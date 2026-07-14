@@ -55,7 +55,7 @@ public static class RecipeTable
         new Recipe("bulwark",      "Bulwark",      ItemSlot.Shield, Tier: 3, "steel",  MaterialQuantity: 5, new ItemStats(Attack: 0,  Defense: 34, Weight: 12)), // heavy
 
         // ---- Armor (defense; plate = heavy) -----------------------------------------------
-        new Recipe("chain-vest",   "Chain Vest",   ItemSlot.Armor,  Tier: 1, "copper", MaterialQuantity: 3, new ItemStats(Attack: 0,  Defense: 7,  Weight: 5)),
+        new Recipe("chain-vest",   "Chain Vest",   ItemSlot.Armor,  Tier: 1, "copper", MaterialQuantity: 3, new ItemStats(Attack: 0,  Defense: 7,  Weight: 4)), // mystic-wearable (ShoppingAi.MysticMaxWeight)
         new Recipe("scale-mail",   "Scale Mail",   ItemSlot.Armor,  Tier: 1, "copper", MaterialQuantity: 4, new ItemStats(Attack: 0,  Defense: 9,  Weight: 7)),
         new Recipe("hauberk",      "Hauberk",      ItemSlot.Armor,  Tier: 2, "iron",   MaterialQuantity: 4, new ItemStats(Attack: 0,  Defense: 18, Weight: 9)),
         new Recipe("half-plate",   "Half Plate",   ItemSlot.Armor,  Tier: 2, "iron",   MaterialQuantity: 5, new ItemStats(Attack: 0,  Defense: 24, Weight: 12)), // heavy
