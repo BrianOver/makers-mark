@@ -88,6 +88,7 @@ public sealed class ExpeditionRevealSystem : IPhaseSystem
             }
 
             state = state with { Heroes = state.Heroes.SetItem(heroValue, HeroOps.ApplyLootIncome(hero, gold)) };
+            events.Emit(new LootIncomeReceived(new HeroId(heroValue), gold));
         }
 
         // 3. Depth records (R15): survivors who beat their personal best, strictly.

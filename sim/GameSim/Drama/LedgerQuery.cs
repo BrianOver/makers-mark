@@ -8,14 +8,15 @@ namespace GameSim.Drama;
 /// One per-hero Evening Ledger card (R12), projected from the event log.
 /// <see cref="FloorReached"/> is the deepest floor the log proves for the day:
 /// a dead hero's death floor, or the deepest among the survivor's record, beat, and
-/// ore-implied floors. <see cref="GoldOnHand"/> is the hero's purse AFTER the reveal —
-/// per-day gold income has no event type in the frozen contracts (see LedgerQuery docs).
+/// ore-implied floors. <see cref="GoldEarned"/> is the day's expedition income
+/// (from <see cref="LootIncomeReceived"/>); <see cref="GoldOnHand"/> the purse after reveal.
 /// </summary>
 public sealed record ReturnCard(
     HeroId Hero,
     string HeroName,
     bool Survived,
     int FloorReached,
+    int GoldEarned,
     int GoldOnHand,
     ImmutableList<AttributionBeatEvent> Beats,
     ImmutableList<OreOffered> OreOffers);
@@ -23,11 +24,6 @@ public sealed record ReturnCard(
 /// <summary>
 /// Pure read model over <see cref="GameState.EventLog"/> (R12): no state changes,
 /// callable any number of times by the UI/CLI (U11/U13).
-///
-/// Known contract gap (reported with U8): the frozen event contracts carry no
-/// per-hero loot-income event, so a return card cannot state "earned Ng today" from
-/// the log alone. Cards expose <see cref="ReturnCard.GoldOnHand"/> (current purse)
-/// instead; an exact figure needs a contracts micro-PR (e.g. LootIncomeReceived).
 /// </summary>
 public static class LedgerQuery
 {
@@ -42,6 +38,7 @@ public static class LedgerQuery
         var beats = new Dictionary<int, List<AttributionBeatEvent>>();
         var ores = new Dictionary<int, List<OreOffered>>();
         var records = new Dictionary<int, int>();
+        var earned = new Dictionary<int, int>();
 
         foreach (var gameEvent in DayLog.For(state.EventLog, day))
         {
@@ -56,6 +53,9 @@ public static class LedgerQuery
                     break;
                 case HeroDied died:
                     deaths[died.Hero.Value] = died;
+                    break;
+                case LootIncomeReceived income:
+                    earned[income.Hero.Value] = earned.GetValueOrDefault(income.Hero.Value) + income.Gold;
                     break;
                 case AttributionBeatEvent beat:
                     Bucket(beats, beat.Hero.Value).Add(beat);
@@ -83,7 +83,9 @@ public static class LedgerQuery
                 : (new HeroId(heroValue).ToString(), 0);
 
             var floor = died?.Floor ?? SurvivorFloor(records.GetValueOrDefault(heroValue), heroBeats, heroOres);
-            cards.Add(new ReturnCard(new HeroId(heroValue), name, died is null, floor, purse, heroBeats, heroOres));
+            cards.Add(new ReturnCard(
+                new HeroId(heroValue), name, died is null, floor,
+                earned.GetValueOrDefault(heroValue), purse, heroBeats, heroOres));
         }
 
         return cards.ToImmutable();
