@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Console runner — the literal R21 text surface and a permanent debug harness.
+       TargetFramework comes from Directory.Build.props. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>GameSim.Cli</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\GameSim\GameSim.csproj" />
+  </ItemGroup>
+</Project>
