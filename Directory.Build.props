@@ -1,0 +1,13 @@
+<Project>
+  <!-- Single source of truth for the target framework (KTD2 / .NET 8 EOL guard).
+       Do NOT add <TargetFramework> to individual csproj files: the Godot editor
+       is known to rewrite csproj TFMs back to net8.0; keeping the property only
+       here means an editor rewrite is visible as a spurious csproj diff instead
+       of a silent downgrade. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+</Project>

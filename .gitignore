@@ -1,0 +1,23 @@
+# Build output
+bin/
+obj/
+*.user
+
+# Godot
+.godot/
+godot/.godot/
+*.translation
+
+# Claude Code worktrees
+.claude/worktrees/
+
+# OS / editor
+.vs/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Test results
+TestResults/
+*.trx

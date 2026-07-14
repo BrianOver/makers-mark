@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- gdUnit4Net engine-test wiring: [RequireGodotRuntime] tests locate the Godot
+     executable via GODOT_BIN. CI exports GODOT_BIN from setup-godot; locally,
+     set the path below to your Godot 4.6.3-stable .NET editor executable
+     (or export GODOT_BIN in your shell, which takes precedence). -->
+<RunSettings>
+  <RunConfiguration>
+    <EnvironmentVariables>
+      <GODOT_BIN>C:\Tools\Godot\Godot_v4.6.3-stable_mono_win64.exe</GODOT_BIN>
+    </EnvironmentVariables>
+  </RunConfiguration>
+</RunSettings>

@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Pure simulation core. ZERO Godot references allowed (KTD2).
+       TargetFramework comes from Directory.Build.props. -->
+  <PropertyGroup>
+    <RootNamespace>GameSim</RootNamespace>
+  </PropertyGroup>
+</Project>

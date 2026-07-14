@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(command -v dotnet)",
+      "Bash(python -c \"import json,sys; v=json.load\\(sys.stdin\\)['versions']; print\\([x for x in v if x.startswith\\('4.6'\\) or x.startswith\\('4.7'\\)]\\)\")"
+    ]
+  }
+}

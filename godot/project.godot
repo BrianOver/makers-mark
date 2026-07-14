@@ -1,0 +1,15 @@
+; Engine configuration file.
+; Godot 4.6.3-stable (.NET edition) — do NOT open with any other editor version (see CLAUDE.md).
+
+config_version=5
+
+[application]
+
+config/name="Maker's Mark"
+config/description="Inverted MMO: you are the blacksmith NPC; autonomous AI heroes raid the Mine."
+config/features=PackedStringArray("4.6", "C#")
+
+[dotnet]
+
+project/assembly_name="GodotClient"
+project/solution_directory=".."
