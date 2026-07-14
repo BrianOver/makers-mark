@@ -1,0 +1,50 @@
+using System.Collections.Immutable;
+
+namespace GameSim.Contracts;
+
+/// <summary>A memorial stone in the town square — one per dead hero, accumulating (R13).</summary>
+public sealed record Memorial(HeroId Hero, string HeroName, int Day, string GearNamed);
+
+/// <summary>Drama-surface state: memorials, the Depths Progress board, recruit gating (R10, R13, R15).</summary>
+public sealed record DramaState(
+    ImmutableList<Memorial> Memorials,
+    ImmutableSortedDictionary<int, int> DepthsBoard, // HeroId.Value -> deepest floor
+    int DaysUntilNextRecruit)
+{
+    public static readonly DramaState Empty = new(
+        ImmutableList<Memorial>.Empty,
+        ImmutableSortedDictionary<int, int>.Empty,
+        DaysUntilNextRecruit: 0);
+}
+
+/// <summary>One logged batch of player actions — the replay record (KTD4).</summary>
+public sealed record LoggedBatch(int Day, DayPhase Phase, ImmutableList<PlayerAction> Actions);
+
+/// <summary>
+/// The entire world. Immutable; every field is deterministically serializable
+/// (sorted dictionaries, ordered lists). Advanced only by <c>GameKernel.Tick</c>.
+/// </summary>
+public sealed record GameState(
+    int Day,
+    DayPhase Phase,
+    RngState Rng,
+    int NextItemId,
+    int NextHeroId,
+    int NextBountyId,
+    int NextEventId,
+    PlayerState Player,
+    ImmutableSortedDictionary<int, Hero> Heroes,          // HeroId.Value -> Hero
+    ImmutableSortedDictionary<int, Item> Items,           // ItemId.Value -> Item
+    ImmutableList<ShelfEntry> RivalShelf,
+    ImmutableList<Bounty> Bounties,
+    ImmutableList<ExpeditionResult> PendingExpeditions,   // resolved at departure, revealed at Evening (KTD5)
+    ImmutableList<OreOffered> OpenOreOffers,
+    DramaState Drama,
+    ImmutableList<GameEvent> EventLog,
+    ImmutableList<LoggedBatch> ActionLog);
+
+/// <summary>Result of one phase tick: the new world, what happened, and what was refused.</summary>
+public sealed record TickResult(
+    GameState NewState,
+    ImmutableList<GameEvent> Events,
+    ImmutableList<RejectedAction> Rejected);

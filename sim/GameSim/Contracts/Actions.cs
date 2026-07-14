@@ -1,0 +1,41 @@
+using System.Text.Json.Serialization;
+
+namespace GameSim.Contracts;
+
+/// <summary>
+/// Everything the player can do, as data (KTD4): the UI and the console runner submit
+/// these to <c>Tick</c>; the action log is the replay record. Polymorphic-serializable.
+/// </summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "$action")]
+[JsonDerivedType(typeof(CraftAction), "craft")]
+[JsonDerivedType(typeof(StockAction), "stock")]
+[JsonDerivedType(typeof(SetPriceAction), "setPrice")]
+[JsonDerivedType(typeof(UnstockAction), "unstock")]
+[JsonDerivedType(typeof(BuyOreAction), "buyOre")]
+[JsonDerivedType(typeof(PostBountyAction), "postBounty")]
+[JsonDerivedType(typeof(UnlockTalentAction), "unlockTalent")]
+public abstract record PlayerAction;
+
+/// <summary>Craft a recipe using a material grade key from <see cref="PlayerState.Materials"/> (R4).</summary>
+public sealed record CraftAction(string RecipeId, string MaterialKey) : PlayerAction;
+
+/// <summary>Move a crafted item onto the shelf at a price (R16).</summary>
+public sealed record StockAction(ItemId Item, int Price) : PlayerAction;
+
+/// <summary>Change the price of a shelved item.</summary>
+public sealed record SetPriceAction(ItemId Item, int Price) : PlayerAction;
+
+/// <summary>Take a shelved item back off sale.</summary>
+public sealed record UnstockAction(ItemId Item) : PlayerAction;
+
+/// <summary>Buy ore offered by a returning hero during Evening (R6).</summary>
+public sealed record BuyOreAction(HeroId From, string MaterialKey, int Quantity) : PlayerAction;
+
+/// <summary>Post a subsidized objective heroes weigh but may decline (R18).</summary>
+public sealed record PostBountyAction(int TargetFloor, int RewardGold) : PlayerAction;
+
+/// <summary>Spend a talent point unlocking a node in the blacksmith mini-tree (R4).</summary>
+public sealed record UnlockTalentAction(string NodeId) : PlayerAction;
+
+/// <summary>An action the kernel refused, with a typed reason — never a silent drop.</summary>
+public sealed record RejectedAction(PlayerAction Action, string Reason);
