@@ -1,0 +1,40 @@
+name: CI
+
+# Two required lanes today: sim-tests (fast, no Godot) + balance-sim.
+# The engine lane (headless Godot + gdUnit4Net) is added in U11 alongside the
+# first gdUnit4Net project, and the main ruleset gains it as a required check then.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  sim-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Fast lane — sim suite (no Godot)
+        run: dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter "Category!=Balance" --logger "trx;LogFileName=sim-tests.trx"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sim-test-results
+          path: sim/GameSim.Tests/TestResults/*.trx
+
+  balance-sim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Balance gate — 100-day sim (placeholder until U10)
+        run: dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter "Category=Balance" --logger "trx;LogFileName=balance-sim.trx"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: balance-test-results
+          path: sim/GameSim.Tests/TestResults/*.trx
