@@ -54,6 +54,7 @@ while (true)
                 price <itemId> <gold>         reprice a shelved item
                 unstock <itemId>              pull an item off the shelf
                 buyore <heroId> <mat> <qty>   buy offered ore (Evening)
+                bounty <floor> <gold>         post a bounty (gold escrowed)
                 next                          advance one phase (queued actions apply)
                 day                           advance to next Morning
                 status | recipes | talents | mats | items | heroes | shelf | board | gossip
@@ -86,6 +87,11 @@ while (true)
 
         case "buyore" when parts.Length == 4 && int.TryParse(parts[1], out var hid) && int.TryParse(parts[3], out var qty):
             pending.Add(new BuyOreAction(new HeroId(hid), parts[2], qty));
+            break;
+
+        case "bounty" when parts.Length == 3 && int.TryParse(parts[1], out var bf) && int.TryParse(parts[2], out var bg):
+            pending.Add(new PostBountyAction(bf, bg));
+            Console.WriteLine($"  queued: bounty — clear floor {bf} for {bg}g (escrowed)");
             break;
 
         case "next":

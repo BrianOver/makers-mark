@@ -27,6 +27,15 @@ public sealed class ExpeditionSystem : IPhaseSystem
             // Push one floor past the party's best prior depth, capped at the Mine's bottom (R9).
             var targetFloor = Math.Clamp(party.Max(h => h.DeepestFloorReached) + 1, 1, MonsterTable.FloorCount);
 
+            // Influence, never orders (R18): a member who accepted a bounty commits the
+            // party to that bounty's floor for the day.
+            var bounty = state.Bounties.FirstOrDefault(b =>
+                b.AcceptedBy is { } acceptor && partyIds.Contains(acceptor));
+            if (bounty is not null)
+            {
+                targetFloor = bounty.TargetFloor;
+            }
+
             var result = ExpeditionResolver.Resolve(party, state.Items, targetFloor, rng);
             state = state with { PendingExpeditions = state.PendingExpeditions.Add(result) };
             events.Emit(new PartyDeparted(partyIds, targetFloor));

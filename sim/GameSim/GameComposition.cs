@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using GameSim.Bounties;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Drama;
@@ -16,7 +17,8 @@ namespace GameSim;
 ///
 /// Morning: rival-restock → recruit-trickle → gossip → hero-shopping
 /// (restock must precede shopping; gossip reads yesterday's stamped log).
-/// Expedition: expedition. Evening: expedition-reveal.
+/// Expedition: bounty-judging → expedition (judging shapes target floors).
+/// Evening: expedition-reveal → bounty-payout (payout needs revealed depths).
 /// </summary>
 public static class GameComposition
 {
@@ -26,12 +28,15 @@ public static class GameComposition
             new RecruitSystem(),
             new GossipSystem(),
             new HeroShoppingSystem(),
+            new BountyJudgingSystem(),
             new ExpeditionSystem(),
-            new ExpeditionRevealSystem()),
+            new ExpeditionRevealSystem(),
+            new BountyPayoutSystem()),
         ImmutableList.Create<IActionHandler>(
             new CraftingHandlers(),
             new ShopHandlers(),
-            new OreMarketHandlers()));
+            new OreMarketHandlers(),
+            new BountyHandlers()));
 
     /// <summary>A fresh campaign: seeded world with the starting six heroes installed.</summary>
     public static GameState NewCampaign(ulong seed) =>
