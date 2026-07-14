@@ -93,7 +93,7 @@ public class AttributionTests
         {
             var result = ExpeditionResolver.Resolve(
                 ImmutableList.Create(hero), items, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
-            Assert.Empty(result.Beats.Where(b => b.Item == armor.Id));
+            Assert.DoesNotContain(result.Beats, b => b.Item == armor.Id);
         }
     }
 
