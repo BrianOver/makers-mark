@@ -15,6 +15,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(AttributionBeatEvent), "attributionBeat")]
 [JsonDerivedType(typeof(HeroDied), "heroDied")]
 [JsonDerivedType(typeof(RecruitArrived), "recruitArrived")]
+[JsonDerivedType(typeof(LootIncomeReceived), "lootIncome")]
 [JsonDerivedType(typeof(OreOffered), "oreOffered")]
 [JsonDerivedType(typeof(BountyPosted), "bountyPosted")]
 [JsonDerivedType(typeof(BountyJudged), "bountyJudged")]
@@ -45,6 +46,9 @@ public sealed record AttributionBeatEvent(BeatType Beat, ItemId Item, HeroId Her
 public sealed record HeroDied(HeroId Hero, int Floor, string Cause, GearSet WornGear) : GameEvent;
 
 public sealed record RecruitArrived(HeroId Hero) : GameEvent;
+
+/// <summary>Expedition gold credited to a surviving hero at the Evening reveal (R12/R17).</summary>
+public sealed record LootIncomeReceived(HeroId Hero, int Gold) : GameEvent;
 
 /// <summary>A returning hero offers floor-scaled ore for sale (R6).</summary>
 public sealed record OreOffered(HeroId From, string MaterialKey, int Quantity, int UnitPrice) : GameEvent;
