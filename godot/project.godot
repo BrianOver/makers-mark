@@ -9,6 +9,8 @@ config/name="Maker's Mark"
 config/description="Inverted MMO: you are the blacksmith NPC; autonomous AI heroes raid the Mine."
 config/features=PackedStringArray("4.6", "C#")
 
+run/main_scene="res://scenes/panels/main_ui.tscn"
+
 [dotnet]
 
 project/assembly_name="GodotClient"

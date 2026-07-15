@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- gdUnit4Net engine tests for the U11 panels (KTD3): [RequireGodotRuntime] suites
+       run against headless Godot located via the GODOT_BIN environment variable
+       (or the repo-root .runsettings); pure adapter/clock suites run in the plain
+       test host. TargetFramework comes from the repo-root Directory.Build.props —
+       do not add one here.
+
+       GDUNIT_TESTS: every test .cs in this folder is wrapped in
+       `#if GDUNIT_TESTS` because GodotClient.csproj's default compile glob also
+       sweeps godot/tests/** (nested projects are not auto-excluded). The guard keeps
+       the parent build green until GodotClient.csproj gains
+       <DefaultItemExcludes>$(DefaultItemExcludes);tests/**</DefaultItemExcludes>
+       (orchestrator-owned file). -->
+  <PropertyGroup>
+    <RootNamespace>GodotClient.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <DefineConstants>$(DefineConstants);GDUNIT_TESTS</DefineConstants>
+    <!-- Godot.SourceGenerators flow in via the GodotClient ProjectReference and need
+         to know where project.godot lives (this csproj is plain Microsoft.NET.Sdk). -->
+    <GodotProjectDir>$(MSBuildProjectDirectory)\..\</GodotProjectDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Godot.NET.Sdk normally exposes this to the analyzers; without it the
+         ScriptPathAttributeGenerator warns CS8785 on every build. -->
+    <CompilerVisibleProperty Include="GodotProjectDir" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Pairing pinned by NuGet dependency ranges: adapter 3.0.0 is the newest 3.x
+         that depends on the stable gdUnit4.api 5.0.0 (3.1.x requires 5.1.0-rc5). -->
+    <PackageReference Include="gdUnit4.api" Version="5.0.0" />
+    <PackageReference Include="gdUnit4.test.adapter" Version="3.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\GodotClient.csproj" />
+  </ItemGroup>
+</Project>

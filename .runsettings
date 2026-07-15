@@ -6,7 +6,7 @@
 <RunSettings>
   <RunConfiguration>
     <EnvironmentVariables>
-      <GODOT_BIN>C:\Tools\Godot\Godot_v4.6.3-stable_mono_win64.exe</GODOT_BIN>
+      <GODOT_BIN>C:\Tools\Godot\Godot_v4.6.3-stable_mono_win64\Godot_v4.6.3-stable_mono_win64_console.exe</GODOT_BIN>
     </EnvironmentVariables>
   </RunConfiguration>
 </RunSettings>
