@@ -1,8 +1,6 @@
 name: CI
 
-# Two required lanes today: sim-tests (fast, no Godot) + balance-sim.
-# The engine lane (headless Godot + gdUnit4Net) is added in U11 alongside the
-# first gdUnit4Net project, and the main ruleset gains it as a required check then.
+# Three lanes: sim-tests (fast, no Godot), balance-sim, engine-tests (headless Godot).
 on:
   pull_request:
   push:
@@ -38,3 +36,43 @@ jobs:
         with:
           name: balance-test-results
           path: sim/GameSim.Tests/TestResults/*.trx
+
+  engine-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.6.3   # keep in sync with .godot-version
+          use-dotnet: true
+          include-templates: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/cache@v4
+        with:
+          path: godot/.godot
+          key: godot-import-${{ hashFiles('godot/project.godot', 'godot/**/*.tscn', 'godot/**/*.cs') }}
+          restore-keys: godot-import-
+      - name: Import project (known-flaky step; failures surface in the test step)
+        run: godot --headless --path godot --import --quit-after 200
+        continue-on-error: true
+      - name: Restore csproj after import (Godot editor injects a net8 TFM downgrade)
+        run: git checkout -- godot/GodotClient.csproj
+      - name: Engine tests (headless Godot via GODOT_BIN)
+        run: |
+          export GODOT_BIN=$(which godot)
+          dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests.trx"
+      - name: Assert runtime suite actually ran (silent-skip guard, KTD3)
+        run: |
+          export GODOT_BIN=$(which godot)
+          dotnet test godot/tests/GodotClient.Tests.csproj --filter "FullyQualifiedName~MainUiTests" -- RunConfiguration.TreatNoTestsAsError=true
+      - name: Restore csproj after tests
+        if: always()
+        run: git checkout -- godot/GodotClient.csproj
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: engine-test-results
+          path: godot/tests/TestResults/**/*.trx
+          if-no-files-found: ignore
