@@ -46,6 +46,18 @@ while (true)
         case "quit" or "exit":
             return;
 
+        case "export":
+        {
+            var path = parts.Length >= 2
+                ? parts[1]
+                : Path.Combine("runs", $"run-seed{seed}-day{state.Day}.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            File.WriteAllText(path, GameSim.Chronicle.ChronicleCodec.Serialize(
+                GameSim.Chronicle.ChronicleCodec.FromState(seed, state)));
+            Console.WriteLine($"  chronicle exported: {path}");
+            break;
+        }
+
         case "help":
             Console.WriteLine("""
                 craft <recipeId> <material>   queue a craft (see 'recipes', 'mats')
@@ -55,6 +67,7 @@ while (true)
                 unstock <itemId>              pull an item off the shelf
                 buyore <heroId> <mat> <qty>   buy offered ore (Evening)
                 bounty <floor> <gold>         post a bounty (gold escrowed)
+                export [path]                 dump campaign chronicle for analytics
                 next                          advance one phase (queued actions apply)
                 day                           advance to next Morning
                 status | recipes | talents | mats | items | heroes | shelf | board | gossip

@@ -25,7 +25,7 @@ dotnet build Game.sln
 
 1. **Tests green before done.** No work is reportable as complete until the fast lane passes locally and CI is green on the PR.
 2. **Engine pin.** Godot 4.6.3-stable .NET ONLY (`.godot-version` is the source of truth). Never open or re-save `godot/` with any other editor version — newer editors silently rewrite scenes/import metadata and break CI.
-3. **TargetFramework lives in `Directory.Build.props` only.** Never add `<TargetFramework>` to a csproj — the Godot editor's net8 auto-downgrade must surface as a visible diff.
+3. **TargetFramework lives in `Directory.Build.props` only — EXCEPT `godot/GodotClient.csproj`, which pins `net10.0` explicitly.** Godot injects `net8.0` whenever the element is absent (import + gdUnit4Net adapter rebuilds), so absence is the hazard there. Never add a TFM to any other csproj, and never commit a `net8.0` value anywhere.
 4. **Sim purity (KTD2).** `sim/GameSim/` has ZERO Godot references. All game rules live there. `godot/` is adapter-only: render state, submit actions. No RNG outside the kernel's injected stream; no wall-clock reads in the sim; no transcendental `Math.*` in sim code (cross-OS float drift).
 5. **Determinism.** Same seed + same actions = identical state. The golden-replay test enforces it; breaking it is a build-failing defect.
 

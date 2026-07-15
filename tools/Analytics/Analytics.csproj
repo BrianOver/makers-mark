@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Chronicle analytics (U14): aggregates exported runs into a tuning report.
+       TargetFramework comes from Directory.Build.props. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Analytics</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\sim\GameSim\GameSim.csproj" />
+  </ItemGroup>
+</Project>
