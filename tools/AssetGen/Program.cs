@@ -3,16 +3,18 @@ using System.Text.Json;
 
 // Themed asset generator (U15). Dev-time only — never runs at game runtime
 // (keeps the no-runtime-LLM boundary). Reads GEMINI_API_KEY from the environment;
-// the key is NEVER read from or written to a file, and never printed.
+// the key is NEVER read from or written to a file, NEVER placed in a URL, and
+// NEVER printed — it travels only in the x-goog-api-key request header.
 //
 // Usage:
 //   dotnet run --project tools/AssetGen -- --dry-run          # print prompts, no API calls, no key needed
 //   GEMINI_API_KEY=... dotnet run --project tools/AssetGen    # generate into godot/assets/art/
 //
-// Model id + endpoint are named constants below — verify against current Google
-// Generative Language / Imagen docs before a real run; the API shape drifts.
+// Model: gemini-2.5-flash-image ("Nano Banana"), the current non-deprecated image
+// model (Imagen 3/4 shuts down 2026-08-17). generateContent returns image bytes as
+// base64 in candidates[0].content.parts[].inlineData.data.
 
-const string Model = "imagen-3.0-generate-002"; // TODO: confirm latest Imagen model id at run time
+const string Model = "gemini-2.5-flash-image";
 const string Endpoint = "https://generativelanguage.googleapis.com/v1beta/models";
 
 // Master prompt prefix — kept in sync with docs/style-bible.md.
@@ -22,7 +24,7 @@ const string Prefix =
     "sci-fi teal on faint circuit traces, warm ember candle-glow rim light. " +
     "Ancient craft touched by faint technology — runes and thin circuitry share the same metal. " +
     "Candlelit not neon. Clean outlines, 2-3 tone shading, no gradients, no text. " +
-    "Centered subject, flat void background. Subject: ";
+    "Centered subject, flat void background, square framing. Subject: ";
 
 var subjects = new (string File, string Prompt)[]
 {
@@ -47,10 +49,10 @@ if (!dryRun && string.IsNullOrWhiteSpace(key))
     return 1;
 }
 
-var outDir = Path.Combine("godot", "assets");
-Directory.CreateDirectory(Path.Combine(outDir, "art"));
+Directory.CreateDirectory(Path.Combine("godot", "assets", "art"));
 
 using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
+var ok = 0;
 
 foreach (var (file, subject) in subjects)
 {
@@ -61,27 +63,62 @@ foreach (var (file, subject) in subjects)
         continue;
     }
 
-    var url = $"{Endpoint}/{Model}:predict?key={key}";
-    var body = new
+    using var req = new HttpRequestMessage(HttpMethod.Post, $"{Endpoint}/{Model}:generateContent");
+    req.Headers.Add("x-goog-api-key", key); // key in header, never the URL — no leak in logs
+    req.Content = JsonContent.Create(new
     {
-        instances = new[] { new { prompt } },
-        parameters = new { sampleCount = 1, aspectRatio = "1:1" },
-    };
+        contents = new[] { new { parts = new[] { new { text = prompt } } } },
+        generationConfig = new { responseModalities = new[] { "IMAGE" } },
+    });
 
-    using var resp = await http.PostAsJsonAsync(url, body);
+    using var resp = await http.SendAsync(req);
     if (!resp.IsSuccessStatusCode)
     {
-        // Never surface the URL (carries the key). Report status only.
-        Console.Error.WriteLine($"FAILED {file}: HTTP {(int)resp.StatusCode}");
+        Console.Error.WriteLine($"FAILED {file}: HTTP {(int)resp.StatusCode} {resp.StatusCode}");
         continue;
     }
 
     var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
-    var b64 = json.GetProperty("predictions")[0].GetProperty("bytesBase64Encoded").GetString();
-    var path = Path.Combine(outDir, file);
-    await File.WriteAllBytesAsync(path, Convert.FromBase64String(b64!));
+    var b64 = ExtractImage(json);
+    if (b64 is null)
+    {
+        Console.Error.WriteLine($"FAILED {file}: no image part in response");
+        continue;
+    }
+
+    var path = Path.Combine("godot", "assets", file);
+    await File.WriteAllBytesAsync(path, Convert.FromBase64String(b64));
     Console.WriteLine($"wrote {path}");
+    ok++;
 }
 
-Console.WriteLine(dryRun ? "dry-run complete — no images generated." : "generation complete. Review, then commit the PNGs.");
+Console.WriteLine(dryRun
+    ? "dry-run complete — no images generated."
+    : $"generation complete: {ok}/{subjects.Length} written. Review against docs/style-bible.md, then commit the PNGs.");
 return 0;
+
+// candidates[0].content.parts[] — the image part carries inlineData.data (base64).
+static string? ExtractImage(JsonElement json)
+{
+    if (!json.TryGetProperty("candidates", out var candidates) || candidates.GetArrayLength() == 0)
+    {
+        return null;
+    }
+
+    if (!candidates[0].TryGetProperty("content", out var content)
+        || !content.TryGetProperty("parts", out var parts))
+    {
+        return null;
+    }
+
+    foreach (var part in parts.EnumerateArray())
+    {
+        if (part.TryGetProperty("inlineData", out var inline)
+            && inline.TryGetProperty("data", out var data))
+        {
+            return data.GetString();
+        }
+    }
+
+    return null;
+}
