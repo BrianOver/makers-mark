@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+  <!-- Shop: storefront with a striped awning, ember display windows and a counter. -->
+  <!-- wall -->
+  <rect x="16" y="34" width="64" height="50" fill="#2a2438" stroke="#d8cfe0" stroke-width="2"/>
+  <!-- awning -->
+  <path d="M12 34 L84 34 L78 48 L18 48 Z" fill="#2a2438" stroke="#d8cfe0" stroke-width="2"/>
+  <path d="M30 34 L26 48 M46 34 L44 48 M62 34 L62 48 M76 34 L78 48" stroke="#d8cfe0" stroke-width="1.4" opacity="0.7"/>
+  <!-- ember display windows -->
+  <rect x="22" y="54" width="14" height="14" fill="#e0913f" opacity="0.55" stroke="#d8cfe0" stroke-width="1.5"/>
+  <rect x="60" y="54" width="14" height="14" fill="#e0913f" opacity="0.55" stroke="#d8cfe0" stroke-width="1.5"/>
+  <!-- counter / door -->
+  <rect x="40" y="60" width="16" height="24" fill="#140f1f" stroke="#d8cfe0" stroke-width="2"/>
+  <!-- teal circuit trace -->
+  <path d="M20 76 h12" stroke="#3fb0ac" stroke-width="1.5"/>
+  <!-- purple rune -->
+  <circle cx="48" cy="54" r="3" fill="none" stroke="#6b4c9a" stroke-width="1.5"/>
+  <!-- ember rim light, upper edge -->
+  <path d="M14 35 L82 35" stroke="#e0913f" stroke-width="1.2" opacity="0.6"/>
+</svg>

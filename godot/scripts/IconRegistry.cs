@@ -12,6 +12,7 @@ namespace GodotClient;
 public static class IconRegistry
 {
     private const string IconDir = "res://assets/icons";
+    private const string SpriteDir = "res://assets/sprites";
     private const string ArtDir = "res://assets/art";
 
     public static Texture2D Slot(ItemSlot slot) => Load(IconDir, slot switch
@@ -24,7 +25,25 @@ public static class IconRegistry
 
     public static Texture2D Ore(string materialKey) => Load(IconDir, $"ore_{materialKey}");
 
-    public static Texture2D Glyph(string name) => Load(IconDir, name); // gold, bounty, gossip, depths, skull
+    public static Texture2D Glyph(string name) => Load(IconDir, name); // gold, bounty, gossip, depths, skull, rune
+
+    /// <summary>
+    /// Hand-authored hero figure per role (U16). Bodies are neutral so the town can
+    /// tint them to the role color via <c>TextureRect.Modulate</c>; see the style bible.
+    /// </summary>
+    public static Texture2D Sprite(HeroRole role) => Load(SpriteDir, "hero_" + role switch
+    {
+        HeroRole.Vanguard => "vanguard",
+        HeroRole.Striker => "striker",
+        HeroRole.Mystic => "mystic",
+        _ => "vanguard",
+    });
+
+    /// <summary>
+    /// Hand-authored town facade / prop by key (U16): forge, shop, tavern, mine_gate,
+    /// memorial_stone, ground_tile.
+    /// </summary>
+    public static Texture2D Building(string name) => Load(SpriteDir, name);
 
     /// <summary>Generated art by base file name (e.g. "hero_mystic", "monster_floor5"); null until U15's generator has run.</summary>
     public static Texture2D? Art(string name)

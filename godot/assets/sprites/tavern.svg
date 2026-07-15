@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+  <!-- Tavern: warm lit windows and a hanging mug sign. -->
+  <!-- roof -->
+  <path d="M16 38 L48 20 L80 38 Z" fill="#2a2438" stroke="#d8cfe0" stroke-width="2"/>
+  <!-- wall -->
+  <rect x="22" y="38" width="52" height="46" fill="#2a2438" stroke="#d8cfe0" stroke-width="2"/>
+  <!-- lit windows (ember) -->
+  <rect x="28" y="46" width="12" height="12" fill="#e0913f" opacity="0.7" stroke="#d8cfe0" stroke-width="1.5"/>
+  <rect x="56" y="46" width="12" height="12" fill="#e0913f" opacity="0.7" stroke="#d8cfe0" stroke-width="1.5"/>
+  <!-- door -->
+  <rect x="40" y="62" width="16" height="22" fill="#140f1f" stroke="#d8cfe0" stroke-width="2"/>
+  <!-- hanging mug sign -->
+  <path d="M76 34 v6" stroke="#d8cfe0" stroke-width="1.5"/>
+  <rect x="70" y="40" width="16" height="13" rx="2" fill="#2a2438" stroke="#d8cfe0" stroke-width="1.5"/>
+  <path d="M86 43 q4 0 4 3.5 q0 3.5 -4 3.5" fill="none" stroke="#d8cfe0" stroke-width="1.5"/>
+  <!-- teal foam line doubles as the circuit trace -->
+  <path d="M70 45 h16" stroke="#3fb0ac" stroke-width="1.5"/>
+  <!-- purple rune -->
+  <path d="M48 50 l2.5 4 -2.5 4 -2.5 -4 Z" fill="none" stroke="#6b4c9a" stroke-width="1.5"/>
+  <!-- ember rim light, upper-left roofline -->
+  <path d="M18 37 L47 21" stroke="#e0913f" stroke-width="1.5" opacity="0.8"/>
+</svg>

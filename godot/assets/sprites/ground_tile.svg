@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Tileable cobble ground: void base with faint iron seams. Repeats seamlessly at
+       64px (offset brick rows), with two dim forge-cinder specks for texture. -->
+  <rect width="64" height="64" fill="#140f1f"/>
+  <!-- horizontal seams (rows at 0, ~21.3, ~42.7, 64) -->
+  <path d="M0 21.33 h64 M0 42.66 h64" stroke="#2a2438" stroke-width="1"/>
+  <!-- vertical seams, offset per row so the brick pattern tiles -->
+  <path d="M0 0 v21.33 M32 0 v21.33" stroke="#2a2438" stroke-width="1"/>
+  <path d="M16 21.33 v21.33 M48 21.33 v21.33" stroke="#2a2438" stroke-width="1"/>
+  <path d="M0 42.66 v21.34 M32 42.66 v21.34" stroke="#2a2438" stroke-width="1"/>
+  <!-- dim cinders -->
+  <circle cx="10" cy="52" r="1" fill="#e0913f" opacity="0.30"/>
+  <circle cx="50" cy="12" r="1" fill="#3fb0ac" opacity="0.22"/>
+</svg>

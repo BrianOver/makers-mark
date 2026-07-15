@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Talent rune glyph: an arcane diamond sigil with a teal spark core. -->
+  <rect width="64" height="64" fill="#140f1f"/>
+  <path d="M32 12 L48 32 L32 52 L16 32 Z" fill="none" stroke="#6b4c9a" stroke-width="2.5"/>
+  <path d="M32 22 L32 42 M24 32 L40 32" stroke="#6b4c9a" stroke-width="2"/>
+  <circle cx="32" cy="32" r="3" fill="#3fb0ac"/>
+  <path d="M20 20 L26 26" stroke="#e0913f" stroke-width="1.5" opacity="0.85"/>
+</svg>

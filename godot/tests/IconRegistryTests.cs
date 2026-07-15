@@ -33,9 +33,27 @@ public class IconRegistryTests
     [TestCase]
     public void EveryGlyph_Loads()
     {
-        foreach (var g in new[] { "gold", "bounty", "gossip", "depths", "skull" })
+        foreach (var g in new[] { "gold", "bounty", "gossip", "depths", "skull", "rune" })
         {
             AssertThat(IconRegistry.Glyph(g)).IsNotNull();
+        }
+    }
+
+    [TestCase]
+    public void EveryHeroSprite_Loads()
+    {
+        foreach (HeroRole role in System.Enum.GetValues<HeroRole>())
+        {
+            AssertThat(IconRegistry.Sprite(role)).IsNotNull();
+        }
+    }
+
+    [TestCase]
+    public void EveryBuilding_Loads()
+    {
+        foreach (var name in new[] { "forge", "shop", "tavern", "mine_gate", "memorial_stone", "ground_tile" })
+        {
+            AssertThat(IconRegistry.Building(name)).IsNotNull();
         }
     }
 

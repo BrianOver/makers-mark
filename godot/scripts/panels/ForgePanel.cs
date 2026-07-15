@@ -42,6 +42,7 @@ public partial class ForgePanel : SimPanel
             var material = SelectedMaterialOr(recipe.MaterialKey);
             var have = state.Player.Materials.TryGetValue(material, out var stock) ? stock : 0;
             var row = AddRow(_recipeRows!);
+            AddIcon(row, IconRegistry.Slot(recipe.Slot));
             AddLabel(row,
                 $"{recipe.Name} (t{recipe.Tier} {recipe.Slot}) — {recipe.MaterialQuantity}x {material} (have {have})" +
                 $"  atk {recipe.BaseStats.Attack} def {recipe.BaseStats.Defense} wt {recipe.BaseStats.Weight}");
@@ -53,6 +54,7 @@ public partial class ForgePanel : SimPanel
         {
             var row = AddRow(_talentRows!);
             var unlocked = state.Player.Talents.Contains(node.NodeId);
+            AddIcon(row, IconRegistry.Glyph("rune"));
             AddLabel(row, $"{node.Name} — {node.Description}{(unlocked ? " [unlocked]" : string.Empty)}");
             if (!unlocked)
             {

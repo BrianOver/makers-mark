@@ -81,6 +81,23 @@ public class MainUiTests
     }
 
     [TestCase]
+    public void ForgePanel_RendersThemedIcons_AfterBinding()
+    {
+        // U16: recipe rows carry a slot icon and talent rows a rune glyph, so a freshly
+        // bound forge already renders at least one TextureRect alongside its text.
+        var ui = MountMainUi();
+        try
+        {
+            var icons = ui.Forge.FindChildren("*", "TextureRect", recursive: true, owned: false);
+            AssertThat(icons.Count > 0).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void ForgePanel_CraftRoundTrip_ChangesSimAndRefreshesPanels()
     {
         var ui = MountMainUi();

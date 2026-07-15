@@ -4,8 +4,9 @@ using Godot;
 namespace GodotClient.Town;
 
 /// <summary>
-/// One alive hero's town marker (U12 placeholder art): a role-colored square plus a
-/// name label. Movement is a four-state machine driven by <see cref="TownScene"/>
+/// One alive hero's town marker: a hand-authored role figure (U16 SVG, tinted to the
+/// role color via Modulate) over a small role-color footing, plus a name label.
+/// Movement is a four-state machine driven by <see cref="TownScene"/>
 /// (never by its own _Process): Wandering in town, WalkingOut through the gate when
 /// the expedition departs, Away while in the Mine, WalkingIn when the survivor
 /// returns. The wander is a deterministic lissajous drift derived from the hero id —
@@ -24,7 +25,11 @@ public partial class HeroSprite : Control
     /// <summary>Gate-walk speed in design-space pixels per second (decoration tuning knob).</summary>
     public const float WalkSpeed = 260f;
 
-    private const float MarkerSize = 14f;
+    private const float SpriteWidth = 30f;
+    private const float SpriteHeight = 42f;
+    private const float SpriteRise = 14f;   // the figure rises above the control's top so it reads as standing
+    private const float FootingWidth = 18f; // role-color base bar under the feet
+    private const float FeetY = SpriteHeight - SpriteRise;
     private const float WanderAmplitudeX = 14f;
     private const float WanderAmplitudeY = 10f;
 
@@ -45,7 +50,7 @@ public partial class HeroSprite : Control
     /// <summary>Anchor point the wander drifts around; deterministic per hero id.</summary>
     public Vector2 Home { get; private set; }
 
-    /// <summary>Role → placeholder color (U12 pinned palette).</summary>
+    /// <summary>Role → tint color (U12 pinned palette; U16 tints the figure + footing with it).</summary>
     public static Color RoleColor(HeroRole role) => role switch
     {
         HeroRole.Vanguard => new Color(0.27f, 0.51f, 0.71f), // steel blue
@@ -73,12 +78,29 @@ public partial class HeroSprite : Control
         _speedX = 0.55f + HeroValue % 3 * 0.2f;
         _speedY = 0.4f + HeroValue % 4 * 0.15f;
 
+        // U16: the hand-authored role figure, tinted to the role color via Modulate.
+        // The figure rises above the control's top so it reads as standing; the
+        // control's hit rect (Size) is unchanged, so click routing is identical.
+        var sprite = new TextureRect
+        {
+            Name = "Sprite",
+            Texture = IconRegistry.Sprite(hero.Role),
+            Modulate = RoleColor(hero.Role),
+            Position = new Vector2((Size.X - SpriteWidth) / 2f, -SpriteRise),
+            Size = new Vector2(SpriteWidth, SpriteHeight),
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        AddChild(sprite);
+
+        // Small role-color footing bar under the feet. Retained (U12 pinned) so the
+        // role→color contract stays visible and asserted at a glance.
         var marker = new ColorRect
         {
             Name = "Marker",
             Color = RoleColor(hero.Role),
-            Position = new Vector2((Size.X - MarkerSize) / 2f, 0),
-            Size = new Vector2(MarkerSize, MarkerSize),
+            Position = new Vector2((Size.X - FootingWidth) / 2f, FeetY - 4),
+            Size = new Vector2(FootingWidth, 4),
             MouseFilter = MouseFilterEnum.Ignore,
         };
         AddChild(marker);
@@ -87,7 +109,7 @@ public partial class HeroSprite : Control
         {
             Name = "NameLabel",
             Text = hero.Name,
-            Position = new Vector2(0, MarkerSize + 2),
+            Position = new Vector2(0, FeetY),
             CustomMinimumSize = new Vector2(Size.X, 0),
             HorizontalAlignment = HorizontalAlignment.Center,
             MouseFilter = MouseFilterEnum.Ignore,
