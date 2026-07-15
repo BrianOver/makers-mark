@@ -28,3 +28,5 @@ TestResults/
 # gdUnit4Net regenerated runner + editor csproj backups
 godot/gdunit4_testadapter_v5/
 godot/GodotClient.csproj.old*
+# Campaign telemetry exports
+runs/

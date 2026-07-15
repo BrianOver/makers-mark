@@ -19,5 +19,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\GameSim\GameSim.csproj" />
+    <ProjectReference Include="..\..\tools\Analytics\Analytics.csproj" />
   </ItemGroup>
 </Project>
