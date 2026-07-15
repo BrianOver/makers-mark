@@ -251,8 +251,11 @@ public class TownSceneTests
     private static GameState DoomedCampaign(ulong seed)
     {
         var state = GameComposition.NewCampaign(seed);
+        // Gold 0 so they can't arm up on the Morning shop — a broke 1-HP hero can't
+        // one-shot the floor-1 monster, so the party reliably wipes (post the
+        // death-clears-floor fix, an armed survivor would end the run early with 1 alive).
         var doomed = state.Heroes.Values.Take(3)
-            .Select(h => h with { MaxHp = 1, DeepestFloorReached = 4 })
+            .Select(h => h with { MaxHp = 1, Gold = 0, DeepestFloorReached = 4 })
             .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
         return state with
         {
