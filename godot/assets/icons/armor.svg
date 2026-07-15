@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Armor slot: cuirass with circuit ribs and a rune sigil. -->
+  <rect width="64" height="64" fill="#140f1f"/>
+  <path d="M20 14 L32 10 L44 14 L46 24 Q46 30 42 32 L42 50 L22 50 L22 32 Q18 30 18 24 Z" fill="#2a2438" stroke="#d8cfe0" stroke-width="2"/>
+  <path d="M22 16 L32 12" stroke="#e0913f" stroke-width="1.5" opacity="0.8"/>
+  <path d="M27 22 L27 46 M37 22 L37 46" stroke="#3fb0ac" stroke-width="1.5"/>
+  <path d="M32 26 l3 4 -3 4 -3 -4 Z" fill="none" stroke="#6b4c9a" stroke-width="1.5"/>
+</svg>

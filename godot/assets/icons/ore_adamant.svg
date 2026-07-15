@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Ore: adamant. Faceted chunk in tier color with teal circuit vein + ember rim. -->
+  <rect width="64" height="64" fill="#140f1f"/>
+  <path d="M32 12 L48 26 L40 50 L24 50 L16 26 Z" fill="#e0913f" stroke="#d8cfe0" stroke-width="2"/>
+  <path d="M32 12 L32 50 M16 26 L48 26" stroke="#140f1f" stroke-width="1.5" opacity="0.5"/>
+  <path d="M20 28 L28 34" stroke="#3fb0ac" stroke-width="1.5"/>
+  <path d="M32 12 L40 20" stroke="#e0913f" stroke-width="1.5" opacity="0.8"/>
+</svg>
