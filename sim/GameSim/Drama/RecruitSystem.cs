@@ -21,8 +21,10 @@ public sealed class RecruitSystem : IPhaseSystem
     /// <summary>Recruits never push the alive roster past this (R7's six).</summary>
     public const int RosterCap = 6;
 
-    /// <summary>Mornings between consecutive recruits. Tuned in U10's balance gate.</summary>
-    public const int RecruitGateDays = 3;
+    /// <summary>Mornings between consecutive recruits. Tuned in U10's balance gate —
+    /// lowered from 3 to 2 after the death-clears-floor correctness fix made combat
+    /// deadlier, so the town would otherwise dwindle to a single survivor by day 100.</summary>
+    public const int RecruitGateDays = 2;
 
     public DayPhase Phase => DayPhase.Morning;
 

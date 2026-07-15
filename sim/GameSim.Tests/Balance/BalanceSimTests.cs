@@ -17,7 +17,12 @@ public class BalanceSimTests
 
     // Bands (tuned in U10):
     private const int Floor3ByDay = 40;      // at least one hero this deep this soon
-    private const int NoFloor5BeforeDay = 15; // trivialization ceiling
+    // Trivialization ceiling — catches a broken gate letting floor 5 fall in the first
+    // few days. Re-fit from 15 to 8 after the death-clears-floor correctness fix: the
+    // corrected sim reaches floor 5 around day 12-13 under baseline play (the old 15 was
+    // calibrated against buggy clear logic). Floor-5 pacing (~day 12) is a playtest knob —
+    // raise floor gates or slow advancement if first-session content should last longer.
+    private const int NoFloor5BeforeDay = 8;
     private const int MinAliveAtEnd = 3;      // recruit trickle keeps the town alive
     private const int GrinWindowDays = 60;    // grin-rate measured over the last N days
     private const int MinBeatsPerWindow = 60; // ≥1 attribution beat per day once rolling

@@ -25,6 +25,12 @@ public static class AttributionEngine
 
         foreach (var floor in floors)
         {
+            // The roster alive when this floor began — the population the resolver's
+            // structural gate actually faced (ExpeditionResolver). Snapshot before the
+            // combat replay below mutates hp, so the breakpoint counterfactual (KTD6)
+            // recomputes over the same set, not the post-combat survivors.
+            var floorStartFighters = party.Where(h => hp[h.Id.Value] > 0).ToList();
+
             foreach (var combat in floor.Combats)
             {
                 var hero = heroesById[combat.Hero.Value];
@@ -75,13 +81,10 @@ public static class AttributionEngine
             // would have dropped the party average below the structural gate.
             if (floor.Cleared)
             {
-                var standing = party
-                    .Where(h => hp[h.Id.Value] > 0)
-                    .ToList();
                 var gate = MonsterTable.Gate(floor.Floor);
-                var avg = CombatMath.PartyAveragePower(standing, items);
+                var avg = CombatMath.PartyAveragePower(floorStartFighters, items);
 
-                foreach (var hero in standing)
+                foreach (var hero in floorStartFighters)
                 {
                     foreach (var itemId in new[] { hero.Gear.Weapon, hero.Gear.Shield, hero.Gear.Armor })
                     {
@@ -91,7 +94,7 @@ public static class AttributionEngine
                         }
 
                         var without = items.Remove(id.Value);
-                        if (avg >= gate && CombatMath.PartyAveragePower(standing, without) < gate)
+                        if (avg >= gate && CombatMath.PartyAveragePower(floorStartFighters, without) < gate)
                         {
                             beats.Add(new AttributionBeat(
                                 BeatType.BreakpointClear, id, hero.Id, floor.Floor,

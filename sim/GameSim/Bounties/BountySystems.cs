@@ -78,10 +78,14 @@ public sealed class BountyPayoutSystem : IPhaseSystem
                 continue;
             }
 
-            if (bounty.AcceptedBy is null && state.Day - bounty.PostedOnDay >= BountyRules.ExpiryDays)
+            if (state.Day - bounty.PostedOnDay >= BountyRules.ExpiryDays)
             {
+                // Lapsed — refund the escrow. Reached after the paid (60-71) and
+                // dead-acceptor (73-79) branches, so this also catches an accepted
+                // hero who lived but never reached the target floor by expiry:
+                // without it, that escrow would leak from the town gold total.
                 state = state with { Player = state.Player with { Gold = state.Player.Gold + bounty.RewardGold } };
-                continue; // lapsed — refund
+                continue;
             }
 
             remaining.Add(bounty);
