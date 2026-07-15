@@ -53,6 +53,7 @@ public static class ExpeditionResolver
                 if (outcome == FightOutcome.HeroDied)
                 {
                     dead.Add(hero.Id.Value);
+                    floorCleared = false; // a death leaves the hero's monster alive — floor uncleared
                 }
                 else if (outcome == FightOutcome.MonsterKilled)
                 {
