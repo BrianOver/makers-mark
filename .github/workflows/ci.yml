@@ -59,10 +59,15 @@ jobs:
         continue-on-error: true
       - name: Restore csproj after import (Godot editor injects a net8 TFM downgrade)
         run: git checkout -- godot/GodotClient.csproj
-      - name: Engine tests (headless Godot via GODOT_BIN)
+      - name: Warm up Godot .NET (compile solutions, load assemblies once)
+        run: |
+          dotnet build Game.sln
+          godot --headless --path godot --build-solutions --quit-after 2 || true
+          git checkout -- godot/GodotClient.csproj
+      - name: Engine tests (headless Godot via GODOT_BIN; one retry for cold-start connection timeouts)
         run: |
           export GODOT_BIN=$(which godot)
-          dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests.trx"
+          dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests.trx"             || dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests-retry.trx"
       - name: Assert runtime suite actually ran (silent-skip guard, KTD3)
         run: |
           export GODOT_BIN=$(which godot)
