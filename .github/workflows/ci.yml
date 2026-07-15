@@ -64,17 +64,30 @@ jobs:
           dotnet build Game.sln
           godot --headless --path godot --build-solutions --quit-after 2 || true
           git checkout -- godot/GodotClient.csproj
-      - name: Engine tests (headless Godot via GODOT_BIN; one retry for cold-start connection timeouts)
+      - name: Install xvfb (gdUnit4Net launches Godot WITHOUT --headless; it needs a display)
+        run: sudo apt-get update -q && sudo apt-get install -y -q xvfb
+      - name: Engine tests (Godot under virtual display; one retry)
         run: |
           export GODOT_BIN=$(which godot)
-          dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests.trx"             || dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests-retry.trx"
+          xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests.trx"             || xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests-retry.trx"
       - name: Assert runtime suite actually ran (silent-skip guard, KTD3)
         run: |
           export GODOT_BIN=$(which godot)
-          dotnet test godot/tests/GodotClient.Tests.csproj --filter "FullyQualifiedName~MainUiTests" -- RunConfiguration.TreatNoTestsAsError=true
+          xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj --filter "FullyQualifiedName~MainUiTests" -- RunConfiguration.TreatNoTestsAsError=true
       - name: Restore csproj after tests
         if: always()
         run: git checkout -- godot/GodotClient.csproj
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== adapter dir ==="; ls -la godot/gdunit4_testadapter_v5/ 2>/dev/null || true
+          echo "=== recent logs ==="; find . -name "*.log" -mmin -20 2>/dev/null | head -10
+          find . -name "*.log" -mmin -20 -exec sh -c 'echo "--- $1"; tail -60 "$1"' _ {} \; 2>/dev/null | head -200
+          echo "=== godot user dir logs ==="; find ~/.local/share/godot -name "*.log" 2>/dev/null -exec sh -c 'echo "--- $1"; tail -40 "$1"' _ {} \; | head -120
+          echo "=== manual runner launch ==="
+          RUNNER=$(find godot/gdunit4_testadapter_v5 -name "*.tscn" 2>/dev/null | head -1)
+          echo "runner scene: $RUNNER"
+          if [ -n "$RUNNER" ]; then timeout 40 godot --headless --path godot "res://gdunit4_testadapter_v5/$(basename $RUNNER)" 2>&1 | head -50 || true; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
