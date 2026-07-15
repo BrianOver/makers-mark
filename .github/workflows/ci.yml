@@ -64,14 +64,16 @@ jobs:
           dotnet build Game.sln
           godot --headless --path godot --build-solutions --quit-after 2 || true
           git checkout -- godot/GodotClient.csproj
-      - name: Engine tests (headless Godot via GODOT_BIN; one retry for cold-start connection timeouts)
+      - name: Install xvfb (gdUnit4Net launches Godot WITHOUT --headless; it needs a display)
+        run: sudo apt-get update -q && sudo apt-get install -y -q xvfb
+      - name: Engine tests (Godot under virtual display; one retry)
         run: |
           export GODOT_BIN=$(which godot)
-          dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests.trx"             || dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests-retry.trx"
+          xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests.trx"             || xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests-retry.trx"
       - name: Assert runtime suite actually ran (silent-skip guard, KTD3)
         run: |
           export GODOT_BIN=$(which godot)
-          dotnet test godot/tests/GodotClient.Tests.csproj --filter "FullyQualifiedName~MainUiTests" -- RunConfiguration.TreatNoTestsAsError=true
+          xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj --filter "FullyQualifiedName~MainUiTests" -- RunConfiguration.TreatNoTestsAsError=true
       - name: Restore csproj after tests
         if: always()
         run: git checkout -- godot/GodotClient.csproj
