@@ -24,7 +24,9 @@ public partial class DepthsPanel : SimPanel
 
         var state = Adapter.CurrentState;
         Clear(_content!);
-        AddHeader(_content!, "DEPTHS PROGRESS BOARD — deepest floor on record");
+        var header = AddRow(_content!);
+        AddIcon(header, IconRegistry.Glyph("depths"));
+        AddHeader(header, "DEPTHS PROGRESS BOARD — deepest floor on record");
 
         if (state.Drama.DepthsBoard.IsEmpty)
         {

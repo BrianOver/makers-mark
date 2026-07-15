@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using GameSim.Contracts;
 using GameSim.Drama;
 using Godot;
+using GodotClient.Town;
 
 namespace GodotClient.Panels;
 
@@ -94,6 +95,7 @@ public partial class HeroesPanel : SimPanel
             : $"DIED day {hero.DiedOnDay} on floor record {hero.DeepestFloorReached}");
 
         AddLabel(_detail!, "GEAR:");
+        var roleColor = HeroSprite.RoleColor(hero.Role);
         foreach (var (slot, itemId) in new (ItemSlot, ItemId?)[]
                  {
                      (ItemSlot.Weapon, hero.Gear.Weapon),
@@ -101,15 +103,25 @@ public partial class HeroesPanel : SimPanel
                      (ItemSlot.Armor, hero.Gear.Armor),
                  })
         {
+            var row = AddRow(_detail!);
+            AddIcon(row, IconRegistry.Slot(slot));
+            // Role-tinted marker chip: whose-role-wears-this at a glance.
+            row.AddChild(new ColorRect
+            {
+                Color = roleColor,
+                CustomMinimumSize = new Vector2(10, 10),
+                MouseFilter = MouseFilterEnum.Ignore,
+            });
+
             if (itemId is not { } id || !state.Items.TryGetValue(id.Value, out var item))
             {
-                AddLabel(_detail!, $"  {slot}: —");
+                AddLabel(row, $"  {slot}: —");
                 continue;
             }
 
             var (kills, saves) = LedgerQuery.MarkTally(state, id);
             var mark = item.Mark is null ? "no mark" : $"mark of {item.Mark.CrafterName}: {kills} kills, {saves} saves";
-            AddLabel(_detail!, $"  {slot}: {item.Name} [{item.Quality}] atk {item.Stats.Attack} def {item.Stats.Defense} — {mark}");
+            AddLabel(row, $"  {slot}: {item.Name} [{item.Quality}] atk {item.Stats.Attack} def {item.Stats.Defense} — {mark}");
         }
 
         AddLabel(_detail!, "ITEM MEMORIES:");

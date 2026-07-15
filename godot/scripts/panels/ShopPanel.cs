@@ -56,6 +56,7 @@ public partial class ShopPanel : SimPanel
         {
             var item = state.Items[entry.Item.Value];
             var row = AddRow(_content!);
+            AddIcon(row, IconRegistry.Slot(item.Slot));
             AddLabel(row, $"{entry.Item} {item.Name} [{item.Quality}] — {entry.Price}g");
             var priceSpin = AddSpinBox(row, $"Price_{entry.Item.Value}", 1, 99999, entry.Price);
             var itemId = entry.Item;
@@ -90,6 +91,7 @@ public partial class ShopPanel : SimPanel
         foreach (var item in unshelved)
         {
             var row = AddRow(_content!);
+            AddIcon(row, IconRegistry.Slot(item.Slot));
             AddLabel(row, $"{item.Id} {item.Name} [{item.Quality}] atk {item.Stats.Attack} def {item.Stats.Defense}");
             var priceSpin = AddSpinBox(row, $"StockPrice_{item.Id.Value}", 1, 99999, 10);
             var itemId = item.Id;
@@ -109,7 +111,9 @@ public partial class ShopPanel : SimPanel
         foreach (var entry in state.RivalShelf)
         {
             var item = state.Items[entry.Item.Value];
-            AddLabel(_content!, $"  {entry.Item} {item.Name} [{item.Quality}] — {entry.Price}g");
+            var row = AddRow(_content!);
+            AddIcon(row, IconRegistry.Slot(item.Slot));
+            AddLabel(row, $"  {entry.Item} {item.Name} [{item.Quality}] — {entry.Price}g");
         }
     }
 

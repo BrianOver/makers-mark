@@ -69,10 +69,16 @@ public partial class LedgerModal : SimPanel
             var fate = card.Survived
                 ? $"{card.HeroName}: returned from floor {card.FloorReached}, earned {card.GoldEarned}g (purse {card.GoldOnHand}g)"
                 : $"{card.HeroName}: DIED on floor {card.FloorReached}";
-            var fateLabel = AddLabel(_cards!, fate);
-            if (!card.Survived)
+            if (card.Survived)
             {
-                fateLabel.AddThemeColorOverride("font_color", new Color(1f, 0.45f, 0.45f));
+                AddLabel(_cards!, fate);
+            }
+            else
+            {
+                // Death card: a skull glyph marks the fate line (R12).
+                var fateRow = AddRow(_cards!);
+                AddIcon(fateRow, IconRegistry.Glyph("skull"));
+                AddLabel(fateRow, fate).AddThemeColorOverride("font_color", new Color(1f, 0.45f, 0.45f));
             }
 
             foreach (var beat in card.Beats)
@@ -85,6 +91,7 @@ public partial class LedgerModal : SimPanel
             foreach (var ore in card.OreOffers)
             {
                 var row = AddRow(_cards!);
+                AddIcon(row, IconRegistry.Ore(ore.MaterialKey));
                 AddLabel(row, $"    offers {ore.Quantity}x {ore.MaterialKey} at {ore.UnitPrice}g each");
                 var offer = ore;
                 AddButton(row, $"BuyOre_{ore.From.Value}_{ore.MaterialKey}", "Buy", () =>

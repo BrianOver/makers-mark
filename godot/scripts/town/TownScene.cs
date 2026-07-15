@@ -8,9 +8,9 @@ using GodotClient.Panels;
 namespace GodotClient.Town;
 
 /// <summary>
-/// The living town view (U12, R19): first tab of the MainUi shell. Placeholder art —
-/// colored rects in a fixed design space: ground, a town gate on the right edge,
-/// Forge/Shop/Tavern building markers, a memorial corner plot (R13), and one
+/// The living town view (U12, R19): first tab of the MainUi shell. Hand-authored SVG
+/// art (U16) in a fixed design space: a tileable cobble ground, a town gate on the
+/// right edge, Forge/Shop/Tavern building facades, a memorial corner plot (R13), and one
 /// <see cref="HeroSprite"/> per alive hero. Rhythm follows the sim's phases:
 /// Morning-tick completion sends everyone out the gate (all alive heroes party up),
 /// Expedition-tick completion walks the survivors back in (deaths stay away until the
@@ -22,7 +22,7 @@ namespace GodotClient.Town;
 /// </summary>
 public partial class TownScene : SimPanel
 {
-    // Fixed design-space layout (placeholder v1; U15 re-skins this).
+    // Fixed design-space layout (U16 skins these anchors with SVG facades/props).
     private static readonly Vector2 GatePosition = new(900, 300);
     private static readonly Vector2 GateSize = new(28, 120);
     private static readonly Vector2 GateWalkTarget = new(904, 350);
@@ -191,11 +191,12 @@ public partial class TownScene : SimPanel
                 Size = new Vector2(100, 42),
                 MouseFilter = MouseFilterEnum.Ignore,
             };
-            stone.AddChild(new ColorRect
+            stone.AddChild(new TextureRect
             {
-                Color = new Color(0.55f, 0.55f, 0.58f), // gravestone gray
-                Position = new Vector2(44, 0),
-                Size = new Vector2(12, 14),
+                Texture = IconRegistry.Building("memorial_stone"),
+                Position = new Vector2(38, -6),
+                Size = new Vector2(24, 30),
+                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
                 MouseFilter = MouseFilterEnum.Ignore,
             });
             var name = new Label
@@ -242,19 +243,21 @@ public partial class TownScene : SimPanel
 
         SetAnchorsPreset(LayoutPreset.FullRect);
 
-        var ground = new ColorRect
+        // U16: tileable cobble ground (void/iron) behind everything.
+        var ground = new TextureRect
         {
             Name = "Ground",
-            Color = new Color(0.16f, 0.22f, 0.14f),
+            Texture = IconRegistry.Building("ground_tile"),
+            StretchMode = TextureRect.StretchModeEnum.Tile,
             MouseFilter = MouseFilterEnum.Ignore,
         };
         ground.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(ground);
 
         BuildGate();
-        BuildBuilding("Forge", new Vector2(420, 90), new Color(0.45f, 0.25f, 0.15f));
-        BuildBuilding("Shop", new Vector2(560, 90), new Color(0.25f, 0.35f, 0.5f));
-        BuildBuilding("Tavern", new Vector2(700, 90), new Color(0.5f, 0.4f, 0.15f));
+        BuildBuilding("Forge", new Vector2(420, 90));
+        BuildBuilding("Shop", new Vector2(560, 90));
+        BuildBuilding("Tavern", new Vector2(700, 90));
         BuildMemorialPlot();
 
         _heroLayer = new Control
@@ -285,10 +288,11 @@ public partial class TownScene : SimPanel
             Size = GateSize,
             MouseFilter = MouseFilterEnum.Ignore,
         };
-        gate.AddChild(new ColorRect
+        gate.AddChild(new TextureRect
         {
-            Color = new Color(0.35f, 0.28f, 0.2f),
+            Texture = IconRegistry.Building("mine_gate"),
             Size = GateSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = MouseFilterEnum.Ignore,
         });
         var label = new Label
@@ -302,7 +306,7 @@ public partial class TownScene : SimPanel
         AddChild(gate);
     }
 
-    private void BuildBuilding(string key, Vector2 position, Color color)
+    private void BuildBuilding(string key, Vector2 position)
     {
         var building = new Control
         {
@@ -318,10 +322,11 @@ public partial class TownScene : SimPanel
                 BuildingClicked?.Invoke(key);
             }
         };
-        building.AddChild(new ColorRect
+        building.AddChild(new TextureRect
         {
-            Color = color,
+            Texture = IconRegistry.Building(key.ToLowerInvariant()),
             Size = BuildingSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = MouseFilterEnum.Ignore,
         });
         var label = new Label

@@ -71,6 +71,29 @@ public class TownSceneTests
     }
 
     [TestCase]
+    public void HeroSprite_HasRoleTintedFigureTexture()
+    {
+        // U16: each hero marker now carries a hand-authored figure TextureRect tinted to
+        // the role color via Modulate (the role-color contract the U12 Marker chip kept).
+        var ui = MountMainUi();
+        try
+        {
+            var alive = ui.Adapter.CurrentState.Heroes.Values.Where(h => h.Alive).ToList();
+            AssertThat(alive.Count > 0).IsTrue();
+            foreach (var hero in alive)
+            {
+                var figure = Find<TextureRect>(ui.Town.Sprites[hero.Id.Value], "Sprite");
+                AssertThat(figure.Texture).IsNotNull();
+                AssertThat(figure.Modulate).IsEqual(HeroSprite.RoleColor(hero.Role));
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void ExpeditionPhase_DepartedSpritesLeave_SurvivorsWalkBackIn()
     {
         var ui = MountMainUi();

@@ -178,6 +178,15 @@ public partial class MainUi : Control
         layout.AddChild(statusBar);
         _status = new Label { Name = "StatusLabel" };
         statusBar.AddChild(_status);
+        // Gold glyph (U16) sits by the day/phase/gold readout in StatusLabel.
+        statusBar.AddChild(new TextureRect
+        {
+            Name = "GoldIcon",
+            Texture = IconRegistry.Glyph("gold"),
+            CustomMinimumSize = new Vector2(20, 20),
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            MouseFilter = MouseFilterEnum.Ignore,
+        });
         var spacer = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         statusBar.AddChild(spacer);
         _clockLabel = new Label { Name = "ClockLabel" };

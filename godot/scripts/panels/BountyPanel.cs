@@ -39,7 +39,9 @@ public partial class BountyPanel : SimPanel
             .ToList();
         var renderedJudgments = new HashSet<EventId>();
 
-        AddHeader(_content!, "OPEN BOUNTIES");
+        var openHeader = AddRow(_content!);
+        AddIcon(openHeader, IconRegistry.Glyph("bounty"));
+        AddHeader(openHeader, "OPEN BOUNTIES");
         if (state.Bounties.IsEmpty)
         {
             AddLabel(_content!, "  (none posted)");

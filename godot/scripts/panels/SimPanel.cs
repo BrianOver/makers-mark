@@ -75,6 +75,23 @@ public abstract partial class SimPanel : Control
         return row;
     }
 
+    /// <summary>
+    /// Add a small themed icon (U16) next to text. Decoration only — clicks pass
+    /// through, and a null texture yields a blank spacer so callers need no guard.
+    /// </summary>
+    protected static TextureRect AddIcon(Node parent, Texture2D? texture, int size = 22)
+    {
+        var rect = new TextureRect
+        {
+            Texture = texture,
+            CustomMinimumSize = new Vector2(size, size),
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        parent.AddChild(rect);
+        return rect;
+    }
+
     /// <summary>Full-rect ScrollContainer wrapping a VBox — the standard panel body.</summary>
     protected VBoxContainer BuildScrollBody()
     {

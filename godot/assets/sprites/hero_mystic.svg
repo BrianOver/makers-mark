@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="64" viewBox="0 0 48 64">
+  <!-- Mystic: hooded caster with a rune staff. Neutral body tinted to the role
+       color (arcane #6b4c9a) via TextureRect.Modulate at runtime. -->
+  <!-- robe skirt to the ground -->
+  <path d="M24 20 L37 60 L11 60 Z" fill="#b8b0c6" stroke="#140f1f" stroke-width="2"/>
+  <!-- hooded head -->
+  <path d="M24 5 Q33 7 31 21 L17 21 Q15 7 24 5 Z" fill="#b8b0c6" stroke="#140f1f" stroke-width="2"/>
+  <!-- staff -->
+  <rect x="37" y="14" width="3" height="46" fill="#b8b0c6" stroke="#140f1f" stroke-width="1.5"/>
+  <!-- teal orb atop the staff -->
+  <circle cx="38.5" cy="12" r="4.5" fill="#3fb0ac" stroke="#140f1f" stroke-width="1.5"/>
+  <!-- purple rune on the robe -->
+  <path d="M24 34 l3.5 5 -3.5 5 -3.5 -5 Z" fill="none" stroke="#6b4c9a" stroke-width="1.6"/>
+  <!-- teal circuit hem -->
+  <path d="M15 52 h18" stroke="#3fb0ac" stroke-width="1.2" opacity="0.8"/>
+  <!-- ember rim light, upper-left edge -->
+  <path d="M23 21 L14 55" stroke="#e0913f" stroke-width="1.2" opacity="0.6"/>
+</svg>

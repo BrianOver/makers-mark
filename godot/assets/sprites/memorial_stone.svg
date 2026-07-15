@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="56" viewBox="0 0 48 56">
+  <!-- Memorial stone: a rounded gravestone bearing a mourning rune (R13). -->
+  <!-- base -->
+  <rect x="6" y="48" width="36" height="8" fill="#2a2438" stroke="#d8cfe0" stroke-width="2"/>
+  <!-- headstone -->
+  <path d="M10 50 L10 20 Q24 4 38 20 L38 50 Z" fill="#2a2438" stroke="#d8cfe0" stroke-width="2"/>
+  <!-- purple mourning rune -->
+  <path d="M24 24 l4 6 -4 6 -4 -6 Z" fill="none" stroke="#6b4c9a" stroke-width="2"/>
+  <!-- teal circuit trace -->
+  <path d="M16 42 h16" stroke="#3fb0ac" stroke-width="1.2" opacity="0.7"/>
+  <!-- ember rim light, upper-left -->
+  <path d="M11 22 Q20 8 28 11" stroke="#e0913f" stroke-width="1.2" opacity="0.6" fill="none"/>
+</svg>

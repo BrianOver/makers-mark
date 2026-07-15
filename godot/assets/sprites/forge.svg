@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+  <!-- Forge: iron smithy with a chimney ember-glow and an anvil in the lit doorway. -->
+  <!-- roof -->
+  <path d="M14 40 L48 18 L82 40 Z" fill="#2a2438" stroke="#d8cfe0" stroke-width="2"/>
+  <!-- wall -->
+  <rect x="20" y="40" width="56" height="44" fill="#2a2438" stroke="#d8cfe0" stroke-width="2"/>
+  <!-- chimney with ember glow -->
+  <rect x="58" y="10" width="12" height="20" fill="#2a2438" stroke="#d8cfe0" stroke-width="2"/>
+  <circle cx="64" cy="10" r="5" fill="#e0913f" opacity="0.9"/>
+  <circle cx="64" cy="5" r="3" fill="#e0913f" opacity="0.55"/>
+  <!-- doorway: dark forge mouth with an ember glow -->
+  <rect x="38" y="54" width="20" height="30" fill="#140f1f" stroke="#d8cfe0" stroke-width="2"/>
+  <rect x="40" y="68" width="16" height="16" fill="#e0913f" opacity="0.45"/>
+  <!-- anvil silhouette -->
+  <path d="M42 66 L54 66 L52 70 L56 70 L56 74 L40 74 L40 70 L44 70 Z" fill="#2a2438" stroke="#d8cfe0" stroke-width="1.5"/>
+  <!-- teal circuit trace on the wall -->
+  <path d="M24 48 h10 M24 48 v8" stroke="#3fb0ac" stroke-width="1.5" fill="none"/>
+  <!-- purple rune -->
+  <path d="M66 58 l3 5 -3 5 -3 -5 Z" fill="none" stroke="#6b4c9a" stroke-width="1.5"/>
+  <!-- ember rim light, upper-left roofline -->
+  <path d="M16 39 L47 19" stroke="#e0913f" stroke-width="1.5" opacity="0.8"/>
+</svg>
