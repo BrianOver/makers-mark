@@ -25,10 +25,10 @@ public class MainUiTests
         var ui = MountMainUi();
         try
         {
-            // Tab shell: six panels, pinned order, plus the modal overlay.
-            AssertThat(ui.Tabs.GetTabCount()).IsEqual(6);
-            var titles = Enumerable.Range(0, 6).Select(i => ui.Tabs.GetTabTitle(i)).ToArray();
-            AssertThat(string.Join(",", titles)).IsEqual("Forge,Shop,Heroes,Tavern,Depths,Bounties");
+            // Tab shell: the U12 town first, then the six panels, plus the modal overlay.
+            AssertThat(ui.Tabs.GetTabCount()).IsEqual(7);
+            var titles = Enumerable.Range(0, 7).Select(i => ui.Tabs.GetTabTitle(i)).ToArray();
+            AssertThat(string.Join(",", titles)).IsEqual("Town,Forge,Shop,Heroes,Tavern,Depths,Bounties");
             AssertThat(ui.Ledger.Visible).IsFalse();
 
             // Drive to a mid-game state: one full day + the next Morning.
@@ -116,7 +116,11 @@ public class MainUiTests
             ui.Adapter.AdvancePhase(); // day 1 Morning
             ui.Adapter.AdvancePhase(); // day 1 Expedition
             AssertThat(ui.Ledger.Visible).IsFalse();
-            ui.Adapter.AdvancePhase(); // day 1 Evening — the reveal
+            ui.Adapter.AdvancePhase(); // day 1 Evening — arms the Return Ritual gate
+
+            // U12 pinned design: the reveal is TIME-gated, never immediate.
+            AssertThat(ui.Ledger.Visible).IsFalse();
+            ui._Process(MainUi.ReturnRitualDelaySeconds + 0.1); // clock paused: only the gate elapses
 
             AssertThat(ui.Ledger.Visible).IsTrue();
             AssertThat(ui.Ledger.ShownDay).IsEqual(1);
@@ -251,7 +255,7 @@ public class MainUiTests
         AssertThat(RenderedText(ui.Forge)).Contains($"queued: craft {ScriptedSession.CraftRecipeId}");
 
         ui.Adapter.AdvancePhase(); // day 2 Evening: buys then craft apply in order
-        ui.Ledger.CloseModal();    // the day-2 ledger auto-opened; not under test here
+        ui.Ledger.CloseModal();    // day-2 reveal is timer-gated (U12); close if a frame opened it
     }
 }
 #endif
