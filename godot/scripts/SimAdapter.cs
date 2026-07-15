@@ -24,6 +24,12 @@ public sealed class SimAdapter
 
     public SimAdapter(ulong seed) => CurrentState = GameComposition.NewCampaign(seed);
 
+    /// <summary>
+    /// Scenario injection (U12 engine tests / future replay loading): adopt a prepared
+    /// campaign state as-is. Same kernel, same determinism — only the starting world differs.
+    /// </summary>
+    public SimAdapter(GameState initialState) => CurrentState = initialState;
+
     /// <summary>The world as of the last tick. Immutable — render freely.</summary>
     public GameState CurrentState { get; private set; }
 

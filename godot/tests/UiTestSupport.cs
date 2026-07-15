@@ -9,10 +9,17 @@ namespace GodotClient.Tests;
 public static class UiTestSupport
 {
     /// <summary>Instantiate main_ui.tscn into the live scene tree with the auto-clock paused.</summary>
-    public static MainUi MountMainUi()
+    public static MainUi MountMainUi() => MountMainUi(adapterOverride: null);
+
+    /// <summary>
+    /// Mount with an injected adapter (U12 scenario tests — e.g., a crafted wipe-day
+    /// campaign). Pass null for the default fresh seed-2026 campaign.
+    /// </summary>
+    public static MainUi MountMainUi(SimAdapter? adapterOverride)
     {
         var tree = (SceneTree)Engine.GetMainLoop();
         var ui = GD.Load<PackedScene>("res://scenes/panels/main_ui.tscn").Instantiate<MainUi>();
+        ui.AdapterOverride = adapterOverride;
         tree.Root.AddChild(ui); // triggers _Ready: adapter + panels + bindings
         ui.Clock.Pause();       // tests drive phases explicitly
         return ui;
@@ -32,6 +39,12 @@ public static class UiTestSupport
     /// <summary>Press a button the way a user would — through its pressed signal.</summary>
     public static void Press(Node root, string buttonName) =>
         Find<Button>(root, buttonName).EmitSignal(BaseButton.SignalName.Pressed);
+
+    /// <summary>Left-click a plain Control (U12 town markers) — through its gui_input signal.</summary>
+    public static void Click(Control control) =>
+        control.EmitSignal(
+            Control.SignalName.GuiInput,
+            new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true });
 
     /// <summary>All user-visible text rendered under a control (labels, buttons, item lists).</summary>
     public static string RenderedText(Node root)

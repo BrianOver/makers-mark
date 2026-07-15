@@ -57,6 +57,27 @@ public partial class HeroesPanel : SimPanel
         RenderDetail(_rosterHeroIds[index]);
     }
 
+    /// <summary>
+    /// Bind a specific hero into the detail pane (U12 town click routing, R20).
+    /// Selects the roster row when the hero is listed and renders their detail.
+    /// </summary>
+    public void SelectHero(int heroValue)
+    {
+        EnsureBuilt();
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        var index = _rosterHeroIds.IndexOf(heroValue);
+        if (index >= 0)
+        {
+            _roster!.Select(index);
+        }
+
+        RenderDetail(heroValue);
+    }
+
     private void RenderDetail(int heroValue)
     {
         _selectedHeroId = heroValue;
