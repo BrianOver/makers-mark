@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Death / memorial glyph: skull with rune-lit eyes. -->
+  <rect width="64" height="64" fill="#140f1f"/>
+  <path d="M32 12 Q48 12 48 30 Q48 40 42 44 L42 50 L22 50 L22 44 Q16 40 16 30 Q16 12 32 12 Z" fill="#2a2438" stroke="#d8cfe0" stroke-width="2"/>
+  <circle cx="25" cy="30" r="4" fill="#b5462f"/>
+  <circle cx="39" cy="30" r="4" fill="#b5462f"/>
+  <path d="M30 40 L34 40" stroke="#d8cfe0" stroke-width="2"/>
+  <path d="M32 14 L32 22" stroke="#6b4c9a" stroke-width="1.5"/>
+</svg>

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Themed asset generator (U15). Dev-time tool — NOT referenced by the game,
+       NOT in the runtime path (keeps the no-runtime-LLM boundary).
+       TargetFramework comes from Directory.Build.props. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>AssetGen</RootNamespace>
+  </PropertyGroup>
+</Project>

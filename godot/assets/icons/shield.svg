@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Shield slot: kite shield, rune boss, circuit seam, ember rim. -->
+  <rect width="64" height="64" fill="#140f1f"/>
+  <path d="M32 8 L52 16 L52 34 Q52 50 32 58 Q12 50 12 34 L12 16 Z" fill="#2a2438" stroke="#d8cfe0" stroke-width="2"/>
+  <path d="M32 10 L50 17" stroke="#e0913f" stroke-width="1.5" opacity="0.8"/>
+  <path d="M32 20 L32 46 M20 33 L44 33" stroke="#3fb0ac" stroke-width="1.5"/>
+  <circle cx="32" cy="33" r="5" fill="none" stroke="#6b4c9a" stroke-width="2"/>
+</svg>
