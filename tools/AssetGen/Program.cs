@@ -17,6 +17,11 @@ using System.Text.Json;
 const string Model = "gemini-2.5-flash-image";
 const string Endpoint = "https://generativelanguage.googleapis.com/v1beta/models";
 
+// Free-tier throttling knobs — raise if you have a paid tier.
+const int MaxAttempts = 4;         // per image, on 429
+const int BackoffBaseSeconds = 8;  // 8s, 16s, 24s ...
+const int ThrottleSeconds = 7;     // spacing between successful calls
+
 // Master prompt prefix — kept in sync with docs/style-bible.md.
 const string Prefix =
     "Flat stylized 2D game art, fantasy-witchy with a subtle sci-fi tinge. " +
@@ -63,26 +68,42 @@ foreach (var (file, subject) in subjects)
         continue;
     }
 
-    using var req = new HttpRequestMessage(HttpMethod.Post, $"{Endpoint}/{Model}:generateContent");
-    req.Headers.Add("x-goog-api-key", key); // key in header, never the URL — no leak in logs
-    req.Content = JsonContent.Create(new
+    // Free-tier image models are rate-limited (~a few requests/min): retry 429 with
+    // exponential backoff. On any other failure, print the response body (Google's JSON
+    // error — carries the real reason like SERVICE_DISABLED or billing; contains no key).
+    string? b64 = null;
+    for (var attempt = 1; attempt <= MaxAttempts; attempt++)
     {
-        contents = new[] { new { parts = new[] { new { text = prompt } } } },
-        generationConfig = new { responseModalities = new[] { "IMAGE" } },
-    });
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{Endpoint}/{Model}:generateContent");
+        req.Headers.Add("x-goog-api-key", key); // key in header, never the URL — no leak in logs
+        req.Content = JsonContent.Create(new
+        {
+            contents = new[] { new { parts = new[] { new { text = prompt } } } },
+            generationConfig = new { responseModalities = new[] { "IMAGE" } },
+        });
 
-    using var resp = await http.SendAsync(req);
-    if (!resp.IsSuccessStatusCode)
-    {
-        Console.Error.WriteLine($"FAILED {file}: HTTP {(int)resp.StatusCode} {resp.StatusCode}");
-        continue;
+        using var resp = await http.SendAsync(req);
+        if (resp.IsSuccessStatusCode)
+        {
+            b64 = ExtractImage(await resp.Content.ReadFromJsonAsync<JsonElement>());
+            break;
+        }
+
+        if ((int)resp.StatusCode == 429 && attempt < MaxAttempts)
+        {
+            var wait = TimeSpan.FromSeconds(BackoffBaseSeconds * attempt);
+            Console.Error.WriteLine($"  rate-limited on {file}, retrying in {wait.TotalSeconds:0}s ({attempt}/{MaxAttempts})...");
+            await Task.Delay(wait);
+            continue;
+        }
+
+        var body = await resp.Content.ReadAsStringAsync();
+        Console.Error.WriteLine($"FAILED {file}: HTTP {(int)resp.StatusCode} {resp.StatusCode}\n  {Trim(body)}");
+        break;
     }
 
-    var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
-    var b64 = ExtractImage(json);
     if (b64 is null)
     {
-        Console.Error.WriteLine($"FAILED {file}: no image part in response");
         continue;
     }
 
@@ -90,12 +111,17 @@ foreach (var (file, subject) in subjects)
     await File.WriteAllBytesAsync(path, Convert.FromBase64String(b64));
     Console.WriteLine($"wrote {path}");
     ok++;
+
+    await Task.Delay(TimeSpan.FromSeconds(ThrottleSeconds)); // stay under the free-tier RPM
 }
 
 Console.WriteLine(dryRun
     ? "dry-run complete — no images generated."
     : $"generation complete: {ok}/{subjects.Length} written. Review against docs/style-bible.md, then commit the PNGs.");
 return 0;
+
+// First ~400 chars of an error body — enough to show Google's reason, no key echoed.
+static string Trim(string s) => s.Length <= 400 ? s.Trim() : s[..400].Trim() + "…";
 
 // candidates[0].content.parts[] — the image part carries inlineData.data (base64).
 static string? ExtractImage(JsonElement json)
