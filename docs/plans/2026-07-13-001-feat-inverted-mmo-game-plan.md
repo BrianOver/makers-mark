@@ -307,6 +307,8 @@ Unit index — dependency order; one unit = one branch = one PR:
 | U10 | 100-day balance sim gate | `sim/GameSim.Tests/` (Balance) | U4–U9 |
 | U11 | Debug panels — playable game | `godot/scenes/`, `godot/scripts/` | U3–U9 |
 | U12 | Living town scene + Return Ritual | `godot/scenes/` | U11 |
+| U14 | Chronicle export + analytics report | `sim/GameSim.Cli/`, `tools/analytics/` | U8, U13 |
+| U15 | Themed asset pipeline (SVG + Gemini) | `tools/assetgen/`, `godot/assets/` | U12 |
 
 Parallelization: after U3 merges, U4 and U5 run as parallel agents (disjoint directories); U2 can run parallel to U3. U6 follows U4+U5. After U6 merges, U7, U8, and U13 run in parallel; U9 follows U7. U7 and U9 consume U6's `ExpeditionResult` (ore scales with floor reached; bounty payout reads expedition results), so neither belongs in the first wave.
 
@@ -495,6 +497,26 @@ Parallelization: after U3 merges, U4 and U5 run as parallel agents (disjoint dir
   - Click hero → hero detail panel opens with that hero bound.
 - **Verification:** Engine-lane CI green; manual smoke — watch a full day including a death day.
 
+### U14. Chronicle export + analytics report
+
+- **Goal:** Historical NPC/AI pattern data flows back into tuning — the human-AI feedback loop.
+- **Requirements:** Extends R12/R14's event-sourced design; no new product behavior in the sim.
+- **Dependencies:** U8, U13.
+- **Files:** `sim/GameSim.Cli/` (export command), `tools/analytics/`
+- **Approach:** CLI `export <path>` dumps campaign seed + full event log + day as JSON into a gitignored `runs/` dir. `tools/analytics` script aggregates one-or-many run files: death rates per floor/role, gear-adoption and pass-reason histograms, attribution-beat frequency, gold curves — emitted as a compact markdown report for tuning review. CI uploads the balance sim's stats as a per-run artifact for commit-over-commit trends. Sim core untouched (pure read-model + IO at the edges).
+- **Test scenarios:** Export round-trips (JSON reloads to identical event list); analytics totals match a hand-computed fixture run; empty runs dir handled.
+- **Verification:** Play N days in CLI, `export`, run analytics, read the report.
+
+### U15. Themed asset pipeline (SVG + Gemini)
+
+- **Goal:** Replace placeholder visuals with the game's style: fantasy-witchy with a sci-fi tinge (dark purple/teal palette, runes with faint circuitry, candle-glow rim light).
+- **Requirements:** Presentation-only; keeps the no-runtime-LLM boundary — generation is dev-time.
+- **Dependencies:** U12.
+- **Files:** `tools/assetgen/`, `godot/assets/`, `docs/style-bible.md`
+- **Approach:** Committed style bible (palette hexes + master prompt prefix + reference image). UI icons and item art authored as SVG in the bible's style (Godot imports SVG). Hero portraits, monsters, and town backdrops generated via Gemini/Imagen API script in `tools/assetgen/` reading `GEMINI_API_KEY` from the environment (never committed); outputs reviewed then committed as PNGs. Consistency via the shared prompt prefix + image conditioning on the reference.
+- **Test scenarios:** Test expectation: none — art pipeline; verified visually and by Godot import succeeding in CI.
+- **Verification:** Town scene and panels render with themed assets; CI engine lane still green.
+
 ---
 
 ## Verification Contract
@@ -514,7 +536,7 @@ Check names are pinned in the ruleset. A failing test that exits 0 is a CI defec
 
 ## Definition of Done
 
-- All thirteen units merged to `main` through the protected ruleset with green required checks.
+- All fifteen units merged to `main` through the protected ruleset with green required checks (U14/U15 added 2026-07-14 at Brian's request: telemetry feedback loop + themed asset pipeline).
 - AE1–AE7 each enforced by at least one named passing test.
 - 100-day balance sim passes its bands as a required CI check.
 - A fresh clone plays end-to-end: 3 in-game days through the UI, including one attribution beat visible in the Ledger.

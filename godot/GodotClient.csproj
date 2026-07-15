@@ -1,12 +1,19 @@
 <Project Sdk="Godot.NET.Sdk/4.6.3">
   <!-- Thin presentation adapter over sim/GameSim (KTD2). No game rules here.
        TargetFramework comes from Directory.Build.props — do not add one here;
-       the Godot editor's auto-downgrade would show up as a visible csproj diff. -->
+       the Godot editor's auto-downgrade would show up as a visible csproj diff.
+       CopyLocalLockFileAssemblies + the gdUnit4.api reference exist because
+       gdUnit4Net injects its runner scene (gdunit4_testadapter_v5/) into this
+       project at engine-test time; tests/** is excluded from the compile glob
+       so the separate test assembly stays separate. -->
   <PropertyGroup>
     <RootNamespace>GodotClient</RootNamespace>
     <EnableDynamicLoading>true</EnableDynamicLoading>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <DefaultItemExcludes>$(DefaultItemExcludes);tests/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="gdUnit4.api" Version="5.0.0" />
     <ProjectReference Include="..\sim\GameSim\GameSim.csproj" />
   </ItemGroup>
 </Project>

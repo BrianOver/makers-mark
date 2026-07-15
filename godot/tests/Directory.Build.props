@@ -1,0 +1,23 @@
+<Project>
+  <!-- Chain up to the repo-root Directory.Build.props (TargetFramework lives there —
+       MSBuild's nearest-file semantics would otherwise hide it from this project). -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)..'))" />
+  <PropertyGroup>
+    <!-- Keep ALL intermediate artifacts — including MSBuild-generated .cs files like
+         GodotClient.Tests.AssemblyInfo.cs — inside GodotClient.csproj's own excluded
+         intermediate tree (.godot/mono/temp/obj). GodotClient's default compile glob
+         sweeps godot/tests/**, so an obj/ here would get its generated attribute
+         files double-compiled into the Godot assembly and break the build.
+         Must be set in a Directory.Build.props (before Microsoft.Common.props reads
+         it), not in the csproj body. See also the GDUNIT_TESTS source guard. -->
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)..\.godot\mono\temp\obj\GodotClient.Tests\</BaseIntermediateOutputPath>
+    <!-- The test ASSEMBLY must also live outside godot/tests: gdUnit4Net's engine
+         runner resolves the Godot project directory by walking UP from the test
+         assembly to the first folder containing a .csproj and launches Godot with
+         that folder as the project path. From here the walk skips godot/tests
+         (no bin/ below it anymore) and lands on godot/ (GodotClient.csproj +
+         project.godot), the correct project. .godot/ is gitignored, so build
+         artifacts stay invisible either way. -->
+    <BaseOutputPath>$(MSBuildThisFileDirectory)..\.godot\mono\temp\bin\GodotClient.Tests\</BaseOutputPath>
+  </PropertyGroup>
+</Project>
