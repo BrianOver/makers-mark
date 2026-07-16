@@ -51,6 +51,29 @@ public class SaveLoadTests
     }
 
     [Fact]
+    public void PreP4Save_WithoutVenueId_LoadsAsMine()
+    {
+        // Backward-compat contract (P4): a pre-P4 ExpeditionResult serialized without the
+        // trailing VenueId must deserialize to the Mine. Pinned in-repo rather than trusting
+        // System.Text.Json default-when-absent semantics by reasoning alone.
+        var result = new ExpeditionResult(
+            ImmutableList<HeroId>.Empty, TargetFloor: 1, DeepestFloorCleared: 0,
+            ImmutableList<FloorOutcome>.Empty, ImmutableList<HeroId>.Empty, ImmutableList<HeroId>.Empty,
+            ImmutableList<AttributionBeat>.Empty, ImmutableList<OreLoot>.Empty,
+            ImmutableSortedDictionary<int, int>.Empty);
+        var state = GameFactory.NewGame(seed: 7) with { PendingExpeditions = ImmutableList.Create(result) };
+
+        var json = SaveCodec.Serialize(state);
+        // Strip the VenueId property to mimic a save written before P4 added it (case/position-agnostic).
+        var preP4 = System.Text.RegularExpressions.Regex.Replace(
+            json, ",?\\s*\"[Vv]enueId\"\\s*:\\s*\"mine\"", string.Empty);
+        Assert.DoesNotContain("enueId", preP4);
+
+        var loaded = SaveCodec.Deserialize(preP4);
+        Assert.Equal("mine", loaded.PendingExpeditions[0].VenueId);
+    }
+
+    [Fact]
     public void RoundTrip_PreservesPolymorphicActionsAndEvents()
     {
         var state = GameFactory.NewGame(seed: 5);
