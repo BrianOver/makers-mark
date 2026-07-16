@@ -24,6 +24,10 @@ public static class ExpeditionResolver
         targetFloor = Math.Clamp(targetFloor, 1, MonsterTable.FloorCount);
 
         var hp = party.ToDictionary(h => h.Id.Value, h => h.MaxHp);
+        // Working copy of each hero's pack (P2): quaffs consume from the FRONT-most
+        // matching item in list order; the persistent Hero.Pack is depleted at the
+        // Evening reveal from the recorded ConsumableUses.
+        var packs = party.ToDictionary(h => h.Id.Value, h => h.Pack.ToList());
         var gold = party.ToDictionary(h => h.Id.Value, _ => 0);
         var dead = new HashSet<int>();
         var floors = ImmutableList.CreateBuilder<FloorOutcome>();
@@ -49,7 +53,7 @@ public static class ExpeditionResolver
 
             foreach (var hero in fighters) // HeroId order — deterministic
             {
-                var outcome = FightMonster(hero, items, floor, hp, rng, combats);
+                var outcome = FightMonster(hero, items, floor, hp, packs, rng, combats);
                 if (outcome == FightOutcome.HeroDied)
                 {
                     dead.Add(hero.Id.Value);
@@ -67,6 +71,27 @@ public static class ExpeditionResolver
 
             var anyoneStanding = party.Any(h => !dead.Contains(h.Id.Value));
             floorCleared &= anyoneStanding;
+
+            // The post-floor "too hurt to continue" check, evaluated BEFORE the floor
+            // outcome is sealed so a quaff (P2) can be recorded into this floor's
+            // combat events. A too-hurt hero drinks by the same rule as in-fight
+            // (first Heal item in pack order), THEN the check is evaluated. Draws no
+            // RNG, so evaluating here instead of after the loot rolls leaves the
+            // stream untouched (the loot is granted either way on a cleared floor).
+            var tooHurtToContinue = false;
+            if (floorCleared)
+            {
+                foreach (var hero in party.Where(h => !dead.Contains(h.Id.Value)))
+                {
+                    if (CombatMath.ShouldFlee(hp[hero.Id.Value], hero.MaxHp))
+                    {
+                        QuaffAfterFight(hero, items, hp, packs, combats);
+                    }
+
+                    tooHurtToContinue |= CombatMath.ShouldFlee(hp[hero.Id.Value], hero.MaxHp);
+                }
+            }
+
             floors.Add(new FloorOutcome(floor, floorCleared, combats.ToImmutable()));
 
             if (!floorCleared)
@@ -83,8 +108,7 @@ public static class ExpeditionResolver
             }
 
             // Anyone too hurt to continue ends the expedition after banking the clear.
-            if (party.Where(h => !dead.Contains(h.Id.Value))
-                     .Any(h => CombatMath.ShouldFlee(hp[h.Id.Value], h.MaxHp)))
+            if (tooHurtToContinue)
             {
                 break;
             }
@@ -121,15 +145,38 @@ public static class ExpeditionResolver
         ImmutableSortedDictionary<int, Item> items,
         int floor,
         Dictionary<int, int> hp,
+        Dictionary<int, List<ItemId>> packs,
         IDeterministicRng rng,
         ImmutableList<CombatEvent>.Builder combats)
     {
         var monsterHp = MonsterTable.MonsterHp(floor);
         var heroAttack = CombatMath.HeroAttack(hero, items);
         var heroDefense = CombatMath.HeroDefense(hero, items);
+        var round = 0;
 
         while (true)
         {
+            round++;
+
+            // Top of the round (P2): a hero who would flee quaffs the first Heal item
+            // in pack order instead and fights on; with an empty pack the hero flees
+            // exactly as before. The quaff itself draws NO RNG — draw counts change
+            // only because the fight continues, a deterministic function of state.
+            // At most one quaff per round; round 1 never triggers (heroes enter a
+            // floor above the flee threshold — the post-floor check guarantees it).
+            var uses = ImmutableList<ConsumableUse>.Empty;
+            if (CombatMath.ShouldFlee(hp[hero.Id.Value], hero.MaxHp))
+            {
+                if (TryQuaff(hero, items, hp, packs, round) is { } use)
+                {
+                    uses = uses.Add(use);
+                }
+                else
+                {
+                    return FightOutcome.HeroFled;
+                }
+            }
+
             var rolls = ImmutableList.CreateBuilder<int>();
 
             var heroRoll = rng.NextInt(0, CombatMath.RollSides);
@@ -155,7 +202,10 @@ public static class ExpeditionResolver
                 dealt,
                 taken,
                 monsterKilled,
-                monsterKilled ? hero.Gear.Weapon : null));
+                monsterKilled ? hero.Gear.Weapon : null)
+            {
+                Uses = uses,
+            });
 
             if (monsterKilled)
             {
@@ -167,10 +217,75 @@ public static class ExpeditionResolver
                 return FightOutcome.HeroDied;
             }
 
-            if (CombatMath.ShouldFlee(hp[hero.Id.Value], hero.MaxHp))
+            // The flee decision now happens at the top of the next round, where a
+            // quaff can override it — identical outcomes and draws when packs are empty.
+        }
+    }
+
+    /// <summary>
+    /// Consume the FIRST item with a Heal effect in the hero's pack order (P2), capping
+    /// at MaxHp. Keyed off <see cref="ConsumableEffect"/> DATA, never recipe ids, so
+    /// add-on consumables heal through this identical path. Returns null when the pack
+    /// holds no Heal item. Draws no RNG.
+    /// </summary>
+    private static ConsumableUse? TryQuaff(
+        Hero hero,
+        ImmutableSortedDictionary<int, Item> items,
+        Dictionary<int, int> hp,
+        Dictionary<int, List<ItemId>> packs,
+        int round)
+    {
+        var pack = packs[hero.Id.Value];
+        for (var i = 0; i < pack.Count; i++)
+        {
+            if (!items.TryGetValue(pack[i].Value, out var item)
+                || item.Effect is not { Kind: ConsumableKind.Heal } effect)
             {
-                return FightOutcome.HeroFled;
+                continue;
             }
+
+            var before = hp[hero.Id.Value];
+            var after = Math.Min(before + effect.Magnitude, hero.MaxHp);
+            hp[hero.Id.Value] = after;
+            pack.RemoveAt(i);
+            return new ConsumableUse(item.Id, round, before, after);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The post-floor quaff (P2): same rule as in-fight, recorded onto the hero's LAST
+    /// combat event of this floor with Round = rounds fought + 1, marking a heal that
+    /// landed after the fight's damage (attribution reads Round to order heals against
+    /// recorded damage). No-op if the hero fought no rounds this floor (defensive).
+    /// </summary>
+    private static void QuaffAfterFight(
+        Hero hero,
+        ImmutableSortedDictionary<int, Item> items,
+        Dictionary<int, int> hp,
+        Dictionary<int, List<ItemId>> packs,
+        ImmutableList<CombatEvent>.Builder combats)
+    {
+        var lastIndex = -1;
+        var roundsFought = 0;
+        for (var i = 0; i < combats.Count; i++)
+        {
+            if (combats[i].Hero == hero.Id)
+            {
+                lastIndex = i;
+                roundsFought++;
+            }
+        }
+
+        if (lastIndex < 0)
+        {
+            return;
+        }
+
+        if (TryQuaff(hero, items, hp, packs, roundsFought + 1) is { } use)
+        {
+            combats[lastIndex] = combats[lastIndex] with { Uses = combats[lastIndex].Uses.Add(use) };
         }
     }
 }

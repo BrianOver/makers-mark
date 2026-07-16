@@ -10,6 +10,7 @@ namespace GameSim.Crafting;
 ///   Poor 80% | Common 100% | Fine 115% | Superior 135% | Masterwork 160%
 ///
 /// Attack and Defense scale; Weight does NOT — quality changes edge and fit, not mass.
+/// A consumable's <see cref="ConsumableEffect.Magnitude"/> scales by the same table (P2).
 /// Every player craft is stamped <c>MakersMark("You", day)</c> (R5) and starts with an
 /// empty history; kills/saves/bearer entries are appended by other modules.
 /// </summary>
@@ -43,6 +44,9 @@ public static class ItemForge
             quality,
             stats,
             new MakersMark("You", day),
-            ImmutableList<ItemHistoryEntry>.Empty);
+            ImmutableList<ItemHistoryEntry>.Empty,
+            Effect: recipe.Effect is { } effect
+                ? effect with { Magnitude = effect.Magnitude * pct / 100 }
+                : null);
     }
 }

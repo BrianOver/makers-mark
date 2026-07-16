@@ -12,8 +12,16 @@ public sealed record MakersMark(string CrafterName, int CraftedOnDay);
 public sealed record ItemHistoryEntry(int Day, string Kind, string Detail);
 
 /// <summary>
+/// What a consumable item does when used (P2): the resolver and shopping key off THIS
+/// DATA, never off recipe or profession ids, so add-on consumables ride the same path
+/// as the reference Field Salve with zero mechanism edits (see docs/addon-guide.md).
+/// </summary>
+public sealed record ConsumableEffect(ConsumableKind Kind, int Magnitude);
+
+/// <summary>
 /// A concrete item instance. Player crafts and rival stock both use this shape;
-/// <see cref="Mark"/> is null for rival-vendor goods.
+/// <see cref="Mark"/> is null for rival-vendor goods. <see cref="Effect"/> is null for
+/// everything but consumables (trailing optional — old saves deserialize null).
 /// </summary>
 public sealed record Item(
     ItemId Id,
@@ -23,7 +31,8 @@ public sealed record Item(
     QualityGrade Quality,
     ItemStats Stats,
     MakersMark? Mark,
-    ImmutableList<ItemHistoryEntry> History)
+    ImmutableList<ItemHistoryEntry> History,
+    ConsumableEffect? Effect = null)
 {
     public bool PlayerCrafted => Mark is not null;
 }

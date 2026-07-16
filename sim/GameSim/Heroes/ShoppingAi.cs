@@ -101,6 +101,46 @@ public static class ShoppingAi
     }
 
     /// <summary>
+    /// Judge one shelf CONSUMABLE for one hero (P2). Consumables carry no gear score
+    /// and fit every role, so the only judgment is affordability. The Pack-empty gate
+    /// and the Heal filter live in <see cref="HeroShoppingSystem"/> — they are not
+    /// per-item verdicts. Integer math only; no RNG.
+    /// </summary>
+    public static ShoppingVerdict EvaluateConsumable(Hero hero, Item item, int price)
+    {
+        if (price > hero.Gold)
+        {
+            return ShoppingVerdict.MakePass(
+                PassReasonKind.CannotAfford,
+                $"can't afford at {price}g — has {hero.Gold}g");
+        }
+
+        return ShoppingVerdict.MakeBuy(gain: 0, $"stocked up: {item.Name} {price}g");
+    }
+
+    /// <summary>
+    /// True when consumable candidate A beats B (P2): cheapest first, price ties prefer
+    /// the player shelf (mirroring the gear pass's deterministic tie rule in spirit),
+    /// then the LOWER ItemId settles same-shelf same-price ties.
+    /// </summary>
+    public static bool IsBetterConsumable(
+        int priceA, bool playerShelfA, ItemId idA,
+        int priceB, bool playerShelfB, ItemId idB)
+    {
+        if (priceA != priceB)
+        {
+            return priceA < priceB;
+        }
+
+        if (playerShelfA != playerShelfB)
+        {
+            return playerShelfA;
+        }
+
+        return idA.Value < idB.Value;
+    }
+
+    /// <summary>
     /// True when candidate A is strictly better value than B. Value = gear-score gain
     /// per gold, compared by cross-multiplication (pure integers, no division, handles
     /// price 0). Ties fall to raw gain, then to the LOWER ItemId — the deterministic
