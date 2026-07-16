@@ -149,10 +149,12 @@ public class MainUiTests
             var ledgerText = RenderedText(ui.Ledger);
             foreach (var card in cards)
             {
+                // U5: the modal renders the card's pack-rendered FateLine; pack conformance
+                // guarantees hero name and floor appear verbatim inside it (R4).
                 AssertThat(ledgerText).Contains(card.HeroName);
-                AssertThat(ledgerText).Contains(card.Survived
-                    ? $"returned from floor {card.FloorReached}, earned {card.GoldEarned}g"
-                    : $"DIED on floor {card.FloorReached}");
+                AssertThat(ledgerText).Contains(card.FateLine);
+                AssertThat(card.FateLine).Contains(card.HeroName);
+                AssertThat(card.FateLine).Contains($"{card.FloorReached}");
             }
 
             // Reading the ledger holds the town clock; closing releases it.

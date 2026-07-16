@@ -266,8 +266,9 @@ void PrintLedger(GameState s, int day)
     Console.WriteLine($"  ── EVENING LEDGER, day {day} ──");
     foreach (var card in cards)
     {
-        var fate = card.Survived ? $"returned from floor {card.FloorReached}, earned {card.GoldEarned}g" : $"DIED on floor {card.FloorReached}";
-        Console.WriteLine($"  {card.HeroName}: {fate}");
+        // U5: fate prose lives on the card (LedgerPack via FlavorEngine) — hero name,
+        // floor, and gold earned are guaranteed verbatim in the line (R4).
+        Console.WriteLine($"  {card.FateLine}");
         foreach (var beat in card.Beats)
         {
             Console.WriteLine($"      ★ {beat.Detail}");

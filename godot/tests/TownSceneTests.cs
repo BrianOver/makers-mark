@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Drama;
 using GdUnit4;
 using Godot;
 using GodotClient.Town;
@@ -210,12 +211,19 @@ public class TownSceneTests
             AssertThat(ui.Ledger.Visible).IsTrue();
             AssertThat(ui.Ledger.ShownDay).IsEqual(1);
 
+            // U5: fate prose is the card's pack-rendered FateLine — assert structurally:
+            // a wipe day shows only death cards, each rendered with the hero's name in it.
+            var wipeCards = LedgerQuery.ReturnCards(ui.Adapter.CurrentState, 1);
+            AssertThat(wipeCards.All(card => !card.Survived)).IsTrue();
             var ledgerText = RenderedText(ui.Ledger);
-            AssertThat(ledgerText.Contains("returned from floor")).IsFalse();
+            foreach (var card in wipeCards)
+            {
+                AssertThat(ledgerText).Contains(card.FateLine);
+                AssertThat(card.FateLine).Contains(card.HeroName);
+            }
             foreach (var hero in ui.Adapter.CurrentState.Heroes.Values)
             {
                 AssertThat(ledgerText).Contains(hero.Name);
-                AssertThat(ledgerText).Contains("DIED");
             }
         }
         finally
