@@ -37,6 +37,22 @@ public static class FlavorEngine
     public const char KeySeparator = '/';
 
     /// <summary>
+    /// Build the ordinal-keyed slot dictionary <see cref="Render"/> requires (its caller
+    /// contract). Shared by every pack caller so the comparer is never accidentally
+    /// culture-sensitive.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> Slots(params (string Name, string Value)[] pairs)
+    {
+        var slots = new Dictionary<string, string>(pairs.Length, StringComparer.Ordinal);
+        foreach (var (name, value) in pairs)
+        {
+            slots[name] = value;
+        }
+
+        return slots;
+    }
+
+    /// <summary>
     /// Render the flavor line for <paramref name="key"/> from <paramref name="pack"/>,
     /// substituting <paramref name="slots"/>; <paramref name="campaignId"/> and
     /// <paramref name="eventId"/> drive the stable variant pick.

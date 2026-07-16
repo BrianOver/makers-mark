@@ -73,6 +73,20 @@ public class GossipTests
     }
 
     [Fact]
+    public void Generator_ToolAssistBeat_StaysUntold()
+    {
+        // ToolAssist is a reserved BeatType with no pack key yet (BeatBaseKey returns null),
+        // so a stamped ToolAssist beat must fall through to 'untold' — no line, no throw.
+        var state = NewWorld();
+        var lines = Generate(
+            state,
+            maxLines: 10,
+            new AttributionBeatEvent(BeatType.ToolAssist, new ItemId(1), new HeroId(1), 2, "detail") { Id = new EventId(5), Day = 1 });
+
+        Assert.Empty(lines);
+    }
+
+    [Fact]
     public void Generator_CapsAtMaxLines_PickingFirstNInLogOrder()
     {
         var state = NewWorld();

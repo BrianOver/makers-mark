@@ -36,6 +36,10 @@ public class FlavorEngineTests
             ["badTemplate/gruff"] = ImmutableList.Create("{hero} found {loot}."),    // {loot} never provided
             ["malformed/gruff"] = ImmutableList.Create("{hero fell down."),          // unclosed brace
             ["emptyKind/gruff"] = ImmutableList<string>.Empty,                       // zero variants
+            // Fallback-of-fallback keys: zero variants force RenderFallback, and the FALLBACK
+            // itself fails validation, forcing the SubstituteLenient last resort.
+            ["lenientUnclosed/gruff"] = ImmutableList<string>.Empty,
+            ["lenientOmits/gruff"] = ImmutableList<string>.Empty,
         },
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -45,6 +49,8 @@ public class FlavorEngineTests
             ["badTemplate"] = "{hero} found something.",
             ["malformed"] = "{hero} fell.",
             ["emptyKind"] = "Nothing happened to {hero}.",
+            ["lenientUnclosed"] = "{hero fell.",   // unclosed brace: TryRenderTemplate fails -> lenient
+            ["lenientOmits"] = "Nothing here.",    // omits provided {hero}: verbatim check fails -> lenient
         });
 
     private static Dictionary<string, string> Slots(params (string Key, string Value)[] pairs)
@@ -207,6 +213,20 @@ public class FlavorEngineTests
     }
 
     [Fact]
+    public void Render_FallbackItselfInvalid_UsesLenientSubstitution()
+    {
+        // Both keys have zero variants (forcing RenderFallback) AND a fallback that fails
+        // validation, so the SubstituteLenient last resort runs. Unclosed braces stay literal;
+        // an omitted-slot fallback renders unchanged (no recursion, no throw).
+        Assert.Equal(
+            "{hero fell.",
+            FlavorEngine.Render(Pack, "lenientUnclosed/gruff", Slots(("hero", "Kel")), Campaign, 0UL));
+        Assert.Equal(
+            "Nothing here.",
+            FlavorEngine.Render(Pack, "lenientOmits/gruff", Slots(("hero", "Kel")), Campaign, 0UL));
+    }
+
+    [Fact]
     public void Render_TemplateWithUnresolvedPlaceholder_FallsBack()
     {
         // Variant "{hero} found {loot}." references {loot}, which no slot provides: the
@@ -264,8 +284,15 @@ public class FlavorEngineTests
             ["emptyKind"] = Slots(("hero", "Kel")),
         };
 
-        Assert.Equal(slotsByBaseKey.Keys.OrderBy(k => k, StringComparer.Ordinal), Pack.Fallbacks.Keys);
-        foreach (var (baseKey, fallback) in Pack.Fallbacks)
+        // The "lenient*" keys are deliberately-invalid fixtures for the SubstituteLenient
+        // path (see Render_FallbackItselfInvalid_UsesLenientSubstitution) — excluded here
+        // because this guard is about the pack's REAL fallbacks always rendering cleanly.
+        var realFallbacks = Pack.Fallbacks
+            .Where(f => !f.Key.StartsWith("lenient", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.Equal(slotsByBaseKey.Keys.OrderBy(k => k, StringComparer.Ordinal), realFallbacks.Select(f => f.Key));
+        foreach (var (baseKey, fallback) in realFallbacks)
         {
             var slots = slotsByBaseKey[baseKey];
             Assert.True(

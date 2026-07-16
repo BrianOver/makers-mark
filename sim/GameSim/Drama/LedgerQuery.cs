@@ -124,27 +124,15 @@ public static class LedgerQuery
             ? FlavorEngine.Render(
                 LedgerPack.Pack,
                 LedgerPack.Died + FlavorEngine.KeySeparator + voice,
-                Slots(("hero", heroName), ("floor", Digits(floor))),
+                FlavorEngine.Slots(("hero", heroName), ("floor", Digits(floor))),
                 campaignId,
                 eventId: unchecked((ulong)died.Id.Value))
             : FlavorEngine.Render(
                 LedgerPack.Pack,
                 LedgerPack.Survived + FlavorEngine.KeySeparator + voice,
-                Slots(("hero", heroName), ("floor", Digits(floor)), ("gold", Digits(goldEarned))),
+                FlavorEngine.Slots(("hero", heroName), ("floor", Digits(floor)), ("gold", Digits(goldEarned))),
                 campaignId,
                 eventId: StableHash.Mix(unchecked((ulong)day), unchecked((ulong)heroValue)));
-    }
-
-    /// <summary>Ordinal-keyed slot dictionary — the engine's caller contract.</summary>
-    private static IReadOnlyDictionary<string, string> Slots(params (string Name, string Value)[] pairs)
-    {
-        var slots = new Dictionary<string, string>(pairs.Length, StringComparer.Ordinal);
-        foreach (var (name, value) in pairs)
-        {
-            slots[name] = value;
-        }
-
-        return slots;
     }
 
     private static string Digits(int value) => value.ToString(CultureInfo.InvariantCulture);

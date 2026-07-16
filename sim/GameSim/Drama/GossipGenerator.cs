@@ -76,18 +76,18 @@ public static class GossipGenerator
         ImmutableSortedDictionary<int, Hero> heroes,
         ImmutableSortedDictionary<int, Item> items) => gameEvent switch
     {
-        HeroDied died => (TavernPack.HeroDied, died.Hero, Slots(
+        HeroDied died => (TavernPack.HeroDied, died.Hero, FlavorEngine.Slots(
             ("hero", HeroName(died.Hero, heroes)),
             ("cause", died.Cause),
             ("floor", FloorText(died.Floor)))),
-        AttributionBeatEvent beat when BeatBaseKey(beat.Beat) is { } key => (key, beat.Hero, Slots(
+        AttributionBeatEvent beat when BeatBaseKey(beat.Beat) is { } key => (key, beat.Hero, FlavorEngine.Slots(
             ("hero", HeroName(beat.Hero, heroes)),
             ("item", ItemName(beat.Item, items)),
             ("floor", FloorText(beat.Floor)))),
-        FloorRecordSet record => (TavernPack.FloorRecordSet, record.Hero, Slots(
+        FloorRecordSet record => (TavernPack.FloorRecordSet, record.Hero, FlavorEngine.Slots(
             ("hero", HeroName(record.Hero, heroes)),
             ("floor", FloorText(record.Floor)))),
-        RecruitArrived arrived => (TavernPack.RecruitArrived, arrived.Hero, Slots(
+        RecruitArrived arrived => (TavernPack.RecruitArrived, arrived.Hero, FlavorEngine.Slots(
             ("hero", HeroName(arrived.Hero, heroes)))),
         _ => null,
     };
@@ -101,18 +101,6 @@ public static class GossipGenerator
         BeatType.PotionLifesave => TavernPack.PotionLifesave,
         _ => null, // ToolAssist reserved (no emitter yet) — stays untold until authored
     };
-
-    /// <summary>Ordinal-keyed slot dictionary — the engine's caller contract.</summary>
-    private static IReadOnlyDictionary<string, string> Slots(params (string Name, string Value)[] pairs)
-    {
-        var slots = new Dictionary<string, string>(pairs.Length, StringComparer.Ordinal);
-        foreach (var (name, value) in pairs)
-        {
-            slots[name] = value;
-        }
-
-        return slots;
-    }
 
     private static string FloorText(int floor) => floor.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
