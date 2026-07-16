@@ -7,6 +7,7 @@ contracts) are built in the orchestrating session per
 
 Read `CLAUDE.md` first — its hard rules (tests green, engine pin, sim purity, determinism)
 and multi-agent rules (directory ownership, deny-list, branch/PR discipline) all apply.
+Building from the master systems catalog? `docs/design/catalog-prompt-transposition.md` is the standing conversion contract for its GDScript/GOAP/Ollama prompts — fill its table, don't re-derive.
 
 ## The contract, in one paragraph
 
@@ -54,6 +55,38 @@ Steps:
    referenced nodes exist, sane ranges, global recipe-id uniqueness). Balance category must
    stay green too (your content shifts economy only when selected; the baseline save selects
    blacksmith, so baseline bands must not move).
+
+## Adding flavor pack entries (available now — flavor engine)
+
+Flavor prose (tavern gossip, ledger fate lines, future surfaces) renders from committed
+content packs (`sim/GameSim/Flavor/Packs/`) through `FlavorEngine` — data only, zero RNG.
+An add-on that introduces new content (a beat type, an event kind, a surface) ships its
+lines as a pack the same way it ships recipes:
+
+1. **One static class** in `sim/GameSim/Flavor/Packs/<Name>Pack.cs` exposing
+   `public static readonly FlavorPack Pack` plus a `SlotNames` map (base key → slot names).
+   Mirror `TavernPack`/`LedgerPack`.
+2. **Key scheme:** full key = `"<baseKey>/<voiceId>"`. Base key = event kind (or beat type)
+   in camelCase; voice ids come from `VoiceProfile.Voices` (frozen: gruff, dramatic, wry,
+   omen — never reorder). Author every (baseKey, voice) combination, ≥4 variants each.
+3. **Slots resolvable, facts verbatim (R4):** every `{slot}` in every variant must resolve
+   from the base key's declared slot set, and every slot's value must appear verbatim in
+   the rendered output — the engine validates both and falls back on any failure.
+4. **Fallback mandatory:** exactly one per base key, simple enough to ALWAYS pass
+   validation (mention every slot). When replacing an existing hardcoded line, the old
+   line becomes the fallback, verbatim.
+5. **Conformance tests** in `sim/GameSim.Tests/Flavor/<Name>PackTests.cs`, mirroring
+   `TavernPackTests`/`LedgerPackTests`: keys = base keys × voices; ≥4 variants per key;
+   every variant passes `FlavorEngine.TryRenderTemplate` with its slot set; every fallback
+   passes too; pinned-prose goldens for a fixed (campaign, eventId) so a pick shift fails
+   the build.
+6. **Registration** is the usual orchestrator one-liner — packs are consumed at a call
+   site (e.g. `GossipGenerator` → `TavernPack.Pack`, `LedgerQuery` → `LedgerPack.Pack`),
+   so put the wiring line in your PR description and the orchestrator applies it:
+   `<consumer>.cs → render key "<baseKey>/<voice>" from <YourPack>.Pack`.
+7. **Determinism duties apply:** variant picks key on (campaign identity, stamped event id
+   or an integer mix) via `StableHash` — never `string.GetHashCode`, never kernel RNG, no
+   floats, no wall clock.
 
 ## Determinism duties (every add-on)
 

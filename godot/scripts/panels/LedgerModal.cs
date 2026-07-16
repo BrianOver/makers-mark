@@ -66,9 +66,12 @@ public partial class LedgerModal : SimPanel
 
         foreach (var card in cards)
         {
+            // U5: fate prose lives on the card (LedgerPack via FlavorEngine) — hero name,
+            // floor, and gold earned are guaranteed verbatim in the line (R4). The purse
+            // is a panel fact, not a pack slot, so it stays composed here.
             var fate = card.Survived
-                ? $"{card.HeroName}: returned from floor {card.FloorReached}, earned {card.GoldEarned}g (purse {card.GoldOnHand}g)"
-                : $"{card.HeroName}: DIED on floor {card.FloorReached}";
+                ? $"{card.FateLine} (purse {card.GoldOnHand}g)"
+                : card.FateLine;
             if (card.Survived)
             {
                 AddLabel(_cards!, fate);

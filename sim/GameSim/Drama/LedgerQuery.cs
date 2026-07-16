@@ -1,6 +1,9 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using GameSim.Contracts;
 using GameSim.Expedition;
+using GameSim.Flavor;
+using GameSim.Flavor.Packs;
 
 namespace GameSim.Drama;
 
@@ -10,6 +13,11 @@ namespace GameSim.Drama;
 /// a dead hero's death floor, or the deepest among the survivor's record, beat, and
 /// ore-implied floors. <see cref="GoldEarned"/> is the day's expedition income
 /// (from <see cref="LootIncomeReceived"/>); <see cref="GoldOnHand"/> the purse after reveal.
+/// <see cref="FateLine"/> is the card's fate prose, rendered at construction from
+/// <see cref="LedgerPack"/> through <see cref="FlavorEngine"/> in the hero's seed-derived
+/// voice (U5): hero name, floor, and (for survivors) gold earned appear verbatim (R4).
+/// Deterministic, zero RNG — death cards pick their variant on the stamped
+/// <see cref="HeroDied"/> event id, survivor cards on <c>StableHash.Mix(day, heroId)</c>.
 /// </summary>
 public sealed record ReturnCard(
     HeroId Hero,
@@ -19,7 +27,8 @@ public sealed record ReturnCard(
     int GoldEarned,
     int GoldOnHand,
     ImmutableList<AttributionBeatEvent> Beats,
-    ImmutableList<OreOffered> OreOffers);
+    ImmutableList<OreOffered> OreOffers,
+    string FateLine);
 
 /// <summary>
 /// Pure read model over <see cref="GameState.EventLog"/> (R12): no state changes,
@@ -83,13 +92,50 @@ public static class LedgerQuery
                 : (new HeroId(heroValue).ToString(), 0);
 
             var floor = died?.Floor ?? SurvivorFloor(records.GetValueOrDefault(heroValue), heroBeats, heroOres);
+            var goldEarned = earned.GetValueOrDefault(heroValue);
             cards.Add(new ReturnCard(
                 new HeroId(heroValue), name, died is null, floor,
-                earned.GetValueOrDefault(heroValue), purse, heroBeats, heroOres));
+                goldEarned, purse, heroBeats, heroOres,
+                FateLine(state.Rng.Inc, day, heroValue, name, died, floor, goldEarned)));
         }
 
         return cards.ToImmutable();
     }
+
+    /// <summary>
+    /// The card's fate prose via <see cref="LedgerPack"/> + <see cref="FlavorEngine"/> (U5).
+    /// Voice and campaign identity follow <see cref="GossipSystem"/>: campaign identity is
+    /// <c>state.Rng.Inc</c> (KTD3), the voice is the card hero's. Variant-pick ids per plan:
+    /// a death card hashes on its stamped <see cref="HeroDied"/> event id (real, logged);
+    /// a survivor card on <c>StableHash.Mix(day, heroId)</c> — deterministic and per-hero
+    /// distinct without an event lookup. Draws no RNG (the engine API takes none).
+    /// </summary>
+    private static string FateLine(
+        ulong campaignId,
+        int day,
+        int heroValue,
+        string heroName,
+        HeroDied? died,
+        int floor,
+        int goldEarned)
+    {
+        var voice = VoiceProfile.VoiceFor(campaignId, heroValue);
+        return died is not null
+            ? FlavorEngine.Render(
+                LedgerPack.Pack,
+                LedgerPack.Died + FlavorEngine.KeySeparator + voice,
+                FlavorEngine.Slots(("hero", heroName), ("floor", Digits(floor))),
+                campaignId,
+                eventId: unchecked((ulong)died.Id.Value))
+            : FlavorEngine.Render(
+                LedgerPack.Pack,
+                LedgerPack.Survived + FlavorEngine.KeySeparator + voice,
+                FlavorEngine.Slots(("hero", heroName), ("floor", Digits(floor)), ("gold", Digits(goldEarned))),
+                campaignId,
+                eventId: StableHash.Mix(unchecked((ulong)day), unchecked((ulong)heroValue)));
+    }
+
+    private static string Digits(int value) => value.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>Running maker's-mark tally for one item (R12): lifetime kills and saves.</summary>
     public static (int Kills, int Saves) MarkTally(GameState state, ItemId item)
