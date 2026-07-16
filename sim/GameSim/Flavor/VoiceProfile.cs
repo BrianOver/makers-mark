@@ -33,22 +33,7 @@ public static class VoiceProfile
     /// <summary>The voice a hero speaks (and is spoken of) with, for this campaign.</summary>
     public static string VoiceFor(ulong campaignId, int heroId)
     {
-        var pick = Finalize(StableHash.Mix(campaignId, unchecked((ulong)heroId)));
+        var pick = StableHash.Avalanche(StableHash.Mix(campaignId, unchecked((ulong)heroId)));
         return Voices[(int)(pick % (ulong)Voices.Length)];
-    }
-
-    /// <summary>
-    /// Canonical SplitMix64 finalizer — same constants and shape as
-    /// <see cref="FlavorEngine"/>'s private variant-pick finalizer (kept private there and
-    /// here: two 5-line copies beat widening the committed U3 surface).
-    /// </summary>
-    private static ulong Finalize(ulong hash)
-    {
-        hash ^= hash >> 30;
-        hash *= 0xBF58476D1CE4E5B9UL;
-        hash ^= hash >> 27;
-        hash *= 0x94D049BB133111EBUL;
-        hash ^= hash >> 31;
-        return hash;
     }
 }

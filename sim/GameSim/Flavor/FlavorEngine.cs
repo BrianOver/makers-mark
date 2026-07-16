@@ -8,11 +8,9 @@ namespace GameSim.Flavor;
 /// clock, integer-only math, ordinal string operations only. Flavor lines are sim state, so
 /// this is sim code held to the determinism gate.
 ///
-/// <para><b>Variant pick.</b> <c>Finalize(StableHash.Mix(campaignId, eventId,
-/// StableHash.HashString(key))) % variantCount</c>. The finalizer is a SplitMix64-style
-/// avalanche: raw FNV-1a low bits cycle with sequential event ids (index would be nearly
-/// campaign-independent), and the pick must vary by campaign for R3's cross-seed variety.
-/// Same save, same line, forever.</para>
+/// <para><b>Variant pick.</b> <c>StableHash.Avalanche(StableHash.Mix(campaignId, eventId,
+/// StableHash.HashString(key))) % variantCount</c> — see <see cref="StableHash.Avalanche"/>
+/// for why the finalizer is required (R3 cross-seed variety). Same save, same line, forever.</para>
 ///
 /// <para><b>Validation (KTD5/R4)</b> is structural, via a single-pass parse of the TEMPLATE:
 /// every <c>{name}</c> placeholder must resolve to a provided slot (an unknown placeholder or
@@ -52,7 +50,7 @@ public static class FlavorEngine
     {
         if (pack.Variants.TryGetValue(key, out var variants) && variants.Count > 0)
         {
-            var pick = Finalize(StableHash.Mix(campaignId, eventId, StableHash.HashString(key)));
+            var pick = StableHash.Avalanche(StableHash.Mix(campaignId, eventId, StableHash.HashString(key)));
             var index = (int)(pick % (ulong)variants.Count);
             if (TryRenderTemplate(variants[index], slots, out var line))
             {
@@ -61,22 +59,6 @@ public static class FlavorEngine
         }
 
         return RenderFallback(pack, key, slots);
-    }
-
-    /// <summary>
-    /// SplitMix64-style avalanche finalizer: spreads campaign-id entropy into the low bits
-    /// the modulo reads. Without it, FNV-1a's low bits cycle with sequential event ids and
-    /// the variant index barely varies by campaign (see class doc). Constants are the
-    /// canonical SplitMix64 finalizer constants.
-    /// </summary>
-    private static ulong Finalize(ulong hash)
-    {
-        hash ^= hash >> 30;
-        hash *= 0xBF58476D1CE4E5B9UL;
-        hash ^= hash >> 27;
-        hash *= 0x94D049BB133111EBUL;
-        hash ^= hash >> 31;
-        return hash;
     }
 
     /// <summary>The base key: the segment before the first '/', or the whole key if none.</summary>

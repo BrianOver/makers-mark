@@ -25,6 +25,21 @@ public static class StableHash
     /// <summary>Canonical FNV-1a 64-bit prime (0x100000001B3).</summary>
     public const ulong Prime = 1099511628211UL;
 
+    /// <summary>
+    /// Canonical SplitMix64 avalanche finalizer. FNV-1a's low bits barely vary for
+    /// sequential integer inputs (picks would cycle, nearly campaign-independent); run a
+    /// hash through this before taking a modulo so every input bit reaches the low bits.
+    /// </summary>
+    public static ulong Avalanche(ulong hash)
+    {
+        hash ^= hash >> 30;
+        hash *= 0xBF58476D1CE4E5B9UL;
+        hash ^= hash >> 27;
+        hash *= 0x94D049BB133111EBUL;
+        hash ^= hash >> 31;
+        return hash;
+    }
+
     /// <summary>Hash two values (allocation-free overload; same result as the params overload).</summary>
     public static ulong Mix(ulong a, ulong b) => MixValue(MixValue(OffsetBasis, a), b);
 
