@@ -12,6 +12,10 @@ namespace GameSim.Drama;
 /// Process returns, so gossip emitted in the same Evening as its source would have
 /// to predict ids. Reading yesterday's log instead keeps R14 a lookup of real,
 /// stamped ids — no coupling to the kernel's stamping arithmetic. Draws no RNG.
+///
+/// Campaign identity for voice/variant picks (KTD3) is <c>state.Rng.Inc</c>: the
+/// Pcg32 stream increment is seed-derived, campaign-constant, and already in every
+/// save. Flavor identity only — it never feeds sim rules.
 /// </summary>
 public sealed class GossipSystem : IPhaseSystem
 {
@@ -27,7 +31,8 @@ public sealed class GossipSystem : IPhaseSystem
             return state; // day 1 has no yesterday — the tavern is quiet
         }
 
-        foreach (var gossip in GossipGenerator.Generate(DayLog.For(state.EventLog, yesterday), state.Heroes, state.Items))
+        foreach (var gossip in GossipGenerator.Generate(
+            DayLog.For(state.EventLog, yesterday), state.Heroes, state.Items, campaignId: state.Rng.Inc))
         {
             events.Emit(gossip);
         }

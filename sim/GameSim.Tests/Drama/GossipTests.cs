@@ -12,25 +12,35 @@ using static DramaFixtures;
 /// Tavern gossip (R14): every line grows from a REAL stamped event — never from a
 /// disconnected flavor pool. Generation is a pure function; the Morning system reads
 /// yesterday's already-stamped log entries.
+///
+/// U4 note: prose is pack-driven now, so assertions here are STRUCTURAL (source ids,
+/// caps, selection, facts-verbatim). Exact prose is pinned in
+/// <c>Flavor/TavernPackTests</c> against golden (campaign, event id) inputs.
 /// </summary>
 public class GossipTests
 {
+    /// <summary>Arbitrary fixed campaign identity for pure-function tests.</summary>
+    private const ulong Campaign = 0xC0FFEEUL;
+
     private static GossipEmitted[] Generate(GameState state, int maxLines, params GameEvent[] events) =>
-        [.. GossipGenerator.Generate(events, state.Heroes, state.Items, maxLines)];
+        [.. GossipGenerator.Generate(events, state.Heroes, state.Items, Campaign, maxLines)];
 
     [Fact]
     public void Generator_TemplatesEverySupportedEventType_CitingItsSourceId()
     {
         var blade = PlayerItem(10, "Fine Iron Blade", ItemSlot.Weapon, 8, 0);
-        var state = WithItem(NewWorld(), blade);
+        var salve = PlayerItem(11, "Field Salve", ItemSlot.Consumable, 0, 0);
+        var state = WithItem(WithItem(NewWorld(), blade), salve);
         var sources = new GameEvent[]
         {
             new HeroDied(new HeroId(1), 2, "slain by a Tunnel Spider", GearSet.Empty) { Id = new EventId(5), Day = 1 },
             new AttributionBeatEvent(BeatType.KillingBlow, blade.Id, new HeroId(1), 2, "detail") { Id = new EventId(6), Day = 1 },
             new AttributionBeatEvent(BeatType.LethalSave, blade.Id, new HeroId(2), 2, "detail") { Id = new EventId(7), Day = 1 },
             new AttributionBeatEvent(BeatType.BreakpointClear, blade.Id, new HeroId(3), 2, "detail") { Id = new EventId(8), Day = 1 },
-            new FloorRecordSet(new HeroId(4), 3) { Id = new EventId(9), Day = 1 },
-            new RecruitArrived(new HeroId(5)) { Id = new EventId(10), Day = 1 },
+            new AttributionBeatEvent(BeatType.Provisioned, salve.Id, new HeroId(4), 2, "detail") { Id = new EventId(9), Day = 1 },
+            new AttributionBeatEvent(BeatType.PotionLifesave, salve.Id, new HeroId(5), 2, "detail") { Id = new EventId(10), Day = 1 },
+            new FloorRecordSet(new HeroId(4), 3) { Id = new EventId(11), Day = 1 },
+            new RecruitArrived(new HeroId(5)) { Id = new EventId(12), Day = 1 },
         };
 
         var lines = Generate(state, maxLines: 10, sources);
@@ -42,8 +52,10 @@ public class GossipTests
             Assert.False(string.IsNullOrWhiteSpace(lines[i].Line));
         }
 
-        Assert.Contains("Torvald", lines[0].Line);        // death line names the hero
-        Assert.Contains("Fine Iron Blade", lines[1].Line); // beat line names the item
+        Assert.Contains("Torvald", lines[0].Line);         // death line names the hero (R4)
+        Assert.Contains("Fine Iron Blade", lines[1].Line); // beat line names the item (R4)
+        Assert.Contains("Field Salve", lines[4].Line);     // Provisioned names the consumable (R4)
+        Assert.Contains("Field Salve", lines[5].Line);     // PotionLifesave names the consumable (R4)
     }
 
     [Fact]
@@ -75,7 +87,7 @@ public class GossipTests
     }
 
     [Fact]
-    public void GossipSystem_MorningGossipsAboutYesterdaysLog()
+    public void GossipSystem_MorningGossipsAboutYesterdaysLog_DrawingNoRng()
     {
         var state = NewWorld() with { Day = 2, Phase = DayPhase.Morning };
         state = state with
@@ -91,6 +103,7 @@ public class GossipTests
         Assert.Equal(new EventId(1), gossip.Source);
         Assert.Equal(2, gossip.Day); // told the morning after
         Assert.Contains("Torvald", gossip.Line);
+        Assert.Equal(state.Rng, tick.NewState.Rng); // KTD2: gossip consumes zero RNG state
     }
 
     [Fact]
