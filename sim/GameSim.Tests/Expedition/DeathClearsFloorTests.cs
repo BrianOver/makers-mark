@@ -12,7 +12,7 @@ namespace GameSim.Tests.Expedition;
 public class DeathClearsFloorTests
 {
     private static Hero Frail(int id) => new(
-        new HeroId(id), $"Frail{id}", HeroRole.Mystic, Level: 1, MaxHp: 8, Gold: 10,
+        new HeroId(id), $"Frail{id}", "mystic", Level: 1, MaxHp: 8, Gold: 10,
         GearSet.Empty, ImmutableList<ItemMemory>.Empty, Alive: true, DeepestFloorReached: 0, DiedOnDay: null);
 
     [Fact]

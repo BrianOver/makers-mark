@@ -20,7 +20,7 @@ public class ConsumableShoppingTests
     }
 
     private static Hero MakeHero(int id, int gold, params ItemId[] pack) => new(
-        new HeroId(id), $"Hero{id}", HeroRole.Vanguard, Level: 1, MaxHp: 25, Gold: gold,
+        new HeroId(id), $"Hero{id}", "vanguard", Level: 1, MaxHp: 25, Gold: gold,
         GearSet.Empty, ImmutableList<ItemMemory>.Empty,
         Alive: true, DeepestFloorReached: 0, DiedOnDay: null)
     {

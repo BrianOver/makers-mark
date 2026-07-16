@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using GameSim.Classes;
 using GameSim.Contracts;
 
 namespace GameSim.Expedition;
@@ -13,16 +14,19 @@ public static class CombatMath
     public const int RollSides = 6;          // rolls are NextInt(0, 6)
     public const int FleeThresholdPct = 25;  // hero flees below 25% MaxHp
 
-    public static int RoleBaseAttack(HeroRole role) => role switch
-    {
-        HeroRole.Vanguard => 4,
-        HeroRole.Striker => 6,
-        HeroRole.Mystic => 3,
-        _ => 0,
-    };
+    /// <summary>A class's flat attack contribution — pure data read (P3). Kept as a named
+    /// seam so an add-on class's <see cref="ClassDefinition.BaseAttack"/> flows through the
+    /// same math the built-ins use.</summary>
+    public static int RoleBaseAttack(ClassDefinition heroClass) => heroClass.BaseAttack;
 
+    /// <summary>Hero attack with the class resolved from the registry (production path).</summary>
     public static int HeroAttack(Hero hero, ImmutableSortedDictionary<int, Item> items) =>
-        RoleBaseAttack(hero.Role) + hero.Level * 2 + StatOf(hero.Gear.Weapon, items, s => s.Attack);
+        HeroAttack(hero, ClassRegistry.Require(hero.ClassId), items);
+
+    /// <summary>Hero attack for an explicit class definition — lets an unregistered (e.g.
+    /// test/add-on) class flow through the exact same formula.</summary>
+    public static int HeroAttack(Hero hero, ClassDefinition heroClass, ImmutableSortedDictionary<int, Item> items) =>
+        RoleBaseAttack(heroClass) + hero.Level * 2 + StatOf(hero.Gear.Weapon, items, s => s.Attack);
 
     public static int HeroDefense(Hero hero, ImmutableSortedDictionary<int, Item> items) =>
         hero.Level

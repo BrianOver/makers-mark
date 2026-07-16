@@ -23,9 +23,9 @@ public class HeroRosterTests
     {
         var roster = HeroRoster.StartingSix();
 
-        Assert.Equal(2, roster.Values.Count(h => h.Role == HeroRole.Vanguard));
-        Assert.Equal(2, roster.Values.Count(h => h.Role == HeroRole.Striker));
-        Assert.Equal(2, roster.Values.Count(h => h.Role == HeroRole.Mystic));
+        Assert.Equal(2, roster.Values.Count(h => h.ClassId =="vanguard"));
+        Assert.Equal(2, roster.Values.Count(h => h.ClassId =="striker"));
+        Assert.Equal(2, roster.Values.Count(h => h.ClassId =="mystic"));
     }
 
     [Fact]

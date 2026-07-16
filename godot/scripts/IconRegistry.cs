@@ -28,16 +28,12 @@ public static class IconRegistry
     public static Texture2D Glyph(string name) => Load(IconDir, name); // gold, bounty, gossip, depths, skull, rune
 
     /// <summary>
-    /// Hand-authored hero figure per role (U16). Bodies are neutral so the town can
-    /// tint them to the role color via <c>TextureRect.Modulate</c>; see the style bible.
+    /// Hand-authored hero figure per class (U16, P3). The asset is <c>hero_{classId}.svg</c>
+    /// (e.g. hero_vanguard), so a new class ships its figure by naming the file after its id.
+    /// Bodies are neutral so the town can tint them to the class color via
+    /// <c>TextureRect.Modulate</c>; see the style bible.
     /// </summary>
-    public static Texture2D Sprite(HeroRole role) => Load(SpriteDir, "hero_" + role switch
-    {
-        HeroRole.Vanguard => "vanguard",
-        HeroRole.Striker => "striker",
-        HeroRole.Mystic => "mystic",
-        _ => "vanguard",
-    });
+    public static Texture2D Sprite(string classId) => Load(SpriteDir, "hero_" + classId);
 
     /// <summary>
     /// Hand-authored town facade / prop by key (U16): forge, shop, tavern, mine_gate,

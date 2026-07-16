@@ -20,7 +20,7 @@ public class OreMarketHandlersTests
     }
 
     private static Hero MakeHero(int id, int gold = 40, bool alive = true) => new(
-        new HeroId(id), $"Hero{id}", HeroRole.Vanguard, Level: 1, MaxHp: 30, Gold: gold,
+        new HeroId(id), $"Hero{id}", "vanguard", Level: 1, MaxHp: 30, Gold: gold,
         GearSet.Empty, ImmutableList<ItemMemory>.Empty,
         Alive: alive, DeepestFloorReached: 0, DiedOnDay: alive ? null : 2);
 

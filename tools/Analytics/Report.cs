@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text;
 using GameSim.Chronicle;
+using GameSim.Classes;
 using GameSim.Contracts;
 
 namespace Analytics;
@@ -19,12 +20,16 @@ public static class Report
         sb.AppendLine($"Runs: {runs.Count} | Total sim-days: {runs.Sum(r => r.Day - 1)}");
         sb.AppendLine();
 
-        var roleByHero = new Dictionary<(ulong Seed, int Hero), HeroRole>();
+        // Hero class → its display name for the by-class death table. Resolving the class
+        // definition keeps the report reading "Vanguard" (not the raw "vanguard" id); an
+        // unregistered id falls back to the raw key so nothing is dropped.
+        var roleByHero = new Dictionary<(ulong Seed, int Hero), string>();
         foreach (var run in runs)
         {
             foreach (var hero in run.Heroes)
             {
-                roleByHero[(run.Seed, hero.Id.Value)] = hero.Role;
+                roleByHero[(run.Seed, hero.Id.Value)] =
+                    ClassRegistry.TryGet(hero.ClassId, out var def) ? def!.DisplayName : hero.ClassId;
             }
         }
 
@@ -48,7 +53,7 @@ public static class Report
                 {
                     case HeroDied died:
                         deathsByFloor[died.Floor] = deathsByFloor.GetValueOrDefault(died.Floor) + 1;
-                        var role = roleByHero.TryGetValue((run.Seed, died.Hero.Value), out var r) ? r.ToString() : "Unknown";
+                        var role = roleByHero.TryGetValue((run.Seed, died.Hero.Value), out var r) ? r : "Unknown";
                         deathsByRole[role] = deathsByRole.GetValueOrDefault(role) + 1;
                         break;
                     case AttributionBeatEvent beat:

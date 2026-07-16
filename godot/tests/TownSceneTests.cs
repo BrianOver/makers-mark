@@ -2,6 +2,7 @@
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Drama;
 using GdUnit4;
@@ -50,7 +51,7 @@ public class TownSceneTests
                 AssertThat(sprite.HeroName).IsEqual(hero.Name);
 
                 // Role → placeholder color pin (Vanguard steel-blue / Striker crimson / Mystic violet).
-                AssertThat(Find<ColorRect>(sprite, "Marker").Color).IsEqual(HeroSprite.RoleColor(hero.Role));
+                AssertThat(Find<ColorRect>(sprite, "Marker").Color).IsEqual(HeroSprite.RoleColor(hero.ClassId));
             }
 
             // Memorial plot mirrors the U8 registry: one gray stone per dead hero, named.
@@ -85,7 +86,7 @@ public class TownSceneTests
             {
                 var figure = Find<TextureRect>(ui.Town.Sprites[hero.Id.Value], "Sprite");
                 AssertThat(figure.Texture).IsNotNull();
-                AssertThat(figure.Modulate).IsEqual(HeroSprite.RoleColor(hero.Role));
+                AssertThat(figure.Modulate).IsEqual(HeroSprite.RoleColor(hero.ClassId));
             }
         }
         finally
@@ -245,7 +246,7 @@ public class TownSceneTests
             Click(ui.Town.Sprites[hero.Id.Value]);
 
             AssertThat(ui.Tabs.CurrentTab).IsEqual(ui.Tabs.GetTabIdxFromControl(ui.Heroes));
-            AssertThat(RenderedText(ui.Heroes)).Contains($"{hero.Name} — {hero.Role}");
+            AssertThat(RenderedText(ui.Heroes)).Contains($"{hero.Name} — {ClassRegistry.Require(hero.ClassId).DisplayName}");
         }
         finally
         {

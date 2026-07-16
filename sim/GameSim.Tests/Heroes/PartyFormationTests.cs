@@ -7,8 +7,8 @@ namespace GameSim.Tests.Heroes;
 /// <summary>Covers R7's party half: deterministic role-composition grouping for U6's resolver.</summary>
 public class PartyFormationTests
 {
-    private static Hero MakeHero(int id, HeroRole role, bool alive = true) => new(
-        new HeroId(id), $"Hero{id}", role, Level: 1, MaxHp: 25, Gold: 40,
+    private static Hero MakeHero(int id, string classId, bool alive = true) => new(
+        new HeroId(id), $"Hero{id}", classId, Level: 1, MaxHp: 25, Gold: 40,
         GearSet.Empty, ImmutableList<ItemMemory>.Empty,
         Alive: alive, DeepestFloorReached: 0, DiedOnDay: null);
 
@@ -16,12 +16,12 @@ public class PartyFormationTests
         heroes.ToImmutableSortedDictionary(h => h.Id.Value, h => h);
 
     private static ImmutableSortedDictionary<int, Hero> StandardSix(bool hero3Alive = true, bool hero6Alive = true) => Roster(
-        MakeHero(1, HeroRole.Vanguard),
-        MakeHero(2, HeroRole.Vanguard),
-        MakeHero(3, HeroRole.Striker, hero3Alive),
-        MakeHero(4, HeroRole.Striker),
-        MakeHero(5, HeroRole.Mystic),
-        MakeHero(6, HeroRole.Mystic, hero6Alive));
+        MakeHero(1, "vanguard"),
+        MakeHero(2, "vanguard"),
+        MakeHero(3, "striker", hero3Alive),
+        MakeHero(4, "striker"),
+        MakeHero(5, "mystic"),
+        MakeHero(6, "mystic", hero6Alive));
 
     [Fact]
     public void SixAlive_TwoPartiesOfThree_EachWithAVanguard()
@@ -32,7 +32,7 @@ public class PartyFormationTests
 
         Assert.Equal(2, parties.Count);
         Assert.All(parties, p => Assert.Equal(3, p.Count));
-        Assert.All(parties, p => Assert.Contains(p, id => roster[id.Value].Role == HeroRole.Vanguard));
+        Assert.All(parties, p => Assert.Contains(p, id => roster[id.Value].ClassId == "vanguard"));
 
         // Every alive hero parties exactly once.
         var all = parties.SelectMany(p => p).Select(id => id.Value).OrderBy(v => v).ToArray();
@@ -55,7 +55,7 @@ public class PartyFormationTests
     [Fact]
     public void OneAlive_FormsSoloParty()
     {
-        var parties = PartyFormation.FormParties(Roster(MakeHero(4, HeroRole.Mystic)));
+        var parties = PartyFormation.FormParties(Roster(MakeHero(4, "mystic")));
 
         var solo = Assert.Single(parties);
         Assert.Equal(new HeroId(4), Assert.Single(solo));
@@ -65,8 +65,8 @@ public class PartyFormationTests
     public void ZeroAlive_FormsNoParties()
     {
         var parties = PartyFormation.FormParties(Roster(
-            MakeHero(1, HeroRole.Vanguard, alive: false),
-            MakeHero(2, HeroRole.Striker, alive: false)));
+            MakeHero(1, "vanguard", alive: false),
+            MakeHero(2, "striker", alive: false)));
 
         Assert.Empty(parties);
     }
@@ -82,7 +82,7 @@ public class PartyFormationTests
         Assert.Equal(2, parties.Count);
         Assert.Equal(3, parties[0].Count);
         Assert.Single(parties[1]);
-        Assert.Contains(parties[0], id => roster[id.Value].Role == HeroRole.Vanguard);
+        Assert.Contains(parties[0], id => roster[id.Value].ClassId == "vanguard");
 
         var all = parties.SelectMany(p => p).Select(id => id.Value).ToArray();
         Assert.DoesNotContain(3, all);
@@ -95,9 +95,9 @@ public class PartyFormationTests
     {
         // "At least 1 Vanguard" is a preference, not a hard gate — heroes still go.
         var parties = PartyFormation.FormParties(Roster(
-            MakeHero(1, HeroRole.Striker),
-            MakeHero(2, HeroRole.Mystic),
-            MakeHero(3, HeroRole.Mystic)));
+            MakeHero(1, "striker"),
+            MakeHero(2, "mystic"),
+            MakeHero(3, "mystic")));
 
         var party = Assert.Single(parties);
         Assert.Equal(3, party.Count);

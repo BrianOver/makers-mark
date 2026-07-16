@@ -28,7 +28,7 @@ public class LoadoutSaveTests
         var charm = Charm(2);
         var state = GameFactory.NewGame(seed: 5);
         var hero = new Hero(
-            new HeroId(1), "Torvald", HeroRole.Vanguard, Level: 2, MaxHp: 30, Gold: 40,
+            new HeroId(1), "Torvald", "vanguard", Level: 2, MaxHp: 30, Gold: 40,
             new GearSet(null, null, null, charm.Id), ImmutableList<ItemMemory>.Empty,
             Alive: true, DeepestFloorReached: 1, DiedOnDay: null)
         {
@@ -63,7 +63,7 @@ public class LoadoutSaveTests
         var state = GameFactory.NewGame(seed: 7) with
         {
             Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, new Hero(
-                new HeroId(1), "Torvald", HeroRole.Vanguard, Level: 1, MaxHp: 30, Gold: 40,
+                new HeroId(1), "Torvald", "vanguard", Level: 1, MaxHp: 30, Gold: 40,
                 GearSet.Empty, ImmutableList<ItemMemory>.Empty,
                 Alive: true, DeepestFloorReached: 0, DiedOnDay: null)),
             Items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, Charm(1) with { Slot = ItemSlot.Weapon }),

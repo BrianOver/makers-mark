@@ -36,7 +36,7 @@ public class ChronicleTests
     [Fact]
     public void Report_Totals_MatchFixture()
     {
-        var hero = new Hero(new HeroId(1), "Torvald", HeroRole.Vanguard, 1, 25, 30,
+        var hero = new Hero(new HeroId(1), "Torvald", "vanguard", 1, 25, 30,
             GearSet.Empty, ImmutableList<ItemMemory>.Empty, Alive: false, 0, DiedOnDay: 2);
 
         var events = ImmutableList.Create<GameEvent>(

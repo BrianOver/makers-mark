@@ -39,7 +39,7 @@ public sealed record ItemMemory(ItemId Item, int Kills, int Saves);
 public sealed record Hero(
     HeroId Id,
     string Name,
-    HeroRole Role,
+    string ClassId,
     int Level,
     int MaxHp,
     int Gold,

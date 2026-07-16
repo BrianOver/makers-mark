@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using GameSim;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Drama;
@@ -160,7 +161,7 @@ while (true)
             foreach (var hero in state.Heroes.Values)
             {
                 var status = hero.Alive ? $"L{hero.Level} {hero.Gold}g deepest {hero.DeepestFloorReached}" : $"DIED day {hero.DiedOnDay}";
-                Console.WriteLine($"  {hero.Id} {hero.Name,-10} {hero.Role,-8} {status}");
+                Console.WriteLine($"  {hero.Id} {hero.Name,-10} {ClassRegistry.Require(hero.ClassId).DisplayName,-8} {status}");
             }
 
             break;

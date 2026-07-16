@@ -10,8 +10,8 @@ namespace GameSim.Tests.Heroes;
 /// </summary>
 public class ShoppingAiTests
 {
-    private static Hero MakeHero(HeroRole role, int gold = 100, GearSet? gear = null) => new(
-        new HeroId(1), "Testa", role, Level: 1, MaxHp: 25, Gold: gold,
+    private static Hero MakeHero(string classId, int gold = 100, GearSet? gear = null) => new(
+        new HeroId(1), "Testa", classId, Level: 1, MaxHp: 25, Gold: gold,
         gear ?? GearSet.Empty, ImmutableList<ItemMemory>.Empty,
         Alive: true, DeepestFloorReached: 0, DiedOnDay: null);
 
@@ -27,7 +27,7 @@ public class ShoppingAiTests
     public void AE4_Mystic_PassesOnHeavyTwoHandedSword_ReasonNamesRoleAndWeight()
     {
         // Rogue-analog per AE4: the heavy two-hander fails the mystic's weight limit.
-        var mystic = MakeHero(HeroRole.Mystic, gold: 100);
+        var mystic = MakeHero("mystic", gold: 100);
         var greatsword = MakeItem(10, ItemSlot.Weapon, attack: 9, defense: 0,
             weight: ShoppingAi.MysticMaxWeight + 4, name: "Iron Greatsword");
 
@@ -43,7 +43,7 @@ public class ShoppingAiTests
     [Fact]
     public void Striker_PassesOnShield_ReasonNamesStriker()
     {
-        var striker = MakeHero(HeroRole.Striker, gold: 100);
+        var striker = MakeHero("striker", gold: 100);
         var shield = MakeItem(11, ItemSlot.Shield, attack: 0, defense: 5, weight: 3, name: "Oak Shield");
 
         var verdict = ShoppingAi.EvaluateItem(striker, shield, price: 10, Catalog(shield));
@@ -56,7 +56,7 @@ public class ShoppingAiTests
     [Fact]
     public void Mystic_PassesOnShield_ReasonNamesMystic()
     {
-        var mystic = MakeHero(HeroRole.Mystic, gold: 100);
+        var mystic = MakeHero("mystic", gold: 100);
         var shield = MakeItem(12, ItemSlot.Shield, attack: 0, defense: 5, weight: 2, name: "Oak Shield");
 
         var verdict = ShoppingAi.EvaluateItem(mystic, shield, price: 10, Catalog(shield));
@@ -69,7 +69,7 @@ public class ShoppingAiTests
     [Fact]
     public void OverBudget_PassesWithAffordabilityReason_NamingBothAmounts()
     {
-        var hero = MakeHero(HeroRole.Vanguard, gold: 30);
+        var hero = MakeHero("vanguard", gold: 30);
         var sword = MakeItem(13, ItemSlot.Weapon, attack: 5, defense: 0, weight: 3, name: "Iron Sword");
 
         var verdict = ShoppingAi.EvaluateItem(hero, sword, price: 45, Catalog(sword));
@@ -85,7 +85,7 @@ public class ShoppingAiTests
     {
         var current = MakeItem(20, ItemSlot.Weapon, attack: 8, defense: 0, weight: 3, name: "Steel Blade");
         var candidate = MakeItem(21, ItemSlot.Weapon, attack: 4, defense: 0, weight: 3, name: "Rusty Blade");
-        var hero = MakeHero(HeroRole.Vanguard, gold: 100,
+        var hero = MakeHero("vanguard", gold: 100,
             gear: GearSet.Empty.WithSlot(ItemSlot.Weapon, current.Id));
 
         var verdict = ShoppingAi.EvaluateItem(hero, candidate, price: 5, Catalog(current, candidate));
@@ -99,7 +99,7 @@ public class ShoppingAiTests
     [Fact]
     public void AffordableUpgrade_ReturnsBuy_WithPositiveGain()
     {
-        var hero = MakeHero(HeroRole.Vanguard, gold: 50);
+        var hero = MakeHero("vanguard", gold: 50);
         var sword = MakeItem(22, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Iron Sword");
 
         var verdict = ShoppingAi.EvaluateItem(hero, sword, price: 25, Catalog(sword));
@@ -120,7 +120,7 @@ public class ShoppingAiTests
             MakeItem(32, ItemSlot.Weapon, 1, 0, 1, "Twig"),
         };
         var catalog = Catalog(catalogItems);
-        var poorMystic = MakeHero(HeroRole.Mystic, gold: 0);
+        var poorMystic = MakeHero("mystic", gold: 0);
 
         foreach (var item in catalogItems)
         {

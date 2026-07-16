@@ -130,7 +130,7 @@ public class ShopHandlersTests
     {
         var item = PlayerItem(1);
         var hero = new Hero(
-            new HeroId(1), "Torvald", HeroRole.Vanguard, Level: 1, MaxHp: 30, Gold: 40,
+            new HeroId(1), "Torvald", "vanguard", Level: 1, MaxHp: 30, Gold: 40,
             GearSet.Empty with { Weapon = item.Id }, ImmutableList<ItemMemory>.Empty,
             Alive: true, DeepestFloorReached: 0, DiedOnDay: null);
         var state = BaseState(item) with

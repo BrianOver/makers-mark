@@ -20,7 +20,7 @@ public class ConsumableAttributionTests
         ImmutableList<ItemHistoryEntry>.Empty, new ConsumableEffect(ConsumableKind.Heal, 6));
 
     private static Hero Torvald(int maxHp = 30) => new(
-        new HeroId(1), "Torvald", HeroRole.Vanguard, Level: 1, MaxHp: maxHp, Gold: 30,
+        new HeroId(1), "Torvald", "vanguard", Level: 1, MaxHp: maxHp, Gold: 30,
         GearSet.Empty, ImmutableList<ItemMemory>.Empty, Alive: true, DeepestFloorReached: 0, DiedOnDay: null);
 
     /// <summary>One recorded round; Uses ride on the round the quaff preceded.</summary>

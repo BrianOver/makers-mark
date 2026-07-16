@@ -95,9 +95,48 @@ lines as a pack the same way it ships recipes:
   (e.g. a new phase system), it's core work — stop and flag.
 - After each add-on merges, the orchestrator re-baselines goldens; never edit golden files yourself.
 
+## Adding a hero class (available now — P3 core)
+
+A hero class is pure data: `ClassDefinition` in `sim/GameSim/Classes/ClassDefinition.cs`
+(BaseHp, BaseAttack, IsAnchor, AllowsShield, MaxItemWeight, ColorRgb). The generic pipeline
+(ShoppingAi role-fit, CombatMath attack, HeroRoster, PartyFormation, and the Godot hero panel/
+sprite via `ColorRgb`) reads definitions from `ClassRegistry` — a new class appears in the game,
+UI colour included, with zero code changes outside your directory.
+
+Steps mirror the profession flow:
+
+1. **Claim** your unit in `.claude/tasks/` and branch `feat/addon-<class>`.
+2. **Create `sim/GameSim/Classes/<Name>/`** with a static class exposing a
+   `public static readonly ClassDefinition Definition`. Class id is lowercase kebab
+   (e.g. `"necromancer"`); integer stats only; `ColorRgb` is three ints in 0–255 (no `Godot.Color`
+   in sim — the panel builds the colour from these).
+3. **Rules of the data:**
+   - `Id` == the class id used everywhere; `DisplayName` is the capitalised UI label.
+   - Combat/fit values are the same integers the built-ins use (BaseHp ~20–30 band, BaseAttack
+     small single digits); `MaxItemWeight` null = unlimited; `AllowsShield`/`IsAnchor` are the
+     shopping and party-formation levers.
+   - NO RNG, no wall clock, no floats, no Godot references — definitions are constant data.
+4. **Recruitability is a separate, determinism-gated decision.** Registering a class does NOT add
+   it to `ClassRegistry.RecruitPool` — that array is frozen at the three built-ins because the
+   recruit draw is `rng.NextInt(0, RecruitPool.Length)` and changing its length/order shifts every
+   existing seed's world. A class that should spawn from the recruit trickle needs an
+   orchestrator-owned change to the recruit mechanism, not just a registry entry. Until then a new
+   class reaches play only through a bespoke spawn path (a companion summon, a scripted arrival).
+5. **Create `sim/GameSim.Tests/Classes/<Name>/`** with behaviour tests (shopping fit, combat
+   attack, party anchoring as applicable).
+6. **Registration:** do NOT edit `ClassRegistry.cs`. Put the one line in your PR description
+   (`ClassRegistry.All: add <YourClass>.Definition`) and the orchestrator applies it.
+7. **Definition of done:** `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj` fully green —
+   `ClassConformanceTests` picks up your class automatically and validates its structure; Balance
+   bands must stay byte-identical (your class only affects a save that actually fields it, and no
+   baseline save does).
+
+Companion entities and item augments/enchants are NOT part of the class core — they ship bundled
+with the add-on that first consumes them (a summoner class brings companion support; an Enchanter
+profession brings augments), reviewed together with that consumer.
+
 ## Coming registries (don't build against these until the core lands)
 
-- **Hero classes** — P3 core: `ClassDefinition` registry (stats, shopping preferences, gear fit).
 - **Venues/maps** — P4 core: `VenueDefinition` registry (floors, monster/loot tables, gates).
 - **Materials/markets** — P4 core: material registry replaces `RecipeTable.MaterialGrades` as
   the source of truth for material keys.
