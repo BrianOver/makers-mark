@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using GameSim.Classes;
 using GameSim.Contracts;
 
 namespace GameSim.Heroes;
@@ -52,28 +53,43 @@ public static class ShoppingAi
     public const int MysticMaxWeight = 4;
 
     /// <summary>
-    /// Judge one shelf item for one hero. Check order is fixed (role fit, then
-    /// affordability, then gear score) so pass reasons are stable across runs.
+    /// Judge one shelf item for one hero, resolving the hero's class from the registry
+    /// (production path).
     /// </summary>
     public static ShoppingVerdict EvaluateItem(
         Hero hero,
         Item item,
         int price,
+        ImmutableSortedDictionary<int, Item> items) =>
+        EvaluateItem(hero, ClassRegistry.Require(hero.ClassId), item, price, items);
+
+    /// <summary>
+    /// Judge one shelf item for one hero against an explicit class definition (P3). Check
+    /// order is fixed (role fit, then affordability, then gear score) so pass reasons are
+    /// stable across runs. Role fit reads the DEFINITION — an add-on class's shield/weight
+    /// rules are honored with no code change — while the built-ins stay byte-identical
+    /// (DisplayName lowercased is the role word the R8 prose names).
+    /// </summary>
+    public static ShoppingVerdict EvaluateItem(
+        Hero hero,
+        ClassDefinition heroClass,
+        Item item,
+        int price,
         ImmutableSortedDictionary<int, Item> items)
     {
         // 1. Role fit (R8: the reason must name the role).
-        if (item.Slot == ItemSlot.Shield && hero.Role != HeroRole.Vanguard)
+        if (item.Slot == ItemSlot.Shield && !heroClass.AllowsShield)
         {
             return ShoppingVerdict.MakePass(
                 PassReasonKind.RoleMismatch,
-                $"shields don't suit a {RoleName(hero.Role)}");
+                $"shields don't suit a {heroClass.DisplayName.ToLowerInvariant()}");
         }
 
-        if (hero.Role == HeroRole.Mystic && item.Stats.Weight > MysticMaxWeight)
+        if (heroClass.MaxItemWeight is { } cap && item.Stats.Weight > cap)
         {
             return ShoppingVerdict.MakePass(
                 PassReasonKind.TooHeavy,
-                $"too heavy for a mystic — {item.Stats.Weight} weight, carries at most {MysticMaxWeight}");
+                $"too heavy for a {heroClass.DisplayName.ToLowerInvariant()} — {item.Stats.Weight} weight, carries at most {cap}");
         }
 
         // 2. Affordability.
@@ -163,12 +179,4 @@ public static class ShoppingAi
 
         return idA.Value < idB.Value;
     }
-
-    private static string RoleName(HeroRole role) => role switch
-    {
-        HeroRole.Vanguard => "vanguard",
-        HeroRole.Striker => "striker",
-        HeroRole.Mystic => "mystic",
-        _ => "hero",
-    };
 }

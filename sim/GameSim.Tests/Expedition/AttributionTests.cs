@@ -24,7 +24,7 @@ public class AttributionTests
         new ItemStats(0, defense, 4), Mark: null, ImmutableList<ItemHistoryEntry>.Empty);
 
     private static Hero HeroWith(int id, GearSet gear, int hp = 30) => new(
-        new HeroId(id), "Torvald", HeroRole.Vanguard, Level: 3, MaxHp: hp, Gold: 50,
+        new HeroId(id), "Torvald", "vanguard", Level: 3, MaxHp: hp, Gold: 50,
         gear, ImmutableList<ItemMemory>.Empty, Alive: true, DeepestFloorReached: 4, DiedOnDay: null);
 
     [Fact]

@@ -1,3 +1,4 @@
+using GameSim.Classes;
 using GameSim.Contracts;
 using Godot;
 
@@ -43,28 +44,33 @@ public partial class HeroSprite : Control
 
     public string HeroName { get; private set; } = string.Empty;
 
-    public HeroRole Role { get; private set; }
+    public string ClassId { get; private set; } = string.Empty;
 
     public TownState State { get; private set; } = TownState.Wandering;
 
     /// <summary>Anchor point the wander drifts around; deterministic per hero id.</summary>
     public Vector2 Home { get; private set; }
 
-    /// <summary>Role → tint color (U12 pinned palette; U16 tints the figure + footing with it).</summary>
-    public static Color RoleColor(HeroRole role) => role switch
+    /// <summary>Class → tint color (U12 pinned palette; U16 tints the figure + footing with it).
+    /// Reads <see cref="ClassDefinition.ColorRgb"/> (P3), so an add-on class is self-describing;
+    /// unknown ids fall back to gray (the old default arm).</summary>
+    public static Color RoleColor(string classId)
     {
-        HeroRole.Vanguard => new Color(0.27f, 0.51f, 0.71f), // steel blue
-        HeroRole.Striker => new Color(0.86f, 0.08f, 0.24f),  // crimson
-        HeroRole.Mystic => new Color(0.54f, 0.17f, 0.89f),   // violet
-        _ => new Color(0.8f, 0.8f, 0.8f),
-    };
+        if (ClassRegistry.TryGet(classId, out var def))
+        {
+            var (r, g, b) = def!.ColorRgb;
+            return new Color(r / 255f, g / 255f, b / 255f);
+        }
+
+        return new Color(0.8f, 0.8f, 0.8f);
+    }
 
     /// <summary>Build the marker + label and pin the deterministic wander parameters.</summary>
     public void Setup(Hero hero, Vector2 home, Vector2 gate)
     {
         HeroValue = hero.Id.Value;
         HeroName = hero.Name;
-        Role = hero.Role;
+        ClassId = hero.ClassId;
         Home = home;
         _gate = gate;
         Name = $"Hero_{HeroValue}";
@@ -84,8 +90,8 @@ public partial class HeroSprite : Control
         var sprite = new TextureRect
         {
             Name = "Sprite",
-            Texture = IconRegistry.Sprite(hero.Role),
-            Modulate = RoleColor(hero.Role),
+            Texture = IconRegistry.Sprite(hero.ClassId),
+            Modulate = RoleColor(hero.ClassId),
             Position = new Vector2((Size.X - SpriteWidth) / 2f, -SpriteRise),
             Size = new Vector2(SpriteWidth, SpriteHeight),
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
@@ -98,7 +104,7 @@ public partial class HeroSprite : Control
         var marker = new ColorRect
         {
             Name = "Marker",
-            Color = RoleColor(hero.Role),
+            Color = RoleColor(hero.ClassId),
             Position = new Vector2((Size.X - FootingWidth) / 2f, FeetY - 4),
             Size = new Vector2(FootingWidth, 4),
             MouseFilter = MouseFilterEnum.Ignore,

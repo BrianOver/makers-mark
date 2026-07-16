@@ -8,7 +8,7 @@ namespace GameSim.Tests.Heroes;
 public class HeroOpsTests
 {
     private static Hero MakeHero(int gold = 40) => new(
-        new HeroId(1), "Testa", HeroRole.Striker, Level: 1, MaxHp: 25, Gold: gold,
+        new HeroId(1), "Testa", "striker", Level: 1, MaxHp: 25, Gold: gold,
         GearSet.Empty, ImmutableList<ItemMemory>.Empty,
         Alive: true, DeepestFloorReached: 0, DiedOnDay: null);
 

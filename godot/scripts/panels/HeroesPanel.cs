@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Drama;
 using Godot;
@@ -37,7 +38,7 @@ public partial class HeroesPanel : SimPanel
             var status = hero.Alive
                 ? $"L{hero.Level} {hero.Gold}g deepest {hero.DeepestFloorReached}"
                 : $"DIED day {hero.DiedOnDay}";
-            _roster.AddItem($"{hero.Id} {hero.Name} ({hero.Role}) — {status}");
+            _roster.AddItem($"{hero.Id} {hero.Name} ({ClassRegistry.Require(hero.ClassId).DisplayName}) — {status}");
             _rosterHeroIds.Add(hero.Id.Value);
         }
 
@@ -89,13 +90,13 @@ public partial class HeroesPanel : SimPanel
             return;
         }
 
-        AddHeader(_detail!, $"{hero.Name} — {hero.Role}");
+        AddHeader(_detail!, $"{hero.Name} — {ClassRegistry.Require(hero.ClassId).DisplayName}");
         AddLabel(_detail!, hero.Alive
             ? $"Level {hero.Level} | HP {hero.MaxHp} | {hero.Gold}g | deepest floor {hero.DeepestFloorReached}"
             : $"DIED day {hero.DiedOnDay} on floor record {hero.DeepestFloorReached}");
 
         AddLabel(_detail!, "GEAR:");
-        var roleColor = HeroSprite.RoleColor(hero.Role);
+        var roleColor = HeroSprite.RoleColor(hero.ClassId);
         foreach (var (slot, itemId) in new (ItemSlot, ItemId?)[]
                  {
                      (ItemSlot.Weapon, hero.Gear.Weapon),

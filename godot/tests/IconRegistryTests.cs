@@ -42,9 +42,11 @@ public class IconRegistryTests
     [TestCase]
     public void EveryHeroSprite_Loads()
     {
-        foreach (HeroRole role in System.Enum.GetValues<HeroRole>())
+        // P3: iterate the registered classes instead of the removed role enum — every
+        // built-in class ships a hero_{id}.svg figure.
+        foreach (var classId in GameSim.Classes.ClassRegistry.All.Keys)
         {
-            AssertThat(IconRegistry.Sprite(role)).IsNotNull();
+            AssertThat(IconRegistry.Sprite(classId)).IsNotNull();
         }
     }
 

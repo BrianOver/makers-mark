@@ -23,7 +23,7 @@ public class ConsumableResolverTests
         new ItemStats(attack, 0, 4), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
 
     private static Hero Packed(int id, int hp, GearSet? gear = null, params ItemId[] pack) => new(
-        new HeroId(id), $"Hero{id}", HeroRole.Vanguard, Level: 1, MaxHp: hp, Gold: 30,
+        new HeroId(id), $"Hero{id}", "vanguard", Level: 1, MaxHp: hp, Gold: 30,
         gear ?? GearSet.Empty, ImmutableList<ItemMemory>.Empty, Alive: true, DeepestFloorReached: 0, DiedOnDay: null)
     {
         Pack = pack.ToImmutableList(),

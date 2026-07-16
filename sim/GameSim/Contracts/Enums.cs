@@ -8,14 +8,6 @@ public enum DayPhase
     Evening,
 }
 
-/// <summary>The three combat roles heroes come in (R7).</summary>
-public enum HeroRole
-{
-    Vanguard, // front line: weapon + shield + armor
-    Striker,  // damage: two-handed weapons, light armor
-    Mystic,   // support: light weapons, no shield
-}
-
 /// <summary>
 /// Equipment slots a hero can fill from the shops. APPEND ONLY — existing numeric
 /// values are frozen in every save ever written (KTD4).

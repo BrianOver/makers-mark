@@ -8,7 +8,7 @@ namespace GameSim.Tests.Expedition;
 public class ResolverTests
 {
     private static Hero Naked(int id, int hp = 25, int deepest = 0) => new(
-        new HeroId(id), $"Hero{id}", HeroRole.Vanguard, Level: 1, MaxHp: hp, Gold: 30,
+        new HeroId(id), $"Hero{id}", "vanguard", Level: 1, MaxHp: hp, Gold: 30,
         GearSet.Empty, ImmutableList<ItemMemory>.Empty, Alive: true, DeepestFloorReached: deepest, DiedOnDay: null);
 
     private static readonly ImmutableSortedDictionary<int, Item> NoItems = ImmutableSortedDictionary<int, Item>.Empty;

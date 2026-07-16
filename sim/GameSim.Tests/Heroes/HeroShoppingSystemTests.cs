@@ -17,8 +17,8 @@ public class HeroShoppingSystemTests
         public void Emit(GameEvent gameEvent) => Events.Add(gameEvent);
     }
 
-    private static Hero MakeHero(int id, HeroRole role, int gold, bool alive = true, GearSet? gear = null) => new(
-        new HeroId(id), $"Hero{id}", role, Level: 1, MaxHp: 25, Gold: gold,
+    private static Hero MakeHero(int id, string classId, int gold, bool alive = true, GearSet? gear = null) => new(
+        new HeroId(id), $"Hero{id}", classId, Level: 1, MaxHp: 25, Gold: gold,
         gear ?? GearSet.Empty, ImmutableList<ItemMemory>.Empty,
         Alive: alive, DeepestFloorReached: 0, DiedOnDay: null);
 
@@ -51,7 +51,7 @@ public class HeroShoppingSystemTests
         // Item 1: +6 score for 30g (5g/point). Item 2: +8 score for 20g (2.5g/point) — better value.
         var lowValue = MakeItem(1, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Bronze Sword");
         var highValue = MakeItem(2, ItemSlot.Weapon, attack: 8, defense: 0, weight: 3, name: "Iron Sword");
-        var hero = MakeHero(1, HeroRole.Vanguard, gold: 100);
+        var hero = MakeHero(1, "vanguard", gold: 100);
         var state = BaseState(Roster(hero), lowValue, highValue) with
         {
             Player = PlayerState.NewGame(0) with
@@ -81,7 +81,7 @@ public class HeroShoppingSystemTests
         // bug would buy it — the tie must go to the lower ItemId.
         var higherId = MakeItem(5, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Twin Blade B");
         var lowerId = MakeItem(3, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Twin Blade A");
-        var hero = MakeHero(1, HeroRole.Vanguard, gold: 100);
+        var hero = MakeHero(1, "vanguard", gold: 100);
         var state = BaseState(Roster(hero), higherId, lowerId) with
         {
             Player = PlayerState.NewGame(0) with
@@ -100,7 +100,7 @@ public class HeroShoppingSystemTests
     public void OverBudgetHero_Passes_WithAffordabilityReason()
     {
         var sword = MakeItem(1, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Iron Sword");
-        var hero = MakeHero(1, HeroRole.Vanguard, gold: 30);
+        var hero = MakeHero(1, "vanguard", gold: 30);
         var state = BaseState(Roster(hero), sword) with
         {
             Player = PlayerState.NewGame(0) with { Shelf = ImmutableList.Create(new ShelfEntry(sword.Id, 45)) },
@@ -121,7 +121,7 @@ public class HeroShoppingSystemTests
     public void PlayerShelfPurchase_CreditsPlayerGold_AndRemovesShelfEntry()
     {
         var sword = MakeItem(1, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Iron Sword");
-        var hero = MakeHero(1, HeroRole.Vanguard, gold: 50);
+        var hero = MakeHero(1, "vanguard", gold: 50);
         var state = BaseState(Roster(hero), sword) with
         {
             Player = PlayerState.NewGame(100) with { Shelf = ImmutableList.Create(new ShelfEntry(sword.Id, 25)) },
@@ -145,7 +145,7 @@ public class HeroShoppingSystemTests
         // buys rival; the player item gets a pass event, player gold is untouched.
         var playerItem = MakeItem(1, ItemSlot.Weapon, attack: 4, defense: 0, weight: 3, name: "Player Sword");
         var rivalItem = MakeItem(2, ItemSlot.Weapon, attack: 8, defense: 0, weight: 3, name: "Rival Sword");
-        var hero = MakeHero(1, HeroRole.Vanguard, gold: 60);
+        var hero = MakeHero(1, "vanguard", gold: 60);
         var state = BaseState(Roster(hero), playerItem, rivalItem) with
         {
             Player = PlayerState.NewGame(100) with { Shelf = ImmutableList.Create(new ShelfEntry(playerItem.Id, 20)) },
@@ -171,7 +171,7 @@ public class HeroShoppingSystemTests
     {
         // Cap: pass events are emitted only for player-shelf items (avoids event spam).
         var shield = MakeItem(1, ItemSlot.Shield, attack: 0, defense: 5, weight: 3, name: "Rival Shield");
-        var striker = MakeHero(1, HeroRole.Striker, gold: 100);
+        var striker = MakeHero(1, "striker", gold: 100);
         var state = BaseState(Roster(striker), shield) with
         {
             RivalShelf = ImmutableList.Create(new ShelfEntry(shield.Id, 10)),
@@ -186,7 +186,7 @@ public class HeroShoppingSystemTests
     public void DeadHeroes_NeverShop()
     {
         var sword = MakeItem(1, ItemSlot.Weapon, attack: 9, defense: 0, weight: 3, name: "Iron Sword");
-        var dead = MakeHero(1, HeroRole.Vanguard, gold: 100, alive: false);
+        var dead = MakeHero(1, "vanguard", gold: 100, alive: false);
         var state = BaseState(Roster(dead), sword) with
         {
             Player = PlayerState.NewGame(0) with { Shelf = ImmutableList.Create(new ShelfEntry(sword.Id, 10)) },
@@ -204,8 +204,8 @@ public class HeroShoppingSystemTests
     public void HeroesShopInHeroIdOrder_FirstIdWinsContestedItem()
     {
         var sword = MakeItem(1, ItemSlot.Weapon, attack: 9, defense: 0, weight: 3, name: "The Only Sword");
-        var first = MakeHero(1, HeroRole.Vanguard, gold: 100);
-        var second = MakeHero(2, HeroRole.Vanguard, gold: 100);
+        var first = MakeHero(1, "vanguard", gold: 100);
+        var second = MakeHero(2, "vanguard", gold: 100);
         var state = BaseState(Roster(second, first), sword) with
         {
             Player = PlayerState.NewGame(0) with { Shelf = ImmutableList.Create(new ShelfEntry(sword.Id, 10)) },
