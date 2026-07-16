@@ -1,4 +1,5 @@
 using GameSim.Contracts;
+using GameSim.Professions;
 
 namespace GameSim.Crafting;
 
@@ -29,33 +30,39 @@ public sealed class CraftingHandlers : IActionHandler
 
     private static (GameState, RejectedAction?) ApplyCraft(GameState state, CraftAction action, IDeterministicRng rng, IEventSink events)
     {
-        // 1. Recipe must exist.
-        if (!RecipeTable.All.TryGetValue(action.RecipeId, out var recipe))
+        // 1. Recipe must exist (global lookup across all professions).
+        if (!ProfessionRegistry.TryGetRecipe(action.RecipeId, out var recipe))
         {
             return (state, new RejectedAction(action, $"Unknown recipe '{action.RecipeId}'."));
         }
 
-        // 2. Material must be a known grade key.
+        // 2. The recipe's profession must be registered and selected by this save.
+        if (!ProfessionRegistry.TryGet(recipe!.Profession, out var profession))
+        {
+            return (state, new RejectedAction(action, $"Recipe '{recipe.RecipeId}' belongs to unknown profession '{recipe.Profession}'."));
+        }
+
+        if (!state.Player.IsSelected(recipe.Profession))
+        {
+            return (state, new RejectedAction(action, $"Profession '{recipe.Profession}' is not selected."));
+        }
+
+        // 3. Material must be a known grade key.
         if (!RecipeTable.MaterialGrades.TryGetValue(action.MaterialKey, out var materialGrade))
         {
             return (state, new RejectedAction(action, $"Unknown material '{action.MaterialKey}'."));
         }
 
-        // 3. Tier gate: tier 2/3 recipes need their unlock talent.
-        var talents = state.Player.Talents;
-        var gate = recipe.Tier switch
-        {
-            2 => TalentTree.Tier2Smithing,
-            3 => TalentTree.Tier3Smithing,
-            _ => null,
-        };
-        if (gate is not null && !talents.Contains(gate))
+        // 4. Tier gate (read from the profession definition) against this profession's talents.
+        var talents = state.Player.TalentsFor(recipe.Profession);
+        if (profession!.TierGate.TryGetValue(recipe.Tier, out var gate) && !talents.Contains(gate))
         {
             return (state, new RejectedAction(action, $"Recipe '{recipe.RecipeId}' is tier {recipe.Tier}; requires talent '{gate}'."));
         }
 
-        // 4. Material quantity (material-efficiency saves one, floor of 1).
-        var needed = recipe.MaterialQuantity - (talents.Contains(TalentTree.MaterialEfficiency) ? 1 : 0);
+        // 5. Material quantity (material-efficiency node from the definition saves one, floor of 1).
+        var efficiency = profession.MaterialEfficiencyNode is { } eff && talents.Contains(eff) ? 1 : 0;
+        var needed = recipe.MaterialQuantity - efficiency;
         if (needed < 1)
         {
             needed = 1;
@@ -67,8 +74,8 @@ public sealed class CraftingHandlers : IActionHandler
             return (state, new RejectedAction(action, $"Not enough {action.MaterialKey}: need {needed}, have {have}."));
         }
 
-        // 5. All checks passed — consume, roll (the single RNG draw), mint, emit.
-        var quality = QualityRoller.Roll(recipe, materialGrade, talents, rng);
+        // 6. All checks passed — consume, roll (the single RNG draw), mint, emit.
+        var quality = QualityRoller.Roll(recipe, materialGrade, talents, profession.Quality, rng);
         var itemId = new ItemId(state.NextItemId);
         var item = ItemForge.Forge(itemId, recipe, quality, state.Day);
 
@@ -88,13 +95,19 @@ public sealed class CraftingHandlers : IActionHandler
 
     private static (GameState, RejectedAction?) ApplyUnlock(GameState state, UnlockTalentAction action)
     {
-        var talents = state.Player.Talents;
-
-        if (!TalentTree.Nodes.TryGetValue(action.NodeId, out var node))
+        // Scope the unlock to the action's profession: node lookup, unlocked set, and prereqs
+        // are all evaluated within that profession's definition (P1).
+        if (!ProfessionRegistry.TryGet(action.Profession, out var profession))
         {
-            return (state, new RejectedAction(action, $"Unknown talent node '{action.NodeId}'."));
+            return (state, new RejectedAction(action, $"Unknown profession '{action.Profession}'."));
         }
 
+        if (!profession!.TalentNodes.TryGetValue(action.NodeId, out var node))
+        {
+            return (state, new RejectedAction(action, $"Unknown talent node '{action.NodeId}' in profession '{action.Profession}'."));
+        }
+
+        var talents = state.Player.TalentsFor(action.Profession);
         if (talents.Contains(action.NodeId))
         {
             return (state, new RejectedAction(action, $"Talent '{action.NodeId}' is already unlocked."));
@@ -111,7 +124,7 @@ public sealed class CraftingHandlers : IActionHandler
         // No cost in v1 (talent-point economy deferred — see class doc).
         var newState = state with
         {
-            Player = state.Player with { Talents = talents.Add(action.NodeId) },
+            Player = state.Player.WithTalent(action.Profession, action.NodeId),
         };
         return (newState, null);
     }

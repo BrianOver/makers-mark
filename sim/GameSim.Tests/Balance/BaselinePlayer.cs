@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Crafting;
+using GameSim.Professions;
 
 namespace GameSim.Tests.Balance;
 
@@ -19,14 +20,15 @@ public static class BaselinePlayer
         {
             case DayPhase.Morning:
                 // Unlock one affordable talent per morning, prereq order (they're free in v1).
+                var smithTalents = state.Player.TalentsFor(ProfessionRegistry.BlacksmithId);
                 var next = TalentTree.Nodes.Values
-                    .Where(n => !state.Player.Talents.Contains(n.NodeId)
-                                && n.Prerequisites.All(state.Player.Talents.Contains))
+                    .Where(n => !smithTalents.Contains(n.NodeId)
+                                && n.Prerequisites.All(smithTalents.Contains))
                     .OrderBy(n => n.NodeId, StringComparer.Ordinal)
                     .FirstOrDefault();
                 if (next is not null)
                 {
-                    actions.Add(new UnlockTalentAction(next.NodeId));
+                    actions.Add(new UnlockTalentAction(next.NodeId, ProfessionRegistry.BlacksmithId));
                 }
 
                 // Stock every unshelved player craft at the rival's price formula.

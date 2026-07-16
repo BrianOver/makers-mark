@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Kernel;
+using GameSim.Professions;
 
 namespace GameSim.Tests.Crafting;
 
@@ -24,8 +25,13 @@ public class CraftingHandlersTests
         return state with { Player = state.Player with { Materials = stores } };
     }
 
-    private static GameState WithTalents(GameState state, params string[] talents) =>
-        state with { Player = state.Player with { Talents = state.Player.Talents.Union(talents) } };
+    private const string Blacksmith = ProfessionRegistry.BlacksmithId;
+
+    private static GameState WithTalents(GameState state, params string[] talents)
+    {
+        var set = state.Player.TalentsFor(Blacksmith).Union(talents);
+        return state with { Player = state.Player with { Talents = state.Player.Talents.SetItem(Blacksmith, set) } };
+    }
 
     private sealed class TestSink : IEventSink
     {
@@ -82,7 +88,7 @@ public class CraftingHandlersTests
         foreach (var phase in new[] { DayPhase.Morning, DayPhase.Expedition, DayPhase.Evening })
         {
             Assert.True(handlers.CanHandle(new CraftAction("dagger", "copper"), phase));
-            Assert.True(handlers.CanHandle(new UnlockTalentAction(TalentTree.KeenEye), phase));
+            Assert.True(handlers.CanHandle(new UnlockTalentAction(TalentTree.KeenEye, Blacksmith), phase));
         }
     }
 
@@ -187,10 +193,10 @@ public class CraftingHandlersTests
     public void UnlockTalent_AddsNode_WhenPrereqsMet()
     {
         var state = StateWith();
-        var result = Kernel.Tick(state, ImmutableList.Create<PlayerAction>(new UnlockTalentAction(TalentTree.KeenEye)));
+        var result = Kernel.Tick(state, ImmutableList.Create<PlayerAction>(new UnlockTalentAction(TalentTree.KeenEye, Blacksmith)));
 
         Assert.Empty(result.Rejected);
-        Assert.Contains(TalentTree.KeenEye, result.NewState.Player.Talents);
+        Assert.Contains(TalentTree.KeenEye, result.NewState.Player.TalentsFor(Blacksmith));
     }
 
     [Fact]
@@ -198,17 +204,17 @@ public class CraftingHandlersTests
     {
         var state = StateWith();
 
-        var missingPrereq = Kernel.Tick(state, ImmutableList.Create<PlayerAction>(new UnlockTalentAction(TalentTree.MasterTouch)));
+        var missingPrereq = Kernel.Tick(state, ImmutableList.Create<PlayerAction>(new UnlockTalentAction(TalentTree.MasterTouch, Blacksmith)));
         var r1 = Assert.Single(missingPrereq.Rejected);
         Assert.Contains(TalentTree.KeenEye, r1.Reason);
 
-        var unknown = Kernel.Tick(state, ImmutableList.Create<PlayerAction>(new UnlockTalentAction("not-a-node")));
+        var unknown = Kernel.Tick(state, ImmutableList.Create<PlayerAction>(new UnlockTalentAction("not-a-node", Blacksmith)));
         var r2 = Assert.Single(unknown.Rejected);
         Assert.Contains("not-a-node", r2.Reason);
 
         var duplicate = Kernel.Tick(
             WithTalents(state, TalentTree.KeenEye),
-            ImmutableList.Create<PlayerAction>(new UnlockTalentAction(TalentTree.KeenEye)));
+            ImmutableList.Create<PlayerAction>(new UnlockTalentAction(TalentTree.KeenEye, Blacksmith)));
         var r3 = Assert.Single(duplicate.Rejected);
         Assert.Contains(TalentTree.KeenEye, r3.Reason);
     }
@@ -219,7 +225,7 @@ public class CraftingHandlersTests
         // Actions in one batch apply in order: unlock tier-2, then craft tier-2.
         var state = StateWith(("iron", 5));
         var result = Kernel.Tick(state, ImmutableList.Create<PlayerAction>(
-            new UnlockTalentAction(TalentTree.Tier2Smithing),
+            new UnlockTalentAction(TalentTree.Tier2Smithing, Blacksmith),
             new CraftAction("longsword", "iron")));
 
         Assert.Empty(result.Rejected);
@@ -233,7 +239,7 @@ public class CraftingHandlersTests
     {
         var state = StateWith(("iron", 10));
         var actions = ImmutableList.Create<PlayerAction>(
-            new UnlockTalentAction(TalentTree.Tier2Smithing),
+            new UnlockTalentAction(TalentTree.Tier2Smithing, Blacksmith),
             new CraftAction("longsword", "iron"));
 
         var a = Kernel.Tick(state, actions);
