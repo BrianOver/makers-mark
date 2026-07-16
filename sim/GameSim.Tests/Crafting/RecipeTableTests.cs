@@ -6,9 +6,11 @@ namespace GameSim.Tests.Crafting;
 public class RecipeTableTests
 {
     [Fact]
-    public void Table_Has15Recipes_FiveTimesEachSlot_AcrossThreeTiers()
+    public void Table_Has15GearRecipes_FiveTimesEachGearSlot_PlusOneConsumable()
     {
-        Assert.Equal(15, RecipeTable.All.Count);
+        Assert.Equal(16, RecipeTable.All.Count);
+        Assert.Equal(15, RecipeTable.All.Values.Count(r => r.Effect is null));
+        Assert.Equal(1, RecipeTable.All.Values.Count(r => r.Slot == ItemSlot.Consumable));
 
         foreach (var slot in new[] { ItemSlot.Weapon, ItemSlot.Shield, ItemSlot.Armor })
         {
@@ -28,6 +30,16 @@ public class RecipeTableTests
             Assert.InRange(recipe.Tier, 1, 3);
             Assert.True(recipe.MaterialQuantity >= 1);
             Assert.True(RecipeTable.MaterialGrades.ContainsKey(recipe.MaterialKey), $"{key}: unknown material '{recipe.MaterialKey}'");
+
+            if (recipe.Slot == ItemSlot.Consumable)
+            {
+                // Consumables are effect-carriers, not stat-carriers (P2).
+                Assert.NotNull(recipe.Effect);
+                Assert.Equal(new ItemStats(0, 0, 0), recipe.BaseStats);
+                continue;
+            }
+
+            Assert.Null(recipe.Effect);
             Assert.True(recipe.BaseStats.Weight >= 1);
 
             if (recipe.Slot == ItemSlot.Weapon)

@@ -30,7 +30,8 @@ public sealed class CraftingHandlers : IActionHandler
 
     private static (GameState, RejectedAction?) ApplyCraft(GameState state, CraftAction action, IDeterministicRng rng, IEventSink events)
     {
-        // 1. Recipe must exist (global lookup across all professions).
+        // 1. Recipe must exist (global lookup across all professions; consumables
+        //    live in the same tables as gear — see RecipeTable).
         if (!ProfessionRegistry.TryGetRecipe(action.RecipeId, out var recipe))
         {
             return (state, new RejectedAction(action, $"Unknown recipe '{action.RecipeId}'."));

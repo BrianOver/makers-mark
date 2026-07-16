@@ -149,6 +149,29 @@ public sealed class ExpeditionRevealSystem : IPhaseSystem
             }
         }
 
+        // 4b. Consumable uses (P2): drinks are gone — remove each recorded use from
+        //     its bearer's pack, in recorded order. Applies to the fallen too (the
+        //     salve was drunk either way). Emits nothing: quaffing is not a sale,
+        //     and its drama already surfaced as Provisioned/PotionLifesave beats.
+        foreach (var floorOutcome in result.Floors)
+        {
+            foreach (var combat in floorOutcome.Combats)
+            {
+                foreach (var use in combat.Uses)
+                {
+                    if (state.Heroes.TryGetValue(combat.Hero.Value, out var bearer))
+                    {
+                        state = state with
+                        {
+                            Heroes = state.Heroes.SetItem(
+                                combat.Hero.Value,
+                                bearer with { Pack = bearer.Pack.Remove(use.Item) }),
+                        };
+                    }
+                }
+            }
+        }
+
         // 5. Ore market (R6): survivors' loot becomes tonight's floor-priced offers.
         foreach (var loot in result.Loot)
         {

@@ -21,12 +21,17 @@ public sealed record Recipe(
     int Tier,
     string MaterialKey,
     int MaterialQuantity,
-    ItemStats BaseStats);
+    ItemStats BaseStats,
+    ConsumableEffect? Effect = null);
 
 /// <summary>
-/// Static recipe data (U4): 15 recipes, 5 per slot, tiers 1–3. Stats scale with tier;
-/// two-handed weapons and heavy shields/armor carry more weight than their tier peers.
-/// Tier 2/3 recipes are gated behind the tier-unlock talent nodes (see <see cref="TalentTree"/>).
+/// Static recipe data (U4/P2): 15 gear recipes (5 per gear slot, tiers 1–3) plus the
+/// reference consumable. Stats scale with tier; two-handed weapons and heavy shields/armor
+/// carry more weight than their tier peers. Tier 2/3 recipes are gated behind the
+/// tier-unlock talent nodes (see <see cref="TalentTree"/>). Consumables live in the SAME
+/// table as gear — one recipe pipeline, one lookup path — distinguished purely by
+/// <see cref="Recipe.Effect"/> data, so an add-on profession ships consumables the same
+/// way it ships gear (see docs/addon-guide.md).
 /// </summary>
 public static class RecipeTable
 {
@@ -67,6 +72,12 @@ public static class RecipeTable
         new Recipe("hauberk",      "Hauberk",      BlacksmithProfession, ItemSlot.Armor,  Tier: 2, "iron",   MaterialQuantity: 4, new ItemStats(Attack: 0,  Defense: 18, Weight: 9)),
         new Recipe("half-plate",   "Half Plate",   BlacksmithProfession, ItemSlot.Armor,  Tier: 2, "iron",   MaterialQuantity: 5, new ItemStats(Attack: 0,  Defense: 24, Weight: 12)), // heavy
         new Recipe("full-plate",   "Full Plate",   BlacksmithProfession, ItemSlot.Armor,  Tier: 3, "steel",  MaterialQuantity: 6, new ItemStats(Attack: 0,  Defense: 38, Weight: 15)), // heavy
+
+        // ---- Consumables (P2 reference: proves the loadout spine end-to-end) --------------
+        // Field Salve: tier 1, 2x copper (zero new material keys), no combat stats,
+        // Heal(6) scaled by the same quality table as gear stats.
+        new Recipe("field-salve",  "Field Salve",  BlacksmithProfession, ItemSlot.Consumable, Tier: 1, "copper", MaterialQuantity: 2,
+            new ItemStats(Attack: 0, Defense: 0, Weight: 0), new ConsumableEffect(ConsumableKind.Heal, Magnitude: 6)),
     }.ToImmutableSortedDictionary(r => r.RecipeId, r => r, StringComparer.Ordinal);
 
     /// <summary>Lookup by recipe id.</summary>

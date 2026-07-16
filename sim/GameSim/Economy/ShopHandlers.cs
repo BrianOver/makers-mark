@@ -64,6 +64,17 @@ public sealed class ShopHandlers : IActionHandler
             }
         }
 
+        // 3b. A consumable that has ever been sold never returns to the shelf (P2):
+        //     once bought it lives in a hero's pack until drunk, and a drunk salve is
+        //     gone — re-shelving either would duplicate the physical item. Sale history
+        //     is read from the event log (recorded data, no new state), and the check
+        //     is keyed off ConsumableEffect DATA like all consumable behavior.
+        if (item.Effect is not null
+            && state.EventLog.Any(e => e is ItemSold sold && sold.Item == action.Item))
+        {
+            return (state, new RejectedAction(action, $"{item.Name} ({action.Item}) was already sold — consumables don't come back."));
+        }
+
         // 4. One shelf slot per item.
         if (state.Player.Shelf.Any(e => e.Item == action.Item))
         {

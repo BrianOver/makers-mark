@@ -10,6 +10,12 @@ namespace GameSim.Heroes;
 /// Earlier heroes shop first, so later heroes see a thinner shelf: strictly sequential
 /// and deterministic. Draws no RNG.
 ///
+/// After the gear pass, the CONSUMABLE pass (P2) runs in the same HeroId order: a hero
+/// with an empty <see cref="Hero.Pack"/> buys the single cheapest shelf item with a
+/// Heal effect it can afford (player shelf preferred on price tie), at most one per
+/// hero per Morning. Consumables are keyed off <see cref="ConsumableEffect"/> DATA and
+/// never enter the gear pass (they carry no gear score).
+///
 /// Event cap (documented behavior): <see cref="HeroPassedOnItem"/> is emitted only for
 /// PLAYER-shelf items — the player needs to know why their stock didn't sell (R8/AE4).
 /// Rival-shelf passes stay silent to avoid event spam the player can't act on.
@@ -35,6 +41,19 @@ public sealed class HeroShoppingSystem : IPhaseSystem
             state = ShopOnce(state, hero, events);
         }
 
+        // Consumable pass (P2), after the whole gear pass: gold spent on gear is gone,
+        // so the pass reads each hero's post-gear purse.
+        foreach (var heroId in state.Heroes.Keys.ToImmutableArray())
+        {
+            var hero = state.Heroes[heroId];
+            if (!hero.Alive)
+            {
+                continue;
+            }
+
+            state = ShopConsumableOnce(state, hero, events);
+        }
+
         return state;
     }
 
@@ -48,6 +67,11 @@ public sealed class HeroShoppingSystem : IPhaseSystem
         Candidate? best = null;
         foreach (var candidate in candidates)
         {
+            if (candidate.Item.Effect is not null)
+            {
+                continue; // consumables shop in their own pass (P2) — no gear score here
+            }
+
             var verdict = ShoppingAi.EvaluateItem(hero, candidate.Item, candidate.Price, state.Items);
             candidate.Verdict = verdict;
             if (verdict.Kind != ShoppingVerdictKind.Buy)
@@ -65,16 +89,72 @@ public sealed class HeroShoppingSystem : IPhaseSystem
 
         // Legible passes (R8): every player-shelf item the hero looked at and did not
         // buy gets a reasoned event — including buyable items that lost on value.
+        // (A null verdict means the item wasn't judged in this pass — consumables.)
         foreach (var candidate in candidates)
         {
-            if (!candidate.FromPlayerShelf || ReferenceEquals(candidate, best))
+            if (!candidate.FromPlayerShelf || candidate.Verdict is null || ReferenceEquals(candidate, best))
             {
                 continue;
             }
 
-            var reason = candidate.Verdict!.Kind == ShoppingVerdictKind.Pass
+            var reason = candidate.Verdict.Kind == ShoppingVerdictKind.Pass
                 ? candidate.Verdict.Reason
                 : $"picked {best!.Item.Name} instead — better gear score per gold";
+            events.Emit(new HeroPassedOnItem(hero.Id, candidate.Item.Id, reason));
+        }
+
+        return best is null ? state : ApplyPurchase(state, hero, best, events);
+    }
+
+    /// <summary>
+    /// One hero's consumable restock (P2): only when the pack is EMPTY, buy the single
+    /// cheapest affordable Heal item across both shelves — player shelf wins price
+    /// ties, lower ItemId settles the rest. At most one purchase per hero per Morning.
+    /// </summary>
+    private static GameState ShopConsumableOnce(GameState state, Hero hero, IEventSink events)
+    {
+        if (hero.Pack.Count > 0)
+        {
+            return state; // still stocked from an earlier day — no browsing, no events
+        }
+
+        var candidates = CollectCandidates(state);
+
+        Candidate? best = null;
+        foreach (var candidate in candidates)
+        {
+            if (candidate.Item.Effect is not { Kind: ConsumableKind.Heal })
+            {
+                continue; // behavior keyed off the effect DATA, never recipe ids
+            }
+
+            var verdict = ShoppingAi.EvaluateConsumable(hero, candidate.Item, candidate.Price);
+            candidate.Verdict = verdict;
+            if (verdict.Kind != ShoppingVerdictKind.Buy)
+            {
+                continue;
+            }
+
+            if (best is null || ShoppingAi.IsBetterConsumable(
+                    candidate.Price, candidate.FromPlayerShelf, candidate.Item.Id,
+                    best.Price, best.FromPlayerShelf, best.Item.Id))
+            {
+                best = candidate;
+            }
+        }
+
+        // Legible passes mirror the gear pass: every player-shelf Heal item the hero
+        // looked at and did not buy gets a reasoned event (R8/AE4).
+        foreach (var candidate in candidates)
+        {
+            if (!candidate.FromPlayerShelf || candidate.Verdict is null || ReferenceEquals(candidate, best))
+            {
+                continue;
+            }
+
+            var reason = candidate.Verdict.Kind == ShoppingVerdictKind.Pass
+                ? candidate.Verdict.Reason
+                : $"picked {best!.Item.Name} instead — cheaper on the day";
             events.Emit(new HeroPassedOnItem(hero.Id, candidate.Item.Id, reason));
         }
 
@@ -104,15 +184,21 @@ public sealed class HeroShoppingSystem : IPhaseSystem
 
     private static GameState ApplyPurchase(GameState state, Hero hero, Candidate bought, IEventSink events)
     {
-        // Equip into the item's slot. The previous item is simply dropped from the
-        // gear set (kept simple by design): it stays in GameState.Items, so its
-        // maker's-mark history survives, but nobody bears it. Resale/trade-in is
-        // out of U5's scope.
-        var updatedHero = hero with
-        {
-            Gold = hero.Gold - bought.Price,
-            Gear = hero.Gear.WithSlot(bought.Item.Slot, bought.Item.Id),
-        };
+        // Consumables go into the pack (P2); gear equips into the item's slot. A
+        // replaced gear item is simply dropped from the gear set (kept simple by
+        // design): it stays in GameState.Items, so its maker's-mark history survives,
+        // but nobody bears it. Resale/trade-in is out of U5's scope.
+        var updatedHero = bought.Item.Effect is not null
+            ? hero with
+            {
+                Gold = hero.Gold - bought.Price,
+                Pack = hero.Pack.Add(bought.Item.Id),
+            }
+            : hero with
+            {
+                Gold = hero.Gold - bought.Price,
+                Gear = hero.Gear.WithSlot(bought.Item.Slot, bought.Item.Id),
+            };
         state = state with { Heroes = state.Heroes.SetItem(hero.Id.Value, updatedHero) };
 
         if (bought.FromPlayerShelf)

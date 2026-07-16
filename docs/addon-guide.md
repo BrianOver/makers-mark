@@ -38,6 +38,10 @@ Steps:
    - Tier gates only on tier ≥ 2; every referenced node id must exist in your `TalentNodes`.
    - Quality shifts are integers; universal quality math (±8/grade, threshold table) is shared —
      you only supply per-talent shifts (`FlatShifts`, `SlotShifts`, `MaterialMasteryNode`).
+   - Consumables (P2 spine) are ordinary recipes: `Slot = ItemSlot.Consumable`, zero
+     `BaseStats`, and a `ConsumableEffect` (kind + magnitude; magnitude scales with quality
+     automatically). Hero shopping, packs, in-combat use, and attribution beats all key off
+     the effect DATA — no resolver or handler edits, ever.
    - NO RNG, no wall clock, no floats, no Godot references — definitions are constant data.
 4. **Create `sim/GameSim.Tests/Professions/<Name>/`** with behavior tests for your content
    (craft happy path, tier gating, a quality-distribution pin for your shift values).

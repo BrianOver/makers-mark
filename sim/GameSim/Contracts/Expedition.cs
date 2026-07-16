@@ -3,8 +3,19 @@ using System.Collections.Immutable;
 namespace GameSim.Contracts;
 
 /// <summary>
+/// One consumable quaffed during a fight (P2), recorded for attribution (KTD6):
+/// <see cref="Round"/> is the 1-based round within the hero's fight the drink preceded
+/// (a value past the fight's last round marks the post-floor "too hurt to continue"
+/// quaff, which heals AFTER the fight's damage). Hp values are the actual before/after
+/// (heal capped at MaxHp), so attribution replays from data alone — never re-draws.
+/// </summary>
+public sealed record ConsumableUse(ItemId Item, int Round, int HpBefore, int HpAfter);
+
+/// <summary>
 /// One combat exchange inside an expedition, with its resolved rolls recorded (KTD6).
 /// Counterfactual attribution recomputes over <see cref="RecordedRolls"/> — it never draws RNG.
+/// <see cref="Uses"/> holds any consumables quaffed this round (P2); non-positional init
+/// member so old saves and existing constructors default to empty.
 /// </summary>
 public sealed record CombatEvent(
     int Floor,
@@ -14,7 +25,10 @@ public sealed record CombatEvent(
     int DamageDealt,
     int DamageTaken,
     bool MonsterKilled,
-    ItemId? KillingItem);
+    ItemId? KillingItem)
+{
+    public ImmutableList<ConsumableUse> Uses { get; init; } = ImmutableList<ConsumableUse>.Empty;
+}
 
 /// <summary>Outcome for one floor attempt within an expedition.</summary>
 public sealed record FloorOutcome(int Floor, bool Cleared, ImmutableList<CombatEvent> Combats);

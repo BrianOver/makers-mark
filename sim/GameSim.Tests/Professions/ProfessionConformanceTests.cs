@@ -49,6 +49,14 @@ public class ProfessionConformanceTests
             Assert.True(recipe.Tier >= 1, $"{id}/{recipe.RecipeId}: tier < 1");
             Assert.True(recipe.BaseStats.Attack >= 0 && recipe.BaseStats.Defense >= 0 && recipe.BaseStats.Weight >= 0,
                 $"{id}/{recipe.RecipeId}: negative base stat");
+
+            // Consumable slot and ConsumableEffect must agree, and magnitudes stay sane (P2).
+            Assert.True((recipe.Slot == GameSim.Contracts.ItemSlot.Consumable) == (recipe.Effect is not null),
+                $"{id}/{recipe.RecipeId}: Consumable slot and Effect must be set together");
+            if (recipe.Effect is { } effect)
+            {
+                Assert.InRange(effect.Magnitude, 1, 100);
+            }
         }
     }
 
