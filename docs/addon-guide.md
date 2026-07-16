@@ -7,6 +7,7 @@ contracts) are built in the orchestrating session per
 
 Read `CLAUDE.md` first — its hard rules (tests green, engine pin, sim purity, determinism)
 and multi-agent rules (directory ownership, deny-list, branch/PR discipline) all apply.
+Building from the master systems catalog? `docs/design/catalog-prompt-transposition.md` is the standing conversion contract for its GDScript/GOAP/Ollama prompts — fill its table, don't re-derive.
 
 ## The contract, in one paragraph
 

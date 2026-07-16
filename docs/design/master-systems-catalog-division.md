@@ -122,3 +122,5 @@ disasters ride P5 (drama). Minigame presentation can start any time after its se
 
 If the unit ships a `*Definition` + tests and asks for one registration line — task-Claude.
 If it ships a new contract type, phase system, resolver read, or scoring hook — here.
+
+HOW a catalog prompt converts to this stack (mapping table + worked example) is the standing contract in `catalog-prompt-transposition.md` — fill it at dispatch, never re-derive.
