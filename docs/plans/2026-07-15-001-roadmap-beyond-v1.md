@@ -13,6 +13,22 @@ Phased plan from the shipped v1 slice toward the original inverted-MMO vision (9
 
 v1 is a deep, correct *vertical slice*: one profession (Blacksmith) proving the whole spine — deterministic seeded sim, event-sourced drama, and an attribution engine that proves the player's craft changed a hero's fate. The vision is that spine repeated in **breadth**: every profession earns attributable beats the way the blacksmith does, every hero class is a differentiated customer for those professions, and the player's agency grows from "craft + price + stock + bounty" into the full quartermaster fantasy — **supply** (gear/consumables), **logistics** (provisioning runs), and **intelligence** (scouting that shapes hero decisions).
 
+## Execution model: cores here, add-ons fan out (decided 2026-07-15)
+
+The work splits along its real seam:
+
+- **CORE / BASE — built by the orchestrator session, in phase order.** The mechanisms, shared `Contracts/`, `GameComposition` registration (determinism-critical), and the resolver/attribution hooks. This is the entangled, single-owner work. Each core lands with **one reference implementation** that proves it — never untested plumbing:
+  - P1 core proven by re-expressing the existing **Blacksmith as data** (generalization proven, zero new content).
+  - P2 core proven by **one reference consumable** riding the loadout hook.
+  - P3 core proven by **one reference class + one augment**.
+  - P4 core proven by **one second venue + one scouting report**.
+  - P5 core proven by **one personality trait + one relationship + one arc**.
+  Each core ships as its own green PR with tests + balance passing before the next core begins.
+
+- **ADD-ONS — fanned out to parallel task-Claudes, after all cores land.** The 2nd+ profession, hero class, map, or arc — pure data/"asset-type" content plugging into a proven core. Independent, disjoint directories (`Professions/<name>/` etc.), low determinism/balance risk. One task-Claude per add-on, claimed in `.claude/tasks/`, integrated by an orchestrator. This is where breadth (all 9 professions, the full class roster, many venues) gets filled in.
+
+The seam: **a core is a mechanism proven by one example; an add-on is another example of a proven mechanism.** Front-load the entangled cores here; back-load the independent content to task-Claudes.
+
 ## What v1 already generalizes well (verified against the code)
 
 - `PlayerState.Materials` is a generic `ImmutableSortedDictionary<string,int>` — hides, herbs, reagents, bone, essence, scrap all work as new keys with **zero refactor**.
