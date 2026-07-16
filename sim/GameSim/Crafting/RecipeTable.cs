@@ -4,8 +4,11 @@ using GameSim.Contracts;
 namespace GameSim.Crafting;
 
 /// <summary>
-/// One craftable blueprint (R4). <see cref="MaterialKey"/> is the recipe's baseline
-/// material (grade == tier); the player may substitute any stocked material — the
+/// One craftable blueprint (R4). <see cref="Profession"/> is the profession key that owns
+/// the recipe (e.g. "blacksmith"); it selects the profession definition that supplies the
+/// tier gates, material-efficiency node, and quality model for the craft (see
+/// <c>GameSim.Professions.ProfessionRegistry</c>). <see cref="MaterialKey"/> is the recipe's
+/// baseline material (grade == tier); the player may substitute any stocked material — the
 /// substituted grade relative to <see cref="Tier"/> shifts the quality roll
 /// (see <see cref="QualityRoller"/>). <see cref="BaseStats"/> are Common-grade stats;
 /// <see cref="ItemForge"/> applies the quality multiplier.
@@ -13,6 +16,7 @@ namespace GameSim.Crafting;
 public sealed record Recipe(
     string RecipeId,
     string Name,
+    string Profession,
     ItemSlot Slot,
     int Tier,
     string MaterialKey,
@@ -38,28 +42,31 @@ public static class RecipeTable
         }.ToImmutableSortedDictionary(StringComparer.Ordinal);
 
     /// <summary>All recipes, keyed by <see cref="Recipe.RecipeId"/>. Sorted for deterministic iteration.</summary>
+    /// <summary>The profession key every recipe in this table belongs to (R4/P1).</summary>
+    public const string BlacksmithProfession = "blacksmith";
+
     public static readonly ImmutableSortedDictionary<string, Recipe> All = new[]
     {
         // ---- Weapons (attack; two-handed = higher weight) --------------------------------
-        new Recipe("dagger",       "Dagger",       ItemSlot.Weapon, Tier: 1, "copper", MaterialQuantity: 2, new ItemStats(Attack: 8,  Defense: 0,  Weight: 2)),
-        new Recipe("shortsword",   "Shortsword",   ItemSlot.Weapon, Tier: 1, "copper", MaterialQuantity: 3, new ItemStats(Attack: 10, Defense: 0,  Weight: 4)),
-        new Recipe("longsword",    "Longsword",    ItemSlot.Weapon, Tier: 2, "iron",   MaterialQuantity: 3, new ItemStats(Attack: 20, Defense: 0,  Weight: 5)),
-        new Recipe("greataxe",     "Greataxe",     ItemSlot.Weapon, Tier: 2, "iron",   MaterialQuantity: 4, new ItemStats(Attack: 26, Defense: 0,  Weight: 9)),  // two-handed
-        new Recipe("greatsword",   "Greatsword",   ItemSlot.Weapon, Tier: 3, "steel",  MaterialQuantity: 5, new ItemStats(Attack: 40, Defense: 0,  Weight: 10)), // two-handed
+        new Recipe("dagger",       "Dagger",       BlacksmithProfession, ItemSlot.Weapon, Tier: 1, "copper", MaterialQuantity: 2, new ItemStats(Attack: 8,  Defense: 0,  Weight: 2)),
+        new Recipe("shortsword",   "Shortsword",   BlacksmithProfession, ItemSlot.Weapon, Tier: 1, "copper", MaterialQuantity: 3, new ItemStats(Attack: 10, Defense: 0,  Weight: 4)),
+        new Recipe("longsword",    "Longsword",    BlacksmithProfession, ItemSlot.Weapon, Tier: 2, "iron",   MaterialQuantity: 3, new ItemStats(Attack: 20, Defense: 0,  Weight: 5)),
+        new Recipe("greataxe",     "Greataxe",     BlacksmithProfession, ItemSlot.Weapon, Tier: 2, "iron",   MaterialQuantity: 4, new ItemStats(Attack: 26, Defense: 0,  Weight: 9)),  // two-handed
+        new Recipe("greatsword",   "Greatsword",   BlacksmithProfession, ItemSlot.Weapon, Tier: 3, "steel",  MaterialQuantity: 5, new ItemStats(Attack: 40, Defense: 0,  Weight: 10)), // two-handed
 
         // ---- Shields (defense; tower/bulwark = heavy) ------------------------------------
-        new Recipe("buckler",      "Buckler",      ItemSlot.Shield, Tier: 1, "copper", MaterialQuantity: 2, new ItemStats(Attack: 0,  Defense: 6,  Weight: 2)),
-        new Recipe("round-shield", "Round Shield", ItemSlot.Shield, Tier: 1, "copper", MaterialQuantity: 3, new ItemStats(Attack: 0,  Defense: 8,  Weight: 4)),
-        new Recipe("kite-shield",  "Kite Shield",  ItemSlot.Shield, Tier: 2, "iron",   MaterialQuantity: 3, new ItemStats(Attack: 0,  Defense: 16, Weight: 6)),
-        new Recipe("tower-shield", "Tower Shield", ItemSlot.Shield, Tier: 2, "iron",   MaterialQuantity: 5, new ItemStats(Attack: 0,  Defense: 22, Weight: 10)), // heavy
-        new Recipe("bulwark",      "Bulwark",      ItemSlot.Shield, Tier: 3, "steel",  MaterialQuantity: 5, new ItemStats(Attack: 0,  Defense: 34, Weight: 12)), // heavy
+        new Recipe("buckler",      "Buckler",      BlacksmithProfession, ItemSlot.Shield, Tier: 1, "copper", MaterialQuantity: 2, new ItemStats(Attack: 0,  Defense: 6,  Weight: 2)),
+        new Recipe("round-shield", "Round Shield", BlacksmithProfession, ItemSlot.Shield, Tier: 1, "copper", MaterialQuantity: 3, new ItemStats(Attack: 0,  Defense: 8,  Weight: 4)),
+        new Recipe("kite-shield",  "Kite Shield",  BlacksmithProfession, ItemSlot.Shield, Tier: 2, "iron",   MaterialQuantity: 3, new ItemStats(Attack: 0,  Defense: 16, Weight: 6)),
+        new Recipe("tower-shield", "Tower Shield", BlacksmithProfession, ItemSlot.Shield, Tier: 2, "iron",   MaterialQuantity: 5, new ItemStats(Attack: 0,  Defense: 22, Weight: 10)), // heavy
+        new Recipe("bulwark",      "Bulwark",      BlacksmithProfession, ItemSlot.Shield, Tier: 3, "steel",  MaterialQuantity: 5, new ItemStats(Attack: 0,  Defense: 34, Weight: 12)), // heavy
 
         // ---- Armor (defense; plate = heavy) -----------------------------------------------
-        new Recipe("chain-vest",   "Chain Vest",   ItemSlot.Armor,  Tier: 1, "copper", MaterialQuantity: 3, new ItemStats(Attack: 0,  Defense: 7,  Weight: 4)), // mystic-wearable (ShoppingAi.MysticMaxWeight)
-        new Recipe("scale-mail",   "Scale Mail",   ItemSlot.Armor,  Tier: 1, "copper", MaterialQuantity: 4, new ItemStats(Attack: 0,  Defense: 9,  Weight: 7)),
-        new Recipe("hauberk",      "Hauberk",      ItemSlot.Armor,  Tier: 2, "iron",   MaterialQuantity: 4, new ItemStats(Attack: 0,  Defense: 18, Weight: 9)),
-        new Recipe("half-plate",   "Half Plate",   ItemSlot.Armor,  Tier: 2, "iron",   MaterialQuantity: 5, new ItemStats(Attack: 0,  Defense: 24, Weight: 12)), // heavy
-        new Recipe("full-plate",   "Full Plate",   ItemSlot.Armor,  Tier: 3, "steel",  MaterialQuantity: 6, new ItemStats(Attack: 0,  Defense: 38, Weight: 15)), // heavy
+        new Recipe("chain-vest",   "Chain Vest",   BlacksmithProfession, ItemSlot.Armor,  Tier: 1, "copper", MaterialQuantity: 3, new ItemStats(Attack: 0,  Defense: 7,  Weight: 4)), // mystic-wearable (ShoppingAi.MysticMaxWeight)
+        new Recipe("scale-mail",   "Scale Mail",   BlacksmithProfession, ItemSlot.Armor,  Tier: 1, "copper", MaterialQuantity: 4, new ItemStats(Attack: 0,  Defense: 9,  Weight: 7)),
+        new Recipe("hauberk",      "Hauberk",      BlacksmithProfession, ItemSlot.Armor,  Tier: 2, "iron",   MaterialQuantity: 4, new ItemStats(Attack: 0,  Defense: 18, Weight: 9)),
+        new Recipe("half-plate",   "Half Plate",   BlacksmithProfession, ItemSlot.Armor,  Tier: 2, "iron",   MaterialQuantity: 5, new ItemStats(Attack: 0,  Defense: 24, Weight: 12)), // heavy
+        new Recipe("full-plate",   "Full Plate",   BlacksmithProfession, ItemSlot.Armor,  Tier: 3, "steel",  MaterialQuantity: 6, new ItemStats(Attack: 0,  Defense: 38, Weight: 15)), // heavy
     }.ToImmutableSortedDictionary(r => r.RecipeId, r => r, StringComparer.Ordinal);
 
     /// <summary>Lookup by recipe id.</summary>

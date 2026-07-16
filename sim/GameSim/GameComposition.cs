@@ -7,6 +7,7 @@ using GameSim.Economy;
 using GameSim.Expedition;
 using GameSim.Heroes;
 using GameSim.Kernel;
+using GameSim.Professions;
 
 namespace GameSim;
 
@@ -36,7 +37,8 @@ public static class GameComposition
             new CraftingHandlers(),
             new ShopHandlers(),
             new OreMarketHandlers(),
-            new BountyHandlers()));
+            new BountyHandlers(),
+            new ProfessionHandlers()));
 
     /// <summary>A fresh campaign: seeded world with the starting six heroes installed.</summary>
     public static GameState NewCampaign(ulong seed) =>

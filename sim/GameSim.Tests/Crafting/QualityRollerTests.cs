@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Kernel;
+using GameSim.Professions;
 
 namespace GameSim.Tests.Crafting;
 
@@ -62,7 +63,7 @@ public class QualityRollerTests
 
         for (var i = 0; i < count; i++)
         {
-            var actual = QualityRoller.Roll(recipe, materialGrade, talents, rollerRng);
+            var actual = QualityRoller.Roll(recipe, materialGrade, talents, ProfessionRegistry.Blacksmith.Quality, rollerRng);
             var expected = ExpectedGrade(mirrorRng.Roll100(), shift);
             Assert.Equal(expected, actual);
             counts[(int)actual]++;

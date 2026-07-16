@@ -4,6 +4,7 @@ using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Drama;
 using GameSim.Kernel;
+using GameSim.Professions;
 
 // Maker's Mark — text-mode play (U13, R21).
 // Usage: dotnet run --project sim/GameSim.Cli [-- --seed N]
@@ -81,7 +82,7 @@ while (true)
             break;
 
         case "talent" when parts.Length == 2:
-            pending.Add(new UnlockTalentAction(parts[1]));
+            pending.Add(new UnlockTalentAction(parts[1], ProfessionRegistry.BlacksmithId));
             Console.WriteLine($"  queued: unlock {parts[1]}");
             break;
 
@@ -134,7 +135,7 @@ while (true)
         case "talents":
             foreach (var n in TalentTree.Nodes.Values)
             {
-                var have = state.Player.Talents.Contains(n.NodeId) ? "*" : " ";
+                var have = state.Player.TalentsFor(ProfessionRegistry.BlacksmithId).Contains(n.NodeId) ? "*" : " ";
                 Console.WriteLine($" {have} {n.NodeId,-20} needs: {(n.Prerequisites.IsEmpty ? "-" : string.Join(",", n.Prerequisites))}");
             }
 

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json.Serialization;
 
 namespace GameSim.Contracts;
@@ -14,6 +15,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(BuyOreAction), "buyOre")]
 [JsonDerivedType(typeof(PostBountyAction), "postBounty")]
 [JsonDerivedType(typeof(UnlockTalentAction), "unlockTalent")]
+[JsonDerivedType(typeof(SetProfessionsAction), "setProfessions")]
 public abstract record PlayerAction;
 
 /// <summary>Craft a recipe using a material grade key from <see cref="PlayerState.Materials"/> (R4).</summary>
@@ -34,8 +36,13 @@ public sealed record BuyOreAction(HeroId From, string MaterialKey, int Quantity)
 /// <summary>Post a subsidized objective heroes weigh but may decline (R18).</summary>
 public sealed record PostBountyAction(int TargetFloor, int RewardGold) : PlayerAction;
 
-/// <summary>Spend a talent point unlocking a node in the blacksmith mini-tree (R4).</summary>
-public sealed record UnlockTalentAction(string NodeId) : PlayerAction;
+/// <summary>Spend a talent point unlocking a node in a profession's talent mini-tree (R4/P1).
+/// <paramref name="Profession"/> scopes the node lookup and the resulting unlocked set.</summary>
+public sealed record UnlockTalentAction(string NodeId, string Profession) : PlayerAction;
+
+/// <summary>Choose which professions this save practises (P1): pick 1–2 registered professions.
+/// Only recipes whose profession is selected may be crafted.</summary>
+public sealed record SetProfessionsAction(ImmutableSortedSet<string> Professions) : PlayerAction;
 
 /// <summary>An action the kernel refused, with a typed reason — never a silent drop.</summary>
 public sealed record RejectedAction(PlayerAction Action, string Reason);
