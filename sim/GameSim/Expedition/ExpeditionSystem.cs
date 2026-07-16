@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Heroes;
+using GameSim.Venues;
 
 namespace GameSim.Expedition;
 
@@ -20,12 +21,15 @@ public sealed class ExpeditionSystem : IPhaseSystem
     {
         var parties = PartyFormation.FormParties(state.Heroes); // filters dead internally
 
+        // The Mine is the only LIVE venue (P4 live-venue contract: VenueRegistry.LiveRotation).
+        var venue = VenueRegistry.Mine;
+
         foreach (var partyIds in parties)
         {
             var party = partyIds.Select(id => state.Heroes[id.Value]).ToImmutableList();
 
-            // Push one floor past the party's best prior depth, capped at the Mine's bottom (R9).
-            var targetFloor = Math.Clamp(party.Max(h => h.DeepestFloorReached) + 1, 1, MonsterTable.FloorCount);
+            // Push one floor past the party's best prior depth, capped at the venue's bottom (R9).
+            var targetFloor = Math.Clamp(party.Max(h => h.DeepestFloorReached) + 1, 1, venue.FloorCount);
 
             // Influence, never orders (R18): a member who accepted a bounty commits the
             // party to that bounty's floor for the day.
@@ -36,7 +40,7 @@ public sealed class ExpeditionSystem : IPhaseSystem
                 targetFloor = bounty.TargetFloor;
             }
 
-            var result = ExpeditionResolver.Resolve(party, state.Items, targetFloor, rng);
+            var result = ExpeditionResolver.Resolve(party, state.Items, venue, targetFloor, rng);
             state = state with { PendingExpeditions = state.PendingExpeditions.Add(result) };
             events.Emit(new PartyDeparted(partyIds, targetFloor));
         }

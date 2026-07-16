@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
+using GameSim.Venues;
 
 namespace GameSim.Expedition;
 
@@ -9,13 +10,17 @@ namespace GameSim.Expedition;
 /// estimates. Beats are only emitted for player-crafted items (maker's mark present).
 /// Multi-item overlap rule (v1): each defensive item is evaluated independently; two
 /// independently-decisive items each earn a beat for the same survival.
+/// The <c>venue</c> supplies the SAME floor numbers (monster attack, structural gate) the
+/// forward resolver used — the counterfactual pass MUST read identical venue data or attribution
+/// diverges (KTD6/P4).
 /// </summary>
 public static class AttributionEngine
 {
     public static ImmutableList<AttributionBeat> ComputeBeats(
         ImmutableList<FloorOutcome> floors,
         ImmutableList<Hero> party,
-        ImmutableSortedDictionary<int, Item> items)
+        ImmutableSortedDictionary<int, Item> items,
+        VenueDefinition venue)
     {
         var beats = ImmutableList.CreateBuilder<AttributionBeat>();
         var heroesById = party.ToDictionary(h => h.Id.Value);
@@ -79,7 +84,7 @@ public static class AttributionEngine
                         var defWithout = CombatMath.HeroDefense(hero, items)
                                          - items[defId.Value].Stats.Defense;
                         var takenWithout = CombatMath.MonsterDamage(
-                            MonsterTable.MonsterAttack(combat.Floor), monsterRoll, defWithout);
+                            venue.MonsterAttack(combat.Floor), monsterRoll, defWithout);
 
                         if (actualAfter > 0 && hpBefore - takenWithout <= 0)
                         {
@@ -105,7 +110,7 @@ public static class AttributionEngine
             // would have dropped the party average below the structural gate.
             if (floor.Cleared)
             {
-                var gate = MonsterTable.Gate(floor.Floor);
+                var gate = venue.Gate(floor.Floor);
                 var avg = CombatMath.PartyAveragePower(floorStartFighters, items);
 
                 foreach (var hero in floorStartFighters)

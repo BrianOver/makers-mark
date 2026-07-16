@@ -1,18 +1,23 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
+using GameSim.Venues;
 
 namespace GameSim.Expedition;
 
 /// <summary>
-/// The pure expedition function (KTD5): (party, gear, floor, rng) → ExpeditionResult,
+/// The pure expedition function (KTD5): (party, gear, venue, floor, rng) → ExpeditionResult,
 /// computed at departure, revealed at Evening. Every roll is recorded into the event
 /// log (KTD6) so attribution recomputes counterfactually without touching RNG.
+/// The <paramref name="venue"/> supplies all floor NUMBERS (gate, monster stats, gold, ore,
+/// floor count); the combat math and RNG draw order are unchanged, so for the Mine the result
+/// is byte-identical to the pre-P4 static-table resolver (P4).
 /// </summary>
 public static class ExpeditionResolver
 {
     public static ExpeditionResult Resolve(
         ImmutableList<Hero> party,
         ImmutableSortedDictionary<int, Item> items,
+        VenueDefinition venue,
         int targetFloor,
         IDeterministicRng rng)
     {
@@ -21,7 +26,7 @@ public static class ExpeditionResolver
             throw new ArgumentException("Expedition party cannot be empty.", nameof(party));
         }
 
-        targetFloor = Math.Clamp(targetFloor, 1, MonsterTable.FloorCount);
+        targetFloor = Math.Clamp(targetFloor, 1, venue.FloorCount);
 
         var hp = party.ToDictionary(h => h.Id.Value, h => h.MaxHp);
         // Working copy of each hero's pack (P2): quaffs consume from the FRONT-most
@@ -43,7 +48,7 @@ public static class ExpeditionResolver
             }
 
             // STRUCTURAL gate (AE3): under-geared parties retreat at the gate — no roll involved.
-            if (CombatMath.PartyAveragePower(fighters, items) < MonsterTable.Gate(floor))
+            if (CombatMath.PartyAveragePower(fighters, items) < venue.Gate(floor))
             {
                 break;
             }
@@ -53,7 +58,7 @@ public static class ExpeditionResolver
 
             foreach (var hero in fighters) // HeroId order — deterministic
             {
-                var outcome = FightMonster(hero, items, floor, hp, packs, rng, combats);
+                var outcome = FightMonster(hero, items, venue, floor, hp, packs, rng, combats);
                 if (outcome == FightOutcome.HeroDied)
                 {
                     dead.Add(hero.Id.Value);
@@ -61,7 +66,7 @@ public static class ExpeditionResolver
                 }
                 else if (outcome == FightOutcome.MonsterKilled)
                 {
-                    gold[hero.Id.Value] += MonsterTable.GoldPerKill(floor);
+                    gold[hero.Id.Value] += venue.GoldPerKill(floor);
                 }
                 else
                 {
@@ -104,7 +109,7 @@ public static class ExpeditionResolver
             // Ore loot for standing survivors (R6): quantity 1-3, rarity by floor.
             foreach (var hero in party.Where(h => !dead.Contains(h.Id.Value)))
             {
-                loot.Add(new OreLoot(hero.Id, MonsterTable.OreKey(floor), rng.NextInt(1, 4)));
+                loot.Add(new OreLoot(hero.Id, venue.OreKey(floor), rng.NextInt(1, 4)));
             }
 
             // Anyone too hurt to continue ends the expedition after banking the clear.
@@ -118,8 +123,10 @@ public static class ExpeditionResolver
         var deaths = party.Where(h => dead.Contains(h.Id.Value)).Select(h => h.Id).ToImmutableList();
         var allFloors = floors.ToImmutable();
 
-        // Attribution runs AFTER resolution, over recorded rolls only (KTD6).
-        var beats = AttributionEngine.ComputeBeats(allFloors, party, items);
+        // Attribution runs AFTER resolution, over recorded rolls only (KTD6). It is handed the
+        // SAME venue the forward pass used, so the counterfactual recompute reads identical floor
+        // data — a divergence here would corrupt attribution (KTD6).
+        var beats = AttributionEngine.ComputeBeats(allFloors, party, items, venue);
 
         return new ExpeditionResult(
             party.Select(h => h.Id).ToImmutableList(),
@@ -130,7 +137,8 @@ public static class ExpeditionResolver
             deaths,
             beats,
             loot.ToImmutable(),
-            gold.ToImmutableSortedDictionary());
+            gold.ToImmutableSortedDictionary(),
+            venue.Id);
     }
 
     private enum FightOutcome
@@ -143,13 +151,14 @@ public static class ExpeditionResolver
     private static FightOutcome FightMonster(
         Hero hero,
         ImmutableSortedDictionary<int, Item> items,
+        VenueDefinition venue,
         int floor,
         Dictionary<int, int> hp,
         Dictionary<int, List<ItemId>> packs,
         IDeterministicRng rng,
         ImmutableList<CombatEvent>.Builder combats)
     {
-        var monsterHp = MonsterTable.MonsterHp(floor);
+        var monsterHp = venue.MonsterHp(floor);
         var heroAttack = CombatMath.HeroAttack(hero, items);
         var heroDefense = CombatMath.HeroDefense(hero, items);
         var round = 0;
@@ -181,7 +190,7 @@ public static class ExpeditionResolver
 
             var heroRoll = rng.NextInt(0, CombatMath.RollSides);
             rolls.Add(heroRoll);
-            var dealt = CombatMath.HeroDamage(heroAttack, heroRoll, MonsterTable.MonsterDefense(floor));
+            var dealt = CombatMath.HeroDamage(heroAttack, heroRoll, venue.MonsterDefense(floor));
             monsterHp -= dealt;
             var monsterKilled = monsterHp <= 0;
 
@@ -190,14 +199,14 @@ public static class ExpeditionResolver
             {
                 var monsterRoll = rng.NextInt(0, CombatMath.RollSides);
                 rolls.Add(monsterRoll);
-                taken = CombatMath.MonsterDamage(MonsterTable.MonsterAttack(floor), monsterRoll, heroDefense);
+                taken = CombatMath.MonsterDamage(venue.MonsterAttack(floor), monsterRoll, heroDefense);
                 hp[hero.Id.Value] -= taken;
             }
 
             combats.Add(new CombatEvent(
                 floor,
                 hero.Id,
-                MonsterTable.MonsterKind(floor),
+                venue.MonsterKind(floor),
                 rolls.ToImmutable(),
                 dealt,
                 taken,

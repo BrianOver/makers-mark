@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Expedition;
 using GameSim.Kernel;
+using GameSim.Venues;
 
 namespace GameSim.Tests.Expedition;
 
@@ -17,8 +18,8 @@ public class ResolverTests
     public void Purity_SameInputs_IdenticalResult()
     {
         var party = ImmutableList.Create(Naked(1), Naked(2));
-        var a = ExpeditionResolver.Resolve(party, NoItems, 2, new Pcg32(RngState.FromSeed(3)));
-        var b = ExpeditionResolver.Resolve(party, NoItems, 2, new Pcg32(RngState.FromSeed(3)));
+        var a = ExpeditionResolver.Resolve(party, NoItems, VenueRegistry.Mine, 2, new Pcg32(RngState.FromSeed(3)));
+        var b = ExpeditionResolver.Resolve(party, NoItems, VenueRegistry.Mine, 2, new Pcg32(RngState.FromSeed(3)));
         // Immutable collections use reference equality inside records — compare structurally.
         Assert.Equal(System.Text.Json.JsonSerializer.Serialize(a), System.Text.Json.JsonSerializer.Serialize(b));
     }
@@ -27,14 +28,14 @@ public class ResolverTests
     public void EmptyParty_Throws()
     {
         Assert.Throws<ArgumentException>(() =>
-            ExpeditionResolver.Resolve(ImmutableList<Hero>.Empty, NoItems, 1, new Pcg32(RngState.FromSeed(1))));
+            ExpeditionResolver.Resolve(ImmutableList<Hero>.Empty, NoItems, VenueRegistry.Mine, 1, new Pcg32(RngState.FromSeed(1))));
     }
 
     [Fact]
     public void EveryCombatEvent_RecordsItsRolls()
     {
         var party = ImmutableList.Create(Naked(1, hp: 100));
-        var result = ExpeditionResolver.Resolve(party, NoItems, 2, new Pcg32(RngState.FromSeed(5)));
+        var result = ExpeditionResolver.Resolve(party, NoItems, VenueRegistry.Mine, 2, new Pcg32(RngState.FromSeed(5)));
         var combats = result.Floors.SelectMany(f => f.Combats).ToList();
         Assert.NotEmpty(combats);
         Assert.All(combats, c => Assert.NotEmpty(c.RecordedRolls));
@@ -45,7 +46,7 @@ public class ResolverTests
     {
         // Strong hero clears deep: expect ore tiers to rise with floor (R6).
         var strong = Naked(1, hp: 500) with { Level = 10 };
-        var r = ExpeditionResolver.Resolve(ImmutableList.Create(strong), NoItems, 1, new Pcg32(RngState.FromSeed(2)));
+        var r = ExpeditionResolver.Resolve(ImmutableList.Create(strong), NoItems, VenueRegistry.Mine, 1, new Pcg32(RngState.FromSeed(2)));
         Assert.All(r.Loot, l => Assert.Equal("copper", l.MaterialKey));
     }
 
@@ -56,7 +57,7 @@ public class ResolverTests
         for (ulong seed = 0; seed < 100; seed++)
         {
             var party = ImmutableList.Create(Naked(1, hp: 10), Naked(2, hp: 10));
-            var r = ExpeditionResolver.Resolve(party, NoItems, 5, new Pcg32(RngState.FromSeed(seed)));
+            var r = ExpeditionResolver.Resolve(party, NoItems, VenueRegistry.Mine, 5, new Pcg32(RngState.FromSeed(seed)));
             if (r.Survivors.IsEmpty)
             {
                 Assert.Equal(2, r.Deaths.Count);
@@ -74,7 +75,7 @@ public class ResolverTests
         var retreats = 0;
         for (ulong seed = 0; seed < 50; seed++)
         {
-            var r = ExpeditionResolver.Resolve(ImmutableList.Create(Naked(1, hp: 30)), NoItems, 4, new Pcg32(RngState.FromSeed(seed)));
+            var r = ExpeditionResolver.Resolve(ImmutableList.Create(Naked(1, hp: 30)), NoItems, VenueRegistry.Mine, 4, new Pcg32(RngState.FromSeed(seed)));
             if (r.Survivors.Count == 1 && r.DeepestFloorCleared < 4) retreats++;
         }
 
@@ -85,7 +86,7 @@ public class ResolverTests
     public void GoldEarned_TracksMonsterKills()
     {
         var strong = Naked(1, hp: 200) with { Level = 8 };
-        var r = ExpeditionResolver.Resolve(ImmutableList.Create(strong), NoItems, 1, new Pcg32(RngState.FromSeed(4)));
+        var r = ExpeditionResolver.Resolve(ImmutableList.Create(strong), NoItems, VenueRegistry.Mine, 1, new Pcg32(RngState.FromSeed(4)));
         var kills = r.Floors.SelectMany(f => f.Combats).Count(c => c.MonsterKilled);
         if (kills > 0)
         {
@@ -97,7 +98,7 @@ public class ResolverTests
     public void TargetFloor_CapsDescent()
     {
         var strong = Naked(1, hp: 500) with { Level = 10 };
-        var r = ExpeditionResolver.Resolve(ImmutableList.Create(strong), NoItems, 2, new Pcg32(RngState.FromSeed(6)));
+        var r = ExpeditionResolver.Resolve(ImmutableList.Create(strong), NoItems, VenueRegistry.Mine, 2, new Pcg32(RngState.FromSeed(6)));
         Assert.True(r.DeepestFloorCleared <= 2);
         Assert.All(r.Floors, f => Assert.InRange(f.Floor, 1, 2));
     }

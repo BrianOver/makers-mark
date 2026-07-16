@@ -14,6 +14,11 @@ namespace GameSim.Kernel;
 /// that carries a hero's class — the chronicle codec joins on it offline but writes live-vs-live
 /// JSON, and there are no checked-in golden save fixtures — so the change is internally
 /// consistent under System.Text.Json and does not break the determinism/save suites.
+///
+/// P4 save-shape note: <c>ExpeditionResult</c> (serialized inside <c>GameState.PendingExpeditions</c>)
+/// gained a TRAILING <c>string VenueId</c> with a "mine" default. System.Text.Json applies the
+/// constructor parameter's default when the property is absent, so a pre-P4 save (no venueId in the
+/// JSON) round-trips to the Mine — the only live venue — leaving the determinism/save suites green.
 /// </summary>
 public static class SaveCodec
 {
