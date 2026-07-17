@@ -42,7 +42,21 @@ jobs:
   engine-tests:
     runs-on: ubuntu-latest
     steps:
+      # LFS on the engine lane ONLY (it renders the PNGs). Checkout skips auto-download so the
+      # cache below can serve objects first, protecting the free-tier 1 GiB/month LFS bandwidth;
+      # `git lfs pull` then materializes anything the cache missed. sim/balance lanes stay
+      # LFS-less — they only ever see pointer files (AssetConformanceTests is pure, no PNG IO).
       - uses: actions/checkout@v4
+        with:
+          lfs: false
+      - name: Cache LFS objects
+        uses: actions/cache@v4
+        with:
+          path: .git/lfs
+          key: lfs-${{ hashFiles('godot/assets/art/**/*.png') }}
+          restore-keys: lfs-
+      - name: Materialize LFS art (cache hit = no download)
+        run: git lfs pull
       - uses: chickensoft-games/setup-godot@v2
         with:
           version: 4.6.3   # keep in sync with .godot-version
