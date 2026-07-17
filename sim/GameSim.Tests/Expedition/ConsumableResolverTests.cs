@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Expedition;
 using GameSim.Kernel;
+using GameSim.Venues;
 
 namespace GameSim.Tests.Expedition;
 
@@ -48,7 +49,7 @@ public class ConsumableResolverTests
         {
             var hero = Packed(1, hp: 30, gear: null, salve.Id);
             var result = ExpeditionResolver.Resolve(
-                ImmutableList.Create(hero), items, targetFloor: 2, new Pcg32(RngState.FromSeed(seed)));
+                ImmutableList.Create(hero), items, VenueRegistry.Mine, targetFloor: 2, new Pcg32(RngState.FromSeed(seed)));
 
             var use = AllUses(result).FirstOrDefault();
             if (use is null)
@@ -78,7 +79,7 @@ public class ConsumableResolverTests
         {
             var hero = Packed(1, hp: 30, gear: null, megaSalve.Id);
             var result = ExpeditionResolver.Resolve(
-                ImmutableList.Create(hero), items, targetFloor: 2, new Pcg32(RngState.FromSeed(seed)));
+                ImmutableList.Create(hero), items, VenueRegistry.Mine, targetFloor: 2, new Pcg32(RngState.FromSeed(seed)));
 
             var use = AllUses(result).FirstOrDefault();
             if (use is null)
@@ -105,12 +106,12 @@ public class ConsumableResolverTests
         {
             var oneStock = Packed(1, hp: 30, gear: null, salveA.Id);
             var one = ExpeditionResolver.Resolve(
-                ImmutableList.Create(oneStock), items, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
+                ImmutableList.Create(oneStock), items, VenueRegistry.Mine, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
             Assert.True(AllUses(one).Count() <= 1, $"seed {seed}: one salve, multiple uses");
 
             var twoStock = Packed(1, hp: 30, gear: null, salveA.Id, salveB.Id);
             var two = ExpeditionResolver.Resolve(
-                ImmutableList.Create(twoStock), items, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
+                ImmutableList.Create(twoStock), items, VenueRegistry.Mine, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
             var uses = AllUses(two).ToList();
             Assert.True(uses.Count <= 2, $"seed {seed}: two salves, {uses.Count} uses");
             if (uses.Count == 2)
@@ -139,9 +140,9 @@ public class ConsumableResolverTests
         for (ulong seed = 0; seed < 20; seed++)
         {
             var emptyPack = ExpeditionResolver.Resolve(
-                ImmutableList.Create(Packed(1, hp: 30)), items, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
+                ImmutableList.Create(Packed(1, hp: 30)), items, VenueRegistry.Mine, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
             var inertPack = ExpeditionResolver.Resolve(
-                ImmutableList.Create(Packed(1, hp: 30, gear: null, inert.Id)), items, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
+                ImmutableList.Create(Packed(1, hp: 30, gear: null, inert.Id)), items, VenueRegistry.Mine, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
 
             Assert.Equal(
                 System.Text.Json.JsonSerializer.Serialize(emptyPack),
@@ -162,7 +163,7 @@ public class ConsumableResolverTests
         {
             var hero = Packed(1, hp: 12, gear: null, salve.Id);
             var result = ExpeditionResolver.Resolve(
-                ImmutableList.Create(hero), items, targetFloor: 1, new Pcg32(RngState.FromSeed(seed)));
+                ImmutableList.Create(hero), items, VenueRegistry.Mine, targetFloor: 1, new Pcg32(RngState.FromSeed(seed)));
 
             if (result.Deaths.Contains(hero.Id) && result.Floors[0].Combats.Count == 1)
             {
@@ -191,7 +192,7 @@ public class ConsumableResolverTests
         {
             var hero = Packed(1, hp: 36, gear, drops.Select(d => d.Id).ToArray());
             var result = ExpeditionResolver.Resolve(
-                ImmutableList.Create(hero), items, targetFloor: 2, new Pcg32(RngState.FromSeed(seed)));
+                ImmutableList.Create(hero), items, VenueRegistry.Mine, targetFloor: 2, new Pcg32(RngState.FromSeed(seed)));
 
             foreach (var floor in result.Floors)
             {
@@ -221,8 +222,8 @@ public class ConsumableResolverTests
         var items = Catalog(salve);
         var party = ImmutableList.Create(Packed(1, hp: 30, gear: null, salve.Id), Packed(2, hp: 25));
 
-        var a = ExpeditionResolver.Resolve(party, items, 3, new Pcg32(RngState.FromSeed(9)));
-        var b = ExpeditionResolver.Resolve(party, items, 3, new Pcg32(RngState.FromSeed(9)));
+        var a = ExpeditionResolver.Resolve(party, items, VenueRegistry.Mine, 3, new Pcg32(RngState.FromSeed(9)));
+        var b = ExpeditionResolver.Resolve(party, items, VenueRegistry.Mine, 3, new Pcg32(RngState.FromSeed(9)));
 
         Assert.Equal(
             System.Text.Json.JsonSerializer.Serialize(a),

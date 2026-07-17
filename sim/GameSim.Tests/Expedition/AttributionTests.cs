@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Expedition;
 using GameSim.Kernel;
+using GameSim.Venues;
 
 namespace GameSim.Tests.Expedition;
 
@@ -35,7 +36,7 @@ public class AttributionTests
         var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, weapon);
 
         var result = ExpeditionResolver.Resolve(
-            ImmutableList.Create(hero), items, targetFloor: 2, new Pcg32(RngState.FromSeed(7)));
+            ImmutableList.Create(hero), items, VenueRegistry.Mine, targetFloor: 2, new Pcg32(RngState.FromSeed(7)));
 
         var kill = result.Beats.FirstOrDefault(b => b.Beat == BeatType.KillingBlow);
         Assert.NotNull(kill);
@@ -56,7 +57,7 @@ public class AttributionTests
         for (ulong seed = 0; seed < 200; seed++)
         {
             var result = ExpeditionResolver.Resolve(
-                ImmutableList.Create(hero), items, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
+                ImmutableList.Create(hero), items, VenueRegistry.Mine, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
             if (result.Beats.Any(b => b.Beat == BeatType.LethalSave && b.Item == armor.Id))
             {
                 return; // proven
@@ -77,7 +78,7 @@ public class AttributionTests
         for (ulong seed = 0; seed < 50; seed++)
         {
             var result = ExpeditionResolver.Resolve(
-                ImmutableList.Create(hero), items, targetFloor: 2, new Pcg32(RngState.FromSeed(seed)));
+                ImmutableList.Create(hero), items, VenueRegistry.Mine, targetFloor: 2, new Pcg32(RngState.FromSeed(seed)));
             Assert.DoesNotContain(result.Beats, b => b.Beat == BeatType.LethalSave);
         }
     }
@@ -92,7 +93,7 @@ public class AttributionTests
         for (ulong seed = 0; seed < 50; seed++)
         {
             var result = ExpeditionResolver.Resolve(
-                ImmutableList.Create(hero), items, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
+                ImmutableList.Create(hero), items, VenueRegistry.Mine, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
             Assert.DoesNotContain(result.Beats, b => b.Item == armor.Id);
         }
     }
@@ -106,12 +107,12 @@ public class AttributionTests
         var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, weapon).Add(2, armor);
 
         var rng = new Pcg32(RngState.FromSeed(11));
-        var result = ExpeditionResolver.Resolve(ImmutableList.Create(hero), items, 3, rng);
+        var result = ExpeditionResolver.Resolve(ImmutableList.Create(hero), items, VenueRegistry.Mine, 3, rng);
         var streamAfterResolve = rng.Snapshot();
 
         // Re-running attribution over the same result must not touch any RNG and must
         // reproduce identical beats from the recorded rolls alone.
-        var beatsAgain = AttributionEngine.ComputeBeats(result.Floors, ImmutableList.Create(hero), items);
+        var beatsAgain = AttributionEngine.ComputeBeats(result.Floors, ImmutableList.Create(hero), items, VenueRegistry.Mine);
         Assert.Equal(streamAfterResolve, rng.Snapshot());
         Assert.Equal(result.Beats, beatsAgain);
     }
@@ -138,11 +139,11 @@ public class AttributionTests
         for (ulong seed = 0; seed < 100; seed++)
         {
             var rivalParty = ImmutableList.Create(HeroWith(1, gear), HeroWith(2, gear) with { Id = new HeroId(2) }, HeroWith(3, gear) with { Id = new HeroId(3) });
-            var r1 = ExpeditionResolver.Resolve(rivalParty, rivalItems, 5, new Pcg32(RngState.FromSeed(seed)));
+            var r1 = ExpeditionResolver.Resolve(rivalParty, rivalItems, VenueRegistry.Mine, 5, new Pcg32(RngState.FromSeed(seed)));
             if (r1.DeepestFloorCleared >= 5) rivalCleared++;
 
             var playerParty = ImmutableList.Create(HeroWith(1, gear), HeroWith(2, gear) with { Id = new HeroId(2) }, HeroWith(3, gear) with { Id = new HeroId(3) });
-            var r2 = ExpeditionResolver.Resolve(playerParty, playerItems, 5, new Pcg32(RngState.FromSeed(seed)));
+            var r2 = ExpeditionResolver.Resolve(playerParty, playerItems, VenueRegistry.Mine, 5, new Pcg32(RngState.FromSeed(seed)));
             if (r2.DeepestFloorCleared >= 5) playerCleared++;
         }
 

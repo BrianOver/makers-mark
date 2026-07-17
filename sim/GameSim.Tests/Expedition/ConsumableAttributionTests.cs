@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Expedition;
 using GameSim.Kernel;
+using GameSim.Venues;
 
 namespace GameSim.Tests.Expedition;
 
@@ -34,7 +35,8 @@ public class ConsumableAttributionTests
         AttributionEngine.ComputeBeats(
             ImmutableList.Create(new FloorOutcome(1, Cleared: false, fight.ToImmutableList())),
             ImmutableList.Create(Torvald()),
-            ImmutableSortedDictionary<int, Item>.Empty.Add(salve.Id.Value, salve));
+            ImmutableSortedDictionary<int, Item>.Empty.Add(salve.Id.Value, salve),
+            VenueRegistry.Mine);
 
     [Fact]
     public void FirstUse_EmitsProvisioned_NamingHeroAndFloor()
@@ -136,7 +138,8 @@ public class ConsumableAttributionTests
                 new FloorOutcome(2, Cleared: false, ImmutableList.Create(
                     Round(taken: 3, killed: false, new ConsumableUse(secondSalve.Id, Round: 1, HpBefore: 6, HpAfter: 12)) with { Floor = 2 }))),
             ImmutableList.Create(Torvald()),
-            items);
+            items,
+            VenueRegistry.Mine);
 
         var beat = Assert.Single(beats, b => b.Beat is BeatType.Provisioned or BeatType.PotionLifesave);
         Assert.Equal(salve.Id, beat.Item);
@@ -155,7 +158,7 @@ public class ConsumableAttributionTests
         {
             var hero = Torvald() with { Pack = ImmutableList.Create(salve.Id) };
             var result = ExpeditionResolver.Resolve(
-                ImmutableList.Create(hero), items, targetFloor: 2, new Pcg32(RngState.FromSeed(seed)));
+                ImmutableList.Create(hero), items, VenueRegistry.Mine, targetFloor: 2, new Pcg32(RngState.FromSeed(seed)));
 
             if (!result.Floors.SelectMany(f => f.Combats).SelectMany(c => c.Uses).Any())
             {
@@ -181,10 +184,10 @@ public class ConsumableAttributionTests
         var hero = Torvald() with { Pack = ImmutableList.Create(salve.Id) };
 
         var rng = new Pcg32(RngState.FromSeed(11));
-        var result = ExpeditionResolver.Resolve(ImmutableList.Create(hero), items, 3, rng);
+        var result = ExpeditionResolver.Resolve(ImmutableList.Create(hero), items, VenueRegistry.Mine, 3, rng);
         var streamAfterResolve = rng.Snapshot();
 
-        var beatsAgain = AttributionEngine.ComputeBeats(result.Floors, ImmutableList.Create(hero), items);
+        var beatsAgain = AttributionEngine.ComputeBeats(result.Floors, ImmutableList.Create(hero), items, VenueRegistry.Mine);
         Assert.Equal(streamAfterResolve, rng.Snapshot());
         Assert.Equal(result.Beats, beatsAgain);
     }

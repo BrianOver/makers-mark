@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Expedition;
 using GameSim.Kernel;
+using GameSim.Venues;
 
 namespace GameSim.Tests.Expedition;
 
@@ -23,7 +24,7 @@ public class DeathClearsFloorTests
         for (ulong seed = 0; seed < 200; seed++)
         {
             var party = ImmutableList.Create(Frail(1), Frail(2));
-            var result = ExpeditionResolver.Resolve(party, ImmutableSortedDictionary<int, Item>.Empty, 3, new Pcg32(RngState.FromSeed(seed)));
+            var result = ExpeditionResolver.Resolve(party, ImmutableSortedDictionary<int, Item>.Empty, VenueRegistry.Mine, 3, new Pcg32(RngState.FromSeed(seed)));
 
             foreach (var floor in result.Floors)
             {
@@ -53,7 +54,7 @@ public class DeathClearsFloorTests
         for (ulong seed = 0; seed < 200; seed++)
         {
             var party = ImmutableList.Create(Frail(1));
-            var result = ExpeditionResolver.Resolve(party, ImmutableSortedDictionary<int, Item>.Empty, 5, new Pcg32(RngState.FromSeed(seed)));
+            var result = ExpeditionResolver.Resolve(party, ImmutableSortedDictionary<int, Item>.Empty, VenueRegistry.Mine, 5, new Pcg32(RngState.FromSeed(seed)));
             if (result.Survivors.IsEmpty)
             {
                 Assert.Empty(result.Loot);

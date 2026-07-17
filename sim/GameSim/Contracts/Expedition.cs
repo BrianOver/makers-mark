@@ -42,6 +42,9 @@ public sealed record OreLoot(HeroId Hero, string MaterialKey, int Quantity);
 /// <summary>
 /// The pure-function output of an expedition (KTD5): computed at departure, revealed on return.
 /// Everything the Evening reveal needs is in here — no other source of truth exists.
+/// <see cref="VenueId"/> is the <c>VenueRegistry</c> key of the venue raided (P4); it is TRAILING
+/// with a Mine default so the reveal/records are venue-aware and old saves (no venue in the JSON)
+/// deserialize to the Mine — a byte-identical round-trip while the Mine is the only live venue.
 /// </summary>
 public sealed record ExpeditionResult(
     ImmutableList<HeroId> Party,
@@ -52,7 +55,8 @@ public sealed record ExpeditionResult(
     ImmutableList<HeroId> Deaths,
     ImmutableList<AttributionBeat> Beats,
     ImmutableList<OreLoot> Loot,
-    ImmutableSortedDictionary<int, int> GoldEarnedByHero);
+    ImmutableSortedDictionary<int, int> GoldEarnedByHero,
+    string VenueId = "mine");
 
 /// <summary>A bounty on the board (R18).</summary>
 public sealed record Bounty(BountyId Id, int TargetFloor, int RewardGold, int PostedOnDay, HeroId? AcceptedBy, bool Paid);

@@ -1,9 +1,9 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using GameSim.Contracts;
-using GameSim.Expedition;
 using GameSim.Flavor;
 using GameSim.Flavor.Packs;
+using GameSim.Venues;
 
 namespace GameSim.Drama;
 
@@ -182,19 +182,13 @@ public static class LedgerQuery
         return floor;
     }
 
-    /// <summary>Inverse of <see cref="MonsterTable.OreKey"/> — ore names the floor it came from.</summary>
-    private static int OreFloor(string materialKey)
-    {
-        for (var floor = 1; floor <= MonsterTable.FloorCount; floor++)
-        {
-            if (MonsterTable.OreKey(floor) == materialKey)
-            {
-                return floor;
-            }
-        }
-
-        return 0;
-    }
+    /// <summary>
+    /// Inverse of <see cref="VenueDefinition.OreKey"/> — ore names the floor it came from.
+    /// Scoped to the Mine (the only live venue, P4): with no venue in hand here (the ledger reads
+    /// the event log, not the <c>ExpeditionResult</c>), the Mine is the correct default and this
+    /// stays byte-identical to the old <c>MonsterTable</c> loop.
+    /// </summary>
+    private static int OreFloor(string materialKey) => VenueRegistry.Mine.OreFloor(materialKey);
 
     private static List<TValue> Bucket<TValue>(Dictionary<int, List<TValue>> map, int key)
     {
