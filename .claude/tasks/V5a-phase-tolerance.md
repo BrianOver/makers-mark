@@ -2,9 +2,9 @@
 
 - lane: visuals
 - agent: VISUALS core lane (Opus)
-- status: in-progress
+- status: pr-open
 - branch: feat/v5a-phase-tolerance
-- pr: <pending>
+- pr: https://github.com/BrianOver/makers-mark/pull/38
 - owned dirs: godot/scripts/town/TownScene.cs, godot/tests/{UiTestSupport,TownSceneTests,MainUiTests,SimAdapterTests}.cs
 - must not edit: CLAUDE.md deny-list + VISUALS deny-list (operating-model §1) + sim/** + art/specs/** + .gitattributes
 - test command: dotnet test godot/tests/GodotClient.Tests.csproj --settings .runsettings
