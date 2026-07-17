@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
+using GameSim.Factions;
 using GameSim.Kernel;
 
 namespace GameSim.Tests.Kernel;
@@ -71,6 +72,39 @@ public class SaveLoadTests
 
         var loaded = SaveCodec.Deserialize(preP4);
         Assert.Equal("mine", loaded.PendingExpeditions[0].VenueId);
+    }
+
+    [Fact]
+    public void PreP5Save_WithoutStanding_LoadsAsNeutral()
+    {
+        // Backward-compat contract (P5 U2/KTD2): PlayerState.Standing is a trailing-optional member
+        // defaulting to null. A pre-core save has no Standing property; it must load as neutral
+        // standing everywhere (StandingFor → 0), not crash. This asserts LOAD behavior — not
+        // byte-identical re-save, since a fresh save now carries the member.
+        var state = GameFactory.NewGame(seed: 11);
+        var json = SaveCodec.Serialize(state);
+
+        // Strip the Standing property to mimic a save written before the member existed
+        // (fresh saves write "Standing":null; an explicitly-empty map would write "Standing":{}).
+        var preP5 = System.Text.RegularExpressions.Regex.Replace(
+            json, ",?\\s*\"Standing\"\\s*:\\s*(?:null|\\{\\})", string.Empty);
+        Assert.DoesNotContain("Standing", preP5);
+
+        var loaded = SaveCodec.Deserialize(preP5);
+        Assert.Equal(0, loaded.Player.StandingFor(FactionRegistry.DeepveinId));
+    }
+
+    [Fact]
+    public void SaveWithPopulatedStanding_RoundTripsValues()
+    {
+        // A save that HAS standing preserves the exact values across a round-trip (byte-identical).
+        var state = GameFactory.NewGame(seed: 12);
+        state = state with { Player = state.Player.WithStanding(FactionRegistry.DeepveinId, 35) };
+
+        var loaded = SaveCodec.Deserialize(SaveCodec.Serialize(state));
+
+        Assert.Equal(35, loaded.Player.StandingFor(FactionRegistry.DeepveinId));
+        Assert.Equal(SaveCodec.Serialize(state), SaveCodec.Serialize(loaded));
     }
 
     [Fact]

@@ -19,6 +19,13 @@ namespace GameSim.Kernel;
 /// gained a TRAILING <c>string VenueId</c> with a "mine" default. System.Text.Json applies the
 /// constructor parameter's default when the property is absent, so a pre-P4 save (no venueId in the
 /// JSON) round-trips to the Mine — the only live venue — leaving the determinism/save suites green.
+///
+/// P5 save-shape note: <c>PlayerState</c> gained a TRAILING nullable
+/// <c>ImmutableSortedDictionary&lt;string,int&gt;? Standing</c> defaulting to <c>null</c> (a
+/// collection can't default to <c>.Empty</c> in a positional record — KTD2). A pre-core save with no
+/// Standing property deserializes it as null → <c>PlayerState.StandingFor</c> reads every faction as
+/// neutral (0), so the save loads with no behavior change until the player trades. The U2 save test
+/// pins this LOAD behavior (absent → neutral), not byte-identical re-save.
 /// </summary>
 public static class SaveCodec
 {

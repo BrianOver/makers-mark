@@ -108,8 +108,18 @@ public class GoldConservationTests
 
             oreBuys += actions.OfType<BuyOreAction>().Count();
 
-            // THE conservation law: only rival sales remove gold from the town total.
-            Assert.Equal(before - rivalGoldAbsorbed, TotalGold(tick.NewState));
+            // P5 U3: the tariff moves gold too — every faction sink/source is a recorded
+            // TariffApplied delta (KTD3). delta = playerCost − heroBase: positive burns gold
+            // from the town total (surcharge sink), negative mints it (discount source).
+            long tariffDelta = 0;
+            foreach (var tariff in tick.Events.OfType<TariffApplied>())
+            {
+                tariffDelta += tariff.Delta;
+            }
+
+            // THE conservation law (extended, KTD3): the town total changes by exactly minus the
+            // rival sales and minus the summed tariff deltas of that tick — nothing else, ever.
+            Assert.Equal(before - rivalGoldAbsorbed - tariffDelta, TotalGold(tick.NewState));
 
             state = tick.NewState;
         }
@@ -150,5 +160,14 @@ public class GoldConservationTests
         Assert.Equal(beforeEvening.Player.Gold - 12, evening.NewState.Player.Gold);
         Assert.Equal(beforeEvening.Heroes[1].Gold + 12, evening.NewState.Heroes[1].Gold);
         Assert.Equal(3, evening.NewState.Player.Materials["iron"]);
+
+        // Per-purchase conservation (KTD3): playerOut == heroBaseIn + Σ tariffDelta. Standing is
+        // neutral on this first buy, so delta is 0 and the two mirror exactly — TariffTests pins
+        // the nonzero (discount/surcharge) cases.
+        long tariffDelta = evening.Events.OfType<TariffApplied>().Sum(t => (long)t.Delta);
+        var playerOut = beforeEvening.Player.Gold - evening.NewState.Player.Gold;
+        var heroBaseIn = evening.NewState.Heroes[1].Gold - beforeEvening.Heroes[1].Gold;
+        Assert.Equal(heroBaseIn + tariffDelta, playerOut);
+        Assert.Equal(0, tariffDelta);
     }
 }

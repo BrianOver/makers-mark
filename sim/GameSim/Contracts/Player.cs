@@ -18,12 +18,19 @@ public sealed record ShelfEntry(ItemId Item, int Price);
 /// profession. A flat set no longer works: talents are scoped per profession (P1).</param>
 /// <param name="SelectedProfessions">The professions this save has taken (1–2). Only recipes
 /// whose profession is selected may be crafted.</param>
+/// <param name="Standing">Per-faction standing (factionId → integer, neutral 0), the P5 U2
+/// drama-layer state (R4/KTD2). TRAILING-OPTIONAL and defaults <c>null</c> — a collection is not a
+/// compile-time constant, so it cannot default to <c>.Empty</c> in a positional record (mirrors
+/// <see cref="GearSet.Trinket"/>, which defaults null). Null means neutral everywhere, so a pre-core
+/// save without the member loads as no-standing / no behavior change (see <see cref="StandingFor"/>).
+/// The map materializes on the first <see cref="WithStanding"/> write.</param>
 public sealed record PlayerState(
     int Gold,
     ImmutableSortedDictionary<string, int> Materials,
     ImmutableSortedDictionary<string, ImmutableSortedSet<string>> Talents,
     ImmutableSortedSet<string> SelectedProfessions,
-    ImmutableList<ShelfEntry> Shelf)
+    ImmutableList<ShelfEntry> Shelf,
+    ImmutableSortedDictionary<string, int>? Standing = null)
 {
     /// <summary>
     /// A fresh save: no materials, no talents, and the blacksmith selected — so existing
@@ -46,4 +53,21 @@ public sealed record PlayerState(
 
     /// <summary>Whether <paramref name="profession"/> is among the selected professions.</summary>
     public bool IsSelected(string profession) => SelectedProfessions.Contains(profession);
+
+    /// <summary>
+    /// This player's standing with <paramref name="factionId"/>; 0 (neutral) when
+    /// <see cref="Standing"/> is null or the faction is absent (R4/KTD2). Absent and null both
+    /// read as neutral, so a pre-core save behaves exactly like a fresh one until the player trades.
+    /// </summary>
+    public int StandingFor(string factionId) =>
+        Standing is not null && Standing.TryGetValue(factionId, out var value) ? value : 0;
+
+    /// <summary>
+    /// Returns a copy with <paramref name="factionId"/>'s standing set to <paramref name="value"/>,
+    /// materializing the map on first write (KTD2 — <see cref="Standing"/> defaults null, not
+    /// <c>.Empty</c>). Uses the default comparer to match <see cref="Materials"/>, keeping saves
+    /// byte-stable across a round-trip.
+    /// </summary>
+    public PlayerState WithStanding(string factionId, int value) =>
+        this with { Standing = (Standing ?? ImmutableSortedDictionary<string, int>.Empty).SetItem(factionId, value) };
 }

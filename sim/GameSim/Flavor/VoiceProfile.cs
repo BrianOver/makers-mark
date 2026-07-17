@@ -36,4 +36,16 @@ public static class VoiceProfile
         var pick = StableHash.Avalanche(StableHash.Mix(campaignId, unchecked((ulong)heroId)));
         return Voices[(int)(pick % (ulong)Voices.Length)];
     }
+
+    /// <summary>
+    /// The voice a FACTION beat is told in (P5 U4/KTD7). A faction standing shift has no protagonist,
+    /// so there is no hero id to key off — the voice is derived from the campaign identity and the
+    /// faction id's <see cref="StableHash.HashString(string)"/> instead, through the SAME pick as
+    /// <see cref="VoiceFor(ulong,int)"/>. Deterministic (StableHash + integer modulo, no RNG, no
+    /// <c>GetHashCode</c>): a given faction speaks with one stable voice for a campaign's whole life,
+    /// and voices differently across campaigns. Reuses the flavor engine rather than inventing a
+    /// mechanism (KTD7).
+    /// </summary>
+    public static string VoiceForFaction(ulong campaignId, string factionId) =>
+        VoiceFor(campaignId, unchecked((int)StableHash.HashString(factionId)));
 }

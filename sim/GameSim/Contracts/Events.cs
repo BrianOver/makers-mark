@@ -22,6 +22,8 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(BountyPaid), "bountyPaid")]
 [JsonDerivedType(typeof(GossipEmitted), "gossip")]
 [JsonDerivedType(typeof(FloorRecordSet), "floorRecord")]
+[JsonDerivedType(typeof(TariffApplied), "tariffApplied")]
+[JsonDerivedType(typeof(FactionStandingShifted), "factionStandingShifted")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -65,3 +67,30 @@ public sealed record GossipEmitted(EventId Source, string Line) : GameEvent;
 
 /// <summary>A new personal deepest-floor record for the Depths Progress board (R15).</summary>
 public sealed record FloorRecordSet(HeroId Hero, int Floor) : GameEvent;
+
+/// <summary>
+/// A faction ore tariff moved the price the player paid away from the base ask (P5 U3, R7/R8/KTD3).
+/// The hero always receives <paramref name="BaseLineCost"/> (the base ask); the player pays
+/// <paramref name="PlayerCost"/>; <paramref name="Delta"/> = <c>PlayerCost − BaseLineCost</c> is the
+/// signed faction sink/source — positive burns gold from the town total (surcharge sink), negative
+/// mints it (discount source, the only reachable direction in this discount-only core, KTD8). The
+/// MANDATORY recorded delta (KTD3) is what the gold-conservation invariant reconciles against; it is
+/// emitted only when a faction supplies the ore AND the tariff actually moved the price (delta != 0),
+/// keeping the log clean at neutral standing.
+/// </summary>
+public sealed record TariffApplied(
+    string FactionId, string MaterialKey, int BaseLineCost, int PlayerCost, int Delta) : GameEvent;
+
+/// <summary>
+/// A faction's standing crossed a voicing threshold (P5 U4, R9/KTD7): the drama the flavor engine
+/// renders into a gossip line. Carries the faction's <paramref name="FactionId"/> (sim identity) and
+/// its <paramref name="FactionName"/> — the DISPLAY name as a ready slot VALUE, so
+/// <c>GossipGenerator</c> voices the line with no <c>FactionRegistry</c> lookup (KTD7: the renderer
+/// receives only heroes + items, never the registry). <paramref name="Direction"/> is the band
+/// crossing (warmed/cooled). Emitted at most once per faction per direction per day-cycle — the ore
+/// purchase (rise) crosses the favored ENTER boundary, the Morning drift crosses the EXIT boundary,
+/// and the ENTER/EXIT deadband (<see cref="GameSim.Factions.FactionStandingThresholds"/>) is the
+/// HYSTERESIS that stops a same-day drift-then-buy oscillation from emitting a contradictory pair.
+/// </summary>
+public sealed record FactionStandingShifted(
+    string FactionId, string FactionName, StandingShiftDirection Direction) : GameEvent;
