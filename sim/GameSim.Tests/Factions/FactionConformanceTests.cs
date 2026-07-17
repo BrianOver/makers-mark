@@ -69,6 +69,16 @@ public class FactionConformanceTests
         Assert.True(faction.RiseStep <= faction.StandingCap, $"{id}: RiseStep exceeds StandingCap");
         Assert.True(faction.DriftStep <= faction.StandingCap, $"{id}: DriftStep exceeds StandingCap");
 
+        // Hysteresis precondition (P5 U4 review): one Morning drift + one Evening buy must not
+        // leap the favored deadband (enter − exit), or a SINGLE buy/evening could emit a
+        // contradictory cooled+favored pair. Multi-buy Evenings are additionally caught by the
+        // batch collapse in GossipGenerator; this guard keeps add-on factions honest for the
+        // single-buy case the deadband proof relies on.
+        var deadband = FactionStandingThresholds.FavoredEnter(faction) - FactionStandingThresholds.FavoredExit(faction);
+        Assert.True(
+            faction.RiseStep + faction.DriftStep < deadband,
+            $"{id}: RiseStep+DriftStep ({faction.RiseStep + faction.DriftStep}) must be < favored deadband ({deadband}) for hysteresis");
+
         // The tariff stays a bounded NUDGE (R8/KTD8): the cap adjustment is < 1000 per-mille (< 100%,
         // so the player never pays 0 or negative) and light-touch (<= 500 = <= 50%).
         Assert.InRange(faction.MaxAdjustmentPerMille, 1, 500);

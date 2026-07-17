@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Linq;
 using GameSim.Contracts;
 using GameSim.Flavor;
 using GameSim.Flavor.Packs;
@@ -44,8 +45,24 @@ public static class GossipGenerator
         ulong campaignId,
         int maxLines = MaxLinesPerDay)
     {
+        var events = stampedEvents as IReadOnlyList<GameEvent> ?? stampedEvents.ToList();
+
+        // Hysteresis is per-Evening-buy, but a faction can supply several ores: multiple buys
+        // in one Evening (or a drift-down then a same-day buy-back) can stamp BOTH a Cooled and
+        // a Favored shift for one faction on the same day. Rendering both is a contradictory
+        // pair ("Deepvein cooled" AND "Deepvein warmed") though the net standing moved one way.
+        // Suppress a faction whose batch holds conflicting directions — silence beats
+        // contradiction; a lone crossing still speaks. Deterministic, no new state.
+        var conflictingFactions = events
+            .OfType<FactionStandingShifted>()
+            .Where(s => s.Id.Value != 0)
+            .GroupBy(s => s.FactionId, StringComparer.Ordinal)
+            .Where(g => g.Select(s => s.Direction).Distinct().Count() > 1)
+            .Select(g => g.Key)
+            .ToImmutableHashSet(StringComparer.Ordinal);
+
         var lines = ImmutableList.CreateBuilder<GossipEmitted>();
-        foreach (var gameEvent in stampedEvents)
+        foreach (var gameEvent in events)
         {
             if (lines.Count >= maxLines)
             {
@@ -55,6 +72,11 @@ public static class GossipGenerator
             if (gameEvent.Id.Value == 0)
             {
                 continue; // unstamped — not a real logged event, nothing to cite (R14)
+            }
+
+            if (gameEvent is FactionStandingShifted conflicted && conflictingFactions.Contains(conflicted.FactionId))
+            {
+                continue; // contradictory same-faction pair this batch — suppressed (see above)
             }
 
             var line = gameEvent switch

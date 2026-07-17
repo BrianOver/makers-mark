@@ -196,6 +196,42 @@ public class FactionVoicingTests
         Assert.Contains(Deepvein.DisplayName, lines[0].Line, StringComparison.Ordinal); // the faction line took its slot
     }
 
+    [Fact]
+    public void ContradictorySameFactionPairInOneBatch_IsSuppressed_NoConflictingLines()
+    {
+        // Multi-ore Evening (review finding): a faction that supplies several ores can stamp
+        // BOTH a Cooled and a Favored shift on one day (drift-down Morning, then several buys
+        // back up the same Evening). GossipGenerator collapses the contradictory pair to
+        // silence rather than render "Deepvein cooled" AND "Deepvein warmed" together.
+        var state = DramaWorld();
+        GameEvent[] sources =
+        [
+            new FactionStandingShifted("deepvein", Deepvein.DisplayName, StandingShiftDirection.Cooled) { Id = new EventId(1), Day = 1 },
+            new FactionStandingShifted("deepvein", Deepvein.DisplayName, StandingShiftDirection.Favored) { Id = new EventId(2), Day = 1 },
+        ];
+
+        var lines = GossipGenerator.Generate(sources, state.Heroes, state.Items, Campaign, GossipGenerator.MaxLinesPerDay);
+
+        Assert.Empty(lines); // both suppressed — silence beats contradiction
+    }
+
+    [Fact]
+    public void LoneFactionShift_StillSpeaks_WhenNoContradiction()
+    {
+        // The collapse only fires on conflicting directions; a single crossing is unaffected.
+        var state = DramaWorld();
+        GameEvent[] sources =
+        [
+            new FactionStandingShifted("deepvein", Deepvein.DisplayName, StandingShiftDirection.Favored) { Id = new EventId(1), Day = 1 },
+            new FactionStandingShifted("deepvein", Deepvein.DisplayName, StandingShiftDirection.Favored) { Id = new EventId(2), Day = 1 },
+        ];
+
+        var lines = GossipGenerator.Generate(sources, state.Heroes, state.Items, Campaign, GossipGenerator.MaxLinesPerDay);
+
+        Assert.NotEmpty(lines);
+        Assert.All(lines, l => Assert.Contains(Deepvein.DisplayName, l.Line, StringComparison.Ordinal));
+    }
+
     // ---- Save round-trip stays byte-identical with a faction-rendered gossip line ----
 
     [Fact]
