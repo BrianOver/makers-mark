@@ -1,7 +1,7 @@
 # Add-on guide — how task-Claudes extend Maker's Mark
 
 Audience: a Claude session (or human) adding **content** — a profession, hero class, venue,
-or story arc — WITHOUT touching core mechanisms. Cores (registries, resolvers, kernel,
+faction, or story arc — WITHOUT touching core mechanisms. Cores (registries, resolvers, kernel,
 contracts) are built in the orchestrating session per
 `docs/plans/2026-07-15-001-roadmap-beyond-v1.md`; add-ons are data plugged into them.
 
@@ -138,6 +138,64 @@ Steps mirror the profession flow:
 Companion entities and item augments/enchants are NOT part of the class core — they ship bundled
 with the add-on that first consumes them (a summoner class brings companion support; an Enchanter
 profession brings augments), reviewed together with that consumer.
+
+## Adding a faction (available now — P5 core)
+
+A faction is pure data: `FactionDefinition` in `sim/GameSim/Factions/FactionDefinition.cs`
+(`Id`, `DisplayName`, `SuppliesOreKeys`, and the standing→tariff params `StandingCap` / `RiseStep` /
+`DriftStep` / `MaxAdjustmentPerMille`). The generic pipeline reads definitions from `FactionRegistry`:
+`ByOreKey` resolves the supplier on an ore purchase, `OreMarketHandlers` raises standing and applies
+the tariff, `FactionDriftSystem` drifts it back each Morning, and the flavor engine voices the shift —
+a new faction plugs into all of it with zero code changes outside your directory.
+
+Steps mirror the profession/class flow:
+
+1. **Claim** your unit in `.claude/tasks/` and branch `feat/addon-<faction>`.
+2. **Create `sim/GameSim/Factions/<Name>/`** with a static class exposing a
+   `public static readonly FactionDefinition Definition`. Faction id is lowercase kebab
+   (e.g. `"crownsguard"`); `DisplayName` is the UI/flavor label.
+3. **Rules of the data:**
+   - `Id` == the registry key used everywhere; `DisplayName` non-blank (it rides in on the voicing
+     event as the `{faction}` slot value — no registry lookup in the renderer).
+   - `SuppliesOreKeys` = the material keys this faction supplies (`ImmutableArray`, `StringComparer.Ordinal`).
+     Every key must be a known, priced ore key (a Mine floor material in this single-venue core —
+     `copper…adamant`; add-ons with their own materials associate those once the P4 material registry
+     lands). `SuppliesOreKeys` must be non-empty with no repeat within the faction.
+   - **Single supplier per ore key (R6/KTD6):** no two registered factions may supply the same ore
+     key — the handler resolves exactly one faction per ore via `FactionRegistry.ByOreKey`. Bring your
+     own materials; never contend for another faction's ore.
+   - Standing→tariff params are all positive integers: `RiseStep`/`DriftStep` ≤ `StandingCap` (standing
+     moves gradually, never leaps the range); `MaxAdjustmentPerMille` in 1–500 (the tariff stays a
+     bounded nudge — < 1000 so the player never pays 0, ≤ 500 = ≤ 50% by convention). Deepvein's
+     100 / 5 / 2 / 100 (a 10% cap, ~20 buys to saturate, ~50 idle Mornings to decay) is the reference.
+   - NO RNG, no wall clock, no floats, no `string.GetHashCode`, no Godot references — constant data.
+4. **A standing-LOWERING driver is deferred (the recruitability-style caveat).** There is no
+   `LiveRotation`/`RecruitPool`-equivalent gate here, but this core is **discount-only** (KTD8): the
+   only standing driver is ore-buying (raises) + Morning drift (toward neutral, never below 0), so
+   standing never goes negative and the symmetric **surcharge branch is built but dormant**. A faction
+   that should be able to *fall out of favor* (standing < 0 → the player pays a surcharge) needs a
+   standing-lowering driver — e.g. buying a rival faction's ore. That driver is orchestrator-owned core
+   work (it changes what writes standing); flag it, don't add it in your add-on. Until it lands, an
+   add-on faction can only ever be neutral-to-favored.
+5. **Voicing entry (hero-less):** add faction lines to `sim/GameSim/Flavor/Packs/FactionPack.cs` under
+   the base keys `favored`/`cooled`, slots `{faction}`/`{direction}` — see "Adding flavor pack entries"
+   above. A faction beat has no protagonist, so the voice is picked hero-lessly via
+   `VoiceProfile.VoiceForFaction(campaignId, factionId)` (deterministic `StableHash`, never kernel RNG).
+   The named thresholds that trigger `favored`/`cooled` come from `FactionStandingThresholds` (derived
+   from `StandingCap`), so a new faction scales without new threshold data.
+6. **Create `sim/GameSim.Tests/Factions/<Name>/`** with behaviour tests (standing rises on your ore,
+   drifts back, tariff discounts a subsequent buy) if your faction has behaviour beyond the shared
+   mechanism; the conformance harness (below) already covers the structural contract.
+7. **Registration:** do NOT edit `FactionRegistry.cs`. Put the one line in your PR description
+   (`FactionRegistry.All: add <YourFaction>.Definition`) and the orchestrator applies it.
+8. **Definition of done:** `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj` fully green —
+   `FactionConformanceTests` picks up your faction automatically (it parameterizes over
+   `FactionRegistry.All`) and validates its structure: id == key, non-blank name, positive params in
+   sane bounds, known/priced ore keys, and the single-supplier-per-ore-key invariant across the whole
+   registry. `FactionPackTests` validates your voicing lines. Balance must stay green — a new faction
+   moves the economy only for a save that actually trades with it, and the baseline trades only with
+   Deepvein, so the shipped bands must not move (see `FactionTariffBalanceTests` for the tariff
+   acceptance shape if your faction warrants its own scenario).
 
 ## Coming registries (don't build against these until the core lands)
 
