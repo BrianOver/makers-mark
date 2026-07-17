@@ -120,7 +120,7 @@ public class BountyTests
         state = Post(state, kernel, floor: 5, reward: 90, out _); // nobody dares floor 5
         var goldAfterEscrow = state.Player.Gold;
 
-        for (var i = 0; i < 3 * BountyRules.ExpiryDays + 3; i++)
+        for (var i = 0; i < 5 * BountyRules.ExpiryDays + 5; i++) // 5-phase day: 5 ticks/day
         {
             state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
         }

@@ -78,10 +78,15 @@ public sealed class GameKernel
         return new TickResult(newState, stamped.ToImmutable(), rejected.ToImmutable());
     }
 
+    // The 5-phase day (staged resolution). Camp/ExpeditionDeep sit between Expedition and Evening;
+    // day ORDER is defined here, never by DayPhase's numeric value (Camp=3/ExpeditionDeep=4 append
+    // after Evening=2 in the enum for save compat — KTD4).
     private static (int Day, DayPhase Phase) Advance(int day, DayPhase phase) => phase switch
     {
         DayPhase.Morning => (day, DayPhase.Expedition),
-        DayPhase.Expedition => (day, DayPhase.Evening),
+        DayPhase.Expedition => (day, DayPhase.Camp),
+        DayPhase.Camp => (day, DayPhase.ExpeditionDeep),
+        DayPhase.ExpeditionDeep => (day, DayPhase.Evening),
         DayPhase.Evening => (day + 1, DayPhase.Morning),
         _ => throw new InvalidOperationException($"Unknown phase {phase}"),
     };

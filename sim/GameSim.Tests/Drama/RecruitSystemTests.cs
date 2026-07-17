@@ -65,6 +65,8 @@ public class RecruitSystemTests
         for (var morning = 1; morning <= RecruitSystem.RecruitGateDays; morning++)
         {
             state = Tick(state, system).NewState;                    // Expedition (no-op)
+            state = Tick(state, system).NewState;                    // Camp (no-op)
+            state = Tick(state, system).NewState;                    // ExpeditionDeep (no-op)
             state = Tick(state, system).NewState;                    // Evening (no-op)
             var morningTick = Tick(state, system);                   // next Morning
             state = morningTick.NewState;
@@ -120,7 +122,7 @@ public class RecruitSystemTests
         var state = Kill(Kill(Kill(NewWorld(), 1), 3), 5);
         var system = new RecruitSystem();
 
-        for (var tick = 0; tick < 90; tick++) // 30 full days
+        for (var tick = 0; tick < 150; tick++) // 30 full days (5-phase)
         {
             state = Tick(state, system).NewState;
             Assert.True(AliveCount(state) <= 6, $"alive roster exceeded six at tick {tick}");

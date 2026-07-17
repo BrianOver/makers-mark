@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using GameSim;
 using GameSim.Contracts;
 using GameSim.Kernel;
 
@@ -11,7 +12,51 @@ public class PhaseMachineTests
         ImmutableList<IActionHandler>.Empty);
 
     [Fact]
-    public void PhasesAdvance_MorningExpeditionEvening_ThenNextDay()
+    public void EmptyCampAndDeepTicks_DrawNoRng()
+    {
+        // U2 proof-of-stream-preservation: the two new ticks (Camp, ExpeditionDeep) have no
+        // registered systems yet, so a composed kernel must draw ZERO RNG across them —
+        // the Rng snapshot is byte-equal before and after each. This is what keeps the
+        // balance bands unchanged after U2 (the stream didn't move).
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(seed: 4242);
+
+        // Advance to the Camp tick (Morning -> Expedition -> Camp).
+        state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState; // Morning done
+        state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState; // Expedition done
+        Assert.Equal(DayPhase.Camp, state.Phase);
+
+        var beforeCamp = state.Rng;
+        state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState; // Camp tick
+        Assert.Equal(DayPhase.ExpeditionDeep, state.Phase);
+        Assert.Equal(beforeCamp, state.Rng); // Camp drew nothing
+
+        state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState; // ExpeditionDeep tick
+        Assert.Equal(DayPhase.Evening, state.Phase);
+        Assert.Equal(beforeCamp, state.Rng); // ExpeditionDeep drew nothing either
+    }
+
+    [Fact]
+    public void PostBounty_DuringCamp_IsRejected()
+    {
+        // D2: the BountyHandlers whitelist is Morning/Evening only — posting during the new
+        // Camp tick must come back rejected (no handler accepts it), not silently legalized.
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(seed: 4243);
+
+        state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState; // Morning done
+        state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState; // Expedition done
+        Assert.Equal(DayPhase.Camp, state.Phase);
+
+        var result = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new PostBountyAction(3, 50)));
+
+        var rejected = Assert.Single(result.Rejected);
+        Assert.IsType<PostBountyAction>(rejected.Action);
+        Assert.False(string.IsNullOrWhiteSpace(rejected.Reason));
+    }
+
+    [Fact]
+    public void PhasesAdvance_FivePhaseDay_ThenNextDay()
     {
         var state = GameFactory.NewGame(seed: 1);
         Assert.Equal((1, DayPhase.Morning), (state.Day, state.Phase));
@@ -20,10 +65,16 @@ public class PhaseMachineTests
         Assert.Equal((1, DayPhase.Expedition), (state.Day, state.Phase));
 
         state = Kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
+        Assert.Equal((1, DayPhase.Camp), (state.Day, state.Phase));
+
+        state = Kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
+        Assert.Equal((1, DayPhase.ExpeditionDeep), (state.Day, state.Phase));
+
+        state = Kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
         Assert.Equal((1, DayPhase.Evening), (state.Day, state.Phase));
 
         state = Kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
-        Assert.Equal((2, DayPhase.Morning), (state.Day, state.Phase));
+        Assert.Equal((2, DayPhase.Morning), (state.Day, state.Phase)); // day 2 after 5 ticks
     }
 
     [Fact]

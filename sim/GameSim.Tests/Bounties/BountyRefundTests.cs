@@ -26,7 +26,7 @@ public class BountyRefundTests
 
         var sawAccept = false;
         var refundedByExpiry = false;
-        for (var i = 0; i < 3 * (BountyRules.ExpiryDays + 4); i++)
+        for (var i = 0; i < 5 * (BountyRules.ExpiryDays + 4); i++) // 5-phase day: 5 ticks/day
         {
             var result = kernel.Tick(state, ImmutableList<PlayerAction>.Empty);
             state = result.NewState;
@@ -56,7 +56,7 @@ public class BountyRefundTests
         state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new PostBountyAction(5, 90))).NewState;
         var escrowed = state.Player.Gold;
 
-        for (var i = 0; i < 3 * (BountyRules.ExpiryDays + 2); i++)
+        for (var i = 0; i < 5 * (BountyRules.ExpiryDays + 2); i++) // 5-phase day: 5 ticks/day
         {
             state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
         }

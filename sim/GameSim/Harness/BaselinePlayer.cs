@@ -65,6 +65,14 @@ public static class BaselinePlayer
 
                 break;
 
+            case DayPhase.Camp:
+            case DayPhase.ExpeditionDeep:
+                // D5: the baseline holds at the new staged ticks — no camp verbs, no deep actions.
+                // The balance gate keeps measuring the SAME policy across 5 phases (bands must not
+                // move from the two empty ticks). The kill-risk-1 send/never-send A/B lives in a
+                // test-local scripted policy (U4), never here — BaselinePlayer is never forked.
+                break;
+
             case DayPhase.Evening:
                 // Buy every ore offer the purse can afford, in offer order.
                 var gold = state.Player.Gold;

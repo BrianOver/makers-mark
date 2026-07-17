@@ -12,7 +12,7 @@ public class ChronicleTests
     {
         var kernel = GameComposition.BuildKernel();
         var state = GameComposition.NewCampaign(seed);
-        for (var i = 0; i < days * 3; i++)
+        for (var i = 0; i < days * 5; i++) // 5-phase day
         {
             state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
         }

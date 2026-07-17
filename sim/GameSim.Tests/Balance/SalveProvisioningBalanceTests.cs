@@ -31,7 +31,7 @@ public class SalveProvisioningBalanceTests
         var salvesSold = 0;
         var salveUses = 0;
 
-        for (var tick = 0; tick < Days * 3; tick++)
+        for (var tick = 0; tick < Days * 5; tick++) // 5-phase day
         {
             var actions = withSalves ? SalveActionsFor(state) : BaselinePlayer.ActionsFor(state);
             var result = kernel.Tick(state, actions);

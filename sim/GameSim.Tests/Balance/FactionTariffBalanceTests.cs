@@ -99,7 +99,7 @@ public class FactionTariffBalanceTests
         var negCount = 0;
         var maxStanding = 0;
 
-        for (var tick = 0; tick < Days * 3; tick++)
+        for (var tick = 0; tick < Days * 5; tick++) // 5-phase day
         {
             if (neutral)
             {
