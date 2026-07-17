@@ -1,4 +1,5 @@
 using GameSim.Contracts;
+using GameSim.Factions;
 using GameSim.Heroes;
 
 namespace GameSim.Economy;
@@ -82,13 +83,26 @@ public sealed class OreMarketHandlers : IActionHandler
         // All checks passed — the exact move.
         var have = state.Player.Materials.TryGetValue(buy.MaterialKey, out var stock) ? stock : 0;
         var remaining = offer.Quantity - buy.Quantity;
+        var newPlayer = state.Player with
+        {
+            Gold = state.Player.Gold - cost,
+            Materials = state.Player.Materials.SetItem(buy.MaterialKey, have + buy.Quantity),
+        };
+
+        // P5 U2: a successful ore purchase RAISES the supplying faction's standing (R5/KTD6), in
+        // the SAME state update as the buy. Discount-only core (KTD8): standing only rises here —
+        // it never falls (that is the Morning FactionDriftSystem) — so we clamp to +StandingCap.
+        // No tariff yet (U3 prices, priced-before-rise); U2 adds only the rise. Pure integer, no RNG.
+        var faction = FactionRegistry.ByOreKey(buy.MaterialKey);
+        if (faction is not null)
+        {
+            var raised = Math.Min(newPlayer.StandingFor(faction.Id) + faction.RiseStep, faction.StandingCap);
+            newPlayer = newPlayer.WithStanding(faction.Id, raised);
+        }
+
         var newState = state with
         {
-            Player = state.Player with
-            {
-                Gold = state.Player.Gold - cost,
-                Materials = state.Player.Materials.SetItem(buy.MaterialKey, have + buy.Quantity),
-            },
+            Player = newPlayer,
             Heroes = state.Heroes.SetItem(hero.Id.Value, HeroOps.ApplyLootIncome(hero, cost)),
             OpenOreOffers = remaining == 0
                 ? state.OpenOreOffers.RemoveAt(index)
