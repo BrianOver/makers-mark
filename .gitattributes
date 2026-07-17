@@ -1,2 +1,6 @@
 * text=auto
 *.sh eol=lf
+
+# Generated art PNGs (diffuse + normal) via Git LFS. Scope is the Godot asset tree ONLY —
+# `art/**` would LFS-ify C# spec source and miss this PNG tree (art-pipeline-architecture.md §4).
+godot/assets/art/**/*.png filter=lfs diff=lfs merge=lfs -text

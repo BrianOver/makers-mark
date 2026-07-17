@@ -30,3 +30,6 @@ godot/gdunit4_testadapter_v5/
 godot/GodotClient.csproj.old*
 # Campaign telemetry exports
 runs/
+
+# Art pipeline candidate images (curation scratch; only curated pairs get committed)
+art/pipeline/candidates/
