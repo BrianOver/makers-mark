@@ -37,9 +37,59 @@ public static class ExpeditionResolver
         var dead = new HashSet<int>();
         var floors = ImmutableList.CreateBuilder<FloorOutcome>();
         var loot = ImmutableList.CreateBuilder<OreLoot>();
+
+        var deepestCleared = ResolveFloors(
+            party, items, venue, 1, targetFloor, hp, packs, gold, dead, floors, loot, rng);
+
+        var survivors = party.Where(h => !dead.Contains(h.Id.Value)).Select(h => h.Id).ToImmutableList();
+        var deaths = party.Where(h => dead.Contains(h.Id.Value)).Select(h => h.Id).ToImmutableList();
+        var allFloors = floors.ToImmutable();
+
+        // Attribution runs AFTER resolution, over recorded rolls only (KTD6). It is handed the
+        // SAME venue the forward pass used, so the counterfactual recompute reads identical floor
+        // data — a divergence here would corrupt attribution (KTD6).
+        var beats = AttributionEngine.ComputeBeats(allFloors, party, items, venue);
+
+        return new ExpeditionResult(
+            party.Select(h => h.Id).ToImmutableList(),
+            targetFloor,
+            deepestCleared,
+            allFloors,
+            survivors,
+            deaths,
+            beats,
+            loot.ToImmutable(),
+            gold.ToImmutableSortedDictionary(),
+            venue.Id);
+    }
+
+    /// <summary>
+    /// Runs the per-floor combat loop over the INCLUSIVE range [fromFloor, toFloor], mutating
+    /// the caller's working state (hp/packs/gold/dead) and appending to its floor/loot builders.
+    /// Returns the deepest floor cleared WITHIN the range (0 if none). This method is the
+    /// staged-resolution seam (expedition-tension verdict §5 step 1): a later PR runs
+    /// [1..checkpoint] at the Expedition tick and [checkpoint+1..target] at the Deep tick, with
+    /// the parameters here persisting between stages as <c>InFlightExpedition</c> — every
+    /// parameter maps 1:1 onto a former <see cref="Resolve"/> method-local, and the body is a
+    /// verbatim move of the original loop so the RNG draw order is byte-identical.
+    /// </summary>
+    private static int ResolveFloors(
+        ImmutableList<Hero> party,
+        ImmutableSortedDictionary<int, Item> items,
+        VenueDefinition venue,
+        int fromFloor,
+        int toFloor,
+        Dictionary<int, int> hp,
+        Dictionary<int, List<ItemId>> packs,
+        Dictionary<int, int> gold,
+        HashSet<int> dead,
+        ImmutableList<FloorOutcome>.Builder floors,
+        ImmutableList<OreLoot>.Builder loot,
+        IDeterministicRng rng)
+    {
         var deepestCleared = 0;
 
-        for (var floor = 1; floor <= targetFloor; floor++)
+        for (var floor = fromFloor; floor <= toFloor; floor++)
         {
             var fighters = party.Where(h => !dead.Contains(h.Id.Value)).ToList();
             if (fighters.Count == 0)
@@ -119,26 +169,7 @@ public static class ExpeditionResolver
             }
         }
 
-        var survivors = party.Where(h => !dead.Contains(h.Id.Value)).Select(h => h.Id).ToImmutableList();
-        var deaths = party.Where(h => dead.Contains(h.Id.Value)).Select(h => h.Id).ToImmutableList();
-        var allFloors = floors.ToImmutable();
-
-        // Attribution runs AFTER resolution, over recorded rolls only (KTD6). It is handed the
-        // SAME venue the forward pass used, so the counterfactual recompute reads identical floor
-        // data — a divergence here would corrupt attribution (KTD6).
-        var beats = AttributionEngine.ComputeBeats(allFloors, party, items, venue);
-
-        return new ExpeditionResult(
-            party.Select(h => h.Id).ToImmutableList(),
-            targetFloor,
-            deepestCleared,
-            allFloors,
-            survivors,
-            deaths,
-            beats,
-            loot.ToImmutable(),
-            gold.ToImmutableSortedDictionary(),
-            venue.Id);
+        return deepestCleared;
     }
 
     private enum FightOutcome
