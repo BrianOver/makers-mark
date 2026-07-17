@@ -40,17 +40,16 @@ public class ProfessionSelectionTests
     [Fact]
     public void SelectTwo_IsWithinTheLimit()
     {
-        // Only "blacksmith" is registered in P1 core, so a fully-registered two-profession
-        // selection cannot be exercised until a second profession is added (a later add-on).
-        // But the limit is two: a two-element set must be rejected (if at all) for its UNKNOWN
-        // member, never for exceeding the count — proving two is allowed.
+        // "weaving" is the still-unregistered placeholder (was "tanning" until the Tanning
+        // add-on registered it). The limit is two: a two-element set must be rejected (if at
+        // all) for its UNKNOWN member, never for exceeding the count — proving two is allowed.
         Assert.Equal(2, ProfessionHandlers.MaxSelected);
 
         var result = Selection.Tick(GameFactory.NewGame(seed: 1),
-            ImmutableList.Create<PlayerAction>(Select(ProfessionRegistry.BlacksmithId, "tanning")));
+            ImmutableList.Create<PlayerAction>(Select(ProfessionRegistry.BlacksmithId, "weaving")));
 
         var rejected = Assert.Single(result.Rejected);
-        Assert.Contains("tanning", rejected.Reason);
+        Assert.Contains("weaving", rejected.Reason);
         Assert.DoesNotContain("more than", rejected.Reason);
     }
 
@@ -71,10 +70,10 @@ public class ProfessionSelectionTests
     public void SelectUnknownProfession_Rejected()
     {
         var result = Selection.Tick(GameFactory.NewGame(seed: 1),
-            ImmutableList.Create<PlayerAction>(Select("tanning")));
+            ImmutableList.Create<PlayerAction>(Select("weaving")));
 
         var rejected = Assert.Single(result.Rejected);
-        Assert.Contains("tanning", rejected.Reason);
+        Assert.Contains("weaving", rejected.Reason);
     }
 
     [Fact]
