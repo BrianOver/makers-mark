@@ -31,11 +31,9 @@ public class MainUiTests
             AssertThat(string.Join(",", titles)).IsEqual("Town,Forge,Shop,Heroes,Tavern,Depths,Bounties");
             AssertThat(ui.Ledger.Visible).IsFalse();
 
-            // Drive to a mid-game state: one full day + the next Morning.
-            for (var tick = 0; tick < 4; tick++)
-            {
-                ui.Adapter.AdvancePhase();
-            }
+            // Drive to a mid-game state: one full day, then on into day-2 Expedition.
+            AdvanceDay(ui);
+            ui.Adapter.AdvancePhase();
 
             ui.Ledger.CloseModal();
             var state = ui.Adapter.CurrentState;
@@ -133,7 +131,7 @@ public class MainUiTests
             ui.Adapter.AdvancePhase(); // day 1 Morning
             ui.Adapter.AdvancePhase(); // day 1 Expedition
             AssertThat(ui.Ledger.Visible).IsFalse();
-            ui.Adapter.AdvancePhase(); // day 1 Evening — arms the Return Ritual gate
+            AdvanceDay(ui); // finish day 1 → Evening completion arms the Return Ritual gate
 
             // U12 pinned design: the reveal is TIME-gated, never immediate.
             AssertThat(ui.Ledger.Visible).IsFalse();
@@ -247,10 +245,8 @@ public class MainUiTests
     /// </summary>
     private static void DriveToCraftedDagger(MainUi ui)
     {
-        for (var tick = 0; tick < 5; tick++)
-        {
-            ui.Adapter.AdvancePhase(); // day 1 M/X/V, day 2 M/X
-        }
+        AdvanceDay(ui);                          // day 1 → day 2 Morning
+        AdvanceToPhase(ui, DayPhase.Evening);    // day 2 Morning → day 2 Evening (about to reveal)
 
         ui.Ledger.CloseModal();
         var state = ui.Adapter.CurrentState;

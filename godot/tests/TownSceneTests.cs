@@ -30,11 +30,9 @@ public class TownSceneTests
         var ui = MountMainUi();
         try
         {
-            // Day 1 M/X/V → day 2 Morning. Seed 2026 loses one hero on day 1.
-            for (var tick = 0; tick < 3; tick++)
-            {
-                ui.Adapter.AdvancePhase();
-            }
+            // Day 1 → day 2 Morning (loop-until-Morning; day-length agnostic). Seed 2026
+            // loses one hero on day 1.
+            AdvanceDay(ui);
 
             var state = ui.Adapter.CurrentState;
             AssertThat(state.Day).IsEqual(2);
@@ -140,7 +138,7 @@ public class TownSceneTests
             AssertThat(ui.Town.Sprites.Values.Count(s => s.State == HeroSprite.TownState.Wandering))
                 .IsEqual(survivors.Count);
 
-            ui.Adapter.AdvancePhase(); // Evening done: deaths applied, dead sprite removed
+            AdvanceDay(ui); // finish the day → Evening reveal: deaths applied, dead sprite removed
             var state = ui.Adapter.CurrentState;
             AssertThat(ui.Town.Sprites.Count).IsEqual(state.Heroes.Values.Count(h => h.Alive));
             AssertThat(ui.Town.MemorialStoneCount).IsEqual(state.Drama.Memorials.Count);
@@ -157,10 +155,7 @@ public class TownSceneTests
         var ui = MountMainUi();
         try
         {
-            for (var tick = 0; tick < 3; tick++)
-            {
-                ui.Adapter.AdvancePhase(); // day 1 M/X/V — Evening completion arms the gate
-            }
+            AdvanceDay(ui); // day 1 → Evening completion arms the Return Ritual gate
 
             // Not immediate — the walk-in is decoration, the timer is the gate.
             AssertThat(ui.Ledger.Visible).IsFalse();
@@ -201,7 +196,7 @@ public class TownSceneTests
             ui.Town.Animate(10); // nobody walks back in — the town stays empty
             AssertThat(ui.Town.Sprites.Values.Count(s => s.Visible)).IsEqual(0);
 
-            ui.Adapter.AdvancePhase(); // Evening reveal: all deaths applied, gate armed
+            AdvanceDay(ui); // finish the day → Evening reveal: all deaths applied, gate armed
             AssertThat(ui.Adapter.CurrentState.Heroes.Values.Count(h => h.Alive)).IsEqual(0);
             AssertThat(ui.Town.Sprites.Count).IsEqual(0);
             AssertThat(ui.Town.MemorialStoneCount).IsEqual(3);
@@ -268,6 +263,40 @@ public class TownSceneTests
 
             Click(Find<Control>(ui.Town, "Building_Tavern"));
             AssertThat(ui.Tabs.CurrentTab).IsEqual(ui.Tabs.GetTabIdxFromControl(ui.Tavern));
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void OnPhaseCompleted_UnknownPhase_LeavesSpritesUntouched()
+    {
+        // V5a gate (G2): once the 5-phase kernel (staged-plan U2) fires Camp/ExpeditionDeep
+        // completions, TownScene must NOT snap heroes home on a phase it doesn't own — the
+        // real staged-resolution walks arrive in V5b. Probe a BEYOND-MAX cast: (DayPhase)3
+        // is Camp now that the contracts PR landed, so only a value past the enum stays
+        // "unknown". Under the old fused `case Evening: default:` arm this snapped everyone
+        // home mid-expedition (visible-dead-hero bug).
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.AdvancePhase(); // Morning done → the party departs (WalkingOut)
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
+
+            var before = ui.Town.Sprites.Values
+                .ToDictionary(s => s.HeroValue, s => (s.State, s.Visible));
+            AssertThat(before.Count > 0).IsTrue();
+
+            ui.Town.OnPhaseCompleted((DayPhase)99); // unknown/future phase — must be a no-op
+
+            foreach (var sprite in ui.Town.Sprites.Values)
+            {
+                var (state, visible) = before[sprite.HeroValue];
+                AssertThat(sprite.State).IsEqual(state);
+                AssertThat(sprite.Visible).IsEqual(visible);
+            }
         }
         finally
         {

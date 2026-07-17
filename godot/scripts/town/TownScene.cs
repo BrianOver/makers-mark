@@ -129,7 +129,6 @@ public partial class TownScene : SimPanel
 
                 break;
             case DayPhase.Evening:
-            default:
                 // New day: every remaining (alive) hero is home, whatever the walk state.
                 foreach (var sprite in _sprites.Values.Where(s => s.State != HeroSprite.TownState.Wandering))
                 {
@@ -137,6 +136,13 @@ public partial class TownScene : SimPanel
                 }
 
                 break;
+            default:
+                // Unknown/future phase (Camp, ExpeditionDeep, or anything appended after):
+                // no-op. The real staged-resolution walks arrive in V5b — until then NEVER
+                // snap on a phase we don't own. The old fused `case Evening: default:` arm
+                // popped away/dead heroes home mid-expedition the moment the 5-phase kernel
+                // (staged-plan U2) started firing Camp/ExpeditionDeep completions.
+                return;
         }
     }
 
