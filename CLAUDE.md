@@ -47,7 +47,8 @@ Debugging anything? `docs/debugging.md` — deterministic repro recipe, log map,
 
 ## Layout
 
-- `sim/GameSim/` — pure .NET sim core: `Contracts/` (shared types), `Kernel/`, then per-module dirs (`Crafting/`, `Heroes/`, `Expedition/`, `Economy/`, `Drama/`, `Bounties/`)
+- `sim/GameSim/` — pure .NET sim core: `Contracts/` (shared types), `Kernel/`, `Harness/` (scripted player policies — pure, no IO/RNG/clock), then per-module dirs (`Crafting/`, `Heroes/`, `Expedition/`, `Economy/`, `Drama/`, `Bounties/`)
+- `art/` — asset pipeline: `GameArt/` (AssetSpec contract + registry, orchestrator-only), `GameArt.Tests/`, `specs/<module>/` (fan-out-owned)
 - `sim/GameSim.Tests/` — xUnit; `Category=Balance` for the 100-day sim
 - `sim/GameSim.Cli/` — console runner (first playable surface)
 - `godot/` — Godot 4.6.3 .NET project; `scripts/` = C# adapters, `scenes/`, `tests/` = gdUnit4Net

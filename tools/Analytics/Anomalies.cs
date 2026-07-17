@@ -24,8 +24,15 @@ public sealed record Anomaly(
     int DayTo,
     string Detail)
 {
+    /// <summary>
+    /// Reproduces the window WITHOUT contaminating the analytics corpus: writes to a separate
+    /// <c>runs-repro/</c> dir (re-running Analytics over <c>runs/</c> must not ingest the truncated
+    /// repro chronicle — it would double-count the seed and skew every corpus baseline).
+    /// Only valid for BATCH chronicles: an interactively-exported run was driven by human actions,
+    /// which this command does not replay (see docs/debugging.md §1).
+    /// </summary>
     public string ReproCommand =>
-        $"dotnet run --project sim/GameSim.Cli -- batch --seeds 1 --seed {Seed} --days {DayTo}";
+        $"dotnet run --project sim/GameSim.Cli -- batch --seeds 1 --seed {Seed} --days {DayTo} --out runs-repro";
 }
 
 /// <summary>
@@ -59,7 +66,7 @@ public static class Anomalies
     public const int MintSpikeMinGold = 500;            // and the trailing window minted at least this
     public const int DeadShopMinCrafts = 5;
     public const int DeadShopMinDay = 15;
-    public const int TariffSaturationPerMille = 90;     // |delta| ≥ 9% of base ≈ at the 10% cap
+    public const int TariffSaturationPerMille = 90;     // Σ|delta| ≥ 9% of Σbase ≈ averaging at the 10% cap
     public const int TariffSaturationMinEvents = 8;
     public const int TariffSaturationMinSpanDays = 5;
     public const int MonocultureMinJudgments = 20;
@@ -70,9 +77,12 @@ public static class Anomalies
     {
         var found = new List<Anomaly>();
 
-        // Corpus baseline for the death-spike rule: mean deaths per floor per run.
+        // Death-spike baseline corpus = runs long enough to be comparable. Short interactive
+        // exports (a 4-day playtest) would inflate runCount without contributing deaths, making
+        // the exclude-self inequality fire falsely on normal batch runs.
+        var baselineCorpus = runs.Where(r => r.Day - 1 >= TrailingWindowDays).ToList();
         var corpusDeathsByFloor = new Dictionary<int, int>();
-        foreach (var run in runs)
+        foreach (var run in baselineCorpus)
         {
             foreach (var death in run.Events.OfType<HeroDied>())
             {
@@ -89,7 +99,10 @@ public static class Anomalies
             }
 
             BeatStarvation(run, lastFullDay, found);
-            DeathSpike(run, runs.Count, corpusDeathsByFloor, found);
+            if (lastFullDay >= TrailingWindowDays)
+            {
+                DeathSpike(run, baselineCorpus.Count, corpusDeathsByFloor, found);
+            }
             GoldMintSpike(run, lastFullDay, found);
             DeadShop(run, lastFullDay, found);
             TariffSaturation(run, found);
@@ -132,12 +145,24 @@ public static class Anomalies
 
     private static void BeatStarvation(ChronicleData run, int lastFullDay, List<Anomaly> found)
     {
-        if (lastFullDay < BeatStarvationMinDay || !run.Heroes.Any(h => h.Alive))
+        if (lastFullDay < BeatStarvationMinDay)
         {
             return;
         }
 
         var from = lastFullDay - TrailingWindowDays + 1;
+
+        // Fire when the town HAD heroes and produced no beats: alive at end (even fresh recruits —
+        // heroes who never depart are the MAXIMAL starvation, not an excuse), or died inside the
+        // window (a final-day wipe must not silence the gauge). Deliberately loud: this is the #1
+        // fun gauge; a wipe-recovery window firing is a conservative true-ish positive, a
+        // never-departing roster staying silent would be a blind spot.
+        var townHadHeroes = run.Heroes.Any(h => h.Alive)
+                            || run.Heroes.Any(h => h.DiedOnDay is int died && died >= from);
+        if (!townHadHeroes)
+        {
+            return;
+        }
         var beats = run.Events.OfType<AttributionBeatEvent>().Count(e => e.Day >= from && e.Day <= lastFullDay);
         if (beats == 0)
         {
@@ -160,9 +185,12 @@ public static class Anomalies
         {
             // Baseline = the OTHER runs (excluding self, else a lone spike dilutes its own baseline):
             // run's count > factor × others' mean  ⇔  count × (runCount−1) > factor × othersTotal.
-            // A single-run corpus has no baseline and stays silent by construction.
+            // A single-run corpus has no baseline and stays silent by construction. othersTotal == 0
+            // also stays silent: a frontier run (only one to reach a floor) has no baseline either —
+            // firing on "3 deaths vs 0" would flag progress, not drift.
             var othersTotal = corpusDeathsByFloor.GetValueOrDefault(floor) - deaths.Count;
-            if (deaths.Count >= DeathSpikeMinDeaths && deaths.Count * (runCount - 1) > DeathSpikeFactor * othersTotal)
+            if (deaths.Count >= DeathSpikeMinDeaths && othersTotal > 0
+                && deaths.Count * (runCount - 1) > DeathSpikeFactor * othersTotal)
             {
                 found.Add(new Anomaly(
                     AnomalySeverity.Medium, "death-spike", run.Seed,
@@ -179,10 +207,18 @@ public static class Anomalies
             return; // need two disjoint full windows
         }
 
+        // No baseline window ⇒ silent. KNOWN LIMIT (v1): an economy whose first loot lands after
+        // day 10 can never fire this rule; if tuning ever delays first income past day 10, replace
+        // the fixed opening window with the first non-zero 10-day window.
         var opening = MintedIn(run, 1, TrailingWindowDays);
+        if (opening == 0)
+        {
+            return;
+        }
+
         var trailingFrom = lastFullDay - TrailingWindowDays + 1;
         var trailing = MintedIn(run, trailingFrom, lastFullDay);
-        if (trailing >= MintSpikeMinGold && trailing > MintSpikeFactor * Math.Max(1, opening))
+        if (trailing >= MintSpikeMinGold && trailing > MintSpikeFactor * opening)
         {
             found.Add(new Anomaly(
                 AnomalySeverity.Medium, "gold-mint-spike", run.Seed, trailingFrom, lastFullDay,
@@ -190,9 +226,11 @@ public static class Anomalies
         }
     }
 
+    // Minted = NEW gold entering the town (hero loot income). BountyPaid is deliberately excluded:
+    // bounty rewards are player-ESCROWED transfers (deducted at post time, refunded on failure) —
+    // counting them would flag a gold-conserving transfer as inflation.
     private static int MintedIn(ChronicleData run, int from, int to) =>
-        run.Events.OfType<LootIncomeReceived>().Where(e => e.Day >= from && e.Day <= to).Sum(e => e.Gold)
-        + run.Events.OfType<BountyPaid>().Where(e => e.Day >= from && e.Day <= to).Sum(e => e.RewardGold);
+        run.Events.OfType<LootIncomeReceived>().Where(e => e.Day >= from && e.Day <= to).Sum(e => e.Gold);
 
     private static void DeadShop(ChronicleData run, int lastFullDay, List<Anomaly> found)
     {
@@ -213,22 +251,31 @@ public static class Anomalies
 
     private static void TariffSaturation(ChronicleData run, List<Anomaly> found)
     {
-        var atCap = run.Events.OfType<TariffApplied>()
-            .Where(t => t.BaseLineCost > 0
-                        && Math.Abs(t.Delta) * 1000 >= t.BaseLineCost * TariffSaturationPerMille)
-            .ToList();
-        if (atCap.Count < TariffSaturationMinEvents)
+        // AGGREGATE ratio, not per-line: integer rounding makes per-line per-mille meaningless on
+        // small line costs (a 1g delta on a 10g line reads as 10% at HALF standing; at the true cap
+        // a 14g line rounds to 7.1% — per-line tests false-fire AND false-miss). Summing deltas and
+        // bases over all tariff events washes the rounding out. long math: sums of external input
+        // must never overflow/throw (Math.Abs(int.MinValue)).
+        var tariffs = run.Events.OfType<TariffApplied>().Where(t => t.BaseLineCost > 0).ToList();
+        if (tariffs.Count < TariffSaturationMinEvents)
         {
             return;
         }
 
-        var from = atCap.Min(t => t.Day);
-        var to = atCap.Max(t => t.Day);
+        var totalDelta = tariffs.Sum(t => Math.Abs((long)t.Delta));
+        var totalBase = tariffs.Sum(t => (long)t.BaseLineCost);
+        if (totalDelta * 1000 < totalBase * TariffSaturationPerMille)
+        {
+            return;
+        }
+
+        var from = tariffs.Min(t => t.Day);
+        var to = tariffs.Max(t => t.Day);
         if (to - from + 1 >= TariffSaturationMinSpanDays)
         {
             found.Add(new Anomaly(
                 AnomalySeverity.Low, "tariff-saturation", run.Seed, from, to,
-                $"{atCap.Count} tariff applications at/near the cap over {to - from + 1} days — standing pegged; the lever stopped mattering."));
+                $"{tariffs.Count} tariff applications averaging at/near the cap over {to - from + 1} days — standing pegged; the lever stopped mattering."));
         }
     }
 
@@ -240,13 +287,16 @@ public static class Anomalies
             return;
         }
 
+        // Cross-multiplied compare — integer floor division would make the reject side asymmetric
+        // (11/200 accepted = 5.5% floors to 5, wrongly firing below the 95% rejection threshold).
         var accepted = judged.Count(j => j.Accepted);
-        var acceptedPerCent = accepted * 100 / judged.Count;
-        if (acceptedPerCent >= MonoculturePerCentEither || acceptedPerCent <= 100 - MonoculturePerCentEither)
+        var fires = accepted * 100 >= MonoculturePerCentEither * judged.Count
+                    || accepted * 100 <= (100 - MonoculturePerCentEither) * judged.Count;
+        if (fires)
         {
             found.Add(new Anomaly(
                 AnomalySeverity.Low, "bounty-monoculture", run.Seed, 1, lastFullDay,
-                $"{judged.Count} bounty judgments, {acceptedPerCent}% accepted — the decision has degenerated to one direction."));
+                $"{judged.Count} bounty judgments, {accepted} accepted — the decision has degenerated to one direction."));
         }
     }
 }

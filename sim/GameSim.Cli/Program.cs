@@ -18,12 +18,26 @@ if (args.Length > 0 && args[0] == "batch")
     return parsed is null ? 1 : GameSim.Cli.BatchRunner.Run(parsed, Console.Out, Console.Error);
 }
 
+// Interactive mode accepts ONLY `--seed N`. Anything else is a hard error — a typo'd batch
+// invocation ('Batch', misordered flags) must never fall through to the interactive REPL,
+// where redirected stdin would EOF and exit 0 having written zero chronicles (silent green).
 var seed = 2026UL;
-for (var i = 0; i < args.Length - 1; i++)
+for (var i = 0; i < args.Length; i++)
 {
-    if (args[i] == "--seed" && ulong.TryParse(args[i + 1], out var s))
+    if (args[i] == "--seed" && i + 1 < args.Length && ulong.TryParse(args[i + 1], out var s))
     {
         seed = s;
+        i++;
+    }
+    else if (args[i] == "--seed")
+    {
+        Console.Error.WriteLine("missing/invalid value for --seed (expected a non-negative integer)");
+        return 1;
+    }
+    else
+    {
+        Console.Error.WriteLine($"unknown arg '{args[i]}' — usage: [--seed N] | batch [flags]");
+        return 1;
     }
 }
 

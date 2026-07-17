@@ -3,7 +3,11 @@
 > Brian's asks (2026-07-17): (1) debugging logs + docs good enough that Claudes fix their own
 > detected issues; (2) NPC logic/behavior — semi-random, player-influenced — logged so the game
 > self-improves as it grows. Semi-automatic: heavy events trigger analysis; a human approves tuning.
-> Status: **proposed** — pending sign-off. Nothing here is implemented yet.
+> Status: **implemented** (Gaps 1-3 shipped 2026-07-17 as plan U1-U3+U5, PR #30) except
+> decision-trace events (plan U4, sequenced behind the expedition-tension PR). Authority for
+> current behavior: `docs/plans/2026-07-17-001-feat-observability-telemetry-plan.md`,
+> `docs/telemetry-loop.md`, `docs/debugging.md`. Note: the tuning report goes to stdout;
+> only `anomalies.md` is written to disk.
 
 ## What already exists (grounded)
 

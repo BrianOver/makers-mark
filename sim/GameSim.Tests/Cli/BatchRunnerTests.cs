@@ -18,9 +18,9 @@ public class BatchRunnerTests : IDisposable
         {
             Directory.Delete(_dir, recursive: true);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // best-effort temp cleanup
+            // best-effort temp cleanup (AV/indexer holds throw either type on Windows)
         }
     }
 
@@ -84,6 +84,30 @@ public class BatchRunnerTests : IDisposable
         Assert.Equal(1UL, args.StartSeed);
         Assert.Equal(100, args.Days);
         Assert.Equal("runs", args.OutDir);
+    }
+
+    [Fact]
+    public void SweepCleansStaleBatchFiles_ButSingleSeedRepro_DoesNot()
+    {
+        // A sweep owns the dir's batch-*.json namespace (stale params would skew corpus baselines);
+        // a single-seed run (anomaly repro) must NEVER wipe a corpus it was mistakenly pointed at.
+        var sweep = BatchRunner.Parse(["--seeds", "2", "--days", "2", "--out", _dir], TextWriter.Null);
+        Assert.Equal(0, BatchRunner.Run(sweep!, TextWriter.Null, TextWriter.Null));
+        var stale = Path.Combine(_dir, "batch-seed999-days50.json");
+        File.WriteAllText(stale, "{}");
+        var export = Path.Combine(_dir, "run-seed7-day3.json"); // interactive export: always untouched
+        File.WriteAllText(export, "{}");
+
+        // Single-seed repro: stale corpus files survive.
+        var repro = BatchRunner.Parse(["--seeds", "1", "--seed", "5", "--days", "2", "--out", _dir], TextWriter.Null);
+        Assert.Equal(0, BatchRunner.Run(repro!, TextWriter.Null, TextWriter.Null));
+        Assert.True(File.Exists(stale));
+        Assert.True(File.Exists(export));
+
+        // Sweep: stale batch file cleaned, interactive export preserved.
+        Assert.Equal(0, BatchRunner.Run(sweep!, TextWriter.Null, TextWriter.Null));
+        Assert.False(File.Exists(stale));
+        Assert.True(File.Exists(export));
     }
 
     [Fact]

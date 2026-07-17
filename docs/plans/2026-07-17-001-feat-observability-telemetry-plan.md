@@ -94,7 +94,8 @@ one chronicle JSON per seed, no interaction.
 **Files:** `sim/GameSim.Cli/Program.cs` (subcommand + arg parse); `sim/GameSim.Tests/Cli/BatchRunnerTests.cs` (new).
 **Approach:** Loop seeds; per seed: `GameComposition.NewCampaign(seed)`, tick M days with the
 baseline player policy already used by the balance sim (reuse — do not fork a second policy);
-`ChronicleCodec` serialize to `runs/batch-<stamp>-seed<see>.json`. Sim purity: IO stays in CLI.
+`ChronicleCodec` serialize to `runs/batch-seed{seed}-days{days}.json` — DETERMINISTIC names, no
+wall-clock stamp (re-runs overwrite; the runner clears stale `batch-*.json` first). Sim purity: IO stays in CLI.
 Design the arg surface so later axes (`--policy`, `--param-override`) slot in without breaking
 callers (R4 forward-fit); do NOT implement them.
 **Test scenarios:** happy: 2 seeds × 3 days writes 2 parseable chronicles with Day==4/expected
@@ -123,8 +124,10 @@ warning, run continues; integration: real 5-seed batch output parses and report 
 
 ### U4. Decision-trace events (orchestrator, sequenced)
 
-**Goal:** `ShoppingScored`, `FloorTargetScored`, `BountyJudged` events with per-term integer score
-breakdowns + enum reason codes; the player-influence ledger.
+**Goal:** `ShoppingScored`, `FloorTargetScored`, `BountyScored` events with per-term integer score
+breakdowns + enum reason codes; the player-influence ledger. NOTE: a `BountyJudged` event ALREADY
+EXISTS (`Contracts/Events.cs`, accept/decline + free-text reason, save-serialized) — do NOT redefine
+it; the new score-breakdown event is named `BountyScored` and coexists.
 **Requirements:** R2, R6, R5.
 **Dependencies:** U3 (rules consume it); HARD SEQUENCE: after expedition-tension architecture PR.
 **Files:** `sim/GameSim/Contracts/Events.cs` (orchestrator-only), emitters in `sim/GameSim/Heroes/`

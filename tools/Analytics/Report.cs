@@ -33,7 +33,7 @@ public static class Report
                 roleByHero[(run.Seed, hero.Id.Value)] =
                     hero.ClassId is not null && ClassRegistry.TryGet(hero.ClassId, out var def)
                         ? def!.DisplayName
-                        : hero.ClassId ?? "unknown";
+                        : hero.ClassId ?? "Unknown"; // matches the missing-hero fallback bucket below
             }
         }
 

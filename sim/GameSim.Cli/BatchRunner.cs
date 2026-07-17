@@ -65,6 +65,13 @@ public static class BatchRunner
             return null;
         }
 
+        if (startSeed > ulong.MaxValue - (ulong)(seedCount - 1))
+        {
+            // Unchecked wrap would silently duplicate low seeds and overwrite their chronicles.
+            error.WriteLine($"batch: seed range {startSeed}+{seedCount} overflows — lower --seed or --seeds");
+            return null;
+        }
+
         return new BatchArgs(seedCount, startSeed, days, outDir);
     }
 
@@ -79,10 +86,24 @@ public static class BatchRunner
         try
         {
             Directory.CreateDirectory(batch.OutDir);
+
+            // Corpus hygiene: filenames embed seed+days, so a SWEEP with different params would
+            // ACCUMULATE next to stale chronicles and silently skew every corpus baseline in
+            // Analytics — a sweep owns the dir's batch-*.json namespace and clears it first.
+            // Single-seed runs (anomaly repros) deliberately do NOT clean: a repro pointed at the
+            // corpus dir by mistake must never wipe 20 chronicles to write 1.
+            // Interactive exports (run-*.json) are always untouched.
+            if (batch.SeedCount > 1)
+            {
+                foreach (var stale in Directory.EnumerateFiles(batch.OutDir, "batch-*.json", SearchOption.TopDirectoryOnly))
+                {
+                    File.Delete(stale);
+                }
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            error.WriteLine($"batch: cannot create output dir '{batch.OutDir}': {ex.Message}");
+            error.WriteLine($"batch: cannot prepare output dir '{batch.OutDir}': {ex.Message}");
             return 1;
         }
 

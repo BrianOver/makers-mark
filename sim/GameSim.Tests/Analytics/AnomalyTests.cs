@@ -56,8 +56,10 @@ public class AnomalyTests
     }
 
     [Fact]
-    public void BeatStarvation_Silent_WhenAllHeroesDead()
+    public void BeatStarvation_Silent_WhenTownIsEmpty()
     {
+        // Everyone dead long before the window (day 10 < window start 21) and no recruits:
+        // no town, no gauge. (Living recruits who never depart DO fire — deliberately loud.)
         var dead = LivingHero() with { Alive = false, DiedOnDay = 10 };
         var run = Run(seed: 7, day: 31, HealthyBeats(15), dead);
 
@@ -65,19 +67,50 @@ public class AnomalyTests
     }
 
     [Fact]
+    public void BeatStarvation_Fires_WhenWipeHappensInsideTheWindow()
+    {
+        // Beat-less window 21-30 with the party dying on day 30: starvation preceded the wipe —
+        // the gauge must not be silenced by end-of-run roster liveness.
+        var dead = LivingHero() with { Alive = false, DiedOnDay = 30 };
+        var run = Run(seed: 7, day: 31, HealthyBeats(15), dead);
+
+        Assert.Contains(Anomalies.Detect([run]), a => a.Rule == "beat-starvation");
+    }
+
+    private static ImmutableList<GameEvent> WithFloorDeaths(ImmutableList<GameEvent> events, int count, int idBase)
+    {
+        var builder = events.ToBuilder();
+        for (var i = 0; i < count; i++)
+        {
+            builder.Add(new HeroDied(new HeroId(i + 1), Floor: 2, "ambush", new GearSet(null, null, null)) with
+            { Id = new EventId(idBase + i), Day = i + 5 });
+        }
+
+        return builder.ToImmutable();
+    }
+
+    [Fact]
     public void DeathSpike_Fires_AgainstCorpusBaseline()
     {
-        // Spiky run: 4 deaths on floor 2. Baseline runs: none. Corpus mean ≈ 4/3 → 4 > 3×mean.
-        var deaths = Enumerable.Range(1, 4).Select(GameEvent (i) =>
-            new HeroDied(new HeroId(i), Floor: 2, "ambush", new GearSet(null, null, null)) with
-            { Id = new EventId(i), Day = i + 4 });
-        var spiky = Run(seed: 1, day: 31, HealthyBeats(30).AddRange(deaths));
-        var calm1 = Run(seed: 2, day: 31, HealthyBeats(30));
-        var calm2 = Run(seed: 3, day: 31, HealthyBeats(30));
+        // Spiky run: 6 deaths on floor 2 vs 1 each in the others: 6×2 > 3×2 → fires.
+        var spiky = Run(seed: 1, day: 31, WithFloorDeaths(HealthyBeats(30), 6, 40));
+        var calm1 = Run(seed: 2, day: 31, WithFloorDeaths(HealthyBeats(30), 1, 60));
+        var calm2 = Run(seed: 3, day: 31, WithFloorDeaths(HealthyBeats(30), 1, 70));
 
         var hit = Assert.Single(Anomalies.Detect([spiky, calm1, calm2]), a => a.Rule == "death-spike");
         Assert.Equal(1UL, hit.Seed);
         Assert.Contains("floor 2", hit.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DeathSpike_Silent_OnFrontierRun_WithNoBaseline()
+    {
+        // Only one run reached floor 2 (othersTotal == 0): progress, not drift — stays silent.
+        var frontier = Run(seed: 1, day: 31, WithFloorDeaths(HealthyBeats(30), 4, 40));
+        var calm1 = Run(seed: 2, day: 31, HealthyBeats(30));
+        var calm2 = Run(seed: 3, day: 31, HealthyBeats(30));
+
+        Assert.DoesNotContain(Anomalies.Detect([frontier, calm1, calm2]), a => a.Rule == "death-spike");
     }
 
     [Fact]
@@ -156,7 +189,24 @@ public class AnomalyTests
         var run = Run(seed: 8, day: 31, events.ToImmutable());
 
         var hit = Assert.Single(Anomalies.Detect([run]), a => a.Rule == "bounty-monoculture");
-        Assert.Contains("0% accepted", hit.Detail, StringComparison.Ordinal);
+        Assert.Contains("0 accepted", hit.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BountyMonoculture_Silent_JustInsideBothBoundaries()
+    {
+        // 11/200 accepted = 5.5% — above the 5% reject threshold; integer floor must not fire it
+        // (cross-multiplied compare, not floored percent).
+        var events = HealthyBeats(30).ToBuilder();
+        for (var i = 0; i < 200; i++)
+        {
+            events.Add(new BountyJudged(new BountyId(i + 1), new HeroId(1), Accepted: i < 11, "r") with
+            { Id = new EventId(700 + i), Day = (i % 30) + 1 });
+        }
+
+        var run = Run(seed: 12, day: 31, events.ToImmutable());
+
+        Assert.DoesNotContain(Anomalies.Detect([run]), a => a.Rule == "bounty-monoculture");
     }
 
     [Fact]

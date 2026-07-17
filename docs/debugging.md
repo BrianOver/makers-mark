@@ -17,8 +17,11 @@ action log.** Use it before reading resolver code or guessing.
 4. **Isolate** — write a focused xUnit test that builds the minimal state and calls the one
    system/handler directly (see any `*ConformanceTests` for the pattern). Fix, then re-run lanes.
 
-Batch repro of a reported anomaly: `dotnet run --project sim/GameSim.Cli -- batch --seeds 1 --seed <s> --days <window-end>`
-then inspect the chronicle or replay interactively with `--seed <s>`.
+Batch repro of a reported anomaly: run the exact `Repro:` command from `anomalies.md` (it targets
+`runs-repro/` so the truncated repro chronicle never pollutes the analytics corpus), then inspect
+that chronicle. **Determinism is seed + ACTIONS**: a batch chronicle replays only under the batch
+command (BaselinePlayer actions); an interactively-exported run was driven by YOUR actions — replay
+it by re-entering the same commands with `--seed <s>`, or debug from its exported event log directly.
 
 ## 2. Test lanes (what to run, when)
 
@@ -34,7 +37,7 @@ Run the fast lane before reporting ANY work done (CLAUDE.md rule 1).
 ## 3. Where logs & artifacts live
 
 - `runs/*.json` — exported chronicles (CLI `export`, batch runner). Input to Analytics.
-- `runs/report.md` + `runs/anomalies.md` — `dotnet run --project tools/Analytics -- runs`.
+- `dotnet run --project tools/Analytics -- runs` — tuning report to STDOUT; `runs/anomalies.md` written to disk.
 - CI: trx artifacts per lane (`sim-test-results`, `balance-test-results`, `engine-test-results`);
   engine-lane failure step dumps recent Godot logs.
 - Godot user logs (local): `%APPDATA%\Godot\app_userdata\` / `~/.local/share/godot/`.

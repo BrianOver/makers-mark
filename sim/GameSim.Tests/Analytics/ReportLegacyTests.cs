@@ -31,6 +31,6 @@ public class ReportLegacyTests
 
         var report = Report.Build([run]);
 
-        Assert.Contains("unknown", report, StringComparison.Ordinal);
+        Assert.Contains("Unknown", report, StringComparison.Ordinal);
     }
 }
