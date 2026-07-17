@@ -11,12 +11,33 @@ using GameSim.Professions;
 // Usage: dotnet run --project sim/GameSim.Cli [-- --seed N]
 // Commands drive the same Tick(actions) surface the Godot panels bind later.
 
-var seed = 2026UL;
-for (var i = 0; i < args.Length - 1; i++)
+// Batch mode: `-- batch [flags]` runs the non-interactive telemetry farm and exits (plan U2).
+if (args.Length > 0 && args[0] == "batch")
 {
-    if (args[i] == "--seed" && ulong.TryParse(args[i + 1], out var s))
+    var parsed = GameSim.Cli.BatchRunner.Parse(args[1..], Console.Error);
+    return parsed is null ? 1 : GameSim.Cli.BatchRunner.Run(parsed, Console.Out, Console.Error);
+}
+
+// Interactive mode accepts ONLY `--seed N`. Anything else is a hard error — a typo'd batch
+// invocation ('Batch', misordered flags) must never fall through to the interactive REPL,
+// where redirected stdin would EOF and exit 0 having written zero chronicles (silent green).
+var seed = 2026UL;
+for (var i = 0; i < args.Length; i++)
+{
+    if (args[i] == "--seed" && i + 1 < args.Length && ulong.TryParse(args[i + 1], out var s))
     {
         seed = s;
+        i++;
+    }
+    else if (args[i] == "--seed")
+    {
+        Console.Error.WriteLine("missing/invalid value for --seed (expected a non-negative integer)");
+        return 1;
+    }
+    else
+    {
+        Console.Error.WriteLine($"unknown arg '{args[i]}' — usage: [--seed N] | batch [flags]");
+        return 1;
     }
 }
 
@@ -46,7 +67,7 @@ while (true)
     switch (parts[0].ToLowerInvariant())
     {
         case "quit" or "exit":
-            return;
+            return 0;
 
         case "export":
         {
@@ -203,6 +224,8 @@ while (true)
             break;
     }
 }
+
+return 0; // EOF — scripted runs end here
 
 GameState Advance(GameState current)
 {

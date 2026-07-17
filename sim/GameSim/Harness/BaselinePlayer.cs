@@ -3,12 +3,14 @@ using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Professions;
 
-namespace GameSim.Tests.Balance;
+namespace GameSim.Harness;
 
 /// <summary>
-/// The scripted baseline player policy (U10): craft the best recipe materials allow,
-/// price at the rival's own formula (better stats win value ties), buy every affordable
-/// ore offer, unlock talents in prerequisite order. Deterministic — no RNG of its own.
+/// The scripted baseline player policy (U10; moved from the Balance tests for the telemetry
+/// batch runner — one policy, shared by the balance gate and the CLI batch farm, never forked).
+/// Craft the best recipe materials allow, price at the rival's own formula (better stats win
+/// value ties), buy every affordable ore offer, unlock talents in prerequisite order.
+/// Deterministic — no RNG of its own, no IO, no wall clock: purity-safe inside GameSim.
 /// </summary>
 public static class BaselinePlayer
 {

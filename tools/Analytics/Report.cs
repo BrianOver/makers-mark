@@ -28,8 +28,12 @@ public static class Report
         {
             foreach (var hero in run.Heroes)
             {
+                // Legacy chronicles (pre-P3 exports) deserialize with a null ClassId — the report
+                // tool must tolerate every chronicle ever written, never crash on one.
                 roleByHero[(run.Seed, hero.Id.Value)] =
-                    ClassRegistry.TryGet(hero.ClassId, out var def) ? def!.DisplayName : hero.ClassId;
+                    hero.ClassId is not null && ClassRegistry.TryGet(hero.ClassId, out var def)
+                        ? def!.DisplayName
+                        : hero.ClassId ?? "Unknown"; // matches the missing-hero fallback bucket below
             }
         }
 
