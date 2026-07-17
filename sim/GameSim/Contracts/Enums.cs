@@ -1,11 +1,18 @@
 namespace GameSim.Contracts;
 
-/// <summary>The three phases of a game day (R1). Tick advances exactly one phase.</summary>
+/// <summary>
+/// The phases of a game day (R1). Tick advances exactly one phase. APPEND ONLY — numeric
+/// values are frozen in every save ever written (KTD4); day ORDER is defined solely by
+/// <c>GameKernel.Advance</c>, never by numeric value (Camp/ExpeditionDeep sit between
+/// Expedition and Evening in the cycle despite their higher values).
+/// </summary>
 public enum DayPhase
 {
     Morning,
     Expedition,
     Evening,
+    Camp,           // = 3 — decision window while the party camps below the checkpoint (staged resolution)
+    ExpeditionDeep, // = 4 — stage-2 floors resolve
 }
 
 /// <summary>
@@ -52,6 +59,20 @@ public enum BeatType
 public enum ConsumableKind
 {
     Heal,
+}
+
+/// <summary>Why an expedition's floor progression stopped. APPEND ONLY — serialized in
+/// <see cref="ExpeditionResult"/> (KTD4). TargetReached is the default old saves deserialize to.
+/// Precedence: DeepestCleared == TargetFloor is ALWAYS TargetReached, whatever exit path
+/// ended the loop (a too-hurt break after clearing the target is a success, not a limp).</summary>
+public enum ExpeditionHalt
+{
+    TargetReached, // cleared through the target floor
+    GateHeld,      // structural gate turned the party back (no roll)
+    FloorLost,     // a flee or death left a floor uncleared
+    PartyWiped,    // nobody left standing
+    TooHurt,       // cleared the floor but too hurt to continue (short of target)
+    Recalled,      // the player rang the recall bell at Camp (v1 bank-and-surface)
 }
 
 /// <summary>

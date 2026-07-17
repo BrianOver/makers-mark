@@ -1,6 +1,6 @@
 # U12 — Living town scene + Return Ritual
 - agent: claude-fable-5 subagent (U12 worktree agent-a78adccf83cbf94b8)
-- status: in-progress
+- status: done (2026-07-14 shipped; stamped 2026-07-17 in lane-split pre-flight — operating-model §8)
 - branch: feat/u12-town-scene (worktree; NOT committed by this agent — orchestrator commits)
 - owned dirs: godot/scenes/town/, godot/scripts/town/
 - surgical edits allowed to U11 files where design requires (documented in final report):

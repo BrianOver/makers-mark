@@ -39,6 +39,7 @@ Debugging anything? `docs/debugging.md` — deterministic repro recipe, log map,
 
 ## Multi-agent rules
 
+- **Lane model:** core lanes (VISUALS / AI-NPC / ENGINE-DEPLOY) + addon swarm + orchestrator — charters, per-lane deny-list amendments, gates, and the CONTRACT-REQUEST escalation format live in `docs/design/lane-operating-model.md`. Cross-lane gates + seam broadcasts: `.claude/tasks/BOARD.md` (read at session start and after any rebase failure).
 - **Directory ownership:** one agent owns one unit's directory exclusively. Claim it in `.claude/tasks/` (see README there) before starting.
 - **Deny-list — never edit unassigned:** `Game.sln`, `godot/project.godot`, `.github/`, `sim/GameSim/Contracts/`, `CLAUDE.md`, `global.json`, `Directory.Build.props`, `.godot-version`.
 - **Contract amendments:** changes to `sim/GameSim/Contracts/` land as dedicated micro-PRs authored by the orchestrating session only, merged before dependent module PRs; in-flight agents rebase.
