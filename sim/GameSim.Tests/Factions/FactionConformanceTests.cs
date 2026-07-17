@@ -148,10 +148,12 @@ public class FactionConformanceTests
         Assert.Equal(FactionRegistry.DeepveinId, found!.Id);
         Assert.True(FactionRegistry.IsRegistered(FactionRegistry.DeepveinId));
 
-        Assert.False(FactionRegistry.TryGet("crownsguard", out var missing));
+        // "no-such-faction" is the never-registered example (was "crownsguard" until that
+        // pack shipped as content — its registration awaits the material-registry core gate).
+        Assert.False(FactionRegistry.TryGet("no-such-faction", out var missing));
         Assert.Null(missing);
-        Assert.False(FactionRegistry.IsRegistered("crownsguard"));
-        Assert.Throws<KeyNotFoundException>(() => FactionRegistry.Require("crownsguard"));
+        Assert.False(FactionRegistry.IsRegistered("no-such-faction"));
+        Assert.Throws<KeyNotFoundException>(() => FactionRegistry.Require("no-such-faction"));
 
         Assert.Same(FactionRegistry.Deepvein, FactionRegistry.Require(FactionRegistry.DeepveinId));
     }
