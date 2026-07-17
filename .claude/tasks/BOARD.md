@@ -7,7 +7,7 @@ session start and after any rebase failure. Everything else is per-claim.
 
 | Gate | What | Blocks | Owner | Status |
 |---|---|---|---|---|
-| G1 | U1 contracts micro-PR merged | U2 | orchestrator | **OPEN — PR up, auto-merge armed** |
+| G1 | U1 contracts micro-PR merged | U2 | orchestrator | **MERGED (#34, 2026-07-17)** |
 | **G2** | **V5a 5-phase tolerance merged (cross-lane hard deadline)** | **U2** | **VISUALS** | not started — VISUALS first action |
 | G3 | U2 kernel (5-phase) merged | U3 | AI-NPC | waiting on G1+G2 |
 | G4 | U3 staging + band re-fit + registration line merged | U4; V5b choreography | AI-NPC (+ orchestrator merge) | waiting on G3 |
@@ -22,4 +22,4 @@ session start and after any rebase failure. Everything else is per-claim.
 
 ## Seam changes (dated; every contracts/GameComposition/registration merge gets a line)
 
-- 2026-07-17: U1 contracts micro-PR opened (`chore/contracts-staged-resolution`) — DayPhase +Camp/+ExpeditionDeep, ExpeditionHalt, camp actions/events, InFlightExpedition, GameState.InFlight, 5 save pins. All lanes rebase once merged.
+- 2026-07-17: **U1 contracts MERGED (#34)** — DayPhase +Camp/+ExpeditionDeep, ExpeditionHalt, camp actions/events, InFlightExpedition, GameState.InFlight, 5 save pins. All 3 CI lanes green (engine lane unaffected, as planned). **All lanes rebase before next push. G1 open for U2 — waiting only on G2 (V5a).**
