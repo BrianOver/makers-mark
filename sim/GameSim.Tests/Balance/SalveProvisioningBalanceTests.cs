@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Harness;
 
 namespace GameSim.Tests.Balance;
 

@@ -3,6 +3,7 @@ using GameSim;
 using GameSim.Contracts;
 using GameSim.Economy;
 using GameSim.Factions;
+using GameSim.Harness;
 using GameSim.Kernel;
 
 namespace GameSim.Tests.Balance;

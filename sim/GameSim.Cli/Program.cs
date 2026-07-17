@@ -11,6 +11,13 @@ using GameSim.Professions;
 // Usage: dotnet run --project sim/GameSim.Cli [-- --seed N]
 // Commands drive the same Tick(actions) surface the Godot panels bind later.
 
+// Batch mode: `-- batch [flags]` runs the non-interactive telemetry farm and exits (plan U2).
+if (args.Length > 0 && args[0] == "batch")
+{
+    var parsed = GameSim.Cli.BatchRunner.Parse(args[1..], Console.Error);
+    return parsed is null ? 1 : GameSim.Cli.BatchRunner.Run(parsed, Console.Out, Console.Error);
+}
+
 var seed = 2026UL;
 for (var i = 0; i < args.Length - 1; i++)
 {
@@ -46,7 +53,7 @@ while (true)
     switch (parts[0].ToLowerInvariant())
     {
         case "quit" or "exit":
-            return;
+            return 0;
 
         case "export":
         {
@@ -203,6 +210,8 @@ while (true)
             break;
     }
 }
+
+return 0; // EOF — scripted runs end here
 
 GameState Advance(GameState current)
 {
