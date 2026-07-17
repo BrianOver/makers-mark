@@ -3,7 +3,7 @@
 - agent: ENGINE/DEPLOY
 - status: pr-open
 - branch: ci/lfs-art
-- pr: <pending>
+- pr: https://github.com/BrianOver/makers-mark/pull/35
 - owned dirs: .gitattributes, .gitignore, .github/workflows/ci.yml (author; orchestrator merges)
 - must not edit: CLAUDE.md deny-list + other claims' dirs
 - test command: all 3 CI lanes green; `git lfs ls-files` shows tavern pair on engine-tests job
