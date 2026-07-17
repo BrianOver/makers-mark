@@ -51,6 +51,7 @@ public static class ProfessionRegistry
     public static readonly ImmutableSortedDictionary<string, ProfessionDefinition> All = new[]
     {
         Blacksmith,
+        TanningProfession.Definition,
     }.ToImmutableSortedDictionary(p => p.Id, p => p, StringComparer.Ordinal);
 
     /// <summary>
