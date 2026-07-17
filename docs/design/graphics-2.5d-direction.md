@@ -47,17 +47,19 @@ normal maps, `CanvasModulate`, `Parallax2D` behave as in 4.3–4.5. `Parallax2D`
 experimental (unverified in 4.6). `AnimatedSprite2D`/TileMap normal maps need a custom shader, not
 the plain property.
 
-## Asset pipeline (the graphics lane — free, human-in-the-loop)
+## Asset pipeline (the graphics lane — free, agent-driven)
+
+> **SUPERSEDED 2026-07-17 (generation stage only):** the "hand-drive Krita" generation model below
+> was replaced once `comfyui-mcp` proved Claude can drive the local ComfyUI directly — automated,
+> $0/image, full seed/LoRA control. The pipeline is now **sequential stages of one flow**:
+> **ComfyUI/SDXL via MCP (generate, master art-Claude) → Krita AI Diffusion (hand-finish/inpaint,
+> human) → Laigter (normal maps) → Godot (steps 1–5 below).** Contract, roles, and lifecycle live in
+> `docs/design/art-pipeline-architecture.md`; styles/prompts in `docs/design/asset-style-spec.md`.
+> Everything below about Laigter, licensing, LFS, and the pilot stays authoritative.
 
 **Krita AI Diffusion (free, local, GPL) + Laigter (free normal/depth/AO maps).** One app for
-generate → LoRA/reference-image coherence → inpaint → **paint-finish**; Laigter turns any finished
+LoRA/reference-image coherence → inpaint → **paint-finish**; Laigter turns any finished
 PNG into the normal (+ specular/AO/depth) maps step 4 needs.
-
-- **The "Claude writes prompts, you generate" split — validated.** I author the durable **style spec +
-  per-asset prompt library + seed/negative conventions**; you drive Krita by hand. A human in a good
-  GUI keeps every coherence lever (seed-lock, style-LoRA, reference image, inpaint) *and* the
-  generate→paint-fix loop in one canvas — so hand-driving **beats** headless ComfyUI automation for an
-  asset set this size. Automating generation is not worth it here; authoring the spec is.
 - **Pilot the cheapest thing first:** run the *existing flat art* (SVG→PNG) through Laigter → normal
   maps → do the engine steps 1–3 on ONE building, and judge whether "lit flat art" already hits the
   2.5D look before generating any new art. Caveat (Agent A): auto-normals off low-relief flat art can
