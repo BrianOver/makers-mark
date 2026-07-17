@@ -69,6 +69,10 @@ lines as a pack the same way it ships recipes:
 2. **Key scheme:** full key = `"<baseKey>/<voiceId>"`. Base key = event kind (or beat type)
    in camelCase; voice ids come from `VoiceProfile.Voices` (frozen: gruff, dramatic, wry,
    omen — never reorder). Author every (baseKey, voice) combination, ≥4 variants each.
+   A hero-ANCHORED beat picks its voice with `VoiceProfile.VoiceFor(campaignId, heroId)`; a
+   hero-LESS beat (no protagonist — e.g. a faction standing shift) uses
+   `VoiceProfile.VoiceForFaction(campaignId, id)` instead, deterministic via `StableHash`. See
+   `FactionPack` (base keys `favored`/`cooled`, slots `{faction}`/`{direction}`) for the pattern.
 3. **Slots resolvable, facts verbatim (R4):** every `{slot}` in every variant must resolve
    from the base key's declared slot set, and every slot's value must appear verbatim in
    the rendered output — the engine validates both and falls back on any failure.

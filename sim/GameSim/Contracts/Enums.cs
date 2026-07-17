@@ -53,3 +53,17 @@ public enum ConsumableKind
 {
     Heal,
 }
+
+/// <summary>
+/// The direction a faction's standing crossed a voicing threshold (P5 U4, R9/KTD7): the town
+/// warmed (<see cref="Favored"/>, standing rose through the favored-band ENTER boundary on an ore
+/// purchase) or cooled (<see cref="Cooled"/>, standing drifted down through the EXIT boundary).
+/// Rides in the <see cref="FactionStandingShifted"/> event that the flavor engine voices; it is
+/// serialized in that event's log entries, so this is APPEND ONLY — numeric values are frozen in
+/// saves (KTD4).
+/// </summary>
+public enum StandingShiftDirection
+{
+    Favored,
+    Cooled,
+}

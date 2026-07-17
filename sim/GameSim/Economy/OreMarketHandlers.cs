@@ -112,10 +112,22 @@ public sealed class OreMarketHandlers : IActionHandler
         // pricing (priced-before-rise, KTD6 — the earned standing discounts only SUBSEQUENT buys).
         // Discount-only core (KTD8): standing only rises here — it never falls (that is the Morning
         // FactionDriftSystem) — so we clamp to +StandingCap. Pure integer, no RNG.
+        //
+        // P5 U4 (R9/KTD7): if that rise carries standing THROUGH a voicing threshold, emit a stamped
+        // FactionStandingShifted the flavor engine renders. The rise can only cross UPWARD (favored);
+        // the crossing test is edge-triggered, so a further buy the same Evening (standing already
+        // past the boundary) emits nothing — at most one favored beat per faction per day-cycle. The
+        // display name rides in on the event so GossipGenerator needs no registry lookup (KTD7).
         if (faction is not null)
         {
-            var raised = Math.Min(newPlayer.StandingFor(faction.Id) + faction.RiseStep, faction.StandingCap);
+            var oldStanding = newPlayer.StandingFor(faction.Id);
+            var raised = Math.Min(oldStanding + faction.RiseStep, faction.StandingCap);
             newPlayer = newPlayer.WithStanding(faction.Id, raised);
+
+            if (FactionStandingThresholds.Crossing(faction, oldStanding, raised) is { } direction)
+            {
+                events.Emit(new FactionStandingShifted(faction.Id, faction.DisplayName, direction));
+            }
         }
 
         var newState = state with

@@ -19,9 +19,18 @@ namespace GameSim.Drama;
 ///
 /// Told kinds: <see cref="HeroDied"/>, <see cref="AttributionBeatEvent"/> (every
 /// <see cref="BeatType"/> except the reserved <see cref="BeatType.ToolAssist"/>, which
-/// has no emitter yet), <see cref="FloorRecordSet"/>, and <see cref="RecruitArrived"/>.
-/// Everything else stays untold. Output is capped at <paramref name="maxLines"/>,
-/// picking the FIRST matches in the order given (log order) — deterministic, no favorites.
+/// has no emitter yet), <see cref="FloorRecordSet"/>, <see cref="RecruitArrived"/>, and the
+/// hero-LESS <see cref="FactionStandingShifted"/> (P5 U4). Everything else stays untold. Output is
+/// capped at <paramref name="maxLines"/>, picking the FIRST matches in the order given (log order) —
+/// deterministic, no favorites; faction lines and hero lines compete for the same slots by log order.
+///
+/// <para><b>Pack dispatch (P5 U4/KTD7).</b> Hero-anchored beats render through <see cref="TavernPack"/>
+/// with the protagonist's <see cref="VoiceProfile.VoiceFor(ulong,int)"/> voice, exactly as before. A
+/// <see cref="FactionStandingShifted"/> has no protagonist, so it renders through the separate
+/// <see cref="FactionPack"/> with a hero-less <see cref="VoiceProfile.VoiceForFaction"/> voice, and its
+/// facts (faction display name, direction word) come straight off the EVENT — never a
+/// <see cref="Factions.FactionRegistry"/> lookup here, since <see cref="Generate"/> is handed only
+/// heroes + items (KTD7).</para>
 /// </summary>
 public static class GossipGenerator
 {
@@ -48,23 +57,80 @@ public static class GossipGenerator
                 continue; // unstamped — not a real logged event, nothing to cite (R14)
             }
 
-            if (Describe(gameEvent, heroes, items) is not var (baseKey, hero, slots))
+            var line = gameEvent switch
+            {
+                FactionStandingShifted shift => RenderFaction(shift, campaignId),
+                _ => RenderHero(gameEvent, heroes, items, campaignId),
+            };
+            if (line is null)
             {
                 continue; // untold kind
             }
 
-            var voice = VoiceProfile.VoiceFor(campaignId, hero.Value);
-            var line = FlavorEngine.Render(
-                TavernPack.Pack,
-                baseKey + FlavorEngine.KeySeparator + voice,
-                slots,
-                campaignId,
-                eventId: unchecked((ulong)gameEvent.Id.Value));
             lines.Add(new GossipEmitted(gameEvent.Id, line));
         }
 
         return lines.ToImmutable();
     }
+
+    /// <summary>
+    /// Render a hero-anchored beat through <see cref="TavernPack"/> using its protagonist's voice.
+    /// Null = untold kind. Unchanged from the pre-U4 path (existing prose goldens depend on it).
+    /// </summary>
+    private static string? RenderHero(
+        GameEvent gameEvent,
+        ImmutableSortedDictionary<int, Hero> heroes,
+        ImmutableSortedDictionary<int, Item> items,
+        ulong campaignId)
+    {
+        if (Describe(gameEvent, heroes, items) is not var (baseKey, hero, slots))
+        {
+            return null;
+        }
+
+        var voice = VoiceProfile.VoiceFor(campaignId, hero.Value);
+        return FlavorEngine.Render(
+            TavernPack.Pack,
+            baseKey + FlavorEngine.KeySeparator + voice,
+            slots,
+            campaignId,
+            eventId: unchecked((ulong)gameEvent.Id.Value));
+    }
+
+    /// <summary>
+    /// Render a hero-LESS faction standing shift through <see cref="FactionPack"/> (P5 U4/KTD7). The
+    /// direction picks the base key; the faction display name and direction word ride in as slots
+    /// straight off the event (no registry lookup); the voice is faction-derived, not hero-derived.
+    /// </summary>
+    private static string RenderFaction(FactionStandingShifted shift, ulong campaignId)
+    {
+        var voice = VoiceProfile.VoiceForFaction(campaignId, shift.FactionId);
+        var slots = FlavorEngine.Slots(
+            ("faction", shift.FactionName),
+            ("direction", DirectionWord(shift.Direction)));
+        return FlavorEngine.Render(
+            FactionPack.Pack,
+            DirectionBaseKey(shift.Direction) + FlavorEngine.KeySeparator + voice,
+            slots,
+            campaignId,
+            eventId: unchecked((ulong)shift.Id.Value));
+    }
+
+    /// <summary>The <see cref="FactionPack"/> base key for a shift direction.</summary>
+    private static string DirectionBaseKey(StandingShiftDirection direction) => direction switch
+    {
+        StandingShiftDirection.Favored => FactionPack.Favored,
+        StandingShiftDirection.Cooled => FactionPack.Cooled,
+        _ => FactionPack.Favored,
+    };
+
+    /// <summary>The verbatim direction word slot (the crossing verb the template embeds).</summary>
+    private static string DirectionWord(StandingShiftDirection direction) => direction switch
+    {
+        StandingShiftDirection.Favored => "warmed",
+        StandingShiftDirection.Cooled => "cooled",
+        _ => "warmed",
+    };
 
     /// <summary>
     /// Maps a told event to its <see cref="TavernPack"/> base key, its protagonist (whose

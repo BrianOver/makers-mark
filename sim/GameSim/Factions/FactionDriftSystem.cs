@@ -49,7 +49,19 @@ public sealed class FactionDriftSystem : IPhaseSystem
                 continue;
             }
 
-            drifted = drifted.SetItem(factionId, StepTowardZero(value, faction.DriftStep));
+            var stepped = StepTowardZero(value, faction.DriftStep);
+
+            // P5 U4 (R9/KTD7): drift only lowers standing, so it can only cross the favored EXIT
+            // boundary DOWNWARD (cooled). Emit a stamped FactionStandingShifted the flavor engine
+            // renders. Runs once per Morning, so at most one cooled beat per faction per day-cycle;
+            // the display name rides in on the event (no registry lookup in the renderer, KTD7). This
+            // stays pure integer — no RNG (KTD5).
+            if (FactionStandingThresholds.Crossing(faction, value, stepped) is { } direction)
+            {
+                events.Emit(new FactionStandingShifted(faction.Id, faction.DisplayName, direction));
+            }
+
+            drifted = drifted.SetItem(factionId, stepped);
         }
 
         return ReferenceEquals(drifted, standing)
