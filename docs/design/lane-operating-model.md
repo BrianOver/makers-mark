@@ -1,6 +1,10 @@
 # Lane operating model — 3 core lanes + addon swarm
 
-> Status: **ADOPTED 2026-07-17** — Brian launched the three core-lane sessions same day. Authored by the orchestrator (Fable) session. Path: `docs/design/lane-operating-model.md`.
+> Status: **SUPERSEDED IN PART by §13 (Coordination v2.1, 2026-07-17 evening)** — the lane *charters,
+> deny-lists, claim protocol, gates, and escalation format (§1-§11) remain law except where §13's
+> seam rules amend them (claim-stub-on-main, orchestrator stamps `done`, orchestrator babysits);
+> §0's launch model (three cores converged on one feature chain) is replaced by §13's parallel
+> file-disjoint feature tracks + automated GitHub seams. Read §13 first.
 > Extends (does not replace): `CLAUDE.md` multi-agent rules, `.claude/tasks/README.md`, `docs/design/fanout-strategy.md`, `docs/design/art-pipeline-architecture.md`, `docs/addon-guide.md`. Where this doc amends one of those, the amendment is called out explicitly (§9).
 > Execution authorities per lane: `docs/plans/2026-07-17-002-feat-staged-resolution-plan.md` (AI-NPC), `docs/plans/2026-07-17-003-feat-town-2p5d-migration-plan.md` (VISUALS + ENGINE infra units), `docs/plans/2026-07-17-001-feat-observability-telemetry-plan.md` (AI-NPC, U4 gated), engine-pin rules in `CLAUDE.md` (ENGINE).
 
@@ -303,3 +307,73 @@ change, STOP and file a CONTRACT-REQUEST (§7) instead of coding it.
 ---
 
 *Grounding: all Design-3 citations re-verified by the cross-examination; corrections applied this session against the working tree: `Game.sln` contains no AssetGen project (directory-only orphan); deaths-by-floor recount 59/182/191/25 (n=457) from `runs/batch-seed*.json`; 20 `AdvancePhase` call sites (TownSceneTests 8 / MainUiTests 9 / SimAdapterTests 3); `SalvePrice = 8` (`SalveProvisioningBalanceTests.cs:19`); `BountyJudged` exists (`Contracts/Events.cs:21`); `GameComposition.cs:15-18` registration-order header; `IconRegistry.cs:45` null-tolerant `Art`.*
+
+---
+
+## 13. Coordination v2.1 — parallel feature tracks + automated seams (ADOPTED 2026-07-17 evening; supersedes §0's concurrency model; v2.0 serial-baton draft was critic-rejected same evening, findings applied below)
+
+### What the first live hours taught (evidence)
+
+1. **Shared-checkout collision:** two sessions fought over `c:\Code\Game`'s HEAD; an orchestrator commit landed on the ENGINE lane's branch mid-push (rode into #35, benign, pure luck).
+2. **Stale-state questions to Brian:** ENGINE asked Brian to merge #35 forty minutes *after* it was merged; AI-NPC asked who owns V5a when §1 already answered it. Sessions cannot see main move, so they turned the human into a message bus.
+3. **Convergent scheduling, not parallelism, was the defect:** all three cores were launched onto ONE serial feature chain (V5a → U2 → U3 → U4). ENGINE finished O1 in ~30 minutes and idled; AI-NPC was gate-blocked from minute one. Parallel cores on DISJOINT features would not have collided at all — data-only addon work is collision-proof by construction.
+
+**Design goal (Brian, explicit): maximum parallel development — three cores + grunt task-Claudes running together — with GitHub management automated so nobody overwrites anybody.** So: parallelize across disjoint feature tracks; automate every seam; never park a core on a gate.
+
+### The v2.1 model
+
+```
+ORCHESTRATOR (always-on, this session) ─ the automation layer, not a bottleneck
+  • INTEGRATE loop (watcher-driven): review + merge PRs, flip gates ON MERGE (same pass),
+    stamp claim statuses, apply registry lines, re-record goldens, broadcast on BOARD
+  • CUT: keeps EVERY core queue stocked ≥1 ungated item; writes claim stubs to main BEFORE
+    work starts; declares track-disjointness (file-level) between everything running
+  • SPAWNS the addon swarm (subagents, per-packet worktrees) — grunt runs without Brian
+  • Contracts micro-PRs, verdicts, plans — unchanged from §4
+
+CORE SESSIONS (up to 3 standing, parallel — VISUALS / AI-NPC / ENGINE)
+  • A core session runs whenever its queue is non-empty; closes when empty; Brian is pinged
+    to open/close. (Today: VISUALS + AI-NPC deep queues; ENGINE closed until G6/bug work.)
+  • Each core works ONE claim at a time from ITS OWN queue, in ITS OWN worktree; when a unit
+    hits a cross-gate, the core takes its next ungated queue item — never idles, never asks.
+  • Queues are orchestrator-cut to be file-disjoint from every other active track. Cross-core
+    seams (a V5a→U2 style gate) are BOARD gates the orchestrator flips automatically at merge.
+
+ADDON SWARM (N parallel, fully automatic — the grunt tier)
+  • Data-only packets per §10 (professions/classes/venues/factions/flavor/art-specs —
+    characters, maps, items). Orchestrator-spawned subagents; conformance green = orchestrator
+    commits/PRs; cores + registries consume the output. Human addon sessions stay legal.
+```
+
+### Automated GitHub seams (the anti-overwrite machinery)
+
+1. **Worktree per claim, no exceptions.** `git worktree add ../Game-<claim> -b <branch> origin/main`. The shared root `c:\Code\Game` is read-only territory for every session including the orchestrator.
+2. **Claims live on MAIN before work starts.** The orchestrator writes the claim stub (status: `cut`) to `.claude/tasks/` via its own micro-PR at CUT time — for cores AND spawned swarm workers (CLAUDE.md's claim rule binds subagents too). BOARD's open-claims table is the live lock registry; a claim file on a feature branch locks nothing.
+3. **Gate truth = merged PRs, BOARD second.** The orchestrator flips gates in the same INTEGRATE pass that merges. A session verifying a gate runs `git fetch origin && git show origin/main:.claude/tasks/BOARD.md` AND, if the gate names a PR, `gh pr view <n> --json state` — a MERGED gate PR beats a stale BOARD line.
+4. **Status lifecycle:** session sets `claimed → in-progress → pr-open` (same-session, pushed); the ORCHESTRATOR stamps `done` at merge and `blocked → cut` on re-packet (§5's "same-session" rule is amended accordingly — sessions can't stamp what happens after they exit).
+5. **Auto-merge policy:** PRs fully inside owned dirs with no registry line = auto-merge armed by the session. PRs carrying a `Registration lines:` entry or `GameComposition.cs` edit NEVER auto-merge — the orchestrator commits the registry line onto the PR branch (or reviews the in-PR line), then merges personally (§2/§7 preserved).
+6. **Escalation without orphans:** blocked = push the branch AND the claim update (`status: blocked`, `parked: <branch>@<sha>`), then take the next queue item (or exit if queue empty). The orchestrator's next CUT emits a resume packet referencing the parked sha; adoption is explicit in the new claim stub.
+7. **Rebase/babysit ownership: ORCHESTRATOR** (watcher merges, rebases stale auto-merge PRs, triages CI). §3/§8/§11's "ENGINE babysits" lines are struck (§9 amendment 6). ENGINE returns as a core when real engine work exists (G6, CI breakage, upgrades).
+
+### Session lifecycle rules (mandatory lines in every bootstrap prompt)
+
+1. Worktree first (seam rule 1). 2. Never ask the user routing/status questions — seam rule 3 is your truth procedure. 3. Gated ≠ idle: next ungated queue item, else escalate per seam rule 6, else exit with summary. 4. Done = PR (auto-merge per seam rule 5) + next queue item; exit only on empty queue. 5. One ACTIVE claim at a time; taking the next queue item = activating the next orchestrator-cut claim, never inventing scope.
+
+### The cycle (continuous, watcher-driven)
+
+```
+INTEGRATE  merge green · flip gates AT merge · stamp statuses · registry lines · goldens · BOARD
+CUT        restock every core queue (≥1 ungated, file-disjoint) · claim stubs to main · swarm wave
+RUN        cores work their queues in parallel · swarm workers spawn · nothing waits on Brian
+VERIFY     CI lanes green · adversarial review on mechanism-adjacent PRs · anomaly scan on runs/
+```
+
+Brian's touchpoints: open/close a core session when pinged; play the game; verdicts the orchestrator escalates (band re-fits >30%, engine upgrades, design pivots). Everything else is automatic.
+
+### Immediate transition (2026-07-17 evening)
+
+- **G2 FLIPPED** (#38 merged) — AI-NPC pushes U2 now. AI-NPC queue: U2 → U3 → U4 (serial within the core — that's fine, it's ONE core's queue), then telemetry-U4.
+- **VISUALS queue:** V1 → V4a → V2 (G7 flipped). V3-gen stays spec-blocked until swarm packet `addon-art-heroes` merges (§1's ordering stands; the earlier "V3-gen unlocked by G7 alone" line was wrong). V4b blocked on G6; V5b on G4.
+- **ENGINE session: closed** (queue empty — O1 shipped, G6 upstream-blocked; watch + babysit duties to orchestrator). Reopens as a core the moment engine work exists.
+- **Swarm wave-1, orchestrator-spawned:** `addon-art-heroes` first (unblocks V3-gen), then `addon-tanning`, `addon-faction-crownsguard`, one flavor pack — claim stubs to main at CUT per seam rule 2.
+- **§12's v1 prompts are SUPERSEDED** — future packets are generated from §13's lifecycle rules + the packet fields in seam rule 2 (§12 kept for the charter reading lists only).
