@@ -1,6 +1,6 @@
 # Lane operating model — 3 core lanes + addon swarm
 
-> Status: **proposed → for Brian sign-off**, authored by the orchestrator (Fable) session 2026-07-17. Path: `docs/design/lane-operating-model.md`.
+> Status: **ADOPTED 2026-07-17** — Brian launched the three core-lane sessions same day. Authored by the orchestrator (Fable) session. Path: `docs/design/lane-operating-model.md`.
 > Extends (does not replace): `CLAUDE.md` multi-agent rules, `.claude/tasks/README.md`, `docs/design/fanout-strategy.md`, `docs/design/art-pipeline-architecture.md`, `docs/addon-guide.md`. Where this doc amends one of those, the amendment is called out explicitly (§9).
 > Execution authorities per lane: `docs/plans/2026-07-17-002-feat-staged-resolution-plan.md` (AI-NPC), `docs/plans/2026-07-17-003-feat-town-2p5d-migration-plan.md` (VISUALS + ENGINE infra units), `docs/plans/2026-07-17-001-feat-observability-telemetry-plan.md` (AI-NPC, U4 gated), engine-pin rules in `CLAUDE.md` (ENGINE).
 
@@ -170,6 +170,7 @@ Orchestrator disposition: author the micro-PR (or reject with reason on the clai
 
 ## 8. Conflict mechanics
 
+- **Worktrees (mandatory):** the `c:\Code\Game` checkout is SHARED by all concurrent sessions. Never `git checkout`/commit a work branch in the shared root — every session works in its own worktree (`git worktree add ../Game-<lane> -b <branch> origin/main`). Added 2026-07-17 after a live branch-switch collision between two sessions.
 - **Branches:** per the §5 grammar. One claim = one branch = one small PR. Conventional commits; no `git add .`.
 - **Rebase cadence:** rebase onto main (i) before opening a PR, (ii) whenever the ruleset marks the PR stale (auto-merge is on — rebase + re-run is the loop), (iii) whenever BOARD.md announces a seam merge. ENGINE lane babysits; lanes own their own rebases.
 - **Cross-lane merge conflicts:** structurally impossible on owned dirs (disjoint). If one occurs anyway, a shared seam was edited — the orchestrator resolves it AND the offending edit is reverted into a contract-request. No lane ever resolves a conflict inside a file it doesn't own.
