@@ -62,8 +62,8 @@ public class IconRegistryTests
     [TestCase]
     public void GeneratedArt_AbsentUntilGenerated_ReturnsNull()
     {
-        // Art PNGs are produced by tools/AssetGen (needs GEMINI_API_KEY) and committed
-        // later; the registry must degrade gracefully until then.
+        // Art PNGs are produced by the local ComfyUI pipeline (docs/design/art-pipeline-architecture.md)
+        // and committed later; the registry must degrade gracefully until then.
         AssertThat(IconRegistry.Art("does_not_exist_yet")).IsNull();
     }
 }

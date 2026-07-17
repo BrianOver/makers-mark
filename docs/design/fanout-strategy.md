@@ -132,7 +132,8 @@ the *curation*.
 - Steam mandates AI-content disclosure; ~1 in 5 2025 releases disclosed. Plan the disclosure.
 - Generated PNGs carry provenance (e.g. SynthID watermarks on some models); keep prompts + drafts +
   hand-finish edits as the authorship paper trail (also the copyright-protectability trail).
-- Commit PNGs as source of truth via **Git LFS** (`.gitattributes` for `art/**`), commit the `.import`
+- Commit PNGs as source of truth via **Git LFS** (`.gitattributes` for `godot/assets/art/**/*.png` —
+  NOT `art/**`, which would miss the committed PNG tree and wrongly LFS-ify C# spec source), commit the `.import`
   files, keep the ComfyUI workflow JSON in `pipeline/` for provenance — never as a build step
   (cross-GPU float drift makes regenerate-on-demand unsafe).
 

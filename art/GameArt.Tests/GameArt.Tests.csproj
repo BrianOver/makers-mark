@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Fast-lane art conformance: runs via `dotnet test` with NO Godot, NO filesystem/pixel IO (KTD3).
+       "conformance-green = the describe-PR's definition of done". The IO/pixel/lock checks live in a
+       separate lock gate (see docs/design/art-pipeline-architecture.md). TFM from Directory.Build.props. -->
+  <PropertyGroup>
+    <RootNamespace>GameArt.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GameArt\GameArt.csproj" />
+  </ItemGroup>
+</Project>

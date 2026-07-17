@@ -16,6 +16,8 @@ jobs:
           global-json-file: global.json
       - name: Fast lane — sim suite (no Godot)
         run: dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter "Category!=Balance" --logger "trx;LogFileName=sim-tests.trx"
+      - name: Fast lane — art conformance (no Godot, no IO; describe-PR definition of done)
+        run: dotnet test art/GameArt.Tests/GameArt.Tests.csproj --logger "trx;LogFileName=art-tests.trx"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

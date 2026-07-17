@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Art-asset contract + registry (the art lane's core, mirrors GameSim's registries).
+       Pure .NET, no Godot. References GameSim ONE-WAY for StableHash (seed derivation) only;
+       GameSim never references back. TargetFramework comes from Directory.Build.props.
+       See docs/design/art-pipeline-architecture.md. -->
+  <PropertyGroup>
+    <RootNamespace>GameArt</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Fan-out-owned module spec files live OUTSIDE this deny-listed project dir, under art/specs/.
+       Glob-included so adding a module is a new file under art/specs/ with NO edit to this csproj. -->
+  <ItemGroup>
+    <Compile Include="..\specs\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\sim\GameSim\GameSim.csproj" />
+  </ItemGroup>
+</Project>
