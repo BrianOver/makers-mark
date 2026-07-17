@@ -17,9 +17,17 @@ dotnet test godot/tests --settings .runsettings
 # Console play (from U13)
 dotnet run --project sim/GameSim.Cli
 
+# Batch telemetry farm (seed sweep, chronicles to runs/)
+dotnet run --project sim/GameSim.Cli -- batch --seeds 20 --days 100
+
+# Analytics + anomaly report over runs/
+dotnet run --project tools/Analytics -- runs
+
 # Build everything
 dotnet build Game.sln
 ```
+
+Debugging anything? `docs/debugging.md` — deterministic repro recipe, log map, known failure shapes.
 
 ## Hard rules
 
