@@ -26,6 +26,13 @@ namespace GameSim.Kernel;
 /// Standing property deserializes it as null → <c>PlayerState.StandingFor</c> reads every faction as
 /// neutral (0), so the save loads with no behavior change until the player trades. The U2 save test
 /// pins this LOAD behavior (absent → neutral), not byte-identical re-save.
+///
+/// P6 save-shape note (staged resolution U1): <c>DayPhase</c> gained APPEND-ONLY <c>Camp=3</c> /
+/// <c>ExpeditionDeep=4</c> (int-serialized; day order lives in <c>GameKernel.Advance</c>, not the
+/// numeric values); <c>ExpeditionResult</c> gained a TRAILING <c>ExpeditionHalt Halt</c> defaulting
+/// to <c>TargetReached</c> (VenueId precedent — absent property loads as the old implicit meaning);
+/// <c>GameState</c> gained a non-positional <c>InFlight</c> init member defaulting to empty
+/// (Hero.Pack precedent), so pre-staging saves load unchanged. All pinned in SaveLoadTests.
 /// </summary>
 public static class SaveCodec
 {

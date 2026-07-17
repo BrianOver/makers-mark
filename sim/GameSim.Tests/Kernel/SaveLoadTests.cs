@@ -121,4 +121,131 @@ public class SaveLoadTests
         Assert.Equal(3, bounty.TargetFloor);
         Assert.Equal(SaveCodec.Serialize(state), SaveCodec.Serialize(roundTripped));
     }
+
+    [Fact]
+    public void PreStagedSave_WithoutInFlight_LoadsEmpty()
+    {
+        // Backward-compat contract (staged resolution U1): GameState.InFlight is a non-positional
+        // init member; a pre-staging save has no InFlight property and must load as empty.
+        var state = GameFactory.NewGame(seed: 21);
+        var json = SaveCodec.Serialize(state);
+
+        var preStaged = System.Text.RegularExpressions.Regex.Replace(
+            json, ",?\\s*\"InFlight\"\\s*:\\s*\\[\\]", string.Empty);
+        Assert.DoesNotContain("InFlight", preStaged);
+
+        var loaded = SaveCodec.Deserialize(preStaged);
+        Assert.Empty(loaded.InFlight);
+
+        // Populated case: values survive a byte-identical round-trip.
+        var inFlight = new InFlightExpedition(
+            ImmutableList.Create(new HeroId(1), new HeroId(2)),
+            TargetFloor: 3, CheckpointFloor: 1, VenueId: "mine",
+            Hp: ImmutableSortedDictionary<int, int>.Empty.Add(1, 14).Add(2, 9),
+            Packs: ImmutableSortedDictionary<int, ImmutableList<ItemId>>.Empty
+                .Add(1, ImmutableList.Create(new ItemId(41))).Add(2, ImmutableList<ItemId>.Empty),
+            Gold: ImmutableSortedDictionary<int, int>.Empty.Add(1, 6).Add(2, 0),
+            Dead: ImmutableSortedSet<int>.Empty,
+            Floors: ImmutableList.Create(new FloorOutcome(1, Cleared: true, ImmutableList<CombatEvent>.Empty)),
+            Loot: ImmutableList.Create(new OreLoot(new HeroId(1), "iron", 2)),
+            DeepestFloorCleared: 1)
+        { SupplySent = true, Recalled = false };
+        var populated = state with { InFlight = ImmutableList.Create(inFlight) };
+
+        var reloaded = SaveCodec.Deserialize(SaveCodec.Serialize(populated));
+        Assert.Equal(SaveCodec.Serialize(populated), SaveCodec.Serialize(reloaded));
+        var round = Assert.Single(reloaded.InFlight);
+        Assert.True(round.SupplySent);
+        Assert.Equal(1, round.CheckpointFloor);
+        Assert.Equal(14, round.Hp[1]);
+    }
+
+    [Fact]
+    public void CampPhase_RoundTripsAsInt()
+    {
+        // DayPhase serializes as an int (no string-enum converter): Camp = 3 must survive a
+        // byte-identical round-trip so a mid-day save parked at the Camp tick is safe.
+        var state = GameFactory.NewGame(seed: 22) with { Phase = DayPhase.Camp };
+
+        var json = SaveCodec.Serialize(state);
+        var loaded = SaveCodec.Deserialize(json);
+
+        Assert.Equal(DayPhase.Camp, loaded.Phase);
+        Assert.Equal(json, SaveCodec.Serialize(loaded));
+    }
+
+    [Fact]
+    public void PreP6Result_WithoutHalt_LoadsTargetReached()
+    {
+        // Backward-compat contract (P6 save-shape): ExpeditionHalt is a trailing member with a
+        // TargetReached default — a pre-staging ExpeditionResult without the property must
+        // deserialize to TargetReached (the old implicit meaning), VenueId-precedent style.
+        var result = new ExpeditionResult(
+            ImmutableList<HeroId>.Empty, TargetFloor: 1, DeepestFloorCleared: 1,
+            ImmutableList<FloorOutcome>.Empty, ImmutableList<HeroId>.Empty, ImmutableList<HeroId>.Empty,
+            ImmutableList<AttributionBeat>.Empty, ImmutableList<OreLoot>.Empty,
+            ImmutableSortedDictionary<int, int>.Empty);
+        var state = GameFactory.NewGame(seed: 23) with { PendingExpeditions = ImmutableList.Create(result) };
+
+        var json = SaveCodec.Serialize(state);
+        var preP6 = System.Text.RegularExpressions.Regex.Replace(
+            json, ",?\\s*\"Halt\"\\s*:\\s*0", string.Empty);
+        Assert.DoesNotContain("\"Halt\"", preP6);
+
+        var loaded = SaveCodec.Deserialize(preP6);
+        Assert.Equal(ExpeditionHalt.TargetReached, loaded.PendingExpeditions[0].Halt);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesCampActions()
+    {
+        // Handler-less kernel: the actions are rejected but still logged (GameKernel logs every
+        // batch) — enough to pin their polymorphic discriminators before any handler exists.
+        var state = GameFactory.NewGame(seed: 24);
+        var kernel = new GameKernel(ImmutableList<IPhaseSystem>.Empty, ImmutableList<IActionHandler>.Empty);
+        state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(
+            new SendSupplyAction(new HeroId(1), new ItemId(7)),
+            new RecallPartyAction(new HeroId(2)))).NewState;
+
+        var roundTripped = SaveCodec.Deserialize(SaveCodec.Serialize(state));
+
+        var logged = Assert.Single(roundTripped.ActionLog);
+        var supply = Assert.IsType<SendSupplyAction>(logged.Actions[0]);
+        Assert.Equal(new ItemId(7), supply.Item);
+        var recall = Assert.IsType<RecallPartyAction>(logged.Actions[1]);
+        Assert.Equal(new HeroId(2), recall.Member);
+        Assert.Equal(SaveCodec.Serialize(state), SaveCodec.Serialize(roundTripped));
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesCampEvents()
+    {
+        // Pins the three staged-resolution event discriminators polymorphically.
+        var state = GameFactory.NewGame(seed: 25);
+        state = state with
+        {
+            EventLog = state.EventLog.AddRange(new GameEvent[]
+            {
+                new PartyCampReport(
+                    ImmutableList.Create(new HeroId(1)),
+                    CampedBelowFloor: 2, TargetFloor: 4,
+                    HpByHero: ImmutableSortedDictionary<int, int>.Empty.Add(1, 11),
+                    HealsLeftByHero: ImmutableSortedDictionary<int, int>.Empty.Add(1, 1))
+                { Id = new EventId(9001), Day = 3 },
+                new SupplyDelivered(new HeroId(1), new ItemId(7), Fee: 9) { Id = new EventId(9002), Day = 3 },
+                new PartyRecalled(ImmutableList.Create(new HeroId(1))) { Id = new EventId(9003), Day = 3 },
+            }),
+        };
+
+        var roundTripped = SaveCodec.Deserialize(SaveCodec.Serialize(state));
+
+        var events = roundTripped.EventLog;
+        var report = Assert.IsType<PartyCampReport>(events[^3]);
+        Assert.Equal(2, report.CampedBelowFloor);
+        Assert.Equal(1, report.HealsLeftByHero[1]);
+        var delivered = Assert.IsType<SupplyDelivered>(events[^2]);
+        Assert.Equal(9, delivered.Fee);
+        Assert.IsType<PartyRecalled>(events[^1]);
+        Assert.Equal(SaveCodec.Serialize(state), SaveCodec.Serialize(roundTripped));
+    }
 }

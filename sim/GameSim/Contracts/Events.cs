@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json.Serialization;
 
 namespace GameSim.Contracts;
@@ -24,6 +25,9 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(FloorRecordSet), "floorRecord")]
 [JsonDerivedType(typeof(TariffApplied), "tariffApplied")]
 [JsonDerivedType(typeof(FactionStandingShifted), "factionStandingShifted")]
+[JsonDerivedType(typeof(PartyCampReport), "partyCampReport")]
+[JsonDerivedType(typeof(SupplyDelivered), "supplyDelivered")]
+[JsonDerivedType(typeof(PartyRecalled), "partyRecalled")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -94,3 +98,21 @@ public sealed record TariffApplied(
 /// </summary>
 public sealed record FactionStandingShifted(
     string FactionId, string FactionName, StandingShiftDirection Direction) : GameEvent;
+
+/// <summary>The winch-house slate (staged resolution): a party camped below the checkpoint,
+/// stage 2 unresolved. HpByHero/HealsLeftByHero are the decision facts (current hp; count of
+/// Heal consumables left in the working pack). Never lists a dead hero — a stage-1 death
+/// finalizes immediately and no report is emitted (KTD5: deaths reveal only at Evening).</summary>
+public sealed record PartyCampReport(
+    ImmutableList<HeroId> Party,
+    int CampedBelowFloor,
+    int TargetFloor,
+    ImmutableSortedDictionary<int, int> HpByHero,
+    ImmutableSortedDictionary<int, int> HealsLeftByHero) : GameEvent;
+
+/// <summary>A camp delivery landed (front of pack). Fee is the runner's charge — a recorded
+/// gold SINK the conservation invariant reconciles against (KTD3, TariffApplied precedent).</summary>
+public sealed record SupplyDelivered(HeroId To, ItemId Item, int Fee) : GameEvent;
+
+/// <summary>The recall bell: the party will bank and surface at the Deep tick (v1).</summary>
+public sealed record PartyRecalled(ImmutableList<HeroId> Party) : GameEvent;

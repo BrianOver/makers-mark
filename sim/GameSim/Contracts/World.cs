@@ -41,7 +41,12 @@ public sealed record GameState(
     ImmutableList<OreOffered> OpenOreOffers,
     DramaState Drama,
     ImmutableList<GameEvent> EventLog,
-    ImmutableList<LoggedBatch> ActionLog);
+    ImmutableList<LoggedBatch> ActionLog)
+{
+    /// <summary>Staged expeditions between the Expedition and ExpeditionDeep ticks (KTD5 staged).
+    /// Non-positional init member: pre-staging saves (no property) deserialize to empty.</summary>
+    public ImmutableList<InFlightExpedition> InFlight { get; init; } = ImmutableList<InFlightExpedition>.Empty;
+}
 
 /// <summary>Result of one phase tick: the new world, what happened, and what was refused.</summary>
 public sealed record TickResult(

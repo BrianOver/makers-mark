@@ -16,6 +16,8 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(PostBountyAction), "postBounty")]
 [JsonDerivedType(typeof(UnlockTalentAction), "unlockTalent")]
 [JsonDerivedType(typeof(SetProfessionsAction), "setProfessions")]
+[JsonDerivedType(typeof(SendSupplyAction), "sendSupply")]
+[JsonDerivedType(typeof(RecallPartyAction), "recallParty")]
 public abstract record PlayerAction;
 
 /// <summary>Craft a recipe using a material grade key from <see cref="PlayerState.Materials"/> (R4).</summary>
@@ -43,6 +45,15 @@ public sealed record UnlockTalentAction(string NodeId, string Profession) : Play
 /// <summary>Choose which professions this save practises (P1): pick 1–2 registered professions.
 /// Only recipes whose profession is selected may be crafted.</summary>
 public sealed record SetProfessionsAction(ImmutableSortedSet<string> Professions) : PlayerAction;
+
+/// <summary>Pay the camp runner to deliver ONE held consumable to a camped hero (Camp phase only).
+/// The item goes to the FRONT of the hero's pack — the resolver quaffs front-first, so
+/// your delivery drinks before anything the hero bought (P2 pack-order contract).</summary>
+public sealed record SendSupplyAction(HeroId To, ItemId Item) : PlayerAction;
+
+/// <summary>Ring the recall bell: the party containing <paramref name="Member"/> banks its
+/// stage-1 clears/ore and surfaces at the Deep tick without rolling deeper floors (v1).</summary>
+public sealed record RecallPartyAction(HeroId Member) : PlayerAction;
 
 /// <summary>An action the kernel refused, with a typed reason — never a silent drop.</summary>
 public sealed record RejectedAction(PlayerAction Action, string Reason);
