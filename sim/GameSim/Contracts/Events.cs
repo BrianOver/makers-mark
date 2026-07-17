@@ -22,6 +22,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(BountyPaid), "bountyPaid")]
 [JsonDerivedType(typeof(GossipEmitted), "gossip")]
 [JsonDerivedType(typeof(FloorRecordSet), "floorRecord")]
+[JsonDerivedType(typeof(TariffApplied), "tariffApplied")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -65,3 +66,16 @@ public sealed record GossipEmitted(EventId Source, string Line) : GameEvent;
 
 /// <summary>A new personal deepest-floor record for the Depths Progress board (R15).</summary>
 public sealed record FloorRecordSet(HeroId Hero, int Floor) : GameEvent;
+
+/// <summary>
+/// A faction ore tariff moved the price the player paid away from the base ask (P5 U3, R7/R8/KTD3).
+/// The hero always receives <paramref name="BaseLineCost"/> (the base ask); the player pays
+/// <paramref name="PlayerCost"/>; <paramref name="Delta"/> = <c>PlayerCost − BaseLineCost</c> is the
+/// signed faction sink/source — positive burns gold from the town total (surcharge sink), negative
+/// mints it (discount source, the only reachable direction in this discount-only core, KTD8). The
+/// MANDATORY recorded delta (KTD3) is what the gold-conservation invariant reconciles against; it is
+/// emitted only when a faction supplies the ore AND the tariff actually moved the price (delta != 0),
+/// keeping the log clean at neutral standing.
+/// </summary>
+public sealed record TariffApplied(
+    string FactionId, string MaterialKey, int BaseLineCost, int PlayerCost, int Delta) : GameEvent;
