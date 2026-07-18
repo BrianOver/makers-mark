@@ -31,7 +31,15 @@ public sealed class ExpeditionDeepSystem : IPhaseSystem
             var party = inFlight.Party.Select(id => state.Heroes[id.Value]).ToImmutableList();
             var venue = VenueRegistry.Require(inFlight.VenueId);
 
-            var result = ExpeditionResolver.ResolveStage2(inFlight, party, state.Items, venue, rng);
+            // TUNING-C: recompute the bounty-acceptor retreat exemption for stage 2. Bounty AcceptedBy
+            // is stable between the Expedition and Deep ticks (set at judging, cleared only at the
+            // Evening payout), so this matches what the Expedition tick used — and stage 2 reconstructs
+            // the stage-1 retreated set from it (InFlightExpedition carries no retreated field).
+            var bounty = state.Bounties.FirstOrDefault(b =>
+                b.AcceptedBy is { } acceptor && inFlight.Party.Contains(acceptor));
+            var (exemptHeroes, exemptThroughFloor) = ExpeditionSystem.RetreatExemption(bounty);
+
+            var result = ExpeditionResolver.ResolveStage2(inFlight, party, state.Items, venue, rng, exemptHeroes, exemptThroughFloor);
             state = state with { PendingExpeditions = state.PendingExpeditions.Add(result) };
         }
 
