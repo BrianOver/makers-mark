@@ -38,6 +38,7 @@ public static class FactionRegistry
     {
         Deepvein,
         Crownsguard.CrownsguardFaction.Definition,
+        Wardens.WardensFaction.Definition,
     }.ToImmutableSortedDictionary(f => f.Id, f => f, StringComparer.Ordinal);
 
     /// <summary>Resolve a faction definition by key.</summary>

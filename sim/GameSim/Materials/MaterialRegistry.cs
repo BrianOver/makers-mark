@@ -60,6 +60,10 @@ public static class MaterialRegistry
         // adds them to PricedPool (R4).
         new MaterialDefinition(Electrum,   UnitPrice: 24, Grade: 6, Tags: ImmutableArray<string>.Empty, SourceVenue: ""),
         new MaterialDefinition(Orichalcum, UnitPrice: 30, Grade: 7, Tags: ImmutableArray<string>.Empty, SourceVenue: ""),
+        new MaterialDefinition("greenheart", UnitPrice: 36, Grade: 8, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
+        new MaterialDefinition("amberpitch", UnitPrice: 42, Grade: 9, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
+        new MaterialDefinition("moonresin", UnitPrice: 48, Grade: 10, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
+        new MaterialDefinition("heartwood", UnitPrice: 54, Grade: 11, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
     }.ToImmutableSortedDictionary(m => m.Id, m => m, StringComparer.Ordinal);
 
     /// <summary>
