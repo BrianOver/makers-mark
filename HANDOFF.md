@@ -55,10 +55,13 @@ loop must work for all of them, not just ore.
 | # | Doc | Status | Owns R-IDs | Depends on |
 |---|-----|--------|-----------|------------|
 | — | `docs/plans/2026-07-18-004-feat-next-phase-scope-plan.md` | **written** (requirements-only foundation) | all | — |
-| 1 | `docs/plans/2026-07-18-005-feat-playable-core-plan.md` | authoring | R1–R7, R14, R15 + BOARD.md housekeeping | — |
-| 2 | `docs/plans/2026-07-18-006-feat-art-pipeline-wiring-plan.md` | authoring | R8, R9, R10, R14 | pipeline health |
-| 3 | `docs/plans/2026-07-18-007-feat-ui-rethink-plan.md` | authoring | R11, R12, R15 | Plan 1 + Plan 2 |
-| 4 | `docs/plans/2026-07-18-008-feat-flavorforge-devtool-plan.md` | authoring | R13, R14 | — (independent) |
+| 1 | `docs/plans/2026-07-18-005-feat-playable-core-plan.md` | **written** (8 units, Deep) | R1–R7, R14, R15 + BOARD.md housekeeping | — |
+| 2 | `docs/plans/2026-07-18-006-feat-art-pipeline-wiring-plan.md` | **written** (7 units, Deep) | R8, R9, R10, R14 | pipeline health |
+| 3 | `docs/plans/2026-07-18-007-feat-ui-rethink-plan.md` | **written** (8 units, Deep) | R11, R12, R15 | Plan 1 + Plan 2 |
+| 4 | `docs/plans/2026-07-18-008-feat-flavorforge-devtool-plan.md` | **written** (Standard) | R13, R14 | — (independent) |
+
+**All 5 docs are written and pushed to branch `chore/next-phase-plans-handoff`.** The background
+workflow completed after the first push. Review, then get Brian's go/no-go and work Plan 1 first.
 
 **Work order:** 1 → 2 → 3, with 4 any time. Each worked as its own phase.
 
