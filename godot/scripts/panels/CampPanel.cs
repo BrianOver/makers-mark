@@ -80,12 +80,14 @@ public partial class CampPanel : SimPanel
             }
         }
 
-        // AE4 render half: camp-action refusals from the last tick, verbatim from the kernel.
+        // AE4 render half: camp-action refusals from the last tick — the typed reasons stay
+        // verbatim (they are decision facts the player needs), but behind a player-phrased
+        // lead-in: the raw "REJECTED:" framing never renders anywhere (U6/R6).
         var reasons = Adapter.LastRejections
             .Where(r => r.Action is SendSupplyAction or RecallPartyAction)
             .Select(r => r.Reason)
             .ToArray();
-        _rejection!.Text = reasons.Length == 0 ? string.Empty : "REJECTED: " + string.Join(" | ", reasons);
+        _rejection!.Text = reasons.Length == 0 ? string.Empty : "The runner reports: " + string.Join(" | ", reasons);
     }
 
     private void RenderParty(GameState state, InFlightExpedition party, ImmutableList<Item> held)
@@ -129,14 +131,24 @@ public partial class CampPanel : SimPanel
             {
                 Name = $"CampSend_{member.Value}",
                 Text = "Send",
-                Disabled = party.SupplySent || held.IsEmpty,
             };
             send.Pressed += () => OnSend(pick, to);
             row.AddChild(send);
+            // U6 gate, mirroring CampHandlers.ApplySend off facts the slate already renders:
+            // one runner per party per day (SupplySent), something held to send, the recall
+            // bell short-circuits a send, and the runner's fee must be payable (step 8).
+            GateButton(send,
+                legal: !party.SupplySent && !held.IsEmpty && !party.Recalled && state.Player.Gold >= fee,
+                whyNot: party.SupplySent ? "One runner per party per day — this delivery is spent."
+                    : held.IsEmpty ? "Nothing in your hands to send."
+                    : party.Recalled ? "The recall bell has rung — the runner won't chase them."
+                    : $"You can't pay the {fee}g runner yet.");
         }
 
-        AddButton(_parties!, $"CampRecall_{lead.Value}", "Recall", () =>
+        var recall = AddButton(_parties!, $"CampRecall_{lead.Value}", "Recall", () =>
             Adapter!.Queue(new RecallPartyAction(lead)));
+        // Mirror of CampHandlers.ApplyRecall: the bell rings once per party.
+        GateButton(recall, !party.Recalled, "The recall bell has already rung for this party.");
     }
 
     private void OnSend(OptionButton pick, HeroId to)

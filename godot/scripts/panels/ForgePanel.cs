@@ -1,3 +1,4 @@
+using System;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Economy;
@@ -55,7 +56,16 @@ public partial class ForgePanel : SimPanel
             var row = AddRow(_vendorRows!);
             AddIcon(row, IconRegistry.Ore(key));
             AddLabel(row, $"{key} — {quote}g each (have {have})");
-            AddButton(row, $"BuyMat_{key}", "Buy 1", () => OnBuyMaterialPressed(key));
+            var buy = AddButton(row, $"BuyMat_{key}", "Buy 1", () => OnBuyMaterialPressed(key));
+            // U6 gate, mirroring MaterialVendorHandlers: Morning-only CanHandle + the gold
+            // check. Landing phase = the CURRENT phase (GameKernel.Tick applies the queued
+            // batch against state.Phase before advancing), so the buy is legal exactly
+            // while the sim still sits AT Morning.
+            GateButton(buy,
+                legal: state.Phase == DayPhase.Morning && quote <= state.Player.Gold,
+                whyNot: state.Phase != DayPhase.Morning
+                    ? "The vendor sells in the Morning."
+                    : "You can't afford that yet.");
         }
 
         Clear(_recipeRows!);
@@ -67,6 +77,7 @@ public partial class ForgePanel : SimPanel
                 continue;
             }
 
+            var unlocked = state.Player.TalentsFor(professionId);
             foreach (var recipe in profession!.Recipes.Values)
             {
                 var material = SelectedMaterialOr(recipe.MaterialKey);
@@ -76,10 +87,16 @@ public partial class ForgePanel : SimPanel
                 AddLabel(row,
                     $"{recipe.Name} (t{recipe.Tier} {recipe.Slot}) — {recipe.MaterialQuantity}x {material} (have {have})" +
                     $"  atk {recipe.BaseStats.Attack} def {recipe.BaseStats.Defense} wt {recipe.BaseStats.Weight}");
-                AddButton(row, $"Craft_{recipe.RecipeId}", "Craft", () => OnCraftPressed(recipe.RecipeId));
+                var craft = AddButton(row, $"Craft_{recipe.RecipeId}", "Craft", () => OnCraftPressed(recipe.RecipeId));
+                // U6 gate, mirroring CraftingHandlers.ApplyCraft step 5 (material quantity
+                // less the material-efficiency talent, floor 1) — the kernel's own math,
+                // only rendered here. Crafting is legal in ALL phases (the forge never
+                // closes), so there is deliberately NO phase term in this gate.
+                var efficiency = profession.MaterialEfficiencyNode is { } eff && unlocked.Contains(eff) ? 1 : 0;
+                var needed = Math.Max(1, recipe.MaterialQuantity - efficiency);
+                GateButton(craft, have >= needed, $"Not enough {material} — need {needed}, have {have}.");
             }
 
-            var unlocked = state.Player.TalentsFor(professionId);
             foreach (var node in profession.TalentNodes.Values)
             {
                 var row = AddRow(_talentRows!);
@@ -105,21 +122,21 @@ public partial class ForgePanel : SimPanel
 
         var material = SelectedMaterialOr(recipe!.MaterialKey);
         Adapter.Queue(new CraftAction(recipeId, material));
-        _feedback!.Text = $"queued: craft {recipeId} with {material} (applies next phase)";
+        _feedback!.Text = $"queued: craft {recipeId} with {material} (applies when the phase ticks)";
     }
 
     private void OnUnlockPressed(string nodeId, string professionId)
     {
         Adapter?.Queue(new UnlockTalentAction(nodeId, professionId));
-        _feedback!.Text = $"queued: unlock {nodeId} (applies next phase)";
+        _feedback!.Text = $"queued: unlock {nodeId} (applies when the phase ticks)";
     }
 
-    /// <summary>Queues a one-unit vendor buy (Morning-only in the sim; the kernel rejects it
-    /// on any other phase and the rejection surfaces via the adapter, not here).</summary>
+    /// <summary>Queues a one-unit vendor buy (Morning-only in the sim; the U6 gate disables the
+    /// row off-Morning, and a rejection that still surfaces becomes MainUi's toast).</summary>
     private void OnBuyMaterialPressed(string materialKey)
     {
         Adapter?.Queue(new BuyMaterialAction(materialKey, 1));
-        _feedback!.Text = $"queued: buy 1 {materialKey} (applies next phase)";
+        _feedback!.Text = $"queued: buy 1 {materialKey} (applies when the phase ticks)";
     }
 
     private string SelectedMaterialOr(string recipeDefault)
