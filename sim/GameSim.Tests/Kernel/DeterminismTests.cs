@@ -28,7 +28,7 @@ public class DeterminismTests
     {
         var kernel = new GameKernel(systems.ToImmutableList(), ImmutableList<IActionHandler>.Empty);
         var state = GameFactory.NewGame(seed);
-        for (var i = 0; i < days * 3; i++)
+        for (var i = 0; i < days * 5; i++) // 5-phase day (staged resolution)
         {
             state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
         }

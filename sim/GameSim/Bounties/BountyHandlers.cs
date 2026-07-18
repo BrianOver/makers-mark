@@ -9,8 +9,11 @@ namespace GameSim.Bounties;
 /// </summary>
 public sealed class BountyHandlers : IActionHandler
 {
+    // D2: explicit whitelist (not `!= Expedition`) so the new Camp/ExpeditionDeep ticks don't
+    // silently legalize posting. Preserves today's exact semantics — posting is a Morning/Evening
+    // town verb; mid-expedition posts wouldn't be judged until the next day anyway.
     public bool CanHandle(PlayerAction action, DayPhase phase) =>
-        action is PostBountyAction && phase != DayPhase.Expedition;
+        action is PostBountyAction && phase is DayPhase.Morning or DayPhase.Evening;
 
     public (GameState State, RejectedAction? Rejected) Apply(
         GameState state, PlayerAction action, IDeterministicRng rng, IEventSink events)

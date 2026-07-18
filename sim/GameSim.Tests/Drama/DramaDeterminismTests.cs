@@ -17,7 +17,7 @@ public class DramaDeterminismTests
         {
             var state = GossipTests.ComposedWorld(seed: 7);
             var systems = GossipTests.ComposedSystems();
-            for (var tick = 0; tick < 30; tick++) // 10 days
+            for (var tick = 0; tick < 50; tick++) // 10 days (5-phase)
             {
                 state = Tick(state, systems).NewState;
             }

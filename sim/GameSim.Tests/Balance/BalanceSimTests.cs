@@ -46,7 +46,7 @@ public class BalanceSimTests
         var minGold = state.Player.Gold;
         var beatDays = ImmutableList.CreateBuilder<int>();
 
-        for (var tick = 0; tick < Days * 3; tick++)
+        for (var tick = 0; tick < Days * 5; tick++) // 5-phase day (staged resolution)
         {
             var result = kernel.Tick(state, BaselinePlayer.ActionsFor(state));
             state = result.NewState;
@@ -136,7 +136,7 @@ public class BalanceSimTests
         {
             var kernel = GameComposition.BuildKernel();
             var state = GameComposition.NewCampaign(seed: 2026);
-            for (var i = 0; i < 30; i++)
+            for (var i = 0; i < 50; i++) // 10 days × 5-phase
             {
                 state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
             }

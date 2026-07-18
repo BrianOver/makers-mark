@@ -28,22 +28,22 @@ public class SaveLoadTests
             ImmutableList.Create<IPhaseSystem>(new RngProbeSystem()),
             ImmutableList<IActionHandler>.Empty);
 
-        // Uninterrupted: 10 full days.
+        // Uninterrupted: 10 full days (5-phase day = 50 ticks).
         var uninterrupted = GameFactory.NewGame(seed: 1234);
-        for (var i = 0; i < 30; i++)
+        for (var i = 0; i < 50; i++)
         {
             uninterrupted = kernel.Tick(uninterrupted, ImmutableList<PlayerAction>.Empty).NewState;
         }
 
-        // Interrupted: 5 days, save, load, 5 more days.
+        // Interrupted: 5 days, save, load, 5 more days (25 + 25 ticks).
         var first = GameFactory.NewGame(seed: 1234);
-        for (var i = 0; i < 15; i++)
+        for (var i = 0; i < 25; i++)
         {
             first = kernel.Tick(first, ImmutableList<PlayerAction>.Empty).NewState;
         }
 
         var loaded = SaveCodec.Deserialize(SaveCodec.Serialize(first));
-        for (var i = 0; i < 15; i++)
+        for (var i = 0; i < 25; i++)
         {
             loaded = kernel.Tick(loaded, ImmutableList<PlayerAction>.Empty).NewState;
         }

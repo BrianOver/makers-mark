@@ -58,23 +58,31 @@ public class GoldConservationTests
         };
     }
 
-    /// <summary>Three scripted days: stock + sell, buy ore across two evenings, keep shopping.</summary>
+    /// <summary>Three scripted days (5-phase: Morning, Expedition, Camp, ExpeditionDeep, Evening):
+    /// stock + sell, buy ore across two evenings, keep shopping. Camp/Deep hold empty — ore buys
+    /// stay on the real Evening tick (BuyOreAction is Evening-only).</summary>
     internal static ImmutableList<ImmutableList<PlayerAction>> ScriptTicks() => ImmutableList.Create(
         // Day 1
         ImmutableList.Create<PlayerAction>(new StockAction(new ItemId(100), 30)), // Morning
         ImmutableList<PlayerAction>.Empty,                                        // Expedition
+        ImmutableList<PlayerAction>.Empty,                                        // Camp
+        ImmutableList<PlayerAction>.Empty,                                        // ExpeditionDeep
         ImmutableList.Create<PlayerAction>(                                       // Evening
             new BuyOreAction(new HeroId(1), "iron", 3)),
         // Day 2
-        ImmutableList<PlayerAction>.Empty,
-        ImmutableList<PlayerAction>.Empty,
-        ImmutableList.Create<PlayerAction>(
+        ImmutableList<PlayerAction>.Empty,                                        // Morning
+        ImmutableList<PlayerAction>.Empty,                                        // Expedition
+        ImmutableList<PlayerAction>.Empty,                                        // Camp
+        ImmutableList<PlayerAction>.Empty,                                        // ExpeditionDeep
+        ImmutableList.Create<PlayerAction>(                                       // Evening
             new BuyOreAction(new HeroId(1), "iron", 2),
             new BuyOreAction(new HeroId(5), "copper", 10)),
         // Day 3
-        ImmutableList<PlayerAction>.Empty,
-        ImmutableList<PlayerAction>.Empty,
-        ImmutableList<PlayerAction>.Empty);
+        ImmutableList<PlayerAction>.Empty,                                        // Morning
+        ImmutableList<PlayerAction>.Empty,                                        // Expedition
+        ImmutableList<PlayerAction>.Empty,                                        // Camp
+        ImmutableList<PlayerAction>.Empty,                                        // ExpeditionDeep
+        ImmutableList<PlayerAction>.Empty);                                       // Evening
 
     [Fact]
     public void TotalGold_ChangesOnlyByRivalSales_AcrossAScriptedMultiDayRun()
@@ -151,9 +159,12 @@ public class GoldConservationTests
         Assert.Equal(state.Player.Gold + 30, morning.NewState.Player.Gold);
         Assert.Equal(state.Heroes[1].Gold - 30, morning.NewState.Heroes[1].Gold);
 
-        // Evening: buy 3 iron at 4g from H1 — exact opposite direction.
-        var expedition = kernel.Tick(morning.NewState, ImmutableList<PlayerAction>.Empty);
-        var beforeEvening = expedition.NewState;
+        // Evening: buy 3 iron at 4g from H1 — exact opposite direction. Advance through the
+        // empty Expedition/Camp/ExpeditionDeep ticks first (5-phase day).
+        var expedition = kernel.Tick(morning.NewState, ImmutableList<PlayerAction>.Empty); // -> Camp
+        var camp = kernel.Tick(expedition.NewState, ImmutableList<PlayerAction>.Empty);    // -> ExpeditionDeep
+        var deep = kernel.Tick(camp.NewState, ImmutableList<PlayerAction>.Empty);          // -> Evening
+        var beforeEvening = deep.NewState;
         var evening = kernel.Tick(beforeEvening, ImmutableList.Create<PlayerAction>(
             new BuyOreAction(new HeroId(1), "iron", 3)));
         Assert.Empty(evening.Rejected);

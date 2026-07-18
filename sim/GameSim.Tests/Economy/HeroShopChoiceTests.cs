@@ -75,11 +75,13 @@ public class HeroShopChoiceTests
         // Every hero that looked and passed left a legible reason on the player item (R8).
         Assert.Contains(morning1.Events.OfType<HeroPassedOnItem>(), p => p.Item == sword.Id);
 
-        // Day 1 Expedition: nothing.
-        var expedition1 = kernel.Tick(morning1.NewState, ImmutableList<PlayerAction>.Empty);
+        // Day 1 Expedition/Camp/ExpeditionDeep: nothing (5-phase day).
+        var expedition1 = kernel.Tick(morning1.NewState, ImmutableList<PlayerAction>.Empty); // -> Camp
+        var camp1 = kernel.Tick(expedition1.NewState, ImmutableList<PlayerAction>.Empty);    // -> ExpeditionDeep
+        var deep1 = kernel.Tick(camp1.NewState, ImmutableList<PlayerAction>.Empty);          // -> Evening
 
         // Day 1 Evening: cut the price.
-        var evening1 = kernel.Tick(expedition1.NewState, ImmutableList.Create<PlayerAction>(
+        var evening1 = kernel.Tick(deep1.NewState, ImmutableList.Create<PlayerAction>(
             new SetPriceAction(sword.Id, 10)));
         Assert.Empty(evening1.Rejected);
 
