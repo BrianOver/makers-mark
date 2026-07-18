@@ -43,7 +43,8 @@ public static class GameComposition
             new ShopHandlers(),
             new OreMarketHandlers(),
             new BountyHandlers(),
-            new ProfessionHandlers()));
+            new ProfessionHandlers(),
+            new CampHandlers())); // U4 staged resolution: Camp-phase send-supply / recall verbs (draws no RNG)
 
     /// <summary>A fresh campaign: seeded world with the starting six heroes installed.</summary>
     public static GameState NewCampaign(ulong seed) =>

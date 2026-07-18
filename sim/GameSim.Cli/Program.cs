@@ -90,6 +90,8 @@ while (true)
                 unstock <itemId>              pull an item off the shelf
                 buyore <heroId> <mat> <qty>   buy offered ore (Evening)
                 bounty <floor> <gold>         post a bounty (gold escrowed)
+                send <heroId> <itemId>        deliver a held consumable to a camped hero (Camp)
+                recall <heroId>               ring the recall bell for a camped party (Camp)
                 export [path]                 dump campaign chronicle for analytics
                 next                          advance one phase (queued actions apply)
                 day                           advance to next Morning
@@ -128,6 +130,16 @@ while (true)
         case "bounty" when parts.Length == 3 && int.TryParse(parts[1], out var bf) && int.TryParse(parts[2], out var bg):
             pending.Add(new PostBountyAction(bf, bg));
             Console.WriteLine($"  queued: bounty — clear floor {bf} for {bg}g (escrowed)");
+            break;
+
+        case "send" when parts.Length == 3 && int.TryParse(parts[1], out var shid) && int.TryParse(parts[2], out var siid):
+            pending.Add(new SendSupplyAction(new HeroId(shid), new ItemId(siid)));
+            Console.WriteLine($"  queued: send I{siid} to H{shid} (runner fee at delivery)");
+            break;
+
+        case "recall" when parts.Length == 2 && int.TryParse(parts[1], out var rhid):
+            pending.Add(new RecallPartyAction(new HeroId(rhid)));
+            Console.WriteLine($"  queued: recall the party camped with H{rhid}");
             break;
 
         case "next":
@@ -249,7 +261,35 @@ GameState Advance(GameState current)
         PrintLedger(next, current.Day);
     }
 
+    // The camp decision window just opened: show the winch-house slate so 'send'/'recall' can act.
+    if (next.Phase == DayPhase.Camp && !next.InFlight.IsEmpty)
+    {
+        PrintCampSlate(next);
+    }
+
     return next;
+}
+
+void PrintCampSlate(GameState s)
+{
+    Console.WriteLine("  ── CAMP — parties camped below the checkpoint ──");
+    foreach (var party in s.InFlight)
+    {
+        var tag = party.Recalled ? " [recalled]" : party.SupplySent ? " [runner spent]" : string.Empty;
+        Console.WriteLine($"  party for floor {party.TargetFloor} (camped below floor {party.CheckpointFloor}){tag}");
+        foreach (var id in party.Party)
+        {
+            var maxHp = s.Heroes.TryGetValue(id.Value, out var h) ? h.MaxHp : 0;
+            var hp = party.Hp.TryGetValue(id.Value, out var cur) ? cur : 0;
+            var healsLeft = party.Packs.TryGetValue(id.Value, out var pack)
+                ? pack.Count(pid => s.Items.TryGetValue(pid.Value, out var it) && it.Effect is { Kind: ConsumableKind.Heal })
+                : 0;
+            var toTarget = party.TargetFloor - party.DeepestFloorCleared;
+            Console.WriteLine($"    {HeroName(s, id),-10} {id} {hp}/{maxHp} hp — {healsLeft} heal(s) left, {toTarget} floor(s) to target");
+        }
+    }
+
+    Console.WriteLine("  send <heroId> <itemId> to deliver a held consumable; recall <heroId> to bank and surface.");
 }
 
 void Narrate(GameEvent gameEvent, GameState s)
@@ -266,6 +306,10 @@ void Narrate(GameEvent gameEvent, GameState s)
             $"  ★ {beat.Beat}: {beat.Detail} (floor {beat.Floor})",
         HeroDied died =>
             $"  † {HeroName(s, died.Hero)} died on floor {died.Floor} — {died.Cause}",
+        SupplyDelivered supply =>
+            $"  ⛏ runner delivered {ItemName(s, supply.Item)} to {HeroName(s, supply.To)} at camp — {supply.Fee}g",
+        PartyRecalled recalled =>
+            $"  ⤺ recall bell — [{string.Join(", ", recalled.Party.Select(h => HeroName(s, h)))}] bank and surface",
         RecruitArrived recruit =>
             $"  + recruit {HeroName(s, recruit.Hero)} arrives in town",
         GossipEmitted gossip =>
