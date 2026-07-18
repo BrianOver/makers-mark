@@ -50,4 +50,14 @@ public static class GameComposition
     /// <summary>A fresh campaign: seeded world with the starting six heroes installed.</summary>
     public static GameState NewCampaign(ulong seed) =>
         HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed));
+
+    /// <summary>
+    /// A fresh campaign with a CHOSEN starting profession + starter stock (Playable Core R4/KD3).
+    /// Routes through the same <see cref="HeroRoster.InstallStartingRoster"/> pipeline, so the
+    /// starting cast and id counters are identical to <see cref="NewCampaign(ulong)"/>; only the
+    /// player's selected profession + starter copper differ. The single-arg overload stays
+    /// byte-identical (CLI, replays, determinism pins).
+    /// </summary>
+    public static GameState NewCampaign(ulong seed, string startingProfession) =>
+        HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed, startingProfession));
 }

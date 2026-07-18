@@ -43,6 +43,19 @@ public sealed record PlayerState(
         ImmutableSortedSet.Create("blacksmith"),
         ImmutableList<ShelfEntry>.Empty);
 
+    /// <summary>
+    /// A fresh save with a CHOSEN starting profession and starter materials (Playable Core
+    /// R4/KD3). Sibling of <see cref="NewGame(int)"/>, which stays byte-identical as the
+    /// blacksmith-default compatibility baseline for the CLI, replays, and existing saves.
+    /// </summary>
+    public static PlayerState NewGame(
+        int startingGold, string profession, ImmutableSortedDictionary<string, int> starterMaterials) => new(
+        startingGold,
+        starterMaterials,
+        ImmutableSortedDictionary<string, ImmutableSortedSet<string>>.Empty,
+        ImmutableSortedSet.Create(profession),
+        ImmutableList<ShelfEntry>.Empty);
+
     /// <summary>The unlocked talent node ids for <paramref name="profession"/> (empty if none yet).</summary>
     public ImmutableSortedSet<string> TalentsFor(string profession) =>
         Talents.TryGetValue(profession, out var set) ? set : ImmutableSortedSet<string>.Empty;
