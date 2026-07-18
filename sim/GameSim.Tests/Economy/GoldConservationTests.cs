@@ -15,6 +15,10 @@ namespace GameSim.Tests.Economy;
 ///   - RIVAL sale:        hero → rival   (the rival absorbs it — gold LEAVES the
 ///     player+heroes total BY DESIGN; the rival's purse is deliberately unmodeled,
 ///     see HeroShoppingSystem.ApplyPurchase)
+///   - CAMP RUNNER fee (U4 staged resolution): player → runner. A town-gold SINK the size of
+///     SupplyDelivered.Fee — it LEAVES the player+heroes total (the runner's purse is unmodeled,
+///     TariffApplied-style KTD3). Not composed in this suite's EconomyKernel; the focused
+///     Δ(player+heroes) == −fee reconciliation lives in CampHandlersTests.CampRunnerFee_IsAConservedSink.
 ///   - expedition loot income: creates hero gold — U6/U8 territory, NOT composed here
 ///     and not this suite's to test.
 ///
