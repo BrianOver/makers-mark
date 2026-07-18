@@ -90,6 +90,22 @@ public static class UiTestSupport
     public static void Press(Node root, string buttonName) =>
         Find<Button>(root, buttonName).EmitSignal(BaseButton.SignalName.Pressed);
 
+    /// <summary>
+    /// Press like <see cref="Press"/> but fail loudly when the control renders Disabled —
+    /// the U8 loop's proof that the driven path never leans on a gated-off button (a real
+    /// player could not have clicked it, so the test must not either).
+    /// </summary>
+    public static void PressEnabled(Node root, string buttonName)
+    {
+        var button = Find<Button>(root, buttonName);
+        if (button.Disabled)
+        {
+            throw new InvalidOperationException($"Button '{buttonName}' was Disabled at press time.");
+        }
+
+        button.EmitSignal(BaseButton.SignalName.Pressed);
+    }
+
     /// <summary>Left-click a plain Control (U12 town markers) — through its gui_input signal.</summary>
     public static void Click(Control control) =>
         control.EmitSignal(
