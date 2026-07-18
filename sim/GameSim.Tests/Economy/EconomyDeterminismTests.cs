@@ -17,7 +17,13 @@ public class EconomyDeterminismTests
     private static GameState RunScript()
     {
         var kernel = new GameKernel(
-            ImmutableList.Create<IPhaseSystem>(new RivalRestockSystem(), new HeroShoppingSystem()),
+            ImmutableList.Create<IPhaseSystem>(
+                // Playable Core U5: mirrors GoldConservationTests.EconomyKernel. The floor draws
+                // no RNG and the solvent script never fires it, so the RNG-stream pin below
+                // stays exact — that is precisely what this suite guards.
+                new DestitutionRecoverySystem(),
+                new RivalRestockSystem(),
+                new HeroShoppingSystem()),
             ImmutableList.Create<IActionHandler>(
                 new ShopHandlers(), new OreMarketHandlers(), new MaterialVendorHandlers()));
 
