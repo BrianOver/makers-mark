@@ -1,7 +1,7 @@
 # addon-faction-crownsguard — 2nd faction pack (wave-1 packet)
 - lane: addon (orchestrator-spawned)
 - agent: swarm worker
-- status: blocked (content merged inert; registration gated on G8 material registry)
+- status: done (registered at G8 flip — material registry PR)
 - branch: feat/addon-faction-crownsguard
 - pr: <pending>
 - owned dirs: sim/GameSim/Factions/Crownsguard/, sim/GameSim.Tests/Factions/Crownsguard/
