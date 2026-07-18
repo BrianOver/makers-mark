@@ -31,6 +31,17 @@ free stack. Any Fornida session or task-Claude can reproduce assets from this fi
 Dominant mood: deep desaturated **void-purple + iron-grey**, warm **ember-orange** key
 glow, subtle **arcane-violet** accents. Low saturation base, glow does the color work.
 
+## Palette families (2026-07-18 amendment — variety-tone direction §2)
+
+Purple is the NIGHT/DEEP anchor, not the default. Five families — `house` (void-purple+ember,
+night/arcane/deep-mine), `hearth` (honey-amber warm town), `gloomwood` (moss+verdigris forest),
+`crypt` (bone+cold-cyan), `den` (rust+charcoal) — authoritative ids + clauses live in
+`art/GameArt/PaletteRegistry.cs`; specs select via `AssetSpec.PaletteId`. Tint-multiply
+legibility rules: warm families (R>G>B) always survive the phase tints; green identity needs
+G >= 1.6x B pre-tint; teal is accent/emissive only; cool families ride the B channel; never
+carry identity on yellow alone. The master negative no longer bans bright/cheerful (tone
+directive) — warmth is a legal register; see docs/design/tone-register.md.
+
 ## Master prompt (prepend to every asset)
 
 > dark fantasy painterly game art, stylized, cohesive game asset, moody volumetric

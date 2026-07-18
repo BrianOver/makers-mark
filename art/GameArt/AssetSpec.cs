@@ -77,5 +77,5 @@ public sealed record AssetSpec(
     int SpecVersion = AssetSpec.CurrentSpecVersion)
 {
     /// <summary>The current asset-style-spec revision. Bump when the contract's meaning changes.</summary>
-    public const int CurrentSpecVersion = 1;
+    public const int CurrentSpecVersion = 2; // v2 (2026-07-18): palette-family clause spliced into prompt composition (variety-tone §2)
 }
