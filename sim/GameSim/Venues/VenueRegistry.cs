@@ -29,6 +29,7 @@ public static class VenueRegistry
     {
         Mine,
         Gloomwood.GloomwoodVenue.Definition,
+        SunkenCrypt.SunkenCryptVenue.Definition,
     }.ToImmutableSortedDictionary(v => v.Id, v => v, StringComparer.Ordinal);
 
     /// <summary>

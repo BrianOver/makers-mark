@@ -64,6 +64,11 @@ public static class MaterialRegistry
         new MaterialDefinition("amberpitch", UnitPrice: 42, Grade: 9, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
         new MaterialDefinition("moonresin", UnitPrice: 48, Grade: 10, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
         new MaterialDefinition("heartwood", UnitPrice: 54, Grade: 11, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
+        new MaterialDefinition("verdigris", UnitPrice: 3, Grade: 1, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
+        new MaterialDefinition("saltglass", UnitPrice: 5, Grade: 2, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
+        new MaterialDefinition("bonechalk", UnitPrice: 8, Grade: 3, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
+        new MaterialDefinition("drowned-silver", UnitPrice: 12, Grade: 4, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
+        new MaterialDefinition("abyss-pearl", UnitPrice: 18, Grade: 5, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
     }.ToImmutableSortedDictionary(m => m.Id, m => m, StringComparer.Ordinal);
 
     /// <summary>
