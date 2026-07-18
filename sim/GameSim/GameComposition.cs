@@ -42,6 +42,7 @@ public static class GameComposition
             new CraftingHandlers(),
             new ShopHandlers(),
             new OreMarketHandlers(),
+            new MaterialVendorHandlers(), // Playable Core U3: Morning vendor floor (KD2); draws no RNG — stream unchanged
             new BountyHandlers(),
             new ProfessionHandlers(),
             new CampHandlers())); // U4 staged resolution: Camp-phase send-supply / recall verbs (draws no RNG)

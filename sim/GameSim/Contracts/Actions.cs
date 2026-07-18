@@ -13,6 +13,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(SetPriceAction), "setPrice")]
 [JsonDerivedType(typeof(UnstockAction), "unstock")]
 [JsonDerivedType(typeof(BuyOreAction), "buyOre")]
+[JsonDerivedType(typeof(BuyMaterialAction), "buyMaterial")]
 [JsonDerivedType(typeof(PostBountyAction), "postBounty")]
 [JsonDerivedType(typeof(UnlockTalentAction), "unlockTalent")]
 [JsonDerivedType(typeof(SetProfessionsAction), "setProfessions")]
@@ -38,6 +39,12 @@ public sealed record UnstockAction(ItemId Item) : PlayerAction;
 
 /// <summary>Buy ore offered by a returning hero during Evening (R6).</summary>
 public sealed record BuyOreAction(HeroId From, string MaterialKey, int Quantity) : PlayerAction;
+
+/// <summary>Buy base materials from the standing Morning vendor (Playable Core R2/R3, KD2):
+/// the always-available supply floor that makes every profession's craft loop reachable on
+/// day 1. Morning ONLY; sells the whole <c>MaterialRegistry.PricedPool</c> at unit price plus
+/// a fixed markup, so returning heroes' Evening ore offers stay the strictly-cheaper upside.</summary>
+public sealed record BuyMaterialAction(string MaterialKey, int Quantity) : PlayerAction;
 
 /// <summary>Post a subsidized objective heroes weigh but may decline (R18).</summary>
 public sealed record PostBountyAction(int TargetFloor, int RewardGold) : PlayerAction;
