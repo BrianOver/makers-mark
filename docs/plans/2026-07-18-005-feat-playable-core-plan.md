@@ -222,7 +222,7 @@ the rest of the plan.
 **Approach.** Lines 25/29/33 carry raw `<<<<<<< HEAD` / `=======` / `>>>>>>> 2ac2033 ...` markers
 straddling the G3/G4/G5 gate rows. Resolve by taking the **merged reality** from `git log`/merged PRs:
 G3 (U2 five-phase kernel) merged (#43), G4 (U3 staging) merged (#51), G5 (U4 camp verbs) merged — and
-the plan of record has advanced well past these (recent commits run through #72). Collapse the two
+the plan of record has advanced well past these (recent commits run through #77). Collapse the two
 conflicting halves into one correct table, mark the resolved gates `MERGED (#..)` per history, and add
 a one-line note that the gate/claim tables are historical (the current plan of record is
 `docs/plans/2026-07-13-001` and this next-phase wave). Reconcile the Open-claims table the same way —
@@ -277,7 +277,13 @@ retelling; ore-buying legality is handled in U6 so a buy can only queue at Eveni
 
 **Execution note.** Prove the gated invariant directly: with auto OFF, a large `Update(delta)` must
 leave `Day`/`Phase` unchanged; only an explicit `AdvancePhase()` moves the sim. This is the property
-that dissolves the timing-trap class.
+that dissolves the timing-trap class. Two verified seams to handle deliberately: (1) the Ledger
+reveal countdown (`MainUi._Process` scales `LedgerDelayRemaining` by `Clock.SpeedMultiplier`,
+MainUi.cs:105; Ledger open/close pauses/resumes the clock, 306–333) — in gated mode the reveal must
+elapse on wall-clock (unscaled) or reveal immediately, never wait on the auto clock, or the Ledger
+never reveals with auto OFF; (2) `PhaseClock.DurationOf` covers only Morning/Expedition/Evening and
+falls back to `MorningSeconds` for Camp/ExpeditionDeep (PhaseClock.cs:40–46) — keep or change that
+default deliberately for auto mode and state it in the PR.
 
 **Patterns to follow.** `PhaseClockTests` (existing pure-C# clock tests, no Godot runtime);
 `MainUi.UpdateClockLabel` / the existing Play/Pause/Speed button wiring for the new controls.
@@ -319,9 +325,11 @@ gold conservation) plus a `godot/` buy surface. Contract + composition edits are
 stable rejection reasons; every rejection before any state change; **no RNG**). `CanHandle` returns
 true for `BuyMaterialAction` when `phase == DayPhase.Morning`. Apply, in order: (1) quantity positive;
 (2) `MaterialRegistry.IsPriced(key)` — the vendor sells only the priced pool (KTD-C), unknown/inert
-keys rejected; (3) compute cost = `MaterialRegistry.UnitPrice(key) * quantity`, scaled by a
-`VendorMarkupPermille` const (recommend a small positive markup, e.g. +250‰, so hero offers stay
-strictly cheaper — pin the exact value with a test and flag it for balance confirmation); (4) player
+keys rejected; (3) compute cost with the exact integer formula
+`cost = ceilDiv(quantity * MaterialRegistry.UnitPrice(key) * (1000 + VendorMarkupPermille), 1000)`
+(ceiling division so a single unit still carries the markup: 1 copper at +250‰ = ceil(3.75) = 4g),
+with `VendorMarkupPermille = 250` so hero offers stay strictly cheaper — pin the formula and value
+with a test and flag for balance confirmation; (4) player
 can pay. On success: player gold down by cost, `Player.Materials[key] += quantity`, emit
 `MaterialPurchased(key, quantity, cost)`. Gold leaves the modelled town total (vendor purse
 unmodelled) — a **sink**, so extend `GoldConservationTests` to subtract `Σ MaterialPurchased.Cost`
@@ -331,14 +339,17 @@ prices/keys — adapter-only, no rule logic.
 
 **Execution note.** Golden-replay guard: the golden trace submits no `BuyMaterialAction`, the handler
 draws no RNG, and adding a handler does not reorder any RNG-drawing **system**, so `DeterminismTests`
-and the balance gate stay byte-identical. State this in the PR body.
+and the balance gate stay byte-identical. State this in the PR body. Note `GoldConservationTests`
+composes its own focused `EconomyKernel` with a subset of systems/handlers
+(GoldConservationTests.cs:37) — the vendor handler must be registered in that focused kernel too,
+not only in `GameComposition`, or the extended invariant never exercises it.
 
 **Patterns to follow.** `OreMarketHandlers` (check-order discipline, rejection-before-mutation, event
 emission, gold accounting); `ShopHandlers` (all-phase-legal handler shape for comparison);
 `GoldConservationTests` (how `TariffApplied` deltas are reconciled — extend the same way).
 
 **Test scenarios.**
-- Happy: Morning, 100g, buy 4 copper → gold −12, `Materials["copper"] == 4`, one `MaterialPurchased(copper,4,12)` event.
+- Happy: Morning, 100g, buy 4 copper → cost = ceilDiv(4·3·1250, 1000) = 15 → gold −15, `Materials["copper"] == 4`, one `MaterialPurchased(copper,4,15)` event; buy 1 copper → cost 4 (markup survives rounding).
 - Happy (multi-profession): a save with two selected professions buys iron and copper in one Morning batch; both land.
 - Edge: buy exactly to zero gold succeeds; buy the last affordable unit succeeds.
 - Error (phase): `BuyMaterialAction` during Expedition/Evening → rejected `No handler accepts BuyMaterialAction during {phase}` (the original playtest failure, now impossible in Morning).
@@ -369,7 +380,7 @@ screen. `GameComposition` edit is a deny-list micro-PR (KTD-F).
 **Files.**
 - Modify (composition micro-PR): `sim/GameSim/GameComposition.cs` — add a `NewCampaign(ulong seed, string startingProfession)` overload that selects the chosen profession and seeds starter materials; keep the existing `NewCampaign(ulong seed)` as blacksmith-default for the CLI/tests/replays.
 - Modify: `sim/GameSim/Kernel/GameFactory.cs` — a `NewGame` seeding path (or param) that sets `SelectedProfessions` and seeds `Player.Materials` deterministically; leave the default `NewGame(seed)` byte-identical.
-- Modify: `sim/GameSim/Contracts/Player.cs` — optionally a `PlayerState.NewGame(gold, profession, starterMaterials)` factory sibling to the existing blacksmith-default `NewGame(gold)` (keep the old one unchanged for save/determinism compatibility).
+- Modify (contract micro-PR): `sim/GameSim/Contracts/Player.cs` — optionally a `PlayerState.NewGame(gold, profession, starterMaterials)` factory sibling to the existing blacksmith-default `NewGame(gold)` (keep the old one unchanged for save/determinism compatibility). Deny-list file — orchestrator-authored per KTD-F.
 - Create: `godot/scenes/new_game_select.tscn` + `godot/scripts/NewGameSelect.cs` — a functional profession-pick screen (four buttons from `ProfessionRegistry.All`) that constructs the campaign via the new overload and hands it to `MainUi.AdapterOverride`.
 - Modify: `godot/scripts/SimAdapter.cs` — allow constructing from a chosen profession (reuse the existing `SimAdapter(GameState)` injection ctor; the select screen builds the state and injects it).
 - Create test: `sim/GameSim.Tests/Kernel/NewCampaignSeedingTests.cs`.
@@ -449,7 +460,12 @@ cheapest priced material, or craft from stock, or stock an existing craft).
 **Execution note.** Golden-replay + band guard: like `FactionDriftSystem`, this system **draws no
 RNG**, so its insertion does not shift the kernel stream — every existing seed's world and the balance
 bands stay byte-identical, and it never fires on a solvent trace. Verify `DeterminismTests`
-(Category!=Balance) and the balance gate are unchanged. State this in the PR body.
+(Category!=Balance) and the balance gate are unchanged. State this in the PR body. Two composition
+cautions: (1) `FactionDriftSystem` documents a contract that it runs **FIRST** in the Morning group
+(FactionDriftSystem.cs:13–15, GameComposition.cs:31) — insert `DestitutionRecoverySystem` after it,
+never before, and state the chosen position in the micro-PR; (2) `GoldConservationTests`' focused
+`EconomyKernel` (GoldConservationTests.cs:37) must also register this system or the stipend source
+term is never exercised by the invariant.
 
 **Patterns to follow.** `FactionDriftSystem` (a Morning system that mutates player state, draws no
 RNG, is order-neutral for determinism — the exact precedent this relies on); `OreMarketHandlers` /
@@ -503,7 +519,10 @@ off the player surface.
 
 **Execution note.** Non-default proof: assert on **rendered Control state** (button `Disabled`, toast
 text), not just sim values — the AE-style "render half" the existing `MainUiTests` already assert. A
-disabled control that never submits is the observable contract.
+disabled control that never submits is the observable contract. Gate each control on **its own
+handler's actual legality**, not a shared phase assumption: `CraftingHandlers` is legal in ALL phases
+(CraftingHandlers.cs:8,21) while the vendor is Morning-only and ore offers Evening-only — a blanket
+"wrong phase = disable everything" rule would wrongly lock crafting.
 
 **Patterns to follow.** `ForgePanel` talent-unlock button (`button.Disabled = !profession.CanUnlock(...)`
 — the exact disable-on-illegality pattern to generalise); `CampPanel` Send button
@@ -632,8 +651,10 @@ dotnet test godot/tests --settings .runsettings
 dotnet build Game.sln
 ```
 
-**Determinism gates that must remain byte-identical:** `DeterminismTests`
-(`SameSeed_SameActions_ByteIdenticalAfter200Ticks` and the golden replay), the balance gate bands, and
+**Determinism gates that must remain byte-identical:** `DeterminismTests.SameSeed_SameActions_ByteIdenticalAfter200Ticks`
+(fast lane) **and the golden replay `BalanceSimTests.Ae5_HundredDay_ByteIdenticalReplay` — which lives
+in `Category=Balance`, so the fast lane alone does NOT run it; sim-touching units (U3/U4/U5) must run
+the balance gate locally before "done"**, the balance gate bands, and
 the default `NewCampaign(seed)` serialization. Each sim unit's PR body states *why* it cannot perturb
 the RNG stream (no RNG drawn; handlers don't reorder systems; new systems draw no RNG — the
 `FactionDriftSystem` precedent).

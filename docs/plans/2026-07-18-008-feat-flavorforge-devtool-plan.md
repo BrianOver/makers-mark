@@ -116,9 +116,16 @@ Referenced key decisions: **KD5** (dev-time packs first, runtime LLM parked).
   contract; no drift between tool and engine (R13).
 - **KTD-D — Extend existing pack files in place; never add a same-surface pack; never change the
   key set.** The emitter appends accepted variants into the target key's existing
-  `ImmutableList.Create(...)` block, keyed off the section-header comments already in the pack
-  files, and re-emits the file. It reads the authoritative slot names and voices from the pack's
-  own published tables (`TavernPack.SlotNames`, `VoiceProfile.Voices`). Rationale: respects
+  `ImmutableList.Create(...)` block and re-emits the file. **Anchoring (verified against
+  TavernPack.cs):** the pack files have per-BASE-KEY long-dash headers only
+  (`// ------------------------------------------------------------- heroDied`) — there is no
+  per-voice header, and dictionary keys are interpolated consts
+  (`[$"{KillingBlow}/gruff"] = ImmutableList.Create(`), so a literal-string grep for
+  `killingBlow/gruff` finds nothing. The emitter must anchor on the **interpolated dict-entry
+  lines**, building a const-name→base-key map first (parse the `private const string KillingBlow =
+  "killingBlow";` declarations), then locate `[$"{<ConstName>}/<voice>"]` for the target cell. It
+  reads the authoritative slot names and voices from the pack's own published tables
+  (`TavernPack.SlotNames`, `VoiceProfile.Voices`). Rationale: respects
   `Pack_VariantKeys_AreExactlyBaseKeysCrossVoices` and the additive-same-surface constraint by
   construction (R13, R14).
 - **KTD-E — Golden re-pin is an explicit, reviewed step, not a side effect.** Emitting variants
@@ -357,12 +364,16 @@ golden-replay stay green after re-pin.
 **Files.**
 - Create `tools/FlavorForge/Emit/PackEmitter.cs` — given accepted variants per key and a target
   pack file path, insert each key's new C#-escaped string literals into that key's existing
-  `ImmutableList.Create(...)` block (anchored on the section-header comments already present, e.g.
-  `// ---- killingBlow`), and write the file back.
+  `ImmutableList.Create(...)` block. Anchor per KTD-D: parse the `private const string X = "baseKey";`
+  declarations into a const-name→base-key map, then locate the interpolated dict-entry line
+  `[$"{X}/{voice}"] = ImmutableList.Create(` for the target cell (per-voice headers do not exist;
+  base-key long-dash headers are a secondary sanity check only), and write the file back.
 - Create `tools/FlavorForge/Emit/ProposalWriter.cs` — default mode: write accepted candidates to
   `tools/FlavorForge/proposals/<surface>.txt` (a dev review artifact, not sim source).
-- Modify (as *output*, only under `--emit`): `sim/GameSim/Flavor/Packs/TavernPack.cs` and/or the
-  Faction/Ledger/Narrator pack files — variant lists extended in place.
+- Modify (as *output*, only under `--emit`): `sim/GameSim/Flavor/Packs/TavernPack.cs`,
+  `FactionPack.cs`, `LedgerPack.cs` — and note `NarratorPack` lives at
+  `sim/GameSim/Narrative/NarratorPack.cs` (tests in `sim/GameSim.Tests/Narrative/`), outside the
+  `Flavor/Packs/` glob — variant lists extended in place.
 - Test: covered in U6 (`tools/FlavorForge.Tests/PackEmitterTests.cs`, operating on a temp fixture
   file, not the real pack).
 
@@ -484,7 +495,15 @@ actual committed authoring run.
 `Generate_FixedCampaignAndEvents_PinsExactProse` comment already documents pick-shift on variant
 count change). When a real generation run is committed: run the fast lane, read the new pinned prose
 from the failure, confirm it is a *sensible* line, and commit the re-pin as a deliberate prose
-change — never blanket-update goldens without reading them.
+change — never blanket-update goldens without reading them. **Enumerate ALL golden-bearing suites**,
+not just `TavernPackTests`: pinned prose also lives in the FactionPack/LedgerPack/NarratorPack tests
+and `ExpeditionNarratorTests` (`sim/GameSim.Tests/Narrative/`). Also: `LedgerPack` fallbacks are v1
+CLI fate lines committed verbatim ("verbatim as composed on screen") — the emitter's
+must-not-touch-fallbacks rule is save-compat load-bearing there, not just golden hygiene. **CI
+wiring gap:** `.github/workflows/ci.yml` runs `dotnet test` on specific csproj files and will NOT
+pick up `tools/FlavorForge.Tests` automatically — the `.github/` edit is deny-listed, so a **second
+orchestrator micro-PR** (alongside the `Game.sln` one) must add the tool suite to CI, or it silently
+never runs; flag both in the CONTRACT-REQUEST.
 
 **Patterns to follow.** `sim/GameSim.Tests/Flavor/TavernPackTests.cs` (conformance + golden
 assertion style), `sim/GameSim.Tests/GameSim.Tests.csproj` (xUnit csproj + ProjectReference shape,

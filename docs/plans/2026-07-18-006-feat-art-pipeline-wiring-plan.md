@@ -211,7 +211,9 @@ reconcile the one documented settings drift so U4–U6 render at the true ship s
 - modify `art/pipeline/README.md` — reconcile the SDXL settings table to **steps 28** (match
   `ArtTrackProfiles.Active`, the single authoritative source); note the locally-present
   `Hyper-SDXL-8steps-CFG-lora.safetensors` is an **optional fast-draft aid, not the ship setting**
-  (shipped art is 28-step base, no LoRA, per the committed profile + prior curated pairs).
+  (shipped art is 28-step base, no LoRA, per the committed profile + prior curated pairs); also fix
+  the phantom `models.lock.json` reference (README line ~11) — no such file exists in
+  `art/pipeline/`; either drop the line or create the pin file as part of this unit.
 - create `docs/design/art-pipeline-health-2026-07-18.md` — a short verification record: ComfyUI
   version/GPU/VRAM/queue, checkpoint presence, script proof, the smoke-gen result, and the explicit
   **OQ3 = GO / GO-with-reduced-scope / NO-GO** verdict feeding U4–U6.
@@ -225,7 +227,15 @@ Discard the smoke output (candidates are gitignored). Record the verdict. If NO-
 descoped to whatever renders and the seam units still proceed.
 
 **Execution note.** The smoke generation is *verification only* — its bytes are never committed. The
-committed deliverable is the health record + the README reconciliation, not pixels.
+committed deliverable is the health record + the README reconciliation, not pixels. **Provenance
+reality check (verified 2026-07-18): `art/build/` is EMPTY — no `build.json` exists for ANY of the 7
+committed assets, and `seeds.generated.md` has only 6 rows (town-tavern missing), every row
+"(pending build-half)".** U1 must therefore *define* the `build.json` schema in the health doc (id,
+track, seed, model, sampler, scheduler, DiffuseSha256, NormalSha256?, uid, status) so U4–U6 mint it
+consistently; U7 backfills the 7 legacy assets. Also: health probe showed only ~8.1 of 15.9 GB VRAM
+free — run `clear_vram`/restart before each 1024² generation batch, and use a checkpoint-loader-only
+workflow for the smoke gen (the instance's vae/text_encoder/diffusion_model dirs are empty; separate
+loader nodes will fail).
 
 **Patterns to follow.** `docs/design/art-pipeline-architecture.md` (doc voice + verification-record
 style); `art/pipeline/README.md` §1 (the settings table being corrected).
@@ -340,7 +350,10 @@ committed pixels, never from `GameState`.
 **Execution note.** `AssetCatalog` must not reference `GameSim` types it does not already have access
 to; compose ids from primitive strings the caller passes (recipe id, class id, venue id, monster kind
 slug), keeping the art lane decoupled from sim registries (architecture doc §7 — the same
-`ClassFigure` decoupling rule).
+`ClassFigure` decoupling rule). Caution on the `IconRegistry` refactor: only `Art`/`Lit` are
+null-tolerant — the SVG path (`Load` behind `Building`/`Sprite`/`Ore`/`Glyph`/`Slot`) is a raw
+`GD.Load` by contract. Keep the two load paths distinct; do not route the SVG accessors through the
+null-tolerant path or their existing non-null test contracts change.
 
 **Patterns to follow.** `godot/scripts/IconRegistry.cs` (`Art`/`Lit` null-tolerant load + the
 "bind by name, null-tolerant" keystone); `art/pipeline/normalmap.py` (committed-dev-script voice, arg
@@ -531,7 +544,11 @@ docs, zero sim.**
 - modify `docs/design/art-pipeline-health-2026-07-18.md` (or a short companion) — record the final
   committed inventory + what was deferred, so any session sees coverage at a glance.
 
-**Approach.** Run `gen-manifest.ps1` once more; commit the reconciled manifest. Add a coverage test
+**Approach.** Run `gen-manifest.ps1` once more; commit the reconciled manifest. **Backfill
+provenance for the 7 legacy committed assets**: mint their `art/build/<id>.build.json` records per
+the U1 schema (seed from `seeds.generated.md` where recorded, sha256 from on-disk bytes) and add the
+missing `town-tavern` row to `seeds.generated.md`, replacing the six "(pending build-half)" cells —
+otherwise the "final committed inventory with full provenance" claim is unachievable. Add a coverage test
 that walks a curated list of gameplay-critical ids (a representative recipe icon per profession, each
 Mine monster, each committed venue backdrop/entrance, each hero) and asserts `AssetCatalog` resolves a
 non-null texture and `Has(id)` agrees with the manifest — the executable proof that "the UI can load
