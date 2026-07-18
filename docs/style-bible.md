@@ -37,3 +37,6 @@ Every generation appends its subject to this prefix and conditions on `reference
 
 - **SVG (hand-authored, `godot/assets/icons/`):** item-slot icons (weapon/shield/armor), material ore tiers ×5, UI glyphs (gold, bounty, gossip, depths, skull), phase icons (morning/expedition/evening).
 - **Generated (`godot/assets/art/`):** 6 hero portraits (by role), 5 monster illustrations (one per Mine floor), 1 town backdrop, 5 memorial-stone variants.
+
+
+> 2026-07-18 amendment: the dominant mood is now the ANCHOR mood — one of five palette families (`art/GameArt/PaletteRegistry.cs`); tone register lightened per `docs/design/tone-register.md`.

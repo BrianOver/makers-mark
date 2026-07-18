@@ -40,6 +40,10 @@ public static class AssetSpecRules
         {
             errors.Add($"{spec.Id}: PaletteId is blank");
         }
+        else if (!PaletteRegistry.IsRegistered(spec.PaletteId))
+        {
+            errors.Add($"{spec.Id}: PaletteId '{spec.PaletteId}' is not a registered palette family");
+        }
 
         if (spec.SpecVersion != AssetSpec.CurrentSpecVersion)
         {

@@ -41,14 +41,16 @@ public static class ArtTrackProfiles
     public static readonly ArtTrackProfile Active = new(
         Track: ArtTrack.Active,
         MasterPrompt:
+            // Palette text lives in PaletteRegistry (variety-tone §2) — ComposePrompt splices the
+            // spec's family clause here. Geometry/lighting text only.
             "crisp clean stylized game asset, single subject, one structure centered, 3/4 isometric view, "
             + "hand-painted diffuse texture, clear readable silhouette, dark fantasy, low-key moody lighting, "
-            + "deep desaturated void-purple shadows, iron-grey, warm ember-orange key glow, subtle arcane-violet "
-            + "rim accents, muted somber palette, plain dark neutral background",
+            + "plain dark neutral background",
         MasterNegative:
+            // "bright, cheerful" removed (tone directive 2026-07-18) — warmth is now a legal register.
             "text, letters, logo, words, title, caption, signature, watermark, multiple buildings, sprite sheet, "
             + "tiled, duplicated, photo, photorealistic, 3d render, blurry, low quality, ui, hud, frame, border, "
-            + "oversaturated, neon, bright, cheerful, flat lighting, people, snow, trees, forest background",
+            + "oversaturated, neon, flat lighting, people, snow, trees, forest background",
         Width: 1024,
         Height: 1024,
         Steps: 28,
@@ -64,8 +66,9 @@ public static class ArtTrackProfiles
     public static readonly ArtTrackProfile Painterly = new(
         Track: ArtTrack.Painterly,
         MasterPrompt:
+            // Palette text spliced from PaletteRegistry per spec (variety-tone §2).
             "dark fantasy concept art, loose painterly brushwork, dramatic chiaroscuro, oil-painting texture, "
-            + "moody atmospheric, deep desaturated purples and iron greys with ember-orange glow, arcane-violet accents",
+            + "moody atmospheric",
         MasterNegative:
             "photo, photorealistic, 3d render, blurry, low quality, text, watermark, signature, ui, hud, frame, "
             + "border, oversaturated, neon, cartoon, cel shaded, flat lighting",
@@ -88,12 +91,14 @@ public static class ArtTrackProfiles
         _ => throw new ArgumentOutOfRangeException(nameof(track), track, "Unknown art track"),
     };
 
-    /// <summary>The full positive prompt for a spec: the track master prompt + subject (+ optional extra).</summary>
+    /// <summary>The full positive prompt for a spec: track master + the spec's palette-family clause
+    /// (variety-tone §2 — <c>house</c> reproduces the pre-family prompt byte-for-byte) + subject.</summary>
     public static string ComposePrompt(AssetSpec spec)
     {
         var profile = For(spec.Track);
+        var palette = PaletteRegistry.Require(spec.PaletteId).Clause;
         var extra = string.IsNullOrWhiteSpace(spec.PromptExtra) ? string.Empty : ", " + spec.PromptExtra.Trim();
-        return $"{profile.MasterPrompt}, {spec.Subject.Trim()}{extra}";
+        return $"{profile.MasterPrompt}, {palette}, {spec.Subject.Trim()}{extra}";
     }
 
     /// <summary>The full negative for a spec: the track master negative (+ optional additive extra).</summary>
