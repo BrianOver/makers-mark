@@ -196,7 +196,13 @@ public partial class CampPanel : SimPanel
         _title = AddLabel(box, "WINCH-HOUSE SLATE — the party camps below");
         _title.Name = "CampTitle";
 
-        var scroll = new ScrollContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
+        // Horizontal scroll disabled (U7/R7): the slate column follows the box's 640px width
+        // so autowrap labels wrap on real width instead of collapsing to 1 char per line.
+        var scroll = new ScrollContainer
+        {
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+        };
         box.AddChild(scroll);
         _parties = new VBoxContainer
         {

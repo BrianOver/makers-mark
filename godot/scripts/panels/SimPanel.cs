@@ -41,7 +41,16 @@ public abstract partial class SimPanel : Control
 
     protected static Label AddLabel(Node parent, string text)
     {
-        var label = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        // ExpandFill (U7/R7): an autowrap label's minimum width is ~1px, so inside an HBox row
+        // (which hands non-expand children their minimum) it collapses to one character per
+        // line. Expanding claims the row's leftover width; in a VBox it is a no-op (cross-axis
+        // already fills).
+        var label = new Label
+        {
+            Text = text,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+        };
         parent.AddChild(label);
         return label;
     }
@@ -95,7 +104,13 @@ public abstract partial class SimPanel : Control
     /// <summary>Full-rect ScrollContainer wrapping a VBox — the standard panel body.</summary>
     protected VBoxContainer BuildScrollBody()
     {
-        var scroll = new ScrollContainer { Name = "Scroll" };
+        // Horizontal scroll disabled (U7/R7): with it enabled the child gets unbounded
+        // horizontal space, so autowrap labels lose their real wrap width. Vertical-only.
+        var scroll = new ScrollContainer
+        {
+            Name = "Scroll",
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+        };
         scroll.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(scroll);
         var body = new VBoxContainer
