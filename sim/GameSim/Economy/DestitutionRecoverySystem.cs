@@ -42,27 +42,29 @@ public sealed class DestitutionRecoverySystem : IPhaseSystem
     {
         var player = state.Player;
 
-        // 1. Cannot buy: gold below the cheapest priced-pool unit price. (Base unit price is the
-        //    conservative bound — the vendor's marked-up price is higher, and Evening hero offers
-        //    ask at least base; if gold >= cheapest base the player MIGHT trade, so we stay out.)
-        var cheapest = int.MaxValue;
+        // 1+2. Cannot reach a craft: the cheapest GUARANTEED path back to a productive loop is
+        //    "top the best-stocked priced material up to the smallest tier-1 recipe quantity at
+        //    the Morning vendor, then craft". Cost it exactly with the vendor's own quote
+        //    (MaterialVendorHandlers.QuoteCost — the one pricing formula). Zero cost means a
+        //    craft is possible RIGHT NOW; affordable cost means the vendor path is open. Either
+        //    way the player is solvent and the floor stays out. Coarser arms (cheapest BASE unit
+        //    price / "any material at all") left provable dead-ends: gold 3 cannot pay the 4g
+        //    marked-up copper, and a single held copper crafts nothing (min quantity 2) —
+        //    NoSoftlockTests pins both. Evening hero offers are contingent, never guaranteed,
+        //    so they cannot carry the R5 guarantee.
+        var minQuantity = CheapestTier1RecipeQuantity(player);
+        var cheapestPathCost = int.MaxValue;
         foreach (var key in MaterialRegistry.PricedPool)
         {
-            cheapest = Math.Min(cheapest, MaterialRegistry.UnitPrice(key));
+            var held = player.Materials.TryGetValue(key, out var stock) ? stock : 0;
+            var needed = Math.Max(0, minQuantity - held);
+            var cost = needed == 0 ? 0 : MaterialVendorHandlers.QuoteCost(key, needed);
+            cheapestPathCost = Math.Min(cheapestPathCost, cost);
         }
 
-        if (player.Gold >= cheapest)
+        if (player.Gold >= cheapestPathCost)
         {
-            return state;
-        }
-
-        // 2. Cannot craft: no materials at all.
-        foreach (var (_, quantity) in player.Materials)
-        {
-            if (quantity > 0)
-            {
-                return state;
-            }
+            return state; // craftable now (cost 0) or the vendor path is affordable — solvent
         }
 
         // 3. Nothing to stock: no player craft that is unshelved, unequipped, and not in a pack
@@ -106,14 +108,38 @@ public sealed class DestitutionRecoverySystem : IPhaseSystem
             return state;
         }
 
-        // True dead-end — top up to the floor and stamp the source event.
-        var delta = DestitutionFloorGold - player.Gold;
+        // True dead-end — top up to the floor and stamp the source event. The target is
+        // max(floor, cheapest path cost): the guarantee must survive even if recipe/price data
+        // ever makes the cheapest craft path cost more than the nominal floor (structural R5,
+        // not a tuning accident). Today: floor 10 ≥ 2 copper at 8g.
+        var target = Math.Max(DestitutionFloorGold, cheapestPathCost);
+        var delta = target - player.Gold;
         if (delta <= 0)
         {
-            return state; // defensive: floor not above current gold (unreachable while floor > cheapest)
+            return state; // defensive: unreachable while target > gold (gold < cheapestPathCost here)
         }
 
         events.Emit(new RecoveryStipendGranted(delta));
-        return state with { Player = player with { Gold = DestitutionFloorGold } };
+        return state with { Player = player with { Gold = target } };
+    }
+
+    /// <summary>
+    /// The smallest tier-1 (ungated) recipe material quantity across the player's selected
+    /// professions — the least material any craft needs. Tier-1 recipes are talent-free by
+    /// design, so this path never depends on unlocks. Defensive fallback 2 (every current
+    /// profession's tier-1 quantity) if a save somehow has no selected professions.
+    /// </summary>
+    private static int CheapestTier1RecipeQuantity(PlayerState player)
+    {
+        var min = int.MaxValue;
+        foreach (var recipe in Professions.ProfessionRegistry.AllRecipes.Values)
+        {
+            if (recipe.Tier == 1 && player.IsSelected(recipe.Profession))
+            {
+                min = Math.Min(min, recipe.MaterialQuantity);
+            }
+        }
+
+        return min == int.MaxValue ? 2 : min;
     }
 }
