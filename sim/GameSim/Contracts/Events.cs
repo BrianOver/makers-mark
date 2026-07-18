@@ -24,6 +24,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(GossipEmitted), "gossip")]
 [JsonDerivedType(typeof(FloorRecordSet), "floorRecord")]
 [JsonDerivedType(typeof(TariffApplied), "tariffApplied")]
+[JsonDerivedType(typeof(MaterialPurchased), "materialPurchased")]
 [JsonDerivedType(typeof(FactionStandingShifted), "factionStandingShifted")]
 [JsonDerivedType(typeof(PartyCampReport), "partyCampReport")]
 [JsonDerivedType(typeof(SupplyDelivered), "supplyDelivered")]
@@ -116,3 +117,9 @@ public sealed record SupplyDelivered(HeroId To, ItemId Item, int Fee) : GameEven
 
 /// <summary>The recall bell: the party will bank and surface at the Deep tick (v1).</summary>
 public sealed record PartyRecalled(ImmutableList<HeroId> Party) : GameEvent;
+
+/// <summary>A Morning vendor purchase landed (Playable Core R3/KD2). <paramref name="Cost"/> is the
+/// marked-up gold the player handed over — a recorded gold SINK the conservation invariant
+/// reconciles against (KTD3; TariffApplied / SupplyDelivered precedent): the vendor's purse is
+/// unmodelled, so the cost leaves the modelled town total.</summary>
+public sealed record MaterialPurchased(string MaterialKey, int Quantity, int Cost) : GameEvent;
