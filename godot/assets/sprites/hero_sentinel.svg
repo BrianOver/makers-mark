@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="64" viewBox="0 0 48 64">
+  <!-- Vanguard: sturdy shield-bearer. Neutral body is tinted to the role color
+       (steel-blue #4a6b9a) via TextureRect.Modulate at runtime; accents follow the
+       style bible (bone outline, faint teal circuit, purple rune, ember rim). -->
+  <!-- legs -->
+  <rect x="18" y="44" width="5" height="16" fill="#b8b0c6" stroke="#140f1f" stroke-width="2"/>
+  <rect x="25" y="44" width="5" height="16" fill="#b8b0c6" stroke="#140f1f" stroke-width="2"/>
+  <!-- torso -->
+  <path d="M16 24 L32 24 L34 46 L14 46 Z" fill="#b8b0c6" stroke="#140f1f" stroke-width="2"/>
+  <!-- head -->
+  <circle cx="24" cy="15" r="7" fill="#b8b0c6" stroke="#140f1f" stroke-width="2"/>
+  <!-- shield (left arm) with a purple rune boss -->
+  <path d="M5 25 L15 23 L15 41 Q10 45 5 41 Z" fill="#b8b0c6" stroke="#140f1f" stroke-width="2"/>
+  <circle cx="10" cy="33" r="2.5" fill="none" stroke="#6b4c9a" stroke-width="1.5"/>
+  <!-- sword (right hand) -->
+  <path d="M38 10 L41 42 L35 42 Z" fill="#b8b0c6" stroke="#140f1f" stroke-width="2"/>
+  <!-- teal circuit trace on torso -->
+  <path d="M20 28 L20 42 M28 28 L28 42" stroke="#3fb0ac" stroke-width="1.2" opacity="0.85"/>
+  <!-- ember rim light, upper-left edge -->
+  <path d="M17 25 L17 44" stroke="#e0913f" stroke-width="1.2" opacity="0.7"/>
+</svg>

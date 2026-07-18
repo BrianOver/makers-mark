@@ -61,6 +61,9 @@ public static class ClassRegistry
         Vanguard,
         Striker,
         Mystic,
+        SentinelClass.Definition,
+        SkirmisherClass.Definition,
+        OccultistClass.Definition,
     }.ToImmutableSortedDictionary(c => c.Id, c => c, StringComparer.Ordinal);
 
     /// <summary>
