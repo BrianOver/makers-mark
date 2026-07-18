@@ -28,12 +28,17 @@ namespace GameSim.Flavor.Packs;
 /// both to reproduce that exact line and because a fallback must mention every provided
 /// slot to pass the engine's validation (a fallback that can fail is a pack authoring bug).</para>
 ///
-/// <para><b>Breadth (T8a).</b> Every (baseKey, voice) key carries TWELVE variants — the launch
-/// four plus eight more in the same frozen voice register. Breadth lives in this existing pack file:
-/// additive same-surface packs are unsupported (LedgerQuery binds one pack, and
-/// <c>Pack_VariantKeys_AreExactlyBaseKeysCrossVoices</c> pins the exact key set), so ruling R8 grows
-/// the file in place. The launch four keep indices 0-3; the golden death card (died/omen index 1)
-/// is unmoved.</para>
+/// <para><b>Breadth (T8a + C4).</b> Every (baseKey, voice) key carries at least twelve variants — the
+/// launch four plus eight more in the same frozen voice register — then the C4 tone pass (design doc
+/// <c>2026-07-18-variety-tone-direction.md</c> §1): <see cref="Survived"/> gains deadpan comic variants
+/// per voice (omen = failed portents, gruff = invoices/lectures, dramatic = grandiosity about mundane
+/// things, wry stays wry); <see cref="Died"/> gains ONE WARM variant per voice — a fond line, never a
+/// joke (the death-restraint guardrail). Breadth lives in this existing pack file: additive same-surface
+/// packs are unsupported (LedgerQuery binds one pack, and
+/// <c>Pack_VariantKeys_AreExactlyBaseKeysCrossVoices</c> pins the exact key set), so ruling R8 grows the
+/// file in place. Appends are byte-sensitive: the added variants change each key's count, so the pinned
+/// prose golden (<c>LedgerPackTests.Render_FixedCampaignAndEventId_PinsExactProse</c>) is re-pinned
+/// in-packet (pick-shift, expected).</para>
 ///
 /// <para><b>Conformance floor:</b> every (baseKey, voice) key carries at least 4 variants.
 /// <c>LedgerPackTests</c> enforces all of the above structurally.</para>
@@ -74,7 +79,10 @@ public static class LedgerPack
                 "Back from floor {floor}, {hero}, {gold}g richer and grumbling. Same as ever.",
                 "Floor {floor} took a bite and paid {gold}g for it. {hero} took the deal.",
                 "{hero} banked {gold}g off floor {floor}. Count it, log it, done.",
-                "Floor {floor}, {gold}g, all fingers accounted for. {hero} did fine."),
+                "Floor {floor}, {gold}g, all fingers accounted for. {hero} did fine.",
+                "{hero} walked out of floor {floor} with {gold}g. Counted it twice. It counted the same. Good day.",
+                "Back from floor {floor}, {hero}, {gold}g on the table. Logged it, taxed it in my head, called it fair.",
+                "{gold}g out of floor {floor} for {hero}. Wrote the figure down before they could round it up in the retelling."),
             [$"{Survived}/dramatic"] = ImmutableList.Create(
                 "Triumphant! {hero} returns from floor {floor} bearing {gold}g!",
                 "{hero} strides home from floor {floor} — hear the {gold}g sing in the purse!",
@@ -87,7 +95,10 @@ public static class LedgerPack
                 "Home in glory — {hero}, floor {floor} behind them, {gold}g in hand!",
                 "Let the coins ring — {hero} won {gold}g from the maw of floor {floor}!",
                 "Floor {floor} is beaten and {gold}g the poorer — rejoice for {hero}!",
-                "A hero returns! {hero}, {gold}g, and floor {floor} survived!"),
+                "A hero returns! {hero}, {gold}g, and floor {floor} survived!",
+                "{hero} returns from floor {floor} bearing {gold}g — a fortune! a hoard! enough, very nearly, for a good dinner!",
+                "Sound the ledger's trumpet: {hero}, home from floor {floor}, {gold}g the richer and insufferable with it!",
+                "Behold the conqueror {hero}, floor {floor} survived, {gold}g in purse — let the coins be counted aloud, twice, with feeling!"),
             [$"{Survived}/wry"] = ImmutableList.Create(
                 "{hero} came back from floor {floor} with {gold}g and most of their dignity.",
                 "Floor {floor}: survived. {gold}g: earned. {hero}: insufferable about it.",
@@ -100,7 +111,10 @@ public static class LedgerPack
                 "{hero} survived floor {floor} and {gold}g happened. Cause unclear, results banked.",
                 "Floor {floor} let {hero} keep {gold}g. Generous, for a hole that eats people.",
                 "{gold}g richer, {hero} limps out of floor {floor} looking almost pleased.",
-                "{hero} made floor {floor} look easy. It wasn't. Here's {gold}g anyway."),
+                "{hero} made floor {floor} look easy. It wasn't. Here's {gold}g anyway.",
+                "{hero} survived floor {floor} and came home with {gold}g and a story that grows a floor deeper each telling.",
+                "Floor {floor}: survived. {gold}g: banked. {hero}: already spending it, in theory, at the bar.",
+                "{hero} priced a day on floor {floor} at {gold}g. A bargain, if you don't count the near-death as overhead."),
             [$"{Survived}/omen"] = ImmutableList.Create(
                 "{hero} returned from floor {floor} with {gold}g. The Mine let them keep both.",
                 "Floor {floor} released {hero} — {gold}g in hand, and a debt unspoken.",
@@ -113,7 +127,10 @@ public static class LedgerPack
                 "The ledger's ink stayed black for {hero}: floor {floor}, {gold}g, alive.",
                 "Floor {floor} gave {hero} {gold}g and a warning. Only one was spent.",
                 "The Mine counted {hero} out at floor {floor} — {gold}g, and a name still owed.",
-                "{hero} rose from floor {floor} with {gold}g. Rising always costs. Mark it."),
+                "{hero} rose from floor {floor} with {gold}g. Rising always costs. Mark it.",
+                "I foresaw an empty stool for {hero}. Instead: floor {floor}, {gold}g, and a pulse. The vision misfiled itself.",
+                "The dregs warned {hero} off floor {floor}. {hero} went, and returned with {gold}g. The dregs are re-steeping.",
+                "A grim sign hung over {hero} at floor {floor}. They brought back {gold}g and no grimness at all. Signs err. Rarely admitted."),
 
             // ------------------------------------------------------------- died
             [$"{Died}/gruff"] = ImmutableList.Create(
@@ -128,7 +145,8 @@ public static class LedgerPack
                 "{hero} won't climb out of floor {floor}. Draw the line.",
                 "Floor {floor}'s the last word on {hero}. Write it plain.",
                 "{hero} ends on floor {floor}. The book doesn't argue.",
-                "Strike {hero} off. Floor {floor} keeps the rest."),
+                "Strike {hero} off. Floor {floor} keeps the rest.",
+                "{hero} ends on floor {floor}. Paid every round they ever owed. Strike the name gentle."),
             [$"{Died}/dramatic"] = ImmutableList.Create(
                 "Fallen! {hero} lies still on floor {floor}!",
                 "The ledger bleeds tonight: {hero}, lost to floor {floor}!",
@@ -141,7 +159,8 @@ public static class LedgerPack
                 "A hero's tale ends in the dark — {hero}, floor {floor}!",
                 "Lost! {hero} passed into floor {floor} and did not return!",
                 "The dark of floor {floor} has a new name — {hero}!",
-                "Mourn {hero}, swallowed whole by floor {floor}!"),
+                "Mourn {hero}, swallowed whole by floor {floor}!",
+                "The ledger closes on {hero}, lost to floor {floor} — a good name, well written, and grieved."),
             [$"{Died}/wry"] = ImmutableList.Create(
                 "{hero} is staying on floor {floor}. Permanently.",
                 "Floor {floor} gets custody of {hero}. No appeal.",
@@ -154,7 +173,8 @@ public static class LedgerPack
                 "Long-term lease for {hero} on floor {floor}. Term: eternal.",
                 "{hero} decided to stay on floor {floor}. Wasn't really a decision.",
                 "The ledger closes on {hero}: floor {floor}, balance zero.",
-                "{hero} committed fully to floor {floor}. Full marks, no {hero}."),
+                "{hero} committed fully to floor {floor}. Full marks, no {hero}.",
+                "{hero}'s account closes on floor {floor}. They were better company than the entry allows. Mark it kindly."),
             [$"{Died}/omen"] = ImmutableList.Create(
                 "{hero}'s thread ends on floor {floor}. The ink knew before I did.",
                 "Floor {floor} claimed {hero}. The tithe is paid.",
@@ -167,7 +187,8 @@ public static class LedgerPack
                 "{hero}'s name left the roster and joined floor {floor}'s tally.",
                 "Salt the doorstep for {hero}. Floor {floor} keeps its own.",
                 "Floor {floor} sealed over {hero}. Some doors don't reopen.",
-                "{hero} paid the deep's tithe on floor {floor}. It always comes due."),
+                "{hero} paid the deep's tithe on floor {floor}. It always comes due.",
+                "Floor {floor} keeps {hero} now. The deep took a good one; light a candle, not a fuss."),
         },
         new Dictionary<string, string>(StringComparer.Ordinal)
         {

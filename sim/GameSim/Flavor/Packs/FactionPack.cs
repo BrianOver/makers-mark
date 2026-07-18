@@ -25,11 +25,15 @@ namespace GameSim.Flavor.Packs;
 /// <para><b>Fallbacks:</b> one per base key, in the same plain register — new drama with no prior
 /// hardcoded line. Simple enough to always pass validation (pack conformance tests assert this).</para>
 ///
-/// <para><b>Breadth (T8a).</b> Every (baseKey, voice) key carries TWELVE variants — the launch four
-/// plus eight more in the same frozen voice register, all pinned to the cheaper/dearer-ore consequence
-/// (R7). Breadth lives in this existing pack file: additive same-surface packs are unsupported (the
-/// generator binds one faction pack, and <c>Pack_VariantKeys_AreExactlyBaseKeysCrossVoices</c> pins the
-/// exact key set), so ruling R8 grows it in place.</para>
+/// <para><b>Breadth (T8a + C4).</b> Every (baseKey, voice) key carries at least twelve variants — the
+/// launch four plus eight more in the same frozen voice register — then the C4 tone pass (design doc
+/// <c>2026-07-18-variety-tone-direction.md</c> §1) adds comic-bureaucratic "permit-office" variants per
+/// voice (idea #18): omen = failed portents, gruff = invoices/lectures, dramatic = grandiosity about
+/// mundane coppers, wry stays wry. Every added line stays pinned to the cheaper/dearer-ore consequence
+/// the player actually feels (R7). Breadth lives in this existing pack file: additive same-surface packs
+/// are unsupported (the generator binds one faction pack, and
+/// <c>Pack_VariantKeys_AreExactlyBaseKeysCrossVoices</c> pins the exact key set), so ruling R8 grows it
+/// in place.</para>
 ///
 /// <para><b>Conformance floor:</b> every (baseKey, voice) key carries at least 4 variants — no
 /// fallback-only keys. <c>FactionPackTests</c> enforces all of the above structurally.</para>
@@ -70,7 +74,9 @@ public static class FactionPack
                 "The {faction} {direction} toward you. Cheaper iron, plain and simple.",
                 "The {faction} {direction} on your account. Don't let it lapse this time.",
                 "Guild's warm — the {faction} {direction}, and ore's off a coin.",
-                "The {faction} {direction} to your custom. That's a discount, not a favor."),
+                "The {faction} {direction} to your custom. That's a discount, not a favor.",
+                "The {faction} {direction} to your custom. Filed the discount under 'earned.' Ore's down a coin. Don't make me refile it.",
+                "The {faction} {direction}. Stamped, sealed, cheaper ore approved. Keep buying and the stamp stays wet."),
             [$"{Favored}/dramatic"] = ImmutableList.Create(
                 "Rejoice! The {faction} have {direction} to your forge — the ore flows cheap!",
                 "The great {faction} {direction} at last, and the price of iron bows before you!",
@@ -83,7 +89,9 @@ public static class FactionPack
                 "A golden season! The {faction} {direction}, and the forge drinks cheap iron!",
                 "The mighty {faction} {direction} toward you — let the anvils ring in thanks!",
                 "Fortune smiles: the {faction} {direction}, and every ingot costs you less!",
-                "The {faction} {direction} to your shop — sing it down every street!"),
+                "The {faction} {direction} to your shop — sing it down every street!",
+                "Rejoice — the {faction} {direction}! A whole coin off the ore! Kingdoms have risen on less, or nearly!",
+                "The great {faction} {direction} to your name, and the price of iron bows — bows! — by an entire copper!"),
             [$"{Favored}/wry"] = ImmutableList.Create(
                 "The {faction} {direction} to you. Miracles happen; so do discounts.",
                 "Turns out the {faction} {direction} — apparently coin buys affection. Who knew.",
@@ -96,7 +104,9 @@ public static class FactionPack
                 "The great {faction} {direction} to you. Try to accept the affection gracefully.",
                 "The {faction} {direction}. The ore's down a coin; act like you expected it.",
                 "So the {faction} {direction} at last. Coin buys love. Noted for the ledger.",
-                "The {faction} {direction} toward your account. Sentiment, priced per ingot."),
+                "The {faction} {direction} toward your account. Sentiment, priced per ingot.",
+                "The {faction} {direction} to you. Somewhere a clerk stamped 'friend' and sighed. Ore's cheaper; don't thank the clerk.",
+                "Apparently the {faction} {direction}. There's a form for affection now, filed in triplicate. The ore's down a coin regardless."),
             [$"{Favored}/omen"] = ImmutableList.Create(
                 "The {faction} {direction} to you — the coals burned blue last night. The deep favors your coin.",
                 "I read it in the ore-dust: the {faction} {direction}. Kinder prices ride a kind wind.",
@@ -109,7 +119,9 @@ public static class FactionPack
                 "The candles stood tall at the assay — the {faction} {direction} to you.",
                 "The {faction} {direction}. Cheaper ore, and an omen worth keeping.",
                 "The veins warmed the day the {faction} {direction}. Such signs hold, a while.",
-                "The {faction} {direction} to you. Salt the sill in thanks — cheap ore is a gift."),
+                "The {faction} {direction} to you. Salt the sill in thanks — cheap ore is a gift.",
+                "I foretold the {faction} would sour. Instead they {direction}, and the ore came cheap. The omens have filed a correction.",
+                "The signs said dear iron. The {faction} {direction} and made them liars. Cheaper ore, and a portent eating its words."),
 
             // ------------------------------------------------------------- cooled (direction = "cooled")
             [$"{Cooled}/gruff"] = ImmutableList.Create(
@@ -124,7 +136,9 @@ public static class FactionPack
                 "Guild's cold — the {faction} {direction}, and the ore knows it.",
                 "The {faction} {direction} toward you. Dearer ore, colder welcome.",
                 "The {faction} {direction}. Should've fed the guild. Now it feeds on you.",
-                "The {faction} {direction} on your custom. Costs more to make good than to keep good."),
+                "The {faction} {direction} on your custom. Costs more to make good than to keep good.",
+                "The {faction} {direction} on you. Reclassified your account 'neglectful.' Ore's up a coin. Appeals go in the usual bin.",
+                "The {faction} {direction}. Marked the file 'lapsed,' dearer ore attached. Mend it or pay the surcharge. Your ledger."),
             [$"{Cooled}/dramatic"] = ImmutableList.Create(
                 "Alas! The {faction} have {direction} toward your forge — the ore turns dear!",
                 "The {faction} {direction}, and the price of iron rises like a tide against you!",
@@ -137,7 +151,9 @@ public static class FactionPack
                 "The {faction} {direction}, and a chill settles on every price you pay!",
                 "Hear and lament: the {faction} {direction}, the iron dear as gold!",
                 "The {faction} {direction} toward you — the anvils ring a poorer tune!",
-                "A bitter season! The {faction} {direction}, and the ledger weeps coin!"),
+                "A bitter season! The {faction} {direction}, and the ledger weeps coin!",
+                "Alas, the {faction} {direction}! The ore climbs a whole coin — a catastrophe measured in coppers, but felt in the soul!",
+                "The great {faction} {direction} from you, and iron's price rises like a tide — a very small tide, but a cold one!"),
             [$"{Cooled}/wry"] = ImmutableList.Create(
                 "The {faction} {direction} on you. Turns out they hold grudges and invoices.",
                 "The {faction} {direction} — nothing personal, just pricier ore. Somewhat personal.",
@@ -150,7 +166,9 @@ public static class FactionPack
                 "The {faction} {direction}. You forgot them; they remembered, with a surcharge.",
                 "The {faction} {direction} toward you. Cold guild, warm invoice.",
                 "The {faction} {direction}. They're not upset. The prices are just expressing themselves.",
-                "The great {faction} {direction} on you. Grudges, now available by the ingot."),
+                "The great {faction} {direction} on you. Grudges, now available by the ingot.",
+                "The {faction} {direction} on you. There's a form for grudges; they filled it out neatly. Dearer ore, itemized.",
+                "So the {faction} {direction}. Nothing personal — the surcharge, however, is extremely personal. Ore's up a coin."),
             [$"{Cooled}/omen"] = ImmutableList.Create(
                 "The {faction} {direction} toward you — the candles guttered at the assay. Dearer ore, darker signs.",
                 "I saw it in the slag: the {faction} {direction}. The veins turn their faces away.",
@@ -163,7 +181,9 @@ public static class FactionPack
                 "The {faction} {direction}. The coals leaned away from your account tonight.",
                 "The {faction} {direction} toward you. Costlier iron, and the deep's cold shoulder.",
                 "The {faction} {direction}. The mountain feeds a colder table now. Yours.",
-                "The {faction} {direction} from you. Dearer ore is how the deep says it's watching."),
+                "The {faction} {direction} from you. Dearer ore is how the deep says it's watching.",
+                "I swore the {faction} would hold. They {direction} instead, and the ore turned dear. My portents are in disgrace.",
+                "The signs promised warm trade. The {faction} {direction}, dearer iron in hand. Even the omens are asking for a refund."),
         },
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
