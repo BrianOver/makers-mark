@@ -48,5 +48,15 @@ public static class IconRegistry
         return ResourceLoader.Exists(path) ? GD.Load<Texture2D>(path) : null;
     }
 
+    /// <summary>Diffuse+normal CanvasTexture for a generated art id (2.5D path). Null-tolerant:
+    /// null when the diffuse is absent (caller falls back to the SVG placeholder); a missing
+    /// _n sibling yields a diffuse-only CanvasTexture (lights work, normals just read flat).</summary>
+    public static CanvasTexture? Lit(string id)
+    {
+        var diffuse = Art(id);
+        return diffuse is null ? null
+            : new CanvasTexture { DiffuseTexture = diffuse, NormalTexture = Art(id + "_n") };
+    }
+
     private static Texture2D Load(string dir, string name) => GD.Load<Texture2D>($"{dir}/{name}.svg");
 }

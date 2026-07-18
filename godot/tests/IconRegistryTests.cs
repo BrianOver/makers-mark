@@ -66,5 +66,46 @@ public class IconRegistryTests
         // and committed later; the registry must degrade gracefully until then.
         AssertThat(IconRegistry.Art("does_not_exist_yet")).IsNull();
     }
+
+    [TestCase]
+    public void Lit_AbsentDiffuse_ReturnsNull()
+    {
+        // V4a (plan 2026-07-17-003 §V4a): the 2.5D lit lookup mirrors Art's null-tolerance —
+        // no diffuse PNG means null, so the town falls back to the SVG placeholder.
+        AssertThat(IconRegistry.Lit("does_not_exist_yet")).IsNull();
+    }
+
+    [TestCase]
+    public void Lit_ShippedPair_ReturnsCanvasTextureWithDiffuseAndNormal()
+    {
+        // V4a: the shipped pilot pair (town-tavern.png + town-tavern_n.png) resolves to a
+        // CanvasTexture carrying BOTH the diffuse and the normal — the input a lit Sprite2D
+        // needs (proven by lit_tavern_pilot.tscn).
+        var lit = IconRegistry.Lit("town-tavern");
+        AssertThat(lit).IsNotNull();
+        AssertThat(lit!.DiffuseTexture).IsNotNull();
+        AssertThat(lit.NormalTexture).IsNotNull();
+    }
+
+    [TestCase]
+    public void TownViewportShell_Instantiates_WithSubViewportWorld()
+    {
+        // V4a additive shell: SubViewportContainer > SubViewport > Node2D world (the
+        // "SubViewport trap" structure V4b migrates the live town into). Additive/throwaway —
+        // not wired into town_scene.tscn; this just proves the scene loads on the pinned engine.
+        var shell = GD.Load<PackedScene>("res://scenes/town/town_viewport_shell.tscn")
+            .Instantiate<SubViewportContainer>();
+        try
+        {
+            AssertThat(shell.Stretch).IsTrue();
+            var viewport = shell.GetNode<SubViewport>("TownViewport");
+            AssertThat(viewport).IsNotNull();
+            AssertThat(viewport.GetNode<Node2D>("TownWorld")).IsNotNull();
+        }
+        finally
+        {
+            shell.Free();
+        }
+    }
 }
 #endif
