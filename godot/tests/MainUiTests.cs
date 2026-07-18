@@ -1,7 +1,9 @@
 #if GDUNIT_TESTS
+using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Narrative;
 using GdUnit4;
 using Godot;
 using GodotClient.Panels;
@@ -230,6 +232,114 @@ public class MainUiTests
             {
                 AssertThat(bountyText).Contains(judgment.Reason);
             }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void EveningLedger_RendersExpeditionRetelling_WithHaltCloser()
+    {
+        // V7b: the U5 narrator surfaces on the Evening reveal (DoD D6 — no CLI-only feature).
+        var ui = MountMainUi();
+        try
+        {
+            AdvanceDay(ui);                                     // day 1 → Evening completion arms the gate
+            ui._Process(MainUi.ReturnRitualDelaySeconds + 0.1); // Return Ritual elapses → Ledger opens
+            AssertThat(ui.Ledger.Visible).IsTrue();
+            AssertThat(ui.Ledger.ShownDay).IsEqual(1);
+
+            // The reveal snapshot is the ONLY source of the day's ExpeditionResults post-tick.
+            var revealed = ui.Adapter.LastRevealedExpeditions;
+            AssertThat(revealed.IsEmpty).IsFalse();
+            AssertThat(ui.Adapter.LastRevealedDay).IsEqual(1);
+
+            var state = ui.Adapter.CurrentState;
+            var ledgerText = RenderedText(ui.Ledger);
+
+            // The retelling section rendered, with a Full-tale expand toggle (V7b req 2).
+            AssertThat(ledgerText).Contains("THE RETELLING");
+            AssertThat(ledgerText).Contains("Full tale");
+
+            // Each revealed expedition's Halt closer — the pride payload — is on the ledger,
+            // rendered with the same ExpeditionNarrator call shape the CLI uses.
+            foreach (var result in revealed)
+            {
+                var party = PartyOf(state, result.Party);
+                AssertThat(party.IsEmpty).IsFalse();
+                var closer = ExpeditionNarrator.Closer(
+                    result.Halt, party, result.DeepestFloorCleared, result.TargetFloor,
+                    NarratorPack.Pack, state.Rng.Inc, ui.Ledger.ShownDay);
+                AssertThat(ledgerText).Contains(closer);
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void EveningLedger_Retelling_IsDeterministic_AcrossRuns()
+    {
+        // Same seed twice ⇒ byte-identical Evening ledger (cards + retelling), the U5 determinism gate.
+        var first = CaptureLedgerText();
+        var second = CaptureLedgerText();
+        AssertThat(first.Length > 0).IsTrue();
+        AssertThat(first).IsEqual(second);
+        AssertThat(first).Contains("THE RETELLING");
+    }
+
+    [TestCase]
+    public void EveningLedger_FullTaleToggle_ExpandsBeyondPridePayload()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            AdvanceDay(ui);
+            ui._Process(MainUi.ReturnRitualDelaySeconds + 0.1);
+            AssertThat(ui.Ledger.Visible).IsTrue();
+
+            var revealed = ui.Adapter.LastRevealedExpeditions;
+            AssertThat(revealed.IsEmpty).IsFalse();
+            var state = ui.Adapter.CurrentState;
+            var first = revealed[0];
+            var departure = ExpeditionNarrator.Departure(
+                PartyOf(state, first.Party), first.TargetFloor,
+                NarratorPack.Pack, state.Rng.Inc, ui.Ledger.ShownDay);
+
+            var collapsed = RenderedText(ui.Ledger);
+
+            // Expand: the full tale adds the departure + every floor's tension beats.
+            Press(ui.Ledger, "ToggleTale");
+            var expanded = RenderedText(ui.Ledger);
+
+            AssertThat(expanded.Length > collapsed.Length).IsTrue();
+            AssertThat(expanded).Contains(departure);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The heroes of a party in id order, mirroring the LedgerModal/CLI retelling input.</summary>
+    private static ImmutableList<Hero> PartyOf(GameState state, ImmutableList<HeroId> ids) =>
+        ids.Where(id => state.Heroes.ContainsKey(id.Value))
+           .Select(id => state.Heroes[id.Value])
+           .ToImmutableList();
+
+    /// <summary>Drive a fresh seed-2026 campaign to the day-1 Evening reveal and read the ledger text.</summary>
+    private static string CaptureLedgerText()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            AdvanceDay(ui);
+            ui._Process(MainUi.ReturnRitualDelaySeconds + 0.1);
+            return RenderedText(ui.Ledger);
         }
         finally
         {
