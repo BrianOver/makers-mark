@@ -424,6 +424,128 @@ public class TownSceneTests
         }
     }
 
+    // ── V-lit-overlay: the 2.5D lit town backdrop (DoD D3) ───────────────────────────────────
+
+    [TestCase]
+    public void LitOverlay_ShippedAssets_MountFourBuildingsThreeHeroesAndWarmLights()
+    {
+        // The 4 building + 3 hero curated pairs are on main via LFS; CI's `godot --import` makes
+        // them loadable — assert each resolves, then that the mounted overlay realized every one.
+        var ui = MountMainUi();
+        try
+        {
+            foreach (var building in LitTownOverlay.DefaultBuildings)
+            {
+                AssertThat(IconRegistry.Lit(building.LitId)).IsNotNull();
+            }
+
+            foreach (var hero in LitTownOverlay.DefaultHeroes)
+            {
+                AssertThat(IconRegistry.Lit(hero.LitId)).IsNotNull();
+            }
+
+            var overlay = ui.Town.LitOverlay;
+            AssertThat(overlay).IsNotNull();
+            AssertThat(overlay!.HasContent).IsTrue();
+
+            foreach (var building in LitTownOverlay.DefaultBuildings)
+            {
+                AssertThat(Find<Sprite2D>(ui.Town, $"LitBuilding_{building.Key}")).IsNotNull();
+            }
+
+            foreach (var hero in LitTownOverlay.DefaultHeroes)
+            {
+                AssertThat(Find<Sprite2D>(ui.Town, $"LitHero_{hero.ClassId}")).IsNotNull();
+            }
+
+            // One warm PointLight2D per building, carrying the pilot's params (color/height/scale).
+            AssertThat(overlay.Lights.Count).IsEqual(LitTownOverlay.DefaultBuildings.Length);
+            var light = overlay.Lights[0];
+            AssertThat(light.Color).IsEqual(new Color(1f, 0.75f, 0.45f));
+            AssertThat(light.Height).IsEqual(30f);
+            AssertThat(light.TextureScale).IsEqual(2.0f);
+            AssertThat(light.Texture).IsNotNull();
+
+            // The backdrop never intercepts a click — the SVG town on top keeps its routing.
+            AssertThat(overlay.MouseFilter).IsEqual(Control.MouseFilterEnum.Ignore);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void LitOverlay_CanvasModulate_TracksEveryPhaseTint()
+    {
+        // The lit world's SubViewport-scoped CanvasModulate carries the same 5-phase MULTIPLY table
+        // as the town root — pushed in by TownScene.Refresh every tick. Walk the full day.
+        var ui = MountMainUi();
+        try
+        {
+            var overlay = ui.Town.LitOverlay;
+            AssertThat(overlay).IsNotNull();
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+            AssertThat(overlay!.Ambient.Color).IsEqual(TownScene.TintFor(DayPhase.Morning));
+
+            foreach (var phase in new[]
+                     {
+                         DayPhase.Expedition, DayPhase.Camp, DayPhase.ExpeditionDeep, DayPhase.Evening,
+                     })
+            {
+                ui.Adapter.AdvancePhase();
+                AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(phase);
+                AssertThat(overlay.Ambient.Color).IsEqual(TownScene.TintFor(phase));
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void LitOverlay_HeroFigures_MultiplyTintedToClassColor()
+    {
+        // Neutral-base multiply design: each lit hero Sprite2D is Modulate-tinted to its class
+        // ColorRgb (ClassRegistry via HeroSprite.RoleColor) — the same contract the SVG marker holds.
+        var ui = MountMainUi();
+        try
+        {
+            foreach (var hero in LitTownOverlay.DefaultHeroes)
+            {
+                var sprite = Find<Sprite2D>(ui.Town, $"LitHero_{hero.ClassId}");
+                AssertThat(sprite.Modulate).IsEqual(HeroSprite.RoleColor(hero.ClassId));
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void LitOverlay_MissingAsset_DegradesToNoSpriteNoCrash()
+    {
+        // Graceful degrade (built standalone so no shipped id masks the path): a fake id resolves
+        // to null Lit → no sprite, no orphan light, no crash. The SVG town would survive on its own.
+        var overlay = new LitTownOverlay();
+        try
+        {
+            overlay.Build(
+                new[] { new LitTownOverlay.BuildingSpec("ghost", "does_not_exist_yet", Vector2.Zero, Vector2.Zero) },
+                System.Array.Empty<LitTownOverlay.HeroSpec>());
+
+            AssertThat(overlay.HasContent).IsFalse();
+            AssertThat(overlay.Lights.Count).IsEqual(0);
+            AssertThat(overlay.World.FindChild("LitBuilding_ghost", true, false)).IsNull();
+        }
+        finally
+        {
+            overlay.Free();
+        }
+    }
+
     // ── Staged-party fixture (mirrors CampPanelTests / CampHandlersTests) ─────────────────────
     // Seed 6 parks a strong vanguard party at the floor-1 checkpoint.
     private const ulong CampSeed = 6;

@@ -34,6 +34,7 @@ public partial class TownScene : SimPanel
 
     private Control? _heroLayer;
     private Control? _memorialPlot;
+    private LitTownOverlay? _litOverlay;
     private bool _built;
     private double _townTime;
 
@@ -51,6 +52,10 @@ public partial class TownScene : SimPanel
 
     /// <summary>Stones currently in the memorial plot (mirrors DramaState.Memorials).</summary>
     public int MemorialStoneCount { get; private set; }
+
+    /// <summary>The 2.5D lit backdrop (V-lit-overlay), or null before the first build. Null-safe
+    /// by design — a fully-absent asset set leaves it built-but-empty, never removed.</summary>
+    public LitTownOverlay? LitOverlay => _litOverlay;
 
     /// <summary>Current ambient MULTIPLY-tint — the phase color applied to the whole town
     /// subtree via <see cref="CanvasItem.Modulate"/>. Neutral white before the first build.</summary>
@@ -93,6 +98,8 @@ public partial class TownScene : SimPanel
         ReconcileSprites(state);
         RebuildMemorials(state);
         Modulate = TintFor(state.Phase);
+        // The lit backdrop tracks the same phase tint on its SubViewport-scoped CanvasModulate.
+        _litOverlay?.ApplyPhase(state.Phase);
     }
 
     /// <summary>
@@ -304,6 +311,15 @@ public partial class TownScene : SimPanel
         };
         ground.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(ground);
+
+        // V-lit-overlay (CP-1 option (c) additive overlay): the 2.5D lit town, mounted as the
+        // backmost visual layer — ON TOP of the cobble ground, BEHIND every SVG facade/label/hero
+        // marker built below. It draws through its own SubViewport (CanvasModulate scoped to the lit
+        // world) and ignores mouse input, so every TownScene click-routing/label test stays green.
+        // Graceful degrade: with no shipped art it builds empty and the SVG town is untouched.
+        _litOverlay = new LitTownOverlay();
+        _litOverlay.Build();
+        AddChild(_litOverlay);
 
         BuildGate();
         BuildBuilding("Forge", new Vector2(420, 90));
