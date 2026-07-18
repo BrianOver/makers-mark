@@ -94,7 +94,9 @@ public class StagedResolutionTests
     {
         // The normative invariant: whenever a run reaches its target floor, the halt is
         // TargetReached regardless of which exit path ended the loop.
-        var party = ImmutableList.Create(Naked(1, hp: 200) with { Level = 8 });
+        // Record 4 so the TUNING-C competence retreat never preempts a target of 2/3/4 — this test
+        // is about halt classification, not the retreat rule.
+        var party = ImmutableList.Create(Naked(1, hp: 200, deepest: 4) with { Level = 8 });
         var items = new[] { Weapon(90, 20) }.ToImmutableSortedDictionary(i => i.Id.Value, i => i);
 
         for (ulong seed = 0; seed < 100; seed++)
@@ -133,7 +135,9 @@ public class StagedResolutionTests
 
             for (ulong seed = 0; seed < 2500; seed++)
             {
-                var hero = Naked(1, hp: maxHp, gear: gear, pack: pack);
+                // Record 1 so the TUNING-C competence retreat does not preempt a target of 2 — the
+                // scenario needs the hero to actually reach and grind the target floor.
+                var hero = Naked(1, hp: maxHp, deepest: 1, gear: gear, pack: pack);
                 var r = ExpeditionResolver.Resolve(ImmutableList.Create(hero), items, VenueRegistry.Mine, target, new Pcg32(RngState.FromSeed(seed)));
 
                 if (r.DeepestFloorCleared != target)

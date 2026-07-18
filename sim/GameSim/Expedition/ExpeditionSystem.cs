@@ -57,17 +57,23 @@ public sealed class ExpeditionSystem : IPhaseSystem
                 targetFloor = bounty.TargetFloor;
             }
 
+            // TUNING-C (open decision, default): the bounty's acceptor is EXEMPT from the competence
+            // retreat through the bounty's TargetFloor — accepting the bounty IS the commitment (R18).
+            // Non-acceptor partymates still retreat at their own ceiling. ExpeditionDeepSystem
+            // recomputes this identically at the Deep tick (bounties are stable across the two ticks).
+            var (exemptHeroes, exemptThroughFloor) = RetreatExemption(bounty);
+
             var checkpoint = CheckpointFor(targetFloor);
             if (checkpoint < 1)
             {
                 // Unstaged (target floor 1): resolve the whole run now, park in PendingExpeditions.
-                var result = ExpeditionResolver.Resolve(party, state.Items, venue, targetFloor, rng);
+                var result = ExpeditionResolver.Resolve(party, state.Items, venue, targetFloor, rng, exemptHeroes, exemptThroughFloor);
                 state = state with { PendingExpeditions = state.PendingExpeditions.Add(result) };
             }
             else
             {
                 var (completed, inFlight) = ExpeditionResolver.ResolveStage1(
-                    party, state.Items, venue, targetFloor, checkpoint, rng);
+                    party, state.Items, venue, targetFloor, checkpoint, rng, exemptHeroes, exemptThroughFloor);
                 if (completed is not null)
                 {
                     // Stage-1 wipe / gate / floor-lost / too-hurt: finalise now, no camp report.
@@ -86,6 +92,19 @@ public sealed class ExpeditionSystem : IPhaseSystem
 
         return state;
     }
+
+    /// <summary>
+    /// TUNING-C retreat exemption for a party's driving bounty (default open-decision): the acceptor
+    /// is exempt from the competence retreat through the bounty's TargetFloor. Returns an empty
+    /// exemption when no party member accepted a bounty. Shared by <see cref="ExpeditionSystem"/>
+    /// (stage 1 / unstaged) and <see cref="ExpeditionDeepSystem"/> (stage 2) so both ticks compute
+    /// the identical exemption — bounty <c>AcceptedBy</c> is set at the Expedition tick and untouched
+    /// until the Evening payout, so it is stable across the Camp seam.
+    /// </summary>
+    internal static (ImmutableHashSet<int> ExemptHeroes, int ThroughFloor) RetreatExemption(Bounty? bounty) =>
+        bounty?.AcceptedBy is { } acceptor
+            ? (ImmutableHashSet.Create(acceptor.Value), bounty.TargetFloor)
+            : (ImmutableHashSet<int>.Empty, 0);
 
     /// <summary>The winch-house slate: current HP and the count of Heal consumables left in each
     /// camped hero's working pack — the facts the player decides send/recall/hold on. Never lists a
