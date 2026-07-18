@@ -38,42 +38,190 @@ public static class ExpeditionResolver
         var floors = ImmutableList.CreateBuilder<FloorOutcome>();
         var loot = ImmutableList.CreateBuilder<OreLoot>();
 
-        var deepestCleared = ResolveFloors(
+        var (deepestCleared, rawHalt) = ResolveFloors(
             party, items, venue, 1, targetFloor, hp, packs, gold, dead, floors, loot, rng);
 
+        // D4 precedence: clearing the target floor is a full success whatever exit path ended
+        // the loop (a too-hurt break AFTER the target is cleared is success, not a limp home).
+        var halt = ClassifyHalt(deepestCleared, targetFloor, rawHalt);
+
+        return BuildResult(
+            party, items, venue, targetFloor, deepestCleared, floors.ToImmutable(), loot.ToImmutable(), gold, dead, halt);
+    }
+
+    /// <summary>
+    /// Stage 1 of a staged resolution (expedition-tension verdict §5 step 4): resolve floors
+    /// [1..<paramref name="checkpointFloor"/>] at the Expedition tick. Initialises the working
+    /// locals exactly as <see cref="Resolve"/> does, then runs the shared floor loop over the
+    /// stage-1 range. If the party cleared every stage-1 floor with nobody dead and nobody too
+    /// hurt (raw halt == TargetReached), it PARKS as an <see cref="InFlightExpedition"/> for the
+    /// Deep tick; ANY other stage-1 ending (wipe / gate / floor-lost / too-hurt-at-checkpoint)
+    /// finalises IMMEDIATELY as an <see cref="ExpeditionResult"/> carrying that raw halt — the D4
+    /// precedence does NOT apply here (clearing the checkpoint is not clearing the target, and the
+    /// checkpoint is always shallower than the target so deepest &lt; target on every finalise).
+    /// The RNG draw order is byte-identical to the equivalent prefix of an unstaged
+    /// <see cref="Resolve"/> — the loop body and draws are shared verbatim.
+    /// </summary>
+    public static (ExpeditionResult? Completed, InFlightExpedition? InFlight) ResolveStage1(
+        ImmutableList<Hero> party,
+        ImmutableSortedDictionary<int, Item> items,
+        VenueDefinition venue,
+        int targetFloor,
+        int checkpointFloor,
+        IDeterministicRng rng)
+    {
+        if (party.IsEmpty)
+        {
+            throw new ArgumentException("Expedition party cannot be empty.", nameof(party));
+        }
+
+        targetFloor = Math.Clamp(targetFloor, 1, venue.FloorCount);
+
+        var hp = party.ToDictionary(h => h.Id.Value, h => h.MaxHp);
+        var packs = party.ToDictionary(h => h.Id.Value, h => h.Pack.ToList());
+        var gold = party.ToDictionary(h => h.Id.Value, _ => 0);
+        var dead = new HashSet<int>();
+        var floors = ImmutableList.CreateBuilder<FloorOutcome>();
+        var loot = ImmutableList.CreateBuilder<OreLoot>();
+
+        var (deepestCleared, rawHalt) = ResolveFloors(
+            party, items, venue, 1, checkpointFloor, hp, packs, gold, dead, floors, loot, rng);
+
+        // Any non-clean stage-1 ending finalises now (no camp window, no report — deaths reveal
+        // only at Evening, KTD5). rawHalt is guaranteed != TargetReached here: a fully cleared
+        // stage-1 range with nobody too hurt is exactly the parking condition below.
+        if (rawHalt != ExpeditionHalt.TargetReached)
+        {
+            var completed = BuildResult(
+                party, items, venue, targetFloor, deepestCleared, floors.ToImmutable(), loot.ToImmutable(), gold, dead, rawHalt);
+            return (completed, null);
+        }
+
+        // Park: every field is a serializable image of a working local, so stage 2 resumes the
+        // loop verbatim on the live kernel stream (no RngState carried — KTD4).
+        var inFlight = new InFlightExpedition(
+            party.Select(h => h.Id).ToImmutableList(),
+            targetFloor,
+            checkpointFloor,
+            venue.Id,
+            hp.ToImmutableSortedDictionary(),
+            packs.ToImmutableSortedDictionary(kv => kv.Key, kv => kv.Value.ToImmutableList()),
+            gold.ToImmutableSortedDictionary(),
+            dead.ToImmutableSortedSet(),
+            floors.ToImmutable(),
+            loot.ToImmutable(),
+            deepestCleared);
+
+        return (null, inFlight);
+    }
+
+    /// <summary>
+    /// Stage 2 of a staged resolution: finalise floors [CheckpointFloor+1..TargetFloor] at the
+    /// ExpeditionDeep tick. Rehydrates the mutable working state from <paramref name="inFlight"/>
+    /// and continues the shared floor loop on the LIVE kernel stream (<paramref name="rng"/>), so
+    /// stage-2 rolls were provably undrawn while the party camped. The merged floor/loot lists and
+    /// the deepest-cleared value reconstruct exactly what an unstaged <see cref="Resolve"/> would
+    /// have produced for the same party/seed; attribution runs once over the MERGED floors (KTD6).
+    /// A recalled party (v1 bank-and-surface) short-circuits: no loop, no draws, halt == Recalled.
+    /// </summary>
+    public static ExpeditionResult ResolveStage2(
+        InFlightExpedition inFlight,
+        ImmutableList<Hero> party,
+        ImmutableSortedDictionary<int, Item> items,
+        VenueDefinition venue,
+        IDeterministicRng rng)
+    {
+        var hp = inFlight.Hp.ToDictionary(kv => kv.Key, kv => kv.Value);
+        var packs = inFlight.Packs.ToDictionary(kv => kv.Key, kv => kv.Value.ToList());
+        var gold = inFlight.Gold.ToDictionary(kv => kv.Key, kv => kv.Value);
+        var dead = new HashSet<int>(inFlight.Dead);
+        var floors = inFlight.Floors.ToBuilder();
+        var loot = inFlight.Loot.ToBuilder();
+
+        int deepestCleared;
+        ExpeditionHalt halt;
+        if (inFlight.Recalled)
+        {
+            // The recall bell rang at Camp: bank stage-1 clears/ore and surface without rolling
+            // deeper floors. No RNG is drawn — the stream is untouched by a recalled party.
+            deepestCleared = inFlight.DeepestFloorCleared;
+            halt = ExpeditionHalt.Recalled;
+        }
+        else
+        {
+            var (stage2Deepest, rawHalt) = ResolveFloors(
+                party, items, venue, inFlight.CheckpointFloor + 1, inFlight.TargetFloor, hp, packs, gold, dead, floors, loot, rng);
+
+            // ResolveFloors returns the deepest cleared WITHIN its range (0 if none); fall back to
+            // the stage-1 deepest so the merged value equals the unstaged single accumulator.
+            deepestCleared = stage2Deepest > 0 ? stage2Deepest : inFlight.DeepestFloorCleared;
+            halt = ClassifyHalt(deepestCleared, inFlight.TargetFloor, rawHalt);
+        }
+
+        return BuildResult(
+            party, items, venue, inFlight.TargetFloor, deepestCleared, floors.ToImmutable(), loot.ToImmutable(), gold, dead, halt);
+    }
+
+    /// <summary>
+    /// D4 precedence rule: <c>DeepestCleared == TargetFloor</c> is ALWAYS a
+    /// <see cref="ExpeditionHalt.TargetReached"/>, whatever exit path ended the loop — a too-hurt
+    /// break that fires only after the target floor is cleared is a success, not a limp home.
+    /// Only a run that fell short of the target keeps its exit-path classification.
+    /// </summary>
+    private static ExpeditionHalt ClassifyHalt(int deepestCleared, int targetFloor, ExpeditionHalt rawHalt) =>
+        deepestCleared == targetFloor ? ExpeditionHalt.TargetReached : rawHalt;
+
+    /// <summary>
+    /// Assemble the <see cref="ExpeditionResult"/> from the resolved working state. Shared by
+    /// <see cref="Resolve"/>, <see cref="ResolveStage1"/> (immediate finalise), and
+    /// <see cref="ResolveStage2"/> so the three paths build byte-identical results from identical
+    /// state. Attribution runs AFTER resolution, over recorded rolls only (KTD6), handed the SAME
+    /// venue the forward pass used — a divergence here would corrupt attribution.
+    /// </summary>
+    private static ExpeditionResult BuildResult(
+        ImmutableList<Hero> party,
+        ImmutableSortedDictionary<int, Item> items,
+        VenueDefinition venue,
+        int targetFloor,
+        int deepestCleared,
+        ImmutableList<FloorOutcome> floors,
+        ImmutableList<OreLoot> loot,
+        Dictionary<int, int> gold,
+        HashSet<int> dead,
+        ExpeditionHalt halt)
+    {
         var survivors = party.Where(h => !dead.Contains(h.Id.Value)).Select(h => h.Id).ToImmutableList();
         var deaths = party.Where(h => dead.Contains(h.Id.Value)).Select(h => h.Id).ToImmutableList();
-        var allFloors = floors.ToImmutable();
-
-        // Attribution runs AFTER resolution, over recorded rolls only (KTD6). It is handed the
-        // SAME venue the forward pass used, so the counterfactual recompute reads identical floor
-        // data — a divergence here would corrupt attribution (KTD6).
-        var beats = AttributionEngine.ComputeBeats(allFloors, party, items, venue);
+        var beats = AttributionEngine.ComputeBeats(floors, party, items, venue);
 
         return new ExpeditionResult(
             party.Select(h => h.Id).ToImmutableList(),
             targetFloor,
             deepestCleared,
-            allFloors,
+            floors,
             survivors,
             deaths,
             beats,
-            loot.ToImmutable(),
+            loot,
             gold.ToImmutableSortedDictionary(),
-            venue.Id);
+            venue.Id,
+            halt);
     }
 
     /// <summary>
     /// Runs the per-floor combat loop over the INCLUSIVE range [fromFloor, toFloor], mutating
     /// the caller's working state (hp/packs/gold/dead) and appending to its floor/loot builders.
-    /// Returns the deepest floor cleared WITHIN the range (0 if none). This method is the
-    /// staged-resolution seam (expedition-tension verdict §5 step 1): a later PR runs
-    /// [1..checkpoint] at the Expedition tick and [checkpoint+1..target] at the Deep tick, with
-    /// the parameters here persisting between stages as <c>InFlightExpedition</c> — every
-    /// parameter maps 1:1 onto a former <see cref="Resolve"/> method-local, and the body is a
-    /// verbatim move of the original loop so the RNG draw order is byte-identical.
+    /// Returns the deepest floor cleared WITHIN the range (0 if none) plus the RAW exit-path
+    /// <see cref="ExpeditionHalt"/> classification (before the D4 <see cref="ClassifyHalt"/>
+    /// precedence check the callers apply). This method is the staged-resolution seam
+    /// (expedition-tension verdict §5): <see cref="ResolveStage1"/> runs [1..checkpoint] at the
+    /// Expedition tick and <see cref="ResolveStage2"/> runs [checkpoint+1..target] at the Deep
+    /// tick, with the parameters here persisting between stages as <c>InFlightExpedition</c> —
+    /// every parameter maps 1:1 onto a former <see cref="Resolve"/> method-local, and the body is
+    /// a verbatim move of the original loop so the RNG draw order is byte-identical. The halt is a
+    /// pure classification of the exit taken; it draws no RNG and changes no forward state.
     /// </summary>
-    private static int ResolveFloors(
+    private static (int DeepestCleared, ExpeditionHalt Halt) ResolveFloors(
         ImmutableList<Hero> party,
         ImmutableSortedDictionary<int, Item> items,
         VenueDefinition venue,
@@ -88,18 +236,23 @@ public static class ExpeditionResolver
         IDeterministicRng rng)
     {
         var deepestCleared = 0;
+        // Default: the loop runs the whole range to completion (range fully cleared, nobody too
+        // hurt). Every early exit below overwrites this with its cause.
+        var halt = ExpeditionHalt.TargetReached;
 
         for (var floor = fromFloor; floor <= toFloor; floor++)
         {
             var fighters = party.Where(h => !dead.Contains(h.Id.Value)).ToList();
             if (fighters.Count == 0)
             {
+                halt = ExpeditionHalt.PartyWiped;
                 break;
             }
 
             // STRUCTURAL gate (AE3): under-geared parties retreat at the gate — no roll involved.
             if (CombatMath.PartyAveragePower(fighters, items) < venue.Gate(floor))
             {
+                halt = ExpeditionHalt.GateHeld;
                 break;
             }
 
@@ -151,6 +304,9 @@ public static class ExpeditionResolver
 
             if (!floorCleared)
             {
+                // A flee or death left the floor uncleared: FloorLost if anyone still stands,
+                // PartyWiped if the whole party fell this floor.
+                halt = anyoneStanding ? ExpeditionHalt.FloorLost : ExpeditionHalt.PartyWiped;
                 break;
             }
 
@@ -165,11 +321,12 @@ public static class ExpeditionResolver
             // Anyone too hurt to continue ends the expedition after banking the clear.
             if (tooHurtToContinue)
             {
+                halt = ExpeditionHalt.TooHurt;
                 break;
             }
         }
 
-        return deepestCleared;
+        return (deepestCleared, halt);
     }
 
     private enum FightOutcome

@@ -35,6 +35,7 @@ public static class GameComposition
             new HeroShoppingSystem(),
             new BountyJudgingSystem(),
             new ExpeditionSystem(),
+            new ExpeditionDeepSystem(), // U3 staged resolution: stage-2 finalize at the Deep tick (day order; phase filter does the work)
             new ExpeditionRevealSystem(),
             new BountyPayoutSystem()),
         ImmutableList.Create<IActionHandler>(
