@@ -34,10 +34,14 @@ public partial class MainUi : Control
     public int Seed { get; set; } = 2026;
 
     /// <summary>
-    /// Scenario injection for engine tests/replays: set BEFORE the node enters the
-    /// tree to bind the shell to a prepared campaign instead of a fresh <see cref="Seed"/> one.
+    /// Scenario/campaign injection: set BEFORE the node enters the tree to bind the shell
+    /// to a prepared campaign instead of a fresh <see cref="Seed"/> one. STATIC (U4) so the
+    /// new-game profession select can hand a freshly seeded campaign across
+    /// <c>ChangeSceneToFile</c> (a new MainUi instance exists only after the swap).
+    /// Consumed — cleared — by <see cref="_Ready"/>, so a stale override never leaks into
+    /// a later mount.
     /// </summary>
-    public SimAdapter? AdapterOverride { get; set; }
+    public static SimAdapter? AdapterOverride { get; set; }
 
     public SimAdapter Adapter { get; private set; } = null!;
     public PhaseClock Clock { get; private set; } = null!;
@@ -72,6 +76,7 @@ public partial class MainUi : Control
     public override void _Ready()
     {
         Adapter = AdapterOverride ?? new SimAdapter((ulong)Seed);
+        AdapterOverride = null; // consumed — the handoff is one-shot (see property doc)
         Clock = new PhaseClock(Adapter);
         BuildUi();
 

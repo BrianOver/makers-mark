@@ -69,7 +69,7 @@ public static class UiTestSupport
     {
         var tree = (SceneTree)Engine.GetMainLoop();
         var ui = GD.Load<PackedScene>("res://scenes/panels/main_ui.tscn").Instantiate<MainUi>();
-        ui.AdapterOverride = adapterOverride;
+        MainUi.AdapterOverride = adapterOverride; // static handoff (U4) — _Ready consumes it
         tree.Root.AddChild(ui); // triggers _Ready: adapter + panels + bindings
         ui.Clock.Pause();       // tests drive phases explicitly
         return ui;
