@@ -13,17 +13,24 @@
 
 ## Where we are
 
-Weekend shipped the full **sim** (complete, 722 tests green, `Category!=Balance`). A live
-playtest proved the game is **not reachable or legible** in Godot: craft loop dead on day 1,
-timing traps reject actions, generated art not wired into gameplay panels, UI unstyled by design.
+**UPDATE 2026-07-18 evening — PLAN 1 (Playable Core, 005) SHIPPED.** All 8 units merged as PRs
+#78–#88 (11 PRs: U1 BOARD reconcile, U3/U4/U5 micro+module pairs, U2/U6/U7/U8 godot). Gates at
+close: 767 sim + 25 balance + 63 engine tests green, golden replay byte-identical throughout.
+Playable now: pick profession → Morning vendor buy → craft → stock → sell; gated day clock
+(Advance button, auto toggle); no-softlock destitution floor (R5 proof: 60-cell sweep zero dead
+cells — first sweep found 5 real dead-ends in the coarse arms, fixed in #82); legality-gated
+controls + player-phrased toast; label collapse fixed; PlayableLoopTests locks the loop.
+Plans 005/006/008 carry verification-pass patches (commit a1844b2). NewGameSelect screen exists
+but `run/main_scene` still boots main_ui — needs a one-line orchestrator project.godot micro-PR.
+**Residuals:** formal 8-persona review panel aborted (session token limit) — every unit was
+TDD-red-first, per-PR diff-reviewed, CI green ×11; optional lean re-review later. Token rules now
+mandatory (see memory): Fable plans only, cheap models for work, caveman ultra everywhere.
+**Next: Plan 2 (006 art wiring), then Plan 3 (007 UI), 008 anytime.**
 
-A 6-agent read-only audit diagnosed it (see the foundation doc's Problem Frame). Brian's
-direction: **brainstorm + plan the WHOLE next phase FIRST, as SEPARATE plan docs per large item,
-then work them one phase at a time.** Core (playable + art + dev-LLM) before any new-mechanism
-addons.
-
-We are in the **planning** stage. **No implementation started. Do not code yet** — finish the
-plans, get Brian's go, then work phase-by-phase.
+Prior context: weekend shipped the full sim; a live playtest proved it unreachable in Godot
+(craft loop dead day 1, timing traps, art invisible, UI unstyled). A 6-agent audit diagnosed it;
+Brian's direction: plan whole next phase first as separate docs, then work one phase at a time.
+Plans written + approved + verified; Plan 1 executed as above.
 
 ---
 
