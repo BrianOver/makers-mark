@@ -5,6 +5,7 @@ using GameSim;
 using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Kernel;
 using GdUnit4;
 using Godot;
 using GodotClient.Town;
@@ -303,6 +304,158 @@ public class TownSceneTests
             Unmount(ui);
         }
     }
+
+    [TestCase]
+    public void PhaseAmbience_MultiplyTintTracksEveryPhase()
+    {
+        // V5b-lite: the town's ambient tint is the pilot's MULTIPLY table on the town root's
+        // Modulate, re-applied every tick. Walk the full 5-phase day and assert one tint per
+        // phase (5 assertions), then pin the table values to the approved LitTavernPilot colors.
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+            AssertThat(ui.Town.CurrentTint).IsEqual(TownScene.TintFor(DayPhase.Morning));
+
+            foreach (var phase in new[]
+                     {
+                         DayPhase.Expedition, DayPhase.Camp, DayPhase.ExpeditionDeep, DayPhase.Evening,
+                     })
+            {
+                ui.Adapter.AdvancePhase();
+                AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(phase);
+                AssertThat(ui.Town.CurrentTint).IsEqual(TownScene.TintFor(phase));
+            }
+
+            // Opaque multipliers (alpha 1), NOT the old alpha-overlay table — the pilot values.
+            AssertThat(TownScene.TintFor(DayPhase.Morning)).IsEqual(new Color(1.00f, 0.92f, 0.78f));
+            AssertThat(TownScene.TintFor(DayPhase.Expedition)).IsEqual(new Color(1.00f, 1.00f, 1.00f));
+            AssertThat(TownScene.TintFor(DayPhase.Camp)).IsEqual(new Color(0.85f, 0.80f, 0.95f));
+            AssertThat(TownScene.TintFor(DayPhase.ExpeditionDeep)).IsEqual(new Color(0.60f, 0.60f, 0.85f));
+            AssertThat(TownScene.TintFor(DayPhase.Evening)).IsEqual(new Color(0.45f, 0.45f, 0.70f));
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void DeepCompletion_StagedSurvivorsWalkHome_DeathsHiddenUntilEvening()
+    {
+        // A staged party (seed 6 parks two strong vanguards at the floor-1 checkpoint) is in
+        // InFlight — NOT PendingExpeditions — at Expedition-complete, so it must NOT return
+        // then (the V5a arm would strand it); the fix walks its survivors home at Deep-complete.
+        // Recall banks stage 1 so the finalize is deterministic: both alive, zero deaths.
+        var ui = MountMainUi(new SimAdapter(ExpeditionWorld()));
+        try
+        {
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
+            AssertThat(ui.Town.Sprites.Count).IsEqual(2);
+            foreach (var sprite in ui.Town.Sprites.Values)
+            {
+                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Away); // in the Mine
+            }
+
+            // Expedition → Camp: the party PARKS. PendingExpeditions is empty, so the Expedition
+            // arm returns nobody — the staged party is not stranded, it is camping.
+            ui.Adapter.AdvancePhase();
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Camp);
+            AssertThat(ui.Adapter.CurrentState.InFlight.IsEmpty).IsFalse();
+            AssertThat(ui.Adapter.CurrentState.PendingExpeditions.IsEmpty).IsTrue();
+            foreach (var sprite in ui.Town.Sprites.Values)
+            {
+                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Away);
+            }
+
+            // Camp → ExpeditionDeep: recall applies at the Camp tick; Camp completion is a no-op.
+            ui.Adapter.Queue(new RecallPartyAction(new HeroId(1)));
+            ui.Adapter.AdvancePhase();
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.ExpeditionDeep);
+            foreach (var sprite in ui.Town.Sprites.Values)
+            {
+                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Away);
+            }
+
+            var spritesBeforeDeep = ui.Town.Sprites.Count;
+            var memorialsBeforeDeep = ui.Town.MemorialStoneCount;
+
+            // ExpeditionDeep → Evening: stage 2 banks-and-surfaces into PendingExpeditions; the
+            // Deep arm walks the surviving Away sprites home — revealing NO death (the reveal is
+            // still the Evening tick: nobody has died yet, no sprite removed, no memorial added).
+            ui.Adapter.AdvancePhase();
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Evening);
+            var survivors = ui.Adapter.CurrentState.PendingExpeditions
+                .SelectMany(e => e.Survivors).Select(id => id.Value).ToHashSet();
+            AssertThat(survivors.Count > 0).IsTrue();
+
+            foreach (var sprite in ui.Town.Sprites.Values)
+            {
+                if (survivors.Contains(sprite.HeroValue))
+                {
+                    AssertThat(sprite.State).IsEqual(HeroSprite.TownState.WalkingIn);
+                    AssertThat(sprite.Visible).IsTrue();
+                }
+                else
+                {
+                    // A death (none here) would stay Away until the Evening reveal (KTD5).
+                    AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Away);
+                    AssertThat(sprite.Visible).IsFalse();
+                }
+            }
+
+            // KTD5: Deep completion surfaced no death — roster unchanged, no memorial, all alive.
+            AssertThat(ui.Town.Sprites.Count).IsEqual(spritesBeforeDeep);
+            AssertThat(ui.Town.MemorialStoneCount).IsEqual(memorialsBeforeDeep);
+            AssertThat(ui.Adapter.CurrentState.Heroes.Values.All(h => h.Alive)).IsTrue();
+
+            // Survivors reach home; the Evening reveal then snaps + reconciles (unchanged).
+            ui.Town.Animate(10);
+            AssertThat(ui.Town.Sprites.Values.Count(s => s.State == HeroSprite.TownState.Wandering))
+                .IsEqual(survivors.Count);
+            AdvanceDay(ui);
+            var state = ui.Adapter.CurrentState;
+            AssertThat(ui.Town.Sprites.Count).IsEqual(state.Heroes.Values.Count(h => h.Alive));
+            AssertThat(ui.Town.MemorialStoneCount).IsEqual(state.Drama.Memorials.Count);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── Staged-party fixture (mirrors CampPanelTests / CampHandlersTests) ─────────────────────
+    // Seed 6 parks a strong vanguard party at the floor-1 checkpoint.
+    private const ulong CampSeed = 6;
+    private const int SalveId = 50;
+
+    private static Hero Strong(int id) => new(
+        new HeroId(id), $"Strong{id}", "vanguard", Level: 5, MaxHp: 60, Gold: 30,
+        new GearSet(new ItemId(90), null, new ItemId(91)), ImmutableList<ItemMemory>.Empty,
+        Alive: true, DeepestFloorReached: 1, DiedOnDay: null);
+
+    private static Item Weapon(int id, int attack) => new(
+        new ItemId(id), "sword", "Sword", ItemSlot.Weapon, QualityGrade.Common,
+        new ItemStats(attack, 0, 4), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+    private static Item Armor(int id, int defense) => new(
+        new ItemId(id), "plate", "Plate", ItemSlot.Armor, QualityGrade.Common,
+        new ItemStats(0, defense, 8), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+    private static Item Salve(int id) => new(
+        new ItemId(id), "field-salve", "Field Salve", ItemSlot.Consumable, QualityGrade.Common,
+        new ItemStats(0, 0, 0), new MakersMark("You", 1),
+        ImmutableList<ItemHistoryEntry>.Empty, new ConsumableEffect(ConsumableKind.Heal, 6));
+
+    /// <summary>A day-1 world already at Expedition (two strong vanguards → one party): the
+    /// party parks at the floor-1 checkpoint on the Expedition tick.</summary>
+    private static GameState ExpeditionWorld() => GameFactory.NewGame(CampSeed) with
+    {
+        Phase = DayPhase.Expedition,
+        Heroes = new[] { Strong(1), Strong(2) }.ToImmutableSortedDictionary(h => h.Id.Value, h => h),
+        Items = new[] { Weapon(90, 30), Armor(91, 20), Salve(SalveId) }
+            .ToImmutableSortedDictionary(i => i.Id.Value, i => i),
+    };
 
     /// <summary>
     /// A campaign engineered to fully wipe on day 1: three 1-HP heroes (they pass the

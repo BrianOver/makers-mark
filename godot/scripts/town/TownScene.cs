@@ -11,10 +11,11 @@ namespace GodotClient.Town;
 /// The living town view (U12, R19): first tab of the MainUi shell. Hand-authored SVG
 /// art (U16) in a fixed design space: a tileable cobble ground, a town gate on the
 /// right edge, Forge/Shop/Tavern building facades, a memorial corner plot (R13), and one
-/// <see cref="HeroSprite"/> per alive hero. Rhythm follows the sim's phases:
-/// Morning-tick completion sends everyone out the gate (all alive heroes party up),
-/// Expedition-tick completion walks the survivors back in (deaths stay away until the
-/// Evening reveal removes them), Evening-tick completion snaps the town to a new day.
+/// <see cref="HeroSprite"/> per alive hero. Rhythm follows the sim's five phases:
+/// Morning-tick completion sends everyone out the gate (all alive heroes party up); a run that
+/// finalizes at Expedition (never parked) walks its survivors back then, while staged parties
+/// park at Camp and walk back at ExpeditionDeep-tick completion; deaths stay away until the
+/// Evening reveal removes them; Evening-tick completion snaps the town to a new day.
 /// The walks are decoration only — the Ledger reveal is MainUi's TIME-BASED Return
 /// Ritual gate, never blocked by sprites (a full wipe returns zero of them).
 /// Clicking a hero or building raises an event MainUi routes to the U11 tabs (R20).
@@ -33,7 +34,7 @@ public partial class TownScene : SimPanel
 
     private Control? _heroLayer;
     private Control? _memorialPlot;
-    private ColorRect? _tint;
+    private bool _built;
     private double _townTime;
 
     /// <summary>A hero sprite was clicked — payload is HeroId.Value (R20).</summary>
@@ -51,8 +52,9 @@ public partial class TownScene : SimPanel
     /// <summary>Stones currently in the memorial plot (mirrors DramaState.Memorials).</summary>
     public int MemorialStoneCount { get; private set; }
 
-    /// <summary>Current day/night tint (Morning warm, Expedition neutral, Evening dark).</summary>
-    public Color CurrentTint => _tint?.Color ?? Colors.Transparent;
+    /// <summary>Current ambient MULTIPLY-tint — the phase color applied to the whole town
+    /// subtree via <see cref="CanvasItem.Modulate"/>. Neutral white before the first build.</summary>
+    public Color CurrentTint => Modulate;
 
     public override void _Ready() => EnsureBuilt();
 
@@ -90,13 +92,19 @@ public partial class TownScene : SimPanel
         var state = Adapter.CurrentState;
         ReconcileSprites(state);
         RebuildMemorials(state);
-        _tint!.Color = TintFor(state.Phase);
+        Modulate = TintFor(state.Phase);
     }
 
     /// <summary>
     /// Phase-transition choreography, called by MainUi after every tick (post-Refresh).
-    /// Morning done → the party walks out; Expedition done → survivors (from the still
-    /// pending expeditions) walk back in; Evening done → snap the new day into place.
+    /// Morning done → the party walks out. Expedition done → survivors of any run that
+    /// FINALIZED at stage 1 (a wipe/too-hurt/gate-held party that never parked, already in
+    /// <c>PendingExpeditions</c>) re-enter; staged parties are still parked in <c>InFlight</c>
+    /// (empty <c>PendingExpeditions</c>), so nobody is stranded. Camp done → the town holds its
+    /// breath, no movement. ExpeditionDeep done → the staged parties have now finalized, so
+    /// their still-Away survivors head home. Evening done → snap the new day into place. Deaths
+    /// are resolved at departure (KTD5) but NEVER surface before the Evening reveal — only
+    /// survivors ever walk; the dead stay Away until Evening removes them.
     /// </summary>
     public void OnPhaseCompleted(DayPhase completedPhase)
     {
@@ -116,17 +124,20 @@ public partial class TownScene : SimPanel
 
                 break;
             case DayPhase.Expedition:
-                // Deaths were resolved at departure (KTD5) but stay hidden until the
-                // Evening reveal — only survivors re-enter through the gate now.
-                var survivors = Adapter.CurrentState.PendingExpeditions
-                    .SelectMany(expedition => expedition.Survivors)
-                    .Select(id => id.Value)
-                    .ToHashSet();
-                foreach (var sprite in _sprites.Values.Where(s => survivors.Contains(s.HeroValue)))
-                {
-                    sprite.BeginReturn();
-                }
-
+                // Runs that finalized at stage 1 are already in PendingExpeditions — their
+                // survivors re-enter now. Staged parties are in InFlight (empty
+                // PendingExpeditions), so this returns nobody for them (fixed at Deep).
+                ReturnSurvivors();
+                break;
+            case DayPhase.Camp:
+                // The party is camping below the checkpoint — the town holds its breath.
+                // No movement, and no death may surface here (KTD5).
+                break;
+            case DayPhase.ExpeditionDeep:
+                // Stage 2 has finalized the staged parties into PendingExpeditions; their
+                // still-Away survivors now walk home. Survivors already returned at the
+                // Expedition arm are no longer Away, so ReturnSurvivors skips them.
+                ReturnSurvivors();
                 break;
             case DayPhase.Evening:
                 // New day: every remaining (alive) hero is home, whatever the walk state.
@@ -137,12 +148,30 @@ public partial class TownScene : SimPanel
 
                 break;
             default:
-                // Unknown/future phase (Camp, ExpeditionDeep, or anything appended after):
-                // no-op. The real staged-resolution walks arrive in V5b — until then NEVER
-                // snap on a phase we don't own. The old fused `case Evening: default:` arm
-                // popped away/dead heroes home mid-expedition the moment the 5-phase kernel
-                // (staged-plan U2) started firing Camp/ExpeditionDeep completions.
+                // Truly unknown/future phase (anything appended after ExpeditionDeep): no-op.
+                // NEVER snap on a phase we don't own — that would pop away/dead heroes home
+                // mid-day before the Evening reveal.
                 return;
+        }
+    }
+
+    /// <summary>
+    /// Walk the survivors of every FINALIZED expedition (those in <c>PendingExpeditions</c>) who
+    /// are still in the Mine back in through the gate. The <c>Away</c> guard makes this idempotent
+    /// across the Expedition and ExpeditionDeep arms: a survivor who already re-entered is no
+    /// longer Away, so a second call never yanks them back to the gate. Deaths are never in a
+    /// Survivors list, so the dead stay Away until the Evening reveal (KTD5).
+    /// </summary>
+    private void ReturnSurvivors()
+    {
+        var survivors = Adapter!.CurrentState.PendingExpeditions
+            .SelectMany(expedition => expedition.Survivors)
+            .Select(id => id.Value)
+            .ToHashSet();
+        foreach (var sprite in _sprites.Values
+                     .Where(s => s.State == HeroSprite.TownState.Away && survivors.Contains(s.HeroValue)))
+        {
+            sprite.BeginReturn();
         }
     }
 
@@ -223,13 +252,20 @@ public partial class TownScene : SimPanel
         MemorialStoneCount = index;
     }
 
-    /// <summary>Day/night tint per phase (U12 pinned: nothing fancier in v1).</summary>
+    /// <summary>
+    /// Ambient MULTIPLY-tint per phase (the approved LitTavernPilot table). Opaque multipliers
+    /// applied to the town subtree via Modulate — NOT alpha overlays: Morning warms, Expedition
+    /// is neutral white, Camp/ExpeditionDeep cool toward the deep-dungeon blue, Evening is the
+    /// darkest. Unknown/future phases read neutral (never darken a phase we don't own).
+    /// </summary>
     public static Color TintFor(DayPhase phase) => phase switch
     {
-        DayPhase.Morning => new Color(1f, 0.85f, 0.6f, 0.10f),   // warm
-        DayPhase.Expedition => new Color(0f, 0f, 0f, 0f),        // neutral
-        DayPhase.Evening => new Color(0.08f, 0.08f, 0.25f, 0.30f), // dark
-        _ => new Color(0f, 0f, 0f, 0f),
+        DayPhase.Morning => new Color(1.00f, 0.92f, 0.78f),
+        DayPhase.Expedition => new Color(1.00f, 1.00f, 1.00f),
+        DayPhase.Camp => new Color(0.85f, 0.80f, 0.95f),
+        DayPhase.ExpeditionDeep => new Color(0.60f, 0.60f, 0.85f),
+        DayPhase.Evening => new Color(0.45f, 0.45f, 0.70f),
+        _ => new Color(1.00f, 1.00f, 1.00f),
     };
 
     /// <summary>Deterministic home spot per hero id — spread across the town square.</summary>
@@ -242,12 +278,21 @@ public partial class TownScene : SimPanel
 
     private void EnsureBuilt()
     {
-        if (_tint is not null)
+        if (_built)
         {
             return;
         }
 
         SetAnchorsPreset(LayoutPreset.FullRect);
+
+        // Phase ambience is a MULTIPLY tint on the town root's Modulate — the .tscn-free
+        // equivalent of the pilot's CanvasModulate. A CanvasModulate tints its whole canvas,
+        // so it would need its own CanvasLayer/SubViewport to avoid dimming the entire
+        // TabContainer (that scene surgery is V4b, out of this slice); Modulate on this Control
+        // multiplies only the town subtree and stops at the panel boundary. It replaces V5a's
+        // alpha-overlay ColorRect. Set here so the town reads warm before the first Refresh;
+        // every tick re-applies TintFor(state.Phase).
+        Modulate = TintFor(DayPhase.Morning);
 
         // U16: tileable cobble ground (void/iron) behind everything.
         var ground = new TextureRect
@@ -274,15 +319,7 @@ public partial class TownScene : SimPanel
         _heroLayer.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_heroLayer);
 
-        // Tint overlay last = draws over everything; Ignore = clicks pass through.
-        _tint = new ColorRect
-        {
-            Name = "DayNightTint",
-            Color = TintFor(DayPhase.Morning),
-            MouseFilter = MouseFilterEnum.Ignore,
-        };
-        _tint.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(_tint);
+        _built = true;
     }
 
     private void BuildGate()
