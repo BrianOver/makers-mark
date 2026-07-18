@@ -21,6 +21,15 @@ public sealed record DramaState(
 public sealed record LoggedBatch(int Day, DayPhase Phase, ImmutableList<PlayerAction> Actions);
 
 /// <summary>
+/// Per-venue mutable world state (M4, P9 dens / P5 closures): days since a party last cleared
+/// ground here, the den's escalation meter (per-mille), and whether routes to it are closed.
+/// Written by post-weekend systems (M11a escalation, M6 closures) — until they land, a venue
+/// simply has no entry and the game reads it as untouched/open. APPEND fields via contracts
+/// micro-PR only (KTD4).
+/// </summary>
+public sealed record VenueState(int DaysUntouched, int InfectionPerMille, bool Closed);
+
+/// <summary>
 /// The entire world. Immutable; every field is deterministically serializable
 /// (sorted dictionaries, ordered lists). Advanced only by <c>GameKernel.Tick</c>.
 /// </summary>
@@ -46,6 +55,10 @@ public sealed record GameState(
     /// <summary>Staged expeditions between the Expedition and ExpeditionDeep ticks (KTD5 staged).
     /// Non-positional init member: pre-staging saves (no property) deserialize to empty.</summary>
     public ImmutableList<InFlightExpedition> InFlight { get; init; } = ImmutableList<InFlightExpedition>.Empty;
+
+    /// <summary>Per-venue mutable state keyed by VenueRegistry id (M4). Non-positional init
+    /// member: pre-M4 saves (no property) deserialize to empty — no entry = untouched/open.</summary>
+    public ImmutableSortedDictionary<string, VenueState> Venues { get; init; } = ImmutableSortedDictionary<string, VenueState>.Empty;
 }
 
 /// <summary>Result of one phase tick: the new world, what happened, and what was refused.</summary>

@@ -76,7 +76,7 @@ public sealed class CraftingHandlers : IActionHandler
         }
 
         // 6. All checks passed — consume, roll (the single RNG draw), mint, emit.
-        var quality = QualityRoller.Roll(recipe, materialGrade, talents, profession.Quality, rng);
+        var quality = QualityRoller.Roll(recipe, materialGrade, talents, profession.Quality, rng, action.PerformanceGrade);
         var itemId = new ItemId(state.NextItemId);
         var item = ItemForge.Forge(itemId, recipe, quality, state.Day);
 
