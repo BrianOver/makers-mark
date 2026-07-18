@@ -10,18 +10,21 @@ namespace GodotClient;
 /// <summary>
 /// The one UI scene (U11 shell + U12 town layer): a persistent tab bar hosting the
 /// living town view plus the six management panels over a top status bar
-/// (day/phase/gold + play/pause/fast-forward), with the Evening Ledger as a modal
-/// overlay. The Ledger opens through the U12 Return Ritual — a TIME-BASED gate
-/// (<see cref="ReturnRitualDelaySeconds"/> after the Evening tick, scaled by clock
-/// speed), never blocked by sprite walk-ins, so a zero-survivor day cannot hang the
+/// (day/phase/gold + Advance/Auto, with play/pause/fast-forward as auto-mode
+/// sub-controls), with the Evening Ledger as a modal overlay. The Ledger opens
+/// through the U12 Return Ritual — a TIME-BASED gate
+/// (<see cref="ReturnRitualDelaySeconds"/> of unscaled wall-clock after the Evening
+/// tick), never blocked by sprite walk-ins, so a zero-survivor day cannot hang the
 /// reveal. Owns the single <see cref="SimAdapter"/> and the <see cref="PhaseClock"/>;
 /// everything below binds through the adapter (KTD2). Town clicks select tabs (R20).
 /// </summary>
 public partial class MainUi : Control
 {
     /// <summary>
-    /// Return Ritual gate (U12 pinned design): fixed reveal delay after the Evening
-    /// tick at 1x, scaled by the PhaseClock multiplier. The walk-in is decoration;
+    /// Return Ritual gate (U12 pinned design, U2 revision): fixed reveal delay of
+    /// UNSCALED wall-clock seconds after the Evening tick — independent of the
+    /// auto-advance flag, Playing state, and speed multiplier, so the gated (auto
+    /// OFF) clock still delivers its promised reveal. The walk-in is decoration;
     /// this timer is the gate.
     /// </summary>
     public const double ReturnRitualDelaySeconds = 3.0;
@@ -59,6 +62,8 @@ public partial class MainUi : Control
     private Label _status = null!;
     private Label _clockLabel = null!;
     private Label _rejections = null!;
+    private Button _advance = null!;
+    private Button _auto = null!;
     private Button _playPause = null!;
     private Button _speed = null!;
     private bool _resumePlayOnLedgerClose;
@@ -97,12 +102,13 @@ public partial class MainUi : Control
         Clock.Update(delta);
         UpdateClockLabel();
 
-        // Return Ritual gate (U12): the reveal lands a fixed, speed-scaled interval
-        // after the Evening tick — decoration timer, deliberately independent of
-        // play/pause so a paused town still keeps its promised reveal.
+        // Return Ritual gate (U12, U2 revision): the reveal lands a fixed UNSCALED
+        // wall-clock interval after the Evening tick — decoration timer, deliberately
+        // independent of the auto flag, play/pause, and speed, so the gated (auto OFF)
+        // or paused town still keeps its promised reveal.
         if (LedgerDelayRemaining > 0)
         {
-            LedgerDelayRemaining -= delta * Clock.SpeedMultiplier;
+            LedgerDelayRemaining -= delta;
             if (LedgerDelayRemaining <= 0)
             {
                 LedgerDelayRemaining = 0;
@@ -185,11 +191,23 @@ public partial class MainUi : Control
 
     private void UpdateClockLabel()
     {
-        var remaining = Clock.Remaining.ToString("0", CultureInfo.InvariantCulture);
-        var paused = Clock.Playing ? string.Empty : " [paused]";
-        _clockLabel.Text = $"next phase in {remaining}s @{Clock.SpeedMultiplier}x{paused}";
-        _playPause.Text = Clock.Playing ? "Pause" : "Play";
-        _speed.Text = $"{Clock.SpeedMultiplier}x";
+        _auto.Text = Clock.AutoAdvance ? "Auto: ON" : "Auto: OFF";
+        // Play/pause + speed are sub-controls of auto mode — hidden while gated (U2).
+        _playPause.Visible = Clock.AutoAdvance;
+        _speed.Visible = Clock.AutoAdvance;
+
+        if (Clock.AutoAdvance)
+        {
+            var remaining = Clock.Remaining.ToString("0", CultureInfo.InvariantCulture);
+            var paused = Clock.Playing ? string.Empty : " [paused]";
+            _clockLabel.Text = $"next phase in {remaining}s @{Clock.SpeedMultiplier}x{paused}";
+            _playPause.Text = Clock.Playing ? "Pause" : "Play";
+            _speed.Text = $"{Clock.SpeedMultiplier}x";
+        }
+        else
+        {
+            _clockLabel.Text = "next phase on Advance";
+        }
     }
 
     private void BuildUi()
@@ -217,6 +235,24 @@ public partial class MainUi : Control
         statusBar.AddChild(spacer);
         _clockLabel = new Label { Name = "ClockLabel" };
         statusBar.AddChild(_clockLabel);
+
+        // U2 hybrid clock controls: explicit Advance is the primary control; the Auto
+        // toggle opts into the timed cadence, where play/pause + speed apply.
+        _advance = new Button { Name = "AdvancePhase", Text = "Advance" };
+        _advance.Pressed += () =>
+        {
+            Clock.AdvanceNow(); // same advance the auto timer fires (R1)
+            UpdateClockLabel();
+        };
+        statusBar.AddChild(_advance);
+
+        _auto = new Button { Name = "AutoAdvance", Text = "Auto: OFF" };
+        _auto.Pressed += () =>
+        {
+            Clock.ToggleAuto();
+            UpdateClockLabel();
+        };
+        statusBar.AddChild(_auto);
 
         _playPause = new Button { Name = "PlayPause", Text = "Pause" };
         _playPause.Pressed += () =>

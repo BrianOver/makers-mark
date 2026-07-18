@@ -151,7 +151,7 @@ public class TownSceneTests
     }
 
     [TestCase]
-    public void ReturnRitual_LedgerOpensOnTimer_ScaledBySpeed_NeverImmediately()
+    public void ReturnRitual_LedgerOpensOnWallClockTimer_NeverImmediately_SpeedIndependent()
     {
         var ui = MountMainUi();
         try
@@ -162,11 +162,13 @@ public class TownSceneTests
             AssertThat(ui.Ledger.Visible).IsFalse();
             AssertThat(ui.LedgerDelayRemaining).IsEqual(MainUi.ReturnRitualDelaySeconds);
 
-            ui.Clock.CycleSpeed(); // 2x — the delay is speed-scaled
-            ui._Process(1.0);      // 2.0 effective of the 3.0 gate
+            // U2 revision: the gate elapses on UNSCALED wall-clock, independent of the
+            // auto flag, Playing state, and speed — so the gated clock still reveals.
+            ui.Clock.CycleSpeed(); // 2x — must NOT compress the reveal timer
+            ui._Process(2.0);      // 2.0 wall-clock of the 3.0 gate (would open if scaled)
             AssertThat(ui.Ledger.Visible).IsFalse();
 
-            ui._Process(0.6);      // 1.2 more effective — the gate elapses
+            ui._Process(1.1);      // wall-clock passes 3.0 — the gate elapses
             AssertThat(ui.Ledger.Visible).IsTrue();
             AssertThat(ui.Ledger.ShownDay).IsEqual(1);
             AssertThat(ui.LedgerDelayRemaining).IsEqual(0.0);
