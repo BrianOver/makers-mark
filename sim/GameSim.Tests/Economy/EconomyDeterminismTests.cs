@@ -8,8 +8,9 @@ namespace GameSim.Tests.Economy;
 
 /// <summary>
 /// AE5 for the economy composition: two identical scripted runs through the full U7
-/// stack (restock → shopping, shop + ore handlers) must serialize byte-identically.
-/// Neither U7 system draws RNG, so this also guards against accidental draws sneaking in.
+/// stack (restock → shopping, shop + ore + Morning-vendor handlers) must serialize
+/// byte-identically. No composed system or handler draws RNG, so this also guards
+/// against accidental draws sneaking in.
 /// </summary>
 public class EconomyDeterminismTests
 {
@@ -17,7 +18,8 @@ public class EconomyDeterminismTests
     {
         var kernel = new GameKernel(
             ImmutableList.Create<IPhaseSystem>(new RivalRestockSystem(), new HeroShoppingSystem()),
-            ImmutableList.Create<IActionHandler>(new ShopHandlers(), new OreMarketHandlers()));
+            ImmutableList.Create<IActionHandler>(
+                new ShopHandlers(), new OreMarketHandlers(), new MaterialVendorHandlers()));
 
         var state = GoldConservationTests.ScriptStart();
         foreach (var actions in GoldConservationTests.ScriptTicks())

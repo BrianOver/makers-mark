@@ -19,12 +19,17 @@ namespace GameSim.Tests.Economy;
 ///     SupplyDelivered.Fee — it LEAVES the player+heroes total (the runner's purse is unmodeled,
 ///     TariffApplied-style KTD3). Not composed in this suite's EconomyKernel; the focused
 ///     Δ(player+heroes) == −fee reconciliation lives in CampHandlersTests.CampRunnerFee_IsAConservedSink.
+///   - MORNING VENDOR buy (Playable Core U3): player → vendor. A town-gold SINK the size of
+///     MaterialPurchased.Cost — the vendor's purse is unmodeled (TariffApplied-style KTD3),
+///     so the cost LEAVES the player+heroes total and is reconciled by its recorded event.
+///     Composed in this suite's EconomyKernel and exercised by the day-2 Morning buy.
 ///   - expedition loot income: creates hero gold — U6/U8 territory, NOT composed here
 ///     and not this suite's to test.
 ///
 /// So the invariant this property test asserts, tick by tick over a scripted
 /// multi-day run: (player + all heroes) changes by EXACTLY minus the rival sale
-/// prices of that tick — nothing else, ever.
+/// prices, minus the summed tariff deltas, minus the vendor purchase costs of
+/// that tick — nothing else, ever.
 /// </summary>
 public class GoldConservationTests
 {
@@ -35,7 +40,8 @@ public class GoldConservationTests
 
     private static GameKernel EconomyKernel() => new(
         ImmutableList.Create<IPhaseSystem>(new RivalRestockSystem(), new HeroShoppingSystem()),
-        ImmutableList.Create<IActionHandler>(new ShopHandlers(), new OreMarketHandlers()));
+        ImmutableList.Create<IActionHandler>(
+            new ShopHandlers(), new OreMarketHandlers(), new MaterialVendorHandlers()));
 
     private static long TotalGold(GameState state)
     {
@@ -63,8 +69,9 @@ public class GoldConservationTests
     }
 
     /// <summary>Three scripted days (5-phase: Morning, Expedition, Camp, ExpeditionDeep, Evening):
-    /// stock + sell, buy ore across two evenings, keep shopping. Camp/Deep hold empty — ore buys
-    /// stay on the real Evening tick (BuyOreAction is Evening-only).</summary>
+    /// stock + sell, buy ore across two evenings, buy vendor copper on day-2 Morning (the U3
+    /// sink term), keep shopping. Camp/Deep hold empty — ore buys stay on the real Evening tick
+    /// (BuyOreAction is Evening-only; BuyMaterialAction is Morning-only).</summary>
     internal static ImmutableList<ImmutableList<PlayerAction>> ScriptTicks() => ImmutableList.Create(
         // Day 1
         ImmutableList.Create<PlayerAction>(new StockAction(new ItemId(100), 30)), // Morning
@@ -74,7 +81,8 @@ public class GoldConservationTests
         ImmutableList.Create<PlayerAction>(                                       // Evening
             new BuyOreAction(new HeroId(1), "iron", 3)),
         // Day 2
-        ImmutableList<PlayerAction>.Empty,                                        // Morning
+        ImmutableList.Create<PlayerAction>(                                       // Morning
+            new BuyMaterialAction("copper", 2)), // vendor sink: ceil(2·3·1250/1000) = 8g
         ImmutableList<PlayerAction>.Empty,                                        // Expedition
         ImmutableList<PlayerAction>.Empty,                                        // Camp
         ImmutableList<PlayerAction>.Empty,                                        // ExpeditionDeep
@@ -89,7 +97,7 @@ public class GoldConservationTests
         ImmutableList<PlayerAction>.Empty);                                       // Evening
 
     [Fact]
-    public void TotalGold_ChangesOnlyByRivalSales_AcrossAScriptedMultiDayRun()
+    public void TotalGold_ChangesOnlyByRecordedSinks_AcrossAScriptedMultiDayRun()
     {
         var kernel = EconomyKernel();
         var state = ScriptStart();
@@ -97,6 +105,7 @@ public class GoldConservationTests
         var playerSales = 0;
         var rivalSales = 0;
         var oreBuys = 0;
+        var vendorBuys = 0;
 
         foreach (var actions in ScriptTicks())
         {
@@ -129,9 +138,19 @@ public class GoldConservationTests
                 tariffDelta += tariff.Delta;
             }
 
+            // Playable Core U3: the Morning vendor is a recorded gold sink too — every buy
+            // burns MaterialPurchased.Cost from the town total (vendor purse unmodeled, KTD3).
+            long vendorCost = 0;
+            foreach (var purchase in tick.Events.OfType<MaterialPurchased>())
+            {
+                vendorBuys++;
+                vendorCost += purchase.Cost;
+            }
+
             // THE conservation law (extended, KTD3): the town total changes by exactly minus the
-            // rival sales and minus the summed tariff deltas of that tick — nothing else, ever.
-            Assert.Equal(before - rivalGoldAbsorbed - tariffDelta, TotalGold(tick.NewState));
+            // rival sales, minus the summed tariff deltas, and minus the vendor purchase costs
+            // of that tick — nothing else, ever.
+            Assert.Equal(before - rivalGoldAbsorbed - tariffDelta - vendorCost, TotalGold(tick.NewState));
 
             state = tick.NewState;
         }
@@ -141,10 +160,12 @@ public class GoldConservationTests
         Assert.True(playerSales >= 1, "script produced no player shop sale");
         Assert.True(rivalSales >= 1, "script produced no rival sale");
         Assert.Equal(3, oreBuys);
+        Assert.Equal(1, vendorBuys); // the day-2 Morning vendor sink actually fired
 
-        // Ore fully bought out: materials arrived intact, offers consumed.
+        // Ore fully bought out: materials arrived intact, offers consumed. Copper is
+        // 10 from the hero offer + 2 from the day-2 Morning vendor buy.
         Assert.Equal(5, state.Player.Materials["iron"]);
-        Assert.Equal(10, state.Player.Materials["copper"]);
+        Assert.Equal(12, state.Player.Materials["copper"]);
         Assert.Empty(state.OpenOreOffers);
     }
 
