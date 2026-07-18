@@ -52,6 +52,7 @@ public static class ProfessionRegistry
     {
         Blacksmith,
         TanningProfession.Definition,
+        EngineeringProfession.Definition,
     }.ToImmutableSortedDictionary(p => p.Id, p => p, StringComparer.Ordinal);
 
     /// <summary>
