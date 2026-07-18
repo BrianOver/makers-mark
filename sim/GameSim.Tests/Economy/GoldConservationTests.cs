@@ -23,13 +23,18 @@ namespace GameSim.Tests.Economy;
 ///     MaterialPurchased.Cost — the vendor's purse is unmodeled (TariffApplied-style KTD3),
 ///     so the cost LEAVES the player+heroes total and is reconciled by its recorded event.
 ///     Composed in this suite's EconomyKernel and exercised by the day-2 Morning buy.
+///   - DESTITUTION STIPEND (Playable Core U5): a gold SOURCE the size of
+///     RecoveryStipendGranted.Amount, minted to the player at a true dead-end Morning (no
+///     counterparty — the mirror of a discount-tariff source, KTD3). Composed in this suite's
+///     EconomyKernel; the solvent main script never fires it (pinned at zero), and
+///     StipendIsAConservedSource_AcrossADestituteScriptedRun exercises the firing tick.
 ///   - expedition loot income: creates hero gold — U6/U8 territory, NOT composed here
 ///     and not this suite's to test.
 ///
 /// So the invariant this property test asserts, tick by tick over a scripted
 /// multi-day run: (player + all heroes) changes by EXACTLY minus the rival sale
-/// prices, minus the summed tariff deltas, minus the vendor purchase costs of
-/// that tick — nothing else, ever.
+/// prices, minus the summed tariff deltas, minus the vendor purchase costs, plus
+/// the recovery stipends of that tick — nothing else, ever.
 /// </summary>
 public class GoldConservationTests
 {
@@ -39,7 +44,13 @@ public class GoldConservationTests
         new MakersMark("You", CraftedOnDay: 1), ImmutableList<ItemHistoryEntry>.Empty);
 
     private static GameKernel EconomyKernel() => new(
-        ImmutableList.Create<IPhaseSystem>(new RivalRestockSystem(), new HeroShoppingSystem()),
+        ImmutableList.Create<IPhaseSystem>(
+            // Playable Core U5: mirrors GameComposition's Morning order (destitution floor before
+            // restock/shopping; FactionDriftSystem is not composed in this focused suite). Draws
+            // no RNG and never fires on the solvent main script — a stream-neutral insertion.
+            new DestitutionRecoverySystem(),
+            new RivalRestockSystem(),
+            new HeroShoppingSystem()),
         ImmutableList.Create<IActionHandler>(
             new ShopHandlers(), new OreMarketHandlers(), new MaterialVendorHandlers()));
 
@@ -106,6 +117,7 @@ public class GoldConservationTests
         var rivalSales = 0;
         var oreBuys = 0;
         var vendorBuys = 0;
+        var stipends = 0;
 
         foreach (var actions in ScriptTicks())
         {
@@ -147,10 +159,19 @@ public class GoldConservationTests
                 vendorCost += purchase.Cost;
             }
 
+            // Playable Core U5: the destitution floor is a recorded gold SOURCE — every stipend
+            // mints RecoveryStipendGranted.Amount into the town total (no counterparty, KTD3).
+            long stipendGold = 0;
+            foreach (var granted in tick.Events.OfType<RecoveryStipendGranted>())
+            {
+                stipends++;
+                stipendGold += granted.Amount;
+            }
+
             // THE conservation law (extended, KTD3): the town total changes by exactly minus the
-            // rival sales, minus the summed tariff deltas, and minus the vendor purchase costs
-            // of that tick — nothing else, ever.
-            Assert.Equal(before - rivalGoldAbsorbed - tariffDelta - vendorCost, TotalGold(tick.NewState));
+            // rival sales, minus the summed tariff deltas, minus the vendor purchase costs, plus
+            // the recovery stipends of that tick — nothing else, ever.
+            Assert.Equal(before - rivalGoldAbsorbed - tariffDelta - vendorCost + stipendGold, TotalGold(tick.NewState));
 
             state = tick.NewState;
         }
@@ -161,6 +182,7 @@ public class GoldConservationTests
         Assert.True(rivalSales >= 1, "script produced no rival sale");
         Assert.Equal(3, oreBuys);
         Assert.Equal(1, vendorBuys); // the day-2 Morning vendor sink actually fired
+        Assert.Equal(0, stipends);   // U5 floor pin: the stipend NEVER fires on this solvent script
 
         // Ore fully bought out: materials arrived intact, offers consumed. Copper is
         // 10 from the hero offer + 2 from the day-2 Morning vendor buy.
@@ -205,5 +227,58 @@ public class GoldConservationTests
         var heroBaseIn = evening.NewState.Heroes[1].Gold - beforeEvening.Heroes[1].Gold;
         Assert.Equal(heroBaseIn + tariffDelta, playerOut);
         Assert.Equal(0, tariffDelta);
+    }
+
+    [Fact]
+    public void StipendIsAConservedSource_AcrossADestituteScriptedRun()
+    {
+        // Playable Core U5: the source term, exercised for real. The main script's player is
+        // never destitute, so this focused run starts at the true dead-end instead of mangling
+        // that script: 0 gold, no items, empty shelf, roster present. Day-1 Morning fires the
+        // stipend (0 → 10); day-2 Morning spends it at the vendor (the U3 sink term) — the
+        // extended law must hold on EVERY tick, including the minting one.
+        var kernel = EconomyKernel();
+        var state = HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed: 11)) with
+        {
+            Player = PlayerState.NewGame(0),
+        };
+
+        var ticks = ImmutableList.Create(
+            ImmutableList<PlayerAction>.Empty, // Day-1 Morning — stipend fires here
+            ImmutableList<PlayerAction>.Empty, // Expedition
+            ImmutableList<PlayerAction>.Empty, // Camp
+            ImmutableList<PlayerAction>.Empty, // ExpeditionDeep
+            ImmutableList<PlayerAction>.Empty, // Evening
+            ImmutableList.Create<PlayerAction>( // Day-2 Morning — spend the stipend (vendor sink)
+                new BuyMaterialAction("copper", 2)));
+
+        var stipends = 0;
+        foreach (var actions in ticks)
+        {
+            var before = TotalGold(state);
+            var tick = kernel.Tick(state, actions);
+            Assert.Empty(tick.Rejected);
+
+            long rivalGoldAbsorbed = tick.Events.OfType<ItemSold>()
+                .Where(sale => !sale.FromPlayerShop).Sum(sale => (long)sale.Price);
+            long tariffDelta = tick.Events.OfType<TariffApplied>().Sum(t => (long)t.Delta);
+            long vendorCost = tick.Events.OfType<MaterialPurchased>().Sum(p => (long)p.Cost);
+            long stipendGold = 0;
+            foreach (var granted in tick.Events.OfType<RecoveryStipendGranted>())
+            {
+                stipends++;
+                stipendGold += granted.Amount;
+            }
+
+            Assert.Equal(before - rivalGoldAbsorbed - tariffDelta - vendorCost + stipendGold, TotalGold(tick.NewState));
+
+            state = tick.NewState;
+        }
+
+        // The source term was actually exercised — once, at the dead-end Morning, for the full
+        // floor — and the recovery arithmetic landed: 0 → 10 (stipend) → 2 (vendor 8g sink).
+        Assert.Equal(1, stipends);
+        Assert.Equal(2, state.Player.Gold);
+        Assert.Equal(2, state.Player.Materials["copper"]);
     }
 }
