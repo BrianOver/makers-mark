@@ -6,16 +6,19 @@ namespace GameSim.Economy;
 
 /// <summary>
 /// The no-softlock economy floor (Playable Core R5/KD3): a Morning system that detects a TRUE
-/// dead-end and only then tops the player's gold up to <see cref="DestitutionFloorGold"/>, so a
-/// productive action (buy the cheapest priced material → craft) is always reachable. The game is
-/// forgiving by design — it must be impossible to dead-end.
+/// dead-end and only then tops the player's gold up to
+/// <c>max(DestitutionFloorGold, cheapestPathCost)</c>, so a productive action (buy enough of a
+/// priced material at the vendor → craft) is always reachable. The game is forgiving by design —
+/// it must be impossible to dead-end.
 ///
-/// The dead-end test is deliberately a LAST RESORT — all four must hold:
-///   1. gold below the cheapest <see cref="MaterialRegistry.PricedPool"/> unit price (cannot buy),
-///   2. no materials (cannot craft),
-///   3. no stockable player craft — unshelved, unequipped, not in any hero's pack (nothing to stock),
-///   4. empty shelf (no pending sale income).
-/// A player holding any of those assets gets nothing: the floor is a rescue, not a handout.
+/// The dead-end test is deliberately a LAST RESORT — all three must hold:
+///   1. cannot reach a craft: gold below the cheapest guaranteed path cost — topping the
+///      best-stocked <see cref="MaterialRegistry.PricedPool"/> key up to the smallest selected-
+///      profession tier-1 recipe quantity at the vendor's own quote
+///      (<see cref="MaterialVendorHandlers.QuoteCost"/>; cost 0 = craftable right now),
+///   2. no stockable player craft — unshelved, unequipped, not in any hero's pack (nothing to stock),
+///   3. empty shelf (no pending sale income).
+/// A player holding any of those outs gets nothing: the floor is a rescue, not a handout.
 ///
 /// COMPOSITION ORDER: registered in the Morning group AFTER <see cref="Factions.FactionDriftSystem"/>
 /// (whose contract is to run FIRST — drift settles standing before anything reads it, KTD5).
