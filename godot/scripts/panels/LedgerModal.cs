@@ -240,7 +240,13 @@ public partial class LedgerModal : SimPanel
         _title = AddLabel(box, "EVENING LEDGER");
         _title.Name = "LedgerTitle";
 
-        var scroll = new ScrollContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
+        // Horizontal scroll disabled (U7/R7): the cards column follows the box's 640px width
+        // so autowrap labels wrap on real width instead of collapsing to 1 char per line.
+        var scroll = new ScrollContainer
+        {
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+        };
         box.AddChild(scroll);
         _cards = new VBoxContainer
         {

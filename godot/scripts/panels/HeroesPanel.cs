@@ -157,10 +157,13 @@ public partial class HeroesPanel : SimPanel
         _roster.ItemSelected += index => RenderDetail(_rosterHeroIds[(int)index]);
         split.AddChild(_roster);
 
+        // Horizontal scroll disabled (U7/R7): the detail column follows the pane width so
+        // autowrap labels wrap on real width instead of collapsing to 1 char per line.
         var scroll = new ScrollContainer
         {
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             SizeFlagsVertical = SizeFlags.ExpandFill,
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
         };
         split.AddChild(scroll);
         _detail = new VBoxContainer
