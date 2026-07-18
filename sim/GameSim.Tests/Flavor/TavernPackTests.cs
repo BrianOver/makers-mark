@@ -185,10 +185,10 @@ public class TavernPackTests
             maxLines: 3);
 
         Assert.Equal(
-            "The candles guttered when Torvald fell — slain by a Tunnel Spider on floor 2. The Mine marked them days ago.",
+            "The crows knew Torvald's name before floor 2 did — slain by a Tunnel Spider. So it was written.",
             lines[0].Line);
-        Assert.Equal("With one stroke of Fine Iron Blade, Kael silenced floor 4!", lines[1].Line);
-        Assert.Equal("Elowen has come! Fortune or funeral, we shall see!", lines[2].Line);
+        Assert.Equal("Steel of legend! Kael's Fine Iron Blade broke the beast of floor 4 asunder!", lines[1].Line);
+        Assert.Equal("The company grows — Elowen has come to seek glory or a grave!", lines[2].Line);
     }
 
     // ---------------------------------------------------------------- Plan U4 scenarios

@@ -132,7 +132,7 @@ public class LedgerPackTests
         var death = FlavorEngine.Render(
             LedgerPack.Pack, $"{LedgerPack.Died}/omen", SlotsFor(LedgerPack.Died), Campaign, eventId: 5);
 
-        Assert.Equal("Torvald: floor 7, 16g, all limbs attached. Call it a day.", survivor);
+        Assert.Equal("Torvald banked 16g off floor 7. Count it, log it, done.", survivor);
         Assert.Equal("Floor 7 claimed Torvald. The tithe is paid.", death);
     }
 }
