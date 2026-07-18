@@ -57,13 +57,14 @@ Drive ComfyUI through the `comfyui-mcp` tools (`generate_image` /
 `create_workflow`, then `view_image`) — the agent-driven path — or the ComfyUI
 web UI at `http://127.0.0.1:8188`.
 
-**SDXL settings (locked, from `asset-style-spec.md`):**
+**SDXL settings (locked, from `ArtTrackProfiles.Active` — the single authoritative
+source; `asset-style-spec.md` restates it for reference only):**
 
 | Setting | Value |
 |---|---|
 | checkpoint | `sd_xl_base_1.0.safetensors` |
-| size | `1024×1024` (buildings/scenes) |
-| steps | `25` |
+| size | `1024×1024` (buildings/scenes); per-spec override for others (e.g. item icons `512×512`) |
+| steps | `28` |
 | cfg | `6.5` |
 | sampler | `dpmpp_2m` |
 | scheduler | `karras` |
@@ -72,9 +73,15 @@ web UI at `http://127.0.0.1:8188`.
 
 Prompt = the **`active`** track profile (master prefix + subject + neutral
 background); negatives include `plain dark neutral background`-friendly excludes.
-The single source of the master prompt/negative is
+The single source of the master prompt/negative **and settings** is
 `art/GameArt/ArtTrackProfiles.cs` — the style spec restates it for reference
 only.
+
+**Hyper-SDXL LoRA note.** `Hyper-SDXL-8steps-CFG-lora.safetensors` is present in
+the local ComfyUI `models/loras` (health-checked 2026-07-18). It is an
+**optional fast-draft aid only** — useful for rapid curation-time previews at
+low step counts — and is **never** the ship setting. All committed, shipped art
+renders at the frozen **28-step base** settings above with no LoRA attached.
 
 Generate **8–16 candidates** per asset. Write them to the gitignored scratch
 dir so they never enter history:
