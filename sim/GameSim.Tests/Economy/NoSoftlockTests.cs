@@ -4,56 +4,35 @@ using GameSim.Economy;
 using GameSim.Harness;
 using GameSim.Kernel;
 using GameSim.Materials;
+using GameSim.Professions;
 
 namespace GameSim.Tests.Economy;
 
 /// <summary>
 /// The un-losability proof (Playable Core R5/KD3): <see cref="DestitutionRecoverySystem"/> must
-/// fire at a TRUE dead-end (cannot buy, craft, stock, or wait on a sale) and ONLY there — the
-/// floor is a rescue, not a handout. Tested through the COMPOSED kernel
-/// (<see cref="GameComposition.BuildKernel"/>) wherever the behavior is composition-visible;
-/// the four solvency arms use direct <c>Process</c> calls with a THROWING rng, which doubles as
-/// proof the system draws no RNG on either path (R14 purity).
+/// fire at a TRUE dead-end and ONLY there — the floor is a rescue, not a handout. The dead-end
+/// test costs the real recovery path: cheapestPathCost = the vendor quote
+/// (<see cref="MaterialVendorHandlers.QuoteCost"/>, the one pricing formula) for topping the
+/// best-stocked priced material up to the smallest tier-1 recipe quantity of a selected
+/// profession. Solvent iff gold covers that path (cost 0 = craftable right now), or a stockable
+/// craft exists, or the shelf holds pending sale income.
 ///
-/// KNOWN GAPS (pinned, not fixed here — sim fixes are not this module's to make): the sweep
-/// documents five near-zero cells where the current dead-end test leaves the player with no
-/// productive action. See <see cref="UnLosabilitySweep_NearZeroGrid_ProductiveActionOrPinnedGap"/>.
+/// Tested through the COMPOSED kernel (<see cref="GameComposition.BuildKernel"/>) wherever the
+/// behavior is composition-visible; the solvency arms use direct <c>Process</c> calls with a
+/// THROWING rng, which doubles as proof the system draws no RNG on either path (R14 purity).
+/// The sweep asserts ZERO dead cells across the near-zero grid — the earlier pinned gaps
+/// (gold=3 base-vs-vendor, lone 1 copper) are closed by the path-cost arms.
 /// </summary>
 public class NoSoftlockTests
 {
     // ---- Boundary math (pinned so the constants can't drift silently) ---------------------
 
-    /// <summary>Cheapest priced-pool base unit price — the stipend's "cannot buy" bound.</summary>
-    private static int CheapestBase()
-    {
-        var cheapest = int.MaxValue;
-        foreach (var key in MaterialRegistry.PricedPool)
-        {
-            cheapest = Math.Min(cheapest, MaterialRegistry.UnitPrice(key));
-        }
-
-        return cheapest;
-    }
-
-    /// <summary>Cheapest single unit at the Morning vendor (base + markup, ceiling division).</summary>
-    private static int CheapestVendorCost()
-    {
-        var cheapest = int.MaxValue;
-        foreach (var key in MaterialRegistry.PricedPool)
-        {
-            var marked = MaterialRegistry.UnitPrice(key) * (1000 + MaterialVendorHandlers.VendorMarkupPermille);
-            cheapest = Math.Min(cheapest, (marked + 999) / 1000);
-        }
-
-        return cheapest;
-    }
-
     [Fact]
     public void BoundaryConstants_Pin()
     {
-        Assert.Equal(3, CheapestBase());                                  // copper base
-        Assert.Equal(4, CheapestVendorCost());                            // ceil(3 · 1.25)
-        Assert.Equal(10, DestitutionRecoverySystem.DestitutionFloorGold); // buys 2 copper (8g) + spare
+        Assert.Equal(4, MaterialVendorHandlers.QuoteCost("copper", 1)); // ceil(3 · 1.25)
+        Assert.Equal(8, MaterialVendorHandlers.QuoteCost("copper", 2)); // bare-blacksmith cheapestPathCost
+        Assert.Equal(10, DestitutionRecoverySystem.DestitutionFloorGold); // top-up target = max(10, pathCost)
     }
 
     // ---- Helpers ---------------------------------------------------------------------------
@@ -143,26 +122,44 @@ public class NoSoftlockTests
         return false;
     }
 
-    /// <summary>At least one legal productive move exists: a vendor buy is affordable, a craft is
-    /// affordable (cheapest recipes need 2 of a priced material — dagger/buckler/field-salve),
-    /// a stockable craft is on hand, or a shelved item is pending sale income.</summary>
-    private static bool ProductivePathExists(GameState state)
+    /// <summary>Mirrors the system's cheapest-path arithmetic: the vendor quote for topping the
+    /// best-stocked priced material up to the smallest tier-1 recipe quantity of a selected
+    /// profession. 0 = a craft is possible right now.</summary>
+    private static int CheapestPathCost(PlayerState player)
     {
-        if (state.Player.Gold >= CheapestVendorCost())
+        var minQuantity = int.MaxValue;
+        foreach (var recipe in ProfessionRegistry.AllRecipes.Values)
         {
-            return true;
-        }
-
-        foreach (var (key, quantity) in state.Player.Materials)
-        {
-            if (quantity >= 2 && MaterialRegistry.IsPriced(key))
+            if (recipe.Tier == 1 && player.IsSelected(recipe.Profession))
             {
-                return true;
+                minQuantity = Math.Min(minQuantity, recipe.MaterialQuantity);
             }
         }
 
-        return StockableCraftExists(state) || state.Player.Shelf.Count > 0;
+        if (minQuantity == int.MaxValue)
+        {
+            minQuantity = 2;
+        }
+
+        var cheapest = int.MaxValue;
+        foreach (var key in MaterialRegistry.PricedPool)
+        {
+            var held = player.Materials.TryGetValue(key, out var stock) ? stock : 0;
+            var needed = Math.Max(0, minQuantity - held);
+            var cost = needed == 0 ? 0 : MaterialVendorHandlers.QuoteCost(key, needed);
+            cheapest = Math.Min(cheapest, cost);
+        }
+
+        return cheapest;
     }
+
+    /// <summary>At least one legal productive move exists: the vendor-top-up-then-craft path is
+    /// affordable (cost 0 = craftable now), a stockable craft is on hand, or a shelved item is
+    /// pending sale income.</summary>
+    private static bool ProductivePathExists(GameState state) =>
+        state.Player.Gold >= CheapestPathCost(state.Player)
+        || StockableCraftExists(state)
+        || state.Player.Shelf.Count > 0;
 
     // ---- Happy path: fire + full recovery through the composed kernel ---------------------
 
@@ -172,7 +169,7 @@ public class NoSoftlockTests
         var kernel = GameComposition.BuildKernel();
         var state = Destitute(seed: 17);
 
-        // Day-1 Morning: the floor fires exactly once, topping 0 → 10.
+        // Day-1 Morning: the floor fires exactly once, topping 0 → 10 (Amount = 10 − 0).
         var morning = kernel.Tick(state, ImmutableList<PlayerAction>.Empty);
         Assert.Empty(morning.Rejected);
         var stipend = Assert.Single(morning.Events.OfType<RecoveryStipendGranted>());
@@ -190,26 +187,26 @@ public class NoSoftlockTests
         Assert.Empty(recovery.Rejected);
 
         var purchase = Assert.Single(recovery.Events.OfType<MaterialPurchased>());
-        Assert.Equal(8, purchase.Cost); // ceil(2 · 3 · 1.25) = 8
+        Assert.Equal(8, purchase.Cost); // QuoteCost(copper, 2)
         var crafted = Assert.Single(recovery.Events.OfType<ItemCrafted>());
         var item = recovery.NewState.Items[crafted.Item.Value];
         Assert.True(item.PlayerCrafted);
         Assert.Equal("dagger", item.RecipeId);
         Assert.Equal(2, recovery.NewState.Player.Gold); // 10 − 8
 
-        // The floor fired ONCE across the whole recovery arc — day-2 Morning sees the
-        // stockable dagger (and would see it before the craft, gold 2 + 2 copper) and stays out.
+        // The floor fired ONCE across the whole recovery arc — the day-2 Morning check runs
+        // after the actions and sees the stockable dagger (solvent on the stock+sell path).
         Assert.Single(recovery.NewState.EventLog.OfType<RecoveryStipendGranted>());
     }
 
-    // ---- The four solvency arms (each alone keeps the floor out) ---------------------------
+    // ---- The solvency arms (each alone keeps the floor out) --------------------------------
     // Direct Process with a throwing rng: proves no-op AND that no RNG is ever drawn.
 
     [Fact]
-    public void SolventArm_GoldAtCheapestBase_NoStipend_StateUntouched()
+    public void SolventArm_GoldAtCheapestPathCost_NoStipend_StateUntouched()
     {
         var state = Destitute(seed: 5);
-        state = state with { Player = state.Player with { Gold = CheapestBase() } }; // exactly 3
+        state = state with { Player = state.Player with { Gold = 8 } }; // exactly QuoteCost(copper, 2)
 
         var sink = new TestSink();
         var after = new DestitutionRecoverySystem().Process(state, new ThrowingRng(), sink);
@@ -219,12 +216,34 @@ public class NoSoftlockTests
     }
 
     [Fact]
-    public void SolventArm_AnyMaterial_NoStipend_StateUntouched()
+    public void SolventArm_CraftableNow_TwoCopperZeroGold_NoStipend_StateUntouched()
     {
+        // 2 copper = the smallest tier-1 quantity — path cost 0, solvent even at 0 gold.
         var state = Destitute(seed: 5);
         state = state with
         {
-            Player = state.Player with { Materials = state.Player.Materials.Add("copper", 1) },
+            Player = state.Player with { Materials = state.Player.Materials.Add("copper", 2) },
+        };
+
+        var sink = new TestSink();
+        var after = new DestitutionRecoverySystem().Process(state, new ThrowingRng(), sink);
+
+        Assert.Same(state, after);
+        Assert.Empty(sink.Events);
+    }
+
+    [Fact]
+    public void SolventArm_PathAffordable_OneCopperAndTopUpGold_NoStipend_StateUntouched()
+    {
+        // 1 copper held → the path is "buy 1 more copper" = QuoteCost(copper, 1) = 4g.
+        var state = Destitute(seed: 5);
+        state = state with
+        {
+            Player = state.Player with
+            {
+                Gold = 4,
+                Materials = state.Player.Materials.Add("copper", 1),
+            },
         };
 
         var sink = new TestSink();
@@ -272,21 +291,87 @@ public class NoSoftlockTests
         Assert.Empty(sink.Events);
     }
 
-    // ---- Boundary: the cannot-buy line ------------------------------------------------------
+    // ---- Boundaries: the cannot-afford-the-path line ----------------------------------------
 
     [Fact]
-    public void Boundary_GoldOneBelowCheapestBase_Fires_TopsToFloor()
+    public void Boundary_GoldOneBelowPathCost_Fires_TopsToFloor()
     {
         var state = Destitute(seed: 9);
-        state = state with { Player = state.Player with { Gold = CheapestBase() - 1 } }; // 2
+        state = state with { Player = state.Player with { Gold = 7 } }; // 7 < QuoteCost(copper, 2) = 8
 
         var sink = new TestSink();
         var after = new DestitutionRecoverySystem().Process(state, new ThrowingRng(), sink);
 
         var stipend = Assert.Single(sink.Events.OfType<RecoveryStipendGranted>());
-        Assert.Equal(8, stipend.Amount); // 10 − 2: a TOP-UP to the floor, not a flat grant
+        Assert.Equal(3, stipend.Amount); // 10 − 7: a TOP-UP to the floor, not a flat grant
         Assert.Equal(DestitutionRecoverySystem.DestitutionFloorGold, after.Player.Gold);
         Assert.Single(sink.Events); // the stipend stamp is the only emission
+    }
+
+    [Fact]
+    public void Boundary_GoldAtPathCost_NoFire_BuysAndCraftsSameTick_ZeroRejections()
+    {
+        // gold 8 == QuoteCost(copper, 2): solvent WITHOUT help — prove it by walking the exact
+        // path the arm priced, through the composed kernel, with zero rejections and no stipend.
+        var state = Destitute(seed: 19);
+        state = state with { Player = state.Player with { Gold = 8 } };
+
+        var tick = GameComposition.BuildKernel().Tick(state, ImmutableList.Create<PlayerAction>(
+            new BuyMaterialAction("copper", 2),
+            new CraftAction("dagger", "copper")));
+
+        Assert.Empty(tick.Rejected);
+        Assert.Empty(tick.Events.OfType<RecoveryStipendGranted>());
+        Assert.Single(tick.Events.OfType<ItemCrafted>());
+        Assert.Equal(0, tick.NewState.Player.Gold); // spent to the bone, but productive
+    }
+
+    [Fact]
+    public void Boundary_OneCopper_GoldOneBelowTopUp_Fires_TopsToFloor()
+    {
+        // 1 copper held → path = buy 1 more = 4g; gold 3 misses it. The OLD arms called this
+        // solvent ("has a material") — the tightened cost-the-path arm rescues it.
+        var state = Destitute(seed: 9);
+        state = state with
+        {
+            Player = state.Player with
+            {
+                Gold = 3,
+                Materials = state.Player.Materials.Add("copper", 1),
+            },
+        };
+
+        var sink = new TestSink();
+        var after = new DestitutionRecoverySystem().Process(state, new ThrowingRng(), sink);
+
+        var stipend = Assert.Single(sink.Events.OfType<RecoveryStipendGranted>());
+        Assert.Equal(7, stipend.Amount); // top-up to max(10, pathCost 4) = 10
+        Assert.Equal(DestitutionRecoverySystem.DestitutionFloorGold, after.Player.Gold);
+    }
+
+    [Fact]
+    public void Boundary_OneCopper_GoldAtTopUp_NoFire_BuysOneAndCrafts_ZeroRejections()
+    {
+        // gold 4 + 1 copper: the priced path (buy 1 copper at 4g, craft) is exactly affordable —
+        // no stipend; prove the path lands through the composed kernel.
+        var state = Destitute(seed: 19);
+        state = state with
+        {
+            Player = state.Player with
+            {
+                Gold = 4,
+                Materials = state.Player.Materials.Add("copper", 1),
+            },
+        };
+
+        var tick = GameComposition.BuildKernel().Tick(state, ImmutableList.Create<PlayerAction>(
+            new BuyMaterialAction("copper", 1),
+            new CraftAction("dagger", "copper")));
+
+        Assert.Empty(tick.Rejected);
+        Assert.Empty(tick.Events.OfType<RecoveryStipendGranted>());
+        Assert.Single(tick.Events.OfType<ItemCrafted>());
+        Assert.Equal(0, tick.NewState.Player.Gold);
     }
 
     // ---- Edge: unsold craft on hand (built through the composed kernel) --------------------
@@ -346,44 +431,37 @@ public class NoSoftlockTests
         Assert.Equal(DestitutionRecoverySystem.DestitutionFloorGold, tick.NewState.Player.Gold);
     }
 
-    // ---- Un-losability sweep -----------------------------------------------------------------
+    // ---- Un-losability sweep: ZERO dead cells ------------------------------------------------
 
     [Fact]
-    public void UnLosabilitySweep_NearZeroGrid_ProductiveActionOrPinnedGap()
+    public void UnLosabilitySweep_NearZeroGrid_EveryCellRecovers()
     {
-        // 20-cell grid: gold 0..4 × materials {none, 1 copper} × shelf {empty, one stocked craft}.
-        // After one composed Morning tick each cell must leave a productive path open.
-        //
-        // KNOWN GAP (defect, pinned — NOT fixed in this test-only module): five cells are true
-        // dead-ends the floor misses, because its solvency arms are coarser than what the assets
-        // can actually DO:
-        //   - gold=3 (== cheapest BASE) fails the "cannot buy" arm, but the only standing market
-        //     is the vendor at 4g — base-priced hero ore offers are contingent, not guaranteed;
-        //   - 1 copper fails the "no materials" arm, but NO recipe crafts from 1 material
-        //     (cheapest recipes need 2), so a lone copper with < 4g is stuck forever.
-        // Fixing this means tightening the arms (gold < cheapest VENDOR cost; materials must
-        // reach some recipe's quantity) — a sim change for the U5 owner, made visible here.
+        // 60-cell grid: gold 0..9 × materials {none, 1 copper, 2 copper} × shelf {empty, one
+        // stocked craft}. After one composed Morning tick, EVERY cell must leave a productive
+        // path open — the tightened cost-the-path arms closed the five dead cells the previous
+        // revision of this test had to pin as KNOWN GAPS. Per cell, the fire/no-fire decision is
+        // recomputed from the documented rule and asserted, so the sweep also pins WHEN the
+        // floor spends: bare gold < 8 (path = 2 copper), 1-copper gold < 4 (path = 1 copper),
+        // never with 2 copper (craftable now), never with any shelf entry.
         var kernel = GameComposition.BuildKernel();
         var baseState = Destitute(seed: 23);
         var shelfCraft = PlayerCraft(800, "buckler", "Buckler", ItemSlot.Shield, attack: 0, defense: 6, weight: 2);
 
-        var gaps = new List<string>();
-        var stipendCells = new List<string>();
-
+        var fires = 0;
         foreach (var hasShelf in new[] { false, true })
         {
-            foreach (var hasCopper in new[] { false, true })
+            foreach (var copper in new[] { 0, 1, 2 })
             {
-                for (var gold = 0; gold <= 4; gold++)
+                for (var gold = 0; gold <= 9; gold++)
                 {
-                    var cell = $"gold={gold} mat={(hasCopper ? "1copper" : "none")} shelf={(hasShelf ? "stocked" : "empty")}";
+                    var cell = $"gold={gold} copper={copper} shelf={(hasShelf ? "stocked" : "empty")}";
                     var state = baseState with
                     {
                         Player = baseState.Player with
                         {
                             Gold = gold,
-                            Materials = hasCopper
-                                ? baseState.Player.Materials.Add("copper", 1)
+                            Materials = copper > 0
+                                ? baseState.Player.Materials.Add("copper", copper)
                                 : baseState.Player.Materials,
                             Shelf = hasShelf
                                 ? ImmutableList.Create(new ShelfEntry(shelfCraft.Id, 25))
@@ -395,38 +473,31 @@ public class NoSoftlockTests
                         NextItemId = hasShelf ? 801 : baseState.NextItemId,
                     };
 
+                    var pathCost = CheapestPathCost(state.Player); // none→8, 1cu→4, 2cu→0
+                    var expectFire = !hasShelf && gold < pathCost;
+
                     var tick = kernel.Tick(state, ImmutableList<PlayerAction>.Empty);
                     Assert.Empty(tick.Rejected);
 
-                    if (tick.Events.OfType<RecoveryStipendGranted>().Any())
+                    var stipends = tick.Events.OfType<RecoveryStipendGranted>().ToList();
+                    Assert.True(expectFire == (stipends.Count == 1) && stipends.Count <= 1,
+                        $"{cell}: expected fire={expectFire}, got {stipends.Count} stipend(s)");
+                    if (expectFire)
                     {
-                        stipendCells.Add(cell);
+                        fires++;
+                        Assert.Equal(10 - gold, stipends[0].Amount); // top-up to max(10, pathCost) = 10
+                        Assert.Equal(10, tick.NewState.Player.Gold);
                     }
 
-                    if (!ProductivePathExists(tick.NewState))
-                    {
-                        gaps.Add(cell);
-                    }
+                    // THE un-losability assertion: no cell is dead.
+                    Assert.True(ProductivePathExists(tick.NewState), $"{cell}: no productive path after the Morning tick");
                 }
             }
         }
 
-        // The floor rescues exactly the three all-bare sub-base cells — nowhere else.
-        Assert.Equal(
-            ["gold=0 mat=none shelf=empty", "gold=1 mat=none shelf=empty", "gold=2 mat=none shelf=empty"],
-            stipendCells);
-
-        // 15 of 20 cells provably recover; the KNOWN GAP above pins the other five EXACTLY —
-        // any sim fix (or regression) must edit this list, making the change visible.
-        Assert.Equal(
-            [
-                "gold=3 mat=none shelf=empty",
-                "gold=0 mat=1copper shelf=empty",
-                "gold=1 mat=1copper shelf=empty",
-                "gold=2 mat=1copper shelf=empty",
-                "gold=3 mat=1copper shelf=empty",
-            ],
-            gaps);
+        // The sweep actually exercised the floor: 8 bare cells (gold 0..7) + 4 one-copper
+        // cells (gold 0..3), shelf empty — and nowhere else.
+        Assert.Equal(12, fires);
     }
 
     // ---- Determinism -------------------------------------------------------------------------
