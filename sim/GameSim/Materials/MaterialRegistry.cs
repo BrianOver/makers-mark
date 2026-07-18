@@ -60,6 +60,11 @@ public static class MaterialRegistry
         // adds them to PricedPool (R4).
         new MaterialDefinition(Electrum,   UnitPrice: 24, Grade: 6, Tags: ImmutableArray<string>.Empty, SourceVenue: ""),
         new MaterialDefinition(Orichalcum, UnitPrice: 30, Grade: 7, Tags: ImmutableArray<string>.Empty, SourceVenue: ""),
+        new MaterialDefinition("firebrick", UnitPrice: 60, Grade: 12, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
+        new MaterialDefinition("slagiron", UnitPrice: 66, Grade: 13, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
+        new MaterialDefinition("quench-salt", UnitPrice: 72, Grade: 14, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
+        new MaterialDefinition("emberglass", UnitPrice: 78, Grade: 15, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
+        new MaterialDefinition("heartcoal", UnitPrice: 84, Grade: 16, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
         new MaterialDefinition("greenheart", UnitPrice: 36, Grade: 8, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
         new MaterialDefinition("amberpitch", UnitPrice: 42, Grade: 9, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
         new MaterialDefinition("moonresin", UnitPrice: 48, Grade: 10, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
