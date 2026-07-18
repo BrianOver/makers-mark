@@ -1,0 +1,27 @@
+# Maker's Mark art pipeline — Python deps for cutout.py + normalmap.py
+# Local tooling only (RTX 5080 / Blackwell / CUDA 13). Never installed in CI.
+#
+# ── torch + torchvision are MACHINE-SPECIFIC — do NOT pin them here ──────────
+# The GPU wheel must match the box's CUDA build. On the pipeline box (RTX 5080,
+# Blackwell, cu130) install them from the CUDA 13.0 index BEFORE this file:
+#
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+#
+# then:  pip install -r requirements.txt
+#
+# Pinning a torch/torchvision version here would fight that CUDA-matched build,
+# so they are intentionally absent. Verify the GPU is live after install:
+#   python -c "import torch; print(torch.cuda.is_available())"   # -> True
+# ────────────────────────────────────────────────────────────────────────────
+
+# cutout.py — BiRefNet segmentation (revision-pinned in the script)
+transformers>=4.44
+
+# normalmap.py + cutout.py — imaging / arrays
+pillow>=10.2
+numpy>=1.26,<3
+
+# BiRefNet's trust_remote_code model code may import these at load time.
+# Uncomment if cutout.py's from_pretrained() raises ModuleNotFoundError.
+# timm>=1.0
+# einops>=0.8
