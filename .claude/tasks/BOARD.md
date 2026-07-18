@@ -23,8 +23,8 @@ in the shared root already caused one cross-session commit collision (rode into 
 | G1 | U1 contracts micro-PR merged | U2 | orchestrator | **MERGED (#34, 2026-07-17)** |
 | **G2** | **V5a 5-phase tolerance merged (cross-lane hard deadline)** | **U2** | **VISUALS** | **MERGED (#38, 2026-07-17) — U2 UNBLOCKED** |
 | G3 | U2 kernel (5-phase) merged | U3 | AI-NPC | waiting on G1+G2 |
-| G4 | U3 staging + band re-fit + registration line merged | U4; V5b choreography | AI-NPC (+ orchestrator merge) | waiting on G3 |
-| G5 | U4 camp verbs merged | U5 narrator; telemetry-plan U4 | AI-NPC | waiting on G4 |
+| G4 | U3 staging + band re-fit + registration line merged | U4; V5b choreography | AI-NPC (+ orchestrator merge) | **MERGED (#51, 2026-07-18) — bands held UNCHANGED, no re-fit needed** |
+| G5 | U4 camp verbs merged | U5 narrator; telemetry-plan U4 | AI-NPC | worker spawned (B2) |
 | G6 | gdUnit4Net stable 4.7 → V0 infra PR merged | V4b town migration | ENGINE (VISUALS verifies, orchestrator merges) | watching upstream |
 | G7 | O1 LFS infra merged | V2, V3-gen PNG commits | ENGINE (orchestrator merges) | **MERGED (#35, 2026-07-17)** |
 | — | Wave-1 addons: no gates, run anytime (operating-model §10) | — | swarm | open |
