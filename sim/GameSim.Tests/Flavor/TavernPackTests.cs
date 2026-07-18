@@ -184,11 +184,15 @@ public class TavernPackTests
             Campaign,
             maxLines: 3);
 
+        // Re-pinned in-packet for the C4 tone-lightening append (design doc §1): each target key
+        // gained variants, so its variant count changed and the stable pick moved (pick-shift is
+        // expected and byte-deterministic). hero 1's death lands on the new WARM heroDied/omen
+        // variant (grim-but-fond, not comic — guardrail); recruitArrived on a new comic variant.
         Assert.Equal(
-            "The crows knew Torvald's name before floor 2 did — slain by a Tunnel Spider. So it was written.",
+            "The deep keeps its own, and it kept a good one — Torvald, slain by a Tunnel Spider, floor 2. Remember them kindly, and ward the door.",
             lines[0].Line);
-        Assert.Equal("Steel of legend! Kael's Fine Iron Blade broke the beast of floor 4 asunder!", lines[1].Line);
-        Assert.Equal("The company grows — Elowen has come to seek glory or a grave!", lines[2].Line);
+        Assert.Equal("With one stroke of Fine Iron Blade, Kael silenced floor 4!", lines[1].Line);
+        Assert.Equal("Herald Elowen, come at last! Trumpets would be fitting. We have a spoon and a tankard. They shall have to do!", lines[2].Line);
     }
 
     // ---------------------------------------------------------------- Plan U4 scenarios

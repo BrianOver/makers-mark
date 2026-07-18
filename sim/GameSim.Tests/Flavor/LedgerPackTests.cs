@@ -106,19 +106,22 @@ public class LedgerPackTests
     public void Pack_EveryVariant_ReachableOverAnEventIdSweep()
     {
         // Distribution sanity (per-hero distinct picks): with voice and slots fixed, a
-        // sweep of event ids must reach every authored variant of every key.
+        // sweep of event ids must reach every authored variant of every key. Sweep widened
+        // 64 -> 128 for the C4 tone append: survived now carries 15 variants/voice (+3 comic),
+        // and 64 draws over 15 buckets leaves one unhit by chance (verified: all reached by 112).
+        const int sweep = 128;
         foreach (var (key, variants) in LedgerPack.Pack.Variants)
         {
             var slots = SlotsFor(FlavorEngine.BaseKey(key));
             var seen = new HashSet<string>(StringComparer.Ordinal);
-            for (var eventId = 1UL; eventId <= 64UL; eventId++)
+            for (var eventId = 1UL; eventId <= (ulong)sweep; eventId++)
             {
                 seen.Add(FlavorEngine.Render(LedgerPack.Pack, key, slots, Campaign, eventId));
             }
 
             Assert.True(
                 seen.Count == variants.Count,
-                $"'{key}': {seen.Count}/{variants.Count} variants reached over 64 event ids");
+                $"'{key}': {seen.Count}/{variants.Count} variants reached over {sweep} event ids");
         }
     }
 
@@ -132,7 +135,10 @@ public class LedgerPackTests
         var death = FlavorEngine.Render(
             LedgerPack.Pack, $"{LedgerPack.Died}/omen", SlotsFor(LedgerPack.Died), Campaign, eventId: 5);
 
-        Assert.Equal("Torvald banked 16g off floor 7. Count it, log it, done.", survivor);
-        Assert.Equal("Floor 7 claimed Torvald. The tithe is paid.", death);
+        // Re-pinned in-packet for the C4 tone-lightening append (design doc §1): survived gained
+        // comic variants and died gained a warm variant, so each key's count changed and the stable
+        // pick moved (pick-shift is expected and byte-deterministic).
+        Assert.Equal("Back from floor 7, Torvald, 16g on the table. Logged it, taxed it in my head, called it fair.", survivor);
+        Assert.Equal("Floor 7 sealed over Torvald. Some doors don't reopen.", death);
     }
 }

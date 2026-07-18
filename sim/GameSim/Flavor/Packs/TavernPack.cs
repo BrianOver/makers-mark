@@ -23,13 +23,18 @@ namespace GameSim.Flavor.Packs;
 /// <c>potionLifesave</c> are new P2 beats with no prior line; their fallbacks are authored
 /// in the same plain register.</para>
 ///
-/// <para><b>Breadth (T8a).</b> Every (baseKey, voice) key carries TWELVE variants — the launch
-/// four plus eight more in the same frozen voice register (gruff fatalism, dramatic exclamation,
-/// wry understatement, omen portent-reading). Attribution beats (killingBlow / lethalSave /
-/// breakpointClear / provisioned / potionLifesave) lean on smith's-pride: the hero lived or won
-/// because the gear did its work. Additive same-surface packs are unsupported (the generator binds
-/// one pack per surface and <c>Pack_VariantKeys_AreExactlyBaseKeysCrossVoices</c> pins the exact key
-/// set), so breadth lives here in the existing pack file (ruling R8).</para>
+/// <para><b>Breadth (T8a).</b> Every (baseKey, voice) key carries at least twelve variants — the
+/// launch four, eight more in the same frozen voice register (gruff fatalism, dramatic exclamation,
+/// wry understatement, omen portent-reading), then the C4 tone-lightening pass on top (design doc
+/// <c>2026-07-18-variety-tone-direction.md</c> §1): comedy-forward keys (provisioned, recruitArrived,
+/// floorRecordSet, breakpointClear, potionLifesave) gain deadpan comic variants per voice — omen =
+/// failed portents, gruff = invoices/lectures, dramatic = grandiosity about mundane things, wry stays
+/// wry; the pride beats (killingBlow, lethalSave) gain attribution-warmth variants ("that dent is
+/// sentimental"); heroDied gains ONE WARM variant per voice — a toast or fond detail, never a joke
+/// (deaths keep their grim register; the restraint is the charm). Fallbacks are UNTOUCHED. Additive
+/// same-surface packs are unsupported (the generator binds one pack per surface and
+/// <c>Pack_VariantKeys_AreExactlyBaseKeysCrossVoices</c> pins the exact key set), so breadth lives
+/// here in the existing pack file (ruling R8).</para>
 ///
 /// <para><b>Conformance floor:</b> every (baseKey, voice) key carries at least 4 variants —
 /// no fallback-only keys. <c>TavernPackTests</c> enforces all of the above structurally.</para>
@@ -94,7 +99,8 @@ public static class TavernPack
                 "{hero} went down to {cause} on floor {floor}. The Mine gives nothing back.",
                 "One more name for the stone: {hero}, {cause}, floor {floor}.",
                 "{hero} paid floor {floor} in full — {cause}. That's the wage.",
-                "{cause} took {hero} on floor {floor}. Bank it and move on."),
+                "{cause} took {hero} on floor {floor}. Bank it and move on.",
+                "{hero} dug straight and paid their round. {cause} on floor {floor}. Raise one, and mean it."),
             [$"{HeroDied}/dramatic"] = ImmutableList.Create(
                 "Gone! {hero}, {cause} on floor {floor} — the dark has a new name to whisper.",
                 "Weep, tavern, weep — {hero} lies on floor {floor}, {cause}.",
@@ -107,7 +113,8 @@ public static class TavernPack
                 "Brave {hero}, undone by {cause} in the belly of floor {floor}!",
                 "Floor {floor} has claimed a hero's blood — {cause} took {hero}!",
                 "Weep and remember: {hero} met {cause} on floor {floor} and passed into legend!",
-                "The deep sang a dirge — {hero} fell to {cause} upon floor {floor}!"),
+                "The deep sang a dirge — {hero} fell to {cause} upon floor {floor}!",
+                "Stand for {hero}, lost to {cause} on floor {floor} — we are the poorer, and the prouder for having known them."),
             [$"{HeroDied}/wry"] = ImmutableList.Create(
                 "{hero} found the one thing on floor {floor} you can't walk off — {cause}.",
                 "Turns out floor {floor} bites. {hero}, {cause}. Who's next?",
@@ -120,7 +127,8 @@ public static class TavernPack
                 "{hero} had one job on floor {floor}: not that. {cause}.",
                 "Floor {floor}, {cause}, and {hero}'s flawless record of being alive. Was.",
                 "Somebody tell floor {floor} that {cause} was excessive. {hero} would agree, if they could.",
-                "{hero} met {cause} on floor {floor}. Bold plan. Poor finish."),
+                "{hero} met {cause} on floor {floor}. Bold plan. Poor finish.",
+                "Floor {floor}. {cause}. {hero} would have called it 'a Tuesday.' Raise a quiet one."),
             [$"{HeroDied}/omen"] = ImmutableList.Create(
                 "The candles guttered when {hero} fell — {cause} on floor {floor}. The Mine marked them days ago.",
                 "I read it in the dregs: {hero}, {cause}, floor {floor}. The leaves never lie.",
@@ -133,7 +141,8 @@ public static class TavernPack
                 "{cause} on floor {floor}. The coals hissed {hero}'s name and went dark.",
                 "Floor {floor} kept its tithe — {hero}, {cause}. Ward your door tonight.",
                 "The candle by {hero}'s bed guttered out. {cause}, floor {floor}. The deep marks its own.",
-                "{hero}'s shadow left before the body did — {cause} on floor {floor}. Omens don't grieve."),
+                "{hero}'s shadow left before the body did — {cause} on floor {floor}. Omens don't grieve.",
+                "The deep keeps its own, and it kept a good one — {hero}, {cause}, floor {floor}. Remember them kindly, and ward the door."),
 
             // ------------------------------------------------------------- killingBlow
             [$"{KillingBlow}/gruff"] = ImmutableList.Create(
@@ -148,7 +157,9 @@ public static class TavernPack
                 "No mess, no fuss — {item} settled floor {floor}. {hero} can thank the smith.",
                 "That's what {item} is for. Floor {floor}, {hero}, done.",
                 "{hero} put {item} through whatever floor {floor} sent. It held.",
-                "Floor {floor} learned the weight of {item} in {hero}'s hand."),
+                "Floor {floor} learned the weight of {item} in {hero}'s hand.",
+                "{item} did clean work on floor {floor}, and {hero} kept the notch as a keepsake. Good steel earns a scar.",
+                "That edge has a history now — floor {floor}, {hero}'s hand, one less thing in the dark. {item} remembers its wins."),
             [$"{KillingBlow}/dramatic"] = ImmutableList.Create(
                 "With one stroke of {item}, {hero} silenced floor {floor}!",
                 "Sing of {hero}! Sing of {item}! Floor {floor} remembers the blow!",
@@ -161,7 +172,9 @@ public static class TavernPack
                 "Steel of legend! {hero}'s {item} broke the beast of floor {floor} asunder!",
                 "Let the forge take a bow — {item} felled floor {floor} in {hero}'s hand!",
                 "The dark of floor {floor} had no answer for {item}, and {hero} knew it!",
-                "Glory to the blade! {hero} and {item}, and floor {floor} lies conquered!"),
+                "Glory to the blade! {hero} and {item}, and floor {floor} lies conquered!",
+                "Glory! {hero}'s {item} ended the terror of floor {floor} — and every notch upon it is a tale the forge holds dear!",
+                "Sing of {item}! In {hero}'s grip it conquered floor {floor}, and the smith shall polish that blade with pride!"),
             [$"{KillingBlow}/wry"] = ImmutableList.Create(
                 "Whatever lived on floor {floor} has opinions no more. {hero}'s {item}, allegedly.",
                 "{hero} let {item} do the talking on floor {floor}. Short conversation.",
@@ -174,7 +187,9 @@ public static class TavernPack
                 "Turns out {item} solves most of floor {floor}'s arguments. {hero} noticed.",
                 "One swing of {item}, and floor {floor}'s problem became {hero}'s footnote.",
                 "Floor {floor} met {item}. Brief acquaintance. {hero} moved on.",
-                "{hero}'s {item} does fine work. Floor {floor} would review it poorly."),
+                "{hero}'s {item} does fine work. Floor {floor} would review it poorly.",
+                "{hero}'s {item} did the hard part on floor {floor}. {hero} did the yelling. Both essential, reportedly.",
+                "Floor {floor}'s over. {hero} takes the bow; {item} takes the wear. The dent's got sentimental value now, apparently."),
             [$"{KillingBlow}/omen"] = ImmutableList.Create(
                 "{item} drank deep on floor {floor} — {hero} carries a hungry thing.",
                 "The smith forged more than steel into {item}. Floor {floor} learned it; {hero} swung it.",
@@ -187,7 +202,9 @@ public static class TavernPack
                 "Cold iron, hot end — {item} closed a life on floor {floor}. {hero} bore witness.",
                 "The smith forged an omen into {item}. Floor {floor} read it. {hero} swung it.",
                 "{hero}'s {item} drank on floor {floor}. The mountain keeps that ledger.",
-                "Mark it deep: {item} ended floor {floor}'s making, and {hero} walked on."),
+                "Mark it deep: {item} ended floor {floor}'s making, and {hero} walked on.",
+                "{item} closed a life on floor {floor}, and grew fonder of {hero}'s hand for it. Steel keeps the ones who wield it true.",
+                "Mark it kindly: {hero}'s {item} ended floor {floor}'s making, and the iron warms to its keeper. The deep notes such bonds."),
 
             // ------------------------------------------------------------- lethalSave
             [$"{LethalSave}/gruff"] = ImmutableList.Create(
@@ -202,7 +219,9 @@ public static class TavernPack
                 "Floor {floor} bit {hero} and broke a tooth on {item}. Fair trade.",
                 "Without {item}, {hero} stays on floor {floor}. Simple as that.",
                 "{item} ate the hit on floor {floor}. {hero} walked home to complain about it.",
-                "Dented, not dead — {item} spared {hero} on floor {floor}. Worth every coin."),
+                "Dented, not dead — {item} spared {hero} on floor {floor}. Worth every coin.",
+                "{item} took the blow floor {floor} meant for {hero}, and wears the dent proud. Keep that one; it's earned its keep.",
+                "That dent in {item} is where floor {floor} lost {hero}. Don't hammer it out — it's the good kind of scar."),
             [$"{LethalSave}/dramatic"] = ImmutableList.Create(
                 "Death reached for {hero} on floor {floor} — and {item} slapped its hand away!",
                 "So close! Floor {floor} nearly claimed {hero}, but {item} held the line!",
@@ -215,7 +234,9 @@ public static class TavernPack
                 "A hair from doom! {hero} breathes because {item} defied floor {floor}!",
                 "Behold the smith's mercy — {item} caught floor {floor}'s killing stroke, and {hero} yet stands!",
                 "Floor {floor} reached for {hero}'s soul, and {item} struck its hand aside!",
-                "Cry it aloud — {item} bought {hero} back from the brink of floor {floor}!"),
+                "Cry it aloud — {item} bought {hero} back from the brink of floor {floor}!",
+                "DEATH reached for {hero} on floor {floor} — and struck {item} instead! The smith shall hear of this dent. At length.",
+                "Behold the faithful {item}! It caught floor {floor}'s killing stroke for {hero}, and shall be honored at the forge for an age!"),
             [$"{LethalSave}/wry"] = ImmutableList.Create(
                 "{hero} owes {item} a polish. Floor {floor} owes an apology.",
                 "Floor {floor} tried. {item} disagreed. {hero} drinks tonight.",
@@ -228,7 +249,9 @@ public static class TavernPack
                 "{hero} calls it reflexes. The dent in {item} from floor {floor} disagrees.",
                 "Floor {floor} had {hero} dead to rights. {item} had other paperwork.",
                 "Turns out {item} is load-bearing for {hero}. Floor {floor} learned that the hard way.",
-                "{hero} should buy {item} a drink. Floor {floor} owes it an apology."),
+                "{hero} should buy {item} a drink. Floor {floor} owes it an apology.",
+                "{hero} lives; {item} has the dent to prove floor {floor} tried. Sentimental value, that dent. Don't buff it out.",
+                "Floor {floor} aimed for {hero} and hit {item}. {hero} calls it luck. {item} calls it a career."),
             [$"{LethalSave}/omen"] = ImmutableList.Create(
                 "Death wrote {hero}'s name on floor {floor}, and {item} smudged the ink.",
                 "I heard {item} hum when floor {floor} struck. {hero} was spared. Wards hold.",
@@ -241,7 +264,9 @@ public static class TavernPack
                 "The smith forged a ward into {item}. Floor {floor} tested it; {hero} passed.",
                 "Something turned floor {floor}'s blow aside — that something was {item}. {hero} felt it.",
                 "The bones foretold {hero}'s grave on floor {floor}. {item} broke the reading.",
-                "{item} bought {hero} a breath on floor {floor}. The Mine keeps such accounts."),
+                "{item} bought {hero} a breath on floor {floor}. The Mine keeps such accounts.",
+                "{item} stood between {hero} and floor {floor}'s claim, and the two are bound the closer for it. Steel remembers who it saves.",
+                "The iron in {item} turned floor {floor}'s stroke from {hero}. Such a debt ties a soul to its steel. Keep it near."),
 
             // ------------------------------------------------------------- breakpointClear
             [$"{BreakpointClear}/gruff"] = ImmutableList.Create(
@@ -256,7 +281,10 @@ public static class TavernPack
                 "No {item}, {hero} bounces off floor {floor}. With it, through.",
                 "Floor {floor} needed the right steel. {hero} carried {item}. That did it.",
                 "{item} put {hero} past floor {floor}. Gear before glory.",
-                "Floor {floor} was always {item}'s job. {hero} just brought it along."),
+                "Floor {floor} was always {item}'s job. {hero} just brought it along.",
+                "Floor {floor} gate's open. {hero}'s {item} did the arguing. Iron argues best.",
+                "Charged {hero} for the {item} and threw in a lecture on which end opens floor {floor}. The lecture was free. This time.",
+                "Floor {floor}'s gate wanted the right {item}, not grit. {hero} had it. Filed the paperwork, closed the account."),
             [$"{BreakpointClear}/dramatic"] = ImmutableList.Create(
                 "Floor {floor} yields to no one — no one without {item}! {hero} knew!",
                 "It was {item} that broke floor {floor} — and {hero} who dared carry it!",
@@ -269,7 +297,10 @@ public static class TavernPack
                 "What barred floor {floor} for an age gave way to {item} in {hero}'s grip!",
                 "Behold {item}! By its edge {hero} shattered the threshold of floor {floor}!",
                 "Floor {floor} stood proud — until {hero} came bearing {item}!",
-                "The gate of floor {floor} knew {item}, and {hero} strode through!"),
+                "The gate of floor {floor} knew {item}, and {hero} strode through!",
+                "Floor {floor}'s ancient seal — an age unbroken — met {item}, and {hero} pushed. It was, in fairness, a door.",
+                "The gate of floor {floor} yielded to {hero} and {item} with a groan of legend. Or a rusty hinge. History will decide.",
+                "Behold {hero}! Behold {item}! Behold floor {floor}, now merely open, which is somehow the grandest thing of all!"),
             [$"{BreakpointClear}/wry"] = ImmutableList.Create(
                 "{hero} would still be staring at floor {floor} without {item}. We've all said it. Quietly.",
                 "Floor {floor}: impossible. Floor {floor} versus {item}: apparently not. Nice work, {hero}.",
@@ -282,7 +313,10 @@ public static class TavernPack
                 "{hero} plus {item} equals floor {floor} cleared. The {item} carried the equation.",
                 "Floor {floor} was unbeatable until someone tried {item}. {hero} tried {item}.",
                 "Give {hero} floor {floor} and {item} and — look at that — a clear. Coincidence.",
-                "{hero} swears skill cleared floor {floor}. The {item} in hand swears otherwise."),
+                "{hero} swears skill cleared floor {floor}. The {item} in hand swears otherwise.",
+                "Floor {floor}: sealed for ages, allegedly. {hero} brought {item}, gave it a shove. Ages, apparently, have a weak spot.",
+                "The secret of floor {floor} was {item} the whole time. {hero} would like a moment of applause for reading instructions.",
+                "{hero} opened floor {floor} with {item} and the smug look of someone who found the right key on the first ring. It was the third."),
             [$"{BreakpointClear}/omen"] = ImmutableList.Create(
                 "Floor {floor} was sealed by more than stone. {item} was the key, {hero} the keyholder.",
                 "The threshold of floor {floor} tested {hero} — and found {item} in the scales.",
@@ -295,7 +329,10 @@ public static class TavernPack
                 "The old miners said floor {floor} wanted a price. {item} paid it, in {hero}'s hand.",
                 "{item} was forged for a door like floor {floor}. {hero} found the door.",
                 "The Mine let {hero} pass floor {floor} — but only bearing {item}. It watches such things.",
-                "Steel and fate met at floor {floor}: {item}, {hero}, and a way through."),
+                "Steel and fate met at floor {floor}: {item}, {hero}, and a way through.",
+                "The signs swore floor {floor} would never open. Then {hero} brought {item}. The signs are revising their position.",
+                "I foretold doom at the gate of floor {floor}. {hero}'s {item} foretold a way through. One of us was right, and it wasn't me.",
+                "The portents marked floor {floor} as sealed by fate. {hero} and {item} unsealed it by supper. Fate is looking into it."),
 
             // ------------------------------------------------------------- provisioned (P2)
             [$"{Provisioned}/gruff"] = ImmutableList.Create(
@@ -310,7 +347,10 @@ public static class TavernPack
                 "{item} bought {hero} the hours floor {floor} tried to take. Fair.",
                 "{hero} rationed {item} right and outlasted floor {floor}. Good head.",
                 "That {item} earned its space in {hero}'s pack — floor {floor} proved it.",
-                "Floor {floor} wears you down. {item} kept {hero} in the fight."),
+                "Floor {floor} wears you down. {item} kept {hero} in the fight.",
+                "Sold {hero} a {item} for floor {floor}. Charged extra for the lecture on holding it right. No refunds on the lecture.",
+                "{item} kept {hero} standing on floor {floor}. The bill for it kept me standing too. Fair's fair.",
+                "Told {hero} to ration the {item} on floor {floor}. Twice. Wrote it on the receipt. They read the receipt after, as usual."),
             [$"{Provisioned}/dramatic"] = ImmutableList.Create(
                 "When floor {floor} pressed hardest, {hero} drank deep of {item} and stood fast!",
                 "{item}! Remember the name — it held {hero} together on floor {floor}!",
@@ -323,7 +363,10 @@ public static class TavernPack
                 "Floor {floor} demanded everything, and {item} gave {hero} one hour more!",
                 "By {item} alone did {hero} outlast the long dark of floor {floor}!",
                 "The pack saved the hero — {item} carried {hero} through floor {floor}!",
-                "Sing of humble {item}, without which floor {floor} keeps {hero}!"),
+                "Sing of humble {item}, without which floor {floor} keeps {hero}!",
+                "When floor {floor} pressed hardest, {hero} uncorked {item} — a bottle! a mere bottle! — and the tide of legend turned!",
+                "Sing of the humble {item}! Without it {hero} would have sat down on floor {floor} and had a good long think about quitting!",
+                "{item}! Drunk in one heroic swallow on floor {floor}! {hero} did not even wince! Well — a small wince. Historic, nonetheless!"),
             [$"{Provisioned}/wry"] = ImmutableList.Create(
                 "{hero}'s finest move on floor {floor}? Uncorking {item}. Tactics.",
                 "Halfway down floor {floor}, {hero}'s best friend was {item}. No offense to the party.",
@@ -336,7 +379,10 @@ public static class TavernPack
                 "{hero} would like credit for surviving floor {floor}. {item} would like a word.",
                 "The real hero of floor {floor} was {item}. {hero} was the delivery method.",
                 "Floor {floor} nearly benched {hero}. {item} filed for an extension.",
-                "{hero} calls it endurance. The empty {item} on floor {floor} calls it chemistry."),
+                "{hero} calls it endurance. The empty {item} on floor {floor} calls it chemistry.",
+                "{hero} asked if the {item} comes in 'lucky.' It does now, apparently. Floor {floor} can check the paperwork.",
+                "{hero}'s master plan for floor {floor}: drink the {item} before dying, not after. Revolutionary. It worked.",
+                "The {item} did {hero}'s surviving on floor {floor}. {hero} supplied the drinking motion. Teamwork, of a sort."),
             [$"{Provisioned}/omen"] = ImmutableList.Create(
                 "Brewed under a good moon, that {item} — it kept {hero} whole through floor {floor}.",
                 "{hero} sipped {item} on floor {floor} and the shadows kept their distance.",
@@ -349,7 +395,10 @@ public static class TavernPack
                 "Something in {item} argued with floor {floor}, and bought {hero} time.",
                 "{item} carried a blessing down floor {floor}. {hero} carried {item}.",
                 "The deep leaned on {hero} on floor {floor}. {item} leaned back.",
-                "Mark the flask — {item} kept {hero} for the surface, and floor {floor} let it."),
+                "Mark the flask — {item} kept {hero} for the surface, and floor {floor} let it.",
+                "I foresaw {hero} falling on floor {floor}. Then they drank the {item}. The vision has been amended. Quietly.",
+                "The leaves said {hero} wouldn't last the floor {floor}. The {item} said otherwise. The leaves are consulting other leaves.",
+                "A dark omen hung over {hero} on floor {floor}, and the {item} washed it right off. Some omens don't hold their liquor."),
 
             // ------------------------------------------------------------- potionLifesave (P2)
             [$"{PotionLifesave}/gruff"] = ImmutableList.Create(
@@ -364,7 +413,10 @@ public static class TavernPack
                 "{hero}'s stool isn't empty tonight. Thank {item}, and floor {floor} for nearly winning.",
                 "No {item}, {hero} stays on floor {floor}. That plain.",
                 "{item} did what stitches couldn't — pulled {hero} off floor {floor}.",
-                "Floor {floor} nearly kept {hero}. {item} had the last word."),
+                "Floor {floor} nearly kept {hero}. {item} had the last word.",
+                "{item} bought {hero}'s breath back on floor {floor}. Added it to the tab. Life's not free; neither's the vial.",
+                "Dead, then not — {hero}, floor {floor}, one {item}. Charged for the vial, not the miracle. Miracles are complimentary.",
+                "{item} pulled {hero} off floor {floor}'s books. I keep better books. Paid in full, no returns on a used cure."),
             [$"{PotionLifesave}/dramatic"] = ImmutableList.Create(
                 "Back from the brink! Floor {floor} had {hero} cold — until {item} lit the blood!",
                 "Dead on floor {floor}, all but buried — then {item}, and {hero} rose!",
@@ -377,7 +429,10 @@ public static class TavernPack
                 "Death held {hero} on floor {floor}, and {item} tore them free!",
                 "The vial flashed, and floor {floor} lost its claim — {hero} lives by {item}!",
                 "From the very lip of the grave on floor {floor}, {item} called {hero} home!",
-                "A miracle in a bottle! {item} dragged {hero} back from floor {floor}!"),
+                "A miracle in a bottle! {item} dragged {hero} back from floor {floor}!",
+                "A bottle! One small bottle of {item} stood between {hero} and eternity on floor {floor} — and eternity blinked first!",
+                "Uncork the trumpets! {item} hauled {hero} back from floor {floor} by the collar, and the collar barely wrinkled!",
+                "Let the ages record it: on floor {floor}, {hero} died for a heartbeat, and {item} said 'not today' in the voice of thunder!"),
             [$"{PotionLifesave}/wry"] = ImmutableList.Create(
                 "{hero} technically died on floor {floor}. {item} filed an objection.",
                 "Floor {floor} was measuring {hero} for a casket. {item} canceled the order.",
@@ -390,7 +445,10 @@ public static class TavernPack
                 "Floor {floor} had {hero} on the books as dead. {item} amended the record.",
                 "{hero} owes {item} a life. Floor {floor} owes {hero} nothing, as usual.",
                 "The corpse got up. {item}, floor {floor}, {hero} — in reverse order of dying.",
-                "Floor {floor} nearly closed {hero}'s account. {item} bounced the transaction."),
+                "Floor {floor} nearly closed {hero}'s account. {item} bounced the transaction.",
+                "{hero} died on floor {floor}, briefly, as a formality. {item} handled the appeal. Verdict overturned.",
+                "The {item} did the reviving on floor {floor}; {hero} did the dramatic gasping. Only one of them was strictly necessary.",
+                "Floor {floor} had {hero} down as settled. {item} disputed the charge. {hero} lives to dispute other things."),
             [$"{PotionLifesave}/omen"] = ImmutableList.Create(
                 "{hero}'s thread was cut on floor {floor}, and {item} knotted it back. I felt the snap from here.",
                 "The ferryman reached for {hero} on floor {floor}; {item} paid him to wait.",
@@ -403,7 +461,10 @@ public static class TavernPack
                 "Death signed for {hero} on floor {floor}. {item} forged the release.",
                 "The candle relit when {item} touched {hero} on floor {floor}. Mark that.",
                 "{hero} crossed over on floor {floor} and {item} called them back. Such things cost.",
-                "The deep had {hero}'s name on floor {floor}. {item} scratched it out."),
+                "The deep had {hero}'s name on floor {floor}. {item} scratched it out.",
+                "A red vial on floor {floor}, and {hero} breathing yet — the {item} gets the credit the portents wanted. The portents have been asked to cite their sources.",
+                "I called {hero}'s death on floor {floor}. The {item} called my bluff. The bones and I are no longer speaking.",
+                "The omens buried {hero} on floor {floor} a touch early — the {item} dug them right back out. Omens, revised. Again."),
 
             // ------------------------------------------------------------- floorRecordSet
             [$"{FloorRecordSet}/gruff"] = ImmutableList.Create(
@@ -418,7 +479,10 @@ public static class TavernPack
                 "{hero} set the depth at floor {floor}. Somebody'll beat it. Not soon.",
                 "New low for the town, high for {hero}: floor {floor}.",
                 "{hero} went to floor {floor} on purpose and lived. That's the record.",
-                "Floor {floor} is the deep mark now. {hero} put it there."),
+                "Floor {floor} is the deep mark now. {hero} put it there.",
+                "{hero} hit floor {floor}. Deepest yet. Bought a round, then counted the change. Twice.",
+                "New record: {hero}, floor {floor}. Chalked it on the board. Charged them for the chalk. Fair's fair.",
+                "{hero} reached floor {floor}, deepest in town. I'll want that in writing, signed, before I believe the boasting."),
             [$"{FloorRecordSet}/dramatic"] = ImmutableList.Create(
                 "Deeper than any before — {hero} has touched floor {floor}!",
                 "History! {hero} stands alone at floor {floor}!",
@@ -431,7 +495,10 @@ public static class TavernPack
                 "No boots ever pressed floor {floor} till {hero}'s! Sing it!",
                 "The town has a new legend, and its name is {hero} — floor {floor}!",
                 "Behold the deep-walker! {hero} has dared floor {floor}!",
-                "Let it echo up every shaft — {hero} reached floor {floor}!"),
+                "Let it echo up every shaft — {hero} reached floor {floor}!",
+                "{hero} has touched floor {floor}, deeper than any boot before — a feat! a legend! a very long way down some stairs!",
+                "History trembles: {hero} stands upon floor {floor}! Chalk it to the rafters, then dust the rafters, for they are filthy!",
+                "Deeper than mortal record — {hero}, floor {floor}! Bards will sing it, once someone teaches the bards the number!"),
             [$"{FloorRecordSet}/wry"] = ImmutableList.Create(
                 "{hero} went to floor {floor} on purpose. Takes all kinds.",
                 "Floor {floor}: previously theoretical. {hero} disagrees.",
@@ -444,7 +511,10 @@ public static class TavernPack
                 "Congratulations to {hero} for finding a deeper way to nearly die: floor {floor}.",
                 "{hero} reached floor {floor}. The prize is bragging rights and a limp.",
                 "Floor {floor}, apparently. {hero} volunteered. We didn't ask.",
-                "{hero} set foot on floor {floor} so you don't have to. Considerate."),
+                "{hero} set foot on floor {floor} so you don't have to. Considerate.",
+                "{hero} went to floor {floor} on purpose, which raises more questions about {hero} than about floor {floor}.",
+                "New record — {hero}, floor {floor}. The prize is bragging rights, a limp, and the deep respect of no one who values sense.",
+                "Floor {floor}. {hero} volunteered. Deepest in town, and the least surprised to end up down a hole."),
             [$"{FloorRecordSet}/omen"] = ImmutableList.Create(
                 "{hero} walked floor {floor} and the Mine let them. Ask why.",
                 "Floor {floor} showed itself to {hero}. Depths don't open for free.",
@@ -457,7 +527,10 @@ public static class TavernPack
                 "{hero} saw floor {floor} and came back changed. They always do.",
                 "The dark parted for {hero} at floor {floor}. Debts follow such gifts.",
                 "Floor {floor} let {hero} look upon it. That is not always a mercy.",
-                "The veins whispered when {hero} touched floor {floor}. Keep salt near."),
+                "The veins whispered when {hero} touched floor {floor}. Keep salt near.",
+                "The signs promised {hero} would turn back at floor {floor}. {hero} kept walking. The signs are updating their forecast.",
+                "I read ruin for {hero} at floor {floor}. Instead: a record. The dregs owe me an explanation and a fresh cup.",
+                "The portents marked floor {floor} as {hero}'s limit. {hero} marked it as a start. We do not always agree, the portents and I."),
 
             // ------------------------------------------------------------- recruitArrived
             [$"{RecruitArrived}/gruff"] = ImmutableList.Create(
@@ -472,7 +545,10 @@ public static class TavernPack
                 "{hero} turned up looking for coin. There's coin, and there's the Mine.",
                 "Name's {hero}. Ask again in a month if they're still standing.",
                 "{hero} joined on. Green as spring ore. The deep will temper them.",
-                "New blood, {hero}. Everybody's new until the first floor."),
+                "New blood, {hero}. Everybody's new until the first floor.",
+                "New face: {hero}. Signed the book, paid the tab up front. I like them already. Give it a week.",
+                "{hero} signed on. Handed them the rules, the pick, and the bill for the pick. Welcome to the trade.",
+                "{hero} turned up for work. Told them the terms twice. They nodded once. We'll see."),
             [$"{RecruitArrived}/dramatic"] = ImmutableList.Create(
                 "A new soul steps into the tale — welcome, {hero}!",
                 "{hero} has come! Fortune or funeral, we shall see!",
@@ -485,7 +561,10 @@ public static class TavernPack
                 "Herald it! {hero} takes up the miner's lot this day!",
                 "The Mine has a new challenger, and {hero} is the name!",
                 "Rise and welcome {hero} — may the deep be kind, though it rarely is!",
-                "A hero unproven enters — {hero}, and the tale turns a page!"),
+                "A hero unproven enters — {hero}, and the tale turns a page!",
+                "{hero} has ARRIVED! The door has been informed. It remains a door, but a prouder one.",
+                "A new soul strides into legend — {hero}! The tavern stool has never held such promise, nor such an ordinary cloak!",
+                "Herald {hero}, come at last! Trumpets would be fitting. We have a spoon and a tankard. They shall have to do!"),
             [$"{RecruitArrived}/wry"] = ImmutableList.Create(
                 "{hero} just arrived and already looks braver than the last one. Low bar.",
                 "Fresh meat — sorry, fresh talent: {hero}.",
@@ -498,7 +577,10 @@ public static class TavernPack
                 "Meet {hero}, who has clearly not talked to the last recruit. There isn't one.",
                 "{hero} signed up eager. We'll fix that.",
                 "Welcome {hero}. The tavern takes bets; the Mine takes recruits.",
-                "{hero} arrived with all their limbs. Enjoy the set, {hero}."),
+                "{hero} arrived with all their limbs. Enjoy the set, {hero}.",
+                "Everyone say hello to {hero}, fresh optimism factory-sealed. The Mine does love opening a new one.",
+                "{hero} arrived with all their limbs and most of their illusions. We'll take good care of neither.",
+                "New recruit: {hero}. Came for work and glory. We've plenty of the former and a rumor of the latter."),
             [$"{RecruitArrived}/omen"] = ImmutableList.Create(
                 "{hero} blew in with the cold wind. The cards say: interesting.",
                 "A stranger named {hero}. The Mine already knows the name.",
@@ -511,7 +593,10 @@ public static class TavernPack
                 "The crows counted {hero} in. They keep an honest tally.",
                 "A name for the deep to learn: {hero}. It learns them all in time.",
                 "{hero} walked in from the dark. Remember which way they came.",
-                "The coals leaned toward {hero}. The fire has opinions. Heed them."),
+                "The coals leaned toward {hero}. The fire has opinions. Heed them.",
+                "The signs foretold {hero}'s coming. The signs also foretold a rain of frogs. One out of two. Again.",
+                "I dreamt a great omen the night before {hero} came. Then I dreamt of breakfast. {hero} is, at least, real.",
+                "The crows announced {hero} at dawn. The crows announce most things. Still — welcome, {hero}, on their authority."),
         },
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
