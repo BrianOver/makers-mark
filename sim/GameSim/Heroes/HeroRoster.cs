@@ -25,7 +25,9 @@ public static class HeroRoster
     private static readonly ImmutableArray<string> RecruitNames = ImmutableArray.Create(
         "Astrid", "Bram", "Cedany", "Dain", "Esben", "Freya",
         "Gorm", "Hilde", "Ivar", "Jorunn", "Kettil", "Liv",
-        "Magnus", "Nessa", "Orin", "Petra");
+        "Magnus", "Nessa", "Orin", "Petra",
+        // Appended 2026-07-18 (variety row C3) — warmer register, append-only per the contract above.
+        "Bertha", "Pim", "Snorri", "Grimhild", "Odd", "Tove", "Ulf", "Wren");
 
     /// <summary>Base MaxHp per class — Vanguards soak, Mystics are glass (band 20-30). Reads
     /// the class definition (P3), so a recruit's HP is data, not a hardcoded switch.</summary>
