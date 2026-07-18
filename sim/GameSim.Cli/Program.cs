@@ -5,6 +5,7 @@ using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Drama;
 using GameSim.Kernel;
+using GameSim.Narrative;
 using GameSim.Professions;
 
 // Maker's Mark — text-mode play (U13, R21).
@@ -261,13 +262,82 @@ GameState Advance(GameState current)
         PrintLedger(next, current.Day);
     }
 
+    // Stage-1 retelling (U5): the Expedition tick just resolved [1..checkpoint] and parked the
+    // campers. No attribution beats exist yet — attribution runs at finalize, so stage-1 beats
+    // surface at the Evening ledger as today (a documented v1 choice).
+    if (current.Phase == DayPhase.Expedition)
+    {
+        foreach (var party in next.InFlight)
+        {
+            NarrateLines(ExpeditionNarrator.FloorBeats(
+                party.Floors, ImmutableList<AttributionBeat>.Empty, PartyHeroes(next, party.Party),
+                next.Items, ImmutableList<HeroId>.Empty, NarratorPack.Pack, next.Rng.Inc, current.Day));
+        }
+    }
+
     // The camp decision window just opened: show the winch-house slate so 'send'/'recall' can act.
     if (next.Phase == DayPhase.Camp && !next.InFlight.IsEmpty)
     {
         PrintCampSlate(next);
     }
 
+    // Stage-2 retelling + Halt closer (U5): the Deep tick finalized each camper into
+    // PendingExpeditions. current.InFlight supplies each party's checkpoint (the slice boundary).
+    if (current.Phase == DayPhase.ExpeditionDeep)
+    {
+        foreach (var inFlight in current.InFlight)
+        {
+            var finalized = FindResult(next.PendingExpeditions, inFlight.Party);
+            if (finalized is null)
+            {
+                continue;
+            }
+
+            var heroes = PartyHeroes(next, inFlight.Party);
+            var slice = finalized.Floors.Where(f => f.Floor > inFlight.CheckpointFloor).ToImmutableList();
+            NarrateLines(ExpeditionNarrator.FloorBeats(
+                slice, finalized.Beats, heroes, next.Items, finalized.Deaths,
+                NarratorPack.Pack, next.Rng.Inc, current.Day));
+            Console.WriteLine($"  {ExpeditionNarrator.Closer(finalized.Halt, heroes, finalized.DeepestFloorCleared, finalized.TargetFloor, NarratorPack.Pack, next.Rng.Inc, current.Day)}");
+        }
+    }
+
     return next;
+}
+
+void NarrateLines(ImmutableList<string> lines)
+{
+    foreach (var line in lines)
+    {
+        Console.WriteLine($"  {line}");
+    }
+}
+
+ImmutableList<Hero> PartyHeroes(GameState s, ImmutableList<HeroId> ids)
+{
+    var heroes = ImmutableList.CreateBuilder<Hero>();
+    foreach (var id in ids)
+    {
+        if (s.Heroes.TryGetValue(id.Value, out var hero))
+        {
+            heroes.Add(hero);
+        }
+    }
+
+    return heroes.ToImmutable();
+}
+
+ExpeditionResult? FindResult(ImmutableList<ExpeditionResult> results, ImmutableList<HeroId> party)
+{
+    foreach (var result in results)
+    {
+        if (result.Party.SequenceEqual(party))
+        {
+            return result;
+        }
+    }
+
+    return null;
 }
 
 void PrintCampSlate(GameState s)
@@ -275,6 +345,8 @@ void PrintCampSlate(GameState s)
     Console.WriteLine("  ── CAMP — parties camped below the checkpoint ──");
     foreach (var party in s.InFlight)
     {
+        // The cliffhanger (U5): a dramatic beat over the recorded camp facts, before the slate.
+        Console.WriteLine($"  {ExpeditionNarrator.Cliffhanger(PartyHeroes(s, party.Party), party.CheckpointFloor, NarratorPack.Pack, s.Rng.Inc, s.Day)}");
         var tag = party.Recalled ? " [recalled]" : party.SupplySent ? " [runner spent]" : string.Empty;
         Console.WriteLine($"  party for floor {party.TargetFloor} (camped below floor {party.CheckpointFloor}){tag}");
         foreach (var id in party.Party)
@@ -301,7 +373,7 @@ void Narrate(GameEvent gameEvent, GameState s)
         HeroPassedOnItem pass =>
             $"  ~ {HeroName(s, pass.Hero)} passed on {ItemName(s, pass.Item)}: {pass.Reason}",
         PartyDeparted dep =>
-            $"  → party [{string.Join(", ", dep.Party.Select(h => HeroName(s, h)))}] departs for floor {dep.TargetFloor}",
+            "  → " + ExpeditionNarrator.Departure(PartyHeroes(s, dep.Party), dep.TargetFloor, NarratorPack.Pack, s.Rng.Inc, dep.Day),
         AttributionBeatEvent beat =>
             $"  ★ {beat.Beat}: {beat.Detail} (floor {beat.Floor})",
         HeroDied died =>
