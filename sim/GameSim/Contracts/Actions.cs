@@ -20,8 +20,12 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(RecallPartyAction), "recallParty")]
 public abstract record PlayerAction;
 
-/// <summary>Craft a recipe using a material grade key from <see cref="PlayerState.Materials"/> (R4).</summary>
-public sealed record CraftAction(string RecipeId, string MaterialKey) : PlayerAction;
+/// <summary>Craft a recipe using a material grade key from <see cref="PlayerState.Materials"/> (R4).
+/// <paramref name="PerformanceGrade"/> is the M3 seam (P4/P11 minigames): a per-mille craft-performance
+/// grade [0..1000] from a PRESENTATION-layer minigame (V6 forge balance etc.), clamped by the roller;
+/// 500 is neutral. TRAILING with a null default — old saves/actions deserialize to null, and null is
+/// byte-identical to the pre-M3 roll (KTD4: the grade rides the ActionLog, so replays stay exact).</summary>
+public sealed record CraftAction(string RecipeId, string MaterialKey, int? PerformanceGrade = null) : PlayerAction;
 
 /// <summary>Move a crafted item onto the shelf at a price (R16).</summary>
 public sealed record StockAction(ItemId Item, int Price) : PlayerAction;

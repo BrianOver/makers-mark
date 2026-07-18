@@ -37,11 +37,24 @@ namespace GameSim.Crafting;
 /// </summary>
 public static class QualityRoller
 {
-    public static QualityGrade Roll(Recipe recipe, int materialGrade, ImmutableSortedSet<string> unlockedTalents, ProfessionQualityModel quality, IDeterministicRng rng)
+    /// <summary>Half-width of the performance-grade shift band (M3): grade 0 → −8, 500 → 0,
+    /// 1000 → +8 — deliberately the weight of ONE material-grade step, so a perfect minigame
+    /// equals one grade of better ore, never dominating the roll.</summary>
+    private const int PerformanceShiftMax = 8;
+
+    public static QualityGrade Roll(Recipe recipe, int materialGrade, ImmutableSortedSet<string> unlockedTalents, ProfessionQualityModel quality, IDeterministicRng rng, int? performanceGrade = null)
     {
         var masteryGrade = quality.MaterialMasteryNode is { } mastery && unlockedTalents.Contains(mastery) ? 1 : 0;
         var effectiveGrade = materialGrade + masteryGrade;
         var shift = 8 * (effectiveGrade - recipe.Tier);
+
+        if (performanceGrade is { } grade)
+        {
+            // M3 seam: clamp to per-mille, center on 500, scale to ±PerformanceShiftMax.
+            // Integer math; null (no minigame) adds nothing — byte-identical to pre-M3.
+            var clamped = grade < 0 ? 0 : grade > 1000 ? 1000 : grade;
+            shift += (clamped - 500) * PerformanceShiftMax * 2 / 1000;
+        }
 
         foreach (var (nodeId, amount) in quality.FlatShifts)
         {

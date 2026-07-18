@@ -123,6 +123,61 @@ public class SaveLoadTests
     }
 
     [Fact]
+    public void PreM3CraftAction_WithoutPerformanceGrade_LoadsNull()
+    {
+        // Backward-compat contract (M3): CraftAction.PerformanceGrade is trailing-nullable.
+        // A pre-M3 logged action has no such property and must deserialize to null (the
+        // byte-identical roll path), VenueId-precedent style.
+        var state = GameFactory.NewGame(seed: 31);
+        var kernel = new GameKernel(ImmutableList<IPhaseSystem>.Empty, ImmutableList<IActionHandler>.Empty);
+        state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new CraftAction("dagger", "copper"))).NewState;
+
+        var json = SaveCodec.Serialize(state);
+        var preM3 = System.Text.RegularExpressions.Regex.Replace(
+            json, ",?\\s*\"PerformanceGrade\"\\s*:\\s*null", string.Empty);
+        Assert.DoesNotContain("PerformanceGrade", preM3);
+
+        var loaded = SaveCodec.Deserialize(preM3);
+        var craft = Assert.IsType<CraftAction>(Assert.Single(loaded.ActionLog).Actions[0]);
+        Assert.Null(craft.PerformanceGrade);
+
+        // Populated case survives byte-identical.
+        var graded = GameFactory.NewGame(seed: 31);
+        graded = kernel.Tick(graded, ImmutableList.Create<PlayerAction>(new CraftAction("dagger", "copper", 750))).NewState;
+        var reloaded = SaveCodec.Deserialize(SaveCodec.Serialize(graded));
+        var gradedCraft = Assert.IsType<CraftAction>(Assert.Single(reloaded.ActionLog).Actions[0]);
+        Assert.Equal(750, gradedCraft.PerformanceGrade);
+        Assert.Equal(SaveCodec.Serialize(graded), SaveCodec.Serialize(reloaded));
+    }
+
+    [Fact]
+    public void PreM4Save_WithoutVenues_LoadsEmpty()
+    {
+        // Backward-compat contract (M4): GameState.Venues is a non-positional init member
+        // (InFlight precedent) — a pre-M4 save has no property and must load as empty.
+        var state = GameFactory.NewGame(seed: 32);
+        var json = SaveCodec.Serialize(state);
+
+        var preM4 = System.Text.RegularExpressions.Regex.Replace(
+            json, ",?\\s*\"Venues\"\\s*:\\s*\\{\\}", string.Empty);
+        Assert.DoesNotContain("\"Venues\"", preM4);
+
+        var loaded = SaveCodec.Deserialize(preM4);
+        Assert.Empty(loaded.Venues);
+
+        // Populated case survives byte-identical.
+        var populated = state with
+        {
+            Venues = ImmutableSortedDictionary<string, VenueState>.Empty
+                .Add("mine", new VenueState(DaysUntouched: 3, InfectionPerMille: 250, Closed: false)),
+        };
+        var reloaded = SaveCodec.Deserialize(SaveCodec.Serialize(populated));
+        Assert.Equal(3, reloaded.Venues["mine"].DaysUntouched);
+        Assert.Equal(250, reloaded.Venues["mine"].InfectionPerMille);
+        Assert.Equal(SaveCodec.Serialize(populated), SaveCodec.Serialize(reloaded));
+    }
+
+    [Fact]
     public void PreStagedSave_WithoutInFlight_LoadsEmpty()
     {
         // Backward-compat contract (staged resolution U1): GameState.InFlight is a non-positional
