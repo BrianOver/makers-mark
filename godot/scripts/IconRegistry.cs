@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Text.Json;
 using Godot;
 using GameSim.Contracts;
 
@@ -8,12 +10,27 @@ namespace GodotClient;
 /// and the town scene bind art by concept, not by hardcoded paths. Icons are the
 /// hand-authored SVGs under res://assets/icons/ (style bible palette); generated art
 /// (portraits, monsters, backdrop) lives under res://assets/art/ and is loaded by name.
+///
+/// <para>U3 (P006, R10) adds a manifest-backed presence check (<see cref="Has"/>/
+/// <see cref="HasNormal"/>) over <c>res://assets/art/art-manifest.json</c> — the generated
+/// "what exists" list from <c>art/pipeline/gen-manifest.ps1</c> — so callers (chiefly
+/// <see cref="AssetCatalog"/>) can ask "is this id committed?" without a per-call filesystem
+/// probe. <see cref="Art"/>/<see cref="Lit"/> remain the single id→path load point and are
+/// unchanged: still null-tolerant against the actual resource filesystem, still what
+/// <see cref="AssetCatalog"/> delegates to for the real load.</para>
 /// </summary>
 public static class IconRegistry
 {
     private const string IconDir = "res://assets/icons";
     private const string SpriteDir = "res://assets/sprites";
     private const string ArtDir = "res://assets/art";
+    private const string ManifestPath = ArtDir + "/art-manifest.json";
+
+    /// <summary>One manifest entry (U3): whether an id has a committed diffuse and/or normal PNG.
+    /// Generated from committed pixels by <c>gen-manifest.ps1</c> — never from GameState (R14).</summary>
+    public readonly record struct ManifestEntry(bool Diffuse, bool Normal);
+
+    private static Dictionary<string, ManifestEntry>? _manifestCache;
 
     public static Texture2D Slot(ItemSlot slot) => Load(IconDir, slot switch
     {
@@ -41,10 +58,12 @@ public static class IconRegistry
     /// </summary>
     public static Texture2D Building(string name) => Load(SpriteDir, name);
 
-    /// <summary>Generated art by base file name (e.g. "hero_mystic", "monster_floor5"); null until U15's generator has run.</summary>
+    /// <summary>Generated art by base file name/id (e.g. "hero-mystic", "monster-cave-rat"); null
+    /// until the pipeline has generated it. The single id→path load point — <see cref="Lit"/> and
+    /// <see cref="AssetCatalog"/>'s resolvers both compose an id string and call through here.</summary>
     public static Texture2D? Art(string name)
     {
-        var path = $"{ArtDir}/{name}.png";
+        var path = ArtPath(name);
         return ResourceLoader.Exists(path) ? GD.Load<Texture2D>(path) : null;
     }
 
@@ -57,6 +76,55 @@ public static class IconRegistry
         return diffuse is null ? null
             : new CanvasTexture { DiffuseTexture = diffuse, NormalTexture = Art(id + "_n") };
     }
+
+    /// <summary>True iff the generated manifest lists <paramref name="id"/> (any pixels committed
+    /// for it). Manifest-backed so repeated presence checks (e.g. Plan #3 enumeration) don't hit
+    /// the filesystem per call — the manifest is loaded once and cached for the process lifetime.</summary>
+    public static bool Has(string id) => Manifest().ContainsKey(id);
+
+    /// <summary>True iff the manifest lists a committed normal map for <paramref name="id"/>;
+    /// false for an absent id or a diffuse-only entry (e.g. a flat item icon or backdrop).</summary>
+    public static bool HasNormal(string id) => Manifest().TryGetValue(id, out var entry) && entry.Normal;
+
+    /// <summary>Pure parse of the manifest JSON shape — <c>{"&lt;id&gt;": {"diffuse": bool,
+    /// "normal": bool}}</c> — with no I/O, so tests can prove manifest fidelity (including a
+    /// diffuse-only entry) against a synthetic fixture without touching the committed file or the
+    /// Godot resource filesystem. Malformed/missing flags default to <c>false</c>, never throw.</summary>
+    public static Dictionary<string, ManifestEntry> ParseManifest(string json)
+    {
+        var result = new Dictionary<string, ManifestEntry>();
+        if (string.IsNullOrWhiteSpace(json)) return result;
+
+        using var doc = JsonDocument.Parse(json);
+        foreach (var prop in doc.RootElement.EnumerateObject())
+        {
+            var diffuse = prop.Value.TryGetProperty("diffuse", out var d) && d.ValueKind == JsonValueKind.True;
+            var normal = prop.Value.TryGetProperty("normal", out var n) && n.ValueKind == JsonValueKind.True;
+            result[prop.Name] = new ManifestEntry(diffuse, normal);
+        }
+        return result;
+    }
+
+    private static Dictionary<string, ManifestEntry> Manifest()
+    {
+        if (_manifestCache is not null) return _manifestCache;
+
+        try
+        {
+            _manifestCache = Godot.FileAccess.FileExists(ManifestPath)
+                ? ParseManifest(Godot.FileAccess.Open(ManifestPath, Godot.FileAccess.ModeFlags.Read).GetAsText())
+                : new Dictionary<string, ManifestEntry>();
+        }
+        catch (JsonException)
+        {
+            // A corrupted manifest degrades to "nothing present" rather than crashing the UI —
+            // the same null-tolerant contract Art/Lit already give callers.
+            _manifestCache = new Dictionary<string, ManifestEntry>();
+        }
+        return _manifestCache;
+    }
+
+    private static string ArtPath(string name) => $"{ArtDir}/{name}.png";
 
     private static Texture2D Load(string dir, string name) => GD.Load<Texture2D>($"{dir}/{name}.svg");
 }

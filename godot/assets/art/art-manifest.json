@@ -1,0 +1,9 @@
+{
+  "hero-mystic": { "diffuse": true, "normal": true },
+  "hero-striker": { "diffuse": true, "normal": true },
+  "hero-vanguard": { "diffuse": true, "normal": true },
+  "town-forge": { "diffuse": true, "normal": true },
+  "town-market": { "diffuse": true, "normal": true },
+  "town-mine-gate": { "diffuse": true, "normal": true },
+  "town-tavern": { "diffuse": true, "normal": true }
+}
