@@ -15,4 +15,12 @@ byte-reproducible across GPUs. The committed PNG + its `DiffuseSha256` in
 
 | Id | Track | Seed | Hand-finished | Build-half |
 |----|-------|------|---------------|------------|
-| _(none committed yet — populated by V2 / V3-gen)_ | | | | |
+| town-forge | active | 72462746+1 (candidate c1) | no | (pending build-half) |
+| town-market | active | 172757101+4 (candidate c4) | no | (pending build-half) |
+| town-mine-gate | active | 1693938457+0 (candidate c0) | no | (pending build-half) |
+| hero-vanguard | active | 72462747+7 (candidate c7) | no | (pending build-half) |
+| hero-striker | active | 72462748+0 (candidate c0) | no | (pending build-half) |
+| hero-mystic | active | 72462749+3 (candidate c3) | no | (pending build-half) |
+
+Curated by Brian (CP-2, 2026-07-18) from 8 candidates each; BiRefNet cutout + sobel normal
+via `art/pipeline/`; heroes trimmed + bottom-anchored on the 512x768 spec canvas.
