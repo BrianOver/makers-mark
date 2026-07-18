@@ -39,6 +39,19 @@ public sealed class SimAdapter
     /// <summary>Actions the kernel refused on the most recent tick — typed reasons, never a silent drop.</summary>
     public ImmutableList<RejectedAction> LastRejections { get; private set; } = ImmutableList<RejectedAction>.Empty;
 
+    /// <summary>
+    /// The expeditions the most recent Evening tick revealed, snapshotted from
+    /// <see cref="GameState.PendingExpeditions"/> BEFORE that tick ran. The Evening reveal
+    /// (<c>ExpeditionRevealSystem</c>) consumes and clears PendingExpeditions and the event log
+    /// carries no <c>FloorOutcome</c>/<c>CombatEvent</c> stream, so this snapshot is the ONLY place
+    /// the post-tick Evening Ledger can retell the day through <c>ExpeditionNarrator</c> (V7b).
+    /// Empty until the first Evening tick with pending results.
+    /// </summary>
+    public ImmutableList<ExpeditionResult> LastRevealedExpeditions { get; private set; } = ImmutableList<ExpeditionResult>.Empty;
+
+    /// <summary>The day whose expeditions <see cref="LastRevealedExpeditions"/> holds (0 = none yet).</summary>
+    public int LastRevealedDay { get; private set; }
+
     /// <summary>Actions queued for the next <see cref="AdvancePhase"/>, in submission order.</summary>
     public IReadOnlyList<PlayerAction> PendingActions => _pending;
 
@@ -57,6 +70,15 @@ public sealed class SimAdapter
     {
         var completedPhase = CurrentState.Phase;
         var completedDay = CurrentState.Day;
+
+        // Capture the results the Evening reveal is about to consume — the narrator retells them at
+        // the Ledger, which renders the post-tick (already-cleared) state (V7b).
+        if (completedPhase == DayPhase.Evening && !CurrentState.PendingExpeditions.IsEmpty)
+        {
+            LastRevealedExpeditions = CurrentState.PendingExpeditions;
+            LastRevealedDay = completedDay;
+        }
+
         var result = _kernel.Tick(CurrentState, _pending.ToImmutableList());
         _pending.Clear();
         CurrentState = result.NewState;

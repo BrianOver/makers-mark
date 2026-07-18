@@ -1,5 +1,8 @@
+using System.Collections.Immutable;
+using System.Linq;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Narrative;
 using Godot;
 
 namespace GodotClient.Panels;
@@ -16,9 +19,17 @@ namespace GodotClient.Panels;
 /// </summary>
 public partial class LedgerModal : SimPanel
 {
+    /// <summary>
+    /// Collapsed retelling shows the pride payload only — the attribution beats plus the Halt
+    /// closer — so it always fits the modal; the "Full tale" toggle expands to the whole retelling
+    /// (departure + every floor's tension beats). A fixed cap, not a per-run count (V7b req 2).
+    /// </summary>
+    public const int MaxCollapsedTaleLines = 8;
+
     private Label? _title;
     private VBoxContainer? _cards;
     private Label? _feedback;
+    private bool _showFullTale;
 
     /// <summary>The day whose cards are currently shown (0 = never shown).</summary>
     public int ShownDay { get; private set; }
@@ -40,6 +51,7 @@ public partial class LedgerModal : SimPanel
     {
         EnsureBuilt();
         ShownDay = day;
+        _showFullTale = false; // each reveal opens on the compact pride payload
         RenderCards(day);
         Visible = true;
     }
@@ -104,6 +116,102 @@ public partial class LedgerModal : SimPanel
                 });
             }
         }
+
+        RenderRetelling(day);
+    }
+
+    /// <summary>
+    /// The narrator drip made VISIBLE (V7b, DoD D2/D4/D6): the same <see cref="ExpeditionNarrator"/>
+    /// the CLI voices, surfaced on the Evening reveal. For each expedition the day revealed
+    /// (snapshotted in <see cref="SimAdapter.LastRevealedExpeditions"/> before the reveal tick
+    /// cleared it), retell it with the CLI's inputs — party heroes + items from state, the campaign
+    /// identity (<c>state.Rng.Inc</c>, KTD3), the shown day for the deterministic variant pick.
+    /// Collapsed shows the pride payload only (attribution ★ beats + the Halt closer); "Full tale"
+    /// expands to the whole retelling. Plain Labels only, so <c>RenderedText</c> reads every line.
+    /// </summary>
+    private void RenderRetelling(int day)
+    {
+        if (Adapter is null
+            || Adapter.LastRevealedDay != day
+            || Adapter.LastRevealedExpeditions.IsEmpty)
+        {
+            return; // no matching retelling for this day — cards stand alone
+        }
+
+        var state = Adapter.CurrentState;
+        AddHeader(_cards!, "── THE RETELLING ──").Name = "RetellingHeader";
+
+        var anyLines = false;
+        foreach (var result in Adapter.LastRevealedExpeditions)
+        {
+            var party = PartyHeroes(state, result.Party);
+            if (party.IsEmpty)
+            {
+                continue; // defensive: a result whose party left state has no voice
+            }
+
+            // Same call shape as the CLI's unstaged retelling path (Program.cs).
+            var tale = ExpeditionNarrator.Retell(
+                result, party, state.Items, NarratorPack.Pack, state.Rng.Inc, day);
+
+            foreach (var line in _showFullTale ? tale : CollapsedTale(tale))
+            {
+                var label = AddLabel(_cards!, line);
+                if (line.StartsWith('★'))
+                {
+                    // Attribution beats are the spine of the game (R11) — pride, highlighted.
+                    label.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.2f));
+                }
+
+                anyLines = true;
+            }
+        }
+
+        if (anyLines)
+        {
+            AddButton(
+                _cards!, "ToggleTale", _showFullTale ? "Show less" : "Full tale",
+                () =>
+                {
+                    _showFullTale = !_showFullTale;
+                    RenderCards(ShownDay);
+                });
+        }
+    }
+
+    /// <summary>
+    /// The compact pride payload: every attribution ★ beat plus the closer (always the retelling's
+    /// last line). Bounded by <see cref="MaxCollapsedTaleLines"/> so a beat-heavy run still fits —
+    /// the closer is appended last regardless, so it is never dropped (V7b req 2, DoD D4).
+    /// </summary>
+    private static ImmutableList<string> CollapsedTale(ImmutableList<string> tale)
+    {
+        if (tale.IsEmpty)
+        {
+            return tale;
+        }
+
+        var closer = tale[^1];
+        var beats = tale
+            .Take(tale.Count - 1)
+            .Where(line => line.StartsWith('★'))
+            .Take(MaxCollapsedTaleLines - 1)
+            .ToImmutableList();
+        return beats.Add(closer);
+    }
+
+    private static ImmutableList<Hero> PartyHeroes(GameState state, ImmutableList<HeroId> ids)
+    {
+        var heroes = ImmutableList.CreateBuilder<Hero>();
+        foreach (var id in ids)
+        {
+            if (state.Heroes.TryGetValue(id.Value, out var hero))
+            {
+                heroes.Add(hero);
+            }
+        }
+
+        return heroes.ToImmutable();
     }
 
     private void EnsureBuilt()
