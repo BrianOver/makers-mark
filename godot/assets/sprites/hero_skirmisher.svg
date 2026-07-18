@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="64" viewBox="0 0 48 64">
+  <!-- Striker: lean damage-dealer mid-swing with a two-hand blade. Neutral body
+       tinted to the role color (crimson #b5462f) via TextureRect.Modulate at runtime. -->
+  <!-- legs in a lunge stance -->
+  <rect x="15" y="44" width="5" height="16" fill="#b8b0c6" stroke="#140f1f" stroke-width="2"/>
+  <rect x="26" y="44" width="5" height="16" fill="#b8b0c6" stroke="#140f1f" stroke-width="2"/>
+  <!-- torso (leaner) -->
+  <path d="M17 24 L31 24 L32 46 L16 46 Z" fill="#b8b0c6" stroke="#140f1f" stroke-width="2"/>
+  <!-- head -->
+  <circle cx="24" cy="15" r="7" fill="#b8b0c6" stroke="#140f1f" stroke-width="2"/>
+  <!-- raised two-hand blade, diagonal -->
+  <path d="M33 4 L43 9 L21 41 L15 37 Z" fill="#b8b0c6" stroke="#140f1f" stroke-width="2"/>
+  <!-- teal circuit trace along the blade -->
+  <path d="M34 9 L23 37" stroke="#3fb0ac" stroke-width="1.2" opacity="0.85"/>
+  <!-- purple rune on the torso -->
+  <path d="M24 30 l2.5 4 -2.5 4 -2.5 -4 Z" fill="none" stroke="#6b4c9a" stroke-width="1.5"/>
+  <!-- ember rim light, upper-left edge -->
+  <path d="M18 25 L18 44" stroke="#e0913f" stroke-width="1.2" opacity="0.7"/>
+</svg>
