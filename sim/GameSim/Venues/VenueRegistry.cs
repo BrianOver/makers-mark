@@ -28,6 +28,7 @@ public static class VenueRegistry
     public static readonly ImmutableSortedDictionary<string, VenueDefinition> All = new[]
     {
         Mine,
+        Emberfall.EmberfallFoundryVenue.Definition,
         Gloomwood.GloomwoodVenue.Definition,
         SunkenCrypt.SunkenCryptVenue.Definition,
     }.ToImmutableSortedDictionary(v => v.Id, v => v, StringComparer.Ordinal);

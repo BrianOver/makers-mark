@@ -38,6 +38,7 @@ public static class FactionRegistry
     {
         Deepvein,
         Crownsguard.CrownsguardFaction.Definition,
+        Ashguild.AshguildFaction.Definition,
         Wardens.WardensFaction.Definition,
         Tidewrit.TidewritFaction.Definition,
     }.ToImmutableSortedDictionary(f => f.Id, f => f, StringComparer.Ordinal);
