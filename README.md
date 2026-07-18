@@ -4,6 +4,16 @@ An inverted MMO: **you are the NPC.** You play the town blacksmith; six autonomo
 
 Built sim-first: the entire game is a deterministic, seeded, headless .NET simulation with the Godot town scene as a presentation skin.
 
+## Play
+
+- **Visual game** (lit 2.5D town): double-click **`play.bat`** (needs Godot 4.6.3-stable .NET at `C:\Tools\Godot\...` or `GODOT_BIN` set). Runs the game directly, no editor.
+- **Edit scenes**: **`edit.bat`** opens the Godot editor.
+- **Text game** (no Godot): double-click **`play-cli.bat`**, or `dotnet run --project sim/GameSim.Cli`. Type `help`.
+
+Tip: right-click `play.bat` → Send to → Desktop (create shortcut) for a one-click icon.
+
+**Distribution (planned):** Steam, via Godot's Windows/Linux export templates + a Steamworks wrapper — a post-v1 unit (needs a Steam partner appid). The deterministic sim + Godot skin already match Godot's standard export path.
+
 ## Stack
 
 - Godot 4.6.3-stable (.NET edition) — pinned via `.godot-version`, do not open with other versions
