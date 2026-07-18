@@ -70,6 +70,21 @@ public abstract partial class SimPanel : Control
         return button;
     }
 
+    /// <summary>
+    /// U6 (R6) prevention half: reflect the kernel's own legality verdict on a button —
+    /// Disabled with a player-phrased tooltip when the queued action would provably be
+    /// refused. MIRROR, never replace: <paramref name="legal"/> must be read off the same
+    /// sim-exposed facts/predicates the action's handler checks, and the kernel remains
+    /// the authority on apply — a stale enable is still honestly rejected (and toasted
+    /// by MainUi), never silently dropped.
+    /// </summary>
+    protected static Button GateButton(Button button, bool legal, string whyNot)
+    {
+        button.Disabled = !legal;
+        button.TooltipText = legal ? string.Empty : whyNot;
+        return button;
+    }
+
     protected static SpinBox AddSpinBox(Node parent, string name, double min, double max, double value)
     {
         var spin = new SpinBox { Name = name, MinValue = min, MaxValue = max, Rounded = true, Value = value };

@@ -1,7 +1,10 @@
+using System;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Factions;
+using GameSim.Kernel;
 using GameSim.Narrative;
 using Godot;
 
@@ -12,10 +15,13 @@ namespace GodotClient.Panels;
 /// completes, showing per-hero return cards for the just-ended day
 /// (<see cref="LedgerQuery.ReturnCards"/>): fate line, gold earned, attribution
 /// beats (highlighted), and ore offers with Buy buttons that queue
-/// <see cref="BuyOreAction"/>. Note the sim only accepts ore purchases on an
-/// Evening tick — a queued buy is honestly rejected by the kernel otherwise, and
-/// the status bar surfaces that. Reopen the Ledger from the status bar during the
-/// next Evening to buy.
+/// <see cref="BuyOreAction"/>. The sim only accepts ore purchases on an Evening
+/// tick, and the queued batch lands in the CURRENT phase — so the U6 gate disables
+/// Buy unless the sim sits AT Evening (the fresh reveal renders during next-day
+/// Morning, where buying was the original playtest trap) and the tariffed cost is
+/// payable. The gate MIRRORS OreMarketHandlers' own checks, never replaces them —
+/// a rejection that still surfaces becomes MainUi's transient toast.
+/// Reopen the Ledger from the status bar during the next Evening to buy.
 /// </summary>
 public partial class LedgerModal : SimPanel
 {
@@ -109,11 +115,12 @@ public partial class LedgerModal : SimPanel
                 AddIcon(row, IconRegistry.Ore(ore.MaterialKey));
                 AddLabel(row, $"    offers {ore.Quantity}x {ore.MaterialKey} at {ore.UnitPrice}g each");
                 var offer = ore;
-                AddButton(row, $"BuyOre_{ore.From.Value}_{ore.MaterialKey}", "Buy", () =>
+                var buy = AddButton(row, $"BuyOre_{ore.From.Value}_{ore.MaterialKey}", "Buy", () =>
                 {
                     Adapter!.Queue(new BuyOreAction(offer.From, offer.MaterialKey, offer.Quantity));
-                    _feedback!.Text = $"queued: buy {offer.Quantity}x {offer.MaterialKey} from {card.HeroName} (applies on the next Evening tick)";
+                    _feedback!.Text = $"queued: buy {offer.Quantity}x {offer.MaterialKey} from {card.HeroName} (applies when the Evening ticks)";
                 });
+                GateButton(buy, BuyOreLegal(Adapter.CurrentState, offer, card.HeroName, out var whyNot), whyNot);
             }
         }
 
@@ -198,6 +205,67 @@ public partial class LedgerModal : SimPanel
             .Take(MaxCollapsedTaleLines - 1)
             .ToImmutableList();
         return beats.Add(closer);
+    }
+
+    /// <summary>
+    /// U6 gate for an ore Buy, MIRRORING OreMarketHandlers' checks off sim-exposed facts
+    /// (never re-implementing the rule — the kernel stays the authority on apply):
+    /// Evening-only CanHandle (the queued batch lands in the CURRENT phase, per
+    /// GameKernel.Tick), a live matching open offer with enough quantity, a living
+    /// seller, and the tariffed cost within the purse. Reasons are player-phrased.
+    /// </summary>
+    private static bool BuyOreLegal(GameState state, OreOffered offer, string heroName, out string whyNot)
+    {
+        if (state.Phase != DayPhase.Evening)
+        {
+            whyNot = "Ore changes hands in the Evening — reopen the ledger then.";
+            return false;
+        }
+
+        var open = state.OpenOreOffers.FirstOrDefault(o => o.From == offer.From && o.MaterialKey == offer.MaterialKey);
+        if (open is null || open.Quantity < offer.Quantity)
+        {
+            whyNot = "That offer is gone.";
+            return false;
+        }
+
+        if (!state.Heroes.TryGetValue(offer.From.Value, out var seller) || !seller.Alive)
+        {
+            whyNot = $"{heroName} never made it home — the offer is void.";
+            return false;
+        }
+
+        if (TariffedCost(state, offer) > state.Player.Gold)
+        {
+            whyNot = "You can't afford that yet.";
+            return false;
+        }
+
+        whyNot = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// Cost mirror, display/gating quote only: the same aggregate-line standing tariff
+    /// OreMarketHandlers.Apply computes (base ask, scaled by standing-at-cap through the
+    /// faction's public knobs via <see cref="IntegerCurves.MulDiv"/>, clamped to
+    /// ±MaxAdjustmentPerMille). The kernel reprices authoritatively on apply — no rule
+    /// lives here.
+    /// </summary>
+    private static int TariffedCost(GameState state, OreOffered offer)
+    {
+        var baseLineCost = offer.Quantity * offer.UnitPrice;
+        var faction = FactionRegistry.ByOreKey(offer.MaterialKey);
+        if (faction is null)
+        {
+            return baseLineCost;
+        }
+
+        long max = faction.MaxAdjustmentPerMille;
+        var adj = Math.Clamp(
+            IntegerCurves.MulDiv(state.Player.StandingFor(faction.Id), faction.MaxAdjustmentPerMille, faction.StandingCap),
+            -max, max);
+        return (int)IntegerCurves.MulDiv(baseLineCost, 1000 - adj, 1000);
     }
 
     private static ImmutableList<Hero> PartyHeroes(GameState state, ImmutableList<HeroId> ids)

@@ -95,11 +95,18 @@ public partial class ShopPanel : SimPanel
             AddLabel(row, $"{item.Id} {item.Name} [{item.Quality}] atk {item.Stats.Attack} def {item.Stats.Defense}");
             var priceSpin = AddSpinBox(row, $"StockPrice_{item.Id.Value}", 1, 99999, 10);
             var itemId = item.Id;
-            AddButton(row, $"Stock_{item.Id.Value}", "Stock", () =>
+            var stock = AddButton(row, $"Stock_{item.Id.Value}", "Stock", () =>
             {
                 Adapter!.Queue(new StockAction(itemId, (int)priceSpin.Value));
                 _feedback!.Text = $"queued: stock {itemId} at {(int)priceSpin.Value}g";
             });
+            // U6 gate, mirroring ShopHandlers.ApplyStock check 3b (the only refusal this
+            // list can still reach: existence/provenance/equipped are already filtered by
+            // UnshelvedPlayerCrafts, and the SpinBox floor of 1 keeps prices positive): a
+            // consumable that has ever been sold never returns to the shelf.
+            var soldConsumable = item.Effect is not null
+                && state.EventLog.Any(e => e is ItemSold sold && sold.Item == itemId);
+            GateButton(stock, !soldConsumable, "Sold consumables don't come back.");
         }
 
         AddHeader(_content!, "RIVAL SHELF (read-only)");

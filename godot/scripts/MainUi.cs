@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using System.Linq;
 using GameSim.Contracts;
@@ -28,6 +29,13 @@ public partial class MainUi : Control
     /// this timer is the gate.
     /// </summary>
     public const double ReturnRitualDelaySeconds = 3.0;
+
+    /// <summary>
+    /// U6 (R6) toast lifetime: a surfaced rejection renders as a short player-phrased
+    /// line for this many UNSCALED wall-clock seconds, then clears (or earlier, on the
+    /// next clean tick). The raw kernel reason never renders — it goes to the dev log.
+    /// </summary>
+    public const double RejectionToastSeconds = 4.0;
 
     /// <summary>Campaign seed — same seed, same world, everywhere (KTD4).</summary>
     [Export]
@@ -62,10 +70,13 @@ public partial class MainUi : Control
     /// <summary>Seconds left on the Return Ritual gate; 0 when no reveal is pending.</summary>
     public double LedgerDelayRemaining { get; private set; }
 
+    /// <summary>Seconds left on the rejection toast; 0 when no toast is showing (U6).</summary>
+    public double ToastRemaining { get; private set; }
+
     private int _pendingLedgerDay;
     private Label _status = null!;
     private Label _clockLabel = null!;
-    private Label _rejections = null!;
+    private Label _toast = null!;
     private Button _advance = null!;
     private Button _auto = null!;
     private Button _playPause = null!;
@@ -120,6 +131,17 @@ public partial class MainUi : Control
                 Ledger.ShowFor(_pendingLedgerDay);
             }
         }
+
+        // U6 rejection toast: transient by design — it fades on unscaled wall-clock
+        // (same _Process pattern as the Return Ritual gate) or on the next clean tick.
+        if (ToastRemaining > 0)
+        {
+            ToastRemaining -= delta;
+            if (ToastRemaining <= 0)
+            {
+                ClearToast();
+            }
+        }
     }
 
     private void OnPhaseCompleted(DayPhase completedPhase, int completedDay)
@@ -129,7 +151,23 @@ public partial class MainUi : Control
                  $"({Adapter.LastEvents.Count} events, {Adapter.LastRejections.Count} rejections)");
         foreach (var rejected in Adapter.LastRejections)
         {
+            // Dev log keeps the RAW kernel reason (org logging rule); the player only
+            // ever sees the friendly toast below.
             GD.PushWarning($"[MainUi] rejected {rejected.Action.GetType().Name}: {rejected.Reason}");
+        }
+
+        // U6 (R6) toast half: surfaced refusals render as a short player-phrased line
+        // that auto-clears (wall-clock in _Process, or here on the next clean tick).
+        // The raw kernel string never reaches a rendered control.
+        if (Adapter.LastRejections.IsEmpty)
+        {
+            ClearToast();
+        }
+        else
+        {
+            _toast.Text = string.Join("  ",
+                Adapter.LastRejections.Select(r => FriendlyRejection(r.Reason)).Distinct());
+            ToastRemaining = RejectionToastSeconds;
         }
 
         RefreshAll();
@@ -189,9 +227,55 @@ public partial class MainUi : Control
         var state = Adapter.CurrentState;
         var alive = state.Heroes.Values.Count(h => h.Alive);
         _status.Text = $"Day {state.Day} — {state.Phase} | Gold {state.Player.Gold}g | Heroes {alive}/{state.Heroes.Count}";
-        _rejections.Text = Adapter.LastRejections.IsEmpty
-            ? string.Empty
-            : "REJECTED: " + string.Join(" | ", Adapter.LastRejections.Select(r => r.Reason));
+    }
+
+    private void ClearToast()
+    {
+        ToastRemaining = 0;
+        _toast.Text = string.Empty;
+    }
+
+    /// <summary>
+    /// U6 (R6): map a kernel rejection reason to a short player-phrased toast line.
+    /// Presentation only — no rule lives here, and the RAW reason never renders (it
+    /// goes to the dev log in <see cref="OnPhaseCompleted"/>). Ordered most-specific
+    /// first; unknown reasons fall through to a generic friendly line.
+    /// </summary>
+    private static string FriendlyRejection(string reason)
+    {
+        if (reason.StartsWith("Not enough gold", StringComparison.Ordinal)
+            || reason.StartsWith("Can't pay the", StringComparison.Ordinal))
+        {
+            return "You can't afford that yet.";
+        }
+
+        if (reason.StartsWith("No handler accepts", StringComparison.Ordinal))
+        {
+            return "Can't do that right now.";
+        }
+
+        if (reason.StartsWith("Not enough ", StringComparison.Ordinal))
+        {
+            return "You don't have the materials for that.";
+        }
+
+        if (reason.StartsWith("No open ore offer", StringComparison.Ordinal)
+            || reason.StartsWith("Only ", StringComparison.Ordinal))
+        {
+            return "That offer is gone.";
+        }
+
+        if (reason.Contains("is no longer alive", StringComparison.Ordinal))
+        {
+            return "That seller never made it home.";
+        }
+
+        if (reason.Contains("was already sold", StringComparison.Ordinal))
+        {
+            return "Sold consumables don't come back.";
+        }
+
+        return "That didn't work out.";
     }
 
     private void UpdateClockLabel()
@@ -279,9 +363,11 @@ public partial class MainUi : Control
         ledgerButton.Pressed += () => Ledger.ShowFor(LastCompletedDay);
         statusBar.AddChild(ledgerButton);
 
-        _rejections = new Label { Name = "Rejections", AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        _rejections.AddThemeColorOverride("font_color", new Color(1f, 0.5f, 0.5f));
-        layout.AddChild(_rejections);
+        // U6 rejection toast: transient player-phrased line under the status bar. It is
+        // NOT a persistent status readout — OnPhaseCompleted sets it, _Process fades it.
+        _toast = new Label { Name = "RejectionToast", AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        _toast.AddThemeColorOverride("font_color", new Color(1f, 0.75f, 0.45f));
+        layout.AddChild(_toast);
 
         // --- panel tabs (tab title = scene root node name) -------------------
         Tabs = new TabContainer
