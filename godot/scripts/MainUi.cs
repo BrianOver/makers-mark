@@ -47,6 +47,7 @@ public partial class MainUi : Control
     public DepthsPanel Depths { get; private set; } = null!;
     public BountyPanel Bounties { get; private set; } = null!;
     public LedgerModal Ledger { get; private set; } = null!;
+    public CampPanel Camp { get; private set; } = null!;
 
     /// <summary>The most recent day whose Evening completed — what the Ledger button reopens.</summary>
     public int LastCompletedDay { get; private set; }
@@ -61,6 +62,7 @@ public partial class MainUi : Control
     private Button _playPause = null!;
     private Button _speed = null!;
     private bool _resumePlayOnLedgerClose;
+    private bool _resumePlayOnCampClose;
 
     public override void _Ready()
     {
@@ -77,9 +79,11 @@ public partial class MainUi : Control
         Depths.Bind(Adapter);
         Bounties.Bind(Adapter);
         Ledger.Bind(Adapter);
+        Camp.Bind(Adapter);
 
         RefreshStatus();
         UpdateClockLabel();
+        SyncCampModal(); // adopt an injected mid-day (parked) campaign — open the slate if already at Camp
         GD.Print($"[MainUi] campaign started, seed {Seed}");
     }
 
@@ -119,6 +123,7 @@ public partial class MainUi : Control
 
         RefreshAll();
         Town.OnPhaseCompleted(completedPhase);
+        SyncCampModal(); // V7a: raise the winch-house slate the moment a party parks at Camp
 
         if (completedPhase == DayPhase.Evening)
         {
@@ -145,6 +150,27 @@ public partial class MainUi : Control
         Depths.Refresh();
         Bounties.Refresh();
         Ledger.Refresh();
+        Camp.Refresh();
+    }
+
+    /// <summary>
+    /// V7a phase hook: raise the camp slate the instant a party parks (Phase == Camp with a
+    /// non-empty InFlight), and drop it once the parked run finalizes (InFlight cleared at the
+    /// Deep tick). Deliberately does NOT auto-close merely on leaving Camp — the just-completed
+    /// Camp tick's rejections must stay legible on the slate through the Deep phase (AE4), and the
+    /// player's own Hold is the normal close. No new tab, so the MainUiTests tab-title pin is untouched.
+    /// </summary>
+    private void SyncCampModal()
+    {
+        var state = Adapter.CurrentState;
+        if (state.InFlight.IsEmpty)
+        {
+            Camp.CloseModal();
+        }
+        else if (state.Phase == DayPhase.Camp)
+        {
+            Camp.ShowModal();
+        }
     }
 
     private void RefreshStatus()
@@ -239,6 +265,14 @@ public partial class MainUi : Control
         AddChild(Ledger);
         Ledger.SetAnchorsPreset(LayoutPreset.FullRect);
         Ledger.VisibilityChanged += OnLedgerVisibilityChanged;
+
+        // --- camp decision slate (V7a): a second modal overlay, code-built (no scene, so no
+        //     .tscn/import metadata churn). Camp (phase 3) and the Evening Ledger never show at
+        //     once, so the two overlays never contend.
+        Camp = new CampPanel { Name = "CampModal" };
+        AddChild(Camp);
+        Camp.SetAnchorsPreset(LayoutPreset.FullRect);
+        Camp.VisibilityChanged += OnCampVisibilityChanged;
     }
 
     private T InstantiatePanel<T>(string scenePath) where T : SimPanel
@@ -280,6 +314,23 @@ public partial class MainUi : Control
         else if (_resumePlayOnLedgerClose)
         {
             Clock.Play();
+        }
+
+        UpdateClockLabel();
+    }
+
+    /// <summary>The camp decision window holds the town clock; Hold (close) resumes it if it was running.</summary>
+    private void OnCampVisibilityChanged()
+    {
+        if (Camp.Visible)
+        {
+            _resumePlayOnCampClose = Clock.Playing;
+            Clock.Pause();
+        }
+        else if (_resumePlayOnCampClose)
+        {
+            Clock.Play();
+            _resumePlayOnCampClose = false;
         }
 
         UpdateClockLabel();
