@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
+using GameSim.Materials;
 
 namespace GameSim.Crafting;
 
@@ -35,16 +36,16 @@ public sealed record Recipe(
 /// </summary>
 public static class RecipeTable
 {
-    /// <summary>Material grade per key (R4/R6): grade feeds the quality-roll shift.</summary>
+    /// <summary>Material grade per key (R4/R6): grade feeds the quality-roll shift. Derived from
+    /// <see cref="MaterialRegistry"/> (the single source of truth, M1) — the grades of the frozen
+    /// priced pool (the five Mine ores), byte-identical to the old hand-written map. Registered
+    /// add-on materials (electrum, orichalcum) are deliberately absent: they are not in the priced
+    /// pool, so a craft with them is still rejected exactly as before (draw-neutral, R4).</summary>
     public static readonly ImmutableSortedDictionary<string, int> MaterialGrades =
-        new Dictionary<string, int>
-        {
-            ["copper"] = 1,
-            ["iron"] = 2,
-            ["steel"] = 3,
-            ["mithril"] = 4,
-            ["adamant"] = 5,
-        }.ToImmutableSortedDictionary(StringComparer.Ordinal);
+        MaterialRegistry.PricedPool.ToImmutableSortedDictionary(
+            key => key,
+            MaterialRegistry.Grade,
+            StringComparer.Ordinal);
 
     /// <summary>All recipes, keyed by <see cref="Recipe.RecipeId"/>. Sorted for deterministic iteration.</summary>
     /// <summary>The profession key every recipe in this table belongs to (R4/P1).</summary>

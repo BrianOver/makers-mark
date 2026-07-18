@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
-using GameSim.Drama;
 using GameSim.Factions;
+using GameSim.Materials;
 using GameSim.Venues;
 using Xunit;
 
@@ -27,10 +27,13 @@ namespace GameSim.Tests.Factions;
 /// </summary>
 public class FactionConformanceTests
 {
-    /// <summary>The in-path ore keys a faction may legitimately supply in this single-venue core —
-    /// the Mine's floor materials (copper…adamant), the source of truth <c>OrePricing</c> prices.</summary>
+    /// <summary>The ore keys a registered faction may legitimately supply — every material in
+    /// <see cref="MaterialRegistry.All"/> (M1: the single source of truth for price + grade). This is
+    /// the G8 flip: the pin now reads the registry, not the frozen Mine floor list, so a registered
+    /// faction may supply ANY registered material — the five Mine ores AND add-on materials such as
+    /// the Crownsguard's electrum/orichalcum. (Registering the Crownsguard turns this suite green.)</summary>
     private static readonly ImmutableHashSet<string> KnownOreKeys =
-        VenueRegistry.Mine.Floors.Select(f => f.OreKey).ToImmutableHashSet(StringComparer.Ordinal);
+        MaterialRegistry.All.Keys.ToImmutableHashSet(StringComparer.Ordinal);
 
     public static TheoryData<string> AllFactionIds()
     {
@@ -96,10 +99,11 @@ public class FactionConformanceTests
         {
             Assert.False(string.IsNullOrWhiteSpace(oreKey), $"{id}: blank ore key");
 
-            // Known ore key (copper…adamant) sourced from BOTH the Mine venue and OrePricing —
-            // a registered faction can only supply ore the game actually mints and prices (R6).
+            // Registered material (M1): a faction may only supply a material the registry knows and
+            // prices (R6). Reads the registry directly — so an add-on material (electrum/orichalcum)
+            // that OrePricing does not price on the frozen live path is still a valid supply key.
             Assert.Contains(oreKey, KnownOreKeys);
-            Assert.True(OrePricing.UnitPrice(oreKey) > 0, $"{id}: ore key '{oreKey}' has no positive price");
+            Assert.True(MaterialRegistry.UnitPrice(oreKey) > 0, $"{id}: ore key '{oreKey}' has no positive price");
         }
 
         // No ore key repeats within one faction's supply list.
