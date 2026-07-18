@@ -25,6 +25,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(FloorRecordSet), "floorRecord")]
 [JsonDerivedType(typeof(TariffApplied), "tariffApplied")]
 [JsonDerivedType(typeof(MaterialPurchased), "materialPurchased")]
+[JsonDerivedType(typeof(RecoveryStipendGranted), "recoveryStipend")]
 [JsonDerivedType(typeof(FactionStandingShifted), "factionStandingShifted")]
 [JsonDerivedType(typeof(PartyCampReport), "partyCampReport")]
 [JsonDerivedType(typeof(SupplyDelivered), "supplyDelivered")]
@@ -123,3 +124,9 @@ public sealed record PartyRecalled(ImmutableList<HeroId> Party) : GameEvent;
 /// reconciles against (KTD3; TariffApplied / SupplyDelivered precedent): the vendor's purse is
 /// unmodelled, so the cost leaves the modelled town total.</summary>
 public sealed record MaterialPurchased(string MaterialKey, int Quantity, int Cost) : GameEvent;
+
+/// <summary>The destitution floor fired (Playable Core R5/KD3): the player hit a true dead-end
+/// (cannot buy, craft, stock, or sell anything) and the Morning recovery topped gold up by
+/// <paramref name="Amount"/>. A recorded gold SOURCE the conservation invariant reconciles
+/// against (mirror of the discount-tariff source term). Never fires on a solvent trace.</summary>
+public sealed record RecoveryStipendGranted(int Amount) : GameEvent;

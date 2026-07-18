@@ -29,6 +29,7 @@ public static class GameComposition
     public static GameKernel BuildKernel() => new(
         ImmutableList.Create<IPhaseSystem>(
             new FactionDriftSystem(), // Morning, FIRST — drift settles standing before anything reads it (KTD5); draws no RNG
+            new DestitutionRecoverySystem(), // Playable Core U5: no-softlock floor (R5/KD3); draws no RNG, never fires solvent — stream unchanged
             new RivalRestockSystem(),
             new RecruitSystem(),
             new GossipSystem(),

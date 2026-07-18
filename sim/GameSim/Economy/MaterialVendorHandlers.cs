@@ -30,6 +30,18 @@ public sealed class MaterialVendorHandlers : IActionHandler
     /// MaterialVendorHandlersTests; flagged for balance confirmation (plan 005 KTD-C).</summary>
     public const int VendorMarkupPermille = 250;
 
+    /// <summary>
+    /// The vendor's aggregate line quote — the ONE pricing formula (class doc): ceiling
+    /// division keeps the markup alive on a single unit. Shared by the handler, the
+    /// ForgePanel display quote, and <see cref="DestitutionRecoverySystem"/>'s
+    /// cheapest-path-to-a-craft arithmetic, so the three can never drift.
+    /// </summary>
+    public static int QuoteCost(string materialKey, int quantity)
+    {
+        long baseLine = (long)quantity * Materials.MaterialRegistry.UnitPrice(materialKey);
+        return (int)((baseLine * (1000 + VendorMarkupPermille) + 999) / 1000);
+    }
+
     public bool CanHandle(PlayerAction action, DayPhase phase) =>
         action is BuyMaterialAction && phase == DayPhase.Morning;
 
@@ -54,19 +66,14 @@ public sealed class MaterialVendorHandlers : IActionHandler
             return (state, new RejectedAction(action, $"The vendor does not sell '{buy.MaterialKey}'."));
         }
 
-        // 3. Price the line: ceiling division keeps the markup alive on a single unit
-        //    (see class doc). Long arithmetic bounds the intermediate product.
-        long baseLine = (long)buy.Quantity * MaterialRegistry.UnitPrice(buy.MaterialKey);
-        long marked = baseLine * (1000 + VendorMarkupPermille);
-        long costLong = (marked + 999) / 1000;
+        // 3. Price the line via the shared quote (see QuoteCost — the one pricing formula).
+        var cost = QuoteCost(buy.MaterialKey, buy.Quantity);
 
         // 4. The player must be able to pay.
-        if (costLong > state.Player.Gold)
+        if (cost > state.Player.Gold)
         {
-            return (state, new RejectedAction(action, $"Not enough gold: need {costLong}, have {state.Player.Gold}."));
+            return (state, new RejectedAction(action, $"Not enough gold: need {cost}, have {state.Player.Gold}."));
         }
-
-        var cost = (int)costLong;
 
         // All checks passed — the exact move: gold down by cost, materials up by quantity,
         // stamped sink event. No RNG, no other state touched.
