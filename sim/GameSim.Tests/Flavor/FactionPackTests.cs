@@ -96,14 +96,14 @@ public class FactionPackTests
         {
             var slots = SlotsFor(FlavorEngine.BaseKey(key));
             var seen = new HashSet<string>(StringComparer.Ordinal);
-            for (var eventId = 1UL; eventId <= 64UL; eventId++)
+            for (var eventId = 1UL; eventId <= 160UL; eventId++)
             {
                 seen.Add(FlavorEngine.Render(FactionPack.Pack, key, slots, Campaign, eventId));
             }
 
             Assert.True(
                 seen.Count == variants.Count,
-                $"'{key}': {seen.Count}/{variants.Count} variants reached over 64 event ids");
+                $"'{key}': {seen.Count}/{variants.Count} variants reached over 160 event ids");
         }
     }
 
