@@ -12,4 +12,8 @@ if not exist "%GODOT%" (
   pause
   exit /b 1
 )
+REM R8: headless import pre-pass so committed art (.png + .png.import) renders on a fresh
+REM checkout — GD.Load needs the .godot/imported/*.ctex cache, which a plain clone lacks.
+"%GODOT%" --path "%~dp0godot" --headless --import --quit
+
 "%GODOT%" --path "%~dp0godot"
