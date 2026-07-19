@@ -99,6 +99,14 @@ public partial class HeroSprite : Control
     /// <summary>Anchor point the wander drifts around; deterministic per hero id.</summary>
     public Vector2 Home { get; private set; }
 
+    /// <summary>
+    /// Point a LW2 speech bubble's tail should touch — roughly the top of the standing figure,
+    /// tracking whatever <see cref="Position"/> currently is (walk bob / breath bob included), so
+    /// a bubble that repositions here every tick rides along with the hero instead of floating in
+    /// a fixed spot.
+    /// </summary>
+    public Vector2 HeadAnchor => Position + new Vector2(Size.X / 2f, -SpriteRise);
+
     /// <summary>The sim day, pushed in by <see cref="TownScene.Refresh"/> every tick — the
     /// second half of the anchor-vignette's (heroId, day) determinism key. Presentation-only;
     /// never read by the sim.</summary>
