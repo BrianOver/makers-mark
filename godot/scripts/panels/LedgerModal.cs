@@ -82,8 +82,17 @@ public partial class LedgerModal : SimPanel
             return;
         }
 
-        foreach (var card in cards)
+        for (var i = 0; i < cards.Count; i++)
         {
+            var card = cards[i];
+
+            // P007 polish: each hero's return is now a themed Card — structural wrap only,
+            // every label/row below still renders the identical text it always has.
+            var wrap = Card($"LedgerCard_{i}");
+            _cards!.AddChild(wrap);
+            var cardBody = new VBoxContainer();
+            wrap.AddChild(cardBody);
+
             // U5: fate prose lives on the card (LedgerPack via FlavorEngine) — hero name,
             // floor, and gold earned are guaranteed verbatim in the line (R4). The purse
             // is a panel fact, not a pack slot, so it stays composed here.
@@ -92,12 +101,12 @@ public partial class LedgerModal : SimPanel
                 : card.FateLine;
             if (card.Survived)
             {
-                AddLabel(_cards!, fate);
+                AddLabel(cardBody, fate);
             }
             else
             {
                 // Death card: a skull glyph marks the fate line (R12).
-                var fateRow = AddRow(_cards!);
+                var fateRow = AddRow(cardBody);
                 AddIcon(fateRow, IconRegistry.Glyph("skull"));
                 AddLabel(fateRow, fate).AddThemeColorOverride("font_color", new Color(1f, 0.45f, 0.45f));
             }
@@ -105,13 +114,13 @@ public partial class LedgerModal : SimPanel
             foreach (var beat in card.Beats)
             {
                 // Attribution beats are the spine of the game (R11) — highlighted.
-                var beatLabel = AddLabel(_cards!, $"    ** {beat.Beat}: {beat.Detail} (floor {beat.Floor}) **");
+                var beatLabel = AddLabel(cardBody, $"    ** {beat.Beat}: {beat.Detail} (floor {beat.Floor}) **");
                 beatLabel.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.2f));
             }
 
             foreach (var ore in card.OreOffers)
             {
-                var row = AddRow(_cards!);
+                var row = AddRow(cardBody);
                 AddIcon(row, IconRegistry.Ore(ore.MaterialKey));
                 AddLabel(row, $"    offers {ore.Quantity}x {ore.MaterialKey} at {ore.UnitPrice}g each");
                 var offer = ore;
