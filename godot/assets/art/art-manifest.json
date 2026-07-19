@@ -1,4 +1,6 @@
 {
+  "gloomwood-backdrop": { "diffuse": true, "normal": false },
+  "gloomwood-entrance": { "diffuse": true, "normal": true },
   "hero-mystic": { "diffuse": true, "normal": true },
   "hero-striker": { "diffuse": true, "normal": true },
   "hero-vanguard": { "diffuse": true, "normal": true },
@@ -46,6 +48,8 @@
   "monster-forgeworm": { "diffuse": true, "normal": true },
   "monster-ore-golem": { "diffuse": true, "normal": true },
   "monster-tunnel-spider": { "diffuse": true, "normal": true },
+  "sunkencrypt-backdrop": { "diffuse": true, "normal": false },
+  "sunkencrypt-entrance": { "diffuse": true, "normal": true },
   "town-forge": { "diffuse": true, "normal": true },
   "town-market": { "diffuse": true, "normal": true },
   "town-mine-gate": { "diffuse": true, "normal": true },

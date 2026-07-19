@@ -29,7 +29,8 @@ public sealed class SunkenCryptSpecs : IAssetModule
             Kind: AssetKind.Backdrop,
             Subject: "a flooded catacomb interior beneath an old chapel, submerged stone archways and "
                 + "toppled sarcophagi, still black water mirroring vaulted funerary crypts, drowned "
-                + "pillars receding into gloom, atmospheric wide backdrop scene"),
+                + "pillars receding into gloom, atmospheric wide backdrop scene",
+            PaletteId: "crypt"),
         new AssetSpec(
             Id: "sunkencrypt-entrance",
             Module: "sunkencrypt",
@@ -38,6 +39,7 @@ public sealed class SunkenCryptSpecs : IAssetModule
             Subject: "a sunken crypt entrance, a half-drowned chapel crypt doorway carved into old stone, "
                 + "water spilling down worn steps into the dark below, a broken iron gate hanging ajar, "
                 + "weathered funerary statues flanking the arch",
+            PaletteId: "crypt",
             NormalMap: true),
 
         // ---- Floor monsters F1-F5 (map to C2 VenueFloor.MonsterKind) --------------------------

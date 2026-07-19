@@ -1,0 +1,20 @@
+{
+  "Seed": 1453651214,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "061c4df76590d2c040543444ad5349c958cfa70102147e328b6336ba3566ed79",
+  "NormalSha256": null,
+  "Uid": "uid://ceudji1bw1dpd",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c3 (seed+3) -- flooded colonnade with a centered altar cross + foreground skulls on the water, strongest atmospheric depth (near skulls, mid pillars, far lit apse) and the most distinctly funerary/crypt read of the batch. c0 was a multi-view concept sheet (not a single scene); c1/c2 were close variants of the same colonnade, both usable backups.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse. Same deviation as gloomwood-backdrop: cutout.py's BiRefNet segmentation was skipped (verified it would discard the majority of a full-bleed backdrop as 'background'); the raw 1024x1024 SDXL output was format-converted straight to a fully-opaque RGBA (no normalmap.py -- AssetSpec.NormalMap=false, flat far plane per SunkenCryptSpecs.cs). PaletteId fixed from the file's default ('house') to 'crypt' (art/specs/sunkencrypt/SunkenCryptSpecs.cs) for this asset and sunkencrypt-entrance ONLY, to match the module's own doc-comment ('All crypt palette family') and the plan's family-distinctness requirement -- the other 6 sunkencrypt specs (monsters/prop, deferred long tail) were left untouched."
+  }
+}

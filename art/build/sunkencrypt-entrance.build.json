@@ -1,0 +1,20 @@
+{
+  "Seed": 493287220,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "25eb5d703fd055e5302806d6f3ac0d8f052f2238e668a2e447b099b17d2a075e",
+  "NormalSha256": "6a21691e329398591436a855ce3172effcdf92e7c86907a35b9f9beb5e765a20",
+  "Uid": "uid://e34q6p6kdit1",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c3 (seed+3) -- single centered stone archway with an ornate iron gate door, cross above, water pooling at the threshold, plain dark neutral background, very clean silhouette. c0/c1 were multi-view concept sheets (rejected -- not single subject); c2 was a strong single-subject alternate (a smaller shrine-like aedicula) kept as a backup. Full chain: cutout.py --trim (BiRefNet) -> normalmap.py 2.5 (Sobel).",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Building world sprite per AssetSpec.NormalMap=true. Normal-map QA (bumps brighten toward a swept PointLight2D, windowed pilot scene) passed with the existing Flip-Y-OFF import convention. PaletteId fixed from 'house' to 'crypt' for this asset and sunkencrypt-backdrop (see sunkencrypt-backdrop.build.json note)."
+  }
+}

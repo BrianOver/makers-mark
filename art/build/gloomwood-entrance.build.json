@@ -1,0 +1,20 @@
+{
+  "Seed": 2019880327,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "3368b44d19b9383d2a75f193ba65804e466b45fa3f972da0f18a602c55a8a4a5",
+  "NormalSha256": "26dc84f52bc9932577714b996f620b6a9a09f981e669e8ef5f5d1cf4f8e9c51d",
+  "Uid": "uid://cwuqofxy6vwk5",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c3 (seed+3) -- single centered moss-covered mound doorway, plain dark neutral background (clean cutout), lit lantern, clear readable silhouette. c0/c2 read well artistically but sat inside a full natural-forest scene (not neutral bg, weaker silhouette for cutout); c1 was a stone archway that undersold the 'gnarled root-woven timber gate' subject. Full chain: cutout.py --trim (BiRefNet) -> normalmap.py 2.5 (Sobel).",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Building world sprite per AssetSpec.NormalMap=true. Normal-map QA (bumps brighten toward a swept PointLight2D, windowed pilot scene) passed with the existing Flip-Y-OFF import convention."
+  }
+}

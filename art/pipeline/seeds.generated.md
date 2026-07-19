@@ -87,3 +87,27 @@ clean single-subject, prop-free, non-pedestal draw landed; tunnel-spider and ore
 the first 4-candidate pass. Normal-map QA (bumps brighten toward a swept PointLight2D, per
 `art/pipeline/README.md` §3) passed for all 5 with the existing Flip-Y-OFF import convention — no
 script or import-setting change needed.
+
+## U6 batch (P006) — Gloomwood + Sunken Crypt backdrops and entrances, 2026-07-18
+
+| Id | Track | Seed | Hand-finished | Build-half |
+|----|-------|------|---------------|------------|
+| gloomwood-backdrop | active | 1385130324+1 (candidate, resolved 1385130325) | no | `art/build/gloomwood-backdrop.build.json` |
+| gloomwood-entrance | active | 2019880324+3 (candidate, resolved 2019880327) | no | `art/build/gloomwood-entrance.build.json` |
+| sunkencrypt-backdrop | active | 1453651211+3 (candidate, resolved 1453651214) | no | `art/build/sunkencrypt-backdrop.build.json` |
+| sunkencrypt-entrance | active | 493287217+3 (candidate, resolved 493287220) | no | `art/build/sunkencrypt-entrance.build.json` |
+
+Both venues generated at 1024² Active settings (28/6.5/dpmpp_2m/karras, no LoRA) via ComfyUI MCP,
+4 candidates per asset (no escalation needed — all 4 first-pass batches cleared). The two
+**entrances** ran the full chain (BiRefNet `cutout.py --trim` → Sobel `normalmap.py … 2.5`);
+normal-map QA (bumps brighten toward a swept PointLight2D, windowed pilot scene per README §3)
+passed both on the existing Flip-Y-OFF import convention. The two **backdrops** deliberately
+**skipped** `cutout.py`: an empirical check (alpha histogram on the gloomwood-backdrop draw) showed
+BiRefNet's salient-object segmentation discards ~97% of a full-bleed atmospheric scene as
+"background," which would gut the `AssetKind.Backdrop` "fills the plane" contract — so the raw
+SDXL output is instead format-converted straight to a fully-opaque RGBA (no normal map, per
+`NormalMap: false` on both backdrop specs). Also fixed: `art/specs/sunkencrypt/SunkenCryptSpecs.cs`
+was missing `PaletteId: "crypt"` on `sunkencrypt-backdrop`/`sunkencrypt-entrance` (it silently
+defaulted to `house`, contradicting the file's own doc-comment and the plan's family-distinctness
+requirement) — added for these 2 in-scope specs only; the other 6 (monsters/prop, deferred long
+tail) are untouched.
