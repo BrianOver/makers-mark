@@ -1,0 +1,20 @@
+{
+  "Seed": 867803438,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "95631c50679073eea351958bd15747ba6e95bdeb48619f4a580db463f8b82e88",
+  "NormalSha256": null,
+  "Uid": "uid://c626e3wxng5dg",
+  "HandFinished": true,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "8-20 candidates generated locally via ComfyUI MCP; curated hard per art/pipeline/README.md",
+    "paintoverNote": "never escaped character/urn bias in its own seed family after 20 candidates; reused the item-round-shield round2 c5 sheet (same generation event), manually cropped the top-right cell (distinct copper-toned boss) before cutout",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py); no normal map (flat menu icon per AssetSpec.NormalMap=false)"
+  }
+}

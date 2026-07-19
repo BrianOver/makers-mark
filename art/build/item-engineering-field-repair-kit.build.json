@@ -1,0 +1,20 @@
+{
+  "Seed": 863260644,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "d13f84b9f8532c0dc8d1987c8732ed507a362463e0e783e26ece3f95d9b2f82b",
+  "NormalSha256": null,
+  "Uid": "uid://bt5ngdw7m2e82",
+  "HandFinished": true,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "8-20 candidates generated locally via ComfyUI MCP; curated hard per art/pipeline/README.md",
+    "paintoverNote": "batch1 c5 was a 4-case sheet; manually cropped the bottom-right open case before cutout",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py); no normal map (flat menu icon per AssetSpec.NormalMap=false)"
+  }
+}

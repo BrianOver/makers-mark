@@ -1,0 +1,20 @@
+{
+  "Seed": 1489590098,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "7daf5589efbaf7fb7b2feebc89267720ebfc6a29b55fc1d4f1c9cb6f31a3fe7b",
+  "NormalSha256": null,
+  "Uid": "uid://b13hi12mvryep",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "8-20 candidates generated locally via ComfyUI MCP; curated hard per art/pipeline/README.md",
+    "paintoverNote": "4 rounds (~38 candidates); round4 c0, featureless-mannequin front/back pair, clear chainmail ring texture",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py); no normal map (flat menu icon per AssetSpec.NormalMap=false)"
+  }
+}
