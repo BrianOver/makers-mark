@@ -30,6 +30,15 @@ public partial class TownScene : SimPanel
     private static readonly Vector2 BuildingSize = new(96, 72);
     private static readonly Vector2 MemorialPlotOrigin = new(20, 60);
 
+    // LW1 rally-and-depart: party members gather here (spaced by file slot) before peeling
+    // off toward GateWalkTarget one at a time — "exit in file" instead of a simultaneous pop.
+    private static readonly Vector2 RallyCenter = GateWalkTarget - new Vector2(70, 0);
+    private const float RallyFileSpacing = 16f;
+    private const float FileExitStaggerSeconds = 0.35f;
+
+    /// <summary>Smooth phase-tint crossfade duration (LW1: replaces the old instant snap).</summary>
+    public const float TintTweenSeconds = 1.5f;
+
     private readonly Dictionary<int, HeroSprite> _sprites = [];
 
     private Control? _heroLayer;
@@ -37,6 +46,10 @@ public partial class TownScene : SimPanel
     private LitTownOverlay? _litOverlay;
     private bool _built;
     private double _townTime;
+
+    private Color _tintFrom = Colors.White;
+    private Color _tintTarget = Colors.White;
+    private float _tintElapsed = TintTweenSeconds; // starts "settled" — EnsureBuilt sets the real initial tint
 
     /// <summary>A hero sprite was clicked — payload is HeroId.Value (R20).</summary>
     public event Action<int>? HeroClicked;
@@ -79,6 +92,18 @@ public partial class TownScene : SimPanel
     public void Animate(double delta)
     {
         _townTime += delta;
+
+        // LW1: crossfade the ambient tint over TintTweenSeconds instead of the old instant
+        // snap. Frame-accumulated (never wall-clock), so it fast-forwards exactly like the
+        // sprite walks below — Refresh() arms a new (from, target) pair every phase completion.
+        if (_tintElapsed < TintTweenSeconds)
+        {
+            _tintElapsed = Mathf.Min(_tintElapsed + (float)delta, TintTweenSeconds);
+            // Snap bit-exact to the target on settle (never leave the compare-by-value tests —
+            // and TintFor callers generally — at a Lerp-rounding hair off the pinned table).
+            Modulate = _tintElapsed >= TintTweenSeconds ? _tintTarget : _tintFrom.Lerp(_tintTarget, _tintElapsed / TintTweenSeconds);
+        }
+
         foreach (var sprite in _sprites.Values)
         {
             sprite.Advance(delta, _townTime);
@@ -97,7 +122,16 @@ public partial class TownScene : SimPanel
         var state = Adapter.CurrentState;
         ReconcileSprites(state);
         RebuildMemorials(state);
-        Modulate = TintFor(state.Phase);
+        foreach (var sprite in _sprites.Values)
+        {
+            sprite.Day = state.Day; // LW1 anchor-vignette determinism key (heroId + day)
+        }
+
+        // LW1: arm a crossfade from whatever is currently on-screen (possibly still mid-tween
+        // from the previous tick) toward the new phase's tint, instead of snapping Modulate.
+        _tintFrom = Modulate;
+        _tintTarget = TintFor(state.Phase);
+        _tintElapsed = 0f;
         // The lit backdrop tracks the same phase tint on its SubViewport-scoped CanvasModulate.
         _litOverlay?.ApplyPhase(state.Phase);
     }
@@ -123,10 +157,21 @@ public partial class TownScene : SimPanel
         switch (completedPhase)
         {
             case DayPhase.Morning:
-                // Everyone alive parties up (PartyFormation covers the whole roster).
-                foreach (var sprite in _sprites.Values.Where(s => s.State != HeroSprite.TownState.Away))
+                // Everyone alive parties up (PartyFormation covers the whole roster). LW1:
+                // rally at the gate first (spaced, so the cluster reads as a group), dwell
+                // together, then exit in file — staggered by RallyFileSpacing/index so they
+                // peel off one at a time instead of popping through the gate simultaneously.
+                // WalkingIn is excluded: a hero in that state got there via ReconcileSprites
+                // JUST NOW in this same Refresh (a RecruitArrived walk-in) — they cannot also
+                // be marching out the same instant they walked in.
+                var departing = _sprites.Values
+                    .Where(s => s.State != HeroSprite.TownState.Away
+                                && s.State != HeroSprite.TownState.WalkingIn)
+                    .OrderBy(s => s.HeroValue)
+                    .ToList();
+                for (var i = 0; i < departing.Count; i++)
                 {
-                    sprite.BeginDeparture();
+                    departing[i].BeginDeparture(RallySpotFor(i, departing.Count), i * FileExitStaggerSeconds);
                 }
 
                 break;
@@ -182,8 +227,19 @@ public partial class TownScene : SimPanel
         }
     }
 
+    /// <summary>Party-file rally slot near the gate — spread across a small vertical line so
+    /// the group reads as a cluster, not a stack (LW1).</summary>
+    private static Vector2 RallySpotFor(int index, int count) =>
+        RallyCenter + new Vector2(0, (index - (count - 1) / 2f) * RallyFileSpacing);
+
     private void ReconcileSprites(GameState state)
     {
+        // LW1 recruit arrival: a hero newly present THIS tick because RecruitArrived fired
+        // (RecruitSystem is a Morning system, stamped in the same tick whose completion this
+        // Refresh renders) walks in from off-screen instead of popping in at Home already
+        // Away/Wandering. Anyone else new (initial roster bind) keeps the old placement.
+        var recruitIds = Adapter!.LastEvents.OfType<RecruitArrived>().Select(e => e.Hero.Value).ToHashSet();
+
         foreach (var hero in state.Heroes.Values.Where(h => h.Alive))
         {
             if (_sprites.ContainsKey(hero.Id.Value))
@@ -202,7 +258,11 @@ public partial class TownScene : SimPanel
             };
             _heroLayer!.AddChild(sprite);
             _sprites[hero.Id.Value] = sprite;
-            if (state.Phase == DayPhase.Expedition)
+            if (recruitIds.Contains(hero.Id.Value))
+            {
+                sprite.BeginRecruitWalkIn(); // spawn off-screen left, walk in to Home
+            }
+            else if (state.Phase == DayPhase.Expedition)
             {
                 sprite.SetAway(); // bound mid-expedition — they are in the Mine
             }
@@ -298,7 +358,7 @@ public partial class TownScene : SimPanel
         // TabContainer (that scene surgery is V4b, out of this slice); Modulate on this Control
         // multiplies only the town subtree and stops at the panel boundary. It replaces V5a's
         // alpha-overlay ColorRect. Set here so the town reads warm before the first Refresh;
-        // every tick re-applies TintFor(state.Phase).
+        // every tick arms a crossfade toward TintFor(state.Phase) (LW1), consumed by Animate.
         Modulate = TintFor(DayPhase.Morning);
 
         // U16: tileable cobble ground (void/iron) behind everything.
