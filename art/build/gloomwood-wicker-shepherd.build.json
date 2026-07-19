@@ -1,0 +1,20 @@
+{
+  "Seed": 1761010747,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "0b0a64225210a7a217963fb0ed01fbae374bfd0bf730c03cc855843497c36294",
+  "NormalSha256": "e0abb16b74e5f3f5b817dd225b5f89374bbd8cf50ff06c6a1c2610cdbbdd5566",
+  "Uid": "uid://dmebim528uxo",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "round 1: 4 candidates (seed+0..+3), all rejected. round 2 escalation: 4 more candidates (seed+4..+7) with hardened negative (concept sheet, character sheet, turnaround, multiple views, grid layout, item icons); curated per art/pipeline/README.md",
+    "paintoverNote": "round 1 all rejected -- 2 multi-panel concept sheets, 1 two-figure comparison sheet, 1 single figure with an extra companion lamb plus an off-model bird/skull face. round 2 c2 (seed+6, offset+2 within the round) -- a single hooded lantern-bearing wood-walker holding its own staff+lantern, full body, clean silhouette; accepted despite the face being obscured by a wrapped scarf rather than showing the literal 'burlap head with button eyes' (SDXL's strong pull toward person-in-robe over wicker-scarecrow material, even after hardening).",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Monster world sprite per AssetSpec.NormalMap=true. Normal-map QA: normalmap.py (Sobel height-from-luminance, strength 2.5) and the Flip-Y-OFF import convention are unchanged from the prior passing waves (P006 U1/U4-U6); this wave's windowed pilot-scene sweep directly verified 6 representative samples (gloomwood-old-mossjaw, gloomwood-toll-booth, sunkencrypt-undertow, sunkencrypt-crypt-crab, props-noticeboard, props-tavern-cat) with no inversion/caving on any -- no per-asset regression risk since the script and import setting are both untouched."
+  }
+}

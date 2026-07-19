@@ -1,0 +1,20 @@
+{
+  "Seed": 413675621,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "5ce79b89d7bdce76f5720cd228c6ad2b65ae82af554d992d69453067da0abddb",
+  "NormalSha256": "d272caa2dfb1d420ef6a66a97b6c64e744adede39515d8c5deaf8ef2f358ca0d",
+  "Uid": "uid://3ds1w6wx32c7",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c0 (seed+0) -- wooden ore cart on iron-rimmed wheels, hinged lid open showing heaped ore chunks, worn plank fittings, clean background aside from a tiny corner mark outside the silhouette (removed by --trim). c1 was a 3-panel comparison sheet; c2 and c3 both leaned photorealistic/3d-render (violating the style-track negative).",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Prop world sprite per AssetSpec.NormalMap=true. Normal-map QA: normalmap.py (Sobel height-from-luminance, strength 2.5) and the Flip-Y-OFF import convention are unchanged from the prior passing waves (P006 U1/U4-U6); this wave's windowed pilot-scene sweep directly verified 6 representative samples (gloomwood-old-mossjaw, gloomwood-toll-booth, sunkencrypt-undertow, sunkencrypt-crypt-crab, props-noticeboard, props-tavern-cat) with no inversion/caving on any -- no per-asset regression risk since the script and import setting are both untouched."
+  }
+}

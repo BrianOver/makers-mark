@@ -1,0 +1,20 @@
+{
+  "Seed": 1364196959,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "f6c2ebf44c57a4ca76f1d29172ed47dc8b1466be70f332b2b1cfdeafa4bcb504",
+  "NormalSha256": "f3b2c956c10d62293937b9163b6a7e3b21c561cce70ee95a697050b7783bfc27",
+  "Uid": "uid://b3bgw1m24jxxl",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c1 (seed+1) -- a shallow bronze dish holding votive coins beneath a small candle-lit arch, clean background. c0 read as an odd bell/urn shape with a stray sword-flag detail; c2 read as a balance-scale/altar rather than a plate; c3 read as furniture (a small pedestal table) without visible coins.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Prop world sprite per AssetSpec.NormalMap=true. Normal-map QA: normalmap.py (Sobel height-from-luminance, strength 2.5) and the Flip-Y-OFF import convention are unchanged from the prior passing waves (P006 U1/U4-U6); this wave's windowed pilot-scene sweep directly verified 6 representative samples (gloomwood-old-mossjaw, gloomwood-toll-booth, sunkencrypt-undertow, sunkencrypt-crypt-crab, props-noticeboard, props-tavern-cat) with no inversion/caving on any -- no per-asset regression risk since the script and import setting are both untouched."
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "Seed": 1331430840,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "d4f16e21c29ed5e713e846c9adc75a691b023cd424775839743993a11a18bfae",
+  "NormalSha256": "5e0dddb88cfd7893f2cc4c71fd6a2ca28580976e3739f675c2f47d0fb4121958",
+  "Uid": "uid://nj8lho4jlprb",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c0 (seed+0) -- full-body standing pose, thorny bramble-vine texture across its back, big soft eyes, tiny tusks; clean single subject. c1 was cuter/rounder but read more mossy-crown than thorny-vine; c2 leaned feral/less charming; c3 drew an anthropomorphized clothed boar-person bust (the known character-sheet/anthropomorphize attractor for creature nouns) -- rejected.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Monster world sprite per AssetSpec.NormalMap=true. Normal-map QA: normalmap.py (Sobel height-from-luminance, strength 2.5) and the Flip-Y-OFF import convention are unchanged from the prior passing waves (P006 U1/U4-U6); this wave's windowed pilot-scene sweep directly verified 6 representative samples (gloomwood-old-mossjaw, gloomwood-toll-booth, sunkencrypt-undertow, sunkencrypt-crypt-crab, props-noticeboard, props-tavern-cat) with no inversion/caving on any -- no per-asset regression risk since the script and import setting are both untouched."
+  }
+}

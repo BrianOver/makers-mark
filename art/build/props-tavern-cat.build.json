@@ -1,0 +1,20 @@
+{
+  "Seed": 183191284,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "a5119584e78f21307137845712d58d93a827373cdab3d4b59c234079a8aabecf",
+  "NormalSha256": "255e11dfea9615c6ebf0a07c7a4b823c77e3bc0072d14b0d2a4eee99526e8dd0",
+  "Uid": "uid://weqokbmyruac",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c1 (seed+1) -- plump tabby cat curled asleep on a barrel, content and rounded, big soft ears, clean read despite a faint dark background shadow blob (removed by --trim). c0 was a multi-panel grid; c2 had a visible rectangular border frame around the scene (violates the border negative); c3 showed the cat sitting upright/alert rather than curled asleep.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Sprite world sprite per AssetSpec.NormalMap=true. Normal-map QA (windowed Sprite2D + textured PointLight2D pilot scene, deleted before commit, per art/pipeline/README.md) directly swept the light left/right on this asset -- bumps brightened toward the light on both sides, no caved-in/inverted relief. Passed on the existing Flip-Y-OFF import convention."
+  }
+}

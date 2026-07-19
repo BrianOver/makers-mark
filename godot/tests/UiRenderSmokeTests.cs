@@ -24,8 +24,8 @@ namespace GodotClient.Tests;
 /// scope boundary.
 ///
 /// <para>The suite runs twice. Once over the default fresh campaign — whatever mix of committed/
-/// absent art that implies; Depths' "mine-backdrop" is already absent from the committed
-/// manifest, so even this run exercises a real KTD3 fallback. And once over
+/// absent art that implies (as of art wave 2, Depths' "mine-backdrop" is committed too, so this
+/// run no longer exercises a Depths fallback). And once over
 /// <see cref="ArtAbsentWorld"/>: a fixture whose Shop shelf holds one item carrying a recipe id no
 /// art pipeline ever generated — the "unknown-key probe" this plan's execution note calls for in
 /// place of any filesystem trick (committed assets under <c>godot/assets/art/</c> are never
@@ -78,22 +78,20 @@ public class UiRenderSmokeTests
     }
 
     [TestCase]
-    public void ArtAbsentWorld_ForcesArtRectFallback_OnShopAndDepths()
+    public void ArtAbsentWorld_ForcesArtRectFallback_OnShop()
     {
         // KTD3 evidence: the unknown-key probe this fixture creates (Shop's Mystery Blade recipe
-        // id; Depths' "mine-backdrop", permanently uncommitted in the real manifest regardless of
-        // fixture) actually reaches the ArtRect fallback path, not just a panel that happens to
-        // still lay out for some unrelated reason.
+        // id) actually reaches the ArtRect fallback path, not just a panel that happens to still
+        // lay out for some unrelated reason. Depths dropped out of this probe in art wave 2 —
+        // "mine-backdrop" is now committed, so Depths' ArtRect resolves real art under every
+        // fixture (VenueHubTests.VenueBackdropArt_Present_RendersRealArt_NotFallback covers that).
         var ui = MountMainUi(new SimAdapter(ArtAbsentWorld()));
         try
         {
-            foreach (var tabName in new[] { "Shop", "Depths" })
-            {
-                var panel = PanelFor(ui, tabName);
-                var placeholders =
-                    panel.FindChildren("ArtRectFallback", "PanelContainer", recursive: true, owned: false);
-                AssertThat(placeholders.Count > 0).IsTrue();
-            }
+            var panel = PanelFor(ui, "Shop");
+            var placeholders =
+                panel.FindChildren("ArtRectFallback", "PanelContainer", recursive: true, owned: false);
+            AssertThat(placeholders.Count > 0).IsTrue();
         }
         finally
         {
@@ -135,10 +133,9 @@ public class UiRenderSmokeTests
     /// <see cref="AdvanceDay"/>, unlike an unregistered-class fixture) — whose shelf carries one
     /// item with a recipe id no art pipeline ever generated (mirrors
     /// <c>ShopPanelTests.ShelfWithUncommittedArt</c>): the KTD3 unknown-key probe for the Shop
-    /// tab. Depths needs no override — "mine-backdrop" has no committed art under ANY fixture
-    /// (only gloomwood/sunkencrypt backdrops are generated so far, per
-    /// <c>VenueHubTests</c>), so its ArtRect fallback is already forced by the real committed
-    /// manifest.</summary>
+    /// tab. Depths no longer needs (or gets) an override here — "mine-backdrop" is committed as of
+    /// art wave 2 (<c>art/specs/mine/MineSpecs.cs</c>), so Depths' ArtRect resolves real art under
+    /// this fixture too; see <c>VenueHubTests.VenueBackdropArt_Present_RendersRealArt_NotFallback</c>.</summary>
     private static GameState ArtAbsentWorld()
     {
         var baseState = GameFactory.NewGame(9500);

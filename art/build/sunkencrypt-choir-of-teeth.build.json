@@ -1,0 +1,20 @@
+{
+  "Seed": 2098949235,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "483857f34f99f7d66e23b17941944a150480c7d5299ac3baafdae8d2e7afd015",
+  "NormalSha256": "cc7573a529183b72ad1cd93b8953b2523de86b62e094713c2a04739a6285faa3",
+  "Uid": "uid://bpetaygbm7lc3",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c3 (seed+3) -- a central skull with radiating jawbone/spike tendrils and teal-tinted drips, on a stone pedestal, clean neutral background. c0 had a small signature-like mark; c1 read well but sat against a busy moonlit backdrop (weaker cutout silhouette); c2 leaned photorealistic/3d-render (a marble-sculpture look) -- rejected for style-track violation.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Monster world sprite per AssetSpec.NormalMap=true. Normal-map QA: normalmap.py (Sobel height-from-luminance, strength 2.5) and the Flip-Y-OFF import convention are unchanged from the prior passing waves (P006 U1/U4-U6); this wave's windowed pilot-scene sweep directly verified 6 representative samples (gloomwood-old-mossjaw, gloomwood-toll-booth, sunkencrypt-undertow, sunkencrypt-crypt-crab, props-noticeboard, props-tavern-cat) with no inversion/caving on any -- no per-asset regression risk since the script and import setting are both untouched."
+  }
+}

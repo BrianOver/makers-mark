@@ -1,0 +1,20 @@
+{
+  "Seed": 434494951,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "f377279d3e42ab224ef0965f40ff548b37240b991c3e5af1ec9f4aee31ea2780",
+  "NormalSha256": "f3ed25512de18f3aaf1185d7974ad9f5e892d48104d9862728cbd40d323c2242",
+  "Uid": "uid://b4h6yhj4r27h5",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c2 (seed+2) -- best 'crab wearing a borrowed skull' reading of the 4: a skull-headed, multi-legged crab-like creature with visible claws, clean gradient background. c0 and c3 drew skull-headed creatures with a spider/beetle or upright-humanoid stance rather than a crab; c1 was a tall stilt-legged skeletal figure with no crab silhouette at all.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Monster world sprite per AssetSpec.NormalMap=true. Normal-map QA (windowed Sprite2D + textured PointLight2D pilot scene, deleted before commit, per art/pipeline/README.md) directly swept the light left/right on this asset -- bumps brightened toward the light on both sides, no caved-in/inverted relief. Passed on the existing Flip-Y-OFF import convention."
+  }
+}

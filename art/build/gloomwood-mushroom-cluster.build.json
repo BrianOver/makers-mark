@@ -1,0 +1,20 @@
+{
+  "Seed": 379326539,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "1a87e0898374bb5db38e5e00ed19308be727da8a17d9944a5143baf4b4e13731",
+  "NormalSha256": "cc66207527341f0a0e7971851f69fa0e1bd83206a716b2dbc3c76a20190f89b4",
+  "Uid": "uid://cg3p361wq6j6a",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c1 (seed+1) -- single clustered fungi group (one large cap + two small) on a mossy mound, teal bioluminescent glow, clean neutral background. c0 was a 4-panel comparison grid; c2 read as a full forest-floor scene (too busy/scene-like for an isolated prop cutout); c3 was a similar single cluster but warm brown toadstool coloring, less 'bioluminescent' than c1's teal glow.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Prop world sprite per AssetSpec.NormalMap=true. Normal-map QA: normalmap.py (Sobel height-from-luminance, strength 2.5) and the Flip-Y-OFF import convention are unchanged from the prior passing waves (P006 U1/U4-U6); this wave's windowed pilot-scene sweep directly verified 6 representative samples (gloomwood-old-mossjaw, gloomwood-toll-booth, sunkencrypt-undertow, sunkencrypt-crypt-crab, props-noticeboard, props-tavern-cat) with no inversion/caving on any -- no per-asset regression risk since the script and import setting are both untouched."
+  }
+}

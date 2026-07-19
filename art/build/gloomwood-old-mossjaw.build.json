@@ -1,0 +1,20 @@
+{
+  "Seed": 504991146,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "247e7e821f0c873ac72605285af72a3ab666be984b45aac7cf060c02bdd56e42",
+  "NormalSha256": "eb5ef259e4a8e4104e43e7bf000f6c255a68a66458fa572d8357fc38cd1bd0bb",
+  "Uid": "uid://dsff8epbl4xyi",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c0 (seed+0) -- huge rounded moss-and-lichen beast, mushrooms sprouting on its back, broad blunt jaw, clawed limbs, full body, clear silhouette against a light forest ground (high-contrast, cutout-friendly). c1 had no visible face/eyes (too abstract for the boss read); c2 read aggressive/toothy (violates the gentle-giant charm rule); c3 nailed 'big slow soulful eyes' via one expressive eye but read more frog-shaped than 'hulking' -- c0 matched the most named subject details overall.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Monster world sprite per AssetSpec.NormalMap=true. Normal-map QA (windowed Sprite2D + textured PointLight2D pilot scene, deleted before commit, per art/pipeline/README.md) directly swept the light left/right on this asset -- bumps brightened toward the light on both sides, no caved-in/inverted relief. Passed on the existing Flip-Y-OFF import convention."
+  }
+}

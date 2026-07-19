@@ -1,0 +1,20 @@
+{
+  "Seed": 2137317058,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "092580c8e8dab1db71c4d7918b753166c5e94c246d9d47ee2837a2ad8afb2774",
+  "NormalSha256": "5b6d4fa360503c508d4cda49ea57002395ec5a2ed1136367cd38b6d2bda7973f",
+  "Uid": "uid://c161t0f0cg6x5",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c1 (seed+1) -- rounded velvety body, big gentle glowing amber eyes reading as the lantern-glow motif, soft plush wings, clean near-neutral background. c0 was a viable full-body standing alternative; c2 drew a realistic unsettling long-legged moth and c3 leaned 3d-render-ish -- both rejected for tone/negative violations. None of the 4 drew a literal held lantern; accepted c1 on the eye-glow reading plus the Cult-of-the-Lamb charm rule.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Monster world sprite per AssetSpec.NormalMap=true. Normal-map QA: normalmap.py (Sobel height-from-luminance, strength 2.5) and the Flip-Y-OFF import convention are unchanged from the prior passing waves (P006 U1/U4-U6); this wave's windowed pilot-scene sweep directly verified 6 representative samples (gloomwood-old-mossjaw, gloomwood-toll-booth, sunkencrypt-undertow, sunkencrypt-crypt-crab, props-noticeboard, props-tavern-cat) with no inversion/caving on any -- no per-asset regression risk since the script and import setting are both untouched."
+  }
+}
