@@ -1,0 +1,20 @@
+{
+  "Seed": 324013460,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "a68e28fd140f7a17e563cf5e7c0cde36bf66bc769ef62c8d83be0a45315e6cba",
+  "NormalSha256": "efb24ed071c5de313e914b8a89ae69d74fb851967b185a2e7dda52dbeaf0d009",
+  "Uid": "uid://nhngtfad2ctq",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "8-20 candidates generated locally via ComfyUI MCP across escalation rounds; curated hard per art/pipeline/README.md",
+    "paintoverNote": "batch 1 (4 candidates); c3 -- symmetric front stance, glowing molten-core belly reads the 'molten core' spec phrase literally; clean first pass, no escalation needed",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Mine world sprite per AssetSpec.NormalMap=true"
+  }
+}

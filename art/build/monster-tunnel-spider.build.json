@@ -1,0 +1,20 @@
+{
+  "Seed": 381603456,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "9e2cbe28864a640c4e276a22050e296e9389a79f672c924b243ed7a029fc7e7f",
+  "NormalSha256": "3efc81c58b269c673afec6890c7ec12eed0a88bb253b54cad9a57897151e6082",
+  "Uid": "uid://bq0tmf38lucct",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "8-20 candidates generated locally via ComfyUI MCP across escalation rounds; curated hard per art/pipeline/README.md",
+    "paintoverNote": "batch 1 (4 candidates); c2 -- front-facing spread stance, fangs bared, ember-cracked abdomen reads the ore/forge palette; clean first pass, no escalation needed",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Mine world sprite per AssetSpec.NormalMap=true"
+  }
+}

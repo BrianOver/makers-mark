@@ -1,0 +1,20 @@
+{
+  "Seed": 1890321182,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "1eaa47163ab14a1f76d3e77cc0df71c8b495154d9039893fc9cd4cc9cfa61ff4",
+  "NormalSha256": "dcb918a6a46ef1ce123e00519a0a1075fa0e0f6bfa03d2fe7f03b2c578928825",
+  "Uid": "uid://3ayl1p1rj7p0",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "8-20 candidates generated locally via ComfyUI MCP across escalation rounds; curated hard per art/pipeline/README.md",
+    "paintoverNote": "round 2 escalation (8 candidates across 2 rounds); c2 -- single hulking figure, molten-cracked head/chest, no held props/pedestal/wings. Round 1 drew winged demons, armored lich-knights holding weapons, and a concept sheet; curation accepted a bulkier silhouette than the spec's literal 'gaunt' in exchange for a clean single-subject readable silhouette after repeated off-spec/concept-sheet draws",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Mine world sprite per AssetSpec.NormalMap=true"
+  }
+}

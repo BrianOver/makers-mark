@@ -1,0 +1,20 @@
+{
+  "Seed": 46130615,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "8099828463a622b7accd363f8edb9db2043a99a62609cc7eddef7ad497e256f3",
+  "NormalSha256": "b73692a1e635a7eb3bc273ea583667920d42a15c0ce288d9cf8360702ad7b7b9",
+  "Uid": "uid://cmcdstnf1ffr2",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "8-20 candidates generated locally via ComfyUI MCP across escalation rounds; curated hard per art/pipeline/README.md",
+    "paintoverNote": "round 3 escalation (12 candidates total across 3 rounds); c3 -- feral quadruped stance, bared teeth clearly visible, no clothing/props/pedestal (rounds 1-2 drew anthropomorphized rat-people in coats/cloaks holding staves, or a display-pedestal pose -- round 3 negative-prompt hardening against clothing/bipedal/pedestal fixed it)",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Mine world sprite per AssetSpec.NormalMap=true"
+  }
+}
