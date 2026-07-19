@@ -1,0 +1,588 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
+using GameSim.Contracts;
+using Godot;
+using GodotClient.Town;
+
+namespace GodotClient.Panels;
+
+/// <summary>
+/// LW5 — the depths watch: a lit <see cref="SubViewport"/> strip (the V-lit-overlay pattern,
+/// cloned from <c>GodotClient.Town.LitTownOverlay</c> — SubViewport trap, SubViewport-scoped
+/// <see cref="CanvasModulate"/>, null-tolerant lit sprites) mounted at the top of
+/// <c>DepthsPanel</c>. Live ONLY while a party is underground —
+/// <see cref="DayPhase.Expedition"/>/<see cref="DayPhase.Camp"/>/
+/// <see cref="DayPhase.ExpeditionDeep"/> — collapsed to zero height otherwise, so the venue-hub
+/// grid beneath it renders exactly as it always has when nobody is raiding. Zero sim/Contracts
+/// writes (KTD2): <see cref="Refresh"/> only ever READS <see cref="GameState"/> and the tick's
+/// <see cref="GameEvent"/> batch; every animation below is driven by accumulated frame delta
+/// (<see cref="_time"/>), never wall-clock, never engine RNG.
+///
+/// <para><b>State model.</b> The marching party is the most recent <see cref="PartyDeparted"/>
+/// party, cached across ticks — a <see cref="GameEvent"/> batch is momentary (only live in
+/// <c>Adapter.LastEvents</c> for the one <see cref="Refresh"/> call right after its tick), so a
+/// party that departed at the Expedition tick must still be remembered through the Camp/
+/// ExpeditionDeep ticks that follow it, which emit no <see cref="PartyDeparted"/> of their own.
+/// Once a party parks (<see cref="GameState.InFlight"/> non-empty) that persistent record — the
+/// same decision facts <see cref="PartyCampReport"/> and <c>CampPanel</c> read — takes over as the
+/// authoritative party/hp source, because it (unlike the cache) survives a save/load and reflects
+/// live camp deliveries.</para>
+///
+/// <para><b>Floor-milestone flash — the plan's own flagged risk, confirmed.</b>
+/// <see cref="FloorRecordSet"/>/<see cref="AttributionBeatEvent"/> are emitted ONLY by
+/// <c>GameSim.Drama.ExpeditionRevealSystem</c> at the <see cref="DayPhase.Evening"/> tick (verified
+/// against that system's source before wiring this) — by the time <see cref="Refresh"/> sees one,
+/// <c>GameState.Phase</c> has already rolled to next-day <see cref="DayPhase.Morning"/>, outside the
+/// live-phase gate above. Rather than silently drop the beat the plan asked for, the milestone
+/// flash (monster silhouette slide + record bark) is the one deliberate exception to that gate: it
+/// force-shows the strip for <see cref="MilestoneSeconds"/> regardless of phase, then restores
+/// whatever the phase gate says. The silhouette's monster kind has no event field to read (a
+/// <see cref="FloorRecordSet"/> carries no monster at all; an <see cref="AttributionBeatEvent"/>'s
+/// <c>Detail</c> only sometimes names one, in free text) — deterministically picked from the floor
+/// number over the committed roster instead (flavor, not a specific-encounter claim).</para>
+///
+/// <para><b>Graceful degrade</b> (the LitTownOverlay contract): a missing "mine-backdrop" makes
+/// <see cref="HasContent"/> false and collapses the WHOLE strip forever, whatever the phase —
+/// DepthsPanel behaves exactly as it did before this unit. A missing hero-class or monster art id
+/// degrades that ONE figure only (no sprite, no light, never a crash) — LW-art's still-unshipped
+/// occultist/sentinel/skirmisher figures simply don't march yet.</para>
+/// </summary>
+public partial class MineWatch : SubViewportContainer
+{
+    public enum WatchState
+    {
+        Hidden,
+        Marching,
+        Camped,
+    }
+
+    private const string MineVenueId = "mine";
+    private static readonly Vector2I DesignSize = new(1024, 260);
+    private const float StripHeight = 260f;
+    private const float HeroTargetWidth = 64f;
+    private const float FigureSpacing = 86f;
+    private const float MonsterTargetWidth = 160f;
+    private const float MilestoneSeconds = 2.6f;
+    private const float LowHpFraction = 0.4f; // below this, a camped hero's pose slumps
+    private const float SlumpOffsetY = 14f;
+    private const float SlumpRotationDegrees = 8f;
+    private const int MaxFigures = 3; // PartyFormation ships parties of <=3 (v1)
+    private const float BackdropSpeed = 14f; // design px/s — deliberately slow ("never-static", not a scroller)
+
+    private static readonly Color AmbientTint = new(0.30f, 0.33f, 0.52f); // dark-cool — contrast for the warm torch/fire
+    private static readonly Color TorchColor = new(1f, 0.72f, 0.42f);
+    private static readonly Color CampfireColor = new(1f, 0.55f, 0.24f);
+    private static readonly Color MonsterTint = new(0.22f, 0.20f, 0.26f, 0.92f); // dark-modulated silhouette
+
+    /// <summary>Committed Mine monster ids (art wave, `art-manifest.json`) — the milestone flash's
+    /// silhouette picks deterministically from this roster by floor number (see type remarks: no
+    /// event field names the actual monster). APPEND as the roster grows; never reorder existing
+    /// entries (keeps the floor->id mapping stable for anyone who screenshots it).</summary>
+    private static readonly string[] MonsterRoster =
+    [
+        "cave-rat", "tunnel-spider", "deep-ghoul", "ore-golem", "forgeworm",
+    ];
+
+    private readonly record struct Figure(Sprite2D Sprite, Vector2 BasePosition, float Phase);
+
+    private SubViewport _viewport = null!;
+    private Node2D _world = null!;
+    private CanvasModulate _ambient = null!;
+    private Sprite2D? _backdropA;
+    private Sprite2D? _backdropB;
+    private PointLight2D _torch = null!;
+    private PointLight2D _campfireLight = null!;
+    private CpuParticles2D _embers = null!;
+    private Sprite2D _monsterSlide = null!;
+    private Label _recordBark = null!;
+    private GradientTexture2D _lightGradient = null!;
+
+    private readonly List<Figure> _figures = [];
+    private ImmutableList<HeroId> _currentParty = ImmutableList<HeroId>.Empty;
+    private float _time;
+    private float _milestoneRemaining;
+    private bool _built;
+
+    /// <summary>The strip's current choreography state (test/tuning hook).</summary>
+    public WatchState State { get; private set; } = WatchState.Hidden;
+
+    /// <summary>True once "mine-backdrop" resolved — false degrades the WHOLE strip forever,
+    /// whatever the phase (see type remarks). Mirrors <c>LitTownOverlay.HasContent</c>.</summary>
+    public bool HasContent { get; private set; }
+
+    /// <summary>The lit world's dark-cool ambient tint (test/tuning hook).</summary>
+    public CanvasModulate Ambient => _ambient;
+
+    /// <summary>Party figures currently drawn (test hook) — 0 while Hidden or while the current
+    /// party is not yet known (live phase, no <see cref="PartyDeparted"/>/<see
+    /// cref="InFlightExpedition"/> seen yet this day).</summary>
+    public int FigureCount => _figures.Count;
+
+    /// <summary>Build with the real committed backdrop id.</summary>
+    public void Build() => Build(AssetCatalog.VenueBackdropId(MineVenueId));
+
+    /// <summary>
+    /// Build the SubViewport world. Injectable backdrop id (tests exercise the graceful-degrade
+    /// path with a fake one — same technique <c>LitTownOverlay.Build(buildings, heroes)</c> uses).
+    /// Idempotent-guarded.
+    /// </summary>
+    public void Build(string backdropId)
+    {
+        if (_built)
+        {
+            return;
+        }
+
+        Name = "MineWatch";
+        Stretch = true;
+        MouseFilter = MouseFilterEnum.Ignore; // decoration only — never eats a click
+        SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        CustomMinimumSize = Vector2.Zero; // starts collapsed; Refresh grows it once live
+
+        _viewport = new SubViewport
+        {
+            Name = "MineViewport",
+            Size = DesignSize,
+            HandleInputLocally = false,
+            TransparentBg = true,
+            RenderTargetUpdateMode = SubViewport.UpdateMode.Always,
+        };
+        AddChild(_viewport);
+
+        _world = new Node2D { Name = "MineWorld" };
+        _viewport.AddChild(_world);
+
+        _ambient = new CanvasModulate { Name = "MineAmbient", Color = AmbientTint };
+        _world.AddChild(_ambient);
+
+        _lightGradient = BuildLightGradient();
+
+        var backdrop = IconRegistry.Art(backdropId);
+        if (backdrop is not null)
+        {
+            var scale = new Vector2(DesignSize.X / (float)backdrop.GetWidth(), StripHeight / backdrop.GetHeight());
+            _backdropA = BuildBackdrop("MineBackdropA", backdrop, scale, 0f);
+            _backdropB = BuildBackdrop("MineBackdropB", backdrop, scale, DesignSize.X);
+            _world.AddChild(_backdropA);
+            _world.AddChild(_backdropB);
+        }
+
+        HasContent = _backdropA is not null;
+
+        _torch = new PointLight2D
+        {
+            Name = "MineTorch",
+            Color = TorchColor,
+            Energy = 1.2f,
+            Texture = _lightGradient,
+            TextureScale = 1.4f,
+            Height = 24f,
+            Enabled = false,
+        };
+        _world.AddChild(_torch);
+
+        _campfireLight = new PointLight2D
+        {
+            Name = "CampfireLight",
+            Color = CampfireColor,
+            Energy = 1.1f,
+            Texture = _lightGradient,
+            TextureScale = 1.7f,
+            Height = 20f,
+            Enabled = false,
+        };
+        _world.AddChild(_campfireLight);
+
+        _embers = new CpuParticles2D
+        {
+            Name = "CampfireEmbers",
+            Amount = 20,
+            Lifetime = 1.3,
+            Emitting = false,
+            OneShot = false,
+            Direction = new Vector2(0, -1), // 2D node — Direction/Gravity are Vector2 (verified against GodotSharp 4.6.3; the Vector3 gotcha is CPUParticles3D's, not this one)
+            Spread = 18f,
+            Gravity = new Vector2(0, -26f), // embers rise on their own heat, not fall
+            InitialVelocityMin = 12f,
+            InitialVelocityMax = 26f,
+            ScaleAmountMin = 1.2f,
+            ScaleAmountMax = 2.4f,
+            Color = new Color(1f, 0.55f, 0.2f),
+        };
+        _world.AddChild(_embers);
+
+        _monsterSlide = new Sprite2D { Name = "MonsterSlide", Visible = false, Modulate = MonsterTint };
+        _world.AddChild(_monsterSlide);
+
+        _recordBark = new Label
+        {
+            Name = "RecordBark",
+            Visible = false,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Position = new Vector2(0, 10),
+            Size = new Vector2(DesignSize.X, 28),
+        };
+        _viewport.AddChild(_recordBark); // sibling of _world — never dark-tinted by MineAmbient
+
+        _built = true;
+    }
+
+    /// <summary>
+    /// Rebuild the strip's choreography from the live world. Called from <c>DepthsPanel.Refresh</c>
+    /// every tick (KTD2: reads <paramref name="state"/>/<paramref name="lastEvents"/> only — no
+    /// sim/Contracts writes, ever).
+    /// </summary>
+    public void Refresh(GameState state, ImmutableList<GameEvent> lastEvents)
+    {
+        Build();
+
+        if (!HasContent)
+        {
+            ApplyHidden();
+            return;
+        }
+
+        foreach (var departed in lastEvents.OfType<PartyDeparted>())
+        {
+            _currentParty = departed.Party; // last one wins if somehow more than one party departs a tick
+        }
+
+        var live = state.Phase is DayPhase.Expedition or DayPhase.Camp or DayPhase.ExpeditionDeep;
+        if (!live)
+        {
+            _currentParty = ImmutableList<HeroId>.Empty; // never let a stale party carry into next day
+        }
+
+        if (live && state.Phase == DayPhase.Camp && !state.InFlight.IsEmpty)
+        {
+            State = WatchState.Camped;
+            RenderCamp(state, state.InFlight[0]);
+        }
+        else if (live)
+        {
+            State = WatchState.Marching;
+            RenderMarch(state, state.InFlight.IsEmpty ? _currentParty : state.InFlight[0].Party);
+        }
+        else
+        {
+            State = WatchState.Hidden;
+            ClearFigures();
+            _torch.Enabled = false;
+            _campfireLight.Enabled = false;
+            _embers.Emitting = false;
+        }
+
+        var milestone = lastEvents.FirstOrDefault(e => e is FloorRecordSet or AttributionBeatEvent);
+        if (milestone is not null)
+        {
+            QueueMilestone(state, milestone);
+        }
+
+        Visible = live || _milestoneRemaining > 0f;
+        CustomMinimumSize = Visible ? new Vector2(0, StripHeight) : Vector2.Zero;
+    }
+
+    public override void _Process(double delta)
+    {
+        if (!_built)
+        {
+            return;
+        }
+
+        _time += (float)delta;
+        AnimateBackdrop((float)delta);
+
+        if (State != WatchState.Hidden)
+        {
+            AnimateFigures();
+            AnimateLightFlicker();
+        }
+
+        if (_milestoneRemaining > 0f)
+        {
+            AnimateMilestone((float)delta);
+        }
+    }
+
+    // ── phase rendering ──────────────────────────────────────────────────────────────────────
+
+    private void RenderMarch(GameState state, ImmutableList<HeroId> party)
+    {
+        ClearFigures();
+        _campfireLight.Enabled = false;
+        _embers.Emitting = false;
+
+        var groundY = StripHeight - 70f;
+        var placed = 0;
+        for (var i = 0; i < party.Count && placed < MaxFigures; i++)
+        {
+            var sprite = BuildFigureSprite(state, party[i], new Vector2(120f + placed * FigureSpacing, groundY), rotation: 0f);
+            if (sprite is null)
+            {
+                continue; // per-figure graceful degrade — unshipped class art
+            }
+
+            _figures.Add(new Figure(sprite, sprite.Position, placed * 1.3f));
+            if (placed == 0)
+            {
+                _torch.Position = sprite.Position + new Vector2(20, -46);
+                _torch.Enabled = true;
+            }
+
+            placed++;
+        }
+
+        if (placed == 0)
+        {
+            _torch.Enabled = false; // no known party yet (live phase, PartyDeparted not seen) — ambient only
+        }
+    }
+
+    private void RenderCamp(GameState state, InFlightExpedition camp)
+    {
+        ClearFigures();
+        _torch.Enabled = false;
+
+        var centerX = DesignSize.X / 2f;
+        var groundY = StripHeight - 60f;
+        var placed = 0;
+        for (var i = 0; i < camp.Party.Count && placed < MaxFigures; i++)
+        {
+            var heroId = camp.Party[i];
+            var hp = camp.Hp.TryGetValue(heroId.Value, out var hpValue) ? hpValue : 0;
+            var maxHp = state.Heroes.TryGetValue(heroId.Value, out var hero) ? hero.MaxHp : 0;
+            var fraction = maxHp > 0 ? (float)hp / maxHp : 1f;
+            var slumped = fraction < LowHpFraction;
+
+            var angle = (placed - (Math.Min(camp.Party.Count, MaxFigures) - 1) / 2f) * 0.6f;
+            var basePos = new Vector2(centerX + Mathf.Sin(angle) * 90f, groundY + (slumped ? SlumpOffsetY : 0f));
+            var sprite = BuildFigureSprite(state, heroId, basePos, slumped ? SlumpRotationDegrees : 0f);
+            if (sprite is null)
+            {
+                continue;
+            }
+
+            _figures.Add(new Figure(sprite, basePos, placed * 1.3f));
+            placed++;
+        }
+
+        _campfireLight.Position = new Vector2(centerX, groundY - 10f);
+        _campfireLight.Enabled = true;
+        _embers.Position = _campfireLight.Position;
+        _embers.Emitting = true;
+    }
+
+    private Sprite2D? BuildFigureSprite(GameState state, HeroId heroId, Vector2 position, float rotation)
+    {
+        if (!state.Heroes.TryGetValue(heroId.Value, out var hero))
+        {
+            return null;
+        }
+
+        var lit = AssetCatalog.HeroPortrait(hero.ClassId);
+        if (lit is null)
+        {
+            return null; // graceful degrade — no diffuse means no sprite, no crash
+        }
+
+        var sprite = new Sprite2D
+        {
+            Name = $"MineHero_{_figures.Count}",
+            Texture = lit,
+            Position = position,
+            RotationDegrees = rotation,
+            Modulate = HeroSprite.RoleColor(hero.ClassId),
+        };
+        ScaleToWidth(sprite, lit, HeroTargetWidth);
+        _world.AddChild(sprite);
+        return sprite;
+    }
+
+    private void ClearFigures()
+    {
+        foreach (var figure in _figures)
+        {
+            _world.RemoveChild(figure.Sprite);
+            figure.Sprite.Free();
+        }
+
+        _figures.Clear();
+    }
+
+    // ── milestone flash (floor record / attribution beat) ───────────────────────────────────────
+
+    private void QueueMilestone(GameState state, GameEvent evt)
+    {
+        var floor = FloorOf(evt);
+        var monsterId = MonsterRoster[Math.Abs(floor) % MonsterRoster.Length];
+        var monsterArt = AssetCatalog.MonsterPortrait(monsterId);
+
+        _milestoneRemaining = MilestoneSeconds;
+        _recordBark.Text = BarkFor(state, evt);
+        _recordBark.Visible = true;
+
+        if (monsterArt is not null)
+        {
+            ScaleToWidth(_monsterSlide, monsterArt, MonsterTargetWidth);
+            _monsterSlide.Texture = monsterArt;
+            _monsterSlide.Position = new Vector2(-MonsterTargetWidth, StripHeight - 90f);
+            _monsterSlide.Visible = true;
+        }
+    }
+
+    private void AnimateMilestone(float delta)
+    {
+        _milestoneRemaining -= delta;
+        var progress = 1f - Mathf.Clamp(_milestoneRemaining / MilestoneSeconds, 0f, 1f);
+        _monsterSlide.Position = new Vector2(
+            Mathf.Lerp(-MonsterTargetWidth, DesignSize.X + MonsterTargetWidth, progress),
+            _monsterSlide.Position.Y);
+
+        if (_milestoneRemaining > 0f)
+        {
+            return;
+        }
+
+        _milestoneRemaining = 0f;
+        _monsterSlide.Visible = false;
+        _recordBark.Visible = false;
+        if (State == WatchState.Hidden)
+        {
+            Visible = false;
+            CustomMinimumSize = Vector2.Zero;
+        }
+    }
+
+    private static int FloorOf(GameEvent evt) => evt switch
+    {
+        FloorRecordSet r => r.Floor,
+        AttributionBeatEvent b => b.Floor,
+        _ => 1,
+    };
+
+    private static string BarkFor(GameState state, GameEvent evt) => evt switch
+    {
+        FloorRecordSet r => $"{HeroLabel(state, r.Hero)} sets a new depth record — floor {r.Floor}!",
+        AttributionBeatEvent b => $"{HeroLabel(state, b.Hero)} — {BeatVerb(b.Beat)} (floor {b.Floor})",
+        _ => string.Empty,
+    };
+
+    private static string HeroLabel(GameState state, HeroId id) =>
+        state.Heroes.TryGetValue(id.Value, out var hero) ? hero.Name : $"Hero #{id.Value}";
+
+    private static string BeatVerb(BeatType beat) => beat switch
+    {
+        BeatType.KillingBlow => "killing blow",
+        BeatType.LethalSave => "lethal save",
+        BeatType.BreakpointClear => "breakpoint clear",
+        BeatType.Provisioned => "provisioned",
+        BeatType.PotionLifesave => "potion lifesave",
+        BeatType.ToolAssist => "tool assist",
+        _ => "notable beat",
+    };
+
+    private void ApplyHidden()
+    {
+        State = WatchState.Hidden;
+        Visible = false;
+        CustomMinimumSize = Vector2.Zero;
+    }
+
+    // ── per-frame animation (accumulated delta only — no wall clock, no RNG) ────────────────────
+
+    private void AnimateBackdrop(float delta)
+    {
+        if (_backdropA is null || _backdropB is null)
+        {
+            return;
+        }
+
+        var shift = -BackdropSpeed * delta;
+        var ax = _backdropA.Position.X + shift;
+        var bx = _backdropB.Position.X + shift;
+        if (ax <= -DesignSize.X)
+        {
+            ax += DesignSize.X * 2f;
+        }
+
+        if (bx <= -DesignSize.X)
+        {
+            bx += DesignSize.X * 2f;
+        }
+
+        _backdropA.Position = new Vector2(ax, 0);
+        _backdropB.Position = new Vector2(bx, 0);
+    }
+
+    private void AnimateFigures()
+    {
+        var campedPose = State == WatchState.Camped;
+        var amplitude = campedPose ? 1.5f : 3f; // marching bob reads bigger than the huddle's slow breathing
+        var speed = campedPose ? 1.6f : 3.4f;
+        foreach (var figure in _figures)
+        {
+            var bob = amplitude * Mathf.Sin(_time * speed + figure.Phase);
+            figure.Sprite.Position = figure.BasePosition + new Vector2(0, bob);
+        }
+    }
+
+    private void AnimateLightFlicker()
+    {
+        if (_torch.Enabled)
+        {
+            _torch.Energy = 1.2f + 0.12f * Mathf.Sin(_time * 9f) * Mathf.Sin(_time * 2.1f);
+        }
+
+        if (_campfireLight.Enabled)
+        {
+            _campfireLight.Energy = 1.1f + 0.18f * Mathf.Sin(_time * 11f) * Mathf.Sin(_time * 1.7f);
+        }
+    }
+
+    // ── build helpers ────────────────────────────────────────────────────────────────────────
+
+    private static Sprite2D BuildBackdrop(string name, Texture2D texture, Vector2 scale, float x) => new()
+    {
+        Name = name,
+        Texture = texture,
+        Centered = false, // (x,0) is the top-left corner — maps 1:1 onto DesignSize pixel space
+        Scale = scale,
+        Position = new Vector2(x, 0),
+    };
+
+    /// <summary>Scale a lit Sprite2D so its diffuse renders at <paramref name="targetWidth"/> px.
+    /// Duplicated from <c>LitTownOverlay.ScaleToWidth</c> (private there; LW4 owns that file
+    /// exclusively) rather than shared across lanes — same call CampPanel's mirrored SupplyFee
+    /// constant makes.</summary>
+    private static void ScaleToWidth(Sprite2D sprite, CanvasTexture lit, float targetWidth)
+    {
+        var width = lit.DiffuseTexture?.GetWidth() ?? 0;
+        if (width > 0)
+        {
+            sprite.Scale = Vector2.One * (targetWidth / width);
+        }
+    }
+
+    /// <summary>The pilot's radial falloff recipe (see <c>LitTownOverlay.BuildLightGradient</c>):
+    /// white core → 0.45 alpha at 0.55 → transparent edge, radial fill. Duplicated for the same
+    /// cross-lane reason as <see cref="ScaleToWidth"/>.</summary>
+    private static GradientTexture2D BuildLightGradient()
+    {
+        var gradient = new Gradient
+        {
+            Colors = [new Color(1, 1, 1, 1), new Color(1, 1, 1, 0.45f), new Color(1, 1, 1, 0)],
+            Offsets = [0f, 0.55f, 1f],
+        };
+        return new GradientTexture2D
+        {
+            Gradient = gradient,
+            Width = 512,
+            Height = 512,
+            Fill = GradientTexture2D.FillEnum.Radial,
+            FillFrom = new Vector2(0.5f, 0.5f),
+            FillTo = new Vector2(1f, 0.5f),
+        };
+    }
+}
