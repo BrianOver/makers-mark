@@ -56,7 +56,7 @@ directive) — warmth is a legal register; see docs/design/tone-register.md.
 
 ## SDXL settings (locked)
 
-- size `1024×1024` (buildings/scenes) · steps `25` · cfg `6.5` · sampler `dpmpp_2m` · scheduler `karras`
+- size `1024×1024` (buildings/scenes) · steps `28` · cfg `6.5` · sampler `dpmpp_2m` · scheduler `karras`
 - **seed: fixed per asset** — reproducible iteration + matches the sim's determinism ethos.
   Record the seed with each kept asset.
 - 2.5D framing: buildings/props at **3/4 isometric view**, centered, on a **plain dark
