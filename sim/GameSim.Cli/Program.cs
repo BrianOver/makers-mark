@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using GameSim;
 using GameSim.Classes;
+using GameSim.Cli;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Drama;
@@ -11,6 +12,19 @@ using GameSim.Professions;
 // Maker's Mark — text-mode play (U13, R21).
 // Usage: dotnet run --project sim/GameSim.Cli [-- --seed N]
 // Commands drive the same Tick(actions) surface the Godot panels bind later.
+
+// The narration glyphs (†, ★, ⤺, ⛏, →) need UTF-8 to render; the default Windows console
+// codepage falls back to '?' for anything it can't encode, which visually collides with the
+// '?' this CLI already uses to flag an unknown command (playtest findings #5/#9). Best-effort
+// only: stdout can be a non-console handle (redirected to a file/pipe in scripted runs), and
+// setting OutputEncoding on one throws — swallow it, the scripted runs just keep default bytes.
+try
+{
+    Console.OutputEncoding = System.Text.Encoding.UTF8;
+}
+catch (IOException)
+{
+}
 
 // Batch mode: `-- batch [flags]` runs the non-interactive telemetry farm and exits (plan U2).
 if (args.Length > 0 && args[0] == "batch")
@@ -101,47 +115,144 @@ while (true)
                 """);
             break;
 
-        case "craft" when parts.Length == 3:
-            pending.Add(new CraftAction(parts[1], parts[2]));
-            Console.WriteLine($"  queued: craft {parts[1]} with {parts[2]}");
-            break;
+        // Each case below matches on the VERB alone first, then validates its own args — a
+        // known verb with bad args reports a per-command usage hint (playtest finding #2) and
+        // never falls through to the generic '? unknown command' a typo gets. Id args accept
+        // both the bare number and the "H#"/"I#" form every listing displays (finding #1).
+        case "craft":
+        {
+            if (parts.Length == 3)
+            {
+                pending.Add(new CraftAction(parts[1], parts[2]));
+                Console.WriteLine($"  queued: craft {parts[1]} with {parts[2]}");
+            }
+            else
+            {
+                PrintUsage("craft", "craft <recipeId> <material>", line);
+            }
 
-        case "talent" when parts.Length == 2:
-            pending.Add(new UnlockTalentAction(parts[1], ProfessionRegistry.BlacksmithId));
-            Console.WriteLine($"  queued: unlock {parts[1]}");
             break;
+        }
 
-        case "stock" when parts.Length == 3 && int.TryParse(parts[1], out var sid) && int.TryParse(parts[2], out var sp):
-            pending.Add(new StockAction(new ItemId(sid), sp));
-            Console.WriteLine($"  queued: stock I{sid} at {sp}g");
-            break;
+        case "talent":
+        {
+            if (parts.Length == 2)
+            {
+                pending.Add(new UnlockTalentAction(parts[1], ProfessionRegistry.BlacksmithId));
+                Console.WriteLine($"  queued: unlock {parts[1]}");
+            }
+            else
+            {
+                PrintUsage("talent", "talent <nodeId>", line);
+            }
 
-        case "price" when parts.Length == 3 && int.TryParse(parts[1], out var pid) && int.TryParse(parts[2], out var pp):
-            pending.Add(new SetPriceAction(new ItemId(pid), pp));
             break;
+        }
 
-        case "unstock" when parts.Length == 2 && int.TryParse(parts[1], out var uid):
-            pending.Add(new UnstockAction(new ItemId(uid)));
-            break;
+        case "stock":
+        {
+            if (parts.Length == 3 && CliIds.TryParseItem(parts[1], out var sid) && int.TryParse(parts[2], out var sp))
+            {
+                pending.Add(new StockAction(new ItemId(sid), sp));
+                Console.WriteLine($"  queued: stock I{sid} at {sp}g");
+            }
+            else
+            {
+                PrintUsage("stock", "stock <itemId> <price>", line);
+            }
 
-        case "buyore" when parts.Length == 4 && int.TryParse(parts[1], out var hid) && int.TryParse(parts[3], out var qty):
-            pending.Add(new BuyOreAction(new HeroId(hid), parts[2], qty));
             break;
+        }
 
-        case "bounty" when parts.Length == 3 && int.TryParse(parts[1], out var bf) && int.TryParse(parts[2], out var bg):
-            pending.Add(new PostBountyAction(bf, bg));
-            Console.WriteLine($"  queued: bounty — clear floor {bf} for {bg}g (escrowed)");
-            break;
+        case "price":
+        {
+            if (parts.Length == 3 && CliIds.TryParseItem(parts[1], out var pid) && int.TryParse(parts[2], out var pp))
+            {
+                pending.Add(new SetPriceAction(new ItemId(pid), pp));
+                Console.WriteLine($"  queued: reprice I{pid} to {pp}g");
+            }
+            else
+            {
+                PrintUsage("price", "price <itemId> <gold>", line);
+            }
 
-        case "send" when parts.Length == 3 && int.TryParse(parts[1], out var shid) && int.TryParse(parts[2], out var siid):
-            pending.Add(new SendSupplyAction(new HeroId(shid), new ItemId(siid)));
-            Console.WriteLine($"  queued: send I{siid} to H{shid} (runner fee at delivery)");
             break;
+        }
 
-        case "recall" when parts.Length == 2 && int.TryParse(parts[1], out var rhid):
-            pending.Add(new RecallPartyAction(new HeroId(rhid)));
-            Console.WriteLine($"  queued: recall the party camped with H{rhid}");
+        case "unstock":
+        {
+            if (parts.Length == 2 && CliIds.TryParseItem(parts[1], out var uid))
+            {
+                pending.Add(new UnstockAction(new ItemId(uid)));
+                Console.WriteLine($"  queued: unstock I{uid}");
+            }
+            else
+            {
+                PrintUsage("unstock", "unstock <itemId>", line);
+            }
+
             break;
+        }
+
+        case "buyore":
+        {
+            if (parts.Length == 4 && CliIds.TryParseHero(parts[1], out var hid) && int.TryParse(parts[3], out var qty))
+            {
+                pending.Add(new BuyOreAction(new HeroId(hid), parts[2], qty));
+                Console.WriteLine($"  queued: buy {qty}x {parts[2]} from H{hid}");
+            }
+            else
+            {
+                PrintUsage("buyore", "buyore <heroId> <mat> <qty>", line);
+            }
+
+            break;
+        }
+
+        case "bounty":
+        {
+            if (parts.Length == 3 && int.TryParse(parts[1], out var bf) && int.TryParse(parts[2], out var bg))
+            {
+                pending.Add(new PostBountyAction(bf, bg));
+                Console.WriteLine($"  queued: bounty — clear floor {bf} for {bg}g (escrowed)");
+            }
+            else
+            {
+                PrintUsage("bounty", "bounty <floor> <gold>", line);
+            }
+
+            break;
+        }
+
+        case "send":
+        {
+            if (parts.Length == 3 && CliIds.TryParseHero(parts[1], out var shid) && CliIds.TryParseItem(parts[2], out var siid))
+            {
+                pending.Add(new SendSupplyAction(new HeroId(shid), new ItemId(siid)));
+                Console.WriteLine($"  queued: send I{siid} to H{shid} (runner fee at delivery)");
+            }
+            else
+            {
+                PrintUsage("send", "send <heroId> <itemId>", line);
+            }
+
+            break;
+        }
+
+        case "recall":
+        {
+            if (parts.Length == 2 && CliIds.TryParseHero(parts[1], out var rhid))
+            {
+                pending.Add(new RecallPartyAction(new HeroId(rhid)));
+                Console.WriteLine($"  queued: recall the party camped with H{rhid}");
+            }
+            else
+            {
+                PrintUsage("recall", "recall <heroId>", line);
+            }
+
+            break;
+        }
 
         case "next":
             state = Advance(state);
@@ -183,13 +294,22 @@ while (true)
             break;
 
         case "items":
-            foreach (var item in state.Items.Values.Where(i => i.PlayerCrafted))
+        {
+            var crafted = state.Items.Values.Where(i => i.PlayerCrafted).ToList();
+            if (crafted.Count == 0)
+            {
+                Console.WriteLine("  (nothing crafted yet — try 'craft <recipeId> <material>')");
+                break;
+            }
+
+            foreach (var item in crafted)
             {
                 var (kills, saves) = LedgerQuery.MarkTally(state, item.Id);
                 Console.WriteLine($"  {item.Id} {item.Name} [{item.Quality}] atk {item.Stats.Attack} def {item.Stats.Defense} — {kills} kills, {saves} saves");
             }
 
             break;
+        }
 
         case "heroes":
             foreach (var hero in state.Heroes.Values)
@@ -216,6 +336,13 @@ while (true)
             break;
 
         case "board":
+        {
+            if (state.Drama.DepthsBoard.IsEmpty)
+            {
+                Console.WriteLine("  (no depths reported yet — heroes post their deepest floor on return)");
+                break;
+            }
+
             foreach (var (heroValue, floor) in state.Drama.DepthsBoard)
             {
                 var name = state.Heroes.TryGetValue(heroValue, out var h) ? h.Name : $"H{heroValue}";
@@ -223,14 +350,24 @@ while (true)
             }
 
             break;
+        }
 
         case "gossip":
-            foreach (var g in state.EventLog.OfType<GossipEmitted>().TakeLast(6))
+        {
+            var lines = state.EventLog.OfType<GossipEmitted>().TakeLast(6).ToList();
+            if (lines.Count == 0)
+            {
+                Console.WriteLine("  (no gossip yet)");
+                break;
+            }
+
+            foreach (var g in lines)
             {
                 Console.WriteLine($"  \"{g.Line}\"");
             }
 
             break;
+        }
 
         default:
             Console.WriteLine("  ? unknown command (try 'help')");
@@ -429,3 +566,9 @@ void PrintStatus(GameState s)
 string HeroName(GameState s, HeroId id) => s.Heroes.TryGetValue(id.Value, out var h) ? h.Name : id.ToString();
 
 string ItemName(GameState s, ItemId id) => s.Items.TryGetValue(id.Value, out var i) ? i.Name : id.ToString();
+
+// Distinct from the generic '? unknown command': this is a RECOGNIZED verb with bad args
+// (wrong arg count or an id that didn't parse), so it names the verb and shows the exact
+// usage plus what was actually typed (playtest finding #2).
+void PrintUsage(string verb, string usage, string rawLine) =>
+    Console.WriteLine($"  {verb}: expected '{usage}' — got '{rawLine.Trim()}'");
