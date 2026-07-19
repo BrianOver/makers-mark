@@ -164,3 +164,55 @@ representative samples (`gloomwood-old-mossjaw`, `gloomwood-toll-booth`, `sunken
 `sunkencrypt-crypt-crab`, `props-noticeboard`, `props-tavern-cat`) — all passed (highlights track
 the light, no caved-in/inverted relief) on the unchanged Flip-Y-OFF import convention; the
 remaining full-chain assets share the identical unchanged script + convention.
+
+## LW-art parity — 3 missing hero classes + shop-interior, 2026-07-19
+
+| Id | Track | Seed | Hand-finished | Build-half |
+|----|-------|------|---------------|------------|
+| hero-occultist | active | 969827894+5 (round-2 candidate, resolved 969827899) | no | `art/build/hero-occultist.build.json` |
+| hero-sentinel | active | 1731462135+0 (candidate c0) | no | `art/build/hero-sentinel.build.json` |
+| hero-skirmisher | active | 837462951+0 (round-2 candidate, superseding 1043285190+0) | no | `art/build/hero-skirmisher.build.json` |
+| shop-interior | active | 497501341+4 (round-2 candidate, resolved 497501345) | no | `art/build/shop-interior.build.json` |
+
+The 3 hero class-figures (living-world plan §LW-art: Occultist/Sentinel/Skirmisher, the sim classes
+shipped since the original V3 hero set) generated at 512x768 Active settings
+(28/6.5/dpmpp_2m/karras, no LoRA) via ComfyUI MCP, `NeutralBaseTint: true` + full BiRefNet
+`cutout.py --trim` → Sobel `normalmap.py … 2.5` chain, same as hero-vanguard/striker/mystic.
+hero-occultist needed a full second 4-candidate escalation round (round 1 hit the character-sheet/
+picture-frame/signature-mark/cel-shaded-anime attractors on all 4 candidates); the escalation added
+a `NoConceptSheet` negative constant to `HeroSpecs.cs` (frame/turnaround/comic/anime terms) plus a
+generation-time-only positive addendum ("atmospheric digital painting, soft painterly brushwork,
+subtle rim lighting, single full-bleed illustration, one pose only") that cleared the same
+attractor for all three classes without a second round for hero-skirmisher (2 candidates, no
+escalation) and only a partial win for hero-sentinel (10 candidates across 3 rounds — the
+shield+warhammer weapon pair kept drawing floating weapon-icon insets, character sheets, and one
+two-headed anatomy error; the accepted candidate reads a single polearm instead of shield+warhammer
+but was the only artifact-free composition). None of the three exactly hit their weapon prop as
+written in `AssetSpec.Subject` — curation prioritized a clean single-pose, artifact-free silhouette
+over literal prop fidelity, consistent with prior waves (see U5's cave-rat/forgeworm precedent).
+Normal-map QA relies on the unchanged Sobel script + Flip-Y-OFF import convention (not re-swept
+this wave — no script/setting change).
+
+`shop-interior` (LW3's `ShopStage` backdrop dependency) generated at the full 1024² Active square
+(matching the `AssetKind.Building`/`Backdrop` precedent, not a direct 1024x224 request) — round 1
+(4 candidates) universally drew a 3/4-isometric room corner with shelves already stocked with
+pottery/jars, failing both the "flat front elevation" and "empty shelf" requirements; round 2
+rewrote the subject to explicitly demand a flat, front-on, perspective-free shelf-wall texture with
+bare cubbies and added matching negatives (isometric, room corner, perspective, pottery, jars,
+clutter), clearing 3 of 4. The winner was then manually cropped to a 1024x224 band (not run through
+`cutout.py`): the composition is a full-bleed, edge-to-edge shelf texture with no isolated
+background for BiRefNet's salient-object segmentation to remove — the same condition that makes
+`mine-backdrop`/`gloomwood-backdrop` skip cutout — so it was format-converted straight to opaque
+RGBA instead, deviating from `ShopSpecs.cs`'s doc-comment expectation of the normal cutout chain.
+The normal map still ran (Sobel `normalmap.py … 2.5`, `NormalMap: true`) since the surface is a
+near, lit, structured wall rather than a receding atmospheric plane.
+
+**Post-generation quality gate correction (same day, Worker E finish-and-ship pass):** curating the
+four LW-art assets against the shipped hero-vanguard/striker/mystic pairs found `hero-skirmisher`'s
+original seed-1043285190 winner visibly cel-shaded with thick ink outlines -- a style-parity miss,
+not caught by the original 2-candidate no-escalation round. Re-rolled 4 candidates at seed
+837462951+0..+3 with a stronger painterly-brushwork addendum and explicit anti-lineart negatives
+layered on top of `NoConceptSheet`; c0 (837462951+0) cleared cleanly and replaced the original file.
+`hero-occultist` and `hero-sentinel` were inspected against the same bar and both hold up as
+genuinely painterly -- no other regeneration was needed this pass. See
+`art/build/hero-skirmisher.build.json` for full before/after provenance.

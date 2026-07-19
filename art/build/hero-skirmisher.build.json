@@ -1,0 +1,20 @@
+{
+  "Seed": 837462951,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "26c73640a50673293d5856a7cc16ad9dea421ccc24597a5341e157f2c05cdd38",
+  "NormalSha256": "c4f34a633b559f88fb5a8c52f0cf3dcab8aca020fbec929a740bb00c8e07a488",
+  "Uid": "uid://d2rccje8gku6d",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "LW-art parity, 2026-07-19, round 2 (re-curated during Worker E's finish-and-ship pass): the original seed-1043285190 winner passed curation on subject-fidelity grounds but reads visibly cel-shaded/thick-outlined on inspection -- a style-parity miss against hero-vanguard/striker/mystic's soft painterly rendering (the exact NoConceptSheet attractor the negative was meant to block, that slipped through this class's original 2-candidate round with no escalation). Re-rolled 4 fresh candidates (seed 837462951+0..+3) with a strengthened generation-time-only prompt: same Active/house/Subject/NeutralBase composition plus an emphasized painterly addendum ('painted with visible loose brush strokes ... no ink outlines, no line art, soft blended shading only') and explicit anti-lineart negatives added on top of NoConceptSheet ('ink outline, line art, manga, graphic novel illustration, poster art, hard cel shading, thick black lineart, sketch lines, bold linework'). 3 of 4 rejected: two repeated the same cel-shaded/thick-outline failure and one drew a concept-art UI panel with palette swatches (the NoConceptSheet attractor again, in a new shape).",
+    "paintoverNote": "Winner is c0 (seed+0): single hooded rogue figure, one curved blade held low, soft painterly brushwork with no ink outlines -- matches the vanguard/mystic/striker rendering style cleanly. Diverges from the original brief (dual curved blades) the same way the other two LW-art classes' winners diverge from their AssetSpec.Subject weapon phrasing -- curation prioritized style-parity and an artifact-free painterly silhouette over literal prop fidelity (see hero-occultist/hero-sentinel's provenance for the same trade-off, and U5's cave-rat/forgeworm precedent). Silhouette still reads distinct from Striker (twin short daggers, no cloak) and Occultist (straight sword, no scarf-wrap hood) via the flowing scarf-hood and single longer blade.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse; background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5), Flip-Y-OFF import convention unchanged from the hero-vanguard/striker/mystic precedent -- lit ClassFigure sprite per AssetSpec.NormalMap=true, NeutralBaseTint=true (multiplied in-engine by ClassDefinition.ColorRgb for 'skirmisher', emerald (46,204,113))."
+  }
+}

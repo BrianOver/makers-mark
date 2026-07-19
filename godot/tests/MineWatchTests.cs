@@ -153,16 +153,20 @@ public class MineWatchTests
     [TestCase]
     public void MarchingParty_UnshippedClassArt_SkipsThatFigureOnly_NoCrash()
     {
-        // "skirmisher" is a real registered class (GameSim.Classes.Skirmisher) with no committed
-        // lit art yet (LW-art's occultist/sentinel/skirmisher figures are a separate in-flight
-        // unit) — the per-figure graceful degrade this proves is independent of that unit landing.
+        // AssetCatalog.HeroPortrait(classId) is a plain string lookup (IconRegistry.Lit($"hero-
+        // {classId}")) with no ClassRegistry validation, so a deliberately-unregistered classId
+        // exercises the "no lit art for this class" branch forever, independent of which real
+        // sim classes currently have shipped art (LW-art parity shipped occultist/sentinel/
+        // skirmisher's figures, which used to be this test's example -- see art/build/hero-
+        // skirmisher.build.json). The per-figure graceful degrade this proves (skip that one
+        // figure, don't crash) is what's under test, not any particular class's art status.
         var watch = new MineWatch();
         try
         {
             watch.Build();
             var heroes = ImmutableSortedDictionary<int, Hero>.Empty
                 .Add(1, Delver(1, "V1", "vanguard"))
-                .Add(2, Delver(2, "K1", "skirmisher"));
+                .Add(2, Delver(2, "K1", "unshipped-test-class"));
             var state = GameFactory.NewGame(9099) with { Heroes = heroes };
             var departed = ImmutableList.Create<GameEvent>(
                 new PartyDeparted(ImmutableList.Create(new HeroId(1), new HeroId(2)), 2));

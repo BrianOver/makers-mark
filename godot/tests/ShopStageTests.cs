@@ -23,19 +23,22 @@ namespace GodotClient.Tests;
 public class ShopStageTests
 {
     [TestCase]
-    public void Build_NoShopInteriorArtYet_DegradesToGeneratedGradient()
+    public void Build_ShopInteriorArtShipped_UsesLitBackdrop()
     {
-        // LW-art hasn't shipped "shop-interior" yet — the degrade path is what actually runs today.
-        AssertThat(IconRegistry.Lit("shop-interior")).IsNull();
+        // LW-art parity (2026-07-19) shipped "shop-interior" — see art/build/shop-interior.build.json.
+        // This was "Build_NoShopInteriorArtYet_DegradesToGeneratedGradient" pre-ship; the graceful-
+        // degrade branch it exercised is still live code (ShopStage.BuildBackdrop's else arm) but is
+        // no longer reachable through this real, always-registered asset id.
+        AssertThat(IconRegistry.Lit("shop-interior")).IsNotNull();
 
         var stage = new ShopStage();
         try
         {
             stage.Build();
 
-            AssertThat(stage.HasBackdropArt).IsFalse();
-            AssertThat(stage.World.FindChild("ShopBackdropFallback", true, false)).IsNotNull();
-            AssertThat(stage.World.FindChild("ShopBackdrop", true, false)).IsNull();
+            AssertThat(stage.HasBackdropArt).IsTrue();
+            AssertThat(stage.World.FindChild("ShopBackdrop", true, false)).IsNotNull();
+            AssertThat(stage.World.FindChild("ShopBackdropFallback", true, false)).IsNull();
 
             // Decoration only — never intercepts a click (same contract as LitTownOverlay).
             AssertThat(stage.MouseFilter).IsEqual(Control.MouseFilterEnum.Ignore);
