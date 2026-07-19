@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Economy;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
@@ -58,6 +59,25 @@ public class LayoutTests
         Items = new[] { Weapon(90, 30), Armor(91, 20), Salve(50) }
             .ToImmutableSortedDictionary(i => i.Id.Value, i => i),
     };
+
+    // ── Rival shelf fixture (the exact two-word names the findings quote) ────────────────────
+
+    private static GameState RivalShelfWorld()
+    {
+        var longsword = RivalCatalog.Entries.First(e => e.Name == "Soldier's Longsword");
+        var buckler = RivalCatalog.Entries.First(e => e.Name == "Pine Buckler");
+        var items = new[]
+            {
+                RivalCatalog.Mint(new ItemId(900), longsword),
+                RivalCatalog.Mint(new ItemId(901), buckler),
+            }
+            .ToImmutableSortedDictionary(i => i.Id.Value, i => i);
+        var shelf = ImmutableList.Create(
+            new ShelfEntry(new ItemId(900), longsword.Price),
+            new ShelfEntry(new ItemId(901), buckler.Price));
+
+        return GameFactory.NewGame(CampSeed) with { Items = items, RivalShelf = shelf };
+    }
 
     // ── 1. Evening Ledger: populated return cards render at real width ───────────────────────
 
@@ -127,6 +147,34 @@ public class LayoutTests
         {
             ui.Tabs.CurrentTab = 2; // Shop
             await SettleLayout(ui);
+
+            AssertLabelsReadable(Find<ScrollContainer>(ui.Shop, "Scroll"));
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// Playtest findings 2026-07-19 §8: "Pine/Buckle/r", "Soldier/'s/Longs/word" — the rival
+    /// catalog's two-word item names ("Pine Buckler", "Soldier's Longsword") wrapped mid-word on
+    /// the Rival Shelf. A fresh campaign's <c>RivalShelf</c> starts empty (populated over several
+    /// days by <c>RivalRestockSystem</c>), so <see cref="ShopBody_Labels_RenderAtReadableWidth"/>
+    /// above never actually exercised this card — this fixture seeds it directly.
+    /// </summary>
+    [TestCase]
+    public async Task ShopBody_RivalShelfLongItemNames_WrapAtWordBoundaries_NotMidWord()
+    {
+        var ui = MountMainUi(new SimAdapter(RivalShelfWorld()));
+        try
+        {
+            ui.Tabs.CurrentTab = 2; // Shop
+            await SettleLayout(ui);
+
+            var shopText = RenderedText(ui.Shop);
+            AssertThat(shopText).Contains("Soldier's Longsword");
+            AssertThat(shopText).Contains("Pine Buckler");
 
             AssertLabelsReadable(Find<ScrollContainer>(ui.Shop, "Scroll"));
         }
