@@ -36,10 +36,29 @@ public partial class TownScene : SimPanel
     private const float RallyFileSpacing = 16f;
     private const float FileExitStaggerSeconds = 0.35f;
 
+    // LW2 speech bubbles: shared budget across gossip/pair-banter/shop barks (plan LW2 caps).
+    private static readonly Vector2 TavernAnchor = new(700, 90);
+    private const int MaxConcurrentBubbles = 2;
+    private const float BubbleCooldownSeconds = 20f; // per-hero, in town time
+    private const float PairBanterRadius = 70f; // "idle near each other" threshold, px
+
+    private static readonly string[] SatisfactionBarks =
+    [
+        "Nice find!",
+        "Worth every coin.",
+        "This'll do.",
+        "A steal!",
+        "Exactly what I needed.",
+    ];
+
     /// <summary>Smooth phase-tint crossfade duration (LW1: replaces the old instant snap).</summary>
     public const float TintTweenSeconds = 1.5f;
 
     private readonly Dictionary<int, HeroSprite> _sprites = [];
+    private readonly List<(SpeechBubble Bubble, int OwnerId)> _bubbles = [];
+    private readonly Dictionary<int, float> _bubbleLastShownAt = [];
+    private readonly HashSet<string> _shownLinesToday = [];
+    private int _bubbleDedupeDay = -1;
 
     private Control? _heroLayer;
     private Control? _memorialPlot;
@@ -62,6 +81,9 @@ public partial class TownScene : SimPanel
 
     /// <summary>Live sprites keyed by HeroId.Value — alive heroes only.</summary>
     public IReadOnlyDictionary<int, HeroSprite> Sprites => _sprites;
+
+    /// <summary>LW2: currently-live speech bubbles (test/inspection surface) — insertion order.</summary>
+    public IReadOnlyList<SpeechBubble> Bubbles => _bubbles.Select(b => b.Bubble).ToList();
 
     /// <summary>Stones currently in the memorial plot (mirrors DramaState.Memorials).</summary>
     public int MemorialStoneCount { get; private set; }
@@ -108,6 +130,47 @@ public partial class TownScene : SimPanel
         {
             sprite.Advance(delta, _townTime);
         }
+
+        AdvanceBubbles(delta);
+    }
+
+    /// <summary>
+    /// LW2: advance every live speech bubble's pop-in/hold/fade lifecycle and reap the ones that
+    /// finished; a bubble still tracks its owning hero's CURRENT (bobbing/wandering) position
+    /// every tick, and is reaped immediately (no dangling reference) if that hero's sprite is
+    /// gone — permadeath can remove a sprite mid-bubble on a fast-forwarded Evening reveal.
+    /// </summary>
+    private void AdvanceBubbles(double delta)
+    {
+        for (var i = _bubbles.Count - 1; i >= 0; i--)
+        {
+            var (bubble, ownerId) = _bubbles[i];
+            if (!_sprites.TryGetValue(ownerId, out var owner)
+                || !GodotObject.IsInstanceValid(owner)
+                || owner.State == HeroSprite.TownState.Away)
+            {
+                // Gone (permadeath) or now off in the Mine — LW1's "absence is the signal"
+                // extends to bubbles too: nothing should float over an empty gate.
+                ReapBubble(i, bubble);
+                continue;
+            }
+
+            bubble.Advance(delta);
+            if (bubble.IsDone)
+            {
+                ReapBubble(i, bubble);
+                continue;
+            }
+
+            bubble.PositionAbove(owner.HeadAnchor);
+        }
+    }
+
+    private void ReapBubble(int index, SpeechBubble bubble)
+    {
+        _bubbles.RemoveAt(index);
+        _heroLayer!.RemoveChild(bubble);
+        bubble.Free();
     }
 
     /// <summary>Reconcile sprites, memorial plot, and tint from <c>Adapter.CurrentState</c>.</summary>
@@ -125,6 +188,14 @@ public partial class TownScene : SimPanel
         foreach (var sprite in _sprites.Values)
         {
             sprite.Day = state.Day; // LW1 anchor-vignette determinism key (heroId + day)
+        }
+
+        // LW2: same-day gossip-line dedupe resets on a new day (Erenshor anti-pattern guard —
+        // never repeat a verbatim gossip line within one day).
+        if (state.Day != _bubbleDedupeDay)
+        {
+            _shownLinesToday.Clear();
+            _bubbleDedupeDay = state.Day;
         }
 
         // LW1: arm a crossfade from whatever is currently on-screen (possibly still mid-tween
@@ -153,6 +224,11 @@ public partial class TownScene : SimPanel
         {
             return;
         }
+
+        // LW2: render this tick's gossip/shop-bark lines BEFORE the Morning arm below moves
+        // anyone to Rallying — GossipSystem and HeroShoppingSystem are both Morning systems, so
+        // their events land in this SAME LastEvents batch while every subject is still Wandering.
+        ProcessSpeechEvents();
 
         switch (completedPhase)
         {
@@ -231,6 +307,128 @@ public partial class TownScene : SimPanel
     /// the group reads as a cluster, not a stack (LW1).</summary>
     private static Vector2 RallySpotFor(int index, int count) =>
         RallyCenter + new Vector2(0, (index - (count - 1) / 2f) * RallyFileSpacing);
+
+    /// <summary>
+    /// LW2: scan this tick's <c>Adapter.LastEvents</c> for the two told-on-screen kinds — gossip
+    /// (already-generated <see cref="TavernPack"/> prose) and a player-shelf sale (a short,
+    /// presentation-only satisfaction bark; ItemSold itself carries no prose to reuse) — and
+    /// render each as a bubble, subject to the shared concurrent-bubble cap, per-hero cooldown,
+    /// and same-day line dedupe.
+    /// </summary>
+    private void ProcessSpeechEvents()
+    {
+        foreach (var gameEvent in Adapter!.LastEvents)
+        {
+            switch (gameEvent)
+            {
+                case GossipEmitted gossip:
+                    TryShowGossip(gossip.Line);
+                    break;
+                case ItemSold { FromPlayerShop: true } sold:
+                    TryShowBark(sold.Buyer.Value);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Erenshor's "world runs without me": prefer rendering the line as pair-banter (speaker +
+    /// a "…!" reaction bubble) when two Wandering heroes happen to be idling near each other;
+    /// otherwise a single wanderer nearest the tavern speaks it solo. Either way, same-day
+    /// dedupe/cooldown/cap gate whether — and how — the line actually renders.
+    /// </summary>
+    private void TryShowGossip(string line)
+    {
+        if (_shownLinesToday.Contains(line))
+        {
+            return; // Erenshor anti-pattern guard: never repeat a verbatim line same-day.
+        }
+
+        var pair = FindIdlePair();
+        if (pair is { } found
+            && _bubbles.Count + 2 <= MaxConcurrentBubbles
+            && BubbleReady(found.A.HeroValue) && BubbleReady(found.B.HeroValue))
+        {
+            Spawn(found.A, line, reaction: false);
+            Spawn(found.B, "…!", reaction: true);
+            _shownLinesToday.Add(line);
+            return;
+        }
+
+        var speaker = NearestWanderingToTavern();
+        if (speaker is not null && _bubbles.Count + 1 <= MaxConcurrentBubbles && BubbleReady(speaker.HeroValue))
+        {
+            Spawn(speaker, line, reaction: false);
+            _shownLinesToday.Add(line);
+        }
+    }
+
+    /// <summary>A player-shelf sale's buyer barks a short satisfaction line — only while they are
+    /// still visibly Wandering in town (a sprite bound mid-expedition, or already off Rallying by
+    /// the time this reads, has nobody on-screen to bark).</summary>
+    private void TryShowBark(int heroValue)
+    {
+        if (!_sprites.TryGetValue(heroValue, out var sprite) || sprite.State != HeroSprite.TownState.Wandering)
+        {
+            return;
+        }
+
+        if (_bubbles.Count + 1 > MaxConcurrentBubbles || !BubbleReady(heroValue))
+        {
+            return;
+        }
+
+        Spawn(sprite, SatisfactionBarks[heroValue % SatisfactionBarks.Length], reaction: false);
+    }
+
+    /// <summary>The closest pair of currently-Wandering heroes within <see cref="PairBanterRadius"/>
+    /// of each other, deterministic (log/heroId order, no RNG) — null when nobody qualifies.</summary>
+    private (HeroSprite A, HeroSprite B)? FindIdlePair()
+    {
+        var idle = _sprites.Values
+            .Where(s => s.State == HeroSprite.TownState.Wandering)
+            .OrderBy(s => s.HeroValue)
+            .ToList();
+
+        (HeroSprite A, HeroSprite B)? best = null;
+        var bestDistance = float.MaxValue;
+        for (var i = 0; i < idle.Count; i++)
+        {
+            for (var j = i + 1; j < idle.Count; j++)
+            {
+                var distance = idle[i].Position.DistanceTo(idle[j].Position);
+                if (distance <= PairBanterRadius && distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = (idle[i], idle[j]);
+                }
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>The Wandering hero closest to the tavern door — the plan's "bubble over the hero
+    /// nearest the tavern" solo-speaker pick; ties break on heroId for determinism.</summary>
+    private HeroSprite? NearestWanderingToTavern() =>
+        _sprites.Values
+            .Where(s => s.State == HeroSprite.TownState.Wandering)
+            .OrderBy(s => s.Position.DistanceTo(TavernAnchor))
+            .ThenBy(s => s.HeroValue)
+            .FirstOrDefault();
+
+    private bool BubbleReady(int heroValue) =>
+        !_bubbleLastShownAt.TryGetValue(heroValue, out var last) || _townTime - last >= BubbleCooldownSeconds;
+
+    private void Spawn(HeroSprite sprite, string line, bool reaction)
+    {
+        var bubble = new SpeechBubble();
+        bubble.Setup(line, reaction);
+        bubble.PositionAbove(sprite.HeadAnchor);
+        _heroLayer!.AddChild(bubble);
+        _bubbles.Add((bubble, sprite.HeroValue));
+        _bubbleLastShownAt[sprite.HeroValue] = (float)_townTime;
+    }
 
     private void ReconcileSprites(GameState state)
     {
@@ -384,7 +582,7 @@ public partial class TownScene : SimPanel
         BuildGate();
         BuildBuilding("Forge", new Vector2(420, 90));
         BuildBuilding("Shop", new Vector2(560, 90));
-        BuildBuilding("Tavern", new Vector2(700, 90));
+        BuildBuilding("Tavern", TavernAnchor);
         BuildMemorialPlot();
 
         _heroLayer = new Control

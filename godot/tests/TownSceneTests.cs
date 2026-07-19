@@ -939,6 +939,174 @@ public class TownSceneTests
         }
     }
 
+    // ── LW2 speech bubbles ────────────────────────────────────────────────────────────────────
+
+    [TestCase]
+    public void Gossip_PairBanter_RendersSpeakerAndReactionOnTheClosestIdlePair()
+    {
+        // RecruitReadyCampaign trims to heroes {1,2,3} (Torvald/Brunhilde/Kael) and forces a
+        // day-1 recruit (id 7) — HomeFor spreads heroes such that (2,7) land ~16px apart (well
+        // under PairBanterRadius) while every OTHER pair among {1,2,3,7} sits 90px+ apart, so
+        // this fixture deterministically has exactly one qualifying idle pair.
+        var ui = MountMainUi(new SimAdapter(RecruitReadyCampaign(ScriptedSession.Seed)));
+        try
+        {
+            AdvanceDay(ui); // day 1: recruit arrives; Evening's SnapHome settles everyone Wandering
+            ui.Adapter.AdvancePhase(); // day 2 Morning: GossipSystem reads day 1's log
+
+            var gossipLines = ui.Adapter.LastEvents.OfType<GossipEmitted>().Select(g => g.Line).ToList();
+            AssertThat(gossipLines.Count > 0).IsTrue();
+
+            AssertThat(ui.Town.Bubbles.Count).IsEqual(2);
+            var reaction = ui.Town.Bubbles.SingleOrDefault(b => b.IsReaction);
+            AssertThat(reaction).IsNotNull();
+            AssertThat(reaction!.Line).IsEqual("…!");
+
+            var speaker = ui.Town.Bubbles.SingleOrDefault(b => !b.IsReaction);
+            AssertThat(speaker).IsNotNull();
+            AssertThat(gossipLines.Contains(speaker!.Line)).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Gossip_NoQualifyingPair_RendersSoloBubbleOnOneWanderingHero()
+    {
+        // Sparse fixture: heroes {1,3} + the day-1 recruit (7) sit 100px+ apart from each other
+        // (no pair under PairBanterRadius) — the solo "nearest the tavern" path is the only one
+        // that can render this gossip line.
+        var ui = MountMainUi(new SimAdapter(RecruitReadyCampaignSparse(ScriptedSession.Seed)));
+        try
+        {
+            AdvanceDay(ui);
+            ui.Adapter.AdvancePhase();
+
+            var gossipLines = ui.Adapter.LastEvents.OfType<GossipEmitted>().Select(g => g.Line).ToList();
+            AssertThat(gossipLines.Count > 0).IsTrue();
+
+            AssertThat(ui.Town.Bubbles.Count).IsEqual(1);
+            var bubble = ui.Town.Bubbles[0];
+            AssertThat(bubble.IsReaction).IsFalse();
+            AssertThat(gossipLines.Contains(bubble.Line)).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Gossip_SameLineTwice_SameDay_IsDeduped()
+    {
+        // Erenshor anti-pattern guard: replaying the SAME LastEvents batch (as if the identical
+        // gossip line arrived again this day) must not add a second bubble for it.
+        var ui = MountMainUi(new SimAdapter(RecruitReadyCampaignSparse(ScriptedSession.Seed)));
+        try
+        {
+            AdvanceDay(ui);
+            ui.Adapter.AdvancePhase();
+            AssertThat(ui.Adapter.LastEvents.OfType<GossipEmitted>().Any()).IsTrue();
+            var countAfterFirst = ui.Town.Bubbles.Count;
+            AssertThat(countAfterFirst).IsEqual(1);
+
+            ui.Town.OnPhaseCompleted(DayPhase.Morning); // reprocess the IDENTICAL event batch
+            AssertThat(ui.Town.Bubbles.Count).IsEqual(countAfterFirst);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ItemSold_FromPlayerShop_BuyerBarksASatisfactionLine()
+    {
+        var ui = MountMainUi(new SimAdapter(OneGuaranteedBuyerState(ScriptedSession.Seed)));
+        try
+        {
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+            ui.Adapter.AdvancePhase(); // day 1 Morning: the sale lands
+
+            var sale = ui.Adapter.LastEvents.OfType<ItemSold>().FirstOrDefault(s => s.FromPlayerShop);
+            AssertThat(sale).IsNotNull();
+
+            AssertThat(ui.Town.Bubbles.Count).IsEqual(1);
+            var bark = ui.Town.Bubbles[0];
+            AssertThat(bark.IsReaction).IsFalse();
+            AssertThat(bark.Line.Length > 0).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ConcurrentBubbleCap_LimitsToTwoEvenWithThreeSimultaneousSales()
+    {
+        var ui = MountMainUi(new SimAdapter(ThreeGuaranteedBuyersState(ScriptedSession.Seed)));
+        try
+        {
+            ui.Adapter.AdvancePhase(); // day 1 Morning: three heroes each buy a distinct item
+
+            var sales = ui.Adapter.LastEvents.OfType<ItemSold>().Count(s => s.FromPlayerShop);
+            AssertThat(sales).IsEqual(3); // three simultaneous bark-worthy events this tick
+
+            AssertThat(ui.Town.Bubbles.Count).IsEqual(2); // capped, not 3
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void PerHeroCooldown_BlocksASecondBarkForTheSameHeroInOneTick()
+    {
+        // HeroShoppingSystem can sell a hero TWO items in one Morning tick — a gear upgrade
+        // (gear pass) and a consumable (P2 pass) — giving two ItemSold(FromPlayerShop:true)
+        // events for the SAME buyer in ONE LastEvents batch, entirely before the departure
+        // switch touches sprite state. So the cooldown map — not the Wandering-state guard —
+        // is what blocks the second bark here.
+        var ui = MountMainUi(new SimAdapter(OneHeroTwoPurchasesState(ScriptedSession.Seed)));
+        try
+        {
+            ui.Adapter.AdvancePhase();
+
+            var sales = ui.Adapter.LastEvents.OfType<ItemSold>().Where(s => s.FromPlayerShop).ToList();
+            AssertThat(sales.Count).IsEqual(2);
+            AssertThat(sales[0].Buyer).IsEqual(sales[1].Buyer); // same hero, both purchases
+
+            AssertThat(ui.Town.Bubbles.Count).IsEqual(1); // cooldown blocked the second bark
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Bubble_FullLifecycle_ReapsAutomaticallyOnceFaded()
+    {
+        var ui = MountMainUi(new SimAdapter(OneGuaranteedBuyerState(ScriptedSession.Seed)));
+        try
+        {
+            ui.Adapter.AdvancePhase();
+            AssertThat(ui.Town.Bubbles.Count).IsEqual(1);
+
+            ui.Town.Animate(
+                SpeechBubble.PopInSeconds + SpeechBubble.HoldSeconds + SpeechBubble.FadeOutSeconds + 1.0);
+            AssertThat(ui.Town.Bubbles.Count).IsEqual(0);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── Staged-party fixture (mirrors CampPanelTests / CampHandlersTests) ─────────────────────
     // Seed 6 parks a strong vanguard party at the floor-1 checkpoint.
     private const ulong CampSeed = 6;
@@ -1006,6 +1174,106 @@ public class TownSceneTests
         {
             Heroes = trimmed,
             Drama = state.Drama with { DaysUntilNextRecruit = 0 },
+        };
+    }
+
+    /// <summary>
+    /// Same day-1-recruit setup as <see cref="RecruitReadyCampaign"/>, but keeping heroes 1 and 3
+    /// (Torvald/Kael) instead of 1-2-3 — every pair among {1, 3, 7} (the day-1 recruit) sits
+    /// 100px+ apart (LW2 solo-fallback fixture: no idle pair qualifies for pair-banter).
+    /// </summary>
+    private static GameState RecruitReadyCampaignSparse(ulong seed)
+    {
+        var state = GameComposition.NewCampaign(seed);
+        var sparse = state.Heroes.Values.Where(h => h.Id.Value is 1 or 3)
+            .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+        return state with
+        {
+            Heroes = sparse,
+            Drama = state.Drama with { DaysUntilNextRecruit = 0 },
+        };
+    }
+
+    private static Item ShopWeapon(int id, int attack, int price) => new(
+        new ItemId(id), "test-recipe", $"Test Blade {id}", ItemSlot.Weapon, QualityGrade.Common,
+        new ItemStats(attack, 0, 2), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+    /// <summary>
+    /// A real composed campaign (day 1) with every starting hero's gear cleared, gold bumped,
+    /// and ONE weapon on the player's shelf — only the lowest-HeroId hero buys it (everyone
+    /// after finds an empty shelf), giving exactly one ItemSold(FromPlayerShop:true) this tick
+    /// (LW2 bark/cooldown fixture).
+    /// </summary>
+    private static GameState OneGuaranteedBuyerState(ulong seed)
+    {
+        var baseState = GameComposition.NewCampaign(seed);
+        var item = ShopWeapon(9001, attack: 10, price: 8);
+        var heroes = baseState.Heroes.Values
+            .Select(h => h with { Gold = 500, Gear = GearSet.Empty })
+            .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+        return baseState with
+        {
+            Heroes = heroes,
+            RivalShelf = ImmutableList<ShelfEntry>.Empty,
+            Items = baseState.Items.Add(item.Id.Value, item),
+            Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(item.Id, 8)) },
+        };
+    }
+
+    /// <summary>
+    /// A weapon (gear pass) AND a Heal consumable (P2 pass) on the shelf, gold to spare — the
+    /// lowest-HeroId hero buys BOTH in one Morning tick (two separate shopping passes), giving
+    /// two ItemSold(FromPlayerShop:true) events for the SAME buyer in one LastEvents batch
+    /// (LW2 per-hero-cooldown fixture).
+    /// </summary>
+    private static GameState OneHeroTwoPurchasesState(ulong seed)
+    {
+        var baseState = GameComposition.NewCampaign(seed);
+        var weapon = ShopWeapon(9001, attack: 10, price: 8);
+        var salve = new Item(
+            new ItemId(9002), "test-salve", "Test Salve", ItemSlot.Consumable, QualityGrade.Common,
+            new ItemStats(0, 0, 1), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty,
+            new ConsumableEffect(ConsumableKind.Heal, 6));
+        var heroes = baseState.Heroes.Values
+            .Select(h => h with { Gold = 500, Gear = GearSet.Empty })
+            .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+        return baseState with
+        {
+            Heroes = heroes,
+            RivalShelf = ImmutableList<ShelfEntry>.Empty,
+            Items = baseState.Items.Add(weapon.Id.Value, weapon).Add(salve.Id.Value, salve),
+            Player = baseState.Player with
+            {
+                Shelf = ImmutableList.Create(new ShelfEntry(weapon.Id, 8), new ShelfEntry(salve.Id, 5)),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Same recipe as <see cref="OneGuaranteedBuyerState"/> but with THREE distinct weapons on
+    /// the shelf — the three lowest-HeroId heroes each provably buy a different one (best-value-
+    /// first; the shelf shrinks after each buy), giving three simultaneous
+    /// ItemSold(FromPlayerShop:true) events in one Morning tick (LW2 cap-test fixture).
+    /// </summary>
+    private static GameState ThreeGuaranteedBuyersState(ulong seed)
+    {
+        var baseState = GameComposition.NewCampaign(seed);
+        var items = new[] { ShopWeapon(9001, 10, 8), ShopWeapon(9002, 8, 6), ShopWeapon(9003, 6, 4) };
+        var heroes = baseState.Heroes.Values
+            .Select(h => h with { Gold = 500, Gear = GearSet.Empty })
+            .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+        return baseState with
+        {
+            Heroes = heroes,
+            RivalShelf = ImmutableList<ShelfEntry>.Empty,
+            Items = items.Aggregate(baseState.Items, (acc, item) => acc.Add(item.Id.Value, item)),
+            Player = baseState.Player with
+            {
+                Shelf = ImmutableList.Create(
+                    new ShelfEntry(items[0].Id, 8),
+                    new ShelfEntry(items[1].Id, 6),
+                    new ShelfEntry(items[2].Id, 4)),
+            },
         };
     }
 }
