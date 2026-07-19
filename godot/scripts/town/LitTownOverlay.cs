@@ -68,6 +68,7 @@ public partial class LitTownOverlay : SubViewportContainer
     private Node2D _world = null!;
     private CanvasModulate _ambient = null!;
     private GradientTexture2D _lightGradient = null!;
+    private AmbientFxLayer _fx = null!;
     private float _time;
     private bool _built;
 
@@ -79,6 +80,10 @@ public partial class LitTownOverlay : SubViewportContainer
 
     /// <summary>Per-building warm lights (for tests / tuning).</summary>
     public IReadOnlyList<PointLight2D> Lights => _lights;
+
+    /// <summary>LW4 atmosphere layer (window glow, forge-coals landmark, particles, props, fog) —
+    /// mounted as a child of <see cref="World"/>, phase-driven from <see cref="ApplyPhase"/>.</summary>
+    public AmbientFxLayer Fx => _fx;
 
     /// <summary>True once at least one lit sprite resolved — lets TownScene skip the backdrop
     /// entirely (and any veil) when every asset is absent, so the SVG town is untouched.</summary>
@@ -118,7 +123,7 @@ public partial class LitTownOverlay : SubViewportContainer
 
         // Phase ambience: a CanvasModulate MULTIPLIES the lit world only (the SubViewport isolates
         // it from the TabContainer UI). Starts warm (Morning) to match TownScene's own initial tint.
-        _ambient = new CanvasModulate { Name = "AmbientTint", Color = TownScene.TintFor(DayPhase.Morning) };
+        _ambient = new CanvasModulate { Name = "AmbientTint", Color = AtmosphereTintFor(DayPhase.Morning) };
         _world.AddChild(_ambient);
 
         _lightGradient = BuildLightGradient();
@@ -133,17 +138,45 @@ public partial class LitTownOverlay : SubViewportContainer
             TryAddHero(hero);
         }
 
+        // LW4 atmosphere layer: window glow, forge-coals landmark, particles, props, fog — all on
+        // top of the buildings/heroes above so glow/embers read over the facades they belong to.
+        _fx = new AmbientFxLayer();
+        _world.AddChild(_fx);
+        _fx.Build(buildings);
+        _fx.ApplyPhase(DayPhase.Morning);
+
         _built = true;
     }
 
-    /// <summary>Push the phase tint onto the lit world's CanvasModulate (same 5-phase table as
-    /// TownScene). Called from <see cref="TownScene.Refresh"/> so the lit backdrop tracks the sim.</summary>
+    /// <summary>
+    /// Two-temperature retune (LW4): the lit backdrop's OWN CanvasModulate ramp. Morning/Expedition
+    /// (daylight) match <see cref="TownScene.TintFor"/> exactly; Camp/ExpeditionDeep/Evening are
+    /// deliberately cooler and more desaturated than that table (which stays exactly as pinned —
+    /// it drives the flat SVG town's Modulate and its own tests) so the warm window-glow sprites
+    /// and forge coals (<see cref="AmbientFxLayer"/>) visibly pop against a colder dusk/night sky.
+    /// Never below the crush point (the darkest stop still reads as navy, not black).
+    /// </summary>
+    public static Color AtmosphereTintFor(DayPhase phase) => phase switch
+    {
+        DayPhase.Morning => new Color(1.00f, 0.92f, 0.78f),
+        DayPhase.Expedition => new Color(1.00f, 1.00f, 1.00f),
+        DayPhase.Camp => new Color(0.59f, 0.66f, 0.78f),          // dusk
+        DayPhase.ExpeditionDeep => new Color(0.42f, 0.46f, 0.64f), // deepening
+        DayPhase.Evening => new Color(0.30f, 0.32f, 0.55f),        // night — above the crush point
+        _ => new Color(1.00f, 1.00f, 1.00f),
+    };
+
+    /// <summary>Push the phase tint onto the lit world's CanvasModulate (this overlay's OWN
+    /// two-temperature ramp — see <see cref="AtmosphereTintFor"/>) and fan it out to the fx
+    /// layer. Called from <see cref="TownScene.Refresh"/> so the lit backdrop tracks the sim.</summary>
     public void ApplyPhase(DayPhase phase)
     {
         if (_ambient is not null)
         {
-            _ambient.Color = TownScene.TintFor(phase);
+            _ambient.Color = AtmosphereTintFor(phase);
         }
+
+        _fx?.ApplyPhase(phase);
     }
 
     public override void _Process(double delta)
