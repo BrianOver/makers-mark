@@ -1,4 +1,5 @@
 #if GDUNIT_TESTS
+using System.Linq;
 using GdUnit4;
 using Godot;
 using GodotClient.Ui;
@@ -75,6 +76,53 @@ public class GameThemeTests
             var feedback = Find<Label>(ui.Shop, "ShopFeedback");
             AssertThat(feedback.GetThemeFontSize("font_size") >= GameTheme.LegibilityFloor).IsTrue();
             AssertThat(feedback.GetThemeColor("font_color") == GameTheme.BodyTextColor).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// P007 polish (display font): <see cref="GameTheme.HeaderFont"/> resolves to a real,
+    /// non-null asset (the committed OFL Cinzel face — never a throw even if the asset were
+    /// ever absent, per its null-tolerant contract), and it is registered ONLY on
+    /// <see cref="GameTheme.HeaderThemeType"/> — the base "Label"/"Button" theme types never
+    /// carry it, so body text keeps the engine default face (R11 layout stability).
+    /// </summary>
+    [TestCase]
+    public void HeaderFont_ResolvesNonNull_AndIsRegisteredOnlyOnTheHeaderVariation()
+    {
+        AssertThat(GameTheme.HeaderFont).IsNotNull();
+
+        var theme = GameTheme.Build();
+        AssertThat(theme.HasFont("font", GameTheme.HeaderThemeType)).IsTrue();
+        AssertThat(theme.GetFont("font", GameTheme.HeaderThemeType)).IsEqual(GameTheme.HeaderFont);
+
+        // Body types never carry the display font directly — only the opt-in variation does.
+        AssertThat(theme.HasFont("font", "Label")).IsFalse();
+        AssertThat(theme.HasFont("font", "Button")).IsFalse();
+    }
+
+    /// <summary>
+    /// <see cref="GodotClient.Panels.SimPanel.AddHeader"/> and <see cref="UiKit.Section"/>'s
+    /// title both opt into <see cref="GameTheme.HeaderThemeType"/>, so a real header rendered
+    /// in the live tree resolves <see cref="GameTheme.HeaderFont"/> through the normal theme
+    /// cascade — not just in isolation off <see cref="GameTheme.Build"/>.
+    /// </summary>
+    [TestCase]
+    public void RealHeaderLabel_OptsIntoHeaderThemeType_AndResolvesTheDisplayFontFromTheCascade()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            // ForgePanel's "RECIPES" section header is built via SimPanel.AddHeader.
+            var header = ui.Forge.FindChildren("*", "Label", recursive: true, owned: false)
+                .Cast<Label>()
+                .First(l => l.Text == "RECIPES");
+
+            AssertThat(header.ThemeTypeVariation).IsEqual(GameTheme.HeaderThemeType);
+            AssertThat(header.GetThemeFont("font")).IsEqual(GameTheme.HeaderFont);
         }
         finally
         {

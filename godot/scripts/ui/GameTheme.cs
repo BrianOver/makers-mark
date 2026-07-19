@@ -22,9 +22,33 @@ namespace GodotClient.Ui;
 /// <see cref="Build"/> calls) would let a later caller's edit bleed into every other consumer.
 /// <see cref="Build"/> itself is therefore idempotent-safe: calling it twice yields two
 /// independent, equivalent themes.</para>
+///
+/// <para>P007 polish (display font): <see cref="HeaderFont"/> — the OFL-licensed Cinzel display
+/// face (<c>godot/assets/fonts/</c>, license alongside it) — is registered ONLY on the
+/// <see cref="HeaderThemeType"/> theme-type variation, never on the base "Label"/"Button"
+/// types. Body text stays the engine default everywhere (legibility + layout stability, R11);
+/// only a Control that opts in via <c>ThemeTypeVariation = GameTheme.HeaderThemeType</c> —
+/// today, <see cref="GodotClient.Panels.SimPanel.AddHeader"/> and <see cref="UiKit.Section"/>'s
+/// title — picks it up. Null-tolerant like every other art loader on this project
+/// (<see cref="IconRegistry"/>): a missing font resource degrades to
+/// <see cref="ThemeDB.FallbackFont"/>, never a throw.</para>
 /// </summary>
 public static class GameTheme
 {
+    /// <summary>Theme-type variation carrying <see cref="HeaderFont"/> (see type remarks) —
+    /// a Control opts in by setting its own <c>ThemeTypeVariation</c> to this constant.</summary>
+    public const string HeaderThemeType = "HeaderLabel";
+
+    /// <summary>The committed OFL display font asset (Cinzel, a variable TTF covering
+    /// Regular→Black) — see <c>godot/assets/fonts/OFL.txt</c> for the license.</summary>
+    private const string HeaderFontPath = "res://assets/fonts/Cinzel-VariableFont_wght.ttf";
+
+    private static Font? _headerFont;
+
+    /// <summary>The header/title display font, loaded once and cached. Never null: degrades to
+    /// <see cref="ThemeDB.FallbackFont"/> if the asset is ever missing from a build.</summary>
+    public static Font HeaderFont => _headerFont ??= LoadHeaderFont();
+
     // ── Style-bible palette (docs/style-bible.md) ─────────────────────────────────────────────
     public static readonly Color VoidColor = new("140f1f");
     public static readonly Color IronColor = new("2a2438");
@@ -160,6 +184,20 @@ public static class GameTheme
         theme.SetFontSize("font_size", "Label", BodyFontSize);
         theme.SetFontSize("font_size", "Button", BodyFontSize);
 
+        // Display font (P007 polish): a type VARIATION of "Label", never the base type itself —
+        // font_color/font_size for a HeaderThemeType Control still resolve through the normal
+        // variation fallback to the "Label" entries above (both are usually overridden locally
+        // by AddHeader/Section anyway), but the FONT only ever changes for a Control that opts
+        // in. Body Labels/Buttons are untouched, so plain text keeps the engine default face.
+        theme.SetTypeVariation(HeaderThemeType, "Label");
+        theme.SetFont("font", HeaderThemeType, HeaderFont);
+
         return theme;
     }
+
+    /// <summary>Load the committed Cinzel asset; degrade to <see cref="ThemeDB.FallbackFont"/>
+    /// on any miss (a fresh checkout missing LFS pixels, a stripped test build, etc.) — the
+    /// same null-tolerant contract <see cref="IconRegistry"/> already guarantees for art.</summary>
+    private static Font LoadHeaderFont() =>
+        ResourceLoader.Exists(HeaderFontPath) ? GD.Load<FontFile>(HeaderFontPath) : ThemeDB.FallbackFont;
 }
