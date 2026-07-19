@@ -64,6 +64,7 @@ public partial class MainUi : Control
     public BountyPanel Bounties { get; private set; } = null!;
     public LedgerModal Ledger { get; private set; } = null!;
     public CampPanel Camp { get; private set; } = null!;
+    public TabFade TabFade { get; private set; } = null!;
 
     /// <summary>The most recent day whose Evening completed — what the Ledger button reopens.</summary>
     public int LastCompletedDay { get; private set; }
@@ -169,6 +170,9 @@ public partial class MainUi : Control
                 _goldPopElapsed = -1;
             }
         }
+
+        // LW6: tick the tab-switch fade veil (no-op unless a dip is in flight).
+        TabFade.Tick(delta);
     }
 
     private void OnPhaseCompleted(DayPhase completedPhase, int completedDay)
@@ -487,6 +491,14 @@ public partial class MainUi : Control
         Tavern = InstantiatePanel<TavernPanel>("res://scenes/panels/tavern_panel.tscn");
         Depths = InstantiatePanel<DepthsPanel>("res://scenes/panels/depths_panel.tscn");
         Bounties = InstantiatePanel<BountyPanel>("res://scenes/panels/bounty_panel.tscn");
+
+        // LW6: tab-switch fade — a purely additive CanvasLayer-100 veil, never touches the
+        // TabContainer itself. TabChanged (not TabSelected) so a programmatic jump (hero/building
+        // click routing, R20) dips it too, not just a manual click.
+        TabFade = new TabFade();
+        AddChild(TabFade);
+        TabFade.Build();
+        Tabs.TabChanged += _ => TabFade.Trigger();
 
         // --- ledger modal overlay (sibling after the layout = draws on top) --
         Ledger = GD.Load<PackedScene>("res://scenes/panels/ledger_modal.tscn").Instantiate<LedgerModal>();
