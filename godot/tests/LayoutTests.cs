@@ -170,14 +170,15 @@ public class LayoutTests
     }
 
     /// <summary>
-    /// Every non-empty label under root must render readable-wide. The narrowest label is the
-    /// canary: a collapsed autowrap label measures ~1px (one character per line).
+    /// Every non-empty PROSE label under root must render readable-wide. The narrowest label is
+    /// the canary: a collapsed autowrap label measures ~1px (one character per line).
     /// </summary>
     private static void AssertLabelsReadable(Node root)
     {
         var labels = root.FindChildren("*", nameof(Label), recursive: true, owned: false)
             .OfType<Label>()
             .Where(label => label.Text.Trim().Length > 0)
+            .Where(label => !IsCompactKitWidgetLabel(label))
             .ToList();
         AssertThat(labels.Count > 0).IsTrue();
 
@@ -187,6 +188,28 @@ public class LayoutTests
                 $"Label '{narrowest.Text}' rendered {narrowest.Size.X}px wide — "
                 + "the R7 one-character-per-line collapse.")
             .IsGreater(MinReadableWidth);
+    }
+
+    /// <summary>
+    /// P007 U3/U4: <c>UiKit.StatChip</c>/<c>ArtRect</c>-fallback/<c>PortraitFrame</c> labels
+    /// (the price/atk/def pills and art-miss captions the storefront and hero roster now
+    /// compose) are intentionally small, fixed-size widgets — proven non-null and discoverable
+    /// by <c>UiKitTests</c> — not the R7 autowrap collapse this canary hunts, which only afflicts
+    /// a WordSmart label (<c>SimPanel.AddLabel</c>/<c>AddHeader</c>) handed too little width by
+    /// its container. Identified by walking up to the nearest ancestor Godot name the kit itself
+    /// assigns those widgets (<see cref="GodotClient.Ui.UiKit"/>).
+    /// </summary>
+    private static bool IsCompactKitWidgetLabel(Label label)
+    {
+        for (Node? node = label; node is not null; node = node.GetParent())
+        {
+            if (node.Name == "StatChip" || node.Name == "ArtRectFallback" || node.Name == "PortraitFrame")
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 #endif
