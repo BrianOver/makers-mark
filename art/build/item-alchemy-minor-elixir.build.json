@@ -1,0 +1,20 @@
+{
+  "Seed": 1344999410,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "fcebaf0eeee102e76ac4745e4efbdfd61d2684524df10d391110170208b5c231",
+  "NormalSha256": null,
+  "Uid": "uid://ba72kdo0sikq5",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "8-20 candidates generated locally via ComfyUI MCP; curated hard per art/pipeline/README.md",
+    "paintoverNote": "batch1 c1, clean single small vial on a wood stand",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py); no normal map (flat menu icon per AssetSpec.NormalMap=false)"
+  }
+}

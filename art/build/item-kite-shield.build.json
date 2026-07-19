@@ -1,0 +1,20 @@
+{
+  "Seed": 845013175,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "f68d1e3b3f4555604576173b1b2b66eb506af55c057771fa978bf1b510892abe",
+  "NormalSha256": null,
+  "Uid": "uid://ctd0001mu73sr",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "8-20 candidates generated locally via ComfyUI MCP; curated hard per art/pipeline/README.md",
+    "paintoverNote": "round3 (anti-character/knight negatives) c1, matched shield pair (front/back)",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py); no normal map (flat menu icon per AssetSpec.NormalMap=false)"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "Seed": 1997207628,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "3aa06c0a4a2357c922742896d21a464b23b977c230997227e4ee319e411829b5",
+  "NormalSha256": null,
+  "Uid": "uid://d24v4apruqp8i",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "8-20 candidates generated locally via ComfyUI MCP; curated hard per art/pipeline/README.md",
+    "paintoverNote": "batch1 c3, matched leather shield pair, warm hearth palette",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py); no normal map (flat menu icon per AssetSpec.NormalMap=false)"
+  }
+}

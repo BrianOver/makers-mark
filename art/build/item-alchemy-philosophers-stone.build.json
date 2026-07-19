@@ -1,0 +1,20 @@
+{
+  "Seed": 1873137827,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "eac0f64dff3c6a74ca0bbc6caba1ad3b9f04563d83f5758877ae983b4d611c75",
+  "NormalSha256": null,
+  "Uid": "uid://dgh3tkuao6ebk",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "8-20 candidates generated locally via ComfyUI MCP; curated hard per art/pipeline/README.md",
+    "paintoverNote": "batch1 c3, clean faceted gem cluster",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py); no normal map (flat menu icon per AssetSpec.NormalMap=false)"
+  }
+}
