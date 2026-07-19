@@ -1,0 +1,20 @@
+{
+  "Seed": 864050719,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "33300ffcf5796861f4f7968b1625e4adddac0ab283d987d03f677e64d00d7a3f",
+  "NormalSha256": null,
+  "Uid": "uid://018kn48y17xx",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "round 1: 4 candidates (seed+0..+3) -- c1 was a clean full-bleed torchlit tunnel scene but carried a small signature-like corner mark. round 2 escalation: 4 more candidates (seed+4..+7) with negative hardened against text/signature/corner-text/concept-sheet/grid-layout; curated per art/pipeline/README.md",
+    "paintoverNote": "round 1 c1 (seed+1) was viable but had a small signature-like mark in one corner; escalated for a mark-free alternative. round 2 c2 (seed+6, offset+2 within the round) -- full-bleed torchlit cave-tunnel interior, receding rock-wall depth with both ember-orange torchlight and arcane-violet glow (matches the house palette's dual-hue clause), no visible text/signature. round 1 c0/round 2 c0 were multi-panel concept grids; round 1 c3 was an explicitly tiled/seamless pattern.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse; cutout.py NOT run (AssetKind.Backdrop fills the whole plane -- BiRefNet's salient-object segmentation would discard ~97% of the scene as 'background', per the U6 precedent) -- format-converted straight to opaque RGBA; no normal map (flat far plane per AssetSpec.NormalMap=false)."
+  }
+}

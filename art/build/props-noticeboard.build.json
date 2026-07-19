@@ -1,0 +1,20 @@
+{
+  "Seed": 361966402,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "c804eadccf5172aabdaab13b4f223b3f48f72aeb77791ca89a3ac9b2bf607cb5",
+  "NormalSha256": "79b2d97077d62cdbb3ae727746a8318ef1f936f179172031a6054f5ecd769047",
+  "Uid": "uid://bflvw766sqoto",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "round 1: 4 candidates (seed+0..+3), all rejected. round 2 escalation: 4 more candidates (seed+4..+7) with a rewritten subject ('flat rectangular wooden signboard...no roof...simple outdoor signpost') and negative hardened against building/house/cottage/shed/roof/door/window; curated per art/pipeline/README.md",
+    "paintoverNote": "round 1 all rendered small roofed cottages/sheds (the 'noticeboard on posts' phrasing pattern-matched to 'small wooden building') -- a total 0/4 miss. round 2 c1 (seed+5, offset+1 within the round) -- a two-post frame with a crossbar holding a board and three hanging tag-like notices, no roof, clean gradient background.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Prop world sprite per AssetSpec.NormalMap=true. Normal-map QA (windowed Sprite2D + textured PointLight2D pilot scene, deleted before commit, per art/pipeline/README.md) directly swept the light left/right on this asset -- bumps brightened toward the light on both sides, no caved-in/inverted relief. Passed on the existing Flip-Y-OFF import convention."
+  }
+}

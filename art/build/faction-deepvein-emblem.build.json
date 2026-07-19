@@ -1,0 +1,20 @@
+{
+  "Seed": 1000736316,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "8eb191c10c4a761f516e42a2bf3fca0d44bbda827b5d7580beda3428c1860eb8",
+  "NormalSha256": null,
+  "Uid": "uid://uy5u67xpislx",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c3 (seed+3) -- the only one of the 4 to show literal crossed miner's pickaxes over a dark ore vein, framed as a heraldic crest; accepted despite an unusual wavy-banner frame shape. c0 and c1 drew generic fantasy amulet crests with no pickaxe motif; c2 drew a crossed-hammer/blade crest closer in spirit but still not pickaxes.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); no normal map (flat icon per AssetSpec.NormalMap=false)."
+  }
+}

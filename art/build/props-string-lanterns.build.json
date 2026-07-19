@@ -1,0 +1,20 @@
+{
+  "Seed": 902721940,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "e02421b5324efaba4794612e339b76f1b8bfb0e5da574c1220347763fce19838",
+  "NormalSha256": "19f1244c0b319fda55f00df56c551bc9702869285da75a094c9536307e44ec08",
+  "Uid": "uid://dwah57804uyxq",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c1 (seed+1) -- a wooden archway strung with multiple glowing paper lanterns between its two posts, warm amber glow, one cohesive structure. c0 was a 9-panel concept grid; c2 was a full pergola-and-mountains scene (too backdrop-like for an isolated prop, plus a faint corner text mark); c3 read as a full fenced entrance-gate scene rather than a simple lantern garland.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Prop world sprite per AssetSpec.NormalMap=true. Normal-map QA: normalmap.py (Sobel height-from-luminance, strength 2.5) and the Flip-Y-OFF import convention are unchanged from the prior passing waves (P006 U1/U4-U6); this wave's windowed pilot-scene sweep directly verified 6 representative samples (gloomwood-old-mossjaw, gloomwood-toll-booth, sunkencrypt-undertow, sunkencrypt-crypt-crab, props-noticeboard, props-tavern-cat) with no inversion/caving on any -- no per-asset regression risk since the script and import setting are both untouched."
+  }
+}

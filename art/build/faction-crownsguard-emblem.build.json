@@ -1,0 +1,20 @@
+{
+  "Seed": 891710806,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "10a5174fcb216cee9a8d1fe78744507053334c07cb0066463f9cb37b7a867f17",
+  "NormalSha256": null,
+  "Uid": "uid://c4r6ca7pl2btj",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c1 (seed+1) -- a clean heraldic shield crest (purple/orange/cream), the strongest 'clean bold silhouette' read of the 4 even though none of the 4 candidates rendered a literal crowned anvil. c0 had extra corner blade ornaments; c2 read as an odd mouse-eared shield (off-tone); c3 was a 9-panel concept grid with visible text.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); no normal map (flat icon per AssetSpec.NormalMap=false)."
+  }
+}

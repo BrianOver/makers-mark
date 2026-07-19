@@ -51,6 +51,7 @@ public sealed class SunkenCryptSpecs : IAssetModule
             Subject: "a small round crypt crab wearing an oversized borrowed human skull as its shell, "
                 + "big expressive eyes peering shyly out of the eye sockets, stubby claws held together "
                 + "self-consciously, soft rounded friendly shape, full body, clear readable silhouette",
+            PaletteId: "crypt",
             NormalMap: true),
         new AssetSpec(
             Id: "sunkencrypt-bog-wight",
@@ -60,6 +61,7 @@ public sealed class SunkenCryptSpecs : IAssetModule
             Subject: "a waterlogged bog-wight, tattered grave-shroud draped over a gaunt swollen figure, "
                 + "drowned pallid skin, dim lantern-glow eyes, reeds and silt clinging to its limbs, "
                 + "full body, clear readable silhouette",
+            PaletteId: "crypt",
             NormalMap: true),
         new AssetSpec(
             Id: "sunkencrypt-choir-of-teeth",
@@ -69,6 +71,7 @@ public sealed class SunkenCryptSpecs : IAssetModule
             Subject: "a floating choir of teeth, a hovering cluster of disembodied jawbones and grinning "
                 + "tooth-rows arranged like a chorus opened in silent song, wispy ghostly tendrils "
                 + "trailing below, full body, clear readable silhouette",
+            PaletteId: "crypt",
             NormalMap: true),
         new AssetSpec(
             Id: "sunkencrypt-reliquary-mimic",
@@ -78,6 +81,7 @@ public sealed class SunkenCryptSpecs : IAssetModule
             Subject: "a reliquary mimic disguised as an ornate collection chest, hinged lid gaping into a "
                 + "toothy maw, votive coins and offerings spilling from its mouth, stubby clawed feet, "
                 + "big innocent eyes above the lid, full body, clear readable silhouette",
+            PaletteId: "crypt",
             NormalMap: true),
         new AssetSpec(
             Id: "sunkencrypt-undertow",
@@ -87,6 +91,7 @@ public sealed class SunkenCryptSpecs : IAssetModule
             Subject: "The Undertow, a towering drowned leviathan of coiling black water and bound "
                 + "skeletons, a churning vortex maw at its core, trailing chains and grave-silt, looming "
                 + "imposing boss form, full body, clear readable silhouette",
+            PaletteId: "crypt",
             NormalMap: true),
 
         // ---- Offering prop -------------------------------------------------------------------
@@ -97,6 +102,7 @@ public sealed class SunkenCryptSpecs : IAssetModule
             Kind: AssetKind.Prop,
             Subject: "a tarnished bronze donation plate on a slender stand, a few votive coins resting on "
                 + "it, worn engraved rim, a small chapel offering dish",
+            PaletteId: "crypt",
             NormalMap: true),
     ];
 }

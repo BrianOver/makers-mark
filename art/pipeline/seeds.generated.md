@@ -111,3 +111,56 @@ was missing `PaletteId: "crypt"` on `sunkencrypt-backdrop`/`sunkencrypt-entrance
 defaulted to `house`, contradicting the file's own doc-comment and the plan's family-distinctness
 requirement) — added for these 2 in-scope specs only; the other 6 (monsters/prop, deferred long
 tail) are untouched.
+
+## Art wave 2 — long-tail deferred specs + mine-backdrop, 2026-07-19
+
+| Id | Track | Seed | Hand-finished | Build-half |
+|----|-------|------|---------------|------------|
+| gloomwood-bramble-boar | active | 1331430840+0 (candidate c0) | no | `art/build/gloomwood-bramble-boar.build.json` |
+| gloomwood-lantern-moth | active | 2137317057+1 (candidate, resolved 2137317058) | no | `art/build/gloomwood-lantern-moth.build.json` |
+| gloomwood-wicker-shepherd | active | 1761010741+6 (round-2 candidate, resolved 1761010747) | no | `art/build/gloomwood-wicker-shepherd.build.json` |
+| gloomwood-old-mossjaw | active | 504991146+0 (candidate c0) | no | `art/build/gloomwood-old-mossjaw.build.json` |
+| gloomwood-mushroom-cluster | active | 379326538+1 (candidate, resolved 379326539) | no | `art/build/gloomwood-mushroom-cluster.build.json` |
+| gloomwood-toll-booth | active | 704749996+2 (candidate, resolved 704749998) | no | `art/build/gloomwood-toll-booth.build.json` |
+| sunkencrypt-crypt-crab | active | 434494949+2 (candidate, resolved 434494951) | no | `art/build/sunkencrypt-crypt-crab.build.json` |
+| sunkencrypt-bog-wight | active | 1254204538+1 (candidate, resolved 1254204539) | no | `art/build/sunkencrypt-bog-wight.build.json` |
+| sunkencrypt-choir-of-teeth | active | 2098949232+3 (candidate, resolved 2098949235) | no | `art/build/sunkencrypt-choir-of-teeth.build.json` |
+| sunkencrypt-reliquary-mimic | active | 1156515308+3 (candidate, resolved 1156515311) | no | `art/build/sunkencrypt-reliquary-mimic.build.json` |
+| sunkencrypt-undertow | active | 1930888489+1 (candidate, resolved 1930888490) | no | `art/build/sunkencrypt-undertow.build.json` |
+| sunkencrypt-donation-plate | active | 1364196958+1 (candidate, resolved 1364196959) | no | `art/build/sunkencrypt-donation-plate.build.json` |
+| props-noticeboard | active | 361966397+5 (round-2 candidate, resolved 361966402) | no | `art/build/props-noticeboard.build.json` |
+| props-town-well | active | 1769433299+1 (candidate, resolved 1769433300) | no | `art/build/props-town-well.build.json` |
+| props-ore-cart | active | 413675621+0 (candidate c0) | no | `art/build/props-ore-cart.build.json` |
+| props-string-lanterns | active | 902721939+1 (candidate, resolved 902721940) | no | `art/build/props-string-lanterns.build.json` |
+| props-market-crates | active | 1741657917+6 (round-2 candidate, resolved 1741657923) | no | `art/build/props-market-crates.build.json` |
+| props-laundry-line | active | 1594650275+4 (round-2 candidate, resolved 1594650279) | no | `art/build/props-laundry-line.build.json` |
+| props-tavern-cat | active | 183191283+1 (candidate, resolved 183191284) | no | `art/build/props-tavern-cat.build.json` |
+| props-forge-salamander | active | 2095996073+2 (candidate, resolved 2095996075) | no | `art/build/props-forge-salamander.build.json` |
+| faction-deepvein-emblem | active | 1000736313+3 (candidate, resolved 1000736316) | no | `art/build/faction-deepvein-emblem.build.json` |
+| faction-crownsguard-emblem | active | 891710805+1 (candidate, resolved 891710806) | no | `art/build/faction-crownsguard-emblem.build.json` |
+| mine-backdrop | active | 864050713+6 (round-2 candidate, resolved 864050719) | no | `art/build/mine-backdrop.build.json` |
+
+Generated at 1024² Active settings (28/6.5/dpmpp_2m/karras, no LoRA) via ComfyUI MCP — the
+deferred long tail flagged in `docs/design/art-pipeline-health-2026-07-18.md` (9 venue floor
+monsters, 3 venue props, 8 town props, 2 faction crests) plus a new `mine-backdrop` spec authored
+this wave to fill the Mine hub-tile gap (`art/specs/mine/MineSpecs.cs`, `PaletteId: "house"`).
+Also fixed: `SunkenCryptSpecs.cs`'s remaining 6 specs (5 monsters + the donation-plate prop) were
+still defaulting to `house` per the U6 follow-up note — added `PaletteId: "crypt"` to all 6, so the
+whole Sunken Crypt module is now family-consistent.
+
+4 candidates per asset on the first pass; 4 assets needed a second 4-candidate escalation round
+after a 0/4 first-pass reject (`gloomwood-wicker-shepherd`, `props-noticeboard`, `props-market-crates`,
+`props-laundry-line` — each hit a distinct SDXL attractor: character-sheet/multi-panel layouts, or
+the subject wording literally drawing a building/scene instead of an isolated prop; escalation
+rewrote the subject phrasing and hardened the negative rather than touching the checked-in
+`AssetSpec.Subject` text). `mine-backdrop` also escalated one round to avoid a signature-like
+corner mark on the otherwise-clean round-1 winner. Full chain (BiRefNet `cutout.py --trim` → Sobel
+`normalmap.py … 2.5`) for all monsters/props (`NormalMap: true`); the 2 faction crests ran cutout
+only, no normal map (`NormalMap: false`, flat `Item`-kind icons); `mine-backdrop` skipped
+`cutout.py` entirely per the U6 backdrop precedent (BiRefNet discards a full-bleed scene as
+"background") and was format-converted straight to opaque RGBA. Normal-map QA (windowed
+`Sprite2D` + textured `PointLight2D` pilot scene, deleted before commit) directly swept 6
+representative samples (`gloomwood-old-mossjaw`, `gloomwood-toll-booth`, `sunkencrypt-undertow`,
+`sunkencrypt-crypt-crab`, `props-noticeboard`, `props-tavern-cat`) — all passed (highlights track
+the light, no caved-in/inverted relief) on the unchanged Flip-Y-OFF import convention; the
+remaining full-chain assets share the identical unchanged script + convention.

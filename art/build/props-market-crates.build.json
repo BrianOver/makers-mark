@@ -1,0 +1,20 @@
+{
+  "Seed": 1741657923,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "a9efe39e3e4b30f772a2496ca2bbc4dc5547173ad50ee22a4ec69310cc8b4d29",
+  "NormalSha256": "70754e02ee85d2c2ac175014946842b97ecbc341aad057a85391067e6060fc72",
+  "Uid": "uid://c1dkqva8jgw2f",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "round 1: 4 candidates (seed+0..+3), all rejected. round 2 escalation: 4 more candidates (seed+4..+7) with a rewritten subject ('one single stack...compact clustered prop, isolated object') and negative hardened against scene/tent/street/tiled/grid; curated per art/pipeline/README.md",
+    "paintoverNote": "round 1 all rejected -- 2 concept-sheet grids of separate barrels/crates, 1 full market-stall-and-tent scene, 1 explicitly seamless/tiled pattern of scattered barrels. round 2 c2 (seed+6, offset+2 within the round) -- one cohesive two-barrel cluster with pumpkins/gourds and a cutting board spilling over the top, clean plain background.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Prop world sprite per AssetSpec.NormalMap=true. Normal-map QA: normalmap.py (Sobel height-from-luminance, strength 2.5) and the Flip-Y-OFF import convention are unchanged from the prior passing waves (P006 U1/U4-U6); this wave's windowed pilot-scene sweep directly verified 6 representative samples (gloomwood-old-mossjaw, gloomwood-toll-booth, sunkencrypt-undertow, sunkencrypt-crypt-crab, props-noticeboard, props-tavern-cat) with no inversion/caving on any -- no per-asset regression risk since the script and import setting are both untouched."
+  }
+}

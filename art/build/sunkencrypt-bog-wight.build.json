@@ -1,0 +1,20 @@
+{
+  "Seed": 1254204539,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "9ec8853879c929acf9e080b513750e84ccf10a45de727f99a02b7ba0a5c404d7",
+  "NormalSha256": "53adfc56ff07543a0ebb854ae216b54f311989bbed56efe8a23424c9e7d3eb16",
+  "Uid": "uid://rne41yxkisla",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c1 (seed+1) -- single hooded ragged-robed figure holding a skull-topped staff, one glowing eye, gaunt, clean grey background, full body. c0 and c2 were multi-panel/multi-figure concept-sheet layouts; c3 surrounded a decent central figure with 4 extra disconnected goblet props (multi-subject).",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Monster world sprite per AssetSpec.NormalMap=true. Normal-map QA: normalmap.py (Sobel height-from-luminance, strength 2.5) and the Flip-Y-OFF import convention are unchanged from the prior passing waves (P006 U1/U4-U6); this wave's windowed pilot-scene sweep directly verified 6 representative samples (gloomwood-old-mossjaw, gloomwood-toll-booth, sunkencrypt-undertow, sunkencrypt-crypt-crab, props-noticeboard, props-tavern-cat) with no inversion/caving on any -- no per-asset regression risk since the script and import setting are both untouched."
+  }
+}

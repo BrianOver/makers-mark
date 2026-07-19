@@ -1,0 +1,20 @@
+{
+  "Seed": 704749998,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "cf89ef53306c42d6a8b36d84d1eb645c1d9997068a46a4338c12697854583830",
+  "NormalSha256": "7d88c1f8858e5faad62c3b7fd3c62c08f06eddac9a379d85290178dcacc88c98",
+  "Uid": "uid://dis5i0e8fhiwy",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c2 (seed+2) -- single mossy tree-stump kiosk with a door, bench, and hanging lantern, on a clean near-neutral gradient background (best cutout reliability of the 4). c0 read as a truer 'kiosk' shape but sat inside a busier full forest scene (weaker silhouette for cutout, the same risk flagged on gloomwood-entrance in U6); c1 was a multi-panel concept sheet; c3 had a visible signature-like artifact in two corners.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Prop world sprite per AssetSpec.NormalMap=true. Normal-map QA (windowed Sprite2D + textured PointLight2D pilot scene, deleted before commit, per art/pipeline/README.md) directly swept the light left/right on this asset -- bumps brightened toward the light on both sides, no caved-in/inverted relief. Passed on the existing Flip-Y-OFF import convention."
+  }
+}

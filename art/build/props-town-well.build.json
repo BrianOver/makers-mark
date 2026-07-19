@@ -1,0 +1,20 @@
+{
+  "Seed": 1769433300,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "de592f8e99fb9c6cfd9b92bd45b4fd387fb91d9d17e412140c68a5431f662b4d",
+  "NormalSha256": "516229d636f20c226c38be18537fa49cbba66d4a0a843fd811de16fbeeed9e50",
+  "Uid": "uid://cu1sgg7bw7f64",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c1 (seed+1) -- classic wishing-well silhouette: round stone well, wooden shingled roof, crossbeam crank with a bucket hanging by rope on one side and resting on the ledge on the other. c0 was also a strong single-well candidate (close second); c2 was a multi-panel grid of small houses/wells; c3 read more like an elaborate well/shrine building hybrid with stairs.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Prop world sprite per AssetSpec.NormalMap=true. Normal-map QA: normalmap.py (Sobel height-from-luminance, strength 2.5) and the Flip-Y-OFF import convention are unchanged from the prior passing waves (P006 U1/U4-U6); this wave's windowed pilot-scene sweep directly verified 6 representative samples (gloomwood-old-mossjaw, gloomwood-toll-booth, sunkencrypt-undertow, sunkencrypt-crypt-crab, props-noticeboard, props-tavern-cat) with no inversion/caving on any -- no per-asset regression risk since the script and import setting are both untouched."
+  }
+}

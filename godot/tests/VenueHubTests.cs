@@ -66,15 +66,19 @@ public class VenueHubTests
     }
 
     [TestCase]
-    public void VenueBackdropArt_Absent_RendersThemedPlaceholder_StillLegible()
+    public void VenueBackdropArt_Present_RendersRealArt_NotFallback()
     {
-        // KTD3 fallback path: "mine-backdrop" has no committed art yet — the common CI case
-        // (only gloomwood/sunkencrypt backdrops are generated so far).
+        // "mine-backdrop" is committed as of art wave 2 (art/specs/mine/MineSpecs.cs) — the
+        // KTD3 fallback path this test used to exercise no longer applies to the Mine tile;
+        // UiRenderSmokeTests.ArtAbsentWorld_ForcesArtRectFallback_OnShop still proves the
+        // fallback contract itself via a genuinely-unregistered recipe id.
         var ui = MountMainUi();
         try
         {
+            var realArt = ui.Depths.FindChildren("ArtRect", "TextureRect", recursive: true, owned: false);
+            AssertThat(realArt.Count > 0).IsTrue();
             var placeholders = ui.Depths.FindChildren("ArtRectFallback", "PanelContainer", recursive: true, owned: false);
-            AssertThat(placeholders.Count > 0).IsTrue();
+            AssertThat(placeholders.Count == 0).IsTrue();
             AssertThat(RenderedText(ui.Depths)).Contains("The Mine");
         }
         finally

@@ -1,0 +1,20 @@
+{
+  "Seed": 2095996075,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "730e2cf0ed5f2bcaa7e8e8c694d6e90f9850a5d278b76338c1a32c5b04f4d3c8",
+  "NormalSha256": "3feb69d0828371860b82b7f8d86e3cb8ffe16566d4e77b88c07c18735ddedeb8",
+  "Uid": "uid://d36tf17ywby0n",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c2 (seed+2) -- small rounded orange gecko/salamander pup with a huge round expressive eye, curled tail, clean gradient background -- the strongest 'big round eyes' read of the 4. c0 was a decent alternative reading more toad-like; c1 was an 8-pose concept sheet with a visible signature; c3 had a faint cursive signature mark in one corner.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Sprite world sprite per AssetSpec.NormalMap=true. Normal-map QA: normalmap.py (Sobel height-from-luminance, strength 2.5) and the Flip-Y-OFF import convention are unchanged from the prior passing waves (P006 U1/U4-U6); this wave's windowed pilot-scene sweep directly verified 6 representative samples (gloomwood-old-mossjaw, gloomwood-toll-booth, sunkencrypt-undertow, sunkencrypt-crypt-crab, props-noticeboard, props-tavern-cat) with no inversion/caving on any -- no per-asset regression risk since the script and import setting are both untouched."
+  }
+}

@@ -11,13 +11,16 @@ namespace GodotClient.Tests;
 /// <c>art-manifest.json</c>, U3/R10) actually resolves the gameplay-critical committed set from a
 /// fresh checkout (R8), and <c>Has</c> agrees with the manifest exactly. Data-driven theory over id
 /// arrays — mirrors <c>TownSceneTests.LitOverlay_ShippedAssets_MountFourBuildingsThreeHeroesAndWarmLights</c>
-/// and <c>IconRegistryTests</c> — so a future generated asset (the deferred long tail: venue floor
-/// monsters, props, faction crests) extends coverage by one array entry, not new test code.
+/// and <c>IconRegistryTests</c> — so a future generated asset extends coverage by one array entry,
+/// not new test code (the art wave 2 batch below — Gloomwood/Sunken Crypt monsters+props, town
+/// props, faction crests, the new <c>mine-backdrop</c> — is exactly that extension).
 ///
 /// <para>Coverage set (representative, not exhaustive — the full inventory lives in
-/// <c>docs/design/art-pipeline-health-2026-07-18.md</c>): one item icon per profession (blacksmith/
-/// tanning/engineering/alchemy), all 5 Mine monster portraits, both venues' backdrop+entrance
-/// (gloomwood/sunkencrypt), all 3 hero portraits, all 4 town buildings.</para>
+/// <c>docs/design/art-pipeline-health-2026-07-18.md</c> plus the art wave 2 session): one item
+/// icon per profession (blacksmith/tanning/engineering/alchemy), all 5 Mine monster portraits,
+/// both venues' backdrop+entrance (gloomwood/sunkencrypt) plus their floor monsters and props, all
+/// 8 town props, both faction crests, all 3 hero portraits, all 4 town buildings, and the Mine's
+/// own hub-tile backdrop.</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -45,6 +48,40 @@ public class ArtWiringCoverageTests
     private static readonly string[] TownBuildingIds =
     [
         "town-forge", "town-market", "town-mine-gate", "town-tavern",
+    ];
+
+    // --- art wave 2 (long-tail deferred specs + mine-backdrop) --------------------------------
+
+    // GloomwoodVenue.Build()'s 4 floor kinds (sim/GameSim/Venues/Gloomwood/GloomwoodVenue.cs).
+    private static readonly string[] GloomwoodMonsterKinds =
+    [
+        "Bramble Boar", "Lantern Moth", "The Wicker Shepherd", "Old Mossjaw",
+    ];
+
+    // SunkenCryptVenue.Build()'s 5 floor kinds (sim/GameSim/Venues/SunkenCrypt/SunkenCryptVenue.cs).
+    private static readonly string[] SunkenCryptMonsterKinds =
+    [
+        "Crypt Crab", "Bog-Wight", "Choir of Teeth", "Reliquary Mimic", "The Undertow",
+    ];
+
+    // Venue props (GloomwoodSpecs.cs + SunkenCryptSpecs.cs) — no typed AssetCatalog resolver (same
+    // shape as TownBuildingIds below), all AssetKind.Prop with NormalMap: true.
+    private static readonly string[] VenuePropIds =
+    [
+        "gloomwood-mushroom-cluster", "gloomwood-toll-booth", "sunkencrypt-donation-plate",
+    ];
+
+    // Warm-hub town props (art/specs/props/PropsSpecs.cs) — Prop or Sprite kind, all NormalMap: true.
+    private static readonly string[] TownPropIds =
+    [
+        "props-noticeboard", "props-town-well", "props-ore-cart", "props-string-lanterns",
+        "props-market-crates", "props-laundry-line", "props-tavern-cat", "props-forge-salamander",
+    ];
+
+    // Faction crests (art/specs/factions/FactionSpecs.cs) — AssetKind.Item, flat (NormalMap: false).
+    private static readonly string[] FactionCrestIds =
+    [
+        "faction-deepvein-emblem", "faction-crownsguard-emblem",
     ];
 
     [TestCase]
@@ -138,21 +175,114 @@ public class ArtWiringCoverageTests
     }
 
     [TestCase]
-    public void DeferredLongTailIds_AbsentFromManifest_ResolversNullNoThrow()
+    public void AllGloomwoodAndSunkenCryptMonsters_ResolveWithNormal()
     {
-        // Real authored-but-NOT-yet-generated specs (deferred long tail: venue props / faction
-        // crests — art/specs/props/PropSpecs.cs, art/specs/factions/FactionSpecs.cs) — proves the
-        // graceful-degrade contract holds for genuine future work, not just a made-up string.
-        const string deferredProp = "props-noticeboard";
-        const string deferredFaction = "faction-deepvein-emblem";
+        foreach (var kind in GloomwoodMonsterKinds)
+        {
+            AssertMonsterResolvesWithNormal(kind, "gloomwood");
+        }
 
-        foreach (var id in new[] { deferredProp, deferredFaction })
+        foreach (var kind in SunkenCryptMonsterKinds)
+        {
+            AssertMonsterResolvesWithNormal(kind, "sunkencrypt");
+        }
+    }
+
+    [TestCase]
+    public void VenueProps_ResolveWithNormal()
+    {
+        foreach (var id in VenuePropIds)
+        {
+            AssertThat(AssetCatalog.Has(id)).IsTrue();
+            AssertThat(AssetCatalog.HasNormal(id)).IsTrue();
+            var lit = IconRegistry.Lit(id);
+            AssertThat(lit).IsNotNull();
+            AssertThat(lit!.DiffuseTexture).IsNotNull();
+            AssertThat(lit.NormalTexture).IsNotNull();
+        }
+    }
+
+    [TestCase]
+    public void TownProps_ResolveWithNormal()
+    {
+        foreach (var id in TownPropIds)
+        {
+            AssertThat(AssetCatalog.Has(id)).IsTrue();
+            AssertThat(AssetCatalog.HasNormal(id)).IsTrue();
+            var lit = IconRegistry.Lit(id);
+            AssertThat(lit).IsNotNull();
+            AssertThat(lit!.DiffuseTexture).IsNotNull();
+            AssertThat(lit.NormalTexture).IsNotNull();
+        }
+    }
+
+    [TestCase]
+    public void FactionCrests_ResolveWithoutNormal()
+    {
+        foreach (var id in FactionCrestIds)
+        {
+            AssertThat(AssetCatalog.Has(id)).IsTrue();
+
+            // Faction crests are flat menu-style icons (AssetSpec.NormalMap=false), same
+            // diffuse-only contract as item icons.
+            AssertThat(AssetCatalog.HasNormal(id)).IsFalse();
+            var lit = IconRegistry.Lit(id);
+            AssertThat(lit).IsNotNull();
+            AssertThat(lit!.DiffuseTexture).IsNotNull();
+            AssertThat(lit.NormalTexture).IsNull();
+        }
+    }
+
+    [TestCase]
+    public void MineBackdrop_ResolvesWithoutNormal()
+    {
+        // The Mine's own venue-map hub tile (DepthsPanel.BuildMineTile) — flat far plane, same
+        // diffuse-only contract as the gloomwood/sunkencrypt backdrops (AssetSpec.NormalMap=false).
+        const string mineVenueId = "mine";
+        var backdropId = AssetCatalog.VenueBackdropId(mineVenueId);
+        AssertThat(backdropId).IsEqual("mine-backdrop");
+        AssertThat(AssetCatalog.VenueBackdrop(mineVenueId)).IsNotNull();
+        AssertThat(AssetCatalog.Has(backdropId)).IsTrue();
+        AssertThat(AssetCatalog.HasNormal(backdropId)).IsFalse();
+        var lit = IconRegistry.Lit(backdropId);
+        AssertThat(lit).IsNotNull();
+        AssertThat(lit!.NormalTexture).IsNull();
+    }
+
+    [TestCase]
+    public void NeverRegisteredIds_AbsentFromManifest_ResolversNullNoThrow()
+    {
+        // KTD3 graceful-degrade contract, pinned against synthetic ids that will never be
+        // registered (the real long tail this suite once pinned — props-noticeboard,
+        // faction-deepvein-emblem — is now fully generated above; art wave 2 closed out every
+        // spec the repo had authored, so no genuine "registered but ungenerated" id remains to
+        // probe with). AssetCatalogTests.UnknownConcept_HasFalseAndNullReturn_NoThrow covers the
+        // same code path via typed resolvers (venue/monster/item/hero ids); this pins it for a
+        // bare art id resolved straight through IconRegistry too.
+        const string neverRegisteredProp = "props-nonexistent-prop";
+        const string neverRegisteredFaction = "faction-nonexistent-emblem";
+
+        foreach (var id in new[] { neverRegisteredProp, neverRegisteredFaction })
         {
             AssertThat(AssetCatalog.Has(id)).IsFalse();
             AssertThat(AssetCatalog.HasNormal(id)).IsFalse();
             AssertThat(IconRegistry.Art(id)).IsNull();
             AssertThat(IconRegistry.Lit(id)).IsNull();
         }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────────────────────
+
+    private static void AssertMonsterResolvesWithNormal(string kind, string venuePrefix)
+    {
+        var id = AssetCatalog.MonsterPortraitId(kind, venuePrefix);
+        var lit = AssetCatalog.MonsterPortrait(kind, venuePrefix);
+        AssertThat(lit).IsNotNull();
+        AssertThat(lit!.DiffuseTexture).IsNotNull();
+        AssertThat(lit.NormalTexture).IsNotNull();
+
+        AssertThat(AssetCatalog.Has(id)).IsTrue();
+        AssertThat(AssetCatalog.HasNormal(id)).IsTrue();
     }
 }
 #endif
