@@ -16,6 +16,13 @@ namespace GodotClient.Tests;
 /// U11 engine-lane scenarios: the panels bind real sim state through the ONE adapter
 /// and every action goes through real Controls. AE4/AE7 assertions read the rendered
 /// Control text, never just the sim value.
+///
+/// <para>P007 U8 reconciliation checkpoint: the tab-count/title pin (7; "Town,Forge,Shop,
+/// Heroes,Tavern,Depths,Bounties") and the themed HUD status assertions (DayChip/PhaseChip/
+/// GoldChip) below already reflect U3–U7's shipped screens — verified here green, no further
+/// pin changes needed. Cross-screen theme-cascade/layout-non-degeneracy coverage (the R15
+/// backstop) now lives in <see cref="UiRenderSmokeTests"/>, run in both art-present and
+/// art-absent configurations.</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]

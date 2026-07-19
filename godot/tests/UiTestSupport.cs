@@ -1,8 +1,10 @@
 #if GDUNIT_TESTS
 using System;
 using System.Text;
+using System.Threading.Tasks;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Ui;
 
 namespace GodotClient.Tests;
 
@@ -144,5 +146,51 @@ public static class UiTestSupport
             Collect(child, text);
         }
     }
+
+    /// <summary>
+    /// P007 U8 cross-screen smoke guard: let container layout settle over a few real process
+    /// frames before reading geometry. A container's <c>queue_sort()</c> is deferred, and nested
+    /// containers can cascade across several frames, so <see cref="Control.Size"/>/
+    /// <see cref="Control.GetCombinedMinimumSize"/> read immediately after a mutation (a mount, a
+    /// tab switch, a Refresh) can still show stale — often zero — values without this pump.
+    /// Mirrors <c>LayoutTests</c>' private helper of the same shape, promoted here so any suite
+    /// asserting layout geometry can reuse it.
+    /// </summary>
+    public static async Task SettleLayout(Node node)
+    {
+        var tree = (SceneTree)Engine.GetMainLoop();
+        for (var i = 0; i < 3; i++)
+        {
+            await node.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        }
+    }
+
+    /// <summary>
+    /// P007 U8 cross-screen smoke guard: true iff the U1 Theme cascade (<see cref="GameTheme.
+    /// Build"/>, assigned ONLY at the <c>MainUi</c> root) reaches <paramref name="panel"/> at a
+    /// legible size. <see cref="Control.GetThemeDefaultFontSize"/> walks the ancestor chain for
+    /// the nearest assigned <see cref="Theme"/> and returns THAT theme's <c>DefaultFontSize</c> —
+    /// so this reads the cascade source itself rather than probing an arbitrary descendant
+    /// Label. Deliberately NOT a Label-text probe: several panels carry Labels with intentional
+    /// LOCAL per-node overrides (Town's building/gate markers, <c>UiKit.StatChip</c>/Section-
+    /// header pills) smaller than the legibility floor by design, which would make a Label-probe
+    /// a false negative even though the cascade itself reaches the panel fine.
+    /// </summary>
+    public static bool ThemeReachesPanel(Control panel) =>
+        panel.GetThemeDefaultFontSize() >= GameTheme.LegibilityFloor;
+
+    /// <summary>
+    /// P007 U8 cross-screen smoke guard: true iff <paramref name="control"/> laid out to a real,
+    /// non-zero footprint — the general panel-level guard against the "one-character-per-line"
+    /// layout-collapse *class* (R7/R15) that <c>LayoutTests</c> hunts at the individual-autowrap-
+    /// label instance level. Checks the settled <see cref="Control.Size"/> OR
+    /// <see cref="Control.GetCombinedMinimumSize"/>, whichever is non-zero, since a fixed-
+    /// <c>CustomMinimumSize</c> widget can report a healthy minimum a frame before its parent's
+    /// Size catches up (call after <see cref="SettleLayout"/>, on a control whose tab is current
+    /// — a hidden <c>TabContainer</c> page is never laid out).
+    /// </summary>
+    public static bool HasNonDegenerateLayout(Control control) =>
+        (control.Size.X > 1f && control.Size.Y > 1f) ||
+        (control.GetCombinedMinimumSize().X > 1f && control.GetCombinedMinimumSize().Y > 1f);
 }
 #endif
