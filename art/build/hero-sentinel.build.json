@@ -1,0 +1,20 @@
+{
+  "Seed": 1731462135,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "e853b82b7a3d876bb45266fc871f4aaead31fb7e434e76d2d1ed0dcb88f31846",
+  "NormalSha256": "e51b8cf3cdf26a6e6d46a45bdc746d0a39e92d5cd9bd2a76e6857a1526077450",
+  "Uid": "uid://hn0ntr4hrhxr",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "LW-art parity, 2026-07-19: 10 candidates total via ComfyUI MCP against the same hardened recipe used for hero-occultist (NoConceptSheet negative + the painterly-illustration positive addendum from the start, seed 1731462135+0..+4, then two further escalation rounds seed+... rewording the weapon phrasing). 9 of 10 rejected: floating weapon-icon insets, a full character-sheet/color-swatch/thumbnail-grid layout, a duplicate small thumbnail figure, a two-headed anatomy error, an out-of-palette glowing archway background, and a torn-paper-edge artifact each recurred across escalations -- the 'shield + warhammer' combo proved a stronger concept-sheet/multi-view attractor for this checkpoint than the other two classes' single-weapon phrasing. Curated per art/pipeline/README.md.",
+    "paintoverNote": "Winner is round-1 c0 (seed+0, the base seed itself, no offset): single bulky plate-armored knight, full helm, one polearm-type weapon and a flowing cape, soft gradient background, no artifacts across 10 candidates -- the cleanest composition despite not literally rendering the shield+warhammer pair. Silhouette still reads distinct from Vanguard (different helm shape, cape, and weapon) and Skirmisher/Occultist (much bulkier plate), which was the actual design goal (HeroSpecs.cs's per-class divergence note).",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse; background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5), Flip-Y-OFF import convention unchanged from the hero-vanguard/striker/mystic precedent -- lit ClassFigure sprite per AssetSpec.NormalMap=true, NeutralBaseTint=true (multiplied in-engine by ClassDefinition.ColorRgb for 'sentinel', bronze (176,141,87))."
+  }
+}

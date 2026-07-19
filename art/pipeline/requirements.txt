@@ -21,7 +21,9 @@ transformers>=4.44
 pillow>=10.2
 numpy>=1.26,<3
 
-# BiRefNet's trust_remote_code model code may import these at load time.
-# Uncomment if cutout.py's from_pretrained() raises ModuleNotFoundError.
-# timm>=1.0
-# einops>=0.8
+# BiRefNet's trust_remote_code model code imports these at load time (confirmed required,
+# not optional, on a fresh venv 2026-07-19 — from_pretrained() raises ModuleNotFoundError
+# for all three without them).
+timm>=1.0
+einops>=0.8
+kornia>=0.7

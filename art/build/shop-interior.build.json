@@ -1,0 +1,20 @@
+{
+  "Seed": 497501345,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "c8c28ec54013486bc16317df907445e1e5c2e4fa6346ace6aa3b12782cac2b22",
+  "NormalSha256": "be8abba5ea75473a7337529451b070dbf10a28548f8de263e96bf906a6d7d44f",
+  "Uid": "uid://bn0wxr47jgxq7",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "LW-art parity, 2026-07-19: round 1, 4 candidates (seed 497501341+0..+3) at 1024x1024 via ComfyUI MCP -- all 4 rejected: every one drew a full 3/4-isometric room corner (walls, floor, sometimes a window) with shelves already loaded with pottery/jars/barrels, violating both the 'flat front elevation' and 'empty display slots' requirements. Escalated: round 2, 4 more candidates (seed+4..+7) with the subject rewritten to explicitly demand a flat 2D front-elevation shelf-wall texture (no perspective/room-corner/floor/ceiling/window) and completely bare shelves, plus matching negatives (isometric, room corner, perspective, vanishing point, pottery, jars, jugs, barrels, baskets, crates, cluttered shelves). This produced 3 clean, empty, front-on repeating shelf-row textures out of 4.",
+    "paintoverNote": "Winner is round-2 c0 (seed+4, resolved 497501345): a clean repeating flat shelf-wall texture, warm honey-amber lit, completely bare cubby rows, no perspective, no clutter, no text/frame artifacts. Generated at the full 1024x1024 Active-track square (matching every other backdrop/building precedent) then manually cropped to a 1024x224 horizontal band (y=[440,664]) centered on two clean shelf-lip rows -- chosen over the raw non-uniform runtime squash ShopStage.cs would otherwise apply, so the committed asset is already close to its final ~1024x220 display aspect and the wood grain doesn't read flattened.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse. DEVIATION from ShopSpecs.cs's docstring (which anticipated the normal BiRefNet-cutout chain): the winning candidate is a full-bleed, edge-to-edge shelf texture with no isolated background region for BiRefNet's salient-object segmentation to remove (the whole frame IS the subject, the same condition that makes mine-backdrop/gloomwood-backdrop skip cutout.py) -- cutout.py was skipped and the crop was format-converted straight to opaque RGBA instead. Normal map still derived via normalmap.py (Sobel height-from-luminance, strength 2.5) since NormalMap=true and the surface is a near, lit, structured wall (not a receding atmospheric plane); Flip-Y-OFF import convention unchanged."
+  }
+}

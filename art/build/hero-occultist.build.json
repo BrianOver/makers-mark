@@ -1,0 +1,20 @@
+{
+  "Seed": 969827899,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "3e853ab1abfff619f3c7612eb4938b55203ebca0ff2d439a1d6247c75d8b3430",
+  "NormalSha256": "c9277c050406361212a82f0c0261a6a69bd7f04f5cbf95650b0ebeb66f2af69d",
+  "Uid": "uid://che7cn152i74c",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "LW-art parity, 2026-07-19: round 1, 4 candidates (seed+0..+3, base 969827894) via ComfyUI MCP -- all 4 rejected (a character-sheet/turnaround layout, a painted picture-frame border, a small signature-like corner glyph, or flat cel-shaded/anime linework instead of the painterly single-portrait style hero-vanguard/striker/mystic locked in). Escalated: round 2, 4 more candidates (seed+4..+7) with the negative hardened against picture-frame/vignette-border/split-screen/multiple-heads/manga/line-art/toon-shading and a positive addendum ('atmospheric digital painting, soft painterly brushwork, subtle rim lighting, single full-bleed illustration, one pose only'); this recipe change (recorded in HeroSpecs.cs's NoConceptSheet negative constant, generation-time positive addendum not committed to the spec) cleared the concept-sheet/frame attractor for all three LW-art hero candidates. Curated per art/pipeline/README.md.",
+    "paintoverNote": "Winner is round-2 c5 (seed+5, resolved 969827899): single hooded figure, long straight blade at the hip, torn cloak hem, plain dark-to-grey gradient background, no frame/text/signature. Diverges from the literal 'curved ritual dagger + tome' subject text (reads a long blade, no visible tome) but was the cleanest single-pose, artifact-free composition of the 8 candidates and keeps the silhouette read distinct from Mystic (no staff) and Striker (one blade, not twin daggers) via the flowing full-length cloak.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse; background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5), Flip-Y-OFF import convention unchanged from the hero-vanguard/striker/mystic precedent -- lit ClassFigure sprite per AssetSpec.NormalMap=true, NeutralBaseTint=true (multiplied in-engine by ClassDefinition.ColorRgb for 'occultist', dark violet (85,26,110))."
+  }
+}
