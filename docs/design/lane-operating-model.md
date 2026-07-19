@@ -174,7 +174,7 @@ Orchestrator disposition: author the micro-PR (or reject with reason on the clai
 
 ## 8. Conflict mechanics
 
-- **Worktrees (mandatory):** the `c:\Code\Game` checkout is SHARED by all concurrent sessions. Never `git checkout`/commit a work branch in the shared root — every session works in its own worktree (`git worktree add ../Game-<lane> -b <branch> origin/main`). Added 2026-07-17 after a live branch-switch collision between two sessions.
+- **Worktrees (mandatory):** the `c:\Code\Game` checkout is SHARED by all concurrent sessions. Never `git checkout`/commit a work branch in the shared root — every session works in its own worktree (`git worktree add .claude/worktrees/<lane> -b <branch> origin/main`, path gitignored; sibling `C:\Code\Game-*` folders are the retired 2026-07-17 convention — create no new ones). Added 2026-07-17 after a live branch-switch collision between two sessions; layout moved in-repo 2026-07-19 to stop folder sprawl in `C:\Code`.
 - **Branches:** per the §5 grammar. One claim = one branch = one small PR. Conventional commits; no `git add .`.
 - **Rebase cadence:** rebase onto main (i) before opening a PR, (ii) whenever the ruleset marks the PR stale (auto-merge is on — rebase + re-run is the loop), (iii) whenever BOARD.md announces a seam merge. ENGINE lane babysits; lanes own their own rebases.
 - **Cross-lane merge conflicts:** structurally impossible on owned dirs (disjoint). If one occurs anyway, a shared seam was edited — the orchestrator resolves it AND the offending edit is reverted into a contract-request. No lane ever resolves a conflict inside a file it doesn't own.
@@ -347,7 +347,7 @@ ADDON SWARM (N parallel, fully automatic — the grunt tier)
 
 ### Automated GitHub seams (the anti-overwrite machinery)
 
-1. **Worktree per claim, no exceptions.** `git worktree add ../Game-<claim> -b <branch> origin/main`. The shared root `c:\Code\Game` is read-only territory for every session including the orchestrator.
+1. **Worktree per claim, no exceptions.** `git worktree add .claude/worktrees/<claim> -b <branch> origin/main` (run from the shared root; gitignored path). The shared root `c:\Code\Game` is read-only territory for every session including the orchestrator.
 2. **Claims live on MAIN before work starts.** The orchestrator writes the claim stub (status: `cut`) to `.claude/tasks/` via its own micro-PR at CUT time — for cores AND spawned swarm workers (CLAUDE.md's claim rule binds subagents too). BOARD's open-claims table is the live lock registry; a claim file on a feature branch locks nothing.
 3. **Gate truth = merged PRs, BOARD second.** The orchestrator flips gates in the same INTEGRATE pass that merges. A session verifying a gate runs `git fetch origin && git show origin/main:.claude/tasks/BOARD.md` AND, if the gate names a PR, `gh pr view <n> --json state` — a MERGED gate PR beats a stale BOARD line.
 4. **Status lifecycle:** session sets `claimed → in-progress → pr-open` (same-session, pushed); the ORCHESTRATOR stamps `done` at merge and `blocked → cut` on re-packet (§5's "same-session" rule is amended accordingly — sessions can't stamp what happens after they exit).

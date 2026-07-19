@@ -12,6 +12,17 @@ if not exist "%GODOT%" (
   pause
   exit /b 1
 )
+REM Build the C# game assembly first — Godot mono loads it at boot, and a fresh checkout
+REM has none (launching without it crashes before the first frame).
+dotnet build "%~dp0godot\GodotClient.csproj" --nologo
+if errorlevel 1 (
+  echo.
+  echo   C# build failed — fix the errors above, then rerun.
+  echo.
+  pause
+  exit /b 1
+)
+
 REM R8: headless import pre-pass so committed art (.png + .png.import) renders on a fresh
 REM checkout — GD.Load needs the .godot/imported/*.ctex cache, which a plain clone lacks.
 "%GODOT%" --path "%~dp0godot" --headless --import --quit

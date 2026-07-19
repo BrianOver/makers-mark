@@ -13,7 +13,9 @@ session start and after any rebase failure. Everything else is per-claim.
 
 **WORKTREE RULE (mandatory, 2026-07-17):** the `c:\Code\Game` checkout is SHARED by all
 concurrent sessions — never `git checkout`/commit a work branch there. Every lane works in
-its own worktree: `git worktree add ../Game-<lane> -b <branch> origin/main`. A branch switch
+its own worktree: `git worktree add .claude/worktrees/<lane> -b <branch> origin/main` (path is
+gitignored; sibling `C:\Code\Game-*` folders are the old convention — create no new ones; the
+human playable build is the `play/` worktree in the root). A branch switch
 in the shared root already caused one cross-session commit collision (rode into #35, benign).
 
 > **NOTE (2026-07-18 reconcile):** the gate/claim tables below are **historical** — every listed

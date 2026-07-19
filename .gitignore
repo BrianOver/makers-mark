@@ -11,6 +11,9 @@ godot/.godot/
 # Claude Code worktrees
 .claude/worktrees/
 
+# Human stable-playable worktree (see HANDOFF.md — double-click play/play.bat)
+/play/
+
 # OS / editor
 .vs/
 .idea/

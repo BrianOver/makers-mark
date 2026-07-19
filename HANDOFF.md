@@ -104,7 +104,7 @@ Decisions (KD1–KD5), Scope Boundaries, and Open Questions (OQ1–OQ4) that all
 
 - One unit = one branch (`feat/uN-slug`) = one small PR. Green checks + up-to-date required;
   auto-merge on — rebase + re-run when stale (`gh pr update-branch <n> --rebase`).
-- **Never commit in the shared `c:\Code\Game` root** — use `git worktree add ../Game-<slug> -b feat/<slug> origin/main`.
+- **Never commit in the shared `c:\Code\Game` root** — use `git worktree add .claude/worktrees/<slug> -b feat/<slug> origin/main` (run from the root; the path is gitignored). Sibling `C:\Code\Game-*` folders are the OLD convention — do not create new ones. The human playable build lives at `C:\Code\Game\play` (also a worktree, also gitignored).
 - Deny-list (never edit unassigned): `Game.sln`, `godot/project.godot`, `.github/`,
   `sim/GameSim/Contracts/`, `CLAUDE.md`, `global.json`, `Directory.Build.props`, `.godot-version`.
 - Gate before "done": `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter Category!=Balance`.
