@@ -77,6 +77,7 @@ public class GeneratedPackConformanceTests
         yield return [SurfaceContract.Tavern];
         yield return [SurfaceContract.Faction];
         yield return [SurfaceContract.Ledger];
+        yield return [SurfaceContract.Narrator];
     }
 
     /// <summary>One structurally-valid candidate per cell: every declared slot placeholder,
