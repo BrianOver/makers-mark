@@ -69,6 +69,9 @@ public abstract partial class SimPanel : Control
     {
         var label = AddLabel(parent, text);
         label.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        // P007 polish: opt this header into the display-font theme-type variation (never the
+        // base "Label" type) — see GameTheme's HeaderFont remarks.
+        label.ThemeTypeVariation = GameTheme.HeaderThemeType;
         return label;
     }
 

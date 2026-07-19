@@ -68,6 +68,9 @@ public static class UiKit
         var header = new Label { Name = "SectionHeader", Text = title };
         header.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
         header.AddThemeFontSizeOverride("font_size", GameTheme.HeaderFontSize);
+        // P007 polish: opt this title into the display-font theme-type variation (never the
+        // base "Label" type) — see GameTheme's HeaderFont remarks.
+        header.ThemeTypeVariation = GameTheme.HeaderThemeType;
         body.AddChild(header);
 
         return new SectionView(root, body);
