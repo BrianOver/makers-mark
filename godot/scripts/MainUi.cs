@@ -86,6 +86,14 @@ public partial class MainUi : Control
     private bool _resumePlayOnLedgerClose;
     private bool _resumePlayOnCampClose;
 
+    // ── LW3: gold-chip bounce-scale pop (StatusBar region) ────────────────────────────────────
+    // No engine Tween in this codebase (LitTownOverlay/HeroSprite precedent: accumulated-delta
+    // math only, so the pop is deterministic and headless-testable via direct _Process calls,
+    // same as TownScene.Animate). -1 = not popping.
+    private const double GoldPopSeconds = 0.3;
+    private Label? _goldValueLabel;
+    private double _goldPopElapsed = -1;
+
     public override void _Ready()
     {
         Adapter = AdapterOverride ?? new SimAdapter((ulong)Seed);
@@ -148,6 +156,19 @@ public partial class MainUi : Control
                 ClearToast();
             }
         }
+
+        // LW3: the gold-chip bounce-scale pop (1.0→1.25→1.0), armed by RefreshStatus whenever the
+        // just-completed tick's LastEvents carried a player-shelf sale.
+        if (_goldPopElapsed >= 0 && _goldValueLabel is not null)
+        {
+            _goldPopElapsed += delta;
+            var t = Mathf.Clamp((float)(_goldPopElapsed / GoldPopSeconds), 0f, 1f);
+            _goldValueLabel.Scale = Vector2.One * GoldPopScale(t);
+            if (t >= 1f)
+            {
+                _goldPopElapsed = -1;
+            }
+        }
     }
 
     private void OnPhaseCompleted(DayPhase completedPhase, int completedDay)
@@ -179,6 +200,7 @@ public partial class MainUi : Control
 
         RefreshAll();
         Town.OnPhaseCompleted(completedPhase);
+        Shop.OnPhaseCompleted(completedPhase); // LW3: stage the day's shop customers/coin flourish
         SyncCampModal(); // V7a: raise the winch-house slate the moment a party parks at Camp
 
         if (completedPhase == DayPhase.Evening)
@@ -247,11 +269,28 @@ public partial class MainUi : Control
 
         _statChips.AddChild(NamedStatChip("DayChip", "Day", $"{state.Day}"));
         _statChips.AddChild(NamedStatChip("PhaseChip", "Phase", state.Phase.ToString(), UiKit.ChipTone.Accent));
-        _statChips.AddChild(BuildGoldChip(state.Player.Gold));
+
+        var goldChip = BuildGoldChip(state.Player.Gold);
+        _statChips.AddChild(goldChip);
+        _goldValueLabel = goldChip.GetNode<Label>("StatChip/StatChipRow/Value");
+
         _statChips.AddChild(NamedStatChip(
             "HeroesChip", "Heroes", $"{alive}/{state.Heroes.Count}",
             alive == state.Heroes.Count && state.Heroes.Count > 0 ? UiKit.ChipTone.Positive : UiKit.ChipTone.Neutral));
+
+        // LW3 coin flourish (StatusBar half): a player-shelf sale on THIS tick arms the gold-
+        // label pop. ShopStage plays the matching coin-arc off the SAME Adapter.LastEvents batch
+        // independently — no cross-panel coupling, the event log is the single source of truth.
+        if (Adapter.LastEvents.Any(e => e is ItemSold { FromPlayerShop: true }))
+        {
+            _goldPopElapsed = 0;
+        }
     }
+
+    /// <summary>1.0→1.25→1.0 bounce over the pop's duration — a symmetric sine hump standing in
+    /// for the plan's "Trans.Elastic" (no engine Tween in this codebase; accumulated-delta only,
+    /// the same determinism contract every other decoration on this project holds).</summary>
+    private static float GoldPopScale(float t) => 1f + 0.25f * Mathf.Sin(Mathf.Pi * t);
 
     /// <summary>A <see cref="UiKit.StatChip"/> given a discoverable <see cref="Node.Name"/> so
     /// tests can locate the exact chip instead of scanning the whole HUD's rendered text.</summary>
