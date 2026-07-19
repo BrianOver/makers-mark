@@ -191,7 +191,8 @@ public class PlayableLoopTests
         AssertThat(shelf[0].Price).IsEqual(DefaultStockPrice);
         var shopText = RenderedText(ui.Shop);
         AssertThat(shopText).Contains("Dagger");
-        AssertThat(shopText).Contains($"— {DefaultStockPrice}g");
+        // P007 U3: price moved from an inline "— Ng" suffix into its own StatChip value label.
+        AssertThat(shopText).Contains($"{DefaultStockPrice}g");
 
         // Ride the gated clock to day-2 Morning: ExpeditionDeep, then Evening (day rolls).
         PressEnabled(ui, "AdvancePhase");

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Ui;
 
 namespace GodotClient.Panels;
 
@@ -12,9 +13,23 @@ namespace GodotClient.Panels;
 /// controls; the rival shelf read-only. The unshelved filter mirrors (never
 /// replaces) the sim's own StockAction validation — an invalid stock is still
 /// the kernel's rejection to make.
+///
+/// <para>P007 U3 (R12/KTD2/KTD3): recomposed around three <see cref="UiKit.Section"/>s —
+/// Your Shelf, Unshelved Crafts, Rival Shelf — each a themed card per item with
+/// <see cref="ArtRect"/> art (falling back to the slot icon on any manifest miss) and a
+/// <see cref="StatChip"/> price readout. Every sim read (<c>state.Player.Shelf</c>,
+/// <see cref="UnshelvedPlayerCrafts"/>, <c>state.RivalShelf</c>, the <see cref="HeroPassedOnItem"/>
+/// grouping) and every action queue (<see cref="SetPriceAction"/>, <see cref="UnstockAction"/>,
+/// <see cref="StockAction"/>) is unchanged from the pre-rethink panel — only the visual
+/// composition changed. Button/SpinBox <c>Name</c>s (<c>Reprice_{id}</c>, <c>Unstock_{id}</c>,
+/// <c>Stock_{id}</c>, <c>Price_{id}</c>, <c>StockPrice_{id}</c>) are preserved verbatim so
+/// existing/new tests keep driving through the same signals.</para>
 /// </summary>
 public partial class ShopPanel : SimPanel
 {
+    /// <summary>Item-art tile edge length (px) for a shelf/craft/rival card.</summary>
+    private const float ItemArtSize = 56f;
+
     private Label? _feedback;
     private VBoxContainer? _content;
 
@@ -31,7 +46,16 @@ public partial class ShopPanel : SimPanel
         var state = Adapter.CurrentState;
         Clear(_content!);
 
-        // The day's pass-reasons, grouped per item (R8/AE4 — the legible half).
+        var passesToday = PassesToday(state);
+
+        BuildShelfSection(state, passesToday);
+        BuildUnshelvedSection(state);
+        BuildRivalSection(state);
+    }
+
+    /// <summary>The day's pass-reasons, grouped per item (R8/AE4 — the legible half).</summary>
+    private static Dictionary<int, List<HeroPassedOnItem>> PassesToday(GameState state)
+    {
         var passesToday = new Dictionary<int, List<HeroPassedOnItem>>();
         foreach (var gameEvent in state.EventLog)
         {
@@ -46,56 +70,99 @@ public partial class ShopPanel : SimPanel
             }
         }
 
-        AddHeader(_content!, "YOUR SHELF");
+        return passesToday;
+    }
+
+    private void BuildShelfSection(GameState state, Dictionary<int, List<HeroPassedOnItem>> passesToday)
+    {
+        var section = Section("Your Shelf");
+        _content!.AddChild(section.Root);
+
         if (state.Player.Shelf.IsEmpty)
         {
-            AddLabel(_content!, "  (empty — craft at the forge, then stock it here)");
+            AddLabel(section.Body, "Nothing shelved yet — craft at the forge, then stock it here.");
+            return;
         }
 
         foreach (var entry in state.Player.Shelf)
         {
             var item = state.Items[entry.Item.Value];
-            var row = AddRow(_content!);
-            AddIcon(row, IconRegistry.Slot(item.Slot));
-            AddLabel(row, $"{entry.Item} {item.Name} [{item.Quality}] — {entry.Price}g");
-            var priceSpin = AddSpinBox(row, $"Price_{entry.Item.Value}", 1, 99999, entry.Price);
             var itemId = entry.Item;
-            AddButton(row, $"Reprice_{entry.Item.Value}", "Reprice", () =>
+
+            var card = Card($"ShelfCard_{itemId.Value}");
+            section.Body.AddChild(card);
+            var cardBody = new VBoxContainer();
+            card.AddChild(cardBody);
+
+            var headerRow = AddRow(cardBody);
+            headerRow.AddChild(ArtRect(
+                AssetCatalog.ItemIconId(item.RecipeId), new Vector2(ItemArtSize, ItemArtSize),
+                IconRegistry.Slot(item.Slot), item.Name));
+
+            var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            headerRow.AddChild(infoCol);
+            AddLabel(infoCol, $"{itemId} {item.Name} [{item.Quality}]");
+            infoCol.AddChild(StatChip("Price", $"{entry.Price}g", UiKit.ChipTone.Accent));
+
+            var controlsRow = AddRow(cardBody);
+            var priceSpin = AddSpinBox(controlsRow, $"Price_{itemId.Value}", 1, 99999, entry.Price);
+            AddButton(controlsRow, $"Reprice_{itemId.Value}", "Reprice", () =>
             {
                 Adapter!.Queue(new SetPriceAction(itemId, (int)priceSpin.Value));
                 _feedback!.Text = $"queued: reprice {itemId} to {(int)priceSpin.Value}g";
             });
-            AddButton(row, $"Unstock_{entry.Item.Value}", "Unstock", () =>
+            AddButton(controlsRow, $"Unstock_{itemId.Value}", "Unstock", () =>
             {
                 Adapter!.Queue(new UnstockAction(itemId));
                 _feedback!.Text = $"queued: unstock {itemId}";
             });
 
-            if (passesToday.TryGetValue(entry.Item.Value, out var passes))
+            if (passesToday.TryGetValue(itemId.Value, out var passes))
             {
                 foreach (var pass in passes)
                 {
-                    var reason = AddLabel(_content!, $"    {HeroName(pass.Hero)} passed: {pass.Reason}");
-                    reason.AddThemeColorOverride("font_color", new Color(1f, 0.7f, 0.4f));
+                    var reason = AddLabel(cardBody, $"    {HeroName(pass.Hero)} passed: {pass.Reason}");
+                    reason.AddThemeColorOverride("font_color", GameTheme.RejectionColor);
                 }
             }
         }
+    }
 
-        AddHeader(_content!, "UNSHELVED CRAFTS");
+    private void BuildUnshelvedSection(GameState state)
+    {
+        var section = Section("Unshelved Crafts");
+        _content!.AddChild(section.Root);
+
         var unshelved = UnshelvedPlayerCrafts(state).ToList();
         if (unshelved.Count == 0)
         {
-            AddLabel(_content!, "  (none)");
+            AddLabel(section.Body, "Nothing waiting — every craft is either shelved or worn.");
+            return;
         }
 
         foreach (var item in unshelved)
         {
-            var row = AddRow(_content!);
-            AddIcon(row, IconRegistry.Slot(item.Slot));
-            AddLabel(row, $"{item.Id} {item.Name} [{item.Quality}] atk {item.Stats.Attack} def {item.Stats.Defense}");
-            var priceSpin = AddSpinBox(row, $"StockPrice_{item.Id.Value}", 1, 99999, 10);
+            var card = Card($"UnshelvedCard_{item.Id.Value}");
+            section.Body.AddChild(card);
+            var cardBody = new VBoxContainer();
+            card.AddChild(cardBody);
+
+            var headerRow = AddRow(cardBody);
+            headerRow.AddChild(ArtRect(
+                AssetCatalog.ItemIconId(item.RecipeId), new Vector2(ItemArtSize, ItemArtSize),
+                IconRegistry.Slot(item.Slot), item.Name));
+
+            var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            headerRow.AddChild(infoCol);
+            AddLabel(infoCol, $"{item.Id} {item.Name} [{item.Quality}]");
+            var chipRow = AddRow(infoCol);
+            chipRow.AddChild(StatChip("Atk", $"{item.Stats.Attack}"));
+            chipRow.AddChild(StatChip("Def", $"{item.Stats.Defense}"));
+
+            var controlsRow = AddRow(cardBody);
+            var priceSpin = AddSpinBox(controlsRow, $"StockPrice_{item.Id.Value}", 1, 99999, 10);
             var itemId = item.Id;
-            var stock = AddButton(row, $"Stock_{item.Id.Value}", "Stock", () =>
+            var stock = AddButton(controlsRow, $"Stock_{item.Id.Value}", "Stock", () =>
             {
                 Adapter!.Queue(new StockAction(itemId, (int)priceSpin.Value));
                 _feedback!.Text = $"queued: stock {itemId} at {(int)priceSpin.Value}g";
@@ -108,19 +175,34 @@ public partial class ShopPanel : SimPanel
                 && state.EventLog.Any(e => e is ItemSold sold && sold.Item == itemId);
             GateButton(stock, !soldConsumable, "Sold consumables don't come back.");
         }
+    }
 
-        AddHeader(_content!, "RIVAL SHELF (read-only)");
+    private void BuildRivalSection(GameState state)
+    {
+        var section = Section("Rival Shelf");
+        _content!.AddChild(section.Root);
+
         if (state.RivalShelf.IsEmpty)
         {
-            AddLabel(_content!, "  (empty)");
+            AddLabel(section.Body, "The rival stall sits empty.");
+            return;
         }
 
         foreach (var entry in state.RivalShelf)
         {
             var item = state.Items[entry.Item.Value];
-            var row = AddRow(_content!);
-            AddIcon(row, IconRegistry.Slot(item.Slot));
-            AddLabel(row, $"  {entry.Item} {item.Name} [{item.Quality}] — {entry.Price}g");
+
+            var card = Card($"RivalCard_{entry.Item.Value}");
+            section.Body.AddChild(card);
+            var headerRow = AddRow(card);
+            headerRow.AddChild(ArtRect(
+                AssetCatalog.ItemIconId(item.RecipeId), new Vector2(ItemArtSize, ItemArtSize),
+                IconRegistry.Slot(item.Slot), item.Name));
+
+            var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            headerRow.AddChild(infoCol);
+            AddLabel(infoCol, $"{entry.Item} {item.Name} [{item.Quality}]");
+            infoCol.AddChild(StatChip("Price", $"{entry.Price}g"));
         }
     }
 
