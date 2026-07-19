@@ -480,15 +480,18 @@ public class TownSceneTests
     [TestCase]
     public void LitOverlay_CanvasModulate_TracksEveryPhaseTint()
     {
-        // The lit world's SubViewport-scoped CanvasModulate carries the same 5-phase MULTIPLY table
-        // as the town root — pushed in by TownScene.Refresh every tick. Walk the full day.
+        // The lit world's SubViewport-scoped CanvasModulate carries its OWN two-temperature ramp
+        // (LW4: LitTownOverlay.AtmosphereTintFor) — daylight (Morning/Expedition) matches the flat
+        // SVG town's TownScene.TintFor exactly, but dusk/night (Camp/ExpeditionDeep/Evening) is
+        // deliberately cooler/desaturated so the warm window-glow + forge coals pop. TownScene's
+        // own TintFor table is untouched (its Modulate assertions live in the SVG-town tests below).
         var ui = MountMainUi();
         try
         {
             var overlay = ui.Town.LitOverlay;
             AssertThat(overlay).IsNotNull();
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
-            AssertThat(overlay!.Ambient.Color).IsEqual(TownScene.TintFor(DayPhase.Morning));
+            AssertThat(overlay!.Ambient.Color).IsEqual(LitTownOverlay.AtmosphereTintFor(DayPhase.Morning));
 
             foreach (var phase in new[]
                      {
@@ -497,8 +500,12 @@ public class TownSceneTests
             {
                 ui.Adapter.AdvancePhase();
                 AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(phase);
-                AssertThat(overlay.Ambient.Color).IsEqual(TownScene.TintFor(phase));
+                AssertThat(overlay.Ambient.Color).IsEqual(LitTownOverlay.AtmosphereTintFor(phase));
             }
+
+            // Daylight stops are pinned identical between the two ramps (only dusk/night diverge).
+            AssertThat(LitTownOverlay.AtmosphereTintFor(DayPhase.Morning)).IsEqual(TownScene.TintFor(DayPhase.Morning));
+            AssertThat(LitTownOverlay.AtmosphereTintFor(DayPhase.Expedition)).IsEqual(TownScene.TintFor(DayPhase.Expedition));
         }
         finally
         {
@@ -545,6 +552,208 @@ public class TownSceneTests
         finally
         {
             overlay.Free();
+        }
+    }
+
+    // ── LW4 atmosphere layer: window glow, forge coals, particles, props, fog ────────────────
+
+    private static readonly DayPhase[] AllPhasesFromMorning =
+    [
+        DayPhase.Morning, DayPhase.Expedition, DayPhase.Camp, DayPhase.ExpeditionDeep, DayPhase.Evening,
+    ];
+
+    [TestCase]
+    public void Fx_ShippedProps_AllEightResolveAsSprites()
+    {
+        // The 8 committed props (LW-art) are on main via LFS; CI's `godot --import` makes them
+        // loadable — assert each resolves, then that the mounted fx layer realized every one.
+        var ui = MountMainUi();
+        try
+        {
+            foreach (var prop in AmbientFxLayer.DefaultProps)
+            {
+                AssertThat(IconRegistry.Lit(prop.Id)).IsNotNull();
+                AssertThat(Find<Sprite2D>(ui.Town, $"Prop_{prop.Id}")).IsNotNull();
+            }
+
+            AssertThat(ui.Town.LitOverlay!.Fx.Props.Count).IsEqual(AmbientFxLayer.DefaultProps.Length);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Fx_MissingProp_DegradesToNoSpriteNoCrash()
+    {
+        // Graceful degrade (standalone build so no shipped id masks the path): a fake prop id
+        // resolves to null Lit → no sprite, no crash — same contract as LitTownOverlay's buildings.
+        var fx = new AmbientFxLayer();
+        try
+        {
+            fx.Build(
+                LitTownOverlay.DefaultBuildings,
+                new[] { new AmbientFxLayer.PropSpec("does_not_exist_yet", Vector2.Zero, false) });
+
+            AssertThat(fx.Props.Count).IsEqual(0);
+            AssertThat(fx.FindChild("Prop_does_not_exist_yet", true, false)).IsNull();
+        }
+        finally
+        {
+            fx.Free();
+        }
+    }
+
+    [TestCase]
+    public void Fx_WindowGlow_AlphaAndVisibilityRampWithPhase()
+    {
+        // Off in daylight, rising through dusk to full at night — pops against the cooler
+        // AtmosphereTintFor stops instead of the flatter TownScene.TintFor.
+        var ui = MountMainUi();
+        try
+        {
+            var expected = new System.Collections.Generic.Dictionary<DayPhase, float>
+            {
+                [DayPhase.Morning] = 0f,
+                [DayPhase.Expedition] = 0f,
+                [DayPhase.Camp] = 0.55f,
+                [DayPhase.ExpeditionDeep] = 0.80f,
+                [DayPhase.Evening] = 1.00f,
+            };
+
+            foreach (var phase in AllPhasesFromMorning)
+            {
+                if (phase != DayPhase.Morning)
+                {
+                    ui.Adapter.AdvancePhase();
+                }
+
+                AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(phase);
+                foreach (var glow in ui.Town.LitOverlay!.Fx.WindowGlows)
+                {
+                    AssertThat(glow.Modulate.A).IsEqual(expected[phase]);
+                    AssertThat(glow.Visible).IsEqual(expected[phase] > 0f);
+                }
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Fx_Particles_EmitStateTracksPhase()
+    {
+        // Fireflies: dusk/night only. Dust motes: daytime only. Chimney smoke + forge embers:
+        // always on — the forge never goes cold.
+        var ui = MountMainUi();
+        try
+        {
+            var fx = ui.Town.LitOverlay!.Fx;
+            AssertThat(fx.ChimneySmokes.Count).IsGreater(0);
+            foreach (var smoke in fx.ChimneySmokes)
+            {
+                AssertThat(smoke.Emitting).IsTrue();
+            }
+
+            AssertThat(fx.ForgeEmbers).IsNotNull();
+            AssertThat(fx.ForgeEmbers!.Emitting).IsTrue();
+
+            foreach (var phase in AllPhasesFromMorning)
+            {
+                if (phase != DayPhase.Morning)
+                {
+                    ui.Adapter.AdvancePhase();
+                }
+
+                var isNight = phase is DayPhase.Camp or DayPhase.ExpeditionDeep or DayPhase.Evening;
+                var isDay = phase is DayPhase.Morning or DayPhase.Expedition;
+
+                AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(phase);
+                AssertThat(fx.Fireflies!.Emitting).IsEqual(isNight);
+                AssertThat(fx.DustMotes!.Emitting).IsEqual(isDay);
+
+                foreach (var wisp in fx.FogWisps)
+                {
+                    AssertThat(wisp.Visible).IsEqual(isNight);
+                }
+
+                // Forge never goes cold, whatever the hour.
+                AssertThat(fx.ForgeEmbers!.Emitting).IsTrue();
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Fx_ForgeCoalsLandmark_StrongestLightTownWide()
+    {
+        // The forge coals are the ONE strongest extra light — beats every per-building lantern
+        // (LightEnergy 1.2) so the coals read as the hottest spot in town.
+        var ui = MountMainUi();
+        try
+        {
+            var overlay = ui.Town.LitOverlay!;
+            AssertThat(overlay.Fx.Lights.Count).IsEqual(1);
+            var coals = overlay.Fx.Lights[0];
+            AssertThat(coals.Name.ToString()).IsEqual("ForgeCoalsLight");
+
+            foreach (var lantern in overlay.Lights)
+            {
+                AssertThat(coals.Energy).IsGreater(lantern.Energy);
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Fx_LightBudget_TownWideStaysUnderEightConcurrent()
+    {
+        // Plan LW4 budget: ≤8 concurrent lights town-wide (per-building lanterns + the one
+        // forge-coals landmark).
+        var ui = MountMainUi();
+        try
+        {
+            var overlay = ui.Town.LitOverlay!;
+            var total = overlay.Lights.Count + overlay.Fx.Lights.Count;
+            AssertThat(total).IsLessEqual(8);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Fx_FogWisps_TwoSpritesPanByAccumulatedDelta()
+    {
+        // 2 fog wisps, dusk/night only, panned by accumulated frame delta with modulo wrap —
+        // never wall-clock, never engine RNG (KTD2).
+        var ui = MountMainUi();
+        try
+        {
+            var fx = ui.Town.LitOverlay!.Fx;
+            AssertThat(fx.FogWisps.Count).IsEqual(2);
+
+            var before = fx.FogWisps[0].Position.X;
+            // Two synthetic ticks of accumulated delta should move the wisp forward (no wall
+            // clock, no engine RNG — the same accumulated-delta contract as the ember flicker).
+            fx._Process(0.5);
+            fx._Process(0.5);
+            var after = fx.FogWisps[0].Position.X;
+            AssertThat(after).IsNotEqual(before);
+        }
+        finally
+        {
+            Unmount(ui);
         }
     }
 
