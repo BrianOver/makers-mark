@@ -9,7 +9,7 @@ using FlavorForge.Model;
 // file (KTD-F). This tool never runs at game runtime — it lives only under tools/, and is never
 // referenced by sim/GameSim or godot/ (R13/R14).
 //
-// Usage: flavorforge --surface <tavern|faction|ledger> (--stub | --endpoint <url> --model <id>)
+// Usage: flavorforge --surface <tavern|faction|ledger|narrator> (--stub | --endpoint <url> --model <id>)
 //                     [--api-shape ollama|openai] [--count N] [--emit] [--pack-file PATH]
 //                     [--out DIR] [--config PATH]
 
@@ -239,7 +239,7 @@ static bool TryParseApiShape(string? value, out LocalModelApiShape shape)
 
 static void PrintUsage()
 {
-    Console.Error.WriteLine("usage: flavorforge --surface <tavern|faction|ledger> (--stub | --endpoint <url> --model <id>)");
+    Console.Error.WriteLine("usage: flavorforge --surface <tavern|faction|ledger|narrator> (--stub | --endpoint <url> --model <id>)");
     Console.Error.WriteLine("                    [--api-shape ollama|openai] [--count N] [--emit]");
     Console.Error.WriteLine("                    [--pack-file PATH] [--out DIR] [--config PATH]");
     Console.Error.WriteLine();

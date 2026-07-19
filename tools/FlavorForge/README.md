@@ -52,14 +52,14 @@ An unreachable endpoint (server not started, wrong port) fails fast with a clear
 ## CLI reference
 
 ```
-flavorforge --surface <tavern|faction|ledger> (--stub | --endpoint <url> --model <id>)
+flavorforge --surface <tavern|faction|ledger|narrator> (--stub | --endpoint <url> --model <id>)
             [--api-shape ollama|openai] [--count N] [--emit]
             [--pack-file PATH] [--out DIR] [--config PATH]
 ```
 
 | Flag | Meaning |
 | --- | --- |
-| `--surface` | Which pack to target: `tavern`, `faction`, or `ledger`. Required. |
+| `--surface` | Which pack to target: `tavern`, `faction`, `ledger`, or `narrator`. Required. |
 | `--stub` | Deterministic dry run with zero network IO — no real candidates, just a pipeline smoke test. |
 | `--endpoint` / `--model` | Live local model — base URL and model id. Required together unless `--stub`. |
 | `--api-shape` | `ollama` (default) or `openai` — which request/response shape to speak. |
