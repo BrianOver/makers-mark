@@ -37,3 +37,6 @@ art/pipeline/candidates/
 # FlavorForge dev-time review artifacts (P008) — proposals only, never sim source
 tools/FlavorForge/proposals/
 tools/FlavorForge/config.json
+
+# Local time-tracking plugin data
+.timelog/
