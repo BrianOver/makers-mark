@@ -16,6 +16,8 @@ jobs:
           global-json-file: global.json
       - name: Fast lane — sim suite (no Godot)
         run: dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter "Category!=Balance" --logger "trx;LogFileName=sim-tests.trx"
+      - name: FlavorForge test lane (stub-only, zero network)
+        run: dotnet test tools/FlavorForge.Tests/FlavorForge.Tests.csproj
       - name: Fast lane — art conformance (no Godot, no IO; describe-PR definition of done)
         run: dotnet test art/GameArt.Tests/GameArt.Tests.csproj --logger "trx;LogFileName=art-tests.trx"
       - uses: actions/upload-artifact@v4
@@ -84,8 +86,49 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q xvfb
       - name: Engine tests (Godot under virtual display; one retry)
         run: |
+          # Known flake (hit on PR #92, green on rerun): gdUnit4Net finishes and prints its
+          # summary ("Failed: 0, Passed: N") but Godot's own process then SIGABRTs during
+          # shutdown, exiting 134 after the results are already on disk. `-e` is on by default
+          # for this shell, so `set +e` here — we need to inspect the exit code ourselves
+          # instead of letting the script die on the first nonzero return.
+          set +e
           export GODOT_BIN=$(which godot)
-          xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests.trx"             || xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests-retry.trx"
+
+          run_engine_tests() {
+            # PIPESTATUS[0] = dotnet test's own exit code, not tee's (tee itself always
+            # succeeds), so the pipe through tee doesn't hide a real failure.
+            xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests.trx" 2>&1 | tee "$1"
+            return "${PIPESTATUS[0]}"
+          }
+
+          run_engine_tests engine-tests-attempt1.log
+          exit_code=$?
+
+          if [ "$exit_code" -ne 0 ]; then
+            echo "::notice::Engine tests attempt 1 exited $exit_code — retrying once (known Godot shutdown flake)."
+            run_engine_tests engine-tests-attempt2.log
+            exit_code=$?
+          fi
+
+          if [ "$exit_code" -eq 0 ]; then
+            exit 0
+          fi
+
+          # Both attempts failed. Tolerate ONLY the exact known shape: exit code 134 (SIGABRT)
+          # AND a definitive all-tests-passed marker in that same run's output. Any other exit
+          # code, or a "Failed: 0" marker missing/showing real failures, fails the step normally
+          # — this must never mask an actual test regression.
+          last_log=engine-tests-attempt2.log
+          [ -f "$last_log" ] || last_log=engine-tests-attempt1.log
+
+          if [ "$exit_code" -eq 134 ] && grep -q "Failed: 0" "$last_log"; then
+            passed_count=$(grep -oE "Passed: [0-9]+" "$last_log" | tail -1 | grep -oE "[0-9]+")
+            echo "::warning::engine shutdown SIGABRT tolerated, all ${passed_count:-N} tests passed"
+            exit 0
+          fi
+
+          echo "::error::Engine tests failed for real (exit $exit_code) — not the tolerated shutdown flake."
+          exit "$exit_code"
       - name: Assert runtime suite actually ran (silent-skip guard, KTD3)
         run: |
           export GODOT_BIN=$(which godot)
