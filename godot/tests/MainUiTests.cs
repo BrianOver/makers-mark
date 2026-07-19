@@ -42,11 +42,11 @@ public class MainUiTests
             AssertThat(state.Day).IsEqual(2);
             AssertThat(state.Phase).IsEqual(DayPhase.Expedition);
 
-            // Status bar reflects the live state.
-            var status = Find<Label>(ui, "StatusLabel").Text;
-            AssertThat(status).Contains($"Day {state.Day}");
-            AssertThat(status).Contains(state.Phase.ToString());
-            AssertThat(status).Contains($"Gold {state.Player.Gold}g");
+            // P007 U7: the status bar is now a themed HUD header of named stat chips —
+            // day/phase/gold/heroes stay discoverable, each on its own chip.
+            AssertThat(RenderedText(Find<Control>(ui, "DayChip"))).Contains($"{state.Day}");
+            AssertThat(RenderedText(Find<Control>(ui, "PhaseChip"))).Contains(state.Phase.ToString());
+            AssertThat(RenderedText(Find<Control>(ui, "GoldChip"))).Contains($"{state.Player.Gold}g");
 
             // Hero roster renders every hero; detail pane renders the selected one.
             var heroesText = RenderedText(ui.Heroes);

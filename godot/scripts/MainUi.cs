@@ -11,9 +11,9 @@ namespace GodotClient;
 
 /// <summary>
 /// The one UI scene (U11 shell + U12 town layer): a persistent tab bar hosting the
-/// living town view plus the six management panels over a top status bar
-/// (day/phase/gold + Advance/Auto, with play/pause/fast-forward as auto-mode
-/// sub-controls), with the Evening Ledger as a modal overlay. The Ledger opens
+/// living town view plus the six management panels under a themed HUD header (P007
+/// U7 — day/phase/gold/heroes stat chips + Advance/Auto, with play/pause/fast-forward
+/// as auto-mode sub-controls), with the Evening Ledger as a modal overlay. The Ledger opens
 /// through the U12 Return Ritual — a TIME-BASED gate
 /// (<see cref="ReturnRitualDelaySeconds"/> of unscaled wall-clock after the Evening
 /// tick), never blocked by sprite walk-ins, so a zero-survivor day cannot hang the
@@ -75,8 +75,9 @@ public partial class MainUi : Control
     public double ToastRemaining { get; private set; }
 
     private int _pendingLedgerDay;
-    private Label _status = null!;
+    private HBoxContainer _statChips = null!;
     private Label _clockLabel = null!;
+    private PanelContainer _toastBanner = null!;
     private Label _toast = null!;
     private Button _advance = null!;
     private Button _auto = null!;
@@ -172,6 +173,7 @@ public partial class MainUi : Control
         {
             _toast.Text = string.Join("  ",
                 Adapter.LastRejections.Select(r => FriendlyRejection(r.Reason)).Distinct());
+            _toastBanner.Visible = true; // U7: transient banner, hidden except while a toast is live
             ToastRemaining = RejectionToastSeconds;
         }
 
@@ -227,17 +229,61 @@ public partial class MainUi : Control
         }
     }
 
+    /// <summary>
+    /// P007 U7 (R11/R12/KD1): rebuild the HUD's stat-chip row from CurrentState. Rebuilt (not
+    /// mutated in place) each call — mirrors the panels' own Clear-then-compose Refresh pattern
+    /// (KTD2) so the chips can never drift from live state between ticks.
+    /// </summary>
     private void RefreshStatus()
     {
         var state = Adapter.CurrentState;
         var alive = state.Heroes.Values.Count(h => h.Alive);
-        _status.Text = $"Day {state.Day} — {state.Phase} | Gold {state.Player.Gold}g | Heroes {alive}/{state.Heroes.Count}";
+
+        foreach (var child in _statChips.GetChildren())
+        {
+            _statChips.RemoveChild(child);
+            child.Free();
+        }
+
+        _statChips.AddChild(NamedStatChip("DayChip", "Day", $"{state.Day}"));
+        _statChips.AddChild(NamedStatChip("PhaseChip", "Phase", state.Phase.ToString(), UiKit.ChipTone.Accent));
+        _statChips.AddChild(BuildGoldChip(state.Player.Gold));
+        _statChips.AddChild(NamedStatChip(
+            "HeroesChip", "Heroes", $"{alive}/{state.Heroes.Count}",
+            alive == state.Heroes.Count && state.Heroes.Count > 0 ? UiKit.ChipTone.Positive : UiKit.ChipTone.Neutral));
+    }
+
+    /// <summary>A <see cref="UiKit.StatChip"/> given a discoverable <see cref="Node.Name"/> so
+    /// tests can locate the exact chip instead of scanning the whole HUD's rendered text.</summary>
+    private static Control NamedStatChip(string name, string label, string value, UiKit.ChipTone tone = UiKit.ChipTone.Neutral)
+    {
+        var chip = UiKit.StatChip(label, value, tone);
+        chip.Name = name;
+        return chip;
+    }
+
+    /// <summary>The gold chip pairs the existing gold glyph (U16) with a themed StatChip value —
+    /// the one place the U16 icon and the P007 U2 widget kit meet.</summary>
+    private static Control BuildGoldChip(int gold)
+    {
+        var wrap = new HBoxContainer { Name = "GoldChip" };
+        wrap.AddChild(new TextureRect
+        {
+            Name = "GoldIcon",
+            Texture = IconRegistry.Glyph("gold"),
+            CustomMinimumSize = new Vector2(20, 20),
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            MouseFilter = MouseFilterEnum.Ignore,
+        });
+        wrap.AddChild(UiKit.StatChip("Gold", $"{gold}g", UiKit.ChipTone.Accent));
+        return wrap;
     }
 
     private void ClearToast()
     {
         ToastRemaining = 0;
         _toast.Text = string.Empty;
+        _toastBanner.Visible = false; // U7: hide the whole banner, not just the text
     }
 
     /// <summary>
@@ -286,6 +332,7 @@ public partial class MainUi : Control
     private void UpdateClockLabel()
     {
         _auto.Text = Clock.AutoAdvance ? "Auto: ON" : "Auto: OFF";
+        _auto.ButtonPressed = Clock.AutoAdvance; // keep the toggle's pressed look in sync (U7)
         // Play/pause + speed are sub-controls of auto mode — hidden while gated (U2).
         _playPause.Visible = Clock.AutoAdvance;
         _speed.Visible = Clock.AutoAdvance;
@@ -311,42 +358,44 @@ public partial class MainUi : Control
         layout.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(layout);
 
-        // --- status bar -----------------------------------------------------
-        var statusBar = new HBoxContainer { Name = "StatusBar" };
-        layout.AddChild(statusBar);
-        _status = new Label { Name = "StatusLabel" };
-        statusBar.AddChild(_status);
-        // Gold glyph (U16) sits by the day/phase/gold readout in StatusLabel.
-        statusBar.AddChild(new TextureRect
-        {
-            Name = "GoldIcon",
-            Texture = IconRegistry.Glyph("gold"),
-            CustomMinimumSize = new Vector2(20, 20),
-            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-            MouseFilter = MouseFilterEnum.Ignore,
-        });
-        var spacer = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        statusBar.AddChild(spacer);
-        _clockLabel = new Label { Name = "ClockLabel" };
-        statusBar.AddChild(_clockLabel);
+        // --- HUD header (P007 U7/R11/R12/KD1): themed stat-chip row (left) + the
+        // Advance/Auto controls cluster (right) — the real home for the hybrid day
+        // clock. Both Advance and Auto drive PhaseClock's ONE gated advance path
+        // (AdvanceNow / Update -> SimAdapter.AdvancePhase); nothing here is a second
+        // code path (KD1). -----------------------------------------------------
+        var header = new PanelContainer { Name = "HudHeader" };
+        layout.AddChild(header);
+        var headerRow = new HBoxContainer { Name = "HudHeaderRow" };
+        header.AddChild(headerRow);
 
-        // U2 hybrid clock controls: explicit Advance is the primary control; the Auto
-        // toggle opts into the timed cadence, where play/pause + speed apply.
+        _statChips = new HBoxContainer { Name = "StatChips", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        headerRow.AddChild(_statChips); // populated by RefreshStatus (day/phase/gold/heroes)
+
+        var controls = new HBoxContainer { Name = "HudControls" };
+        headerRow.AddChild(controls);
+
+        _clockLabel = new Label { Name = "ClockLabel" };
+        controls.AddChild(_clockLabel);
+
+        // U2 hybrid clock controls: explicit Advance is the primary control (styled as
+        // such — StylePrimary — so it reads as THE control); the Auto toggle opts into
+        // the timed cadence, where play/pause + speed apply.
         _advance = new Button { Name = "AdvancePhase", Text = "Advance" };
+        StylePrimary(_advance);
         _advance.Pressed += () =>
         {
             Clock.AdvanceNow(); // same advance the auto timer fires (R1)
             UpdateClockLabel();
         };
-        statusBar.AddChild(_advance);
+        controls.AddChild(_advance);
 
-        _auto = new Button { Name = "AutoAdvance", Text = "Auto: OFF" };
+        _auto = new Button { Name = "AutoAdvance", Text = "Auto: OFF", ToggleMode = true };
         _auto.Pressed += () =>
         {
             Clock.ToggleAuto();
             UpdateClockLabel();
         };
-        statusBar.AddChild(_auto);
+        controls.AddChild(_auto);
 
         _playPause = new Button { Name = "PlayPause", Text = "Pause" };
         _playPause.Pressed += () =>
@@ -354,7 +403,7 @@ public partial class MainUi : Control
             Clock.TogglePlay();
             UpdateClockLabel();
         };
-        statusBar.AddChild(_playPause);
+        controls.AddChild(_playPause);
 
         _speed = new Button { Name = "Speed", Text = "1x" };
         _speed.Pressed += () =>
@@ -362,17 +411,25 @@ public partial class MainUi : Control
             Clock.CycleSpeed();
             UpdateClockLabel();
         };
-        statusBar.AddChild(_speed);
+        controls.AddChild(_speed);
 
         var ledgerButton = new Button { Name = "OpenLedger", Text = "Ledger" };
         ledgerButton.Pressed += () => Ledger.ShowFor(LastCompletedDay);
-        statusBar.AddChild(ledgerButton);
+        controls.AddChild(ledgerButton);
 
-        // U6 rejection toast: transient player-phrased line under the status bar. It is
-        // NOT a persistent status readout — OnPhaseCompleted sets it, _Process fades it.
-        _toast = new Label { Name = "RejectionToast", AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        // U6/U7 rejection banner: a transient, themed, player-phrased line — hidden
+        // except while a toast is live (OnPhaseCompleted shows it, ClearToast/_Process
+        // hide it). NOT a persistent status readout, and never the raw kernel string.
+        _toastBanner = new PanelContainer { Name = "ToastBanner", Visible = false };
+        layout.AddChild(_toastBanner);
+        _toast = new Label
+        {
+            Name = "RejectionToast",
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
         _toast.AddThemeColorOverride("font_color", GameTheme.RejectionColor);
-        layout.AddChild(_toast);
+        _toastBanner.AddChild(_toast);
 
         // --- panel tabs (tab title = scene root node name) -------------------
         Tabs = new TabContainer
@@ -412,6 +469,33 @@ public partial class MainUi : Control
         var panel = GD.Load<PackedScene>(scenePath).Instantiate<T>();
         Tabs.AddChild(panel);
         return panel;
+    }
+
+    /// <summary>
+    /// P007 U7: an Accent-forward per-node override marking the ONE primary HUD action
+    /// (Advance). A deliberate, narrow exception to the "no local color literals" rule
+    /// (R11/KTD1) — every color/shape still comes from <see cref="GameTheme"/>'s public
+    /// surface (<see cref="GameTheme.ButtonStyle"/>, <see cref="GameTheme.AccentColor"/>,
+    /// <see cref="GameTheme.BoneColor"/>), just recombined for this single distinguished
+    /// control rather than registered as a shared theme type.
+    /// </summary>
+    private static void StylePrimary(Button button)
+    {
+        var normal = GameTheme.ButtonStyle(GameTheme.ButtonVisualState.Pressed);
+        normal.BgColor = GameTheme.AccentColor;
+        button.AddThemeStyleboxOverride("normal", normal);
+
+        var hover = GameTheme.ButtonStyle(GameTheme.ButtonVisualState.Pressed);
+        hover.BgColor = GameTheme.AccentColor.Lightened(0.15f);
+        button.AddThemeStyleboxOverride("hover", hover);
+
+        var pressed = GameTheme.ButtonStyle(GameTheme.ButtonVisualState.Pressed);
+        pressed.BgColor = GameTheme.AccentColor.Darkened(0.15f);
+        button.AddThemeStyleboxOverride("pressed", pressed);
+
+        button.AddThemeColorOverride("font_color", GameTheme.BoneColor);
+        button.AddThemeColorOverride("font_color_hover", GameTheme.BoneColor);
+        button.AddThemeColorOverride("font_color_pressed", GameTheme.BoneColor);
     }
 
     /// <summary>Town hero click (R20): jump to the Heroes tab with that hero's detail bound.</summary>
