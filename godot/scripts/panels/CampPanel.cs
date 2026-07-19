@@ -17,7 +17,14 @@ namespace GodotClient.Panels;
 /// The panel NEVER enforces a rule (AE4 legibility): it submits the action and renders the
 /// kernel's typed <c>TickResult.Rejected</c> reasons verbatim. Server-side <c>SupplySent</c> is the
 /// truth — the panel re-reads state after every tick and disables Send once the delivery is spent.
-/// Adapter-only, code-built content, plain Controls (KTD10 / schedule §4: functional, not beautiful).
+/// Adapter-only, code-built content (KTD10 / schedule §4).
+///
+/// <para>P007 polish: each camped party is now a themed <see cref="Card"/> inside
+/// <c>CampParties</c> instead of a bare run of rows — structural wrap only. Every Control
+/// <c>Name</c> (<c>CampPick_{lead}</c>, <c>CampSend_{member}</c>, <c>CampRecall_{lead}</c>),
+/// every label's exact text, and the lifecycle (<see cref="ShowModal"/>/<see cref="Render"/>)
+/// are unchanged, so the existing golden <c>CampPanelTests</c>/<c>MainUiTests</c> scenarios stay
+/// green.</para>
 /// </summary>
 public partial class CampPanel : SimPanel
 {
@@ -95,8 +102,13 @@ public partial class CampPanel : SimPanel
         var lead = party.Party[0];
         var fee = SupplyFee(party.CheckpointFloor);
 
-        AddHeader(_parties!, $"PARTY CAMPED — below floor {party.CheckpointFloor}, pressing for floor {party.TargetFloor}");
-        AddLabel(_parties!, $"Runner: {fee}g per delivery");
+        var card = Card($"CampPartyCard_{lead.Value}");
+        _parties!.AddChild(card);
+        var cardBody = new VBoxContainer();
+        card.AddChild(cardBody);
+
+        AddHeader(cardBody, $"PARTY CAMPED — below floor {party.CheckpointFloor}, pressing for floor {party.TargetFloor}");
+        AddLabel(cardBody, $"Runner: {fee}g per delivery");
 
         // Supply picker: the player's held consumables (exactly the send-legal set the kernel accepts).
         var pick = new OptionButton { Name = $"CampPick_{lead.Value}" };
@@ -111,10 +123,10 @@ public partial class CampPanel : SimPanel
             pick.Select(0);
         }
 
-        _parties!.AddChild(pick);
+        cardBody.AddChild(pick);
         if (held.IsEmpty)
         {
-            AddLabel(_parties!, "  (nothing in your hands to send)");
+            AddLabel(cardBody, "  (nothing in your hands to send)");
         }
 
         foreach (var member in party.Party)
@@ -123,7 +135,7 @@ public partial class CampPanel : SimPanel
             var maxHp = state.Heroes.TryGetValue(member.Value, out var hero) ? hero.MaxHp : 0;
             var heals = HealsLeft(state, party, member);
 
-            var row = AddRow(_parties!);
+            var row = AddRow(cardBody);
             AddLabel(row, $"{HeroName(member)} — hp {hp}/{maxHp}, {heals} heals left");
 
             var to = member;
@@ -145,7 +157,7 @@ public partial class CampPanel : SimPanel
                     : $"You can't pay the {fee}g runner yet.");
         }
 
-        var recall = AddButton(_parties!, $"CampRecall_{lead.Value}", "Recall", () =>
+        var recall = AddButton(cardBody, $"CampRecall_{lead.Value}", "Recall", () =>
             Adapter!.Queue(new RecallPartyAction(lead)));
         // Mirror of CampHandlers.ApplyRecall: the bell rings once per party.
         GateButton(recall, !party.Recalled, "The recall bell has already rung for this party.");
