@@ -22,6 +22,13 @@ namespace GodotClient.Town;
 /// <para>Adapter-free: the phase tint is pushed in via <see cref="ApplyPhase"/> by TownScene (which
 /// owns the adapter), and the flicker is pure presentation (accumulated frame time → Mathf.Sin, no
 /// sim contact, no RNG — same contract as the pilot and <see cref="HeroSprite"/>).</para>
+///
+/// <para>LW6 camera feel: the LitViewport carries its own <see cref="Camera2D"/> for a
+/// barely-conscious idle drift (<see cref="DriftOffsetFor"/>), scoped to this SubViewport only via
+/// <see cref="Camera2D.MakeCurrent"/> — it never becomes the main viewport's camera. Mouse
+/// parallax (<see cref="ApplyParallax"/>) deliberately does NOT move the camera; it offsets the
+/// <see cref="BackLayer"/>/<see cref="Fx"/>/<see cref="HeroDecorLayer"/> depth groups at their own
+/// factors instead, so the backdrop reads with depth.</para>
 /// </summary>
 public partial class LitTownOverlay : SubViewportContainer
 {
@@ -62,14 +69,35 @@ public partial class LitTownOverlay : SubViewportContainer
         new("mystic", "hero-mystic", new Vector2(720, 380)),
     ];
 
+    // ── LW6: camera drift + mouse parallax ────────────────────────────────────────────────────
+    // Idle drift lives on the LitViewport's OWN Camera2D (barely-conscious sway — never moves
+    // the SVG town on top, never touches the main viewport). Mouse parallax is deliberately NOT
+    // camera movement (plan §LW6): it offsets the lit-world's depth layers themselves, each at
+    // its own factor, so the backdrop reads with depth instead of drifting as one flat plane.
+    private const float DriftFreqX = 0.10f;
+    private const float DriftFreqY = 0.13f;
+    private const float DriftAmplitude = 4f; // px
+
+    // Parallax factors per depth (plan's 0.02–0.04 range) — the decorative hero figures read as
+    // nearest (moves most), the building facades as farthest (moves least), the fx layer between.
+    private const float ParallaxFactorBack = 0.02f;
+    private const float ParallaxFactorFx = 0.03f;
+    private const float ParallaxFactorHeroes = 0.04f;
+    private const float ParallaxLerpSpeed = 6f; // per-second convergence toward the target offset
+
     private readonly List<PointLight2D> _lights = [];
     private readonly List<Sprite2D> _sprites = [];
     private SubViewport _viewport = null!;
     private Node2D _world = null!;
+    private Node2D _backLayer = null!;
+    private Node2D _heroDecorLayer = null!;
+    private Camera2D _camera = null!;
     private CanvasModulate _ambient = null!;
     private GradientTexture2D _lightGradient = null!;
     private AmbientFxLayer _fx = null!;
     private float _time;
+    private Vector2 _parallaxTarget;
+    private Vector2 _parallaxCurrent;
     private bool _built;
 
     /// <summary>The lit world's ambient MULTIPLY tint node (the SubViewport-scoped CanvasModulate).</summary>
@@ -84,6 +112,18 @@ public partial class LitTownOverlay : SubViewportContainer
     /// <summary>LW4 atmosphere layer (window glow, forge-coals landmark, particles, props, fog) —
     /// mounted as a child of <see cref="World"/>, phase-driven from <see cref="ApplyPhase"/>.</summary>
     public AmbientFxLayer Fx => _fx;
+
+    /// <summary>LW6: the LitViewport's own <see cref="Camera2D"/> (idle drift only — never the
+    /// main viewport's camera; <see cref="Camera2D.MakeCurrent"/> scopes it to this SubViewport).</summary>
+    public Camera2D Camera => _camera;
+
+    /// <summary>LW6 depth layer: building facades + their lanterns (farthest — smallest parallax
+    /// factor).</summary>
+    public Node2D BackLayer => _backLayer;
+
+    /// <summary>LW6 depth layer: the decorative hero figures (nearest — largest parallax factor).
+    /// NOT the live <see cref="HeroSprite"/>s (those are TownScene's own SVG-town HeroLayer).</summary>
+    public Node2D HeroDecorLayer => _heroDecorLayer;
 
     /// <summary>True once at least one lit sprite resolved — lets TownScene skip the backdrop
     /// entirely (and any veil) when every asset is absent, so the SVG town is untouched.</summary>
@@ -121,12 +161,36 @@ public partial class LitTownOverlay : SubViewportContainer
         _world = new Node2D { Name = "LitWorld" };
         _viewport.AddChild(_world);
 
+        // LW6: the LitViewport's OWN camera — idle drift only, scoped to this SubViewport via
+        // MakeCurrent (never the main viewport's camera). FixedTopLeft keeps its rest framing
+        // identical to the camera-less rendering every existing test/screenshot was built against.
+        // MakeCurrent() itself is deferred to _Ready (see below) — TownScene calls Build() BEFORE
+        // AddChild(overlay), so the whole subtree (camera included) isn't inside the live tree yet
+        // here; MakeCurrent() requires is_inside_tree().
+        _camera = new Camera2D
+        {
+            Name = "LitCamera",
+            AnchorMode = Camera2D.AnchorModeEnum.FixedTopLeft,
+            Position = Vector2.Zero,
+        };
+        _viewport.AddChild(_camera);
+
         // Phase ambience: a CanvasModulate MULTIPLIES the lit world only (the SubViewport isolates
         // it from the TabContainer UI). Starts warm (Morning) to match TownScene's own initial tint.
         _ambient = new CanvasModulate { Name = "AmbientTint", Color = AtmosphereTintFor(DayPhase.Morning) };
         _world.AddChild(_ambient);
 
         _lightGradient = BuildLightGradient();
+
+        // LW6 depth layers: separate Node2D groups so mouse parallax can offset each at its own
+        // factor (ApplyParallax) — buildings/lights farthest, decorative heroes nearest. Sprites
+        // keep their existing spec-authored Position (relative to the layer, which rests at (0,0)
+        // until parallax nudges it), so every existing Find-by-name test is unaffected.
+        _backLayer = new Node2D { Name = "LitBackLayer" };
+        _world.AddChild(_backLayer);
+
+        _heroDecorLayer = new Node2D { Name = "LitHeroDecorLayer" };
+        _world.AddChild(_heroDecorLayer);
 
         foreach (var building in buildings)
         {
@@ -179,6 +243,12 @@ public partial class LitTownOverlay : SubViewportContainer
         _fx?.ApplyPhase(phase);
     }
 
+    /// <summary>LW6: activate the LitViewport's own camera once this overlay (and everything
+    /// built into it by <see cref="Build"/>, camera included) is actually inside the live tree —
+    /// <see cref="Camera2D.MakeCurrent"/> requires <c>is_inside_tree()</c>, and <see cref="Build"/>
+    /// itself typically runs before <see cref="TownScene"/> adds this overlay as a child.</summary>
+    public override void _Ready() => _camera?.MakeCurrent();
+
     public override void _Process(double delta)
     {
         // Ember flicker: subtle deterministic wobble (presentation only — no sim contact, no RNG),
@@ -189,6 +259,49 @@ public partial class LitTownOverlay : SubViewportContainer
             var phase = _time * 9f + i * 1.7f;
             _lights[i].Energy = LightEnergy + FlickerAmplitude * Mathf.Sin(phase) * Mathf.Sin(_time * 2.3f);
         }
+
+        // LW6 idle camera drift — barely-conscious sway, scoped to the LitViewport's own camera.
+        if (_camera is not null)
+        {
+            _camera.Offset = DriftOffsetFor(_time);
+        }
+
+        // LW6 mouse parallax — reads the container's own local mouse position (this Control still
+        // polls it while MouseFilter=Ignore; it just never consumes the click), never the camera.
+        if (_backLayer is not null && Size.X > 0 && Size.Y > 0)
+        {
+            ApplyParallax(GetLocalMousePosition(), Size, (float)delta);
+        }
+    }
+
+    /// <summary>LW6 idle drift (plan §LW6): a barely-conscious <see cref="Camera2D.Offset"/> sway,
+    /// pure function of accumulated time — no wall clock, no RNG (KTD2), testable without a live
+    /// SubViewport.</summary>
+    public static Vector2 DriftOffsetFor(float t) =>
+        new(Mathf.Sin(t * DriftFreqX) * DriftAmplitude, Mathf.Cos(t * DriftFreqY) * DriftAmplitude);
+
+    /// <summary>
+    /// LW6 mouse parallax (plan §LW6): offsets the lit-world's depth layers themselves — NOT the
+    /// camera — by <c>(mouse - center)</c> converted from the container's on-screen pixels into
+    /// the SubViewport's DESIGN-space pixels, scaled 0.02–0.04 per layer and lerped toward the
+    /// target so a mouse jump reads as a smooth settle, not a snap. Public + delta-parameterized so
+    /// tests can drive it with a synthetic mouse position/container size without a real cursor.
+    /// </summary>
+    public void ApplyParallax(Vector2 mouseLocal, Vector2 containerSize, float delta)
+    {
+        var designScale = new Vector2(DesignSize.X / containerSize.X, DesignSize.Y / containerSize.Y);
+        _parallaxTarget = (mouseLocal - containerSize / 2f) * designScale;
+
+        var lerpAmount = Mathf.Clamp(ParallaxLerpSpeed * delta, 0f, 1f);
+        _parallaxCurrent = _parallaxCurrent.Lerp(_parallaxTarget, lerpAmount);
+
+        _backLayer.Position = _parallaxCurrent * ParallaxFactorBack;
+        if (_fx is not null)
+        {
+            _fx.Position = _parallaxCurrent * ParallaxFactorFx;
+        }
+
+        _heroDecorLayer.Position = _parallaxCurrent * ParallaxFactorHeroes;
     }
 
     private void TryAddBuilding(BuildingSpec spec)
@@ -206,7 +319,7 @@ public partial class LitTownOverlay : SubViewportContainer
             Position = spec.Position,
         };
         ScaleToWidth(sprite, lit, BuildingTargetWidth);
-        _world.AddChild(sprite);
+        _backLayer.AddChild(sprite);
         _sprites.Add(sprite);
 
         var light = new PointLight2D
@@ -219,7 +332,7 @@ public partial class LitTownOverlay : SubViewportContainer
             TextureScale = LightTextureScale,
             Height = LightHeight,
         };
-        _world.AddChild(light);
+        _backLayer.AddChild(light);
         _lights.Add(light);
     }
 
@@ -241,7 +354,7 @@ public partial class LitTownOverlay : SubViewportContainer
             Modulate = HeroSprite.RoleColor(spec.ClassId),
         };
         ScaleToWidth(sprite, lit, HeroTargetWidth);
-        _world.AddChild(sprite);
+        _heroDecorLayer.AddChild(sprite);
         _sprites.Add(sprite);
     }
 

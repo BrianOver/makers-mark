@@ -830,6 +830,115 @@ public class TownSceneTests
         }
     }
 
+    // ── LW6 camera drift + mouse parallax ────────────────────────────────────────────────────
+
+    [TestCase]
+    public void LitOverlay_CameraDrift_PureFormulaMatchesPlanSpec()
+    {
+        // Plan §LW6: Offset = (sin(t*0.10), cos(t*0.13)) * 4px — a pure, headless-testable
+        // function of accumulated time, no live SubViewport needed.
+        AssertThat(LitTownOverlay.DriftOffsetFor(0f)).IsEqual(new Vector2(0f, 4f));
+
+        var atOne = LitTownOverlay.DriftOffsetFor(1f);
+        AssertThat(atOne.X).IsEqual(Mathf.Sin(1f * 0.10f) * 4f);
+        AssertThat(atOne.Y).IsEqual(Mathf.Cos(1f * 0.13f) * 4f);
+    }
+
+    [TestCase]
+    public void LitOverlay_Camera_LiveInSubViewportAndDriftsOverTime()
+    {
+        // MakeCurrent scopes the camera to the LitViewport SubViewport only (never the main
+        // viewport); FixedTopLeft keeps its rest framing identical to the camera-less rendering
+        // every earlier LitTownOverlay test/screenshot was built against.
+        var ui = MountMainUi();
+        try
+        {
+            var overlay = ui.Town.LitOverlay!;
+            var camera = overlay.Camera;
+            AssertThat(camera).IsNotNull();
+            AssertThat(camera.AnchorMode).IsEqual(Camera2D.AnchorModeEnum.FixedTopLeft);
+            AssertThat(camera.IsCurrent()).IsTrue();
+
+            var before = camera.Offset;
+            // Two synthetic ticks of accumulated delta should move the drift (same
+            // accumulated-delta contract as the ember flicker / fog-wisp pan above — never
+            // wall-clock, never engine RNG).
+            overlay._Process(0.5);
+            overlay._Process(0.5);
+            AssertThat(camera.Offset).IsNotEqual(before);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void LitOverlay_MouseParallax_OffsetsDepthLayersAtDifferingFactors()
+    {
+        // Standalone build (mirrors LitOverlay_MissingAsset_DegradesToNoSpriteNoCrash) — parallax
+        // is a plain public method, no live viewport needed. A large delta forces the lerp to
+        // fully converge in one call so the assertion reads the settled offset, not a mid-lerp
+        // value — plan §LW6: offset the LAYERS (not the camera) by (mouse-center)*0.02–0.04,
+        // a different factor per depth.
+        var overlay = new LitTownOverlay();
+        try
+        {
+            overlay.Build();
+
+            var containerSize = new Vector2(1024f, 600f); // matches the SubViewport's own design size
+            var mouse = new Vector2(1024f, 600f);          // bottom-right corner
+            overlay.ApplyParallax(mouse, containerSize, delta: 1000f);
+
+            // target = (mouse - center) * designScale(=1,1 here, container == design size) = (512, 300)
+            var target = new Vector2(512f, 300f);
+            AssertThat(overlay.BackLayer.Position).IsEqual(target * 0.02f);
+            AssertThat(overlay.Fx.Position).IsEqual(target * 0.03f);
+            AssertThat(overlay.HeroDecorLayer.Position).IsEqual(target * 0.04f);
+
+            // Depth ordering: nearest (decorative heroes) moves most, farthest (buildings) least —
+            // never the camera itself, which stays untouched by parallax.
+            AssertThat(overlay.HeroDecorLayer.Position.X).IsGreater(overlay.Fx.Position.X);
+            AssertThat(overlay.Fx.Position.X).IsGreater(overlay.BackLayer.Position.X);
+            AssertThat(overlay.Camera.Offset).IsEqual(Vector2.Zero);
+        }
+        finally
+        {
+            overlay.Free();
+        }
+    }
+
+    [TestCase]
+    public void LitOverlay_ShippedBuildingsAndHeroes_StillResolveUnderDepthLayers()
+    {
+        // LW6 reparented the buildings/lights/decorative-heroes under new depth-layer Node2Ds
+        // (LitBackLayer / LitHeroDecorLayer) for parallax — every existing name-pin must still
+        // resolve via recursive find, unaffected by the extra nesting.
+        var ui = MountMainUi();
+        try
+        {
+            var overlay = ui.Town.LitOverlay!;
+            AssertThat(overlay.BackLayer).IsNotNull();
+            AssertThat(overlay.HeroDecorLayer).IsNotNull();
+
+            foreach (var building in LitTownOverlay.DefaultBuildings)
+            {
+                AssertThat(Find<Sprite2D>(ui.Town, $"LitBuilding_{building.Key}").GetParent())
+                    .IsEqual(overlay.BackLayer);
+            }
+
+            foreach (var hero in LitTownOverlay.DefaultHeroes)
+            {
+                AssertThat(Find<Sprite2D>(ui.Town, $"LitHero_{hero.ClassId}").GetParent())
+                    .IsEqual(overlay.HeroDecorLayer);
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── Staged-party fixture (mirrors CampPanelTests / CampHandlersTests) ─────────────────────
     // Seed 6 parks a strong vanguard party at the floor-1 checkpoint.
     private const ulong CampSeed = 6;

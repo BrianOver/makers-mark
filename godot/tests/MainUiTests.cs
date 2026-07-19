@@ -7,6 +7,7 @@ using GameSim.Narrative;
 using GdUnit4;
 using Godot;
 using GodotClient.Panels;
+using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -325,6 +326,83 @@ public class MainUiTests
 
             AssertThat(expanded.Length > collapsed.Length).IsTrue();
             AssertThat(expanded).Contains(departure);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── LW6: tab-switch fade ──────────────────────────────────────────────────────────────────
+
+    [TestCase]
+    public void TabFade_SwitchingTabs_TriggersDipThenSettlesBackToInvisible()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(ui.TabFade).IsNotNull();
+            AssertThat(ui.TabFade.IsFading).IsFalse();
+            AssertThat(ui.TabFade.Veil.Modulate.A).IsEqual(0f);
+
+            // A real tab switch (TabChanged, not just TabSelected) arms the dip — including the
+            // programmatic jumps OnTownHeroClicked/OnTownBuildingClicked already drive (R20).
+            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Forge);
+            AssertThat(ui.TabFade.IsFading).IsTrue();
+
+            // Mid-dip: some non-zero alpha (accumulated-delta hump, no engine Tween in this
+            // codebase — same contract as the gold-chip pop this mirrors).
+            ui.TabFade.Tick(TabFade.DurationSeconds / 2.0);
+            AssertThat(ui.TabFade.Veil.Modulate.A).IsGreater(0f);
+
+            // Past the full duration: settled back to fully invisible, dip complete.
+            ui.TabFade.Tick(TabFade.DurationSeconds);
+            AssertThat(ui.TabFade.IsFading).IsFalse();
+            AssertThat(ui.TabFade.Veil.Modulate.A).IsEqual(0f);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void TabFade_RapidRetrigger_RestartsWithoutStackingOrLengthening()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.TabFade.Trigger();
+            ui.TabFade.Tick(TabFade.DurationSeconds / 2.0); // now mid-dip
+
+            // Retrigger mid-dip: restarts from 0, never stacks or extends past one dip's length.
+            ui.TabFade.Trigger();
+            AssertThat(ui.TabFade.IsFading).IsTrue();
+            ui.TabFade.Tick(TabFade.DurationSeconds + 0.01); // past one full duration from the restart
+            AssertThat(ui.TabFade.IsFading).IsFalse();
+            AssertThat(ui.TabFade.Veil.Modulate.A).IsEqual(0f);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void TabFade_Veil_NeverInterceptsClicksAndNeverTouchesTabShell()
+    {
+        // Purely additive: a CanvasLayer-100 veil that never eats a click, and the 7-tab shell /
+        // tab-title pin stays exactly as MainUiTests already asserts it, even across a dip.
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(ui.TabFade.Layer).IsEqual(100);
+            AssertThat(ui.TabFade.Veil.MouseFilter).IsEqual(Control.MouseFilterEnum.Ignore);
+
+            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Shop);
+            AssertThat(ui.Tabs.GetTabCount()).IsEqual(7);
+            var titles = Enumerable.Range(0, 7).Select(i => ui.Tabs.GetTabTitle(i)).ToArray();
+            AssertThat(string.Join(",", titles)).IsEqual("Town,Forge,Shop,Heroes,Tavern,Depths,Bounties");
         }
         finally
         {
