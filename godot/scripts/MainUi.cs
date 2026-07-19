@@ -5,6 +5,7 @@ using GameSim.Contracts;
 using Godot;
 using GodotClient.Panels;
 using GodotClient.Town;
+using GodotClient.Ui;
 
 namespace GodotClient;
 
@@ -89,6 +90,10 @@ public partial class MainUi : Control
         Adapter = AdapterOverride ?? new SimAdapter((ulong)Seed);
         AdapterOverride = null; // consumed — the handoff is one-shot (see property doc)
         Clock = new PhaseClock(Adapter);
+
+        // P007 U1 (R11/KTD1): assign the shared Theme BEFORE building any child Control so
+        // Godot's normal Theme cascade carries it to every panel/tab built below.
+        Theme = GameTheme.Build();
         BuildUi();
 
         Adapter.StateChanged += OnPhaseCompleted;
@@ -366,7 +371,7 @@ public partial class MainUi : Control
         // U6 rejection toast: transient player-phrased line under the status bar. It is
         // NOT a persistent status readout — OnPhaseCompleted sets it, _Process fades it.
         _toast = new Label { Name = "RejectionToast", AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        _toast.AddThemeColorOverride("font_color", new Color(1f, 0.75f, 0.45f));
+        _toast.AddThemeColorOverride("font_color", GameTheme.RejectionColor);
         layout.AddChild(_toast);
 
         // --- panel tabs (tab title = scene root node name) -------------------

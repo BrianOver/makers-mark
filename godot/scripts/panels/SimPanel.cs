@@ -1,6 +1,7 @@
 using System;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Ui;
 
 namespace GodotClient.Panels;
 
@@ -10,7 +11,16 @@ namespace GodotClient.Panels;
 /// <c>Adapter.CurrentState</c>, and queues <see cref="PlayerAction"/>s from its
 /// buttons. Adapter-only: no game rules in any panel. Content is rebuilt
 /// synchronously on <see cref="Refresh"/> so tests can assert rendered text
-/// immediately after a tick — plain Controls, placeholder look by design.
+/// immediately after a tick.
+///
+/// <para>P007 U2 (KTD2): the themed widget kit (<see cref="UiKit"/>) is exposed below as
+/// protected passthroughs alongside the original <see cref="AddLabel"/>/<see cref="AddHeader"/>/
+/// <see cref="AddButton"/>/<see cref="AddRow"/>/<see cref="AddIcon"/> — those keep their exact
+/// behavior (still test-load-bearing) while screens rebuilt on the kit compose
+/// <see cref="Card"/>/<see cref="Section"/>/<see cref="StatChip"/>/<see cref="PortraitFrame"/>/
+/// <see cref="ArtRect"/> instead of bare rows. No panel is required to switch — the "placeholder
+/// look by design" era is over, but the lifecycle (Bind/Refresh/Clear) and the HeroName/ItemName
+/// lookups are unchanged.</para>
 /// </summary>
 public abstract partial class SimPanel : Control
 {
@@ -58,7 +68,7 @@ public abstract partial class SimPanel : Control
     protected static Label AddHeader(Node parent, string text)
     {
         var label = AddLabel(parent, text);
-        label.AddThemeColorOverride("font_color", new Color(0.6f, 0.8f, 1f));
+        label.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
         return label;
     }
 
@@ -146,4 +156,26 @@ public abstract partial class SimPanel : Control
         Adapter is not null && Adapter.CurrentState.Items.TryGetValue(id.Value, out var item)
             ? item.Name
             : id.ToString();
+
+    // ── P007 U2: themed widget kit passthroughs (GodotClient.Ui.UiKit) ───────────────────────
+
+    /// <summary>A plain themed card container — see <see cref="UiKit.Card"/>.</summary>
+    protected static PanelContainer Card(string? name = null) => UiKit.Card(name);
+
+    /// <summary>A titled section (header + body VBox) — see <see cref="UiKit.Section"/>.</summary>
+    protected static UiKit.SectionView Section(string title) => UiKit.Section(title);
+
+    /// <summary>A small themed label/value pill — see <see cref="UiKit.StatChip"/>.</summary>
+    protected static Control StatChip(string label, string value, UiKit.ChipTone tone = UiKit.ChipTone.Neutral) =>
+        UiKit.StatChip(label, value, tone);
+
+    /// <summary>A bordered hero-portrait frame — see <see cref="UiKit.PortraitFrame"/>.</summary>
+    protected static Control PortraitFrame(
+        string artKey, float size = UiKit.PortraitSize, Texture2D? fallbackIcon = null, string? caption = null) =>
+        UiKit.PortraitFrame(artKey, size, fallbackIcon, caption);
+
+    /// <summary>The fallback-safe art-loader bridge — see <see cref="UiKit.ArtRect"/>.</summary>
+    protected static Control ArtRect(
+        string artKey, Vector2 size, Texture2D? fallbackIcon = null, string? caption = null) =>
+        UiKit.ArtRect(artKey, size, fallbackIcon, caption);
 }

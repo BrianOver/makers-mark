@@ -82,6 +82,19 @@ public static class IconRegistry
     /// the filesystem per call — the manifest is loaded once and cached for the process lifetime.</summary>
     public static bool Has(string id) => Manifest().ContainsKey(id);
 
+    /// <summary>
+    /// P007 U2 art-loader bridge single entry point: <see cref="Has"/>'s manifest fast-path
+    /// gates the actual <see cref="Art"/> load, so an id absent from the manifest never even
+    /// probes the resource filesystem. True + a non-null texture on hit; false + null on any
+    /// miss (unlisted id, or listed but somehow unloadable) — never throws, mirroring every
+    /// other lookup on this type.
+    /// </summary>
+    public static bool TryArt(string id, out Texture2D? texture)
+    {
+        texture = Has(id) ? Art(id) : null;
+        return texture is not null;
+    }
+
     /// <summary>True iff the manifest lists a committed normal map for <paramref name="id"/>;
     /// false for an absent id or a diffuse-only entry (e.g. a flat item icon or backdrop).</summary>
     public static bool HasNormal(string id) => Manifest().TryGetValue(id, out var entry) && entry.Normal;
