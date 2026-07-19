@@ -1,0 +1,47 @@
+{
+  "_comment": "Project-wide Claude Code permission baseline (checked in) — every session/worker on this repo inherits it. Personal extras go in .claude/settings.local.json (gitignored). Scope: build/test/git/gh, pinned Godot + ComfyUI + Ollama local tooling, docs-research web domains. No rm/del, no non-localhost curl.",
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(gh *)",
+      "Bash(dotnet *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(pip *)",
+      "Bash(ollama *)",
+      "Bash(curl http://127.0.0.1*)",
+      "Bash(curl http://localhost*)",
+      "Bash(/c/Tools/Godot/*)",
+      "Bash(/c/Tools/ComfyUI_windows_portable/python_embeded/python.exe *)",
+      "Bash(ls *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(printf *)",
+      "Bash(echo *)",
+      "Bash(nvidia-smi *)",
+      "PowerShell(dotnet *)",
+      "PowerShell(git *)",
+      "PowerShell(gh *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(Stop-Process *)",
+      "PowerShell(Start-Process *)",
+      "PowerShell(Get-Content *)",
+      "WebSearch",
+      "WebFetch(domain:docs.godotengine.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:store.steampowered.com)",
+      "WebFetch(domain:reddit.com)",
+      "WebFetch(domain:www.reddit.com)",
+      "mcp__comfyui"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "comfyui"
+  ]
+}
