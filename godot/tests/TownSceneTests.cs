@@ -62,7 +62,11 @@ public class TownSceneTests
                 AssertThat(townText).Contains(memorial.HeroName);
             }
 
-            // Morning tint is the warm one.
+            // Morning tint is the warm one. LW1: the tint now crossfades over
+            // TownScene.TintTweenSeconds instead of snapping — AdvanceDay never pumps Animate,
+            // so let the armed tween settle before reading it (same fast-forward contract the
+            // walk decoration already uses).
+            ui.Town.Animate(TownScene.TintTweenSeconds);
             AssertThat(ui.Town.CurrentTint).IsEqual(TownScene.TintFor(DayPhase.Morning));
         }
         finally
@@ -104,10 +108,12 @@ public class TownSceneTests
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
             foreach (var sprite in ui.Town.Sprites.Values)
             {
-                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.WalkingOut);
+                // LW1: the party rallies near the gate first, THEN exits in file — not an
+                // immediate WalkingOut pop.
+                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Rallying);
             }
 
-            ui.Town.Animate(10); // walk to the gate completes — town is empty
+            ui.Town.Animate(10); // rally dwell + staggered file exit + walk to the gate completes
             foreach (var sprite in ui.Town.Sprites.Values)
             {
                 AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Away);
@@ -143,6 +149,71 @@ public class TownSceneTests
             var state = ui.Adapter.CurrentState;
             AssertThat(ui.Town.Sprites.Count).IsEqual(state.Heroes.Values.Count(h => h.Alive));
             AssertThat(ui.Town.MemorialStoneCount).IsEqual(state.Drama.Memorials.Count);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void PartyDeparture_RalliesBeforeReachingAway()
+    {
+        // LW1 rally-and-depart: Morning-completion moves the whole (non-Away) roster to
+        // Rallying, never straight to WalkingOut/Away — the gate-cluster dwell + staggered
+        // file exit (HeroSprite-level precision timing lives in HeroSpriteTests) is a real
+        // intermediate stage here too. Distances from each hero's Home to the shared rally
+        // point vary (HomeFor spreads them across the square), so this only pins the
+        // reachable states, not exact sub-second timing.
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.AdvancePhase(); // Morning done → the party rallies
+            var ordered = ui.Town.Sprites.Values.OrderBy(s => s.HeroValue).ToList();
+            AssertThat(ordered.Count > 1).IsTrue(); // seed 2026 starts with more than one hero
+
+            foreach (var sprite in ordered)
+            {
+                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Rallying);
+            }
+
+            ui.Town.Animate(10); // rally walk + dwell + staggered file exit + gate walk complete
+            foreach (var sprite in ordered)
+            {
+                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Away);
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void RecruitArrived_SpawnsOffscreenLeftThenWalksHome()
+    {
+        // LW1 recruit arrival: RecruitArrived (a Morning event) is stamped in the SAME tick
+        // whose completion this Refresh renders, so the new sprite must appear already
+        // off-screen left and WalkingIn — never popping straight in at Home.
+        var ui = MountMainUi(new SimAdapter(RecruitReadyCampaign(ScriptedSession.Seed)));
+        try
+        {
+            var before = ui.Town.Sprites.Count;
+            ui.Adapter.AdvancePhase(); // Morning tick: roster is short of six, so one trickles in
+
+            var recruits = ui.Adapter.LastEvents.OfType<RecruitArrived>().ToList();
+            AssertThat(recruits.Count).IsEqual(1);
+            var recruitId = recruits[0].Hero.Value;
+
+            AssertThat(ui.Town.Sprites.Count).IsEqual(before + 1);
+            var sprite = ui.Town.Sprites[recruitId];
+            AssertThat(sprite.State).IsEqual(HeroSprite.TownState.WalkingIn);
+            AssertThat(sprite.Visible).IsTrue();
+            AssertThat(sprite.Position.X < 0f).IsTrue(); // off-screen left, not popped in at Home
+
+            ui.Town.Animate(10); // walks all the way in
+            AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Wandering);
+            AssertThat(sprite.Position.DistanceTo(sprite.Home) < 1f).IsTrue();
         }
         finally
         {
@@ -317,6 +388,7 @@ public class TownSceneTests
         try
         {
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+            ui.Town.Animate(TownScene.TintTweenSeconds); // let the initial crossfade (LW1) settle
             AssertThat(ui.Town.CurrentTint).IsEqual(TownScene.TintFor(DayPhase.Morning));
 
             foreach (var phase in new[]
@@ -326,6 +398,7 @@ public class TownSceneTests
             {
                 ui.Adapter.AdvancePhase();
                 AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(phase);
+                ui.Town.Animate(TownScene.TintTweenSeconds); // crossfade settles before we read it
                 AssertThat(ui.Town.CurrentTint).IsEqual(TownScene.TintFor(phase));
             }
 
@@ -808,6 +881,22 @@ public class TownSceneTests
         {
             Heroes = doomed,
             Drama = state.Drama with { DaysUntilNextRecruit = 9 },
+        };
+    }
+
+    /// <summary>
+    /// A day-1 Morning world engineered so RecruitSystem fires on the very next tick: roster
+    /// trimmed below RosterCap(6) and the recruit gate held at zero.
+    /// </summary>
+    private static GameState RecruitReadyCampaign(ulong seed)
+    {
+        var state = GameComposition.NewCampaign(seed);
+        var trimmed = state.Heroes.Values.Take(3)
+            .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+        return state with
+        {
+            Heroes = trimmed,
+            Drama = state.Drama with { DaysUntilNextRecruit = 0 },
         };
     }
 }
