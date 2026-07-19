@@ -67,11 +67,14 @@ public class GameThemeTests
             AssertThat(ui.Theme).IsNotNull();
             AssertThat(ui.Theme.DefaultFontSize >= GameTheme.LegibilityFloor).IsTrue();
 
-            // The status label never sets a local font override — its effective size/color
-            // only exist because the cascade from ui.Theme reached it.
-            var status = Find<Label>(ui, "StatusLabel");
-            AssertThat(status.GetThemeFontSize("font_size") >= GameTheme.LegibilityFloor).IsTrue();
-            AssertThat(status.GetThemeColor("font_color") == GameTheme.BodyTextColor).IsTrue();
+            // The Shop panel's feedback label (SimPanel.AddLabel) never sets a local font
+            // override — its effective size/color only exist because the cascade from
+            // ui.Theme reached it. (P007 U7 retired the old bare "StatusLabel" in favor of
+            // the themed HUD header's StatChips, which DO carry local color overrides by
+            // design — see UiKit.StatChip — so they are not a valid cascade-only witness.)
+            var feedback = Find<Label>(ui.Shop, "ShopFeedback");
+            AssertThat(feedback.GetThemeFontSize("font_size") >= GameTheme.LegibilityFloor).IsTrue();
+            AssertThat(feedback.GetThemeColor("font_color") == GameTheme.BodyTextColor).IsTrue();
         }
         finally
         {
