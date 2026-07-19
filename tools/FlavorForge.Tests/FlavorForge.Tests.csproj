@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- FlavorForge's own test suite (P008/U6): StubModelClient only, zero network IO anywhere.
+       TargetFramework comes from Directory.Build.props. -->
+  <PropertyGroup>
+    <RootNamespace>FlavorForge.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Description>Test suite for the FlavorForge dev-time flavor generator — stubbed model client only, no network IO.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FlavorForge\FlavorForge.csproj" />
+    <ProjectReference Include="..\..\sim\GameSim\GameSim.csproj" />
+  </ItemGroup>
+</Project>

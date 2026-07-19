@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy to config.json (git-ignored) and adjust. No secrets: local dev endpoints need none.",
+  "endpoint": "http://localhost:11434",
+  "model": "llama3.1",
+  "apiShape": "ollama",
+  "candidateCount": 6
+}
