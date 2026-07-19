@@ -39,6 +39,10 @@ public partial class ForgePanel : SimPanel
     /// <c>ShopPanel.ItemArtSize</c> so an item's icon reads at the same weight everywhere.</summary>
     private const float RecipeArtSize = 56f;
 
+    /// <summary>Sane minimum width (px) for a recipe card's info column (R7-class guard) — a long
+    /// recipe name must keep enough room to wrap at word boundaries, not mid-word.</summary>
+    private const float RecipeInfoColumnMinWidth = 180f;
+
     private Label? _feedback;
     private Label? _materialsLabel;
     private OptionButton? _materialSelect;
@@ -115,9 +119,17 @@ public partial class ForgePanel : SimPanel
                 var headerRow = AddRow(cardBody);
                 headerRow.AddChild(ArtRect(
                     AssetCatalog.ItemIconId(recipe.RecipeId), new Vector2(RecipeArtSize, RecipeArtSize),
+                    // Caption restored (recipe.Name): on a manifest MISS this is the ONLY place
+                    // the placeholder's caption comes from — dropping it would show the raw asset
+                    // key instead of the recipe name. On a HIT it also renders under the icon
+                    // now, alongside the fuller infoCol line below — redundant, never wrong.
                     IconRegistry.Slot(recipe.Slot), recipe.Name));
 
-                var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                var infoCol = new VBoxContainer
+                {
+                    SizeFlagsHorizontal = SizeFlags.ExpandFill,
+                    CustomMinimumSize = new Vector2(RecipeInfoColumnMinWidth, 0),
+                };
                 headerRow.AddChild(infoCol);
                 AddLabel(infoCol, $"{recipe.Name} (t{recipe.Tier} {recipe.Slot})");
                 var outputRow = AddRow(infoCol);

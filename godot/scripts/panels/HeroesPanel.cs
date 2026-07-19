@@ -39,6 +39,11 @@ public partial class HeroesPanel : SimPanel
     /// <summary>Gear-row item-art tile edge length (px).</summary>
     private const float GearArtSize = 48f;
 
+    /// <summary>Sane minimum width (px) for the gear row's info column (R7-class guard, mirrors
+    /// <see cref="RosterCardSize"/>'s fixed-width technique) — a long item name (e.g. "Soldier's
+    /// Longsword") must keep enough room to wrap at word boundaries, not mid-word.</summary>
+    private const float GearInfoColumnMinWidth = 180f;
+
     private GridContainer? _rosterGrid;
     private VBoxContainer? _detail;
     private readonly Dictionary<int, Button> _heroCards = [];
@@ -141,11 +146,19 @@ public partial class HeroesPanel : SimPanel
 
             row.AddChild(ArtRect(
                 AssetCatalog.ItemIconId(item.RecipeId), new Vector2(GearArtSize, GearArtSize),
+                // Caption restored (item.Name): on a manifest MISS this is the ONLY place the
+                // placeholder's caption comes from — dropping it would show the raw asset key
+                // instead of the item name. On a HIT it also renders under the icon now,
+                // alongside the fuller infoCol line below — redundant, never wrong.
                 IconRegistry.Slot(slot), item.Name));
 
             var (kills, saves) = LedgerQuery.MarkTally(state, id);
             var mark = item.Mark is null ? "no mark" : $"mark of {item.Mark.CrafterName}: {kills} kills, {saves} saves";
-            var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            var infoCol = new VBoxContainer
+            {
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+                CustomMinimumSize = new Vector2(GearInfoColumnMinWidth, 0),
+            };
             row.AddChild(infoCol);
             AddLabel(infoCol, $"  {slot}: {item.Name} [{item.Quality}] — {mark}");
             var chipRow = AddRow(infoCol);
@@ -189,8 +202,9 @@ public partial class HeroesPanel : SimPanel
         TintPortraitIcon(frame, HeroSprite.RoleColor(hero.ClassId));
         body.AddChild(frame);
 
-        var nameLabel = AddLabel(body, hero.Name);
-        nameLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        // hero.Name renders as the frame's own caption now that UiKit.ArtRect's real-art branch
+        // honors it (previously dropped silently, so this card carried a second, redundant name
+        // Label here as the only place the name actually showed — no longer needed).
 
         if (hero.Alive)
         {

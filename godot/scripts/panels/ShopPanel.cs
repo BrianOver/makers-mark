@@ -30,6 +30,13 @@ public partial class ShopPanel : SimPanel
     /// <summary>Item-art tile edge length (px) for a shelf/craft/rival card.</summary>
     private const float ItemArtSize = 56f;
 
+    /// <summary>Sane minimum width (px) for a card's info column (R7-class guard, mirrors
+    /// <c>HeroesPanel.RosterCardSize</c>/<c>DepthsPanel.VenueTileSize</c>'s fixed-width technique):
+    /// a multi-word item name (e.g. the rival catalog's "Soldier's Longsword") must keep enough
+    /// room to wrap at word boundaries instead of mid-word, regardless of how much width its
+    /// <see cref="ArtRect"/> sibling claims.</summary>
+    private const float InfoColumnMinWidth = 180f;
+
     private Label? _feedback;
     private VBoxContainer? _content;
     private ShopStage? _stage;
@@ -120,9 +127,18 @@ public partial class ShopPanel : SimPanel
             var headerRow = AddRow(cardBody);
             headerRow.AddChild(ArtRect(
                 AssetCatalog.ItemIconId(item.RecipeId), new Vector2(ItemArtSize, ItemArtSize),
+                // Caption restored (item.Name): on a manifest MISS this is the ONLY place the
+                // placeholder's caption comes from — dropping it here would show the raw asset
+                // key (e.g. "item-rival-blade-2") instead of the item name. On a HIT it now also
+                // renders under the icon (ArtRect's real-art branch honors it) alongside the
+                // fuller infoCol line below — a little redundant, never wrong or ugly.
                 IconRegistry.Slot(item.Slot), item.Name));
 
-            var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            var infoCol = new VBoxContainer
+            {
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+                CustomMinimumSize = new Vector2(InfoColumnMinWidth, 0),
+            };
             headerRow.AddChild(infoCol);
             AddLabel(infoCol, $"{itemId} {item.Name} [{item.Quality}]");
             infoCol.AddChild(StatChip("Price", $"{entry.Price}g", UiKit.ChipTone.Accent));
@@ -173,9 +189,18 @@ public partial class ShopPanel : SimPanel
             var headerRow = AddRow(cardBody);
             headerRow.AddChild(ArtRect(
                 AssetCatalog.ItemIconId(item.RecipeId), new Vector2(ItemArtSize, ItemArtSize),
+                // Caption restored (item.Name): on a manifest MISS this is the ONLY place the
+                // placeholder's caption comes from — dropping it here would show the raw asset
+                // key (e.g. "item-rival-blade-2") instead of the item name. On a HIT it now also
+                // renders under the icon (ArtRect's real-art branch honors it) alongside the
+                // fuller infoCol line below — a little redundant, never wrong or ugly.
                 IconRegistry.Slot(item.Slot), item.Name));
 
-            var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            var infoCol = new VBoxContainer
+            {
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+                CustomMinimumSize = new Vector2(InfoColumnMinWidth, 0),
+            };
             headerRow.AddChild(infoCol);
             AddLabel(infoCol, $"{item.Id} {item.Name} [{item.Quality}]");
             var chipRow = AddRow(infoCol);
@@ -220,9 +245,18 @@ public partial class ShopPanel : SimPanel
             var headerRow = AddRow(card);
             headerRow.AddChild(ArtRect(
                 AssetCatalog.ItemIconId(item.RecipeId), new Vector2(ItemArtSize, ItemArtSize),
+                // Caption restored (item.Name): on a manifest MISS this is the ONLY place the
+                // placeholder's caption comes from — dropping it here would show the raw asset
+                // key (e.g. "item-rival-blade-2") instead of the item name. On a HIT it now also
+                // renders under the icon (ArtRect's real-art branch honors it) alongside the
+                // fuller infoCol line below — a little redundant, never wrong or ugly.
                 IconRegistry.Slot(item.Slot), item.Name));
 
-            var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            var infoCol = new VBoxContainer
+            {
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+                CustomMinimumSize = new Vector2(InfoColumnMinWidth, 0),
+            };
             headerRow.AddChild(infoCol);
             AddLabel(infoCol, $"{entry.Item} {item.Name} [{item.Quality}]");
             infoCol.AddChild(StatChip("Price", $"{entry.Price}g"));

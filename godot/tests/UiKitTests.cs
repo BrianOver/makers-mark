@@ -123,9 +123,59 @@ public class UiKitTests
     }
 
     [TestCase]
+    public void ArtRect_KnownManifestKey_RequestedSizeGovernsMinimum_NotNativeTextureSize()
+    {
+        // Central regression guard for the class of bug LW5 hit and patched locally in
+        // DepthsPanel (PR #119): "hero-vanguard" ships as a committed ~1024px-square texture, far
+        // larger than this small requested size. TextureRect.ExpandMode defaults to KeepSize,
+        // whose GetMinimumSize() reports the TEXTURE's own pixel size, so
+        // GetCombinedMinimumSize() = max(CustomMinimumSize, that native size) would silently blow
+        // the tile out to ~1024px — squeezing every sibling in a fixed-width row/column to one
+        // character per line (the exact DepthsPanel/HeroesPanel-roster defect this proves fixed
+        // centrally, for every ArtRect caller, not just one patched call site).
+        var requested = new Vector2(64, 64);
+        var control = ArtRect(KnownArtKey, requested);
+        try
+        {
+            var textureRect = (TextureRect)control;
+            AssertThat(textureRect.ExpandMode).IsEqual(TextureRect.ExpandModeEnum.IgnoreSize);
+
+            var min = textureRect.GetCombinedMinimumSize();
+            AssertThat(min.X).IsLessEqual(requested.X);
+            AssertThat(min.Y).IsLessEqual(requested.Y);
+        }
+        finally
+        {
+            control.Free();
+        }
+    }
+
+    [TestCase]
+    public void ArtRect_KnownManifestKey_WithCaption_RendersCaptionText_OverTheRealArt()
+    {
+        // The success branch used to return a bare TextureRect and silently drop `caption` —
+        // only the no-art fallback branch ever built a Label. A caller passing a caption on a
+        // manifest HIT (e.g. HeroesPanel's roster PortraitFrame, passing the hero's name) must
+        // still see that text rendered, not just on a miss.
+        var control = ArtRect(KnownArtKey, new Vector2(64, 64), caption: "Vanguard");
+        try
+        {
+            AssertThat(RenderedText(control)).Contains("Vanguard");
+
+            var icons = control.FindChildren("*", nameof(TextureRect), recursive: true, owned: false);
+            AssertThat(icons.Count > 0).IsTrue();
+            AssertThat(((TextureRect)icons[0]).Texture).IsNotNull();
+        }
+        finally
+        {
+            control.Free();
+        }
+    }
+
+    [TestCase]
     public void PortraitFrame_HitAndMiss_BothRenderNonNullFramedContent()
     {
-        var hit = PortraitFrame(KnownArtKey);
+        var hit = PortraitFrame(KnownArtKey, caption: "Sir Vanguard");
         var miss = PortraitFrame(UnknownArtKey, caption: "Mystery Hero");
         try
         {
@@ -133,6 +183,9 @@ public class UiKitTests
             var hitIcons = hit.FindChildren("*", nameof(TextureRect), recursive: true, owned: false);
             AssertThat(hitIcons.Count > 0).IsTrue();
             AssertThat(hitIcons.Cast<TextureRect>().Any(t => t.Texture is not null)).IsTrue();
+            // Real-art hit + caption (the hero roster's exact shape): the name must render on the
+            // card, not just on the no-art fallback below.
+            AssertThat(RenderedText(hit)).Contains("Sir Vanguard");
 
             AssertThat(miss).IsNotNull();
             AssertThat(RenderedText(miss)).Contains("Mystery Hero");
@@ -151,7 +204,8 @@ public class UiKitTests
     private static UiKit.SectionView Section(string title) => UiKit.Section(title);
     private static Control StatChip(string label, string value, UiKit.ChipTone tone) =>
         UiKit.StatChip(label, value, tone);
-    private static Control ArtRect(string artKey, Vector2 size) => UiKit.ArtRect(artKey, size);
+    private static Control ArtRect(string artKey, Vector2 size, string? caption = null) =>
+        UiKit.ArtRect(artKey, size, caption: caption);
     private static Control PortraitFrame(string artKey, string? caption = null) =>
         UiKit.PortraitFrame(artKey, caption: caption);
 }

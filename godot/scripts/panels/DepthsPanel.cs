@@ -78,21 +78,16 @@ public partial class DepthsPanel : SimPanel
         card.AddChild(body);
 
         var headerRow = AddRow(body);
+        // Caption restored (MineVenueName): on a manifest MISS this is the ONLY place the
+        // placeholder's caption comes from — dropping it would show the raw asset key instead of
+        // the venue name. On a HIT it also renders under the backdrop now, alongside the header
+        // label beside it — redundant, never wrong. The ExpandMode=IgnoreSize fix for the
+        // 1024x1024 "mine-backdrop" blowing the 120x120 tile out to ~1024px wide (discovered by
+        // LW5's own screenshot self-verify, PR #119) now lives centrally in UiKit.ArtRect instead
+        // of patched locally here — see UiKit.ArtRect's own remarks.
         var backdropArt = ArtRect(
             AssetCatalog.VenueBackdropId(MineVenueId), new Vector2(BackdropSize, BackdropSize),
             IconRegistry.Glyph("depths"), MineVenueName);
-        // Local fix (pre-existing latent defect, discovered by LW5's own screenshot self-verify —
-        // see PR notes; scoped here rather than in the shared UiKit.ArtRect since that file is
-        // outside this unit's ownership): TextureRect.ExpandMode defaults to KeepSize, so
-        // GetCombinedMinimumSize() is max(CustomMinimumSize, the TEXTURE's real pixel size) — a
-        // 1024x1024 "mine-backdrop" blows the 120x120 tile out to ~1024px wide, squeezing the
-        // standings column to a 1px-wide one-letter-per-line label. IgnoreSize lets the requested
-        // <see cref="BackdropSize"/> box actually govern the minimum, as every caller here assumes.
-        if (backdropArt is TextureRect textureRect)
-        {
-            textureRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-        }
-
         headerRow.AddChild(backdropArt);
 
         var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
