@@ -165,3 +165,85 @@ sim fast lane + engine tests via .runsettings; read CLAUDE.md + HANDOFF.md first
 > frequency/price-tolerance/boycott (clone faction Standing shape), QualityTooLow pass reason +
 > veteran pickiness (KD3 guard: rookies never picky), balance-gate impact. Show me plan for
 > go/no-go before any implementation.
+
+---
+
+## Part 3 — Self-playtest harness: Claude plays the game (added 2026-07-19)
+
+**Status: recommendation only — not built.** Goal: automated experiential testing when human
+playtesters aren't available — an agent plays like a human, varies choices, documents outcomes,
+then synthesizes fixes/improvements. Repo precedent: `docs/design/2026-07-17-strategic-reckoning.md`
+already recommends a CLI autoplay/watch mode and reframing done as "I-watched-or-played-it."
+
+### Hard constraint honored
+
+The parked-LLM ruling (`docs/design/master-systems-catalog-division.md`) forbids any LLM inside
+the sim decision loop. This harness never violates it: the LLM sits OUTSIDE as a *player* driving
+the same surfaces a human uses (CLI stdin / UI controls). Every LLM choice becomes a recorded
+action transcript — and determinism turns every finding into an exact `seed + transcript` repro.
+
+### Four modes, phased by cost
+
+**SP-1 — LLM plays the CLI (ZERO BUILD — works today).**
+`GameSim.Cli` is stdin-scriptable now (`Console.ReadLine` loop, clean EOF exit, `--seed N`).
+Reactive play trick: determinism means seed + action-prefix always reproduces state — so the agent
+plays turn-by-turn by re-piping its growing transcript each iteration (run, read output, decide,
+append, rerun). Sim ticks are cheap; a 25-day run is seconds of compute per iteration.
+Per run: persona prompt (min-maxer / cautious casual / chaos monkey / narrative-follower), a
+decision journal (`decision → expectation → actual outcome` per phase), then an experience report:
+confusion points, friction, dead choices, balance feel, suspected bugs — each with the repro
+transcript attached. Cost: medium (per-turn LLM reasoning); bound runs to 20–30 days.
+
+**SP-2 — Nightly chronicle review (build: S).**
+Gap found: chronicles persist structured events, not prose — the CLI's `Narrate()`/`PrintLedger`
+text is generated at play-time and thrown away. Small CLI-only addition (`replay --narrate` or
+`batch --narrate`): persist the narration alongside the JSON. That IS the strategic-reckoning
+"watch mode." Then a scheduled nightly job: batch farm (20 seeds × 100 days) → `tools/Analytics`
+anomalies.md (6 rules, repro commands built in) → cheap LLM pass reads narration + anomalies →
+findings doc. Testing happens every night, zero humans, near-zero cost.
+
+**SP-3 — Persona policy seam (build: S/M).**
+`Harness/` holds exactly one policy (`BaselinePlayer`, deliberately never forked). Add a policy
+seam + 2–3 coded personas (hoarder, bounty-spammer, minimalist) behind a `--policy` batch flag —
+LLM designs the persona once, code executes it deterministically at scale. Balance gate keeps
+consuming `BaselinePlayer` untouched; personas are additive batch-only coverage.
+
+**SP-4 — UI text bridge (build: M — catches the class sim-play can't).**
+Pure-sim play would have missed this project's founding bug (sim fine, craft loop dead in UI).
+Bridge = gdUnit-side harness composing existing pieces: `RenderedText` (what the player sees) +
+button walk reading `.Disabled`/`.TooltipText` (the #86 legality mirrors = what's clickable and
+why not) + name→action mapping, exposed as a per-phase JSON request/response the agent drives.
+Agent then plays through UI TRUTH — affordance gaps, hidden-but-legal actions, misleading labels
+all become findings. Build after SP-1 proves the findings pipeline.
+
+### Cadence + pipeline
+
+| Mode | Cadence | Cost | Catches |
+|---|---|---|---|
+| SP-2 chronicle review | nightly (cron) | ~free | balance drift, anomaly narratives, prose repetition |
+| SP-1 CLI persona play | weekly / pre-milestone | medium | UX friction, confusion, dead choices, bugs |
+| SP-3 coded personas | rides nightly batch | free after build | balance edges beyond baseline strategy |
+| SP-4 UI bridge play | per milestone | medium-high | UI affordance gaps, sim-vs-UI divergence |
+
+Findings land as `docs/design/playtest-findings-<date>.md` PRs (or GitHub issues), every finding
+carrying its seed + transcript/repro command — feed them straight into the post-/clear
+"Playtest-findings fix session" bootstrap prompt (§Part 2 appendix).
+
+### Recommended order
+
+1. **SP-1 pilot now-ish** (zero build): 3 personas × 1 seed × 25 days, one findings doc. Proves
+   signal quality before any code.
+2. **SP-2** small CLI `--narrate` PR + nightly schedule (pairs with existing batch farm + Analytics).
+3. **SP-3** seam + personas (S/M PR).
+4. **SP-4** UI bridge (M) once SP-1/2 findings prove the loop earns its keep.
+
+### Post-/clear bootstrap prompt E — self-playtest session
+
+> Caveman ultra every reply + subagents; Fable orchestrates only. Read CLAUDE.md + HANDOFF.md +
+> docs/design/2026-07-19-flavorforge-erenshor-recommendations.md Part 3. Run SP-1 self-playtest:
+> spawn one sonnet persona-player per persona (SERIAL): [min-maxer, cautious casual, chaos monkey],
+> each plays GameSim.Cli seed <N> for 25 days via the deterministic re-pipe loop (transcript grows
+> each turn), keeps decision→expectation→outcome journal, ends with experience report. Shared root
+> READ-ONLY — transcripts/journals to scratchpad. Fable synthesizes cross-persona findings doc
+> (confusion/friction/bugs/balance, each with seed+transcript repro), PR to docs/design/, show me.
+> No sim/godot code changes.
