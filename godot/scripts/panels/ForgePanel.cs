@@ -5,6 +5,7 @@ using GameSim.Economy;
 using GameSim.Materials;
 using GameSim.Professions;
 using Godot;
+using GodotClient.Ui;
 
 namespace GodotClient.Panels;
 
@@ -17,10 +18,26 @@ namespace GodotClient.Panels;
 /// Core U3): one row per <see cref="MaterialRegistry.PricedPool"/> key with its marked-up
 /// price, queueing <see cref="BuyMaterialAction"/>. Unlock enablement calls
 /// <see cref="ProfessionDefinition.CanUnlock"/> — sim-owned validation, only rendered here.
+///
+/// <para>P007 U5 (R12/KTD2/KTD3/KTD5 — resolves OQ4 to click-to-craft): recipe rows are now
+/// <see cref="UiKit.Card"/>s — a recipe <see cref="UiKit.ArtRect"/> (falling back to the slot
+/// icon on any manifest miss), name/tier/slot, output atk/def/wt <see cref="UiKit.StatChip"/>s,
+/// and a material-requirement chip that lights <see cref="UiKit.ChipTone.Positive"/> when
+/// affordable / stays <see cref="UiKit.ChipTone.Neutral"/> ("dim") when not — a VISUAL mirror
+/// only, read off <c>state.Player.Materials</c>; the kernel's <see cref="CraftAction"/> stays
+/// the real gate (a card never bypasses the sim's own validation). Talent rows are unlock
+/// cards. Every sim read/queue path (<see cref="SelectedMaterialOr"/>, <see cref="OnCraftPressed"/>/
+/// <see cref="OnUnlockPressed"/>, <see cref="ProfessionDefinition.CanUnlock"/> enablement) and
+/// every control <c>Name</c> (<c>MaterialSelect</c>, <c>Craft_{recipeId}</c>,
+/// <c>Unlock_{nodeId}</c>) is preserved verbatim — only the visual composition changed.</para>
 /// </summary>
 public partial class ForgePanel : SimPanel
 {
     private const string RecipeDefaultOption = "(recipe default)";
+
+    /// <summary>Recipe-art tile edge length (px) for a recipe/talent card — matches
+    /// <c>ShopPanel.ItemArtSize</c> so an item's icon reads at the same weight everywhere.</summary>
+    private const float RecipeArtSize = 56f;
 
     private Label? _feedback;
     private Label? _materialsLabel;
@@ -82,27 +99,56 @@ public partial class ForgePanel : SimPanel
             {
                 var material = SelectedMaterialOr(recipe.MaterialKey);
                 var have = state.Player.Materials.TryGetValue(material, out var stock) ? stock : 0;
-                var row = AddRow(_recipeRows!);
-                AddIcon(row, IconRegistry.Slot(recipe.Slot));
-                AddLabel(row,
-                    $"{recipe.Name} (t{recipe.Tier} {recipe.Slot}) — {recipe.MaterialQuantity}x {material} (have {have})" +
-                    $"  atk {recipe.BaseStats.Attack} def {recipe.BaseStats.Defense} wt {recipe.BaseStats.Weight}");
-                var craft = AddButton(row, $"Craft_{recipe.RecipeId}", "Craft", () => OnCraftPressed(recipe.RecipeId));
                 // U6 gate, mirroring CraftingHandlers.ApplyCraft step 5 (material quantity
                 // less the material-efficiency talent, floor 1) — the kernel's own math,
                 // only rendered here. Crafting is legal in ALL phases (the forge never
                 // closes), so there is deliberately NO phase term in this gate.
                 var efficiency = profession.MaterialEfficiencyNode is { } eff && unlocked.Contains(eff) ? 1 : 0;
                 var needed = Math.Max(1, recipe.MaterialQuantity - efficiency);
-                GateButton(craft, have >= needed, $"Not enough {material} — need {needed}, have {have}.");
+                var affordable = have >= needed;
+
+                var card = Card($"RecipeCard_{recipe.RecipeId}");
+                _recipeRows!.AddChild(card);
+                var cardBody = new VBoxContainer();
+                card.AddChild(cardBody);
+
+                var headerRow = AddRow(cardBody);
+                headerRow.AddChild(ArtRect(
+                    AssetCatalog.ItemIconId(recipe.RecipeId), new Vector2(RecipeArtSize, RecipeArtSize),
+                    IconRegistry.Slot(recipe.Slot), recipe.Name));
+
+                var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                headerRow.AddChild(infoCol);
+                AddLabel(infoCol, $"{recipe.Name} (t{recipe.Tier} {recipe.Slot})");
+                var outputRow = AddRow(infoCol);
+                outputRow.AddChild(StatChip("Atk", $"{recipe.BaseStats.Attack}"));
+                outputRow.AddChild(StatChip("Def", $"{recipe.BaseStats.Defense}"));
+                outputRow.AddChild(StatChip("Wt", $"{recipe.BaseStats.Weight}"));
+
+                // Affordability lighting (KTD5) is a VISUAL MIRROR ONLY, read off the same
+                // state.Player.Materials the gate below reads — the kernel's CraftAction stays
+                // the real gate; a stale-enabled press is still honestly rejected downstream.
+                var controlsRow = AddRow(cardBody);
+                controlsRow.AddChild(StatChip(
+                    material, $"{recipe.MaterialQuantity}x (have {have})",
+                    affordable ? UiKit.ChipTone.Positive : UiKit.ChipTone.Neutral));
+                var craft = AddButton(controlsRow, $"Craft_{recipe.RecipeId}", "Craft", () => OnCraftPressed(recipe.RecipeId));
+                GateButton(craft, affordable, $"Not enough {material} — need {needed}, have {have}.");
             }
 
             foreach (var node in profession.TalentNodes.Values)
             {
-                var row = AddRow(_talentRows!);
                 var hasNode = unlocked.Contains(node.NodeId);
+                var card = Card($"TalentCard_{node.NodeId}");
+                _talentRows!.AddChild(card);
+                var cardBody = new VBoxContainer();
+                card.AddChild(cardBody);
+
+                var row = AddRow(cardBody);
                 AddIcon(row, IconRegistry.Glyph("rune"));
-                AddLabel(row, $"{node.Name} — {node.Description}{(hasNode ? " [unlocked]" : string.Empty)}");
+                var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                row.AddChild(infoCol);
+                AddLabel(infoCol, $"{node.Name} — {node.Description}{(hasNode ? " [unlocked]" : string.Empty)}");
                 if (!hasNode)
                 {
                     var button = AddButton(row, $"Unlock_{node.NodeId}", "Unlock", () => OnUnlockPressed(node.NodeId, professionId));
