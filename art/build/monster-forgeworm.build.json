@@ -1,0 +1,20 @@
+{
+  "Seed": 620456509,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "e05b886f77826598d2b9b647bea1f93fb598fe77a90d211ff21d16aee84dbc0e",
+  "NormalSha256": "8d58cd1a37893a76078f6bf73863e3373723d45785b8d910cb300d678357ce82",
+  "Uid": "uid://b4c02fgq2xy7o",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "8-20 candidates generated locally via ComfyUI MCP across escalation rounds; curated hard per art/pipeline/README.md",
+    "paintoverNote": "round 3 escalation (12 candidates across 3 rounds); c1 -- quadrupedal segmented worm-lizard, glowing molten dorsal shell, bared teeth. Rounds 1-2 drew humanoid dragon-knights, winged wyverns, and repeated multi-cell concept sheets -- round 3 negative-prompt hardening against humanoid/wings/concept-sheet fixed it",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Mine world sprite per AssetSpec.NormalMap=true"
+  }
+}
