@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using GameSim.Flavor;
 using GameSim.Flavor.Packs;
+using GameSim.Narrative;
 
 namespace FlavorForge.Generation;
 
@@ -63,6 +64,17 @@ public sealed record SurfaceContract(
         Sample(("hero", "Torvald"), ("floor", "7"), ("gold", "16")),
         "sim/GameSim/Flavor/Packs/LedgerPack.cs");
 
+    /// <summary>The expedition-narrator surface (U5's <see cref="NarratorPack"/>) — sample values
+    /// mirror <c>NarratorPackTests.SampleValues</c> so the tool validates against the same
+    /// representative facts the sim's own conformance tests already trust.</summary>
+    public static readonly SurfaceContract Narrator = new(
+        "narrator",
+        NarratorPack.Pack,
+        NarratorPack.SlotNames,
+        VoiceProfile.Voices,
+        Sample(("hero", "Kess"), ("floor", "3"), ("monster", "Cave Rat"), ("dmg", "7"), ("item", "Field Salve")),
+        "sim/GameSim/Narrative/NarratorPack.cs");
+
     /// <summary>All surfaces the tool knows, keyed by the CLI's <c>--surface</c> name (ordinal, lower-case).</summary>
     public static readonly ImmutableSortedDictionary<string, SurfaceContract> All =
         new Dictionary<string, SurfaceContract>(StringComparer.Ordinal)
@@ -70,6 +82,7 @@ public sealed record SurfaceContract(
             [Tavern.Name] = Tavern,
             [Faction.Name] = Faction,
             [Ledger.Name] = Ledger,
+            [Narrator.Name] = Narrator,
         }.ToImmutableSortedDictionary(StringComparer.Ordinal);
 
     public static bool TryResolve(string name, out SurfaceContract? contract) => All.TryGetValue(name, out contract);
