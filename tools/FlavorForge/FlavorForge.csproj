@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Dev-time flavor-pack generator (P008): asks a local model (Ollama/LM Studio) for candidate
+       flavor lines, gates every candidate through the sim's real FlavorEngine, and either writes a
+       review proposal (default) or splices accepted lines into the existing pack file (emit mode).
+       Ships zero runtime weight: nothing here runs at game runtime, and the model dependency lives
+       only in tools/ (R13/R14). TargetFramework comes from Directory.Build.props — do not add one. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>FlavorForge</RootNamespace>
+    <Description>Dev-time flavor-pack content generator: local-model candidates gated by the real FlavorEngine, emitted into existing pack files for review.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\sim\GameSim\GameSim.csproj" />
+  </ItemGroup>
+</Project>
