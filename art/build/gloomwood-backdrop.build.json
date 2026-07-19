@@ -1,0 +1,20 @@
+{
+  "Seed": 1385130325,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "323a9b2e697fc60616d6ecf30f948fe14fd22c93117654e4d9edba64a0d490ee",
+  "NormalSha256": null,
+  "Uid": "uid://c38bcxbo56w3k",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
+    "paintoverNote": "c1 (seed+1) -- moonlit path with layered depth (near mushrooms, mid path, far light-shaft trees), on-palette moss/verdigris, no legible text artifacts. c0 was a close-up prop-like mushroom cluster (insufficient depth for a wide backdrop); c2 read as a tiled/repeated mushroom pattern; c3 had garbled text-like marks baked into the paint -- all rejected.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse. Deviation from the standard chain: cutout.py's BiRefNet salient-object segmentation was NOT run -- verified empirically that it discards ~97% of a full-bleed atmospheric backdrop as 'background' (isolates only the single most-salient object), which breaks the AssetKind.Backdrop 'fills the plane' contract. Instead the raw 1024x1024 SDXL output was format-converted straight to a fully-opaque RGBA (no normalmap.py -- AssetSpec.NormalMap=false, flat far plane per GloomwoodSpecs.cs)."
+  }
+}
