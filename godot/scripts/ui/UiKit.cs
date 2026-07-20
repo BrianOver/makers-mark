@@ -108,13 +108,63 @@ public static class UiKit
         return chip;
     }
 
+    /// <summary>A tighter <see cref="StatChip"/> for cramped card real estate (U4: the hero
+    /// roster card needs 3 chips — Lv/Gold/Deepest — across a ~140px-wide card; the full chip's
+    /// <see cref="GameTheme.PanelStyle"/> margins alone (12px/side) ate ~270px across 3). Shrinks
+    /// the stylebox's content margins via a per-node stylebox override on a duplicated
+    /// <see cref="GameTheme.PanelStyle"/> instance — <see cref="GameTheme"/>'s own margin constant
+    /// stays untouched and every OTHER themed panel in the app keeps its normal breathing room.
+    /// Text stays at <see cref="GameTheme.LegibilityFloor"/>, never smaller.</summary>
+    public static Control StatChipCompact(string label, string value, ChipTone tone = ChipTone.Neutral)
+    {
+        var chip = new PanelContainer { Name = "StatChipCompact" };
+        chip.AddThemeStyleboxOverride("panel", CompactChipStyle());
+
+        var row = new HBoxContainer { Name = "StatChipRow" };
+        row.AddThemeConstantOverride("separation", CompactChipSeparation);
+        chip.AddChild(row);
+
+        var labelNode = new Label { Text = label };
+        labelNode.AddThemeColorOverride("font_color", GameTheme.BodyTextColor);
+        labelNode.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
+        row.AddChild(labelNode);
+
+        var valueNode = new Label { Name = "Value", Text = value };
+        valueNode.AddThemeColorOverride("font_color", ToneColor(tone));
+        valueNode.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
+        row.AddChild(valueNode);
+
+        return chip;
+    }
+
+    /// <summary>Label/value gap (px) inside a <see cref="StatChipCompact"/> row — tighter than
+    /// the full <see cref="StatChip"/>'s themed default HBox separation.</summary>
+    private const int CompactChipSeparation = 3;
+
+    /// <summary>Content margins (px) for <see cref="StatChipCompact"/> — a fraction of
+    /// <see cref="GameTheme.PanelStyle"/>'s own margin, applied as a per-node override so the
+    /// global constant it reads stays untouched.</summary>
+    private const float CompactChipMarginX = 4f;
+    private const float CompactChipMarginY = 2f;
+
+    private static StyleBoxFlat CompactChipStyle()
+    {
+        var style = (StyleBoxFlat)GameTheme.PanelStyle().Duplicate();
+        style.ContentMarginLeft = CompactChipMarginX;
+        style.ContentMarginRight = CompactChipMarginX;
+        style.ContentMarginTop = CompactChipMarginY;
+        style.ContentMarginBottom = CompactChipMarginY;
+        return style;
+    }
+
     /// <summary>An <see cref="ArtRect"/> in a bordered card sized for a hero portrait — the
     /// class-tinted frame the roster composes per hero.</summary>
     public static Control PortraitFrame(
-        string artKey, float size = PortraitSize, Texture2D? fallbackIcon = null, string? caption = null)
+        string artKey, float size = PortraitSize, Texture2D? fallbackIcon = null, string? caption = null,
+        bool ellipsizeCaption = false)
     {
         var frame = new PanelContainer { Name = "PortraitFrame" };
-        frame.AddChild(ArtRect(artKey, new Vector2(size, size), fallbackIcon, caption));
+        frame.AddChild(ArtRect(artKey, new Vector2(size, size), fallbackIcon, caption, ellipsizeCaption));
         return frame;
     }
 
@@ -129,7 +179,8 @@ public static class UiKit
     /// <see cref="IconRegistry.Glyph"/>) plus a caption label. Never null, never throws.
     /// </summary>
     public static Control ArtRect(
-        string artKey, Vector2 size, Texture2D? fallbackIcon = null, string? caption = null)
+        string artKey, Vector2 size, Texture2D? fallbackIcon = null, string? caption = null,
+        bool ellipsizeCaption = false)
     {
         if (IconRegistry.TryArt(artKey, out var texture))
         {
@@ -171,19 +222,7 @@ public static class UiKit
                 CustomMinimumSize = new Vector2(Mathf.Max(size.X, CaptionMinWidth), 0),
             };
             captioned.AddChild(textureRect);
-            var captionLabel = new Label
-            {
-                Name = "Caption",
-                Text = caption,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                // Word, not WordSmart (R7-class guard): WordSmart falls back to an
-                // arbitrary/per-character break when a single word doesn't fit the box — the
-                // exact "Soldier's Longsword" -> "Soldier's/Longswor/d" mid-word split the
-                // playtest findings quote. Word wraps ONLY at word boundaries, full stop; a
-                // caption box narrower than one word overflows slightly rather than fragmenting.
-                AutowrapMode = TextServer.AutowrapMode.Word,
-            };
-            captioned.AddChild(captionLabel);
+            captioned.AddChild(CaptionLabel(caption, ellipsizeCaption));
             return captioned;
         }
 
@@ -216,20 +255,42 @@ public static class UiKit
         };
         body.AddChild(icon);
 
-        var label = new Label
-        {
-            Name = "FallbackCaption",
-            Text = caption ?? artKey,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            // Word, not WordSmart — see the real-art caption branch's remarks above. Playtest
-            // findings 2026-07-19 §8's "Soldier/'s/Longs/word" reproduces on THIS branch: the
-            // rival catalog's items carry no committed art, so every rival-shelf card hits this
-            // placeholder, not the real-art branch.
-            AutowrapMode = TextServer.AutowrapMode.Word,
-        };
+        var label = CaptionLabel(caption ?? artKey, ellipsizeCaption, fallbackName: true);
         body.AddChild(label);
 
         return placeholder;
+    }
+
+    /// <summary>Build an <see cref="ArtRect"/> caption label: word-wrapped (never mid-word) by
+    /// default, or single-line ellipsized when <paramref name="ellipsize"/> is true — the roster
+    /// card's shape (U4), where a long hero name must clip with an ellipsis rather than wrap and
+    /// blow out the card's fixed-column height.</summary>
+    private static Label CaptionLabel(string text, bool ellipsize, bool fallbackName = false)
+    {
+        var label = new Label
+        {
+            Name = fallbackName ? "FallbackCaption" : "Caption",
+            Text = text,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+
+        if (ellipsize)
+        {
+            label.ClipText = true;
+            label.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+            label.AutowrapMode = TextServer.AutowrapMode.Off;
+        }
+        else
+        {
+            // Word, not WordSmart (R7-class guard): WordSmart falls back to an
+            // arbitrary/per-character break when a single word doesn't fit the box — the exact
+            // "Soldier's Longsword" -> "Soldier's/Longswor/d" mid-word split the playtest findings
+            // quote. Word wraps ONLY at word boundaries, full stop; a caption box narrower than
+            // one word overflows slightly rather than fragmenting.
+            label.AutowrapMode = TextServer.AutowrapMode.Word;
+        }
+
+        return label;
     }
 
     private static Color ToneColor(ChipTone tone) => tone switch

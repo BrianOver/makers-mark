@@ -24,6 +24,14 @@ namespace GodotClient.Panels;
 /// town-click routing (<see cref="SelectHero"/>) and the old <c>ItemList</c> selection did.
 /// The class tint (<see cref="HeroSprite.RoleColor"/>) is applied to the portrait's own
 /// icon layer only, never the card's text, so name/chip legibility is unaffected.</para>
+///
+/// <para>Rebuilt (world-rework U4): the card is now a content-honest
+/// <see cref="PanelContainer"/> — its predecessor, a bare <see cref="Button"/>, is not a
+/// <see cref="Container"/>, so its VBox children never sized or clipped it (3
+/// <see cref="UiKit.StatChipCompact"/> chips needed ~270px in a 140px card; captions clipped
+/// mid-word). A transparent overlay <see cref="Button"/> now drives the click, the roster name
+/// ellipsizes instead of wrapping mid-word, and <see cref="TintPortraitFrame"/> tints the
+/// frame/underlay only — a painted portrait's own texture stays untinted (white Modulate).</para>
 /// </summary>
 public partial class HeroesPanel : SimPanel
 {
@@ -33,7 +41,9 @@ public partial class HeroesPanel : SimPanel
     /// <summary>Roster column width (px) — two <see cref="RosterCardSize"/> cards plus gutters.</summary>
     private const float RosterColumnWidth = 300f;
 
-    /// <summary>One roster card's footprint (px): portrait + name + a chip row/DIED line.</summary>
+    /// <summary>One roster card's footprint (px): portrait + name + a chip row/DIED line. A
+    /// FLOOR only — the card's real <see cref="PanelContainer"/> sizing grows past this when its
+    /// content (the chip row) needs more.</summary>
     private static readonly Vector2 RosterCardSize = new(140f, 190f);
 
     /// <summary>Gear-row item-art tile edge length (px).</summary>
@@ -46,7 +56,7 @@ public partial class HeroesPanel : SimPanel
 
     private GridContainer? _rosterGrid;
     private VBoxContainer? _detail;
-    private readonly Dictionary<int, Button> _heroCards = [];
+    private readonly Dictionary<int, Button> _heroCardButtons = [];
     private int _selectedHeroId = -1;
 
     public override void _Ready() => EnsureBuilt();
@@ -61,13 +71,13 @@ public partial class HeroesPanel : SimPanel
 
         var state = Adapter.CurrentState;
         Clear(_rosterGrid!);
-        _heroCards.Clear();
+        _heroCardButtons.Clear();
 
         foreach (var hero in state.Heroes.Values)
         {
-            var card = BuildHeroCard(hero);
-            _rosterGrid!.AddChild(card);
-            _heroCards[hero.Id.Value] = card;
+            var (frame, button) = BuildHeroCard(hero);
+            _rosterGrid!.AddChild(frame);
+            _heroCardButtons[hero.Id.Value] = button;
         }
 
         if (state.Heroes.IsEmpty)
@@ -99,12 +109,12 @@ public partial class HeroesPanel : SimPanel
     private void RenderDetail(int heroValue)
     {
         _selectedHeroId = heroValue;
-        foreach (var (id, card) in _heroCards)
+        foreach (var (id, button) in _heroCardButtons)
         {
             // NoSignal: this is a programmatic sync, never a real click — using the plain
             // setter would re-emit `toggled`/risk re-entrancy through the card's own
             // Pressed handler.
-            card.SetPressedNoSignal(id == heroValue);
+            button.SetPressedNoSignal(id == heroValue);
         }
 
         var state = Adapter!.CurrentState;
@@ -178,41 +188,39 @@ public partial class HeroesPanel : SimPanel
         }
     }
 
-    /// <summary>One roster card: a themed toggle <see cref="Button"/> (so a click drives the same
-    /// <see cref="RenderDetail"/> path as <see cref="SelectHero"/>, and selection state is provable
-    /// via <see cref="Button.ButtonPressed"/>) wrapping a class-tinted portrait, the hero's name,
-    /// and either level/gold/deepest chips (alive) or a DIED line.</summary>
-    private Button BuildHeroCard(Hero hero)
+    /// <summary>One roster card: a content-honest <see cref="PanelContainer"/> (R7-class fix,
+    /// U4 — its predecessor, a bare <see cref="Button"/>, is not a <see cref="Container"/>, so its
+    /// VBox children never sized or clipped it; 3 <see cref="UiKit.StatChipCompact"/> chips need
+    /// more room than a fixed 140px card gave them) wrapping a class-tinted portrait, the hero's
+    /// name (ellipsized, never mid-word-wrapped), and either level/gold/deepest chips (alive) or a
+    /// DIED line — plus a transparent, borderless <see cref="Button"/> stacked on top by
+    /// <see cref="PanelContainer"/>'s every-child-fills-the-content-rect layout, so a click still
+    /// drives the same <see cref="RenderDetail"/> path <see cref="SelectHero"/> does and selection
+    /// state stays provable via <see cref="Button.ButtonPressed"/>.</summary>
+    private (Control Frame, Button Overlay) BuildHeroCard(Hero hero)
     {
-        var card = new Button
+        var frame = new PanelContainer
         {
-            Name = $"HeroCard_{hero.Id.Value}",
-            ToggleMode = true,
-            ClipText = true,
+            Name = $"HeroCardFrame_{hero.Id.Value}",
             CustomMinimumSize = RosterCardSize,
         };
-        card.Pressed += () => RenderDetail(hero.Id.Value);
 
         var body = new VBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
-        body.SetAnchorsPreset(LayoutPreset.FullRect);
-        card.AddChild(body);
+        frame.AddChild(body);
 
-        var frame = PortraitFrame(
-            AssetCatalog.HeroPortraitId(hero.ClassId), UiKit.PortraitSize, IconRegistry.Sprite(hero.ClassId), hero.Name);
-        TintPortraitIcon(frame, HeroSprite.RoleColor(hero.ClassId));
-        body.AddChild(frame);
-
-        // hero.Name renders as the frame's own caption now that UiKit.ArtRect's real-art branch
-        // honors it (previously dropped silently, so this card carried a second, redundant name
-        // Label here as the only place the name actually showed — no longer needed).
+        var portrait = PortraitFrame(
+            AssetCatalog.HeroPortraitId(hero.ClassId), UiKit.PortraitSize, IconRegistry.Sprite(hero.ClassId),
+            hero.Name, ellipsizeCaption: true);
+        TintPortraitFrame(portrait, HeroSprite.RoleColor(hero.ClassId));
+        body.AddChild(portrait);
 
         if (hero.Alive)
         {
             var chipRow = AddRow(body);
             chipRow.Alignment = BoxContainer.AlignmentMode.Center;
-            chipRow.AddChild(StatChip("Lv", $"{hero.Level}"));
-            chipRow.AddChild(StatChip("Gold", $"{hero.Gold}g", UiKit.ChipTone.Accent));
-            chipRow.AddChild(StatChip("Deepest", $"{hero.DeepestFloorReached}"));
+            chipRow.AddChild(UiKit.StatChipCompact("Lv", $"{hero.Level}"));
+            chipRow.AddChild(UiKit.StatChipCompact("Gold", $"{hero.Gold}g", UiKit.ChipTone.Accent));
+            chipRow.AddChild(UiKit.StatChipCompact("Deepest", $"{hero.DeepestFloorReached}"));
         }
         else
         {
@@ -222,24 +230,46 @@ public partial class HeroesPanel : SimPanel
         }
 
         // Decoration only: every descendant must pass mouse input through so the click always
-        // resolves to the card Button itself (mirrors SimPanel.AddIcon/HeroSprite's sprite+marker
-        // convention, generalized recursively — PortraitFrame/StatChip nest PanelContainers that
-        // default to Stop and would otherwise swallow the click before it reaches the Button).
+        // resolves to the overlay Button, never a nested PanelContainer (portrait/chips default
+        // to Stop) swallowing it first (mirrors SimPanel.AddIcon/HeroSprite's sprite+marker
+        // convention, generalized recursively).
         MakeDecorative(body);
-        return card;
+
+        // Transparent overlay: PanelContainer stacks every direct child to fill the same content
+        // rect, and a later-added sibling receives input first, so this Button — added after
+        // `body` — sits visually on top and alone answers the click without drawing its own
+        // themed background/border over the card's real content.
+        var overlay = new Button
+        {
+            Name = $"HeroCard_{hero.Id.Value}",
+            ToggleMode = true,
+            Flat = true,
+        };
+        overlay.Pressed += () => RenderDetail(hero.Id.Value);
+        frame.AddChild(overlay);
+
+        return (frame, overlay);
     }
 
-    /// <summary>Tint the portrait's own icon layer (hit texture or fallback glyph) to
-    /// <paramref name="tint"/> — never the card's text, so name/chip legibility is unaffected.
-    /// Mirrors <see cref="HeroSprite"/>'s own neutral-body-tinted-via-Modulate convention.</summary>
-    private static void TintPortraitIcon(Control frame, Color tint)
+    /// <summary>Tint the portrait's frame/underlay only via <see cref="CanvasItem.SelfModulate"/>
+    /// (which colors a node's own drawn stylebox but does not cascade to children, unlike
+    /// <see cref="CanvasItem.Modulate"/>) — a painted portrait's own texture keeps its default
+    /// white <see cref="CanvasItem.Modulate"/> untouched, so generated art is never discolored.
+    /// A glyph fallback icon (no generated art for this class) still gets the role tint, since
+    /// it is a placeholder, not painted art.</summary>
+    private static void TintPortraitFrame(Control frame, Color tint)
     {
-        var icon = frame.FindChildren("*", nameof(TextureRect), recursive: true, owned: false)
+        if (frame is CanvasItem item)
+        {
+            item.SelfModulate = tint;
+        }
+
+        var fallbackIcon = frame.FindChildren("FallbackIcon", nameof(TextureRect), recursive: true, owned: false)
             .Cast<TextureRect>()
             .FirstOrDefault();
-        if (icon is not null)
+        if (fallbackIcon is not null)
         {
-            icon.Modulate = tint;
+            fallbackIcon.Modulate = tint;
         }
     }
 
