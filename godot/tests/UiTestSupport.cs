@@ -60,20 +60,36 @@ public static class UiTestSupport
             }
         }
     }
-    /// <summary>Instantiate main_ui.tscn into the live scene tree with the auto-clock paused.</summary>
+    /// <summary>Instantiate main_ui.tscn into the live scene tree with the auto-clock gated
+    /// and paused.</summary>
     public static MainUi MountMainUi() => MountMainUi(adapterOverride: null);
 
     /// <summary>
     /// Mount with an injected adapter (U12 scenario tests — e.g., a crafted wipe-day
     /// campaign). Pass null for the default fresh seed-2026 campaign.
     /// </summary>
-    public static MainUi MountMainUi(SimAdapter? adapterOverride)
+    /// <param name="adapterOverride">Injected campaign, or null for a fresh seed-2026 one.</param>
+    /// <param name="forceGated">
+    /// U15: the living clock now defaults to auto-advance ON, and a leftover
+    /// <c>ClockSettings</c> file from an earlier test/run could otherwise leak a preference
+    /// into this mount. Defaults true — every existing suite drives phases explicitly via
+    /// <see cref="AdvanceDay"/>/<see cref="AdvanceToPhase"/>/direct <c>Adapter.AdvancePhase</c>
+    /// calls and must see a fully inert clock regardless of persisted state. Pass false only
+    /// to observe what <c>MainUi._Ready</c> itself applied (e.g. asserting the persisted
+    /// setting/AE1 default landed) before this override would mask it.
+    /// </param>
+    public static MainUi MountMainUi(SimAdapter? adapterOverride, bool forceGated = true)
     {
         var tree = (SceneTree)Engine.GetMainLoop();
         var ui = GD.Load<PackedScene>("res://scenes/panels/main_ui.tscn").Instantiate<MainUi>();
         MainUi.AdapterOverride = adapterOverride; // static handoff (U4) — _Ready consumes it
         tree.Root.AddChild(ui); // triggers _Ready: adapter + panels + bindings
-        ui.Clock.Pause();       // tests drive phases explicitly
+        if (forceGated)
+        {
+            ui.Clock.Pause();          // tests drive phases explicitly
+            ui.Clock.SetAutoAdvance(false); // U15: never let a persisted/ON default fire a tick
+        }
+
         return ui;
     }
 
@@ -81,6 +97,12 @@ public static class UiTestSupport
     {
         ui.GetParent()?.RemoveChild(ui);
         ui.Free();
+
+        // U15: every MountMainUi pairs with Unmount (one shared teardown, every call site) —
+        // wipe any ClockSettings file a pressed Auto toggle may have written mid-test so a
+        // local test run can never leak a persisted "manual mode" preference into the
+        // developer's own real Godot user:// data, and no suite can leak one into another.
+        MainUi.ClockSettings.DeleteForTests();
     }
 
     /// <summary>Find a (code-built, unowned) control by name anywhere under root.</summary>
