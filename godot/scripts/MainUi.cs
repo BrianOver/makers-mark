@@ -12,13 +12,16 @@ namespace GodotClient;
 /// <summary>
 /// The one UI scene (U11 shell + U12 town layer): a persistent tab bar hosting the
 /// living town view plus the six management panels under a themed HUD header (P007
-/// U7 — day/phase/gold/heroes stat chips + Advance/Auto, with play/pause/fast-forward
+/// U7 — day/phase/gold/heroes stat chips + Skip/Auto, with play/pause/fast-forward
 /// as auto-mode sub-controls), with the Evening Ledger as a modal overlay. The Ledger opens
 /// through the U12 Return Ritual — a TIME-BASED gate
 /// (<see cref="ReturnRitualDelaySeconds"/> of unscaled wall-clock after the Evening
 /// tick), never blocked by sprite walk-ins, so a zero-survivor day cannot hang the
 /// reveal. Owns the single <see cref="SimAdapter"/> and the <see cref="PhaseClock"/>;
 /// everything below binds through the adapter (KTD2). Town clicks select tabs (R20).
+/// U15 (KTD3): the clock flows on its own by default and computes <see cref="PhaseClock.
+/// Engaged"/> from tab/modal state each frame's relevant events — see
+/// <see cref="UpdateEngaged"/> for the interim (tab-era) predicate.
 /// </summary>
 public partial class MainUi : Control
 {
@@ -101,10 +104,20 @@ public partial class MainUi : Control
         AdapterOverride = null; // consumed — the handoff is one-shot (see property doc)
         Clock = new PhaseClock(Adapter);
 
+        // U15 (KTD3 escape hatch): a saved manual-mode preference wins over PhaseClock's
+        // ON-by-default so a player who deliberately went manual stays manual next launch.
+        // No file yet (fresh install) ⇒ null ⇒ leave the ON default untouched.
+        var persistedAutoAdvance = ClockSettings.LoadAutoAdvance();
+        if (persistedAutoAdvance.HasValue)
+        {
+            Clock.SetAutoAdvance(persistedAutoAdvance.Value);
+        }
+
         // P007 U1 (R11/KTD1): assign the shared Theme BEFORE building any child Control so
         // Godot's normal Theme cascade carries it to every panel/tab built below.
         Theme = GameTheme.Build();
         BuildUi();
+        UpdateEngaged(); // Town is the initial tab, no modal open — starts disengaged
 
         Adapter.StateChanged += OnPhaseCompleted;
         Town.Bind(Adapter);
@@ -404,13 +417,16 @@ public partial class MainUi : Control
         {
             var remaining = Clock.Remaining.ToString("0", CultureInfo.InvariantCulture);
             var paused = Clock.Playing ? string.Empty : " [paused]";
-            _clockLabel.Text = $"next phase in {remaining}s @{Clock.SpeedMultiplier}x{paused}";
+            // U15/AE1: engaged holds the boundary even while flowing — surface that distinctly
+            // from a manual pause so it's legible that the wait is the player's own doing.
+            var engaged = !Clock.Playing || !Clock.Engaged ? string.Empty : " [waiting]";
+            _clockLabel.Text = $"next phase in {remaining}s @{Clock.SpeedMultiplier}x{paused}{engaged}";
             _playPause.Text = Clock.Playing ? "Pause" : "Play";
             _speed.Text = $"{Clock.SpeedMultiplier}x";
         }
         else
         {
-            _clockLabel.Text = "next phase on Advance";
+            _clockLabel.Text = "next phase on Skip";
         }
     }
 
@@ -422,8 +438,8 @@ public partial class MainUi : Control
         AddChild(layout);
 
         // --- HUD header (P007 U7/R11/R12/KD1): themed stat-chip row (left) + the
-        // Advance/Auto controls cluster (right) — the real home for the hybrid day
-        // clock. Both Advance and Auto drive PhaseClock's ONE gated advance path
+        // Skip/Auto controls cluster (right) — the real home for the living day
+        // clock (U15). Both Skip and Auto drive PhaseClock's ONE advance path
         // (AdvanceNow / Update -> SimAdapter.AdvancePhase); nothing here is a second
         // code path (KD1). -----------------------------------------------------
         var header = new PanelContainer { Name = "HudHeader" };
@@ -440,14 +456,16 @@ public partial class MainUi : Control
         _clockLabel = new Label { Name = "ClockLabel" };
         controls.AddChild(_clockLabel);
 
-        // U2 hybrid clock controls: explicit Advance is the primary control (styled as
-        // such — StylePrimary — so it reads as THE control); the Auto toggle opts into
-        // the timed cadence, where play/pause + speed apply.
-        _advance = new Button { Name = "AdvancePhase", Text = "Advance" };
+        // U15: the living clock flows by default, so the explicit control is now a
+        // "Skip" — same underlying advance (AdvanceNow), just relabeled now that it is
+        // the exception rather than the primary way forward (player intent always wins,
+        // engaged or not). Node NAME stays "AdvancePhase" (existing tests press it by
+        // name). The Auto toggle remains the escape hatch back to fully-manual mode.
+        _advance = new Button { Name = "AdvancePhase", Text = "Skip" };
         StylePrimary(_advance);
         _advance.Pressed += () =>
         {
-            Clock.AdvanceNow(); // same advance the auto timer fires (R1)
+            Clock.AdvanceNow(); // same advance the auto timer fires — player intent wins even engaged
             UpdateClockLabel();
         };
         controls.AddChild(_advance);
@@ -456,6 +474,7 @@ public partial class MainUi : Control
         _auto.Pressed += () =>
         {
             Clock.ToggleAuto();
+            ClockSettings.SaveAutoAdvance(Clock.AutoAdvance); // U15 escape hatch: sticks across campaigns
             UpdateClockLabel();
         };
         controls.AddChild(_auto);
@@ -518,7 +537,11 @@ public partial class MainUi : Control
         TabFade = new TabFade();
         AddChild(TabFade);
         TabFade.Build();
-        Tabs.TabChanged += _ => TabFade.Trigger();
+        Tabs.TabChanged += _ =>
+        {
+            TabFade.Trigger();
+            UpdateEngaged(); // TAB-ERA INTERIM RULE (U15): only Town flows; every other tab engages
+        };
 
         // --- ledger modal overlay (sibling after the layout = draws on top) --
         Ledger = GD.Load<PackedScene>("res://scenes/panels/ledger_modal.tscn").Instantiate<LedgerModal>();
@@ -603,6 +626,7 @@ public partial class MainUi : Control
             Clock.Play();
         }
 
+        UpdateEngaged(); // TAB-ERA INTERIM RULE (U15): the Ledger modal engages the latch too
         UpdateClockLabel();
     }
 
@@ -620,6 +644,81 @@ public partial class MainUi : Control
             _resumePlayOnCampClose = false;
         }
 
+        UpdateEngaged(); // TAB-ERA INTERIM RULE (U15): the Camp modal engages the latch too
         UpdateClockLabel();
+    }
+
+    /// <summary>
+    /// U15 (KTD3/AE1) TAB-ERA INTERIM RULE: drawers/interiors arrive in U21 (Wave 4) — until
+    /// then, the Town tab is the only flowing surface. Any other active tab, or either modal
+    /// overlay (Ledger/Camp) being open, engages <see cref="PhaseClock.Engaged"/> so an
+    /// expired phase timer holds at the boundary instead of ticking. U21 swaps this predicate
+    /// for real drawer/interior state and deletes the interim test that pins it.
+    /// </summary>
+    private void UpdateEngaged()
+    {
+        var onTownTab = Tabs.CurrentTab == Tabs.GetTabIdxFromControl(Town);
+        Clock.Engaged = !onTownTab || Ledger.Visible || Camp.Visible;
+    }
+
+    /// <summary>
+    /// U15 (KTD3 escape hatch): tiny adapter-side settings store for the living clock's
+    /// auto-advance preference — a JSON file at Godot's <c>user://</c>, entirely outside the
+    /// sim save (KTD2 — the sim never reads or writes this). Whatever the player last chose
+    /// via the Auto toggle survives to the next campaign load, so turning the clock manual
+    /// sticks instead of silently reverting to the ON default. Fails soft everywhere (missing
+    /// or corrupt file ⇒ null ⇒ callers fall back to <see cref="PhaseClock"/>'s own default)
+    /// so a settings-store hiccup can never block boot.
+    /// </summary>
+    public static class ClockSettings
+    {
+        private const string Path = "user://clock_settings.json";
+
+        /// <summary>Null when no settings file exists yet — callers keep PhaseClock's own
+        /// default (ON); otherwise the persisted auto-advance preference.</summary>
+        public static bool? LoadAutoAdvance()
+        {
+            if (!Godot.FileAccess.FileExists(Path))
+            {
+                return null;
+            }
+
+            using var file = Godot.FileAccess.Open(Path, Godot.FileAccess.ModeFlags.Read);
+            if (file is null)
+            {
+                return null; // unreadable — fail soft, never block boot
+            }
+
+            try
+            {
+                var data = System.Text.Json.JsonSerializer.Deserialize<Data>(file.GetAsText());
+                return data?.AutoAdvance;
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return null; // corrupt file — fail soft
+            }
+        }
+
+        public static void SaveAutoAdvance(bool autoAdvance)
+        {
+            using var file = Godot.FileAccess.Open(Path, Godot.FileAccess.ModeFlags.Write);
+            file?.StoreString(System.Text.Json.JsonSerializer.Serialize(new Data { AutoAdvance = autoAdvance }));
+        }
+
+        /// <summary>Test-only teardown: delete the file so suites never leak a preference
+        /// across runs (this store is adapter-side scaffolding, not sim state — safe to wipe).</summary>
+        public static void DeleteForTests()
+        {
+            if (Godot.FileAccess.FileExists(Path))
+            {
+                Godot.DirAccess.RemoveAbsolute(ProjectSettings.GlobalizePath(Path));
+            }
+        }
+
+        private sealed class Data
+        {
+            public bool AutoAdvance { get; set; } = true;
+        }
     }
 }
