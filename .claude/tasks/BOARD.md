@@ -60,3 +60,12 @@ in the shared root already caused one cross-session commit collision (rode into 
 - 2026-07-18: **WEEKEND PLANS ADOPTED** — master completion plan `docs/plans/2026-07-18-001` (M-units, T-packets, rulings R1-R9, Horizon-1/2) + grind-block schedule `docs/plans/2026-07-18-002` (B1-B10, DoD D1-D6, tag v1-playable). Single band-mover this weekend: U3. All work spawns from the orchestrator session per §13.
 - 2026-07-17 evening: **COORDINATION V2.1 adopted (operating-model §13)** — parallel file-disjoint core tracks + automated GitHub seams (critic pass applied: claim stubs on main, gate-flip-at-merge, orchestrator stamps done/babysits, registry-line PRs never auto-merge, escalations push before parking). ENGINE session closed until engine work exists. Swarm wave-1 orchestrator-spawned: addon-art-heroes → addon-tanning → addon-faction-crownsguard.
 - 2026-07-18: **BOARD RECONCILED (next-phase U1)** — removed committed conflict markers (#44 vs #52 collision at the G3/G4/G5 rows), collapsed gate/claim tables to merged reality from git log (G3 #43, G4 #51, G5 #54, G8 #62; V1 #46, V4a #45), marked tables historical. Next-phase wave begins: Playable Core (`docs/plans/2026-07-18-005`), worked one unit = one branch = one PR from the orchestrating session.
+
+## World Rework wave (plan 2026-07-19-002) — seam broadcasts 2026-07-19
+
+- **Plan of record:** `docs/plans/2026-07-19-002-feat-world-rework-plan.md` (26 units, 5 waves). Supersedes plan 2026-07-18-007 (ui-rethink) for panel/HUD ownership.
+- **Branch rule:** ALL workers branch from `origin/main`, never local HEADs. Shared root READ-ONLY.
+- **Seam freezes:** `godot/scripts/town/TownScene.cs` + `LitTownOverlay.cs` single-owner per wave (U3 Wave 1 → U14 Wave 2 → U19/U20 Wave 3). `MainUi.cs`: U7 sole toucher Wave 1; U15/U16/U17/U18 serialize merges Wave 2; U21 freeze Wave 4.
+- **Gates:** G1 = U8 Area2D harness verdict posts here before U14 merges. U9 gated on contracts PR (PartiesFormed) merge. U12 boot flip gated on U11 green.
+- **HUD layout (KTD13, binding):** top bar = chips left / day-timeline center / Advance-Auto right; objective tracker top-right; ticker bottom edge; PiP bottom-right (expedition phases only).
+- **World scale:** U14 publishes `docs/design/world-scale.md` BEFORE Wave 3 opens.
