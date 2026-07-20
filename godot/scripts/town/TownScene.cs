@@ -106,6 +106,11 @@ public partial class TownScene : SimPanel
     /// by design — a fully-absent asset set leaves it built-but-empty, never removed.</summary>
     public LitTownOverlay? LitOverlay => _litOverlay;
 
+    /// <summary>U20 (R3): the player avatar — a passthrough to <see cref="LitTownOverlay"/>, which
+    /// actually mounts it (owns the world/camera/click-zones it interacts with), so callers don't
+    /// need to know avatar mounting lives one level down. Null before the first build.</summary>
+    public PlayerAvatar? Avatar => _litOverlay?.Avatar;
+
     /// <summary>Current ambient MULTIPLY-tint (U3: <see cref="LitTownOverlay"/>'s CanvasModulate —
     /// <see cref="LitTownOverlay.AtmosphereTintFor"/> — is the SOLE tint authority; this town
     /// root's own <see cref="CanvasItem.Modulate"/> stays pinned <see cref="Colors.White"/> so the

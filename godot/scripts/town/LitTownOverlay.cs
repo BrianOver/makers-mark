@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using GameSim.Contracts;
 using Godot;
 
@@ -37,6 +38,15 @@ namespace GodotClient.Town;
 /// Mouse parallax (<see cref="ApplyParallax"/>) nudges only <see cref="Fx"/> (an idle depth cue) —
 /// never <see cref="Ents"/>, whose building colliders/click-zones must never drift out of sync
 /// with their own visuals.</para>
+///
+/// <para>U20 (R3/KTD12): also owns the player <see cref="PlayerAvatar"/> (a Y-sorted <see
+/// cref="Ents"/> child, same as buildings/heroes), the <see cref="WorldInput"/> that drives it,
+/// and every venue/landmark <see cref="InteractionZone"/>. Building clicks no longer open a panel
+/// instantly — <see cref="TryAddBuilding"/>'s click-zone handler now issues a walk to the door and
+/// <see cref="BuildingClicked"/> fires only once <see cref="PlayerAvatar.PathCompleted"/> confirms
+/// arrival (KTD12); the world-scale doc's "still deferred" note for this is closed by this unit.
+/// The camera also leans gently toward the avatar while it is moving (<see
+/// cref="FollowOffsetFor"/>), reverting to the LW6 idle drift the instant it stops.</para>
 /// </summary>
 public partial class LitTownOverlay : SubViewportContainer
 {
@@ -77,6 +87,36 @@ public partial class LitTownOverlay : SubViewportContainer
     private static readonly Vector2 ClickZoneSize = new(260f, 340f);
     private static readonly Vector2 ClickZoneOffset = new(0f, -170f);
 
+    // ── U20: player avatar, world input, interaction zones ────────────────────────────────────
+    /// <summary>Avatar spawn point — mid-street, in the walkable band (world-scale doc), not on
+    /// any building's ground-line anchor.</summary>
+    private static readonly Vector2 AvatarSpawn = new(800f, GroundLine + 60f);
+
+    /// <summary>How far south of a building's ground-line anchor its door/interaction point sits
+    /// — clear of the Base collider's own Y range (<see cref="BaseColliderOffset"/> ± half of
+    /// <see cref="BaseColliderSize"/>.Y spans roughly [GroundLine-40, GroundLine]), so a
+    /// click-to-move-to-door target is always physically reachable rather than sitting inside the
+    /// very collider that would block the walk.</summary>
+    private const float DoorApproachOffsetY = 60f;
+
+    private static readonly Vector2 VenueZoneSize = new(180f, 130f);
+
+    // Noticeboard/memorials have no BuildingSpec/rendered art of their own (world-scale doc lists
+    // only the 4 buildings) — fixed landmark points, independent of the buildings list passed to
+    // Build(), so a degrade/custom-buildings test never disturbs them. The gate's OWN zone comes
+    // from TryAddBuilding (its "minegate" BuildingSpec) like every other building's door — no
+    // separate landmark entry here, or the two would sit on the exact same point and duplicate.
+    private static readonly Vector2 NoticeboardZonePosition = new(1300f, GroundLine + DoorApproachOffsetY);
+    private static readonly Vector2 MemorialZonePosition = new(140f, GroundLine + DoorApproachOffsetY);
+
+    /// <summary>Camera-follow lean cap, px — the world container already exactly equals <see
+    /// cref="DesignSize"/> (world-scale doc: no scrollable headroom exists), so any follow nudge
+    /// must stay small, same order of magnitude as the LW6 idle drift's own ±4px, with just enough
+    /// headroom to read as a deliberate lean rather than noise.</summary>
+    public const float FollowMaxOffset = 24f;
+    private const float FollowFactor = 0.02f;
+    private const float FollowLerpSpeed = 4f; // per-second convergence, mirrors ParallaxLerpSpeed
+
     /// <summary>The shipped 4 buildings — world-scale doc's table (feet-anchored, re-spaced so the
     /// 400+ px pitch structurally cannot overlap the ≈300px facade width, unlike U3's 230px-pitch
     /// interim fix).</summary>
@@ -103,6 +143,7 @@ public partial class LitTownOverlay : SubViewportContainer
 
     private readonly List<PointLight2D> _lights = [];
     private readonly List<Sprite2D> _sprites = [];
+    private readonly Dictionary<string, InteractionZone> _zones = [];
     private SubViewport _viewport = null!;
     private Node2D _world = null!;
     private Node2D _ents = null!;
@@ -110,9 +151,14 @@ public partial class LitTownOverlay : SubViewportContainer
     private CanvasModulate _ambient = null!;
     private GradientTexture2D _lightGradient = null!;
     private AmbientFxLayer _fx = null!;
+    private PlayerAvatar _avatar = null!;
+    private WorldInput _worldInput = null!;
+    private Label _promptLabel = null!;
+    private string? _pendingOpenKey;
     private float _time;
     private Vector2 _parallaxTarget;
     private Vector2 _parallaxCurrent;
+    private Vector2 _cameraFollowCurrent;
     private bool _built;
 
     /// <summary>A building marker was clicked — payload matches <see cref="BuildingSpec.ClickKey"/>
@@ -150,6 +196,20 @@ public partial class LitTownOverlay : SubViewportContainer
     /// <summary>True once at least one building's art resolved — lets a caller detect a fully
     /// asset-less degrade (every id missing).</summary>
     public bool HasContent => _sprites.Count > 0;
+
+    /// <summary>The player-blacksmith avatar (U20, R3) — presentation-only (KTD2).</summary>
+    public PlayerAvatar Avatar => _avatar;
+
+    /// <summary>The WASD/interact/cancel input brain driving <see cref="Avatar"/> (U20, KTD4).</summary>
+    public WorldInput WorldInput => _worldInput;
+
+    /// <summary>Every proximity zone by key ("forge" | "market" | "tavern" | "gate" |
+    /// "noticeboard" | "memorials") — test/inspection surface.</summary>
+    public IReadOnlyDictionary<string, InteractionZone> Zones => _zones;
+
+    /// <summary>The floating "E — Forge" style interact prompt (U20) — hidden while the avatar is
+    /// in no zone.</summary>
+    public Label InteractPrompt => _promptLabel;
 
     /// <summary>Build the live town with the shipped 4 buildings.</summary>
     public void Build() => Build(DefaultBuildings);
@@ -226,7 +286,74 @@ public partial class LitTownOverlay : SubViewportContainer
         _fx.Build(buildings);
         _fx.ApplyPhase(DayPhase.Morning);
 
+        // U20: the player avatar — a Y-sorted Ents child like buildings/heroes, so it draws
+        // correctly in front of/behind a facade depending on which side of the ground line it
+        // stands on (KTD6 + Y-sort agree by construction: the Base collider only spans the ground
+        // line itself, never the "behind the roofline" band).
+        _avatar = new PlayerAvatar();
+        _avatar.Build(AvatarSpawn);
+        _ents.AddChild(_avatar);
+        _avatar.PathCompleted += OnAvatarPathCompleted;
+        _avatar.PathCancelled += OnAvatarPathCancelled;
+
+        BuildLandmarkZones();
+
+        _worldInput = new WorldInput();
+        AddChild(_worldInput); // outer Control level: IsVisibleInTree() tracks the Town tab itself
+        _worldInput.Configure(this, _avatar, _zones.Values.ToList());
+        _worldInput.ZoneChanged += OnZoneChanged;
+
+        _promptLabel = new Label
+        {
+            Name = "InteractPrompt",
+            Visible = false,
+            MouseFilter = MouseFilterEnum.Ignore,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        _promptLabel.AddThemeFontSizeOverride("font_size", 16);
+        _promptLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.9f, 0.75f));
+        AddChild(_promptLabel);
+        _promptLabel.SetAnchorsAndOffsetsPreset(LayoutPreset.CenterBottom, LayoutPresetMode.KeepSize, 28);
+
         _built = true;
+    }
+
+    /// <summary>Noticeboard/memorials (U20): landmark interaction zones with no dedicated building
+    /// sprite of their own — fixed points, independent of whatever <c>buildings</c> list <see
+    /// cref="Build"/> was given, so a degrade/custom-buildings test never disturbs them. Neither
+    /// wires an <see cref="InteractionZone.Interact"/> handler (no venue to open yet for either) —
+    /// an unwired event safely no-ops.</summary>
+    private void BuildLandmarkZones()
+    {
+        AddZone("noticeboard", "E — Notice Board", NoticeboardZonePosition);
+        AddZone("memorials", "E — Memorials", MemorialZonePosition);
+    }
+
+    private void AddZone(string key, string prompt, Vector2 position)
+    {
+        var zone = new InteractionZone { Position = position };
+        zone.Setup(key, prompt, VenueZoneSize);
+        _ents.AddChild(zone);
+        _zones[key] = zone;
+    }
+
+    private void OnAvatarPathCompleted()
+    {
+        if (_pendingOpenKey is not { } key)
+        {
+            return;
+        }
+
+        _pendingOpenKey = null;
+        BuildingClicked?.Invoke(key);
+    }
+
+    private void OnAvatarPathCancelled() => _pendingOpenKey = null;
+
+    private void OnZoneChanged(InteractionZone? zone)
+    {
+        _promptLabel.Visible = zone is not null;
+        _promptLabel.Text = zone?.PromptText ?? string.Empty;
     }
 
     /// <summary>
@@ -271,10 +398,19 @@ public partial class LitTownOverlay : SubViewportContainer
             _lights[i].Energy = LightEnergy + FlickerAmplitude * Mathf.Sin(phase) * Mathf.Sin(_time * 2.3f);
         }
 
-        // LW6 idle camera drift — barely-conscious sway.
+        // LW6 idle camera drift, U20-extended with a gentle follow-lean while the avatar is
+        // moving (FollowOffsetFor), lerped in/out (FollowLerpSpeed) rather than snapped so the
+        // transition back to idle drift on stopping never pops. Lerping FROM/TOWARD values that
+        // are themselves each bounded (±DriftAmplitude idle, ±FollowMaxOffset follow) keeps every
+        // intermediate sample bounded too — the convex-combination property Lerp gives for free.
         if (_camera is not null)
         {
-            _camera.Offset = DriftOffsetFor(_time);
+            var target = _avatar is not null && _avatar.IsMoving
+                ? FollowOffsetFor(_avatar.Position, DesignSize)
+                : DriftOffsetFor(_time);
+            var lerpAmount = Mathf.Clamp(FollowLerpSpeed * (float)delta, 0f, 1f);
+            _cameraFollowCurrent = _cameraFollowCurrent.Lerp(target, lerpAmount);
+            _camera.Offset = _cameraFollowCurrent;
         }
 
         // LW6 mouse parallax — reads the container's own local mouse position (still polled while
@@ -291,6 +427,24 @@ public partial class LitTownOverlay : SubViewportContainer
     /// SubViewport. Bounded to ±<see cref="DriftAmplitude"/> px on both axes by construction.</summary>
     public static Vector2 DriftOffsetFor(float t) =>
         new(Mathf.Sin(t * DriftFreqX) * DriftAmplitude, Mathf.Cos(t * DriftFreqY) * DriftAmplitude);
+
+    /// <summary>
+    /// U20 camera follow-lean: a pure function of the avatar's own world position, no live camera
+    /// needed (same testability contract as <see cref="DriftOffsetFor"/>). The world container
+    /// exactly equals <see cref="DesignSize"/> (world-scale doc: no scrollable headroom exists at
+    /// all), so this can never be a real scrolling follow — it is a small, capped lean toward
+    /// wherever the avatar is relative to the world's center, clamped to ±<see
+    /// cref="FollowMaxOffset"/> on each axis regardless of how close to a world edge the avatar
+    /// stands ("camera stays within world limits at edges").
+    /// </summary>
+    public static Vector2 FollowOffsetFor(Vector2 avatarPosition, Vector2I designSize)
+    {
+        var center = new Vector2(designSize.X / 2f, designSize.Y / 2f);
+        var raw = (avatarPosition - center) * FollowFactor;
+        return new Vector2(
+            Mathf.Clamp(raw.X, -FollowMaxOffset, FollowMaxOffset),
+            Mathf.Clamp(raw.Y, -FollowMaxOffset, FollowMaxOffset));
+    }
 
     /// <summary>
     /// LW6 mouse parallax (plan §LW6), U14-narrowed to <see cref="Fx"/> only: offsets the
@@ -400,6 +554,28 @@ public partial class LitTownOverlay : SubViewportContainer
         });
         wrapper.AddChild(body);
 
+        // U20: every building that resolved art also gets a proximity InteractionZone at its door
+        // (same "no art -> nothing" graceful degrade the collider/light/click-zone above already
+        // honor — a fake id never lights a prompt for a facade nobody can see). Positioned south
+        // of the ground line (DoorApproachOffsetY), clear of the Base collider above, so both the
+        // walk-to-door target (below) and standing-in-zone-then-E are always reachable.
+        var doorPosition = spec.Position + new Vector2(0f, DoorApproachOffsetY);
+        var zone = new InteractionZone { Position = doorPosition };
+        if (spec.ClickKey is { } zoneClickKey)
+        {
+            zone.Setup(spec.Key, $"E — {zoneClickKey}", VenueZoneSize);
+            zone.Interact += () => BuildingClicked?.Invoke(zoneClickKey); // already arrived — opens now
+        }
+        else
+        {
+            // The mine gate (no ClickKey — parity with the pre-U14 gate, never clickable): a
+            // capitalized prompt from its own key, no Interact wiring (no venue to open yet).
+            zone.Setup(spec.Key, $"E — {char.ToUpperInvariant(spec.Key[0])}{spec.Key[1..]}", VenueZoneSize);
+        }
+
+        _ents.AddChild(zone);
+        _zones[spec.Key] = zone;
+
         if (spec.ClickKey is { } clickKey)
         {
             var area = new Area2D { Name = $"ClickZone_{spec.Key}" };
@@ -412,7 +588,10 @@ public partial class LitTownOverlay : SubViewportContainer
             {
                 if (@event is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true })
                 {
-                    BuildingClicked?.Invoke(clickKey);
+                    // KTD12: no more instant open — walk to the door first, BuildingClicked fires
+                    // only once PlayerAvatar.PathCompleted confirms arrival (OnAvatarPathCompleted).
+                    _avatar.RequestMoveTo(doorPosition);
+                    _pendingOpenKey = clickKey;
                 }
             };
             wrapper.AddChild(area);

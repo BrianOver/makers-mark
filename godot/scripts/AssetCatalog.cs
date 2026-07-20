@@ -67,6 +67,17 @@ public static class AssetCatalog
     /// <summary>Lit class figure for a hero, neutral-tinted (caller applies <c>Modulate</c>).</summary>
     public static CanvasTexture? HeroPortrait(string classId) => IconRegistry.Lit(HeroPortraitId(classId));
 
+    /// <summary>Id of the player-blacksmith avatar figure (<c>art/specs/town/TownSpecsExtra.cs</c>,
+    /// U13/U20) — a single fixed id, not composed from any parameter, since there is exactly one
+    /// avatar. Public so <see cref="GodotClient.Town.PlayerAvatar"/> and tests can reference the
+    /// exact string without duplicating the literal.</summary>
+    public const string PlayerAvatarId = "player-avatar";
+
+    /// <summary>Lit avatar figure, or null while the art hasn't landed yet — <see
+    /// cref="GodotClient.Town.PlayerAvatar"/> falls back to a tinted placeholder rect (U20 scope
+    /// note: no image exists yet, per <c>TownSpecsExtra</c>).</summary>
+    public static CanvasTexture? PlayerAvatar() => IconRegistry.Lit(PlayerAvatarId);
+
     // ---- world-rework U14 (KTD6): feet-anchor offset table ------------------------------------
 
     /// <summary>

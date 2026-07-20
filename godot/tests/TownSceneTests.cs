@@ -365,7 +365,7 @@ public class TownSceneTests
     }
 
     [TestCase]
-    public void ClickBuildingMarkers_SelectMatchingPanels()
+    public void ClickBuildingMarkers_IssueAWalk_NeverAnInstantOpen()
     {
         // U14 KTD1: the old invisible Control hit-rects (Building_Forge/Building_Shop/
         // Building_Tavern Controls, blinded since U3) are DELETED outright — no Building_*
@@ -373,6 +373,12 @@ public class TownSceneTests
         // LitTownOverlay's Area2D click zones, driven here via the G1 fallback (TryClickArea) —
         // headless Area2D physics picking does not fire under gdUnit4Net (BOARD verdict), so
         // production picking is verified only by the manual-smoke recipe, never CI.
+        //
+        // U20 KTD12 re-pin: a building click no longer opens its panel instantly — it only issues
+        // a click-to-move to the door; the panel opens once the avatar actually arrives (proven
+        // end-to-end, with real physics frames, by PlayerAvatarTests.ClickingForgeDoor_
+        // WalksThenOpens_NeverInstantly). This test stays at the "click issued a walk, nothing
+        // opened yet" boundary for all three panel-routed buildings, cheaply (no frame-pumping).
         var ui = MountMainUi();
         try
         {
@@ -380,18 +386,24 @@ public class TownSceneTests
             AssertThat(ui.Town.FindChild("Building_Shop", true, false)).IsNull();
             AssertThat(ui.Town.FindChild("Building_Tavern", true, false)).IsNull();
 
+            var startTab = ui.Tabs.CurrentTab;
+            var avatar = ui.Town.Avatar!;
+
             AssertThat(TryClickArea(Find<Area2D>(ui.Town, "ClickZone_forge"), ClickPointFor("forge"))).IsTrue();
-            AssertThat(ui.Tabs.CurrentTab).IsEqual(ui.Tabs.GetTabIdxFromControl(ui.Forge));
+            AssertThat(ui.Tabs.CurrentTab).IsEqual(startTab); // KTD12: no instant open
+            AssertThat(avatar.IsFollowingPath).IsTrue();
 
             AssertThat(TryClickArea(Find<Area2D>(ui.Town, "ClickZone_market"), ClickPointFor("market"))).IsTrue();
-            AssertThat(ui.Tabs.CurrentTab).IsEqual(ui.Tabs.GetTabIdxFromControl(ui.Shop));
+            AssertThat(ui.Tabs.CurrentTab).IsEqual(startTab);
+            AssertThat(avatar.IsFollowingPath).IsTrue(); // the market click replaced the forge path
 
             AssertThat(TryClickArea(Find<Area2D>(ui.Town, "ClickZone_tavern"), ClickPointFor("tavern"))).IsTrue();
-            AssertThat(ui.Tabs.CurrentTab).IsEqual(ui.Tabs.GetTabIdxFromControl(ui.Tavern));
+            AssertThat(ui.Tabs.CurrentTab).IsEqual(startTab);
+            AssertThat(avatar.IsFollowingPath).IsTrue();
 
             // The mine gate never routes a click — parity with the pre-U14 gate, which was never
-            // clickable either (KTD1 item 6 note: U20 is where a walk-then-open gate affordance
-            // would land, not U14).
+            // clickable either (U20 gives it its own proximity InteractionZone, but still no
+            // click-zone Area2D and no BuildingClicked routing).
             AssertThat(ui.Town.FindChild("ClickZone_minegate", true, false)).IsNull();
         }
         finally
