@@ -1,6 +1,7 @@
 #if GDUNIT_TESTS
 using System;
 using System.Collections.Immutable;
+using System.Linq;
 using GameSim.Contracts;
 using GameSim.Kernel;
 using GdUnit4;
@@ -205,6 +206,58 @@ public class MineWatchTests
         {
             watch.Free();
         }
+    }
+
+    [TestCase(1024f, 2)]
+    [TestCase(1900f, 3)]
+    [TestCase(2560f, 4)]
+    public void Backdrop_TileCountMatchesFormula_AndCoversFullWidthThroughScrollCycle(float containerWidth, int expectedTiles)
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            watch.Size = new Vector2(containerWidth, 260f);
+            watch._Process(0.0); // no signal wired (repo convention) — width picked up by polling
+
+            AssertThat(watch.BackdropTileCount).IsEqual(expectedTiles);
+            AssertThat((int)Mathf.Ceil(containerWidth / MineWatch.BackdropTileWidth) + 1).IsEqual(expectedTiles);
+
+            // Full-width coverage at many offsets across a full scroll cycle (period = tileCount *
+            // tileWidth / speed) — the defect this guards: a fixed 2-tile strip left a growing
+            // right-edge gap on wide windows for most of each cycle.
+            const int Samples = 40;
+            for (var s = 0; s < Samples; s++)
+            {
+                watch._Process(0.37); // odd, non-period-aligned step — exercises every phase of the cycle
+                AssertCoversFullWidth(watch, containerWidth);
+            }
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    private static void AssertCoversFullWidth(MineWatch watch, float containerWidth)
+    {
+        var spans = watch.BackdropTileX
+            .Select(x => (Start: x, End: x + MineWatch.BackdropTileWidth))
+            .OrderBy(span => span.Start)
+            .ToList();
+
+        var covered = 0f;
+        foreach (var span in spans)
+        {
+            var start = Mathf.Max(span.Start, covered);
+            var end = Mathf.Min(span.End, containerWidth);
+            if (end > start)
+            {
+                covered = Mathf.Max(covered, end);
+            }
+        }
+
+        AssertThat(covered).IsGreaterEqual(containerWidth);
     }
 
     // ── fixtures ──────────────────────────────────────────────────────────────────────────────
