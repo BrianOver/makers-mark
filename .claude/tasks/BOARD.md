@@ -69,3 +69,12 @@ in the shared root already caused one cross-session commit collision (rode into 
 - **Gates:** G1 = U8 Area2D harness verdict posts here before U14 merges. U9 gated on contracts PR (PartiesFormed) merge. U12 boot flip gated on U11 green.
 - **HUD layout (KTD13, binding):** top bar = chips left / day-timeline center / Advance-Auto right; objective tracker top-right; ticker bottom edge; PiP bottom-right (expedition phases only).
 - **World scale:** U14 publishes `docs/design/world-scale.md` BEFORE Wave 3 opens.
+
+**2026-07-20: WORLD REWORK WAVE COMPLETE.** U1–U24, U26 merged across Waves 0–5; **U25 (cleanup &
+docs reconcile) closes the program.** Seam freezes above are now historical (`TownScene.cs`/
+`LitTownOverlay.cs` and `MainUi.cs` are no longer under single-owner freeze — normal per-file
+ownership rules resume). U25 deleted the `lit_tavern_pilot.tscn`/`LitTavernPilot.cs` orphans,
+folded in 3 deferred follow-ups (PiP/MineWatch pause-sync, general ground click-to-move, ShopPanel
+banner-strip retirement — see its PR), and reconciled `docs/design/graphics-2.5d-direction.md` +
+plan `2026-07-17-003` (V4b/V5b marked done) + `HANDOFF.md`. Next session: no open gates on this
+wave; pick up from `HANDOFF.md`'s to-do list.

@@ -86,3 +86,16 @@ in-engine via P3's `ClassDefinition.ColorRgb`, so add-on classes get a lit, tint
 3. Stand up the Krita AI + Laigter pipeline; I author the style spec; generate richer art only where
    lit-flat-art falls short.
 4. Reserve billboard-3D / pre-rendered-3D for a later, separately-scoped wow pass — not this one.
+
+## Addendum (2026-07-20, U25 cleanup): the deferred "wow pass" is EXECUTED
+
+Step 4's "later, separately-scoped wow pass" — the Y-sort, input-bearing, moveable painted world
+plus an embodied avatar walking through it — is no longer deferred. It shipped as
+`docs/plans/2026-07-19-002-feat-world-rework-plan.md` (the "World Rework" program): `LitTownOverlay`
+was promoted to be THE town (input-forwarding `SubViewport`, `YSortEnabled`, feet-anchored actors,
+real camera — U14), the SVG scaffold it used to sit behind was deleted, and `PlayerAvatar` (WASD +
+click-to-move, U20) walks it, collides with building bases, and enters staged interiors (U22). This
+plan's own pilot (`lit_tavern_pilot.tscn`/`LitTavernPilot.cs`) and plan 2026-07-17-003's deferred
+V4b migration are both retired/closed as part of the same U25 cleanup that adds this note — see
+that plan doc's own status addendum for the full mapping from this doc's steps to the units that
+executed them.

@@ -79,6 +79,12 @@ public partial class MineWatch : SubViewportContainer
     /// recomputed from the container's live width every time it changes (see <see cref="_Process"/>).</summary>
     public const float BackdropTileWidth = 1024f;
 
+    /// <summary>U25 follow-up (a): wired by <see cref="DepthsPanel"/> so the feed pauses with the
+    /// clock (paused ≠ engaged — an engaged surface keeps the feed flowing per KTD3). Null in every
+    /// test that never wires a <see cref="PhaseClock"/> — treated as "always playing" (the
+    /// pre-U25 behavior), never a crash.</summary>
+    public PhaseClock? Clock { get; set; }
+
     private static readonly Color AmbientTint = new(0.30f, 0.33f, 0.52f); // dark-cool — contrast for the warm torch/fire
     private static readonly Color TorchColor = new(1f, 0.72f, 0.42f);
     private static readonly Color CampfireColor = new(1f, 0.55f, 0.24f);
@@ -360,10 +366,9 @@ public partial class MineWatch : SubViewportContainer
         }
 
         // U16 (KTD11): accumulated-delta only, no engine Tween, no RNG — same contract as every
-        // other animator in this file. Pause wiring (feed pauses with the clock, paused ≠ engaged)
-        // is a documented follow-up for whoever wires PhaseClock.Playing through DepthsPanel; the
-        // feed always flows here, which is a strict superset of correct (never stuck, never leaks).
-        _feed.Advance(delta, paused: false);
+        // other animator in this file. U25 (a): feed pauses with the clock (paused ≠ engaged — an
+        // engaged surface keeps the feed flowing per KTD3), wired via Clock/DepthsPanel.
+        _feed.Advance(delta, paused: Clock is not null && !Clock.Playing);
         UpdateFeedLabel();
     }
 

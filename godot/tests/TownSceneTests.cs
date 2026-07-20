@@ -486,6 +486,51 @@ public class TownSceneTests
     }
 
     [TestCase]
+    public void ClickEmptyGround_WalksAvatarThere_WithoutDoubleFiringABuildingClick()
+    {
+        // U25 follow-up (b) — U20's deferred general click-to-move: a click on open ground (no
+        // building underneath) now issues a walk there. The double-fire risk U20 deferred this
+        // feature over: a click that DOES land on a building's own click-zone must never ALSO
+        // issue a competing ground-move — only that building's own ClickZone_* Area2D path fires
+        // for it (proven separately by ClickBuildingMarkers_IssueAWalk_NeverAnInstantOpen).
+        var ui = MountMainUi();
+        try
+        {
+            var overlay = ui.Town.LitOverlay!;
+            var avatar = ui.Town.Avatar!;
+
+            // Empty ground: well clear of every building's click-zone rectangle — deep in the
+            // walkable band, south of the door-approach line no building's zone reaches.
+            var groundPoint = new Vector2(800f, LitTownOverlay.GroundLine + 150f);
+            var groundScreenPos = overlay.Viewport.CanvasTransform * groundPoint;
+            overlay.EmitSignal(
+                Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = groundScreenPos });
+
+            AssertThat(avatar.IsFollowingPath).IsTrue();
+            AssertThat(avatar.PathTarget).IsEqual(groundPoint);
+
+            avatar.CancelPath();
+            AssertThat(avatar.IsFollowingPath).IsFalse();
+
+            // Squarely inside the forge's own click-zone rectangle (ClickPointFor — the same
+            // point ClickBuildingMarkers_IssueAWalk_NeverAnInstantOpen drives via TryClickArea):
+            // the ground-click handler must back off, issuing nothing.
+            var buildingPoint = ClickPointFor("forge");
+            var buildingScreenPos = overlay.Viewport.CanvasTransform * buildingPoint;
+            overlay.EmitSignal(
+                Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = buildingScreenPos });
+
+            AssertThat(avatar.IsFollowingPath).IsFalse(); // no ground-move competed with the building's own path
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void OnPhaseCompleted_UnknownPhase_LeavesSpritesUntouched()
     {
         // V5a gate (G2): once the 5-phase kernel (staged-plan U2) fires Camp/ExpeditionDeep

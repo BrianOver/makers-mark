@@ -67,7 +67,14 @@ public partial class ScryingMirror : SimPanel
             return;
         }
 
-        _feed.Advance(delta, paused: false); // pause wiring: see MineWatch's matching remark
+        // U25 (a) — investigated, deliberately NOT wired to PhaseClock.Playing (unlike MineWatch/
+        // PipDock's matching follow-up): ShowMirror() unconditionally forces Clock.Pause() while
+        // open (see OnMirrorVisibilityChanged), so gating this feed on Playing would freeze it the
+        // instant it opens — the opposite of "watch the recorded stream while the day waits for
+        // you" (pinned by ScryingMirrorTests.MultiParty_TabSwitch_ShowsTheSecondPartysOwnBeats,
+        // which forces a reveal via _Process right after ShowMirror()). Always flowing while open
+        // is correct here.
+        _feed.Advance(delta, paused: false);
         Render();
     }
 

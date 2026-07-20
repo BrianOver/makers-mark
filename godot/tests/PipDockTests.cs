@@ -55,6 +55,32 @@ public class PipDockTests
     }
 
     [TestCase]
+    public void Clock_Paused_FeedHoldsStill_Played_ItAdvances()
+    {
+        // U25 follow-up (a): the PiP feed pauses with the clock (paused != engaged — an engaged
+        // surface, e.g. a drawer open over the world, keeps the feed flowing per KTD3; PipDock's
+        // own visibility never forces a pause the way ScryingMirror's does, so gating on
+        // PhaseClock.Playing here is safe — see ScryingMirror.cs for why that surface differs).
+        var ui = MountMainUi();
+        try
+        {
+            AdvanceToPhase(ui, DayPhase.Camp);
+            ui.Clock.Pause();
+
+            ui.Pip._Process(100.0); // would force a full reveal if the feed were still advancing
+            AssertThat(ui.Pip.CurrentBeats.IsEmpty).IsTrue();
+
+            ui.Clock.Play();
+            ui.Pip._Process(100.0);
+            AssertThat(ui.Pip.CurrentBeats.IsEmpty).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void ExpandButton_OpensTheScryingMirror()
     {
         var ui = MountMainUi();

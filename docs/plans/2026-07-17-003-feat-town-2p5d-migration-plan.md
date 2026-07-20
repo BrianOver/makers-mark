@@ -8,6 +8,17 @@ execution: code+assets — VISUALS-lane Claude (V1, V2, V3-gen, V4a, V4b, V5a, V
 related: docs/plans/2026-07-17-002-feat-staged-resolution-plan.md (U2 gate on V5a; V5b after U3), docs/design/lane-operating-model.md (charters, gates), docs/design/art-pipeline-architecture.md, docs/design/asset-style-spec.md
 ---
 
+> **STATUS (2026-07-20, U25 cleanup): V4b/V5b's deferred town-wide migration is now DONE** —
+> executed on Godot 4.6.3 (the 4.7.1 gate below was moot: 4.6.3 supports Y-sort/`CharacterBody2D`/
+> `Area2D`/`TileMapLayer` in full) by `docs/plans/2026-07-19-002-feat-world-rework-plan.md`'s U3
+> (de-collage triage) + U14 (TownWorld promotion — the Y-sort unification this plan's V4b
+> describes). `lit_tavern_pilot.tscn`/`LitTavernPilot.cs` (the pilot this plan was built to
+> generalize) are deleted as part of that same cleanup (U25) — their job is done; every building
+> now ships the promoted, input-bearing, Y-sorted world directly. This plan's Phase 1 (art/cutout
+> pipeline) and pre-V4b groundwork remain historically accurate; V4b/V5b's own sections describe
+> the approach later executed under the 2026-07-19-002 plan's own KTD1/KTD6/U3/U14, not verbatim
+> (that plan is the current source of truth for the town scene's actual shape).
+
 ## Goal Capsule
 
 Take the approved lit-2D pilot (`godot/scenes/town/lit_tavern_pilot.tscn` + `LitTavernPilot.cs`: `CanvasTexture` diffuse+normal `Sprite2D` + `PointLight2D` + `CanvasModulate`) town-wide: complete the four-building asset set through the proven ComfyUI→cutout→normal-map pipeline, migrate `TownScene` from `Control`/`TextureRect` widgets to a lit `Node2D` world inside a `SubViewport`, give heroes neutral-base generated figures tinted by `ClassDefinition.ColorRgb`, and drive the ambient tint from the real `DayPhase` — including the 5-phase day when staged resolution lands. Every unit lands green on the existing CI gates. **Role note:** the VISUALS lane **is** the master art-Claude of `art-pipeline-architecture.md` §2 — sole writer of pixels, `.import` sidecars, and build-half JSON; that role grant authorizes the `godot/assets/art/**` writes below.
