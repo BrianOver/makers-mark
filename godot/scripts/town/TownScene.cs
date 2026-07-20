@@ -62,6 +62,7 @@ public partial class TownScene : SimPanel
 
     private Control? _heroLayer;
     private Control? _memorialPlot;
+    private Label? _memorialHeader;
     private LitTownOverlay? _litOverlay;
     private bool _built;
     private double _townTime;
@@ -92,9 +93,11 @@ public partial class TownScene : SimPanel
     /// by design — a fully-absent asset set leaves it built-but-empty, never removed.</summary>
     public LitTownOverlay? LitOverlay => _litOverlay;
 
-    /// <summary>Current ambient MULTIPLY-tint — the phase color applied to the whole town
-    /// subtree via <see cref="CanvasItem.Modulate"/>. Neutral white before the first build.</summary>
-    public Color CurrentTint => Modulate;
+    /// <summary>Current ambient MULTIPLY-tint (U3: <see cref="LitTownOverlay"/>'s CanvasModulate —
+    /// <see cref="LitTownOverlay.AtmosphereTintFor"/> — is the SOLE tint authority; this town
+    /// root's own <see cref="CanvasItem.Modulate"/> stays pinned <see cref="Colors.White"/> so the
+    /// subtree is multiplied exactly once, never twice). Neutral white before the overlay exists.</summary>
+    public Color CurrentTint => _litOverlay?.Ambient.Color ?? Colors.White;
 
     public override void _Ready() => EnsureBuilt();
 
@@ -118,12 +121,16 @@ public partial class TownScene : SimPanel
         // LW1: crossfade the ambient tint over TintTweenSeconds instead of the old instant
         // snap. Frame-accumulated (never wall-clock), so it fast-forwards exactly like the
         // sprite walks below — Refresh() arms a new (from, target) pair every phase completion.
-        if (_tintElapsed < TintTweenSeconds)
+        // U3: re-pointed at LitTownOverlay's CanvasModulate (the sole tint authority) instead of
+        // this Control's own Modulate, which now stays pinned white (kills the double-tint).
+        if (_tintElapsed < TintTweenSeconds && _litOverlay is not null)
         {
             _tintElapsed = Mathf.Min(_tintElapsed + (float)delta, TintTweenSeconds);
-            // Snap bit-exact to the target on settle (never leave the compare-by-value tests —
-            // and TintFor callers generally — at a Lerp-rounding hair off the pinned table).
-            Modulate = _tintElapsed >= TintTweenSeconds ? _tintTarget : _tintFrom.Lerp(_tintTarget, _tintElapsed / TintTweenSeconds);
+            // Snap bit-exact to the target on settle (never leave the compare-by-value tests
+            // at a Lerp-rounding hair off the pinned table).
+            _litOverlay.Ambient.Color = _tintElapsed >= TintTweenSeconds
+                ? _tintTarget
+                : _tintFrom.Lerp(_tintTarget, _tintElapsed / TintTweenSeconds);
         }
 
         foreach (var sprite in _sprites.Values)
@@ -199,11 +206,14 @@ public partial class TownScene : SimPanel
         }
 
         // LW1: arm a crossfade from whatever is currently on-screen (possibly still mid-tween
-        // from the previous tick) toward the new phase's tint, instead of snapping Modulate.
-        _tintFrom = Modulate;
-        _tintTarget = TintFor(state.Phase);
+        // from the previous tick) toward the new phase's tint. U3: the target lives on
+        // LitTownOverlay's own CanvasModulate now (the sole tint authority) — this Control's
+        // Modulate stays pinned white, so Animate() writes the lerp straight into the overlay.
+        _tintFrom = CurrentTint;
+        _tintTarget = LitTownOverlay.AtmosphereTintFor(state.Phase);
         _tintElapsed = 0f;
-        // The lit backdrop tracks the same phase tint on its SubViewport-scoped CanvasModulate.
+        // Fx (window glow / particles / fog) is still phase-driven directly — only the ambient
+        // CanvasModulate color itself is now owned by the Animate() crossfade above.
         _litOverlay?.ApplyPhase(state.Phase);
     }
 
@@ -480,6 +490,10 @@ public partial class TownScene : SimPanel
 
     private void RebuildMemorials(GameState state)
     {
+        // U3: the MEMORIALS header only renders while there is something to show — an empty
+        // plot at day 1 no longer leaves a floating label with nothing under it.
+        _memorialHeader!.Visible = !state.Drama.Memorials.IsEmpty;
+
         Clear(_memorialPlot!);
         var index = 0;
         foreach (var memorial in state.Drama.Memorials)
@@ -517,22 +531,6 @@ public partial class TownScene : SimPanel
         MemorialStoneCount = index;
     }
 
-    /// <summary>
-    /// Ambient MULTIPLY-tint per phase (the approved LitTavernPilot table). Opaque multipliers
-    /// applied to the town subtree via Modulate — NOT alpha overlays: Morning warms, Expedition
-    /// is neutral white, Camp/ExpeditionDeep cool toward the deep-dungeon blue, Evening is the
-    /// darkest. Unknown/future phases read neutral (never darken a phase we don't own).
-    /// </summary>
-    public static Color TintFor(DayPhase phase) => phase switch
-    {
-        DayPhase.Morning => new Color(1.00f, 0.92f, 0.78f),
-        DayPhase.Expedition => new Color(1.00f, 1.00f, 1.00f),
-        DayPhase.Camp => new Color(0.85f, 0.80f, 0.95f),
-        DayPhase.ExpeditionDeep => new Color(0.60f, 0.60f, 0.85f),
-        DayPhase.Evening => new Color(0.45f, 0.45f, 0.70f),
-        _ => new Color(1.00f, 1.00f, 1.00f),
-    };
-
     /// <summary>Deterministic home spot per hero id — spread across the town square.</summary>
     private static Vector2 HomeFor(int heroValue) => new(
         380 + heroValue * 67 % 320,
@@ -550,14 +548,12 @@ public partial class TownScene : SimPanel
 
         SetAnchorsPreset(LayoutPreset.FullRect);
 
-        // Phase ambience is a MULTIPLY tint on the town root's Modulate — the .tscn-free
-        // equivalent of the pilot's CanvasModulate. A CanvasModulate tints its whole canvas,
-        // so it would need its own CanvasLayer/SubViewport to avoid dimming the entire
-        // TabContainer (that scene surgery is V4b, out of this slice); Modulate on this Control
-        // multiplies only the town subtree and stops at the panel boundary. It replaces V5a's
-        // alpha-overlay ColorRect. Set here so the town reads warm before the first Refresh;
-        // every tick arms a crossfade toward TintFor(state.Phase) (LW1), consumed by Animate.
-        Modulate = TintFor(DayPhase.Morning);
+        // U3 de-collage: phase ambience used to be a MULTIPLY tint on this Control's own
+        // Modulate, applied ON TOP of LitTownOverlay's own SubViewport-scoped CanvasModulate —
+        // double-multiplying the same phase color. LitTownOverlay.Ambient is now the SOLE tint
+        // authority (it starts warm on its own in LitTownOverlay.Build()); this root Modulate
+        // stays pinned neutral white forever so the subtree is multiplied exactly once.
+        Modulate = Colors.White;
 
         // U16: tileable cobble ground (void/iron) behind everything.
         var ground = new TextureRect
@@ -596,6 +592,12 @@ public partial class TownScene : SimPanel
         _built = true;
     }
 
+    /// <summary>
+    /// U3 de-collage: the old SVG wireframe (TextureRect + "GATE" Label) is gone — the
+    /// LitTownOverlay's "minegate" facade is the only visible gate now. This Control survives as
+    /// bare hit-rect geometry only (no click routing on the gate today; kept for shape parity /
+    /// future use rather than deleted outright).
+    /// </summary>
     private void BuildGate()
     {
         var gate = new Control
@@ -605,24 +607,15 @@ public partial class TownScene : SimPanel
             Size = GateSize,
             MouseFilter = MouseFilterEnum.Ignore,
         };
-        gate.AddChild(new TextureRect
-        {
-            Texture = IconRegistry.Building("mine_gate"),
-            Size = GateSize,
-            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-            MouseFilter = MouseFilterEnum.Ignore,
-        });
-        var label = new Label
-        {
-            Text = "GATE",
-            Position = new Vector2(-6, GateSize.Y + 4),
-            MouseFilter = MouseFilterEnum.Ignore,
-        };
-        label.AddThemeFontSizeOverride("font_size", 11);
-        gate.AddChild(label);
         AddChild(gate);
     }
 
+    /// <summary>
+    /// U3 de-collage: the old SVG wireframe (TextureRect + upper-case Label) is gone — the
+    /// LitTownOverlay's facade is the only visible building now. This stays an INVISIBLE click
+    /// target: same Position/Size/MouseFilter.Stop and the same GuiInput→BuildingClicked routing,
+    /// just with zero rendered children, so every UiTestSupport.Click assertion stays green.
+    /// </summary>
     private void BuildBuilding(string key, Vector2 position)
     {
         var building = new Control
@@ -639,38 +632,22 @@ public partial class TownScene : SimPanel
                 BuildingClicked?.Invoke(key);
             }
         };
-        building.AddChild(new TextureRect
-        {
-            Texture = IconRegistry.Building(key.ToLowerInvariant()),
-            Size = BuildingSize,
-            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-            MouseFilter = MouseFilterEnum.Ignore,
-        });
-        var label = new Label
-        {
-            Text = key.ToUpperInvariant(),
-            Position = new Vector2(0, BuildingSize.Y / 2 - 10),
-            CustomMinimumSize = new Vector2(BuildingSize.X, 0),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            MouseFilter = MouseFilterEnum.Ignore,
-        };
-        label.AddThemeFontSizeOverride("font_size", 12);
-        building.AddChild(label);
         AddChild(building);
     }
 
     private void BuildMemorialPlot()
     {
-        var header = new Label
+        _memorialHeader = new Label
         {
             Name = "MemorialHeader",
             Text = "MEMORIALS",
             Position = MemorialPlotOrigin - new Vector2(0, 22),
             MouseFilter = MouseFilterEnum.Ignore,
+            Visible = false, // U3: nothing to head up yet — RebuildMemorials flips this on a death
         };
-        header.AddThemeFontSizeOverride("font_size", 12);
-        header.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.72f));
-        AddChild(header);
+        _memorialHeader.AddThemeFontSizeOverride("font_size", 12);
+        _memorialHeader.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.72f));
+        AddChild(_memorialHeader);
 
         _memorialPlot = new Control
         {
