@@ -68,6 +68,7 @@ public partial class MainUi : Control
     public LedgerModal Ledger { get; private set; } = null!;
     public CampPanel Camp { get; private set; } = null!;
     public TabFade TabFade { get; private set; } = null!;
+    public AdventureTicker Ticker { get; private set; } = null!;
 
     /// <summary>The most recent day whose Evening completed — what the Ledger button reopens.</summary>
     public int LastCompletedDay { get; private set; }
@@ -186,6 +187,9 @@ public partial class MainUi : Control
 
         // LW6: tick the tab-switch fade veil (no-op unless a dip is in flight).
         TabFade.Tick(delta);
+
+        // U17: tick the bottom-edge adventure ticker marquee (no-op with no lines yet).
+        Ticker.Tick(delta);
     }
 
     private void OnPhaseCompleted(DayPhase completedPhase, int completedDay)
@@ -219,6 +223,11 @@ public partial class MainUi : Control
         Town.OnPhaseCompleted(completedPhase);
         Shop.OnPhaseCompleted(completedPhase); // LW3: stage the day's shop customers/coin flourish
         SyncCampModal(); // V7a: raise the winch-house slate the moment a party parks at Camp
+
+        // U17: feed this tick's freshly stamped events to the bottom-edge adventure ticker.
+        // EventLog only (Adapter.LastEvents) — never PendingExpeditions — is what keeps it
+        // KTD5-safe by construction (see AdventureTicker's class doc).
+        Ticker.OnPhaseCompleted(completedPhase, completedDay, state, Adapter.LastEvents);
 
         if (completedPhase == DayPhase.Evening)
         {
@@ -530,6 +539,13 @@ public partial class MainUi : Control
         Tavern = InstantiatePanel<TavernPanel>("res://scenes/panels/tavern_panel.tscn");
         Depths = InstantiatePanel<DepthsPanel>("res://scenes/panels/depths_panel.tscn");
         Bounties = InstantiatePanel<BountyPanel>("res://scenes/panels/bounty_panel.tscn");
+
+        // U17 (KTD13): the single bottom-edge HUD line — mounted last in the layout so it sits
+        // below the tab shell, the one region KTD13 reserves for it (PiP docks above it; top bar
+        // and the top-right objective chip are untouched by this unit).
+        Ticker = new AdventureTicker();
+        layout.AddChild(Ticker);
+        Ticker.Build();
 
         // LW6: tab-switch fade — a purely additive CanvasLayer-100 veil, never touches the
         // TabContainer itself. TabChanged (not TabSelected) so a programmatic jump (hero/building
