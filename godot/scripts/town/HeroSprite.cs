@@ -38,10 +38,15 @@ public partial class HeroSprite : Control
     /// toward the gate (LW1 rally-and-depart).</summary>
     public const float RallyDwellSeconds = 1.0f;
 
-    private const float SpriteWidth = 30f;
-    private const float SpriteHeight = 42f;
-    private const float SpriteRise = 14f;   // the figure rises above the control's top so it reads as standing
-    private const float FootingWidth = 18f; // role-color base bar under the feet
+    // U14 world-scale doc: standing figure height ≈96px (the published headline number), width
+    // keeping the pre-U14 aspect ratio (30:42 ≈ 0.714 → 68:96). SpriteRise/FeetY scale with it
+    // (same 1/3-of-height rise ratio as before) so the figure still reads as standing on this
+    // Control's own origin — which stays the ground-contact/feet point (unchanged feet-anchor
+    // contract; U14 only re-anchors the BUILDINGS, heroes were already anchored this way).
+    private const float SpriteWidth = 68f;
+    private const float SpriteHeight = 96f;
+    private const float SpriteRise = 32f;   // the figure rises above the control's top so it reads as standing
+    private const float FootingWidth = 26f; // role-color base bar under the feet
     private const float FeetY = SpriteHeight - SpriteRise;
     private const float WanderAmplitudeX = 14f;
     private const float WanderAmplitudeY = 10f;
@@ -60,12 +65,15 @@ public partial class HeroSprite : Control
     private const float AnchorPauseSeconds = 3f; // how long the pause at the anchor lasts
 
     /// <summary>Landmark anchor points a wandering hero occasionally pauses at (well /
-    /// noticeboard near the gate / tavern door) — presentation-only town-square dressing.</summary>
+    /// noticeboard near the gate / tavern door) — presentation-only town-square dressing.
+    /// U14: repositioned onto the world-scale doc's wander band and building layout (well near
+    /// the forge end of the street, noticeboard by the re-spaced minegate, tavern door at the
+    /// re-spaced tavern's ground line).</summary>
     public static readonly Vector2[] AnchorPoints =
     [
-        new(200, 320), // town well
-        new(850, 260), // noticeboard near the gate
-        new(748, 175), // tavern door
+        new(500, 560),  // town well
+        new(1380, 500), // noticeboard near the gate
+        new(1100, 560), // tavern door
     ];
 
     private Vector2 _gate;
@@ -146,7 +154,7 @@ public partial class HeroSprite : Control
         Position = home;
         _logicalPosition = home;
         _lastBaseX = home.X;
-        Size = new Vector2(64, 34);
+        Size = new Vector2(SpriteWidth + 22f, FeetY); // click hitbox, scaled up with the U14 figure
         MouseFilter = MouseFilterEnum.Stop;
 
         // Deterministic per-hero drift parameters — id in, motion out, no RNG. Reused as the

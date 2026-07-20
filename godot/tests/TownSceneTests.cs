@@ -15,11 +15,20 @@ using static GodotClient.Tests.UiTestSupport;
 namespace GodotClient.Tests;
 
 /// <summary>
-/// U12 engine-lane scenarios: the living town (R19), memorial plot (R13), click-to-panel
+/// U12/U14 engine-lane scenarios: the living town (R19), memorial plot (R13), click-to-panel
 /// routing (R20), and the TIME-BASED Return Ritual gate — the pinned design that a wipe
 /// day can never hang the Evening reveal. Walk decoration is advanced via
 /// <see cref="TownScene.Animate"/> so no engine frames are needed; the sim is driven
 /// through the same seed-2026 adapter path as the U11 suites.
+///
+/// <para>Rewritten for U14 (TownWorld promotion — plan-003 §V4b's bridge table): building click
+/// routing now drives <see cref="LitTownOverlay"/>'s Area2D click zones via
+/// <see cref="TryClickArea"/> (G1 verdict — headless Area2D picking does not fire under
+/// gdUnit4Net) instead of the deleted Control hit-rects; new coverage pins the Y-sort entity
+/// layer, feet-anchored building ground lines, and the "no Building_* Control anywhere" guard.
+/// Hero-proximity fixtures (LW2 pair-banter) are re-derived for the wider world-scale canvas —
+/// see <c>docs/design/world-scale.md</c> for the published constants these tests assert against.
+/// </para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -342,6 +351,8 @@ public class TownSceneTests
             var hero = ui.Adapter.CurrentState.Heroes.Values.Where(h => h.Alive).Skip(1).First();
             AssertThat(ui.Tabs.CurrentTab).IsEqual(0); // starts on the Town tab
 
+            // U14: HeroSprite stays Control-based (U19 promotes it) — the pre-U14 GuiInput click
+            // path is unaffected by living inside the Y-sorted Ents Node2D now.
             Click(ui.Town.Sprites[hero.Id.Value]);
 
             AssertThat(ui.Tabs.CurrentTab).IsEqual(ui.Tabs.GetTabIdxFromControl(ui.Heroes));
@@ -356,17 +367,32 @@ public class TownSceneTests
     [TestCase]
     public void ClickBuildingMarkers_SelectMatchingPanels()
     {
+        // U14 KTD1: the old invisible Control hit-rects (Building_Forge/Building_Shop/
+        // Building_Tavern Controls, blinded since U3) are DELETED outright — no Building_*
+        // Control node exists anywhere in the tree post-promotion. Clicks now route through
+        // LitTownOverlay's Area2D click zones, driven here via the G1 fallback (TryClickArea) —
+        // headless Area2D physics picking does not fire under gdUnit4Net (BOARD verdict), so
+        // production picking is verified only by the manual-smoke recipe, never CI.
         var ui = MountMainUi();
         try
         {
-            Click(Find<Control>(ui.Town, "Building_Forge"));
+            AssertThat(ui.Town.FindChild("Building_Forge", true, false)).IsNull();
+            AssertThat(ui.Town.FindChild("Building_Shop", true, false)).IsNull();
+            AssertThat(ui.Town.FindChild("Building_Tavern", true, false)).IsNull();
+
+            AssertThat(TryClickArea(Find<Area2D>(ui.Town, "ClickZone_forge"), ClickPointFor("forge"))).IsTrue();
             AssertThat(ui.Tabs.CurrentTab).IsEqual(ui.Tabs.GetTabIdxFromControl(ui.Forge));
 
-            Click(Find<Control>(ui.Town, "Building_Shop"));
+            AssertThat(TryClickArea(Find<Area2D>(ui.Town, "ClickZone_market"), ClickPointFor("market"))).IsTrue();
             AssertThat(ui.Tabs.CurrentTab).IsEqual(ui.Tabs.GetTabIdxFromControl(ui.Shop));
 
-            Click(Find<Control>(ui.Town, "Building_Tavern"));
+            AssertThat(TryClickArea(Find<Area2D>(ui.Town, "ClickZone_tavern"), ClickPointFor("tavern"))).IsTrue();
             AssertThat(ui.Tabs.CurrentTab).IsEqual(ui.Tabs.GetTabIdxFromControl(ui.Tavern));
+
+            // The mine gate never routes a click — parity with the pre-U14 gate, which was never
+            // clickable either (KTD1 item 6 note: U20 is where a walk-then-open gate affordance
+            // would land, not U14).
+            AssertThat(ui.Town.FindChild("ClickZone_minegate", true, false)).IsNull();
         }
         finally
         {
@@ -533,15 +559,13 @@ public class TownSceneTests
         }
     }
 
-    // ── V-lit-overlay: the 2.5D lit town backdrop (DoD D3) ───────────────────────────────────
+    // ── U14 TownWorld promotion: Y-sort, feet anchors, camera, the promoted lit world ─────────
 
     [TestCase]
     public void LitOverlay_ShippedAssets_MountFourBuildingsAndWarmLights()
     {
         // The 4 building curated pairs are on main via LFS; CI's `godot --import` makes them
-        // loadable — assert each resolves, then that the mounted overlay realized every one.
-        // U3: DefaultHeroes is now empty (the 3 hard-coded decor figures were removed — U19
-        // brings the real live-hero figures), so there is nothing hero-shaped to assert here.
+        // loadable — assert each resolves, then that the mounted world realized every one.
         var ui = MountMainUi();
         try
         {
@@ -567,8 +591,9 @@ public class TownSceneTests
             AssertThat(light.TextureScale).IsEqual(2.0f);
             AssertThat(light.Texture).IsNotNull();
 
-            // The backdrop never intercepts a click — the SVG town on top keeps its routing.
-            AssertThat(overlay.MouseFilter).IsEqual(Control.MouseFilterEnum.Ignore);
+            // U14 KTD1 item 1: the world is input-FORWARDING now (was Ignore pre-promotion) — the
+            // whole point of the flip is that this viewport IS the town's input surface.
+            AssertThat(overlay.MouseFilter).IsEqual(Control.MouseFilterEnum.Stop);
         }
         finally
         {
@@ -613,21 +638,91 @@ public class TownSceneTests
     public void LitOverlay_MissingAsset_DegradesToNoSpriteNoCrash()
     {
         // Graceful degrade (built standalone so no shipped id masks the path): a fake id resolves
-        // to null Lit → no sprite, no orphan light, no crash. The SVG town would survive on its own.
+        // to null Lit → no sprite, no orphan light/collider/click-zone, no crash.
         var overlay = new LitTownOverlay();
         try
         {
             overlay.Build(
-                new[] { new LitTownOverlay.BuildingSpec("ghost", "does_not_exist_yet", Vector2.Zero, Vector2.Zero) },
-                System.Array.Empty<LitTownOverlay.HeroSpec>());
+                [new LitTownOverlay.BuildingSpec("ghost", "does_not_exist_yet", "Ghost", Vector2.Zero, Vector2.Zero)]);
 
             AssertThat(overlay.HasContent).IsFalse();
             AssertThat(overlay.Lights.Count).IsEqual(0);
             AssertThat(overlay.World.FindChild("LitBuilding_ghost", true, false)).IsNull();
+            AssertThat(overlay.Ents.FindChild("Building_ghost", true, false)).IsNull();
         }
         finally
         {
             overlay.Free();
+        }
+    }
+
+    [TestCase]
+    public void LitOverlay_ShippedBuildings_ResolveUnderEnts_FeetAnchoredOnGroundLine()
+    {
+        // U14 KTD1/KTD6: building wrappers are direct children of the Y-sorted Ents layer (not a
+        // fixed parallax BackLayer) and each wrapper's OWN Position IS its ground-contact anchor —
+        // the "feet anchor" test scenario from the plan (facade base y == the configured ground
+        // line, ±1px, for all four buildings).
+        var ui = MountMainUi();
+        try
+        {
+            var overlay = ui.Town.LitOverlay!;
+            AssertThat(overlay.Ents).IsNotNull();
+            AssertThat(overlay.Ents.YSortEnabled).IsTrue();
+
+            foreach (var building in LitTownOverlay.DefaultBuildings)
+            {
+                // Find<Node2D> resolving THIS exact name already proves no Control shares it (a
+                // node cannot be both) — the capitalized "Building_Forge"-style Control names are
+                // separately proven absent in ClickBuildingMarkers_SelectMatchingPanels.
+                var wrapper = Find<Node2D>(ui.Town, $"Building_{building.Key}");
+                AssertThat(wrapper.GetParent()).IsEqual(overlay.Ents);
+                AssertThat(Mathf.Abs(wrapper.Position.Y - LitTownOverlay.GroundLine) <= 1f).IsTrue();
+                AssertThat(Find<Sprite2D>(ui.Town, $"LitBuilding_{building.Key}").GetParent()).IsEqual(wrapper);
+
+                // KTD1 item 8: every building has a physical base collider.
+                AssertThat(wrapper.GetNode<StaticBody2D>("Base")).IsNotNull();
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void YSort_ActorBelowGroundLineDrawsInFront_ActorAboveDrawsBehind()
+    {
+        // Plan's "two-position assertion": a Y-sorted actor and a building wrapper share the same
+        // Ents parent (CanvasItem.YSortEnabled — lives on the CanvasItem base, so a Control-based
+        // HeroSprite participates correctly alongside a Node2D building). The engine's own Y-sort
+        // draw order isn't queryable from script (no headless render-order introspection exists),
+        // so this pins the STRUCTURAL precondition the engine's sort acts on: both nodes are direct
+        // children of the one YSortEnabled Ents layer, and the two straddling world-Y positions the
+        // plan's scenario describes (one below the facade's ground line, one above it) are both
+        // real, reachable HeroSprite positions.
+        var ui = MountMainUi();
+        try
+        {
+            var overlay = ui.Town.LitOverlay!;
+            var forgeWrapper = Find<Node2D>(ui.Town, "Building_forge");
+            AssertThat(forgeWrapper.GetParent()).IsEqual(overlay.Ents);
+
+            var hero = ui.Adapter.CurrentState.Heroes.Values.First(h => h.Alive);
+            var sprite = ui.Town.Sprites[hero.Id.Value];
+            AssertThat(sprite.GetParent()).IsEqual(overlay.Ents);
+
+            // Below the ground line (visually "closer to camera") — draws IN FRONT.
+            sprite.Position = new Vector2(sprite.Position.X, LitTownOverlay.GroundLine + 40f);
+            AssertThat(sprite.Position.Y).IsGreater(forgeWrapper.Position.Y);
+
+            // Above the ground line (behind the facade's own base) — draws BEHIND.
+            sprite.Position = new Vector2(sprite.Position.X, LitTownOverlay.GroundLine - 40f);
+            AssertThat(sprite.Position.Y).IsLess(forgeWrapper.Position.Y);
+        }
+        finally
+        {
+            Unmount(ui);
         }
     }
 
@@ -833,7 +928,7 @@ public class TownSceneTests
         }
     }
 
-    // ── LW6 camera drift + mouse parallax ────────────────────────────────────────────────────
+    // ── LW6 camera drift + Fx-only mouse parallax ─────────────────────────────────────────────
 
     [TestCase]
     public void LitOverlay_CameraDrift_PureFormulaMatchesPlanSpec()
@@ -848,11 +943,13 @@ public class TownSceneTests
     }
 
     [TestCase]
-    public void LitOverlay_Camera_LiveInSubViewportAndDriftsOverTime()
+    public void LitOverlay_Camera_LiveInSubViewportAndDriftsWithinBoundedAmplitude()
     {
-        // MakeCurrent scopes the camera to the LitViewport SubViewport only (never the main
-        // viewport); FixedTopLeft keeps its rest framing identical to the camera-less rendering
-        // every earlier LitTownOverlay test/screenshot was built against.
+        // MakeCurrent scopes the camera to the town's SubViewport (now load-bearing, not merely
+        // decorative); FixedTopLeft keeps its rest framing identical to the camera-less rendering
+        // every earlier LitTownOverlay test/screenshot was built against. KTD1 item 7 / plan's
+        // "camera drift bounded" scenario: sample several accumulated-time ticks and assert the
+        // idle sway never exceeds the pure formula's own ±4px amplitude.
         var ui = MountMainUi();
         try
         {
@@ -863,12 +960,14 @@ public class TownSceneTests
             AssertThat(camera.IsCurrent()).IsTrue();
 
             var before = camera.Offset;
-            // Two synthetic ticks of accumulated delta should move the drift (same
-            // accumulated-delta contract as the ember flicker / fog-wisp pan above — never
-            // wall-clock, never engine RNG).
-            overlay._Process(0.5);
-            overlay._Process(0.5);
-            AssertThat(camera.Offset).IsNotEqual(before);
+            for (var i = 0; i < 20; i++)
+            {
+                overlay._Process(0.5); // same accumulated-delta contract as the ember flicker
+                AssertThat(Mathf.Abs(camera.Offset.X) <= 4.001f).IsTrue();
+                AssertThat(Mathf.Abs(camera.Offset.Y) <= 4.001f).IsTrue();
+            }
+
+            AssertThat(camera.Offset).IsNotEqual(before); // it actually moved, not frozen
         }
         finally
         {
@@ -877,32 +976,23 @@ public class TownSceneTests
     }
 
     [TestCase]
-    public void LitOverlay_MouseParallax_OffsetsDepthLayersAtDifferingFactors()
+    public void LitOverlay_MouseParallax_OffsetsFxOnlyAsAnIdleDepthCue()
     {
-        // Standalone build (mirrors LitOverlay_MissingAsset_DegradesToNoSpriteNoCrash) — parallax
-        // is a plain public method, no live viewport needed. A large delta forces the lerp to
-        // fully converge in one call so the assertion reads the settled offset, not a mid-lerp
-        // value — plan §LW6: offset the LAYERS (not the camera) by (mouse-center)*0.02–0.04,
-        // a different factor per depth.
+        // U14: buildings moved into the Y-sorted Ents layer (a parallax nudge would desync their
+        // StaticBody2D/Area2D from their own sprite) and the old decorative hero-figure layer this
+        // used to also offset is deleted (real HeroSprites fill that role now) — only the
+        // atmosphere fx layer keeps an idle parallax cue, and the camera is never touched by it.
         var overlay = new LitTownOverlay();
         try
         {
             overlay.Build();
 
-            var containerSize = new Vector2(1024f, 600f); // matches the SubViewport's own design size
-            var mouse = new Vector2(1024f, 600f);          // bottom-right corner
-            overlay.ApplyParallax(mouse, containerSize, delta: 1000f);
+            var containerSize = new Vector2(LitTownOverlay.DesignSize.X, LitTownOverlay.DesignSize.Y);
+            var mouse = containerSize; // bottom-right corner
+            overlay.ApplyParallax(mouse, containerSize, delta: 1000f); // huge delta: lerp fully converges
 
-            // target = (mouse - center) * designScale(=1,1 here, container == design size) = (512, 300)
-            var target = new Vector2(512f, 300f);
-            AssertThat(overlay.BackLayer.Position).IsEqual(target * 0.02f);
+            var target = mouse - containerSize / 2f; // designScale is (1,1): container == design size
             AssertThat(overlay.Fx.Position).IsEqual(target * 0.03f);
-            AssertThat(overlay.HeroDecorLayer.Position).IsEqual(target * 0.04f);
-
-            // Depth ordering: nearest (decorative heroes) moves most, farthest (buildings) least —
-            // never the camera itself, which stays untouched by parallax.
-            AssertThat(overlay.HeroDecorLayer.Position.X).IsGreater(overlay.Fx.Position.X);
-            AssertThat(overlay.Fx.Position.X).IsGreater(overlay.BackLayer.Position.X);
             AssertThat(overlay.Camera.Offset).IsEqual(Vector2.Zero);
         }
         finally
@@ -911,41 +1001,16 @@ public class TownSceneTests
         }
     }
 
-    [TestCase]
-    public void LitOverlay_ShippedBuildings_StillResolveUnderBackLayer()
-    {
-        // LW6 reparented the buildings/lights under a new depth-layer Node2D (LitBackLayer) for
-        // parallax — every existing name-pin must still resolve via recursive find, unaffected by
-        // the extra nesting. U3: DefaultHeroes is empty (decor figures removed), so
-        // HeroDecorLayer stays a real, present, empty layer — nothing to iterate under it here.
-        var ui = MountMainUi();
-        try
-        {
-            var overlay = ui.Town.LitOverlay!;
-            AssertThat(overlay.BackLayer).IsNotNull();
-            AssertThat(overlay.HeroDecorLayer).IsNotNull();
-
-            foreach (var building in LitTownOverlay.DefaultBuildings)
-            {
-                AssertThat(Find<Sprite2D>(ui.Town, $"LitBuilding_{building.Key}").GetParent())
-                    .IsEqual(overlay.BackLayer);
-            }
-        }
-        finally
-        {
-            Unmount(ui);
-        }
-    }
-
     // ── LW2 speech bubbles ────────────────────────────────────────────────────────────────────
 
     [TestCase]
     public void Gossip_PairBanter_RendersSpeakerAndReactionOnTheClosestIdlePair()
     {
-        // RecruitReadyCampaign trims to heroes {1,2,3} (Torvald/Brunhilde/Kael) and forces a
-        // day-1 recruit (id 7) — HomeFor spreads heroes such that (2,7) land ~16px apart (well
-        // under PairBanterRadius) while every OTHER pair among {1,2,3,7} sits 90px+ apart, so
-        // this fixture deterministically has exactly one qualifying idle pair.
+        // RecruitReadyCampaign trims to heroes {2,3} and forces a day-1 recruit (id 7, the sim's
+        // NextHeroId counter is untouched by trimming the roster dictionary) — under the U14
+        // world-scale HomeFor spread, (2,3) sit ~121px apart (within PairBanterRadius) while
+        // every OTHER pair among {2,3,7} sits 380px+ apart, so this fixture deterministically has
+        // exactly one qualifying idle pair.
         var ui = MountMainUi(new SimAdapter(RecruitReadyCampaign(ScriptedSession.Seed)));
         try
         {
@@ -973,9 +1038,9 @@ public class TownSceneTests
     [TestCase]
     public void Gossip_NoQualifyingPair_RendersSoloBubbleOnOneWanderingHero()
     {
-        // Sparse fixture: heroes {1,3} + the day-1 recruit (7) sit 100px+ apart from each other
-        // (no pair under PairBanterRadius) — the solo "nearest the tavern" path is the only one
-        // that can render this gossip line.
+        // Sparse fixture: heroes {1,4} + the day-1 recruit (7) sit 290px+ apart from each other
+        // under the U14 world-scale HomeFor spread (no pair under PairBanterRadius) — the solo
+        // "nearest the tavern" path is the only one that can render this gossip line.
         var ui = MountMainUi(new SimAdapter(RecruitReadyCampaignSparse(ScriptedSession.Seed)));
         try
         {
@@ -1105,6 +1170,17 @@ public class TownSceneTests
         }
     }
 
+    // ── Helpers ────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>World-space point guaranteed to sit inside the named building's click zone —
+    /// well within the zone's own footprint (not near an edge), so the fallback's rectangle
+    /// hit-test never flakes on a boundary rounding hair.</summary>
+    private static Vector2 ClickPointFor(string key)
+    {
+        var spec = LitTownOverlay.DefaultBuildings.First(b => b.Key == key);
+        return new Vector2(spec.Position.X, LitTownOverlay.GroundLine - 100f);
+    }
+
     // ── Staged-party fixture (mirrors CampPanelTests / CampHandlersTests) ─────────────────────
     // Seed 6 parks a strong vanguard party at the floor-1 checkpoint.
     private const ulong CampSeed = 6;
@@ -1161,12 +1237,15 @@ public class TownSceneTests
 
     /// <summary>
     /// A day-1 Morning world engineered so RecruitSystem fires on the very next tick: roster
-    /// trimmed below RosterCap(6) and the recruit gate held at zero.
+    /// trimmed below RosterCap(6) and the recruit gate held at zero. U14: keeps heroes 2 and 3
+    /// (the pair that lands within PairBanterRadius under the world-scale HomeFor spread) instead
+    /// of the pre-U14 {1,2,3} trio — trimming Heroes leaves GameState.NextHeroId untouched, so the
+    /// recruit still lands at id 7 exactly as before.
     /// </summary>
     private static GameState RecruitReadyCampaign(ulong seed)
     {
         var state = GameComposition.NewCampaign(seed);
-        var trimmed = state.Heroes.Values.Take(3)
+        var trimmed = state.Heroes.Values.Where(h => h.Id.Value is 2 or 3)
             .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
         return state with
         {
@@ -1176,14 +1255,14 @@ public class TownSceneTests
     }
 
     /// <summary>
-    /// Same day-1-recruit setup as <see cref="RecruitReadyCampaign"/>, but keeping heroes 1 and 3
-    /// (Torvald/Kael) instead of 1-2-3 — every pair among {1, 3, 7} (the day-1 recruit) sits
-    /// 100px+ apart (LW2 solo-fallback fixture: no idle pair qualifies for pair-banter).
+    /// Same day-1-recruit setup as <see cref="RecruitReadyCampaign"/>, but keeping heroes 1 and 4
+    /// — every pair among {1, 4, 7} (the day-1 recruit) sits 290px+ apart under the world-scale
+    /// HomeFor spread (LW2 solo-fallback fixture: no idle pair qualifies for pair-banter).
     /// </summary>
     private static GameState RecruitReadyCampaignSparse(ulong seed)
     {
         var state = GameComposition.NewCampaign(seed);
-        var sparse = state.Heroes.Values.Where(h => h.Id.Value is 1 or 3)
+        var sparse = state.Heroes.Values.Where(h => h.Id.Value is 1 or 4)
             .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
         return state with
         {

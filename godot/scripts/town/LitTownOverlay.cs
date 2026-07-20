@@ -5,43 +5,49 @@ using Godot;
 namespace GodotClient.Town;
 
 /// <summary>
-/// The 2.5D lit town backdrop (V-lit-overlay, plan 2026-07-17-003 CP-1 option (c): an ADDITIVE
-/// overlay — no <c>town_scene.tscn</c> surgery, no editor). Built entirely in code (CLAUDE.md
-/// rule 2: never author .tscn metadata with a non-pinned editor), this is the V4a "SubViewport
-/// trap" made live: a <see cref="SubViewport"/> world whose <see cref="CanvasModulate"/> tints
-/// ONLY the lit world (not the surrounding TabContainer UI), holding the normal-mapped building /
-/// hero <see cref="CanvasTexture"/>s, one warm <see cref="PointLight2D"/> per building, and the
-/// approved <see cref="LitTavernPilot"/> look (gradient/height/energy/warm color + ember flicker).
+/// THE town (U14 promotion — KTD1: "promote, don't rebuild"). Through U13 this was a purely
+/// decorative backdrop (a non-input <see cref="SubViewport"/> painted world sitting behind the
+/// real, <c>Control</c>-based, click-driven SVG scaffold in <see cref="TownScene"/>). U14 flips
+/// the polarity: this <see cref="SubViewport"/> world is now input-forwarding, Y-sorted
+/// (<see cref="_ents"/>), and the ONLY town — the SVG scaffold (invisible since U3) is deleted.
+/// World-space pixel constants are published in <c>docs/design/world-scale.md</c>; read that
+/// before touching any position/size constant below.
 ///
-/// <para>Mounted by <see cref="TownScene"/> as its backmost visual layer (behind the SVG facades /
-/// labels / hero markers, on top of the cobble ground). <see cref="MouseFilterEnum.Ignore"/> + a
-/// non-input SubViewport means it never intercepts a click, so every TownScene routing/label test
-/// stays green. Graceful degrade: any asset whose <see cref="IconRegistry.Lit"/> is null simply
-/// does not appear — no sprite, no light, never a crash — so the SVG town survives on its own.</para>
+/// <para><see cref="TownScene"/> still owns the sim-driven bits (hero lifecycle, speech bubbles,
+/// memorial plot, phase choreography) and reaches into this class's <see cref="Ents"/> layer to
+/// add/remove them — this class owns the WORLD ITSELF: the ground, the four building facades
+/// (feet-anchored per KTD6, each with a <see cref="StaticBody2D"/> base collider and — for the
+/// three interactable ones — an <see cref="Area2D"/> click zone), the ambient tint (SOLE town-wide
+/// authority since U3), the atmosphere fx layer, and the camera.</para>
 ///
-/// <para>Adapter-free: <see cref="ApplyPhase"/> (called by TownScene, which owns the adapter) fans
-/// the phase out to <see cref="Fx"/>'s discrete per-phase looks; <see cref="Ambient"/>'s own color
-/// is the SOLE town-wide tint authority (U3), but TownScene writes it directly across its LW1
-/// crossfade rather than through an instant per-Refresh snap. The flicker is pure presentation
-/// (accumulated frame time → Mathf.Sin, no sim contact, no RNG — same contract as the pilot and
-/// <see cref="HeroSprite"/>).</para>
+/// <para>Input: G1 (BOARD) verdict was NO for headless Area2D physics picking under gdUnit4Net —
+/// engine-side clicks are proven only by <c>UiTestSupport.ManualSmokeRecipe</c>, never by CI.
+/// Tests drive <see cref="BuildingClicked"/> via <c>UiTestSupport.TryClickArea</c> against each
+/// building's click-zone <see cref="Area2D"/> directly, bypassing the (unproven-under-CI) picking
+/// pass — production code does not need to know the difference.</para>
 ///
-/// <para>LW6 camera feel: the LitViewport carries its own <see cref="Camera2D"/> for a
-/// barely-conscious idle drift (<see cref="DriftOffsetFor"/>), scoped to this SubViewport only via
-/// <see cref="Camera2D.MakeCurrent"/> — it never becomes the main viewport's camera. Mouse
-/// parallax (<see cref="ApplyParallax"/>) deliberately does NOT move the camera; it offsets the
-/// <see cref="BackLayer"/>/<see cref="Fx"/>/<see cref="HeroDecorLayer"/> depth groups at their own
-/// factors instead, so the backdrop reads with depth.</para>
+/// <para>Adapter-free: <see cref="ApplyPhase"/> (called by <see cref="TownScene"/>, which owns the
+/// adapter) fans the phase out to <see cref="Fx"/>'s discrete per-phase looks; <see cref="Ambient"/>'s
+/// own color is the SOLE town-wide tint authority (U3), written by <see cref="TownScene"/>'s LW1
+/// crossfade rather than snapped here.</para>
+///
+/// <para>LW6 camera feel: <see cref="Camera"/> — now the operative camera for the whole Town tab,
+/// not merely a decorative SubViewport's own — carries a barely-conscious idle drift
+/// (<see cref="DriftOffsetFor"/>), scoped to this SubViewport via <see cref="Camera2D.MakeCurrent"/>.
+/// Mouse parallax (<see cref="ApplyParallax"/>) nudges only <see cref="Fx"/> (an idle depth cue) —
+/// never <see cref="Ents"/>, whose building colliders/click-zones must never drift out of sync
+/// with their own visuals.</para>
 /// </summary>
 public partial class LitTownOverlay : SubViewportContainer
 {
-    /// <summary>A lit building: node key + its <see cref="IconRegistry.Lit"/> art id, world
-    /// position (echoing the Control town's building layout), and its light's offset.</summary>
-    public readonly record struct BuildingSpec(string Key, string LitId, Vector2 Position, Vector2 LightOffset);
-
-    /// <summary>A lit hero figure: class id (its lit art id is <c>hero-{ClassId}</c>) and world
-    /// position. The Sprite2D is MULTIPLY-tinted by the class ColorRgb (neutral-base design).</summary>
-    public readonly record struct HeroSpec(string ClassId, string LitId, Vector2 Position);
+    /// <summary>
+    /// A building: its node/asset key, <see cref="IconRegistry.Lit"/> art id, the click-routing
+    /// string <see cref="MainUi"/> switches on (null = not clickable, e.g. the mine gate), its
+    /// world-space GROUND-LINE anchor point (KTD6 — bottom-center of the facade, NOT its visual
+    /// center), and its lantern's offset from that same ground-line point.
+    /// </summary>
+    public readonly record struct BuildingSpec(
+        string Key, string LitId, string? ClickKey, Vector2 Position, Vector2 LightOffset);
 
     // ── Pilot-approved light params (lit_tavern_pilot.tscn) ───────────────────────────────────
     private static readonly Color LightColor = new(1f, 0.75f, 0.45f); // warm lantern
@@ -50,51 +56,56 @@ public partial class LitTownOverlay : SubViewportContainer
     private const float LightHeight = 30.0f;
     private const float FlickerAmplitude = 0.15f; // subtle ember wobble around LightEnergy
 
-    private static readonly Vector2I DesignSize = new(1024, 600);
-    private const float BuildingTargetWidth = 220f; // native art is ~1024px+; scale to read as a facade
-    private const float HeroTargetWidth = 90f;
+    /// <summary>World design space — see <c>docs/design/world-scale.md</c> "World container".</summary>
+    public static readonly Vector2I DesignSize = new(1600, 700);
 
-    /// <summary>Building layout echoing <see cref="TownScene"/>'s SVG anchors (Forge/Shop/Tavern/gate),
-    /// dropped a little lower so the lit facades read as a street BEHIND the crisp SVG markers.
-    /// U3 de-collage: forge/market shifted left to a >=230px center pitch — the old 140px pitch
-    /// let adjacent 220px-wide facades overlap by up to 80px. Tavern (and so the gate's own
-    /// offset from it) is UNCHANGED from the original layout.</summary>
+    /// <summary>Shared street baseline every facade's feet anchor sits on (world-scale doc).</summary>
+    public const float GroundLine = 480f;
+
+    // Native building art runs much wider than its target read width; scale down to it.
+    private const float BuildingTargetWidth = 300f;
+
+    /// <summary>Small physical footprint under each facade (KTD1 item 8) — present regardless of
+    /// which building it is; no avatar exists yet to collide with it (U20), but the structure is
+    /// load-bearing for that unit rather than invented fresh there.</summary>
+    private static readonly Vector2 BaseColliderSize = new(240f, 40f);
+    private static readonly Vector2 BaseColliderOffset = new(0f, -20f);
+
+    /// <summary>Click-zone footprint (world-scale doc "Click zones") — big enough to read as the
+    /// whole facade, inset enough that neighboring buildings' zones (400+ px pitch, 300px wide
+    /// facades) can never touch.</summary>
+    private static readonly Vector2 ClickZoneSize = new(260f, 340f);
+    private static readonly Vector2 ClickZoneOffset = new(0f, -170f);
+
+    /// <summary>The shipped 4 buildings — world-scale doc's table (feet-anchored, re-spaced so the
+    /// 400+ px pitch structurally cannot overlap the ≈300px facade width, unlike U3's 230px-pitch
+    /// interim fix).</summary>
     public static readonly BuildingSpec[] DefaultBuildings =
     [
-        new("forge", "town-forge", new Vector2(288, 230), new Vector2(-24, -110)),
-        new("market", "town-market", new Vector2(518, 230), new Vector2(24, -110)),
-        new("tavern", "town-tavern", new Vector2(748, 230), new Vector2(-24, -110)),
-        new("minegate", "town-mine-gate", new Vector2(914, 320), new Vector2(-16, -120)),
+        new("forge", "town-forge", "Forge", new Vector2(260, GroundLine), new Vector2(-30, -260)),
+        new("market", "town-market", "Shop", new Vector2(680, GroundLine), new Vector2(30, -260)),
+        new("tavern", "town-tavern", "Tavern", new Vector2(1100, GroundLine), new Vector2(-30, -260)),
+        new("minegate", "town-mine-gate", null, new Vector2(1440, GroundLine), new Vector2(-20, -260)),
     ];
 
-    /// <summary>U3 de-collage: the 3 hard-coded decorative hero figures are removed (they read as
-    /// a second, un-owned "town" alongside the live <see cref="HeroSprite"/>s on the SVG layer
-    /// above) — empty until U19 wires the real live-hero figures into this layer. <see cref="Build"/>
-    /// / <see cref="TryAddHero"/> stay in place so tests (and U19) can still inject specs.</summary>
-    public static readonly HeroSpec[] DefaultHeroes = [];
-
-    // ── LW6: camera drift + mouse parallax ────────────────────────────────────────────────────
-    // Idle drift lives on the LitViewport's OWN Camera2D (barely-conscious sway — never moves
-    // the SVG town on top, never touches the main viewport). Mouse parallax is deliberately NOT
-    // camera movement (plan §LW6): it offsets the lit-world's depth layers themselves, each at
-    // its own factor, so the backdrop reads with depth instead of drifting as one flat plane.
+    // ── LW6: camera drift + Fx-only mouse parallax ────────────────────────────────────────────
     private const float DriftFreqX = 0.10f;
     private const float DriftFreqY = 0.13f;
     private const float DriftAmplitude = 4f; // px
 
-    // Parallax factors per depth (plan's 0.02–0.04 range) — the decorative hero figures read as
-    // nearest (moves most), the building facades as farthest (moves least), the fx layer between.
-    private const float ParallaxFactorBack = 0.02f;
+    // U14: the old multi-layer parallax (buildings/decor-heroes/fx, each at its own factor) lost
+    // its buildings/decor-heroes targets — buildings now live in the Y-sorted Ents (a parallax
+    // nudge would desync their StaticBody2D/Area2D from their own sprite) and the decorative
+    // hero figures this used to offset are deleted (real HeroSprites fill that role now). Only
+    // the atmosphere fx layer keeps an idle parallax cue.
     private const float ParallaxFactorFx = 0.03f;
-    private const float ParallaxFactorHeroes = 0.04f;
     private const float ParallaxLerpSpeed = 6f; // per-second convergence toward the target offset
 
     private readonly List<PointLight2D> _lights = [];
     private readonly List<Sprite2D> _sprites = [];
     private SubViewport _viewport = null!;
     private Node2D _world = null!;
-    private Node2D _backLayer = null!;
-    private Node2D _heroDecorLayer = null!;
+    private Node2D _ents = null!;
     private Camera2D _camera = null!;
     private CanvasModulate _ambient = null!;
     private GradientTexture2D _lightGradient = null!;
@@ -104,43 +115,51 @@ public partial class LitTownOverlay : SubViewportContainer
     private Vector2 _parallaxCurrent;
     private bool _built;
 
+    /// <summary>A building marker was clicked — payload matches <see cref="BuildingSpec.ClickKey"/>
+    /// ("Forge" | "Shop" | "Tavern"); the mine gate never raises this (parity with pre-U14).</summary>
+    public event System.Action<string>? BuildingClicked;
+
     /// <summary>The lit world's ambient MULTIPLY tint node (the SubViewport-scoped CanvasModulate).</summary>
     public CanvasModulate Ambient => _ambient;
 
-    /// <summary>The Node2D holding the lit buildings, heroes, and lights.</summary>
+    /// <summary>The Node2D holding the ground, entities, and fx.</summary>
     public Node2D World => _world;
+
+    /// <summary>
+    /// The Y-sorted (<see cref="CanvasItem.YSortEnabled"/>) entity layer — <see cref="TownScene"/>
+    /// adds/removes its live <see cref="HeroSprite"/> instances (and their speech bubbles) here
+    /// directly, so they draw correctly in front of/behind the building wrappers that are this
+    /// layer's other direct children. <see cref="CanvasItem.YSortEnabled"/> lives on the
+    /// CanvasItem base (not just Node2D), so a <c>Control</c>-based <see cref="HeroSprite"/> sorts
+    /// correctly here too (U19 promotes it to a Node2D <c>HeroActor</c>; U14 does not need to).
+    /// </summary>
+    public Node2D Ents => _ents;
 
     /// <summary>Per-building warm lights (for tests / tuning).</summary>
     public IReadOnlyList<PointLight2D> Lights => _lights;
 
     /// <summary>LW4 atmosphere layer (window glow, forge-coals landmark, particles, props, fog) —
-    /// mounted as a child of <see cref="World"/>, phase-driven from <see cref="ApplyPhase"/>.</summary>
+    /// mounted as a child of <see cref="World"/>, drawn ON TOP of <see cref="Ents"/> (never
+    /// Y-sorted against actors), phase-driven from <see cref="ApplyPhase"/>.</summary>
     public AmbientFxLayer Fx => _fx;
 
-    /// <summary>LW6: the LitViewport's own <see cref="Camera2D"/> (idle drift only — never the
-    /// main viewport's camera; <see cref="Camera2D.MakeCurrent"/> scopes it to this SubViewport).</summary>
+    /// <summary>The operative Camera2D for the whole Town tab (LW6: idle drift only in U14 — no
+    /// follow target until U20's avatar lands).</summary>
     public Camera2D Camera => _camera;
 
-    /// <summary>LW6 depth layer: building facades + their lanterns (farthest — smallest parallax
-    /// factor).</summary>
-    public Node2D BackLayer => _backLayer;
-
-    /// <summary>LW6 depth layer: the decorative hero figures (nearest — largest parallax factor).
-    /// NOT the live <see cref="HeroSprite"/>s (those are TownScene's own SVG-town HeroLayer).</summary>
-    public Node2D HeroDecorLayer => _heroDecorLayer;
-
-    /// <summary>True once at least one lit sprite resolved — lets TownScene skip the backdrop
-    /// entirely (and any veil) when every asset is absent, so the SVG town is untouched.</summary>
+    /// <summary>True once at least one building's art resolved — lets a caller detect a fully
+    /// asset-less degrade (every id missing).</summary>
     public bool HasContent => _sprites.Count > 0;
 
-    /// <summary>Build the live backdrop with the shipped 4 buildings + 3 hero figures.</summary>
-    public void Build() => Build(DefaultBuildings, DefaultHeroes);
+    /// <summary>Build the live town with the shipped 4 buildings.</summary>
+    public void Build() => Build(DefaultBuildings);
 
     /// <summary>
-    /// Build the SubViewport world from the given specs. Injectable so tests can exercise the
-    /// graceful-degrade path (a fake id yields no sprite). Idempotent-guarded.
+    /// Build the SubViewport world from the given building specs. Injectable so tests can
+    /// exercise the graceful-degrade path (a fake id yields no facade/collider/click-zone at
+    /// all — same "nothing there" contract this class has always used). Idempotent-guarded.
     /// </summary>
-    public void Build(IReadOnlyList<BuildingSpec> buildings, IReadOnlyList<HeroSpec> heroes)
+    public void Build(IReadOnlyList<BuildingSpec> buildings)
     {
         if (_built)
         {
@@ -148,66 +167,60 @@ public partial class LitTownOverlay : SubViewportContainer
         }
 
         Name = "LitTownOverlay";
-        Stretch = true;                        // SubViewport tracks this container's pixel rect 1:1
-        MouseFilter = MouseFilterEnum.Ignore;  // never eat a click — the SVG town on top owns input
+        Stretch = true; // SubViewportContainer tracks this container's pixel rect 1:1
+
+        // U14 KTD1 item 1: flip from decorative (never eats a click) to input-forwarding — this
+        // viewport IS the town's input surface now. G1 (BOARD): headless Area2D picking does not
+        // fire under gdUnit4Net regardless of this flag; real verification is the manual-smoke
+        // recipe (UiTestSupport.ManualSmokeRecipe), never CI.
+        MouseFilter = MouseFilterEnum.Stop;
         SetAnchorsPreset(LayoutPreset.FullRect);
 
         _viewport = new SubViewport
         {
-            Name = "LitViewport",
+            Name = "TownViewport",
             Size = DesignSize,
-            HandleInputLocally = false,        // the "SubViewport trap": no input handling here
-            TransparentBg = true,              // only the lit props draw; the cobble ground shows through gaps
+            HandleInputLocally = true, // U14: was false (the decorative-era "SubViewport trap")
+            TransparentBg = true,      // only the painted props draw; nothing to show through today
             RenderTargetUpdateMode = SubViewport.UpdateMode.Always,
         };
         AddChild(_viewport);
 
-        _world = new Node2D { Name = "LitWorld" };
+        _world = new Node2D { Name = "WorldRoot" };
         _viewport.AddChild(_world);
 
-        // LW6: the LitViewport's OWN camera — idle drift only, scoped to this SubViewport via
-        // MakeCurrent (never the main viewport's camera). FixedTopLeft keeps its rest framing
-        // identical to the camera-less rendering every existing test/screenshot was built against.
-        // MakeCurrent() itself is deferred to _Ready (see below) — TownScene calls Build() BEFORE
-        // AddChild(overlay), so the whole subtree (camera included) isn't inside the live tree yet
-        // here; MakeCurrent() requires is_inside_tree().
+        // LW6: the camera is now load-bearing (not merely scoped to a decorative backdrop) —
+        // MakeCurrent() itself is deferred to _Ready (Build() runs before this overlay is added
+        // as TownScene's child, so is_inside_tree() is false here).
         _camera = new Camera2D
         {
-            Name = "LitCamera",
+            Name = "TownCamera",
             AnchorMode = Camera2D.AnchorModeEnum.FixedTopLeft,
             Position = Vector2.Zero,
         };
         _viewport.AddChild(_camera);
 
-        // Phase ambience: a CanvasModulate MULTIPLIES the lit world only (the SubViewport isolates
-        // it from the TabContainer UI). Starts warm (Morning) to match TownScene's own initial tint.
+        // Phase ambience: a CanvasModulate MULTIPLIES the world only (SubViewport-isolated from
+        // the surrounding TabContainer UI). Sole town-wide tint authority since U3.
         _ambient = new CanvasModulate { Name = "AmbientTint", Color = AtmosphereTintFor(DayPhase.Morning) };
         _world.AddChild(_ambient);
 
         _lightGradient = BuildLightGradient();
 
-        // LW6 depth layers: separate Node2D groups so mouse parallax can offset each at its own
-        // factor (ApplyParallax) — buildings/lights farthest, decorative heroes nearest. Sprites
-        // keep their existing spec-authored Position (relative to the layer, which rests at (0,0)
-        // until parallax nudges it), so every existing Find-by-name test is unaffected.
-        _backLayer = new Node2D { Name = "LitBackLayer" };
-        _world.AddChild(_backLayer);
+        BuildGround();
 
-        _heroDecorLayer = new Node2D { Name = "LitHeroDecorLayer" };
-        _world.AddChild(_heroDecorLayer);
+        // U14 KTD1 item 2: the ONE Y-sort group — building wrappers and (added by TownScene) live
+        // HeroSprites are direct children, sorted by world Y at draw time.
+        _ents = new Node2D { Name = "Ents", YSortEnabled = true };
+        _world.AddChild(_ents);
 
         foreach (var building in buildings)
         {
             TryAddBuilding(building);
         }
 
-        foreach (var hero in heroes)
-        {
-            TryAddHero(hero);
-        }
-
-        // LW4 atmosphere layer: window glow, forge-coals landmark, particles, props, fog — all on
-        // top of the buildings/heroes above so glow/embers read over the facades they belong to.
+        // LW4 atmosphere layer: window glow, forge-coals landmark, particles, props, fog — added
+        // LAST so it always draws on top of Ents, never Y-sorted against actors.
         _fx = new AmbientFxLayer();
         _world.AddChild(_fx);
         _fx.Build(buildings);
@@ -217,12 +230,12 @@ public partial class LitTownOverlay : SubViewportContainer
     }
 
     /// <summary>
-    /// Two-temperature retune (LW4): the lit backdrop's OWN CanvasModulate ramp — U3: now the SOLE
-    /// town-wide tint authority (<see cref="TownScene"/>'s own root Modulate stays pinned white).
-    /// Morning/Expedition (daylight) are neutral/warm; Camp/ExpeditionDeep/Evening are deliberately
-    /// cooler and more desaturated so the warm window-glow sprites and forge coals
-    /// (<see cref="AmbientFxLayer"/>) visibly pop against a colder dusk/night sky. Never below the
-    /// crush point (the darkest stop still reads as navy, not black).
+    /// Two-temperature retune (LW4): the SOLE town-wide tint authority since U3 (<see
+    /// cref="TownScene"/>'s own root Modulate stays pinned white). Morning/Expedition (daylight)
+    /// are neutral/warm; Camp/ExpeditionDeep/Evening are deliberately cooler and more desaturated
+    /// so the warm window-glow sprites and forge coals (<see cref="AmbientFxLayer"/>) visibly pop
+    /// against a colder dusk/night sky. Never below the crush point (the darkest stop still reads
+    /// as navy, not black).
     /// </summary>
     public static Color AtmosphereTintFor(DayPhase phase) => phase switch
     {
@@ -236,17 +249,15 @@ public partial class LitTownOverlay : SubViewportContainer
 
     /// <summary>
     /// Fan the phase out to the fx layer (window glow / particles / fog — all discrete per-phase,
-    /// not tweened). U3: <see cref="Ambient"/>'s color is no longer snapped here — TownScene owns
-    /// the LW1 crossfade now (the sole tint authority lives on <see cref="Ambient"/>, but the
-    /// WRITE comes from TownScene.Animate so the fade is smooth instead of an instant per-Refresh
-    /// snap). Called from <see cref="TownScene.Refresh"/> so the lit backdrop tracks the sim.
+    /// not tweened). <see cref="Ambient"/>'s color is written by <see cref="TownScene"/>'s LW1
+    /// crossfade, never snapped here. Called from <see cref="TownScene.Refresh"/> so the world
+    /// tracks the sim.
     /// </summary>
     public void ApplyPhase(DayPhase phase) => _fx?.ApplyPhase(phase);
 
-    /// <summary>LW6: activate the LitViewport's own camera once this overlay (and everything
-    /// built into it by <see cref="Build"/>, camera included) is actually inside the live tree —
-    /// <see cref="Camera2D.MakeCurrent"/> requires <c>is_inside_tree()</c>, and <see cref="Build"/>
-    /// itself typically runs before <see cref="TownScene"/> adds this overlay as a child.</summary>
+    /// <summary>LW6: activate the camera once this overlay (and everything <see cref="Build"/>
+    /// built into it, camera included) is actually inside the live tree — <see
+    /// cref="Camera2D.MakeCurrent"/> requires <c>is_inside_tree()</c>.</summary>
     public override void _Ready() => _camera?.MakeCurrent();
 
     public override void _Process(double delta)
@@ -260,15 +271,16 @@ public partial class LitTownOverlay : SubViewportContainer
             _lights[i].Energy = LightEnergy + FlickerAmplitude * Mathf.Sin(phase) * Mathf.Sin(_time * 2.3f);
         }
 
-        // LW6 idle camera drift — barely-conscious sway, scoped to the LitViewport's own camera.
+        // LW6 idle camera drift — barely-conscious sway.
         if (_camera is not null)
         {
             _camera.Offset = DriftOffsetFor(_time);
         }
 
-        // LW6 mouse parallax — reads the container's own local mouse position (this Control still
-        // polls it while MouseFilter=Ignore; it just never consumes the click), never the camera.
-        if (_backLayer is not null && Size.X > 0 && Size.Y > 0)
+        // LW6 mouse parallax — reads the container's own local mouse position (still polled while
+        // input-forwarding; a click passes through to the SubViewport, this read never consumes
+        // it).
+        if (_fx is not null && Size.X > 0 && Size.Y > 0)
         {
             ApplyParallax(GetLocalMousePosition(), Size, (float)delta);
         }
@@ -276,16 +288,17 @@ public partial class LitTownOverlay : SubViewportContainer
 
     /// <summary>LW6 idle drift (plan §LW6): a barely-conscious <see cref="Camera2D.Offset"/> sway,
     /// pure function of accumulated time — no wall clock, no RNG (KTD2), testable without a live
-    /// SubViewport.</summary>
+    /// SubViewport. Bounded to ±<see cref="DriftAmplitude"/> px on both axes by construction.</summary>
     public static Vector2 DriftOffsetFor(float t) =>
         new(Mathf.Sin(t * DriftFreqX) * DriftAmplitude, Mathf.Cos(t * DriftFreqY) * DriftAmplitude);
 
     /// <summary>
-    /// LW6 mouse parallax (plan §LW6): offsets the lit-world's depth layers themselves — NOT the
-    /// camera — by <c>(mouse - center)</c> converted from the container's on-screen pixels into
-    /// the SubViewport's DESIGN-space pixels, scaled 0.02–0.04 per layer and lerped toward the
-    /// target so a mouse jump reads as a smooth settle, not a snap. Public + delta-parameterized so
-    /// tests can drive it with a synthetic mouse position/container size without a real cursor.
+    /// LW6 mouse parallax (plan §LW6), U14-narrowed to <see cref="Fx"/> only: offsets the
+    /// atmosphere layer — NOT the camera, NOT <see cref="Ents"/> — by <c>(mouse - center)</c>
+    /// converted from the container's on-screen pixels into the SubViewport's DESIGN-space
+    /// pixels, scaled by <see cref="ParallaxFactorFx"/> and lerped toward the target so a mouse
+    /// jump reads as a smooth settle, not a snap. Public + delta-parameterized so tests can drive
+    /// it with a synthetic mouse position/container size without a real cursor.
     /// </summary>
     public void ApplyParallax(Vector2 mouseLocal, Vector2 containerSize, float delta)
     {
@@ -295,77 +308,124 @@ public partial class LitTownOverlay : SubViewportContainer
         var lerpAmount = Mathf.Clamp(ParallaxLerpSpeed * delta, 0f, 1f);
         _parallaxCurrent = _parallaxCurrent.Lerp(_parallaxTarget, lerpAmount);
 
-        _backLayer.Position = _parallaxCurrent * ParallaxFactorBack;
-        if (_fx is not null)
-        {
-            _fx.Position = _parallaxCurrent * ParallaxFactorFx;
-        }
-
-        _heroDecorLayer.Position = _parallaxCurrent * ParallaxFactorHeroes;
+        _fx.Position = _parallaxCurrent * ParallaxFactorFx;
     }
 
+    /// <summary>Tiled ground layer (KTD1 item 9 replacement: the old Control-based tiled
+    /// TextureRect lived in <see cref="TownScene"/>, behind this decorative backdrop; promotion
+    /// moves ground rendering into the world itself). Graceful-degrade: an unresolved
+    /// <c>ground_tile</c> hand-authored SVG (should never happen — it ships in the repo, not the
+    /// generated-art pipeline) simply leaves an empty layer, never a crash.</summary>
+    private void BuildGround()
+    {
+        var ground = new Node2D { Name = "GroundLayer" };
+        _world.AddChild(ground);
+
+        var texture = IconRegistry.Building("ground_tile");
+        if (texture is null)
+        {
+            return;
+        }
+
+        var tileWidth = Mathf.Max(1, texture.GetWidth());
+        var tileHeight = Mathf.Max(1, texture.GetHeight());
+        var cols = Mathf.CeilToInt(DesignSize.X / (float)tileWidth) + 1;
+        var rows = Mathf.CeilToInt(DesignSize.Y / (float)tileHeight) + 1;
+        for (var y = 0; y < rows; y++)
+        {
+            for (var x = 0; x < cols; x++)
+            {
+                ground.AddChild(new Sprite2D
+                {
+                    Name = $"Tile_{x}_{y}",
+                    Texture = texture,
+                    Centered = false,
+                    Position = new Vector2(x * tileWidth, y * tileHeight),
+                });
+            }
+        }
+    }
+
+    /// <summary>
+    /// Build one building: a Node2D wrapper positioned at the ground-line anchor (KTD1 items 3/5/
+    /// 6/8), holding a feet-anchored facade <see cref="Sprite2D"/>, its lantern, a
+    /// <see cref="StaticBody2D"/> base collider, and — when <see cref="BuildingSpec.ClickKey"/> is
+    /// set — an <see cref="Area2D"/> click zone raising <see cref="BuildingClicked"/>. Graceful
+    /// degrade preserved exactly: no resolved art means nothing is built at all (no orphan
+    /// collider/click-zone/light), the same contract this class has always used.
+    /// </summary>
     private void TryAddBuilding(BuildingSpec spec)
     {
         var lit = IconRegistry.Lit(spec.LitId);
         if (lit is null)
         {
-            return; // graceful degrade — no diffuse means no sprite AND no orphan light
+            return;
         }
 
-        var sprite = new Sprite2D
+        var wrapper = new Node2D { Name = $"Building_{spec.Key}", Position = spec.Position };
+        _ents.AddChild(wrapper);
+
+        var facade = new Sprite2D
         {
-            Name = $"LitBuilding_{spec.Key}",
+            Name = $"LitBuilding_{spec.Key}", // pre-U14 name kept — same discoverable id, new anchor contract
             Texture = lit,
-            Position = spec.Position,
+            Centered = false, // KTD6: feet-anchored, not center-anchored
         };
-        ScaleToWidth(sprite, lit, BuildingTargetWidth);
-        _backLayer.AddChild(sprite);
-        _sprites.Add(sprite);
+        var scale = ScaleFactorFor(lit, BuildingTargetWidth);
+        facade.Scale = Vector2.One * scale;
+        var scaledHeight = (lit.DiffuseTexture?.GetHeight() ?? 0) * scale;
+        var anchorOffset = AssetCatalog.FeetAnchorOffset(spec.LitId);
+        facade.Position = new Vector2(-BuildingTargetWidth / 2f, -scaledHeight) + anchorOffset;
+        wrapper.AddChild(facade);
+        _sprites.Add(facade);
 
         var light = new PointLight2D
         {
-            Name = $"LitLight_{spec.Key}",
-            Position = spec.Position + spec.LightOffset,
+            Name = "Lantern",
+            Position = spec.LightOffset,
             Color = LightColor,
             Energy = LightEnergy,
             Texture = _lightGradient,
             TextureScale = LightTextureScale,
             Height = LightHeight,
         };
-        _backLayer.AddChild(light);
+        wrapper.AddChild(light);
         _lights.Add(light);
-    }
 
-    private void TryAddHero(HeroSpec spec)
-    {
-        var lit = IconRegistry.Lit(spec.LitId);
-        if (lit is null)
+        var body = new StaticBody2D { Name = "Base" };
+        body.AddChild(new CollisionShape2D
         {
-            return; // graceful degrade
+            Shape = new RectangleShape2D { Size = BaseColliderSize },
+            Position = BaseColliderOffset,
+        });
+        wrapper.AddChild(body);
+
+        if (spec.ClickKey is { } clickKey)
+        {
+            var area = new Area2D { Name = $"ClickZone_{spec.Key}" };
+            area.AddChild(new CollisionShape2D
+            {
+                Shape = new RectangleShape2D { Size = ClickZoneSize },
+                Position = ClickZoneOffset,
+            });
+            area.InputEvent += (_, @event, _) =>
+            {
+                if (@event is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true })
+                {
+                    BuildingClicked?.Invoke(clickKey);
+                }
+            };
+            wrapper.AddChild(area);
         }
-
-        var sprite = new Sprite2D
-        {
-            Name = $"LitHero_{spec.ClassId}",
-            Texture = lit,
-            Position = spec.Position,
-            // Neutral-base multiply: tint the figure to its class ColorRgb (ClassRegistry via
-            // HeroSprite.RoleColor — the same contract the SVG hero marker asserts).
-            Modulate = HeroSprite.RoleColor(spec.ClassId),
-        };
-        ScaleToWidth(sprite, lit, HeroTargetWidth);
-        _heroDecorLayer.AddChild(sprite);
-        _sprites.Add(sprite);
     }
 
-    /// <summary>Scale a lit Sprite2D so its diffuse renders at <paramref name="targetWidth"/> px.</summary>
-    private static void ScaleToWidth(Sprite2D sprite, CanvasTexture lit, float targetWidth)
+    /// <summary>Uniform scale factor so a texture's diffuse renders at <paramref
+    /// name="targetWidth"/> px wide (0 when the width can't be read — leaves Scale at the
+    /// caller's own default rather than dividing by zero).</summary>
+    private static float ScaleFactorFor(CanvasTexture lit, float targetWidth)
     {
         var width = lit.DiffuseTexture?.GetWidth() ?? 0;
-        if (width > 0)
-        {
-            sprite.Scale = Vector2.One * (targetWidth / width);
-        }
+        return width > 0 ? targetWidth / width : 1f;
     }
 
     /// <summary>The pilot's radial falloff (Gradient_light + GradientTexture2D_light in
