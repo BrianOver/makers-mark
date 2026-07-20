@@ -89,6 +89,67 @@ public class MainUiTests
     }
 
     [TestCase]
+    public void PhaseChip_LegendFlyout_ListsAllFivePhasesInKernelOrder()
+    {
+        // P007 U7: the legend follows GameKernel.Tick's own transition table (Morning →
+        // Expedition → Camp → ExpeditionDeep → Evening) — NOT the DayPhase enum's declaration
+        // order, which lists Evening before Camp/ExpeditionDeep.
+        var lines = MainUi.PhaseLegend.Split('\n');
+        AssertThat(lines.Length).IsEqual(5);
+        AssertThat(lines[0]).StartsWith("Morning");
+        AssertThat(lines[1]).StartsWith("Expedition");
+        AssertThat(lines[2]).StartsWith("Camp");
+        AssertThat(lines[3]).StartsWith("Deep");
+        AssertThat(lines[4]).StartsWith("Evening");
+
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(Find<Control>(ui, "PhaseChip").TooltipText).IsEqual(MainUi.PhaseLegend);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ForgePanel_MaterialsLabel_NeverShowsStaleVendorHint()
+    {
+        // P007 U7: the old "buy ore from returning heroes (Evening ledger)" hint predates the
+        // Morning vendor (U3) — it's gone, replaced by wording that mentions the vendor itself.
+        var ui = MountMainUi();
+        try
+        {
+            var forgeText = RenderedText(ui.Forge);
+            AssertThat(forgeText).NotContains("buy ore from returning heroes (Evening ledger)");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ForgePanel_BuyMaterialFeedback_NamesMorningAsResolvingPhase()
+    {
+        // BuyMaterial is Morning-only (MaterialVendorHandlers.CanHandle) — a fresh game starts at
+        // day 1 Morning, so the vendor row is live and the queue feedback names Morning.
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+            var key = GameSim.Materials.MaterialRegistry.PricedPool[0];
+            Press(ui.Forge, $"BuyMat_{key}");
+            AssertThat(RenderedText(ui.Forge)).Contains("Queued — resolves when Morning ticks. Press Advance or wait.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void ForgePanel_RendersThemedIcons_AfterBinding()
     {
         // U16: recipe rows carry a slot icon and talent rows a rune glyph, so a freshly
@@ -463,6 +524,7 @@ public class MainUiTests
         // Queue the craft through the forge panel's action path (default material = copper).
         Press(ui.Forge, $"Craft_{ScriptedSession.CraftRecipeId}");
         AssertThat(RenderedText(ui.Forge)).Contains($"queued: craft {ScriptedSession.CraftRecipeId}");
+        AssertThat(RenderedText(ui.Forge)).Contains("Queued — resolves when Evening ticks. Press Advance or wait.");
 
         ui.Adapter.AdvancePhase(); // day 2 Evening: buys then craft apply in order
         ui.Ledger.CloseModal();    // day-2 reveal is timer-gated (U12); close if a frame opened it
