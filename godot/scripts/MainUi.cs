@@ -10,18 +10,20 @@ using GodotClient.Ui;
 namespace GodotClient;
 
 /// <summary>
-/// The one UI scene (U11 shell + U12 town layer): a persistent tab bar hosting the
-/// living town view plus the six management panels under a themed HUD header (P007
+/// The one UI scene (U11 shell + U12 town layer, drawer-reworked U21): the living town view is a
+/// PERMANENT full-rect base child — always visible, never hidden by a panel opening — with the six
+/// management panels (Forge/Shop/Heroes/Tavern/Depths/Bounties) hosted one at a time in the
+/// right-anchored <see cref="DrawerHost"/> that slides over it, under a themed HUD header (P007
 /// U7 — day/phase/gold/heroes stat chips + Skip/Auto, with play/pause/fast-forward
 /// as auto-mode sub-controls), with the Evening Ledger as a modal overlay. The Ledger opens
 /// through the U12 Return Ritual — a TIME-BASED gate
 /// (<see cref="ReturnRitualDelaySeconds"/> of unscaled wall-clock after the Evening
 /// tick), never blocked by sprite walk-ins, so a zero-survivor day cannot hang the
 /// reveal. Owns the single <see cref="SimAdapter"/> and the <see cref="PhaseClock"/>;
-/// everything below binds through the adapter (KTD2). Town clicks select tabs (R20).
-/// U15 (KTD3): the clock flows on its own by default and computes <see cref="PhaseClock.
-/// Engaged"/> from tab/modal state each frame's relevant events — see
-/// <see cref="UpdateEngaged"/> for the interim (tab-era) predicate.
+/// everything below binds through the adapter (KTD2). Town clicks route through <see
+/// cref="OpenPanel"/> (R20). U15 (KTD3): the clock flows on its own by default and computes <see
+/// cref="PhaseClock.Engaged"/> from drawer/modal state each frame's relevant events — see
+/// <see cref="UpdateEngaged"/>.
 /// </summary>
 public partial class MainUi : Control
 {
@@ -65,7 +67,7 @@ public partial class MainUi : Control
 
     public SimAdapter Adapter { get; private set; } = null!;
     public PhaseClock Clock { get; private set; } = null!;
-    public TabContainer Tabs { get; private set; } = null!;
+    public DrawerHost Drawer { get; private set; } = null!;
     public TownScene Town { get; private set; } = null!;
     public ForgePanel Forge { get; private set; } = null!;
     public ShopPanel Shop { get; private set; } = null!;
@@ -141,7 +143,7 @@ public partial class MainUi : Control
         // Godot's normal Theme cascade carries it to every panel/tab built below.
         Theme = GameTheme.Build();
         BuildUi();
-        UpdateEngaged(); // Town is the initial tab, no modal open — starts disengaged
+        UpdateEngaged(); // no drawer open, no modal open — starts disengaged
 
         Adapter.StateChanged += OnPhaseCompleted;
         Town.Bind(Adapter);
@@ -210,8 +212,11 @@ public partial class MainUi : Control
             }
         }
 
-        // LW6: tick the tab-switch fade veil (no-op unless a dip is in flight).
+        // LW6: tick the drawer-swap fade veil (no-op unless a dip is in flight).
         TabFade.Tick(delta);
+
+        // U21: tick the drawer's accumulated-delta slide (no-op unless a slide is in flight).
+        Drawer.Tick(delta);
 
         // U17: tick the bottom-edge adventure ticker marquee (no-op with no lines yet).
         Ticker.Tick(delta);
@@ -267,17 +272,23 @@ public partial class MainUi : Control
         }
     }
 
-    /// <summary>Re-render the status bar and every panel from CurrentState.</summary>
+    /// <summary>
+    /// Re-render the status bar, the permanent world, and every currently-visible surface from
+    /// CurrentState. U21: VISIBILITY-GATED — a load-bearing perf change now that the world always
+    /// renders. The five drawer panels NOT currently open never get a Refresh() call here; opening
+    /// one via <see cref="OpenPanel"/> refreshes it on the spot, so nothing a player actually looks
+    /// at is ever stale. Ledger/Camp/Mirror/Pip are unaffected — they were never tab-gated before
+    /// U21 (LedgerModal/CampPanel stay FullRect overlays above the drawer) and stay unconditional.
+    /// </summary>
     public void RefreshAll()
     {
         RefreshHud();
-        Town.Refresh();
-        Forge.Refresh();
-        Shop.Refresh();
-        Heroes.Refresh();
-        Tavern.Refresh();
-        Depths.Refresh();
-        Bounties.Refresh();
+        Town.Refresh(); // the world is always visible — always refreshed
+        if (Drawer.CurrentPanelId is { } openId)
+        {
+            PanelFor(openId).Refresh();
+        }
+
         Ledger.Refresh();
         Camp.Refresh();
         Mirror.Refresh();
@@ -289,7 +300,7 @@ public partial class MainUi : Control
     /// non-empty InFlight), and drop it once the parked run finalizes (InFlight cleared at the
     /// Deep tick). Deliberately does NOT auto-close merely on leaving Camp — the just-completed
     /// Camp tick's rejections must stay legible on the slate through the Deep phase (AE4), and the
-    /// player's own Hold is the normal close. No new tab, so the MainUiTests tab-title pin is untouched.
+    /// player's own Hold is the normal close. A FullRect modal, not a drawer — untouched by U21.
     /// </summary>
     private void SyncCampModal()
     {
@@ -485,9 +496,20 @@ public partial class MainUi : Control
 
     private void BuildUi()
     {
-        SetAnchorsPreset(LayoutPreset.FullRect);
+        SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+
+        // --- U21: TownWorld is now a PERMANENT FullRect base child — added FIRST so every later
+        // sibling (the HUD layout, the DrawerHost, the modals) draws on top of it, and it is never
+        // hidden by a drawer opening/closing (R1 world permanence). ---------------------------
+        Town = InstantiatePanel<TownScene>("res://scenes/town/town_scene.tscn");
+        AddChild(Town);
+        Town.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        Town.Clock = Clock;
+        Town.HeroClicked += OnTownHeroClicked;
+        Town.BuildingClicked += OnTownBuildingClicked;
+
         var layout = new VBoxContainer { Name = "Layout" };
-        layout.SetAnchorsPreset(LayoutPreset.FullRect);
+        layout.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(layout);
 
         // --- HUD header (P007 U7/R11/R12/KD1): themed stat-chip row (left) + the
@@ -574,17 +596,19 @@ public partial class MainUi : Control
         _toast.AddThemeColorOverride("font_color", GameTheme.RejectionColor);
         _toastBanner.AddChild(_toast);
 
-        // --- panel tabs (tab title = scene root node name) -------------------
-        Tabs = new TabContainer
+        // U21: the world renders through this gap — a transparent, input-passthrough spacer
+        // claiming the exact vertical space the old TabContainer's ExpandFill claimed, so the
+        // header stays pinned top and the ticker stays pinned bottom without either drawing over
+        // (or blocking clicks into) the permanent world now visible underneath the whole Layout
+        // column.
+        var worldSlot = new Control
         {
-            Name = "Tabs",
+            Name = "WorldSlot",
             SizeFlagsVertical = SizeFlags.ExpandFill,
+            MouseFilter = MouseFilterEnum.Ignore,
         };
-        layout.AddChild(Tabs);
-        Town = InstantiatePanel<TownScene>("res://scenes/town/town_scene.tscn"); // first tab (U12)
-        Town.Clock = Clock;
-        Town.HeroClicked += OnTownHeroClicked;
-        Town.BuildingClicked += OnTownBuildingClicked;
+        layout.AddChild(worldSlot);
+
         Forge = InstantiatePanel<ForgePanel>("res://scenes/panels/forge_panel.tscn");
         Shop = InstantiatePanel<ShopPanel>("res://scenes/panels/shop_panel.tscn");
         Heroes = InstantiatePanel<HeroesPanel>("res://scenes/panels/heroes_panel.tscn");
@@ -593,28 +617,42 @@ public partial class MainUi : Control
         Bounties = InstantiatePanel<BountyPanel>("res://scenes/panels/bounty_panel.tscn");
 
         // U17 (KTD13): the single bottom-edge HUD line — mounted last in the layout so it sits
-        // below the tab shell, the one region KTD13 reserves for it (PiP docks above it; top bar
+        // below the world gap, the one region KTD13 reserves for it (PiP docks above it; top bar
         // and the top-right objective chip are untouched by this unit).
         Ticker = new AdventureTicker();
         layout.AddChild(Ticker);
         Ticker.Build();
 
-        // LW6: tab-switch fade — a purely additive CanvasLayer-100 veil, never touches the
-        // TabContainer itself. TabChanged (not TabSelected) so a programmatic jump (hero/building
-        // click routing, R20) dips it too, not just a manual click.
+        // --- U21: DrawerHost — replaces the TabContainer. A right-anchored ~600px panel that
+        // slides over the permanent world; one panel at a time (OpenPanel below REPLACES, never
+        // stacks). Dim-under (LedgerModal precedent) + click-out/Esc close; the click-out consumes
+        // the input event structurally (the dim veil's default Stop mouse filter), so it never
+        // reaches WorldInput/the world's Area2D click zones underneath. ------------------------
+        Drawer = new DrawerHost();
+        AddChild(Drawer);
+        Drawer.Build();
+        Drawer.Register("Forge", Forge);
+        Drawer.Register("Shop", Shop);
+        Drawer.Register("Heroes", Heroes);
+        Drawer.Register("Tavern", Tavern);
+        Drawer.Register("Depths", Depths);
+        Drawer.Register("Bounties", Bounties);
+        // LW6: the drawer-swap fade veil (was the tab-switch veil pre-U21) — a purely additive
+        // CanvasLayer-100 overlay, triggered from OpenPanel below, and from a click-out/Esc close
+        // that bypasses OpenPanel entirely (Drawer.Closed).
         TabFade = new TabFade();
         AddChild(TabFade);
         TabFade.Build();
-        Tabs.TabChanged += _ =>
+        Drawer.Closed += () =>
         {
             TabFade.Trigger();
-            UpdateEngaged(); // TAB-ERA INTERIM RULE (U15): only Town flows; every other tab engages
+            UpdateEngaged(); // click-out/Esc close the same latch update an OpenPanel("Town") gets
         };
 
-        // --- ledger modal overlay (sibling after the layout = draws on top) --
+        // --- ledger modal overlay (sibling after the drawer = draws on top) --
         Ledger = GD.Load<PackedScene>("res://scenes/panels/ledger_modal.tscn").Instantiate<LedgerModal>();
         AddChild(Ledger);
-        Ledger.SetAnchorsPreset(LayoutPreset.FullRect);
+        Ledger.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Ledger.VisibilityChanged += OnLedgerVisibilityChanged;
 
         // --- camp decision slate (V7a): a second modal overlay, code-built (no scene, so no
@@ -622,13 +660,13 @@ public partial class MainUi : Control
         //     once, so the two overlays never contend.
         Camp = new CampPanel { Name = "CampModal" };
         AddChild(Camp);
-        Camp.SetAnchorsPreset(LayoutPreset.FullRect);
+        Camp.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Camp.VisibilityChanged += OnCampVisibilityChanged;
 
         // --- objective chip (U18/KTD13): a floating overlay sibling (like the modals above),
         //     anchored top-right (engine preset + margin, auto-sized to its own content) and
         //     nudged down by ObjectiveDockOffsetTop to clear the header row — stays visible
-        //     over every tab without shifting any panel's own layout. Populated by RefreshHud.
+        //     over every drawer without shifting any panel's own layout. Populated by RefreshHud.
         Objective = new ObjectiveTracker { CustomMinimumSize = new Vector2(ObjectiveDockWidth, 0) };
         Objective.Build();
         AddChild(Objective);
@@ -639,11 +677,11 @@ public partial class MainUi : Control
         // --- U16 (KTD11/KTD13): the scrying mirror (a third same-shaped modal overlay — Camp/
         //     Ledger/Mirror never show at once in practice, but nothing here assumes it) and its
         //     PiP dock, the ONLY new always-on HUD element this unit adds — a small bottom-right
-        //     corner Control, independent of the header/Tabs/Ticker/Objective regions U17/U18
+        //     corner Control, independent of the header/Drawer/Ticker/Objective regions U17/U18
         //     touch. -----------------------------------------------------------------------
         Mirror = new ScryingMirror { Name = "ScryingMirror" };
         AddChild(Mirror);
-        Mirror.SetAnchorsPreset(LayoutPreset.FullRect);
+        Mirror.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Mirror.VisibilityChanged += OnMirrorVisibilityChanged;
 
         Pip = new PipDock();
@@ -652,12 +690,47 @@ public partial class MainUi : Control
         Pip.ExpandRequested += () => Mirror.ShowMirror();
     }
 
-    private T InstantiatePanel<T>(string scenePath) where T : SimPanel
+    private static T InstantiatePanel<T>(string scenePath) where T : SimPanel =>
+        GD.Load<PackedScene>(scenePath).Instantiate<T>();
+
+    /// <summary>
+    /// U21: the one entry point that opens a management surface — replaces the old
+    /// <c>Tabs.CurrentTab = ...</c> routing. <paramref name="id"/> is one of "Forge" | "Shop" |
+    /// "Heroes" | "Tavern" | "Depths" | "Bounties" | "Town" (the last one, and any drawer already
+    /// open, both resolve through <see cref="DrawerHost.Close"/> — "Town" IS the bare-world state,
+    /// not a drawer). A drawer already open when this is called is REPLACED, never stacked
+    /// (<see cref="DrawerHost.Open"/>'s own contract). Opening a panel refreshes it on the spot —
+    /// <see cref="RefreshAll"/> is visibility-gated (U21), so this is what guarantees a panel a
+    /// player actually opens is never stale from ticks that happened while it was hidden.
+    /// </summary>
+    public void OpenPanel(string id)
     {
-        var panel = GD.Load<PackedScene>(scenePath).Instantiate<T>();
-        Tabs.AddChild(panel);
-        return panel;
+        if (id == "Town")
+        {
+            Drawer.Close();
+        }
+        else
+        {
+            Drawer.Open(id);
+            PanelFor(id).Refresh();
+        }
+
+        TabFade.Trigger();
+        UpdateEngaged();
     }
+
+    /// <summary>The drawer-hosted panel registered under <paramref name="id"/> — "Town" is not a
+    /// drawer panel (the world is the permanent base, not routed through here).</summary>
+    private SimPanel PanelFor(string id) => id switch
+    {
+        "Forge" => Forge,
+        "Shop" => Shop,
+        "Heroes" => Heroes,
+        "Tavern" => Tavern,
+        "Depths" => Depths,
+        "Bounties" => Bounties,
+        _ => throw new ArgumentOutOfRangeException(nameof(id), id, "no such drawer panel"),
+    };
 
     /// <summary>
     /// P007 U7: an Accent-forward per-node override marking the ONE primary HUD action
@@ -686,24 +759,24 @@ public partial class MainUi : Control
         button.AddThemeColorOverride("font_color_pressed", GameTheme.BoneColor);
     }
 
-    /// <summary>Town hero click (R20): jump to the Heroes tab with that hero's detail bound.</summary>
+    /// <summary>Town hero click (R20): open the Heroes drawer with that hero's detail bound.</summary>
     private void OnTownHeroClicked(int heroValue)
     {
-        Tabs.CurrentTab = Tabs.GetTabIdxFromControl(Heroes);
+        OpenPanel("Heroes");
         Heroes.SelectHero(heroValue);
     }
 
-    /// <summary>Town building click (R20): jump to the matching management tab.</summary>
+    /// <summary>Town building click (R20): open the matching management drawer.</summary>
     private void OnTownBuildingClicked(string building)
     {
-        Control target = building switch
+        var id = building switch
         {
-            "Forge" => Forge,
-            "Shop" => Shop,
-            "Tavern" => Tavern,
-            _ => Town,
+            "Forge" => "Forge",
+            "Shop" => "Shop",
+            "Tavern" => "Tavern",
+            _ => "Town",
         };
-        Tabs.CurrentTab = Tabs.GetTabIdxFromControl(target);
+        OpenPanel(id);
     }
 
     /// <summary>Reading the Ledger pauses the town; closing it resumes if it was running.</summary>
@@ -720,7 +793,7 @@ public partial class MainUi : Control
             Clock.Play();
         }
 
-        UpdateEngaged(); // TAB-ERA INTERIM RULE (U15): the Ledger modal engages the latch too
+        UpdateEngaged(); // the Ledger modal engages the latch too
         UpdateClockLabel();
     }
 
@@ -757,25 +830,23 @@ public partial class MainUi : Control
             _resumePlayOnCampClose = false;
         }
 
-        UpdateEngaged(); // TAB-ERA INTERIM RULE (U15): the Camp modal engages the latch too
+        UpdateEngaged(); // the Camp modal engages the latch too
         UpdateClockLabel();
     }
 
     /// <summary>
-    /// U15 (KTD3/AE1) TAB-ERA INTERIM RULE: drawers/interiors arrive in U21 (Wave 4) — until
-    /// then, the Town tab is the only flowing surface. Any other active tab, or either modal
-    /// overlay (Ledger/Camp) being open, engages <see cref="PhaseClock.Engaged"/> so an
-    /// expired phase timer holds at the boundary instead of ticking. U21 swaps this predicate
-    /// for real drawer/interior state and deletes the interim test that pins it.
+    /// U15/U21 (KTD3/AE1): real drawer/modal state engages <see cref="PhaseClock.Engaged"/> — the
+    /// bare world (no drawer open, no modal visible) is the only flowing surface; any open drawer
+    /// (<see cref="DrawerHost.IsOpen"/>) or modal overlay (Ledger/Camp/Mirror) engages the latch so
+    /// an expired phase timer holds at the boundary instead of ticking.
     /// </summary>
     private void UpdateEngaged()
     {
-        var onTownTab = Tabs.CurrentTab == Tabs.GetTabIdxFromControl(Town);
-        Clock.Engaged = !onTownTab || Ledger.Visible || Camp.Visible || Mirror.Visible;
+        Clock.Engaged = Drawer.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible;
 
-        // U18: the engaged latch flips on this discrete event (tab switch / modal open-close),
-        // not only on a phase tick — the waiting indicator must track it here too, still never
-        // per frame.
+        // U18: the engaged latch flips on this discrete event (drawer open/close / modal
+        // open-close), not only on a phase tick — the waiting indicator must track it here too,
+        // still never per frame.
         Timeline.Refresh(Adapter.CurrentState.Phase, Waiting);
     }
 

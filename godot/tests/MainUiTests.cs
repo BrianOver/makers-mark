@@ -18,12 +18,20 @@ namespace GodotClient.Tests;
 /// and every action goes through real Controls. AE4/AE7 assertions read the rendered
 /// Control text, never just the sim value.
 ///
-/// <para>P007 U8 reconciliation checkpoint: the tab-count/title pin (7; "Town,Forge,Shop,
-/// Heroes,Tavern,Depths,Bounties") and the themed HUD status assertions (DayChip/PhaseChip/
+/// <para>P007 U8 reconciliation checkpoint: the themed HUD status assertions (DayChip/PhaseChip/
 /// GoldChip) below already reflect U3–U7's shipped screens — verified here green, no further
 /// pin changes needed. Cross-screen theme-cascade/layout-non-degeneracy coverage (the R15
 /// backstop) now lives in <see cref="UiRenderSmokeTests"/>, run in both art-present and
 /// art-absent configurations.</para>
+///
+/// <para>U21 rewrite (KTD7 — class name kept; CI's silent-skip guard hard-fails on the name
+/// disappearing): the TabContainer is gone. The permanent world + <see cref="MainUi.OpenPanel"/>/
+/// <see cref="DrawerHost"/> replace every <c>ui.Tabs.CurrentTab</c> assertion below; the six
+/// management panels are no longer unconditionally refreshed each tick (<see
+/// cref="MainUi.RefreshAll"/> is visibility-gated — U21's load-bearing perf change now the world
+/// always renders), so a scenario that reads a panel's rendered state after a tick now opens that
+/// panel first (<see cref="OpenPanel_RefreshesOnDemand_EvenIfHiddenPanelsMissedTicks"/> pins the
+/// gating itself; the other scenarios below just call <c>OpenPanel</c> before reading).</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -35,10 +43,9 @@ public class MainUiTests
         var ui = MountMainUi();
         try
         {
-            // Tab shell: the U12 town first, then the six panels, plus the modal overlay.
-            AssertThat(ui.Tabs.GetTabCount()).IsEqual(7);
-            var titles = Enumerable.Range(0, 7).Select(i => ui.Tabs.GetTabTitle(i)).ToArray();
-            AssertThat(string.Join(",", titles)).IsEqual("Town,Forge,Shop,Heroes,Tavern,Depths,Bounties");
+            // U21: the world is a permanent base child; no drawer is open at boot.
+            AssertThat(ui.Town.Visible).IsTrue();
+            AssertThat(ui.Drawer.IsOpen).IsFalse();
             AssertThat(ui.Ledger.Visible).IsFalse();
 
             // Drive to a mid-game state: one full day, then on into day-2 Expedition.
@@ -56,7 +63,9 @@ public class MainUiTests
             AssertThat(RenderedText(Find<Control>(ui, "PhaseChip"))).Contains(state.Phase.ToString());
             AssertThat(RenderedText(Find<Control>(ui, "GoldChip"))).Contains($"{state.Player.Gold}g");
 
-            // Hero roster renders every hero; detail pane renders the selected one.
+            // Hero roster renders every hero; detail pane renders the selected one. U21: closed
+            // drawer panels don't refresh on tick, so open Heroes before reading it fresh.
+            ui.OpenPanel("Heroes");
             var heroesText = RenderedText(ui.Heroes);
             foreach (var hero in state.Heroes.Values)
             {
@@ -64,6 +73,7 @@ public class MainUiTests
             }
 
             // Depths board renders each recorded standing.
+            ui.OpenPanel("Depths");
             var depthsText = RenderedText(ui.Depths);
             foreach (var (heroValue, floor) in state.Drama.DepthsBoard)
             {
@@ -71,6 +81,7 @@ public class MainUiTests
             }
 
             // Tavern renders the newest gossip line (day-2 Morning gossips over day 1).
+            ui.OpenPanel("Tavern");
             var gossip = state.EventLog.OfType<GossipEmitted>().ToList();
             var tavernText = RenderedText(ui.Tavern);
             if (gossip.Count > 0)
@@ -81,6 +92,9 @@ public class MainUiTests
             {
                 AssertThat(tavernText).Contains("quiet");
             }
+
+            // Opening Tavern last REPLACED Heroes/Depths, never stacked (DrawerHost contract).
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Tavern");
         }
         finally
         {
@@ -182,9 +196,12 @@ public class MainUiTests
             AssertThat(ui.Adapter.LastRejections.Count).IsEqual(0);
 
             // Panels refreshed from the new state: the shop lists the unshelved craft,
-            // the forge shows the post-craft copper stock.
+            // the forge shows the post-craft copper stock. U21: each was hidden through the tick
+            // that changed this, so open-on-demand is what catches them up (RefreshAll gating).
+            ui.OpenPanel("Shop");
             AssertThat(RenderedText(ui.Shop)).Contains("Dagger");
             var copperLeft = state.Player.Materials.TryGetValue("copper", out var stock) ? stock : 0;
+            ui.OpenPanel("Forge");
             AssertThat(RenderedText(ui.Forge)).Contains($"copper x{copperLeft}");
         }
         finally
@@ -244,6 +261,8 @@ public class MainUiTests
         try
         {
             DriveToCraftedDagger(ui);
+            ui.OpenPanel("Shop"); // U21: RefreshAll is visibility-gated — open it so the freshly
+                                  // crafted item's shelf row (SpinBox/Stock button) actually exists
 
             // Day 3 Morning: shelve the dagger at 9999g through the shop panel's controls.
             var itemId = ScriptedSession.CraftedItem(ui.Adapter.CurrentState);
@@ -258,7 +277,9 @@ public class MainUiTests
                 .ToList();
             AssertThat(passes.Count > 0).IsTrue();
 
-            // AE4 render half: the reason string is on the rendered shop panel itself.
+            // AE4 render half: the reason string is on the rendered shop panel itself. U21: Shop
+            // was hidden through the tick that produced these passes — open it before reading.
+            ui.OpenPanel("Shop");
             var shopText = RenderedText(ui.Shop);
             foreach (var pass in passes)
             {
@@ -295,7 +316,9 @@ public class MainUiTests
                 .ToList();
             AssertThat(judged.Count > 0).IsTrue();
 
-            // AE7 render half: accept/decline reasons are on the rendered bounty board.
+            // AE7 render half: accept/decline reasons are on the rendered bounty board. U21:
+            // Bounties was hidden through the judging tick — open it before reading.
+            ui.OpenPanel("Bounties");
             var bountyText = RenderedText(ui.Bounties);
             foreach (var judgment in judged)
             {
@@ -394,10 +417,10 @@ public class MainUiTests
         }
     }
 
-    // ── LW6: tab-switch fade ──────────────────────────────────────────────────────────────────
+    // ── LW6: drawer-swap fade (was the tab-switch fade pre-U21) ─────────────────────────────────
 
     [TestCase]
-    public void TabFade_SwitchingTabs_TriggersDipThenSettlesBackToInvisible()
+    public void TabFade_OpeningADrawer_TriggersDipThenSettlesBackToInvisible()
     {
         var ui = MountMainUi();
         try
@@ -406,9 +429,9 @@ public class MainUiTests
             AssertThat(ui.TabFade.IsFading).IsFalse();
             AssertThat(ui.TabFade.Veil.Modulate.A).IsEqual(0f);
 
-            // A real tab switch (TabChanged, not just TabSelected) arms the dip — including the
-            // programmatic jumps OnTownHeroClicked/OnTownBuildingClicked already drive (R20).
-            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Forge);
+            // Opening a drawer arms the dip — including the programmatic jumps
+            // OnTownHeroClicked/OnTownBuildingClicked already drive via OpenPanel (R20).
+            ui.OpenPanel("Forge");
             AssertThat(ui.TabFade.IsFading).IsTrue();
 
             // Mid-dip: some non-zero alpha (accumulated-delta hump, no engine Tween in this
@@ -450,20 +473,18 @@ public class MainUiTests
     }
 
     [TestCase]
-    public void TabFade_Veil_NeverInterceptsClicksAndNeverTouchesTabShell()
+    public void TabFade_Veil_NeverInterceptsClicks_AndDrawerStillOpensNormally()
     {
-        // Purely additive: a CanvasLayer-100 veil that never eats a click, and the 7-tab shell /
-        // tab-title pin stays exactly as MainUiTests already asserts it, even across a dip.
+        // Purely additive: a CanvasLayer-100 veil that never eats a click, and OpenPanel still
+        // resolves to the exact requested drawer even across a dip.
         var ui = MountMainUi();
         try
         {
             AssertThat(ui.TabFade.Layer).IsEqual(100);
             AssertThat(ui.TabFade.Veil.MouseFilter).IsEqual(Control.MouseFilterEnum.Ignore);
 
-            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Shop);
-            AssertThat(ui.Tabs.GetTabCount()).IsEqual(7);
-            var titles = Enumerable.Range(0, 7).Select(i => ui.Tabs.GetTabTitle(i)).ToArray();
-            AssertThat(string.Join(",", titles)).IsEqual("Town,Forge,Shop,Heroes,Tavern,Depths,Bounties");
+            ui.OpenPanel("Shop");
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Shop");
         }
         finally
         {
@@ -474,30 +495,162 @@ public class MainUiTests
     // ── U15/KTD3/AE1: the living clock — Engaged latch + settings escape hatch ────────────
 
     [TestCase]
-    public void TownTab_TimerExpiry_TicksImmediately_ForgeTab_TimerExpiry_DoesNotTick()
+    public void ClosedDrawer_TimerExpiry_TicksImmediately_OpenDrawer_TimerExpiry_DoesNotTick()
     {
-        // TAB-ERA INTERIM RULE (deleted by U21 once drawers/interiors replace tabs): Town is
-        // the only flowing tab today; any other active tab engages the latch.
+        // U21: the Engaged latch now reads real drawer state — the bare world is the only
+        // flowing surface; any open drawer engages the latch (UpdateEngaged).
         var ui = MountMainUi();
         try
         {
             ui.Clock.SetAutoAdvance(true);
             ui.Clock.Play();
-            AssertThat(ui.Clock.Engaged).IsFalse(); // Town is the initial tab
+            AssertThat(ui.Clock.Engaged).IsFalse(); // no drawer open
 
-            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Forge);
+            ui.OpenPanel("Forge");
             AssertThat(ui.Clock.Engaged).IsTrue();
 
-            // Way past the phase duration on the Forge tab: held at the boundary, no tick.
+            // Way past the phase duration with the Forge drawer open: held at the boundary, no tick.
             ui._Process(PhaseClock.MorningSeconds * 2);
             AssertThat(ui.Adapter.CurrentState.Day).IsEqual(1);
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
 
-            // Back to Town: disengages, and the very next frame ticks (Elapsed already capped).
-            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Town);
+            // Back to the bare world: disengages, and the very next frame ticks (Elapsed already
+            // capped).
+            ui.OpenPanel("Town");
             AssertThat(ui.Clock.Engaged).IsFalse();
             ui._Process(0.001);
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void OpenPanel_WhileADrawerIsOpen_ReplacesIt_NeverStacks()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Forge");
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Forge");
+            AssertThat(ui.Forge.Visible).IsTrue();
+
+            ui.OpenPanel("Shop");
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Shop");
+            AssertThat(ui.Shop.Visible).IsTrue();
+            AssertThat(ui.Forge.Visible).IsFalse(); // replaced, not stacked underneath
+
+            // "Town" is the bare-world state, not a drawer — closes whatever was open, no
+            // "go back one" stack semantics.
+            ui.OpenPanel("Town");
+            AssertThat(ui.Drawer.IsOpen).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Drawer_Escape_ClosesAndReturnsFocusToTheWorld()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Heroes");
+            AssertThat(ui.Drawer.IsOpen).IsTrue();
+
+            ui.Drawer._Input(new InputEventKey { PhysicalKeycode = Key.Escape, Pressed = true });
+
+            AssertThat(ui.Drawer.IsOpen).IsFalse();
+            AssertThat(ui.Clock.Engaged).IsFalse(); // back to the bare, flowing world
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Drawer_ClickOut_ClosesAndConsumesTheClick_AvatarNeverMoves()
+    {
+        // KTD12/U21: the click-out that dismisses the drawer must never also reach WorldInput's
+        // click-to-move — proven here by the avatar sitting exactly where it started.
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Forge");
+            AssertThat(ui.Drawer.IsOpen).IsTrue();
+
+            var avatar = ui.Town.Avatar!;
+            var before = avatar.Position;
+
+            Click(ui.Drawer.Veil); // same GuiInput-signal seam TabFade/LedgerModal tests use
+
+            AssertThat(ui.Drawer.IsOpen).IsFalse();
+            AssertThat(avatar.Position).IsEqual(before);
+            AssertThat(avatar.IsFollowingPath).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void OpenPanel_RefreshesOnDemand_EvenIfHiddenPanelsMissedTicks()
+    {
+        // U21 load-bearing perf change: RefreshAll only refreshes the currently-open drawer panel
+        // (plus the always-live world/HUD/modals) — a CLOSED panel does not refresh on tick.
+        // Proven here via ForgePanel's own materials count, which only ever changes through
+        // Refresh(): stays stale while Forge is hidden, catches up the instant OpenPanel reruns it.
+        var ui = MountMainUi();
+        try
+        {
+            var key = GameSim.Materials.MaterialRegistry.PricedPool[0];
+            var stale = RenderedText(ui.Forge); // fresh campaign: "MATERIALS: none — ..." (Bind's own boot Refresh)
+
+            // Queued straight through the adapter (never through Forge's OWN Pressed handler,
+            // which sets its feedback label directly and would confound this gating proof).
+            ui.Adapter.Queue(new BuyMaterialAction(key, 1));
+            ui.Adapter.AdvancePhase(); // Morning resolves the buy; RefreshAll fires, Forge is closed
+
+            var after = ui.Adapter.CurrentState.Player.Materials[key];
+            AssertThat(after).IsGreater(0); // sanity: the sim state actually changed
+            AssertThat(ui.Drawer.IsOpen).IsFalse();
+            AssertThat(RenderedText(ui.Forge)).IsEqual(stale); // byte-identical — hidden, never refreshed
+            AssertThat(RenderedText(ui.Forge)).NotContains($"{key} x{after}");
+
+            ui.OpenPanel("Forge"); // opening it is what catches it up
+            AssertThat(RenderedText(ui.Forge)).Contains($"{key} x{after}");
+            AssertThat(RenderedText(ui.Forge)).IsNotEqual(stale);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void LedgerModal_OverlaysAboveAnOpenDrawer_WithoutDisturbingIt()
+    {
+        // LedgerModal/CampPanel stay FullRect overlays drawn above the drawer (U21) — proven here
+        // functionally: the open drawer survives a Ledger open/close cycle untouched.
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Forge");
+            AdvanceDay(ui);
+            ui._Process(MainUi.ReturnRitualDelaySeconds + 0.1); // Ledger opens
+
+            AssertThat(ui.Ledger.Visible).IsTrue();
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Forge"); // untouched underneath
+
+            Press(ui.Ledger, "CloseLedger");
+            AssertThat(ui.Ledger.Visible).IsFalse();
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Forge"); // still open, still untouched
         }
         finally
         {
@@ -655,16 +808,16 @@ public class MainUiTests
             ui.Clock.SetAutoAdvance(true);
             ui.Clock.Play();
 
-            // Town tab, nothing engaged yet: the waiting indicator stays hidden.
+            // No drawer open yet, nothing engaged: the waiting indicator stays hidden.
             AssertThat(Find<Control>(ui, "TimelineWaiting").Visible).IsFalse();
 
-            // TAB-ERA INTERIM RULE (U15): switching off Town engages the latch — a discrete
-            // event UpdateEngaged refreshes the timeline on, same as a phase tick would.
-            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Forge);
+            // U21: opening a drawer engages the latch — a discrete event (UpdateEngaged) refreshes
+            // the timeline on, same as a phase tick would.
+            ui.OpenPanel("Forge");
             AssertThat(ui.Clock.Engaged).IsTrue();
             AssertThat(Find<Control>(ui, "TimelineWaiting").Visible).IsTrue();
 
-            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Town);
+            ui.OpenPanel("Town");
             AssertThat(ui.Clock.Engaged).IsFalse();
             AssertThat(Find<Control>(ui, "TimelineWaiting").Visible).IsFalse();
         }
