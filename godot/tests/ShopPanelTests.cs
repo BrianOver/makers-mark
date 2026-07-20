@@ -183,6 +183,8 @@ public class ShopPanelTests
         ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
         ui.Adapter.AdvancePhase(); // Expedition: craft lands
         AssertThat(ui.Adapter.LastRejections.Count).IsEqual(0);
+        ui.OpenPanel("Shop"); // U21: RefreshAll is visibility-gated — open it so the new unshelved
+                              // craft's row (SpinBox/Stock button) actually exists to find/press
         return ScriptedSession.CraftedItem(ui.Adapter.CurrentState);
     }
 

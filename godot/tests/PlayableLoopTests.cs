@@ -168,6 +168,8 @@ public class PlayableLoopTests
         PressEnabled(ui, "AdvancePhase");
         Step("Morning tick: vendor buys landed");
         AssertThat(ui.Adapter.LastEvents.OfType<MaterialPurchased>().Count()).IsEqual(2);
+        // U21: RefreshAll is visibility-gated — open Forge for a fresh read/Disabled state.
+        ui.OpenPanel("Forge");
         AssertThat(RenderedText(ui.Forge))
             .Contains($"{ScriptedSession.CraftMaterial} x{ScriptedSession.CopperNeeded}");
         AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
@@ -179,6 +181,7 @@ public class PlayableLoopTests
         Step("Expedition tick: craft landed");
         AssertThat(ui.Adapter.LastEvents.OfType<ItemCrafted>().Count()).IsEqual(1);
         var crafted = ScriptedSession.CraftedItem(ui.Adapter.CurrentState);
+        ui.OpenPanel("Shop"); // U21: open Shop so the fresh unshelved craft actually renders
         AssertThat(RenderedText(ui.Shop)).Contains("Dagger");
 
         // Day-1 Camp: shelve the dagger from the Shop tab (StockAction is all-phases).

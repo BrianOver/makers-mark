@@ -420,7 +420,7 @@ public class TownSceneTests
         {
             // Pick a hero who is NOT the default detail binding to prove the click binds.
             var hero = ui.Adapter.CurrentState.Heroes.Values.Where(h => h.Alive).Skip(1).First();
-            AssertThat(ui.Tabs.CurrentTab).IsEqual(0); // starts on the Town tab
+            AssertThat(ui.Drawer.IsOpen).IsFalse(); // starts on the bare world, no drawer open
 
             // U19: HeroActor is a Node2D now — clicks route through its Area2D PickZone, driven
             // here via the G1 fallback (TryClickArea), same contract as the building click
@@ -428,7 +428,7 @@ public class TownSceneTests
             var actor = ui.Town.Sprites[hero.Id.Value];
             AssertThat(TryClickArea(actor.PickZone, actor.Position)).IsTrue();
 
-            AssertThat(ui.Tabs.CurrentTab).IsEqual(ui.Tabs.GetTabIdxFromControl(ui.Heroes));
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Heroes");
             AssertThat(RenderedText(ui.Heroes)).Contains($"{hero.Name} — {ClassRegistry.Require(hero.ClassId).DisplayName}");
         }
         finally
@@ -459,19 +459,19 @@ public class TownSceneTests
             AssertThat(ui.Town.FindChild("Building_Shop", true, false)).IsNull();
             AssertThat(ui.Town.FindChild("Building_Tavern", true, false)).IsNull();
 
-            var startTab = ui.Tabs.CurrentTab;
+            var startOpen = ui.Drawer.CurrentPanelId;
             var avatar = ui.Town.Avatar!;
 
             AssertThat(TryClickArea(Find<Area2D>(ui.Town, "ClickZone_forge"), ClickPointFor("forge"))).IsTrue();
-            AssertThat(ui.Tabs.CurrentTab).IsEqual(startTab); // KTD12: no instant open
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual(startOpen!); // KTD12: no instant open
             AssertThat(avatar.IsFollowingPath).IsTrue();
 
             AssertThat(TryClickArea(Find<Area2D>(ui.Town, "ClickZone_market"), ClickPointFor("market"))).IsTrue();
-            AssertThat(ui.Tabs.CurrentTab).IsEqual(startTab);
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual(startOpen!);
             AssertThat(avatar.IsFollowingPath).IsTrue(); // the market click replaced the forge path
 
             AssertThat(TryClickArea(Find<Area2D>(ui.Town, "ClickZone_tavern"), ClickPointFor("tavern"))).IsTrue();
-            AssertThat(ui.Tabs.CurrentTab).IsEqual(startTab);
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual(startOpen!);
             AssertThat(avatar.IsFollowingPath).IsTrue();
 
             // The mine gate never routes a click — parity with the pre-U14 gate, which was never

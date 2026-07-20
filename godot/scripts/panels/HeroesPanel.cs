@@ -41,6 +41,16 @@ public partial class HeroesPanel : SimPanel
     /// <summary>Roster column width (px) — two <see cref="RosterCardSize"/> cards plus gutters.</summary>
     private const float RosterColumnWidth = 300f;
 
+    /// <summary>
+    /// U21 drawer-relayout audit: below this panel width the roster/detail side-by-side split no
+    /// longer fits comfortably (<see cref="RosterColumnWidth"/> alone eats half of the drawer's
+    /// ~600px), so the split STACKS — roster on top, detail below — instead. Chosen above the
+    /// drawer's width (<c>DrawerHost.DrawerWidth</c> = 600) and below LayoutTests' pinned
+    /// side-by-side widths (800/1900), so the pre-U21 wide-panel geometry pin
+    /// (<c>DetailPane_NeverOccludesRosterGrid_AtNarrowAndWideWidths</c>) stays green unchanged.
+    /// </summary>
+    private const float StackBelowWidth = 700f;
+
     /// <summary>One roster card's footprint (px): portrait + name + a chip row/DIED line. A
     /// FLOOR only — the card's real <see cref="PanelContainer"/> sizing grows past this when its
     /// content (the chip row) needs more.</summary>
@@ -54,6 +64,9 @@ public partial class HeroesPanel : SimPanel
     /// Longsword") must keep enough room to wrap at word boundaries, not mid-word.</summary>
     private const float GearInfoColumnMinWidth = 180f;
 
+    private Control? _split;
+    private ScrollContainer? _rosterScroll;
+    private ScrollContainer? _detailScroll;
     private GridContainer? _rosterGrid;
     private VBoxContainer? _detail;
     private readonly Dictionary<int, Button> _heroCardButtons = [];
@@ -296,19 +309,27 @@ public partial class HeroesPanel : SimPanel
             return;
         }
 
-        var split = new HBoxContainer();
-        split.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(split);
+        // U21 drawer-relayout audit: a plain (non-Container) Control so the roster/detail split
+        // can freely switch between side-by-side and stacked (see RelayoutSplit) by directly
+        // positioning its two children — an HBox/VBox can't change orientation without
+        // reparenting churn, so this manual layout replaces it.
+        _split = new Control { Name = "HeroSplit" };
+        // SetAnchorsAndOffsetsPreset (not plain SetAnchorsPreset): a freshly-constructed Control
+        // has Size == Vector2.Zero, and the plain overload's default resize mode PRESERVES the
+        // control's current rect while only changing which anchors govern it — it would pin this
+        // to a degenerate zero-size rect rather than actually filling the panel.
+        _split.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        _split.Resized += RelayoutSplit;
+        AddChild(_split);
 
         // Roster: a vertically-scrolling grid of portrait cards (horizontal scroll disabled,
         // U7/R7 convention — the grid follows the column width instead of collapsing).
-        var rosterScroll = new ScrollContainer
+        _rosterScroll = new ScrollContainer
         {
             Name = "RosterScroll",
-            CustomMinimumSize = new Vector2(RosterColumnWidth, 0),
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
         };
-        split.AddChild(rosterScroll);
+        _split.AddChild(_rosterScroll);
 
         _rosterGrid = new GridContainer
         {
@@ -316,22 +337,66 @@ public partial class HeroesPanel : SimPanel
             Columns = RosterColumns,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
         };
-        rosterScroll.AddChild(_rosterGrid);
+        _rosterScroll.AddChild(_rosterGrid);
 
         // Horizontal scroll disabled (U7/R7): the detail column follows the pane width so
         // autowrap labels wrap on real width instead of collapsing to 1 char per line.
-        var scroll = new ScrollContainer
+        _detailScroll = new ScrollContainer
         {
-            SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            SizeFlagsVertical = SizeFlags.ExpandFill,
+            Name = "DetailScroll",
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
         };
-        split.AddChild(scroll);
+        _split.AddChild(_detailScroll);
         _detail = new VBoxContainer
         {
             Name = "HeroDetail",
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
         };
-        scroll.AddChild(_detail);
+        _detailScroll.AddChild(_detail);
+
+        RelayoutSplit();
+    }
+
+    /// <summary>
+    /// U21 drawer-relayout audit: manual two-region layout, re-run whenever <see cref="_split"/>'s
+    /// own rect changes (its parent resizing — the drawer opening at ~600px, or a test forcing
+    /// <c>ui.Heroes.Size</c> directly). Below <see cref="StackBelowWidth"/> the roster sits above
+    /// the detail pane (stacked); at or above it, they sit side by side (the original split),
+    /// roster fixed at <see cref="RosterColumnWidth"/>, detail filling the rest.
+    /// </summary>
+    private void RelayoutSplit()
+    {
+        if (_split is null || _rosterScroll is null || _detailScroll is null)
+        {
+            return;
+        }
+
+        var size = _split.Size;
+        if (size.X <= 0f || size.Y <= 0f)
+        {
+            return; // not laid out yet — the next Resized (or the explicit call after build) retries
+        }
+
+        if (size.X < StackBelowWidth)
+        {
+            var rosterHeight = Mathf.Min(size.Y * 0.45f, RosterCardSize.Y + 40f);
+            _rosterScroll.Position = Vector2.Zero;
+            _rosterScroll.Size = new Vector2(size.X, rosterHeight);
+            _detailScroll.Position = new Vector2(0f, rosterHeight);
+            _detailScroll.Size = new Vector2(size.X, size.Y - rosterHeight);
+        }
+        else
+        {
+            // The roster's HorizontalScrollMode.Disabled means its GetCombinedMinimumSize can
+            // exceed RosterColumnWidth (the grid's own content, e.g. a card's chip row, may need
+            // more) — Godot then clamps the assigned Size UP to that minimum regardless of what we
+            // ask for. Position the detail column off the roster's ACTUAL resulting width, not the
+            // raw constant, so the two columns never overlap even when the clamp kicks in.
+            var rosterWidth = Mathf.Max(RosterColumnWidth, _rosterScroll.GetCombinedMinimumSize().X);
+            _rosterScroll.Position = Vector2.Zero;
+            _rosterScroll.Size = new Vector2(rosterWidth, size.Y);
+            _detailScroll.Position = new Vector2(rosterWidth, 0f);
+            _detailScroll.Size = new Vector2(size.X - rosterWidth, size.Y);
+        }
     }
 }

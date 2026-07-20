@@ -149,14 +149,14 @@ public class PlayerAvatarTests
             AssertThat(TryClickArea(Find<Area2D>(ui.Town, "ClickZone_forge"), ClickPointFor("forge"))).IsTrue();
 
             // KTD12 pin: the click only issued a walk — no instant open.
-            AssertThat(ui.Tabs.CurrentTab).IsEqual(0);
+            AssertThat(ui.Drawer.IsOpen).IsFalse();
             AssertThat(ui.Town.Avatar!.IsFollowingPath).IsTrue();
 
             await SettlePhysics(ui);
             await WalkUntilArrived(ui, ui.Town.Avatar!);
 
             AssertThat(ui.Town.Avatar!.IsFollowingPath).IsFalse(); // arrived
-            AssertThat(ui.Tabs.CurrentTab).IsEqual(ui.Tabs.GetTabIdxFromControl(ui.Forge));
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Forge");
         }
         finally
         {
@@ -199,7 +199,7 @@ public class PlayerAvatarTests
 
             overlay.WorldInput.TryInteract();
 
-            AssertThat(ui.Tabs.CurrentTab).IsEqual(ui.Tabs.GetTabIdxFromControl(ui.Forge));
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Forge");
         }
         finally
         {
@@ -213,12 +213,12 @@ public class PlayerAvatarTests
         var ui = MountMainUi();
         try
         {
-            var startTab = ui.Tabs.CurrentTab;
+            var startOpen = ui.Drawer.CurrentPanelId;
             AssertThat(ui.Town.LitOverlay!.WorldInput.CurrentZone).IsNull();
 
             ui.Town.LitOverlay!.WorldInput.TryInteract();
 
-            AssertThat(ui.Tabs.CurrentTab).IsEqual(startTab);
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual(startOpen!);
         }
         finally
         {

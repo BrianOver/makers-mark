@@ -158,11 +158,13 @@ public class HeroRosterTests
         var ui = MountMainUi(new SimAdapter(RosterWorld()));
         try
         {
-            // A non-current TabContainer page's subtree never gets its nested containers
-            // (the roster/detail HBoxContainer split) sorted — only the page Control itself
-            // tracks the tab content rect via anchors. Select Heroes as current (R20's own
-            // routing does this) before forcing a width and measuring descendant geometry.
-            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Heroes);
+            // A closed drawer panel's subtree never gets its nested containers (the roster/detail
+            // manual split — U21) laid out — only the open panel tracks the drawer's rect via
+            // anchors. Open Heroes (R20's own routing does this) before forcing a width and
+            // measuring descendant geometry. Both pinned widths (800/1900) sit above HeroesPanel's
+            // StackBelowWidth threshold, so this stays the side-by-side geometry pin even though
+            // the drawer itself opens narrower (600px, which stacks instead — U21 audit).
+            ui.OpenPanel("Heroes");
             ui.Heroes.Size = new Vector2(panelWidth, 700f);
             await SettleLayout(ui);
 

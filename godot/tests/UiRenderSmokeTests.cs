@@ -14,8 +14,9 @@ namespace GodotClient.Tests;
 /// <summary>
 /// P007 U8 (R15 backstop): the cross-screen render-smoke harness the plan's origin doc
 /// explicitly demands ("no test drives the UI loop or asserts label layout"). Data-driven over
-/// EVERY tab (<see cref="MainUi.Tabs"/>'s pinned seven — Town/Forge/Shop/Heroes/Tavern/Depths/
-/// Bounties, see <see cref="AllTabNames"/>): after a full simulated day, each panel must
+/// EVERY former tab (U21: Town is the permanent world; the other six are the <see
+/// cref="MainUi.Drawer"/>'s registered panels — Forge/Shop/Heroes/Tavern/Depths/Bounties, see
+/// <see cref="AllTabNames"/>): after a full simulated day, each panel must
 /// (1) resolve the U1 Theme cascade at a legible size (<see cref="ThemeReachesPanel"/>),
 /// (2) hold at least one child <see cref="Control"/>, and (3) lay out to a real, non-zero
 /// footprint (<see cref="HasNonDegenerateLayout"/>) — the general panel-level guard against the
@@ -104,7 +105,11 @@ public class UiRenderSmokeTests
     private static async Task AssertRenderSmoke(MainUi ui, string tabName)
     {
         var panel = PanelFor(ui, tabName);
-        ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(panel); // a hidden tab page never lays out
+        if (tabName != "Town")
+        {
+            ui.OpenPanel(tabName); // U21: a closed drawer panel never lays out
+        }
+
         await SettleLayout(ui);
 
         AssertThat(ThemeReachesPanel(panel)).IsTrue();

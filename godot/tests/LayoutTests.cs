@@ -128,7 +128,7 @@ public class LayoutTests
         var ui = MountMainUi();
         try
         {
-            ui.Tabs.CurrentTab = 1; // Forge — a hidden tab is never laid out, so surface it first
+            ui.OpenPanel("Forge"); // a closed drawer panel is never laid out, so surface it first
             await SettleLayout(ui);
 
             AssertLabelsReadable(Find<ScrollContainer>(ui.Forge, "Scroll"));
@@ -145,7 +145,7 @@ public class LayoutTests
         var ui = MountMainUi();
         try
         {
-            ui.Tabs.CurrentTab = 2; // Shop
+            ui.OpenPanel("Shop");
             await SettleLayout(ui);
 
             AssertLabelsReadable(Find<ScrollContainer>(ui.Shop, "Scroll"));
@@ -169,7 +169,7 @@ public class LayoutTests
         var ui = MountMainUi(new SimAdapter(RivalShelfWorld()));
         try
         {
-            ui.Tabs.CurrentTab = 2; // Shop
+            ui.OpenPanel("Shop");
             await SettleLayout(ui);
 
             var shopText = RenderedText(ui.Shop);
@@ -192,7 +192,7 @@ public class LayoutTests
         var ui = MountMainUi();
         try
         {
-            ui.Tabs.CurrentTab = 3; // Heroes — Refresh auto-selects the first hero into the detail pane
+            ui.OpenPanel("Heroes"); // Refresh auto-selects the first hero into the detail pane
             await SettleLayout(ui);
 
             AssertLabelsReadable(Find<VBoxContainer>(ui.Heroes, "HeroDetail"));

@@ -34,6 +34,7 @@ public class ForgeCraftTests
             // card's affordability chip lights and the Craft button is a real, clickable path.
             ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
             ui.Adapter.AdvancePhase(); // Morning: the buy lands
+            ui.OpenPanel("Forge"); // U21: RefreshAll is visibility-gated — open it for a fresh read
 
             var craft = Find<Button>(ui.Forge, $"Craft_{ScriptedSession.CraftRecipeId}");
             AssertThat(craft.Disabled).IsFalse();

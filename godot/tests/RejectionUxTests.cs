@@ -83,6 +83,7 @@ public class RejectionUxTests
             // it. The row's Buy renders Disabled — the vendor is a Morning-only handler.
             ui.Adapter.AdvancePhase();
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
+            ui.OpenPanel("Forge"); // U21: RefreshAll is visibility-gated — open it for a fresh read
             AssertThat(Find<Button>(ui.Forge, "BuyMat_copper").Disabled).IsTrue();
         }
         finally
