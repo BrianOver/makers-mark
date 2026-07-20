@@ -54,6 +54,27 @@ public class CliWiringTests
     }
 
     [Fact]
+    public void Accepts_MirrorsTheHandlerPhaseGate_ForInputTimeRejection()
+    {
+        // Playtest finding N3 (P1): phase-illegal actions ('buymat' outside Morning, etc.) queued
+        // silently and only failed a full phase later at 'next'. Accepts exposes the SAME
+        // CanHandle predicate Tick uses so the CLI can reject them at input time instead.
+        var kernel = GameComposition.BuildKernel();
+
+        // BuyMaterial is Morning-only; Craft is all-phase.
+        Assert.True(kernel.Accepts(new BuyMaterialAction("copper", 1), DayPhase.Morning));
+        Assert.False(kernel.Accepts(new BuyMaterialAction("copper", 1), DayPhase.Expedition));
+        Assert.True(kernel.Accepts(new CraftAction("dagger", "copper"), DayPhase.Morning));
+        Assert.True(kernel.Accepts(new CraftAction("dagger", "copper"), DayPhase.Expedition));
+
+        // BuyOre is Evening-only; the camp verbs are Camp-only.
+        Assert.False(kernel.Accepts(new BuyOreAction(new HeroId(1), "copper", 1), DayPhase.Morning));
+        Assert.True(kernel.Accepts(new BuyOreAction(new HeroId(1), "copper", 1), DayPhase.Evening));
+        Assert.False(kernel.Accepts(new RecallPartyAction(new HeroId(1)), DayPhase.Morning));
+        Assert.True(kernel.Accepts(new RecallPartyAction(new HeroId(1)), DayPhase.Camp));
+    }
+
+    [Fact]
     public void TopSuggestion_OnFreshCampaign_IsFormattableAndActionable()
     {
         // Ties ObjectiveAdvisorTests's "fresh game suggests buy-material first" to the CLI's own
