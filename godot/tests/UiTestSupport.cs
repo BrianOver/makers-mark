@@ -4,6 +4,7 @@ using System.Text;
 using System.Threading.Tasks;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Town;
 using GodotClient.Ui;
 
 namespace GodotClient.Tests;
@@ -279,6 +280,46 @@ public static class UiTestSupport
         for (var i = 0; i < 3; i++)
         {
             await node.ToSignal(tree, SceneTree.SignalName.PhysicsFrame);
+        }
+    }
+
+    /// <summary>
+    /// U20: pump both process AND physics frames for real, letting the engine's own
+    /// <c>_Process</c>/<c>_PhysicsProcess</c> run at their normal cadence — the avatar/world-input
+    /// twin of <see cref="SettlePhysics"/>, just for longer stretches (walking a real distance, or
+    /// letting a click-to-move path settle, needs many ticks). Deliberately real engine frames
+    /// rather than manual method calls, so a WASD/collision test exercises the exact same code
+    /// path production does.
+    /// </summary>
+    public static async Task PumpWorldFrames(Node node, int frames)
+    {
+        var tree = (SceneTree)Engine.GetMainLoop();
+        for (var i = 0; i < frames; i++)
+        {
+            await node.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+            await node.ToSignal(tree, SceneTree.SignalName.PhysicsFrame);
+        }
+    }
+
+    /// <summary>
+    /// U20: pump real physics frames until <paramref name="avatar"/> reports it is no longer
+    /// following a path — day-length-agnostic the same way <see cref="AdvanceDay"/> is tick-count
+    /// agnostic, so a test never has to hand-compute "how many frames does 540px at 240px/s take
+    /// at 60Hz". Capped like every other tick-loop in this file so a genuinely stuck avatar fails
+    /// the test instead of hanging it.
+    /// </summary>
+    public static async Task WalkUntilArrived(Node node, PlayerAvatar avatar, int maxFrames = 600)
+    {
+        var tree = (SceneTree)Engine.GetMainLoop();
+        var frames = 0;
+        while (avatar.IsFollowingPath)
+        {
+            await node.ToSignal(tree, SceneTree.SignalName.PhysicsFrame);
+            if (++frames > maxFrames)
+            {
+                throw new InvalidOperationException(
+                    $"Avatar did not arrive within {maxFrames} physics frames.");
+            }
         }
     }
 
