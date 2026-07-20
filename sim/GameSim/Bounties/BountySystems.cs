@@ -17,25 +17,14 @@ public sealed class BountyJudgingSystem : IPhaseSystem
 
     public GameState Process(GameState state, IDeterministicRng rng, IEventSink events)
     {
-        foreach (var bounty in state.Bounties.Where(b => b.AcceptedBy is null))
-        {
-            foreach (var hero in state.Heroes.Values.Where(h => h.Alive))
-            {
-                var (accepted, reason) = BountyRules.Judge(hero, bounty);
-                events.Emit(new BountyJudged(bounty.Id, hero.Id, accepted, reason));
+        // Shared first-accept loop (KTD8) — identical behavior, extracted so MusterSystem can
+        // predict the same outcome one phase earlier (Morning) without duplicating the rule.
+        var judged = BountyRules.JudgeFirstAccept(
+            state.Heroes,
+            state.Bounties,
+            (bounty, hero, accepted, reason) => events.Emit(new BountyJudged(bounty.Id, hero.Id, accepted, reason)));
 
-                if (accepted)
-                {
-                    state = state with
-                    {
-                        Bounties = state.Bounties.Replace(bounty, bounty with { AcceptedBy = hero.Id }),
-                    };
-                    break;
-                }
-            }
-        }
-
-        return state;
+        return state with { Bounties = judged };
     }
 }
 

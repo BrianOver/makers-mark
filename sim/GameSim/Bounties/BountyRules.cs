@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using GameSim.Contracts;
 
 namespace GameSim.Bounties;
@@ -29,5 +30,38 @@ public static class BountyRules
         }
 
         return (true, $"{hero.Name} takes the floor {bounty.TargetFloor} bounty for {bounty.RewardGold}g");
+    }
+
+    /// <summary>
+    /// The first-accept loop (KTD8): every unaccepted bounty is offered to every alive hero in
+    /// HeroId order; the first to accept claims it. Returns <paramref name="bounties"/> with
+    /// <see cref="Bounty.AcceptedBy"/> set for whichever hero accepted this pass — already-accepted
+    /// bounties pass through untouched. Pure, zero RNG. Shared by two callers: authoritative
+    /// (<c>BountyJudgingSystem</c> at the Expedition tick, which passes <paramref name="onJudged"/>
+    /// to emit the visible <c>BountyJudged</c> event, AE7) and predictive (<c>MusterSystem</c> at the
+    /// Morning tick, silent — no callback — since the real judging is still two phases away and must
+    /// not double-log).
+    /// </summary>
+    public static ImmutableList<Bounty> JudgeFirstAccept(
+        ImmutableSortedDictionary<int, Hero> heroes,
+        ImmutableList<Bounty> bounties,
+        Action<Bounty, Hero, bool, string>? onJudged = null)
+    {
+        foreach (var bounty in bounties.Where(b => b.AcceptedBy is null))
+        {
+            foreach (var hero in heroes.Values.Where(h => h.Alive))
+            {
+                var (accepted, reason) = Judge(hero, bounty);
+                onJudged?.Invoke(bounty, hero, accepted, reason);
+
+                if (accepted)
+                {
+                    bounties = bounties.Replace(bounty, bounty with { AcceptedBy = hero.Id });
+                    break;
+                }
+            }
+        }
+
+        return bounties;
     }
 }

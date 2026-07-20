@@ -45,17 +45,13 @@ public sealed class ExpeditionSystem : IPhaseSystem
         {
             var party = partyIds.Select(id => state.Heroes[id.Value]).ToImmutableList();
 
-            // Push one floor past the party's best prior depth, capped at the venue's bottom (R9).
-            var targetFloor = Math.Clamp(party.Max(h => h.DeepestFloorReached) + 1, 1, venue.FloorCount);
+            var targetFloor = TargetFloorFor(party, partyIds, state.Bounties, venue);
 
             // Influence, never orders (R18): a member who accepted a bounty commits the
-            // party to that bounty's floor for the day.
+            // party to that bounty's floor for the day (target-floor override lives in
+            // TargetFloorFor above — shared with MusterSystem's Morning-tick prediction, KTD8).
             var bounty = state.Bounties.FirstOrDefault(b =>
                 b.AcceptedBy is { } acceptor && partyIds.Contains(acceptor));
-            if (bounty is not null)
-            {
-                targetFloor = bounty.TargetFloor;
-            }
 
             // TUNING-C (open decision, default): the bounty's acceptor is EXEMPT from the competence
             // retreat through the bounty's TargetFloor — accepting the bounty IS the commitment (R18).
@@ -105,6 +101,33 @@ public sealed class ExpeditionSystem : IPhaseSystem
         bounty?.AcceptedBy is { } acceptor
             ? (ImmutableHashSet.Create(acceptor.Value), bounty.TargetFloor)
             : (ImmutableHashSet<int>.Empty, 0);
+
+    /// <summary>
+    /// A party's target floor (KTD8): push one floor past the party's best prior depth, capped at
+    /// the venue's bottom (R9) — UNLESS a member accepted a bounty, in which case the bounty's floor
+    /// overrides (R18, influence not orders). Pure function of already-judged <paramref name="bounties"/>
+    /// (<see cref="Bounty.AcceptedBy"/> set). Shared by two callers: authoritative (this system, fed
+    /// the real post-judging <c>state.Bounties</c>) and predictive (<c>MusterSystem</c> at Morning,
+    /// fed <see cref="BountyRules.JudgeFirstAccept"/>'s prediction one phase early) — one rule, two
+    /// call sites, no drift possible.
+    /// </summary>
+    internal static int TargetFloorFor(
+        ImmutableList<Hero> party,
+        ImmutableList<HeroId> partyIds,
+        ImmutableList<Bounty> bounties,
+        VenueDefinition venue)
+    {
+        var targetFloor = Math.Clamp(party.Max(h => h.DeepestFloorReached) + 1, 1, venue.FloorCount);
+
+        var bounty = bounties.FirstOrDefault(b =>
+            b.AcceptedBy is { } acceptor && partyIds.Contains(acceptor));
+        if (bounty is not null)
+        {
+            targetFloor = bounty.TargetFloor;
+        }
+
+        return targetFloor;
+    }
 
     /// <summary>The winch-house slate: current HP and the count of Heal consumables left in each
     /// camped hero's working pack — the facts the player decides send/recall/hold on. Never lists a

@@ -471,6 +471,102 @@ public class MainUiTests
         }
     }
 
+    // ── U15/KTD3/AE1: the living clock — Engaged latch + settings escape hatch ────────────
+
+    [TestCase]
+    public void TownTab_TimerExpiry_TicksImmediately_ForgeTab_TimerExpiry_DoesNotTick()
+    {
+        // TAB-ERA INTERIM RULE (deleted by U21 once drawers/interiors replace tabs): Town is
+        // the only flowing tab today; any other active tab engages the latch.
+        var ui = MountMainUi();
+        try
+        {
+            ui.Clock.SetAutoAdvance(true);
+            ui.Clock.Play();
+            AssertThat(ui.Clock.Engaged).IsFalse(); // Town is the initial tab
+
+            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Forge);
+            AssertThat(ui.Clock.Engaged).IsTrue();
+
+            // Way past the phase duration on the Forge tab: held at the boundary, no tick.
+            ui._Process(PhaseClock.MorningSeconds * 2);
+            AssertThat(ui.Adapter.CurrentState.Day).IsEqual(1);
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+
+            // Back to Town: disengages, and the very next frame ticks (Elapsed already capped).
+            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Town);
+            AssertThat(ui.Clock.Engaged).IsFalse();
+            ui._Process(0.001);
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void LedgerModal_Open_EngagesTheLatch_ClosingDisengages()
+    {
+        // The interim rule also folds the modal overlays in — same latch U18 reads either way.
+        var ui = MountMainUi();
+        try
+        {
+            AdvanceDay(ui);
+            ui._Process(MainUi.ReturnRitualDelaySeconds + 0.1); // Ledger opens
+            AssertThat(ui.Ledger.Visible).IsTrue();
+            AssertThat(ui.Clock.Engaged).IsTrue();
+
+            Press(ui.Ledger, "CloseLedger");
+            AssertThat(ui.Ledger.Visible).IsFalse();
+            AssertThat(ui.Clock.Engaged).IsFalse(); // Town tab, no modal — disengaged again
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void FreshMount_NoPersistedSettings_AutoAdvanceDefaultsOn()
+    {
+        // U15/KTD3: a brand-new install has no settings file yet — PhaseClock's ON default
+        // for a new campaign must reach MainUi untouched.
+        MainUi.ClockSettings.DeleteForTests(); // guard against a leftover file from another suite
+        var ui = MountMainUi(adapterOverride: null, forceGated: false);
+        try
+        {
+            AssertThat(ui.Clock.AutoAdvance).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void PersistedManualMode_OverridesTheOnDefault_OnLoad()
+    {
+        // U15/KTD3 escape hatch: a saved "manual mode" preference wins over the ON default.
+        MainUi.ClockSettings.SaveAutoAdvance(false);
+        try
+        {
+            var ui = MountMainUi(adapterOverride: null, forceGated: false);
+            try
+            {
+                AssertThat(ui.Clock.AutoAdvance).IsFalse();
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+        finally
+        {
+            MainUi.ClockSettings.DeleteForTests(); // never leak this preference into another suite
+        }
+    }
+
     /// <summary>The heroes of a party in id order, mirroring the LedgerModal/CLI retelling input.</summary>
     private static ImmutableList<Hero> PartyOf(GameState state, ImmutableList<HeroId> ids) =>
         ids.Where(id => state.Heroes.ContainsKey(id.Value))
