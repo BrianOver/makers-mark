@@ -17,10 +17,15 @@ namespace GameSim;
 /// DETERMINISM CONTRACT (KTD4): every consumer — CLI, Godot, balance sim — must build
 /// the kernel through here so a seed means the same world everywhere.
 ///
-/// Morning: faction-drift → rival-restock → recruit-trickle → gossip → hero-shopping
+/// Morning: faction-drift → rival-restock → recruit-trickle → gossip → hero-shopping → muster
 /// (drift settles standing for the day before anything reads it — KTD5; restock must
-/// precede shopping; gossip reads yesterday's stamped log). Drift draws no RNG, so the
-/// kernel stream — and every existing seed's world — is unchanged by its insertion.
+/// precede shopping; gossip reads yesterday's stamped log). MusterSystem registers LAST in
+/// the Morning block BY CONTRACT (world-rework U9/KTD8): it predicts the Expedition tick's
+/// party/target-floor outcome, so it must see the day's final roster (after RecruitSystem)
+/// and final hero state (after HeroShoppingSystem) or its emitted PartiesFormed roster/floor
+/// diverges from what ExpeditionSystem actually forms two phases later — reordering it breaks
+/// the byte-match property test. Drift draws no RNG, so the kernel stream — and every existing
+/// seed's world — is unchanged by its insertion; muster likewise draws no RNG (pure projection).
 /// Expedition: bounty-judging → expedition (judging shapes target floors).
 /// Evening: expedition-reveal → bounty-payout (payout needs revealed depths).
 /// </summary>
@@ -34,6 +39,7 @@ public static class GameComposition
             new RecruitSystem(),
             new GossipSystem(),
             new HeroShoppingSystem(),
+            new MusterSystem(), // world rework U9/KTD8: LAST in Morning — see class comment above
             new BountyJudgingSystem(),
             new ExpeditionSystem(),
             new ExpeditionDeepSystem(), // U3 staged resolution: stage-2 finalize at the Deep tick (day order; phase filter does the work)
