@@ -530,7 +530,10 @@ void TryQueue(PlayerAction action, string queuedMessage)
 {
     if (!kernel.Accepts(action, state.Phase))
     {
-        Console.WriteLine($"  can't do that during {state.Phase} — type 'advice' to see this phase's legal actions.");
+        // Name the offending verb (finding R3), matching the per-verb error style the id/arg
+        // checks use — the verb is the first token of the action's own re-typeable form.
+        var verb = CliActionFormat.Format(action)?.Split(' ')[0] ?? action.GetType().Name;
+        Console.WriteLine($"  {verb}: can't do that during {state.Phase} — type 'advice' to see this phase's legal actions.");
         return;
     }
 
@@ -540,12 +543,26 @@ void TryQueue(PlayerAction action, string queuedMessage)
 
 GameState Advance(GameState current)
 {
-    var result = kernel.Tick(current, pending.ToImmutable());
+    var batch = pending.ToImmutable();
+    var result = kernel.Tick(current, batch);
     pending.Clear();
 
     foreach (var rejected in result.Rejected)
     {
         Console.WriteLine($"  REJECTED: {rejected.Action.GetType().Name} — {rejected.Reason}");
+    }
+
+    // A successful buyore emits no resolution event of its own (the sim records the transfer in the
+    // action log, not an event), so it would otherwise resolve silently — the buyore half of the
+    // finding-N1 "successful action logs nothing" defect (finding R1). Confirm each ACCEPTED
+    // purchase here (accepted == queued this batch and not in the rejection list).
+    var rejectedActions = result.Rejected.Select(r => r.Action).ToHashSet();
+    foreach (var ore in batch.OfType<BuyOreAction>())
+    {
+        if (!rejectedActions.Contains(ore))
+        {
+            Console.WriteLine($"  ⛏ bought {ore.Quantity}x {ore.MaterialKey} from H{ore.From.Value}");
+        }
     }
 
     var next = result.NewState;
