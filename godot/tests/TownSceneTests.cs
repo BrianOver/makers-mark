@@ -62,12 +62,42 @@ public class TownSceneTests
                 AssertThat(townText).Contains(memorial.HeroName);
             }
 
+            // U3: the MEMORIALS header itself only renders once there is something under it.
+            // RenderedText ignores Label.Visible (it walks the whole tree regardless), so the
+            // gate has to be asserted on the node directly, not via townText above.
+            AssertThat(Find<Label>(ui.Town, "MemorialHeader").Visible).IsTrue();
+
             // Morning tint is the warm one. LW1: the tint now crossfades over
             // TownScene.TintTweenSeconds instead of snapping — AdvanceDay never pumps Animate,
             // so let the armed tween settle before reading it (same fast-forward contract the
-            // walk decoration already uses).
+            // walk decoration already uses). U3: LitTownOverlay.AtmosphereTintFor is now the
+            // sole tint authority (CurrentTint reads its CanvasModulate, not the town root's own
+            // Modulate, which stays pinned white).
             ui.Town.Animate(TownScene.TintTweenSeconds);
-            AssertThat(ui.Town.CurrentTint).IsEqual(TownScene.TintFor(DayPhase.Morning));
+            AssertThat(ui.Town.CurrentTint).IsEqual(LitTownOverlay.AtmosphereTintFor(DayPhase.Morning));
+            AssertThat(ui.Town.Modulate).IsEqual(Colors.White);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void MemorialHeader_HiddenUntilFirstDeath()
+    {
+        // U3: the MEMORIALS label now gates on Drama.Memorials being non-empty instead of always
+        // floating over an empty plot. RenderedText can't see this (it ignores Label.Visible), so
+        // this asserts the node's Visible flag directly, both before and after the first death.
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(ui.Adapter.CurrentState.Drama.Memorials.Count).IsEqual(0);
+            AssertThat(Find<Label>(ui.Town, "MemorialHeader").Visible).IsFalse();
+
+            AdvanceDay(ui); // seed 2026 loses one hero on day 1
+            AssertThat(ui.Adapter.CurrentState.Drama.Memorials.Count > 0).IsTrue();
+            AssertThat(Find<Label>(ui.Town, "MemorialHeader").Visible).IsTrue();
         }
         finally
         {
@@ -381,15 +411,18 @@ public class TownSceneTests
     [TestCase]
     public void PhaseAmbience_MultiplyTintTracksEveryPhase()
     {
-        // V5b-lite: the town's ambient tint is the pilot's MULTIPLY table on the town root's
-        // Modulate, re-applied every tick. Walk the full 5-phase day and assert one tint per
-        // phase (5 assertions), then pin the table values to the approved LitTavernPilot colors.
+        // U3 de-collage: LitTownOverlay's CanvasModulate (AtmosphereTintFor) is now the SOLE tint
+        // authority — the town root's own Modulate stays pinned white (never re-applied), so the
+        // subtree is multiplied exactly once, not twice (the old bug this unit kills). Walk the
+        // full 5-phase day and assert one tint per phase (5 assertions) plus the white-root guard,
+        // then pin the table values to the approved LitTavernPilot colors.
         var ui = MountMainUi();
         try
         {
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
             ui.Town.Animate(TownScene.TintTweenSeconds); // let the initial crossfade (LW1) settle
-            AssertThat(ui.Town.CurrentTint).IsEqual(TownScene.TintFor(DayPhase.Morning));
+            AssertThat(ui.Town.CurrentTint).IsEqual(LitTownOverlay.AtmosphereTintFor(DayPhase.Morning));
+            AssertThat(ui.Town.Modulate).IsEqual(Colors.White);
 
             foreach (var phase in new[]
                      {
@@ -399,15 +432,16 @@ public class TownSceneTests
                 ui.Adapter.AdvancePhase();
                 AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(phase);
                 ui.Town.Animate(TownScene.TintTweenSeconds); // crossfade settles before we read it
-                AssertThat(ui.Town.CurrentTint).IsEqual(TownScene.TintFor(phase));
+                AssertThat(ui.Town.CurrentTint).IsEqual(LitTownOverlay.AtmosphereTintFor(phase));
+                AssertThat(ui.Town.Modulate).IsEqual(Colors.White);
             }
 
-            // Opaque multipliers (alpha 1), NOT the old alpha-overlay table — the pilot values.
-            AssertThat(TownScene.TintFor(DayPhase.Morning)).IsEqual(new Color(1.00f, 0.92f, 0.78f));
-            AssertThat(TownScene.TintFor(DayPhase.Expedition)).IsEqual(new Color(1.00f, 1.00f, 1.00f));
-            AssertThat(TownScene.TintFor(DayPhase.Camp)).IsEqual(new Color(0.85f, 0.80f, 0.95f));
-            AssertThat(TownScene.TintFor(DayPhase.ExpeditionDeep)).IsEqual(new Color(0.60f, 0.60f, 0.85f));
-            AssertThat(TownScene.TintFor(DayPhase.Evening)).IsEqual(new Color(0.45f, 0.45f, 0.70f));
+            // Pinned ramp values (the approved LitTavernPilot table), now owned solely by the overlay.
+            AssertThat(LitTownOverlay.AtmosphereTintFor(DayPhase.Morning)).IsEqual(new Color(1.00f, 0.92f, 0.78f));
+            AssertThat(LitTownOverlay.AtmosphereTintFor(DayPhase.Expedition)).IsEqual(new Color(1.00f, 1.00f, 1.00f));
+            AssertThat(LitTownOverlay.AtmosphereTintFor(DayPhase.Camp)).IsEqual(new Color(0.59f, 0.66f, 0.78f));
+            AssertThat(LitTownOverlay.AtmosphereTintFor(DayPhase.ExpeditionDeep)).IsEqual(new Color(0.42f, 0.46f, 0.64f));
+            AssertThat(LitTownOverlay.AtmosphereTintFor(DayPhase.Evening)).IsEqual(new Color(0.30f, 0.32f, 0.55f));
         }
         finally
         {
@@ -502,21 +536,18 @@ public class TownSceneTests
     // ── V-lit-overlay: the 2.5D lit town backdrop (DoD D3) ───────────────────────────────────
 
     [TestCase]
-    public void LitOverlay_ShippedAssets_MountFourBuildingsThreeHeroesAndWarmLights()
+    public void LitOverlay_ShippedAssets_MountFourBuildingsAndWarmLights()
     {
-        // The 4 building + 3 hero curated pairs are on main via LFS; CI's `godot --import` makes
-        // them loadable — assert each resolves, then that the mounted overlay realized every one.
+        // The 4 building curated pairs are on main via LFS; CI's `godot --import` makes them
+        // loadable — assert each resolves, then that the mounted overlay realized every one.
+        // U3: DefaultHeroes is now empty (the 3 hard-coded decor figures were removed — U19
+        // brings the real live-hero figures), so there is nothing hero-shaped to assert here.
         var ui = MountMainUi();
         try
         {
             foreach (var building in LitTownOverlay.DefaultBuildings)
             {
                 AssertThat(IconRegistry.Lit(building.LitId)).IsNotNull();
-            }
-
-            foreach (var hero in LitTownOverlay.DefaultHeroes)
-            {
-                AssertThat(IconRegistry.Lit(hero.LitId)).IsNotNull();
             }
 
             var overlay = ui.Town.LitOverlay;
@@ -526,11 +557,6 @@ public class TownSceneTests
             foreach (var building in LitTownOverlay.DefaultBuildings)
             {
                 AssertThat(Find<Sprite2D>(ui.Town, $"LitBuilding_{building.Key}")).IsNotNull();
-            }
-
-            foreach (var hero in LitTownOverlay.DefaultHeroes)
-            {
-                AssertThat(Find<Sprite2D>(ui.Town, $"LitHero_{hero.ClassId}")).IsNotNull();
             }
 
             // One warm PointLight2D per building, carrying the pilot's params (color/height/scale).
@@ -554,16 +580,16 @@ public class TownSceneTests
     public void LitOverlay_CanvasModulate_TracksEveryPhaseTint()
     {
         // The lit world's SubViewport-scoped CanvasModulate carries its OWN two-temperature ramp
-        // (LW4: LitTownOverlay.AtmosphereTintFor) — daylight (Morning/Expedition) matches the flat
-        // SVG town's TownScene.TintFor exactly, but dusk/night (Camp/ExpeditionDeep/Evening) is
-        // deliberately cooler/desaturated so the warm window-glow + forge coals pop. TownScene's
-        // own TintFor table is untouched (its Modulate assertions live in the SVG-town tests below).
+        // (LW4: LitTownOverlay.AtmosphereTintFor) — U3: this is now the SOLE town-wide tint
+        // authority, written by TownScene's LW1 crossfade (Animate), so settle it the same way
+        // CurrentTint's own tests do before reading Ambient.Color directly.
         var ui = MountMainUi();
         try
         {
             var overlay = ui.Town.LitOverlay;
             AssertThat(overlay).IsNotNull();
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+            ui.Town.Animate(TownScene.TintTweenSeconds); // let the initial crossfade (LW1) settle
             AssertThat(overlay!.Ambient.Color).IsEqual(LitTownOverlay.AtmosphereTintFor(DayPhase.Morning));
 
             foreach (var phase in new[]
@@ -573,31 +599,8 @@ public class TownSceneTests
             {
                 ui.Adapter.AdvancePhase();
                 AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(phase);
+                ui.Town.Animate(TownScene.TintTweenSeconds); // crossfade settles before we read it
                 AssertThat(overlay.Ambient.Color).IsEqual(LitTownOverlay.AtmosphereTintFor(phase));
-            }
-
-            // Daylight stops are pinned identical between the two ramps (only dusk/night diverge).
-            AssertThat(LitTownOverlay.AtmosphereTintFor(DayPhase.Morning)).IsEqual(TownScene.TintFor(DayPhase.Morning));
-            AssertThat(LitTownOverlay.AtmosphereTintFor(DayPhase.Expedition)).IsEqual(TownScene.TintFor(DayPhase.Expedition));
-        }
-        finally
-        {
-            Unmount(ui);
-        }
-    }
-
-    [TestCase]
-    public void LitOverlay_HeroFigures_MultiplyTintedToClassColor()
-    {
-        // Neutral-base multiply design: each lit hero Sprite2D is Modulate-tinted to its class
-        // ColorRgb (ClassRegistry via HeroSprite.RoleColor) — the same contract the SVG marker holds.
-        var ui = MountMainUi();
-        try
-        {
-            foreach (var hero in LitTownOverlay.DefaultHeroes)
-            {
-                var sprite = Find<Sprite2D>(ui.Town, $"LitHero_{hero.ClassId}");
-                AssertThat(sprite.Modulate).IsEqual(HeroSprite.RoleColor(hero.ClassId));
             }
         }
         finally
@@ -682,7 +685,7 @@ public class TownSceneTests
     public void Fx_WindowGlow_AlphaAndVisibilityRampWithPhase()
     {
         // Off in daylight, rising through dusk to full at night — pops against the cooler
-        // AtmosphereTintFor stops instead of the flatter TownScene.TintFor.
+        // AtmosphereTintFor dusk/night stops (the sole town-wide tint ramp since U3).
         var ui = MountMainUi();
         try
         {
@@ -909,11 +912,12 @@ public class TownSceneTests
     }
 
     [TestCase]
-    public void LitOverlay_ShippedBuildingsAndHeroes_StillResolveUnderDepthLayers()
+    public void LitOverlay_ShippedBuildings_StillResolveUnderBackLayer()
     {
-        // LW6 reparented the buildings/lights/decorative-heroes under new depth-layer Node2Ds
-        // (LitBackLayer / LitHeroDecorLayer) for parallax — every existing name-pin must still
-        // resolve via recursive find, unaffected by the extra nesting.
+        // LW6 reparented the buildings/lights under a new depth-layer Node2D (LitBackLayer) for
+        // parallax — every existing name-pin must still resolve via recursive find, unaffected by
+        // the extra nesting. U3: DefaultHeroes is empty (decor figures removed), so
+        // HeroDecorLayer stays a real, present, empty layer — nothing to iterate under it here.
         var ui = MountMainUi();
         try
         {
@@ -925,12 +929,6 @@ public class TownSceneTests
             {
                 AssertThat(Find<Sprite2D>(ui.Town, $"LitBuilding_{building.Key}").GetParent())
                     .IsEqual(overlay.BackLayer);
-            }
-
-            foreach (var hero in LitTownOverlay.DefaultHeroes)
-            {
-                AssertThat(Find<Sprite2D>(ui.Town, $"LitHero_{hero.ClassId}").GetParent())
-                    .IsEqual(overlay.HeroDecorLayer);
             }
         }
         finally

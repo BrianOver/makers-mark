@@ -19,9 +19,12 @@ namespace GodotClient.Town;
 /// stays green. Graceful degrade: any asset whose <see cref="IconRegistry.Lit"/> is null simply
 /// does not appear — no sprite, no light, never a crash — so the SVG town survives on its own.</para>
 ///
-/// <para>Adapter-free: the phase tint is pushed in via <see cref="ApplyPhase"/> by TownScene (which
-/// owns the adapter), and the flicker is pure presentation (accumulated frame time → Mathf.Sin, no
-/// sim contact, no RNG — same contract as the pilot and <see cref="HeroSprite"/>).</para>
+/// <para>Adapter-free: <see cref="ApplyPhase"/> (called by TownScene, which owns the adapter) fans
+/// the phase out to <see cref="Fx"/>'s discrete per-phase looks; <see cref="Ambient"/>'s own color
+/// is the SOLE town-wide tint authority (U3), but TownScene writes it directly across its LW1
+/// crossfade rather than through an instant per-Refresh snap. The flicker is pure presentation
+/// (accumulated frame time → Mathf.Sin, no sim contact, no RNG — same contract as the pilot and
+/// <see cref="HeroSprite"/>).</para>
 ///
 /// <para>LW6 camera feel: the LitViewport carries its own <see cref="Camera2D"/> for a
 /// barely-conscious idle drift (<see cref="DriftOffsetFor"/>), scoped to this SubViewport only via
@@ -52,22 +55,23 @@ public partial class LitTownOverlay : SubViewportContainer
     private const float HeroTargetWidth = 90f;
 
     /// <summary>Building layout echoing <see cref="TownScene"/>'s SVG anchors (Forge/Shop/Tavern/gate),
-    /// dropped a little lower so the lit facades read as a street BEHIND the crisp SVG markers.</summary>
+    /// dropped a little lower so the lit facades read as a street BEHIND the crisp SVG markers.
+    /// U3 de-collage: forge/market shifted left to a >=230px center pitch — the old 140px pitch
+    /// let adjacent 220px-wide facades overlap by up to 80px. Tavern (and so the gate's own
+    /// offset from it) is UNCHANGED from the original layout.</summary>
     public static readonly BuildingSpec[] DefaultBuildings =
     [
-        new("forge", "town-forge", new Vector2(468, 230), new Vector2(-24, -110)),
-        new("market", "town-market", new Vector2(608, 230), new Vector2(24, -110)),
+        new("forge", "town-forge", new Vector2(288, 230), new Vector2(-24, -110)),
+        new("market", "town-market", new Vector2(518, 230), new Vector2(24, -110)),
         new("tavern", "town-tavern", new Vector2(748, 230), new Vector2(-24, -110)),
         new("minegate", "town-mine-gate", new Vector2(914, 320), new Vector2(-16, -120)),
     ];
 
-    /// <summary>Three hero figures in the town square, one per built-in class.</summary>
-    public static readonly HeroSpec[] DefaultHeroes =
-    [
-        new("vanguard", "hero-vanguard", new Vector2(470, 380)),
-        new("striker", "hero-striker", new Vector2(600, 400)),
-        new("mystic", "hero-mystic", new Vector2(720, 380)),
-    ];
+    /// <summary>U3 de-collage: the 3 hard-coded decorative hero figures are removed (they read as
+    /// a second, un-owned "town" alongside the live <see cref="HeroSprite"/>s on the SVG layer
+    /// above) — empty until U19 wires the real live-hero figures into this layer. <see cref="Build"/>
+    /// / <see cref="TryAddHero"/> stay in place so tests (and U19) can still inject specs.</summary>
+    public static readonly HeroSpec[] DefaultHeroes = [];
 
     // ── LW6: camera drift + mouse parallax ────────────────────────────────────────────────────
     // Idle drift lives on the LitViewport's OWN Camera2D (barely-conscious sway — never moves
@@ -213,12 +217,12 @@ public partial class LitTownOverlay : SubViewportContainer
     }
 
     /// <summary>
-    /// Two-temperature retune (LW4): the lit backdrop's OWN CanvasModulate ramp. Morning/Expedition
-    /// (daylight) match <see cref="TownScene.TintFor"/> exactly; Camp/ExpeditionDeep/Evening are
-    /// deliberately cooler and more desaturated than that table (which stays exactly as pinned —
-    /// it drives the flat SVG town's Modulate and its own tests) so the warm window-glow sprites
-    /// and forge coals (<see cref="AmbientFxLayer"/>) visibly pop against a colder dusk/night sky.
-    /// Never below the crush point (the darkest stop still reads as navy, not black).
+    /// Two-temperature retune (LW4): the lit backdrop's OWN CanvasModulate ramp — U3: now the SOLE
+    /// town-wide tint authority (<see cref="TownScene"/>'s own root Modulate stays pinned white).
+    /// Morning/Expedition (daylight) are neutral/warm; Camp/ExpeditionDeep/Evening are deliberately
+    /// cooler and more desaturated so the warm window-glow sprites and forge coals
+    /// (<see cref="AmbientFxLayer"/>) visibly pop against a colder dusk/night sky. Never below the
+    /// crush point (the darkest stop still reads as navy, not black).
     /// </summary>
     public static Color AtmosphereTintFor(DayPhase phase) => phase switch
     {
@@ -230,18 +234,14 @@ public partial class LitTownOverlay : SubViewportContainer
         _ => new Color(1.00f, 1.00f, 1.00f),
     };
 
-    /// <summary>Push the phase tint onto the lit world's CanvasModulate (this overlay's OWN
-    /// two-temperature ramp — see <see cref="AtmosphereTintFor"/>) and fan it out to the fx
-    /// layer. Called from <see cref="TownScene.Refresh"/> so the lit backdrop tracks the sim.</summary>
-    public void ApplyPhase(DayPhase phase)
-    {
-        if (_ambient is not null)
-        {
-            _ambient.Color = AtmosphereTintFor(phase);
-        }
-
-        _fx?.ApplyPhase(phase);
-    }
+    /// <summary>
+    /// Fan the phase out to the fx layer (window glow / particles / fog — all discrete per-phase,
+    /// not tweened). U3: <see cref="Ambient"/>'s color is no longer snapped here — TownScene owns
+    /// the LW1 crossfade now (the sole tint authority lives on <see cref="Ambient"/>, but the
+    /// WRITE comes from TownScene.Animate so the fade is smooth instead of an instant per-Refresh
+    /// snap). Called from <see cref="TownScene.Refresh"/> so the lit backdrop tracks the sim.
+    /// </summary>
+    public void ApplyPhase(DayPhase phase) => _fx?.ApplyPhase(phase);
 
     /// <summary>LW6: activate the LitViewport's own camera once this overlay (and everything
     /// built into it by <see cref="Build"/>, camera included) is actually inside the live tree —
