@@ -50,6 +50,29 @@ public class ShopStageTests
     }
 
     [TestCase]
+    public void Build_WideWindow_NeverShowsOpaqueVoidRightOfDesignWidth()
+    {
+        // U5 fix: the SubViewport must be transparent (a wider host window than the 1024px design
+        // space must never paint an opaque gray rect past x=1024) AND the strip's own footprint
+        // must stay pinned at the fixed design size (ShrinkCenter, not ExpandFill) — otherwise
+        // Godot's SubViewportContainer.Stretch auto-resizes the SubViewport itself to match
+        // whatever width the container is handed, blowing the design space back open.
+        var stage = new ShopStage();
+        try
+        {
+            stage.Build();
+
+            AssertThat(stage.Viewport.TransparentBg).IsTrue();
+            AssertThat(stage.SizeFlagsHorizontal).IsEqual(Control.SizeFlags.ShrinkCenter);
+            AssertThat(stage.CustomMinimumSize).IsEqual(new Vector2(1024, 220));
+        }
+        finally
+        {
+            stage.Free();
+        }
+    }
+
+    [TestCase]
     public void QueueDay_SoldAndPassedEvents_QueuesOneStaggeredRunPerRelevantEvent()
     {
         var state = TwoHeroTwoItemWorld();

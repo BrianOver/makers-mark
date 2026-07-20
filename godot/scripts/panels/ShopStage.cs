@@ -124,6 +124,11 @@ public partial class ShopStage : SubViewportContainer
     /// <summary>The Node2D holding the backdrop, shelf highlights, customer figures, and coins.</summary>
     public Node2D World => _world;
 
+    /// <summary>The lit strip's SubViewport (test visibility — e.g. asserting
+    /// <see cref="SubViewport.TransparentBg"/> to guard against the opaque-void-past-1024px
+    /// regression).</summary>
+    public SubViewport Viewport => _viewport;
+
     /// <summary>Build the strip (backdrop only — customers arrive via <see cref="QueueDay"/>).
     /// Idempotent-guarded, mirroring <see cref="LitTownOverlay.Build()"/>.</summary>
     public void Build()
@@ -134,8 +139,14 @@ public partial class ShopStage : SubViewportContainer
         }
 
         Name = "ShopStage";
-        CustomMinimumSize = new Vector2(0, DesignSize.Y);
-        SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        // Fixed design-space footprint (ShrinkCenter, NOT ExpandFill): SubViewportContainer.Stretch
+        // resizes its child SubViewport to match ITS OWN rect, so handing this container the full
+        // panel width would blow the SubViewport open past DesignSize and paint opaque clear-color
+        // (gray void) everywhere the 1024x220 world doesn't reach. Pinning the container's own size
+        // to DesignSize keeps the SubViewport at 1024x220 regardless of host window width; the
+        // caller (ShopPanel) is responsible for centering this fixed-size strip in a wider row.
+        CustomMinimumSize = DesignSize;
+        SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
         Stretch = true;                        // SubViewport tracks this container's pixel rect 1:1
         MouseFilter = MouseFilterEnum.Ignore;  // never eat a click — decoration only
 
@@ -144,6 +155,7 @@ public partial class ShopStage : SubViewportContainer
             Name = "ShopViewport",
             Size = DesignSize,
             HandleInputLocally = false,
+            TransparentBg = true, // no opaque clear-color void beyond the design space's own art
             RenderTargetUpdateMode = SubViewport.UpdateMode.Always,
         };
         AddChild(_viewport);

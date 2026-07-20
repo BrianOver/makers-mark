@@ -55,6 +55,60 @@ public class ShopPanelTests
     }
 
     [TestCase]
+    public void StageStrip_IsMountedOutsideTheScrollBody_SoItStaysVisibleWhilScrolling()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(ui.Shop.Stage).IsNotNull();
+
+            // U5 fix: the lit customer strip must never live inside "Scroll" — if it did, it
+            // would scroll away with the shelf list instead of staying fixed above it.
+            var scroll = ui.Shop.FindChild("Scroll", recursive: true, owned: false);
+            AssertThat(scroll).IsNotNull();
+            AssertThat(IsDescendantOf(ui.Shop.Stage!, (Node)scroll!)).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ShelfCard_PriceChip_ShrinksToContent_InsteadOfStretchingFullPanelWidth()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var itemId = CraftDagger(ui);
+            Find<SpinBox>(ui.Shop, $"StockPrice_{itemId.Value}").Value = StockPrice;
+            PressEnabled(ui.Shop, $"Stock_{itemId.Value}");
+            ui.Adapter.AdvancePhase(); // lands the stock
+
+            var chip = ui.Shop.FindChild("StatChip", recursive: true, owned: false) as Control;
+            AssertThat(chip).IsNotNull();
+            AssertThat(chip!.SizeFlagsHorizontal).IsNotEqual(Control.SizeFlags.ExpandFill);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    private static bool IsDescendantOf(Node node, Node ancestor)
+    {
+        for (var current = node.GetParent(); current is not null; current = current.GetParent())
+        {
+            if (current == ancestor)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    [TestCase]
     public void FreshCampaign_EmptyShelf_RendersThemedEmptyState_NotBlankPanel()
     {
         var ui = MountMainUi();

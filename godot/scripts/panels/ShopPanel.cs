@@ -48,6 +48,18 @@ public partial class ShopPanel : SimPanel
 
     public override void _Ready() => EnsureBuilt();
 
+    /// <summary>Shrink-center a <see cref="StatChip"/> in a <see cref="VBoxContainer"/> info column
+    /// (U5 fix): a <see cref="Control"/>'s default horizontal size flag (<c>Fill</c>) stretches it
+    /// to the parent VBox's full cross-axis width regardless of the <c>Expand</c> flag, so on a
+    /// wide window an info column that claims 1700px of leftover header-row space turned every
+    /// price/atk/def chip into a 1700px bar. <see cref="SizeFlags.ShrinkBegin"/> hugs the chip to
+    /// its own content, left-aligned under the name label above it.</summary>
+    private static void AddChip(Control parent, Control chip)
+    {
+        chip.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+        parent.AddChild(chip);
+    }
+
     public override void Refresh()
     {
         EnsureBuilt();
@@ -141,7 +153,7 @@ public partial class ShopPanel : SimPanel
             };
             headerRow.AddChild(infoCol);
             AddLabel(infoCol, $"{itemId} {item.Name} [{item.Quality}]");
-            infoCol.AddChild(StatChip("Price", $"{entry.Price}g", UiKit.ChipTone.Accent));
+            AddChip(infoCol, StatChip("Price", $"{entry.Price}g", UiKit.ChipTone.Accent));
 
             var controlsRow = AddRow(cardBody);
             var priceSpin = AddSpinBox(controlsRow, $"Price_{itemId.Value}", 1, 99999, entry.Price);
@@ -259,7 +271,7 @@ public partial class ShopPanel : SimPanel
             };
             headerRow.AddChild(infoCol);
             AddLabel(infoCol, $"{entry.Item} {item.Name} [{item.Quality}]");
-            infoCol.AddChild(StatChip("Price", $"{entry.Price}g"));
+            AddChip(infoCol, StatChip("Price", $"{entry.Price}g"));
         }
     }
 
@@ -290,16 +302,58 @@ public partial class ShopPanel : SimPanel
             return;
         }
 
-        var body = BuildScrollBody();
+        // U5 fix: the lit customer strip must stay FIXED above the shelf list, never scrolling
+        // away with it — so it is mounted as its own row alongside (not inside) the ScrollContainer
+        // BuildScrollBody would otherwise wrap it in. A plain root VBox anchored full-rect stands
+        // in for that: strip row on top, scroll body (built by hand, same shape BuildScrollBody
+        // returns) filling the rest.
+        var root = new VBoxContainer { Name = "ShopRoot" };
+        root.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(root);
 
-        // LW3: the lit customer strip mounted at the TOP of the panel, above the shelf sections.
-        _stage = new ShopStage();
-        _stage.Build();
-        body.AddChild(_stage);
+        root.AddChild(BuildStageStrip());
+
+        var scroll = new ScrollContainer
+        {
+            Name = "Scroll",
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+        };
+        root.AddChild(scroll);
+        var body = new VBoxContainer
+        {
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+        };
+        scroll.AddChild(body);
 
         _feedback = AddLabel(body, string.Empty);
         _feedback.Name = "ShopFeedback";
         _content = new VBoxContainer { Name = "ShopContent" };
         body.AddChild(_content);
     }
+
+    /// <summary>The lit strip row: the fixed 1024x220 <see cref="ShopStage"/> centered
+    /// (<see cref="SizeFlags.ShrinkCenter"/>, set by <see cref="ShopStage.Build"/>) between two
+    /// themed filler panels — so a host window wider than the design space reads as an
+    /// intentional stage-with-wings, never a stretched or gray-void backdrop.</summary>
+    private Control BuildStageStrip()
+    {
+        var strip = new HBoxContainer { Name = "ShopStageStrip" };
+        strip.AddChild(EdgeFiller());
+        _stage = new ShopStage();
+        _stage.Build();
+        strip.AddChild(_stage);
+        strip.AddChild(EdgeFiller());
+        return strip;
+    }
+
+    private static Control EdgeFiller() => new ColorRect
+    {
+        Name = "ShopStageEdgeFade",
+        Color = GameTheme.VoidColor,
+        SizeFlagsHorizontal = SizeFlags.ExpandFill,
+        SizeFlagsVertical = SizeFlags.ExpandFill,
+        MouseFilter = MouseFilterEnum.Ignore,
+    };
 }
