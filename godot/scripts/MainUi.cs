@@ -272,7 +272,9 @@ public partial class MainUi : Control
         }
 
         _statChips.AddChild(NamedStatChip("DayChip", "Day", $"{state.Day}"));
-        _statChips.AddChild(NamedStatChip("PhaseChip", "Phase", state.Phase.ToString(), UiKit.ChipTone.Accent));
+        var phaseChip = NamedStatChip("PhaseChip", "Phase", state.Phase.ToString(), UiKit.ChipTone.Accent);
+        phaseChip.TooltipText = PhaseLegend;
+        _statChips.AddChild(phaseChip);
 
         var goldChip = BuildGoldChip(state.Player.Gold);
         _statChips.AddChild(goldChip);
@@ -295,6 +297,24 @@ public partial class MainUi : Control
     /// for the plan's "Trans.Elastic" (no engine Tween in this codebase; accumulated-delta only,
     /// the same determinism contract every other decoration on this project holds).</summary>
     private static float GoldPopScale(float t) => 1f + 0.25f * Mathf.Sin(Mathf.Pi * t);
+
+    /// <summary>P007 U7 (R12/R14): the PhaseChip's legend flyout, one line per phase in the
+    /// kernel's own tick order (<see cref="GameSim.Kernel.GameKernel"/>'s Morning→Expedition→
+    /// Camp→ExpeditionDeep→Evening transition table — NOT the <see cref="DayPhase"/> enum's
+    /// declaration order, which lists Evening before Camp/ExpeditionDeep). Each line names what
+    /// happens that phase and what the player can do, mirrored against the handlers' own
+    /// <c>CanHandle</c> phase gates so it never drifts from what's actually legal: BuyMaterial is
+    /// Morning-only (<see cref="GameSim.Economy.MaterialVendorHandlers"/>); PostBounty is
+    /// Morning+Evening (<see cref="GameSim.Bounties.BountyHandlers"/>); BuyOre is Evening-only
+    /// (<see cref="GameSim.Economy.OreMarketHandlers"/>); SendSupply/RecallParty are Camp-only
+    /// (<see cref="GameSim.Expedition.CampHandlers"/>); craft/stock/price have no phase term at
+    /// all (legal every phase).</summary>
+    public const string PhaseLegend =
+        "Morning — parties muster and recruits arrive. Buy materials from the vendor, post bounties, craft, stock, and price.\n" +
+        "Expedition — parties descend toward their target floor. Craft, stock, and price; nothing else resolves until they return.\n" +
+        "Camp — a party pauses at its checkpoint before the deep floors. Send supply or recall the party; craft, stock, and price.\n" +
+        "Deep — camped parties push into the deeper floors and the run is decided. Craft, stock, and price; nothing else to do but wait.\n" +
+        "Evening — heroes return with loot and news. Buy their ore, post bounties, craft, stock, and price.";
 
     /// <summary>A <see cref="UiKit.StatChip"/> given a discoverable <see cref="Node.Name"/> so
     /// tests can locate the exact chip instead of scanning the whole HUD's rendered text.</summary>
