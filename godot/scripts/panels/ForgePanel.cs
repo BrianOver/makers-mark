@@ -62,7 +62,7 @@ public partial class ForgePanel : SimPanel
 
         var state = Adapter.CurrentState;
         _materialsLabel!.Text = state.Player.Materials.IsEmpty
-            ? "MATERIALS: none — buy ore from returning heroes (Evening ledger)"
+            ? "MATERIALS: none — buy from the vendor below or wait for Evening's returning heroes"
             : "MATERIALS: " + string.Join(", ", state.Player.Materials.Select(m => $"{m.Key} x{m.Value}"));
 
         // Vendor rows (U3): every priced-pool material at its marked-up single-unit price.
@@ -180,21 +180,31 @@ public partial class ForgePanel : SimPanel
 
         var material = SelectedMaterialOr(recipe!.MaterialKey);
         Adapter.Queue(new CraftAction(recipeId, material));
-        _feedback!.Text = $"queued: craft {recipeId} with {material} (applies when the phase ticks)";
+        // Craft has no phase term (CraftingHandlers accepts every phase) — the batch always
+        // lands against whatever phase the sim is CURRENTLY sitting at (GameKernel.Tick applies
+        // the queued batch before advancing), so the resolving phase IS the current one.
+        _feedback!.Text = $"queued: craft {recipeId} with {material}. " +
+            $"Queued — resolves when {Adapter.CurrentState.Phase} ticks. Press Advance or wait.";
     }
 
     private void OnUnlockPressed(string nodeId, string professionId)
     {
         Adapter?.Queue(new UnlockTalentAction(nodeId, professionId));
-        _feedback!.Text = $"queued: unlock {nodeId} (applies when the phase ticks)";
+        // UnlockTalent likewise has no phase term — same current-phase reasoning as OnCraftPressed.
+        var phase = Adapter?.CurrentState.Phase;
+        _feedback!.Text = $"queued: unlock {nodeId}. " +
+            $"Queued — resolves when {phase} ticks. Press Advance or wait.";
     }
 
     /// <summary>Queues a one-unit vendor buy (Morning-only in the sim; the U6 gate disables the
-    /// row off-Morning, and a rejection that still surfaces becomes MainUi's toast).</summary>
+    /// row off-Morning, and a rejection that still surfaces becomes MainUi's toast). Fixed to
+    /// Morning — <see cref="GameSim.Economy.MaterialVendorHandlers"/>'s CanHandle is Morning-only,
+    /// so unlike craft/unlock this action's resolving phase is never the current one off-Morning.</summary>
     private void OnBuyMaterialPressed(string materialKey)
     {
         Adapter?.Queue(new BuyMaterialAction(materialKey, 1));
-        _feedback!.Text = $"queued: buy 1 {materialKey} (applies when the phase ticks)";
+        _feedback!.Text = $"queued: buy 1 {materialKey}. " +
+            "Queued — resolves when Morning ticks. Press Advance or wait.";
     }
 
     private string SelectedMaterialOr(string recipeDefault)
