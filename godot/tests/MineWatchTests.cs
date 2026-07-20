@@ -260,6 +260,81 @@ public class MineWatchTests
         AssertThat(covered).IsGreaterEqual(containerWidth);
     }
 
+    // ── U16: the in-panel journey feed (MineWatch evolves to carry it — KTD11/AE2) ─────────────
+
+    [TestCase]
+    public void CampPhase_FeedRevealsBeats_MonsterNameFromCombatEvent()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var camp = CampedPartyWithFloors();
+            var state = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(camp) };
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+            watch._Process(100.0); // force full reveal — comfortably past any phase duration
+
+            AssertThat(watch.CurrentBeats.Any(b => b.Contains("cave-rat"))).IsTrue();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void DeathRound_NeverAppearsInMineWatchFeed_RendersCloudInstead()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var floors = ImmutableList.Create(
+                new FloorOutcome(1, false, ImmutableList.Create(
+                    new CombatEvent(1, new HeroId(1), "tunnel-spider", ImmutableList.Create(1), 0, 40, false, null))));
+            var result = new ExpeditionResult(
+                Party: ImmutableList.Create(new HeroId(1)), TargetFloor: 1, DeepestFloorCleared: 0, Floors: floors,
+                Survivors: ImmutableList<HeroId>.Empty, Deaths: ImmutableList.Create(new HeroId(1)),
+                Beats: ImmutableList<AttributionBeat>.Empty, Loot: ImmutableList<OreLoot>.Empty,
+                GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty);
+            var state = StagedWorld() with { Phase = DayPhase.Camp, PendingExpeditions = ImmutableList.Create(result) };
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+            watch._Process(100.0);
+
+            AssertThat(watch.CurrentBeats.Any(b => b.Contains("is lost from sight"))).IsTrue();
+            AssertThat(watch.CurrentBeats.Any(b => b.Contains("died"))).IsFalse();
+            AssertThat(watch.CurrentBeats.Any(b => b.Contains("takes 40"))).IsFalse();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void SaveLoad_MidExpedition_FreshMineWatch_CloudsOnReload_NoCrash()
+    {
+        // KTD11: a fresh MineWatch (post-reload scene rebuild) has no memory of prior reveals —
+        // the very first Refresh/Process must not throw, and nothing is revealed yet.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var camp = CampedPartyWithFloors();
+            var state = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(camp) };
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            AssertThat(watch.CurrentBeats.IsEmpty).IsTrue(); // clouded on reload — nothing revealed yet
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
     // ── fixtures ──────────────────────────────────────────────────────────────────────────────
 
     private static Hero Delver(int id, string name, string classId, int deepestFloor = 1) => new(
@@ -291,5 +366,14 @@ public class MineWatchTests
         Floors: ImmutableList<FloorOutcome>.Empty,
         Loot: ImmutableList<OreLoot>.Empty,
         DeepestFloorCleared: 1);
+
+    /// <summary>Same shape as <see cref="CampedParty"/> but with a real stage-1 floor (U16 feed
+    /// tests need combat data to reveal).</summary>
+    private static InFlightExpedition CampedPartyWithFloors() => CampedParty() with
+    {
+        Floors = ImmutableList.Create(
+            new FloorOutcome(1, true, ImmutableList.Create(
+                new CombatEvent(1, new HeroId(1), "cave-rat", ImmutableList.Create(3), 5, 0, true, null)))),
+    };
 }
 #endif

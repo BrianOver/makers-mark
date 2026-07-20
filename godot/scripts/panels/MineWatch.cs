@@ -114,6 +114,19 @@ public partial class MineWatch : SubViewportContainer
     private float _milestoneRemaining;
     private bool _built;
 
+    /// <summary>U16 (KTD11): the in-panel journey feed — one <see cref="JourneyFeed"/> cache
+    /// driving a text line under the marching/camped figures above. MineWatch shows exactly ONE
+    /// party's feed (the same party its figures already track); multi-party support (PARTY TABS)
+    /// lives on the bigger <c>ScryingMirror</c> surface this strip's click expands to.</summary>
+    private readonly JourneyFeed _feed = new();
+    private Label _feedLabel = null!;
+
+    /// <summary>The currently revealed feed lines for the tracked party, in recorded order — the
+    /// test hook AE2/KTD5 scenarios assert against (never contains a death round's real text).</summary>
+    public ImmutableList<string> CurrentBeats { get; private set; } = ImmutableList<string>.Empty;
+
+    private const int FeedVisibleLines = 3;
+
     /// <summary>The strip's current choreography state (test/tuning hook).</summary>
     public WatchState State { get; private set; } = WatchState.Hidden;
 
@@ -237,6 +250,18 @@ public partial class MineWatch : SubViewportContainer
         };
         _viewport.AddChild(_recordBark); // sibling of _world — never dark-tinted by MineAmbient
 
+        // U16: the journey feed line, a sibling of _world for the same reason _recordBark is —
+        // never dark-tinted, and drawn on top of the marching/camped figures below it.
+        _feedLabel = new Label
+        {
+            Name = "JourneyFeedLabel",
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Position = new Vector2(12, StripHeight - 58),
+            Size = new Vector2(DesignSize.X - 24, 54),
+        };
+        _viewport.AddChild(_feedLabel);
+
         _built = true;
     }
 
@@ -254,6 +279,11 @@ public partial class MineWatch : SubViewportContainer
             ApplyHidden();
             return;
         }
+
+        // U16 (KTD11): rebuild this tick's journey cards once per Refresh call (never per frame —
+        // matches every other adapter cache in this codebase). Collapses whatever the outgoing
+        // phase hadn't finished revealing first (JourneyFeed.Refresh's own contract).
+        _feed.Refresh(state, lastEvents);
 
         foreach (var departed in lastEvents.OfType<PartyDeparted>())
         {
@@ -293,6 +323,8 @@ public partial class MineWatch : SubViewportContainer
 
         Visible = live || _milestoneRemaining > 0f;
         CustomMinimumSize = Visible ? new Vector2(0, StripHeight) : Vector2.Zero;
+
+        UpdateFeedLabel();
     }
 
     public override void _Process(double delta)
@@ -326,6 +358,45 @@ public partial class MineWatch : SubViewportContainer
         {
             AnimateMilestone((float)delta);
         }
+
+        // U16 (KTD11): accumulated-delta only, no engine Tween, no RNG — same contract as every
+        // other animator in this file. Pause wiring (feed pauses with the clock, paused ≠ engaged)
+        // is a documented follow-up for whoever wires PhaseClock.Playing through DepthsPanel; the
+        // feed always flows here, which is a strict superset of correct (never stuck, never leaks).
+        _feed.Advance(delta, paused: false);
+        UpdateFeedLabel();
+    }
+
+    /// <summary>Renders the tracked party's revealed beats (KTD11 time-stretch) as up to
+    /// <see cref="FeedVisibleLines"/> lines, falling back to the rumor line (Expedition phase, no
+    /// beats yet) or the censored idle loop (stream exhaustion) when there is nothing to show.</summary>
+    private void UpdateFeedLabel()
+    {
+        if (_feed.Cards.IsEmpty)
+        {
+            CurrentBeats = ImmutableList<string>.Empty;
+            _feedLabel.Visible = false;
+            return;
+        }
+
+        var card = _feed.Cards[0]; // one party here — ScryingMirror owns multi-party PARTY TABS
+        var revealed = _feed.Revealed(card);
+        CurrentBeats = revealed.Select(b => b.Text).ToImmutableList();
+
+        var lines = CurrentBeats.TakeLast(FeedVisibleLines).ToList();
+        if (lines.Count == 0)
+        {
+            lines.Add(card.Stage == JourneyStage.Rumored
+                ? $"Rumor has it a party sets out for floor {card.TargetFloor}…"
+                : _feed.IdleLine(card.PartyKey));
+        }
+        else if (_feed.IsIdle(card))
+        {
+            lines.Add(_feed.IdleLine(card.PartyKey));
+        }
+
+        _feedLabel.Text = string.Join("\n", lines);
+        _feedLabel.Visible = Visible;
     }
 
     // ── phase rendering ──────────────────────────────────────────────────────────────────────

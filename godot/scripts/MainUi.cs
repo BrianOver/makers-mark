@@ -86,6 +86,12 @@ public partial class MainUi : Control
     /// + the U15 engaged-wait indicator.</summary>
     public DayTimeline Timeline { get; private set; } = null!;
 
+    /// <summary>U16 (KTD11/KTD13): the expanded scrying-mirror modal.</summary>
+    public ScryingMirror Mirror { get; private set; } = null!;
+
+    /// <summary>U16 (KTD13): the bottom-right PiP journey dock.</summary>
+    public PipDock Pip { get; private set; } = null!;
+
     /// <summary>The most recent day whose Evening completed — what the Ledger button reopens.</summary>
     public int LastCompletedDay { get; private set; }
 
@@ -106,6 +112,7 @@ public partial class MainUi : Control
     private Button _speed = null!;
     private bool _resumePlayOnLedgerClose;
     private bool _resumePlayOnCampClose;
+    private bool _resumePlayOnMirrorClose;
 
     // ── LW3: gold-chip bounce-scale pop (StatusBar region) ────────────────────────────────────
     // No engine Tween in this codebase (LitTownOverlay/HeroSprite precedent: accumulated-delta
@@ -146,6 +153,8 @@ public partial class MainUi : Control
         Bounties.Bind(Adapter);
         Ledger.Bind(Adapter);
         Camp.Bind(Adapter);
+        Mirror.Bind(Adapter);
+        Pip.Refresh(Adapter.CurrentState, Adapter.LastEvents); // not a SimPanel — no Bind() auto-refresh
 
         RefreshHud();
         UpdateClockLabel();
@@ -271,6 +280,8 @@ public partial class MainUi : Control
         Bounties.Refresh();
         Ledger.Refresh();
         Camp.Refresh();
+        Mirror.Refresh();
+        Pip.Refresh(Adapter.CurrentState, Adapter.LastEvents); // U16/KTD11: rebuild the PiP's cards once per tick
     }
 
     /// <summary>
@@ -624,6 +635,21 @@ public partial class MainUi : Control
         Objective.SetAnchorsAndOffsetsPreset(LayoutPreset.TopRight, LayoutPresetMode.Minsize, (int)ObjectiveDockMargin);
         Objective.OffsetTop += ObjectiveDockOffsetTop;
         Objective.OffsetBottom += ObjectiveDockOffsetTop;
+
+        // --- U16 (KTD11/KTD13): the scrying mirror (a third same-shaped modal overlay — Camp/
+        //     Ledger/Mirror never show at once in practice, but nothing here assumes it) and its
+        //     PiP dock, the ONLY new always-on HUD element this unit adds — a small bottom-right
+        //     corner Control, independent of the header/Tabs/Ticker/Objective regions U17/U18
+        //     touch. -----------------------------------------------------------------------
+        Mirror = new ScryingMirror { Name = "ScryingMirror" };
+        AddChild(Mirror);
+        Mirror.SetAnchorsPreset(LayoutPreset.FullRect);
+        Mirror.VisibilityChanged += OnMirrorVisibilityChanged;
+
+        Pip = new PipDock();
+        AddChild(Pip);
+        Pip.Build();
+        Pip.ExpandRequested += () => Mirror.ShowMirror();
     }
 
     private T InstantiatePanel<T>(string scenePath) where T : SimPanel
@@ -698,6 +724,25 @@ public partial class MainUi : Control
         UpdateClockLabel();
     }
 
+    /// <summary>The scrying mirror holds the town clock while open, same as Ledger/Camp — reading a
+    /// live journey feed should not have the day marching on unseen behind it.</summary>
+    private void OnMirrorVisibilityChanged()
+    {
+        if (Mirror.Visible)
+        {
+            _resumePlayOnMirrorClose = Clock.Playing;
+            Clock.Pause();
+        }
+        else if (_resumePlayOnMirrorClose)
+        {
+            Clock.Play();
+            _resumePlayOnMirrorClose = false;
+        }
+
+        UpdateEngaged();
+        UpdateClockLabel();
+    }
+
     /// <summary>The camp decision window holds the town clock; Hold (close) resumes it if it was running.</summary>
     private void OnCampVisibilityChanged()
     {
@@ -726,7 +771,7 @@ public partial class MainUi : Control
     private void UpdateEngaged()
     {
         var onTownTab = Tabs.CurrentTab == Tabs.GetTabIdxFromControl(Town);
-        Clock.Engaged = !onTownTab || Ledger.Visible || Camp.Visible;
+        Clock.Engaged = !onTownTab || Ledger.Visible || Camp.Visible || Mirror.Visible;
 
         // U18: the engaged latch flips on this discrete event (tab switch / modal open-close),
         // not only on a phase tick — the waiting indicator must track it here too, still never
