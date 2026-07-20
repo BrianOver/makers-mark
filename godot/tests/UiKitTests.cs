@@ -204,10 +204,20 @@ public class UiKitTests
         // StatChip's full GameTheme.PanelStyle() margins (12px/side) alone ate ~270px across 3
         // chips. The compact variant must render the same discoverable text at a smaller footprint,
         // without touching GameTheme.PanelContentMargin (that stays a single global constant).
-        var full = StatChip("Deepest", "12", UiKit.ChipTone.Neutral);
-        var compact = StatChipCompact("Deepest", "12", UiKit.ChipTone.Neutral);
+        //
+        // Both chips need MainUi's real Theme cascade (GameTheme.Build()) reaching them to make
+        // that comparison mean anything: `full`'s wide margins come ONLY from the cascade (it
+        // carries no per-node stylebox override), so measuring it unparented — Godot's own tiny
+        // default engine theme, not GameTheme.PanelStyle() — made both chips land at the same
+        // width. `compact`'s per-node overrides (stylebox/font/separation) apply either way.
+        var ui = MountMainUi();
         try
         {
+            var full = StatChip("Deepest", "12", UiKit.ChipTone.Neutral);
+            var compact = StatChipCompact("Deepest", "12", UiKit.ChipTone.Neutral);
+            ui.AddChild(full);
+            ui.AddChild(compact);
+
             AssertThat(RenderedText(compact)).Contains("Deepest");
             AssertThat(RenderedText(compact)).Contains("12");
             AssertThat(compact.GetCombinedMinimumSize().X)
@@ -215,8 +225,7 @@ public class UiKitTests
         }
         finally
         {
-            full.Free();
-            compact.Free();
+            Unmount(ui);
         }
     }
 

@@ -64,11 +64,15 @@ public class HeroRosterTests
             AssertThat(heroesText).Contains("DIED day 3");
 
             // Both cards still stand side by side — the dead hero didn't collapse the grid.
+            // U4: the card's CustomMinimumSize (RosterCardSize) lives on the PanelContainer
+            // FRAME now, not the overlay Button found by name — the frame is that Button's
+            // parent (BuildHeroCard's `frame`/`overlay` split).
             var dead = Find<Button>(ui.Heroes, "HeroCard_2");
             var alive = Find<Button>(ui.Heroes, "HeroCard_1");
             AssertThat(dead.Visible).IsTrue();
             AssertThat(alive.Visible).IsTrue();
-            AssertThat(dead.CustomMinimumSize.X > 0 && dead.CustomMinimumSize.Y > 0).IsTrue();
+            var deadFrame = dead.GetParent<Control>();
+            AssertThat(deadFrame.CustomMinimumSize.X > 0 && deadFrame.CustomMinimumSize.Y > 0).IsTrue();
         }
         finally
         {
@@ -154,6 +158,11 @@ public class HeroRosterTests
         var ui = MountMainUi(new SimAdapter(RosterWorld()));
         try
         {
+            // A non-current TabContainer page's subtree never gets its nested containers
+            // (the roster/detail HBoxContainer split) sorted — only the page Control itself
+            // tracks the tab content rect via anchors. Select Heroes as current (R20's own
+            // routing does this) before forcing a width and measuring descendant geometry.
+            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Heroes);
             ui.Heroes.Size = new Vector2(panelWidth, 700f);
             await SettleLayout(ui);
 
