@@ -51,6 +51,22 @@ public partial class MainUi : Control
     private const float ObjectiveDockMargin = 16f;
     private const float ObjectiveDockOffsetTop = 64f;
 
+    /// <summary>U23: the tutorial-flow overlay docks in the same top-right column, stacked below
+    /// the objective chip rather than sharing its box (keeps the chip's own layout untouched).</summary>
+    private const float TutorialDockOffsetTop = ObjectiveDockOffsetTop + 90f;
+
+    /// <summary>U23 (R5, KTD4): number-row hotkeys for the quick-travel unlock — runtime <see
+    /// cref="InputMap"/> registration only (no <c>project.godot</c> contact), gated on <see
+    /// cref="TutorialFlow.QuickTravelUnlocked"/> in <see cref="_Process"/>. Building keys match
+    /// <see cref="TownScene.BuildingClicked"/>'s own payload vocabulary.</summary>
+    private static readonly (string Action, Key Key, string Building)[] QuickTravelHotkeys =
+    [
+        ("quicktravel_forge", Key.Key1, "Forge"),
+        ("quicktravel_shop", Key.Key2, "Shop"),
+        ("quicktravel_tavern", Key.Key3, "Tavern"),
+        ("quicktravel_gate", Key.Key4, "Gate"),
+    ];
+
     /// <summary>Campaign seed — same seed, same world, everywhere (KTD4).</summary>
     [Export]
     public int Seed { get; set; } = 2026;
@@ -87,6 +103,10 @@ public partial class MainUi : Control
     /// <summary>U18 (R11/KTD13): the top-right objective chip — <c>ObjectiveAdvisor</c>'s top
     /// pick + reason, expandable to the ranked list.</summary>
     public ObjectiveTracker Objective { get; private set; } = null!;
+
+    /// <summary>U23 (R5/R10/R13): the first-run tutorial chain + earn-2nd-profession affordance +
+    /// quick-travel unlock — see <see cref="TutorialFlow"/>'s own class doc.</summary>
+    public TutorialFlow Tutorial { get; private set; } = null!;
 
     /// <summary>U18 (R12/KTD13): the top-bar-center day-timeline widget — live phase highlight
     /// + the U15 engaged-wait indicator.</summary>
@@ -138,6 +158,7 @@ public partial class MainUi : Control
         Adapter = AdapterOverride ?? new SimAdapter((ulong)Seed);
         AdapterOverride = null; // consumed — the handoff is one-shot (see property doc)
         Clock = new PhaseClock(Adapter);
+        RegisterQuickTravelActions(); // U23 (KTD4): runtime InputMap only, zero project.godot contact
 
         // U15 (KTD3 escape hatch): a saved manual-mode preference wins over PhaseClock's
         // ON-by-default so a player who deliberately went manual stays manual next launch.
@@ -232,6 +253,18 @@ public partial class MainUi : Control
 
         // U17: tick the bottom-edge adventure ticker marquee (no-op with no lines yet).
         Ticker.Tick(delta);
+
+        // U23 (R5): quick-travel hotkeys — inert until the tutorial chain completes.
+        if (Tutorial.QuickTravelUnlocked)
+        {
+            foreach (var (action, _, building) in QuickTravelHotkeys)
+            {
+                if (Input.IsActionJustPressed(action))
+                {
+                    QuickTravel(building);
+                }
+            }
+        }
     }
 
     private void OnPhaseCompleted(DayPhase completedPhase, int completedDay)
@@ -261,6 +294,7 @@ public partial class MainUi : Control
             ToastRemaining = RejectionToastSeconds;
         }
 
+        Tutorial.Advance(state, Adapter.LastEvents); // U23: this tick's events only (KTD5-safe)
         RefreshAll();
         Town.OnPhaseCompleted(completedPhase);
         Shop.OnPhaseCompleted(completedPhase); // LW3: stage the day's shop customers/coin flourish
@@ -336,8 +370,10 @@ public partial class MainUi : Control
     private void RefreshHud()
     {
         RefreshStatus();
-        Objective.Refresh(Adapter.CurrentState);
-        Timeline.Refresh(Adapter.CurrentState.Phase, Waiting);
+        var state = Adapter.CurrentState;
+        Objective.Refresh(state, Tutorial.TopSlotText(state)); // U23: tutorial overrides the top slot only
+        Tutorial.RefreshAffordances(state);
+        Timeline.Refresh(state.Phase, Waiting);
     }
 
     /// <summary>U18/U15: the day-timeline's engaged-wait indicator mirrors <see cref="
@@ -686,6 +722,25 @@ public partial class MainUi : Control
         Objective.SetAnchorsAndOffsetsPreset(LayoutPreset.TopRight, LayoutPresetMode.Minsize, (int)ObjectiveDockMargin);
         Objective.OffsetTop += ObjectiveDockOffsetTop;
         Objective.OffsetBottom += ObjectiveDockOffsetTop;
+        Objective.TutorialDismiss.Pressed += () =>
+        {
+            Tutorial.Dismiss();
+            RefreshHud();
+        };
+
+        // --- U23: the tutorial-flow overlay (chain state lives here; its visible chrome is just
+        //     the earn-2nd-profession picker + quick-travel row — the chain's OWN top-slot text
+        //     renders through the objective chip above, never a second visible HUD element).
+        //     Stacked below the objective chip in the same top-right column (KTD13 precedent). --
+        Tutorial = new TutorialFlow { CustomMinimumSize = new Vector2(ObjectiveDockWidth, 0) };
+        Tutorial.Build();
+        AddChild(Tutorial);
+        Tutorial.SetAnchorsAndOffsetsPreset(LayoutPreset.TopRight, LayoutPresetMode.Minsize, (int)ObjectiveDockMargin);
+        Tutorial.OffsetTop += TutorialDockOffsetTop;
+        Tutorial.OffsetBottom += TutorialDockOffsetTop;
+        Tutorial.SecondProfessionPicked += OnSecondProfessionPicked;
+        Tutorial.QuickTravelRequested += QuickTravel;
+        Tutorial.Load(); // user:// (KTD2 — never the sim save): adopt a prior dismiss/complete
 
         // --- U16 (KTD11/KTD13): the scrying mirror (a third same-shaped modal overlay — Camp/
         //     Ledger/Mirror never show at once in practice, but nothing here assumes it) and its
@@ -813,6 +868,60 @@ public partial class MainUi : Control
         }
 
         OpenInterior(venueKey);
+    }
+
+    /// <summary>
+    /// U23 (R5): jump straight to <paramref name="building"/>'s interior without walking there —
+    /// the shortcut half of the quick-travel unlock, gated on <see
+    /// cref="TutorialFlow.QuickTravelUnlocked"/> so both the hotkey path (<see cref="_Process"/>)
+    /// and <see cref="Tutorial"/>'s own clickable venue-jump row funnel through the SAME check and
+    /// the SAME routing <see cref="OnTownBuildingClicked"/> already uses (content parity —
+    /// quick-travel never opens anything a walked arrival could not). Public so a test can call it
+    /// directly (mirrors <see cref="InteractionZone.RaiseInteract"/>'s own test-friendly
+    /// convention) — a real hotkey press reaches it via <see cref="_Process"/> in production.
+    /// </summary>
+    public void QuickTravel(string building)
+    {
+        if (!Tutorial.QuickTravelUnlocked)
+        {
+            return;
+        }
+
+        OnTownBuildingClicked(building);
+    }
+
+    /// <summary>U23: register the quick-travel number-row hotkeys at runtime (KTD4) — guarded so
+    /// repeated mounts in the same test process never double-add the same action (<see
+    /// cref="WorldInput.RegisterActions"/> precedent).</summary>
+    private static void RegisterQuickTravelActions()
+    {
+        foreach (var (action, key, _) in QuickTravelHotkeys)
+        {
+            if (InputMap.HasAction(action))
+            {
+                continue;
+            }
+
+            InputMap.AddAction(action);
+            InputMap.ActionAddEvent(action, new InputEventKey { PhysicalKeycode = key });
+        }
+    }
+
+    /// <summary>
+    /// U23: earn-2nd-profession affordance — a profession picked from <see
+    /// cref="TutorialFlow.ProfessionPicker"/> unions onto the save's current selection (never
+    /// replaces it) and queues <see cref="SetProfessionsAction"/> for the next tick (sim already
+    /// permits <c>ProfessionHandlers.MaxSelected</c> = 2, no sim change).
+    /// </summary>
+    private void OnSecondProfessionPicked(string professionId)
+    {
+        var current = Adapter.CurrentState.Player.SelectedProfessions;
+        if (current.Contains(professionId))
+        {
+            return;
+        }
+
+        Adapter.Queue(new SetProfessionsAction(current.Add(professionId)));
     }
 
     /// <summary>

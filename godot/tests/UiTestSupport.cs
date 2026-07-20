@@ -104,6 +104,10 @@ public static class UiTestSupport
         // local test run can never leak a persisted "manual mode" preference into the
         // developer's own real Godot user:// data, and no suite can leak one into another.
         MainUi.ClockSettings.DeleteForTests();
+
+        // U23: same leak guard for the tutorial-flow chain's own user:// file — a completed/
+        // dismissed flag from one test must never suppress the next suite's tutorial chip.
+        TutorialFlow.DeleteForTests();
     }
 
     /// <summary>Find a (code-built, unowned) control by name anywhere under root.</summary>

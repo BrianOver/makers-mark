@@ -24,6 +24,11 @@ public sealed partial class ObjectiveTracker : PanelContainer
     public Button Expand { get; private set; } = null!;
     public VBoxContainer RankedList { get; private set; } = null!;
 
+    /// <summary>U23: visible only while <see cref="Refresh"/> is given a tutorial override —
+    /// dismisses the first-run chain (<c>TutorialFlow.Dismiss</c>, wired by <c>MainUi</c>) without
+    /// exposing this chip to any other tutorial-specific concept.</summary>
+    public Button TutorialDismiss { get; private set; } = null!;
+
     /// <summary>Construct the chip's children. Call once, before the first <see cref="Refresh"/>.</summary>
     public void Build()
     {
@@ -53,19 +58,26 @@ public sealed partial class ObjectiveTracker : PanelContainer
         Expand.Pressed += () => RankedList.Visible = Expand.ButtonPressed;
         row.AddChild(Expand);
 
+        TutorialDismiss = new Button { Name = "ObjectiveTutorialDismiss", Text = "Dismiss tutorial", Visible = false };
+        row.AddChild(TutorialDismiss);
+
         RankedList = new VBoxContainer { Name = "ObjectiveRankedList", Visible = false };
         body.AddChild(RankedList);
     }
 
     /// <summary>
     /// Rebuild the chip from a fresh <see cref="ObjectiveAdvisor.Suggest"/> pass over
-    /// <paramref name="state"/>: the top entry's reason renders on the always-visible row; every
-    /// entry (including the top one) renders as its own line in the collapsible ranked list.
+    /// <paramref name="state"/>: the top entry's reason renders on the always-visible row (unless
+    /// <paramref name="tutorialOverride"/> is given — U23's first-run chain overrides ONLY this
+    /// top slot, never the ranked list below, so the live advisor stays reachable via "More"
+    /// throughout the tutorial); every entry (including the top one) renders as its own line in
+    /// the collapsible ranked list regardless.
     /// </summary>
-    public void Refresh(GameState state)
+    public void Refresh(GameState state, string? tutorialOverride = null)
     {
         var suggestions = ObjectiveAdvisor.Suggest(state);
-        Reason.Text = suggestions.Count > 0 ? suggestions[0].Reason : NoObjectiveText;
+        Reason.Text = tutorialOverride ?? (suggestions.Count > 0 ? suggestions[0].Reason : NoObjectiveText);
+        TutorialDismiss.Visible = tutorialOverride is not null;
 
         foreach (var child in RankedList.GetChildren())
         {
