@@ -133,7 +133,10 @@ public static class ExpeditionNarrator
                 }
                 else if (deadSet.Contains(combat.Hero.Value) && lastCombatIndex[combat.Hero.Value] == i)
                 {
-                    lines.Add(Render(
+                    // Playtest finding N4 (P1): a death beat carries the unambiguous † marker so it
+                    // reads as a death, never as a kill ("The Ghoul fell to Kess") or a living
+                    // retreat ("Kess flees") — the CombatDied/CombatKill prose both use "fell to".
+                    lines.Add("† " + Render(
                         pack, NarratorPack.CombatDied, voice,
                         FlavorEngine.Slots(("hero", hero.Name), ("monster", combat.MonsterKind), ("floor", Digits(floor.Floor))),
                         campaignId, EventId(day, floor.Floor, (i * 16) + 15)));

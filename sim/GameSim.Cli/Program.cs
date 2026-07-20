@@ -127,8 +127,7 @@ while (true)
         {
             if (parts.Length == 3)
             {
-                pending.Add(new CraftAction(parts[1], parts[2]));
-                Console.WriteLine($"  queued: craft {parts[1]} with {parts[2]}");
+                TryQueue(new CraftAction(parts[1], parts[2]), $"  queued: craft {parts[1]} with {parts[2]}");
             }
             else
             {
@@ -154,8 +153,7 @@ while (true)
 
             if (TryResolveTalentProfession(state, parts[1], out var talentProfession))
             {
-                pending.Add(new UnlockTalentAction(parts[1], talentProfession));
-                Console.WriteLine($"  queued: unlock {parts[1]} ({talentProfession})");
+                TryQueue(new UnlockTalentAction(parts[1], talentProfession), $"  queued: unlock {parts[1]} ({talentProfession})");
             }
             else
             {
@@ -172,8 +170,7 @@ while (true)
         {
             if (CliIds.TryParseProfessions(parts[1..], out var professions))
             {
-                pending.Add(new SetProfessionsAction(professions));
-                Console.WriteLine($"  queued: practise {string.Join(", ", professions)}");
+                TryQueue(new SetProfessionsAction(professions), $"  queued: practise {string.Join(", ", professions)}");
             }
             else
             {
@@ -189,14 +186,17 @@ while (true)
         // campaign IS this action (a fresh save otherwise can't act on its own advice).
         case "buymat":
         {
-            if (parts.Length == 3 && int.TryParse(parts[2], out var buyMatQty))
+            if (parts.Length != 3)
             {
-                pending.Add(new BuyMaterialAction(parts[1], buyMatQty));
-                Console.WriteLine($"  queued: buy {buyMatQty}x {parts[1]} from the Morning vendor");
+                PrintUsage("buymat", "buymat <material> <qty>", line);
+            }
+            else if (!CliParse.TryInt(parts[2], out var buyMatQty, out var qtyError))
+            {
+                Console.WriteLine($"  buymat: {qtyError}");
             }
             else
             {
-                PrintUsage("buymat", "buymat <material> <qty>", line);
+                TryQueue(new BuyMaterialAction(parts[1], buyMatQty), $"  queued: buy {buyMatQty}x {parts[1]} from the Morning vendor");
             }
 
             break;
@@ -204,14 +204,21 @@ while (true)
 
         case "stock":
         {
-            if (parts.Length == 3 && CliIds.TryParseItem(parts[1], out var sid) && int.TryParse(parts[2], out var sp))
+            if (parts.Length != 3)
             {
-                pending.Add(new StockAction(new ItemId(sid), sp));
-                Console.WriteLine($"  queued: stock I{sid} at {sp}g");
+                PrintUsage("stock", "stock <itemId> <price>", line);
+            }
+            else if (!CliParse.TryItemId(parts[1], out var sid, out var idError))
+            {
+                Console.WriteLine($"  stock: {idError}");
+            }
+            else if (!CliParse.TryInt(parts[2], out var sp, out var priceError))
+            {
+                Console.WriteLine($"  stock: {priceError}");
             }
             else
             {
-                PrintUsage("stock", "stock <itemId> <price>", line);
+                TryQueue(new StockAction(new ItemId(sid), sp), $"  queued: stock I{sid} at {sp}g");
             }
 
             break;
@@ -219,14 +226,21 @@ while (true)
 
         case "price":
         {
-            if (parts.Length == 3 && CliIds.TryParseItem(parts[1], out var pid) && int.TryParse(parts[2], out var pp))
+            if (parts.Length != 3)
             {
-                pending.Add(new SetPriceAction(new ItemId(pid), pp));
-                Console.WriteLine($"  queued: reprice I{pid} to {pp}g");
+                PrintUsage("price", "price <itemId> <gold>", line);
+            }
+            else if (!CliParse.TryItemId(parts[1], out var pid, out var idError))
+            {
+                Console.WriteLine($"  price: {idError}");
+            }
+            else if (!CliParse.TryInt(parts[2], out var pp, out var goldError))
+            {
+                Console.WriteLine($"  price: {goldError}");
             }
             else
             {
-                PrintUsage("price", "price <itemId> <gold>", line);
+                TryQueue(new SetPriceAction(new ItemId(pid), pp), $"  queued: reprice I{pid} to {pp}g");
             }
 
             break;
@@ -234,14 +248,17 @@ while (true)
 
         case "unstock":
         {
-            if (parts.Length == 2 && CliIds.TryParseItem(parts[1], out var uid))
+            if (parts.Length != 2)
             {
-                pending.Add(new UnstockAction(new ItemId(uid)));
-                Console.WriteLine($"  queued: unstock I{uid}");
+                PrintUsage("unstock", "unstock <itemId>", line);
+            }
+            else if (!CliParse.TryItemId(parts[1], out var uid, out var idError))
+            {
+                Console.WriteLine($"  unstock: {idError}");
             }
             else
             {
-                PrintUsage("unstock", "unstock <itemId>", line);
+                TryQueue(new UnstockAction(new ItemId(uid)), $"  queued: unstock I{uid}");
             }
 
             break;
@@ -249,14 +266,21 @@ while (true)
 
         case "buyore":
         {
-            if (parts.Length == 4 && CliIds.TryParseHero(parts[1], out var hid) && int.TryParse(parts[3], out var qty))
+            if (parts.Length != 4)
             {
-                pending.Add(new BuyOreAction(new HeroId(hid), parts[2], qty));
-                Console.WriteLine($"  queued: buy {qty}x {parts[2]} from H{hid}");
+                PrintUsage("buyore", "buyore <heroId> <mat> <qty>", line);
+            }
+            else if (!CliParse.TryHeroId(parts[1], out var hid, out var idError))
+            {
+                Console.WriteLine($"  buyore: {idError}");
+            }
+            else if (!CliParse.TryInt(parts[3], out var qty, out var qtyError))
+            {
+                Console.WriteLine($"  buyore: {qtyError}");
             }
             else
             {
-                PrintUsage("buyore", "buyore <heroId> <mat> <qty>", line);
+                TryQueue(new BuyOreAction(new HeroId(hid), parts[2], qty), $"  queued: buy {qty}x {parts[2]} from H{hid}");
             }
 
             break;
@@ -264,14 +288,21 @@ while (true)
 
         case "bounty":
         {
-            if (parts.Length == 3 && int.TryParse(parts[1], out var bf) && int.TryParse(parts[2], out var bg))
+            if (parts.Length != 3)
             {
-                pending.Add(new PostBountyAction(bf, bg));
-                Console.WriteLine($"  queued: bounty — clear floor {bf} for {bg}g (escrowed)");
+                PrintUsage("bounty", "bounty <floor> <gold>", line);
+            }
+            else if (!CliParse.TryInt(parts[1], out var bf, out var floorError))
+            {
+                Console.WriteLine($"  bounty: {floorError}");
+            }
+            else if (!CliParse.TryInt(parts[2], out var bg, out var goldError))
+            {
+                Console.WriteLine($"  bounty: {goldError}");
             }
             else
             {
-                PrintUsage("bounty", "bounty <floor> <gold>", line);
+                TryQueue(new PostBountyAction(bf, bg), $"  queued: bounty — clear floor {bf} for {bg}g (escrowed)");
             }
 
             break;
@@ -279,14 +310,21 @@ while (true)
 
         case "send":
         {
-            if (parts.Length == 3 && CliIds.TryParseHero(parts[1], out var shid) && CliIds.TryParseItem(parts[2], out var siid))
+            if (parts.Length != 3)
             {
-                pending.Add(new SendSupplyAction(new HeroId(shid), new ItemId(siid)));
-                Console.WriteLine($"  queued: send I{siid} to H{shid} (runner fee at delivery)");
+                PrintUsage("send", "send <heroId> <itemId>", line);
+            }
+            else if (!CliParse.TryHeroId(parts[1], out var shid, out var heroError))
+            {
+                Console.WriteLine($"  send: {heroError}");
+            }
+            else if (!CliParse.TryItemId(parts[2], out var siid, out var itemError))
+            {
+                Console.WriteLine($"  send: {itemError}");
             }
             else
             {
-                PrintUsage("send", "send <heroId> <itemId>", line);
+                TryQueue(new SendSupplyAction(new HeroId(shid), new ItemId(siid)), $"  queued: send I{siid} to H{shid} (runner fee at delivery)");
             }
 
             break;
@@ -294,14 +332,17 @@ while (true)
 
         case "recall":
         {
-            if (parts.Length == 2 && CliIds.TryParseHero(parts[1], out var rhid))
+            if (parts.Length != 2)
             {
-                pending.Add(new RecallPartyAction(new HeroId(rhid)));
-                Console.WriteLine($"  queued: recall the party camped with H{rhid}");
+                PrintUsage("recall", "recall <heroId>", line);
+            }
+            else if (!CliParse.TryHeroId(parts[1], out var rhid, out var heroError))
+            {
+                Console.WriteLine($"  recall: {heroError}");
             }
             else
             {
-                PrintUsage("recall", "recall <heroId>", line);
+                TryQueue(new RecallPartyAction(new HeroId(rhid)), $"  queued: recall the party camped with H{rhid}");
             }
 
             break;
@@ -481,14 +522,47 @@ while (true)
 
 return 0; // EOF — scripted runs end here
 
+// Queue an action only if a handler accepts it in the CURRENT phase (finding N3): a phase-illegal
+// verb is rejected at input with the phase named, not queued to fail a full phase later at 'next'.
+// Uses the kernel's own CanHandle predicate (GameKernel.Accepts), so it can never drift from what
+// Tick will actually accept.
+void TryQueue(PlayerAction action, string queuedMessage)
+{
+    if (!kernel.Accepts(action, state.Phase))
+    {
+        // Name the offending verb (finding R3), matching the per-verb error style the id/arg
+        // checks use — the verb is the first token of the action's own re-typeable form.
+        var verb = CliActionFormat.Format(action)?.Split(' ')[0] ?? action.GetType().Name;
+        Console.WriteLine($"  {verb}: can't do that during {state.Phase} — type 'advice' to see this phase's legal actions.");
+        return;
+    }
+
+    pending.Add(action);
+    Console.WriteLine(queuedMessage);
+}
+
 GameState Advance(GameState current)
 {
-    var result = kernel.Tick(current, pending.ToImmutable());
+    var batch = pending.ToImmutable();
+    var result = kernel.Tick(current, batch);
     pending.Clear();
 
     foreach (var rejected in result.Rejected)
     {
         Console.WriteLine($"  REJECTED: {rejected.Action.GetType().Name} — {rejected.Reason}");
+    }
+
+    // A successful buyore emits no resolution event of its own (the sim records the transfer in the
+    // action log, not an event), so it would otherwise resolve silently — the buyore half of the
+    // finding-N1 "successful action logs nothing" defect (finding R1). Confirm each ACCEPTED
+    // purchase here (accepted == queued this batch and not in the rejection list).
+    var rejectedActions = result.Rejected.Select(r => r.Action).ToHashSet();
+    foreach (var ore in batch.OfType<BuyOreAction>())
+    {
+        if (!rejectedActions.Contains(ore))
+        {
+            Console.WriteLine($"  ⛏ bought {ore.Quantity}x {ore.MaterialKey} from H{ore.From.Value}");
+        }
     }
 
     var next = result.NewState;
@@ -607,29 +681,9 @@ void PrintCampSlate(GameState s)
 
 void Narrate(GameEvent gameEvent, GameState s)
 {
-    string? line = gameEvent switch
-    {
-        ItemSold sold when sold.FromPlayerShop =>
-            $"  $ {HeroName(s, sold.Buyer)} bought {ItemName(s, sold.Item)} for {sold.Price}g from YOUR shop",
-        HeroPassedOnItem pass =>
-            $"  ~ {HeroName(s, pass.Hero)} passed on {ItemName(s, pass.Item)}: {pass.Reason}",
-        PartyDeparted dep =>
-            "  → " + ExpeditionNarrator.Departure(PartyHeroes(s, dep.Party), dep.TargetFloor, NarratorPack.Pack, s.Rng.Inc, dep.Day),
-        AttributionBeatEvent beat =>
-            $"  ★ {beat.Beat}: {beat.Detail} (floor {beat.Floor})",
-        HeroDied died =>
-            $"  † {HeroName(s, died.Hero)} died on floor {died.Floor} — {died.Cause}",
-        SupplyDelivered supply =>
-            $"  ⛏ runner delivered {ItemName(s, supply.Item)} to {HeroName(s, supply.To)} at camp — {supply.Fee}g",
-        PartyRecalled recalled =>
-            $"  ⤺ recall bell — [{string.Join(", ", recalled.Party.Select(h => HeroName(s, h)))}] bank and surface",
-        RecruitArrived recruit =>
-            $"  + recruit {HeroName(s, recruit.Hero)} arrives in town",
-        GossipEmitted gossip =>
-            $"  🍺 \"{gossip.Line}\"",
-        _ => null,
-    };
-
+    // Event → player line lives in EventNarration (unit-tested; U26 finding N1 added the
+    // ItemCrafted success beat there so a legal craft is never silent).
+    var line = EventNarration.Line(gameEvent, s);
     if (line is not null)
     {
         Console.WriteLine(line);
@@ -691,8 +745,6 @@ void PrintStatus(GameState s)
 }
 
 string HeroName(GameState s, HeroId id) => s.Heroes.TryGetValue(id.Value, out var h) ? h.Name : id.ToString();
-
-string ItemName(GameState s, ItemId id) => s.Items.TryGetValue(id.Value, out var i) ? i.Name : id.ToString();
 
 // Distinct from the generic '? unknown command': this is a RECOGNIZED verb with bad args
 // (wrong arg count or an id that didn't parse), so it names the verb and shows the exact

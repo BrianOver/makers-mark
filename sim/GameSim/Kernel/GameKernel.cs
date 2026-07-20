@@ -19,6 +19,16 @@ public sealed class GameKernel
         _handlers = handlers;
     }
 
+    /// <summary>
+    /// Whether some registered handler accepts <paramref name="action"/>'s type during
+    /// <paramref name="phase"/> — the EXACT predicate <see cref="Tick"/> uses at step 1 before
+    /// applying. Exposed so a UI can reject a phase-illegal action at INPUT time (playtest finding
+    /// N3: <c>buymat</c>/<c>buyore</c>/<c>recall</c> in the wrong phase used to queue silently and
+    /// only fail a full phase later at the next tick). Pure: no state change, no RNG.
+    /// </summary>
+    public bool Accepts(PlayerAction action, DayPhase phase) =>
+        _handlers.Any(h => h.CanHandle(action, phase));
+
     public TickResult Tick(GameState state, ImmutableList<PlayerAction> actions)
     {
         var rng = new Pcg32(state.Rng);

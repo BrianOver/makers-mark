@@ -239,8 +239,26 @@ public class ExpeditionNarratorTests
 
         var lines = ExpeditionNarrator.FloorBeats(floors, ImmutableList<AttributionBeat>.Empty, party, Items(), deaths, NarratorPack.Pack, Campaign, Day);
 
-        Assert.Contains(lines, l => Candidates(NarratorPack.CombatDied, Voice(1), ("hero", "Kess"), ("monster", "Deep Ghoul"), ("floor", "3")).Contains(l));
+        // Finding N4 (P1): a real death now carries the unambiguous † marker, so the death beat is
+        // never mistaken for a kill ("The Ghoul fell to Kess") or a retreat ("Kess flees"). The
+        // prose under the marker is still one of the CombatDied variants.
+        var deathLine = Assert.Single(lines, l => l.StartsWith("† ", StringComparison.Ordinal));
+        Assert.Contains(deathLine["† ".Length..], Candidates(NarratorPack.CombatDied, Voice(1), ("hero", "Kess"), ("monster", "Deep Ghoul"), ("floor", "3")));
         Assert.DoesNotContain(lines, l => Candidates(NarratorPack.CombatFled, Voice(1), ("hero", "Kess"), ("monster", "Deep Ghoul")).Contains(l));
+    }
+
+    [Fact]
+    public void FloorBeats_Retreat_IsNotMarkedAsDeath()
+    {
+        // The other half of N4: a living retreat must stay visibly distinct — no † marker — so it
+        // can never read as a death.
+        var party = ImmutableList.Create(MakeHero(1, "Kess"));
+        var floors = ImmutableList.Create(
+            new FloorOutcome(2, false, ImmutableList.Create(Combat(2, new HeroId(1), "Tunnel Spider", 4, killed: false))));
+
+        var lines = ExpeditionNarrator.FloorBeats(floors, ImmutableList<AttributionBeat>.Empty, party, Items(), ImmutableList<HeroId>.Empty, NarratorPack.Pack, Campaign, Day);
+
+        Assert.DoesNotContain(lines, l => l.StartsWith("† ", StringComparison.Ordinal));
     }
 
     [Fact]
