@@ -567,6 +567,113 @@ public class MainUiTests
         }
     }
 
+    // ── U18/R11/R12/KTD13: objective HUD chip + day-timeline widget ─────────────────────────────
+
+    [TestCase]
+    public void ObjectiveChip_FreshCampaign_ShowsAdvisorsTopSuggestion()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            // Fresh seed-2026 campaign: shelf empty, starting gold covers the cheapest quote —
+            // ObjectiveAdvisor's top pick is the buy-material step (U10's Playable Core loop).
+            var suggestions = GameSim.Advisor.ObjectiveAdvisor.Suggest(ui.Adapter.CurrentState);
+            AssertThat(suggestions.Count > 0).IsTrue();
+            AssertThat(suggestions[0].Action).IsInstanceOf<BuyMaterialAction>();
+            AssertThat(RenderedText(Find<Control>(ui, "ObjectiveReason"))).Contains(suggestions[0].Reason);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ObjectiveChip_UpdatesAfterTheSuggestedActionCompletes()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var before = GameSim.Advisor.ObjectiveAdvisor.Suggest(ui.Adapter.CurrentState);
+            AssertThat(before.Count > 0).IsTrue();
+            AssertThat(before[0].Action).IsNotNull();
+
+            // Submit the EXACT suggested action, the way the panel it maps to would queue it,
+            // then tick — RefreshHud (MainUi.RefreshAll) refreshes the chip on that phase tick.
+            ui.Adapter.Queue(before[0].Action!);
+            ui.Adapter.AdvancePhase();
+
+            var after = GameSim.Advisor.ObjectiveAdvisor.Suggest(ui.Adapter.CurrentState);
+            var chipText = RenderedText(Find<Control>(ui, "ObjectiveReason"));
+            AssertThat(chipText).NotContains(before[0].Reason);
+            AssertThat(chipText).Contains(after.Count > 0 ? after[0].Reason : ObjectiveTracker.NoObjectiveText);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void DayTimeline_HighlightsLivePhase_AcrossAScriptedDay()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            // The chip is populated at boot (RefreshHud in _Ready), before any tick.
+            AssertThat(ui.Timeline.Current).IsEqual(ui.Adapter.CurrentState.Phase);
+            AssertThat(ui.Timeline.Current).IsEqual(DayPhase.Morning);
+
+            for (var tick = 0; tick < MaxPhasesPerDay; tick++)
+            {
+                ui.Adapter.AdvancePhase();
+                // Every tick fires OnPhaseCompleted -> RefreshAll -> RefreshHud -> Timeline.Refresh —
+                // the live highlight must track the sim's own phase every time, day-length agnostic.
+                AssertThat(ui.Timeline.Current).IsEqual(ui.Adapter.CurrentState.Phase);
+                if (ui.Adapter.CurrentState.Phase == DayPhase.Morning)
+                {
+                    break;
+                }
+            }
+
+            AssertThat(ui.Adapter.CurrentState.Day).IsEqual(2);
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+            AssertThat(ui.Timeline.Current).IsEqual(DayPhase.Morning);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void DayTimeline_EngagedAndPlaying_ShowsTheWaitingIndicator()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Clock.SetAutoAdvance(true);
+            ui.Clock.Play();
+
+            // Town tab, nothing engaged yet: the waiting indicator stays hidden.
+            AssertThat(Find<Control>(ui, "TimelineWaiting").Visible).IsFalse();
+
+            // TAB-ERA INTERIM RULE (U15): switching off Town engages the latch — a discrete
+            // event UpdateEngaged refreshes the timeline on, same as a phase tick would.
+            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Forge);
+            AssertThat(ui.Clock.Engaged).IsTrue();
+            AssertThat(Find<Control>(ui, "TimelineWaiting").Visible).IsTrue();
+
+            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Town);
+            AssertThat(ui.Clock.Engaged).IsFalse();
+            AssertThat(Find<Control>(ui, "TimelineWaiting").Visible).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     /// <summary>The heroes of a party in id order, mirroring the LedgerModal/CLI retelling input.</summary>
     private static ImmutableList<Hero> PartyOf(GameState state, ImmutableList<HeroId> ids) =>
         ids.Where(id => state.Heroes.ContainsKey(id.Value))

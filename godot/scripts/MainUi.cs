@@ -41,6 +41,14 @@ public partial class MainUi : Control
     /// </summary>
     public const double RejectionToastSeconds = 4.0;
 
+    /// <summary>U18/KTD13: the objective chip's docked width and its margin from the window's
+    /// right edge and the header's bottom edge — an overlay sibling (like the Ledger/Camp
+    /// modals) rather than a layout child, so it floats above every tab without shifting
+    /// panel content down.</summary>
+    private const float ObjectiveDockWidth = 320f;
+    private const float ObjectiveDockMargin = 16f;
+    private const float ObjectiveDockOffsetTop = 64f;
+
     /// <summary>Campaign seed — same seed, same world, everywhere (KTD4).</summary>
     [Export]
     public int Seed { get; set; } = 2026;
@@ -69,6 +77,14 @@ public partial class MainUi : Control
     public CampPanel Camp { get; private set; } = null!;
     public TabFade TabFade { get; private set; } = null!;
     public AdventureTicker Ticker { get; private set; } = null!;
+
+    /// <summary>U18 (R11/KTD13): the top-right objective chip — <c>ObjectiveAdvisor</c>'s top
+    /// pick + reason, expandable to the ranked list.</summary>
+    public ObjectiveTracker Objective { get; private set; } = null!;
+
+    /// <summary>U18 (R12/KTD13): the top-bar-center day-timeline widget — live phase highlight
+    /// + the U15 engaged-wait indicator.</summary>
+    public DayTimeline Timeline { get; private set; } = null!;
 
     /// <summary>The most recent day whose Evening completed — what the Ledger button reopens.</summary>
     public int LastCompletedDay { get; private set; }
@@ -131,7 +147,7 @@ public partial class MainUi : Control
         Ledger.Bind(Adapter);
         Camp.Bind(Adapter);
 
-        RefreshStatus();
+        RefreshHud();
         UpdateClockLabel();
         SyncCampModal(); // adopt an injected mid-day (parked) campaign — open the slate if already at Camp
         GD.Print($"[MainUi] campaign started, seed {Seed}");
@@ -245,7 +261,7 @@ public partial class MainUi : Control
     /// <summary>Re-render the status bar and every panel from CurrentState.</summary>
     public void RefreshAll()
     {
-        RefreshStatus();
+        RefreshHud();
         Town.Refresh();
         Forge.Refresh();
         Shop.Refresh();
@@ -276,6 +292,23 @@ public partial class MainUi : Control
             Camp.ShowModal();
         }
     }
+
+    /// <summary>
+    /// U18 (R11/R12): the stat-chip row plus the two new HUD widgets — the objective chip and
+    /// the day-timeline — refreshed together on every phase tick (never per frame; see
+    /// <see cref="ObjectiveTracker.Refresh"/>/<see cref="DayTimeline.Refresh"/> remarks).
+    /// </summary>
+    private void RefreshHud()
+    {
+        RefreshStatus();
+        Objective.Refresh(Adapter.CurrentState);
+        Timeline.Refresh(Adapter.CurrentState.Phase, Waiting);
+    }
+
+    /// <summary>U18/U15: the day-timeline's engaged-wait indicator mirrors <see cref="
+    /// UpdateClockLabel"/>'s own predicate — only worth flagging while the clock is actively
+    /// running AND held at a boundary; a manual pause is a different, already-visible state.</summary>
+    private bool Waiting => Clock.AutoAdvance && Clock.Playing && Clock.Engaged;
 
     /// <summary>
     /// P007 U7 (R11/R12/KD1): rebuild the HUD's stat-chip row from CurrentState. Rebuilt (not
@@ -459,6 +492,12 @@ public partial class MainUi : Control
         _statChips = new HBoxContainer { Name = "StatChips", SizeFlagsHorizontal = SizeFlags.ExpandFill };
         headerRow.AddChild(_statChips); // populated by RefreshStatus (day/phase/gold/heroes)
 
+        // U18/KTD13: the day-timeline widget docks top-bar CENTER, between the stat chips
+        // (left) and the Skip/Auto cluster (right) — populated/highlighted by RefreshHud.
+        Timeline = new DayTimeline { SizeFlagsHorizontal = SizeFlags.ExpandFill, Alignment = BoxContainer.AlignmentMode.Center };
+        Timeline.Build();
+        headerRow.AddChild(Timeline);
+
         var controls = new HBoxContainer { Name = "HudControls" };
         headerRow.AddChild(controls);
 
@@ -485,6 +524,7 @@ public partial class MainUi : Control
             Clock.ToggleAuto();
             ClockSettings.SaveAutoAdvance(Clock.AutoAdvance); // U15 escape hatch: sticks across campaigns
             UpdateClockLabel();
+            Timeline.Refresh(Adapter.CurrentState.Phase, Waiting); // U18: Auto gates the Waiting predicate too
         };
         controls.AddChild(_auto);
 
@@ -493,6 +533,7 @@ public partial class MainUi : Control
         {
             Clock.TogglePlay();
             UpdateClockLabel();
+            Timeline.Refresh(Adapter.CurrentState.Phase, Waiting); // U18: Playing gates the Waiting predicate too
         };
         controls.AddChild(_playPause);
 
@@ -572,6 +613,17 @@ public partial class MainUi : Control
         AddChild(Camp);
         Camp.SetAnchorsPreset(LayoutPreset.FullRect);
         Camp.VisibilityChanged += OnCampVisibilityChanged;
+
+        // --- objective chip (U18/KTD13): a floating overlay sibling (like the modals above),
+        //     anchored top-right (engine preset + margin, auto-sized to its own content) and
+        //     nudged down by ObjectiveDockOffsetTop to clear the header row — stays visible
+        //     over every tab without shifting any panel's own layout. Populated by RefreshHud.
+        Objective = new ObjectiveTracker { CustomMinimumSize = new Vector2(ObjectiveDockWidth, 0) };
+        Objective.Build();
+        AddChild(Objective);
+        Objective.SetAnchorsAndOffsetsPreset(LayoutPreset.TopRight, LayoutPresetMode.Minsize, (int)ObjectiveDockMargin);
+        Objective.OffsetTop += ObjectiveDockOffsetTop;
+        Objective.OffsetBottom += ObjectiveDockOffsetTop;
     }
 
     private T InstantiatePanel<T>(string scenePath) where T : SimPanel
@@ -675,6 +727,11 @@ public partial class MainUi : Control
     {
         var onTownTab = Tabs.CurrentTab == Tabs.GetTabIdxFromControl(Town);
         Clock.Engaged = !onTownTab || Ledger.Visible || Camp.Visible;
+
+        // U18: the engaged latch flips on this discrete event (tab switch / modal open-close),
+        // not only on a phase tick — the waiting indicator must track it here too, still never
+        // per frame.
+        Timeline.Refresh(Adapter.CurrentState.Phase, Waiting);
     }
 
     /// <summary>
