@@ -197,6 +197,38 @@ public class UiKitTests
         }
     }
 
+    [TestCase]
+    public void StatChipCompact_RendersLabelAndValueText_NarrowerThanFullStatChip()
+    {
+        // U4: the roster card needs 3 chips ("Lv"/"Gold"/"Deepest") to fit a ~140px-wide card —
+        // StatChip's full GameTheme.PanelStyle() margins (12px/side) alone ate ~270px across 3
+        // chips. The compact variant must render the same discoverable text at a smaller footprint,
+        // without touching GameTheme.PanelContentMargin (that stays a single global constant).
+        //
+        // Both chips need MainUi's real Theme cascade (GameTheme.Build()) reaching them to make
+        // that comparison mean anything: `full`'s wide margins come ONLY from the cascade (it
+        // carries no per-node stylebox override), so measuring it unparented — Godot's own tiny
+        // default engine theme, not GameTheme.PanelStyle() — made both chips land at the same
+        // width. `compact`'s per-node overrides (stylebox/font/separation) apply either way.
+        var ui = MountMainUi();
+        try
+        {
+            var full = StatChip("Deepest", "12", UiKit.ChipTone.Neutral);
+            var compact = StatChipCompact("Deepest", "12", UiKit.ChipTone.Neutral);
+            ui.AddChild(full);
+            ui.AddChild(compact);
+
+            AssertThat(RenderedText(compact)).Contains("Deepest");
+            AssertThat(RenderedText(compact)).Contains("12");
+            AssertThat(compact.GetCombinedMinimumSize().X)
+                .IsLess(full.GetCombinedMinimumSize().X);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // Thin static-passthrough wrappers so this suite reads against the same kit surface
     // SimPanel subclasses use (protected passthroughs), proving both the kit and the
     // exposure work end to end.
@@ -204,6 +236,8 @@ public class UiKitTests
     private static UiKit.SectionView Section(string title) => UiKit.Section(title);
     private static Control StatChip(string label, string value, UiKit.ChipTone tone) =>
         UiKit.StatChip(label, value, tone);
+    private static Control StatChipCompact(string label, string value, UiKit.ChipTone tone) =>
+        UiKit.StatChipCompact(label, value, tone);
     private static Control ArtRect(string artKey, Vector2 size, string? caption = null) =>
         UiKit.ArtRect(artKey, size, caption: caption);
     private static Control PortraitFrame(string artKey, string? caption = null) =>
