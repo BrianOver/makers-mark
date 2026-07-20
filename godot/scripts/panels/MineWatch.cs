@@ -71,6 +71,14 @@ public partial class MineWatch : SubViewportContainer
     private const int MaxFigures = 3; // PartyFormation ships parties of <=3 (v1)
     private const float BackdropSpeed = 14f; // design px/s — deliberately slow ("never-static", not a scroller)
 
+    /// <summary>Logical width of one backdrop tile, world/px units (the backdrop art is scaled to
+    /// this width — see <see cref="RebuildBackdropTiles"/>). <c>SubViewportContainer.Stretch</c>
+    /// resizes the child <see cref="SubViewport"/> to match this container's REAL on-screen width
+    /// (Godot's stretch contract — the viewport is not pinned to <see cref="DesignSize"/>), so a
+    /// fixed 2-tile strip stops covering the window on anything wider than 2×this. Tile count is
+    /// recomputed from the container's live width every time it changes (see <see cref="_Process"/>).</summary>
+    public const float BackdropTileWidth = 1024f;
+
     private static readonly Color AmbientTint = new(0.30f, 0.33f, 0.52f); // dark-cool — contrast for the warm torch/fire
     private static readonly Color TorchColor = new(1f, 0.72f, 0.42f);
     private static readonly Color CampfireColor = new(1f, 0.55f, 0.24f);
@@ -90,8 +98,9 @@ public partial class MineWatch : SubViewportContainer
     private SubViewport _viewport = null!;
     private Node2D _world = null!;
     private CanvasModulate _ambient = null!;
-    private Sprite2D? _backdropA;
-    private Sprite2D? _backdropB;
+    private Texture2D? _backdropTexture;
+    private readonly List<Sprite2D> _backdropTiles = [];
+    private float _backdropContainerWidth = -1f; // -1 forces the first RebuildBackdropTiles call
     private PointLight2D _torch = null!;
     private PointLight2D _campfireLight = null!;
     private CpuParticles2D _embers = null!;
@@ -119,6 +128,13 @@ public partial class MineWatch : SubViewportContainer
     /// party is not yet known (live phase, no <see cref="PartyDeparted"/>/<see
     /// cref="InFlightExpedition"/> seen yet this day).</summary>
     public int FigureCount => _figures.Count;
+
+    /// <summary>Live backdrop tile count (test hook) — <c>ceil(containerWidth/BackdropTileWidth)+1</c>.</summary>
+    public int BackdropTileCount => _backdropTiles.Count;
+
+    /// <summary>Current left-edge X of every backdrop tile, world/px units (test hook) — each tile
+    /// spans <c>[X, X+BackdropTileWidth)</c>; used to assert full-width coverage through a scroll cycle.</summary>
+    public IReadOnlyList<float> BackdropTileX => _backdropTiles.Select(t => t.Position.X).ToList();
 
     /// <summary>Build with the real committed backdrop id.</summary>
     public void Build() => Build(AssetCatalog.VenueBackdropId(MineVenueId));
@@ -159,17 +175,12 @@ public partial class MineWatch : SubViewportContainer
 
         _lightGradient = BuildLightGradient();
 
-        var backdrop = IconRegistry.Art(backdropId);
-        if (backdrop is not null)
+        _backdropTexture = IconRegistry.Art(backdropId);
+        HasContent = _backdropTexture is not null;
+        if (HasContent)
         {
-            var scale = new Vector2(DesignSize.X / (float)backdrop.GetWidth(), StripHeight / backdrop.GetHeight());
-            _backdropA = BuildBackdrop("MineBackdropA", backdrop, scale, 0f);
-            _backdropB = BuildBackdrop("MineBackdropB", backdrop, scale, DesignSize.X);
-            _world.AddChild(_backdropA);
-            _world.AddChild(_backdropB);
+            RebuildBackdropTiles(CurrentContainerWidth());
         }
-
-        HasContent = _backdropA is not null;
 
         _torch = new PointLight2D
         {
@@ -292,6 +303,17 @@ public partial class MineWatch : SubViewportContainer
         }
 
         _time += (float)delta;
+
+        // Godot's SubViewportContainer.Stretch contract resizes the child SubViewport to this
+        // container's REAL on-screen width every layout pass — there is no resize signal wired
+        // (repo convention: accumulated-delta polling, not events; see TabFade/gold-pop), so a
+        // width change is caught here, same as every other per-frame check in this method.
+        var width = CurrentContainerWidth();
+        if (HasContent && !Mathf.IsEqualApprox(width, _backdropContainerWidth))
+        {
+            RebuildBackdropTiles(width);
+        }
+
         AnimateBackdrop((float)delta);
 
         if (State != WatchState.Hidden)
@@ -494,26 +516,24 @@ public partial class MineWatch : SubViewportContainer
 
     private void AnimateBackdrop(float delta)
     {
-        if (_backdropA is null || _backdropB is null)
+        if (_backdropTiles.Count == 0)
         {
             return;
         }
 
         var shift = -BackdropSpeed * delta;
-        var ax = _backdropA.Position.X + shift;
-        var bx = _backdropB.Position.X + shift;
-        if (ax <= -DesignSize.X)
+        var wrapSpan = _backdropTiles.Count * BackdropTileWidth; // generalized N-tile wrap
+        for (var i = 0; i < _backdropTiles.Count; i++)
         {
-            ax += DesignSize.X * 2f;
-        }
+            var tile = _backdropTiles[i];
+            var x = tile.Position.X + shift;
+            if (x <= -BackdropTileWidth)
+            {
+                x += wrapSpan;
+            }
 
-        if (bx <= -DesignSize.X)
-        {
-            bx += DesignSize.X * 2f;
+            tile.Position = new Vector2(x, 0);
         }
-
-        _backdropA.Position = new Vector2(ax, 0);
-        _backdropB.Position = new Vector2(bx, 0);
     }
 
     private void AnimateFigures()
@@ -543,14 +563,52 @@ public partial class MineWatch : SubViewportContainer
 
     // ── build helpers ────────────────────────────────────────────────────────────────────────
 
-    private static Sprite2D BuildBackdrop(string name, Texture2D texture, Vector2 scale, float x) => new()
+    /// <summary>The container's live width, in world/px units — <see cref="DesignSize"/> until the
+    /// engine's first <c>NOTIFICATION_RESIZED</c> layout pass sizes this
+    /// <see cref="SubViewportContainer"/> for real (Stretch contract; see <see cref="_Process"/>).</summary>
+    private float CurrentContainerWidth() => Size.X > 0f ? Size.X : DesignSize.X;
+
+    /// <summary>
+    /// (Re)builds the backdrop as <c>ceil(containerWidth / <see cref="BackdropTileWidth"/>) + 1</c>
+    /// tiles, laid edge-to-edge from x=0 — enough that, combined with the wrap in
+    /// <see cref="AnimateBackdrop"/>, the strip has no seam-free gap at ANY scroll offset for a
+    /// container of this width (the "+1" covers the one tile mid-wrap off the left edge). Odd tiles
+    /// are <see cref="Sprite2D.FlipH"/>'d — the art isn't tileable, so alternating the flip breaks
+    /// the repeating mirror-seam read instead of hard-wrapping the same edge into itself every tile.
+    /// </summary>
+    private void RebuildBackdropTiles(float containerWidth)
     {
-        Name = name,
-        Texture = texture,
-        Centered = false, // (x,0) is the top-left corner — maps 1:1 onto DesignSize pixel space
-        Scale = scale,
-        Position = new Vector2(x, 0),
-    };
+        foreach (var tile in _backdropTiles)
+        {
+            _world.RemoveChild(tile);
+            tile.Free();
+        }
+
+        _backdropTiles.Clear();
+        _backdropContainerWidth = containerWidth;
+
+        if (_backdropTexture is null)
+        {
+            return;
+        }
+
+        var scale = new Vector2(BackdropTileWidth / _backdropTexture.GetWidth(), StripHeight / _backdropTexture.GetHeight());
+        var tileCount = (int)Mathf.Ceil(containerWidth / BackdropTileWidth) + 1;
+        for (var i = 0; i < tileCount; i++)
+        {
+            var tile = new Sprite2D
+            {
+                Name = $"MineBackdrop_{i}",
+                Texture = _backdropTexture,
+                Centered = false, // (x,0) is the top-left corner — maps 1:1 onto pixel space
+                Scale = scale,
+                Position = new Vector2(i * BackdropTileWidth, 0),
+                FlipH = i % 2 == 1,
+            };
+            _world.AddChild(tile);
+            _backdropTiles.Add(tile);
+        }
+    }
 
     /// <summary>Scale a lit Sprite2D so its diffuse renders at <paramref name="targetWidth"/> px.
     /// Duplicated from <c>LitTownOverlay.ScaleToWidth</c> (private there; LW4 owns that file
