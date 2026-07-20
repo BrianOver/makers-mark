@@ -114,6 +114,87 @@ public static class UiTestSupport
             Control.SignalName.GuiInput,
             new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true });
 
+    /// <summary>
+    /// World-rework U8 (gate G1) — RED, kept for the record, NOT on the passing path.
+    /// Attempted: left-click a WORLD position inside a SubViewport by pushing a
+    /// mouse-motion then a mouse-button <see cref="InputEventMouseButton"/> through
+    /// <see cref="SubViewport.PushInput"/> (positions transformed world→viewport-local via
+    /// <see cref="Viewport.CanvasTransform"/> so it stays correct under a scrolled
+    /// Camera2D), with physics frames settled both before and after the push.
+    /// Verdict (observed on a real Godot_v4.6.3-stable_mono_win64 binary via GODOT_BIN,
+    /// not just "no runner found"): the click never reaches Area2D physics picking in
+    /// gdUnit4Net's headless run — see <c>Area2dPickingSpikeTests</c> for the red output.
+    /// Do not build tests on this path. Use <see cref="TryClickArea"/> instead.
+    /// </summary>
+    public static async Task ClickWorld(SubViewport viewport, Vector2 worldPos)
+    {
+        var screenPos = viewport.CanvasTransform * worldPos;
+
+        viewport.PushInput(
+            new InputEventMouseMotion { Position = screenPos, GlobalPosition = screenPos },
+            inLocalCoords: true);
+        viewport.PushInput(
+            new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = screenPos, GlobalPosition = screenPos },
+            inLocalCoords: true);
+        viewport.PushInput(
+            new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = screenPos, GlobalPosition = screenPos },
+            inLocalCoords: true);
+
+        await SettlePhysics(viewport);
+    }
+
+    /// <summary>
+    /// World-rework U8 (gate G1) FALLBACK — the seam tests must actually use. Since headless
+    /// physics picking is unproven (see <see cref="ClickWorld"/>), world-clickable Area2D
+    /// nodes are driven directly: this reimplements the same rectangle hit-test the engine's
+    /// picking pass would do (centered on <paramref name="area"/>'s global position, against
+    /// its first <see cref="RectangleShape2D"/> child), and on a hit emits the SAME
+    /// <see cref="Area2D.SignalName.InputEvent"/> signal real picking would emit — so
+    /// production click-handling code does not need to know it is under test. Mirrors the
+    /// existing <see cref="Click"/> seam for Controls (drives GuiInput directly rather than
+    /// real OS input). Camera-agnostic by construction: it hit-tests in world space, so a
+    /// scrolled Camera2D cannot desync it the way a screen-coordinate helper could.
+    /// Returns whether the point hit (so miss-case tests can assert on the return value too).
+    /// </summary>
+    public static bool TryClickArea(Area2D area, Vector2 worldPos)
+    {
+        foreach (var child in area.GetChildren())
+        {
+            if (child is not CollisionShape2D { Disabled: false, Shape: RectangleShape2D rect } shape)
+            {
+                continue;
+            }
+
+            var local = worldPos - (area.GlobalPosition + shape.Position);
+            if (Mathf.Abs(local.X) > rect.Size.X / 2f || Mathf.Abs(local.Y) > rect.Size.Y / 2f)
+            {
+                continue;
+            }
+
+            area.EmitSignal(
+                Area2D.SignalName.InputEvent,
+                area.GetViewport(),
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true },
+                0);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// World-rework U8 (gate G1) MANUAL-SMOKE RECIPE — not automated, never runs in CI.
+    /// <see cref="TryClickArea"/> intentionally bypasses the engine's own picking pass, so it
+    /// cannot catch a regression IN that pass. Run this by hand once per milestone that
+    /// touches world-click wiring (U14 TownWorld promotion, any later Area2D interactable):
+    /// launch the real game (`dotnet run` / the Godot editor's Play), hover and left-click a
+    /// world-clickable Area2D on screen, and confirm the expected in-game reaction fires.
+    /// If it does not, physics picking itself is broken — a defect this suite cannot see.
+    /// </summary>
+    public const string ManualSmokeRecipe =
+        "Launch the real game, left-click a world-clickable Area2D, confirm its in-game " +
+        "reaction fires. TryClickArea cannot catch a regression in real picking.";
+
     /// <summary>All user-visible text rendered under a control (labels, buttons, item lists).</summary>
     public static string RenderedText(Node root)
     {
@@ -162,6 +243,20 @@ public static class UiTestSupport
         for (var i = 0; i < 3; i++)
         {
             await node.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        }
+    }
+
+    /// <summary>
+    /// World-rework U8: pump a few physics frames so 2D physics-space mutations (a freshly
+    /// added CollisionShape2D, a camera scroll, a queued picking event) are committed before
+    /// the test reads results. The physics twin of <see cref="SettleLayout"/>.
+    /// </summary>
+    public static async Task SettlePhysics(Node node)
+    {
+        var tree = (SceneTree)Engine.GetMainLoop();
+        for (var i = 0; i < 3; i++)
+        {
+            await node.ToSignal(tree, SceneTree.SignalName.PhysicsFrame);
         }
     }
 

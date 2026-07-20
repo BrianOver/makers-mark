@@ -303,4 +303,33 @@ public class SaveLoadTests
         Assert.IsType<PartyRecalled>(events[^1]);
         Assert.Equal(SaveCodec.Serialize(state), SaveCodec.Serialize(roundTripped));
     }
+
+    [Fact]
+    public void PartiesFormed_RoundTrips_EmptyAndPopulated()
+    {
+        // Save-compat pin (world rework plan 2026-07-19-002 U1/KTD8): PartiesFormed is a new
+        // polymorphic EventLog entry — pre-muster saves contain none and keep loading (additive).
+        // The pinned zero-hero shape is an event with an EMPTY Parties list, never an omission.
+        var state = GameFactory.NewGame(seed: 21);
+        var plan = new PartyPlan(
+            ImmutableList.Create(new HeroId(1), new HeroId(2)), TargetFloor: 3, VenueId: "mine");
+        var mustered = state with
+        {
+            EventLog = state.EventLog
+                .Add(new PartiesFormed(ImmutableList.Create(plan)) { Day = 1 })
+                .Add(new PartiesFormed(ImmutableList<PartyPlan>.Empty) { Day = 2 }),
+        };
+
+        var json = SaveCodec.Serialize(mustered);
+        var loaded = SaveCodec.Deserialize(json);
+
+        Assert.Equal(json, SaveCodec.Serialize(loaded));
+        var musters = loaded.EventLog.OfType<PartiesFormed>().ToList();
+        Assert.Equal(2, musters.Count);
+        var loadedPlan = musters[0].Parties[0];
+        Assert.Equal(plan.Roster, loadedPlan.Roster); // sequence equality via xUnit collection compare
+        Assert.Equal(plan.TargetFloor, loadedPlan.TargetFloor);
+        Assert.Equal(plan.VenueId, loadedPlan.VenueId);
+        Assert.Empty(musters[1].Parties);
+    }
 }
