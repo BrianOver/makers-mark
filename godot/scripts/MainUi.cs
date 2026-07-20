@@ -115,7 +115,7 @@ public partial class MainUi : Control
     private bool _resumePlayOnMirrorClose;
 
     // ── LW3: gold-chip bounce-scale pop (StatusBar region) ────────────────────────────────────
-    // No engine Tween in this codebase (LitTownOverlay/HeroSprite precedent: accumulated-delta
+    // No engine Tween in this codebase (LitTownOverlay/HeroActor precedent: accumulated-delta
     // math only, so the pop is deterministic and headless-testable via direct _Process calls,
     // same as TownScene.Animate). -1 = not popping.
     private const double GoldPopSeconds = 0.3;

@@ -96,7 +96,7 @@ public partial class LitTownOverlay : SubViewportContainer
     // U14: the old multi-layer parallax (buildings/decor-heroes/fx, each at its own factor) lost
     // its buildings/decor-heroes targets — buildings now live in the Y-sorted Ents (a parallax
     // nudge would desync their StaticBody2D/Area2D from their own sprite) and the decorative
-    // hero figures this used to offset are deleted (real HeroSprites fill that role now). Only
+    // hero figures this used to offset are deleted (real HeroActors fill that role now). Only
     // the atmosphere fx layer keeps an idle parallax cue.
     private const float ParallaxFactorFx = 0.03f;
     private const float ParallaxLerpSpeed = 6f; // per-second convergence toward the target offset
@@ -127,11 +127,12 @@ public partial class LitTownOverlay : SubViewportContainer
 
     /// <summary>
     /// The Y-sorted (<see cref="CanvasItem.YSortEnabled"/>) entity layer — <see cref="TownScene"/>
-    /// adds/removes its live <see cref="HeroSprite"/> instances (and their speech bubbles) here
+    /// adds/removes its live <see cref="HeroActor"/> instances (and their speech bubbles) here
     /// directly, so they draw correctly in front of/behind the building wrappers that are this
     /// layer's other direct children. <see cref="CanvasItem.YSortEnabled"/> lives on the
-    /// CanvasItem base (not just Node2D), so a <c>Control</c>-based <see cref="HeroSprite"/> sorts
-    /// correctly here too (U19 promotes it to a Node2D <c>HeroActor</c>; U14 does not need to).
+    /// CanvasItem base, so a Node2D <see cref="HeroActor"/> (U19 — promoted from the
+    /// <c>Control</c>-based pre-U19 <c>HeroSprite</c>) sorts correctly here alongside the
+    /// building wrappers, both being direct <see cref="Ents"/> children.
     /// </summary>
     public Node2D Ents => _ents;
 
@@ -210,7 +211,7 @@ public partial class LitTownOverlay : SubViewportContainer
         BuildGround();
 
         // U14 KTD1 item 2: the ONE Y-sort group — building wrappers and (added by TownScene) live
-        // HeroSprites are direct children, sorted by world Y at draw time.
+        // HeroActors are direct children, sorted by world Y at draw time.
         _ents = new Node2D { Name = "Ents", YSortEnabled = true };
         _world.AddChild(_ents);
 
