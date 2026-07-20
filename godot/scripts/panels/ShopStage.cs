@@ -17,7 +17,7 @@ namespace GodotClient.Panels;
 /// replays yesterday's customers. Each <see cref="ItemSold"/>/<see cref="HeroPassedOnItem"/>
 /// event stages one customer run, staggered by the stage's own accumulated clock (never
 /// wall-clock, never engine RNG — the same determinism contract as <see cref="LitTownOverlay"/>'s
-/// ember flicker and <see cref="HeroSprite"/>'s wander): walk in from the left → stop at a shelf
+/// ember flicker and <see cref="HeroActor"/>'s wander): walk in from the left → stop at a shelf
 /// slot → judged-item highlight + one of four code-drawn emote glyphs → walk back out, either
 /// item-bobbing (bought) or slumped (passed). A bought run also plays a self-contained coin-arc
 /// flourish.</para>
@@ -320,7 +320,7 @@ public partial class ShopStage : SubViewportContainer
         {
             Name = $"ShopCustomer_{pending.Info.Hero.Value}",
             Texture = texture,
-            Modulate = HeroSprite.RoleColor(pending.Info.ClassId),
+            Modulate = HeroActor.RoleColor(pending.Info.ClassId),
             Position = new Vector2(EntryX, FloorY),
         };
         ScaleToWidth(figure, FigureTargetWidth);

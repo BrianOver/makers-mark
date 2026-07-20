@@ -1,3 +1,4 @@
+using System;
 using GameSim.Classes;
 using GameSim.Contracts;
 using Godot;
@@ -5,22 +6,28 @@ using Godot;
 namespace GodotClient.Town;
 
 /// <summary>
-/// One alive hero's town marker: a hand-authored role figure (U16 SVG, tinted to the
-/// role color via Modulate) over a small role-color footing, plus a name label.
-/// Movement is a state machine driven by <see cref="TownScene"/> (never by its own
-/// _Process): Wandering in town, Rallying at the gate before an expedition departs,
-/// WalkingOut through the gate, Away while in the Mine, WalkingIn when a survivor
-/// returns (or a fresh recruit walks in from off-screen). The wander/breath/walk motion
-/// is a deterministic function of the hero id + accumulated town time — presentation
-/// only, NO RNG, so it can never touch the sim's stream (KTD2/KTD4).
+/// One alive hero's town marker (world-rework U19 — replaces the <c>Control</c>-based
+/// <c>HeroSprite</c>): a <see cref="Node2D"/>, feet-anchored at <see cref="Position"/> exactly
+/// like a <see cref="LitTownOverlay"/> building wrapper (KTD6), with an <see cref="Area2D"/>
+/// pick zone for world clicks (G1 fallback — tests drive it via
+/// <c>GodotClient.Tests.UiTestSupport.TryClickArea</c>, never real physics picking) instead of
+/// the old <see cref="Control.GuiInput"/> seam.
 ///
-/// <para>LW1 (2026-07-19 living-world plan): every state now reads a "base" position
-/// (<see cref="_logicalPosition"/> for the walking/rally states, the wander/anchor
-/// formula for Wandering) and layers a small vertical bob on top for rendering only —
-/// the base position is what state-machine distance checks and left/right facing key
-/// off, so the bob can never desync arrival detection or cause facing jitter.</para>
+/// <para>The motion state machine below is <c>HeroSprite</c>'s LW1 state machine PORTED
+/// VERBATIM — Wandering/Rallying/WalkingOut/Away/WalkingIn, <see cref="StepToward"/>, the
+/// breath/walk bobs, the arrival squash — only the base type and the figure's own render anchor
+/// changed (Control top-left origin → Node2D feet origin); every distance/timing/easing formula
+/// is byte-identical to the pre-U19 code, so <see cref="Position"/> (the state machine's own
+/// coordinate) never desyncs from the world-scale doc's Home/gate points.</para>
+///
+/// <para>Visuals switch from the 30x42 SVG figurine to the painted <c>hero-&lt;classId&gt;</c>
+/// portrait via <see cref="AssetCatalog.HeroPortrait"/> (untinted — a painted portrait carries
+/// its own color), falling back to the hand-authored <see cref="IconRegistry.Sprite"/> SVG
+/// (tinted via <see cref="RoleColor"/>, the pre-U19 look) for a class the art pipeline has not
+/// painted yet. Name labels render on hover/selected only (<see cref="SetHovered"/>/
+/// <see cref="SetSelected"/>) instead of always-on, per the plan's world declutter.</para>
 /// </summary>
-public partial class HeroSprite : Control
+public partial class HeroActor : Node2D
 {
     public enum TownState
     {
@@ -31,44 +38,46 @@ public partial class HeroSprite : Control
         WalkingIn,
     }
 
-    /// <summary>Gate-walk speed in design-space pixels per second (decoration tuning knob).</summary>
+    /// <summary>Gate-walk speed in world-space pixels per second (decoration tuning knob).</summary>
     public const float WalkSpeed = 260f;
 
     /// <summary>How long a party dwells at the rally point before the first hero peels off
     /// toward the gate (LW1 rally-and-depart).</summary>
     public const float RallyDwellSeconds = 1.0f;
 
-    // U14 world-scale doc: standing figure height ≈96px (the published headline number), width
-    // keeping the pre-U14 aspect ratio (30:42 ≈ 0.714 → 68:96). SpriteRise/FeetY scale with it
-    // (same 1/3-of-height rise ratio as before) so the figure still reads as standing on this
-    // Control's own origin — which stays the ground-contact/feet point (unchanged feet-anchor
-    // contract; U14 only re-anchors the BUILDINGS, heroes were already anchored this way).
+    // world-scale.md: standing figure height ≈96px, width ≈68px. The figure fits inside this
+    // box (aspect-preserved, like the old TextureRect's KeepAspectCentered) and is feet-anchored
+    // at THIS node's own origin — Position IS the ground-contact point (KTD6), matching the
+    // building-wrapper convention exactly, so no separate "rise" offset is needed the way the
+    // old Control (whose origin was NOT its own feet) required.
     private const float SpriteWidth = 68f;
     private const float SpriteHeight = 96f;
-    private const float SpriteRise = 32f;   // the figure rises above the control's top so it reads as standing
-    private const float FootingWidth = 26f; // role-color base bar under the feet
-    private const float FeetY = SpriteHeight - SpriteRise;
+
     private const float WanderAmplitudeX = 14f;
     private const float WanderAmplitudeY = 10f;
 
-    // ── LW1 never-static motion tuning ────────────────────────────────────────────────────
-    private const float BreathAmplitude = 1.5f;  // idle micro-bob, px
+    // ── LW1 never-static motion tuning (verbatim) ─────────────────────────────────────────────
+    private const float BreathAmplitude = 1.5f;
     private const float BreathFreqHz = 1.2f;
-    private const float WalkBobAmplitude = 2.5f; // walk-cycle bob, px
-    private const float WalkBobFreqHz = 2.0f;    // ≈ 2 steps/sec
-    private const float FlipEpsilon = 0.05f;     // px of horizontal travel before flipping facing
-    private const float SquashDuration = 0.2f;   // arrival squash settle time (Trans.Back feel)
-    private const float OffscreenLeftX = -80f;   // recruit spawn point, left of the design-space edge
+    private const float WalkBobAmplitude = 2.5f;
+    private const float WalkBobFreqHz = 2.0f;
+    private const float FlipEpsilon = 0.05f;
+    private const float SquashDuration = 0.2f;
+    private const float OffscreenLeftX = -80f;
 
-    // ── LW1 anchor vignette: deterministic (heroId, day) idle-target bias ─────────────────
-    private const float AnchorCyclePeriod = 20f; // seconds of town-time between anchor windows
-    private const float AnchorPauseSeconds = 3f; // how long the pause at the anchor lasts
+    // ── LW1 anchor vignette (verbatim) ────────────────────────────────────────────────────────
+    private const float AnchorCyclePeriod = 20f;
+    private const float AnchorPauseSeconds = 3f;
 
-    /// <summary>Landmark anchor points a wandering hero occasionally pauses at (well /
-    /// noticeboard near the gate / tavern door) — presentation-only town-square dressing.
-    /// U14: repositioned onto the world-scale doc's wander band and building layout (well near
-    /// the forge end of the street, noticeboard by the re-spaced minegate, tavern door at the
-    /// re-spaced tavern's ground line).</summary>
+    /// <summary>Pick-zone footprint (world-scale convention): big enough to read as the whole
+    /// standing figure, centered on the head/torso so a click anywhere on the visible sprite
+    /// hits it.</summary>
+    private static readonly Vector2 PickZoneSize = new(SpriteWidth + 22f, SpriteHeight + 8f);
+    private static readonly Vector2 PickZoneOffset = new(0f, -SpriteHeight / 2f);
+
+    /// <summary>Landmark anchor points a wandering hero occasionally pauses at (world-scale
+    /// doc's wander band / building layout) — presentation-only town-square dressing, ported
+    /// verbatim from <c>HeroSprite</c>.</summary>
     public static readonly Vector2[] AnchorPoints =
     [
         new(500, 560),  // town well
@@ -83,9 +92,13 @@ public partial class HeroSprite : Control
     private float _speedY;
     private int _day;
 
-    private Vector2 _logicalPosition; // the "real" walk-state position; bob is layered on top for render only
+    private Vector2 _logicalPosition;
     private float _lastBaseX;
-    private TextureRect? _figure;
+    private Sprite2D? _figure;
+    private Vector2 _baseScale = Vector2.One; // the figure's fit-to-box scale, pre-squash
+    private float _figureTopOffset; // scaled figure's own top edge, local Y (negative)
+    private Label? _nameLabel;
+    private Area2D? _pickZone;
 
     private Vector2 _rallyPoint;
     private float _fileDelay;
@@ -95,6 +108,9 @@ public partial class HeroSprite : Control
     private bool _squashing;
     private float _squashElapsed;
     private Vector2 _squashFrom;
+
+    private bool _hovered;
+    private bool _selected;
 
     public int HeroValue { get; private set; }
 
@@ -107,22 +123,31 @@ public partial class HeroSprite : Control
     /// <summary>Anchor point the wander drifts around; deterministic per hero id.</summary>
     public Vector2 Home { get; private set; }
 
+    /// <summary>The <see cref="Area2D"/> pick zone raising <see cref="Clicked"/> — the world
+    /// click target tests drive via <c>UiTestSupport.TryClickArea</c> (G1 fallback).</summary>
+    public Area2D PickZone => _pickZone!;
+
     /// <summary>
-    /// Point a LW2 speech bubble's tail should touch — roughly the top of the standing figure,
-    /// tracking whatever <see cref="Position"/> currently is (walk bob / breath bob included), so
-    /// a bubble that repositions here every tick rides along with the hero instead of floating in
-    /// a fixed spot.
+    /// Point a LW2 speech bubble's tail should touch — the top of the standing figure, tracking
+    /// whatever <see cref="Position"/> currently is (walk bob / breath bob included), so a bubble
+    /// that repositions here every tick rides along with the hero instead of floating in a fixed
+    /// spot. Feet-anchored origin (KTD6) means no horizontal offset is needed (the figure is
+    /// already centered on this node), unlike the pre-U19 Control anchor.
     /// </summary>
-    public Vector2 HeadAnchor => Position + new Vector2(Size.X / 2f, -SpriteRise);
+    public Vector2 HeadAnchor => Position + new Vector2(0, _figureTopOffset);
 
     /// <summary>The sim day, pushed in by <see cref="TownScene.Refresh"/> every tick — the
     /// second half of the anchor-vignette's (heroId, day) determinism key. Presentation-only;
     /// never read by the sim.</summary>
     public int Day { set => _day = value; }
 
-    /// <summary>Class → tint color (U12 pinned palette; U16 tints the figure + footing with it).
-    /// Reads <see cref="ClassDefinition.ColorRgb"/> (P3), so an add-on class is self-describing;
-    /// unknown ids fall back to gray (the old default arm).</summary>
+    /// <summary>A hero actor was clicked (payload: <see cref="HeroValue"/>) — routes to
+    /// hero-inspect via <see cref="TownScene.HeroClicked"/>.</summary>
+    public event Action<int>? Clicked;
+
+    /// <summary>Class → tint color (P3 pinned palette). Reads <see cref="ClassDefinition.ColorRgb"/>
+    /// so an add-on class is self-describing; unknown ids fall back to gray. Applied only to the
+    /// SVG-fallback figure — a painted portrait carries its own color and renders untinted.</summary>
     public static Color RoleColor(string classId)
     {
         if (ClassRegistry.TryGet(classId, out var def))
@@ -142,7 +167,8 @@ public partial class HeroSprite : Control
     public static Vector2 AnchorFor(int heroValue, int day) =>
         AnchorPoints[(heroValue + day) % AnchorPoints.Length];
 
-    /// <summary>Build the marker + label and pin the deterministic wander parameters.</summary>
+    /// <summary>Build the figure + pick zone + name label and pin the deterministic wander
+    /// parameters.</summary>
     public void Setup(Hero hero, Vector2 home, Vector2 gate)
     {
         HeroValue = hero.Id.Value;
@@ -154,8 +180,6 @@ public partial class HeroSprite : Control
         Position = home;
         _logicalPosition = home;
         _lastBaseX = home.X;
-        Size = new Vector2(SpriteWidth + 22f, FeetY); // click hitbox, scaled up with the U14 figure
-        MouseFilter = MouseFilterEnum.Stop;
 
         // Deterministic per-hero drift parameters — id in, motion out, no RNG. Reused as the
         // breath-bob / walk-bob phase offset too, so every hero's idle rhythm is desynced.
@@ -164,46 +188,103 @@ public partial class HeroSprite : Control
         _speedX = 0.55f + HeroValue % 3 * 0.2f;
         _speedY = 0.4f + HeroValue % 4 * 0.15f;
 
-        // U16: the hand-authored role figure, tinted to the role color via Modulate.
-        // The figure rises above the control's top so it reads as standing; the
-        // control's hit rect (Size) is unchanged, so click routing is identical.
-        var sprite = new TextureRect
+        var (texture, tint) = ResolveFigure(hero.ClassId);
+        var sprite = new Sprite2D
         {
             Name = "Sprite",
-            Texture = IconRegistry.Sprite(hero.ClassId),
-            Modulate = RoleColor(hero.ClassId),
-            Position = new Vector2((Size.X - SpriteWidth) / 2f, -SpriteRise),
-            Size = new Vector2(SpriteWidth, SpriteHeight),
-            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-            PivotOffset = new Vector2(SpriteWidth / 2f, SpriteHeight / 2f),
-            MouseFilter = MouseFilterEnum.Ignore,
+            Texture = texture,
+            Modulate = tint,
+            Centered = false,
         };
+        if (texture is not null)
+        {
+            var scale = FitScale(texture);
+            var scaledWidth = texture.GetWidth() * scale;
+            var scaledHeight = texture.GetHeight() * scale;
+            sprite.Scale = Vector2.One * scale;
+            sprite.Position = new Vector2(-scaledWidth / 2f, -scaledHeight);
+            _baseScale = sprite.Scale;
+        }
+
         AddChild(sprite);
         _figure = sprite;
+        _figureTopOffset = sprite.Position.Y;
 
-        // Small role-color footing bar under the feet. Retained (U12 pinned) so the
-        // role→color contract stays visible and asserted at a glance.
-        var marker = new ColorRect
+        _pickZone = new Area2D { Name = "PickZone" };
+        _pickZone.AddChild(new CollisionShape2D
         {
-            Name = "Marker",
-            Color = RoleColor(hero.ClassId),
-            Position = new Vector2((Size.X - FootingWidth) / 2f, FeetY - 4),
-            Size = new Vector2(FootingWidth, 4),
-            MouseFilter = MouseFilterEnum.Ignore,
+            Shape = new RectangleShape2D { Size = PickZoneSize },
+            Position = PickZoneOffset,
+        });
+        _pickZone.InputEvent += (_, @event, _) =>
+        {
+            if (@event is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true })
+            {
+                Clicked?.Invoke(HeroValue);
+            }
         };
-        AddChild(marker);
+        _pickZone.MouseEntered += () => SetHovered(true);
+        _pickZone.MouseExited += () => SetHovered(false);
+        AddChild(_pickZone);
 
-        var label = new Label
+        _nameLabel = new Label
         {
             Name = "NameLabel",
             Text = hero.Name,
-            Position = new Vector2(0, FeetY),
-            CustomMinimumSize = new Vector2(Size.X, 0),
+            Visible = false,
+            Position = new Vector2(-40f, 4f),
+            CustomMinimumSize = new Vector2(80f, 14f),
             HorizontalAlignment = HorizontalAlignment.Center,
-            MouseFilter = MouseFilterEnum.Ignore,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        label.AddThemeFontSizeOverride("font_size", 11);
-        AddChild(label);
+        _nameLabel.AddThemeFontSizeOverride("font_size", 11);
+        AddChild(_nameLabel);
+    }
+
+    /// <summary>Resolve this hero's figure: the painted class portrait (untinted — it carries its
+    /// own color) when the art pipeline has generated one, otherwise the hand-authored SVG
+    /// figurine tinted to the class's role color (the pre-U19 look). Both resolvers are
+    /// null-tolerant; an id with neither degrades to no texture, never a throw.</summary>
+    private static (Texture2D? Texture, Color Tint) ResolveFigure(string classId)
+    {
+        var painted = AssetCatalog.HeroPortrait(classId);
+        return painted is not null ? (painted, Colors.White) : (IconRegistry.Sprite(classId), RoleColor(classId));
+    }
+
+    /// <summary>Uniform scale so the texture fits inside the <see cref="SpriteWidth"/> x
+    /// <see cref="SpriteHeight"/> box, aspect preserved (the Node2D analog of the old
+    /// TextureRect's <c>KeepAspectCentered</c>). 0-safe (a 0-dimension texture never divides by
+    /// zero — falls back to no scaling).</summary>
+    private static float FitScale(Texture2D texture)
+    {
+        var width = Mathf.Max(1, texture.GetWidth());
+        var height = Mathf.Max(1, texture.GetHeight());
+        return Mathf.Min(SpriteWidth / width, SpriteHeight / height);
+    }
+
+    /// <summary>Hover affordance (R2): shows the name label while the cursor is over the pick
+    /// zone. Presentation-only; real physics picking is unproven under headless CI (G1), so this
+    /// path is exercised by manual smoke, not the automated suite.</summary>
+    public void SetHovered(bool hovered)
+    {
+        _hovered = hovered;
+        UpdateLabelVisibility();
+    }
+
+    /// <summary>Selection affordance (R2): keeps the name label shown after a click, until
+    /// another actor is selected — set/cleared by <see cref="TownScene"/>.</summary>
+    public void SetSelected(bool selected)
+    {
+        _selected = selected;
+        UpdateLabelVisibility();
+    }
+
+    private void UpdateLabelVisibility()
+    {
+        if (_nameLabel is not null)
+        {
+            _nameLabel.Visible = _hovered || _selected;
+        }
     }
 
     /// <summary>
@@ -421,6 +502,10 @@ public partial class HeroSprite : Control
         }
     }
 
+    /// <summary>Squashes relative to <see cref="_baseScale"/> (the figure's own fit-to-box
+    /// scale set in <see cref="Setup"/>), never relative to <see cref="Vector2.One"/> — a
+    /// painted portrait's fit-scale is rarely 1:1, and squashing toward One would jump its size
+    /// the instant a squash starts.</summary>
     private void TriggerArrivalSquash()
     {
         if (_figure is null)
@@ -428,7 +513,7 @@ public partial class HeroSprite : Control
             return;
         }
 
-        _squashFrom = new Vector2(1.2f, 0.8f);
+        _squashFrom = _baseScale * new Vector2(1.2f, 0.8f);
         _figure.Scale = _squashFrom;
         _squashElapsed = 0f;
         _squashing = true;
@@ -443,11 +528,11 @@ public partial class HeroSprite : Control
 
         _squashElapsed += (float)delta;
         var t = Mathf.Clamp(_squashElapsed / SquashDuration, 0f, 1f);
-        _figure.Scale = EaseOutBack(_squashFrom, Vector2.One, t);
+        _figure.Scale = EaseOutBack(_squashFrom, _baseScale, t);
         if (t >= 1f)
         {
             _squashing = false;
-            _figure.Scale = Vector2.One;
+            _figure.Scale = _baseScale;
         }
     }
 
@@ -456,7 +541,7 @@ public partial class HeroSprite : Control
         _squashing = false;
         if (_figure is not null)
         {
-            _figure.Scale = Vector2.One;
+            _figure.Scale = _baseScale;
         }
     }
 
