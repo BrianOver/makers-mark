@@ -7,7 +7,7 @@ namespace GodotClient.Town;
 /// <summary>
 /// LW4 atmosphere layer: window glow, the forge-coals landmark, ambient particles, props, and
 /// fog wisps — everything that makes the lit town feel inhabited in the negative space around
-/// the buildings and heroes. Mounted as a child of <see cref="LitTownOverlay"/>'s <c>LitWorld</c>
+/// the buildings and heroes. Mounted as a child of <see cref="LitTownOverlay"/>'s <c>WorldRoot</c>
 /// (same SubViewport, same CanvasModulate scope), built entirely in code (no .tscn authoring),
 /// CpuParticles2D-only (headless-simulatable — GPUParticles2D needs a compute shader that never
 /// runs under <c>--headless</c>), and null-tolerant against <see cref="IconRegistry.Lit"/> so a
@@ -35,35 +35,41 @@ public partial class AmbientFxLayer : Node2D
 
     private const float WindowGlowWidth = 96f;
     private static readonly Color WindowGlowColor = new(1f, 0.78f, 0.45f);
-    private static readonly Vector2 WindowGlowOffset = new(0f, -70f);
+
+    // U14: LitTownOverlay.BuildingSpec.Position is now the GROUND-LINE anchor (feet, KTD6), not
+    // the facade's visual center it was pre-U14 — every offset below is retuned relative to that
+    // new reference point (all negative-Y "up from the ground" instead of "up from mid-facade").
+    private static readonly Vector2 WindowGlowOffset = new(0f, -190f); // mid-upper facade band
 
     // The forge-coals landmark: the ONE strongest light town-wide (LitTownOverlay's per-building
     // lantern lights run at LightEnergy 1.2 — this beats them so the coals read as the hottest
-    // spot in town), tighter and lower than a hung lantern.
+    // spot in town), sitting low and close to the forge's own ground line (a hearth, not a hung
+    // lantern).
     private const float ForgeCoalsEnergy = 1.9f;
     private const float ForgeCoalsTextureScale = 1.4f;
     private const float ForgeCoalsHeight = 14f;
     private static readonly Color ForgeCoalsColor = new(1f, 0.42f, 0.12f);
-    private static readonly Vector2 ForgeCoalsOffset = new(20f, 70f);
+    private static readonly Vector2 ForgeCoalsOffset = new(30f, -20f);
 
-    private static readonly Vector2 ChimneyOffset = new(50f, -170f);
+    private static readonly Vector2 ChimneyOffset = new(60f, -300f); // roofline
 
     private const float FogAlpha = 0.12f;
     private const float FogPanSpeed = 6f; // design px/s
-    private const float FogWrapWidth = 1400f; // wider than the 1024 canvas so the wrap never pops
+    private const float FogWrapWidth = 1700f; // wider than the 1600px canvas so the wrap never pops
 
-    /// <summary>The 8 committed props (LW-art), placed around the town square. Only the string
+    /// <summary>The 8 committed props (LW-art), placed around the world-scale doc's wander band
+    /// (world X [300,1300], Y [460,600]) in front of the four re-spaced facades. Only the string
     /// lanterns and laundry line sway — everything else is a static ground prop.</summary>
     public static readonly PropSpec[] DefaultProps =
     [
-        new("props-town-well", new Vector2(600, 460), false),
-        new("props-noticeboard", new Vector2(380, 340), false),
-        new("props-ore-cart", new Vector2(890, 420), false),
-        new("props-market-crates", new Vector2(650, 300), false),
-        new("props-string-lanterns", new Vector2(748, 160), true),
-        new("props-laundry-line", new Vector2(520, 190), true),
-        new("props-tavern-cat", new Vector2(780, 440), false),
-        new("props-forge-salamander", new Vector2(430, 300), false),
+        new("props-town-well", new Vector2(420, 560), false),
+        new("props-noticeboard", new Vector2(1380, 500), false),
+        new("props-ore-cart", new Vector2(1200, 560), false),
+        new("props-market-crates", new Vector2(760, 460), false),
+        new("props-string-lanterns", new Vector2(1100, 320), true),
+        new("props-laundry-line", new Vector2(600, 340), true),
+        new("props-tavern-cat", new Vector2(1150, 580), false),
+        new("props-forge-salamander", new Vector2(300, 460), false),
     ];
 
     private readonly List<Sprite2D> _windowGlows = [];
@@ -292,7 +298,7 @@ public partial class AmbientFxLayer : Node2D
         _fireflies = new CpuParticles2D
         {
             Name = "Fireflies",
-            Position = new Vector2(620f, 400f),
+            Position = new Vector2(800f, 460f), // world-scale doc: middle of the wander band
             Emitting = false, // ApplyPhase(Camp/ExpeditionDeep/Evening) turns them on
             Amount = 10,
             Lifetime = 3.0,
@@ -315,7 +321,7 @@ public partial class AmbientFxLayer : Node2D
         _dustMotes = new CpuParticles2D
         {
             Name = "DustMotes",
-            Position = new Vector2(620f, 300f),
+            Position = new Vector2(800f, 380f), // world-scale doc: middle of the wander band
             Emitting = false, // ApplyPhase(Morning/Expedition) turns them on
             Amount = 15,
             Lifetime = 6.0,
@@ -362,8 +368,8 @@ public partial class AmbientFxLayer : Node2D
 
     private void AddFogWisps()
     {
-        AddFogWisp("FogWisp_0", new Vector2(0f, 260f));
-        AddFogWisp("FogWisp_1", new Vector2(700f, 380f));
+        AddFogWisp("FogWisp_0", new Vector2(0f, 420f));
+        AddFogWisp("FogWisp_1", new Vector2(850f, 520f));
     }
 
     private void AddFogWisp(string name, Vector2 position)
