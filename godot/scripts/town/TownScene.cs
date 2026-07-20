@@ -8,39 +8,45 @@ using GodotClient.Panels;
 namespace GodotClient.Town;
 
 /// <summary>
-/// The living town view (U12, R19): first tab of the MainUi shell. Hand-authored SVG
-/// art (U16) in a fixed design space: a tileable cobble ground, a town gate on the
-/// right edge, Forge/Shop/Tavern building facades, a memorial corner plot (R13), and one
-/// <see cref="HeroSprite"/> per alive hero. Rhythm follows the sim's five phases:
+/// The living town view (U12, R19; promoted U14 — KTD1): first tab of the MainUi shell.
+/// <see cref="LitTownOverlay"/> IS the town now — a single, input-forwarding, Y-sorted painted
+/// world (ground, four feet-anchored building facades, a memorial corner plot (R13), one
+/// <see cref="HeroSprite"/> per alive hero). Rhythm follows the sim's five phases:
 /// Morning-tick completion sends everyone out the gate (all alive heroes party up); a run that
 /// finalizes at Expedition (never parked) walks its survivors back then, while staged parties
 /// park at Camp and walk back at ExpeditionDeep-tick completion; deaths stay away until the
 /// Evening reveal removes them; Evening-tick completion snaps the town to a new day.
 /// The walks are decoration only — the Ledger reveal is MainUi's TIME-BASED Return
 /// Ritual gate, never blocked by sprites (a full wipe returns zero of them).
-/// Clicking a hero or building raises an event MainUi routes to the U11 tabs (R20).
+/// Clicking a hero or building raises an event MainUi routes to the U11 tabs (R20). World-space
+/// pixel constants below are the ones published in <c>docs/design/world-scale.md</c> — read that
+/// doc, not just this file, before touching any of them.
 /// Adapter-only rendering: reads <c>Adapter.CurrentState</c>, submits nothing.
 /// </summary>
 public partial class TownScene : SimPanel
 {
-    // Fixed design-space layout (U16 skins these anchors with SVG facades/props).
-    private static readonly Vector2 GatePosition = new(900, 300);
-    private static readonly Vector2 GateSize = new(28, 120);
-    private static readonly Vector2 GateWalkTarget = new(904, 350);
-    private static readonly Vector2 BuildingSize = new(96, 72);
+    // World-scale doc: gate sits at the minegate building's ground-line anchor; heroes walk to a
+    // point just in front of it. MemorialPlotOrigin is screen-space (a Control corner overlay on
+    // TOP of the world SubViewportContainer), unrelated to world coordinates.
+    private static readonly Vector2 GateWalkTarget = new(1420, LitTownOverlay.GroundLine);
     private static readonly Vector2 MemorialPlotOrigin = new(20, 60);
 
     // LW1 rally-and-depart: party members gather here (spaced by file slot) before peeling
     // off toward GateWalkTarget one at a time — "exit in file" instead of a simultaneous pop.
-    private static readonly Vector2 RallyCenter = GateWalkTarget - new Vector2(70, 0);
+    private static readonly Vector2 RallyCenter = GateWalkTarget - new Vector2(100, 0);
     private const float RallyFileSpacing = 16f;
     private const float FileExitStaggerSeconds = 0.35f;
 
     // LW2 speech bubbles: shared budget across gossip/pair-banter/shop barks (plan LW2 caps).
-    private static readonly Vector2 TavernAnchor = new(700, 90);
+    private static readonly Vector2 TavernAnchor = new(1100, LitTownOverlay.GroundLine);
     private const int MaxConcurrentBubbles = 2;
     private const float BubbleCooldownSeconds = 20f; // per-hero, in town time
-    private const float PairBanterRadius = 70f; // "idle near each other" threshold, px
+
+    // U14: the world-scale canvas widened ~1.6x (1024→1600 design width) so HomeFor's spread grew
+    // with it — adjacent hero-id homes now sit ~118-125px apart at rest (was ~16-90px pre-U14).
+    // The "idle near each other" threshold scales with the canvas so pair-banter still reads as
+    // "these two happen to be near each other" rather than never firing.
+    private const float PairBanterRadius = 130f;
 
     private static readonly string[] SatisfactionBarks =
     [
@@ -60,7 +66,12 @@ public partial class TownScene : SimPanel
     private readonly HashSet<string> _shownLinesToday = [];
     private int _bubbleDedupeDay = -1;
 
-    private Control? _heroLayer;
+    // U14: heroes (and their speech bubbles) now live directly in LitTownOverlay.Ents — the ONE
+    // Y-sorted layer — so they draw correctly in front of/behind the building wrappers that are
+    // Ents' other direct children. Node2D, not Control: CanvasItem.YSortEnabled sorts any
+    // CanvasItem child regardless of type, and HeroSprite stays Control-based until U19's
+    // HeroActor promotes it.
+    private Node2D? _heroLayer;
     private Control? _memorialPlot;
     private Label? _memorialHeader;
     private LitTownOverlay? _litOverlay;
@@ -74,7 +85,9 @@ public partial class TownScene : SimPanel
     /// <summary>A hero sprite was clicked — payload is HeroId.Value (R20).</summary>
     public event Action<int>? HeroClicked;
 
-    /// <summary>A building marker was clicked — payload is "Forge" | "Shop" | "Tavern" (R20).</summary>
+    /// <summary>A building marker was clicked — payload is "Forge" | "Shop" | "Tavern" (R20).
+    /// Relayed from <see cref="LitTownOverlay.BuildingClicked"/>, which owns the click-zone
+    /// <see cref="Area2D"/>s since U14.</summary>
     public event Action<string>? BuildingClicked;
 
     /// <summary>Set by MainUi so decoration speed follows play/pause and fast-forward.</summary>
@@ -531,10 +544,11 @@ public partial class TownScene : SimPanel
         MemorialStoneCount = index;
     }
 
-    /// <summary>Deterministic home spot per hero id — spread across the town square.</summary>
+    /// <summary>Deterministic home spot per hero id — spread across the world-scale doc's
+    /// "wander band" (world X [300,1300], Y [460,600]) in front of the four facades.</summary>
     private static Vector2 HomeFor(int heroValue) => new(
-        380 + heroValue * 67 % 320,
-        280 + heroValue * 97 % 160);
+        300 + heroValue * 97 % 1000,
+        460 + heroValue * 67 % 140);
 
     private static bool IsLeftPress(InputEvent evt) =>
         evt is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true };
@@ -555,84 +569,20 @@ public partial class TownScene : SimPanel
         // stays pinned neutral white forever so the subtree is multiplied exactly once.
         Modulate = Colors.White;
 
-        // U16: tileable cobble ground (void/iron) behind everything.
-        var ground = new TextureRect
-        {
-            Name = "Ground",
-            Texture = IconRegistry.Building("ground_tile"),
-            StretchMode = TextureRect.StretchModeEnum.Tile,
-            MouseFilter = MouseFilterEnum.Ignore,
-        };
-        ground.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(ground);
-
-        // V-lit-overlay (CP-1 option (c) additive overlay): the 2.5D lit town, mounted as the
-        // backmost visual layer — ON TOP of the cobble ground, BEHIND every SVG facade/label/hero
-        // marker built below. It draws through its own SubViewport (CanvasModulate scoped to the lit
-        // world) and ignores mouse input, so every TownScene click-routing/label test stays green.
-        // Graceful degrade: with no shipped art it builds empty and the SVG town is untouched.
+        // U14 promotion (KTD1): LitTownOverlay IS the town now — the ground, the four
+        // feet-anchored buildings, the camera, and (via Ents, below) every live hero. It fills
+        // this whole tab; the only siblings left on THIS Control are the screen-space memorial
+        // plot overlay and nothing else — the old SVG gate/building hit-rect Controls and the
+        // Control-based tiled ground are deleted outright (blinded since U3, gone for good now).
         _litOverlay = new LitTownOverlay();
         _litOverlay.Build();
+        _litOverlay.BuildingClicked += key => BuildingClicked?.Invoke(key);
         AddChild(_litOverlay);
+        _heroLayer = _litOverlay.Ents;
 
-        BuildGate();
-        BuildBuilding("Forge", new Vector2(420, 90));
-        BuildBuilding("Shop", new Vector2(560, 90));
-        BuildBuilding("Tavern", TavernAnchor);
         BuildMemorialPlot();
 
-        _heroLayer = new Control
-        {
-            Name = "HeroLayer",
-            MouseFilter = MouseFilterEnum.Ignore,
-        };
-        _heroLayer.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(_heroLayer);
-
         _built = true;
-    }
-
-    /// <summary>
-    /// U3 de-collage: the old SVG wireframe (TextureRect + "GATE" Label) is gone — the
-    /// LitTownOverlay's "minegate" facade is the only visible gate now. This Control survives as
-    /// bare hit-rect geometry only (no click routing on the gate today; kept for shape parity /
-    /// future use rather than deleted outright).
-    /// </summary>
-    private void BuildGate()
-    {
-        var gate = new Control
-        {
-            Name = "TownGate",
-            Position = GatePosition,
-            Size = GateSize,
-            MouseFilter = MouseFilterEnum.Ignore,
-        };
-        AddChild(gate);
-    }
-
-    /// <summary>
-    /// U3 de-collage: the old SVG wireframe (TextureRect + upper-case Label) is gone — the
-    /// LitTownOverlay's facade is the only visible building now. This stays an INVISIBLE click
-    /// target: same Position/Size/MouseFilter.Stop and the same GuiInput→BuildingClicked routing,
-    /// just with zero rendered children, so every UiTestSupport.Click assertion stays green.
-    /// </summary>
-    private void BuildBuilding(string key, Vector2 position)
-    {
-        var building = new Control
-        {
-            Name = $"Building_{key}",
-            Position = position,
-            Size = BuildingSize,
-            MouseFilter = MouseFilterEnum.Stop,
-        };
-        building.GuiInput += evt =>
-        {
-            if (IsLeftPress(evt))
-            {
-                BuildingClicked?.Invoke(key);
-            }
-        };
-        AddChild(building);
     }
 
     private void BuildMemorialPlot()
