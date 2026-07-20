@@ -49,4 +49,41 @@ public class CliIdsTests
     {
         Assert.False(CliIds.TryParseItem(token, out _));
     }
+
+    // ---- TryParseProfessions (U26: the 'profession' verb's arg-count parse rule) ----
+
+    [Fact]
+    public void TryParseProfessions_OneToken_Accepted()
+    {
+        Assert.True(CliIds.TryParseProfessions(["blacksmith"], out var professions));
+        Assert.Equal(new[] { "blacksmith" }, professions);
+    }
+
+    [Fact]
+    public void TryParseProfessions_TwoTokens_Accepted()
+    {
+        Assert.True(CliIds.TryParseProfessions(["tanning", "blacksmith"], out var professions));
+
+        // Sorted-set result: order-independent input, deterministic (alphabetical) output.
+        Assert.Equal(new[] { "blacksmith", "tanning" }, professions);
+    }
+
+    [Fact]
+    public void TryParseProfessions_IsCaseInsensitive()
+    {
+        Assert.True(CliIds.TryParseProfessions(["BLACKSMITH"], out var professions));
+        Assert.Equal(new[] { "blacksmith" }, professions);
+    }
+
+    [Fact]
+    public void TryParseProfessions_ZeroTokens_Rejected()
+    {
+        Assert.False(CliIds.TryParseProfessions([], out _));
+    }
+
+    [Fact]
+    public void TryParseProfessions_ThreeTokens_Rejected()
+    {
+        Assert.False(CliIds.TryParseProfessions(["a", "b", "c"], out _));
+    }
 }

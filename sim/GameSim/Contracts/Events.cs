@@ -30,6 +30,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(PartyCampReport), "partyCampReport")]
 [JsonDerivedType(typeof(SupplyDelivered), "supplyDelivered")]
 [JsonDerivedType(typeof(PartyRecalled), "partyRecalled")]
+[JsonDerivedType(typeof(PartiesFormed), "partiesFormed")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -130,3 +131,14 @@ public sealed record MaterialPurchased(string MaterialKey, int Quantity, int Cos
 /// <paramref name="Amount"/>. A recorded gold SOURCE the conservation invariant reconciles
 /// against (mirror of the discount-tariff source term). Never fires on a solvent trace.</summary>
 public sealed record RecoveryStipendGranted(int Amount) : GameEvent;
+
+/// <summary>One planned party from the Morning muster: roster (HeroId order), the provisional
+/// target floor (bounty acceptance PREDICTED via the same pure rule BountyJudgingSystem applies
+/// at the Expedition tick), and the destination venue's <c>VenueRegistry</c> key.</summary>
+public sealed record PartyPlan(ImmutableList<HeroId> Roster, int TargetFloor, string VenueId);
+
+/// <summary>Morning-phase muster (plan 2026-07-19-002 U9/KTD8): the parties that will depart at
+/// the Expedition tick. Emitted by MusterSystem with ZERO RNG draws; consumed by the adapter for
+/// roster-true gate departures, ticker lines, and spectate feeds. A zero-hero morning emits this
+/// event with an empty <paramref name="Parties"/> list (pinned shape — never omitted).</summary>
+public sealed record PartiesFormed(ImmutableList<PartyPlan> Parties) : GameEvent;

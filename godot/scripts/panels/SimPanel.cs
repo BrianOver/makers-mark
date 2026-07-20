@@ -174,8 +174,9 @@ public abstract partial class SimPanel : Control
 
     /// <summary>A bordered hero-portrait frame — see <see cref="UiKit.PortraitFrame"/>.</summary>
     protected static Control PortraitFrame(
-        string artKey, float size = UiKit.PortraitSize, Texture2D? fallbackIcon = null, string? caption = null) =>
-        UiKit.PortraitFrame(artKey, size, fallbackIcon, caption);
+        string artKey, float size = UiKit.PortraitSize, Texture2D? fallbackIcon = null, string? caption = null,
+        bool ellipsizeCaption = false) =>
+        UiKit.PortraitFrame(artKey, size, fallbackIcon, caption, ellipsizeCaption);
 
     /// <summary>The fallback-safe art-loader bridge — see <see cref="UiKit.ArtRect"/>.</summary>
     protected static Control ArtRect(
