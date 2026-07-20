@@ -148,15 +148,20 @@ public class PlayerAvatarTests
         {
             AssertThat(TryClickArea(Find<Area2D>(ui.Town, "ClickZone_forge"), ClickPointFor("forge"))).IsTrue();
 
-            // KTD12 pin: the click only issued a walk — no instant open.
+            // KTD12 pin: the click only issued a walk — no instant open (of either surface).
             AssertThat(ui.Drawer.IsOpen).IsFalse();
+            AssertThat(ui.Interior.IsOpen).IsFalse();
             AssertThat(ui.Town.Avatar!.IsFollowingPath).IsTrue();
 
             await SettlePhysics(ui);
             await WalkUntilArrived(ui, ui.Town.Avatar!);
 
             AssertThat(ui.Town.Avatar!.IsFollowingPath).IsFalse(); // arrived
-            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Forge");
+            // U22: arrival stages the interior, not the drawer directly (content parity —
+            // a hotspot press is what actually opens the drawer, see Interior_ForgeHotspot_...).
+            AssertThat(ui.Drawer.IsOpen).IsFalse();
+            AssertThat(ui.Interior.IsOpen).IsTrue();
+            AssertThat(ui.Interior.VenueKey).IsEqual("forge");
         }
         finally
         {
@@ -195,10 +200,21 @@ public class PlayerAvatarTests
         try
         {
             var overlay = ui.Town.LitOverlay!;
-            overlay.WorldInput.UpdateZone(overlay.Zones["forge"].Position);
+            var doorPosition = overlay.Zones["forge"].Position;
+            overlay.WorldInput.UpdateZone(doorPosition);
 
             overlay.WorldInput.TryInteract();
 
+            // U22: interact stages the forge interior (R4/AE4), not the drawer directly.
+            AssertThat(ui.Interior.IsOpen).IsTrue();
+            AssertThat(ui.Interior.VenueKey).IsEqual("forge");
+            AssertThat(ui.Drawer.IsOpen).IsFalse();
+
+            // Pressing the forge's one content hotspot ("Anvil") is what opens the SAME drawer
+            // id interact used to open directly — content parity with the pre-U22 behaviour.
+            Press(ui.Interior, "Hotspot_anvil");
+
+            AssertThat(ui.Interior.IsOpen).IsFalse();
             AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Forge");
         }
         finally

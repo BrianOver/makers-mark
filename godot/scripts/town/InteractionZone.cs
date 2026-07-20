@@ -31,11 +31,14 @@ public partial class InteractionZone : Area2D
 
     /// <summary>
     /// Raised when the interact key is pressed while this is the avatar's current zone. Forge/
-    /// shop/tavern wire this straight to <see cref="LitTownOverlay.BuildingClicked"/> (already
-    /// arrived, so it opens immediately — no walk needed); gate/noticeboard/memorials leave it
+    /// shop/tavern/gate all wire this straight to <see cref="LitTownOverlay.BuildingClicked"/>
+    /// (already arrived, so it opens immediately — no walk needed) — U22 (R4) names the mine gate
+    /// as one of the four staged-interior venues, so its own Interact now fires a "Gate" payload
+    /// the same way forge/shop/tavern fire their own ClickKey; noticeboard/memorials leave it
     /// unwired for now (an unwired <see cref="Action"/> event safely no-ops on <see
-    /// cref="RaiseInteract"/> — R5 walk-first ships no venue hotkeys, and the gate's quick-travel
-    /// affordance is a documented no-op stub until the U23 unlock).
+    /// cref="RaiseInteract"/> — neither is one of U22's four staged-interior venues). This is
+    /// distinct from R5's quick-travel HOTKEY affordance (jumping to a venue without walking
+    /// there first), which stays a documented no-op stub until the U23 unlock.
     /// </summary>
     public event Action? Interact;
 

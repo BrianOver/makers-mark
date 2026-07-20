@@ -80,6 +80,10 @@ public partial class MainUi : Control
     public TabFade TabFade { get; private set; } = null!;
     public AdventureTicker Ticker { get; private set; } = null!;
 
+    /// <summary>U22 (R4/KTD10): the staged-interior framework — opens instead of the drawer on a
+    /// venue interact/click-arrival, then routes a hotspot press onto the same drawer id.</summary>
+    public InteriorStage Interior { get; private set; } = null!;
+
     /// <summary>U18 (R11/KTD13): the top-right objective chip — <c>ObjectiveAdvisor</c>'s top
     /// pick + reason, expandable to the ranked list.</summary>
     public ObjectiveTracker Objective { get; private set; } = null!;
@@ -115,6 +119,11 @@ public partial class MainUi : Control
     private bool _resumePlayOnLedgerClose;
     private bool _resumePlayOnCampClose;
     private bool _resumePlayOnMirrorClose;
+
+    /// <summary>U22: the door position the avatar stood at when the currently-open (or just-
+    /// closed) interior was opened — restored on exit (R4/AE4 "exit returns avatar to door
+    /// position"). Null while no interior has ever been opened this session.</summary>
+    private Vector2? _interiorDoorPosition;
 
     // ── LW3: gold-chip bounce-scale pop (StatusBar region) ────────────────────────────────────
     // No engine Tween in this codebase (LitTownOverlay/HeroActor precedent: accumulated-delta
@@ -218,6 +227,9 @@ public partial class MainUi : Control
         // U21: tick the drawer's accumulated-delta slide (no-op unless a slide is in flight).
         Drawer.Tick(delta);
 
+        // U22: tick the interior stage's accumulated-delta camera push-in (no-op unless open).
+        Interior.Tick(delta);
+
         // U17: tick the bottom-edge adventure ticker marquee (no-op with no lines yet).
         Ticker.Tick(delta);
     }
@@ -252,6 +264,7 @@ public partial class MainUi : Control
         RefreshAll();
         Town.OnPhaseCompleted(completedPhase);
         Shop.OnPhaseCompleted(completedPhase); // LW3: stage the day's shop customers/coin flourish
+        Interior.OnPhaseCompleted(completedPhase, state, Adapter.LastEvents); // U22: ported into the shop interior too
         SyncCampModal(); // V7a: raise the winch-house slate the moment a party parks at Camp
 
         // U17: feed this tick's freshly stamped events to the bottom-edge adventure ticker.
@@ -688,6 +701,15 @@ public partial class MainUi : Control
         AddChild(Pip);
         Pip.Build();
         Pip.ExpandRequested += () => Mirror.ShowMirror();
+
+        // --- U22: InteriorStage — the staged-interior framework (R4/KTD10), mounted LAST so it
+        //     draws above the drawer/HUD/every modal (in practice mutually exclusive with them —
+        //     OpenInterior always closes the drawer first — but topmost is the safe default). ---
+        Interior = new InteriorStage();
+        AddChild(Interior);
+        Interior.Build();
+        Interior.HotspotActivated += OnInteriorHotspotActivated;
+        Interior.Exited += OnInteriorExited;
     }
 
     private static T InstantiatePanel<T>(string scenePath) where T : SimPanel =>
@@ -766,17 +788,72 @@ public partial class MainUi : Control
         Heroes.SelectHero(heroValue);
     }
 
-    /// <summary>Town building click (R20): open the matching management drawer.</summary>
+    /// <summary>
+    /// Town building click/interact (R20, U22): stage the venue's interior instead of the drawer
+    /// — the same <see cref="TownScene.BuildingClicked"/> payload every venue's click-arrival or
+    /// E-interact already fires (KTD12/U20), just routed onto <see cref="InteriorStage.Venues"/>
+    /// instead of straight onto <see cref="OpenPanel"/>. A hotspot pressed inside the interior
+    /// (<see cref="OnInteriorHotspotActivated"/>) is what actually opens the matching drawer.
+    /// </summary>
     private void OnTownBuildingClicked(string building)
     {
-        var id = building switch
+        var venueKey = building switch
         {
-            "Forge" => "Forge",
-            "Shop" => "Shop",
-            "Tavern" => "Tavern",
-            _ => "Town",
+            "Forge" => "forge",
+            "Shop" => "market",
+            "Tavern" => "tavern",
+            "Gate" => "minegate",
+            _ => null,
         };
-        OpenPanel(id);
+
+        if (venueKey is null)
+        {
+            OpenPanel("Town");
+            return;
+        }
+
+        OpenInterior(venueKey);
+    }
+
+    /// <summary>
+    /// Open <paramref name="venueKey"/>'s staged interior (<see cref="InteriorStage.Venues"/>).
+    /// The avatar is already standing at the venue's door — <see
+    /// cref="TownScene.BuildingClicked"/> only ever fires on arrival/interact (KTD12/U20) — so
+    /// this records that exact position for <see cref="ResetAvatarToDoor"/> to restore on exit,
+    /// closes whichever drawer was showing (REPLACE semantics, mirrors <see cref="OpenPanel"/>),
+    /// and starts the interior's own accumulated-delta push-in.
+    /// </summary>
+    private void OpenInterior(string venueKey)
+    {
+        Drawer.Close();
+        _interiorDoorPosition = Town.LitOverlay?.Zones.GetValueOrDefault(venueKey)?.Position;
+        Interior.Open(venueKey, Adapter.CurrentState);
+        UpdateEngaged();
+    }
+
+    /// <summary>A content hotspot (never exit) was pressed inside the interior — close it, restore
+    /// the avatar to the door, and open the SAME drawer id the hotspot's action names (content
+    /// parity with the pre-U22 interact-opens-the-drawer behaviour).</summary>
+    private void OnInteriorHotspotActivated(string action)
+    {
+        ResetAvatarToDoor();
+        OpenPanel(action);
+    }
+
+    /// <summary>The exit hotspot or Esc closed the interior — restore the avatar to the door
+    /// position it entered from (R4/AE4) and re-sync the Engaged latch.</summary>
+    private void OnInteriorExited()
+    {
+        ResetAvatarToDoor();
+        UpdateEngaged();
+    }
+
+    private void ResetAvatarToDoor()
+    {
+        if (_interiorDoorPosition is { } doorPosition && Town.Avatar is not null)
+        {
+            Town.Avatar.Position = doorPosition;
+        }
     }
 
     /// <summary>Reading the Ledger pauses the town; closing it resumes if it was running.</summary>
@@ -835,14 +912,15 @@ public partial class MainUi : Control
     }
 
     /// <summary>
-    /// U15/U21 (KTD3/AE1): real drawer/modal state engages <see cref="PhaseClock.Engaged"/> — the
-    /// bare world (no drawer open, no modal visible) is the only flowing surface; any open drawer
-    /// (<see cref="DrawerHost.IsOpen"/>) or modal overlay (Ledger/Camp/Mirror) engages the latch so
-    /// an expired phase timer holds at the boundary instead of ticking.
+    /// U15/U21/U22 (KTD3/AE1/R7): real drawer/interior/modal state engages <see
+    /// cref="PhaseClock.Engaged"/> — the bare world (no drawer open, no interior staged, no modal
+    /// visible) is the only flowing surface; any open drawer (<see cref="DrawerHost.IsOpen"/>),
+    /// staged interior (<see cref="InteriorStage.IsOpen"/>), or modal overlay (Ledger/Camp/Mirror)
+    /// engages the latch so an expired phase timer holds at the boundary instead of ticking.
     /// </summary>
     private void UpdateEngaged()
     {
-        Clock.Engaged = Drawer.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible;
+        Clock.Engaged = Drawer.IsOpen || Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible;
 
         // U18: the engaged latch flips on this discrete event (drawer open/close / modal
         // open-close), not only on a phase tick — the waiting indicator must track it here too,
