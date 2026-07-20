@@ -53,6 +53,21 @@ public partial class MainUi : Control
     private const float ObjectiveDockMargin = 16f;
     private const float ObjectiveDockOffsetTop = 64f;
 
+    /// <summary>Menu-sizing fix (review): the smallest on-screen gap the objective chip's clamp
+    /// math will ever collapse OffsetTop/OffsetBottom down to on a very short viewport — keeps
+    /// the chip a sliver rather than zero/negative height instead of tuning the normal-case
+    /// docking above.</summary>
+    private const float ObjectiveDockMinBottomGap = 40f;
+
+    /// <summary>Menu-sizing fix (review): fixed floors for the header row's three HUD
+    /// sections (stat chips / day timeline / Skip-Auto-Pause-Speed-Ledger controls) — named
+    /// here rather than left as inline literals at each <c>CustomMinimumSize</c> call site,
+    /// matching the ObjectiveDock consts above.</summary>
+    private const float StatChipsMinWidth = 220f;
+
+    private const float TimelineMinWidth = 280f;
+    private const float HudControlsMinWidth = 420f;
+
     /// <summary>Menu-sizing fix (gate-b): a generous fixed docked height for the chip — same
     /// fixed-height-overlay idiom <see cref="Ui.PipDock"/> already uses (DockHeight there),
     /// picked instead of an engine-computed minimum so a fresh mount's un-expanded chip and a
@@ -595,7 +610,7 @@ public partial class MainUi : Control
         {
             Name = "StatChipsWrap",
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            CustomMinimumSize = new Vector2(220, 0),
+            CustomMinimumSize = new Vector2(StatChipsMinWidth, 0),
             ClipContents = true,
         };
         headerRow.AddChild(statChipsWrap);
@@ -609,7 +624,7 @@ public partial class MainUi : Control
         {
             Name = "TimelineWrap",
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            CustomMinimumSize = new Vector2(280, 0),
+            CustomMinimumSize = new Vector2(TimelineMinWidth, 0),
             ClipContents = true,
         };
         headerRow.AddChild(timelineWrap);
@@ -626,7 +641,7 @@ public partial class MainUi : Control
         var controls = new HBoxContainer
         {
             Name = "HudControls",
-            CustomMinimumSize = new Vector2(420, 0),
+            CustomMinimumSize = new Vector2(HudControlsMinWidth, 0),
         };
         headerRow.AddChild(controls);
 
@@ -775,13 +790,14 @@ public partial class MainUi : Control
         Objective.SetAnchorsPreset(LayoutPreset.TopRight);
         Objective.OffsetLeft = -ObjectiveDockWidth - ObjectiveDockMargin;
         Objective.OffsetRight = -ObjectiveDockMargin;
-        Objective.OffsetTop = ObjectiveDockOffsetTop;
-        // Clamp inside the viewport: on a short window, a fixed OffsetTop + DockHeight could
-        // otherwise push OffsetBottom past the visible area (TopRight anchors both Top/Bottom
-        // to the window's top edge, so these offsets ARE the absolute on-screen Y coordinates).
+        // Clamp OffsetTop/OffsetBottom inside the viewport: on a short window, a fixed
+        // OffsetTop + DockHeight could otherwise push OffsetBottom (or even OffsetTop itself)
+        // past the visible area (TopRight anchors both Top/Bottom to the window's top edge, so
+        // these offsets ARE the absolute on-screen Y coordinates).
         var viewportHeight = GetViewportRect().Size.Y;
-        var maxBottom = Mathf.Max(ObjectiveDockOffsetTop + 40f, viewportHeight - ObjectiveDockMargin);
-        Objective.OffsetBottom = Mathf.Min(ObjectiveDockOffsetTop + ObjectiveDockHeight, maxBottom);
+        Objective.OffsetTop = Mathf.Min(ObjectiveDockOffsetTop, viewportHeight - ObjectiveDockMinBottomGap);
+        var maxBottom = Mathf.Max(Objective.OffsetTop + ObjectiveDockMinBottomGap, viewportHeight - ObjectiveDockMargin);
+        Objective.OffsetBottom = Mathf.Min(Objective.OffsetTop + ObjectiveDockHeight, maxBottom);
         Objective.TutorialDismiss.Pressed += () =>
         {
             Tutorial.Dismiss();
