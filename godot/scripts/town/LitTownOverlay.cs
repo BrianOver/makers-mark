@@ -569,9 +569,13 @@ public partial class LitTownOverlay : SubViewportContainer
         }
         else
         {
-            // The mine gate (no ClickKey — parity with the pre-U14 gate, never clickable): a
-            // capitalized prompt from its own key, no Interact wiring (no venue to open yet).
+            // The mine gate (no ClickKey — parity with the pre-U14 gate, never MOUSE-clickable):
+            // a capitalized prompt from its own key. U22 (R4): the gate IS one of the four
+            // staged-interior venues, so E now opens it via the same BuildingClicked routing
+            // every other venue already uses — "Gate" is a payload MainUi maps onto the
+            // InteriorStage's "minegate" table row, never a drawer id (the gate has no drawer).
             zone.Setup(spec.Key, $"E — {char.ToUpperInvariant(spec.Key[0])}{spec.Key[1..]}", VenueZoneSize);
+            zone.Interact += () => BuildingClicked?.Invoke("Gate");
         }
 
         _ents.AddChild(zone);

@@ -86,9 +86,11 @@ public partial class TownScene : SimPanel
     /// <summary>A hero sprite was clicked — payload is HeroId.Value (R20).</summary>
     public event Action<int>? HeroClicked;
 
-    /// <summary>A building marker was clicked — payload is "Forge" | "Shop" | "Tavern" (R20).
-    /// Relayed from <see cref="LitTownOverlay.BuildingClicked"/>, which owns the click-zone
-    /// <see cref="Area2D"/>s since U14.</summary>
+    /// <summary>A building marker was clicked, or its interaction zone interacted with — payload
+    /// is "Forge" | "Shop" | "Tavern" | "Gate" (R20; "Gate" added U22 — R4 names the mine gate as
+    /// one of the four staged-interior venues). Relayed from <see
+    /// cref="LitTownOverlay.BuildingClicked"/>, which owns the click-zone <see cref="Area2D"/>s
+    /// since U14.</summary>
     public event Action<string>? BuildingClicked;
 
     /// <summary>Set by MainUi so decoration speed follows play/pause and fast-forward.</summary>
