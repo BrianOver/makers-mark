@@ -21,6 +21,10 @@ public partial class Town3D : SubViewportContainer
     public Node3D Buildings { get; private set; } = null!;
     public Node3D Heroes { get; private set; } = null!;
 
+    /// <summary>T4: the player avatar; spawned in <see cref="Build"/> and followed by
+    /// <see cref="Camera"/>.</summary>
+    public PlayerController Player { get; private set; } = null!;
+
     /// <summary>Raised when a building is clicked/interacted with (T5+); re-emits into
     /// <c>MainUi</c>'s existing 2D-town vocabulary unchanged (KTD2 — presentation-only).</summary>
     public event System.Action<string>? BuildingClicked;
@@ -64,6 +68,66 @@ public partial class Town3D : SubViewportContainer
 
         Camera = new CameraRig { Name = "CameraRig" };
         World.AddChild(Camera);
+
+        Player = BuildPlayer();
+        World.AddChild(Player);
+        Player.Cam = Camera.GetNode<Camera3D>("Camera3D");
+        Camera.Target = Player;
+    }
+
+    /// <summary>
+    /// Builds the standalone player body: a layer-4 <see cref="CharacterBody3D"/> (mask 1|2 — the
+    /// ground and building footprints, T5) with a feet-anchored capsule collider and a visual
+    /// child sourced from <see cref="TownAssets.HeroScene"/> (variant 0) or a primitive capsule
+    /// fallback when the Kenney asset is missing.
+    /// </summary>
+    private static PlayerController BuildPlayer()
+    {
+        var player = new PlayerController { Name = "Player", CollisionLayer = 4, CollisionMask = 1 | 2 };
+
+        var shape = new CollisionShape3D
+        {
+            Name = "CollisionShape3D",
+            Shape = new CapsuleShape3D { Radius = 0.35f, Height = 1.6f },
+            Position = new Vector3(0, 0.8f, 0),
+        };
+        player.AddChild(shape);
+
+        var mesh = SpawnCharacterMesh(0);
+        player.AddChild(mesh);
+        player.Mesh = mesh;
+
+        return player;
+    }
+
+    /// <summary>Instantiates the Kenney hero GLB for <paramref name="variant"/> when the asset
+    /// exists, else falls back to <see cref="PrimitiveCapsule"/> so the standalone scaffold never
+    /// depends on art having landed.</summary>
+    private static Node3D SpawnCharacterMesh(int variant)
+    {
+        var scene = TownAssets.HeroScene(variant);
+        if (scene == null)
+        {
+            return PrimitiveCapsule(new Color(0.85f, 0.78f, 0.55f));
+        }
+
+        var mesh = scene.Instantiate<Node3D>();
+        mesh.Name = "Mesh";
+        return mesh;
+    }
+
+    /// <summary>Primitive placeholder body — a capsule sitting on the ground plane (origin at
+    /// feet, matching the collider) tinted <paramref name="color"/>.</summary>
+    private static Node3D PrimitiveCapsule(Color color)
+    {
+        var mesh = new MeshInstance3D
+        {
+            Name = "Mesh",
+            Mesh = new CapsuleMesh { Radius = 0.35f, Height = 1.6f },
+            Position = new Vector3(0, 0.8f, 0),
+            MaterialOverride = new StandardMaterial3D { AlbedoColor = color },
+        };
+        return mesh;
     }
 
     // BuildingClicked/HeroClicked are wired to real in-world sources starting in T5/T7
