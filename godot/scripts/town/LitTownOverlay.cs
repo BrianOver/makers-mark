@@ -144,6 +144,12 @@ public partial class LitTownOverlay : SubViewportContainer
     private readonly List<PointLight2D> _lights = [];
     private readonly List<Sprite2D> _sprites = [];
     private readonly Dictionary<string, InteractionZone> _zones = [];
+
+    /// <summary>U25 follow-up (b): each building's click-zone rectangle (world-space center +
+    /// size), mirrored from the <c>ClickZone_*</c> <see cref="Area2D"/> <see cref="TryAddBuilding"/>
+    /// builds — read by <see cref="OnWorldGuiInput"/>'s ground-click hit-test so a click landing on
+    /// a building never ALSO issues a ground-move to that same point (double-fire guard).</summary>
+    private readonly Dictionary<string, (Vector2 Position, Vector2 Size)> _clickZoneRects = [];
     private SubViewport _viewport = null!;
     private Node2D _world = null!;
     private Node2D _ents = null!;
@@ -194,6 +200,11 @@ public partial class LitTownOverlay : SubViewportContainer
     /// follow target until U20's avatar lands).</summary>
     public Camera2D Camera => _camera;
 
+    /// <summary>The world's input-forwarding SubViewport (<see cref="ShopStage.Viewport"/>
+    /// precedent) — test hook for computing a screen⇄world transform (<see
+    /// cref="Viewport.CanvasTransform"/>), same technique <c>UiTestSupport.ClickWorld</c> uses.</summary>
+    public SubViewport Viewport => _viewport;
+
     /// <summary>True once at least one building's art resolved — lets a caller detect a fully
     /// asset-less degrade (every id missing).</summary>
     public bool HasContent => _sprites.Count > 0;
@@ -237,6 +248,13 @@ public partial class LitTownOverlay : SubViewportContainer
         MouseFilter = MouseFilterEnum.Stop;
         SetAnchorsPreset(LayoutPreset.FullRect);
 
+        // U25 (b): empty-ground click-to-move — the GUI-input phase runs BEFORE Area2D physics
+        // picking (Godot's per-viewport input order), so this fires for every click before any
+        // ClickZone_* Area2D gets a chance to. OnWorldGuiInput does its own rectangle hit-test
+        // (never AcceptEvent()/SetInputAsHandled()) so a building click still falls through to its
+        // own Area2D.InputEvent handler afterward — see OnWorldGuiInput for the double-fire guard.
+        GuiInput += OnWorldGuiInput;
+
         _viewport = new SubViewport
         {
             Name = "TownViewport",
@@ -244,6 +262,12 @@ public partial class LitTownOverlay : SubViewportContainer
             HandleInputLocally = true, // U14: was false (the decorative-era "SubViewport trap")
             TransparentBg = true,      // only the painted props draw; nothing to show through today
             RenderTargetUpdateMode = SubViewport.UpdateMode.Always,
+            // U25 (b): OFF by default on SubViewport (Area2dPickingSpikeTests' own G1 spike set it
+            // for its scratch scene and left a breadcrumb that "the U14 wiring must set it too" —
+            // it never had). Without this, ClickZone_* Area2D.InputEvent never fires from a real
+            // click in play (only UiTestSupport.TryClickArea's direct signal-emission bypass
+            // exercised it), so building clicks were silently inert outside tests.
+            PhysicsObjectPicking = true,
         };
         AddChild(_viewport);
 
@@ -350,6 +374,45 @@ public partial class LitTownOverlay : SubViewportContainer
     }
 
     private void OnAvatarPathCancelled() => _pendingOpenKey = null;
+
+    /// <summary>U25 follow-up (b, U20's deferred general click-to-move): a left-click anywhere in
+    /// the world that does NOT land on a building's own click-zone rectangle walks the avatar
+    /// there. Runs in the GUI-input phase (ahead of Area2D physics picking, Godot's per-viewport
+    /// order), and never calls <c>AcceptEvent()</c>/<c>SetInputAsHandled()</c> — so a building
+    /// click still falls through to its own <c>ClickZone_*</c> <see cref="Area2D.InputEvent"/>
+    /// handler afterward, unaffected by this method having run first. The rectangle test against
+    /// <see cref="_clickZoneRects"/> is what prevents THIS method from also issuing a competing
+    /// ground-move for that same click (the double-fire risk U20 deferred this feature over) —
+    /// deterministic geometry, not a race against the physics-picking pass's own timing.</summary>
+    private void OnWorldGuiInput(InputEvent @event)
+    {
+        if (@event is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } mb)
+        {
+            return;
+        }
+
+        var worldPos = _viewport.CanvasTransform.AffineInverse() * mb.Position;
+        if (IsInsideAnyClickZone(worldPos))
+        {
+            return; // a building's own click-zone owns this point — its Area2D handler takes it
+        }
+
+        _avatar.RequestMoveTo(worldPos);
+    }
+
+    private bool IsInsideAnyClickZone(Vector2 worldPos)
+    {
+        foreach (var (position, size) in _clickZoneRects.Values)
+        {
+            var half = size / 2f;
+            if (Mathf.Abs(worldPos.X - position.X) <= half.X && Mathf.Abs(worldPos.Y - position.Y) <= half.Y)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private void OnZoneChanged(InteractionZone? zone)
     {
@@ -600,6 +663,10 @@ public partial class LitTownOverlay : SubViewportContainer
                 }
             };
             wrapper.AddChild(area);
+
+            // U25 (b): tracked so OnWorldGuiInput's ground-click hit-test can back off for this
+            // building's own footprint (double-fire guard) — same rectangle the Area2D above uses.
+            _clickZoneRects[clickKey] = (spec.Position + ClickZoneOffset, ClickZoneSize);
         }
     }
 

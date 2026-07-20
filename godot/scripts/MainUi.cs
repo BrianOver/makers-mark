@@ -297,7 +297,8 @@ public partial class MainUi : Control
         Tutorial.Advance(state, Adapter.LastEvents); // U23: this tick's events only (KTD5-safe)
         RefreshAll();
         Town.OnPhaseCompleted(completedPhase);
-        Shop.OnPhaseCompleted(completedPhase); // LW3: stage the day's shop customers/coin flourish
+        // U25 (c): the drawer's own ShopPanel.OnPhaseCompleted (LW3's lit customer strip) is
+        // retired — Interior's own hook below is the ONE ShopStage choreography now.
         Interior.OnPhaseCompleted(completedPhase, state, Adapter.LastEvents); // U22: ported into the shop interior too
         SyncCampModal(); // V7a: raise the winch-house slate the moment a party parks at Camp
 
@@ -663,6 +664,7 @@ public partial class MainUi : Control
         Heroes = InstantiatePanel<HeroesPanel>("res://scenes/panels/heroes_panel.tscn");
         Tavern = InstantiatePanel<TavernPanel>("res://scenes/panels/tavern_panel.tscn");
         Depths = InstantiatePanel<DepthsPanel>("res://scenes/panels/depths_panel.tscn");
+        Depths.Clock = Clock; // U25 (a): MineWatch's journey feed pauses with the clock
         Bounties = InstantiatePanel<BountyPanel>("res://scenes/panels/bounty_panel.tscn");
 
         // U17 (KTD13): the single bottom-edge HUD line — mounted last in the layout so it sits
@@ -756,6 +758,7 @@ public partial class MainUi : Control
         AddChild(Pip);
         Pip.Build();
         Pip.ExpandRequested += () => Mirror.ShowMirror();
+        Pip.Clock = Clock; // U25 (a): PiP's journey feed pauses with the clock
 
         // --- U22: InteriorStage — the staged-interior framework (R4/KTD10), mounted LAST so it
         //     draws above the drawer/HUD/every modal (in practice mutually exclusive with them —

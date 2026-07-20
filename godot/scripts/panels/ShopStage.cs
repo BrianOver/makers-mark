@@ -10,11 +10,14 @@ namespace GodotClient.Panels;
 /// <summary>
 /// LW3 (living-world plan, 2026-07-19-001) — the Moonlighter core loop made visible: a slim lit
 /// strip (SubViewport pattern cloned from <see cref="GodotClient.Town.LitTownOverlay"/>,
-/// ~1024x220) mounted at the top of <see cref="ShopPanel"/>.
+/// ~1024x220). U25 (c): the drawer-hosted <see cref="ShopPanel"/> copy of this strip (the LW3
+/// original mount point) is retired as redundant now that <see cref="GodotClient.Town.InteriorStage"/>
+/// hosts its own instance for the shop interior (<see cref="GodotClient.Town.InteriorStage.ShopStage"/>)
+/// — that is this class's ONE live mount point today.
 ///
-/// <para><see cref="QueueDay"/> is fed by <see cref="ShopPanel"/> with ONE Morning tick's
-/// <c>Adapter.LastEvents</c> — never the whole-game <c>EventLog</c> — so a re-render never
-/// replays yesterday's customers. Each <see cref="ItemSold"/>/<see cref="HeroPassedOnItem"/>
+/// <para><see cref="QueueDay"/> is fed by its host (<c>InteriorStage.OnPhaseCompleted</c>) with ONE
+/// Morning tick's <c>Adapter.LastEvents</c> — never the whole-game <c>EventLog</c> — so a
+/// re-render never replays yesterday's customers. Each <see cref="ItemSold"/>/<see cref="HeroPassedOnItem"/>
 /// event stages one customer run, staggered by the stage's own accumulated clock (never
 /// wall-clock, never engine RNG — the same determinism contract as <see cref="LitTownOverlay"/>'s
 /// ember flicker and <see cref="HeroActor"/>'s wander): walk in from the left → stop at a shelf

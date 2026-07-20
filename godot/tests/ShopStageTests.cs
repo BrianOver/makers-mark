@@ -213,9 +213,12 @@ public class ShopStageTests
             AssertThat(sale).IsNotNull();
             AssertThat(ui.Adapter.CurrentState.Player.Gold).IsGreater(goldBefore);
 
-            AssertThat(ui.Shop.Stage).IsNotNull();
-            AssertThat(ui.Shop.Stage!.QueuedRuns.Count).IsEqual(1);
-            AssertThat(ui.Shop.Stage!.QueuedRuns[0].Bought).IsTrue();
+            // U25 (c): the drawer's own ShopPanel.Stage strip is retired — InteriorStage's own
+            // embedded ShopStage is the ONE choreography now, and it queues regardless of whether
+            // the shop interior is currently staged (InteriorStage.OnPhaseCompleted's own contract).
+            AssertThat(ui.Interior.ShopStage).IsNotNull();
+            AssertThat(ui.Interior.ShopStage.QueuedRuns.Count).IsEqual(1);
+            AssertThat(ui.Interior.ShopStage.QueuedRuns[0].Bought).IsTrue();
 
             // Gold-pop tween property assertions (accumulated-delta, no engine Tween): the
             // StatusBar's gold VALUE label bounces 1.0 -> ~1.25 -> 1.0 over 0.3s.

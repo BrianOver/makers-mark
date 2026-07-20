@@ -13,6 +13,21 @@
 
 ## Where we are
 
+**UPDATE 2026-07-20 — World Rework wave COMPLETE.** Plan
+`docs/plans/2026-07-19-002-feat-world-rework-plan.md` (26 units, 5 waves) shipped in full: U1–U24,
+U26 merged; **U25 (cleanup & docs reconcile) closes the program.** The tab-and-collage client is
+now one living, Y-sorted painted town — input-bearing `LitTownOverlay` world (SVG scaffold
+deleted), embodied `PlayerAvatar` (WASD + click-to-move, including empty-ground click-to-move,
+folded in by U25), staged interiors for all four venues, a flows-but-waits day clock, layered
+hero-journey spectating (ticker/PiP/scrying mirror), and profession onboarding + first-run
+tutorial. U25's own scope: deleted the `lit_tavern_pilot`/`LitTavernPilot` orphans (plan-003 V4b
+cleanup that never ran), folded in 3 deferred follow-ups (PiP/MineWatch pause-sync, general
+ground click-to-move, ShopPanel banner-strip retirement — see its PR for the full itemization),
+and reconciled `docs/design/graphics-2.5d-direction.md` + plan 2026-07-17-003 (V4b/V5b now marked
+done) + this doc + BOARD.md. See BOARD.md's "World Rework wave" section for the seam-freeze
+history. Two untracked dirs in the shared root (`play/playTest_Images/`, `.timelog/`) are flagged
+for Brian to keep/commit/gitignore — U25 did not touch them.
+
 **UPDATE 2026-07-19 — Plans 1–4 SHIPPED. Next-phase wave COMPLETE.**
 
 - **Plan 1 (Playable Core, 005): SHIPPED.** All 8 units merged as PRs #78–#88. Gates at close:

@@ -48,10 +48,27 @@ public partial class DepthsPanel : SimPanel
 
     private GridContainer? _venueGrid;
     private MineWatch? _mineWatch;
+    private PhaseClock? _clock;
 
     /// <summary>The LW5 lit strip (test/tuning hook) — null only before the first <see
     /// cref="_Ready"/>/<see cref="Refresh"/> call builds the panel.</summary>
     public MineWatch? Watch => _mineWatch;
+
+    /// <summary>U25 follow-up (a): forwarded to <see cref="MineWatch.Clock"/> so its journey feed
+    /// pauses with the clock. Settable before <see cref="EnsureBuilt"/> has run (MainUi wires this
+    /// right after construction) — cached and re-applied once the strip actually exists.</summary>
+    public PhaseClock? Clock
+    {
+        get => _clock;
+        set
+        {
+            _clock = value;
+            if (_mineWatch is not null)
+            {
+                _mineWatch.Clock = value;
+            }
+        }
+    }
 
     public override void _Ready() => EnsureBuilt();
 
@@ -129,6 +146,7 @@ public partial class DepthsPanel : SimPanel
         _mineWatch = new MineWatch();
         root.AddChild(_mineWatch);
         _mineWatch.Build();
+        _mineWatch.Clock = _clock;
 
         // Horizontal scroll disabled (U7/R7 precedent — BuildScrollBody's own reasoning): with it
         // enabled the child gets unbounded horizontal space, so autowrap labels lose their real

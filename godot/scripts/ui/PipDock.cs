@@ -39,6 +39,12 @@ public partial class PipDock : Control
     /// <summary>Raised when the player clicks the dock's body to expand to the full mirror.</summary>
     public event Action? ExpandRequested;
 
+    /// <summary>U25 follow-up (a): wired by <c>MainUi</c> so the feed pauses with the clock
+    /// (paused ≠ engaged — an engaged surface keeps the feed flowing per KTD3). Null in every
+    /// test that never wires a <see cref="PhaseClock"/> — treated as "always playing" (the
+    /// pre-U25 behavior), never a crash.</summary>
+    public PhaseClock? Clock { get; set; }
+
     /// <summary>The active party's currently revealed beat lines (test hook — same KTD5/AE2
     /// self-censor guarantee every other spectate surface carries).</summary>
     public ImmutableList<string> CurrentBeats { get; private set; } = ImmutableList<string>.Empty;
@@ -138,7 +144,8 @@ public partial class PipDock : Control
             return;
         }
 
-        _feed.Advance(delta, paused: false); // pause wiring: see MineWatch's matching remark
+        // U25 (a): feed pauses with the clock (paused ≠ engaged — see MineWatch's matching wiring).
+        _feed.Advance(delta, paused: Clock is not null && !Clock.Playing);
         UpdateLabels();
 
         var target = _wantsVisible ? 1f : 0f;

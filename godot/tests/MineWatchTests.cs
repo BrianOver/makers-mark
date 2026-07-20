@@ -284,6 +284,37 @@ public class MineWatchTests
     }
 
     [TestCase]
+    public void Clock_Paused_FeedHoldsStill_Played_ItAdvances()
+    {
+        // U25 follow-up (a): the feed pauses with the clock (paused != engaged — an engaged
+        // surface, e.g. a drawer open over the world, keeps the feed flowing per KTD3; this test
+        // covers only the Play/Pause half of that contract).
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var camp = CampedPartyWithFloors();
+            var state = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(camp) };
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            var clock = new PhaseClock(new SimAdapter(state));
+            clock.Pause();
+            watch.Clock = clock;
+
+            watch._Process(100.0); // would force full reveal if the feed were still advancing
+            AssertThat(watch.CurrentBeats.IsEmpty).IsTrue();
+
+            clock.Play();
+            watch._Process(100.0);
+            AssertThat(watch.CurrentBeats.Any(b => b.Contains("cave-rat"))).IsTrue();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
     public void DeathRound_NeverAppearsInMineWatchFeed_RendersCloudInstead()
     {
         var watch = new MineWatch();

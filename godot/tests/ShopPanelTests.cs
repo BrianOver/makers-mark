@@ -54,25 +54,11 @@ public class ShopPanelTests
         }
     }
 
-    [TestCase]
-    public void StageStrip_IsMountedOutsideTheScrollBody_SoItStaysVisibleWhilScrolling()
-    {
-        var ui = MountMainUi();
-        try
-        {
-            AssertThat(ui.Shop.Stage).IsNotNull();
-
-            // U5 fix: the lit customer strip must never live inside "Scroll" — if it did, it
-            // would scroll away with the shelf list instead of staying fixed above it.
-            var scroll = ui.Shop.FindChild("Scroll", recursive: true, owned: false);
-            AssertThat(scroll).IsNotNull();
-            AssertThat(IsDescendantOf(ui.Shop.Stage!, (Node)scroll!)).IsFalse();
-        }
-        finally
-        {
-            Unmount(ui);
-        }
-    }
+    // U25 (c): StageStrip_IsMountedOutsideTheScrollBody_SoItStaysVisibleWhilScrolling deleted —
+    // the drawer's own lit customer strip (ShopPanel.Stage) it pinned is retired as redundant now
+    // that InteriorStage hosts the richer choreography for the shop interior (see
+    // ShopStageTests.MorningSale_StagesOneBoughtCustomer_AndPopsTheGoldChip, retargeted at
+    // ui.Interior.ShopStage, for the equivalent coverage that survives).
 
     [TestCase]
     public void ShelfCard_PriceChip_ShrinksToContent_InsteadOfStretchingFullPanelWidth()
@@ -93,19 +79,6 @@ public class ShopPanelTests
         {
             Unmount(ui);
         }
-    }
-
-    private static bool IsDescendantOf(Node node, Node ancestor)
-    {
-        for (var current = node.GetParent(); current is not null; current = current.GetParent())
-        {
-            if (current == ancestor)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     [TestCase]
