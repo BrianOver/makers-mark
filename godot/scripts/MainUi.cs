@@ -46,10 +46,19 @@ public partial class MainUi : Control
     /// <summary>U18/KTD13: the objective chip's docked width and its margin from the window's
     /// right edge and the header's bottom edge — an overlay sibling (like the Ledger/Camp
     /// modals) rather than a layout child, so it floats above every tab without shifting
-    /// panel content down.</summary>
-    private const float ObjectiveDockWidth = 320f;
+    /// panel content down. Menu-sizing fix (gate-b): mirrors
+    /// <see cref="Ui.ObjectiveTracker.DockWidth"/> rather than duplicating the literal, so the
+    /// chip's own minimum size and its docked offsets can never drift apart.</summary>
+    private const float ObjectiveDockWidth = Ui.ObjectiveTracker.DockWidth;
     private const float ObjectiveDockMargin = 16f;
     private const float ObjectiveDockOffsetTop = 64f;
+
+    /// <summary>Menu-sizing fix (gate-b): a generous fixed docked height for the chip — same
+    /// fixed-height-overlay idiom <see cref="Ui.PipDock"/> already uses (DockHeight there),
+    /// picked instead of an engine-computed minimum so a fresh mount's un-expanded chip and a
+    /// "More"-expanded ranked list both fit without the docking math depending on content that
+    /// changes after <c>Refresh</c>.</summary>
+    private const float ObjectiveDockHeight = 260f;
 
     /// <summary>U23: the tutorial-flow overlay docks in the same top-right column, stacked below
     /// the objective chip rather than sharing its box (keeps the chip's own layout untouched).</summary>
@@ -572,16 +581,53 @@ public partial class MainUi : Control
         var headerRow = new HBoxContainer { Name = "HudHeaderRow" };
         header.AddChild(headerRow);
 
-        _statChips = new HBoxContainer { Name = "StatChips", SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        headerRow.AddChild(_statChips); // populated by RefreshStatus (day/phase/gold/heroes)
+        // Menu-sizing fix (gate-b/HUD clip): StatChips and Timeline are the row's two
+        // ExpandFill regions — with no cap, each one's OWN reported minimum size (the sum of
+        // its live children's minimums) feeds straight into HudHeaderRow's total width demand,
+        // and once that total exceeds the window width the row simply overflows to the right
+        // (HBoxContainer never shrinks a child below its minimum) — pushing the rightmost
+        // child, HudControls ("Skip"/Auto/Pause/etc.), off-screen. Wrapping each in a plain
+        // (non-Container) Control with a fixed CustomMinimumSize + ClipContents=true bounds
+        // its contribution to that total regardless of how many stat chips or phase labels it
+        // ends up holding — a plain Control's own minimum size is just CustomMinimumSize, so it
+        // does NOT propagate its children's combined minimum upward the way a Container would.
+        var statChipsWrap = new Control
+        {
+            Name = "StatChipsWrap",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(220, 0),
+            ClipContents = true,
+        };
+        headerRow.AddChild(statChipsWrap);
+        _statChips = new HBoxContainer { Name = "StatChips" };
+        _statChips.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        statChipsWrap.AddChild(_statChips); // populated by RefreshStatus (day/phase/gold/heroes)
 
         // U18/KTD13: the day-timeline widget docks top-bar CENTER, between the stat chips
         // (left) and the Skip/Auto cluster (right) — populated/highlighted by RefreshHud.
-        Timeline = new DayTimeline { SizeFlagsHorizontal = SizeFlags.ExpandFill, Alignment = BoxContainer.AlignmentMode.Center };
+        var timelineWrap = new Control
+        {
+            Name = "TimelineWrap",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(280, 0),
+            ClipContents = true,
+        };
+        headerRow.AddChild(timelineWrap);
+        Timeline = new DayTimeline { Alignment = BoxContainer.AlignmentMode.Center };
         Timeline.Build();
-        headerRow.AddChild(Timeline);
+        Timeline.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        timelineWrap.AddChild(Timeline);
 
-        var controls = new HBoxContainer { Name = "HudControls" };
+        // HudControls is the row's rightmost, non-expand child — HBoxContainer already
+        // reserves its natural minimum size before handing any leftover space to the two
+        // ExpandFill wrappers above, but a fixed floor here keeps it from ever reporting
+        // narrower than its real button cluster (Skip/Auto/Pause/Speed/Ledger) needs, which
+        // is what actually keeps it fully on-screen once StatChips/Timeline are capped.
+        var controls = new HBoxContainer
+        {
+            Name = "HudControls",
+            CustomMinimumSize = new Vector2(420, 0),
+        };
         headerRow.AddChild(controls);
 
         _clockLabel = new Label { Name = "ClockLabel" };
@@ -715,15 +761,27 @@ public partial class MainUi : Control
         Camp.VisibilityChanged += OnCampVisibilityChanged;
 
         // --- objective chip (U18/KTD13): a floating overlay sibling (like the modals above),
-        //     anchored top-right (engine preset + margin, auto-sized to its own content) and
-        //     nudged down by ObjectiveDockOffsetTop to clear the header row — stays visible
-        //     over every drawer without shifting any panel's own layout. Populated by RefreshHud.
-        Objective = new ObjectiveTracker { CustomMinimumSize = new Vector2(ObjectiveDockWidth, 0) };
+        //     anchored top-right at a FIXED width and nudged down by ObjectiveDockOffsetTop to
+        //     clear the header row — stays visible over every drawer without shifting any
+        //     panel's own layout. Populated by RefreshHud. Menu-sizing fix (gate-b): docked via
+        //     explicit OffsetLeft/OffsetRight rather than SetAnchorsAndOffsetsPreset(...,
+        //     LayoutPresetMode.Minsize, ...) — Minsize snapshots the CURRENT (collapsed, at
+        //     build time) minimum width into a one-time offset, so the chip never grew to
+        //     DockWidth even with CustomMinimumSize set, which is exactly the ~1-char-wide
+        //     playtest bug.
+        Objective = new ObjectiveTracker();
         Objective.Build();
         AddChild(Objective);
-        Objective.SetAnchorsAndOffsetsPreset(LayoutPreset.TopRight, LayoutPresetMode.Minsize, (int)ObjectiveDockMargin);
-        Objective.OffsetTop += ObjectiveDockOffsetTop;
-        Objective.OffsetBottom += ObjectiveDockOffsetTop;
+        Objective.SetAnchorsPreset(LayoutPreset.TopRight);
+        Objective.OffsetLeft = -ObjectiveDockWidth - ObjectiveDockMargin;
+        Objective.OffsetRight = -ObjectiveDockMargin;
+        Objective.OffsetTop = ObjectiveDockOffsetTop;
+        // Clamp inside the viewport: on a short window, a fixed OffsetTop + DockHeight could
+        // otherwise push OffsetBottom past the visible area (TopRight anchors both Top/Bottom
+        // to the window's top edge, so these offsets ARE the absolute on-screen Y coordinates).
+        var viewportHeight = GetViewportRect().Size.Y;
+        var maxBottom = Mathf.Max(ObjectiveDockOffsetTop + 40f, viewportHeight - ObjectiveDockMargin);
+        Objective.OffsetBottom = Mathf.Min(ObjectiveDockOffsetTop + ObjectiveDockHeight, maxBottom);
         Objective.TutorialDismiss.Pressed += () =>
         {
             Tutorial.Dismiss();

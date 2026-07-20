@@ -20,6 +20,13 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// player input, so this is a calm line, not an error.</summary>
     public const string NoObjectiveText = "Nothing urgent right now — the town runs itself.";
 
+    /// <summary>Menu-sizing fix (gate-b): the chip's fixed docked width — set as
+    /// <see cref="Control.CustomMinimumSize"/> on both this panel and its autowrap
+    /// <see cref="Reason"/> label so the WordSmart label can never collapse the row to its
+    /// ~1px natural minimum (the R7 layout-collapse class <c>LayoutTests</c> hunts elsewhere).
+    /// <c>MainUi</c> reads this same constant to dock the chip's offsets — one source of truth.</summary>
+    public const float DockWidth = 320f;
+
     public Label Reason { get; private set; } = null!;
     public Button Expand { get; private set; } = null!;
     public VBoxContainer RankedList { get; private set; } = null!;
@@ -33,6 +40,7 @@ public sealed partial class ObjectiveTracker : PanelContainer
     public void Build()
     {
         Name = "ObjectiveTracker";
+        CustomMinimumSize = new Vector2(DockWidth, 0);
 
         var body = new VBoxContainer { Name = "ObjectiveTrackerBody" };
         AddChild(body);
@@ -50,6 +58,7 @@ public sealed partial class ObjectiveTracker : PanelContainer
             Name = "ObjectiveReason",
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(DockWidth - 24, 0),
         };
         row.AddChild(Reason);
 
@@ -126,6 +135,12 @@ public sealed partial class DayTimeline : HBoxContainer
     public void Build()
     {
         Name = "DayTimeline";
+
+        // Menu-sizing fix (gate-b): LOCAL override only (this node's own theme-constant
+        // stack) — never theme.SetConstant("separation", "HBoxContainer", ...), which would
+        // restyle every HBoxContainer in the app. Without this the 5 phase labels + the
+        // waiting indicator sat with zero gap and read as run-on text.
+        AddThemeConstantOverride("separation", 12);
 
         _phaseLabels = new Label[KernelOrder.Length];
         for (var i = 0; i < KernelOrder.Length; i++)
