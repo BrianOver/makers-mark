@@ -1,6 +1,7 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
 using System.Linq;
+using System.Threading.Tasks;
 using GameSim.Contracts;
 using GameSim.Kernel;
 using GdUnit4;
@@ -17,6 +18,10 @@ namespace GodotClient.Tests;
 /// name discoverable, <see cref="HeroesPanel.SelectHero"/> town-click routing (R20), dead-hero
 /// state, and the KTD3 art-fallback guarantee — plus the new detail-pane gear
 /// <c>ArtRect</c>/<c>StatChip</c> rows and the preserved <see cref="LedgerQuery.MarkTally"/> read.
+///
+/// <para>World-rework U4: the roster card rebuild (bare <see cref="Button"/> → content-honest
+/// <see cref="PanelContainer"/> + transparent overlay Button) adds min-size/no-overflow, detail-
+/// pane-never-occludes-grid at narrow/wide widths, and painted-portrait-stays-untinted coverage.</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -59,11 +64,15 @@ public class HeroRosterTests
             AssertThat(heroesText).Contains("DIED day 3");
 
             // Both cards still stand side by side — the dead hero didn't collapse the grid.
+            // U4: the card's CustomMinimumSize (RosterCardSize) lives on the PanelContainer
+            // FRAME now, not the overlay Button found by name — the frame is that Button's
+            // parent (BuildHeroCard's `frame`/`overlay` split).
             var dead = Find<Button>(ui.Heroes, "HeroCard_2");
             var alive = Find<Button>(ui.Heroes, "HeroCard_1");
             AssertThat(dead.Visible).IsTrue();
             AssertThat(alive.Visible).IsTrue();
-            AssertThat(dead.CustomMinimumSize.X > 0 && dead.CustomMinimumSize.Y > 0).IsTrue();
+            var deadFrame = dead.GetParent<Control>();
+            AssertThat(deadFrame.CustomMinimumSize.X > 0 && deadFrame.CustomMinimumSize.Y > 0).IsTrue();
         }
         finally
         {
@@ -95,6 +104,109 @@ public class HeroRosterTests
     }
 
     [TestCase]
+    public async Task RosterCard_MinSize_CoversContent_NoChildOverflowsCardRect()
+    {
+        // U4: cards were Buttons with FullRect VBox children — Button is not a Container, so
+        // children never sized/clipped it and 3 StatChips overflowed a fixed 140x190 card.
+        // Rebuilt as a content-honest PanelContainer, the card's own min size must cover every
+        // descendant's rect (no child bleeds past the card's bounds).
+        var ui = MountMainUi(new SimAdapter(RosterWorld()));
+        try
+        {
+            await SettleLayout(ui);
+            var card = Find<Button>(ui.Heroes, "HeroCard_1");
+            var frame = card.GetParent<Control>();
+            AssertThat(frame.Size.X).IsGreaterEqual(frame.GetCombinedMinimumSize().X);
+            AssertThat(frame.Size.Y).IsGreaterEqual(frame.GetCombinedMinimumSize().Y);
+
+            var frameRect = new Rect2(Vector2.Zero, frame.Size);
+            foreach (var descendant in frame.FindChildren("*", "Control", recursive: true, owned: false))
+            {
+                var control = (Control)descendant;
+                if (!control.Visible || control.Size == Vector2.Zero)
+                {
+                    continue;
+                }
+
+                // Transform the descendant's local rect up to the frame's coordinate space one
+                // ancestor at a time (siblings/StatChip rows nest a few levels deep).
+                var node = control.GetParent();
+                var offset = control.Position;
+                while (node is Control ancestor && ancestor != frame)
+                {
+                    offset += ancestor.Position;
+                    node = ancestor.GetParent();
+                }
+
+                var descendantRect = new Rect2(offset, control.Size);
+                AssertThat(descendantRect.Position.X).IsGreaterEqual(-0.5f);
+                AssertThat(descendantRect.Position.Y).IsGreaterEqual(-0.5f);
+                AssertThat(descendantRect.End.X).IsLessEqual(frameRect.Size.X + 0.5f);
+                AssertThat(descendantRect.End.Y).IsLessEqual(frameRect.Size.Y + 0.5f);
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase(800f)]
+    [TestCase(1900f)]
+    public async Task DetailPane_NeverOccludesRosterGrid_AtNarrowAndWideWidths(float panelWidth)
+    {
+        var ui = MountMainUi(new SimAdapter(RosterWorld()));
+        try
+        {
+            // A non-current TabContainer page's subtree never gets its nested containers
+            // (the roster/detail HBoxContainer split) sorted — only the page Control itself
+            // tracks the tab content rect via anchors. Select Heroes as current (R20's own
+            // routing does this) before forcing a width and measuring descendant geometry.
+            ui.Tabs.CurrentTab = ui.Tabs.GetTabIdxFromControl(ui.Heroes);
+            ui.Heroes.Size = new Vector2(panelWidth, 700f);
+            await SettleLayout(ui);
+
+            var rosterScroll = Find<ScrollContainer>(ui.Heroes, "RosterScroll");
+            var detail = Find<VBoxContainer>(ui.Heroes, "HeroDetail");
+            var rosterGlobal = rosterScroll.GetGlobalRect();
+            var detailGlobal = detail.GetGlobalRect();
+
+            AssertThat(rosterGlobal.Size.X).IsGreater(0f);
+            AssertThat(detailGlobal.Size.X).IsGreater(0f);
+            // The two columns sit side by side — the detail pane's left edge never starts
+            // before the roster column's right edge ends.
+            AssertThat(detailGlobal.Position.X).IsGreaterEqual(rosterGlobal.End.X - 0.5f);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void PaintedPortrait_RendersUntinted_OnlyFrameUnderlayGetsRoleTint()
+    {
+        // U4: TintPortraitIcon previously tinted the first TextureRect it found — on a real
+        // (painted) portrait hit that WAS the art itself, discoloring generated art. The role
+        // tint must land on the frame/underlay only; a painted portrait's own texture Modulate
+        // stays white.
+        var ui = MountMainUi(new SimAdapter(RosterWorld())); // hero 1 = vanguard, real committed art
+        try
+        {
+            var card = Find<Button>(ui.Heroes, "HeroCard_1");
+            var portrait = card.GetParent<Control>()
+                .FindChildren("ArtRect", "TextureRect", recursive: true, owned: false)
+                .Cast<TextureRect>().FirstOrDefault();
+            AssertThat(portrait).IsNotNull();
+            AssertThat(portrait!.Modulate).IsEqual(Colors.White);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void UnregisteredClassHero_RendersPlaceholderPortrait_StillShowingNameOnCard()
     {
         // KTD3 fallback: an id no art pipeline (or, here, no class registration) ever produced.
@@ -104,11 +216,12 @@ public class HeroRosterTests
         try
         {
             var card = Find<Button>(ui.Heroes, "HeroCard_2");
-            var cardText = RenderedText(card);
+            var cardText = RenderedText(card.GetParent<Control>());
             AssertThat(cardText).Contains("Mystery2");
             AssertThat(cardText).Contains("Lv");
 
-            var placeholders = card.FindChildren("ArtRectFallback", "PanelContainer", recursive: true, owned: false);
+            var placeholders = card.GetParent<Control>()
+                .FindChildren("ArtRectFallback", "PanelContainer", recursive: true, owned: false);
             AssertThat(placeholders.Count > 0).IsTrue();
         }
         finally
