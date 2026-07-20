@@ -55,11 +55,12 @@ public class TownSceneTests
             {
                 var sprite = ui.Town.Sprites[hero.Id.Value];
                 AssertThat(sprite.Visible).IsTrue();
-                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Wandering);
+                AssertThat(sprite.State).IsEqual(HeroActor.TownState.Wandering);
                 AssertThat(sprite.HeroName).IsEqual(hero.Name);
 
-                // Role → placeholder color pin (Vanguard steel-blue / Striker crimson / Mystic violet).
-                AssertThat(Find<ColorRect>(sprite, "Marker").Color).IsEqual(HeroSprite.RoleColor(hero.ClassId));
+                // U19: seed 2026's classes all ship a painted portrait — the figure resolves it
+                // untinted (RoleColor tints only the SVG-fallback branch; see HeroActorTests).
+                AssertThat(Find<Sprite2D>(sprite, "Sprite").Modulate).IsEqual(Colors.White);
             }
 
             // Memorial plot mirrors the U8 registry: one gray stone per dead hero, named.
@@ -115,10 +116,12 @@ public class TownSceneTests
     }
 
     [TestCase]
-    public void HeroSprite_HasRoleTintedFigureTexture()
+    public void HeroActor_UsesPaintedPortraitTexture_UntintedWhenPaintedArtExists()
     {
-        // U16: each hero marker now carries a hand-authored figure TextureRect tinted to
-        // the role color via Modulate (the role-color contract the U12 Marker chip kept).
+        // U19: the figure is now a Sprite2D bound to AssetCatalog.HeroPortrait(classId) — seed
+        // 2026's classes all ship painted art, so every alive hero's figure resolves a non-null
+        // texture, untinted (RoleColor tints the SVG-fallback branch only — see HeroActorTests
+        // for the fallback-branch coverage on an unregistered class id).
         var ui = MountMainUi();
         try
         {
@@ -126,9 +129,9 @@ public class TownSceneTests
             AssertThat(alive.Count > 0).IsTrue();
             foreach (var hero in alive)
             {
-                var figure = Find<TextureRect>(ui.Town.Sprites[hero.Id.Value], "Sprite");
+                var figure = Find<Sprite2D>(ui.Town.Sprites[hero.Id.Value], "Sprite");
                 AssertThat(figure.Texture).IsNotNull();
-                AssertThat(figure.Modulate).IsEqual(HeroSprite.RoleColor(hero.ClassId));
+                AssertThat(figure.Modulate).IsEqual(Colors.White);
             }
         }
         finally
@@ -149,13 +152,13 @@ public class TownSceneTests
             {
                 // LW1: the party rallies near the gate first, THEN exits in file — not an
                 // immediate WalkingOut pop.
-                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Rallying);
+                AssertThat(sprite.State).IsEqual(HeroActor.TownState.Rallying);
             }
 
             ui.Town.Animate(10); // rally dwell + staggered file exit + walk to the gate completes
             foreach (var sprite in ui.Town.Sprites.Values)
             {
-                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Away);
+                AssertThat(sprite.State).IsEqual(HeroActor.TownState.Away);
                 AssertThat(sprite.Visible).IsFalse();
             }
 
@@ -169,19 +172,19 @@ public class TownSceneTests
             {
                 if (survivors.Contains(sprite.HeroValue))
                 {
-                    AssertThat(sprite.State).IsEqual(HeroSprite.TownState.WalkingIn);
+                    AssertThat(sprite.State).IsEqual(HeroActor.TownState.WalkingIn);
                     AssertThat(sprite.Visible).IsTrue();
                 }
                 else
                 {
                     // Dead-at-departure heroes stay away until the Evening reveal (KTD5).
-                    AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Away);
+                    AssertThat(sprite.State).IsEqual(HeroActor.TownState.Away);
                     AssertThat(sprite.Visible).IsFalse();
                 }
             }
 
             ui.Town.Animate(10); // survivors reach home and resume wandering
-            AssertThat(ui.Town.Sprites.Values.Count(s => s.State == HeroSprite.TownState.Wandering))
+            AssertThat(ui.Town.Sprites.Values.Count(s => s.State == HeroActor.TownState.Wandering))
                 .IsEqual(survivors.Count);
 
             AdvanceDay(ui); // finish the day → Evening reveal: deaths applied, dead sprite removed
@@ -200,7 +203,7 @@ public class TownSceneTests
     {
         // LW1 rally-and-depart: Morning-completion moves the whole (non-Away) roster to
         // Rallying, never straight to WalkingOut/Away — the gate-cluster dwell + staggered
-        // file exit (HeroSprite-level precision timing lives in HeroSpriteTests) is a real
+        // file exit (HeroActor-level precision timing lives in HeroActorTests) is a real
         // intermediate stage here too. Distances from each hero's Home to the shared rally
         // point vary (HomeFor spreads them across the square), so this only pins the
         // reachable states, not exact sub-second timing.
@@ -213,19 +216,87 @@ public class TownSceneTests
 
             foreach (var sprite in ordered)
             {
-                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Rallying);
+                AssertThat(sprite.State).IsEqual(HeroActor.TownState.Rallying);
             }
 
             ui.Town.Animate(10); // rally walk + dwell + staggered file exit + gate walk complete
             foreach (var sprite in ordered)
             {
-                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Away);
+                AssertThat(sprite.State).IsEqual(HeroActor.TownState.Away);
             }
         }
         finally
         {
             Unmount(ui);
         }
+    }
+
+    [TestCase]
+    public void PartialMuster_OnlyRosteredHeroesDepart_StragglersKeepWandering()
+    {
+        // R18/KTD8: today's real MusterPlan musters every alive hero (PartyFormation.
+        // FormParties has no concept of a straggler yet — see its own doc comment), so this
+        // pins the adapter-side FILTERING LOGIC directly via the DepartMusteredHeroes seam,
+        // independent of whether the sim ever actually produces a partial roster. Seed 2026
+        // starts with RosterCap's full 6 heroes, all Wandering pre-tick.
+        var ui = MountMainUi();
+        try
+        {
+            var allIds = ui.Town.Sprites.Keys.OrderBy(v => v).ToList();
+            AssertThat(allIds.Count).IsEqual(6);
+
+            var mustered = allIds.Take(3).ToHashSet();
+            var stragglers = allIds.Skip(3).ToHashSet();
+
+            ui.Town.DepartMusteredHeroes(mustered);
+
+            foreach (var id in mustered)
+            {
+                AssertThat(ui.Town.Sprites[id].State).IsEqual(HeroActor.TownState.Rallying);
+            }
+
+            foreach (var id in stragglers)
+            {
+                AssertThat(ui.Town.Sprites[id].State).IsEqual(HeroActor.TownState.Wandering);
+                AssertThat(ui.Town.Sprites[id].Visible).IsTrue();
+            }
+
+            ui.Town.Animate(10); // rally + file exit + gate walk completes for the mustered trio
+            foreach (var id in mustered)
+            {
+                AssertThat(ui.Town.Sprites[id].State).IsEqual(HeroActor.TownState.Away);
+                AssertThat(ui.Town.Sprites[id].Visible).IsFalse();
+            }
+
+            foreach (var id in stragglers)
+            {
+                // Untouched by the whole departure choreography — still wandering at home.
+                AssertThat(ui.Town.Sprites[id].State).IsEqual(HeroActor.TownState.Wandering);
+                AssertThat(ui.Town.Sprites[id].Visible).IsTrue();
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void MusteredHeroIds_ExtractsRosterFromPartiesFormedEvent_IgnoresOtherEvents()
+    {
+        // Pure extraction pin (KTD8): the roster is every HeroId across every planned party in
+        // the day's PartiesFormed event, regardless of target floor/venue — other event kinds in
+        // the same batch never contribute ids.
+        var parties = ImmutableList.Create(
+            new PartyPlan(ImmutableList.Create(new HeroId(1), new HeroId(2)), 1, "mine"),
+            new PartyPlan(ImmutableList.Create(new HeroId(5)), 2, "mine"));
+        var events = ImmutableList.Create<GameEvent>(
+            new PartiesFormed(parties),
+            new RecruitArrived(new HeroId(9)));
+
+        var roster = TownScene.MusteredHeroIds(events);
+
+        AssertThat(roster.SetEquals(new HashSet<int> { 1, 2, 5 })).IsTrue();
     }
 
     [TestCase]
@@ -246,12 +317,12 @@ public class TownSceneTests
 
             AssertThat(ui.Town.Sprites.Count).IsEqual(before + 1);
             var sprite = ui.Town.Sprites[recruitId];
-            AssertThat(sprite.State).IsEqual(HeroSprite.TownState.WalkingIn);
+            AssertThat(sprite.State).IsEqual(HeroActor.TownState.WalkingIn);
             AssertThat(sprite.Visible).IsTrue();
             AssertThat(sprite.Position.X < 0f).IsTrue(); // off-screen left, not popped in at Home
 
             ui.Town.Animate(10); // walks all the way in
-            AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Wandering);
+            AssertThat(sprite.State).IsEqual(HeroActor.TownState.Wandering);
             AssertThat(sprite.Position.DistanceTo(sprite.Home) < 1f).IsTrue();
         }
         finally
@@ -342,7 +413,7 @@ public class TownSceneTests
     }
 
     [TestCase]
-    public void ClickHeroSprite_SelectsHeroesTab_AndBindsThatHero()
+    public void ClickHeroActor_SelectsHeroesTab_AndBindsThatHero()
     {
         var ui = MountMainUi();
         try
@@ -351,9 +422,11 @@ public class TownSceneTests
             var hero = ui.Adapter.CurrentState.Heroes.Values.Where(h => h.Alive).Skip(1).First();
             AssertThat(ui.Tabs.CurrentTab).IsEqual(0); // starts on the Town tab
 
-            // U14: HeroSprite stays Control-based (U19 promotes it) — the pre-U14 GuiInput click
-            // path is unaffected by living inside the Y-sorted Ents Node2D now.
-            Click(ui.Town.Sprites[hero.Id.Value]);
+            // U19: HeroActor is a Node2D now — clicks route through its Area2D PickZone, driven
+            // here via the G1 fallback (TryClickArea), same contract as the building click
+            // zones (headless Area2D physics picking does not fire under gdUnit4Net).
+            var actor = ui.Town.Sprites[hero.Id.Value];
+            AssertThat(TryClickArea(actor.PickZone, actor.Position)).IsTrue();
 
             AssertThat(ui.Tabs.CurrentTab).IsEqual(ui.Tabs.GetTabIdxFromControl(ui.Heroes));
             AssertThat(RenderedText(ui.Heroes)).Contains($"{hero.Name} — {ClassRegistry.Require(hero.ClassId).DisplayName}");
@@ -501,7 +574,7 @@ public class TownSceneTests
             AssertThat(ui.Town.Sprites.Count).IsEqual(2);
             foreach (var sprite in ui.Town.Sprites.Values)
             {
-                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Away); // in the Mine
+                AssertThat(sprite.State).IsEqual(HeroActor.TownState.Away); // in the Mine
             }
 
             // Expedition → Camp: the party PARKS. PendingExpeditions is empty, so the Expedition
@@ -512,7 +585,7 @@ public class TownSceneTests
             AssertThat(ui.Adapter.CurrentState.PendingExpeditions.IsEmpty).IsTrue();
             foreach (var sprite in ui.Town.Sprites.Values)
             {
-                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Away);
+                AssertThat(sprite.State).IsEqual(HeroActor.TownState.Away);
             }
 
             // Camp → ExpeditionDeep: recall applies at the Camp tick; Camp completion is a no-op.
@@ -521,7 +594,7 @@ public class TownSceneTests
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.ExpeditionDeep);
             foreach (var sprite in ui.Town.Sprites.Values)
             {
-                AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Away);
+                AssertThat(sprite.State).IsEqual(HeroActor.TownState.Away);
             }
 
             var spritesBeforeDeep = ui.Town.Sprites.Count;
@@ -540,13 +613,13 @@ public class TownSceneTests
             {
                 if (survivors.Contains(sprite.HeroValue))
                 {
-                    AssertThat(sprite.State).IsEqual(HeroSprite.TownState.WalkingIn);
+                    AssertThat(sprite.State).IsEqual(HeroActor.TownState.WalkingIn);
                     AssertThat(sprite.Visible).IsTrue();
                 }
                 else
                 {
                     // A death (none here) would stay Away until the Evening reveal (KTD5).
-                    AssertThat(sprite.State).IsEqual(HeroSprite.TownState.Away);
+                    AssertThat(sprite.State).IsEqual(HeroActor.TownState.Away);
                     AssertThat(sprite.Visible).IsFalse();
                 }
             }
@@ -558,7 +631,7 @@ public class TownSceneTests
 
             // Survivors reach home; the Evening reveal then snaps + reconciles (unchanged).
             ui.Town.Animate(10);
-            AssertThat(ui.Town.Sprites.Values.Count(s => s.State == HeroSprite.TownState.Wandering))
+            AssertThat(ui.Town.Sprites.Values.Count(s => s.State == HeroActor.TownState.Wandering))
                 .IsEqual(survivors.Count);
             AdvanceDay(ui);
             var state = ui.Adapter.CurrentState;
@@ -706,13 +779,13 @@ public class TownSceneTests
     public void YSort_ActorBelowGroundLineDrawsInFront_ActorAboveDrawsBehind()
     {
         // Plan's "two-position assertion": a Y-sorted actor and a building wrapper share the same
-        // Ents parent (CanvasItem.YSortEnabled — lives on the CanvasItem base, so a Control-based
-        // HeroSprite participates correctly alongside a Node2D building). The engine's own Y-sort
-        // draw order isn't queryable from script (no headless render-order introspection exists),
-        // so this pins the STRUCTURAL precondition the engine's sort acts on: both nodes are direct
-        // children of the one YSortEnabled Ents layer, and the two straddling world-Y positions the
-        // plan's scenario describes (one below the facade's ground line, one above it) are both
-        // real, reachable HeroSprite positions.
+        // Ents parent (CanvasItem.YSortEnabled — lives on the CanvasItem base; U19's HeroActor is
+        // a Node2D now, same base type as the building wrapper). The engine's own Y-sort draw
+        // order isn't queryable from script (no headless render-order introspection exists), so
+        // this pins the STRUCTURAL precondition the engine's sort acts on: both nodes are direct
+        // children of the one YSortEnabled Ents layer, and the two straddling world-Y positions
+        // the plan's scenario describes (one below the facade's ground line, one above it) are
+        // both real, reachable HeroActor positions.
         var ui = MountMainUi();
         try
         {
@@ -992,7 +1065,7 @@ public class TownSceneTests
     {
         // U14: buildings moved into the Y-sorted Ents layer (a parallax nudge would desync their
         // StaticBody2D/Area2D from their own sprite) and the old decorative hero-figure layer this
-        // used to also offset is deleted (real HeroSprites fill that role now) — only the
+        // used to also offset is deleted (real HeroActors fill that role now) — only the
         // atmosphere fx layer keeps an idle parallax cue, and the camera is never touched by it.
         var overlay = new LitTownOverlay();
         try

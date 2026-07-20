@@ -11,8 +11,9 @@ namespace GodotClient.Town;
 /// The living town view (U12, R19; promoted U14 — KTD1): first tab of the MainUi shell.
 /// <see cref="LitTownOverlay"/> IS the town now — a single, input-forwarding, Y-sorted painted
 /// world (ground, four feet-anchored building facades, a memorial corner plot (R13), one
-/// <see cref="HeroSprite"/> per alive hero). Rhythm follows the sim's five phases:
-/// Morning-tick completion sends everyone out the gate (all alive heroes party up); a run that
+/// <see cref="HeroActor"/> per alive hero). Rhythm follows the sim's five phases:
+/// Morning-tick completion sends the MUSTERED roster out the gate (U19/R18 — the day's
+/// <see cref="PartiesFormed"/> event, never "everyone alive"; stragglers keep wandering); a run that
 /// finalizes at Expedition (never parked) walks its survivors back then, while staged parties
 /// park at Camp and walk back at ExpeditionDeep-tick completion; deaths stay away until the
 /// Evening reveal removes them; Evening-tick completion snaps the town to a new day.
@@ -60,7 +61,7 @@ public partial class TownScene : SimPanel
     /// <summary>Smooth phase-tint crossfade duration (LW1: replaces the old instant snap).</summary>
     public const float TintTweenSeconds = 1.5f;
 
-    private readonly Dictionary<int, HeroSprite> _sprites = [];
+    private readonly Dictionary<int, HeroActor> _sprites = [];
     private readonly List<(SpeechBubble Bubble, int OwnerId)> _bubbles = [];
     private readonly Dictionary<int, float> _bubbleLastShownAt = [];
     private readonly HashSet<string> _shownLinesToday = [];
@@ -68,9 +69,9 @@ public partial class TownScene : SimPanel
 
     // U14: heroes (and their speech bubbles) now live directly in LitTownOverlay.Ents — the ONE
     // Y-sorted layer — so they draw correctly in front of/behind the building wrappers that are
-    // Ents' other direct children. Node2D, not Control: CanvasItem.YSortEnabled sorts any
-    // CanvasItem child regardless of type, and HeroSprite stays Control-based until U19's
-    // HeroActor promotes it.
+    // Ents' other direct children. CanvasItem.YSortEnabled sorts any CanvasItem child regardless
+    // of type; U19 promotes the actor itself from a Control (HeroSprite) to a Node2D (HeroActor),
+    // feet-anchored the same way a building wrapper is (KTD6).
     private Node2D? _heroLayer;
     private Control? _memorialPlot;
     private Label? _memorialHeader;
@@ -94,7 +95,7 @@ public partial class TownScene : SimPanel
     public PhaseClock? Clock { get; set; }
 
     /// <summary>Live sprites keyed by HeroId.Value — alive heroes only.</summary>
-    public IReadOnlyDictionary<int, HeroSprite> Sprites => _sprites;
+    public IReadOnlyDictionary<int, HeroActor> Sprites => _sprites;
 
     /// <summary>LW2: currently-live speech bubbles (test/inspection surface) — insertion order.</summary>
     public IReadOnlyList<SpeechBubble> Bubbles => _bubbles.Select(b => b.Bubble).ToList();
@@ -172,7 +173,7 @@ public partial class TownScene : SimPanel
             var (bubble, ownerId) = _bubbles[i];
             if (!_sprites.TryGetValue(ownerId, out var owner)
                 || !GodotObject.IsInstanceValid(owner)
-                || owner.State == HeroSprite.TownState.Away)
+                || owner.State == HeroActor.TownState.Away)
             {
                 // Gone (permadeath) or now off in the Mine — LW1's "absence is the signal"
                 // extends to bubbles too: nothing should float over an empty gate.
@@ -261,23 +262,11 @@ public partial class TownScene : SimPanel
         switch (completedPhase)
         {
             case DayPhase.Morning:
-                // Everyone alive parties up (PartyFormation covers the whole roster). LW1:
-                // rally at the gate first (spaced, so the cluster reads as a group), dwell
-                // together, then exit in file — staggered by RallyFileSpacing/index so they
-                // peel off one at a time instead of popping through the gate simultaneously.
-                // WalkingIn is excluded: a hero in that state got there via ReconcileSprites
-                // JUST NOW in this same Refresh (a RecruitArrived walk-in) — they cannot also
-                // be marching out the same instant they walked in.
-                var departing = _sprites.Values
-                    .Where(s => s.State != HeroSprite.TownState.Away
-                                && s.State != HeroSprite.TownState.WalkingIn)
-                    .OrderBy(s => s.HeroValue)
-                    .ToList();
-                for (var i = 0; i < departing.Count; i++)
-                {
-                    departing[i].BeginDeparture(RallySpotFor(i, departing.Count), i * FileExitStaggerSeconds);
-                }
-
+                // U19/R18 (KTD8): departures are roster-true — only the heroes THIS Morning's
+                // PartiesFormed actually mustered rally and file out; anyone it left out (a
+                // straggler — today's MusterPlan musters every alive hero, but the adapter must
+                // never assume that going forward) keeps wandering untouched.
+                DepartMusteredHeroes(MusteredHeroIds(Adapter.LastEvents));
                 break;
             case DayPhase.Expedition:
                 // Runs that finalized at stage 1 are already in PendingExpeditions — their
@@ -297,7 +286,7 @@ public partial class TownScene : SimPanel
                 break;
             case DayPhase.Evening:
                 // New day: every remaining (alive) hero is home, whatever the walk state.
-                foreach (var sprite in _sprites.Values.Where(s => s.State != HeroSprite.TownState.Wandering))
+                foreach (var sprite in _sprites.Values.Where(s => s.State != HeroActor.TownState.Wandering))
                 {
                     sprite.SnapHome();
                 }
@@ -325,9 +314,49 @@ public partial class TownScene : SimPanel
             .Select(id => id.Value)
             .ToHashSet();
         foreach (var sprite in _sprites.Values
-                     .Where(s => s.State == HeroSprite.TownState.Away && survivors.Contains(s.HeroValue)))
+                     .Where(s => s.State == HeroActor.TownState.Away && survivors.Contains(s.HeroValue)))
         {
             sprite.BeginReturn();
+        }
+    }
+
+    /// <summary>
+    /// R18/KTD8: the roster THIS Morning's <see cref="PartiesFormed"/> event actually mustered
+    /// (roster ids across every planned party, whatever venue) — the single source of truth
+    /// Morning-departure choreography must key off, never a re-derived "everyone alive" guess.
+    /// Pure/public so a unit test can pin the extraction itself, independent of whether today's
+    /// <c>MusterPlan</c> (which currently musters every alive hero — see
+    /// <c>GameSim.Heroes.PartyFormation.FormParties</c>) ever actually excludes anyone.
+    /// </summary>
+    public static HashSet<int> MusteredHeroIds(IEnumerable<GameEvent> events) =>
+        events.OfType<PartiesFormed>()
+            .SelectMany(e => e.Parties)
+            .SelectMany(p => p.Roster)
+            .Select(id => id.Value)
+            .ToHashSet();
+
+    /// <summary>
+    /// LW1 rally-and-depart, R18-scoped to <paramref name="musteredIds"/>: rally at the gate
+    /// first (spaced, so the cluster reads as a group), dwell together, then exit in file —
+    /// staggered by index so they peel off one at a time instead of popping through the gate
+    /// simultaneously. A hero not in <paramref name="musteredIds"/> (a straggler) is left
+    /// untouched — still Wandering. WalkingIn is excluded even when mustered: a hero in that
+    /// state got there via <see cref="ReconcileSprites"/> JUST NOW in this same Refresh (a
+    /// RecruitArrived walk-in) — they cannot also be marching out the same instant they walked
+    /// in. Public so a test can pin the roster-filtering behavior directly (see remarks on
+    /// <see cref="MusteredHeroIds"/>); production reaches it only via <see cref="OnPhaseCompleted"/>.
+    /// </summary>
+    public void DepartMusteredHeroes(IReadOnlySet<int> musteredIds)
+    {
+        var departing = _sprites.Values
+            .Where(s => musteredIds.Contains(s.HeroValue)
+                        && s.State != HeroActor.TownState.Away
+                        && s.State != HeroActor.TownState.WalkingIn)
+            .OrderBy(s => s.HeroValue)
+            .ToList();
+        for (var i = 0; i < departing.Count; i++)
+        {
+            departing[i].BeginDeparture(RallySpotFor(i, departing.Count), i * FileExitStaggerSeconds);
         }
     }
 
@@ -396,7 +425,7 @@ public partial class TownScene : SimPanel
     /// the time this reads, has nobody on-screen to bark).</summary>
     private void TryShowBark(int heroValue)
     {
-        if (!_sprites.TryGetValue(heroValue, out var sprite) || sprite.State != HeroSprite.TownState.Wandering)
+        if (!_sprites.TryGetValue(heroValue, out var sprite) || sprite.State != HeroActor.TownState.Wandering)
         {
             return;
         }
@@ -411,14 +440,14 @@ public partial class TownScene : SimPanel
 
     /// <summary>The closest pair of currently-Wandering heroes within <see cref="PairBanterRadius"/>
     /// of each other, deterministic (log/heroId order, no RNG) — null when nobody qualifies.</summary>
-    private (HeroSprite A, HeroSprite B)? FindIdlePair()
+    private (HeroActor A, HeroActor B)? FindIdlePair()
     {
         var idle = _sprites.Values
-            .Where(s => s.State == HeroSprite.TownState.Wandering)
+            .Where(s => s.State == HeroActor.TownState.Wandering)
             .OrderBy(s => s.HeroValue)
             .ToList();
 
-        (HeroSprite A, HeroSprite B)? best = null;
+        (HeroActor A, HeroActor B)? best = null;
         var bestDistance = float.MaxValue;
         for (var i = 0; i < idle.Count; i++)
         {
@@ -438,9 +467,9 @@ public partial class TownScene : SimPanel
 
     /// <summary>The Wandering hero closest to the tavern door — the plan's "bubble over the hero
     /// nearest the tavern" solo-speaker pick; ties break on heroId for determinism.</summary>
-    private HeroSprite? NearestWanderingToTavern() =>
+    private HeroActor? NearestWanderingToTavern() =>
         _sprites.Values
-            .Where(s => s.State == HeroSprite.TownState.Wandering)
+            .Where(s => s.State == HeroActor.TownState.Wandering)
             .OrderBy(s => s.Position.DistanceTo(TavernAnchor))
             .ThenBy(s => s.HeroValue)
             .FirstOrDefault();
@@ -448,7 +477,7 @@ public partial class TownScene : SimPanel
     private bool BubbleReady(int heroValue) =>
         !_bubbleLastShownAt.TryGetValue(heroValue, out var last) || _townTime - last >= BubbleCooldownSeconds;
 
-    private void Spawn(HeroSprite sprite, string line, bool reaction)
+    private void Spawn(HeroActor sprite, string line, bool reaction)
     {
         var bubble = new SpeechBubble();
         bubble.Setup(line, reaction);
@@ -473,15 +502,12 @@ public partial class TownScene : SimPanel
                 continue;
             }
 
-            var sprite = new HeroSprite();
+            var sprite = new HeroActor();
             sprite.Setup(hero, HomeFor(hero.Id.Value), GateWalkTarget);
-            sprite.GuiInput += evt =>
-            {
-                if (IsLeftPress(evt))
-                {
-                    HeroClicked?.Invoke(sprite.HeroValue);
-                }
-            };
+            // U19: click routing moves from Control.GuiInput to the actor's own Area2D pick
+            // zone (G1 fallback — UiTestSupport.TryClickArea drives this in tests; real physics
+            // picking is unproven headless, manual-smoke-only, same contract as building clicks).
+            sprite.Clicked += heroValue => HeroClicked?.Invoke(heroValue);
             _heroLayer!.AddChild(sprite);
             _sprites[hero.Id.Value] = sprite;
             if (recruitIds.Contains(hero.Id.Value))
@@ -554,9 +580,6 @@ public partial class TownScene : SimPanel
     private static Vector2 HomeFor(int heroValue) => new(
         300 + heroValue * 97 % 1000,
         460 + heroValue * 67 % 140);
-
-    private static bool IsLeftPress(InputEvent evt) =>
-        evt is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true };
 
     private void EnsureBuilt()
     {

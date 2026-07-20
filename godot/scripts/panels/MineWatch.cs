@@ -486,7 +486,7 @@ public partial class MineWatch : SubViewportContainer
             Texture = lit,
             Position = position,
             RotationDegrees = rotation,
-            Modulate = HeroSprite.RoleColor(hero.ClassId),
+            Modulate = HeroActor.RoleColor(hero.ClassId),
         };
         ScaleToWidth(sprite, lit, HeroTargetWidth);
         _world.AddChild(sprite);

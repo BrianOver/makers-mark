@@ -8,7 +8,7 @@ namespace GodotClient.Town;
 /// <c>MarginContainer</c> → <c>Label</c> (autowrap), with a <see cref="_Draw"/>-time triangle
 /// tail pointing down at the hero it floats above. Lifecycle (pop-in → hold → fade-out) is
 /// driven by <see cref="Advance"/> off ACCUMULATED delta only — never an engine <c>Tween</c>
-/// node and never wall-clock — mirroring <c>HeroSprite</c>'s own squash-ease (see its remarks):
+/// node and never wall-clock — mirroring <c>HeroActor</c>'s own squash-ease (see its remarks):
 /// a caller fast-forwards it deterministically with big <c>Advance</c> calls exactly like the
 /// rest of the town's decoration, and a headless test never needs to pump real engine frames.
 ///
@@ -110,9 +110,11 @@ public partial class SpeechBubble : Control
     /// <summary>
     /// Position this bubble so its tail tip touches <paramref name="headPoint"/> (in the SAME
     /// coordinate space as the caller's layer — <c>TownScene</c> calls this with a
-    /// <see cref="HeroSprite.HeadAnchor"/>). Called every <c>Animate</c> tick while the owning
-    /// hero is still around, so the bubble tracks idle wander/breath-bob instead of floating in
-    /// a fixed spot.
+    /// <see cref="HeroActor.HeadAnchor"/>; U19 re-anchored this from the pre-U19
+    /// <c>HeroSprite</c>'s Control-space head point to <c>HeroActor</c>'s Node2D one — both are
+    /// plain world-space <see cref="Vector2"/>s, so this method's own math is unchanged).
+    /// Called every <c>Animate</c> tick while the owning hero is still around, so the bubble
+    /// tracks idle wander/breath-bob instead of floating in a fixed spot.
     /// </summary>
     public void PositionAbove(Vector2 headPoint) =>
         Position = new Vector2(headPoint.X - Size.X / 2f, headPoint.Y - Size.Y - TailHeight - 4f);
@@ -121,7 +123,7 @@ public partial class SpeechBubble : Control
     /// Advance the pop-in/hold/fade-out lifecycle by <paramref name="delta"/> seconds of
     /// accumulated town time. Safe to call with a large delta (fast-forward) — a single call
     /// can carry the bubble straight through to <see cref="BubbleState.Done"/>, matching the
-    /// same big-<c>Animate</c>-call contract <c>HeroSprite</c>/<c>TownScene</c> already honor.
+    /// same big-<c>Animate</c>-call contract <c>HeroActor</c>/<c>TownScene</c> already honor.
     /// </summary>
     public void Advance(double delta)
     {
