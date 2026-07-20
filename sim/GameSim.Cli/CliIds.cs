@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace GameSim.Cli;
 
 /// <summary>
@@ -24,5 +26,26 @@ public static class CliIds
         }
 
         return int.TryParse(token, out id);
+    }
+
+    /// <summary>
+    /// Parse the `profession` verb's arguments: 1–2 profession ids (matches
+    /// <see cref="GameSim.Professions.ProfessionHandlers.MaxSelected"/> — kept as a literal here
+    /// since that constant is a kernel-side legality detail, not a CLI parse rule; the kernel
+    /// still re-validates count and registration, so a literal drifting stays a rejection, never
+    /// a silent acceptance). Case-insensitive (every registered profession id is lowercase kebab)
+    /// and de-duplicating via the sorted-set result, mirroring <see cref="TryParseHero"/>/
+    /// <see cref="TryParseItem"/>'s tolerance for how a persona is likely to type an id.
+    /// </summary>
+    public static bool TryParseProfessions(IReadOnlyList<string> tokens, out ImmutableSortedSet<string> professions)
+    {
+        if (tokens.Count is < 1 or > 2)
+        {
+            professions = ImmutableSortedSet<string>.Empty;
+            return false;
+        }
+
+        professions = ImmutableSortedSet.CreateRange(tokens.Select(t => t.ToLowerInvariant()));
+        return true;
     }
 }

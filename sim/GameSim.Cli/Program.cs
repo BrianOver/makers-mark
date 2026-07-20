@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using GameSim;
+using GameSim.Advisor;
 using GameSim.Classes;
 using GameSim.Cli;
 using GameSim.Contracts;
@@ -99,14 +100,17 @@ while (true)
         case "help":
             Console.WriteLine("""
                 craft <recipeId> <material>   queue a craft (see 'recipes', 'mats')
+                profession <id> [id2]         choose 1-2 professions (see 'status' for current pick)
                 talent <nodeId>               unlock a talent node (see 'talents')
+                buymat <material> <qty>       buy base materials from the Morning vendor
                 stock <itemId> <price>        put a crafted item on your shelf
                 price <itemId> <gold>         reprice a shelved item
                 unstock <itemId>              pull an item off the shelf
-                buyore <heroId> <mat> <qty>   buy offered ore (Evening)
+                buyore <heroId> <mat> <qty>   buy offered ore (Evening) — see the ledger's timing note
                 bounty <floor> <gold>         post a bounty (gold escrowed)
                 send <heroId> <itemId>        deliver a held consumable to a camped hero (Camp)
                 recall <heroId>               ring the recall bell for a camped party (Camp)
+                advice                        ranked next-step suggestions + this phase's legal actions
                 export [path]                 dump campaign chronicle for analytics
                 next                          advance one phase (queued actions apply)
                 day                           advance to next Morning
@@ -134,16 +138,65 @@ while (true)
             break;
         }
 
+        // Playtest finding #2 (P0) generalized: the CLI used to hardcode the blacksmith
+        // profession here and at 'talents' below (plan 2026-07-19-002 U26) — every unlock went
+        // to ProfessionRegistry.BlacksmithId regardless of what the save actually selected via
+        // 'profession'. The owning profession is now resolved from the node id against the
+        // SAVE's selected professions, so a tanning/engineering/alchemy pick's own talents are
+        // reachable without a bespoke verb per profession.
         case "talent":
         {
-            if (parts.Length == 2)
+            if (parts.Length != 2)
             {
-                pending.Add(new UnlockTalentAction(parts[1], ProfessionRegistry.BlacksmithId));
-                Console.WriteLine($"  queued: unlock {parts[1]}");
+                PrintUsage("talent", "talent <nodeId>", line);
+                break;
+            }
+
+            if (TryResolveTalentProfession(state, parts[1], out var talentProfession))
+            {
+                pending.Add(new UnlockTalentAction(parts[1], talentProfession));
+                Console.WriteLine($"  queued: unlock {parts[1]} ({talentProfession})");
             }
             else
             {
-                PrintUsage("talent", "talent <nodeId>", line);
+                Console.WriteLine($"  talent: '{parts[1]}' isn't a node in your selected profession(s) ({string.Join(", ", state.Player.SelectedProfessions)}) — try 'talents'");
+            }
+
+            break;
+        }
+
+        // Playable Core deferred this ("CLI parity for the vendor + profession pick... later" —
+        // 2026-07-18-005 plan) until this unit: SetProfessionsAction was reachable from Godot and
+        // the kernel/composition root but had no CLI verb at all.
+        case "profession":
+        {
+            if (CliIds.TryParseProfessions(parts[1..], out var professions))
+            {
+                pending.Add(new SetProfessionsAction(professions));
+                Console.WriteLine($"  queued: practise {string.Join(", ", professions)}");
+            }
+            else
+            {
+                PrintUsage("profession", "profession <id> [id2]", line);
+            }
+
+            break;
+        }
+
+        // Playable Core's Morning materials vendor (BuyMaterialAction/MaterialVendorHandlers)
+        // shipped with no CLI verb — the exact "state the sim supports but the CLI can't reach"
+        // trap this unit exists to close, and the top ObjectiveAdvisor suggestion on a fresh
+        // campaign IS this action (a fresh save otherwise can't act on its own advice).
+        case "buymat":
+        {
+            if (parts.Length == 3 && int.TryParse(parts[2], out var buyMatQty))
+            {
+                pending.Add(new BuyMaterialAction(parts[1], buyMatQty));
+                Console.WriteLine($"  queued: buy {buyMatQty}x {parts[1]} from the Morning vendor");
+            }
+            else
+            {
+                PrintUsage("buymat", "buymat <material> <qty>", line);
             }
 
             break;
@@ -279,10 +332,21 @@ while (true)
             break;
 
         case "talents":
-            foreach (var n in TalentTree.Nodes.Values)
+            // Every SELECTED profession's own tree (not just blacksmith's, U26) — 'profession'
+            // may have added a second one since the last look.
+            foreach (var professionId in state.Player.SelectedProfessions)
             {
-                var have = state.Player.TalentsFor(ProfessionRegistry.BlacksmithId).Contains(n.NodeId) ? "*" : " ";
-                Console.WriteLine($" {have} {n.NodeId,-20} needs: {(n.Prerequisites.IsEmpty ? "-" : string.Join(",", n.Prerequisites))}");
+                if (!ProfessionRegistry.TryGet(professionId, out var profession))
+                {
+                    continue;
+                }
+
+                Console.WriteLine($"  -- {profession!.DisplayName} --");
+                foreach (var n in profession.TalentNodes.Values)
+                {
+                    var have = state.Player.TalentsFor(professionId).Contains(n.NodeId) ? "*" : " ";
+                    Console.WriteLine($" {have} {n.NodeId,-24} needs: {(n.Prerequisites.IsEmpty ? "-" : string.Join(",", n.Prerequisites))}");
+                }
             }
 
             break;
@@ -364,6 +428,46 @@ while (true)
             foreach (var g in lines)
             {
                 Console.WriteLine($"  \"{g.Line}\"");
+            }
+
+            break;
+        }
+
+        // Sim-side "what can/should I do" surface (plan 2026-07-19-002 U10/U26): the same
+        // ObjectiveAdvisor.Suggest + ActionLegality a persona/HUD reads, printed as CLI verb
+        // lines so an answer here is directly re-typeable — never another "the game names a
+        // command that doesn't work" trap (playtest finding #3).
+        case "advice":
+        {
+            var suggestions = ObjectiveAdvisor.Suggest(state);
+            Console.WriteLine("  SUGGESTIONS (ranked):");
+            if (suggestions.IsEmpty)
+            {
+                Console.WriteLine("    (none right now)");
+            }
+            else
+            {
+                foreach (var suggestion in suggestions)
+                {
+                    var hint = CliActionFormat.Format(suggestion.Action);
+                    Console.WriteLine(hint is null
+                        ? $"    - {suggestion.Reason}"
+                        : $"    - {hint}  ({suggestion.Reason})");
+                }
+            }
+
+            var legal = ActionLegality.LegalActions(state, state.Phase);
+            Console.WriteLine($"  LEGAL THIS PHASE ({state.Phase}):");
+            if (legal.IsEmpty)
+            {
+                Console.WriteLine("    (nothing legal right now)");
+            }
+            else
+            {
+                foreach (var action in legal)
+                {
+                    Console.WriteLine($"    {CliActionFormat.Format(action)}");
+                }
             }
 
             break;
@@ -553,7 +657,13 @@ void PrintLedger(GameState s, int day)
 
         foreach (var ore in card.OreOffers)
         {
-            Console.WriteLine($"      offers {ore.Quantity}x {ore.MaterialKey} at {ore.UnitPrice}g (buyore {card.Hero.Value} {ore.MaterialKey} {ore.Quantity})");
+            // Playtest finding #3 (P0): this offer is written into OpenOreOffers by THIS SAME
+            // Evening tick's ExpeditionRevealSystem, which runs AFTER actions apply (kernel
+            // contract, ExpeditionRevealSystem's class doc) — so it is NOT purchasable this
+            // tick, and 'next' from this ledger already rolls past Evening into tomorrow's
+            // Morning (where buyore is phase-illegal). It becomes buyable only at TOMORROW's
+            // Evening prompt, before that tick's 'next' — the exact command below, unchanged.
+            Console.WriteLine($"      offers {ore.Quantity}x {ore.MaterialKey} at {ore.UnitPrice}g — buyable at TOMORROW's Evening prompt (type this BEFORE 'next' then): buyore {card.Hero} {ore.MaterialKey} {ore.Quantity}");
         }
     }
 }
@@ -561,6 +671,23 @@ void PrintLedger(GameState s, int day)
 void PrintStatus(GameState s)
 {
     Console.WriteLine($"  gold {s.Player.Gold}g | shelf {s.Player.Shelf.Count} items | heroes alive {s.Heroes.Values.Count(h => h.Alive)}/{s.Heroes.Count}");
+    Console.WriteLine($"  professions: {string.Join(", ", s.Player.SelectedProfessions)} (change with 'profession <id> [id2]')");
+
+    // Plan 2026-07-19-002 U10/U26: the same top-pick guidance a HUD reads, so a persona (or a
+    // player) always has a next step surfaced without hunting for 'advice'.
+    var suggestions = ObjectiveAdvisor.Suggest(s);
+    if (suggestions.IsEmpty)
+    {
+        Console.WriteLine("  suggestion: (none right now — try 'advice' for the full legal-action list)");
+    }
+    else
+    {
+        var top = suggestions[0];
+        var hint = CliActionFormat.Format(top.Action);
+        Console.WriteLine(hint is null
+            ? $"  suggestion: {top.Reason}"
+            : $"  suggestion: {hint}  ({top.Reason})");
+    }
 }
 
 string HeroName(GameState s, HeroId id) => s.Heroes.TryGetValue(id.Value, out var h) ? h.Name : id.ToString();
@@ -572,3 +699,23 @@ string ItemName(GameState s, ItemId id) => s.Items.TryGetValue(id.Value, out var
 // usage plus what was actually typed (playtest finding #2).
 void PrintUsage(string verb, string usage, string rawLine) =>
     Console.WriteLine($"  {verb}: expected '{usage}' — got '{rawLine.Trim()}'");
+
+// U26: 'talent' no longer hardcodes ProfessionRegistry.BlacksmithId (old Program.cs:141) — the
+// owning profession is resolved from the node id against the save's OWN selected professions
+// (node ids are namespaced per profession, e.g. "keen-eye" vs "tanning-steady-hand", so this is
+// unambiguous). First match in the sorted selection wins; ties are a non-issue given that
+// namespacing, but a stable, deterministic pick is kept anyway.
+bool TryResolveTalentProfession(GameState s, string nodeId, out string profession)
+{
+    foreach (var professionId in s.Player.SelectedProfessions)
+    {
+        if (ProfessionRegistry.TryGet(professionId, out var definition) && definition!.TalentNodes.ContainsKey(nodeId))
+        {
+            profession = professionId;
+            return true;
+        }
+    }
+
+    profession = string.Empty;
+    return false;
+}
