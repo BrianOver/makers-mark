@@ -34,5 +34,13 @@ public sealed record Item(
     ImmutableList<ItemHistoryEntry> History,
     ConsumableEffect? Effect = null)
 {
+    /// <summary>
+    /// The three forge-beat sub-scores (smelt, forge, quench) captured when this item was crafted
+    /// via the active minigame, per-mille, in beat order — stored verbatim for Evening ledger flavor
+    /// ("the edge quenched brittle"). DATA, never rules: no sim system keys off it. Empty for
+    /// auto-crafted, rival, or pre-Phase-A items. Non-positional init member (save-compat).
+    /// </summary>
+    public ImmutableList<int> CraftSubScores { get; init; } = ImmutableList<int>.Empty;
+
     public bool PlayerCrafted => Mark is not null;
 }

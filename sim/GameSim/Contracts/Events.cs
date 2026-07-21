@@ -31,6 +31,10 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(SupplyDelivered), "supplyDelivered")]
 [JsonDerivedType(typeof(PartyRecalled), "partyRecalled")]
 [JsonDerivedType(typeof(PartiesFormed), "partiesFormed")]
+[JsonDerivedType(typeof(CustomerApproached), "customerApproached")]
+[JsonDerivedType(typeof(CustomerCountered), "customerCountered")]
+[JsonDerivedType(typeof(CounterSaleClosed), "counterSaleClosed")]
+[JsonDerivedType(typeof(CustomerWalked), "customerWalked")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -136,6 +140,24 @@ public sealed record RecoveryStipendGranted(int Amount) : GameEvent;
 /// target floor (bounty acceptance PREDICTED via the same pure rule BountyJudgingSystem applies
 /// at the Expedition tick), and the destination venue's <c>VenueRegistry</c> key.</summary>
 public sealed record PartyPlan(ImmutableList<HeroId> Roster, int TargetFloor, string VenueId);
+
+/// <summary>A hero stepped up to the counter for stepped service (PKD5). Emitted when they become
+/// the active customer; the presentation layer plays the walk-up and reaction faces off these.</summary>
+public sealed record CustomerApproached(HeroId Hero) : GameEvent;
+
+/// <summary>The active customer made (or revised) a standing offer during haggling (PKD6).
+/// <paramref name="OfferGold"/> is what they will currently pay for the presented item.</summary>
+public sealed record CustomerCountered(HeroId Hero, int OfferGold) : GameEvent;
+
+/// <summary>A counter sale closed (PKD6). <paramref name="Pinned"/> = the player countered within the
+/// pin window of the hero's true willingness (mood bonus applied). Gold conservation reconciles against
+/// <paramref name="Price"/> exactly like <see cref="ItemSold"/>.</summary>
+public sealed record CounterSaleClosed(HeroId Hero, ItemId Item, int Price, bool Pinned) : GameEvent;
+
+/// <summary>The active customer left the counter without buying (patience ran out, price never met,
+/// or nothing fit) — with the legible reason (R8 prose rules). <paramref name="Item"/> is the item
+/// under discussion when they walked, or null if none was presented.</summary>
+public sealed record CustomerWalked(HeroId Hero, ItemId? Item, string Reason) : GameEvent;
 
 /// <summary>Morning-phase muster (plan 2026-07-19-002 U9/KTD8): the parties that will depart at
 /// the Expedition tick. Emitted by MusterSystem with ZERO RNG draws; consumed by the adapter for

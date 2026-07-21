@@ -57,6 +57,16 @@ public sealed record Hero(
     /// </summary>
     public ImmutableList<ItemId> Pack { get; init; } = ImmutableList<ItemId>.Empty;
 
+    /// <summary>
+    /// The hero's mood toward the player's shop, per-mille, signed (0 = neutral; the pin-bonus /
+    /// fleece-memory target — PKD6). A counter "pin" (countering near true willingness) nudges it up;
+    /// an over-ceiling fleece nudges it down; PA4 willingness math and the gossip surface read it.
+    /// STRICTLY influence, never orders (PKD7): mood NEVER touches party formation, floor choice, or
+    /// expedition resolution. Non-positional init member (the <see cref="Pack"/> pattern) — old saves
+    /// and existing constructors default to 0.
+    /// </summary>
+    public int MoodPermille { get; init; } = 0;
+
     /// <summary>Simple additive gear score used by shopping and floor gates. Integer math only.</summary>
     public static int GearScore(GearSet gear, ImmutableSortedDictionary<int, Item> items)
     {

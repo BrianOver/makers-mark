@@ -28,6 +28,17 @@ public enum ItemSlot
     Trinket,    // fourth gear slot (P2 contract; content arrives with later add-ons)
 }
 
+/// <summary>
+/// How the player answers the active customer's standing offer at the counter (PKD6).
+/// APPEND ONLY — serialized in the <see cref="HaggleResponseAction"/> that rides the ActionLog (KTD4).
+/// </summary>
+public enum HaggleResponseKind
+{
+    Accept,   // take the customer's current offer — closes the sale
+    HoldFirm, // refuse without moving price; the per-round band may shift in your favor
+    Counter,  // name a price (the action's Price); pinning near true willingness earns a mood bonus
+}
+
 /// <summary>Quality grades a craft can roll (R4). Order is ascending power.</summary>
 public enum QualityGrade
 {
