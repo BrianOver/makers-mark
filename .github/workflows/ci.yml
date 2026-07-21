@@ -131,8 +131,30 @@ jobs:
           exit "$exit_code"
       - name: Assert runtime suite actually ran (silent-skip guard, KTD3)
         run: |
+          # Same Godot shutdown SIGABRT (exit 134 after a clean pass) that the main engine
+          # step tolerates also hits this guard — it re-launches Godot via dotnet test — and
+          # was reddening the whole job AFTER the suite already passed. `-e` is on by default,
+          # so `set +e` to inspect the exit code ourselves.
+          set +e
           export GODOT_BIN=$(which godot)
-          xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj --filter "FullyQualifiedName~MainUiTests" -- RunConfiguration.TreatNoTestsAsError=true
+          xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj \
+            --filter "FullyQualifiedName~MainUiTests" \
+            -- RunConfiguration.TreatNoTestsAsError=true 2>&1 | tee guard.log
+          exit_code="${PIPESTATUS[0]}"
+          [ "$exit_code" -eq 0 ] && exit 0
+
+          # Tolerate ONLY the known shutdown flake: exit 134 (SIGABRT) AND proof the suite
+          # actually ran and passed — a nonzero Passed count with Failed: 0. A silent skip
+          # (0 tests) produces no "Passed: [1-9]" marker and still fails, which is the entire
+          # reason this guard exists (KTD3). Never let it mask a real skip or regression.
+          if [ "$exit_code" -eq 134 ] && grep -qE "Passed: [1-9][0-9]*" guard.log && grep -q "Failed: 0" guard.log; then
+            passed_count=$(grep -oE "Passed: [0-9]+" guard.log | tail -1 | grep -oE "[0-9]+")
+            echo "::warning::silent-skip guard: shutdown SIGABRT tolerated, MainUiTests ran and passed (${passed_count})"
+            exit 0
+          fi
+
+          echo "::error::silent-skip guard failed for real (exit $exit_code) — not the tolerated shutdown flake."
+          exit "$exit_code"
       - name: Restore csproj after tests
         if: always()
         run: git checkout -- godot/GodotClient.csproj
