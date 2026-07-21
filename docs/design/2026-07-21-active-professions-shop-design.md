@@ -34,6 +34,34 @@ We take the tactile-craft act from the first and the live-counter service from t
 6. **Auto-craft escape hatch.** Every recipe can be auto-crafted at a fixed "competent" `PerformanceGrade` with no minigame — for filler stock and, critically, as the deterministic baseline the headless 100-day balance sim uses.
 7. **Fable plans + proposes the subclaude decomposition; the orchestrating session dispatches.**
 
+## Comparables — adopted mechanics (2026-07-21 Fable research)
+
+Full brief mechanics, mapped to our seams. Determinism verdict on each was CLEAN (all resolve to captured integers/enums or in-sim math).
+
+**Crafting minigame (blacksmith beats):**
+- **Spiritfarer (Foundry/Loom)** — Smelt = a slow, readable thermometer you push into a band and *hold*; Quench = stop-the-needle on a moving readout. Soft failure (lower output, never destruction). Sub-score = distance-from-band-center → per-mille.
+- **Fantasy Life** — Forge = a *budget of shaping-progress* to fill before the glow cools; on-beat strikes fill more, so a skilled run finishes in fewer strikes with "heat to spare" (readable win). Validates talents-as-assist (wider bands / slower drift) *feeling* like mastery.
+- **Jacksmith** — validates the whole inverted-MMO concept (craft feeds autonomous fighters, proven fun). Steal: **carry-forward flaw** — a smelt impurity renders as visible dross in the Forge beat so the chain feels causal, not three separate scores. Record the three sub-scores in item history → Evening ledger flavor ("edge quenched brittle").
+- **Reject:** physics forging (My Little Blacksmith Shop — un-capturable, Phase-C at best), any mashing/spin (twitch/fatigue). Keep only tap-on-beat + hold-release + stop-the-needle. Keep MLBS's *fantasy checklist* (bellows, glowing ingot, anvil sparks) as overlay art targets.
+
+**Counter-service haggle (the loop anchor):**
+- **Potionomics** — turn-based negotiation with meters: customer **Interest** (raises price multiplier), customer **Patience** (counter in *rounds*, not seconds; 0 = deal fails), seller **Goodwill/Suspicion** (our Stress analogue — a fleeced hero remembers → feeds gossip/loyalty). Opener = right-item-for-role starting bonus; Closer = a Counter landed inside the band. **Cap ~3 rounds.** Keep the *meters, drop the deckbuilder cards.*
+- **Recettear** — per-hero-class **price factor** (Vanguard overpays for a fitting shield, Skirmisher stingy — falls out of the existing utility) and a **band that shifts per haggle round** so HoldFirm can win round 2 (real choice, not a trap). A **"pin" reward:** countering close to the hero's true willingness gives a mood/loyalty bonus on top of gold — reading the hero *is* the counter skill. Avoid Recettear's solved-meta ("always 107%") by making role-fit/mood move the band enough that one global markup leaves real money/loyalty behind.
+
+**Shop arrangement / legibility (async prep):**
+- **Moonlighter** — 4–5 legible **reaction faces** rendering the computed utility verdict (ecstatic→walks); **ledger memory page** of past reactions per item×class. Pure render of sim state; zero new action params. *Reject theft/whack-a-mole* (twitch, punishes leaving the counter).
+- **TCG Card Shop Sim** — **shelf-slot model**: heroes evaluate slots while browsing and *murmur their verdict* (cheap, strong legibility on top of R8 walk-reasons). Arrange role-fit gear where the morning's expected party looks.
+- **Winkeltje** — coarse **shop-appeal scalar** (from placed decor/displays) nudging *morning-queue composition* toward higher-budget heroes. Small modifier, not a dominant stat.
+
+**Anti-tedium (validated against My Time at Sandrock's failure — batch queues *removed* engagement):**
+- Grade-capped auto-craft (**competent ceiling, never Masterwork** — the minigame is the only road to the top).
+- Difficulty scales per tier so mastered recipes stay quick.
+- **Overnight racking/aging** (Travellers Rest) — a finished blade oil-tempered overnight gains a small grade bump: zero-interaction quality for planners, trivially deterministic (days-elapsed counter). Fits async-prep.
+- **Station-tier cap** (Travellers Rest) — forge/anvil upgrades as another quality ceiling input (pure data), a progression axis alongside material.
+- **Calendar-gated master crafts** (Moonlight Peaks) — "the forge burns hot before a storm": sim-calendar bonus, adds ceremony. Gate *bonuses* only, never gate the auto-craft escape hatch.
+
+**Seam consequence (bake now):** some professions score entirely in-sim. Alchemist (Potion Craft's ingredient-vector map / Potionomics' magimin-ratio) is natively discrete — ingredient list + grind fractions + path choices scored by the sim, no Godot-computed grade. So the craft seam must accept **either** a captured `PerformanceGrade` **or** structured per-profession puzzle params the sim scores itself (strictly better for balance-gate coverage). One contract line in Phase A; build nothing alchemist in Phase A.
+
 ## Determinism model (the crux)
 
 The sim must stay a pure function of (state, actions) so `Tick` replays byte-identically (KTD4). Active, real-time-feeling interaction reconciles with that because **the sim never sees real time — it only sees the result the interaction produced, captured as an action parameter.**
