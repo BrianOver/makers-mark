@@ -40,11 +40,25 @@ internal static class BuildingKit
         _ => BuildForge(),
     };
 
-    /// <summary>Stone walls, a door facing front, a gable roof, a chimney, and a warm forge-glow
-    /// light near the base — the plan's literal recipe.</summary>
+    /// <summary>The forge is the first venue wired to the AI-gen pipeline: if a normalized
+    /// <c>gen/forge.glb</c> is present it becomes the building's mesh directly (feet-pivoted +
+    /// pre-scaled by <c>normalize_glb.py</c>, so no <see cref="TownAssets.BuildingScale"/>), else we
+    /// fall back to the Kenney assembly — stone walls, a front door, a gable roof, and a chimney.
+    /// Either way a warm forge-glow light is parented to the root near the base.</summary>
     private static Node3D BuildForge()
     {
-        var root = Cottage("Forge", "wall.glb", "wall-door.glb", "roof-gable.glb", chimney: true);
+        var gen = TownAssets.InstantiateGen("forge.glb");
+        Node3D root;
+        if (gen != null)
+        {
+            root = new Node3D { Name = "Forge" };
+            root.AddChild(gen);
+        }
+        else
+        {
+            root = Cottage("Forge", "wall.glb", "wall-door.glb", "roof-gable.glb", chimney: true);
+        }
+
         root.AddChild(new OmniLight3D
         {
             Name = "ForgeGlow",
