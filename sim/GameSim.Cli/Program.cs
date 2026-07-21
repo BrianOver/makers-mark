@@ -99,7 +99,10 @@ while (true)
 
         case "help":
             Console.WriteLine("""
-                craft <recipeId> <material>   queue a craft (see 'recipes', 'mats')
+                craft <recipeId> <material> [grade <0-1000>]
+                                               queue a craft (see 'recipes', 'mats'); an explicit
+                                               grade puts a captured minigame result in hand
+                                               (blacksmith only — grade dominates quality, PA2)
                 profession <id> [id2]         choose 1-2 professions (see 'status' for current pick)
                 talent <nodeId>               unlock a talent node (see 'talents')
                 buymat <material> <qty>       buy base materials from the Morning vendor
@@ -110,6 +113,13 @@ while (true)
                 bounty <floor> <gold>         post a bounty (gold escrowed)
                 send <heroId> <itemId>        deliver a held consumable to a camped hero (Camp)
                 recall <heroId>               ring the recall bell for a camped party (Camp)
+                counter open                  start stepped counter service (Morning only)
+                counter present <itemId>      show a shelved item to the customer at the counter
+                counter suggest <itemId>      upsell a complementary item (Interest bonus)
+                counter close                 end stepped service; unserved heroes shop atomically
+                haggle accept                 take the customer's standing offer
+                haggle hold                   hold firm — the band may shift in your favor next round
+                haggle counter <gold>         counter the standing offer at <gold>
                 advice                        ranked next-step suggestions + this phase's legal actions
                 export [path]                 dump campaign chronicle for analytics
                 next                          advance one phase (queued actions apply)
@@ -129,9 +139,25 @@ while (true)
             {
                 TryQueue(new CraftAction(parts[1], parts[2]), $"  queued: craft {parts[1]} with {parts[2]}");
             }
+            else if (parts.Length == 5 && parts[3].Equals("grade", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!CliParse.TryInt(parts[4], out var grade, out var gradeError))
+                {
+                    Console.WriteLine($"  craft: {gradeError}");
+                }
+                else if (grade is < 0 or > 1000)
+                {
+                    Console.WriteLine($"  craft: grade must be 0-1000; got {grade}.");
+                }
+                else
+                {
+                    TryQueue(new CraftAction(parts[1], parts[2], grade),
+                        $"  queued: craft {parts[1]} with {parts[2]} at grade {grade} (grade-in-hand — dominates quality on an active profession)");
+                }
+            }
             else
             {
-                PrintUsage("craft", "craft <recipeId> <material>", line);
+                PrintUsage("craft", "craft <recipeId> <material> [grade <0-1000>]", line);
             }
 
             break;
@@ -343,6 +369,110 @@ while (true)
             else
             {
                 TryQueue(new RecallPartyAction(new HeroId(rhid)), $"  queued: recall the party camped with H{rhid}");
+            }
+
+            break;
+        }
+
+        // PA5 (plan 2026-07-21-002): the stepped counter service verbs. 'counter' groups the
+        // session-shaped moves (open/present/suggest/close — PA1 actions with no in-hand price);
+        // 'haggle' is the separate response-to-a-standing-offer verb (Accept/HoldFirm/Counter),
+        // kept apart because it is the only one that takes the negotiated gold amount.
+        case "counter":
+        {
+            if (parts.Length < 2)
+            {
+                PrintUsage("counter", "counter open|present <itemId>|suggest <itemId>|close", line);
+                break;
+            }
+
+            switch (parts[1].ToLowerInvariant())
+            {
+                case "open":
+                    TryQueue(new OpenCounterAction(), "  queued: open the counter");
+                    break;
+
+                case "present":
+                    if (parts.Length != 3)
+                    {
+                        PrintUsage("counter present", "counter present <itemId>", line);
+                    }
+                    else if (!CliParse.TryItemId(parts[2], out var presentId, out var presentError))
+                    {
+                        Console.WriteLine($"  counter present: {presentError}");
+                    }
+                    else
+                    {
+                        TryQueue(new PresentItemAction(new ItemId(presentId)), $"  queued: present I{presentId} to the customer");
+                    }
+
+                    break;
+
+                case "suggest":
+                    if (parts.Length != 3)
+                    {
+                        PrintUsage("counter suggest", "counter suggest <itemId>", line);
+                    }
+                    else if (!CliParse.TryItemId(parts[2], out var suggestId, out var suggestError))
+                    {
+                        Console.WriteLine($"  counter suggest: {suggestError}");
+                    }
+                    else
+                    {
+                        TryQueue(new SuggestItemAction(new ItemId(suggestId)), $"  queued: suggest I{suggestId} to the customer");
+                    }
+
+                    break;
+
+                case "close":
+                    TryQueue(new CloseCounterAction(), "  queued: close the counter");
+                    break;
+
+                default:
+                    PrintUsage("counter", "counter open|present <itemId>|suggest <itemId>|close", line);
+                    break;
+            }
+
+            break;
+        }
+
+        case "haggle":
+        {
+            if (parts.Length < 2)
+            {
+                PrintUsage("haggle", "haggle accept|hold|counter <gold>", line);
+                break;
+            }
+
+            switch (parts[1].ToLowerInvariant())
+            {
+                case "accept":
+                    TryQueue(new HaggleResponseAction(HaggleResponseKind.Accept), "  queued: accept the standing offer");
+                    break;
+
+                case "hold":
+                    TryQueue(new HaggleResponseAction(HaggleResponseKind.HoldFirm), "  queued: hold firm");
+                    break;
+
+                case "counter":
+                    if (parts.Length != 3)
+                    {
+                        PrintUsage("haggle counter", "haggle counter <gold>", line);
+                    }
+                    else if (!CliParse.TryInt(parts[2], out var counterGold, out var goldError))
+                    {
+                        Console.WriteLine($"  haggle counter: {goldError}");
+                    }
+                    else
+                    {
+                        TryQueue(new HaggleResponseAction(HaggleResponseKind.Counter, counterGold), $"  queued: counter at {counterGold}g");
+                    }
+
+                    break;
+
+                default:
+                    PrintUsage("haggle", "haggle accept|hold|counter <gold>", line);
+                    break;
             }
 
             break;

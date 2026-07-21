@@ -99,4 +99,72 @@ public class CliActionFormatTests
     {
         Assert.Equal("recall H4", CliActionFormat.Format(new RecallPartyAction(new HeroId(4))));
     }
+
+    // PA5 (plan 2026-07-21-002): craft's optional grade-in-hand suffix, plus the five counter/
+    // haggle verbs (OpenCounter/PresentItem/SuggestItem/CloseCounter/HaggleResponse) — 'help'
+    // and 'advice' render these lines, so they must stay exactly what Program.cs's own 'craft'/
+    // 'counter'/'haggle' cases parse (mirrors this file's existing round-trip convention).
+
+    [Fact]
+    public void Format_Craft_WithExplicitGrade_MatchesGradeVerbSyntax()
+    {
+        var line = CliActionFormat.Format(new CraftAction("dagger", "copper", PerformanceGrade: 850));
+
+        Assert.Equal("craft dagger copper grade 850", line);
+    }
+
+    [Fact]
+    public void Format_Craft_NullGrade_OmitsGradeSuffix()
+    {
+        // Auto-craft (null grade) must still render the plain pre-PA2 verb line — no "grade"
+        // token appears when there is nothing captured in hand.
+        Assert.Equal("craft dagger copper", CliActionFormat.Format(new CraftAction("dagger", "copper")));
+    }
+
+    [Fact]
+    public void Format_OpenCounter()
+    {
+        Assert.Equal("counter open", CliActionFormat.Format(new OpenCounterAction()));
+    }
+
+    [Fact]
+    public void Format_PresentItem_ItemIdParsesBackViaCliIds()
+    {
+        var line = CliActionFormat.Format(new PresentItemAction(new ItemId(9)));
+
+        Assert.Equal("counter present I9", line);
+        var tail = line!.Split(' ')[2];
+        Assert.True(CliIds.TryParseItem(tail, out var id));
+        Assert.Equal(9, id);
+    }
+
+    [Fact]
+    public void Format_SuggestItem()
+    {
+        Assert.Equal("counter suggest I3", CliActionFormat.Format(new SuggestItemAction(new ItemId(3))));
+    }
+
+    [Fact]
+    public void Format_CloseCounter()
+    {
+        Assert.Equal("counter close", CliActionFormat.Format(new CloseCounterAction()));
+    }
+
+    [Fact]
+    public void Format_HaggleAccept()
+    {
+        Assert.Equal("haggle accept", CliActionFormat.Format(new HaggleResponseAction(HaggleResponseKind.Accept)));
+    }
+
+    [Fact]
+    public void Format_HaggleHoldFirm()
+    {
+        Assert.Equal("haggle hold", CliActionFormat.Format(new HaggleResponseAction(HaggleResponseKind.HoldFirm)));
+    }
+
+    [Fact]
+    public void Format_HaggleCounter_CarriesTheNamedPrice()
+    {
+        Assert.Equal("haggle counter 96", CliActionFormat.Format(new HaggleResponseAction(HaggleResponseKind.Counter, 96)));
+    }
 }

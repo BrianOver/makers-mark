@@ -19,6 +19,7 @@ public static class CliActionFormat
     public static string? Format(PlayerAction? action) => action switch
     {
         null => null,
+        CraftAction { PerformanceGrade: { } grade } a => $"craft {a.RecipeId} {a.MaterialKey} grade {grade}",
         CraftAction a => $"craft {a.RecipeId} {a.MaterialKey}",
         StockAction a => $"stock {a.Item} {a.Price}",
         SetPriceAction a => $"price {a.Item} {a.Price}",
@@ -30,6 +31,13 @@ public static class CliActionFormat
         SetProfessionsAction a => $"profession {string.Join(' ', a.Professions)}",
         SendSupplyAction a => $"send {a.To} {a.Item}",
         RecallPartyAction a => $"recall {a.Member}",
+        OpenCounterAction => "counter open",
+        PresentItemAction a => $"counter present {a.Item}",
+        SuggestItemAction a => $"counter suggest {a.Item}",
+        CloseCounterAction => "counter close",
+        HaggleResponseAction { Kind: HaggleResponseKind.Accept } => "haggle accept",
+        HaggleResponseAction { Kind: HaggleResponseKind.HoldFirm } => "haggle hold",
+        HaggleResponseAction { Kind: HaggleResponseKind.Counter } a => $"haggle counter {a.Price}",
         _ => action.GetType().Name, // defensive: a future action type falls back to its name, never a crash
     };
 }

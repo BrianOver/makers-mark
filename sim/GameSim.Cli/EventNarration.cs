@@ -38,6 +38,16 @@ public static class EventNarration
             $"  + recruit {HeroName(state, recruit.Hero)} arrives in town",
         GossipEmitted gossip =>
             $"  🍺 \"{gossip.Line}\"",
+        CustomerApproached approached =>
+            $"  → {HeroName(state, approached.Hero)} steps up to the counter",
+        CustomerCountered countered =>
+            $"  ↔ {HeroName(state, countered.Hero)} offers {countered.OfferGold}g",
+        CounterSaleClosed sale when sale.Pinned =>
+            $"  ★ {HeroName(state, sale.Hero)} buys {ItemName(state, sale.Item)} for {sale.Price}g — you read them perfectly",
+        CounterSaleClosed sale =>
+            $"  $ {HeroName(state, sale.Hero)} buys {ItemName(state, sale.Item)} for {sale.Price}g at the counter",
+        CustomerWalked walked =>
+            $"  ~ {HeroName(state, walked.Hero)} walks away from the counter: {walked.Reason}",
         _ => null,
     };
 
