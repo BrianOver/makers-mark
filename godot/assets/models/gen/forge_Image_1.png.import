@@ -2,19 +2,19 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cd35uw7nx2hso"
-path="res://.godot/imported/forge_Image_0.png-a41dace73029c90cdee9cd83a40368ff.ctex"
+uid="uid://b1ibrmi6ak83c"
+path="res://.godot/imported/forge_Image_1.png-fbdeb7eff32a039d4739f03575d133c0.ctex"
 metadata={
 "vram_texture": false
 }
 generator_parameters={
-"md5": "d6ac4b3af368211b72c9ccdaae9226c1"
+"md5": "93a1e9a9b682b2391ae84d7010344e1c"
 }
 
 [deps]
 
-source_file="res://assets/models/gen/forge_Image_0.png"
-dest_files=["res://.godot/imported/forge_Image_0.png-a41dace73029c90cdee9cd83a40368ff.ctex"]
+source_file="res://assets/models/gen/forge_Image_1.png"
+dest_files=["res://.godot/imported/forge_Image_1.png-fbdeb7eff32a039d4739f03575d133c0.ctex"]
 
 [params]
 

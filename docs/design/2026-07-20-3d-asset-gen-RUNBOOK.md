@@ -76,3 +76,16 @@ Keep animated heroes on Kenney Mini Characters (no AI tool rigs).
 - Decide TRELLIS.2 install route (enable Manager vs manual clone) — both need you present for the admin + restart + attended build-failure handling.
 - Blender + VS Build Tools installs (admin).
 - First generation is explicitly YOUR-gated ("machine is free") per the safety rules.
+
+---
+
+## HARD SAFETY LIMITS (added 2026-07-21 — non-negotiable)
+
+Machine health outranks any asset. For EVERY local GPU job:
+
+- **16 GB VRAM card.** Require `nvidia-smi` free ≥ **14 GB** before starting. **ABORT if used > 14 GB** (~2 GB headroom) — never approach 16. Trust `nvidia-smi`, NOT ComfyUI `/system_stats` (torch-pool figure, reads low).
+- **Live monitor** running the whole job (`nvidia-smi -l 3`). **Hard-abort > 83 °C**, soft-pause > 80 °C.
+- **One job at a time.** Lower tier by default (512³ not 1024³; texture 1024 not 2048); step up only with > 3 GB headroom measured.
+- **Watchdog:** kill any job > ~2× expected time. Cancelling a gen is always safe (loses one item, never the machine).
+- **Never** the un-offloaded Hunyuan texture path (~21 GB > 16 GB). Offload/low-VRAM only.
+- **Attended only** — start solely when the operator confirms the machine is free; report peak VRAM/temp after.
