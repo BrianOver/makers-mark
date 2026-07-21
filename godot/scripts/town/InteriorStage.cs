@@ -25,8 +25,8 @@ namespace GodotClient.Town;
 /// <para><b>Data-driven (KTD10):</b> every venue's backdrop id, title, and hotspot list lives in
 /// <see cref="Venues"/> — a fresh venue is a table row, never a new code path (the hotspot
 /// definitions are also the carry-forward asset if walkable interiors happen later). Keys match
-/// the <see cref="InteractionZone.Key"/>/<see cref="LitTownOverlay.Zones"/> keys the world
-/// already uses ("forge"/"market"/"tavern"/"minegate").</para>
+/// the venue keys <see cref="GodotClient.Town3d.Town3D.DoorAnchor"/> already uses
+/// ("forge"/"market"/"tavern"/"minegate").</para>
 ///
 /// <para><b>Shop is richest (art already shipped):</b> a private <see cref="ShopStage"/>
 /// instance — the SAME class the pre-U22 shop drawer strip used, ported rather than
@@ -171,7 +171,8 @@ public partial class InteriorStage : Control
         else
         {
             // U13 spec'd the avatar figure but it may not exist yet — a tinted placeholder keeps
-            // the figure visible without blocking on the art pipeline (PlayerAvatar precedent).
+            // the figure visible without blocking on the art pipeline (same graceful-degrade
+            // pattern used elsewhere in the asset pipeline).
             var placeholder = new ColorRect
             {
                 Color = GameTheme.BoneColor.Darkened(0.3f),
@@ -265,7 +266,8 @@ public partial class InteriorStage : Control
     /// <summary>Fire a hotspot's action — "exit" closes and raises <see cref="Exited"/>; any
     /// other action closes and raises <see cref="HotspotActivated"/> with that action. Public so
     /// tests can drive it directly (equivalent to "the hotspot button was just pressed"),
-    /// mirroring <see cref="InteractionZone.RaiseInteract"/>'s test-friendly convention.</summary>
+    /// mirroring <see cref="GodotClient.Town3d.WorldInput3D.TriggerInteract"/>'s test-friendly
+    /// convention.</summary>
     public void RaiseHotspot(string action)
     {
         Close();
@@ -442,8 +444,8 @@ public partial class InteriorStage : Control
     };
 
     /// <summary>KTD10: the declarative venue table — forge/market/tavern/minegate, matching the
-    /// world's own <see cref="InteractionZone.Key"/> values. Action strings match the drawer ids
-    /// <c>MainUi.OpenPanel</c> already accepts.</summary>
+    /// world's own venue key values (<see cref="GodotClient.Town3d.Town3D.DoorAnchor"/>). Action
+    /// strings match the drawer ids <c>MainUi.OpenPanel</c> already accepts.</summary>
     private static IReadOnlyDictionary<string, VenueSpec> BuildVenueTable()
     {
         VenueSpec[] specs =
