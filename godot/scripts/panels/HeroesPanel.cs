@@ -4,7 +4,6 @@ using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Drama;
 using Godot;
-using GodotClient.Town;
 using GodotClient.Ui;
 
 namespace GodotClient.Panels;
@@ -22,7 +21,7 @@ namespace GodotClient.Panels;
 /// <see cref="IconRegistry.Sprite"/> SVG then the kit's own placeholder), each a themed
 /// <see cref="Button"/> so a click drives the exact same <see cref="RenderDetail"/> path the
 /// town-click routing (<see cref="SelectHero"/>) and the old <c>ItemList</c> selection did.
-/// The class tint (<see cref="HeroActor.RoleColor"/>) is applied to the portrait's own
+/// The class tint (<see cref="ClassColors.RoleColor"/>) is applied to the portrait's own
 /// icon layer only, never the card's text, so name/chip legibility is unaffected.</para>
 ///
 /// <para>Rebuilt (world-rework U4): the card is now a content-honest
@@ -143,7 +142,7 @@ public partial class HeroesPanel : SimPanel
             : $"DIED day {hero.DiedOnDay} on floor record {hero.DeepestFloorReached}");
 
         AddHeader(_detail!, "GEAR:");
-        var roleColor = HeroActor.RoleColor(hero.ClassId);
+        var roleColor = ClassColors.RoleColor(hero.ClassId);
         foreach (var (slot, itemId) in new (ItemSlot, ItemId?)[]
                  {
                      (ItemSlot.Weapon, hero.Gear.Weapon),
@@ -224,7 +223,7 @@ public partial class HeroesPanel : SimPanel
         var portrait = PortraitFrame(
             AssetCatalog.HeroPortraitId(hero.ClassId), UiKit.PortraitSize, IconRegistry.Sprite(hero.ClassId),
             hero.Name, ellipsizeCaption: true);
-        TintPortraitFrame(portrait, HeroActor.RoleColor(hero.ClassId));
+        TintPortraitFrame(portrait, ClassColors.RoleColor(hero.ClassId));
         body.AddChild(portrait);
 
         if (hero.Alive)
@@ -244,8 +243,8 @@ public partial class HeroesPanel : SimPanel
 
         // Decoration only: every descendant must pass mouse input through so the click always
         // resolves to the overlay Button, never a nested PanelContainer (portrait/chips default
-        // to Stop) swallowing it first (mirrors SimPanel.AddIcon/HeroActor's sprite+marker
-        // convention, generalized recursively).
+        // to Stop) swallowing it first (mirrors SimPanel.AddIcon's sprite+marker convention,
+        // generalized recursively).
         MakeDecorative(body);
 
         // Transparent overlay: PanelContainer stacks every direct child to fill the same content

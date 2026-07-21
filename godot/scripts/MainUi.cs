@@ -5,6 +5,7 @@ using GameSim.Contracts;
 using Godot;
 using GodotClient.Panels;
 using GodotClient.Town;
+using GodotClient.Town3d;
 using GodotClient.Ui;
 
 namespace GodotClient;
@@ -82,7 +83,7 @@ public partial class MainUi : Control
     /// <summary>U23 (R5, KTD4): number-row hotkeys for the quick-travel unlock — runtime <see
     /// cref="InputMap"/> registration only (no <c>project.godot</c> contact), gated on <see
     /// cref="TutorialFlow.QuickTravelUnlocked"/> in <see cref="_Process"/>. Building keys match
-    /// <see cref="TownScene.BuildingClicked"/>'s own payload vocabulary.</summary>
+    /// <see cref="Town3D.BuildingClicked"/>'s own payload vocabulary.</summary>
     private static readonly (string Action, Key Key, string Building)[] QuickTravelHotkeys =
     [
         ("quicktravel_forge", Key.Key1, "Forge"),
@@ -108,7 +109,7 @@ public partial class MainUi : Control
     public SimAdapter Adapter { get; private set; } = null!;
     public PhaseClock Clock { get; private set; } = null!;
     public DrawerHost Drawer { get; private set; } = null!;
-    public TownScene Town { get; private set; } = null!;
+    public Town3D Town { get; private set; } = null!;
     public ForgePanel Forge { get; private set; } = null!;
     public ShopPanel Shop { get; private set; } = null!;
     public HeroesPanel Heroes { get; private set; } = null!;
@@ -167,12 +168,11 @@ public partial class MainUi : Control
     /// <summary>U22: the door position the avatar stood at when the currently-open (or just-
     /// closed) interior was opened — restored on exit (R4/AE4 "exit returns avatar to door
     /// position"). Null while no interior has ever been opened this session.</summary>
-    private Vector2? _interiorDoorPosition;
+    private Vector3? _interiorDoorPosition;
 
     // ── LW3: gold-chip bounce-scale pop (StatusBar region) ────────────────────────────────────
-    // No engine Tween in this codebase (LitTownOverlay/HeroActor precedent: accumulated-delta
-    // math only, so the pop is deterministic and headless-testable via direct _Process calls,
-    // same as TownScene.Animate). -1 = not popping.
+    // No engine Tween in this codebase (accumulated-delta math only, so the pop is deterministic
+    // and headless-testable via direct _Process calls). -1 = not popping.
     private const double GoldPopSeconds = 0.3;
     private Label? _goldValueLabel;
     private double _goldPopElapsed = -1;
@@ -574,10 +574,12 @@ public partial class MainUi : Control
 
         // --- U21: TownWorld is now a PERMANENT FullRect base child — added FIRST so every later
         // sibling (the HUD layout, the DrawerHost, the modals) draws on top of it, and it is never
-        // hidden by a drawer opening/closing (R1 world permanence). ---------------------------
-        Town = InstantiatePanel<TownScene>("res://scenes/town/town_scene.tscn");
+        // hidden by a drawer opening/closing (R1 world permanence). T8: the grounded 3D town
+        // replaces the 2D SubViewport shell — same permanence contract, same event vocabulary. ---
+        Town = new Town3D { Name = "Town3D" };
         AddChild(Town);
         Town.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        Town.Build(Adapter);
         Town.Clock = Clock;
         Town.HeroClicked += OnTownHeroClicked;
         Town.BuildingClicked += OnTownBuildingClicked;
@@ -739,7 +741,7 @@ public partial class MainUi : Control
         // slides over the permanent world; one panel at a time (OpenPanel below REPLACES, never
         // stacks). Dim-under (LedgerModal precedent) + click-out/Esc close; the click-out consumes
         // the input event structurally (the dim veil's default Stop mouse filter), so it never
-        // reaches WorldInput/the world's Area2D click zones underneath. ------------------------
+        // reaches the 3D world's own click-to-move/interact input underneath. -------------------
         Drawer = new DrawerHost();
         AddChild(Drawer);
         Drawer.Build();
@@ -921,14 +923,23 @@ public partial class MainUi : Control
     }
 
     /// <summary>
-    /// Town building click/interact (R20, U22): stage the venue's interior instead of the drawer
-    /// — the same <see cref="TownScene.BuildingClicked"/> payload every venue's click-arrival or
-    /// E-interact already fires (KTD12/U20), just routed onto <see cref="InteriorStage.Venues"/>
-    /// instead of straight onto <see cref="OpenPanel"/>. A hotspot pressed inside the interior
-    /// (<see cref="OnInteriorHotspotActivated"/>) is what actually opens the matching drawer.
+    /// Town building click/interact (R20, U22, T8): stage the venue's interior instead of the
+    /// drawer — the same <see cref="Town3D.BuildingClicked"/> payload every venue's click-arrival
+    /// or E-interact already fires, just routed onto <see cref="InteriorStage.Venues"/> instead of
+    /// straight onto <see cref="OpenPanel"/>. A hotspot pressed inside the interior (<see
+    /// cref="OnInteriorHotspotActivated"/>) is what actually opens the matching drawer. The
+    /// noticeboard (T5/T8) has no staged interior — its "Bounties" payload opens the Bounties
+    /// drawer directly, the same one-step routing quick-travel and the interior's own board
+    /// hotspot use.
     /// </summary>
     private void OnTownBuildingClicked(string building)
     {
+        if (building == "Bounties")
+        {
+            OpenPanel("Bounties");
+            return;
+        }
+
         var venueKey = building switch
         {
             "Forge" => "forge",
@@ -954,8 +965,7 @@ public partial class MainUi : Control
     /// and <see cref="Tutorial"/>'s own clickable venue-jump row funnel through the SAME check and
     /// the SAME routing <see cref="OnTownBuildingClicked"/> already uses (content parity —
     /// quick-travel never opens anything a walked arrival could not). Public so a test can call it
-    /// directly (mirrors <see cref="InteractionZone.RaiseInteract"/>'s own test-friendly
-    /// convention) — a real hotkey press reaches it via <see cref="_Process"/> in production.
+    /// directly — a real hotkey press reaches it via <see cref="_Process"/> in production.
     /// </summary>
     public void QuickTravel(string building)
     {
@@ -968,8 +978,7 @@ public partial class MainUi : Control
     }
 
     /// <summary>U23: register the quick-travel number-row hotkeys at runtime (KTD4) — guarded so
-    /// repeated mounts in the same test process never double-add the same action (<see
-    /// cref="WorldInput.RegisterActions"/> precedent).</summary>
+    /// repeated mounts in the same test process never double-add the same action.</summary>
     private static void RegisterQuickTravelActions()
     {
         foreach (var (action, key, _) in QuickTravelHotkeys)
@@ -1004,15 +1013,15 @@ public partial class MainUi : Control
     /// <summary>
     /// Open <paramref name="venueKey"/>'s staged interior (<see cref="InteriorStage.Venues"/>).
     /// The avatar is already standing at the venue's door — <see
-    /// cref="TownScene.BuildingClicked"/> only ever fires on arrival/interact (KTD12/U20) — so
-    /// this records that exact position for <see cref="ResetAvatarToDoor"/> to restore on exit,
-    /// closes whichever drawer was showing (REPLACE semantics, mirrors <see cref="OpenPanel"/>),
-    /// and starts the interior's own accumulated-delta push-in.
+    /// cref="Town3D.BuildingClicked"/> only ever fires on arrival/interact — so this records that
+    /// exact position for <see cref="ResetAvatarToDoor"/> to restore on exit, closes whichever
+    /// drawer was showing (REPLACE semantics, mirrors <see cref="OpenPanel"/>), and starts the
+    /// interior's own accumulated-delta push-in.
     /// </summary>
     private void OpenInterior(string venueKey)
     {
         Drawer.Close();
-        _interiorDoorPosition = Town.LitOverlay?.Zones.GetValueOrDefault(venueKey)?.Position;
+        _interiorDoorPosition = Town.DoorAnchor(venueKey);
         Interior.Open(venueKey, Adapter.CurrentState);
         UpdateEngaged();
     }
@@ -1036,9 +1045,9 @@ public partial class MainUi : Control
 
     private void ResetAvatarToDoor()
     {
-        if (_interiorDoorPosition is { } doorPosition && Town.Avatar is not null)
+        if (_interiorDoorPosition is { } doorPosition)
         {
-            Town.Avatar.Position = doorPosition;
+            Town.Player.GlobalPosition = doorPosition;
         }
     }
 
@@ -1106,7 +1115,12 @@ public partial class MainUi : Control
     /// </summary>
     private void UpdateEngaged()
     {
-        Clock.Engaged = Drawer.IsOpen || Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible;
+        var engaged = Drawer.IsOpen || Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible;
+        Clock.Engaged = engaged;
+
+        // T8: a drawer/interior/modal owns input while engaged — the 3D world's own click-to-
+        // move/interact must not fight it for the same clicks underneath.
+        Town.SetWorldInputEnabled(!engaged);
 
         // U18: the engaged latch flips on this discrete event (drawer open/close / modal
         // open-close), not only on a phase tick — the waiting indicator must track it here too,

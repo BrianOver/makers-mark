@@ -7,9 +7,8 @@ namespace GodotClient.Ui;
 /// style-bible colors, spacing, and per-control-type <see cref="StyleBoxFlat"/>s — assigned once
 /// at the <c>MainUi</c> root (<c>this.Theme = GameTheme.Build();</c>, set BEFORE <c>BuildUi()</c>)
 /// so Godot's normal Theme cascade carries it to every descendant Control with zero
-/// <c>project.godot</c> contact (deny-listed). Built entirely in code, mirroring the editor-free
-/// style of <see cref="GodotClient.Town.LitTownOverlay"/> and the static-factory shape of
-/// <see cref="IconRegistry"/>.
+/// <c>project.godot</c> contact (deny-listed). Built entirely in code, mirroring the static-factory
+/// shape of <see cref="IconRegistry"/>.
 ///
 /// <para>Colors are the palette from <c>docs/style-bible.md</c> ("fantasy-witchy with a sci-fi
 /// tinge") so the UI reads as the same world as the generated art: Void/Iron for surfaces,

@@ -59,6 +59,41 @@ public partial class Town3D : SubViewportContainer
     /// interior/modal owns input instead of the world underneath it.</summary>
     public void SetWorldInputEnabled(bool enabled) => WorldInputNode.Enabled = enabled;
 
+    /// <summary>
+    /// T8: drop-in replacement for the old <c>TownScene.Bind(SimAdapter)</c> call site — <see
+    /// cref="Build"/> already assigned <see cref="Adapter"/> and ran one reconcile by the time
+    /// <c>MainUi._Ready</c> calls this, so re-storing it here is a harmless no-op re-assignment;
+    /// the follow-up <see cref="ReconcileHeroes"/> call keeps behavior identical to the pre-cutover
+    /// two-call sequence (<c>Build</c> then <c>Bind</c>) either way.
+    /// </summary>
+    public void Bind(GodotClient.SimAdapter adapter)
+    {
+        Adapter = adapter;
+        ReconcileHeroes();
+    }
+
+    /// <summary>T8: drop-in replacement for <c>TownScene.Refresh()</c> — <c>MainUi.RefreshAll</c>
+    /// calls this every tick the world is visible (which, per U21, is always).</summary>
+    public void Refresh() => ReconcileHeroes();
+
+    /// <summary>
+    /// T8: interface parity with the old <c>TownScene.Clock</c> setter <c>MainUi.BuildUi</c> already
+    /// assigns — a no-op here. The 2D town read the live clock to pause its own ambient-light
+    /// crossfade tween; this 3D scaffold has no such per-frame decoration keyed off clock state, so
+    /// there's nothing for the value to drive yet.
+    /// </summary>
+    public GodotClient.PhaseClock? Clock { set { } }
+
+    /// <summary>
+    /// T8: venue → door-anchor lookup for <c>MainUi.OpenInterior</c>/<c>ResetAvatarToDoor</c> — the
+    /// world-space point <see cref="Player"/> should stand at while (and be restored to, on interior
+    /// exit) <paramref name="venueKey"/>'s interior is staged. Null for an unrecognized key
+    /// (defensive only — every venue key MainUi passes is one of <see cref="BuildingLayout"/>'s own
+    /// keys).
+    /// </summary>
+    public Vector3? DoorAnchor(string venueKey) =>
+        Buildings.GetChildren().OfType<Building3D>().FirstOrDefault(b => b.Key == venueKey)?.DoorAnchorGlobal;
+
     /// <summary>T7: the adapter <see cref="Build"/> was given — <see cref="ReconcileHeroes"/> and
     /// the phase-choreography helpers below read <see cref="GodotClient.SimAdapter.CurrentState"/>
     /// off this. Null only before <see cref="Build"/> has run.</summary>

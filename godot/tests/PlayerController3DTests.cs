@@ -248,7 +248,7 @@ public class PlayerController3DTests
             await PumpPhysicsOnly(town, 3);
 
             AssertThat(town.Player.IsClickMoving)
-                .OverrideFailureMessage("a click while WorldInput is disabled must not start a click-move").IsFalse();
+                .OverrideFailureMessage("a click while WorldInput3D is disabled must not start a click-move").IsFalse();
         }
         finally
         {

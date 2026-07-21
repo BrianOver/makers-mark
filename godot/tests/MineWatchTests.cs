@@ -19,9 +19,8 @@ namespace GodotClient.Tests;
 /// <see cref="PartyDeparted"/>), the graceful-degrade path, and that
 /// <see cref="VenueHubTests"/>' pre-LW5 asserts on <c>DepthsPanel</c> stay green. Most scenarios
 /// drive <see cref="MineWatch"/> directly (its own public <see cref="MineWatch.Refresh"/>) —
-/// deterministic and RNG-free, unlike ticking a real expedition through combat — mirroring
-/// <c>TownSceneTests</c>' standalone <c>LitOverlay_MissingAsset_DegradesToNoSpriteNoCrash</c>
-/// technique for the degrade path.
+/// deterministic and RNG-free, unlike ticking a real expedition through combat — the same
+/// standalone-degrade-path technique used elsewhere in this suite.
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -133,7 +132,7 @@ public class MineWatchTests
         var watch = new MineWatch();
         try
         {
-            watch.Build("does-not-exist-in-any-manifest"); // injectable degrade path (LitTownOverlay precedent)
+            watch.Build("does-not-exist-in-any-manifest"); // injectable degrade path
             AssertThat(watch.HasContent).IsFalse();
 
             var departed = ImmutableList.Create<GameEvent>(

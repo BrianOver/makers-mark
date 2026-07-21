@@ -6,7 +6,7 @@ namespace GodotClient.Ui;
 
 /// <summary>
 /// U21: the right-anchored ~600px slide-in panel host that replaces the old <see
-/// cref="TabContainer"/> tab shell — the world (<c>TownScene</c>) is now a PERMANENT base child of
+/// cref="TabContainer"/> tab shell — the world (<c>Town3D</c>, T8) is now a PERMANENT base child of
 /// <c>MainUi</c>, always visible, and the six management panels (Forge/Shop/Heroes/Tavern/Depths/
 /// Bounties) live here instead, one at a time, sliding over the world rather than replacing it.
 ///

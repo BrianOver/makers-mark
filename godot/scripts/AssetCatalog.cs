@@ -69,12 +69,12 @@ public static class AssetCatalog
 
     /// <summary>Id of the player-blacksmith avatar figure (<c>art/specs/town/TownSpecsExtra.cs</c>,
     /// U13/U20) — a single fixed id, not composed from any parameter, since there is exactly one
-    /// avatar. Public so <see cref="GodotClient.Town.PlayerAvatar"/> and tests can reference the
+    /// avatar. Public so <see cref="GodotClient.Town.InteriorStage"/> and tests can reference the
     /// exact string without duplicating the literal.</summary>
     public const string PlayerAvatarId = "player-avatar";
 
     /// <summary>Lit avatar figure, or null while the art hasn't landed yet — <see
-    /// cref="GodotClient.Town.PlayerAvatar"/> falls back to a tinted placeholder rect (U20 scope
+    /// cref="GodotClient.Town.InteriorStage"/> falls back to a tinted placeholder rect (U20 scope
     /// note: no image exists yet, per <c>TownSpecsExtra</c>).</summary>
     public static CanvasTexture? PlayerAvatar() => IconRegistry.Lit(PlayerAvatarId);
 
@@ -83,7 +83,7 @@ public static class AssetCatalog
     /// <summary>
     /// KTD6: <c>AssetSpec</c> carries no pivot field and the committed PNGs are content-tight
     /// trimmed cutouts, so "bottom of content ≈ baseline" holds for nearly every world sprite —
-    /// <see cref="GodotClient.Town.LitTownOverlay"/> feet-anchors buildings by placing <c>Sprite2D</c> art (always
+    /// the (retired) 2D town feet-anchored buildings by placing <c>Sprite2D</c> art (always
     /// <c>Centered = false</c>) at <c>(-width/2, -height)</c> relative to the ground-line point and
     /// only consults this table for the exceptions (a roof overhang, a few px of untrimmed margin).
     /// Keyed by the same <c>Lit</c> id <see cref="IconRegistry.Lit"/> resolves — never a raw file

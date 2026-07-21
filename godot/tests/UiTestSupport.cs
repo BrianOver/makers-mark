@@ -4,7 +4,6 @@ using System.Text;
 using System.Threading.Tasks;
 using GameSim.Contracts;
 using Godot;
-using GodotClient.Town;
 using GodotClient.Ui;
 
 namespace GodotClient.Tests;
@@ -302,28 +301,6 @@ public static class UiTestSupport
         {
             await node.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
             await node.ToSignal(tree, SceneTree.SignalName.PhysicsFrame);
-        }
-    }
-
-    /// <summary>
-    /// U20: pump real physics frames until <paramref name="avatar"/> reports it is no longer
-    /// following a path — day-length-agnostic the same way <see cref="AdvanceDay"/> is tick-count
-    /// agnostic, so a test never has to hand-compute "how many frames does 540px at 240px/s take
-    /// at 60Hz". Capped like every other tick-loop in this file so a genuinely stuck avatar fails
-    /// the test instead of hanging it.
-    /// </summary>
-    public static async Task WalkUntilArrived(Node node, PlayerAvatar avatar, int maxFrames = 600)
-    {
-        var tree = (SceneTree)Engine.GetMainLoop();
-        var frames = 0;
-        while (avatar.IsFollowingPath)
-        {
-            await node.ToSignal(tree, SceneTree.SignalName.PhysicsFrame);
-            if (++frames > maxFrames)
-            {
-                throw new InvalidOperationException(
-                    $"Avatar did not arrive within {maxFrames} physics frames.");
-            }
         }
     }
 

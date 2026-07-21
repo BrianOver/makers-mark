@@ -1,7 +1,6 @@
 #if GDUNIT_TESTS
 using GdUnit4;
 using GameSim.Contracts;
-using Godot;
 using GodotClient;
 using static GdUnit4.Assertions;
 
@@ -87,25 +86,5 @@ public class IconRegistryTests
         AssertThat(lit.NormalTexture).IsNotNull();
     }
 
-    [TestCase]
-    public void TownViewportShell_Instantiates_WithSubViewportWorld()
-    {
-        // V4a additive shell: SubViewportContainer > SubViewport > Node2D world (the
-        // "SubViewport trap" structure V4b migrates the live town into). Additive/throwaway —
-        // not wired into town_scene.tscn; this just proves the scene loads on the pinned engine.
-        var shell = GD.Load<PackedScene>("res://scenes/town/town_viewport_shell.tscn")
-            .Instantiate<SubViewportContainer>();
-        try
-        {
-            AssertThat(shell.Stretch).IsTrue();
-            var viewport = shell.GetNode<SubViewport>("TownViewport");
-            AssertThat(viewport).IsNotNull();
-            AssertThat(viewport.GetNode<Node2D>("TownWorld")).IsNotNull();
-        }
-        finally
-        {
-            shell.Free();
-        }
-    }
 }
 #endif
