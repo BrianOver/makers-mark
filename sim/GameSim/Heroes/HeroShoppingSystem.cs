@@ -19,6 +19,16 @@ namespace GameSim.Heroes;
 /// Event cap (documented behavior): <see cref="HeroPassedOnItem"/> is emitted only for
 /// PLAYER-shelf items — the player needs to know why their stock didn't sell (R8/AE4).
 /// Rival-shelf passes stay silent to avoid event spam the player can't act on.
+///
+/// PA3/PKD5: while a stepped counter session is OPEN and UNFINISHED (<see cref="GameState.Counter"/>
+/// is <c>{ Closed: false }</c>), this system does nothing at all — those heroes are still queued for
+/// (or mid-) counter service, resolved by <see cref="Counter.CounterQueueSystem"/> instead, and running
+/// the atomic pass early would shop them twice. On the CLOSING tick (<c>Counter.Closed == true</c>,
+/// set by <see cref="Counter.CounterHandlers"/>'s <c>CloseCounterAction</c> or by the queue running
+/// dry) this system runs its normal pass but SKIPS every hero already in <see cref="CounterState.Served"/>
+/// — nobody shops twice, nobody starves. <see cref="GameState.Counter"/> null (the default — the ONLY
+/// path <c>BaselinePlayer</c>/the balance gate ever exercise) takes the exact original unconditional
+/// loop, byte-identical to pre-Phase-A (the atomic-equivalence pin).
 /// </summary>
 public sealed class HeroShoppingSystem : IPhaseSystem
 {
@@ -28,14 +38,21 @@ public sealed class HeroShoppingSystem : IPhaseSystem
 
     public GameState Process(GameState state, IDeterministicRng rng, IEventSink events)
     {
+        if (state.Counter is { Closed: false })
+        {
+            return state; // stepped session still open — CounterQueueSystem owns these heroes
+        }
+
+        var served = state.Counter?.Served; // non-null only on the closing tick (PKD5 fallback gate)
+
         // Snapshot the id order up front; ImmutableSortedDictionary keys are already
         // ascending HeroId.Value — the deterministic shopping order.
         foreach (var heroId in state.Heroes.Keys.ToImmutableArray())
         {
             var hero = state.Heroes[heroId];
-            if (!hero.Alive)
+            if (!hero.Alive || served is { } s && s.Contains(heroId))
             {
-                continue; // dead heroes never shop (R7 permadeath)
+                continue; // dead heroes never shop (R7 permadeath); counter-served heroes don't shop twice
             }
 
             state = ShopOnce(state, hero, events);
@@ -46,7 +63,7 @@ public sealed class HeroShoppingSystem : IPhaseSystem
         foreach (var heroId in state.Heroes.Keys.ToImmutableArray())
         {
             var hero = state.Heroes[heroId];
-            if (!hero.Alive)
+            if (!hero.Alive || served is { } s && s.Contains(heroId))
             {
                 continue;
             }

@@ -74,7 +74,7 @@ public sealed class GameKernel
         }
 
         // 4. Log the action batch, advance the phase machine, persist RNG stream.
-        var (nextDay, nextPhase) = Advance(state.Day, state.Phase);
+        var (nextDay, nextPhase) = Advance(state.Day, state.Phase, state.Counter);
         var newState = state with
         {
             Rng = rng.Snapshot(),
@@ -83,6 +83,11 @@ public sealed class GameKernel
             ActionLog = state.ActionLog.Add(new LoggedBatch(state.Day, state.Phase, actions)),
             Day = nextDay,
             Phase = nextPhase,
+            // PA3/PKD5: the ONLY place a stepped counter session is torn down — the instant the day
+            // actually leaves Morning (whether closed by CloseCounterAction or by queue exhaustion),
+            // never mid-hold. A run that never opens the counter has state.Counter null the whole
+            // time, so this line is a no-op for it (the atomic-equivalence pin).
+            Counter = state.Phase == DayPhase.Morning && nextPhase != DayPhase.Morning ? null : state.Counter,
         };
 
         return new TickResult(newState, stamped.ToImmutable(), rejected.ToImmutable());
@@ -91,8 +96,14 @@ public sealed class GameKernel
     // The 5-phase day (staged resolution). Camp/ExpeditionDeep sit between Expedition and Evening;
     // day ORDER is defined here, never by DayPhase's numeric value (Camp=3/ExpeditionDeep=4 append
     // after Evening=2 in the enum for save compat — KTD4).
-    private static (int Day, DayPhase Phase) Advance(int day, DayPhase phase) => phase switch
+    //
+    // PA3/PKD5: the ONE state-aware case — an open, unfinished counter session HOLDS the day at
+    // Morning instead of advancing to Expedition. Every other transition is the verbatim original
+    // switch (a run with Counter null — the default, and the ONLY path BaselinePlayer/the balance
+    // gate ever exercise — takes the exact same branch it always did, byte-identical).
+    private static (int Day, DayPhase Phase) Advance(int day, DayPhase phase, CounterState? counter) => phase switch
     {
+        DayPhase.Morning when counter is { Closed: false } => (day, DayPhase.Morning),
         DayPhase.Morning => (day, DayPhase.Expedition),
         DayPhase.Expedition => (day, DayPhase.Camp),
         DayPhase.Camp => (day, DayPhase.ExpeditionDeep),
