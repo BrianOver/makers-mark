@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Economy;
 using GameSim.Materials;
 using GameSim.Professions;
 using Godot;
+using GodotClient.Minigames;
 using GodotClient.Ui;
 
 namespace GodotClient.Panels;
@@ -49,6 +51,12 @@ public partial class ForgePanel : SimPanel
     private VBoxContainer? _vendorRows;
     private VBoxContainer? _recipeRows;
     private VBoxContainer? _talentRows;
+
+    /// <summary>PA6: the forge minigame overlay — a single instance reused across recipes,
+    /// (re)configured per <see cref="OnWorkForgePressed"/> press. Built once in
+    /// <see cref="EnsureBuilt"/> as the LAST child so it draws over the recipe/talent scroll body
+    /// (PKD8 self-contained focus overlay); hidden except while a run is in progress.</summary>
+    private ForgeMinigame? _minigame;
 
     public override void _Ready() => EnsureBuilt();
 
@@ -144,8 +152,21 @@ public partial class ForgePanel : SimPanel
                 controlsRow.AddChild(StatChip(
                     material, $"{recipe.MaterialQuantity}x (have {have})",
                     affordable ? UiKit.ChipTone.Positive : UiKit.ChipTone.Neutral));
-                var craft = AddButton(controlsRow, $"Craft_{recipe.RecipeId}", "Craft", () => OnCraftPressed(recipe.RecipeId));
+
+                // PA6/PKD4: an ACTIVE profession's instant Craft is the null-grade auto-craft
+                // path (competent, hard-capped below Masterwork) — relabeled so it reads as the
+                // explicit fallback beside the minigame, not the only way to craft. A PASSIVE
+                // profession's Craft is unchanged (no minigame exists for it in Phase A).
+                var craftLabel = profession.ActiveCraft ? "Auto-craft (competent)" : "Craft";
+                var craft = AddButton(controlsRow, $"Craft_{recipe.RecipeId}", craftLabel, () => OnCraftPressed(recipe.RecipeId));
                 GateButton(craft, affordable, $"Not enough {material} — need {needed}, have {have}.");
+
+                if (profession.ActiveCraft)
+                {
+                    var work = AddButton(controlsRow, $"WorkForge_{recipe.RecipeId}", "Work the forge",
+                        () => OnWorkForgePressed(recipe, material, profession!, unlocked));
+                    GateButton(work, affordable, $"Not enough {material} — need {needed}, have {have}.");
+                }
             }
 
             foreach (var node in profession.TalentNodes.Values)
@@ -186,6 +207,30 @@ public partial class ForgePanel : SimPanel
         _feedback!.Text = $"queued: craft {recipeId} with {material}. " +
             $"Queued — resolves when {Adapter.CurrentState.Phase} ticks. Press Advance or wait.";
     }
+
+    /// <summary>PA6: open the forge minigame overlay for this recipe/material, configured with
+    /// the profession's talent-assist data — the "Work the forge" path beside the auto-craft
+    /// fallback. Standalone-openable here in this unit; PA8 adds the town station entrance.</summary>
+    private void OnWorkForgePressed(Recipe recipe, string material, ProfessionDefinition profession, ImmutableSortedSet<string> unlockedTalents)
+    {
+        EnsureBuilt();
+        _minigame!.Configure(recipe, material, profession, unlockedTalents);
+        _minigame.Visible = true;
+    }
+
+    /// <summary>The minigame's ONE completed run → the ONE queued <see cref="CraftAction"/>
+    /// (PKD8 single-action contract) — then the overlay closes.</summary>
+    private void OnMinigameFinished(CraftAction action)
+    {
+        Adapter?.Queue(action);
+        _minigame!.Visible = false;
+        _feedback!.Text = $"queued: forge minigame craft {action.RecipeId} with {action.MaterialKey} " +
+            $"(grade {action.PerformanceGrade}, sub-scores {string.Join("/", action.SubScores ?? ImmutableList<int>.Empty)}). " +
+            $"Queued — resolves when {Adapter?.CurrentState.Phase} ticks. Press Advance or wait.";
+    }
+
+    /// <summary>Cancel queues nothing (PKD8) — just closes the overlay.</summary>
+    private void OnMinigameCancelled() => _minigame!.Visible = false;
 
     private void OnUnlockPressed(string nodeId, string professionId)
     {
@@ -248,5 +293,12 @@ public partial class ForgePanel : SimPanel
         AddHeader(body, "TALENTS");
         _talentRows = new VBoxContainer { Name = "TalentRows" };
         body.AddChild(_talentRows);
+
+        // PA6: the forge minigame overlay — added LAST (after the scroll body above) so it
+        // draws on top, self-contained (PKD8), hidden until "Work the forge" opens it.
+        _minigame = new ForgeMinigame { Visible = false };
+        AddChild(_minigame);
+        _minigame.Finished += OnMinigameFinished;
+        _minigame.Cancelled += OnMinigameCancelled;
     }
 }
