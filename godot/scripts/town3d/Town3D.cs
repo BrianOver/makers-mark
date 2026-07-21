@@ -412,6 +412,27 @@ public partial class Town3D : SubViewportContainer
         ("noticeboard", "Bounties", "Bounties", new Vector3(9f, 0f, 8f)),
     };
 
+    /// <summary>
+    /// PA8 (spec DB4/PKD8): the two active-professions stations — the forge anvil/furnace
+    /// cluster and the shop counter — placed a clear gap south of their respective venue
+    /// buildings (5+ units, clear of every existing footprint/interact zone and the gate
+    /// departure lane at x≈0). Distinct from <see cref="BuildingLayout"/>'s venue doorways
+    /// (which stage the full 2.5D interior): arriving here opens the focus overlay/panel
+    /// DIRECTLY with a <see cref="CameraRig.PushIn"/> dolly (<c>MainUi.OnTownBuildingClicked</c>
+    /// routes "ForgeStation"/"CounterStation" before the venue-interior switch) — the outdoor
+    /// station is reused precedent for Phase C's fuller diegetic-3D swap. Built as plain <see
+    /// cref="Building3D"/> instances (proximity/highlight/interact/click-picking are already
+    /// fully generic over the shared <see cref="Buildings"/> list — no new plumbing needed in
+    /// <see cref="PlayerController"/>/<see cref="WorldInput3D"/>), so they reuse
+    /// <see cref="PlayerController.ArrivedAtBuilding"/> and <see cref="WorldInput3D.Interacted"/>
+    /// unchanged.
+    /// </summary>
+    private static readonly (string Key, string Label, string ClickKey, Vector3 Position)[] StationLayout =
+    {
+        ("forge-station", "Anvil", "ForgeStation", new Vector3(-8f, 0f, -12f)),
+        ("counter-station", "Counter", "CounterStation", new Vector3(8f, 0f, -12f)),
+    };
+
     private static List<Building3D> BuildBuildings()
     {
         var buildings = new List<Building3D>();
@@ -422,7 +443,95 @@ public partial class Town3D : SubViewportContainer
             buildings.Add(building);
         }
 
+        foreach (var (key, label, clickKey, position) in StationLayout)
+        {
+            var station = new Building3D();
+            station.Configure(key, label, clickKey, position, BuildStationMesh(key));
+            buildings.Add(station);
+        }
+
         return buildings;
+    }
+
+    /// <summary>
+    /// PA8 placeholder station props (asset-manifest logged: "Forge station (3D world prop)" /
+    /// "Shop counter station" — both `primitive`, no Kenney asset earmarked for either). Built the
+    /// SAME way <see cref="BuildGround"/>/<see cref="BuildPrimitiveWedge"/> build their fallback
+    /// geometry — the tint lives on the <see cref="PrimitiveMesh"/> resource's own <see
+    /// cref="PrimitiveMesh.Material"/>, NEVER <see cref="GeometryInstance3D.MaterialOverride"/>
+    /// (the wedge-fallback bug this deliberately avoids: <see cref="MaterialOverride"/> renders
+    /// ahead of the per-surface override <see cref="Building3D.SetHighlighted"/> installs, so
+    /// setting it here would silently swallow the proximity highlight glow).
+    /// </summary>
+    private static Node3D BuildStationMesh(string key) => key switch
+    {
+        "forge-station" => BuildAnvilFurnaceCluster(),
+        "counter-station" => BuildCounterCluster(),
+        _ => throw new ArgumentOutOfRangeException(nameof(key), key, "no station mesh for this key"),
+    };
+
+    private static Node3D BuildAnvilFurnaceCluster()
+    {
+        var cluster = new Node3D { Name = "AnvilFurnaceCluster" };
+
+        cluster.AddChild(new MeshInstance3D
+        {
+            Name = "Furnace",
+            Mesh = new BoxMesh
+            {
+                Size = new Vector3(1.1f, 1.4f, 1.1f),
+                Material = new StandardMaterial3D
+                {
+                    AlbedoColor = new Color(0.32f, 0.28f, 0.27f),
+                    EmissionEnabled = true,
+                    Emission = new Color(0.95f, 0.4f, 0.05f),
+                    EmissionEnergyMultiplier = 0.8f,
+                },
+            },
+            Position = new Vector3(-0.7f, 0.7f, 0f),
+        });
+
+        cluster.AddChild(new MeshInstance3D
+        {
+            Name = "Anvil",
+            Mesh = new BoxMesh
+            {
+                Size = new Vector3(0.9f, 0.6f, 0.5f),
+                Material = new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.2f, 0.22f) },
+            },
+            Position = new Vector3(0.7f, 0.3f, 0f),
+        });
+
+        return cluster;
+    }
+
+    private static Node3D BuildCounterCluster()
+    {
+        var cluster = new Node3D { Name = "CounterCluster" };
+
+        cluster.AddChild(new MeshInstance3D
+        {
+            Name = "CounterTop",
+            Mesh = new BoxMesh
+            {
+                Size = new Vector3(2.0f, 0.9f, 0.7f),
+                Material = new StandardMaterial3D { AlbedoColor = new Color(0.5f, 0.36f, 0.22f) },
+            },
+            Position = new Vector3(0f, 0.45f, 0f),
+        });
+
+        cluster.AddChild(new MeshInstance3D
+        {
+            Name = "Shelf",
+            Mesh = new BoxMesh
+            {
+                Size = new Vector3(1.6f, 0.15f, 0.4f),
+                Material = new StandardMaterial3D { AlbedoColor = new Color(0.42f, 0.3f, 0.18f) },
+            },
+            Position = new Vector3(0f, 1.0f, -0.3f),
+        });
+
+        return cluster;
     }
 
     /// <summary>T5: the memorial corner plot's container — a non-interactive display-only

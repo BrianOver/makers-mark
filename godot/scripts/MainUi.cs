@@ -80,6 +80,11 @@ public partial class MainUi : Control
     /// the objective chip rather than sharing its box (keeps the chip's own layout untouched).</summary>
     private const float TutorialDockOffsetTop = ObjectiveDockOffsetTop + 90f;
 
+    /// <summary>PA8 (spec DB4): the <see cref="CameraRig.PushIn"/> distance for a station
+    /// dolly-in — tighter than the town's default follow (<c>CameraRig.Distance</c> = 22) so the
+    /// forge/counter focus overlay reads as a deliberate close-up, not a subtle zoom.</summary>
+    private const float StationPushInDistance = 6f;
+
     /// <summary>U23 (R5, KTD4): number-row hotkeys for the quick-travel unlock — runtime <see
     /// cref="InputMap"/> registration only (no <c>project.godot</c> contact), gated on <see
     /// cref="TutorialFlow.QuickTravelUnlocked"/> in <see cref="_Process"/>. Building keys match
@@ -786,6 +791,10 @@ public partial class MainUi : Control
         {
             TabFade.Trigger();
             UpdateEngaged(); // click-out/Esc close the same latch update an OpenPanel("Town") gets
+            // PA8: release any station dolly-in on every full drawer close — a no-op ease when no
+            // PushIn is active (CameraRig.Release's own contract), so this is safe to fire
+            // unconditionally rather than tracking "was this station-opened" state here.
+            Town.Camera.Release();
         };
 
         // --- ledger modal overlay (sibling after the drawer = draws on top) --
@@ -962,6 +971,27 @@ public partial class MainUi : Control
         if (building == "Bounties")
         {
             OpenPanel("Bounties");
+            return;
+        }
+
+        // PA8 (spec DB4/PKD8): the two active-professions stations open their focus surface
+        // DIRECTLY (never through InteriorStage) with a CameraRig dolly-in — Town3D.Build already
+        // added these as ordinary Building3D entries, so this same arrival-only payload (walk
+        // then interact, KTD12 — never instant) already fired before this switch is reached; the
+        // only new behavior is the push-in + which panel opens. Release() is hooked on
+        // Drawer.Closed (BuildUi) so it fires regardless of how the panel closes (Esc, click-out,
+        // or switching to another drawer).
+        if (building == "ForgeStation")
+        {
+            Town.Camera.PushIn(Town.FindBuilding("forge-station"), StationPushInDistance);
+            OpenPanel("Forge");
+            return;
+        }
+
+        if (building == "CounterStation")
+        {
+            Town.Camera.PushIn(Town.FindBuilding("counter-station"), StationPushInDistance);
+            OpenPanel("Shop");
             return;
         }
 
