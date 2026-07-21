@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Heroes;
 
@@ -7,20 +8,21 @@ namespace GameSim.Counter;
 /// <summary>
 /// Morning stepped-queue resolution (PKD5/PKD6). Runs AFTER every action in the tick's batch has
 /// been applied (systems pass, step 2 of <c>GameKernel.Tick</c>) — so a batch that presents an item
-/// resolves that customer the SAME tick it was shown.
+/// resolves that customer's role-fit verdict the SAME tick it was shown.
 ///
-/// PA3 ships the MINIMAL deterministic placeholder resolution the plan calls for (PA4 replaces it
-/// with real willingness-band haggle economics): a presented item resolves via the EXISTING
-/// <see cref="ShoppingAi.EvaluateItem"/> verdict at the shelf's list price — Buy closes the sale
-/// (<see cref="CounterSaleClosed"/>, unpinned), anything else walks with that verdict's legible
-/// reason (<see cref="CustomerWalked"/>). Draws ZERO RNG — the verdict is pure integer math, and
-/// dequeuing/closing is pure bookkeeping (PA3 hard constraint).
+/// PA4 (plan 2026-07-21-002) replaces PA3's placeholder ("present a strict upgrade → instant sale
+/// at list price") with the real haggle economics: a presented item that fails
+/// <see cref="ShoppingAi.EvaluateItem"/> (role mismatch, too heavy, unaffordable, not an upgrade)
+/// still walks immediately — there is no round to negotiate over an item the hero doesn't want.
+/// A presented item that PASSES that verdict no longer closes instantly; it OPENS a haggle round
+/// (<see cref="HaggleResolver.OpenRound"/>) with a standing offer the player then Accepts, HoldFirms,
+/// or Counters via <see cref="HaggleResponseAction"/> (resolved synchronously in
+/// <see cref="CounterHandlers"/> — see that file's remarks for why haggle resolution does NOT defer
+/// to this system). Draws ZERO RNG throughout (PA4 hard constraint).
 ///
-/// A tick with nothing presented does nothing here: the active customer simply keeps waiting
-/// (the phase-hold in <c>GameKernel.Advance</c> is what lets the player take as many ticks as they
-/// like to arrange, suggest, or haggle before presenting — PA4 wires real per-round consequence
-/// for those other actions; PA3 keeps them legal no-ops so the wrong-phase/wrong-state rejection
-/// contract is uniform across all five counter actions).
+/// A tick with nothing NEWLY presented does nothing here: once a round is open
+/// (<see cref="CounterState.Round"/> &gt; 0) this system is a no-op for that customer — the
+/// haggle handler owns every subsequent step until the sale closes or the customer walks.
 /// </summary>
 public sealed class CounterQueueSystem : IPhaseSystem
 {
@@ -34,6 +36,11 @@ public sealed class CounterQueueSystem : IPhaseSystem
         if (counter is null || counter.Active is not { } activeId || counter.Presented is not { } presentedId)
         {
             return state; // no session, nobody at the counter, or nothing presented yet this tick
+        }
+
+        if (counter.Round > 0)
+        {
+            return state; // a round is already open for this presentment — the haggle handler owns it now
         }
 
         if (!state.Heroes.TryGetValue(activeId.Value, out var hero)
@@ -53,19 +60,29 @@ public sealed class CounterQueueSystem : IPhaseSystem
             return state with { Counter = counter with { Presented = null } };
         }
 
-        var verdict = ShoppingAi.EvaluateItem(hero, item, shelfEntry.Price, state.Items);
-        var resolvedState = verdict.Kind == ShoppingVerdictKind.Buy
-            ? ApplySale(state, hero, item, shelfEntry, events)
-            : Walk(state, hero, item, verdict, events);
+        var heroClass = ClassRegistry.Require(hero.ClassId);
+        var verdict = ShoppingAi.EvaluateItem(hero, heroClass, item, shelfEntry.Price, state.Items);
 
-        return Advance(resolvedState, counter, activeId, events);
+        if (verdict.Kind != ShoppingVerdictKind.Buy)
+        {
+            var walkedState = Walk(state, hero, item, verdict, events);
+            return Advance(walkedState, counter, activeId, events);
+        }
+
+        var openedCounter = HaggleResolver.OpenRound(counter, hero, heroClass, item, shelfEntry.Price, events);
+        return state with { Counter = openedCounter };
     }
 
     /// <summary>Dequeues the just-resolved customer, promotes the next queue head to Active
-    /// (emitting <see cref="CustomerApproached"/> unless the session is already closing), and marks
-    /// the session Closed once the queue runs dry — the trigger for the atomic fallback pass
-    /// (<see cref="Heroes.HeroShoppingSystem"/>).</summary>
-    private static GameState Advance(GameState state, CounterState counter, HeroId resolvedHero, IEventSink events)
+    /// (resetting the per-customer meters — Round/Interest/Patience — and emitting
+    /// <see cref="CustomerApproached"/> unless the session is already closing), and marks the
+    /// session Closed once the queue runs dry — the trigger for the atomic fallback pass
+    /// (<see cref="Heroes.HeroShoppingSystem"/>). <see cref="CounterState.GoodwillPermille"/> is
+    /// NOT reset here — it is a whole-session fleece memory (PA4), reset only by
+    /// <see cref="CounterHandlers"/>'s <c>OpenCounterAction</c> handling.
+    /// Internal (not private): <see cref="HaggleResolver"/> calls this to advance the queue after
+    /// a haggle response resolves a sale or a walk — the same dequeue logic either path takes.</summary>
+    internal static GameState Advance(GameState state, CounterState counter, HeroId resolvedHero, IEventSink events)
     {
         var nextQueue = counter.Queue.Count > 0 && counter.Queue[0] == resolvedHero
             ? counter.Queue.RemoveAt(0)
@@ -78,42 +95,33 @@ public sealed class CounterQueueSystem : IPhaseSystem
             events.Emit(new CustomerApproached(approaching));
         }
 
+        var promoted = PromoteActive(counter, nextQueue, nextActive);
+
         return state with
         {
-            Counter = counter with
+            Counter = promoted with
             {
-                Queue = nextQueue,
-                Active = nextActive,
-                Presented = null,
-                StandingOfferGold = null,
                 Served = counter.Served.Add(resolvedHero.Value),
                 Closed = closed,
             },
         };
     }
 
-    /// <summary>Placeholder buy resolution (PA4 replaces with real haggle pricing): the sale closes
-    /// at the shelf's list price, unpinned. Mirrors <see cref="Heroes.HeroShoppingSystem"/>'s
-    /// purchase application — gold moves exactly (conservation), gear equips / consumables pack.</summary>
-    private static GameState ApplySale(GameState state, Hero hero, Item item, ShelfEntry shelfEntry, IEventSink events)
-    {
-        var updatedHero = item.Effect is not null
-            ? hero with { Gold = hero.Gold - shelfEntry.Price, Pack = hero.Pack.Add(item.Id) }
-            : hero with { Gold = hero.Gold - shelfEntry.Price, Gear = hero.Gear.WithSlot(item.Slot, item.Id) };
-
-        var newState = state with
+    /// <summary>Resets the per-customer meters (Round, Interest, Patience, Presented, standing
+    /// offer) for a newly-active customer (or for the very first customer at
+    /// <see cref="CounterHandlers"/>'s <c>OpenCounterAction</c> handling) — everything except
+    /// <see cref="CounterState.GoodwillPermille"/>, which is session-wide.</summary>
+    internal static CounterState PromoteActive(CounterState counter, ImmutableList<HeroId> queue, HeroId? active) =>
+        counter with
         {
-            Heroes = state.Heroes.SetItem(hero.Id.Value, updatedHero),
-            Player = state.Player with
-            {
-                Gold = state.Player.Gold + shelfEntry.Price,
-                Shelf = state.Player.Shelf.Remove(shelfEntry),
-            },
+            Queue = queue,
+            Active = active,
+            Round = 0,
+            InterestPermille = 0,
+            PatienceRounds = active is not null ? WillingnessModel.InitialPatienceRounds : 0,
+            Presented = null,
+            StandingOfferGold = null,
         };
-
-        events.Emit(new CounterSaleClosed(hero.Id, item.Id, shelfEntry.Price, Pinned: false));
-        return newState;
-    }
 
     private static GameState Walk(GameState state, Hero hero, Item item, ShoppingVerdict verdict, IEventSink events)
     {

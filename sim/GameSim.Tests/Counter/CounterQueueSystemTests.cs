@@ -79,12 +79,13 @@ public class CounterQueueSystemTests
     }
 
     [Fact]
-    public void PresentItem_StrictUpgrade_ClosesSaleAtListPrice_ConservesGold()
+    public void PresentItem_StrictUpgrade_OpensRound_SetsStandingOffer_NoInstantSale()
     {
-        // Two heroes queued: resolving hero1 must NOT exhaust the queue (hero2 still waits),
-        // so the session stays observably open (Morning holds) after the sale — a lone customer
-        // would auto-close AND advance out of Morning in the same tick, nulling Counter (KTD5;
-        // see the fallback/phase-hold tests for that path).
+        // PA4: presenting a genuine upgrade no longer closes the sale on the spot — it opens a
+        // haggle round (PA3's placeholder instant-buy is gone). The customer's own opening
+        // (lowball) offer is emitted as CustomerCountered; the actual sale waits on a
+        // HaggleResponseAction (see the Accept/HoldFirm/Counter tests below and in
+        // HaggleEconomicsTests).
         var hero1 = MakeHero(1, "vanguard", gold: 100);
         var hero2 = MakeHero(2, "vanguard", gold: 100);
         var sword = MakeItem(1, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Iron Sword");
@@ -96,6 +97,38 @@ public class CounterQueueSystemTests
 
         state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new OpenCounterAction())).NewState;
         var result = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new PresentItemAction(sword.Id)));
+
+        Assert.Empty(result.Events.OfType<CounterSaleClosed>());   // no instant sale
+        var offer = Assert.Single(result.Events.OfType<CustomerCountered>());
+        Assert.Equal(hero1.Id, offer.Hero);
+        Assert.Equal(22, offer.OfferGold);                          // round-1 floor (see HaggleEconomicsTests band table)
+
+        Assert.Equal(100, result.NewState.Heroes[1].Gold);         // nothing spent yet
+        Assert.Single(result.NewState.Player.Shelf);               // item still shelved — negotiation, not a sale
+        Assert.Equal(1, result.NewState.Counter!.Round);
+        Assert.Equal(22, result.NewState.Counter.StandingOfferGold);
+        Assert.Equal(new HeroId(1), result.NewState.Counter.Active); // hero1 still active — negotiating
+        Assert.Equal(DayPhase.Morning, result.NewState.Phase);
+    }
+
+    [Fact]
+    public void HaggleCounter_WithinBandOutsidePinWindow_ClosesNormalSale_ConservesGold()
+    {
+        // Continues the scenario above through to a real sale: Counter at list price (25) lands
+        // inside the round-1 band [22, 27] but outside the pin window [26, 29] — a normal,
+        // unpinned sale (HaggleEconomicsTests exercises the pinned/fleeced variants directly).
+        var hero1 = MakeHero(1, "vanguard", gold: 100);
+        var hero2 = MakeHero(2, "vanguard", gold: 100);
+        var sword = MakeItem(1, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Iron Sword");
+        var state = BaseState(Roster(hero1, hero2), sword) with
+        {
+            Player = PlayerState.NewGame(50) with { Shelf = ImmutableList.Create(new ShelfEntry(sword.Id, 25)) },
+        };
+        var kernel = Kernel();
+
+        state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new OpenCounterAction())).NewState;
+        state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new PresentItemAction(sword.Id))).NewState;
+        var result = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new HaggleResponseAction(HaggleResponseKind.Counter, 25)));
 
         var sale = Assert.Single(result.Events.OfType<CounterSaleClosed>());
         Assert.Equal(hero1.Id, sale.Hero);
@@ -163,16 +196,24 @@ public class CounterQueueSystemTests
         state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new OpenCounterAction())).NewState;
         Assert.Equal(DayPhase.Morning, state.Phase);
 
-        // Tick 2: serve hero1 via the counter.
+        // Tick 2: present to hero1 — opens the round (PA4: no more instant sale).
         state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new PresentItemAction(counterItemA.Id))).NewState;
+        Assert.Equal(DayPhase.Morning, state.Phase);
+
+        // Tick 3: accept hero1's own opening offer — closes the sale, hero2 approaches.
+        state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new HaggleResponseAction(HaggleResponseKind.Accept))).NewState;
         Assert.Equal(DayPhase.Morning, state.Phase); // still holding — queue not exhausted
 
-        // Tick 3: serve hero2 via the counter.
+        // Tick 4: present to hero2 — opens hero2's round.
         state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new PresentItemAction(counterItemB.Id))).NewState;
+        Assert.Equal(DayPhase.Morning, state.Phase);
+
+        // Tick 5: accept hero2's opening offer — closes the sale.
+        state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new HaggleResponseAction(HaggleResponseKind.Accept))).NewState;
         Assert.Equal(DayPhase.Morning, state.Phase);
         Assert.Equal(ImmutableSortedSet.Create(1, 2), state.Counter!.Served);
 
-        // Tick 4: close — heroes 3,4,5,6 (unserved) run the atomic pass THIS tick.
+        // Tick 6: close — heroes 3,4,5,6 (unserved) run the atomic pass THIS tick.
         var closeResult = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new CloseCounterAction()));
 
         // The single fallback-shelf item is contested: HeroId order settles it — hero 3 (lowest
