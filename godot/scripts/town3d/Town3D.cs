@@ -183,8 +183,10 @@ public partial class Town3D : SubViewportContainer
     /// actor rallies and files out the gate. Expedition/ExpeditionDeep done → survivors of any
     /// FINALIZED run (<c>PendingExpeditions</c>) who are still Away walk home (the <c>Away</c>
     /// guard makes calling this at both arms idempotent, same as the 2D original). Evening done →
-    /// every remaining actor snaps home for the new day. Camp/unknown → no-op (never snap an
-    /// away/dead hero home mid-day before the Evening reveal).
+    /// every remaining actor whose hero is confirmed alive snaps home for the new day (see
+    /// <see cref="SnapRemainingHeroesHome"/> for why that's an alive-check rather than a blanket
+    /// snap). Camp/unknown → no-op (never snap an away/dead hero home mid-day before the Evening
+    /// reveal).
     /// </summary>
     public void OnPhaseCompleted(DayPhase completedPhase)
     {
@@ -203,15 +205,38 @@ public partial class Town3D : SubViewportContainer
                 ReturnSurvivors();
                 break;
             case DayPhase.Evening:
-                foreach (var actor in _heroActors.Values.Where(a => a.State != HeroActor3D.ActorState.Wandering))
-                {
-                    actor.SnapHome();
-                }
-
+                SnapRemainingHeroesHome();
                 break;
             case DayPhase.Camp:
             default:
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Evening choreography: every actor not already Wandering snaps home for the new day —
+    /// EXCEPT one whose hero is dead or gone from the roster right now. Review finding: a hero
+    /// that died mid-expedition may not have been reconciled away yet (this task's
+    /// <see cref="ReconcileHeroes"/> only runs at <see cref="Build"/>; T8 wires the per-tick
+    /// <c>Refresh()</c> call that keeps it current), so its actor could still be sitting in
+    /// <see cref="_heroActors"/> in a non-Wandering state (e.g. <c>Away</c>) when Evening fires —
+    /// a blanket snap would resurrect it (visible, <c>Wandering</c>) until the next reconcile
+    /// caught up. Fixing this with a per-actor alive-check (rather than calling
+    /// <see cref="ReconcileHeroes"/> first, here, to remove the dead actor before this loop runs)
+    /// keeps the ordering dependency gone entirely instead of just narrowing the window: it's
+    /// correct regardless of whether/when reconcile has last run, and it avoids forcing a full
+    /// heroes diff + memorial-plot rebuild on every Evening completion just to cover this one
+    /// case. Dead/absent heroes are left exactly as they are; <see cref="ReconcileHeroes"/>
+    /// (called elsewhere) is what actually frees their actor.
+    /// </summary>
+    private void SnapRemainingHeroesHome()
+    {
+        var heroes = Adapter!.CurrentState.Heroes;
+        foreach (var actor in _heroActors.Values.Where(a =>
+                     a.State != HeroActor3D.ActorState.Wandering &&
+                     heroes.TryGetValue(a.HeroIdValue, out var hero) && hero.Alive))
+        {
+            actor.SnapHome();
         }
     }
 

@@ -110,5 +110,79 @@ public class HeroActor3DTests
             b.QueueFree();
         }
     }
+
+    /// <summary>Review finding (Minor): the original determinism test only ever exercised the
+    /// Wandering branch. This drives two identically-<see cref="HeroActor3D.Configure"/>d actors
+    /// through <see cref="HeroActor3D.BeginDeparture"/> — Rallying → dwell → WalkingOut → Away —
+    /// with the same rally point/file delay and the same delta sequence, asserting identical
+    /// <see cref="Node3D.GlobalPosition"/> and <see cref="HeroActor3D.State"/> at every step, not
+    /// just at the end.</summary>
+    [TestCase]
+    public void Determinism_TwoActorsSameDeparture_IdenticalPositionsAndStateThroughRallyWalkOutAway()
+    {
+        var a = new HeroActor3D();
+        var b = new HeroActor3D();
+        try
+        {
+            var home = new Vector3(4f, 0f, 6f);
+            a.Configure(7, "Hero7", 3, home);
+            b.Configure(7, "Hero7", 3, home);
+
+            var rallyPoint = new Vector3(2f, 0f, -15f);
+            a.BeginDeparture(rallyPoint, 0.35f);
+            b.BeginDeparture(rallyPoint, 0.35f);
+
+            // 20s of accumulated time — comfortably past rally-travel + dwell + walk-out-to-gate
+            // for this home/rally pair, so both actors pass through every departure state.
+            for (var i = 0; i < 200; i++)
+            {
+                a.Advance(0.1);
+                b.Advance(0.1);
+                AssertThat(a.GlobalPosition).IsEqual(b.GlobalPosition);
+                AssertThat(a.State).IsEqual(b.State);
+            }
+
+            AssertThat(a.State).IsEqual(HeroActor3D.ActorState.Away); // sanity: actually reached Away
+        }
+        finally
+        {
+            a.QueueFree();
+            b.QueueFree();
+        }
+    }
+
+    /// <summary>Review finding (Important): proves the <c>Town3D.SnapRemainingHeroesHome</c>
+    /// alive-guard fix — a hero that died mid-expedition but hasn't been reconciled away yet
+    /// (this task's <see cref="Town3D.ReconcileHeroes"/> only runs at <see cref="Town3D.Build"/>;
+    /// T8 wires the per-tick call) must NOT be revived by the Evening choreography. Reflection
+    /// into the private actor dictionary is the only way to manufacture this window: Town3D has
+    /// no production API to attach an actor for a dead hero (<see cref="Town3D.ReconcileHeroes"/>
+    /// would never do it), so the test forces the exact "not yet reconciled" state the finding
+    /// describes.</summary>
+    [TestCase]
+    public void OnPhaseCompleted_Evening_DoesNotReviveDeadHeroActor()
+    {
+        var town = Mount(); // MidGameWorld: Alive(1), Alive(2), Dead(3)
+        try
+        {
+            var deadActor = new HeroActor3D();
+            deadActor.Configure(3, "Fallen3", 0, new Vector3(0f, 0f, 0f));
+            deadActor.SetAway(); // non-Wandering — as if caught mid-expedition when it died
+            town.Heroes.AddChild(deadActor);
+
+            var field = typeof(Town3D).GetField("_heroActors", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+            var actors = (System.Collections.Generic.Dictionary<int, HeroActor3D>)field.GetValue(town)!;
+            actors[3] = deadActor;
+
+            town.OnPhaseCompleted(DayPhase.Evening);
+
+            AssertThat(deadActor.State).IsNotEqual(HeroActor3D.ActorState.Wandering);
+            AssertThat(deadActor.Visible).IsFalse();
+        }
+        finally
+        {
+            town.QueueFree();
+        }
+    }
 }
 #endif
