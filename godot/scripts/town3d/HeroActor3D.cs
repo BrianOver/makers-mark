@@ -300,7 +300,7 @@ public partial class HeroActor3D : Node3D
 
         var targetYaw = Mathf.Atan2(-flat.X, -flat.Z);
         var rotation = Mesh.Rotation;
-        rotation.Y = Mathf.LerpAngle(rotation.Y, targetYaw, (float)delta * 12f);
+        rotation.Y = Mathf.LerpAngle(rotation.Y, targetYaw, Mathf.Clamp((float)delta * 12f, 0f, 1f));
         Mesh.Rotation = rotation;
     }
 

@@ -107,6 +107,14 @@ public partial class Town3D : SubViewportContainer
     /// successive party members peel off the rally point toward the gate.</summary>
     private const float FileExitStaggerSeconds = 0.35f;
 
+    /// <summary>Polish pass: the player capsule's radius/height/Y-offset, shared between
+    /// <see cref="BuildPlayer"/>'s collider and <see cref="PrimitiveCapsule"/>'s visual mesh so
+    /// the two can never drift apart (they were duplicated literals before).</summary>
+    private const float PlayerCapsuleRadius = 0.35f;
+
+    private const float PlayerCapsuleHeight = 1.6f;
+    private const float PlayerCapsuleYOffset = 0.8f;
+
     /// <summary>T7: live hero-actor count (test/inspection surface).</summary>
     public int HeroActorCount() => _heroActors.Count;
 
@@ -447,8 +455,8 @@ public partial class Town3D : SubViewportContainer
         var shape = new CollisionShape3D
         {
             Name = "CollisionShape3D",
-            Shape = new CapsuleShape3D { Radius = 0.35f, Height = 1.6f },
-            Position = new Vector3(0, 0.8f, 0),
+            Shape = new CapsuleShape3D { Radius = PlayerCapsuleRadius, Height = PlayerCapsuleHeight },
+            Position = new Vector3(0, PlayerCapsuleYOffset, 0),
         };
         player.AddChild(shape);
 
@@ -492,8 +500,8 @@ public partial class Town3D : SubViewportContainer
         var mesh = new MeshInstance3D
         {
             Name = "Mesh",
-            Mesh = new CapsuleMesh { Radius = 0.35f, Height = 1.6f },
-            Position = new Vector3(0, 0.8f, 0),
+            Mesh = new CapsuleMesh { Radius = PlayerCapsuleRadius, Height = PlayerCapsuleHeight },
+            Position = new Vector3(0, PlayerCapsuleYOffset, 0),
             MaterialOverride = new StandardMaterial3D { AlbedoColor = color },
         };
         return mesh;

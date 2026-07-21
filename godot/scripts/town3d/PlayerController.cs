@@ -215,7 +215,7 @@ public partial class PlayerController : CharacterBody3D
 
         var targetYaw = Mathf.Atan2(-dir.X, -dir.Z);
         var rotation = Mesh.Rotation;
-        rotation.Y = Mathf.LerpAngle(rotation.Y, targetYaw, (float)delta * TurnSpeed);
+        rotation.Y = Mathf.LerpAngle(rotation.Y, targetYaw, Mathf.Clamp((float)delta * TurnSpeed, 0f, 1f));
         Mesh.Rotation = rotation;
     }
 }

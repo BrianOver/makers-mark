@@ -792,14 +792,12 @@ public partial class MainUi : Control
         Objective.SetAnchorsPreset(LayoutPreset.TopRight);
         Objective.OffsetLeft = -ObjectiveDockWidth - ObjectiveDockMargin;
         Objective.OffsetRight = -ObjectiveDockMargin;
-        // Clamp OffsetTop/OffsetBottom inside the viewport: on a short window, a fixed
-        // OffsetTop + DockHeight could otherwise push OffsetBottom (or even OffsetTop itself)
-        // past the visible area (TopRight anchors both Top/Bottom to the window's top edge, so
-        // these offsets ARE the absolute on-screen Y coordinates).
-        var viewportHeight = GetViewportRect().Size.Y;
-        Objective.OffsetTop = Mathf.Min(ObjectiveDockOffsetTop, viewportHeight - ObjectiveDockMinBottomGap);
-        var maxBottom = Mathf.Max(Objective.OffsetTop + ObjectiveDockMinBottomGap, viewportHeight - ObjectiveDockMargin);
-        Objective.OffsetBottom = Mathf.Min(Objective.OffsetTop + ObjectiveDockHeight, maxBottom);
+        // Clamp OffsetTop/OffsetBottom inside the viewport at build time, AND re-clamp on every
+        // later resize (see ClampObjectiveDockToViewport) — a fixed OffsetTop + DockHeight
+        // computed only once could otherwise push OffsetBottom (or even OffsetTop itself) past
+        // the visible area the moment the window shrinks after mount.
+        ClampObjectiveDockToViewport();
+        GetViewport().SizeChanged += ClampObjectiveDockToViewport;
         Objective.TutorialDismiss.Pressed += () =>
         {
             Tutorial.Dismiss();
@@ -844,6 +842,23 @@ public partial class MainUi : Control
         Interior.Build();
         Interior.HotspotActivated += OnInteriorHotspotActivated;
         Interior.Exited += OnInteriorExited;
+    }
+
+    /// <summary>
+    /// Menu-sizing fix (gate-b) + resize follow-up: (re)clamp the objective chip's
+    /// OffsetTop/OffsetBottom inside the CURRENT viewport height. Extracted out of <see
+    /// cref="BuildUi"/> so both the initial build AND a live window resize (<see
+    /// cref="Viewport.SizeChanged"/>, wired in <see cref="BuildUi"/>) share the exact same math —
+    /// clamping only once at build time left a later resize to a shorter window free to clip the
+    /// chip (TopRight anchors both Top/Bottom to the window's top edge, so these offsets ARE the
+    /// absolute on-screen Y coordinates).
+    /// </summary>
+    private void ClampObjectiveDockToViewport()
+    {
+        var viewportHeight = GetViewportRect().Size.Y;
+        Objective.OffsetTop = Mathf.Min(ObjectiveDockOffsetTop, viewportHeight - ObjectiveDockMinBottomGap);
+        var maxBottom = Mathf.Max(Objective.OffsetTop + ObjectiveDockMinBottomGap, viewportHeight - ObjectiveDockMargin);
+        Objective.OffsetBottom = Mathf.Min(Objective.OffsetTop + ObjectiveDockHeight, maxBottom);
     }
 
     private static T InstantiatePanel<T>(string scenePath) where T : SimPanel =>

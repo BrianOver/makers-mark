@@ -354,43 +354,5 @@ public static class UiTestSupport
         throw new System.Exception($"body did not arrive within {maxFrames} frames (at {body.GlobalPosition}, target {target})");
     }
 
-    /// <summary>
-    /// T5 (T6 click-to-move consumes this): the 3D twin of <see cref="TryClickArea"/> — headless
-    /// physics *picking* is unproven on this build (G1 verdict), so a 3D click-target Area3D is
-    /// driven directly instead: reimplements the same point-in-box hit test real picking would do
-    /// (centered on <paramref name="area"/>'s global position, against its first <see
-    /// cref="BoxShape3D"/> child), and on a hit emits the SAME 5-arg <c>Area3D.InputEvent</c>
-    /// signal (<c>camera, event, position, normal, shape_idx</c>) real picking would emit — so
-    /// production click-handling code does not need to know it is under test. Returns whether the
-    /// point hit (so miss-case tests can assert on the return value too).
-    /// </summary>
-    public static bool TryClickArea3D(Area3D area, Camera3D camera, Vector3 worldPos)
-    {
-        foreach (var child in area.GetChildren())
-        {
-            if (child is not CollisionShape3D { Disabled: false, Shape: BoxShape3D box } shape)
-            {
-                continue;
-            }
-
-            var local = worldPos - (area.GlobalPosition + shape.Position);
-            var half = box.Size / 2f;
-            if (Mathf.Abs(local.X) > half.X || Mathf.Abs(local.Y) > half.Y || Mathf.Abs(local.Z) > half.Z)
-            {
-                continue;
-            }
-
-            area.EmitSignal(
-                Area3D.SignalName.InputEvent,
-                camera,
-                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true },
-                worldPos,
-                Vector3.Up,
-                0);
-            return true;
-        }
-
-        return false;
-    }
 }
 #endif
