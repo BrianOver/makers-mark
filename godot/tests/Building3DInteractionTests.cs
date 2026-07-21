@@ -114,5 +114,47 @@ public class Building3DInteractionTests
             town.QueueFree();
         }
     }
+
+    /// <summary>
+    /// Regression for the primitive-wedge highlight bug: <c>BuildPrimitiveWedge</c> used to stamp
+    /// its base color onto <see cref="GeometryInstance3D.MaterialOverride"/>, which renders ahead
+    /// of the per-surface override <see cref="Building3D.SetHighlighted"/> installs — so the glow
+    /// silently never showed on the fallback used whenever <see cref="TownAssets.BuildingScene"/>
+    /// returns null. Never parented into a mounted tree (no render/physics needed to exercise a
+    /// material swap), so this asserts synchronously with no frame pump and frees the node
+    /// directly rather than via <c>QueueFree</c>.
+    /// </summary>
+    [TestCase]
+    public void PrimitiveFallback_SetHighlighted_TogglesActiveMaterial()
+    {
+        var building = new Building3D();
+        try
+        {
+            building.Configure("forge", "Forge", "Forge", Vector3.Zero, null); // null scene forces the wedge fallback
+
+            var mesh = (MeshInstance3D)building.Mesh;
+            AssertThat(mesh.MaterialOverride)
+                .OverrideFailureMessage("fallback mesh set MaterialOverride, which shadows SetSurfaceOverrideMaterial")
+                .IsNull();
+
+            building.SetHighlighted(true);
+            var onMaterial = mesh.GetActiveMaterial(0) as StandardMaterial3D;
+            AssertThat(onMaterial).IsNotNull();
+            AssertThat(onMaterial!.EmissionEnabled)
+                .OverrideFailureMessage("SetHighlighted(true) did not enable emission on the fallback's active material")
+                .IsTrue();
+
+            building.SetHighlighted(false);
+            var offMaterial = mesh.GetActiveMaterial(0) as StandardMaterial3D;
+            AssertThat(offMaterial).IsNotNull();
+            AssertThat(offMaterial!.EmissionEnabled)
+                .OverrideFailureMessage("SetHighlighted(false) did not disable emission on the fallback's active material")
+                .IsFalse();
+        }
+        finally
+        {
+            building.Free(); // never parented into a mounted tree — free it directly, no leaked orphan
+        }
+    }
 }
 #endif

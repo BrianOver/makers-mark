@@ -96,12 +96,22 @@ public partial class Building3D : Node3D
 
     /// <summary>Placeholder shape used whenever <see cref="TownAssets.BuildingScene"/> returns
     /// null (asset missing/renamed) — a distinct wedge silhouette rather than a plain box, so a
-    /// degraded building still reads as "a building" rather than "an untextured crate".</summary>
+    /// degraded building still reads as "a building" rather than "an untextured crate". The base
+    /// color lives on the <see cref="PrismMesh"/> resource's own <see
+    /// cref="PrimitiveMesh.Material"/> rather than <see
+    /// cref="GeometryInstance3D.MaterialOverride"/> — the latter takes render-priority over a
+    /// per-surface <see cref="MeshInstance3D.SetSurfaceOverrideMaterial"/> (which is exactly how
+    /// <see cref="SetHighlighted"/> applies its glow), so setting it here would silently swallow
+    /// the highlight on this fallback path while the surface material set by
+    /// <see cref="CollectHighlightMaterials"/> renders underneath it, unseen.</summary>
     private static Node3D BuildPrimitiveWedge() => new MeshInstance3D
     {
-        Mesh = new PrismMesh { Size = new Vector3(2f, 2f, 2f) },
+        Mesh = new PrismMesh
+        {
+            Size = new Vector3(2f, 2f, 2f),
+            Material = new StandardMaterial3D { AlbedoColor = new Color(0.55f, 0.45f, 0.35f) },
+        },
         Position = new Vector3(0, 1f, 0),
-        MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.55f, 0.45f, 0.35f) },
     };
 
     /// <summary>Recursively duplicates each <see cref="MeshInstance3D"/> surface's active
