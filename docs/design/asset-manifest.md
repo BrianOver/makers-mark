@@ -51,7 +51,8 @@ Log entries here as the slice builds; seed list of what the design implies:
 | Glowing stock / ingot | PA6: "dross" text label only (`ForgeMinigameDross`) when the smelt carried forward an impurity — no ingot visual | Hot-metal stock that visibly cools during the forge beat | P1 | needed |
 | Ore & fuel props | — | Ore chunks (per material grade), coal/fuel | P2 | needed |
 | Hammer strike FX | PA6: numeric progress readout only (Forge beat) — no sparks/impact | Sparks + impact feedback on the forge beat | P2 | needed |
-| Shop counter station | — | Counter, display shelves/pedestals, signage for the service loop | P1 | needed |
+| Forge station (3D world prop) | PA8: two stacked `BoxMesh` primitives (furnace tinted + emissive, anvil dark) at the outdoor "forge-station" `Building3D` (`Town3D.BuildAnvilFurnaceCluster`) — walking up dollies the camera in and opens `ForgePanel` (the PA6 minigame's own entrance) | Sculpted furnace + anvil + bellows + tool rack matching the interior overlay's fantasy checklist | P1 | primitive |
+| Shop counter station | PA8: two stacked `BoxMesh` primitives (counter top + shelf) at the outdoor "counter-station" `Building3D` (`Town3D.BuildCounterCluster`) — walking up dollies the camera in and opens `ShopPanel` | Counter, display shelves/pedestals, signage for the service loop | P1 | primitive |
 | Item display models | 2D icons (`IconRegistry`) | 3D/2.5D display versions of shelved gear for the counter | P2 | needed |
 | Craft-quality feedback | PA6: text-only "Done — grade N" readout on minigame completion | Visual tell for Poor→Masterwork result (spark burst, mark stamp) | P2 | needed |
 
