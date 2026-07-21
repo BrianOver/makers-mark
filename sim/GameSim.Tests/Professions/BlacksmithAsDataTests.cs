@@ -35,19 +35,24 @@ public class BlacksmithAsDataTests
         // Material-efficiency node.
         Assert.Equal(TalentTree.MaterialEfficiency, Bs.MaterialEfficiencyNode);
 
-        // Quality shift model — the exact numbers the old QualityRoller hardcoded.
-        Assert.Equal(5, Bs.Quality.FlatShifts[TalentTree.KeenEye]);
-        Assert.Equal(7, Bs.Quality.FlatShifts[TalentTree.MasterTouch]);
-        Assert.Equal(8, Bs.Quality.FlatShifts[TalentTree.LegendaryCraft]);
-        var weaponSpecialist = Bs.Quality.SlotShifts[TalentTree.WeaponSpecialist];
-        Assert.Equal(ItemSlot.Weapon, weaponSpecialist.Slot);
-        Assert.Equal(5, weaponSpecialist.Shift);
+        // PA2/PKD2/PKD3: blacksmith flips to the ACTIVE dominance model — the retired
+        // quality-shift nodes no longer touch the roll at all (double-count resolved),
+        // so FlatShifts/SlotShifts are EMPTY. Material-mastery is KEPT (no overlap with
+        // the minigame — it still raises the roll's ceiling).
+        Assert.True(Bs.ActiveCraft);
+        Assert.Empty(Bs.Quality.FlatShifts);
+        Assert.Empty(Bs.Quality.SlotShifts);
         Assert.Equal(TalentTree.MaterialMastery, Bs.Quality.MaterialMasteryNode);
 
-        // Non-quality nodes never appear in the quality model.
-        Assert.False(Bs.Quality.FlatShifts.ContainsKey(TalentTree.MaterialEfficiency));
-        Assert.False(Bs.Quality.FlatShifts.ContainsKey(TalentTree.Tier2Smithing));
-        Assert.False(Bs.Quality.SlotShifts.ContainsKey(TalentTree.MaterialEfficiency));
+        // The four retired quality nodes remap 1:1 to non-degenerate minigame-assist data
+        // for the PA6 forge-overlay adapter to read (pure data — the sim never interprets it).
+        Assert.Equal(4, Bs.MinigameAssists.Count);
+        foreach (var nodeId in new[] { TalentTree.KeenEye, TalentTree.MasterTouch, TalentTree.LegendaryCraft, TalentTree.WeaponSpecialist })
+        {
+            var assist = Bs.MinigameAssists[nodeId];
+            Assert.True(assist.SweetZoneWidthBonus > 0 || assist.DriftRateReduction > 0 || assist.OffBeatForgiveness > 0,
+                $"{nodeId}: minigame-assist data is degenerate (all zero)");
+        }
     }
 
     [Fact]
@@ -73,18 +78,20 @@ public class BlacksmithAsDataTests
     [Fact]
     public void QualityDistribution_ThroughDefinition_MatchesGoldenCounts()
     {
-        // Identical golden case to QualityRollerTests.BaseDistribution: tier-1 dagger + copper
-        // (grade 1), no talents, seed 1234, 1000 rolls. Routing through the profession quality
-        // model must reproduce the same byte-identical distribution.
+        // PA2: blacksmith is ACTIVE now, so the real production path is RollActive, not the
+        // passive Roll(). Tier-1 dagger + copper (grade 1, materialStep = 0), no PerformanceGrade
+        // submitted (auto-craft, PKD4), seed 1234, 1000 rolls. Auto-craft resolves at the
+        // competent constant (550) ± jitter, which straddles only the Common/Fine seam at
+        // materialStep 0 — never Poor, Superior, or Masterwork.
         var rng = new Pcg32(RngState.FromSeed(1234));
         var counts = new int[5];
         for (var i = 0; i < 1000; i++)
         {
-            var grade = QualityRoller.Roll(RecipeTable.All["dagger"], materialGrade: 1, ImmutableSortedSet<string>.Empty, Bs.Quality, rng);
+            var grade = QualityRoller.RollActive(RecipeTable.All["dagger"], materialGrade: 1, ImmutableSortedSet<string>.Empty, Bs.Quality, rng, performanceGrade: null);
             counts[(int)grade]++;
         }
 
-        Assert.Equal("146,513,247,85,9", string.Join(",", counts));
+        Assert.Equal("0,487,513,0,0", string.Join(",", counts));
         Assert.Equal(1000, counts.Sum());
     }
 

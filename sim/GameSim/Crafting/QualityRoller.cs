@@ -95,4 +95,97 @@ public static class QualityRoller
 
         return QualityGrade.Masterwork;
     }
+
+    // ==================================================================================
+    // ACTIVE MODEL (PA2/PKD2/PKD3/PKD4) — blacksmith only in Phase A. Skill (the captured
+    // PerformanceGrade) DOMINATES quality; RNG shrinks to a floor jitter that can never skip
+    // a whole band; material sets a hard ceiling; talents no longer shift this roll at all
+    // (they became MinigameAssist data instead — see ProfessionDefinition). The PASSIVE
+    // Roll() method above is completely untouched by this addition.
+    // ==================================================================================
+
+    /// <summary>Half-width of the active-model jitter band, per-mille (PKD3): the single
+    /// <see cref="IDeterministicRng.Roll100"/> draw maps to exactly [-25, +25].</summary>
+    private const int ActiveJitterMax = 25;
+
+    /// <summary>Auto-craft's competent-but-capped grade (PKD4): a null <c>PerformanceGrade</c>
+    /// (and, once Phase B lands puzzle-scored professions, a null <c>CraftPuzzleInput</c> too —
+    /// Phase A's puzzle is always null) resolves here rather than at the player's real skill.</summary>
+    private const int AutoCraftGrade = 550;
+
+    /// <summary>
+    /// The active-model dominance roll (PA2/PKD3): <paramref name="performanceGrade"/> (a
+    /// per-mille [0..1000] captured minigame result; <see langword="null"/> = auto-craft,
+    /// PKD4) is clamped and jittered by the SINGLE <see cref="IDeterministicRng.Roll100"/> draw
+    /// — draw count is unchanged from the passive path (KTD4). Grade bands are read off the
+    /// jittered value (THE TABLE, tests pin these exact numbers):
+    ///
+    ///   effective = clamp(performanceGrade ?? 550, 0, 1000) + jitter
+    ///   jitter    = Roll100() * 51 / 100 - 25                     // maps [0,99] -> [-25, +25]
+    ///
+    ///   band:  effective &lt;  200  → Poor
+    ///          effective &lt;  550  → Common
+    ///          effective &lt;  780  → Fine
+    ///          effective &lt;  930  → Superior
+    ///          effective &gt;= 930  → Masterwork
+    ///
+    /// Every band (excluding the two open ends) is at least 150 per-mille wide — comfortably
+    /// wider than the 50-wide jitter swing — so a single roll can shift the result into an
+    /// ADJACENT band at a seam but can never SKIP an entire band on its own.
+    ///
+    /// Material sets a hard ceiling from <c>materialGrade + mastery − recipe.Tier</c>: at or
+    /// below -1 caps Fine; exactly 0 caps Superior; +1 or above is uncapped. Talents no longer
+    /// shift this roll at all (<see cref="ProfessionQualityModel.FlatShifts"/>/<see
+    /// cref="ProfessionQualityModel.SlotShifts"/> are never consulted here — PKD3's
+    /// double-count fix) — only <see cref="ProfessionQualityModel.MaterialMasteryNode"/>
+    /// still matters, and only for the ceiling, not the roll.
+    ///
+    /// Auto-craft (<paramref name="performanceGrade"/> is <see langword="null"/>) additionally
+    /// hard-caps at Superior regardless of jitter or future constant drift — belt and braces:
+    /// the minigame is the only road to Masterwork (PKD4).
+    /// </summary>
+    public static QualityGrade RollActive(Recipe recipe, int materialGrade, ImmutableSortedSet<string> unlockedTalents, ProfessionQualityModel quality, IDeterministicRng rng, int? performanceGrade = null)
+    {
+        var isAutoCraft = performanceGrade is null;
+        var grade = performanceGrade ?? AutoCraftGrade;
+        var clamped = grade < 0 ? 0 : grade > 1000 ? 1000 : grade;
+
+        // Exactly one Roll100 draw, same as the passive path (KTD4).
+        var roll = rng.Roll100();
+        var jitter = (roll * (ActiveJitterMax * 2 + 1) / 100) - ActiveJitterMax;
+        var effective = clamped + jitter;
+
+        var band = BandFor(effective);
+
+        var masteryGrade = quality.MaterialMasteryNode is { } mastery && unlockedTalents.Contains(mastery) ? 1 : 0;
+        var materialStep = materialGrade + masteryGrade - recipe.Tier;
+        if (MaterialCeiling(materialStep) is { } ceiling && band > ceiling)
+        {
+            band = ceiling;
+        }
+
+        if (isAutoCraft && band > QualityGrade.Superior)
+        {
+            band = QualityGrade.Superior;
+        }
+
+        return band;
+    }
+
+    private static QualityGrade BandFor(int effective) => effective switch
+    {
+        < 200 => QualityGrade.Poor,
+        < 550 => QualityGrade.Common,
+        < 780 => QualityGrade.Fine,
+        < 930 => QualityGrade.Superior,
+        _ => QualityGrade.Masterwork,
+    };
+
+    /// <summary>The material-grade ceiling (PKD3): <see langword="null"/> = uncapped.</summary>
+    private static QualityGrade? MaterialCeiling(int materialStep) => materialStep switch
+    {
+        <= -1 => QualityGrade.Fine,
+        0 => QualityGrade.Superior,
+        _ => null,
+    };
 }

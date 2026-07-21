@@ -7,22 +7,52 @@ using GameSim.Professions;
 namespace GameSim.Tests.Crafting;
 
 /// <summary>
-/// Asserts the QualityRoller against its documented threshold table (U4 spec table):
+/// Asserts <see cref="QualityRoller.Roll"/> — the PASSIVE threshold-table roll every
+/// non-active profession uses — against its documented table (U4 spec table, UNTOUCHED by
+/// PA2/PKD2/PKD3):
 ///
 ///   effective = Roll100() + shift        (exactly ONE Roll100 draw per craft)
 ///   shift = 8 * (materialGrade + (material-mastery ? 1 : 0) - recipe.Tier)
-///         + (keen-eye ? 5 : 0)
-///         + (master-touch ? 7 : 0)
-///         + (legendary-craft ? 8 : 0)
-///         + (weapon-specialist and Slot == Weapon ? 5 : 0)
+///         + sum of quality.FlatShifts[node] for each unlocked flat node
+///         + sum of quality.SlotShifts[node].Shift for each unlocked slot node whose slot matches
 ///   grade: effective &lt;= 14 Poor | 15..64 Common | 65..89 Fine | 90..98 Superior | &gt;= 99 Masterwork
 ///
+/// PA2 flips the BLACKSMITH to the active dominance model (see <see cref="ActiveQualityModelTests"/>
+/// and <see cref="PerformanceGradeTests"/>), so this file uses a SYNTHETIC quality model + recipes
+/// instead of <c>ProfessionRegistry.Blacksmith</c> — fully decoupled from any one profession's data,
+/// so it keeps proving the shared passive math regardless of which registered profession uses it.
 /// The mirror function below re-implements that table independently; any drift between
 /// implementation and documentation fails these tests deterministically.
 /// </summary>
 public class QualityRollerTests
 {
     private static readonly ImmutableSortedSet<string> NoTalents = ImmutableSortedSet<string>.Empty;
+
+    // ---- Synthetic passive fixture (decoupled from any registered profession) --------------
+    private const string FlatA = "test-flat-a";   // +5
+    private const string FlatB = "test-flat-b";   // +7 (stacks with FlatA)
+    private const string FlatC = "test-flat-c";   // +8 (stacks with the chain)
+    private const string WeaponNode = "test-weapon-specialist"; // Weapon slot only, +5
+    private const string MaterialEfficiencyNode = "test-material-efficiency";
+    private const string MasteryNode = "test-material-mastery"; // material +1 grade
+    private const string Tier2Node = "test-tier-2";
+    private const string Tier3Node = "test-tier-3";
+
+    private static readonly ProfessionQualityModel TestQuality = new(
+        FlatShifts: new Dictionary<string, int>
+        {
+            [FlatA] = 5,
+            [FlatB] = 7,
+            [FlatC] = 8,
+        }.ToImmutableSortedDictionary(StringComparer.Ordinal),
+        SlotShifts: new Dictionary<string, SlotShift>
+        {
+            [WeaponNode] = new SlotShift(ItemSlot.Weapon, 5),
+        }.ToImmutableSortedDictionary(StringComparer.Ordinal),
+        MaterialMasteryNode: MasteryNode);
+
+    private static Recipe TestRecipe(ItemSlot slot, int tier) =>
+        new($"test-{slot}-{tier}", "Test Recipe", "test-profession", slot, tier, "copper", MaterialQuantity: 1, new ItemStats(0, 0, 0));
 
     private static ImmutableSortedSet<string> Talents(params string[] ids) =>
         ImmutableSortedSet.CreateRange(ids);
@@ -63,7 +93,7 @@ public class QualityRollerTests
 
         for (var i = 0; i < count; i++)
         {
-            var actual = QualityRoller.Roll(recipe, materialGrade, talents, ProfessionRegistry.Blacksmith.Quality, rollerRng);
+            var actual = QualityRoller.Roll(recipe, materialGrade, talents, TestQuality, rollerRng);
             var expected = ExpectedGrade(mirrorRng.Roll100(), shift);
             Assert.Equal(expected, actual);
             counts[(int)actual]++;
@@ -75,10 +105,10 @@ public class QualityRollerTests
     }
 
     [Fact]
-    public void BaseDistribution_Tier1Copper_1000Rolls_ExactCounts()
+    public void BaseDistribution_Tier1Weapon_1000Rolls_ExactCounts()
     {
-        // Tier 1 recipe + copper (grade 1), no talents: shift = 8 * (1 - 1) = 0.
-        var counts = RollAndVerify(RecipeTable.All["dagger"], materialGrade: 1, NoTalents, shift: 0, seed: 1234, count: 1000);
+        // Tier 1 recipe + grade-1 material, no talents: shift = 8 * (1 - 1) = 0.
+        var counts = RollAndVerify(TestRecipe(ItemSlot.Weapon, tier: 1), materialGrade: 1, NoTalents, shift: 0, seed: 1234, count: 1000);
 
         // Golden counts for seed 1234 — deterministic forever (Pcg32 known-answer + table).
         // Base odds: Poor 15%, Common 50%, Fine 25%, Superior 9%, Masterwork 1%.
@@ -89,8 +119,8 @@ public class QualityRollerTests
     [Fact]
     public void MaterialGradeAboveTier_ShiftsDistributionUp_Exactly8PerGrade()
     {
-        // Mithril (grade 4) on a tier-1 recipe: shift = 8 * (4 - 1) = +24.
-        var counts = RollAndVerify(RecipeTable.All["dagger"], materialGrade: 4, NoTalents, shift: 24, seed: 1234, count: 1000);
+        // Material grade 4 on a tier-1 recipe: shift = 8 * (4 - 1) = +24.
+        var counts = RollAndVerify(TestRecipe(ItemSlot.Weapon, tier: 1), materialGrade: 4, NoTalents, shift: 24, seed: 1234, count: 1000);
 
         // +24 kills Poor entirely (roll would need to be < -9).
         Assert.Equal(0, counts[(int)QualityGrade.Poor]);
@@ -100,8 +130,8 @@ public class QualityRollerTests
     [Fact]
     public void MaterialGradeBelowTier_ShiftsDistributionDown()
     {
-        // Copper (grade 1) on a tier-3 recipe: shift = 8 * (1 - 3) = -16 → Masterwork impossible (max effective 99 - 16 = 83).
-        var counts = RollAndVerify(RecipeTable.All["greatsword"], materialGrade: 1, NoTalents, shift: -16, seed: 1234, count: 1000);
+        // Material grade 1 on a tier-3 recipe: shift = 8 * (1 - 3) = -16 → Masterwork impossible (max effective 99 - 16 = 83).
+        var counts = RollAndVerify(TestRecipe(ItemSlot.Weapon, tier: 3), materialGrade: 1, NoTalents, shift: -16, seed: 1234, count: 1000);
 
         Assert.Equal(0, counts[(int)QualityGrade.Masterwork]);
         Assert.Equal(0, counts[(int)QualityGrade.Superior]);
@@ -110,34 +140,28 @@ public class QualityRollerTests
     [Fact]
     public void QualityShiftTalents_StackExactlyAsDocumented()
     {
-        var recipe = RecipeTable.All["dagger"]; // tier 1, weapon
+        var recipe = TestRecipe(ItemSlot.Weapon, tier: 1);
 
-        // keen-eye alone: +5.
-        RollAndVerify(recipe, materialGrade: 1, Talents(TalentTree.KeenEye), shift: 5, seed: 77, count: 500);
+        // FlatA alone: +5.
+        RollAndVerify(recipe, materialGrade: 1, Talents(FlatA), shift: 5, seed: 77, count: 500);
 
-        // keen-eye + master-touch: +12.
-        RollAndVerify(recipe, materialGrade: 1, Talents(TalentTree.KeenEye, TalentTree.MasterTouch), shift: 12, seed: 77, count: 500);
+        // FlatA + FlatB: +12.
+        RollAndVerify(recipe, materialGrade: 1, Talents(FlatA, FlatB), shift: 12, seed: 77, count: 500);
 
-        // keen-eye + master-touch + legendary-craft: +20.
-        RollAndVerify(
-            recipe,
-            materialGrade: 1,
-            Talents(TalentTree.KeenEye, TalentTree.MasterTouch, TalentTree.LegendaryCraft),
-            shift: 20,
-            seed: 77,
-            count: 500);
+        // FlatA + FlatB + FlatC: +20.
+        RollAndVerify(recipe, materialGrade: 1, Talents(FlatA, FlatB, FlatC), shift: 20, seed: 77, count: 500);
     }
 
     [Fact]
     public void WeaponSpecialist_AppliesToWeaponsOnly()
     {
-        var talents = Talents(TalentTree.KeenEye, TalentTree.WeaponSpecialist);
+        var talents = Talents(FlatA, WeaponNode);
 
-        // Weapon: keen-eye +5 and weapon-specialist +5 → +10.
-        RollAndVerify(RecipeTable.All["dagger"], materialGrade: 1, talents, shift: 10, seed: 99, count: 500);
+        // Weapon: FlatA +5 and the weapon-slot node +5 → +10.
+        RollAndVerify(TestRecipe(ItemSlot.Weapon, tier: 1), materialGrade: 1, talents, shift: 10, seed: 99, count: 500);
 
-        // Shield: weapon-specialist contributes nothing → +5.
-        RollAndVerify(RecipeTable.All["buckler"], materialGrade: 1, talents, shift: 5, seed: 99, count: 500);
+        // Shield: the weapon-slot node contributes nothing → +5.
+        RollAndVerify(TestRecipe(ItemSlot.Shield, tier: 1), materialGrade: 1, talents, shift: 5, seed: 99, count: 500);
     }
 
     [Fact]
@@ -145,9 +169,9 @@ public class QualityRollerTests
     {
         // material-mastery: grade counts as +1 → shift = 8 * (1 + 1 - 1) = +8.
         RollAndVerify(
-            RecipeTable.All["dagger"],
+            TestRecipe(ItemSlot.Weapon, tier: 1),
             materialGrade: 1,
-            Talents(TalentTree.MaterialEfficiency, TalentTree.MaterialMastery),
+            Talents(MaterialEfficiencyNode, MasteryNode),
             shift: 8,
             seed: 55,
             count: 500);
@@ -157,14 +181,14 @@ public class QualityRollerTests
     public void NonQualityTalents_HaveNoEffectOnTheRoll()
     {
         // material-efficiency and the tier unlocks are not quality nodes: shift stays 0.
-        var talents = Talents(TalentTree.MaterialEfficiency, TalentTree.Tier2Smithing, TalentTree.Tier3Smithing);
-        RollAndVerify(RecipeTable.All["dagger"], materialGrade: 1, talents, shift: 0, seed: 1234, count: 1000);
+        var talents = Talents(MaterialEfficiencyNode, Tier2Node, Tier3Node);
+        RollAndVerify(TestRecipe(ItemSlot.Weapon, tier: 1), materialGrade: 1, talents, shift: 0, seed: 1234, count: 1000);
     }
 
     [Fact]
     public void LockedTalents_HaveNoEffect_OnlyTheUnlockedSetCounts()
     {
-        // Nodes exist in the tree but are NOT in the unlocked set → base distribution.
-        RollAndVerify(RecipeTable.All["dagger"], materialGrade: 1, NoTalents, shift: 0, seed: 2026, count: 500);
+        // Nodes exist in the model but are NOT in the unlocked set → base distribution.
+        RollAndVerify(TestRecipe(ItemSlot.Weapon, tier: 1), materialGrade: 1, NoTalents, shift: 0, seed: 2026, count: 500);
     }
 }

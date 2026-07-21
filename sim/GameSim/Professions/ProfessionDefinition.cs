@@ -30,6 +30,18 @@ public sealed record ProfessionQualityModel(
     string? MaterialMasteryNode);
 
 /// <summary>
+/// Per-mille minigame-assist data for one talent node (PA2/PKD3): the retired quality-shift
+/// nodes of an ACTIVE profession no longer touch <see cref="QualityRoller"/> at all — instead
+/// they widen/soften the PRESENTATION-layer minigame the Godot overlay renders. Pure DATA the
+/// adapter reads; the sim never interprets these numbers beyond storing and exposing them
+/// (KTD2 — no rules live here). All three are per-mille (0..1000-ish) integers:
+/// </summary>
+/// <param name="SweetZoneWidthBonus">Widens a beat's sweet-zone/hold-band.</param>
+/// <param name="DriftRateReduction">Slows a gauge's drift/cooling rate.</param>
+/// <param name="OffBeatForgiveness">Forgives an off-beat strike/input.</param>
+public sealed record MinigameAssist(int SweetZoneWidthBonus, int DriftRateReduction, int OffBeatForgiveness);
+
+/// <summary>
 /// A profession expressed entirely as data (P1 kernel). The blacksmith's crafting rules that
 /// used to be hardcoded across <c>CraftingHandlers</c> and <c>QualityRoller</c> are relocated
 /// here unchanged, so any profession is now "just data" plugged into the same pipeline:
@@ -39,6 +51,14 @@ public sealed record ProfessionQualityModel(
 ///   <item><description><see cref="TierGate"/> — recipe tier → the talent node that unlocks it.</description></item>
 ///   <item><description><see cref="MaterialEfficiencyNode"/> — the node that saves one material (min 1).</description></item>
 ///   <item><description><see cref="Quality"/> — the quality-roll shift model (see <see cref="ProfessionQualityModel"/>).</description></item>
+///   <item><description><see cref="ActiveCraft"/> — PA2/PKD2: false (default) keeps the passive
+///   ±8 threshold-table roll (<see cref="QualityRoller.Roll"/>), byte-identical to pre-PA2; true
+///   (blacksmith only in Phase A) routes crafts through the dominance roll
+///   (<see cref="QualityRoller.RollActive"/>) instead — talents stop shifting the roll and
+///   <see cref="MinigameAssists"/> becomes the talent payload instead.</description></item>
+///   <item><description><see cref="MinigameAssists"/> — PA2: per-node minigame-assist data for an
+///   active profession's retired quality-shift nodes (see <see cref="MinigameAssist"/>). Empty for
+///   every passive profession.</description></item>
 /// </list>
 /// </summary>
 public sealed record ProfessionDefinition(
@@ -48,8 +68,16 @@ public sealed record ProfessionDefinition(
     ImmutableSortedDictionary<string, TalentNode> TalentNodes,
     ImmutableSortedDictionary<int, string> TierGate,
     string? MaterialEfficiencyNode,
-    ProfessionQualityModel Quality)
+    ProfessionQualityModel Quality,
+    bool ActiveCraft = false,
+    ImmutableSortedDictionary<string, MinigameAssist>? MinigameAssists = null)
 {
+    /// <summary>Per-node minigame-assist data (PA2). Defaults to empty so every passive
+    /// profession's definition needs zero edits (byte-identical, PKD2's passive-regression pin).</summary>
+    public ImmutableSortedDictionary<string, MinigameAssist> MinigameAssists { get; init; } =
+        MinigameAssists ?? ImmutableSortedDictionary<string, MinigameAssist>.Empty;
+
+
     /// <summary>
     /// Pure validation identical to the old <c>TalentTree.CanUnlock</c>, but scoped to THIS
     /// profession's node set: a node can be unlocked iff it exists here, is not already
