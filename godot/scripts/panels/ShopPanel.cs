@@ -40,6 +40,13 @@ public partial class ShopPanel : SimPanel
     private Label? _feedback;
     private VBoxContainer? _content;
 
+    /// <summary>PA7: the stepped counter-service body — built once (a persistent sibling of
+    /// <see cref="_content"/>, never re-created by <see cref="Clear"/>) and re-bound every
+    /// <see cref="Refresh"/> so it always reflects the live <c>state.Counter</c> alongside the
+    /// async-prep shelf sections below it (spec: "no active customer" is a valid state, and the
+    /// existing shelf/reprice/unstock controls remain live throughout).</summary>
+    private CounterPanel? _counter;
+
     public override void _Ready() => EnsureBuilt();
 
     /// <summary>Shrink-center a <see cref="StatChip"/> in a <see cref="VBoxContainer"/> info column
@@ -63,6 +70,7 @@ public partial class ShopPanel : SimPanel
         }
 
         var state = Adapter.CurrentState;
+        _counter!.Bind(Adapter); // PA7: re-bind (idempotent) so the counter body tracks this tick
         Clear(_content!);
 
         var passesToday = PassesToday(state);
@@ -304,6 +312,13 @@ public partial class ShopPanel : SimPanel
 
         _feedback = AddLabel(body, string.Empty);
         _feedback.Name = "ShopFeedback";
+
+        // PA7: the counter-service body sits ABOVE the shelf sections — built once here (never
+        // torn down by this panel's own Clear(_content) cycle), bound to the same Adapter, and
+        // re-bound every Refresh (see call site above).
+        _counter = new CounterPanel { Name = "CounterPanel" };
+        body.AddChild(_counter);
+
         _content = new VBoxContainer { Name = "ShopContent" };
         body.AddChild(_content);
     }
