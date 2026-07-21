@@ -52,16 +52,18 @@ public partial class Building3D : Node3D
     /// <summary>
     /// Builds every child (mesh, footprint, interact zone, label, door anchor) fresh — call once
     /// per instance, before adding this node to the live tree (mirrors <c>Town3D.BuildPlayer</c>'s
-    /// own "assemble fully, then AddChild" idiom).
+    /// own "assemble fully, then AddChild" idiom). <paramref name="mesh"/> is a fully-assembled,
+    /// already colormap-fixed visual (see <c>TownAssets.BuildBuilding</c>/<c>BuildingKit</c>) — null
+    /// falls back to the primitive wedge (used directly by the interaction-test seam).
     /// </summary>
-    public void Configure(string key, string label, string clickKey, Vector3 pos, PackedScene? scene)
+    public void Configure(string key, string label, string clickKey, Vector3 pos, Node3D? mesh)
     {
         Key = key;
         ClickKey = clickKey;
         Name = $"Building_{key}";
         Position = pos;
 
-        Mesh = scene != null ? scene.Instantiate<Node3D>() : BuildPrimitiveWedge();
+        Mesh = mesh ?? BuildPrimitiveWedge();
         Mesh.Name = "Mesh";
         AddChild(Mesh);
         CollectHighlightMaterials(Mesh);

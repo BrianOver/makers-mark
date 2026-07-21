@@ -290,7 +290,7 @@ public partial class Town3D : SubViewportContainer
     /// <summary>Party-file rally slot near the gate, spread along X so the group reads as a
     /// cluster rather than a stack (LW1, ported to 3D).</summary>
     private static Vector3 RallySpotFor(int index, int count) =>
-        new((index - (count - 1) / 2f) * 0.8f, 0f, -15f);
+        new((index - (count - 1) / 2f) * 0.8f, 0f, -11f);
 
     private void ReturnSurvivors()
     {
@@ -365,6 +365,10 @@ public partial class Town3D : SubViewportContainer
         NavRegion.AddChild(Buildings);
         NavRegion.BakeNavigationMesh(onThread: false); // synchronous — deterministic headless
 
+        // Decoration only — never parented under NavRegion (goal 4: no collider means nothing
+        // here can distort the bake above, matching the plan's "props are decoration only" rule).
+        World.AddChild(BuildProps());
+
         Heroes = new Node3D { Name = "Heroes" };
         World.AddChild(Heroes);
 
@@ -401,11 +405,11 @@ public partial class Town3D : SubViewportContainer
     /// </summary>
     private static readonly (string Key, string Label, string ClickKey, Vector3 Position)[] BuildingLayout =
     {
-        ("forge", "Forge", "Forge", new Vector3(-9f, 0f, -7f)),
-        ("market", "Shop", "Shop", new Vector3(9f, 0f, -7f)),
-        ("tavern", "Tavern", "Tavern", new Vector3(-9f, 0f, 8f)),
-        ("minegate", "Gate", "Gate", new Vector3(0f, 0f, -20f)),
-        ("noticeboard", "Bounties", "Bounties", new Vector3(11f, 0f, 9f)),
+        ("forge", "Forge", "Forge", new Vector3(-8f, 0f, -6f)),
+        ("market", "Shop", "Shop", new Vector3(8f, 0f, -6f)),
+        ("tavern", "Tavern", "Tavern", new Vector3(-8f, 0f, 7f)),
+        ("minegate", "Gate", "Gate", new Vector3(0f, 0f, -16f)),
+        ("noticeboard", "Bounties", "Bounties", new Vector3(9f, 0f, 8f)),
     };
 
     private static List<Building3D> BuildBuildings()
@@ -414,7 +418,7 @@ public partial class Town3D : SubViewportContainer
         foreach (var (key, label, clickKey, position) in BuildingLayout)
         {
             var building = new Building3D();
-            building.Configure(key, label, clickKey, position, TownAssets.BuildingScene(key));
+            building.Configure(key, label, clickKey, position, TownAssets.BuildBuilding(key));
             buildings.Add(building);
         }
 
@@ -424,7 +428,7 @@ public partial class Town3D : SubViewportContainer
     /// <summary>T5: the memorial corner plot's container — a non-interactive display-only
     /// landmark (no collider, no interact zone; see <see cref="MemorialPlot"/>'s own doc). One
     /// stone per dead hero, rebuilt on reconcile, lands in T7.</summary>
-    private static Node3D BuildMemorialPlot() => new() { Name = "MemorialPlot", Position = new Vector3(-14f, 0f, 14f) };
+    private static Node3D BuildMemorialPlot() => new() { Name = "MemorialPlot", Position = new Vector3(-11f, 0f, 11f) };
 
     /// <summary>Look up one of the six placed buildings by its <see cref="Building3D.Key"/> (e.g.
     /// "forge") — throws if <see cref="Build"/> hasn't run or the key is unknown, since every
@@ -469,18 +473,18 @@ public partial class Town3D : SubViewportContainer
         return player;
     }
 
-    /// <summary>Instantiates the Kenney hero GLB for <paramref name="variant"/> when the asset
-    /// exists, else falls back to <see cref="PrimitiveCapsule"/> so the standalone scaffold never
-    /// depends on art having landed.</summary>
+    /// <summary>Instantiates the Kenney hero GLB for <paramref name="variant"/> (colormap-fixed,
+    /// pre-scaled — see <see cref="TownAssets.InstantiateHero"/>) when the asset exists, else falls
+    /// back to <see cref="PrimitiveCapsule"/> so the standalone scaffold never depends on art
+    /// having landed.</summary>
     private static Node3D SpawnCharacterMesh(int variant)
     {
-        var scene = TownAssets.HeroScene(variant);
-        if (scene == null)
+        var mesh = TownAssets.InstantiateHero(variant);
+        if (mesh == null)
         {
             return PrimitiveCapsule(new Color(0.85f, 0.78f, 0.55f));
         }
 
-        var mesh = scene.Instantiate<Node3D>();
         mesh.Name = "Mesh";
         return mesh;
     }
@@ -508,7 +512,9 @@ public partial class Town3D : SubViewportContainer
     /// layer-1 <see cref="StaticBody3D"/> carrying a <see cref="BoxShape3D"/> (NOT a
     /// <see cref="WorldBoundaryShape3D"/> — an infinite plane shape can't be baked into a
     /// navmesh later, T6). The box is centered at y=-0.5 with height 1 so its TOP face sits
-    /// exactly at y=0, flush with the visible plane mesh.
+    /// exactly at y=0, flush with the visible plane mesh. Tinted an earthy grass green (goal 4:
+    /// "not bare gray") via a flat <see cref="StandardMaterial3D"/> — no texture needed for a flat
+    /// field of color.
     /// </summary>
     private static Node3D BuildGround()
     {
@@ -517,7 +523,11 @@ public partial class Town3D : SubViewportContainer
         var mesh = new MeshInstance3D
         {
             Name = "GroundMesh",
-            Mesh = new PlaneMesh { Size = new Vector2(60, 60) },
+            Mesh = new PlaneMesh
+            {
+                Size = new Vector2(60, 60),
+                Material = new StandardMaterial3D { AlbedoColor = new Color(0.36f, 0.47f, 0.24f) },
+            },
         };
         ground.AddChild(mesh);
 
@@ -534,6 +544,61 @@ public partial class Town3D : SubViewportContainer
         return ground;
     }
 
+    /// <summary>
+    /// Goal 4 scene dressing: a plaza fountain, a handful of trees, a fenced paddock corner, a
+    /// cart, and scattered rocks — every position is a fixed literal (no RNG, KTD2/KTD4) chosen to
+    /// sit clear of every <c>Building3D</c>'s 4.4-unit interact zone and the gate departure lane
+    /// (x≈0, z from -20 to -15). Pure decoration: no colliders, so nothing here can block the
+    /// player, a hero, or the bake this container is deliberately kept OUT of (see <see
+    /// cref="Build"/>'s own comment on why it's a <see cref="World"/> sibling of
+    /// <see cref="NavRegion"/> rather than a child).
+    /// </summary>
+    private static Node3D BuildProps()
+    {
+        var props = new Node3D { Name = "Props" };
+
+        AddProp(props, TownAssets.FantasyTownKit, "fountain-round.glb", new Vector3(0f, 0f, 1f), scale: 1.3f);
+
+        AddProp(props, TownAssets.FantasyTownKit, "tree.glb", new Vector3(-16f, 0f, -2f));
+        AddProp(props, TownAssets.FantasyTownKit, "tree-high.glb", new Vector3(15f, 0f, -4f));
+        AddProp(props, TownAssets.FantasyTownKit, "tree-crooked.glb", new Vector3(-4f, 0f, 16f));
+        AddProp(props, TownAssets.FantasyTownKit, "tree.glb", new Vector3(6f, 0f, 17f));
+        AddProp(props, TownAssets.FantasyTownKit, "tree-high.glb", new Vector3(-17f, 0f, 12f));
+
+        AddProp(props, TownAssets.FantasyTownKit, "fence.glb", new Vector3(-7f, 0f, 1.5f), rotationYDeg: 0f);
+        AddProp(props, TownAssets.FantasyTownKit, "fence.glb", new Vector3(-7f, 0f, 2.5f), rotationYDeg: 0f);
+        AddProp(props, TownAssets.FantasyTownKit, "fence-gate.glb", new Vector3(-7f, 0f, 3.5f), rotationYDeg: 0f);
+
+        AddProp(props, TownAssets.FantasyTownKit, "cart.glb", new Vector3(6f, 0f, -3f), rotationYDeg: 35f);
+        AddProp(props, TownAssets.FantasyTownKit, "rock-large.glb", new Vector3(-3f, 0f, -17f));
+        AddProp(props, TownAssets.FantasyTownKit, "rock-small.glb", new Vector3(4f, 0f, -18f), rotationYDeg: 60f);
+        AddProp(props, TownAssets.FantasyTownKit, "rock-small.glb", new Vector3(16f, 0f, 3f), rotationYDeg: 200f);
+
+        AddProp(props, TownAssets.FantasyTownKit, "lantern.glb", new Vector3(1.5f, 0f, 4.5f), lanternGlow: true);
+        AddProp(props, TownAssets.FantasyTownKit, "lantern.glb", new Vector3(-1.5f, 0f, 4.5f), lanternGlow: true);
+
+        return props;
+    }
+
+    private static void AddProp(Node3D parent, string kitFolder, string asset, Vector3 position, float rotationYDeg = 0f, float scale = 1f, bool lanternGlow = false)
+    {
+        var piece = TownAssets.Instantiate(kitFolder, asset);
+        if (piece == null)
+        {
+            return;
+        }
+
+        piece.Position = position;
+        piece.RotationDegrees = new Vector3(0f, rotationYDeg, 0f);
+        piece.Scale = new Vector3(scale, scale, scale);
+        parent.AddChild(piece);
+
+        if (lanternGlow)
+        {
+            TownAssets.AttachLanternGlow(piece);
+        }
+    }
+
     private static DirectionalLight3D BuildLight() => new()
     {
         Name = "SunLight",
@@ -546,7 +611,11 @@ public partial class Town3D : SubViewportContainer
         var env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Sky,
-            Sky = new Sky { SkyMaterial = new ProceduralSkyMaterial() },
+            Sky = new Sky { SkyMaterial = new ProceduralSkyMaterial { SkyEnergyMultiplier = 0.55f, GroundEnergyMultiplier = 0.55f } },
+            BackgroundEnergyMultiplier = 0.6f,
+            AmbientLightSource = Godot.Environment.AmbientSource.Bg,
+            AmbientLightEnergy = 0.6f,
+            TonemapMode = Godot.Environment.ToneMapper.Filmic,
         };
         return new WorldEnvironment { Name = "WorldEnvironment", Environment = env };
     }

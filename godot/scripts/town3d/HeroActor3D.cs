@@ -52,10 +52,10 @@ public partial class HeroActor3D : Node3D
     private static readonly Color FallbackTint = new(0.85f, 0.78f, 0.55f);
 
     /// <summary>Default walk-out/return target — just outside <c>Town3D</c>'s minegate door
-    /// anchor (building at (0,0,-20), door anchor ~1.8 units in front of it). Settable per-actor
+    /// anchor (building at (0,0,-16), door anchor ~1.8 units in front of it). Settable per-actor
     /// so <c>Town3D</c> can re-point it if the layout ever moves without touching this type.
     /// </summary>
-    private static readonly Vector3 DefaultGate = new(0f, 0f, -18.2f);
+    private static readonly Vector3 DefaultGate = new(0f, 0f, -14.2f);
 
     public int HeroIdValue { get; private set; }
 
@@ -309,10 +309,9 @@ public partial class HeroActor3D : Node3D
     /// wedge and <c>Town3D.SpawnCharacterMesh</c>).</summary>
     private static Node3D BuildMesh(int variant, string classId)
     {
-        var scene = TownAssets.HeroScene(variant);
-        if (scene != null)
+        var mesh = TownAssets.InstantiateHero(variant);
+        if (mesh != null)
         {
-            var mesh = scene.Instantiate<Node3D>();
             mesh.Name = "Mesh";
             return mesh;
         }

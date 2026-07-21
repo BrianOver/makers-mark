@@ -13,8 +13,8 @@ namespace GodotClient.Town3d;
 public partial class CameraRig : Node3D
 {
     [Export] public Node3D? Target;
-    [Export] public float Pitch = -50f;
-    [Export] public float Distance = 14f;
+    [Export] public float Pitch = -42f;
+    [Export] public float Distance = 22f;
     [Export] public float FollowSpeed = 5f;
 
     private Camera3D _cam = null!;
