@@ -10,8 +10,10 @@ namespace GodotClient.Town3d;
 /// hosting a picking-enabled <see cref="SubViewport"/> whose <see cref="World"/> is a plain
 /// <see cref="Node3D"/> with a box-floor ground, a <see cref="CameraRig"/>, ambient light, six
 /// interactable <see cref="Buildings"/> (T5), a display-only <see cref="MemorialPlot"/> (T5,
-/// populated T7), and <see cref="WorldInputNode"/> driving proximity/highlight/interact (T5). The
-/// <see cref="Heroes"/> container stays empty until T7.
+/// populated T7), a synchronously-baked <see cref="NavRegion"/> (T6) driving the player's
+/// navmesh click-to-move, and <see cref="WorldInputNode"/> driving proximity/highlight/interact
+/// plus camera-ray click resolution (T5/T6). The <see cref="Heroes"/> container stays empty
+/// until T7.
 ///
 /// <para>Deliberately standalone: this task mounts <see cref="Town3D"/> directly in a
 /// code-built test rig (see <c>Town3DSceneTests</c>) rather than through <c>MainUi</c> — the
@@ -38,12 +40,23 @@ public partial class Town3D : SubViewportContainer
     /// <see cref="Player"/> every physics frame.</summary>
     public WorldInput3D WorldInputNode { get; private set; } = null!;
 
+    /// <summary>T6: baked once in <see cref="Build"/> after <see cref="Buildings"/> (and the
+    /// ground) exist as its descendants — <see cref="Godot.NavigationMesh.SourceGeometryMode"/>
+    /// defaults to scanning the region's own subtree, so both must be reparented under here
+    /// rather than left as <see cref="World"/> siblings for the bake to see them at all.</summary>
+    public NavigationRegion3D NavRegion { get; private set; } = null!;
+
     /// <summary>Raised when a building is clicked/interacted with (T5+); re-emits into
     /// <c>MainUi</c>'s existing 2D-town vocabulary unchanged (KTD2 — presentation-only).</summary>
     public event System.Action<string>? BuildingClicked;
 
     /// <summary>Raised when a hero actor is clicked (T7+).</summary>
     public event System.Action<int>? HeroClicked;
+
+    /// <summary>T6: gates <see cref="WorldInputNode"/> off entirely (proximity scan, camera-ray
+    /// clicks, "interact") — T8 drives this from <c>MainUi</c>'s engaged-state so a drawer/
+    /// interior/modal owns input instead of the world underneath it.</summary>
+    public void SetWorldInputEnabled(bool enabled) => WorldInputNode.Enabled = enabled;
 
     /// <summary>
     /// Builds the whole standalone 3D scaffold: viewport, world, ground, light, camera. Safe to
@@ -69,12 +82,32 @@ public partial class Town3D : SubViewportContainer
         World = new Node3D { Name = "World" };
         Viewport.AddChild(World);
 
-        World.AddChild(BuildGround());
         World.AddChild(BuildLight());
         World.AddChild(BuildEnvironment());
 
         Buildings = new Node3D { Name = "Buildings" };
-        World.AddChild(Buildings);
+        var buildings = BuildBuildings();
+        foreach (var building in buildings)
+        {
+            Buildings.AddChild(building);
+        }
+
+        // T6: NavRegion must be built AFTER the ground + buildings it reparents exist, and its
+        // bake must run AFTER it (and them) are actually in the live tree — see the NavRegion
+        // property doc for why they become its children rather than World siblings.
+        NavRegion = new NavigationRegion3D
+        {
+            Name = "NavRegion",
+            NavigationMesh = new NavigationMesh
+            {
+                GeometryParsedGeometryType = NavigationMesh.ParsedGeometryType.StaticColliders,
+                GeometryCollisionMask = 1 | 2,
+            },
+        };
+        World.AddChild(NavRegion);
+        NavRegion.AddChild(BuildGround());
+        NavRegion.AddChild(Buildings);
+        NavRegion.BakeNavigationMesh(onThread: false); // synchronous — deterministic headless
 
         Heroes = new Node3D { Name = "Heroes" };
         World.AddChild(Heroes);
@@ -86,18 +119,13 @@ public partial class Town3D : SubViewportContainer
         World.AddChild(Player);
         Player.Cam = Camera.GetNode<Camera3D>("Camera3D");
         Camera.Target = Player;
-
-        var buildings = BuildBuildings();
-        foreach (var building in buildings)
-        {
-            Buildings.AddChild(building);
-        }
+        Player.ArrivedAtBuilding += key => BuildingClicked?.Invoke(key);
 
         MemorialPlot = BuildMemorialPlot();
         World.AddChild(MemorialPlot);
 
         WorldInputNode = new WorldInput3D { Name = "WorldInput3D" };
-        WorldInputNode.Configure(Player, buildings);
+        WorldInputNode.Configure(Player, buildings, Player.Cam);
         World.AddChild(WorldInputNode);
         WorldInputNode.Interacted += key => BuildingClicked?.Invoke(key);
     }
@@ -147,9 +175,10 @@ public partial class Town3D : SubViewportContainer
 
     /// <summary>
     /// Builds the standalone player body: a layer-4 <see cref="CharacterBody3D"/> (mask 1|2 — the
-    /// ground and building footprints, T5) with a feet-anchored capsule collider and a visual
+    /// ground and building footprints, T5) with a feet-anchored capsule collider, a visual
     /// child sourced from <see cref="TownAssets.HeroScene"/> (variant 0) or a primitive capsule
-    /// fallback when the Kenney asset is missing.
+    /// fallback when the Kenney asset is missing, and (T6) a <see cref="NavigationAgent3D"/> that
+    /// drives click-to-move.
     /// </summary>
     private static PlayerController BuildPlayer()
     {
@@ -166,6 +195,16 @@ public partial class Town3D : SubViewportContainer
         var mesh = SpawnCharacterMesh(0);
         player.AddChild(mesh);
         player.Mesh = mesh;
+
+        var agent = new NavigationAgent3D
+        {
+            Name = "NavigationAgent3D",
+            AvoidanceEnabled = false,
+            PathDesiredDistance = 0.5f,
+            TargetDesiredDistance = 1.0f,
+        };
+        player.AddChild(agent);
+        player.Agent = agent;
 
         return player;
     }
