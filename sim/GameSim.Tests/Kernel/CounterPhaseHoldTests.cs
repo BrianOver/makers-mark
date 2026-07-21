@@ -85,9 +85,15 @@ public class CounterPhaseHoldTests
         state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new OpenCounterAction())).NewState;
         Assert.Equal((1, DayPhase.Morning), (state.Day, state.Phase));
 
-        // The lone customer resolves (buys) — the queue is now empty, so the session auto-closes
-        // and the SAME tick advances (nobody had to submit CloseCounterAction by hand).
+        // PA4: presenting opens a round instead of closing the sale on the spot — the phase still
+        // holds while the round is open.
         state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new PresentItemAction(sword.Id))).NewState;
+        Assert.Equal((1, DayPhase.Morning), (state.Day, state.Phase));
+
+        // Accepting the standing offer resolves (buys) the lone customer — the queue is now empty,
+        // so the session auto-closes and the SAME tick advances (nobody had to submit
+        // CloseCounterAction by hand).
+        state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new HaggleResponseAction(HaggleResponseKind.Accept))).NewState;
 
         Assert.Equal((1, DayPhase.Expedition), (state.Day, state.Phase));
         Assert.Null(state.Counter);

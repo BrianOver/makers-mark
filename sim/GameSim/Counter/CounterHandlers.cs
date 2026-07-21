@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using GameSim.Classes;
 using GameSim.Contracts;
 
 namespace GameSim.Counter;
@@ -9,11 +10,17 @@ namespace GameSim.Counter;
 /// <see cref="HaggleResponseAction"/>/<see cref="CloseCounterAction"/>. Morning-only — a stepped
 /// counter session can only exist while the day is holding at Morning (PKD5).
 ///
-/// This handler does NOT resolve the active customer's fate (buy/walk) — <see cref="CounterQueueSystem"/>
-/// does that in the systems pass (step 2 of <c>GameKernel.Tick</c>), after every action in the batch
-/// has been applied. That split keeps rejection legality (this file) separate from resolution math
-/// (the system), matching the CraftingHandlers/QualityRoller precedent. Every rejection here happens
-/// BEFORE any RNG — in fact nothing in this file draws RNG at all (PA3 hard constraint).
+/// <para>PA3 split resolution math out to <see cref="CounterQueueSystem"/> (the systems pass, which
+/// runs once AFTER every action in the batch is applied) so a single deferred field
+/// (<see cref="CounterState.Presented"/>) could carry "what was shown" across that boundary. PA4's
+/// <see cref="HaggleResponseAction"/> has no equivalent spare field to stash intent across that same
+/// boundary — <c>Contracts/</c> is frozen (deny-list) — so <see cref="ApplyHaggle"/> resolves
+/// IMMEDIATELY here instead, reading the standing offer <see cref="CounterQueueSystem"/> set up on a
+/// PRIOR tick's Present. Practical consequence: submit <c>PresentItemAction</c> and
+/// <c>HaggleResponseAction</c> in SEPARATE ticks (the natural UX anyway — you see the offer, then
+/// respond to it); bundling both in one batch would read a stale/absent standing offer. Every
+/// rejection here happens BEFORE any RNG — nothing in this file draws RNG at all (PA3/PA4 hard
+/// constraint).</para>
 /// </summary>
 public sealed class CounterHandlers : IActionHandler
 {
@@ -28,7 +35,7 @@ public sealed class CounterHandlers : IActionHandler
             OpenCounterAction open => ApplyOpen(state, open, events),
             PresentItemAction present => ApplyPresent(state, present),
             SuggestItemAction suggest => ApplySuggest(state, suggest),
-            HaggleResponseAction haggle => ApplyHaggle(state, haggle),
+            HaggleResponseAction haggle => ApplyHaggle(state, haggle, events),
             CloseCounterAction close => ApplyClose(state, close),
             _ => (state, new RejectedAction(action, $"CounterHandlers cannot apply {action.GetType().Name}.")),
         };
@@ -36,8 +43,9 @@ public sealed class CounterHandlers : IActionHandler
     /// <summary>
     /// Opens a fresh stepped session: queue = alive heroes in HeroId order (the existing
     /// deterministic shopping order — <see cref="Heroes.HeroShoppingSystem"/>), first customer
-    /// becomes Active, <see cref="CustomerApproached"/> fires. An empty queue (no living heroes) is
-    /// a valid open session with Active null — the player is only arranging (PKD6).
+    /// becomes Active with a full Patience budget, <see cref="CustomerApproached"/> fires. An empty
+    /// queue (no living heroes) is a valid open session with Active null — the player is only
+    /// arranging (PKD6).
     /// </summary>
     private static (GameState, RejectedAction?) ApplyOpen(GameState state, OpenCounterAction action, IEventSink events)
     {
@@ -53,7 +61,7 @@ public sealed class CounterHandlers : IActionHandler
             .ToImmutableList();
 
         var active = queue.Count > 0 ? queue[0] : (HeroId?)null;
-        var counter = CounterState.Empty with { Queue = queue, Active = active };
+        var counter = CounterQueueSystem.PromoteActive(CounterState.Empty, queue, active);
 
         if (active is { } hero)
         {
@@ -64,7 +72,10 @@ public sealed class CounterHandlers : IActionHandler
     }
 
     /// <summary>Shows a shelved item to the active customer (opener move). Records the intent on
-    /// <see cref="CounterState.Presented"/>; <see cref="CounterQueueSystem"/> resolves it this same tick.</summary>
+    /// <see cref="CounterState.Presented"/>; <see cref="CounterQueueSystem"/> resolves it this same
+    /// tick (walk immediately on a Pass verdict, else open a haggle round). Presenting a DIFFERENT
+    /// item while a round is already open abandons that round (a fresh pitch starts clean); re-
+    /// presenting the SAME item mid-round is a harmless no-op — the round stays exactly as it was.</summary>
     private static (GameState, RejectedAction?) ApplyPresent(GameState state, PresentItemAction action)
     {
         var (session, rejection) = RequireActiveSession(state, action);
@@ -83,34 +94,72 @@ public sealed class CounterHandlers : IActionHandler
             return (state, new RejectedAction(action, $"Item {action.Item} is not on the shelf."));
         }
 
-        return (state with { Counter = session! with { Presented = action.Item } }, null);
+        var abandonPriorRound = session!.Round > 0 && session.Presented != action.Item;
+        var updated = abandonPriorRound
+            ? session with { Round = 0, InterestPermille = 0, StandingOfferGold = null, Presented = action.Item }
+            : session with { Presented = action.Item };
+
+        return (state with { Counter = updated }, null);
     }
 
-    /// <summary>Upsell a complementary item (PA4 seam: Interest bonus on an empty fitting slot).
-    /// PA3 validates legality only — the economics are a PA4 placeholder-replacement, so this is a
-    /// legal no-op today (never rejects a well-formed suggest just because PA4 hasn't landed).</summary>
+    /// <summary>Upsell a complementary item: bumps the session Interest meter
+    /// (<see cref="HaggleResolver.ApplySuggestBonus"/>) when the suggestion lands on a slot the
+    /// hero would plausibly wear and currently has empty. A legal no-op on any other item — PA3's
+    /// contract that a well-formed Suggest never rejects holds (only wrong-phase/no-session/no-item
+    /// rejects).</summary>
     private static (GameState, RejectedAction?) ApplySuggest(GameState state, SuggestItemAction action)
     {
-        var (_, rejection) = RequireActiveSession(state, action);
+        var (session, rejection) = RequireActiveSession(state, action);
         if (rejection is not null)
         {
             return (state, rejection);
         }
 
-        if (!state.Items.ContainsKey(action.Item.Value))
+        if (!state.Items.TryGetValue(action.Item.Value, out var item))
         {
             return (state, new RejectedAction(action, $"No such item {action.Item}."));
         }
 
-        return (state, null);
+        var hero = state.Heroes[session!.Active!.Value.Value];
+        var heroClass = ClassRegistry.Require(hero.ClassId);
+        var updated = HaggleResolver.ApplySuggestBonus(session, hero, heroClass, item);
+
+        return (state with { Counter = updated }, null);
     }
 
-    /// <summary>Respond to the standing offer (PA4 seam: band math, patience, pin bonus). PA3
-    /// validates legality only — a legal no-op today; PA4 replaces this with the real resolution.</summary>
-    private static (GameState, RejectedAction?) ApplyHaggle(GameState state, HaggleResponseAction action)
+    /// <summary>Respond to the standing offer: Accept, HoldFirm, or Counter at a named price
+    /// (<see cref="HaggleResolver.ResolveHaggleResponse"/>) — band math, patience, and the pin bonus
+    /// all resolve HERE, immediately (see the type-level remarks for why). Rejects (before any
+    /// mutation) when no round has been opened yet, when a Counter price is missing/non-positive, or
+    /// when it exceeds the hero's gold on hand.</summary>
+    private static (GameState, RejectedAction?) ApplyHaggle(GameState state, HaggleResponseAction action, IEventSink events)
     {
-        var (_, rejection) = RequireActiveSession(state, action);
-        return rejection is not null ? (state, rejection) : (state, null);
+        var (session, rejection) = RequireActiveSession(state, action);
+        if (rejection is not null)
+        {
+            return (state, rejection);
+        }
+
+        var counter = session!;
+        if (counter.Round == 0 || counter.StandingOfferGold is null || counter.Presented is not { } presentedId)
+        {
+            return (state, new RejectedAction(action, "No standing offer to respond to — present an item first."));
+        }
+
+        var hero = state.Heroes[counter.Active!.Value.Value];
+
+        if (!state.Items.TryGetValue(presentedId.Value, out var item))
+        {
+            return (state, new RejectedAction(action, $"No such item {presentedId}."));
+        }
+
+        var shelfEntry = state.Player.Shelf.FirstOrDefault(e => e.Item == presentedId);
+        if (shelfEntry is null)
+        {
+            return (state, new RejectedAction(action, $"Item {presentedId} is no longer on the shelf."));
+        }
+
+        return HaggleResolver.ResolveHaggleResponse(state, counter, hero, item, shelfEntry, action, events);
     }
 
     /// <summary>Ends stepped service. Unserved heroes fall back to the atomic pass on this same tick
