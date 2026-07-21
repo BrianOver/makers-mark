@@ -46,14 +46,14 @@ Log entries here as the slice builds; seed list of what the design implies:
 
 | Slot | Now | Needed | Priority | Status |
 |---|---|---|---|---|
-| Forge station (interior focus) | — | Furnace, anvil, hammer, quench barrel, workbench for the 2.5D overlay | P1 | needed |
-| Furnace heat FX | — | Glow / ember / heat-shimmer for the smelt beat | P1 | needed |
-| Glowing stock / ingot | — | Hot-metal stock that visibly cools during the forge beat | P1 | needed |
+| Forge station (interior focus) | PA6: code-drawn `ForgeMinigame` overlay — title/stage label + numeric `ProgressBar` gauge + Stop/Strike/Quench/Cancel buttons (`godot/scripts/minigames/ForgeMinigame.cs`), no scene/art | Furnace, anvil, hammer, quench barrel, workbench for the 2.5D overlay | P1 | primitive |
+| Furnace heat FX | PA6: numeric heat readout + generic `ProgressBar` (Smelt beat) | Glow / ember / heat-shimmer for the smelt beat | P1 | primitive |
+| Glowing stock / ingot | PA6: "dross" text label only (`ForgeMinigameDross`) when the smelt carried forward an impurity — no ingot visual | Hot-metal stock that visibly cools during the forge beat | P1 | needed |
 | Ore & fuel props | — | Ore chunks (per material grade), coal/fuel | P2 | needed |
-| Hammer strike FX | — | Sparks + impact feedback on the forge beat | P2 | needed |
+| Hammer strike FX | PA6: numeric progress readout only (Forge beat) — no sparks/impact | Sparks + impact feedback on the forge beat | P2 | needed |
 | Shop counter station | — | Counter, display shelves/pedestals, signage for the service loop | P1 | needed |
 | Item display models | 2D icons (`IconRegistry`) | 3D/2.5D display versions of shelved gear for the counter | P2 | needed |
-| Craft-quality feedback | — | Visual tell for Poor→Masterwork result (spark burst, mark stamp) | P2 | needed |
+| Craft-quality feedback | PA6: text-only "Done — grade N" readout on minigame completion | Visual tell for Poor→Masterwork result (spark burst, mark stamp) | P2 | needed |
 
 ## Phase B/C (not yet built — placeholder rows to expand later)
 
