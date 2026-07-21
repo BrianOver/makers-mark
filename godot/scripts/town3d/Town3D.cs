@@ -1,17 +1,21 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using Godot;
 
 namespace GodotClient.Town3d;
 
 /// <summary>
-/// T3: standalone scaffold for the grounded 3D town — a <see cref="SubViewportContainer"/>
+/// T3+: standalone scaffold for the grounded 3D town — a <see cref="SubViewportContainer"/>
 /// hosting a picking-enabled <see cref="SubViewport"/> whose <see cref="World"/> is a plain
-/// <see cref="Node3D"/> with a box-floor ground, a <see cref="CameraRig"/>, ambient light, and
-/// empty <see cref="Buildings"/>/<see cref="Heroes"/> containers for later tasks to populate.
+/// <see cref="Node3D"/> with a box-floor ground, a <see cref="CameraRig"/>, ambient light, six
+/// interactable <see cref="Buildings"/> (T5), a display-only <see cref="MemorialPlot"/> (T5,
+/// populated T7), and <see cref="WorldInputNode"/> driving proximity/highlight/interact (T5). The
+/// <see cref="Heroes"/> container stays empty until T7.
 ///
 /// <para>Deliberately standalone: this task mounts <see cref="Town3D"/> directly in a
 /// code-built test rig (see <c>Town3DSceneTests</c>) rather than through <c>MainUi</c> — the
-/// <c>MainUi</c> cutover is a single atomic task (T8) at the end of the plan, so this type has
-/// no <c>Player</c> property yet (T4) and no building/hero population yet (T5/T7).</para>
+/// <c>MainUi</c> cutover is a single atomic task (T8) at the end of the plan.</para>
 /// </summary>
 public partial class Town3D : SubViewportContainer
 {
@@ -24,6 +28,15 @@ public partial class Town3D : SubViewportContainer
     /// <summary>T4: the player avatar; spawned in <see cref="Build"/> and followed by
     /// <see cref="Camera"/>.</summary>
     public PlayerController Player { get; private set; } = null!;
+
+    /// <summary>T5: display-only landmark (mirrors <c>TownScene</c>'s memorial corner) — no
+    /// collider, no interact zone. Per-hero stones are added by <c>ReconcileHeroes</c> (T7); this
+    /// task only places the container so the plot has a fixed home in the world.</summary>
+    public Node3D MemorialPlot { get; private set; } = null!;
+
+    /// <summary>T5: proximity target + prompt + interact — scans <see cref="Buildings"/> against
+    /// <see cref="Player"/> every physics frame.</summary>
+    public WorldInput3D WorldInputNode { get; private set; } = null!;
 
     /// <summary>Raised when a building is clicked/interacted with (T5+); re-emits into
     /// <c>MainUi</c>'s existing 2D-town vocabulary unchanged (KTD2 — presentation-only).</summary>
@@ -73,7 +86,64 @@ public partial class Town3D : SubViewportContainer
         World.AddChild(Player);
         Player.Cam = Camera.GetNode<Camera3D>("Camera3D");
         Camera.Target = Player;
+
+        var buildings = BuildBuildings();
+        foreach (var building in buildings)
+        {
+            Buildings.AddChild(building);
+        }
+
+        MemorialPlot = BuildMemorialPlot();
+        World.AddChild(MemorialPlot);
+
+        WorldInputNode = new WorldInput3D { Name = "WorldInput3D" };
+        WorldInputNode.Configure(Player, buildings);
+        World.AddChild(WorldInputNode);
+        WorldInputNode.Interacted += key => BuildingClicked?.Invoke(key);
     }
+
+    /// <summary>
+    /// T5 world-feature layout: the four staged-interior venues (forge/market/tavern/minegate —
+    /// the exact click-keys <c>MainUi.OnTownBuildingClicked</c>'s switch already handles) plus the
+    /// noticeboard (payload "Bounties" — the existing bounty-panel id used elsewhere in <c>MainUi</c>
+    /// (<c>Drawer.Register("Bounties", ...)</c>, the interior "board" hotspot's own "Bounties"
+    /// payload); the 2D noticeboard zone never routed through <c>BuildingClicked</c> at all — T8
+    /// adds the MainUi-side case). Positions are spread around the box-floor ground (60×60, so
+    /// ±30 in each horizontal axis) well clear of each other's interact zones.
+    /// </summary>
+    private static readonly (string Key, string Label, string ClickKey, Vector3 Position)[] BuildingLayout =
+    {
+        ("forge", "Forge", "Forge", new Vector3(-9f, 0f, -7f)),
+        ("market", "Shop", "Shop", new Vector3(9f, 0f, -7f)),
+        ("tavern", "Tavern", "Tavern", new Vector3(-9f, 0f, 8f)),
+        ("minegate", "Gate", "Gate", new Vector3(0f, 0f, -20f)),
+        ("noticeboard", "Bounties", "Bounties", new Vector3(11f, 0f, 9f)),
+    };
+
+    private static List<Building3D> BuildBuildings()
+    {
+        var buildings = new List<Building3D>();
+        foreach (var (key, label, clickKey, position) in BuildingLayout)
+        {
+            var building = new Building3D();
+            building.Configure(key, label, clickKey, position, TownAssets.BuildingScene(key));
+            buildings.Add(building);
+        }
+
+        return buildings;
+    }
+
+    /// <summary>T5: the memorial corner plot's container — a non-interactive display-only
+    /// landmark (no collider, no interact zone; see <see cref="MemorialPlot"/>'s own doc). One
+    /// stone per dead hero, rebuilt on reconcile, lands in T7.</summary>
+    private static Node3D BuildMemorialPlot() => new() { Name = "MemorialPlot", Position = new Vector3(-14f, 0f, 14f) };
+
+    /// <summary>Look up one of the six placed buildings by its <see cref="Building3D.Key"/> (e.g.
+    /// "forge") — throws if <see cref="Build"/> hasn't run or the key is unknown, since every
+    /// caller (tests, T6/T8 routing) expects the full layout to already exist.</summary>
+    public Building3D FindBuilding(string key) =>
+        Buildings.GetChildren().OfType<Building3D>().FirstOrDefault(b => b.Key == key)
+        ?? throw new InvalidOperationException($"No building named '{key}' in Town3D.Buildings.");
 
     /// <summary>
     /// Builds the standalone player body: a layer-4 <see cref="CharacterBody3D"/> (mask 1|2 — the
