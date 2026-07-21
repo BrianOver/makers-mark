@@ -4,7 +4,6 @@ using System.Text;
 using System.Threading.Tasks;
 using GameSim.Contracts;
 using Godot;
-using GodotClient.Town;
 using GodotClient.Ui;
 
 namespace GodotClient.Tests;
@@ -306,28 +305,6 @@ public static class UiTestSupport
     }
 
     /// <summary>
-    /// U20: pump real physics frames until <paramref name="avatar"/> reports it is no longer
-    /// following a path — day-length-agnostic the same way <see cref="AdvanceDay"/> is tick-count
-    /// agnostic, so a test never has to hand-compute "how many frames does 540px at 240px/s take
-    /// at 60Hz". Capped like every other tick-loop in this file so a genuinely stuck avatar fails
-    /// the test instead of hanging it.
-    /// </summary>
-    public static async Task WalkUntilArrived(Node node, PlayerAvatar avatar, int maxFrames = 600)
-    {
-        var tree = (SceneTree)Engine.GetMainLoop();
-        var frames = 0;
-        while (avatar.IsFollowingPath)
-        {
-            await node.ToSignal(tree, SceneTree.SignalName.PhysicsFrame);
-            if (++frames > maxFrames)
-            {
-                throw new InvalidOperationException(
-                    $"Avatar did not arrive within {maxFrames} physics frames.");
-            }
-        }
-    }
-
-    /// <summary>
     /// P007 U8 cross-screen smoke guard: true iff the U1 Theme cascade (<see cref="GameTheme.
     /// Build"/>, assigned ONLY at the <c>MainUi</c> root) reaches <paramref name="panel"/> at a
     /// legible size. <see cref="Control.GetThemeDefaultFontSize"/> walks the ancestor chain for
@@ -354,5 +331,66 @@ public static class UiTestSupport
     public static bool HasNonDegenerateLayout(Control control) =>
         (control.Size.X > 1f && control.Size.Y > 1f) ||
         (control.GetCombinedMinimumSize().X > 1f && control.GetCombinedMinimumSize().Y > 1f);
+
+    /// <summary>
+    /// T3: the 3D-town twin of <see cref="WalkUntilArrived"/> — pumps real physics frames until
+    /// <paramref name="body"/> settles within 1.2 units of <paramref name="target"/> (matches the
+    /// arrival radius later click-to-move code uses, T6), rather than hand-computing a frame
+    /// count from speed/distance. Capped and throws on exhaustion, same as every other tick-loop
+    /// helper in this file, so a genuinely stuck body fails the test instead of hanging it.
+    /// </summary>
+    public static async Task WalkUntilArrived3D(Node ctx, Node3D body, Vector3 target, int maxFrames = 600)
+    {
+        for (int i = 0; i < maxFrames; i++)
+        {
+            if (body.GlobalPosition.DistanceTo(target) < 1.2f)
+            {
+                return;
+            }
+
+            await ctx.ToSignal(ctx.GetTree(), SceneTree.SignalName.PhysicsFrame);
+        }
+
+        throw new System.Exception($"body did not arrive within {maxFrames} frames (at {body.GlobalPosition}, target {target})");
+    }
+
+    /// <summary>
+    /// T5 (T6 click-to-move consumes this): the 3D twin of <see cref="TryClickArea"/> — headless
+    /// physics *picking* is unproven on this build (G1 verdict), so a 3D click-target Area3D is
+    /// driven directly instead: reimplements the same point-in-box hit test real picking would do
+    /// (centered on <paramref name="area"/>'s global position, against its first <see
+    /// cref="BoxShape3D"/> child), and on a hit emits the SAME 5-arg <c>Area3D.InputEvent</c>
+    /// signal (<c>camera, event, position, normal, shape_idx</c>) real picking would emit — so
+    /// production click-handling code does not need to know it is under test. Returns whether the
+    /// point hit (so miss-case tests can assert on the return value too).
+    /// </summary>
+    public static bool TryClickArea3D(Area3D area, Camera3D camera, Vector3 worldPos)
+    {
+        foreach (var child in area.GetChildren())
+        {
+            if (child is not CollisionShape3D { Disabled: false, Shape: BoxShape3D box } shape)
+            {
+                continue;
+            }
+
+            var local = worldPos - (area.GlobalPosition + shape.Position);
+            var half = box.Size / 2f;
+            if (Mathf.Abs(local.X) > half.X || Mathf.Abs(local.Y) > half.Y || Mathf.Abs(local.Z) > half.Z)
+            {
+                continue;
+            }
+
+            area.EmitSignal(
+                Area3D.SignalName.InputEvent,
+                camera,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true },
+                worldPos,
+                Vector3.Up,
+                0);
+            return true;
+        }
+
+        return false;
+    }
 }
 #endif

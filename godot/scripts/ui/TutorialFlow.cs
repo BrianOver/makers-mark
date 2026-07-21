@@ -102,7 +102,7 @@ public sealed partial class TutorialFlow : PanelContainer
     public event Action<string>? SecondProfessionPicked;
 
     /// <summary>A quick-travel row button was pressed, carrying the same building key
-    /// <c>TownScene.BuildingClicked</c> payloads use ("Forge"/"Shop"/"Tavern"/"Gate").</summary>
+    /// <c>Town3D.BuildingClicked</c> payloads use ("Forge"/"Shop"/"Tavern"/"Gate").</summary>
     public event Action<string>? QuickTravelRequested;
 
     private ItemId? _craftedItem;

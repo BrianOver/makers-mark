@@ -12,9 +12,9 @@ namespace GodotClient.Ui;
 /// than stamping a per-node override, so one <c>MainUi.Theme</c> assignment restyles every kit
 /// widget in the tree at once.
 ///
-/// <para><see cref="ArtRect"/> mirrors the graceful-degrade contract already proven in
-/// <see cref="GodotClient.Town.LitTownOverlay"/>'s <c>TryAddBuilding</c>/<c>TryAddHero</c> (null
-/// texture → skip cleanly, never a crash) and <c>SimPanel.AddIcon</c> (null-tolerant): on a
+/// <para><see cref="ArtRect"/> mirrors the graceful-degrade contract already proven elsewhere
+/// in this codebase (null texture → skip cleanly, never a crash) and <c>SimPanel.AddIcon</c>
+/// (null-tolerant): on a
 /// manifest hit it returns the real art (a bare <see cref="TextureRect"/>, or that texture
 /// stacked over a caption <see cref="Label"/> when the caller passes one); on any miss — asset
 /// not generated, unknown id, or the manifest itself absent — it returns a theme-styled

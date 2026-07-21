@@ -574,24 +574,28 @@ public class MainUiTests
     }
 
     [TestCase]
-    public void Drawer_ClickOut_ClosesAndConsumesTheClick_AvatarNeverMoves()
+    public void Drawer_ClickOut_ClosesAndConsumesTheClick_PlayerNeverMoves()
     {
-        // KTD12/U21: the click-out that dismisses the drawer must never also reach WorldInput's
-        // click-to-move — proven here by the avatar sitting exactly where it started.
+        // KTD12/U21, T8: an open drawer gates the 3D world's own click-to-move off entirely
+        // (MainUi.UpdateEngaged -> Town.SetWorldInputEnabled) — proven two ways: world input is
+        // disabled the instant the drawer opens, and the click that dismisses the drawer never
+        // reaches the world underneath (the player sits exactly where it started and never enters
+        // a click-move).
         var ui = MountMainUi();
         try
         {
             ui.OpenPanel("Forge");
             AssertThat(ui.Drawer.IsOpen).IsTrue();
+            AssertThat(ui.Town.WorldInputNode.Enabled).IsFalse();
 
-            var avatar = ui.Town.Avatar!;
-            var before = avatar.Position;
+            var before = ui.Town.Player.GlobalPosition;
 
             Click(ui.Drawer.Veil); // same GuiInput-signal seam TabFade/LedgerModal tests use
 
             AssertThat(ui.Drawer.IsOpen).IsFalse();
-            AssertThat(avatar.Position).IsEqual(before);
-            AssertThat(avatar.IsFollowingPath).IsFalse();
+            AssertThat(ui.Town.WorldInputNode.Enabled).IsTrue();
+            AssertThat(ui.Town.Player.GlobalPosition).IsEqual(before);
+            AssertThat(ui.Town.Player.IsClickMoving).IsFalse();
         }
         finally
         {

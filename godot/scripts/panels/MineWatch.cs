@@ -4,14 +4,13 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
 using Godot;
-using GodotClient.Town;
+using GodotClient.Ui;
 
 namespace GodotClient.Panels;
 
 /// <summary>
-/// LW5 — the depths watch: a lit <see cref="SubViewport"/> strip (the V-lit-overlay pattern,
-/// cloned from <c>GodotClient.Town.LitTownOverlay</c> — SubViewport trap, SubViewport-scoped
-/// <see cref="CanvasModulate"/>, null-tolerant lit sprites) mounted at the top of
+/// LW5 — the depths watch: a lit <see cref="SubViewport"/> strip (SubViewport trap,
+/// SubViewport-scoped <see cref="CanvasModulate"/>, null-tolerant lit sprites) mounted at the top of
 /// <c>DepthsPanel</c>. Live ONLY while a party is underground —
 /// <see cref="DayPhase.Expedition"/>/<see cref="DayPhase.Camp"/>/
 /// <see cref="DayPhase.ExpeditionDeep"/> — collapsed to zero height otherwise, so the venue-hub
@@ -43,7 +42,7 @@ namespace GodotClient.Panels;
 /// <c>Detail</c> only sometimes names one, in free text) — deterministically picked from the floor
 /// number over the committed roster instead (flavor, not a specific-encounter claim).</para>
 ///
-/// <para><b>Graceful degrade</b> (the LitTownOverlay contract): a missing "mine-backdrop" makes
+/// <para><b>Graceful degrade:</b> a missing "mine-backdrop" makes
 /// <see cref="HasContent"/> false and collapses the WHOLE strip forever, whatever the phase —
 /// DepthsPanel behaves exactly as it did before this unit. A missing hero-class or monster art id
 /// degrades that ONE figure only (no sprite, no light, never a crash) — LW-art's still-unshipped
@@ -137,7 +136,7 @@ public partial class MineWatch : SubViewportContainer
     public WatchState State { get; private set; } = WatchState.Hidden;
 
     /// <summary>True once "mine-backdrop" resolved — false degrades the WHOLE strip forever,
-    /// whatever the phase (see type remarks). Mirrors <c>LitTownOverlay.HasContent</c>.</summary>
+    /// whatever the phase (see type remarks).</summary>
     public bool HasContent { get; private set; }
 
     /// <summary>The lit world's dark-cool ambient tint (test/tuning hook).</summary>
@@ -160,8 +159,7 @@ public partial class MineWatch : SubViewportContainer
 
     /// <summary>
     /// Build the SubViewport world. Injectable backdrop id (tests exercise the graceful-degrade
-    /// path with a fake one — same technique <c>LitTownOverlay.Build(buildings, heroes)</c> uses).
-    /// Idempotent-guarded.
+    /// path with a fake one). Idempotent-guarded.
     /// </summary>
     public void Build(string backdropId)
     {
@@ -491,7 +489,7 @@ public partial class MineWatch : SubViewportContainer
             Texture = lit,
             Position = position,
             RotationDegrees = rotation,
-            Modulate = HeroActor.RoleColor(hero.ClassId),
+            Modulate = ClassColors.RoleColor(hero.ClassId),
         };
         ScaleToWidth(sprite, lit, HeroTargetWidth);
         _world.AddChild(sprite);
@@ -687,8 +685,7 @@ public partial class MineWatch : SubViewportContainer
     }
 
     /// <summary>Scale a lit Sprite2D so its diffuse renders at <paramref name="targetWidth"/> px.
-    /// Duplicated from <c>LitTownOverlay.ScaleToWidth</c> (private there; LW4 owns that file
-    /// exclusively) rather than shared across lanes — same call CampPanel's mirrored SupplyFee
+    /// Not shared across lanes — same call CampPanel's mirrored SupplyFee
     /// constant makes.</summary>
     private static void ScaleToWidth(Sprite2D sprite, CanvasTexture lit, float targetWidth)
     {
@@ -699,9 +696,9 @@ public partial class MineWatch : SubViewportContainer
         }
     }
 
-    /// <summary>The pilot's radial falloff recipe (see <c>LitTownOverlay.BuildLightGradient</c>):
-    /// white core → 0.45 alpha at 0.55 → transparent edge, radial fill. Duplicated for the same
-    /// cross-lane reason as <see cref="ScaleToWidth"/>.</summary>
+    /// <summary>The pilot's radial falloff recipe: white core → 0.45 alpha at 0.55 → transparent
+    /// edge, radial fill. Duplicated for the same cross-lane reason as <see
+    /// cref="ScaleToWidth"/>.</summary>
     private static GradientTexture2D BuildLightGradient()
     {
         var gradient = new Gradient

@@ -40,7 +40,7 @@ public class ShopStageTests
             AssertThat(stage.World.FindChild("ShopBackdrop", true, false)).IsNotNull();
             AssertThat(stage.World.FindChild("ShopBackdropFallback", true, false)).IsNull();
 
-            // Decoration only — never intercepts a click (same contract as LitTownOverlay).
+            // Decoration only — never intercepts a click.
             AssertThat(stage.MouseFilter).IsEqual(Control.MouseFilterEnum.Ignore);
         }
         finally
@@ -179,8 +179,8 @@ public class ShopStageTests
             AssertThat(stage.ActiveCustomerCount).IsEqual(1);
             AssertThat(stage.World.FindChild("ShopCustomer_1", true, false)).IsNotNull();
 
-            // Drive real per-frame-sized steps (mirrors TownScene.Animate/HeroSprite.Advance)
-            // until the customer walks in, judges, and walks fully back out — one state
+            // Drive real per-frame-sized steps until the customer walks in, judges, and walks
+            // fully back out — one state
             // transition can complete per Advance call by design, so a single huge delta (unlike
             // real frame deltas) would only cross ONE boundary; capped so a stuck machine fails
             // the test instead of looping forever.

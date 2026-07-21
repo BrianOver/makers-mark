@@ -5,6 +5,7 @@ using GameSim.Contracts;
 using Godot;
 using GodotClient.Panels;
 using GodotClient.Town;
+using GodotClient.Town3d;
 using GodotClient.Ui;
 
 namespace GodotClient;
@@ -46,10 +47,34 @@ public partial class MainUi : Control
     /// <summary>U18/KTD13: the objective chip's docked width and its margin from the window's
     /// right edge and the header's bottom edge — an overlay sibling (like the Ledger/Camp
     /// modals) rather than a layout child, so it floats above every tab without shifting
-    /// panel content down.</summary>
-    private const float ObjectiveDockWidth = 320f;
+    /// panel content down. Menu-sizing fix (gate-b): mirrors
+    /// <see cref="Ui.ObjectiveTracker.DockWidth"/> rather than duplicating the literal, so the
+    /// chip's own minimum size and its docked offsets can never drift apart.</summary>
+    private const float ObjectiveDockWidth = Ui.ObjectiveTracker.DockWidth;
     private const float ObjectiveDockMargin = 16f;
     private const float ObjectiveDockOffsetTop = 64f;
+
+    /// <summary>Menu-sizing fix (review): the smallest on-screen gap the objective chip's clamp
+    /// math will ever collapse OffsetTop/OffsetBottom down to on a very short viewport — keeps
+    /// the chip a sliver rather than zero/negative height instead of tuning the normal-case
+    /// docking above.</summary>
+    private const float ObjectiveDockMinBottomGap = 40f;
+
+    /// <summary>Menu-sizing fix (review): fixed floors for the header row's three HUD
+    /// sections (stat chips / day timeline / Skip-Auto-Pause-Speed-Ledger controls) — named
+    /// here rather than left as inline literals at each <c>CustomMinimumSize</c> call site,
+    /// matching the ObjectiveDock consts above.</summary>
+    private const float StatChipsMinWidth = 220f;
+
+    private const float TimelineMinWidth = 280f;
+    private const float HudControlsMinWidth = 420f;
+
+    /// <summary>Menu-sizing fix (gate-b): a generous fixed docked height for the chip — same
+    /// fixed-height-overlay idiom <see cref="Ui.PipDock"/> already uses (DockHeight there),
+    /// picked instead of an engine-computed minimum so a fresh mount's un-expanded chip and a
+    /// "More"-expanded ranked list both fit without the docking math depending on content that
+    /// changes after <c>Refresh</c>.</summary>
+    private const float ObjectiveDockHeight = 260f;
 
     /// <summary>U23: the tutorial-flow overlay docks in the same top-right column, stacked below
     /// the objective chip rather than sharing its box (keeps the chip's own layout untouched).</summary>
@@ -58,7 +83,7 @@ public partial class MainUi : Control
     /// <summary>U23 (R5, KTD4): number-row hotkeys for the quick-travel unlock — runtime <see
     /// cref="InputMap"/> registration only (no <c>project.godot</c> contact), gated on <see
     /// cref="TutorialFlow.QuickTravelUnlocked"/> in <see cref="_Process"/>. Building keys match
-    /// <see cref="TownScene.BuildingClicked"/>'s own payload vocabulary.</summary>
+    /// <see cref="Town3D.BuildingClicked"/>'s own payload vocabulary.</summary>
     private static readonly (string Action, Key Key, string Building)[] QuickTravelHotkeys =
     [
         ("quicktravel_forge", Key.Key1, "Forge"),
@@ -84,7 +109,7 @@ public partial class MainUi : Control
     public SimAdapter Adapter { get; private set; } = null!;
     public PhaseClock Clock { get; private set; } = null!;
     public DrawerHost Drawer { get; private set; } = null!;
-    public TownScene Town { get; private set; } = null!;
+    public Town3D Town { get; private set; } = null!;
     public ForgePanel Forge { get; private set; } = null!;
     public ShopPanel Shop { get; private set; } = null!;
     public HeroesPanel Heroes { get; private set; } = null!;
@@ -143,12 +168,11 @@ public partial class MainUi : Control
     /// <summary>U22: the door position the avatar stood at when the currently-open (or just-
     /// closed) interior was opened — restored on exit (R4/AE4 "exit returns avatar to door
     /// position"). Null while no interior has ever been opened this session.</summary>
-    private Vector2? _interiorDoorPosition;
+    private Vector3? _interiorDoorPosition;
 
     // ── LW3: gold-chip bounce-scale pop (StatusBar region) ────────────────────────────────────
-    // No engine Tween in this codebase (LitTownOverlay/HeroActor precedent: accumulated-delta
-    // math only, so the pop is deterministic and headless-testable via direct _Process calls,
-    // same as TownScene.Animate). -1 = not popping.
+    // No engine Tween in this codebase (accumulated-delta math only, so the pop is deterministic
+    // and headless-testable via direct _Process calls). -1 = not popping.
     private const double GoldPopSeconds = 0.3;
     private Label? _goldValueLabel;
     private double _goldPopElapsed = -1;
@@ -192,6 +216,31 @@ public partial class MainUi : Control
         UpdateClockLabel();
         SyncCampModal(); // adopt an injected mid-day (parked) campaign — open the slate if already at Camp
         GD.Print($"[MainUi] campaign started, seed {Seed}");
+        MaybeScreenshotAndQuit();
+    }
+
+    // Dev tool (no-op in normal play): when TOWN_SHOT=<path> is set, render a few frames then
+    // save the whole viewport (3D town + HUD) to that PNG and quit. Lets an agent verify the
+    // town visually on a real GPU (headless can't render 3D). Guarded — never fires without the
+    // env var, so it has zero effect on a normal launch or playtest.
+    private async void MaybeScreenshotAndQuit()
+    {
+        var shotPath = System.Environment.GetEnvironmentVariable("TOWN_SHOT");
+        if (string.IsNullOrEmpty(shotPath))
+        {
+            return;
+        }
+
+        var tree = GetTree();
+        for (var i = 0; i < 90; i++) // ~1.5s at 60fps: let 3D, camera, and layout settle
+        {
+            await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        }
+
+        var image = GetViewport().GetTexture().GetImage();
+        image.SavePng(shotPath);
+        GD.Print($"[MainUi] TOWN_SHOT saved: {shotPath}");
+        tree.Quit();
     }
 
     public override void _Process(double delta)
@@ -550,10 +599,12 @@ public partial class MainUi : Control
 
         // --- U21: TownWorld is now a PERMANENT FullRect base child — added FIRST so every later
         // sibling (the HUD layout, the DrawerHost, the modals) draws on top of it, and it is never
-        // hidden by a drawer opening/closing (R1 world permanence). ---------------------------
-        Town = InstantiatePanel<TownScene>("res://scenes/town/town_scene.tscn");
+        // hidden by a drawer opening/closing (R1 world permanence). T8: the grounded 3D town
+        // replaces the 2D SubViewport shell — same permanence contract, same event vocabulary. ---
+        Town = new Town3D { Name = "Town3D" };
         AddChild(Town);
         Town.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        Town.Build(Adapter);
         Town.Clock = Clock;
         Town.HeroClicked += OnTownHeroClicked;
         Town.BuildingClicked += OnTownBuildingClicked;
@@ -572,16 +623,53 @@ public partial class MainUi : Control
         var headerRow = new HBoxContainer { Name = "HudHeaderRow" };
         header.AddChild(headerRow);
 
-        _statChips = new HBoxContainer { Name = "StatChips", SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        headerRow.AddChild(_statChips); // populated by RefreshStatus (day/phase/gold/heroes)
+        // Menu-sizing fix (gate-b/HUD clip): StatChips and Timeline are the row's two
+        // ExpandFill regions — with no cap, each one's OWN reported minimum size (the sum of
+        // its live children's minimums) feeds straight into HudHeaderRow's total width demand,
+        // and once that total exceeds the window width the row simply overflows to the right
+        // (HBoxContainer never shrinks a child below its minimum) — pushing the rightmost
+        // child, HudControls ("Skip"/Auto/Pause/etc.), off-screen. Wrapping each in a plain
+        // (non-Container) Control with a fixed CustomMinimumSize + ClipContents=true bounds
+        // its contribution to that total regardless of how many stat chips or phase labels it
+        // ends up holding — a plain Control's own minimum size is just CustomMinimumSize, so it
+        // does NOT propagate its children's combined minimum upward the way a Container would.
+        var statChipsWrap = new Control
+        {
+            Name = "StatChipsWrap",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(StatChipsMinWidth, 0),
+            ClipContents = true,
+        };
+        headerRow.AddChild(statChipsWrap);
+        _statChips = new HBoxContainer { Name = "StatChips" };
+        _statChips.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        statChipsWrap.AddChild(_statChips); // populated by RefreshStatus (day/phase/gold/heroes)
 
         // U18/KTD13: the day-timeline widget docks top-bar CENTER, between the stat chips
         // (left) and the Skip/Auto cluster (right) — populated/highlighted by RefreshHud.
-        Timeline = new DayTimeline { SizeFlagsHorizontal = SizeFlags.ExpandFill, Alignment = BoxContainer.AlignmentMode.Center };
+        var timelineWrap = new Control
+        {
+            Name = "TimelineWrap",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(TimelineMinWidth, 0),
+            ClipContents = true,
+        };
+        headerRow.AddChild(timelineWrap);
+        Timeline = new DayTimeline { Alignment = BoxContainer.AlignmentMode.Center };
         Timeline.Build();
-        headerRow.AddChild(Timeline);
+        Timeline.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        timelineWrap.AddChild(Timeline);
 
-        var controls = new HBoxContainer { Name = "HudControls" };
+        // HudControls is the row's rightmost, non-expand child — HBoxContainer already
+        // reserves its natural minimum size before handing any leftover space to the two
+        // ExpandFill wrappers above, but a fixed floor here keeps it from ever reporting
+        // narrower than its real button cluster (Skip/Auto/Pause/Speed/Ledger) needs, which
+        // is what actually keeps it fully on-screen once StatChips/Timeline are capped.
+        var controls = new HBoxContainer
+        {
+            Name = "HudControls",
+            CustomMinimumSize = new Vector2(HudControlsMinWidth, 0),
+        };
         headerRow.AddChild(controls);
 
         _clockLabel = new Label { Name = "ClockLabel" };
@@ -678,7 +766,7 @@ public partial class MainUi : Control
         // slides over the permanent world; one panel at a time (OpenPanel below REPLACES, never
         // stacks). Dim-under (LedgerModal precedent) + click-out/Esc close; the click-out consumes
         // the input event structurally (the dim veil's default Stop mouse filter), so it never
-        // reaches WorldInput/the world's Area2D click zones underneath. ------------------------
+        // reaches the 3D world's own click-to-move/interact input underneath. -------------------
         Drawer = new DrawerHost();
         AddChild(Drawer);
         Drawer.Build();
@@ -715,15 +803,28 @@ public partial class MainUi : Control
         Camp.VisibilityChanged += OnCampVisibilityChanged;
 
         // --- objective chip (U18/KTD13): a floating overlay sibling (like the modals above),
-        //     anchored top-right (engine preset + margin, auto-sized to its own content) and
-        //     nudged down by ObjectiveDockOffsetTop to clear the header row — stays visible
-        //     over every drawer without shifting any panel's own layout. Populated by RefreshHud.
-        Objective = new ObjectiveTracker { CustomMinimumSize = new Vector2(ObjectiveDockWidth, 0) };
+        //     anchored top-right at a FIXED width and nudged down by ObjectiveDockOffsetTop to
+        //     clear the header row — stays visible over every drawer without shifting any
+        //     panel's own layout. Populated by RefreshHud. Menu-sizing fix (gate-b): docked via
+        //     explicit OffsetLeft/OffsetRight rather than SetAnchorsAndOffsetsPreset(...,
+        //     LayoutPresetMode.Minsize, ...) — Minsize snapshots the CURRENT (collapsed, at
+        //     build time) minimum width into a one-time offset, so the chip never grew to
+        //     DockWidth even with CustomMinimumSize set, which is exactly the ~1-char-wide
+        //     playtest bug.
+        Objective = new ObjectiveTracker();
         Objective.Build();
         AddChild(Objective);
-        Objective.SetAnchorsAndOffsetsPreset(LayoutPreset.TopRight, LayoutPresetMode.Minsize, (int)ObjectiveDockMargin);
-        Objective.OffsetTop += ObjectiveDockOffsetTop;
-        Objective.OffsetBottom += ObjectiveDockOffsetTop;
+        Objective.SetAnchorsPreset(LayoutPreset.TopRight);
+        Objective.OffsetLeft = -ObjectiveDockWidth - ObjectiveDockMargin;
+        Objective.OffsetRight = -ObjectiveDockMargin;
+        // Clamp OffsetTop/OffsetBottom inside the viewport: on a short window, a fixed
+        // OffsetTop + DockHeight could otherwise push OffsetBottom (or even OffsetTop itself)
+        // past the visible area (TopRight anchors both Top/Bottom to the window's top edge, so
+        // these offsets ARE the absolute on-screen Y coordinates).
+        var viewportHeight = GetViewportRect().Size.Y;
+        Objective.OffsetTop = Mathf.Min(ObjectiveDockOffsetTop, viewportHeight - ObjectiveDockMinBottomGap);
+        var maxBottom = Mathf.Max(Objective.OffsetTop + ObjectiveDockMinBottomGap, viewportHeight - ObjectiveDockMargin);
+        Objective.OffsetBottom = Mathf.Min(Objective.OffsetTop + ObjectiveDockHeight, maxBottom);
         Objective.TutorialDismiss.Pressed += () =>
         {
             Tutorial.Dismiss();
@@ -847,14 +948,23 @@ public partial class MainUi : Control
     }
 
     /// <summary>
-    /// Town building click/interact (R20, U22): stage the venue's interior instead of the drawer
-    /// — the same <see cref="TownScene.BuildingClicked"/> payload every venue's click-arrival or
-    /// E-interact already fires (KTD12/U20), just routed onto <see cref="InteriorStage.Venues"/>
-    /// instead of straight onto <see cref="OpenPanel"/>. A hotspot pressed inside the interior
-    /// (<see cref="OnInteriorHotspotActivated"/>) is what actually opens the matching drawer.
+    /// Town building click/interact (R20, U22, T8): stage the venue's interior instead of the
+    /// drawer — the same <see cref="Town3D.BuildingClicked"/> payload every venue's click-arrival
+    /// or E-interact already fires, just routed onto <see cref="InteriorStage.Venues"/> instead of
+    /// straight onto <see cref="OpenPanel"/>. A hotspot pressed inside the interior (<see
+    /// cref="OnInteriorHotspotActivated"/>) is what actually opens the matching drawer. The
+    /// noticeboard (T5/T8) has no staged interior — its "Bounties" payload opens the Bounties
+    /// drawer directly, the same one-step routing quick-travel and the interior's own board
+    /// hotspot use.
     /// </summary>
     private void OnTownBuildingClicked(string building)
     {
+        if (building == "Bounties")
+        {
+            OpenPanel("Bounties");
+            return;
+        }
+
         var venueKey = building switch
         {
             "Forge" => "forge",
@@ -880,8 +990,7 @@ public partial class MainUi : Control
     /// and <see cref="Tutorial"/>'s own clickable venue-jump row funnel through the SAME check and
     /// the SAME routing <see cref="OnTownBuildingClicked"/> already uses (content parity —
     /// quick-travel never opens anything a walked arrival could not). Public so a test can call it
-    /// directly (mirrors <see cref="InteractionZone.RaiseInteract"/>'s own test-friendly
-    /// convention) — a real hotkey press reaches it via <see cref="_Process"/> in production.
+    /// directly — a real hotkey press reaches it via <see cref="_Process"/> in production.
     /// </summary>
     public void QuickTravel(string building)
     {
@@ -894,8 +1003,7 @@ public partial class MainUi : Control
     }
 
     /// <summary>U23: register the quick-travel number-row hotkeys at runtime (KTD4) — guarded so
-    /// repeated mounts in the same test process never double-add the same action (<see
-    /// cref="WorldInput.RegisterActions"/> precedent).</summary>
+    /// repeated mounts in the same test process never double-add the same action.</summary>
     private static void RegisterQuickTravelActions()
     {
         foreach (var (action, key, _) in QuickTravelHotkeys)
@@ -930,15 +1038,15 @@ public partial class MainUi : Control
     /// <summary>
     /// Open <paramref name="venueKey"/>'s staged interior (<see cref="InteriorStage.Venues"/>).
     /// The avatar is already standing at the venue's door — <see
-    /// cref="TownScene.BuildingClicked"/> only ever fires on arrival/interact (KTD12/U20) — so
-    /// this records that exact position for <see cref="ResetAvatarToDoor"/> to restore on exit,
-    /// closes whichever drawer was showing (REPLACE semantics, mirrors <see cref="OpenPanel"/>),
-    /// and starts the interior's own accumulated-delta push-in.
+    /// cref="Town3D.BuildingClicked"/> only ever fires on arrival/interact — so this records that
+    /// exact position for <see cref="ResetAvatarToDoor"/> to restore on exit, closes whichever
+    /// drawer was showing (REPLACE semantics, mirrors <see cref="OpenPanel"/>), and starts the
+    /// interior's own accumulated-delta push-in.
     /// </summary>
     private void OpenInterior(string venueKey)
     {
         Drawer.Close();
-        _interiorDoorPosition = Town.LitOverlay?.Zones.GetValueOrDefault(venueKey)?.Position;
+        _interiorDoorPosition = Town.DoorAnchor(venueKey);
         Interior.Open(venueKey, Adapter.CurrentState);
         UpdateEngaged();
     }
@@ -962,9 +1070,9 @@ public partial class MainUi : Control
 
     private void ResetAvatarToDoor()
     {
-        if (_interiorDoorPosition is { } doorPosition && Town.Avatar is not null)
+        if (_interiorDoorPosition is { } doorPosition)
         {
-            Town.Avatar.Position = doorPosition;
+            Town.Player.GlobalPosition = doorPosition;
         }
     }
 
@@ -1032,7 +1140,12 @@ public partial class MainUi : Control
     /// </summary>
     private void UpdateEngaged()
     {
-        Clock.Engaged = Drawer.IsOpen || Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible;
+        var engaged = Drawer.IsOpen || Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible;
+        Clock.Engaged = engaged;
+
+        // T8: a drawer/interior/modal owns input while engaged — the 3D world's own click-to-
+        // move/interact must not fight it for the same clicks underneath.
+        Town.SetWorldInputEnabled(!engaged);
 
         // U18: the engaged latch flips on this discrete event (drawer open/close / modal
         // open-close), not only on a phase tick — the waiting indicator must track it here too,

@@ -215,6 +215,10 @@ public class InteriorStageTests
     }
 
     // ── Full-world integration: arrival opens the interior, hotspot opens the SAME drawer id ──
+    // T8: the pre-cutover 2D avatar-walks-then-interacts flow is gone with the 2D town; these now
+    // drive the 3D equivalent directly through WorldInput3D.SetTarget/TriggerInteract — the same
+    // deterministic test seam Building3DInteractionTests already uses (bypasses the proximity
+    // scan/physics-frame wait, same as the pre-cutover flow bypassed real avatar movement).
 
     [TestCase]
     public void TavernArrival_OpensInterior_KeeperHotspot_OpensTavernDrawer_ExitReturnsAvatarToDoor()
@@ -222,10 +226,9 @@ public class InteriorStageTests
         var ui = MountMainUi();
         try
         {
-            var overlay = ui.Town.LitOverlay!;
-            var doorPosition = overlay.Zones["tavern"].Position;
-            overlay.WorldInput.UpdateZone(doorPosition);
-            overlay.WorldInput.TryInteract();
+            var doorPosition = ui.Town.DoorAnchor("tavern")!.Value;
+            ui.Town.WorldInputNode.SetTarget(ui.Town.FindBuilding("tavern"));
+            ui.Town.WorldInputNode.TriggerInteract();
 
             AssertThat(ui.Interior.IsOpen).IsTrue();
             AssertThat(ui.Interior.VenueKey).IsEqual("tavern");
@@ -237,18 +240,18 @@ public class InteriorStageTests
             AssertThat(ui.Interior.IsOpen).IsFalse();
             AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Tavern"); // content parity with pre-U22
 
-            // Nudge the avatar off the door (as if it had drifted) then re-enter and exit, to
+            // Nudge the player off the door (as if it had drifted) then re-enter and exit, to
             // prove the exit affordance actively restores the door position rather than the
-            // avatar simply never having moved.
-            ui.Town.Avatar!.Position += new Vector2(400, 0);
-            overlay.WorldInput.UpdateZone(doorPosition);
-            overlay.WorldInput.TryInteract();
+            // player simply never having moved.
+            ui.Town.Player.GlobalPosition += new Vector3(400, 0, 0);
+            ui.Town.WorldInputNode.SetTarget(ui.Town.FindBuilding("tavern"));
+            ui.Town.WorldInputNode.TriggerInteract();
             AssertThat(ui.Interior.IsOpen).IsTrue();
 
             Press(ui.Interior, "InteriorExit");
 
             AssertThat(ui.Interior.IsOpen).IsFalse();
-            AssertThat(ui.Town.Avatar!.Position).IsEqual(doorPosition);
+            AssertThat(ui.Town.Player.GlobalPosition).IsEqual(doorPosition);
             AssertThat(ui.Clock.Engaged).IsFalse();
         }
         finally
@@ -265,9 +268,8 @@ public class InteriorStageTests
         var ui = MountMainUi();
         try
         {
-            var overlay = ui.Town.LitOverlay!;
-            overlay.WorldInput.UpdateZone(overlay.Zones["minegate"].Position);
-            overlay.WorldInput.TryInteract();
+            ui.Town.WorldInputNode.SetTarget(ui.Town.FindBuilding("minegate"));
+            ui.Town.WorldInputNode.TriggerInteract();
 
             AssertThat(ui.Interior.IsOpen).IsTrue();
             AssertThat(ui.Interior.VenueKey).IsEqual("minegate");
@@ -296,9 +298,8 @@ public class InteriorStageTests
             ui.Clock.Play();
             AssertThat(ui.Clock.Engaged).IsFalse();
 
-            var overlay = ui.Town.LitOverlay!;
-            overlay.WorldInput.UpdateZone(overlay.Zones["forge"].Position);
-            overlay.WorldInput.TryInteract();
+            ui.Town.WorldInputNode.SetTarget(ui.Town.FindBuilding("forge"));
+            ui.Town.WorldInputNode.TriggerInteract();
             AssertThat(ui.Interior.IsOpen).IsTrue();
             AssertThat(ui.Clock.Engaged).IsTrue();
 
@@ -326,9 +327,8 @@ public class InteriorStageTests
         var ui = MountMainUi(new SimAdapter(GuaranteedSaleState()));
         try
         {
-            var overlay = ui.Town.LitOverlay!;
-            overlay.WorldInput.UpdateZone(overlay.Zones["market"].Position);
-            overlay.WorldInput.TryInteract();
+            ui.Town.WorldInputNode.SetTarget(ui.Town.FindBuilding("market"));
+            ui.Town.WorldInputNode.TriggerInteract();
 
             AssertThat(ui.Interior.VenueKey).IsEqual("market");
             AssertThat(ui.Interior.ShelfIconCount).IsEqual(ui.Adapter.CurrentState.Player.Shelf.Count);
@@ -336,8 +336,8 @@ public class InteriorStageTests
 
             Press(ui.Interior, "InteriorExit");
 
-            overlay.WorldInput.UpdateZone(overlay.Zones["forge"].Position);
-            overlay.WorldInput.TryInteract();
+            ui.Town.WorldInputNode.SetTarget(ui.Town.FindBuilding("forge"));
+            ui.Town.WorldInputNode.TriggerInteract();
             AssertThat(ui.Interior.VenueKey).IsEqual("forge");
             AssertThat(ui.Interior.ShelfIconCount).IsEqual(0); // not the market venue
             AssertThat(ui.Interior.ShopStage.Visible).IsFalse();
@@ -359,9 +359,8 @@ public class InteriorStageTests
             AssertThat(ui.Interior.ShopStage.QueuedRuns.Count).IsEqual(1);
             AssertThat(ui.Interior.ShopStage.QueuedRuns[0].Bought).IsTrue();
 
-            var overlay = ui.Town.LitOverlay!;
-            overlay.WorldInput.UpdateZone(overlay.Zones["market"].Position);
-            overlay.WorldInput.TryInteract();
+            ui.Town.WorldInputNode.SetTarget(ui.Town.FindBuilding("market"));
+            ui.Town.WorldInputNode.TriggerInteract();
             AssertThat(ui.Interior.ShopStage.Visible).IsTrue();
 
             for (var i = 0; i < 200 && ui.Interior.ShopStage.ActiveCustomerCount == 0; i++)
