@@ -29,6 +29,13 @@ public static class TownAssets
     public const string CastleKit = "res://assets/models/kenney/castle-kit/";
     private const string MiniCharacters = "res://assets/models/kenney/mini-characters/";
 
+    /// <summary>Locally AI-generated + Blender-normalized GLBs (TRELLIS.2 pipeline, see
+    /// <c>docs/design/2026-07-20-3d-asset-gen-plan.md</c>). Each is already decimated to a low-poly
+    /// budget, feet-pivoted (origin at base, sits on y=0), and pre-scaled to its final town height
+    /// by <c>tools/blender/normalize_glb.py</c> — so unlike the Kenney kits these need no assembly,
+    /// no <see cref="BuildingScale"/>, and no colormap repair (they ship baked PBR materials).</summary>
+    public const string GenModels = "res://assets/models/gen/";
+
     /// <summary>Kenney mini-characters GLBs are ~0.67 units tall in native mesh space;
     /// <c>Town3D.BuildPlayer</c>'s hand-picked capsule collider is 1.6 units tall (meant to read as
     /// human-height next to <see cref="BuildingScale"/>-sized buildings) — scaling the visual mesh
@@ -67,6 +74,23 @@ public static class TownAssets
 
         node.Scale = new Vector3(CharacterScale, CharacterScale, CharacterScale);
         return node;
+    }
+
+    /// <summary>Instantiates a normalized AI-gen GLB from <see cref="GenModels"/> at its final
+    /// (feet-pivoted, pre-scaled) transform — no colormap repair, since gen assets carry baked PBR.
+    /// Returns null when the file is absent, which is the intended signal for callers to fall back
+    /// to a Kenney assembly (<c>ResourceLoader.Exists</c> guard keeps a missing gen asset a graceful
+    /// degrade, never a crash — mirrors the runbook's incremental swap-in).</summary>
+    public static Node3D? InstantiateGen(string fileName)
+    {
+        var path = GenModels + fileName;
+        if (!ResourceLoader.Exists(path))
+        {
+            return null;
+        }
+
+        var scene = ResourceLoader.Load<PackedScene>(path);
+        return scene.Instantiate<Node3D>();
     }
 
     /// <summary>The assembled, colormap-fixed, pre-scaled building mesh for a
