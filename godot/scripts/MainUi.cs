@@ -216,6 +216,31 @@ public partial class MainUi : Control
         UpdateClockLabel();
         SyncCampModal(); // adopt an injected mid-day (parked) campaign — open the slate if already at Camp
         GD.Print($"[MainUi] campaign started, seed {Seed}");
+        MaybeScreenshotAndQuit();
+    }
+
+    // Dev tool (no-op in normal play): when TOWN_SHOT=<path> is set, render a few frames then
+    // save the whole viewport (3D town + HUD) to that PNG and quit. Lets an agent verify the
+    // town visually on a real GPU (headless can't render 3D). Guarded — never fires without the
+    // env var, so it has zero effect on a normal launch or playtest.
+    private async void MaybeScreenshotAndQuit()
+    {
+        var shotPath = System.Environment.GetEnvironmentVariable("TOWN_SHOT");
+        if (string.IsNullOrEmpty(shotPath))
+        {
+            return;
+        }
+
+        var tree = GetTree();
+        for (var i = 0; i < 90; i++) // ~1.5s at 60fps: let 3D, camera, and layout settle
+        {
+            await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        }
+
+        var image = GetViewport().GetTexture().GetImage();
+        image.SavePng(shotPath);
+        GD.Print($"[MainUi] TOWN_SHOT saved: {shotPath}");
+        tree.Quit();
     }
 
     public override void _Process(double delta)
