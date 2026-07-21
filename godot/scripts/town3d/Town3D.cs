@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using GameSim.Contracts;
 using Godot;
 
 namespace GodotClient.Town3d;
@@ -58,6 +59,200 @@ public partial class Town3D : SubViewportContainer
     /// interior/modal owns input instead of the world underneath it.</summary>
     public void SetWorldInputEnabled(bool enabled) => WorldInputNode.Enabled = enabled;
 
+    /// <summary>T7: the adapter <see cref="Build"/> was given — <see cref="ReconcileHeroes"/> and
+    /// the phase-choreography helpers below read <see cref="GodotClient.SimAdapter.CurrentState"/>
+    /// off this. Null only before <see cref="Build"/> has run.</summary>
+    public GodotClient.SimAdapter? Adapter { get; private set; }
+
+    /// <summary>T7: live hero actors keyed by <c>HeroId.Value</c> — alive heroes only (mirrors
+    /// <c>TownScene.Sprites</c>).</summary>
+    private readonly Dictionary<int, HeroActor3D> _heroActors = new();
+
+    /// <summary>LW1 file-exit stagger, ported from <c>TownScene</c> — how far apart (in seconds)
+    /// successive party members peel off the rally point toward the gate.</summary>
+    private const float FileExitStaggerSeconds = 0.35f;
+
+    /// <summary>T7: live hero-actor count (test/inspection surface).</summary>
+    public int HeroActorCount() => _heroActors.Count;
+
+    /// <summary>T7: the lowest-HeroId live actor (test/inspection surface) — deterministic even
+    /// though <see cref="Dictionary{TKey,TValue}"/> enumeration order is an implementation detail.
+    /// Throws if <see cref="ReconcileHeroes"/> has never produced any actor.</summary>
+    public HeroActor3D FirstHeroActor() => _heroActors.Values.OrderBy(a => a.HeroIdValue).First();
+
+    /// <summary>
+    /// T7: reconcile <see cref="Heroes"/> against <c>Adapter.CurrentState.Heroes</c> — adds a
+    /// <see cref="HeroActor3D"/> for every ALIVE hero that doesn't already have one, and removes
+    /// (frees) the actor for any hero that's now dead or gone entirely (mirrors
+    /// <c>GodotClient.Town.TownScene.ReconcileSprites</c>'s intent). Also rebuilds the memorial
+    /// plot from the current <c>DramaState.Memorials</c>. Called once at the end of <see
+    /// cref="Build"/> for this standalone scaffold; the T8 <c>Refresh()</c> surface calls it again
+    /// on every tick.
+    /// </summary>
+    public void ReconcileHeroes()
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        var state = Adapter.CurrentState;
+
+        foreach (var hero in state.Heroes.Values.Where(h => h.Alive))
+        {
+            if (_heroActors.ContainsKey(hero.Id.Value))
+            {
+                continue;
+            }
+
+            var actor = new HeroActor3D();
+            actor.Configure(hero.Id.Value, hero.Name, hero.Id.Value % 12, HomeFor(hero.Id.Value), hero.ClassId);
+            actor.Picked += id => HeroClicked?.Invoke(id);
+            Heroes.AddChild(actor);
+            _heroActors[hero.Id.Value] = actor;
+        }
+
+        // Permadeath (R7) / roster-absent: free the actor for anyone no longer alive-and-present.
+        foreach (var heroId in _heroActors.Keys
+                     .Where(id => !state.Heroes.TryGetValue(id, out var hero) || !hero.Alive)
+                     .ToList())
+        {
+            var actor = _heroActors[heroId];
+            _heroActors.Remove(heroId);
+            Heroes.RemoveChild(actor);
+            actor.QueueFree();
+        }
+
+        RebuildMemorialPlot(state);
+    }
+
+    /// <summary>Deterministic home spot per hero id — spread across an open band of the ground
+    /// plane clear of every building footprint (world-scale doc's 2D "wander band" analog).
+    /// </summary>
+    private static Vector3 HomeFor(int heroValue) => new(-18f + heroValue * 7 % 36, 0f, 2f + heroValue * 5 % 10);
+
+    /// <summary>T7: one stone per dead hero (mirrors <c>TownScene.RebuildMemorials</c>) — clears
+    /// and rebuilds <see cref="MemorialPlot"/> every reconcile so it never drifts from
+    /// <c>DramaState.Memorials</c>.</summary>
+    private void RebuildMemorialPlot(GameState state)
+    {
+        foreach (var child in MemorialPlot.GetChildren().ToList())
+        {
+            MemorialPlot.RemoveChild(child);
+            child.QueueFree();
+        }
+
+        var index = 0;
+        foreach (var memorial in state.Drama.Memorials)
+        {
+            MemorialPlot.AddChild(BuildMemorialStone(memorial, index));
+            index++;
+        }
+
+        MemorialStoneCount = index;
+    }
+
+    /// <summary>Live memorial-stone count (test/inspection surface).</summary>
+    public int MemorialStoneCount { get; private set; }
+
+    private static Node3D BuildMemorialStone(Memorial memorial, int index)
+    {
+        var stone = new Node3D { Name = $"Memorial_{memorial.Hero.Value}", Position = new Vector3(index * 1.6f, 0f, 0f) };
+        stone.AddChild(new MeshInstance3D
+        {
+            Name = "Stone",
+            Mesh = new BoxMesh { Size = new Vector3(0.6f, 1.0f, 0.3f) },
+            Position = new Vector3(0, 0.5f, 0),
+            MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.55f, 0.55f, 0.58f) },
+        });
+        stone.AddChild(new Label3D
+        {
+            Name = "Label3D",
+            Text = memorial.HeroName,
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            Position = new Vector3(0, 1.3f, 0),
+            FontSize = 28,
+            OutlineSize = 6,
+        });
+        return stone;
+    }
+
+    /// <summary>
+    /// T7 stub: phase-transition choreography for hero actors, called (like <c>TownScene</c>'s own
+    /// <c>OnPhaseCompleted</c>) after every tick. Morning done → every non-Away, non-WalkingIn
+    /// actor rallies and files out the gate. Expedition/ExpeditionDeep done → survivors of any
+    /// FINALIZED run (<c>PendingExpeditions</c>) who are still Away walk home (the <c>Away</c>
+    /// guard makes calling this at both arms idempotent, same as the 2D original). Evening done →
+    /// every remaining actor snaps home for the new day. Camp/unknown → no-op (never snap an
+    /// away/dead hero home mid-day before the Evening reveal).
+    /// </summary>
+    public void OnPhaseCompleted(DayPhase completedPhase)
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        switch (completedPhase)
+        {
+            case DayPhase.Morning:
+                DepartWanderingHeroes();
+                break;
+            case DayPhase.Expedition:
+            case DayPhase.ExpeditionDeep:
+                ReturnSurvivors();
+                break;
+            case DayPhase.Evening:
+                foreach (var actor in _heroActors.Values.Where(a => a.State != HeroActor3D.ActorState.Wandering))
+                {
+                    actor.SnapHome();
+                }
+
+                break;
+            case DayPhase.Camp:
+            default:
+                break;
+        }
+    }
+
+    private void DepartWanderingHeroes()
+    {
+        var departing = _heroActors.Values
+            .Where(a => a.State != HeroActor3D.ActorState.Away && a.State != HeroActor3D.ActorState.WalkingIn)
+            .OrderBy(a => a.HeroIdValue)
+            .ToList();
+        for (var i = 0; i < departing.Count; i++)
+        {
+            departing[i].BeginDeparture(RallySpotFor(i, departing.Count), i * FileExitStaggerSeconds);
+        }
+    }
+
+    /// <summary>Party-file rally slot near the gate, spread along X so the group reads as a
+    /// cluster rather than a stack (LW1, ported to 3D).</summary>
+    private static Vector3 RallySpotFor(int index, int count) =>
+        new((index - (count - 1) / 2f) * 0.8f, 0f, -15f);
+
+    private void ReturnSurvivors()
+    {
+        var survivors = Adapter!.CurrentState.PendingExpeditions
+            .SelectMany(expedition => expedition.Survivors)
+            .Select(id => id.Value)
+            .ToHashSet();
+        foreach (var actor in _heroActors.Values
+                     .Where(a => a.State == HeroActor3D.ActorState.Away && survivors.Contains(a.HeroIdValue)))
+        {
+            actor.BeginReturn();
+        }
+    }
+
+    public override void _Process(double delta)
+    {
+        foreach (var actor in _heroActors.Values)
+        {
+            actor.Advance(delta);
+        }
+    }
+
     /// <summary>
     /// Builds the whole standalone 3D scaffold: viewport, world, ground, light, camera. Safe to
     /// call once per instance (mirrors the <c>MainUi.Build</c>/panel idiom elsewhere in this
@@ -66,6 +261,7 @@ public partial class Town3D : SubViewportContainer
     /// </summary>
     public void Build(GodotClient.SimAdapter adapter)
     {
+        Adapter = adapter;
         TownInput.RegisterActions();
 
         Stretch = true;
@@ -128,6 +324,10 @@ public partial class Town3D : SubViewportContainer
         WorldInputNode.Configure(Player, buildings, Player.Cam);
         World.AddChild(WorldInputNode);
         WorldInputNode.Interacted += key => BuildingClicked?.Invoke(key);
+
+        // T7: populate Heroes/MemorialPlot from the adapter's initial state. T8's Refresh()
+        // surface calls this again on every tick; this standalone scaffold only needs it once.
+        ReconcileHeroes();
     }
 
     /// <summary>
