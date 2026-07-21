@@ -76,9 +76,13 @@ public sealed class CraftingHandlers : IActionHandler
         }
 
         // 6. All checks passed — consume, roll (the single RNG draw), mint, emit.
-        var quality = QualityRoller.Roll(recipe, materialGrade, talents, profession.Quality, rng, action.PerformanceGrade);
+        // ActiveCraft professions (blacksmith, PA2/PKD2) dominance-roll off the captured
+        // PerformanceGrade; every other profession keeps the untouched passive ±8 roll.
+        var quality = profession.ActiveCraft
+            ? QualityRoller.RollActive(recipe, materialGrade, talents, profession.Quality, rng, action.PerformanceGrade)
+            : QualityRoller.Roll(recipe, materialGrade, talents, profession.Quality, rng, action.PerformanceGrade);
         var itemId = new ItemId(state.NextItemId);
-        var item = ItemForge.Forge(itemId, recipe, quality, state.Day);
+        var item = ItemForge.Forge(itemId, recipe, quality, state.Day, action.SubScores);
 
         var newState = state with
         {

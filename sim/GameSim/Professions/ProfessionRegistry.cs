@@ -19,9 +19,19 @@ public static class ProfessionRegistry
 
     /// <summary>
     /// The blacksmith, re-expressed as data. Recipes and talent nodes are the existing tables;
-    /// the tier gates, material-efficiency node, and quality shifts are the constants that used
-    /// to be hardcoded in <c>CraftingHandlers</c>/<c>QualityRoller</c> — copied verbatim so the
-    /// crafting behaviour and quality distribution stay byte-identical.
+    /// the tier gates and material-efficiency node are the constants that used to be hardcoded
+    /// in <c>CraftingHandlers</c> — copied verbatim so THOSE stay byte-identical.
+    ///
+    /// PA2/PKD2/PKD3 flips the blacksmith to the ACTIVE dominance model
+    /// (<see cref="ActiveCraft"/> in <see cref="ProfessionDefinition"/>): the old quality-shift
+    /// talents (keen-eye/master-touch/legendary-craft/weapon-specialist) no longer touch the
+    /// roll at all, so <see cref="ProfessionQualityModel.FlatShifts"/>/<see
+    /// cref="ProfessionQualityModel.SlotShifts"/> are EMPTY here (double-count resolved — the
+    /// same node unlocking a minigame assist AND still shifting the retired roll would double-
+    /// count mastery). <see cref="ProfessionQualityModel.MaterialMasteryNode"/> is KEPT — the
+    /// material axis has no overlap with the minigame and still raises the roll's ceiling. The
+    /// four retired nodes are remapped 1:1 to <see cref="ProfessionDefinition.MinigameAssists"/>
+    /// data for the PA6 forge-overlay adapter to read.
     /// </summary>
     public static readonly ProfessionDefinition Blacksmith = new(
         Id: BlacksmithId,
@@ -35,17 +45,22 @@ public static class ProfessionRegistry
         }.ToImmutableSortedDictionary(),
         MaterialEfficiencyNode: TalentTree.MaterialEfficiency,
         Quality: new ProfessionQualityModel(
-            FlatShifts: new Dictionary<string, int>
-            {
-                [TalentTree.KeenEye] = 5,
-                [TalentTree.MasterTouch] = 7,
-                [TalentTree.LegendaryCraft] = 8,
-            }.ToImmutableSortedDictionary(StringComparer.Ordinal),
-            SlotShifts: new Dictionary<string, SlotShift>
-            {
-                [TalentTree.WeaponSpecialist] = new SlotShift(ItemSlot.Weapon, 5),
-            }.ToImmutableSortedDictionary(StringComparer.Ordinal),
-            MaterialMasteryNode: TalentTree.MaterialMastery));
+            FlatShifts: ImmutableSortedDictionary<string, int>.Empty,
+            SlotShifts: ImmutableSortedDictionary<string, SlotShift>.Empty,
+            MaterialMasteryNode: TalentTree.MaterialMastery),
+        ActiveCraft: true,
+        MinigameAssists: new Dictionary<string, MinigameAssist>
+        {
+            // Keen Eye: widen the smelt/quench sweet zones — a sharper eye reads the gauge.
+            [TalentTree.KeenEye] = new MinigameAssist(SweetZoneWidthBonus: 50, DriftRateReduction: 0, OffBeatForgiveness: 0),
+            // Master's Touch: a steadier hand slows heat/shaping drift.
+            [TalentTree.MasterTouch] = new MinigameAssist(SweetZoneWidthBonus: 0, DriftRateReduction: 70, OffBeatForgiveness: 0),
+            // Legendary Craft: the capstone — forgives off-beat forge strikes.
+            [TalentTree.LegendaryCraft] = new MinigameAssist(SweetZoneWidthBonus: 0, DriftRateReduction: 0, OffBeatForgiveness: 80),
+            // Weapon Specialist: extra sweet-zone width, weapon recipes only (the adapter scopes
+            // this by the recipe's slot — the sim just exposes the data).
+            [TalentTree.WeaponSpecialist] = new MinigameAssist(SweetZoneWidthBonus: 50, DriftRateReduction: 0, OffBeatForgiveness: 0),
+        }.ToImmutableSortedDictionary(StringComparer.Ordinal));
 
     /// <summary>All registered professions, keyed by id. Sorted for deterministic iteration.</summary>
     public static readonly ImmutableSortedDictionary<string, ProfessionDefinition> All = new[]

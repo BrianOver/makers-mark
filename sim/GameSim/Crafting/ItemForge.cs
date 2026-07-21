@@ -27,8 +27,11 @@ public static class ItemForge
         _ => 100,
     };
 
-    /// <summary>Mint the item record. Pure: no RNG, no state — callers allocate the id.</summary>
-    public static Item Forge(ItemId id, Recipe recipe, QualityGrade quality, int day)
+    /// <summary>Mint the item record. Pure: no RNG, no state — callers allocate the id.
+    /// <paramref name="subScores"/> is the PA2 forge-beat data (smelt/forge/quench), stamped
+    /// verbatim onto <see cref="Item.CraftSubScores"/> for Evening ledger flavor — data, never
+    /// rules; <see langword="null"/> (auto-craft, rival goods, pre-Phase-A) yields empty.</summary>
+    public static Item Forge(ItemId id, Recipe recipe, QualityGrade quality, int day, ImmutableList<int>? subScores = null)
     {
         var pct = QualityPercent(quality);
         var stats = new ItemStats(
@@ -47,6 +50,9 @@ public static class ItemForge
             ImmutableList<ItemHistoryEntry>.Empty,
             Effect: recipe.Effect is { } effect
                 ? effect with { Magnitude = effect.Magnitude * pct / 100 }
-                : null);
+                : null)
+        {
+            CraftSubScores = subScores ?? ImmutableList<int>.Empty,
+        };
     }
 }
