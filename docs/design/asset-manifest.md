@@ -54,6 +54,8 @@ Log entries here as the slice builds; seed list of what the design implies:
 | Forge station (3D world prop) | PA8: two stacked `BoxMesh` primitives (furnace tinted + emissive, anvil dark) at the outdoor "forge-station" `Building3D` (`Town3D.BuildAnvilFurnaceCluster`) — walking up dollies the camera in and opens `ForgePanel` (the PA6 minigame's own entrance) | Sculpted furnace + anvil + bellows + tool rack matching the interior overlay's fantasy checklist | P1 | primitive |
 | Shop counter station | PA8: two stacked `BoxMesh` primitives (counter top + shelf) at the outdoor "counter-station" `Building3D` (`Town3D.BuildCounterCluster`) — walking up dollies the camera in and opens `ShopPanel` | Counter, display shelves/pedestals, signage for the service loop | P1 | primitive |
 | Item display models | 2D icons (`IconRegistry`) | 3D/2.5D display versions of shelved gear for the counter | P2 | needed |
+| Shop counter station | PA7: code-built `CounterPanel` (Present/Suggest/Accept/HoldFirm/Counter/CloseCounter controls, StatChip meters) + `ShopStage`'s counter choreography (customer walks to a fixed spot, reuses the LW3 code-drawn emote faces) — reuses existing hero-class/item-slot icons, no station prop art | Counter, display shelves/pedestals, signage for the service loop | P1 | needed |
+| Item display models | PA7: 2D icons (`IconRegistry`) also used for the presented/shelf items in the counter flow | 3D/2.5D display versions of shelved gear for the counter | P2 | needed |
 | Craft-quality feedback | PA6: text-only "Done — grade N" readout on minigame completion | Visual tell for Poor→Masterwork result (spark burst, mark stamp) | P2 | needed |
 
 ## Phase B/C (not yet built — placeholder rows to expand later)

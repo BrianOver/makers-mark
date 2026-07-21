@@ -43,9 +43,14 @@ public partial class ShopStage : SubViewportContainer
     }
 
     /// <summary>One customer's staged run, snapshotted for tests/tuning — the live animation
-    /// state (nodes, elapsed time) stays private to <see cref="ShopStage"/>.</summary>
+    /// state (nodes, elapsed time) stays private to <see cref="ShopStage"/>. <paramref
+    /// name="IsCounterCustomer"/> (PA7, default false — every pre-PA7 call site is unaffected)
+    /// marks a run staged from the stepped counter session's resolution events
+    /// (<see cref="CounterSaleClosed"/>/<see cref="CustomerWalked"/>): it walks to the fixed
+    /// counter spot (<see cref="CounterPosX"/>) instead of a numbered shelf slot.</summary>
     public readonly record struct CustomerRun(
-        HeroId Hero, string ClassId, ItemId Item, ItemSlot Slot, bool Bought, EmoteKind Emote, double StartDelay);
+        HeroId Hero, string ClassId, ItemId Item, ItemSlot Slot, bool Bought, EmoteKind Emote, double StartDelay,
+        bool IsCounterCustomer = false);
 
     private const string BackdropArtId = "shop-interior";
     private static readonly Vector2I DesignSize = new(1024, 220);
@@ -53,6 +58,12 @@ public partial class ShopStage : SubViewportContainer
     private const float EntryX = -70f;
     private const int ShelfSlotCount = 5;
     private const float ShelfMarginX = 160f;
+
+    /// <summary>PA7: the fixed spot a stepped counter-session customer walks to — deliberately
+    /// distinct from any <see cref="ShelfSlotX"/> value (outside the shelf's own margin span) so
+    /// a counter customer never visually overlaps an atomic-pass shopper occupying a shelf slot
+    /// the same tick.</summary>
+    private static readonly float CounterPosX = DesignSize.X - 60f;
     private const float FigureTargetWidth = 60f;
     private const float WalkSpeed = 150f;         // design px/s
     private const float SlumpSpeedFactor = 0.55f; // a passed customer trudges out slower
@@ -170,10 +181,14 @@ public partial class ShopStage : SubViewportContainer
 
     /// <summary>
     /// Stage the day's shop choreography: one customer run per <see cref="ItemSold"/>
-    /// (player-shelf sales only — a rival sale never touches our till or our stage) and every
-    /// <see cref="HeroPassedOnItem"/>, in event order, staggered <see cref="StaggerSeconds"/>
-    /// apart on the stage's own accumulated clock. Call ONLY with ONE Morning tick's
-    /// <c>Adapter.LastEvents</c> (never the whole <c>EventLog</c>) — see type remarks.
+    /// (player-shelf sales only — a rival sale never touches our till or our stage), every
+    /// <see cref="HeroPassedOnItem"/> (the atomic pass), and — PA7 — every <see
+    /// cref="CounterSaleClosed"/>/<see cref="CustomerWalked"/> (the stepped counter session's
+    /// resolution events), in event order, staggered <see cref="StaggerSeconds"/> apart on the
+    /// stage's own accumulated clock. Call ONLY with ONE Morning tick's <c>Adapter.LastEvents</c>
+    /// (never the whole <c>EventLog</c>) — see type remarks. A stepped session spans MULTIPLE
+    /// Morning ticks (the phase-hold, PKD5), so this is called once per tick throughout it, each
+    /// call staging at most the handful of counter events THAT tick resolved.
     /// </summary>
     public void QueueDay(GameState state, IEnumerable<GameEvent> dayEvents)
     {
@@ -188,6 +203,8 @@ public partial class ShopStage : SubViewportContainer
             {
                 ItemSold { FromPlayerShop: true } sold => BuildSaleRun(state, sold, delay),
                 HeroPassedOnItem pass => BuildPassRun(state, pass, delay),
+                CounterSaleClosed sale => BuildCounterSaleRun(state, sale, delay),
+                CustomerWalked walked => BuildCounterWalkRun(state, walked, delay),
                 _ => null,
             };
 
@@ -234,6 +251,38 @@ public partial class ShopStage : SubViewportContainer
             pass.Hero, hero.ClassId, pass.Item, item.Slot, Bought: false, ClassifyPass(pass.Reason), delay);
     }
 
+    /// <summary>PA7: a stepped counter sale — walks to the fixed counter spot, not a shelf slot.</summary>
+    private static CustomerRun? BuildCounterSaleRun(GameState state, CounterSaleClosed sale, double delay)
+    {
+        if (!state.Items.TryGetValue(sale.Item.Value, out var item)
+            || !state.Heroes.TryGetValue(sale.Hero.Value, out var hero))
+        {
+            return null;
+        }
+
+        return new CustomerRun(
+            sale.Hero, hero.ClassId, sale.Item, item.Slot, Bought: true, ClassifyCounterSale(sale.Pinned), delay,
+            IsCounterCustomer: true);
+    }
+
+    /// <summary>PA7: a stepped counter walk-away. <see cref="CustomerWalked.Item"/> is nullable
+    /// (the contract allows "nothing presented"); in practice every emit site names a real item,
+    /// but a null still degrades to no staged run rather than crashing (the same graceful-degrade
+    /// contract <see cref="BuildPassRun"/> already holds).</summary>
+    private static CustomerRun? BuildCounterWalkRun(GameState state, CustomerWalked walked, double delay)
+    {
+        if (walked.Item is not { } itemId
+            || !state.Items.TryGetValue(itemId.Value, out var item)
+            || !state.Heroes.TryGetValue(walked.Hero.Value, out var hero))
+        {
+            return null;
+        }
+
+        return new CustomerRun(
+            walked.Hero, hero.ClassId, itemId, item.Slot, Bought: false, ClassifyCounterWalk(walked.Reason), delay,
+            IsCounterCustomer: true);
+    }
+
     /// <summary>
     /// Bought-cheap → heart; bought-fair → smile. "Cheap" reuses <c>RivalCatalog</c>'s own
     /// fair-market baseline — <c>(Attack + Defense) * 2</c>, its fixed rival shelf-price formula —
@@ -255,6 +304,20 @@ public partial class ShopStage : SubViewportContainer
     /// </summary>
     public static EmoteKind ClassifyPass(string reason) =>
         reason.Contains("can't afford", StringComparison.OrdinalIgnoreCase) ? EmoteKind.Frown : EmoteKind.Shrug;
+
+    /// <summary>PA7 (Moonlighter, pure render of the sim's computed verdict): a pinned counter
+    /// sale (countered within the true-willingness window) → heart; any other closed counter sale
+    /// → smile. <see cref="CounterSaleClosed.Pinned"/> is the sim's own already-computed flag — no
+    /// new action params, no local math.</summary>
+    public static EmoteKind ClassifyCounterSale(bool pinned) => pinned ? EmoteKind.Heart : EmoteKind.Smile;
+
+    /// <summary>PA7: a customer who walked because their patience ran out → frown (the
+    /// closest analogue to <see cref="ClassifyPass"/>'s unaffordable-frown — the deal was
+    /// genuinely lost, not merely a poor fit); every other walk reason (price never met, item not
+    /// wanted) → shrug. The sim's patience-exhausted reason always renders "the customer's
+    /// patience ran out" (pinned prose), matched case-insensitively like <see cref="ClassifyPass"/>.</summary>
+    public static EmoteKind ClassifyCounterWalk(string reason) =>
+        reason.Contains("patience", StringComparison.OrdinalIgnoreCase) ? EmoteKind.Frown : EmoteKind.Shrug;
 
     public override void _Process(double delta) => Advance(delta);
 
@@ -311,7 +374,12 @@ public partial class ShopStage : SubViewportContainer
 
     private ActiveCustomer Spawn(PendingCustomer pending)
     {
-        var shelfPos = new Vector2(ShelfSlotX(pending.SlotIndex), FloorY);
+        // PA7: a stepped counter customer stops at the fixed counter spot, not a numbered shelf
+        // slot (the field is still named ShelfPos below — it is really just "the stop target",
+        // reused as-is by every downstream Judging/WalkOut/coin-arc step regardless of source).
+        var shelfPos = pending.Info.IsCounterCustomer
+            ? new Vector2(CounterPosX, FloorY)
+            : new Vector2(ShelfSlotX(pending.SlotIndex), FloorY);
 
         var lit = IconRegistry.Lit($"hero-{pending.Info.ClassId}");
         Texture2D texture = lit ?? IconRegistry.Sprite(pending.Info.ClassId); // SVG fallback, always resolvable
