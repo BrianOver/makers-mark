@@ -14,6 +14,20 @@ public partial class PlayerController : CharacterBody3D
     [Export] public float Speed = 5f;
     [Export] public float TurnSpeed = 12f;
 
+    /// <summary>The body's resting Y — matches the top surface of <c>Town3D.BuildGround</c>'s
+    /// ground plane (y=0) and the (unoffset) Y of the <see cref="CharacterBody3D"/> root that
+    /// <c>Town3D.BuildPlayer</c> constructs. <see cref="FollowNav"/> deliberately lets the body
+    /// climb toward the baked navmesh's corner height (~0.5 above ground, a Recast voxelization
+    /// artifact) WHILE a click-move is in progress — <see cref="NavigationAgent3D"/> tracks path
+    /// progress against the body's own real position, so it needs that climb to advance past
+    /// each corner (see <see cref="FollowNav"/>'s comment for the empirical proof forcing this
+    /// horizontal-only doesn't work). Both places a click-move ends — arrival (<see
+    /// cref="FollowNav"/>'s <see cref="NavigationAgent3D.IsNavigationFinished"/> branch) and a
+    /// WASD interrupt (<see cref="_PhysicsProcess"/>) — pin <see cref="Node3D.GlobalPosition"/>
+    /// back to this value, so the climb is always transient and never a permanent state
+    /// change.</summary>
+    private const float GroundY = 0f;
+
     /// <summary>Set by <c>Town3D.Build</c> to the rig's <see cref="Camera3D"/> so WASD input can
     /// be interpreted camera-relative (movement always means "relative to what's on screen",
     /// regardless of the fixed <see cref="CameraRig"/> pitch).</summary>
@@ -86,9 +100,14 @@ public partial class PlayerController : CharacterBody3D
             if (wasd.LengthSquared() > 0.0001f)
             {
                 // A real player grabbing WASD mid-walk wins outright — drop the nav path instead
-                // of trying to blend it with manual input.
+                // of trying to blend it with manual input. Ground the body first: FollowNav may
+                // have been mid-climb toward the navmesh's corner height (see FollowNav and
+                // GroundY) when this cancel lands, and ApplyWasd's Velocity.Y=0 only preserves
+                // whatever Y is already there rather than resetting it — without this pin, a
+                // WASD-cancelled click-move would leave the player floating from then on.
                 IsClickMoving = false;
                 _pending = null;
+                GlobalPosition = new Vector3(GlobalPosition.X, GroundY, GlobalPosition.Z);
                 ApplyWasd(delta);
                 return;
             }
@@ -120,6 +139,7 @@ public partial class PlayerController : CharacterBody3D
         {
             Velocity = Vector3.Zero;
             MoveAndSlide();
+            GlobalPosition = new Vector3(GlobalPosition.X, GroundY, GlobalPosition.Z);
             IsClickMoving = false;
 
             var pending = _pending;
@@ -135,15 +155,20 @@ public partial class PlayerController : CharacterBody3D
         var next = Agent.GetNextPathPosition();
         var toNext = next - GlobalPosition;
 
-        // Deliberately NOT flattened to the XZ plane (matches Godot's own navigation-demo
-        // convention): the baked navmesh surface sits a small, fixed distance above the visual
-        // ground the body starts on, so a Y-flattened direction can compute to ~zero right at
-        // the very first corner (its XZ is essentially the agent's own starting point) and never
-        // let the body's tracked Y close that gap — which then keeps <see
-        // cref="NavigationAgent3D.GetNextPathPosition"/>'s own internal "corner reached" check
-        // (a full 3D distance test) from ever advancing past corner zero. Driving Velocity by the
-        // true 3D direction lets that small vertical settle happen as a byproduct of normal
-        // movement, same as the horizontal travel.
+        // Deliberately NOT flattened to the XZ plane — verified empirically, not just by
+        // inspection, that flattening deadlocks navigation entirely: the navmesh's very first
+        // path point sits ~0.5 directly above the body's own start (a Recast voxelization
+        // artifact — its XZ delta is ~0), and NavigationAgent3D tracks path progress against the
+        // body's own real GlobalPosition (including Y). Forcing Velocity.Y=0 means the body can
+        // never physically close that ~0.5 vertical gap, so the "reached this corner" check
+        // (which needs that gap closed) never fires and the path permanently stalls at corner
+        // zero — reproduced directly: 596 identical frames, zero net movement, no error. Driving
+        // the true 3D direction lets the body climb toward navmesh height as a byproduct of
+        // normal movement (every corner in this bake shares ~0.5 elevation, so the climb holds
+        // for the rest of the walk, same as Godot's own navigation-demo convention) — GroundY
+        // pins the body back to the visual ground the instant the click-move ends (see
+        // IsNavigationFinished above and the WASD-cancel branch in _PhysicsProcess), so this
+        // climb is always transient and never a permanent state change.
         var dir = toNext.LengthSquared() > 0.0001f ? toNext.Normalized() : Vector3.Zero;
 
         Velocity = dir * Speed;

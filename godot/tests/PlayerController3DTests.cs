@@ -96,14 +96,85 @@ public class PlayerController3DTests
             // own arrival check (also 1.2, but gated on IsNavigationFinished) actually fires.
             // Capped like every other tick-loop in this suite: throws rather than silently
             // leaving `raised` null if arrival genuinely never settles.
+            const int maxSettleFrames = 120;
             var settleFrames = 0;
-            while (raised == null && settleFrames < 120)
+            while (raised == null && settleFrames < maxSettleFrames)
             {
                 await PumpPhysicsOnly(town, 1);
                 settleFrames++;
             }
 
+            if (raised == null)
+            {
+                throw new System.Exception($"BuildingClicked did not fire within {maxSettleFrames} settle frames");
+            }
+
             AssertThat(raised).IsEqual("Forge");
+        }
+        finally
+        {
+            town.QueueFree();
+        }
+    }
+
+    /// <summary>
+    /// Regression (review): <see cref="PlayerController.FollowNav"/> used to drive Velocity from
+    /// the full 3D direction to the next nav corner, and because baked navmesh corners sit ~0.5
+    /// above the visual ground (a Recast voxelization artifact) the body climbed to that height
+    /// and stayed there permanently after the first click-to-move — <see
+    /// cref="PlayerController.ApplyWasd"/> hardcodes <c>Velocity.Y=0</c>, which preserves
+    /// whatever Y the body already has rather than resetting it, so later WASD never recovered
+    /// it either. <see cref="PlayerController.FollowNav"/> now pins <see
+    /// cref="Node3D.GlobalPosition"/>'s Y back to ground every nav frame; this asserts a
+    /// click-move leaves the body at ground level, and that a subsequent WASD move keeps it
+    /// there.
+    /// </summary>
+    [TestCase]
+    public async Task ClickMove_ThenArrive_StaysAtGroundY_AndWasdKeepsIt()
+    {
+        var town = Mount();
+        try
+        {
+            town.Viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+
+            var player = town.Player;
+            player.GlobalPosition = new Vector3(0, 0, 10);
+            var target = new Vector3(5, 0, 5);
+            player.MoveTo(target);
+
+            await WalkUntilArrived3D(town, player, target, 600);
+
+            // A few more settle frames so IsNavigationFinished's own arrival branch (and its
+            // ground pin) has definitely run — same pattern as
+            // ClickForge_WalksThenOpens_NeverInstant's post-WalkUntilArrived3D settle loop.
+            const int maxSettleFrames = 120;
+            var settleFrames = 0;
+            while (player.IsClickMoving && settleFrames < maxSettleFrames)
+            {
+                await PumpPhysicsOnly(town, 1);
+                settleFrames++;
+            }
+
+            if (player.IsClickMoving)
+            {
+                throw new System.Exception($"click-move did not finish within {maxSettleFrames} settle frames");
+            }
+
+            AssertThat(Mathf.Abs(player.GlobalPosition.Y) < 0.05f)
+                .OverrideFailureMessage($"player floated after click-move: Y={player.GlobalPosition.Y}").IsTrue();
+
+            player.SetDirectInput(new Vector2(1, 0));
+            try
+            {
+                await PumpPhysicsOnly(town, 20);
+            }
+            finally
+            {
+                player.SetDirectInput(Vector2.Zero);
+            }
+
+            AssertThat(Mathf.Abs(player.GlobalPosition.Y) < 0.05f)
+                .OverrideFailureMessage($"WASD after click-move left player off ground: Y={player.GlobalPosition.Y}").IsTrue();
         }
         finally
         {
