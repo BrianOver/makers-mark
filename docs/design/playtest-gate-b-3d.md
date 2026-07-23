@@ -1,22 +1,33 @@
 # Gate B — 3D town playtest sheet (Brian's run-and-score instrument)
 
-> **RUN STATUS — verified 2026-07-21.** Pre-flight **GREEN**: fast lane 934 passed · 3D engine
-> subset 6 passed · Godot 4.6.3 console exe present · `Game/play` (branch `play-3d`) builds clean =
-> **launchable now.**
-> **Play from `C:\Code\Game\play`** (the human-play checkout). Open THIS sheet from the worktree to fill in.
-> ⚠ **Divergence flag (a priority to reconcile later):** `play-3d` is 14 commits behind main — it
-> is **missing the AI-gen forge (#167) and GPU-safety limits (#168)** — and has 21 of its own
-> commits main lacks (its "dress the town" line). The two 3D-town lines have diverged; play-3d is on
-> the older gen base but is independently playtest-ready. Score what you see; the merge is tracked.
+> **RUN STATUS.** Play the CURRENT build only: run `tools/play.ps1` from `C:\Code\Game\play`.
+> It is a FRESHNESS GATE -- it fetches, fast-forwards `play` to the latest `main`, refuses to launch
+> anything stale/diverged, then builds + launches. The in-game corner **build stamp**
+> (`branch @ sha | freshness | date`) tells you exactly what you are running -- screenshot it with any
+> finding. There is no `play-3d` branch anymore: **`main` IS the game.**
+>
+> **Pre-flight green bar (2026-07-23, main @ fba5bb2):** fast lane 981, Balance 25, Godot build clean.
+>
+> **WHAT IS ACTUALLY IN THIS BUILD (scope -- read before scoring; do not test for what is not here):**
+> - YES 3D town HUB: real 3D buildings (AI-gen + kit), click-to-move navmesh, 3D hero actors, camera rig.
+> - YES Blacksmith ACTIVE craft: staged forge minigame (smelt/forge/quench) with G1 world VFX + result
+>   ceremony (grade / quality stars / 3 sub-score pips) + in-game build stamp.
+> - YES Scarcity (G3): per-day action slots, guild rent, rival market share.
+> - YES Raid forecast (G4): CLI `forecast`/`telegraph` command only -- NO in-game board yet.
+> - NO -- NOT the "full 3D game": building INTERIORS are still 2D painted backdrops; the mine/expedition
+>   is a 2D spectate feed. 3D is the town HUB only.
+> - NO -- NOT a profession overhaul: only the BLACKSMITH is interactive. Alchemy/Tanning/Engineering
+>   exist as recipes/items/talents but craft PASSIVELY (auto-craft menu, no distinct minigame). The
+>   per-profession verb overhaul is Phase B (docs/plans/2026-07-21-006-phaseB-living-heroes.md), NOT built.
 >
 > **This is the thing you open and fill in.** The *why* lives in
 > `2026-07-21-3d-playtest-redesign.md` + `-open-questions-research.md`; this is the *do*.
-> Gate A (CLI naive-persona comprehension) is **PASSED and carried** — do not re-run it for a
+> Gate A (CLI naive-persona comprehension) is **PASSED and carried** -- do not re-run it for a
 > render change. Gate B rev.2 alone gates the 3D slice.
 >
-> **Decisions baked in (confirmed 2026-07-21):** motion sickness = auto-P0 · fps target 60 / floor
+> **Decisions baked in (confirmed 2026-07-21):** motion sickness = auto-P0, fps target 60 / floor
 > 45 (sustained <45 = P0) on the dev box (RTX 5080 / 7950X / 64 GB) via Godot's **built-in F3
-> overlay** · strict discoverability bar · golden-image tests deferred · Cards 2 & 4 want a *fresh*
+> overlay**, strict discoverability bar, golden-image tests deferred, Cards 2 & 4 want a *fresh*
 > tester on major reruns (prior exposure destroys cold-cognition; you keep verdict authority).
 
 ---
@@ -43,10 +54,11 @@ $env:TOWN_SHOT="C:\temp\townshot.png"; & "C:\Tools\Godot\Godot_v4.6.3-stable_mon
 ## 1. Launch for the live session
 
 ```powershell
-& "C:\Tools\Godot\Godot_v4.6.3-stable_mono_win64\Godot_v4.6.3-stable_mono_win64_console.exe" --path godot
+powershell -ExecutionPolicy Bypass -File tools/play.ps1
 ```
 
-Press **F3** in-game for the fps/frame-time overlay (watch it during Card 5). Play **cold** — do not
+Always launch via the gate (never the raw Godot exe) so you can never score a stale build; it writes
+the corner build stamp and refuses stale/diverged checkouts. Press **F3** in-game for the fps/frame-time overlay (watch it during Card 5). Play **cold** — do not
 pre-plan routes. Seed 2026 for reproducibility if a finding needs a repro. Budget ~45–60 min.
 
 ---
