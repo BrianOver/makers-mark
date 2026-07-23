@@ -1,5 +1,14 @@
 # Gate B — 3D town playtest sheet (Brian's run-and-score instrument)
 
+> **RUN STATUS — verified 2026-07-21.** Pre-flight **GREEN**: fast lane 934 passed · 3D engine
+> subset 6 passed · Godot 4.6.3 console exe present · `Game/play` (branch `play-3d`) builds clean =
+> **launchable now.**
+> **Play from `C:\Code\Game\play`** (the human-play checkout). Open THIS sheet from the worktree to fill in.
+> ⚠ **Divergence flag (a priority to reconcile later):** `play-3d` is 14 commits behind main — it
+> is **missing the AI-gen forge (#167) and GPU-safety limits (#168)** — and has 21 of its own
+> commits main lacks (its "dress the town" line). The two 3D-town lines have diverged; play-3d is on
+> the older gen base but is independently playtest-ready. Score what you see; the merge is tracked.
+>
 > **This is the thing you open and fill in.** The *why* lives in
 > `2026-07-21-3d-playtest-redesign.md` + `-open-questions-research.md`; this is the *do*.
 > Gate A (CLI naive-persona comprehension) is **PASSED and carried** — do not re-run it for a

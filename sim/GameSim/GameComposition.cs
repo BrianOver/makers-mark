@@ -35,13 +35,17 @@ namespace GameSim;
 /// stream — and every existing seed's world — is unchanged by its insertion; muster likewise
 /// draws no RNG (pure projection).
 /// Expedition: bounty-judging → expedition (judging shapes target floors).
-/// Evening: expedition-reveal → bounty-payout (payout needs revealed depths).
+/// Evening: expedition-reveal → bounty-payout → market-share (payout needs revealed depths;
+/// market-share is LAST in Evening BY CONTRACT — see MarketShareSystem's class comment — it
+/// reads GameState.ActionSlotsRemaining after every handler for the day has had its chance to
+/// spend one, but before the kernel's own post-tick budget reset).
 /// </summary>
 public static class GameComposition
 {
     public static GameKernel BuildKernel() => new(
         ImmutableList.Create<IPhaseSystem>(
             new FactionDriftSystem(), // Morning, FIRST — drift settles standing before anything reads it (KTD5); draws no RNG
+            new RentSystem(), // Game-Feel Plan G3: right after drift, BEFORE the no-softlock floor — see class comment; draws no RNG
             new DestitutionRecoverySystem(), // Playable Core U5: no-softlock floor (R5/KD3); draws no RNG, never fires solvent — stream unchanged
             new RivalRestockSystem(),
             new RecruitSystem(),
@@ -53,7 +57,8 @@ public static class GameComposition
             new ExpeditionSystem(),
             new ExpeditionDeepSystem(), // U3 staged resolution: stage-2 finalize at the Deep tick (day order; phase filter does the work)
             new ExpeditionRevealSystem(),
-            new BountyPayoutSystem()),
+            new BountyPayoutSystem(),
+            new MarketShareSystem()), // Game-Feel Plan G3: LAST in Evening BY CONTRACT — see class comment; draws no RNG
         ImmutableList.Create<IActionHandler>(
             new CraftingHandlers(),
             new ShopHandlers(),

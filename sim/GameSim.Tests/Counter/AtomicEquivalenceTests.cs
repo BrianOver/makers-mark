@@ -8,18 +8,27 @@ namespace GameSim.Tests.Counter;
 
 /// <summary>
 /// THE PA3 PIN (plan 2026-07-21-002, PKD5): a Morning that never submits a counter action must
-/// stay BYTE-IDENTICAL to the pre-Phase-A kernel — the atomic <c>HeroShoppingSystem</c> pass is
-/// still the default day loop. This is the FIRST test PA3 lands (HIGH-RISK-land-tests-first):
-/// the expected hash below was captured by running this exact 30-day/no-counter-action script
+/// stay BYTE-IDENTICAL to the ATOMIC path of whatever kernel composition is current — the
+/// atomic <c>HeroShoppingSystem</c> pass is still the default day loop. This is the FIRST test
+/// PA3 lands (HIGH-RISK-land-tests-first): the expected hash below was originally captured
 /// against the pre-PA3 <see cref="GameComposition.BuildKernel"/> (commit a7ae67d, before
 /// <c>GameKernel.Advance</c>, <c>GameComposition</c>, or <c>HeroShoppingSystem</c> gained any
-/// counter-awareness). Every later PA3/PA4 change must keep this hash green — it is the
-/// structural guarantee that stepped-Morning is an ADDITIVE seam, not a rules rewrite (PKD9).
+/// counter-awareness).
+///
+/// RE-BASELINED (Game-Feel Plan G3, 2026-07-21): this 30-day/zero-action script is now
+/// necessarily idle every day by construction (ActionSlotsRemaining never drops, since no
+/// slot-consuming action is ever submitted), so the NEW always-on <c>RentSystem</c> (rent comes
+/// due at day 10/20/30) and <c>MarketShareSystem</c> (idling every day rides the rival's edge to
+/// its 1000‰ cap, discounting <c>RivalRestockSystem</c>'s newly-minted stock) legitimately move
+/// the serialized state — this is G3 working as designed, not a counter-additivity regression.
+/// The hash below is the new baseline post-G3; the PA3 invariant it protects (atomic == the
+/// current kernel's non-counter path) is otherwise unchanged. A future feature that touches
+/// composed state on an all-empty-actions run will need the same deliberate re-baseline.
 /// </summary>
 public class AtomicEquivalenceTests
 {
     private const string ExpectedPreCounterSha256 =
-        "EC3DDFCCA9F14C55F892E9ECF525151801108D7BBB8EF1EB3E82ED018DEA40D9";
+        "8EB0FCB1328334BEE182405DD51461CDC7675D3BAA75B879F01FCA710C47B25B";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

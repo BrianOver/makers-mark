@@ -75,6 +75,14 @@ public sealed class MaterialVendorHandlers : IActionHandler
             return (state, new RejectedAction(action, $"Not enough gold: need {cost}, have {state.Player.Gold}."));
         }
 
+        // 5. Day action-budget gate (Game-Feel Plan G3): restocking is real work — checked LAST,
+        //    after every economic precondition, so existing rejection reasons stay byte-identical
+        //    on a day with slots to spare; only a legal buy with zero slots left is newly refused.
+        if (state.ActionSlotsRemaining <= 0)
+        {
+            return (state, new RejectedAction(action, $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance."));
+        }
+
         // All checks passed — the exact move: gold down by cost, materials up by quantity,
         // stamped sink event. No RNG, no other state touched.
         var have = state.Player.Materials.TryGetValue(buy.MaterialKey, out var stock) ? stock : 0;
@@ -85,6 +93,7 @@ public sealed class MaterialVendorHandlers : IActionHandler
                 Gold = state.Player.Gold - cost,
                 Materials = state.Player.Materials.SetItem(buy.MaterialKey, have + buy.Quantity),
             },
+            ActionSlotsRemaining = state.ActionSlotsRemaining - 1,
         };
 
         events.Emit(new MaterialPurchased(buy.MaterialKey, buy.Quantity, cost));

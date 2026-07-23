@@ -99,6 +99,67 @@ public class RivalRestockSystemTests
     }
 
     [Fact]
+    public void ZeroMarketShare_ShelvesAtFixedCatalogPrice()
+    {
+        // Default/pre-G3 RivalMarketSharePermille == 0 must stay byte-identical to the fixed
+        // catalog price — the identity-function guarantee DiscountedPrice's doc promises.
+        var (after, _) = Run(GameFactory.NewGame(seed: 3) with { RivalMarketSharePermille = 0 });
+
+        foreach (var line in RivalCatalog.Entries)
+        {
+            var entry = Assert.Single(after.RivalShelf, e => after.Items[e.Item.Value].RecipeId == line.RecipeId);
+            Assert.Equal(line.Price, entry.Price);
+        }
+    }
+
+    [Fact]
+    public void FullMarketShare_DiscountsNewlyMintedStock_ButNeverBelowOneGold()
+    {
+        // Game-Feel Plan G3: at the 1000‰ ceiling the rival undercuts by up to
+        // RivalRestockSystem.MaxDiscountPermille (40%) — the visible consequence of a fully
+        // idle campaign, floored at 1 gold so a line is never free.
+        var (after, _) = Run(GameFactory.NewGame(seed: 3) with { RivalMarketSharePermille = 1000 });
+
+        foreach (var line in RivalCatalog.Entries)
+        {
+            var entry = Assert.Single(after.RivalShelf, e => after.Items[e.Item.Value].RecipeId == line.RecipeId);
+            var discountPermille = (int)IntegerCurves.MulDiv(1000, RivalRestockSystem.MaxDiscountPermille, 1000);
+            var expected = Math.Max(1, line.Price - (int)IntegerCurves.MulDiv(line.Price, discountPermille, 1000));
+            Assert.Equal(expected, entry.Price);
+            Assert.True(entry.Price <= line.Price, "discounted price must never exceed the base catalog price");
+        }
+    }
+
+    [Fact]
+    public void PartialMarketShare_DiscountsProportionally()
+    {
+        // Half the ceiling (500‰) should land at half the max discount — pins the linear scaling
+        // (IntegerCurves.MulDiv round-to-nearest) rather than an all-or-nothing toggle.
+        var (after, _) = Run(GameFactory.NewGame(seed: 3) with { RivalMarketSharePermille = 500 });
+
+        var line = RivalCatalog.Entries.First(l => l.RecipeId == "rival-blade-2"); // Attack 20 -> price 40
+        var entry = Assert.Single(after.RivalShelf, e => after.Items[e.Item.Value].RecipeId == line.RecipeId);
+        Assert.True(entry.Price < line.Price);
+
+        var maxDiscounted = Math.Max(1, line.Price - (int)IntegerCurves.MulDiv(line.Price, RivalRestockSystem.MaxDiscountPermille, 1000));
+        Assert.True(entry.Price > maxDiscounted);
+    }
+
+    [Fact]
+    public void AlreadyShelvedLines_KeepTheirOriginalPrice_OnlyFreshMintsRepricePrice()
+    {
+        // A discount is only applied at MINT time (the class doc's "fresh mints re-price" note) —
+        // an untouched shelf entry from a previous, cheaper (or costlier) market-share morning must
+        // not silently retag its price when the meter moves on a later morning.
+        var (stocked, _) = Run(GameFactory.NewGame(seed: 3) with { RivalMarketSharePermille = 0 });
+        var untouchedPrice = stocked.RivalShelf[0].Price;
+
+        var (again, _) = Run(stocked with { RivalMarketSharePermille = 1000 }); // full shelf -> restock is a no-op anyway
+
+        Assert.Equal(untouchedPrice, again.RivalShelf[0].Price);
+    }
+
+    [Fact]
     public void Restock_DrawsNoRng_TwoRunsIdentical()
     {
         var start = GameFactory.NewGame(seed: 3);

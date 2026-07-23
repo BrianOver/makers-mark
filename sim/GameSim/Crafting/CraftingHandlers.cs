@@ -75,7 +75,17 @@ public sealed class CraftingHandlers : IActionHandler
             return (state, new RejectedAction(action, $"Not enough {action.MaterialKey}: need {needed}, have {have}."));
         }
 
-        // 6. All checks passed — consume, roll (the single RNG draw), mint, emit.
+        // 6. Day action-budget gate (Game-Feel Plan G3): craft is real work (ActionBudget.ConsumesSlot)
+        //    — checked LAST, after every other precondition, so an invalid recipe/material/tier/stock
+        //    keeps its existing rejection reason even on a slot-exhausted day; only a genuinely legal
+        //    craft with zero slots left is newly refused here. No RNG drawn yet — a refused craft never
+        //    touches the stream (CLAUDE.md rule 4).
+        if (state.ActionSlotsRemaining <= 0)
+        {
+            return (state, new RejectedAction(action, $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance."));
+        }
+
+        // 7. All checks passed — consume, roll (the single RNG draw), mint, emit.
         // ActiveCraft professions (blacksmith, PA2/PKD2) dominance-roll off the captured
         // PerformanceGrade; every other profession keeps the untouched passive ±8 roll.
         var quality = profession.ActiveCraft
@@ -92,6 +102,7 @@ public sealed class CraftingHandlers : IActionHandler
             {
                 Materials = state.Player.Materials.SetItem(action.MaterialKey, have - needed),
             },
+            ActionSlotsRemaining = state.ActionSlotsRemaining - 1,
         };
 
         events.Emit(new ItemCrafted(itemId, quality));

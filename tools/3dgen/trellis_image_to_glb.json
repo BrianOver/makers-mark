@@ -1,0 +1,12 @@
+{
+  "_comment": "TRELLIS.2 image->GLB API workflow. Replace __IMAGE__ (cutout filename in ComfyUI/input) and __PREFIX__ (output name). Enqueue with mcp comfyui enqueue_workflow AND disable_random_seed=true (else seed 42 gets randomized past int32 max -> 400). Proven 2026-07-21. See docs/design/2026-07-21-3d-gen-pipeline-PROVEN.md",
+  "1": {"class_type": "LoadImage", "inputs": {"image": "__IMAGE__"}},
+  "11": {"class_type": "InvertMask", "inputs": {"mask": ["1", 1]}},
+  "68": {"class_type": "LoadTrellis2Models", "inputs": {"resolution": "512", "precision": "auto", "attn_backend": "auto"}},
+  "69": {"class_type": "Trellis2GetConditioning", "inputs": {"model_config": ["68", 0], "image": ["1", 0], "mask": ["11", 0], "background_color": "black"}},
+  "82": {"class_type": "Trellis2ImageToShape", "inputs": {"model_config": ["68", 0], "conditioning": ["69", 0], "seed": 42, "ss_guidance_strength": 6.5, "ss_guidance_rescale": 0.05, "ss_sampling_steps": 12, "shape_guidance_strength": 6.5, "shape_guidance_rescale": 0.05, "shape_sampling_steps": 12, "max_tokens": 262144}},
+  "83": {"class_type": "Trellis2ShapeToTexturedMesh", "inputs": {"model_config": ["68", 0], "conditioning": ["69", 0], "shape_slat": ["82", 1], "subs": ["82", 2], "seed": 42, "tex_guidance_strength": 3, "tex_guidance_rescale": 0.2, "tex_sampling_steps": 12}},
+  "97": {"class_type": "Trellis2ProcessMesh", "inputs": {"trimesh": ["82", 0], "remesh": "on", "remesh.remesh_band": 1, "remesh.remove_inner_faces": true, "target_face_count": 12000, "floater_threshold": 0.001, "weld_vertices": true, "weld_digits": 4, "chart_cone_angle": 90, "chart_refine_iterations": 1, "chart_global_iterations": 1, "chart_smooth_strength": 1}},
+  "98": {"class_type": "Trellis2RasterizePBR", "inputs": {"trimesh": ["97", 0], "voxelgrid": ["83", 0], "original_mesh": ["82", 0], "texture_size": 1024}},
+  "86": {"class_type": "Trellis2ExportTrimesh", "inputs": {"trimesh": ["98", 0], "filename_prefix": "__PREFIX__", "file_format": "glb"}}
+}

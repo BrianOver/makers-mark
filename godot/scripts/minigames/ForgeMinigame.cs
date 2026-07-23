@@ -99,6 +99,27 @@ public sealed partial class ForgeMinigame : PanelContainer
     /// <summary>Raised on <see cref="Cancel"/> — the caller queues nothing.</summary>
     public event Action? Cancelled;
 
+    // ── G1 staging events (game-feel plan §"World VFX keyed to beat state" / §"Result
+    // ceremony") — purely additive presentation signals. None of these read or write any
+    // scoring state; they mirror decisions the beats already made (or are about to make) so the
+    // host (ForgePanel) can key world VFX/SFX to the exact moment without polling every frame or
+    // re-deriving the beat math. Never affects Advance/Finish/FoldGrade. ──────────────────────
+
+    /// <summary>Raised whenever <see cref="Current"/> changes: <see cref="Configure"/>'s reset to
+    /// Smelt, <see cref="EnterForge"/>, <see cref="EnterQuench"/>, and <see cref="Finish"/>'s move
+    /// to Done. Drives stage-keyed world VFX (e.g. reset the furnace glow the instant Smelt ends).</summary>
+    public event Action<Stage>? StageChanged;
+
+    /// <summary>Raised inside <see cref="ForgeStrike"/> with whether THAT strike landed on-beat —
+    /// judged via <see cref="ForgeBeat.IsOnBeatNow"/> BEFORE <see cref="ForgeBeat.Strike"/> itself
+    /// runs, so this is a read of the same judgement the beat is about to score, never a second
+    /// opinion. Drives the spark-burst/flash VFX and the hammer-clang SFX.</summary>
+    public event Action<bool>? Struck;
+
+    /// <summary>Raised inside <see cref="QuenchLock"/>, before <see cref="QuenchBeat.Lock"/> runs —
+    /// drives the steam-plume VFX at the moment the player plunges the stock.</summary>
+    public event Action? Quenched;
+
     private Label _titleLabel = null!;
     private Label _stageLabel = null!;
     private Label _gaugeLabel = null!;
@@ -149,6 +170,7 @@ public sealed partial class ForgeMinigame : PanelContainer
         Forge = new ForgeBeat(BaseForgeBeatPeriodSeconds, BaseForgeOnBeatWindowSeconds, BaseForgeCoolSeconds, _offBeatForgivenessPermille, false);
 
         RepaintUi();
+        StageChanged?.Invoke(Current);
     }
 
     /// <summary>Advance the current beat by <paramref name="delta"/> accumulated-clock seconds —
@@ -199,7 +221,9 @@ public sealed partial class ForgeMinigame : PanelContainer
             return;
         }
 
+        var onBeat = Forge.IsOnBeatNow(); // presentation cue — read BEFORE the real scoring call
         Forge.Strike();
+        Struck?.Invoke(onBeat);
         CheckStageTransition();
         RepaintUi();
     }
@@ -212,6 +236,7 @@ public sealed partial class ForgeMinigame : PanelContainer
             return;
         }
 
+        Quenched?.Invoke();
         Quench.Lock();
         CheckStageTransition();
         RepaintUi();
@@ -252,9 +277,14 @@ public sealed partial class ForgeMinigame : PanelContainer
         var forgePeriod = Math.Max(0.3, BaseForgeBeatPeriodSeconds * _difficultyPermille / (double)NeutralDifficultyPermille);
         var forgeWindow = Math.Max(0.05, BaseForgeOnBeatWindowSeconds * NeutralDifficultyPermille / (double)_difficultyPermille);
         Forge = new ForgeBeat(forgePeriod, forgeWindow, BaseForgeCoolSeconds, _offBeatForgivenessPermille, Smelt.Impurity);
+        StageChanged?.Invoke(Current);
     }
 
-    private void EnterQuench() => Current = Stage.Quench;
+    private void EnterQuench()
+    {
+        Current = Stage.Quench;
+        StageChanged?.Invoke(Current);
+    }
 
     private void Finish()
     {
@@ -264,6 +294,7 @@ public sealed partial class ForgeMinigame : PanelContainer
         var performanceGrade = FoldGrade(subScores);
         var action = new CraftAction(RecipeId, MaterialKey, performanceGrade, Puzzle: null, SubScores: subScores);
         EmittedAction = action;
+        StageChanged?.Invoke(Current);
         Finished?.Invoke(action);
     }
 
@@ -272,6 +303,28 @@ public sealed partial class ForgeMinigame : PanelContainer
     /// can assert the fold in isolation from beat scoring.</summary>
     public static int FoldGrade(ImmutableList<int> subScores) => Math.Clamp(
         (int)Math.Round(subScores[0] * SmeltWeight + subScores[1] * ForgeWeight + subScores[2] * QuenchWeight), 0, 1000);
+
+    /// <summary>G1 result ceremony: a presentation-only PREVIEW of which <see cref="QualityGrade"/>
+    /// band this run's folded grade is heading toward — mirrors <c>QualityRoller.RollActive</c>'s
+    /// own band thresholds (200/550/780/930) but deliberately WITHOUT its ±25 jitter or its
+    /// material-grade ceiling, both of which only apply sim-side once the queued
+    /// <see cref="CraftAction"/> actually resolves. The active model is built so skill dominates
+    /// that later roll (a jitter/ceiling swing can shift one band at a seam, never skip a whole
+    /// band on its own — see <c>QualityRoller</c>'s own remarks), so this preview is a good stand-in
+    /// for the ceremony stamp without ever claiming to BE the final rolled <see cref="QualityGrade"/>.
+    /// Public/static so a test can pin the band thresholds independently of a live run.</summary>
+    public static QualityGrade PreviewGrade(int performanceGradePermille)
+    {
+        var clamped = Math.Clamp(performanceGradePermille, 0, 1000);
+        return clamped switch
+        {
+            < 200 => QualityGrade.Poor,
+            < 550 => QualityGrade.Common,
+            < 780 => QualityGrade.Fine,
+            < 930 => QualityGrade.Superior,
+            _ => QualityGrade.Masterwork,
+        };
+    }
 
     /// <summary>Scales a base rise-rate/oscillation-Hz value by the difficulty axis and by the
     /// talent-assist drift reduction — kept as a <see langword="double"/> (never rounded here) so

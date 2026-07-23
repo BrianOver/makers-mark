@@ -256,6 +256,10 @@ public class FactionTariffBalanceTests
             Player = PlayerState.NewGame(gold),
             Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, AliveHero(1)),
             OpenOreOffers = offers.ToImmutableList(),
+            // These helpers drive OreMarketHandlers directly (never through the kernel's day-rollover
+            // slot reset) to saturate standing over many buys — they exercise the tariff/standing
+            // mechanic, NOT the G3 action budget, so grant slots generously so no buy is slot-rejected.
+            ActionSlotsRemaining = 1000,
         };
 
     /// <summary>The discount (base − playerCost) on a fixed 10-copper@3 buy (base 30) at a given standing.</summary>

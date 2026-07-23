@@ -311,6 +311,21 @@ public partial class Town3D : SubViewportContainer
         {
             actor.Advance(delta);
         }
+
+        // G1 forge-station VFX: decay the on-beat flash pulse ForgeSparkBurst armed — accumulated
+        // delta, no engine Tween (the established idiom elsewhere in this codebase, e.g. MainUi's
+        // gold-chip pop). No-op whenever no flash is in flight (-1 sentinel) or the station was
+        // never wired (headless-safe: nothing here depends on a frame actually rendering).
+        if (_forgeFlashElapsed >= 0 && _forgeFlashLight is not null)
+        {
+            _forgeFlashElapsed += delta;
+            var t = Mathf.Clamp((float)(_forgeFlashElapsed / ForgeFlashSeconds), 0f, 1f);
+            _forgeFlashLight.LightEnergy = Mathf.Lerp(ForgeFlashPeakEnergy, 0f, t);
+            if (t >= 1f)
+            {
+                _forgeFlashElapsed = -1;
+            }
+        }
     }
 
     /// <summary>
@@ -392,6 +407,11 @@ public partial class Town3D : SubViewportContainer
         // T7: populate Heroes/MemorialPlot from the adapter's initial state. T8's Refresh()
         // surface calls this again on every tick; this standalone scaffold only needs it once.
         ReconcileHeroes();
+
+        // G1: locate the forge station's VFX nodes now that every Building3D (including the
+        // station cluster above) is configured — see WireForgeStationVfx's own doc for why this
+        // must run after Configure, not inside BuildAnvilFurnaceCluster itself.
+        WireForgeStationVfx();
     }
 
     /// <summary>
@@ -485,7 +505,7 @@ public partial class Town3D : SubViewportContainer
                     AlbedoColor = new Color(0.32f, 0.28f, 0.27f),
                     EmissionEnabled = true,
                     Emission = new Color(0.95f, 0.4f, 0.05f),
-                    EmissionEnergyMultiplier = 0.8f,
+                    EmissionEnergyMultiplier = ForgeGlowBaseline,
                 },
             },
             Position = new Vector3(-0.7f, 0.7f, 0f),
@@ -502,7 +522,144 @@ public partial class Town3D : SubViewportContainer
             Position = new Vector3(0.7f, 0.3f, 0f),
         });
 
+        // G1 (game-feel plan §"World VFX keyed to beat state"): the station's own VFX props —
+        // headless-safe (CpuParticles3D/OmniLight3D are plain scene nodes; nothing here depends on
+        // a frame actually rendering, and none of it is read back by anything else, so a headless
+        // engine test that never pumps a rendering SubViewport is unaffected). Driven by
+        // ForgeGlow/ForgeSparkBurst/ForgeSteamPlume below, wired to the anvil after Configure runs
+        // (see WireForgeStationVfx).
+        cluster.AddChild(new CpuParticles3D
+        {
+            Name = "ForgeSparks",
+            Emitting = false,
+            OneShot = true,
+            Amount = 14,
+            Lifetime = 0.4,
+            Explosiveness = 1f,
+            Position = new Vector3(0.7f, 0.55f, 0f),
+            Direction = new Vector3(0, 1, 0),
+            Spread = 60f,
+            Gravity = new Vector3(0, -9.8f, 0),
+            InitialVelocityMin = 1.5f,
+            InitialVelocityMax = 3.5f,
+            ScaleAmountMin = 0.04f,
+            ScaleAmountMax = 0.08f,
+            Color = new Color(1f, 0.75f, 0.25f),
+        });
+
+        cluster.AddChild(new CpuParticles3D
+        {
+            Name = "QuenchSteam",
+            Emitting = false,
+            OneShot = true,
+            Amount = 10,
+            Lifetime = 0.9,
+            Explosiveness = 0.6f,
+            Position = new Vector3(0.7f, 0.35f, 0f),
+            Direction = new Vector3(0, 1, 0),
+            Spread = 25f,
+            Gravity = Vector3.Zero,
+            InitialVelocityMin = 0.4f,
+            InitialVelocityMax = 0.9f,
+            ScaleAmountMin = 0.3f,
+            ScaleAmountMax = 0.6f,
+            Color = new Color(0.9f, 0.9f, 0.95f, 0.5f),
+        });
+
+        cluster.AddChild(new OmniLight3D
+        {
+            Name = "ForgeFlash",
+            LightColor = new Color(1f, 0.7f, 0.3f),
+            LightEnergy = 0f, // off by default — a brief pulse driven by ForgeSparkBurst/_Process
+            OmniRange = 4f,
+            Position = new Vector3(0.7f, 0.6f, 0f),
+        });
+
         return cluster;
+    }
+
+    // ── G1 forge-station world VFX (game-feel plan §"World VFX keyed to beat state") ──────────
+    // Presentation-only: every method below reads an already-computed permille/bool cue from the
+    // minigame and writes ONLY render-facing node properties (emission energy, particle Emitting,
+    // light energy). No game logic lives here, nothing here is read back by the sim or by
+    // ForgeMinigame, and every accessor degrades to a silent no-op when the station hasn't been
+    // wired (e.g. a headless test that builds a bare Town3D without ever opening the forge).
+
+    private const float ForgeGlowBaseline = 0.8f;
+    private const float ForgeGlowPeak = 2.6f;
+    private const double ForgeFlashSeconds = 0.15;
+    private const float ForgeFlashPeakEnergy = 3.5f;
+
+    private StandardMaterial3D? _forgeFurnaceMaterial;
+    private CpuParticles3D? _forgeSparks;
+    private CpuParticles3D? _forgeSteam;
+    private OmniLight3D? _forgeFlashLight;
+    private double _forgeFlashElapsed = -1;
+
+    /// <summary>Locates the forge station's VFX nodes once <see cref="Build"/> has configured every
+    /// <see cref="Building3D"/> — called at the tail of <see cref="Build"/>. Reads <see
+    /// cref="MeshInstance3D.GetActiveMaterial"/> (not the mesh resource's own <c>Material</c>)
+    /// because <see cref="Building3D.Configure"/> already duplicated every surface material into a
+    /// per-instance override for its own proximity-highlight glow (<see
+    /// cref="Building3D.SetHighlighted"/>) — this is the SAME material actually on screen, so
+    /// brightening it here and the highlight toggle never fight over two different resources.</summary>
+    private void WireForgeStationVfx()
+    {
+        var station = FindBuilding("forge-station");
+        var furnaceMesh = station.Mesh.GetNode<MeshInstance3D>("Furnace");
+        _forgeFurnaceMaterial = furnaceMesh.GetActiveMaterial(0) as StandardMaterial3D;
+        _forgeSparks = station.Mesh.GetNodeOrNull<CpuParticles3D>("ForgeSparks");
+        _forgeSteam = station.Mesh.GetNodeOrNull<CpuParticles3D>("QuenchSteam");
+        _forgeFlashLight = station.Mesh.GetNodeOrNull<OmniLight3D>("ForgeFlash");
+    }
+
+    /// <summary>Brightens the furnace glow in step with the live Smelt heat gauge (0-1000 permille)
+    /// — call every frame while the minigame's Smelt beat is active. No-op if the station was never
+    /// wired.</summary>
+    public void ForgeGlow(int heatPermille)
+    {
+        if (_forgeFurnaceMaterial is null)
+        {
+            return;
+        }
+
+        var t = Mathf.Clamp(heatPermille / 1000f, 0f, 1f);
+        _forgeFurnaceMaterial.EmissionEnergyMultiplier = Mathf.Lerp(ForgeGlowBaseline, ForgeGlowPeak, t);
+    }
+
+    /// <summary>Resets the furnace glow to its resting baseline — called the instant the Smelt
+    /// stage ends (or the minigame cancels/closes) so a half-finished smelt never leaves the
+    /// furnace stuck bright.</summary>
+    public void ForgeGlowReset()
+    {
+        if (_forgeFurnaceMaterial is not null)
+        {
+            _forgeFurnaceMaterial.EmissionEnergyMultiplier = ForgeGlowBaseline;
+        }
+    }
+
+    /// <summary>A one-shot spark burst + brief flash at the anvil — the on-beat forge-hit cue.</summary>
+    public void ForgeSparkBurst()
+    {
+        if (_forgeSparks is not null)
+        {
+            _forgeSparks.Restart();
+            _forgeSparks.Emitting = true;
+        }
+
+        _forgeFlashElapsed = 0; // decayed in _Process
+    }
+
+    /// <summary>A one-shot steam plume at the anvil — the quench-lock cue.</summary>
+    public void ForgeSteamPlume()
+    {
+        if (_forgeSteam is null)
+        {
+            return;
+        }
+
+        _forgeSteam.Restart();
+        _forgeSteam.Emitting = true;
     }
 
     private static Node3D BuildCounterCluster()
