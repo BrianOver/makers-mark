@@ -38,6 +38,8 @@ public class GenAssetCoverageTests
         "anvil.glb",
         // MonsterView3D spectate stage (MineWatch milestone flash, AssetCatalog.MonsterModelFile)
         "monster-cave-rat.glb", "monster-spider.glb", "monster-ghoul.glb", "monster-ore-golem.glb",
+        // InteriorRoom3D furniture (InteriorRoom3D.Rooms per-venue prop lists)
+        "weapon-rack.glb", "crate.glb", "cauldron.glb", "table.glb", "chest.glb",
     };
 
     /// <summary>Gen GLBs finished but not yet placeable — each needs a surface that does not exist
