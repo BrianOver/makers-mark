@@ -13,13 +13,20 @@ namespace GameSim.Professions;
 /// registration line the orchestrator applies to <see cref="ProfessionRegistry.All"/> — no code
 /// changes outside this directory (see docs/addon-guide.md).
 ///
-/// Structure mirrors the blacksmith/tanner exactly (nothing bespoke): a quality-shift chain,
-/// one slot specialist (Consumable-scoped, since potions are the identity), a
-/// material-efficiency → material-mastery pair, and the tier-2/tier-3 unlock gates. Integer
-/// stats only, no RNG, no wall clock, no floats, no Godot references — constant data
-/// (KTD2/KTD4). Materials are the shared Mine ore keys (grade proxy) until the P4 material
-/// registry lands. All collections are <c>ImmutableSorted*</c> with
-/// <see cref="StringComparer.Ordinal"/>, so iteration order never depends on registration order.
+/// Phase B (active professions fan-out): alchemy is the SECOND active-craft profession after
+/// the blacksmith — but the IN-SIM-SCORED shape (PKD1 dual mode): the player's reagent choices
+/// ride <c>CraftAction.Puzzle</c> as an <see cref="AlchemyReagentPuzzle"/> and
+/// <see cref="AlchemyPuzzleScorer"/> grades them inside the pure sim (the blacksmith's Godot
+/// overlay computes its own grade instead). Following the blacksmith's PA2/PKD3 talent remap
+/// exactly: the retired quality-shift nodes (measured-pour/careful-distillation/
+/// master-alchemist/potent-brews) no longer touch any roll — they became
+/// <see cref="ProfessionDefinition.MinigameAssists"/> data the scorer consumes as forgiveness —
+/// and <see cref="ReagentMastery"/> (the material axis) is KEPT on the quality model, still
+/// raising the dominance roll's material ceiling. Integer stats only, no RNG, no wall clock,
+/// no floats, no Godot references — constant data (KTD2/KTD4). Materials are the shared Mine
+/// ore keys (grade proxy) until the P4 material registry lands. All collections are
+/// <c>ImmutableSorted*</c> with <see cref="StringComparer.Ordinal"/>, so iteration order never
+/// depends on registration order.
 ///
 /// NOTE (contract): <see cref="ConsumableKind"/> is currently <c>{ Heal }</c> only, so every
 /// consumable here — including the "utility brew" Transmuter's Tonic — ships as a Heal-kind
@@ -32,13 +39,13 @@ public static class AlchemyProfession
     public const string Id = "alchemy";
 
     // ---- Talent node ids ----------------------------------------------------------------
-    // Quality-shift chain (+5 / +7 / +8), a Consumable slot specialist (potions are the
-    // identity), a material-efficiency → mastery pair, and the tier unlock gates — the same
-    // shape as the blacksmith/tanner tree.
-    public const string MeasuredPour = "alchemy-measured-pour";               // flat +5 (chain root)
-    public const string CarefulDistillation = "alchemy-careful-distillation"; // flat +7 (needs measured-pour)
-    public const string MasterAlchemist = "alchemy-master-alchemist";         // flat +8 (needs careful-distillation)
-    public const string PotentBrews = "alchemy-potent-brews";                 // Consumable slot +5 (needs measured-pour)
+    // The retired quality-shift chain (now brew-assist data — see MinigameAssists below), a
+    // Consumable specialist (potions are the identity), a material-efficiency → mastery pair,
+    // and the tier unlock gates — the same shape as the blacksmith's post-PA2 tree.
+    public const string MeasuredPour = "alchemy-measured-pour";               // assist 50‰ (chain root)
+    public const string CarefulDistillation = "alchemy-careful-distillation"; // assist 70‰ (needs measured-pour)
+    public const string MasterAlchemist = "alchemy-master-alchemist";         // assist 80‰ (needs careful-distillation)
+    public const string PotentBrews = "alchemy-potent-brews";                 // assist 50‰, consumables only (needs measured-pour)
     public const string FrugalReagents = "alchemy-frugal-reagents";           // material efficiency (-1, floor 1)
     public const string ReagentMastery = "alchemy-reagent-mastery";           // material counts +1 grade (needs frugal-reagents)
     public const string Tier2Alchemy = "alchemy-tier-2";                      // unlocks tier 2 recipes
@@ -47,10 +54,10 @@ public static class AlchemyProfession
     /// <summary>Talent mini-tree, keyed by node id. Sorted for deterministic iteration.</summary>
     private static readonly ImmutableSortedDictionary<string, TalentNode> Talents = new[]
     {
-        new TalentNode(MeasuredPour,        "Measured Pour",        "Quality roll +5.",                                 ImmutableList<string>.Empty),
-        new TalentNode(CarefulDistillation, "Careful Distillation", "Quality roll +7 (stacks with Measured Pour).",     ImmutableList.Create(MeasuredPour)),
-        new TalentNode(MasterAlchemist,     "Master Alchemist",     "Quality roll +8 (stacks with the chain).",         ImmutableList.Create(CarefulDistillation)),
-        new TalentNode(PotentBrews,         "Potent Brews",         "Quality roll +5 on consumable recipes.",           ImmutableList.Create(MeasuredPour)),
+        new TalentNode(MeasuredPour,        "Measured Pour",        "Brew scoring forgives small reagent mistakes.",    ImmutableList<string>.Empty),
+        new TalentNode(CarefulDistillation, "Careful Distillation", "Brew scoring forgives more (stacks with Measured Pour).", ImmutableList.Create(MeasuredPour)),
+        new TalentNode(MasterAlchemist,     "Master Alchemist",     "The capstone — brew scoring forgives most (stacks with the chain).", ImmutableList.Create(CarefulDistillation)),
+        new TalentNode(PotentBrews,         "Potent Brews",         "Extra brew forgiveness on consumable recipes.",    ImmutableList.Create(MeasuredPour)),
         new TalentNode(FrugalReagents,      "Frugal Reagents",      "Recipes consume one fewer material (minimum 1).",  ImmutableList<string>.Empty),
         new TalentNode(ReagentMastery,      "Reagent Mastery",      "Material counts as one grade higher for quality.", ImmutableList.Create(FrugalReagents)),
         new TalentNode(Tier2Alchemy,        "Tier 2 Alchemy",       "Unlocks tier 2 recipes.",                          ImmutableList<string>.Empty),
@@ -84,9 +91,15 @@ public static class AlchemyProfession
     }.ToImmutableSortedDictionary(r => r.RecipeId, r => r, StringComparer.Ordinal);
 
     /// <summary>
-    /// The Alchemy profession definition. Tier gates on tiers 2/3; quality chain and the
-    /// Consumable specialist supply the per-talent shifts; the universal quality math (±8/grade,
-    /// threshold table) is shared by every profession and lives in <see cref="QualityRoller"/>.
+    /// The Alchemy profession definition — ACTIVE (Phase B). Tier gates on tiers 2/3.
+    /// <see cref="ProfessionQualityModel.FlatShifts"/>/<see cref="ProfessionQualityModel.SlotShifts"/>
+    /// are EMPTY (the PA2/PKD3 double-count fix: a node granting brew forgiveness AND still
+    /// shifting a roll would count mastery twice); <see cref="ReagentMastery"/> stays as the
+    /// material-mastery axis (no overlap with the puzzle — it raises the dominance roll's
+    /// material ceiling, exactly like the blacksmith's material-mastery). The four retired
+    /// quality nodes are remapped 1:1 to <see cref="ProfessionDefinition.MinigameAssists"/>,
+    /// consumed sim-side by <see cref="AlchemyPuzzleScorer"/> as flat per-mille forgiveness
+    /// (this profession's "adapter" IS the sim scorer — see the scorer's own doc).
     /// </summary>
     public static readonly ProfessionDefinition Definition = new(
         Id: Id,
@@ -100,15 +113,20 @@ public static class AlchemyProfession
         }.ToImmutableSortedDictionary(),
         MaterialEfficiencyNode: FrugalReagents,
         Quality: new ProfessionQualityModel(
-            FlatShifts: new Dictionary<string, int>
-            {
-                [MeasuredPour] = 5,
-                [CarefulDistillation] = 7,
-                [MasterAlchemist] = 8,
-            }.ToImmutableSortedDictionary(StringComparer.Ordinal),
-            SlotShifts: new Dictionary<string, SlotShift>
-            {
-                [PotentBrews] = new SlotShift(ItemSlot.Consumable, 5),
-            }.ToImmutableSortedDictionary(StringComparer.Ordinal),
-            MaterialMasteryNode: ReagentMastery));
+            FlatShifts: ImmutableSortedDictionary<string, int>.Empty,
+            SlotShifts: ImmutableSortedDictionary<string, SlotShift>.Empty,
+            MaterialMasteryNode: ReagentMastery),
+        ActiveCraft: true,
+        MinigameAssists: new Dictionary<string, MinigameAssist>
+        {
+            // Measured Pour: a steadier hand — small brew mistakes are forgiven (mirrors Keen Eye's 50).
+            [MeasuredPour] = new MinigameAssist(SweetZoneWidthBonus: 50, DriftRateReduction: 0, OffBeatForgiveness: 0),
+            // Careful Distillation: cleaner separation — more forgiveness (mirrors Master's Touch's 70).
+            [CarefulDistillation] = new MinigameAssist(SweetZoneWidthBonus: 0, DriftRateReduction: 70, OffBeatForgiveness: 0),
+            // Master Alchemist: the capstone — the most forgiveness (mirrors Legendary Craft's 80).
+            [MasterAlchemist] = new MinigameAssist(SweetZoneWidthBonus: 0, DriftRateReduction: 0, OffBeatForgiveness: 80),
+            // Potent Brews: extra forgiveness on Consumable recipes only (the scorer scopes this
+            // by the recipe's slot — mirrors Weapon Specialist's weapon-scoped 50).
+            [PotentBrews] = new MinigameAssist(SweetZoneWidthBonus: 50, DriftRateReduction: 0, OffBeatForgiveness: 0),
+        }.ToImmutableSortedDictionary(StringComparer.Ordinal));
 }

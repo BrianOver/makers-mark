@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using GameSim.Contracts;
+using GameSim.Professions;
 
 namespace GameSim.Kernel;
 
@@ -33,6 +35,14 @@ namespace GameSim.Kernel;
 /// to <c>TargetReached</c> (VenueId precedent — absent property loads as the old implicit meaning);
 /// <c>GameState</c> gained a non-positional <c>InFlight</c> init member defaulting to empty
 /// (Hero.Pack precedent), so pre-staging saves load unchanged. All pinned in SaveLoadTests.
+///
+/// Phase B save-shape note (alchemist active-craft): <c>CraftPuzzleInput</c> got its first
+/// derived type (<see cref="AlchemyReagentPuzzle"/>). <c>Contracts/</c> is frozen, so the
+/// polymorphic mapping is registered HERE at runtime via a type-info resolver (discriminator
+/// <c>"$puzzle": "alchemyReagent"</c>) instead of a <c>[JsonPolymorphic]</c> attribute on the
+/// base. Byte-compat: a null puzzle serializes as <c>"puzzle":null</c> exactly as before, so
+/// every pre-Phase-B save/replay round-trips unchanged; only actions actually carrying a brew
+/// gain the discriminator. Pinned in <c>AlchemyActiveCraftTests</c>' round-trip case.
 /// </summary>
 public static class SaveCodec
 {
@@ -41,7 +51,27 @@ public static class SaveCodec
         WriteIndented = false,
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
         IncludeFields = false,
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { AddCraftPuzzlePolymorphism } },
     };
+
+    /// <summary>Registers <see cref="CraftPuzzleInput"/>'s derived types for polymorphic
+    /// (de)serialization — the runtime equivalent of the <c>[JsonPolymorphic]</c> +
+    /// <c>[JsonDerivedType]</c> pair the deny-listed <c>Contracts/</c> base cannot carry yet.
+    /// New puzzle-scored professions add one <c>DerivedTypes.Add</c> line here.</summary>
+    private static void AddCraftPuzzlePolymorphism(JsonTypeInfo typeInfo)
+    {
+        if (typeInfo.Type != typeof(CraftPuzzleInput))
+        {
+            return;
+        }
+
+        typeInfo.PolymorphismOptions = new JsonPolymorphismOptions
+        {
+            TypeDiscriminatorPropertyName = "$puzzle",
+        };
+        typeInfo.PolymorphismOptions.DerivedTypes.Add(
+            new JsonDerivedType(typeof(AlchemyReagentPuzzle), "alchemyReagent"));
+    }
 
     public static string Serialize(GameState state) => JsonSerializer.Serialize(state, Options);
 
