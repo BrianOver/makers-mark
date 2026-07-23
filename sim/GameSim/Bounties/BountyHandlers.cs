@@ -35,6 +35,15 @@ public sealed class BountyHandlers : IActionHandler
             return (state, new RejectedAction(action, $"Can't escrow {post.RewardGold}g — you have {state.Player.Gold}g."));
         }
 
+        // Day action-budget gate (Game-Feel Plan G3): posting a bounty is "negotiate" — real work
+        // — checked LAST, after every economic precondition, so an out-of-range floor or an
+        // unaffordable escrow keeps its existing rejection reason on a day with slots to spare;
+        // only a legal post with zero slots left is newly refused here.
+        if (state.ActionSlotsRemaining <= 0)
+        {
+            return (state, new RejectedAction(action, $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance."));
+        }
+
         var bounty = new Bounty(
             new BountyId(state.NextBountyId), post.TargetFloor, post.RewardGold,
             PostedOnDay: state.Day, AcceptedBy: null, Paid: false);
@@ -46,6 +55,7 @@ public sealed class BountyHandlers : IActionHandler
             NextBountyId = state.NextBountyId + 1,
             Player = state.Player with { Gold = state.Player.Gold - post.RewardGold },
             Bounties = state.Bounties.Add(bounty),
+            ActionSlotsRemaining = state.ActionSlotsRemaining - 1,
         }, null);
     }
 }

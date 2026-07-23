@@ -120,6 +120,7 @@ while (true)
                 haggle accept                 take the customer's standing offer
                 haggle hold                   hold firm — the band may shift in your favor next round
                 haggle counter <gold>         counter the standing offer at <gold>
+                forecast | telegraph          tomorrow's raids: parties, target floor, threats, gear gaps
                 advice                        ranked next-step suggestions + this phase's legal actions
                 export [path]                 dump campaign chronicle for analytics
                 next                          advance one phase (queued actions apply)
@@ -570,6 +571,31 @@ while (true)
 
             break;
 
+        // G4 "Tomorrow's Telegraph" (game-feel plan §G4): the pre-sleep triage board — who marches,
+        // the floor each targets, the monsters on the way, and where kit is thin. Pure projection
+        // (RaidForecast over the SAME muster the Expedition tick will make real).
+        case "forecast":
+        case "telegraph":
+        {
+            var forecast = GameSim.Heroes.RaidForecast.ForTomorrow(state);
+            if (forecast.IsEmpty)
+            {
+                Console.WriteLine("  (no parties will muster — no living heroes to march)");
+                break;
+            }
+
+            foreach (var party in forecast)
+            {
+                Console.WriteLine($"  {string.Join(", ", party.HeroNames)} — {party.VenueId}, target floor {party.TargetFloor}");
+                Console.WriteLine($"    threats: {string.Join(" · ", party.Threats.Select(t => $"F{t.Floor} {t.MonsterKind}"))}");
+                Console.WriteLine(party.GearGaps.IsEmpty
+                    ? "    gear: all equipped"
+                    : $"    gear gaps: {string.Join("; ", party.GearGaps)}");
+            }
+
+            break;
+        }
+
         case "board":
         {
             if (state.Drama.DepthsBoard.IsEmpty)
@@ -822,6 +848,10 @@ void Narrate(GameEvent gameEvent, GameState s)
 
 void PrintLedger(GameState s, int day)
 {
+    // Game-Feel Plan G3: the deadline heartbeat, telegraphed every evening regardless of
+    // whether any hero returned tonight — the looming rent due-date is always visible.
+    Console.WriteLine($"  rent due in {s.Rent.DaysUntilDue} day(s): {s.Rent.AmountDueGold}g");
+
     var cards = LedgerQuery.ReturnCards(s, day);
     if (cards.IsEmpty)
     {
@@ -856,6 +886,8 @@ void PrintStatus(GameState s)
 {
     Console.WriteLine($"  gold {s.Player.Gold}g | shelf {s.Player.Shelf.Count} items | heroes alive {s.Heroes.Values.Count(h => h.Alive)}/{s.Heroes.Count}");
     Console.WriteLine($"  professions: {string.Join(", ", s.Player.SelectedProfessions)} (change with 'profession <id> [id2]')");
+    // Game-Feel Plan G3: the day's scarcity budget + the looming rent deadline, always visible.
+    Console.WriteLine($"  actions left today: {s.ActionSlotsRemaining}/{ActionBudget.SlotsPerDay} | rent due in {s.Rent.DaysUntilDue} day(s): {s.Rent.AmountDueGold}g");
 
     // Plan 2026-07-19-002 U10/U26: the same top-pick guidance a HUD reads, so a persona (or a
     // player) always has a next step surfaced without hunting for 'advice'.

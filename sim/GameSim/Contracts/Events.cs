@@ -35,6 +35,9 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(CustomerCountered), "customerCountered")]
 [JsonDerivedType(typeof(CounterSaleClosed), "counterSaleClosed")]
 [JsonDerivedType(typeof(CustomerWalked), "customerWalked")]
+[JsonDerivedType(typeof(RentPaid), "rentPaid")]
+[JsonDerivedType(typeof(RentMissed), "rentMissed")]
+[JsonDerivedType(typeof(MarketShareShifted), "marketShareShifted")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -158,6 +161,22 @@ public sealed record CounterSaleClosed(HeroId Hero, ItemId Item, int Price, bool
 /// or nothing fit) — with the legible reason (R8 prose rules). <paramref name="Item"/> is the item
 /// under discussion when they walked, or null if none was presented.</summary>
 public sealed record CustomerWalked(HeroId Hero, ItemId? Item, string Reason) : GameEvent;
+
+/// <summary>Guild rent came due and was paid in full (Game-Feel Plan G3). <paramref name="AmountGold"/>
+/// is what left the till; <paramref name="NextAmountDueGold"/> is next cycle's escalated ask, so the
+/// line is self-contained for narration ("rent: 30g paid — next due in 10 days at 33g").</summary>
+public sealed record RentPaid(int AmountGold, int NextAmountDueGold) : GameEvent;
+
+/// <summary>Guild rent came due and the till couldn't cover it (Game-Feel Plan G3) — a legible SOFT
+/// consequence, never game-over: <paramref name="ConfidencePermille"/> (post-hit, 0-1000) is the
+/// visible morale cost, and rent still escalates to <paramref name="NextAmountDueGold"/> for the
+/// next cycle. <paramref name="MissedPayments"/> is the lifetime tally.</summary>
+public sealed record RentMissed(int AmountDueGold, int NextAmountDueGold, int MissedPayments, int ConfidencePermille) : GameEvent;
+
+/// <summary>The rival vendor's market-share edge moved (Game-Feel Plan G3): idling a full day (zero
+/// action-budget slots spent) raises <paramref name="Permille"/> toward the rival; any real-work day
+/// lowers it back toward the player. <paramref name="RivalGained"/> names the direction for narration.</summary>
+public sealed record MarketShareShifted(int Permille, bool RivalGained) : GameEvent;
 
 /// <summary>Morning-phase muster (plan 2026-07-19-002 U9/KTD8): the parties that will depart at
 /// the Expedition tick. Emitted by MusterSystem with ZERO RNG draws; consumed by the adapter for

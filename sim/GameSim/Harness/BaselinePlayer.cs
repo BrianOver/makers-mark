@@ -51,6 +51,13 @@ public static class BaselinePlayer
 
             case DayPhase.Expedition:
                 // Craft while heroes are away: best affordable recipe by tier then stat sum.
+                // G3: a craft spends an action slot, so skip if the day's budget is already spent
+                // (an over-budget craft would only be rejected — leaving state unchanged — anyway).
+                if (state.ActionSlotsRemaining <= 0)
+                {
+                    break;
+                }
+
                 foreach (var recipe in RecipeTable.All.Values
                              .OrderByDescending(r => r.Tier)
                              .ThenByDescending(r => r.BaseStats.Attack + r.BaseStats.Defense))
@@ -74,15 +81,26 @@ public static class BaselinePlayer
                 break;
 
             case DayPhase.Evening:
-                // Buy every ore offer the purse can afford, in offer order.
+                // Buy every ore offer the purse can afford, in offer order — but only while the
+                // day still has action slots (G3): each buy spends one, so the baseline now stops
+                // at the budget instead of emitting doomed, would-be-rejected buys. Rejected buys
+                // never mutated state, so the 100-day balance bands are byte-identical either way;
+                // this just keeps the ActionLog clean (no RejectedAction spam).
                 var gold = state.Player.Gold;
+                var slots = state.ActionSlotsRemaining;
                 foreach (var offer in state.OpenOreOffers)
                 {
+                    if (slots <= 0)
+                    {
+                        break;
+                    }
+
                     var cost = offer.Quantity * offer.UnitPrice;
                     if (cost <= gold)
                     {
                         actions.Add(new BuyOreAction(offer.From, offer.MaterialKey, offer.Quantity));
                         gold -= cost;
+                        slots--;
                     }
                 }
 

@@ -88,6 +88,12 @@ public sealed class GameKernel
             // never mid-hold. A run that never opens the counter has state.Counter null the whole
             // time, so this line is a no-op for it (the atomic-equivalence pin).
             Counter = state.Phase == DayPhase.Morning && nextPhase != DayPhase.Morning ? null : state.Counter,
+            // Game-Feel Plan G3: the ONLY place the day's action-slot budget resets — the instant
+            // Day actually increments (Evening -> Morning), mirroring the Counter-teardown precedent
+            // above. Every other tick within the same calendar day (including a held Morning while a
+            // counter session is open) leaves it untouched, so slots persist correctly across the
+            // 5-phase day.
+            ActionSlotsRemaining = nextDay != state.Day ? ActionBudget.SlotsPerDay : state.ActionSlotsRemaining,
         };
 
         return new TickResult(newState, stamped.ToImmutable(), rejected.ToImmutable());

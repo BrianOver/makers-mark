@@ -76,6 +76,14 @@ internal static class BuildingKit
     /// </summary>
     private static Node3D BuildMarket()
     {
+        var gen = TownAssets.InstantiateGen("market.glb");
+        if (gen != null)
+        {
+            var g = new Node3D { Name = "Market" };
+            g.AddChild(gen);
+            return g;
+        }
+
         var root = new Node3D { Name = "Market", Scale = new Vector3(TownAssets.BuildingScale, TownAssets.BuildingScale, TownAssets.BuildingScale) };
         AddPiece(root, Kit, "stall-red.glb", 0f);
 
@@ -93,6 +101,14 @@ internal static class BuildingKit
     /// banner out front, and a lantern by the door.</summary>
     private static Node3D BuildTavern()
     {
+        var gen = TownAssets.InstantiateGen("tavern.glb");
+        if (gen != null)
+        {
+            var g = new Node3D { Name = "Tavern" };
+            g.AddChild(gen);
+            return g;
+        }
+
         var root = Cottage("Tavern", "wall-wood.glb", "wall-wood-door.glb", "roof-high-gable.glb", chimney: true, lantern: true);
 
         var banner = AddPiece(root, Kit, "banner-green.glb", FaceFrontY);
@@ -108,6 +124,14 @@ internal static class BuildingKit
     /// side, scaled up so it reads as a landmark from across the plaza.</summary>
     private static Node3D BuildMineGate()
     {
+        var gen = TownAssets.InstantiateGen("minegate.glb");
+        if (gen != null)
+        {
+            var g = new Node3D { Name = "MineGate" };
+            g.AddChild(gen);
+            return g;
+        }
+
         var root = new Node3D { Name = "MineGate", Scale = new Vector3(TownAssets.BuildingScale, TownAssets.BuildingScale, TownAssets.BuildingScale) };
 
         AddPiece(root, Castle, "metal-gate.glb", FaceFrontY);
@@ -131,6 +155,14 @@ internal static class BuildingKit
     /// flat roof, instead of the bare wall-panel stand-in T5 shipped.</summary>
     private static Node3D BuildNoticeboard()
     {
+        var gen = TownAssets.InstantiateGen("noticeboard.glb");
+        if (gen != null)
+        {
+            var g = new Node3D { Name = "Noticeboard" };
+            g.AddChild(gen);
+            return g;
+        }
+
         var root = new Node3D { Name = "Noticeboard", Scale = new Vector3(TownAssets.BuildingScale, TownAssets.BuildingScale, TownAssets.BuildingScale) };
 
         AddPiece(root, Kit, "wall-detail-cross.glb", FaceFrontY);

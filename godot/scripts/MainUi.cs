@@ -878,6 +878,13 @@ public partial class MainUi : Control
         Interior.Build();
         Interior.HotspotActivated += OnInteriorHotspotActivated;
         Interior.Exited += OnInteriorExited;
+
+        // --- build-provenance stamp (deploy hygiene): a small always-visible corner label naming
+        //     this build — mounted last so it draws over everything else. See BuildStamp's own
+        //     doc; no other MainUi behavior changes here. ---
+        var buildStamp = new BuildStamp();
+        AddChild(buildStamp);
+        buildStamp.Build();
     }
 
     private static T InstantiatePanel<T>(string scenePath) where T : SimPanel =>

@@ -98,6 +98,14 @@ public sealed class OreMarketHandlers : IActionHandler
             return (state, new RejectedAction(action, $"Not enough gold: need {playerCost}, have {state.Player.Gold}."));
         }
 
+        // 7. Day action-budget gate (Game-Feel Plan G3): buying ore is real work — checked LAST,
+        //    after every economic precondition, so existing rejection reasons stay byte-identical
+        //    on a day with slots to spare; only a legal buy with zero slots left is newly refused.
+        if (state.ActionSlotsRemaining <= 0)
+        {
+            return (state, new RejectedAction(action, $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance."));
+        }
+
         // All checks passed — the exact move. Player gold down by the tariffed playerCost; hero gold
         // up by the base ask (KTD3, unchanged); materials up; offer reduced or removed.
         var have = state.Player.Materials.TryGetValue(buy.MaterialKey, out var stock) ? stock : 0;
@@ -137,6 +145,7 @@ public sealed class OreMarketHandlers : IActionHandler
             OpenOreOffers = remaining == 0
                 ? state.OpenOreOffers.RemoveAt(index)
                 : state.OpenOreOffers.SetItem(index, offer with { Quantity = remaining }),
+            ActionSlotsRemaining = state.ActionSlotsRemaining - 1,
         };
 
         // Record the tariff delta (MANDATORY, KTD3) — the faction sink(+)/source(−) the gold-

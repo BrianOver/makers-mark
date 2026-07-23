@@ -79,6 +79,35 @@ public sealed record CounterState(
 public sealed record VenueState(int DaysUntouched, int InfectionPerMille, bool Closed);
 
 /// <summary>
+/// The guild-rent deadline heartbeat (Game-Feel Plan G3): due every <see cref="CadenceDays"/>
+/// Mornings, escalating whether paid or missed. A missed payment is a legible SOFT consequence
+/// (a confidence hit) — never game-over; the shop keeps running at low confidence forever if the
+/// player never catches up. The Morning rent system in the Economy module is the only writer;
+/// pure integer, no RNG, no wall clock (KTD2).
+/// </summary>
+/// <param name="DaysUntilDue">Mornings left before the next payment (counts down to 0).</param>
+/// <param name="AmountDueGold">Gold owed at the next due date; escalates each cycle.</param>
+/// <param name="MissedPayments">Lifetime count of due dates that landed unaffordable.</param>
+/// <param name="ConfidencePermille">0-1000 legible morale/confidence gauge: drops on a missed
+/// payment, recovers a little on a paid one. Cosmetic-but-visible in this slice — a hook for a
+/// later unit to feed recruit trickle / hero mood, deliberately NOT wired yet (scope control).</param>
+public sealed record RentState(int DaysUntilDue, int AmountDueGold, int MissedPayments, int ConfidencePermille)
+{
+    /// <summary>Mornings between rent due-dates. The ONE cadence knob (~10 days per the plan).</summary>
+    public const int CadenceDays = 10;
+
+    /// <summary>Starting/base rent, before any escalation.</summary>
+    public const int BaseRentGold = 30;
+
+    /// <summary>A fresh campaign's rent clock: a full cadence away, at the base rate, full confidence.</summary>
+    public static readonly RentState Initial = new(
+        DaysUntilDue: CadenceDays,
+        AmountDueGold: BaseRentGold,
+        MissedPayments: 0,
+        ConfidencePermille: 1000);
+}
+
+/// <summary>
 /// The entire world. Immutable; every field is deterministically serializable
 /// (sorted dictionaries, ordered lists). Advanced only by <c>GameKernel.Tick</c>.
 /// </summary>
@@ -113,6 +142,29 @@ public sealed record GameState(
     /// Morning shopping pass. Non-positional init member (the <see cref="InFlight"/>/<see cref="Venues"/>
     /// pattern): pre-Phase-A saves (no property) deserialize to null, which is byte-identical to today.</summary>
     public CounterState? Counter { get; init; } = null;
+
+    /// <summary>Real-work action slots left today (Game-Feel Plan G3): craft, restock/buy, and
+    /// negotiate (see <see cref="ActionBudget.ConsumesSlot"/>) each spend one; <c>GameKernel.Tick</c>
+    /// resets it to <see cref="ActionBudget.SlotsPerDay"/> whenever <see cref="Day"/> actually
+    /// advances (the Counter-teardown precedent for a day-boundary reset in the kernel). Non-
+    /// positional init member (InFlight/Venues/Counter pattern): a pre-G3 save (no property in the
+    /// JSON) deserializes to a FULL day's budget — the scarcity mechanic is always-on once this
+    /// ships (there's no "off" state to preserve), so a fresh full slot count is the
+    /// least-surprising load, never a mid-day save mysteriously starting at zero.</summary>
+    public int ActionSlotsRemaining { get; init; } = ActionBudget.SlotsPerDay;
+
+    /// <summary>The guild-rent deadline heartbeat (Game-Feel Plan G3), or <see cref="RentState.Initial"/>
+    /// for a pre-G3 save (no property in the JSON) — the InFlight/Venues/Counter precedent: absence
+    /// deserializes to the feature's fresh-start baseline, not a behavior change beyond the countdown
+    /// restarting from a full cadence.</summary>
+    public RentState Rent { get; init; } = RentState.Initial;
+
+    /// <summary>The rival vendor's competitive edge, 0-1000 (Game-Feel Plan G3): a full idle day
+    /// (zero action-budget slots spent) raises it; any real-work day lowers it. The Morning rival
+    /// restock system reads it to discount newly-minted rival stock, so idling visibly cedes market
+    /// share. Non-positional init member defaulting to 0 (no edge) — a pre-G3 save loads with the
+    /// rival at its old, undiscounted catalog prices (byte-identical pricing for the default trace).</summary>
+    public int RivalMarketSharePermille { get; init; } = 0;
 }
 
 /// <summary>Result of one phase tick: the new world, what happened, and what was refused.</summary>

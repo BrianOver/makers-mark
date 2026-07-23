@@ -93,9 +93,7 @@ public sealed class ForgeBeat
         }
 
         StrikeCount++;
-        var phase = Elapsed % BeatPeriodSeconds;
-        var distanceToBeat = Math.Min(phase, BeatPeriodSeconds - phase);
-        var onBeat = distanceToBeat <= OnBeatWindowSeconds;
+        var onBeat = DistanceToNearestBeat(Elapsed) <= OnBeatWindowSeconds;
 
         if (onBeat)
         {
@@ -127,5 +125,18 @@ public sealed class ForgeBeat
         var marPenalty = MarCount * MarPenaltyPermille;
         var raw = (ProgressPermille * 1000 / ProgressBudgetPermille) + heatToSpareBonus - marPenalty;
         SubScorePermille = Math.Clamp(raw, 0, ScoreCapPermille);
+    }
+
+    /// <summary>Presentation-only query (G1 staging — game-feel plan §"World VFX keyed to beat
+    /// state"): true if a strike THIS INSTANT (at the current accumulated <see cref="Elapsed"/>)
+    /// would land on-beat — the exact same judgement <see cref="Strike"/> is about to make, just
+    /// read without mutating anything. Lets the host (<c>ForgeMinigame.ForgeStrike</c>) fire a
+    /// spark-burst/flash VFX cue in lockstep with the real scoring call, never affecting it.</summary>
+    public bool IsOnBeatNow() => DistanceToNearestBeat(Elapsed) <= OnBeatWindowSeconds;
+
+    private double DistanceToNearestBeat(double elapsed)
+    {
+        var phase = elapsed % BeatPeriodSeconds;
+        return Math.Min(phase, BeatPeriodSeconds - phase);
     }
 }
