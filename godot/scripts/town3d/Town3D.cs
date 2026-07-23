@@ -511,16 +511,33 @@ public partial class Town3D : SubViewportContainer
             Position = new Vector3(-0.7f, 0.7f, 0f),
         });
 
-        cluster.AddChild(new MeshInstance3D
+        // Gen-first (mirrors BuildingKit): the AI-gen anvil GLB becomes the station's anvil, rescaled
+        // to ~0.6u from its own bounds and feet-pivoted at the same spot; the primitive box is the
+        // graceful fallback when the asset is absent. The ForgeSparks/flash VFX below sit above this
+        // anchor either way.
+        var genAnvil = TownAssets.InstantiateGen("anvil.glb");
+        if (genAnvil != null)
         {
-            Name = "Anvil",
-            Mesh = new BoxMesh
+            var anvilHeight = MeshHeight(genAnvil, 1f);
+            var anvilScale = anvilHeight > 0.001f ? 0.6f / anvilHeight : 1f;
+            genAnvil.Name = "Anvil";
+            genAnvil.Scale = new Vector3(anvilScale, anvilScale, anvilScale);
+            genAnvil.Position = new Vector3(0.7f, 0f, 0f);
+            cluster.AddChild(genAnvil);
+        }
+        else
+        {
+            cluster.AddChild(new MeshInstance3D
             {
-                Size = new Vector3(0.9f, 0.6f, 0.5f),
-                Material = new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.2f, 0.22f) },
-            },
-            Position = new Vector3(0.7f, 0.3f, 0f),
-        });
+                Name = "Anvil",
+                Mesh = new BoxMesh
+                {
+                    Size = new Vector3(0.9f, 0.6f, 0.5f),
+                    Material = new StandardMaterial3D { AlbedoColor = new Color(0.2f, 0.2f, 0.22f) },
+                },
+                Position = new Vector3(0.7f, 0.3f, 0f),
+            });
+        }
 
         // G1 (game-feel plan §"World VFX keyed to beat state"): the station's own VFX props —
         // headless-safe (CpuParticles3D/OmniLight3D are plain scene nodes; nothing here depends on
@@ -843,6 +860,17 @@ public partial class Town3D : SubViewportContainer
         AddProp(props, TownAssets.FantasyTownKit, "lantern.glb", new Vector3(1.5f, 0f, 4.5f), lanternGlow: true);
         AddProp(props, TownAssets.FantasyTownKit, "lantern.glb", new Vector3(-1.5f, 0f, 4.5f), lanternGlow: true);
 
+        // Wire the AI-gen prop GLBs (previously orphaned — see GenAssetCoverageTests): each is
+        // rescaled to a sane prop height from its OWN mesh bounds (gen assets ship at varying baked
+        // scales, so we never trust the file's raw size), placed clear of every Building3D interact
+        // zone and the gate departure lane (x≈0, z -20..-15). Pure decoration, no colliders.
+        AddGenProp(props, "well.glb", new Vector3(-3f, 0f, 5.5f), targetHeight: 1.3f);
+        AddGenProp(props, "barrel.glb", new Vector3(-11f, 0f, 4.5f), targetHeight: 0.8f);
+        AddGenProp(props, "barrel.glb", new Vector3(-10.2f, 0f, 9f), targetHeight: 0.8f, rotationYDeg: 40f);
+        AddGenProp(props, "ore-cart.glb", new Vector3(4f, 0f, -15f), targetHeight: 1.0f, rotationYDeg: 20f);
+        AddGenProp(props, "market-stall.glb", new Vector3(12.5f, 0f, -4f), targetHeight: 2.2f, rotationYDeg: -30f);
+        AddGenProp(props, "bounty-board.glb", new Vector3(12f, 0f, 9f), targetHeight: 1.6f, rotationYDeg: -20f);
+
         return props;
     }
 
@@ -863,6 +891,54 @@ public partial class Town3D : SubViewportContainer
         {
             TownAssets.AttachLanternGlow(piece);
         }
+    }
+
+    /// <summary>Places a normalized AI-gen prop GLB (<see cref="TownAssets.InstantiateGen"/>) as pure
+    /// decoration, uniformly rescaled from its own mesh bounds to <paramref name="targetHeight"/>
+    /// units — gen assets ship at varying baked scales, so we fit each to a sane prop height rather
+    /// than trusting the file. No collider (mirrors <see cref="AddProp"/>); a missing file is a silent
+    /// skip (<c>GenAssetCoverageTests</c> guards presence + wiring separately).</summary>
+    private static void AddGenProp(Node3D parent, string fileName, Vector3 position, float targetHeight, float rotationYDeg = 0f)
+    {
+        var piece = TownAssets.InstantiateGen(fileName);
+        if (piece == null)
+        {
+            return;
+        }
+
+        var height = MeshHeight(piece, 1f);
+        var scale = height > 0.001f ? targetHeight / height : 1f;
+        piece.Scale = new Vector3(scale, scale, scale);
+        piece.Position = position;
+        piece.RotationDegrees = new Vector3(0f, rotationYDeg, 0f);
+        // Recognizable node name (e.g. "Gen_well") so scene inspection + the placement smoke test
+        // can find gen props among the Kenney dressing; Godot auto-suffixes the duplicate barrel.
+        piece.Name = "Gen_" + System.IO.Path.GetFileNameWithoutExtension(fileName);
+        parent.AddChild(piece);
+    }
+
+    /// <summary>Tallest descendant <see cref="MeshInstance3D"/> AABB height, folding in each node's Y
+    /// scale on the way down — enough to read a gen asset's natural height for uniform rescaling.
+    /// Pure resource read (<c>Mesh.GetAabb</c>), never a render, so it is headless-test safe.</summary>
+    private static float MeshHeight(Node node, float scaleY)
+    {
+        if (node is Node3D n3)
+        {
+            scaleY *= n3.Scale.Y;
+        }
+
+        var height = 0f;
+        if (node is MeshInstance3D mesh && mesh.Mesh != null)
+        {
+            height = mesh.Mesh.GetAabb().Size.Y * scaleY;
+        }
+
+        foreach (var child in node.GetChildren())
+        {
+            height = Mathf.Max(height, MeshHeight(child, scaleY));
+        }
+
+        return height;
     }
 
     private static DirectionalLight3D BuildLight() => new()
