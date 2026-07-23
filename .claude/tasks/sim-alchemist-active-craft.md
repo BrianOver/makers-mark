@@ -4,7 +4,7 @@
 - agent: alchemist-active-craft worker (orchestrated session 016ZkJQb)
 - status: pr-open
 - branch: feat/alchemist-active-craft
-- pr: (set at open)
+- pr: https://github.com/BrianOver/makers-mark/pull/176
 - owned dirs: sim/GameSim/Professions/Alchemy/, sim/GameSim.Tests/Professions/Alchemy/, godot/scripts/minigames/AlchemyBrewPuzzle.cs, godot/tests/minigames/AlchemyBrewPuzzleTests.cs
 - must not edit: CLAUDE.md deny-list (Contracts/ untouched — puzzle polymorphism registered via SaveCodec type-info resolver, no attribute on the base)
 - test command: `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter "Category!=Balance"` + Balance gate + `dotnet test godot/tests/GodotClient.Tests.csproj --settings .runsettings --filter "FullyQualifiedName~Alchemy|FullyQualifiedName~Forge"`
