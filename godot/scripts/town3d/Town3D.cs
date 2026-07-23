@@ -354,6 +354,7 @@ public partial class Town3D : SubViewportContainer
         Viewport.AddChild(World);
 
         World.AddChild(BuildLight());
+        World.AddChild(BuildFillLight());
         World.AddChild(BuildEnvironment());
 
         Buildings = new Node3D { Name = "Buildings" };
@@ -943,22 +944,42 @@ public partial class Town3D : SubViewportContainer
         return height;
     }
 
+    /// <summary>Key light (the sun): warm, from the upper front-left. Slightly brighter than the
+    /// original 1.1 so lit faces of the PBR gen assets read with punch.</summary>
     private static DirectionalLight3D BuildLight() => new()
     {
         Name = "SunLight",
         RotationDegrees = new Vector3(-55, -30, 0),
-        LightEnergy = 1.1f,
+        LightColor = new Color(1f, 0.96f, 0.9f),
+        LightEnergy = 1.2f,
     };
 
+    /// <summary>Fill light: a dim, cool, shadowless light from the OPPOSITE side that lifts the
+    /// faces the sun leaves dark. This is the main fix for "everything looks dark/flat" — the town
+    /// (and the baked-PBR gen assets, which go near-black on unlit faces under low ambient) had only
+    /// a single key light + modest ambient, so back/side faces read almost black. A classic
+    /// key+fill pair opens them up without washing the scene out.</summary>
+    private static DirectionalLight3D BuildFillLight() => new()
+    {
+        Name = "FillLight",
+        RotationDegrees = new Vector3(-25, 150, 0),
+        LightColor = new Color(0.75f, 0.83f, 1f),
+        LightEnergy = 0.45f,
+        ShadowEnabled = false,
+    };
+
+    /// <summary>Sky + ambient. Ambient (and the procedural sky feeding it) were dim enough that
+    /// shadowed geometry crushed to black; raised so the whole town sits in a readable daylight
+    /// ambient. Filmic tonemap kept (safe, no colour surprises).</summary>
     private static WorldEnvironment BuildEnvironment()
     {
         var env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Sky,
-            Sky = new Sky { SkyMaterial = new ProceduralSkyMaterial { SkyEnergyMultiplier = 0.55f, GroundEnergyMultiplier = 0.55f } },
-            BackgroundEnergyMultiplier = 0.6f,
+            Sky = new Sky { SkyMaterial = new ProceduralSkyMaterial { SkyEnergyMultiplier = 0.85f, GroundEnergyMultiplier = 0.65f } },
+            BackgroundEnergyMultiplier = 0.8f,
             AmbientLightSource = Godot.Environment.AmbientSource.Bg,
-            AmbientLightEnergy = 0.6f,
+            AmbientLightEnergy = 1.0f,
             TonemapMode = Godot.Environment.ToneMapper.Filmic,
         };
         return new WorldEnvironment { Name = "WorldEnvironment", Environment = env };

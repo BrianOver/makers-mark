@@ -145,8 +145,8 @@ public partial class InteriorRoom3D : Node3D
             Name = "RoomLight",
             Position = new Vector3(0f, WallHeight - 0.6f, 0f),
             LightColor = new Color(1f, 0.82f, 0.55f),
-            LightEnergy = 1.6f,
-            OmniRange = RoomSize * 1.2f,
+            LightEnergy = 2.3f,
+            OmniRange = RoomSize * 1.6f,
         });
 
         foreach (var prop in props)
