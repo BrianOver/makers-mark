@@ -78,6 +78,30 @@ public static class AssetCatalog
     /// note: no image exists yet, per <c>TownSpecsExtra</c>).</summary>
     public static CanvasTexture? PlayerAvatar() => IconRegistry.Lit(PlayerAvatarId);
 
+    // ---- 3D gen monster meshes (MonsterView3D spectate stage) ---------------------------------
+
+    /// <summary>
+    /// AI-gen monster GLB file names under <c>TownAssets.GenModels</c>, keyed by slugged Mine
+    /// monster kind. An EXPLICIT map (not slug composition like <see cref="MonsterPortraitId"/>)
+    /// because the gen pipeline shipped shortened file names ("monster-spider.glb", not
+    /// "monster-tunnel-spider.glb"). A kind with no entry ("forgeworm" — no gen model yet) resolves
+    /// null, which is <c>MonsterView3D</c>'s cue to keep the 2D portrait fallback.
+    /// </summary>
+    private static readonly Dictionary<string, string> MonsterModelFiles = new()
+    {
+        ["cave-rat"] = "monster-cave-rat.glb",
+        ["tunnel-spider"] = "monster-spider.glb",
+        ["deep-ghoul"] = "monster-ghoul.glb",
+        ["ore-golem"] = "monster-ore-golem.glb",
+    };
+
+    /// <summary>Gen monster GLB file name for <paramref name="kind"/> (display name "Cave Rat" or
+    /// slug "cave-rat" — same <see cref="Slugify"/> tolerance as <see cref="MonsterPortraitId"/>),
+    /// or null when no 3D model has been generated for that kind yet. Null-tolerant like every
+    /// resolver here — never a throw.</summary>
+    public static string? MonsterModelFile(string kind) =>
+        MonsterModelFiles.TryGetValue(Slugify(kind), out var file) ? file : null;
+
     // ---- world-rework U14 (KTD6): feet-anchor offset table ------------------------------------
 
     /// <summary>
