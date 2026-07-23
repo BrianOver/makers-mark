@@ -59,21 +59,26 @@ public partial class InteriorRoom3D : Node3D
         [
             new PropSpec("anvil.glb", new Vector3(0.4f, 0f, -1.0f), 0.9f, 15f),
             new PropSpec("barrel.glb", new Vector3(-2.4f, 0f, -2.6f), 1.0f, 0f),
+            new PropSpec("weapon-rack.glb", new Vector3(2.6f, 0f, -2.7f), 1.7f, -35f),
         ],
         ["market"] =
         [
             new PropSpec("market-stall.glb", new Vector3(0f, 0f, -2.0f), 2.4f, 0f),
             new PropSpec("barrel.glb", new Vector3(2.4f, 0f, -2.4f), 1.0f, 30f),
+            new PropSpec("crate.glb", new Vector3(-2.5f, 0f, -1.7f), 1.1f, 20f),
         ],
         ["tavern"] =
         [
             new PropSpec("barrel.glb", new Vector3(-2.4f, 0f, -2.2f), 1.0f, 0f),
             new PropSpec("well.glb", new Vector3(1.8f, 0f, -1.6f), 1.6f, -20f),
+            new PropSpec("cauldron.glb", new Vector3(2.6f, 0f, -2.8f), 0.9f, 0f),
+            new PropSpec("table.glb", new Vector3(-1.4f, 0f, -0.9f), 0.8f, 0f),
         ],
         ["minegate"] =
         [
             new PropSpec("ore-cart.glb", new Vector3(0f, 0f, -1.4f), 1.3f, 25f),
             new PropSpec("bounty-board.glb", new Vector3(-2.2f, 0f, -3.0f), 1.8f, 10f),
+            new PropSpec("chest.glb", new Vector3(2.3f, 0f, -1.7f), 0.8f, -25f),
         ],
     };
 
