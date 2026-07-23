@@ -85,6 +85,11 @@ public partial class MainUi : Control
     /// forge/counter focus overlay reads as a deliberate close-up, not a subtle zoom.</summary>
     private const float StationPushInDistance = 6f;
 
+    /// <summary>3D-interiors MVP: the <see cref="CameraRig.PushIn"/> distance for a venue's
+    /// <see cref="InteriorRoom3D"/> — slightly wider than <see cref="StationPushInDistance"/> so
+    /// the whole 8-unit diorama room (floor + three walls) fits the rig's 45° FOV frame.</summary>
+    private const float InteriorRoomPushInDistance = 7.5f;
+
     /// <summary>U23 (R5, KTD4): number-row hotkeys for the quick-travel unlock — runtime <see
     /// cref="InputMap"/> registration only (no <c>project.godot</c> contact), gated on <see
     /// cref="TutorialFlow.QuickTravelUnlocked"/> in <see cref="_Process"/>. Building keys match
@@ -127,8 +132,16 @@ public partial class MainUi : Control
     public AdventureTicker Ticker { get; private set; } = null!;
 
     /// <summary>U22 (R4/KTD10): the staged-interior framework — opens instead of the drawer on a
-    /// venue interact/click-arrival, then routes a hotspot press onto the same drawer id.</summary>
+    /// venue interact/click-arrival, then routes a hotspot press onto the same drawer id. Since
+    /// the 3D-interiors MVP it renders in see-through mode (hotspot/exit overlay only) over the
+    /// real 3D room below whenever <see cref="InteriorRoom"/> mounted.</summary>
     public InteriorStage Interior { get; private set; } = null!;
+
+    /// <summary>3D-interiors MVP: the live 3D interior room while a venue interior is open (null
+    /// otherwise) — mounted in <see cref="Town3D.World"/> and framed by the shared
+    /// <see cref="CameraRig"/> push-in; replaces <see cref="InteriorStage"/>'s painted backdrop,
+    /// never its hotspot routing. Test/inspection surface.</summary>
+    public InteriorRoom3D? InteriorRoom { get; private set; }
 
     /// <summary>U18 (R11/KTD13): the top-right objective chip — <c>ObjectiveAdvisor</c>'s top
     /// pick + reason, expandable to the ranked list.</summary>
@@ -1077,30 +1090,70 @@ public partial class MainUi : Control
     /// The avatar is already standing at the venue's door — <see
     /// cref="Town3D.BuildingClicked"/> only ever fires on arrival/interact — so this records that
     /// exact position for <see cref="ResetAvatarToDoor"/> to restore on exit, closes whichever
-    /// drawer was showing (REPLACE semantics, mirrors <see cref="OpenPanel"/>), and starts the
-    /// interior's own accumulated-delta push-in.
+    /// drawer was showing (REPLACE semantics, mirrors <see cref="OpenPanel"/>), mounts the venue's
+    /// real 3D room (<see cref="MountInteriorRoom"/>, camera dolly included), and opens the stage
+    /// in see-through mode over it so the hotspot overlay + its accumulated-delta push-in still
+    /// run unchanged.
     /// </summary>
     private void OpenInterior(string venueKey)
     {
         Drawer.Close();
         _interiorDoorPosition = Town.DoorAnchor(venueKey);
-        Interior.Open(venueKey, Adapter.CurrentState);
+        MountInteriorRoom(venueKey);
+        Interior.Open(venueKey, Adapter.CurrentState, seeThrough: InteriorRoom is not null);
         UpdateEngaged();
     }
 
-    /// <summary>A content hotspot (never exit) was pressed inside the interior — close it, restore
-    /// the avatar to the door, and open the SAME drawer id the hotspot's action names (content
-    /// parity with the pre-U22 interact-opens-the-drawer behaviour).</summary>
+    /// <summary>
+    /// 3D-interiors MVP: build <paramref name="venueKey"/>'s real 3D room, mount it on the
+    /// <see cref="InteriorRoom3D.MountPosition"/> shelf inside the live town world, and dolly the
+    /// shared camera onto it — the SAME <see cref="CameraRig.PushIn"/> path the forge/counter
+    /// stations proved (<see cref="OnTownBuildingClicked"/>). The see-through
+    /// <see cref="InteriorStage"/> overlay opened right after this keeps every hotspot action /
+    /// exit / Esc / Engaged behavior unchanged on top of the room.
+    /// </summary>
+    private void MountInteriorRoom(string venueKey)
+    {
+        UnmountInteriorRoom();
+        var room = new InteriorRoom3D { Position = InteriorRoom3D.MountPosition };
+        room.Build(venueKey);
+        Town.World.AddChild(room);
+        Town.Camera.PushIn(room.Focus, InteriorRoomPushInDistance);
+        InteriorRoom = room;
+    }
+
+    /// <summary>Tear the 3D interior room down (no-op when none is mounted): release the camera
+    /// back to its avatar follow and free the room — a fresh room is built per entry, so venue
+    /// state can never leak between visits.</summary>
+    private void UnmountInteriorRoom()
+    {
+        if (InteriorRoom is null)
+        {
+            return;
+        }
+
+        Town.Camera.Release();
+        Town.World.RemoveChild(InteriorRoom);
+        InteriorRoom.Free();
+        InteriorRoom = null;
+    }
+
+    /// <summary>A content hotspot (never exit) was pressed inside the interior — close it (room
+    /// down, camera released), restore the avatar to the door, and open the SAME drawer id the
+    /// hotspot's action names (content parity with the pre-U22 interact-opens-the-drawer
+    /// behaviour).</summary>
     private void OnInteriorHotspotActivated(string action)
     {
+        UnmountInteriorRoom();
         ResetAvatarToDoor();
         OpenPanel(action);
     }
 
-    /// <summary>The exit hotspot or Esc closed the interior — restore the avatar to the door
-    /// position it entered from (R4/AE4) and re-sync the Engaged latch.</summary>
+    /// <summary>The exit hotspot or Esc closed the interior — tear the 3D room down, restore the
+    /// avatar to the door position it entered from (R4/AE4) and re-sync the Engaged latch.</summary>
     private void OnInteriorExited()
     {
+        UnmountInteriorRoom();
         ResetAvatarToDoor();
         UpdateEngaged();
     }
