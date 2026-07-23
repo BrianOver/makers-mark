@@ -41,6 +41,13 @@ namespace GodotClient.Town;
 /// cref="ApplyBackdrop"/>, the same <see cref="GradientTexture2D"/> technique <see
 /// cref="ShopStage"/> itself uses for its own backdrop degrade). Never a blank hole, never a
 /// crash; every hotspot still renders and routes regardless of backdrop art presence.</para>
+///
+/// <para><b>3D-interiors MVP (see-through mode):</b> when <c>MainUi.OpenInterior</c> mounts a
+/// real <see cref="GodotClient.Town3d.InteriorRoom3D"/> in the town's 3D world, it opens this
+/// stage with <c>seeThrough: true</c> — the dim veil / painted backdrop / avatar figure hide so
+/// the 3D room shows through, and this class serves ONLY the carry-forward hotspot data + exit/
+/// Esc/Engaged routing on top (exactly the "walkable interiors later" hand-off the paragraph
+/// above reserved the hotspot table for).</para>
 /// </summary>
 public partial class InteriorStage : Control
 {
@@ -106,6 +113,13 @@ public partial class InteriorStage : Control
     /// generated-gradient degrade path (test/tuning visibility, mirrors <see
     /// cref="ShopStage.HasBackdropArt"/>).</summary>
     public bool HasBackdropArt { get; private set; }
+
+    /// <summary>3D-interiors MVP: true while the current venue opened in see-through mode — the
+    /// dim veil / painted backdrop / avatar figure are hidden so the caller's real 3D room
+    /// (<see cref="GodotClient.Town3d.InteriorRoom3D"/>, framed by the town camera's own
+    /// push-in) shows through underneath, while the hotspot panel / title / exit / Esc routing
+    /// all keep working exactly as staged mode. False in classic staged (painted-backdrop) mode.</summary>
+    public bool SeeThrough { get; private set; }
 
     /// <summary>Every hotspot button currently rendered, in declared order (test visibility) —
     /// never includes the structural exit button.</summary>
@@ -222,8 +236,11 @@ public partial class InteriorStage : Control
     /// declarative table, shows/hides the embedded <see cref="ShopStage"/> ("market" only), and
     /// starts the accumulated-delta push-in. <paramref name="state"/> — when given — refreshes
     /// the shelf-stock icon row for "market" (no-op for every other venue).
+    /// <paramref name="seeThrough"/> (3D-interiors MVP) hides the dim/backdrop/avatar-figure
+    /// layers so a real 3D room renders underneath while this stage keeps serving ONLY the
+    /// hotspot/title/exit overlay (see <see cref="SeeThrough"/>).
     /// </summary>
-    public void Open(string venueKey, GameState? state = null)
+    public void Open(string venueKey, GameState? state = null, bool seeThrough = false)
     {
         Build();
         if (!Venues.TryGetValue(venueKey, out var spec))
@@ -232,8 +249,12 @@ public partial class InteriorStage : Control
         }
 
         _current = spec;
+        SeeThrough = seeThrough;
+        _dim.Visible = !seeThrough;
+        _backdrop.Visible = !seeThrough;
+        _avatarFigure.Visible = !seeThrough;
         _title.Text = spec.Title;
-        ApplyBackdrop(spec.BackdropArtId);
+        ApplyBackdrop(spec.BackdropArtId); // still resolved in see-through mode: HasBackdropArt stays meaningful
         RebuildHotspots(spec);
 
         _shopStage.Visible = venueKey == "market";

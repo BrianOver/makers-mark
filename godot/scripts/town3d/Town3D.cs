@@ -919,8 +919,10 @@ public partial class Town3D : SubViewportContainer
 
     /// <summary>Tallest descendant <see cref="MeshInstance3D"/> AABB height, folding in each node's Y
     /// scale on the way down — enough to read a gen asset's natural height for uniform rescaling.
-    /// Pure resource read (<c>Mesh.GetAabb</c>), never a render, so it is headless-test safe.</summary>
-    private static float MeshHeight(Node node, float scaleY)
+    /// Pure resource read (<c>Mesh.GetAabb</c>), never a render, so it is headless-test safe.
+    /// Internal (not private) so <see cref="InteriorRoom3D"/> reuses the SAME sizing read for its
+    /// own gen-prop dressing instead of forking the pattern.</summary>
+    internal static float MeshHeight(Node node, float scaleY)
     {
         if (node is Node3D n3)
         {
