@@ -60,6 +60,12 @@ public partial class ForgePanel : SimPanel
     /// (PKD8 self-contained focus overlay); hidden except while a run is in progress.</summary>
     private ForgeMinigame? _minigame;
 
+    /// <summary>Phase B: the alchemist's reagent-puzzle overlay — the same single-instance,
+    /// self-contained-focus-overlay pattern as <see cref="_minigame"/>, opened by the "Brew"
+    /// button an ACTIVE alchemy recipe renders where the blacksmith gets "Work the forge".
+    /// Presentation only: the sim scores the submitted <c>AlchemyReagentPuzzle</c> itself.</summary>
+    private AlchemyBrewPuzzle? _brewPuzzle;
+
     /// <summary>G1 (game-feel plan §"World VFX keyed to beat state"): the town's forge-station VFX
     /// surface — resolved lazily via <see cref="ResolveTown"/> rather than threaded through
     /// <c>MainUi</c> (this unit's scope keeps MainUi untouched beyond the build-stamp mount), and
@@ -207,9 +213,21 @@ public partial class ForgePanel : SimPanel
 
                 if (profession.ActiveCraft)
                 {
-                    var work = AddButton(controlsRow, $"WorkForge_{recipe.RecipeId}", "Work the forge",
-                        () => OnWorkForgePressed(recipe, material, profession!, unlocked));
-                    GateButton(work, affordable, $"Not enough {material} — need {needed}, have {have}.");
+                    // Each active profession routes to ITS OWN overlay (the template's "don't
+                    // hardcode your profession into ForgeMinigame" rule): blacksmith → the
+                    // real-time forge minigame; alchemy → the discrete reagent-puzzle panel.
+                    if (professionId == AlchemyProfession.Id)
+                    {
+                        var brew = AddButton(controlsRow, $"Brew_{recipe.RecipeId}", "Brew (reagent puzzle)",
+                            () => OnBrewPressed(recipe, material, profession!, unlocked));
+                        GateButton(brew, affordable, $"Not enough {material} — need {needed}, have {have}.");
+                    }
+                    else
+                    {
+                        var work = AddButton(controlsRow, $"WorkForge_{recipe.RecipeId}", "Work the forge",
+                            () => OnWorkForgePressed(recipe, material, profession!, unlocked));
+                        GateButton(work, affordable, $"Not enough {material} — need {needed}, have {have}.");
+                    }
                 }
             }
 
@@ -286,6 +304,31 @@ public partial class ForgePanel : SimPanel
         _minigame!.Visible = false;
         ResolveTown()?.ForgeGlowReset();
     }
+
+    /// <summary>Phase B: open the reagent-puzzle overlay for this alchemy recipe/material — the
+    /// "Brew" path beside the auto-craft fallback, mirroring <see cref="OnWorkForgePressed"/>.</summary>
+    private void OnBrewPressed(Recipe recipe, string material, ProfessionDefinition profession, ImmutableSortedSet<string> unlockedTalents)
+    {
+        EnsureBuilt();
+        _brewPuzzle!.Configure(recipe, material, profession, unlockedTalents);
+        _brewPuzzle.Visible = true;
+    }
+
+    /// <summary>The brew overlay's ONE completed run → the ONE queued <see cref="CraftAction"/>
+    /// (PKD8 single-action contract, same as <see cref="OnMinigameFinished"/>). The grade shown
+    /// is the scorer's preview (SubScores[2]); the sim recomputes it authoritatively on resolve.</summary>
+    private void OnBrewFinished(CraftAction action)
+    {
+        Adapter?.Queue(action);
+        _brewPuzzle!.Visible = false;
+        var preview = action.SubScores is { Count: 3 } scores ? scores[2] : 0;
+        _feedback!.Text = $"queued: brew {action.RecipeId} with {action.MaterialKey} " +
+            $"(brew score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)}). " +
+            $"Queued — resolves when {Adapter?.CurrentState.Phase} ticks. Press Advance or wait.";
+    }
+
+    /// <summary>Brew cancel queues nothing (PKD8) — just closes the overlay.</summary>
+    private void OnBrewCancelled() => _brewPuzzle!.Visible = false;
 
     /// <summary>G1: the Smelt beat ended (or the Forge/Quench/Done stage was entered) — reset the
     /// furnace glow to its resting baseline. The glow's continuous rise while Smelt IS active is
@@ -470,6 +513,13 @@ public partial class ForgePanel : SimPanel
         _minigame.StageChanged += OnMinigameStageChanged;
         _minigame.Struck += OnMinigameStruck;
         _minigame.Quenched += OnMinigameQuenched;
+
+        // Phase B: the alchemist's reagent-puzzle overlay — same self-contained-focus pattern,
+        // hidden until a "Brew" button opens it.
+        _brewPuzzle = new AlchemyBrewPuzzle { Visible = false };
+        AddChild(_brewPuzzle);
+        _brewPuzzle.Finished += OnBrewFinished;
+        _brewPuzzle.Cancelled += OnBrewCancelled;
 
         BuildCeremony();
         BuildSfx();

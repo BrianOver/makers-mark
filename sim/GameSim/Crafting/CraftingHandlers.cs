@@ -75,7 +75,21 @@ public sealed class CraftingHandlers : IActionHandler
             return (state, new RejectedAction(action, $"Not enough {action.MaterialKey}: need {needed}, have {have}."));
         }
 
-        // 6. Day action-budget gate (Game-Feel Plan G3): craft is real work (ActionBudget.ConsumesSlot)
+        // 6. Dual-mode puzzle seam (Phase B / PKD1): an in-sim-scored profession submits its
+        //    puzzle input on the action instead of a Godot-captured grade. Validate BEFORE the
+        //    slot gate (a malformed action keeps its specific rejection even on a spent day)
+        //    and, like every rejection above, before any RNG draw (KTD4).
+        if (action.Puzzle is not null && action.Puzzle is not AlchemyReagentPuzzle)
+        {
+            return (state, new RejectedAction(action, $"Unsupported craft puzzle '{action.Puzzle.GetType().Name}'."));
+        }
+
+        if (action.Puzzle is AlchemyReagentPuzzle && (!profession.ActiveCraft || recipe.Profession != AlchemyProfession.Id))
+        {
+            return (state, new RejectedAction(action, $"Recipe '{recipe.RecipeId}' does not take a reagent puzzle."));
+        }
+
+        // 7. Day action-budget gate (Game-Feel Plan G3): craft is real work (ActionBudget.ConsumesSlot)
         //    — checked LAST, after every other precondition, so an invalid recipe/material/tier/stock
         //    keeps its existing rejection reason even on a slot-exhausted day; only a genuinely legal
         //    craft with zero slots left is newly refused here. No RNG drawn yet — a refused craft never
@@ -85,12 +99,18 @@ public sealed class CraftingHandlers : IActionHandler
             return (state, new RejectedAction(action, $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance."));
         }
 
-        // 7. All checks passed — consume, roll (the single RNG draw), mint, emit.
-        // ActiveCraft professions (blacksmith, PA2/PKD2) dominance-roll off the captured
-        // PerformanceGrade; every other profession keeps the untouched passive ±8 roll.
+        // 8. All checks passed — consume, roll (the single RNG draw), mint, emit.
+        // ActiveCraft professions dominance-roll off a per-mille grade: the blacksmith's is
+        // CAPTURED by its Godot minigame (action.PerformanceGrade, PA2/PKD2); the alchemist's is
+        // SCORED HERE from the reagent puzzle (Phase B/PKD1 — pure integer scorer, zero RNG, so
+        // the draw count below is unchanged). A null grade AND null puzzle is the auto-craft
+        // path for both. Every passive profession keeps the untouched passive ±8 roll.
+        var performanceGrade = action.Puzzle is AlchemyReagentPuzzle brew
+            ? AlchemyPuzzleScorer.Score(recipe!, brew, talents, profession).GradePermille
+            : action.PerformanceGrade;
         var quality = profession.ActiveCraft
-            ? QualityRoller.RollActive(recipe, materialGrade, talents, profession.Quality, rng, action.PerformanceGrade)
-            : QualityRoller.Roll(recipe, materialGrade, talents, profession.Quality, rng, action.PerformanceGrade);
+            ? QualityRoller.RollActive(recipe, materialGrade, talents, profession.Quality, rng, performanceGrade)
+            : QualityRoller.Roll(recipe, materialGrade, talents, profession.Quality, rng, performanceGrade);
         var itemId = new ItemId(state.NextItemId);
         var item = ItemForge.Forge(itemId, recipe, quality, state.Day, action.SubScores);
 

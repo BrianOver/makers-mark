@@ -56,22 +56,29 @@ public class AlchemyProfessionTests
     }
 
     [Fact]
-    public void Definition_QualityModel_HasExpectedShifts()
+    public void Definition_ActiveModel_RetiredShiftsBecameAssists_MasteryKept()
     {
-        Assert.Equal(5, Alc.Quality.FlatShifts[AlchemyProfession.MeasuredPour]);
-        Assert.Equal(7, Alc.Quality.FlatShifts[AlchemyProfession.CarefulDistillation]);
-        Assert.Equal(8, Alc.Quality.FlatShifts[AlchemyProfession.MasterAlchemist]);
-
-        var potent = Alc.Quality.SlotShifts[AlchemyProfession.PotentBrews];
-        Assert.Equal(ItemSlot.Consumable, potent.Slot);
-        Assert.Equal(5, potent.Shift);
-
+        // Phase B active flip, mirroring the blacksmith's PA2/PKD3 remap exactly: the retired
+        // quality-shift nodes must not ALSO shift any roll (double-count fix) — they live on as
+        // MinigameAssist data the in-sim scorer consumes — and the material-mastery axis is KEPT.
+        Assert.True(Alc.ActiveCraft);
+        Assert.Empty(Alc.Quality.FlatShifts);
+        Assert.Empty(Alc.Quality.SlotShifts);
         Assert.Equal(AlchemyProfession.ReagentMastery, Alc.Quality.MaterialMasteryNode);
         Assert.Equal(AlchemyProfession.FrugalReagents, Alc.MaterialEfficiencyNode);
 
-        // Non-quality nodes never leak into the quality model.
-        Assert.False(Alc.Quality.FlatShifts.ContainsKey(AlchemyProfession.FrugalReagents));
-        Assert.False(Alc.Quality.FlatShifts.ContainsKey(AlchemyProfession.Tier2Alchemy));
+        // 1:1 remap of the four retired nodes, same magnitudes as the blacksmith's four.
+        Assert.Equal(4, Alc.MinigameAssists.Count);
+        Assert.Equal(50, Alc.MinigameAssists[AlchemyProfession.MeasuredPour].SweetZoneWidthBonus);
+        Assert.Equal(70, Alc.MinigameAssists[AlchemyProfession.CarefulDistillation].DriftRateReduction);
+        Assert.Equal(80, Alc.MinigameAssists[AlchemyProfession.MasterAlchemist].OffBeatForgiveness);
+        Assert.Equal(50, Alc.MinigameAssists[AlchemyProfession.PotentBrews].SweetZoneWidthBonus);
+
+        // Every assist node is a real talent node; non-quality nodes never leak into the map.
+        Assert.All(Alc.MinigameAssists.Keys, nodeId => Assert.True(Alc.TalentNodes.ContainsKey(nodeId)));
+        Assert.False(Alc.MinigameAssists.ContainsKey(AlchemyProfession.FrugalReagents));
+        Assert.False(Alc.MinigameAssists.ContainsKey(AlchemyProfession.ReagentMastery));
+        Assert.False(Alc.MinigameAssists.ContainsKey(AlchemyProfession.Tier2Alchemy));
     }
 
     // ---- Tier gating --------------------------------------------------------------------
@@ -147,15 +154,15 @@ public class AlchemyProfessionTests
         Assert.Equal(30 * ItemForge.QualityPercent(QualityGrade.Superior) / 100, item.Effect.Magnitude); // 40
     }
 
-    // ---- Quality distribution pins (deterministic; guard the shift values) --------------
+    // ---- Active-model distribution pins (deterministic; PKD3 semantics) -----------------
 
-    private static string RollDistribution(Recipe recipe, int materialGrade, ImmutableSortedSet<string> talents, ulong seed)
+    private static string ActiveRollDistribution(Recipe recipe, int materialGrade, ImmutableSortedSet<string> talents, int? grade, ulong seed)
     {
         var rng = new Pcg32(RngState.FromSeed(seed));
         var counts = new int[5];
         for (var i = 0; i < 1000; i++)
         {
-            counts[(int)QualityRoller.Roll(recipe, materialGrade, talents, Alc.Quality, rng)]++;
+            counts[(int)QualityRoller.RollActive(recipe, materialGrade, talents, Alc.Quality, rng, grade)]++;
         }
 
         Assert.Equal(1000, counts.Sum());
@@ -163,40 +170,35 @@ public class AlchemyProfessionTests
     }
 
     [Fact]
-    public void QualityDistribution_NoTalents_GradeEqualsTier_MatchesSharedBaseCurve()
+    public void ActiveRoll_RetiredTalents_ShiftTheRollByExactlyZero()
     {
-        // shift 0 (material grade == recipe tier, no quality talents): the roll is Roll100()
-        // straight into the shared threshold table, so alchemy reproduces the exact base curve
-        // the blacksmith dagger golden pins (Poor 15 / Common 50 / Fine 25 / Superior 9 / Master 1).
-        var dist = RollDistribution(Alc.Recipes["alchemy-alchemical-robe"], materialGrade: 1, ImmutableSortedSet<string>.Empty, seed: 1234);
-        Assert.Equal("146,513,247,85,9", dist);
+        // The PKD3 double-count pin, alchemy edition (mirrors the blacksmith's): the retired
+        // quality nodes became scorer assists — unlocking every one of them must move the
+        // dominance ROLL's distribution by exactly nothing (only the puzzle grade they forgive
+        // moves, and that enters as the grade parameter, not a roll shift).
+        var recipe = Alc.Recipes["alchemy-minor-elixir"];
+        var none = ActiveRollDistribution(recipe, materialGrade: 1, ImmutableSortedSet<string>.Empty, grade: 700, seed: 1234);
+        var all = ActiveRollDistribution(
+            recipe, materialGrade: 1,
+            ImmutableSortedSet.Create(
+                AlchemyProfession.MeasuredPour, AlchemyProfession.CarefulDistillation,
+                AlchemyProfession.MasterAlchemist, AlchemyProfession.PotentBrews),
+            grade: 700, seed: 1234);
+
+        Assert.Equal(none, all);
     }
 
     [Fact]
-    public void QualityDistribution_PotentBrews_ShiftsConsumableRollsUp()
+    public void ActiveRoll_AutoCraft_NeverExceedsSuperior_AndGradeDominates()
     {
-        // Potent Brews (+5, Consumable-scoped) applied to a Consumable recipe shifts the curve up.
-        var talents = ImmutableSortedSet.Create(AlchemyProfession.PotentBrews);
-        var dist = RollDistribution(Alc.Recipes["alchemy-minor-elixir"], materialGrade: 1, talents, seed: 1234);
-        Assert.Equal("106,495,251,102,46", dist);
-    }
+        // Auto-craft (null grade, null puzzle) sits at the competent 550 baseline and is
+        // hard-capped below Masterwork (PKD4); a perfect in-sim-scored brew (1000) with
+        // above-tier material is Masterwork-reachable — the puzzle is the only road to the top.
+        var recipe = Alc.Recipes["alchemy-minor-elixir"];
+        var auto = ActiveRollDistribution(recipe, materialGrade: 1, ImmutableSortedSet<string>.Empty, grade: null, seed: 1234);
+        Assert.Equal("0", auto.Split(',')[4]); // zero Masterwork out of 1000 auto-crafts
 
-    [Fact]
-    public void QualityDistribution_PotentBrews_DoesNotShiftGear()
-    {
-        // Slot scoping: the Consumable-scoped +5 must NOT touch an Armor recipe — the curve
-        // stays the shift-0 base curve.
-        var talents = ImmutableSortedSet.Create(AlchemyProfession.PotentBrews);
-        var dist = RollDistribution(Alc.Recipes["alchemy-alchemical-robe"], materialGrade: 1, talents, seed: 1234);
-        Assert.Equal("146,513,247,85,9", dist);
-    }
-
-    [Fact]
-    public void QualityDistribution_FullFlatChain_ShiftsRollsUp()
-    {
-        // Measured Pour + Careful Distillation + Master Alchemist = +5+7+8 = +20 flat.
-        var talents = ImmutableSortedSet.Create(AlchemyProfession.MeasuredPour, AlchemyProfession.CarefulDistillation, AlchemyProfession.MasterAlchemist);
-        var dist = RollDistribution(Alc.Recipes["alchemy-alchemical-robe"], materialGrade: 1, talents, seed: 1234);
-        Assert.Equal("0,426,285,85,204", dist);
+        var perfect = ActiveRollDistribution(recipe, materialGrade: 2, ImmutableSortedSet<string>.Empty, grade: 1000, seed: 1234);
+        Assert.Equal(1000, int.Parse(perfect.Split(',')[4])); // every perfect brew with grade-2 material is Masterwork
     }
 }

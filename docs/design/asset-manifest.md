@@ -57,11 +57,13 @@ Log entries here as the slice builds; seed list of what the design implies:
 | Item display models | PA7: 2D icons (`IconRegistry`) used for the presented/shelf items in the counter flow (same icon set as the Forge/Ledger panels) | 3D/2.5D display versions of shelved gear for the counter | P2 | needed |
 | Craft-quality feedback | PA6: text-only "Done — grade N" readout on minigame completion | Visual tell for Poor→Masterwork result (spark burst, mark stamp) | P2 | needed |
 
-## Phase B/C (not yet built — placeholder rows to expand later)
+## Phase B/C (alchemist live; enchanter to expand later)
 
 | Slot | Now | Needed | Priority | Status |
 |---|---|---|---|---|
-| Alchemist station | — | Cauldron / reagent bench for the puzzle minigame | P1 | needed |
+| Alchemist station (interior focus) | Phase B: code-drawn `AlchemyBrewPuzzle` overlay — recipe-notes/cauldron labels + one Button per reagent + Undo/Brew/Cancel (`godot/scripts/minigames/AlchemyBrewPuzzle.cs`), no scene/art | Cauldron, reagent shelf/jars, pour animation for the 2.5D overlay | P1 | primitive |
+| Alchemist station (3D world prop) | — (deferred: the brew puzzle opens from `ForgePanel`'s "Brew" button; no outdoor `Town3D` station cluster yet — add a `("alchemy-station", …)` tuple + `BuildCauldronCluster()` when it lands) | Cauldron + reagent bench outdoor prop with camera dolly, matching the forge/counter station pattern | P1 | needed |
+| Reagent icons | Phase B: text-only reagent names on the palette buttons (Sunpetal … Voidsalt) | One icon per `AlchemyReagents` entry | P2 | needed |
 | Enchanter station | — | Glyph table / rune surface for the pattern minigame | P1 | needed |
 
 ## How to use this

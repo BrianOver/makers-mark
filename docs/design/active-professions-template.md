@@ -12,6 +12,21 @@ related:
 
 # Active Professions Template — building the Phase B profession loop
 
+> **Phase B status (2026-07-23): the ALCHEMIST shipped** as the first in-sim-scored profession
+> (branch `feat/alchemist-active-craft`). One deliberate divergence from §1 below: the
+> `[JsonPolymorphic]` contracts micro-PR was NOT needed — `SaveCodec` registers the
+> `CraftPuzzleInput` → `AlchemyReagentPuzzle` mapping at runtime via a
+> `DefaultJsonTypeInfoResolver` modifier (discriminator `"$puzzle"`), keeping `Contracts/`
+> untouched. A second puzzle profession (enchanter) adds one `DerivedTypes.Add` line in
+> `SaveCodec.AddCraftPuzzlePolymorphism`; if the list grows past a couple of entries, consider
+> consolidating into the attribute-based micro-PR this doc originally planned. Reference files:
+> `sim/GameSim/Professions/Alchemy/AlchemyReagentPuzzle.cs` / `AlchemyPuzzleScorer.cs` (scorer
+> consumes `MinigameAssists` as flat forgiveness — the sim IS the "adapter" for a puzzle
+> profession), the `action.Puzzle` branch in `CraftingHandlers.ApplyCraft` (steps 6/8), and
+> `godot/scripts/minigames/AlchemyBrewPuzzle.cs` (+ its "Brew" routing in `ForgePanel`).
+> The outdoor 3D station (§5) is deferred — the puzzle opens from `ForgePanel`; see the
+> asset manifest's "Alchemist station (3D world prop)" row.
+
 Phase A built one profession (blacksmith) end-to-end as a *template*, not a one-off. This doc is
 the "no tribal knowledge" handoff for whoever builds the next one (alchemist reagent puzzle first,
 per the design's Phase B roster). Read this before touching code. Every code reference below is a
