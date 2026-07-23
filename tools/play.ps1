@@ -108,7 +108,13 @@ if ($LASTEXITCODE -ne 0) { Write-Host "BUILD FAILED -- not launching." -Foregrou
 # ---- import (first run / new assets) ------------------------------------------------------
 if (-not $NoImport) {
     Write-Host "importing assets..." -ForegroundColor Cyan
-    & $GodotBin --path $godot --headless --import --quit | Out-Null
+    # Godot prints non-fatal reimport warnings to stderr; under ErrorActionPreference=Stop that
+    # would abort the launcher. Only a nonzero exit code is a real import failure.
+    $prevEAP = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    & $GodotBin --path $godot --headless --import --quit 2>&1 | Out-Null
+    $importExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEAP
+    if ($importExit -ne 0) { Write-Host "  (import exit $importExit -- non-fatal warnings; assets reimport on launch)" -ForegroundColor DarkYellow }
 }
 
 # ---- launch -------------------------------------------------------------------------------
@@ -117,4 +123,5 @@ if ($NoLaunch) {
     exit 0
 }
 Write-Host "launching: $stamp" -ForegroundColor Green
+$ErrorActionPreference = 'Continue'  # Godot logs runtime warnings to stderr; do not treat as fatal
 & $GodotBin --path $godot
