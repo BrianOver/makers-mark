@@ -36,18 +36,14 @@ public class GenAssetCoverageTests
         "well.glb", "barrel.glb", "ore-cart.glb", "market-stall.glb", "bounty-board.glb",
         // Town3D forge-station anvil
         "anvil.glb",
+        // MonsterView3D spectate stage (MineWatch milestone flash, AssetCatalog.MonsterModelFile)
+        "monster-cave-rat.glb", "monster-spider.glb", "monster-ghoul.glb", "monster-ore-golem.glb",
     };
 
     /// <summary>Gen GLBs finished but not yet placeable — each needs a surface that does not exist
     /// yet. KEEP THE REASON; remove an entry only by wiring the asset (then add it to
-    /// <see cref="Wired"/>).</summary>
-    private static readonly Dictionary<string, string> Pending = new()
-    {
-        ["monster-cave-rat.glb"] = "awaiting the 3D mine/combat scene (no 3D surface for monsters yet)",
-        ["monster-spider.glb"] = "awaiting the 3D mine/combat scene",
-        ["monster-ghoul.glb"] = "awaiting the 3D mine/combat scene",
-        ["monster-ore-golem.glb"] = "awaiting the 3D mine/combat scene",
-    };
+    /// <see cref="Wired"/>). Currently empty — every gen GLB on disk is wired.</summary>
+    private static readonly Dictionary<string, string> Pending = new();
 
     private static List<string> GenGlbsOnDisk()
     {
