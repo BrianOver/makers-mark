@@ -41,6 +41,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(CommissionPosted), "commissionPosted")]
 [JsonDerivedType(typeof(CommissionFulfilled), "commissionFulfilled")]
 [JsonDerivedType(typeof(CommissionExpired), "commissionExpired")]
+[JsonDerivedType(typeof(ItemSigned), "itemSigned")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -198,3 +199,7 @@ public sealed record CommissionFulfilled(HeroId Hero, ItemId Item, int Premium) 
 
 /// <summary>Wave 3: an accepted commission passed its deadline unfilled — a mood hit + gossip hook.</summary>
 public sealed record CommissionExpired(HeroId Hero, ItemSlot Slot) : GameEvent;
+
+/// <summary>Wave 4 (named artifacts): a rare craft was signed into a named Work — "your craft
+/// writes the legends" made literal. Carries the earned legend name for narration/UI.</summary>
+public sealed record ItemSigned(ItemId Item, string SignedName) : GameEvent;

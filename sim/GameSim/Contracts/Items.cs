@@ -42,5 +42,15 @@ public sealed record Item(
     /// </summary>
     public ImmutableList<int> CraftSubScores { get; init; } = ImmutableList<int>.Empty;
 
+    /// <summary>Wave 4 (named artifacts / "Signed Works"): the legend name a rare craft earns, or
+    /// null for ordinary gear. When set, this item is a Signed Work — its <see cref="History"/> +
+    /// attribution deeds read as its growing inscription, and it outlives its bearer. DATA, never
+    /// rules: no sim system keys off it beyond presentation. Trailing init member (save-compat —
+    /// old saves have no property → null → unsigned).</summary>
+    public string? SignedName { get; init; } = null;
+
+    /// <summary>True once this item has been signed into a named artifact (Wave 4).</summary>
+    public bool IsSigned => SignedName is not null;
+
     public bool PlayerCrafted => Mark is not null;
 }
