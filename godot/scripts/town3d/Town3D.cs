@@ -902,6 +902,10 @@ public partial class Town3D : SubViewportContainer
         AddGenProp(props, "lamp-post.glb", new Vector3(5f, 0f, 5.5f), targetHeight: 2.4f, rotationYDeg: 0f, lampGlow: true);
         AddGenProp(props, "tree-stump.glb", new Vector3(-14f, 0f, -6f), targetHeight: 0.7f, rotationYDeg: 20f);
         AddGenProp(props, "trough.glb", new Vector3(-11.5f, 0f, 6.5f), targetHeight: 0.7f, rotationYDeg: 10f);
+        AddGenProp(props, "standing-lantern.glb", new Vector3(-5f, 0f, 5.5f), targetHeight: 1.6f, rotationYDeg: 0f, lampGlow: true);
+        AddGenProp(props, "grain-sack.glb", new Vector3(11f, 0f, -2f), targetHeight: 0.7f, rotationYDeg: 10f);
+        AddGenProp(props, "shop-sign.glb", new Vector3(10f, 0f, -6.5f), targetHeight: 1.0f, rotationYDeg: -20f);
+        AddGenProp(props, "bucket.glb", new Vector3(-2f, 0f, 6f), targetHeight: 0.5f, rotationYDeg: 0f);
 
         return props;
     }

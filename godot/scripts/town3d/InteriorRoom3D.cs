@@ -61,6 +61,7 @@ public partial class InteriorRoom3D : Node3D
             new PropSpec("barrel.glb", new Vector3(-2.4f, 0f, -2.6f), 1.0f, 0f),
             new PropSpec("weapon-rack.glb", new Vector3(2.6f, 0f, -2.7f), 1.7f, -35f),
             new PropSpec("brazier.glb", new Vector3(-2.5f, 0f, -0.9f), 1.0f, 0f),
+            new PropSpec("wall-sconce.glb", new Vector3(2.9f, 0f, -1.6f), 0.6f, -90f),
         ],
         ["market"] =
         [
@@ -68,6 +69,8 @@ public partial class InteriorRoom3D : Node3D
             new PropSpec("barrel.glb", new Vector3(2.4f, 0f, -2.4f), 1.0f, 30f),
             new PropSpec("crate.glb", new Vector3(-2.5f, 0f, -1.7f), 1.1f, 20f),
             new PropSpec("bookshelf.glb", new Vector3(2.7f, 0f, -2.8f), 2.0f, -30f),
+            new PropSpec("potion-shelf.glb", new Vector3(-2.8f, 0f, -2.9f), 1.6f, 20f),
+            new PropSpec("apple-barrel.glb", new Vector3(1.4f, 0f, -1.2f), 0.9f, 0f),
         ],
         ["tavern"] =
         [
@@ -76,12 +79,15 @@ public partial class InteriorRoom3D : Node3D
             new PropSpec("cauldron.glb", new Vector3(2.6f, 0f, -2.8f), 0.9f, 0f),
             new PropSpec("table.glb", new Vector3(-1.4f, 0f, -0.9f), 0.8f, 0f),
             new PropSpec("stool.glb", new Vector3(-0.3f, 0f, -1.3f), 0.6f, 0f),
+            new PropSpec("chair.glb", new Vector3(-2.3f, 0f, -1.0f), 0.9f, 90f),
+            new PropSpec("bed.glb", new Vector3(2.4f, 0f, -2.4f), 0.7f, -20f),
         ],
         ["minegate"] =
         [
             new PropSpec("ore-cart.glb", new Vector3(0f, 0f, -1.4f), 1.3f, 25f),
             new PropSpec("bounty-board.glb", new Vector3(-2.2f, 0f, -3.0f), 1.8f, 10f),
             new PropSpec("chest.glb", new Vector3(2.3f, 0f, -1.7f), 0.8f, -25f),
+            new PropSpec("wall-banner.glb", new Vector3(0.2f, 0f, -3.1f), 1.4f, 0f),
         ],
     };
 
