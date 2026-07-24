@@ -358,4 +358,73 @@ public class PresentationSchedulerTests
 
         Assert.Equal(BeatTier.Glance, floor1.Tier);
     }
+
+    // ---------------------------------------------------------------- day-1 attribution ceremony (U8)
+
+    [Fact]
+    public void Schedule_Day1_PlainKillingBlow_IsPromotedToPullFocus()
+    {
+        // U8: the game's whole payoff — "your marked gear felled it" — must be reachable AND
+        // spotlighted within the FIRST play session. No player-crafted item can exist before day
+        // 1, so this exact same "plain killing blow" scenario that stays Glance on any later day
+        // (see Schedule_PlainKillingBlow_IsGlanceNotPullFocus, Day = 4) must be promoted to
+        // PullFocus when it happens on day 1.
+        var party = ImmutableList.Create(MakeHero(1, "Kess"));
+        var heroIds = party.Select(h => h.Id).ToImmutableList();
+        var items = Items(MakeItem(10, "Riverfang"));
+        var floors = ImmutableList.Create(
+            new FloorOutcome(1, true, ImmutableList.Create(Combat(1, heroIds[0], "Cave Rat", 2, true, killingItem: new ItemId(10)))));
+        var beats = ImmutableList.Create(
+            new AttributionBeat(BeatType.KillingBlow, new ItemId(10), heroIds[0], 1, "Riverfang landed the killing blow"));
+        var result = MakeResult(heroIds, floors, beats: beats);
+
+        var schedule = PresentationScheduler.Schedule(result, party, items, Campaign, day: 1);
+        var floor1 = schedule.Single(b => b.Floor == 1);
+
+        Assert.Equal(BeatTier.PullFocus, floor1.Tier);
+        Assert.Contains("Riverfang", floor1.ResolveLine); // names the maker's-marked item, never the raw id
+        Assert.Equal(new ItemId(10), floor1.Item);
+        Assert.False(string.IsNullOrEmpty(floor1.TelegraphLine)); // PullFocus always carries both lines (rule 2)
+    }
+
+    [Fact]
+    public void Schedule_Day1_DeathStillOutranksTheAttributionBeatForTheOnePullFocusSlot()
+    {
+        // The day-1 promotion never adds a SECOND PullFocus slot — a same-raid death (already
+        // over PullFocusStakesFloor on its own) still wins the one slot, exactly like any other
+        // day; the attribution beat on the earlier floor is told as Glance instead, never dropped.
+        var party = ImmutableList.Create(MakeHero(1, "Kess"), MakeHero(2, "Bran"));
+        var heroIds = party.Select(h => h.Id).ToImmutableList();
+        var items = Items(MakeItem(10, "Riverfang"));
+        var deaths = ImmutableList.Create(heroIds[1]);
+        var floors = ImmutableList.Create(
+            new FloorOutcome(1, true, ImmutableList.Create(Combat(1, heroIds[0], "Cave Rat", 2, true, killingItem: new ItemId(10)))),
+            new FloorOutcome(2, false, ImmutableList.Create(Combat(2, heroIds[1], "Deep Ghoul", 30, killed: false))));
+        var beats = ImmutableList.Create(
+            new AttributionBeat(BeatType.KillingBlow, new ItemId(10), heroIds[0], 1, "Riverfang landed the killing blow"));
+        var result = MakeResult(heroIds, floors, deaths: deaths, beats: beats) with { Halt = ExpeditionHalt.FloorLost };
+
+        var schedule = PresentationScheduler.Schedule(result, party, items, Campaign, day: 1);
+
+        Assert.Equal(BeatTier.PullFocus, schedule.Single(b => b.Floor == 2).Tier); // the death
+        Assert.Equal(BeatTier.Glance, schedule.Single(b => b.Floor == 1).Tier); // the attribution beat, told but not dilated
+    }
+
+    [Fact]
+    public void Schedule_Day1_NoAttributionBeat_BehavesExactlyLikeAnyOtherDay()
+    {
+        // The day-1 rule only ever adds a promotion — a day-1 raid with no attribution beat at
+        // all must stay exactly as unremarkable as it would on any other day (no beat to invent).
+        var party = ImmutableList.Create(MakeHero(1, "Kess"), MakeHero(2, "Bran"));
+        var heroIds = party.Select(h => h.Id).ToImmutableList();
+        var floors = ImmutableList.Create(
+            new FloorOutcome(1, true, ImmutableList.Create(
+                Combat(1, heroIds[0], "Cave Rat", 4, true),
+                Combat(1, heroIds[1], "Cave Rat", 3, true))));
+        var result = MakeResult(heroIds, floors);
+
+        var schedule = PresentationScheduler.Schedule(result, party, Items(), Campaign, day: 1);
+
+        Assert.Equal(BeatTier.Ambient, schedule.Single(b => b.Floor == 1).Tier);
+    }
 }

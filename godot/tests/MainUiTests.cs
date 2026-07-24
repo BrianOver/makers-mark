@@ -528,6 +528,83 @@ public class MainUiTests
     }
 
     [TestCase]
+    public void Day1_CraftQueuedButNotYetShelved_HoldsMorningEvenWithTheBareWorldShowing()
+    {
+        // U8: the walk from the Forge to the Shop is the one genuinely unengaged stretch of the
+        // day-1 tutorial's Buy->Craft->Shelve chain — a Craft queued but not yet matched by a
+        // Shelve (StockAction) must hold the Morning phase open even with NO drawer/interior/
+        // modal open, so that walk can never let the timer expire the item into the Expedition
+        // phase (missing THIS Morning's hero-shopping pass — the day-2 ★ attribution delay this
+        // unit closes; see MainUi.Day1CraftToShelvePacingHold).
+        var ui = MountMainUi();
+        try
+        {
+            ui.Clock.SetAutoAdvance(true);
+            ui.Clock.Play();
+            AssertThat(ui.Adapter.CurrentState.Day).IsEqual(1);
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+            AssertThat(ui.Clock.Engaged).IsFalse(); // untouched fresh Morning: no special treatment
+
+            // The player crafts (queued for this Morning's batch), then walks away from the Forge
+            // toward the Shop — the bare world, no drawer open.
+            ui.Adapter.Queue(new CraftAction("dagger", "copper"));
+            ui.OpenPanel("Town");
+            AssertThat(ui.Drawer.IsOpen).IsFalse();
+            AssertThat(ui.Clock.Engaged).IsTrue(); // held: craft queued, no shelve yet
+
+            // Way past the phase duration mid-walk: still held, no premature tick — unlike the
+            // no-craft-queued case above, which ticks immediately once disengaged.
+            ui._Process(PhaseClock.MorningSeconds * 2);
+            AssertThat(ui.Adapter.CurrentState.Day).IsEqual(1);
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+
+            // The player reaches the Shop and shelves — once the matching StockAction is ALSO
+            // queued, the hold releases even with the world bare again.
+            ui.Adapter.Queue(new StockAction(new ItemId(1), 10));
+            ui.OpenPanel("Town");
+            AssertThat(ui.Clock.Engaged).IsFalse(); // released — craft AND shelve are both queued
+
+            // The very next frame ticks (Elapsed was already capped while held) — Craft and Stock
+            // apply together in the SAME batch, in time for THIS Morning's hero-shopping pass.
+            ui._Process(0.001);
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Day2_CraftQueuedButNotYetShelved_NeverHoldsTheMorningPhase()
+    {
+        // The day-1 pacing guard must never leak into day 2+ — that is the documented
+        // "craft during Expedition" steady-state loop (ShopHandlers' own class doc), untouched:
+        // a day-2 Morning with the exact same pending-actions shape ticks exactly as it always did.
+        var ui = MountMainUi();
+        try
+        {
+            AdvanceDay(ui); // day 1 -> day 2, lands back on Morning
+            AssertThat(ui.Adapter.CurrentState.Day).IsEqual(2);
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+
+            ui.Clock.SetAutoAdvance(true);
+            ui.Clock.Play();
+
+            ui.Adapter.Queue(new CraftAction("dagger", "copper"));
+            ui.OpenPanel("Town");
+            AssertThat(ui.Clock.Engaged).IsFalse(); // no day-2 hold — the guard is day-1 only
+
+            ui._Process(PhaseClock.MorningSeconds * 2);
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition); // ticks normally
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void OpenPanel_WhileADrawerIsOpen_ReplacesIt_NeverStacks()
     {
         var ui = MountMainUi();
