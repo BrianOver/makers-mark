@@ -52,7 +52,12 @@ public partial class MainUi : Control
     /// chip's own minimum size and its docked offsets can never drift apart.</summary>
     private const float ObjectiveDockWidth = Ui.ObjectiveTracker.DockWidth;
     private const float ObjectiveDockMargin = 16f;
-    private const float ObjectiveDockOffsetTop = 64f;
+
+    /// <summary>Top offset of the objective chip's top-right dock — must clear the HUD header's
+    /// bottom edge. Bumped from 64 to 108 for the two-row header (gate-b playtest, 2026-07-24): the
+    /// stat chips moved to their own row, so the header is ~2x tall and the chip would otherwise sit
+    /// on the timeline/controls row.</summary>
+    private const float ObjectiveDockOffsetTop = 108f;
 
     /// <summary>Menu-sizing fix (review): the smallest on-screen gap the objective chip's clamp
     /// math will ever collapse OffsetTop/OffsetBottom down to on a very short viewport — keeps
@@ -60,12 +65,10 @@ public partial class MainUi : Control
     /// docking above.</summary>
     private const float ObjectiveDockMinBottomGap = 40f;
 
-    /// <summary>Menu-sizing fix (review): fixed floors for the header row's three HUD
-    /// sections (stat chips / day timeline / Skip-Auto-Pause-Speed-Ledger controls) — named
-    /// here rather than left as inline literals at each <c>CustomMinimumSize</c> call site,
-    /// matching the ObjectiveDock consts above.</summary>
-    private const float StatChipsMinWidth = 220f;
-
+    /// <summary>Menu-sizing fix (review): fixed floors for header row 2's two HUD sections (day
+    /// timeline / Skip-Auto-Pause-Speed-Ledger-Forecast controls) — named here rather than left as
+    /// inline literals at each <c>CustomMinimumSize</c> call site, matching the ObjectiveDock consts
+    /// above. (The stat-chip row is row 1 now — its own full width, no floor needed.)</summary>
     private const float TimelineMinWidth = 280f;
     private const float HudControlsMinWidth = 420f;
 
@@ -722,33 +725,35 @@ public partial class MainUi : Control
         // code path (KD1). -----------------------------------------------------
         var header = new PanelContainer { Name = "HudHeader" };
         layout.AddChild(header);
-        var headerRow = new HBoxContainer { Name = "HudHeaderRow" };
-        header.AddChild(headerRow);
 
-        // Menu-sizing fix (gate-b/HUD clip): StatChips and Timeline are the row's two
-        // ExpandFill regions — with no cap, each one's OWN reported minimum size (the sum of
-        // its live children's minimums) feeds straight into HudHeaderRow's total width demand,
-        // and once that total exceeds the window width the row simply overflows to the right
-        // (HBoxContainer never shrinks a child below its minimum) — pushing the rightmost
-        // child, HudControls ("Skip"/Auto/Pause/etc.), off-screen. Wrapping each in a plain
-        // (non-Container) Control with a fixed CustomMinimumSize + ClipContents=true bounds
-        // its contribution to that total regardless of how many stat chips or phase labels it
-        // ends up holding — a plain Control's own minimum size is just CustomMinimumSize, so it
-        // does NOT propagate its children's combined minimum upward the way a Container would.
-        var statChipsWrap = new Control
-        {
-            Name = "StatChipsWrap",
-            SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            CustomMinimumSize = new Vector2(StatChipsMinWidth, 0),
-            ClipContents = true,
-        };
-        headerRow.AddChild(statChipsWrap);
+        // Two-row header (gate-b playtest, 2026-07-24): at the default 1152px window a single row
+        // could not hold [6 stat chips] + [timeline] + [6 controls] — the stat chips overflowed
+        // and Gold/Heroes/Rent/slot-pips clipped off the left region (U10's scarcity widgets were
+        // invisible at the shipped size). Splitting into two rows gives the chips their own full-
+        // width row so they never compete with the timeline/controls for horizontal space.
+        var headerColumn = new VBoxContainer { Name = "HudHeaderColumn" };
+        header.AddChild(headerColumn);
+
+        // Row 1: the full-width stat-chip row (Day/Phase/Gold/Heroes/Rent/slot-pips), populated by
+        // RefreshStatus. ClipContents is a belt-and-braces cap for a sub-~600px window — there is
+        // nothing to its right on this row, so any overflow clips harmlessly at the window edge and
+        // can never push a control off-screen (controls live on row 2).
+        var statRow = new HBoxContainer { Name = "HudStatRow", ClipContents = true };
+        headerColumn.AddChild(statRow);
         _statChips = new HBoxContainer { Name = "StatChips" };
-        _statChips.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        statChipsWrap.AddChild(_statChips); // populated by RefreshStatus (day/phase/gold/heroes)
+        statRow.AddChild(_statChips);
 
-        // U18/KTD13: the day-timeline widget docks top-bar CENTER, between the stat chips
-        // (left) and the Skip/Auto cluster (right) — populated/highlighted by RefreshHud.
+        // Row 2: the day-timeline (U18/KTD13, ExpandFill center-left) + the Skip/Auto/Pause/Speed/
+        // Ledger/Forecast controls cluster (right).
+        var headerRow = new HBoxContainer { Name = "HudHeaderRow" };
+        headerColumn.AddChild(headerRow);
+
+        // Menu-sizing fix (gate-b/HUD clip): the timeline is the row's ExpandFill region — with no
+        // cap its own reported minimum (its children's combined minimum) feeds HudHeaderRow's total
+        // width demand, and once that exceeds the window the row overflows right (HBoxContainer never
+        // shrinks a child below its minimum), pushing HudControls off-screen. Wrapping it in a plain
+        // (non-Container) Control with a fixed CustomMinimumSize + ClipContents bounds its width
+        // contribution regardless of how many phase labels it holds.
         var timelineWrap = new Control
         {
             Name = "TimelineWrap",
@@ -762,11 +767,10 @@ public partial class MainUi : Control
         Timeline.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         timelineWrap.AddChild(Timeline);
 
-        // HudControls is the row's rightmost, non-expand child — HBoxContainer already
-        // reserves its natural minimum size before handing any leftover space to the two
-        // ExpandFill wrappers above, but a fixed floor here keeps it from ever reporting
-        // narrower than its real button cluster (Skip/Auto/Pause/Speed/Ledger) needs, which
-        // is what actually keeps it fully on-screen once StatChips/Timeline are capped.
+        // HudControls is row 2's rightmost, non-expand child — HBoxContainer reserves its natural
+        // minimum before handing leftover to the timeline wrap, and a fixed floor keeps it from ever
+        // reporting narrower than its real button cluster needs, keeping it on-screen once the
+        // timeline is capped.
         var controls = new HBoxContainer
         {
             Name = "HudControls",
