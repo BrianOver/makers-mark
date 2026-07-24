@@ -42,6 +42,18 @@ public sealed class RentSystem : IPhaseSystem
 
     public GameState Process(GameState state, IDeterministicRng rng, IEventSink events)
     {
+        // U1 held-Morning guard: a stepped counter session (PA3/PKD5) holds the day at Morning
+        // across many ticks and GameKernel re-runs every Morning system each tick, so a
+        // once-per-Morning effect (the rent countdown) would otherwise fire once PER counter step.
+        // Skip while a session is open — mirrors HeroShoppingSystem. CounterQueueSystem is
+        // registered ahead of this system (GameComposition), so on the closing tick — explicit
+        // CloseCounterAction (step 1) or natural queue-exhaustion (CounterQueueSystem) — Closed is
+        // already true here and the countdown fires exactly once for the calendar Morning.
+        if (state.Counter is { Closed: false })
+        {
+            return state;
+        }
+
         var rent = state.Rent;
         var daysLeft = rent.DaysUntilDue - 1;
         if (daysLeft > 0)

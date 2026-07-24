@@ -25,6 +25,14 @@ public sealed class GossipSystem : IPhaseSystem
 
     public GameState Process(GameState state, IDeterministicRng rng, IEventSink events)
     {
+        // U1 held-Morning guard (see RentSystem): fire once per calendar Morning, not once per
+        // stepped-counter tick. Skip while a session is open; CounterQueueSystem runs ahead of
+        // this system so the closing tick sees Closed==true and gossip is emitted once.
+        if (state.Counter is { Closed: false })
+        {
+            return state;
+        }
+
         var yesterday = state.Day - 1;
         if (yesterday < 1)
         {
