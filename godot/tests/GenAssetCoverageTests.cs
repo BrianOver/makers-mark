@@ -45,6 +45,9 @@ public class GenAssetCoverageTests
         "signpost.glb", "haybale.glb",
         // Town3D.BuildProps outdoor variety (batch 3)
         "statue.glb", "lamp-post.glb", "tree-stump.glb", "trough.glb",
+        // Furniture wave — interior (InteriorRoom3D.Rooms) + outdoor (Town3D.BuildProps)
+        "wall-sconce.glb", "potion-shelf.glb", "apple-barrel.glb", "chair.glb", "bed.glb", "wall-banner.glb",
+        "standing-lantern.glb", "grain-sack.glb", "shop-sign.glb", "bucket.glb",
     };
 
     /// <summary>Gen GLBs finished but not yet placeable — each needs a surface that does not exist
