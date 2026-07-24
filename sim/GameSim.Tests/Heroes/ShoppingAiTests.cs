@@ -158,6 +158,53 @@ public class ShoppingAiTests
     }
 
     [Fact]
+    public void StoriedWornGear_MarginalUpgrade_PassesSentimental_NamesTheItem()
+    {
+        // Wave 2b: worn gear with >= SentimentalDeedThreshold deeds resists a merely-marginal
+        // upgrade (gain below SentimentalMinDisplacementGain) — the maker's old work earned loyalty.
+        var worn = MakeItem(50, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Emberfang");
+        var candidate = MakeItem(51, ItemSlot.Weapon, attack: 8, defense: 0, weight: 3, name: "Plain Blade");
+        var hero = MakeHero("vanguard", gold: 100, gear: GearSet.Empty.WithSlot(ItemSlot.Weapon, worn.Id)) with
+        {
+            Memories = ImmutableList.Create(new ItemMemory(worn.Id, Kills: 2, Saves: 2)), // 4 deeds
+        };
+
+        var verdict = ShoppingAi.EvaluateItem(hero, candidate, price: 5, Catalog(worn, candidate));
+
+        Assert.Equal(ShoppingVerdictKind.Pass, verdict.Kind);
+        Assert.Equal(PassReasonKind.Sentimental, verdict.PassReason);
+        Assert.Contains("Emberfang", verdict.Reason);
+    }
+
+    [Fact]
+    public void StoriedWornGear_BigUpgrade_StillDisplaces_ReturnsBuy()
+    {
+        var worn = MakeItem(50, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Emberfang");
+        var bigUpgrade = MakeItem(51, ItemSlot.Weapon, attack: 20, defense: 0, weight: 3, name: "Dragonclaw");
+        var hero = MakeHero("vanguard", gold: 100, gear: GearSet.Empty.WithSlot(ItemSlot.Weapon, worn.Id)) with
+        {
+            Memories = ImmutableList.Create(new ItemMemory(worn.Id, Kills: 2, Saves: 2)),
+        };
+
+        var verdict = ShoppingAi.EvaluateItem(hero, bigUpgrade, price: 5, Catalog(worn, bigUpgrade));
+
+        Assert.Equal(ShoppingVerdictKind.Buy, verdict.Kind); // a big-enough gain overrides sentiment
+    }
+
+    [Fact]
+    public void NonStoriedWornGear_MarginalUpgrade_BuysNormally_NotGated()
+    {
+        var worn = MakeItem(50, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Plain Sword");
+        var candidate = MakeItem(51, ItemSlot.Weapon, attack: 8, defense: 0, weight: 3, name: "Better Sword");
+        var hero = MakeHero("vanguard", gold: 100, gear: GearSet.Empty.WithSlot(ItemSlot.Weapon, worn.Id));
+        // No memories → 0 deeds → below threshold → the marginal upgrade buys as usual.
+
+        var verdict = ShoppingAi.EvaluateItem(hero, candidate, price: 5, Catalog(worn, candidate));
+
+        Assert.Equal(ShoppingVerdictKind.Buy, verdict.Kind);
+    }
+
+    [Fact]
     public void Rookie_BelowVeteranThreshold_NeverGatedOnQuality_EvenOnPoorGear()
     {
         // KD3 no-softlock guard (U9): a rookie's DeepestFloorReached is below the veteran
