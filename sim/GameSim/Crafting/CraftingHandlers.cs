@@ -17,6 +17,15 @@ namespace GameSim.Crafting;
 /// </summary>
 public sealed class CraftingHandlers : IActionHandler
 {
+    /// <summary>Wave 5 (U23e, batch echo): how many echoed auto-crafts one hand-forge seeds.</summary>
+    private const int BatchEchoCount = 4;
+
+    /// <summary>Per-mille the echoed grade decays per successive copy.</summary>
+    private const int BatchEchoDecayPermille = 80;
+
+    /// <summary>Floor the echoed grade can never fall below — the ordinary auto-craft baseline (PKD4).</summary>
+    private const int BatchEchoFloor = 550;
+
     public bool CanHandle(PlayerAction action, DayPhase phase) =>
         action is CraftAction or UnlockTalentAction; // all phases legal
 
@@ -119,7 +128,21 @@ public sealed class CraftingHandlers : IActionHandler
         ForgeScore? forgeScore = action.Puzzle is ForgeTraceInput trace
             ? ForgeScorer.Score(recipe!, trace, talents, profession)
             : null;
+
+        // Wave 5 (U23e, batch echo): a null-puzzle / null-grade AUTO-craft that repeats your last
+        // hand-forge's recipe on the SAME day inherits a DECAYING echo of that grade — set the rhythm
+        // by hand once, the copies follow — so you don't hand-forge five identical blades. Pure integer,
+        // no RNG draw (the quality roll below stays one Roll100). Never fires on the idle trace
+        // (BaselinePlayer never hand-forges), so it moves only the serialized SHAPE, not behavior.
+        var echo = state.Player.BatchEcho;
+        var isAutoCraft = action.Puzzle is null && action.PerformanceGrade is null;
+        int? echoGrade = isAutoCraft && echo is not null
+                && echo.RecipeId == recipe.RecipeId && echo.Day == state.Day && echo.Uses < BatchEchoCount
+            ? System.Math.Max(BatchEchoFloor, echo.SeedGrade - (BatchEchoDecayPermille * (echo.Uses + 1)))
+            : null;
+
         var performanceGrade = forgeScore?.GradePermille
+            ?? echoGrade
             ?? (action.Puzzle is AlchemyReagentPuzzle brew
                 ? AlchemyPuzzleScorer.Score(recipe!, brew, talents, profession).GradePermille
                 : action.PerformanceGrade);
@@ -152,6 +175,15 @@ public sealed class CraftingHandlers : IActionHandler
             item = item with { History = item.History.Add(new ItemHistoryEntry(state.Day, "forged", ForgeMomentLine((ForgeMoment)scored.Moments))) };
         }
 
+        // Wave 5 (U23e): a hand-forge (re)seeds the echo memory at this grade; a consumed echo
+        // advances its use count; anything else keeps the prior memory (it goes stale on its own
+        // when the day or recipe next changes, via the match check above).
+        var nextEcho = forgeScore is { } fscore
+            ? new BatchEchoState(recipe.RecipeId, state.Day, fscore.GradePermille, 0)
+            : echoGrade is not null
+                ? echo! with { Uses = echo.Uses + 1 }
+                : state.Player.BatchEcho;
+
         var newState = state with
         {
             NextItemId = state.NextItemId + 1,
@@ -159,6 +191,7 @@ public sealed class CraftingHandlers : IActionHandler
             Player = state.Player with
             {
                 Materials = state.Player.Materials.SetItem(action.MaterialKey, have - needed),
+                BatchEcho = nextEcho,
             },
             ActionSlotsRemaining = state.ActionSlotsRemaining - 1,
         };

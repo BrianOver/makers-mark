@@ -52,8 +52,15 @@ public class AtomicEquivalenceTests
     // or reforges an heirloom on the BaselinePlayer trace (no HonorMemorialAction / ReforgeHeirloomAction
     // is ever submitted), so the RNG stream and every value are identical — same class as the SignedName
     // and Commissions field additions above.
+    // RE-BASELINED (Wave 5 U23e batch echo, 2026-07-24): the trailing `PlayerState.BatchEcho`
+    // (default null) means the player object now serializes "BatchEcho":null. Pure serialized-SHAPE
+    // change — batch echo only ever fires after a hand-forge (a ForgeTraceInput craft), which
+    // BaselinePlayer never submits, so the memory stays null the whole idle run and the RNG stream +
+    // every value are identical. (Note: registering the ForgeTraceInput puzzle type + wiring
+    // ForgeScorer into crafting, Wave 5 U23a/U23c, did NOT shift this hash — a null Puzzle serializes
+    // identically and no forge trace is ever submitted here; only this new PlayerState field moved it.)
     private const string ExpectedPreCounterSha256 =
-        "23B602CDBA6466C259099FA17F4A4049157E4768C92971831B07D7C6CE1C5933";
+        "7164E452CE6113BA541C03A44618402C44E8CA15A7AD429DC4C4BA896623E9DF";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

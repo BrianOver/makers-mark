@@ -6,6 +6,17 @@ namespace GameSim.Contracts;
 public sealed record ShelfEntry(ItemId Item, int Price);
 
 /// <summary>
+/// Wave 5 (U23e, "batch echo"): a memory of the player's last hand-forge so the next few IDENTICAL
+/// auto-crafts (same <paramref name="RecipeId"/>, same <paramref name="Day"/>) inherit a decaying
+/// echo of that <paramref name="SeedGrade"/> instead of the flat auto-craft baseline — you set the
+/// rhythm once by hand, the copies follow. <paramref name="Uses"/> counts echoes already spent.
+/// Pure data driving a deterministic, RNG-free grade substitution; a new day or a different recipe
+/// makes it stale (the match check in <c>CraftingHandlers</c> ignores it). Never set on the idle
+/// balance/golden trace (BaselinePlayer never hand-forges).
+/// </summary>
+public sealed record BatchEchoState(string RecipeId, int Day, int SeedGrade, int Uses);
+
+/// <summary>
 /// The player's side of the world (A1): gold, raw materials by grade key, unlocked talent
 /// node ids PER PROFESSION, the selected professions (pick 1–2), and the shop shelf.
 /// Materials and <see cref="Talents"/> use sorted collections so serialization is byte-stable
@@ -30,7 +41,8 @@ public sealed record PlayerState(
     ImmutableSortedDictionary<string, ImmutableSortedSet<string>> Talents,
     ImmutableSortedSet<string> SelectedProfessions,
     ImmutableList<ShelfEntry> Shelf,
-    ImmutableSortedDictionary<string, int>? Standing = null)
+    ImmutableSortedDictionary<string, int>? Standing = null,
+    BatchEchoState? BatchEcho = null)
 {
     /// <summary>
     /// A fresh save: no materials, no talents, and the blacksmith selected — so existing
