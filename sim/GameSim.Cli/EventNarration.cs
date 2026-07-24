@@ -47,6 +47,10 @@ public static class EventNarration
             $"  $ {HeroName(state, sale.Hero)} buys {ItemName(state, sale.Item)} for {sale.Price}g at the counter",
         CustomerWalked walked =>
             $"  ~ {HeroName(state, walked.Hero)} walks away from the counter: {walked.Reason}",
+        MemorialHonored honored =>
+            $"  🕯 the town bids farewell to {honored.HeroName} — the rite is done",
+        HeirloomReforged reforged =>
+            $"  ⚒ {ItemName(state, reforged.NewItem)} reforged — {reforged.Lineage}",
         _ => null,
     };
 

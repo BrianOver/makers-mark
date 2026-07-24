@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Professions;
 using Godot;
 using GodotClient.Ui;
 
@@ -13,18 +15,32 @@ namespace GodotClient.Panels;
 /// name/day/gear), the Depths Progress board (deepest floor per hero), and per-item legend
 /// entries — items with <see cref="LegendQuery.FamousBeatThreshold"/>+ proven
 /// <see cref="AttributionBeatEvent"/>s OR a Wave-4a Signed Work (<see cref="Item.IsSigned"/>) —
-/// each opening that item's <see cref="ProvenanceCard"/>. Zero sim change — a pure projection of
-/// existing <c>Contracts</c> data (KTD2), same code-built-modal idiom as
+/// each opening that item's <see cref="ProvenanceCard"/>. Same code-built-modal idiom as
 /// <see cref="RaidForecastBoard"/>/<see cref="BestiaryPanel"/>: dim backdrop, centered themed
-/// card, a Close button; no <c>SimAdapter</c> binding — the caller hands in the already-live
-/// <see cref="GameState"/> through <see cref="ShowWall"/>. Property-only/headless-test safe: no
-/// frame pump, no render scheduled by building or showing it.
+/// card, a Close button. Property-only/headless-test safe: no frame pump, no render scheduled by
+/// building or showing it.
+///
+/// <para>Wave 4c (U18/U20): unlike the read-only Wave 4 wall, this one now submits player
+/// actions from the memorial rows — an "Honor" button per un-honored <see cref="Memorial"/>
+/// (queues <see cref="HonorMemorialAction"/>) and a "Reforge" button per still-reforgeable piece
+/// of a fallen hero's worn gear (queues <see cref="ReforgeHeirloomAction"/>, reusing the source
+/// item's own recipe + its baseline material key — a one-click default, not a full recipe
+/// picker; scope-controlled per the unit spec). Carries its own settable <see cref="Adapter"/>
+/// (the <see cref="CommissionBoard"/> precedent) rather than a <c>SimAdapter</c>-bound
+/// <see cref="SimPanel"/> base — <see cref="ShowWall"/> still takes the live
+/// <see cref="GameState"/> explicitly, so rendering never depends on <see cref="Adapter"/> being
+/// set; only the new buttons do (null-safe: disabled when unset).</para>
 /// </summary>
 public partial class LegendsWall : Control
 {
     private Label? _title;
     private VBoxContainer? _body;
     private ProvenanceCard? _provenance;
+
+    /// <summary>Set by <c>MainUi</c> after construction so Honor/Reforge can queue actions.
+    /// Null-safe: a wall shown before this is wired simply renders with disabled buttons
+    /// (headless/test safe, <see cref="CommissionBoard.Adapter"/> precedent).</summary>
+    public SimAdapter? Adapter { get; set; }
 
     /// <summary>True iff the last <see cref="ShowWall"/> call rendered the invitational empty
     /// state (no memorials, no depths records, no legend items) — test hook.</summary>
@@ -71,10 +87,65 @@ public partial class LegendsWall : Control
             return;
         }
 
+        var reforgedSourceIds = state.EventLog.OfType<HeirloomReforged>()
+            .Select(e => e.SourceItem.Value)
+            .ToHashSet();
+
         // Recent first — the newest loss is the one the player is most likely here to see.
         foreach (var memorial in state.Drama.Memorials.OrderByDescending(m => m.Day))
         {
-            AddLabel(_body!, $"  Day {memorial.Day} — {memorial.HeroName}, carrying {memorial.GearNamed}");
+            var row = AddRow(_body!);
+            var text = $"  Day {memorial.Day} — {memorial.HeroName}, carrying {memorial.GearNamed}"
+                + (memorial.Honored ? " — honored" : string.Empty);
+            var label = AddLabel(row, text);
+            label.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+
+            if (!memorial.Honored)
+            {
+                var hero = memorial.Hero;
+                var honor = new Button { Name = $"Honor_{hero.Value}", Text = "Honor" };
+                honor.Pressed += () => Adapter?.Queue(new HonorMemorialAction(hero));
+                honor.Disabled = Adapter is null;
+                row.AddChild(honor);
+            }
+
+            RenderReforgeOptions(state, memorial.Hero, reforgedSourceIds);
+        }
+    }
+
+    /// <summary>Wave 4c (U20): one "Reforge" row per still-eligible piece of
+    /// <paramref name="hero"/>'s worn-at-death gear — a real item, recorded on that hero's
+    /// <see cref="HeroDied"/> event, not already reforged. Reuses the item's OWN recipe id and
+    /// that recipe's baseline material key as the one-click default (a full recipe/material
+    /// picker is out of scope for this minimal surface — the sim handler is what matters).</summary>
+    private void RenderReforgeOptions(GameState state, HeroId hero, HashSet<int> reforgedSourceIds)
+    {
+        var died = state.EventLog.OfType<HeroDied>().FirstOrDefault(d => d.Hero == hero);
+        if (died is null)
+        {
+            return;
+        }
+
+        foreach (var slotItem in new[] { died.WornGear.Weapon, died.WornGear.Shield, died.WornGear.Armor, died.WornGear.Trinket })
+        {
+            if (slotItem is not { } itemId
+                || reforgedSourceIds.Contains(itemId.Value)
+                || !state.Items.TryGetValue(itemId.Value, out var item)
+                || !ProfessionRegistry.TryGetRecipe(item.RecipeId, out var recipe))
+            {
+                continue;
+            }
+
+            var row = AddRow(_body!);
+            var label = AddLabel(row, $"    reforge {item.Name}?");
+            label.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+
+            var recipeId = recipe!.RecipeId;
+            var materialKey = recipe.MaterialKey;
+            var button = new Button { Name = $"Reforge_{itemId.Value}", Text = "Reforge" };
+            button.Pressed += () => Adapter?.Queue(new ReforgeHeirloomAction(itemId, recipeId, materialKey));
+            button.Disabled = Adapter is null;
+            row.AddChild(button);
         }
     }
 

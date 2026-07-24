@@ -1065,9 +1065,11 @@ public partial class MainUi : Control
         Commissions.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Commissions.VisibilityChanged += OnCommissionsVisibilityChanged;
 
-        // --- Wave 4 (U21) Legends Wall: a code-built modal sibling, mirroring RaidForecastBoard —
-        //     no SimAdapter binding, the caller hands in the live GameState through ShowWall.
-        Legends = new LegendsWall();
+        // --- Wave 4 (U21) Legends Wall: a code-built modal sibling, mirroring RaidForecastBoard.
+        //     Wave 4c (U18/U20): now submits actions (Honor/Reforge), so it needs the adapter
+        //     handed in too (CommissionBoard precedent) — ShowWall itself still takes the live
+        //     GameState explicitly.
+        Legends = new LegendsWall { Adapter = Adapter };
         AddChild(Legends);
         Legends.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Legends.VisibilityChanged += OnLegendsVisibilityChanged;
