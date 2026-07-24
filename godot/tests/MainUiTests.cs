@@ -751,8 +751,16 @@ public class MainUiTests
             AssertThat(ui.Ledger.Visible).IsTrue();
             AssertThat(ui.Clock.Engaged).IsTrue();
 
+            // U10: the auto-revealed day-end Ledger chains into the raid-forecast board — closing
+            // the Ledger hands the screen to the forecast (still engaged), not straight back to town.
             Press(ui.Ledger, "CloseLedger");
             AssertThat(ui.Ledger.Visible).IsFalse();
+            AssertThat(ui.Forecast.Visible).IsTrue();
+            AssertThat(ui.Clock.Engaged).IsTrue();
+
+            // Closing the forecast is what finally releases the latch back to town.
+            Press(ui.Forecast, "ForecastClose");
+            AssertThat(ui.Forecast.Visible).IsFalse();
             AssertThat(ui.Clock.Engaged).IsFalse(); // Town tab, no modal — disengaged again
         }
         finally

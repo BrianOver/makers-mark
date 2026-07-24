@@ -125,6 +125,9 @@ public partial class MainUi : Control
     public DepthsPanel Depths { get; private set; } = null!;
     public BountyPanel Bounties { get; private set; } = null!;
     public LedgerModal Ledger { get; private set; } = null!;
+    /// <summary>U10: the pre-sleep raid-forecast board (RaidForecast.ForTomorrow projection),
+    /// chained after the day-end Ledger and re-openable from the HUD "Forecast" button.</summary>
+    public RaidForecastBoard Forecast { get; private set; } = null!;
     public CampPanel Camp { get; private set; } = null!;
     public TabFade TabFade { get; private set; } = null!;
     public AdventureTicker Ticker { get; private set; } = null!;
@@ -180,6 +183,19 @@ public partial class MainUi : Control
     private bool _resumePlayOnLedgerClose;
     private bool _resumePlayOnCampClose;
     private bool _resumePlayOnMirrorClose;
+    /// <summary>U10: whether resuming play is owed when the forecast board closes — captured the
+    /// same way the Ledger's is (from the play state when it opened, or inherited from the Ledger
+    /// when the board auto-chains at day end).</summary>
+    private bool _resumePlayOnForecastClose;
+    /// <summary>U10: armed when the Return-Ritual auto-reveal opens the day-end Ledger, so the
+    /// forecast board pops the moment that Ledger is dismissed — the "review results, then read
+    /// tomorrow's threats, then sleep" beat. A manual mid-day Ledger peek never sets it, so it
+    /// never spuriously chains the board.</summary>
+    private bool _showForecastOnLedgerClose;
+    /// <summary>U10: true only for the one frame the board is opening as a day-end chain (not a
+    /// manual HUD-button open) so its VisibilityChanged handler keeps the inherited resume intent
+    /// instead of overwriting it with the (paused) clock state.</summary>
+    private bool _forecastChaining;
 
     /// <summary>U22: the door position the avatar stood at when the currently-open (or just-
     /// closed) interior was opened — restored on exit (R4/AE4 "exit returns avatar to door
@@ -279,6 +295,7 @@ public partial class MainUi : Control
             if (LedgerDelayRemaining <= 0)
             {
                 LedgerDelayRemaining = 0;
+                _showForecastOnLedgerClose = true; // U10: the auto-revealed day-end Ledger chains to the forecast
                 Ledger.ShowFor(_pendingLedgerDay);
             }
         }
@@ -499,6 +516,21 @@ public partial class MainUi : Control
             "HeroesChip", "Heroes", $"{alive}/{state.Heroes.Count}",
             alive == state.Heroes.Count && state.Heroes.Count > 0 ? UiKit.ChipTone.Positive : UiKit.ChipTone.Neutral));
 
+        // U10 scarcity surfacing: the guild-rent countdown. Tone escalates as the deadline nears
+        // (or once a payment has been missed) so the pressure reads at a glance.
+        var rent = state.Rent;
+        var rentTone = rent.MissedPayments > 0 || rent.DaysUntilDue <= 1 ? UiKit.ChipTone.Negative
+            : rent.DaysUntilDue <= 3 ? UiKit.ChipTone.Accent
+            : UiKit.ChipTone.Neutral;
+        var rentChip = NamedStatChip("RentChip", "Rent", $"{rent.DaysUntilDue}d/{rent.AmountDueGold}g", rentTone);
+        rentChip.TooltipText = rent.MissedPayments > 0
+            ? $"Rent due in {rent.DaysUntilDue} day(s): {rent.AmountDueGold}g. {rent.MissedPayments} missed payment(s) — the guild is losing patience."
+            : $"Rent due in {rent.DaysUntilDue} day(s): {rent.AmountDueGold}g (every {RentState.CadenceDays} days).";
+        _statChips.AddChild(rentChip);
+
+        // U10 scarcity surfacing: today's remaining real-work action slots as a pip row.
+        _statChips.AddChild(BuildSlotPips(state.ActionSlotsRemaining, ActionBudget.SlotsPerDay));
+
         // LW3 coin flourish (StatusBar half): a player-shelf sale on THIS tick arms the gold-
         // label pop. ShopStage plays the matching coin-arc off the SAME Adapter.LastEvents batch
         // independently — no cross-panel coupling, the event log is the single source of truth.
@@ -555,6 +587,37 @@ public partial class MainUi : Control
         });
         wrap.AddChild(UiKit.StatChip("Gold", $"{gold}g", UiKit.ChipTone.Accent));
         return wrap;
+    }
+
+    /// <summary>U10: the action-slot budget (Game-Feel Plan G3) as a row of pips — one filled dot
+    /// per remaining slot, one dim dot per spent slot. Filled-ness is carried on a per-dot
+    /// <c>filled</c> meta (NOT the node name — Godot renames duplicate sibling names, so a
+    /// name-based count would collapse to one); the row carries a spelt-out tooltip.
+    /// <paramref name="remaining"/> is clamped into [0, <paramref name="max"/>] defensively so a
+    /// transient out-of-range value never spawns a negative/oversized row.</summary>
+    private static Control BuildSlotPips(int remaining, int max)
+    {
+        var filled = Math.Clamp(remaining, 0, max);
+        var row = new HBoxContainer { Name = "SlotPips" };
+        row.AddThemeConstantOverride("separation", 4);
+        row.TooltipText = $"{filled}/{max} action slots left today (craft, restock, negotiate each spend one).";
+        row.MouseFilter = MouseFilterEnum.Stop; // let the tooltip surface on hover
+
+        for (var i = 0; i < max; i++)
+        {
+            var lit = i < filled;
+            var pip = new ColorRect
+            {
+                CustomMinimumSize = new Vector2(12, 12),
+                Color = lit ? new Color(0.90f, 0.76f, 0.24f) : new Color(0.28f, 0.28f, 0.34f),
+                SizeFlagsVertical = SizeFlags.ShrinkCenter,
+                MouseFilter = MouseFilterEnum.Ignore,
+            };
+            pip.SetMeta("filled", lit);
+            row.AddChild(pip);
+        }
+
+        return row;
     }
 
     private void ClearToast()
@@ -759,6 +822,12 @@ public partial class MainUi : Control
         ledgerButton.Pressed += () => Ledger.ShowFor(LastCompletedDay);
         controls.AddChild(ledgerButton);
 
+        // U10: open the raid-forecast board on demand (day-end auto-open is the chained path in
+        // OnLedgerVisibilityChanged). Reads live state so it always reflects the current roster.
+        var forecastButton = new Button { Name = "OpenForecast", Text = "Forecast" };
+        forecastButton.Pressed += () => Forecast.ShowForTomorrow(Adapter.CurrentState);
+        controls.AddChild(forecastButton);
+
         // U6/U7 rejection banner: a transient, themed, player-phrased line — hidden
         // except while a toast is live (OnPhaseCompleted shows it, ClearToast/_Process
         // hide it). NOT a persistent status readout, and never the raw kernel string.
@@ -855,6 +924,14 @@ public partial class MainUi : Control
         AddChild(Ledger);
         Ledger.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Ledger.VisibilityChanged += OnLedgerVisibilityChanged;
+
+        // --- U10 raid-forecast board: a code-built modal sibling (no scene, no import churn),
+        //     drawn above the drawer like the Ledger. Chained after the day-end Ledger (see
+        //     OnLedgerVisibilityChanged) and re-openable from the "Forecast" HUD button.
+        Forecast = new RaidForecastBoard();
+        AddChild(Forecast);
+        Forecast.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        Forecast.VisibilityChanged += OnForecastVisibilityChanged;
 
         // --- camp decision slate (V7a): a second modal overlay, code-built (no scene, so no
         //     .tscn/import metadata churn). Camp (phase 3) and the Evening Ledger never show at
@@ -1209,12 +1286,46 @@ public partial class MainUi : Control
             Clock.Pause();
             LedgerDelayRemaining = 0; // a manual open satisfies the pending Return Ritual
         }
+        else if (_showForecastOnLedgerClose)
+        {
+            // U10 day-end chain: the Ledger just closed after the Evening reveal — pop the raid
+            // forecast next, inheriting the Ledger's own resume intent (the clock stays paused
+            // through the board; play resumes only when the board itself closes).
+            _showForecastOnLedgerClose = false;
+            _forecastChaining = true;
+            _resumePlayOnForecastClose = _resumePlayOnLedgerClose;
+            Forecast.ShowForTomorrow(Adapter.CurrentState);
+        }
         else if (_resumePlayOnLedgerClose)
         {
             Clock.Play();
         }
 
         UpdateEngaged(); // the Ledger modal engages the latch too
+        UpdateClockLabel();
+    }
+
+    /// <summary>U10: mirror of <see cref="OnLedgerVisibilityChanged"/> for the raid-forecast board —
+    /// pause the clock while it owns the screen, resume on close when play was running (or when the
+    /// day-end chain inherited that intent). Never resumes if the board opened over a paused clock.</summary>
+    private void OnForecastVisibilityChanged()
+    {
+        if (Forecast.Visible)
+        {
+            if (!_forecastChaining)
+            {
+                _resumePlayOnForecastClose = Clock.Playing;
+            }
+
+            _forecastChaining = false;
+            Clock.Pause();
+        }
+        else if (_resumePlayOnForecastClose)
+        {
+            Clock.Play();
+        }
+
+        UpdateEngaged();
         UpdateClockLabel();
     }
 
@@ -1288,7 +1399,7 @@ public partial class MainUi : Control
     /// </summary>
     private void UpdateEngaged()
     {
-        var engaged = Drawer.IsOpen || Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible;
+        var engaged = Drawer.IsOpen || Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible || Forecast.Visible;
 
         // U8: Clock.Engaged can ALSO be held by the day-1 craft→shelve pacing guard above —
         // deliberately NOT folded into `engaged` itself, which also drives the objective chip's
