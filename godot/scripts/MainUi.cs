@@ -467,6 +467,7 @@ public partial class MainUi : Control
         UpdateObjectiveDock(); // Refresh can change the reason line's line count — re-dock to it
         Tutorial.RefreshAffordances(state);
         Timeline.Refresh(state.Phase, Waiting);
+        UpdateClockLabel(); // U3/U4: bell verb + player-phase banner are state-driven — refresh on every tick, not only per-frame _Process
     }
 
     /// <summary>
@@ -687,21 +688,92 @@ public partial class MainUi : Control
         _playPause.Visible = Clock.AutoAdvance;
         _speed.Visible = Clock.AutoAdvance;
 
+        var state = Adapter.CurrentState;
         if (Clock.AutoAdvance)
         {
+            _advance.Text = "Skip"; // Innkeeper's Clock (opt-in auto): the bell is the exception
             var remaining = Clock.Remaining.ToString("0", CultureInfo.InvariantCulture);
             var paused = Clock.Playing ? string.Empty : " [paused]";
             // U15/AE1: engaged holds the boundary even while flowing — surface that distinctly
             // from a manual pause so it's legible that the wait is the player's own doing.
             var engaged = !Clock.Playing || !Clock.Engaged ? string.Empty : " [waiting]";
-            _clockLabel.Text = $"next phase in {remaining}s @{Clock.SpeedMultiplier}x{paused}{engaged}";
+            _clockLabel.Text = $"{PlayerPhaseName(state)} — next in {remaining}s @{Clock.SpeedMultiplier}x{paused}{engaged}";
             _playPause.Text = Clock.Playing ? "Pause" : "Play";
             _speed.Text = $"{Clock.SpeedMultiplier}x";
         }
         else
         {
-            _clockLabel.Text = "next phase on Skip";
+            // U2/U3/U4: player-decided pacing. The bell verb + the phase banner name the player
+            // phase (Dawn/Prepare/Quest–Watch/Quest–Vigil/Night, mapped from the kernel phase, U4);
+            // an open-items readout replaces the countdown (U3); Quest–Watch shows a departure omen (U4).
+            _advance.Text = BellVerb(state);
+            var badge = OpenItemsBadge(state);
+            var omen = state.Phase == DayPhase.Expedition ? DepartureOmen(state) : string.Empty;
+            var tail = !string.IsNullOrEmpty(omen) ? $" — {omen}"
+                : !string.IsNullOrEmpty(badge) ? $" — {badge}"
+                : string.Empty;
+            _clockLabel.Text = $"{PlayerPhaseName(state)}{tail}";
         }
+    }
+
+    /// <summary>U4: the player-facing phase banner, mapped from the kernel <see cref="DayPhase"/>
+    /// (never a new enum value). Morning splits into Dawn (no counter open) vs Prepare (counter
+    /// session open); Camp/ExpeditionDeep both read as the Quest–Vigil beat.</summary>
+    private static string PlayerPhaseName(GameState state) => state.Phase switch
+    {
+        DayPhase.Morning => state.Counter is { Closed: false } ? "Prepare" : "Dawn",
+        DayPhase.Expedition => "Quest — Watch",
+        DayPhase.Camp => "Quest — Vigil",
+        DayPhase.ExpeditionDeep => "Quest — Vigil",
+        DayPhase.Evening => "Night",
+        _ => state.Phase.ToString(),
+    };
+
+    /// <summary>U3: the contextual bell label — what ringing it does from the current phase.</summary>
+    private static string BellVerb(GameState state) => state.Phase switch
+    {
+        DayPhase.Morning => "Send them off",
+        DayPhase.Expedition => "Lower the winch",
+        DayPhase.Camp => "Ring the return bell",
+        DayPhase.ExpeditionDeep => "Ring the return bell",
+        DayPhase.Evening => "Snuff the lanterns",
+        _ => "Advance",
+    };
+
+    /// <summary>U3: a readout of what is still open this phase (per-type, not one opaque count),
+    /// so the player knows what the bell will end. Empty when nothing is pending.</summary>
+    private string OpenItemsBadge(GameState state)
+    {
+        var parts = new System.Collections.Generic.List<string>();
+        if (state.Counter is { Closed: false } counter && counter.Queue.Count > 0)
+        {
+            parts.Add($"{counter.Queue.Count} at the counter");
+        }
+
+        if (state.Phase == DayPhase.Morning && state.ActionSlotsRemaining > 0)
+        {
+            parts.Add($"{state.ActionSlotsRemaining} slots");
+        }
+
+        return parts.Count == 0 ? string.Empty : string.Join(" · ", parts);
+    }
+
+    /// <summary>U4: the Quest–Watch payoff — a one-line departure omen from the parties that just
+    /// mustered (presentation over data the sim already produced; no new sim state).</summary>
+    private static string DepartureOmen(GameState state)
+    {
+        var parties = state.PendingExpeditions.Count;
+        return parties > 0
+            ? $"{parties} {(parties == 1 ? "party marches" : "parties march")} for the Mine — watch them go"
+            : "the gate stands quiet today";
+    }
+
+    /// <summary>U5: a transient bell-action notice (reuses the rejection-toast banner).</summary>
+    private void ShowBellToast(string message)
+    {
+        _toast.Text = message;
+        _toastBanner.Visible = true;
+        ToastRemaining = RejectionToastSeconds;
     }
 
     private void BuildUi()
@@ -796,6 +868,19 @@ public partial class MainUi : Control
         StylePrimary(_advance);
         _advance.Pressed += () =>
         {
+            var state = Adapter.CurrentState;
+            // U5: ringing the bell while a counter session is open would otherwise silently fail to
+            // advance — GameKernel holds the day at Morning while Counter is { Closed: false }. Close
+            // the session first so the day ALWAYS moves, and surface it so it is never a silent
+            // abandon of a live haggle/queue (the "never silently discards a live decision" goal).
+            if (state.Counter is { Closed: false } counter)
+            {
+                Adapter.Queue(new CloseCounterAction());
+                ShowBellToast(counter.Round > 0
+                    ? "Closed the counter mid-haggle — parties depart."
+                    : "Closed the counter — parties depart.");
+            }
+
             Clock.AdvanceNow(); // same advance the auto timer fires — player intent wins even engaged
             UpdateClockLabel();
         };
@@ -1481,7 +1566,8 @@ public partial class MainUi : Control
         private const string Path = "user://clock_settings.json";
 
         /// <summary>Null when no settings file exists yet — callers keep PhaseClock's own
-        /// default (ON); otherwise the persisted auto-advance preference.</summary>
+        /// default (OFF / player-decided, U2); otherwise the persisted auto-advance preference
+        /// (opt-in "Innkeeper's Clock").</summary>
         public static bool? LoadAutoAdvance()
         {
             if (!Godot.FileAccess.FileExists(Path))
@@ -1524,7 +1610,10 @@ public partial class MainUi : Control
 
         private sealed class Data
         {
-            public bool AutoAdvance { get; set; } = true;
+            // U2: manual-by-default everywhere — a settings blob missing this field (schema
+            // evolution) must not silently resurrect timed mode. (A blob that already persisted
+            // AutoAdvance:true keeps it — a one-time carry-over the player can toggle off.)
+            public bool AutoAdvance { get; set; } = false;
         }
     }
 }
