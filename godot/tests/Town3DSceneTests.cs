@@ -64,6 +64,28 @@ public class Town3DSceneTests
         finally { town.Free(); }
     }
 
+    /// <summary>U7 (opener fantasy line + frame the mine gate on day 1): the initial camera
+    /// framing set synchronously in <see cref="Town3D.Build"/> must already include the mine
+    /// gate — the whole point of the game — not just the player's own day-1 spawn point.
+    /// Property-only: <see cref="Camera3D.IsPositionInFrustum"/> is a pure geometry check against
+    /// the camera's already-set transform/projection; no frame pump (pumping a rendering 3D
+    /// SubViewport hangs the headless gdUnit runner).</summary>
+    [TestCase]
+    public void Town3D_Built_Day1CameraFraming_IncludesMineGate()
+    {
+        var town = Mount();
+        try
+        {
+            var camera3D = town.Camera.GetNode<Camera3D>("Camera3D");
+            var gateWorldPosition = town.FindBuilding("minegate").GlobalPosition;
+
+            AssertThat(camera3D.IsPositionInFrustum(gateWorldPosition))
+                .OverrideFailureMessage("day-1 opening camera framing must include the mine gate — it's off-screen")
+                .IsTrue();
+        }
+        finally { town.Free(); }
+    }
+
     [TestCase]
     public void Town3D_Built_PlacesGenProps()
     {

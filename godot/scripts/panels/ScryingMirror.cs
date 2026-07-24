@@ -23,6 +23,11 @@ public partial class ScryingMirror : SimPanel
     private Label? _floorLabel;
     private VBoxContainer? _feedBody;
 
+    /// <summary>U5: the provenance popup — a single instance reused across ★ attribution lines,
+    /// self-contained (this unit's scope keeps MainUi untouched), added as the LAST child in
+    /// <see cref="EnsureBuilt"/> so it draws over the feed body.</summary>
+    private ProvenanceCard? _provenance;
+
     /// <summary>How many parties currently have a live card (test hook).</summary>
     public int PartyCount => _feed.Cards.Count;
 
@@ -145,13 +150,39 @@ public partial class ScryingMirror : SimPanel
 
         foreach (var beat in revealed)
         {
-            AddLabel(_feedBody!, beat.Text);
+            if (beat is { IsAttribution: true, Item: { } itemId })
+            {
+                // U5: "your craft writes the legends" made touchable — the ★ attribution line
+                // opens the item's provenance card on click, instead of a plain label.
+                var row = AddRow(_feedBody!);
+                var button = AddButton(row, $"AttributionBeat_{itemId.Value}_{beat.Floor}", beat.Text,
+                    () => OnShowProvenance(itemId));
+                button.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+                button.Alignment = HorizontalAlignment.Left;
+            }
+            else
+            {
+                AddLabel(_feedBody!, beat.Text);
+            }
         }
 
         if (_feed.IsIdle(card))
         {
             AddLabel(_feedBody!, _feed.IdleLine(card.PartyKey));
         }
+    }
+
+    /// <summary>U5: open the self-contained provenance popup for an attribution beat's ItemId,
+    /// reading live state off <c>Adapter</c> the same way every other click handler here does.</summary>
+    private void OnShowProvenance(ItemId itemId)
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        EnsureBuilt();
+        _provenance!.ShowFor(Adapter.CurrentState, itemId);
     }
 
     private void EnsureBuilt()
@@ -195,5 +226,10 @@ public partial class ScryingMirror : SimPanel
         scroll.AddChild(_feedBody);
 
         AddButton(box, "MirrorClose", "Close", CloseMirror);
+
+        // U5: added LAST (after the panel body) so it draws over the feed, self-contained
+        // (PKD8-style single overlay), hidden until a ★ attribution line opens it.
+        _provenance = new ProvenanceCard { Visible = false };
+        AddChild(_provenance);
     }
 }

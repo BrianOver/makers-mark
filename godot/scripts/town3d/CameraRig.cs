@@ -108,6 +108,18 @@ public partial class CameraRig : Node3D
         _targetPitch = Pitch;
     }
 
+    /// <summary>
+    /// U7 (frame the mine gate on day 1): snaps the rig directly onto <paramref name="focusPoint"/>
+    /// — a synchronous reassignment, same as the one <see cref="_Ready"/> itself performs when
+    /// <see cref="Target"/> is already known at Ready time. Used once, at town Build, to set the
+    /// DAY-1 OPENING framing before any frame has run the per-frame follow-ease: the very first
+    /// view of the town should already show the game's destination, not wait for the ease to glide
+    /// there. The normal <see cref="Target"/> follow (in <see cref="_Process"/>) takes back over
+    /// on the very next tick, easing the rig from this opening focus onto the player as usual —
+    /// this only nudges the FIRST frame, not the ongoing follow behavior.
+    /// </summary>
+    public void SnapTo(Vector3 focusPoint) => GlobalPosition = focusPoint;
+
     public override void _Process(double delta)
     {
         var followTarget = _pushFocus ?? Target;

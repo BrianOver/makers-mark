@@ -406,6 +406,21 @@ public partial class Town3D : SubViewportContainer
         Camera.Target = Player;
         Player.ArrivedAtBuilding += key => BuildingClicked?.Invoke(key);
 
+        // U7 (opener fantasy line + frame the mine gate on day 1): the mine gate — the whole
+        // point of the game — sits far ahead of the player's day-1 spawn (z ≈ -16 vs the
+        // player's z = 0), close to the edge of (or entirely outside) the rig's forward view
+        // when it simply snaps onto the player alone. Framing the rig's OPENING position at the
+        // midpoint between the player and the gate — instead of directly on the player — pulls
+        // the gate well inside the camera's initial frustum while the player, much nearer to the
+        // rig than the gate is, stays comfortably in view too. This only nudges the first frame:
+        // CameraRig's own per-frame follow-ease (_Process) takes back over immediately after,
+        // gliding the rig from this opening establishing shot onto the player as normal.
+        var gate = FindBuilding("minegate");
+        Camera.SnapTo(new Vector3(
+            Player.GlobalPosition.X,
+            Player.GlobalPosition.Y,
+            (Player.GlobalPosition.Z + gate.GlobalPosition.Z) / 2f));
+
         MemorialPlot = BuildMemorialPlot();
         World.AddChild(MemorialPlot);
 
