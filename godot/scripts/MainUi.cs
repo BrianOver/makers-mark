@@ -1256,6 +1256,30 @@ public partial class MainUi : Control
     }
 
     /// <summary>
+    /// U8 (day-1 attribution pacing): once a <see cref="CraftAction"/> is queued for day 1's
+    /// Morning batch but a matching <see cref="StockAction"/> (shelve) is not YET queued, hold
+    /// <see cref="PhaseClock.Engaged"/> — even with no drawer/interior/modal open — so the walk
+    /// from the Forge to the Shop (the one genuinely unengaged stretch of the tutorial's
+    /// Buy→Craft→Shelve chain) cannot let the Morning timer expire mid-walk. An expired Morning
+    /// on day 1 applies the queued batch BEFORE the shelve exists, pushing craft+shelve into the
+    /// Expedition phase — legal every phase (<see cref="GameSim.Economy.ShopHandlers"/>'s own
+    /// class doc), but a day too late for THAT Morning's
+    /// <see cref="GameSim.Heroes.HeroShoppingSystem"/> pass: the item cannot sell until day 2's
+    /// Morning, which is exactly the day-2 ★ attribution delay this unit closes. Released the
+    /// instant a StockAction is ALSO queued — the pending batch now carries both (actions apply
+    /// before systems, <see cref="GameSim.Kernel.GameKernel.Tick"/> steps 1/2), so THIS Morning's
+    /// hero-shopping pass will see the freshly shelved item. Never engages on any later day (the
+    /// "craft during Expedition" steady-state loop ShopHandlers documents for day 2+ is
+    /// untouched) and never engages before a craft is queued at all — a fresh, untouched Morning
+    /// still ticks exactly as before (<c>MainUiTests.ClosedDrawer_TimerExpiry_...</c>).
+    /// </summary>
+    private bool Day1CraftToShelvePacingHold =>
+        Adapter.CurrentState.Day == 1
+        && Adapter.CurrentState.Phase == DayPhase.Morning
+        && Adapter.PendingActions.Any(a => a is CraftAction)
+        && !Adapter.PendingActions.Any(a => a is StockAction);
+
+    /// <summary>
     /// U15/U21/U22 (KTD3/AE1/R7): real drawer/interior/modal state engages <see
     /// cref="PhaseClock.Engaged"/> — the bare world (no drawer open, no interior staged, no modal
     /// visible) is the only flowing surface; any open drawer (<see cref="DrawerHost.IsOpen"/>),
@@ -1265,7 +1289,12 @@ public partial class MainUi : Control
     private void UpdateEngaged()
     {
         var engaged = Drawer.IsOpen || Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible;
-        Clock.Engaged = engaged;
+
+        // U8: Clock.Engaged can ALSO be held by the day-1 craft→shelve pacing guard above —
+        // deliberately NOT folded into `engaged` itself, which also drives the objective chip's
+        // visibility and Town's world-input gate a few lines down: the player must still see the
+        // chip and be able to WALK to the Shop during this exact window.
+        Clock.Engaged = engaged || Day1CraftToShelvePacingHold;
 
         // Menu-sizing fix (U2, playtest F1): the objective chip floats over the SAME top-right
         // region a drawer/modal's own action buttons can occupy (e.g. it sat on top of the Forge

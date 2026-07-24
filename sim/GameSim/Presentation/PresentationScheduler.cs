@@ -122,7 +122,7 @@ public static class PresentationScheduler
             perFloor.Add((floor.Floor, star, ambient));
         }
 
-        var (pullFocusFloor, glanceFloors) = AllocateBudget(perFloor);
+        var (pullFocusFloor, glanceFloors) = AllocateBudget(perFloor, day);
 
         var beats = ImmutableArray.CreateBuilder<Beat>();
         var order = 0;
@@ -171,9 +171,19 @@ public static class PresentationScheduler
     /// to PullFocus IFF it clears <see cref="PullFocusStakesFloor"/>, then take up to
     /// <see cref="MaxGlance"/> of the remainder as Glance. Everything else stays Ambient — still
     /// broadcast, just not dilated (recoverable via scrollback, never fabricated, never dropped).
+    ///
+    /// <para><b>Day-1 attribution ceremony (U8):</b> no player-crafted item can exist before day
+    /// 1, so ANY attribution-beat candidate (<see cref="StarCandidate.Item"/> non-null) in a
+    /// day-1 result is necessarily the player's first-ever proof — the game's whole payoff moment
+    /// — and gets the hard-interrupt spotlight even when its ordinary stakes (a plain killing
+    /// blow, well under <see cref="PullFocusStakesFloor"/>) would not otherwise clear the bar on
+    /// any later day. Pure tier SELECTION, not new content — the promoted candidate's lines still
+    /// come straight from the same <see cref="RenderTavern"/> pass every other day's beat uses.
+    /// Only engages when nothing else already claimed the raid's one PullFocus slot: a day-1
+    /// death or proven save still outranks a routine kill, exactly like any other day.</para>
     /// </summary>
     private static (int? PullFocusFloor, HashSet<int> GlanceFloors) AllocateBudget(
-        List<(int Floor, StarCandidate? Star, string AmbientLine)> perFloor)
+        List<(int Floor, StarCandidate? Star, string AmbientLine)> perFloor, int day)
     {
         var ranked = perFloor
             .Where(f => f.Star is not null)
@@ -185,6 +195,15 @@ public static class PresentationScheduler
         int? pullFocusFloor = ranked.Count > 0 && ranked[0].Stakes >= PullFocusStakesFloor
             ? ranked[0].Floor
             : null;
+
+        if (pullFocusFloor is null && day == 1)
+        {
+            var firstEverAttribution = ranked.FirstOrDefault(s => s.Item is not null);
+            if (firstEverAttribution is not null)
+            {
+                pullFocusFloor = firstEverAttribution.Floor;
+            }
+        }
 
         var glanceFloors = ranked
             .Where(s => s.Floor != pullFocusFloor)
