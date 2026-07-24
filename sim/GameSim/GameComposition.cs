@@ -19,17 +19,22 @@ namespace GameSim;
 /// the kernel through here so a seed means the same world everywhere.
 ///
 /// Morning: faction-drift → counter-queue → rent → destitution → rival-restock → recruit-trickle →
-/// gossip → hero-shopping → muster (drift settles standing for the day before anything reads it —
-/// KTD5; restock must precede shopping; gossip reads yesterday's stamped log). CounterQueueSystem
-/// (PA3/PKD5) registers BEFORE HeroShoppingSystem AND before the once-per-Morning economy/drama
-/// systems (U1): it resolves the active counter customer (and may flip <c>CounterState.Closed</c>
-/// on queue exhaustion), so on the closing tick those systems' held-Morning guards see the FINAL
-/// Closed==true and fire exactly once per calendar Morning; HeroShoppingSystem likewise sees this tick's
-/// FINAL closed/unserved state when deciding whether to run its unserved-heroes fallback pass —
-/// draws ZERO RNG either way, so a run whose <c>GameState.Counter</c> stays null (the default, the
-/// ONLY path BaselinePlayer/the balance gate ever exercise) leaves the stream untouched and
-/// HeroShoppingSystem's own behavior byte-identical to pre-Phase-A (the atomic-equivalence pin).
-/// MusterSystem registers LAST in the Morning block BY CONTRACT (world-rework U9/KTD8): it
+/// gossip → hero-shopping → commissions → muster (drift settles standing for the day before anything
+/// reads it — KTD5; restock must precede shopping; gossip reads yesterday's stamped log).
+/// CounterQueueSystem (PA3/PKD5) registers BEFORE HeroShoppingSystem AND before the once-per-Morning
+/// economy/drama systems (U1): it resolves the active counter customer (and may flip
+/// <c>CounterState.Closed</c> on queue exhaustion), so on the closing tick those systems' held-Morning
+/// guards see the FINAL Closed==true and fire exactly once per calendar Morning; HeroShoppingSystem
+/// likewise sees this tick's FINAL closed/unserved state when deciding whether to run its
+/// unserved-heroes fallback pass — draws ZERO RNG either way, so a run whose <c>GameState.Counter</c>
+/// stays null (the default, the ONLY path BaselinePlayer/the balance gate ever exercise) leaves the
+/// stream untouched and HeroShoppingSystem's own behavior byte-identical to pre-Phase-A (the
+/// atomic-equivalence pin). CommissionSystem (Wave 3, U13) registers AFTER HeroShoppingSystem so a
+/// hero who just bought their own fix this same Morning isn't also offered a redundant commission for
+/// it — and BEFORE MusterSystem, which MUST stay last (see below); it draws no RNG (pure projection
+/// over <c>MusterPlan.Compute</c>, same as <c>RaidForecast</c>) and only appends to
+/// <c>GameState.Commissions</c> / nudges mood, so it never perturbs the muster projection or the RNG
+/// stream. MusterSystem registers LAST in the Morning block BY CONTRACT (world-rework U9/KTD8): it
 /// predicts the Expedition tick's party/target-floor outcome, so it must see the day's final
 /// roster (after RecruitSystem) and final hero state (after HeroShoppingSystem) or its emitted
 /// PartiesFormed roster/floor diverges from what ExpeditionSystem actually forms two phases
@@ -54,6 +59,7 @@ public static class GameComposition
             new RecruitSystem(), // Held-Morning guarded (U1)
             new GossipSystem(), // Held-Morning guarded (U1)
             new HeroShoppingSystem(),
+            new CommissionSystem(), // Wave 3 (U13): after shopping, before Muster — see class comment above
             new MusterSystem(), // world rework U9/KTD8: LAST in Morning — see class comment above
             new BountyJudgingSystem(),
             new ExpeditionSystem(),
@@ -69,7 +75,8 @@ public static class GameComposition
             new BountyHandlers(),
             new ProfessionHandlers(),
             new CampHandlers(), // U4 staged resolution: Camp-phase send-supply / recall verbs (draws no RNG)
-            new CounterHandlers())); // PA3/PKD5: open/present/suggest/haggle/close (draws no RNG)
+            new CounterHandlers(), // PA3/PKD5: open/present/suggest/haggle/close (draws no RNG)
+            new CommissionHandlers())); // Wave 3 (U14): accept/decline a hero's posted commission (draws no RNG)
 
     /// <summary>A fresh campaign: seeded world with the starting six heroes installed.</summary>
     public static GameState NewCampaign(ulong seed) =>
