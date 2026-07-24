@@ -40,6 +40,9 @@ public class GenAssetCoverageTests
         "monster-cave-rat.glb", "monster-spider.glb", "monster-ghoul.glb", "monster-ore-golem.glb",
         // InteriorRoom3D furniture (InteriorRoom3D.Rooms per-venue prop lists)
         "weapon-rack.glb", "crate.glb", "cauldron.glb", "table.glb", "chest.glb",
+        "brazier.glb", "bookshelf.glb", "stool.glb", // batch 2 interior furniture
+        // Town3D.BuildProps outdoor dressing (batch 2)
+        "signpost.glb", "haybale.glb",
     };
 
     /// <summary>Gen GLBs finished but not yet placeable — each needs a surface that does not exist
