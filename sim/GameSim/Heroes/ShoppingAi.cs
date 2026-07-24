@@ -19,6 +19,7 @@ public enum PassReasonKind
     TooHeavy,      // "too heavy for a mystic"
     CannotAfford,  // "can't afford at 45g — has 30g"
     NotAnUpgrade,  // "current blade is better"
+    QualityTooLow, // U9: a deep-floor veteran won't trust sub-Fine work
 }
 
 /// <summary>
@@ -53,6 +54,29 @@ public static class ShoppingAi
     public const int MysticMaxWeight = 4;
 
     /// <summary>
+    /// U9 ("quality gets teeth"): the deep-floor "veteran" gate. A hero who has reached this Mine
+    /// floor or deeper has earned the right to be picky about who forged their gear — see
+    /// <see cref="VeteranMinQualityGrade"/>. Rookies (<see cref="Hero.DeepestFloorReached"/> below
+    /// this) are NEVER gated: a fresh game's only stock is whatever the smith just auto-crafted
+    /// (often Poor/Common), so gating rookies too would risk a quality soft-lock (KD3 no-softlock
+    /// guard, precedent: <c>docs/design/2026-07-19-flavorforge-erenshor-recommendations.md</c> M3).
+    /// Chosen at floor 3 of 5 (<see cref="Expedition.MonsterTable.FloorCount"/>) — past the
+    /// halfway point, matching the existing "veteran" hero fixtures already used elsewhere in this
+    /// suite (e.g. <c>ExpeditionRevealSystemTests</c>).
+    /// </summary>
+    public const int VeteranFloorThreshold = 3;
+
+    /// <summary>
+    /// The minimum <see cref="QualityGrade"/> a veteran will accept — below this, they pass with a
+    /// named reason regardless of price or gear-score gain. Rival goods are always
+    /// <see cref="QualityGrade.Common"/> (flat quality, never a maker's mark — <c>RivalCatalog</c>),
+    /// so a veteran this deep declines the rival shelf outright, same as Poor player stock: only a
+    /// player craft of Fine or better proves the smith's minigame mastery actually mattered (the
+    /// problem this unit fixes — the market previously valued a Masterwork identically to junk).
+    /// </summary>
+    public const QualityGrade VeteranMinQualityGrade = QualityGrade.Fine;
+
+    /// <summary>
     /// Judge one shelf item for one hero, resolving the hero's class from the registry
     /// (production path).
     /// </summary>
@@ -65,10 +89,10 @@ public static class ShoppingAi
 
     /// <summary>
     /// Judge one shelf item for one hero against an explicit class definition (P3). Check
-    /// order is fixed (role fit, then affordability, then gear score) so pass reasons are
-    /// stable across runs. Role fit reads the DEFINITION — an add-on class's shield/weight
-    /// rules are honored with no code change — while the built-ins stay byte-identical
-    /// (DisplayName lowercased is the role word the R8 prose names).
+    /// order is fixed (role fit, then veteran quality gate (U9), then affordability, then gear
+    /// score) so pass reasons are stable across runs. Role fit reads the DEFINITION — an add-on
+    /// class's shield/weight rules are honored with no code change — while the built-ins stay
+    /// byte-identical (DisplayName lowercased is the role word the R8 prose names).
     /// </summary>
     public static ShoppingVerdict EvaluateItem(
         Hero hero,
@@ -92,7 +116,17 @@ public static class ShoppingAi
                 $"too heavy for a {heroClass.DisplayName.ToLowerInvariant()} — {item.Stats.Weight} weight, carries at most {cap}");
         }
 
-        // 2. Affordability.
+        // 2. Veteran pickiness (U9, KD3 no-softlock: gated on floor depth so a rookie's first
+        // shopping trip is never blocked). Checked before affordability — a veteran refuses
+        // sub-Fine work on principle, not because of the price tag.
+        if (hero.DeepestFloorReached >= VeteranFloorThreshold && item.Quality < VeteranMinQualityGrade)
+        {
+            return ShoppingVerdict.MakePass(
+                PassReasonKind.QualityTooLow,
+                $"a floor-{hero.DeepestFloorReached} veteran won't trust {item.Quality.ToString().ToLowerInvariant()} work — bring Fine or better");
+        }
+
+        // 3. Affordability.
         if (price > hero.Gold)
         {
             return ShoppingVerdict.MakePass(
@@ -100,7 +134,7 @@ public static class ShoppingAi
                 $"can't afford at {price}g — has {hero.Gold}g");
         }
 
-        // 3. Gear-score improvement: only buy strict upgrades.
+        // 4. Gear-score improvement: only buy strict upgrades.
         var currentScore = Hero.GearScore(hero.Gear, items);
         var newScore = Hero.GearScore(hero.Gear.WithSlot(item.Slot, item.Id), items);
         var gain = newScore - currentScore;

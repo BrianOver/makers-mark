@@ -110,6 +110,54 @@ public class ShoppingAiTests
     }
 
     [Fact]
+    public void Veteran_PassesOnPoorItem_ReasonNamesFloorAndGrade()
+    {
+        // U9: a hero who has reached the veteran floor threshold refuses Poor-grade gear outright,
+        // regardless of price or gear-score gain — the reason names both the hero's depth and the
+        // item's grade so the player sees exactly why the sale didn't land.
+        var veteran = MakeHero("vanguard", gold: 100) with { DeepestFloorReached = ShoppingAi.VeteranFloorThreshold };
+        var poorSword = MakeItem(40, ItemSlot.Weapon, attack: 9, defense: 0, weight: 3, name: "Dull Blade")
+            with { Quality = QualityGrade.Poor };
+
+        var verdict = ShoppingAi.EvaluateItem(veteran, poorSword, price: 5, Catalog(poorSword));
+
+        Assert.Equal(ShoppingVerdictKind.Pass, verdict.Kind);
+        Assert.Equal(PassReasonKind.QualityTooLow, verdict.PassReason);
+        Assert.Contains("veteran", verdict.Reason);
+        Assert.Contains("poor", verdict.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Veteran_AcceptsFineOrBetter_ReturnsBuy()
+    {
+        // U9: Fine is the veteran's floor of acceptance — the same item at Fine (or better) is a
+        // normal Buy, proving the gate is quality-specific, not a blanket veteran refusal.
+        var veteran = MakeHero("vanguard", gold: 100) with { DeepestFloorReached = ShoppingAi.VeteranFloorThreshold };
+        var fineSword = MakeItem(41, ItemSlot.Weapon, attack: 9, defense: 0, weight: 3, name: "Fine Blade")
+            with { Quality = QualityGrade.Fine };
+
+        var verdict = ShoppingAi.EvaluateItem(veteran, fineSword, price: 5, Catalog(fineSword));
+
+        Assert.Equal(ShoppingVerdictKind.Buy, verdict.Kind);
+    }
+
+    [Fact]
+    public void Rookie_BelowVeteranThreshold_NeverGatedOnQuality_EvenOnPoorGear()
+    {
+        // KD3 no-softlock guard (U9): a rookie's DeepestFloorReached is below the veteran
+        // threshold, so a Poor item that is a genuine upgrade still buys — a fresh game's only
+        // stock (often Poor/Common auto-craft) can never quality-softlock a new hero.
+        var rookie = MakeHero("vanguard", gold: 100);
+        Assert.True(rookie.DeepestFloorReached < ShoppingAi.VeteranFloorThreshold);
+        var poorSword = MakeItem(42, ItemSlot.Weapon, attack: 9, defense: 0, weight: 3, name: "Dull Blade")
+            with { Quality = QualityGrade.Poor };
+
+        var verdict = ShoppingAi.EvaluateItem(rookie, poorSword, price: 5, Catalog(poorSword));
+
+        Assert.Equal(ShoppingVerdictKind.Buy, verdict.Kind);
+    }
+
+    [Fact]
     public void EveryPassPath_CarriesANonEmptyReason()
     {
         // U5 verification clause: every rejection path proven to carry a reason string.

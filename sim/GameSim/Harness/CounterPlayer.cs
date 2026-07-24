@@ -63,8 +63,11 @@ public static class CounterPlayer
             // band-center counter still routes through HaggleResolver.ResolveCounter (pin, fleece,
             // or a plain in-band sale), which is the coverage this policy exists to exercise.
             var listPrice = state.Player.Shelf.FirstOrDefault(e => e.Item == counter.Presented)?.Price ?? standingOffer;
+            var presentedQuality = state.Items.TryGetValue(counter.Presented.Value.Value, out var presentedItem)
+                ? presentedItem.Quality
+                : QualityGrade.Common;
             var trueWillingness = WillingnessModel.TrueWillingness(
-                listPrice, hero.Gold, hero.ClassId, counter.InterestPermille, hero.MoodPermille);
+                listPrice, hero.Gold, hero.ClassId, counter.InterestPermille, hero.MoodPermille, presentedQuality);
             var (floor, ceiling) = WillingnessModel.Band(trueWillingness, counter.Round);
             var center = Math.Clamp((floor + ceiling) / 2, 1, hero.Gold);
             actions.Add(new HaggleResponseAction(HaggleResponseKind.Counter, center));

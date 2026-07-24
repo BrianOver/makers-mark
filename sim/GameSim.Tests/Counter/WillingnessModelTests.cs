@@ -1,4 +1,5 @@
 using GameSim.Classes;
+using GameSim.Contracts;
 using GameSim.Counter;
 
 namespace GameSim.Tests.Counter;
@@ -98,5 +99,43 @@ public class WillingnessModelTests
     public void ClassPriceFactor_UnregisteredClass_DefaultsNeutral()
     {
         Assert.Equal(WillingnessModel.NeutralPriceFactorPermille, WillingnessModel.ClassPriceFactor("not-a-real-class"));
+    }
+
+    [Fact]
+    public void TrueWillingness_HigherQualityGrade_StrictlyHigherWillingness()
+    {
+        // U9 ("quality gets teeth"): the same list price/class/gold, only the crafted
+        // QualityGrade changes — willingness must climb strictly with the grade, Poor lowest,
+        // Masterwork highest. Same shape as the existing Vanguard-vs-Skirmisher class proof.
+        var poor = WillingnessModel.TrueWillingness(ListPrice, PlentifulGold, ClassRegistry.StrikerId, 0, 0, QualityGrade.Poor);
+        var common = WillingnessModel.TrueWillingness(ListPrice, PlentifulGold, ClassRegistry.StrikerId, 0, 0, QualityGrade.Common);
+        var fine = WillingnessModel.TrueWillingness(ListPrice, PlentifulGold, ClassRegistry.StrikerId, 0, 0, QualityGrade.Fine);
+        var superior = WillingnessModel.TrueWillingness(ListPrice, PlentifulGold, ClassRegistry.StrikerId, 0, 0, QualityGrade.Superior);
+        var masterwork = WillingnessModel.TrueWillingness(ListPrice, PlentifulGold, ClassRegistry.StrikerId, 0, 0, QualityGrade.Masterwork);
+
+        Assert.True(poor < common, $"Poor ({poor}) should be strictly cheaper than Common ({common})");
+        Assert.True(common < fine, $"Common ({common}) should be strictly cheaper than Fine ({fine})");
+        Assert.True(fine < superior, $"Fine ({fine}) should be strictly cheaper than Superior ({superior})");
+        Assert.True(superior < masterwork, $"Superior ({superior}) should be strictly cheaper than Masterwork ({masterwork})");
+    }
+
+    [Fact]
+    public void TrueWillingness_OmittedQuality_DefaultsToCommon_ByteIdenticalToPreU9Callers()
+    {
+        // Every pre-U9 call site (and every existing test above) never passes a quality argument —
+        // this proves the default keeps them byte-identical: omitting it must equal passing
+        // QualityGrade.Common explicitly (the neutral, 0-bonus entry in the table).
+        var omitted = WillingnessModel.TrueWillingness(ListPrice, PlentifulGold, ClassRegistry.VanguardId, 10, 5);
+        var explicitCommon = WillingnessModel.TrueWillingness(ListPrice, PlentifulGold, ClassRegistry.VanguardId, 10, 5, QualityGrade.Common);
+
+        Assert.Equal(explicitCommon, omitted);
+    }
+
+    [Fact]
+    public void QualityBonus_UnknownGrade_DefaultsNeutral()
+    {
+        // Defensive default (mirrors ClassPriceFactor_UnregisteredClass_DefaultsNeutral): every real
+        // QualityGrade is in the table today, but an unmapped value must still resolve total at 0.
+        Assert.Equal(0, WillingnessModel.QualityBonus((QualityGrade)999));
     }
 }
