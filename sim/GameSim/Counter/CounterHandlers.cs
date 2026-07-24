@@ -56,7 +56,12 @@ public sealed class CounterHandlers : IActionHandler
 
         var queue = state.Heroes.Values
             .Where(h => h.Alive)
-            .OrderBy(h => h.Id.Value)
+            // U8 (Regulars first): higher relationship band serves ahead at the counter; HeroId
+            // breaks ties (preserving the deterministic order the fallback shopping pass uses).
+            // This is counter-session state only — never read by muster (PKD7), so party formation
+            // and every gated trace (BaselinePlayer never opens the counter) are unaffected.
+            .OrderByDescending(h => (int)GameSim.Heroes.RelationshipBands.For(h.Id, state))
+            .ThenBy(h => h.Id.Value)
             .Select(h => h.Id)
             .ToImmutableList();
 
