@@ -770,15 +770,15 @@ public class MainUiTests
     }
 
     [TestCase]
-    public void FreshMount_NoPersistedSettings_AutoAdvanceDefaultsOn()
+    public void FreshMount_NoPersistedSettings_AutoAdvanceDefaultsOff_PlayerDecided()
     {
-        // U15/KTD3: a brand-new install has no settings file yet — PhaseClock's ON default
-        // for a new campaign must reach MainUi untouched.
+        // U2 (Ring the Bell): a brand-new install has no settings file yet — PhaseClock's
+        // player-decided default (auto OFF) must reach MainUi untouched.
         MainUi.ClockSettings.DeleteForTests(); // guard against a leftover file from another suite
         var ui = MountMainUi(adapterOverride: null, forceGated: false);
         try
         {
-            AssertThat(ui.Clock.AutoAdvance).IsTrue();
+            AssertThat(ui.Clock.AutoAdvance).IsFalse();
         }
         finally
         {

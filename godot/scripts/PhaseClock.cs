@@ -35,12 +35,14 @@ public sealed class PhaseClock
     public PhaseClock(SimAdapter adapter) => _adapter = adapter;
 
     /// <summary>
-    /// U15 (KTD3): ON by default for a new campaign — the living clock flows on its own.
-    /// The explicit skip (<see cref="AdvanceNow"/>) is always available regardless. A
-    /// persisted preference (MainUi's settings escape hatch) can restore manual mode on
-    /// load by calling <see cref="SetAutoAdvance"/> before the first frame.
+    /// U2 (plan 2026-07-24-003, "Ring the Bell"): OFF by default — the day is PLAYER-DECIDED, it
+    /// advances only when the player rings the phase bell (<see cref="AdvanceNow"/>, always
+    /// available). The old timed "living clock" survives as an opt-IN "Innkeeper's Clock": MainUi's
+    /// persisted <c>ClockSettings</c> escape hatch calls <see cref="SetAutoAdvance"/>(true) before
+    /// the first frame to restore it. (Was ON-by-default under U15's living clock, which "isn't
+    /// working out" per playtest — the timer is removed as the default, not deleted.)
     /// </summary>
-    public bool AutoAdvance { get; private set; } = true;
+    public bool AutoAdvance { get; private set; } = false;
 
     /// <summary>Within auto mode the town moves by default; pause is the exception.</summary>
     public bool Playing { get; private set; } = true;

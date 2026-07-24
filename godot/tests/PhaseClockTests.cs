@@ -17,11 +17,12 @@ namespace GodotClient.Tests;
 public class PhaseClockTests
 {
     [TestCase]
-    public void FreshClock_AutoAdvanceIsOn_ByDefault_ForANewCampaign()
+    public void FreshClock_AutoAdvanceIsOff_ByDefault_PlayerDecidedPacing()
     {
-        // U15/KTD3: the living clock flows on its own for a new game — no opt-in needed.
+        // U2 (Ring the Bell): a new campaign is PLAYER-DECIDED — the timer is off by default and
+        // the day advances only on the bell (AdvanceNow). The old timed clock is opt-in.
         var clock = new PhaseClock(new SimAdapter(ScriptedSession.Seed));
-        AssertThat(clock.AutoAdvance).IsTrue();
+        AssertThat(clock.AutoAdvance).IsFalse();
     }
 
     [TestCase]
