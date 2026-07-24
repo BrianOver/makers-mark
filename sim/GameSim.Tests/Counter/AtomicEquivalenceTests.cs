@@ -41,8 +41,12 @@ public class AtomicEquivalenceTests
     // over MusterPlan). Party formation / target floors / expedition results are unchanged (the PKD7
     // pin in HaggleEconomicsTests still holds). Deliberate re-baseline, same class as the Wave 3
     // contracts field addition above.
+    // RE-BASELINED (Wave 4a named-artifacts contract, 2026-07-24): adding the trailing
+    // `Item.SignedName` init member (default null) means every item in the save JSON now carries
+    // "SignedName":null — a pure serialized-SHAPE change, no behavior change (nothing signs items
+    // yet; RNG stream + every value identical). Same class as the Commissions field addition.
     private const string ExpectedPreCounterSha256 =
-        "5A804739B3C84752A09BD75A533F96E7DBF56C4F3951016AA8D49C7014F643BE";
+        "127EFF8EBE804F81EDB4CB25664AE82E662CFC312234084FAFF3C5226C9BDD7F";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
