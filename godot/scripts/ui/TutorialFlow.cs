@@ -111,6 +111,7 @@ public sealed partial class TutorialFlow : PanelContainer
     public void Build()
     {
         Name = "TutorialFlow";
+        Visible = false; // hidden until an affordance goes live (RefreshAffordances) — no empty-panel sliver
 
         var body = new VBoxContainer { Name = "TutorialFlowBody" };
         AddChild(body);
@@ -338,6 +339,12 @@ public sealed partial class TutorialFlow : PanelContainer
 
         RebuildProfessionPicker(state);
         QuickTravelRow.Visible = QuickTravelUnlocked;
+
+        // This PanelContainer exists ONLY to host the two adapter-gated affordances (the 2nd-
+        // profession picker + quick-travel row); the tutorial chain's own text renders through the
+        // Objective chip. When neither affordance is live (e.g. Day 1), hide the whole panel so its
+        // empty background doesn't peek at the screen edge (playtest fix 2026-07-24).
+        Visible = SecondProfessionButton.Visible || QuickTravelRow.Visible;
     }
 
     private void RebuildProfessionPicker(GameState state)
