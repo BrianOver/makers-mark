@@ -146,6 +146,16 @@ public partial class HeroesPanel : SimPanel
             ? $"Level {hero.Level} | HP {hero.MaxHp} | {hero.Gold}g | deepest floor {hero.DeepestFloorReached}"
             : $"DIED day {hero.DiedOnDay} on floor record {hero.DeepestFloorReached}");
 
+        // U7/U10: relationship band + mood at a glance. Fresh recruits render cleanly as
+        // "Stranger · neutral" (the no-history state) — never blank.
+        if (hero.Alive)
+        {
+            var band = GameSim.Heroes.RelationshipBands.For(hero.Id, state);
+            var mood = hero.MoodPermille;
+            var moodWord = mood >= 200 ? "warm" : mood >= 80 ? "friendly" : mood <= -80 ? "sour" : "neutral";
+            AddLabel(_detail!, $"Standing: {GameSim.Heroes.RelationshipBands.Label(band)}  ·  mood: {moodWord}");
+        }
+
         AddHeader(_detail!, "GEAR:");
         var roleColor = ClassColors.RoleColor(hero.ClassId);
         foreach (var (slot, itemId) in new (ItemSlot, ItemId?)[]
