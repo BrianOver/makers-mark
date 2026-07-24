@@ -20,6 +20,7 @@ public enum PassReasonKind
     CannotAfford,  // "can't afford at 45g — has 30g"
     NotAnUpgrade,  // "current blade is better"
     QualityTooLow, // U9: a deep-floor veteran won't trust sub-Fine work
+    Sentimental,   // Wave 2b: won't part with storied gear that's carried them through fights
 }
 
 /// <summary>
@@ -78,6 +79,15 @@ public static class ShoppingAi
     /// Masterwork is still never valued like Poor (the problem U9 fixes) without bricking Common flow.
     /// </summary>
     public const QualityGrade VeteranMinQualityGrade = QualityGrade.Common;
+
+    /// <summary>Wave 2b (storied gear): worn-gear deeds (Kills + Saves from the hero's
+    /// <see cref="Hero.Memories"/>) at/above which the hero grows attached — a merely-marginal
+    /// upgrade no longer displaces it, so the maker's old work gains gravity.</summary>
+    public const int SentimentalDeedThreshold = 3;
+
+    /// <summary>Wave 2b: the gear-score gain a new item must clear to displace storied worn gear —
+    /// above the ordinary "&gt; 0 is an upgrade" bar. A smaller gain passes with a Sentimental reason.</summary>
+    public const int SentimentalMinDisplacementGain = 5;
 
     /// <summary>
     /// Judge one shelf item for one hero, resolving the hero's class from the registry
@@ -141,6 +151,22 @@ public static class ShoppingAi
         var currentScore = Hero.GearScore(hero.Gear, items);
         var newScore = Hero.GearScore(hero.Gear.WithSlot(item.Slot, item.Id), items);
         var gain = newScore - currentScore;
+
+        // Wave 2b storied-gear gate: a hero won't part with worn gear that has carried them through
+        // enough fights (Kills + Saves) for a merely-marginal upgrade — the player's old work has
+        // earned loyalty. A big-enough gain still displaces it; this only blocks the marginal case.
+        if (gain > 0 && hero.Gear.Slot(item.Slot) is { } wornId)
+        {
+            var deeds = WornDeeds(hero, wornId);
+            if (deeds >= SentimentalDeedThreshold && gain < SentimentalMinDisplacementGain)
+            {
+                var wornName = items.TryGetValue(wornId.Value, out var worn) ? worn.Name : "their gear";
+                return ShoppingVerdict.MakePass(
+                    PassReasonKind.Sentimental,
+                    $"won't part with {wornName} — it's carried them through {deeds} fights");
+            }
+        }
+
         if (gain <= 0)
         {
             var currentName = hero.Gear.Slot(item.Slot) is { } currentId
@@ -151,6 +177,22 @@ public static class ShoppingAi
         }
 
         return ShoppingVerdict.MakeBuy(gain, $"upgrade: +{gain} gear score for {price}g");
+    }
+
+    /// <summary>Wave 2b: total deeds (Kills + Saves) the hero's <see cref="Hero.Memories"/> record
+    /// for one worn item — the "how storied is this gear" signal for the sentimental gate.</summary>
+    private static int WornDeeds(Hero hero, ItemId worn)
+    {
+        var total = 0;
+        foreach (var memory in hero.Memories)
+        {
+            if (memory.Item == worn)
+            {
+                total += memory.Kills + memory.Saves;
+            }
+        }
+
+        return total;
     }
 
     /// <summary>
