@@ -896,20 +896,27 @@ public partial class Town3D : SubViewportContainer
         var ground = new Node3D { Name = "Ground" };
 
         // Visual round: a larger meadow (90×90 vs the old 60) so the village sits in open country
-        // rather than on a cramped tile, and a warmer, slightly brighter grass tone. The generated
-        // ground texture (grass/dirt/cobble) drops onto this same material's AlbedoTexture later.
+        // rather than on a cramped tile, dressed with the generated hand-painted grass texture
+        // (tiled across the plane). Falls back to a flat warm grass tone if the texture isn't
+        // imported yet, so the scene never renders untextured-white.
+        var groundMat = new StandardMaterial3D { Roughness = 0.97f };
+        const string grassPath = "res://assets/textures/env/grass.png";
+        if (ResourceLoader.Exists(grassPath))
+        {
+            groundMat.AlbedoTexture = ResourceLoader.Load<Texture2D>(grassPath);
+            groundMat.Uv1Scale = new Vector3(11f, 11f, 1f); // ~8-unit tiles across the 90-unit meadow
+            groundMat.TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic;
+            groundMat.AlbedoColor = new Color(0.86f, 0.90f, 0.82f); // gently desaturate/soften toward the town palette
+        }
+        else
+        {
+            groundMat.AlbedoColor = new Color(0.42f, 0.52f, 0.28f);
+        }
+
         var mesh = new MeshInstance3D
         {
             Name = "GroundMesh",
-            Mesh = new PlaneMesh
-            {
-                Size = new Vector2(90, 90),
-                Material = new StandardMaterial3D
-                {
-                    AlbedoColor = new Color(0.42f, 0.52f, 0.28f),
-                    Roughness = 0.95f,
-                },
-            },
+            Mesh = new PlaneMesh { Size = new Vector2(90, 90), Material = groundMat },
         };
         ground.AddChild(mesh);
 
