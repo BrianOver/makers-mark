@@ -43,6 +43,8 @@ public class GenAssetCoverageTests
         "brazier.glb", "bookshelf.glb", "stool.glb", // batch 2 interior furniture
         // Town3D.BuildProps outdoor dressing (batch 2)
         "signpost.glb", "haybale.glb",
+        // Town3D.BuildProps outdoor variety (batch 3)
+        "statue.glb", "lamp-post.glb", "tree-stump.glb", "trough.glb",
     };
 
     /// <summary>Gen GLBs finished but not yet placeable — each needs a surface that does not exist

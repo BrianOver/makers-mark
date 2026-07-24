@@ -874,6 +874,10 @@ public partial class Town3D : SubViewportContainer
         AddGenProp(props, "signpost.glb", new Vector3(2.5f, 0f, 3.5f), targetHeight: 2.2f, rotationYDeg: 30f);
         AddGenProp(props, "haybale.glb", new Vector3(-6f, 0f, 12f), targetHeight: 0.8f, rotationYDeg: 0f);
         AddGenProp(props, "haybale.glb", new Vector3(-5.1f, 0f, 12.6f), targetHeight: 0.7f, rotationYDeg: 55f);
+        AddGenProp(props, "statue.glb", new Vector3(-4f, 0f, 9f), targetHeight: 1.9f, rotationYDeg: 200f);
+        AddGenProp(props, "lamp-post.glb", new Vector3(5f, 0f, 5.5f), targetHeight: 2.4f, rotationYDeg: 0f, lampGlow: true);
+        AddGenProp(props, "tree-stump.glb", new Vector3(-14f, 0f, -6f), targetHeight: 0.7f, rotationYDeg: 20f);
+        AddGenProp(props, "trough.glb", new Vector3(-11.5f, 0f, 6.5f), targetHeight: 0.7f, rotationYDeg: 10f);
 
         return props;
     }
@@ -902,7 +906,7 @@ public partial class Town3D : SubViewportContainer
     /// units — gen assets ship at varying baked scales, so we fit each to a sane prop height rather
     /// than trusting the file. No collider (mirrors <see cref="AddProp"/>); a missing file is a silent
     /// skip (<c>GenAssetCoverageTests</c> guards presence + wiring separately).</summary>
-    private static void AddGenProp(Node3D parent, string fileName, Vector3 position, float targetHeight, float rotationYDeg = 0f)
+    private static void AddGenProp(Node3D parent, string fileName, Vector3 position, float targetHeight, float rotationYDeg = 0f, bool lampGlow = false)
     {
         var piece = TownAssets.InstantiateGen(fileName);
         if (piece == null)
@@ -918,6 +922,22 @@ public partial class Town3D : SubViewportContainer
         // Recognizable node name (e.g. "Gen_well") so scene inspection + the placement smoke test
         // can find gen props among the Kenney dressing; Godot auto-suffixes the duplicate barrel.
         piece.Name = "Gen_" + System.IO.Path.GetFileNameWithoutExtension(fileName);
+
+        // A warm point light near the prop's top (child local Y ≈ 0.85·natural height, so after the
+        // uniform scale above it lands at ~0.85·targetHeight world) — for the lamp-post so it reads
+        // as a lit street lamp, not a grey pole. Also contributes to the town's night ambience.
+        if (lampGlow)
+        {
+            piece.AddChild(new OmniLight3D
+            {
+                Name = "LampGlow",
+                Position = new Vector3(0f, height * 0.85f, 0f),
+                LightColor = new Color(1f, 0.82f, 0.45f),
+                LightEnergy = 1.6f,
+                OmniRange = 6f,
+            });
+        }
+
         parent.AddChild(piece);
     }
 
