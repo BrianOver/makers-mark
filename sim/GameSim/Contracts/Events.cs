@@ -38,6 +38,9 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(RentPaid), "rentPaid")]
 [JsonDerivedType(typeof(RentMissed), "rentMissed")]
 [JsonDerivedType(typeof(MarketShareShifted), "marketShareShifted")]
+[JsonDerivedType(typeof(CommissionPosted), "commissionPosted")]
+[JsonDerivedType(typeof(CommissionFulfilled), "commissionFulfilled")]
+[JsonDerivedType(typeof(CommissionExpired), "commissionExpired")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -183,3 +186,15 @@ public sealed record MarketShareShifted(int Permille, bool RivalGained) : GameEv
 /// roster-true gate departures, ticker lines, and spectate feeds. A zero-hero morning emits this
 /// event with an empty <paramref name="Parties"/> list (pinned shape — never omitted).</summary>
 public sealed record PartiesFormed(ImmutableList<PartyPlan> Parties) : GameEvent;
+
+/// <summary>Wave 3 (commissions): a hero asks the player to forge a specific slot at or above a
+/// minimum grade by a deadline, for a gold premium over list. Emitted by <c>CommissionSystem</c>
+/// (Morning); the player accepts/declines (<see cref="AcceptCommissionAction"/>).</summary>
+public sealed record CommissionPosted(HeroId Hero, ItemSlot Slot, QualityGrade MinQuality, int DeadlineDay, int PremiumGold) : GameEvent;
+
+/// <summary>Wave 3: an accepted commission was delivered by its deadline — a guaranteed sale at
+/// list + <paramref name="Premium"/>, plus the mood/attribution payoff.</summary>
+public sealed record CommissionFulfilled(HeroId Hero, ItemId Item, int Premium) : GameEvent;
+
+/// <summary>Wave 3: an accepted commission passed its deadline unfilled — a mood hit + gossip hook.</summary>
+public sealed record CommissionExpired(HeroId Hero, ItemSlot Slot) : GameEvent;
