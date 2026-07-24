@@ -34,12 +34,15 @@ namespace GameSim.Tests.Counter;
 /// </summary>
 public class AtomicEquivalenceTests
 {
-    // RE-BASELINED (Wave 3 contracts, 2026-07-24): adding the trailing `GameState.Commissions` init
-    // member means the save JSON now carries an empty `"Commissions":[]` — a pure serialized-SHAPE
-    // change, NOT a behavior change (nothing posts/reads commissions yet; RNG stream + every value is
-    // identical). Same class of re-baseline as the InFlight/Venues/Counter/Rent field additions.
+    // RE-BASELINED AGAIN (Wave 3 implementation, 2026-07-24): CommissionSystem now posts
+    // CommissionPosted (and silent-expiry) events for gappy heroes on this idle BaselinePlayer trace,
+    // and only appends to GameState.Commissions / nudges nothing on the un-accepted path — a legitimate
+    // demand-side surfacing, not an RNG/order change (CommissionSystem draws no RNG, pure projection
+    // over MusterPlan). Party formation / target floors / expedition results are unchanged (the PKD7
+    // pin in HaggleEconomicsTests still holds). Deliberate re-baseline, same class as the Wave 3
+    // contracts field addition above.
     private const string ExpectedPreCounterSha256 =
-        "9A9A06C7651A34BD269E39445ADFA1B7AC66003A9A6BCC6EEBAA9F5219FB878A";
+        "5A804739B3C84752A09BD75A533F96E7DBF56C4F3951016AA8D49C7014F643BE";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
