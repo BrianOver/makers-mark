@@ -25,6 +25,7 @@ public class ProvenanceCardTests
     private static readonly ItemId HistoryItemId = new(701);
     private static readonly ItemId FreshItemId = new(702);
     private static readonly ItemId ScoredItemId = new(703);
+    private static readonly ItemId SignedItemId = new(704);
 
     [TestCase]
     public void MultiEntryHistory_RendersEachEntry_InDayAscendingOrder()
@@ -102,6 +103,42 @@ public class ProvenanceCardTests
     }
 
     [TestCase]
+    public void SignedWork_RendersMarkerAndLegendName()
+    {
+        var ui = MountMainUi(new SimAdapter(ShelfWorld()));
+        try
+        {
+            PressEnabled(ui.Shop, $"Provenance_{SignedItemId.Value}");
+
+            var card = Find<ProvenanceCard>(ui.Shop, "ProvenanceCard");
+            var text = RenderedText(card);
+            AssertThat(text).Contains("SIGNED WORK");
+            AssertThat(text).Contains("Emberfall");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void UnsignedItem_NeverRendersSignedWorkMarker()
+    {
+        var ui = MountMainUi(new SimAdapter(ShelfWorld()));
+        try
+        {
+            PressEnabled(ui.Shop, $"Provenance_{FreshItemId.Value}");
+
+            var text = RenderedText(Find<ProvenanceCard>(ui.Shop, "ProvenanceCard"));
+            AssertThat(text).NotContains("SIGNED WORK");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void OpeningFromShelf_ResolvesTheClickedItem_NotAPreviouslyOpenedOne()
     {
         var ui = MountMainUi(new SimAdapter(ShelfWorld()));
@@ -170,15 +207,25 @@ public class ProvenanceCardTests
         CraftSubScores = ImmutableList.Create(700, 650, 800),
     };
 
+    /// <summary>Wave 4 (U19, "Signed Works"): a named artifact — the ONE new render this unit adds.</summary>
+    private static Item SignedItem() => new(
+        SignedItemId, "no-such-recipe", "Masterwork Longsword", ItemSlot.Weapon, QualityGrade.Masterwork,
+        new ItemStats(24, 0, 5), new MakersMark("You", 3),
+        ImmutableList<ItemHistoryEntry>.Empty)
+    {
+        SignedName = "Emberfall",
+    };
+
     private static GameState ShelfWorld()
     {
         var baseState = GameFactory.NewGame(5501);
-        var items = new[] { HistoryItem(), FreshItem(), ScoredItem() }
+        var items = new[] { HistoryItem(), FreshItem(), ScoredItem(), SignedItem() }
             .ToImmutableSortedDictionary(i => i.Id.Value, i => i);
         var shelf = ImmutableList.Create(
             new ShelfEntry(HistoryItemId, 20),
             new ShelfEntry(FreshItemId, 10),
-            new ShelfEntry(ScoredItemId, 40));
+            new ShelfEntry(ScoredItemId, 40),
+            new ShelfEntry(SignedItemId, 90));
 
         return baseState with
         {

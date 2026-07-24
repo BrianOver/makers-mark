@@ -58,6 +58,17 @@ public partial class ProvenanceCard : Control
         Clear(_body!);
         _title!.Text = $"{item.Name} [{item.Quality}] — {item.Slot}";
 
+        // Wave 4 (U19, "Signed Works"): a rare craft's earned legend name — the inscription IS
+        // the History/sub-scores already rendered below, so this is a marker + name only, no new
+        // section. Rendered first (right under the title) so a Signed Work reads as special
+        // before the player even reaches its history.
+        if (item.IsSigned)
+        {
+            var signedLabel = AddLabel(_body!, $"✦ SIGNED WORK — \"{item.SignedName}\"");
+            signedLabel.Name = "ProvenanceSignedWork";
+            signedLabel.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        }
+
         var markRow = AddRow(_body!);
         markRow.AddChild(ItemIcon(item));
         AddLabel(markRow, item.Mark is { } mark

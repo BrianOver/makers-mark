@@ -26,6 +26,14 @@ public sealed class RecruitSystem : IPhaseSystem
     /// deadlier, so the town would otherwise dwindle to a single survivor by day 100.</summary>
     public const int RecruitGateDays = 2;
 
+    /// <summary>Wave 4 (U22, "kin-of-the-dead"): the starting <see cref="Hero.MoodPermille"/> bump
+    /// a recruit carries in when a qualifying famous-dead legend exists (<see
+    /// cref="LegendQuery.HasFamousDeadLegend"/>) — deliberately SMALL (well under
+    /// <c>RelationshipBands.RegularMinMood</c> = 80, and the same order of magnitude as
+    /// <c>WillingnessModel.PinMoodBonus</c> = 60) so it nudges a recruit toward Regular without
+    /// ever dominating the band math or moving the balance gate out of band.</summary>
+    public const int KinOfDeadMoodBonus = 60;
+
     public DayPhase Phase => DayPhase.Morning;
 
     public string Name => "recruit-trickle";
@@ -59,6 +67,16 @@ public sealed class RecruitSystem : IPhaseSystem
         }
 
         var recruit = HeroRoster.CreateRecruit(state.NextHeroId, rng);
+
+        // U22 (kin-of-the-dead): a famous fallen hero's legend reaches new arrivals — pure
+        // derivation over already-recorded memorials/attribution beats (LegendQuery), no per-hero
+        // tick (KTD5), no RNG draw (doesn't touch the determinism contract's draw count), and
+        // NEVER read by muster/floor/expedition (PKD7) — Hero.MoodPermille's own doc pins that.
+        if (LegendQuery.HasFamousDeadLegend(state))
+        {
+            recruit = recruit with { MoodPermille = recruit.MoodPermille + KinOfDeadMoodBonus };
+        }
+
         events.Emit(new RecruitArrived(recruit.Id));
         return state with
         {
