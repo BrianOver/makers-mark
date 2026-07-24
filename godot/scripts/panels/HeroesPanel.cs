@@ -71,6 +71,11 @@ public partial class HeroesPanel : SimPanel
     private readonly Dictionary<int, Button> _heroCardButtons = [];
     private int _selectedHeroId = -1;
 
+    /// <summary>U5: the provenance popup — a single instance reused across gear rows, self-
+    /// contained (this unit's scope keeps MainUi untouched), added as the LAST child in
+    /// <see cref="EnsureBuilt"/> so it draws over the roster/detail split.</summary>
+    private ProvenanceCard? _provenance;
+
     public override void _Ready() => EnsureBuilt();
 
     public override void Refresh()
@@ -186,6 +191,11 @@ public partial class HeroesPanel : SimPanel
             var chipRow = AddRow(infoCol);
             chipRow.AddChild(StatChip("Atk", $"{item.Stats.Attack}"));
             chipRow.AddChild(StatChip("Def", $"{item.Stats.Defense}"));
+
+            // U5: "your craft writes the legends" made touchable — open the item's provenance
+            // card (History entries + maker's mark + forge sub-scores) on click.
+            var gearItemId = id;
+            AddButton(row, $"Provenance_{gearItemId.Value}", "History", () => OnShowProvenance(gearItemId));
         }
 
         AddLabel(_detail!, "ITEM MEMORIES:");
@@ -198,6 +208,19 @@ public partial class HeroesPanel : SimPanel
         {
             AddLabel(_detail!, $"  {ItemName(memory.Item)}: {memory.Kills} kills, {memory.Saves} saves");
         }
+    }
+
+    /// <summary>U5: open the self-contained provenance popup for a gear item's ItemId, reading
+    /// live state off <c>Adapter</c> the same way every other click handler in this panel does.</summary>
+    private void OnShowProvenance(ItemId itemId)
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        EnsureBuilt();
+        _provenance!.ShowFor(Adapter.CurrentState, itemId);
     }
 
     /// <summary>One roster card: a content-honest <see cref="PanelContainer"/> (R7-class fix,
@@ -352,6 +375,11 @@ public partial class HeroesPanel : SimPanel
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
         };
         _detailScroll.AddChild(_detail);
+
+        // U5: added LAST (after the split) so it draws over the roster/detail body, self-
+        // contained (PKD8-style single overlay), hidden until a gear row's History button opens it.
+        _provenance = new ProvenanceCard { Visible = false };
+        AddChild(_provenance);
 
         RelayoutSplit();
     }

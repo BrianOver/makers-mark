@@ -109,6 +109,28 @@ public class NewGameSelectTests
         }
     }
 
+    /// <summary>U7 (opener fantasy line): the primer must state the fantasy — not just the
+    /// clock mechanics — so the first-day view says what the game is about, not only how the
+    /// day flows.</summary>
+    [TestCase]
+    public void Pick_ShowsPrimer_StatesTheFantasy_HeroesCarryYourGearIntoTheMine()
+    {
+        var screen = Mount();
+        try
+        {
+            MainUi.AdapterOverride = null;
+            Press(screen, "Pick_blacksmith");
+
+            var fantasy = Find<Label>(screen, "FantasyNote").Text;
+            AssertThat(fantasy).IsNotEmpty();
+            AssertThat(fantasy).Contains("Mine");
+        }
+        finally
+        {
+            Unmount(screen);
+        }
+    }
+
     [TestCase]
     public void Back_ReturnsToPicker_WithoutLeakingCampaign_AndPickIsStillUsableAfter()
     {

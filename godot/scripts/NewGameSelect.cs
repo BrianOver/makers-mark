@@ -72,6 +72,15 @@ public partial class NewGameSelect : Control
         "you're working in a panel, so no queued action is ever lost to time. Advance skips " +
         "straight to the next phase whenever you're ready.";
 
+    /// <summary>
+    /// U7 (opener fantasy line): the one sentence this whole game is about — everything else on
+    /// this primer (phase legend, clock note, seed) explains HOW day 1 works; this states WHY it
+    /// matters, so the fantasy is never left implicit on the very first screen a player sees.
+    /// </summary>
+    private const string FantasyNote =
+        "Heroes will buy this gear and carry it into the Mine — what it does down there is " +
+        "written on your name.";
+
     private VBoxContainer _picker = null!;
     private VBoxContainer _primer = null!;
     private Label _seedLabel = null!;
@@ -147,6 +156,15 @@ public partial class NewGameSelect : Control
         var primer = new VBoxContainer { Name = "Primer" };
 
         primer.AddChild(new Label { Name = "PrimerTitle", Text = "Your first day" });
+
+        // U7: the fantasy, stated once, before any mechanics — everything below this line is
+        // HOW the day works; this line is WHY it's worth playing.
+        primer.AddChild(new Label
+        {
+            Name = "FantasyNote",
+            Text = FantasyNote,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        });
 
         // Verbatim MainUi.PhaseLegend (R12): the same 5-phase, one-line-each copy the in-game
         // HUD legend shows, so this primer can never drift from what the game explains later.

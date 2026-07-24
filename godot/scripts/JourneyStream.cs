@@ -28,8 +28,11 @@ public enum JourneyStage
 }
 
 /// <summary>One line of the spectate feed — already self-censored (KTD5) by the time it exists.
-/// <see cref="IsAttribution"/> marks a proven <see cref="AttributionBeat"/> callout (★-prefixed).</summary>
-public sealed record JourneyBeat(int Floor, string Text, bool IsAttribution);
+/// <see cref="IsAttribution"/> marks a proven <see cref="AttributionBeat"/> callout (★-prefixed).
+/// <see cref="Item"/> carries that beat's item id (U5: "your craft writes the legends" made
+/// touchable — <c>ScryingMirror</c> renders an attribution line as a button opening the item's
+/// <see cref="GodotClient.Panels.ProvenanceCard"/>); null for every non-attribution beat.</summary>
+public sealed record JourneyBeat(int Floor, string Text, bool IsAttribution, ItemId? Item = null);
 
 /// <summary>
 /// One party's spectate card for the CURRENT tick — <see cref="PartyKey"/> (the party's minimum
@@ -194,7 +197,8 @@ public static class JourneyStream
                 // vendor stock carries no MakersMark, so Item.PlayerCrafted gates it here.
                 if (items.TryGetValue(beat.Item.Value, out var item) && item.PlayerCrafted)
                 {
-                    result.Add(new JourneyBeat(floor.Floor, $"★ {HeroName(heroes, beat.Hero)} — {beat.Detail}", true));
+                    result.Add(new JourneyBeat(
+                        floor.Floor, $"★ {HeroName(heroes, beat.Hero)} — {beat.Detail}", true, beat.Item));
                 }
             }
         }

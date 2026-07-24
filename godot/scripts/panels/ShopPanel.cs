@@ -40,6 +40,11 @@ public partial class ShopPanel : SimPanel
     private Label? _feedback;
     private VBoxContainer? _content;
 
+    /// <summary>U5: the provenance popup — a single instance reused across shelf/unshelved
+    /// cards, self-contained (this unit's scope keeps MainUi untouched), added as the LAST child
+    /// in <see cref="EnsureBuilt"/> so it draws over the shelf sections.</summary>
+    private ProvenanceCard? _provenance;
+
     /// <summary>PA7: the stepped counter-service body — built once (a persistent sibling of
     /// <see cref="_content"/>, never re-created by <see cref="Clear"/>) and re-bound every
     /// <see cref="Refresh"/> so it always reflects the live <c>state.Counter</c> alongside the
@@ -152,6 +157,9 @@ public partial class ShopPanel : SimPanel
                 Adapter!.Queue(new UnstockAction(itemId));
                 _feedback!.Text = $"queued: unstock {itemId}";
             });
+            // U5: "your craft writes the legends" made touchable — open the item's provenance
+            // card (History entries + maker's mark + forge sub-scores) on click.
+            AddButton(controlsRow, $"Provenance_{itemId.Value}", "History", () => OnShowProvenance(itemId));
 
             if (passesToday.TryGetValue(itemId.Value, out var passes))
             {
@@ -219,6 +227,9 @@ public partial class ShopPanel : SimPanel
             var soldConsumable = item.Effect is not null
                 && state.EventLog.Any(e => e is ItemSold sold && sold.Item == itemId);
             GateButton(stock, !soldConsumable, "Sold consumables don't come back.");
+
+            // U5: same provenance popup as the shelf section above.
+            AddButton(controlsRow, $"Provenance_{item.Id.Value}", "History", () => OnShowProvenance(item.Id));
         }
     }
 
@@ -258,6 +269,19 @@ public partial class ShopPanel : SimPanel
             AddLabel(infoCol, $"{entry.Item} {item.Name} [{item.Quality}]");
             AddChip(infoCol, StatChip("Price", $"{entry.Price}g"));
         }
+    }
+
+    /// <summary>U5: open the self-contained provenance popup for a shelf/unshelved item's
+    /// ItemId, reading live state off <c>Adapter</c> the same way every other click handler here does.</summary>
+    private void OnShowProvenance(ItemId itemId)
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        EnsureBuilt();
+        _provenance!.ShowFor(Adapter.CurrentState, itemId);
     }
 
     /// <summary>Player crafts that could go on the shelf: marked, not shelved, not on a hero's back.</summary>
@@ -321,5 +345,10 @@ public partial class ShopPanel : SimPanel
 
         _content = new VBoxContainer { Name = "ShopContent" };
         body.AddChild(_content);
+
+        // U5: added LAST (after root) so it draws over every shelf section, self-contained
+        // (PKD8-style single overlay), hidden until a card's History button opens it.
+        _provenance = new ProvenanceCard { Visible = false };
+        AddChild(_provenance);
     }
 }
