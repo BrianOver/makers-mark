@@ -283,5 +283,110 @@ public class TutorialFlowTests
             Unmount(ui);
         }
     }
+
+    [TestCase]
+    public void Step1Copy_NamesTheForge_AndIncludesAMovementHint()
+    {
+        // Playtest F6: the very first line a player ever sees must say WHERE to go (the Forge)
+        // and HOW to get there (walk/click-to-move) — not just the raw "buy 2 copper" verb.
+        var ui = MountMainUi();
+        try
+        {
+            var text = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
+            AssertThat(text).StartsWith("Tutorial 1/5:");
+            AssertThat(text).Contains("Forge");
+            AssertThat(text).Contains("WASD");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void BuyMaterialStep_PhaseForbidsTheVendor_ShowsWaitVariant_ThenRestoresAndAdvancesNextMorning()
+    {
+        // Playtest F6's core complaint: on a fresh campaign the player can drift into Expedition
+        // without ever buying (nothing forces it), and the Morning-only vendor is now closed —
+        // the step must swap to a "come back" variant instead of repeating an impossible instruction.
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
+
+            ui.Adapter.AdvancePhase(); // Morning -> Expedition: nothing queued, vendor now closed
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial); // unchanged: no MaterialPurchased event
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
+
+            var waitText = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
+            AssertThat(waitText).StartsWith("Tutorial 1/5:");
+            AssertThat(waitText).Contains("Morning");
+            AssertThat(waitText).NotContains("Walk to"); // the raw actionable instruction must be gone
+
+            // Cycle the rest of day 1 around to day 2's own Morning — the vendor reopens.
+            ui.Adapter.AdvancePhase(); // Expedition -> Camp
+            ui.Adapter.AdvancePhase(); // Camp -> ExpeditionDeep
+            ui.Adapter.AdvancePhase(); // ExpeditionDeep -> Evening
+            ui.Adapter.AdvancePhase(); // Evening -> day 2 Morning
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+
+            var restoredText = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
+            AssertThat(restoredText).StartsWith("Tutorial 1/5:");
+            AssertThat(restoredText).Contains("Forge"); // the actionable copy is back, not the wait copy
+
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            ui.Adapter.AdvancePhase(); // Morning -> Expedition: MaterialPurchased lands, step advances
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Craft);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void PostBountyStep_PhaseForbidsTheBoard_ShowsWaitVariant_ThenActionableAtEveningAndAdvances()
+    {
+        // Same F6 gap on the bounty board: it only takes postings Morning-or-Evening
+        // (ActionLegality.IsLegal), so the Expedition/Camp/ExpeditionDeep window in between must
+        // show the deferred variant, then hand back the actionable "walk to the Gate" copy once
+        // Evening reopens it.
+        var ui = MountMainUi();
+        try
+        {
+            // Reach PostBounty without ever posting: buy+craft+stock in one Morning batch.
+            var craftedItemId = new ItemId(ui.Adapter.CurrentState.NextItemId);
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
+            ui.Adapter.Queue(new StockAction(craftedItemId, 50));
+            ui.Adapter.AdvancePhase(); // Morning -> Expedition
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.PostBounty);
+
+            var duringExpedition = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
+            AssertThat(duringExpedition).StartsWith("Tutorial 4/5:");
+            AssertThat(duringExpedition).Contains("Morning or Evening");
+            AssertThat(duringExpedition).NotContains("Walk to");
+
+            ui.Adapter.AdvancePhase(); // Expedition -> Camp: still forbidden
+            AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!).NotContains("Walk to");
+
+            ui.Adapter.AdvancePhase(); // Camp -> ExpeditionDeep: still forbidden
+            AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!).NotContains("Walk to");
+
+            ui.Adapter.AdvancePhase(); // ExpeditionDeep -> Evening: the board reopens
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Evening);
+            var duringEvening = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
+            AssertThat(duringEvening).StartsWith("Tutorial 4/5:");
+            AssertThat(duringEvening).Contains("Gate");
+
+            ui.Adapter.Queue(new PostBountyAction(ScriptedSession.BountyFloor, ScriptedSession.BountyReward));
+            ui.Adapter.AdvancePhase(); // Evening -> day 2 Morning: BountyPosted lands, step advances
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.WatchDeparture);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif

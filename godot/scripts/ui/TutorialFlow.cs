@@ -141,25 +141,86 @@ public sealed partial class TutorialFlow : PanelContainer
     /// should show through unmodified (<see cref="Active"/> is false).</summary>
     public string? TopSlotText(GameState state) => Active ? StepText(state) : null;
 
+    /// <summary>Playtest F6: the first-day chain used to name the ACTION ("Buy 2 copper") but
+    /// never WHERE to go or HOW to get there, and during a phase that forbids the step's own
+    /// action (e.g. the Morning-only vendor mid-Expedition) it kept demanding the impossible
+    /// instruction with no "come back later" hint. Each step now names its target building (<see
+    /// cref="StepBuilding"/>) — with a one-time movement hint on step 1 — and, when the CURRENT
+    /// <see cref="GameState.Phase"/> forbids that step's own action (<see
+    /// cref="StepActionAvailable"/>, mirroring <c>ActionLegality.IsLegal</c>'s own phase gates for
+    /// <c>BuyMaterialAction</c>/<c>PostBountyAction</c>), swaps in the deferred/"comes back"
+    /// variant (<see cref="WaitText"/>) instead of the raw actionable copy — restored automatically
+    /// the next tick the phase allows it again, since this is a pure per-tick projection, never
+    /// stored state.</summary>
     private string StepText(GameState state)
     {
+        var index = StepIndex(Step);
+        if (!StepActionAvailable(Step, state.Phase))
+        {
+            return WaitText(Step, index);
+        }
+
         var suggestions = ObjectiveAdvisor.Suggest(state);
+        var building = StepBuilding[Step];
         return Step switch
         {
             TutorialStep.BuyMaterial or TutorialStep.Craft =>
-                $"Tutorial {StepIndex(Step)}/5: " + (suggestions.Count > 0
+                $"Tutorial {index}/5: {GoTo(building, includeMovementHint: Step == TutorialStep.BuyMaterial)} — " +
+                (suggestions.Count > 0
                     ? suggestions[0].Reason
-                    : "Buy material at the Morning vendor, then craft at the forge."),
+                    : "Buy material at the vendor, then craft at the anvil."),
             TutorialStep.Shelve =>
-                $"Tutorial {StepIndex(Step)}/5: " + (suggestions.FirstOrDefault(s => s.Action is StockAction)?.Reason
+                $"Tutorial {index}/5: {GoTo(building, includeMovementHint: false)} — " +
+                (suggestions.FirstOrDefault(s => s.Action is StockAction)?.Reason
                     ?? "Shelve your finished item so heroes can buy it."),
             TutorialStep.PostBounty =>
-                "Tutorial 4/5: Post a bounty at the mine gate — heroes may accept it before they depart.",
+                $"Tutorial {index}/5: {GoTo(building, includeMovementHint: false)} — post a bounty at the mine gate; heroes may accept it before they depart.",
             TutorialStep.WatchDeparture =>
-                "Tutorial 5/5: Watch the party depart through the gate — the chain completes when they head out.",
+                $"Tutorial {index}/5: Watch the party depart through the **{building}** — the chain completes when they head out.",
             _ => string.Empty,
         };
     }
+
+    /// <summary>The target building named in each step's copy (playtest F6) — the same click-keys
+    /// <c>Town3D.BuildingClicked</c>/<c>MainUi.OnTownBuildingClicked</c> already route on. Buy and
+    /// Craft both happen at the Forge (vendor + anvil share the interior); Shelve at the Shop;
+    /// PostBounty and the final watch at the Gate.</summary>
+    private static readonly IReadOnlyDictionary<TutorialStep, string> StepBuilding = new Dictionary<TutorialStep, string>
+    {
+        [TutorialStep.BuyMaterial] = "Forge",
+        [TutorialStep.Craft] = "Forge",
+        [TutorialStep.Shelve] = "Shop",
+        [TutorialStep.PostBounty] = "Gate",
+        [TutorialStep.WatchDeparture] = "Gate",
+    };
+
+    private const string MovementHint = "walk there with WASD, or click the ground to move";
+
+    private static string GoTo(string building, bool includeMovementHint) => includeMovementHint
+        ? $"Walk to the **{building}** ({MovementHint}) and click it"
+        : $"Walk to the **{building}** and click it";
+
+    /// <summary>Whether <paramref name="step"/>'s own action is legal THIS phase — mirrors
+    /// <c>ActionLegality.IsLegal</c>'s exact phase gates for <c>BuyMaterialAction</c> (Morning
+    /// only) and <c>PostBountyAction</c> (Morning or Evening); Craft/Stock are phase-unrestricted
+    /// there too, and WatchDeparture has no player action to gate at all.</summary>
+    private static bool StepActionAvailable(TutorialStep step, DayPhase phase) => step switch
+    {
+        TutorialStep.BuyMaterial => phase == DayPhase.Morning,
+        TutorialStep.PostBounty => phase is DayPhase.Morning or DayPhase.Evening,
+        _ => true,
+    };
+
+    /// <summary>The deferred "comes back later" variant (playtest F6) shown in place of the raw
+    /// instruction whenever <see cref="StepActionAvailable"/> is false for the current phase.</summary>
+    private static string WaitText(TutorialStep step, int index) => step switch
+    {
+        TutorialStep.BuyMaterial =>
+            $"Tutorial {index}/5: The Forge's material vendor only trades in the Morning — it opens back up next Morning. Nothing to do here until then.",
+        TutorialStep.PostBounty =>
+            $"Tutorial {index}/5: The Gate's bounty board only takes postings in the Morning or Evening — come back then to post yours.",
+        _ => string.Empty,
+    };
 
     private static int StepIndex(TutorialStep step) => step switch
     {
