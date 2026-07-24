@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Linq;
 using GameSim.Contracts;
 using GameSim.Venues;
 
@@ -56,10 +57,10 @@ public static class RaidForecast
             foreach (var id in plan.Roster)
             {
                 var hero = state.Heroes[id.Value];
-                var missing = MissingSlots(hero.Gear);
+                var missing = MissingItemSlots(hero.Gear);
                 if (missing.Count > 0)
                 {
-                    gaps.Add($"{hero.Name}: {string.Join(", ", missing)}");
+                    gaps.Add($"{hero.Name}: {string.Join(", ", missing.Select(SlotLabel))}");
                 }
             }
 
@@ -70,24 +71,40 @@ public static class RaidForecast
         return forecast.ToImmutable();
     }
 
-    private static ImmutableList<string> MissingSlots(GearSet gear)
+    /// <summary>
+    /// Wave 3 (U13): the per-hero/slot gear-gap query <see cref="Heroes.CommissionSystem"/> needs —
+    /// this used to be a private, party-level, prose-string helper (<c>MissingSlots</c>); it is now
+    /// PUBLIC and returns typed <see cref="ItemSlot"/> values so a caller can act on the gap, not just
+    /// print it. Only weapon/shield/armor count as gaps (trinket is optional content, not a gap — same
+    /// rule the old prose helper used). Order is fixed (Weapon, Shield, Armor) so callers that pick
+    /// "the first gap" stay deterministic.
+    /// </summary>
+    public static IReadOnlyList<ItemSlot> MissingItemSlots(GearSet gear)
     {
-        var missing = ImmutableList.CreateBuilder<string>();
+        var missing = new List<ItemSlot>(3);
         if (gear.Weapon is null)
         {
-            missing.Add("no weapon");
+            missing.Add(ItemSlot.Weapon);
         }
 
         if (gear.Shield is null)
         {
-            missing.Add("no shield");
+            missing.Add(ItemSlot.Shield);
         }
 
         if (gear.Armor is null)
         {
-            missing.Add("no armor");
+            missing.Add(ItemSlot.Armor);
         }
 
-        return missing.ToImmutable();
+        return missing;
     }
+
+    private static string SlotLabel(ItemSlot slot) => slot switch
+    {
+        ItemSlot.Weapon => "no weapon",
+        ItemSlot.Shield => "no shield",
+        ItemSlot.Armor => "no armor",
+        _ => $"no {slot.ToString().ToLowerInvariant()}",
+    };
 }

@@ -77,6 +77,17 @@ public sealed class HeroShoppingSystem : IPhaseSystem
     /// <summary>One hero's whole morning: evaluate both shelves, buy at most one item.</summary>
     private static GameState ShopOnce(GameState state, Hero hero, IEventSink events)
     {
+        // Wave 3 (U14): an ACCEPTED commission is a standing forge request, checked ahead of the
+        // hero's ordinary gear-score shopping — see CommissionHandlers.TryFulfillFromShelf for why
+        // this bypasses the normal ShoppingAi verdict gates. Null means nothing to fulfill (no
+        // accepted commission / no matching shelf item / can't afford the guaranteed price yet), so
+        // the hero falls through to their ordinary shopping pass, unchanged, exactly as before.
+        var commissionSale = CommissionHandlers.TryFulfillFromShelf(state, hero, events);
+        if (commissionSale is { } fulfilled)
+        {
+            return fulfilled;
+        }
+
         var candidates = CollectCandidates(state);
 
         // Pick the single best Buy across both shops. Strict "better than" keeps the
