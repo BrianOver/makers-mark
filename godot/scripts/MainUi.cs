@@ -69,13 +69,6 @@ public partial class MainUi : Control
     private const float TimelineMinWidth = 280f;
     private const float HudControlsMinWidth = 420f;
 
-    /// <summary>Menu-sizing fix (gate-b): a generous fixed docked height for the chip — same
-    /// fixed-height-overlay idiom <see cref="Ui.PipDock"/> already uses (DockHeight there),
-    /// picked instead of an engine-computed minimum so a fresh mount's un-expanded chip and a
-    /// "More"-expanded ranked list both fit without the docking math depending on content that
-    /// changes after <c>Refresh</c>.</summary>
-    private const float ObjectiveDockHeight = 260f;
-
     /// <summary>U23: the tutorial-flow overlay docks in the same top-right column, stacked below
     /// the objective chip rather than sharing its box (keeps the chip's own layout untouched).</summary>
     private const float TutorialDockOffsetTop = ObjectiveDockOffsetTop + 90f;
@@ -445,8 +438,31 @@ public partial class MainUi : Control
         RefreshStatus();
         var state = Adapter.CurrentState;
         Objective.Refresh(state, Tutorial.TopSlotText(state)); // U23: tutorial overrides the top slot only
+        UpdateObjectiveDock(); // Refresh can change the reason line's line count — re-dock to it
         Tutorial.RefreshAffordances(state);
         Timeline.Refresh(state.Phase, Waiting);
+    }
+
+    /// <summary>
+    /// Menu-sizing fix (U2, playtest F1 "objective menu STILL renders off-screen" + the "chip
+    /// covers the Buy-copper button" self-test gap): dock the objective chip's OffsetTop/
+    /// OffsetBottom to its OWN live content height (<see cref="Control.GetCombinedMinimumSize"/>)
+    /// instead of the old fixed 260px dock — a fresh mount's single-line reason and a "More"-
+    /// expanded ranked list both get exactly the height they need, never a mostly-empty panel
+    /// sized to fit the tallest case. Still clamped so OffsetTop/OffsetBottom can never land past
+    /// the viewport's bottom edge on a short window (TopRight anchors both Top/Bottom to the
+    /// window's top edge, so these offsets ARE the absolute on-screen Y coordinates) — the same
+    /// clamp <see cref="ObjectiveDockMinBottomGap"/> already existed for. Called once at build
+    /// time, every <see cref="RefreshHud"/> tick, and on every "More" ranked-list toggle — the
+    /// three moments the chip's own content height can change.
+    /// </summary>
+    private void UpdateObjectiveDock()
+    {
+        var viewportHeight = GetViewportRect().Size.Y;
+        Objective.OffsetTop = Mathf.Min(ObjectiveDockOffsetTop, viewportHeight - ObjectiveDockMinBottomGap);
+        var maxBottom = Mathf.Max(Objective.OffsetTop + ObjectiveDockMinBottomGap, viewportHeight - ObjectiveDockMargin);
+        var contentHeight = Objective.GetCombinedMinimumSize().Y;
+        Objective.OffsetBottom = Mathf.Min(Objective.OffsetTop + contentHeight, maxBottom);
     }
 
     /// <summary>U18/U15: the day-timeline's engaged-wait indicator mirrors <see cref="
@@ -781,8 +797,27 @@ public partial class MainUi : Control
         // U17 (KTD13): the single bottom-edge HUD line — mounted last in the layout so it sits
         // below the world gap, the one region KTD13 reserves for it (PiP docks above it; top bar
         // and the top-right objective chip are untouched by this unit).
+        // Menu-sizing fix (U2, playtest F1): AdventureTicker is a PanelContainer whose Label has
+        // AutowrapMode.Off (deliberate — a scrolling marquee, never wrapped), so its OWN combined
+        // minimum width is the FULL unwrapped width of the joined marquee line — once real events
+        // land (first tick) that can be 2000+px. Added straight into `layout` (a VBoxContainer),
+        // that minimum propagates upward and inflates the WHOLE layout's width past the viewport,
+        // which is what actually pushed Skip/Auto/Pause/1x/Ledger off-screen (not the stat chips —
+        // those are already capped by StatChipsWrap/TimelineWrap above). Same fix as those wraps:
+        // a plain (non-Container) Control cuts the upward minimum-size propagation at exactly this
+        // width (0 — the ticker's real minimum height, 28, still travels up so the world gap keeps
+        // reserving the right vertical space); ClipContents keeps the marquee's own scroll/clip
+        // rendering inside it exactly as before.
+        var tickerWrap = new Control
+        {
+            Name = "TickerWrap",
+            ClipContents = true,
+            CustomMinimumSize = new Vector2(0, 28),
+        };
+        layout.AddChild(tickerWrap);
         Ticker = new AdventureTicker();
-        layout.AddChild(Ticker);
+        Ticker.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        tickerWrap.AddChild(Ticker);
         Ticker.Build();
 
         // --- U21: DrawerHost — replaces the TabContainer. A right-anchored ~600px panel that
@@ -831,7 +866,7 @@ public partial class MainUi : Control
 
         // --- objective chip (U18/KTD13): a floating overlay sibling (like the modals above),
         //     anchored top-right at a FIXED width and nudged down by ObjectiveDockOffsetTop to
-        //     clear the header row — stays visible over every drawer without shifting any
+        //     clear the header row — stays visible over the bare town without shifting any
         //     panel's own layout. Populated by RefreshHud. Menu-sizing fix (gate-b): docked via
         //     explicit OffsetLeft/OffsetRight rather than SetAnchorsAndOffsetsPreset(...,
         //     LayoutPresetMode.Minsize, ...) — Minsize snapshots the CURRENT (collapsed, at
@@ -844,14 +879,8 @@ public partial class MainUi : Control
         Objective.SetAnchorsPreset(LayoutPreset.TopRight);
         Objective.OffsetLeft = -ObjectiveDockWidth - ObjectiveDockMargin;
         Objective.OffsetRight = -ObjectiveDockMargin;
-        // Clamp OffsetTop/OffsetBottom inside the viewport: on a short window, a fixed
-        // OffsetTop + DockHeight could otherwise push OffsetBottom (or even OffsetTop itself)
-        // past the visible area (TopRight anchors both Top/Bottom to the window's top edge, so
-        // these offsets ARE the absolute on-screen Y coordinates).
-        var viewportHeight = GetViewportRect().Size.Y;
-        Objective.OffsetTop = Mathf.Min(ObjectiveDockOffsetTop, viewportHeight - ObjectiveDockMinBottomGap);
-        var maxBottom = Mathf.Max(Objective.OffsetTop + ObjectiveDockMinBottomGap, viewportHeight - ObjectiveDockMargin);
-        Objective.OffsetBottom = Mathf.Min(Objective.OffsetTop + ObjectiveDockHeight, maxBottom);
+        UpdateObjectiveDock(); // initial content-height dock (see method doc)
+        Objective.Expand.Pressed += UpdateObjectiveDock; // "More" toggles the ranked list's height
         Objective.TutorialDismiss.Pressed += () =>
         {
             Tutorial.Dismiss();
@@ -1237,6 +1266,13 @@ public partial class MainUi : Control
     {
         var engaged = Drawer.IsOpen || Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible;
         Clock.Engaged = engaged;
+
+        // Menu-sizing fix (U2, playtest F1): the objective chip floats over the SAME top-right
+        // region a drawer/modal's own action buttons can occupy (e.g. it sat on top of the Forge
+        // drawer's "Buy copper" row, and overlapped the Evening Ledger). Reusing this exact
+        // "engaged" predicate — already the codebase's one definition of "a drawer/interior/modal
+        // owns the screen" — hides the chip for every one of those cases with no new wiring.
+        Objective.Visible = !engaged;
 
         // T8: a drawer/interior/modal owns input while engaged — the 3D world's own click-to-
         // move/interact must not fight it for the same clicks underneath.
