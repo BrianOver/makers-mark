@@ -1112,9 +1112,16 @@ public partial class MainUi : Control
         Tutorial = new TutorialFlow { CustomMinimumSize = new Vector2(ObjectiveDockWidth, 0) };
         Tutorial.Build();
         AddChild(Tutorial);
-        Tutorial.SetAnchorsAndOffsetsPreset(LayoutPreset.TopRight, LayoutPresetMode.Minsize, (int)ObjectiveDockMargin);
-        Tutorial.OffsetTop += TutorialDockOffsetTop;
-        Tutorial.OffsetBottom += TutorialDockOffsetTop;
+        // Dock at the FULL objective width via explicit offsets, NOT LayoutPresetMode.Minsize:
+        // Minsize snapshots the collapsed build-time min width into the offset, pinning a sliver-
+        // wide panel to the right edge — the same bug already fixed for the Objective chip above
+        // (playtest 2026-07-24). The panel self-hides when it has no live affordance (TutorialFlow
+        // .RefreshAffordances), so on Day 1 nothing shows here at all.
+        Tutorial.SetAnchorsPreset(LayoutPreset.TopRight);
+        Tutorial.OffsetLeft = -ObjectiveDockWidth - ObjectiveDockMargin;
+        Tutorial.OffsetRight = -ObjectiveDockMargin;
+        Tutorial.OffsetTop = TutorialDockOffsetTop;
+        Tutorial.OffsetBottom = TutorialDockOffsetTop + Tutorial.GetCombinedMinimumSize().Y;
         Tutorial.SecondProfessionPicked += OnSecondProfessionPicked;
         Tutorial.QuickTravelRequested += QuickTravel;
         Tutorial.Load(); // user:// (KTD2 — never the sim save): adopt a prior dismiss/complete
