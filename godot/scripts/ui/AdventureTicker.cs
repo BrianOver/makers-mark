@@ -124,7 +124,12 @@ public partial class AdventureTicker : PanelContainer
 
     private static string? FormatLine(GameEvent evt, DayPhase completedPhase, GameState state) => evt switch
     {
-        ItemSold e => $"{ItemName(state, e.Item)} sold to {HeroName(state, e.Buyer)} for {e.Price}g.",
+        // U3: the player's gold never moves on a rival sale, so the two must read differently —
+        // mirrors EventNarration's FromPlayerShop split (sim/GameSim.Cli/EventNarration.cs).
+        ItemSold e when e.FromPlayerShop =>
+            $"Your {ItemName(state, e.Item)} sold to {HeroName(state, e.Buyer)} for {e.Price}g.",
+        ItemSold e =>
+            $"Rival's {ItemName(state, e.Item)} sold to {HeroName(state, e.Buyer)} for {e.Price}g.",
         PartyDeparted e => $"A party of {e.Party.Count} departs for floor {e.TargetFloor}.",
         FloorRecordSet e => $"{HeroName(state, e.Hero)} sets a new depth record — floor {e.Floor}.",
         GossipEmitted e => e.Line,

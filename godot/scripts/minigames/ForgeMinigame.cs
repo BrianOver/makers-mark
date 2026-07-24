@@ -123,7 +123,9 @@ public sealed partial class ForgeMinigame : PanelContainer
     private Label _titleLabel = null!;
     private Label _stageLabel = null!;
     private Label _gaugeLabel = null!;
+    private Control _gaugeContainer = null!;
     private ProgressBar _gaugeBar = null!;
+    private ColorRect _bandOverlay = null!;
     private Label _drossLabel = null!;
     private Button _smeltStop = null!;
     private Button _forgeStrike = null!;
@@ -400,8 +402,29 @@ public sealed partial class ForgeMinigame : PanelContainer
         _stageLabel = new Label { Name = "ForgeMinigameStage" };
         body.AddChild(_stageLabel);
 
+        // Gauge + sweet-zone band share one rect: a bare Control wrapper (never a VBoxContainer,
+        // which would stack them instead of overlapping) holding the ProgressBar full-rect and
+        // the band ColorRect layered on top, anchored to the [0,1000] fraction of the gauge the
+        // active beat's sweet zone covers (see SetBandRegion/RepaintUi below).
+        _gaugeContainer = new Control { Name = "ForgeMinigameGaugeContainer", CustomMinimumSize = new Vector2(0, 24) };
+        _gaugeContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        body.AddChild(_gaugeContainer);
+
         _gaugeBar = new ProgressBar { Name = "ForgeMinigameGaugeBar", MinValue = 0, MaxValue = 1000 };
-        body.AddChild(_gaugeBar);
+        _gaugeBar.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        _gaugeContainer.AddChild(_gaugeBar);
+
+        _bandOverlay = new ColorRect
+        {
+            Name = "ForgeMinigameSweetZoneBand",
+            Color = new Color(GameTheme.CoolantColor, 0.35f),
+            MouseFilter = MouseFilterEnum.Ignore, // purely visual — never eats the bar's own input
+            AnchorTop = 0f,
+            AnchorBottom = 1f,
+            OffsetTop = 0f,
+            OffsetBottom = 0f,
+        };
+        _gaugeContainer.AddChild(_bandOverlay);
 
         _gaugeLabel = new Label { Name = "ForgeMinigameGauge" };
         body.AddChild(_gaugeLabel);
@@ -454,6 +477,7 @@ public sealed partial class ForgeMinigame : PanelContainer
                 _gaugeBar.Value = Smelt.HeatPermille;
                 _gaugeLabel.Text = $"Heat: {Smelt.HeatPermille}";
                 _drossLabel.Visible = false;
+                SetBandRegion(SmeltBeat.BandCenterPermille, Smelt.BandWidthPermille / 2);
                 break;
             case Stage.Forge:
                 _stageLabel.Text = "FORGE — strike on the beat";
@@ -461,15 +485,48 @@ public sealed partial class ForgeMinigame : PanelContainer
                 _gaugeLabel.Text = $"Progress: {Forge.ProgressPermille} — strikes {Forge.StrikeCount}, mars {Forge.MarCount}";
                 _drossLabel.Visible = Forge.HasDross;
                 _drossLabel.Text = "Dross from the smelt mars the stock.";
+                // Forge's sweet zone is temporal (strike on the metronome beat), not a range on
+                // this progress readout — no band region applies here (never a leftover Smelt/
+                // Quench band bleeding into a stage it doesn't describe).
+                _bandOverlay.Visible = false;
                 break;
             case Stage.Quench:
                 _stageLabel.Text = "QUENCH — plunge on the readout";
                 _gaugeBar.Value = Quench.NeedlePermille;
                 _gaugeLabel.Text = $"Reading: {Quench.NeedlePermille}";
+                SetBandRegion(QuenchBeat.TargetPermille, Quench.BandWidthPermille / 2);
                 break;
             case Stage.Done:
                 _stageLabel.Text = WasCancelled ? "Cancelled." : $"Done — grade {EmittedAction?.PerformanceGrade}.";
+                _bandOverlay.Visible = false;
                 break;
         }
     }
+
+    /// <summary>Positions <see cref="_bandOverlay"/> over the gauge's [<paramref
+    /// name="centerPermille"/> - <paramref name="halfWidthPermille"/>, <paramref
+    /// name="centerPermille"/> + <paramref name="halfWidthPermille"/>] region — the exact sweet
+    /// zone the active beat scores against, mapped from the bar's 0..1000 domain into the
+    /// Control's 0..1 anchor-fraction domain. Presentation-only: reads beat-exposed data,
+    /// writes no scoring state.</summary>
+    private void SetBandRegion(int centerPermille, int halfWidthPermille)
+    {
+        _bandOverlay.Visible = true;
+        _bandOverlay.AnchorLeft = (float)BandStartFraction(centerPermille, halfWidthPermille);
+        _bandOverlay.AnchorRight = (float)BandEndFraction(centerPermille, halfWidthPermille);
+        _bandOverlay.OffsetLeft = 0f;
+        _bandOverlay.OffsetRight = 0f;
+    }
+
+    /// <summary>The sweet zone's low edge as a fraction of the gauge's 0..1000 domain — clamped
+    /// into [0,1] (a band can run off either end of the gauge, e.g. a wide talent-assisted band
+    /// near the domain floor/ceiling). Public/static so a test can pin the mapping independent of
+    /// a live Control tree.</summary>
+    public static double BandStartFraction(int centerPermille, int halfWidthPermille) =>
+        Math.Clamp((centerPermille - halfWidthPermille) / 1000.0, 0.0, 1.0);
+
+    /// <summary>The sweet zone's high edge as a fraction of the gauge's 0..1000 domain — see
+    /// <see cref="BandStartFraction"/>.</summary>
+    public static double BandEndFraction(int centerPermille, int halfWidthPermille) =>
+        Math.Clamp((centerPermille + halfWidthPermille) / 1000.0, 0.0, 1.0);
 }

@@ -203,11 +203,20 @@ public partial class Town3D : SubViewportContainer
         stone.AddChild(new Label3D
         {
             Name = "Label3D",
-            Text = memorial.HeroName,
+            Text = $"{memorial.HeroName} — Day {memorial.Day}",
             Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
             Position = new Vector3(0, 1.3f, 0),
             FontSize = 28,
             OutlineSize = 6,
+        });
+        stone.AddChild(new Label3D
+        {
+            Name = "EpitaphLabel3D",
+            Text = $"died wearing {memorial.GearNamed}",
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            Position = new Vector3(0, 1.0f, 0),
+            FontSize = 18,
+            OutlineSize = 5,
         });
         return stone;
     }

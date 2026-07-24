@@ -40,11 +40,86 @@ public class AdventureTickerTests
             ticker.OnPhaseCompleted(DayPhase.Evening, completedDay: 1, state, events);
 
             AssertThat(ticker.Lines.Count).IsEqual(4);
-            AssertThat(ticker.DisplayText).Contains("Dagger sold to S1 for 42g.");
+            AssertThat(ticker.DisplayText).Contains("Your Dagger sold to S1 for 42g.");
             AssertThat(ticker.DisplayText).Contains("A party of 2 departs for floor 3.");
             AssertThat(ticker.DisplayText).Contains("V1 sets a new depth record — floor 5.");
             AssertThat(ticker.DisplayText).Contains("The forge ran hot all night.");
             AssertThat(ticker.DisplayText).StartsWith("Day 1:");
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
+    /// <summary>
+    /// U3: a rival sale must never read like the player made the sale — the player's gold doesn't
+    /// move on a rival sale, so new players were misreading "X sold to Y for Ng" as their own
+    /// trade. Rival sales get a distinct "Rival's ..." prefix.
+    /// </summary>
+    [TestCase]
+    public void ItemSold_RivalShop_RendersRivalWording()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            var state = StagedWorld();
+            var events = ImmutableList.Create<GameEvent>(
+                new ItemSold(new ItemId(1), new HeroId(2), 42, FromPlayerShop: false));
+
+            ticker.OnPhaseCompleted(DayPhase.Evening, completedDay: 1, state, events);
+
+            AssertThat(ticker.DisplayText).Contains("Rival's Dagger sold to S1 for 42g.");
+            AssertThat(ticker.DisplayText).NotContains("Your Dagger");
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
+    /// <summary>U3: the player-shop counterpart — confirms the split goes both ways.</summary>
+    [TestCase]
+    public void ItemSold_PlayerShop_RendersPlayerWording()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            var state = StagedWorld();
+            var events = ImmutableList.Create<GameEvent>(
+                new ItemSold(new ItemId(1), new HeroId(2), 42, FromPlayerShop: true));
+
+            ticker.OnPhaseCompleted(DayPhase.Evening, completedDay: 1, state, events);
+
+            AssertThat(ticker.DisplayText).Contains("Your Dagger sold to S1 for 42g.");
+            AssertThat(ticker.DisplayText).NotContains("Rival's Dagger");
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
+    /// <summary>U3: neither wording is ambiguous — a rival sale line never contains bare "sold to"
+    /// without a "Rival's"/"Your" owner prefix, so no line can be misread as the player's own sale.</summary>
+    [TestCase]
+    public void ItemSold_RivalShop_NeverImpliesPlayerSold()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            var state = StagedWorld();
+            var events = ImmutableList.Create<GameEvent>(
+                new ItemSold(new ItemId(1), new HeroId(2), 42, FromPlayerShop: false));
+
+            ticker.OnPhaseCompleted(DayPhase.Evening, completedDay: 1, state, events);
+
+            var line = ticker.Lines.Single(l => l.Text.Contains("sold to")).Text;
+            AssertThat(line).StartsWith("Rival's");
+            AssertThat(line).NotContains("Your");
         }
         finally
         {
