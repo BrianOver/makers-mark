@@ -96,7 +96,7 @@ public class Town3DSceneTests
             // assembled town (not merely that the GLBs load in isolation, which GenAssetCoverageTests
             // covers). A regression that dropped the AddGenProp calls fails here. Node names are set
             // in Town3D.AddGenProp ("Gen_<file>"); property-only, no frame pump.
-            foreach (var name in new[] { "Gen_well", "Gen_ore-cart", "Gen_market-stall", "Gen_bounty-board", "Gen_barrel", "Gen_signpost", "Gen_haybale", "Gen_statue", "Gen_lamp-post", "Gen_tree-stump", "Gen_trough", "Gen_standing-lantern", "Gen_grain-sack", "Gen_shop-sign", "Gen_bucket" })
+            foreach (var name in new[] { "Gen_well", "Gen_ore-cart", "Gen_market-stall", "Gen_bounty-board", "Gen_barrel", "Gen_signpost", "Gen_haybale", "Gen_statue", "Gen_lamp-post", "Gen_tree-stump", "Gen_trough", "Gen_standing-lantern", "Gen_grain-sack", "Gen_shop-sign", "Gen_bucket", "Gen_scarecrow", "Gen_flower-planter" })
             {
                 AssertThat(town.FindChild(name, recursive: true, owned: false))
                     .OverrideFailureMessage($"gen prop '{name}' is missing from the built town — BuildProps wiring regressed")
