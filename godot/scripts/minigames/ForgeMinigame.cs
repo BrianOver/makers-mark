@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Crafting;
+using GameSim.Flavor;
 using GameSim.Professions;
 using Godot;
 using GodotClient.Ui;
@@ -9,128 +11,122 @@ using GodotClient.Ui;
 namespace GodotClient.Minigames;
 
 /// <summary>
-/// PA6 (spec §Blacksmith minigame; PKD1/PKD3/PKD8): the three-beat forge overlay — Smelt
-/// (<see cref="SmeltBeat"/>) → Forge (<see cref="ForgeBeat"/>) → Quench (<see cref="QuenchBeat"/>)
-/// — a self-contained focus overlay that receives recipe/material/assist context via
-/// <see cref="Configure"/>, runs on its own accumulated clock (public <see cref="Advance"/>, the
-/// SAME house pattern <c>ShopStage.Advance</c> already proves — no wall-clock, no engine RNG
-/// anywhere in this file), and on completion raises <see cref="Finished"/> with EXACTLY ONE
-/// <see cref="CraftAction"/> carrying the folded <see cref="CraftAction.PerformanceGrade"/> and
-/// the three beat <see cref="CraftAction.SubScores"/> in beat order (smelt, forge, quench).
-/// <see cref="Cancel"/> raises <see cref="Cancelled"/> instead — the caller (<see
-/// cref="GodotClient.Panels.ForgePanel"/>) queues nothing.
+/// U23d ("Anvil Map"): the tactile forge overlay — a HARD REPLACEMENT of the old three-beat
+/// Smelt/Forge/Quench minigame. Renders the shared target line
+/// (<see cref="GameSim.Crafting.ForgePath.Generate"/>/<see cref="GameSim.Crafting.ForgePath.HeatAt"/>
+/// — the SAME sim-owned polyline the scorer grades against, so what the player aims at is exactly
+/// what gets scored) on a plain 2D canvas (never a 3D <c>SubViewport</c> — a known gdUnit headless
+/// hang) and drives a cursor (the billet: X = shape progress, Y = current heat) the player steers
+/// with a hammer strike (advance X, cost heat, bonus near the tempo window), bellows (hold: raise
+/// heat, shape drifts back slightly — mutually exclusive with hammering), and a finale plunge once
+/// the shape reaches the end. Runs on the SAME accumulated-clock <see cref="Advance"/> pattern the
+/// old minigame (and <c>ShopStage</c>) already prove — no wall-clock, no engine RNG anywhere in the
+/// path that shapes the emitted trace.
 ///
-/// <para><b>Adapter-only (KTD2):</b> this class computes ONLY the presentation-layer capture — the
-/// per-mille fold of three sub-scores into one grade (PKD1: "Godot computes it, sim consumes it").
-/// The actual quality math (grade→band, RNG jitter, material ceiling) lives in
-/// <c>QualityRoller.RollActive</c>, sim-side, and never runs here.</para>
+/// <para><b>Adapter-only (KTD2):</b> this class only captures the presentation-layer trace — an
+/// INTEGER (xPermille, yPermille) sample stream plus strike events, quantized at a fixed cadence
+/// and capped at <see cref="MaxSamples"/> pairs. It builds ONE <see cref="ForgeTraceInput"/> and
+/// rides it on <see cref="CraftAction.Puzzle"/> (PKD1 dual-mode craft seam) — the actual quality
+/// math (deviation scoring, grade fold, RNG jitter, material ceiling) lives sim-side in
+/// <c>ForgeScorer</c>/<c>QualityRoller</c> and never runs here. <see cref="PreviewGradePermille"/>/
+/// <see cref="PreviewSubScores"/> call that SAME pure scorer read-only for an immediate UI preview
+/// (mirrors <c>AlchemyBrewPuzzle</c>'s own preview) — never a second set of rules.</para>
 ///
-/// <para><b>Difficulty scaling:</b> <see cref="ComputeDifficultyPermille"/> derives one scalar from
-/// recipe tier + material grade (mirrors <c>QualityRoller</c>'s own material-step axis); every beat's
-/// band width / rise-or-drift rate / timing window scales off it. <b>Talent assists</b>
-/// (<see cref="AggregateAssist"/>) read <c>ProfessionDefinition.MinigameAssists</c> for whichever
-/// talent nodes are unlocked — Weapon Specialist's bonus is scoped to <see cref="ItemSlot.Weapon"/>
-/// recipes only, mirroring the retired <c>SlotShift</c> semantics (see
-/// <c>ProfessionRegistry.Blacksmith</c>'s own doc note) — and widen bands / slow drift / forgive
-/// off-beat strikes: mastery makes the act easier, visibly, never a hidden number.</para>
+/// <para><b>Single-action contract (PKD8, same as the old minigame and the alchemist's puzzle):</b>
+/// <see cref="Finished"/> fires EXACTLY ONCE, on <see cref="Plunge"/>, carrying one
+/// <see cref="CraftAction"/> whose <see cref="CraftAction.Puzzle"/> is the captured
+/// <see cref="ForgeTraceInput"/> (<see cref="CraftAction.PerformanceGrade"/> stays null — the
+/// trace is the single source the sim scores); <see cref="Cancel"/> raises <see cref="Cancelled"/>
+/// instead and the caller queues nothing.</para>
 /// </summary>
 public sealed partial class ForgeMinigame : PanelContainer
 {
-    public enum Stage
-    {
-        Smelt,
-        Forge,
-        Quench,
-        Done,
-    }
+    // ── Tunable adapter-only knobs (never sim rules — only the resulting integer trace crosses
+    // the KTD2 boundary). The target line's own tier/weight-driven shape (ForgePath) already
+    // carries the "harder recipe = harder track" difficulty axis, so these stay constant across
+    // recipes; only the field to steer through changes shape.  ─────────────────────────────────
+    public const double SampleIntervalSeconds = 0.1;
+    public const int MaxSamples = 256;
 
-    // ── Folding weights (PA6 spec: "EXPORTED DATA — tunable without code") ──────────────────
-    // Three per-mille sub-scores fold into one per-mille PerformanceGrade. Forge gets the
-    // heaviest weight (the beat with the carry-forward flaw baked in — a bad smelt already
-    // discounted itself into the forge sub-score, so double-weighting it would double-punish).
-    public const double SmeltWeight = 0.30;
-    public const double ForgeWeight = 0.40;
-    public const double QuenchWeight = 0.30;
-
-    // ── Base difficulty knobs (tier-1, material-grade == tier baseline; PA6 spec: "difficulty
-    // scales with recipe tier + material grade") — tunable constants, never sim rules. ────────
-    public const int BaseSmeltBandWidthPermille = 260;
-    public const int BaseSmeltRisePermilliePerSecond = 220;
-    public const double BaseSmeltTimeoutSeconds = 5.0;
-    public const double BaseForgeBeatPeriodSeconds = 0.8;
-    public const double BaseForgeOnBeatWindowSeconds = 0.18;
-    public const double BaseForgeCoolSeconds = 6.0;
-    public const double BaseQuenchOscillationHz = 0.5;
-    public const int BaseQuenchBandWidthPermille = 260;
-    public const double BaseQuenchTimeoutSeconds = 6.0;
-
-    /// <summary>Difficulty reference point (500 = tier-1, material grade == tier — the neutral
-    /// baseline every Base* constant above is tuned at).</summary>
-    private const int NeutralDifficultyPermille = 500;
-
-    private const int DifficultyFloor = 200;
-    private const int DifficultyCeiling = 1200;
-
-    /// <summary>Per tier above 1, difficulty rises by this many per-mille points.</summary>
-    private const int DifficultyPerTier = 150;
-
-    /// <summary>Per material-grade step above/below the recipe's tier, difficulty falls/rises by
-    /// this many per-mille points (better ore eases the act, mirrors the sim's own ceiling axis).</summary>
-    private const int DifficultyPerMaterialStep = 100;
-
-    private int _difficultyPermille = NeutralDifficultyPermille;
-    private int _offBeatForgivenessPermille;
+    public const int HeatDrainPermillePerSecond = 70;
+    public const int BellowsRaisePermillePerSecond = 260;
+    public const int BellowsDriftBackPermillePerSecond = 50;
+    public const int StrikeHeatCostPermille = 90;
+    public const int StrikeBaseAdvancePermille = 35;
+    public const double StrikeOnTempoBonusMultiplier = 2.2;
+    public const double TempoPeriodSeconds = 0.6;
+    public const int TempoOnBeatWindowPermille = 180;
 
     public string RecipeId { get; private set; } = string.Empty;
     public string MaterialKey { get; private set; } = string.Empty;
-    public Stage Current { get; private set; } = Stage.Smelt;
-    public SmeltBeat Smelt { get; private set; } = new(BaseSmeltBandWidthPermille, BaseSmeltRisePermilliePerSecond, BaseSmeltTimeoutSeconds);
-    public ForgeBeat Forge { get; private set; } = new(BaseForgeBeatPeriodSeconds, BaseForgeOnBeatWindowSeconds, BaseForgeCoolSeconds, 0, false);
-    public QuenchBeat Quench { get; private set; } = new(BaseQuenchOscillationHz, BaseQuenchBandWidthPermille, BaseQuenchTimeoutSeconds);
+
+    /// <summary>The integer seed selecting this craft's forging-line variant — derived
+    /// deterministically from the recipe id + day (<see cref="Configure"/>), never RNG, and
+    /// carried verbatim on the emitted <see cref="ForgeTraceInput.PathSeed"/> so the sim
+    /// regenerates the IDENTICAL line this overlay rendered.</summary>
+    public int PathSeed { get; private set; }
+
+    /// <summary>The shared target line (<c>ForgePath.Generate</c>) this overlay renders — the
+    /// SAME polyline the sim scorer regenerates from <see cref="PathSeed"/>.</summary>
+    public ImmutableList<int> Path { get; private set; } = ImmutableList<int>.Empty;
+
+    /// <summary>Shape progress, per-mille [0..1000] — the cursor's X axis.</summary>
+    public int ShapeXPermille { get; private set; }
+
+    /// <summary>Current heat, per-mille [0..1000] — the cursor's Y axis.</summary>
+    public int HeatYPermille { get; private set; } = 500;
+
+    /// <summary>True while the bellows are held — hammering is disabled during a pump
+    /// (the two inputs are mutually exclusive, per spec).</summary>
+    public bool IsPumping { get; private set; }
+
     public bool Completed { get; private set; }
     public bool WasCancelled { get; private set; }
 
     /// <summary>The exact action <see cref="Finished"/> carried — test/inspection visibility.</summary>
     public CraftAction? EmittedAction { get; private set; }
 
-    /// <summary>Raised EXACTLY ONCE, on beat completion, with the one action to queue.</summary>
+    /// <summary>A read-only UI preview of the grade <c>ForgeScorer</c> will compute for this exact
+    /// trace (same pure scorer, called here only for immediate feedback) — NEVER written onto
+    /// <see cref="CraftAction.PerformanceGrade"/>, which stays null per the dual-mode contract.</summary>
+    public int? PreviewGradePermille { get; private set; }
+
+    /// <summary>The scorer's smelt/forge/quench preview triple — rides <see cref="CraftAction.SubScores"/>
+    /// as ledger flavor DATA (same role as the old beat sub-scores), never rules.</summary>
+    public ImmutableList<int>? PreviewSubScores { get; private set; }
+
+    /// <summary>Raised EXACTLY ONCE, on <see cref="Plunge"/>, with the one action to queue.</summary>
     public event Action<CraftAction>? Finished;
 
     /// <summary>Raised on <see cref="Cancel"/> — the caller queues nothing.</summary>
     public event Action? Cancelled;
 
-    // ── G1 staging events (game-feel plan §"World VFX keyed to beat state" / §"Result
-    // ceremony") — purely additive presentation signals. None of these read or write any
-    // scoring state; they mirror decisions the beats already made (or are about to make) so the
-    // host (ForgePanel) can key world VFX/SFX to the exact moment without polling every frame or
-    // re-deriving the beat math. Never affects Advance/Finish/FoldGrade. ──────────────────────
-
-    /// <summary>Raised whenever <see cref="Current"/> changes: <see cref="Configure"/>'s reset to
-    /// Smelt, <see cref="EnterForge"/>, <see cref="EnterQuench"/>, and <see cref="Finish"/>'s move
-    /// to Done. Drives stage-keyed world VFX (e.g. reset the furnace glow the instant Smelt ends).</summary>
-    public event Action<Stage>? StageChanged;
-
-    /// <summary>Raised inside <see cref="ForgeStrike"/> with whether THAT strike landed on-beat —
-    /// judged via <see cref="ForgeBeat.IsOnBeatNow"/> BEFORE <see cref="ForgeBeat.Strike"/> itself
-    /// runs, so this is a read of the same judgement the beat is about to score, never a second
-    /// opinion. Drives the spark-burst/flash VFX and the hammer-clang SFX.</summary>
+    /// <summary>Raised inside <see cref="ForgeStrike"/> with whether THAT strike landed inside the
+    /// tempo window — judged before the strike itself mutates anything, so a listener is reading
+    /// the same judgement the trace is about to score, never a second opinion. Drives the
+    /// spark-burst/flash VFX + hammer-clang SFX (G1 staging, same idiom as the old minigame).</summary>
     public event Action<bool>? Struck;
 
-    /// <summary>Raised inside <see cref="QuenchLock"/>, before <see cref="QuenchBeat.Lock"/> runs —
-    /// drives the steam-plume VFX at the moment the player plunges the stock.</summary>
+    /// <summary>Raised inside <see cref="Plunge"/>, before the run finishes — drives the
+    /// steam-plume VFX at the moment the player plunges the stock.</summary>
     public event Action? Quenched;
 
+    private readonly List<int> _samples = new();
+    private readonly List<int> _strikes = new();
+    private double _elapsed;
+    private double _sampleAccumulator;
+
+    private Recipe? _recipe;
+    private ProfessionDefinition? _profession;
+    private ImmutableSortedSet<string> _unlockedTalents = ImmutableSortedSet<string>.Empty;
+
     private Label _titleLabel = null!;
-    private Label _stageLabel = null!;
-    private Label _gaugeLabel = null!;
-    private Control _gaugeContainer = null!;
-    private ProgressBar _gaugeBar = null!;
-    private ColorRect _bandOverlay = null!;
-    private Label _drossLabel = null!;
-    private Button _smeltStop = null!;
-    private Button _forgeStrike = null!;
-    private Button _quenchLock = null!;
-    private Button _cancel = null!;
+    private AnvilMapCanvas _canvas = null!;
+    private Label _readoutLabel = null!;
+    private Button _hammerButton = null!;
+    private Button _bellowsButton = null!;
+    private Button _plungeButton = null!;
+    private Button _cancelButton = null!;
     private bool _built;
 
     public override void _Ready() => EnsureBuilt();
@@ -138,110 +134,137 @@ public sealed partial class ForgeMinigame : PanelContainer
     public override void _Process(double delta) => Advance(delta);
 
     /// <summary>
-    /// Bind fresh beat instances scaled to this recipe/material/talent context and reset to the
-    /// Smelt stage. Safe to call repeatedly (e.g., the player reopens the overlay for a different
-    /// recipe) — always leaves a clean, un-completed run.
+    /// Bind a fresh run for this recipe/material/talent context and regenerate the shared target
+    /// line from a seed derived (no RNG — <c>StableHash</c>, the same project-owned hash
+    /// <c>ForgePath</c> itself uses) from the recipe id + <paramref name="day"/>, so reopening the
+    /// SAME recipe on a different day gets a different — but still deterministic and sim-agreeing
+    /// — line. Safe to call repeatedly (e.g. the player reopens for a different recipe) — always
+    /// leaves a clean, un-completed run.
     /// </summary>
     public void Configure(
-        Recipe recipe, string materialKey, ProfessionDefinition profession, ImmutableSortedSet<string> unlockedTalents)
+        Recipe recipe, string materialKey, ProfessionDefinition profession, ImmutableSortedSet<string> unlockedTalents, int day)
     {
         EnsureBuilt();
 
         RecipeId = recipe.RecipeId;
         MaterialKey = materialKey;
-        Current = Stage.Smelt;
+        _recipe = recipe;
+        _profession = profession;
+        _unlockedTalents = unlockedTalents;
+
+        PathSeed = unchecked((int)StableHash.Avalanche(StableHash.Mix(StableHash.HashString(recipe.RecipeId), unchecked((ulong)day))));
+        Path = ForgePath.Generate(recipe.Tier, recipe.Slot, recipe.BaseStats.Weight, PathSeed);
+
+        ShapeXPermille = 0;
+        HeatYPermille = ForgePath.HeatAt(Path, 0);
+        IsPumping = false;
         Completed = false;
         WasCancelled = false;
         EmittedAction = null;
-
-        var materialGrade = RecipeTable.MaterialGrades.TryGetValue(materialKey, out var grade) ? grade : recipe.Tier;
-        _difficultyPermille = ComputeDifficultyPermille(recipe.Tier, materialGrade);
-        var assist = AggregateAssist(profession, unlockedTalents, recipe.Slot);
-        _offBeatForgivenessPermille = assist.OffBeatForgiveness;
-
-        var smeltBand = Math.Max(60, BaseSmeltBandWidthPermille * NeutralDifficultyPermille / _difficultyPermille + assist.SweetZoneWidthBonus);
-        var smeltRise = Math.Max(20, (int)Math.Round(ScaleByDifficultyAndDrift(BaseSmeltRisePermilliePerSecond, assist.DriftRateReduction)));
-        Smelt = new SmeltBeat(smeltBand, smeltRise, BaseSmeltTimeoutSeconds);
-
-        var quenchBand = Math.Max(60, BaseQuenchBandWidthPermille * NeutralDifficultyPermille / _difficultyPermille + assist.SweetZoneWidthBonus);
-        var quenchHz = Math.Max(0.1, ScaleByDifficultyAndDrift(BaseQuenchOscillationHz, assist.DriftRateReduction));
-        Quench = new QuenchBeat(quenchHz, quenchBand, BaseQuenchTimeoutSeconds);
-
-        // Forge is rebuilt once Smelt completes (it needs Smelt.Impurity for the carry-forward
-        // cap) — see EnterForge. A neutral placeholder here just keeps the property non-null.
-        Forge = new ForgeBeat(BaseForgeBeatPeriodSeconds, BaseForgeOnBeatWindowSeconds, BaseForgeCoolSeconds, _offBeatForgivenessPermille, false);
+        PreviewGradePermille = null;
+        PreviewSubScores = null;
+        _samples.Clear();
+        _strikes.Clear();
+        _elapsed = 0;
+        _sampleAccumulator = 0;
 
         RepaintUi();
-        StageChanged?.Invoke(Current);
     }
 
-    /// <summary>Advance the current beat by <paramref name="delta"/> accumulated-clock seconds —
-    /// public so tests drive scripted runs deterministically (no wall-clock, no engine RNG; the
-    /// same house pattern <c>ShopStage.Advance</c> already proves).</summary>
+    /// <summary>Advance the run by <paramref name="delta"/> accumulated-clock seconds — public so
+    /// tests drive scripted runs deterministically (no wall-clock, no engine RNG; the same house
+    /// pattern <c>ShopStage.Advance</c>/the old <c>ForgeMinigame</c> already prove). Heat drains
+    /// over time (the pursuit pressure) unless the bellows are held, in which case heat rises and
+    /// shape drifts back slightly (can't hammer while pumping). Samples the cursor at a fixed
+    /// cadence, capped at <see cref="MaxSamples"/> pairs.</summary>
     public void Advance(double delta)
+    {
+        if (Completed || WasCancelled || delta <= 0)
+        {
+            return;
+        }
+
+        _elapsed += delta;
+
+        if (IsPumping)
+        {
+            HeatYPermille = Math.Min(1000, HeatYPermille + (int)Math.Round(BellowsRaisePermillePerSecond * delta));
+            ShapeXPermille = Math.Max(0, ShapeXPermille - (int)Math.Round(BellowsDriftBackPermillePerSecond * delta));
+        }
+        else
+        {
+            HeatYPermille = Math.Max(0, HeatYPermille - (int)Math.Round(HeatDrainPermillePerSecond * delta));
+        }
+
+        _sampleAccumulator += delta;
+        while (_sampleAccumulator >= SampleIntervalSeconds && _samples.Count / 2 < MaxSamples)
+        {
+            RecordSample();
+            _sampleAccumulator -= SampleIntervalSeconds;
+        }
+
+        RepaintUi();
+    }
+
+    /// <summary>Hammer strike: advances shape-X proportional to the CURRENT heat (a cold billet
+    /// barely moves), costs heat, and advances further when it lands inside the tempo window.
+    /// No-op while pumping (mutually exclusive inputs) or once the shape has already reached the
+    /// path's end (only <see cref="Plunge"/> is legal there).</summary>
+    public void ForgeStrike()
+    {
+        if (Completed || WasCancelled || IsPumping || ShapeXPermille >= 1000)
+        {
+            return;
+        }
+
+        var tempoError = TempoErrorPermilleNow();
+        var onTempo = tempoError <= TempoOnBeatWindowPermille;
+        RecordStrike(tempoError);
+
+        var multiplier = onTempo ? StrikeOnTempoBonusMultiplier : 1.0;
+        var advance = (int)Math.Round(StrikeBaseAdvancePermille * (HeatYPermille / 1000.0) * multiplier);
+        ShapeXPermille = Math.Clamp(ShapeXPermille + Math.Max(0, advance), 0, 1000);
+        HeatYPermille = Math.Clamp(HeatYPermille - StrikeHeatCostPermille, 0, 1000);
+
+        Struck?.Invoke(onTempo);
+        RepaintUi();
+    }
+
+    /// <summary>Start holding the bellows — heat rises, shape drifts back slightly, hammering is
+    /// disabled until <see cref="BellowsStop"/>.</summary>
+    public void BellowsStart()
     {
         if (Completed || WasCancelled)
         {
             return;
         }
 
-        switch (Current)
-        {
-            case Stage.Smelt:
-                Smelt.Advance(delta);
-                break;
-            case Stage.Forge:
-                Forge.Advance(delta);
-                break;
-            case Stage.Quench:
-                Quench.Advance(delta);
-                break;
-        }
-
-        CheckStageTransition();
+        IsPumping = true;
         RepaintUi();
     }
 
-    /// <summary>Smelt-stage input: pull the stock now.</summary>
-    public void SmeltStop()
+    /// <summary>Release the bellows.</summary>
+    public void BellowsStop()
     {
-        if (Current != Stage.Smelt || Completed || WasCancelled)
+        IsPumping = false;
+        RepaintUi();
+    }
+
+    /// <summary>Quench finale: plunge the cursor now. Legal only once the shape has reached the
+    /// path's end (x &gt;= 1000) — the player is expected to stop pumping/hammering there and let
+    /// the natural heat drain carry the cursor down toward the trough before plunging. Captures
+    /// the plunge instant as the final trace sample, builds the ONE <see cref="ForgeTraceInput"/>/
+    /// <see cref="CraftAction"/> (PKD8), and raises <see cref="Finished"/>.</summary>
+    public void Plunge()
+    {
+        if (Completed || WasCancelled || ShapeXPermille < 1000)
         {
             return;
         }
 
-        Smelt.Stop();
-        CheckStageTransition();
-        RepaintUi();
-    }
-
-    /// <summary>Forge-stage input: strike the anvil now.</summary>
-    public void ForgeStrike()
-    {
-        if (Current != Stage.Forge || Completed || WasCancelled)
-        {
-            return;
-        }
-
-        var onBeat = Forge.IsOnBeatNow(); // presentation cue — read BEFORE the real scoring call
-        Forge.Strike();
-        Struck?.Invoke(onBeat);
-        CheckStageTransition();
-        RepaintUi();
-    }
-
-    /// <summary>Quench-stage input: plunge the stock now.</summary>
-    public void QuenchLock()
-    {
-        if (Current != Stage.Quench || Completed || WasCancelled)
-        {
-            return;
-        }
-
+        RecordSample();
         Quenched?.Invoke();
-        Quench.Lock();
-        CheckStageTransition();
-        RepaintUi();
+        Finish();
     }
 
     /// <summary>Abandon the run — queues nothing (<see cref="Cancelled"/> only).</summary>
@@ -257,64 +280,44 @@ public sealed partial class ForgeMinigame : PanelContainer
         RepaintUi();
     }
 
-    private void CheckStageTransition()
+    /// <summary>Real-time input mapping (Space/left-click to strike, Shift/right-click held to
+    /// pump) — routes to the SAME public seam methods a scripted test or the button row drives, so
+    /// there is exactly one code path for "what a strike/pump does" regardless of input source.</summary>
+    public override void _GuiInput(InputEvent @event)
     {
-        switch (Current)
+        if (Completed || WasCancelled)
         {
-            case Stage.Smelt when Smelt.Complete:
-                EnterForge();
+            return;
+        }
+
+        switch (@event)
+        {
+            case InputEventKey { Keycode: Key.Space, Pressed: true, Echo: false }:
+                ForgeStrike();
                 break;
-            case Stage.Forge when Forge.Complete:
-                EnterQuench();
+            case InputEventKey { Keycode: Key.Shift, Pressed: true }:
+                BellowsStart();
                 break;
-            case Stage.Quench when Quench.Complete:
-                Finish();
+            case InputEventKey { Keycode: Key.Shift, Pressed: false }:
+                BellowsStop();
+                break;
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true }:
+                ForgeStrike();
+                break;
+            case InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: true }:
+                BellowsStart();
+                break;
+            case InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false }:
+                BellowsStop();
                 break;
         }
     }
 
-    private void EnterForge()
-    {
-        Current = Stage.Forge;
-        var forgePeriod = Math.Max(0.3, BaseForgeBeatPeriodSeconds * _difficultyPermille / (double)NeutralDifficultyPermille);
-        var forgeWindow = Math.Max(0.05, BaseForgeOnBeatWindowSeconds * NeutralDifficultyPermille / (double)_difficultyPermille);
-        Forge = new ForgeBeat(forgePeriod, forgeWindow, BaseForgeCoolSeconds, _offBeatForgivenessPermille, Smelt.Impurity);
-        StageChanged?.Invoke(Current);
-    }
-
-    private void EnterQuench()
-    {
-        Current = Stage.Quench;
-        StageChanged?.Invoke(Current);
-    }
-
-    private void Finish()
-    {
-        Current = Stage.Done;
-        Completed = true;
-        var subScores = ImmutableList.Create(Smelt.SubScorePermille, Forge.SubScorePermille, Quench.SubScorePermille);
-        var performanceGrade = FoldGrade(subScores);
-        var action = new CraftAction(RecipeId, MaterialKey, performanceGrade, Puzzle: null, SubScores: subScores);
-        EmittedAction = action;
-        StageChanged?.Invoke(Current);
-        Finished?.Invoke(action);
-    }
-
-    /// <summary>The PA6-pinned fold: three per-mille sub-scores (in beat order — smelt, forge,
-    /// quench) → one per-mille <see cref="CraftAction.PerformanceGrade"/>. Public/static so a test
-    /// can assert the fold in isolation from beat scoring.</summary>
-    public static int FoldGrade(ImmutableList<int> subScores) => Math.Clamp(
-        (int)Math.Round(subScores[0] * SmeltWeight + subScores[1] * ForgeWeight + subScores[2] * QuenchWeight), 0, 1000);
-
-    /// <summary>G1 result ceremony: a presentation-only PREVIEW of which <see cref="QualityGrade"/>
-    /// band this run's folded grade is heading toward — mirrors <c>QualityRoller.RollActive</c>'s
-    /// own band thresholds (200/550/780/930) but deliberately WITHOUT its ±25 jitter or its
-    /// material-grade ceiling, both of which only apply sim-side once the queued
-    /// <see cref="CraftAction"/> actually resolves. The active model is built so skill dominates
-    /// that later roll (a jitter/ceiling swing can shift one band at a seam, never skip a whole
-    /// band on its own — see <c>QualityRoller</c>'s own remarks), so this preview is a good stand-in
-    /// for the ceremony stamp without ever claiming to BE the final rolled <see cref="QualityGrade"/>.
-    /// Public/static so a test can pin the band thresholds independently of a live run.</summary>
+    /// <summary>G1 result ceremony (unchanged from the old minigame): a presentation-only PREVIEW
+    /// of which <see cref="QualityGrade"/> band a folded per-mille grade is heading toward —
+    /// mirrors <c>QualityRoller.RollActive</c>'s own band thresholds (200/550/780/930) but
+    /// deliberately WITHOUT its ±25 jitter or its material-grade ceiling. Public/static so a test
+    /// can pin the band thresholds independently of a live run.</summary>
     public static QualityGrade PreviewGrade(int performanceGradePermille)
     {
         var clamped = Math.Clamp(performanceGradePermille, 0, 1000);
@@ -328,56 +331,63 @@ public sealed partial class ForgeMinigame : PanelContainer
         };
     }
 
-    /// <summary>Scales a base rise-rate/oscillation-Hz value by the difficulty axis and by the
-    /// talent-assist drift reduction — kept as a <see langword="double"/> (never rounded here) so
-    /// a sub-1-per-second base like <see cref="BaseQuenchOscillationHz"/> doesn't truncate to
-    /// zero; callers that need an integer per-mille rate round the RESULT, not this method.</summary>
-    private double ScaleByDifficultyAndDrift(double baseValue, int driftRateReductionPermille)
+    private void RecordSample()
     {
-        var difficultyScaled = baseValue * _difficultyPermille / (double)NeutralDifficultyPermille;
-        return difficultyScaled * (1000 - Math.Clamp(driftRateReductionPermille, 0, 900)) / 1000.0;
-    }
-
-    /// <summary>One scalar difficulty axis from recipe tier + material grade — higher = harder.
-    /// Mirrors <c>QualityRoller</c>'s own <c>materialGrade - recipe.Tier</c> ceiling axis so a
-    /// player reading "better ore eases the act" sees the SAME material relationship the sim's
-    /// quality ceiling already rewards.</summary>
-    private static int ComputeDifficultyPermille(int tier, int materialGrade)
-    {
-        var materialStep = materialGrade - tier;
-        var difficulty = NeutralDifficultyPermille + (DifficultyPerTier * (tier - 1)) - (DifficultyPerMaterialStep * materialStep);
-        return Math.Clamp(difficulty, DifficultyFloor, DifficultyCeiling);
-    }
-
-    private readonly record struct AssistTotals(int SweetZoneWidthBonus, int DriftRateReduction, int OffBeatForgiveness);
-
-    /// <summary>Sums every unlocked talent's <c>MinigameAssist</c> data (PA2/PKD3). Weapon
-    /// Specialist is weapon-recipe-scoped only — mirrors the retired <c>SlotShift</c> semantics the
-    /// sim-side doc note assigns to "the adapter" (<c>ProfessionRegistry.Blacksmith</c>'s remarks).</summary>
-    private static AssistTotals AggregateAssist(
-        ProfessionDefinition profession, ImmutableSortedSet<string> unlockedTalents, ItemSlot recipeSlot)
-    {
-        var sweetZone = 0;
-        var drift = 0;
-        var offBeat = 0;
-        foreach (var (nodeId, assist) in profession.MinigameAssists)
+        if (_samples.Count / 2 >= MaxSamples)
         {
-            if (!unlockedTalents.Contains(nodeId))
-            {
-                continue;
-            }
-
-            if (nodeId == TalentTree.WeaponSpecialist && recipeSlot != ItemSlot.Weapon)
-            {
-                continue;
-            }
-
-            sweetZone += assist.SweetZoneWidthBonus;
-            drift += assist.DriftRateReduction;
-            offBeat += assist.OffBeatForgiveness;
+            return;
         }
 
-        return new AssistTotals(sweetZone, drift, offBeat);
+        _samples.Add(ShapeXPermille);
+        _samples.Add(HeatYPermille);
+    }
+
+    private void RecordStrike(int tempoErrorPermille)
+    {
+        if (_strikes.Count / 2 >= MaxSamples)
+        {
+            return;
+        }
+
+        _strikes.Add(ShapeXPermille);
+        _strikes.Add(tempoErrorPermille);
+    }
+
+    /// <summary>Distance from the nearest tempo-metronome pulse, mapped to [0, 1000] (0 = dead on
+    /// beat, 1000 = exactly off-beat at the half-period). A pure function of the accumulated clock
+    /// — no engine RNG, no wall-clock — so the same strike timing always grades identically.</summary>
+    private int TempoErrorPermilleNow()
+    {
+        var phase = _elapsed % TempoPeriodSeconds;
+        var halfPeriod = TempoPeriodSeconds / 2.0;
+        var distance = Math.Min(phase, TempoPeriodSeconds - phase);
+        return (int)Math.Round(Math.Clamp(distance / halfPeriod, 0.0, 1.0) * 1000.0);
+    }
+
+    private void Finish()
+    {
+        Completed = true;
+        var samples = ImmutableList.CreateRange(_samples);
+        var strikes = ImmutableList.CreateRange(_strikes);
+        var puzzle = new ForgeTraceInput(samples, strikes, PathSeed);
+
+        // Read-only preview off the SAME pure sim scorer (mirrors AlchemyBrewPuzzle's own
+        // preview) — never written back as rules, purely for the ceremony/feedback text below.
+        if (_recipe is not null && _profession is not null)
+        {
+            var preview = ForgeScorer.Score(_recipe, puzzle, _unlockedTalents, _profession);
+            PreviewGradePermille = preview.GradePermille;
+            PreviewSubScores = preview.SubScores;
+        }
+
+        // U23c orchestrator wires ForgeScorer into CraftingHandlers.ApplyCraft so a submitted
+        // ForgeTraceInput actually resolves (today the puzzle-validation gate there only
+        // recognizes AlchemyReagentPuzzle and rejects anything else) — PerformanceGrade stays
+        // null here regardless; the trace is the single source of truth the sim will score.
+        var action = new CraftAction(RecipeId, MaterialKey, PerformanceGrade: null, Puzzle: puzzle, SubScores: PreviewSubScores);
+        EmittedAction = action;
+        RepaintUi();
+        Finished?.Invoke(action);
     }
 
     private void EnsureBuilt()
@@ -390,6 +400,7 @@ public sealed partial class ForgeMinigame : PanelContainer
         Name = "ForgeMinigame";
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Stop; // an open overlay owns clicks — never passes through to what it covers
+        FocusMode = FocusModeEnum.All; // so _GuiInput actually receives keyboard events
 
         var body = new VBoxContainer { Name = "ForgeMinigameBody" };
         AddChild(body);
@@ -399,64 +410,38 @@ public sealed partial class ForgeMinigame : PanelContainer
         _titleLabel.ThemeTypeVariation = GameTheme.HeaderThemeType;
         body.AddChild(_titleLabel);
 
-        _stageLabel = new Label { Name = "ForgeMinigameStage" };
-        body.AddChild(_stageLabel);
+        _canvas = new AnvilMapCanvas { Name = "AnvilMapCanvas", CustomMinimumSize = new Vector2(0, 240) };
+        _canvas.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        body.AddChild(_canvas);
 
-        // Gauge + sweet-zone band share one rect: a bare Control wrapper (never a VBoxContainer,
-        // which would stack them instead of overlapping) holding the ProgressBar full-rect and
-        // the band ColorRect layered on top, anchored to the [0,1000] fraction of the gauge the
-        // active beat's sweet zone covers (see SetBandRegion/RepaintUi below).
-        _gaugeContainer = new Control { Name = "ForgeMinigameGaugeContainer", CustomMinimumSize = new Vector2(0, 24) };
-        _gaugeContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        body.AddChild(_gaugeContainer);
-
-        _gaugeBar = new ProgressBar { Name = "ForgeMinigameGaugeBar", MinValue = 0, MaxValue = 1000 };
-        _gaugeBar.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _gaugeContainer.AddChild(_gaugeBar);
-
-        _bandOverlay = new ColorRect
-        {
-            Name = "ForgeMinigameSweetZoneBand",
-            Color = new Color(GameTheme.CoolantColor, 0.35f),
-            MouseFilter = MouseFilterEnum.Ignore, // purely visual — never eats the bar's own input
-            AnchorTop = 0f,
-            AnchorBottom = 1f,
-            OffsetTop = 0f,
-            OffsetBottom = 0f,
-        };
-        _gaugeContainer.AddChild(_bandOverlay);
-
-        _gaugeLabel = new Label { Name = "ForgeMinigameGauge" };
-        body.AddChild(_gaugeLabel);
-
-        _drossLabel = new Label { Name = "ForgeMinigameDross", Visible = false };
-        _drossLabel.AddThemeColorOverride("font_color", GameTheme.BloodColor);
-        body.AddChild(_drossLabel);
+        _readoutLabel = new Label { Name = "ForgeMinigameReadout" };
+        body.AddChild(_readoutLabel);
 
         var buttonRow = new HBoxContainer { Name = "ForgeMinigameButtons" };
         body.AddChild(buttonRow);
 
-        _smeltStop = new Button { Name = "SmeltStop", Text = "Stop!" };
-        _smeltStop.Pressed += SmeltStop;
-        buttonRow.AddChild(_smeltStop);
+        _hammerButton = new Button { Name = "HammerStrike", Text = "Hammer (Space)" };
+        _hammerButton.Pressed += ForgeStrike;
+        buttonRow.AddChild(_hammerButton);
 
-        _forgeStrike = new Button { Name = "ForgeStrike", Text = "Strike!" };
-        _forgeStrike.Pressed += ForgeStrike;
-        buttonRow.AddChild(_forgeStrike);
+        _bellowsButton = new Button { Name = "Bellows", Text = "Bellows (hold Shift)" };
+        _bellowsButton.ButtonDown += BellowsStart;
+        _bellowsButton.ButtonUp += BellowsStop;
+        buttonRow.AddChild(_bellowsButton);
 
-        _quenchLock = new Button { Name = "QuenchLock", Text = "Quench!" };
-        _quenchLock.Pressed += QuenchLock;
-        buttonRow.AddChild(_quenchLock);
+        _plungeButton = new Button { Name = "Plunge", Text = "Plunge!" };
+        _plungeButton.Pressed += Plunge;
+        buttonRow.AddChild(_plungeButton);
 
-        _cancel = new Button { Name = "ForgeMinigameCancel", Text = "Cancel" };
-        _cancel.Pressed += Cancel;
-        buttonRow.AddChild(_cancel);
+        _cancelButton = new Button { Name = "ForgeMinigameCancel", Text = "Cancel" };
+        _cancelButton.Pressed += Cancel;
+        buttonRow.AddChild(_cancelButton);
 
         _built = true;
         RepaintUi();
     }
 
-    /// <summary>Render-only — reads the current beat's live numbers, writes no state. Called after
+    /// <summary>Render-only — reads the current run state, writes no scoring state. Called after
     /// every state-changing call above (never a per-frame poll independent of them).</summary>
     private void RepaintUi()
     {
@@ -465,68 +450,64 @@ public sealed partial class ForgeMinigame : PanelContainer
             return;
         }
 
-        _titleLabel.Text = $"Forge: {RecipeId}";
-        _smeltStop.Visible = Current == Stage.Smelt;
-        _forgeStrike.Visible = Current == Stage.Forge;
-        _quenchLock.Visible = Current == Stage.Quench;
+        _titleLabel.Text = $"Anvil Map: {RecipeId}";
 
-        switch (Current)
-        {
-            case Stage.Smelt:
-                _stageLabel.Text = "SMELT — stop it in the sweet zone";
-                _gaugeBar.Value = Smelt.HeatPermille;
-                _gaugeLabel.Text = $"Heat: {Smelt.HeatPermille}";
-                _drossLabel.Visible = false;
-                SetBandRegion(SmeltBeat.BandCenterPermille, Smelt.BandWidthPermille / 2);
-                break;
-            case Stage.Forge:
-                _stageLabel.Text = "FORGE — strike on the beat";
-                _gaugeBar.Value = Forge.ProgressPermille;
-                _gaugeLabel.Text = $"Progress: {Forge.ProgressPermille} — strikes {Forge.StrikeCount}, mars {Forge.MarCount}";
-                _drossLabel.Visible = Forge.HasDross;
-                _drossLabel.Text = "Dross from the smelt mars the stock.";
-                // Forge's sweet zone is temporal (strike on the metronome beat), not a range on
-                // this progress readout — no band region applies here (never a leftover Smelt/
-                // Quench band bleeding into a stage it doesn't describe).
-                _bandOverlay.Visible = false;
-                break;
-            case Stage.Quench:
-                _stageLabel.Text = "QUENCH — plunge on the readout";
-                _gaugeBar.Value = Quench.NeedlePermille;
-                _gaugeLabel.Text = $"Reading: {Quench.NeedlePermille}";
-                SetBandRegion(QuenchBeat.TargetPermille, Quench.BandWidthPermille / 2);
-                break;
-            case Stage.Done:
-                _stageLabel.Text = WasCancelled ? "Cancelled." : $"Done — grade {EmittedAction?.PerformanceGrade}.";
-                _bandOverlay.Visible = false;
-                break;
-        }
+        _canvas.Path = Path;
+        _canvas.CursorXPermille = ShapeXPermille;
+        _canvas.CursorYPermille = HeatYPermille;
+        _canvas.QueueRedraw();
+
+        _readoutLabel.Text = WasCancelled
+            ? "Cancelled."
+            : Completed
+                ? $"Done — grade {PreviewGradePermille}."
+                : $"Shape {ShapeXPermille}/1000 — Heat {HeatYPermille} — {(IsPumping ? "pumping" : "idle")}";
+
+        _hammerButton.Disabled = Completed || WasCancelled || IsPumping || ShapeXPermille >= 1000;
+        _bellowsButton.Disabled = Completed || WasCancelled;
+        _plungeButton.Disabled = Completed || WasCancelled || ShapeXPermille < 1000;
     }
 
-    /// <summary>Positions <see cref="_bandOverlay"/> over the gauge's [<paramref
-    /// name="centerPermille"/> - <paramref name="halfWidthPermille"/>, <paramref
-    /// name="centerPermille"/> + <paramref name="halfWidthPermille"/>] region — the exact sweet
-    /// zone the active beat scores against, mapped from the bar's 0..1000 domain into the
-    /// Control's 0..1 anchor-fraction domain. Presentation-only: reads beat-exposed data,
-    /// writes no scoring state.</summary>
-    private void SetBandRegion(int centerPermille, int halfWidthPermille)
+    /// <summary>
+    /// The 2D drawing surface: renders the shared target line (<see cref="Path"/>) and the cursor
+    /// (<see cref="CursorXPermille"/>/<see cref="CursorYPermille"/>) — a plain <see cref="Control"/>
+    /// with <see cref="_Draw"/> primitive shapes only, exactly the idiom <c>ShopStage</c>'s own
+    /// <c>ShopEmoteGlyph</c> already proves headless-safe (NEVER a 3D <c>SubViewport</c> — a known
+    /// gdUnit headless hang). X = shape progress (left→right), Y = heat (bottom cold → top hot).
+    /// </summary>
+    private sealed partial class AnvilMapCanvas : Control
     {
-        _bandOverlay.Visible = true;
-        _bandOverlay.AnchorLeft = (float)BandStartFraction(centerPermille, halfWidthPermille);
-        _bandOverlay.AnchorRight = (float)BandEndFraction(centerPermille, halfWidthPermille);
-        _bandOverlay.OffsetLeft = 0f;
-        _bandOverlay.OffsetRight = 0f;
+        public ImmutableList<int> Path = ImmutableList<int>.Empty;
+        public int CursorXPermille;
+        public int CursorYPermille;
+
+        public override void _Draw()
+        {
+            var size = Size;
+            if (size.X <= 0 || size.Y <= 0)
+            {
+                return;
+            }
+
+            DrawRect(new Rect2(Vector2.Zero, size), new Color(GameTheme.BoneColor, 0.08f));
+
+            if (Path.Count >= 4 && Path.Count % 2 == 0)
+            {
+                var vertexCount = Path.Count / 2;
+                for (var i = 0; i < vertexCount - 1; i++)
+                {
+                    var a = ToCanvasPoint(Path[i * 2], Path[i * 2 + 1], size);
+                    var b = ToCanvasPoint(Path[(i + 1) * 2], Path[(i + 1) * 2 + 1], size);
+                    DrawLine(a, b, new Color(GameTheme.EmberColor, 0.9f), 3f);
+                }
+            }
+
+            var cursor = ToCanvasPoint(CursorXPermille, CursorYPermille, size);
+            DrawCircle(cursor, 7f, GameTheme.CoolantColor);
+        }
+
+        private static Vector2 ToCanvasPoint(int xPermille, int yPermille, Vector2 size) => new(
+            Math.Clamp(xPermille, 0, 1000) / 1000f * size.X,
+            size.Y - Math.Clamp(yPermille, 0, 1000) / 1000f * size.Y);
     }
-
-    /// <summary>The sweet zone's low edge as a fraction of the gauge's 0..1000 domain — clamped
-    /// into [0,1] (a band can run off either end of the gauge, e.g. a wide talent-assisted band
-    /// near the domain floor/ceiling). Public/static so a test can pin the mapping independent of
-    /// a live Control tree.</summary>
-    public static double BandStartFraction(int centerPermille, int halfWidthPermille) =>
-        Math.Clamp((centerPermille - halfWidthPermille) / 1000.0, 0.0, 1.0);
-
-    /// <summary>The sweet zone's high edge as a fraction of the gauge's 0..1000 domain — see
-    /// <see cref="BandStartFraction"/>.</summary>
-    public static double BandEndFraction(int centerPermille, int halfWidthPermille) =>
-        Math.Clamp((centerPermille + halfWidthPermille) / 1000.0, 0.0, 1.0);
 }

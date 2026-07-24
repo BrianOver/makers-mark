@@ -17,6 +17,15 @@ namespace GameSim.Crafting;
 /// </summary>
 public sealed class CraftingHandlers : IActionHandler
 {
+    /// <summary>Wave 5 (U23e, batch echo): how many echoed auto-crafts one hand-forge seeds.</summary>
+    private const int BatchEchoCount = 4;
+
+    /// <summary>Per-mille the echoed grade decays per successive copy.</summary>
+    private const int BatchEchoDecayPermille = 80;
+
+    /// <summary>Floor the echoed grade can never fall below — the ordinary auto-craft baseline (PKD4).</summary>
+    private const int BatchEchoFloor = 550;
+
     public bool CanHandle(PlayerAction action, DayPhase phase) =>
         action is CraftAction or UnlockTalentAction; // all phases legal
 
@@ -79,7 +88,7 @@ public sealed class CraftingHandlers : IActionHandler
         //    puzzle input on the action instead of a Godot-captured grade. Validate BEFORE the
         //    slot gate (a malformed action keeps its specific rejection even on a spent day)
         //    and, like every rejection above, before any RNG draw (KTD4).
-        if (action.Puzzle is not null && action.Puzzle is not AlchemyReagentPuzzle)
+        if (action.Puzzle is not null && action.Puzzle is not AlchemyReagentPuzzle && action.Puzzle is not ForgeTraceInput)
         {
             return (state, new RejectedAction(action, $"Unsupported craft puzzle '{action.Puzzle.GetType().Name}'."));
         }
@@ -87,6 +96,13 @@ public sealed class CraftingHandlers : IActionHandler
         if (action.Puzzle is AlchemyReagentPuzzle && (!profession.ActiveCraft || recipe.Profession != AlchemyProfession.Id))
         {
             return (state, new RejectedAction(action, $"Recipe '{recipe.RecipeId}' does not take a reagent puzzle."));
+        }
+
+        // Wave 5 (U23c): the blacksmith's Anvil-Map forge trace is only valid for an active-craft
+        // blacksmith recipe (the alchemist's reagent puzzle is handled above).
+        if (action.Puzzle is ForgeTraceInput && (!profession.ActiveCraft || recipe.Profession != ProfessionRegistry.BlacksmithId))
+        {
+            return (state, new RejectedAction(action, $"Recipe '{recipe.RecipeId}' does not take a forge trace."));
         }
 
         // 7. Day action-budget gate (Game-Feel Plan G3): craft is real work (ActionBudget.ConsumesSlot)
@@ -105,14 +121,39 @@ public sealed class CraftingHandlers : IActionHandler
         // SCORED HERE from the reagent puzzle (Phase B/PKD1 — pure integer scorer, zero RNG, so
         // the draw count below is unchanged). A null grade AND null puzzle is the auto-craft
         // path for both. Every passive profession keeps the untouched passive ±8 roll.
-        var performanceGrade = action.Puzzle is AlchemyReagentPuzzle brew
-            ? AlchemyPuzzleScorer.Score(recipe!, brew, talents, profession).GradePermille
-            : action.PerformanceGrade;
+        // Wave 5 (U23c): the blacksmith's Anvil-Map trace is scored HERE (pure integer, zero RNG —
+        // the same PKD1 pattern as the alchemist), yielding BOTH the dominance grade AND the three
+        // forge-beat sub-scores stamped on the item (which U19 signing reads). Null-grade + null-puzzle
+        // stays the auto-craft baseline; draw count below is unchanged either way (KTD4).
+        ForgeScore? forgeScore = action.Puzzle is ForgeTraceInput trace
+            ? ForgeScorer.Score(recipe!, trace, talents, profession)
+            : null;
+
+        // Wave 5 (U23e, batch echo): a null-puzzle / null-grade AUTO-craft that repeats your last
+        // hand-forge's recipe on the SAME day inherits a DECAYING echo of that grade — set the rhythm
+        // by hand once, the copies follow — so you don't hand-forge five identical blades. Pure integer,
+        // no RNG draw (the quality roll below stays one Roll100). Never fires on the idle trace
+        // (BaselinePlayer never hand-forges), so it moves only the serialized SHAPE, not behavior.
+        var echo = state.Player.BatchEcho;
+        var isAutoCraft = action.Puzzle is null && action.PerformanceGrade is null;
+        int? echoGrade = isAutoCraft && echo is not null
+                && echo.RecipeId == recipe.RecipeId && echo.Day == state.Day && echo.Uses < BatchEchoCount
+            ? System.Math.Max(BatchEchoFloor, echo.SeedGrade - (BatchEchoDecayPermille * (echo.Uses + 1)))
+            : null;
+
+        var performanceGrade = forgeScore?.GradePermille
+            ?? echoGrade
+            ?? (action.Puzzle is AlchemyReagentPuzzle brew
+                ? AlchemyPuzzleScorer.Score(recipe!, brew, talents, profession).GradePermille
+                : action.PerformanceGrade);
         var quality = profession.ActiveCraft
             ? QualityRoller.RollActive(recipe, materialGrade, talents, profession.Quality, rng, performanceGrade)
             : QualityRoller.Roll(recipe, materialGrade, talents, profession.Quality, rng, performanceGrade);
         var itemId = new ItemId(state.NextItemId);
-        var item = ItemForge.Forge(itemId, recipe, quality, state.Day, action.SubScores);
+        // Sub-scores: the Anvil-Map scorer's three zone scores when hand-forged (Wave 5), else the
+        // action's Godot-captured sub-scores (legacy/passive), else empty (auto-craft).
+        var subScores = forgeScore?.SubScores ?? action.SubScores;
+        var item = ItemForge.Forge(itemId, recipe, quality, state.Day, subScores);
 
         // Wave 4 (U19, "Signed Works"): a rare, deterministic, RNG-free proc — reads only data
         // this craft already produced (quality + the captured forge-beat sub-scores), so it never
@@ -125,6 +166,24 @@ public sealed class CraftingHandlers : IActionHandler
             item = item with { SignedName = signedName };
         }
 
+        // Wave 5 (U23c): the forging itself becomes the item's FIRST History entry — "your craft
+        // writes the legends" made literal. Only a hand-forged Anvil-Map craft with earned moments
+        // writes it; auto-craft / passive / pre-Wave-5 items get nothing, so the idle golden trace
+        // (BaselinePlayer never submits a forge trace) is byte-unaffected.
+        if (forgeScore is { Moments: not 0 } scored)
+        {
+            item = item with { History = item.History.Add(new ItemHistoryEntry(state.Day, "forged", ForgeMomentLine((ForgeMoment)scored.Moments))) };
+        }
+
+        // Wave 5 (U23e): a hand-forge (re)seeds the echo memory at this grade; a consumed echo
+        // advances its use count; anything else keeps the prior memory (it goes stale on its own
+        // when the day or recipe next changes, via the match check above).
+        var nextEcho = forgeScore is { } fscore
+            ? new BatchEchoState(recipe.RecipeId, state.Day, fscore.GradePermille, 0)
+            : echoGrade is not null
+                ? echo! with { Uses = echo.Uses + 1 }
+                : state.Player.BatchEcho;
+
         var newState = state with
         {
             NextItemId = state.NextItemId + 1,
@@ -132,6 +191,7 @@ public sealed class CraftingHandlers : IActionHandler
             Player = state.Player with
             {
                 Materials = state.Player.Materials.SetItem(action.MaterialKey, have - needed),
+                BatchEcho = nextEcho,
             },
             ActionSlotsRemaining = state.ActionSlotsRemaining - 1,
         };
@@ -143,6 +203,21 @@ public sealed class CraftingHandlers : IActionHandler
         }
 
         return (newState, null);
+    }
+
+    /// <summary>Wave 5 (U23c): the item's opening inscription, built purely from the earned forge
+    /// moments (a <see cref="ForgeMoment"/> flag set) — deterministic, no RNG, no clock. Data/prose
+    /// only; called only when at least one moment was earned.</summary>
+    private static string ForgeMomentLine(ForgeMoment moments)
+    {
+        var parts = new System.Collections.Generic.List<string>();
+        if (moments.HasFlag(ForgeMoment.ForgedInOneHeat)) { parts.Add("forged in a single heat"); }
+        if (moments.HasFlag(ForgeMoment.NeverScorched)) { parts.Add("never once scorched"); }
+        if (moments.HasFlag(ForgeMoment.PerfectQuench)) { parts.Add("quenched clean and true"); }
+        if (moments.HasFlag(ForgeMoment.RecoveredFromTheBrink)) { parts.Add("saved from a scorched edge"); }
+        return parts.Count == 0
+            ? "Forged at the anvil."
+            : "Forged at the anvil — " + string.Join(", ", parts) + ".";
     }
 
     private static (GameState, RejectedAction?) ApplyUnlock(GameState state, UnlockTalentAction action)

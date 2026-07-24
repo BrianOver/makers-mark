@@ -71,6 +71,11 @@ public static class SaveCodec
         };
         typeInfo.PolymorphismOptions.DerivedTypes.Add(
             new JsonDerivedType(typeof(AlchemyReagentPuzzle), "alchemyReagent"));
+        // Wave 5 (U23, tactile forge): the blacksmith's Anvil-Map trace, the second CraftPuzzleInput
+        // derived type. Adding it does not change how an absent/null Puzzle serializes, so the idle
+        // golden trace is byte-unaffected (BaselinePlayer never forges with a puzzle).
+        typeInfo.PolymorphismOptions.DerivedTypes.Add(
+            new JsonDerivedType(typeof(GameSim.Crafting.ForgeTraceInput), "forgeTrace"));
     }
 
     public static string Serialize(GameState state) => JsonSerializer.Serialize(state, Options);

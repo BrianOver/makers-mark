@@ -54,7 +54,7 @@ public partial class ForgePanel : SimPanel
     private VBoxContainer? _recipeRows;
     private VBoxContainer? _talentRows;
 
-    /// <summary>PA6: the forge minigame overlay — a single instance reused across recipes,
+    /// <summary>U23d: the Anvil Map forge overlay — a single instance reused across recipes,
     /// (re)configured per <see cref="OnWorkForgePressed"/> press. Built once in
     /// <see cref="EnsureBuilt"/> as the LAST child so it draws over the recipe/talent scroll body
     /// (PKD8 self-contained focus overlay); hidden except while a run is in progress.</summary>
@@ -90,12 +90,12 @@ public partial class ForgePanel : SimPanel
 
     public override void _Process(double delta)
     {
-        // G1: drive the furnace glow continuously off the LIVE heat gauge while Smelt is the
-        // active stage — a per-frame poll rather than an event, since the gauge itself changes
-        // every frame the minigame's own _Process ticks Advance(delta).
-        if (_minigame is { Visible: true, Current: ForgeMinigame.Stage.Smelt })
+        // G1: drive the furnace glow continuously off the LIVE heat gauge whenever the overlay is
+        // open — a per-frame poll rather than an event, since the gauge itself changes every
+        // frame the minigame's own _Process ticks Advance(delta).
+        if (_minigame is { Visible: true })
         {
-            ResolveTown()?.ForgeGlow(_minigame.Smelt.HeatPermille);
+            ResolveTown()?.ForgeGlow(_minigame.HeatYPermille);
         }
 
         // G1 ceremony auto-dismiss: accumulated-delta only (no engine Tween in this codebase —
@@ -270,35 +270,40 @@ public partial class ForgePanel : SimPanel
             $"Queued — resolves when {Adapter.CurrentState.Phase} ticks. Press Advance or wait.";
     }
 
-    /// <summary>PA6: open the forge minigame overlay for this recipe/material, configured with
-    /// the profession's talent-assist data — the "Work the forge" path beside the auto-craft
-    /// fallback. Standalone-openable here in this unit; PA8 adds the town station entrance.</summary>
+    /// <summary>U23d: open the Anvil Map forge overlay for this recipe/material — the "Work the
+    /// forge" path beside the auto-craft fallback. The path seed is derived from the recipe id +
+    /// the CURRENT day (no RNG), so reopening the same recipe tomorrow renders a different — but
+    /// still deterministic and sim-agreeing — target line.</summary>
     private void OnWorkForgePressed(Recipe recipe, string material, ProfessionDefinition profession, ImmutableSortedSet<string> unlockedTalents)
     {
         EnsureBuilt();
-        _minigame!.Configure(recipe, material, profession, unlockedTalents);
+        var day = Adapter?.CurrentState.Day ?? 0;
+        _minigame!.Configure(recipe, material, profession, unlockedTalents, day);
         _minigame.Visible = true;
     }
 
     /// <summary>The minigame's ONE completed run → the ONE queued <see cref="CraftAction"/>
     /// (PKD8 single-action contract) — then the overlay closes and the G1 result ceremony opens
-    /// over it.</summary>
+    /// over it. <see cref="CraftAction.PerformanceGrade"/> stays null (the trace rides
+    /// <see cref="CraftAction.Puzzle"/> instead); the preview grade shown here reads
+    /// <see cref="ForgeMinigame.PreviewGradePermille"/>, the SAME pure sim scorer read-only.</summary>
     private void OnMinigameFinished(CraftAction action)
     {
         Adapter?.Queue(action);
         _minigame!.Visible = false;
-        _feedback!.Text = $"queued: forge minigame craft {action.RecipeId} with {action.MaterialKey} " +
-            $"(grade {action.PerformanceGrade}, sub-scores {string.Join("/", action.SubScores ?? ImmutableList<int>.Empty)}). " +
+        _feedback!.Text = $"queued: anvil-map craft {action.RecipeId} with {action.MaterialKey} " +
+            $"(preview grade {_minigame.PreviewGradePermille}, sub-scores {string.Join("/", action.SubScores ?? ImmutableList<int>.Empty)}). " +
             $"Queued — resolves when {Adapter?.CurrentState.Phase} ticks. Press Advance or wait.";
 
-        // Belt-and-braces: Finish() only ever fires from Stage.Quench, so the furnace should
-        // already be back at baseline via OnMinigameStageChanged — this just guarantees it.
+        // The overlay closes immediately above, so _Process's continuous glow poll (gated on
+        // _minigame.Visible) stops on its own next frame — this just resets it right now instead
+        // of waiting a frame.
         ResolveTown()?.ForgeGlowReset();
         ShowCeremony(action);
     }
 
-    /// <summary>Cancel queues nothing (PKD8) — just closes the overlay. A cancel mid-Smelt must
-    /// not leave the furnace stuck at its elevated glow.</summary>
+    /// <summary>Cancel queues nothing (PKD8) — just closes the overlay and resets the furnace so a
+    /// mid-run cancel never leaves it stuck at its elevated glow.</summary>
     private void OnMinigameCancelled()
     {
         _minigame!.Visible = false;
@@ -330,17 +335,6 @@ public partial class ForgePanel : SimPanel
     /// <summary>Brew cancel queues nothing (PKD8) — just closes the overlay.</summary>
     private void OnBrewCancelled() => _brewPuzzle!.Visible = false;
 
-    /// <summary>G1: the Smelt beat ended (or the Forge/Quench/Done stage was entered) — reset the
-    /// furnace glow to its resting baseline. The glow's continuous rise while Smelt IS active is
-    /// driven off the live heat gauge in <see cref="_Process"/>, not this event.</summary>
-    private void OnMinigameStageChanged(ForgeMinigame.Stage stage)
-    {
-        if (stage != ForgeMinigame.Stage.Smelt)
-        {
-            ResolveTown()?.ForgeGlowReset();
-        }
-    }
-
     /// <summary>G1: every anvil strike gets the hammer clang; an on-beat strike additionally fires
     /// the spark-burst/flash world VFX. <paramref name="onBeat"/> is the SAME judgement
     /// <see cref="ForgeMinigame.ForgeStrike"/> just scored (read before it mutated anything, per
@@ -367,7 +361,7 @@ public partial class ForgePanel : SimPanel
     /// </summary>
     private void ShowCeremony(CraftAction action)
     {
-        var band = ForgeMinigame.PreviewGrade(action.PerformanceGrade ?? 0);
+        var band = ForgeMinigame.PreviewGrade(_minigame?.PreviewGradePermille ?? 0);
         _ceremonyGrade!.Text = $"{band}!";
         _ceremonyGrade.AddThemeColorOverride("font_color", GradeColor(band));
         var filled = StarCountFor(band);
@@ -502,15 +496,15 @@ public partial class ForgePanel : SimPanel
         _talentRows = new VBoxContainer { Name = "TalentRows" };
         body.AddChild(_talentRows);
 
-        // PA6: the forge minigame overlay — added LAST (after the scroll body above) so it
+        // U23d: the Anvil Map forge overlay — added LAST (after the scroll body above) so it
         // draws on top, self-contained (PKD8), hidden until "Work the forge" opens it.
         _minigame = new ForgeMinigame { Visible = false };
         AddChild(_minigame);
         _minigame.Finished += OnMinigameFinished;
         _minigame.Cancelled += OnMinigameCancelled;
-        // G1 staging: forward the minigame's presentation-only beat cues to the forge station's
-        // world VFX (Town3D) and to this panel's own SFX — see each handler's own doc.
-        _minigame.StageChanged += OnMinigameStageChanged;
+        // G1 staging: forward the minigame's presentation-only cues to the forge station's world
+        // VFX (Town3D) and to this panel's own SFX — see each handler's own doc. The furnace glow
+        // itself is driven continuously off the live heat gauge in _Process, not an event.
         _minigame.Struck += OnMinigameStruck;
         _minigame.Quenched += OnMinigameQuenched;
 
