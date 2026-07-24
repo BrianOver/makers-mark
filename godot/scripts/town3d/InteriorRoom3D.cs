@@ -162,7 +162,7 @@ public partial class InteriorRoom3D : Node3D
             AddChild(BuildProp(prop));
         }
 
-        Focus = new Node3D { Name = "Focus", Position = new Vector3(0f, 0.9f, -0.5f) };
+        Focus = new Node3D { Name = "Focus", Position = new Vector3(0f, 1.2f, -1.2f) };
         AddChild(Focus);
     }
 

@@ -96,6 +96,40 @@ public class CameraRigTests
         }
     }
 
+    [TestCase]
+    public void PushIn_PitchOverride_EasesAndReleaseRestoresTownDefault()
+    {
+        var target = new Node3D { Position = Vector3.Zero };
+        var focus = new Node3D { Position = new Vector3(10f, 0f, 10f) };
+        var rig = BuildRig(target); // Pitch defaults to -42 (town top-down follow)
+        try
+        {
+            rig.PushIn(focus, 6f, pitch: -15f); // interior framing (nearer eye level)
+            for (var i = 0; i < 200; i++)
+            {
+                rig._Process(0.05);
+            }
+
+            AssertThat(Mathf.Abs(rig.CameraPitch - (-15f)) < 0.05f)
+                .OverrideFailureMessage($"pitch did not ease to the interior override: {rig.CameraPitch}").IsTrue();
+
+            rig.Release();
+            for (var i = 0; i < 200; i++)
+            {
+                rig._Process(0.05);
+            }
+
+            AssertThat(Mathf.Abs(rig.CameraPitch - (-42f)) < 0.05f)
+                .OverrideFailureMessage($"pitch did not restore the town default after Release: {rig.CameraPitch}").IsTrue();
+        }
+        finally
+        {
+            rig.Free();
+            focus.Free();
+            target.Free();
+        }
+    }
+
     /// <summary>PA8 test scenario: "no NaNs at zero delta" — a zero-length frame must be a
     /// pure no-op ease (both <c>Mathf.Exp(0) == 1</c> branches collapse to <c>t == 0</c>), never
     /// a divide-by-zero or NaN propagation.</summary>
