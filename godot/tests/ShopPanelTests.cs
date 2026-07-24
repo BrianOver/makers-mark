@@ -168,7 +168,7 @@ public class ShopPanelTests
 
             var shopText = RenderedText(ui.Shop);
             AssertThat(shopText).Contains("veteran");
-            AssertThat(shopText).Contains("bring Fine or better");
+            AssertThat(shopText).Contains("bring common or better"); // gate-b retune: gate is Common now (Poor still refused)
 
             // The item is still on the shelf (every veteran refused it) — proves this is the
             // "passed" render path, not a sale.

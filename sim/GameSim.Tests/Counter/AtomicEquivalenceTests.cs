@@ -22,21 +22,20 @@ namespace GameSim.Tests.Counter;
 /// its 1000‰ cap, discounting <c>RivalRestockSystem</c>'s newly-minted stock) legitimately move
 /// the serialized state — this is G3 working as designed, not a counter-additivity regression.
 ///
-/// RE-BASELINED AGAIN (U9 "quality gets teeth", 2026-07-24, exactly the future case this
-/// docstring warned about): the player crafts nothing on this script (zero actions, ever), so
-/// every hero purchase on this run comes off the RIVAL shelf, which is always
-/// <see cref="QualityGrade.Common"/> (flat quality, <c>RivalCatalog</c>) — a legitimate demand-side
-/// change. Once <c>ShoppingAi.VeteranFloorThreshold</c> (floor 3) is crossed, a veteran now
-/// refuses Common-grade rival gear outright (<c>ShoppingAi.VeteranMinQualityGrade</c> = Fine) —
-/// exactly the intended "picky veteran" effect, and it legitimately reshapes who buys what for the
-/// rest of this 30-day script, hence a new hash. The PA3 invariant this test protects (atomic ==
-/// the current kernel's non-counter path) is otherwise unchanged — this run still never opens the
-/// counter, so <see cref="WillingnessModel"/>'s U9 quality bonus (haggle-only) never fires here.
+/// U9 "quality gets teeth" (2026-07-24) briefly re-baselined this hash: with
+/// <c>VeteranMinQualityGrade</c> = Fine, veterans refused the flat-Common rival shelf outright,
+/// reshaping who bought what across the idle run. The gate-b retune (2026-07-24) lowered that gate
+/// to <see cref="QualityGrade.Common"/> (veterans refuse only Poor junk, per the plan's stated
+/// intent), so veterans accept Common rival gear again and this idle trace returns BYTE-FOR-BYTE to
+/// its pre-U9 value — the hash below is the original G3 baseline, restored. The PA3 invariant this
+/// test protects (atomic == the current kernel's non-counter path) is unchanged — this run never
+/// opens the counter, so <see cref="WillingnessModel"/>'s U9 quality bonus (haggle-only) never fires
+/// here, and the continuous quality-demand effect is exercised by the counter/haggle tests instead.
 /// </summary>
 public class AtomicEquivalenceTests
 {
     private const string ExpectedPreCounterSha256 =
-        "AF9CDC9D2F7D96BAB6D25E6C78D56F1BD1EC8CD50180C694F15938CCDD967701";
+        "8EB0FCB1328334BEE182405DD51461CDC7675D3BAA75B879F01FCA710C47B25B";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
