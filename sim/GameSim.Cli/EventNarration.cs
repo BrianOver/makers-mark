@@ -34,8 +34,7 @@ public static class EventNarration
             $"  ⛏ runner delivered {ItemName(state, supply.Item)} to {HeroName(state, supply.To)} at camp — {supply.Fee}g",
         PartyRecalled recalled =>
             $"  ⤺ recall bell — [{string.Join(", ", recalled.Party.Select(h => HeroName(state, h)))}] bank and surface",
-        RecruitArrived recruit =>
-            $"  + recruit {HeroName(state, recruit.Hero)} arrives in town",
+        RecruitArrived recruit => RecruitLine(recruit, state),
         GossipEmitted gossip =>
             $"  🍺 \"{gossip.Line}\"",
         CustomerApproached approached =>
@@ -50,6 +49,20 @@ public static class EventNarration
             $"  ~ {HeroName(state, walked.Hero)} walks away from the counter: {walked.Reason}",
         _ => null,
     };
+
+    /// <summary>U22 (kin-of-the-dead): a recruit who arrived with a mood bump above neutral —
+    /// <see cref="GameSim.Drama.RecruitSystem"/> only ever seeds one when a famous-dead legend
+    /// exists — earns the prose hook; an ordinary arrival keeps the plain line. Presentation-only,
+    /// derived at narration time from the already-seeded <see cref="Hero.MoodPermille"/> — no new
+    /// event field needed.</summary>
+    private static string RecruitLine(RecruitArrived recruit, GameState state)
+    {
+        var name = HeroName(state, recruit.Hero);
+        var seededByLegend = state.Heroes.TryGetValue(recruit.Hero.Value, out var hero) && hero.MoodPermille > 0;
+        return seededByLegend
+            ? $"  + recruit {name} arrives in town — came having heard what your steel did for the fallen"
+            : $"  + recruit {name} arrives in town";
+    }
 
     private static string HeroName(GameState s, HeroId id) => s.Heroes.TryGetValue(id.Value, out var h) ? h.Name : id.ToString();
 

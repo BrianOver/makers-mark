@@ -36,6 +36,12 @@ public partial class CampPanel : SimPanel
     private const int SupplyFeeBase = 6;
     private const int SupplyFeePerFloor = 3;
 
+    /// <summary>U17 (Wave 4, "signal retreat"): a camped hero at or below this hp% is "at flee
+    /// threshold" — the moment the Recall button reframes into a dramatic, urgent interrupt.
+    /// Mirrors <c>MineWatch.LowHpFraction</c> (0.4) in whole-percent terms, so the winch-house
+    /// slate and the mine strip agree on what "fading" looks like.</summary>
+    private const int FleeThresholdPercent = 40;
+
     private static int SupplyFee(int checkpointFloor) => SupplyFeeBase + SupplyFeePerFloor * checkpointFloor;
 
     private Label? _title;
@@ -84,6 +90,22 @@ public partial class CampPanel : SimPanel
             foreach (var party in state.InFlight)
             {
                 RenderParty(state, party, held);
+            }
+        }
+
+        // U16 (Wave 4, KTD3-b): OTHER parties that already fully resolved today's Expedition tick
+        // (unstaged runs, or a stage-1 bad ending) sit in PendingExpeditions — legal to pace out
+        // during the Vigil (they finished BEFORE Camp even started, unlike the camping party's own
+        // still-unresolved stage 2). Deliberately self-censored exactly like JourneyStream/
+        // ScryingMirror: no survivor count, no floor-cleared number, no death — the outcome still
+        // waits for tonight's Ledger reveal; this is a "they're back, the tale isn't told yet" line.
+        if (!state.PendingExpeditions.IsEmpty)
+        {
+            AddHeader(_parties!, "ALREADY BACK TODAY");
+            foreach (var result in state.PendingExpeditions)
+            {
+                var names = string.Join(", ", result.Party.Select(HeroName));
+                AddLabel(_parties!, $"  {names} — back from the mine; the full story awaits tonight's Ledger.");
             }
         }
 
@@ -157,8 +179,27 @@ public partial class CampPanel : SimPanel
                     : $"You can't pay the {fee}g runner yet.");
         }
 
-        var recall = AddButton(cardBody, $"CampRecall_{lead.Value}", "Recall", () =>
-            Adapter!.Queue(new RecallPartyAction(lead)));
+        // U17 (Wave 4, "signal retreat"): pure UI framing over the EXISTING legal RecallPartyAction
+        // — no new sim rule. When any camped member is at flee-threshold hp%, the ordinary Recall
+        // button becomes a scarce, dramatic interrupt (bigger ask, bigger stakes), but the Control's
+        // Name and the action it queues are byte-identical to the calm-Recall path.
+        var atFleeThreshold = party.Party.Any(member =>
+        {
+            var hp = party.Hp.TryGetValue(member.Value, out var value) ? value : 0;
+            var maxHp = state.Heroes.TryGetValue(member.Value, out var hero) ? hero.MaxHp : 0;
+            return maxHp > 0 && hp * 100 / maxHp < FleeThresholdPercent;
+        });
+
+        if (atFleeThreshold && !party.Recalled)
+        {
+            var warning = AddLabel(cardBody, "⚠ Someone's fading — this is the moment to ring them home.");
+            warning.Name = $"CampFleeWarning_{lead.Value}";
+            warning.AddThemeColorOverride("font_color", new Color(1f, 0.55f, 0.35f));
+        }
+
+        var recall = AddButton(cardBody, $"CampRecall_{lead.Value}",
+            atFleeThreshold ? "⚠ Signal Retreat!" : "Recall",
+            () => Adapter!.Queue(new RecallPartyAction(lead)));
         // Mirror of CampHandlers.ApplyRecall: the bell rings once per party.
         GateButton(recall, !party.Recalled, "The recall bell has already rung for this party.");
     }

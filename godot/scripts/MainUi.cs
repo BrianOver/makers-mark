@@ -137,6 +137,10 @@ public partial class MainUi : Control
     /// <summary>Wave 3 (U15): the commission board (<see cref="GameState.Commissions"/>) — opened
     /// from the Prepare-phase HUD button next to Forecast.</summary>
     public CommissionBoard Commissions { get; private set; } = null!;
+    /// <summary>Wave 4 (U21): the single monument to the spine — memorials, depths records, and
+    /// legendary (Signed/high-attribution) gear. Opened from the HUD button or the Tavern's
+    /// "Legends" hotspot.</summary>
+    public LegendsWall Legends { get; private set; } = null!;
     public CampPanel Camp { get; private set; } = null!;
     public TabFade TabFade { get; private set; } = null!;
     public AdventureTicker Ticker { get; private set; } = null!;
@@ -210,6 +214,8 @@ public partial class MainUi : Control
     private bool _resumePlayOnBestiaryClose;
     /// <summary>Wave 3 (U15): mirror of the Bestiary/Forecast latch for the commission board.</summary>
     private bool _resumePlayOnCommissionsClose;
+    /// <summary>Wave 4 (U21): mirror of the Bestiary/Forecast latch for the Legends Wall.</summary>
+    private bool _resumePlayOnLegendsClose;
 
     /// <summary>U22: the door position the avatar stood at when the currently-open (or just-
     /// closed) interior was opened — restored on exit (R4/AE4 "exit returns avatar to door
@@ -934,6 +940,12 @@ public partial class MainUi : Control
         commissionsButton.Pressed += () => Commissions.ShowOpen(Adapter.CurrentState);
         controls.AddChild(commissionsButton);
 
+        // Wave 4 (U21): open the Legends Wall on demand — same button cluster as Forecast/Bestiary/
+        // Commissions. Reads live state so it always reflects the current memorials/records/gear.
+        var legendsButton = new Button { Name = "OpenLegends", Text = "Legends" };
+        legendsButton.Pressed += () => Legends.ShowWall(Adapter.CurrentState);
+        controls.AddChild(legendsButton);
+
         // U6/U7 rejection banner: a transient, themed, player-phrased line — hidden
         // except while a toast is live (OnPhaseCompleted shows it, ClearToast/_Process
         // hide it). NOT a persistent status readout, and never the raw kernel string.
@@ -1052,6 +1064,13 @@ public partial class MainUi : Control
         AddChild(Commissions);
         Commissions.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Commissions.VisibilityChanged += OnCommissionsVisibilityChanged;
+
+        // --- Wave 4 (U21) Legends Wall: a code-built modal sibling, mirroring RaidForecastBoard —
+        //     no SimAdapter binding, the caller hands in the live GameState through ShowWall.
+        Legends = new LegendsWall();
+        AddChild(Legends);
+        Legends.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        Legends.VisibilityChanged += OnLegendsVisibilityChanged;
 
         // --- camp decision slate (V7a): a second modal overlay, code-built (no scene, so no
         //     .tscn/import metadata churn). Camp (phase 3) and the Evening Ledger never show at
@@ -1386,6 +1405,14 @@ public partial class MainUi : Control
             return;
         }
 
+        // Wave 4 (U21): the Tavern "Legends" hotspot opens the code-built Legends Wall modal —
+        // same routing shape as Bestiary above.
+        if (action == "Legends")
+        {
+            Legends.ShowWall(Adapter.CurrentState);
+            return;
+        }
+
         OpenPanel(action);
     }
 
@@ -1494,6 +1521,24 @@ public partial class MainUi : Control
         UpdateClockLabel();
     }
 
+    /// <summary>Wave 4 (U21): mirror of the Bestiary/Forecast latch for the Legends Wall — pause
+    /// while it owns the screen, resume on close when play was running.</summary>
+    private void OnLegendsVisibilityChanged()
+    {
+        if (Legends.Visible)
+        {
+            _resumePlayOnLegendsClose = Clock.Playing;
+            Clock.Pause();
+        }
+        else if (_resumePlayOnLegendsClose)
+        {
+            Clock.Play();
+        }
+
+        UpdateEngaged();
+        UpdateClockLabel();
+    }
+
     /// <summary>The scrying mirror holds the town clock while open, same as Ledger/Camp — reading a
     /// live journey feed should not have the day marching on unseen behind it.</summary>
     private void OnMirrorVisibilityChanged()
@@ -1564,7 +1609,7 @@ public partial class MainUi : Control
     /// </summary>
     private void UpdateEngaged()
     {
-        var engaged = Drawer.IsOpen || Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible || Forecast.Visible || Bestiary.Visible || Commissions.Visible;
+        var engaged = Drawer.IsOpen || Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible || Forecast.Visible || Bestiary.Visible || Commissions.Visible || Legends.Visible;
 
         // U8: Clock.Engaged can ALSO be held by the day-1 craft→shelve pacing guard above —
         // deliberately NOT folded into `engaged` itself, which also drives the objective chip's

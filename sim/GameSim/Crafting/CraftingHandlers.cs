@@ -114,6 +114,17 @@ public sealed class CraftingHandlers : IActionHandler
         var itemId = new ItemId(state.NextItemId);
         var item = ItemForge.Forge(itemId, recipe, quality, state.Day, action.SubScores);
 
+        // Wave 4 (U19, "Signed Works"): a rare, deterministic, RNG-free proc — reads only data
+        // this craft already produced (quality + the captured forge-beat sub-scores), so it never
+        // draws from the stream and never changes the draw-count contract above. See
+        // ArtifactSigning's class doc for the condition + the seed-derived name pick.
+        string? signedName = null;
+        if (ArtifactSigning.Qualifies(item))
+        {
+            signedName = ArtifactSigning.LegendName(state.Rng.Inc, itemId, recipe.RecipeId, state.Day);
+            item = item with { SignedName = signedName };
+        }
+
         var newState = state with
         {
             NextItemId = state.NextItemId + 1,
@@ -126,6 +137,11 @@ public sealed class CraftingHandlers : IActionHandler
         };
 
         events.Emit(new ItemCrafted(itemId, quality));
+        if (signedName is not null)
+        {
+            events.Emit(new ItemSigned(itemId, signedName));
+        }
+
         return (newState, null);
     }
 

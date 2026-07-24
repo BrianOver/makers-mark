@@ -139,6 +139,15 @@ public partial class AdventureTicker : PanelContainer
         HeroDied e when completedPhase == DayPhase.Evening =>
             $"{HeroName(state, e.Hero)} did not return from floor {e.Floor}.",
 
+        // U16 (Wave 4, KTD3): the attribution spotlight — "your blade turned the killing blow" —
+        // belongs to the NIGHT homecoming beat, not the Vigil, because AttributionBeatEvent is
+        // ONLY ever emitted here (the Evening tick that resolves it — see the class doc's
+        // structural argument for HeroDied above, which applies identically). AttributionEngine
+        // gates every beat to player-crafted items already (ExpeditionRevealSystem source), so no
+        // further PlayerCrafted filter is needed here.
+        AttributionBeatEvent e when completedPhase == DayPhase.Evening =>
+            $"Home safe: {ItemName(state, e.Item)} — {e.Detail}.",
+
         _ => null,
     };
 
