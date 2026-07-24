@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using GameSim.Classes;
+using GameSim.Contracts;
 
 namespace GameSim.Counter;
 
@@ -90,19 +91,48 @@ public static class WillingnessModel
     /// integer safety floor, not a modeled mechanic.</summary>
     public const int MinEffectiveFactorPermille = 100;
 
+    /// <summary>
+    /// U9 ("quality gets teeth"): additive permille bonus onto the effective price factor, keyed
+    /// by the crafted <see cref="QualityGrade"/> — a Masterwork earns real price tolerance, Poor
+    /// gear gets lowballed. <see cref="QualityGrade.Common"/> is the neutral baseline (0 bonus) BY
+    /// DESIGN: every pre-existing haggle fixture/test in this suite crafts Common-quality items, so
+    /// this addition is byte-identical for them without touching a single existing test — only the
+    /// new non-Common cases (and any future ones) see the effect. Bounded, integer, deterministic;
+    /// tune this table alone.
+    /// </summary>
+    public static readonly ImmutableSortedDictionary<QualityGrade, int> QualityWillingnessBonusPermille =
+        new Dictionary<QualityGrade, int>
+        {
+            [QualityGrade.Poor] = -120,
+            [QualityGrade.Common] = 0,
+            [QualityGrade.Fine] = 60,
+            [QualityGrade.Superior] = 130,
+            [QualityGrade.Masterwork] = 220,
+        }.ToImmutableSortedDictionary();
+
     /// <summary>Resolve a class's price factor, defaulting to neutral for an unregistered id
     /// (defensive — every built-in and add-on class is registered, but this keeps the model total).</summary>
     public static int ClassPriceFactor(string classId) =>
         ClassPriceFactorPermille.TryGetValue(classId, out var factor) ? factor : NeutralPriceFactorPermille;
 
+    /// <summary>Resolve a quality grade's willingness bonus (U9), defaulting to neutral for any
+    /// grade absent from the table (defensive — the enum is APPEND ONLY in Contracts, so a future
+    /// grade this table hasn't been tuned for yet still resolves total, at 0 bonus).</summary>
+    public static int QualityBonus(QualityGrade quality) =>
+        QualityWillingnessBonusPermille.TryGetValue(quality, out var bonus) ? bonus : 0;
+
     /// <summary>
     /// True willingness-to-pay in gold: list price scaled by (class factor + session Interest +
-    /// persistent hero mood), capped at the hero's gold on hand (PKD6/PKD7: mood is read here, it
-    /// never writes anywhere but the counter/gossip surfaces). Integer math, floor division.
+    /// persistent hero mood + U9's quality bonus), capped at the hero's gold on hand (PKD6/PKD7:
+    /// mood is read here, it never writes anywhere but the counter/gossip surfaces). Integer math,
+    /// floor division. <paramref name="quality"/> defaults to <see cref="QualityGrade.Common"/> (0
+    /// bonus) so pre-U9 callers/tests that never pass it are unaffected.
     /// </summary>
-    public static int TrueWillingness(int listPrice, int heroGold, string classId, int interestPermille, int moodPermille)
+    public static int TrueWillingness(
+        int listPrice, int heroGold, string classId, int interestPermille, int moodPermille,
+        QualityGrade quality = QualityGrade.Common)
     {
-        var factor = ClassPriceFactor(classId) + interestPermille + moodPermille;
+        var factor = ClassPriceFactor(classId) + interestPermille + moodPermille + QualityBonus(quality);
         if (factor < MinEffectiveFactorPermille)
         {
             factor = MinEffectiveFactorPermille;

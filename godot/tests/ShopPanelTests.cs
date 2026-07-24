@@ -1,6 +1,7 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
 using System.Linq;
+using GameSim;
 using GameSim.Contracts;
 using GameSim.Kernel;
 using GdUnit4;
@@ -144,6 +145,66 @@ public class ShopPanelTests
         {
             Unmount(ui);
         }
+    }
+
+    [TestCase]
+    public void VeteranHero_PassesOnPoorShelfItem_QualityTooLowReasonRendersUnderTheCard()
+    {
+        // U9 ("quality gets teeth"): a real Morning tick where every hero is a deep-floor
+        // veteran and the only shelf item is Poor-grade proves the refusal reason is surfaced —
+        // no HeroShoppingSystem/ShoppingAi mocking, the same real sim tick every other ShopPanel
+        // scenario in this file drives.
+        var ui = MountMainUi(new SimAdapter(VeteranPartyWithPoorShelfItemState()));
+        try
+        {
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+            ui.OpenPanel("Shop"); // U21: RefreshAll only refreshes the currently open drawer — open
+                                  // it BEFORE the tick so the post-tick pass reasons actually render.
+
+            ui.Adapter.AdvancePhase(); // Morning: every veteran evaluates and refuses the Poor item
+
+            var passes = ui.Adapter.LastEvents.OfType<HeroPassedOnItem>().ToList();
+            AssertThat(passes.Count).IsGreater(0);
+
+            var shopText = RenderedText(ui.Shop);
+            AssertThat(shopText).Contains("veteran");
+            AssertThat(shopText).Contains("bring Fine or better");
+
+            // The item is still on the shelf (every veteran refused it) — proves this is the
+            // "passed" render path, not a sale.
+            AssertThat(ui.Adapter.CurrentState.Player.Shelf.Any(e => e.Item == PoorItemId)).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    private static readonly ItemId PoorItemId = new(9101);
+
+    /// <summary>Every default hero bumped to the U9 veteran floor threshold, gear cleared, gold
+    /// plentiful (the fixture is about the QUALITY gate, not affordability/gear-score); the only
+    /// shelf item is a Poor-grade weapon light enough for every class (mystic included) to
+    /// consider; the rival shelf is cleared so nothing else competes for a hero's single buy.</summary>
+    private static GameState VeteranPartyWithPoorShelfItemState()
+    {
+        var baseState = GameComposition.NewCampaign(9101);
+        var item = new Item(
+            PoorItemId, "test-veteran-quality-gate", "Rusty Test Blade", ItemSlot.Weapon,
+            QualityGrade.Poor, new ItemStats(Attack: 5, Defense: 0, Weight: 3),
+            new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+        var heroes = baseState.Heroes.Values
+            .Select(h => h with { Gold = 500, Gear = GearSet.Empty, DeepestFloorReached = 3 })
+            .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+
+        return baseState with
+        {
+            Heroes = heroes,
+            RivalShelf = ImmutableList<ShelfEntry>.Empty,
+            Items = baseState.Items.Add(item.Id.Value, item),
+            Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(item.Id, 8)) },
+        };
     }
 
     /// <summary>Buy 2x copper then craft the scripted dagger, driven directly through the
