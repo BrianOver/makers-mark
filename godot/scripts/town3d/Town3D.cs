@@ -906,6 +906,8 @@ public partial class Town3D : SubViewportContainer
         AddGenProp(props, "grain-sack.glb", new Vector3(11f, 0f, -2f), targetHeight: 0.7f, rotationYDeg: 10f);
         AddGenProp(props, "shop-sign.glb", new Vector3(10f, 0f, -6.5f), targetHeight: 1.0f, rotationYDeg: -20f);
         AddGenProp(props, "bucket.glb", new Vector3(-2f, 0f, 6f), targetHeight: 0.5f, rotationYDeg: 0f);
+        AddGenProp(props, "scarecrow.glb", new Vector3(-7.5f, 0f, 13.5f), targetHeight: 1.9f, rotationYDeg: 210f);
+        AddGenProp(props, "flower-planter.glb", new Vector3(1f, 0f, 6.5f), targetHeight: 0.5f, rotationYDeg: 15f);
 
         return props;
     }
