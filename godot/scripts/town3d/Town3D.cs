@@ -365,6 +365,7 @@ public partial class Town3D : SubViewportContainer
         World.AddChild(BuildLight());
         World.AddChild(BuildFillLight());
         World.AddChild(BuildEnvironment());
+        World.AddChild(BuildSun());
 
         Buildings = new Node3D { Name = "Buildings" };
         var buildings = BuildBuildings();
@@ -393,11 +394,16 @@ public partial class Town3D : SubViewportContainer
         // Decoration only — never parented under NavRegion (goal 4: no collider means nothing
         // here can distort the bake above, matching the plan's "props are decoration only" rule).
         World.AddChild(BuildProps());
+        World.AddChild(BuildBoundary()); // visual round: perimeter treeline (decoration, no collider)
 
         Heroes = new Node3D { Name = "Heroes" };
         World.AddChild(Heroes);
 
-        Camera = new CameraRig { Name = "CameraRig" };
+        // Visual round: pull the follow-camera back a touch (28 vs the class default 22) so the
+        // town reads as a sizable village in a forest clearing rather than a tight cluster — reveals
+        // more of the square + the perimeter treeline. Instance-level only; the class default (and
+        // the CameraRig tests that pin 22) are untouched, and PushIn station dollies still override.
+        Camera = new CameraRig { Name = "CameraRig", Distance = 28f };
         World.AddChild(Camera);
 
         Player = BuildPlayer();
@@ -824,17 +830,85 @@ public partial class Town3D : SubViewportContainer
     /// "not bare gray") via a flat <see cref="StandardMaterial3D"/> — no texture needed for a flat
     /// field of color.
     /// </summary>
+    /// <summary>A ring of stylized pines around the village perimeter (visual round): encloses the
+    /// open meadow so the town reads as a real settlement in a clearing rather than a few models on
+    /// a bare tile, and the distance haze (<see cref="BuildEnvironment"/>) fades the far trees to
+    /// sell scale. Pure decoration — no collider, never under the NavRegion, so it can't distort the
+    /// hero navigation bake. Placement is deterministic (index-derived angle + hash jitter, no RNG).</summary>
+    private static Node3D BuildBoundary()
+    {
+        var ring = new Node3D { Name = "Boundary" };
+        const int count = 40;
+        const float radius = 24f;
+        for (var i = 0; i < count; i++)
+        {
+            var angle = Mathf.Tau * i / count;
+            var jitter = ((i * 2654435761u) % 1000u) / 1000f; // deterministic 0..1
+            var r = radius + (jitter - 0.5f) * 7f;
+            var pos = new Vector3(Mathf.Cos(angle) * r, 0f, Mathf.Sin(angle) * r);
+            ring.AddChild(BuildPine(pos, 1.4f + jitter * 0.9f, i));
+        }
+
+        return ring;
+    }
+
+    /// <summary>A single low-poly stylized pine (trunk + three stacked foliage cones), matching the
+    /// flat-shaded town look — the generated foliage texture can dress these later.</summary>
+    private static Node3D BuildPine(Vector3 pos, float scale, int i)
+    {
+        var tree = new Node3D { Name = $"Pine{i}", Position = pos, Scale = Vector3.One * scale };
+
+        tree.AddChild(new MeshInstance3D
+        {
+            Name = "Trunk",
+            Position = new Vector3(0f, 0.7f, 0f),
+            Mesh = new CylinderMesh
+            {
+                TopRadius = 0.18f,
+                BottomRadius = 0.26f,
+                Height = 1.4f,
+                Material = new StandardMaterial3D { AlbedoColor = new Color(0.34f, 0.24f, 0.16f), Roughness = 1f },
+            },
+        });
+
+        var foliage = new StandardMaterial3D { AlbedoColor = new Color(0.18f, 0.40f, 0.23f), Roughness = 1f };
+        for (var t = 0; t < 3; t++)
+        {
+            tree.AddChild(new MeshInstance3D
+            {
+                Name = $"Foliage{t}",
+                Position = new Vector3(0f, 1.7f + t * 1.05f, 0f),
+                Mesh = new CylinderMesh
+                {
+                    TopRadius = 0.02f,
+                    BottomRadius = 1.35f - t * 0.34f,
+                    Height = 1.6f,
+                    Material = foliage,
+                },
+            });
+        }
+
+        return tree;
+    }
+
     private static Node3D BuildGround()
     {
         var ground = new Node3D { Name = "Ground" };
 
+        // Visual round: a larger meadow (90×90 vs the old 60) so the village sits in open country
+        // rather than on a cramped tile, and a warmer, slightly brighter grass tone. The generated
+        // ground texture (grass/dirt/cobble) drops onto this same material's AlbedoTexture later.
         var mesh = new MeshInstance3D
         {
             Name = "GroundMesh",
             Mesh = new PlaneMesh
             {
-                Size = new Vector2(60, 60),
-                Material = new StandardMaterial3D { AlbedoColor = new Color(0.36f, 0.47f, 0.24f) },
+                Size = new Vector2(90, 90),
+                Material = new StandardMaterial3D
+                {
+                    AlbedoColor = new Color(0.42f, 0.52f, 0.28f),
+                    Roughness = 0.95f,
+                },
             },
         };
         ground.AddChild(mesh);
@@ -843,7 +917,7 @@ public partial class Town3D : SubViewportContainer
         var shape = new CollisionShape3D
         {
             Name = "GroundShape",
-            Shape = new BoxShape3D { Size = new Vector3(60, 1, 60) },
+            Shape = new BoxShape3D { Size = new Vector3(90, 1, 90) },
             Position = new Vector3(0, -0.5f, 0),
         };
         body.AddChild(shape);
@@ -1026,15 +1100,53 @@ public partial class Town3D : SubViewportContainer
     /// ambient. Filmic tonemap kept (safe, no colour surprises).</summary>
     private static WorldEnvironment BuildEnvironment()
     {
+        // A real daytime sky (not the near-black void the low-energy default read as): a warm,
+        // slightly hazy blue dome over a soft green-tinted horizon, so the world beyond the village
+        // reads as open countryside. Visual round 2026-07-24 (stylized-3D direction): these are
+        // placeholder gradient colors a generated skybox texture can later replace.
+        var sky = new ProceduralSkyMaterial
+        {
+            SkyTopColor = new Color(0.35f, 0.55f, 0.85f),      // clear upper blue
+            SkyHorizonColor = new Color(0.78f, 0.82f, 0.80f),  // pale hazy horizon
+            SkyEnergyMultiplier = 1.0f,
+            GroundHorizonColor = new Color(0.62f, 0.66f, 0.55f), // meadow haze meeting the sky
+            GroundBottomColor = new Color(0.40f, 0.45f, 0.34f),
+            GroundEnergyMultiplier = 0.9f,
+            SunAngleMax = 30f,
+            SunCurve = 0.15f,
+        };
+
         var env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Sky,
-            Sky = new Sky { SkyMaterial = new ProceduralSkyMaterial { SkyEnergyMultiplier = 0.85f, GroundEnergyMultiplier = 0.65f } },
-            BackgroundEnergyMultiplier = 0.8f,
+            Sky = new Sky { SkyMaterial = sky },
+            BackgroundEnergyMultiplier = 1.0f,
             AmbientLightSource = Godot.Environment.AmbientSource.Bg,
-            AmbientLightEnergy = 1.0f,
+            AmbientLightEnergy = 1.1f,
             TonemapMode = Godot.Environment.ToneMapper.Filmic,
+            // A touch of distance haze so the far treeline/walls fade into the horizon — sells scale.
+            FogEnabled = true,
+            FogLightColor = new Color(0.74f, 0.80f, 0.82f),
+            FogDensity = 0.006f,
+            FogSkyAffect = 0.2f,
         };
         return new WorldEnvironment { Name = "WorldEnvironment", Environment = env };
+    }
+
+    /// <summary>A warm key sun that casts the village's shadows — gives the flat-shaded 3D town depth
+    /// and time-of-day warmth (visual round). Paired with the sky's own ambient fill in
+    /// <see cref="BuildEnvironment"/>.</summary>
+    private static DirectionalLight3D BuildSun()
+    {
+        var sun = new DirectionalLight3D
+        {
+            Name = "Sun",
+            LightColor = new Color(1.0f, 0.94f, 0.82f), // warm late-morning
+            LightEnergy = 1.15f,
+            ShadowEnabled = true,
+        };
+        // Angled low from the south-west for long, readable shadows across the square.
+        sun.RotationDegrees = new Vector3(-52f, -130f, 0f);
+        return sun;
     }
 }
