@@ -871,6 +871,9 @@ public partial class Town3D : SubViewportContainer
         AddGenProp(props, "ore-cart.glb", new Vector3(4f, 0f, -15f), targetHeight: 1.0f, rotationYDeg: 20f);
         AddGenProp(props, "market-stall.glb", new Vector3(12.5f, 0f, -4f), targetHeight: 2.2f, rotationYDeg: -30f);
         AddGenProp(props, "bounty-board.glb", new Vector3(12f, 0f, 9f), targetHeight: 1.6f, rotationYDeg: -20f);
+        AddGenProp(props, "signpost.glb", new Vector3(2.5f, 0f, 3.5f), targetHeight: 2.2f, rotationYDeg: 30f);
+        AddGenProp(props, "haybale.glb", new Vector3(-6f, 0f, 12f), targetHeight: 0.8f, rotationYDeg: 0f);
+        AddGenProp(props, "haybale.glb", new Vector3(-5.1f, 0f, 12.6f), targetHeight: 0.7f, rotationYDeg: 55f);
 
         return props;
     }
