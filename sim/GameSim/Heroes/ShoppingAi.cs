@@ -68,13 +68,16 @@ public static class ShoppingAi
 
     /// <summary>
     /// The minimum <see cref="QualityGrade"/> a veteran will accept — below this, they pass with a
-    /// named reason regardless of price or gear-score gain. Rival goods are always
-    /// <see cref="QualityGrade.Common"/> (flat quality, never a maker's mark — <c>RivalCatalog</c>),
-    /// so a veteran this deep declines the rival shelf outright, same as Poor player stock: only a
-    /// player craft of Fine or better proves the smith's minigame mastery actually mattered (the
-    /// problem this unit fixes — the market previously valued a Masterwork identically to junk).
+    /// named reason regardless of price or gear-score gain. Set to <see cref="QualityGrade.Common"/>
+    /// (gate-b retune, 2026-07-24): a deep veteran categorically refuses <b>Poor</b> junk, matching
+    /// the plan's "refuse Poor" intent. The initial U9 value (Fine) also refused all Common —
+    /// including the flat-Common rival shelf and any Common player craft — which throttled the early
+    /// economy too hard for how few Fine+ items a fresh smith can make. Continuous quality demand
+    /// still comes from <c>WillingnessModel.QualityWillingnessBonusPermille</c> (Poor −120 … Masterwork
+    /// +220); this hard gate is only the floor that keeps a veteran off outright junk, so a
+    /// Masterwork is still never valued like Poor (the problem U9 fixes) without bricking Common flow.
     /// </summary>
-    public const QualityGrade VeteranMinQualityGrade = QualityGrade.Fine;
+    public const QualityGrade VeteranMinQualityGrade = QualityGrade.Common;
 
     /// <summary>
     /// Judge one shelf item for one hero, resolving the hero's class from the registry
@@ -123,7 +126,7 @@ public static class ShoppingAi
         {
             return ShoppingVerdict.MakePass(
                 PassReasonKind.QualityTooLow,
-                $"a floor-{hero.DeepestFloorReached} veteran won't trust {item.Quality.ToString().ToLowerInvariant()} work — bring Fine or better");
+                $"a floor-{hero.DeepestFloorReached} veteran won't trust {item.Quality.ToString().ToLowerInvariant()} work — bring {VeteranMinQualityGrade.ToString().ToLowerInvariant()} or better");
         }
 
         // 3. Affordability.

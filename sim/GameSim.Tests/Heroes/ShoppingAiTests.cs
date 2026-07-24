@@ -130,13 +130,29 @@ public class ShoppingAiTests
     [Fact]
     public void Veteran_AcceptsFineOrBetter_ReturnsBuy()
     {
-        // U9: Fine is the veteran's floor of acceptance — the same item at Fine (or better) is a
-        // normal Buy, proving the gate is quality-specific, not a blanket veteran refusal.
+        // A Fine (or better) item is a normal Buy for a veteran — well above the Common floor,
+        // proving the gate is quality-specific, not a blanket veteran refusal.
         var veteran = MakeHero("vanguard", gold: 100) with { DeepestFloorReached = ShoppingAi.VeteranFloorThreshold };
         var fineSword = MakeItem(41, ItemSlot.Weapon, attack: 9, defense: 0, weight: 3, name: "Fine Blade")
             with { Quality = QualityGrade.Fine };
 
         var verdict = ShoppingAi.EvaluateItem(veteran, fineSword, price: 5, Catalog(fineSword));
+
+        Assert.Equal(ShoppingVerdictKind.Buy, verdict.Kind);
+    }
+
+    [Fact]
+    public void Veteran_AcceptsCommon_ReturnsBuy()
+    {
+        // Gate-b retune (VeteranMinQualityGrade = Common): the veteran gate refuses only Poor junk,
+        // so a Common upgrade now BUYS for a deep veteran (it refused all Common under the initial
+        // U9 Fine threshold). This is the behavior change the retune makes — Common flow is not
+        // throttled, while Poor is still categorically refused (see Veteran_PassesOnPoorItem).
+        var veteran = MakeHero("vanguard", gold: 100) with { DeepestFloorReached = ShoppingAi.VeteranFloorThreshold };
+        var commonSword = MakeItem(43, ItemSlot.Weapon, attack: 9, defense: 0, weight: 3, name: "Plain Blade")
+            with { Quality = QualityGrade.Common };
+
+        var verdict = ShoppingAi.EvaluateItem(veteran, commonSword, price: 5, Catalog(commonSword));
 
         Assert.Equal(ShoppingVerdictKind.Buy, verdict.Kind);
     }
