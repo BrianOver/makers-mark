@@ -42,6 +42,8 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(CommissionFulfilled), "commissionFulfilled")]
 [JsonDerivedType(typeof(CommissionExpired), "commissionExpired")]
 [JsonDerivedType(typeof(ItemSigned), "itemSigned")]
+[JsonDerivedType(typeof(MemorialHonored), "memorialHonored")]
+[JsonDerivedType(typeof(HeirloomReforged), "heirloomReforged")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -203,3 +205,12 @@ public sealed record CommissionExpired(HeroId Hero, ItemSlot Slot) : GameEvent;
 /// <summary>Wave 4 (named artifacts): a rare craft was signed into a named Work — "your craft
 /// writes the legends" made literal. Carries the earned legend name for narration/UI.</summary>
 public sealed record ItemSigned(ItemId Item, string SignedName) : GameEvent;
+
+/// <summary>Wave 4c (U18, farewell rite): the player performed a fallen hero's farewell, marking
+/// their <see cref="Memorial"/> honored (once, idempotent). An earned goodbye (R6).</summary>
+public sealed record MemorialHonored(HeroId Hero, string HeroName) : GameEvent;
+
+/// <summary>Wave 4c (U20, heirloom reforge): a fallen hero's worn gear was reforged into a new item
+/// carrying their legend-line forward (<see cref="Item.HeirloomLineage"/>). The dead persist as
+/// inheritance (R6).</summary>
+public sealed record HeirloomReforged(ItemId NewItem, ItemId SourceItem, string Lineage) : GameEvent;

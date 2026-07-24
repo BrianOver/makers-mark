@@ -26,6 +26,8 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(CloseCounterAction), "closeCounter")]
 [JsonDerivedType(typeof(AcceptCommissionAction), "acceptCommission")]
 [JsonDerivedType(typeof(DeclineCommissionAction), "declineCommission")]
+[JsonDerivedType(typeof(HonorMemorialAction), "honorMemorial")]
+[JsonDerivedType(typeof(ReforgeHeirloomAction), "reforgeHeirloom")]
 public abstract record PlayerAction;
 
 /// <summary>Craft a recipe using a material grade key from <see cref="PlayerState.Materials"/> (R4).
@@ -126,6 +128,17 @@ public sealed record AcceptCommissionAction(HeroId Hero) : PlayerAction;
 
 /// <summary>Wave 3: decline a hero's open commission — removes it with no obligation.</summary>
 public sealed record DeclineCommissionAction(HeroId Hero) : PlayerAction;
+
+/// <summary>Wave 4c (U18, farewell rite): perform a fallen hero's farewell, marking their
+/// <see cref="Memorial"/> honored (idempotent — a second rite for the same hero is a no-op).
+/// Evening/Night-legal ritual; deterministic, draws no RNG.</summary>
+public sealed record HonorMemorialAction(HeroId Hero) : PlayerAction;
+
+/// <summary>Wave 4c (U20, heirloom reforge): reforge a fallen hero's worn gear (<paramref name="SourceItem"/>,
+/// drawn from a recorded <c>HeroDied.WornGear</c>) into a new item of <paramref name="RecipeId"/> using
+/// <paramref name="MaterialKey"/> stock — the new item inherits the fallen's legend-line
+/// (<see cref="Item.HeirloomLineage"/>). Deterministic; draws the same single craft roll as a normal craft.</summary>
+public sealed record ReforgeHeirloomAction(ItemId SourceItem, string RecipeId, string MaterialKey) : PlayerAction;
 
 /// <summary>An action the kernel refused, with a typed reason — never a silent drop.</summary>
 public sealed record RejectedAction(PlayerAction Action, string Reason);

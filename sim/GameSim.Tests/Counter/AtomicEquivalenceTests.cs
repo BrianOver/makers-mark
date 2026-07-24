@@ -45,8 +45,15 @@ public class AtomicEquivalenceTests
     // `Item.SignedName` init member (default null) means every item in the save JSON now carries
     // "SignedName":null — a pure serialized-SHAPE change, no behavior change (nothing signs items
     // yet; RNG stream + every value identical). Same class as the Commissions field addition.
+    // RE-BASELINED (Wave 4c farewell + heirloom contracts, 2026-07-24): two trailing serialized fields
+    // land together — `Memorial.Honored` (default false; every memorial on this idle trace, minted
+    // when a hero dies, now serializes "Honored":false) and `Item.HeirloomLineage` (default null; every
+    // item now carries "HeirloomLineage":null). Pure serialized-SHAPE change: nothing honors a memorial
+    // or reforges an heirloom on the BaselinePlayer trace (no HonorMemorialAction / ReforgeHeirloomAction
+    // is ever submitted), so the RNG stream and every value are identical — same class as the SignedName
+    // and Commissions field additions above.
     private const string ExpectedPreCounterSha256 =
-        "127EFF8EBE804F81EDB4CB25664AE82E662CFC312234084FAFF3C5226C9BDD7F";
+        "23B602CDBA6466C259099FA17F4A4049157E4768C92971831B07D7C6CE1C5933";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

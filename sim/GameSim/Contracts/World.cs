@@ -2,8 +2,13 @@ using System.Collections.Immutable;
 
 namespace GameSim.Contracts;
 
-/// <summary>A memorial stone in the town square — one per dead hero, accumulating (R13).</summary>
-public sealed record Memorial(HeroId Hero, string HeroName, int Day, string GearNamed);
+/// <summary>A memorial stone in the town square — one per dead hero, accumulating (R13).
+/// <para>Wave 4c (U18, farewell rite): <paramref name="Honored"/> flips true exactly once when the
+/// player performs the fallen's farewell rite (<c>HonorMemorialAction</c>) — an earned goodbye, not
+/// just an economy event (R6). Trailing positional with a default so old saves and existing
+/// constructors deserialize/compile unchanged (default = not yet honored); DATA only, no sim rule
+/// keys off it beyond the rite's own idempotency guard + presentation.</para></summary>
+public sealed record Memorial(HeroId Hero, string HeroName, int Day, string GearNamed, bool Honored = false);
 
 /// <summary>Drama-surface state: memorials, the Depths Progress board, recruit gating (R10, R13, R15).</summary>
 public sealed record DramaState(
