@@ -75,6 +75,9 @@ public partial class InteriorStage : Control
     public const double StageInSeconds = 0.3;
 
     private const float StageStartScale = 0.92f;
+    /// <summary>Top offset of the interior title so it clears the two-row HUD header (gate-b fix);
+    /// mirrors MainUi's ObjectiveDockOffsetTop clearance without coupling to that type.</summary>
+    private const float InteriorTitleTopOffset = 108f;
     private const float HotspotPanelWidth = 260f;
     private const float FigureWidth = 90f;
     private const float FigureHeight = 144f;
@@ -213,7 +216,11 @@ public partial class InteriorStage : Control
         _title = new Label { Name = "InteriorTitle" };
         _title.AddThemeFontSizeOverride("font_size", 24);
         _stage.AddChild(_title);
-        _title.SetAnchorsAndOffsetsPreset(LayoutPreset.TopLeft, LayoutPresetMode.KeepSize, 24);
+        // Docked below the HUD header (gate-b playtest fix): the header grew to two rows, so a
+        // top-left title at the old 24px margin z-overlapped the Day/Phase stat chips. Clear the
+        // ~two-row header height; left margin stays 24.
+        _title.SetAnchorsPreset(LayoutPreset.TopLeft);
+        _title.Position = new Vector2(24, InteriorTitleTopOffset);
 
         var panel = new PanelContainer { Name = "InteriorHotspotPanel", CustomMinimumSize = new Vector2(HotspotPanelWidth, 0) };
         _stage.AddChild(panel);
