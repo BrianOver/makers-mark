@@ -34,8 +34,12 @@ namespace GameSim.Tests.Counter;
 /// </summary>
 public class AtomicEquivalenceTests
 {
+    // RE-BASELINED (Wave 3 contracts, 2026-07-24): adding the trailing `GameState.Commissions` init
+    // member means the save JSON now carries an empty `"Commissions":[]` — a pure serialized-SHAPE
+    // change, NOT a behavior change (nothing posts/reads commissions yet; RNG stream + every value is
+    // identical). Same class of re-baseline as the InFlight/Venues/Counter/Rent field additions.
     private const string ExpectedPreCounterSha256 =
-        "8EB0FCB1328334BEE182405DD51461CDC7675D3BAA75B879F01FCA710C47B25B";
+        "9A9A06C7651A34BD269E39445ADFA1B7AC66003A9A6BCC6EEBAA9F5219FB878A";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

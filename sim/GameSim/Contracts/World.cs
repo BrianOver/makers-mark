@@ -165,7 +165,25 @@ public sealed record GameState(
     /// share. Non-positional init member defaulting to 0 (no edge) — a pre-G3 save loads with the
     /// rival at its old, undiscounted catalog prices (byte-identical pricing for the default trace).</summary>
     public int RivalMarketSharePermille { get; init; } = 0;
+
+    /// <summary>Wave 3 (commissions): open + accepted hero commissions. Trailing init member
+    /// (the InFlight/Venues/Counter/Rent save-compat precedent) — a pre-Wave-3 save has no property
+    /// and deserializes to empty, byte-identical to today. The Morning <c>CommissionSystem</c> posts
+    /// them; player accept/decline flips <see cref="Commission.Accepted"/>; fulfillment/expiry drains them.</summary>
+    public ImmutableList<Commission> Commissions { get; init; } = ImmutableList<Commission>.Empty;
 }
+
+/// <summary>Wave 3: one hero's gear request — forge <see cref="Slot"/> at or above
+/// <see cref="MinQuality"/> by <see cref="DeadlineDay"/> for a <see cref="PremiumGold"/> premium over
+/// list. <see cref="Accepted"/> is false when first posted; the player's AcceptCommissionAction flips
+/// it. Pure data (no Godot, integer-only).</summary>
+public sealed record Commission(
+    HeroId Hero,
+    ItemSlot Slot,
+    QualityGrade MinQuality,
+    int DeadlineDay,
+    int PremiumGold,
+    bool Accepted = false);
 
 /// <summary>Result of one phase tick: the new world, what happened, and what was refused.</summary>
 public sealed record TickResult(

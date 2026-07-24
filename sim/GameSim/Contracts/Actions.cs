@@ -24,6 +24,8 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(SuggestItemAction), "suggestItem")]
 [JsonDerivedType(typeof(HaggleResponseAction), "haggle")]
 [JsonDerivedType(typeof(CloseCounterAction), "closeCounter")]
+[JsonDerivedType(typeof(AcceptCommissionAction), "acceptCommission")]
+[JsonDerivedType(typeof(DeclineCommissionAction), "declineCommission")]
 public abstract record PlayerAction;
 
 /// <summary>Craft a recipe using a material grade key from <see cref="PlayerState.Materials"/> (R4).
@@ -117,6 +119,13 @@ public sealed record SendSupplyAction(HeroId To, ItemId Item) : PlayerAction;
 /// <summary>Ring the recall bell: the party containing <paramref name="Member"/> banks its
 /// stage-1 clears/ore and surfaces at the Deep tick without rolling deeper floors (v1).</summary>
 public sealed record RecallPartyAction(HeroId Member) : PlayerAction;
+
+/// <summary>Wave 3: accept a hero's open commission (by hero) — locks it so fulfilling the slot
+/// at/above its MinQuality by the deadline pays list + premium.</summary>
+public sealed record AcceptCommissionAction(HeroId Hero) : PlayerAction;
+
+/// <summary>Wave 3: decline a hero's open commission — removes it with no obligation.</summary>
+public sealed record DeclineCommissionAction(HeroId Hero) : PlayerAction;
 
 /// <summary>An action the kernel refused, with a typed reason — never a silent drop.</summary>
 public sealed record RejectedAction(PlayerAction Action, string Reason);
