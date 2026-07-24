@@ -18,11 +18,13 @@ namespace GameSim;
 /// DETERMINISM CONTRACT (KTD4): every consumer — CLI, Godot, balance sim — must build
 /// the kernel through here so a seed means the same world everywhere.
 ///
-/// Morning: faction-drift → rival-restock → recruit-trickle → gossip → counter-queue →
-/// hero-shopping → muster (drift settles standing for the day before anything reads it — KTD5;
-/// restock must precede shopping; gossip reads yesterday's stamped log). CounterQueueSystem
-/// (PA3/PKD5) registers BEFORE HeroShoppingSystem: it resolves the active counter customer (and
-/// may flip <c>CounterState.Closed</c> on queue exhaustion) so HeroShoppingSystem sees this tick's
+/// Morning: faction-drift → counter-queue → rent → destitution → rival-restock → recruit-trickle →
+/// gossip → hero-shopping → muster (drift settles standing for the day before anything reads it —
+/// KTD5; restock must precede shopping; gossip reads yesterday's stamped log). CounterQueueSystem
+/// (PA3/PKD5) registers BEFORE HeroShoppingSystem AND before the once-per-Morning economy/drama
+/// systems (U1): it resolves the active counter customer (and may flip <c>CounterState.Closed</c>
+/// on queue exhaustion), so on the closing tick those systems' held-Morning guards see the FINAL
+/// Closed==true and fire exactly once per calendar Morning; HeroShoppingSystem likewise sees this tick's
 /// FINAL closed/unserved state when deciding whether to run its unserved-heroes fallback pass —
 /// draws ZERO RNG either way, so a run whose <c>GameState.Counter</c> stays null (the default, the
 /// ONLY path BaselinePlayer/the balance gate ever exercise) leaves the stream untouched and
@@ -45,12 +47,12 @@ public static class GameComposition
     public static GameKernel BuildKernel() => new(
         ImmutableList.Create<IPhaseSystem>(
             new FactionDriftSystem(), // Morning, FIRST — drift settles standing before anything reads it (KTD5); draws no RNG
-            new RentSystem(), // Game-Feel Plan G3: right after drift, BEFORE the no-softlock floor — see class comment; draws no RNG
+            new CounterQueueSystem(), // U1: moved to SECOND (was after gossip). Resolves the stepped counter queue and flips CounterState.Closed on queue-exhaustion; it draws no RNG and is a no-op when Counter is null (BaselinePlayer path), so running it earlier leaves every gated trace byte-identical. Placing it ahead of the once-per-Morning systems below lets their held-Morning guards see Closed==true on the closing tick (explicit or exhaustion) so they fire exactly once per calendar Morning. Still BEFORE hero-shopping (PA3/PKD5).
+            new RentSystem(), // Game-Feel Plan G3: BEFORE the no-softlock floor — see class comment; draws no RNG. Held-Morning guarded (U1).
             new DestitutionRecoverySystem(), // Playable Core U5: no-softlock floor (R5/KD3); draws no RNG, never fires solvent — stream unchanged
-            new RivalRestockSystem(),
-            new RecruitSystem(),
-            new GossipSystem(),
-            new CounterQueueSystem(), // PA3/PKD5: resolves the stepped counter queue; BEFORE hero-shopping (see class comment above); draws no RNG
+            new RivalRestockSystem(), // Held-Morning guarded (U1)
+            new RecruitSystem(), // Held-Morning guarded (U1)
+            new GossipSystem(), // Held-Morning guarded (U1)
             new HeroShoppingSystem(),
             new MusterSystem(), // world rework U9/KTD8: LAST in Morning — see class comment above
             new BountyJudgingSystem(),

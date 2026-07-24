@@ -35,6 +35,14 @@ public sealed class RivalRestockSystem : IPhaseSystem
 
     public GameState Process(GameState state, IDeterministicRng rng, IEventSink events)
     {
+        // U1 held-Morning guard (see RentSystem): fire once per calendar Morning, not once per
+        // stepped-counter tick. Skip while a session is open; CounterQueueSystem runs ahead of
+        // this system so the closing tick sees Closed==true and restock fires exactly once.
+        if (state.Counter is { Closed: false })
+        {
+            return state;
+        }
+
         // Recipe ids currently represented on the rival shelf. HashSet is membership
         // only — never iterated — so it cannot introduce order dependence.
         var stocked = new HashSet<string>(StringComparer.Ordinal);
