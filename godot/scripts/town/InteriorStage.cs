@@ -495,6 +495,7 @@ public partial class InteriorStage : Control
                 new Hotspot("tables", "Hero Tables", "See who is drinking tonight.", "Tavern"),
                 new Hotspot("keeper", "Keeper", "Chat with the tavern keeper.", "Tavern"),
                 new Hotspot("bestiary", "Bestiary", "Study the beasts heroes face in the depths.", "Bestiary"),
+                new Hotspot("legends", "Legends Wall", "Read the town's memorials, records, and legendary gear.", "Legends"),
             ]),
             new VenueSpec("minegate", "Mine Gate", "gate-interior",
             [

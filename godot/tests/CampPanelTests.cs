@@ -1,4 +1,5 @@
 #if GDUNIT_TESTS
+using System;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
@@ -193,6 +194,115 @@ public class CampPanelTests
 
             AssertThat(ui.Camp.Visible).IsTrue(); // slate held through the Deep phase to stay legible
             AssertThat(RenderedText(ui.Camp)).Contains(rejected.Reason);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── U16 (Wave 4, KTD3-b): other already-resolved parties pace out during the Vigil too ─────
+
+    /// <summary>Drive a throwaway adapter to Camp (mirrors <see cref="MountAtCamp"/>), then apply
+    /// <paramref name="customize"/> to its parked state BEFORE mounting the real UI — the only way
+    /// to hand <c>MainUi</c> an already-customized Camp world, since <see cref="SimPanel.Adapter"/>
+    /// has no public setter to rebind mid-test.</summary>
+    private static MainUi MountAtCampWith(Func<GameState, GameState> customize)
+    {
+        var seed = new SimAdapter(ExpeditionWorld());
+        seed.AdvancePhase(); // Expedition -> Camp: the party parks
+        var ui = MountMainUi(new SimAdapter(customize(seed.CurrentState)));
+        AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Camp);
+        AssertThat(ui.Camp.Visible).IsTrue(); // SyncCampModal adopts the injected mid-day park
+        return ui;
+    }
+
+    private static GameState WithPendingExpedition(GameState state, params HeroId[] party) => state with
+    {
+        PendingExpeditions = state.PendingExpeditions.Add(new ExpeditionResult(
+            party.ToImmutableList(),
+            TargetFloor: 2,
+            DeepestFloorCleared: 2,
+            ImmutableList<FloorOutcome>.Empty,
+            Survivors: party.ToImmutableList(),
+            Deaths: ImmutableList<HeroId>.Empty,
+            Beats: ImmutableList<AttributionBeat>.Empty,
+            Loot: ImmutableList<OreLoot>.Empty,
+            GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty)),
+    };
+
+    [TestCase]
+    public void OtherResolvedParty_RendersSummary_WithoutRevealingOutcome()
+    {
+        var ui = MountAtCampWith(state => WithPendingExpedition(state, new HeroId(99)));
+        try
+        {
+            var text = RenderedText(ui.Camp);
+            AssertThat(text).Contains("ALREADY BACK TODAY");
+            AssertThat(text).Contains("back from the mine");
+            // Self-censored like JourneyStream/ScryingMirror: no floor-cleared number, no death word.
+            AssertThat(text).NotContains("floor 2 cleared");
+            AssertThat(text).NotContains("died");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void NoPendingExpeditions_NoAlreadyBackSection()
+    {
+        var ui = MountAtCamp();
+        try
+        {
+            var text = RenderedText(ui.Camp);
+            AssertThat(text).NotContains("ALREADY BACK TODAY");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── U17 (Wave 4): the "signal retreat" interrupt reframes the EXISTING Recall verb ─────────
+
+    [TestCase]
+    public void FleeThreshold_HpBelow40Percent_RecallButtonBecomesSignalRetreat()
+    {
+        var ui = MountAtCampWith(state => state with
+        {
+            InFlight = ImmutableList.Create(state.InFlight[0] with
+            {
+                Hp = ImmutableSortedDictionary<int, int>.Empty.Add(1, 5).Add(2, 60), // hero 1: 5/60 hp, well under 40%
+            }),
+        });
+        try
+        {
+            var button = Find<Button>(ui.Camp, "CampRecall_1");
+            AssertThat(button.Text).Contains("Signal Retreat");
+            AssertThat(RenderedText(ui.Camp)).Contains("fading");
+
+            // Still the SAME action, unchanged — U17 is UI framing only.
+            Press(ui.Camp, "CampRecall_1");
+            var recall = ui.Adapter.PendingActions.OfType<RecallPartyAction>().Single();
+            AssertThat(recall.Member.Value).IsEqual(1);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void AboveFleeThreshold_RecallButtonStaysPlain()
+    {
+        var ui = MountAtCamp();
+        try
+        {
+            var button = Find<Button>(ui.Camp, "CampRecall_1");
+            AssertThat(button.Text).IsEqual("Recall");
+            AssertThat(RenderedText(ui.Camp)).NotContains("fading");
         }
         finally
         {

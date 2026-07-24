@@ -175,6 +175,56 @@ public class AdventureTickerTests
         }
     }
 
+    // ── U16 (Wave 4, KTD3): the attribution spotlight moves to the Night homecoming beat ────────
+
+    [TestCase]
+    public void AttributionBeat_BeforeEvening_NeverRenders()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            var state = StagedWorld();
+            var beat = ImmutableList.Create<GameEvent>(
+                new AttributionBeatEvent(BeatType.KillingBlow, new ItemId(1), new HeroId(1), Floor: 2, "Dagger landed the killing blow on the Cave Rat"));
+
+            // Morning/Expedition/Camp/ExpeditionDeep — the Vigil never gets this popup.
+            ticker.OnPhaseCompleted(DayPhase.Morning, 1, state, beat);
+            ticker.OnPhaseCompleted(DayPhase.Expedition, 1, state, beat);
+            ticker.OnPhaseCompleted(DayPhase.Camp, 1, state, beat);
+            ticker.OnPhaseCompleted(DayPhase.ExpeditionDeep, 1, state, beat);
+
+            AssertThat(ticker.Lines.Count).IsEqual(0);
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
+    [TestCase]
+    public void AttributionBeat_AtEvening_Renders_CitingItemAndDetail()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            var state = StagedWorld();
+            var events = ImmutableList.Create<GameEvent>(
+                new AttributionBeatEvent(BeatType.KillingBlow, new ItemId(1), new HeroId(1), Floor: 2, "Dagger landed the killing blow on the Cave Rat"));
+
+            ticker.OnPhaseCompleted(DayPhase.Evening, 1, state, events);
+
+            AssertThat(ticker.Lines.Count).IsEqual(1);
+            AssertThat(ticker.DisplayText).Contains("Dagger");
+            AssertThat(ticker.DisplayText).Contains("Dagger landed the killing blow on the Cave Rat");
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
     [TestCase]
     public void SameDayRepeat_Dedupes()
     {
