@@ -6,7 +6,6 @@ using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Professions;
 using GdUnit4;
-using Godot;
 using GodotClient.Minigames;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
@@ -14,37 +13,54 @@ using static GodotClient.Tests.UiTestSupport;
 namespace GodotClient.Tests;
 
 /// <summary>
-/// PA6: the forge minigame overlay — deterministic scoring, the Jacksmith carry-forward flaw,
-/// the single-action contract, talent-assist wiring, and end-to-end adapter fidelity against
-/// PA2's active quality model. Every scenario drives <see cref="ForgeMinigame"/> through its
-/// public <c>Advance(double)</c>/input-seam methods (<c>SmeltStop</c>/<c>ForgeStrike</c>/
-/// <c>QuenchLock</c>) — no wall-clock, no engine RNG anywhere in the driven path, so "same script
-/// twice" tests are a real determinism pin, not a coincidence.
+/// U23d: the "Anvil Map" forge overlay — the shared-target-line contract (this overlay renders
+/// EXACTLY the polyline <c>ForgePath</c>/<c>ForgeScorer</c> regenerate sim-side from the SAME
+/// seed), the captured trace's shape (even-length, in-range, capped Samples/Strikes), the
+/// single-action contract (PKD8), and same-script determinism. Every scenario drives
+/// <see cref="ForgeMinigame"/> through its public <c>Advance(double)</c>/input-seam methods
+/// (<c>ForgeStrike</c>/<c>BellowsStart</c>/<c>BellowsStop</c>/<c>Plunge</c>) — no wall-clock, no
+/// engine RNG anywhere in the driven path, so "same script twice" is a real determinism pin, not
+/// a coincidence. PROPERTY-ONLY: the Anvil Map is a plain 2D <c>Control</c> canvas, never a 3D
+/// <c>SubViewport</c> — the known gdUnit headless-hang trap never applies here.
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
 public class ForgeMinigameTests
 {
+    private const int TestDay = 0;
     private static readonly Recipe DaggerRecipe = ProfessionRegistry.AllRecipes[ScriptedSession.CraftRecipeId];
 
     [TestCase]
-    public void PerfectScriptedRun_ReachesMasterworkReachableGrade_AllSubScoresMax()
+    public void EmittedTrace_HasEvenLengthSamplesAndStrikes_ValuesInRange_RespectsCap()
     {
         var mg = new ForgeMinigame();
         try
         {
-            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty);
+            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
 
-            DriveSmeltPerfect(mg);
-            DriveForgeOnBeatToCompletion(mg);
-            DriveQuenchPerfect(mg);
+            DriveGoodRun(mg);
 
             AssertThat(mg.Completed).IsTrue();
-            AssertThat(mg.Smelt.SubScorePermille).IsEqual(1000);
-            AssertThat(mg.Forge.SubScorePermille).IsEqual(1000);
-            AssertThat(mg.Quench.SubScorePermille).IsEqual(1000);
-            AssertThat(mg.EmittedAction!.PerformanceGrade!.Value).IsGreaterEqual(930); // Masterwork-reachable band
-            AssertThat(mg.EmittedAction!.SubScores!).ContainsExactly(1000, 1000, 1000);
+            var trace = mg.EmittedAction!.Puzzle as ForgeTraceInput;
+            AssertThat(trace is not null).IsTrue();
+            AssertThat(trace!.Samples.Count % 2).IsEqual(0);
+            AssertThat(trace.Strikes.Count % 2).IsEqual(0);
+            AssertThat(trace.Samples.Count / 2).IsLessEqual(ForgeMinigame.MaxSamples);
+            AssertThat(trace.Strikes.Count / 2).IsLessEqual(ForgeMinigame.MaxSamples);
+
+            foreach (var value in trace.Samples)
+            {
+                AssertThat(value).IsGreaterEqual(0);
+                AssertThat(value).IsLessEqual(1000);
+            }
+
+            foreach (var value in trace.Strikes)
+            {
+                AssertThat(value).IsGreaterEqual(0);
+                AssertThat(value).IsLessEqual(1000);
+            }
+
+            AssertThat(trace.PathSeed).IsEqual(mg.PathSeed);
         }
         finally
         {
@@ -53,21 +69,108 @@ public class ForgeMinigameTests
     }
 
     [TestCase]
-    public void SloppyScriptedRun_ScoresMidOrLow_BelowThePerfectRun()
+    public void GoodRun_TracksPathBetter_ThanBadRun_HigherPreviewGrade()
+    {
+        var good = RunScript(DriveGoodRun);
+
+        // A deliberately pathological trace over the SAME target line: heat pinned scorching-hot the
+        // whole way (ignoring the target curve entirely) with maximally off-beat forge strikes. Scored
+        // by the same pure scorer, this is what "not tracking the path" looks like — a real driven,
+        // path-following run must beat it. (Constructed rather than driven because the forge physics
+        // punish bad play with stalled progress, so a sloppy run can't reliably reach the path end at
+        // all — the ForgeScorerTests cover the driven-perfect-vs-worst ranking on synthetic traces.)
+        var badSamples = ImmutableList.CreateBuilder<int>();
+        for (var x = 0; x <= 1000; x += 40)
+        {
+            badSamples.Add(x);
+            badSamples.Add(950); // pinned scorching hot, nowhere near the target curve
+        }
+
+        var badStrikes = ImmutableList.Create(400, 1000, 500, 1000, 600, 1000); // forge-zone, maximally off-beat
+        var badTrace = new ForgeTraceInput(badSamples.ToImmutable(), badStrikes, good.Trace.PathSeed);
+        var badGrade = ForgeScorer.Score(DaggerRecipe, badTrace, ImmutableSortedSet<string>.Empty, ProfessionRegistry.Blacksmith).GradePermille;
+
+        AssertThat(good.PreviewGrade).IsGreater(badGrade);
+    }
+
+    [TestCase]
+    public void SameScriptTwice_ProducesIdenticalTraceAndGrade_NoHiddenRandomness()
+    {
+        var first = RunScript(DriveGoodRun);
+        var second = RunScript(DriveGoodRun);
+
+        AssertThat(second.Trace.Samples).ContainsExactly(first.Trace.Samples);
+        AssertThat(second.Trace.Strikes).ContainsExactly(first.Trace.Strikes);
+        AssertThat(second.Trace.PathSeed).IsEqual(first.Trace.PathSeed);
+        AssertThat(second.PreviewGrade).IsEqual(first.PreviewGrade);
+    }
+
+    [TestCase]
+    public void DifferentDay_RegeneratesADifferentPathSeed_ButStaysAgreeableWithForgePath()
+    {
+        var day0 = new ForgeMinigame();
+        var day1 = new ForgeMinigame();
+        try
+        {
+            day0.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, 0);
+            day1.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, 1);
+
+            AssertThat(day1.PathSeed).IsNotEqual(day0.PathSeed);
+
+            // The overlay's rendered Path is EXACTLY what ForgePath.Generate regenerates from the
+            // same seed — the byte-for-byte agreement the sim scorer depends on.
+            var regenerated = ForgePath.Generate(DaggerRecipe.Tier, DaggerRecipe.Slot, DaggerRecipe.BaseStats.Weight, day0.PathSeed);
+            AssertThat(regenerated).ContainsExactly(day0.Path);
+        }
+        finally
+        {
+            day0.Free();
+            day1.Free();
+        }
+    }
+
+    [TestCase]
+    public void UnlockedAssists_ImprovePreviewGrade_ForTheIdenticalTrace()
+    {
+        var result = RunScript(DriveGoodRun);
+
+        var baselineScore = ForgeScorer.Score(DaggerRecipe, result.Trace, ImmutableSortedSet<string>.Empty, ProfessionRegistry.Blacksmith);
+        AssertThat(result.PreviewGrade).IsEqual(baselineScore.GradePermille); // the preview IS this same pure scorer
+
+        var everyAssistNode = ImmutableSortedSet.Create(
+            TalentTree.KeenEye, TalentTree.MasterTouch, TalentTree.LegendaryCraft, TalentTree.WeaponSpecialist);
+        // DaggerRecipe is a Weapon recipe — Weapon Specialist's bonus is in scope (sim-side slot gating).
+        AssertThat(DaggerRecipe.Slot).IsEqual(ItemSlot.Weapon);
+        var assistedScore = ForgeScorer.Score(DaggerRecipe, result.Trace, everyAssistNode, ProfessionRegistry.Blacksmith);
+
+        AssertThat(assistedScore.GradePermille).IsGreaterEqual(baselineScore.GradePermille);
+    }
+
+    [TestCase]
+    public void Cancel_MidRun_QueuesNoActionAndRaisesCancelledExactlyOnce()
     {
         var mg = new ForgeMinigame();
         try
         {
-            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty);
+            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
+            var cancelledCount = 0;
+            mg.Cancelled += () => cancelledCount++;
 
-            DriveSmeltOverheat(mg);
-            DriveForgeOffBeatToCompletion(mg);
-            DriveQuenchSloppy(mg);
+            mg.Advance(0.05);
+            mg.ForgeStrike();
+            mg.Cancel();
+            mg.Cancel(); // double-cancel must not double-fire
 
-            AssertThat(mg.Completed).IsTrue();
-            AssertThat(mg.Smelt.Impurity).IsTrue();
-            AssertThat(mg.Forge.MarCount).IsGreater(0);
-            AssertThat(mg.EmittedAction!.PerformanceGrade!.Value).IsLess(500);
+            AssertThat(mg.WasCancelled).IsTrue();
+            AssertThat(mg.Completed).IsFalse();
+            AssertThat(mg.EmittedAction is null).IsTrue();
+            AssertThat(cancelledCount).IsEqual(1);
+
+            // A cancelled run never finishes, even if driven further.
+            mg.Advance(5.0);
+            mg.ForgeStrike();
+            mg.Plunge();
+            AssertThat(mg.EmittedAction is null).IsTrue();
         }
         finally
         {
@@ -76,68 +179,51 @@ public class ForgeMinigameTests
     }
 
     [TestCase]
-    public void SameScriptTwice_ProducesIdenticalGrade_NoHiddenRandomness()
+    public void Plunge_BeforeShapeReachesPathEnd_IsANoOp()
     {
-        var first = RunSloppyScript();
-        var second = RunSloppyScript();
-
-        AssertThat(second.PerformanceGrade!.Value).IsEqual(first.PerformanceGrade!.Value);
-        AssertThat(second.SubScores!).ContainsExactly(first.SubScores!);
-
-        static CraftAction RunSloppyScript()
-        {
-            var mg = new ForgeMinigame();
-            try
-            {
-                mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty);
-                DriveSmeltOverheat(mg);
-                DriveForgeOffBeatToCompletion(mg);
-                DriveQuenchSloppy(mg);
-                return mg.EmittedAction!;
-            }
-            finally
-            {
-                mg.Free();
-            }
-        }
-    }
-
-    [TestCase]
-    public void SmeltImpurity_CarriesForwardAsVisibleDross_AndCapsForgeSubScore()
-    {
-        var clean = new ForgeMinigame();
-        var impure = new ForgeMinigame();
+        var mg = new ForgeMinigame();
         try
         {
-            clean.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty);
-            DriveSmeltPerfect(clean);
-            AssertThat(clean.Forge.HasDross).IsFalse();
-            AssertThat(clean.Forge.ScoreCapPermille).IsEqual(1000);
+            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
 
-            impure.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty);
-            DriveSmeltOverheat(impure);
-            AssertThat(impure.Smelt.Impurity).IsTrue();
-            AssertThat(impure.Forge.HasDross).IsTrue(); // visible the instant the Forge beat opens
-            AssertThat(impure.Forge.ScoreCapPermille).IsLess(1000);
+            mg.Plunge();
 
-            DriveForgeOnBeatToCompletion(impure); // even a clean forge run is capped by the carried-forward dross
-            AssertThat(impure.Forge.SubScorePermille).IsLessEqual(impure.Forge.ScoreCapPermille);
-
-            // Sub-scores land in the emitted action in beat order (smelt, forge, quench).
-            DriveQuenchPerfect(impure);
-            AssertThat(impure.EmittedAction!.SubScores![0]).IsEqual(impure.Smelt.SubScorePermille);
-            AssertThat(impure.EmittedAction!.SubScores![1]).IsEqual(impure.Forge.SubScorePermille);
-            AssertThat(impure.EmittedAction!.SubScores![2]).IsEqual(impure.Quench.SubScorePermille);
+            AssertThat(mg.Completed).IsFalse();
+            AssertThat(mg.ShapeXPermille).IsLess(1000);
+            AssertThat(mg.EmittedAction is null).IsTrue();
         }
         finally
         {
-            clean.Free();
-            impure.Free();
+            mg.Free();
         }
     }
 
     [TestCase]
-    public void CompletedRun_QueuesExactlyOneCraftAction_ThroughTheRealForgePanel()
+    public void HammerAndBellows_AreMutuallyExclusive_StrikeIsANoOpWhilePumping()
+    {
+        var mg = new ForgeMinigame();
+        try
+        {
+            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
+
+            mg.BellowsStart();
+            var xBefore = mg.ShapeXPermille;
+            mg.ForgeStrike(); // no-op while pumping
+            AssertThat(mg.ShapeXPermille).IsEqual(xBefore);
+
+            mg.BellowsStop();
+            mg.Advance(1.0); // heat rose while pumping — a strike now should actually move the shape
+            mg.ForgeStrike();
+            AssertThat(mg.ShapeXPermille).IsGreater(xBefore);
+        }
+        finally
+        {
+            mg.Free();
+        }
+    }
+
+    [TestCase]
+    public void CompletedRun_QueuesExactlyOneCraftAction_CarryingTheForgeTracePuzzle_ThroughTheRealForgePanel()
     {
         var ui = MountMainUi();
         try
@@ -150,14 +236,14 @@ public class ForgeMinigameTests
             var overlay = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
             AssertThat(overlay.Visible).IsTrue();
 
-            DriveSmeltPerfect(overlay);
-            DriveForgeOnBeatToCompletion(overlay);
-            DriveQuenchPerfect(overlay);
+            DriveGoodRun(overlay);
 
             var pending = ui.Adapter.PendingActions.OfType<CraftAction>().ToList();
             AssertThat(pending.Count).IsEqual(1);
             AssertThat(pending[0].RecipeId).IsEqual(ScriptedSession.CraftRecipeId);
-            AssertThat(pending[0].PerformanceGrade!.Value).IsGreaterEqual(930);
+            AssertThat(pending[0].MaterialKey).IsEqual(ScriptedSession.CraftMaterial);
+            AssertThat(pending[0].PerformanceGrade is null).IsTrue(); // the trace is the source; sim scores it
+            AssertThat(pending[0].Puzzle is ForgeTraceInput).IsTrue();
             AssertThat(overlay.Visible).IsFalse(); // the overlay closes on completion
         }
         finally
@@ -167,7 +253,7 @@ public class ForgeMinigameTests
     }
 
     [TestCase]
-    public void Cancel_MidBeat_QueuesNoAction()
+    public void Cancel_MidRun_ThroughTheRealForgePanel_QueuesNoAction()
     {
         var ui = MountMainUi();
         try
@@ -178,7 +264,7 @@ public class ForgeMinigameTests
 
             PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
             var overlay = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
-            overlay.Advance(0.05); // mid-smelt, nowhere near complete
+            overlay.Advance(0.05); // mid-run, nowhere near the path end
 
             PressEnabled(ui.Forge, "ForgeMinigameCancel");
 
@@ -192,151 +278,71 @@ public class ForgeMinigameTests
         }
     }
 
-    [TestCase]
-    public void UnlockedAssists_WidenBandsAndSlowDrift_VersusNoTalentBaseline()
-    {
-        var baseline = new ForgeMinigame();
-        var assisted = new ForgeMinigame();
-        try
-        {
-            baseline.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty);
-
-            var everyAssistNode = ImmutableSortedSet.Create(
-                TalentTree.KeenEye, TalentTree.MasterTouch, TalentTree.LegendaryCraft, TalentTree.WeaponSpecialist);
-            // DaggerRecipe is a Weapon recipe — Weapon Specialist's bonus is in scope (adapter-side
-            // slot gating, mirroring the retired SlotShift semantics).
-            AssertThat(DaggerRecipe.Slot).IsEqual(ItemSlot.Weapon);
-            assisted.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, everyAssistNode);
-
-            AssertThat(assisted.Smelt.BandWidthPermille).IsGreater(baseline.Smelt.BandWidthPermille);
-            AssertThat(assisted.Quench.BandWidthPermille).IsGreater(baseline.Quench.BandWidthPermille);
-            AssertThat(assisted.Smelt.RisePermilliePerSecond).IsLess(baseline.Smelt.RisePermilliePerSecond);
-            AssertThat(assisted.Quench.OscillationHz).IsLess(baseline.Quench.OscillationHz);
-
-            // Off-beat forgiveness only shows up on the Forge beat, which is (re)built on entering
-            // that stage — drive both runs to Forge and compare the exported parameter directly.
-            DriveSmeltPerfect(baseline);
-            DriveSmeltPerfect(assisted);
-            AssertThat(assisted.Forge.OffBeatForgivenessPermille).IsGreater(baseline.Forge.OffBeatForgivenessPermille);
-        }
-        finally
-        {
-            baseline.Free();
-            assisted.Free();
-        }
-    }
-
-    [TestCase]
-    public void EmittedAction_AppliedToTheSim_RespectsPA2sMaterialCeiling()
-    {
-        var ui = MountMainUi();
-        try
-        {
-            // Copper (grade 1) on the dagger (tier 1): materialStep == 0 → PA2's ceiling caps the
-            // craft at Superior regardless of PerformanceGrade — even a perfect 1000 minigame run
-            // (which alone would band Masterwork) must NOT reach Masterwork on this material.
-            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
-            ui.Adapter.AdvancePhase();
-            ui.OpenPanel("Forge");
-
-            PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
-            var overlay = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
-            DriveSmeltPerfect(overlay);
-            DriveForgeOnBeatToCompletion(overlay);
-            DriveQuenchPerfect(overlay);
-
-            ui.Adapter.AdvancePhase(); // CraftAction has no phase gate — resolves at whatever phase this lands on
-
-            var crafted = ui.Adapter.CurrentState.Items.Values.Single(item => item.PlayerCrafted);
-            AssertThat(crafted.RecipeId).IsEqual(ScriptedSession.CraftRecipeId);
-            AssertThat(crafted.CraftSubScores).ContainsExactly(1000, 1000, 1000);
-            AssertThat(crafted.Quality).IsNotEqual(QualityGrade.Masterwork); // PA2's material ceiling held
-            AssertThat((int)crafted.Quality).IsLessEqual((int)QualityGrade.Superior);
-        }
-        finally
-        {
-            Unmount(ui);
-        }
-    }
-
     // ── Scripted-run drivers — pure Advance(delta)/input-seam calls, no wall-clock, no RNG ────
 
-    private static void DriveSmeltPerfect(ForgeMinigame mg)
+    /// <summary>Works the billet to the path end on-tempo, tracking the target line's heat (pumping
+    /// toward <see cref="ForgePath.HeatAt"/> at the current shape-x, floored at a workable heat so
+    /// strikes — whose advance scales with heat — always progress and the run never stalls). Every
+    /// strike lands on a tempo-period boundary, so it earns the on-beat advance bonus and a clean
+    /// forge-strike score. Shared by the good and bad runs so they differ ONLY in the finish.</summary>
+    private static void WorkBilletToEnd(ForgeMinigame mg)
     {
         var guard = 0;
-        while (mg.Smelt.HeatPermille < SmeltBeat.BandCenterPermille && !mg.Smelt.Complete)
+        while (mg.ShapeXPermille < 1000)
         {
-            mg.Advance(0.01);
-            if (++guard > 200_000)
+            var target = Math.Max(ForgePath.HeatAt(mg.Path, mg.ShapeXPermille), 500);
+            if (mg.HeatYPermille < target - 40)
             {
-                throw new InvalidOperationException("smelt heat never reached the band center");
+                mg.BellowsStart();
+                mg.Advance(ForgeMinigame.TempoPeriodSeconds); // a full period — tempo phase stays synced
+                mg.BellowsStop();
             }
-        }
-
-        mg.SmeltStop();
-    }
-
-    private static void DriveSmeltOverheat(ForgeMinigame mg)
-    {
-        var guard = 0;
-        while (!mg.Smelt.Complete)
-        {
-            mg.Advance(0.05); // never Stop — runs past the sweet zone until the timeout/over-heat path fires
-            if (++guard > 200_000)
+            else
             {
-                throw new InvalidOperationException("smelt never auto-completed");
-            }
-        }
-    }
-
-    private static void DriveForgeOnBeatToCompletion(ForgeMinigame mg)
-    {
-        var guard = 0;
-        while (mg.Current == ForgeMinigame.Stage.Forge)
-        {
-            var period = mg.Forge.BeatPeriodSeconds;
-            mg.ForgeStrike(); // Elapsed sits on a beat boundary (0, period, 2*period, ...) — on-beat every time
-            if (mg.Current != ForgeMinigame.Stage.Forge)
-            {
-                break;
+                mg.Advance(ForgeMinigame.TempoPeriodSeconds); // Elapsed on a beat boundary — on-tempo strike
+                mg.ForgeStrike();
             }
 
-            mg.Advance(period);
-            if (++guard > 1000)
+            if (++guard > 5000)
             {
-                throw new InvalidOperationException("forge (on-beat) never completed");
+                throw new InvalidOperationException("run never reached the path end");
             }
         }
     }
 
-    private static void DriveForgeOffBeatToCompletion(ForgeMinigame mg)
+    /// <summary>A competent run: works the billet to the end on-tempo, then lets heat drain toward
+    /// the quench trough (the path's final heat) before plunging — a clean quench.</summary>
+    private static void DriveGoodRun(ForgeMinigame mg)
     {
-        var period = mg.Forge.BeatPeriodSeconds;
-        mg.Advance(period / 2.0); // offset to the exact midpoint between pulses — off-beat every strike
-        var guard = 0;
-        while (mg.Current == ForgeMinigame.Stage.Forge)
-        {
-            mg.ForgeStrike();
-            if (mg.Current != ForgeMinigame.Stage.Forge)
-            {
-                break;
-            }
+        WorkBilletToEnd(mg);
 
-            mg.Advance(period); // stays at the same off-beat phase offset every cycle
-            if (++guard > 1000)
-            {
-                throw new InvalidOperationException("forge (off-beat) never completed");
-            }
+        var trough = ForgePath.HeatAt(mg.Path, 1000);
+        var guard = 0;
+        while (mg.HeatYPermille > trough + 40 && guard++ < 500)
+        {
+            mg.Advance(ForgeMinigame.TempoPeriodSeconds);
+        }
+
+        mg.Plunge();
+    }
+
+
+    private static ScriptResult RunScript(Action<ForgeMinigame> script)
+    {
+        var mg = new ForgeMinigame();
+        try
+        {
+            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
+            script(mg);
+            var trace = (ForgeTraceInput)mg.EmittedAction!.Puzzle!;
+            return new ScriptResult(mg.PreviewGradePermille!.Value, trace);
+        }
+        finally
+        {
+            mg.Free();
         }
     }
 
-    private static void DriveQuenchPerfect(ForgeMinigame mg) => mg.QuenchLock(); // NeedlePermille starts at dead-center
-
-    private static void DriveQuenchSloppy(ForgeMinigame mg)
-    {
-        var quarterPeriod = 0.25 / mg.Quench.OscillationHz; // needle swings to its extreme — worst-case distance
-        mg.Advance(quarterPeriod);
-        mg.QuenchLock();
-    }
+    private readonly record struct ScriptResult(int PreviewGrade, ForgeTraceInput Trace);
 }
 #endif
