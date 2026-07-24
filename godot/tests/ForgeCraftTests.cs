@@ -4,6 +4,7 @@ using System.Linq;
 using GameSim.Contracts;
 using GdUnit4;
 using Godot;
+using GodotClient.Minigames;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -121,6 +122,82 @@ public class ForgeCraftTests
             var pending = ui.Adapter.PendingActions.OfType<UnlockTalentAction>().ToList();
             AssertThat(pending.Count).IsEqual(1);
             AssertThat(pending[0].NodeId).IsEqual("keen-eye");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── U1: the forge minigame's sweet-zone band overlay ─────────────────────────────────────
+
+    [TestCase]
+    public void SweetZoneBand_MapsCenterHalfWidthToGaugeFraction_ClampedToDomainEdges()
+    {
+        // SmeltBeat's own band center (620) — a plain-math pin independent of any live Control.
+        AssertThat(ForgeMinigame.BandStartFraction(SmeltBeat.BandCenterPermille, 130)).IsEqual(0.49);
+        AssertThat(ForgeMinigame.BandEndFraction(SmeltBeat.BandCenterPermille, 130)).IsEqual(0.75);
+
+        // QuenchBeat's own target (500).
+        AssertThat(ForgeMinigame.BandStartFraction(QuenchBeat.TargetPermille, 130)).IsEqual(0.37);
+        AssertThat(ForgeMinigame.BandEndFraction(QuenchBeat.TargetPermille, 130)).IsEqual(0.63);
+
+        // A band wide/near-edge enough to run off the [0,1000] domain clamps rather than
+        // reporting a negative/over-1 anchor fraction (a talent-widened band near either end).
+        AssertThat(ForgeMinigame.BandStartFraction(50, 200)).IsEqual(0.0);
+        AssertThat(ForgeMinigame.BandEndFraction(950, 200)).IsEqual(1.0);
+    }
+
+    [TestCase]
+    public void ForgeMinigameOverlay_DrawsSweetZoneBand_PerBeatType_HiddenDuringForge()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            ui.Adapter.AdvancePhase();
+            ui.OpenPanel("Forge");
+
+            PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
+            var overlay = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
+            var band = Find<ColorRect>(overlay, "ForgeMinigameSweetZoneBand");
+
+            // Smelt: the band tracks the beat's own live center/half-width.
+            AssertThat(band.Visible).IsTrue();
+            var smeltHalf = overlay.Smelt.BandWidthPermille / 2;
+            AssertThat(band.AnchorLeft).IsEqual((float)ForgeMinigame.BandStartFraction(SmeltBeat.BandCenterPermille, smeltHalf));
+            AssertThat(band.AnchorRight).IsEqual((float)ForgeMinigame.BandEndFraction(SmeltBeat.BandCenterPermille, smeltHalf));
+
+            // Forge's sweet zone is temporal (strike on the metronome beat), not a range on this
+            // progress readout — the band hides rather than showing a stale Smelt region.
+            overlay.SmeltStop();
+            AssertThat(overlay.Current).IsEqual(ForgeMinigame.Stage.Forge);
+            AssertThat(band.Visible).IsFalse();
+
+            // Drive Forge (on-beat) to completion, then Quench re-shows the band at its own
+            // center/width — proving the overlay updates PER beat type, not just once at Configure.
+            var period = overlay.Forge.BeatPeriodSeconds;
+            var guard = 0;
+            while (overlay.Current == ForgeMinigame.Stage.Forge)
+            {
+                overlay.ForgeStrike();
+                if (overlay.Current != ForgeMinigame.Stage.Forge)
+                {
+                    break;
+                }
+
+                overlay.Advance(period);
+                if (++guard > 1000)
+                {
+                    throw new InvalidOperationException("forge (on-beat) never completed");
+                }
+            }
+
+            AssertThat(overlay.Current).IsEqual(ForgeMinigame.Stage.Quench);
+            AssertThat(band.Visible).IsTrue();
+            var quenchHalf = overlay.Quench.BandWidthPermille / 2;
+            AssertThat(band.AnchorLeft).IsEqual((float)ForgeMinigame.BandStartFraction(QuenchBeat.TargetPermille, quenchHalf));
+            AssertThat(band.AnchorRight).IsEqual((float)ForgeMinigame.BandEndFraction(QuenchBeat.TargetPermille, quenchHalf));
         }
         finally
         {
