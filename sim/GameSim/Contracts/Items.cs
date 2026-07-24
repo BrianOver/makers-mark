@@ -52,5 +52,15 @@ public sealed record Item(
     /// <summary>True once this item has been signed into a named artifact (Wave 4).</summary>
     public bool IsSigned => SignedName is not null;
 
+    /// <summary>Wave 4c (U20, heirloom reforge): the legend-line an item inherits when it is reforged
+    /// from a fallen hero's worn gear ("forged from the blade of Sera Deepfall"), or null for ordinary
+    /// stock. When set, this item carries the dead forward — the dead persist as inheritance (R6).
+    /// DATA, never rules: no sim system keys off it beyond presentation/history. Trailing init member
+    /// (save-compat — old saves have no property → null → not an heirloom).</summary>
+    public string? HeirloomLineage { get; init; } = null;
+
+    /// <summary>True once this item was reforged from a fallen hero's gear (Wave 4c).</summary>
+    public bool IsHeirloom => HeirloomLineage is not null;
+
     public bool PlayerCrafted => Mark is not null;
 }

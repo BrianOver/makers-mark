@@ -76,7 +76,9 @@ public static class GameComposition
             new ProfessionHandlers(),
             new CampHandlers(), // U4 staged resolution: Camp-phase send-supply / recall verbs (draws no RNG)
             new CounterHandlers(), // PA3/PKD5: open/present/suggest/haggle/close (draws no RNG)
-            new CommissionHandlers())); // Wave 3 (U14): accept/decline a hero's posted commission (draws no RNG)
+            new CommissionHandlers(), // Wave 3 (U14): accept/decline a hero's posted commission (draws no RNG)
+            new FarewellHandlers(), // Wave 4c (U18): HonorMemorialAction, Evening-legal (draws no RNG)
+            new HeirloomHandlers())); // Wave 4c (U20): ReforgeHeirloomAction, all phases like CraftAction (single roll, same as a normal craft)
 
     /// <summary>A fresh campaign: seeded world with the starting six heroes installed.</summary>
     public static GameState NewCampaign(ulong seed) =>

@@ -161,5 +161,115 @@ public class LegendsWallTests
             Unmount(ui);
         }
     }
+
+    // ── Wave 4c (U18/U20): Honor + Reforge affordances on the memorial rows ─────────────────
+
+    private static readonly HeroId FallenHeroId = new(9);
+    private static readonly ItemId WornWeaponId = new(810);
+
+    /// <summary>A fallen hero (Sera) whose Memorial and matching <see cref="HeroDied"/> record
+    /// line up — the exact shape <see cref="LegendsWall"/> needs to render both an Honor button
+    /// (un-honored memorial) and a Reforge button (a worn item not yet reforged).</summary>
+    private static GameState WorldWithFallenHero(bool honored = false, bool alreadyReforged = false)
+    {
+        var baseState = GameFactory.NewGame(6010);
+        var weapon = new Item(
+            WornWeaponId, "dagger", "Rusty Dagger", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(8, 0, 2), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var wornGear = new GearSet(WornWeaponId, null, null);
+        var died = new HeroDied(FallenHeroId, 3, "slain by a Tunnel Spider", wornGear) { Id = new EventId(1), Day = 3 };
+
+        var events = ImmutableList.Create<GameEvent>(died);
+        if (alreadyReforged)
+        {
+            events = events.Add(new HeirloomReforged(new ItemId(900), WornWeaponId, "forged from the Rusty Dagger of Sera")
+            {
+                Id = new EventId(2), Day = 4,
+            });
+        }
+
+        return baseState with
+        {
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(WornWeaponId.Value, weapon),
+            Drama = baseState.Drama with
+            {
+                Memorials = ImmutableList.Create(new Memorial(FallenHeroId, "Sera", Day: 3, GearNamed: "Rusty Dagger", Honored: honored)),
+            },
+            EventLog = events,
+        };
+    }
+
+    [TestCase]
+    public void HonorButton_QueuesHonorMemorialAction()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(WorldWithFallenHero());
+
+            PressEnabled(ui.Legends, $"Honor_{FallenHeroId.Value}");
+
+            var honored = ui.Adapter.PendingActions.OfType<HonorMemorialAction>().Single();
+            AssertThat(honored.Hero).IsEqual(FallenHeroId);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void HonoredMemorial_ShowsHonoredSuffix_NoHonorButton()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(WorldWithFallenHero(honored: true));
+
+            AssertThat(ui.Legends.FindChild($"Honor_{FallenHeroId.Value}", recursive: true, owned: false)).IsNull();
+            AssertThat(RenderedText(ui.Legends)).Contains("honored");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ReforgeButton_QueuesReforgeHeirloomAction_UsingSourceItemsOwnRecipe()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(WorldWithFallenHero());
+
+            PressEnabled(ui.Legends, $"Reforge_{WornWeaponId.Value}");
+
+            var reforge = ui.Adapter.PendingActions.OfType<ReforgeHeirloomAction>().Single();
+            AssertThat(reforge.SourceItem).IsEqual(WornWeaponId);
+            AssertThat(reforge.RecipeId).IsEqual("dagger");
+            AssertThat(reforge.MaterialKey).IsEqual("copper");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void AlreadyReforgedSource_HasNoReforgeButton()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(WorldWithFallenHero(alreadyReforged: true));
+
+            AssertThat(ui.Legends.FindChild($"Reforge_{WornWeaponId.Value}", recursive: true, owned: false)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif
