@@ -332,7 +332,10 @@ public class InteriorStageTests
 
             AssertThat(ui.Interior.VenueKey).IsEqual("market");
             AssertThat(ui.Interior.ShelfIconCount).IsEqual(ui.Adapter.CurrentState.Player.Shelf.Count);
-            AssertThat(ui.Interior.ShopStage.Visible).IsTrue();
+            // U6: entering the market now stages a 3D room (see-through), so the full-screen 2D
+            // ShopStage plank is HIDDEN (it used to bury the room). Shelf logic still populates;
+            // the shop is reached via the hotspot. The 2D strip only shows in classic (opaque) mode.
+            AssertThat(ui.Interior.ShopStage.Visible).IsFalse();
 
             Press(ui.Interior, "InteriorExit");
 
@@ -361,7 +364,10 @@ public class InteriorStageTests
 
             ui.Town.WorldInputNode.SetTarget(ui.Town.FindBuilding("market"));
             ui.Town.WorldInputNode.TriggerInteract();
-            AssertThat(ui.Interior.ShopStage.Visible).IsTrue();
+            // U6: the 2D ShopStage strip is hidden behind the 3D room now (see-through). Its
+            // customer-staging LOGIC still runs — the sale already landed (QueuedRuns above), and
+            // Advance still stages the figure — but the strip itself no longer covers the room.
+            AssertThat(ui.Interior.ShopStage.Visible).IsFalse();
 
             for (var i = 0; i < 200 && ui.Interior.ShopStage.ActiveCustomerCount == 0; i++)
             {

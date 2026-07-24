@@ -40,17 +40,37 @@ public partial class CameraRig : Node3D
     /// cref="Distance"/> normally, or <see cref="PushIn"/>'s override while pushed in.</summary>
     private float _targetDistance;
 
+    /// <summary>The per-frame eased camera pitch (degrees) and the value it eases toward. Normally
+    /// <see cref="Pitch"/> (the town's -42 top-down follow); a <see cref="PushIn"/> can override it
+    /// so interiors are framed nearer eye level (~-15) and read as 3D rooms rather than floor plans.
+    /// Eased with the same exponential as distance so the tilt feels identical to the dolly.</summary>
+    private float _currentPitch;
+    private float _targetPitch;
+
+    /// <summary>The pitch last written to the camera node. We only re-assign
+    /// <c>_cam.RotationDegrees</c> when the eased pitch actually moves, so the common no-override
+    /// case (town/station follow) never touches the camera transform per frame — keeps the pure-math
+    /// dolly detached-node-test-safe (writing a child transform every frame errors on a rig that was
+    /// never added to a SceneTree).</summary>
+    private float _appliedPitch;
+
     /// <summary>PA8 test/inspection surface: true while a station dolly-in is active.</summary>
     public bool IsPushedIn => _pushFocus != null;
 
     /// <summary>PA8 test/inspection surface: the live eased camera distance.</summary>
     public float CurrentDistance => _currentDistance;
 
+    /// <summary>Test/inspection surface: the live eased camera pitch (degrees).</summary>
+    public float CameraPitch => _currentPitch;
+
     public override void _Ready()
     {
         _cam = new Camera3D { Name = "Camera3D", Fov = 45f, Near = 0.5f, Far = 200f };
         AddChild(_cam);
-        _cam.RotationDegrees = new Vector3(Pitch, 0, 0);
+        _currentPitch = Pitch;
+        _targetPitch = Pitch;
+        _appliedPitch = Pitch;
+        _cam.RotationDegrees = new Vector3(_currentPitch, 0, 0);
         _currentDistance = Distance;
         _targetDistance = Distance;
         _cam.Position = _cam.Basis.Z * _currentDistance;
@@ -68,10 +88,11 @@ public partial class CameraRig : Node3D
     /// subsequent frames (never an instant cut). Calling this again (a different station, or a
     /// re-press) simply re-targets the same ease — safe to call repeatedly.
     /// </summary>
-    public void PushIn(Node3D focus, float distance)
+    public void PushIn(Node3D focus, float distance, float? pitch = null)
     {
         _pushFocus = focus;
         _targetDistance = distance;
+        _targetPitch = pitch ?? Pitch;
     }
 
     /// <summary>
@@ -84,6 +105,7 @@ public partial class CameraRig : Node3D
     {
         _pushFocus = null;
         _targetDistance = Distance;
+        _targetPitch = Pitch;
     }
 
     public override void _Process(double delta)
@@ -96,6 +118,13 @@ public partial class CameraRig : Node3D
 
         var t = 1f - Mathf.Exp(-FollowSpeed * (float)delta);
         GlobalPosition = GlobalPosition.Lerp(followTarget.GlobalPosition, t);
+        _currentPitch = Mathf.Lerp(_currentPitch, _targetPitch, t);
+        if (!Mathf.IsEqualApprox(_currentPitch, _appliedPitch))
+        {
+            _cam.RotationDegrees = new Vector3(_currentPitch, 0, 0); // before Position: it reads Basis.Z
+            _appliedPitch = _currentPitch;
+        }
+
         _currentDistance = Mathf.Lerp(_currentDistance, _targetDistance, t);
         _cam.Position = _cam.Basis.Z * _currentDistance;
     }

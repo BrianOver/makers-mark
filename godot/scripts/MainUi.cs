@@ -88,7 +88,12 @@ public partial class MainUi : Control
     /// <summary>3D-interiors MVP: the <see cref="CameraRig.PushIn"/> distance for a venue's
     /// <see cref="InteriorRoom3D"/> — slightly wider than <see cref="StationPushInDistance"/> so
     /// the whole 8-unit diorama room (floor + three walls) fits the rig's 45° FOV frame.</summary>
-    private const float InteriorRoomPushInDistance = 7.5f;
+    private const float InteriorRoomPushInDistance = 6f;
+
+    /// <summary>Interior camera pitch (degrees): shallower than the town's -42 top-down follow so
+    /// the room is viewed nearer eye level and its walls/depth/props read as a 3D space rather than
+    /// a flat floor plan (the "interiors look 2D" fix). Eased by <see cref="CameraRig.PushIn"/>.</summary>
+    private const float InteriorRoomPitch = -15f;
 
     /// <summary>U23 (R5, KTD4): number-row hotkeys for the quick-travel unlock — runtime <see
     /// cref="InputMap"/> registration only (no <c>project.godot</c> contact), gated on <see
@@ -1118,7 +1123,7 @@ public partial class MainUi : Control
         var room = new InteriorRoom3D { Position = InteriorRoom3D.MountPosition };
         room.Build(venueKey);
         Town.World.AddChild(room);
-        Town.Camera.PushIn(room.Focus, InteriorRoomPushInDistance);
+        Town.Camera.PushIn(room.Focus, InteriorRoomPushInDistance, InteriorRoomPitch);
         InteriorRoom = room;
     }
 

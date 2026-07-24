@@ -257,8 +257,11 @@ public partial class InteriorStage : Control
         ApplyBackdrop(spec.BackdropArtId); // still resolved in see-through mode: HasBackdropArt stays meaningful
         RebuildHotspots(spec);
 
-        _shopStage.Visible = venueKey == "market";
-        _shelfRow.Visible = venueKey == "market";
+        // The 2D shop strip must NOT draw over a 3D interior room: gate on !seeThrough. In see-through
+        // mode a real InteriorRoom3D is behind this overlay, and an unconditional ShopStage plank
+        // buried it (the market's tutorial-step-1 "clearly 2D" bug). Classic (opaque) mode unchanged.
+        _shopStage.Visible = venueKey == "market" && !seeThrough;
+        _shelfRow.Visible = venueKey == "market" && !seeThrough;
         ClearShelfIcons(); // a previous venue's icons (if any) never leak into this one
         if (venueKey == "market" && state is not null)
         {
