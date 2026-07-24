@@ -50,23 +50,16 @@ public class GenAssetCoverageTests
         "standing-lantern.glb", "grain-sack.glb", "shop-sign.glb", "bucket.glb",
         // Overnight staged batch — outdoor props (Town3D.BuildProps)
         "scarecrow.glb", "flower-planter.glb",
+        // Venue monsters — surfaced in the Bestiary (BestiaryPanel + AssetCatalog.MonsterModelFile).
+        // Gloomwood F1/F2 + Sunken Crypt F1; venue-independent so they show even though those venues
+        // aren't in the live raid rotation yet.
+        "monster-bramble-boar.glb", "monster-lantern-moth.glb", "monster-crypt-crab.glb",
     };
 
     /// <summary>Gen GLBs finished but not yet placeable — each needs a surface that does not exist
     /// yet. KEEP THE REASON; remove an entry only by wiring the asset (then add it to
-    /// <see cref="Wired"/>).</summary>
-    private static readonly Dictionary<string, string> Pending = new()
-    {
-        // Venue (non-Mine) monster meshes. The only 3D monster spectate surface today is
-        // MineWatch's milestone flash, whose MonsterRoster is Mine-only (cave-rat..forgeworm) and
-        // whose events (FloorRecordSet/AttributionBeatEvent) carry no venue/kind. These three are
-        // finished + normalized (on disk); they light up the instant a venue-aware spectate passes
-        // the real MonsterKind to
-        // MonsterView3D.ShowMonster (kind slug already resolves via AssetCatalog once mapped).
-        ["monster-bramble-boar.glb"] = "Gloomwood F1 monster — no venue-aware 3D spectate surface yet (MineWatch is Mine-only).",
-        ["monster-lantern-moth.glb"] = "Gloomwood F2 monster — no venue-aware 3D spectate surface yet (MineWatch is Mine-only).",
-        ["monster-crypt-crab.glb"] = "Sunken Crypt F1 monster — no venue-aware 3D spectate surface yet (MineWatch is Mine-only).",
-    };
+    /// <see cref="Wired"/>). Currently empty — every gen GLB on disk is wired.</summary>
+    private static readonly Dictionary<string, string> Pending = new();
 
     private static List<string> GenGlbsOnDisk()
     {

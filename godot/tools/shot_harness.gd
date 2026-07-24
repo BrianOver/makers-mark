@@ -38,9 +38,15 @@ func _initialize() -> void:
 func _process(_delta: float) -> bool:
 	_frames += 1
 	if _state != "" and not _entered and _frames == 60:
-		# Same entry point the town uses on building arrival (private C# method reached
-		# via the source-gen call() bridge).
-		if _ui.has_method("OnTownBuildingClicked"):
+		if _state == "Bestiary":
+			# The Bestiary modal opens from a tavern hotspot in-game; capture it directly by
+			# finding the panel node and calling its public ShowAll (source-gen call() bridge).
+			var b = _ui.find_child("BestiaryPanel", true, false)
+			if b:
+				b.call("ShowAll")
+		elif _ui.has_method("OnTownBuildingClicked"):
+			# Same entry point the town uses on building arrival (private C# method reached
+			# via the source-gen call() bridge).
 			_ui.call("OnTownBuildingClicked", _state)
 		_entered = true
 	if _frames >= _settle:

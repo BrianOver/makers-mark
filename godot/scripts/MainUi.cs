@@ -131,6 +131,9 @@ public partial class MainUi : Control
     /// <summary>U10: the pre-sleep raid-forecast board (RaidForecast.ForTomorrow projection),
     /// chained after the day-end Ledger and re-openable from the HUD "Forecast" button.</summary>
     public RaidForecastBoard Forecast { get; private set; } = null!;
+    /// <summary>Gate-b flag 3: the Bestiary gallery (all venues' monsters, 3D mesh where one
+    /// exists), opened from the Tavern's "Bestiary" hotspot.</summary>
+    public BestiaryPanel Bestiary { get; private set; } = null!;
     public CampPanel Camp { get; private set; } = null!;
     public TabFade TabFade { get; private set; } = null!;
     public AdventureTicker Ticker { get; private set; } = null!;
@@ -199,6 +202,9 @@ public partial class MainUi : Control
     /// manual HUD-button open) so its VisibilityChanged handler keeps the inherited resume intent
     /// instead of overwriting it with the (paused) clock state.</summary>
     private bool _forecastChaining;
+    /// <summary>Gate-b flag 3: resume-play-on-close intent for the Bestiary modal (same pattern as
+    /// the Ledger/Forecast).</summary>
+    private bool _resumePlayOnBestiaryClose;
 
     /// <summary>U22: the door position the avatar stood at when the currently-open (or just-
     /// closed) interior was opened — restored on exit (R4/AE4 "exit returns avatar to door
@@ -937,6 +943,12 @@ public partial class MainUi : Control
         Forecast.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Forecast.VisibilityChanged += OnForecastVisibilityChanged;
 
+        // --- Bestiary (gate-b flag 3): code-built modal sibling, opened from the Tavern hotspot.
+        Bestiary = new BestiaryPanel();
+        AddChild(Bestiary);
+        Bestiary.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        Bestiary.VisibilityChanged += OnBestiaryVisibilityChanged;
+
         // --- camp decision slate (V7a): a second modal overlay, code-built (no scene, so no
         //     .tscn/import metadata churn). Camp (phase 3) and the Evening Ledger never show at
         //     once, so the two overlays never contend.
@@ -1261,6 +1273,15 @@ public partial class MainUi : Control
     {
         UnmountInteriorRoom();
         ResetAvatarToDoor();
+
+        // Gate-b flag 3: the Tavern "Bestiary" hotspot opens the code-built modal, not a drawer —
+        // route it before OpenPanel (which only knows the six drawer ids and would throw).
+        if (action == "Bestiary")
+        {
+            Bestiary.ShowAll();
+            return;
+        }
+
         OpenPanel(action);
     }
 
@@ -1325,6 +1346,24 @@ public partial class MainUi : Control
             Clock.Pause();
         }
         else if (_resumePlayOnForecastClose)
+        {
+            Clock.Play();
+        }
+
+        UpdateEngaged();
+        UpdateClockLabel();
+    }
+
+    /// <summary>Gate-b flag 3: mirror of the Forecast/Ledger latch for the Bestiary modal — pause
+    /// while it owns the screen, resume on close when play was running.</summary>
+    private void OnBestiaryVisibilityChanged()
+    {
+        if (Bestiary.Visible)
+        {
+            _resumePlayOnBestiaryClose = Clock.Playing;
+            Clock.Pause();
+        }
+        else if (_resumePlayOnBestiaryClose)
         {
             Clock.Play();
         }
@@ -1403,7 +1442,7 @@ public partial class MainUi : Control
     /// </summary>
     private void UpdateEngaged()
     {
-        var engaged = Drawer.IsOpen || Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible || Forecast.Visible;
+        var engaged = Drawer.IsOpen || Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible || Forecast.Visible || Bestiary.Visible;
 
         // U8: Clock.Engaged can ALSO be held by the day-1 craft→shelve pacing guard above —
         // deliberately NOT folded into `engaged` itself, which also drives the objective chip's
