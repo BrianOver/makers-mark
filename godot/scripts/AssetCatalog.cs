@@ -89,10 +89,17 @@ public static class AssetCatalog
     /// </summary>
     private static readonly Dictionary<string, string> MonsterModelFiles = new()
     {
+        // Mine (MineWatch milestone flash)
         ["cave-rat"] = "monster-cave-rat.glb",
         ["tunnel-spider"] = "monster-spider.glb",
         ["deep-ghoul"] = "monster-ghoul.glb",
         ["ore-golem"] = "monster-ore-golem.glb",
+        // Venue monsters — surfaced in the Bestiary (Gloomwood F1/F2, Sunken Crypt F1). Keyed by
+        // the venue-floor MonsterKind slug (Slugify tolerates the display name), no venue prefix
+        // because the file names are already unique.
+        ["bramble-boar"] = "monster-bramble-boar.glb",
+        ["lantern-moth"] = "monster-lantern-moth.glb",
+        ["crypt-crab"] = "monster-crypt-crab.glb",
     };
 
     /// <summary>Gen monster GLB file name for <paramref name="kind"/> (display name "Cave Rat" or
