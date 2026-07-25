@@ -80,6 +80,43 @@ public class DemandBoardTests
         }
     }
 
+    /// <summary>
+    /// A dead hero's commission can never be fulfilled, so the board must never surface it — else the
+    /// advisor points the player at the fallen (fable Slice-2 confirm found a suggestion naming a hero
+    /// who had died four days prior). Invariant across a long seeded run; also directly exercises the
+    /// filter whenever the raw <see cref="GameState.Commissions"/> holds an unaccepted commission for a
+    /// dead hero on any day.
+    /// </summary>
+    [Fact]
+    public void OpenCommissions_NeverSurfaceADeadHero()
+    {
+        const int Days = 30;
+        var byDay = RunSeededDays(seed: 2026, days: Days);
+
+        for (var day = 1; day <= Days; day++)
+        {
+            var state = byDay[day];
+            var snapshot = DemandBoard.Snapshot(state);
+
+            foreach (var entry in snapshot.OpenCommissions)
+            {
+                Assert.True(
+                    state.Heroes.TryGetValue(entry.Hero.Value, out var hero) && hero.Alive,
+                    $"day {day}: OpenCommissions surfaced hero {entry.Hero}, who is dead or absent");
+            }
+
+            // Direct filter exercise: any raw unaccepted commission for a dead hero must be excluded.
+            foreach (var commission in state.Commissions)
+            {
+                if (!commission.Accepted
+                    && state.Heroes.TryGetValue(commission.Hero.Value, out var h) && !h.Alive)
+                {
+                    Assert.DoesNotContain(snapshot.OpenCommissions, e => e.Hero == commission.Hero);
+                }
+            }
+        }
+    }
+
     [Fact]
     public void DepthStall_EntryAppears_WithinTwoDaysOfPlateauOnset()
     {
@@ -119,5 +156,54 @@ public class DemandBoardTests
             firstStallDay - lastProgressDay,
             DemandBoard.StallThresholdDays,
             DemandBoard.StallThresholdDays + 1); // +1 day-boundary slack (byDay captures END-of-day state)
+    }
+
+    /// <summary>
+    /// N1 (plan 2026-07-25-001 Slice 2 addendum): the "gear's full — something else is blocking the
+    /// push" non-answer must never be reachable. Every stalled hero either has a concrete
+    /// <see cref="DepthStallEntry.BlockingSlot"/> (an empty slot) OR — when every slot is worn — a
+    /// concrete quality gap (<see cref="DepthStallEntry.CarriedQuality"/> vs
+    /// <see cref="DepthStallEntry.RequiredQuality"/> for the next floor). Scans every calendar day of
+    /// a seeded 15-day run so the check covers however many distinct stalled heroes actually appear
+    /// (not just the lead entry a narration layer happens to print).
+    /// </summary>
+    [Fact]
+    public void DepthStall_NamesConcreteBlocker_NeverFallsThroughToNonAnswer()
+    {
+        const int Days = 15;
+        var byDay = RunSeededDays(seed: 2026, days: Days);
+
+        var sawAnyStall = false;
+        var sawAnyQualityGate = false;
+
+        for (var day = 1; day <= Days; day++)
+        {
+            var snapshot = DemandBoard.Snapshot(byDay[day]);
+            foreach (var stall in snapshot.DepthStalls)
+            {
+                sawAnyStall = true;
+
+                if (stall.BlockingSlot is not null)
+                {
+                    // Slot gap already fully explains it — the quality fields stay unset (no
+                    // double-diagnosis of the same hero).
+                    Assert.Null(stall.CarriedQuality);
+                    Assert.Null(stall.RequiredQuality);
+                    continue;
+                }
+
+                // No empty slot: this is exactly the case that used to fall through to
+                // "something else is blocking the push". It must now name the quality gate.
+                Assert.NotNull(stall.CarriedQuality);
+                Assert.NotNull(stall.RequiredQuality);
+                Assert.True(Enum.IsDefined(stall.CarriedQuality!.Value));
+                Assert.True(Enum.IsDefined(stall.RequiredQuality!.Value));
+                sawAnyQualityGate = true;
+            }
+        }
+
+        Assert.True(sawAnyStall, "expected at least one depth-stall entry within 15 days on seed 2026");
+        Assert.True(sawAnyQualityGate,
+            "expected at least one full-gear stall (the exact case that used to be a non-answer) within 15 days on seed 2026");
     }
 }

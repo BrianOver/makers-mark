@@ -22,14 +22,21 @@ public sealed record OpenCommissionEntry(
 
 /// <summary>A hero who hasn't posted a new personal-deepest floor in a while (KTD6): the
 /// counterfactual made visible — <see cref="BlockingSlot"/> is the first empty gear slot in the
-/// fixed Weapon/Shield/Armor order (<see cref="RaidForecast.MissingItemSlots"/>), or null when
-/// every slot is filled and something else (quality, floor gate) is the true block.</summary>
+/// fixed Weapon/Shield/Armor order (<see cref="RaidForecast.MissingItemSlots"/>), or null when every
+/// slot is filled. In the null case the true block is named instead of left as a non-answer (N1,
+/// plan 2026-07-25-001): <see cref="CarriedQuality"/> is the worst grade the hero has worn across
+/// Weapon/Shield/Armor and <see cref="RequiredQuality"/> is what the NEXT floor
+/// (<c>DeepestFloorReached + 1</c>) demands, both populated together, both null exactly when
+/// <see cref="BlockingSlot"/> is non-null (a slot gap already fully explains the stall — no quality
+/// read needed).</summary>
 public sealed record DepthStallEntry(
     HeroId Hero,
     string HeroName,
     int DeepestFloorReached,
     int TargetFloor,
-    ItemSlot? BlockingSlot);
+    ItemSlot? BlockingSlot,
+    QualityGrade? CarriedQuality = null,
+    QualityGrade? RequiredQuality = null);
 
 /// <summary>The price floor a hero expects before risking a given depth (R18), shown whether or
 /// not a bounty is currently posted there — the reference the board's live postings are judged
@@ -139,12 +146,16 @@ public static class DemandBoard
                 continue;
             }
 
-            var name = state.Heroes.TryGetValue(commission.Hero.Value, out var hero)
-                ? hero.Name
-                : commission.Hero.ToString();
+            // A dead hero's commission can never be fulfilled or meaningfully accepted — don't
+            // surface it as a target, else the advisor/board point the player at the fallen
+            // (fable Slice-2 confirm: a suggestion named a hero who had died four days earlier).
+            if (!state.Heroes.TryGetValue(commission.Hero.Value, out var hero) || !hero.Alive)
+            {
+                continue;
+            }
 
             open.Add(new OpenCommissionEntry(
-                commission.Hero, name, commission.Slot, commission.MinQuality,
+                commission.Hero, hero.Name, commission.Slot, commission.MinQuality,
                 commission.PremiumGold, commission.DeadlineDay));
         }
 
@@ -199,12 +210,48 @@ public static class DemandBoard
             }
 
             var missing = RaidForecast.MissingItemSlots(hero.Gear);
+            if (missing.Count > 0)
+            {
+                stalls.Add(new DepthStallEntry(
+                    hero.Id, hero.Name, hero.DeepestFloorReached, targetFloor, missing[0]));
+                continue;
+            }
+
+            // Every slot is filled — name the QUALITY gate instead of leaving "something else" as a
+            // non-answer (N1): the next floor's bar (the SAME table CommissionSystem's own gap-scan
+            // judges commissions against) vs the worst grade this hero actually carries.
+            var nextFloor = hero.DeepestFloorReached + 1;
+            var required = CommissionSystem.FloorMinQuality(nextFloor);
+            var carried = WorstCarriedQuality(hero.Gear, state.Items);
             stalls.Add(new DepthStallEntry(
                 hero.Id, hero.Name, hero.DeepestFloorReached, targetFloor,
-                missing.Count > 0 ? missing[0] : null));
+                BlockingSlot: null, CarriedQuality: carried, RequiredQuality: required));
         }
 
         return stalls.ToImmutable();
+    }
+
+    /// <summary>The worst (lowest) <see cref="QualityGrade"/> among a hero's worn Weapon/Shield/Armor
+    /// — the same three slots <see cref="RaidForecast.MissingItemSlots"/> checks for emptiness. Only
+    /// called once every slot is confirmed non-null (see <see cref="DepthStalls"/>), so a missing item
+    /// lookup (defensively defaulted to <see cref="QualityGrade.Poor"/>, the weakest grade, never
+    /// thrown) can only ever pull the reported gate DOWN, never hide a real one.</summary>
+    private static QualityGrade WorstCarriedQuality(GearSet gear, ImmutableSortedDictionary<int, Item> items)
+    {
+        var worst = QualityGrade.Masterwork;
+        foreach (var slot in new[] { ItemSlot.Weapon, ItemSlot.Shield, ItemSlot.Armor })
+        {
+            var worn = gear.Slot(slot);
+            var grade = worn is { } id && items.TryGetValue(id.Value, out var item)
+                ? item.Quality
+                : QualityGrade.Poor;
+            if (grade < worst)
+            {
+                worst = grade;
+            }
+        }
+
+        return worst;
     }
 
     /// <summary>(d, price-floor half) The pure minimum-reward reference for every floor the Mine

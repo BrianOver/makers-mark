@@ -169,4 +169,140 @@ public class CliWiringTests
             Assert.Contains(snapshot.DepthStalls[0].HeroName, telegraph, StringComparison.Ordinal);
         }
     }
+
+    // U9 (C5, R6, KTD-1): the four Godot-only thesis-layer verbs, now reachable from the CLI.
+    // These tests pin the exact wiring 'accept-commission'/'decline-commission'/'honor-memorial'/
+    // 'reforge-heirloom' drive through the REAL composition root (mirrors this file's own doc
+    // comment), and — for honor-memorial/reforge-heirloom — that EventNarration.cs's previously-dead
+    // MemorialHonored/HeirloomReforged switch cases now actually fire.
+
+    [Fact]
+    public void AcceptCommissionCommand_FlipsAccepted_NoRejection()
+    {
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(Seed);
+
+        // CommissionSystem posts during Morning's own system pass and an open commission survives
+        // phase transitions until accepted/declined/fulfilled/expired (same reasoning
+        // DemandVerb_OnFreshCampaign_RendersAllFiveFieldsPerOpenCommission pins for a single tick) —
+        // cycle phases until we land back on a Morning tick with one still open.
+        for (var tick = 0; state.Phase != DayPhase.Morning || DemandBoard.Snapshot(state).OpenCommissions.IsEmpty; tick++)
+        {
+            Assert.True(tick < 200, "no open commission reached a Morning phase within 200 ticks");
+            state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
+        }
+
+        var target = DemandBoard.Snapshot(state).OpenCommissions[0];
+
+        // What Program.cs's 'accept-commission H<id>' verb submits, byte-for-byte.
+        var action = new AcceptCommissionAction(target.Hero);
+        Assert.True(kernel.Accepts(action, state.Phase));
+        Assert.Equal($"accept-commission {target.Hero}", CliActionFormat.Format(action));
+
+        var result = kernel.Tick(state, ImmutableList.Create<PlayerAction>(action));
+
+        Assert.Empty(result.Rejected);
+        Assert.Contains(result.NewState.Commissions, c => c.Hero == target.Hero && c.Accepted);
+    }
+
+    [Fact]
+    public void DeclineCommissionCommand_RemovesCommission_NoRejection()
+    {
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(Seed);
+
+        for (var tick = 0; state.Phase != DayPhase.Morning || DemandBoard.Snapshot(state).OpenCommissions.IsEmpty; tick++)
+        {
+            Assert.True(tick < 200, "no open commission reached a Morning phase within 200 ticks");
+            state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
+        }
+
+        var target = DemandBoard.Snapshot(state).OpenCommissions[0];
+        var originalCommission = state.Commissions.Single(c => c.Hero == target.Hero && !c.Accepted);
+
+        // What Program.cs's 'decline-commission H<id>' verb submits, byte-for-byte.
+        var action = new DeclineCommissionAction(target.Hero);
+        Assert.True(kernel.Accepts(action, state.Phase));
+        Assert.Equal($"decline-commission {target.Hero}", CliActionFormat.Format(action));
+
+        var result = kernel.Tick(state, ImmutableList.Create<PlayerAction>(action));
+
+        Assert.Empty(result.Rejected);
+        // Not a Hero-based check: this SAME Morning tick's CommissionSystem pass can immediately
+        // post a FRESH commission to the just-declined hero (they're commission-less again the
+        // moment DeclineCommissionAction applies, and action-apply runs before systems within one
+        // Tick) — so the correct assertion is that THIS specific commission record is gone, not
+        // that the hero has none at all.
+        Assert.DoesNotContain(originalCommission, result.NewState.Commissions);
+    }
+
+    [Fact]
+    public void HonorMemorialCommand_EmitsEvent_AndRevivesMemorialHonoredNarration()
+    {
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(Seed) with
+        {
+            Phase = DayPhase.Evening,
+            Drama = DramaState.Empty with
+            {
+                Memorials = ImmutableList.Create(new Memorial(new HeroId(1), "Torvald", 3, "a rusty sword")),
+            },
+        };
+
+        // What Program.cs's 'honor-memorial H1' verb submits, byte-for-byte.
+        var action = new HonorMemorialAction(new HeroId(1));
+        Assert.True(kernel.Accepts(action, DayPhase.Evening));
+        Assert.Equal("honor-memorial H1", CliActionFormat.Format(action));
+
+        var result = kernel.Tick(state, ImmutableList.Create<PlayerAction>(action));
+
+        Assert.Empty(result.Rejected);
+        var honored = Assert.Single(result.Events.OfType<MemorialHonored>());
+        Assert.Equal("Torvald", honored.HeroName);
+        Assert.True(result.NewState.Drama.Memorials[0].Honored);
+
+        // EventNarration.cs's MemorialHonored case (dead code before U9 made this verb reachable).
+        var narrated = EventNarration.Line(honored, result.NewState);
+        Assert.NotNull(narrated);
+        Assert.Contains("Torvald", narrated, StringComparison.Ordinal);
+        Assert.Contains("farewell", narrated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReforgeHeirloomCommand_MintsItem_AndRevivesHeirloomReforgedNarration()
+    {
+        var kernel = GameComposition.BuildKernel();
+        var wornGear = new GearSet(new ItemId(10), null, null);
+        var dagger = new Item(
+            new ItemId(10), "dagger", "Dagger", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(8, 0, 2), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var died = new HeroDied(new HeroId(1), 3, "slain by a Tunnel Spider", wornGear) { Id = new EventId(1), Day = 1 };
+
+        var state = GameComposition.NewCampaign(Seed) with
+        {
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(10, dagger),
+            EventLog = ImmutableList.Create<GameEvent>(died),
+            Player = GameComposition.NewCampaign(Seed).Player with
+            {
+                Materials = ImmutableSortedDictionary<string, int>.Empty.Add("copper", 5),
+            },
+        };
+
+        // What Program.cs's 'reforge-heirloom I10 shortsword copper' verb submits, byte-for-byte.
+        var action = new ReforgeHeirloomAction(new ItemId(10), "shortsword", "copper");
+        Assert.True(kernel.Accepts(action, state.Phase));
+        Assert.Equal("reforge-heirloom I10 shortsword copper", CliActionFormat.Format(action));
+
+        var result = kernel.Tick(state, ImmutableList.Create<PlayerAction>(action));
+
+        Assert.Empty(result.Rejected);
+        var reforgedEvent = Assert.Single(result.Events.OfType<HeirloomReforged>());
+        Assert.Equal(new ItemId(10), reforgedEvent.SourceItem);
+        Assert.Contains("Dagger", reforgedEvent.Lineage, StringComparison.Ordinal);
+
+        // EventNarration.cs's HeirloomReforged case (dead code before U9 made this verb reachable).
+        var narrated = EventNarration.Line(reforgedEvent, result.NewState);
+        Assert.NotNull(narrated);
+        Assert.Contains("reforged", narrated, StringComparison.Ordinal);
+    }
 }

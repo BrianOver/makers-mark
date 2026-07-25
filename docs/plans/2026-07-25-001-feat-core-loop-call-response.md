@@ -397,3 +397,57 @@ Orchestrator owns staging/commits/gates; workers implement + self-test only, nev
   diff, no `BountyRefunded` event. The deferred event stays deferred.
 - Demand pass-reason rollup shape (per-item vs per-tier) — pick the one the persona playtest can act
   on; measured in U4's test.
+
+---
+
+# Slice 2 addendum — the ANSWER side (2026-07-25, from fable confirm on Slice 1)
+
+Slice 1 made the loop ASK well (fable: SHIP-WITH-NITS, PR #213). Slice 2 wires the player's ability
+to ANSWER. Same golden-safety bar: U7/U8/N1 are sim-side pure/RNG-free read or legality projections
+(no kernel path, no draw); U9 submits EXISTING action types (no new rules); N2/G1 are presentation.
+Golden byte-identical throughout; parity property test extended to 20/20.
+
+**Batching (4 workers, disjoint file sets):**
+- **Worker P — U7 → U8** (serial; `Advisor/ActionLegality.cs`+test, then `Advisor/ObjectiveAdvisor.cs`+test).
+- **Worker Q — U9 → N2** (serial; both touch `Program.cs`/`CliActionFormat.cs`).
+- **Worker R — N1** (independent; `Drama/DemandBoard.cs`+test).
+- **Worker S — G1** (independent; `godot/`).
+
+### U7/U8 acceptance refinements (from fable)
+- U7 stays as specified (extend `ActionLegality.IsLegal` `_=>false` at `:50` to the 9 verbs, mirror
+  each handler's Apply-guards per KTD9; parity test to 20/20 driven by `CounterPlayer`, MF-8).
+- **U8 adds:** the advisor suggestion must READ `DemandBoard.Snapshot(state)` and prefer an action
+  that answers the current top demand (e.g. telegraph names "Fine+ Weapon +55g" ⇒ suggest the craft
+  toward it, not a frozen `buymat copper 2`). Acceptance: on the T4/seed-2026 15-day run the
+  suggestion changes ≥3× AND at least once references an open commission or a stall.
+
+### N1. Name the stall blocker (the KTD-6 call-to-action must not be a non-answer)
+- **Problem (fable):** `DepthBoard` stall line says "gear's full — something else is blocking the
+  push" for Torvald/Brunhilde — a non-answer on the exact line KTD-6 designates as the standing goal.
+  For Kael it correctly says "blocked on Shield". The real gate above floor 3-4 is gear *quality*
+  (the Fine+ commissions already name it).
+- **Files:** `sim/GameSim/Drama/DemandBoard.cs` — when no gear SLOT is empty, diagnose the quality
+  gate: compute the tier/quality the next floor needs vs the party's carried gear and name it
+  ("carrying Common steel; floor 4 wants Fine+"). Pure read, no RNG. Extend `DemandBoardTests.cs`.
+- **Verify:** the stall line names a concrete blocker (slot OR quality) for every stalled hero in a
+  seeded 15-day run — zero "something else" non-answers.
+
+### N2. Evening noise compression (the ledger is the best AND noisiest screen)
+- **Files:** `sim/GameSim.Cli/Program.cs` (+ `CampNarration.cs` if needed) — (a) roll up the
+  per-hero camp attribution ("you held the checkpoint window …") to ONE per-party line; (b) compress
+  the Evening ore-offer block (group by material; shorten the "buyable at TOMORROW's Evening prompt"
+  instruction to a single legend line, not per-offer). Presentation only.
+- **Verify:** a seeded 15-day run shows ≤1 camp-attribution line per party per evening and the
+  ore-offer block ≤ half its current line count; golden byte-identical.
+
+### G1. DemandPanel in-world click-path (stop it being an orphan like DepthsPanel)
+- **Files:** `godot/scripts/MainUi.cs` (+ the town HUD/hotspot file, NOT `project.godot`) — add a
+  HUD button or noticeboard hotspot that calls `OpenPanel("Demand")`. Mirror how another panel's
+  in-world/HUD entry is wired. Build-verify `dotnet build godot/GodotClient.csproj`; orchestrator
+  screenshot-verifies via `tools/shoot.ps1 -State Demand`.
+- **Verify:** the panel is reachable from a player-visible control, not only the shot harness.
+
+### Deferred to a later pass (not Slice 2)
+- Pre-existing cosmetics: "undone by slain by" gossip grammar; duplicate death line (beat + event).
+- Rerun the persona playtest with an ACTING policy (craft/sell/commission) once U9 lands — the
+  Slice-1 personas only observed, so the craft→sell→commission narration path is transcript-untested.
