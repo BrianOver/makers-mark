@@ -22,6 +22,13 @@ public partial class Building3D : Node3D
 
     private static readonly Vector3 FootprintSize = new(2.4f, 2.4f, 2.4f);
     private static readonly Vector3 InteractSize = new(4.4f, 3f, 4.4f);
+
+    /// <summary>Visual round: buildings were only ~1.5× a hero's height (both normalized to ~2.4 vs
+    /// the 1.6 hero) — a village of dollhouses. Scaling the VISUAL mesh (only) by this factor makes a
+    /// cottage tower over people (~4.8 units ≈ 3× the hero) for accurate proportions, without touching
+    /// the footprint/interact colliders or the nav bake — heroes still path to the same door spots, and
+    /// any slight visual overhang of the base past the collider reads fine in the stylized look.</summary>
+    private const float BuildingBigness = 2.0f;
     private static readonly Color HighlightEmission = new(1f, 0.85f, 0.35f);
 
     /// <summary>Stable identity ("forge" | "market" | "tavern" | "minegate" | "noticeboard") —
@@ -65,6 +72,7 @@ public partial class Building3D : Node3D
 
         Mesh = mesh ?? BuildPrimitiveWedge();
         Mesh.Name = "Mesh";
+        Mesh.Scale *= BuildingBigness; // visual round: buildings tower over people (see BuildingBigness)
         AddChild(Mesh);
         CollectHighlightMaterials(Mesh);
 
@@ -179,7 +187,7 @@ public partial class Building3D : Node3D
         Name = "Label3D",
         Text = text,
         Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
-        Position = new Vector3(0, FootprintSize.Y + 0.8f, 0),
+        Position = new Vector3(0, FootprintSize.Y * BuildingBigness + 0.8f, 0), // clear the now-taller building
         FontSize = 48,
         OutlineSize = 8,
     };
