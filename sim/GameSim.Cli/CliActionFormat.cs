@@ -31,6 +31,12 @@ public static class CliActionFormat
         SetProfessionsAction a => $"profession {string.Join(' ', a.Professions)}",
         SendSupplyAction a => $"send {a.To} {a.Item}",
         RecallPartyAction a => $"recall {a.Member}",
+        // U9 (C5, R6): the four Godot-only thesis-layer verbs — same round-trip guarantee every
+        // other action gets (a suggestion/advice line must be the exact, re-typeable CLI verb).
+        AcceptCommissionAction a => $"accept-commission {a.Hero}",
+        DeclineCommissionAction a => $"decline-commission {a.Hero}",
+        HonorMemorialAction a => $"honor-memorial {a.Hero}",
+        ReforgeHeirloomAction a => $"reforge-heirloom {a.SourceItem} {a.RecipeId} {a.MaterialKey}",
         OpenCounterAction => "counter open",
         PresentItemAction a => $"counter present {a.Item}",
         SuggestItemAction a => $"counter suggest {a.Item}",

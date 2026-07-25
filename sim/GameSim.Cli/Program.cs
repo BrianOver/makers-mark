@@ -61,6 +61,11 @@ var kernel = GameComposition.BuildKernel();
 var state = GameComposition.NewCampaign(seed);
 var pending = ImmutableList.CreateBuilder<PlayerAction>();
 
+// N2 (Evening noise compression): the ore-offer "buyable at TOMORROW's Evening prompt" rule is
+// session-standing, not per-offer — shown once as a legend the first time an offer appears, never
+// repeated after (previously every single offer line carried the full sentence).
+var oreLegendShown = false;
+
 Console.WriteLine($"=== MAKER'S MARK — campaign seed {seed} ===");
 Console.WriteLine("You are the blacksmith. Type 'help' for commands.\n");
 PrintStatus(state);
@@ -113,6 +118,12 @@ while (true)
                 bounty <floor> <gold>         post a bounty (gold escrowed)
                 send <heroId> <itemId>        deliver a held consumable to a camped hero (Camp)
                 recall <heroId>               ring the recall bell for a camped party (Camp)
+                accept-commission <heroId>    accept a hero's open commission (see 'demand' for targets)
+                decline-commission <heroId>   decline a hero's open commission — no obligation
+                honor-memorial <heroId>       perform a fallen hero's farewell rite (Evening only)
+                reforge-heirloom <itemId> <recipeId> <material>
+                                               reforge a fallen hero's worn gear into a new item
+                                               (any phase, like craft)
                 counter open                  start stepped counter service (Morning only)
                 counter present <itemId>      show a shelved item to the customer at the counter
                 counter suggest <itemId>      upsell a complementary item (Interest bonus)
@@ -372,6 +383,90 @@ while (true)
             else
             {
                 TryQueue(new RecallPartyAction(new HeroId(rhid)), $"  queued: recall the party camped with H{rhid}");
+            }
+
+            break;
+        }
+
+        // U9 (C5, R6, KTD-1): the four Godot-only thesis-layer verbs, now reachable from the CLI.
+        // These SUBMIT the existing (already-handled) action types — no new sim rule. The two
+        // narration cases these revive (EventNarration.cs's MemorialHonored/HeirloomReforged) were
+        // added for Godot and have never fired from this surface until now. 'demand's open-commission
+        // list already prints each entry's Hero id ("H<id> <name> wants a ... due day ..."), so that
+        // listing is this verb's accept/decline target list.
+        case "accept-commission":
+        {
+            if (parts.Length != 2)
+            {
+                PrintUsage("accept-commission", "accept-commission <heroId>", line);
+            }
+            else if (!CliParse.TryHeroId(parts[1], out var acHid, out var heroError))
+            {
+                Console.WriteLine($"  accept-commission: {heroError}");
+            }
+            else
+            {
+                TryQueue(new AcceptCommissionAction(new HeroId(acHid)), $"  queued: accept H{acHid}'s commission");
+            }
+
+            break;
+        }
+
+        case "decline-commission":
+        {
+            if (parts.Length != 2)
+            {
+                PrintUsage("decline-commission", "decline-commission <heroId>", line);
+            }
+            else if (!CliParse.TryHeroId(parts[1], out var dcHid, out var heroError))
+            {
+                Console.WriteLine($"  decline-commission: {heroError}");
+            }
+            else
+            {
+                TryQueue(new DeclineCommissionAction(new HeroId(dcHid)), $"  queued: decline H{dcHid}'s commission");
+            }
+
+            break;
+        }
+
+        // Evening-legal (FarewellHandlers.CanHandle) — a memorial is raised by the SAME Evening
+        // tick's system pass a hero dies in, so it's only actionable starting the NEXT Evening.
+        case "honor-memorial":
+        {
+            if (parts.Length != 2)
+            {
+                PrintUsage("honor-memorial", "honor-memorial <heroId>", line);
+            }
+            else if (!CliParse.TryHeroId(parts[1], out var hmHid, out var heroError))
+            {
+                Console.WriteLine($"  honor-memorial: {heroError}");
+            }
+            else
+            {
+                TryQueue(new HonorMemorialAction(new HeroId(hmHid)), $"  queued: honor H{hmHid}'s memorial (Evening rite)");
+            }
+
+            break;
+        }
+
+        // All-phase legal (HeirloomHandlers.CanHandle — a reforge IS a craft). SourceItem must be
+        // gear recorded worn by a hero at the moment of a HeroDied event (HeirloomHandlers guard 2);
+        // 'items'/gossip/death lines name which item that was.
+        case "reforge-heirloom":
+        {
+            if (parts.Length != 4)
+            {
+                PrintUsage("reforge-heirloom", "reforge-heirloom <sourceItemId> <recipeId> <material>", line);
+            }
+            else if (!CliParse.TryItemId(parts[1], out var rhSid, out var itemError))
+            {
+                Console.WriteLine($"  reforge-heirloom: {itemError}");
+            }
+            else
+            {
+                TryQueue(new ReforgeHeirloomAction(new ItemId(rhSid), parts[2], parts[3]),
+                    $"  queued: reforge I{rhSid} into {parts[2]} with {parts[3]}");
             }
 
             break;
@@ -972,35 +1067,63 @@ void PrintLedger(GameState s, int day, ImmutableList<GoldLedgerEntry> oreSpend, 
     if (!cards.IsEmpty)
     {
         Console.WriteLine($"  ── EVENING LEDGER, day {day} ──");
+        var dayEvents = s.EventLog.Where(e => e.Day == day).ToImmutableList();
+
+        // N2 (a): a live camp slate's PartyCampReport covers every member of the party, so calling
+        // CampNarration.Attribution once per RETURN CARD printed the SAME "you held the checkpoint
+        // window..." line once per hero — 5-6x/evening for a single party's one checkpoint choice
+        // (playtest finding). Print it ONCE per party instead: first card whose party hasn't been
+        // attributed yet this ledger triggers it, keyed on the party roster from PartyCampReport.
+        // A mixed-fate party (one dies, others live) reports its worst outcome — "any member died"
+        // picks the more consequential branch of Attribution's existing matrix, never sugarcoating
+        // a death by reading only a survivor's own card.
+        var attributedParties = new List<ImmutableList<HeroId>>();
         foreach (var card in cards)
         {
             // U5: fate prose lives on the card (LedgerPack via FlavorEngine) — hero name,
             // floor, and gold earned are guaranteed verbatim in the line (R4).
             Console.WriteLine($"  {card.FateLine}");
 
-            // U3 (C3, R3): tie this hero's fate to today's camp choice, when they went through
-            // a camp window at all (CampNarration.Attribution returns null otherwise).
-            var dayEvents = s.EventLog.Where(e => e.Day == day).ToImmutableList();
-            var attribution = CampNarration.Attribution(dayEvents, card.Hero, card.Survived);
-            if (attribution is not null)
+            var partyReport = dayEvents.OfType<PartyCampReport>().FirstOrDefault(r => r.Party.Contains(card.Hero));
+            if (partyReport is not null && !attributedParties.Any(p => p.SequenceEqual(partyReport.Party)))
             {
-                Console.WriteLine($"      — {attribution}");
+                attributedParties.Add(partyReport.Party);
+                var anyDied = partyReport.Party.Any(h => cards.Any(c => c.Hero == h && !c.Survived));
+                var attribution = CampNarration.Attribution(dayEvents, card.Hero, survived: !anyDied);
+                if (attribution is not null)
+                {
+                    var roster = string.Join(", ", partyReport.Party.Select(h => HeroName(s, h)));
+                    Console.WriteLine($"      — [{roster}] {attribution}");
+                }
             }
 
             foreach (var beat in card.Beats)
             {
                 Console.WriteLine($"      ★ {beat.Detail}");
             }
+        }
 
-            foreach (var ore in card.OreOffers)
+        // N2 (b): the ore-offer block, grouped by MATERIAL across every hero who returned tonight
+        // (previously one line PER OFFER, each carrying the full "buyable at TOMORROW's Evening
+        // prompt" instruction — the single most repeated sentence in the ledger). Playtest finding
+        // #3 (P0)'s timing fact is unchanged: this offer is written into OpenOreOffers by THIS SAME
+        // Evening tick's ExpeditionRevealSystem (runs AFTER actions apply), so it is NOT purchasable
+        // this tick — it becomes buyable only at TOMORROW's Evening prompt, before that tick's
+        // 'next'. That rule is now a LEGEND, shown once ever (oreLegendShown), not per offer.
+        var allOffers = cards.SelectMany(c => c.OreOffers.Select(o => (Card: c, Offer: o))).ToImmutableList();
+        if (!allOffers.IsEmpty)
+        {
+            foreach (var group in allOffers.GroupBy(x => x.Offer.MaterialKey).OrderBy(g => g.Key, StringComparer.Ordinal))
             {
-                // Playtest finding #3 (P0): this offer is written into OpenOreOffers by THIS SAME
-                // Evening tick's ExpeditionRevealSystem, which runs AFTER actions apply (kernel
-                // contract, ExpeditionRevealSystem's class doc) — so it is NOT purchasable this
-                // tick, and 'next' from this ledger already rolls past Evening into tomorrow's
-                // Morning (where buyore is phase-illegal). It becomes buyable only at TOMORROW's
-                // Evening prompt, before that tick's 'next' — the exact command below, unchanged.
-                Console.WriteLine($"      offers {ore.Quantity}x {ore.MaterialKey} at {ore.UnitPrice}g — buyable at TOMORROW's Evening prompt (type this BEFORE 'next' then): buyore {card.Hero} {ore.MaterialKey} {ore.Quantity}");
+                var offerText = string.Join("; ", group.Select(x =>
+                    $"{x.Offer.Quantity}x from {x.Card.Hero} at {x.Offer.UnitPrice}g (buyore {x.Card.Hero} {group.Key} {x.Offer.Quantity})"));
+                Console.WriteLine($"      offers {group.Key}: {offerText}");
+            }
+
+            if (!oreLegendShown)
+            {
+                Console.WriteLine("      (buyable at TOMORROW's Evening prompt — type the buyore command above BEFORE 'next' then)");
+                oreLegendShown = true;
             }
         }
     }
