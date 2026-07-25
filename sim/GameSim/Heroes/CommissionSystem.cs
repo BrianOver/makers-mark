@@ -177,8 +177,11 @@ public sealed class CommissionSystem : IPhaseSystem
 
     /// <summary>The floor-implied quality bar: what a hero marching to this depth expects their kit
     /// to clear. Doubles as the "sub-par" bar (a worn item below this grade is as good as empty for
-    /// commission purposes — the plan's own wording) and as the FLOOR half of the posted MinQuality.</summary>
-    private static QualityGrade FloorMinQuality(int targetFloor) => targetFloor switch
+    /// commission purposes — the plan's own wording) and as the FLOOR half of the posted MinQuality.
+    /// Internal (not private): <see cref="Drama.DemandBoard"/> (N1, plan 2026-07-25-001) reuses this
+    /// SAME table to name the quality gate a depth-stalled hero with full gear is failing, rather than
+    /// inventing a second, driftable floor-to-quality scale.</summary>
+    internal static QualityGrade FloorMinQuality(int targetFloor) => targetFloor switch
     {
         >= 5 => QualityGrade.Superior,
         >= 3 => QualityGrade.Fine,
