@@ -86,12 +86,39 @@ public static class ObjectiveAdvisor
             }
         }
 
+        // U10 (plan 2026-07-25-001, Slice 3 addendum): the TOP depth stall, whichever shape it is —
+        // an empty <see cref="DepthStallEntry.BlockingSlot"/> (handled since U8) or a filled-but-
+        // under-quality gate (BlockingSlot null, RequiredQuality > CarriedQuality — previously
+        // skipped entirely, the fable-flagged "call without response" gap: "floor 3 wants Fine+" was
+        // named but nothing guided PRODUCING it). Picking FirstOrDefault() unfiltered (not "first
+        // SLOT stall") is the fix: the top demand answers whichever kind it actually is, instead of
+        // silently hunting past a quality stall for a slot stall further down the list.
+        // The QUALITY-gated depth stall is the progression blocker a Common+ commission never solves
+        // (accepting Torvald's Common+ Shield does not lift a Fine+ floor-3 wall), so surface its
+        // upgrade path even when a commission was already suggested — the two are different-horizon
+        // goals (near-term premium vs breaking the depth ceiling). Gating this behind
+        // "suggestions.Count == 0" masked U10 entirely in practice, since a commission is almost
+        // always open early-game (fable Slice-3 playtest). Deduped so it never repeats the commission.
+        // Scan for the first QUALITY-gated stall specifically (not just the top stall) — a slot
+        // stall ahead of it in the list must not hide it, since they call for different answers.
+        var qualityStall = demand.DepthStalls.FirstOrDefault(s => s.BlockingSlot is null);
+        if (qualityStall is not null)
+        {
+            var upgrade = SuggestQualityUpgrade(state, qualityStall, phase);
+            if (upgrade is not null && suggestions.All(s => !Equals(s.Action, upgrade.Action)))
+            {
+                suggestions.Add(upgrade);
+            }
+        }
+
+        // The SLOT-gated stall stays a fallback: a slot commission usually IS that same slot need,
+        // so it only fires when nothing sharper did.
         if (suggestions.Count == 0)
         {
-            var stall = demand.DepthStalls.FirstOrDefault(s => s.BlockingSlot is not null);
-            if (stall is not null)
+            var slotStall = demand.DepthStalls.FirstOrDefault(s => s.BlockingSlot is not null);
+            if (slotStall is not null)
             {
-                var slotSuggestion = SuggestSlotCraftOrBuy(state, stall, phase);
+                var slotSuggestion = SuggestSlotCraftOrBuy(state, slotStall, phase);
                 if (slotSuggestion is not null)
                 {
                     suggestions.Add(slotSuggestion);
@@ -140,6 +167,17 @@ public static class ObjectiveAdvisor
                         $"Not enough gold for {materialKey} yet ({cost}g needed) — the town's recovery stipend will cover it this morning."));
                 }
             }
+        }
+
+        // U11 (plan 2026-07-25-001, Slice 3 addendum): fulfillment guidance — a shelved or held
+        // player item may already ANSWER the top commission/stall's need (right slot, quality at or
+        // above the bar). That is worth surfacing regardless of which suggestion won above (it is
+        // information about existing inventory, not a competing directive), so it is appended
+        // unconditionally rather than gated behind `suggestions.Count == 0`.
+        var fulfillment = SuggestFulfillmentMatch(state, demand, phase);
+        if (fulfillment is not null)
+        {
+            suggestions.Add(fulfillment);
         }
 
         // 3. Stock any unshelved player craft — always legal once one exists (unchanged, always
@@ -213,6 +251,230 @@ public static class ObjectiveAdvisor
         }
 
         return null;
+    }
+
+    /// <summary>U10 (plan 2026-07-25-001, Slice 3 addendum) demand answer for a depth-stalled
+    /// hero's QUALITY gate (<see cref="DepthStallEntry.BlockingSlot"/> null, <see
+    /// cref="DepthStallEntry.RequiredQuality"/> above <see cref="DepthStallEntry.CarriedQuality"/>):
+    /// every Weapon/Shield/Armor slot is filled, but the worn gear is under-quality for the next
+    /// floor. Names the sub-par slot (<see cref="SubParSlot"/> mirrors <c>CommissionSystem</c>'s own
+    /// private gap-scan), then walks that slot's recipes tier-ascending for the selected profession:
+    /// the first one whose <see cref="ProfessionDefinition.TierGate"/> talent ISN'T unlocked yet is
+    /// "the better item" — unlocking that gate is the direct next step (a locked tier can't be
+    /// crafted at all, so no material purchase would help yet). Once every tier is already unlocked,
+    /// the gate is no longer the blocker: suggest (re)crafting the slot's HIGHEST-tier recipe with
+    /// its own better baseline material, buying it first if not in stock (Morning only) — mirrors
+    /// <see cref="SuggestSlotCraftOrBuy"/>'s craft-now/buy-toward-it shape exactly. Returns null when
+    /// no recipe exists for the slot under a selected profession, the hero can't be resolved, no
+    /// worn item is actually sub-par (defensive — <see cref="DemandBoard"/>'s own
+    /// RequiredQuality &gt; CarriedQuality check should already guarantee one exists), or neither
+    /// action is legal right now — the caller falls through to the unchanged fallback rather than
+    /// propose nothing at all.</summary>
+    private static Suggestion? SuggestQualityUpgrade(GameState state, DepthStallEntry stall, DayPhase phase)
+    {
+        if (stall.BlockingSlot is not null
+            || stall.RequiredQuality is not { } required
+            || stall.CarriedQuality is not { } carried
+            || required <= carried)
+        {
+            return null;
+        }
+
+        if (!state.Heroes.TryGetValue(stall.Hero.Value, out var hero))
+        {
+            return null;
+        }
+
+        if (SubParSlot(hero.Gear, state.Items, required) is not { } targetSlot)
+        {
+            return null;
+        }
+
+        var recipes = ProfessionRegistry.AllRecipes.Values
+            .Where(r => r.Slot == targetSlot && state.Player.IsSelected(r.Profession))
+            .OrderBy(r => r.Tier)
+            .ThenBy(r => r.MaterialQuantity)
+            .ToList();
+        if (recipes.Count == 0)
+        {
+            return null;
+        }
+
+        var nextFloor = stall.DeepestFloorReached + 1;
+
+        // The lowest-tier recipe whose talent gate isn't unlocked yet — a locked tier can't be
+        // crafted at all (CraftLegal's own tier-gate guard), so unlocking it is the unambiguous next
+        // step, ahead of any material purchase.
+        foreach (var recipe in recipes)
+        {
+            if (!ProfessionRegistry.TryGet(recipe.Profession, out var profession))
+            {
+                continue;
+            }
+
+            if (!profession!.TierGate.TryGetValue(recipe.Tier, out var gate)
+                || state.Player.TalentsFor(recipe.Profession).Contains(gate))
+            {
+                continue;
+            }
+
+            var unlock = new UnlockTalentAction(gate, recipe.Profession);
+            return ActionLegality.IsLegal(state, unlock, phase)
+                ? new Suggestion(unlock,
+                    $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar (currently {carried}) " +
+                    $"— unlock '{profession.TalentNodes[gate].Name}' to open the way to '{recipe.Name}'.")
+                : null;
+        }
+
+        // Every tier is already unlocked — the gate isn't the blocker. Craft (or buy toward) the
+        // slot's best recipe, its own better material raising the quality ceiling.
+        var best = recipes[^1];
+        var have = state.Player.Materials.TryGetValue(best.MaterialKey, out var stock) ? stock : 0;
+        if (have >= best.MaterialQuantity)
+        {
+            var craft = new CraftAction(best.RecipeId, best.MaterialKey);
+            return ActionLegality.IsLegal(state, craft, phase)
+                ? new Suggestion(craft,
+                    $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar (currently {carried}) " +
+                    $"— craft '{best.Name}' now, you already have enough {best.MaterialKey}.")
+                : null;
+        }
+
+        if (phase == DayPhase.Morning)
+        {
+            var buy = new BuyMaterialAction(best.MaterialKey, best.MaterialQuantity);
+            if (ActionLegality.IsLegal(state, buy, phase))
+            {
+                var cost = MaterialVendorHandlers.QuoteCost(best.MaterialKey, best.MaterialQuantity);
+                return new Suggestion(buy,
+                    $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar (currently {carried}) " +
+                    $"— buy {best.MaterialQuantity} {best.MaterialKey} ({cost}g) toward '{best.Name}'.");
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Mirrors <c>Heroes.CommissionSystem</c>'s own private gap-scan (<c>FindGapSlot</c>'s
+    /// sub-par branch): the first worn Weapon/Shield/Armor slot whose item quality falls below
+    /// <paramref name="bar"/>, in the same fixed order <see cref="RaidForecast.MissingItemSlots"/>/
+    /// <see cref="DemandBoard"/> use. A defensively-null worn slot also counts as sub-par (never
+    /// thrown) — it shouldn't occur here since <see cref="SuggestQualityUpgrade"/> only calls this
+    /// once <see cref="DepthStallEntry.BlockingSlot"/> is confirmed null (every slot filled).</summary>
+    private static ItemSlot? SubParSlot(GearSet gear, ImmutableSortedDictionary<int, Item> items, QualityGrade bar)
+    {
+        foreach (var slot in new[] { ItemSlot.Weapon, ItemSlot.Shield, ItemSlot.Armor })
+        {
+            var worn = gear.Slot(slot);
+            if (worn is not { } id || !items.TryGetValue(id.Value, out var item) || item.Quality < bar)
+            {
+                return slot;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>U11 (plan 2026-07-25-001, Slice 3 addendum) fulfillment guidance: does a shelved or
+    /// held (crafted, unshelved, unequipped) player item already ANSWER the top demand — the right
+    /// slot at or above the required quality? Reads the SAME top-demand target U10/U8 answer (the
+    /// top open commission if one exists, else the top depth stall's needed slot/quality — an empty
+    /// <see cref="DepthStallEntry.BlockingSlot"/> accepts ANY quality, a quality stall needs <see
+    /// cref="SubParSlot"/>'s bar). A SHELVED match names the item and — R-real, KTD9 spirit —
+    /// flags a PURSE MISMATCH when the target hero's gold falls short of the asking price (the sale
+    /// can't close as priced); the caller cannot fix that discrepancy from this seam, so the action
+    /// is null (informational, like the destitution message above). A HELD (unshelved) match instead
+    /// proposes the concrete next step: shelve it. Returns null when there is no live commission or
+    /// stall to answer, the target hero can't be resolved, or no held/shelved item matches.</summary>
+    private static Suggestion? SuggestFulfillmentMatch(GameState state, DemandSnapshot demand, DayPhase phase)
+    {
+        ItemSlot slot;
+        QualityGrade minQuality;
+        HeroId targetHero;
+        string heroName;
+        string demandLabel;
+
+        if (demand.OpenCommissions.Count > 0)
+        {
+            var commission = demand.OpenCommissions[0];
+            slot = commission.Slot;
+            minQuality = commission.MinQuality;
+            targetHero = commission.Hero;
+            heroName = commission.HeroName;
+            demandLabel = $"{commission.HeroName}'s {slot} commission";
+        }
+        else if (demand.DepthStalls.FirstOrDefault() is { } stall)
+        {
+            if (stall.BlockingSlot is { } blocking)
+            {
+                slot = blocking;
+                minQuality = QualityGrade.Poor; // an empty slot — anything crafted answers it
+            }
+            else if (stall.RequiredQuality is { } required && stall.CarriedQuality is { } carried && required > carried)
+            {
+                if (!state.Heroes.TryGetValue(stall.Hero.Value, out var stalledHero)
+                    || SubParSlot(stalledHero.Gear, state.Items, required) is not { } subParSlot)
+                {
+                    return null;
+                }
+
+                slot = subParSlot;
+                minQuality = required;
+            }
+            else
+            {
+                return null;
+            }
+
+            targetHero = stall.Hero;
+            heroName = stall.HeroName;
+            demandLabel = $"{stall.HeroName}'s stall";
+        }
+        else
+        {
+            return null;
+        }
+
+        if (!state.Heroes.TryGetValue(targetHero.Value, out var hero))
+        {
+            return null;
+        }
+
+        // Shelved first: it is already for sale, so a purse mismatch is worth flagging.
+        foreach (var entry in state.Player.Shelf)
+        {
+            if (!state.Items.TryGetValue(entry.Item.Value, out var item) || item.Slot != slot || item.Quality < minQuality)
+            {
+                continue;
+            }
+
+            return hero.Gold < entry.Price
+                ? new Suggestion(null,
+                    $"You have a {item.Quality} {item.Name} shelved — {demandLabel} wants it, but {heroName} " +
+                    $"only carries {hero.Gold}g against the {entry.Price}g asking price — the sale can't close as priced.")
+                : new Suggestion(null, $"You have a {item.Quality} {item.Name} shelved — {demandLabel} wants it.");
+        }
+
+        // Held: finished, unshelved, unequipped — propose shelving it (the concrete next step).
+        var shelvedIds = state.Player.Shelf.Select(e => e.Item.Value).ToHashSet();
+        var equippedIds = state.Heroes.Values
+            .SelectMany(h => new[] { h.Gear.Weapon, h.Gear.Shield, h.Gear.Armor })
+            .Where(id => id is not null)
+            .Select(id => id!.Value.Value)
+            .ToHashSet();
+        var held = state.Items.Values.FirstOrDefault(i =>
+            i.PlayerCrafted && i.Slot == slot && i.Quality >= minQuality
+            && !shelvedIds.Contains(i.Id.Value) && !equippedIds.Contains(i.Id.Value));
+        if (held is null)
+        {
+            return null;
+        }
+
+        var price = Math.Max(1, (held.Stats.Attack + held.Stats.Defense) * 2);
+        var stock = new StockAction(held.Id, price);
+        return ActionLegality.IsLegal(state, stock, phase)
+            ? new Suggestion(stock, $"You crafted a {held.Quality} {held.Name} — shelve it, {demandLabel} wants it.")
+            : null;
     }
 
     /// <summary>

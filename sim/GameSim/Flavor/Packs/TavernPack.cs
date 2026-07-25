@@ -110,7 +110,7 @@ public static class TavernPack
                 "O cruel floor {floor}! {cause}, and {hero} is no more!",
                 "The dark of floor {floor} swallowed {hero} — {cause}, and the tavern grieves!",
                 "Lament, all who drink here — {hero}, {cause}, lost on floor {floor}!",
-                "Brave {hero}, undone by {cause} in the belly of floor {floor}!",
+                "Brave {hero}, undone in the belly of floor {floor} — {cause}!",
                 "Floor {floor} has claimed a hero's blood — {cause} took {hero}!",
                 "Weep and remember: {hero} met {cause} on floor {floor} and passed into legend!",
                 "The deep sang a dirge — {hero} fell to {cause} upon floor {floor}!",
