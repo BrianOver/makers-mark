@@ -47,6 +47,15 @@ public static class ActionLegality
         SetProfessionsAction setProfessions => SetProfessionsLegal(setProfessions),
         SendSupplyAction sendSupply => phase == DayPhase.Camp && SendSupplyLegal(state, sendSupply),
         RecallPartyAction recall => phase == DayPhase.Camp && RecallLegal(state, recall),
+        AcceptCommissionAction accept => phase == DayPhase.Morning && AcceptCommissionLegal(state, accept),
+        DeclineCommissionAction decline => phase == DayPhase.Morning && DeclineCommissionLegal(state, decline),
+        HonorMemorialAction honor => phase == DayPhase.Evening && HonorMemorialLegal(state, honor),
+        ReforgeHeirloomAction reforge => ReforgeHeirloomLegal(state, reforge),
+        OpenCounterAction => phase == DayPhase.Morning && OpenCounterLegal(state),
+        PresentItemAction present => phase == DayPhase.Morning && PresentItemLegal(state, present),
+        SuggestItemAction suggest => phase == DayPhase.Morning && SuggestItemLegal(state, suggest),
+        HaggleResponseAction haggle => phase == DayPhase.Morning && HaggleResponseLegal(state, haggle),
+        CloseCounterAction => phase == DayPhase.Morning && CloseCounterLegal(state),
         _ => false,
     };
 
@@ -198,6 +207,136 @@ public static class ActionLegality
                     {
                         actions.Add(send);
                         break;
+                    }
+                }
+            }
+        }
+
+        // AcceptCommission / DeclineCommission: one candidate pair per still-open (not-yet-accepted)
+        // commission — mirrors CommissionHandlers' own "by hero" target lookup.
+        foreach (var commission in state.Commissions)
+        {
+            if (commission.Accepted)
+            {
+                continue;
+            }
+
+            var accept = new AcceptCommissionAction(commission.Hero);
+            if (IsLegal(state, accept, phase))
+            {
+                actions.Add(accept);
+            }
+
+            var decline = new DeclineCommissionAction(commission.Hero);
+            if (IsLegal(state, decline, phase))
+            {
+                actions.Add(decline);
+            }
+        }
+
+        // HonorMemorial: one candidate per NOT-YET-honored memorial (an already-honored one is a
+        // legal idempotent no-op too — see HonorMemorialLegal — but isn't a fresh "opportunity").
+        foreach (var memorial in state.Drama.Memorials)
+        {
+            if (memorial.Honored)
+            {
+                continue;
+            }
+
+            var honor = new HonorMemorialAction(memorial.Hero);
+            if (IsLegal(state, honor, phase))
+            {
+                actions.Add(honor);
+            }
+        }
+
+        // ReforgeHeirloom: one candidate per not-yet-reforged fallen-gear item, first recipe (in
+        // registry order) that turns out legal — same "one canonical instance" shape as Craft above.
+        var reforgedSources = state.EventLog.OfType<HeirloomReforged>().Select(e => e.SourceItem.Value).ToHashSet();
+        var fallenItems = state.EventLog.OfType<HeroDied>()
+            .SelectMany(died => new[] { died.WornGear.Weapon, died.WornGear.Shield, died.WornGear.Armor, died.WornGear.Trinket })
+            .Where(item => item is not null)
+            .Select(item => item!.Value)
+            .Where(item => !reforgedSources.Contains(item.Value))
+            .Distinct()
+            .OrderBy(item => item.Value);
+
+        foreach (var sourceItem in fallenItems)
+        {
+            foreach (var recipe in ProfessionRegistry.AllRecipes.Values)
+            {
+                var candidate = new ReforgeHeirloomAction(sourceItem, recipe.RecipeId, recipe.MaterialKey);
+                if (IsLegal(state, candidate, phase))
+                {
+                    actions.Add(candidate);
+                    break;
+                }
+            }
+        }
+
+        // Counter verbs: only reachable while the session-opening phase (Morning) is live. MF-8 —
+        // BaselinePlayer never opens the counter, so these candidates are only ever exercised when
+        // the caller drives CounterPlayer (or an equivalent open-session fixture).
+        if (phase == DayPhase.Morning)
+        {
+            var open = new OpenCounterAction();
+            if (IsLegal(state, open, phase))
+            {
+                actions.Add(open);
+            }
+
+            var close = new CloseCounterAction();
+            if (IsLegal(state, close, phase))
+            {
+                actions.Add(close);
+            }
+
+            if (state.Counter is { Closed: false, Active: { } activeHero } session
+                && state.Heroes.TryGetValue(activeHero.Value, out var activeHeroState))
+            {
+                // PresentItem: one candidate per shelved item, first legal wins.
+                foreach (var entry in state.Player.Shelf)
+                {
+                    var present = new PresentItemAction(entry.Item);
+                    if (IsLegal(state, present, phase))
+                    {
+                        actions.Add(present);
+                        break;
+                    }
+                }
+
+                // SuggestItem: ANY known item is a legal candidate — a wrong-slot suggestion is a
+                // legal no-op (SuggestItemLegal), so one canonical instance exercises the verb.
+                var suggestTarget = state.Items.Values.FirstOrDefault();
+                if (suggestTarget is not null)
+                {
+                    var suggest = new SuggestItemAction(suggestTarget.Id);
+                    if (IsLegal(state, suggest, phase))
+                    {
+                        actions.Add(suggest);
+                    }
+                }
+
+                // HaggleResponse: only meaningful once a round is open with a standing offer.
+                if (session.Round > 0 && session.StandingOfferGold is { } standingOffer && session.Presented is not null)
+                {
+                    var accept = new HaggleResponseAction(HaggleResponseKind.Accept);
+                    if (IsLegal(state, accept, phase))
+                    {
+                        actions.Add(accept);
+                    }
+
+                    var holdFirm = new HaggleResponseAction(HaggleResponseKind.HoldFirm);
+                    if (IsLegal(state, holdFirm, phase))
+                    {
+                        actions.Add(holdFirm);
+                    }
+
+                    var counterPrice = Math.Clamp(standingOffer, 1, Math.Max(1, activeHeroState.Gold));
+                    var counter = new HaggleResponseAction(HaggleResponseKind.Counter, counterPrice);
+                    if (IsLegal(state, counter, phase))
+                    {
+                        actions.Add(counter);
                     }
                 }
             }
@@ -424,4 +563,146 @@ public static class ActionLegality
 
         return !state.InFlight[index].Recalled;
     }
+
+    // ---- CommissionHandlers.ApplyAccept guards (Heroes/CommissionHandlers.cs) — the hero's single
+    // open (not-yet-accepted) commission is the unambiguous target. ----
+    private static bool AcceptCommissionLegal(GameState state, AcceptCommissionAction action) =>
+        state.Commissions.Any(c => c.Hero == action.Hero && !c.Accepted);
+
+    // ---- CommissionHandlers.ApplyDecline guards (same open-commission lookup as Accept) ----
+    private static bool DeclineCommissionLegal(GameState state, DeclineCommissionAction action) =>
+        state.Commissions.Any(c => c.Hero == action.Hero && !c.Accepted);
+
+    // ---- FarewellHandlers.Apply guards (Drama/FarewellHandlers.cs). A memorial must be recorded
+    // for the hero — but honoring an ALREADY-honored memorial is an IDEMPOTENT NO-OP in the handler
+    // (returns success, not a RejectedAction), so legality does not require Honored == false; it
+    // mirrors the handler's actual accept/reject boundary, not "first rite only".
+    private static bool HonorMemorialLegal(GameState state, HonorMemorialAction action) =>
+        state.Drama.Memorials.Any(m => m.Hero == action.Hero);
+
+    // ---- HeirloomHandlers.Apply guards (Crafting/HeirloomHandlers.cs): source provenance (worn by
+    // a fallen hero, not already reforged) + the SAME recipe/profession/material/tier/quantity chain
+    // as CraftLegal above + the action-budget gate (guard 9, checked last like every other
+    // real-work handler). Legal in any phase — same as Craft, the forge never closes.
+    private static bool ReforgeHeirloomLegal(GameState state, ReforgeHeirloomAction action)
+    {
+        if (!state.Items.ContainsKey(action.SourceItem.Value))
+        {
+            return false;
+        }
+
+        var fallenHero = state.EventLog.OfType<HeroDied>()
+            .Any(died => WoreItem(died.WornGear, action.SourceItem));
+        if (!fallenHero)
+        {
+            return false;
+        }
+
+        if (state.EventLog.OfType<HeirloomReforged>().Any(already => already.SourceItem == action.SourceItem))
+        {
+            return false;
+        }
+
+        if (!ProfessionRegistry.TryGetRecipe(action.RecipeId, out var recipe))
+        {
+            return false;
+        }
+
+        if (!ProfessionRegistry.TryGet(recipe!.Profession, out var profession))
+        {
+            return false;
+        }
+
+        if (!state.Player.IsSelected(recipe.Profession))
+        {
+            return false;
+        }
+
+        if (!RecipeTable.MaterialGrades.ContainsKey(action.MaterialKey))
+        {
+            return false;
+        }
+
+        var talents = state.Player.TalentsFor(recipe.Profession);
+        if (profession!.TierGate.TryGetValue(recipe.Tier, out var gate) && !talents.Contains(gate))
+        {
+            return false;
+        }
+
+        var efficiency = profession.MaterialEfficiencyNode is { } eff && talents.Contains(eff) ? 1 : 0;
+        var needed = Math.Max(1, recipe.MaterialQuantity - efficiency);
+        var have = state.Player.Materials.TryGetValue(action.MaterialKey, out var stock) ? stock : 0;
+        if (have < needed)
+        {
+            return false;
+        }
+
+        return state.ActionSlotsRemaining > 0;
+    }
+
+    private static bool WoreItem(GearSet gear, ItemId item) =>
+        gear.Weapon == item || gear.Shield == item || gear.Armor == item || gear.Trinket == item;
+
+    // ---- CounterHandlers.ApplyOpen guards: legal only when no session is open (null) or the prior
+    // one already finished closing. ----
+    private static bool OpenCounterLegal(GameState state) =>
+        state.Counter is not { Closed: false };
+
+    // ---- CounterHandlers.ApplyPresent guards (RequireActiveSession + item known + item shelved) ----
+    private static bool PresentItemLegal(GameState state, PresentItemAction action) =>
+        HasActiveSession(state) && state.Items.ContainsKey(action.Item.Value)
+        && state.Player.Shelf.Any(e => e.Item == action.Item);
+
+    // ---- CounterHandlers.ApplySuggest guards (RequireActiveSession + item known). fable: a
+    // suggestion aimed at a slot the hero wouldn't wear is a LEGAL NO-OP in the handler
+    // (HaggleResolver.ApplySuggestBonus just returns the session unchanged — CounterHandlers.cs:
+    // 110-114) — it is NOT rejected, so legality here does not check slot fit at all. Only "no open
+    // session" / "no active customer" / "unknown item" make a SuggestItem illegal.
+    private static bool SuggestItemLegal(GameState state, SuggestItemAction action) =>
+        HasActiveSession(state) && state.Items.ContainsKey(action.Item.Value);
+
+    // ---- CounterHandlers.ApplyClose guards: legal whenever a session (open OR already-closing)
+    // exists — closing an already-closing session is another idempotent no-op. ----
+    private static bool CloseCounterLegal(GameState state) =>
+        state.Counter is not null;
+
+    // ---- CounterHandlers.ApplyHaggle + HaggleResolver.ResolveHaggleResponse guards: a standing
+    // offer must exist (round open, presented item still shelved), then Accept/HoldFirm always
+    // resolve, and Counter additionally needs a positive price the active hero can afford. ----
+    private static bool HaggleResponseLegal(GameState state, HaggleResponseAction action)
+    {
+        if (state.Counter is not { Closed: false } session || session.Active is not { } activeHero)
+        {
+            return false;
+        }
+
+        if (session.Round == 0 || session.StandingOfferGold is null || session.Presented is not { } presentedId)
+        {
+            return false;
+        }
+
+        if (!state.Items.ContainsKey(presentedId.Value))
+        {
+            return false;
+        }
+
+        if (!state.Player.Shelf.Any(e => e.Item == presentedId))
+        {
+            return false;
+        }
+
+        return action.Kind switch
+        {
+            HaggleResponseKind.Accept => true,
+            HaggleResponseKind.HoldFirm => true,
+            HaggleResponseKind.Counter => action.Price is { } price && price > 0
+                && state.Heroes.TryGetValue(activeHero.Value, out var hero) && price <= hero.Gold,
+            _ => false,
+        };
+    }
+
+    /// <summary>Shared gate mirroring CounterHandlers.RequireActiveSession: a session must be open
+    /// (not already closing) and a customer must actually be at the counter.</summary>
+    private static bool HasActiveSession(GameState state) =>
+        state.Counter is { Closed: false, Active: not null };
 }
