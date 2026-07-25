@@ -398,6 +398,7 @@ public partial class Town3D : SubViewportContainer
         World.AddChild(BuildBoundary()); // visual round: perimeter treeline (decoration, no collider)
         World.AddChild(BuildPalisade()); // visual round: timber palisade "walls" with a gate opening
         World.AddChild(WorldDressing.Build()); // world-connection: road to mine, well, lanterns, stalls, crates
+        World.AddChild(TownsfolkNpcs.Build()); // world-connection: wandering non-hero villagers
 
         Heroes = new Node3D { Name = "Heroes" };
         World.AddChild(Heroes);
