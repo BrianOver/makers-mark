@@ -365,6 +365,7 @@ public partial class Town3D : SubViewportContainer
         World.AddChild(BuildLight());
         World.AddChild(BuildFillLight());
         World.AddChild(BuildEnvironment());
+        World.AddChild(BuildSun());
 
         Buildings = new Node3D { Name = "Buildings" };
         var buildings = BuildBuildings();
@@ -393,11 +394,20 @@ public partial class Town3D : SubViewportContainer
         // Decoration only — never parented under NavRegion (goal 4: no collider means nothing
         // here can distort the bake above, matching the plan's "props are decoration only" rule).
         World.AddChild(BuildProps());
+        World.AddChild(BuildSquare());   // visual round: cobbled market square at the town centre
+        World.AddChild(BuildBoundary()); // visual round: perimeter treeline (decoration, no collider)
+        World.AddChild(BuildPalisade()); // visual round: timber palisade "walls" with a gate opening
+        World.AddChild(WorldDressing.Build()); // world-connection: road to mine, well, lanterns, stalls, crates
+        World.AddChild(TownsfolkNpcs.Build()); // world-connection: wandering non-hero villagers
 
         Heroes = new Node3D { Name = "Heroes" };
         World.AddChild(Heroes);
 
-        Camera = new CameraRig { Name = "CameraRig" };
+        // Visual round: pull the follow-camera back a touch (28 vs the class default 22) so the
+        // town reads as a sizable village in a forest clearing rather than a tight cluster — reveals
+        // more of the square + the perimeter treeline. Instance-level only; the class default (and
+        // the CameraRig tests that pin 22) are untouched, and PushIn station dollies still override.
+        Camera = new CameraRig { Name = "CameraRig", Distance = 32f };
         World.AddChild(Camera);
 
         Player = BuildPlayer();
@@ -450,11 +460,11 @@ public partial class Town3D : SubViewportContainer
     /// </summary>
     private static readonly (string Key, string Label, string ClickKey, Vector3 Position)[] BuildingLayout =
     {
-        ("forge", "Forge", "Forge", new Vector3(-8f, 0f, -6f)),
-        ("market", "Shop", "Shop", new Vector3(8f, 0f, -6f)),
-        ("tavern", "Tavern", "Tavern", new Vector3(-8f, 0f, 7f)),
-        ("minegate", "Gate", "Gate", new Vector3(0f, 0f, -16f)),
-        ("noticeboard", "Bounties", "Bounties", new Vector3(9f, 0f, 8f)),
+        ("forge", "Forge", "Forge", new Vector3(-12f, 0f, -9f)),
+        ("market", "Shop", "Shop", new Vector3(12f, 0f, -9f)),
+        ("tavern", "Tavern", "Tavern", new Vector3(-12f, 0f, 11f)),
+        ("minegate", "Gate", "Gate", new Vector3(0f, 0f, -26f)),
+        ("noticeboard", "Bounties", "Bounties", new Vector3(14f, 0f, 12f)),
     };
 
     /// <summary>
@@ -474,8 +484,8 @@ public partial class Town3D : SubViewportContainer
     /// </summary>
     private static readonly (string Key, string Label, string ClickKey, Vector3 Position)[] StationLayout =
     {
-        ("forge-station", "Anvil", "ForgeStation", new Vector3(-8f, 0f, -12f)),
-        ("counter-station", "Counter", "CounterStation", new Vector3(8f, 0f, -12f)),
+        ("forge-station", "Anvil", "ForgeStation", new Vector3(-12f, 0f, -18f)),
+        ("counter-station", "Counter", "CounterStation", new Vector3(12f, 0f, -18f)),
     };
 
     private static List<Building3D> BuildBuildings()
@@ -824,18 +834,161 @@ public partial class Town3D : SubViewportContainer
     /// "not bare gray") via a flat <see cref="StandardMaterial3D"/> — no texture needed for a flat
     /// field of color.
     /// </summary>
+    /// <summary>A ring of stylized pines around the village perimeter (visual round): encloses the
+    /// open meadow so the town reads as a real settlement in a clearing rather than a few models on
+    /// a bare tile, and the distance haze (<see cref="BuildEnvironment"/>) fades the far trees to
+    /// sell scale. Pure decoration — no collider, never under the NavRegion, so it can't distort the
+    /// hero navigation bake. Placement is deterministic (index-derived angle + hash jitter, no RNG).</summary>
+    private static Node3D BuildBoundary()
+    {
+        var ring = new Node3D { Name = "Boundary" };
+        const int count = 56;
+        const float radius = 36f;
+        for (var i = 0; i < count; i++)
+        {
+            var angle = Mathf.Tau * i / count;
+            var jitter = ((i * 2654435761u) % 1000u) / 1000f; // deterministic 0..1
+            var r = radius + (jitter - 0.5f) * 7f;
+            var pos = new Vector3(Mathf.Cos(angle) * r, 0f, Mathf.Sin(angle) * r);
+            ring.AddChild(BuildPine(pos, 1.4f + jitter * 0.9f, i));
+        }
+
+        return ring;
+    }
+
+    /// <summary>A single low-poly stylized pine (trunk + three stacked foliage cones), matching the
+    /// flat-shaded town look — the generated foliage texture can dress these later.</summary>
+    private static Node3D BuildPine(Vector3 pos, float scale, int i)
+    {
+        var tree = new Node3D { Name = $"Pine{i}", Position = pos, Scale = Vector3.One * scale };
+
+        tree.AddChild(new MeshInstance3D
+        {
+            Name = "Trunk",
+            Position = new Vector3(0f, 0.7f, 0f),
+            Mesh = new CylinderMesh
+            {
+                TopRadius = 0.18f,
+                BottomRadius = 0.26f,
+                Height = 1.4f,
+                Material = new StandardMaterial3D { AlbedoColor = new Color(0.34f, 0.24f, 0.16f), Roughness = 1f },
+            },
+        });
+
+        var foliage = new StandardMaterial3D { AlbedoColor = new Color(0.18f, 0.40f, 0.23f), Roughness = 1f };
+        for (var t = 0; t < 3; t++)
+        {
+            tree.AddChild(new MeshInstance3D
+            {
+                Name = $"Foliage{t}",
+                Position = new Vector3(0f, 1.7f + t * 1.05f, 0f),
+                Mesh = new CylinderMesh
+                {
+                    TopRadius = 0.02f,
+                    BottomRadius = 1.35f - t * 0.34f,
+                    Height = 1.6f,
+                    Material = foliage,
+                },
+            });
+        }
+
+        return tree;
+    }
+
+    /// <summary>A cobbled village square (generated cobblestone texture) laid over the grass at the
+    /// town centre, just above the ground plane — gives the settlement a market-square heart instead
+    /// of buildings scattered on bare turf. Decoration only (no collider); heroes walk over it.</summary>
+    private static Node3D BuildSquare()
+    {
+        var mat = new StandardMaterial3D { Roughness = 0.95f };
+        const string cobble = "res://assets/textures/env/cobble.png";
+        if (ResourceLoader.Exists(cobble))
+        {
+            mat.AlbedoTexture = ResourceLoader.Load<Texture2D>(cobble);
+            mat.Uv1Scale = new Vector3(3f, 3f, 1f);
+            mat.TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic;
+        }
+        else
+        {
+            mat.AlbedoColor = new Color(0.52f, 0.46f, 0.40f);
+        }
+
+        return new MeshInstance3D
+        {
+            Name = "VillageSquare",
+            Position = new Vector3(0f, 0.04f, 0f), // a hair above the grass — no z-fight
+            Mesh = new PlaneMesh { Size = new Vector2(26f, 26f), Material = mat },
+        };
+    }
+
+    /// <summary>A rustic timber palisade (generated log-wall texture) ringing the village just
+    /// inside the treeline, with an opening left toward the mine gate — the "walls" that make the
+    /// place read as a defended settlement. Decoration only (no collider; the treeline + open meadow
+    /// already bound where heroes roam), deterministic placement (no RNG).</summary>
+    private static Node3D BuildPalisade()
+    {
+        var mat = new StandardMaterial3D { Roughness = 1f };
+        const string pal = "res://assets/textures/env/palisade.png";
+        if (ResourceLoader.Exists(pal))
+        {
+            mat.AlbedoTexture = ResourceLoader.Load<Texture2D>(pal);
+            mat.TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic;
+        }
+        else
+        {
+            mat.AlbedoColor = new Color(0.45f, 0.32f, 0.20f);
+        }
+
+        var wall = new Node3D { Name = "Palisade" };
+        const int segments = 40;
+        const float radius = 30f;
+        for (var i = 0; i < segments; i++)
+        {
+            var angle = Mathf.Tau * i / segments;
+            if (Mathf.Sin(angle) < -0.5f)
+            {
+                continue; // leave a gateway open toward the mine gate (-z)
+            }
+
+            var seg = new MeshInstance3D
+            {
+                Name = $"Wall{i}",
+                Position = new Vector3(Mathf.Cos(angle) * radius, 1.7f, Mathf.Sin(angle) * radius),
+                Rotation = new Vector3(0f, angle + Mathf.Pi / 2f, 0f), // long axis tangent to the ring
+                Mesh = new BoxMesh { Size = new Vector3(5.2f, 3.4f, 0.5f), Material = mat },
+            };
+            wall.AddChild(seg);
+        }
+
+        return wall;
+    }
+
     private static Node3D BuildGround()
     {
         var ground = new Node3D { Name = "Ground" };
 
+        // Visual round: a larger meadow (90×90 vs the old 60) so the village sits in open country
+        // rather than on a cramped tile, dressed with the generated hand-painted grass texture
+        // (tiled across the plane). Falls back to a flat warm grass tone if the texture isn't
+        // imported yet, so the scene never renders untextured-white.
+        var groundMat = new StandardMaterial3D { Roughness = 0.97f };
+        const string grassPath = "res://assets/textures/env/grass.png";
+        if (ResourceLoader.Exists(grassPath))
+        {
+            groundMat.AlbedoTexture = ResourceLoader.Load<Texture2D>(grassPath);
+            groundMat.Uv1Scale = new Vector3(16f, 16f, 1f); // ~8-unit tiles across the 90-unit meadow
+            groundMat.TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic;
+            groundMat.AlbedoColor = new Color(0.86f, 0.90f, 0.82f); // gently desaturate/soften toward the town palette
+        }
+        else
+        {
+            groundMat.AlbedoColor = new Color(0.42f, 0.52f, 0.28f);
+        }
+
         var mesh = new MeshInstance3D
         {
             Name = "GroundMesh",
-            Mesh = new PlaneMesh
-            {
-                Size = new Vector2(60, 60),
-                Material = new StandardMaterial3D { AlbedoColor = new Color(0.36f, 0.47f, 0.24f) },
-            },
+            Mesh = new PlaneMesh { Size = new Vector2(130, 130), Material = groundMat },
         };
         ground.AddChild(mesh);
 
@@ -843,7 +996,7 @@ public partial class Town3D : SubViewportContainer
         var shape = new CollisionShape3D
         {
             Name = "GroundShape",
-            Shape = new BoxShape3D { Size = new Vector3(60, 1, 60) },
+            Shape = new BoxShape3D { Size = new Vector3(130, 1, 130) },
             Position = new Vector3(0, -0.5f, 0),
         };
         body.AddChild(shape);
@@ -1026,15 +1179,53 @@ public partial class Town3D : SubViewportContainer
     /// ambient. Filmic tonemap kept (safe, no colour surprises).</summary>
     private static WorldEnvironment BuildEnvironment()
     {
+        // Moody PURPLE DUSK (user direction 2026-07-24: bring back the "spooky purple" atmosphere the
+        // bright-noon sky had killed). A deep dusk-violet dome bleeding to a dusky rose-purple glow at
+        // the horizon, lit low and warm — atmospheric but still navigable. The perpetual-twilight mood
+        // fits the game's theme (permadeath, legends of the dead) far better than bright noon.
+        var sky = new ProceduralSkyMaterial
+        {
+            SkyTopColor = new Color(0.10f, 0.07f, 0.20f),      // deep dusk violet
+            SkyHorizonColor = new Color(0.38f, 0.22f, 0.40f),  // dusky purple horizon glow
+            SkyEnergyMultiplier = 0.6f,
+            GroundHorizonColor = new Color(0.20f, 0.15f, 0.26f),
+            GroundBottomColor = new Color(0.09f, 0.08f, 0.13f),
+            GroundEnergyMultiplier = 0.5f,
+            SunAngleMax = 18f,
+            SunCurve = 0.08f,
+        };
+
         var env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Sky,
-            Sky = new Sky { SkyMaterial = new ProceduralSkyMaterial { SkyEnergyMultiplier = 0.85f, GroundEnergyMultiplier = 0.65f } },
-            BackgroundEnergyMultiplier = 0.8f,
+            Sky = new Sky { SkyMaterial = sky },
+            BackgroundEnergyMultiplier = 0.7f,
             AmbientLightSource = Godot.Environment.AmbientSource.Bg,
-            AmbientLightEnergy = 1.0f,
+            AmbientLightEnergy = 0.78f, // sky-sourced → cool purple ambient fill; enough to stay readable
             TonemapMode = Godot.Environment.ToneMapper.Filmic,
+            // Purple distance haze — fades the far treeline/walls into a twilight murk, sells scale + mood.
+            FogEnabled = true,
+            FogLightColor = new Color(0.26f, 0.16f, 0.40f),
+            FogDensity = 0.014f,
+            FogSkyAffect = 0.45f,
         };
         return new WorldEnvironment { Name = "WorldEnvironment", Environment = env };
+    }
+
+    /// <summary>A low, warm dusk key sun cutting warm gold through the purple twilight — long dramatic
+    /// shadows across the square, dimmer than a noon key so the purple ambient reads as the dominant
+    /// mood (visual round; user wanted the spooky-purple atmosphere back).</summary>
+    private static DirectionalLight3D BuildSun()
+    {
+        var sun = new DirectionalLight3D
+        {
+            Name = "Sun",
+            LightColor = new Color(1.0f, 0.76f, 0.58f), // warm dusk gold
+            LightEnergy = 0.8f,
+            ShadowEnabled = true,
+        };
+        // Low from the west for long twilight shadows raking across the village.
+        sun.RotationDegrees = new Vector3(-26f, -118f, 0f);
+        return sun;
     }
 }
