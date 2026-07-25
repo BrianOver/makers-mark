@@ -65,10 +65,11 @@ public class ActionLegalityTests
         // correctly closes immediately instead of stalling (see its own "empty shelf" doc). Warm up
         // with a short BaselinePlayer run first (crafts + shelves real items, same production
         // kernel) so the counter session that follows has something to present — then switch the
-        // SAME evolving state over to CounterPlayer to reach a real open session.
+        // SAME evolving state over to a MERGED policy (see <see cref="CounterPlayerWithOngoingSupply"/>)
+        // to reach a real open session.
         var covered = new HashSet<Type>();
         var warmed = RunParityCheck(GameComposition.NewCampaign(Seed), BaselinePlayer.ActionsFor, WarmupDays, covered);
-        RunParityCheck(warmed, CounterPlayer.ActionsFor, CounterPlayerDays, covered);
+        RunParityCheck(warmed, CounterPlayerWithOngoingSupply, CounterPlayerDays, covered);
 
         Assert.Contains(typeof(OpenCounterAction), covered);
         Assert.Contains(typeof(PresentItemAction), covered);
@@ -86,9 +87,10 @@ public class ActionLegalityTests
         // die and leave memorials/reforgeable gear, talents unlock, ...) — everything EXCEPT the
         // five counter verbs, which need a live session (MF-8).
         var afterBaseline = RunParityCheck(GameComposition.NewCampaign(Seed), BaselinePlayer.ActionsFor, Days, covered);
-        // Continue the SAME evolved state (shelf already stocked from the run above) with
-        // CounterPlayer to reach OpenCounter/PresentItem/SuggestItem/HaggleResponse/CloseCounter.
-        RunParityCheck(afterBaseline, CounterPlayer.ActionsFor, CounterPlayerDays, covered);
+        // Continue the SAME evolved state (shelf already stocked from the run above) with a MERGED
+        // policy (see <see cref="CounterPlayerWithOngoingSupply"/>) to reach
+        // OpenCounter/PresentItem/SuggestItem/HaggleResponse/CloseCounter.
+        RunParityCheck(afterBaseline, CounterPlayerWithOngoingSupply, CounterPlayerDays, covered);
 
         // SendSupplyAction needs a live InFlight party (Camp phase) holding an UNSHELVED
         // player-crafted consumable — BaselinePlayer never sends supplies (D5: "no camp verbs, no
@@ -98,11 +100,27 @@ public class ActionLegalityTests
         // opportunity directly and round-trip it through the real kernel rather than accept a
         // vacuous "never observed" as coverage.
         covered.UnionWith(SendSupplyFixtureCoverage());
+        covered.UnionWith(HaggleResponseFixtureCoverage());
 
         var missing = AllActionTypes.Where(t => !covered.Contains(t)).Select(t => t.Name).ToList();
         Assert.True(missing.Count == 0,
             $"20/20 parity coverage failed — never exercised by LegalActions nor accepted from a driving policy: {string.Join(", ", missing)}");
     }
+
+    /// <summary>
+    /// Phase B (B2, R-B5): CounterPlayer alone never crafts/stocks (by design, MF-8's doc above), so
+    /// once traits give player-shelf heroes real teeth (a Discerning veteran refusing Common, a
+    /// Sentimental hero clinging to already-worn gear, ...) a small FROZEN post-warmup shelf can run
+    /// out of anything any queued hero will buy — no <see cref="HaggleResponseAction"/> ever becomes
+    /// reachable, starving this file's coverage assertions on an otherwise-legitimate economy. Keep
+    /// the shelf alive during the counter phase exactly the way a real morning would (the smith
+    /// keeps crafting/stocking while working the counter) by also driving <see cref="BaselinePlayer"/>'s
+    /// craft/stock actions every tick — different action types than the counter verbs, so the two
+    /// batches never conflict, and CounterPlayer's own OpenCounter/Present/Haggle/Close behavior is
+    /// unchanged.
+    /// </summary>
+    private static ImmutableList<PlayerAction> CounterPlayerWithOngoingSupply(GameState state) =>
+        BaselinePlayer.ActionsFor(state).AddRange(CounterPlayer.ActionsFor(state));
 
     /// <summary>Drives <paramref name="days"/> days of ticks from <paramref name="start"/> with
     /// <paramref name="policy"/>, checking BOTH directions every tick: FORWARD — every
@@ -200,6 +218,69 @@ public class ActionLegalityTests
             $"{string.Join("; ", result.Rejected.Select(r => r.Reason))}");
 
         return new HashSet<Type> { typeof(SendSupplyAction) };
+    }
+
+    /// <summary>
+    /// Phase B (B2, R-B5): a concrete, deterministic <see cref="HaggleResponseAction"/> opportunity
+    /// — one rookie hero with empty gear and gold to spare, offered a shelf item their class can
+    /// wear, guaranteed to open a haggle round and accept at the standing offer. Same "construct the
+    /// one concrete opportunity directly" precedent as <see cref="SendSupplyFixtureCoverage"/>: once
+    /// trait teeth are real (a Discerning veteran refusing Common, a Sentimental hero clinging to
+    /// already-worn gear, ...), an ORGANIC multi-week run's survivors can end up entirely maxed-out
+    /// or entirely gated, so this file's coverage no longer safely assumes an organic run reaches
+    /// every counter verb — a rookie's very first purchase never hits any of those gates
+    /// (KD3 no-softlock: the veteran gate is floor-depth gated; empty gear means no sentimental worn
+    /// item either), so this fixture is unaffected by trait variance by construction.
+    /// </summary>
+    private static HashSet<Type> HaggleResponseFixtureCoverage()
+    {
+        var fresh = GameComposition.NewCampaign(Seed);
+        var rookie = fresh.Heroes.Values.First(h => h.Alive);
+
+        var weaponId = new ItemId(fresh.NextItemId);
+        var sword = new Item(
+            weaponId, "test-recipe", "Fixture Sword", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(Attack: 9, Defense: 0, Weight: 3), Mark: null, ImmutableList<ItemHistoryEntry>.Empty);
+
+        var heroState = rookie with
+        {
+            Gold = 1000,
+            Gear = GearSet.Empty,
+            Memories = ImmutableList<ItemMemory>.Empty,
+            DeepestFloorReached = 0,
+        };
+
+        var state = fresh with
+        {
+            Phase = DayPhase.Morning,
+            Heroes = fresh.Heroes.SetItem(rookie.Id.Value, heroState),
+            Items = fresh.Items.Add(weaponId.Value, sword),
+            NextItemId = fresh.NextItemId + 1,
+            Player = fresh.Player with { Shelf = ImmutableList.Create(new ShelfEntry(weaponId, 10)) },
+        };
+
+        var kernel = GameComposition.BuildKernel();
+
+        var openResult = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new OpenCounterAction()));
+        Assert.True(openResult.Rejected.IsEmpty);
+        state = openResult.NewState;
+        Assert.Equal(heroState.Id, state.Counter?.Active); // the only alive hero this fixture cares about
+
+        var presentResult = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new PresentItemAction(weaponId)));
+        Assert.True(presentResult.Rejected.IsEmpty);
+        state = presentResult.NewState;
+        Assert.True(state.Counter is { Round: > 0, StandingOfferGold: not null },
+            "HaggleResponse fixture: presenting a clear, affordable, empty-slot upgrade to a rookie never opened a round.");
+
+        var accept = new HaggleResponseAction(HaggleResponseKind.Accept);
+        Assert.True(ActionLegality.IsLegal(state, accept, DayPhase.Morning));
+
+        var haggleResult = kernel.Tick(state, ImmutableList.Create<PlayerAction>(accept));
+        Assert.True(haggleResult.Rejected.IsEmpty,
+            $"HaggleResponse fixture: kernel rejected a fixture ActionLegality reported legal: " +
+            $"{string.Join("; ", haggleResult.Rejected.Select(r => r.Reason))}");
+
+        return new HashSet<Type> { typeof(OpenCounterAction), typeof(PresentItemAction), typeof(HaggleResponseAction) };
     }
 
     [Theory]

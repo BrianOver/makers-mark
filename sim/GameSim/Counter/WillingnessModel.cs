@@ -123,16 +123,20 @@ public static class WillingnessModel
 
     /// <summary>
     /// True willingness-to-pay in gold: list price scaled by (class factor + session Interest +
-    /// persistent hero mood + U9's quality bonus), capped at the hero's gold on hand (PKD6/PKD7:
-    /// mood is read here, it never writes anywhere but the counter/gossip surfaces). Integer math,
-    /// floor division. <paramref name="quality"/> defaults to <see cref="QualityGrade.Common"/> (0
-    /// bonus) so pre-U9 callers/tests that never pass it are unaffected.
+    /// persistent hero mood + U9's quality bonus + Phase B's per-hero trait bonus), capped at the
+    /// hero's gold on hand (PKD6/PKD7: mood is read here, it never writes anywhere but the
+    /// counter/gossip surfaces). Integer math, floor division. <paramref name="quality"/> defaults
+    /// to <see cref="QualityGrade.Common"/> (0 bonus) so pre-U9 callers/tests that never pass it
+    /// are unaffected. <paramref name="traitPermille"/> (Phase B, B2, R-B5) defaults to 0 — the
+    /// Price Sensitivity trait axis's offset (<see cref="Heroes.TraitEffects.PriceSensitivityPermille"/>),
+    /// 0 for a hero holding neither Thrifty nor Spendthrift, so every caller that never passes it
+    /// (every pre-Phase-B test) is BYTE IDENTICAL.
     /// </summary>
     public static int TrueWillingness(
         int listPrice, int heroGold, string classId, int interestPermille, int moodPermille,
-        QualityGrade quality = QualityGrade.Common)
+        QualityGrade quality = QualityGrade.Common, int traitPermille = 0)
     {
-        var factor = ClassPriceFactor(classId) + interestPermille + moodPermille + QualityBonus(quality);
+        var factor = ClassPriceFactor(classId) + interestPermille + moodPermille + QualityBonus(quality) + traitPermille;
         if (factor < MinEffectiveFactorPermille)
         {
             factor = MinEffectiveFactorPermille;

@@ -10,8 +10,12 @@ namespace GameSim.Tests.Heroes;
 /// </summary>
 public class ShoppingAiTests
 {
+    // Phase B (B2): id=3 rather than id=1 — verified StableHash(HeroId(3), "Testa") derives
+    // {Spendthrift, Stubborn} (Price Sensitivity + Haggle Patience only), staying OFF the Quality
+    // Demand and Sentiment axes this file's veteran-gate and storied-gear pins depend on. Keeps
+    // every pinned expectation in this file byte-identical post-B2.
     private static Hero MakeHero(string classId, int gold = 100, GearSet? gear = null) => new(
-        new HeroId(1), "Testa", classId, Level: 1, MaxHp: 25, Gold: gold,
+        new HeroId(3), "Testa", classId, Level: 1, MaxHp: 25, Gold: gold,
         gear ?? GearSet.Empty, ImmutableList<ItemMemory>.Empty,
         Alive: true, DeepestFloorReached: 0, DiedOnDay: null);
 

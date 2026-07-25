@@ -95,7 +95,7 @@ public sealed class CounterQueueSystem : IPhaseSystem
             events.Emit(new CustomerApproached(approaching));
         }
 
-        var promoted = PromoteActive(counter, nextQueue, nextActive);
+        var promoted = PromoteActive(state, counter, nextQueue, nextActive);
 
         return state with
         {
@@ -110,18 +110,28 @@ public sealed class CounterQueueSystem : IPhaseSystem
     /// <summary>Resets the per-customer meters (Round, Interest, Patience, Presented, standing
     /// offer) for a newly-active customer (or for the very first customer at
     /// <see cref="CounterHandlers"/>'s <c>OpenCounterAction</c> handling) — everything except
-    /// <see cref="CounterState.GoodwillPermille"/>, which is session-wide.</summary>
-    internal static CounterState PromoteActive(CounterState counter, ImmutableList<HeroId> queue, HeroId? active) =>
-        counter with
+    /// <see cref="CounterState.GoodwillPermille"/>, which is session-wide. Phase B (B2, R-B5): the
+    /// starting Patience budget is the new customer's own Haggle Patience trait
+    /// (<see cref="TraitEffects.PatienceRoundsFor"/>) applied to
+    /// <see cref="WillingnessModel.InitialPatienceRounds"/> — 0 offset (byte-identical) for a hero
+    /// holding neither Patient nor Stubborn.</summary>
+    internal static CounterState PromoteActive(GameState state, CounterState counter, ImmutableList<HeroId> queue, HeroId? active)
+    {
+        var patienceRounds = active is { } activeId && state.Heroes.TryGetValue(activeId.Value, out var hero)
+            ? TraitEffects.PatienceRoundsFor(hero, WillingnessModel.InitialPatienceRounds)
+            : 0;
+
+        return counter with
         {
             Queue = queue,
             Active = active,
             Round = 0,
             InterestPermille = 0,
-            PatienceRounds = active is not null ? WillingnessModel.InitialPatienceRounds : 0,
+            PatienceRounds = patienceRounds,
             Presented = null,
             StandingOfferGold = null,
         };
+    }
 
     private static GameState Walk(GameState state, Hero hero, Item item, ShoppingVerdict verdict, IEventSink events)
     {

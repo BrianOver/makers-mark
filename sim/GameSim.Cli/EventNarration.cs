@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Heroes;
 using GameSim.Narrative;
 
 namespace GameSim.Cli;
@@ -24,7 +25,7 @@ public static class EventNarration
         ItemSold sold when sold.FromPlayerShop =>
             $"  $ {HeroName(state, sold.Buyer)} bought {ItemName(state, sold.Item)} for {sold.Price}g from YOUR shop",
         HeroPassedOnItem pass =>
-            $"  ~ {HeroName(state, pass.Hero)} passed on {ItemName(state, pass.Item)}: {pass.Reason}",
+            $"  ~ {TraitFlavoredName(state, pass.Hero, pass.Reason)} passed on {ItemName(state, pass.Item)}: {pass.Reason}",
         PartyDeparted dep =>
             "  → " + ExpeditionNarrator.Departure(PartyHeroes(state, dep.Party), dep.TargetFloor, NarratorPack.Pack, state.Rng.Inc, dep.Day),
         AttributionBeatEvent beat =>
@@ -47,7 +48,7 @@ public static class EventNarration
         CounterSaleClosed sale =>
             $"  $ {HeroName(state, sale.Hero)} buys {ItemName(state, sale.Item)} for {sale.Price}g at the counter",
         CustomerWalked walked =>
-            $"  ~ {HeroName(state, walked.Hero)} walks away from the counter: {walked.Reason}",
+            $"  ~ {TraitFlavoredName(state, walked.Hero, walked.Reason)} walks away from the counter: {walked.Reason}",
         MemorialHonored honored =>
             $"  🕯 the town bids farewell to {honored.HeroName} — the rite is done",
         HeirloomReforged reforged =>
@@ -117,6 +118,42 @@ public static class EventNarration
         return seededByLegend
             ? $"  + recruit {name} arrives in town — came having heard what your steel did for the fallen"
             : $"  + recruit {name} arrives in town";
+    }
+
+    /// <summary>Phase B (B2, R-B5): prefixes the hero's name with its trait's <see cref="TraitDefinition.DisplayName"/>
+    /// when the reason text is one this hero's OWN derived trait actually produced ("Thrifty Torvald
+    /// balks at the price") — a light textual match on the exact reason phrases <c>ShoppingAi</c>/
+    /// <c>HaggleResolver</c> stamp for that trait's gate, so the flavor only ever fires for the hero
+    /// whose trait caused it, never a coincidental namesake. Falls back to the bare name otherwise
+    /// (every pre-Phase-B reason, and any trait axis with no single-string reason to hook — Price
+    /// Sensitivity's fleece/pin split and Consumable Stocking's silent skip carry no reason string
+    /// here to flavor).</summary>
+    private static string TraitFlavoredName(GameState s, HeroId id, string reason)
+    {
+        var name = HeroName(s, id);
+        if (!s.Heroes.TryGetValue(id.Value, out var hero))
+        {
+            return name;
+        }
+
+        var traits = TraitRegistry.TraitsFor(hero.Id, hero.Name);
+
+        if (reason.Contains("won't trust", StringComparison.Ordinal) && traits.Contains(TraitId.Discerning))
+        {
+            return $"{TraitRegistry.Definition(TraitId.Discerning).DisplayName} {name}";
+        }
+
+        if (reason.Contains("won't part with", StringComparison.Ordinal) && traits.Contains(TraitId.Sentimental))
+        {
+            return $"{TraitRegistry.Definition(TraitId.Sentimental).DisplayName} {name}";
+        }
+
+        if (reason.Contains("patience ran out", StringComparison.Ordinal) && traits.Contains(TraitId.Stubborn))
+        {
+            return $"{TraitRegistry.Definition(TraitId.Stubborn).DisplayName} {name}";
+        }
+
+        return name;
     }
 
     private static string HeroName(GameState s, HeroId id) => s.Heroes.TryGetValue(id.Value, out var h) ? h.Name : id.ToString();

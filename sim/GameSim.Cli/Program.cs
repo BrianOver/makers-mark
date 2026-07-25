@@ -1303,6 +1303,8 @@ void PrintStatus(GameState s)
 // RelationshipBands read the counter queue already sorts by; deeds sum the hero's LIFETIME
 // Memories (career total — distinct from HeroXp's per-expedition-only grant, see its doc comment);
 // the forecast is the B1b shadow-tick, read-only and exact-by-construction against this same state.
+// Phase B (B2, R-B5): trait chips — derived on read from (HeroId, Name), never stored — surface
+// the two personality axes this hero's shop decisions are already biased by.
 void PrintHeroCard(Hero hero, GameState s)
 {
     var display = HeroIdentity.DisplayName(hero.Id, s);
@@ -1312,8 +1314,14 @@ void PrintHeroCard(Hero hero, GameState s)
     var lifeline = hero.Alive
         ? $"alive, deepest floor {hero.DeepestFloorReached}"
         : $"died day {hero.DiedOnDay}";
+    var traits = TraitRegistry.TraitsFor(hero.Id, hero.Name).Select(TraitRegistry.Definition).ToImmutableArray();
 
     Console.WriteLine($"  {hero.Id} {display} — {ClassRegistry.Require(hero.ClassId).DisplayName} ({lifeline})");
+    Console.WriteLine($"    traits: {string.Join(", ", traits.Select(t => t.DisplayName))}");
+    foreach (var trait in traits)
+    {
+        Console.WriteLine($"      [{trait.DisplayName}] {trait.Tooltip}");
+    }
     Console.WriteLine($"    band: {RelationshipBands.Label(band)} | mood {hero.MoodPermille}‰ | rank: {rank} (xp {hero.Xp})");
     Console.WriteLine($"    deeds: {kills} kills, {saves} saves");
 
