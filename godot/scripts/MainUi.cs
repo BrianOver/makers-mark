@@ -951,6 +951,16 @@ public partial class MainUi : Control
         legendsButton.Pressed += () => Legends.ShowWall(Adapter.CurrentState);
         controls.AddChild(legendsButton);
 
+        // G1 (plan 2026-07-25-001, Slice 2): the demand telegraph had no player-visible entry —
+        // DemandPanel was already registered in the Drawer (U6) and reachable via
+        // OpenPanel("Demand"), but nothing ever called it. Same button-cluster pattern as
+        // Ledger/Forecast/Commissions/Legends above, wired straight onto the drawer's own
+        // OpenPanel router (mirrors OnTownBuildingClicked's OpenPanel("Bounties") call) rather
+        // than inventing a bespoke show method.
+        var demandButton = new Button { Name = "OpenDemand", Text = "Demand" };
+        demandButton.Pressed += () => OpenPanel("Demand");
+        controls.AddChild(demandButton);
+
         // U6/U7 rejection banner: a transient, themed, player-phrased line — hidden
         // except while a toast is live (OnPhaseCompleted shows it, ClearToast/_Process
         // hide it). NOT a persistent status readout, and never the raw kernel string.
