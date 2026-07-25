@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using GameSim.Advisor;
 using GameSim.Cli;
 using GameSim.Contracts;
+using GameSim.Drama;
 using GameSim.Kernel;
 
 namespace GameSim.Tests.Cli;
@@ -99,5 +100,73 @@ public class CliWiringTests
         var result = kernel.Tick(state, ImmutableList.Create<PlayerAction>(reparsed));
 
         Assert.Empty(result.Rejected);
+    }
+
+    // U5 (C2b, R4): the 'demand' verb prints DemandNarration.DemandVerbLines(DemandBoard.Snapshot(state))
+    // straight to the console (Program.cs has no PlayerAction to route through the kernel here — this
+    // is a pure display verb), so the CLI-wiring guarantee is that the RENDERED text actually carries
+    // every field the accept/decline target list (U9) needs, not just that DemandBoard computed them.
+    [Fact]
+    public void DemandVerb_OnFreshCampaign_RendersAllFiveFieldsPerOpenCommission()
+    {
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(Seed);
+
+        // NewCampaign is the pre-tick genesis state (before ANY Morning system has run) — the
+        // gap-scan that posts commissions is CommissionSystem, a Morning-phase system, so it needs
+        // one real tick to fire (same reasoning DemandBoardTests documents for its own seed).
+        state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
+
+        var snapshot = DemandBoard.Snapshot(state);
+        Assert.NotEmpty(snapshot.OpenCommissions); // pinned by DemandBoardTests too — guards this test isn't vacuous
+
+        var rendered = string.Join('\n', DemandNarration.DemandVerbLines(snapshot));
+
+        foreach (var commission in snapshot.OpenCommissions)
+        {
+            Assert.Contains(commission.HeroName, rendered, StringComparison.Ordinal);
+            Assert.Contains(commission.Slot.ToString(), rendered, StringComparison.Ordinal);
+            Assert.Contains(commission.MinQuality.ToString(), rendered, StringComparison.Ordinal);
+            Assert.Contains(commission.PremiumGold.ToString(), rendered, StringComparison.Ordinal);
+            Assert.Contains(commission.DeadlineDay.ToString(), rendered, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void TelegraphLines_NonEmpty_OnDay1()
+    {
+        var state = GameComposition.NewCampaign(Seed);
+
+        var lines = DemandNarration.TelegraphLines(DemandBoard.Snapshot(state));
+
+        Assert.NotEmpty(lines);
+        Assert.Contains(lines, l => l.Contains("bounty board", StringComparison.Ordinal));
+    }
+
+    // R4's loop-closing contract: the Morning muster restates the prior Evening's telegraph. Both
+    // surfaces are pure functions over the identical DemandSnapshot (no separate state capture), so
+    // this pins that they can never drift on the SAME snapshot's lead depth-stall fact.
+    [Fact]
+    public void MusterLine_Restates_SameLeadStallFact_AsTelegraph()
+    {
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(Seed);
+
+        // Run a handful of days so a depth-stall entry has a chance to appear (BaselinePlayer takes
+        // no actions of its own — this just advances the clock via bare 'next'-equivalent ticks).
+        for (var tick = 0; tick < 15 * 5; tick++)
+        {
+            state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
+        }
+
+        var snapshot = DemandBoard.Snapshot(state);
+        var muster = DemandNarration.MusterLine(ImmutableList<PartyPlan>.Empty, snapshot);
+        var telegraph = string.Join('\n', DemandNarration.TelegraphLines(snapshot));
+
+        if (!snapshot.DepthStalls.IsEmpty)
+        {
+            Assert.Contains(snapshot.DepthStalls[0].HeroName, muster, StringComparison.Ordinal);
+            Assert.Contains(snapshot.DepthStalls[0].HeroName, telegraph, StringComparison.Ordinal);
+        }
     }
 }
