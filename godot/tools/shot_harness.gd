@@ -49,6 +49,10 @@ func _process(_delta: float) -> bool:
 			# same way Bestiary does — the production OpenPanel path by id.
 			if _ui.has_method("OpenPanel"):
 				_ui.call("OpenPanel", "Demand")
+		elif _state == "HeroCards":
+			# Phase B Renown panel — drawer-hosted, opened by id.
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "HeroCards")
 		elif _ui.has_method("OnTownBuildingClicked"):
 			# Same entry point the town uses on building arrival (private C# method reached
 			# via the source-gen call() bridge).
