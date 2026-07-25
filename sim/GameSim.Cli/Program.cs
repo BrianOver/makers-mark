@@ -721,16 +721,78 @@ GameState Advance(GameState current)
         }
     }
 
+    // U2 (C1b, MF-2): OreMarketHandlers emits NO event for a neutral-standing ore buy (only the
+    // TariffApplied DELTA when a faction's standing moves the price), so the itemized Evening
+    // ledger can't reconstruct the day's ore spend from the log alone — compute it here, right
+    // where "accepted this tick" is already isolated above, and feed GoldLedger the caller-side
+    // fact it cannot see (R7 stop-rule: no OrePurchased event is added to close the hole).
+    var tariffsThisTick = result.Events.OfType<TariffApplied>().ToList();
+    var oreSpend = ImmutableList.CreateBuilder<GoldLedgerEntry>();
+    foreach (var ore in batch.OfType<BuyOreAction>())
+    {
+        if (rejectedActions.Contains(ore))
+        {
+            continue;
+        }
+
+        // The pre-tick offer's base ask (quantity * unit price) — the SAME offer OreMarketHandlers
+        // matched. Computed FIRST and used as part of the tariff-event match key: two same-material
+        // buys in one tick can have DIFFERENT BaseLineCost (different quantities), and one of them
+        // can legitimately round to a zero delta (no TariffApplied event) while another doesn't —
+        // matching by MaterialKey alone would then steal the wrong buy's tariff record. Matching on
+        // (MaterialKey, BaseLineCost) keeps each buy paired with its own outcome.
+        var offer = current.OpenOreOffers.FirstOrDefault(o => o.From == ore.From && o.MaterialKey == ore.MaterialKey);
+        var baseLineCost = offer is null ? 0 : ore.Quantity * offer.UnitPrice;
+
+        var tariffIndex = tariffsThisTick.FindIndex(t => t.MaterialKey == ore.MaterialKey && t.BaseLineCost == baseLineCost);
+        if (tariffIndex >= 0)
+        {
+            var tariff = tariffsThisTick[tariffIndex];
+            tariffsThisTick.RemoveAt(tariffIndex); // consume — a second identical buy this tick needs its OWN tariff event, not this one twice
+            oreSpend.Add(new GoldLedgerEntry("ore", -tariff.PlayerCost, $"{ore.Quantity}x {ore.MaterialKey} from H{ore.From.Value} ({tariff.FactionId} tariffed)"));
+            continue;
+        }
+
+        // No matching tariff event — standing was neutral (or the discount rounded away to
+        // nothing) for THIS specific buy, so the player paid exactly the base ask.
+        oreSpend.Add(new GoldLedgerEntry("ore", -baseLineCost, $"{ore.Quantity}x {ore.MaterialKey} from H{ore.From.Value}"));
+    }
+
     var next = result.NewState;
 
+    // U1 (MF-4, R2): the bounty escrow refund — dead-acceptor (BountySystems.cs:62-68) or lapsed-
+    // at-expiry (:70-78) — is NEVER evented; the only way to see it is this cross-tick diff (KTD-2:
+    // derive, don't add a new event type). U2 reuses these SAME derived facts as ledger rows below.
+    var bountyRefunds = DetectBountyRefunds(current, next, result.Events);
+
+    // U1 (MF-5, R2): BountyJudgingSystem re-judges every unaccepted bounty against every alive hero
+    // EVERY Expedition tick until it's accepted or expires (435 near-identical declines seen in one
+    // 100-day telemetry run) — narrate only the FIRST decline per bounty this tick; any acceptance
+    // always narrates. Dedupe lives here at the call site, not in the pure EventNarration.Line switch.
+    var declinedBountiesNarrated = new HashSet<int>();
     foreach (var gameEvent in result.Events)
     {
+        if (gameEvent is BountyJudged { Accepted: false } declined && !declinedBountiesNarrated.Add(declined.Bounty.Value))
+        {
+            continue;
+        }
+
         Narrate(gameEvent, next);
+    }
+
+    // U1 (MF-4): the silent refund the diff above just proved — one line per lapsed/dead-acceptor
+    // bounty this tick.
+    foreach (var bounty in bountyRefunds)
+    {
+        Console.WriteLine($"  ↺ bounty refunded — {bounty.Id} (floor {bounty.TargetFloor}) lapsed, {bounty.RewardGold}g returned to the till");
     }
 
     if (current.Phase == DayPhase.Evening)
     {
-        PrintLedger(next, current.Day);
+        var bountyRefundRows = bountyRefunds
+            .Select(b => new GoldLedgerEntry("bounty refund", b.RewardGold, $"{b.Id} (floor {b.TargetFloor}) lapsed"))
+            .ToImmutableList();
+        PrintLedger(next, current.Day, oreSpend.ToImmutable(), bountyRefundRows);
     }
 
     // Stage-1 retelling (U5): the Expedition tick just resolved [1..checkpoint] and parked the
@@ -750,6 +812,22 @@ GameState Advance(GameState current)
     if (next.Phase == DayPhase.Camp && !next.InFlight.IsEmpty)
     {
         PrintCampSlate(next);
+    }
+
+    // U3 (C3, R3): the camp decision window just CLOSED. A party carried a live slate through this
+    // exact Camp tick (current.Phase == Camp); if neither 'send' nor 'recall' landed on it this
+    // tick, the player let the checkpoint choice ride untouched — call that out explicitly (KTD-2:
+    // derived from the InFlightExpedition Recalled/SupplySent flags after the tick, no new event).
+    if (current.Phase == DayPhase.Camp)
+    {
+        foreach (var party in current.InFlight)
+        {
+            var after = next.InFlight.FirstOrDefault(p => p.Party.SequenceEqual(party.Party));
+            if (after is not null && CampNarration.WindowClosedUntouched(after))
+            {
+                Console.WriteLine($"  ⏳ camp window closed for [{string.Join(", ", PartyHeroes(next, party.Party).Select(h => h.Name))}] — you let it ride.");
+            }
+        }
     }
 
     // Stage-2 retelling + Halt closer (U5): the Deep tick finalized each camper into
@@ -832,7 +910,31 @@ void PrintCampSlate(GameState s)
         }
     }
 
-    Console.WriteLine("  send <heroId> <itemId> to deliver a held consumable; recall <heroId> to bank and surface.");
+    // U3 (C3, R3): the trailing hint reframed as an explicit send/recall/hold QUESTION — the
+    // slate itself already exists (MF-3: this is a reframe, not a new print) — the Evening
+    // reveal's attribution clause (CampNarration.Attribution, rendered from PrintLedger) closes
+    // the loop on whichever answer (or non-answer) the player gives.
+    Console.WriteLine("  Send, recall, or hold? send <heroId> <itemId> to deliver a held consumable, recall <heroId> to bank and surface — or do nothing to hold and let it ride.");
+}
+
+// U1 (MF-4, R2): pure cross-tick diff — a bounty present in `before.Bounties` but gone from
+// `after.Bounties` with no BountyPaid for its id THIS tick was refunded (KTD-2: BountySystems.cs's
+// dead-acceptor and expiry-refund branches both move Player.Gold with no event of their own).
+ImmutableList<Bounty> DetectBountyRefunds(GameState before, GameState after, ImmutableList<GameEvent> events)
+{
+    var paidIds = events.OfType<BountyPaid>().Select(p => p.Bounty.Value).ToHashSet();
+    var afterIds = after.Bounties.Select(b => b.Id.Value).ToHashSet();
+
+    var refunds = ImmutableList.CreateBuilder<Bounty>();
+    foreach (var bounty in before.Bounties)
+    {
+        if (!afterIds.Contains(bounty.Id.Value) && !paidIds.Contains(bounty.Id.Value))
+        {
+            refunds.Add(bounty);
+        }
+    }
+
+    return refunds.ToImmutable();
 }
 
 void Narrate(GameEvent gameEvent, GameState s)
@@ -846,39 +948,65 @@ void Narrate(GameEvent gameEvent, GameState s)
     }
 }
 
-void PrintLedger(GameState s, int day)
+void PrintLedger(GameState s, int day, ImmutableList<GoldLedgerEntry> oreSpend, ImmutableList<GoldLedgerEntry> bountyRefunds)
 {
     // Game-Feel Plan G3: the deadline heartbeat, telegraphed every evening regardless of
     // whether any hero returned tonight — the looming rent due-date is always visible.
     Console.WriteLine($"  rent due in {s.Rent.DaysUntilDue} day(s): {s.Rent.AmountDueGold}g");
 
     var cards = LedgerQuery.ReturnCards(s, day);
-    if (cards.IsEmpty)
+    if (!cards.IsEmpty)
     {
-        return;
+        Console.WriteLine($"  ── EVENING LEDGER, day {day} ──");
+        foreach (var card in cards)
+        {
+            // U5: fate prose lives on the card (LedgerPack via FlavorEngine) — hero name,
+            // floor, and gold earned are guaranteed verbatim in the line (R4).
+            Console.WriteLine($"  {card.FateLine}");
+
+            // U3 (C3, R3): tie this hero's fate to today's camp choice, when they went through
+            // a camp window at all (CampNarration.Attribution returns null otherwise).
+            var dayEvents = s.EventLog.Where(e => e.Day == day).ToImmutableList();
+            var attribution = CampNarration.Attribution(dayEvents, card.Hero, card.Survived);
+            if (attribution is not null)
+            {
+                Console.WriteLine($"      — {attribution}");
+            }
+
+            foreach (var beat in card.Beats)
+            {
+                Console.WriteLine($"      ★ {beat.Detail}");
+            }
+
+            foreach (var ore in card.OreOffers)
+            {
+                // Playtest finding #3 (P0): this offer is written into OpenOreOffers by THIS SAME
+                // Evening tick's ExpeditionRevealSystem, which runs AFTER actions apply (kernel
+                // contract, ExpeditionRevealSystem's class doc) — so it is NOT purchasable this
+                // tick, and 'next' from this ledger already rolls past Evening into tomorrow's
+                // Morning (where buyore is phase-illegal). It becomes buyable only at TOMORROW's
+                // Evening prompt, before that tick's 'next' — the exact command below, unchanged.
+                Console.WriteLine($"      offers {ore.Quantity}x {ore.MaterialKey} at {ore.UnitPrice}g — buyable at TOMORROW's Evening prompt (type this BEFORE 'next' then): buyore {card.Hero} {ore.MaterialKey} {ore.Quantity}");
+            }
+        }
     }
 
-    Console.WriteLine($"  ── EVENING LEDGER, day {day} ──");
-    foreach (var card in cards)
+    // U2 (C1b, R1): itemize EVERY known player-gold delta the day moved — the "why did my gold
+    // change" block, including the two flows the sim never events at all (ore spend, bounty
+    // refund — MF-2/MF-4, fed in by the caller above) alongside the evented flows GoldLedger
+    // reads straight off the log. Printed even on a day with no hero return (rent/materials/
+    // bounty posts still move gold).
+    var (rows, total) = GoldLedger.DayDeltas(s, day, oreSpend, bountyRefunds);
+    if (!rows.IsEmpty)
     {
-        // U5: fate prose lives on the card (LedgerPack via FlavorEngine) — hero name,
-        // floor, and gold earned are guaranteed verbatim in the line (R4).
-        Console.WriteLine($"  {card.FateLine}");
-        foreach (var beat in card.Beats)
+        Console.WriteLine("  ── WHY YOUR GOLD CHANGED ──");
+        foreach (var row in rows)
         {
-            Console.WriteLine($"      ★ {beat.Detail}");
+            var sign = row.Delta >= 0 ? "+" : string.Empty;
+            Console.WriteLine($"    {sign}{row.Delta}g {row.Source} — {row.Note}");
         }
 
-        foreach (var ore in card.OreOffers)
-        {
-            // Playtest finding #3 (P0): this offer is written into OpenOreOffers by THIS SAME
-            // Evening tick's ExpeditionRevealSystem, which runs AFTER actions apply (kernel
-            // contract, ExpeditionRevealSystem's class doc) — so it is NOT purchasable this
-            // tick, and 'next' from this ledger already rolls past Evening into tomorrow's
-            // Morning (where buyore is phase-illegal). It becomes buyable only at TOMORROW's
-            // Evening prompt, before that tick's 'next' — the exact command below, unchanged.
-            Console.WriteLine($"      offers {ore.Quantity}x {ore.MaterialKey} at {ore.UnitPrice}g — buyable at TOMORROW's Evening prompt (type this BEFORE 'next' then): buyore {card.Hero} {ore.MaterialKey} {ore.Quantity}");
-        }
+        Console.WriteLine($"    = {total}g net today");
     }
 }
 

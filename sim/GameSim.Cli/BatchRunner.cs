@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using GameSim;
 using GameSim.Chronicle;
 using GameSim.Contracts;
@@ -18,10 +19,21 @@ namespace GameSim.Cli;
 public static class BatchRunner
 {
     public const string Usage =
-        "usage: batch --seeds <count> [--seed <startSeed>] [--days <days>] [--out <dir>]";
+        "usage: batch --seeds <count> [--seed <startSeed>] [--days <days>] [--out <dir>] [--policy baseline|counter]";
 
-    /// <summary>Parsed batch parameters. Defaults: 20 seeds starting at 1, 100 days, runs/.</summary>
-    public sealed record BatchArgs(int SeedCount, ulong StartSeed, int Days, string OutDir);
+    /// <summary>
+    /// The player policy a sweep drives (U0: <see cref="CounterPlayer"/> was previously
+    /// unreachable — hardcoded to <see cref="BaselinePlayer"/>). Default stays
+    /// <see cref="Policy.Baseline"/> so <c>BaselinePlayerPinTests</c> and the golden corpus never move.
+    /// </summary>
+    public enum Policy
+    {
+        Baseline,
+        Counter,
+    }
+
+    /// <summary>Parsed batch parameters. Defaults: 20 seeds starting at 1, 100 days, runs/, baseline policy.</summary>
+    public sealed record BatchArgs(int SeedCount, ulong StartSeed, int Days, string OutDir, Policy PlayerPolicy);
 
     /// <summary>Parse args after the `batch` token. Null (with an error line) = invalid.</summary>
     public static BatchArgs? Parse(string[] args, TextWriter error)
@@ -30,6 +42,7 @@ public static class BatchRunner
         var startSeed = 1UL;
         var days = 100;
         var outDir = "runs";
+        var policyArg = "baseline";
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -49,6 +62,10 @@ public static class BatchRunner
                     break;
                 case "--out" when i + 1 < args.Length:
                     outDir = args[i + 1];
+                    i++;
+                    break;
+                case "--policy" when i + 1 < args.Length:
+                    policyArg = args[i + 1];
                     i++;
                     break;
                 default:
@@ -72,13 +89,48 @@ public static class BatchRunner
             return null;
         }
 
-        return new BatchArgs(seedCount, startSeed, days, outDir);
+        Policy policy;
+        switch (policyArg.ToLowerInvariant())
+        {
+            case "baseline":
+                policy = Policy.Baseline;
+                break;
+            case "counter":
+                policy = Policy.Counter;
+                break;
+            default:
+                error.WriteLine($"batch: unknown --policy '{policyArg}' (expected 'baseline' or 'counter')");
+                error.WriteLine(Usage);
+                return null;
+        }
+
+        return new BatchArgs(seedCount, startSeed, days, outDir, policy);
     }
+
+    /// <summary>Lowercase name embedded in the chronicle filename (corpus hygiene) — matches the
+    /// <c>--policy</c> value so a filename always tells you which policy produced it.</summary>
+    private static string PolicyFileTag(Policy policy) => policy switch
+    {
+        Policy.Counter => "counter",
+        _ => "baseline",
+    };
+
+    /// <summary>The scripted policy driving this sweep (defaults to <see cref="BaselinePlayer"/> —
+    /// never changes for an existing caller that omits <c>--policy</c>).</summary>
+    private static Func<GameState, ImmutableList<PlayerAction>> PolicyFn(Policy policy) => policy switch
+    {
+        Policy.Counter => CounterPlayer.ActionsFor,
+        _ => BaselinePlayer.ActionsFor,
+    };
 
     /// <summary>
     /// Run the sweep: for each seed, a fresh campaign ticked to the END of day <c>Days</c>
-    /// (i.e. until <c>state.Day &gt; Days</c>) under <see cref="BaselinePlayer"/>, then the
-    /// chronicle serialized to <c>{outDir}/batch-seed{seed}-days{days}.json</c>.
+    /// (i.e. until <c>state.Day &gt; Days</c>) under <see cref="BatchArgs.PlayerPolicy"/>
+    /// (<see cref="BaselinePlayer"/> unless <c>--policy counter</c> selects
+    /// <see cref="CounterPlayer"/>), then the chronicle serialized to
+    /// <c>{outDir}/batch-seed{seed}-days{days}-{policy}.json</c> — the policy tag rides in the
+    /// filename so a counter-policy sweep never accumulates next to (or gets mistaken for) a
+    /// baseline corpus.
     /// Returns 0 on success, 1 on any failure (reported to <paramref name="error"/>).
     /// </summary>
     public static int Run(BatchArgs batch, TextWriter output, TextWriter error)
@@ -108,16 +160,18 @@ public static class BatchRunner
         }
 
         var kernel = GameComposition.BuildKernel();
+        var policyFn = PolicyFn(batch.PlayerPolicy);
+        var policyTag = PolicyFileTag(batch.PlayerPolicy);
         for (var i = 0; i < batch.SeedCount; i++)
         {
             var seed = batch.StartSeed + (ulong)i;
             var state = GameComposition.NewCampaign(seed);
             while (state.Day <= batch.Days)
             {
-                state = kernel.Tick(state, BaselinePlayer.ActionsFor(state)).NewState;
+                state = kernel.Tick(state, policyFn(state)).NewState;
             }
 
-            var path = Path.Combine(batch.OutDir, $"batch-seed{seed}-days{batch.Days}.json");
+            var path = Path.Combine(batch.OutDir, $"batch-seed{seed}-days{batch.Days}-{policyTag}.json");
             try
             {
                 File.WriteAllText(path, ChronicleCodec.Serialize(ChronicleCodec.FromState(seed, state)));
