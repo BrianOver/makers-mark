@@ -216,15 +216,20 @@ public sealed class HeroShoppingSystem : IPhaseSystem
         gain <= 0 ? 0 : Math.Min(1000, gain * 1000 / Math.Max(price, 1));
 
     /// <summary>
-    /// One hero's consumable restock (P2): only when the pack is EMPTY, buy the single
-    /// cheapest affordable Heal item across both shelves — player shelf wins price
-    /// ties, lower ItemId settles the rest. At most one purchase per hero per Morning.
+    /// One hero's consumable restock (P2): while the pack is below this hero's stocking target,
+    /// buy the single cheapest affordable Heal item across both shelves — player shelf wins price
+    /// ties, lower ItemId settles the rest. At most one purchase per hero per Morning (so a
+    /// Prepared hero tops up over 2 mornings, never in one big binge). Phase B (B2, R-B5): the
+    /// target is this hero's Consumable Stocking trait
+    /// (<see cref="TraitEffects.ConsumableStockTargetFor"/>) — a neutral hero (neither Prepared
+    /// nor Reckless) gets <see cref="TraitEffects.BaselineStockTarget"/> (1), which reproduces the
+    /// pre-Phase-B "only when Pack is completely empty" gate byte-for-byte.
     /// </summary>
     private static GameState ShopConsumableOnce(GameState state, Hero hero, IEventSink events)
     {
-        if (hero.Pack.Count > 0)
+        if (hero.Pack.Count >= TraitEffects.ConsumableStockTargetFor(hero))
         {
-            return state; // still stocked from an earlier day — no browsing, no events
+            return state; // this hero is content with what they're carrying — no browsing, no events
         }
 
         var candidates = CollectCandidates(state);

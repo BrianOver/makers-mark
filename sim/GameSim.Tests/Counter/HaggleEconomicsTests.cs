@@ -15,8 +15,14 @@ namespace GameSim.Tests.Counter;
 /// </summary>
 public class HaggleEconomicsTests
 {
+    // Phase B (B2): named "Lc{id}" rather than "Hero{id}" so this fixture's derived traits
+    // (StableHash(HeroId, Name)) stay OFF the two axes this file's pinned floor/ceiling/patience
+    // numbers depend on (Price Sensitivity, Haggle Patience) — verified by scan for ids 1-4:
+    // Lc1=Discerning+Reckless, Lc2=Unfussy+Sentimental, Lc3=Unfussy+Practical, Lc4=Sentimental+Reckless,
+    // none of which this file's rookie/bare-gear fixtures ever trigger (no worn gear, no Memories,
+    // DeepestFloorReached always 0). Keeps every pinned number in this file byte-identical post-B2.
     private static Hero MakeHero(int id, string classId, int gold, int mood = 0) => new(
-        new HeroId(id), $"Hero{id}", classId, Level: 1, MaxHp: 25, Gold: gold,
+        new HeroId(id), $"Lc{id}", classId, Level: 1, MaxHp: 25, Gold: gold,
         GearSet.Empty, ImmutableList<ItemMemory>.Empty,
         Alive: true, DeepestFloorReached: 0, DiedOnDay: null)
     {

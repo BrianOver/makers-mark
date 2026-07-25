@@ -131,12 +131,15 @@ public static class ShoppingAi
 
         // 2. Veteran pickiness (U9, KD3 no-softlock: gated on floor depth so a rookie's first
         // shopping trip is never blocked). Checked before affordability — a veteran refuses
-        // sub-Fine work on principle, not because of the price tag.
-        if (hero.DeepestFloorReached >= VeteranFloorThreshold && item.Quality < VeteranMinQualityGrade)
+        // sub-Fine work on principle, not because of the price tag. Phase B (B2, R-B5): the
+        // Quality Demand trait axis (Discerning/Unfussy) shifts WHICH grade clears the bar —
+        // it never touches the floor-depth guard above, so a rookie stays ungated regardless.
+        var veteranMinQuality = TraitEffects.VeteranMinQualityGradeFor(hero, VeteranMinQualityGrade);
+        if (hero.DeepestFloorReached >= VeteranFloorThreshold && item.Quality < veteranMinQuality)
         {
             return ShoppingVerdict.MakePass(
                 PassReasonKind.QualityTooLow,
-                $"a floor-{hero.DeepestFloorReached} veteran won't trust {item.Quality.ToString().ToLowerInvariant()} work — bring {VeteranMinQualityGrade.ToString().ToLowerInvariant()} or better");
+                $"a floor-{hero.DeepestFloorReached} veteran won't trust {item.Quality.ToString().ToLowerInvariant()} work — bring {veteranMinQuality.ToString().ToLowerInvariant()} or better");
         }
 
         // 3. Affordability.
@@ -155,10 +158,14 @@ public static class ShoppingAi
         // Wave 2b storied-gear gate: a hero won't part with worn gear that has carried them through
         // enough fights (Kills + Saves) for a merely-marginal upgrade — the player's old work has
         // earned loyalty. A big-enough gain still displaces it; this only blocks the marginal case.
+        // Phase B (B2, R-B5): the Sentiment trait axis (Sentimental/Practical) shifts the deeds
+        // threshold that triggers this gate — Sentimental clings sooner, Practical effectively
+        // never triggers.
         if (gain > 0 && hero.Gear.Slot(item.Slot) is { } wornId)
         {
             var deeds = WornDeeds(hero, wornId);
-            if (deeds >= SentimentalDeedThreshold && gain < SentimentalMinDisplacementGain)
+            var sentimentalThreshold = TraitEffects.SentimentalDeedThresholdFor(hero, SentimentalDeedThreshold);
+            if (deeds >= sentimentalThreshold && gain < SentimentalMinDisplacementGain)
             {
                 var wornName = items.TryGetValue(wornId.Value, out var worn) ? worn.Name : "their gear";
                 return ShoppingVerdict.MakePass(

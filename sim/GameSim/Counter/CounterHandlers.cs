@@ -66,7 +66,7 @@ public sealed class CounterHandlers : IActionHandler
             .ToImmutableList();
 
         var active = queue.Count > 0 ? queue[0] : (HeroId?)null;
-        var counter = CounterQueueSystem.PromoteActive(CounterState.Empty, queue, active);
+        var counter = CounterQueueSystem.PromoteActive(state, CounterState.Empty, queue, active);
 
         if (active is { } hero)
         {

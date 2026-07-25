@@ -53,7 +53,9 @@ internal static class HaggleResolver
             : counter.InterestPermille;
 
         const int round = 1;
-        var trueWillingness = WillingnessModel.TrueWillingness(listPrice, hero.Gold, hero.ClassId, interest, hero.MoodPermille, item.Quality);
+        var trueWillingness = WillingnessModel.TrueWillingness(
+            listPrice, hero.Gold, hero.ClassId, interest, hero.MoodPermille, item.Quality,
+            Heroes.TraitEffects.PriceSensitivityPermille(hero));
         var (floor, _) = WillingnessModel.Band(trueWillingness, round);
 
         events.Emit(new CustomerCountered(hero.Id, floor));
@@ -106,7 +108,9 @@ internal static class HaggleResolver
         }
 
         var nextRound = Math.Min(counter.Round + 1, WillingnessModel.MaxRounds);
-        var trueWillingness = WillingnessModel.TrueWillingness(listPrice, hero.Gold, hero.ClassId, counter.InterestPermille, hero.MoodPermille, item.Quality);
+        var trueWillingness = WillingnessModel.TrueWillingness(
+            listPrice, hero.Gold, hero.ClassId, counter.InterestPermille, hero.MoodPermille, item.Quality,
+            Heroes.TraitEffects.PriceSensitivityPermille(hero));
         var (floor, _) = WillingnessModel.Band(trueWillingness, nextRound);
 
         events.Emit(new CustomerCountered(hero.Id, floor));
@@ -135,7 +139,9 @@ internal static class HaggleResolver
             return (state, new RejectedAction(action, $"Countered price {price}g exceeds what the hero can afford ({hero.Gold}g)."));
         }
 
-        var trueWillingness = WillingnessModel.TrueWillingness(shelfEntry.Price, hero.Gold, hero.ClassId, counter.InterestPermille, hero.MoodPermille, item.Quality);
+        var trueWillingness = WillingnessModel.TrueWillingness(
+            shelfEntry.Price, hero.Gold, hero.ClassId, counter.InterestPermille, hero.MoodPermille, item.Quality,
+            Heroes.TraitEffects.PriceSensitivityPermille(hero));
         var (_, ceiling) = WillingnessModel.Band(trueWillingness, counter.Round);
 
         if (price > ceiling)

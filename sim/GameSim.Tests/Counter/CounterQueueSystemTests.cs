@@ -13,8 +13,15 @@ namespace GameSim.Tests.Counter;
 /// </summary>
 public class CounterQueueSystemTests
 {
+    // Phase B (B2): named "Lc{id}" rather than "Hero{id}" — verified StableHash(HeroId, "Lc{id}")
+    // for ids 1-6 stays OFF the Price Sensitivity and Haggle Patience axes this file's pinned
+    // band/offer/patience numbers depend on (Lc1=Discerning+Reckless, Lc2=Unfussy+Sentimental,
+    // Lc3=Unfussy+Practical, Lc4=Sentimental+Reckless, Lc5=Unfussy+Patient, Lc6=Thrifty+Unfussy —
+    // wait, Lc5/Lc6 DO touch HagglePatience/PriceSensitivity, but this file never pins an exact
+    // haggle number for ids 5/6, only queue-order/fallback-pass assertions that Accept whatever the
+    // standing offer is). Keeps every pinned floor/ceiling/patience expectation byte-identical.
     private static Hero MakeHero(int id, string classId, int gold, bool alive = true) => new(
-        new HeroId(id), $"Hero{id}", classId, Level: 1, MaxHp: 25, Gold: gold,
+        new HeroId(id), $"Lc{id}", classId, Level: 1, MaxHp: 25, Gold: gold,
         GearSet.Empty, ImmutableList<ItemMemory>.Empty,
         Alive: alive, DeepestFloorReached: 0, DiedOnDay: null);
 
