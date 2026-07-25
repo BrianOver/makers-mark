@@ -93,17 +93,35 @@ public static class ObjectiveAdvisor
         // named but nothing guided PRODUCING it). Picking FirstOrDefault() unfiltered (not "first
         // SLOT stall") is the fix: the top demand answers whichever kind it actually is, instead of
         // silently hunting past a quality stall for a slot stall further down the list.
+        // The QUALITY-gated depth stall is the progression blocker a Common+ commission never solves
+        // (accepting Torvald's Common+ Shield does not lift a Fine+ floor-3 wall), so surface its
+        // upgrade path even when a commission was already suggested — the two are different-horizon
+        // goals (near-term premium vs breaking the depth ceiling). Gating this behind
+        // "suggestions.Count == 0" masked U10 entirely in practice, since a commission is almost
+        // always open early-game (fable Slice-3 playtest). Deduped so it never repeats the commission.
+        // Scan for the first QUALITY-gated stall specifically (not just the top stall) — a slot
+        // stall ahead of it in the list must not hide it, since they call for different answers.
+        var qualityStall = demand.DepthStalls.FirstOrDefault(s => s.BlockingSlot is null);
+        if (qualityStall is not null)
+        {
+            var upgrade = SuggestQualityUpgrade(state, qualityStall, phase);
+            if (upgrade is not null && suggestions.All(s => !Equals(s.Action, upgrade.Action)))
+            {
+                suggestions.Add(upgrade);
+            }
+        }
+
+        // The SLOT-gated stall stays a fallback: a slot commission usually IS that same slot need,
+        // so it only fires when nothing sharper did.
         if (suggestions.Count == 0)
         {
-            var stall = demand.DepthStalls.FirstOrDefault();
-            if (stall is not null)
+            var slotStall = demand.DepthStalls.FirstOrDefault(s => s.BlockingSlot is not null);
+            if (slotStall is not null)
             {
-                var stallSuggestion = stall.BlockingSlot is not null
-                    ? SuggestSlotCraftOrBuy(state, stall, phase)
-                    : SuggestQualityUpgrade(state, stall, phase);
-                if (stallSuggestion is not null)
+                var slotSuggestion = SuggestSlotCraftOrBuy(state, slotStall, phase);
+                if (slotSuggestion is not null)
                 {
-                    suggestions.Add(stallSuggestion);
+                    suggestions.Add(slotSuggestion);
                 }
             }
         }
