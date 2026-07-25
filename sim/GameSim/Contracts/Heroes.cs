@@ -67,6 +67,15 @@ public sealed record Hero(
     /// </summary>
     public int MoodPermille { get; init; } = 0;
 
+    /// <summary>
+    /// Career experience points (Phase B, B0). Accrues at the Evening reveal and crosses cosmetic
+    /// RANK thresholds only — read by NOTHING mechanical. It NEVER feeds <see cref="Level"/>
+    /// (<c>CombatMath</c> reads Level into Attack), so XP cannot touch combat; the XP→Level flip is
+    /// deferred to Phase C's hardening window (KTD-B2). Non-positional init member (the
+    /// <see cref="MoodPermille"/> pattern) — old saves and existing constructors default to 0.
+    /// </summary>
+    public int Xp { get; init; } = 0;
+
     /// <summary>Simple additive gear score used by shopping and floor gates. Integer math only.</summary>
     public static int GearScore(GearSet gear, ImmutableSortedDictionary<int, Item> items)
     {

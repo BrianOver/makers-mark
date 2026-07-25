@@ -178,22 +178,27 @@ public class FactionVoicingTests
     // ---- Faction lines compete with hero lines for the per-day cap by log order ----
 
     [Fact]
-    public void FactionAndHeroLines_CompeteForMaxLinesPerDay_ByLogOrder()
+    public void FactionAndHeroLines_CompeteForMaxLinesPerDay_BySalience()
     {
+        // Phase B (B1e): the cap is now picked by salience (involvement, then recency-as-total-
+        // tie-break), not first-in-log-order. Four distinct subjects (one event each) tie on
+        // involvement, so recency alone decides — the OLDEST event drops off the cap, and the
+        // faction line (deliberately the most recent here) competes for and wins a slot exactly
+        // like a hero line would.
         var state = DramaWorld();
         GameEvent[] sources =
         [
-            new FactionStandingShifted("deepvein", Deepvein.DisplayName, StandingShiftDirection.Favored) { Id = new EventId(1), Day = 1 },
+            new FloorRecordSet(new HeroId(3), 4) { Id = new EventId(1), Day = 1 }, // oldest — drops off the cap
             new HeroDied(new HeroId(1), 2, "slain by a Tunnel Spider", GearSet.Empty) { Id = new EventId(2), Day = 1 },
             new RecruitArrived(new HeroId(2)) { Id = new EventId(3), Day = 1 },
-            new FloorRecordSet(new HeroId(3), 4) { Id = new EventId(4), Day = 1 }, // 4th — drops off the cap
+            new FactionStandingShifted("deepvein", Deepvein.DisplayName, StandingShiftDirection.Favored) { Id = new EventId(4), Day = 1 },
         ];
 
         var lines = GossipGenerator.Generate(sources, state.Heroes, state.Items, Campaign, GossipGenerator.MaxLinesPerDay);
 
         Assert.Equal(GossipGenerator.MaxLinesPerDay, lines.Count);
-        Assert.Equal(new[] { 1, 2, 3 }, lines.Select(l => l.Source.Value)); // first three in log order
-        Assert.Contains(Deepvein.DisplayName, lines[0].Line, StringComparison.Ordinal); // the faction line took its slot
+        Assert.Equal(new[] { 4, 3, 2 }, lines.Select(l => l.Source.Value)); // most recent three win the tie
+        Assert.Contains(Deepvein.DisplayName, lines[0].Line, StringComparison.Ordinal); // the faction line — freshest news — took the top slot
     }
 
     [Fact]

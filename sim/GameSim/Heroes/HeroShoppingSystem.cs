@@ -88,10 +88,51 @@ public sealed class HeroShoppingSystem : IPhaseSystem
             return fulfilled;
         }
 
+        var (best, candidates) = EvaluateGearCandidates(state, hero);
+
+        // Legible passes (R8): every player-shelf item the hero looked at and did not
+        // buy gets a reasoned event — including buyable items that lost on value.
+        // (A null verdict means the item wasn't judged in this pass — consumables.)
+        foreach (var candidate in candidates)
+        {
+            if (!candidate.FromPlayerShelf || candidate.Verdict is null || ReferenceEquals(candidate, best))
+            {
+                continue;
+            }
+
+            var reason = candidate.Verdict.Kind == ShoppingVerdictKind.Pass
+                ? candidate.Verdict.Reason
+                : $"picked {best!.Item.Name} instead — better gear score per gold";
+            events.Emit(new HeroPassedOnItem(hero.Id, candidate.Item.Id, reason));
+        }
+
+        if (best is null)
+        {
+            return state;
+        }
+
+        // Phase B (B1a, R-B1): explain the gear buy — capped to the cases where the player's OWN
+        // shelf was actually part of the decision (won it or lost it), mirroring HeroPassedOnItem's
+        // player-shelf-only anti-spam precedent above rather than firing for every hero every
+        // morning. Observational only: it reads the verdicts already computed, changes nothing,
+        // and draws no RNG.
+        StampGearDecision(hero, best, candidates, events);
+
+        return ApplyPurchase(state, hero, best, events);
+    }
+
+    /// <summary>
+    /// The pure "which gear item wins" pass (extracted so the Phase B advisor shadow-tick,
+    /// <see cref="GameSim.Advisor.HeroForecast"/>, can call the EXACT same evaluation the real
+    /// Morning pass uses — same helpers, same tie-breaks, so a forecast can never disagree with
+    /// what this system does the next time it actually runs against the same state). Pick the
+    /// single best Buy across both shops; strict "better than" keeps the comparison pure, and
+    /// ItemIds are unique so <see cref="ShoppingAi.IsBetterValue"/> is a total order.
+    /// </summary>
+    internal static (Candidate? Best, ImmutableList<Candidate> Candidates) EvaluateGearCandidates(GameState state, Hero hero)
+    {
         var candidates = CollectCandidates(state);
 
-        // Pick the single best Buy across both shops. Strict "better than" keeps the
-        // comparison pure; ItemIds are unique, so IsBetterValue is a total order.
         Candidate? best = null;
         foreach (var candidate in candidates)
         {
@@ -115,24 +156,64 @@ public sealed class HeroShoppingSystem : IPhaseSystem
             }
         }
 
-        // Legible passes (R8): every player-shelf item the hero looked at and did not
-        // buy gets a reasoned event — including buyable items that lost on value.
-        // (A null verdict means the item wasn't judged in this pass — consumables.)
+        return (best, candidates.ToImmutableList());
+    }
+
+    /// <summary>Phase B (B1a): the runner-up gear Buy candidate — the best-value candidate other
+    /// than <paramref name="best"/> — for the decision card's "chosen over X" framing. Null when
+    /// nothing else was a viable Buy this morning.</summary>
+    internal static Candidate? RunnerUpGearCandidate(ImmutableList<Candidate> candidates, Candidate best)
+    {
+        Candidate? runnerUp = null;
         foreach (var candidate in candidates)
         {
-            if (!candidate.FromPlayerShelf || candidate.Verdict is null || ReferenceEquals(candidate, best))
+            if (ReferenceEquals(candidate, best) || candidate.Verdict is not { Kind: ShoppingVerdictKind.Buy })
             {
                 continue;
             }
 
-            var reason = candidate.Verdict.Kind == ShoppingVerdictKind.Pass
-                ? candidate.Verdict.Reason
-                : $"picked {best!.Item.Name} instead — better gear score per gold";
-            events.Emit(new HeroPassedOnItem(hero.Id, candidate.Item.Id, reason));
+            if (runnerUp is null || ShoppingAi.IsBetterValue(
+                    candidate.Verdict.GearScoreGain, candidate.Price, candidate.Item.Id,
+                    runnerUp.Verdict!.GearScoreGain, runnerUp.Price, runnerUp.Item.Id))
+            {
+                runnerUp = candidate;
+            }
         }
 
-        return best is null ? state : ApplyPurchase(state, hero, best, events);
+        return runnerUp;
     }
+
+    private static void StampGearDecision(Hero hero, Candidate best, ImmutableList<Candidate> candidates, IEventSink events)
+    {
+        var runnerUp = RunnerUpGearCandidate(candidates, best);
+        if (!best.FromPlayerShelf && !(runnerUp?.FromPlayerShelf ?? false))
+        {
+            return; // neither side of the decision touched the player's own shelf — not player-relevant
+        }
+
+        var runnerUpName = runnerUp?.Item.Name ?? "nothing else affordable";
+        events.Emit(new HeroDecisionExplained(
+            hero.Id, best.Item.Name, runnerUpName, best.Verdict!.Reason, GearDecisionGapPermille(best, runnerUp)));
+    }
+
+    /// <summary>Value-per-gold gap between the chosen item and its runner-up, in per-mille —
+    /// 1000 (maximal) when nothing else was a viable Buy. Integer-only: <c>gain*1000/price</c>
+    /// per side, clamped, never negative (a worse "winner" than its runner-up cannot happen by
+    /// construction of <see cref="ShoppingAi.IsBetterValue"/>).</summary>
+    private static int GearDecisionGapPermille(Candidate best, Candidate? runnerUp)
+    {
+        if (runnerUp is null)
+        {
+            return 1000;
+        }
+
+        var bestScore = ValueScorePermille(best.Verdict!.GearScoreGain, best.Price);
+        var runnerUpScore = ValueScorePermille(runnerUp.Verdict!.GearScoreGain, runnerUp.Price);
+        return Math.Clamp(bestScore - runnerUpScore, 0, 1000);
+    }
+
+    private static int ValueScorePermille(int gain, int price) =>
+        gain <= 0 ? 0 : Math.Min(1000, gain * 1000 / Math.Max(price, 1));
 
     /// <summary>
     /// One hero's consumable restock (P2): only when the pack is EMPTY, buy the single
@@ -251,8 +332,10 @@ public sealed class HeroShoppingSystem : IPhaseSystem
         return state;
     }
 
-    /// <summary>One shelf entry under evaluation. Mutable Verdict keeps the pass loop single-pass.</summary>
-    private sealed class Candidate(ShelfEntry entry, Item item, bool fromPlayerShelf)
+    /// <summary>One shelf entry under evaluation. Mutable Verdict keeps the pass loop single-pass.
+    /// Internal (not private) so the Phase B advisor shadow-tick (<see cref="GameSim.Advisor.HeroForecast"/>)
+    /// can share the exact same evaluation this system uses.</summary>
+    internal sealed class Candidate(ShelfEntry entry, Item item, bool fromPlayerShelf)
     {
         public ShelfEntry Entry { get; } = entry;
         public Item Item { get; } = item;

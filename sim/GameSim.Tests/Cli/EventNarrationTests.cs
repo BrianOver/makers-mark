@@ -155,4 +155,27 @@ public class EventNarrationTests
         Assert.NotNull(line);
         Assert.Contains("20g", line, StringComparison.Ordinal);
     }
+
+    // Phase B (B1a/B1c, R-B1/R-B3): the legibility spine's two new event types must render —
+    // an undeclared case here would leave them stamped but silently unnarrated (the "dead line"
+    // trap the unit explicitly calls out).
+    [Fact]
+    public void Line_ForHeroDecisionExplained_NamesBothItemsAndTheGap()
+    {
+        var line = EventNarration.Line(
+            new HeroDecisionExplained(new HeroId(1), "Iron Sword", "Bronze Sword", "upgrade: +8 gear score for 20g", GapPermille: 350),
+            State);
+        Assert.NotNull(line);
+        Assert.Contains("Iron Sword", line, StringComparison.Ordinal);
+        Assert.Contains("Bronze Sword", line, StringComparison.Ordinal);
+        Assert.Contains("350", line, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Line_ForHeroRankUp_NamesTheHeroAndRank()
+    {
+        var line = EventNarration.Line(new HeroRankUp(new HeroId(1), "Delver"), State);
+        Assert.NotNull(line);
+        Assert.Contains("Delver", line, StringComparison.Ordinal);
+    }
 }

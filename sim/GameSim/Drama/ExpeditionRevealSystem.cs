@@ -172,7 +172,48 @@ public sealed class ExpeditionRevealSystem : IPhaseSystem
             }
         }
 
-        // 5. Ore market (R6): survivors' loot becomes tonight's floor-priced offers.
+        // 5. XP + cosmetic rank (Phase B B1c, R-B3): survivors accrue career XP off THIS
+        // expedition's own facts — a flat survival grant, its deepest floor cleared, and
+        // kills/saves THIS run credits them with (result.Beats, not the lifetime Memories tally —
+        // see HeroXp's own doc comment for why that distinction matters). Crossing a rank
+        // threshold emits a named HeroRankUp — a cosmetic label only; NEVER Hero.Level
+        // (CombatMath.cs:29,32 read Level into Attack/Defense — touching it is a Class-2/Balance
+        // break, deferred to Phase C's hardening window per KTD-B2).
+        foreach (var heroId in result.Survivors)
+        {
+            if (!state.Heroes.TryGetValue(heroId.Value, out var hero))
+            {
+                continue;
+            }
+
+            var creditedBeats = 0;
+            foreach (var beat in result.Beats)
+            {
+                if (beat.Hero == heroId && beat.Beat is BeatType.KillingBlow or BeatType.LethalSave)
+                {
+                    creditedBeats++;
+                }
+            }
+
+            var xpGain = HeroXp.ForExpedition(result.DeepestFloorCleared, creditedBeats);
+            if (xpGain <= 0)
+            {
+                continue;
+            }
+
+            var oldRank = HeroRank.For(hero.Xp);
+            var newXp = hero.Xp + xpGain;
+            var newRank = HeroRank.For(newXp);
+
+            state = state with { Heroes = state.Heroes.SetItem(heroId.Value, hero with { Xp = newXp }) };
+
+            if (newRank != oldRank)
+            {
+                events.Emit(new HeroRankUp(heroId, newRank));
+            }
+        }
+
+        // 6. Ore market (R6): survivors' loot becomes tonight's floor-priced offers.
         foreach (var loot in result.Loot)
         {
             if (!result.Survivors.Contains(loot.Hero))

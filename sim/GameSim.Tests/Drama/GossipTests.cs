@@ -45,17 +45,21 @@ public class GossipTests
 
         var lines = Generate(state, maxLines: 10, sources);
 
-        Assert.Equal(sources.Length, lines.Length);
-        for (var i = 0; i < sources.Length; i++)
-        {
-            Assert.Equal(sources[i].Id, lines[i].Source); // R14: cite the source event
-            Assert.False(string.IsNullOrWhiteSpace(lines[i].Line));
-        }
+        // Phase B (B1e): with maxLines covering every source, nothing is dropped, but the
+        // TELLING ORDER is now salience-ranked (involvement, then recency), not log order — so
+        // assert set-membership (every source cited exactly once) and per-source content by
+        // lookup, not by position.
+        Assert.Equal(
+            sources.Select(s => s.Id.Value).OrderBy(v => v),
+            lines.Select(l => l.Source.Value).OrderBy(v => v));
+        Assert.All(lines, l => Assert.False(string.IsNullOrWhiteSpace(l.Line)));
 
-        Assert.Contains("Torvald", lines[0].Line);         // death line names the hero (R4)
-        Assert.Contains("Fine Iron Blade", lines[1].Line); // beat line names the item (R4)
-        Assert.Contains("Field Salve", lines[4].Line);     // Provisioned names the consumable (R4)
-        Assert.Contains("Field Salve", lines[5].Line);     // PotionLifesave names the consumable (R4)
+        string LineFor(EventId id) => lines.Single(l => l.Source == id).Line;
+
+        Assert.Contains("Torvald", LineFor(sources[0].Id));         // death line names the hero (R4)
+        Assert.Contains("Fine Iron Blade", LineFor(sources[1].Id)); // beat line names the item (R4)
+        Assert.Contains("Field Salve", LineFor(sources[4].Id));     // Provisioned names the consumable (R4)
+        Assert.Contains("Field Salve", LineFor(sources[5].Id));     // PotionLifesave names the consumable (R4)
     }
 
     [Fact]
@@ -87,8 +91,11 @@ public class GossipTests
     }
 
     [Fact]
-    public void Generator_CapsAtMaxLines_PickingFirstNInLogOrder()
+    public void Generator_CapsAtMaxLines_PickingMostRecentForATiedSpeaker()
     {
+        // Phase B (B1e): all five events share one subject (HeroId 1), so involvement ties across
+        // the board — recency (EventId descending) is the sole, total tie-break. The freshest 3
+        // survive the cap, not the first 3 in log order (the OLD behavior this test used to pin).
         var state = NewWorld();
         var sources = Enumerable.Range(1, 5)
             .Select(i => (GameEvent)new FloorRecordSet(new HeroId(1), 2) { Id = new EventId(i), Day = 1 })
@@ -97,7 +104,27 @@ public class GossipTests
         var lines = Generate(state, GossipGenerator.MaxLinesPerDay, sources);
 
         Assert.Equal(3, lines.Length);
-        Assert.Equal(new[] { 1, 2, 3 }, lines.Select(l => l.Source.Value));
+        Assert.Equal(new[] { 5, 4, 3 }, lines.Select(l => l.Source.Value));
+    }
+
+    [Fact]
+    public void Generator_RanksBySpeakerInvolvement_BeforeRecency()
+    {
+        // Phase B (B1e) core behavior: hero 1 has two tellable events today (more "involved"),
+        // hero 2 has only one — even though hero 2's event is the single most RECENT event
+        // overall. Involvement outranks recency, so both of hero 1's events win a slot ahead of
+        // hero 2's, and the total tie-break (EventId descending) orders hero 1's own two.
+        var state = NewWorld();
+        GameEvent[] sources =
+        [
+            new FloorRecordSet(new HeroId(1), 2) { Id = new EventId(1), Day = 1 },
+            new FloorRecordSet(new HeroId(1), 3) { Id = new EventId(2), Day = 1 },
+            new FloorRecordSet(new HeroId(2), 2) { Id = new EventId(3), Day = 1 }, // most recent, but hero 2's only event
+        ];
+
+        var lines = Generate(state, maxLines: 2, sources);
+
+        Assert.Equal(new[] { 2, 1 }, lines.Select(l => l.Source.Value));
     }
 
     [Fact]

@@ -44,6 +44,8 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(ItemSigned), "itemSigned")]
 [JsonDerivedType(typeof(MemorialHonored), "memorialHonored")]
 [JsonDerivedType(typeof(HeirloomReforged), "heirloomReforged")]
+[JsonDerivedType(typeof(HeroDecisionExplained), "heroDecisionExplained")]
+[JsonDerivedType(typeof(HeroRankUp), "heroRankUp")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -68,6 +70,21 @@ public sealed record AttributionBeatEvent(BeatType Beat, ItemId Item, HeroId Her
 public sealed record HeroDied(HeroId Hero, int Floor, string Cause, GearSet WornGear) : GameEvent;
 
 public sealed record RecruitArrived(HeroId Hero) : GameEvent;
+
+/// <summary>
+/// Phase B (B0, R-B1): a player-relevant hero decision, explained for legibility. The hero chose
+/// <paramref name="Chosen"/> over <paramref name="RunnerUp"/> because of <paramref name="Reason"/>,
+/// by a <paramref name="GapPermille"/> score margin. A presentation signal stamped alongside a
+/// decision the sim already makes — it reads and changes NO rule (draw-free, decision-free).
+/// </summary>
+public sealed record HeroDecisionExplained(HeroId Hero, string Chosen, string RunnerUp, string Reason, int GapPermille) : GameEvent;
+
+/// <summary>
+/// Phase B (B0, R-B3): the hero crossed a cosmetic RANK threshold on accrued <see cref="Hero.Xp"/>
+/// (e.g. "Delver"). A label only — it NEVER touches <see cref="Hero.Level"/> or CombatMath; the
+/// XP→Level flip is deliberately deferred to Phase C's hardening window.
+/// </summary>
+public sealed record HeroRankUp(HeroId Hero, string Rank) : GameEvent;
 
 /// <summary>Expedition gold credited to a surviving hero at the Evening reveal (R12/R17).</summary>
 public sealed record LootIncomeReceived(HeroId Hero, int Gold) : GameEvent;

@@ -219,6 +219,85 @@ public class HeroShoppingSystemTests
         Assert.Null(after.Heroes[2].Gear.Weapon);
     }
 
+    // ---- Phase B (B1a, R-B1): the gear-decision legibility card ----
+
+    [Fact]
+    public void PlayerShelfBuy_StampsHeroDecisionExplained_NamingChosenAndRunnerUp()
+    {
+        var lowValue = MakeItem(1, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Bronze Sword");
+        var highValue = MakeItem(2, ItemSlot.Weapon, attack: 8, defense: 0, weight: 3, name: "Iron Sword");
+        var hero = MakeHero(1, "vanguard", gold: 100);
+        var state = BaseState(Roster(hero), lowValue, highValue) with
+        {
+            Player = PlayerState.NewGame(0) with
+            {
+                Shelf = ImmutableList.Create(new ShelfEntry(lowValue.Id, 30), new ShelfEntry(highValue.Id, 20)),
+            },
+        };
+
+        var (_, events) = Run(state);
+
+        var decision = Assert.Single(events.OfType<HeroDecisionExplained>());
+        Assert.Equal(hero.Id, decision.Hero);
+        Assert.Equal("Iron Sword", decision.Chosen);
+        Assert.Equal("Bronze Sword", decision.RunnerUp);
+        Assert.False(string.IsNullOrWhiteSpace(decision.Reason));
+        Assert.InRange(decision.GapPermille, 0, 1000);
+    }
+
+    [Fact]
+    public void RivalOnlyPurchase_NoPlayerShelfInvolved_StampsNoDecisionCard()
+    {
+        // Mirrors RivalShelfPasses_EmitNoEvents: no player-shelf item was even ON THE TABLE, so
+        // this decision isn't player-relevant — no card (the HeroPassedOnItem anti-spam precedent).
+        var shield = MakeItem(1, ItemSlot.Shield, attack: 0, defense: 5, weight: 3, name: "Rival Shield");
+        var striker = MakeHero(1, "striker", gold: 100);
+        var state = BaseState(Roster(striker), shield) with
+        {
+            RivalShelf = ImmutableList.Create(new ShelfEntry(shield.Id, 10)),
+        };
+
+        var (_, events) = Run(state);
+
+        Assert.Empty(events.OfType<HeroDecisionExplained>());
+    }
+
+    [Fact]
+    public void RivalWins_ButPlayerItemWasRunnerUp_StillStampsDecisionCard()
+    {
+        // The player's shelf LOST this decision, but it was in the running — still worth
+        // explaining ("why didn't Torvald buy from me").
+        var playerItem = MakeItem(1, ItemSlot.Weapon, attack: 4, defense: 0, weight: 3, name: "Player Sword");
+        var rivalItem = MakeItem(2, ItemSlot.Weapon, attack: 8, defense: 0, weight: 3, name: "Rival Sword");
+        var hero = MakeHero(1, "vanguard", gold: 60);
+        var state = BaseState(Roster(hero), playerItem, rivalItem) with
+        {
+            Player = PlayerState.NewGame(100) with { Shelf = ImmutableList.Create(new ShelfEntry(playerItem.Id, 20)) },
+            RivalShelf = ImmutableList.Create(new ShelfEntry(rivalItem.Id, 20)),
+        };
+
+        var (_, events) = Run(state);
+
+        var decision = Assert.Single(events.OfType<HeroDecisionExplained>());
+        Assert.Equal("Rival Sword", decision.Chosen);
+        Assert.Equal("Player Sword", decision.RunnerUp);
+    }
+
+    [Fact]
+    public void NoPurchase_StampsNoDecisionCard()
+    {
+        var sword = MakeItem(1, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Iron Sword");
+        var hero = MakeHero(1, "vanguard", gold: 30);
+        var state = BaseState(Roster(hero), sword) with
+        {
+            Player = PlayerState.NewGame(0) with { Shelf = ImmutableList.Create(new ShelfEntry(sword.Id, 45)) },
+        };
+
+        var (_, events) = Run(state);
+
+        Assert.Empty(events.OfType<HeroDecisionExplained>());
+    }
+
     [Fact]
     public void SameState_TwoRuns_IdenticalSerializedStateAndEventSequence()
     {

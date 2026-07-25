@@ -61,14 +61,13 @@ public static class GossipGenerator
             .Select(g => g.Key)
             .ToImmutableHashSet(StringComparer.Ordinal);
 
-        var lines = ImmutableList.CreateBuilder<GossipEmitted>();
+        // Phase B (B1e): collect every TELLABLE event this batch (unstamped/suppressed/untold
+        // already excluded), each paired with its salience SUBJECT — the hero the beat is about,
+        // or the faction for a hero-less standing shift. Rendering is deferred to the ranked pass
+        // below so the cap picks by salience, not first-in-log-order.
+        var tellable = new List<(GameEvent Event, string SubjectKey)>();
         foreach (var gameEvent in events)
         {
-            if (lines.Count >= maxLines)
-            {
-                break;
-            }
-
             if (gameEvent.Id.Value == 0)
             {
                 continue; // unstamped — not a real logged event, nothing to cite (R14)
@@ -79,6 +78,34 @@ public static class GossipGenerator
                 continue; // contradictory same-faction pair this batch — suppressed (see above)
             }
 
+            if (gameEvent is FactionStandingShifted shift)
+            {
+                tellable.Add((gameEvent, "faction:" + shift.FactionId));
+            }
+            else if (Describe(gameEvent, heroes, items) is { } described)
+            {
+                tellable.Add((gameEvent, "hero:" + described.Hero.Value));
+            }
+
+            // else: untold kind (Describe returned null) — excluded, matches the old RenderHero-null path.
+        }
+
+        // Salience rank (B1e): involvement (how many of yesterday's tellable events name this
+        // subject) descending, then recency (EventId) descending — the freshest news of an
+        // equally-involved subject is told first. EventId is unique per event, so this second key
+        // is simultaneously "recency" AND the total deterministic tie-break (no further ties possible).
+        var involvement = tellable
+            .GroupBy(t => t.SubjectKey, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+
+        var ranked = tellable
+            .OrderByDescending(t => involvement[t.SubjectKey])
+            .ThenByDescending(t => t.Event.Id.Value)
+            .Take(maxLines);
+
+        var lines = ImmutableList.CreateBuilder<GossipEmitted>();
+        foreach (var (gameEvent, _) in ranked)
+        {
             var line = gameEvent switch
             {
                 FactionStandingShifted shift => RenderFaction(shift, campaignId),
@@ -86,7 +113,7 @@ public static class GossipGenerator
             };
             if (line is null)
             {
-                continue; // untold kind
+                continue; // defensive — every event reaching here already passed the tellable filter
             }
 
             lines.Add(new GossipEmitted(gameEvent.Id, line));

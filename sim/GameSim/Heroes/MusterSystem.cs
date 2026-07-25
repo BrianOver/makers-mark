@@ -73,6 +73,55 @@ public sealed class MusterSystem : IPhaseSystem
     {
         var parties = MusterPlan.Compute(state.Heroes, state.Bounties);
         events.Emit(new PartiesFormed(parties));
+
+        // Phase B (B1a, R-B1): explain the muster's target-floor decision — capped to the one case
+        // that is an actual DECISION (a bounty overriding the usual depth-based floor), not every
+        // party every morning, mirroring HeroPassedOnItem's anti-spam precedent. Pure read over the
+        // just-computed plan; stamps no state, draws no RNG.
+        foreach (var plan in parties)
+        {
+            StampTargetFloorDecision(state, plan, events);
+        }
+
         return state;
+    }
+
+    /// <summary>
+    /// Phase B (B1a): names the party's target floor when it diverges from the ordinary
+    /// depth-based default (a member's accepted bounty overrode it — <c>ExpeditionSystem.TargetFloorFor</c>'s
+    /// own rule, duplicated here as one small formula rather than reaching into Expedition/ so this
+    /// stays a pure read over MusterSystem's own inputs). Silent when the floor IS the default —
+    /// that is a fallback, not a decision worth a card.
+    /// </summary>
+    private static void StampTargetFloorDecision(GameState state, PartyPlan plan, IEventSink events)
+    {
+        if (plan.Roster.IsEmpty)
+        {
+            return;
+        }
+
+        var deepestReached = 0;
+        foreach (var id in plan.Roster)
+        {
+            if (state.Heroes.TryGetValue(id.Value, out var hero))
+            {
+                deepestReached = Math.Max(deepestReached, hero.DeepestFloorReached);
+            }
+        }
+
+        var defaultFloor = Math.Clamp(deepestReached + 1, 1, VenueRegistry.Mine.FloorCount);
+        if (plan.TargetFloor == defaultFloor)
+        {
+            return; // no override — the default floor isn't a "decision" worth explaining
+        }
+
+        var leader = plan.Roster[0]; // lowest HeroId — PartyFormation's own deterministic sort order
+        var gapPermille = Math.Clamp(Math.Abs(plan.TargetFloor - defaultFloor) * 200, 0, 1000);
+        events.Emit(new HeroDecisionExplained(
+            leader,
+            $"floor {plan.TargetFloor} (bounty)",
+            $"floor {defaultFloor} (deepest reached + 1)",
+            "the party's accepted bounty overrode the usual depth-based target floor",
+            gapPermille));
     }
 }
