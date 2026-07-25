@@ -8,7 +8,7 @@ execution: code
 supersedes_scope_of: docs/plans/2026-07-21-006-phaseB-living-heroes.md
 roadmap: docs/plans/2026-07-21-003-phased-roadmap.md
 research: fable Phase-B research pass 2026-07-25 (in-session)
-status: draft-awaiting-fable-check
+status: build-ready (fable-checked, fixes 1-7 applied)
 ---
 
 # Phase B — Living Heroes (re-scoped 2026-07-25)
@@ -53,10 +53,18 @@ forecast is exactly correct, AND the same LLM rubric run against a **pre-Phase-B
 Unlike the core-loop slices (all presentation, byte-identical golden), Phase B changes sim behavior.
 The repo's test topology has **three classes** — scope every unit by class:
 
-- **KTD-B0 — Class 0 (shape-only):** new trailing-init `Hero` fields + new stamped events that change
-  **no decision**. Move the pinned 30-day idle hash (`AtomicEquivalenceTests`) by a **documented
-  one-line re-pin** (precedented: `SignedName`, `Memorial.Honored`, `CommissionPosted` all did this)
-  — RNG stream + every value identical. Land freely.
+- **KTD-B0 — Class 0, split into 0a / 0b (fable-check fix 1):**
+  - **0a — shape-only:** a new trailing-init `Hero` field that nothing reads. RNG stream AND every
+    serialized value identical; the idle-hash re-pin note reads "shape-only, values identical"
+    (`SignedName`, `Memorial.Honored` precedent). B0's `Hero.Xp` is 0a **only while unread**.
+  - **0b — additive events/values, draw-free + decision-free:** new stamped events or accrued values
+    (Xp counting up, `HeroRankUp`, `HeroDecisionExplained`, re-ranked gossip prose). No decision
+    reads them and no draw is added, BUT the idle-hash moves because **values differ** (new events
+    shift downstream `EventId`s; `GossipGenerator` feeds `eventId` into the FlavorEngine variant pick,
+    so gossip prose changes; these serialize). Re-pin note MUST say "values changed (events/prose),
+    draw-free & decision-free — deliberate re-baseline" (`CommissionPosted` precedent,
+    `AtomicEquivalenceTests.cs:37-43`). **B1a/B1c/B1e are 0b, not 0a** — a builder copying the
+    "shape-only" note onto a 0b re-pin corrupts the hash header's audit trail.
 - **KTD-B1 — Class 1 (behavior-without-draws):** no new/reordered RNG draws, but hero decisions
   change → purchases/deaths/loot shift → idle hash moves for real + the 100-day Balance bands may need
   a re-fit. **Precedented and routine** (U9 veteran pickiness shipped exactly this). Determinism
@@ -117,13 +125,17 @@ The repo's test topology has **three classes** — scope every unit by class:
 
 ## Implementation Units (sequenced by golden class)
 
-### B0. Contracts micro-PR (orchestrator-only, lands FIRST) — Class 0
-- **Files (`sim/GameSim/Contracts/`, deny-listed, orchestrator-authored):** `Hero.Xp` (trailing-init
-  `int = 0`); event types `HeroDecisionExplained(HeroId, ...chosen/runnerUp/reason/gap)`,
-  `HeroRankUp(HeroId, string Rank)`, `RelDelta(HeroId A, HeroId B, int DeltaPermille, string Cause)`
-  (if edges stored), `HeroBoycott(HeroId, ...)` / `HeroReturned`. All additive, save-compat.
-- **Verify:** builds; `AtomicEquivalenceTests` re-pinned with the documented "shape-only" note; fast
-  lane green. Merged before B1+.
+### B0. Contracts micro-PR (orchestrator-only, lands FIRST) — Class 0a/0b
+- **Files (`sim/GameSim/Contracts/`, deny-listed, orchestrator-authored) — TRIMMED per fable fix 5,
+  only what B1 needs:** `Hero.Xp` (trailing-init `int = 0`, the `MoodPermille` pattern);
+  `HeroDecisionExplained(HeroId Hero, string Chosen, string RunnerUp, string Reason, int GapPermille)`;
+  `HeroRankUp(HeroId Hero, string Rank)`. **NOT in B0:** `RelDelta`/`GameState.Relationships` — B3
+  derives edges from the event log (RelationshipBands precedent: shared expeditions, `HeroDied`,
+  outbids are already stamped; decay = day-delta math), so no stored edge surface. `HeroBoycott`/
+  `HeroReturned` land in a **B0.2 micro-PR** right before B4, not speculatively now.
+- **Verify:** builds; `Hero.Xp` unread ⇒ `AtomicEquivalenceTests` unchanged (0a); the two event types
+  are unstamped in B0 (declared only) so the hash is untouched until B1 stamps them; fast lane green.
+  Committed first on the branch; B1 workers branch from it.
 
 ### B1. Legibility & identity spine — **Class 0** (the golden-safe first slice)
 Narrate the individuality that already exists latently (mood trajectory, band, sentiment, veteran
@@ -131,16 +143,37 @@ pickiness, deeds, deepest floor) + add cosmetic progression + identity. Parallel
 - **B1a — Decision cards:** stamp `HeroDecisionExplained` alongside the shopping/muster decisions the
   sim already makes (`HeroShoppingSystem`/`MusterSystem`), capped to player-relevant decisions. CLI +
   ticker render.
-- **B1b — Advisor hero forecast:** re-run the pure `ShoppingAi`/`MusterPlan` scorer against projected
-  next-day state; CLI `forecast`/hero card shows it. Exact (draw-free).
-- **B1c — XP + cosmetic ranks:** `Hero.Xp` accrual at Evening reveal; rank thresholds emit `HeroRankUp`.
-- **B1d — Identity:** deterministic name disambiguation at recruit-gen (epithet via StableHash, NO
-  draw — FR-16); `hero <name>` CLI card (traits/band/deeds/XP-rank) + Godot hero-panel enrichment;
-  wire the two dead CLI narration lines if still present.
+- **B1b — Advisor hero forecast (fable fix 2 — presentation-side shadow-tick, NO re-pin):** a
+  same-day/conditional forecast: clone the current `GameState` and shadow-tick the pure
+  `ShoppingAi`/`MusterPlan` scorers against it ("as the shelf stands, Torvald buys X"). Exact by
+  construction, deterministic, presentation-side — it MUTATES NOTHING in the real sim and stamps no
+  event, so it needs **no re-pin**. Do NOT try to predict the *next day* post-expedition (the Night
+  expedition draws RNG + mutates hero state — an exact next-day forecast is impossible without
+  replaying the RNG). Forecast-exactness test asserts the shadow-tick result == what the real scorer
+  produces on that same state.
+- **B1c — XP + cosmetic ranks:** `Hero.Xp` accrual at Evening reveal; rank thresholds emit
+  `HeroRankUp`. **TRIPWIRE (fable fix 3):** rank NEVER writes `Hero.Level` — `CombatMath.cs:29,32`
+  read `hero.Level` into Attack; touching Level is a Class-2 / Balance break, STOP. Rank is a pure
+  label off `Xp` thresholds. (0b: Xp values accrue on the idle trace, so the hash moves with values.)
+- **B1d — Identity (fable fix 4 — DISPLAY-LAYER, not gen-time):** a pure module-side disambiguation
+  helper (the `RelationshipBands` derived-view precedent) that resolves duplicate names for the
+  `hero <name>` lookup + Godot panel via a collision-ordinal epithet ("the Younger") — computed at
+  read time, **NOT** by mutating `Hero.Name` at recruit-gen. This satisfies FR-16 with ZERO sim
+  change, zero re-pin, and leaves B2's `(HeroId, Name)` trait-hash input clean. `hero <name>` CLI card
+  (band/deeds/XP-rank; traits after B2) + Godot hero-panel enrichment; wire any dead CLI narration
+  lines still present.
 - **B1e — Gossip salience v1:** rank the day's log per speaker by involvement + recency (deterministic
   sort, 3-line cap preserved, no edges yet).
-- **Verify:** no-draw property gate (KTD-B5) green; `AtomicEquivalenceTests` shape-only re-pin;
-  forecast-exactness test; fast lane + Balance green.
+- **Verify:** no-draw property gate (KTD-B5: the serialized `state.Rng` after the 30-day idle trace
+  is byte-identical before/after — clone the `AlchemyActiveCraftTests` `Assert.Equal(a.Rng, b.Rng)`
+  pattern; this survives 0b value re-pins and isolates any accidental draw); forecast-exactness test;
+  fast lane + Balance green.
+- **Build batching (fable fix 7 — hash-mover contention):** B1a/B1c/B1e all move the single
+  `ExpectedPreCounterSha256` pin, and B1a/B1c/B1d all edit `Program.cs`/`EventNarration.cs`. So the
+  whole B1 sim+CLI spine is built by ONE worker (serial internally); the **orchestrator owns the ONE
+  re-pin** after merge (recompute the hash on the merged tree, update the constant with the 0b note) —
+  workers implement + self-test everything EXCEPT the golden pin and report "hash moved". B1's Godot
+  hero-panel half is an independent parallel worker (godot/ only).
 - **Honest caveat:** B1 alone gets a rubric reader to *describe* heroes circumstantially ("the sworn
   regular", "the veteran who refuses Poor work") — **Gate B is only safely passable after B2.** B1 is
   still the right first slice: it builds the whole reporting pipeline B2 plugs variance into.
@@ -153,9 +186,21 @@ pickiness, deeds, deepest floor) + add cosmetic progression + identity. Parallel
   tooltips/gossip/barks/the hero card.
 - **Golden:** ONE deliberate idle-hash re-pin + ONE Balance re-fit (U9 playbook — the hash header
   narrates the re-baseline). **Shop teeth only** — raid teeth withheld to Phase C.
-- **Verify:** divergence test (≥3 trait pairs, same item → different verdict/reason); trait-registry
-  manifest conformance; no NEW draws (draw-count pin still byte-identical — traits are derived);
-  Balance re-fit documented; Gate B rubric (with failing pre-B control) run here.
+- **Verify (fable fix 6 — the Class-1 gate is a GREP, not a stream pin):** trait teeth change
+  purchases → gear → fight lengths → the *number* of `ExpeditionResolver` draws changes → the RngState
+  MOVES (that's expected Class 1, U9 did it). So the gate is **"no new draw SITES"**: grep confirms
+  `rng.(NextInt|Roll100)` stays confined to the same 3 files and the trait/registry code contains no
+  `rng.` at all — a code-review/grep gate. Only Class-0 units get the byte-identical `state.Rng` pin.
+  Plus: divergence test (≥3 trait pairs, same item → different verdict/reason); trait-registry manifest
+  conformance; **one deliberate idle-hash re-pin + Balance re-fit** (flag the consumable-stocking knob
+  — pack Heals directly gate deaths — as the strongest survival bleed for the re-fit note); Gate B
+  rubric with the failing pre-B control arm (manual one-time: checkout pre-B commit → CLI transcript →
+  LLM rubric).
+- **Trait-variance decision (fable):** derive from `StableHash(HeroId, Name)` ONLY ⇒ the starting six
+  have identical traits every campaign (fixed ids) — ADOPTED as the default (a consistent anchor cast;
+  makes the divergence test trivially stable over the fixed six). If per-campaign variance is later
+  wanted, mix in `state.Rng.Inc` (the campaign-constant, already-serialized id `GossipSystem` uses,
+  draw-free) — a deliberate choice, never an accidental one.
 
 ### B3. Hero↔hero edges + gossip salience v2 — Class 0 (edges/prose) / small Class 1 (mood delta)
 - **Files:** `sim/GameSim/Drama/RelationshipSystem.cs` — sparse `ImmutableSortedDictionary` of decaying
