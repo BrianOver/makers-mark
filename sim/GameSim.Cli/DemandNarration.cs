@@ -92,7 +92,7 @@ public static class DemandNarration
         {
             foreach (var stall in snapshot.DepthStalls)
             {
-                var blocked = stall.BlockingSlot is { } slot ? $"blocked on {slot}" : "gear's full — something else is blocking";
+                var blocked = stall.BlockingSlot is { } slot ? $"blocked on {slot}" : QualityGap(stall);
                 lines.Add($"    {stall.Hero} {stall.HeroName}: floor {stall.DeepestFloorReached} -> target {stall.TargetFloor}, {blocked}");
             }
         }
@@ -133,10 +133,18 @@ public static class DemandNarration
         var lead = stalls[0];
         var gap = lead.BlockingSlot is { } slot
             ? $"nobody carries a {slot}"
-            : "gear's full — something else is blocking the push";
+            : QualityGap(lead);
         var extra = stalls.Count > 1 ? $" (+{stalls.Count - 1} more stalled)" : string.Empty;
         return $"stalled: {lead.HeroName} stuck at floor {lead.DeepestFloorReached} (target {lead.TargetFloor}) — {gap}{extra}";
     }
+
+    /// <summary>N1: when no gear slot is empty, the gate is gear QUALITY — name it (grade carried vs
+    /// the next floor's required grade) rather than the old "something else is blocking" non-answer.
+    /// Falls back gracefully only if the model couldn't resolve both grades.</summary>
+    private static string QualityGap(DepthStallEntry stall) =>
+        stall is { CarriedQuality: { } carried, RequiredQuality: { } required }
+            ? $"carrying {carried} gear — floor {stall.DeepestFloorReached + 1} wants {required}+"
+            : "gear's full — something else is blocking";
 
     private static string CommissionSummary(ImmutableList<OpenCommissionEntry> commissions)
     {

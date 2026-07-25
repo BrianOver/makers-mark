@@ -106,7 +106,9 @@ public partial class DemandPanel : SimPanel
         {
             var gap = stall.BlockingSlot is { } slot
                 ? $"missing a {slot}"
-                : "gear's full — something else is holding them back";
+                : stall is { CarriedQuality: { } carried, RequiredQuality: { } required }
+                    ? $"carrying {carried} gear — floor {stall.DeepestFloorReached + 1} wants {required}+"
+                    : "gear's full — something else is holding them back";
             AddLabel(
                 section.Body,
                 $"  {stall.HeroName} stalled at floor {stall.DeepestFloorReached}/{stall.TargetFloor} — {gap}");
