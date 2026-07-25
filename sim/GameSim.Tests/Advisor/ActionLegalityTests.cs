@@ -271,4 +271,57 @@ public class ActionLegalityTests
 
         Assert.False(ActionLegality.IsLegal(state, action, DayPhase.Morning));
     }
+
+    /// <summary>T1 (plan 2026-07-25-001): with the day's action budget exhausted
+    /// (<see cref="GameState.ActionSlotsRemaining"/> == 0), CraftAction, BuyMaterialAction,
+    /// BuyOreAction, and PostBountyAction must all be reported ILLEGAL by their mirrors — matching
+    /// their owning handlers, which reject a budget-spent day as guard-of-last-resort — even though
+    /// every OTHER precondition (materials, gold, offer, recipe) is otherwise satisfied. Drives the
+    /// real kernel for both directions, same shape as <see cref="RunParityCheck"/>'s per-candidate
+    /// check, so a mirror that forgets the gate fails here even if it never surfaces in the 100-day
+    /// organic run.</summary>
+    [Fact]
+    public void ExhaustedActionBudget_MirrorAgreesWithKernel_ForAllFourBudgetGatedVerbs()
+    {
+        var kernel = GameComposition.BuildKernel();
+        var fresh = GameComposition.NewCampaign(Seed);
+        var recipe = ProfessionRegistry.AllRecipes.Values
+            .First(r => r.Tier == 1 && fresh.Player.IsSelected(r.Profession));
+
+        var baseState = fresh with
+        {
+            Player = fresh.Player with
+            {
+                Gold = 10_000,
+                Materials = fresh.Player.Materials.SetItem(recipe.MaterialKey, 1000),
+            },
+            OpenOreOffers = ImmutableList.Create(new OreOffered(new HeroId(1), "copper", 5, 3)),
+            ActionSlotsRemaining = 0,
+        };
+        baseState = baseState with { Heroes = baseState.Heroes.SetItem(1, baseState.Heroes[1] with { Alive = true }) };
+
+        // Each candidate paired with the phase its OWN handler requires (CraftAction: all phases;
+        // BuyMaterialAction: Morning only; BuyOreAction: Evening only; PostBountyAction: Morning or
+        // Evening) — using the wrong phase would fail on "no handler accepts this action" instead
+        // of exercising the budget gate this test targets.
+        var candidates = new (PlayerAction Action, DayPhase Phase)[]
+        {
+            (new CraftAction(recipe.RecipeId, recipe.MaterialKey), DayPhase.Morning),
+            (new BuyMaterialAction("copper", 1), DayPhase.Morning),
+            (new BuyOreAction(new HeroId(1), "copper", 5), DayPhase.Evening),
+            (new PostBountyAction(1, 1), DayPhase.Morning),
+        };
+
+        foreach (var (action, phase) in candidates)
+        {
+            var state = baseState with { Phase = phase };
+
+            Assert.False(ActionLegality.IsLegal(state, action, phase),
+                $"{action.GetType().Name}: mirror reported legal with ActionSlotsRemaining == 0.");
+
+            var result = kernel.Tick(state, ImmutableList.Create(action));
+            Assert.Single(result.Rejected);
+            Assert.Contains("No action slots left today", result.Rejected[0].Reason);
+        }
+    }
 }

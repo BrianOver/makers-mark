@@ -377,7 +377,13 @@ public static class ActionLegality
         var efficiency = profession.MaterialEfficiencyNode is { } eff && talents.Contains(eff) ? 1 : 0;
         var needed = Math.Max(1, recipe.MaterialQuantity - efficiency);
         var have = state.Player.Materials.TryGetValue(action.MaterialKey, out var stock) ? stock : 0;
-        return have >= needed;
+        if (have < needed)
+        {
+            return false;
+        }
+
+        // ---- CraftingHandlers.ApplyCraft guard 7 (action-budget, checked LAST) ----
+        return state.ActionSlotsRemaining > 0;
     }
 
     // ---- ShopHandlers.ApplyStock guards ----
@@ -459,7 +465,13 @@ public static class ActionLegality
             playerCost = (int)IntegerCurves.MulDiv(baseLineCost, 1000 - adj, 1000);
         }
 
-        return state.Player.Gold >= playerCost;
+        if (state.Player.Gold < playerCost)
+        {
+            return false;
+        }
+
+        // ---- OreMarketHandlers.Apply guard 7 (action-budget, checked LAST) ----
+        return state.ActionSlotsRemaining > 0;
     }
 
     // ---- MaterialVendorHandlers.Apply guards (quantity, priced pool, quote cost) ----
@@ -476,14 +488,22 @@ public static class ActionLegality
         }
 
         var cost = MaterialVendorHandlers.QuoteCost(action.MaterialKey, action.Quantity);
-        return cost <= state.Player.Gold;
+        if (cost > state.Player.Gold)
+        {
+            return false;
+        }
+
+        // ---- MaterialVendorHandlers.Apply guard 5 (action-budget, checked LAST) ----
+        return state.ActionSlotsRemaining > 0;
     }
 
-    // ---- BountyHandlers.Apply guards (floor range, positive reward, escrow) ----
+    // ---- BountyHandlers.Apply guards (floor range, positive reward, escrow, action-budget
+    // checked LAST) ----
     private static bool PostBountyLegal(GameState state, PostBountyAction action) =>
         action.TargetFloor is >= 1 and <= MonsterTable.FloorCount
         && action.RewardGold > 0
-        && state.Player.Gold >= action.RewardGold;
+        && state.Player.Gold >= action.RewardGold
+        && state.ActionSlotsRemaining > 0;
 
     // ---- ProfessionHandlers.ApplySet guards ----
     private static bool SetProfessionsLegal(SetProfessionsAction action)

@@ -1,6 +1,9 @@
+using System.Collections.Immutable;
 using GameSim;
 using GameSim.Advisor;
 using GameSim.Contracts;
+using GameSim.Crafting;
+using GameSim.Drama;
 using GameSim.Economy;
 using GameSim.Harness;
 using GameSim.Kernel;
@@ -202,5 +205,184 @@ public class ObjectiveAdvisorTests
         }
 
         Assert.True(found, "No HonorMemorial suggestion appeared within the two Evenings following the 6th hero death.");
+    }
+
+    /// <summary>
+    /// U10 (plan 2026-07-25-001, Slice 3 addendum): the fable-flagged "call without response" gap —
+    /// a QUALITY stall (<see cref="DepthStallEntry.BlockingSlot"/> null, <see
+    /// cref="DepthStallEntry.RequiredQuality"/> above <see cref="DepthStallEntry.CarriedQuality"/>)
+    /// got NO suggestion before this unit. Seed 1, driven with <see cref="BaselinePlayer"/>, reaches
+    /// day 4 with Torvald's top demand being exactly that shape (his Weapon gear is Common, floor 3
+    /// wants Fine+) while the tier-2 talent gate is still locked — the top suggestion must name the
+    /// unlock, never silence.
+    /// </summary>
+    [Fact]
+    public void QualityStall_TopSuggestion_UnlocksTierGate_WhenLocked()
+    {
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(1);
+        DepthStallEntry? qualityStall = null;
+        ImmutableList<Suggestion> suggestions = ImmutableList<Suggestion>.Empty;
+
+        for (var tick = 0; tick < 20 * 5 && qualityStall is null; tick++)
+        {
+            var demand = DemandBoard.Snapshot(state);
+            var top = demand.DepthStalls.FirstOrDefault();
+            var candidate = ObjectiveAdvisor.Suggest(state);
+            if (top is not null && top.BlockingSlot is null
+                && top.RequiredQuality is { } req && top.CarriedQuality is { } car && req > car
+                && candidate.Count > 0 && candidate[0].Action is UnlockTalentAction)
+            {
+                qualityStall = top;
+                suggestions = candidate;
+                break;
+            }
+
+            state = kernel.Tick(state, BaselinePlayer.ActionsFor(state)).NewState;
+        }
+
+        Assert.NotNull(qualityStall);
+        Assert.NotEmpty(suggestions);
+
+        var top2 = suggestions[0];
+        Assert.NotNull(top2.Action);
+        Assert.True(ActionLegality.IsLegal(state, top2.Action!, state.Phase));
+
+        var unlock = Assert.IsType<UnlockTalentAction>(top2.Action);
+        Assert.Equal(ProfessionRegistry.BlacksmithId, unlock.Profession);
+        Assert.DoesNotContain(unlock.NodeId, state.Player.TalentsFor(unlock.Profession));
+        Assert.Contains(qualityStall!.HeroName, top2.Reason, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// U10: once the tier gate is no longer the blocker (already unlocked), the SAME quality stall
+    /// must fall through to the OTHER lever the plan names — crafting the slot's better-material
+    /// recipe now, or buying toward it. Reuses the exact locked-gate scenario above, then patches in
+    /// the gate the top suggestion just named, proving the branch's two halves are reachable from
+    /// the same real stall (not two independently-constructed fixtures).
+    /// </summary>
+    [Fact]
+    public void QualityStall_TopSuggestion_CraftsOrBuysBetterMaterial_WhenGateAlreadyUnlocked()
+    {
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(1);
+        ImmutableList<Suggestion> locked = ImmutableList<Suggestion>.Empty;
+
+        for (var tick = 0; tick < 20 * 5; tick++)
+        {
+            var demand = DemandBoard.Snapshot(state);
+            var top = demand.DepthStalls.FirstOrDefault();
+            var candidate = ObjectiveAdvisor.Suggest(state);
+            if (top is not null && top.BlockingSlot is null
+                && top.RequiredQuality is { } req && top.CarriedQuality is { } car && req > car
+                && candidate.Count > 0 && candidate[0].Action is UnlockTalentAction)
+            {
+                locked = candidate;
+                break;
+            }
+
+            state = kernel.Tick(state, BaselinePlayer.ActionsFor(state)).NewState;
+        }
+
+        Assert.NotEmpty(locked);
+        var lockedUnlock = Assert.IsType<UnlockTalentAction>(locked[0].Action);
+
+        // Grant EVERY tier gate for this profession (not just the one the locked-state top
+        // suggestion named first) — U10 escalates one locked tier at a time, so leaving tier 3
+        // locked while only granting tier 2 would just re-trigger the unlock branch for tier 3.
+        // Only once every tier is open does the "else" half of U10's branch (craft/buy) win.
+        var allGates = ProfessionRegistry.Blacksmith.TierGate.Values;
+        var player = state.Player;
+        foreach (var gate in allGates)
+        {
+            player = player.WithTalent(lockedUnlock.Profession, gate);
+        }
+
+        var unlocked = state with { Player = player };
+
+        var suggestions = ObjectiveAdvisor.Suggest(unlocked);
+        Assert.NotEmpty(suggestions);
+
+        var top2 = suggestions[0];
+        Assert.NotNull(top2.Action);
+        Assert.True(ActionLegality.IsLegal(unlocked, top2.Action!, unlocked.Phase));
+        Assert.True(top2.Action is CraftAction or BuyMaterialAction,
+            $"Expected a craft-toward or buy-toward suggestion once the gate is unlocked, got {top2.Action!.GetType().Name}.");
+    }
+
+    /// <summary>
+    /// U11 (plan 2026-07-25-001, Slice 3 addendum): a shelved item that already answers the top open
+    /// commission (right slot, quality at or above the bar) must be named, not left for the player to
+    /// notice on their own.
+    /// </summary>
+    [Fact]
+    public void ShelvedItem_AnsweringOpenCommission_NamesTheMatch()
+    {
+        var state = GameComposition.NewCampaign(Seed);
+        var hero = state.Heroes.Values.First();
+        var richHero = hero with { Gold = 100 };
+        state = state with
+        {
+            Phase = DayPhase.Morning,
+            Heroes = state.Heroes.SetItem(hero.Id.Value, richHero),
+            Commissions = ImmutableList.Create(new Commission(
+                hero.Id, ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: state.Day + 5, PremiumGold: 15)),
+        };
+
+        var item = new Item(
+            new ItemId(state.NextItemId), "longsword", "Fine Longsword", ItemSlot.Weapon, QualityGrade.Fine,
+            new ItemStats(Attack: 20, Defense: 0, Weight: 5), new MakersMark("Test Smith", state.Day),
+            ImmutableList<ItemHistoryEntry>.Empty);
+        state = state with
+        {
+            NextItemId = state.NextItemId + 1,
+            Items = state.Items.SetItem(item.Id.Value, item),
+            Player = state.Player with { Shelf = state.Player.Shelf.Add(new ShelfEntry(item.Id, 20)) },
+        };
+
+        var suggestions = ObjectiveAdvisor.Suggest(state);
+        var match = suggestions.FirstOrDefault(s => s.Reason.Contains(item.Name, StringComparison.Ordinal));
+
+        Assert.NotNull(match);
+        Assert.Contains(hero.Name, match!.Reason, StringComparison.Ordinal);
+        Assert.DoesNotContain("can't close", match.Reason, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// U11: the same matching shelved item, but the target hero can't afford the asking price — the
+    /// purse mismatch must be surfaced (the sale can't close as priced), not silently omitted.
+    /// </summary>
+    [Fact]
+    public void ShelvedItem_AnsweringCommission_ButHeroCannotAfford_SurfacesMismatch()
+    {
+        var state = GameComposition.NewCampaign(Seed);
+        var hero = state.Heroes.Values.First();
+        var poorHero = hero with { Gold = 5 };
+        state = state with
+        {
+            Phase = DayPhase.Morning,
+            Heroes = state.Heroes.SetItem(hero.Id.Value, poorHero),
+            Commissions = ImmutableList.Create(new Commission(
+                hero.Id, ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: state.Day + 5, PremiumGold: 15)),
+        };
+
+        var item = new Item(
+            new ItemId(state.NextItemId), "longsword", "Fine Longsword", ItemSlot.Weapon, QualityGrade.Fine,
+            new ItemStats(Attack: 20, Defense: 0, Weight: 5), new MakersMark("Test Smith", state.Day),
+            ImmutableList<ItemHistoryEntry>.Empty);
+        state = state with
+        {
+            NextItemId = state.NextItemId + 1,
+            Items = state.Items.SetItem(item.Id.Value, item),
+            Player = state.Player with { Shelf = state.Player.Shelf.Add(new ShelfEntry(item.Id, 20)) },
+        };
+
+        var suggestions = ObjectiveAdvisor.Suggest(state);
+        var match = suggestions.FirstOrDefault(s => s.Reason.Contains(item.Name, StringComparison.Ordinal));
+
+        Assert.NotNull(match);
+        Assert.Null(match!.Action);
+        Assert.Contains("5g", match.Reason, StringComparison.Ordinal);
+        Assert.Contains("20g", match.Reason, StringComparison.Ordinal);
     }
 }
