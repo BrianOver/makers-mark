@@ -1,5 +1,5 @@
 ---
-title: Active Professions & Shop Management — Phase A (Blacksmith Vertical Slice) - Plan
+title: Active Professions & Shop Management — Stage 1 (Blacksmith Vertical Slice) - Plan
 type: feat
 date: 2026-07-21
 topic: active-professions-shop
