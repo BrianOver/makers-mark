@@ -79,6 +79,14 @@ public static class EventNarration
             $"  ~ commission expired — {HeroName(state, expired.Hero)} needed a {expired.Slot} by the deadline, unfilled",
         ItemSigned signed =>
             $"  ★ {ItemName(state, signed.Item)} signed into legend as \"{signed.SignedName}\"",
+
+        // Phase B (B1a/B1c, R-B1/R-B3): the legibility spine — a hero's decision, explained; a
+        // hero crossing a cosmetic XP-rank threshold. Neither changes a rule; both are presentation
+        // signals stamped alongside a decision the sim already makes.
+        HeroDecisionExplained decision =>
+            $"  ◆ {HeroName(state, decision.Hero)} — {decision.Chosen} over {decision.RunnerUp}: {decision.Reason} ({decision.GapPermille}‰ gap)",
+        HeroRankUp rankUp =>
+            $"  ⬆ {HeroName(state, rankUp.Hero)} reaches {rankUp.Rank}!",
         MaterialPurchased material =>
             $"  ⛏ bought {material.Quantity}x {material.MaterialKey} from the Morning vendor for {material.Cost}g",
         RecoveryStipendGranted stipend =>

@@ -120,6 +120,56 @@ public class MusterSystemTests
         Assert.Empty(plan.Parties);
     }
 
+    // ---- Phase B (B1a, R-B1): the muster target-floor decision card ----
+
+    private static Hero MakeHero(int id, int deepestFloorReached) => new(
+        new HeroId(id), $"Hero{id}", "vanguard", Level: 1, MaxHp: 25, Gold: 0,
+        GearSet.Empty, ImmutableList<ItemMemory>.Empty,
+        Alive: true, DeepestFloorReached: deepestFloorReached, DiedOnDay: null);
+
+    [Fact]
+    public void AcceptedBountyOverridingDefaultFloor_StampsHeroDecisionExplained()
+    {
+        // A floor-3 veteran's default target would be floor 4 (deepest reached + 1) — but a rich
+        // floor-1 bounty is accepted instead, a genuine divergence worth explaining.
+        var veteran = MakeHero(1, deepestFloorReached: 3);
+        var state = GameFactory.NewGame(seed: 11) with
+        {
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, veteran),
+            Bounties = ImmutableList.Create(new Bounty(new BountyId(1), TargetFloor: 1, RewardGold: 1000, PostedOnDay: 1, AcceptedBy: null, Paid: false)),
+        };
+        var kernel = new GameKernel(ImmutableList.Create<IPhaseSystem>(new MusterSystem()), ImmutableList<IActionHandler>.Empty);
+
+        var result = kernel.Tick(state, ImmutableList<PlayerAction>.Empty);
+
+        var plan = Assert.Single(result.Events.OfType<PartiesFormed>());
+        var party = Assert.Single(plan.Parties);
+        Assert.Equal(1, party.TargetFloor); // bounty override, not the default floor 4
+
+        var decision = Assert.Single(result.Events.OfType<HeroDecisionExplained>());
+        Assert.Equal(new HeroId(1), decision.Hero);
+        Assert.Contains("floor 1", decision.Chosen, StringComparison.Ordinal);
+        Assert.Contains("floor 4", decision.RunnerUp, StringComparison.Ordinal);
+        Assert.InRange(decision.GapPermille, 0, 1000);
+    }
+
+    [Fact]
+    public void NoBounty_DefaultTargetFloor_StampsNoDecisionCard()
+    {
+        // No override — the target floor IS the ordinary depth-based default, so there is no
+        // "decision" worth a card (this fires every Morning otherwise — the anti-spam cap).
+        var rookie = MakeHero(1, deepestFloorReached: 0);
+        var state = GameFactory.NewGame(seed: 11) with
+        {
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, rookie),
+        };
+        var kernel = new GameKernel(ImmutableList.Create<IPhaseSystem>(new MusterSystem()), ImmutableList<IActionHandler>.Empty);
+
+        var result = kernel.Tick(state, ImmutableList<PlayerAction>.Empty);
+
+        Assert.Empty(result.Events.OfType<HeroDecisionExplained>());
+    }
+
     [Fact]
     public void FullCampaign_WithMuster_IsDeterministic()
     {

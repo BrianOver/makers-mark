@@ -6,6 +6,7 @@ using GameSim.Cli;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Drama;
+using GameSim.Heroes;
 using GameSim.Kernel;
 using GameSim.Narrative;
 using GameSim.Professions;
@@ -148,6 +149,8 @@ while (true)
                 export [path]                 dump campaign chronicle for analytics
                 next                          advance one phase (queued actions apply)
                 day                           advance to next Morning
+                hero <name>                    one hero's card — band, mood, deeds, XP-rank,
+                                               shelf-as-it-stands buy forecast
                 status | recipes | talents | mats | items | heroes | shelf | board | gossip | demand
                 quit
                 """);
@@ -692,10 +695,36 @@ while (true)
             foreach (var hero in state.Heroes.Values)
             {
                 var status = hero.Alive ? $"L{hero.Level} {hero.Gold}g deepest {hero.DeepestFloorReached}" : $"DIED day {hero.DiedOnDay}";
-                Console.WriteLine($"  {hero.Id} {hero.Name,-10} {ClassRegistry.Require(hero.ClassId).DisplayName,-8} {status}");
+                Console.WriteLine($"  {hero.Id} {HeroIdentity.DisplayName(hero.Id, state),-10} {ClassRegistry.Require(hero.ClassId).DisplayName,-8} {status}");
             }
 
             break;
+
+        // Phase B (B1d, R-B4): the per-hero identity card — band/mood, deeds, deepest floor,
+        // XP-rank, and the B1b shadow-tick "would buy" forecast. Accepts either a hero's bare
+        // name or its disambiguated display name ("Torvald the Younger") since duplicate names
+        // only resolve to a display-time epithet (HeroIdentity), never a stored field.
+        case "hero":
+        {
+            if (parts.Length < 2)
+            {
+                PrintUsage("hero", "hero <name>", line);
+                break;
+            }
+
+            var query = string.Join(' ', parts[1..]);
+            var match = state.Heroes.Values.FirstOrDefault(h =>
+                string.Equals(HeroIdentity.DisplayName(h.Id, state), query, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(h.Name, query, StringComparison.OrdinalIgnoreCase));
+            if (match is null)
+            {
+                Console.WriteLine($"  hero: no hero named '{query}' — try 'heroes' for the roster");
+                break;
+            }
+
+            PrintHeroCard(match, state);
+            break;
+        }
 
         case "shelf":
             Console.WriteLine("  YOUR SHELF:");
@@ -1268,6 +1297,46 @@ void PrintStatus(GameState s)
             ? $"  suggestion: {top.Reason}"
             : $"  suggestion: {hint}  ({top.Reason})");
     }
+}
+
+// Phase B (B1d, R-B4): the per-hero identity card. Band/mood come off the same derived
+// RelationshipBands read the counter queue already sorts by; deeds sum the hero's LIFETIME
+// Memories (career total — distinct from HeroXp's per-expedition-only grant, see its doc comment);
+// the forecast is the B1b shadow-tick, read-only and exact-by-construction against this same state.
+void PrintHeroCard(Hero hero, GameState s)
+{
+    var display = HeroIdentity.DisplayName(hero.Id, s);
+    var band = RelationshipBands.For(hero.Id, s);
+    var rank = HeroRank.For(hero.Xp);
+    var (kills, saves) = LifetimeDeeds(hero);
+    var lifeline = hero.Alive
+        ? $"alive, deepest floor {hero.DeepestFloorReached}"
+        : $"died day {hero.DiedOnDay}";
+
+    Console.WriteLine($"  {hero.Id} {display} — {ClassRegistry.Require(hero.ClassId).DisplayName} ({lifeline})");
+    Console.WriteLine($"    band: {RelationshipBands.Label(band)} | mood {hero.MoodPermille}‰ | rank: {rank} (xp {hero.Xp})");
+    Console.WriteLine($"    deeds: {kills} kills, {saves} saves");
+
+    if (hero.Alive)
+    {
+        var forecast = GameSim.Advisor.HeroForecast.ForShelfAsItStands(s, hero.Id);
+        Console.WriteLine(forecast.WouldBuy
+            ? $"    as the shelf stands: would buy {forecast.ItemName} — {forecast.Reason}"
+            : $"    as the shelf stands: would buy nothing — {forecast.Reason}");
+    }
+}
+
+(int Kills, int Saves) LifetimeDeeds(Hero hero)
+{
+    var kills = 0;
+    var saves = 0;
+    foreach (var memory in hero.Memories)
+    {
+        kills += memory.Kills;
+        saves += memory.Saves;
+    }
+
+    return (kills, saves);
 }
 
 string HeroName(GameState s, HeroId id) => s.Heroes.TryGetValue(id.Value, out var h) ? h.Name : id.ToString();

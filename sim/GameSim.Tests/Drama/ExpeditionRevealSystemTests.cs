@@ -287,6 +287,99 @@ public class ExpeditionRevealSystemTests
         Assert.Empty(tick.NewState.PendingExpeditions);
     }
 
+    // ---- XP + cosmetic rank (Phase B B1c, R-B3) ----
+
+    [Fact]
+    public void Survivor_AccruesXp_ForSurvivalAndDepth_NoBeats()
+    {
+        var state = NewWorld();
+        var result = Result(party: [1], survivors: [1], deaths: [], targetFloor: 3, deepestCleared: 3);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        // 10 (survive) + 3 floors * 5 = 25. No beats credited (none in this result).
+        Assert.Equal(25, tick.NewState.Heroes[1].Xp);
+        Assert.Empty(tick.Events.OfType<HeroRankUp>()); // 25 XP stays under the Delver (50) threshold
+    }
+
+    [Fact]
+    public void Survivor_AccruesExtraXp_ForCreditedKillsAndSaves_NotFromLifetimeMemories()
+    {
+        var blade = PlayerItem(30, "Fine Iron Blade", ItemSlot.Weapon, attack: 8, defense: 0);
+        var state = Equip(NewWorld(), heroId: 1, blade);
+        var result = Result(
+            party: [1], survivors: [1], deaths: [],
+            targetFloor: 1, deepestCleared: 1,
+            beats:
+            [
+                new AttributionBeat(BeatType.KillingBlow, blade.Id, new HeroId(1), 1, "detail"),
+                new AttributionBeat(BeatType.LethalSave, blade.Id, new HeroId(1), 1, "detail"),
+            ]);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        // 10 (survive) + 1 floor * 5 + 2 credited beats * 15 = 45 — computed off THIS expedition's
+        // beats, not off the hero's post-reveal Memories tally (which would also read 1 kill + 1
+        // save here, but must never be double-summed against a running lifetime total).
+        Assert.Equal(45, tick.NewState.Heroes[1].Xp);
+    }
+
+    [Fact]
+    public void BreakpointBeat_IsNotCreditedAsXpBeat()
+    {
+        // Only KillingBlow/LethalSave count — BreakpointClear has no per-item tally either (see the
+        // BreakpointBeat_EmitsEvent_ButNoHistoryOrMemoryTally test above) and must not inflate XP.
+        var blade = PlayerItem(31, "Gatebreaker", ItemSlot.Weapon, attack: 9, defense: 0);
+        var state = Equip(NewWorld(), heroId: 1, blade);
+        var result = Result(
+            party: [1], survivors: [1], deaths: [],
+            targetFloor: 1, deepestCleared: 1,
+            beats: [new AttributionBeat(BeatType.BreakpointClear, blade.Id, new HeroId(1), 1, "detail")]);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.Equal(15, tick.NewState.Heroes[1].Xp); // 10 (survive) + 1 floor * 5, zero beat credit
+    }
+
+    [Fact]
+    public void DeadHeroes_NeverAccrueXp()
+    {
+        var state = NewWorld();
+        var result = Result(party: [1], survivors: [], deaths: [1], targetFloor: 3, deepestCleared: 2);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.Equal(0, tick.NewState.Heroes[1].Xp);
+    }
+
+    [Fact]
+    public void CrossingARankThreshold_EmitsNamedHeroRankUp()
+    {
+        var state = NewWorld();
+        // 10 (survive) + 10 floors * 5 = 60 — crosses the Delver (50) threshold from Novice (0).
+        var result = Result(party: [1], survivors: [1], deaths: [], targetFloor: 10, deepestCleared: 10);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        var rankUp = Assert.Single(tick.Events.OfType<HeroRankUp>());
+        Assert.Equal(new HeroId(1), rankUp.Hero);
+        Assert.Equal("Delver", rankUp.Rank);
+    }
+
+    [Fact]
+    public void XpAccrual_NeverWritesLevel_TheCombatMathTripwire()
+    {
+        // TRIPWIRE (fable fix 3): CombatMath.cs:29,32 read Hero.Level into Attack/Defense — XP
+        // accrual and rank-up must NEVER touch it (that would be a Class-2/Balance break).
+        var state = NewWorld();
+        var levelBefore = state.Heroes[1].Level;
+        var result = Result(party: [1], survivors: [1], deaths: [], targetFloor: 10, deepestCleared: 10);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.Equal(levelBefore, tick.NewState.Heroes[1].Level);
+    }
+
     [Fact]
     public void MultipleResults_AllRevealedInOrder_AndPendingCleared()
     {

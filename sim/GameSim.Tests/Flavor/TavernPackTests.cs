@@ -188,11 +188,17 @@ public class TavernPackTests
         // gained variants, so its variant count changed and the stable pick moved (pick-shift is
         // expected and byte-deterministic). hero 1's death lands on the new WARM heroDied/omen
         // variant (grim-but-fond, not comic — guardrail); recruitArrived on a new comic variant.
+        //
+        // Re-pinned again for Phase B (B1e, salience ranking): three distinct heroes, one tellable
+        // event each — involvement ties across the board, so recency (EventId descending) is the
+        // sole tie-break and the TELLING ORDER reverses (freshest first): event 7 (RecruitArrived,
+        // hero 5), then event 6 (KillingBlow, hero 3), then event 5 (HeroDied, hero 1). The three
+        // prose strings themselves are unchanged — only their order moved.
+        Assert.Equal("Herald Elowen, come at last! Trumpets would be fitting. We have a spoon and a tankard. They shall have to do!", lines[0].Line);
+        Assert.Equal("With one stroke of Fine Iron Blade, Kael silenced floor 4!", lines[1].Line);
         Assert.Equal(
             "The deep keeps its own, and it kept a good one — Torvald, slain by a Tunnel Spider, floor 2. Remember them kindly, and ward the door.",
-            lines[0].Line);
-        Assert.Equal("With one stroke of Fine Iron Blade, Kael silenced floor 4!", lines[1].Line);
-        Assert.Equal("Herald Elowen, come at last! Trumpets would be fitting. We have a spoon and a tankard. They shall have to do!", lines[2].Line);
+            lines[2].Line);
     }
 
     // ---------------------------------------------------------------- Plan U4 scenarios
@@ -264,13 +270,16 @@ public class TavernPackTests
         var gossip = morning.Events.OfType<GossipEmitted>().ToList();
         Assert.Equal(2, gossip.Count);
 
-        var provisioned = gossip[0];
+        // Phase B (B1e): both beats are for distinct heroes with one tellable event each
+        // (involvement ties), so recency — EventId descending, PotionLifesave stamped second/later
+        // this same Evening — puts it first in the telling order now.
+        var lifesave = gossip[0];
+        var provisioned = gossip[1];
         Assert.Equal(beats.Single(b => b.Beat == BeatType.Provisioned).Id, provisioned.Source);
         Assert.Contains("Torvald", provisioned.Line);
         Assert.Contains("Field Salve", provisioned.Line);
         Assert.Contains("2", provisioned.Line);
 
-        var lifesave = gossip[1];
         Assert.Equal(beats.Single(b => b.Beat == BeatType.PotionLifesave).Id, lifesave.Source);
         Assert.Contains("Brunhilde", lifesave.Line);
         Assert.Contains("Field Salve", lifesave.Line);
