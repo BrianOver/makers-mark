@@ -33,7 +33,7 @@ public class BatchRunnerTests : IDisposable
         var exit = BatchRunner.Run(args!, TextWriter.Null, TextWriter.Null);
 
         Assert.Equal(0, exit);
-        var files = Directory.GetFiles(_dir, "batch-seed*-days3.json").OrderBy(f => f).ToList();
+        var files = Directory.GetFiles(_dir, "batch-seed*-days3-baseline.json").OrderBy(f => f).ToList();
         Assert.Equal(2, files.Count);
         foreach (var file in files)
         {
@@ -65,6 +65,7 @@ public class BatchRunnerTests : IDisposable
     [InlineData("--days", "0")]
     [InlineData("--seeds", "banana")]
     [InlineData("--bogus", "1")]
+    [InlineData("--policy", "rival")]
     public void Parse_RejectsBadArgs(string flag, string value)
     {
         using var err = new StringWriter();
@@ -84,6 +85,24 @@ public class BatchRunnerTests : IDisposable
         Assert.Equal(1UL, args.StartSeed);
         Assert.Equal(100, args.Days);
         Assert.Equal("runs", args.OutDir);
+        Assert.Equal(BatchRunner.Policy.Baseline, args.PlayerPolicy); // U0: default must stay Baseline
+    }
+
+    [Fact]
+    public void Policy_Counter_IsSelectableAndTagsItsOwnFilename()
+    {
+        // U0: CounterPlayer was previously unreachable from the batch farm (hardcoded selection).
+        // Selecting it must (a) actually run CounterPlayer's scripted counter-session loop and
+        // (b) tag its own filename distinctly so it never collides with a baseline corpus.
+        var args = BatchRunner.Parse(["--seeds", "1", "--days", "3", "--out", _dir, "--policy", "counter"], TextWriter.Null);
+        Assert.NotNull(args);
+        Assert.Equal(BatchRunner.Policy.Counter, args!.PlayerPolicy);
+
+        Assert.Equal(0, BatchRunner.Run(args, TextWriter.Null, TextWriter.Null));
+
+        var file = Assert.Single(Directory.GetFiles(_dir, "batch-seed*-days3-counter.json"));
+        var chronicle = ChronicleCodec.Deserialize(File.ReadAllText(file));
+        Assert.Equal(4, chronicle.Day); // ran through the END of day 3, same as the baseline path
     }
 
     [Fact]

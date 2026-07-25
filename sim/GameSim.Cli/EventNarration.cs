@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
+using GameSim.Drama;
 using GameSim.Narrative;
 
 namespace GameSim.Cli;
@@ -51,6 +52,48 @@ public static class EventNarration
             $"  🕯 the town bids farewell to {honored.HeroName} — the rite is done",
         HeirloomReforged reforged =>
             $"  ⚒ {ItemName(state, reforged.NewItem)} reforged — {reforged.Lineage}",
+
+        // U1 (C1a, R1/R2): the silent-economy + bounty-lifecycle cluster — every gold event the
+        // player caused or was charged for now says so. BountyJudged surfaces `.Reason` VERBATIM
+        // (AE7's self-teaching string already names the floor's price floor on a decline); the
+        // Program.cs call site dedupes repeat declines per bounty per day (MF-5), not this switch.
+        BountyPosted posted =>
+            $"  ⚑ bounty posted — floor {posted.TargetFloor} for {posted.RewardGold}g (escrowed)",
+        BountyJudged judged when judged.Accepted =>
+            $"  ⚑ {judged.Reason}",
+        BountyJudged judged =>
+            $"  ~ {judged.Reason}",
+        BountyPaid paid =>
+            $"  $ bounty paid — {HeroName(state, paid.To)} earns {paid.RewardGold}g for the floor bounty",
+        RentPaid rent =>
+            $"  $ guild rent paid — {rent.AmountGold}g (next due {rent.NextAmountDueGold}g)",
+        RentMissed missed =>
+            $"  ! rent MISSED — {missed.AmountDueGold}g due, confidence down to {missed.ConfidencePermille}‰ ({missed.MissedPayments} missed lifetime)",
+        TariffApplied tariff =>
+            $"  ⚖ {tariff.FactionId} tariff on {tariff.MaterialKey} — paid {tariff.PlayerCost}g (base {tariff.BaseLineCost}g, {(tariff.Delta > 0 ? "+" : string.Empty)}{tariff.Delta}g {(tariff.Delta > 0 ? "surcharge" : "discount")})",
+        MarketShareShifted share =>
+            $"  ↕ rival market share shifts {share.Permille}‰ toward {(share.RivalGained ? "the rival" : "you")}",
+        CommissionFulfilled fulfilled =>
+            $"  $ commission fulfilled — {HeroName(state, fulfilled.Hero)} pays a {fulfilled.Premium}g premium for {ItemName(state, fulfilled.Item)}",
+        CommissionExpired expired =>
+            $"  ~ commission expired — {HeroName(state, expired.Hero)} needed a {expired.Slot} by the deadline, unfilled",
+        ItemSigned signed =>
+            $"  ★ {ItemName(state, signed.Item)} signed into legend as \"{signed.SignedName}\"",
+        MaterialPurchased material =>
+            $"  ⛏ bought {material.Quantity}x {material.MaterialKey} from the Morning vendor for {material.Cost}g",
+        RecoveryStipendGranted stipend =>
+            $"  + recovery stipend granted — +{stipend.Amount}g (you hit a dead end)",
+
+        // U5 (C2b, R4): the Morning muster line — PartiesFormed fires unconditionally every
+        // Morning tick (MusterSystem, zero RNG), so this is always the FIRST line the player sees
+        // once the Morning's own verbs resolve. It restates the prior Evening's telegraph (same
+        // DemandBoard.Snapshot shape) so question -> answer -> question is visible, not just
+        // "parties departed" with no callback to what was asked for.
+        PartiesFormed formed => DemandNarration.MusterLine(formed.Parties, DemandBoard.Snapshot(state)),
+
+        // FactionStandingShifted is deliberately NOT a case here: OreMarketHandlers/FactionDriftSystem
+        // already route it through GossipGenerator into a GossipEmitted line (the existing case
+        // above), so a second raw case would double-print it — the same MF-3 trap U3 avoids for camp.
         _ => null,
     };
 

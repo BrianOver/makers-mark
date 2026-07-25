@@ -12,8 +12,8 @@ namespace GodotClient;
 
 /// <summary>
 /// The one UI scene (U11 shell + U12 town layer, drawer-reworked U21): the living town view is a
-/// PERMANENT full-rect base child — always visible, never hidden by a panel opening — with the six
-/// management panels (Forge/Shop/Heroes/Tavern/Depths/Bounties) hosted one at a time in the
+/// PERMANENT full-rect base child — always visible, never hidden by a panel opening — with the seven
+/// management panels (Forge/Shop/Heroes/Tavern/Depths/Bounties/Demand) hosted one at a time in the
 /// right-anchored <see cref="DrawerHost"/> that slides over it, under a themed HUD header (P007
 /// U7 — day/phase/gold/heroes stat chips + Skip/Auto, with play/pause/fast-forward
 /// as auto-mode sub-controls), with the Evening Ledger as a modal overlay. The Ledger opens
@@ -127,6 +127,10 @@ public partial class MainUi : Control
     public TavernPanel Tavern { get; private set; } = null!;
     public DepthsPanel Depths { get; private set; } = null!;
     public BountyPanel Bounties { get; private set; } = null!;
+    /// <summary>U6 (C2c, plan 2026-07-25-001): the read-only demand telegraph — <see
+    /// cref="DemandBoard.Snapshot"/> rendered as pass-reason rollup, open commissions, depth-stall
+    /// call-to-action, and the bounty board with each floor's price-floor minimum shown.</summary>
+    public DemandPanel Demand { get; private set; } = null!;
     public LedgerModal Ledger { get; private set; } = null!;
     /// <summary>U10: the pre-sleep raid-forecast board (RaidForecast.ForTomorrow projection),
     /// chained after the day-end Ledger and re-openable from the HUD "Forecast" button.</summary>
@@ -259,6 +263,7 @@ public partial class MainUi : Control
         Tavern.Bind(Adapter);
         Depths.Bind(Adapter);
         Bounties.Bind(Adapter);
+        Demand.Bind(Adapter);
         Ledger.Bind(Adapter);
         Camp.Bind(Adapter);
         Mirror.Bind(Adapter);
@@ -980,6 +985,7 @@ public partial class MainUi : Control
         Depths = InstantiatePanel<DepthsPanel>("res://scenes/panels/depths_panel.tscn");
         Depths.Clock = Clock; // U25 (a): MineWatch's journey feed pauses with the clock
         Bounties = InstantiatePanel<BountyPanel>("res://scenes/panels/bounty_panel.tscn");
+        Demand = InstantiatePanel<DemandPanel>("res://scenes/panels/demand_panel.tscn");
 
         // U17 (KTD13): the single bottom-edge HUD line — mounted last in the layout so it sits
         // below the world gap, the one region KTD13 reserves for it (PiP docks above it; top bar
@@ -1021,6 +1027,7 @@ public partial class MainUi : Control
         Drawer.Register("Tavern", Tavern);
         Drawer.Register("Depths", Depths);
         Drawer.Register("Bounties", Bounties);
+        Drawer.Register("Demand", Demand);
         // LW6: the drawer-swap fade veil (was the tab-switch veil pre-U21) — a purely additive
         // CanvasLayer-100 overlay, triggered from OpenPanel below, and from a click-out/Esc close
         // that bypasses OpenPanel entirely (Drawer.Closed).
@@ -1165,7 +1172,7 @@ public partial class MainUi : Control
     /// <summary>
     /// U21: the one entry point that opens a management surface — replaces the old
     /// <c>Tabs.CurrentTab = ...</c> routing. <paramref name="id"/> is one of "Forge" | "Shop" |
-    /// "Heroes" | "Tavern" | "Depths" | "Bounties" | "Town" (the last one, and any drawer already
+    /// "Heroes" | "Tavern" | "Depths" | "Bounties" | "Demand" | "Town" (the last one, and any drawer already
     /// open, both resolve through <see cref="DrawerHost.Close"/> — "Town" IS the bare-world state,
     /// not a drawer). A drawer already open when this is called is REPLACED, never stacked
     /// (<see cref="DrawerHost.Open"/>'s own contract). Opening a panel refreshes it on the spot —
@@ -1198,6 +1205,7 @@ public partial class MainUi : Control
         "Tavern" => Tavern,
         "Depths" => Depths,
         "Bounties" => Bounties,
+        "Demand" => Demand,
         _ => throw new ArgumentOutOfRangeException(nameof(id), id, "no such drawer panel"),
     };
 
