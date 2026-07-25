@@ -121,11 +121,13 @@ while (true)
                 haggle hold                   hold firm — the band may shift in your favor next round
                 haggle counter <gold>         counter the standing offer at <gold>
                 forecast | telegraph          tomorrow's raids: parties, target floor, threats, gear gaps
+                demand                        demand board: pass reasons, open commissions (accept/
+                                               decline targets), depth stalls, bounty floor + postings
                 advice                        ranked next-step suggestions + this phase's legal actions
                 export [path]                 dump campaign chronicle for analytics
                 next                          advance one phase (queued actions apply)
                 day                           advance to next Morning
-                status | recipes | talents | mats | items | heroes | shelf | board | gossip
+                status | recipes | talents | mats | items | heroes | shelf | board | gossip | demand
                 quit
                 """);
             break;
@@ -613,6 +615,18 @@ while (true)
             break;
         }
 
+        // U5 (C2b, R4): the full demand snapshot ON REQUEST — rolled-up pass reasons, every open
+        // commission with all five judging fields (hero/slot/min-quality/premium/deadline, so this
+        // doubles as U9's accept/decline target list), depth stalls, and the bounty board. Named
+        // 'demand', NOT 'board' — 'board' already means the depths leaderboard (below).
+        case "demand":
+            foreach (var demandLine in DemandNarration.DemandVerbLines(DemandBoard.Snapshot(state)))
+            {
+                Console.WriteLine(demandLine);
+            }
+
+            break;
+
         case "gossip":
         {
             var lines = state.EventLog.OfType<GossipEmitted>().TakeLast(6).ToList();
@@ -1007,6 +1021,16 @@ void PrintLedger(GameState s, int day, ImmutableList<GoldLedgerEntry> oreSpend, 
         }
 
         Console.WriteLine($"    = {total}g net today");
+    }
+
+    // U5 (C2b, R4): the demand telegraph — a forward-looking call to action (depth-stall,
+    // commission gear-gaps, bounty board) so tomorrow's Morning muster line (EventNarration's
+    // PartiesFormed case) has something to restate, closing the loop the audit found silent
+    // (question -> answer -> question). `s` is already the post-Evening-tick state (tomorrow's
+    // Morning), so this reads the SAME snapshot the muster line will restate.
+    foreach (var line in DemandNarration.TelegraphLines(DemandBoard.Snapshot(s)))
+    {
+        Console.WriteLine(line);
     }
 }
 

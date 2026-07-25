@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
+using GameSim.Drama;
 using GameSim.Narrative;
 
 namespace GameSim.Cli;
@@ -82,6 +83,13 @@ public static class EventNarration
             $"  ⛏ bought {material.Quantity}x {material.MaterialKey} from the Morning vendor for {material.Cost}g",
         RecoveryStipendGranted stipend =>
             $"  + recovery stipend granted — +{stipend.Amount}g (you hit a dead end)",
+
+        // U5 (C2b, R4): the Morning muster line — PartiesFormed fires unconditionally every
+        // Morning tick (MusterSystem, zero RNG), so this is always the FIRST line the player sees
+        // once the Morning's own verbs resolve. It restates the prior Evening's telegraph (same
+        // DemandBoard.Snapshot shape) so question -> answer -> question is visible, not just
+        // "parties departed" with no callback to what was asked for.
+        PartiesFormed formed => DemandNarration.MusterLine(formed.Parties, DemandBoard.Snapshot(state)),
 
         // FactionStandingShifted is deliberately NOT a case here: OreMarketHandlers/FactionDriftSystem
         // already route it through GossipGenerator into a GossipEmitted line (the existing case
