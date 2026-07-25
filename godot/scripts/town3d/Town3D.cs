@@ -400,6 +400,7 @@ public partial class Town3D : SubViewportContainer
         World.AddChild(WorldDressing.Build()); // world-connection: road to mine, well, lanterns, stalls, crates
         World.AddChild(TownsfolkNpcs.Build()); // world-connection: wandering non-hero villagers
         World.AddChild(MineApproach.Build());  // world-connection: creatures prowling beyond the mine gate
+        World.AddChild(AmbientLife.Build());   // world-connection: chimney smoke + firefly/ember motes
 
         Heroes = new Node3D { Name = "Heroes" };
         World.AddChild(Heroes);
