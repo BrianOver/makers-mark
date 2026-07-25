@@ -405,7 +405,7 @@ public partial class Town3D : SubViewportContainer
         // town reads as a sizable village in a forest clearing rather than a tight cluster — reveals
         // more of the square + the perimeter treeline. Instance-level only; the class default (and
         // the CameraRig tests that pin 22) are untouched, and PushIn station dollies still override.
-        Camera = new CameraRig { Name = "CameraRig", Distance = 28f };
+        Camera = new CameraRig { Name = "CameraRig", Distance = 32f };
         World.AddChild(Camera);
 
         Player = BuildPlayer();
@@ -458,11 +458,11 @@ public partial class Town3D : SubViewportContainer
     /// </summary>
     private static readonly (string Key, string Label, string ClickKey, Vector3 Position)[] BuildingLayout =
     {
-        ("forge", "Forge", "Forge", new Vector3(-8f, 0f, -6f)),
-        ("market", "Shop", "Shop", new Vector3(8f, 0f, -6f)),
-        ("tavern", "Tavern", "Tavern", new Vector3(-8f, 0f, 7f)),
-        ("minegate", "Gate", "Gate", new Vector3(0f, 0f, -16f)),
-        ("noticeboard", "Bounties", "Bounties", new Vector3(9f, 0f, 8f)),
+        ("forge", "Forge", "Forge", new Vector3(-12f, 0f, -9f)),
+        ("market", "Shop", "Shop", new Vector3(12f, 0f, -9f)),
+        ("tavern", "Tavern", "Tavern", new Vector3(-12f, 0f, 11f)),
+        ("minegate", "Gate", "Gate", new Vector3(0f, 0f, -26f)),
+        ("noticeboard", "Bounties", "Bounties", new Vector3(14f, 0f, 12f)),
     };
 
     /// <summary>
@@ -482,8 +482,8 @@ public partial class Town3D : SubViewportContainer
     /// </summary>
     private static readonly (string Key, string Label, string ClickKey, Vector3 Position)[] StationLayout =
     {
-        ("forge-station", "Anvil", "ForgeStation", new Vector3(-8f, 0f, -12f)),
-        ("counter-station", "Counter", "CounterStation", new Vector3(8f, 0f, -12f)),
+        ("forge-station", "Anvil", "ForgeStation", new Vector3(-12f, 0f, -18f)),
+        ("counter-station", "Counter", "CounterStation", new Vector3(12f, 0f, -18f)),
     };
 
     private static List<Building3D> BuildBuildings()
@@ -840,8 +840,8 @@ public partial class Town3D : SubViewportContainer
     private static Node3D BuildBoundary()
     {
         var ring = new Node3D { Name = "Boundary" };
-        const int count = 40;
-        const float radius = 24f;
+        const int count = 56;
+        const float radius = 36f;
         for (var i = 0; i < count; i++)
         {
             var angle = Mathf.Tau * i / count;
@@ -915,7 +915,7 @@ public partial class Town3D : SubViewportContainer
         {
             Name = "VillageSquare",
             Position = new Vector3(0f, 0.04f, 0f), // a hair above the grass — no z-fight
-            Mesh = new PlaneMesh { Size = new Vector2(20f, 20f), Material = mat },
+            Mesh = new PlaneMesh { Size = new Vector2(26f, 26f), Material = mat },
         };
     }
 
@@ -938,8 +938,8 @@ public partial class Town3D : SubViewportContainer
         }
 
         var wall = new Node3D { Name = "Palisade" };
-        const int segments = 30;
-        const float radius = 22f;
+        const int segments = 40;
+        const float radius = 30f;
         for (var i = 0; i < segments; i++)
         {
             var angle = Mathf.Tau * i / segments;
@@ -974,7 +974,7 @@ public partial class Town3D : SubViewportContainer
         if (ResourceLoader.Exists(grassPath))
         {
             groundMat.AlbedoTexture = ResourceLoader.Load<Texture2D>(grassPath);
-            groundMat.Uv1Scale = new Vector3(11f, 11f, 1f); // ~8-unit tiles across the 90-unit meadow
+            groundMat.Uv1Scale = new Vector3(16f, 16f, 1f); // ~8-unit tiles across the 90-unit meadow
             groundMat.TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic;
             groundMat.AlbedoColor = new Color(0.86f, 0.90f, 0.82f); // gently desaturate/soften toward the town palette
         }
@@ -986,7 +986,7 @@ public partial class Town3D : SubViewportContainer
         var mesh = new MeshInstance3D
         {
             Name = "GroundMesh",
-            Mesh = new PlaneMesh { Size = new Vector2(90, 90), Material = groundMat },
+            Mesh = new PlaneMesh { Size = new Vector2(130, 130), Material = groundMat },
         };
         ground.AddChild(mesh);
 
@@ -994,7 +994,7 @@ public partial class Town3D : SubViewportContainer
         var shape = new CollisionShape3D
         {
             Name = "GroundShape",
-            Shape = new BoxShape3D { Size = new Vector3(90, 1, 90) },
+            Shape = new BoxShape3D { Size = new Vector3(130, 1, 130) },
             Position = new Vector3(0, -0.5f, 0),
         };
         body.AddChild(shape);
@@ -1177,53 +1177,53 @@ public partial class Town3D : SubViewportContainer
     /// ambient. Filmic tonemap kept (safe, no colour surprises).</summary>
     private static WorldEnvironment BuildEnvironment()
     {
-        // A real daytime sky (not the near-black void the low-energy default read as): a warm,
-        // slightly hazy blue dome over a soft green-tinted horizon, so the world beyond the village
-        // reads as open countryside. Visual round 2026-07-24 (stylized-3D direction): these are
-        // placeholder gradient colors a generated skybox texture can later replace.
+        // Moody PURPLE DUSK (user direction 2026-07-24: bring back the "spooky purple" atmosphere the
+        // bright-noon sky had killed). A deep dusk-violet dome bleeding to a dusky rose-purple glow at
+        // the horizon, lit low and warm — atmospheric but still navigable. The perpetual-twilight mood
+        // fits the game's theme (permadeath, legends of the dead) far better than bright noon.
         var sky = new ProceduralSkyMaterial
         {
-            SkyTopColor = new Color(0.35f, 0.55f, 0.85f),      // clear upper blue
-            SkyHorizonColor = new Color(0.78f, 0.82f, 0.80f),  // pale hazy horizon
-            SkyEnergyMultiplier = 1.0f,
-            GroundHorizonColor = new Color(0.62f, 0.66f, 0.55f), // meadow haze meeting the sky
-            GroundBottomColor = new Color(0.40f, 0.45f, 0.34f),
-            GroundEnergyMultiplier = 0.9f,
-            SunAngleMax = 30f,
-            SunCurve = 0.15f,
+            SkyTopColor = new Color(0.10f, 0.07f, 0.20f),      // deep dusk violet
+            SkyHorizonColor = new Color(0.38f, 0.22f, 0.40f),  // dusky purple horizon glow
+            SkyEnergyMultiplier = 0.6f,
+            GroundHorizonColor = new Color(0.20f, 0.15f, 0.26f),
+            GroundBottomColor = new Color(0.09f, 0.08f, 0.13f),
+            GroundEnergyMultiplier = 0.5f,
+            SunAngleMax = 18f,
+            SunCurve = 0.08f,
         };
 
         var env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Sky,
             Sky = new Sky { SkyMaterial = sky },
-            BackgroundEnergyMultiplier = 1.0f,
+            BackgroundEnergyMultiplier = 0.7f,
             AmbientLightSource = Godot.Environment.AmbientSource.Bg,
-            AmbientLightEnergy = 1.1f,
+            AmbientLightEnergy = 0.78f, // sky-sourced → cool purple ambient fill; enough to stay readable
             TonemapMode = Godot.Environment.ToneMapper.Filmic,
-            // A touch of distance haze so the far treeline/walls fade into the horizon — sells scale.
+            // Purple distance haze — fades the far treeline/walls into a twilight murk, sells scale + mood.
             FogEnabled = true,
-            FogLightColor = new Color(0.74f, 0.80f, 0.82f),
-            FogDensity = 0.006f,
-            FogSkyAffect = 0.2f,
+            FogLightColor = new Color(0.26f, 0.16f, 0.40f),
+            FogDensity = 0.014f,
+            FogSkyAffect = 0.45f,
         };
         return new WorldEnvironment { Name = "WorldEnvironment", Environment = env };
     }
 
-    /// <summary>A warm key sun that casts the village's shadows — gives the flat-shaded 3D town depth
-    /// and time-of-day warmth (visual round). Paired with the sky's own ambient fill in
-    /// <see cref="BuildEnvironment"/>.</summary>
+    /// <summary>A low, warm dusk key sun cutting warm gold through the purple twilight — long dramatic
+    /// shadows across the square, dimmer than a noon key so the purple ambient reads as the dominant
+    /// mood (visual round; user wanted the spooky-purple atmosphere back).</summary>
     private static DirectionalLight3D BuildSun()
     {
         var sun = new DirectionalLight3D
         {
             Name = "Sun",
-            LightColor = new Color(1.0f, 0.94f, 0.82f), // warm late-morning
-            LightEnergy = 1.15f,
+            LightColor = new Color(1.0f, 0.76f, 0.58f), // warm dusk gold
+            LightEnergy = 0.8f,
             ShadowEnabled = true,
         };
-        // Angled low from the south-west for long, readable shadows across the square.
-        sun.RotationDegrees = new Vector3(-52f, -130f, 0f);
+        // Low from the west for long twilight shadows raking across the village.
+        sun.RotationDegrees = new Vector3(-26f, -118f, 0f);
         return sun;
     }
 }

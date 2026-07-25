@@ -28,7 +28,7 @@ public partial class Building3D : Node3D
     /// cottage tower over people (~4.8 units ≈ 3× the hero) for accurate proportions, without touching
     /// the footprint/interact colliders or the nav bake — heroes still path to the same door spots, and
     /// any slight visual overhang of the base past the collider reads fine in the stylized look.</summary>
-    private const float BuildingBigness = 2.0f;
+    private const float BuildingBigness = 2.6f;
     private static readonly Color HighlightEmission = new(1f, 0.85f, 0.35f);
 
     /// <summary>Stable identity ("forge" | "market" | "tavern" | "minegate" | "noticeboard") —
