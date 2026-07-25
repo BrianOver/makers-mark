@@ -146,12 +146,16 @@ public static class DemandBoard
                 continue;
             }
 
-            var name = state.Heroes.TryGetValue(commission.Hero.Value, out var hero)
-                ? hero.Name
-                : commission.Hero.ToString();
+            // A dead hero's commission can never be fulfilled or meaningfully accepted — don't
+            // surface it as a target, else the advisor/board point the player at the fallen
+            // (fable Slice-2 confirm: a suggestion named a hero who had died four days earlier).
+            if (!state.Heroes.TryGetValue(commission.Hero.Value, out var hero) || !hero.Alive)
+            {
+                continue;
+            }
 
             open.Add(new OpenCommissionEntry(
-                commission.Hero, name, commission.Slot, commission.MinQuality,
+                commission.Hero, hero.Name, commission.Slot, commission.MinQuality,
                 commission.PremiumGold, commission.DeadlineDay));
         }
 

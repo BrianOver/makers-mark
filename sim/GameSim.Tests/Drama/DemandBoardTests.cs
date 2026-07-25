@@ -80,6 +80,43 @@ public class DemandBoardTests
         }
     }
 
+    /// <summary>
+    /// A dead hero's commission can never be fulfilled, so the board must never surface it — else the
+    /// advisor points the player at the fallen (fable Slice-2 confirm found a suggestion naming a hero
+    /// who had died four days prior). Invariant across a long seeded run; also directly exercises the
+    /// filter whenever the raw <see cref="GameState.Commissions"/> holds an unaccepted commission for a
+    /// dead hero on any day.
+    /// </summary>
+    [Fact]
+    public void OpenCommissions_NeverSurfaceADeadHero()
+    {
+        const int Days = 30;
+        var byDay = RunSeededDays(seed: 2026, days: Days);
+
+        for (var day = 1; day <= Days; day++)
+        {
+            var state = byDay[day];
+            var snapshot = DemandBoard.Snapshot(state);
+
+            foreach (var entry in snapshot.OpenCommissions)
+            {
+                Assert.True(
+                    state.Heroes.TryGetValue(entry.Hero.Value, out var hero) && hero.Alive,
+                    $"day {day}: OpenCommissions surfaced hero {entry.Hero}, who is dead or absent");
+            }
+
+            // Direct filter exercise: any raw unaccepted commission for a dead hero must be excluded.
+            foreach (var commission in state.Commissions)
+            {
+                if (!commission.Accepted
+                    && state.Heroes.TryGetValue(commission.Hero.Value, out var h) && !h.Alive)
+                {
+                    Assert.DoesNotContain(snapshot.OpenCommissions, e => e.Hero == commission.Hero);
+                }
+            }
+        }
+    }
+
     [Fact]
     public void DepthStall_EntryAppears_WithinTwoDaysOfPlateauOnset()
     {
