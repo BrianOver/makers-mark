@@ -37,7 +37,111 @@ public static class WorldDressing
             root.AddChild(BuildCrate(crate));
         }
 
+        root.AddChild(BuildGenProps());
+
         return root;
+    }
+
+    /// <summary>Sprinkles higher-fidelity generated prop meshes (barrels, haybales, ore-cart, grain
+    /// sacks, chest, flower planters) around the village for a lived-in feel, plus fire braziers that
+    /// light the dark road down to the mine (warm pools in the purple dusk — mood AND wayfinding).
+    /// Each gen prop degrades gracefully to nothing when its asset is missing (never a crash).</summary>
+    private static Node3D BuildGenProps()
+    {
+        var props = new Node3D { Name = "GenProps" };
+
+        // Braziers lighting the mine road (village → dungeon), each with its own fire glow.
+        foreach (var z in new[] { -12f, -19f, -26f })
+        {
+            props.AddChild(BuildBrazier(new Vector3(-3.6f, 0f, z)));
+            props.AddChild(BuildBrazier(new Vector3(3.6f, 0f, z)));
+        }
+
+        // Lived-in clutter keyed to the spread building layout (tavern ~(-12,11), shop ~(12,-9),
+        // forge ~(-12,-9), bounties ~(14,12)).
+        AddGen(props, "ore-cart.glb", new Vector3(2.4f, 0f, -14f), 1f, 12f);
+        AddGen(props, "barrel.glb", new Vector3(-9.5f, 0f, 9.5f), 1f, 20f);
+        AddGen(props, "apple-barrel.glb", new Vector3(-8.6f, 0f, 10.4f), 1f, -35f);
+        AddGen(props, "haybale.glb", new Vector3(-10.6f, 0f, 8.4f), 1f, 15f);
+        AddGen(props, "grain-sack.glb", new Vector3(10.4f, 0f, -7.4f), 1f, 40f);
+        AddGen(props, "grain-sack.glb", new Vector3(11.2f, 0f, -8.2f), 1f, -20f);
+        AddGen(props, "barrel.glb", new Vector3(12.6f, 0f, 10.6f), 1f, 5f);
+        AddGen(props, "chest.glb", new Vector3(13.4f, 0f, 12.2f), 1f, -25f);
+        AddGen(props, "haybale.glb", new Vector3(-11f, 0f, -7.6f), 1f, -10f);
+        AddGen(props, "flower-planter.glb", new Vector3(-5.2f, 0f, 4.6f), 1f, 0f);
+        AddGen(props, "flower-planter.glb", new Vector3(-7.2f, 0f, 2.4f), 1f, 30f);
+
+        return props;
+    }
+
+    private static void AddGen(Node3D root, string file, Vector3 pos, float scale, float rotYDeg)
+    {
+        var node = TownAssets.InstantiateGen(file);
+        if (node is null)
+        {
+            return; // graceful degrade — missing asset is a no-op, never a crash
+        }
+
+        node.Position = pos;
+        node.Scale = new Vector3(scale, scale, scale);
+        node.RotationDegrees = new Vector3(0f, rotYDeg, 0f);
+        root.AddChild(node);
+    }
+
+    /// <summary>A fire brazier: the generated brazier mesh (or a stone-bowl fallback) crowned with an
+    /// emissive ember mesh + a warm flickering-orange <see cref="OmniLight3D"/>. Real light on the
+    /// mine road so the descent reads as guarded/lit against the gloom.</summary>
+    private static Node3D BuildBrazier(Vector3 pos)
+    {
+        var brazier = new Node3D { Name = "Brazier", Position = pos };
+
+        var mesh = TownAssets.InstantiateGen("brazier.glb");
+        if (mesh is not null)
+        {
+            brazier.AddChild(mesh);
+        }
+        else
+        {
+            brazier.AddChild(new MeshInstance3D
+            {
+                Name = "Bowl",
+                Position = new Vector3(0f, 0.7f, 0f),
+                Mesh = new CylinderMesh
+                {
+                    TopRadius = 0.5f, BottomRadius = 0.2f, Height = 0.5f,
+                    Material = new StandardMaterial3D { AlbedoColor = new Color(0.18f, 0.16f, 0.16f), Roughness = 1f },
+                },
+            });
+        }
+
+        brazier.AddChild(new MeshInstance3D
+        {
+            Name = "Embers",
+            Position = new Vector3(0f, 1.05f, 0f),
+            Mesh = new SphereMesh
+            {
+                Radius = 0.34f, Height = 0.5f,
+                Material = new StandardMaterial3D
+                {
+                    AlbedoColor = new Color(1.0f, 0.55f, 0.18f),
+                    EmissionEnabled = true,
+                    Emission = new Color(1.0f, 0.45f, 0.12f),
+                    EmissionEnergyMultiplier = 4.0f,
+                },
+            },
+        });
+
+        brazier.AddChild(new OmniLight3D
+        {
+            Name = "Fire",
+            Position = new Vector3(0f, 1.2f, 0f),
+            LightColor = new Color(1.0f, 0.58f, 0.26f),
+            LightEnergy = 3.0f,
+            OmniRange = 9f,
+            OmniAttenuation = 1.5f,
+        });
+
+        return brazier;
     }
 
     private static readonly Vector3[] LanternSpots =
