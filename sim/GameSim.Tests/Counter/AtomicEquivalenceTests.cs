@@ -59,8 +59,13 @@ public class AtomicEquivalenceTests
     // every value are identical. (Note: registering the ForgeTraceInput puzzle type + wiring
     // ForgeScorer into crafting, Wave 5 U23a/U23c, did NOT shift this hash — a null Puzzle serializes
     // identically and no forge trace is ever submitted here; only this new PlayerState field moved it.)
+    // RE-BASELINED (Phase B B0 contracts, 2026-07-25): the trailing `Hero.Xp` init member (default 0)
+    // means every hero in the save JSON now carries "Xp":0 — a pure serialized-SHAPE change (Class 0a).
+    // Nothing reads or accrues Xp yet (B0 only declares the field + the HeroDecisionExplained/HeroRankUp
+    // event types, none of which is stamped on the BaselinePlayer idle trace), so the RNG stream and
+    // every value are identical — same class as the SignedName / Memorial.Honored field additions above.
     private const string ExpectedPreCounterSha256 =
-        "7164E452CE6113BA541C03A44618402C44E8CA15A7AD429DC4C4BA896623E9DF";
+        "B7A19B0647CF580855B1866E0E21209597A63CA8D90AF7EA00B10069F488EA97";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
