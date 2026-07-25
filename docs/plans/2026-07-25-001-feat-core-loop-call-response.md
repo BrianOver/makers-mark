@@ -451,3 +451,61 @@ Golden byte-identical throughout; parity property test extended to 20/20.
 - Pre-existing cosmetics: "undone by slain by" gossip grammar; duplicate death line (beat + event).
 - Rerun the persona playtest with an ACTING policy (craft/sell/commission) once U9 lands — the
   Slice-1 personas only observed, so the craft→sell→commission narration path is transcript-untested.
+
+---
+
+# Slice 3 addendum — close the quality-stall lane (2026-07-25, from fable Slice-2 confirm)
+
+Slice 2 made the loop ANSWER in the commission lane, but fable's honest gap: the **quality-stall
+lane is still call-without-response** — the game names "floor 3 wants Fine+" but the advisor has no
+branch to guide *producing* Fine+, and craft quality reads as RNG from the CLI player's chair. Slice
+3 makes "produce Fine+" a guidable, deliberate act, and clears the two logged tickets. Same
+golden-safety bar: advisor/legality changes are RNG-free read/predicate projections; the rest is CLI
+presentation. Golden byte-identical; parity stays 20/20.
+
+**Batching (3 workers, disjoint files):**
+- **Worker P — U10 → U11** (`sim/GameSim/Advisor/ObjectiveAdvisor.cs` + tests; may read `DemandBoard`).
+- **Worker Q — U12 → T2** (CLI presentation: `Program.cs`/`DemandNarration.cs`/`EventNarration.cs`, gossip pack).
+- **Worker R — T1** (`sim/GameSim/Advisor/ActionLegality.cs` + parity test).
+
+### U10. Advisor quality-stall branch (the core fix)
+- **Problem:** `SuggestSlotCraftOrBuy` only handles `BlockingSlot != null` (empty slots); a
+  quality-gated stall (`BlockingSlot == null`, `RequiredQuality > CarriedQuality`) gets NO suggestion.
+- **Files:** `sim/GameSim/Advisor/ObjectiveAdvisor.cs` — add a branch: when the top demand is a
+  quality stall, suggest the path to higher quality — if the tier/quality gate talent (e.g.
+  `tier-2-smithing`) is not yet unlocked, suggest `UnlockTalentAction` for it; else suggest crafting
+  a higher-tier recipe with a better material toward that slot (buy the material if not in stock).
+  Every suggestion re-checked through `ActionLegality.IsLegal` (unchanged contract).
+- **Verify:** on a seeded run where a quality stall appears, the advisor emits a non-empty,
+  legal suggestion that moves toward higher quality (talent or better-material craft) — never silence.
+
+### U11. Fulfillment guidance
+- **Files:** `sim/GameSim/Advisor/ObjectiveAdvisor.cs` (+ `DemandBoard`/`DemandNarration` read if
+  needed) — (a) when a shelved/held item already answers an open commission or a stall's need,
+  surface that ("you have a Fine Longsword shelved — Kael's Weapon commission wants it"); (b) flag a
+  purse mismatch when a target hero can't afford the matching shelf item (hero gold < price).
+- **Verify:** a test where a matching item is shelved ⇒ the advisor/telegraph names the match; a
+  hero-can't-afford case ⇒ the mismatch is surfaced.
+
+### U12. Craft-quality legibility (kill the "RNG from the chair" feel)
+- **Files:** `sim/GameSim.Cli/Program.cs` (+ `DemandNarration.cs`/help) — make quality legible in the
+  CLI: show the quality CEILING each material sets in `mats`/`recipes`, and a one-line hint on craft
+  ("copper caps at Common; steel reaches Fine; the 3D forge minigame reaches higher") so the player
+  understands material sets the ceiling and auto-craft is competent-capped (PKD4). Presentation only,
+  reads existing `RecipeTable`/material-grade data — NO rule change.
+- **Verify:** `mats`/`recipes` show a quality ceiling per material; a craft prints the band it will
+  produce. Golden byte-identical.
+
+### T1. Budget-gate mirror consistency (logged ticket)
+- **Problem (fable):** `ReforgeHeirloomLegal` checks `ActionSlotsRemaining` but the 4 pre-existing
+  mirrors (`CraftLegal`/`BuyMaterialLegal`/`BuyOreLegal`/`PostBountyLegal`) don't, though their
+  handlers do — `advice`/LEGAL can list actions the kernel rejects once the budget is spent.
+- **Files:** `sim/GameSim/Advisor/ActionLegality.cs` — add the `ActionSlotsRemaining > 0` gate to the
+  four mirrors, matching each handler (check it in the same position the handler does). Add an
+  exhausted-budget parity test (submit until slots==0, assert the mirror agrees with the kernel).
+- **Verify:** parity test with a spent budget is green; 20/20 coverage preserved.
+
+### T2. Cosmetics (logged tickets)
+- **Files:** the duplicate death line (expedition beat + Evening `HeroDied` both narrate) — dedupe to
+  one; the gossip grammar bug "undone by **slain by** a Deep Ghoul" (the pack composes two cause
+  fragments) — fix the template so the cause reads once. Presentation only, golden byte-identical.
