@@ -131,6 +131,12 @@ public partial class MainUi : Control
     /// cref="DemandBoard.Snapshot"/> rendered as pass-reason rollup, open commissions, depth-stall
     /// call-to-action, and the bounty board with each floor's price-floor minimum shown.</summary>
     public DemandPanel Demand { get; private set; } = null!;
+    /// <summary>Phase B, B1d (plan 2026-07-25-002): the read-only hero digest — every alive hero
+    /// as a card (standing/deepest/XP/rank + summed deeds), distinct from <see cref="Heroes"/>
+    /// (the portrait-grid roster + gear/provenance detail pane reached via town clicks). Drawer id
+    /// deliberately "HeroCards", not "Heroes" — that id is already taken by the roster panel; the
+    /// HUD button below is still labeled "Heroes" per this unit's brief.</summary>
+    public HeroPanel HeroCards { get; private set; } = null!;
     public LedgerModal Ledger { get; private set; } = null!;
     /// <summary>U10: the pre-sleep raid-forecast board (RaidForecast.ForTomorrow projection),
     /// chained after the day-end Ledger and re-openable from the HUD "Forecast" button.</summary>
@@ -264,6 +270,7 @@ public partial class MainUi : Control
         Depths.Bind(Adapter);
         Bounties.Bind(Adapter);
         Demand.Bind(Adapter);
+        HeroCards.Bind(Adapter);
         Ledger.Bind(Adapter);
         Camp.Bind(Adapter);
         Mirror.Bind(Adapter);
@@ -961,6 +968,14 @@ public partial class MainUi : Control
         demandButton.Pressed += () => OpenPanel("Demand");
         controls.AddChild(demandButton);
 
+        // Phase B, B1d: the hero digest (standing/deepest/XP-rank/deeds card per alive hero) had
+        // no HUD entry — same button-cluster pattern as Demand/Legends above. Opens "HeroCards"
+        // (not "Heroes" — that drawer id is already the portrait-grid roster reached via town
+        // clicks); the button is still labeled "Heroes" per this unit's brief.
+        var heroesButton = new Button { Name = "OpenHeroCards", Text = "Renown" };
+        heroesButton.Pressed += () => OpenPanel("HeroCards");
+        controls.AddChild(heroesButton);
+
         // U6/U7 rejection banner: a transient, themed, player-phrased line — hidden
         // except while a toast is live (OnPhaseCompleted shows it, ClearToast/_Process
         // hide it). NOT a persistent status readout, and never the raw kernel string.
@@ -996,6 +1011,7 @@ public partial class MainUi : Control
         Depths.Clock = Clock; // U25 (a): MineWatch's journey feed pauses with the clock
         Bounties = InstantiatePanel<BountyPanel>("res://scenes/panels/bounty_panel.tscn");
         Demand = InstantiatePanel<DemandPanel>("res://scenes/panels/demand_panel.tscn");
+        HeroCards = InstantiatePanel<HeroPanel>("res://scenes/panels/hero_panel.tscn");
 
         // U17 (KTD13): the single bottom-edge HUD line — mounted last in the layout so it sits
         // below the world gap, the one region KTD13 reserves for it (PiP docks above it; top bar
@@ -1038,6 +1054,7 @@ public partial class MainUi : Control
         Drawer.Register("Depths", Depths);
         Drawer.Register("Bounties", Bounties);
         Drawer.Register("Demand", Demand);
+        Drawer.Register("HeroCards", HeroCards);
         // LW6: the drawer-swap fade veil (was the tab-switch veil pre-U21) — a purely additive
         // CanvasLayer-100 overlay, triggered from OpenPanel below, and from a click-out/Esc close
         // that bypasses OpenPanel entirely (Drawer.Closed).
@@ -1182,8 +1199,8 @@ public partial class MainUi : Control
     /// <summary>
     /// U21: the one entry point that opens a management surface — replaces the old
     /// <c>Tabs.CurrentTab = ...</c> routing. <paramref name="id"/> is one of "Forge" | "Shop" |
-    /// "Heroes" | "Tavern" | "Depths" | "Bounties" | "Demand" | "Town" (the last one, and any drawer already
-    /// open, both resolve through <see cref="DrawerHost.Close"/> — "Town" IS the bare-world state,
+    /// "Heroes" | "Tavern" | "Depths" | "Bounties" | "Demand" | "HeroCards" | "Town" (the last one,
+    /// and any drawer already open, both resolve through <see cref="DrawerHost.Close"/> — "Town" IS the bare-world state,
     /// not a drawer). A drawer already open when this is called is REPLACED, never stacked
     /// (<see cref="DrawerHost.Open"/>'s own contract). Opening a panel refreshes it on the spot —
     /// <see cref="RefreshAll"/> is visibility-gated (U21), so this is what guarantees a panel a
@@ -1216,6 +1233,7 @@ public partial class MainUi : Control
         "Depths" => Depths,
         "Bounties" => Bounties,
         "Demand" => Demand,
+        "HeroCards" => HeroCards,
         _ => throw new ArgumentOutOfRangeException(nameof(id), id, "no such drawer panel"),
     };
 

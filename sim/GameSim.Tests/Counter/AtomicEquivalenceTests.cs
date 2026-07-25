@@ -64,8 +64,15 @@ public class AtomicEquivalenceTests
     // Nothing reads or accrues Xp yet (B0 only declares the field + the HeroDecisionExplained/HeroRankUp
     // event types, none of which is stamped on the BaselinePlayer idle trace), so the RNG stream and
     // every value are identical — same class as the SignedName / Memorial.Honored field additions above.
+    // RE-BASELINED (Phase B B1 legibility spine, 2026-07-25): Class 0b (values change, draw-free &
+    // decision-free). On this idle trace the sim now stamps HeroDecisionExplained + HeroRankUp events,
+    // accrues Hero.Xp at the Evening reveal, and re-ranks the per-speaker gossip cap by salience
+    // (which gossip *prose* is emitted changes). The idle hash MOVES because these VALUES differ — but
+    // no decision changed (Balance gate 25/25 unchanged) and no RNG draw was added or reordered (the
+    // PhaseBNoDrawGateTests RngState pin is byte-identical). Deliberate re-baseline, CommissionPosted
+    // class — NOT the "shape-only, values identical" class of the B0/SignedName notes above.
     private const string ExpectedPreCounterSha256 =
-        "B7A19B0647CF580855B1866E0E21209597A63CA8D90AF7EA00B10069F488EA97";
+        "74BE2C6CC0AE101EDE7D024798E5B8174C9B20CE19F23B2FED09597976FA08EF";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
