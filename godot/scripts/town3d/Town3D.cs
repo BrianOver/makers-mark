@@ -394,7 +394,9 @@ public partial class Town3D : SubViewportContainer
         // Decoration only — never parented under NavRegion (goal 4: no collider means nothing
         // here can distort the bake above, matching the plan's "props are decoration only" rule).
         World.AddChild(BuildProps());
+        World.AddChild(BuildSquare());   // visual round: cobbled market square at the town centre
         World.AddChild(BuildBoundary()); // visual round: perimeter treeline (decoration, no collider)
+        World.AddChild(BuildPalisade()); // visual round: timber palisade "walls" with a gate opening
 
         Heroes = new Node3D { Name = "Heroes" };
         World.AddChild(Heroes);
@@ -889,6 +891,74 @@ public partial class Town3D : SubViewportContainer
         }
 
         return tree;
+    }
+
+    /// <summary>A cobbled village square (generated cobblestone texture) laid over the grass at the
+    /// town centre, just above the ground plane — gives the settlement a market-square heart instead
+    /// of buildings scattered on bare turf. Decoration only (no collider); heroes walk over it.</summary>
+    private static Node3D BuildSquare()
+    {
+        var mat = new StandardMaterial3D { Roughness = 0.95f };
+        const string cobble = "res://assets/textures/env/cobble.png";
+        if (ResourceLoader.Exists(cobble))
+        {
+            mat.AlbedoTexture = ResourceLoader.Load<Texture2D>(cobble);
+            mat.Uv1Scale = new Vector3(3f, 3f, 1f);
+            mat.TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic;
+        }
+        else
+        {
+            mat.AlbedoColor = new Color(0.52f, 0.46f, 0.40f);
+        }
+
+        return new MeshInstance3D
+        {
+            Name = "VillageSquare",
+            Position = new Vector3(0f, 0.04f, 0f), // a hair above the grass — no z-fight
+            Mesh = new PlaneMesh { Size = new Vector2(20f, 20f), Material = mat },
+        };
+    }
+
+    /// <summary>A rustic timber palisade (generated log-wall texture) ringing the village just
+    /// inside the treeline, with an opening left toward the mine gate — the "walls" that make the
+    /// place read as a defended settlement. Decoration only (no collider; the treeline + open meadow
+    /// already bound where heroes roam), deterministic placement (no RNG).</summary>
+    private static Node3D BuildPalisade()
+    {
+        var mat = new StandardMaterial3D { Roughness = 1f };
+        const string pal = "res://assets/textures/env/palisade.png";
+        if (ResourceLoader.Exists(pal))
+        {
+            mat.AlbedoTexture = ResourceLoader.Load<Texture2D>(pal);
+            mat.TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic;
+        }
+        else
+        {
+            mat.AlbedoColor = new Color(0.45f, 0.32f, 0.20f);
+        }
+
+        var wall = new Node3D { Name = "Palisade" };
+        const int segments = 30;
+        const float radius = 22f;
+        for (var i = 0; i < segments; i++)
+        {
+            var angle = Mathf.Tau * i / segments;
+            if (Mathf.Sin(angle) < -0.5f)
+            {
+                continue; // leave a gateway open toward the mine gate (-z)
+            }
+
+            var seg = new MeshInstance3D
+            {
+                Name = $"Wall{i}",
+                Position = new Vector3(Mathf.Cos(angle) * radius, 1.7f, Mathf.Sin(angle) * radius),
+                Rotation = new Vector3(0f, angle + Mathf.Pi / 2f, 0f), // long axis tangent to the ring
+                Mesh = new BoxMesh { Size = new Vector3(5.2f, 3.4f, 0.5f), Material = mat },
+            };
+            wall.AddChild(seg);
+        }
+
+        return wall;
     }
 
     private static Node3D BuildGround()
