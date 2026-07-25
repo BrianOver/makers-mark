@@ -263,6 +263,7 @@ public partial class MainUi : Control
         Tavern.Bind(Adapter);
         Depths.Bind(Adapter);
         Bounties.Bind(Adapter);
+        Demand.Bind(Adapter);
         Ledger.Bind(Adapter);
         Camp.Bind(Adapter);
         Mirror.Bind(Adapter);

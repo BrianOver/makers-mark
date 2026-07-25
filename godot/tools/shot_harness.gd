@@ -44,6 +44,11 @@ func _process(_delta: float) -> bool:
 			var b = _ui.find_child("BestiaryPanel", true, false)
 			if b:
 				b.call("ShowAll")
+		elif _state == "Demand":
+			# DemandPanel opens via the drawer (no in-world hotspot yet); reach it the
+			# same way Bestiary does — the production OpenPanel path by id.
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Demand")
 		elif _ui.has_method("OnTownBuildingClicked"):
 			# Same entry point the town uses on building arrival (private C# method reached
 			# via the source-gen call() bridge).
