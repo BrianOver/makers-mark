@@ -66,6 +66,16 @@ var pending = ImmutableList.CreateBuilder<PlayerAction>();
 // repeated after (previously every single offer line carried the full sentence).
 var oreLegendShown = false;
 
+// T2 (cosmetics — dedupe the double death line): ExpeditionNarrator.FloorBeats already voices a
+// richer "† ... fell to <monster>" beat, in-fight, at the ExpeditionDeep tick, for any death whose
+// fatal floor falls in the post-checkpoint slice. The Evening tick's ExpeditionRevealSystem then
+// emits the plain HeroDied EVENT (a separate, later Advance() call), which EventNarration.cs would
+// otherwise narrate a second, flatter time. Remembered across those two ticks so the flat line is
+// suppressed once the richer one already said it; a death that happened BEFORE the camp checkpoint
+// (never sliced into a FloorBeats call) is untouched here, so it still gets the flat line — no
+// death ever goes fully silent.
+var deathBeatAlreadyNarrated = new HashSet<int>();
+
 Console.WriteLine($"=== MAKER'S MARK — campaign seed {seed} ===");
 Console.WriteLine("You are the blacksmith. Type 'help' for commands.\n");
 PrintStatus(state);
@@ -151,7 +161,13 @@ while (true)
         {
             if (parts.Length == 3)
             {
-                TryQueue(new CraftAction(parts[1], parts[2]), $"  queued: craft {parts[1]} with {parts[2]}");
+                // U12 (craft-quality legibility, PKD4): state the ceiling BEFORE it's queued — no
+                // RNG draw, just the material/recipe ceiling CraftQualityHint mirrors off QualityRoller.
+                var ceiling = CraftQualityHint.CeilingFor(state, parts[1], parts[2], performanceGrade: null);
+                var hint = ceiling is null
+                    ? string.Empty
+                    : $" — ceiling {ceiling} (auto-craft is competent-capped, PKD4; the 3D forge minigame reaches higher)";
+                TryQueue(new CraftAction(parts[1], parts[2]), $"  queued: craft {parts[1]} with {parts[2]}{hint}");
             }
             else if (parts.Length == 5 && parts[3].Equals("grade", StringComparison.OrdinalIgnoreCase))
             {
@@ -165,8 +181,10 @@ while (true)
                 }
                 else
                 {
+                    var ceiling = CraftQualityHint.CeilingFor(state, parts[1], parts[2], performanceGrade: grade);
+                    var hint = ceiling is null ? string.Empty : $" — ceiling {ceiling}";
                     TryQueue(new CraftAction(parts[1], parts[2], grade),
-                        $"  queued: craft {parts[1]} with {parts[2]} at grade {grade} (grade-in-hand — dominates quality on an active profession)");
+                        $"  queued: craft {parts[1]} with {parts[2]} at grade {grade} (grade-in-hand — dominates quality on an active profession){hint}");
                 }
             }
             else
@@ -598,6 +616,13 @@ while (true)
                 Console.WriteLine($"  {r.RecipeId,-14} t{r.Tier} {r.Slot,-7} {r.MaterialKey} x{r.MaterialQuantity}  atk {r.BaseStats.Attack} def {r.BaseStats.Defense} wt {r.BaseStats.Weight}");
             }
 
+            // U12 (craft-quality legibility, PKD4): the tier column above IS the ceiling key —
+            // see 'mats' for what each material you're holding caps out at.
+            Console.WriteLine("  quality ceiling: a material graded below a recipe's tier caps the "
+                + "craft at Fine; matched grade caps Superior (auto-craft's hard cap too, PKD4); "
+                + "above-tier is uncapped — only the 3D forge minigame reaches past Superior, up to "
+                + "Masterwork. See 'mats' for your materials' ceilings.");
+
             break;
 
         case "talents":
@@ -621,9 +646,28 @@ while (true)
             break;
 
         case "mats":
-            Console.WriteLine(state.Player.Materials.IsEmpty
-                ? "  no materials — buy ore from returning heroes (Evening)"
-                : string.Join("\n", state.Player.Materials.Select(m => $"  {m.Key}: {m.Value}")));
+            if (state.Player.Materials.IsEmpty)
+            {
+                Console.WriteLine("  no materials — buy ore from returning heroes (Evening)");
+            }
+            else
+            {
+                // U12 (craft-quality legibility, PKD4): the ceiling QualityRoller.MaterialCeiling
+                // enforces is keyed on (material grade − recipe tier), not the material alone — show
+                // it per tier so the ceiling is readable before crafting, no RNG draw needed.
+                foreach (var (key, qty) in state.Player.Materials)
+                {
+                    var note = RecipeTable.MaterialGrades.TryGetValue(key, out var grade)
+                        ? $" (grade {grade} — ceiling {CraftQualityHint.MaterialCeilingByTier(grade)})"
+                        : string.Empty;
+                    Console.WriteLine($"  {key}: {qty}{note}");
+                }
+
+                Console.WriteLine("  ceiling key: tN = recipe tier; Fine below it, Superior at it "
+                    + "(auto-craft's hard cap too, PKD4), uncapped above it — only 'uncapped' can "
+                    + "reach Masterwork, and only via the 3D forge minigame.");
+            }
+
             break;
 
         case "items":
@@ -886,6 +930,16 @@ GameState Advance(GameState current)
             continue;
         }
 
+        // T2 (cosmetics — dedupe the double death line): the richer in-fight CombatDied beat
+        // (ExpeditionNarrator.FloorBeats, ExpeditionDeep tick, below) already told this hero's
+        // death; skip the Evening's flatter HeroDied line so it isn't said twice. A death that
+        // happened before the camp checkpoint never got that beat, so it's never in this set and
+        // still gets its (only) line here.
+        if (gameEvent is HeroDied died && deathBeatAlreadyNarrated.Contains(died.Hero.Value))
+        {
+            continue;
+        }
+
         Narrate(gameEvent, next);
     }
 
@@ -957,6 +1011,18 @@ GameState Advance(GameState current)
                 slice, finalized.Beats, heroes, next.Items, finalized.Deaths,
                 NarratorPack.Pack, next.Rng.Inc, current.Day));
             Console.WriteLine($"  {ExpeditionNarrator.Closer(finalized.Halt, heroes, finalized.DeepestFloorCleared, finalized.TargetFloor, NarratorPack.Pack, next.Rng.Inc, current.Day)}");
+
+            // T2 (cosmetics — dedupe the double death line): FloorBeats just voiced a CombatDied
+            // beat for every death whose fatal floor fell in THIS post-checkpoint slice. Remember
+            // them so the Evening's HeroDied event (a later, separate Advance() call) doesn't
+            // repeat the same death in a flatter voice.
+            foreach (var deathId in finalized.Deaths)
+            {
+                if (DiedAfterCheckpoint(finalized, deathId, inFlight.CheckpointFloor))
+                {
+                    deathBeatAlreadyNarrated.Add(deathId.Value);
+                }
+            }
         }
     }
 
@@ -996,6 +1062,29 @@ ExpeditionResult? FindResult(ImmutableList<ExpeditionResult> results, ImmutableL
     }
 
     return null;
+}
+
+// T2 (cosmetics — dedupe the double death line): true when a hero's LAST recorded combat (their
+// fatal round — mirrors ExpeditionRevealSystem's own DeathReport) falls STRICTLY AFTER the camp
+// checkpoint, i.e. inside the slice ExpeditionNarrator.FloorBeats just narrated a CombatDied beat
+// for. A death recorded at/before the checkpoint was never sliced into that call (stage-1 always
+// passes an empty deaths list), so it's still ONLY narrated by the Evening's flat HeroDied line —
+// this returns false for it, and the caller leaves that line alone. Pure read, no RNG, no mutation.
+bool DiedAfterCheckpoint(ExpeditionResult finalized, HeroId heroId, int checkpointFloor)
+{
+    var lastFloor = -1;
+    foreach (var floor in finalized.Floors)
+    {
+        foreach (var combat in floor.Combats)
+        {
+            if (combat.Hero == heroId)
+            {
+                lastFloor = floor.Floor;
+            }
+        }
+    }
+
+    return lastFloor > checkpointFloor;
 }
 
 void PrintCampSlate(GameState s)
