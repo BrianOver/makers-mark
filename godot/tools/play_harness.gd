@@ -22,6 +22,8 @@ var _shots := [
 	[30, "play_day6_town", ""],
 	[30, "play_day6_renown", "HeroCards"],
 	[30, "play_day6_demand", "Demand"],
+	[30, "play_day6_roster", "Heroes"],
+	[30, "play_day6_depths", "Depths"],
 ]
 var _shot_idx := 0
 var _settle_after_panel := -1
