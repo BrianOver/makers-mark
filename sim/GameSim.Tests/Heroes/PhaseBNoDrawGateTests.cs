@@ -26,12 +26,16 @@ public class PhaseBNoDrawGateTests
             state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
         }
 
-        // Pinned RNG-stream position on this exact trace — verified BYTE-IDENTICAL to the pre-B1
-        // value (captured the same way against commit d51fea9, before any B1 code existed) by
-        // temporarily stashing every B1 change and re-running this exact loop. Proves the whole
-        // B1 spine (B1a decision cards, B1c XP/rank, B1d identity, B1e gossip salience) drew or
-        // reordered ZERO kernel rolls. If this ever moves, grep `rng.` in sim/GameSim/Heroes,
-        // sim/GameSim/Drama, and sim/GameSim/Advisor for a new draw site before touching this constant.
-        Assert.Equal(new RngState(2746782734468342717UL, 13279888329118852579UL), state.Rng);
+        // RE-PINNED for B2 (hero traits, Class 1). B1 held this BYTE-IDENTICAL to the pre-B1 value
+        // (Class 0 — decisions unchanged, so the draw COUNT was identical). B2 gives heroes shop teeth,
+        // so on this idle trace who buys/refuses what changes → gear → combat length → the existing
+        // stream advances a DIFFERENT number of steps. The tell that this is legitimate and NOT a new
+        // draw site: `Inc` (the stream identity) is UNCHANGED (13279888329118852579) — only `State`
+        // (position) moved. A new/duplicated RNG stream would change Inc; a reordered/extra draw within
+        // the SAME stream only moves State, which is exactly what a decision-count change does. The real
+        // "no new draw site" guarantee for Class-1 units is the grep (rng.* confined to the 3 kernel
+        // files); this pin now guards against an UNEXPLAINED future move. If it moves, first check Inc
+        // (changed ⇒ a new stream, a real bug) then grep for a new `rng.` site.
+        Assert.Equal(new RngState(6848733686438733362UL, 13279888329118852579UL), state.Rng);
     }
 }

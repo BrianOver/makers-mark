@@ -71,8 +71,16 @@ public class AtomicEquivalenceTests
     // no decision changed (Balance gate 25/25 unchanged) and no RNG draw was added or reordered (the
     // PhaseBNoDrawGateTests RngState pin is byte-identical). Deliberate re-baseline, CommissionPosted
     // class — NOT the "shape-only, values identical" class of the B0/SignedName notes above.
+    // RE-BASELINED (Phase B B2 hero traits, 2026-07-25): **Class 1** — the first Phase-B unit that
+    // changes DECISIONS. 10 StableHash-derived traits give heroes shop teeth (price sensitivity,
+    // quality demand, sentiment, haggle patience, consumable stocking), so on this idle trace who
+    // buys/refuses what shifts → purchases → gear → combat length → the serialized state moves for
+    // REAL (this is the U9-veteran-pickiness playbook, not a shape-only re-pin). Determinism holds
+    // (same seed+actions = identical state) and NO new RNG draw SITE was added — traits are DERIVED,
+    // grep confirms rng.* stays in the 3 kernel files, and the Balance gate is 25/25 UNCHANGED (the
+    // bands absorbed it). Deliberate Class-1 re-baseline.
     private const string ExpectedPreCounterSha256 =
-        "74BE2C6CC0AE101EDE7D024798E5B8174C9B20CE19F23B2FED09597976FA08EF";
+        "0B8AD64C890C311E76771ACAF85D225CD65B0ED19AD37A61B24C8BDA815FF2B3";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
