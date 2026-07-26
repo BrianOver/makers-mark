@@ -33,8 +33,8 @@ public class MonsterView3DTests
     public void MonsterModelFile_MapsMineKindsToGenGlbs(string kind, string expected) =>
         AssertThat(AssetCatalog.MonsterModelFile(kind)).IsEqual(expected);
 
-    [TestCase("The Forgeworm")]
-    [TestCase("forgeworm")]
+    [TestCase("Cinder Imp")]     // Emberfall — registered but no gen mesh yet (2D-fallback example)
+    [TestCase("cinder-imp")]
     [TestCase("no-such-monster")]
     public void MonsterModelFile_NoGenModel_ResolvesNull(string kind) =>
         AssertThat(AssetCatalog.MonsterModelFile(kind)).IsNull();
@@ -76,14 +76,14 @@ public class MonsterView3DTests
     }
 
     [TestCase]
-    public void ShowMonster_Forgeworm_NoGlb_ReturnsFalse_StageStaysEmpty()
+    public void ShowMonster_ModellessKind_ReturnsFalse_StageStaysEmpty()
     {
         var view = new MonsterView3D();
         try
         {
             view.Build();
 
-            AssertThat(view.ShowMonster("The Forgeworm")).IsFalse();
+            AssertThat(view.ShowMonster("Cinder Imp")).IsFalse(); // Emberfall — no gen mesh yet
             AssertThat(view.HasMonster).IsFalse();
             AssertThat(view.CurrentKind).IsNull();
             AssertThat(view.FindChild("Monster", recursive: true, owned: false)).IsNull();
@@ -149,23 +149,23 @@ public class MonsterView3DTests
     }
 
     [TestCase]
-    public void Milestone_Forgeworm_NoGlb_FallsBackTo2DSilhouette()
+    public void Milestone_Forgeworm_NowSlides3DMesh_2DSilhouetteHidden()
     {
         var watch = new MineWatch();
         try
         {
             watch.Build();
-            // Floor 4 → MonsterRoster[4] = "forgeworm" — the one Mine kind with NO gen GLB.
+            // Floor 4 → MonsterRoster[4] = "forgeworm" — now HAS a gen GLB (2026-07-26), so the
+            // Mine's whole roster is 3D and the milestone flash prefers the mesh over the 2D slide.
             watch.Refresh(
                 GameFactory.NewGame(9102) with { Phase = DayPhase.Morning },
                 ImmutableList.Create<GameEvent>(new FloorRecordSet(new HeroId(1), 4)));
 
             AssertThat(watch.Visible).IsTrue();
-            AssertThat(watch.MonsterView.HasMonster).IsFalse();
-            AssertThat(watch.Monster3DSlideVisible).IsFalse();
-            // The committed 2D forgeworm portrait exists (art manifest), so the silhouette path
-            // still renders — the pre-3D behavior, untouched.
-            AssertThat(watch.Monster2DSlideVisible).IsTrue();
+            AssertThat(watch.MonsterView.HasMonster).IsTrue();
+            AssertThat(watch.MonsterView.CurrentKind).IsEqual("forgeworm");
+            AssertThat(watch.Monster3DSlideVisible).IsTrue();
+            AssertThat(watch.Monster2DSlideVisible).IsFalse();
         }
         finally
         {

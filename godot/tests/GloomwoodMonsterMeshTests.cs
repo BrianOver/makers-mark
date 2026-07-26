@@ -19,7 +19,12 @@ public class GloomwoodMonsterMeshTests
 {
     [TestCase("The Wicker Shepherd", "monster-wicker-shepherd.glb")]
     [TestCase("Old Mossjaw", "monster-old-mossjaw.glb")]
-    public void GloomwoodBoss_ResolvesToGenMesh_ThatLoads(string kind, string expectedFile)
+    [TestCase("The Forgeworm", "monster-forgeworm.glb")]
+    [TestCase("Bog-Wight", "monster-bog-wight.glb")]
+    [TestCase("Choir of Teeth", "monster-choir-of-teeth.glb")]
+    [TestCase("Reliquary Mimic", "monster-reliquary-mimic.glb")]
+    [TestCase("The Undertow", "monster-undertow.glb")]
+    public void VenueMonster_ResolvesToGenMesh_ThatLoads(string kind, string expectedFile)
     {
         var file = AssetCatalog.MonsterModelFile(kind);
         AssertThat(file).IsEqual(expectedFile);

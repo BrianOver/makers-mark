@@ -74,9 +74,9 @@ public class BestiaryPanelTests
         try
         {
             ui.Bestiary.ShowAll();
-            PressEnabled(ui.Bestiary, "Bestiary_the-forgeworm"); // Mine F5 — no gen model
+            PressEnabled(ui.Bestiary, "Bestiary_cinder-imp"); // Emberfall — registered, no gen model yet
 
-            AssertThat(ui.Bestiary.SelectedKind).IsEqual("The Forgeworm");
+            AssertThat(ui.Bestiary.SelectedKind).IsEqual("Cinder Imp");
             AssertThat(ui.Bestiary.SelectedHasMesh).IsFalse(); // graceful: card, not a crash
         }
         finally { Unmount(ui); }

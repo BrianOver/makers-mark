@@ -54,6 +54,11 @@ public class GenAssetCoverageTests
         // Gloomwood F1/F2 + Sunken Crypt F1; venue-independent so they show even though those venues
         // aren't in the live raid rotation yet.
         "monster-bramble-boar.glb", "monster-lantern-moth.glb", "monster-crypt-crab.glb",
+        // Gloomwood F3/F4 bosses + Mine forgeworm + Sunken Crypt roster (gen'd 2026-07-26) —
+        // all wired via AssetCatalog.MonsterModelFile, shown in the Bestiary / MonsterView3D.
+        "monster-wicker-shepherd.glb", "monster-old-mossjaw.glb", "monster-forgeworm.glb",
+        "monster-bog-wight.glb", "monster-choir-of-teeth.glb", "monster-reliquary-mimic.glb",
+        "monster-undertow.glb",
     };
 
     /// <summary>Gen GLBs finished but not yet placeable — each needs a surface that does not exist
