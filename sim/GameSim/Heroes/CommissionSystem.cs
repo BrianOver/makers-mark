@@ -119,7 +119,7 @@ public sealed class CommissionSystem : IPhaseSystem
 
         var heroesWithCommission = new HashSet<int>(state.Commissions.Select(c => c.Hero.Value));
 
-        var plans = MusterPlan.Compute(state.Heroes, state.Bounties);
+        var plans = MusterPlan.Compute(state.Heroes, state.Bounties, state.Items);
         var targetFloorByHero = new Dictionary<int, int>();
         foreach (var plan in plans)
         {

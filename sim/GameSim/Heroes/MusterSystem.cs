@@ -30,22 +30,44 @@ public static class MusterPlan
     /// </summary>
     public static ImmutableList<PartyPlan> Compute(
         ImmutableSortedDictionary<int, Hero> heroes,
-        ImmutableList<Bounty> bounties)
+        ImmutableList<Bounty> bounties,
+        ImmutableSortedDictionary<int, Item> items)
     {
         var predictedBounties = BountyRules.JudgeFirstAccept(heroes, bounties);
 
         var parties = PartyFormation.FormParties(heroes);
 
-        // The Mine is the only LIVE venue today (P4 live-venue contract: VenueRegistry.LiveRotation)
-        // — mirrors ExpeditionSystem's own hardcode; both read the same single source of truth.
-        var venue = VenueRegistry.Mine;
+        // Phase C U-C4: the SAME queue-seeded routing ExpeditionSystem.Process runs, over the
+        // identical parties in the identical order — so this Morning prediction never disagrees
+        // with what the Expedition tick actually forms two phases later (the byte-match property
+        // test, MusterSystemTests.PredictedRoster_ByteMatches_ExpeditionSystem_Over100Days).
+        var queueCounts = VenueRegistry.LiveRotation.ToDictionary(id => id, _ => 0, StringComparer.Ordinal);
 
         var plans = ImmutableList.CreateBuilder<PartyPlan>();
         foreach (var partyIds in parties)
         {
             var party = partyIds.Select(id => heroes[id.Value]).ToImmutableList();
+
+            var bounty = predictedBounties.FirstOrDefault(b =>
+                b.AcceptedBy is { } acceptor && partyIds.Contains(acceptor));
+
+            string venueId;
+            if (bounty is not null)
+            {
+                venueId = VenueRegistry.MineId; // bounties are Mine-scoped (R18) — see ExpeditionSystem
+            }
+            else
+            {
+                var partyDepth = party.Max(h => h.DeepestFloorReached);
+                var partyPower = CombatMath.PartyAveragePower(party, items);
+                venueId = VenueRouter.ChooseVenue(partyDepth, partyPower, VenueRegistry.LiveRotation, queueCounts);
+            }
+
+            queueCounts[venueId] = queueCounts.TryGetValue(venueId, out var count) ? count + 1 : 1;
+            var venue = VenueRegistry.Require(venueId);
+
             var targetFloor = ExpeditionSystem.TargetFloorFor(party, partyIds, predictedBounties, venue);
-            plans.Add(new PartyPlan(partyIds, targetFloor, VenueRegistry.MineId));
+            plans.Add(new PartyPlan(partyIds, targetFloor, venueId));
         }
 
         return plans.ToImmutable();
@@ -71,7 +93,7 @@ public sealed class MusterSystem : IPhaseSystem
 
     public GameState Process(GameState state, IDeterministicRng rng, IEventSink events)
     {
-        var parties = MusterPlan.Compute(state.Heroes, state.Bounties);
+        var parties = MusterPlan.Compute(state.Heroes, state.Bounties, state.Items);
         events.Emit(new PartiesFormed(parties));
 
         // Phase B (B1a, R-B1): explain the muster's target-floor decision — capped to the one case
@@ -109,7 +131,10 @@ public sealed class MusterSystem : IPhaseSystem
             }
         }
 
-        var defaultFloor = Math.Clamp(deepestReached + 1, 1, VenueRegistry.Mine.FloorCount);
+        // Phase C U-C4: the default floor is clamped to the PLAN'S OWN venue (not always the Mine) —
+        // otherwise a bounty-free party routed to a shallower venue (e.g. the Gloomwood's 4 floors vs
+        // the Mine's 5) would look like a "bounty override" here when it's actually just routing.
+        var defaultFloor = Math.Clamp(deepestReached + 1, 1, VenueRegistry.Require(plan.VenueId).FloorCount);
         if (plan.TargetFloor == defaultFloor)
         {
             return; // no override — the default floor isn't a "decision" worth explaining

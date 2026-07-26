@@ -39,12 +39,15 @@ public static class RaidForecast
     /// </summary>
     public static ImmutableList<ForecastParty> ForTomorrow(GameState state)
     {
-        var plans = MusterPlan.Compute(state.Heroes, state.Bounties);
-        var venue = VenueRegistry.Mine; // the only live venue (mirrors MusterPlan's own hardcode)
+        var plans = MusterPlan.Compute(state.Heroes, state.Bounties, state.Items);
 
         var forecast = ImmutableList.CreateBuilder<ForecastParty>();
         foreach (var plan in plans)
         {
+            // Phase C U-C4: read the PLAN'S OWN venue (routing may send a party to any live venue),
+            // not always the Mine — otherwise a Gloomwood-routed party's threat list would name Mine
+            // monsters it never actually faces.
+            var venue = VenueRegistry.Require(plan.VenueId);
             var names = plan.Roster.Select(id => state.Heroes[id.Value].Name).ToImmutableList();
 
             var threats = ImmutableList.CreateBuilder<ForecastThreat>();

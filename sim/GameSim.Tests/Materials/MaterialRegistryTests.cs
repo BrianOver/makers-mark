@@ -52,13 +52,31 @@ public class MaterialRegistryTests
     }
 
     [Fact]
-    public void PricedPool_IsExactlyTheFiveMineOres_AndMaterialGradesMirrorsIt()
+    public void PricedPool_IsTheFiveMineOresPlusTheFourGloomwoodOres_AndMaterialGradesMirrorsIt()
     {
-        Assert.Equal(new[] { "copper", "iron", "steel", "mithril", "adamant" }, MaterialRegistry.PricedPool);
+        // Phase C U-C4: the Gloomwood's four ores join the pool in the SAME re-baseline that puts the
+        // Gloomwood into VenueRegistry.LiveRotation — a returning hero's loot must be priceable.
+        Assert.Equal(
+            new[] { "copper", "iron", "steel", "mithril", "adamant", "greenheart", "amberpitch", "moonresin", "heartwood" },
+            MaterialRegistry.PricedPool);
 
-        // RecipeTable.MaterialGrades is byte-identical to the old five-key map: same count, same keys.
-        Assert.Equal(5, RecipeTable.MaterialGrades.Count);
+        // RecipeTable.MaterialGrades is byte-identical to the pool: same count, same keys.
+        Assert.Equal(9, RecipeTable.MaterialGrades.Count);
         Assert.Equal(MaterialRegistry.PricedPool.OrderBy(k => k, StringComparer.Ordinal), RecipeTable.MaterialGrades.Keys);
+    }
+
+    [Theory]
+    [InlineData("greenheart", 36, 8)]
+    [InlineData("amberpitch", 42, 9)]
+    [InlineData("moonresin", 48, 10)]
+    [InlineData("heartwood", 54, 11)]
+    public void GloomwoodOres_ArePriced_AndGraded(string key, int expectedPrice, int expectedGrade)
+    {
+        Assert.True(MaterialRegistry.IsPriced(key));
+        Assert.Equal(expectedPrice, MaterialRegistry.UnitPrice(key));
+        Assert.Equal(expectedGrade, MaterialRegistry.Grade(key));
+        Assert.Equal(expectedPrice, OrePricing.UnitPrice(key)); // no throw — the reveal path is safe
+        Assert.Equal(expectedGrade, RecipeTable.MaterialGrades[key]);
     }
 
     [Fact]

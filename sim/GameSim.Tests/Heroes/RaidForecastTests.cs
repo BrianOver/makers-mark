@@ -18,7 +18,7 @@ public class RaidForecastTests
     {
         var state = HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed: 4242));
 
-        var plans = MusterPlan.Compute(state.Heroes, state.Bounties);
+        var plans = MusterPlan.Compute(state.Heroes, state.Bounties, state.Items);
         var forecast = RaidForecast.ForTomorrow(state);
 
         Assert.Equal(plans.Count, forecast.Count);
