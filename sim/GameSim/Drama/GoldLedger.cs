@@ -69,6 +69,12 @@ public static class GoldLedger
                 case RentPaid rent:
                     rows.Add(new GoldLedgerEntry("rent", -rent.AmountGold, "guild rent"));
                     break;
+                case GuildAssessmentPassed assessment:
+                    // Phase D (U-D2): the Guild Assessment debits the till only on a PASS
+                    // (DuesPaidGold). A missed assessment moves no gold (never driven negative — see
+                    // GuildAssessmentMissed's contract), so it needs no reconstruction row.
+                    rows.Add(new GoldLedgerEntry("guild dues", -assessment.DuesPaidGold, "guild assessment"));
+                    break;
                 case RecoveryStipendGranted stipend:
                     rows.Add(new GoldLedgerEntry("stipend", stipend.Amount, "destitution recovery"));
                     break;

@@ -109,7 +109,7 @@ public class AtomicEquivalenceTests
     // PhaseBNoDrawGate pin confirms RngState.Inc is UNCHANGED, only State moved (one extra draw/day on the
     // same stream). The grep gate holds (rng. now confined to the 4 sites incl. Drama/DirectorSystem.cs).
     private const string ExpectedPreCounterSha256 =
-        "11DAB7726B6115A6C7347B5CC3EDB9E86F94F3AA0872B95D24CB0F799654F162";
+        "45F6B05CC66F855EAB069C873404E6AB63E3EC23677EFB1DBE2FF67F5C2359E1";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

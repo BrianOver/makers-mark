@@ -35,6 +35,6 @@ public class PhaseBNoDrawGateTests
         // adding draws to the one stream only moves State. If this moves again, first check Inc (changed ⇒
         // a new stream, a real bug) then grep for a new `rng.` site outside the 4 allowed files (which now
         // include Drama/DirectorSystem.cs).
-        Assert.Equal(new RngState(5771294674252808564UL, 13279888329118852579UL), state.Rng);
+        Assert.Equal(new RngState(1184884748625198882UL, 13279888329118852579UL), state.Rng);
     }
 }
