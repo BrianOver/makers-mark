@@ -18,9 +18,11 @@ namespace GameSim;
 /// DETERMINISM CONTRACT (KTD4): every consumer — CLI, Godot, balance sim — must build
 /// the kernel through here so a seed means the same world everywhere.
 ///
-/// Morning: faction-drift → counter-queue → rent → destitution → rival-restock → recruit-trickle →
-/// gossip → hero-shopping → commissions → muster (drift settles standing for the day before anything
-/// reads it — KTD5; restock must precede shopping; gossip reads yesterday's stamped log).
+/// Morning: faction-drift → counter-queue → rent → guild-assessment → destitution → rival-restock →
+/// recruit-trickle → gossip → hero-shopping → commissions → muster (drift settles standing for the day
+/// before anything reads it — KTD5; restock must precede shopping; gossip reads yesterday's stamped
+/// log). Guild-assessment (Phase D U-D2) sits right after rent and before destitution — same
+/// no-softlock contract: a due-today assessment that empties the till is rescued the same Morning.
 /// CounterQueueSystem (PA3/PKD5) registers BEFORE HeroShoppingSystem AND before the once-per-Morning
 /// economy/drama systems (U1): it resolves the active counter customer (and may flip
 /// <c>CounterState.Closed</c> on queue exhaustion), so on the closing tick those systems' held-Morning
@@ -54,6 +56,7 @@ public static class GameComposition
             new FactionDriftSystem(), // Morning, FIRST — drift settles standing before anything reads it (KTD5); draws no RNG
             new CounterQueueSystem(), // U1: moved to SECOND (was after gossip). Resolves the stepped counter queue and flips CounterState.Closed on queue-exhaustion; it draws no RNG and is a no-op when Counter is null (BaselinePlayer path), so running it earlier leaves every gated trace byte-identical. Placing it ahead of the once-per-Morning systems below lets their held-Morning guards see Closed==true on the closing tick (explicit or exhaustion) so they fire exactly once per calendar Morning. Still BEFORE hero-shopping (PA3/PKD5).
             new RentSystem(), // Game-Feel Plan G3: BEFORE the no-softlock floor — see class comment; draws no RNG. Held-Morning guarded (U1).
+            new GuildAssessmentSystem(), // Phase D U-D2: the Guild Assessment heartbeat — its own 7-day dues cadence, ALSO before the no-softlock floor (same contract as RentSystem, immediately above); draws no RNG. Held-Morning guarded.
             new DestitutionRecoverySystem(), // Playable Core U5: no-softlock floor (R5/KD3); draws no RNG, never fires solvent — stream unchanged
             new RivalRestockSystem(), // Held-Morning guarded (U1)
             new RecruitSystem(), // Held-Morning guarded (U1)
