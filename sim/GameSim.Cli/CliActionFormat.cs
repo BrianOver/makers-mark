@@ -37,6 +37,11 @@ public static class CliActionFormat
         DeclineCommissionAction a => $"decline-commission {a.Hero}",
         HonorMemorialAction a => $"honor-memorial {a.Hero}",
         ReforgeHeirloomAction a => $"reforge-heirloom {a.SourceItem} {a.RecipeId} {a.MaterialKey}",
+        // Phase D (U-D1): the five power-matched gold sinks' round-trip verbs.
+        UpgradeForgeAction => "upgrade-forge",
+        BuyForgeSupplyAction a => $"buy-supply {a.SupplyKey} {a.Quantity}",
+        MasterworkAttemptAction a => $"masterwork {a.RecipeId} {a.MaterialKey}",
+        CommissionLegendaryWorkAction a => $"commission-legendary {a.RecipeId} {a.MaterialKey}",
         OpenCounterAction => "counter open",
         PresentItemAction a => $"counter present {a.Item}",
         SuggestItemAction a => $"counter suggest {a.Item}",

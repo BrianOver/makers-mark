@@ -28,6 +28,10 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(DeclineCommissionAction), "declineCommission")]
 [JsonDerivedType(typeof(HonorMemorialAction), "honorMemorial")]
 [JsonDerivedType(typeof(ReforgeHeirloomAction), "reforgeHeirloom")]
+[JsonDerivedType(typeof(UpgradeForgeAction), "upgradeForge")]
+[JsonDerivedType(typeof(BuyForgeSupplyAction), "buyForgeSupply")]
+[JsonDerivedType(typeof(MasterworkAttemptAction), "masterworkAttempt")]
+[JsonDerivedType(typeof(CommissionLegendaryWorkAction), "commissionLegendaryWork")]
 public abstract record PlayerAction;
 
 /// <summary>Craft a recipe using a material grade key from <see cref="PlayerState.Materials"/> (R4).
@@ -150,6 +154,36 @@ public sealed record HonorMemorialAction(HeroId Hero) : PlayerAction;
 /// <paramref name="MaterialKey"/> stock — the new item inherits the fallen's legend-line
 /// (<see cref="Item.HeirloomLineage"/>). Deterministic; draws the same single craft roll as a normal craft.</summary>
 public sealed record ReforgeHeirloomAction(ItemId SourceItem, string RecipeId, string MaterialKey) : PlayerAction;
+
+/// <summary>
+/// Phase D (U-D1, gold sink 1 — "forge tier"): pay to advance the workshop's forge from its
+/// current tier to the next (Forge I -&gt; V), spending an exponential fixed gold cost PLUS a
+/// flat quantity of the corresponding Mine floor's ore (lock-and-key — you cannot buy past what
+/// the Mine has actually yielded). No parameters: always buys the single next tier.
+/// See <c>GameSim.Economy.ForgeTierHandlers</c> for the cost table and progress tracking.</summary>
+public sealed record UpgradeForgeAction() : PlayerAction;
+
+/// <summary>
+/// Phase D (U-D1, gold sink 3a): buy forge-supply consumables (coal/flux) from the standing
+/// Morning supplier. Coal is a cheap, flat repeatable buy; flux is the rare, premium consumable
+/// <see cref="MasterworkAttemptAction"/> spends. See <c>GameSim.Economy.ForgeSupplyHandlers</c>.</summary>
+public sealed record BuyForgeSupplyAction(string SupplyKey, int Quantity) : PlayerAction;
+
+/// <summary>
+/// Phase D (U-D1, gold sink 3b): spend coal + rare flux + gold + the recipe's materials on a
+/// premium, non-random forging session — gated on the workshop's forge tier (see
+/// <see cref="UpgradeForgeAction"/>). Guarantees an outcome at or above what a lucky ordinary
+/// craft could roll; see <c>GameSim.Economy.MasterworkAttemptHandlers</c> for the deterministic
+/// (RNG-free) quality rule.</summary>
+public sealed record MasterworkAttemptAction(string RecipeId, string MaterialKey) : PlayerAction;
+
+/// <summary>
+/// Phase D (U-D1, gold sink 5): commission one of the era's capped legendary works — a large,
+/// one-off gold sink (scaled by forge tier) that guarantees a Masterwork-grade item outright, no
+/// roll. Capped per campaign (see <c>GameSim.Economy.LegendaryCommissionHandlers</c>); the
+/// narrative sibling of the existing (materials-only) <see cref="ReforgeHeirloomAction"/> memorial
+/// reforge.</summary>
+public sealed record CommissionLegendaryWorkAction(string RecipeId, string MaterialKey) : PlayerAction;
 
 /// <summary>An action the kernel refused, with a typed reason — never a silent drop.</summary>
 public sealed record RejectedAction(PlayerAction Action, string Reason);
