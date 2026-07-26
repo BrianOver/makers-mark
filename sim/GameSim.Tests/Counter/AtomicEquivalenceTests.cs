@@ -91,8 +91,17 @@ public class AtomicEquivalenceTests
     // (Class 2, the intended combat re-baseline). The idle hash moves for REAL; determinism holds and
     // NO new draw SITE was added (grep clean; PhaseBNoDrawGate Inc unchanged, only State moved = same
     // stream, different draw count from decision/combat changes). Balance re-fit checked deliberately.
+    // RE-BASELINED (Phase C U-C1 craft-modifier layer slice 1, 2026-07-25): **Class 0a — shape only,
+    // values identical.** Three trailing nullable modifier slots (Item.QuenchOil/Rune/Fitting, all
+    // null) plus CombatEvent.ModifierHpDelta (default 0) now serialize on every item and every combat
+    // event in the save. The idle BaselinePlayer crafts no modifiers, so every slot stays null and
+    // every effect (flee-oil threshold shift, Leech heal, Lodestone ore) is a no-op — the RNG stream
+    // is byte-identical (the PhaseBNoDrawGate RngState pin is UNCHANGED, the grep gate holds, no new
+    // draw site) and every combat value is identical. Only the serialized shape moved. Same class as
+    // the SignedName / Memorial.Honored field additions. The Class-2 combat re-baseline arrives with
+    // slice 2, when forge composition actually stamps modifiers onto crafted gear.
     private const string ExpectedPreCounterSha256 =
-        "46059EE1A1DED4488D9653C2FAFB98FBE90AE203279C981317771CE340F09198";
+        "0951908C7C529CC0D8FFC0ECBFEC48F7565505BA8216DD86541FF9B537D47359";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

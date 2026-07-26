@@ -5,6 +5,23 @@ namespace GameSim.Contracts;
 /// <summary>Integer combat stats. No floats in the sim (cross-OS determinism).</summary>
 public readonly record struct ItemStats(int Attack, int Defense, int Weight);
 
+/// <summary>
+/// Phase C U-C1 craft-modifier family. Slot-exclusive (Vagrant-Story trinity + Hades slot
+/// exclusivity): an item carries at most one modifier per family, so a fully-composed masterwork
+/// holds up to one <see cref="QuenchOil"/> + one <see cref="Rune"/> + one <see cref="Fitting"/>.
+/// </summary>
+public enum ModifierFamily { QuenchOil, Rune, Fitting }
+
+/// <summary>
+/// Phase C U-C1: a craft modifier stamped onto an item at the forge. DATA only — the integer
+/// effects are resolved from <c>GameSim.Crafting.CraftModifiers</c> by <see cref="Id"/>, never
+/// stored here, so the resolver reads one registry table and add-on modifiers ride the same path
+/// (the <see cref="ConsumableEffect"/> precedent). <see cref="Tier"/> (1..2, material-tier capped)
+/// scales the registry effect. No stat-only modifiers: every registered effect is an integer delta
+/// or flag on a hero-AI decision threshold, never a passive Attack/Defense bump.
+/// </summary>
+public sealed record CraftModifier(string Id, ModifierFamily Family, int Tier);
+
 /// <summary>Who forged the item. Player-crafted items carry the mark; rival-vendor goods do not (R5).</summary>
 public sealed record MakersMark(string CrafterName, int CraftedOnDay);
 
@@ -61,6 +78,30 @@ public sealed record Item(
 
     /// <summary>True once this item was reforged from a fallen hero's gear (Wave 4c).</summary>
     public bool IsHeirloom => HeirloomLineage is not null;
+
+    /// <summary>Phase C U-C1: survival quench-oil treatment on this item, or null. Slot-exclusive
+    /// per <see cref="ModifierFamily"/>. Trailing init member (save-compat — old saves have no
+    /// property → null → no modifier). DATA; effects resolve through
+    /// <c>GameSim.Crafting.CraftModifiers</c>.</summary>
+    public CraftModifier? QuenchOil { get; init; } = null;
+
+    /// <summary>Phase C U-C1: combat rune on this item, or null. Trailing init (save-compat).</summary>
+    public CraftModifier? Rune { get; init; } = null;
+
+    /// <summary>Phase C U-C1: movement/economy fitting on this item, or null. Trailing init
+    /// (save-compat).</summary>
+    public CraftModifier? Fitting { get; init; } = null;
+
+    /// <summary>Enumerates the item's non-null modifier slots (forge composition + resolver aggregation).</summary>
+    public IEnumerable<CraftModifier> Modifiers
+    {
+        get
+        {
+            if (QuenchOil is { } q) yield return q;
+            if (Rune is { } r) yield return r;
+            if (Fitting is { } f) yield return f;
+        }
+    }
 
     public bool PlayerCrafted => Mark is not null;
 }
