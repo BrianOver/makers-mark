@@ -26,16 +26,15 @@ public class PhaseBNoDrawGateTests
             state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
         }
 
-        // RE-PINNED for B2 (hero traits, Class 1). B1 held this BYTE-IDENTICAL to the pre-B1 value
-        // (Class 0 — decisions unchanged, so the draw COUNT was identical). B2 gives heroes shop teeth,
-        // so on this idle trace who buys/refuses what changes → gear → combat length → the existing
-        // stream advances a DIFFERENT number of steps. The tell that this is legitimate and NOT a new
-        // draw site: `Inc` (the stream identity) is UNCHANGED (13279888329118852579) — only `State`
-        // (position) moved. A new/duplicated RNG stream would change Inc; a reordered/extra draw within
-        // the SAME stream only moves State, which is exactly what a decision-count change does. The real
-        // "no new draw site" guarantee for Class-1 units is the grep (rng.* confined to the 3 kernel
-        // files); this pin now guards against an UNEXPLAINED future move. If it moves, first check Inc
-        // (changed ⇒ a new stream, a real bug) then grep for a new `rng.` site.
-        Assert.Equal(new RngState(10819530273638390806UL, 13279888329118852579UL), state.Rng);
+        // RE-BASELINED (Phase C U-C3 drama director): new single daily draw on the EXISTING kernel stream
+        // (Inc unchanged, State advanced) — Class-2. DirectorSystem now polls once every Morning and draws
+        // ONE value from the SAME stream to pick an incident, so over this 30-day idle trace the stream
+        // advances an extra ~30 draws (plus the downstream combat/recruit re-shuffle those draws cause).
+        // The tell this is legitimate and NOT a new stream: `Inc` (the stream identity) is UNCHANGED
+        // (13279888329118852579) — only `State` (position) moved. A new/duplicated Pcg32 would change Inc;
+        // adding draws to the one stream only moves State. If this moves again, first check Inc (changed ⇒
+        // a new stream, a real bug) then grep for a new `rng.` site outside the 4 allowed files (which now
+        // include Drama/DirectorSystem.cs).
+        Assert.Equal(new RngState(5771294674252808564UL, 13279888329118852579UL), state.Rng);
     }
 }

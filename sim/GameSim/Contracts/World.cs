@@ -77,11 +77,21 @@ public sealed record CounterState(
 /// <summary>
 /// Per-venue mutable world state (M4, P9 dens / P5 closures): days since a party last cleared
 /// ground here, the den's escalation meter (per-mille), and whether routes to it are closed.
-/// Written by post-weekend systems (M11a escalation, M6 closures) — until they land, a venue
-/// simply has no entry and the game reads it as untouched/open. APPEND fields via contracts
-/// micro-PR only (KTD4).
+/// Written by the Phase C U-C3 <c>DirectorSystem</c> den-escalation pass (the M11a escalation this
+/// record was reserved for) — until a venue is first escalated it has no entry and the game reads it
+/// as untouched/open. APPEND fields via contracts micro-PR only (KTD4).
+/// <para>Phase C U-C3 den escalation uses <see cref="InfectionPerMille"/> as the ThreatPm meter this
+/// record was pre-declared to hold ("the den's escalation meter (per-mille)"): a scheduled daily
+/// increment raises it, cleared expeditions lower it, <see cref="ThreatTier"/> steps up as it crosses
+/// fixed thresholds (the category shift), and <see cref="Closed"/> latches true at the cap (lockdown).
+/// No sim rule reads these fields back into routing or combat — den escalation is recorded drama
+/// state, so it perturbs no seed's expedition outcomes beyond the shared-stream draw the director adds.</para>
 /// </summary>
-public sealed record VenueState(int DaysUntouched, int InfectionPerMille, bool Closed);
+/// <param name="ThreatTier">Phase C U-C3 den-escalation category tier (0..3), stepped up as
+/// <see cref="InfectionPerMille"/> crosses fixed thresholds. TRAILING with a default so old saves and
+/// existing constructors (which never named it) deserialize/compile to tier 0 — the Standing/Trinket
+/// trailing-optional precedent.</param>
+public sealed record VenueState(int DaysUntouched, int InfectionPerMille, bool Closed, int ThreatTier = 0);
 
 /// <summary>
 /// The guild-rent deadline heartbeat (Game-Feel Plan G3): due every <see cref="CadenceDays"/>
@@ -176,6 +186,13 @@ public sealed record GameState(
     /// and deserializes to empty, byte-identical to today. The Morning <c>CommissionSystem</c> posts
     /// them; player accept/decline flips <see cref="Commission.Accepted"/>; fulfillment/expiry drains them.</summary>
     public ImmutableList<Commission> Commissions { get; init; } = ImmutableList<Commission>.Empty;
+
+    /// <summary>Phase C (U-C3): the drama director's pacing state (tension accumulator + BuildUp/Peak/
+    /// Relax machine + refire/drought counters). Trailing init member (the InFlight/Venues/Counter/Rent/
+    /// Commissions save-compat precedent) — a pre-U-C3 save has no property and deserializes to
+    /// <see cref="DirectorState.Empty"/>, a fresh director. The Morning <c>DirectorSystem</c> is the only
+    /// writer; it advances this by exactly one seeded draw per calendar day on the existing kernel stream.</summary>
+    public DirectorState Director { get; init; } = DirectorState.Empty;
 }
 
 /// <summary>Wave 3: one hero's gear request — forge <see cref="Slot"/> at or above
