@@ -46,14 +46,25 @@ public abstract record PlayerAction;
 /// Phase A (always null); Phase B registers derived types via a contracts micro-PR.</para>
 /// <para><paramref name="SubScores"/> is the three forge-beat scores (smelt/forge/quench), stored
 /// verbatim on the crafted item for Evening ledger flavor ("edge quenched brittle") — DATA, never
-/// rules. All three params TRAIL with null defaults, so old saves/actions and existing positional
+/// rules.</para>
+/// <para>Phase C U-C1 slice 2: <paramref name="RequestQuenchOil"/>/<paramref name="RequestRune"/>/
+/// <paramref name="RequestFitting"/> are the craft-modifier ids the player composes onto this craft
+/// (see <c>GameSim.Crafting.CraftModifiers</c>). <see cref="Crafting.CraftingHandlers"/> validates
+/// each against the finished grade + material (slot count, tier cap, family exclusivity) and silently
+/// drops any the grade can't hold — so an over-ambitious request never fails the craft, it just forges
+/// plainer. Null = no modifier requested (the default; the idle BaselinePlayer requests none, so the
+/// golden trace is unaffected).</para>
+/// <para>All params TRAIL with null defaults, so old saves/actions and existing positional
 /// constructors deserialize/compile unchanged (KTD4: the grade rides the ActionLog, replays stay exact).</para></summary>
 public sealed record CraftAction(
     string RecipeId,
     string MaterialKey,
     int? PerformanceGrade = null,
     CraftPuzzleInput? Puzzle = null,
-    ImmutableList<int>? SubScores = null) : PlayerAction;
+    ImmutableList<int>? SubScores = null,
+    string? RequestQuenchOil = null,
+    string? RequestRune = null,
+    string? RequestFitting = null) : PlayerAction;
 
 /// <summary>
 /// Dual-mode craft seam (PKD1): structured puzzle params a profession's crafting logic scores

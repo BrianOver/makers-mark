@@ -50,6 +50,13 @@ public partial class ForgePanel : SimPanel
     private Label? _feedback;
     private Label? _materialsLabel;
     private OptionButton? _materialSelect;
+
+    // Phase C U-C1 slice 2: craft-modifier composition selectors (oil / rune / fitting). "(none)" is
+    // index 0; the finished grade + material decide how many actually take (CraftingHandlers).
+    private OptionButton? _oilSelect;
+    private OptionButton? _runeSelect;
+    private OptionButton? _fitSelect;
+    private const string ModifierNoneOption = "(none)";
     private VBoxContainer? _vendorRows;
     private VBoxContainer? _recipeRows;
     private VBoxContainer? _talentRows;
@@ -262,11 +269,16 @@ public partial class ForgePanel : SimPanel
         }
 
         var material = SelectedMaterialOr(recipe!.MaterialKey);
-        Adapter.Queue(new CraftAction(recipeId, material));
+        var oil = SelectedModifierId(_oilSelect, GameSim.Contracts.ModifierFamily.QuenchOil);
+        var rune = SelectedModifierId(_runeSelect, GameSim.Contracts.ModifierFamily.Rune);
+        var fitting = SelectedModifierId(_fitSelect, GameSim.Contracts.ModifierFamily.Fitting);
+        Adapter.Queue(new CraftAction(recipeId, material, RequestQuenchOil: oil, RequestRune: rune, RequestFitting: fitting));
         // Craft has no phase term (CraftingHandlers accepts every phase) — the batch always
         // lands against whatever phase the sim is CURRENTLY sitting at (GameKernel.Tick applies
         // the queued batch before advancing), so the resolving phase IS the current one.
-        _feedback!.Text = $"queued: craft {recipeId} with {material}. " +
+        var mods = new[] { oil, rune, fitting }.Where(m => m is not null).ToArray();
+        var modText = mods.Length == 0 ? string.Empty : $" + [{string.Join(", ", mods)}]";
+        _feedback!.Text = $"queued: craft {recipeId} with {material}{modText}. " +
             $"Queued — resolves when {Adapter.CurrentState.Phase} ticks. Press Advance or wait.";
     }
 
@@ -460,6 +472,39 @@ public partial class ForgePanel : SimPanel
         return selected <= 0 ? recipeDefault : _materialSelect.GetItemText(selected);
     }
 
+    /// <summary>Phase C U-C1 slice 2: an OptionButton listing "(none)" then every registered modifier
+    /// of <paramref name="family"/> by display name, in <c>CraftModifiers.All</c> order (so index-1
+    /// maps back to the same family-filtered id list in <see cref="SelectedModifierId"/>).</summary>
+    private static OptionButton BuildModifierSelect(string name, GameSim.Contracts.ModifierFamily family)
+    {
+        var select = new OptionButton { Name = name };
+        select.AddItem(ModifierNoneOption);
+        foreach (var id in GameSim.Crafting.CraftModifiers.All)
+        {
+            if (GameSim.Crafting.CraftModifiers.Definition(id) is { } def && def.Family == family)
+            {
+                select.AddItem(def.DisplayName);
+            }
+        }
+
+        return select;
+    }
+
+    /// <summary>The registered modifier id the given selector points at, or null for "(none)".</summary>
+    private static string? SelectedModifierId(OptionButton? select, GameSim.Contracts.ModifierFamily family)
+    {
+        var idx = select?.Selected ?? 0;
+        if (idx <= 0)
+        {
+            return null;
+        }
+
+        var ids = GameSim.Crafting.CraftModifiers.All
+            .Where(id => GameSim.Crafting.CraftModifiers.IsFamily(id, family))
+            .ToList();
+        return idx - 1 < ids.Count ? ids[idx - 1] : null;
+    }
+
     private void EnsureBuilt()
     {
         if (_recipeRows is not null)
@@ -483,6 +528,17 @@ public partial class ForgePanel : SimPanel
 
         _materialSelect.ItemSelected += _ => Refresh();
         selectRow.AddChild(_materialSelect);
+
+        // Phase C U-C1 slice 2: modifier composition — one selector per family, each populated with
+        // "(none)" plus the registered modifiers of that family. Read in OnCraftPressed.
+        AddHeader(body, "MODIFIERS (OPTIONAL)");
+        var modRow = AddRow(body);
+        _oilSelect = BuildModifierSelect("OilSelect", GameSim.Contracts.ModifierFamily.QuenchOil);
+        _runeSelect = BuildModifierSelect("RuneSelect", GameSim.Contracts.ModifierFamily.Rune);
+        _fitSelect = BuildModifierSelect("FitSelect", GameSim.Contracts.ModifierFamily.Fitting);
+        modRow.AddChild(_oilSelect);
+        modRow.AddChild(_runeSelect);
+        modRow.AddChild(_fitSelect);
 
         AddHeader(body, "MORNING VENDOR");
         _vendorRows = new VBoxContainer { Name = "VendorRows" };
