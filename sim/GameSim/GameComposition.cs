@@ -51,7 +51,8 @@ public static class GameComposition
 {
     public static GameKernel BuildKernel() => new(
         ImmutableList.Create<IPhaseSystem>(
-            new FactionDriftSystem(), // Morning, FIRST — drift settles standing before anything reads it (KTD5); draws no RNG
+            new DirectorSystem(), // Phase C U-C3: Morning, FIRST — the drama director's single daily seeded poll (the 4th rng. site) + den escalation. Fixed at the head of the Morning block so its one draw sits at a stable stream position ahead of RecruitSystem's (the next Morning consumer, via HeroRoster). Held-Morning guarded (polls once per calendar Morning). Its per-day draw perturbs the shared stream (the deliberate U-C3 re-baseline); den escalation writes recorded drama state that no routing/combat rule reads back.
+            new FactionDriftSystem(), // Morning — drift settles standing before anything reads it (KTD5); draws no RNG
             new CounterQueueSystem(), // U1: moved to SECOND (was after gossip). Resolves the stepped counter queue and flips CounterState.Closed on queue-exhaustion; it draws no RNG and is a no-op when Counter is null (BaselinePlayer path), so running it earlier leaves every gated trace byte-identical. Placing it ahead of the once-per-Morning systems below lets their held-Morning guards see Closed==true on the closing tick (explicit or exhaustion) so they fire exactly once per calendar Morning. Still BEFORE hero-shopping (PA3/PKD5).
             new RentSystem(), // Game-Feel Plan G3: BEFORE the no-softlock floor — see class comment; draws no RNG. Held-Morning guarded (U1).
             new DestitutionRecoverySystem(), // Playable Core U5: no-softlock floor (R5/KD3); draws no RNG, never fires solvent — stream unchanged

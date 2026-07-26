@@ -46,6 +46,8 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(HeirloomReforged), "heirloomReforged")]
 [JsonDerivedType(typeof(HeroDecisionExplained), "heroDecisionExplained")]
 [JsonDerivedType(typeof(HeroRankUp), "heroRankUp")]
+[JsonDerivedType(typeof(IncidentFired), "incidentFired")]
+[JsonDerivedType(typeof(DenThreatShifted), "denThreatShifted")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -231,3 +233,19 @@ public sealed record MemorialHonored(HeroId Hero, string HeroName) : GameEvent;
 /// carrying their legend-line forward (<see cref="Item.HeirloomLineage"/>). The dead persist as
 /// inheritance (R6).</summary>
 public sealed record HeirloomReforged(ItemId NewItem, ItemId SourceItem, string Lineage) : GameEvent;
+
+/// <summary>Phase C (U-C3): the drama director fired an incident from its Morning poll. Carries the
+/// stable catalog <paramref name="IncidentId"/>, its <paramref name="Category"/> (gated by the town's
+/// progression tier) and <paramref name="Magnitude"/> (gated by survived-count) — NEVER by shop wealth —
+/// the <paramref name="VenueId"/> den it escalates, and the <paramref name="TensionAfter"/> the release
+/// left behind. A drama surface signal; it changes no combat or economy rule directly.</summary>
+public sealed record IncidentFired(
+    string IncidentId, IncidentCategory Category, IncidentMagnitude Magnitude, string VenueId, int TensionAfter) : GameEvent;
+
+/// <summary>Phase C (U-C3): a den's escalation crossed a threshold — its category
+/// <paramref name="ThreatTier"/> stepped (up or, on a cleared-expedition relief, down) or it latched
+/// into <paramref name="Lockdown"/> at the cap. <paramref name="ThreatPermille"/> is the post-change
+/// meter (<c>VenueState.InfectionPerMille</c>). Recorded drama state only — no routing/combat rule
+/// reads it back, so it perturbs no seed's outcomes.</summary>
+public sealed record DenThreatShifted(
+    string VenueId, int ThreatPermille, int ThreatTier, bool Lockdown) : GameEvent;
