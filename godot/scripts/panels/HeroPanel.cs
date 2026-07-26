@@ -91,8 +91,17 @@ public partial class HeroPanel : SimPanel
         var (kills, saves) = Deeds(hero);
         AddLabel(body, $"  deeds: {kills} kills, {saves} saves");
 
-        // B2 (traits with shop teeth) adds a trait-chip row here — StableHash(HeroId, Name)
-        // derived, 2/hero, no flavor-only entries. Nothing is invented in this unit.
+        // B2 (traits with shop teeth): one chip per derived trait (StableHash(HeroId, Name), 2/hero) —
+        // mirrors the CLI `hero <name>` card. Derived on read, never stored.
+        var traits = GameSim.Heroes.TraitRegistry.TraitsFor(hero.Id, hero.Name);
+        if (!traits.IsDefaultOrEmpty)
+        {
+            var traitRow = AddRow(body);
+            foreach (var traitId in traits)
+            {
+                traitRow.AddChild(StatChip("Trait", GameSim.Heroes.TraitRegistry.Definition(traitId).DisplayName));
+            }
+        }
     }
 
     /// <summary>Sum of every <see cref="ItemMemory.Kills"/>/<see cref="ItemMemory.Saves"/> across

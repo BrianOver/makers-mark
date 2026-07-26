@@ -160,7 +160,7 @@ public class CliWiringTests
         }
 
         var snapshot = DemandBoard.Snapshot(state);
-        var muster = DemandNarration.MusterLine(ImmutableList<PartyPlan>.Empty, snapshot);
+        var muster = DemandNarration.MusterLine(ImmutableList<PartyPlan>.Empty, snapshot, state.Heroes);
         var telegraph = string.Join('\n', DemandNarration.TelegraphLines(snapshot));
 
         if (!snapshot.DepthStalls.IsEmpty)

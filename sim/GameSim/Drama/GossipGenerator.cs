@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Linq;
 using GameSim.Contracts;
 using GameSim.Flavor;
@@ -32,18 +34,36 @@ namespace GameSim.Drama;
 /// facts (faction display name, direction word) come straight off the EVENT — never a
 /// <see cref="Factions.FactionRegistry"/> lookup here, since <see cref="Generate"/> is handed only
 /// heroes + items (KTD7).</para>
+///
+/// <para><b>Salience v2 (Phase B B3, R-B6).</b> The ranking below is involvement, THEN relationship
+/// affinity, THEN recency. <paramref name="affinityLookup"/> (optional; <see cref="GameSim.Heroes.RelationshipSystem.Affinity"/>
+/// in production, via <see cref="GossipSystem"/>) reports the absolute decayed relationship magnitude
+/// between two hero ids — a hero who shares a comrade-bond, grudge, grief, or rivalry-seed with
+/// ANOTHER hero also in today's news gets a salience bump, so the tavern's news skews toward pairs
+/// with real history, not just raw event count. A null lookup (every existing call site that predates
+/// B3) degrades to exactly the old v1 ranking — involvement then recency, byte-identical — so this is
+/// purely additive for callers that opt in.</para>
 /// </summary>
 public static class GossipGenerator
 {
     /// <summary>Cap on gossip lines generated per day.</summary>
     public const int MaxLinesPerDay = 3;
 
+    /// <summary>SubjectKey prefix for a hero-anchored tellable event (paired with
+    /// <see cref="ParseHeroSubjectId"/> below) — a faction's key uses "faction:" instead and never
+    /// matches, so faction subjects fall out of the affinity pass automatically.</summary>
+    private const string HeroSubjectPrefix = "hero:";
+
+    private static int ParseHeroSubjectId(string subjectKey) =>
+        int.Parse(subjectKey.AsSpan(HeroSubjectPrefix.Length), CultureInfo.InvariantCulture);
+
     public static ImmutableList<GossipEmitted> Generate(
         IEnumerable<GameEvent> stampedEvents,
         ImmutableSortedDictionary<int, Hero> heroes,
         ImmutableSortedDictionary<int, Item> items,
         ulong campaignId,
-        int maxLines = MaxLinesPerDay)
+        int maxLines = MaxLinesPerDay,
+        Func<int, int, int>? affinityLookup = null)
     {
         var events = stampedEvents as IReadOnlyList<GameEvent> ?? stampedEvents.ToList();
 
@@ -98,8 +118,43 @@ public static class GossipGenerator
             .GroupBy(t => t.SubjectKey, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
 
+        // Salience v2 (B3): affinity bonus per hero subject = sum of |relationship affinity| to every
+        // OTHER hero subject also in today's tellable set. Faction subjects and (with a null lookup)
+        // every existing caller score zero here, so ThenByDescending is a no-op tie-break in that case
+        // — the EventId recency key below still decides everything, exactly like v1.
+        var heroSubjectIds = affinityLookup is null
+            ? ImmutableArray<int>.Empty
+            : tellable
+                .Select(t => t.SubjectKey)
+                .Distinct(StringComparer.Ordinal)
+                .Where(key => key.StartsWith(HeroSubjectPrefix, StringComparison.Ordinal))
+                .Select(ParseHeroSubjectId)
+                .ToImmutableArray();
+
+        var affinityScore = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (affinityLookup is not null)
+        {
+            foreach (var subjectKey in heroSubjectIds.Select(id => HeroSubjectPrefix + id.ToString(CultureInfo.InvariantCulture)))
+            {
+                var heroId = ParseHeroSubjectId(subjectKey);
+                var score = 0;
+                foreach (var otherId in heroSubjectIds)
+                {
+                    if (otherId == heroId)
+                    {
+                        continue;
+                    }
+
+                    score += Math.Abs(affinityLookup(heroId, otherId));
+                }
+
+                affinityScore[subjectKey] = score;
+            }
+        }
+
         var ranked = tellable
             .OrderByDescending(t => involvement[t.SubjectKey])
+            .ThenByDescending(t => affinityScore.TryGetValue(t.SubjectKey, out var score) ? score : 0)
             .ThenByDescending(t => t.Event.Id.Value)
             .Take(maxLines);
 

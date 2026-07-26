@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
+using GameSim.Counter;
 using GameSim.Drama;
 using GameSim.Heroes;
 using GameSim.Narrative;
@@ -21,7 +22,7 @@ public static class EventNarration
     public static string? Line(GameEvent gameEvent, GameState state) => gameEvent switch
     {
         ItemCrafted crafted =>
-            $"  ⚒ forged {ItemName(state, crafted.Item)} [{crafted.Quality}]",
+            $"  ⚒ forged I{crafted.Item.Value} {ItemName(state, crafted.Item)} [{crafted.Quality}] (stock it: stock I{crafted.Item.Value} <price>)",
         ItemSold sold when sold.FromPlayerShop =>
             $"  $ {HeroName(state, sold.Buyer)} bought {ItemName(state, sold.Item)} for {sold.Price}g from YOUR shop",
         HeroPassedOnItem pass =>
@@ -42,11 +43,11 @@ public static class EventNarration
         CustomerApproached approached =>
             $"  → {HeroName(state, approached.Hero)} steps up to the counter",
         CustomerCountered countered =>
-            $"  ↔ {HeroName(state, countered.Hero)} offers {countered.OfferGold}g",
+            $"  ↔ {TraitFlavoredHagglerName(state, countered.Hero)} offers {countered.OfferGold}g",
         CounterSaleClosed sale when sale.Pinned =>
-            $"  ★ {HeroName(state, sale.Hero)} buys {ItemName(state, sale.Item)} for {sale.Price}g — you read them perfectly",
+            $"  ★ {TraitFlavoredBuyerName(state, sale.Hero)} buys {ItemName(state, sale.Item)} for {sale.Price}g — you read them perfectly",
         CounterSaleClosed sale =>
-            $"  $ {HeroName(state, sale.Hero)} buys {ItemName(state, sale.Item)} for {sale.Price}g at the counter",
+            $"  $ {TraitFlavoredBuyerName(state, sale.Hero)} buys {ItemName(state, sale.Item)} for {sale.Price}g at the counter",
         CustomerWalked walked =>
             $"  ~ {TraitFlavoredName(state, walked.Hero, walked.Reason)} walks away from the counter: {walked.Reason}",
         MemorialHonored honored =>
@@ -98,7 +99,7 @@ public static class EventNarration
         // once the Morning's own verbs resolve. It restates the prior Evening's telegraph (same
         // DemandBoard.Snapshot shape) so question -> answer -> question is visible, not just
         // "parties departed" with no callback to what was asked for.
-        PartiesFormed formed => DemandNarration.MusterLine(formed.Parties, DemandBoard.Snapshot(state)),
+        PartiesFormed formed => DemandNarration.MusterLine(formed.Parties, DemandBoard.Snapshot(state), state.Heroes),
 
         // FactionStandingShifted is deliberately NOT a case here: OreMarketHandlers/FactionDriftSystem
         // already route it through GossipGenerator into a GossipEmitted line (the existing case
@@ -151,6 +152,59 @@ public static class EventNarration
         if (reason.Contains("patience ran out", StringComparison.Ordinal) && traits.Contains(TraitId.Stubborn))
         {
             return $"{TraitRegistry.Definition(TraitId.Stubborn).DisplayName} {name}";
+        }
+
+        return name;
+    }
+
+    /// <summary>Phase B (B5, attribution barks): prefixes the hero's name with the Price
+    /// Sensitivity axis's <see cref="TraitDefinition.DisplayName"/> on every haggle sale THIS hero
+    /// closes — unlike <see cref="TraitFlavoredName"/>'s reason-text match, Thrifty/Spendthrift's
+    /// tooth (<see cref="Heroes.TraitEffects.PriceSensitivityPermille"/>) shifts
+    /// <c>WillingnessModel.TrueWillingness</c> on EVERY counter this hero is party to, pinned or
+    /// not (<c>TraitDivergenceTests.PriceSensitivity_Spendthrift_AcceptsAsAPin_ThePriceThatFleecesThrifty</c>
+    /// proves the identical countered price pins for one and fleeces the other) — so unlike a pass
+    /// reason that only exists sometimes, this axis's tooth is active on every sale, and the flavor
+    /// fires unconditionally for the two traits that hold it.</summary>
+    private static string TraitFlavoredBuyerName(GameState s, HeroId id)
+    {
+        var name = HeroName(s, id);
+        if (!s.Heroes.TryGetValue(id.Value, out var hero))
+        {
+            return name;
+        }
+
+        var traits = TraitRegistry.TraitsFor(hero.Id, hero.Name);
+        if (traits.Contains(TraitId.Spendthrift))
+        {
+            return $"{TraitRegistry.Definition(TraitId.Spendthrift).DisplayName} {name}";
+        }
+
+        return traits.Contains(TraitId.Thrifty) ? $"{TraitRegistry.Definition(TraitId.Thrifty).DisplayName} {name}" : name;
+    }
+
+    /// <summary>Phase B (B5): prefixes the hero's name with <see cref="TraitId.Patient"/>'s
+    /// <see cref="TraitDefinition.DisplayName"/> once haggling has reached the band's round cap —
+    /// only reachable after at least two HoldFirms hold. A neutral hero CAN reach that same round
+    /// once (baseline <c>InitialPatienceRounds</c> survives exactly that far), but a Stubborn hero
+    /// never does (their shorter fuse walks first — <see cref="TraitFlavoredName"/>'s "patience ran
+    /// out" branch covers that line instead), and gating this flavor on <c>traits.Contains(Patient)</c>
+    /// means it only ever decorates the hero whose bonus round (<see cref="Heroes.TraitEffects.PatientRoundsBonus"/>)
+    /// is actually the reason they are still at the table this deep — mirroring the exact 2-HoldFirm
+    /// scenario <c>TraitDivergenceTests.HagglePatience_Patient_SurvivesTwoHoldFirms_ThatStubborn_WalksOn</c>
+    /// pins (Patient offers again at the round cap; Stubborn walks instead).</summary>
+    private static string TraitFlavoredHagglerName(GameState s, HeroId id)
+    {
+        var name = HeroName(s, id);
+        if (!s.Heroes.TryGetValue(id.Value, out var hero) || s.Counter is not { } counter)
+        {
+            return name;
+        }
+
+        if (counter.Round >= WillingnessModel.MaxRounds
+            && TraitRegistry.TraitsFor(hero.Id, hero.Name).Contains(TraitId.Patient))
+        {
+            return $"{TraitRegistry.Definition(TraitId.Patient).DisplayName} {name}";
         }
 
         return name;
