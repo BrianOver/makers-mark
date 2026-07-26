@@ -7,10 +7,11 @@ namespace GameSim.Heroes;
 /// hero's cumulative <see cref="Hero.Memories"/> tally — summing lifetime kills/saves here would
 /// double-count every future expedition (Memories accumulate forever; a per-run XP grant must not).
 ///
-/// TRIPWIRE (fable fix 3): this module NEVER writes <see cref="Hero.Level"/> — <c>CombatMath.cs:29,32</c>
-/// read <c>Hero.Level</c> into Attack/Defense, so touching it is a Class-2/Balance-breaking change.
-/// Rank is a pure label off <see cref="Hero.Xp"/> thresholds; the XP→Level flip is deliberately
-/// deferred to Phase C's hardening window (KTD-B2).
+/// Phase C (U-C6, the level-flip): <see cref="HeroRank.LevelFor"/> now derives a REAL
+/// <see cref="Hero.Level"/> off the same ladder — <c>CombatMath.cs:29,32</c> read <c>Hero.Level</c>
+/// into Attack/Defense, so a hero that ranks up is mechanically stronger. This is a deliberate
+/// Class-2/Balance-breaking change (KTD-B2's deferred flip, now landed) — rank and level stay in
+/// lockstep off one ladder, never two independent thresholds.
 /// </summary>
 public static class HeroXp
 {
@@ -63,5 +64,27 @@ public static class HeroRank
         }
 
         return rank;
+    }
+
+    /// <summary>
+    /// Phase C (U-C6): the REAL <see cref="Hero.Level"/> for a given XP total — the same ladder as
+    /// <see cref="For"/>, just returning the 1-based rank INDEX instead of the name (Novice=1 …
+    /// Legend=6), so rank and level can never drift apart. Reuses the existing thresholds; adds no
+    /// new ladder and draws no RNG.
+    /// </summary>
+    public static int LevelFor(int xp)
+    {
+        var level = 1;
+        for (var i = 0; i < Ladder.Length; i++)
+        {
+            if (xp < Ladder[i].Threshold)
+            {
+                break;
+            }
+
+            level = i + 1;
+        }
+
+        return level;
     }
 }

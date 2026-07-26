@@ -793,6 +793,13 @@ while (true)
                 Console.WriteLine(demandLine);
             }
 
+            // Phase B (B4, R-B7): needs-lite — who's currently telegraphed/boycotting, persistent
+            // for as long as the window lasts (unlike the one-shot crossing beats below).
+            foreach (var needsLine in NeedsNarration.StandingLines(NeedsSystem.Snapshot(state)))
+            {
+                Console.WriteLine(needsLine);
+            }
+
             break;
 
         case "gossip":
@@ -1273,6 +1280,14 @@ void PrintLedger(GameState s, int day, ImmutableList<GoldLedgerEntry> oreSpend, 
     {
         Console.WriteLine(line);
     }
+
+    // Phase B (B4, R-B7): needs-lite one-shot beats — a telegraph warning, a boycott biting, or a
+    // recovery — printed only on the day the streak actually crosses a threshold, so this stays a
+    // bark rather than a repeated status line (the persistent list lives behind the 'demand' verb).
+    foreach (var line in NeedsNarration.CrossingLines(NeedsSystem.Snapshot(s)))
+    {
+        Console.WriteLine(line);
+    }
 }
 
 void PrintStatus(GameState s)
@@ -1327,6 +1342,19 @@ void PrintHeroCard(Hero hero, GameState s)
     }
     Console.WriteLine($"    band: {RelationshipBands.Label(band)} | mood {hero.MoodPermille}‰ | rank: {rank} (xp {hero.Xp})");
     Console.WriteLine($"    deeds: {kills} kills, {saves} saves");
+
+    // Phase B (B4, R-B7): needs-lite — inspectable even outside the crossing-day bark, so a player
+    // checking mid-window can see how close a hero is to boycotting (or already is).
+    if (hero.Alive)
+    {
+        var streak = NeedsSystem.UnmetDemandStreakDays(hero.Id, s);
+        var needsStatus = NeedsSystem.IsBoycotting(hero.Id, s)
+            ? "BOYCOTTING the forge — favors the rival stall"
+            : NeedsSystem.IsTelegraphed(hero.Id, s)
+                ? "telegraphed — nearing a boycott"
+                : "content";
+        Console.WriteLine($"    needs: {streak} day(s) since last player purchase — {needsStatus}");
+    }
 
     var edges = RelationshipSystem.TopEdgesFor(hero.Id, s);
     if (!edges.IsEmpty)

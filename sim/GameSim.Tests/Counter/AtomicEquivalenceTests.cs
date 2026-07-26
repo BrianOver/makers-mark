@@ -84,8 +84,15 @@ public class AtomicEquivalenceTests
     // (derived hero↔hero edges) on top of involvement/recency, so WHICH gossip prose is emitted on the
     // idle trace shifts. No decision changed (Balance 25/25) and no RNG draw added (grep + the
     // PhaseBNoDrawGate Inc-unchanged tell hold). Deliberate re-baseline, CommissionPosted class.
+    // RE-BASELINED (Phase B B4 needs-lite + Phase C U-C6 level-flip, 2026-07-25): two decision-changing
+    // units land together. B4: an unmet-demand streak drives a hero to boycott the shop (Class 1,
+    // shopping decisions shift). U-C6 (the deferred KTD-B2 flip): Hero.Xp now grants a real Level at the
+    // Evening reveal → CombatMath scales → heroes grow stronger and reach deeper floors on this trace
+    // (Class 2, the intended combat re-baseline). The idle hash moves for REAL; determinism holds and
+    // NO new draw SITE was added (grep clean; PhaseBNoDrawGate Inc unchanged, only State moved = same
+    // stream, different draw count from decision/combat changes). Balance re-fit checked deliberately.
     private const string ExpectedPreCounterSha256 =
-        "2BCEB812556F74CEC6EDF520CFCD68A22D17E3A4F8BF2502ABBF1E6447E4F4AB";
+        "46059EE1A1DED4488D9653C2FAFB98FBE90AE203279C981317771CE340F09198";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

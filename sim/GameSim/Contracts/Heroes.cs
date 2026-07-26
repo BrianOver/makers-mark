@@ -68,11 +68,12 @@ public sealed record Hero(
     public int MoodPermille { get; init; } = 0;
 
     /// <summary>
-    /// Career experience points (Phase B, B0). Accrues at the Evening reveal and crosses cosmetic
-    /// RANK thresholds only — read by NOTHING mechanical. It NEVER feeds <see cref="Level"/>
-    /// (<c>CombatMath</c> reads Level into Attack), so XP cannot touch combat; the XP→Level flip is
-    /// deferred to Phase C's hardening window (KTD-B2). Non-positional init member (the
-    /// <see cref="MoodPermille"/> pattern) — old saves and existing constructors default to 0.
+    /// Career experience points (Phase B, B0). Accrues at the Evening reveal and crosses the
+    /// <see cref="GameSim.Heroes.HeroRank"/> ladder's thresholds, which (Phase C, U-C6) now ALSO
+    /// derives the real <see cref="Level"/> (<c>CombatMath</c> reads Level into Attack/Defense), so
+    /// XP growth mechanically strengthens the hero — the deferred flip from KTD-B2, landed. Non-
+    /// positional init member (the <see cref="MoodPermille"/> pattern) — old saves and existing
+    /// constructors default to 0.
     /// </summary>
     public int Xp { get; init; } = 0;
 
