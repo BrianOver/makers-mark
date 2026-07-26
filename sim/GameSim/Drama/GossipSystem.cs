@@ -1,4 +1,5 @@
 using GameSim.Contracts;
+using GameSim.Heroes;
 
 namespace GameSim.Drama;
 
@@ -16,6 +17,12 @@ namespace GameSim.Drama;
 /// Campaign identity for voice/variant picks (KTD3) is <c>state.Rng.Inc</c>: the
 /// Pcg32 stream increment is seed-derived, campaign-constant, and already in every
 /// save. Flavor identity only — it never feeds sim rules.
+///
+/// Phase B (B3, R-B6): passes <see cref="RelationshipSystem.Affinity"/>, bound over the FULL
+/// <c>state</c> (not just yesterday's slice — bonds/grudges/grief accrue over the whole campaign),
+/// as the salience-v2 affinity lookup. Still draw-free: <c>RelationshipSystem</c> is a pure read
+/// model over the already-stamped log, so this adds zero RNG and zero decisions — only WHICH
+/// already-tellable line wins a slot changes.
 /// </summary>
 public sealed class GossipSystem : IPhaseSystem
 {
@@ -40,7 +47,11 @@ public sealed class GossipSystem : IPhaseSystem
         }
 
         foreach (var gossip in GossipGenerator.Generate(
-            DayLog.For(state.EventLog, yesterday), state.Heroes, state.Items, campaignId: state.Rng.Inc))
+            DayLog.For(state.EventLog, yesterday),
+            state.Heroes,
+            state.Items,
+            campaignId: state.Rng.Inc,
+            affinityLookup: (a, b) => RelationshipSystem.Affinity(new HeroId(a), new HeroId(b), state)))
         {
             events.Emit(gossip);
         }

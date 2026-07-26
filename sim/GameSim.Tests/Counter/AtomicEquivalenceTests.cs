@@ -79,8 +79,13 @@ public class AtomicEquivalenceTests
     // (same seed+actions = identical state) and NO new RNG draw SITE was added — traits are DERIVED,
     // grep confirms rng.* stays in the 3 kernel files, and the Balance gate is 25/25 UNCHANGED (the
     // bands absorbed it). Deliberate Class-1 re-baseline.
+    // RE-BASELINED (Phase B B3 gossip salience v2, 2026-07-25): Class 0b (values change, draw-free &
+    // decision-free). GossipGenerator now ranks the per-speaker 3-line cap by relationship affinity
+    // (derived hero↔hero edges) on top of involvement/recency, so WHICH gossip prose is emitted on the
+    // idle trace shifts. No decision changed (Balance 25/25) and no RNG draw added (grep + the
+    // PhaseBNoDrawGate Inc-unchanged tell hold). Deliberate re-baseline, CommissionPosted class.
     private const string ExpectedPreCounterSha256 =
-        "0B8AD64C890C311E76771ACAF85D225CD65B0ED19AD37A61B24C8BDA815FF2B3";
+        "2BCEB812556F74CEC6EDF520CFCD68A22D17E3A4F8BF2502ABBF1E6447E4F4AB";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

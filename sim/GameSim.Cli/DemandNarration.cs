@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Heroes;
 
 namespace GameSim.Cli;
 
@@ -38,14 +39,53 @@ public static class DemandNarration
     /// lead stall/commission fact here is what makes the loop visibly close (question -&gt; answer -&gt;
     /// question) instead of the muster reading as an unrelated status line.
     /// </summary>
-    public static string MusterLine(ImmutableList<PartyPlan> parties, DemandSnapshot snapshot)
+    /// <param name="heroes">Phase B (B5, attribution barks): looked up to flavor the line with any
+    /// Consumable Stocking trait (Prepared/Reckless) marching out today — <see cref="ConsumableStockingFlavor"/>.</param>
+    public static string MusterLine(ImmutableList<PartyPlan> parties, DemandSnapshot snapshot, ImmutableSortedDictionary<int, Hero> heroes)
     {
         var heroCount = parties.Sum(p => p.Roster.Count);
         var muster = parties.IsEmpty
             ? "no parties muster today — no living heroes to march"
             : $"{parties.Count} part{(parties.Count == 1 ? "y" : "ies")} muster ({heroCount} hero{(heroCount == 1 ? string.Empty : "es")}) toward floor {string.Join(",", parties.Select(p => p.TargetFloor).Distinct().OrderBy(f => f))}";
 
-        return $"  ⛺ {muster} — {StallSummary(snapshot.DepthStalls)}";
+        return $"  ⛺ {muster} — {StallSummary(snapshot.DepthStalls)}{ConsumableStockingFlavor(parties, heroes)}";
+    }
+
+    /// <summary>Phase B (B5): names every marching hero whose Consumable Stocking trait
+    /// (Prepared/Reckless) made a real difference to what's in their pack this morning —
+    /// <see cref="Heroes.HeroShoppingSystem"/>'s restock pass (via
+    /// <see cref="Heroes.TraitEffects.ConsumableStockTargetFor"/>) already ran earlier THIS SAME
+    /// Morning tick (registration order, <see cref="Heroes.MusterSystem"/>'s own doc comment), so
+    /// <c>hero.Pack</c> here already reflects the day's stocking decision — a Reckless hero heading
+    /// out with an empty pack, or a Prepared hero who topped up past the baseline target. Neutral
+    /// heroes (neither trait) and any Prepared/Reckless hero who hasn't hit the tell-tale pack state
+    /// yet (still mid-restock over several mornings) produce no clause — this is a bark, not a status
+    /// dump, so it stays silent rather than naming every hero every day.</summary>
+    private static string ConsumableStockingFlavor(ImmutableList<PartyPlan> parties, ImmutableSortedDictionary<int, Hero> heroes)
+    {
+        var flavors = new List<string>();
+        foreach (var party in parties)
+        {
+            foreach (var heroId in party.Roster)
+            {
+                if (!heroes.TryGetValue(heroId.Value, out var hero))
+                {
+                    continue;
+                }
+
+                var traits = TraitRegistry.TraitsFor(hero.Id, hero.Name);
+                if (traits.Contains(TraitId.Reckless) && hero.Pack.IsEmpty)
+                {
+                    flavors.Add($"{hero.Name} marches down with a near-empty pack");
+                }
+                else if (traits.Contains(TraitId.Prepared) && hero.Pack.Count >= TraitEffects.PreparedStockTarget)
+                {
+                    flavors.Add($"{hero.Name} stocked deep on salves");
+                }
+            }
+        }
+
+        return flavors.Count == 0 ? string.Empty : $" — {string.Join("; ", flavors)}";
     }
 
     /// <summary>The full snapshot dump the <c>demand</c> verb prints on request (R4): the rolled-up

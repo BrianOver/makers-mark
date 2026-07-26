@@ -311,4 +311,31 @@ public class TraitDivergenceTests
             Assert.DoesNotContain(opposites[traits[0]], traits);
         }
     }
+
+    // ---- Fixture-trait hash pin (B3 fable nit) --------------------------------------------------
+
+    /// <summary>
+    /// Pins the exact <c>(HeroId, Name) -&gt; traits</c> combos that OTHER test files' fixtures rely
+    /// on via hand-verified code comments rather than an assertion: <c>ShoppingAiTests.MakeHero</c>
+    /// ("Testa", id 3) and <c>CounterQueueSystemTests</c>/<c>HaggleEconomicsTests</c>' "Lc{id}"
+    /// fixtures (ids 1-6). Those files' own pinned dollar figures / <c>PassReasonKind</c>s only stay
+    /// correct because these specific heroes land OFF the axes each file exercises — a future change
+    /// to <see cref="TraitRegistry"/>'s hash mix or <see cref="TraitAxis"/> order would silently
+    /// re-derive different traits for the SAME (id, name) pair and break those files for a reason
+    /// their own diffs would never explain. This test is the loud tripwire instead.
+    /// </summary>
+    [Fact]
+    public void FixtureTraitCombos_PinnedAgainstFutureHashOrAxisDrift()
+    {
+        Assert.Equal(
+            new[] { TraitId.Spendthrift, TraitId.Stubborn },
+            TraitRegistry.TraitsFor(new HeroId(3), "Testa")); // ShoppingAiTests.MakeHero
+
+        Assert.Equal(new[] { TraitId.Discerning, TraitId.Reckless }, TraitRegistry.TraitsFor(new HeroId(1), "Lc1"));
+        Assert.Equal(new[] { TraitId.Unfussy, TraitId.Sentimental }, TraitRegistry.TraitsFor(new HeroId(2), "Lc2"));
+        Assert.Equal(new[] { TraitId.Unfussy, TraitId.Practical }, TraitRegistry.TraitsFor(new HeroId(3), "Lc3"));
+        Assert.Equal(new[] { TraitId.Sentimental, TraitId.Reckless }, TraitRegistry.TraitsFor(new HeroId(4), "Lc4"));
+        Assert.Equal(new[] { TraitId.Unfussy, TraitId.Patient }, TraitRegistry.TraitsFor(new HeroId(5), "Lc5"));
+        Assert.Equal(new[] { TraitId.Thrifty, TraitId.Unfussy }, TraitRegistry.TraitsFor(new HeroId(6), "Lc6"));
+    }
 }

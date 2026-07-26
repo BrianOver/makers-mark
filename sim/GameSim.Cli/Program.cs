@@ -1305,6 +1305,9 @@ void PrintStatus(GameState s)
 // the forecast is the B1b shadow-tick, read-only and exact-by-construction against this same state.
 // Phase B (B2, R-B5): trait chips — derived on read from (HeroId, Name), never stored — surface
 // the two personality axes this hero's shop decisions are already biased by.
+// Phase B (B3, R-B6): relationship edges — derived on read from the event log
+// (RelationshipSystem.TopEdgesFor), never stored — the strongest 1-2 hero<->hero bonds/grudges
+// this hero currently carries.
 void PrintHeroCard(Hero hero, GameState s)
 {
     var display = HeroIdentity.DisplayName(hero.Id, s);
@@ -1324,6 +1327,14 @@ void PrintHeroCard(Hero hero, GameState s)
     }
     Console.WriteLine($"    band: {RelationshipBands.Label(band)} | mood {hero.MoodPermille}‰ | rank: {rank} (xp {hero.Xp})");
     Console.WriteLine($"    deeds: {kills} kills, {saves} saves");
+
+    var edges = RelationshipSystem.TopEdgesFor(hero.Id, s);
+    if (!edges.IsEmpty)
+    {
+        var edgeText = string.Join("; ", edges.Select(e =>
+            $"{RelationshipSystem.Phrase(e.Edge.Kind)} {HeroIdentity.DisplayName(e.Other, s)}"));
+        Console.WriteLine($"    relationships: {edgeText}");
+    }
 
     if (hero.Alive)
     {

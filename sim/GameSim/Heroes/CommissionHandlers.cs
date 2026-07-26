@@ -102,11 +102,19 @@ public sealed class CommissionHandlers : IActionHandler
             return null;
         }
 
-        var totalPrice = match.Price + commission.PremiumGold;
-        if (hero.Gold < totalPrice)
+        // BUG-1 fix (playtest 2026-07-25): fulfilment requires only that the hero can afford LIST
+        // price. If they can't also cover the full premium, fulfil anyway at list + whatever premium
+        // they can pay — NEVER fall through here, because the ordinary shopping pass would otherwise
+        // buy this exact item at plain list, leaking the premium with zero player-facing signal (an
+        // accepted commission silently paying no bonus). A hero who can't even afford list waits a
+        // later Morning (ordinary shopping can't take it either).
+        if (hero.Gold < match.Price)
         {
-            return null; // can't yet afford the guaranteed price — try again a later Morning
+            return null;
         }
+
+        var premiumPaid = Math.Min(commission.PremiumGold, hero.Gold - match.Price);
+        var totalPrice = match.Price + premiumPaid;
 
         var updatedHero = hero with
         {
@@ -126,7 +134,7 @@ public sealed class CommissionHandlers : IActionHandler
         };
 
         events.Emit(new ItemSold(matchItem.Id, hero.Id, totalPrice, FromPlayerShop: true));
-        events.Emit(new CommissionFulfilled(hero.Id, matchItem.Id, commission.PremiumGold));
+        events.Emit(new CommissionFulfilled(hero.Id, matchItem.Id, premiumPaid));
 
         return CommissionSystem.BumpMood(next, hero.Id, FulfillMoodBonus);
     }
