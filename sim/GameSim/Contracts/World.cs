@@ -165,6 +165,20 @@ public sealed record GuildAssessmentState(
 }
 
 /// <summary>
+/// Phase D (U-D3): the campaign arc + ending state, stored in <see cref="GameState.Arc"/>. Every
+/// field is a plain day-stamp (0 = not yet reached) so the whole record stays trivially
+/// serializable and diffable. Advanced ONLY by <c>GameSim.Arc.ArcDirectorSystem</c>, which reads
+/// existing progression signals already in <see cref="GameState"/> (deepest floor reached via
+/// <see cref="DramaState.DepthsBoard"/>, days elapsed via <see cref="GameState.Day"/>) — pure
+/// integer, ZERO RNG (KTD2). <see cref="Act"/> only ever moves forward through
+/// <see cref="CampaignAct"/>'s order; nothing in the sim ever regresses it.</summary>
+public sealed record ArcState(CampaignAct Act, int ActIIStartDay, int ActIIIStartDay, int EndingDay)
+{
+    /// <summary>A fresh campaign: Act I, nothing else reached yet.</summary>
+    public static readonly ArcState Initial = new(CampaignAct.ActI, ActIIStartDay: 0, ActIIIStartDay: 0, EndingDay: 0);
+}
+
+/// <summary>
 /// The entire world. Immutable; every field is deterministically serializable
 /// (sorted dictionaries, ordered lists). Advanced only by <c>GameKernel.Tick</c>.
 /// </summary>
@@ -243,6 +257,12 @@ public sealed record GameState(
     /// (see <see cref="GuildAssessmentState"/>'s own doc comment) — this field is ONLY the
     /// assessment's dues countdown/escalation/tally, never a second confidence number.</summary>
     public GuildAssessmentState Assessment { get; init; } = GuildAssessmentState.Initial;
+
+    /// <summary>Phase D (U-D3): the campaign's 3-act arc + ending state. Non-positional init member
+    /// (the InFlight/Venues/Counter/Rent/Commissions save-compat precedent) — a pre-U-D3 save (no
+    /// property in the JSON) deserializes to <see cref="ArcState.Initial"/>, the fresh-campaign
+    /// baseline, so old saves simply start their arc clock from Act I on load.</summary>
+    public ArcState Arc { get; init; } = ArcState.Initial;
 }
 
 /// <summary>Wave 3: one hero's gear request — forge <see cref="Slot"/> at or above

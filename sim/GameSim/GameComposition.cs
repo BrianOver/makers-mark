@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using GameSim.Arc;
 using GameSim.Bounties;
 using GameSim.Contracts;
 using GameSim.Counter;
@@ -44,10 +45,12 @@ namespace GameSim;
 /// stream — and every existing seed's world — is unchanged by its insertion; muster likewise
 /// draws no RNG (pure projection).
 /// Expedition: bounty-judging → expedition (judging shapes target floors).
-/// Evening: expedition-reveal → bounty-payout → market-share (payout needs revealed depths;
-/// market-share is LAST in Evening BY CONTRACT — see MarketShareSystem's class comment — it
-/// reads GameState.ActionSlotsRemaining after every handler for the day has had its chance to
-/// spend one, but before the kernel's own post-tick budget reset).
+/// Evening: expedition-reveal → bounty-payout → arc-director → market-share (payout needs revealed
+/// depths; ArcDirectorSystem (Phase D, U-D3) runs AFTER expedition-reveal so today's new
+/// DepthsBoard record is visible to its Act/Climax/Ending thresholds — see that class's comment —
+/// and BEFORE market-share, which stays LAST in Evening BY CONTRACT — see MarketShareSystem's class
+/// comment — it reads GameState.ActionSlotsRemaining after every handler for the day has had its
+/// chance to spend one, but before the kernel's own post-tick budget reset).
 /// </summary>
 public static class GameComposition
 {
@@ -70,6 +73,7 @@ public static class GameComposition
             new ExpeditionDeepSystem(), // U3 staged resolution: stage-2 finalize at the Deep tick (day order; phase filter does the work)
             new ExpeditionRevealSystem(),
             new BountyPayoutSystem(),
+            new ArcDirectorSystem(), // Phase D (U-D3): AFTER expedition-reveal, BEFORE market-share — see class comment; draws no RNG
             new MarketShareSystem()), // Game-Feel Plan G3: LAST in Evening BY CONTRACT — see class comment; draws no RNG
         ImmutableList.Create<IActionHandler>(
             new CraftingHandlers(),
