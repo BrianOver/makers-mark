@@ -157,6 +157,7 @@ while (true)
                 demand                        demand board: pass reasons, open commissions (accept/
                                                decline targets), depth stalls, bounty floor + postings
                 advice                        ranked next-step suggestions + this phase's legal actions
+                progress | spine              the five progression ladders + each one's next rung
                 export [path]                 dump campaign chronicle for analytics
                 next                          advance one phase (queued actions apply)
                 day                           advance to next Morning
@@ -221,6 +222,23 @@ while (true)
             foreach (var modLine in CliModifiers.ListLines())
             {
                 Console.WriteLine(modLine);
+            }
+
+            break;
+        }
+
+        case "progress" or "spine":
+        {
+            // Phase D U-D4: the multi-axis progression spine — every ladder's next rung at a glance.
+            var spine = GameSim.Progression.ProgressionSpineSystem.Compute(state);
+            Console.WriteLine("  === PROGRESSION ===");
+            foreach (var rung in spine.Rungs)
+            {
+                var meter = rung.ProgressPermille is { } p ? $" [{p / 10}%]" : "";
+                var tag = rung.Unbounded ? " (unbounded)" : "";
+                Console.WriteLine($"  {rung.Axis,-9} {rung.Current}{meter}{tag}");
+                Console.WriteLine($"            → next: {rung.NextRung}");
+                Console.WriteLine($"            ({rung.Feeds})");
             }
 
             break;
