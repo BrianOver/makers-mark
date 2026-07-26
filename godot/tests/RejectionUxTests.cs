@@ -112,17 +112,22 @@ public class RejectionUxTests
     [TestCase]
     public void LedgerOreBuy_DisabledOffEvening_EnabledAtEvening()
     {
-        var ui = MountMainUi();
+        var ui = MountMainUi(ScriptedSession.StartAdapter());
         try
         {
-            // The day-1 reveal renders during day-2 Morning: a queued buy would land in
-            // Morning and be rejected — every Buy on the fresh reveal renders Disabled.
-            AdvanceDay(ui);
+            // U-C4: day-1 returns carry no ore now — early parties spread to Gloomwood, whose ore
+            // lands on day 2 and only opens for trade the next day. So the FIRST offering day's
+            // reveal is day 2's, which auto-opens during day-3 Morning: a queued buy would land in
+            // Morning and be rejected — every Buy on that fresh reveal renders Disabled.
+            AdvanceDay(ui); // → day 2 Morning
+            AdvanceDay(ui); // → day 3 Morning (day-2 Evening completed: its ledger is what auto-reveals)
             ui._Process(MainUi.ReturnRitualDelaySeconds + 0.1);
             AssertThat(ui.Ledger.Visible).IsTrue();
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
 
-            var offers = ScriptedSession.CopperBuys(ui.Adapter.CurrentState);
+            var earlyDay = ScriptedSession.EarlyOreDay(ui.Adapter.CurrentState);
+            AssertThat(ui.Ledger.ShownDay).IsEqual(earlyDay);
+            var offers = ScriptedSession.EarlyOreBuys(ui.Adapter.CurrentState);
             AssertThat(offers.Count > 0).IsTrue();
             foreach (var offer in offers)
             {
@@ -130,12 +135,13 @@ public class RejectionUxTests
                     .IsTrue();
             }
 
-            // Reopened AT day-2 Evening (pre-tick) the same buys land in Evening → legal.
+            // Reopened AT day-3 Evening (pre-tick) — those day-2 offers are open and the buys land
+            // in Evening → legal.
             Press(ui.Ledger, "CloseLedger");
             AdvanceToPhase(ui, DayPhase.Evening);
             Press(ui, "OpenLedger");
-            AssertThat(ui.Ledger.ShownDay).IsEqual(1);
-            foreach (var offer in ScriptedSession.CopperBuys(ui.Adapter.CurrentState))
+            AssertThat(ui.Ledger.ShownDay).IsEqual(earlyDay);
+            foreach (var offer in ScriptedSession.EarlyOreBuys(ui.Adapter.CurrentState))
             {
                 AssertThat(Find<Button>(ui.Ledger, $"BuyOre_{offer.From.Value}_{offer.MaterialKey}").Disabled)
                     .IsFalse();
