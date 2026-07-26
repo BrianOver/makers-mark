@@ -46,6 +46,9 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(HeirloomReforged), "heirloomReforged")]
 [JsonDerivedType(typeof(HeroDecisionExplained), "heroDecisionExplained")]
 [JsonDerivedType(typeof(HeroRankUp), "heroRankUp")]
+[JsonDerivedType(typeof(ActAdvanced), "actAdvanced")]
+[JsonDerivedType(typeof(ClimaxReached), "climaxReached")]
+[JsonDerivedType(typeof(CampaignEnded), "campaignEnded")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -231,3 +234,27 @@ public sealed record MemorialHonored(HeroId Hero, string HeroName) : GameEvent;
 /// carrying their legend-line forward (<see cref="Item.HeirloomLineage"/>). The dead persist as
 /// inheritance (R6).</summary>
 public sealed record HeirloomReforged(ItemId NewItem, ItemId SourceItem, string Lineage) : GameEvent;
+
+/// <summary>Phase D (U-D3): the campaign arc advanced to a new <see cref="CampaignAct"/> — fired
+/// exactly once per act, the Evening <c>GameSim.Arc.ArcDirectorSystem</c> crosses its threshold.
+/// <paramref name="DeepestFloorReached"/> is the signal that triggered the advance, for narration.</summary>
+public sealed record ActAdvanced(CampaignAct Act, int DeepestFloorReached) : GameEvent;
+
+/// <summary>Phase D (U-D3): the campaign's climax beat — fired the SAME tick as
+/// <see cref="ActAdvanced"/>(<see cref="CampaignAct.ActIII"/>), exactly once. The Act III threshold
+/// IS the climax trigger in this skeleton (the Final Commission / Warden-of-the-Heart content the
+/// plan describes is a later, orchestrator-wired hook — this event is the seam it lands on).</summary>
+public sealed record ClimaxReached(int DeepestFloorReached) : GameEvent;
+
+/// <summary>Phase D (U-D3): the campaign's ending — fired once,
+/// <see cref="GameSim.Arc.ArcDirectorSystem.EndingDelayDays"/> days after <see cref="ClimaxReached"/>.
+/// Carries the assembled final-chronicle tallies (legends, memorials, attribution beats, gossip)
+/// so a credits scroll can render straight off this one event. Hades-style: the world stays open
+/// afterward — this never halts the kernel or blocks further ticks/actions.</summary>
+public sealed record CampaignEnded(
+    int DeepestFloorReached,
+    int MemorialCount,
+    int HonoredMemorialCount,
+    int AttributionBeatCount,
+    int GossipHighlightCount,
+    int LegendaryHeroCount) : GameEvent;
