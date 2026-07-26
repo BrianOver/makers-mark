@@ -162,37 +162,54 @@ while (true)
         // both the bare number and the "H#"/"I#" form every listing displays (finding #1).
         case "craft":
         {
-            if (parts.Length == 3)
+            if (parts.Length < 3)
             {
-                // U12 (craft-quality legibility, PKD4): state the ceiling BEFORE it's queued — no
-                // RNG draw, just the material/recipe ceiling CraftQualityHint mirrors off QualityRoller.
-                var ceiling = CraftQualityHint.CeilingFor(state, parts[1], parts[2], performanceGrade: null);
-                var hint = ceiling is null
-                    ? string.Empty
-                    : $" — ceiling {ceiling} (auto-craft is competent-capped, PKD4; the 3D forge minigame reaches higher)";
-                TryQueue(new CraftAction(parts[1], parts[2]), $"  queued: craft {parts[1]} with {parts[2]}{hint}");
+                PrintUsage("craft", "craft <recipeId> <material> [grade <0-1000>] [oil:<id> rune:<id> fit:<id>]", line);
+                break;
             }
-            else if (parts.Length == 5 && parts[3].Equals("grade", StringComparison.OrdinalIgnoreCase))
+
+            // Flexible tail: `grade <n>` plus any of oil:/rune:/fit:<modifier> (Phase C U-C1 slice 2 —
+            // the player composes craft modifiers here; the finished grade + material decide how many
+            // actually take, over-requests forge plainer, never fail). Aliases resolve to registry ids.
+            int? grade = null;
+            string? oil = null, rune = null, fitting = null;
+            var badToken = false;
+            for (var i = 3; i < parts.Length; i++)
             {
-                if (!CliParse.TryInt(parts[4], out var grade, out var gradeError))
+                var tok = parts[i];
+                if (tok.Equals("grade", StringComparison.OrdinalIgnoreCase) && i + 1 < parts.Length)
                 {
-                    Console.WriteLine($"  craft: {gradeError}");
+                    if (!CliParse.TryInt(parts[++i], out var g, out var gradeError)) { Console.WriteLine($"  craft: {gradeError}"); badToken = true; }
+                    else if (g is < 0 or > 1000) { Console.WriteLine($"  craft: grade must be 0-1000; got {g}."); badToken = true; }
+                    else { grade = g; }
                 }
-                else if (grade is < 0 or > 1000)
-                {
-                    Console.WriteLine($"  craft: grade must be 0-1000; got {grade}.");
-                }
-                else
-                {
-                    var ceiling = CraftQualityHint.CeilingFor(state, parts[1], parts[2], performanceGrade: grade);
-                    var hint = ceiling is null ? string.Empty : $" — ceiling {ceiling}";
-                    TryQueue(new CraftAction(parts[1], parts[2], grade),
-                        $"  queued: craft {parts[1]} with {parts[2]} at grade {grade} (grade-in-hand — dominates quality on an active profession){hint}");
-                }
+                else if (tok.StartsWith("oil:", StringComparison.OrdinalIgnoreCase)) { oil = CliModifiers.Resolve(tok[4..], ModifierFamily.QuenchOil); if (oil is null) { Console.WriteLine($"  craft: no quench-oil '{tok[4..]}' (list: 'modifiers')."); } }
+                else if (tok.StartsWith("rune:", StringComparison.OrdinalIgnoreCase)) { rune = CliModifiers.Resolve(tok[5..], ModifierFamily.Rune); if (rune is null) { Console.WriteLine($"  craft: no rune '{tok[5..]}' (list: 'modifiers')."); } }
+                else if (tok.StartsWith("fit:", StringComparison.OrdinalIgnoreCase)) { fitting = CliModifiers.Resolve(tok[4..], ModifierFamily.Fitting); if (fitting is null) { Console.WriteLine($"  craft: no fitting '{tok[4..]}' (list: 'modifiers')."); } }
+                else { Console.WriteLine($"  craft: unknown token '{tok}'. Try: grade <n>, oil:<id>, rune:<id>, fit:<id> (list: 'modifiers')."); badToken = true; }
             }
-            else
+
+            if (!badToken)
             {
-                PrintUsage("craft", "craft <recipeId> <material> [grade <0-1000>]", line);
+                var ceiling = CraftQualityHint.CeilingFor(state, parts[1], parts[2], performanceGrade: grade);
+                var mods = new[] { oil, rune, fitting }.Where(m => m is not null).ToArray();
+                var modHint = mods.Length == 0 ? string.Empty : $" + [{string.Join(", ", mods)}]";
+                var ceilHint = ceiling is null ? string.Empty : $" — ceiling {ceiling}";
+                var gradeHint = grade is null ? string.Empty : $" at grade {grade}";
+                TryQueue(
+                    new CraftAction(parts[1], parts[2], grade, RequestQuenchOil: oil, RequestRune: rune, RequestFitting: fitting),
+                    $"  queued: craft {parts[1]} with {parts[2]}{gradeHint}{modHint}{ceilHint}");
+            }
+
+            break;
+        }
+
+        case "modifiers":
+        {
+            // Phase C U-C1 slice 2: list the craft modifiers the player can compose at the forge.
+            foreach (var modLine in CliModifiers.ListLines())
+            {
+                Console.WriteLine(modLine);
             }
 
             break;
