@@ -80,13 +80,17 @@ public static class MaterialRegistry
     /// The materials that are LIVE — priced by <c>OrePricing</c> and graded by
     /// <c>RecipeTable.MaterialGrades</c>. THIS IS THE PRICED-POOL CONTRACT (same rule as
     /// <c>VenueRegistry.LiveRotation</c> / <c>ClassRegistry.RecruitPool</c>): a registered material is
-    /// NOT automatically live. Frozen at the five Mine ores so the priced/graded surfaces stay
-    /// byte-identical; expanding it is a deferred determinism-gated re-baseline. Registered add-on
-    /// materials (electrum, orichalcum, future herbs/leathers) live in <see cref="All"/> but never here
-    /// until that re-baseline.
+    /// NOT automatically live. Phase C U-C4: the Gloomwood joins <c>VenueRegistry.LiveRotation</c> as
+    /// the second live venue, so its four ores join the pool HERE in the same re-baseline — a hero
+    /// returning with greenheart/amberpitch/moonresin/heartwood must be priceable at the Evening
+    /// reveal (<c>OrePricing.UnitPrice</c> throws for anything unpriced) or the reveal crashes.
+    /// Registered add-on materials with no live venue (electrum, orichalcum, Emberfall's and Sunken
+    /// Crypt's ores) stay OUT of the pool until THEIR venues go live.
     /// </summary>
-    public static readonly ImmutableArray<string> PricedPool =
-        ImmutableArray.Create(Copper, Iron, Steel, Mithril, Adamant);
+    public static readonly ImmutableArray<string> PricedPool = ImmutableArray.Create(
+        Copper, Iron, Steel, Mithril, Adamant,
+        "greenheart", "amberpitch", "moonresin", "heartwood"); // Gloomwood's four ores (raw literals —
+        // matches how they're already registered above; no Venues.Gloomwood dependency from Materials.
 
     /// <summary>Resolve a material definition by key.</summary>
     public static bool TryGet(string id, out MaterialDefinition? definition)

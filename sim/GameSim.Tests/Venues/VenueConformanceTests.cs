@@ -104,12 +104,16 @@ public class VenueConformanceTests
     }
 
     [Fact]
-    public void LiveRotation_IsFrozenAtTheMine()
+    public void LiveRotation_IsExactlyMineAndGloomwood()
     {
-        // The live-venue contract (P4): a registered venue is NOT automatically live. Frozen at the
-        // single Mine so hero routing → target floors → the whole sim stays byte-identical; a guard
-        // against a live second venue slipping in without the deferred balance re-baseline.
-        Assert.Equal(new[] { VenueRegistry.MineId }, VenueRegistry.LiveRotation);
+        // The live-venue contract (P4): a registered venue is NOT automatically live. Phase C U-C4
+        // lands the deferred second-venue re-baseline: the Gloomwood joins the Mine here, in this
+        // exact order (VenueRouter's queue-length tiebreak — and every existing golden replay that
+        // reads LiveRotation's order — depends on it). Emberfall and Sunken Crypt stay registered but
+        // NOT live until their own re-baseline.
+        Assert.Equal(
+            new[] { VenueRegistry.MineId, "gloomwood" },
+            VenueRegistry.LiveRotation);
     }
 
     [Fact]
