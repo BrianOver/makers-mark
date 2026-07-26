@@ -1,30 +1,81 @@
 name: CI
 
-# Three lanes: sim-tests (fast, no Godot), balance-sim, engine-tests (headless Godot).
+# Lanes: sim-tests (matrix-sharded x4, no Godot), aux-tests (FlavorForge + art), balance-sim,
+# engine-tests (headless Godot). sim-tests shards run in parallel across 4 runners by test
+# namespace for ~4x wall-clock; Release build + NuGet cache cut per-shard time further.
+# Shard 4 is a NEGATION catch-all (every namespace NOT named in shards 1-3, minus Balance), so a
+# newly-added namespace can never silently drop out of the gate — and TreatNoTestsAsError makes an
+# empty shard (e.g. a typo'd filter) fail loudly instead of passing green.
 on:
   pull_request:
   push:
     branches: [main]
 
+# Cancel superseded in-progress runs on feature branches (a new push kills the old run); NEVER
+# cancel the post-merge main gate — it's the determinism safety net.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   sim-tests:
+    name: sim-tests (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: 1
+            filter: "FullyQualifiedName~GameSim.Tests.Expedition|FullyQualifiedName~GameSim.Tests.Heroes"
+          - shard: 2
+            filter: "FullyQualifiedName~GameSim.Tests.Crafting|FullyQualifiedName~GameSim.Tests.Professions|FullyQualifiedName~GameSim.Tests.Materials|FullyQualifiedName~GameSim.Tests.Venues|FullyQualifiedName~GameSim.Tests.Factions"
+          - shard: 3
+            filter: "FullyQualifiedName~GameSim.Tests.Counter|FullyQualifiedName~GameSim.Tests.Kernel|FullyQualifiedName~GameSim.Tests.Economy|FullyQualifiedName~GameSim.Tests.Contracts|FullyQualifiedName~GameSim.Tests.Classes"
+          - shard: 4
+            filter: "FullyQualifiedName!~GameSim.Tests.Expedition&FullyQualifiedName!~GameSim.Tests.Heroes&FullyQualifiedName!~GameSim.Tests.Crafting&FullyQualifiedName!~GameSim.Tests.Professions&FullyQualifiedName!~GameSim.Tests.Materials&FullyQualifiedName!~GameSim.Tests.Venues&FullyQualifiedName!~GameSim.Tests.Factions&FullyQualifiedName!~GameSim.Tests.Counter&FullyQualifiedName!~GameSim.Tests.Kernel&FullyQualifiedName!~GameSim.Tests.Economy&FullyQualifiedName!~GameSim.Tests.Contracts&FullyQualifiedName!~GameSim.Tests.Classes&FullyQualifiedName!~GameSim.Tests.Balance"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'global.json') }}
+          restore-keys: nuget-
+      - name: Sim suite shard ${{ matrix.shard }} (Release, no Godot)
+        run: >
+          dotnet test sim/GameSim.Tests/GameSim.Tests.csproj -c Release
+          --filter "${{ matrix.filter }}"
+          --logger "trx;LogFileName=sim-tests-${{ matrix.shard }}.trx"
+          -- RunConfiguration.TreatNoTestsAsError=true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sim-test-results-${{ matrix.shard }}
+          path: sim/GameSim.Tests/TestResults/*.trx
+
+  aux-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - name: Fast lane — sim suite (no Godot)
-        run: dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter "Category!=Balance" --logger "trx;LogFileName=sim-tests.trx"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'global.json') }}
+          restore-keys: nuget-
       - name: FlavorForge test lane (stub-only, zero network)
-        run: dotnet test tools/FlavorForge.Tests/FlavorForge.Tests.csproj
-      - name: Fast lane — art conformance (no Godot, no IO; describe-PR definition of done)
-        run: dotnet test art/GameArt.Tests/GameArt.Tests.csproj --logger "trx;LogFileName=art-tests.trx"
+        run: dotnet test tools/FlavorForge.Tests/FlavorForge.Tests.csproj -c Release
+      - name: Art conformance (no Godot, no IO; describe-PR definition of done)
+        run: dotnet test art/GameArt.Tests/GameArt.Tests.csproj -c Release --logger "trx;LogFileName=art-tests.trx"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: sim-test-results
-          path: sim/GameSim.Tests/TestResults/*.trx
+          name: aux-test-results
+          path: art/GameArt.Tests/TestResults/*.trx
 
   balance-sim:
     runs-on: ubuntu-latest
@@ -33,8 +84,13 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - name: Balance gate — 100-day sim (placeholder until U10)
-        run: dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter "Category=Balance" --logger "trx;LogFileName=balance-sim.trx"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'global.json') }}
+          restore-keys: nuget-
+      - name: Balance gate — 100-day sim (Release)
+        run: dotnet test sim/GameSim.Tests/GameSim.Tests.csproj -c Release --filter "Category=Balance" --logger "trx;LogFileName=balance-sim.trx"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
