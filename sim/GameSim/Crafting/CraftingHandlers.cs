@@ -155,6 +155,13 @@ public sealed class CraftingHandlers : IActionHandler
         var subScores = forgeScore?.SubScores ?? action.SubScores;
         var item = ItemForge.Forge(itemId, recipe, quality, state.Day, subScores);
 
+        // Phase C U-C1 slice 2: stamp the player's requested craft modifiers, each validated against
+        // the finished grade + material (slot count, tier cap, family exclusivity). Invalid or
+        // over-budget requests are silently dropped — the forge does its best with what the grade
+        // allows, never failing the craft. Pure, no RNG (CraftModifiers is a static integer table),
+        // so the draw-count contract is untouched; the idle BaselinePlayer requests nothing.
+        item = ApplyRequestedModifiers(item, action, quality);
+
         // Wave 4 (U19, "Signed Works"): a rare, deterministic, RNG-free proc — reads only data
         // this craft already produced (quality + the captured forge-beat sub-scores), so it never
         // draws from the stream and never changes the draw-count contract above. See
@@ -218,6 +225,55 @@ public sealed class CraftingHandlers : IActionHandler
         return parts.Count == 0
             ? "Forged at the anvil."
             : "Forged at the anvil — " + string.Join(", ", parts) + ".";
+    }
+
+    /// <summary>
+    /// Phase C U-C1 slice 2: stamp the player's requested craft modifiers onto <paramref name="item"/>.
+    /// Requests fill in family order (oil, rune, fitting); each is assigned the material-tier-capped
+    /// tier, with a single +1 potency overshoot spent on the FIRST modifier of a masterwork (Hades
+    /// "S" bonus). Each candidate is validated by <see cref="CraftModifiers.CanApply"/> against the
+    /// grade's slot count, the material tier cap, and family exclusivity; anything that doesn't fit is
+    /// silently dropped. Pure integer/data — no RNG, no clock.
+    /// </summary>
+    private static Item ApplyRequestedModifiers(Item item, CraftAction action, QualityGrade grade)
+    {
+        var requests = new (string? Id, ModifierFamily Family)[]
+        {
+            (action.RequestQuenchOil, ModifierFamily.QuenchOil),
+            (action.RequestRune, ModifierFamily.Rune),
+            (action.RequestFitting, ModifierFamily.Fitting),
+        };
+
+        var applied = new System.Collections.Generic.List<CraftModifier>();
+        var baseTier = CraftModifiers.MaterialTierCap(action.MaterialKey);
+        var overshootAvailable = CraftModifiers.MasterworkPotencyStep(grade);
+
+        foreach (var (id, family) in requests)
+        {
+            if (id is null)
+            {
+                continue;
+            }
+
+            var tier = baseTier + (overshootAvailable ? 1 : 0);
+            var candidate = new CraftModifier(id, family, tier);
+            if (!CraftModifiers.CanApply(candidate, grade, action.MaterialKey, applied))
+            {
+                continue;
+            }
+
+            applied.Add(candidate);
+            overshootAvailable = false; // the masterwork overshoot is spent on the first fitted modifier
+            item = family switch
+            {
+                ModifierFamily.QuenchOil => item with { QuenchOil = candidate },
+                ModifierFamily.Rune => item with { Rune = candidate },
+                ModifierFamily.Fitting => item with { Fitting = candidate },
+                _ => item,
+            };
+        }
+
+        return item;
     }
 
     private static (GameState, RejectedAction?) ApplyUnlock(GameState state, UnlockTalentAction action)
