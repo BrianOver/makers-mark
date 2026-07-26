@@ -109,6 +109,12 @@ public static class AssetCatalog
         ["choir-of-teeth"] = "monster-choir-of-teeth.glb",
         ["reliquary-mimic"] = "monster-reliquary-mimic.glb",
         ["undertow"] = "monster-undertow.glb",
+        // Emberfall Foundry roster — gen'd 2026-07-26. "Cinder Imp" (F1) is deliberately left
+        // model-less as the fallback-path example for MonsterView3D/Bestiary tests.
+        ["molten-archivist"] = "monster-molten-archivist.glb",
+        ["slag-hound"] = "monster-slag-hound.glb",
+        ["bellows-mad"] = "monster-bellows-mad.glb",
+        ["undying-forge-heart"] = "monster-undying-forge-heart.glb",
     };
 
     /// <summary>Gen monster GLB file name for <paramref name="kind"/> (display name "Cave Rat" or
