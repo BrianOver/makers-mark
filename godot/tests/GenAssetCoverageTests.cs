@@ -50,6 +50,8 @@ public class GenAssetCoverageTests
         "standing-lantern.glb", "grain-sack.glb", "shop-sign.glb", "bucket.glb",
         // Overnight staged batch — outdoor props (Town3D.BuildProps)
         "scarecrow.glb", "flower-planter.glb",
+        // Town dressing (gen'd 2026-07-26) — Town3D.BuildProps: salamander by the forge, crates by the market.
+        "forge-salamander.glb", "market-crates.glb",
         // Venue monsters — surfaced in the Bestiary (BestiaryPanel + AssetCatalog.MonsterModelFile).
         // Gloomwood F1/F2 + Sunken Crypt F1; venue-independent so they show even though those venues
         // aren't in the live raid rotation yet.
