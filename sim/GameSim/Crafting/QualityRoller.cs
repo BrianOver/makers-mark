@@ -188,4 +188,58 @@ public static class QualityRoller
         0 => QualityGrade.Superior,
         _ => null,
     };
+
+    // ==================================================================================
+    // ACTIVE-CRAFT DEPTH (Phase C, U-C2): "a rotation-policy ceiling over a heat-band
+    // input" — heat-band strikes + seeded condition windows + a finite durability budget +
+    // pity, folded into the SAME per-mille <c>performanceGrade</c> scale <see cref="RollActive"/>
+    // already consumes. The heat-band/condition-window/durability MATH lives in the pure,
+    // RNG-free <see cref="HeatBandForge"/> (this file just classifies its draws) — every
+    // <see cref="IDeterministicRng.Roll100"/> call for this depth happens HERE, keeping the
+    // sim's RNG surface at exactly three files.
+    // ==================================================================================
+
+    /// <summary>
+    /// Simulate a rotation POLICY — a caller-supplied sequence of heat-band strike decisions
+    /// (a scripted harness policy for balance-gate replay, or eventually the player's captured
+    /// minigame input) — against the seeded condition-window draws and the material's finite
+    /// durability budget (<see cref="HeatBandForge.DurabilityBudget"/>). Exactly ONE
+    /// <see cref="IDeterministicRng.Roll100"/> draw per strike ACTUALLY thrown (the policy is
+    /// truncated at the budget) — draw count scales with strikes, not a fixed KTD4 count, which
+    /// is safe ONLY because this method is reachable exclusively from the player's active-craft
+    /// minigame path: it is never called for auto-craft, so the idle golden trace never reaches
+    /// it and the RNG stream it perturbs is never the one <c>BaselinePlayer</c> exercises.
+    ///
+    /// <para>Pity resets on any Good-or-better window (natural or forced); it does not reset on
+    /// a Normal strike. Returns the per-mille execution grade — feed it straight into
+    /// <see cref="RollActive"/> as <c>performanceGrade</c>; that call's own existing jitter/
+    /// material-ceiling logic is untouched by this method.</para>
+    /// </summary>
+    public static int SimulateActiveForge(ImmutableList<bool> strikePolicy, int materialGrade, IDeterministicRng rng)
+    {
+        var policy = strikePolicy ?? ImmutableList<bool>.Empty;
+        var budget = HeatBandForge.DurabilityBudget(materialGrade);
+
+        var strikesThrown = 0;
+        var qualityWeightedProgress = 0;
+        var strikesSincePity = 0;
+
+        foreach (var inHeatBand in policy)
+        {
+            if (strikesThrown >= budget)
+            {
+                break;
+            }
+
+            strikesThrown++;
+
+            var roll = rng.Roll100();
+            var window = HeatBandForge.ClassifyWindow(roll, strikesSincePity);
+            strikesSincePity = HeatBandForge.ResetsPity(window) ? 0 : strikesSincePity + 1;
+
+            qualityWeightedProgress += HeatBandForge.ProgressFor(inHeatBand) * HeatBandForge.MultiplierFor(window);
+        }
+
+        return HeatBandForge.ExecutionGradePermille(qualityWeightedProgress, strikesThrown, budget);
+    }
 }

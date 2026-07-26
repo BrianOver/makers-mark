@@ -28,6 +28,15 @@ public sealed record CombatEvent(
     ItemId? KillingItem)
 {
     public ImmutableList<ConsumableUse> Uses { get; init; } = ImmutableList<ConsumableUse>.Empty;
+
+    /// <summary>
+    /// Phase C U-C1: net HP change applied by craft-modifier effects during this exchange (e.g. a
+    /// Leech rune healing the bearer on a kill), recorded so attribution's HP replay (KTD6) stays
+    /// byte-consistent with the forward pass — it applies this delta exactly where it applies a
+    /// <see cref="ConsumableUse"/> heal. Signed (heal positive, cost negative), 0 when the bearer
+    /// carries no modifier that fires this round. Trailing init member (save-compat).
+    /// </summary>
+    public int ModifierHpDelta { get; init; } = 0;
 }
 
 /// <summary>Outcome for one floor attempt within an expedition.</summary>
