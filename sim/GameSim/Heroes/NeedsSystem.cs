@@ -93,6 +93,24 @@ public static class NeedsSystem
         return Math.Max(0, asOfDay - since);
     }
 
+    /// <summary>The most recent day (through <paramref name="asOfDay"/> inclusive) this hero bought
+    /// from the PLAYER'S shop, or 0 if never. Used to detect the recovery crossing from the purchase
+    /// event itself — the post-reset streak alone can't reveal it at post-tick observation time.</summary>
+    private static int LastPlayerPurchaseDay(HeroId hero, GameState state, int asOfDay)
+    {
+        var last = 0;
+        foreach (var gameEvent in state.EventLog)
+        {
+            if (gameEvent.Day <= asOfDay
+                && gameEvent is ItemSold { FromPlayerShop: true } sold && sold.Buyer == hero)
+            {
+                last = Math.Max(last, sold.Day);
+            }
+        }
+
+        return last;
+    }
+
     /// <summary>True once the streak has crossed <see cref="BoycottThresholdDays"/> — the shopping
     /// bias in <see cref="Heroes.HeroShoppingSystem"/> is active this day. Read live, mid-Morning,
     /// against whatever purchases have already landed earlier THIS same tick for other heroes
@@ -128,11 +146,22 @@ public static class NeedsSystem
             var boycotting = today >= BoycottThresholdDays;
             var telegraphedToday = telegraphed && yesterday < TelegraphThresholdDays;
             var boycottBeganToday = boycotting && yesterday < BoycottThresholdDays;
-            var recoveredToday = today == 0 && yesterday >= TelegraphThresholdDays;
+            // Recovery: the hero returned to the counter, ending a telegraphed drought. Every caller
+            // reads this snapshot from the post-Evening-tick state ("tomorrow's Morning" — see
+            // DemandNarration), so the purchase that reset the streak is dated state.Day-1 and by now
+            // the streak has already ticked back up to 1 — the reset day's 0 is never observed, which
+            // is why comparing today vs yesterday can't see it (both are small post-reset values). We
+            // instead read it off the purchase event: bought on the immediately-preceding day, and the
+            // streak the day BEFORE that purchase had reached the telegraph window. Fires exactly once,
+            // the Morning after the hero comes back.
+            var lastBuy = LastPlayerPurchaseDay(hero.Id, state, state.Day);
+            var recoveredToday = lastBuy > 0
+                && lastBuy == state.Day - 1
+                && UnmetDemandStreakDays(hero.Id, state, lastBuy - 1) >= TelegraphThresholdDays;
 
             if (!telegraphed && !recoveredToday)
             {
-                continue; // content hero (or a same-day-buy recovery that never reached the warning window) — nothing to report
+                continue; // content hero (never reached the warning window) — nothing to report
             }
 
             entries.Add(new NeedsEntry(
