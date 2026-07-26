@@ -51,7 +51,19 @@ public static class CombatMath
     public static int MonsterDamage(int monsterAttack, int roll, int heroDefense) =>
         Math.Max(1, monsterAttack + roll - heroDefense);
 
-    public static bool ShouldFlee(int hp, int maxHp) => hp * 100 < FleeThresholdPct * maxHp;
+    public static bool ShouldFlee(int hp, int maxHp) => ShouldFlee(hp, maxHp, 0);
+
+    /// <summary>
+    /// Flee predicate with a craft-modifier threshold shift (Phase C U-C1): a Coward's oil raises the
+    /// wound line (positive delta → breaks off sooner), a Braveheart oil lowers it (negative delta →
+    /// presses on). The effective threshold is clamped to [0,100]. With <paramref name="thresholdDeltaPct"/>
+    /// = 0 (no modifier) this is byte-identical to the base predicate. Integer-only, no RNG.
+    /// </summary>
+    public static bool ShouldFlee(int hp, int maxHp, int thresholdDeltaPct)
+    {
+        var threshold = Math.Clamp(FleeThresholdPct + thresholdDeltaPct, 0, 100);
+        return hp * 100 < threshold * maxHp;
+    }
 
     public static int StatOf(ItemId? id, ImmutableSortedDictionary<int, Item> items, Func<ItemStats, int> pick) =>
         id is { } real && items.TryGetValue(real.Value, out var item) ? pick(item.Stats) : 0;

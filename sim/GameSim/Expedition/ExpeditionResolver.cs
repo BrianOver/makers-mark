@@ -266,6 +266,13 @@ public static class ExpeditionResolver
         // hurt). Every early exit below overwrites this with its cause.
         var halt = ExpeditionHalt.TargetReached;
 
+        // Phase C U-C1: the aggregate craft-modifier effect per hero, read ONCE from equipped gear
+        // (constant across the expedition). A hero whose gear carries no modifier resolves to None,
+        // so every seam below is a no-op and the run is byte-identical to the pre-U-C1 resolver —
+        // the mechanism is dormant until slice-2 composition stamps modifiers at the forge.
+        var effects = party.ToDictionary(
+            h => h.Id.Value, h => Crafting.CraftModifiers.ForGear(h.Gear, items));
+
         for (var floor = fromFloor; floor <= toFloor; floor++)
         {
             // TUNING-C: a retreated hero has left the delve (banked, still a Survivor) — she is
@@ -289,7 +296,7 @@ public static class ExpeditionResolver
 
             foreach (var hero in fighters) // HeroId order — deterministic
             {
-                var outcome = FightMonster(hero, items, venue, floor, hp, packs, rng, combats);
+                var outcome = FightMonster(hero, items, venue, floor, hp, packs, rng, combats, effects[hero.Id.Value]);
                 if (outcome == FightOutcome.HeroDied)
                 {
                     dead.Add(hero.Id.Value);
@@ -319,12 +326,13 @@ public static class ExpeditionResolver
             {
                 foreach (var hero in party.Where(h => !dead.Contains(h.Id.Value) && !retreated.Contains(h.Id.Value)))
                 {
-                    if (CombatMath.ShouldFlee(hp[hero.Id.Value], hero.MaxHp))
+                    var fleeDelta = effects[hero.Id.Value].FleeThresholdDeltaPct;
+                    if (CombatMath.ShouldFlee(hp[hero.Id.Value], hero.MaxHp, fleeDelta))
                     {
                         QuaffAfterFight(hero, items, hp, packs, combats);
                     }
 
-                    tooHurtToContinue |= CombatMath.ShouldFlee(hp[hero.Id.Value], hero.MaxHp);
+                    tooHurtToContinue |= CombatMath.ShouldFlee(hp[hero.Id.Value], hero.MaxHp, fleeDelta);
                 }
             }
 
@@ -345,7 +353,10 @@ public static class ExpeditionResolver
             // retreating on THIS floor still collects it (the retreat check runs below, after this).
             foreach (var hero in party.Where(h => !dead.Contains(h.Id.Value) && !retreated.Contains(h.Id.Value)))
             {
-                loot.Add(new OreLoot(hero.Id, venue.OreKey(floor), rng.NextInt(1, 4)));
+                // Draw the base 1-3 first (RNG order unchanged), THEN add the Lodestone bonus as a
+                // post-draw integer — a hero with no fitting adds 0, so the stream is untouched.
+                var quantity = rng.NextInt(1, 4) + effects[hero.Id.Value].BonusOrePerLoot;
+                loot.Add(new OreLoot(hero.Id, venue.OreKey(floor), quantity));
             }
 
             // Anyone too hurt to continue ends the expedition after banking the clear.
@@ -436,7 +447,8 @@ public static class ExpeditionResolver
         Dictionary<int, int> hp,
         Dictionary<int, List<ItemId>> packs,
         IDeterministicRng rng,
-        ImmutableList<CombatEvent>.Builder combats)
+        ImmutableList<CombatEvent>.Builder combats,
+        Crafting.CraftModifiers.HeroModifierEffect effect)
     {
         var monsterHp = venue.MonsterHp(floor);
         var heroAttack = CombatMath.HeroAttack(hero, items);
@@ -454,7 +466,7 @@ public static class ExpeditionResolver
             // At most one quaff per round; round 1 never triggers (heroes enter a
             // floor above the flee threshold — the post-floor check guarantees it).
             var uses = ImmutableList<ConsumableUse>.Empty;
-            if (CombatMath.ShouldFlee(hp[hero.Id.Value], hero.MaxHp))
+            if (CombatMath.ShouldFlee(hp[hero.Id.Value], hero.MaxHp, effect.FleeThresholdDeltaPct))
             {
                 if (TryQuaff(hero, items, hp, packs, round) is { } use)
                 {
@@ -483,6 +495,18 @@ public static class ExpeditionResolver
                 hp[hero.Id.Value] -= taken;
             }
 
+            // Phase C U-C1: a Leech rune draws life on a kill. Applied AFTER the round's damage,
+            // capped at MaxHp, and recorded as ModifierHpDelta so attribution's HP replay stays
+            // byte-consistent (KTD6). HealOnKill == 0 (no rune) records 0 → no behaviour change.
+            var modHpDelta = 0;
+            if (monsterKilled && effect.HealOnKill > 0)
+            {
+                var before = hp[hero.Id.Value];
+                var after = Math.Min(before + effect.HealOnKill, hero.MaxHp);
+                modHpDelta = after - before;
+                hp[hero.Id.Value] = after;
+            }
+
             combats.Add(new CombatEvent(
                 floor,
                 hero.Id,
@@ -494,6 +518,7 @@ public static class ExpeditionResolver
                 monsterKilled ? hero.Gear.Weapon : null)
             {
                 Uses = uses,
+                ModifierHpDelta = modHpDelta,
             });
 
             if (monsterKilled)

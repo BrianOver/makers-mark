@@ -97,6 +97,11 @@ public static class AttributionEngine
 
                 hp[hero.Id.Value] -= combat.DamageTaken;
 
+                // Phase C U-C1: replay the craft-modifier HP change (e.g. a Leech heal on a kill)
+                // exactly as the forward pass applied it — end of the exchange, after damage. 0 when
+                // the bearer carries no firing modifier, so pre-U-C1 traces are unaffected (KTD6).
+                hp[hero.Id.Value] += combat.ModifierHpDelta;
+
                 foreach (var use in combat.Uses)
                 {
                     if (use.Round > roundNumber)
