@@ -36,6 +36,6 @@ public class PhaseBNoDrawGateTests
         // "no new draw site" guarantee for Class-1 units is the grep (rng.* confined to the 3 kernel
         // files); this pin now guards against an UNEXPLAINED future move. If it moves, first check Inc
         // (changed ⇒ a new stream, a real bug) then grep for a new `rng.` site.
-        Assert.Equal(new RngState(6848733686438733362UL, 13279888329118852579UL), state.Rng);
+        Assert.Equal(new RngState(10819530273638390806UL, 13279888329118852579UL), state.Rng);
     }
 }

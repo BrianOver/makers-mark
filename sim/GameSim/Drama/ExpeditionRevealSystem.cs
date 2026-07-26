@@ -172,13 +172,15 @@ public sealed class ExpeditionRevealSystem : IPhaseSystem
             }
         }
 
-        // 5. XP + cosmetic rank (Phase B B1c, R-B3): survivors accrue career XP off THIS
-        // expedition's own facts — a flat survival grant, its deepest floor cleared, and
+        // 5. XP + rank + level (Phase B B1c/R-B3, Phase C U-C6 flip): survivors accrue career XP
+        // off THIS expedition's own facts — a flat survival grant, its deepest floor cleared, and
         // kills/saves THIS run credits them with (result.Beats, not the lifetime Memories tally —
         // see HeroXp's own doc comment for why that distinction matters). Crossing a rank
-        // threshold emits a named HeroRankUp — a cosmetic label only; NEVER Hero.Level
-        // (CombatMath.cs:29,32 read Level into Attack/Defense — touching it is a Class-2/Balance
-        // break, deferred to Phase C's hardening window per KTD-B2).
+        // threshold emits a named HeroRankUp AND (U-C6) sets the REAL Hero.Level to the matching
+        // rank index — CombatMath.cs:29,32 read Level into Attack/Defense, so a ranked-up hero is
+        // mechanically stronger. Rank and level are derived off the SAME HeroRank ladder (never two
+        // independent thresholds), so they can never drift apart. This is a deliberate Class-2/
+        // Balance-breaking change (the flip KTD-B2 deferred to Phase C).
         foreach (var heroId in result.Survivors)
         {
             if (!state.Heroes.TryGetValue(heroId.Value, out var hero))
@@ -204,8 +206,9 @@ public sealed class ExpeditionRevealSystem : IPhaseSystem
             var oldRank = HeroRank.For(hero.Xp);
             var newXp = hero.Xp + xpGain;
             var newRank = HeroRank.For(newXp);
+            var newLevel = HeroRank.LevelFor(newXp);
 
-            state = state with { Heroes = state.Heroes.SetItem(heroId.Value, hero with { Xp = newXp }) };
+            state = state with { Heroes = state.Heroes.SetItem(heroId.Value, hero with { Xp = newXp, Level = newLevel }) };
 
             if (newRank != oldRank)
             {

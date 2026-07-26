@@ -116,7 +116,7 @@ public sealed class HeroShoppingSystem : IPhaseSystem
         // player-shelf-only anti-spam precedent above rather than firing for every hero every
         // morning. Observational only: it reads the verdicts already computed, changes nothing,
         // and draws no RNG.
-        StampGearDecision(hero, best, candidates, events);
+        StampGearDecision(hero, best, candidates, NeedsSystem.IsBoycotting(hero.Id, state), events);
 
         return ApplyPurchase(state, hero, best, events);
     }
@@ -128,10 +128,17 @@ public sealed class HeroShoppingSystem : IPhaseSystem
     /// what this system does the next time it actually runs against the same state). Pick the
     /// single best Buy across both shops; strict "better than" keeps the comparison pure, and
     /// ItemIds are unique so <see cref="ShoppingAi.IsBetterValue"/> is a total order.
+    ///
+    /// Phase B (B4, R-B7): a boycotting hero (<see cref="NeedsSystem.IsBoycotting"/>) reads a
+    /// PLAYER-shelf candidate's price as <see cref="NeedsSystem.BoycottPerceivedPricePenaltyPermille"/>
+    /// higher for THIS ranking only (<see cref="BoycottEffectivePrice"/>) — a comparison-only bias,
+    /// never a block, so the forecast (which calls this exact method) automatically stays exact
+    /// (R-B2) and a standout player deal can still win and recover the hero.
     /// </summary>
     internal static (Candidate? Best, ImmutableList<Candidate> Candidates) EvaluateGearCandidates(GameState state, Hero hero)
     {
         var candidates = CollectCandidates(state);
+        var boycotting = NeedsSystem.IsBoycotting(hero.Id, state);
 
         Candidate? best = null;
         foreach (var candidate in candidates)
@@ -149,8 +156,8 @@ public sealed class HeroShoppingSystem : IPhaseSystem
             }
 
             if (best is null || ShoppingAi.IsBetterValue(
-                    verdict.GearScoreGain, candidate.Price, candidate.Item.Id,
-                    best.Verdict!.GearScoreGain, best.Price, best.Item.Id))
+                    verdict.GearScoreGain, BoycottEffectivePrice(candidate, boycotting), candidate.Item.Id,
+                    best.Verdict!.GearScoreGain, BoycottEffectivePrice(best, boycotting), best.Item.Id))
             {
                 best = candidate;
             }
@@ -159,10 +166,27 @@ public sealed class HeroShoppingSystem : IPhaseSystem
         return (best, candidates.ToImmutableList());
     }
 
+    /// <summary>Phase B (B4, R-B7): a boycotting hero's PLAYER-shelf candidate reads as this much
+    /// pricier for RANKING purposes only — <see cref="ApplyPurchase"/> always charges/credits the
+    /// real <see cref="Candidate.Price"/>, unmodified. A non-boycotting hero, or any rival-shelf
+    /// candidate, is returned unchanged (byte-identical to the pre-B4 comparison).</summary>
+    private static int BoycottEffectivePrice(Candidate candidate, bool boycotting)
+    {
+        if (!boycotting || !candidate.FromPlayerShelf)
+        {
+            return candidate.Price;
+        }
+
+        return candidate.Price
+            + (int)((long)candidate.Price * NeedsSystem.BoycottPerceivedPricePenaltyPermille / 1000);
+    }
+
     /// <summary>Phase B (B1a): the runner-up gear Buy candidate — the best-value candidate other
     /// than <paramref name="best"/> — for the decision card's "chosen over X" framing. Null when
-    /// nothing else was a viable Buy this morning.</summary>
-    internal static Candidate? RunnerUpGearCandidate(ImmutableList<Candidate> candidates, Candidate best)
+    /// nothing else was a viable Buy this morning. <paramref name="boycotting"/> mirrors
+    /// <see cref="EvaluateGearCandidates"/>'s bias so the reported runner-up is the SAME one that
+    /// would actually have won the real comparison (self-consistent decision card).</summary>
+    internal static Candidate? RunnerUpGearCandidate(ImmutableList<Candidate> candidates, Candidate best, bool boycotting)
     {
         Candidate? runnerUp = null;
         foreach (var candidate in candidates)
@@ -173,8 +197,8 @@ public sealed class HeroShoppingSystem : IPhaseSystem
             }
 
             if (runnerUp is null || ShoppingAi.IsBetterValue(
-                    candidate.Verdict.GearScoreGain, candidate.Price, candidate.Item.Id,
-                    runnerUp.Verdict!.GearScoreGain, runnerUp.Price, runnerUp.Item.Id))
+                    candidate.Verdict.GearScoreGain, BoycottEffectivePrice(candidate, boycotting), candidate.Item.Id,
+                    runnerUp.Verdict!.GearScoreGain, BoycottEffectivePrice(runnerUp, boycotting), runnerUp.Item.Id))
             {
                 runnerUp = candidate;
             }
@@ -183,9 +207,9 @@ public sealed class HeroShoppingSystem : IPhaseSystem
         return runnerUp;
     }
 
-    private static void StampGearDecision(Hero hero, Candidate best, ImmutableList<Candidate> candidates, IEventSink events)
+    private static void StampGearDecision(Hero hero, Candidate best, ImmutableList<Candidate> candidates, bool boycotting, IEventSink events)
     {
-        var runnerUp = RunnerUpGearCandidate(candidates, best);
+        var runnerUp = RunnerUpGearCandidate(candidates, best, boycotting);
         if (!best.FromPlayerShelf && !(runnerUp?.FromPlayerShelf ?? false))
         {
             return; // neither side of the decision touched the player's own shelf — not player-relevant

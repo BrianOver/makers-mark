@@ -367,17 +367,33 @@ public class ExpeditionRevealSystemTests
     }
 
     [Fact]
-    public void XpAccrual_NeverWritesLevel_TheCombatMathTripwire()
+    public void XpAccrual_WritesLevelInLockstepWithRank_PhaseCFlip()
     {
-        // TRIPWIRE (fable fix 3): CombatMath.cs:29,32 read Hero.Level into Attack/Defense — XP
-        // accrual and rank-up must NEVER touch it (that would be a Class-2/Balance break).
+        // Phase C (U-C6): the flip. CombatMath.cs:29,32 read Hero.Level into Attack/Defense —
+        // crossing the Delver (50 XP) threshold now ALSO sets the real Level to 2 (rank index 1 + 1),
+        // off the SAME HeroRank ladder that names the rank. This is the deliberate Class-2/Balance
+        // break KTD-B2 deferred to Phase C.
         var state = NewWorld();
         var levelBefore = state.Heroes[1].Level;
+        // 10 (survive) + 10 floors * 5 = 60 — crosses the Delver (50) threshold from Novice (0).
         var result = Result(party: [1], survivors: [1], deaths: [], targetFloor: 10, deepestCleared: 10);
 
         var tick = TickEvening(AtEvening(state, result));
 
-        Assert.Equal(levelBefore, tick.NewState.Heroes[1].Level);
+        Assert.Equal(1, levelBefore);
+        Assert.Equal(2, tick.NewState.Heroes[1].Level);
+    }
+
+    [Fact]
+    public void XpAccrual_BelowFirstThreshold_LevelStaysAtNovice()
+    {
+        // No rank-up yet (still Novice) — Level must stay 1, not drift ahead of rank.
+        var state = NewWorld();
+        var result = Result(party: [1], survivors: [1], deaths: [], targetFloor: 1, deepestCleared: 1);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.Equal(1, tick.NewState.Heroes[1].Level);
     }
 
     [Fact]
