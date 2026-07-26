@@ -84,12 +84,18 @@ public partial class DepthsPanel : SimPanel
         _mineWatch!.Refresh(state, Adapter.LastEvents);
 
         Clear(_venueGrid!);
-        _venueGrid!.AddChild(BuildMineTile(state));
+        // U-C4: a tile per LIVE venue (the Mine AND Gloomwood, from VenueRegistry.LiveRotation) —
+        // the second venue is now real, so the hub is no longer Mine-only.
+        foreach (var venueId in GameSim.Venues.VenueRegistry.LiveRotation)
+        {
+            _venueGrid!.AddChild(BuildVenueTile(state, venueId));
+        }
     }
 
-    private Control BuildMineTile(GameState state)
+    private Control BuildVenueTile(GameState state, string venueId)
     {
-        var card = Card("VenueTile_mine");
+        var venue = GameSim.Venues.VenueRegistry.Require(venueId);
+        var card = Card($"VenueTile_{venueId}");
         card.CustomMinimumSize = VenueTileSize;
         var body = new VBoxContainer();
         card.AddChild(body);
@@ -103,26 +109,50 @@ public partial class DepthsPanel : SimPanel
         // LW5's own screenshot self-verify, PR #119) now lives centrally in UiKit.ArtRect instead
         // of patched locally here — see UiKit.ArtRect's own remarks.
         var backdropArt = ArtRect(
-            AssetCatalog.VenueBackdropId(MineVenueId), new Vector2(BackdropSize, BackdropSize),
-            IconRegistry.Glyph("depths"), MineVenueName);
+            AssetCatalog.VenueBackdropId(venueId), new Vector2(BackdropSize, BackdropSize),
+            IconRegistry.Glyph("depths"), venue.DisplayName);
         headerRow.AddChild(backdropArt);
 
         var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         headerRow.AddChild(infoCol);
-        AddHeader(infoCol, MineVenueName + " — deepest floor on record");
+        AddHeader(infoCol, venue.DisplayName);
 
-        if (state.Drama.DepthsBoard.IsEmpty)
+        // U-C3: den escalation — the venue's threat tier and lockdown, surfaced so the drama the
+        // director builds up is legible instead of invisible. No entry = untouched/quiet.
+        var threat = state.Venues.TryGetValue(venueId, out var vs) ? vs : null;
+        var tier = threat?.ThreatTier ?? 0;
+        var threatLine = threat is { Closed: true }
+            ? "  ⚠ locked down — the den has overrun the routes here"
+            : tier <= 0
+                ? "  den: quiet"
+                : $"  den threat: tier {tier}" + (threat!.InfectionPerMille > 0 ? $" ({threat.InfectionPerMille / 10}%)" : "");
+        AddLabel(infoCol, threatLine);
+
+        // U-C4: who is raiding this venue right now (from the in-flight expeditions' venue key).
+        var partiesHere = state.InFlight.Count(x => x.VenueId == venueId);
+        if (partiesHere > 0)
         {
-            AddLabel(infoCol, "  (no records yet — the Mine awaits)");
-            return card;
+            AddLabel(infoCol, $"  {partiesHere} part{(partiesHere == 1 ? "y" : "ies")} raiding now");
         }
 
-        var standings = state.Drama.DepthsBoard
-            .OrderByDescending(entry => entry.Value)
-            .ThenBy(entry => entry.Key);
-        foreach (var (heroValue, floor) in standings)
+        // The deepest-floor board is a GLOBAL per-hero record (not venue-split, KTD5) — shown under
+        // the Mine, the venue-of-record it historically belongs to; other venues show live activity.
+        if (venueId == MineVenueId)
         {
-            AddLabel(infoCol, $"  floor {floor} — {HeroName(new HeroId(heroValue))}");
+            if (state.Drama.DepthsBoard.IsEmpty)
+            {
+                AddLabel(infoCol, "  (no records yet — the Mine awaits)");
+            }
+            else
+            {
+                var standings = state.Drama.DepthsBoard
+                    .OrderByDescending(entry => entry.Value)
+                    .ThenBy(entry => entry.Key);
+                foreach (var (heroValue, floor) in standings)
+                {
+                    AddLabel(infoCol, $"  floor {floor} — {HeroName(new HeroId(heroValue))}");
+                }
+            }
         }
 
         return card;

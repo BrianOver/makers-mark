@@ -152,6 +152,9 @@ public partial class MainUi : Control
     /// "Legends" hotspot.</summary>
     public LegendsWall Legends { get; private set; } = null!;
     public CampPanel Camp { get; private set; } = null!;
+    /// <summary>U-D4: the multi-axis progression spine — the five ladders + each one's next rung.
+    /// Opened from the HUD "Progress" button.</summary>
+    public ProgressionPanel Progress { get; private set; } = null!;
     public TabFade TabFade { get; private set; } = null!;
     public AdventureTicker Ticker { get; private set; } = null!;
 
@@ -271,6 +274,7 @@ public partial class MainUi : Control
         Bounties.Bind(Adapter);
         Demand.Bind(Adapter);
         HeroCards.Bind(Adapter);
+        Progress.Bind(Adapter);
         Ledger.Bind(Adapter);
         Camp.Bind(Adapter);
         Mirror.Bind(Adapter);
@@ -561,6 +565,35 @@ public partial class MainUi : Control
             : $"Rent due in {rent.DaysUntilDue} day(s): {rent.AmountDueGold}g (every {RentState.CadenceDays} days).";
         _statChips.AddChild(rentChip);
 
+        // U-D2: the town-Confidence gauge (0-1000 → %) — the soft-deadline morale the Guild
+        // Assessment and rival vendor both read. Tone drops as it nears the collapse floor (0).
+        var confidence = state.Rent.ConfidencePermille;
+        var confidenceTone = confidence <= 200 ? UiKit.ChipTone.Negative
+            : confidence <= 500 ? UiKit.ChipTone.Accent
+            : UiKit.ChipTone.Positive;
+        var confidenceChip = NamedStatChip("ConfidenceChip", "Confidence", $"{confidence / 10}%", confidenceTone);
+        confidenceChip.TooltipText =
+            $"Town confidence {confidence / 10}% — lifts on a paid Guild Assessment, drops on a miss or passive decay. At 0 the era soft-fails (talents + recipes persist).";
+        _statChips.AddChild(confidenceChip);
+
+        // U-D2: the Guild Assessment heartbeat — dues on their own cadence, escalating paid or missed.
+        var assess = state.Assessment;
+        var assessTone = assess.SoftFailed || assess.MissedAssessments > 0 || assess.DaysUntilAssessment <= 1
+                ? UiKit.ChipTone.Negative
+            : assess.DaysUntilAssessment <= 2 ? UiKit.ChipTone.Accent
+            : UiKit.ChipTone.Neutral;
+        var assessChip = NamedStatChip("AssessmentChip", "Guild", $"{assess.DaysUntilAssessment}d/{assess.DuesGold}g", assessTone);
+        assessChip.TooltipText = assess.MissedAssessments > 0
+            ? $"Guild Assessment due in {assess.DaysUntilAssessment} day(s): {assess.DuesGold}g. {assess.MissedAssessments} missed — dues escalate steeply."
+            : $"Guild Assessment due in {assess.DaysUntilAssessment} day(s): {assess.DuesGold}g (every {GuildAssessmentState.CadenceDays} days). Paying it lifts Confidence.";
+        _statChips.AddChild(assessChip);
+
+        // U-D3: which act of the campaign arc the town is in (I → II → III → ending).
+        var actChip = NamedStatChip("ActChip", "Act", ArcActRoman(state.Arc.Act), UiKit.ChipTone.Accent);
+        actChip.TooltipText =
+            $"Campaign arc: {state.Arc.Act}. Advances on the deepest floor your heroes reach; Act III is the climax, then the ending chronicle.";
+        _statChips.AddChild(actChip);
+
         // U10 scarcity surfacing: today's remaining real-work action slots as a pip row.
         _statChips.AddChild(BuildSlotPips(state.ActionSlotsRemaining, ActionBudget.SlotsPerDay));
 
@@ -604,6 +637,16 @@ public partial class MainUi : Control
         chip.Name = name;
         return chip;
     }
+
+    /// <summary>U-D3: the campaign act as a compact roman numeral for the HUD chip.</summary>
+    private static string ArcActRoman(CampaignAct act) => act switch
+    {
+        CampaignAct.ActI => "I",
+        CampaignAct.ActII => "II",
+        CampaignAct.ActIII => "III",
+        CampaignAct.Ended => "Fin",
+        _ => act.ToString(),
+    };
 
     /// <summary>The gold chip pairs the existing gold glyph (U16) with a themed StatChip value —
     /// the one place the U16 icon and the P007 U2 widget kit meet.</summary>
@@ -976,6 +1019,11 @@ public partial class MainUi : Control
         heroesButton.Pressed += () => OpenPanel("HeroCards");
         controls.AddChild(heroesButton);
 
+        // U-D4: the progression spine — same button-cluster pattern. Opens the five-ladder board.
+        var progressButton = new Button { Name = "OpenProgress", Text = "Progress" };
+        progressButton.Pressed += () => OpenPanel("Progress");
+        controls.AddChild(progressButton);
+
         // U6/U7 rejection banner: a transient, themed, player-phrased line — hidden
         // except while a toast is live (OnPhaseCompleted shows it, ClearToast/_Process
         // hide it). NOT a persistent status readout, and never the raw kernel string.
@@ -1012,6 +1060,7 @@ public partial class MainUi : Control
         Bounties = InstantiatePanel<BountyPanel>("res://scenes/panels/bounty_panel.tscn");
         Demand = InstantiatePanel<DemandPanel>("res://scenes/panels/demand_panel.tscn");
         HeroCards = InstantiatePanel<HeroPanel>("res://scenes/panels/hero_panel.tscn");
+        Progress = new ProgressionPanel(); // U-D4: code-built (no scene deps), like BestiaryPanel
 
         // U17 (KTD13): the single bottom-edge HUD line — mounted last in the layout so it sits
         // below the world gap, the one region KTD13 reserves for it (PiP docks above it; top bar
@@ -1055,6 +1104,7 @@ public partial class MainUi : Control
         Drawer.Register("Bounties", Bounties);
         Drawer.Register("Demand", Demand);
         Drawer.Register("HeroCards", HeroCards);
+        Drawer.Register("Progress", Progress);
         // LW6: the drawer-swap fade veil (was the tab-switch veil pre-U21) — a purely additive
         // CanvasLayer-100 overlay, triggered from OpenPanel below, and from a click-out/Esc close
         // that bypasses OpenPanel entirely (Drawer.Closed).
@@ -1234,6 +1284,7 @@ public partial class MainUi : Control
         "Bounties" => Bounties,
         "Demand" => Demand,
         "HeroCards" => HeroCards,
+        "Progress" => Progress,
         _ => throw new ArgumentOutOfRangeException(nameof(id), id, "no such drawer panel"),
     };
 
