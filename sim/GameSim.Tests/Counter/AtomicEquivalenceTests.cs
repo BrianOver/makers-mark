@@ -100,8 +100,16 @@ public class AtomicEquivalenceTests
     // draw site) and every combat value is identical. Only the serialized shape moved. Same class as
     // the SignedName / Memorial.Honored field additions. The Class-2 combat re-baseline arrives with
     // slice 2, when forge composition actually stamps modifiers onto crafted gear.
+    // RE-BASELINED (Phase C U-C3 drama director): new single daily draw on the EXISTING kernel stream
+    // (Inc unchanged, State advanced) — Class-2. DirectorSystem polls once every Morning and draws ONE
+    // value from the shared stream to pick an incident, so every downstream draw that day shifts (combat,
+    // recruit, quality) → the idle serialized state moves for REAL. The director/den state also serializes
+    // now (GameState.Director, GameState.Venues entries, IncidentFired/DenThreatShifted events on the log).
+    // Determinism holds (same seed+actions = identical state) and NO new stream was created — the sibling
+    // PhaseBNoDrawGate pin confirms RngState.Inc is UNCHANGED, only State moved (one extra draw/day on the
+    // same stream). The grep gate holds (rng. now confined to the 4 sites incl. Drama/DirectorSystem.cs).
     private const string ExpectedPreCounterSha256 =
-        "0951908C7C529CC0D8FFC0ECBFEC48F7565505BA8216DD86541FF9B537D47359";
+        "45F6B05CC66F855EAB069C873404E6AB63E3EC23677EFB1DBE2FF67F5C2359E1";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

@@ -32,8 +32,14 @@ public class ConsumableTraitMortalityBalanceTests
     /// <summary>Same affordable price <see cref="SalveProvisioningBalanceTests"/> pins.</summary>
     private const int SalvePrice = 8;
 
+    // Widened 30 -> 90 seeds when Phase C U-C3 (drama director) landed: the director's daily draw
+    // shifts the shared RNG stream position, and the Reckless-vs-Prepared survival delta this test
+    // probes is a genuinely MARGINAL effect (the trait only bites when a hero actually reaches a
+    // flee/death moment where a stocked salve would have mattered). At 30 seeds a stream shift could
+    // flip the aggregate sign; a larger sweep restores a robust signal for the same measurement
+    // (not a loosened assertion — still strict Reckless-dies-more, just more samples).
     private static readonly ulong[] Seeds =
-        { 2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034, 2035, 2036 };
+        System.Linq.Enumerable.Range(2026, 90).Select(i => (ulong)i).ToArray();
 
     private sealed record TraitMortality(int RecklessTotal, int RecklessDied, int PreparedTotal, int PreparedDied);
 

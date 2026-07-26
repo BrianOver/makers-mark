@@ -77,11 +77,21 @@ public sealed record CounterState(
 /// <summary>
 /// Per-venue mutable world state (M4, P9 dens / P5 closures): days since a party last cleared
 /// ground here, the den's escalation meter (per-mille), and whether routes to it are closed.
-/// Written by post-weekend systems (M11a escalation, M6 closures) — until they land, a venue
-/// simply has no entry and the game reads it as untouched/open. APPEND fields via contracts
-/// micro-PR only (KTD4).
+/// Written by the Phase C U-C3 <c>DirectorSystem</c> den-escalation pass (the M11a escalation this
+/// record was reserved for) — until a venue is first escalated it has no entry and the game reads it
+/// as untouched/open. APPEND fields via contracts micro-PR only (KTD4).
+/// <para>Phase C U-C3 den escalation uses <see cref="InfectionPerMille"/> as the ThreatPm meter this
+/// record was pre-declared to hold ("the den's escalation meter (per-mille)"): a scheduled daily
+/// increment raises it, cleared expeditions lower it, <see cref="ThreatTier"/> steps up as it crosses
+/// fixed thresholds (the category shift), and <see cref="Closed"/> latches true at the cap (lockdown).
+/// No sim rule reads these fields back into routing or combat — den escalation is recorded drama
+/// state, so it perturbs no seed's expedition outcomes beyond the shared-stream draw the director adds.</para>
 /// </summary>
-public sealed record VenueState(int DaysUntouched, int InfectionPerMille, bool Closed);
+/// <param name="ThreatTier">Phase C U-C3 den-escalation category tier (0..3), stepped up as
+/// <see cref="InfectionPerMille"/> crosses fixed thresholds. TRAILING with a default so old saves and
+/// existing constructors (which never named it) deserialize/compile to tier 0 — the Standing/Trinket
+/// trailing-optional precedent.</param>
+public sealed record VenueState(int DaysUntouched, int InfectionPerMille, bool Closed, int ThreatTier = 0);
 
 /// <summary>
 /// The guild-rent deadline heartbeat (Game-Feel Plan G3): due every <see cref="CadenceDays"/>
@@ -110,6 +120,62 @@ public sealed record RentState(int DaysUntilDue, int AmountDueGold, int MissedPa
         AmountDueGold: BaseRentGold,
         MissedPayments: 0,
         ConfidencePermille: 1000);
+}
+
+/// <summary>
+/// Phase D (U-D2): the Guild Assessment heartbeat — the "later unit" <see cref="RentState.ConfidencePermille"/>
+/// was left unwired for. Every <see cref="CadenceDays"/> Mornings the guild collects escalating dues
+/// (its OWN cadence and escalation track, separate from — and in addition to — <see cref="RentState"/>'s
+/// existing 10-day rent cycle); the town's shared Confidence gauge (still <see cref="RentState.ConfidencePermille"/>,
+/// 0-1000 — this system EXTENDS that one meter rather than adding a second) now also moves on a passive
+/// daily decay plus depth-record / attribution-beat / hero-death signals, so the player's own progress
+/// (or lack of it) — not a fixed calendar — drives the pressure (AtS "Blightstorm" coupling).
+/// </summary>
+/// <param name="DaysUntilAssessment">Mornings left before the next Guild Assessment (counts down to 0).</param>
+/// <param name="DuesGold">Gold owed at the next assessment; escalates each cycle, paid or missed.</param>
+/// <param name="AssessmentsPassed">Lifetime count of assessments paid in full.</param>
+/// <param name="MissedAssessments">Lifetime count of assessments that landed unaffordable.</param>
+/// <param name="SoftFailed">True once Confidence has bottomed out at 0 at least once this era — the
+/// telegraphed soft-fail signal (<see cref="TownConfidenceCollapsed"/>). Sticky (never clears itself):
+/// U-D5's era-reset is the only thing that should ever flip it back — deliberately NOT implemented here
+/// (POST-v1, scope control). Latching also keeps the collapse event edge-triggered (fires once, not
+/// every Morning Confidence sits at 0).</param>
+public sealed record GuildAssessmentState(
+    int DaysUntilAssessment,
+    int DuesGold,
+    int AssessmentsPassed,
+    int MissedAssessments,
+    bool SoftFailed)
+{
+    /// <summary>Mornings between Guild Assessments (the plan's "every 7 days") — deliberately its OWN
+    /// cadence, distinct from <see cref="RentState.CadenceDays"/>.</summary>
+    public const int CadenceDays = 7;
+
+    /// <summary>Starting/base dues, before any escalation.</summary>
+    public const int BaseDuesGold = 20;
+
+    /// <summary>A fresh campaign's assessment clock: a full cadence away, at the base rate, nothing
+    /// passed or missed yet, Confidence intact.</summary>
+    public static readonly GuildAssessmentState Initial = new(
+        DaysUntilAssessment: CadenceDays,
+        DuesGold: BaseDuesGold,
+        AssessmentsPassed: 0,
+        MissedAssessments: 0,
+        SoftFailed: false);
+}
+
+/// <summary>
+/// Phase D (U-D3): the campaign arc + ending state, stored in <see cref="GameState.Arc"/>. Every
+/// field is a plain day-stamp (0 = not yet reached) so the whole record stays trivially
+/// serializable and diffable. Advanced ONLY by <c>GameSim.Arc.ArcDirectorSystem</c>, which reads
+/// existing progression signals already in <see cref="GameState"/> (deepest floor reached via
+/// <see cref="DramaState.DepthsBoard"/>, days elapsed via <see cref="GameState.Day"/>) — pure
+/// integer, ZERO RNG (KTD2). <see cref="Act"/> only ever moves forward through
+/// <see cref="CampaignAct"/>'s order; nothing in the sim ever regresses it.</summary>
+public sealed record ArcState(CampaignAct Act, int ActIIStartDay, int ActIIIStartDay, int EndingDay)
+{
+    /// <summary>A fresh campaign: Act I, nothing else reached yet.</summary>
+    public static readonly ArcState Initial = new(CampaignAct.ActI, ActIIStartDay: 0, ActIIIStartDay: 0, EndingDay: 0);
 }
 
 /// <summary>
@@ -176,6 +242,27 @@ public sealed record GameState(
     /// and deserializes to empty, byte-identical to today. The Morning <c>CommissionSystem</c> posts
     /// them; player accept/decline flips <see cref="Commission.Accepted"/>; fulfillment/expiry drains them.</summary>
     public ImmutableList<Commission> Commissions { get; init; } = ImmutableList<Commission>.Empty;
+
+    /// <summary>Phase C (U-C3): the drama director's pacing state (tension accumulator + BuildUp/Peak/
+    /// Relax machine + refire/drought counters). Trailing init member (the InFlight/Venues/Counter/Rent/
+    /// Commissions save-compat precedent) — a pre-U-C3 save has no property and deserializes to
+    /// <see cref="DirectorState.Empty"/>, a fresh director. The Morning <c>DirectorSystem</c> is the only
+    /// writer; it advances this by exactly one seeded draw per calendar day on the existing kernel stream.</summary>
+    public DirectorState Director { get; init; } = DirectorState.Empty;
+
+    /// <summary>Phase D (U-D2): the Guild Assessment heartbeat's own dues/cadence track. Trailing init
+    /// member (the InFlight/Venues/Counter/Rent/Commissions save-compat precedent) — a pre-U-D2 save
+    /// has no property and deserializes to <see cref="GuildAssessmentState.Initial"/>, a fresh clock.
+    /// The shared Confidence gauge this heartbeat feeds stays on <see cref="RentState.ConfidencePermille"/>
+    /// (see <see cref="GuildAssessmentState"/>'s own doc comment) — this field is ONLY the
+    /// assessment's dues countdown/escalation/tally, never a second confidence number.</summary>
+    public GuildAssessmentState Assessment { get; init; } = GuildAssessmentState.Initial;
+
+    /// <summary>Phase D (U-D3): the campaign's 3-act arc + ending state. Non-positional init member
+    /// (the InFlight/Venues/Counter/Rent/Commissions save-compat precedent) — a pre-U-D3 save (no
+    /// property in the JSON) deserializes to <see cref="ArcState.Initial"/>, the fresh-campaign
+    /// baseline, so old saves simply start their arc clock from Act I on load.</summary>
+    public ArcState Arc { get; init; } = ArcState.Initial;
 }
 
 /// <summary>Wave 3: one hero's gear request — forge <see cref="Slot"/> at or above

@@ -159,8 +159,9 @@ public class RecruitOpinionSeedTests
         var baseline = HeroRoster.StartingSix();
         var elevated = baseline.SetItem(1, baseline[1] with { MoodPermille = RecruitSystem.KinOfDeadMoodBonus });
 
-        var planBaseline = MusterPlan.Compute(baseline, ImmutableList<Bounty>.Empty);
-        var planElevated = MusterPlan.Compute(elevated, ImmutableList<Bounty>.Empty);
+        var noItems = ImmutableSortedDictionary<int, Item>.Empty;
+        var planBaseline = MusterPlan.Compute(baseline, ImmutableList<Bounty>.Empty, noItems);
+        var planElevated = MusterPlan.Compute(elevated, ImmutableList<Bounty>.Empty, noItems);
 
         // ImmutableList<T> compares by reference, not value — flatten to value tuples so this
         // asserts the actual roster/floor/venue CONTENT is identical, not list identity.

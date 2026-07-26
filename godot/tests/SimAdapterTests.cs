@@ -26,7 +26,10 @@ public class SimAdapterTests
         // is day-length agnostic — 9 ticks today, 15 after the 5-phase kernel (staged-plan
         // U2). Camp/Deep ticks yield empty batches (ScriptedSession is append-tolerant), so
         // the same batch list drives the raw kernel below identically.
-        var adapter = new SimAdapter(ScriptedSession.Seed);
+        // U-C4: the scripted craft draws the blacksmith's own starter copper (StartState), so it no
+        // longer depends on early raid ore — which is now Gloomwood's greenheart, not the Mine's
+        // copper. The SAME start state seeds BOTH sides below, so the byte-for-byte parity holds.
+        var adapter = new SimAdapter(ScriptedSession.StartState());
         var batches = new List<ImmutableList<PlayerAction>>();
         for (var day = 0; day < 3; day++)
         {
@@ -52,7 +55,7 @@ public class SimAdapterTests
 
         // The same batches applied directly to a GameComposition kernel.
         var kernel = GameComposition.BuildKernel();
-        var direct = GameComposition.NewCampaign(ScriptedSession.Seed);
+        var direct = ScriptedSession.StartState();
         foreach (var batch in batches)
         {
             direct = kernel.Tick(direct, batch).NewState;

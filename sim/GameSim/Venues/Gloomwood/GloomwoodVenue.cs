@@ -26,11 +26,13 @@ namespace GameSim.Venues.Gloomwood;
 /// the Mine's <c>copper…adamant</c>: the Gloomwood mints nature-ores, never Mine ore. Supplied to the
 /// player by the Gloomwood Wardens faction (see <c>Factions/Wardens</c>).
 ///
-/// <para><b>Registered, not live.</b> The venue registers into <c>VenueRegistry.All</c> but NOT into
-/// <c>VenueRegistry.LiveRotation</c> (frozen at the Mine): no hero party raids it, so its floors mint
-/// nothing on any live path and the Balance bands cannot move. Going live is the deferred multi-venue
-/// follow-on (wave-D row D8). Until then this definition is exercised only by its own tests, which
-/// drive it through the real resolver + attribution engine without registration (the add-on shape).</para>
+/// <para><b>Live (Phase C U-C4).</b> The venue is registered into <c>VenueRegistry.All</c> AND into
+/// <c>VenueRegistry.LiveRotation</c> as the second live venue alongside the Mine: <c>VenueRouter</c>
+/// distributes bounty-free parties across the two by utility + queue length
+/// (<c>ExpeditionSystem.Process</c> / <c>MusterPlan.Compute</c>), so its floors DO mint gold/ore/XP on
+/// the live path now — the deferred multi-venue follow-on this comment used to describe as future
+/// work. Its four ores joined <c>MaterialRegistry.PricedPool</c> in the same re-baseline so a
+/// returning hero's loot prices at the Evening reveal.</para>
 ///
 /// Pure data: NO Godot reference, NO RNG, integer-only (no floats, no transcendental <c>Math.*</c>).
 /// Determinism-safe by construction (KTD2).

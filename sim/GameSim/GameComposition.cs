@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using GameSim.Arc;
 using GameSim.Bounties;
 using GameSim.Contracts;
 using GameSim.Counter;
@@ -18,9 +19,11 @@ namespace GameSim;
 /// DETERMINISM CONTRACT (KTD4): every consumer — CLI, Godot, balance sim — must build
 /// the kernel through here so a seed means the same world everywhere.
 ///
-/// Morning: faction-drift → counter-queue → rent → destitution → rival-restock → recruit-trickle →
-/// gossip → hero-shopping → commissions → muster (drift settles standing for the day before anything
-/// reads it — KTD5; restock must precede shopping; gossip reads yesterday's stamped log).
+/// Morning: faction-drift → counter-queue → rent → guild-assessment → destitution → rival-restock →
+/// recruit-trickle → gossip → hero-shopping → commissions → muster (drift settles standing for the day
+/// before anything reads it — KTD5; restock must precede shopping; gossip reads yesterday's stamped
+/// log). Guild-assessment (Phase D U-D2) sits right after rent and before destitution — same
+/// no-softlock contract: a due-today assessment that empties the till is rescued the same Morning.
 /// CounterQueueSystem (PA3/PKD5) registers BEFORE HeroShoppingSystem AND before the once-per-Morning
 /// economy/drama systems (U1): it resolves the active counter customer (and may flip
 /// <c>CounterState.Closed</c> on queue exhaustion), so on the closing tick those systems' held-Morning
@@ -42,18 +45,22 @@ namespace GameSim;
 /// stream — and every existing seed's world — is unchanged by its insertion; muster likewise
 /// draws no RNG (pure projection).
 /// Expedition: bounty-judging → expedition (judging shapes target floors).
-/// Evening: expedition-reveal → bounty-payout → market-share (payout needs revealed depths;
-/// market-share is LAST in Evening BY CONTRACT — see MarketShareSystem's class comment — it
-/// reads GameState.ActionSlotsRemaining after every handler for the day has had its chance to
-/// spend one, but before the kernel's own post-tick budget reset).
+/// Evening: expedition-reveal → bounty-payout → arc-director → market-share (payout needs revealed
+/// depths; ArcDirectorSystem (Phase D, U-D3) runs AFTER expedition-reveal so today's new
+/// DepthsBoard record is visible to its Act/Climax/Ending thresholds — see that class's comment —
+/// and BEFORE market-share, which stays LAST in Evening BY CONTRACT — see MarketShareSystem's class
+/// comment — it reads GameState.ActionSlotsRemaining after every handler for the day has had its
+/// chance to spend one, but before the kernel's own post-tick budget reset).
 /// </summary>
 public static class GameComposition
 {
     public static GameKernel BuildKernel() => new(
         ImmutableList.Create<IPhaseSystem>(
-            new FactionDriftSystem(), // Morning, FIRST — drift settles standing before anything reads it (KTD5); draws no RNG
+            new DirectorSystem(), // Phase C U-C3: Morning, FIRST — the drama director's single daily seeded poll (the 4th rng. site) + den escalation. Fixed at the head of the Morning block so its one draw sits at a stable stream position ahead of RecruitSystem's (the next Morning consumer, via HeroRoster). Held-Morning guarded (polls once per calendar Morning). Its per-day draw perturbs the shared stream (the deliberate U-C3 re-baseline); den escalation writes recorded drama state that no routing/combat rule reads back.
+            new FactionDriftSystem(), // Morning — drift settles standing before anything reads it (KTD5); draws no RNG
             new CounterQueueSystem(), // U1: moved to SECOND (was after gossip). Resolves the stepped counter queue and flips CounterState.Closed on queue-exhaustion; it draws no RNG and is a no-op when Counter is null (BaselinePlayer path), so running it earlier leaves every gated trace byte-identical. Placing it ahead of the once-per-Morning systems below lets their held-Morning guards see Closed==true on the closing tick (explicit or exhaustion) so they fire exactly once per calendar Morning. Still BEFORE hero-shopping (PA3/PKD5).
             new RentSystem(), // Game-Feel Plan G3: BEFORE the no-softlock floor — see class comment; draws no RNG. Held-Morning guarded (U1).
+            new GuildAssessmentSystem(), // Phase D U-D2: the Guild Assessment heartbeat — its own 7-day dues cadence, ALSO before the no-softlock floor (same contract as RentSystem, immediately above); draws no RNG. Held-Morning guarded.
             new DestitutionRecoverySystem(), // Playable Core U5: no-softlock floor (R5/KD3); draws no RNG, never fires solvent — stream unchanged
             new RivalRestockSystem(), // Held-Morning guarded (U1)
             new RecruitSystem(), // Held-Morning guarded (U1)
@@ -66,6 +73,7 @@ public static class GameComposition
             new ExpeditionDeepSystem(), // U3 staged resolution: stage-2 finalize at the Deep tick (day order; phase filter does the work)
             new ExpeditionRevealSystem(),
             new BountyPayoutSystem(),
+            new ArcDirectorSystem(), // Phase D (U-D3): AFTER expedition-reveal, BEFORE market-share — see class comment; draws no RNG
             new MarketShareSystem()), // Game-Feel Plan G3: LAST in Evening BY CONTRACT — see class comment; draws no RNG
         ImmutableList.Create<IActionHandler>(
             new CraftingHandlers(),

@@ -38,20 +38,43 @@ public sealed class ExpeditionSystem : IPhaseSystem
     {
         var parties = PartyFormation.FormParties(state.Heroes); // filters dead internally
 
-        // The Mine is the only LIVE venue (P4 live-venue contract: VenueRegistry.LiveRotation).
-        var venue = VenueRegistry.Mine;
+        // Phase C U-C4: parties already routed to each live venue THIS TICK, so later parties in the
+        // same tick see the updated count (the queue-length half of VenueRouter's comparator). Seeded
+        // from the live rotation itself so every live venue reads as an explicit zero, not a missing key.
+        var queueCounts = VenueRegistry.LiveRotation.ToDictionary(id => id, _ => 0, StringComparer.Ordinal);
 
         foreach (var partyIds in parties)
         {
             var party = partyIds.Select(id => state.Heroes[id.Value]).ToImmutableList();
 
-            var targetFloor = TargetFloorFor(party, partyIds, state.Bounties, venue);
-
             // Influence, never orders (R18): a member who accepted a bounty commits the
             // party to that bounty's floor for the day (target-floor override lives in
-            // TargetFloorFor above — shared with MusterSystem's Morning-tick prediction, KTD8).
+            // TargetFloorFor below — shared with MusterSystem's Morning-tick prediction, KTD8).
             var bounty = state.Bounties.FirstOrDefault(b =>
                 b.AcceptedBy is { } acceptor && partyIds.Contains(acceptor));
+
+            // Phase C U-C4 routing: a bounty carries no venue id (bounties are structurally
+            // Mine-scoped, R18 — "the Mine IS the map"), so an accepted bounty routes straight to the
+            // Mine; a bounty-free party is routed by VenueRouter's draw-free utility + queue-length
+            // comparator (KTD2 — no RNG site added). Both call sites (here and MusterPlan.Compute)
+            // run the identical sequence over the identical parties, so the Morning prediction never
+            // disagrees with what this tick actually forms.
+            string venueId;
+            if (bounty is not null)
+            {
+                venueId = VenueRegistry.MineId;
+            }
+            else
+            {
+                var partyDepth = party.Max(h => h.DeepestFloorReached);
+                var partyPower = CombatMath.PartyAveragePower(party, state.Items);
+                venueId = VenueRouter.ChooseVenue(partyDepth, partyPower, VenueRegistry.LiveRotation, queueCounts);
+            }
+
+            queueCounts[venueId] = queueCounts.TryGetValue(venueId, out var count) ? count + 1 : 1;
+            var venue = VenueRegistry.Require(venueId);
+
+            var targetFloor = TargetFloorFor(party, partyIds, state.Bounties, venue);
 
             // TUNING-C (open decision, default): the bounty's acceptor is EXEMPT from the competence
             // retreat through the bounty's TargetFloor — accepting the bounty IS the commitment (R18).

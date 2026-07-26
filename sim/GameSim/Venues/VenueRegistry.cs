@@ -36,12 +36,15 @@ public static class VenueRegistry
     /// <summary>
     /// The venues that are LIVE — the ones hero parties actually raid. THIS IS THE LIVE-VENUE
     /// CONTRACT (same rule as <c>ClassRegistry.RecruitPool</c>): a registered venue is NOT
-    /// automatically live. Frozen at the single Mine so hero routing → target floors → the whole
-    /// sim is byte-identical; a live second venue would move every seed's balance and is the
-    /// deferred multi-venue follow-on. Add-on/test venues live in <see cref="All"/> but never here
-    /// until a determinism-gated re-baseline expands the rotation.
+    /// automatically live just by being in <see cref="All"/>. Phase C U-C4: the deferred
+    /// multi-venue follow-on lands here — the Gloomwood joins the Mine as the SECOND live venue
+    /// (the determinism-gated re-baseline this comment used to defer), and <c>VenueRouter</c>
+    /// distributes bounty-free parties across the two by utility + queue length
+    /// (<c>ExpeditionSystem.Process</c> / <c>MusterPlan.Compute</c>). Add-on/test venues (Emberfall,
+    /// Sunken Crypt) still live in <see cref="All"/> but never here until THEIR own re-baseline.
     /// </summary>
-    public static readonly ImmutableArray<string> LiveRotation = ImmutableArray.Create(MineId);
+    public static readonly ImmutableArray<string> LiveRotation =
+        ImmutableArray.Create(MineId, Gloomwood.GloomwoodVenue.Id);
 
     /// <summary>Resolve a venue definition by key.</summary>
     public static bool TryGet(string venueId, out VenueDefinition? definition)

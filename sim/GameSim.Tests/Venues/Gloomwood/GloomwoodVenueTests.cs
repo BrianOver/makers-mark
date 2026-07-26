@@ -9,18 +9,18 @@ using Xunit;
 namespace GameSim.Tests.Venues.Gloomwood;
 
 /// <summary>
-/// Behavior tests for the Gloomwood add-on venue (the 2nd raid venue, C1). Every test is
-/// REGISTRATION-INDEPENDENT: it drives the venue's <see cref="GloomwoodVenue.Definition"/> through the
-/// real <see cref="ExpeditionResolver"/> + <see cref="AttributionEngine"/> directly — never through
-/// <see cref="VenueRegistry.All"/> — so the suite is green whether or not the orchestrator has applied
-/// the registration line, and it can NEVER be live (the assertions that touch the registry only ever
-/// check the frozen <see cref="VenueRegistry.LiveRotation"/>, which excludes the Gloomwood in both
-/// states). This mirrors the core's own extensibility proof
-/// (<c>VenueConformanceTests.AddOnVenue_ResolvesEndToEnd_WithoutJoiningLiveRotation</c>).
+/// Behavior tests for the Gloomwood venue (the 2nd raid venue, C1 content / Phase C U-C4 go-live).
+/// Most tests drive the venue's <see cref="GloomwoodVenue.Definition"/> through the real
+/// <see cref="ExpeditionResolver"/> + <see cref="AttributionEngine"/> directly — never through
+/// <see cref="VenueRegistry.All"/> — so they stay green regardless of registration state. The
+/// registration/live-state test below confirms the U-C4 go-live: the Gloomwood is now registered AND
+/// in <see cref="VenueRegistry.LiveRotation"/> alongside the Mine. This mirrors the core's own
+/// extensibility proof (<c>VenueConformanceTests.AddOnVenue_ResolvesEndToEnd_WithoutJoiningLiveRotation</c>),
+/// which still uses a THIRD, never-registered reference venue to prove the add-on shape independently
+/// of whether any given venue happens to be live.
 ///
-/// Once the orchestrator applies the registration line, the parameterized <c>VenueConformanceTests</c>
-/// additionally covers the Gloomwood's structural contract automatically — this suite is the
-/// pack-owned behavior layer on top.
+/// The parameterized <c>VenueConformanceTests</c> additionally covers the Gloomwood's structural
+/// contract automatically (any registered venue) — this suite is the pack-owned behavior layer on top.
 /// </summary>
 public class GloomwoodVenueTests
 {
@@ -104,22 +104,16 @@ public class GloomwoodVenueTests
         }
     }
 
-    // ---- Registration/live state (stable in BOTH states) -----------------------------
+    // ---- Registration/live state ------------------------------------------------------
 
     [Fact]
-    public void Gloomwood_IsNeverLive_RegardlessOfRegistration()
+    public void Gloomwood_IsRegistered_AndLive()
     {
-        // The live-venue contract is frozen at the Mine; registering the Gloomwood does NOT make it
-        // live, so no hero party raids it and the Balance bands cannot move (D8 flips this later).
-        Assert.DoesNotContain("gloomwood", VenueRegistry.LiveRotation);
-
-        // Documents the inert add-on state before the orchestrator applies the registration line;
-        // once registered, the parameterized VenueConformanceTests take over its structural coverage.
-        if (!VenueRegistry.IsRegistered("gloomwood"))
-        {
-            Assert.False(VenueRegistry.TryGet("gloomwood", out var missing));
-            Assert.Null(missing);
-        }
+        // Phase C U-C4: the Gloomwood is now the second live venue alongside the Mine —
+        // VenueRouter distributes bounty-free parties across both (see VenueRouterTests /
+        // VenueConformanceTests.LiveRotation_IsExactlyMineAndGloomwood).
+        Assert.True(VenueRegistry.IsRegistered("gloomwood"));
+        Assert.Contains("gloomwood", VenueRegistry.LiveRotation);
     }
 
     // ---- End-to-end through the REAL resolver + attribution (the add-on shape) --------

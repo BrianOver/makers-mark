@@ -99,3 +99,16 @@ public enum StandingShiftDirection
     Favored,
     Cooled,
 }
+
+/// <summary>
+/// Phase D (U-D3): the campaign's 3-act structure. Monotonic — <see cref="GameSim.Arc.ArcDirectorSystem"/>
+/// only ever advances an <see cref="ArcState"/> forward through these values, never back. APPEND
+/// ONLY — serialized on <see cref="GameState.Arc"/> in every save (KTD4).
+/// </summary>
+public enum CampaignAct
+{
+    ActI,   // learn the loop — starting floors, first commission
+    ActII,  // permadeath bites, memorials accumulate, mid floors
+    ActIII, // the wall — deepest floor reached; doubles as the Climax threshold
+    Ended,  // the Ending/credits fired; the world stays open (Hades-style), the arc itself is done
+}

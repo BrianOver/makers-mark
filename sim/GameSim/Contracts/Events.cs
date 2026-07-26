@@ -46,6 +46,16 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(HeirloomReforged), "heirloomReforged")]
 [JsonDerivedType(typeof(HeroDecisionExplained), "heroDecisionExplained")]
 [JsonDerivedType(typeof(HeroRankUp), "heroRankUp")]
+[JsonDerivedType(typeof(IncidentFired), "incidentFired")]
+[JsonDerivedType(typeof(DenThreatShifted), "denThreatShifted")]
+[JsonDerivedType(typeof(GuildAssessmentPassed), "guildAssessmentPassed")]
+[JsonDerivedType(typeof(GuildAssessmentMissed), "guildAssessmentMissed")]
+[JsonDerivedType(typeof(RivalExpansionTriggered), "rivalExpansionTriggered")]
+[JsonDerivedType(typeof(HeroConsideringLeaving), "heroConsideringLeaving")]
+[JsonDerivedType(typeof(TownConfidenceCollapsed), "townConfidenceCollapsed")]
+[JsonDerivedType(typeof(ActAdvanced), "actAdvanced")]
+[JsonDerivedType(typeof(ClimaxReached), "climaxReached")]
+[JsonDerivedType(typeof(CampaignEnded), "campaignEnded")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -231,3 +241,70 @@ public sealed record MemorialHonored(HeroId Hero, string HeroName) : GameEvent;
 /// carrying their legend-line forward (<see cref="Item.HeirloomLineage"/>). The dead persist as
 /// inheritance (R6).</summary>
 public sealed record HeirloomReforged(ItemId NewItem, ItemId SourceItem, string Lineage) : GameEvent;
+
+/// <summary>Phase C (U-C3): the drama director fired an incident from its Morning poll. Carries the
+/// stable catalog <paramref name="IncidentId"/>, its <paramref name="Category"/> (gated by the town's
+/// progression tier) and <paramref name="Magnitude"/> (gated by survived-count) — NEVER by shop wealth —
+/// the <paramref name="VenueId"/> den it escalates, and the <paramref name="TensionAfter"/> the release
+/// left behind. A drama surface signal; it changes no combat or economy rule directly.</summary>
+public sealed record IncidentFired(
+    string IncidentId, IncidentCategory Category, IncidentMagnitude Magnitude, string VenueId, int TensionAfter) : GameEvent;
+
+/// <summary>Phase C (U-C3): a den's escalation crossed a threshold — its category
+/// <paramref name="ThreatTier"/> stepped (up or, on a cleared-expedition relief, down) or it latched
+/// into <paramref name="Lockdown"/> at the cap. <paramref name="ThreatPermille"/> is the post-change
+/// meter (<c>VenueState.InfectionPerMille</c>). Recorded drama state only — no routing/combat rule
+/// reads it back, so it perturbs no seed's outcomes.</summary>
+public sealed record DenThreatShifted(
+    string VenueId, int ThreatPermille, int ThreatTier, bool Lockdown) : GameEvent;
+
+/// <summary>Phase D (U-D2): the Guild Assessment was paid in full — dues escalate for next cycle,
+/// Confidence (<see cref="RentState.ConfidencePermille"/>) recovers a little.</summary>
+public sealed record GuildAssessmentPassed(int DuesPaidGold, int NextDuesGold, int ConfidencePermille) : GameEvent;
+
+/// <summary>Phase D (U-D2): the Guild Assessment came due and the till couldn't cover it — no gold
+/// moves (never driven negative; <see cref="GameSim.Economy.DestitutionRecoverySystem"/> still runs this same
+/// Morning), dues escalate MORE steeply than an on-time pass, Confidence takes a soft hit.</summary>
+public sealed record GuildAssessmentMissed(int DuesDueGold, int NextDuesGold, int MissedAssessments, int ConfidencePermille) : GameEvent;
+
+/// <summary>Phase D (U-D2): Confidence crossed below the rival-expansion threshold — the rival vendor
+/// visibly presses its advantage (feeds <see cref="GameState.RivalMarketSharePermille"/>, the same edge
+/// <see cref="GameSim.Economy.MarketShareSystem"/> and <see cref="GameSim.Economy.RivalRestockSystem"/> already read).
+/// Edge-triggered: fires once on the crossing, not every Morning Confidence stays below it.</summary>
+public sealed record RivalExpansionTriggered(int ConfidencePermille) : GameEvent;
+
+/// <summary>Phase D (U-D2): Confidence crossed below the hero-leaving threshold — a named hero (the
+/// roster's most discontented, per <see cref="GameSim.Heroes.NeedsSystem.IsBoycotting"/>) visibly considers
+/// leaving. A legible warning, never an automatic departure (scope control — roster-leaving mechanics
+/// are a follow-on unit). Edge-triggered, same as <see cref="RivalExpansionTriggered"/>.</summary>
+public sealed record HeroConsideringLeaving(HeroId Hero, int ConfidencePermille) : GameEvent;
+
+/// <summary>Phase D (U-D2): Confidence bottomed out at 0 — the telegraphed soft-fail signal
+/// (Recettear-style "restart the era keeping talents + recipes"). Latched by
+/// <see cref="GuildAssessmentState.SoftFailed"/> so this fires exactly once per era; the actual
+/// era-reset mechanics are U-D5 (prestige era, POST-v1) — deliberately NOT implemented here.</summary>
+public sealed record TownConfidenceCollapsed(int MissedAssessments) : GameEvent;
+
+/// <summary>Phase D (U-D3): the campaign arc advanced to a new <see cref="CampaignAct"/> — fired
+/// exactly once per act, the Evening <c>GameSim.Arc.ArcDirectorSystem</c> crosses its threshold.
+/// <paramref name="DeepestFloorReached"/> is the signal that triggered the advance, for narration.</summary>
+public sealed record ActAdvanced(CampaignAct Act, int DeepestFloorReached) : GameEvent;
+
+/// <summary>Phase D (U-D3): the campaign's climax beat — fired the SAME tick as
+/// <see cref="ActAdvanced"/>(<see cref="CampaignAct.ActIII"/>), exactly once. The Act III threshold
+/// IS the climax trigger in this skeleton (the Final Commission / Warden-of-the-Heart content the
+/// plan describes is a later, orchestrator-wired hook — this event is the seam it lands on).</summary>
+public sealed record ClimaxReached(int DeepestFloorReached) : GameEvent;
+
+/// <summary>Phase D (U-D3): the campaign's ending — fired once,
+/// <see cref="GameSim.Arc.ArcDirectorSystem.EndingDelayDays"/> days after <see cref="ClimaxReached"/>.
+/// Carries the assembled final-chronicle tallies (legends, memorials, attribution beats, gossip)
+/// so a credits scroll can render straight off this one event. Hades-style: the world stays open
+/// afterward — this never halts the kernel or blocks further ticks/actions.</summary>
+public sealed record CampaignEnded(
+    int DeepestFloorReached,
+    int MemorialCount,
+    int HonoredMemorialCount,
+    int AttributionBeatCount,
+    int GossipHighlightCount,
+    int LegendaryHeroCount) : GameEvent;
