@@ -48,6 +48,11 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(HeroRankUp), "heroRankUp")]
 [JsonDerivedType(typeof(IncidentFired), "incidentFired")]
 [JsonDerivedType(typeof(DenThreatShifted), "denThreatShifted")]
+[JsonDerivedType(typeof(GuildAssessmentPassed), "guildAssessmentPassed")]
+[JsonDerivedType(typeof(GuildAssessmentMissed), "guildAssessmentMissed")]
+[JsonDerivedType(typeof(RivalExpansionTriggered), "rivalExpansionTriggered")]
+[JsonDerivedType(typeof(HeroConsideringLeaving), "heroConsideringLeaving")]
+[JsonDerivedType(typeof(TownConfidenceCollapsed), "townConfidenceCollapsed")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -249,3 +254,30 @@ public sealed record IncidentFired(
 /// reads it back, so it perturbs no seed's outcomes.</summary>
 public sealed record DenThreatShifted(
     string VenueId, int ThreatPermille, int ThreatTier, bool Lockdown) : GameEvent;
+
+/// <summary>Phase D (U-D2): the Guild Assessment was paid in full — dues escalate for next cycle,
+/// Confidence (<see cref="RentState.ConfidencePermille"/>) recovers a little.</summary>
+public sealed record GuildAssessmentPassed(int DuesPaidGold, int NextDuesGold, int ConfidencePermille) : GameEvent;
+
+/// <summary>Phase D (U-D2): the Guild Assessment came due and the till couldn't cover it — no gold
+/// moves (never driven negative; <see cref="GameSim.Economy.DestitutionRecoverySystem"/> still runs this same
+/// Morning), dues escalate MORE steeply than an on-time pass, Confidence takes a soft hit.</summary>
+public sealed record GuildAssessmentMissed(int DuesDueGold, int NextDuesGold, int MissedAssessments, int ConfidencePermille) : GameEvent;
+
+/// <summary>Phase D (U-D2): Confidence crossed below the rival-expansion threshold — the rival vendor
+/// visibly presses its advantage (feeds <see cref="GameState.RivalMarketSharePermille"/>, the same edge
+/// <see cref="GameSim.Economy.MarketShareSystem"/> and <see cref="GameSim.Economy.RivalRestockSystem"/> already read).
+/// Edge-triggered: fires once on the crossing, not every Morning Confidence stays below it.</summary>
+public sealed record RivalExpansionTriggered(int ConfidencePermille) : GameEvent;
+
+/// <summary>Phase D (U-D2): Confidence crossed below the hero-leaving threshold — a named hero (the
+/// roster's most discontented, per <see cref="GameSim.Heroes.NeedsSystem.IsBoycotting"/>) visibly considers
+/// leaving. A legible warning, never an automatic departure (scope control — roster-leaving mechanics
+/// are a follow-on unit). Edge-triggered, same as <see cref="RivalExpansionTriggered"/>.</summary>
+public sealed record HeroConsideringLeaving(HeroId Hero, int ConfidencePermille) : GameEvent;
+
+/// <summary>Phase D (U-D2): Confidence bottomed out at 0 — the telegraphed soft-fail signal
+/// (Recettear-style "restart the era keeping talents + recipes"). Latched by
+/// <see cref="GuildAssessmentState.SoftFailed"/> so this fires exactly once per era; the actual
+/// era-reset mechanics are U-D5 (prestige era, POST-v1) — deliberately NOT implemented here.</summary>
+public sealed record TownConfidenceCollapsed(int MissedAssessments) : GameEvent;

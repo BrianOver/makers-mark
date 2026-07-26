@@ -123,6 +123,48 @@ public sealed record RentState(int DaysUntilDue, int AmountDueGold, int MissedPa
 }
 
 /// <summary>
+/// Phase D (U-D2): the Guild Assessment heartbeat — the "later unit" <see cref="RentState.ConfidencePermille"/>
+/// was left unwired for. Every <see cref="CadenceDays"/> Mornings the guild collects escalating dues
+/// (its OWN cadence and escalation track, separate from — and in addition to — <see cref="RentState"/>'s
+/// existing 10-day rent cycle); the town's shared Confidence gauge (still <see cref="RentState.ConfidencePermille"/>,
+/// 0-1000 — this system EXTENDS that one meter rather than adding a second) now also moves on a passive
+/// daily decay plus depth-record / attribution-beat / hero-death signals, so the player's own progress
+/// (or lack of it) — not a fixed calendar — drives the pressure (AtS "Blightstorm" coupling).
+/// </summary>
+/// <param name="DaysUntilAssessment">Mornings left before the next Guild Assessment (counts down to 0).</param>
+/// <param name="DuesGold">Gold owed at the next assessment; escalates each cycle, paid or missed.</param>
+/// <param name="AssessmentsPassed">Lifetime count of assessments paid in full.</param>
+/// <param name="MissedAssessments">Lifetime count of assessments that landed unaffordable.</param>
+/// <param name="SoftFailed">True once Confidence has bottomed out at 0 at least once this era — the
+/// telegraphed soft-fail signal (<see cref="TownConfidenceCollapsed"/>). Sticky (never clears itself):
+/// U-D5's era-reset is the only thing that should ever flip it back — deliberately NOT implemented here
+/// (POST-v1, scope control). Latching also keeps the collapse event edge-triggered (fires once, not
+/// every Morning Confidence sits at 0).</param>
+public sealed record GuildAssessmentState(
+    int DaysUntilAssessment,
+    int DuesGold,
+    int AssessmentsPassed,
+    int MissedAssessments,
+    bool SoftFailed)
+{
+    /// <summary>Mornings between Guild Assessments (the plan's "every 7 days") — deliberately its OWN
+    /// cadence, distinct from <see cref="RentState.CadenceDays"/>.</summary>
+    public const int CadenceDays = 7;
+
+    /// <summary>Starting/base dues, before any escalation.</summary>
+    public const int BaseDuesGold = 20;
+
+    /// <summary>A fresh campaign's assessment clock: a full cadence away, at the base rate, nothing
+    /// passed or missed yet, Confidence intact.</summary>
+    public static readonly GuildAssessmentState Initial = new(
+        DaysUntilAssessment: CadenceDays,
+        DuesGold: BaseDuesGold,
+        AssessmentsPassed: 0,
+        MissedAssessments: 0,
+        SoftFailed: false);
+}
+
+/// <summary>
 /// The entire world. Immutable; every field is deterministically serializable
 /// (sorted dictionaries, ordered lists). Advanced only by <c>GameKernel.Tick</c>.
 /// </summary>
@@ -193,6 +235,14 @@ public sealed record GameState(
     /// <see cref="DirectorState.Empty"/>, a fresh director. The Morning <c>DirectorSystem</c> is the only
     /// writer; it advances this by exactly one seeded draw per calendar day on the existing kernel stream.</summary>
     public DirectorState Director { get; init; } = DirectorState.Empty;
+
+    /// <summary>Phase D (U-D2): the Guild Assessment heartbeat's own dues/cadence track. Trailing init
+    /// member (the InFlight/Venues/Counter/Rent/Commissions save-compat precedent) — a pre-U-D2 save
+    /// has no property and deserializes to <see cref="GuildAssessmentState.Initial"/>, a fresh clock.
+    /// The shared Confidence gauge this heartbeat feeds stays on <see cref="RentState.ConfidencePermille"/>
+    /// (see <see cref="GuildAssessmentState"/>'s own doc comment) — this field is ONLY the
+    /// assessment's dues countdown/escalation/tally, never a second confidence number.</summary>
+    public GuildAssessmentState Assessment { get; init; } = GuildAssessmentState.Initial;
 }
 
 /// <summary>Wave 3: one hero's gear request — forge <see cref="Slot"/> at or above
