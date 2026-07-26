@@ -59,6 +59,9 @@ public class GenAssetCoverageTests
         "monster-wicker-shepherd.glb", "monster-old-mossjaw.glb", "monster-forgeworm.glb",
         "monster-bog-wight.glb", "monster-choir-of-teeth.glb", "monster-reliquary-mimic.glb",
         "monster-undertow.glb",
+        // Emberfall Foundry roster (gen'd 2026-07-26) — Cinder Imp stays model-less by design.
+        "monster-molten-archivist.glb", "monster-slag-hound.glb", "monster-bellows-mad.glb",
+        "monster-undying-forge-heart.glb",
     };
 
     /// <summary>Gen GLBs finished but not yet placeable — each needs a surface that does not exist

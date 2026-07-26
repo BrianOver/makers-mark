@@ -24,6 +24,10 @@ public class GloomwoodMonsterMeshTests
     [TestCase("Choir of Teeth", "monster-choir-of-teeth.glb")]
     [TestCase("Reliquary Mimic", "monster-reliquary-mimic.glb")]
     [TestCase("The Undertow", "monster-undertow.glb")]
+    [TestCase("Molten Archivist", "monster-molten-archivist.glb")]
+    [TestCase("Slag Hound", "monster-slag-hound.glb")]
+    [TestCase("The Bellows-Mad", "monster-bellows-mad.glb")]
+    [TestCase("The Undying Forge-Heart", "monster-undying-forge-heart.glb")]
     public void VenueMonster_ResolvesToGenMesh_ThatLoads(string kind, string expectedFile)
     {
         var file = AssetCatalog.MonsterModelFile(kind);
