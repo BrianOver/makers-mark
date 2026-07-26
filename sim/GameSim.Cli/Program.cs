@@ -135,6 +135,17 @@ while (true)
                 reforge-heirloom <itemId> <recipeId> <material>
                                                reforge a fallen hero's worn gear into a new item
                                                (any phase, like craft)
+                upgrade-forge                 pay gold + Mine-floor ore for the forge's next tier
+                                               (Morning only; exponential cost, U-D1 sink 1)
+                buy-supply <coal|flux> <qty>  buy forge-supply consumables from the Morning
+                                               supplier (U-D1 sink 3a)
+                masterwork <recipeId> <material>
+                                               premium forging session — coal+flux+gold for a
+                                               guaranteed Superior-or-better item (Forge Tier II+,
+                                               any phase, U-D1 sink 3b)
+                commission-legendary <recipeId> <material>
+                                               commission a capped legendary work — guaranteed
+                                               Masterwork outright (any phase, U-D1 sink 5)
                 counter open                  start stepped counter service (Morning only)
                 counter present <itemId>      show a shelved item to the customer at the counter
                 counter suggest <itemId>      upsell a complementary item (Interest bonus)
@@ -505,6 +516,74 @@ while (true)
             {
                 TryQueue(new ReforgeHeirloomAction(new ItemId(rhSid), parts[2], parts[3]),
                     $"  queued: reforge I{rhSid} into {parts[2]} with {parts[3]}");
+            }
+
+            break;
+        }
+
+        // Phase D (U-D1, gold sink 1): Morning-only, no args — always buys the single next tier.
+        case "upgrade-forge":
+        {
+            if (parts.Length != 1)
+            {
+                PrintUsage("upgrade-forge", "upgrade-forge", line);
+            }
+            else
+            {
+                TryQueue(new UpgradeForgeAction(), "  queued: upgrade the forge to its next tier");
+            }
+
+            break;
+        }
+
+        // Phase D (U-D1, gold sink 3a): buy coal or flux from the forge supplier (Morning only).
+        case "buy-supply":
+        {
+            if (parts.Length != 3)
+            {
+                PrintUsage("buy-supply", "buy-supply <coal|flux> <qty>", line);
+            }
+            else if (!CliParse.TryInt(parts[2], out var supplyQty, out var supplyQtyError))
+            {
+                Console.WriteLine($"  buy-supply: {supplyQtyError}");
+            }
+            else
+            {
+                TryQueue(new BuyForgeSupplyAction(parts[1], supplyQty), $"  queued: buy {supplyQty}x {parts[1]} from the forge supplier");
+            }
+
+            break;
+        }
+
+        // Phase D (U-D1, gold sink 3b): all-phase legal, like craft. Requires Forge Tier II+,
+        // stocked coal/flux, and the recipe's own materials; guarantees Superior-or-better.
+        case "masterwork":
+        {
+            if (parts.Length != 3)
+            {
+                PrintUsage("masterwork", "masterwork <recipeId> <material>", line);
+            }
+            else
+            {
+                TryQueue(new MasterworkAttemptAction(parts[1], parts[2]),
+                    $"  queued: masterwork attempt — {parts[1]} with {parts[2]} (guarantees Superior or better)");
+            }
+
+            break;
+        }
+
+        // Phase D (U-D1, gold sink 5): all-phase legal, like craft. Capped per campaign; guarantees
+        // a Masterwork item outright, no roll.
+        case "commission-legendary":
+        {
+            if (parts.Length != 3)
+            {
+                PrintUsage("commission-legendary", "commission-legendary <recipeId> <material>", line);
+            }
+            else
+            {
+                TryQueue(new CommissionLegendaryWorkAction(parts[1], parts[2]),
+                    $"  queued: commission a legendary {parts[1]} from {parts[2]} (guaranteed Masterwork)");
             }
 
             break;
