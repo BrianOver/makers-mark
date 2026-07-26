@@ -531,8 +531,8 @@ public partial class ForgePanel : SimPanel
 
         // Phase C U-C1 slice 2: modifier composition — one selector per family, each populated with
         // "(none)" plus the registered modifiers of that family. Read in OnCraftPressed.
+        AddHeader(body, "MODIFIERS (OPTIONAL)");
         var modRow = AddRow(body);
-        AddLabel(modRow, "Modifiers:");
         _oilSelect = BuildModifierSelect("OilSelect", GameSim.Contracts.ModifierFamily.QuenchOil);
         _runeSelect = BuildModifierSelect("RuneSelect", GameSim.Contracts.ModifierFamily.Rune);
         _fitSelect = BuildModifierSelect("FitSelect", GameSim.Contracts.ModifierFamily.Fitting);
