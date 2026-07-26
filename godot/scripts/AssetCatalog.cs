@@ -100,6 +100,9 @@ public static class AssetCatalog
         ["bramble-boar"] = "monster-bramble-boar.glb",
         ["lantern-moth"] = "monster-lantern-moth.glb",
         ["crypt-crab"] = "monster-crypt-crab.glb",
+        // Gloomwood F3/F4 (U-C4 second venue) — the deep bosses, gen'd 2026-07-26.
+        ["wicker-shepherd"] = "monster-wicker-shepherd.glb",
+        ["old-mossjaw"] = "monster-old-mossjaw.glb",
     };
 
     /// <summary>Gen monster GLB file name for <paramref name="kind"/> (display name "Cave Rat" or
