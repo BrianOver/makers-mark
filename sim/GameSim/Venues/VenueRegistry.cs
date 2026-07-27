@@ -39,12 +39,23 @@ public static class VenueRegistry
     /// automatically live just by being in <see cref="All"/>. Phase C U-C4: the deferred
     /// multi-venue follow-on lands here — the Gloomwood joins the Mine as the SECOND live venue
     /// (the determinism-gated re-baseline this comment used to defer), and <c>VenueRouter</c>
-    /// distributes bounty-free parties across the two by utility + queue length
-    /// (<c>ExpeditionSystem.Process</c> / <c>MusterPlan.Compute</c>). Add-on/test venues (Emberfall,
-    /// Sunken Crypt) still live in <see cref="All"/> but never here until THEIR own re-baseline.
+    /// distributes bounty-free parties across the live venues by utility + queue length
+    /// (<c>ExpeditionSystem.Process</c> / <c>MusterPlan.Compute</c>).
+    ///
+    /// <para>T1 content flip (docs/design/2026-07-26-overnight-strategy-synthesis.md): the two
+    /// remaining fully-built venues join the rotation — <see cref="SunkenCrypt"/> as an early venue
+    /// parallel to the Mine (grade 1-5 ores) and <see cref="Emberfall"/> as an endgame venue
+    /// (grade 12-16 ores, only reached by high-power parties per <c>VenueRouter</c>'s power gate).
+    /// <c>MaterialRegistry.PricedPool</c> is flipped in lockstep so returning ore is priceable, and
+    /// <c>ClassRegistry.RecruitPool</c> opens the three remaining classes in the SAME re-baseline
+    /// window (per the operating model's batch-the-re-baseliners rule). Golden pins re-pinned.</para>
     /// </summary>
     public static readonly ImmutableArray<string> LiveRotation =
-        ImmutableArray.Create(MineId, Gloomwood.GloomwoodVenue.Id);
+        ImmutableArray.Create(
+            MineId,
+            Gloomwood.GloomwoodVenue.Id,
+            SunkenCrypt.SunkenCryptVenue.Id,
+            Emberfall.EmberfallFoundryVenue.Id);
 
     /// <summary>Resolve a venue definition by key.</summary>
     public static bool TryGet(string venueId, out VenueDefinition? definition)

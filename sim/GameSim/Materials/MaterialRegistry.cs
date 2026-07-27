@@ -89,8 +89,12 @@ public static class MaterialRegistry
     /// </summary>
     public static readonly ImmutableArray<string> PricedPool = ImmutableArray.Create(
         Copper, Iron, Steel, Mithril, Adamant,
-        "greenheart", "amberpitch", "moonresin", "heartwood"); // Gloomwood's four ores (raw literals —
+        "greenheart", "amberpitch", "moonresin", "heartwood", // Gloomwood's four ores (raw literals —
         // matches how they're already registered above; no Venues.Gloomwood dependency from Materials.
+        // T1 content flip (2026-07-26): Sunken Crypt + Emberfall go live in VenueRegistry.LiveRotation,
+        // so their ore ladders must be priceable at the Evening reveal in the same re-baseline.
+        "verdigris", "saltglass", "bonechalk", "drowned-silver", "abyss-pearl",   // Sunken Crypt (grade 1-5)
+        "firebrick", "slagiron", "quench-salt", "emberglass", "heartcoal");       // Emberfall (grade 12-16)
 
     /// <summary>Resolve a material definition by key.</summary>
     public static bool TryGet(string id, out MaterialDefinition? definition)

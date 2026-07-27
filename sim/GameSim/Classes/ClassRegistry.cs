@@ -78,7 +78,13 @@ public static class ClassRegistry
     /// new/add-on/test classes live in <see cref="All"/> but never here.
     /// </summary>
     public static readonly ImmutableArray<string> RecruitPool =
-        ImmutableArray.Create(VanguardId, StrikerId, MysticId);
+        ImmutableArray.Create(
+            VanguardId, StrikerId, MysticId,
+            // T1 content flip (2026-07-26): the three remaining fully-tuned classes open for
+            // recruitment in the same re-baseline window as the Sunken Crypt / Emberfall venues.
+            SentinelClass.Definition.Id,
+            SkirmisherClass.Definition.Id,
+            OccultistClass.Definition.Id);
 
     /// <summary>Resolve a class definition by key.</summary>
     public static bool TryGet(string classId, out ClassDefinition? definition)
