@@ -69,6 +69,8 @@ public class GenAssetCoverageTests
         "hero-vanguard.glb", "hero-striker.glb", "hero-mystic.glb",
         // Distinctive townsfolk (gen'd 2026-07-26) — TownsfolkNpcs roster via InstantiateGenCharacter.
         "townsfolk-baker.glb", "townsfolk-elder.glb", "townsfolk-weaver.glb", "townsfolk-tanner.glb",
+        // Mine-mouth dressing (gen'd 2026-07-26) — MineZone.AddGenDressing around the cave tunnel.
+        "mine-timber.glb", "mine-ore-vein.glb", "mine-rubble.glb",
     };
 
     /// <summary>Gen GLBs finished but not yet placeable — each needs a surface that does not exist

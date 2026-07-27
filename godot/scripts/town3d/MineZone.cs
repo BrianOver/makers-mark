@@ -51,7 +51,29 @@ public static class MineZone
             root.AddChild(accent);
         }
 
+        // Gen'd 2026-07-26: distinctive mine-mouth dressing (a timber support, a glowing ore vein, a
+        // rubble heap) spread to the sides of the tunnel bore, clear of its z≈0 axis — replaces the
+        // blocky primitive read with real props. Additive; graceful-degrade when a GLB is missing.
+        AddGenDressing(root, "mine-timber.glb", new Vector3(3.6f, 0f, 3.0f), 205f);
+        AddGenDressing(root, "mine-ore-vein.glb", new Vector3(-3.8f, 0f, 4.2f), 30f);
+        AddGenDressing(root, "mine-rubble.glb", new Vector3(2.4f, 0f, 5.4f), 120f);
+
         return root;
+    }
+
+    /// <summary>Places one normalized gen dressing GLB (feet-pivoted, pre-scaled) at
+    /// <paramref name="position"/>. Null-guarded — a missing asset is silently skipped, never a crash.</summary>
+    private static void AddGenDressing(Node3D root, string fileName, Vector3 position, float rotationYDeg)
+    {
+        var piece = TownAssets.InstantiateGen(fileName);
+        if (piece is null)
+        {
+            return;
+        }
+
+        piece.Position = position;
+        piece.RotationDegrees = new Vector3(0f, rotationYDeg, 0f);
+        root.AddChild(piece);
     }
 
     /// <summary>A big dark, rough rock mass framing the tunnel bore — several oversized primitive
