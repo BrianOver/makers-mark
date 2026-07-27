@@ -67,6 +67,8 @@ public class GenAssetCoverageTests
         // Class-distinctive hero meshes (gen'd 2026-07-26) — HeroActor3D.BuildMesh via
         // TownAssets.InstantiateGenHero; classes with no entry keep the Kenney variant.
         "hero-vanguard.glb", "hero-striker.glb", "hero-mystic.glb",
+        // Distinctive townsfolk (gen'd 2026-07-26) — TownsfolkNpcs roster via InstantiateGenCharacter.
+        "townsfolk-baker.glb", "townsfolk-elder.glb", "townsfolk-weaver.glb", "townsfolk-tanner.glb",
     };
 
     /// <summary>Gen GLBs finished but not yet placeable — each needs a surface that does not exist
