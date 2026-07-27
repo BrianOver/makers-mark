@@ -1,4 +1,7 @@
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.Linq;
+using System.Threading.Tasks;
 using GameSim;
 using GameSim.Contracts;
 using GameSim.Harness;
@@ -85,6 +88,24 @@ public class ConsumableTraitMortalityBalanceTests
         return new TraitMortality(recklessTotal, recklessDied, preparedTotal, preparedDied);
     }
 
+    /// <summary>Runs <see cref="Run"/> across every seed IN PARALLEL and totals the four counters.
+    /// Each seed builds its own kernel/state and runs an isolated, integer-only 100-day sim (no
+    /// shared mutable state, no IO/clock), so the 90-seed sweep is embarrassingly parallel;
+    /// per-seed determinism is untouched and the reduction is a commutative sum, so the aggregate
+    /// is identical to the old serial <c>foreach</c> regardless of completion order.</summary>
+    private static TraitMortality RunAllSeedsParallel()
+    {
+        var bag = new ConcurrentBag<TraitMortality>();
+        Parallel.ForEach(Seeds, seed => bag.Add(Run(seed)));
+        return bag.Aggregate(
+            new TraitMortality(0, 0, 0, 0),
+            (a, r) => new TraitMortality(
+                a.RecklessTotal + r.RecklessTotal,
+                a.RecklessDied + r.RecklessDied,
+                a.PreparedTotal + r.PreparedTotal,
+                a.PreparedDied + r.PreparedDied));
+    }
+
     /// <summary>The exact scripted policy <see cref="SalveProvisioningBalanceTests.SalveActionsFor"/>
     /// uses (baseline gear/talent/ore policy, plus crafting two field-salves per Expedition window
     /// and repricing the baseline's generic 1g statless-salve stocking to an affordable price) so
@@ -122,36 +143,19 @@ public class ConsumableTraitMortalityBalanceTests
     {
         // Engagement guard (SalveProvisioningBalanceTests precedent): the comparison below is
         // meaningless if the sweep never produced enough Reckless/Prepared heroes to compare.
-        var recklessTotal = 0;
-        var preparedTotal = 0;
-        foreach (var seed in Seeds)
-        {
-            var result = Run(seed);
-            recklessTotal += result.RecklessTotal;
-            preparedTotal += result.PreparedTotal;
-        }
+        var totals = RunAllSeedsParallel();
 
-        Assert.True(recklessTotal >= 10, $"too few Reckless heroes seen across the sweep: {recklessTotal}");
-        Assert.True(preparedTotal >= 10, $"too few Prepared heroes seen across the sweep: {preparedTotal}");
+        Assert.True(totals.RecklessTotal >= 10, $"too few Reckless heroes seen across the sweep: {totals.RecklessTotal}");
+        Assert.True(totals.PreparedTotal >= 10, $"too few Prepared heroes seen across the sweep: {totals.PreparedTotal}");
     }
 
     [Fact]
     [Trait("Category", "Balance")]
     public void SalvesStocked_RecklessHeroes_DieMeasurablyMoreThanPrepared()
     {
-        var recklessTotal = 0;
-        var recklessDied = 0;
-        var preparedTotal = 0;
-        var preparedDied = 0;
-
-        foreach (var seed in Seeds)
-        {
-            var result = Run(seed);
-            recklessTotal += result.RecklessTotal;
-            recklessDied += result.RecklessDied;
-            preparedTotal += result.PreparedTotal;
-            preparedDied += result.PreparedDied;
-        }
+        var totals = RunAllSeedsParallel();
+        var (recklessTotal, recklessDied, preparedTotal, preparedDied) =
+            (totals.RecklessTotal, totals.RecklessDied, totals.PreparedTotal, totals.PreparedDied);
 
         // Integer-only mortality-rate comparison (KTD2: no floating point in sim-adjacent math) —
         // recklessDied/recklessTotal > preparedDied/preparedTotal, cross-multiplied

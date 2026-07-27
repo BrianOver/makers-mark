@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.Threading.Tasks;
 using GameSim;
 using GameSim.Contracts;
 using GameSim.Harness;
@@ -55,13 +57,16 @@ public class CampProvisioningBalanceTests
     [Trait("Category", "Balance")]
     public void KillRisk1_NeverSend_vs_SendBelow40_HarnessRuns_BothArmsComplete()
     {
-        var never = default(ArmStats);
-        var send = default(ArmStats);
-        foreach (var seed in Seeds)
-        {
-            never += RunArm(seed, send: false);
-            send += RunArm(seed, send: true);
-        }
+        // Each seed builds its own kernel/state and runs an isolated, integer-only 100-day sim
+        // (no shared mutable state, no IO/clock), so the 20-seed × 2-arm sweep is embarrassingly
+        // parallel. Determinism is per-seed and unaffected by execution order: results are summed
+        // (commutative), never accumulated order-dependently. Collect per-seed, then reduce.
+        var perSeed = new ConcurrentBag<(ArmStats Never, ArmStats Send)>();
+        Parallel.ForEach(Seeds, seed =>
+            perSeed.Add((RunArm(seed, send: false), RunArm(seed, send: true))));
+
+        var never = perSeed.Aggregate(default(ArmStats), (acc, r) => acc + r.Never);
+        var send = perSeed.Aggregate(default(ArmStats), (acc, r) => acc + r.Send);
 
         _output.WriteLine($"NEVER-SEND     : {never}");
         _output.WriteLine($"SEND-BELOW-40% : {send}");
