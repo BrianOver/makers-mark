@@ -39,6 +39,22 @@ if (args.Length > 0 && args[0] == "batch")
 // every day, the legal option menu + advisor suggestions + chosen action across N full playthroughs,
 // then writes a per-seed JSONL + an aggregate markdown report. A documentation tool for design review
 // (feeds the Fable analysis), not a balance gate.
+// Decision-PLAY mode: `-- decisions play --seed N --script PATH` replays a script of index-choices
+// and prints the current decision point as a JSON context blob (the "Claude plays + documents" harness).
+if (args.Length > 1 && args[0] == "decisions" && args[1] == "play")
+{
+    var pSeed = 2026UL;
+    var pScript = Path.Combine("runs", "decisions", "scripts", "play.txt");
+    for (var i = 2; i < args.Length; i++)
+    {
+        if (args[i] == "--seed" && i + 1 < args.Length && ulong.TryParse(args[i + 1], out var s)) { pSeed = s; i++; }
+        else if (args[i] == "--script" && i + 1 < args.Length) { pScript = args[i + 1]; i++; }
+        else { Console.Error.WriteLine($"decisions play: unknown/invalid arg near '{args[i]}' — usage: decisions play --seed N --script PATH"); return 1; }
+    }
+
+    return GameSim.Cli.DecisionPlay.Run(pSeed, pScript, Console.Out, Console.Error);
+}
+
 if (args.Length > 0 && args[0] == "decisions")
 {
     var dSeeds = 15;
