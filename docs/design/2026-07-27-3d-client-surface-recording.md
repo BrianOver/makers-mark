@@ -40,6 +40,21 @@ A second recorder pass drove the SAME real client for 90 days with the default p
 
 Legends Honor/Reforge and Commissions Accept remain the one open item: they're per-row/sub-card interactions a queued-action policy still doesn't click, so confirming *those* specific controls render needs a UI-clicking pass (click an item row → ProvenanceCard) — the next iteration of this tool.
 
+## CLICK-THROUGH — playing the client by pressing real buttons (the headline finding)
+
+A third recorder (`Playtest3dClickThrough`) plays the game the way a player literally does: it opens each panel and **presses the actual action buttons** (their `Pressed` signal — the exact path a mouse click emits), not by queuing sim actions on the adapter. 40 days, every Morning, clicking every buy/craft/stock/bounty/unlock/commission verb. It records what each click did and — crucially — the sim's **rejections** (why a click didn't land). Report: `runs/decisions/3d-click-through.md`.
+
+**THE FINDING: the new-player craft loop is soft-locked by poverty.** A player who sits at the Forge and clicks "Buy 1" → Craft **crafts zero items in 40 days.** Proven by the rejection log:
+- Start state is **0 gold**, and *every* Forge "Buy 1" (BuyMaterial) click is rejected: `Not enough gold: need 7, have 0` … `need 4, have 0`. No materials are ever obtained.
+- No materials → the Craft buttons never enable → nothing to sell → no gold → can't buy materials. A closed failure loop, from day 1.
+- `PostBounty: Can't escrow 25g — you have 0g` — bounties are unaffordable too. Gold only ever flickers to 9–10 across 40 days (never enough for even the cheapest material: one rejection reads `need 4, have 2`).
+
+**Why the earlier active run crafted 20 items but this one crafts 0:** the active/BaselinePlayer path buys **hero ore** (`BuyOre`, a separate Evening surface, cheaper/affordable). The **Forge panel itself only exposes the gold-vendor path** (`BuyMaterial`), which a broke new player can never afford. So the game's central verb — the whole "craft writes legends" premise — is **unreachable through the actual 3D forge UI** for a new player. The working material source is on a different screen the player at the anvil never gets pointed to.
+
+**Robustness (the good news):** across the entire click-through, **no button press threw** — the UI wiring is solid; the problem is economic/onboarding, not crashes. Arc stayed at Act II / floor 4 (consistent with the other runs).
+
+This is the single most important thing the investigation found, and only *clicking the real client* surfaced it — the CLI and adapter-driven runs both used the hero-ore path and sailed right past the broken forge-vendor onboarding.
+
 ## What this establishes
 
 Driving the real 3D client myself (not the CLI, not a human) confirms the hardest findings on the actual shipped surface:
