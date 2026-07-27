@@ -10,7 +10,7 @@ I drove the actual `MainUi` through a **passive, zero-input 90-day run** (seed 2
 
 1. **The campaign never reaches Act III on the HUD.** The Act chip read **ActII for the entire 90-day run** (sampled every 10 days: day 11→91 all ActII). This is the CLI Finding 5 confirmed on the actual 3D surface — the 3-act arc's climax never fires, so the HUD's own "Act III is the climax, then the ending chronicle" tooltip describes a state the player never sees.
 
-2. **The Camp panel has no send/recall control — only "Hold (close)".** The one dramatic decision the camp phase exists for — send a salve to a dying hero, or ring the recall bell — has **no button in the 3D client**. `SendSupply` and `RecallParty` are sim + CLI verbs with (as recorded) no 3D surface; the 3D player can only "Hold." This is the highest-value on-theme beat and it's un-clickable.
+2. ~~The Camp panel has no send/recall control.~~ **RETRACTED — recorder artifact.** The first recorder opened panels only in the Morning phase, so it never saw the Camp panel's `CampSend_{member}` / `CampRecall_{lead}` buttons, which render per-camped-party during the **Camp phase**. A phase-walking re-run confirmed `CampRecall` clicks land 70+ times — send/recall work fine. (See the resolution log below.)
 
 3. **The tutorial objective chip is stuck at step 1/5 after 90 days — and mashes tutorial + advisor text into one run-on line.** End-of-run chip: *"Tutorial 1/5: Walk to the Forge … and click it — Accept Torvald's commission — Weapon at Superior+ … due day 9…"* The tutorial never advances (a passive player never completes step 1), so the game's single guidance surface is frozen on a first-step instruction for the entire campaign, with the advisor's suggestion concatenated onto it. The 3D guidance surface is broken for any player who doesn't immediately craft.
 
@@ -59,6 +59,19 @@ From the intended (starter-copper) start, an actively-clicking player produced o
 **Robustness (genuinely good news):** across the entire click-through — every buy/craft/stock/bounty/unlock button, every Morning, 40 days — **no button press ever threw.** The UI wiring is solid. And the arc stayed at **Act II / floor 4** here too.
 
 The honest headline: *clicking the real client found no crash and no shipped soft-lock, but confirmed the anemic economy and the arc stall on the actual UI — and caught a test-harness gap (the recorders were mounting a starter-stock-less campaign) that would have produced a false "soft-lock" report if not verified against the `NewGameSelect` boot path.*
+
+## Resolution log — looping the game, compiling issues, fixing as I go
+
+I ran repeated click-through loops (press the real buttons, every panel, every phase), compiled the issues, and resolved them. The striking result: **three of the four scary "findings" were my test harness, not the game** — the 3D client is genuinely robust. Only one turned out to be a real code bug, and it's fixed.
+
+| # | Apparent issue | Verdict | Resolution |
+|---|---|---|---|
+| 1 | Day-1 poverty soft-lock (0 items in 40 days) | **Test artifact** | `MountMainUi()` mounts the bare `SimAdapter(seed)` (no starter copper); the real `NewGameSelect` boot injects `NewCampaign(seed, profession)` which grants it. Fixed the recorders to mount the starter-stock path. |
+| 2 | Camp has no send/recall control | **Test artifact** | Recorder opened panels only in Morning; Camp buttons render during the Camp phase. Fixed the click-through to walk every phase → `CampRecall` lands 70+×. |
+| 3 | Buttons clickable in illegal phases (BuyMaterial rejected ×1440) | **Test artifact** | The test used bare `Drawer.Open` (no refresh); the real player path `OpenPanel` = `Drawer.Open` + `Refresh`, which re-gates buttons to the current phase. Fixed the test to use `OpenPanel`. |
+| 4 | **BountyPanel "Post" not gated** (rejected ×120 wrong-phase, ×70 unaffordable) | **REAL bug — FIXED** | Unlike ForgePanel, `BountyPanel` added its Post button with no gate. Added `GatePostButton` (phase = Morning/Evening + reward ≤ gold, re-gated live on reward change), mirroring ForgePanel. Wrong-phase rejections → 0; unaffordable → 1 edge. Godot-only, no golden impact; full suite 413/413. |
+
+Across every loop, **no button press ever threw** — zero crashes. The verbs a player drives by clicking (Forge buy/craft/unlock, Shop stock, Bounties post, Camp recall) all work. The genuine remaining problems are not UI defects but the **anemic economy** (a broke player, from the sensible active run) and the **arc stall at floor 4 / Act II** — both balance, not wiring.
 
 ## What this establishes
 

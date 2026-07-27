@@ -36,6 +36,11 @@ public class Playtest3dClickThrough
         "Forge", "Shop", "Bounties", "Demand", "Heroes", "Depths", "Tavern", "Progress",
     };
 
+    /// <summary>All panels clicked each phase — the drawer ones plus Camp (send/recall render only
+    /// during the Camp phase, so a Morning-only sweep misses them entirely).</summary>
+    private static readonly string[] AllPanels =
+        DrawerPanels.Append("Camp").ToArray();
+
     /// <summary>Button-name prefixes that represent a PLAYER VERB worth clicking (queues an action /
     /// opens a service). Everything else — Close/Cancel/Skip/Undo/Hold, clock controls, and the
     /// real-time minigame widgets — is deliberately skipped.</summary>
@@ -45,7 +50,7 @@ public class Playtest3dClickThrough
     private static readonly string[] ClickablePrefixes =
     {
         "BuyMat_", "Craft_", "Unlock_", "PostBounty", "Stock", "Price",
-        "Accept", "Decline", "Honor", "Reforge", "Send", "Recall", "HeroCard_",
+        "Accept", "Decline", "Honor", "Reforge", "CampSend", "CampRecall", "BuyOre", "HeroCard_",
     };
 
     private static readonly string[] SkipExact =
@@ -60,7 +65,11 @@ public class Playtest3dClickThrough
     [TestCase]
     public void PlayTheClient_ByClicking_EveryVerbButton_AcrossAFullSession()
     {
-        var ui = MountMainUi();
+        // Mount from the INTENDED new-player start (profession + starter copper) — the campaign the
+        // real NewGameSelect boot injects — so this reflects what a player actually plays, not the
+        // starter-stock-less bare SimAdapter(seed) MountMainUi() defaults to.
+        var ui = MountMainUi(new GodotClient.SimAdapter(
+            GameSim.GameComposition.NewCampaign(2026UL, GameSim.Professions.ProfessionRegistry.BlacksmithId)));
         var outcomes = new List<ClickOutcome>();
         var crashes = new List<string>();
         var rejections = new Dictionary<string, int>();
@@ -71,91 +80,61 @@ public class Playtest3dClickThrough
         {
             for (var day = 0; day < Days; day++)
             {
-                AdvanceToPhase(ui, DayPhase.Morning);
-
-                foreach (var panel in DrawerPanels)
+                var ticks = 0;
+                do
                 {
-                    try
+                    // Click EVERY phase — Camp send/recall render only during Camp, BuyOre only in the
+                    // Evening, etc. Opening panels only in Morning (the old bug) missed them all and
+                    // produced false "verb has no 3D control" findings.
+                    foreach (var panel in AllPanels)
                     {
-                        ui.Drawer.Open(panel);
-                    }
-                    catch (Exception ex)
-                    {
-                        crashes.Add($"OPEN {panel}: {ex.GetType().Name}: {Trim(ex.Message)}");
-                        continue;
-                    }
-
-                    var host = HostFor(ui, panel);
-                    if (host is null)
-                    {
-                        continue;
-                    }
-
-                    // Snapshot the actionable, ENABLED buttons up front — pressing mutates the tree,
-                    // so we resolve the list before clicking any (and re-find each by name at press
-                    // time in case a rebuild invalidated the node).
-                    var names = EnabledClickableButtonNames(host);
-                    foreach (var name in names)
-                    {
-                        var before = ui.Adapter.PendingActions.Count;
-                        try
+                        var host = HostFor(ui, panel);
+                        if (host is null)
                         {
-                            var btn = host.FindChild(name, recursive: true, owned: false) as Button;
-                            if (btn is null || btn.Disabled)
-                            {
-                                continue; // gated off after a prior click this pass
-                            }
-
-                            btn.EmitSignal(BaseButton.SignalName.Pressed);
-                        }
-                        catch (Exception ex)
-                        {
-                            var msg = $"{panel}/{name}: {ex.GetType().Name}: {Trim(ex.Message)}";
-                            crashes.Add(msg);
-                            outcomes.Add(new ClickOutcome(panel, name, "THREW"));
                             continue;
                         }
 
-                        var landed = ui.Adapter.PendingActions.Count > before;
-                        outcomes.Add(new ClickOutcome(panel, name, landed ? "queued action" : "no-op"));
-                        if (landed)
+                        if (DrawerPanels.Contains(panel))
                         {
-                            verbsClickedOk.Add(VerbOf(name));
-                            if (name.StartsWith("Craft_", StringComparison.Ordinal))
+                            try
                             {
-                                itemsCraftedClicks++;
+                                // Use the REAL player open path (OpenPanel = Drawer.Open + Refresh),
+                                // NOT bare Drawer.Open — else the panel shows stale, prior-phase button
+                                // enablement and we'd "click" illegal buttons a real player never sees.
+                                ui.OpenPanel(panel);
+                            }
+                            catch (Exception ex)
+                            {
+                                crashes.Add($"OPEN {panel}: {ex.GetType().Name}: {Trim(ex.Message)}");
+                                continue;
                             }
                         }
-                    }
-                }
 
-                // Apply everything the day's clicks queued, phase by phase, collecting the sim's
-                // REJECTIONS — the proof of WHY a click did or didn't do anything (e.g. a Buy click
-                // that bounces for lack of gold, which is why craft never enables).
-                try
-                {
-                    var ticks = 0;
-                    do
+                        ClickVerbButtons(ui, panel, host, outcomes, crashes, verbsClickedOk, ref itemsCraftedClicks);
+                    }
+
+                    try
                     {
                         ui.Adapter.AdvancePhase();
-                        foreach (var r in ui.Adapter.LastRejections)
-                        {
-                            var key = $"{r.Action.GetType().Name.Replace("Action", string.Empty)}: {Trim(r.Reason)}";
-                            rejections[key] = rejections.GetValueOrDefault(key) + 1;
-                        }
-
-                        if (++ticks > MaxPhasesPerDay)
-                        {
-                            break;
-                        }
                     }
-                    while (ui.Adapter.CurrentState.Phase != DayPhase.Morning);
+                    catch (Exception ex)
+                    {
+                        crashes.Add($"ADVANCE day {day} {ui.Adapter.CurrentState.Phase}: {ex.GetType().Name}: {Trim(ex.Message)}");
+                        break;
+                    }
+
+                    foreach (var r in ui.Adapter.LastRejections)
+                    {
+                        var key = $"{r.Action.GetType().Name.Replace("Action", string.Empty)}: {Trim(r.Reason)}";
+                        rejections[key] = rejections.GetValueOrDefault(key) + 1;
+                    }
+
+                    if (++ticks > MaxPhasesPerDay)
+                    {
+                        break;
+                    }
                 }
-                catch (Exception ex)
-                {
-                    crashes.Add($"ADVANCE day {day}: {ex.GetType().Name}: {Trim(ex.Message)}");
-                    break;
-                }
+                while (ui.Adapter.CurrentState.Phase != DayPhase.Morning);
             }
 
             var state = ui.Adapter.CurrentState;
@@ -169,6 +148,44 @@ public class Playtest3dClickThrough
         finally
         {
             Unmount(ui);
+        }
+    }
+
+    /// <summary>Press every enabled verb button in a panel's tree (the real click path), recording
+    /// each outcome + any throw. Re-finds each by name at press time — a prior press can rebuild the tree.</summary>
+    private static void ClickVerbButtons(
+        MainUi ui, string panel, Node host, List<ClickOutcome> outcomes, List<string> crashes,
+        HashSet<string> verbsClickedOk, ref int itemsCraftedClicks)
+    {
+        foreach (var name in EnabledClickableButtonNames(host))
+        {
+            var before = ui.Adapter.PendingActions.Count;
+            try
+            {
+                if (host.FindChild(name, recursive: true, owned: false) is not Button btn || btn.Disabled)
+                {
+                    continue; // gated off after a prior click this pass
+                }
+
+                btn.EmitSignal(BaseButton.SignalName.Pressed);
+            }
+            catch (Exception ex)
+            {
+                crashes.Add($"{panel}/{name}: {ex.GetType().Name}: {Trim(ex.Message)}");
+                outcomes.Add(new ClickOutcome(panel, name, "THREW"));
+                continue;
+            }
+
+            var landed = ui.Adapter.PendingActions.Count > before;
+            outcomes.Add(new ClickOutcome(panel, name, landed ? "queued action" : "no-op"));
+            if (landed)
+            {
+                verbsClickedOk.Add(VerbOf(name));
+                if (name.StartsWith("Craft_", StringComparison.Ordinal))
+                {
+                    itemsCraftedClicks++;
+                }
+            }
         }
     }
 
@@ -244,6 +261,7 @@ public class Playtest3dClickThrough
         "Depths" => ui.Depths,
         "Tavern" => ui.Tavern,
         "Progress" => ui.Progress,
+        "Camp" => ui.Camp,
         _ => null,
     };
 
