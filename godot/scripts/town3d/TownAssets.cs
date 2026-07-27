@@ -117,7 +117,16 @@ public static class TownAssets
             return null;
         }
 
-        var node = InstantiateGen(file);
+        return InstantiateGenCharacter(file);
+    }
+
+    /// <summary>Loads a gen humanoid GLB (<paramref name="fileName"/>) and uniformly scales it to
+    /// <see cref="HeroWorldHeight"/> from its own (feet-pivoted) AABB, so gen heroes AND townsfolk
+    /// stand the same height as the Kenney figures. Null when the file is absent (caller falls back
+    /// to the Kenney variant). Pure resource read + AABB — headless-test safe.</summary>
+    public static Node3D? InstantiateGenCharacter(string fileName)
+    {
+        var node = InstantiateGen(fileName);
         if (node == null)
         {
             return null;

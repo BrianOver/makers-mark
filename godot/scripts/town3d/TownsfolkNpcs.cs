@@ -21,13 +21,13 @@ public static class TownsfolkNpcs
     /// <summary>Villager name + subtitle pairs — the "· townsfolk" hint plus a visibly cooler
     /// tint (vs. <c>HeroActor3D.FallbackTint</c>'s warm tan) are what read as NON-hero at a
     /// glance; heroes carry combat stats, these are flavor only.</summary>
-    private static readonly (string Name, int Variant)[] Roster =
+    private static readonly (string Name, int Variant, string MeshFile)[] Roster =
     {
-        ("Marta the Baker", 0),
-        ("Old Corwin", 6),
-        ("Little Pib", 3),
-        ("Bess the Weaver", 1),
-        ("Fenn the Tanner", 8),
+        ("Marta the Baker", 0, "townsfolk-baker.glb"),
+        ("Old Corwin", 6, "townsfolk-elder.glb"),
+        ("Little Pib", 3, ""), // a child — kept on the Kenney variant (TRELLIS handles kids poorly)
+        ("Bess the Weaver", 1, "townsfolk-weaver.glb"),
+        ("Fenn the Tanner", 8, "townsfolk-tanner.glb"),
     };
 
     /// <summary>Distinct start spots around the square, clear of the exact centre where the
@@ -50,10 +50,10 @@ public static class TownsfolkNpcs
 
         for (var i = 0; i < Roster.Length; i++)
         {
-            var (name, variant) = Roster[i];
+            var (name, variant, meshFile) = Roster[i];
             var npc = new TownsfolkNpc();
             group.AddChild(npc);
-            npc.Configure(i, name, variant, StartSpots[i % StartSpots.Length]);
+            npc.Configure(i, name, variant, StartSpots[i % StartSpots.Length], meshFile);
         }
 
         return group;
@@ -113,7 +113,7 @@ public partial class TownsfolkNpc : Node3D
     /// Builds the visual + name label and pins this NPC's starting waypoint index (derived from
     /// <paramref name="npcId"/>, so distinct NPCs take distinct routes through the same loop).
     /// </summary>
-    public void Configure(int npcId, string name, int variant, Vector3 startPosition)
+    public void Configure(int npcId, string name, int variant, Vector3 startPosition, string meshFile = "")
     {
         NpcId = npcId;
         NpcName = name;
@@ -126,7 +126,7 @@ public partial class TownsfolkNpc : Node3D
         _pauseRemaining = _pauseSeconds;
         _state = WanderState.Pausing;
 
-        Mesh = BuildMesh(variant);
+        Mesh = BuildMesh(variant, meshFile);
         AddChild(Mesh);
 
         Label = BuildLabel(name);
@@ -168,8 +168,20 @@ public partial class TownsfolkNpc : Node3D
     /// resolves, else a tinted primitive capsule — same graceful-degrade contract as
     /// <c>HeroActor3D.BuildMesh</c>, but with a cooler fallback tint so a missing asset still
     /// reads as "not a hero".</summary>
-    private static Node3D BuildMesh(int variant)
+    private static Node3D BuildMesh(int variant, string meshFile)
     {
+        // Prefer a bespoke gen townsperson mesh (baker/elder/weaver/tanner); fall back to the Kenney
+        // variant for entries with none (Little Pib), then the tinted capsule if even that is missing.
+        if (!string.IsNullOrEmpty(meshFile))
+        {
+            var gen = TownAssets.InstantiateGenCharacter(meshFile);
+            if (gen != null)
+            {
+                gen.Name = "Mesh";
+                return gen;
+            }
+        }
+
         var mesh = TownAssets.InstantiateHero(variant);
         if (mesh != null)
         {
