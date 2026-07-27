@@ -93,6 +93,42 @@ public static class TownAssets
         return scene.Instantiate<Node3D>();
     }
 
+    /// <summary>Class → distinctive AI-gen hero GLB (gen'd 2026-07-26). A class with no entry falls
+    /// through to the Kenney variant. Cinder Imp-style: keep this the ONLY hero-mesh source of truth.</summary>
+    private static readonly System.Collections.Generic.Dictionary<string, string> HeroClassMeshFiles = new()
+    {
+        ["vanguard"] = "hero-vanguard.glb",
+        ["striker"] = "hero-striker.glb",
+        ["mystic"] = "hero-mystic.glb",
+    };
+
+    /// <summary>Target world stature for a hero mesh — matches <see cref="CharacterScale"/> applied to
+    /// a Kenney figure, so gen heroes stand the same height as the variant ones.</summary>
+    private const float HeroWorldHeight = 1.7f;
+
+    /// <summary>A class-distinctive gen hero mesh for <paramref name="classId"/>, uniformly scaled to
+    /// <see cref="HeroWorldHeight"/> from its own (feet-pivoted) AABB, or null when the class has no
+    /// gen mesh — the signal for <c>HeroActor3D</c> to fall back to the Kenney variant. Pure resource
+    /// read + AABB (never a render), so it is headless-test safe.</summary>
+    public static Node3D? InstantiateGenHero(string classId)
+    {
+        if (string.IsNullOrEmpty(classId) || !HeroClassMeshFiles.TryGetValue(classId, out var file))
+        {
+            return null;
+        }
+
+        var node = InstantiateGen(file);
+        if (node == null)
+        {
+            return null;
+        }
+
+        var height = Town3D.MeshHeight(node, 1f);
+        var scale = height > 0.001f ? HeroWorldHeight / height : 1f;
+        node.Scale = new Vector3(scale, scale, scale);
+        return node;
+    }
+
     /// <summary>The assembled, colormap-fixed, pre-scaled building mesh for a
     /// <c>Building3D</c> key — see <see cref="BuildingKit"/> for the per-venue assemblies. Never
     /// null (every venue has a deterministic fallback all the way down to a single primitive

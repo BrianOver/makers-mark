@@ -64,6 +64,9 @@ public class GenAssetCoverageTests
         // Emberfall Foundry roster (gen'd 2026-07-26) — Cinder Imp stays model-less by design.
         "monster-molten-archivist.glb", "monster-slag-hound.glb", "monster-bellows-mad.glb",
         "monster-undying-forge-heart.glb",
+        // Class-distinctive hero meshes (gen'd 2026-07-26) — HeroActor3D.BuildMesh via
+        // TownAssets.InstantiateGenHero; classes with no entry keep the Kenney variant.
+        "hero-vanguard.glb", "hero-striker.glb", "hero-mystic.glb",
     };
 
     /// <summary>Gen GLBs finished but not yet placeable — each needs a surface that does not exist
