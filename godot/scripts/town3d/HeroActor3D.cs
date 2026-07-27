@@ -309,6 +309,15 @@ public partial class HeroActor3D : Node3D
     /// wedge and <c>Town3D.SpawnCharacterMesh</c>).</summary>
     private static Node3D BuildMesh(int variant, string classId)
     {
+        // Prefer a class-distinctive AI-gen hero mesh (vanguard/striker/mystic); fall back to the
+        // Kenney variant when the class has none, then to a tinted capsule when even that is missing.
+        var genHero = TownAssets.InstantiateGenHero(classId);
+        if (genHero != null)
+        {
+            genHero.Name = "Mesh";
+            return genHero;
+        }
+
         var mesh = TownAssets.InstantiateHero(variant);
         if (mesh != null)
         {
