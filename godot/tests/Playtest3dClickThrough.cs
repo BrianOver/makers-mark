@@ -172,6 +172,68 @@ public class Playtest3dClickThrough
         }
     }
 
+    /// <summary>The same click-through, but from the INTENDED new-player start — a campaign with a
+    /// chosen profession + starter copper (<c>NewCampaign(seed, blacksmith)</c>), which the default
+    /// <c>SimAdapter(seed)</c> the client mounts with does NOT give. Answers: does the real onboarding
+    /// start let a clicking player actually craft, or is the forge dead on arrival regardless?</summary>
+    [TestCase]
+    public void PlayFromIntendedStart_WithStarterCopper_CanThePlayerActuallyCraft()
+    {
+        var starter = new GodotClient.SimAdapter(
+            GameSim.GameComposition.NewCampaign(2026UL, GameSim.Professions.ProfessionRegistry.BlacksmithId));
+        var ui = MountMainUi(starter);
+        var craftsLanded = 0;
+        try
+        {
+            for (var day = 0; day < Days; day++)
+            {
+                AdvanceToPhase(ui, DayPhase.Morning);
+                ui.Drawer.Open("Forge");
+                foreach (var name in EnabledClickableButtonNames(ui.Forge)
+                             .Where(n => n.StartsWith("Craft_", StringComparison.Ordinal)))
+                {
+                    var before = ui.Adapter.PendingActions.Count;
+                    var btn = ui.Forge.FindChild(name, recursive: true, owned: false) as Button;
+                    if (btn is null || btn.Disabled)
+                    {
+                        continue;
+                    }
+
+                    btn.EmitSignal(BaseButton.SignalName.Pressed);
+                    if (ui.Adapter.PendingActions.Count > before)
+                    {
+                        craftsLanded++;
+                    }
+                }
+
+                AdvanceDay(ui, 1);
+            }
+
+            var state = ui.Adapter.CurrentState;
+            var crafted = state.Items.Values.Count(i => i.PlayerCrafted);
+            var report = new StringBuilder();
+            report.AppendLine("# 3D Click-Through — INTENDED start (profession + starter copper)");
+            report.AppendLine();
+            report.AppendLine($"- Craft-button clicks that landed: **{craftsLanded}**");
+            report.AppendLine($"- Player-crafted items in world: **{crafted}**");
+            report.AppendLine($"- Final gold: {state.Player.Gold}");
+            report.AppendLine($"- Arc act: {state.Arc.Act}; deepest floor: {(state.Heroes.Values.Any() ? state.Heroes.Values.Max(h => h.DeepestFloorReached) : 0)}");
+            report.AppendLine();
+            report.AppendLine(crafted > 0
+                ? "**Verdict: the intended (profession-chosen) start CAN craft via 3D clicks — the day-1 "
+                  + "soft-lock is specific to the starter-copper-less `SimAdapter(seed)` the client mounts with.**"
+                : "**Verdict: STILL cannot craft even with starter copper — the 3D Forge craft path is "
+                  + "broken beyond the starting-stock issue.**");
+            WriteReport(report.ToString(), envVar: "PLAYTEST_3D_STARTER_OUT");
+
+            AssertThat(state.Day >= Days).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     private static Control? HostFor(MainUi ui, string panel) => panel switch
     {
         "Forge" => ui.Forge,
@@ -294,9 +356,9 @@ public class Playtest3dClickThrough
         return sb.ToString();
     }
 
-    private static void WriteReport(string content)
+    private static void WriteReport(string content, string envVar = "PLAYTEST_3D_CLICK_OUT")
     {
-        var path = System.Environment.GetEnvironmentVariable("PLAYTEST_3D_CLICK_OUT");
+        var path = System.Environment.GetEnvironmentVariable(envVar);
         if (string.IsNullOrWhiteSpace(path))
         {
             GD.Print("=== 3D CLICK-THROUGH REPORT (set PLAYTEST_3D_CLICK_OUT to write a file) ===");

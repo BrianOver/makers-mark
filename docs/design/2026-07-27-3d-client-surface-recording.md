@@ -44,16 +44,21 @@ Legends Honor/Reforge and Commissions Accept remain the one open item: they're p
 
 A third recorder (`Playtest3dClickThrough`) plays the game the way a player literally does: it opens each panel and **presses the actual action buttons** (their `Pressed` signal — the exact path a mouse click emits), not by queuing sim actions on the adapter. 40 days, every Morning, clicking every buy/craft/stock/bounty/unlock/commission verb. It records what each click did and — crucially — the sim's **rejections** (why a click didn't land). Report: `runs/decisions/3d-click-through.md`.
 
-**THE FINDING: the new-player craft loop is soft-locked by poverty.** A player who sits at the Forge and clicks "Buy 1" → Craft **crafts zero items in 40 days.** Proven by the rejection log:
-- Start state is **0 gold**, and *every* Forge "Buy 1" (BuyMaterial) click is rejected: `Not enough gold: need 7, have 0` … `need 4, have 0`. No materials are ever obtained.
-- No materials → the Craft buttons never enable → nothing to sell → no gold → can't buy materials. A closed failure loop, from day 1.
-- `PostBounty: Can't escrow 25g — you have 0g` — bounties are unaffordable too. Gold only ever flickers to 9–10 across 40 days (never enough for even the cheapest material: one rejection reads `need 4, have 2`).
+### First pass looked like a soft-lock — then I checked, and it's a test-harness artifact (NOT a shipped bug)
 
-**Why the earlier active run crafted 20 items but this one crafts 0:** the active/BaselinePlayer path buys **hero ore** (`BuyOre`, a separate Evening surface, cheaper/affordable). The **Forge panel itself only exposes the gold-vendor path** (`BuyMaterial`), which a broke new player can never afford. So the game's central verb — the whole "craft writes legends" premise — is **unreachable through the actual 3D forge UI** for a new player. The working material source is on a different screen the player at the anvil never gets pointed to.
+The default click-through (mounting `MountMainUi()`) crafted **zero items in 40 days** — every Forge "Buy 1" rejected `Not enough gold: need 7, have 0`. That *looked* like a shipped new-player poverty soft-lock. **It isn't.** Verified against the real boot path:
+- The shipped new game runs through **`NewGameSelect.cs:227`**, which calls `GameComposition.NewCampaign(seed, profession)` — the overload that grants **starter copper** — and injects it as the client's adapter. A real player who starts a new game *does* get starter stock.
+- `MountMainUi()` (the test harness) skips `NewGameSelect` and mounts the bare `SimAdapter(seed)` = the starter-copper-*less* campaign. That's why the default click-through was broke. Harness artifact, not the game.
 
-**Robustness (the good news):** across the entire click-through, **no button press threw** — the UI wiring is solid; the problem is economic/onboarding, not crashes. Arc stayed at Act II / floor 4 (consistent with the other runs).
+**Confirmed by re-running from the intended start** (`NewCampaign(2026, blacksmith)`): the forge **works** — 7 craft-button clicks landed, **2 items crafted, 20 gold** over 40 days. So the craft path is reachable and functional for a real new player. *(Lesson for this tooling: the 3D recorders should mount via the starter-stock path to reflect real play; the starter-copper case does.)*
 
-This is the single most important thing the investigation found, and only *clicking the real client* surfaced it — the CLI and adapter-driven runs both used the hero-ore path and sailed right past the broken forge-vendor onboarding.
+### The real, accurate finding: the economy is anemic even when it works
+
+From the intended (starter-copper) start, an actively-clicking player produced only **2 crafted items and 20 gold in 40 days.** The forge functions, but the craft→sell→earn→craft loop barely sustains — consistent with the CLI "broke in every run" finding and fable's "weak faucet" diagnosis. This is the true economic concern: not a hard lock, but a loop that limps.
+
+**Robustness (genuinely good news):** across the entire click-through — every buy/craft/stock/bounty/unlock button, every Morning, 40 days — **no button press ever threw.** The UI wiring is solid. And the arc stayed at **Act II / floor 4** here too.
+
+The honest headline: *clicking the real client found no crash and no shipped soft-lock, but confirmed the anemic economy and the arc stall on the actual UI — and caught a test-harness gap (the recorders were mounting a starter-stock-less campaign) that would have produced a false "soft-lock" report if not verified against the `NewGameSelect` boot path.*
 
 ## What this establishes
 
