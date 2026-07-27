@@ -35,6 +35,26 @@ if (args.Length > 0 && args[0] == "batch")
     return parsed is null ? 1 : GameSim.Cli.BatchRunner.Run(parsed, Console.Out, Console.Error);
 }
 
+// Decision-surface mode: `-- decisions [--seeds N] [--days N] [--out DIR]` logs, for every phase of
+// every day, the legal option menu + advisor suggestions + chosen action across N full playthroughs,
+// then writes a per-seed JSONL + an aggregate markdown report. A documentation tool for design review
+// (feeds the Fable analysis), not a balance gate.
+if (args.Length > 0 && args[0] == "decisions")
+{
+    var dSeeds = 15;
+    var dDays = 100;
+    var dOut = Path.Combine("runs", "decisions");
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] == "--seeds" && i + 1 < args.Length && int.TryParse(args[i + 1], out var s)) { dSeeds = s; i++; }
+        else if (args[i] == "--days" && i + 1 < args.Length && int.TryParse(args[i + 1], out var d)) { dDays = d; i++; }
+        else if (args[i] == "--out" && i + 1 < args.Length) { dOut = args[i + 1]; i++; }
+        else { Console.Error.WriteLine($"decisions: unknown/invalid arg near '{args[i]}' — usage: decisions [--seeds N] [--days N] [--out DIR]"); return 1; }
+    }
+
+    return GameSim.Cli.DecisionLogger.Run(dSeeds, 2026UL, dDays, dOut, Console.Out, Console.Error);
+}
+
 // Interactive mode accepts ONLY `--seed N`. Anything else is a hard error — a typo'd batch
 // invocation ('Batch', misordered flags) must never fall through to the interactive REPL,
 // where redirected stdin would EOF and exit 0 having written zero chronicles (silent green).
