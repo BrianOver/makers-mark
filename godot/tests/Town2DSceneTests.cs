@@ -93,12 +93,14 @@ public class Town2DSceneTests
         try
         {
             // Plaza center (see TownLayout2D.PathRects' plaza rect) must be cobble, not grass — the
-            // cozy-village cluster reads as a paved square, not a gap in a grass field.
+            // cozy-village cluster reads as a paved square, not a gap in a grass field. The rich
+            // pixel-art ground atlas (town2d-ground-atlas, always imported in the engine-test env)
+            // places cobble at atlas coord (3,0); the code-built flat fallback used (1,0).
             var cell = town.Ground.GetCellAtlasCoords(new Vector2I(20, 15));
 
             AssertThat(cell)
-                .OverrideFailureMessage("Plaza tile (20,15) must be cobbled — TownLayout2D.PathRects regressed")
-                .IsEqual(new Vector2I(1, 0));
+                .OverrideFailureMessage("Plaza tile (20,15) must be cobbled — TownLayout2D.PathRects or the ground atlas regressed")
+                .IsEqual(new Vector2I(3, 0));
         }
         finally { town.Free(); }
     }
