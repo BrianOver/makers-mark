@@ -45,14 +45,16 @@ if (args.Length > 1 && args[0] == "decisions" && args[1] == "play")
 {
     var pSeed = 2026UL;
     var pScript = Path.Combine("runs", "decisions", "scripts", "play.txt");
+    string? pProfession = null;
     for (var i = 2; i < args.Length; i++)
     {
         if (args[i] == "--seed" && i + 1 < args.Length && ulong.TryParse(args[i + 1], out var s)) { pSeed = s; i++; }
         else if (args[i] == "--script" && i + 1 < args.Length) { pScript = args[i + 1]; i++; }
-        else { Console.Error.WriteLine($"decisions play: unknown/invalid arg near '{args[i]}' — usage: decisions play --seed N --script PATH"); return 1; }
+        else if (args[i] == "--profession" && i + 1 < args.Length) { pProfession = args[i + 1]; i++; }
+        else { Console.Error.WriteLine($"decisions play: unknown/invalid arg near '{args[i]}' — usage: decisions play --seed N --script PATH [--profession blacksmith|alchemy|tanning|engineering]"); return 1; }
     }
 
-    return GameSim.Cli.DecisionPlay.Run(pSeed, pScript, Console.Out, Console.Error);
+    return GameSim.Cli.DecisionPlay.Run(pSeed, pScript, Console.Out, Console.Error, pProfession);
 }
 
 if (args.Length > 0 && args[0] == "decisions")

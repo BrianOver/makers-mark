@@ -27,10 +27,17 @@ namespace GameSim.Cli;
 /// </summary>
 public static class DecisionPlay
 {
-    public static int Run(ulong seed, string scriptPath, TextWriter output, TextWriter error)
+    public static int Run(ulong seed, string scriptPath, TextWriter output, TextWriter error, string? profession = null)
     {
+        var startProfession = profession ?? ProfessionRegistry.BlacksmithId;
+        if (!ProfessionRegistry.IsRegistered(startProfession))
+        {
+            error.WriteLine($"decisions play: unknown profession '{startProfession}' — registered: {string.Join(", ", ProfessionRegistry.All.Keys)}");
+            return 1;
+        }
+
         var kernel = GameComposition.BuildKernel();
-        var state = GameComposition.NewCampaign(seed, ProfessionRegistry.BlacksmithId);
+        var state = GameComposition.NewCampaign(seed, startProfession);
         var lastEvents = ImmutableList<GameEvent>.Empty;
         var lastRejections = ImmutableList<RejectedAction>.Empty;
         var appliedNote = new List<string>();
