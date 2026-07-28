@@ -5,7 +5,7 @@ using GameSim.Contracts;
 using Godot;
 using GodotClient.Panels;
 using GodotClient.Town;
-using GodotClient.Town3d;
+using GodotClient.Town2d;
 using GodotClient.Ui;
 
 namespace GodotClient;
@@ -65,36 +65,25 @@ public partial class MainUi : Control
     /// docking above.</summary>
     private const float ObjectiveDockMinBottomGap = 40f;
 
-    /// <summary>Menu-sizing fix (review): fixed floors for header row 2's two HUD sections (day
-    /// timeline / Skip-Auto-Pause-Speed-Ledger-Forecast controls) — named here rather than left as
-    /// inline literals at each <c>CustomMinimumSize</c> call site, matching the ObjectiveDock consts
-    /// above. (The stat-chip row is row 1 now — its own full width, no floor needed.)</summary>
+    /// <summary>Menu-sizing fix (review): fixed floor for header row 2's PHASE DIAL zone (the
+    /// day-timeline) — named here rather than left as an inline literal at its
+    /// <c>CustomMinimumSize</c> call site, matching the ObjectiveDock consts above. (The stat-chip
+    /// row is row 1 now — its own full width, no floor needed. UI-4's VERB/TRAY zones no longer
+    /// need a matching floor: shrunk to a 36px button + three 24px icon buttons and seven 28px
+    /// tray icons, their natural minimum is small and stable — HBoxContainer reserves it before
+    /// handing the rest to this ExpandFill zone regardless.)</summary>
     private const float TimelineMinWidth = 280f;
-    private const float HudControlsMinWidth = 420f;
 
     /// <summary>U23: the tutorial-flow overlay docks in the same top-right column, stacked below
     /// the objective chip rather than sharing its box (keeps the chip's own layout untouched).</summary>
     private const float TutorialDockOffsetTop = ObjectiveDockOffsetTop + 90f;
 
-    /// <summary>PA8 (spec DB4): the <see cref="CameraRig.PushIn"/> distance for a station
-    /// dolly-in — tighter than the town's default follow (<c>CameraRig.Distance</c> = 22) so the
-    /// forge/counter focus overlay reads as a deliberate close-up, not a subtle zoom.</summary>
-    private const float StationPushInDistance = 6f;
-
-    /// <summary>3D-interiors MVP: the <see cref="CameraRig.PushIn"/> distance for a venue's
-    /// <see cref="InteriorRoom3D"/> — slightly wider than <see cref="StationPushInDistance"/> so
-    /// the whole 8-unit diorama room (floor + three walls) fits the rig's 45° FOV frame.</summary>
-    private const float InteriorRoomPushInDistance = 6f;
-
-    /// <summary>Interior camera pitch (degrees): shallower than the town's -42 top-down follow so
-    /// the room is viewed nearer eye level and its walls/depth/props read as a 3D space rather than
-    /// a flat floor plan (the "interiors look 2D" fix). Eased by <see cref="CameraRig.PushIn"/>.</summary>
-    private const float InteriorRoomPitch = -15f;
-
     /// <summary>U23 (R5, KTD4): number-row hotkeys for the quick-travel unlock — runtime <see
     /// cref="InputMap"/> registration only (no <c>project.godot</c> contact), gated on <see
     /// cref="TutorialFlow.QuickTravelUnlocked"/> in <see cref="_Process"/>. Building keys match
-    /// <see cref="Town3D.BuildingClicked"/>'s own payload vocabulary.</summary>
+    /// <see cref="OnTownBuildingClicked"/>'s own payload vocabulary — the legacy capitalized
+    /// names (<see cref="TutorialFlow"/>'s own <c>QuickTravelVenues</c> table uses the same
+    /// vocabulary and is out of this unit's edit scope).</summary>
     private static readonly (string Action, Key Key, string Building)[] QuickTravelHotkeys =
     [
         ("quicktravel_forge", Key.Key1, "Forge"),
@@ -120,7 +109,7 @@ public partial class MainUi : Control
     public SimAdapter Adapter { get; private set; } = null!;
     public PhaseClock Clock { get; private set; } = null!;
     public DrawerHost Drawer { get; private set; } = null!;
-    public Town3D Town { get; private set; } = null!;
+    public Town2D Town { get; private set; } = null!;
     public ForgePanel Forge { get; private set; } = null!;
     public ShopPanel Shop { get; private set; } = null!;
     public HeroesPanel Heroes { get; private set; } = null!;
@@ -159,16 +148,11 @@ public partial class MainUi : Control
     public AdventureTicker Ticker { get; private set; } = null!;
 
     /// <summary>U22 (R4/KTD10): the staged-interior framework — opens instead of the drawer on a
-    /// venue interact/click-arrival, then routes a hotspot press onto the same drawer id. Since
-    /// the 3D-interiors MVP it renders in see-through mode (hotspot/exit overlay only) over the
-    /// real 3D room below whenever <see cref="InteriorRoom"/> mounted.</summary>
+    /// venue interact/click-arrival, then routes a hotspot press onto the same drawer id. 2.5D
+    /// pivot (U2): this slice's <see cref="OnTownBuildingClicked"/> routes straight to <see
+    /// cref="OpenPanel"/> instead, so nothing currently opens this stage — it stays wired
+    /// (hotspot/exit handlers intact) for a later reintroduction rather than torn out.</summary>
     public InteriorStage Interior { get; private set; } = null!;
-
-    /// <summary>3D-interiors MVP: the live 3D interior room while a venue interior is open (null
-    /// otherwise) — mounted in <see cref="Town3D.World"/> and framed by the shared
-    /// <see cref="CameraRig"/> push-in; replaces <see cref="InteriorStage"/>'s painted backdrop,
-    /// never its hotspot routing. Test/inspection surface.</summary>
-    public InteriorRoom3D? InteriorRoom { get; private set; }
 
     /// <summary>U18 (R11/KTD13): the top-right objective chip — <c>ObjectiveAdvisor</c>'s top
     /// pick + reason, expandable to the ranked list.</summary>
@@ -197,6 +181,12 @@ public partial class MainUi : Control
     /// <summary>Seconds left on the rejection toast; 0 when no toast is showing (U6).</summary>
     public double ToastRemaining { get; private set; }
 
+    /// <summary>Gate-b bug fix: the two-row HUD header panel — kept so <see
+    /// cref="UpdateObjectiveDock"/> can dock the objective chip below its REAL rendered height
+    /// instead of a hand-tuned magic offset (<see cref="ObjectiveDockOffsetTop"/> drifted stale
+    /// the moment the Books Tray zone made the header taller, which is exactly how the chip ended
+    /// up overlapping the tray).</summary>
+    private PanelContainer _hudHeader = null!;
     private int _pendingLedgerDay;
     private HBoxContainer _statChips = null!;
     private Label _clockLabel = null!;
@@ -229,11 +219,6 @@ public partial class MainUi : Control
     private bool _resumePlayOnCommissionsClose;
     /// <summary>Wave 4 (U21): mirror of the Bestiary/Forecast latch for the Legends Wall.</summary>
     private bool _resumePlayOnLegendsClose;
-
-    /// <summary>U22: the door position the avatar stood at when the currently-open (or just-
-    /// closed) interior was opened — restored on exit (R4/AE4 "exit returns avatar to door
-    /// position"). Null while no interior has ever been opened this session.</summary>
-    private Vector3? _interiorDoorPosition;
 
     // ── LW3: gold-chip bounce-scale pop (StatusBar region) ────────────────────────────────────
     // No engine Tween in this codebase (accumulated-delta math only, so the pop is deterministic
@@ -372,6 +357,12 @@ public partial class MainUi : Control
         // U17: tick the bottom-edge adventure ticker marquee (no-op with no lines yet).
         Ticker.Tick(delta);
 
+        // UI-4: tick the day-timeline's pulsing engaged-wait dot (no-op unless it's visible).
+        Timeline.Tick(delta);
+
+        // UI-6: tick the objective note's body fade-in (no-op unless a fresh step just landed).
+        Objective.Tick(delta);
+
         // U23 (R5): quick-travel hotkeys — inert until the tutorial chain completes.
         if (Tutorial.QuickTravelUnlocked)
         {
@@ -509,11 +500,27 @@ public partial class MainUi : Control
     /// clamp <see cref="ObjectiveDockMinBottomGap"/> already existed for. Called once at build
     /// time, every <see cref="RefreshHud"/> tick, and on every "More" ranked-list toggle — the
     /// three moments the chip's own content height can change.
+    ///
+    /// Gate-b bug fix (playtest screenshot, "note overlaps the books tray"): <see
+    /// cref="ObjectiveDockOffsetTop"/> is a hand-tuned constant that goes stale every time the HUD
+    /// header's own content grows (exactly what happened once the Books Tray zone landed — the
+    /// header's real two-row height ended up taller than the 108px the chip was docked at, so the
+    /// chip's top-right corner landed a few pixels INSIDE the header's own top-right Books Tray).
+    /// Rather than re-tune the magic number again (guaranteed to drift again next HUD change),
+    /// dock below <see cref="_hudHeader"/>'s actual measured height — <see
+    /// cref="ObjectiveDockOffsetTop"/> stays only as a floor so the chip never docks HIGHER than
+    /// the originally-tuned position on a header shorter than expected.
     /// </summary>
     private void UpdateObjectiveDock()
     {
         var viewportHeight = GetViewportRect().Size.Y;
-        Objective.OffsetTop = Mathf.Min(ObjectiveDockOffsetTop, viewportHeight - ObjectiveDockMinBottomGap);
+        // GetCombinedMinimumSize (not .Size) for the same reason Objective's own content height is
+        // read that way below — a same-frame content change hasn't necessarily flushed into .Size
+        // yet, and the header sits flush at the layout's top (y=0), so its minimum height IS its
+        // real bottom-edge Y coordinate.
+        var headerBottom = _hudHeader.GetCombinedMinimumSize().Y + ObjectiveDockMargin;
+        var desiredTop = Mathf.Max(ObjectiveDockOffsetTop, headerBottom);
+        Objective.OffsetTop = Mathf.Min(desiredTop, viewportHeight - ObjectiveDockMinBottomGap);
         var maxBottom = Mathf.Max(Objective.OffsetTop + ObjectiveDockMinBottomGap, viewportHeight - ObjectiveDockMargin);
         var contentHeight = Objective.GetCombinedMinimumSize().Y;
         Objective.OffsetBottom = Mathf.Min(Objective.OffsetTop + contentHeight, maxBottom);
@@ -528,6 +535,14 @@ public partial class MainUi : Control
     /// P007 U7 (R11/R12/KD1): rebuild the HUD's stat-chip row from CurrentState. Rebuilt (not
     /// mutated in place) each call — mirrors the panels' own Clear-then-compose Refresh pattern
     /// (KTD2) so the chips can never drift from live state between ticks.
+    ///
+    /// <para>UI-3 (menu-sizing/cozy redesign): the old flat row of 9 loose chips overflowed at the
+    /// default window size (<c>ClipContents</c> silently clipped the tail — Rent/Guild/Confidence
+    /// were invisible). Regrouped into 3 clusters with a fixed gap (<see cref="GameTheme.Space16"/>):
+    /// CALENDAR (Day · Phase, the Act chip demoted into a small badge), WEALTH+HANDS (gold — the
+    /// bar's single largest value — heroes, and the unchanged slot pips), and DUES, pushed flush to
+    /// the bar's right edge by an <c>ExpandFill</c> spacer. Every node's <see cref="Node.Name"/> is
+    /// unchanged from before this pass — only the grouping/visual treatment moved.</para>
     /// </summary>
     private void RefreshStatus()
     {
@@ -540,18 +555,62 @@ public partial class MainUi : Control
             child.Free();
         }
 
-        _statChips.AddChild(NamedStatChip("DayChip", "Day", $"{state.Day}"));
+        _statChips.AddThemeConstantOverride("separation", GameTheme.Space16);
+
+        // ── CALENDAR cluster: Day · Phase, with the campaign Act folded in as a small badge ──────
+        var calendar = new HBoxContainer { Name = "CalendarCluster" };
+        calendar.AddThemeConstantOverride("separation", GameTheme.Space8);
+        _statChips.AddChild(calendar);
+
+        calendar.AddChild(NamedStatChip("DayChip", "Day", $"{state.Day}"));
+
+        var separator = new Label { Text = "·" };
+        separator.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        calendar.AddChild(separator);
+
         var phaseChip = NamedStatChip("PhaseChip", "Phase", state.Phase.ToString(), UiKit.ChipTone.Accent);
         phaseChip.TooltipText = PhaseLegend;
-        _statChips.AddChild(phaseChip);
+        calendar.AddChild(phaseChip);
+
+        // U-D3: which act of the campaign arc the town is in (I → II → III → ending) — demoted
+        // (UI-3) from a full peer chip to a small compact badge folded into the Calendar cluster;
+        // the detail stays on the tooltip.
+        var actChip = NamedStatChipCompact("ActChip", "Act", ArcActRoman(state.Arc.Act), UiKit.ChipTone.Accent);
+        actChip.TooltipText =
+            $"Campaign arc: {state.Arc.Act}. Advances on the deepest floor your heroes reach; Act III is the climax, then the ending chronicle.";
+        calendar.AddChild(actChip);
+
+        // ── WEALTH + HANDS cluster: gold (the bar's biggest value), heroes, action-slot pips ─────
+        var wealthHands = new HBoxContainer { Name = "WealthHandsCluster" };
+        wealthHands.AddThemeConstantOverride("separation", GameTheme.Space8);
+        _statChips.AddChild(wealthHands);
 
         var goldChip = BuildGoldChip(state.Player.Gold);
-        _statChips.AddChild(goldChip);
-        _goldValueLabel = goldChip.GetNode<Label>("StatChip/StatChipRow/Value");
+        wealthHands.AddChild(goldChip);
+        _goldValueLabel = goldChip.GetNode<Label>("Value");
 
-        _statChips.AddChild(NamedStatChip(
-            "HeroesChip", "Heroes", $"{alive}/{state.Heroes.Count}",
-            alive == state.Heroes.Count && state.Heroes.Count > 0 ? UiKit.ChipTone.Positive : UiKit.ChipTone.Neutral));
+        // Icon stand-in note (UI-3): no dedicated "party/helm" glyph exists in assets/icons yet —
+        // reuses "shield" (defense/party) as the closest available fit rather than adding a new
+        // asset file (out of this presentation-only unit's file scope). Flagged for a follow-up
+        // dedicated HUD icon pass; the word itself still lives in TooltipText.
+        var heroesChip = NamedIconChip(
+            "HeroesChip", IconRegistry.Glyph("shield"), $"{alive}/{state.Heroes.Count}",
+            alive == state.Heroes.Count && state.Heroes.Count > 0 ? UiKit.ChipTone.Positive : UiKit.ChipTone.Neutral,
+            "Heroes");
+        wealthHands.AddChild(heroesChip);
+
+        // U10 scarcity surfacing: today's remaining real-work action slots as a pip row (UNCHANGED
+        // from BuildSlotPips per this unit's brief).
+        wealthHands.AddChild(BuildSlotPips(state.ActionSlotsRemaining, ActionBudget.SlotsPerDay));
+
+        // Expanding spacer: pushes the DUES cluster flush to the wood-framed bar's right edge.
+        _statChips.AddChild(new Control { Name = "StatChipsSpacer", SizeFlagsHorizontal = SizeFlags.ExpandFill });
+
+        // ── DUES cluster: the three scarcity/heartbeat gauges — icon+value only, the wordy labels
+        // ("Rent"/"Guild Assessment"/"Confidence") that ate the most width now live in TooltipText.
+        var dues = new HBoxContainer { Name = "DuesCluster" };
+        dues.AddThemeConstantOverride("separation", GameTheme.Space8);
+        _statChips.AddChild(dues);
 
         // U10 scarcity surfacing: the guild-rent countdown. Tone escalates as the deadline nears
         // (or once a payment has been missed) so the pressure reads at a glance.
@@ -559,22 +618,14 @@ public partial class MainUi : Control
         var rentTone = rent.MissedPayments > 0 || rent.DaysUntilDue <= 1 ? UiKit.ChipTone.Negative
             : rent.DaysUntilDue <= 3 ? UiKit.ChipTone.Accent
             : UiKit.ChipTone.Neutral;
-        var rentChip = NamedStatChip("RentChip", "Rent", $"{rent.DaysUntilDue}d/{rent.AmountDueGold}g", rentTone);
+        // Icon stand-in (see HeroesChip's note above): no dedicated "workshop rent" glyph yet —
+        // reuses "bounty" (a formal notice/scroll), the closest available fit.
+        var rentChip = NamedIconChip(
+            "RentChip", IconRegistry.Glyph("bounty"), $"{rent.DaysUntilDue}d·{rent.AmountDueGold}g", rentTone, "Rent");
         rentChip.TooltipText = rent.MissedPayments > 0
             ? $"Rent due in {rent.DaysUntilDue} day(s): {rent.AmountDueGold}g. {rent.MissedPayments} missed payment(s) — the guild is losing patience."
             : $"Rent due in {rent.DaysUntilDue} day(s): {rent.AmountDueGold}g (every {RentState.CadenceDays} days).";
-        _statChips.AddChild(rentChip);
-
-        // U-D2: the town-Confidence gauge (0-1000 → %) — the soft-deadline morale the Guild
-        // Assessment and rival vendor both read. Tone drops as it nears the collapse floor (0).
-        var confidence = state.Rent.ConfidencePermille;
-        var confidenceTone = confidence <= 200 ? UiKit.ChipTone.Negative
-            : confidence <= 500 ? UiKit.ChipTone.Accent
-            : UiKit.ChipTone.Positive;
-        var confidenceChip = NamedStatChip("ConfidenceChip", "Confidence", $"{confidence / 10}%", confidenceTone);
-        confidenceChip.TooltipText =
-            $"Town confidence {confidence / 10}% — lifts on a paid Guild Assessment, drops on a miss or passive decay. At 0 the era soft-fails (talents + recipes persist).";
-        _statChips.AddChild(confidenceChip);
+        dues.AddChild(rentChip);
 
         // U-D2: the Guild Assessment heartbeat — dues on their own cadence, escalating paid or missed.
         var assess = state.Assessment;
@@ -582,20 +633,29 @@ public partial class MainUi : Control
                 ? UiKit.ChipTone.Negative
             : assess.DaysUntilAssessment <= 2 ? UiKit.ChipTone.Accent
             : UiKit.ChipTone.Neutral;
-        var assessChip = NamedStatChip("AssessmentChip", "Guild", $"{assess.DaysUntilAssessment}d/{assess.DuesGold}g", assessTone);
+        // Icon stand-in: no dedicated "guild banner" glyph yet — reuses "gossip" (town chatter/
+        // reputation), the closest available fit.
+        var assessChip = NamedIconChip(
+            "AssessmentChip", IconRegistry.Glyph("gossip"), $"{assess.DaysUntilAssessment}d·{assess.DuesGold}g",
+            assessTone, "Guild Assessment");
         assessChip.TooltipText = assess.MissedAssessments > 0
             ? $"Guild Assessment due in {assess.DaysUntilAssessment} day(s): {assess.DuesGold}g. {assess.MissedAssessments} missed — dues escalate steeply."
             : $"Guild Assessment due in {assess.DaysUntilAssessment} day(s): {assess.DuesGold}g (every {GuildAssessmentState.CadenceDays} days). Paying it lifts Confidence.";
-        _statChips.AddChild(assessChip);
+        dues.AddChild(assessChip);
 
-        // U-D3: which act of the campaign arc the town is in (I → II → III → ending).
-        var actChip = NamedStatChip("ActChip", "Act", ArcActRoman(state.Arc.Act), UiKit.ChipTone.Accent);
-        actChip.TooltipText =
-            $"Campaign arc: {state.Arc.Act}. Advances on the deepest floor your heroes reach; Act III is the climax, then the ending chronicle.";
-        _statChips.AddChild(actChip);
-
-        // U10 scarcity surfacing: today's remaining real-work action slots as a pip row.
-        _statChips.AddChild(BuildSlotPips(state.ActionSlotsRemaining, ActionBudget.SlotsPerDay));
+        // U-D2: the town-Confidence gauge (0-1000 → %) — the soft-deadline morale the Guild
+        // Assessment and rival vendor both read. Tone drops as it nears the collapse floor (0).
+        var confidence = state.Rent.ConfidencePermille;
+        var confidenceTone = confidence <= 200 ? UiKit.ChipTone.Negative
+            : confidence <= 500 ? UiKit.ChipTone.Accent
+            : UiKit.ChipTone.Positive;
+        // Icon stand-in: no dedicated "morale/heart" glyph yet — reuses "rune" (an arcane gauge),
+        // the closest available fit.
+        var confidenceChip = NamedIconChip(
+            "ConfidenceChip", IconRegistry.Glyph("rune"), $"{confidence / 10}%", confidenceTone, "Confidence");
+        confidenceChip.TooltipText =
+            $"Town confidence {confidence / 10}% — lifts on a paid Guild Assessment, drops on a miss or passive decay. At 0 the era soft-fails (talents + recipes persist).";
+        dues.AddChild(confidenceChip);
 
         // LW3 coin flourish (StatusBar half): a player-shelf sale on THIS tick arms the gold-
         // label pop. ShopStage plays the matching coin-arc off the SAME Adapter.LastEvents batch
@@ -638,6 +698,31 @@ public partial class MainUi : Control
         return chip;
     }
 
+    /// <summary>UI-3: the demoted-badge twin of <see cref="NamedStatChip"/> — <see
+    /// cref="UiKit.StatChipCompact"/> instead of the full <see cref="UiKit.StatChip"/>, for a HUD
+    /// element that used to be a full peer chip (e.g. the campaign Act) and is now folded into a
+    /// smaller badge alongside its cluster.</summary>
+    private static Control NamedStatChipCompact(string name, string label, string value, UiKit.ChipTone tone = UiKit.ChipTone.Neutral)
+    {
+        var chip = UiKit.StatChipCompact(label, value, tone);
+        chip.Name = name;
+        return chip;
+    }
+
+    /// <summary>UI-3: an <see cref="UiKit.IconChip"/> given a discoverable <see cref="Node.Name"/>
+    /// (mirrors <see cref="NamedStatChip"/>'s exact contract) plus a default <paramref
+    /// name="tooltip"/> — the word-label a full <see cref="UiKit.StatChip"/> used to render inline
+    /// moves here instead, so the on-bar chip stays icon+value only. Callers with a richer,
+    /// state-dependent tooltip (e.g. Rent/Guild Assessment) simply overwrite <see
+    /// cref="Control.TooltipText"/> on the returned control right after.</summary>
+    private static Control NamedIconChip(string name, Texture2D? icon, string value, UiKit.ChipTone tone, string tooltip)
+    {
+        var chip = UiKit.IconChip(icon, value, tone);
+        chip.Name = name;
+        chip.TooltipText = tooltip;
+        return chip;
+    }
+
     /// <summary>U-D3: the campaign act as a compact roman numeral for the HUD chip.</summary>
     private static string ArcActRoman(CampaignAct act) => act switch
     {
@@ -648,11 +733,23 @@ public partial class MainUi : Control
         _ => act.ToString(),
     };
 
-    /// <summary>The gold chip pairs the existing gold glyph (U16) with a themed StatChip value —
-    /// the one place the U16 icon and the P007 U2 widget kit meet.</summary>
+    /// <summary>
+    /// The gold chip pairs the existing gold glyph (U16) with the bar's single largest value
+    /// (UI-3: <see cref="GameTheme.HudValueFontSize"/>, <see cref="GameTheme.GoldColor"/> — gold is
+    /// the ONE currency, so it gets the ONE outsized read on the bar). The old "Gold" word-label is
+    /// gone (moved to <see cref="Control.TooltipText"/>) now that the icon carries that meaning.
+    ///
+    /// <para>Kept an <see cref="HBoxContainer"/> named "GoldChip" with a direct child <see
+    /// cref="Label"/> named "Value" — <c>ShopStageTests</c>/<c>DayAdvanceHudTests</c> locate it by
+    /// exactly that shape (<c>Find&lt;HBoxContainer&gt;(ui, "GoldChip")</c> /
+    /// <c>Find&lt;Label&gt;(..., "Value")</c>), so this unit's redesign keeps both the node TYPE
+    /// and the discoverable "Value" label — only the inner StatChip wrapper (and its extra label)
+    /// is gone.</para>
+    /// </summary>
     private static Control BuildGoldChip(int gold)
     {
-        var wrap = new HBoxContainer { Name = "GoldChip" };
+        var wrap = new HBoxContainer { Name = "GoldChip", TooltipText = "Gold" };
+        wrap.AddThemeConstantOverride("separation", GameTheme.Space4);
         wrap.AddChild(new TextureRect
         {
             Name = "GoldIcon",
@@ -661,7 +758,11 @@ public partial class MainUi : Control
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = MouseFilterEnum.Ignore,
         });
-        wrap.AddChild(UiKit.StatChip("Gold", $"{gold}g", UiKit.ChipTone.Accent));
+
+        var value = new Label { Name = "Value", Text = $"{gold}g" };
+        value.AddThemeColorOverride("font_color", GameTheme.GoldColor);
+        value.AddThemeFontSizeOverride("font_size", GameTheme.HudValueFontSize);
+        wrap.AddChild(value);
         return wrap;
     }
 
@@ -748,7 +849,11 @@ public partial class MainUi : Control
 
     private void UpdateClockLabel()
     {
-        _auto.Text = Clock.AutoAdvance ? "Auto: ON" : "Auto: OFF";
+        // UI-4: Auto/Pause/Speed are icon-only 24px buttons now — Text stays a fixed short glyph
+        // (or, for Speed, the compact multiplier itself) and the descriptive word/state moves to
+        // TooltipText instead. Node NAMEs and the underlying Clock state are untouched.
+        _auto.Text = "⏱";
+        _auto.TooltipText = Clock.AutoAdvance ? "Auto-advance: ON" : "Auto-advance: OFF";
         _auto.ButtonPressed = Clock.AutoAdvance; // keep the toggle's pressed look in sync (U7)
         // Play/pause + speed are sub-controls of auto mode — hidden while gated (U2).
         _playPause.Visible = Clock.AutoAdvance;
@@ -764,8 +869,10 @@ public partial class MainUi : Control
             // from a manual pause so it's legible that the wait is the player's own doing.
             var engaged = !Clock.Playing || !Clock.Engaged ? string.Empty : " [waiting]";
             _clockLabel.Text = $"{PlayerPhaseName(state)} — next in {remaining}s @{Clock.SpeedMultiplier}x{paused}{engaged}";
-            _playPause.Text = Clock.Playing ? "Pause" : "Play";
-            _speed.Text = $"{Clock.SpeedMultiplier}x";
+            _playPause.Text = Clock.Playing ? "⏸" : "▶";
+            _playPause.TooltipText = Clock.Playing ? "Pause" : "Play";
+            _speed.Text = $"{Clock.SpeedMultiplier}×";
+            _speed.TooltipText = $"Speed: {Clock.SpeedMultiplier}x (click to cycle)";
         }
         else
         {
@@ -848,9 +955,9 @@ public partial class MainUi : Control
 
         // --- U21: TownWorld is now a PERMANENT FullRect base child — added FIRST so every later
         // sibling (the HUD layout, the DrawerHost, the modals) draws on top of it, and it is never
-        // hidden by a drawer opening/closing (R1 world permanence). T8: the grounded 3D town
-        // replaces the 2D SubViewport shell — same permanence contract, same event vocabulary. ---
-        Town = new Town3D { Name = "Town3D" };
+        // hidden by a drawer opening/closing (R1 world permanence). 2.5D pivot (U2): Town2D
+        // replaces the grounded 3D town — same permanence contract, same event vocabulary. ---
+        Town = new Town2D { Name = "Town2D" };
         AddChild(Town);
         Town.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Town.Build(Adapter);
@@ -862,13 +969,18 @@ public partial class MainUi : Control
         layout.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(layout);
 
-        // --- HUD header (P007 U7/R11/R12/KD1): themed stat-chip row (left) + the
-        // Skip/Auto controls cluster (right) — the real home for the living day
-        // clock (U15). Both Skip and Auto drive PhaseClock's ONE advance path
-        // (AdvanceNow / Update -> SimAdapter.AdvancePhase); nothing here is a second
-        // code path (KD1). -----------------------------------------------------
+        // --- HUD header (P007 U7/R11/R12/KD1, UI-3/UI-4 cozy redesign): a wood-framed panel
+        // holding the clustered stat-chip row (row 1) and the PHASE DIAL / PRIMARY VERB / BOOKS
+        // TRAY zones (row 2) — the real home for the living day clock (U15). Both the primary
+        // verb (Skip/bell) and Auto drive PhaseClock's ONE advance path (AdvanceNow / Update ->
+        // SimAdapter.AdvancePhase); nothing here is a second code path (KD1). ------------------
         var header = new PanelContainer { Name = "HudHeader" };
+        // UI-3 (menu-sizing/cozy redesign): the wood-framed panel every other cozy surface now
+        // shares (falls back to a flat timber-bordered panel on a stripped build — see
+        // GameTheme.PanelStyleWood's own null-tolerant contract) instead of the flat Iron rect.
+        header.AddThemeStyleboxOverride("panel", GameTheme.PanelStyleWood());
         layout.AddChild(header);
+        _hudHeader = header; // gate-b fix: UpdateObjectiveDock docks below this panel's real height
 
         // Two-row header (gate-b playtest, 2026-07-24): at the default 1152px window a single row
         // could not hold [6 stat chips] + [timeline] + [6 controls] — the stat chips overflowed
@@ -887,9 +999,10 @@ public partial class MainUi : Control
         _statChips = new HBoxContainer { Name = "StatChips" };
         statRow.AddChild(_statChips);
 
-        // Row 2: the day-timeline (U18/KTD13, ExpandFill center-left) + the Skip/Auto/Pause/Speed/
-        // Ledger/Forecast controls cluster (right).
+        // Row 2 (UI-4): the day-timeline PHASE DIAL (ExpandFill left) + the PRIMARY VERB cluster
+        // (center) + the BOOKS TRAY (right, icon-only, recessed) — 3 zones, 16px apart.
         var headerRow = new HBoxContainer { Name = "HudHeaderRow" };
+        headerRow.AddThemeConstantOverride("separation", GameTheme.Space16);
         headerColumn.AddChild(headerRow);
 
         // Menu-sizing fix (gate-b/HUD clip): the timeline is the row's ExpandFill region — with no
@@ -911,27 +1024,31 @@ public partial class MainUi : Control
         Timeline.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         timelineWrap.AddChild(Timeline);
 
-        // HudControls is row 2's rightmost, non-expand child — HBoxContainer reserves its natural
-        // minimum before handing leftover to the timeline wrap, and a fixed floor keeps it from ever
-        // reporting narrower than its real button cluster needs, keeping it on-screen once the
-        // timeline is capped.
-        var controls = new HBoxContainer
-        {
-            Name = "HudControls",
-            CustomMinimumSize = new Vector2(HudControlsMinWidth, 0),
-        };
-        headerRow.AddChild(controls);
+        // --- UI-4 Zone 2: PRIMARY VERB (center) — the contextual bell verb is now ONE large
+        // button carrying the call-to-action weight; Auto/Pause/Speed collapse to small 24px
+        // icon-only buttons beside it (full words moved to TooltipText). The clock-label caption
+        // (day/phase banner) sits above, small and dim — it used to compete visually with the
+        // button it now defers to; its Text-setting logic in UpdateClockLabel is untouched. -----
+        var verbCluster = new VBoxContainer { Name = "VerbCluster", Alignment = BoxContainer.AlignmentMode.Center };
+        headerRow.AddChild(verbCluster);
 
-        _clockLabel = new Label { Name = "ClockLabel" };
-        controls.AddChild(_clockLabel);
+        _clockLabel = new Label { Name = "ClockLabel", HorizontalAlignment = HorizontalAlignment.Center };
+        _clockLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        _clockLabel.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
+        verbCluster.AddChild(_clockLabel);
+
+        var verbRow = new HBoxContainer { Name = "VerbRow" };
+        verbRow.AddThemeConstantOverride("separation", GameTheme.Space8);
+        verbCluster.AddChild(verbRow);
 
         // U15: the living clock flows by default, so the explicit control is now a
         // "Skip" — same underlying advance (AdvanceNow), just relabeled now that it is
         // the exception rather than the primary way forward (player intent always wins,
         // engaged or not). Node NAME stays "AdvancePhase" (existing tests press it by
         // name). The Auto toggle remains the escape hatch back to fully-manual mode.
-        _advance = new Button { Name = "AdvancePhase", Text = "Skip" };
-        StylePrimary(_advance);
+        _advance = new Button { Name = "AdvancePhase", Text = "Skip", CustomMinimumSize = new Vector2(0, 36) };
+        StylePrimaryVerb(_advance);
+        _advance.AddThemeFontSizeOverride("font_size", GameTheme.HudValueFontSize);
         _advance.Pressed += () =>
         {
             var state = Adapter.CurrentState;
@@ -950,9 +1067,16 @@ public partial class MainUi : Control
             Clock.AdvanceNow(); // same advance the auto timer fires — player intent wins even engaged
             UpdateClockLabel();
         };
-        controls.AddChild(_advance);
+        verbRow.AddChild(_advance);
 
-        _auto = new Button { Name = "AutoAdvance", Text = "Auto: OFF", ToggleMode = true };
+        // UI-4: Auto/Pause/Speed collapse to small 24px icon buttons (Text is a short glyph, the
+        // descriptive word lives on TooltipText, refreshed every UpdateClockLabel tick). Node
+        // NAMEs and underlying behavior are unchanged — tests press these by name and never read
+        // their Text/TooltipText.
+        _auto = new Button
+        {
+            Name = "AutoAdvance", Text = "⏱", ToggleMode = true, CustomMinimumSize = new Vector2(24, 24),
+        };
         _auto.Pressed += () =>
         {
             Clock.ToggleAuto();
@@ -960,69 +1084,94 @@ public partial class MainUi : Control
             UpdateClockLabel();
             Timeline.Refresh(Adapter.CurrentState.Phase, Waiting); // U18: Auto gates the Waiting predicate too
         };
-        controls.AddChild(_auto);
+        verbRow.AddChild(_auto);
 
-        _playPause = new Button { Name = "PlayPause", Text = "Pause" };
+        _playPause = new Button { Name = "PlayPause", Text = "⏸", CustomMinimumSize = new Vector2(24, 24) };
         _playPause.Pressed += () =>
         {
             Clock.TogglePlay();
             UpdateClockLabel();
             Timeline.Refresh(Adapter.CurrentState.Phase, Waiting); // U18: Playing gates the Waiting predicate too
         };
-        controls.AddChild(_playPause);
+        verbRow.AddChild(_playPause);
 
-        _speed = new Button { Name = "Speed", Text = "1x" };
+        _speed = new Button { Name = "Speed", Text = "1×", CustomMinimumSize = new Vector2(24, 24) };
         _speed.Pressed += () =>
         {
             Clock.CycleSpeed();
             UpdateClockLabel();
         };
-        controls.AddChild(_speed);
+        verbRow.AddChild(_speed);
 
-        var ledgerButton = new Button { Name = "OpenLedger", Text = "Ledger" };
+        // --- UI-4 Zone 3: BOOKS TRAY (right) — Ledger/Forecast/Commissions/Legends/Demand/Renown/
+        // Progress collapse to 28px icon-only buttons on a recessed (SurfaceDeep) tray; the full
+        // names move to TooltipText. Icon picks reuse the existing glyph set rather than adding
+        // new asset files (out of this presentation-only unit's scope) — some are thematic reuse
+        // (Ledger's "skull" already marks fate rows inside LedgerModal itself), the rest are
+        // best-available stand-ins flagged for a follow-up dedicated tray-icon pass. -------------
+        var tray = new PanelContainer { Name = "BooksTray" };
+        var trayStyle = new StyleBoxFlat
+        {
+            BgColor = GameTheme.SurfaceDeep,
+            CornerRadiusBottomLeft = GameTheme.RadiusChip,
+            CornerRadiusBottomRight = GameTheme.RadiusChip,
+            CornerRadiusTopLeft = GameTheme.RadiusChip,
+            CornerRadiusTopRight = GameTheme.RadiusChip,
+            ContentMarginLeft = GameTheme.Space4,
+            ContentMarginRight = GameTheme.Space4,
+            ContentMarginTop = GameTheme.Space4,
+            ContentMarginBottom = GameTheme.Space4,
+        };
+        tray.AddThemeStyleboxOverride("panel", trayStyle);
+        headerRow.AddChild(tray);
+
+        var trayRow = new HBoxContainer { Name = "BooksTrayRow" };
+        trayRow.AddThemeConstantOverride("separation", GameTheme.Space4);
+        tray.AddChild(trayRow);
+
+        var ledgerButton = TrayButton("OpenLedger", IconRegistry.Glyph("skull"), "Ledger");
         ledgerButton.Pressed += () => Ledger.ShowFor(LastCompletedDay);
-        controls.AddChild(ledgerButton);
+        trayRow.AddChild(ledgerButton);
 
         // U10: open the raid-forecast board on demand (day-end auto-open is the chained path in
         // OnLedgerVisibilityChanged). Reads live state so it always reflects the current roster.
-        var forecastButton = new Button { Name = "OpenForecast", Text = "Forecast" };
+        var forecastButton = TrayButton("OpenForecast", IconRegistry.Glyph("depths"), "Forecast");
         forecastButton.Pressed += () => Forecast.ShowForTomorrow(Adapter.CurrentState);
-        controls.AddChild(forecastButton);
+        trayRow.AddChild(forecastButton);
 
-        // Wave 3 (U15): open the commission board on demand — a Prepare-phase surface, same button
-        // cluster as Forecast. Reads live state so it always reflects the current board.
-        var commissionsButton = new Button { Name = "OpenCommissions", Text = "Commissions" };
+        // Wave 3 (U15): open the commission board on demand — a Prepare-phase surface, same tray
+        // as Forecast. Reads live state so it always reflects the current board.
+        var commissionsButton = TrayButton("OpenCommissions", IconRegistry.Glyph("bounty"), "Commissions");
         commissionsButton.Pressed += () => Commissions.ShowOpen(Adapter.CurrentState);
-        controls.AddChild(commissionsButton);
+        trayRow.AddChild(commissionsButton);
 
-        // Wave 4 (U21): open the Legends Wall on demand — same button cluster as Forecast/Bestiary/
-        // Commissions. Reads live state so it always reflects the current memorials/records/gear.
-        var legendsButton = new Button { Name = "OpenLegends", Text = "Legends" };
+        // Wave 4 (U21): open the Legends Wall on demand — same tray as Forecast/Bestiary/Commissions.
+        // Reads live state so it always reflects the current memorials/records/gear.
+        var legendsButton = TrayButton("OpenLegends", IconRegistry.Glyph("rune"), "Legends");
         legendsButton.Pressed += () => Legends.ShowWall(Adapter.CurrentState);
-        controls.AddChild(legendsButton);
+        trayRow.AddChild(legendsButton);
 
         // G1 (plan 2026-07-25-001, Slice 2): the demand telegraph had no player-visible entry —
         // DemandPanel was already registered in the Drawer (U6) and reachable via
-        // OpenPanel("Demand"), but nothing ever called it. Same button-cluster pattern as
-        // Ledger/Forecast/Commissions/Legends above, wired straight onto the drawer's own
-        // OpenPanel router (mirrors OnTownBuildingClicked's OpenPanel("Bounties") call) rather
-        // than inventing a bespoke show method.
-        var demandButton = new Button { Name = "OpenDemand", Text = "Demand" };
+        // OpenPanel("Demand"), but nothing ever called it. Same tray, wired straight onto the
+        // drawer's own OpenPanel router (mirrors OnTownBuildingClicked's OpenPanel("Bounties")
+        // call) rather than inventing a bespoke show method.
+        var demandButton = TrayButton("OpenDemand", IconRegistry.Glyph("gossip"), "Demand");
         demandButton.Pressed += () => OpenPanel("Demand");
-        controls.AddChild(demandButton);
+        trayRow.AddChild(demandButton);
 
         // Phase B, B1d: the hero digest (standing/deepest/XP-rank/deeds card per alive hero) had
-        // no HUD entry — same button-cluster pattern as Demand/Legends above. Opens "HeroCards"
-        // (not "Heroes" — that drawer id is already the portrait-grid roster reached via town
-        // clicks); the button is still labeled "Heroes" per this unit's brief.
-        var heroesButton = new Button { Name = "OpenHeroCards", Text = "Renown" };
+        // no HUD entry — same tray as Demand/Legends above. Opens "HeroCards" (not "Heroes" —
+        // that drawer id is already the portrait-grid roster reached via town clicks); the
+        // TooltipText stays "Renown" per this unit's brief.
+        var heroesButton = TrayButton("OpenHeroCards", IconRegistry.Glyph("shield"), "Renown");
         heroesButton.Pressed += () => OpenPanel("HeroCards");
-        controls.AddChild(heroesButton);
+        trayRow.AddChild(heroesButton);
 
-        // U-D4: the progression spine — same button-cluster pattern. Opens the five-ladder board.
-        var progressButton = new Button { Name = "OpenProgress", Text = "Progress" };
+        // U-D4: the progression spine — same tray. Opens the five-ladder board.
+        var progressButton = TrayButton("OpenProgress", IconRegistry.Glyph("weapon"), "Progress");
         progressButton.Pressed += () => OpenPanel("Progress");
-        controls.AddChild(progressButton);
+        trayRow.AddChild(progressButton);
 
         // U6/U7 rejection banner: a transient, themed, player-phrased line — hidden
         // except while a toast is live (OnPhaseCompleted shows it, ClearToast/_Process
@@ -1115,10 +1264,6 @@ public partial class MainUi : Control
         {
             TabFade.Trigger();
             UpdateEngaged(); // click-out/Esc close the same latch update an OpenPanel("Town") gets
-            // PA8: release any station dolly-in on every full drawer close — a no-op ease when no
-            // PushIn is active (CameraRig.Release's own contract), so this is safe to fire
-            // unconditionally rather than tracking "was this station-opened" state here.
-            Town.Camera.Release();
         };
 
         // --- ledger modal overlay (sibling after the drawer = draws on top) --
@@ -1227,8 +1372,9 @@ public partial class MainUi : Control
         Pip.Clock = Clock; // U25 (a): PiP's journey feed pauses with the clock
 
         // --- U22: InteriorStage — the staged-interior framework (R4/KTD10), mounted LAST so it
-        //     draws above the drawer/HUD/every modal (in practice mutually exclusive with them —
-        //     OpenInterior always closes the drawer first — but topmost is the safe default). ---
+        //     draws above the drawer/HUD/every modal. 2.5D pivot (U2): nothing currently opens it
+        //     (OnTownBuildingClicked routes straight to OpenPanel), but it stays wired — see
+        //     the Interior property's own doc. ---------------------------------------------
         Interior = new InteriorStage();
         AddChild(Interior);
         Interior.Build();
@@ -1289,31 +1435,34 @@ public partial class MainUi : Control
     };
 
     /// <summary>
-    /// P007 U7: an Accent-forward per-node override marking the ONE primary HUD action
-    /// (Advance). A deliberate, narrow exception to the "no local color literals" rule
-    /// (R11/KTD1) — every color/shape still comes from <see cref="GameTheme"/>'s public
-    /// surface (<see cref="GameTheme.ButtonStyle"/>, <see cref="GameTheme.AccentColor"/>,
-    /// <see cref="GameTheme.BoneColor"/>), just recombined for this single distinguished
-    /// control rather than registered as a shared theme type.
+    /// UI-4 (menu-sizing/cozy redesign): the PRIMARY VERB button's Ember-filled surface — now
+    /// delegates to <see cref="GameTheme.ButtonStylePrimary"/> (the shared foundation builder that
+    /// formalized this exact per-node override) instead of hand-recombining <see
+    /// cref="GameTheme.ButtonStyle"/>/<see cref="GameTheme.AccentColor"/> locally. Was named
+    /// <c>StylePrimary</c> pre-redesign (Accent/Arcane-tinted); renamed alongside the swap to
+    /// Ember so the name matches the look.
     /// </summary>
-    private static void StylePrimary(Button button)
+    private static void StylePrimaryVerb(Button button)
     {
-        var normal = GameTheme.ButtonStyle(GameTheme.ButtonVisualState.Pressed);
-        normal.BgColor = GameTheme.AccentColor;
-        button.AddThemeStyleboxOverride("normal", normal);
-
-        var hover = GameTheme.ButtonStyle(GameTheme.ButtonVisualState.Pressed);
-        hover.BgColor = GameTheme.AccentColor.Lightened(0.15f);
-        button.AddThemeStyleboxOverride("hover", hover);
-
-        var pressed = GameTheme.ButtonStyle(GameTheme.ButtonVisualState.Pressed);
-        pressed.BgColor = GameTheme.AccentColor.Darkened(0.15f);
-        button.AddThemeStyleboxOverride("pressed", pressed);
+        button.AddThemeStyleboxOverride("normal", GameTheme.ButtonStylePrimary());
+        button.AddThemeStyleboxOverride("hover", GameTheme.ButtonStylePrimary(GameTheme.ButtonVisualState.Hover));
+        button.AddThemeStyleboxOverride("pressed", GameTheme.ButtonStylePrimary(GameTheme.ButtonVisualState.Pressed));
 
         button.AddThemeColorOverride("font_color", GameTheme.BoneColor);
         button.AddThemeColorOverride("font_color_hover", GameTheme.BoneColor);
         button.AddThemeColorOverride("font_color_pressed", GameTheme.BoneColor);
     }
+
+    /// <summary>UI-4: a 28px icon-only Books Tray button — the full label moves to <see
+    /// cref="Control.TooltipText"/> (mirrors <see cref="UiKit.DrawerHeader"/>'s icon-plus-tooltip
+    /// convention for its own Close button).</summary>
+    private static Button TrayButton(string name, Texture2D? icon, string tooltip) => new()
+    {
+        Name = name,
+        Icon = icon,
+        TooltipText = tooltip,
+        CustomMinimumSize = new Vector2(28, 28),
+    };
 
     /// <summary>Town hero click (R20): open the Heroes drawer with that hero's detail bound.</summary>
     private void OnTownHeroClicked(int heroValue)
@@ -1323,60 +1472,27 @@ public partial class MainUi : Control
     }
 
     /// <summary>
-    /// Town building click/interact (R20, U22, T8): stage the venue's interior instead of the
-    /// drawer — the same <see cref="Town3D.BuildingClicked"/> payload every venue's click-arrival
-    /// or E-interact already fires, just routed onto <see cref="InteriorStage.Venues"/> instead of
-    /// straight onto <see cref="OpenPanel"/>. A hotspot pressed inside the interior (<see
-    /// cref="OnInteriorHotspotActivated"/>) is what actually opens the matching drawer. The
-    /// noticeboard (T5/T8) has no staged interior — its "Bounties" payload opens the Bounties
-    /// drawer directly, the same one-step routing quick-travel and the interior's own board
-    /// hotspot use.
+    /// Town building click/interact (R20, T8): 2.5D pivot (U2) — routes straight onto <see
+    /// cref="OpenPanel"/>, no staged interior and no camera push-in for this slice. <see
+    /// cref="Town2D"/>'s <see cref="Building2D"/> emits its lowercase venue keys
+    /// ("forge"/"market"/"tavern"/"minegate"/"noticeboard"); the legacy capitalized names
+    /// ("Forge"/"Shop"/"Tavern"/"Gate"/"Bounties") are accepted too since <see
+    /// cref="QuickTravel"/> and <c>TutorialFlow</c>'s own quick-travel row (out of this unit's
+    /// edit scope) still send them. Any unknown key falls back to the bare-world "Town" id.
     /// </summary>
     private void OnTownBuildingClicked(string building)
     {
-        if (building == "Bounties")
+        var panelId = building switch
         {
-            OpenPanel("Bounties");
-            return;
-        }
-
-        // PA8 (spec DB4/PKD8): the two active-professions stations open their focus surface
-        // DIRECTLY (never through InteriorStage) with a CameraRig dolly-in — Town3D.Build already
-        // added these as ordinary Building3D entries, so this same arrival-only payload (walk
-        // then interact, KTD12 — never instant) already fired before this switch is reached; the
-        // only new behavior is the push-in + which panel opens. Release() is hooked on
-        // Drawer.Closed (BuildUi) so it fires regardless of how the panel closes (Esc, click-out,
-        // or switching to another drawer).
-        if (building == "ForgeStation")
-        {
-            Town.Camera.PushIn(Town.FindBuilding("forge-station"), StationPushInDistance);
-            OpenPanel("Forge");
-            return;
-        }
-
-        if (building == "CounterStation")
-        {
-            Town.Camera.PushIn(Town.FindBuilding("counter-station"), StationPushInDistance);
-            OpenPanel("Shop");
-            return;
-        }
-
-        var venueKey = building switch
-        {
-            "Forge" => "forge",
-            "Shop" => "market",
-            "Tavern" => "tavern",
-            "Gate" => "minegate",
-            _ => null,
+            "forge" or "Forge" => "Forge",
+            "market" or "Shop" => "Shop",
+            "tavern" or "Tavern" => "Tavern",
+            "minegate" or "Gate" => "Depths",
+            "noticeboard" or "Bounties" => "Bounties",
+            _ => "Town",
         };
 
-        if (venueKey is null)
-        {
-            OpenPanel("Town");
-            return;
-        }
-
-        OpenInterior(venueKey);
+        OpenPanel(panelId);
     }
 
     /// <summary>
@@ -1432,69 +1548,15 @@ public partial class MainUi : Control
     }
 
     /// <summary>
-    /// Open <paramref name="venueKey"/>'s staged interior (<see cref="InteriorStage.Venues"/>).
-    /// The avatar is already standing at the venue's door — <see
-    /// cref="Town3D.BuildingClicked"/> only ever fires on arrival/interact — so this records that
-    /// exact position for <see cref="ResetAvatarToDoor"/> to restore on exit, closes whichever
-    /// drawer was showing (REPLACE semantics, mirrors <see cref="OpenPanel"/>), mounts the venue's
-    /// real 3D room (<see cref="MountInteriorRoom"/>, camera dolly included), and opens the stage
-    /// in see-through mode over it so the hotspot overlay + its accumulated-delta push-in still
-    /// run unchanged.
+    /// A content hotspot (never exit) was pressed inside the interior — open the SAME drawer id
+    /// the hotspot's action names. 2.5D pivot (U2): <see cref="OnTownBuildingClicked"/> no longer
+    /// routes through <see cref="InteriorStage"/> to reach here (nothing currently opens the
+    /// stage), but the handler stays live and correct in case a later slice reintroduces it.
     /// </summary>
-    private void OpenInterior(string venueKey)
-    {
-        Drawer.Close();
-        _interiorDoorPosition = Town.DoorAnchor(venueKey);
-        MountInteriorRoom(venueKey);
-        Interior.Open(venueKey, Adapter.CurrentState, seeThrough: InteriorRoom is not null);
-        UpdateEngaged();
-    }
-
-    /// <summary>
-    /// 3D-interiors MVP: build <paramref name="venueKey"/>'s real 3D room, mount it on the
-    /// <see cref="InteriorRoom3D.MountPosition"/> shelf inside the live town world, and dolly the
-    /// shared camera onto it — the SAME <see cref="CameraRig.PushIn"/> path the forge/counter
-    /// stations proved (<see cref="OnTownBuildingClicked"/>). The see-through
-    /// <see cref="InteriorStage"/> overlay opened right after this keeps every hotspot action /
-    /// exit / Esc / Engaged behavior unchanged on top of the room.
-    /// </summary>
-    private void MountInteriorRoom(string venueKey)
-    {
-        UnmountInteriorRoom();
-        var room = new InteriorRoom3D { Position = InteriorRoom3D.MountPosition };
-        room.Build(venueKey);
-        Town.World.AddChild(room);
-        Town.Camera.PushIn(room.Focus, InteriorRoomPushInDistance, InteriorRoomPitch);
-        InteriorRoom = room;
-    }
-
-    /// <summary>Tear the 3D interior room down (no-op when none is mounted): release the camera
-    /// back to its avatar follow and free the room — a fresh room is built per entry, so venue
-    /// state can never leak between visits.</summary>
-    private void UnmountInteriorRoom()
-    {
-        if (InteriorRoom is null)
-        {
-            return;
-        }
-
-        Town.Camera.Release();
-        Town.World.RemoveChild(InteriorRoom);
-        InteriorRoom.Free();
-        InteriorRoom = null;
-    }
-
-    /// <summary>A content hotspot (never exit) was pressed inside the interior — close it (room
-    /// down, camera released), restore the avatar to the door, and open the SAME drawer id the
-    /// hotspot's action names (content parity with the pre-U22 interact-opens-the-drawer
-    /// behaviour).</summary>
     private void OnInteriorHotspotActivated(string action)
     {
-        UnmountInteriorRoom();
-        ResetAvatarToDoor();
-
         // Gate-b flag 3: the Tavern "Bestiary" hotspot opens the code-built modal, not a drawer —
-        // route it before OpenPanel (which only knows the six drawer ids and would throw).
+        // route it before OpenPanel (which only knows the drawer ids and would throw).
         if (action == "Bestiary")
         {
             Bestiary.ShowAll();
@@ -1512,21 +1574,12 @@ public partial class MainUi : Control
         OpenPanel(action);
     }
 
-    /// <summary>The exit hotspot or Esc closed the interior — tear the 3D room down, restore the
-    /// avatar to the door position it entered from (R4/AE4) and re-sync the Engaged latch.</summary>
+    /// <summary>The exit hotspot or Esc closed the interior — re-sync the Engaged latch. 2.5D
+    /// pivot (U2): no 3D room/avatar-door restore to unwind in this slice (see
+    /// <see cref="OnInteriorHotspotActivated"/>'s doc).</summary>
     private void OnInteriorExited()
     {
-        UnmountInteriorRoom();
-        ResetAvatarToDoor();
         UpdateEngaged();
-    }
-
-    private void ResetAvatarToDoor()
-    {
-        if (_interiorDoorPosition is { } doorPosition)
-        {
-            Town.Player.GlobalPosition = doorPosition;
-        }
     }
 
     /// <summary>Reading the Ledger pauses the town; closing it resumes if it was running.</summary>

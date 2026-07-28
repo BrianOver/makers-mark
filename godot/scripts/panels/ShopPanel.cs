@@ -24,6 +24,15 @@ namespace GodotClient.Panels;
 /// composition changed. Button/SpinBox <c>Name</c>s (<c>Reprice_{id}</c>, <c>Unstock_{id}</c>,
 /// <c>Stock_{id}</c>, <c>Price_{id}</c>, <c>StockPrice_{id}</c>) are preserved verbatim so
 /// existing/new tests keep driving through the same signals.</para>
+///
+/// <para>UI-5: Your Shelf and Unshelved Crafts each also carry a <see cref="UiKit.ListRow"/> —
+/// the aligned icon|name|price|owned|action strip — for the row's ONE clear, gate-checkable
+/// action (Unstock; Stock, whose real <see cref="UiKit.ListRow"/>'s enabled/whyNot mirrors the
+/// same soldConsumable refusal the old <c>GateButton</c> call did). Reprice (which needs its
+/// SpinBox alongside it) and the provenance "History" trigger stay in a secondary controlsRow
+/// below, unchanged Names. Rival Shelf stays on its original Card/ArtRect/StatChip layout — it is
+/// read-only (no per-item action exists to gate), so forcing a ListRow there would mean either a
+/// dead decorative button or a misleadingly Danger-tinted price; neither is an improvement.</para>
 /// </summary>
 public partial class ShopPanel : SimPanel
 {
@@ -133,17 +142,23 @@ public partial class ShopPanel : SimPanel
                 // placeholder's caption comes from — dropping it here would show the raw asset
                 // key (e.g. "item-rival-blade-2") instead of the item name. On a HIT it now also
                 // renders under the icon (ArtRect's real-art branch honors it) alongside the
-                // fuller infoCol line below — a little redundant, never wrong or ugly.
+                // ListRow's own name column below — a little redundant, never wrong or ugly (the
+                // same tradeoff ForgePanel's recipe cards already accept).
                 IconRegistry.Slot(item.Slot), item.Name));
 
-            var infoCol = new VBoxContainer
+            // UI-5: the aligned icon|name|price|owned|action strip — Unstock (always legal, no
+            // sim gate) is the shelf's one single-purpose quick action; Reprice needs its SpinBox
+            // alongside it, so it — and the provenance popup trigger — stay in the secondary
+            // controlsRow below, unchanged Names.
+            var unstock = new Button { Name = $"Unstock_{itemId.Value}", Text = "Unstock" };
+            unstock.Pressed += () =>
             {
-                SizeFlagsHorizontal = SizeFlags.ExpandFill,
-                CustomMinimumSize = new Vector2(InfoColumnMinWidth, 0),
+                Adapter!.Queue(new UnstockAction(itemId));
+                _feedback!.Text = $"queued: unstock {itemId}";
             };
-            headerRow.AddChild(infoCol);
-            AddLabel(infoCol, $"{itemId} {item.Name} [{item.Quality}]");
-            AddChip(infoCol, StatChip("Price", $"{entry.Price}g", UiKit.ChipTone.Accent));
+            cardBody.AddChild(ListRow(
+                IconRegistry.Slot(item.Slot), $"{itemId} {item.Name} [{item.Quality}]", $"{entry.Price}g", "1",
+                unstock, enabled: true));
 
             var controlsRow = AddRow(cardBody);
             var priceSpin = AddSpinBox(controlsRow, $"Price_{itemId.Value}", 1, 99999, entry.Price);
@@ -151,11 +166,6 @@ public partial class ShopPanel : SimPanel
             {
                 Adapter!.Queue(new SetPriceAction(itemId, (int)priceSpin.Value));
                 _feedback!.Text = $"queued: reprice {itemId} to {(int)priceSpin.Value}g";
-            });
-            AddButton(controlsRow, $"Unstock_{itemId.Value}", "Unstock", () =>
-            {
-                Adapter!.Queue(new UnstockAction(itemId));
-                _feedback!.Text = $"queued: unstock {itemId}";
             });
             // U5: "your craft writes the legends" made touchable — open the item's provenance
             // card (History entries + maker's mark + forge sub-scores) on click.
@@ -198,36 +208,37 @@ public partial class ShopPanel : SimPanel
                 // placeholder's caption comes from — dropping it here would show the raw asset
                 // key (e.g. "item-rival-blade-2") instead of the item name. On a HIT it now also
                 // renders under the icon (ArtRect's real-art branch honors it) alongside the
-                // fuller infoCol line below — a little redundant, never wrong or ugly.
+                // ListRow's own name column below — a little redundant, never wrong or ugly.
                 IconRegistry.Slot(item.Slot), item.Name));
 
-            var infoCol = new VBoxContainer
-            {
-                SizeFlagsHorizontal = SizeFlags.ExpandFill,
-                CustomMinimumSize = new Vector2(InfoColumnMinWidth, 0),
-            };
-            headerRow.AddChild(infoCol);
-            AddLabel(infoCol, $"{item.Id} {item.Name} [{item.Quality}]");
-            var chipRow = AddRow(infoCol);
+            var chipRow = AddRow(cardBody);
             chipRow.AddChild(StatChip("Atk", $"{item.Stats.Attack}"));
             chipRow.AddChild(StatChip("Def", $"{item.Stats.Defense}"));
 
-            var controlsRow = AddRow(cardBody);
-            var priceSpin = AddSpinBox(controlsRow, $"StockPrice_{item.Id.Value}", 1, 99999, 10);
+            // UI-5: Stock is this row's one gate-checked action — the exact soldConsumable gate
+            // below (U6, mirroring ShopHandlers.ApplyStock check 3b: existence/provenance/equipped
+            // are already filtered by UnshelvedPlayerCrafts, and the SpinBox floor of 1 keeps
+            // prices positive) drives ListRow's own enabled/whyNot. Priced "—": the real price is
+            // whatever the SpinBox alongside holds at press time, never a stale pre-filled quote.
+            var priceSpin = new SpinBox
+            {
+                Name = $"StockPrice_{item.Id.Value}", MinValue = 1, MaxValue = 99999, Rounded = true, Value = 10,
+            };
             var itemId = item.Id;
-            var stock = AddButton(controlsRow, $"Stock_{item.Id.Value}", "Stock", () =>
+            var stock = new Button { Name = $"Stock_{item.Id.Value}", Text = "Stock" };
+            stock.Pressed += () =>
             {
                 Adapter!.Queue(new StockAction(itemId, (int)priceSpin.Value));
                 _feedback!.Text = $"queued: stock {itemId} at {(int)priceSpin.Value}g";
-            });
-            // U6 gate, mirroring ShopHandlers.ApplyStock check 3b (the only refusal this
-            // list can still reach: existence/provenance/equipped are already filtered by
-            // UnshelvedPlayerCrafts, and the SpinBox floor of 1 keeps prices positive): a
-            // consumable that has ever been sold never returns to the shelf.
+            };
             var soldConsumable = item.Effect is not null
                 && state.EventLog.Any(e => e is ItemSold sold && sold.Item == itemId);
-            GateButton(stock, !soldConsumable, "Sold consumables don't come back.");
+            cardBody.AddChild(ListRow(
+                IconRegistry.Slot(item.Slot), $"{item.Id} {item.Name} [{item.Quality}]", "—", "1", stock,
+                enabled: !soldConsumable, whyNot: "Sold consumables don't come back."));
 
+            var controlsRow = AddRow(cardBody);
+            controlsRow.AddChild(priceSpin);
             // U5: same provenance popup as the shelf section above.
             AddButton(controlsRow, $"Provenance_{item.Id.Value}", "History", () => OnShowProvenance(item.Id));
         }

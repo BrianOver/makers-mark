@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="24" viewBox="0 0 16 24" shape-rendering="crispEdges">
+  <!-- Town2D world sprite: mystic hero. 16x24, feet at y=23. Shared neutral-gray body
+       silhouette (tinted to class color via Sprite2D.Modulate at runtime) with a
+       staff+orb for pre-tint legibility; source for
+       godot/assets/art/town2d-hero-mystic.png. -->
+  <rect x="5" y="17" width="3" height="6" fill="#b8b0c6" stroke="#140f1f" stroke-width="1"/>
+  <rect x="9" y="17" width="3" height="6" fill="#b8b0c6" stroke="#140f1f" stroke-width="1"/>
+  <polygon points="4,9 12,9 13,18 3,18" fill="#b8b0c6" stroke="#140f1f" stroke-width="1"/>
+  <circle cx="8" cy="5" r="4" fill="#b8b0c6" stroke="#140f1f" stroke-width="1"/>
+  <line x1="14" y1="2" x2="14" y2="20" stroke="#b8b0c6" stroke-width="1"/>
+  <circle cx="14" cy="2" r="2" fill="none" stroke="#3fb0ac" stroke-width="1"/>
+</svg>

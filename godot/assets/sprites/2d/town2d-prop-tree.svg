@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32" shape-rendering="crispEdges">
+  <!-- Town2D world prop: tree. 24x32. Trunk + dusk-olive canopy, bone-outlined for pop
+       against the dark ground; source for godot/assets/art/town2d-prop-tree.png. -->
+  <rect x="10" y="20" width="4" height="11" fill="#42322a" stroke="#140f1f" stroke-width="1"/>
+  <circle cx="12" cy="12" r="10" fill="#4a5042" stroke="#d8cfe0" stroke-width="1"/>
+  <circle cx="12" cy="12" r="5.5" fill="#5c6450"/>
+</svg>

@@ -27,6 +27,32 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// <c>MainUi</c> reads this same constant to dock the chip's offsets — one source of truth.</summary>
     public const float DockWidth = 320f;
 
+    /// <summary>UI-6 (menu-sizing/cozy redesign): the body clamps to this many WordSmart lines
+    /// (<see cref="Label.MaxLinesVisible"/> + <see cref="TextServer.OverrunBehavior.TrimEllipsis"/>)
+    /// so a verbose advisor reason can never grow the "quest note" past two lines — <see
+    /// cref="Reason"/>'s own <see cref="Label.Text"/> still carries the FULL untruncated string
+    /// (only the rendered glyphs clip), so <c>RenderedText</c>-based tests reading the raw text
+    /// are unaffected.</summary>
+    private const int ReasonMaxLines = 2;
+
+    /// <summary>Bug fix (gate-b playtest screenshot, "body text does not render"): <see
+    /// cref="Label.ClipText"/> is required so a verbose reason can never blow out the panel, but it
+    /// also makes Godot report the Label's OWN natural minimum height as effectively zero — without
+    /// an explicit floor here, <c>reasonRow</c> (an <see cref="HBoxContainer"/>) sizes to its
+    /// tallest child, which becomes <c>ObjectiveStepGlyph</c>'s single-line height, and the
+    /// WordSmart-wrapped body then has zero pixels of vertical room to render into: invisible, even
+    /// though <see cref="Reason"/>'s <see cref="Label.Text"/> is still fully populated (which is why
+    /// the existing <c>RenderedText</c>-based tests never caught this — they read <c>.Text</c>, not
+    /// rendered pixels). Sized for <see cref="ReasonMaxLines"/> lines at <see
+    /// cref="GameTheme.BodyFontSize"/> (the Label's own default font size — Reason sets no
+    /// font-size override), at a ~1.3x line-height multiplier.</summary>
+    private const float ReasonMinHeight = ReasonMaxLines * GameTheme.BodyFontSize * 1.3f;
+
+    /// <summary>Fade-in length (UI-6, accumulated-delta only — no engine Tween in this codebase,
+    /// same contract as <c>TabFade</c>/the HUD gold-chip pop) for the body's dip-then-settle
+    /// whenever a fresh step's text lands.</summary>
+    private const double ReasonFadeSeconds = 0.25;
+
     public Label Reason { get; private set; } = null!;
     public Button Expand { get; private set; } = null!;
     public VBoxContainer RankedList { get; private set; } = null!;
@@ -36,39 +62,80 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// exposing this chip to any other tutorial-specific concept.</summary>
     public Button TutorialDismiss { get; private set; } = null!;
 
+    /// <summary>The step text last rendered — compared on every <see cref="Refresh"/> to decide
+    /// whether a fresh <see cref="Tick"/> fade-in is owed (a same-text re-render, e.g. a tick that
+    /// didn't change the advisor's top pick, never restarts the dip). <c>null</c> means "never
+    /// rendered yet" (bug fix, gate-b): distinct from any real (including empty) reason string, so
+    /// the very FIRST render is never mistaken for a "change" that arms the dip-then-settle fade —
+    /// the first paint is the tutorial's opening line and must never risk landing on a dim frame.</summary>
+    private string? _lastReasonText;
+
+    /// <summary>-1 while no fade is in flight (mirrors <c>TabFade</c>'s own <c>_elapsed</c> idiom).</summary>
+    private double _fadeElapsed = -1;
+
     /// <summary>Construct the chip's children. Call once, before the first <see cref="Refresh"/>.</summary>
     public void Build()
     {
         Name = "ObjectiveTracker";
         CustomMinimumSize = new Vector2(DockWidth, 0);
 
+        // UI-6: a cozy "quest note" — the wood-framed panel every other cozy-redesign surface now
+        // shares (falls back to a flat timber-bordered panel on a stripped build; see
+        // GameTheme.PanelStyleWood's own null-tolerant contract), replacing the flat Iron rect.
+        AddThemeStyleboxOverride("panel", GameTheme.PanelStyleWood());
+
         var body = new VBoxContainer { Name = "ObjectiveTrackerBody" };
         AddChild(body);
 
-        var header = new Label { Name = "ObjectiveHeader", Text = "OBJECTIVE" };
+        // "Today" — a quiet caption, not the old shouting "OBJECTIVE" — still the smallest
+        // legible size (LegibilityFloor) so it reads as a header, not a peer of the reason line.
+        var header = new Label { Name = "ObjectiveHeader", Text = "Today" };
         header.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
         header.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
         body.AddChild(header);
 
-        var row = new HBoxContainer { Name = "ObjectiveTrackerRow" };
-        body.AddChild(row);
+        var reasonRow = new HBoxContainer { Name = "ObjectiveTrackerRow" };
+        reasonRow.AddThemeConstantOverride("separation", GameTheme.Space8);
+        body.AddChild(reasonRow);
+
+        // A filled step glyph marks the single live step (the ranked list below dims its own
+        // lower-priority entries with the hollow twin — see the Refresh loop).
+        var stepGlyph = new Label { Name = "ObjectiveStepGlyph", Text = "◆" };
+        stepGlyph.AddThemeColorOverride("font_color", GameTheme.WarnColor);
+        reasonRow.AddChild(stepGlyph);
 
         Reason = new Label
         {
             Name = "ObjectiveReason",
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            CustomMinimumSize = new Vector2(DockWidth - 24, 0),
+            CustomMinimumSize = new Vector2(DockWidth - 24, ReasonMinHeight),
+            MaxLinesVisible = ReasonMaxLines,
+            ClipText = true,
+            TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            Modulate = Colors.White, // belt-and-braces: never rely on the engine default alone
         };
-        row.AddChild(Reason);
+        reasonRow.AddChild(Reason);
 
-        // Ranked-list expand toggle (U18 approach: "expandable to the ranked list").
-        Expand = new Button { Name = "ObjectiveExpand", Text = "More", ToggleMode = true };
-        Expand.Pressed += () => RankedList.Visible = Expand.ButtonPressed;
-        row.AddChild(Expand);
+        var actionsRow = new HBoxContainer { Name = "ObjectiveActionsRow" };
+        body.AddChild(actionsRow);
 
-        TutorialDismiss = new Button { Name = "ObjectiveTutorialDismiss", Text = "Dismiss tutorial", Visible = false };
-        row.AddChild(TutorialDismiss);
+        // Ranked-list expand toggle (U18 approach: "expandable to the ranked list") — an icon-only
+        // chevron (UI-6), full word moved to TooltipText.
+        Expand = new Button { Name = "ObjectiveExpand", Text = "▾", ToggleMode = true, TooltipText = "More" };
+        Expand.Pressed += () =>
+        {
+            RankedList.Visible = Expand.ButtonPressed;
+            Expand.Text = Expand.ButtonPressed ? "▴" : "▾";
+            Expand.TooltipText = Expand.ButtonPressed ? "Less" : "More";
+        };
+        actionsRow.AddChild(Expand);
+
+        TutorialDismiss = new Button
+        {
+            Name = "ObjectiveTutorialDismiss", Text = "✕", Visible = false, TooltipText = "Dismiss tutorial",
+        };
+        actionsRow.AddChild(TutorialDismiss);
 
         RankedList = new VBoxContainer { Name = "ObjectiveRankedList", Visible = false };
         body.AddChild(RankedList);
@@ -80,12 +147,33 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// <paramref name="tutorialOverride"/> is given — U23's first-run chain overrides ONLY this
     /// top slot, never the ranked list below, so the live advisor stays reachable via "More"
     /// throughout the tutorial); every entry (including the top one) renders as its own line in
-    /// the collapsible ranked list regardless.
+    /// the collapsible ranked list regardless. UI-6: arms the body's fade-in (see <see
+    /// cref="Tick"/>) whenever the rendered text actually changed — a same-text re-render (a tick
+    /// that didn't move the advisor's top pick) never restarts the dip.
     /// </summary>
     public void Refresh(GameState state, string? tutorialOverride = null)
     {
         var suggestions = ObjectiveAdvisor.Suggest(state);
-        Reason.Text = tutorialOverride ?? (suggestions.Count > 0 ? suggestions[0].Reason : NoObjectiveText);
+        var text = tutorialOverride ?? (suggestions.Count > 0 ? suggestions[0].Reason : NoObjectiveText);
+        if (_lastReasonText is null)
+        {
+            // Bug fix (gate-b, "body text does not render"): the very first render must land at
+            // full opacity immediately, never on the fade's dimmer starting frames — Tick's dip is
+            // a nice-to-have for LATER changes only, once something is already on-screen to dip
+            // FROM. Without this guard the initial empty-to-real-text transition armed the same
+            // dip-then-settle as any later change, so a screenshot/paused-frame capture taken
+            // before Tick finished its 0.25s ramp could catch the tutorial's opening line at its
+            // dimmest.
+            Reason.Modulate = Colors.White;
+            _fadeElapsed = -1;
+        }
+        else if (text != _lastReasonText)
+        {
+            _fadeElapsed = 0;
+        }
+
+        _lastReasonText = text;
+        Reason.Text = text;
         TutorialDismiss.Visible = tutorialOverride is not null;
 
         foreach (var child in RankedList.GetChildren())
@@ -96,7 +184,30 @@ public sealed partial class ObjectiveTracker : PanelContainer
 
         for (var i = 0; i < suggestions.Count; i++)
         {
-            RankedList.AddChild(new Label { Name = $"ObjectiveRank_{i}", Text = suggestions[i].Reason });
+            // Hollow glyph for every ranked-list entry (including the top one, shown again here
+            // for the full-list view) — visually subordinate to the filled step glyph above.
+            RankedList.AddChild(new Label { Name = $"ObjectiveRank_{i}", Text = $"◇ {suggestions[i].Reason}" });
+        }
+    }
+
+    /// <summary>UI-6: advance the body's dip-then-settle fade by one frame's delta — called from
+    /// <c>MainUi._Process</c>, the same accumulated-delta place <c>TabFade</c>/the gold-chip pop
+    /// tick (no engine Tween in this codebase). No-op unless <see cref="Refresh"/> just changed
+    /// the rendered text.</summary>
+    public void Tick(double delta)
+    {
+        if (_fadeElapsed < 0)
+        {
+            return;
+        }
+
+        _fadeElapsed += delta;
+        var t = Mathf.Clamp((float)(_fadeElapsed / ReasonFadeSeconds), 0f, 1f);
+        Reason.Modulate = new Color(1f, 1f, 1f, 0.25f + 0.75f * t);
+        if (t >= 1f)
+        {
+            _fadeElapsed = -1;
+            Reason.Modulate = Colors.White;
         }
     }
 }
@@ -123,8 +234,20 @@ public sealed partial class DayTimeline : HBoxContainer
         (DayPhase.Evening, "Evening"),
     };
 
+    /// <summary>Segment-pill underline thickness (px) — the "current phase" marker (UI-4).</summary>
+    private const float UnderlineHeight = 2f;
+
+    /// <summary>Pulsing-dot period (seconds) — accumulated-delta only (no engine Tween in this
+    /// codebase; mirrors <c>TabFade</c>/the HUD gold-chip pop).</summary>
+    private const double PulsePeriodSeconds = 1.2;
+
+    private const float PulseMinAlpha = 0.35f;
+
+    private PanelContainer[] _segmentPills = System.Array.Empty<PanelContainer>();
     private Label[] _phaseLabels = System.Array.Empty<Label>();
-    private Label _waiting = null!;
+    private ColorRect[] _underlines = System.Array.Empty<ColorRect>();
+    private ColorRect _waiting = null!;
+    private double _pulseElapsed;
 
     /// <summary>The phase last highlighted by <see cref="Refresh"/> — a discoverable pin for
     /// tests (mirrors <c>TabFade.IsFading</c>'s own testability shape) so a scripted-day test
@@ -138,37 +261,168 @@ public sealed partial class DayTimeline : HBoxContainer
 
         // Menu-sizing fix (gate-b): LOCAL override only (this node's own theme-constant
         // stack) — never theme.SetConstant("separation", "HBoxContainer", ...), which would
-        // restyle every HBoxContainer in the app. Without this the 5 phase labels + the
-        // waiting indicator sat with zero gap and read as run-on text.
+        // restyle every HBoxContainer in the app. Without this the 5 phase segments + the
+        // waiting dot sat with zero gap and read as run-on text. Kept >= 6 (MenuSizingTests).
         AddThemeConstantOverride("separation", 12);
 
+        // UI-4 (menu-sizing/cozy redesign): a connected segment strip — past dim, current a
+        // filled Arcane pill with an Ember underline, future outlined — replacing the 5 loose
+        // plain-text labels that used to read as run-on text at a glance.
+        _segmentPills = new PanelContainer[KernelOrder.Length];
         _phaseLabels = new Label[KernelOrder.Length];
+        _underlines = new ColorRect[KernelOrder.Length];
         for (var i = 0; i < KernelOrder.Length; i++)
         {
             var (phase, text) = KernelOrder[i];
-            var label = new Label { Name = $"TimelinePhase_{phase}", Text = text };
-            label.AddThemeColorOverride("font_color", GameTheme.BodyTextColor);
-            AddChild(label);
+
+            // The per-phase Name is kept even though it's no longer a bare Label — nothing reads
+            // it today, but it stays a stable, discoverable-by-phase anchor for the segment.
+            var segment = new VBoxContainer { Name = $"TimelinePhase_{phase}" };
+            segment.AddThemeConstantOverride("separation", 2);
+            AddChild(segment);
+
+            var pill = new PanelContainer { Name = "TimelineSegmentPill" };
+            segment.AddChild(pill);
+
+            var label = new Label { Text = text, HorizontalAlignment = HorizontalAlignment.Center };
+            label.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
+            pill.AddChild(label);
+
+            var underline = new ColorRect
+            {
+                Name = "TimelineUnderline",
+                Color = GameTheme.EmberColor,
+                CustomMinimumSize = new Vector2(0, UnderlineHeight),
+                Visible = false,
+            };
+            segment.AddChild(underline);
+
+            _segmentPills[i] = pill;
             _phaseLabels[i] = label;
+            _underlines[i] = underline;
         }
 
-        _waiting = new Label { Name = "TimelineWaiting", Text = "[waiting]", Visible = false };
-        _waiting.AddThemeColorOverride("font_color", GameTheme.EmberColor);
+        // The old "[waiting]" text becomes a small pulsing Ember dot (UI-4) — ticked in Tick(),
+        // called every frame from MainUi._Process (accumulated-delta, no engine Tween). Node NAME
+        // is kept ("TimelineWaiting") and it stays a plain Control so existing Visible-toggle
+        // assertions (MainUiTests) keep working unchanged.
+        _waiting = new ColorRect
+        {
+            Name = "TimelineWaiting",
+            Color = GameTheme.EmberColor,
+            CustomMinimumSize = new Vector2(10, 10),
+            Visible = false,
+        };
         AddChild(_waiting);
     }
 
-    /// <summary>Highlight <paramref name="current"/> among the 5 phase labels and show/hide the
-    /// engaged-wait indicator per <paramref name="waiting"/>.</summary>
+    /// <summary>Highlight <paramref name="current"/> among the 5 phase segments (past dim,
+    /// current filled+underlined, future outlined) and show/hide the pulsing engaged-wait dot per
+    /// <paramref name="waiting"/>.</summary>
     public void Refresh(DayPhase current, bool waiting)
     {
         Current = current;
+        var currentIndex = 0;
         for (var i = 0; i < KernelOrder.Length; i++)
         {
-            var isCurrent = KernelOrder[i].Phase == current;
+            if (KernelOrder[i].Phase == current)
+            {
+                currentIndex = i;
+                break;
+            }
+        }
+
+        for (var i = 0; i < KernelOrder.Length; i++)
+        {
+            var isCurrent = i == currentIndex;
+            var isPast = i < currentIndex;
+            _segmentPills[i].AddThemeStyleboxOverride("panel", SegmentStyle(isCurrent, isPast));
             _phaseLabels[i].AddThemeColorOverride(
-                "font_color", isCurrent ? GameTheme.AccentColor : GameTheme.BodyTextColor);
+                "font_color", isCurrent ? GameTheme.BoneColor : isPast ? GameTheme.TextDim : GameTheme.BodyTextColor);
+            _underlines[i].Visible = isCurrent;
         }
 
         _waiting.Visible = waiting;
+        if (!waiting)
+        {
+            // Reset so the NEXT time it shows always starts at the dip's brightest point rather
+            // than resuming mid-cycle from a stale elapsed value.
+            _pulseElapsed = 0;
+            _waiting.Color = GameTheme.EmberColor;
+        }
+    }
+
+    /// <summary>Advance the waiting-dot pulse by one frame's delta — called from
+    /// <c>MainUi._Process</c> alongside every other accumulated-delta decoration (TabFade, the
+    /// gold-chip pop, ObjectiveTracker's own fade). No-op while the dot is hidden.</summary>
+    public void Tick(double delta)
+    {
+        if (!_waiting.Visible)
+        {
+            return;
+        }
+
+        _pulseElapsed += delta;
+        var phase = (float)((_pulseElapsed % PulsePeriodSeconds) / PulsePeriodSeconds);
+        var alpha = PulseMinAlpha + (1f - PulseMinAlpha) * (0.5f + 0.5f * Mathf.Sin(Mathf.Tau * phase));
+        _waiting.Color = new Color(GameTheme.EmberColor, alpha);
+    }
+
+    /// <summary>Fresh <see cref="StyleBoxFlat"/> per call (StyleBox is a mutable Resource — never
+    /// share one instance across segments/calls, same rule <c>GameTheme</c>'s own builders
+    /// follow): filled Arcane for the current phase, a faint Arcane outline for a future phase,
+    /// and a dim, borderless fill for a past one.</summary>
+    private static StyleBoxFlat SegmentStyle(bool isCurrent, bool isPast)
+    {
+        if (isCurrent)
+        {
+            return new StyleBoxFlat
+            {
+                BgColor = GameTheme.AccentColor,
+                CornerRadiusBottomLeft = GameTheme.RadiusChip,
+                CornerRadiusBottomRight = GameTheme.RadiusChip,
+                CornerRadiusTopLeft = GameTheme.RadiusChip,
+                CornerRadiusTopRight = GameTheme.RadiusChip,
+                ContentMarginLeft = GameTheme.Space8,
+                ContentMarginRight = GameTheme.Space8,
+                ContentMarginTop = GameTheme.Space4,
+                ContentMarginBottom = GameTheme.Space4,
+            };
+        }
+
+        if (isPast)
+        {
+            return new StyleBoxFlat
+            {
+                BgColor = new Color(GameTheme.Surface, 0.4f),
+                CornerRadiusBottomLeft = GameTheme.RadiusChip,
+                CornerRadiusBottomRight = GameTheme.RadiusChip,
+                CornerRadiusTopLeft = GameTheme.RadiusChip,
+                CornerRadiusTopRight = GameTheme.RadiusChip,
+                ContentMarginLeft = GameTheme.Space8,
+                ContentMarginRight = GameTheme.Space8,
+                ContentMarginTop = GameTheme.Space4,
+                ContentMarginBottom = GameTheme.Space4,
+            };
+        }
+
+        // Future: outlined only, transparent fill.
+        return new StyleBoxFlat
+        {
+            BgColor = Colors.Transparent,
+            BorderColor = new Color(GameTheme.AccentColor, 0.5f),
+            BorderWidthBottom = 1,
+            BorderWidthLeft = 1,
+            BorderWidthRight = 1,
+            BorderWidthTop = 1,
+            CornerRadiusBottomLeft = GameTheme.RadiusChip,
+            CornerRadiusBottomRight = GameTheme.RadiusChip,
+            CornerRadiusTopLeft = GameTheme.RadiusChip,
+            CornerRadiusTopRight = GameTheme.RadiusChip,
+            ContentMarginLeft = GameTheme.Space8,
+            ContentMarginRight = GameTheme.Space8,
+            ContentMarginTop = GameTheme.Space4,
+            ContentMarginBottom = GameTheme.Space4,
+        };
     }
 }

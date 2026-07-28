@@ -343,6 +343,67 @@ public class MineWatchTests
         }
     }
 
+    // ── A2 (+A3 FX): the beat-driven DelveStage overlay, wired through the real Refresh/_Process
+    // playhead (DelveStageTests exercises DelveStage directly with handcrafted beats; these prove
+    // the FULL wiring — GameState → RefreshDelveBeats → the playhead → DelveStage.RenderBeat).
+
+    [TestCase]
+    public void CampPhase_StagedParty_DelveStagePlaysFloorAndMonster_AsBeatsReveal()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var camp = CampedPartyWithFloors();
+            var state = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(camp) };
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+            watch._Process(100.0); // force full reveal — same convention as the feed tests above
+
+            AssertThat(watch.Delve.CurrentFloor).IsEqual(1);
+            AssertThat(watch.Delve.CurrentMonsterKind).IsEqual("cave-rat");
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void PendingExpedition_UnstagedResolvedParty_DeathRound_CloudsOnDelveStage_NeverPipsOrHp()
+    {
+        // The ONLY source that can ever carry a SwallowedByDark beat (InFlightExpedition.Dead is
+        // always empty in v1) — a fully resolved (never staged) party in PendingExpeditions.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var floors = ImmutableList.Create(
+                new FloorOutcome(1, true, ImmutableList.Create(
+                    new CombatEvent(1, new HeroId(1), "cave-rat", ImmutableList.Create(3), 5, 0, true, null))),
+                new FloorOutcome(2, false, ImmutableList.Create(
+                    new CombatEvent(2, new HeroId(1), "tunnel-spider", ImmutableList.Create(1), 0, 10, false, null),
+                    new CombatEvent(2, new HeroId(1), "tunnel-spider", ImmutableList.Create(9), 0, 40, false, null))));
+            var result = new ExpeditionResult(
+                Party: ImmutableList.Create(new HeroId(1)), TargetFloor: 2, DeepestFloorCleared: 1, Floors: floors,
+                Survivors: ImmutableList<HeroId>.Empty, Deaths: ImmutableList.Create(new HeroId(1)),
+                Beats: ImmutableList<AttributionBeat>.Empty, Loot: ImmutableList<OreLoot>.Empty,
+                GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty);
+            var state = StagedWorld() with { Phase = DayPhase.Camp, PendingExpeditions = ImmutableList.Create(result) };
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+            watch._Process(100.0); // force full reveal
+
+            AssertThat(watch.Delve.IsClouded(1)).IsTrue();
+            AssertThat(watch.Delve.HasPips(1)).IsFalse();
+            AssertThat(watch.Delve.CurrentFloor).IsEqual(2); // played all the way to the fatal floor
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
     [TestCase]
     public void SaveLoad_MidExpedition_FreshMineWatch_CloudsOnReload_NoCrash()
     {

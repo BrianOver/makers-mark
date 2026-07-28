@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="56" height="72" viewBox="0 0 56 72" shape-rendering="crispEdges">
+  <!-- Town2D world sprite: tavern. 56x72 (TownAssets2D.VenuePlaceholders["tavern"] size).
+       Bare id "tavern" -- the exact key TownLayout2D's tavern venue queries via
+       IconRegistry.Art("tavern"). Warm reddish-brown roof (distinct hue from forge/market)
+       + two lantern-lit windows + hanging sign; source for godot/assets/art/tavern.png. -->
+  <polygon points="4,27 28,9 52,27" fill="#5a362e" stroke="#d8cfe0" stroke-width="1"/>
+  <rect x="10" y="27" width="36" height="38" fill="#3d3242" stroke="#d8cfe0" stroke-width="1"/>
+  <rect x="22" y="47" width="12" height="18" fill="#140f1f" stroke="#d8cfe0" stroke-width="1"/>
+  <rect x="15" y="34" width="8" height="9" fill="#e0913f" opacity="0.55" stroke="#d8cfe0" stroke-width="1"/>
+  <rect x="33" y="34" width="8" height="9" fill="#e0913f" opacity="0.55" stroke="#d8cfe0" stroke-width="1"/>
+  <line x1="28" y1="9" x2="28" y2="4" stroke="#d8cfe0" stroke-width="1"/>
+  <rect x="21" y="2" width="14" height="7" fill="#2e2634" stroke="#d8cfe0" stroke-width="1"/>
+</svg>

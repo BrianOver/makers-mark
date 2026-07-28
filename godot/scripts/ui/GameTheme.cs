@@ -77,20 +77,77 @@ public static class GameTheme
     /// </summary>
     public static readonly Color RejectionColor = new(1f, 0.75f, 0.45f);
 
+    // ── Semantic aliases (UI-1) ────────────────────────────────────────────────────────────────
+    // Named by MEANING, not by raw palette entry, so a panel reaching for "the currency color"
+    // or "the danger color" never has to know/guess which style-bible hue backs it today. Every
+    // alias below still resolves to an existing palette color (or a cheap derivation of one) —
+    // this is a naming layer, not a new palette.
+
+    /// <summary>Currency-only tone (gold counts, prices, the HUD gold chip). Deliberately its own
+    /// hue, not a repurposed palette color — the game's ONE currency should never be confused
+    /// with a stat tone.</summary>
+    public static readonly Color GoldColor = new("e8c15a");
+
+    /// <summary>"Good"/affirmative reads (surplus, success) — alias for <see cref="CoolantColor"/>.</summary>
+    public static readonly Color GoodColor = CoolantColor;
+
+    /// <summary>Warm caution reads (non-alarming friction, R6-class) — alias for <see cref="EmberColor"/>.</summary>
+    public static readonly Color WarnColor = EmberColor;
+
+    /// <summary>True danger/death reads only — alias for <see cref="BloodColor"/>.</summary>
+    public static readonly Color DangerColor = BloodColor;
+
+    /// <summary>Deepest background layer (behind every panel) — alias for <see cref="VoidColor"/>.</summary>
+    public static readonly Color SurfaceDeep = VoidColor;
+
+    /// <summary>Default panel/card fill — alias for <see cref="IronColor"/>.</summary>
+    public static readonly Color Surface = IronColor;
+
+    /// <summary>A surface lifted one step above <see cref="Surface"/> — hover/selected rows,
+    /// nested cards.</summary>
+    public static readonly Color SurfaceRaised = IronColor.Lightened(0.08f);
+
+    /// <summary>De-emphasized body text (secondary labels, "owned ×N" counts) — <see cref="BoneColor"/>
+    /// at reduced alpha rather than a separate gray, so it still reads as the same body-text family.</summary>
+    public static readonly Color TextDim = new(BoneColor, 0.6f);
+
     // ── Sizes ──────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Minimum legible font size at target resolution (R11) — the floor every default
     /// and per-type font size below must meet or exceed.</summary>
     public const int LegibilityFloor = 16;
 
-    /// <summary>Default body/control font size — the engine default (16) bumped for legibility.</summary>
-    public const int BodyFontSize = 18;
+    // TODO(font): pixel display+body font swap deferred — needs a committed .ttf asset. Sizes
+    // below are tuned for the CURRENT fonts (engine default body, Cinzel header); revisit once a
+    // pixel face lands so the scale still reads clean at the new face's metrics.
+
+    /// <summary>Default body/control font size — held at the legibility floor (R11); the cozy
+    /// redesign (UI-1) tightened this from the prior +2 bump now that spacing/hierarchy carry
+    /// more of the visual weight than raw text size.</summary>
+    public const int BodyFontSize = 16;
 
     /// <summary>Section/card header font size.</summary>
     public const int HeaderFontSize = 22;
 
-    // ── Spacing / shape ────────────────────────────────────────────────────────────────────────
-    private const int PanelCornerRadius = 8;
+    /// <summary>HUD stat-value font size (UI-1) — one step above <see cref="BodyFontSize"/> so the
+    /// HUD's live numbers (gold, day) read as the thing the player glances at first.</summary>
+    public const int HudValueFontSize = 20;
+
+    // ── Spacing / shape scale (UI-1) ───────────────────────────────────────────────────────────
+    // A small fixed step scale so every builder's margins/gaps come from the SAME ladder instead
+    // of one-off literals — the thing that makes a screen read as "designed" rather than "sized
+    // by whichever builder touched it last".
+    public const int Space4 = 4;
+    public const int Space8 = 8;
+    public const int Space12 = 12;
+    public const int Space16 = 16;
+
+    /// <summary>Corner radius for small chip-scale controls (stat chips, icon chips).</summary>
+    public const int RadiusChip = 4;
+
+    /// <summary>Corner radius for panel-scale controls (cards, sections, drawers).</summary>
+    public const int RadiusPanel = 8;
+
     private const int PanelBorderWidth = 2;
     private const float PanelContentMargin = 12f;
 
@@ -114,15 +171,72 @@ public static class GameTheme
         BorderWidthLeft = PanelBorderWidth,
         BorderWidthRight = PanelBorderWidth,
         BorderWidthTop = PanelBorderWidth,
-        CornerRadiusBottomLeft = PanelCornerRadius,
-        CornerRadiusBottomRight = PanelCornerRadius,
-        CornerRadiusTopLeft = PanelCornerRadius,
-        CornerRadiusTopRight = PanelCornerRadius,
+        CornerRadiusBottomLeft = RadiusPanel,
+        CornerRadiusBottomRight = RadiusPanel,
+        CornerRadiusTopLeft = RadiusPanel,
+        CornerRadiusTopRight = RadiusPanel,
         ContentMarginLeft = PanelContentMargin,
         ContentMarginRight = PanelContentMargin,
         ContentMarginTop = PanelContentMargin,
         ContentMarginBottom = PanelContentMargin,
     };
+
+    /// <summary>The committed pixel-art wood 9-patch frame (<c>ui-frame-wood.png</c>, a 48×48
+    /// texture) used for cozy-styled panels (drawers, dialogs) that want a hand-authored border
+    /// instead of the flat <see cref="PanelStyle"/> rectangle. 12px texture margins keep the
+    /// corner/edge art crisp while the center tiles/stretches to fill; 12px content margins match
+    /// so text never crowds the frame.</summary>
+    private const string WoodFramePath = "res://assets/art/ui-frame-wood.png";
+    private const float WoodFrameMargin = 12f;
+
+    /// <summary>Timber-brown border used only by <see cref="PanelStyleWood"/>'s flat fallback —
+    /// not a general-purpose alias (nothing else in the theme reads this hue), so it stays
+    /// private rather than joining the semantic-alias set above.</summary>
+    private static readonly Color TimberBrownColor = new("4a3222");
+
+    /// <summary>
+    /// A wood-framed panel StyleBox for cozy-styled surfaces (UI-1). Null-tolerant, mirroring
+    /// <see cref="LoadHeaderFont"/>'s exact degrade contract: on a fresh checkout / stripped test
+    /// build missing <see cref="WoodFramePath"/>, this falls back to a flat <see cref="Surface"/>
+    /// panel with a 1px timber-brown border and the same <see cref="RadiusPanel"/> corners —
+    /// never null, never a throw, and the caller never needs to branch on which it got.
+    /// </summary>
+    public static StyleBox PanelStyleWood()
+    {
+        if (!ResourceLoader.Exists(WoodFramePath))
+        {
+            return new StyleBoxFlat
+            {
+                BgColor = Surface,
+                BorderColor = TimberBrownColor,
+                BorderWidthBottom = 1,
+                BorderWidthLeft = 1,
+                BorderWidthRight = 1,
+                BorderWidthTop = 1,
+                CornerRadiusBottomLeft = RadiusPanel,
+                CornerRadiusBottomRight = RadiusPanel,
+                CornerRadiusTopLeft = RadiusPanel,
+                CornerRadiusTopRight = RadiusPanel,
+                ContentMarginLeft = WoodFrameMargin,
+                ContentMarginRight = WoodFrameMargin,
+                ContentMarginTop = WoodFrameMargin,
+                ContentMarginBottom = WoodFrameMargin,
+            };
+        }
+
+        return new StyleBoxTexture
+        {
+            Texture = GD.Load<Texture2D>(WoodFramePath),
+            TextureMarginLeft = WoodFrameMargin,
+            TextureMarginRight = WoodFrameMargin,
+            TextureMarginTop = WoodFrameMargin,
+            TextureMarginBottom = WoodFrameMargin,
+            ContentMarginLeft = WoodFrameMargin,
+            ContentMarginRight = WoodFrameMargin,
+            ContentMarginTop = WoodFrameMargin,
+            ContentMarginBottom = WoodFrameMargin,
+        };
+    }
 
     /// <summary>Button surface for one interaction state — Iron→Accent progression so a press
     /// reads as tactile depth; Disabled dims toward Void.</summary>
@@ -144,10 +258,49 @@ public static class GameTheme
             BorderWidthLeft = PanelBorderWidth,
             BorderWidthRight = PanelBorderWidth,
             BorderWidthTop = PanelBorderWidth,
-            CornerRadiusBottomLeft = PanelCornerRadius,
-            CornerRadiusBottomRight = PanelCornerRadius,
-            CornerRadiusTopLeft = PanelCornerRadius,
-            CornerRadiusTopRight = PanelCornerRadius,
+            CornerRadiusBottomLeft = RadiusPanel,
+            CornerRadiusBottomRight = RadiusPanel,
+            CornerRadiusTopLeft = RadiusPanel,
+            CornerRadiusTopRight = RadiusPanel,
+            ContentMarginLeft = PanelContentMargin,
+            ContentMarginRight = PanelContentMargin,
+            ContentMarginTop = PanelContentMargin * 0.5f,
+            ContentMarginBottom = PanelContentMargin * 0.5f,
+        };
+    }
+
+    /// <summary>
+    /// The main-verb button surface (UI-1) — an Ember fill formalizing the ad-hoc per-node
+    /// override <c>MainUi.StylePrimary</c> already hand-builds for its one Accent-tinted primary
+    /// action. This is a DIFFERENT, warmer treatment (Ember, not Accent/Arcane) for the cozy
+    /// redesign's main verb buttons (e.g. a drawer's "Craft"/"Buy" CTA); same shape (border/
+    /// radius/margins) as <see cref="ButtonStyle"/> so it drops into the same
+    /// <c>AddThemeStyleboxOverride("normal"/"hover"/"pressed", ...)</c> per-node pattern that
+    /// call site already uses — nothing here touches <see cref="Build"/>'s shared Button type
+    /// slots (those stay Iron via <see cref="ButtonStyle"/>).
+    /// </summary>
+    public static StyleBoxFlat ButtonStylePrimary(ButtonVisualState state = ButtonVisualState.Normal)
+    {
+        var bg = state switch
+        {
+            ButtonVisualState.Hover => EmberColor.Lightened(0.15f),
+            ButtonVisualState.Pressed => EmberColor.Darkened(0.15f),
+            ButtonVisualState.Disabled => EmberColor.Darkened(0.35f),
+            _ => EmberColor,
+        };
+
+        return new StyleBoxFlat
+        {
+            BgColor = bg,
+            BorderColor = new Color(BoneColor, state == ButtonVisualState.Pressed ? 0.9f : 0.4f),
+            BorderWidthBottom = PanelBorderWidth,
+            BorderWidthLeft = PanelBorderWidth,
+            BorderWidthRight = PanelBorderWidth,
+            BorderWidthTop = PanelBorderWidth,
+            CornerRadiusBottomLeft = RadiusPanel,
+            CornerRadiusBottomRight = RadiusPanel,
+            CornerRadiusTopLeft = RadiusPanel,
+            CornerRadiusTopRight = RadiusPanel,
             ContentMarginLeft = PanelContentMargin,
             ContentMarginRight = PanelContentMargin,
             ContentMarginTop = PanelContentMargin * 0.5f,
@@ -173,6 +326,16 @@ public static class GameTheme
         theme.SetStylebox("pressed", "Button", ButtonStyle(ButtonVisualState.Pressed));
         theme.SetStylebox("disabled", "Button", ButtonStyle(ButtonVisualState.Disabled));
         theme.SetStylebox("focus", "Button", ButtonStyle(ButtonVisualState.Hover));
+
+        // UI-1: OptionButton previously fell through to the naked engine default (a light
+        // system-gray dropdown floating on top of every dark themed panel). Give it the SAME
+        // Iron "normal" surface + text colors/size as Button so a dropdown reads as part of this
+        // theme rather than a stray control the cascade forgot. Hover/pressed/disabled are left
+        // to the engine default for now — no OptionButton on any current screen exercises those
+        // states in a way that reads badly; revisit if a future screen needs the full set.
+        theme.SetStylebox("normal", "OptionButton", ButtonStyle(ButtonVisualState.Normal));
+        theme.SetColor("font_color", "OptionButton", BodyTextColor);
+        theme.SetFontSize("font_size", "OptionButton", BodyFontSize);
 
         theme.SetColor("font_color", "Label", BodyTextColor);
         theme.SetColor("font_color", "Button", BodyTextColor);

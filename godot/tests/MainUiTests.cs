@@ -202,7 +202,9 @@ public class MainUiTests
             AssertThat(RenderedText(ui.Shop)).Contains("Dagger");
             var copperLeft = state.Player.Materials.TryGetValue("copper", out var stock) ? stock : 0;
             ui.OpenPanel("Forge");
-            AssertThat(RenderedText(ui.Forge)).Contains($"copper x{copperLeft}");
+            // UI-5: the copper count now reads off the vendor ListRow's own "owned" column
+            // (BuyMat_copper's row), not a standalone "MATERIALS: ..." prose line.
+            AssertThat(VendorOwnedText(ui.Forge, "copper")).IsEqual($"×{copperLeft}");
         }
         finally
         {
@@ -692,6 +694,8 @@ public class MainUiTests
         {
             var key = GameSim.Materials.MaterialRegistry.PricedPool[0];
             var stale = RenderedText(ui.Forge); // fresh campaign: "MATERIALS: none — ..." (Bind's own boot Refresh)
+            // UI-5: the per-material count now reads off the vendor ListRow's own "owned" column.
+            var staleOwned = VendorOwnedText(ui.Forge, key);
 
             // Queued straight through the adapter (never through Forge's OWN Pressed handler,
             // which sets its feedback label directly and would confound this gating proof).
@@ -702,10 +706,11 @@ public class MainUiTests
             AssertThat(after).IsGreater(0); // sanity: the sim state actually changed
             AssertThat(ui.Drawer.IsOpen).IsFalse();
             AssertThat(RenderedText(ui.Forge)).IsEqual(stale); // byte-identical — hidden, never refreshed
-            AssertThat(RenderedText(ui.Forge)).NotContains($"{key} x{after}");
+            AssertThat(VendorOwnedText(ui.Forge, key)).IsEqual(staleOwned);
+            AssertThat(VendorOwnedText(ui.Forge, key)).IsNotEqual($"×{after}");
 
             ui.OpenPanel("Forge"); // opening it is what catches it up
-            AssertThat(RenderedText(ui.Forge)).Contains($"{key} x{after}");
+            AssertThat(VendorOwnedText(ui.Forge, key)).IsEqual($"×{after}");
             AssertThat(RenderedText(ui.Forge)).IsNotEqual(stale);
         }
         finally
@@ -822,7 +827,30 @@ public class MainUiTests
             var suggestions = GameSim.Advisor.ObjectiveAdvisor.Suggest(ui.Adapter.CurrentState);
             AssertThat(suggestions.Count > 0).IsTrue();
             AssertThat(suggestions[0].Action).IsInstanceOf<BuyMaterialAction>();
-            AssertThat(RenderedText(Find<Control>(ui, "ObjectiveReason"))).Contains(suggestions[0].Reason);
+            var reasonLabel = Find<Control>(ui, "ObjectiveReason");
+            AssertThat(RenderedText(reasonLabel)).Contains(suggestions[0].Reason);
+
+            // Bug fix (gate-b playtest screenshot, "body text does not render"): RenderedText only
+            // proves .Text is populated — it says nothing about whether the label is actually
+            // visible. The FIRST render must land fully opaque, never on the fade's dimmer frames.
+            AssertThat(reasonLabel.Modulate.A)
+                .OverrideFailureMessage(
+                    $"objective reason alpha {reasonLabel.Modulate.A} < 1 on the very first render — "
+                    + "the tutorial's opening line must never land on a mid-fade frame")
+                .IsEqual(1f);
+
+            // Bug fix (gate-b): ClipText (needed so a verbose reason can never blow out the panel)
+            // makes Godot report the Label's own natural minimum height as ~zero, so without an
+            // explicit floor the row collapses to the step glyph's single-line height and the
+            // 2-line body has nowhere to render. Assert relative to the glyph's own line height
+            // (content-driven, not a magic pixel guess) so this survives font/theme tuning.
+            var stepGlyph = Find<Control>(ui, "ObjectiveStepGlyph");
+            AssertThat(reasonLabel.GetCombinedMinimumSize().Y)
+                .OverrideFailureMessage(
+                    $"objective reason reserves only {reasonLabel.GetCombinedMinimumSize().Y}px — no taller than "
+                    + $"the step glyph's own {stepGlyph.GetCombinedMinimumSize().Y}px single line, so the 2-line "
+                    + "body has no room to render")
+                .IsGreater(stepGlyph.GetCombinedMinimumSize().Y);
         }
         finally
         {
@@ -978,6 +1006,22 @@ public class MainUiTests
 
         ui.Adapter.AdvancePhase(); // day 3 Evening: buys then craft apply in order
         ui.Ledger.CloseModal();    // day-3 reveal is timer-gated (U12); close if a frame opened it
+    }
+
+    /// <summary>
+    /// UI-5: the text of a Forge vendor row's "owned" column (e.g. <c>"×2"</c>) for
+    /// <paramref name="materialKey"/> — the <see cref="UiKit.ListRow"/> that replaced the old
+    /// "MATERIALS: copper x2, ..." prose line. Walks from the row's stable <c>BuyMat_{key}</c>
+    /// button (the one Name this rethink was required to preserve) to its sibling "Owned" Label
+    /// inside the same row, rather than a global-search-by-name (every vendor row's Owned Label
+    /// shares that same Name, so a global find would be ambiguous).
+    /// </summary>
+    private static string VendorOwnedText(Control forge, string materialKey)
+    {
+        var button = Find<Button>(forge, $"BuyMat_{materialKey}");
+        var owned = button.GetParent()?.FindChild("Owned", recursive: false, owned: false) as Label;
+        return owned?.Text ?? throw new System.InvalidOperationException(
+            $"No 'Owned' label beside BuyMat_{materialKey}.");
     }
 }
 #endif

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <!-- Town2D ground tile: dirt path. Warm tan-gray, two seam rows, tiles at 16px
+       (source for godot/assets/art/town2d-tile-path.png). -->
+  <rect width="16" height="16" fill="#6b5f52"/>
+  <rect x="0" y="5" width="16" height="1" fill="#574d43"/>
+  <rect x="0" y="11" width="16" height="1" fill="#574d43"/>
+  <rect x="3" y="2" width="1" height="1" fill="#574d43"/>
+  <rect x="9" y="8" width="1" height="1" fill="#574d43"/>
+  <rect x="6" y="14" width="1" height="1" fill="#574d43"/>
+</svg>

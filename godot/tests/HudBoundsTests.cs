@@ -92,6 +92,36 @@ public class HudBoundsTests
     }
 
     [TestCase]
+    public async Task AfterMount_ObjectiveChip_NeverCoversBooksTray()
+    {
+        // Bug fix (gate-b playtest screenshot, "note overlaps the books tray"): the chip's dock
+        // offset was a hand-tuned magic constant that went stale the moment the header grew a
+        // Books Tray zone (Ledger/Forecast/Commissions/Legends/Demand/Renown/Progress icon row) —
+        // both are top-right, so a too-small offset put the chip's top edge INSIDE the tray's own
+        // rect. UpdateObjectiveDock now measures the header's real height instead of trusting the
+        // constant blindly.
+        var ui = MountMainUi();
+        try
+        {
+            await SettleLayout(ui);
+
+            var tray = Find<Control>(ui, "BooksTray");
+            AssertThat(tray.Visible).IsTrue();
+            var trayRect = tray.GetGlobalRect();
+
+            AssertThat(!ui.Objective.Visible || !ui.Objective.GetGlobalRect().Intersects(trayRect))
+                .OverrideFailureMessage(
+                    "Objective chip overlaps the HUD header's Books Tray — "
+                    + $"chip={ui.Objective.GetGlobalRect()} tray={trayRect}")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public async Task LedgerOpen_ObjectiveChip_NeverCoversLedger()
     {
         var ui = MountMainUi();

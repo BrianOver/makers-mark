@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="80" viewBox="0 0 64 80" shape-rendering="crispEdges">
+  <!-- Town2D world sprite: smith forge/shop (hero building). 64x80, feet/base at y=80.
+       Bare id "forge" -- the exact key TownAssets2D.ForVenue/TownLayout2D query via
+       IconRegistry.Art("forge"). Source for godot/assets/art/forge.png. Same design as
+       town2d-forge.svg (kept for the sprites/2d ready-to-swap set); this file is the
+       one actually wired to the running Town2D scene. -->
+  <polygon points="6,30 32,10 58,30" fill="#1e1a2a" stroke="#d8cfe0" stroke-width="1"/>
+  <rect x="12" y="30" width="40" height="44" fill="#2a2438" stroke="#d8cfe0" stroke-width="1"/>
+  <rect x="40" y="4" width="10" height="16" fill="#1e1a2a" stroke="#d8cfe0" stroke-width="1"/>
+  <circle cx="45" cy="4" r="4" fill="#e0913f"/>
+  <rect x="26" y="46" width="16" height="28" fill="#140f1f" stroke="#d8cfe0" stroke-width="1"/>
+  <rect x="28" y="58" width="12" height="14" fill="#e0913f" opacity="0.55"/>
+  <polygon points="29,56 39,56 37,60 41,60 41,63 27,63 27,60 31,60" fill="#2a2438" stroke="#d8cfe0" stroke-width="1"/>
+  <path d="M17 38 L17 50 M17 38 L23 38" stroke="#3fb0ac" stroke-width="1" fill="none"/>
+  <polygon points="47,42 50,47 47,52 44,47" fill="none" stroke="#6b4c9a" stroke-width="1"/>
+</svg>
