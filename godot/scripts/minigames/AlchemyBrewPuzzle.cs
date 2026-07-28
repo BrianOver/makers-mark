@@ -63,11 +63,28 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
     private Label _titleLabel = null!;
     private Label _notesLabel = null!;
     private Label _pouredLabel = null!;
+    private BrewCanvas _canvas = null!;
     private Button _undo = null!;
     private Button _submit = null!;
     private Button _cancel = null!;
     private HBoxContainer _palette = null!;
     private bool _built;
+
+    /// <summary>One evocative brew color per reagent id (indexes match <see cref="AlchemyReagents"/>):
+    /// Sunpetal gold, Ironmoss moss, Dewroot dew-teal, Cinderbark ember, Glimmercap glow-violet,
+    /// Voidsalt deep indigo — the shared palette the orb icons AND the cauldron canvas both read.</summary>
+    private static readonly Color[] ReagentColors =
+    {
+        new(1.00f, 0.82f, 0.30f), // Sunpetal
+        new(0.45f, 0.56f, 0.40f), // Ironmoss
+        new(0.35f, 0.76f, 0.72f), // Dewroot
+        new(0.80f, 0.34f, 0.20f), // Cinderbark
+        new(0.64f, 0.44f, 0.86f), // Glimmercap
+        new(0.34f, 0.32f, 0.52f), // Voidsalt
+    };
+
+    private static Color ColorFor(int reagentId) =>
+        reagentId >= 0 && reagentId < ReagentColors.Length ? ReagentColors[reagentId] : Colors.Gray;
 
     public override void _Ready() => EnsureBuilt();
 
@@ -179,6 +196,10 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         _notesLabel = new Label { Name = "AlchemyBrewNotes", AutowrapMode = TextServer.AutowrapMode.WordSmart };
         body.AddChild(_notesLabel);
 
+        _canvas = new BrewCanvas { Name = "BrewCanvas", CustomMinimumSize = new Vector2(0, 260) };
+        _canvas.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        body.AddChild(_canvas);
+
         _pouredLabel = new Label { Name = "AlchemyBrewPoured", AutowrapMode = TextServer.AutowrapMode.WordSmart };
         body.AddChild(_pouredLabel);
 
@@ -187,7 +208,12 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         for (var id = 0; id < AlchemyReagents.Count; id++)
         {
             var reagentId = id; // capture per-iteration
-            var pour = new Button { Name = $"Reagent_{reagentId}", Text = AlchemyReagents.Names[reagentId] };
+            var pour = new Button
+            {
+                Name = $"Reagent_{reagentId}",
+                Text = AlchemyReagents.Names[reagentId],
+                Icon = MakeOrb(ColorFor(reagentId)),
+            };
             pour.Pressed += () => PourReagent(reagentId);
             _palette.AddChild(pour);
         }
@@ -222,14 +248,398 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         _titleLabel.Text = $"Brew: {RecipeId}";
         _notesLabel.Text = _ideal.IsEmpty
             ? string.Empty
-            : "Recipe notes — pour in order: " + string.Join(" → ", _ideal.Select(id => AlchemyReagents.Names[id]));
+            : "Recipe — match the top row, pour left to right:";
         _pouredLabel.Text = Completed
             ? $"Brewed! (score {EmittedAction?.SubScores?[2]}‰)"
             : WasCancelled
                 ? "Cancelled."
-                : $"Cauldron ({Poured.Count}/{RequiredPours}): " +
-                  (Poured.IsEmpty ? "(empty)" : string.Join(" → ", Poured.Select(id => AlchemyReagents.Names[id])));
+                : $"Cauldron: {Poured.Count}/{RequiredPours} poured";
+
+        // One-shot pour FX: the canvas compares against what it last saw, so a NEW pour triggers the
+        // stream/bloom/fizzle and an Undo triggers nothing (the puzzle class stays _Process-free and
+        // property-only, exactly as the gdUnit tests drive it).
+        _canvas.Ideal = _ideal;
+        _canvas.Done = Completed;
+        _canvas.SetPoured(Poured);
+        _canvas.QueueRedraw();
+
         _undo.Disabled = Completed || WasCancelled || Poured.IsEmpty;
         _submit.Disabled = Completed || WasCancelled;
+    }
+
+    /// <summary>A small filled-circle icon in the reagent's brew color — the palette button's swatch
+    /// so the player picks reagents by color, not just name (mirrors the cauldron orbs below).</summary>
+    private static ImageTexture MakeOrb(Color color)
+    {
+        const int d = 16;
+        var img = Image.CreateEmpty(d, d, false, Image.Format.Rgba8);
+        var c = new Vector2(d / 2f, d / 2f);
+        for (var y = 0; y < d; y++)
+        {
+            for (var x = 0; x < d; x++)
+            {
+                var dist = new Vector2(x + 0.5f, y + 0.5f).DistanceTo(c);
+                if (dist <= d / 2f - 0.5f)
+                {
+                    var shade = 1f - 0.35f * (dist / (d / 2f)); // soft spherical shading
+                    img.SetPixel(x, y, new Color(color.R * shade, color.G * shade, color.B * shade));
+                }
+            }
+        }
+
+        return ImageTexture.CreateFromImage(img);
+    }
+
+    /// <summary>
+    /// The cauldron scene: an iron pot with a REAL liquid that rises and colour-shifts as reagents
+    /// go in, a parchment recipe strip up top (what to pour, in order, with a gold caret on the next
+    /// expected slot), rim sockets showing each pour's correctness (green/red rings — the load-bearing
+    /// feedback), and a shelf of tinted bottles. Pouring tips the matching bottle, drips droplets into
+    /// the pot, and either blooms (correct) or fizzles with smoke (wrong). Plain <see cref="_Draw"/>
+    /// primitives + two nearest-filtered sprites, each null-checked with a primitive fallback so
+    /// headless CI renders without imports (never a 3D SubViewport — a known gdUnit headless hang).
+    /// All motion is accumulated-frame-delta only, no wall-clock, no RNG (fixed offset tables).
+    ///
+    /// <para>The owning puzzle class stays <c>_Process</c>-free and property-only (as its gdUnit tests
+    /// drive it): this canvas owns the animation clock and detects a new pour by diffing what it was
+    /// last handed (<see cref="SetPoured"/>), so an Undo triggers no FX.</para>
+    /// </summary>
+    private sealed partial class BrewCanvas : Control
+    {
+        public ImmutableList<int> Ideal = ImmutableList<int>.Empty;
+        public ImmutableList<int> Poured { get; private set; } = ImmutableList<int>.Empty;
+        public bool Done;
+
+        private static readonly Color TargetRing = new(1f, 0.92f, 0.72f, 0.55f);
+        private static readonly Color EmptySocket = new(0.26f, 0.24f, 0.32f, 0.95f);
+        private static readonly Color MatchRing = new(0.45f, 0.90f, 0.50f);
+        private static readonly Color MissRing = new(0.95f, 0.38f, 0.32f);
+        private static readonly Color BrewBase = new(0.23f, 0.17f, 0.33f);
+        private static readonly Color Parchment = new(0.91f, 0.85f, 0.70f);
+        private static readonly Color ParchmentEdge = new(0.62f, 0.55f, 0.42f);
+        private static readonly Color ShelfWood = new(0.34f, 0.23f, 0.15f);
+        private static readonly Color FireGlow = new(1.0f, 0.52f, 0.18f);
+        private static readonly Color Fizzle = new(0.42f, 0.48f, 0.29f);
+        private static readonly Color Caret = new(1.0f, 0.85f, 0.35f);
+
+        // Fixed droplet/bubble/smoke offsets — deterministic, no RNG.
+        private static readonly float[] DropSpread = { -5f, -2f, 0f, 2f, 4f, 6f };
+        private static readonly (float Fx, float Phase)[] Bubbles =
+        {
+            (0.32f, 0.0f), (0.44f, 0.55f), (0.50f, 0.25f), (0.58f, 0.8f), (0.68f, 0.4f),
+        };
+
+        private float _anim;
+        private float _level;              // eased 0..1 liquid level (follows Poured.Count/Required)
+        private float _pourT = -1f;        // 0..0.5 pour animation, -1 idle
+        private int _pourReagent = -1;
+        private bool _pourCorrect;
+        private float _fizzleT = -1f;
+        private float _bloomT = -1f;
+        private Texture2D? _cauldron;
+        private Texture2D? _bottle;
+        private bool _texTried;
+
+        /// <summary>Feed the pour list; a GROWN list fires the one-shot pour FX (an Undo never does).</summary>
+        public void SetPoured(ImmutableList<int> poured)
+        {
+            if (poured.Count > Poured.Count)
+            {
+                var idx = poured.Count - 1;
+                _pourReagent = poured[idx];
+                _pourCorrect = idx < Ideal.Count && poured[idx] == Ideal[idx];
+                _pourT = 0f;
+                if (_pourCorrect) _bloomT = 0f; else _fizzleT = 0f;
+            }
+
+            Poured = poured;
+        }
+
+        public override void _Process(double delta)
+        {
+            var dt = (float)delta;
+            _anim += dt;
+
+            var target = Ideal.Count > 0 ? (float)Poured.Count / Ideal.Count : 0f;
+            _level = Mathf.MoveToward(_level, target, 3f * dt);   // liquid eases up/down
+
+            if (_pourT >= 0f) { _pourT += dt; if (_pourT > 0.5f) _pourT = -1f; }
+            if (_bloomT >= 0f) { _bloomT += dt; if (_bloomT > 0.4f) _bloomT = -1f; }
+            if (_fizzleT >= 0f) { _fizzleT += dt; if (_fizzleT > 0.45f) _fizzleT = -1f; }
+            QueueRedraw();
+        }
+
+        public override void _Draw()
+        {
+            var size = Size;
+            var n = Ideal.Count;
+            if (size.X <= 0 || size.Y <= 0 || n <= 0)
+            {
+                return;
+            }
+
+            EnsureTextures();
+
+            // ── layout ──
+            var potW = Mathf.Min(size.X * 0.52f, 240f);
+            var potH = potW * 0.75f;
+            var potPos = new Vector2(size.X * 0.5f - potW / 2f, size.Y - potH - 6f);
+            var mouth = new Rect2(potPos.X + potW * 0.17f, potPos.Y + potH * 0.16f, potW * 0.66f, potH * 0.21f);
+            var interiorTop = mouth.Position.Y + mouth.Size.Y * 0.4f;
+            var interiorBottom = potPos.Y + potH * 0.80f;
+
+            DrawFireGlow(potPos, potW, potH);
+            DrawParchment(size, n);
+            DrawShelf(size);
+
+            // Cauldron sprite (or a primitive pot).
+            if (_cauldron is not null)
+            {
+                DrawTextureRect(_cauldron, new Rect2(potPos, new Vector2(potW, potH)), false);
+            }
+            else
+            {
+                DrawRect(new Rect2(potPos.X, potPos.Y + potH * 0.2f, potW, potH * 0.8f), new Color(0.29f, 0.30f, 0.35f));
+            }
+
+            DrawLiquid(mouth, interiorTop, interiorBottom);
+            DrawSockets(mouth, n);
+            DrawPourStream(size, mouth);
+        }
+
+        private void DrawFireGlow(Vector2 potPos, float potW, float potH)
+        {
+            var pulse = 0.35f + 0.25f * (0.5f + 0.5f * Mathf.Sin(_anim * 2.4f));
+            var center = new Vector2(potPos.X + potW / 2f, potPos.Y + potH * 0.98f);
+            DrawCircle(center, potW * 0.34f, new Color(FireGlow, pulse * 0.32f));
+            DrawCircle(center, potW * 0.20f, new Color(FireGlow, pulse * 0.5f));
+        }
+
+        /// <summary>The recipe: mini tinted bottles in pour order on a parchment strip, with a gold
+        /// caret under the next expected slot (the order IS the puzzle, so this stays loud).</summary>
+        private void DrawParchment(Vector2 size, int n)
+        {
+            var w = Mathf.Min(size.X * 0.62f, 34f * n + 24f);
+            var rect = new Rect2(10f, 6f, w, 44f);
+            DrawRect(rect, new Color(Parchment, 0.93f));
+            DrawRect(rect, new Color(ParchmentEdge, 0.9f), filled: false, width: 2f);
+
+            var step = (w - 20f) / n;
+            for (var i = 0; i < n; i++)
+            {
+                var cx = rect.Position.X + 10f + step * (i + 0.5f);
+                var c = ColorFor(Ideal[i]);
+                if (_bottle is not null)
+                {
+                    DrawTextureRect(_bottle, new Rect2(new Vector2(cx - 7f, rect.Position.Y + 5f), new Vector2(14f, 19f)), false, c);
+                }
+                else
+                {
+                    DrawCircle(new Vector2(cx, rect.Position.Y + 15f), 7f, c);
+                }
+
+                if (i == Poured.Count && !Done)
+                {
+                    // "pour this next" caret
+                    var y = rect.Position.Y + 30f;
+                    DrawColoredPolygon(
+                        new[] { new Vector2(cx - 5, y + 8), new Vector2(cx + 5, y + 8), new Vector2(cx, y) },
+                        new Color(Caret, 0.95f));
+                }
+            }
+        }
+
+        private const float ShelfStep = 20f;   // px per bottle — enough that 14px bottles never overlap
+        private const float ShelfY = 12f;
+
+        private void DrawShelf(Vector2 size)
+        {
+            var count = AlchemyReagents.Count;
+            var shelfW = ShelfStep * count;
+            var x0 = size.X - shelfW - 10f;
+            if (x0 < size.X * 0.45f)
+            {
+                return; // not enough room beside the parchment — skip the decoration entirely
+            }
+
+            DrawRect(new Rect2(x0 - 4f, ShelfY + 32f, shelfW + 8f, 4f), ShelfWood);
+            for (var i = 0; i < count; i++)
+            {
+                var cx = x0 + ShelfStep * (i + 0.5f);
+                var tipping = _pourT >= 0f && _pourReagent == i;
+                var lean = tipping ? Mathf.Lerp(0f, 55f, Mathf.Min(1f, _pourT / 0.15f)) : 0f;
+                var c = ColorFor(i);
+                if (_bottle is not null)
+                {
+                    DrawSetTransform(new Vector2(cx, ShelfY + 32f), Mathf.DegToRad(lean), Vector2.One);
+                    DrawTextureRect(_bottle, new Rect2(new Vector2(-7f, -26f), new Vector2(14f, 26f)), false, c);
+                    DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+                }
+                else
+                {
+                    DrawCircle(new Vector2(cx, ShelfY + 20f), 6f, c);
+                }
+            }
+        }
+
+        private void DrawLiquid(Rect2 mouth, float interiorTop, float interiorBottom)
+        {
+            // Colour fold: recomputed from the whole pour list every frame, so Undo just works.
+            var col = BrewBase;
+            foreach (var id in Poured)
+            {
+                col = col.Lerp(ColorFor(id), 0.45f);
+            }
+
+            if (_fizzleT >= 0f)
+            {
+                col = col.Lerp(Fizzle, 1f - _fizzleT / 0.45f);
+            }
+
+            if (Done)
+            {
+                col = col.Lerp(new Color(1f, 0.88f, 0.5f), 0.35f + 0.25f * Mathf.Sin(_anim * 5f));
+            }
+
+            var surfaceY = Mathf.Lerp(interiorBottom, interiorTop, Mathf.Max(_level, 0.06f));
+            var halfW = mouth.Size.X / 2f;
+            var cx = mouth.Position.X + halfW;
+
+            // The liquid is a stack of ellipses that TAPER downward — it sits inside the pot's mouth
+            // and reads as a pool with depth, never a box overflowing the iron.
+            const int slices = 10;
+            for (var i = slices; i >= 0; i--)
+            {
+                var t = i / (float)slices;                       // 0 at the surface, 1 at the floor
+                var y = Mathf.Lerp(surfaceY, interiorBottom, t);
+                var rx = halfW * (0.94f - 0.34f * t);            // narrows with depth
+                var shade = 1f - 0.35f * t;                      // darker deeper down
+                DrawEllipseFilled(new Vector2(cx, y), rx, mouth.Size.Y * 0.30f,
+                    new Color(col.R * shade, col.G * shade, col.B * shade, 1f));
+            }
+
+            DrawEllipseFilled(new Vector2(cx, surfaceY - 1f), halfW * 0.70f, mouth.Size.Y * 0.20f,
+                new Color(col.R * 1.35f, col.G * 1.35f, col.B * 1.35f, 0.6f)); // surface sheen
+
+            // Ambient bubbles — livelier the fuller the pot.
+            var liveliness = Mathf.Max(1, Poured.Count);
+            for (var i = 0; i < Bubbles.Length && i < liveliness + 1; i++)
+            {
+                var (fx, phase) = Bubbles[i];
+                var t = (_anim * 0.8f + phase) % 1f;
+                var bx = mouth.Position.X + mouth.Size.X * fx;
+                var by = Mathf.Lerp(interiorBottom, surfaceY, t);
+                var r = 1.5f + 2f * t;
+                DrawCircle(new Vector2(bx, by), r, new Color(1f, 1f, 1f, 0.22f * (1f - t)));
+            }
+
+            // Correct-pour bloom ring on the surface.
+            if (_bloomT >= 0f && _pourReagent >= 0)
+            {
+                var t = _bloomT / 0.4f;
+                DrawArc(new Vector2(cx, surfaceY), 4f + 38f * t, 0f, Mathf.Tau, 28,
+                    new Color(ColorFor(_pourReagent), 1f - t), 2.5f);
+            }
+
+            // Wrong-pour smoke puff.
+            if (_fizzleT >= 0f)
+            {
+                var t = _fizzleT / 0.45f;
+                DrawCircle(new Vector2(cx, surfaceY - 16f * t), 4f + 8f * t, new Color(0.35f, 0.35f, 0.38f, 0.55f * (1f - t)));
+            }
+        }
+
+        /// <summary>Per-pour correctness sockets, arced along the pot's rim — the same green/red ring
+        /// logic as before, relocated onto the cauldron so the pot IS the board.</summary>
+        private void DrawSockets(Rect2 mouth, int n)
+        {
+            var r = Mathf.Min(mouth.Size.X / (n * 2.4f), 11f);
+            var y = mouth.Position.Y + mouth.Size.Y * 0.5f;
+            var step = mouth.Size.X / (n + 1);
+            for (var i = 0; i < n; i++)
+            {
+                var cx = mouth.Position.X + step * (i + 1);
+                var lift = 3f * Mathf.Sin((i / (float)n) * Mathf.Pi); // follow the rim's curve
+                var p = new Vector2(cx, y - lift);
+                if (i < Poured.Count)
+                {
+                    var correct = Poured[i] == Ideal[i];
+                    var jitter = !correct && _fizzleT >= 0f && i == Poured.Count - 1
+                        ? new Vector2(((int)(_anim * 40f) % 2 == 0 ? 1f : -1f) * 1.5f, 0f)
+                        : Vector2.Zero;
+                    DrawCircle(p + jitter, r, ColorFor(Poured[i]));
+                    DrawArc(p + jitter, r + 2f, 0f, Mathf.Tau, 24, correct ? MatchRing : MissRing, 2.5f);
+                }
+                else
+                {
+                    DrawArc(p, r, 0f, Mathf.Tau, 22, EmptySocket, 2f);
+                    if (i == Poured.Count && !Done)
+                    {
+                        DrawArc(p, r + 3f, 0f, Mathf.Tau, 22, new Color(TargetRing, 0.35f + 0.3f * Mathf.Sin(_anim * 4f)), 1.5f);
+                    }
+                }
+            }
+        }
+
+        /// <summary>Droplets falling from the tipped bottle into the pot.</summary>
+        private void DrawPourStream(Vector2 size, Rect2 mouth)
+        {
+            if (_pourT < 0f || _pourReagent < 0)
+            {
+                return;
+            }
+
+            // Pour from the shelf bottle when the shelf is on screen; otherwise straight down from
+            // above the pot (the shelf is decoration and is skipped on a narrow canvas).
+            var count = AlchemyReagents.Count;
+            var shelfW = ShelfStep * count;
+            var shelfX0 = size.X - shelfW - 10f;
+            var to = new Vector2(mouth.Position.X + mouth.Size.X * 0.5f, mouth.Position.Y + mouth.Size.Y * 0.5f);
+            var from = shelfX0 >= size.X * 0.45f
+                ? new Vector2(shelfX0 + ShelfStep * (_pourReagent + 0.5f), ShelfY + 36f)
+                : new Vector2(to.X, Mathf.Max(ShelfY + 36f, mouth.Position.Y - 60f));
+            var c = ColorFor(_pourReagent);
+
+            for (var i = 0; i < DropSpread.Length; i++)
+            {
+                var t = Mathf.Clamp((_pourT - 0.10f - i * 0.03f) / 0.30f, 0f, 1f);
+                if (t <= 0f)
+                {
+                    continue;
+                }
+
+                var p = from.Lerp(to, t) + new Vector2(DropSpread[i], 0f);
+                DrawCircle(p, 3f, new Color(c, 1f - t * 0.3f));
+            }
+        }
+
+        private void DrawEllipseFilled(Vector2 center, float rx, float ry, Color color)
+        {
+            const int seg = 26;
+            var pts = new Vector2[seg];
+            for (var i = 0; i < seg; i++)
+            {
+                var a = Mathf.Tau * i / seg;
+                pts[i] = new Vector2(center.X + Mathf.Cos(a) * rx, center.Y + Mathf.Sin(a) * ry);
+            }
+
+            DrawColoredPolygon(pts, color);
+        }
+
+        private void EnsureTextures()
+        {
+            if (_texTried)
+            {
+                return;
+            }
+
+            _texTried = true;
+            TextureFilter = TextureFilterEnum.Nearest;
+            _cauldron = LoadTex("res://assets/minigames/cauldron.png");
+            _bottle = LoadTex("res://assets/minigames/bottle.png");
+        }
+
+        private static Texture2D? LoadTex(string path) =>
+            ResourceLoader.Exists(path) ? GD.Load<Texture2D>(path) : null;
     }
 }
