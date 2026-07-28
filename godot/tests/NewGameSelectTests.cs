@@ -58,9 +58,14 @@ public class NewGameSelectTests
             }
 
             // Exactly the four profession buttons under the picker — no extra "classic" default
-            // path (scope pin), and the shared starter-kit note is present.
+            // path (scope pin), and the shared starter-kit note is present. Recursive (not
+            // direct-child) count: the cozy restyle groups each button+blurb into its own
+            // "PickRow_{id}" sub-container for tighter visual grouping, so the buttons are one
+            // level deeper than the picker itself — the count of 4 is still the real assertion.
             var picker = Find<VBoxContainer>(screen, "ProfessionPicker");
-            var buttons = picker.GetChildren().OfType<Button>().Count();
+            var buttons = picker.FindChildren("*", "Button", recursive: true, owned: false)
+                .OfType<Button>()
+                .Count();
             AssertThat(buttons).IsEqual(4);
             AssertThat(Find<Label>(screen, "StarterKitNote").Text).IsNotEmpty();
 

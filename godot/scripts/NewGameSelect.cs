@@ -5,6 +5,7 @@ using GameSim;
 using GameSim.Kernel;
 using GameSim.Professions;
 using Godot;
+using GodotClient.Ui;
 
 namespace GodotClient;
 
@@ -17,8 +18,10 @@ namespace GodotClient;
 /// it builds the campaign via <see cref="GameComposition.NewCampaign(ulong, string)"/> — starter
 /// stock seeded, day 1 immediately playable — hands it to <see cref="MainUi.AdapterOverride"/>,
 /// and swaps to the main scene. "Back" returns to the profession picker WITHOUT ever touching
-/// <see cref="MainUi.AdapterOverride"/> — picking is free to reconsider (KD4: functional-only,
-/// no styling wave yet).
+/// <see cref="MainUi.AdapterOverride"/> — picking is free to reconsider. Styled with the shared
+/// cozy theme (<see cref="GameTheme"/>): a dusk background behind a single centered wood-framed
+/// card (<see cref="GameTheme.PanelStyleWood"/>) that holds the picker or the primer — never both
+/// — so the card is never empty and never double-framed.
 ///
 /// Purity note (R14): the nondeterministic seed source (wall clock) lives HERE, in the godot
 /// adapter layer — never in sim/. Both the seed source and the scene change are injectable so
@@ -81,6 +84,14 @@ public partial class NewGameSelect : Control
         "Heroes will buy this gear and carry it into the Mine — what it does down there is " +
         "written on your name.";
 
+    /// <summary>Centered card max width (px) — narrow enough to read as a cozy dialog rather
+    /// than full-bleed at any of this game's supported window sizes (1152×648 and up).</summary>
+    private const float CardWidth = 600f;
+
+    /// <summary>Comfortable tap/click height (px) for a profession pick button — the raw engine
+    /// default sized to its label alone, which read as a cramped single-line strip.</summary>
+    private const float PickButtonHeight = 44f;
+
     private VBoxContainer _picker = null!;
     private VBoxContainer _primer = null!;
     private Label _seedLabel = null!;
@@ -91,20 +102,66 @@ public partial class NewGameSelect : Control
     private string? _pendingProfessionId;
     private ulong _pendingSeed;
 
-    public override void _Ready() => BuildUi();
+    public override void _Ready()
+    {
+        // P007-style cascade (mirrors MainUi._Ready): assign the shared Theme BEFORE building
+        // any child Control so hover/pressed button states, fonts, and colors all come from the
+        // one theme rather than per-node overrides sprinkled through this screen.
+        Theme = GameTheme.Build();
+        BuildUi();
+    }
 
     private void BuildUi()
     {
         SetAnchorsPreset(LayoutPreset.FullRect);
-        var layout = new VBoxContainer { Name = "Layout" };
-        layout.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(layout);
 
-        layout.AddChild(new Label
+        // Dusk backdrop behind the card — the same SurfaceDeep fill MainUi's root reads against,
+        // so this front door already looks like the same world as the game it opens into.
+        var background = new ColorRect
+        {
+            Name = "Background",
+            Color = GameTheme.SurfaceDeep,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        background.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(background);
+
+        // Full-rect CenterContainer so the card sits in the middle of the window at any
+        // supported resolution instead of hugging the top-left like the raw full-bleed layout.
+        var center = new CenterContainer { Name = "Center" };
+        center.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(center);
+
+        var card = new PanelContainer
+        {
+            Name = "Card",
+            CustomMinimumSize = new Vector2(CardWidth, 0),
+        };
+        card.AddThemeStyleboxOverride("panel", GameTheme.PanelStyleWood());
+        center.AddChild(card);
+
+        var margin = new MarginContainer { Name = "CardMargin" };
+        margin.AddThemeConstantOverride("margin_left", GameTheme.Space16);
+        margin.AddThemeConstantOverride("margin_right", GameTheme.Space16);
+        margin.AddThemeConstantOverride("margin_top", GameTheme.Space16);
+        margin.AddThemeConstantOverride("margin_bottom", GameTheme.Space16);
+        card.AddChild(margin);
+
+        var layout = new VBoxContainer { Name = "Layout" };
+        layout.AddThemeConstantOverride("separation", GameTheme.Space16);
+        margin.AddChild(layout);
+
+        var title = new Label
         {
             Name = "Title",
             Text = "Maker's Mark — choose your primary profession",
-        });
+            HorizontalAlignment = HorizontalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            ThemeTypeVariation = GameTheme.HeaderThemeType,
+        };
+        title.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        title.AddThemeFontSizeOverride("font_size", GameTheme.HeaderFontSize);
+        layout.AddChild(title);
 
         _picker = BuildProfessionPicker();
         layout.AddChild(_picker);
@@ -117,36 +174,49 @@ public partial class NewGameSelect : Control
     private VBoxContainer BuildProfessionPicker()
     {
         var picker = new VBoxContainer { Name = "ProfessionPicker" };
+        picker.AddThemeConstantOverride("separation", GameTheme.Space16);
 
         // Registry-driven (deterministic iteration: ImmutableSortedDictionary, Ordinal).
         foreach (var profession in ProfessionRegistry.All.Values)
         {
             var id = profession.Id;
+
+            // Button + blurb grouped tight (Space4) so the pair reads as one row; the outer
+            // picker's Space16 separation is what gives room BETWEEN professions.
+            var row = new VBoxContainer { Name = $"PickRow_{id}" };
+            row.AddThemeConstantOverride("separation", GameTheme.Space4);
+            picker.AddChild(row);
+
             var button = new Button
             {
                 Name = $"Pick_{id}",
                 Text = profession.DisplayName,
+                CustomMinimumSize = new Vector2(0, PickButtonHeight),
             };
             button.Pressed += () => OnProfessionPicked(id);
-            picker.AddChild(button);
+            row.AddChild(button);
 
-            picker.AddChild(new Label
+            var blurb = new Label
             {
                 Name = $"Blurb_{id}",
-                Text = Blurbs.TryGetValue(id, out var blurb) ? blurb : string.Empty,
+                Text = Blurbs.TryGetValue(id, out var text) ? text : string.Empty,
                 AutowrapMode = TextServer.AutowrapMode.WordSmart,
-            });
+            };
+            blurb.AddThemeColorOverride("font_color", GameTheme.TextDim);
+            row.AddChild(blurb);
         }
 
         // Starter kit is uniform across professions (GameFactory R4/KD3) — one shared note
-        // rather than four identical lines.
-        picker.AddChild(new Label
+        // rather than four identical lines. Quiet/dim: informational footnote, not a choice.
+        var starterKitNote = new Label
         {
             Name = "StarterKitNote",
             Text = $"Every craft starts the same day one: {GameFactory.StartingPlayerGold} gold and " +
                    $"{GameFactory.StarterCopper} copper — enough for a few tier-1 crafts right away.",
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
-        });
+        };
+        starterKitNote.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        picker.AddChild(starterKitNote);
 
         return picker;
     }
@@ -154,11 +224,21 @@ public partial class NewGameSelect : Control
     private VBoxContainer BuildPrimer()
     {
         var primer = new VBoxContainer { Name = "Primer" };
+        primer.AddThemeConstantOverride("separation", GameTheme.Space12);
 
-        primer.AddChild(new Label { Name = "PrimerTitle", Text = "Your first day" });
+        var primerTitle = new Label
+        {
+            Name = "PrimerTitle",
+            Text = "Your first day",
+            ThemeTypeVariation = GameTheme.HeaderThemeType,
+        };
+        primerTitle.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        primerTitle.AddThemeFontSizeOverride("font_size", GameTheme.HeaderFontSize);
+        primer.AddChild(primerTitle);
 
         // U7: the fantasy, stated once, before any mechanics — everything below this line is
-        // HOW the day works; this line is WHY it's worth playing.
+        // HOW the day works; this line is WHY it's worth playing. Full body color (not dimmed) —
+        // this is the one line on the whole screen meant to land, not a footnote.
         primer.AddChild(new Label
         {
             Name = "FantasyNote",
@@ -175,23 +255,47 @@ public partial class NewGameSelect : Control
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
         });
 
-        primer.AddChild(new Label
+        var clockNote = new Label
         {
             Name = "ClockNote",
             Text = ClockNote,
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
-        });
+        };
+        clockNote.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        primer.AddChild(clockNote);
 
         _seedLabel = new Label { Name = "SeedLabel", Text = "Seed: —" };
+        _seedLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
         primer.AddChild(_seedLabel);
 
-        var begin = new Button { Name = "Begin", Text = "Begin" };
-        begin.Pressed += OnBeginPressed;
-        primer.AddChild(begin);
+        var actions = new HBoxContainer { Name = "PrimerActions" };
+        actions.AddThemeConstantOverride("separation", GameTheme.Space12);
+        primer.AddChild(actions);
 
-        var back = new Button { Name = "Back", Text = "Back" };
+        // The one main verb on this screen — Ember/primary treatment, same as MainUi's
+        // StylePrimaryVerb (Advance) — so "Begin" reads as THE call to action, and "Back" (plain
+        // themed button) reads as the lesser, reversible one.
+        var begin = new Button
+        {
+            Name = "Begin",
+            Text = "Begin",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(0, PickButtonHeight),
+        };
+        begin.AddThemeStyleboxOverride("normal", GameTheme.ButtonStylePrimary());
+        begin.AddThemeStyleboxOverride("hover", GameTheme.ButtonStylePrimary(GameTheme.ButtonVisualState.Hover));
+        begin.AddThemeStyleboxOverride("pressed", GameTheme.ButtonStylePrimary(GameTheme.ButtonVisualState.Pressed));
+        begin.Pressed += OnBeginPressed;
+        actions.AddChild(begin);
+
+        var back = new Button
+        {
+            Name = "Back",
+            Text = "Back",
+            CustomMinimumSize = new Vector2(0, PickButtonHeight),
+        };
         back.Pressed += OnBackPressed;
-        primer.AddChild(back);
+        actions.AddChild(back);
 
         return primer;
     }
