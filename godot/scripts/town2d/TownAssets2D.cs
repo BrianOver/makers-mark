@@ -34,6 +34,21 @@ public static class TownAssets2D
     private static readonly Vector2 DefaultVenueSize = new(64, 64);
     private static readonly Color DefaultVenueColor = new(0.4f, 0.4f, 0.42f);
 
+    /// <summary>Per-prop placeholder footprint + tint — sizes match the real generated-art PNG
+    /// dimensions 1:1 (verified against <c>godot/assets/art/town2d-*.png</c>'s PNG headers) so
+    /// <see cref="TownLayout2D"/>'s hand-placed tile math holds whether or not the real art has
+    /// landed yet.</summary>
+    private static readonly Dictionary<string, (Vector2 Size, Color Color)> PropPlaceholders = new()
+    {
+        ["town2d-well"] = (new Vector2(32, 32), new Color(0.35f, 0.35f, 0.40f)),
+        ["town2d-prop-lantern"] = (new Vector2(8, 16), new Color(0.85f, 0.65f, 0.25f)),
+        ["town2d-prop-tree"] = (new Vector2(24, 32), new Color(0.16f, 0.34f, 0.18f)),
+        ["town2d-prop-crate"] = (new Vector2(16, 16), new Color(0.5f, 0.35f, 0.2f)),
+    };
+
+    private static readonly Vector2 DefaultPropSize = new(16, 16);
+    private static readonly Color DefaultPropColor = new(0.5f, 0.5f, 0.5f);
+
     /// <summary>Neutral body-sprite size for heroes/player (pivot plan asset-manifest row: 16×24) —
     /// bodies are drawn neutral-tinted so <see cref="HeroActor2D"/> can multiply in the class color
     /// via modulate (mirrors <see cref="IconRegistry.Sprite"/>'s own "bodies are neutral" contract).</summary>
@@ -59,6 +74,28 @@ public static class TownAssets2D
             ? entry
             : (DefaultVenueSize, DefaultVenueColor);
         return Placeholder($"venue:{spriteId}", size, color);
+    }
+
+    /// <summary>
+    /// Resolves a static prop's sprite (well/lantern/tree/crate): generated art first (<see
+    /// cref="IconRegistry.Art"/>, same manifest-backed ladder <see cref="ForVenue"/> uses — these
+    /// ids are already in the U6 pack, see <see cref="TownLayout2D.Props"/>'s doc), else a small
+    /// flat-color placeholder box sized/tinted per <paramref name="spriteId"/> so a fresh checkout
+    /// still reads as "a well/lantern/tree/crate", not a blank hole — mirrors <see cref="ForVenue"/>'s
+    /// exact fallback ladder, just against the prop table instead of the venue one.
+    /// </summary>
+    public static Texture2D ForProp(string spriteId)
+    {
+        var art = IconRegistry.Art(spriteId);
+        if (art is not null)
+        {
+            return art;
+        }
+
+        var (size, color) = PropPlaceholders.TryGetValue(spriteId, out var entry)
+            ? entry
+            : (DefaultPropSize, DefaultPropColor);
+        return Placeholder($"prop:{spriteId}", size, color);
     }
 
     /// <summary>

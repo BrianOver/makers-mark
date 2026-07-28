@@ -56,7 +56,7 @@ public partial class Town2D : Control
     /// <summary>Dusk-purple ambient tint (pivot plan §"Node architecture": "~#b9a3d0", i.e.
     /// RGB 185/163/208 normalized) — a literal float triple rather than a hex-string parse to
     /// avoid depending on a specific <see cref="Color"/> parsing overload being present.</summary>
-    private static readonly Color DuskTint = new(0.7255f, 0.6392f, 0.8157f);
+    private static readonly Color DuskTint = new(0.86f, 0.80f, 0.93f);
 
     public SubViewportContainer ViewportContainer { get; private set; } = null!;
     /// <summary>Named <c>WorldViewport</c> rather than <c>Viewport</c> to avoid shadowing the
@@ -160,6 +160,7 @@ public partial class Town2D : Control
         BuildingsRoot = new Node2D { Name = "Buildings" };
         YSort.AddChild(BuildingsRoot);
         BuildBuildings();
+        BuildProps();
 
         Player = new PlayerController2D { Name = "Player" };
         YSort.AddChild(Player);
@@ -475,6 +476,54 @@ public partial class Town2D : Control
         }
     }
 
+    /// <summary>Fallback footprint for a prop whose resolved texture reports a zero/negative size
+    /// (mirrors <see cref="Building2D"/>'s own <c>FallbackSize</c> guard) — small enough to stay
+    /// unobtrusive if it's ever hit.</summary>
+    private static readonly Vector2 PropFallbackSize = new(16f, 16f);
+
+    /// <summary>
+    /// Instantiates every <see cref="TownLayout2D.Props"/> entry (well, lanterns, trees, crates) —
+    /// called once from <see cref="Build"/>, right after <see cref="BuildBuildings"/> so <see
+    /// cref="YSort"/> already exists. Each prop is a bare <see cref="Sprite2D"/> positioned via the
+    /// SAME feet-origin convention <see cref="Building2D.Configure"/> uses for buildings (<see
+    /// cref="Sprite2D.Offset"/> shifted up by half the sprite's height so its BOTTOM edge lands on
+    /// <see cref="TownLayout2D.TileToWorld"/>'s tile-center position) — required for <see
+    /// cref="YSort"/>'s <c>YSortEnabled</c> parent to sort heroes/the player correctly in front of
+    /// or behind a tall prop like a tree or the well, exactly as it already does for buildings.
+    /// Y-sorted props mount under <see cref="YSort"/>; a flat (non-Y-sorted) prop would mount under
+    /// <see cref="Ground"/> instead, but <see cref="TownLayout2D.Props"/> has none of those yet.
+    /// </summary>
+    private void BuildProps()
+    {
+        foreach (var prop in TownLayout2D.Props)
+        {
+            var sprite = TownAssets2D.ForProp(prop.SpriteId);
+            var size = sprite?.GetSize() ?? PropFallbackSize;
+            if (size.X <= 0f || size.Y <= 0f)
+            {
+                size = PropFallbackSize;
+            }
+
+            var node = new Sprite2D
+            {
+                Name = $"Prop_{prop.SpriteId}_{prop.Tile.X}_{prop.Tile.Y}",
+                Texture = sprite,
+                Centered = true,
+                Offset = new Vector2(0f, -size.Y / 2f), // bottom edge lands on the tile's center (feet-origin)
+                Position = TownLayout2D.TileToWorld(prop.Tile),
+            };
+
+            if (prop.YSorted)
+            {
+                YSort.AddChild(node);
+            }
+            else
+            {
+                Ground.AddChild(node);
+            }
+        }
+    }
+
     /// <summary>Locates the forge building and wires a glow overlay + spark/steam particles near
     /// its door — called once at the tail of <see cref="Build"/>, after <see cref="BuildBuildings"/>
     /// has configured every <see cref="Building2D"/> (mirrors <c>Town3D.WireForgeStationVfx</c>'s
@@ -540,9 +589,11 @@ public partial class Town2D : Control
     /// <summary>
     /// Paints the whole grid with a flat grass tile (a one-tone <see cref="TileMapLayer"/> — no
     /// autotile logic in this slice, U6/U7 swap in a real ground atlas by replacing <see
-    /// cref="BuildTileSet"/>'s source image) plus a single cobbled path tile at every venue's door
-    /// row, purely for legibility (decoration only — <see cref="Building2D"/> carries its own
-    /// blocking <c>Footprint</c>, so nothing here needs collision).
+    /// cref="BuildTileSet"/>'s source image), then paints every tile inside <see
+    /// cref="TownLayout2D.PathRects"/> with the cobble tile — the plaza/road/spur network reading
+    /// as one continuous cozy-village street, purely for legibility (decoration only — <see
+    /// cref="Building2D"/> carries its own blocking <c>Footprint</c>, so nothing here needs
+    /// collision).
     /// </summary>
     private static TileMapLayer BuildGround()
     {
@@ -556,39 +607,41 @@ public partial class Town2D : Control
             }
         }
 
-        foreach (var venue in TownLayout2D.Venues)
+        foreach (var rect in TownLayout2D.PathRects)
         {
-            layer.SetCell(venue.Tile + new Vector2I(0, 1), 0, PathAtlasCoord);
+            for (var y = rect.Position.Y; y < rect.Position.Y + rect.Size.Y; y++)
+            {
+                for (var x = rect.Position.X; x < rect.Position.X + rect.Size.X; x++)
+                {
+                    layer.SetCell(new Vector2I(x, y), 0, CobbleAtlasCoord);
+                }
+            }
         }
 
         return layer;
     }
 
     private static readonly Vector2I GrassAtlasCoord = new(0, 0);
-    private static readonly Vector2I PathAtlasCoord = new(1, 0);
-    private static readonly Vector2I CobbleAtlasCoord = new(2, 0);
+    private static readonly Vector2I CobbleAtlasCoord = new(1, 0);
 
     private static readonly Color GrassColor = new(0.30f, 0.45f, 0.22f);
-    private static readonly Color PathColor = new(0.55f, 0.48f, 0.35f);
     private static readonly Color CobbleColor = new(0.42f, 0.40f, 0.38f);
 
     /// <summary>
-    /// A minimal 3-tile flat-color atlas (grass/path/cobble) built entirely in code — no <c>.tres</c>
+    /// A minimal 2-tile flat-color atlas (grass/cobble) built entirely in code — no <c>.tres</c>
     /// churn, no imported ground art required for the slice to run. U6/U7 replace <see
     /// cref="GrassColor"/>/etc. (or the whole method) with a real imported atlas texture without
     /// touching <see cref="BuildGround"/>'s cell-painting logic.
     /// </summary>
     private static TileSet BuildTileSet()
     {
-        var image = Image.CreateEmpty(TileSize * 3, TileSize, false, Image.Format.Rgba8);
+        var image = Image.CreateEmpty(TileSize * 2, TileSize, false, Image.Format.Rgba8);
         image.FillRect(new Rect2I(0, 0, TileSize, TileSize), GrassColor);
-        image.FillRect(new Rect2I(TileSize, 0, TileSize, TileSize), PathColor);
-        image.FillRect(new Rect2I(TileSize * 2, 0, TileSize, TileSize), CobbleColor);
+        image.FillRect(new Rect2I(TileSize, 0, TileSize, TileSize), CobbleColor);
         var texture = ImageTexture.CreateFromImage(image);
 
         var atlas = new TileSetAtlasSource { Texture = texture, TextureRegionSize = new Vector2I(TileSize, TileSize) };
         atlas.CreateTile(GrassAtlasCoord);
-        atlas.CreateTile(PathAtlasCoord);
         atlas.CreateTile(CobbleAtlasCoord);
 
         var tileSet = new TileSet { TileSize = new Vector2I(TileSize, TileSize) };

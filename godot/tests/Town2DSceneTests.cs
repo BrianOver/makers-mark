@@ -85,5 +85,38 @@ public class Town2DSceneTests
         }
         finally { town.Free(); }
     }
+
+    [TestCase]
+    public void Town2D_Built_PlazaTileIsCobbled()
+    {
+        var town = Mount();
+        try
+        {
+            // Plaza center (see TownLayout2D.PathRects' plaza rect) must be cobble, not grass — the
+            // cozy-village cluster reads as a paved square, not a gap in a grass field.
+            var cell = town.Ground.GetCellAtlasCoords(new Vector2I(20, 15));
+
+            AssertThat(cell)
+                .OverrideFailureMessage("Plaza tile (20,15) must be cobbled — TownLayout2D.PathRects regressed")
+                .IsEqual(new Vector2I(1, 0));
+        }
+        finally { town.Free(); }
+    }
+
+    [TestCase]
+    public void Town2D_Built_PlacesEveryConfiguredProp()
+    {
+        var town = Mount();
+        try
+        {
+            var propNodes = town.YSort.GetChildren()
+                .Count(child => child.Name.ToString().StartsWith("Prop_"));
+
+            AssertThat(propNodes)
+                .OverrideFailureMessage("Every TownLayout2D.Props entry must mount a Prop_* node under YSort — BuildProps regressed")
+                .IsEqual(TownLayout2D.Props.Length);
+        }
+        finally { town.Free(); }
+    }
 }
 #endif
