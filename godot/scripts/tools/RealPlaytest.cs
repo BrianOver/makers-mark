@@ -78,8 +78,98 @@ public partial class RealPlaytest : Node
         for (int i = 0; i < 4; i++) { adapter.AdvancePhase(); await Settle(10); }
         Shot("08_dayend");
 
+        // ── 4. Second real boot: the ALCHEMIST, to cover its own minigame (the brew puzzle) ──
+        RemoveChild(ui); ui.QueueFree();
+        await DriveAlchemistBrew();
+
         GD.Print("[realplaytest] done");
         GetTree().Quit();
+    }
+
+    /// <summary>Boots a REAL second campaign as the alchemist (the front door again, real profession
+    /// pick + Begin) and drives its brew puzzle with real interaction — pressing the real "Brew"
+    /// button, pouring reagents in the recipe's order, and submitting — so BOTH professions'
+    /// minigames are exercised every playtest.</summary>
+    private async Task DriveAlchemistBrew()
+    {
+        var select = GD.Load<PackedScene>("res://scenes/new_game_select.tscn").Instantiate<NewGameSelect>();
+        string? requested = null;
+        select.SceneChange = path => requested = path;
+        AddChild(select);
+        await Settle(6);
+
+        Press(select, $"Pick_{AlchemyProfession.Id}");
+        await Settle(6);
+        Press(select, "Begin");
+        await Settle(4);
+        RemoveChild(select); select.QueueFree();
+
+        var ui = GD.Load<PackedScene>(requested ?? "res://scenes/panels/main_ui.tscn").Instantiate<MainUi>();
+        AddChild(ui);
+        await Settle(20);
+
+        var adapter = ui.Adapter;
+        ui.OpenPanel("Forge");
+        await Settle(8);
+
+        Button? FindBrew() => ui.FindChild("Brew_*", recursive: true, owned: false) as Button;
+        var brew = FindBrew();
+        if (brew is null || brew.Disabled)
+        {
+            for (int pass = 0; pass < 2; pass++)
+                foreach (var a in ActionLegality.LegalActions(adapter.CurrentState, adapter.CurrentState.Phase))
+                    if (a.GetType().Name.Contains("BuyMaterial")) adapter.Queue(a);
+            adapter.AdvancePhase();
+            await Settle(6);
+            ui.OpenPanel("Forge");
+            await Settle(8);
+            brew = FindBrew();
+        }
+
+        if (brew is null || brew.Disabled)
+        {
+            GD.Print($"[realplaytest] brew SKIPPED — Brew button {(brew is null ? "not found" : "gated")}");
+            Shot("09_brew_nomini");
+            return;
+        }
+
+        brew.EmitSignal(BaseButton.SignalName.Pressed);
+        await Settle(6);
+        if (ui.FindChild("AlchemyBrewPuzzle", recursive: true, owned: false) is not AlchemyBrewPuzzle bp)
+        {
+            GD.Print("[realplaytest] brew ERROR — AlchemyBrewPuzzle node not found after press");
+            return;
+        }
+
+        Shot("09_brew_open");
+
+        // Real interaction: pour the recipe in order, but deliberately fumble ONE pour so the
+        // wrong-pour feedback (red socket ring + fizzle) is exercised too, then fix it with Undo.
+        var ideal = AlchemyPuzzleScorer.IdealSequenceFor(
+            ProfessionRegistry.TryGetRecipe(bp.RecipeId, out var recipe) ? recipe! : null!);
+        for (int i = 0; i < bp.RequiredPours && i < ideal.Count; i++)
+        {
+            if (i == 1)
+            {
+                bp.PourReagent((ideal[i] + 1) % AlchemyReagents.Count); // wrong on purpose
+                await Settle(24);
+                Shot("09a_brew_wrongpour");
+                bp.UndoPour();
+                await Settle(8);
+            }
+
+            bp.PourReagent(ideal[i]);
+            await Settle(24);
+        }
+
+        Shot("09b_brew_filled");
+        bp.Submit();
+        await Settle(10);
+        Shot("09c_brew_result");
+
+        GD.Print($"[realplaytest] brew: poured={bp.Poured.Count}/{bp.RequiredPours} completed={bp.Completed} " +
+                 $"emitted={(bp.EmittedAction is null ? "NULL" : bp.EmittedAction.RecipeId)} " +
+                 $"subScores={(bp.EmittedAction?.SubScores is null ? "-" : string.Join("/", bp.EmittedAction.SubScores))}");
     }
 
     /// <summary>Drives the real blacksmith Anvil Map minigame end-to-end with real interaction:
