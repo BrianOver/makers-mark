@@ -103,7 +103,15 @@ public partial class ScreenshotTool : Node
             QueueByName("Stock", 1);
             adapter.AdvancePhase(); await Settle(8);
             LogState($"advance-{i}");
-            if (i == 0) CaptureWindow(OutDir + "ap_3_expedition.png");
+            if (i == 0)
+            {
+                CaptureWindow(OutDir + "ap_3_expedition.png");
+                // Watch the adventure: open the Depths/delve panel while a party is in the Mine and
+                // pump frames so the delve-stage playhead reveals combat beats.
+                ui.OpenPanel("Depths");
+                await Settle(200);
+                CaptureWindow(OutDir + "ap_delve.png");
+            }
         }
         CaptureWindow(OutDir + "ap_4_dayend.png");
 

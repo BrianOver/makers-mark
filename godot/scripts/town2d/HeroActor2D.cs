@@ -89,6 +89,21 @@ public partial class HeroActor2D : Node2D
     private Vector2 _logicalPosition;
     private Vector2 _walkTarget;
 
+    /// <summary>M2: per-actor walk/idle pose driver — phase-seeded from <see cref="HeroIdValue"/>
+    /// (constructed in <see cref="Init"/>, once the id is known) so a town full of idle heroes
+    /// doesn't breathe in lockstep (mirrors the id-&gt;motion wander-phase idiom above).</summary>
+    private SpriteMotion _motion = null!;
+
+    /// <summary>Base (non-step) resolved sprite texture, cached so <see cref="ApplySpritePose"/>
+    /// can swap back to it whenever <see cref="SpriteMotion.Pose.StepFrameB"/> is false.</summary>
+    private Texture2D _baseTex = null!;
+
+    /// <summary>M4-derived step-B texture (<c>"town2d-hero-{ClassId}_step"</c>), resolved through
+    /// the same <see cref="IconRegistry.Art"/> ladder <see cref="TownAssets2D.ForHero"/> uses for
+    /// the base texture — null-tolerant: stays null until the M4 derivation script + gen batch
+    /// land it, in which case <see cref="ApplySpritePose"/> just keeps showing the base texture.</summary>
+    private Texture2D? _stepTex;
+
     /// <summary>
     /// Build the sprite + pick zone and pin the deterministic wander parameters. Mirrors
     /// <c>HeroActor3D.Configure</c> — <paramref name="spawn"/> becomes both <see cref="Home"/>
@@ -120,6 +135,13 @@ public partial class HeroActor2D : Node2D
 
         Sprite = BuildSprite(sprite, classColor);
         AddChild(Sprite);
+
+        // M2: cache the base/step textures + construct the pose driver now that heroId/classId
+        // are known — same id + "_step" suffix, resolved through the same IconRegistry.Art ladder
+        // TownAssets2D.ForHero used for the base (null-tolerant: no _step art until M4 lands it).
+        _baseTex = sprite;
+        _stepTex = IconRegistry.Art($"town2d-hero-{classId}_step");
+        _motion = new SpriteMotion(heroId * 1.7f);
 
         Pick = BuildPick();
         AddChild(Pick);
@@ -208,8 +230,30 @@ public partial class HeroActor2D : Node2D
             _ => _logicalPosition, // Away: frozen, invisible anyway
         };
 
-        Face(basePos - Position);
+        var moved = basePos - Position;
+        Face(moved);
+
+        // M2: velocity feeds the walk/idle pose driver only — Position (the Y-sort/feet
+        // baseline) is set from basePos exactly as it was before pose existed; the pose itself is
+        // applied to the CHILD Sprite2D only, below (see ApplySpritePose).
+        var velocity = delta > 0.0 ? moved / (float)delta : Vector2.Zero;
         Position = basePos;
+
+        var pose = _motion.Advance(delta, velocity, WalkSpeed);
+        ApplySpritePose(pose);
+    }
+
+    /// <summary>Applies a <see cref="SpriteMotion.Pose"/> to the CHILD <see cref="Sprite"/> only —
+    /// exactly the feet-compensation contract documented on <see cref="SpriteMotion.Pose"/> — NEVER
+    /// to this actor's own <see cref="Position"/> (Y-sort key/feet baseline).</summary>
+    private void ApplySpritePose(SpriteMotion.Pose pose)
+    {
+        Sprite.Offset = new Vector2(
+            0,
+            -_spriteHeight / 2f + pose.BobY + _spriteHeight / 2f * (1f - pose.Scale.Y));
+        Sprite.Rotation = pose.LeanRadians;
+        Sprite.Scale = pose.Scale;
+        Sprite.Texture = pose.StepFrameB && _stepTex != null ? _stepTex : _baseTex;
     }
 
     /// <summary>Deterministic lissajous drift for the current accumulated time (pure function of

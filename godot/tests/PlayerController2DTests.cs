@@ -73,6 +73,149 @@ public class PlayerController2DTests
         }
     }
 
+    /// <summary>M3 (animation plan Part 1): the player previously had no left-facing at all — <see
+    /// cref="PlayerController2D._Process"/> now flips the CHILD <see cref="Sprite"/> via <see
+    /// cref="Sprite2D.FlipH"/> off <see cref="CharacterBody2D.Velocity"/>.X.</summary>
+    [TestCase]
+    public async Task Wasd_Left_FlipsSpriteToFaceLeft_Right_UnflipsIt()
+    {
+        var player = Mount();
+        try
+        {
+            player.SpawnAt(new Vector2(100, 100));
+
+            player.SetDirectInput(new Vector2(-1, 0));
+            try
+            {
+                await PumpWorldFrames(player, 10);
+            }
+            finally
+            {
+                player.SetDirectInput(null);
+            }
+
+            AssertThat(player.Sprite.FlipH)
+                .OverrideFailureMessage("moving left did not flip the sprite to face left").IsTrue();
+
+            player.SetDirectInput(new Vector2(1, 0));
+            try
+            {
+                await PumpWorldFrames(player, 10);
+            }
+            finally
+            {
+                player.SetDirectInput(null);
+            }
+
+            AssertThat(player.Sprite.FlipH)
+                .OverrideFailureMessage("moving right did not restore the base (unflipped) facing").IsFalse();
+        }
+        finally
+        {
+            player.QueueFree();
+        }
+    }
+
+    /// <summary>M3: an idle player (no WASD, no seek) still breathes — <see cref="SpriteMotion"/>'s
+    /// idle pose oscillates <see cref="Sprite2D.Scale"/> even at zero <see
+    /// cref="CharacterBody2D.Velocity"/> — while the actor's own <see cref="Node2D.Position"/> (the
+    /// Y-sort key/feet baseline) never moves, since the driver only ever touches the CHILD
+    /// sprite.</summary>
+    [TestCase]
+    public async Task Idle_SpriteBreathes_ButPositionNeverMoves()
+    {
+        var player = Mount();
+        try
+        {
+            player.SpawnAt(new Vector2(200, 200));
+            var start = player.Position;
+
+            var minScaleY = float.MaxValue;
+            var maxScaleY = float.MinValue;
+            for (var i = 0; i < 90; i++)
+            {
+                await PumpWorldFrames(player, 1);
+                minScaleY = Mathf.Min(minScaleY, player.Sprite.Scale.Y);
+                maxScaleY = Mathf.Max(maxScaleY, player.Sprite.Scale.Y);
+            }
+
+            var swing = maxScaleY - minScaleY;
+            AssertThat(swing > 0.3f * SpriteMotion.BreathAmplitude)
+                .OverrideFailureMessage(
+                    $"idle sprite never showed a breathing scale swing (min={minScaleY}, max={maxScaleY})").IsTrue();
+            AssertThat(swing < 3f * SpriteMotion.BreathAmplitude)
+                .OverrideFailureMessage(
+                    $"idle breathing swing implausibly large (min={minScaleY}, max={maxScaleY})").IsTrue();
+
+            AssertThat(player.Position.DistanceTo(start) < 0.01f)
+                .OverrideFailureMessage($"idle breathing moved Position: {start} -> {player.Position}").IsTrue();
+        }
+        finally
+        {
+            player.QueueFree();
+        }
+    }
+
+    /// <summary>
+    /// M3 feet-compensation contract (<see cref="SpriteMotion.Pose"/> doc comment): whenever the
+    /// footfall squash ISN'T active (<see cref="Sprite2D.Scale"/>.Y == 1, the overwhelming majority
+    /// of walk frames), the offset formula collapses exactly to <c>Offset.Y == -h/2 + BobY</c> —
+    /// i.e. the sprite's bottom edge tracks <c>Position.Y + BobY</c>, never drifting off <see
+    /// cref="Node2D.Position"/> (the Y-sort key/feet baseline) by more than the walk bob's own
+    /// amplitude. Inverts the SAME documented formula the production code applies (using only
+    /// <see cref="SpriteMotion"/>'s own public tuning constants as the independent expectation) so
+    /// a sign flip, a dropped term, or a forgotten compensation would fail this even though the
+    /// test never reasons about engine-internal rendering geometry.
+    /// </summary>
+    [TestCase]
+    public async Task Walking_FeetOffsetInvariant_TracksPositionPlusBobY()
+    {
+        var player = Mount();
+        try
+        {
+            player.SpawnAt(new Vector2(300, 300));
+            var h = player.Sprite.Texture.GetHeight();
+
+            player.SetDirectInput(new Vector2(1, 0)); // steady walk — well above WalkSpeedThreshold
+            var minImpliedBobY = float.MaxValue;
+            try
+            {
+                for (var i = 0; i < 60; i++)
+                {
+                    await PumpWorldFrames(player, 1);
+
+                    var scaleY = player.Sprite.Scale.Y;
+                    var offsetY = player.Sprite.Offset.Y;
+
+                    // Invert the documented formula:
+                    // offsetY == -h/2 + bobY + h/2*(1-scaleY)  =>  bobY == offsetY + h/2*scaleY
+                    var impliedBobY = offsetY + h / 2f * scaleY;
+                    minImpliedBobY = Mathf.Min(minImpliedBobY, impliedBobY);
+
+                    // Generous bound: BobY itself never exceeds [-BobAmplitude, 0], plus slack for
+                    // the footfall-squash cross-term the linear compensation doesn't fully cancel.
+                    var slack = SpriteMotion.BobAmplitude + 3f;
+                    AssertThat(impliedBobY > -slack && impliedBobY < slack)
+                        .OverrideFailureMessage(
+                            $"feet drifted off Position by an implausible amount at frame {i}: " +
+                            $"impliedBobY={impliedBobY}, offsetY={offsetY}, scaleY={scaleY}, h={h}").IsTrue();
+                }
+            }
+            finally
+            {
+                player.SetDirectInput(null);
+            }
+
+            AssertThat(minImpliedBobY < -0.3f)
+                .OverrideFailureMessage(
+                    $"walk bob never showed up in the applied offset (minImpliedBobY={minImpliedBobY})").IsTrue();
+        }
+        finally
+        {
+            player.QueueFree();
+        }
+    }
+
     [TestCase]
     public async Task SetInputEnabled_False_IgnoresWasdAndZeroesVelocity()
     {

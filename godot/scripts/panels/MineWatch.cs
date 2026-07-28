@@ -98,7 +98,7 @@ public partial class MineWatch : SubViewportContainer
         "cave-rat", "tunnel-spider", "deep-ghoul", "ore-golem", "forgeworm",
     ];
 
-    private readonly record struct Figure(Sprite2D Sprite, Vector2 BasePosition, float Phase);
+    private readonly record struct Figure(Sprite2D Sprite, Vector2 BasePosition, float Phase, HeroId HeroId);
 
     private SubViewport _viewport = null!;
     private Node2D _world = null!;
@@ -127,6 +127,25 @@ public partial class MineWatch : SubViewportContainer
     /// lives on the bigger <c>ScryingMirror</c> surface this strip's click expands to.</summary>
     private readonly JourneyFeed _feed = new();
     private Label _feedLabel = null!;
+
+    /// <summary>A2 (+A3 FX), plan <c>2026-07-28-001</c> Part 2: the beat-driven combat overlay
+    /// (floor chip, current-floor monster + HP bar, hit/quaff/death-cloud FX) layered over the
+    /// figures built above. Mounted as a sibling of <see cref="_world"/> (never a descendant) —
+    /// same "never dark-tinted" reasoning as <see cref="_recordBark"/>/<see cref="_feedLabel"/>.
+    /// Reads the SAME <see cref="DelveBeats"/> projection <see cref="_feed"/>'s caption line
+    /// reads, via its OWN <see cref="JourneyPlayhead"/> (<see cref="_delveHead"/>) bound on the
+    /// <see cref="DelveBeat"/> count — a second, independent time-stretch of the same underlying
+    /// story, exactly the "delve stage = 3rd renderer of the same feed" the plan calls for.</summary>
+    private DelveStage _delveStage = null!;
+
+    private ImmutableList<DelveBeat> _delveBeats = ImmutableList<DelveBeat>.Empty;
+    private readonly JourneyPlayhead _delveHead = new();
+    private int _delvePartyKey = int.MinValue;
+    private int _delveRendered;
+    private ImmutableSortedDictionary<int, Hero> _delveHeroes = ImmutableSortedDictionary<int, Hero>.Empty;
+
+    /// <summary>The beat-driven overlay (test/tuning hook).</summary>
+    public DelveStage Delve => _delveStage;
 
     /// <summary>The currently revealed feed lines for the tracked party, in recorded order — the
     /// test hook AE2/KTD5 scenarios assert against (never contains a death round's real text).</summary>
@@ -295,6 +314,12 @@ public partial class MineWatch : SubViewportContainer
         };
         _viewport.AddChild(_feedLabel);
 
+        // A2: sibling of _world (never dark-tinted), drawn after the feed label so its floor
+        // chip/monster/FX composite on top of everything else in the strip.
+        _delveStage = new DelveStage();
+        _delveStage.Build();
+        _viewport.AddChild(_delveStage);
+
         _built = true;
     }
 
@@ -358,6 +383,44 @@ public partial class MineWatch : SubViewportContainer
         CustomMinimumSize = Visible ? new Vector2(0, StripHeight) : Vector2.Zero;
 
         UpdateFeedLabel();
+        RefreshDelveBeats(state, live);
+    }
+
+    /// <summary>
+    /// A2: (re)source this tick's <see cref="DelveBeat"/> timeline for the beat-driven overlay —
+    /// a staged party's stage-1 floors (<see cref="GameState.InFlight"/>) if one is parked, else
+    /// the tracked party's finalized result (<see cref="GameState.PendingExpeditions"/>) if it
+    /// resolved whole without ever staging (the ONLY source that can ever carry a <see
+    /// cref="DelveBeatKind.SwallowedByDark"/> beat — <see cref="InFlightExpedition.Dead"/> is
+    /// always empty in v1, so a staged party's beats never contain one; only a finalized <see
+    /// cref="ExpeditionResult"/> can). Rebinds <see cref="_delveHead"/> on the SAME stable party
+    /// key <see cref="JourneyStream.PartyKeyOf"/> gives <see cref="_feed"/>'s own cards, and resets
+    /// the whole overlay (<see cref="DelveStage.ResetState"/>) whenever that key changes — a new
+    /// tracked party, or the day rolling over to nothing tracked at all.
+    /// </summary>
+    private void RefreshDelveBeats(GameState state, bool live)
+    {
+        var staged = live && !state.InFlight.IsEmpty ? state.InFlight[0] : null;
+        var resolved = live && staged is null && !state.PendingExpeditions.IsEmpty ? state.PendingExpeditions[0] : null;
+
+        var beats = staged is not null
+            ? DelveBeats.Build(staged, state.Heroes)
+            : resolved is not null
+                ? DelveBeats.Build(resolved, state.Heroes)
+                : ImmutableList<DelveBeat>.Empty;
+        var party = staged?.Party ?? resolved?.Party ?? ImmutableList<HeroId>.Empty;
+        var partyKey = party.IsEmpty ? int.MinValue : JourneyStream.PartyKeyOf(party);
+
+        if (partyKey != _delvePartyKey)
+        {
+            _delvePartyKey = partyKey;
+            _delveRendered = 0;
+            _delveStage.ResetState();
+        }
+
+        _delveBeats = beats;
+        _delveHeroes = state.Heroes;
+        _delveHead.Bind(partyKey, beats.Count, PhaseClock.DurationOf(state.Phase));
     }
 
     public override void _Process(double delta)
@@ -397,7 +460,27 @@ public partial class MineWatch : SubViewportContainer
         // engaged surface keeps the feed flowing per KTD3), wired via Clock/DepthsPanel.
         _feed.Advance(delta, paused: Clock is not null && !Clock.Playing);
         UpdateFeedLabel();
+
+        // A2 (+A3 FX): the beat-driven overlay's own playhead, same pause contract as _feed above.
+        // SyncHeroSprites runs BEFORE any beat renders and BEFORE DelveStage.Process, so FX always
+        // target this frame's already-bobbed figure (AnimateFigures ran earlier this same call).
+        _delveStage.SyncHeroSprites(BuildHeroSpriteMap());
+        _delveHead.Advance(delta, paused: Clock is not null && !Clock.Playing);
+        var revealTarget = Math.Min(_delveHead.Revealed, _delveBeats.Count);
+        for (; _delveRendered < revealTarget; _delveRendered++)
+        {
+            _delveStage.RenderBeat(_delveBeats[_delveRendered], _delveHeroes);
+        }
+
+        _delveStage.Process((float)delta);
     }
+
+    /// <summary>Hero→sprite map for <see cref="DelveStage.SyncHeroSprites"/> — whichever figure
+    /// <see cref="RenderMarch"/>/<see cref="RenderCamp"/> already built for each hero this tick,
+    /// so the overlay's FX always land on the SAME body the player has been watching, never a
+    /// duplicate (see <see cref="DelveStage"/> type remarks).</summary>
+    private Dictionary<int, Sprite2D> BuildHeroSpriteMap() =>
+        _figures.ToDictionary(f => f.HeroId.Value, f => f.Sprite);
 
     /// <summary>Renders the tracked party's revealed beats (KTD11 time-stretch) as up to
     /// <see cref="FeedVisibleLines"/> lines, falling back to the rumor line (Expedition phase, no
@@ -449,7 +532,7 @@ public partial class MineWatch : SubViewportContainer
                 continue; // per-figure graceful degrade — unshipped class art
             }
 
-            _figures.Add(new Figure(sprite, sprite.Position, placed * 1.3f));
+            _figures.Add(new Figure(sprite, sprite.Position, placed * 1.3f, party[i]));
             if (placed == 0)
             {
                 _torch.Position = sprite.Position + new Vector2(20, -46);
@@ -489,7 +572,7 @@ public partial class MineWatch : SubViewportContainer
                 continue;
             }
 
-            _figures.Add(new Figure(sprite, basePos, placed * 1.3f));
+            _figures.Add(new Figure(sprite, basePos, placed * 1.3f, heroId));
             placed++;
         }
 

@@ -29,6 +29,13 @@ public partial class PlayerController2D : CharacterBody2D
     /// player is still visible and clickable-adjacent before art lands.</summary>
     public const string PlayerSpriteId = "player_smith";
 
+    /// <summary>M4-derived 2-frame step-swap id (animation plan Part 1) — a step-B variant of
+    /// <see cref="PlayerSpriteId"/> the walk pose swaps to on alternating footfalls (<see
+    /// cref="SpriteMotion.Pose.StepFrameB"/>). M4 hasn't landed yet (no derived PNG committed), so
+    /// <see cref="ResolveStepTexture"/> is null-tolerant: missing id/asset just keeps the base
+    /// texture, never a crash and never a placeholder-box swap.</summary>
+    public const string PlayerStepSpriteId = "player_smith_step";
+
     /// <summary>Programmer-art placeholder size (16x24, matches the pivot plan's asset manifest
     /// row for "Player smith") — sizes the flat-color fallback texture only. The feet-offset is no
     /// longer computed from this constant; <see cref="BuildSprite"/> reads it off whichever
@@ -37,6 +44,29 @@ public partial class PlayerController2D : CharacterBody2D
     private static readonly Vector2 PlaceholderSize = new(16, 24);
 
     public Sprite2D Sprite { get; private set; } = null!;
+
+    /// <summary>M3: the pure pose driver (animation plan Part 1) — a single-actor instance (no
+    /// per-hero phase-seed spread needed; there is only one player), advanced every <see
+    /// cref="_Process"/> and applied to the CHILD <see cref="Sprite"/> only, never this body's own
+    /// <see cref="Node2D.Position"/> (the Y-sort key/feet baseline).</summary>
+    private readonly SpriteMotion _motion = new(phaseSeed: 0f);
+
+    /// <summary>The RESOLVED sprite's own texture height, captured once in <see cref="_Ready"/> —
+    /// the same value <see cref="BuildSprite"/> already derives the resting feet-offset from (see
+    /// its own doc comment); <see cref="_Process"/> reuses it every frame for the
+    /// <see cref="SpriteMotion.Pose"/> feet-compensation math instead of re-resolving/re-measuring
+    /// the texture per frame.</summary>
+    private float _spriteHeight;
+
+    /// <summary>The base (non-step) resolved texture, captured once in <see cref="_Ready"/> so
+    /// <see cref="_Process"/> can swap back to it on non-step-B frames without re-resolving.</summary>
+    private Texture2D _baseTex = null!;
+
+    /// <summary>The <see cref="PlayerStepSpriteId"/> texture if committed, else null (M4 not yet
+    /// landed in this worktree) — <see cref="_Process"/> only swaps to it when non-null; a missing
+    /// step frame just holds the base texture on every frame instead of crashing or flashing a
+    /// placeholder box.</summary>
+    private Texture2D? _stepTex;
 
     /// <summary>Non-null while a <see cref="MoveToTile"/> seek is in progress; cleared on arrival
     /// (within <see cref="ArriveThreshold"/> of the target) or the instant nonzero WASD input
@@ -62,6 +92,43 @@ public partial class PlayerController2D : CharacterBody2D
     {
         Sprite = BuildSprite();
         AddChild(Sprite);
+
+        // Same resolved texture BuildSprite already sized the resting feet-offset from — capture
+        // it once rather than re-resolving per frame in _Process.
+        _baseTex = (Texture2D)Sprite.Texture;
+        _spriteHeight = _baseTex.GetHeight();
+        _stepTex = ResolveStepTexture();
+    }
+
+    /// <summary>
+    /// M3 (animation plan Part 1): advance the pure <see cref="SpriteMotion"/> driver and apply
+    /// the resulting <see cref="SpriteMotion.Pose"/> to the CHILD <see cref="Sprite"/> only — walk
+    /// bob/squash/lean/step-swap, idle breathing, and left/right facing. Deliberately separate from
+    /// <see cref="_PhysicsProcess"/> (untouched): movement stays physics-ticked, this is a
+    /// presentation-only per-frame cosmetic layer over whatever <see cref="Velocity"/> physics
+    /// already settled on. Never writes <see cref="Node2D.Position"/> (the Y-sort key/feet
+    /// baseline) — only <see cref="Sprite2D.Offset"/>/<see cref="Sprite2D.Rotation"/>/
+    /// <see cref="Sprite2D.Scale"/>/<see cref="Sprite2D.Texture"/>/<see cref="Sprite2D.FlipH"/>.
+    /// </summary>
+    public override void _Process(double delta)
+    {
+        var pose = _motion.Advance(delta, Velocity, Speed);
+
+        // Feet-compensation contract (SpriteMotion.Pose doc comment): squash/breath scale around
+        // the sprite's own center, so any Scale.Y != 1 frame must add h/2*(1-Scale.Y) back into the
+        // offset or the character appears to sink/float instead of keeping its feet planted.
+        Sprite.Offset = new Vector2(
+            0,
+            -_spriteHeight / 2f + pose.BobY + _spriteHeight / 2f * (1f - pose.Scale.Y));
+        Sprite.Rotation = pose.LeanRadians;
+        Sprite.Scale = pose.Scale;
+        Sprite.Texture = pose.StepFrameB && _stepTex != null ? _stepTex : _baseTex;
+
+        // Facing: flip-only (single ¾-side-view art), player currently had no left-facing at all.
+        if (Mathf.Abs(Velocity.X) > 1f)
+        {
+            Sprite.FlipH = Velocity.X < 0;
+        }
     }
 
     /// <summary>Test/production seam: pass <c>null</c> to fall back to real <see cref="Input"/>.</summary>
@@ -190,6 +257,28 @@ public partial class PlayerController2D : CharacterBody2D
         }
 
         return BuildFallbackTexture();
+    }
+
+    /// <summary>Null-tolerant M4 step-frame resolution (<see cref="PlayerStepSpriteId"/>):
+    /// generated PNG first, then a hand-authored SVG, else <c>null</c> — deliberately NO
+    /// placeholder-box fallback here (unlike <see cref="ResolvePlayerTexture"/>), since a missing
+    /// step frame should just mean "hold the base texture every frame", not flash a placeholder
+    /// box mid-stride. <see cref="_Process"/> only swaps to this when non-null.</summary>
+    private static Texture2D? ResolveStepTexture()
+    {
+        var generated = IconRegistry.Art(PlayerStepSpriteId);
+        if (generated is not null)
+        {
+            return generated;
+        }
+
+        var svgPath = $"res://assets/sprites/{PlayerStepSpriteId}.svg";
+        if (ResourceLoader.Exists(svgPath))
+        {
+            return GD.Load<Texture2D>(svgPath);
+        }
+
+        return null;
     }
 
     /// <summary>Distinct flat-color placeholder (smith-apron blue-grey) sized to <see

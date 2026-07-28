@@ -250,5 +250,79 @@ public class HeroActor2DTests
             b.QueueFree();
         }
     }
+
+    /// <summary>M2 coverage: the <c>SpriteMotion</c> pose (idle breathing, in this case) is applied
+    /// to the CHILD <see cref="HeroActor2D.Sprite"/>'s Scale only — the actor's own <see
+    /// cref="Node2D.Position"/> (the Y-sort key/feet baseline) must stay exactly where the state
+    /// machine put it, frame after frame, even while the sprite visibly breathes. Freezes the actor
+    /// in Away (no wander drift, no travel) so any Position movement across frames could only come
+    /// from pose application, isolating the invariant the plan calls out as hard.</summary>
+    [TestCase]
+    public void PoseApplication_NeverMovesPosition_ButIdleActorSpriteScaleStillBreathes()
+    {
+        var actor = new HeroActor2D();
+        try
+        {
+            var home = new Vector2(30, 40);
+            actor.Init(5, "vanguard", Colors.White, new PlaceholderTexture2D(), home);
+            actor.SetState(HeroActor2D.HeroTownState.Away); // frozen: no drift, no travel
+
+            var minScaleY = float.MaxValue;
+            var maxScaleY = float.MinValue;
+            for (var i = 0; i < 20; i++)
+            {
+                actor._Process(0.1);
+
+                AssertThat(actor.Position).IsEqual(home); // Y-sort key untouched by pose, every frame
+                minScaleY = Mathf.Min(minScaleY, actor.Sprite.Scale.Y);
+                maxScaleY = Mathf.Max(maxScaleY, actor.Sprite.Scale.Y);
+            }
+
+            AssertThat(maxScaleY - minScaleY > 0.001f)
+                .OverrideFailureMessage(
+                    $"idle actor should breathe (Sprite.Scale.Y oscillate) even though Position holds: " +
+                    $"min={minScaleY}, max={maxScaleY}").IsTrue();
+        }
+        finally
+        {
+            actor.QueueFree();
+        }
+    }
+
+    /// <summary>M2 coverage: walking applies a nonzero lean + a non-1 bob/squash scale to the child
+    /// <see cref="HeroActor2D.Sprite"/> while <see cref="HeroActor2D.Position"/> keeps landing
+    /// exactly where the pre-existing <c>StepToward</c> arithmetic (unaffected by M2) would put it —
+    /// proving the pose driver is actually wired into the walk path, not just idle.</summary>
+    [TestCase]
+    public void Walking_AppliesLeanToSprite_WhilePositionMatchesStepTowardExactly()
+    {
+        var actor = new HeroActor2D();
+        try
+        {
+            var home = new Vector2(0, 0);
+            actor.Init(2, "vanguard", Colors.White, new PlaceholderTexture2D(), home);
+
+            actor.RallyTo(new Vector2(1000, 0)); // far enough that 0.5s of travel never arrives
+
+            for (var i = 0; i < 5; i++)
+            {
+                actor._Process(0.1); // 260px/s * 0.1s = 26px/frame, straight along +X
+            }
+
+            AssertThat(actor.State).IsEqual(HeroActor2D.HeroTownState.Rallying); // still travelling
+            var expected = home + new Vector2(HeroActor2D.WalkSpeed * 0.5f, 0f);
+            AssertThat(Mathf.Abs(actor.Position.X - expected.X) < 0.5f)
+                .OverrideFailureMessage($"Position should match StepToward's own arithmetic exactly: " +
+                    $"got={actor.Position}, expected={expected}").IsTrue();
+
+            AssertThat(Mathf.Abs(actor.Sprite.Rotation) > 0f)
+                .OverrideFailureMessage("walking at full pace toward +X should lean the sprite")
+                .IsTrue();
+        }
+        finally
+        {
+            actor.QueueFree();
+        }
+    }
 }
 #endif
