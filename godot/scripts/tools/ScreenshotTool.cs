@@ -41,8 +41,30 @@ public partial class ScreenshotTool : Node
         await Settle(4);
         Capture(town, OutDir + "town_playerview.png");
 
+        // ── Full game screen: mount the real MainUi (town + HUD), capture the window, then open
+        //    each drawer panel to verify the whole composited game renders correctly. ──
+        RemoveChild(town);
+        town.QueueFree();
+        var ui = GD.Load<PackedScene>("res://scenes/panels/main_ui.tscn").Instantiate<GodotClient.MainUi>();
+        AddChild(ui);
+        await Settle(24);
+        CaptureWindow(OutDir + "game_hud.png");
+        foreach (var panel in new[] { "Forge", "Shop", "Tavern", "Bounties" })
+        {
+            ui.OpenPanel(panel);
+            await Settle(10);
+            CaptureWindow(OutDir + $"game_{panel.ToLower()}.png");
+        }
+
         GD.Print("[screenshot] done");
         GetTree().Quit();
+    }
+
+    private void CaptureWindow(string path)
+    {
+        var image = GetViewport().GetTexture().GetImage();
+        var err = image.SavePng(path);
+        GD.Print($"[screenshot] {path} -> {err} ({image.GetWidth()}x{image.GetHeight()})");
     }
 
     private async Task Settle(int frames)
