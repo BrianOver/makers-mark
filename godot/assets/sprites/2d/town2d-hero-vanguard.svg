@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="24" viewBox="0 0 16 24" shape-rendering="crispEdges">
+  <!-- Town2D world sprite: vanguard hero. 16x24, feet at y=23. Shared neutral-gray body
+       silhouette (tinted to class color via Sprite2D.Modulate at runtime, style bible
+       #4a6b9a) with a small shield accent for pre-tint legibility; source for
+       godot/assets/art/town2d-hero-vanguard.png. -->
+  <rect x="5" y="17" width="3" height="6" fill="#b8b0c6" stroke="#140f1f" stroke-width="1"/>
+  <rect x="9" y="17" width="3" height="6" fill="#b8b0c6" stroke="#140f1f" stroke-width="1"/>
+  <polygon points="4,9 12,9 13,18 3,18" fill="#b8b0c6" stroke="#140f1f" stroke-width="1"/>
+  <circle cx="8" cy="5" r="4" fill="#b8b0c6" stroke="#140f1f" stroke-width="1"/>
+  <rect x="0" y="12" width="3" height="7" fill="#b8b0c6" stroke="#140f1f" stroke-width="1"/>
+  <circle cx="1.5" cy="15.5" r="1" fill="#6b4c9a"/>
+</svg>

@@ -275,8 +275,9 @@ public class TutorialFlowTests
             AssertThat(ui.Tutorial.QuickTravelRow.Visible).IsTrue();
 
             ui.QuickTravel("Forge");
-            AssertThat(ui.Interior.IsOpen).IsTrue();
-            AssertThat(ui.Interior.VenueKey).IsEqual("forge");
+            // 2.5D pivot: quick-travel opens the venue's drawer directly now (no staged interior).
+            AssertThat(ui.Drawer.IsOpen).IsTrue();
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Forge");
         }
         finally
         {

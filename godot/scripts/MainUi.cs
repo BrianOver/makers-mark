@@ -5,7 +5,7 @@ using GameSim.Contracts;
 using Godot;
 using GodotClient.Panels;
 using GodotClient.Town;
-using GodotClient.Town3d;
+using GodotClient.Town2d;
 using GodotClient.Ui;
 
 namespace GodotClient;
@@ -76,25 +76,12 @@ public partial class MainUi : Control
     /// the objective chip rather than sharing its box (keeps the chip's own layout untouched).</summary>
     private const float TutorialDockOffsetTop = ObjectiveDockOffsetTop + 90f;
 
-    /// <summary>PA8 (spec DB4): the <see cref="CameraRig.PushIn"/> distance for a station
-    /// dolly-in — tighter than the town's default follow (<c>CameraRig.Distance</c> = 22) so the
-    /// forge/counter focus overlay reads as a deliberate close-up, not a subtle zoom.</summary>
-    private const float StationPushInDistance = 6f;
-
-    /// <summary>3D-interiors MVP: the <see cref="CameraRig.PushIn"/> distance for a venue's
-    /// <see cref="InteriorRoom3D"/> — slightly wider than <see cref="StationPushInDistance"/> so
-    /// the whole 8-unit diorama room (floor + three walls) fits the rig's 45° FOV frame.</summary>
-    private const float InteriorRoomPushInDistance = 6f;
-
-    /// <summary>Interior camera pitch (degrees): shallower than the town's -42 top-down follow so
-    /// the room is viewed nearer eye level and its walls/depth/props read as a 3D space rather than
-    /// a flat floor plan (the "interiors look 2D" fix). Eased by <see cref="CameraRig.PushIn"/>.</summary>
-    private const float InteriorRoomPitch = -15f;
-
     /// <summary>U23 (R5, KTD4): number-row hotkeys for the quick-travel unlock — runtime <see
     /// cref="InputMap"/> registration only (no <c>project.godot</c> contact), gated on <see
     /// cref="TutorialFlow.QuickTravelUnlocked"/> in <see cref="_Process"/>. Building keys match
-    /// <see cref="Town3D.BuildingClicked"/>'s own payload vocabulary.</summary>
+    /// <see cref="OnTownBuildingClicked"/>'s own payload vocabulary — the legacy capitalized
+    /// names (<see cref="TutorialFlow"/>'s own <c>QuickTravelVenues</c> table uses the same
+    /// vocabulary and is out of this unit's edit scope).</summary>
     private static readonly (string Action, Key Key, string Building)[] QuickTravelHotkeys =
     [
         ("quicktravel_forge", Key.Key1, "Forge"),
@@ -120,7 +107,7 @@ public partial class MainUi : Control
     public SimAdapter Adapter { get; private set; } = null!;
     public PhaseClock Clock { get; private set; } = null!;
     public DrawerHost Drawer { get; private set; } = null!;
-    public Town3D Town { get; private set; } = null!;
+    public Town2D Town { get; private set; } = null!;
     public ForgePanel Forge { get; private set; } = null!;
     public ShopPanel Shop { get; private set; } = null!;
     public HeroesPanel Heroes { get; private set; } = null!;
@@ -159,16 +146,11 @@ public partial class MainUi : Control
     public AdventureTicker Ticker { get; private set; } = null!;
 
     /// <summary>U22 (R4/KTD10): the staged-interior framework — opens instead of the drawer on a
-    /// venue interact/click-arrival, then routes a hotspot press onto the same drawer id. Since
-    /// the 3D-interiors MVP it renders in see-through mode (hotspot/exit overlay only) over the
-    /// real 3D room below whenever <see cref="InteriorRoom"/> mounted.</summary>
+    /// venue interact/click-arrival, then routes a hotspot press onto the same drawer id. 2.5D
+    /// pivot (U2): this slice's <see cref="OnTownBuildingClicked"/> routes straight to <see
+    /// cref="OpenPanel"/> instead, so nothing currently opens this stage — it stays wired
+    /// (hotspot/exit handlers intact) for a later reintroduction rather than torn out.</summary>
     public InteriorStage Interior { get; private set; } = null!;
-
-    /// <summary>3D-interiors MVP: the live 3D interior room while a venue interior is open (null
-    /// otherwise) — mounted in <see cref="Town3D.World"/> and framed by the shared
-    /// <see cref="CameraRig"/> push-in; replaces <see cref="InteriorStage"/>'s painted backdrop,
-    /// never its hotspot routing. Test/inspection surface.</summary>
-    public InteriorRoom3D? InteriorRoom { get; private set; }
 
     /// <summary>U18 (R11/KTD13): the top-right objective chip — <c>ObjectiveAdvisor</c>'s top
     /// pick + reason, expandable to the ranked list.</summary>
@@ -229,11 +211,6 @@ public partial class MainUi : Control
     private bool _resumePlayOnCommissionsClose;
     /// <summary>Wave 4 (U21): mirror of the Bestiary/Forecast latch for the Legends Wall.</summary>
     private bool _resumePlayOnLegendsClose;
-
-    /// <summary>U22: the door position the avatar stood at when the currently-open (or just-
-    /// closed) interior was opened — restored on exit (R4/AE4 "exit returns avatar to door
-    /// position"). Null while no interior has ever been opened this session.</summary>
-    private Vector3? _interiorDoorPosition;
 
     // ── LW3: gold-chip bounce-scale pop (StatusBar region) ────────────────────────────────────
     // No engine Tween in this codebase (accumulated-delta math only, so the pop is deterministic
@@ -848,9 +825,9 @@ public partial class MainUi : Control
 
         // --- U21: TownWorld is now a PERMANENT FullRect base child — added FIRST so every later
         // sibling (the HUD layout, the DrawerHost, the modals) draws on top of it, and it is never
-        // hidden by a drawer opening/closing (R1 world permanence). T8: the grounded 3D town
-        // replaces the 2D SubViewport shell — same permanence contract, same event vocabulary. ---
-        Town = new Town3D { Name = "Town3D" };
+        // hidden by a drawer opening/closing (R1 world permanence). 2.5D pivot (U2): Town2D
+        // replaces the grounded 3D town — same permanence contract, same event vocabulary. ---
+        Town = new Town2D { Name = "Town2D" };
         AddChild(Town);
         Town.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Town.Build(Adapter);
@@ -1115,10 +1092,6 @@ public partial class MainUi : Control
         {
             TabFade.Trigger();
             UpdateEngaged(); // click-out/Esc close the same latch update an OpenPanel("Town") gets
-            // PA8: release any station dolly-in on every full drawer close — a no-op ease when no
-            // PushIn is active (CameraRig.Release's own contract), so this is safe to fire
-            // unconditionally rather than tracking "was this station-opened" state here.
-            Town.Camera.Release();
         };
 
         // --- ledger modal overlay (sibling after the drawer = draws on top) --
@@ -1227,8 +1200,9 @@ public partial class MainUi : Control
         Pip.Clock = Clock; // U25 (a): PiP's journey feed pauses with the clock
 
         // --- U22: InteriorStage — the staged-interior framework (R4/KTD10), mounted LAST so it
-        //     draws above the drawer/HUD/every modal (in practice mutually exclusive with them —
-        //     OpenInterior always closes the drawer first — but topmost is the safe default). ---
+        //     draws above the drawer/HUD/every modal. 2.5D pivot (U2): nothing currently opens it
+        //     (OnTownBuildingClicked routes straight to OpenPanel), but it stays wired — see
+        //     the Interior property's own doc. ---------------------------------------------
         Interior = new InteriorStage();
         AddChild(Interior);
         Interior.Build();
@@ -1323,60 +1297,27 @@ public partial class MainUi : Control
     }
 
     /// <summary>
-    /// Town building click/interact (R20, U22, T8): stage the venue's interior instead of the
-    /// drawer — the same <see cref="Town3D.BuildingClicked"/> payload every venue's click-arrival
-    /// or E-interact already fires, just routed onto <see cref="InteriorStage.Venues"/> instead of
-    /// straight onto <see cref="OpenPanel"/>. A hotspot pressed inside the interior (<see
-    /// cref="OnInteriorHotspotActivated"/>) is what actually opens the matching drawer. The
-    /// noticeboard (T5/T8) has no staged interior — its "Bounties" payload opens the Bounties
-    /// drawer directly, the same one-step routing quick-travel and the interior's own board
-    /// hotspot use.
+    /// Town building click/interact (R20, T8): 2.5D pivot (U2) — routes straight onto <see
+    /// cref="OpenPanel"/>, no staged interior and no camera push-in for this slice. <see
+    /// cref="Town2D"/>'s <see cref="Building2D"/> emits its lowercase venue keys
+    /// ("forge"/"market"/"tavern"/"minegate"/"noticeboard"); the legacy capitalized names
+    /// ("Forge"/"Shop"/"Tavern"/"Gate"/"Bounties") are accepted too since <see
+    /// cref="QuickTravel"/> and <c>TutorialFlow</c>'s own quick-travel row (out of this unit's
+    /// edit scope) still send them. Any unknown key falls back to the bare-world "Town" id.
     /// </summary>
     private void OnTownBuildingClicked(string building)
     {
-        if (building == "Bounties")
+        var panelId = building switch
         {
-            OpenPanel("Bounties");
-            return;
-        }
-
-        // PA8 (spec DB4/PKD8): the two active-professions stations open their focus surface
-        // DIRECTLY (never through InteriorStage) with a CameraRig dolly-in — Town3D.Build already
-        // added these as ordinary Building3D entries, so this same arrival-only payload (walk
-        // then interact, KTD12 — never instant) already fired before this switch is reached; the
-        // only new behavior is the push-in + which panel opens. Release() is hooked on
-        // Drawer.Closed (BuildUi) so it fires regardless of how the panel closes (Esc, click-out,
-        // or switching to another drawer).
-        if (building == "ForgeStation")
-        {
-            Town.Camera.PushIn(Town.FindBuilding("forge-station"), StationPushInDistance);
-            OpenPanel("Forge");
-            return;
-        }
-
-        if (building == "CounterStation")
-        {
-            Town.Camera.PushIn(Town.FindBuilding("counter-station"), StationPushInDistance);
-            OpenPanel("Shop");
-            return;
-        }
-
-        var venueKey = building switch
-        {
-            "Forge" => "forge",
-            "Shop" => "market",
-            "Tavern" => "tavern",
-            "Gate" => "minegate",
-            _ => null,
+            "forge" or "Forge" => "Forge",
+            "market" or "Shop" => "Shop",
+            "tavern" or "Tavern" => "Tavern",
+            "minegate" or "Gate" => "Depths",
+            "noticeboard" or "Bounties" => "Bounties",
+            _ => "Town",
         };
 
-        if (venueKey is null)
-        {
-            OpenPanel("Town");
-            return;
-        }
-
-        OpenInterior(venueKey);
+        OpenPanel(panelId);
     }
 
     /// <summary>
@@ -1432,69 +1373,15 @@ public partial class MainUi : Control
     }
 
     /// <summary>
-    /// Open <paramref name="venueKey"/>'s staged interior (<see cref="InteriorStage.Venues"/>).
-    /// The avatar is already standing at the venue's door — <see
-    /// cref="Town3D.BuildingClicked"/> only ever fires on arrival/interact — so this records that
-    /// exact position for <see cref="ResetAvatarToDoor"/> to restore on exit, closes whichever
-    /// drawer was showing (REPLACE semantics, mirrors <see cref="OpenPanel"/>), mounts the venue's
-    /// real 3D room (<see cref="MountInteriorRoom"/>, camera dolly included), and opens the stage
-    /// in see-through mode over it so the hotspot overlay + its accumulated-delta push-in still
-    /// run unchanged.
+    /// A content hotspot (never exit) was pressed inside the interior — open the SAME drawer id
+    /// the hotspot's action names. 2.5D pivot (U2): <see cref="OnTownBuildingClicked"/> no longer
+    /// routes through <see cref="InteriorStage"/> to reach here (nothing currently opens the
+    /// stage), but the handler stays live and correct in case a later slice reintroduces it.
     /// </summary>
-    private void OpenInterior(string venueKey)
-    {
-        Drawer.Close();
-        _interiorDoorPosition = Town.DoorAnchor(venueKey);
-        MountInteriorRoom(venueKey);
-        Interior.Open(venueKey, Adapter.CurrentState, seeThrough: InteriorRoom is not null);
-        UpdateEngaged();
-    }
-
-    /// <summary>
-    /// 3D-interiors MVP: build <paramref name="venueKey"/>'s real 3D room, mount it on the
-    /// <see cref="InteriorRoom3D.MountPosition"/> shelf inside the live town world, and dolly the
-    /// shared camera onto it — the SAME <see cref="CameraRig.PushIn"/> path the forge/counter
-    /// stations proved (<see cref="OnTownBuildingClicked"/>). The see-through
-    /// <see cref="InteriorStage"/> overlay opened right after this keeps every hotspot action /
-    /// exit / Esc / Engaged behavior unchanged on top of the room.
-    /// </summary>
-    private void MountInteriorRoom(string venueKey)
-    {
-        UnmountInteriorRoom();
-        var room = new InteriorRoom3D { Position = InteriorRoom3D.MountPosition };
-        room.Build(venueKey);
-        Town.World.AddChild(room);
-        Town.Camera.PushIn(room.Focus, InteriorRoomPushInDistance, InteriorRoomPitch);
-        InteriorRoom = room;
-    }
-
-    /// <summary>Tear the 3D interior room down (no-op when none is mounted): release the camera
-    /// back to its avatar follow and free the room — a fresh room is built per entry, so venue
-    /// state can never leak between visits.</summary>
-    private void UnmountInteriorRoom()
-    {
-        if (InteriorRoom is null)
-        {
-            return;
-        }
-
-        Town.Camera.Release();
-        Town.World.RemoveChild(InteriorRoom);
-        InteriorRoom.Free();
-        InteriorRoom = null;
-    }
-
-    /// <summary>A content hotspot (never exit) was pressed inside the interior — close it (room
-    /// down, camera released), restore the avatar to the door, and open the SAME drawer id the
-    /// hotspot's action names (content parity with the pre-U22 interact-opens-the-drawer
-    /// behaviour).</summary>
     private void OnInteriorHotspotActivated(string action)
     {
-        UnmountInteriorRoom();
-        ResetAvatarToDoor();
-
         // Gate-b flag 3: the Tavern "Bestiary" hotspot opens the code-built modal, not a drawer —
-        // route it before OpenPanel (which only knows the six drawer ids and would throw).
+        // route it before OpenPanel (which only knows the drawer ids and would throw).
         if (action == "Bestiary")
         {
             Bestiary.ShowAll();
@@ -1512,21 +1399,12 @@ public partial class MainUi : Control
         OpenPanel(action);
     }
 
-    /// <summary>The exit hotspot or Esc closed the interior — tear the 3D room down, restore the
-    /// avatar to the door position it entered from (R4/AE4) and re-sync the Engaged latch.</summary>
+    /// <summary>The exit hotspot or Esc closed the interior — re-sync the Engaged latch. 2.5D
+    /// pivot (U2): no 3D room/avatar-door restore to unwind in this slice (see
+    /// <see cref="OnInteriorHotspotActivated"/>'s doc).</summary>
     private void OnInteriorExited()
     {
-        UnmountInteriorRoom();
-        ResetAvatarToDoor();
         UpdateEngaged();
-    }
-
-    private void ResetAvatarToDoor()
-    {
-        if (_interiorDoorPosition is { } doorPosition)
-        {
-            Town.Player.GlobalPosition = doorPosition;
-        }
     }
 
     /// <summary>Reading the Ledger pauses the town; closing it resumes if it was running.</summary>
