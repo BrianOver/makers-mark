@@ -75,6 +75,7 @@ public partial class Town2D : Control
     public Node2D YSort { get; private set; } = null!;
     public Node2D BuildingsRoot { get; private set; } = null!;
     public Node2D HeroesRoot { get; private set; } = null!;
+    public Node2D TownsfolkRoot { get; private set; } = null!;
     public Node2D Fx { get; private set; } = null!;
     public CanvasModulate DuskModulate { get; private set; } = null!;
     public Camera2D Cam { get; private set; } = null!;
@@ -176,6 +177,10 @@ public partial class Town2D : Control
 
         HeroesRoot = new Node2D { Name = "Heroes" };
         YSort.AddChild(HeroesRoot);
+
+        TownsfolkRoot = new Node2D { Name = "Townsfolk" };
+        YSort.AddChild(TownsfolkRoot);
+        BuildTownsfolk();
 
         Fx = new Node2D { Name = "Fx" };
         World.AddChild(Fx);
@@ -301,6 +306,10 @@ public partial class Town2D : Control
 
     /// <summary>Live hero-actor count (test/inspection surface).</summary>
     public int HeroActorCount() => _heroActors.Count;
+
+    /// <summary>Live cosmetic-villager count (test/inspection surface) — mirrors <see
+    /// cref="HeroActorCount"/>'s shape for <see cref="TownsfolkNpc2D"/>.</summary>
+    public int TownsfolkCount() => TownsfolkRoot.GetChildCount();
 
     /// <summary>The lowest-HeroId live actor (test/inspection surface) — deterministic even though
     /// dictionary enumeration order is an implementation detail. Throws if <see
@@ -529,6 +538,42 @@ public partial class Town2D : Control
             {
                 Ground.AddChild(node);
             }
+        }
+    }
+
+    /// <summary>Deterministic wander-home tiles for the cosmetic <see cref="TownsfolkNpc2D"/>
+    /// villagers — hand-picked clear of every venue footprint, the plaza/road cobble network, and
+    /// hero <see cref="HomeFor"/> bands (see <see cref="TownLayout2D.Venues"/>/<see
+    /// cref="TownLayout2D.PathRects"/> for the occupied regions this avoids): two open corners
+    /// northwest/northeast of the plaza, two more southwest/southeast of it.</summary>
+    private static readonly Vector2I[] TownsfolkHomeTiles =
+    {
+        new(6, 8),
+        new(34, 8),
+        new(6, 20),
+        new(34, 20),
+    };
+
+    /// <summary>Test/inspection surface: how many cosmetic villagers <see cref="BuildTownsfolk"/>
+    /// spawns (mirrors <see cref="TownsfolkHomeTiles"/>'s length without exposing the private table
+    /// itself).</summary>
+    public static int TownsfolkHomeTileCount => TownsfolkHomeTiles.Length;
+
+    /// <summary>
+    /// Spawns a small bounded set of purely cosmetic wandering villagers (<see
+    /// cref="TownsfolkNpc2D"/>) into <see cref="TownsfolkRoot"/> — called once from <see
+    /// cref="Build"/>, right after <see cref="HeroesRoot"/> exists. These are NOT heroes: never
+    /// added to <see cref="_heroActors"/>, never reconciled against sim state, never clickable —
+    /// pure ambience (KTD2). Art/tint resolution lives on <see cref="TownsfolkNpc2D"/> itself (see
+    /// its class doc) so this method is just the deterministic placement loop.
+    /// </summary>
+    private void BuildTownsfolk()
+    {
+        for (var i = 0; i < TownsfolkHomeTiles.Length; i++)
+        {
+            var npc = new TownsfolkNpc2D();
+            npc.Init(i, TownsfolkNpc2D.ResolveSprite(), TownsfolkNpc2D.CivilianTint(i), TownLayout2D.TileToWorld(TownsfolkHomeTiles[i]));
+            TownsfolkRoot.AddChild(npc);
         }
     }
 
