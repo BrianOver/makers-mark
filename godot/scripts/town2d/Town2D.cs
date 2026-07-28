@@ -665,33 +665,51 @@ public partial class Town2D : Control
     };
 
     /// <summary>
-    /// Paints the whole grid with a flat grass tile (a one-tone <see cref="TileMapLayer"/> — no
-    /// autotile logic in this slice, U6/U7 swap in a real ground atlas by replacing <see
-    /// cref="BuildTileSet"/>'s source image), then paints every tile inside <see
-    /// cref="TownLayout2D.PathRects"/> with the cobble tile — the plaza/road/spur network reading
-    /// as one continuous cozy-village street, purely for legibility (decoration only — <see
+    /// Paints the whole grid with grass, then paints every tile inside <see
+    /// cref="TownLayout2D.PathRects"/> with cobble — the plaza/road/spur network reading as one
+    /// continuous cozy-village street, purely for legibility (decoration only — <see
     /// cref="Building2D"/> carries its own blocking <c>Footprint</c>, so nothing here needs
     /// collision).
+    ///
+    /// <para>When the real pixel-art ground atlas (<c>town2d-ground-atlas</c>: grass base + two
+    /// detail variants + textured cobble) is present, grass is broken up with a deterministic
+    /// scatter of the two detail tiles (a stable spatial hash, never RNG — keeps the field identical
+    /// every run and headless-test-safe) and grass cells that border the cobble network bias toward
+    /// the blade variant so the plaza/road edge dithers into the grass instead of reading as a hard
+    /// rectangle seam. When the atlas is missing, everything degrades to the original 2-tile
+    /// flat-color build (single grass coord, single cobble coord) — identical to the pre-art slice,
+    /// so no import dependency can break the town rendering.</para>
     /// </summary>
     private static TileMapLayer BuildGround()
     {
-        var layer = new TileMapLayer { Name = "Ground", TileSet = BuildTileSet() };
+        var (tileSet, rich) = BuildTileSet();
+        var layer = new TileMapLayer { Name = "Ground", TileSet = tileSet };
 
-        for (var y = 0; y < TownLayout2D.GridHeight; y++)
-        {
-            for (var x = 0; x < TownLayout2D.GridWidth; x++)
-            {
-                layer.SetCell(new Vector2I(x, y), 0, GrassAtlasCoord);
-            }
-        }
-
+        var cobble = rich ? RichCobbleCoord : FlatCobbleCoord;
+        var cobbleCells = new HashSet<Vector2I>();
         foreach (var rect in TownLayout2D.PathRects)
         {
             for (var y = rect.Position.Y; y < rect.Position.Y + rect.Size.Y; y++)
             {
                 for (var x = rect.Position.X; x < rect.Position.X + rect.Size.X; x++)
                 {
-                    layer.SetCell(new Vector2I(x, y), 0, CobbleAtlasCoord);
+                    cobbleCells.Add(new Vector2I(x, y));
+                }
+            }
+        }
+
+        for (var y = 0; y < TownLayout2D.GridHeight; y++)
+        {
+            for (var x = 0; x < TownLayout2D.GridWidth; x++)
+            {
+                var cell = new Vector2I(x, y);
+                if (cobbleCells.Contains(cell))
+                {
+                    layer.SetCell(cell, 0, cobble);
+                }
+                else
+                {
+                    layer.SetCell(cell, 0, rich ? GrassVariantFor(x, y, cobbleCells) : GrassBaseCoord);
                 }
             }
         }
@@ -699,31 +717,73 @@ public partial class Town2D : Control
         return layer;
     }
 
-    private static readonly Vector2I GrassAtlasCoord = new(0, 0);
-    private static readonly Vector2I CobbleAtlasCoord = new(1, 0);
+    /// <summary>Deterministic grass-tile pick (stable spatial hash, no RNG): grass cells touching the
+    /// cobble network bias hard toward the blade variant (edge dither), open field gets a sparse
+    /// scatter of both detail variants over the base. Pure — same grid every run.</summary>
+    private static Vector2I GrassVariantFor(int x, int y, HashSet<Vector2I> cobbleCells)
+    {
+        var bordersCobble =
+            cobbleCells.Contains(new Vector2I(x - 1, y)) || cobbleCells.Contains(new Vector2I(x + 1, y)) ||
+            cobbleCells.Contains(new Vector2I(x, y - 1)) || cobbleCells.Contains(new Vector2I(x, y + 1));
+
+        var h = unchecked((x * 73856093) ^ (y * 19349663));
+        var bucket = ((h % 100) + 100) % 100; // 0..99, sign-safe
+
+        if (bordersCobble)
+        {
+            return bucket < 60 ? GrassBladeCoord : GrassBaseCoord;
+        }
+
+        return bucket < 16 ? GrassBladeCoord : bucket < 25 ? GrassFleckCoord : GrassBaseCoord;
+    }
+
+    // Rich atlas layout (town2d-ground-atlas.png, 64x16): base | blades | flecks | cobble.
+    private static readonly Vector2I GrassBaseCoord = new(0, 0);
+    private static readonly Vector2I GrassBladeCoord = new(1, 0);
+    private static readonly Vector2I GrassFleckCoord = new(2, 0);
+    private static readonly Vector2I RichCobbleCoord = new(3, 0);
+
+    // Flat-fallback atlas layout (2 tiles): grass | cobble. GrassBaseCoord (0,0) doubles as the flat
+    // grass coord; the flat cobble sits at (1,0).
+    private static readonly Vector2I FlatCobbleCoord = new(1, 0);
 
     private static readonly Color GrassColor = new(0.30f, 0.45f, 0.22f);
     private static readonly Color CobbleColor = new(0.42f, 0.40f, 0.38f);
 
     /// <summary>
-    /// A minimal 2-tile flat-color atlas (grass/cobble) built entirely in code — no <c>.tres</c>
-    /// churn, no imported ground art required for the slice to run. U6/U7 replace <see
-    /// cref="GrassColor"/>/etc. (or the whole method) with a real imported atlas texture without
-    /// touching <see cref="BuildGround"/>'s cell-painting logic.
+    /// Prefers the imported pixel-art ground atlas (<c>town2d-ground-atlas</c>, 4×1 tiles of 16px);
+    /// falls back to the original 2-tile flat-color image built in code when the art is missing so
+    /// the town always renders (headless tests, unimported checkouts). Returns the tile set plus
+    /// whether the rich atlas was used, so <see cref="BuildGround"/> knows which coord vocabulary and
+    /// scatter path to use.
     /// </summary>
-    private static TileSet BuildTileSet()
+    private static (TileSet TileSet, bool Rich) BuildTileSet()
     {
+        var art = GodotClient.IconRegistry.Art("town2d-ground-atlas");
+        if (art is not null && art.GetWidth() >= TileSize * 4 && art.GetHeight() >= TileSize)
+        {
+            var richAtlas = new TileSetAtlasSource { Texture = art, TextureRegionSize = new Vector2I(TileSize, TileSize) };
+            richAtlas.CreateTile(GrassBaseCoord);
+            richAtlas.CreateTile(GrassBladeCoord);
+            richAtlas.CreateTile(GrassFleckCoord);
+            richAtlas.CreateTile(RichCobbleCoord);
+
+            var richSet = new TileSet { TileSize = new Vector2I(TileSize, TileSize) };
+            richSet.AddSource(richAtlas, 0);
+            return (richSet, true);
+        }
+
         var image = Image.CreateEmpty(TileSize * 2, TileSize, false, Image.Format.Rgba8);
         image.FillRect(new Rect2I(0, 0, TileSize, TileSize), GrassColor);
         image.FillRect(new Rect2I(TileSize, 0, TileSize, TileSize), CobbleColor);
         var texture = ImageTexture.CreateFromImage(image);
 
         var atlas = new TileSetAtlasSource { Texture = texture, TextureRegionSize = new Vector2I(TileSize, TileSize) };
-        atlas.CreateTile(GrassAtlasCoord);
-        atlas.CreateTile(CobbleAtlasCoord);
+        atlas.CreateTile(GrassBaseCoord);
+        atlas.CreateTile(FlatCobbleCoord);
 
         var tileSet = new TileSet { TileSize = new Vector2I(TileSize, TileSize) };
         tileSet.AddSource(atlas, 0);
-        return tileSet;
+        return (tileSet, false);
     }
 }
