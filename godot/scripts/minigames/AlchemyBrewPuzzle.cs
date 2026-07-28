@@ -196,8 +196,10 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         _notesLabel = new Label { Name = "AlchemyBrewNotes", AutowrapMode = TextServer.AutowrapMode.WordSmart };
         body.AddChild(_notesLabel);
 
-        _canvas = new BrewCanvas { Name = "BrewCanvas", CustomMinimumSize = new Vector2(0, 260) };
+        // Fill the drawer (same reason as the forge canvas): a short strip left the panel mostly empty.
+        _canvas = new BrewCanvas { Name = "BrewCanvas", CustomMinimumSize = new Vector2(0, 340) };
         _canvas.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _canvas.SizeFlagsVertical = SizeFlags.ExpandFill;
         body.AddChild(_canvas);
 
         _pouredLabel = new Label { Name = "AlchemyBrewPoured", AutowrapMode = TextServer.AutowrapMode.WordSmart };

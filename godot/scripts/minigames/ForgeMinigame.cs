@@ -412,8 +412,11 @@ public sealed partial class ForgeMinigame : PanelContainer
         _titleLabel.ThemeTypeVariation = GameTheme.HeaderThemeType;
         body.AddChild(_titleLabel);
 
-        _canvas = new AnvilMapCanvas { Name = "AnvilMapCanvas", CustomMinimumSize = new Vector2(0, 240) };
+        // Fill the drawer: a short strip left most of the panel empty, which made the forge read as
+        // a widget rather than a room.
+        _canvas = new AnvilMapCanvas { Name = "AnvilMapCanvas", CustomMinimumSize = new Vector2(0, 340) };
         _canvas.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _canvas.SizeFlagsVertical = SizeFlags.ExpandFill;
         body.AddChild(_canvas);
 
         _readoutLabel = new Label { Name = "ForgeMinigameReadout" };
@@ -586,11 +589,16 @@ public sealed partial class ForgeMinigame : PanelContainer
             QueueRedraw();
         }
 
+        /// <summary>Where the billet sits: ON the anvil, centre-stage and FIXED — the player is
+        /// hammering a bar of steel at a fixed spot, not steering a cursor around a plot. Heat and
+        /// shape are read from the furnace gauge and the shape meter instead of from X/Y position.</summary>
+        private Vector2 BilletAnchor(Vector2 size) => new(size.X * 0.45f, size.Y * 0.79f);
+
         /// <summary>Strike FX: a spark burst from the billet + a small shake; on-tempo throws twice
         /// the sparks and a white ring. Driven by the sim's own Struck event (no new state).</summary>
         public void OnStruck(bool onTempo)
         {
-            var origin = Path.Count >= 2 ? ToCanvasPoint(CursorXPermille, CursorYPermille, Size) : Size / 2f;
+            var origin = BilletAnchor(Size);
             var n = onTempo ? SparkDirs.Length : SparkDirs.Length / 2;
             for (var i = 0; i < n; i++)
             {
@@ -612,7 +620,7 @@ public sealed partial class ForgeMinigame : PanelContainer
         /// <summary>Quench FX: a plume of steam from the billet (driven by the sim's Quenched event).</summary>
         public void OnQuenched()
         {
-            var origin = Path.Count >= 2 ? ToCanvasPoint(CursorXPermille, CursorYPermille, Size) : Size / 2f;
+            var origin = BilletAnchor(Size);
             for (var i = 0; i < 10; i++)
             {
                 var (ang, spd) = SparkDirs[i];
@@ -667,9 +675,15 @@ public sealed partial class ForgeMinigame : PanelContainer
             }
 
             var hasPath = Path.Count >= 4 && Path.Count % 2 == 0;
+
+            // The workbench read: a heat gauge at the furnace (with the forging guide's sweet spot
+            // marked on it), the billet resting on the anvil, and a shape meter — instead of a
+            // polyline with a dot travelling along it.
             if (hasPath)
             {
-                DrawTargetTrail(size);
+                DrawHeatGauge(size);
+                DrawShapeMeter(size);
+                DrawQuenchZone(size, art);
             }
 
             if (!art)
@@ -677,21 +691,14 @@ public sealed partial class ForgeMinigame : PanelContainer
                 DrawAnvil(size);
             }
 
-            if (hasPath)
-            {
-                DrawQuenchZone(size, art);
-            }
-
-            var cursor = ToCanvasPoint(CursorXPermille, CursorYPermille, size);
-            if (hasPath)
-            {
-                DrawDeviation(cursor, size);
-            }
-
-            DrawBillet(cursor);
-            DrawHammer(cursor, shake);
+            // The billet must REST on something — a compact anvil is drawn under it even over the
+            // painted room (whose own props sit elsewhere), so the steel never floats in mid-air.
+            var billet = BilletAnchor(size);
+            DrawAnvilStand(billet);
+            DrawBillet(billet);
+            DrawHammer(billet, shake);
             DrawParticles();
-            DrawBeatFlash(cursor);
+            DrawBeatFlash(billet);
 
             DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
         }
@@ -733,31 +740,128 @@ public sealed partial class ForgeMinigame : PanelContainer
             }
         }
 
-        private void DrawTargetTrail(Vector2 size)
-        {
-            var vertexCount = Path.Count / 2;
-            for (var i = 0; i < vertexCount - 1; i++)
-            {
-                var ax = Path[i * 2];
-                var a = ToCanvasPoint(ax, Path[i * 2 + 1], size);
-                var b = ToCanvasPoint(Path[(i + 1) * 2], Path[(i + 1) * 2 + 1], size);
-                var behind = ax < CursorXPermille;
-                var seg = b - a;
-                var len = seg.Length();
-                var dir = len > 0.001f ? seg / len : Vector2.Zero;
-                if (!behind)
-                {
-                    DrawLine(a, b, new Color(TargetGlow, 0.18f), 6f); // soft heat glow underlay
-                }
+        private const int SweetSpotHalfWidthPermille = 90;   // matches DrawDeviation's "good" band
 
-                // Dashed chalk marks along the segment — drawn with a dark backing quad so they stay
-                // legible over the painted (busy) forge wall, not just over a flat gradient.
-                for (var d = 0f; d < len; d += 9f)
+        /// <summary>
+        /// The furnace heat gauge: a vertical thermometer showing the billet's CURRENT heat, with the
+        /// forging guide's ideal heat for this point in the shaping marked on it as a bright sweet-spot
+        /// band (plus a small arrow showing which way the ideal is about to move, so the player can
+        /// anticipate instead of chasing). This is what replaces the old target polyline — the same
+        /// numbers the sim scores, read as an instrument on the wall rather than a plot to trace.
+        /// </summary>
+        private void DrawHeatGauge(Vector2 size)
+        {
+            var x = size.X * 0.085f;
+            var top = size.Y * 0.16f;
+            var bottom = size.Y * 0.86f;
+            var w = 22f;
+            var h = bottom - top;
+
+            float YFor(int permille) => bottom - Math.Clamp(permille, 0, 1000) / 1000f * h;
+
+            // Housing.
+            DrawRect(new Rect2(x - 4, top - 5, w + 8, h + 10), new Color(0.07f, 0.06f, 0.10f, 0.82f));
+            DrawRect(new Rect2(x - 4, top - 5, w + 8, h + 10), new Color(0.45f, 0.40f, 0.34f, 0.9f), filled: false, width: 2f);
+
+            // Column: cold at the bottom, forge-hot at the top.
+            const int cells = 16;
+            for (var i = 0; i < cells; i++)
+            {
+                var f = 1f - (i + 0.5f) / cells;
+                var cy = top + h * i / cells;
+                DrawRect(new Rect2(x, cy, w, h / cells + 1f), new Color(HeatColor(f), 0.30f));
+            }
+
+            // Sweet spot: the ideal heat for the CURRENT shaping progress, from the same guide the
+            // scorer grades against.
+            var target = InterpTargetHeat(CursorXPermille);
+            var bandTop = YFor(target + SweetSpotHalfWidthPermille);
+            var bandBottom = YFor(target - SweetSpotHalfWidthPermille);
+            var dev = Math.Abs(CursorYPermille - target);
+            var band = dev < 90 ? DeviationGood : dev < 220 ? DeviationWarn : DeviationBad;
+            DrawRect(new Rect2(x - 2, bandTop, w + 4, bandBottom - bandTop), new Color(band, 0.22f));
+            DrawRect(new Rect2(x - 2, bandTop, w + 4, bandBottom - bandTop), new Color(band, 0.95f), filled: false, width: 2f);
+
+            // Where the ideal is heading next (anticipation cue).
+            var ahead = InterpTargetHeat(Math.Min(1000, CursorXPermille + 90));
+            if (Math.Abs(ahead - target) > 25)
+            {
+                var up = ahead > target;
+                var ay = (bandTop + bandBottom) / 2f + (up ? -14f : 14f);
+                var tip = up ? ay - 7f : ay + 7f;
+                DrawColoredPolygon(
+                    new[] { new Vector2(x + w + 8, ay), new Vector2(x + w + 16, ay), new Vector2(x + w + 12, tip) },
+                    new Color(TargetAhead, 0.9f));
+            }
+
+            // The mercury: current heat, glowing in its own heat colour.
+            var my = YFor(CursorYPermille);
+            var heatFrac = Math.Clamp(CursorYPermille / 1000f, 0f, 1f);
+            DrawRect(new Rect2(x, my, w, bottom - my), new Color(HeatColor(heatFrac), 0.92f));
+            DrawRect(new Rect2(x - 5, my - 2f, w + 10, 4f), new Color(1f, 0.97f, 0.88f, 0.95f)); // needle
+        }
+
+        /// <summary>A compact anvil directly beneath the billet: horn, face, waist and base, with a
+        /// contact shadow — the work surface the hammer drives against.</summary>
+        private void DrawAnvilStand(Vector2 billet)
+        {
+            var faceY = billet.Y + 11f;
+            var cx = billet.X;
+
+            DrawEllipseSoft(new Vector2(cx, faceY + 30f), 46f, 7f, new Color(0f, 0f, 0f, 0.35f)); // ground shadow
+            DrawColoredPolygon(
+                new[]
                 {
-                    var p = a + dir * d;
-                    var col = behind ? new Color(TargetBehind, 0.55f) : new Color(TargetAhead, 1f);
-                    DrawRect(new Rect2(p - new Vector2(3.5f, 2.5f), new Vector2(7f, 5f)), new Color(0.05f, 0.04f, 0.07f, 0.55f));
-                    DrawRect(new Rect2(p - new Vector2(2.5f, 1.5f), new Vector2(5f, 3f)), col);
+                    new Vector2(cx - 44, faceY), new Vector2(cx + 40, faceY - 1),
+                    new Vector2(cx + 54, faceY + 4), new Vector2(cx + 40, faceY + 8),   // horn
+                    new Vector2(cx + 20, faceY + 9), new Vector2(cx + 13, faceY + 24),
+                    new Vector2(cx + 26, faceY + 30), new Vector2(cx - 26, faceY + 30), // base
+                    new Vector2(cx - 13, faceY + 24), new Vector2(cx - 20, faceY + 9),
+                    new Vector2(cx - 40, faceY + 8),
+                },
+                AnvilSteel);
+            DrawRect(new Rect2(cx - 44, faceY - 2f, 84f, 3f), AnvilFace); // struck face highlight
+        }
+
+        private void DrawEllipseSoft(Vector2 c, float rx, float ry, Color col)
+        {
+            const int seg = 20;
+            var pts = new Vector2[seg];
+            for (var i = 0; i < seg; i++)
+            {
+                var a = Mathf.Tau * i / seg;
+                pts[i] = new Vector2(c.X + Mathf.Cos(a) * rx, c.Y + Mathf.Sin(a) * ry);
+            }
+
+            DrawColoredPolygon(pts, col);
+        }
+
+        /// <summary>The shape meter: how far the bar has been drawn out toward the finished piece —
+        /// segmented, so each on-tempo strike visibly claims another notch. Replaces "X position".</summary>
+        private void DrawShapeMeter(Vector2 size)
+        {
+            const int cells = 12;
+            var w = size.X * 0.30f;
+            var x = size.X * 0.62f;
+            var y = size.Y * 0.17f;
+            var cw = w / cells;
+
+            DrawRect(new Rect2(x - 3, y - 4, w + 6, 20f), new Color(0.07f, 0.06f, 0.10f, 0.82f));
+            var filled = Mathf.CeilToInt(Math.Clamp(CursorXPermille / 1000f, 0f, 1f) * cells);
+            for (var i = 0; i < cells; i++)
+            {
+                var r = new Rect2(x + i * cw + 1f, y, cw - 2f, 12f);
+                if (i < filled)
+                {
+                    var done = CursorXPermille >= 1000;
+                    var c = done
+                        ? new Color(0.55f, 0.9f, 1f).Lerp(Colors.White, 0.5f + 0.5f * Mathf.Sin(_anim * 5f))
+                        : TargetAhead;
+                    DrawRect(r, c);
+                }
+                else
+                {
+                    DrawRect(r, new Color(0.35f, 0.32f, 0.38f, 0.55f), filled: false, width: 1f);
                 }
             }
         }
@@ -823,19 +927,6 @@ public sealed partial class ForgeMinigame : PanelContainer
                 var sy = waterTop + 4 + s * 6 + 1.5f * Mathf.Sin(_anim * 3f + s);
                 DrawLine(new Vector2(x0 + 3, sy), new Vector2(x0 + 39, sy), new Color(1f, 1f, 1f, 0.3f), 1f);
             }
-        }
-
-        private void DrawDeviation(Vector2 cursor, Vector2 size)
-        {
-            var targetY = InterpTargetHeat(CursorXPermille);
-            var targetPt = ToCanvasPoint(CursorXPermille, targetY, size);
-            var dev = Math.Abs(CursorYPermille - targetY);
-            var col = dev < 90 ? DeviationGood : dev < 220 ? DeviationWarn : DeviationBad;
-            var a = 0.4f + 0.3f * (0.5f + 0.5f * Mathf.Sin(_anim * 6f));
-            DrawLine(cursor, targetPt, new Color(col, a), 2f);
-            // Ghost ember flickering on the ideal spot.
-            var flick = 3f + Mathf.Sin(_anim * 9f);
-            DrawCircle(targetPt, flick, new Color(GhostMark, 0.85f));
         }
 
         private void DrawBillet(Vector2 cursor)
