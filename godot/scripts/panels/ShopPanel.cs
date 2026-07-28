@@ -345,6 +345,13 @@ public partial class ShopPanel : SimPanel
         };
         scroll.AddChild(body);
 
+        // A painted interior strip so the shop reads as a PLACE, not just a list of rows. Null when
+        // the art isn't present (fresh/headless checkout) — then nothing is mounted, as before.
+        if (UiKit.SceneBanner("panel_banner_shop") is { } banner)
+        {
+            body.AddChild(banner);
+        }
+
         _feedback = AddLabel(body, string.Empty);
         _feedback.Name = "ShopFeedback";
 

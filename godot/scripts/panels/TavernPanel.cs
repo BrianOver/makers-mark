@@ -1,6 +1,7 @@
 using System.Linq;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Ui;
 
 namespace GodotClient.Panels;
 
@@ -76,6 +77,14 @@ public partial class TavernPanel : SimPanel
         }
 
         var body = BuildScrollBody();
+
+        // A painted interior strip so the tavern reads as a PLACE (its bar, hearth and stools)
+        // rather than a bare gossip list. Null-tolerant: no art, nothing mounted (as before).
+        if (UiKit.SceneBanner("panel_banner_tavern") is { } banner)
+        {
+            body.AddChild(banner);
+        }
+
         _content = new VBoxContainer { Name = "TavernContent" };
         body.AddChild(_content);
     }

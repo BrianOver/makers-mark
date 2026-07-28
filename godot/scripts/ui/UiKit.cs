@@ -479,6 +479,50 @@ public static class UiKit
     /// <summary>Strip height (px) for a <see cref="DrawerHeader"/>.</summary>
     public const float DrawerHeaderHeight = 40f;
 
+    /// <summary>On-screen height (px) of a <see cref="SceneBanner"/> — the art is authored at half
+    /// this so it lands on a crisp 2x pixel scale.</summary>
+    public const float SceneBannerHeight = 140f;
+
+    /// <summary>Top inset (px) for a <see cref="SceneBanner"/> — clears the drawer title's
+    /// display-font descenders, which overrun <see cref="DrawerHeaderHeight"/>.</summary>
+    public const float SceneBannerTopInset = 14f;
+
+    /// <summary>
+    /// A painted interior banner for a drawer panel (e.g. the shop's shelves, the tavern's bar):
+    /// a nearest-filtered, width-filling strip of generated pixel art that gives an otherwise
+    /// list-only panel a sense of place. Null-tolerant like every other art-taking builder here —
+    /// an unresolvable id yields <c>null</c> and the caller simply mounts nothing, so a fresh or
+    /// headless checkout renders the panel exactly as it did before the art existed.
+    /// </summary>
+    public static Control? SceneBanner(string artId)
+    {
+        var art = IconRegistry.Art(artId);
+        if (art is null)
+        {
+            return null;
+        }
+
+        var rect = new TextureRect
+        {
+            Name = $"SceneBanner_{artId}",
+            Texture = art,
+            CustomMinimumSize = new Vector2(0, SceneBannerHeight),
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.Scale,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest, // crisp pixels, never smeared
+            MouseFilter = Control.MouseFilterEnum.Ignore,         // decoration must never eat clicks
+        };
+
+        // Inset from the top: the drawer title's display-font descenders overrun the
+        // DrawerHeaderHeight strip above the content slot. That overhang was invisible against the
+        // empty dark panel, but a bright banner flush at y=0 collides with the title. Nudging the
+        // art down is contained here; changing the shared header height would move every panel.
+        var host = new MarginContainer { Name = $"SceneBannerHost_{artId}", MouseFilter = Control.MouseFilterEnum.Ignore };
+        host.AddThemeConstantOverride("margin_top", (int)SceneBannerTopInset);
+        host.AddChild(rect);
+        return host;
+    }
+
     private const float DrawerHeaderIconSize = 24f;
     private const float DrawerHeaderCloseSize = 24f;
 
