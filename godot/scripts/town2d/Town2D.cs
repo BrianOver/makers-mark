@@ -116,6 +116,7 @@ public partial class Town2D : Control
     private Sprite2D? _forgeGlowOverlay;
     private CpuParticles2D? _forgeSparks;
     private CpuParticles2D? _forgeSteam;
+    private AmbientLife2D? _ambientLife;
 
     private const float ForgeGlowMaxAlpha = 0.85f;
 
@@ -203,6 +204,7 @@ public partial class Town2D : Control
         WorldInputNode.Configure(Player, _buildingsByKey.Values.ToList());
 
         WireForgeFx();
+        WireAmbientLife();
 
         // T8-parity: populate Heroes from the adapter's initial state now; Refresh() re-runs this
         // every tick once MainUi wires it up (U2).
@@ -554,6 +556,31 @@ public partial class Town2D : Control
 
         _forgeSteam = BuildParticles("QuenchSteam", pos, new Color(0.9f, 0.9f, 0.95f, 0.5f), amount: 8, lifetime: 0.7);
         Fx.AddChild(_forgeSteam);
+    }
+
+    /// <summary>Builds the cozy ambient-life layer (<see cref="AmbientLife2D"/>: chimney smoke,
+    /// dusk fireflies, flickering lamp glow) — mounted under <see cref="World"/> as the LAST child
+    /// added (after <see cref="Fx"/>, <see cref="DuskModulate"/>, <see cref="Cam"/>), so painter's-
+    /// order draws it ABOVE the Y-sorted buildings/heroes/player and above the forge FX, without
+    /// ever joining <see cref="YSort"/> itself — nothing here participates in, or needs, Y-sorting.
+    /// <see cref="DuskModulate"/>'s tint applies to the whole canvas regardless of sibling order, so
+    /// mounting after it does not exempt this layer from the dusk mood. Called once at the tail of
+    /// <see cref="Build"/>, after <see cref="WireForgeFx"/> so <see cref="_forgeBuilding"/> is
+    /// already resolved.</summary>
+    private void WireAmbientLife()
+    {
+        _ambientLife = new AmbientLife2D { Name = "AmbientLife2D" };
+        World.AddChild(_ambientLife);
+
+        var forgeChimneyPos = _forgeBuilding!.GlobalPosition + new Vector2(18f, -70f);
+        var tavernChimneyPos = FindBuilding("tavern").GlobalPosition + new Vector2(14f, -58f);
+        var townRect = new Rect2(0f, 0f, TownLayout2D.GridWidth * TileSize, TownLayout2D.GridHeight * TileSize);
+        var lanternPositions = TownLayout2D.Props
+            .Where(prop => prop.SpriteId == "town2d-prop-lantern")
+            .Select(prop => TownLayout2D.TileToWorld(prop.Tile))
+            .ToList();
+
+        _ambientLife.Build(forgeChimneyPos, tavernChimneyPos, townRect, lanternPositions);
     }
 
     private static CpuParticles2D BuildParticles(string name, Vector2 position, Color color, int amount, double lifetime) => new()
