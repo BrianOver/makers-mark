@@ -170,8 +170,11 @@ public class PlayableLoopTests
         AssertThat(ui.Adapter.LastEvents.OfType<MaterialPurchased>().Count()).IsEqual(2);
         // U21: RefreshAll is visibility-gated — open Forge for a fresh read/Disabled state.
         ui.OpenPanel("Forge");
-        AssertThat(RenderedText(ui.Forge))
-            .Contains($"{ScriptedSession.CraftMaterial} x{ScriptedSession.CopperNeeded}");
+        // UI-5: the copper count now reads off the vendor ListRow's "owned" column
+        // (BuyMat_copper's row), not a standalone "MATERIALS: copper x2" prose line.
+        var copperRow = Find<Godot.Button>(ui.Forge, $"BuyMat_{ScriptedSession.CraftMaterial}");
+        var copperOwned = copperRow.GetParent()?.FindChild("Owned", recursive: false, owned: false) as Godot.Label;
+        AssertThat(copperOwned?.Text).IsEqual($"×{ScriptedSession.CopperNeeded}");
         AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
 
         // Day-1 Expedition: the copper is HELD now, so the U6 craft gate is open

@@ -116,10 +116,12 @@ public class GameThemeTests
         var ui = MountMainUi();
         try
         {
-            // ForgePanel's "RECIPES" section header is built via SimPanel.AddHeader.
+            // UI-5: ForgePanel's "Recipes" section header is now built via UiKit.Section (Title
+            // Case, was the ALL-CAPS "RECIPES" AddHeader label) — Section's own header Label opts
+            // into the same HeaderThemeType/HeaderFont contract this test proves.
             var header = ui.Forge.FindChildren("*", "Label", recursive: true, owned: false)
                 .Cast<Label>()
-                .First(l => l.Text == "RECIPES");
+                .First(l => l.Text == "Recipes");
 
             AssertThat(header.ThemeTypeVariation).IsEqual(GameTheme.HeaderThemeType);
             AssertThat(header.GetThemeFont("font")).IsEqual(GameTheme.HeaderFont);

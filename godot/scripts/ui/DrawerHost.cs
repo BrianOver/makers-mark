@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Godot;
+using GodotClient;
 
 namespace GodotClient.Ui;
 
@@ -26,8 +28,16 @@ namespace GodotClient.Ui;
 ///
 /// <para><b>Slide:</b> accumulated-delta only (<see cref="Tick"/>, called from
 /// <c>MainUi._Process</c>) — no engine <see cref="Tween"/> anywhere in this codebase (the
-/// TabFade/gold-chip-pop precedent). A linear 0→1 ramp drives the panel's X position between fully
-/// off the right edge and its resting spot <see cref="DrawerWidth"/> px in from the right.</para>
+/// TabFade/gold-chip-pop precedent). A cubic ease-out 0→1 ramp (still a plain per-frame lerp, never
+/// a Tween) drives the panel's X position between fully off the right edge and its resting spot
+/// <see cref="DrawerWidth"/> px in from the right.</para>
+///
+/// <para><b>Header (UI-5):</b> a <see cref="UiKit.DrawerHeader"/> strip — title humanized from the
+/// panel's registered id (e.g. "HeroCards" → "Hero Cards"), a best-effort <see
+/// cref="IconRegistry.Glyph"/> icon, and a ✕ close button wired to <see cref="Close"/> — sits above
+/// the content slot, rebuilt fresh on every <see cref="Open"/> (the title/icon depend on which
+/// panel just opened). This is the drawer's ONLY discoverable close affordance besides Esc/
+/// click-out.</para>
 /// </summary>
 public partial class DrawerHost : Control
 {
@@ -41,11 +51,34 @@ public partial class DrawerHost : Control
 
     private ColorRect _dim = null!;
     private PanelContainer _panel = null!;
+    private Control _headerHost = null!;
     private Control _slot = null!;
     private readonly Dictionary<string, Control> _registered = [];
     private Control? _current;
     private double _slideElapsed = -1; // -1 idle; >=0 while a slide is in flight
     private bool _opening;
+
+    /// <summary>Best-effort <see cref="IconRegistry.Glyph"/> name per registered panel id (UI-5) —
+    /// only the ids with a real hand-authored HUD glyph get one; every other id falls back to
+    /// <see cref="DefaultHeaderGlyph"/> rather than probing the resource filesystem for a
+    /// same-named SVG that was never authored (avoids spurious missing-resource log noise on
+    /// every drawer open).</summary>
+    private static readonly Dictionary<string, string> HeaderGlyphByPanelId = new()
+    {
+        ["Bounties"] = "bounty",
+        ["Depths"] = "depths",
+        ["Tavern"] = "gossip",
+    };
+
+    /// <summary>Generic default header glyph for a panel id with no dedicated icon — mirrors
+    /// <see cref="UiKit"/>'s own "rune" default-fallback convention (<c>ArtRect</c>'s
+    /// DefaultFallbackGlyph).</summary>
+    private const string DefaultHeaderGlyph = "rune";
+
+    /// <summary>PascalCase → spaced Title Case ("HeroCards" → "Hero Cards") for a drawer header's
+    /// title, read straight off the panel's registered id (no separate title table to keep in
+    /// sync).</summary>
+    private static readonly Regex PascalWordSplit = new("(?<!^)([A-Z])", RegexOptions.Compiled);
 
     /// <summary>The id of the currently showing panel, or null when the drawer is closed (bare
     /// world) — REPLACE semantics: never more than one at a time, so this is sufficient state,
@@ -94,7 +127,14 @@ public partial class DrawerHost : Control
         // (positioned identically to _panel by ApplySlide, just without going through a Container)
         // makes its rect fully synchronous and deterministic — no deferred-margin hazard.
         _panel = new PanelContainer { Name = "DrawerPanel" };
+        _panel.AddThemeStyleboxOverride("panel", GameTheme.PanelStyleWood());
         AddChild(_panel);
+
+        // UI-5: a persistent host for the per-open header strip — see RebuildHeader. A sibling of
+        // _slot (not its Container-managed child) for the same synchronous-rect reason _panel/
+        // _slot are siblings rather than parent/child (see the class doc's Build note above).
+        _headerHost = new Control { Name = "DrawerHeaderHost" };
+        AddChild(_headerHost);
 
         _slot = new Control { Name = "DrawerSlot" };
         AddChild(_slot);
@@ -131,8 +171,28 @@ public partial class DrawerHost : Control
         Visible = true;
         _opening = true;
         _slideElapsed = 0;
+        RebuildHeader(id);
         ApplySlide(0f);
     }
+
+    /// <summary>Rebuild the header strip for the panel that just opened (UI-5) — cheap (one small
+    /// Control tree) and simplest correct option since <see cref="UiKit.DrawerHeader"/> bakes its
+    /// title/icon in at construction rather than exposing setters.</summary>
+    private void RebuildHeader(string id)
+    {
+        foreach (var child in _headerHost.GetChildren())
+        {
+            _headerHost.RemoveChild(child);
+            child.Free();
+        }
+
+        var glyphName = HeaderGlyphByPanelId.TryGetValue(id, out var mapped) ? mapped : DefaultHeaderGlyph;
+        var header = UiKit.DrawerHeader(HumanizePanelId(id), IconRegistry.Glyph(glyphName), Close);
+        header.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        _headerHost.AddChild(header);
+    }
+
+    private static string HumanizePanelId(string id) => PascalWordSplit.Replace(id, " $1");
 
     /// <summary>Close the drawer (click-out, Esc, or an explicit call) — slides back out, then
     /// hides the host and its content once the slide settles (see <see cref="Tick"/>).</summary>
@@ -185,23 +245,32 @@ public partial class DrawerHost : Control
         }
     }
 
-    /// <summary>Position the sliding panel (background card + content slot, moved as one unit) for
-    /// slide-progress <paramref name="t"/> (0 = fully off-screen right, 1 = resting at <see
-    /// cref="DrawerWidth"/> px from the right edge) — a linear accumulated-delta ramp, direction
-    /// set by <see cref="_opening"/>.</summary>
+    /// <summary>Position the sliding panel (background card + header strip + content slot, moved
+    /// as one unit) for slide-progress <paramref name="t"/> (0 = fully off-screen right, 1 =
+    /// resting at <see cref="DrawerWidth"/> px from the right edge) — a cubic ease-out
+    /// accumulated-delta ramp (still a plain per-frame lerp, never an engine <see cref="Tween"/>),
+    /// direction set by <see cref="_opening"/>. The header strip claims the top <see
+    /// cref="UiKit.DrawerHeaderHeight"/> px; the content slot fills the rest.</summary>
     private void ApplySlide(float t)
     {
         var hostWidth = Size.X;
         var size = new Vector2(DrawerWidth, Size.Y);
         var restX = hostWidth - DrawerWidth;
         var offstageX = hostWidth;
-        var x = _opening ? Mathf.Lerp(offstageX, restX, t) : Mathf.Lerp(restX, offstageX, t);
+        var eased = 1f - Mathf.Pow(1f - t, 3f); // cubic ease-out — see class doc's Slide remarks
+        var x = _opening ? Mathf.Lerp(offstageX, restX, eased) : Mathf.Lerp(restX, offstageX, eased);
         var position = new Vector2(x, 0f);
 
         _panel.Position = position;
         _panel.Size = size;
-        _slot.Position = position;
-        _slot.Size = size;
+
+        _headerHost.Position = position;
+        _headerHost.Size = new Vector2(DrawerWidth, UiKit.DrawerHeaderHeight);
+
+        var contentPosition = position + new Vector2(0f, UiKit.DrawerHeaderHeight);
+        var contentSize = new Vector2(DrawerWidth, Mathf.Max(0f, Size.Y - UiKit.DrawerHeaderHeight));
+        _slot.Position = contentPosition;
+        _slot.Size = contentSize;
     }
 
     /// <summary>

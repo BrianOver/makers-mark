@@ -240,13 +240,14 @@ public class LayoutTests
     }
 
     /// <summary>
-    /// P007 U3/U4/U5/U6: <c>UiKit.StatChip</c>/<c>ArtRect</c>-fallback/<c>PortraitFrame</c> labels
-    /// (the price/atk/def pills and art-miss captions the storefront, hero roster, forge cards,
-    /// and venue tiles now compose) are intentionally small, fixed-size widgets — proven non-null
-    /// and discoverable by <c>UiKitTests</c> — not the R7 autowrap collapse this canary hunts,
-    /// which only afflicts a WordSmart label (<c>SimPanel.AddLabel</c>/<c>AddHeader</c>) handed too
-    /// little width by its container. Identified by walking up to the nearest ancestor Godot name
-    /// the kit itself assigns those widgets (<see cref="GodotClient.Ui.UiKit"/>).
+    /// P007 U3/U4/U5/U6/UI-5: <c>UiKit.StatChip</c>/<c>ArtRect</c>-fallback/<c>PortraitFrame</c>/
+    /// <c>ListRow</c> labels (the price/atk/def pills, art-miss captions, and the Forge vendor/
+    /// Shop shelf rows' fixed 64px "Price"/40px "Owned" columns) are intentionally small,
+    /// fixed-size widgets — proven non-null and discoverable by <c>UiKitTests</c> — not the R7
+    /// autowrap collapse this canary hunts, which only afflicts a WordSmart label
+    /// (<c>SimPanel.AddLabel</c>/<c>AddHeader</c>) handed too little width by its container.
+    /// Identified by walking up to the nearest ancestor Godot name the kit itself assigns those
+    /// widgets (<see cref="GodotClient.Ui.UiKit"/>).
     ///
     /// <para><b>StartsWith, not exact-match (P007 U5 fix):</b> Godot auto-disambiguates sibling
     /// node names — a THIRD <c>StatChip</c> added to the same parent (e.g. a recipe card's
@@ -254,7 +255,8 @@ public class LayoutTests
     /// exact <c>== "StatChip"</c> check would then miss it and false-flag a perfectly legitimate
     /// narrow numeral (e.g. a Defense value of "6") as an R7 collapse. A prefix match still only
     /// matches names the kit itself assigns (no other builder in this codebase names a node
-    /// <c>StatChip*</c>/<c>PortraitFrame*</c>/<c>ArtRectFallback*</c>), so it stays precise.</para>
+    /// <c>StatChip*</c>/<c>PortraitFrame*</c>/<c>ArtRectFallback*</c>/<c>ListRow*</c>), so it stays
+    /// precise.</para>
     /// </summary>
     private static bool IsCompactKitWidgetLabel(Label label)
     {
@@ -263,7 +265,8 @@ public class LayoutTests
             var name = node.Name.ToString();
             if (name.StartsWith("StatChip", StringComparison.Ordinal)
                 || name.StartsWith("ArtRectFallback", StringComparison.Ordinal)
-                || name.StartsWith("PortraitFrame", StringComparison.Ordinal))
+                || name.StartsWith("PortraitFrame", StringComparison.Ordinal)
+                || name.StartsWith("ListRow", StringComparison.Ordinal))
             {
                 return true;
             }

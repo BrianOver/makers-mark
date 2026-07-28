@@ -126,32 +126,36 @@ public partial class ForgePanel : SimPanel
         }
 
         var state = Adapter.CurrentState;
+        // UI-5: the running materials list is now redundant with each vendor ListRow's own
+        // "owned" column below — this line stays only as the empty-inventory hint (no full
+        // "copper x4, iron x2" prose dump once there IS stock to read off the rows instead).
         _materialsLabel!.Text = state.Player.Materials.IsEmpty
             ? "MATERIALS: none — buy from the vendor below or wait for Evening's returning heroes"
-            : "MATERIALS: " + string.Join(", ", state.Player.Materials.Select(m => $"{m.Key} x{m.Value}"));
+            : string.Empty;
 
-        // Vendor rows (U3): every priced-pool material at its marked-up single-unit price.
-        // Display quote only — the sim's MaterialVendorHandlers reprices authoritatively on
-        // apply; this mirrors its exact formula (ceilDiv over sim-owned constants), no rules here.
+        // Vendor rows (U3, UI-5 ListRow-ified): every priced-pool material at its marked-up
+        // single-unit price. Display quote only — the sim's MaterialVendorHandlers reprices
+        // authoritatively on apply; this mirrors its exact formula (ceilDiv over sim-owned
+        // constants), no rules here.
         Clear(_vendorRows!);
         foreach (var key in MaterialRegistry.PricedPool)
         {
             var unit = MaterialRegistry.UnitPrice(key);
             var quote = (int)(((long)unit * (1000 + MaterialVendorHandlers.VendorMarkupPermille) + 999) / 1000);
             var have = state.Player.Materials.TryGetValue(key, out var owned) ? owned : 0;
-            var row = AddRow(_vendorRows!);
-            AddIcon(row, IconRegistry.Ore(key));
-            AddLabel(row, $"{key} — {quote}g each (have {have})");
-            var buy = AddButton(row, $"BuyMat_{key}", "Buy 1", () => OnBuyMaterialPressed(key));
+
+            var buy = new Button { Name = $"BuyMat_{key}", Text = "Buy 1" };
+            buy.Pressed += () => OnBuyMaterialPressed(key);
             // U6 gate, mirroring MaterialVendorHandlers: Morning-only CanHandle + the gold
             // check. Landing phase = the CURRENT phase (GameKernel.Tick applies the queued
             // batch against state.Phase before advancing), so the buy is legal exactly
-            // while the sim still sits AT Morning.
-            GateButton(buy,
-                legal: state.Phase == DayPhase.Morning && quote <= state.Player.Gold,
-                whyNot: state.Phase != DayPhase.Morning
-                    ? "The vendor sells in the Morning."
-                    : "You can't afford that yet.");
+            // while the sim still sits AT Morning. ListRow inlines the exact GateButton
+            // contract (Disabled + player-phrased tooltip) itself.
+            var legal = state.Phase == DayPhase.Morning && quote <= state.Player.Gold;
+            var whyNot = state.Phase != DayPhase.Morning
+                ? "The vendor sells in the Morning."
+                : "You can't afford that yet.";
+            _vendorRows!.AddChild(ListRow(IconRegistry.Ore(key), key, $"{quote}g", have.ToString(), buy, legal, whyNot));
         }
 
         Clear(_recipeRows!);
@@ -531,8 +535,11 @@ public partial class ForgePanel : SimPanel
 
         // Phase C U-C1 slice 2: modifier composition — one selector per family, each populated with
         // "(none)" plus the registered modifiers of that family. Read in OnCraftPressed.
-        AddHeader(body, "MODIFIERS (OPTIONAL)");
-        var modRow = AddRow(body);
+        // UI-5: Title Case Section wrapper (was an ALL-CAPS AddHeader label) — matches ShopPanel's
+        // existing Section-based screens.
+        var modifiersSection = Section("Modifiers (Optional)");
+        body.AddChild(modifiersSection.Root);
+        var modRow = AddRow(modifiersSection.Body);
         _oilSelect = BuildModifierSelect("OilSelect", GameSim.Contracts.ModifierFamily.QuenchOil);
         _runeSelect = BuildModifierSelect("RuneSelect", GameSim.Contracts.ModifierFamily.Rune);
         _fitSelect = BuildModifierSelect("FitSelect", GameSim.Contracts.ModifierFamily.Fitting);
@@ -540,17 +547,20 @@ public partial class ForgePanel : SimPanel
         modRow.AddChild(_runeSelect);
         modRow.AddChild(_fitSelect);
 
-        AddHeader(body, "MORNING VENDOR");
+        var vendorSection = Section("Morning Vendor");
+        body.AddChild(vendorSection.Root);
         _vendorRows = new VBoxContainer { Name = "VendorRows" };
-        body.AddChild(_vendorRows);
+        vendorSection.Body.AddChild(_vendorRows);
 
-        AddHeader(body, "RECIPES");
+        var recipeSection = Section("Recipes");
+        body.AddChild(recipeSection.Root);
         _recipeRows = new VBoxContainer { Name = "RecipeRows" };
-        body.AddChild(_recipeRows);
+        recipeSection.Body.AddChild(_recipeRows);
 
-        AddHeader(body, "TALENTS");
+        var talentSection = Section("Talents");
+        body.AddChild(talentSection.Root);
         _talentRows = new VBoxContainer { Name = "TalentRows" };
-        body.AddChild(_talentRows);
+        talentSection.Body.AddChild(_talentRows);
 
         // U23d: the Anvil Map forge overlay — added LAST (after the scroll body above) so it
         // draws on top, self-contained (PKD8), hidden until "Work the forge" opens it.

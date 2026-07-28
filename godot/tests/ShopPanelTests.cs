@@ -62,7 +62,7 @@ public class ShopPanelTests
     // ui.Interior.ShopStage, for the equivalent coverage that survives).
 
     [TestCase]
-    public void ShelfCard_PriceChip_ShrinksToContent_InsteadOfStretchingFullPanelWidth()
+    public void ShelfCard_PriceLabel_ShrinksToContent_InsteadOfStretchingFullPanelWidth()
     {
         var ui = MountMainUi();
         try
@@ -72,9 +72,11 @@ public class ShopPanelTests
             PressEnabled(ui.Shop, $"Stock_{itemId.Value}");
             ui.Adapter.AdvancePhase(); // lands the stock
 
-            var chip = ui.Shop.FindChild("StatChip", recursive: true, owned: false) as Control;
-            AssertThat(chip).IsNotNull();
-            AssertThat(chip!.SizeFlagsHorizontal).IsNotEqual(Control.SizeFlags.ExpandFill);
+            // UI-5: the shelf row's price now lives in its ListRow's fixed-width "Price" Label
+            // (was a standalone StatChip wrapped in AddChip's ShrinkBegin fix) — same underlying
+            // R7-class guard (must not stretch to the row's full width), different control.
+            var price = Find<Label>(ui.Shop, "Price");
+            AssertThat(price.SizeFlagsHorizontal).IsNotEqual(Control.SizeFlags.ExpandFill);
         }
         finally
         {
