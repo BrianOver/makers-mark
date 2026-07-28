@@ -159,13 +159,31 @@ public partial class Building2D : Node2D
         return body;
     }
 
+    private static readonly Color LabelFontColor = new(0.96f, 0.94f, 0.88f);   // warm parchment white
+    private static readonly Color LabelOutlineColor = new(0.08f, 0.06f, 0.10f, 0.92f); // dusk-dark, near-opaque
+    private static readonly Color LabelShadowColor = new(0f, 0f, 0f, 0.35f);
+
+    /// <summary>A crisp outlined nametag (the 2D twin of <c>Building3D.BuildLabel</c>'s
+    /// <c>OutlineSize</c> Label3D) — small warm-white text with a near-opaque dusk-dark outline plus
+    /// a soft drop shadow, so the name stays legible over grass, cobble, OR a building roof instead
+    /// of reading as raw unstyled white text stamped on the sprite.</summary>
     private static Label BuildLabel(string text, Vector2 size) => new()
     {
         Name = "Label",
         Text = text,
-        Position = new Vector2(-size.X / 2f, -size.Y - 16f), // clear of the roof, centered above
+        Position = new Vector2(-size.X / 2f, -size.Y - 20f), // clear of the roof, centered above
         Size = new Vector2(size.X, 16f),
         HorizontalAlignment = HorizontalAlignment.Center,
+        LabelSettings = new LabelSettings
+        {
+            FontSize = 12,
+            FontColor = LabelFontColor,
+            OutlineSize = 5,
+            OutlineColor = LabelOutlineColor,
+            ShadowSize = 2,
+            ShadowColor = LabelShadowColor,
+            ShadowOffset = new Vector2(0f, 1.5f),
+        },
     };
 
     /// <summary>One tile below the sprite's bottom edge (world +Y) — far enough that the
