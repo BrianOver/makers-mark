@@ -110,4 +110,37 @@ These are candidate-generation gaps (the guided surface + advisor can't reach re
 7. **The reforge-heirloom legend loop is the north star working** but it's a happy accident a legend-chaser stumbles into — should it be a first-class, guided arc?
 8. **What decision points are MISSING?** — the loop has ~6 dilemmas but the mid-game (days 6–15) becomes a stable "accept/craft/stock" rhythm; where would a new tension most improve it?
 
-*Evidence: five worker playthrough logs (returned to the orchestrator; scripts are deterministic replays from seeds 2026/2027). Harness: `sim/GameSim.Cli/DecisionPlay.cs`. Companion human artifact: the "How the Game Plays" visual page. Source-of-truth cross-refs: `sim/GameSim/Advisor/ActionLegality.cs`, `sim/GameSim/Contracts/ActionBudget.cs`, `sim/GameSim/Counter/CounterHandlers.cs`.*
+---
+
+## 9. Professions — the four crafts + the demand-map finding
+
+*Added after 5 more runs: one each of Alchemy / Tanning / Engineering (seed 2026, ~14d), a Blacksmith advisor-follower (18d), and a dual Blacksmith+Alchemy run (14d). All via `decisions play --profession`.*
+
+**Professions are pure data on one pipeline** (`ProfessionDefinition` → `CraftingHandlers`/`QualityRoller`). All four share the day, the 5-slot budget, the verb set, the talent-tree *shape*, the quality table, and the ore materials. Only three things vary: the recipe line, the hero need it serves, the crafting mechanic.
+
+| Profession | Makes | Commissionable? | Unique mechanic | Result (100g start, ~14d) | Depth |
+|---|---|---|---|---|---|
+| **Blacksmith** | weapons/shields/armor (16) | yes (all 3 gear slots) | forge hammer minigame (`PerformanceGrade`) | 5.1–5.8× | DEEP |
+| **Engineering** | bolt-throwers/vests/**trinkets** (8) | yes (gear) + only Trinket source | none (generic roll) | **6.2×** | THIN, rich |
+| **Alchemy** | draughts/elixirs/robe/charm (8) | **only the robe** (Armor); consumables+trinket NOT commissionable | reagent-brew puzzle (**sim-scored**, but harness emits `Puzzle=null` → invisible) + live `send` at Camp | modest; two-business model | its own thing |
+| **Tanning** | hide armor/shields/poultice (7) | Armor/Shield only, **no weapon** | none (generic roll) | **weakest: 100→~28, failed a Guild Assessment** | THIN |
+
+**THE unifying finding — demand is weapon-first, at two levels:**
+1. `CommissionSystem.FindGapSlot` scans **only Weapon/Shield/Armor** → consumables (alchemy) and trinkets (engineering/alchemy) can NEVER be commissioned; and ~75% of commissions ask Weapon.
+2. Every advisor "hero stalled at floor N missing X" depth-gate prompt observed was **Weapon or Shield** — never even Armor. So weapons drive *both* premium gold *and* floor progression.
+
+Consequence: **weapon-making professions (Blacksmith, Engineering) carry the world; non-weapon professions (Tanning, Alchemy) are structurally under-served** — viable as slower/support playstyles but strictly weaker income + locked out of depth-gating. Honest framing: **two professions have a *craft* (Smith's forge, Alchemist's brew), two have a *customer* (Tanner's weight-limited classes, Engineer's trinket monopoly).** The Game-Feel Plan's own "profession distinctness" section prescribes the fix (a distinct core verb + input per profession); the current build hasn't done it for Tanning/Engineering.
+
+**Dual-profession (Blacksmith+Alchemy):** composes as *flavor* (both draw copper → a real "weapons or potions today?" daily dilemma; alchemy's `send` saves weaker heroes — 0 deaths after the heal-send loop began vs 4 before) but **not as balance**: all 18 commissions were Weapon/Shield, every depth-gate was Weapon/Shield, so blacksmith carried all money + all progression (dual ended 1.94× vs mono 5–6×). A player never spent a free alchemy talent because none visibly unblocks a depth-gate. **Verdict: dual = one dominant + one support act.** Also: **picking a 2nd profession is unreachable via the guided surface** — `ActionLegality` only emits a reaffirm-current `SetProfessionsAction`, never an "add a profession" candidate (the dual worker had to add a literal-token escape hatch). Another candidate-gen gap (§5 family).
+
+**Alchemy's puzzle correction:** fable hoped the sim-scored alchemy puzzle could probe the Superior+/Act-III quality wall the blacksmith runs couldn't reach. It can't *through this harness* — `ActionLegality` never emits a puzzle input, so alchemy crafts fall back to the same auto-craft RNG. Act III reachability remains untested via any text surface.
+
+## 10. Additional real bugs found (profession runs)
+
+8. **Blindly following the advisor FAILS** (advisor-follower, 18d): the advisor ranks `AcceptCommission` (Fine+ premium) as #1 while `BuyMaterial` — the precondition to craft it — sits at #2 and is never promoted, so a trusting player accepts commissions they can't fulfill → **≥9 CommissionExpired**, net +7 gold over 18 days. The tutorial/intended path soft-fails. Fix: advisor must promote Buy/Craft to #1 when holding unfulfillable accepted commissions.
+9. **`Stock` candidate-gen stops** after ~day 5 in the advisor run — finished items got no `stock` legal action, stranding 3 items as permanent dead inventory. Needs repro but looks like a real candidate-gen gap.
+10. **Same-name recruits** ("Magnus" ×2 live) make advisor commission references ambiguous to resolve against `legal`.
+11. **Quality→price disconnect:** a Masterwork consumable still auto-prices at 1g (quality tier doesn't raise the suggested price), compounding the SetPrice-inert gap (§5.2).
+12. **Guild Assessment can be FAILED** (`GuildAssessmentMissed`, tanner run) — the slow-selling professions can miss the quota; first observed failure, worth confirming the consequence.
+
+*Evidence: TEN worker playthrough logs (5 blacksmith incl. advisor-follower + 4 professions + 1 dual; deterministic replays, seeds 2026/2027). Harness: `sim/GameSim.Cli/DecisionPlay.cs` (+`--profession`). Companion human artifact: the "How the Game Plays" visual page. Source cross-refs: `ActionLegality.cs`, `ActionBudget.cs`, `CounterHandlers.cs`, `Professions/ProfessionRegistry.cs`, `Heroes/CommissionSystem.cs` (FindGapSlot = the demand-map root), `Professions/Alchemy/AlchemyPuzzleScorer.cs`.*
