@@ -227,6 +227,7 @@ public sealed partial class ForgeMinigame : PanelContainer
         HeatYPermille = Math.Clamp(HeatYPermille - StrikeHeatCostPermille, 0, 1000);
 
         Struck?.Invoke(onTempo);
+        _canvas.OnStruck(onTempo);
         RepaintUi();
     }
 
@@ -264,6 +265,7 @@ public sealed partial class ForgeMinigame : PanelContainer
 
         RecordSample();
         Quenched?.Invoke();
+        _canvas.OnQuenched();
         Finish();
     }
 
@@ -468,7 +470,9 @@ public sealed partial class ForgeMinigame : PanelContainer
         _canvas.CursorYPermille = HeatYPermille;
         _canvas.TempoErrorPermille = TempoErrorPermilleNow();
         _canvas.TempoOnBeatWindowPermille = TempoOnBeatWindowPermille;
+        _canvas.TempoPhase = (float)(_elapsed % TempoPeriodSeconds / TempoPeriodSeconds);
         _canvas.IsPumping = IsPumping;
+        _canvas.Completed = Completed;
         _canvas.QueueRedraw();
 
         if (ShapeXPermille == _lastShapeX && HeatYPermille == _lastHeatY && IsPumping == _lastPumping
@@ -499,11 +503,16 @@ public sealed partial class ForgeMinigame : PanelContainer
     }
 
     /// <summary>
-    /// The 2D drawing surface: renders the shared target line (<see cref="Path"/>) and the cursor
-    /// (<see cref="CursorXPermille"/>/<see cref="CursorYPermille"/>) — a plain <see cref="Control"/>
-    /// with <see cref="_Draw"/> primitive shapes only, exactly the idiom <c>ShopStage</c>'s own
-    /// <c>ShopEmoteGlyph</c> already proves headless-safe (NEVER a 3D <c>SubViewport</c> — a known
-    /// gdUnit headless hang). X = shape progress (left→right), Y = heat (bottom cold → top hot).
+    /// The forge cross-section: a side-view of the smith's fire (coal bed hot at the top, anvil +
+    /// quench trough cold at the bottom) where the billet — a real heat-glowing, morphing sprite
+    /// held in tongs — is steered along the shared target line (<see cref="Path"/>). A metronome
+    /// hammer winds up and falls exactly on the tempo beat so the player can time on-tempo strikes;
+    /// strikes throw a spark burst + a small shake, the bellows brighten the coals, and the plunge
+    /// billows steam. Plain <see cref="_Draw"/> primitives + a handful of nearest-filtered sprites
+    /// (each null-checked with a primitive fallback so headless CI still renders) — never a 3D
+    /// <c>SubViewport</c> (a known gdUnit headless hang). All motion is accumulated-frame-delta only
+    /// (no wall-clock, no RNG — spark patterns come from a fixed table). X = shape progress
+    /// (left→right), Y = heat (bottom cold → top hot).
     /// </summary>
     private sealed partial class AnvilMapCanvas : Control
     {
@@ -512,19 +521,122 @@ public sealed partial class ForgeMinigame : PanelContainer
         public int CursorYPermille;
         public int TempoErrorPermille = 1000;         // 0 = dead on-beat, 1000 = fully off-beat
         public int TempoOnBeatWindowPermille = 180;
+        public float TempoPhase;                       // 0..1 through the beat period (fed each frame)
         public bool IsPumping;
+        public bool Completed;
 
-        // ── forge palette (heat = Y axis: cold blue-steel at the bottom, forge-hot at the top) ──
-        private static readonly Color ColdBand = new(0.11f, 0.13f, 0.22f);
-        private static readonly Color WarmBand = new(0.34f, 0.15f, 0.16f);
-        private static readonly Color HotBand = new(0.62f, 0.24f, 0.12f);
+        private static readonly Color BgTop = new(0.23f, 0.16f, 0.34f);
+        private static readonly Color BgBottom = new(0.14f, 0.11f, 0.20f);
+        private static readonly Color CoalDark = new(0.16f, 0.09f, 0.10f);
+        private static readonly Color CoalEmber = new(1.0f, 0.48f, 0.16f);
+        private static readonly Color AnvilSteel = new(0.20f, 0.21f, 0.27f);
+        private static readonly Color AnvilFace = new(0.30f, 0.31f, 0.38f);
+        private static readonly Color WoodDark = new(0.34f, 0.22f, 0.13f);
+        private static readonly Color WaterTeal = new(0.25f, 0.45f, 0.52f);
+        private static readonly Color TargetAhead = new(1.0f, 0.80f, 0.44f);
         private static readonly Color TargetGlow = new(1.0f, 0.55f, 0.20f);
-        private static readonly Color TargetCore = new(1.0f, 0.78f, 0.42f);
+        private static readonly Color TargetBehind = new(0.40f, 0.37f, 0.44f);
         private static readonly Color GhostMark = new(1.0f, 0.90f, 0.70f);
         private static readonly Color DeviationGood = new(0.45f, 0.90f, 0.50f);
         private static readonly Color DeviationWarn = new(0.95f, 0.75f, 0.30f);
         private static readonly Color DeviationBad = new(0.95f, 0.35f, 0.30f);
-        private static readonly Color GoalColor = new(0.70f, 0.90f, 1.0f);
+
+        // Deterministic spark directions (deg, speed) — -90 is straight up. No RNG.
+        private static readonly (float Ang, float Spd)[] SparkDirs =
+        {
+            (-95, 190), (-80, 150), (-110, 165), (-70, 205), (-100, 140), (-85, 225), (-120, 135), (-62, 175),
+            (-90, 195), (-75, 160), (-105, 178), (-65, 152), (-115, 148), (-95, 212), (-82, 188), (-100, 168),
+        };
+
+        // Fixed ember-lump positions across the coal bed (fraction of width, brightness phase).
+        private static readonly (float Fx, float Phase)[] Coals =
+        {
+            (0.05f, 0.1f), (0.14f, 0.7f), (0.23f, 0.3f), (0.33f, 0.9f), (0.44f, 0.5f), (0.55f, 0.15f),
+            (0.66f, 0.8f), (0.76f, 0.4f), (0.86f, 0.6f), (0.95f, 0.25f),
+        };
+
+        private struct Particle
+        {
+            public Vector2 Pos;
+            public Vector2 Vel;
+            public float Life;
+            public float MaxLife;
+            public Color From;
+            public Color To;
+        }
+
+        private readonly List<Particle> _sparks = new();
+        private readonly List<Particle> _steam = new();
+        private float _anim;
+        private float _shake;
+        private float _ring = -1f;   // on-tempo strike ring: -1 idle, else elapsed 0..0.15
+        private Texture2D?[] _billet = new Texture2D?[4];
+        private Texture2D? _hammer;
+        private bool _texTried;
+
+        public override void _Process(double delta)
+        {
+            var dt = (float)delta;
+            _anim += dt;
+            StepParticles(_sparks, dt, gravity: 320f);
+            StepParticles(_steam, dt, gravity: -30f);
+            if (_shake > 0f) _shake = Math.Max(0f, _shake - 14f * dt);
+            if (_ring >= 0f) { _ring += dt; if (_ring > 0.15f) _ring = -1f; }
+            QueueRedraw();
+        }
+
+        /// <summary>Strike FX: a spark burst from the billet + a small shake; on-tempo throws twice
+        /// the sparks and a white ring. Driven by the sim's own Struck event (no new state).</summary>
+        public void OnStruck(bool onTempo)
+        {
+            var origin = Path.Count >= 2 ? ToCanvasPoint(CursorXPermille, CursorYPermille, Size) : Size / 2f;
+            var n = onTempo ? SparkDirs.Length : SparkDirs.Length / 2;
+            for (var i = 0; i < n; i++)
+            {
+                var (ang, spd) = SparkDirs[i];
+                var r = Mathf.DegToRad(ang);
+                _sparks.Add(new Particle
+                {
+                    Pos = origin,
+                    Vel = new Vector2(Mathf.Cos(r), Mathf.Sin(r)) * spd,
+                    Life = 0.4f, MaxLife = 0.4f,
+                    From = new Color(1f, 0.92f, 0.6f), To = new Color(0.85f, 0.25f, 0.12f),
+                });
+            }
+
+            _shake = onTempo ? 3.2f : 1.6f;
+            if (onTempo) _ring = 0f;
+        }
+
+        /// <summary>Quench FX: a plume of steam from the billet (driven by the sim's Quenched event).</summary>
+        public void OnQuenched()
+        {
+            var origin = Path.Count >= 2 ? ToCanvasPoint(CursorXPermille, CursorYPermille, Size) : Size / 2f;
+            for (var i = 0; i < 10; i++)
+            {
+                var (ang, spd) = SparkDirs[i];
+                _steam.Add(new Particle
+                {
+                    Pos = origin + new Vector2((i - 5) * 2f, 0),
+                    Vel = new Vector2(Mathf.Cos(Mathf.DegToRad(ang)) * 12f, -40f - spd * 0.1f),
+                    Life = 1.2f, MaxLife = 1.2f,
+                    From = new Color(0.95f, 0.95f, 1f, 0.8f), To = new Color(0.8f, 0.85f, 0.95f, 0f),
+                });
+            }
+        }
+
+        private static void StepParticles(List<Particle> list, float dt, float gravity)
+        {
+            for (var i = list.Count - 1; i >= 0; i--)
+            {
+                var p = list[i];
+                p.Vel = new Vector2(p.Vel.X, p.Vel.Y + gravity * dt);
+                p.Pos += p.Vel * dt;
+                p.Life -= dt;
+                if (p.Life <= 0f) { list.RemoveAt(i); continue; }
+                list[i] = p;
+            }
+        }
 
         public override void _Draw()
         {
@@ -534,95 +646,263 @@ public sealed partial class ForgeMinigame : PanelContainer
                 return;
             }
 
-            DrawHeatGradient(size);
+            EnsureTextures();
+            var shake = _shake > 0f ? new Vector2(ShakeTable[(int)(_anim * 60f) % 4].X, ShakeTable[(int)(_anim * 60f) % 4].Y) * _shake : Vector2.Zero;
+            DrawSetTransform(shake, 0f, Vector2.One);
+
+            DrawBackground(size);
+            DrawCoalBed(size);
 
             var hasPath = Path.Count >= 4 && Path.Count % 2 == 0;
             if (hasPath)
             {
-                DrawTargetLine(size);
-                DrawGoalMarker(size);
+                DrawTargetTrail(size);
+            }
+
+            DrawAnvil(size);
+            if (hasPath)
+            {
+                DrawQuenchTrough(size);
             }
 
             var cursor = ToCanvasPoint(CursorXPermille, CursorYPermille, size);
-
-            // Deviation stem: how far the billet sits from the target heat at its current shape-X —
-            // green when tracking well, red when way off (the thing the sim actually scores).
             if (hasPath)
             {
-                var targetY = InterpTargetHeat(CursorXPermille);
-                var targetPt = ToCanvasPoint(CursorXPermille, targetY, size);
-                var dev = Math.Abs(CursorYPermille - targetY);
-                var devColor = dev < 90 ? DeviationGood : dev < 220 ? DeviationWarn : DeviationBad;
-                DrawLine(cursor, targetPt, new Color(devColor, 0.65f), 2f);
-                DrawRect(new Rect2(targetPt - new Vector2(3, 3), new Vector2(6, 6)), new Color(GhostMark, 0.85f));
+                DrawDeviation(cursor, size);
             }
 
-            DrawCursor(cursor);
+            DrawBillet(cursor);
+            DrawHammer(cursor, shake);
+            DrawParticles();
+            DrawBeatFlash(cursor);
+
+            DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
         }
 
-        /// <summary>Vertical cold→hot bands so the Y axis reads as temperature at a glance.</summary>
-        private void DrawHeatGradient(Vector2 size)
+        private static readonly Vector2[] ShakeTable = { new(1, -1), new(-1, 1), new(-1, -1), new(1, 1) };
+
+        private void DrawBackground(Vector2 size)
         {
-            const int bands = 18;
-            var bandH = size.Y / bands;
+            const int bands = 8;
+            var h = size.Y / bands;
             for (var i = 0; i < bands; i++)
             {
-                var heat = 1f - (i + 0.5f) / bands;                // top = hot
-                var col = heat < 0.5f
-                    ? ColdBand.Lerp(WarmBand, heat / 0.5f)
-                    : WarmBand.Lerp(HotBand, (heat - 0.5f) / 0.5f);
-                DrawRect(new Rect2(0, i * bandH, size.X, bandH + 1f), new Color(col, 0.55f));
+                DrawRect(new Rect2(0, i * h, size.X, h + 1f), BgTop.Lerp(BgBottom, (i + 0.5f) / bands));
             }
         }
 
-        private void DrawTargetLine(Vector2 size)
+        private void DrawCoalBed(Vector2 size)
+        {
+            var bedH = size.Y * 0.20f;
+            DrawRect(new Rect2(0, 0, size.X, bedH), CoalDark);
+            var flare = IsPumping ? 1.35f : 1f;
+            foreach (var (fx, phase) in Coals)
+            {
+                var pulse = 0.55f + 0.45f * (0.5f + 0.5f * Mathf.Sin((_anim + phase * 3f) * 2.2f));
+                var c = new Color(CoalEmber.R, CoalEmber.G, CoalEmber.B, Math.Clamp(pulse * flare * 0.9f, 0f, 1f));
+                var cx = fx * size.X;
+                DrawRect(new Rect2(cx - 7, bedH - 9, 14, 8), c);
+                DrawRect(new Rect2(cx - 4, bedH - 13, 8, 5), new Color(c.R, c.G * 1.1f, c.B, c.A * 0.8f));
+            }
+
+            // Flame licks along the bottom edge of the coal bed.
+            for (var i = 0; i < Coals.Length; i += 2)
+            {
+                var cx = Coals[i].Fx * size.X;
+                var flick = 6f + 5f * Mathf.Sin((_anim * 3f) + Coals[i].Phase * 6f);
+                DrawColoredPolygon(
+                    new[] { new Vector2(cx - 5, bedH), new Vector2(cx, bedH + flick), new Vector2(cx + 5, bedH) },
+                    new Color(1f, 0.55f, 0.18f, 0.5f * flare));
+            }
+        }
+
+        private void DrawTargetTrail(Vector2 size)
         {
             var vertexCount = Path.Count / 2;
             for (var i = 0; i < vertexCount - 1; i++)
             {
-                var a = ToCanvasPoint(Path[i * 2], Path[i * 2 + 1], size);
+                var ax = Path[i * 2];
+                var a = ToCanvasPoint(ax, Path[i * 2 + 1], size);
                 var b = ToCanvasPoint(Path[(i + 1) * 2], Path[(i + 1) * 2 + 1], size);
-                DrawLine(a, b, new Color(TargetGlow, 0.25f), 7f);   // soft glow
-                DrawLine(a, b, new Color(TargetCore, 0.95f), 2.5f); // bright core
+                var behind = ax < CursorXPermille;
+                var seg = b - a;
+                var len = seg.Length();
+                var dir = len > 0.001f ? seg / len : Vector2.Zero;
+                if (!behind)
+                {
+                    DrawLine(a, b, new Color(TargetGlow, 0.18f), 6f); // soft heat glow underlay
+                }
+
+                // Dashed chalk marks along the segment.
+                for (var d = 0f; d < len; d += 8f)
+                {
+                    var p = a + dir * d;
+                    var col = behind ? new Color(TargetBehind, 0.5f) : new Color(TargetAhead, 0.95f);
+                    DrawRect(new Rect2(p - new Vector2(2f, 1f), new Vector2(4f, 2f)), col);
+                }
             }
         }
 
-        /// <summary>A goal flag at the path's end — where the shape is finished and the player
-        /// should stop hammering and plunge.</summary>
-        private void DrawGoalMarker(Vector2 size)
+        private void DrawAnvil(Vector2 size)
+        {
+            var faceY = size.Y - 4f; // y=0 heat line sits at the anvil face
+            DrawRect(new Rect2(0, faceY, size.X, size.Y - faceY + 2f), AnvilFace);
+            // A stout anvil body centered low.
+            var cx = size.X * 0.5f;
+            DrawColoredPolygon(
+                new[]
+                {
+                    new Vector2(cx - 70, faceY), new Vector2(cx + 70, faceY),
+                    new Vector2(cx + 40, faceY + 10), new Vector2(cx + 22, faceY + 10),
+                    new Vector2(cx + 16, size.Y), new Vector2(cx - 16, size.Y),
+                    new Vector2(cx - 22, faceY + 10), new Vector2(cx - 40, faceY + 10),
+                },
+                AnvilSteel);
+        }
+
+        private void DrawQuenchTrough(Vector2 size)
         {
             var endY = Path[^1];
-            var end = ToCanvasPoint(1000, endY, size);
-            DrawLine(new Vector2(end.X, 0), new Vector2(end.X, size.Y), new Color(GoalColor, 0.20f), 1.5f);
-            DrawCircle(end, 4f, new Color(GoalColor, 0.9f));
+            var waterTop = ToCanvasPoint(1000, endY, size).Y;
+            var x0 = size.X - 40f;
+            DrawRect(new Rect2(x0, waterTop - 3, 38, size.Y - waterTop + 3), WoodDark);
+            var ready = CursorXPermille >= 1000;
+            var water = ready ? WaterTeal.Lerp(new Color(0.5f, 0.85f, 0.95f), 0.5f + 0.5f * Mathf.Sin(_anim * 4f)) : WaterTeal;
+            DrawRect(new Rect2(x0 + 2, waterTop, 34, size.Y - waterTop - 2), new Color(water, 0.9f));
+            // Shimmer lines.
+            for (var s = 0; s < 2; s++)
+            {
+                var sy = waterTop + 4 + s * 6 + 1.5f * Mathf.Sin(_anim * 3f + s);
+                DrawLine(new Vector2(x0 + 3, sy), new Vector2(x0 + 35, sy), new Color(1f, 1f, 1f, 0.25f), 1f);
+            }
         }
 
-        private void DrawCursor(Vector2 cursor)
+        private void DrawDeviation(Vector2 cursor, Vector2 size)
+        {
+            var targetY = InterpTargetHeat(CursorXPermille);
+            var targetPt = ToCanvasPoint(CursorXPermille, targetY, size);
+            var dev = Math.Abs(CursorYPermille - targetY);
+            var col = dev < 90 ? DeviationGood : dev < 220 ? DeviationWarn : DeviationBad;
+            var a = 0.4f + 0.3f * (0.5f + 0.5f * Mathf.Sin(_anim * 6f));
+            DrawLine(cursor, targetPt, new Color(col, a), 2f);
+            // Ghost ember flickering on the ideal spot.
+            var flick = 3f + Mathf.Sin(_anim * 9f);
+            DrawCircle(targetPt, flick, new Color(GhostMark, 0.85f));
+        }
+
+        private void DrawBillet(Vector2 cursor)
         {
             var heatFrac = Math.Clamp(CursorYPermille / 1000f, 0f, 1f);
-            // The billet: dull red when cold, blazing white-gold when hot.
-            var body = new Color(0.55f, 0.20f, 0.12f).Lerp(new Color(1.0f, 0.92f, 0.62f), heatFrac);
-            var glowR = 9f + 5f * heatFrac;
-            DrawCircle(cursor, glowR, new Color(body, 0.28f));      // heat halo
-            DrawCircle(cursor, 5.5f, body);                          // core
-            if (IsPumping)
+            var body = HeatColor(heatFrac);
+            var glowR = 10f + 7f * heatFrac;
+            DrawCircle(cursor, glowR, new Color(body, 0.30f)); // heat halo
+
+            var frame = CursorXPermille >= 900 ? 3 : CursorXPermille >= 650 ? 2 : CursorXPermille >= 300 ? 1 : 0;
+            var tex = _billet[frame];
+            if (tex is not null)
             {
-                DrawArc(cursor, glowR + 3f, 0f, Mathf.Tau, 24, new Color(HotBand, 0.7f), 1.5f);
+                const float sc = 1.7f;
+                var w = tex.GetWidth() * sc;
+                var h = tex.GetHeight() * sc;
+                DrawTextureRect(tex, new Rect2(cursor - new Vector2(w / 2f, h / 2f), new Vector2(w, h)), false, body);
+            }
+            else
+            {
+                DrawCircle(cursor, 6f, body); // headless / missing-art fallback
             }
 
-            // Tempo ring: flares bright + tight exactly on-beat, so the player can time strikes.
-            var onBeat = 1f - Math.Clamp(TempoErrorPermille / 1000f, 0f, 1f); // 1 on-beat
-            if (onBeat > 0.02f)
+            if (heatFrac < 0.25f)
             {
-                var inWindow = TempoErrorPermille <= TempoOnBeatWindowPermille;
-                var ringColor = inWindow ? new Color(1.0f, 0.95f, 0.5f) : new Color(0.9f, 0.7f, 0.4f);
-                var ringR = 18f - 6f * onBeat;                       // contracts toward the beat
-                DrawArc(cursor, ringR, 0f, Mathf.Tau, 28, new Color(ringColor, 0.25f + 0.6f * onBeat), inWindow ? 2.5f : 1.5f);
+                DrawArc(cursor, glowR - 2f, 0f, Mathf.Tau, 20, new Color(0.42f, 0.48f, 0.60f, 0.9f), 2f); // "gone cold" ring
             }
         }
 
-        /// <summary>Linear-interpolate the target heat (Y permille) at a given shape-X permille along
-        /// the polyline — the "where should the billet be" reference the deviation stem draws to.</summary>
+        private void DrawHammer(Vector2 cursor, Vector2 shake)
+        {
+            // The hammer is the metronome: it winds up through the beat and falls onto the billet
+            // exactly on-beat (TempoPhase→1/0). Head cocked back at mid-phase, down at the beat.
+            float swing = TempoPhase < 0.82f
+                ? Mathf.Lerp(6f, -66f, TempoPhase / 0.82f)          // winding up
+                : Mathf.Lerp(-66f, 6f, (TempoPhase - 0.82f) / 0.18f); // falling to the beat
+            var pivot = cursor + new Vector2(14f, -34f);            // the smith's hand, up-right of the billet
+            var inWindow = TempoErrorPermille <= TempoOnBeatWindowPermille;
+            var tint = inWindow ? new Color(1.0f, 0.9f, 0.55f) : Colors.White;
+
+            if (_hammer is not null)
+            {
+                const float sc = 1.6f;
+                var w = _hammer.GetWidth() * sc;
+                var h = _hammer.GetHeight() * sc;
+                DrawSetTransform(pivot + shake, Mathf.DegToRad(swing), Vector2.One);
+                // Pivot at the handle bottom-centre of the source sprite (14,27 of 28×28).
+                DrawTextureRect(_hammer, new Rect2(new Vector2(-14f * sc, -27f * sc), new Vector2(w, h)), false, tint);
+                DrawSetTransform(shake, 0f, Vector2.One);
+            }
+            else
+            {
+                DrawLine(pivot, pivot + new Vector2(0, 22f).Rotated(Mathf.DegToRad(swing)), tint, 3f); // fallback
+            }
+        }
+
+        private void DrawParticles()
+        {
+            foreach (var p in _sparks)
+            {
+                var t = 1f - p.Life / p.MaxLife;
+                DrawRect(new Rect2(p.Pos - new Vector2(1.5f, 1.5f), new Vector2(3, 3)), p.From.Lerp(p.To, t));
+            }
+
+            foreach (var p in _steam)
+            {
+                var t = 1f - p.Life / p.MaxLife;
+                var c = p.From.Lerp(p.To, t);
+                DrawCircle(p.Pos, 3f + 5f * t, c);
+            }
+        }
+
+        private void DrawBeatFlash(Vector2 cursor)
+        {
+            if (_ring >= 0f)
+            {
+                var t = _ring / 0.15f;
+                DrawArc(cursor, 6f + 22f * t, 0f, Mathf.Tau, 28, new Color(1f, 0.96f, 0.7f, 1f - t), 2.5f);
+            }
+
+            // Continuous secondary on-beat cue (kept for readability even without a strike).
+            var onBeat = 1f - Math.Clamp(TempoErrorPermille / 1000f, 0f, 1f);
+            if (onBeat > 0.5f && _ring < 0f)
+            {
+                var inWindow = TempoErrorPermille <= TempoOnBeatWindowPermille;
+                DrawArc(cursor, 16f - 5f * onBeat, 0f, Mathf.Tau, 24,
+                    new Color(1f, 0.9f, 0.5f, 0.15f + 0.4f * onBeat), inWindow ? 2f : 1f);
+            }
+        }
+
+        private static Color HeatColor(float f) =>
+            f < 0.5f
+                ? new Color(0.29f, 0.23f, 0.27f).Lerp(new Color(0.85f, 0.31f, 0.16f), f / 0.5f)  // cold steel → red
+                : new Color(0.85f, 0.31f, 0.16f).Lerp(new Color(1.0f, 0.97f, 0.86f), (f - 0.5f) / 0.5f); // red → white-hot
+
+        private void EnsureTextures()
+        {
+            if (_texTried)
+            {
+                return;
+            }
+
+            _texTried = true;
+            TextureFilter = TextureFilterEnum.Nearest;
+            for (var i = 0; i < 4; i++)
+            {
+                _billet[i] = LoadTex($"res://assets/minigames/billet_{i}.png");
+            }
+
+            _hammer = LoadTex("res://assets/minigames/hammer.png");
+        }
+
+        private static Texture2D? LoadTex(string path) =>
+            ResourceLoader.Exists(path) ? GD.Load<Texture2D>(path) : null;
+
         private int InterpTargetHeat(int xPermille)
         {
             var vertexCount = Path.Count / 2;
