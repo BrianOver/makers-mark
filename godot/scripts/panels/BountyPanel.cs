@@ -136,6 +136,14 @@ public partial class BountyPanel : SimPanel
         }
 
         var body = BuildScrollBody();
+
+        // The pinned-notices board, so posting a bounty reads as tacking a note to real wood.
+        // Null-tolerant (no art -> nothing mounted), same as every other SceneBanner caller.
+        if (UiKit.SceneBanner("panel_banner_bounties") is { } banner)
+        {
+            body.AddChild(banner);
+        }
+
         _feedback = AddLabel(body, string.Empty);
         _feedback.Name = "BountyFeedback";
 

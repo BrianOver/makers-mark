@@ -147,6 +147,14 @@ public partial class HeroPanel : SimPanel
         }
 
         var body = BuildScrollBody();
+
+        // The guild hall the heroes drink and muster in — gives the roster a home instead of
+        // opening on a bare list. Null-tolerant like every other SceneBanner caller.
+        if (UiKit.SceneBanner("panel_banner_heroes") is { } banner)
+        {
+            body.AddChild(banner);
+        }
+
         _content = new VBoxContainer { Name = "HeroCardContent" };
         body.AddChild(_content);
     }
