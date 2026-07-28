@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using GameSim.Advisor;
 using GameSim.Professions;
+using GodotClient.Minigames;
 using Godot;
 
 namespace GodotClient.Tools;
@@ -56,6 +57,9 @@ public partial class RealPlaytest : Node
         await Settle(10);
         Shot("04_forge");
 
+        // ── Minigame: drive the real "Work the forge" Anvil Map with real interaction ──
+        await DriveForgeMinigame(ui);
+
         // Buy materials through the real vendor Buy buttons.
         var adapter = ui.Adapter;
         foreach (var a in ActionLegality.LegalActions(adapter.CurrentState, adapter.CurrentState.Phase))
@@ -76,6 +80,86 @@ public partial class RealPlaytest : Node
 
         GD.Print("[realplaytest] done");
         GetTree().Quit();
+    }
+
+    /// <summary>Drives the real blacksmith Anvil Map minigame end-to-end with real interaction:
+    /// buys materials until a recipe is craftable, presses the real "Work the forge" button, then
+    /// pumps the bellows + hammers the shape to the end and plunges — capturing the overlay and its
+    /// scored result. This exercises the mini-game exactly as a player would, every playtest.</summary>
+    private async Task DriveForgeMinigame(MainUi ui)
+    {
+        var adapter = ui.Adapter;
+
+        ui.OpenPanel("Forge");
+        await Settle(8);
+
+        Button? FindWork() => ui.FindChild("WorkForge_*", recursive: true, owned: false) as Button;
+        var work = FindWork();
+
+        // If the first recipe isn't affordable yet, buy materials (real vendor actions), apply, reopen.
+        if (work is null || work.Disabled)
+        {
+            for (int pass = 0; pass < 2; pass++)
+                foreach (var a in ActionLegality.LegalActions(adapter.CurrentState, adapter.CurrentState.Phase))
+                    if (a.GetType().Name.Contains("BuyMaterial")) adapter.Queue(a);
+            adapter.AdvancePhase();               // apply the buys
+            await Settle(6);
+            ui.OpenPanel("Forge");
+            await Settle(8);
+            work = FindWork();
+        }
+
+        if (work is null || work.Disabled)
+        {
+            GD.Print($"[realplaytest] minigame SKIPPED — WorkForge button {(work is null ? "not found" : "still gated")}");
+            Shot("04a_forge_nomini");
+            return;
+        }
+
+        work.EmitSignal(BaseButton.SignalName.Pressed);   // real click → OnWorkForgePressed → overlay
+        await Settle(6);
+        if (ui.FindChild("ForgeMinigame", recursive: true, owned: false) is not ForgeMinigame mg)
+        {
+            GD.Print("[realplaytest] minigame ERROR — ForgeMinigame node not found after press");
+            return;
+        }
+
+        Shot("04a_minigame_open");
+
+        // Real interaction (the strategy a player learns): the bellows drift the shape BACK while
+        // pumping, so don't interleave 1:1 — pump the billet HOT in one burst, then unload a rapid
+        // strike run (no drift while hammering) that carries the shape forward. Repeat to the end.
+        int guard = 0;
+        while (mg.ShapeXPermille < 1000 && guard++ < 40)
+        {
+            mg.BellowsStart();
+            int p = 0;
+            while (mg.HeatYPermille < 850 && p++ < 140) await Settle(2);
+            mg.BellowsStop(); await Settle(1);
+
+            int s = 0;
+            while (mg.HeatYPermille > 140 && mg.ShapeXPermille < 1000 && s++ < 16)
+            {
+                mg.ForgeStrike();
+                await Settle(1);
+            }
+        }
+        GD.Print($"[realplaytest] minigame drive end: shapeX={mg.ShapeXPermille} heat={mg.HeatYPermille} guard={guard}");
+
+        Shot("04b_minigame_mid");
+
+        await Settle(6);                 // let heat drain toward the quench trough
+        if (mg.ShapeXPermille >= 1000) mg.Plunge();
+        await Settle(8);
+        Shot("04c_minigame_result");
+
+        GD.Print($"[realplaytest] minigame: shapeX={mg.ShapeXPermille} completed={mg.Completed} " +
+                 $"emitted={(mg.EmittedAction is null ? "NULL" : mg.EmittedAction.RecipeId)} " +
+                 $"previewGrade={mg.PreviewGradePermille}");
+
+        // Close any result ceremony so the rest of the playtest continues cleanly.
+        ui.OpenPanel("Forge");
+        await Settle(4);
     }
 
     private static void SetMove(Vector2 dir)
