@@ -441,8 +441,19 @@ public sealed partial class ForgeMinigame : PanelContainer
         RepaintUi();
     }
 
+    // Last-rendered label state — so the per-frame RepaintUi (called from _Process→Advance every
+    // frame) only rebuilds the readout/title strings when something actually changed, instead of
+    // allocating four interpolated strings every single frame on the hot path.
+    private int _lastShapeX = int.MinValue;
+    private int _lastHeatY = int.MinValue;
+    private bool _lastPumping;
+    private bool _lastCompleted;
+    private bool _lastCancelled;
+
     /// <summary>Render-only — reads the current run state, writes no scoring state. Called after
-    /// every state-changing call above (never a per-frame poll independent of them).</summary>
+    /// every state-changing call above AND every frame via <see cref="Advance"/> (for the canvas's
+    /// live tempo/heat animation); the label/button rebuild is gated on an actual state change so
+    /// the per-frame path allocates nothing.</summary>
     private void RepaintUi()
     {
         if (!_built)
@@ -450,18 +461,37 @@ public sealed partial class ForgeMinigame : PanelContainer
             return;
         }
 
-        _titleLabel.Text = $"Anvil Map: {RecipeId}";
-
+        // Canvas: fed + redrawn every call — the draw is cheap 2D primitives and the tempo ring +
+        // heat glow need a continuous redraw to animate.
         _canvas.Path = Path;
         _canvas.CursorXPermille = ShapeXPermille;
         _canvas.CursorYPermille = HeatYPermille;
+        _canvas.TempoErrorPermille = TempoErrorPermilleNow();
+        _canvas.TempoOnBeatWindowPermille = TempoOnBeatWindowPermille;
+        _canvas.IsPumping = IsPumping;
         _canvas.QueueRedraw();
+
+        if (ShapeXPermille == _lastShapeX && HeatYPermille == _lastHeatY && IsPumping == _lastPumping
+            && Completed == _lastCompleted && WasCancelled == _lastCancelled)
+        {
+            return; // nothing the text/buttons show has changed — skip the string work
+        }
+
+        _lastShapeX = ShapeXPermille;
+        _lastHeatY = HeatYPermille;
+        _lastPumping = IsPumping;
+        _lastCompleted = Completed;
+        _lastCancelled = WasCancelled;
+
+        _titleLabel.Text = $"Anvil Map: {RecipeId}";
 
         _readoutLabel.Text = WasCancelled
             ? "Cancelled."
             : Completed
                 ? $"Done — grade {PreviewGradePermille}."
-                : $"Shape {ShapeXPermille}/1000 — Heat {HeatYPermille} — {(IsPumping ? "pumping" : "idle")}";
+                : ShapeXPermille >= 1000
+                    ? $"Shaped! Let it cool, then Plunge — Heat {HeatYPermille}"
+                    : $"Shape {ShapeXPermille}/1000 — Heat {HeatYPermille} — {(IsPumping ? "pumping" : "idle")}";
 
         _hammerButton.Disabled = Completed || WasCancelled || IsPumping || ShapeXPermille >= 1000;
         _bellowsButton.Disabled = Completed || WasCancelled;
@@ -480,6 +510,21 @@ public sealed partial class ForgeMinigame : PanelContainer
         public ImmutableList<int> Path = ImmutableList<int>.Empty;
         public int CursorXPermille;
         public int CursorYPermille;
+        public int TempoErrorPermille = 1000;         // 0 = dead on-beat, 1000 = fully off-beat
+        public int TempoOnBeatWindowPermille = 180;
+        public bool IsPumping;
+
+        // ── forge palette (heat = Y axis: cold blue-steel at the bottom, forge-hot at the top) ──
+        private static readonly Color ColdBand = new(0.11f, 0.13f, 0.22f);
+        private static readonly Color WarmBand = new(0.34f, 0.15f, 0.16f);
+        private static readonly Color HotBand = new(0.62f, 0.24f, 0.12f);
+        private static readonly Color TargetGlow = new(1.0f, 0.55f, 0.20f);
+        private static readonly Color TargetCore = new(1.0f, 0.78f, 0.42f);
+        private static readonly Color GhostMark = new(1.0f, 0.90f, 0.70f);
+        private static readonly Color DeviationGood = new(0.45f, 0.90f, 0.50f);
+        private static readonly Color DeviationWarn = new(0.95f, 0.75f, 0.30f);
+        private static readonly Color DeviationBad = new(0.95f, 0.35f, 0.30f);
+        private static readonly Color GoalColor = new(0.70f, 0.90f, 1.0f);
 
         public override void _Draw()
         {
@@ -489,21 +534,111 @@ public sealed partial class ForgeMinigame : PanelContainer
                 return;
             }
 
-            DrawRect(new Rect2(Vector2.Zero, size), new Color(GameTheme.BoneColor, 0.08f));
+            DrawHeatGradient(size);
 
-            if (Path.Count >= 4 && Path.Count % 2 == 0)
+            var hasPath = Path.Count >= 4 && Path.Count % 2 == 0;
+            if (hasPath)
             {
-                var vertexCount = Path.Count / 2;
-                for (var i = 0; i < vertexCount - 1; i++)
-                {
-                    var a = ToCanvasPoint(Path[i * 2], Path[i * 2 + 1], size);
-                    var b = ToCanvasPoint(Path[(i + 1) * 2], Path[(i + 1) * 2 + 1], size);
-                    DrawLine(a, b, new Color(GameTheme.EmberColor, 0.9f), 3f);
-                }
+                DrawTargetLine(size);
+                DrawGoalMarker(size);
             }
 
             var cursor = ToCanvasPoint(CursorXPermille, CursorYPermille, size);
-            DrawCircle(cursor, 7f, GameTheme.CoolantColor);
+
+            // Deviation stem: how far the billet sits from the target heat at its current shape-X —
+            // green when tracking well, red when way off (the thing the sim actually scores).
+            if (hasPath)
+            {
+                var targetY = InterpTargetHeat(CursorXPermille);
+                var targetPt = ToCanvasPoint(CursorXPermille, targetY, size);
+                var dev = Math.Abs(CursorYPermille - targetY);
+                var devColor = dev < 90 ? DeviationGood : dev < 220 ? DeviationWarn : DeviationBad;
+                DrawLine(cursor, targetPt, new Color(devColor, 0.65f), 2f);
+                DrawRect(new Rect2(targetPt - new Vector2(3, 3), new Vector2(6, 6)), new Color(GhostMark, 0.85f));
+            }
+
+            DrawCursor(cursor);
+        }
+
+        /// <summary>Vertical cold→hot bands so the Y axis reads as temperature at a glance.</summary>
+        private void DrawHeatGradient(Vector2 size)
+        {
+            const int bands = 18;
+            var bandH = size.Y / bands;
+            for (var i = 0; i < bands; i++)
+            {
+                var heat = 1f - (i + 0.5f) / bands;                // top = hot
+                var col = heat < 0.5f
+                    ? ColdBand.Lerp(WarmBand, heat / 0.5f)
+                    : WarmBand.Lerp(HotBand, (heat - 0.5f) / 0.5f);
+                DrawRect(new Rect2(0, i * bandH, size.X, bandH + 1f), new Color(col, 0.55f));
+            }
+        }
+
+        private void DrawTargetLine(Vector2 size)
+        {
+            var vertexCount = Path.Count / 2;
+            for (var i = 0; i < vertexCount - 1; i++)
+            {
+                var a = ToCanvasPoint(Path[i * 2], Path[i * 2 + 1], size);
+                var b = ToCanvasPoint(Path[(i + 1) * 2], Path[(i + 1) * 2 + 1], size);
+                DrawLine(a, b, new Color(TargetGlow, 0.25f), 7f);   // soft glow
+                DrawLine(a, b, new Color(TargetCore, 0.95f), 2.5f); // bright core
+            }
+        }
+
+        /// <summary>A goal flag at the path's end — where the shape is finished and the player
+        /// should stop hammering and plunge.</summary>
+        private void DrawGoalMarker(Vector2 size)
+        {
+            var endY = Path[^1];
+            var end = ToCanvasPoint(1000, endY, size);
+            DrawLine(new Vector2(end.X, 0), new Vector2(end.X, size.Y), new Color(GoalColor, 0.20f), 1.5f);
+            DrawCircle(end, 4f, new Color(GoalColor, 0.9f));
+        }
+
+        private void DrawCursor(Vector2 cursor)
+        {
+            var heatFrac = Math.Clamp(CursorYPermille / 1000f, 0f, 1f);
+            // The billet: dull red when cold, blazing white-gold when hot.
+            var body = new Color(0.55f, 0.20f, 0.12f).Lerp(new Color(1.0f, 0.92f, 0.62f), heatFrac);
+            var glowR = 9f + 5f * heatFrac;
+            DrawCircle(cursor, glowR, new Color(body, 0.28f));      // heat halo
+            DrawCircle(cursor, 5.5f, body);                          // core
+            if (IsPumping)
+            {
+                DrawArc(cursor, glowR + 3f, 0f, Mathf.Tau, 24, new Color(HotBand, 0.7f), 1.5f);
+            }
+
+            // Tempo ring: flares bright + tight exactly on-beat, so the player can time strikes.
+            var onBeat = 1f - Math.Clamp(TempoErrorPermille / 1000f, 0f, 1f); // 1 on-beat
+            if (onBeat > 0.02f)
+            {
+                var inWindow = TempoErrorPermille <= TempoOnBeatWindowPermille;
+                var ringColor = inWindow ? new Color(1.0f, 0.95f, 0.5f) : new Color(0.9f, 0.7f, 0.4f);
+                var ringR = 18f - 6f * onBeat;                       // contracts toward the beat
+                DrawArc(cursor, ringR, 0f, Mathf.Tau, 28, new Color(ringColor, 0.25f + 0.6f * onBeat), inWindow ? 2.5f : 1.5f);
+            }
+        }
+
+        /// <summary>Linear-interpolate the target heat (Y permille) at a given shape-X permille along
+        /// the polyline — the "where should the billet be" reference the deviation stem draws to.</summary>
+        private int InterpTargetHeat(int xPermille)
+        {
+            var vertexCount = Path.Count / 2;
+            var x = Math.Clamp(xPermille, 0, 1000);
+            for (var i = 0; i < vertexCount - 1; i++)
+            {
+                var x0 = Path[i * 2];
+                var x1 = Path[(i + 1) * 2];
+                if (x >= x0 && x <= x1 && x1 > x0)
+                {
+                    var t = (float)(x - x0) / (x1 - x0);
+                    return (int)Mathf.Lerp(Path[i * 2 + 1], Path[(i + 1) * 2 + 1], t);
+                }
+            }
+
+            return Path[^1];
         }
 
         private static Vector2 ToCanvasPoint(int xPermille, int yPermille, Vector2 size) => new(
