@@ -67,7 +67,7 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
     private Button _undo = null!;
     private Button _submit = null!;
     private Button _cancel = null!;
-    private HBoxContainer _palette = null!;
+    private GridContainer _palette = null!;
     private bool _built;
 
     /// <summary>One evocative brew color per reagent id (indexes match <see cref="AlchemyReagents"/>):
@@ -203,7 +203,9 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         _pouredLabel = new Label { Name = "AlchemyBrewPoured", AutowrapMode = TextServer.AutowrapMode.WordSmart };
         body.AddChild(_pouredLabel);
 
-        _palette = new HBoxContainer { Name = "AlchemyBrewPalette" };
+        // A 3-column grid, not a single row: six named reagent buttons in one HBox overflow the
+        // 600px drawer (DrawerHost.DrawerWidth) and get clipped at its edge.
+        _palette = new GridContainer { Name = "AlchemyBrewPalette", Columns = 3 };
         body.AddChild(_palette);
         for (var id = 0; id < AlchemyReagents.Count; id++)
         {
@@ -338,6 +340,7 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         private float _bloomT = -1f;
         private Texture2D? _cauldron;
         private Texture2D? _bottle;
+        private Texture2D? _backdrop;
         private bool _texTried;
 
         /// <summary>Feed the pour list; a GROWN list fires the one-shot pour FX (an Undo never does).</summary>
@@ -380,6 +383,11 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
 
             EnsureTextures();
 
+            if (_backdrop is not null)
+            {
+                DrawTextureRect(_backdrop, new Rect2(Vector2.Zero, size), false);
+            }
+
             // ── layout ──
             var potW = Mathf.Min(size.X * 0.52f, 240f);
             var potH = potW * 0.75f;
@@ -395,7 +403,10 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
             // Cauldron sprite (or a primitive pot).
             if (_cauldron is not null)
             {
-                DrawTextureRect(_cauldron, new Rect2(potPos, new Vector2(potW, potH)), false);
+                // Dark iron so the pot sits INSIDE the painted lab instead of reading as a bright
+                // sprite pasted over it; a touch of warm bounce from the hearth below.
+                var iron = _backdrop is not null ? new Color(0.38f, 0.36f, 0.44f) : Colors.White;
+                DrawTextureRect(_cauldron, new Rect2(potPos, new Vector2(potW, potH)), false, iron);
             }
             else
             {
@@ -484,11 +495,19 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
 
         private void DrawLiquid(Rect2 mouth, float interiorTop, float interiorBottom)
         {
-            // Colour fold: recomputed from the whole pour list every frame, so Undo just works.
+            // Colour fold: recomputed from the whole pour list every frame, so Undo just works. A
+            // plain average of six reagents turns muddy olive, so the freshest pour keeps a strong
+            // say and the result is brightened — the brew should GLOW, not look like dishwater.
             var col = BrewBase;
             foreach (var id in Poured)
             {
                 col = col.Lerp(ColorFor(id), 0.45f);
+            }
+
+            if (!Poured.IsEmpty)
+            {
+                col = col.Lerp(ColorFor(Poured[^1]), 0.35f);                 // freshest reagent identity
+                col = new Color(Mathf.Min(col.R * 1.25f, 1f), Mathf.Min(col.G * 1.25f, 1f), Mathf.Min(col.B * 1.25f, 1f));
             }
 
             if (_fizzleT >= 0f)
@@ -507,13 +526,13 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
 
             // The liquid is a stack of ellipses that TAPER downward — it sits inside the pot's mouth
             // and reads as a pool with depth, never a box overflowing the iron.
-            const int slices = 10;
+            const int slices = 22; // enough slices that the taper reads smooth, not as stacked discs
             for (var i = slices; i >= 0; i--)
             {
                 var t = i / (float)slices;                       // 0 at the surface, 1 at the floor
                 var y = Mathf.Lerp(surfaceY, interiorBottom, t);
                 var rx = halfW * (0.94f - 0.34f * t);            // narrows with depth
-                var shade = 1f - 0.35f * t;                      // darker deeper down
+                var shade = 1f - 0.22f * t;                      // darker deeper down (gentle)
                 DrawEllipseFilled(new Vector2(cx, y), rx, mouth.Size.Y * 0.30f,
                     new Color(col.R * shade, col.G * shade, col.B * shade, 1f));
             }
@@ -637,6 +656,7 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
             TextureFilter = TextureFilterEnum.Nearest;
             _cauldron = LoadTex("res://assets/minigames/cauldron.png");
             _bottle = LoadTex("res://assets/minigames/bottle.png");
+            _backdrop = LoadTex("res://assets/minigames/brew_backdrop.png");
         }
 
         private static Texture2D? LoadTex(string path) =>

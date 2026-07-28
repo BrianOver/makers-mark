@@ -572,6 +572,7 @@ public sealed partial class ForgeMinigame : PanelContainer
         private float _ring = -1f;   // on-tempo strike ring: -1 idle, else elapsed 0..0.15
         private Texture2D?[] _billet = new Texture2D?[4];
         private Texture2D? _hammer;
+        private Texture2D? _backdrop;
         private bool _texTried;
 
         public override void _Process(double delta)
@@ -650,8 +651,20 @@ public sealed partial class ForgeMinigame : PanelContainer
             var shake = _shake > 0f ? new Vector2(ShakeTable[(int)(_anim * 60f) % 4].X, ShakeTable[(int)(_anim * 60f) % 4].Y) * _shake : Vector2.Zero;
             DrawSetTransform(shake, 0f, Vector2.One);
 
-            DrawBackground(size);
-            DrawCoalBed(size);
+            // With the painted forge interior in place, the procedural furnace/anvil/trough would
+            // fight it — the art already IS the room. They stay only as the no-art fallback, and the
+            // heat band survives as a low-alpha glow that still says "up here is hot".
+            var art = _backdrop is not null;
+            if (art)
+            {
+                DrawTextureRect(_backdrop!, new Rect2(Vector2.Zero, size), false);
+                DrawHeatHaze(size);
+            }
+            else
+            {
+                DrawBackground(size);
+                DrawCoalBed(size);
+            }
 
             var hasPath = Path.Count >= 4 && Path.Count % 2 == 0;
             if (hasPath)
@@ -659,10 +672,14 @@ public sealed partial class ForgeMinigame : PanelContainer
                 DrawTargetTrail(size);
             }
 
-            DrawAnvil(size);
+            if (!art)
+            {
+                DrawAnvil(size);
+            }
+
             if (hasPath)
             {
-                DrawQuenchTrough(size);
+                DrawQuenchZone(size, art);
             }
 
             var cursor = ToCanvasPoint(CursorXPermille, CursorYPermille, size);
@@ -733,12 +750,14 @@ public sealed partial class ForgeMinigame : PanelContainer
                     DrawLine(a, b, new Color(TargetGlow, 0.18f), 6f); // soft heat glow underlay
                 }
 
-                // Dashed chalk marks along the segment.
-                for (var d = 0f; d < len; d += 8f)
+                // Dashed chalk marks along the segment — drawn with a dark backing quad so they stay
+                // legible over the painted (busy) forge wall, not just over a flat gradient.
+                for (var d = 0f; d < len; d += 9f)
                 {
                     var p = a + dir * d;
-                    var col = behind ? new Color(TargetBehind, 0.5f) : new Color(TargetAhead, 0.95f);
-                    DrawRect(new Rect2(p - new Vector2(2f, 1f), new Vector2(4f, 2f)), col);
+                    var col = behind ? new Color(TargetBehind, 0.55f) : new Color(TargetAhead, 1f);
+                    DrawRect(new Rect2(p - new Vector2(3.5f, 2.5f), new Vector2(7f, 5f)), new Color(0.05f, 0.04f, 0.07f, 0.55f));
+                    DrawRect(new Rect2(p - new Vector2(2.5f, 1.5f), new Vector2(5f, 3f)), col);
                 }
             }
         }
@@ -760,20 +779,49 @@ public sealed partial class ForgeMinigame : PanelContainer
                 AnvilSteel);
         }
 
-        private void DrawQuenchTrough(Vector2 size)
+        /// <summary>A soft warm haze over the painted furnace band so "high = hot" still reads on top
+        /// of the art, without stamping opaque orange blocks over it.</summary>
+        private void DrawHeatHaze(Vector2 size)
+        {
+            var bedH = size.Y * 0.22f;
+            var flare = IsPumping ? 1.9f : 1f;
+            const int bands = 6;
+            for (var i = 0; i < bands; i++)
+            {
+                var t = i / (float)bands;
+                var a = (0.16f - 0.16f * t) * flare * (0.85f + 0.15f * Mathf.Sin(_anim * 2.4f));
+                DrawRect(new Rect2(0, bedH * t, size.X, bedH / bands + 1f), new Color(1f, 0.52f, 0.18f, Math.Clamp(a, 0f, 0.5f)));
+            }
+        }
+
+        /// <summary>The quench point. Over art it's a translucent shimmer pool + a glow (the painted
+        /// room already has vessels, so a hard wooden box would read as pasted on); without art it
+        /// falls back to the drawn trough.</summary>
+        private void DrawQuenchZone(Vector2 size, bool art)
         {
             var endY = Path[^1];
             var waterTop = ToCanvasPoint(1000, endY, size).Y;
-            var x0 = size.X - 40f;
-            DrawRect(new Rect2(x0, waterTop - 3, 38, size.Y - waterTop + 3), WoodDark);
+            var x0 = size.X - 44f;
             var ready = CursorXPermille >= 1000;
-            var water = ready ? WaterTeal.Lerp(new Color(0.5f, 0.85f, 0.95f), 0.5f + 0.5f * Mathf.Sin(_anim * 4f)) : WaterTeal;
-            DrawRect(new Rect2(x0 + 2, waterTop, 34, size.Y - waterTop - 2), new Color(water, 0.9f));
-            // Shimmer lines.
+            var water = ready
+                ? WaterTeal.Lerp(new Color(0.55f, 0.9f, 1f), 0.5f + 0.5f * Mathf.Sin(_anim * 4f))
+                : WaterTeal;
+
+            if (!art)
+            {
+                DrawRect(new Rect2(x0, waterTop - 3, 42, size.Y - waterTop + 3), WoodDark);
+            }
+
+            DrawRect(new Rect2(x0 + 2, waterTop, 38, size.Y - waterTop - 2), new Color(water, art ? 0.5f : 0.9f));
+            if (ready)
+            {
+                DrawRect(new Rect2(x0, waterTop - 2, 42, 3f), new Color(0.7f, 0.95f, 1f, 0.75f));
+            }
+
             for (var s = 0; s < 2; s++)
             {
                 var sy = waterTop + 4 + s * 6 + 1.5f * Mathf.Sin(_anim * 3f + s);
-                DrawLine(new Vector2(x0 + 3, sy), new Vector2(x0 + 35, sy), new Color(1f, 1f, 1f, 0.25f), 1f);
+                DrawLine(new Vector2(x0 + 3, sy), new Vector2(x0 + 39, sy), new Color(1f, 1f, 1f, 0.3f), 1f);
             }
         }
 
@@ -794,14 +842,15 @@ public sealed partial class ForgeMinigame : PanelContainer
         {
             var heatFrac = Math.Clamp(CursorYPermille / 1000f, 0f, 1f);
             var body = HeatColor(heatFrac);
-            var glowR = 10f + 7f * heatFrac;
-            DrawCircle(cursor, glowR, new Color(body, 0.30f)); // heat halo
+            var glowR = 14f + 10f * heatFrac;
+            DrawCircle(cursor, glowR * 1.5f, new Color(body, 0.16f)); // wide bloom, reads over art
+            DrawCircle(cursor, glowR, new Color(body, 0.34f));        // heat halo
 
             var frame = CursorXPermille >= 900 ? 3 : CursorXPermille >= 650 ? 2 : CursorXPermille >= 300 ? 1 : 0;
             var tex = _billet[frame];
             if (tex is not null)
             {
-                const float sc = 1.7f;
+                const float sc = 2.6f;
                 var w = tex.GetWidth() * sc;
                 var h = tex.GetHeight() * sc;
                 DrawTextureRect(tex, new Rect2(cursor - new Vector2(w / 2f, h / 2f), new Vector2(w, h)), false, body);
@@ -898,6 +947,7 @@ public sealed partial class ForgeMinigame : PanelContainer
             }
 
             _hammer = LoadTex("res://assets/minigames/hammer.png");
+            _backdrop = LoadTex("res://assets/minigames/forge_backdrop.png");
         }
 
         private static Texture2D? LoadTex(string path) =>
