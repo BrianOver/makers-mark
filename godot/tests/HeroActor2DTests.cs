@@ -36,6 +36,39 @@ public class HeroActor2DTests
         }
     }
 
+    /// <summary>Coverage for the sprite-alignment fix: real gen'd hero body art varies in pixel
+    /// size (no longer a fixed 16x24), and hero bodies are neutral light-grey art that MUST stay
+    /// class-tinted to read apart (unlike the player, which carries its own full-color art and
+    /// stays untinted). Uses a distinctive non-white <c>classColor</c> and an off-placeholder
+    /// texture height so neither assertion could pass by coincidence.</summary>
+    [TestCase]
+    public void Init_TintsSpriteWithClassColor_AndSetsDynamicFeetOffsetFromTextureHeight()
+    {
+        var actor = new HeroActor2D();
+        try
+        {
+            var classColor = new Color(0.2f, 0.6f, 0.9f); // distinctive — proves the tint is real, not a White no-op
+            var texture = new PlaceholderTexture2D { Size = new Vector2(40, 64) }; // taller than the old 24px constant
+            actor.Init(9, "vanguard", classColor, texture, new Vector2(100, 100));
+
+            AssertThat(actor.Sprite.Modulate).IsEqual(classColor);
+
+            var textureHeight = actor.Sprite.Texture.GetHeight();
+            AssertThat(textureHeight).IsEqual(64);
+            AssertThat(actor.Sprite.Offset.Y).IsEqual(-32f); // -textureHeight/2, not the old hardcoded -12f
+
+            var feetLocalY = actor.Sprite.Offset.Y + textureHeight / 2f;
+            AssertThat(Mathf.Abs(feetLocalY) < 0.5f)
+                .OverrideFailureMessage(
+                    $"sprite feet not aligned to Position (sort key): offset={actor.Sprite.Offset}, " +
+                    $"textureHeight={textureHeight}, feetLocalY={feetLocalY}").IsTrue();
+        }
+        finally
+        {
+            actor.QueueFree();
+        }
+    }
+
     [TestCase]
     public void RaisePick_RaisesPickedWithHeroIdValue()
     {

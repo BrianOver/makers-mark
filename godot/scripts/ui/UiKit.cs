@@ -1,3 +1,4 @@
+using System;
 using Godot;
 
 namespace GodotClient.Ui;
@@ -48,6 +49,11 @@ public static class UiKit
         Positive,
         Negative,
         Accent,
+
+        /// <summary>Currency-only tone (UI-1) — resolves to <see cref="GameTheme.GoldColor"/>, the
+        /// one hue reserved for gold counts/prices so a stat chip never has to fake it with
+        /// <see cref="Accent"/>.</summary>
+        Gold,
     }
 
     /// <summary>A titled <see cref="Section"/>: the outer themed panel to add to a parent, and
@@ -297,7 +303,233 @@ public static class UiKit
     {
         ChipTone.Positive => GameTheme.CoolantColor,
         ChipTone.Negative => GameTheme.BloodColor,
-        ChipTone.Accent => GameTheme.EmberColor,
+        // UI-1: re-pointed to the WarnColor alias (same EmberColor value) so this switch reads
+        // against GameTheme's semantic names, not a raw palette pick.
+        ChipTone.Accent => GameTheme.WarnColor,
+        ChipTone.Gold => GameTheme.GoldColor,
         _ => GameTheme.BodyTextColor,
     };
+
+    // ── UI-2: cozy list/HUD builders ───────────────────────────────────────────────────────────
+    // New, additive builders for the HUD + drawer units (next up): a compact icon+value pill,
+    // a fixed-column shop/recipe row, and a drawer's title strip. All read GameTheme tokens only
+    // — no local color/size literals — and stay null/fallback-safe like every other builder above.
+
+    /// <summary>Icon size (px) inside an <see cref="IconChip"/>.</summary>
+    private const float IconChipIconSize = 18f;
+
+    /// <summary>Icon-to-value gap (px) inside an <see cref="IconChip"/>.</summary>
+    private const int IconChipGap = 6;
+
+    /// <summary>
+    /// A compact icon+value pill (UI-2) — an 18px icon next to a tone-colored value label, sharing
+    /// <see cref="StatChipCompact"/>'s tight (4/2) margins so it drops into the same cramped HUD/
+    /// card real estate. Unlike <see cref="StatChip"/>/<see cref="StatChipCompact"/> (label +
+    /// value text), this is icon + value — the HUD's "gold coin icon, 42" shape, not "Gold: 42".
+    /// <paramref name="icon"/> is null-tolerant: a null texture renders as a blank icon slot
+    /// rather than throwing (mirrors <see cref="SimPanel"/>'s <c>AddIcon</c>).
+    /// </summary>
+    public static Control IconChip(Texture2D? icon, string value, ChipTone tone = ChipTone.Neutral)
+    {
+        var chip = new PanelContainer { Name = "IconChip" };
+        chip.AddThemeStyleboxOverride("panel", CompactChipStyle());
+
+        var row = new HBoxContainer { Name = "IconChipRow" };
+        row.AddThemeConstantOverride("separation", IconChipGap);
+        chip.AddChild(row);
+
+        var iconRect = new TextureRect
+        {
+            Name = "Icon",
+            Texture = icon,
+            CustomMinimumSize = new Vector2(IconChipIconSize, IconChipIconSize),
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        row.AddChild(iconRect);
+
+        var valueNode = new Label { Name = "Value", Text = value };
+        valueNode.AddThemeColorOverride("font_color", ToneColor(tone));
+        valueNode.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
+        row.AddChild(valueNode);
+
+        return chip;
+    }
+
+    /// <summary>Fixed row height (px) for a <see cref="ListRow"/>.</summary>
+    public const float ListRowHeight = 32f;
+
+    private const float ListRowIconSize = 24f;
+    private const float ListRowPriceWidth = 64f;
+    private const float ListRowOwnedWidth = 40f;
+    private const float ListRowActionWidth = 72f;
+
+    /// <summary>Whole-row opacity (UI-2) when <see cref="ListRow"/>'s <c>enabled</c> is false —
+    /// dims the entire row (icon/name/price/owned/action) rather than fading one column, so a
+    /// disabled row reads as "not available right now" at a glance.</summary>
+    private const float ListRowDisabledAlpha = 0.55f;
+
+    /// <summary>
+    /// A themed shop/recipe/vendor row (UI-2) — one <see cref="HBoxContainer"/> with fixed
+    /// columns (icon 24px | name, Bone, fills remaining width and single-line-ellipsizes rather
+    /// than wrapping | price 64px right-aligned Gold | owned "×N" 40px dim | action button 72px)
+    /// so a whole list of rows lines up into clean columns instead of each row's own content
+    /// dictating its width. A 1px Iron hairline separates rows (a full per-row box reads as one
+    /// card per item, which is too heavy for a dense list); hovering swaps the row's own fill to
+    /// <see cref="GameTheme.SurfaceRaised"/> — a plain stylebox swap on <c>MouseEntered</c>/
+    /// <c>MouseExited</c>, not an engine Tween (this codebase's accumulated-delta-only rule).
+    ///
+    /// <para>When <paramref name="enabled"/> is false, the whole row dims to
+    /// <see cref="ListRowDisabledAlpha"/>, the price tints <see cref="GameTheme.DangerColor"/>,
+    /// and <paramref name="action"/> is disabled with <paramref name="whyNot"/> as its tooltip —
+    /// the exact <c>SimPanel.GateButton</c> contract (Disabled + player-phrased tooltip),
+    /// inlined here since <c>GateButton</c> itself is a <c>SimPanel</c>-protected member this
+    /// static kit cannot call directly.</para>
+    /// </summary>
+    public static Control ListRow(
+        Texture2D? icon, string name, string price, string owned, Button action, bool enabled,
+        string whyNot = "")
+    {
+        var row = new PanelContainer
+        {
+            Name = "ListRow",
+            CustomMinimumSize = new Vector2(0, ListRowHeight),
+        };
+
+        var normalStyle = ListRowStyle(Colors.Transparent);
+        var hoverStyle = ListRowStyle(GameTheme.SurfaceRaised);
+        row.AddThemeStyleboxOverride("panel", normalStyle);
+        row.MouseEntered += () => row.AddThemeStyleboxOverride("panel", hoverStyle);
+        row.MouseExited += () => row.AddThemeStyleboxOverride("panel", normalStyle);
+
+        var hbox = new HBoxContainer { Name = "ListRowContent" };
+        hbox.AddThemeConstantOverride("separation", GameTheme.Space8);
+        row.AddChild(hbox);
+
+        var iconRect = new TextureRect
+        {
+            Name = "Icon",
+            Texture = icon,
+            CustomMinimumSize = new Vector2(ListRowIconSize, ListRowIconSize),
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        hbox.AddChild(iconRect);
+
+        var nameLabel = new Label
+        {
+            Name = "Name",
+            Text = name,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            ClipText = true,
+            TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            AutowrapMode = TextServer.AutowrapMode.Off,
+        };
+        nameLabel.AddThemeColorOverride("font_color", GameTheme.BoneColor);
+        hbox.AddChild(nameLabel);
+
+        var priceLabel = new Label
+        {
+            Name = "Price",
+            Text = price,
+            CustomMinimumSize = new Vector2(ListRowPriceWidth, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        priceLabel.AddThemeColorOverride("font_color", enabled ? GameTheme.GoldColor : GameTheme.DangerColor);
+        hbox.AddChild(priceLabel);
+
+        var ownedLabel = new Label
+        {
+            Name = "Owned",
+            Text = $"×{owned}",
+            CustomMinimumSize = new Vector2(ListRowOwnedWidth, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        ownedLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        hbox.AddChild(ownedLabel);
+
+        action.CustomMinimumSize = new Vector2(ListRowActionWidth, 0);
+        action.Disabled = !enabled; // SimPanel.GateButton's exact contract, inlined (see remarks)
+        action.TooltipText = enabled ? string.Empty : whyNot;
+        hbox.AddChild(action);
+
+        if (!enabled)
+        {
+            row.Modulate = new Color(1f, 1f, 1f, ListRowDisabledAlpha);
+        }
+
+        return row;
+    }
+
+    /// <summary>A hairline-bottomed row background: <paramref name="bg"/> fill (Transparent for
+    /// the resting state, <see cref="GameTheme.SurfaceRaised"/> on hover) plus a fixed 1px Iron
+    /// bottom border — never a full box, so a list of rows reads as one continuous list rather
+    /// than a stack of separate cards.</summary>
+    private static StyleBoxFlat ListRowStyle(Color bg) => new()
+    {
+        BgColor = bg,
+        BorderWidthBottom = 1,
+        BorderColor = GameTheme.IronColor,
+        ContentMarginLeft = GameTheme.Space8,
+        ContentMarginRight = GameTheme.Space8,
+        ContentMarginTop = GameTheme.Space4,
+        ContentMarginBottom = GameTheme.Space4,
+    };
+
+    /// <summary>Strip height (px) for a <see cref="DrawerHeader"/>.</summary>
+    public const float DrawerHeaderHeight = 40f;
+
+    private const float DrawerHeaderIconSize = 24f;
+    private const float DrawerHeaderCloseSize = 24f;
+
+    /// <summary>
+    /// A drawer's title strip (UI-2): a 24px icon, the title in the display/header theme-type
+    /// variation (see <see cref="GameTheme.HeaderThemeType"/>), a flexible spacer, and a 24px
+    /// "✕" close button wired to <paramref name="onClose"/>. <paramref name="icon"/> is
+    /// null-tolerant (blank slot, not a throw) like every other icon-taking builder here.
+    /// </summary>
+    public static Control DrawerHeader(string title, Texture2D? icon, Action onClose)
+    {
+        var strip = new PanelContainer
+        {
+            Name = "DrawerHeader",
+            CustomMinimumSize = new Vector2(0, DrawerHeaderHeight),
+        };
+
+        var row = new HBoxContainer { Name = "DrawerHeaderRow" };
+        row.AddThemeConstantOverride("separation", GameTheme.Space8);
+        strip.AddChild(row);
+
+        var iconRect = new TextureRect
+        {
+            Name = "Icon",
+            Texture = icon,
+            CustomMinimumSize = new Vector2(DrawerHeaderIconSize, DrawerHeaderIconSize),
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        row.AddChild(iconRect);
+
+        var titleLabel = new Label
+        {
+            Name = "Title",
+            Text = title,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        titleLabel.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        titleLabel.AddThemeFontSizeOverride("font_size", GameTheme.HeaderFontSize);
+        titleLabel.ThemeTypeVariation = GameTheme.HeaderThemeType;
+        row.AddChild(titleLabel);
+
+        var closeButton = new Button
+        {
+            Name = "Close",
+            Text = "✕",
+            CustomMinimumSize = new Vector2(DrawerHeaderCloseSize, DrawerHeaderCloseSize),
+        };
+        closeButton.Pressed += () => onClose();
+        row.AddChild(closeButton);
+
+        return strip;
+    }
 }

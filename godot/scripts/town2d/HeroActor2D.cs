@@ -54,10 +54,12 @@ public partial class HeroActor2D : Node2D
 
     private const float WanderAmplitudeY = 10f;
 
-    /// <summary>Half this = the <see cref="Sprite2D.Offset"/> lift, so <see cref="Position"/> is
-    /// the sprite's FEET line — matches the vertical-slice manifest's 16×24 hero sprite and is
-    /// the Y-sort contract every <c>YSortEnabled</c> sibling (buildings, player) must share.</summary>
-    private const float HeroSpriteHeight = 24f;
+    /// <summary>The RESOLVED sprite's own texture height (set by <see cref="Init"/>) — half of it
+    /// is the <see cref="Sprite2D.Offset"/> lift, so <see cref="Position"/> stays the sprite's FEET
+    /// line no matter the source art's pixel size (real gen'd hero sprites vary; the old hardcoded
+    /// 16x24 constant only fit the placeholder). Also drives the <see cref="Pick"/> zone's radius
+    /// and vertical placement so the click target still tracks the actual sprite footprint.</summary>
+    private float _spriteHeight = 24f;
 
     public int HeroIdValue { get; private set; }
 
@@ -90,7 +92,9 @@ public partial class HeroActor2D : Node2D
     /// <summary>
     /// Build the sprite + pick zone and pin the deterministic wander parameters. Mirrors
     /// <c>HeroActor3D.Configure</c> — <paramref name="spawn"/> becomes both <see cref="Home"/>
-    /// and the initial <see cref="Position"/>.
+    /// and the initial <see cref="Position"/>. <paramref name="classColor"/> is still multiplied
+    /// over the sprite (see <see cref="BuildSprite"/>) — hero body art is neutral light-grey and
+    /// MUST be tinted per class to read apart; only the feet-offset math changed (see below).
     /// </summary>
     public void Init(int heroId, string classId, Color classColor, Texture2D sprite, Vector2 spawn)
     {
@@ -108,6 +112,11 @@ public partial class HeroActor2D : Node2D
         _phaseY = heroId * 2.9f;
         _speedX = 0.55f + heroId % 3 * 0.2f;
         _speedY = 0.4f + heroId % 4 * 0.15f;
+
+        // Feet-offset (and the Pick zone below) are sized from the RESOLVED texture's own height,
+        // not a fixed 16x24 constant — real gen'd hero sprites vary in size (see PlayerController2D
+        // for the same fix on the player side).
+        _spriteHeight = sprite.GetHeight();
 
         Sprite = BuildSprite(sprite, classColor);
         AddChild(Sprite);
@@ -283,14 +292,16 @@ public partial class HeroActor2D : Node2D
     }
 
     /// <summary>Class-colored sprite (modulate = classColor, mirroring
-    /// <c>HeroActor3D</c>'s capsule-tint fallback contract) — <paramref name="offset"/>s its
-    /// origin up by half its height so <see cref="Position"/> stays the feet/Y-sort line.</summary>
-    private static Sprite2D BuildSprite(Texture2D sprite, Color classColor) => new()
+    /// <c>HeroActor3D</c>'s capsule-tint fallback contract) — hero body art is neutral light-grey
+    /// pixel art that must be tinted per class to read apart, so the tint stays. Offsets its
+    /// origin up by half the RESOLVED texture's own height (<see cref="_spriteHeight"/>) so <see
+    /// cref="Position"/> stays the feet/Y-sort line for any sprite size.</summary>
+    private Sprite2D BuildSprite(Texture2D sprite, Color classColor) => new()
     {
         Name = "Sprite",
         Texture = sprite,
         Modulate = classColor,
-        Offset = new Vector2(0, -HeroSpriteHeight / 2f),
+        Offset = new Vector2(0, -_spriteHeight / 2f),
     };
 
     /// <summary>Real-click pick zone — layer 2 (mirrors <c>HeroActor3D.BuildPick</c>'s layer
@@ -310,8 +321,8 @@ public partial class HeroActor2D : Node2D
         area.AddChild(new CollisionShape2D
         {
             Name = "PickShape",
-            Shape = new CircleShape2D { Radius = HeroSpriteHeight / 2f },
-            Position = new Vector2(0, -HeroSpriteHeight / 2f),
+            Shape = new CircleShape2D { Radius = _spriteHeight / 2f },
+            Position = new Vector2(0, -_spriteHeight / 2f),
         });
         area.InputEvent += (Node _, InputEvent @event, long _) =>
         {

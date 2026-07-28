@@ -12,8 +12,11 @@ namespace GodotClient.Town2d;
 /// <para>Lives inside the <c>YSort</c> <see cref="Node2D"/> (see the pivot plan's node
 /// architecture) — this body's own <see cref="Node2D.Position"/>.Y IS the Y-sort key Godot's
 /// <c>YSortEnabled</c> uses, so it must sit at the player's FEET, not the sprite's visual center.
-/// The child <see cref="Sprite2D"/> is offset upward (<see cref="SpriteFeetOffset"/>) so the art's
-/// visual feet line up with that origin — see <see cref="BuildSprite"/>.</para>
+/// The child <see cref="Sprite2D"/> is offset upward, by HALF THE RESOLVED TEXTURE'S HEIGHT (see
+/// <see cref="BuildSprite"/>), so the art's visual feet line up with that origin regardless of the
+/// sprite's actual pixel size — real gen'd character art (e.g. ~30x46) and the 16x24 placeholder
+/// both align correctly, since the offset is derived from whichever texture was actually resolved
+/// rather than a fixed constant.</para>
 /// </summary>
 public partial class PlayerController2D : CharacterBody2D
 {
@@ -27,13 +30,11 @@ public partial class PlayerController2D : CharacterBody2D
     public const string PlayerSpriteId = "player_smith";
 
     /// <summary>Programmer-art placeholder size (16x24, matches the pivot plan's asset manifest
-    /// row for "Player smith") — used both for the fallback texture and the feet-offset math.</summary>
+    /// row for "Player smith") — sizes the flat-color fallback texture only. The feet-offset is no
+    /// longer computed from this constant; <see cref="BuildSprite"/> reads it off whichever
+    /// texture actually resolved (fallback or real art), so this only matters when no real sprite
+    /// has landed yet.</summary>
     private static readonly Vector2 PlaceholderSize = new(16, 24);
-
-    /// <summary>Half the sprite height, moved UP (negative Y) so the sprite's bottom edge — the
-    /// character's visual feet — lands on this node's own <see cref="Node2D.Position"/>, which is
-    /// the actual Y-sort key. This is the whole 2.5D trick (plan §"Y-sort = the whole trick").</summary>
-    private static readonly Vector2 SpriteFeetOffset = new(0, -PlaceholderSize.Y / 2f);
 
     public Sprite2D Sprite { get; private set; } = null!;
 
@@ -151,7 +152,9 @@ public partial class PlayerController2D : CharacterBody2D
     /// cref="PlayerSpriteId"/> is already committed (U6/U7 drop-in, zero code change per the
     /// pivot plan's asset-manifest section), otherwise a flat colored-box placeholder sized to
     /// match — never null, so this never null-crashes even on a completely fresh checkout before
-    /// any art lands.</summary>
+    /// any art lands. The feet-offset is derived from the RESOLVED texture's own height (not the
+    /// 16x24 placeholder constant), so real gen'd sprites of any size still plant their feet
+    /// exactly on this node's Y-sort <see cref="Node2D.Position"/> instead of floating/sinking.</summary>
     private static Sprite2D BuildSprite()
     {
         var texture = ResolvePlayerTexture();
@@ -159,7 +162,7 @@ public partial class PlayerController2D : CharacterBody2D
         {
             Name = "Sprite",
             Texture = texture,
-            Offset = SpriteFeetOffset,
+            Offset = new Vector2(0, -texture.GetHeight() / 2f),
         };
     }
 

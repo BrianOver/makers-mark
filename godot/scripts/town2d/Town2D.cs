@@ -44,8 +44,14 @@ namespace GodotClient.Town2d;
 /// </summary>
 public partial class Town2D : Control
 {
+    // Nominal SubViewport size. NOTE: the SubViewportContainer has Stretch=true, which overrides the
+    // live viewport size to the container's pixel size — so the actual zoom is set by the Camera2D's
+    // integer Zoom (see Build), not this constant. Kept for the overview-capture math + tests.
     public const int ViewportWidth = 640;
     public const int ViewportHeight = 360;
+
+    /// <summary>Integer camera zoom for the Stardew-close framing (2x = crisp, no fractional shimmer).</summary>
+    private const float CameraZoom = 2f;
 
     private const int TileSize = TownLayout2D.TileSize;
 
@@ -179,7 +185,7 @@ public partial class Town2D : Control
         Cam = new Camera2D
         {
             Name = "Cam",
-            Zoom = Vector2.One, // NEVER fractional-zoom (kills pixel snapping) — container upscales
+            Zoom = new Vector2(CameraZoom, CameraZoom), // INTEGER zoom only — never fractional (pixel shimmer)
             PositionSmoothingEnabled = true,
             PositionSmoothingSpeed = 8f,
             LimitLeft = 0,

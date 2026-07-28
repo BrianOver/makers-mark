@@ -182,4 +182,20 @@ public abstract partial class SimPanel : Control
     protected static Control ArtRect(
         string artKey, Vector2 size, Texture2D? fallbackIcon = null, string? caption = null) =>
         UiKit.ArtRect(artKey, size, fallbackIcon, caption);
+
+    // ── UI-2: cozy list/HUD builder passthroughs ──────────────────────────────────────────────
+
+    /// <summary>A compact icon+value pill — see <see cref="UiKit.IconChip"/>.</summary>
+    protected static Control IconChip(Texture2D? icon, string value, UiKit.ChipTone tone = UiKit.ChipTone.Neutral) =>
+        UiKit.IconChip(icon, value, tone);
+
+    /// <summary>A themed shop/recipe/vendor row — see <see cref="UiKit.ListRow"/>.</summary>
+    protected static Control ListRow(
+        Texture2D? icon, string name, string price, string owned, Button action, bool enabled,
+        string whyNot = "") =>
+        UiKit.ListRow(icon, name, price, owned, action, enabled, whyNot);
+
+    /// <summary>A drawer's title strip — see <see cref="UiKit.DrawerHeader"/>.</summary>
+    protected static Control DrawerHeader(string title, Texture2D? icon, Action onClose) =>
+        UiKit.DrawerHeader(title, icon, onClose);
 }
