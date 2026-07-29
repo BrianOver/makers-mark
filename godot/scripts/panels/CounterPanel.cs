@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using GameSim.Contracts;
 using Godot;
@@ -81,6 +82,7 @@ public partial class CounterPanel : SimPanel
 
         BuildActiveCustomerCard(hero);
         BuildMeters(counter);
+        BuildDesk(state, counter, hero);
         BuildPresentedAndOffer(state, counter);
         BuildShelfActions(state, counter);
         BuildHaggleControls(counter, hero);
@@ -147,6 +149,58 @@ public partial class CounterPanel : SimPanel
         row.AddChild(StatChip("Round", $"{counter.Round}", UiKit.ChipTone.Accent));
     }
 
+    /// <summary>
+    /// U2 (plan 2026-07-28-002, design doc §B): the physical desk — drag an item from the shelf
+    /// strip onto the counter mat to present it, click the customer's extended hand to accept,
+    /// and read their posture/expression (mood bucket) plus a tapping foot (patience) instead of a
+    /// chip row. Every gesture here routes into the SAME <see cref="QueuePresent"/>/
+    /// <see cref="QueueAccept"/> seams the existing buttons call (KTD-A) — this is presentation
+    /// ONLY, no new action, no changed seam signature.
+    /// </summary>
+    private void BuildDesk(GameState state, CounterState counter, Hero? hero)
+    {
+        var desk = new CounterDesk { Name = "CounterDesk" };
+        _body!.AddChild(desk);
+
+        // Mirrors CounterHandlers.RequireActiveSession (present) and ApplyHaggle's own rejection
+        // (accept) verbatim — the SAME predicates BuildShelfActions/BuildHaggleControls gate their
+        // buttons on, so the desk can never do something a real click could not.
+        var canPresent = counter.Active is not null;
+        var canAccept = counter.Active is not null && counter.Round > 0
+            && counter.StandingOfferGold is not null && counter.Presented is not null;
+
+        var shelf = new List<CounterDesk.ShelfIcon>();
+        foreach (var entry in state.Player.Shelf)
+        {
+            if (state.Items.TryGetValue(entry.Item.Value, out var item))
+            {
+                shelf.Add(new CounterDesk.ShelfIcon(entry.Item.Value, item.Name, IconRegistry.Slot(item.Slot)));
+            }
+        }
+
+        desk.SetShelf(shelf);
+        desk.SetLegal(canPresent, canAccept);
+        desk.SetCustomer(hero?.ClassId ?? string.Empty, hero?.MoodPermille ?? 0, counter.PatienceRounds);
+        desk.PresentRequested += itemId => QueuePresent(new ItemId(itemId));
+        desk.AcceptRequested += QueueAccept;
+    }
+
+    /// <summary>The ONE seam both the Present button and the desk's drag-drop recogniser call
+    /// (KTD-A) — queues the identical <see cref="PresentItemAction"/> either way.</summary>
+    private void QueuePresent(ItemId itemId)
+    {
+        Adapter!.Queue(new PresentItemAction(itemId));
+        _feedback!.Text = $"queued: present {itemId}. Queued — resolves when Morning ticks. Press Advance or wait.";
+    }
+
+    /// <summary>The ONE seam both the Accept button and the desk's handshake click call (KTD-A) —
+    /// queues the identical Accept <see cref="HaggleResponseAction"/> either way.</summary>
+    private void QueueAccept()
+    {
+        Adapter!.Queue(new HaggleResponseAction(HaggleResponseKind.Accept));
+        _feedback!.Text = "queued: accept the standing offer. Queued — resolves when Morning ticks. Press Advance or wait.";
+    }
+
     private void BuildPresentedAndOffer(GameState state, CounterState counter)
     {
         var row = AddRow(_body!);
@@ -188,11 +242,7 @@ public partial class CounterPanel : SimPanel
             AddIcon(row, IconRegistry.Slot(item.Slot), ShelfIconSize);
             AddLabel(row, $"{item.Name} [{item.Quality}] — {entry.Price}g");
 
-            var present = AddButton(row, $"Present_{itemId.Value}", "Present", () =>
-            {
-                Adapter!.Queue(new PresentItemAction(itemId));
-                _feedback!.Text = $"queued: present {itemId}. Queued — resolves when Morning ticks. Press Advance or wait.";
-            });
+            var present = AddButton(row, $"Present_{itemId.Value}", "Present", () => QueuePresent(itemId));
             GateButton(present, legal, "No active customer is at the counter.");
 
             var suggest = AddButton(row, $"Suggest_{itemId.Value}", "Suggest", () =>
@@ -215,11 +265,7 @@ public partial class CounterPanel : SimPanel
             && counter.StandingOfferGold is not null && counter.Presented is not null;
 
         var row = AddRow(section.Body);
-        var accept = AddButton(row, "Accept", "Accept", () =>
-        {
-            Adapter!.Queue(new HaggleResponseAction(HaggleResponseKind.Accept));
-            _feedback!.Text = "queued: accept the standing offer. Queued — resolves when Morning ticks. Press Advance or wait.";
-        });
+        var accept = AddButton(row, "Accept", "Accept", QueueAccept);
         GateButton(accept, legal, "No standing offer to respond to — present an item first.");
 
         var hold = AddButton(row, "HoldFirm", "Hold Firm", () =>
@@ -229,26 +275,53 @@ public partial class CounterPanel : SimPanel
         });
         GateButton(hold, legal, "No standing offer to respond to — present an item first.");
 
+        // U2 (design doc §B5): a coin stack you count out, not a SpinBox you type into — the SAME
+        // seam either way (Counter reads priceStack.Value). Node name kept as "CounterPrice" so
+        // nothing that looked it up by name needs to change, only its type.
         var maxPrice = hero?.Gold ?? 99999;
-        var priceSpin = AddSpinBox(row, "CounterPrice", 1, Math.Max(1, maxPrice), counter.StandingOfferGold ?? 1);
+        var priceStack = new CoinStack
+        {
+            Name = "CounterPrice",
+            MinValue = 1,
+            MaxValue = Math.Max(1, maxPrice),
+            Value = counter.StandingOfferGold ?? 1,
+        };
+        row.AddChild(priceStack);
         var counterBtn = AddButton(row, "Counter", "Counter", () =>
         {
-            Adapter!.Queue(new HaggleResponseAction(HaggleResponseKind.Counter, (int)priceSpin.Value));
-            _feedback!.Text = $"queued: counter at {(int)priceSpin.Value}g. Queued — resolves when Morning ticks. Press Advance or wait.";
+            Adapter!.Queue(new HaggleResponseAction(HaggleResponseKind.Counter, priceStack.Value));
+            _feedback!.Text = $"queued: counter at {priceStack.Value}g. Queued — resolves when Morning ticks. Press Advance or wait.";
         });
         GateButton(counterBtn, legal, "No standing offer to respond to — present an item first.");
     }
 
     /// <summary>Today's <see cref="CustomerWalked"/> reasons (R8 prose half) — mirrors
-    /// <see cref="ShopPanel"/>'s own <c>HeroPassedOnItem</c> rendering for the atomic path.</summary>
+    /// <see cref="ShopPanel"/>'s own <c>HeroPassedOnItem</c> rendering for the atomic path.
+    /// U2: the reason is now the customer's own parting LINE, spoken in a speech bubble, rather
+    /// than a plain log row — still a real <see cref="Label"/> underneath (RenderedText still
+    /// finds the hero name and reason prose), just framed to read as speech.</summary>
     private void BuildWalkedToday(GameState state)
     {
         var walkedToday = state.EventLog.OfType<CustomerWalked>().Where(e => e.Day == state.Day).ToList();
         foreach (var walked in walkedToday)
         {
-            var label = AddLabel(_body!, $"{HeroName(walked.Hero)} walked away: {walked.Reason}");
-            label.AddThemeColorOverride("font_color", GameTheme.RejectionColor);
+            _body!.AddChild(BuildSpeechBubble($"{HeroName(walked.Hero)}: \"{walked.Reason}\""));
         }
+    }
+
+    /// <summary>A small speech-bubble-framed line — <see cref="GameTheme.PanelStyle"/>'s own
+    /// duplicate-and-tweak idiom (see <c>UiKit.CompactChipStyle</c>), just re-bordered in
+    /// <see cref="GameTheme.RejectionColor"/> so a walk-away reads as spoken rather than logged.</summary>
+    private static Control BuildSpeechBubble(string line)
+    {
+        var bubble = new PanelContainer { Name = "WalkAwaySpeechBubble" };
+        var style = (StyleBoxFlat)GameTheme.PanelStyle().Duplicate();
+        style.BorderColor = GameTheme.RejectionColor;
+        bubble.AddThemeStyleboxOverride("panel", style);
+
+        var label = AddLabel(bubble, line);
+        label.AddThemeColorOverride("font_color", GameTheme.RejectionColor);
+        return bubble;
     }
 
     private void EnsureBuilt()
@@ -268,5 +341,353 @@ public partial class CounterPanel : SimPanel
         AddHeader(root, "COUNTER SERVICE");
         _body = new VBoxContainer { Name = "CounterBody" };
         root.AddChild(_body);
+    }
+
+    /// <summary>
+    /// U2 (plan 2026-07-28-002, design doc §B5): the counter desk canvas — a shelf strip you can
+    /// drag an item off of, a mat you drop it onto, the customer's extended hand you shake to
+    /// accept, and the customer themselves (posture leaning/slumping by mood bucket, a foot
+    /// tapping faster as patience drains). Every gesture is recognised entirely in here via the
+    /// <c>GuiInput</c> C# EVENT (subscribed, not a <c>_GuiInput</c> override — the same idiom
+    /// <c>AlchemyBrewPuzzle</c>'s BrewCanvas and <c>DrawerHost</c>'s dim veil use, so
+    /// a headless test can drive the whole recogniser with
+    /// <c>EmitSignal(Control.SignalName.GuiInput, ...)</c>) and every branch terminates in exactly
+    /// one of the two public events below (KTD-A) — nothing here builds an action or touches the
+    /// sim; the owning <see cref="CounterPanel"/> wires both events straight to the SAME
+    /// <see cref="QueuePresent"/>/<see cref="QueueAccept"/> methods the existing buttons call.
+    /// <see cref="Size"/> is seeded in the constructor (mirrors <c>BrewCanvas</c>) so the hit-tests
+    /// have sane geometry even before a real container layout pass has run.
+    /// </summary>
+    private sealed partial class CounterDesk : Control
+    {
+        /// <summary>One shelf slot's identity + art, precomputed by the owner (the desk stays
+        /// GameSim-shape-agnostic beyond the bare id — mirrors <c>BrewCanvas</c> taking plain
+        /// reagent ints, not a domain enum).</summary>
+        public readonly record struct ShelfIcon(int ItemId, string Name, Texture2D Icon);
+
+        private const float ShelfIconSize = 28f;
+        private const float ShelfStep = 34f;
+
+        private static readonly Color MatIdle = new(0.18f, 0.16f, 0.20f, 0.55f);
+        private static readonly Color MatHover = new(0.30f, 0.50f, 0.28f, 0.55f);
+        private static readonly Color MatEdgeIdle = new(0.5f, 0.45f, 0.35f, 0.8f);
+        private static readonly Color MatEdgeHover = new(0.55f, 0.9f, 0.5f);
+        private static readonly Color HandLegal = new(0.85f, 0.7f, 0.35f);
+        private static readonly Color HandIllegal = new(0.4f, 0.38f, 0.34f, 0.6f);
+        private static readonly Color ShelfBg = new(0.20f, 0.18f, 0.24f, 0.85f);
+        private static readonly Color ShelfEdge = new(0.6f, 0.55f, 0.4f, 0.8f);
+        private static readonly Color FootColor = new(0.25f, 0.22f, 0.20f);
+
+        /// <summary>Fires with the shelf item's id when a drag release lands on the mat — the
+        /// recogniser's ONE present seam (KTD-A); the owner wires this to <c>QueuePresent</c>.</summary>
+        public event Action<int>? PresentRequested;
+
+        /// <summary>Fires on one decisive click of the handshake affordance — the recogniser's ONE
+        /// accept seam (KTD-A); the owner wires this to <c>QueueAccept</c>.</summary>
+        public event Action? AcceptRequested;
+
+        private IReadOnlyList<ShelfIcon> _shelf = Array.Empty<ShelfIcon>();
+        private bool _canPresent;
+        private bool _canAccept;
+        private string _classId = string.Empty;
+        private int _moodPermille;
+        private int _patienceRounds = 3;
+
+        private bool _dragging;
+        private int _dragItemId = -1;
+        private Vector2 _dragPos;
+
+        private float _anim;
+        private Texture2D? _customerTex;
+        private string _customerTexFor = string.Empty;
+
+        public CounterDesk()
+        {
+            Name = "CounterDesk";
+            CustomMinimumSize = new Vector2(0, 150);
+            Size = new Vector2(560, 150); // seeded real footprint — see type remarks
+            SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            MouseFilter = MouseFilterEnum.Stop;
+            // Subscribed (not a `_GuiInput` override) so a headless test can drive the whole
+            // drag-to-present + handshake recogniser via EmitSignal(Control.SignalName.GuiInput, ...).
+            GuiInput += OnGuiInput;
+        }
+
+        /// <summary>Bind this refresh's shelf contents (presentation only — never mutates the
+        /// sim's actual shelf).</summary>
+        public void SetShelf(IReadOnlyList<ShelfIcon> shelf)
+        {
+            _shelf = shelf;
+            if (_dragging && _shelf.All(s => s.ItemId != _dragItemId))
+            {
+                // The shelf changed under an in-flight drag (e.g. a stale carried item sold out
+                // from under it on reopen) — clear it so a stale release cannot fire a present.
+                _dragging = false;
+                _dragItemId = -1;
+            }
+
+            QueueRedraw();
+        }
+
+        /// <summary>Mirror the SAME legality predicates <see cref="CounterPanel.BuildShelfActions"/>/
+        /// <see cref="CounterPanel.BuildHaggleControls"/> gate their buttons on, so the desk can
+        /// never fire something a disabled button could not.</summary>
+        public void SetLegal(bool canPresent, bool canAccept)
+        {
+            _canPresent = canPresent;
+            _canAccept = canAccept;
+            QueueRedraw();
+        }
+
+        /// <summary>Drive posture/expression from the sim's own <paramref name="moodPermille"/>
+        /// bucket and a tapping foot from <paramref name="patienceRounds"/> — presentation only,
+        /// read nowhere near <see cref="PresentRequested"/>/<see cref="AcceptRequested"/>.</summary>
+        public void SetCustomer(string classId, int moodPermille, int patienceRounds)
+        {
+            _classId = classId;
+            _moodPermille = moodPermille;
+            _patienceRounds = patienceRounds;
+            QueueRedraw();
+        }
+
+        // ── pure hit-tests (public: a headless test drives the recogniser's decision without a
+        // mouse, exactly like CoinStack.DenominationAt/AlchemyBrewPuzzle.IsOverCauldron) ─────────
+
+        private static Rect2 ShelfIconRect(int index) => new(6f + index * ShelfStep, 6f, ShelfIconSize, ShelfIconSize);
+
+        /// <summary>Which shelf item (if any) sits at this LOCAL point.</summary>
+        public int? ShelfItemIdAt(Vector2 localPos)
+        {
+            for (var i = 0; i < _shelf.Count; i++)
+            {
+                if (ShelfIconRect(i).HasPoint(localPos))
+                {
+                    return _shelf[i].ItemId;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>The counter mat rect — the SAME rect <c>_Draw</c> paints, so a drop lands
+        /// exactly where the drawing says it will.</summary>
+        private static Rect2 MatRect(Vector2 size) => new(size.X * 0.32f, size.Y - 92f, 130f, 78f);
+
+        /// <summary>Pure hit-test: is this LOCAL point over the counter mat?</summary>
+        public bool IsOverMat(Vector2 localPos) => Size.X > 0f && Size.Y > 0f && MatRect(Size).HasPoint(localPos);
+
+        private static Rect2 HandshakeRect(Vector2 size) => new(size.X - 66f, size.Y - 66f, 50f, 50f);
+
+        /// <summary>Pure hit-test for the customer's extended hand (the accept affordance).</summary>
+        public bool IsOverHandshake(Vector2 localPos) => Size.X > 0f && Size.Y > 0f && HandshakeRect(Size).HasPoint(localPos);
+
+        // ── the whole recogniser: every branch ends in PresentRequested or AcceptRequested ──────
+
+        private void OnGuiInput(InputEvent @event)
+        {
+            switch (@event)
+            {
+                case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } down:
+                {
+                    if (_canPresent && ShelfItemIdAt(down.Position) is { } itemId)
+                    {
+                        _dragging = true;
+                        _dragItemId = itemId;
+                        _dragPos = down.Position;
+                        QueueRedraw();
+                    }
+                    else if (_canAccept && IsOverHandshake(down.Position))
+                    {
+                        AcceptRequested?.Invoke(); // one decisive click — no drag needed
+                    }
+
+                    break;
+                }
+
+                case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } up when _dragging:
+                {
+                    var itemId = _dragItemId;
+                    var overMat = IsOverMat(up.Position);
+                    _dragging = false;
+                    _dragItemId = -1;
+                    QueueRedraw();
+                    if (overMat)
+                    {
+                        PresentRequested?.Invoke(itemId); // KTD-A: same seam the Present button calls
+                    }
+                    // else: dropped off-mat — shelved harmlessly, no action, no error state.
+
+                    break;
+                }
+
+                case InputEventMouseMotion motion when _dragging:
+                    _dragPos = motion.Position;
+                    QueueRedraw();
+                    break;
+            }
+        }
+
+        /// <summary>Accumulated-delta-only animation clock (no wall-clock, no RNG) for the tapping
+        /// foot — purely cosmetic, never read by <see cref="OnGuiInput"/>.</summary>
+        public override void _Process(double delta)
+        {
+            _anim += (float)delta;
+            QueueRedraw();
+        }
+
+        // ── drawing (primitives + the existing hero-sprite art — no new art, no SubViewport) ────
+
+        public override void _Draw()
+        {
+            var size = Size;
+            if (size.X <= 0f || size.Y <= 0f)
+            {
+                return;
+            }
+
+            DrawShelf(size);
+            DrawMat(size);
+            DrawHandshake(size);
+            DrawCustomer(size);
+            DrawCarriedItem();
+        }
+
+        private void DrawShelf(Vector2 size)
+        {
+            for (var i = 0; i < _shelf.Count; i++)
+            {
+                var rect = ShelfIconRect(i);
+                DrawRect(rect, ShelfBg);
+                DrawRect(rect, ShelfEdge, filled: false, width: 1f);
+
+                if (_dragging && _shelf[i].ItemId == _dragItemId)
+                {
+                    continue; // carried — drawn following the cursor instead, see DrawCarriedItem
+                }
+
+                var icon = _shelf[i].Icon;
+                if (icon is not null)
+                {
+                    var tint = _canPresent ? Colors.White : new Color(1f, 1f, 1f, 0.5f);
+                    DrawTextureRect(icon, rect.Grow(-3f), false, tint);
+                }
+            }
+        }
+
+        private void DrawMat(Vector2 size)
+        {
+            var rect = MatRect(size);
+            var hovered = _dragging && rect.HasPoint(_dragPos);
+            DrawRect(rect, hovered ? MatHover : MatIdle);
+            DrawRect(rect, hovered ? MatEdgeHover : MatEdgeIdle, filled: false, width: hovered ? 2.5f : 1.5f);
+
+            var font = GetThemeDefaultFont();
+            if (font is not null)
+            {
+                DrawString(
+                    font, new Vector2(rect.Position.X + 6f, rect.Position.Y + rect.Size.Y / 2f), "present here",
+                    HorizontalAlignment.Left, rect.Size.X - 12f, GetThemeDefaultFontSize());
+            }
+        }
+
+        private void DrawHandshake(Vector2 size)
+        {
+            var rect = HandshakeRect(size);
+            var color = _canAccept ? HandLegal : HandIllegal;
+            DrawRect(rect, new Color(color, 0.25f));
+            DrawRect(rect, color, filled: false, width: 2f);
+
+            // A plain palm + three fingers — a primitive glyph, not generated art.
+            var palm = rect.Grow(-10f);
+            DrawRect(palm, color);
+            for (var f = 0; f < 3; f++)
+            {
+                var fx = palm.Position.X + palm.Size.X * (0.2f + f * 0.3f);
+                DrawLine(new Vector2(fx, palm.Position.Y), new Vector2(fx, palm.Position.Y - 8f), color, 3f);
+            }
+        }
+
+        /// <summary>The customer figure: the existing <see cref="IconRegistry.Sprite"/> hero art
+        /// (never new art), leaned by mood bucket, over a foot that taps faster the lower
+        /// <see cref="_patienceRounds"/> gets — plain dot-eyes + a mouth line bent by the same mood
+        /// bucket for expression. Nothing here is read by <see cref="OnGuiInput"/>.</summary>
+        private void DrawCustomer(Vector2 size)
+        {
+            if (string.IsNullOrEmpty(_classId))
+            {
+                return; // no active customer — the desk still shows shelf/mat, just no figure
+            }
+
+            var cx = size.X * 0.14f;
+            var baseY = size.Y - 10f;
+
+            var lean = _moodPermille switch
+            {
+                > 50 => -8f,  // leaning in, interested
+                < -50 => 10f, // slumping away
+                _ => 0f,
+            };
+
+            // Tapping foot: faster and wider the fewer patience rounds remain.
+            var urgency = _patienceRounds switch { <= 1 => 1f, 2 => 0.5f, _ => 0.15f };
+            var tapFreq = 2f + urgency * 6f;
+            var tapSwing = 3f + urgency * 7f;
+            var footX = cx + Mathf.Sin(_anim * tapFreq) * tapSwing;
+            DrawRect(new Rect2(footX - 7f, baseY - 4f, 14f, 6f), FootColor);
+
+            var tex = CustomerTexture();
+            const float h = 64f;
+            const float w = 40f;
+            if (tex is not null)
+            {
+                DrawSetTransform(new Vector2(cx, baseY - h * 0.5f), Mathf.DegToRad(lean), Vector2.One);
+                DrawTextureRect(tex, new Rect2(new Vector2(-w / 2f, -h / 2f), new Vector2(w, h)), false);
+                DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+            }
+            else
+            {
+                DrawCircle(new Vector2(cx, baseY - h * 0.5f), w * 0.45f, new Color(0.5f, 0.45f, 0.55f));
+            }
+
+            // Expression: dot eyes + a mouth line bent by the same mood bucket.
+            var faceY = baseY - h + 6f;
+            DrawCircle(new Vector2(cx - 6f, faceY), 1.6f, Colors.Black);
+            DrawCircle(new Vector2(cx + 6f, faceY), 1.6f, Colors.Black);
+            var curve = _moodPermille switch { > 50 => 3f, < -50 => -3f, _ => 0f };
+            DrawLine(new Vector2(cx - 5f, faceY + 7f - curve), new Vector2(cx, faceY + 8f + curve * 0.4f), Colors.Black, 1.4f);
+            DrawLine(new Vector2(cx, faceY + 8f + curve * 0.4f), new Vector2(cx + 5f, faceY + 7f - curve), Colors.Black, 1.4f);
+        }
+
+        private void DrawCarriedItem()
+        {
+            if (!_dragging)
+            {
+                return;
+            }
+
+            var icon = _shelf.FirstOrDefault(s => s.ItemId == _dragItemId).Icon;
+            if (icon is null)
+            {
+                return;
+            }
+
+            DrawTextureRect(icon, new Rect2(_dragPos - new Vector2(15f, 15f), new Vector2(30f, 30f)), false);
+        }
+
+        private Texture2D? CustomerTexture()
+        {
+            if (string.IsNullOrEmpty(_classId))
+            {
+                return null;
+            }
+
+            if (_customerTexFor != _classId)
+            {
+                _customerTexFor = _classId;
+                _customerTex = IconRegistry.Sprite(_classId);
+            }
+
+            return _customerTex;
+        }
     }
 }
