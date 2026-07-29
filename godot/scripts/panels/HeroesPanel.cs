@@ -31,6 +31,14 @@ namespace GodotClient.Panels;
 /// mid-word). A transparent overlay <see cref="Button"/> now drives the click, the roster name
 /// ellipsizes instead of wrapping mid-word, and <see cref="TintPortraitFrame"/> tints the
 /// frame/underlay only — a painted portrait's own texture stays untinted (white Modulate).</para>
+///
+/// <para>B4/B3 legibility fix: the Standing/mood line (U7/U10) now also names an unmet-needs
+/// signal off <see cref="GameSim.Heroes.NeedsSystem.Snapshot"/> when this hero has one — the
+/// demand streak, telegraph, boycott, and recovery flags that panel previously never read — and
+/// a new RELATIONSHIPS section lists the hero's strongest derived edges (comrade bond, grief-
+/// bond, grudge, rivalry seed) off <see cref="GameSim.Heroes.RelationshipSystem.TopEdgesFor"/>,
+/// by the other hero's name, mirroring the ITEM MEMORIES section's own explicit "(none yet)"
+/// empty state for a fresh recruit with no shared history.</para>
 /// </summary>
 public partial class HeroesPanel : SimPanel
 {
@@ -153,7 +161,40 @@ public partial class HeroesPanel : SimPanel
             var band = GameSim.Heroes.RelationshipBands.For(hero.Id, state);
             var mood = hero.MoodPermille;
             var moodWord = mood >= 200 ? "warm" : mood >= 80 ? "friendly" : mood <= -80 ? "sour" : "neutral";
-            AddLabel(_detail!, $"Standing: {GameSim.Heroes.RelationshipBands.Label(band)}  ·  mood: {moodWord}");
+
+            // B4: the needs-lite/boycott signal (NeedsSystem.Snapshot) had zero client reader
+            // before this — appended to the same line only when this hero has something to
+            // report (telegraphed, boycotting, or just recovered); a content hero (the day-1
+            // norm) shows the plain Standing/mood line unchanged, honestly matching Snapshot's
+            // own "bark, not a dump" contract rather than inventing a steady-state "content" note.
+            var needsEntry = GameSim.Heroes.NeedsSystem.Snapshot(state)
+                .FirstOrDefault(e => e.Hero == hero.Id);
+            var standingLine = $"Standing: {GameSim.Heroes.RelationshipBands.Label(band)}  ·  mood: {moodWord}";
+            var standingLabel = AddLabel(_detail!, needsEntry is null
+                ? standingLine
+                : standingLine + $"  ·  needs: {NeedsLineInfo(needsEntry).Text}");
+            if (needsEntry is not null)
+            {
+                standingLabel.TooltipText = NeedsLineInfo(needsEntry).Tooltip;
+            }
+
+            // B3: this hero's strongest derived relationship edges, by name —
+            // RelationshipSystem.EdgeFor had zero client consumers before this. Always renders
+            // the header (matching ITEM MEMORIES' own always-visible-header idiom below) with an
+            // explicit, honest empty-state line for a fresh recruit with no shared history yet.
+            AddHeader(_detail!, "RELATIONSHIPS:");
+            var edges = GameSim.Heroes.RelationshipSystem.TopEdgesFor(hero.Id, state);
+            if (edges.IsDefaultOrEmpty)
+            {
+                AddLabel(_detail!, "  no bonds or rivalries yet");
+            }
+            else
+            {
+                foreach (var (other, edge) in edges)
+                {
+                    AddLabel(_detail!, $"  {GameSim.Heroes.RelationshipSystem.Phrase(edge.Kind)} {HeroName(other)}");
+                }
+            }
         }
 
         AddHeader(_detail!, "GEAR:");
@@ -218,6 +259,42 @@ public partial class HeroesPanel : SimPanel
         {
             AddLabel(_detail!, $"  {ItemName(memory.Item)}: {memory.Kills} kills, {memory.Saves} saves");
         }
+    }
+
+    /// <summary>Maps one <see cref="GameSim.Heroes.NeedsEntry"/> to its Standing-line suffix text
+    /// plus a tooltip with the streak-day detail — mirrors <see cref="HeroPanel"/>'s own
+    /// NeedsChipInfo mapping (duplicated rather than shared: the two panels render the fact in
+    /// different idioms — a chip there, a text-line suffix here — and each is a small, panel-
+    /// local read of the same sim fields). Checked in priority order so a day that is both a
+    /// boycott's first day and (trivially) still telegraphed reports the sharper, newer fact.</summary>
+    private static (string Text, string Tooltip) NeedsLineInfo(GameSim.Heroes.NeedsEntry entry)
+    {
+        if (entry.RecoveredToday)
+        {
+            return ("back at the counter",
+                "Just bought again after a dry spell — the boycott risk reset.");
+        }
+
+        if (entry.BoycottBeganToday)
+        {
+            return ("just started boycotting",
+                $"{entry.StreakDays} days since a purchase from your shop — now favoring the rival shelf.");
+        }
+
+        if (entry.Boycotting)
+        {
+            return ("boycotting",
+                $"{entry.StreakDays} days since a purchase from your shop — favoring the rival shelf.");
+        }
+
+        if (entry.TelegraphedToday)
+        {
+            return ("growing restless",
+                $"{entry.StreakDays} days since a purchase — a boycott looms if nothing changes soon.");
+        }
+
+        return ("restless",
+            $"{entry.StreakDays} days since a purchase — stock something this hero actually wants.");
     }
 
     /// <summary>U5: open the self-contained provenance popup for a gear item's ItemId, reading

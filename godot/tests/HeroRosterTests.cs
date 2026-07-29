@@ -232,7 +232,85 @@ public class HeroRosterTests
         }
     }
 
+    // ── B4/B3 legibility fix: needs/boycott + relationships in the detail pane ──────────────────
+
+    [TestCase]
+    public void FreshRecruit_NoUnmetDemandStreak_NoSharedHistory_DetailPaneOmitsBothHonestly()
+    {
+        // Day 1: arrival day 1 (no RecruitArrived), streak 0, no qualifying relationship event —
+        // the honest empty state for both new facets. RELATIONSHIPS still gets its own header
+        // (mirrors ITEM MEMORIES' always-visible-header idiom) with an explicit empty-state line;
+        // Needs has no established header of its own, so it simply stays off the Standing line.
+        var heroes = new[] { GearedHero(1) }.ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+        var state = GameFactory.NewGame(4244) with { Day = 1, Heroes = heroes };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            var detailText = RenderedText(Find<VBoxContainer>(ui.Heroes, "HeroDetail"));
+            AssertThat(detailText).Contains("Standing: Stranger  ·  mood: neutral");
+            AssertThat(detailText).NotContains("needs:");
+            AssertThat(detailText).Contains("RELATIONSHIPS:");
+            AssertThat(detailText).Contains("no bonds or rivalries yet");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void BoycottingHero_DetailPaneAppendsNeedsToTheStandingLine()
+    {
+        // No purchase ever, arrival day 1: day 8 => streak 7, steady boycotting (yesterday's
+        // streak 6 was already boycotting too).
+        var heroes = new[] { GearedHero(1) }.ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+        var state = GameFactory.NewGame(4245) with { Day = 8, Heroes = heroes };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            var detailText = RenderedText(Find<VBoxContainer>(ui.Heroes, "HeroDetail"));
+            AssertThat(detailText).Contains("needs: boycotting");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void SharedExpedition_DetailPaneListsTheComradeByName()
+    {
+        var departed = new PartyDeparted(ImmutableList.Create(new HeroId(1), new HeroId(2)), TargetFloor: 1)
+        {
+            Id = new EventId(1),
+            Day = 3,
+        };
+        var heroes = new[] { GearedHero(1), NamedAliveHero(2, "Bram") }
+            .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+        var state = GameFactory.NewGame(4246) with
+        {
+            Day = 4,
+            Heroes = heroes,
+            EventLog = ImmutableList.Create<GameEvent>(departed),
+        };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            var detailText = RenderedText(Find<VBoxContainer>(ui.Heroes, "HeroDetail"));
+            AssertThat(detailText).Contains("RELATIONSHIPS:");
+            AssertThat(detailText).Contains("comrades with Bram");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── Fixtures ──────────────────────────────────────────────────────────────────────────────
+
+    private static Hero NamedAliveHero(int id, string name) => new(
+        new HeroId(id), name, "vanguard", Level: 1, MaxHp: 25, Gold: 10,
+        GearSet.Empty, ImmutableList<ItemMemory>.Empty, Alive: true, DeepestFloorReached: 0, DiedOnDay: null);
 
     private static Hero GearedHero(int id) => new(
         new HeroId(id), $"Geared{id}", "vanguard", Level: 4, MaxHp: 50, Gold: 20,
