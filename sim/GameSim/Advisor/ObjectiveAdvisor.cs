@@ -355,12 +355,24 @@ public static class ObjectiveAdvisor
         return null;
     }
 
-    /// <summary>Mirrors <c>Heroes.CommissionSystem</c>'s own private gap-scan (<c>FindGapSlot</c>'s
-    /// sub-par branch): the first worn Weapon/Shield/Armor slot whose item quality falls below
-    /// <paramref name="bar"/>, in the same fixed order <see cref="RaidForecast.MissingItemSlots"/>/
+    /// <summary>
+    /// <b>DELIBERATELY NARROWER than <c>CommissionSystem.FindGapSlot</c> — do not "fix" the drift.</b>
+    /// This scan used to mirror it, and that claim is no longer true: commissions now also ask for
+    /// Consumable and Trinket, while this stays worn Weapon/Shield/Armor only. The two answer
+    /// different questions, and conflating them would give bad advice.
+    ///
+    /// <para>This one serves <see cref="SuggestQualityUpgrade"/>: what is blocking a hero from going
+    /// DEEPER. Depth is gated by worn gear power — a potion does not raise a hero's depth ceiling and a
+    /// trinket is an augment, so neither belongs in a stall diagnosis. <c>FindGapSlot</c> answers the
+    /// separate question of what a hero will ASK the smith for, where supplies and favours are
+    /// legitimately part of the ask.</para>
+    ///
+    /// <para>Returns the first worn Weapon/Shield/Armor slot whose item quality falls below
+    /// <paramref name="bar"/>, in the same fixed order <see cref="RaidForecast.MissingItemSlots"/> and
     /// <see cref="DemandBoard"/> use. A defensively-null worn slot also counts as sub-par (never
     /// thrown) — it shouldn't occur here since <see cref="SuggestQualityUpgrade"/> only calls this
-    /// once <see cref="DepthStallEntry.BlockingSlot"/> is confirmed null (every slot filled).</summary>
+    /// once <see cref="DepthStallEntry.BlockingSlot"/> is confirmed null (every slot filled).</para>
+    /// </summary>
     private static ItemSlot? SubParSlot(GearSet gear, ImmutableSortedDictionary<int, Item> items, QualityGrade bar)
     {
         foreach (var slot in new[] { ItemSlot.Weapon, ItemSlot.Shield, ItemSlot.Armor })

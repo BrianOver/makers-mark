@@ -150,13 +150,17 @@ public sealed class CommissionSystem : IPhaseSystem
                 continue;
             }
 
-            var slot = FindGapSlot(hero.Gear, state.Items, targetFloor);
+            // Band is read BEFORE the gap lookup because it now participates in it: only a hero who
+            // knows the smith asks for a trinket (see FindGapSlot). It still scales quality/premium
+            // exactly as before.
+            var band = RelationshipBands.For(hero.Id, state);
+
+            var slot = FindGapSlot(hero, state.Items, targetFloor, band);
             if (slot is null)
             {
-                continue; // fully and adequately kitted for the trip
+                continue; // kitted, supplied, and not owed a favour
             }
 
-            var band = RelationshipBands.For(hero.Id, state);
             var minQuality = MinQualityFor(targetFloor, band);
             var premium = PremiumFor(targetFloor, band);
             var deadline = state.Day + DeadlineWindowDays;
@@ -215,27 +219,72 @@ public sealed class CommissionSystem : IPhaseSystem
     private static int PremiumFor(int targetFloor, RelationshipBand band) =>
         BasePremiumGold + (PremiumPerFloor * targetFloor) + PremiumBonusFor(band);
 
-    /// <summary>The first slot (fixed Weapon/Shield/Armor order — deterministic) that is either empty
-    /// or worn below <see cref="FloorMinQuality"/> for the hero's target floor. Null when every worn
-    /// slot is filled at or above the bar (nothing to commission).</summary>
-    private static ItemSlot? FindGapSlot(GearSet gear, ImmutableSortedDictionary<int, Item> items, int targetFloor)
+    /// <summary>
+    /// The most urgent slot this hero needs for their target floor, in a fixed deterministic order.
+    /// Null when they are adequately equipped and supplied (nothing to commission).
+    ///
+    /// <para><b>Order is survival-first, and it matters:</b> Weapon, Shield, Armor, then a healing
+    /// Consumable, then Trinket. Worn protection outranks supplies, and a hero with no potion going
+    /// deep is in more danger than one missing an accessory — so Trinket, the pure augment, is last.</para>
+    ///
+    /// <para><b>Consumable and Trinket used to be unreachable here</b>, and the consequence was
+    /// bigger than it looks. A commission is this game's only NARRATIVE demand signal — a named hero
+    /// asking you personally, with a premium, a deadline, a mood payoff and an attribution beat. Only
+    /// Weapon/Shield/Armor could ever be its subject, so 13 of 39 recipes — most of the Alchemist's
+    /// book — could be sold off the shelf but could never be part of a story. In a project whose
+    /// thesis is "your craft writes the legends", that is a hole in the thesis, not a content gap.</para>
+    ///
+    /// <para><b>Trinket is gated on the relationship band</b>, and that is a design choice rather than
+    /// a tuning knob. An empty trinket slot as an unconditional gap would mean every hero nags for an
+    /// accessory forever: with worn gear filled and a potion carried, the board's
+    /// <see cref="MaxOpenCommissions"/> slots would sit permanently saturated with trinket asks and
+    /// "nobody needs anything right now" would stop existing as a state. A trinket is a pure augment —
+    /// a favour, not survival kit — so only a hero who actually knows the smith
+    /// (<see cref="RelationshipBand.Regular"/> or better) asks for one. Strangers ask for armour.</para>
+    ///
+    /// <para>Consumables are not worn, so their "gap" is a different question: does the hero carry a
+    /// heal at all. That mirrors what the sim already models everywhere else — <c>TryQuaff</c> drinks
+    /// from <see cref="Hero.Pack"/>, and the camp report surfaces heals-remaining as the fact the
+    /// player decides on. Keyed on <see cref="Item.Effect"/> data rather than recipe ids, the same
+    /// rule <c>ExpeditionResolver</c> and <c>HeroShoppingSystem</c> both follow.</para>
+    /// </summary>
+    private static ItemSlot? FindGapSlot(
+        Hero hero, ImmutableSortedDictionary<int, Item> items, int targetFloor, RelationshipBand band)
     {
         var bar = FloorMinQuality(targetFloor);
+
         foreach (var slot in new[] { ItemSlot.Weapon, ItemSlot.Shield, ItemSlot.Armor })
         {
-            var worn = gear.Slot(slot);
+            if (WornGap(slot) is { } gap)
+            {
+                return gap;
+            }
+        }
+
+        // Carried, not worn: any Heal in the pack counts as supplied. Deliberately a presence test
+        // rather than a quality bar — a hero without a potion needs *a* potion, and asking a day-one
+        // smith for a Fine draught they cannot yet make would post an unfillable commission.
+        var carriesHeal = hero.Pack.Any(id =>
+            items.TryGetValue(id.Value, out var carried) && carried.Effect is { Kind: ConsumableKind.Heal });
+        if (!carriesHeal)
+        {
+            return ItemSlot.Consumable;
+        }
+
+        return band >= RelationshipBand.Regular ? WornGap(ItemSlot.Trinket) : null;
+
+        ItemSlot? WornGap(ItemSlot slot)
+        {
+            var worn = hero.Gear.Slot(slot);
             if (worn is null)
             {
                 return slot; // empty — an unambiguous gap
             }
 
-            if (items.TryGetValue(worn.Value.Value, out var item) && item.Quality < bar)
-            {
-                return slot; // sub-par: below what this depth demands
-            }
+            return items.TryGetValue(worn.Value.Value, out var item) && item.Quality < bar
+                ? slot   // sub-par: below what this depth demands
+                : null;
         }
-
-        return null;
     }
 
     /// <summary>Applies a signed mood delta to one hero (mirrors the counter-haggle mood-bump idiom in

@@ -136,21 +136,39 @@ public class CommissionFulfillmentTests
     /// musters against) so <see cref="CommissionSystem"/>'s posting half finds no gap and never
     /// re-commissions the same hero in the same tick that its expiry half just cleared them —
     /// isolating the expiry assertion from the (separately tested) posting behavior.</summary>
+    /// <summary>The id of the heal this catalog stocks — put it in <see cref="Hero.Pack"/> via
+    /// <see cref="FullyProvisioned"/> to make a hero read as wanting nothing.</summary>
+    private const int KitHealId = 104;
+
+    /// <summary>
+    /// A hero kitted AND supplied — the state that now means "no commission wanted".
+    ///
+    /// <para>Commissions gained Consumable and Trinket as askable slots, so worn gear alone no longer
+    /// implies a hero wants nothing: one carrying no potion is asked for a potion. Tests whose premise
+    /// is "adequately kitted, so nothing is re-posted" therefore have to provision the pack too, or
+    /// they are asserting against a hero the sim now (correctly) considers under-supplied.</para>
+    /// </summary>
+    private static Hero FullyProvisioned(Hero hero, GearSet gear) =>
+        hero with { Gear = gear, Pack = ImmutableList.Create(new ItemId(KitHealId)) };
+
     private static ImmutableSortedDictionary<int, Item> FullCommonGearCatalog(out GearSet gear)
     {
         var weapon = MakeItem(101, ItemSlot.Weapon, QualityGrade.Common, "Kit Weapon");
         var shield = MakeItem(102, ItemSlot.Shield, QualityGrade.Common, "Kit Shield");
         var armor = MakeItem(103, ItemSlot.Armor, QualityGrade.Common, "Kit Armor");
+        var heal = MakeItem(KitHealId, ItemSlot.Consumable, QualityGrade.Common, "Kit Draught")
+            with { Effect = new ConsumableEffect(ConsumableKind.Heal, 10) };
         gear = new GearSet(weapon.Id, shield.Id, armor.Id);
         return ImmutableSortedDictionary<int, Item>.Empty
-            .Add(weapon.Id.Value, weapon).Add(shield.Id.Value, shield).Add(armor.Id.Value, armor);
+            .Add(weapon.Id.Value, weapon).Add(shield.Id.Value, shield).Add(armor.Id.Value, armor)
+            .Add(heal.Id.Value, heal);
     }
 
     [Fact]
     public void AcceptedCommission_PastDeadline_ExpiresWithEventAndMoodPenalty()
     {
         var items = FullCommonGearCatalog(out var gear);
-        var hero = MakeHero(1, gold: 100) with { Gear = gear };
+        var hero = FullyProvisioned(MakeHero(1, gold: 100), gear);
         var commission = new Commission(hero.Id, ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: 5, PremiumGold: 25)
         {
             Accepted = true,
@@ -178,7 +196,7 @@ public class CommissionFulfillmentTests
     public void PostedButNeverAccepted_PastDeadline_SilentlyExpires_NoEventNoMoodChange()
     {
         var items = FullCommonGearCatalog(out var gear);
-        var hero = MakeHero(1, gold: 100, mood: 42) with { Gear = gear };
+        var hero = FullyProvisioned(MakeHero(1, gold: 100, mood: 42), gear);
         var commission = new Commission(hero.Id, ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: 5, PremiumGold: 25);
         // Accepted defaults to false — posted, never accepted.
 
