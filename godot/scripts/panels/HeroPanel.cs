@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Classes;
 using GameSim.Contracts;
@@ -29,6 +30,16 @@ namespace GodotClient.Panels;
 ///
 /// <para>Room is deliberately left (a per-hero trait-chip row, commented below) for B2's ~10
 /// derived traits — no traits are invented here.</para>
+///
+/// <para>B4/B3 legibility fix: two sim systems computed narration-specific signals with zero
+/// client reader — <see cref="NeedsSystem.Snapshot"/> (unmet-demand streak/telegraph/boycott/
+/// recovery, B4) and <see cref="RelationshipSystem.TopEdgesFor"/> (per-pair comrade/grief/
+/// grudge/rivalry edges, B3). Both are rendered here as extra chips next to the existing
+/// Standing chip — the established idiom this panel already uses — and BOTH are honestly
+/// absent on a fresh roster (day 1: no unmet-demand streak has crossed the telegraph
+/// threshold yet, no pair has a qualifying shared-event edge yet), matching
+/// <see cref="NeedsSystem.Snapshot"/>'s own "a bark, not a status dump" design: nothing new is
+/// invented when the sim has nothing to report.</para>
 /// </summary>
 public partial class HeroPanel : SimPanel
 {
@@ -63,15 +74,21 @@ public partial class HeroPanel : SimPanel
             return;
         }
 
+        // B4: computed once per Refresh (roster-wide scan) rather than once per card — Snapshot
+        // rescans the whole EventLog, so batching it here avoids an O(heroes^2) refresh.
+        var needsByHero = NeedsSystem.Snapshot(state).ToImmutableDictionary(e => e.Hero.Value);
+
         foreach (var hero in alive)
         {
-            RenderHeroCard(section.Body, hero, state);
+            RenderHeroCard(section.Body, hero, state, needsByHero);
         }
     }
 
-    /// <summary>One hero card: name/class header, a standing/deepest/XP/rank chip row, and a
-    /// summed-deeds line. Trait chips (B2) plug in below the deeds line — see the comment marker.</summary>
-    private void RenderHeroCard(Node parent, Hero hero, GameState state)
+    /// <summary>One hero card: name/class header, a standing/deepest/XP/rank/needs chip row, a
+    /// summed-deeds line, an optional trait-chip row (B2), and an optional relationship-chip row
+    /// (B3) naming who this hero bonds with or resents.</summary>
+    private void RenderHeroCard(
+        Node parent, Hero hero, GameState state, ImmutableDictionary<int, NeedsEntry> needsByHero)
     {
         var card = Card($"HeroCard_{hero.Id.Value}");
         parent.AddChild(card);
@@ -88,6 +105,19 @@ public partial class HeroPanel : SimPanel
         chipRow.AddChild(StatChip("XP", $"{hero.Xp}"));
         chipRow.AddChild(StatChip("Rank", RankFor(hero.Xp), UiKit.ChipTone.Accent));
 
+        // B4 (needs-lite/boycott, highest-value gap this unit closes): only present once the
+        // hero's unmet-demand streak has crossed the telegraph threshold, is boycotting, or just
+        // recovered — a content hero (the day-1 norm) gets no chip at all, honestly matching
+        // NeedsSystem.Snapshot's own "bark, not a dump" contract rather than inventing a
+        // steady-state "content" chip nobody asked for.
+        if (needsByHero.TryGetValue(hero.Id.Value, out var needsEntry))
+        {
+            var (needsText, needsTone, needsTooltip) = NeedsChipInfo(needsEntry);
+            var needsChip = StatChip("Needs", needsText, needsTone);
+            needsChip.TooltipText = needsTooltip;
+            chipRow.AddChild(needsChip);
+        }
+
         var (kills, saves) = Deeds(hero);
         AddLabel(body, $"  deeds: {kills} kills, {saves} saves");
 
@@ -102,7 +132,83 @@ public partial class HeroPanel : SimPanel
                 traitRow.AddChild(StatChip("Trait", GameSim.Heroes.TraitRegistry.Definition(traitId).DisplayName));
             }
         }
+
+        // B3 (relationships, the other legibility gap this unit closes): the pair(s) this hero
+        // has the strongest derived standing with, by name — RelationshipSystem.EdgeFor had zero
+        // client consumers before this. Omitted entirely when the roster has no qualifying
+        // shared-event history yet (day 1's honest empty state), same "no chip" idiom as Needs.
+        var edges = RelationshipSystem.TopEdgesFor(hero.Id, state);
+        if (!edges.IsDefaultOrEmpty)
+        {
+            var relRow = AddRow(body);
+            foreach (var (other, edge) in edges)
+            {
+                var otherName = HeroName(other);
+                var relChip = StatChip(RelationshipChipLabel(edge.Kind), otherName, RelationshipChipTone(edge.Kind));
+                relChip.TooltipText = $"{RelationshipSystem.Phrase(edge.Kind)} {otherName} (strength {edge.Value}).";
+                relRow.AddChild(relChip);
+            }
+        }
     }
+
+    /// <summary>Maps one <see cref="NeedsEntry"/> to its chip text/tone/tooltip. The "just
+    /// crossed" moments (<see cref="NeedsEntry.TelegraphedToday"/>/
+    /// <see cref="NeedsEntry.BoycottBeganToday"/>/<see cref="NeedsEntry.RecoveredToday"/>) read
+    /// differently from the steady state they settle into — checked in priority order so a day
+    /// that is BOTH a boycott's first day and (trivially) still telegraphed reports the sharper,
+    /// newer fact. Recovery is checked first: <see cref="NeedsSystem.Snapshot"/> never sets it
+    /// alongside <see cref="NeedsEntry.Telegraphed"/> (a reset streak can't also be past the
+    /// telegraph threshold the same day), but ordering it first keeps that invariant local
+    /// instead of assumed.</summary>
+    private static (string Text, UiKit.ChipTone Tone, string Tooltip) NeedsChipInfo(NeedsEntry entry)
+    {
+        if (entry.RecoveredToday)
+        {
+            return ("back at the counter", UiKit.ChipTone.Positive,
+                "Just bought again after a dry spell — the boycott risk reset.");
+        }
+
+        if (entry.BoycottBeganToday)
+        {
+            return ("just started boycotting", UiKit.ChipTone.Negative,
+                $"{entry.StreakDays} days since a purchase from your shop — now favoring the rival shelf.");
+        }
+
+        if (entry.Boycotting)
+        {
+            return ("boycotting", UiKit.ChipTone.Negative,
+                $"{entry.StreakDays} days since a purchase from your shop — favoring the rival shelf.");
+        }
+
+        if (entry.TelegraphedToday)
+        {
+            return ("growing restless", UiKit.ChipTone.Accent,
+                $"{entry.StreakDays} days since a purchase — a boycott looms if nothing changes soon.");
+        }
+
+        return ("restless", UiKit.ChipTone.Accent,
+            $"{entry.StreakDays} days since a purchase — stock something this hero actually wants.");
+    }
+
+    /// <summary>Short chip label for a relationship edge's kind — the value slot carries the
+    /// other hero's name instead (see <see cref="RenderHeroCard"/>), so this stays a one-word tag.</summary>
+    private static string RelationshipChipLabel(RelationshipKind kind) => kind switch
+    {
+        RelationshipKind.ComradeBond => "Bond",
+        RelationshipKind.Grief => "Grief-bond",
+        RelationshipKind.Grudge => "Grudge",
+        RelationshipKind.RivalrySeed => "Rivalry",
+        _ => "—",
+    };
+
+    /// <summary>Chip tone for a relationship edge: the two net-positive kinds (comrade bond,
+    /// grief-bond) read warm; the two net-negative kinds (grudge, rivalry seed) read hostile.</summary>
+    private static UiKit.ChipTone RelationshipChipTone(RelationshipKind kind) => kind switch
+    {
+        RelationshipKind.Grudge or RelationshipKind.RivalrySeed => UiKit.ChipTone.Negative,
+        RelationshipKind.ComradeBond or RelationshipKind.Grief => UiKit.ChipTone.Positive,
+        _ => UiKit.ChipTone.Neutral,
+    };
 
     /// <summary>Sum of every <see cref="ItemMemory.Kills"/>/<see cref="ItemMemory.Saves"/> across
     /// the hero's whole gear-memory history — the roster-wide deeds tally (distinct from
