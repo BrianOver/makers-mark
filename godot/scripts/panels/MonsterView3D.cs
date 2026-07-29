@@ -1,5 +1,4 @@
 using Godot;
-using GodotClient.Town3d;
 
 namespace GodotClient.Panels;
 
@@ -33,6 +32,11 @@ public partial class MonsterView3D : SubViewport
     public static readonly Vector2I ViewSize = new(256, 256);
 
     private const float IdleSpinDegreesPerSecond = 35f;
+
+    /// <summary>Locally AI-generated + Blender-normalized GLBs (TRELLIS.2 pipeline, see
+    /// <c>docs/design/2026-07-20-3d-asset-gen-plan.md</c>). Already decimated/feet-pivoted/pre-scaled,
+    /// so unlike the old Kenney-kit town assembly (deleted U5) these need no colormap repair.</summary>
+    private const string GenModelsPath = "res://assets/models/gen/";
 
     private Node3D _stage = null!;
     private Node3D? _monster;
@@ -110,7 +114,7 @@ public partial class MonsterView3D : SubViewport
         ClearMonster();
 
         var file = AssetCatalog.MonsterModelFile(kind);
-        var mesh = file is null ? null : TownAssets.InstantiateGen(file);
+        var mesh = file is null ? null : InstantiateGenModel(file);
         if (mesh is null)
         {
             return false;
@@ -165,6 +169,23 @@ public partial class MonsterView3D : SubViewport
         RenderTargetUpdateMode = showing && DisplayServer.GetName() != "headless"
             ? UpdateMode.Always
             : UpdateMode.Disabled;
+
+    /// <summary>Loads a normalized AI-gen GLB (<paramref name="fileName"/>) from
+    /// <see cref="GenModelsPath"/>. Returns null when the file is absent — the caller's cue to fall
+    /// back to 2D art. U5: the sole surviving consumer of the old 3D town's gen-asset loader
+    /// (<c>TownAssets.InstantiateGen</c>, deleted with the rest of <c>town3d/</c>) — inlined here
+    /// rather than kept as a shared class since this is now its only call site.</summary>
+    public static Node3D? InstantiateGenModel(string fileName)
+    {
+        var path = GenModelsPath + fileName;
+        if (!ResourceLoader.Exists(path))
+        {
+            return null;
+        }
+
+        var scene = ResourceLoader.Load<PackedScene>(path);
+        return scene.Instantiate<Node3D>();
+    }
 
     /// <summary>Tallest descendant <see cref="MeshInstance3D"/> AABB height, folding each node's Y
     /// scale in on the way down. Local copy of <c>Town3D.MeshHeight</c> (private there; duplicated

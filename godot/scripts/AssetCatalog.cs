@@ -81,7 +81,8 @@ public static class AssetCatalog
     // ---- 3D gen monster meshes (MonsterView3D spectate stage) ---------------------------------
 
     /// <summary>
-    /// AI-gen monster GLB file names under <c>TownAssets.GenModels</c>, keyed by slugged Mine
+    /// AI-gen monster GLB file names under <c>res://assets/models/gen/</c> (loaded via
+    /// <see cref="GodotClient.Panels.MonsterView3D.InstantiateGenModel"/>), keyed by slugged Mine
     /// monster kind. An EXPLICIT map (not slug composition like <see cref="MonsterPortraitId"/>)
     /// because the gen pipeline shipped shortened file names ("monster-spider.glb", not
     /// "monster-tunnel-spider.glb"). A kind with no entry ("forgeworm" — no gen model yet) resolves

@@ -2,7 +2,7 @@
 using GdUnit4;
 using Godot;
 using GodotClient;
-using GodotClient.Town3d;
+using GodotClient.Panels;
 using static GdUnit4.Assertions;
 
 namespace GodotClient.Tests;
@@ -11,7 +11,10 @@ namespace GodotClient.Tests;
 /// U-C4 Gloomwood completeness: the two deep bosses (Wicker Shepherd F3, Old Mossjaw F4) now have
 /// AI-gen 3D meshes, so the whole Gloomwood monster set resolves to a real GLB (no 2D-portrait
 /// fallback). Asserts the sim MonsterKind display names slug to the mapped files and the meshes
-/// actually load from res://assets/models/gen/.
+/// actually load from res://assets/models/gen/ — this is the live path: <see cref="MonsterView3D"/>
+/// (BestiaryPanel/MineWatch) is the only surviving consumer of gen monster meshes after U5 deleted
+/// the rest of the 3D town, so this now exercises <see cref="MonsterView3D.InstantiateGenModel"/>
+/// directly rather than the deleted <c>TownAssets.InstantiateGen</c>.
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -33,7 +36,7 @@ public class GloomwoodMonsterMeshTests
         var file = AssetCatalog.MonsterModelFile(kind);
         AssertThat(file).IsEqual(expectedFile);
 
-        var mesh = TownAssets.InstantiateGen(file!);
+        var mesh = MonsterView3D.InstantiateGenModel(file!);
         AssertThat(mesh).IsNotNull();
 
         mesh!.QueueFree();
