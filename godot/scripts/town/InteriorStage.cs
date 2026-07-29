@@ -25,8 +25,8 @@ namespace GodotClient.Town;
 /// <para><b>Data-driven (KTD10):</b> every venue's backdrop id, title, and hotspot list lives in
 /// <see cref="Venues"/> — a fresh venue is a table row, never a new code path (the hotspot
 /// definitions are also the carry-forward asset if walkable interiors happen later). Keys match
-/// the venue keys <see cref="GodotClient.Town3d.Town3D.DoorAnchor"/> already uses
-/// ("forge"/"market"/"tavern"/"minegate").</para>
+/// the venue keys <see cref="GodotClient.Town2d.Building2D.DoorAnchorGlobal"/> resolves in the
+/// live 2.5D town ("forge"/"market"/"tavern"/"minegate").</para>
 ///
 /// <para><b>Shop is richest (art already shipped):</b> a private <see cref="ShopStage"/>
 /// instance — the SAME class the pre-U22 shop drawer strip used, ported rather than
@@ -42,12 +42,11 @@ namespace GodotClient.Town;
 /// cref="ShopStage"/> itself uses for its own backdrop degrade). Never a blank hole, never a
 /// crash; every hotspot still renders and routes regardless of backdrop art presence.</para>
 ///
-/// <para><b>3D-interiors MVP (see-through mode):</b> when <c>MainUi.OpenInterior</c> mounts a
-/// real <see cref="GodotClient.Town3d.InteriorRoom3D"/> in the town's 3D world, it opens this
-/// stage with <c>seeThrough: true</c> — the dim veil / painted backdrop / avatar figure hide so
-/// the 3D room shows through, and this class serves ONLY the carry-forward hotspot data + exit/
-/// Esc/Engaged routing on top (exactly the "walkable interiors later" hand-off the paragraph
-/// above reserved the hotspot table for).</para>
+/// <para><b>3D-interiors MVP (see-through mode) — CUT (U5):</b> <see cref="Open"/> still accepts a
+/// <c>seeThrough</c> parameter (dim veil / painted backdrop / avatar figure hide so a 3D room
+/// could show through), but its only caller was the standalone 3D town's <c>InteriorRoom3D</c>,
+/// deleted along with the rest of <c>town3d/</c> in the 2.5D pivot's teardown — no live caller
+/// passes <c>true</c> today. Left in place as the carry-forward seam if walkable interiors return.</para>
 /// </summary>
 public partial class InteriorStage : Control
 {
@@ -117,11 +116,13 @@ public partial class InteriorStage : Control
     /// cref="ShopStage.HasBackdropArt"/>).</summary>
     public bool HasBackdropArt { get; private set; }
 
-    /// <summary>3D-interiors MVP: true while the current venue opened in see-through mode — the
-    /// dim veil / painted backdrop / avatar figure are hidden so the caller's real 3D room
-    /// (<see cref="GodotClient.Town3d.InteriorRoom3D"/>, framed by the town camera's own
-    /// push-in) shows through underneath, while the hotspot panel / title / exit / Esc routing
-    /// all keep working exactly as staged mode. False in classic staged (painted-backdrop) mode.</summary>
+    /// <summary>3D-interiors MVP (CUT, U5 — see the class doc's see-through paragraph): true while
+    /// the current venue opened in see-through mode — the dim veil / painted backdrop / avatar
+    /// figure are hidden so the caller's real 3D room (the deleted <c>InteriorRoom3D</c>, framed
+    /// by the town camera's own push-in) shows through underneath, while the hotspot panel /
+    /// title / exit / Esc routing all keep working exactly as staged mode. No live caller passes
+    /// <c>seeThrough: true</c> today, so this is always false in practice. False in classic staged
+    /// (painted-backdrop) mode.</summary>
     public bool SeeThrough { get; private set; }
 
     /// <summary>Every hotspot button currently rendered, in declared order (test visibility) —
@@ -297,8 +298,7 @@ public partial class InteriorStage : Control
     /// <summary>Fire a hotspot's action — "exit" closes and raises <see cref="Exited"/>; any
     /// other action closes and raises <see cref="HotspotActivated"/> with that action. Public so
     /// tests can drive it directly (equivalent to "the hotspot button was just pressed"),
-    /// mirroring <see cref="GodotClient.Town3d.WorldInput3D.TriggerInteract"/>'s test-friendly
-    /// convention.</summary>
+    /// mirroring the deleted <c>WorldInput3D.TriggerInteract</c>'s test-friendly convention.</summary>
     public void RaiseHotspot(string action)
     {
         Close();
@@ -475,8 +475,8 @@ public partial class InteriorStage : Control
     };
 
     /// <summary>KTD10: the declarative venue table — forge/market/tavern/minegate, matching the
-    /// world's own venue key values (<see cref="GodotClient.Town3d.Town3D.DoorAnchor"/>). Action
-    /// strings match the drawer ids <c>MainUi.OpenPanel</c> already accepts.</summary>
+    /// world's own venue key values (<see cref="GodotClient.Town2d.Building2D.DoorAnchorGlobal"/>).
+    /// Action strings match the drawer ids <c>MainUi.OpenPanel</c> already accepts.</summary>
     private static IReadOnlyDictionary<string, VenueSpec> BuildVenueTable()
     {
         VenueSpec[] specs =
