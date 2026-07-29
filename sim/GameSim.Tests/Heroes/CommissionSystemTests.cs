@@ -31,6 +31,14 @@ public class CommissionSystemTests
         new ItemId(id), "test-recipe", name, slot, quality,
         new ItemStats(1, 1, 1), Mark: null, ImmutableList<ItemHistoryEntry>.Empty);
 
+    /// <summary>A Heal consumable, for the pack. Commissions treat "carries no heal" as a supply gap
+    /// (CommissionSystem.FindGapSlot), so a hero meant to read as FULLY provisioned needs one of these
+    /// in <see cref="Hero.Pack"/> — worn gear alone no longer means "wants nothing".</summary>
+    private static Item MakeHeal(int id) => new(
+        new ItemId(id), "test-draught", "Draught", ItemSlot.Consumable, QualityGrade.Common,
+        new ItemStats(0, 0, 1), Mark: null, ImmutableList<ItemHistoryEntry>.Empty,
+        Effect: new ConsumableEffect(ConsumableKind.Heal, 10));
+
     private static GameState BaseState(params Hero[] heroes) =>
         GameFactory.NewGame(seed: 900) with
         {
@@ -72,11 +80,17 @@ public class CommissionSystemTests
         var shield = MakeItem(2, ItemSlot.Shield, QualityGrade.Common);
         var armor = MakeItem(3, ItemSlot.Armor, QualityGrade.Common);
         var gear = new GearSet(weapon.Id, shield.Id, armor.Id);
-        var hero = MakeHero(1, gear);
+
+        // "Fully kitted" now has to include SUPPLIED. Commissions gained Consumable and Trinket as
+        // askable slots, so a hero in perfect armour carrying no potion is no longer wanting for
+        // nothing — they are wanting a potion. Handing them a heal restores this test's own premise
+        // rather than weakening its assertion.
+        var heal = MakeHeal(4);
+        var hero = MakeHero(1, gear) with { Pack = ImmutableList.Create(heal.Id) };
         var state = BaseState(hero) with
         {
             Items = ImmutableSortedDictionary<int, Item>.Empty
-                .Add(1, weapon).Add(2, shield).Add(3, armor),
+                .Add(1, weapon).Add(2, shield).Add(3, armor).Add(4, heal),
         };
 
         var (after, events) = Run(state);

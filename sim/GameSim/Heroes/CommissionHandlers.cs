@@ -116,11 +116,23 @@ public sealed class CommissionHandlers : IActionHandler
         var premiumPaid = Math.Min(commission.PremiumGold, hero.Gold - match.Price);
         var totalPrice = match.Price + premiumPaid;
 
-        var updatedHero = hero with
-        {
-            Gold = hero.Gold - totalPrice,
-            Gear = hero.Gear.WithSlot(matchItem.Slot, matchItem.Id),
-        };
+        // Consumables are CARRIED, not worn, and getting this wrong is silent and expensive:
+        // GearSet has no Consumable field, so WithSlot's default arm returns `this` unchanged —
+        // routing a potion through Gear would take the hero's gold, emit CommissionFulfilled, and
+        // hand them nothing. Branching on Effect (not on the slot enum) mirrors
+        // HeroShoppingSystem.ApplyPurchase and ExpeditionResolver.TryQuaff, both of which key off
+        // ConsumableEffect DATA rather than recipe ids or slots.
+        var updatedHero = matchItem.Effect is not null
+            ? hero with
+            {
+                Gold = hero.Gold - totalPrice,
+                Pack = hero.Pack.Add(matchItem.Id),
+            }
+            : hero with
+            {
+                Gold = hero.Gold - totalPrice,
+                Gear = hero.Gear.WithSlot(matchItem.Slot, matchItem.Id),
+            };
 
         var next = state with
         {
