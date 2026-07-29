@@ -7,18 +7,20 @@ using GameSim.Professions;
 namespace GameSim.Tests.Professions;
 
 /// <summary>
-/// PA2/PKD2 byte-identical regression pin, amended by Phase B: engineering and tanning are the
-/// remaining PASSIVE professions and must stay wired to the untouched
-/// <see cref="QualityRoller.Roll"/> threshold table. Blacksmith (PA2) and now ALCHEMY (Phase B,
-/// the reagent-puzzle profession) are the two ACTIVE professions — alchemy's fixed-seed case
-/// below pins its new auto-craft golden (null grade + null puzzle → the competent-but-capped
-/// <see cref="QualityRoller.RollActive"/> path), the deliberate re-pin this flip requires. Each
-/// case crafts through the real, full pipeline (<see cref="CraftingHandlers"/> via the kernel,
-/// exactly as the game does) with a fixed seed and pins the resulting item's quality, stats, and
-/// effect magnitude against golden values captured from this exact code path. If a future change
-/// to either roll, the shared quality math, or these professions' data ever moves these numbers,
-/// this test fails — which is the point: the passive professions stay byte-identical, full stop,
-/// and the active auto-craft baseline is pinned too.
+/// PA2/PKD2 byte-identical regression pin, amended by Phase B and by U3b (plan
+/// <c>2026-07-28-004</c>): ALL FOUR professions — blacksmith (PA2), alchemy (Phase B), and now
+/// tanning + engineering (U3b) — are ACTIVE. There are no passive professions left. Each
+/// fixed-seed case below pins its auto-craft golden (null grade + null puzzle → the
+/// competent-but-capped <see cref="QualityRoller.RollActive"/> path). Tanning and engineering's
+/// goldens moved at the U3b flip: both dropped from Superior (the old passive
+/// <see cref="QualityRoller.Roll"/> result) to Fine — the deliberate PKD4 auto-craft
+/// consequence (auto-craft hard-caps at Superior, and here the tier-1/copper material ceiling
+/// caps at Fine before that even applies), exactly the same drop alchemy's golden took at its
+/// own flip. Each case crafts through the real, full pipeline (<see cref="CraftingHandlers"/>
+/// via the kernel, exactly as the game does) with a fixed seed and pins the resulting item's
+/// quality, stats, and effect magnitude against golden values captured from this exact code
+/// path. If a future change to the roll, the shared quality math, or these professions' data
+/// ever moves these numbers, this test fails.
 /// </summary>
 public class PassiveQualityRegressionTests
 {
@@ -61,41 +63,61 @@ public class PassiveQualityRegressionTests
     }
 
     [Fact]
-    public void Engineering_FixedSeedCraft_MatchesGoldenItem_UnchangedByPA2()
+    public void Engineering_FixedSeedAutoCraft_RoutesActive_MatchesGoldenItem()
     {
+        // U3b flipped engineering ACTIVE: a puzzle-less craft is now the auto-craft path
+        // (RollActive, grade 550 + jittered by the same single Roll100 draw the passive roll
+        // used — the draw COUNT is unchanged). Golden captured from this exact code path at
+        // the flip: Superior (the old passive golden) drops to Fine (the tier-1/copper material
+        // ceiling caps at Fine, and auto-craft additionally hard-caps at Superior — PKD4).
         var item = CraftOne("engineering", "engineering-bolt-thrower", "copper", qty: 2, seed: 4242);
 
-        Assert.Equal(QualityGrade.Superior, item.Quality);
-        Assert.Equal(new ItemStats(Attack: 10, Defense: 0, Weight: 2), item.Stats); // base 8 attack * 135% = 10
+        Assert.Equal(QualityGrade.Fine, item.Quality);
+        Assert.Equal(new ItemStats(Attack: 9, Defense: 0, Weight: 2), item.Stats); // base 8 attack * Fine 115% = 9
         Assert.Null(item.Effect);
-        Assert.Empty(item.CraftSubScores);
+        Assert.Empty(item.CraftSubScores); // auto-craft carries no puzzle sub-scores
     }
 
     [Fact]
-    public void Tanning_FixedSeedCraft_MatchesGoldenItem_UnchangedByPA2()
+    public void Tanning_FixedSeedAutoCraft_RoutesActive_MatchesGoldenItem()
     {
+        // U3b flipped tanning ACTIVE — same auto-craft path and the same Superior→Fine drop as
+        // engineering and alchemy took at their own flips.
         var item = CraftOne("tanning", "tanning-hide-jerkin", "copper", qty: 3, seed: 4242);
 
-        Assert.Equal(QualityGrade.Superior, item.Quality);
-        Assert.Equal(new ItemStats(Attack: 0, Defense: 9, Weight: 3), item.Stats); // base 7 defense * 135% = 9
+        Assert.Equal(QualityGrade.Fine, item.Quality);
+        Assert.Equal(new ItemStats(Attack: 0, Defense: 8, Weight: 3), item.Stats); // base 7 defense * Fine 115% = 8
         Assert.Null(item.Effect);
-        Assert.Empty(item.CraftSubScores);
+        Assert.Empty(item.CraftSubScores); // auto-craft carries no puzzle sub-scores
     }
 
     [Fact]
-    public void PassiveProfessions_StillRouteThrough_TheUntouchedPassiveRoll_NeverActive()
+    public void ActiveProfessions_AllRouteThrough_TheDominanceRoll_AndRetiredTheirShifts()
     {
-        // Structural half of the pin, Phase B edition: blacksmith (PA2) and alchemy (Phase B)
-        // are the two active professions; engineering and tanning stay PASSIVE — their pins
-        // here are deliberately unweakened.
-        Assert.True(AlchemyProfession.Definition.ActiveCraft);
-        Assert.NotEmpty(AlchemyProfession.Definition.MinigameAssists);
-        Assert.Empty(AlchemyProfession.Definition.Quality.FlatShifts);  // PKD3 double-count fix
-        Assert.Empty(AlchemyProfession.Definition.Quality.SlotShifts);
+        // Structural half of the pin, U3b edition: EVERY profession is now active — assert the
+        // exact set so no future profession flips by accident (half a), and that every active
+        // profession retired its FlatShifts/SlotShifts into MinigameAssists (half b) — the guard
+        // that would have caught the dead-talent bug the U1 correction found (a profession
+        // shipping ActiveCraft: true while a talent still only writes to FlatShifts/SlotShifts is
+        // dead data, because RollActive never reads those fields).
+        var expectedActiveIds = ImmutableSortedSet.Create(
+            StringComparer.Ordinal,
+            ProfessionRegistry.BlacksmithId,
+            AlchemyProfession.Id,
+            TanningProfession.Id,
+            EngineeringProfession.Id);
 
-        Assert.False(EngineeringProfession.Definition.ActiveCraft);
-        Assert.False(TanningProfession.Definition.ActiveCraft);
-        Assert.Empty(EngineeringProfession.Definition.MinigameAssists);
-        Assert.Empty(TanningProfession.Definition.MinigameAssists);
+        // Exactly the registered set of professions, so a fifth profession appearing here
+        // without also appearing in ProfessionRegistry.All would fail loudly, not silently.
+        Assert.Equal(expectedActiveIds, ImmutableSortedSet.CreateRange(StringComparer.Ordinal, ProfessionRegistry.All.Keys));
+
+        foreach (var profession in ProfessionRegistry.All.Values)
+        {
+            Assert.Contains(profession.Id, expectedActiveIds);
+            Assert.True(profession.ActiveCraft, $"{profession.Id} must be ActiveCraft.");
+            Assert.NotEmpty(profession.MinigameAssists); // every active profession has assist data
+            Assert.Empty(profession.Quality.FlatShifts);  // PKD3 double-count fix
+            Assert.Empty(profession.Quality.SlotShifts);
+        }
     }
 }

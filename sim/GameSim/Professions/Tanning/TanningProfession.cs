@@ -12,12 +12,18 @@ namespace GameSim.Professions;
 /// single registration line the orchestrator applies to <see cref="ProfessionRegistry.All"/> —
 /// no code changes outside this directory (see docs/addon-guide.md).
 ///
-/// Structure mirrors the blacksmith exactly (nothing bespoke): a quality-shift chain, one
-/// slot specialist, a material-efficiency → material-mastery pair, and the tier-2/tier-3
-/// unlock gates. Integer stats only, no RNG, no wall clock, no floats, no Godot references —
-/// constant data (KTD2/KTD4). Materials are the shared Mine ore keys (grade proxy) until the
-/// P4 material registry lands. All collections are <c>ImmutableSorted*</c> with
-/// <see cref="StringComparer.Ordinal"/>, so iteration order never depends on registration order.
+/// U3b (plan <c>2026-07-28-004</c>): tanning goes ACTIVE — crafts are graded by the tanning-frame
+/// overlay via <see cref="TanningScrapeScorer"/> (<c>QualityRoller.RollActive</c>), exactly the
+/// blacksmith/alchemy PA2/PKD3 pattern. <see cref="ProfessionQualityModel.FlatShifts"/>/
+/// <see cref="ProfessionQualityModel.SlotShifts"/> are EMPTY (the double-count fix: <c>RollActive</c>
+/// never reads them) — the retired quality-shift chain (Steady Hand/Supple Work/Master Tanner) and
+/// the Armor-scoped Armorer specialist are remapped 1:1 into <see cref="MinigameAssists"/> at
+/// alchemy's 50/70/80 ladder, consumed by <see cref="TanningScrapeScorer"/> as scrape forgiveness.
+/// <see cref="HideMastery"/> stays on the quality model — the material-mastery axis is untouched by
+/// the flip. Integer stats only, no RNG, no wall clock, no floats, no Godot references — constant
+/// data (KTD2/KTD4). Materials are the shared Mine ore keys (grade proxy) until the P4 material
+/// registry lands. All collections are <c>ImmutableSorted*</c> with <see cref="StringComparer.Ordinal"/>,
+/// so iteration order never depends on registration order.
 /// </summary>
 public static class TanningProfession
 {
@@ -25,12 +31,13 @@ public static class TanningProfession
     public const string Id = "tanning";
 
     // ---- Talent node ids ----------------------------------------------------------------
-    // Quality-shift chain (+5 / +7 / +8), an Armor slot specialist, a material-efficiency
-    // → mastery pair, and the tier unlock gates — the same shape as the blacksmith tree.
-    public const string SteadyHand = "tanning-steady-hand";       // flat +5 (chain root)
-    public const string SuppleWork = "tanning-supple-work";       // flat +7 (needs steady-hand)
-    public const string MasterTanner = "tanning-master-tanner";   // flat +8 (needs supple-work)
-    public const string Armorer = "tanning-armorer";              // Armor slot +5 (needs steady-hand)
+    // The retired quality-shift chain (now scrape-assist data — see MinigameAssists below), an
+    // Armor slot specialist (also retired to an assist), a material-efficiency → mastery pair,
+    // and the tier unlock gates — the same shape as alchemy's post-flip tree.
+    public const string SteadyHand = "tanning-steady-hand";       // assist 50‰ (chain root)
+    public const string SuppleWork = "tanning-supple-work";       // assist 70‰ (needs steady-hand)
+    public const string MasterTanner = "tanning-master-tanner";   // assist 80‰ (needs supple-work)
+    public const string Armorer = "tanning-armorer";              // assist 50‰, Armor recipes only (needs steady-hand)
     public const string Thrift = "tanning-thrift";                // material efficiency (-1, floor 1)
     public const string HideMastery = "tanning-hide-mastery";     // material counts +1 grade (needs thrift)
     public const string Tier2Tanning = "tanning-tier-2";          // unlocks tier 2 recipes
@@ -39,10 +46,10 @@ public static class TanningProfession
     /// <summary>Talent mini-tree, keyed by node id. Sorted for deterministic iteration.</summary>
     private static readonly ImmutableSortedDictionary<string, TalentNode> Talents = new[]
     {
-        new TalentNode(SteadyHand,   "Steady Hand",   "Quality roll +5.",                                 ImmutableList<string>.Empty),
-        new TalentNode(SuppleWork,   "Supple Work",   "Quality roll +7 (stacks with Steady Hand).",       ImmutableList.Create(SteadyHand)),
-        new TalentNode(MasterTanner, "Master Tanner", "Quality roll +8 (stacks with the chain).",         ImmutableList.Create(SuppleWork)),
-        new TalentNode(Armorer,      "Armorer",       "Quality roll +5 on armor recipes.",                ImmutableList.Create(SteadyHand)),
+        new TalentNode(SteadyHand,   "Steady Hand",   "Scrape scoring forgives small mistakes.",                 ImmutableList<string>.Empty),
+        new TalentNode(SuppleWork,   "Supple Work",   "Scrape scoring forgives more (stacks with Steady Hand).", ImmutableList.Create(SteadyHand)),
+        new TalentNode(MasterTanner, "Master Tanner", "The capstone — scrape scoring forgives most (stacks with the chain).", ImmutableList.Create(SuppleWork)),
+        new TalentNode(Armorer,      "Armorer",       "Extra scrape forgiveness on armor recipes.",              ImmutableList.Create(SteadyHand)),
         new TalentNode(Thrift,       "Thrift",        "Recipes consume one fewer material (minimum 1).",  ImmutableList<string>.Empty),
         new TalentNode(HideMastery,  "Hide Mastery",  "Material counts as one grade higher for quality.", ImmutableList.Create(Thrift)),
         new TalentNode(Tier2Tanning, "Tier 2 Tanning","Unlocks tier 2 recipes.",                          ImmutableList<string>.Empty),
@@ -69,9 +76,11 @@ public static class TanningProfession
     }.ToImmutableSortedDictionary(r => r.RecipeId, r => r, StringComparer.Ordinal);
 
     /// <summary>
-    /// The Tanning profession definition. Tier gates on tiers 2/3; quality chain and Armor
-    /// specialist supply the per-talent shifts; the universal quality math (±8/grade, threshold
-    /// table) is shared by every profession and lives in <see cref="QualityRoller"/>.
+    /// The Tanning profession definition — ACTIVE (U3b). Tier gates on tiers 2/3.
+    /// <see cref="ProfessionQualityModel.FlatShifts"/>/<see cref="ProfessionQualityModel.SlotShifts"/>
+    /// are EMPTY (the double-count fix); <see cref="HideMastery"/> stays as the material-mastery
+    /// axis. The four retired quality nodes are remapped 1:1 to <see cref="MinigameAssists"/>,
+    /// consumed sim-side by <see cref="TanningScrapeScorer"/> as flat per-mille scrape forgiveness.
     /// </summary>
     public static readonly ProfessionDefinition Definition = new(
         Id: Id,
@@ -85,15 +94,20 @@ public static class TanningProfession
         }.ToImmutableSortedDictionary(),
         MaterialEfficiencyNode: Thrift,
         Quality: new ProfessionQualityModel(
-            FlatShifts: new Dictionary<string, int>
-            {
-                [SteadyHand] = 5,
-                [SuppleWork] = 7,
-                [MasterTanner] = 8,
-            }.ToImmutableSortedDictionary(StringComparer.Ordinal),
-            SlotShifts: new Dictionary<string, SlotShift>
-            {
-                [Armorer] = new SlotShift(ItemSlot.Armor, 5),
-            }.ToImmutableSortedDictionary(StringComparer.Ordinal),
-            MaterialMasteryNode: HideMastery));
+            FlatShifts: ImmutableSortedDictionary<string, int>.Empty,
+            SlotShifts: ImmutableSortedDictionary<string, SlotShift>.Empty,
+            MaterialMasteryNode: HideMastery),
+        ActiveCraft: true,
+        MinigameAssists: new Dictionary<string, MinigameAssist>
+        {
+            // Steady Hand: a steadier hand — small scrape mistakes are forgiven (mirrors Measured Pour's 50).
+            [SteadyHand] = new MinigameAssist(SweetZoneWidthBonus: 50, DriftRateReduction: 0, OffBeatForgiveness: 0),
+            // Supple Work: cleaner work — more forgiveness (mirrors Careful Distillation's 70).
+            [SuppleWork] = new MinigameAssist(SweetZoneWidthBonus: 0, DriftRateReduction: 70, OffBeatForgiveness: 0),
+            // Master Tanner: the capstone — the most forgiveness (mirrors Master Alchemist's 80).
+            [MasterTanner] = new MinigameAssist(SweetZoneWidthBonus: 0, DriftRateReduction: 0, OffBeatForgiveness: 80),
+            // Armorer: extra forgiveness on Armor recipes only (the scorer scopes this by the
+            // recipe's slot — mirrors Potent Brews' consumable-scoped 50).
+            [Armorer] = new MinigameAssist(SweetZoneWidthBonus: 50, DriftRateReduction: 0, OffBeatForgiveness: 0),
+        }.ToImmutableSortedDictionary(StringComparer.Ordinal));
 }
