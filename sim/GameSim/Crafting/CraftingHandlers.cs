@@ -88,7 +88,11 @@ public sealed class CraftingHandlers : IActionHandler
         //    puzzle input on the action instead of a Godot-captured grade. Validate BEFORE the
         //    slot gate (a malformed action keeps its specific rejection even on a spent day)
         //    and, like every rejection above, before any RNG draw (KTD4).
-        if (action.Puzzle is not null && action.Puzzle is not AlchemyReagentPuzzle && action.Puzzle is not ForgeTraceInput)
+        if (action.Puzzle is not null
+            && action.Puzzle is not AlchemyReagentPuzzle
+            && action.Puzzle is not ForgeTraceInput
+            && action.Puzzle is not TanningScrapeInput
+            && action.Puzzle is not EngineeringAssemblyInput)
         {
             return (state, new RejectedAction(action, $"Unsupported craft puzzle '{action.Puzzle.GetType().Name}'."));
         }
@@ -103,6 +107,19 @@ public sealed class CraftingHandlers : IActionHandler
         if (action.Puzzle is ForgeTraceInput && (!profession.ActiveCraft || recipe.Profession != ProfessionRegistry.BlacksmithId))
         {
             return (state, new RejectedAction(action, $"Recipe '{recipe.RecipeId}' does not take a forge trace."));
+        }
+
+        // U7/U8 (plan 2026-07-28-002 part 2): the tanner's hide-scrape and the engineer's assembly
+        // are gated exactly like the two above — one puzzle shape per profession, so a puzzle
+        // submitted to the wrong bench is refused rather than silently scored against the wrong rules.
+        if (action.Puzzle is TanningScrapeInput && (!profession.ActiveCraft || recipe.Profession != TanningProfession.Id))
+        {
+            return (state, new RejectedAction(action, $"Recipe '{recipe.RecipeId}' does not take a hide scrape."));
+        }
+
+        if (action.Puzzle is EngineeringAssemblyInput && (!profession.ActiveCraft || recipe.Profession != EngineeringProfession.Id))
+        {
+            return (state, new RejectedAction(action, $"Recipe '{recipe.RecipeId}' does not take an assembly."));
         }
 
         // 7. Day action-budget gate (Game-Feel Plan G3): craft is real work (ActionBudget.ConsumesSlot)
@@ -141,11 +158,19 @@ public sealed class CraftingHandlers : IActionHandler
             ? System.Math.Max(BatchEchoFloor, echo.SeedGrade - (BatchEchoDecayPermille * (echo.Uses + 1)))
             : null;
 
-        var performanceGrade = forgeScore?.GradePermille
-            ?? echoGrade
-            ?? (action.Puzzle is AlchemyReagentPuzzle brew
-                ? AlchemyPuzzleScorer.Score(recipe!, brew, talents, profession).GradePermille
-                : action.PerformanceGrade);
+        // U7/U8 part 2: the tanner's scrape and the engineer's assembly join the brew on the
+        // scored-here path — all three are pure integer scorers with zero RNG, so adding them leaves
+        // the single-draw contract below untouched (KTD4). A puzzle shape with no scorer falls through
+        // to the action's Godot-captured grade, which is also the auto-craft path.
+        int? puzzleGrade = action.Puzzle switch
+        {
+            AlchemyReagentPuzzle brew => AlchemyPuzzleScorer.Score(recipe!, brew, talents, profession).GradePermille,
+            TanningScrapeInput scrape => TanningScrapeScorer.Score(recipe!, scrape, talents, profession).GradePermille,
+            EngineeringAssemblyInput assembly => EngineeringAssemblyScorer.Score(recipe!, assembly, talents, profession).GradePermille,
+            _ => action.PerformanceGrade,
+        };
+
+        var performanceGrade = forgeScore?.GradePermille ?? echoGrade ?? puzzleGrade;
         var quality = profession.ActiveCraft
             ? QualityRoller.RollActive(recipe, materialGrade, talents, profession.Quality, rng, performanceGrade)
             : QualityRoller.Roll(recipe, materialGrade, talents, profession.Quality, rng, performanceGrade);
