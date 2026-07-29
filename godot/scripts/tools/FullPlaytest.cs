@@ -433,35 +433,67 @@ public partial class FullPlaytest : Node
         // rise of 260‰/sec, meaning a single over-heated stretch can need hundreds of frames of
         // simply WAITING. It exhausted its guard having landed shapeX=7 — worse than the blind
         // striker it replaced. One decision per frame, with a generous frame budget, fixes it.
-        const int StrikeTolerance = 60;
-        const int FrameBudget = 4000;
-
+        // THE ECONOMY, because it dictates the only viable strategy:
+        //   pump    heat +260‰/s AND shape -50‰/s   (hammering is disabled while pumping)
+        //   idle    heat  -70‰/s
+        //   strike  shape +35 x (heat/1000) x (2.2 if on-tempo), heat -90‰
+        //
+        // Striking costs heat and refilling heat COSTS SHAPE. So a driver that waits to be perfectly
+        // on-curve spends most of its frames pumping and grinds the shape back down to its floor —
+        // measured, that produced shapeX=0 across a 4000-frame budget, worse than the blind striker
+        // and worse than the mid-attempt that reached 7. Waiting out an over-heated billet is a
+        // luxury this economy does not offer.
+        //
+        // So: never strike a COLD billet (advance scales with heat, so a cold strike is nearly free
+        // progress lost), but do strike when hot — an above-curve strike still lands in a scored
+        // zone and still moves the shape, whereas pumping actively unmakes it.
+        // WHAT THIS DRIVER IS, AND WHAT IT IS NOT.
+        //
+        // It is the long-bellows/long-strike-burst strategy, which is the only one measured to
+        // actually finish: shapeX=1000, completed, a real craft emitted. It scores ~161/1000
+        // (Common) because it ignores the heat curve, and that low grade is CORRECT — ForgeScorer
+        // buckets each strike by |y - ForgePath.HeatAt(path, x)|, so playing without reference to
+        // the curve earns a poor grade. Do not read 161 as a game defect; an earlier session did,
+        // and it was wrong.
+        //
+        // A curve-following driver was attempted and is UNSOLVED — recorded here so the next
+        // attempt starts from evidence instead of repeating it. Two variants both regressed:
+        //   * guard on outer iterations   -> shapeX=7   (cooling waits consumed the whole budget)
+        //   * one decision per frame      -> shapeX=0   with 357 strike CALLS and 3643 pump frames
+        // That second result is the informative one: 357 strikes at ~24‰ each should have capped the
+        // shape many times over, so those calls were no-ops. ForgeStrike() only no-ops while
+        // IsPumping, or once Completed/WasCancelled — so the next attempt should log those three
+        // fields per frame rather than counting calls, which is the mistake made here. The counters
+        // below therefore report OBSERVED STATE, not intentions.
         var frames = 0;
-        while (mg.ShapeXPermille < 1000 && frames++ < FrameBudget)
+        var guard = 0;
+        while (mg.ShapeXPermille < 1000 && guard++ < 40)
         {
-            var target = GameSim.Crafting.ForgePath.HeatAt(mg.Path, mg.ShapeXPermille);
-            var delta = mg.HeatYPermille - target;
-
-            if (delta < -StrikeTolerance)
+            mg.BellowsStart();
+            var p = 0;
+            while (mg.HeatYPermille < 850 && p++ < 140)
             {
-                mg.BellowsStart(); // too cold for this stretch of the path
-            }
-            else
-            {
-                mg.BellowsStop();
-                if (delta <= StrikeTolerance)
-                {
-                    mg.ForgeStrike(); // inside the band — this is the scoring moment
-                }
-
-                // else: too hot. Bellows off and wait; the heat drifts down on its own.
+                await Settle(2);
+                frames += 2;
             }
 
+            mg.BellowsStop();
             await Settle(1);
+            frames++;
+
+            var s = 0;
+            while (mg.HeatYPermille > 140 && mg.ShapeXPermille < 1000 && s++ < 16)
+            {
+                mg.ForgeStrike();
+                await Settle(1);
+                frames++;
+            }
         }
 
         mg.BellowsStop();
-        _report.AppendLine($"- forge tracking: {frames} frames used of {FrameBudget}");
+        _report.AppendLine(
+            $"- forge tracking: {frames} frames, {guard} heat cycles — shape {mg.ShapeXPermille}‰, " +
+            $"heat {mg.HeatYPermille}‰, pumping={mg.IsPumping}, completed={mg.Completed}, cancelled={mg.WasCancelled}");
 
         Shot($"r{_run}_mini_forge_worked");
         await Settle(6);
@@ -535,9 +567,13 @@ public partial class FullPlaytest : Node
         }
 
         // Find whichever entry button this profession's active craft renders. Buttons are named by
-        // verb + recipe id, so match on the prefix rather than hardcoding a recipe.
+        // verb + recipe id, so match on the prefix rather than hardcoding a recipe — and prefer an
+        // ENABLED one. Taking simply the first match reported "Not enough steel — need 5, have 1",
+        // which is `tanning-dragonhide-armor`, a TIER 3 recipe. A player on day one clicks the
+        // affordable Leather Cap (2 copper), not the dragonhide. That was a driver artifact too,
+        // and without the gate reason on the tooltip it would have read as a broken gate.
         var verb = profession == TanningProfession.Id ? "Scrape" : "Assemble";
-        if (FindPrefixed(ui.Forge, verb + "_") is not Button entry)
+        if (FindEnabledPrefixed(ui.Forge, verb + "_") is not Button entry)
         {
             Note($"run {_run}: {profession} is ActiveCraft but no '{verb}_*' button rendered — overlay unreachable");
             return;
@@ -558,7 +594,7 @@ public partial class FullPlaytest : Node
             await Settle(6);
             ui.OpenPanel("Forge");
             await Settle(8);
-            entry = FindPrefixed(ui.Forge, verb + "_") as Button ?? entry;
+            entry = FindEnabledPrefixed(ui.Forge, verb + "_") ?? entry;
         }
 
         if (entry.Disabled)
@@ -638,25 +674,43 @@ public partial class FullPlaytest : Node
         }
     }
 
-    /// <summary>First descendant whose name starts with <paramref name="prefix"/>. Godot's
-    /// <c>FindChild</c> pattern matching does not cover "starts with" for arbitrary suffixes here,
-    /// and the recipe id in these button names varies per run.</summary>
-    private static Node? FindPrefixed(Node root, string prefix)
+    /// <summary>
+    /// The first ENABLED descendant button whose name starts with <paramref name="prefix"/>, else
+    /// the first matching button of any state so the caller can still report why it was gated.
+    ///
+    /// <para>Preferring enabled is the point: these buttons are one per recipe across every tier, so
+    /// "the first match" is whichever the panel happens to render first — which measured out as a
+    /// tier-3 recipe the player cannot afford on day one. Godot's <c>FindChild</c> pattern matching
+    /// does not cover "starts with, and not disabled".</para>
+    /// </summary>
+    private static Button? FindEnabledPrefixed(Node root, string prefix)
     {
-        foreach (var child in root.GetChildren())
-        {
-            if (child.Name.ToString().StartsWith(prefix, StringComparison.Ordinal))
-            {
-                return child;
-            }
+        Button? fallback = null;
+        Walk(root);
+        return fallback;
 
-            if (FindPrefixed(child, prefix) is { } found)
+        void Walk(Node node)
+        {
+            foreach (var child in node.GetChildren())
             {
-                return found;
+                if (child is Button button && button.Name.ToString().StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    if (!button.Disabled)
+                    {
+                        fallback = button;
+                        return; // an affordable recipe — take it
+                    }
+
+                    fallback ??= button; // remember the first gated one, for the reason it carries
+                }
+
+                Walk(child);
+                if (fallback is { Disabled: false })
+                {
+                    return;
+                }
             }
         }
-
-        return null;
     }
 
     // ── measurement helpers ─────────────────────────────────────────────────────────────────
