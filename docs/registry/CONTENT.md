@@ -1,124 +1,144 @@
 # CONTENT — item ledger
 
-Every content noun. Tier: adding *more of this kind* = T1/T2/T3 (the framework it plugs into may itself be a T3 system in SYSTEMS.md). Status: idea/planned/flight/built. Asset: none/placeholder/final. Seeded 2026-07-21 from the content inventory; verify `built` against code.
+**Rebuilt 2026-07-28** against `origin/main` @ `8d35f03`. The previous version was seeded 2026-07-21 and had drifted badly: ~15 rows said `planned` for shipped work, several counts were wrong (traits, flavor lines, materials), and an entire venue + its faction + its 5 monsters were absent. See `SYSTEMS.md` §Drift note.
 
-## Professions (framework: built)
+Every content noun. **Tier** = adding *more of this kind* is T1/T2/T3. **Status** — `idea` · `planned` (no code) · `flight` (in progress) · `built` (complete and reachable in play) · `built-inert` (complete, registered, tested, deliberately not activated — the state `LiveRotation` / `RecruitPool` / `PricedPool` create). **Asset** — none/placeholder/final.
+
+`built` is a claim, not a proof: there is no manifest test. Verify against code before relying on a row.
+
+## Professions (framework: built — 4 registered)
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| blacksmith | T2 | built | placeholder | 16 recipes, 8-node talents; reference profession |
-| tanning | T2 | built | placeholder | 7 recipes, leather line |
-| alchemy | T2 | flight | placeholder | registered; potion path |
-| engineering | T2 | flight | placeholder | registered |
+| blacksmith | T2 | built | final | 16 recipes (`RecipeTable.cs`), 8-node talents, active-craft; reference profession |
+| tanning | T2 | built | placeholder | 7 recipes; passive quality-craft works. Scrape scorer merged inert (#265) — **not** wired |
+| alchemy | T2 | built | final | 8 recipes, `ActiveCraft: true`, brew puzzle fully wired (#176) |
+| engineering | T2 | built | placeholder | 8 recipes; passive quality-craft works. Assembly scorer merged inert (#265) — **not** wired |
+| modifier layer (sigil/quench/fitting) | T3 | built | – | `Crafting/CraftModifiers.cs` (#221 slice 1, #223 slice 2 player composition) |
 | food-raising | T2 | planned | none | crop day-tick |
 | enchanter | T3 | planned | none | augment layer + multi-crafter attribution |
-| necromancer-assistant | T3 | planned | none | needs caster class |
-| magician-assistant | T3 | planned | none | needs caster class |
+| necromancer-assistant / magician-assistant | T3 | planned | none | need caster classes |
 | husbandry-raising | T2 | idea | none | byproduct keys |
-| _modifier-layer (sigil/quench/fitting)_ | T3 | planned | none | **skeleton-critical**: makes ~12 recipes combinatorial (Phase C) |
 
-## Hero classes (framework: built; RecruitPool frozen at 3)
+## Hero classes (framework: built — 6 registered, RecruitPool frozen at 3)
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| vanguard / striker / mystic | T2 | built | placeholder | 3 combat roles |
-| occultist / sentinel / skirmisher | T2 | built | placeholder | referenced 6-class set; 3 lit figures missing art |
-| healer role (4th archetype) | T3 | planned | none | part of M8 combined re-baseline |
-| necromancer / magician (casters) | T3 | planned | none | companion/minion entity in resolver |
+| vanguard / striker / mystic | T2 | built | final | the 3 recruitable combat roles |
+| occultist / sentinel / skirmisher | T2 | built-inert | **final** | registered, not in `RecruitPool`. Old row claimed "3 lit figures missing art" — **wrong**: all six have diffuse + normal on disk and in `art-manifest.json` |
+| healer role (4th archetype) | T3 | planned | none | part of the combined re-baseline |
+| necromancer / magician (casters) | T3 | planned | none | needs a companion/minion entity in the resolver |
 
-## Named heroes (individuals — skeleton needs 6-10)
+## Named heroes
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| starting six + recruit pool (16 names: Astrid…Petra) | T2 | built | placeholder | name list append-only, order contractual |
-| +8 warm names (Bertha, Pim, Snorri, Grimhild, Odd, Tove, Ulf, Wren) | T2 | planned | none | wave-C C3 |
+| starting six + recruit pool | T2 | built | placeholder | name list append-only, order contractual. Exact count **unverified** in the 2026-07-28 pass — believed 16, not re-derived |
+| +8 warm recruit names | T2 | built | none | shipped as `d4386d7` (#76) — old row said "planned, wave-C" |
 
-## Traits (framework: Phase B)
+## Traits (framework: built)
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| trait set (~16, CK3 shared-axes) | T2 | planned | none | Superstitious, Show-off, Cheapskate, Snores, Collects-rocks, Greedy, Craven, Vain… 2/hero |
+| trait set | T2 | built | – | **10 traits across 5 axes** (`Heroes/TraitDefinition.cs`, #218/#219), shop-teeth wired. Old row said "~16, planned" — 10 hash-derived is the shipped design, and the 16-authored design was rejected |
 
-## Venues (framework: built; 1 live)
+## Venues (framework: built — 4 registered, 2 live)
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| mine (5 floors) | T2 | built | placeholder | the live venue |
-| gloomwood (4 floors, Wardens faction) | T2 | planned | none | **skeleton 2nd-venue candidate**; go-live = Phase C |
-| sunken-crypt (5 floors, Tidewrit faction) | T2 | planned | none | 2nd-venue alt |
+| mine (5 floors) | T2 | built | final | |
+| gloomwood (4 floors, Wardens) | T2 | **built + live** | final | in `LiveRotation` since #230 — old row said "planned, go-live = Phase C" |
+| sunken-crypt (5 floors, Tidewrit) | T2 | **built-inert** | placeholder | fully coded and registered (Crypt Crab → The Undertow); not in `LiveRotation`. Old row's `planned` implied no code |
+| **emberfall-foundry (5 floors, Ashguild)** | T2 | **built-inert** | placeholder | `Venues/Emberfall/EmberfallFoundryVenue.cs` — Cinder Imp → Undying Forge-Heart, den palette. **Had no row at all** |
+| venue routing | T3 | built | – | `VenueRouter.cs` distributes by utility + queue length |
+| venue fatigue / closures | T3 | planned | none | genuinely absent — the old row bundled this with routing |
 | volcano-den | T2 | idea | none | |
-| venue routing / fatigue / closures | T3 | planned | none | Phase C |
 
-## Monsters (framework: built; static 1/floor)
+## Monsters (19 defined, 9 live; static 1/floor)
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| mine 5 (Cave Rat, Tunnel Spider, Deep Ghoul, Ore Golem, Forgeworm) | T2 | built | placeholder | |
-| monster-variant framework (multi/floor) | T3 | planned | none | wave-D D1 sim-monster-table |
-| named/mood variants (Gerald, Foreman, Skittish…) | T2 | planned | none | wave-D D2 |
-| gloomwood 4 + crypt 5 monsters | T2 | planned | none | ride 2nd-venue |
-| elite mutations (Fire-Shielded, Acidic, Vampiric…) | T3 | planned | none | den escalation |
-| den escalation (InfectionRate, lockdown, town-raid) | T3 | planned | none | rides director re-baseline |
+| mine 5 (Cave Rat → Forgeworm) | T2 | built | final | diffuse + normal present |
+| gloomwood 4 (Bramble Boar, Lantern Moth, Wicker Shepherd, Old Mossjaw) | T2 | **built + live** | **final** | live with their venue; art finished (incl. normals) but had **no asset rows** |
+| sunken-crypt 5 | T2 | built-inert | placeholder | code complete, venue not live |
+| **emberfall 5** | T2 | built-inert | placeholder | **had no row** |
+| monster-variant framework (multi/floor) | T3 | planned | none | |
+| named / mood variants | T2 | planned | none | |
+| elite mutations | T3 | planned | none | |
+| den escalation (InfectionRate, lockdown, town-raid) | T3 | planned | none | |
 
-## Economy / materials (framework: partial)
+## Economy / materials (framework: built)
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| 5 Mine ores + 2 inert | T2 | built | placeholder | |
-| material registry (M1) | T3 | planned | none | **unblocker** for factions/venues/professions |
-| dynamic pricing / demand | T3 | planned | none | |
-| sinks (forge upgrades, maintenance, commissions) | T3 | planned | none | **skeleton-critical** Phase D |
-| campaign arc + ending / prestige era | T3 | planned | none | **skeleton-critical** Phase D |
+| materials | T2 | built | placeholder | **21 total, 9 in the live `PricedPool`** (5 Mine + 4 Gloomwood). Old row said "5 Mine ores + 2 inert" — a large undercount |
+| material registry (M1) | T3 | built | – | `Materials/MaterialRegistry.cs` (#62) — old row called it a `planned` unblocker |
+| gold sinks | T3 | built | – | 5 shipped (#226): forge tier, forge supply, masterwork attempts, legendary commissions, guild dues |
+| campaign arc + ending | T3 | built | – | `Arc/ArcDirectorSystem.cs` (#230): three acts + climax + ending with chronicle summary |
+| prestige era | T3 | idea | none | explicit post-v1 deferral — split out of the row above |
+| dynamic pricing / demand | T3 | **unverified** | none | `Drama/DemandBoard.cs` and `Drama/OrePricing.cs` exist, but `OrePricing` reads as a static lookup. Confirm before tagging either way |
 
-## Factions (framework: built; 1 registered)
+## Factions (5 registered; 1 fully live)
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| crownsguard (Law) | T2 | flight | placeholder | inert until M1; skeleton's single live faction |
-| shadow-syndicate (Black Market) | T3 | planned | none | forbidden mats — post-skeleton |
-| grand-conservatory (Mages) | T3 | planned | none | enchant catalysts — post-skeleton |
-| gloomwood-wardens / tidewrit-salvors | T2 | planned | none | ride their venues |
+| deepvein | T2 | built + live | placeholder | the live tariff faction |
+| crownsguard (Law) | T2 | built-inert | placeholder | M1 shipped, but no live venue mints electrum/orichalcum, so it still cannot move balance bands (`MaterialRegistry.cs:58-61`) |
+| gloomwood-wardens | T2 | built | placeholder | supplies live Gloomwood's 4 ores (`GloomwoodVenue.cs:27`). Whether it yet produces a distinct in-game effect is **unverified** |
+| tidewrit-salvors | T2 | built-inert | none | rides the not-live Sunken Crypt |
+| **ashguild** | T2 | built-inert | none | Emberfall's faction, `Factions/Ashguild/AshguildFaction.cs`. **Had no row** |
+| shadow-syndicate / grand-conservatory | T3 | planned | none | confirmed absent from `FactionRegistry.All` |
 | tax engine / inspections / perks | T3 | planned | none | post-skeleton |
 
-## Bounties / quests
+## Bounties / commissions / quests
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| bounty spine (escrow, judge, payout) | T2 | built | placeholder | |
-| bounty flags (Majesty utility scoring) | T3 | planned | none | **skeleton-critical** agency lever — Phase C |
+| bounty spine (escrow, judge, payout) | T2 | built | final | poster board UI shipped #264 |
+| bounty flags (Majesty utility scoring) | T3 | built | – | `Bounties/BountyRules.cs:21-22` (#225) — old row called it `planned`, skeleton-critical |
+| **commissions (heroes request gear)** | T2 | built | – | `Heroes/CommissionSystem.cs` + `CommissionHandlers.cs` (#200/#201). **Had no row** — distinct from supply contracts below, which really are unbuilt |
 | crowdfunding / party competition / quest-types | T3 | planned | none | post-skeleton |
 | supply contracts (workstation missions) | T3 | planned | none | post-skeleton |
 
 ## Abilities / leveling
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| hero XP + level-flip | T3 | planned | none | **skeleton-critical** — Phase B/C |
-| ability registry + 8 launch abilities (2/class) | T3 | planned | none | post-skeleton (M8) |
+| hero XP + level-flip | T3 | built | – | `Heroes/HeroXp.cs` (#220) — old row called it `planned`, skeleton-critical |
+| ability registry + launch abilities | T3 | planned | none | no `AbilityRegistry` in code; post-skeleton |
 | scroll transcription / talent planner | T3 | idea | none | post-skeleton |
 
-## Legend Engine (framework: Phase A)
+## Legend content — SEE THE OPEN RULING
+The specced Legend Engine module does not exist. Parts of what it was meant to deliver shipped under `Drama/`, `Crafting/` and `godot/scripts/panels/` instead. Anyone reading only the old ledger would have concluded none of this work had happened. Ruling pending — roadmap `-003` §3; `2026-07-21-004` is stamped ON HOLD.
+
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| provenance ledger + epithets | T3 | planned | none | Phase A step 1 |
-| sifter engine (Winnow) | T3 | planned | none | Phase A step 2 |
-| 8 story shapes (First Blood, Lifesaver, Deep Run, Fall, Heirloom, Vindicated, Widowmaker, Redemption) | T2 | planned | none | data on the engine |
-| selector + offline rarity table | T3 | planned | none | Phase A |
-| memorial wall + heirloom inheritance | T3 | planned | none | Phase A |
-| bark rule-DB (Valve criteria-match) | T3 | planned | none | Phase B |
+| memorial wall | T2 | **built** | final | `panels/LegendsWall.cs` (#203) — old row said `planned` |
+| heirloom inheritance / reforge | T3 | **built** | – | `Crafting/HeirloomHandlers.cs` (#204) |
+| signed works (maker's mark on items) | T2 | **built** | – | `Crafting/ArtifactSigning.cs` (#202) |
+| famous-dead / legend readback | T2 | built | – | `Drama/LegendQuery.cs`, `Drama/LedgerQuery.cs` |
+| provenance ledger + epithets | T3 | undecided | none | specced in `2026-07-21-004` U-A1; not built |
+| sifter engine (Winnow) | T3 | undecided | none | U-A2; not built |
+| 8 story shapes | T2 | undecided | none | U-A3; not built |
+| selector + offline rarity table | T3 | undecided | none | U-A4; not built |
+| bark rule-DB (Valve criteria-match) | T3 | undecided | none | U-A7; not built |
 
 ## Drama / chronicle / narrative content
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
 | event-sourced chronicle + gossip | T2 | built | – | |
-| flavor packs (Narrator/Tavern/Faction/Ledger, 4 voices, ~204 lines) | T2 | built | – | |
-| relationship + gossip salience | T3 | planned | – | Phase B; RNG-free |
-| drama director | T3 | planned | – | Phase C; the re-baseliner |
-| fan letters (LetterPack) | T2 | planned | – | "top small-mechanism"; wave-D D6 |
-| comic camp events / ShopPack / new gossip subjects | T2 | planned | – | wave-D D5/D7 |
-| tone-lightening comic variants + deadpan voice | T2 | planned | – | wave-C C4 / wave-D D4 |
-| Erenshor: memory-gossip(M1)/opinion(M2)/picky(M3)/death-cause(M4)/rivalry(M5) | T3 | planned | – | M1-3 fold into Phase B; M5 needs rel edges |
+| flavor packs | T2 | built | – | **≈1,470 lines** across TavernPack 614 / FactionPack 230 / LedgerPack 199 / NarratorPack 424. Old row said "~204 lines" |
+| relationship + gossip salience | T3 | **built** | – | `Heroes/RelationshipBands.cs` + `RelationshipSystem.cs` (#198, #219) — old row said `planned` |
+| drama director | T3 | **built** | – | `Drama/DirectorSystem.cs` (#230) — old row said `planned` |
+| comic + warm tone variants | T2 | **built** | – | 240 lines shipped (#71). Deadpan voice remains **unverified** |
+| fan letters (LetterPack) | T2 | planned | – | confirmed absent from `Flavor/Packs/` |
+| ShopPack / comic camp events / new gossip subjects | T2 | planned | – | confirmed absent |
+| Erenshor borrow-mechanics (M1-M5) | T3 | **partly shipped, mapping unclear** | – | the picky-veteran quality gate (#189/#194) and haggle willingness bands (#161) already ship mechanics in this space, but the M1-M5 labels do not map 1:1 onto what exists. Needs a dedicated reconcile before planning more |
 
-## Vanity / disasters (post-skeleton)
+## Vanity / disasters (post-skeleton — confirmed zero code)
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| ego value / bragging / vanity shopping | T3 | planned | none | post-skeleton |
-| 3 vanity classes (dyes/trails/glyphs) | T2 | idea | none | ride ego system |
-| disaster scheduler + templates (audit/extortion/fire) | T3 | planned | none | post-skeleton |
+| ego value / bragging / vanity shopping | T3 | planned | none | |
+| 3 vanity classes (dyes/trails/glyphs) | T2 | idea | none | |
+| disaster scheduler + templates | T3 | planned | none | |
 
 ## Presentation surfaces
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| 3D town slice (avatar, interaction, camera) | T3 | flight | placeholder | current branch; pending Gate B |
-| live raid ticker (Grindcast) | T2 | planned | – | **skeleton-critical** spectacle surface |
-| memorial wall / provenance panel / chronicle page UI | T2 | planned | none | Godot; CLI first |
+| 2.5D top-down town | T3 | built | final | `godot/scripts/town2d/` (#244-#249). **Replaces the old "3D town slice, pending Gate B" row** — the pivot did not advance that slice, it abandoned it |
+| presentation scheduler | T3 | built | – | `sim/GameSim/Presentation/PresentationScheduler.cs` + `Beat.cs` |
+| live raid ticker | T2 | **built** | – | shipped as `godot/scripts/ui/AdventureTicker.cs` (#144) — the old row called it `planned`, skeleton-critical, under the name "Grindcast" |
+| watchable raid stage | T2 | built | final | `godot/scripts/DelveBeats.cs` + `panels/DelveStage.cs` (#244) |
+| memorial wall / provenance / chronicle UI | T2 | **built** | final | `LegendsWall.cs`, `ProvenanceCard.cs`, `LedgerModal.cs` — old row said `planned`, CLI-first |
+| mine-watch spectate | T2 | partial | final | `panels/MineWatch.cs:60` hardcodes `MineVenueId` — live Gloomwood raids are not spectated |
+| return summary card | T2 | **unverified** | – | specced as U-W3 of `2026-07-21-005`; the 2026-07-28 pass could not locate it. Confirm before assuming either way |

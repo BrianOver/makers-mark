@@ -1,5 +1,9 @@
 # 2.5D Stardew Pivot — Implementation Plan
 
+> **STATUS: NEARLY COMPLETE — one unit outstanding (stamped 2026-07-28).** U1-U7 shipped (#244-#249); the game now boots `Town2D` (`godot/scripts/MainUi.cs:960`). U8, the teardown of the old 3D layer, was never run: all 16 files in `godot/scripts/town3d/` are dead code that roughly 17 test files still exercise on every CI run. Note that `godot/scripts/panels/MonsterView3D.cs` is NOT dead — it still renders gen monsters inside BestiaryPanel and MineWatch. Close this plan by finishing U8.
+
+---
+
 *Date: 2026-07-27. Branch: `feat/2.5d-stardew` (off main @ #239). Abandon the non-working 3D gen render layer; rebuild `godot/` as 2.5D Stardew-style pixel art (top-down 3/4, tile-based, Y-sorted). The pure C# sim (`sim/GameSim/`) and `SimAdapter.cs` stay 100% untouched. Source: read-only scout + Fable architecture pass. Scope tonight: vertical slice — walkable pixel town + heroes + clickable buildings that open the existing drawer panels = the full craft→sell→raid loop.*
 
 ## Goal Capsule

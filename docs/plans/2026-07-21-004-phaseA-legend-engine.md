@@ -1,5 +1,18 @@
 # Phase A — The Legend Engine
 
+> **STATUS: ON HOLD — NOT BUILT, AND NOT CLEARED TO BUILD (stamped 2026-07-28).**
+> **Do not execute this plan without an explicit ruling from the owner.** No `sim/GameSim/Legends/`
+> module exists; none of U-A1…U-A7 shipped as written. The payload arrived by a cheaper route instead —
+> `Expedition/AttributionEngine.cs`, `Drama/LegendQuery.cs`, `Drama/LedgerQuery.cs`, the `Chronicle/`
+> module, and memorials / Signed Works (`Crafting/ArtifactSigning.cs`) — so Gate A ("a legend the
+> player can point to and retell") may already be satisfied without the sifter.
+> The open question is whether the specced ProvenanceLedger + Winnow sifter + composer + selector are
+> still owed or should be retired. See `docs/plans/2026-07-28-003-roadmap-post-skeleton.md` §3 for the
+> recommendation (retire the module, keep the promise) and §4 for the feel-test question that settles
+> it. Until that ruling is taken, this is the single most dangerous doc in the repo for a fresh session
+> to pick up: it reads as a fully-specced plan of record for work the project may have already
+> obsoleted by other means.
+
 Plan of record for the moat: **"your craft writes the legends."** Roadmap: `2026-07-21-003-phased-roadmap.md` §2 Phase A. Research basis: narrative-stack report (Winnow/Felt sifting, DF Legends, Qud mythic register, Ruskin bark rule-DB, XCOM/Wildermyth memorialization, offline-LLM banks).
 
 ## Goal
