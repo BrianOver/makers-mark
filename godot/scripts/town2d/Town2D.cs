@@ -59,11 +59,6 @@ public partial class Town2D : Control
     /// so a departing party reads as a cluster, not a stack.</summary>
     private const float RallySpacingPx = 14f;
 
-    /// <summary>Dusk-purple ambient tint (pivot plan §"Node architecture": "~#b9a3d0", i.e.
-    /// RGB 185/163/208 normalized) — a literal float triple rather than a hex-string parse to
-    /// avoid depending on a specific <see cref="Color"/> parsing overload being present.</summary>
-    private static readonly Color DuskTint = new(0.86f, 0.80f, 0.93f);
-
     public SubViewportContainer ViewportContainer { get; private set; } = null!;
     /// <summary>Named <c>WorldViewport</c> rather than <c>Viewport</c> to avoid shadowing the
     /// Godot <see cref="Godot.Viewport"/> TYPE (needed unqualified below for <see
@@ -118,6 +113,12 @@ public partial class Town2D : Control
     private CpuParticles2D? _forgeSparks;
     private CpuParticles2D? _forgeSteam;
     private AmbientLife2D? _ambientLife;
+
+    /// <summary>Gap #4 fix ("day/night is a lie"): eases <see cref="DuskModulate"/>'s tint toward
+    /// whatever <see cref="Adapter"/>'s current <see cref="DayPhase"/> calls for, every frame (see
+    /// <see cref="_Process"/>) — seeded in <see cref="Build"/> at the campaign's actual starting
+    /// phase tint so there is no snap-then-ease on the very first frame.</summary>
+    private DayPhaseTint? _dayTint;
 
     private const float ForgeGlowMaxAlpha = 0.85f;
 
@@ -185,8 +186,13 @@ public partial class Town2D : Control
         Fx = new Node2D { Name = "Fx" };
         World.AddChild(Fx);
 
-        DuskModulate = new CanvasModulate { Name = "DuskModulate", Color = DuskTint };
+        // Gap #4 fix: seed the modulate (and the eased driver) at the CURRENT phase's own tint —
+        // a campaign resumed mid-Evening starts already purple-dusk, not snapping from some
+        // unrelated default.
+        var startingTint = DayPhaseTint.TintFor(adapter.CurrentState.Phase);
+        DuskModulate = new CanvasModulate { Name = "DuskModulate", Color = startingTint };
         World.AddChild(DuskModulate);
+        _dayTint = new DayPhaseTint(startingTint);
 
         Cam = new Camera2D
         {
@@ -418,9 +424,17 @@ public partial class Town2D : Control
     /// <summary>Ticks <see cref="_pendingMarchOut"/>'s dwell timers (see <see
     /// cref="DepartWanderingHeroes"/>'s doc) — off the sim path, pure accumulated delta (KTD4/KTD5).
     /// Guards against firing <see cref="HeroActor2D.MarchOutTo"/> on an actor <see
-    /// cref="ReconcileHeroes"/> already freed (e.g. the hero died the same tick it was mustering).</summary>
+    /// cref="ReconcileHeroes"/> already freed (e.g. the hero died the same tick it was mustering).
+    /// Also advances <see cref="_dayTint"/> (gap #4) every frame regardless of <see
+    /// cref="_pendingMarchOut"/>'s state — the sky must keep answering "what time is it" whether or
+    /// not a party happens to be departing this tick.</summary>
     public override void _Process(double delta)
     {
+        if (Adapter is not null && _dayTint is not null)
+        {
+            DuskModulate.Color = _dayTint.Advance(delta, Adapter.CurrentState.Phase);
+        }
+
         if (_pendingMarchOut.Count == 0)
         {
             return;
@@ -498,20 +512,31 @@ public partial class Town2D : Control
     /// unobtrusive if it's ever hit.</summary>
     private static readonly Vector2 PropFallbackSize = new(16f, 16f);
 
+    /// <summary>Sprite id gap #2 ("trees never move") keys off — every prop with this id gets a
+    /// <see cref="SwayingTreeSprite2D"/> instead of a bare <see cref="Sprite2D"/>.</summary>
+    private const string TreePropSpriteId = "town2d-prop-tree";
+
     /// <summary>
     /// Instantiates every <see cref="TownLayout2D.Props"/> entry (well, lanterns, trees, crates) —
     /// called once from <see cref="Build"/>, right after <see cref="BuildBuildings"/> so <see
-    /// cref="YSort"/> already exists. Each prop is a bare <see cref="Sprite2D"/> positioned via the
-    /// SAME feet-origin convention <see cref="Building2D.Configure"/> uses for buildings (<see
-    /// cref="Sprite2D.Offset"/> shifted up by half the sprite's height so its BOTTOM edge lands on
-    /// <see cref="TownLayout2D.TileToWorld"/>'s tile-center position) — required for <see
+    /// cref="YSort"/> already exists. Each prop is positioned via the SAME feet-origin convention
+    /// <see cref="Building2D.Configure"/> uses for buildings (<see cref="Sprite2D.Offset"/>
+    /// shifted up by half the sprite's height so its BOTTOM edge lands on <see
+    /// cref="TownLayout2D.TileToWorld"/>'s tile-center position) — required for <see
     /// cref="YSort"/>'s <c>YSortEnabled</c> parent to sort heroes/the player correctly in front of
     /// or behind a tall prop like a tree or the well, exactly as it already does for buildings.
     /// Y-sorted props mount under <see cref="YSort"/>; a flat (non-Y-sorted) prop would mount under
     /// <see cref="Ground"/> instead, but <see cref="TownLayout2D.Props"/> has none of those yet.
+    ///
+    /// <para>Gap #2 fix ("trees never move"): every <see cref="TreePropSpriteId"/> entry is a <see
+    /// cref="SwayingTreeSprite2D"/> rather than a bare <see cref="Sprite2D"/> — a per-instance
+    /// index seeds its <see cref="TreeSway"/> phase so a grove doesn't sway in lockstep (mirrors
+    /// <see cref="AmbientLife2D"/>'s per-lamppost flicker-phase idiom). Every other prop is
+    /// unaffected — a bare <see cref="Sprite2D"/>, exactly as before.</para>
     /// </summary>
     private void BuildProps()
     {
+        var treeIndex = 0;
         foreach (var prop in TownLayout2D.Props)
         {
             var sprite = TownAssets2D.ForProp(prop.SpriteId);
@@ -521,14 +546,24 @@ public partial class Town2D : Control
                 size = PropFallbackSize;
             }
 
-            var node = new Sprite2D
+            Sprite2D node;
+            if (prop.SpriteId == TreePropSpriteId)
             {
-                Name = $"Prop_{prop.SpriteId}_{prop.Tile.X}_{prop.Tile.Y}",
-                Texture = sprite,
-                Centered = true,
-                Offset = new Vector2(0f, -size.Y / 2f), // bottom edge lands on the tile's center (feet-origin)
-                Position = TownLayout2D.TileToWorld(prop.Tile),
-            };
+                var swaying = new SwayingTreeSprite2D();
+                swaying.Init(treeIndex * 0.9f); // same per-instance phase spread AmbientLife2D's lamp flicker uses
+                treeIndex++;
+                node = swaying;
+            }
+            else
+            {
+                node = new Sprite2D();
+            }
+
+            node.Name = $"Prop_{prop.SpriteId}_{prop.Tile.X}_{prop.Tile.Y}";
+            node.Texture = sprite;
+            node.Centered = true;
+            node.Offset = new Vector2(0f, -size.Y / 2f); // bottom edge lands on the tile's center (feet-origin)
+            node.Position = TownLayout2D.TileToWorld(prop.Tile);
 
             if (prop.YSorted)
             {
@@ -569,10 +604,13 @@ public partial class Town2D : Control
     /// </summary>
     private void BuildTownsfolk()
     {
+        // Gap #3 fix: resolve the step-B texture once (shared by every villager — they all reuse
+        // the vanguard body) and hand it to each Init call; null-tolerant if it's ever absent.
+        var stepSprite = TownsfolkNpc2D.ResolveStepSprite();
         for (var i = 0; i < TownsfolkHomeTiles.Length; i++)
         {
             var npc = new TownsfolkNpc2D();
-            npc.Init(i, TownsfolkNpc2D.ResolveSprite(), TownsfolkNpc2D.CivilianTint(i), TownLayout2D.TileToWorld(TownsfolkHomeTiles[i]));
+            npc.Init(i, TownsfolkNpc2D.ResolveSprite(), TownsfolkNpc2D.CivilianTint(i), TownLayout2D.TileToWorld(TownsfolkHomeTiles[i]), stepSprite);
             TownsfolkRoot.AddChild(npc);
         }
     }
@@ -625,7 +663,30 @@ public partial class Town2D : Control
             .Select(prop => TownLayout2D.TileToWorld(prop.Tile))
             .ToList();
 
-        _ambientLife.Build(forgeChimneyPos, tavernChimneyPos, townRect, lanternPositions);
+        // Gap #1 fix ("Market, Mine-gate and Noticeboard buildings are completely dead"): position
+        // each venue's ambient cue off that BUILDING's own resolved sprite height (not a hardcoded
+        // placeholder number) so it stays proportionate whether real generated art or the flat-color
+        // fallback is what actually loaded.
+        var marketBuilding = FindBuilding("market");
+        var marketHeight = (float)(marketBuilding.Sprite.Texture?.GetHeight() ?? 64);
+        var marketAwningPos = marketBuilding.GlobalPosition + new Vector2(0f, -marketHeight * 0.75f); // eave/door lintel
+
+        var mineBuilding = FindBuilding("minegate");
+        var mineHeight = (float)(mineBuilding.Sprite.Texture?.GetHeight() ?? 48);
+        var mineDustPos = mineBuilding.GlobalPosition + new Vector2(0f, -mineHeight * 0.3f); // the dark mouth, near ground level
+
+        var noticeboardBuilding = FindBuilding("noticeboard");
+        var noticeboardHeight = (float)(noticeboardBuilding.Sprite.Texture?.GetHeight() ?? 48);
+        var noticeboardPaperPos = noticeboardBuilding.GlobalPosition + new Vector2(0f, -noticeboardHeight * 0.6f); // the board's face
+
+        _ambientLife.Build(
+            forgeChimneyPos,
+            tavernChimneyPos,
+            townRect,
+            lanternPositions,
+            marketAwningPos,
+            mineDustPos,
+            noticeboardPaperPos);
     }
 
     private static CpuParticles2D BuildParticles(string name, Vector2 position, Color color, int amount, double lifetime) => new()

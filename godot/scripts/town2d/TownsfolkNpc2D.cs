@@ -71,6 +71,17 @@ public partial class TownsfolkNpc2D : Node2D
 
     private Vector2 _logicalPosition;
 
+    /// <summary>Base (non-step) resolved sprite texture — mirrors <see
+    /// cref="HeroActor2D._baseTex"/>; <see cref="ApplySpritePose"/> swaps back to this whenever
+    /// <see cref="SpriteMotion.Pose.StepFrameB"/> is false.</summary>
+    private Texture2D _baseTex = null!;
+
+    /// <summary>Gap #3 fix ("townsfolk legs never move"): the 2-frame step-B texture, resolved
+    /// through the same <see cref="ResolveStepSprite"/> ladder as the base body art. Null-
+    /// tolerant — <see cref="ApplySpritePose"/> just keeps showing <see cref="_baseTex"/> if no
+    /// step art was supplied (mirrors <see cref="HeroActor2D._stepTex"/>'s exact contract).</summary>
+    private Texture2D? _stepTex;
+
     /// <summary>
     /// Resolve the shared neutral body sprite villagers reuse — the same "town2d-hero-vanguard"
     /// body art <see cref="TownAssets2D.ForHero"/> resolves for the vanguard class (neutral-grey,
@@ -81,6 +92,18 @@ public partial class TownsfolkNpc2D : Node2D
     public static Texture2D ResolveSprite() =>
         IconRegistry.Art("town2d-hero-vanguard") ?? PlaceholderTexture();
 
+    /// <summary>
+    /// Gap #3 fix: resolves the shared body's 2-frame step-B variant — <c>"town2d-hero-
+    /// vanguard_step"</c>, the SAME id/suffix convention <see cref="HeroActor2D.Init"/> uses
+    /// (<c>$"town2d-hero-{classId}_step"</c>) for its own step swap, since townsfolk always reuse
+    /// the vanguard body. Confirmed committed for this build (<c>git ls-files godot/assets/art</c>
+    /// lists <c>town2d-hero-vanguard_step.png</c>) — null ONLY on a checkout where that asset is
+    /// missing (e.g. a stripped test fixture), in which case the caller degrades to no swap, never
+    /// a crash or a placeholder-box flash (mirrors <see cref="HeroActor2D._stepTex"/>'s exact
+    /// null-tolerant contract).
+    /// </summary>
+    public static Texture2D? ResolveStepSprite() => IconRegistry.Art("town2d-hero-vanguard_step");
+
     /// <summary>Deterministic civilian tint for the given villager index — cycles a small muted
     /// browns/greens/grays palette, deliberately disjoint from any <c>ClassColors.RoleColor</c> hero
     /// tint so villagers read as background dressing, not off-duty heroes.</summary>
@@ -90,9 +113,12 @@ public partial class TownsfolkNpc2D : Node2D
     /// Build the sprite and pin the deterministic wander parameters. <paramref name="sprite"/>/
     /// <paramref name="tint"/> are passed in (rather than resolved internally) so tests can supply a
     /// bare <c>PlaceholderTexture2D</c> without touching <see cref="IconRegistry"/> — mirrors
-    /// <see cref="HeroActor2D.Init"/>'s exact shape for the same reason.
+    /// <see cref="HeroActor2D.Init"/>'s exact shape for the same reason. <paramref
+    /// name="stepSprite"/> (gap #3) is optional and defaults to null — existing callers that only
+    /// pass the base four arguments keep the pre-fix no-swap behavior; <see
+    /// cref="Town2D.BuildTownsfolk"/> passes <see cref="ResolveStepSprite"/>'s real result.
     /// </summary>
-    public void Init(int index, Texture2D sprite, Color tint, Vector2 home)
+    public void Init(int index, Texture2D sprite, Color tint, Vector2 home, Texture2D? stepSprite = null)
     {
         NpcIndex = index;
         Home = home;
@@ -117,6 +143,11 @@ public partial class TownsfolkNpc2D : Node2D
             Offset = new Vector2(0, -_spriteHeight / 2f),
         };
         AddChild(Sprite);
+
+        // Gap #3: cache base/step textures exactly like HeroActor2D.Init does, now that the
+        // resolved sprite is known.
+        _baseTex = sprite;
+        _stepTex = stepSprite;
 
         _motion = new SpriteMotion(index * 2.1f);
 
@@ -159,6 +190,10 @@ public partial class TownsfolkNpc2D : Node2D
             -_spriteHeight / 2f + pose.BobY + _spriteHeight / 2f * (1f - pose.Scale.Y));
         Sprite.Rotation = pose.LeanRadians;
         Sprite.Scale = pose.Scale;
+        // Gap #3 fix: the same step-frame swap HeroActor2D/PlayerController2D already do — this
+        // line was the whole gap (SpriteMotion.Pose.StepFrameB was already being computed above,
+        // just never consumed here).
+        Sprite.Texture = pose.StepFrameB && _stepTex != null ? _stepTex : _baseTex;
     }
 
     /// <summary>Deterministic lissajous drift for the current accumulated time (pure function of
