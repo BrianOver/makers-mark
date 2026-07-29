@@ -57,6 +57,25 @@ public sealed partial class ForgeMinigame : PanelContainer
     public const double TempoPeriodSeconds = 0.6;
     public const int TempoOnBeatWindowPermille = 180;
 
+    // ── U3 "forge feel pass" knobs (P002 interactive-professions plan) — still adapter-only: only
+    // the resulting integer PumpStroke()/ForgeStrike()/Plunge() seam calls ever cross KTD2. ───────
+    /// <summary>Aimed-strike hit box: a left-click only registers as a strike inside this generous
+    /// square (px), centred on the billet's actual screen anchor — Space stays unaimed/always valid
+    /// (KTD-C keyboard parity). Exact pixel tuning is deferred to the real window per the plan.</summary>
+    public const float BilletHitBoxSize = 96f;
+
+    /// <summary>One bellows pump stroke's fixed heat quantum (per-mille) — the discrete counterpart
+    /// to holding the bellows, fired once per <see cref="PumpStrokeDragPixels"/> of downward
+    /// right-drag (KTD-B: raw motion floats never reach a scorer, only these integer calls do).</summary>
+    public const int PumpStrokeHeatPermille = 55;
+
+    /// <summary>Downward right-drag pixels per <see cref="PumpStroke"/> call.</summary>
+    public const int PumpStrokeDragPixels = 18;
+
+    /// <summary>Width (as a fraction of the canvas) of the generous right-edge drag-to-quench hit
+    /// zone approximating where <c>AnvilMapCanvas.DrawQuenchZone</c> paints the trough.</summary>
+    public const float QuenchZoneWidthFraction = 0.16f;
+
     public string RecipeId { get; private set; } = string.Empty;
     public string MaterialKey { get; private set; } = string.Empty;
 
@@ -115,6 +134,12 @@ public sealed partial class ForgeMinigame : PanelContainer
     private readonly List<int> _strikes = new();
     private double _elapsed;
     private double _sampleAccumulator;
+
+    // ── U3 input-gesture state — plumbing only, never crosses KTD2 (every gesture still ends in
+    // ForgeStrike()/PumpStroke()/Plunge()) ──────────────────────────────────────────────────────
+    private bool _quenchDragArmed;         // true once a left-press has landed on the billet
+    private bool _pumpDragArmed;           // true while the right button is held
+    private double _pumpDragAccumulatorPixels;
 
     private Recipe? _recipe;
     private ProfessionDefinition? _profession;
@@ -251,6 +276,69 @@ public sealed partial class ForgeMinigame : PanelContainer
         RepaintUi();
     }
 
+    /// <summary>One bellows PUMP STROKE — the discrete counterpart to holding the bellows (U3): raises
+    /// heat by exactly <see cref="PumpStrokeHeatPermille"/> (clamped at 1000) and applies the SAME
+    /// shape-drifts-back rule <see cref="Advance"/> already uses while pumping, scaled to the
+    /// equivalent time slice this quantum represents (<c>quantum / BellowsRaisePermillePerSecond</c>
+    /// seconds) — so a flurry of strokes behaves like holding the bellows for that long. This is the
+    /// seam every stroke gesture (drag-quantized right-click, or a future dedicated key) terminates
+    /// in — no wall-clock, no RNG, callable directly by a headless test.</summary>
+    public void PumpStroke()
+    {
+        if (Completed || WasCancelled)
+        {
+            return;
+        }
+
+        var equivalentSeconds = PumpStrokeHeatPermille / (double)BellowsRaisePermillePerSecond;
+        HeatYPermille = Math.Clamp(HeatYPermille + PumpStrokeHeatPermille, 0, 1000);
+        ShapeXPermille = Math.Max(0, ShapeXPermille - (int)Math.Round(BellowsDriftBackPermillePerSecond * equivalentSeconds));
+        RepaintUi();
+    }
+
+    /// <summary>Pure hit-test for an aimed strike (U3): true iff <paramref name="localPos"/> — in
+    /// THIS overlay's own local coordinate space, exactly what <see cref="InputEventMouseButton.Position"/>
+    /// carries when <see cref="_GuiInput"/> receives it — falls within a generous
+    /// <see cref="BilletHitBoxSize"/>px square centred on where the billet is actually drawn
+    /// (mirrors <c>AnvilMapCanvas.BilletAnchor</c>). Side-effect-free, so a headless test can call it
+    /// directly; on a freshly-built, unmounted overlay the anchor resolves to the origin (no layout
+    /// has run yet), which still exercises the exact same rect math.</summary>
+    public bool WouldHit(Vector2 localPos)
+    {
+        var anchor = BilletAnchorInPanelSpace();
+        var half = BilletHitBoxSize / 2f;
+        return Math.Abs(localPos.X - anchor.X) <= half && Math.Abs(localPos.Y - anchor.Y) <= half;
+    }
+
+    /// <summary>Pure hit-test for the drag-to-quench gesture's destination (U3): true iff
+    /// <paramref name="localPos"/> (same local space as <see cref="WouldHit"/>) falls in a generous
+    /// right-edge strip approximating where <c>AnvilMapCanvas.DrawQuenchZone</c> paints the trough —
+    /// exact pixel matching isn't needed for a drop target this size (plan's deferred pixel-tuning
+    /// note). False before any layout has sized the canvas.</summary>
+    public bool IsInQuenchZone(Vector2 localPos)
+    {
+        var size = _canvas.Size;
+        if (size.X <= 0 || size.Y <= 0)
+        {
+            return false;
+        }
+
+        var topLeft = ToPanelSpace(new Vector2(size.X * (1f - QuenchZoneWidthFraction), 0f));
+        var bottomRight = ToPanelSpace(new Vector2(size.X, size.Y));
+        return localPos.X >= Math.Min(topLeft.X, bottomRight.X) && localPos.X <= Math.Max(topLeft.X, bottomRight.X)
+            && localPos.Y >= Math.Min(topLeft.Y, bottomRight.Y) && localPos.Y <= Math.Max(topLeft.Y, bottomRight.Y);
+    }
+
+    /// <summary>The billet's current screen anchor, in this overlay's own local space — exposed
+    /// read-only purely so a headless test can locate <see cref="WouldHit"/>'s hit box without
+    /// duplicating canvas-private layout math.</summary>
+    public Vector2 BilletAnchor => BilletAnchorInPanelSpace();
+
+    /// <summary>A point guaranteed to fall inside <see cref="IsInQuenchZone"/>'s hit region, in this
+    /// overlay's own local space — same test-support rationale as <see cref="BilletAnchor"/>.</summary>
+    public Vector2 QuenchZoneAnchor => ToPanelSpace(new Vector2(
+        _canvas.Size.X * (1f - QuenchZoneWidthFraction / 2f), _canvas.Size.Y * 0.6f));
+
     /// <summary>Quench finale: plunge the cursor now. Legal only once the shape has reached the
     /// path's end (x &gt;= 1000) — the player is expected to stop pumping/hammering there and let
     /// the natural heat drain carry the cursor down toward the trough before plunging. Captures
@@ -282,9 +370,15 @@ public sealed partial class ForgeMinigame : PanelContainer
         RepaintUi();
     }
 
-    /// <summary>Real-time input mapping (Space/left-click to strike, Shift/right-click held to
-    /// pump) — routes to the SAME public seam methods a scripted test or the button row drives, so
-    /// there is exactly one code path for "what a strike/pump does" regardless of input source.</summary>
+    /// <summary>Real-time input mapping — routes to the SAME public seam methods a scripted test or
+    /// the button row drives, so there is exactly one code path for "what a gesture does" regardless
+    /// of input source (KTD-A). Space always strikes unaimed (KTD-C accessible path); a left-click
+    /// only strikes if it lands on the billet (<see cref="WouldHit"/>) and, held, arms a
+    /// drag-to-quench that fires <see cref="Plunge"/> once the drag enters the trough
+    /// (<see cref="IsInQuenchZone"/>); Shift keeps working exactly as before (held bellows); a
+    /// right-button DRAG quantizes into discrete <see cref="PumpStroke"/> calls every
+    /// <see cref="PumpStrokeDragPixels"/> of downward motion (KTD-B — no raw float ever reaches a
+    /// scorer).</summary>
     public override void _GuiInput(InputEvent @event)
     {
         if (Completed || WasCancelled)
@@ -303,16 +397,75 @@ public sealed partial class ForgeMinigame : PanelContainer
             case InputEventKey { Keycode: Key.Shift, Pressed: false }:
                 BellowsStop();
                 break;
-            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true }:
-                ForgeStrike();
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } mb:
+                _quenchDragArmed = WouldHit(mb.Position);
+                if (_quenchDragArmed)
+                {
+                    ForgeStrike();
+                }
+
+                break;
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false }:
+                _quenchDragArmed = false;
                 break;
             case InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: true }:
-                BellowsStart();
+                _pumpDragArmed = true;
+                _pumpDragAccumulatorPixels = 0;
                 break;
             case InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false }:
-                BellowsStop();
+                _pumpDragArmed = false;
+                _pumpDragAccumulatorPixels = 0;
+                break;
+            case InputEventMouseMotion mm:
+                if (_quenchDragArmed && IsInQuenchZone(mm.Position))
+                {
+                    Plunge();
+                    _quenchDragArmed = false;
+                }
+
+                if (_pumpDragArmed)
+                {
+                    AccumulatePumpDrag(mm.Relative.Y);
+                }
+
                 break;
         }
+    }
+
+    /// <summary>Quantizes the right-button drag into discrete <see cref="PumpStroke"/> calls: every
+    /// <see cref="PumpStrokeDragPixels"/> of DOWNWARD motion (pulling the bellows handle down) fires
+    /// one stroke; upward jitter is ignored rather than subtracted, so an unsteady hand never loses
+    /// banked progress. No raw float ever reaches a scorer — only the resulting PumpStroke calls do.</summary>
+    private void AccumulatePumpDrag(float relativeY)
+    {
+        if (relativeY <= 0)
+        {
+            return;
+        }
+
+        _pumpDragAccumulatorPixels += relativeY;
+        while (_pumpDragAccumulatorPixels >= PumpStrokeDragPixels)
+        {
+            PumpStroke();
+            _pumpDragAccumulatorPixels -= PumpStrokeDragPixels;
+        }
+    }
+
+    /// <summary>Mirrors <c>AnvilMapCanvas.BilletAnchor</c> exactly, but as a free function with zero
+    /// coupling to the canvas's private draw-time internals (nothing here reaches into
+    /// <see cref="AnvilMapCanvas"/> other than its public <see cref="Control.Size"/>/transform).</summary>
+    private static Vector2 BilletAnchorFor(Vector2 canvasSize) => new(canvasSize.X * 0.45f, canvasSize.Y * 0.79f);
+
+    private Vector2 BilletAnchorInPanelSpace() => ToPanelSpace(BilletAnchorFor(_canvas.Size));
+
+    /// <summary>Translates a point from the Anvil Map canvas's own local coordinate space into this
+    /// overlay's local space (composing global transforms) — so hit-tests can compare directly
+    /// against the raw local position a mouse event already carries when it reaches
+    /// <see cref="_GuiInput"/>, with zero conversion needed at the call site.</summary>
+    private Vector2 ToPanelSpace(Vector2 canvasLocalPos)
+    {
+        var globalPos = _canvas.GetGlobalTransform() * canvasLocalPos;
+        return GetGlobalTransform().AffineInverse() * globalPos;
     }
 
     /// <summary>G1 result ceremony (unchanged from the old minigame): a presentation-only PREVIEW
@@ -568,9 +721,16 @@ public sealed partial class ForgeMinigame : PanelContainer
             public Color To;
         }
 
+        /// <summary>U3 hit-stop: seconds still owed to freezing <see cref="_anim"/> after an on-tempo
+        /// strike (~<see cref="HitStopSeconds"/>) — accumulated and drained via the SAME
+        /// <see cref="_Process"/> accumulated-clock pattern as everything else here; never a sleep,
+        /// never a wall-clock read.</summary>
+        public const float HitStopSeconds = 0.04f;
+
         private readonly List<Particle> _sparks = new();
         private readonly List<Particle> _steam = new();
         private float _anim;
+        private float _hitStopRemaining;
         private float _shake;
         private float _ring = -1f;   // on-tempo strike ring: -1 idle, else elapsed 0..0.15
         private Texture2D?[] _billet = new Texture2D?[4];
@@ -581,7 +741,19 @@ public sealed partial class ForgeMinigame : PanelContainer
         public override void _Process(double delta)
         {
             var dt = (float)delta;
-            _anim += dt;
+
+            // Hit-stop (U3): an on-tempo strike owes ~40ms of frozen animation clock — skip
+            // advancing _anim while that's still owed (particles/shake/ring keep moving; only the
+            // ambient coal/hammer-swing clock pauses, which is what actually reads as "impact").
+            if (_hitStopRemaining > 0f)
+            {
+                _hitStopRemaining = Math.Max(0f, _hitStopRemaining - dt);
+            }
+            else
+            {
+                _anim += dt;
+            }
+
             StepParticles(_sparks, dt, gravity: 320f);
             StepParticles(_steam, dt, gravity: -30f);
             if (_shake > 0f) _shake = Math.Max(0f, _shake - 14f * dt);
@@ -614,7 +786,11 @@ public sealed partial class ForgeMinigame : PanelContainer
             }
 
             _shake = onTempo ? 3.2f : 1.6f;
-            if (onTempo) _ring = 0f;
+            if (onTempo)
+            {
+                _ring = 0f;
+                _hitStopRemaining = HitStopSeconds; // U3: freeze the ambient clock briefly on impact
+            }
         }
 
         /// <summary>Quench FX: a plume of steam from the billet (driven by the sim's Quenched event).</summary>
