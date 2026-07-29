@@ -13,6 +13,10 @@ feature: U23 tactile forge
 
 # Wave 5 — Tactile Forge (Anvil Map)
 
+> **STATUS: SUPERSEDED (stamped 2026-07-28).** The "Anvil Map" forge presentation this plan specced shipped (#205) and has since been replaced twice over — first by a diegetic forge scene, then by the workbench reframe (#257) and the feel pass in `docs/plans/2026-07-28-002-feat-interactive-professions-and-trade-plan.md` U3 (#261). Read `2026-07-28-002` for the current forge design. Kept as the historical record.
+
+---
+
 ## Goal Capsule
 
 Replace the blacksmith's three sequential forge beats (Smelt/Forge/Quench bars) with **one

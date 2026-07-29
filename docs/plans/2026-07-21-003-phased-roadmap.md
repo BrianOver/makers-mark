@@ -1,5 +1,14 @@
 # Maker's Mark — Phased Roadmap (2026-07-21)
 
+> **STATUS: SUPERSEDED by `docs/plans/2026-07-28-003-roadmap-post-skeleton.md` (stamped 2026-07-28).**
+> Phases A–D below are closed. B, C and D shipped as specced (#217–#232). **Phase A did not** — no
+> `sim/GameSim/Legends/` module was ever built, and its payload arrived instead via AttributionEngine,
+> `Drama/LegendQuery.cs`, Chronicle and memorials; whether the specced sifter is still owed is an open
+> ruling in the successor doc, §3. **Do not pick up §2 Phase A and start building `Legends/`.** §4's
+> overnight TRELLIS.2 3D-gen model is dead — the render layer is 2.5D pixel art now (#244–#249).
+> Still valid and carried forward unchanged: the Goal Capsule, the Completeness Bar (§5), the minimum
+> content counts (§6), and the determinism sequencing rules (§7).
+
 Master roadmap of record. Supersedes the 5-phase `2026-07-15-001-roadmap-beyond-v1` and the 11-pillar `2026-07-18-001` master-plan as the **sequencing authority** (those remain valid as the mechanism/pillar backlog — see the registry `CONTENT.md`). Written after a 7-report research reconnect + full content inventory. Read the Goal Capsule, then your phase.
 
 ---

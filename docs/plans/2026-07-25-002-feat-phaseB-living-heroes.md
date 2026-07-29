@@ -13,6 +13,10 @@ status: build-ready (fable-checked, fixes 1-7 applied)
 
 # Phase B — Living Heroes (re-scoped 2026-07-25)
 
+> **STATUS: COMPLETE (stamped 2026-07-28).** B0/B1 (#217), B2 (#218), B3+B5 (#219), B4 needs-lite (#220), B4 narration fix (#222). This is the plan of record for Phase B and it deliberately REJECTED the full 5-need Zubek engine and 16-trait set that the earlier `2026-07-21-006` doc specced — needs-lite and 10 derived traits are the shipped design. Kept as the historical record. Do not execute.
+
+---
+
 ## Goal Capsule
 
 Make the heroes read as **individuals** — the content of this inverted-MMO is the NPC counterparties,

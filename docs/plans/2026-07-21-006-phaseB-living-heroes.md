@@ -1,5 +1,9 @@
 # Phase B — Living Heroes
 
+> **STATUS: SUPERSEDED by `docs/plans/2026-07-25-002-feat-phaseB-living-heroes.md` (stamped 2026-07-28).** DO NOT EXECUTE THIS PLAN. Its central designs — a full 5-need Zubek scoring engine and a 16-trait authored set — were deliberately rejected in favour of needs-lite plus 10 hash-derived traits, which is what actually shipped (#217-#220). This doc predates that decision and describes a design the project chose against.
+
+---
+
 Plan of record for making heroes read as individuals. Roadmap §2 Phase B. Research basis: hero-AI report (Zubek needs-delta, IAUS, CK3 shared-axis traits, RimWorld/CiF relationships, Talk of the Town gossip, Valve bark rule-DB, Nemesis memory).
 
 ## Goal
