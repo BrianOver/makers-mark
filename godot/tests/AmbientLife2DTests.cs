@@ -173,5 +173,133 @@ public class AmbientLife2DTests
             life.QueueFree();
         }
     }
+
+    // ── Gap #1 ("Market, Mine-gate and Noticeboard buildings are completely dead") ────────────
+
+    [TestCase]
+    public void Build_WithAllThreeVenueCuePositions_CreatesAwningDustAndPaper()
+    {
+        var life = new AmbientLife2D();
+        try
+        {
+            life.Build(new Vector2(200, 190), null, SampleTownRect, null,
+                marketAwningPos: new Vector2(300, 150),
+                mineDustPos: new Vector2(320, 60),
+                noticeboardPaperPos: new Vector2(340, 200));
+
+            var cues = life.GetNode<Node2D>("VenueCues");
+            AssertThat(cues.GetChildCount()).IsEqual(3);
+
+            AssertThat(life.HasMarketAwning).IsTrue();
+            AssertThat(life.HasNoticeboardPaper).IsTrue();
+
+            var dust = life.GetNode<CpuParticles2D>("VenueCues/MineDust");
+            AssertThat(dust.Emitting).IsTrue();
+            AssertThat(dust.Amount > 0).IsTrue();
+        }
+        finally
+        {
+            life.QueueFree();
+        }
+    }
+
+    [TestCase]
+    public void Build_WithoutVenueCuePositions_SkipsAllThree_NoCrash()
+    {
+        var life = new AmbientLife2D();
+        try
+        {
+            life.Build(new Vector2(200, 190), null, SampleTownRect, null);
+
+            var cues = life.GetNode<Node2D>("VenueCues");
+            AssertThat(cues.GetChildCount())
+                .OverrideFailureMessage("A layout that supplies no venue-cue positions must skip all three, not throw")
+                .IsEqual(0);
+            AssertThat(life.HasMarketAwning).IsFalse();
+            AssertThat(life.HasNoticeboardPaper).IsFalse();
+
+            // A subsequent _Process tick must still be a safe no-op.
+            life._Process(0.2);
+        }
+        finally
+        {
+            life.QueueFree();
+        }
+    }
+
+    [TestCase]
+    public void Build_WithOnlyMarketAwningPosition_SkipsTheOtherTwo()
+    {
+        var life = new AmbientLife2D();
+        try
+        {
+            life.Build(new Vector2(200, 190), null, SampleTownRect, null, marketAwningPos: new Vector2(300, 150));
+
+            var cues = life.GetNode<Node2D>("VenueCues");
+            AssertThat(cues.GetChildCount()).IsEqual(1);
+            AssertThat(life.HasMarketAwning).IsTrue();
+            AssertThat(life.HasNoticeboardPaper).IsFalse();
+        }
+        finally
+        {
+            life.QueueFree();
+        }
+    }
+
+    [TestCase]
+    public void Process_SwaysMarketAwning_AroundZero_NotFrozen()
+    {
+        var life = new AmbientLife2D();
+        try
+        {
+            life.Build(new Vector2(200, 190), null, SampleTownRect, null, marketAwningPos: new Vector2(300, 150));
+            var awning = life.GetNode<Sprite2D>("VenueCues/MarketAwning");
+
+            var min = float.MaxValue;
+            var max = float.MinValue;
+            for (var i = 0; i < 60; i++)
+            {
+                life._Process(0.1);
+                min = Mathf.Min(min, awning.Rotation);
+                max = Mathf.Max(max, awning.Rotation);
+            }
+
+            AssertThat(max - min > 0.001f)
+                .OverrideFailureMessage("the market awning must visibly sway, not stay rigid")
+                .IsTrue();
+        }
+        finally
+        {
+            life.QueueFree();
+        }
+    }
+
+    [TestCase]
+    public void Process_FluttersNoticeboardPaper_NotFrozen()
+    {
+        var life = new AmbientLife2D();
+        try
+        {
+            life.Build(new Vector2(200, 190), null, SampleTownRect, null, noticeboardPaperPos: new Vector2(340, 200));
+            var paper = life.GetNode<Sprite2D>("VenueCues/NoticeboardPaper");
+
+            var min = float.MaxValue;
+            var max = float.MinValue;
+            for (var i = 0; i < 60; i++)
+            {
+                life._Process(0.1);
+                min = Mathf.Min(min, paper.Rotation);
+                max = Mathf.Max(max, paper.Rotation);
+            }
+
+            AssertThat(max - min > 0.001f)
+                .OverrideFailureMessage("the noticeboard paper must visibly flutter, not stay rigid")
+                .IsTrue();
+        }
+        finally
+        {
+            life.QueueFree();
+        }
+    }
 }
 #endif

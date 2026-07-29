@@ -17,7 +17,18 @@ namespace GodotClient.Town2d;
 ///
 /// <para><see cref="Build"/> is null-tolerant on every position argument — an absent tavern, or an
 /// empty lantern list, simply skips that group rather than throwing, so a thinner layout (or a
-/// future venue rename) never crashes town construction.</para>
+/// future venue rename) never crashes town construction. The same null-tolerance covers the
+/// gap #1 venue cues below (market awning / mine-gate dust / noticeboard paper): any missing
+/// position just skips that one cue.</para>
+///
+/// <para><b>Gap #1 fix ("Market, Mine-gate and Noticeboard buildings are completely dead")</b>:
+/// three restrained, per-venue ambient cues, each appropriate to what the building IS rather than
+/// a copy of the forge's own heat/spark/steam repertoire (the forge stays the liveliest thing in
+/// town, per the fix's own restraint note): a market awning that sways in the wind (<see
+/// cref="BuildMarketAwning"/>), a slow drift of dust from the mine gate's dark mouth (<see
+/// cref="BuildMineDust"/>), and a noticeboard notice that flutters at its pinned corner (<see
+/// cref="BuildNoticeboardPaper"/>). All three are procedural (flat-color textures/particles, same
+/// idiom as this file's existing lamp-glow/smoke-puff recipes) — no new art asset is invented.</para>
 /// </summary>
 public partial class AmbientLife2D : Node2D
 {
@@ -28,10 +39,31 @@ public partial class AmbientLife2D : Node2D
     private const float LampFlickerAmplitude = 0.12f;
     private const float LampFlickerSpeed = 1.7f; // rad/sec
 
+    /// <summary>Market awning sway cadence/amplitude — a slow, gentle cloth-in-the-breeze read.</summary>
+    private const float AwningSwayHz = 0.5f;
+
+    private static readonly float AwningSwayAmplitudeRadians = 6f * Mathf.Pi / 180f;
+
+    /// <summary>Noticeboard paper flutter — TWO layered sine frequencies (still fully
+    /// deterministic, no RNG) so a pinned notice's corner reads as an irregular flutter rather than
+    /// a metronome-smooth wobble.</summary>
+    private const float PaperFlutterHzPrimary = 0.9f;
+
+    private const float PaperFlutterHzSecondary = 2.3f;
+    private static readonly float PaperFlutterAmplitudeRadians = 4f * Mathf.Pi / 180f;
+
+    private const int MineDustAmount = 5;
+    private const double MineDustLifetime = 4.5;
+
     private static GradientTexture2D? _lampGlowTextureCache;
+    private static ImageTexture? _awningTextureCache;
+    private static ImageTexture? _paperTextureCache;
 
     private readonly List<(Sprite2D Sprite, float Phase)> _lampSprites = new();
     private float _elapsed;
+
+    private Sprite2D? _marketAwning;
+    private Sprite2D? _noticeboardPaper;
 
     /// <summary>
     /// Builds the three ambient groups (ChimneySmoke / Fireflies / LampGlow) as children of this
@@ -48,11 +80,20 @@ public partial class AmbientLife2D : Node2D
     /// firefly field drifts across.</param>
     /// <param name="lanternPositions">World positions of every lamppost prop to flicker-glow. May
     /// be null or empty — degrades to no lamp glows, no crash.</param>
+    /// <param name="marketAwningPos">Gap #1: world position for the market's swaying awning cue.
+    /// Null skips it (e.g. a layout without a market).</param>
+    /// <param name="mineDustPos">Gap #1: world position for the mine gate's drifting-dust cue at
+    /// its mouth. Null skips it.</param>
+    /// <param name="noticeboardPaperPos">Gap #1: world position for the noticeboard's fluttering-
+    /// paper cue. Null skips it.</param>
     public void Build(
         Vector2 forgeChimneyPos,
         Vector2? tavernChimneyPos,
         Rect2 townRect,
-        IReadOnlyList<Vector2>? lanternPositions)
+        IReadOnlyList<Vector2>? lanternPositions,
+        Vector2? marketAwningPos = null,
+        Vector2? mineDustPos = null,
+        Vector2? noticeboardPaperPos = null)
     {
         var smokeGroup = new Node2D { Name = "ChimneySmoke" };
         AddChild(smokeGroup);
@@ -87,18 +128,38 @@ public partial class AmbientLife2D : Node2D
                 _lampSprites.Add((sprite, i * 0.9f)); // phase-offset so lamps don't pulse in lockstep
             }
         }
-    }
 
-    /// <summary>Sine-flickers each lamp glow's alpha around <see cref="LampBaseAlpha"/> — pure
-    /// accumulated-delta cosmetic (no wall-clock read, KTD4/KTD5), a no-op with zero lamps.</summary>
-    public override void _Process(double delta)
-    {
-        if (_lampSprites.Count == 0)
+        var cueGroup = new Node2D { Name = "VenueCues" };
+        AddChild(cueGroup);
+
+        _marketAwning = null;
+        if (marketAwningPos is { } awningPos)
         {
-            return;
+            _marketAwning = BuildMarketAwning(awningPos);
+            cueGroup.AddChild(_marketAwning);
         }
 
+        if (mineDustPos is { } dustPos)
+        {
+            cueGroup.AddChild(BuildMineDust(dustPos));
+        }
+
+        _noticeboardPaper = null;
+        if (noticeboardPaperPos is { } paperPos)
+        {
+            _noticeboardPaper = BuildNoticeboardPaper(paperPos);
+            cueGroup.AddChild(_noticeboardPaper);
+        }
+    }
+
+    /// <summary>Sine-flickers each lamp glow's alpha around <see cref="LampBaseAlpha"/>, and
+    /// (gap #1) sways the market awning / flutters the noticeboard paper — all pure
+    /// accumulated-delta cosmetics (no wall-clock read, KTD4/KTD5). A no-op for whichever group has
+    /// nothing built (e.g. zero lamps, or a layout that skipped a venue cue).</summary>
+    public override void _Process(double delta)
+    {
         _elapsed += (float)delta;
+
         foreach (var (sprite, phase) in _lampSprites)
         {
             var alpha = LampBaseAlpha + LampFlickerAmplitude * Mathf.Sin(_elapsed * LampFlickerSpeed + phase);
@@ -106,11 +167,101 @@ public partial class AmbientLife2D : Node2D
             color.A = alpha;
             sprite.Modulate = color;
         }
+
+        if (_marketAwning is not null)
+        {
+            _marketAwning.Rotation = AwningSwayAmplitudeRadians * Mathf.Sin(_elapsed * AwningSwayHz * Mathf.Tau);
+        }
+
+        if (_noticeboardPaper is not null)
+        {
+            var flutter =
+                Mathf.Sin(_elapsed * PaperFlutterHzPrimary * Mathf.Tau) +
+                0.5f * Mathf.Sin(_elapsed * PaperFlutterHzSecondary * Mathf.Tau);
+            _noticeboardPaper.Rotation = PaperFlutterAmplitudeRadians * (flutter / 1.5f); // normalize the 2-term sum back to [-1,1]
+        }
     }
 
     /// <summary>Test/inspection surface: live lamp-glow count (mirrors the count of positions
     /// <see cref="Build"/> was given).</summary>
     public int LampGlowCount() => _lampSprites.Count;
+
+    /// <summary>Test/inspection surface: true once <see cref="Build"/> was given a non-null market
+    /// awning position (gap #1).</summary>
+    public bool HasMarketAwning => _marketAwning is not null;
+
+    /// <summary>Test/inspection surface: true once <see cref="Build"/> was given a non-null
+    /// noticeboard paper position (gap #1).</summary>
+    public bool HasNoticeboardPaper => _noticeboardPaper is not null;
+
+    /// <summary>Restrained "cloth stirring in the wind" cue for the market — a small rectangular
+    /// swatch above the door, sine-swaying in <see cref="_Process"/> around its own top edge (like
+    /// a banner pinned at the eave). Procedural flat-color texture, same idiom as <see
+    /// cref="LampGlowTexture"/> — no new art asset invented.</summary>
+    private static Sprite2D BuildMarketAwning(Vector2 pos) => new()
+    {
+        Name = "MarketAwning",
+        Texture = AwningTexture(),
+        Centered = true,
+        Offset = new Vector2(0f, -4f), // pivot near the swatch's own top edge, not its center
+        Position = pos,
+        Modulate = new Color(0.74f, 0.34f, 0.24f, 0.95f), // warm terra-cotta cloth
+    };
+
+    /// <summary>Restrained "dust drifting from the mouth" cue for the mine gate — a slow, sparse
+    /// particle trickle (same <see cref="CpuParticles2D"/> recipe family as <see
+    /// cref="BuildSmokePuff"/>, muted dust color, gentle downward-and-out drift rather than a
+    /// chimney's upward lift) so the gate reads as a dark opening breathing faint dust, not a
+    /// second forge.</summary>
+    private static CpuParticles2D BuildMineDust(Vector2 pos) => new()
+    {
+        Name = "MineDust",
+        Position = pos,
+        Emitting = true,
+        OneShot = false,
+        Amount = MineDustAmount,
+        Lifetime = MineDustLifetime,
+        Explosiveness = 0f,
+        Randomness = 0.5f,
+        EmissionShape = CpuParticles2D.EmissionShapeEnum.Sphere,
+        EmissionSphereRadius = 10f, // spread across the gate's mouth width, not a single point
+        Direction = new Vector2(0f, 1f), // settles/drifts down and out of the opening
+        Spread = 30f,
+        Gravity = new Vector2(0f, 2f),
+        InitialVelocityMin = 1.5f,
+        InitialVelocityMax = 4f,
+        ScaleAmountMin = 0.5f,
+        ScaleAmountMax = 1.1f,
+        Color = new Color(0.42f, 0.38f, 0.34f, 0.35f), // muted dust brown-grey
+    };
+
+    /// <summary>Restrained "paper flutter" cue for the noticeboard — a small pale parchment
+    /// swatch, rotation-flutters in <see cref="_Process"/> around its own pinned top corner (as if
+    /// tacked up and catching a breeze). Procedural flat-color texture, same idiom as <see
+    /// cref="LampGlowTexture"/>/<see cref="BuildMarketAwning"/> — no new art asset invented.</summary>
+    private static Sprite2D BuildNoticeboardPaper(Vector2 pos) => new()
+    {
+        Name = "NoticeboardPaper",
+        Texture = PaperTexture(),
+        Centered = true,
+        Offset = new Vector2(3f, -5f), // pivot near the pinned top-left corner, not the swatch's own center
+        Position = pos,
+        Modulate = new Color(0.88f, 0.83f, 0.68f, 0.95f), // pale parchment
+    };
+
+    private static ImageTexture AwningTexture() => _awningTextureCache ??= SolidRectTexture(20, 8);
+
+    private static ImageTexture PaperTexture() => _paperTextureCache ??= SolidRectTexture(10, 14);
+
+    /// <summary>A plain opaque-white rectangle — tinted at draw time via each sprite's own <see
+    /// cref="Sprite2D.Modulate"/> (mirrors <see cref="LampGlowTexture"/>'s "cached, tinted at draw
+    /// time" contract, just a flat swatch instead of a radial falloff).</summary>
+    private static ImageTexture SolidRectTexture(int width, int height)
+    {
+        var image = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
+        image.Fill(Colors.White);
+        return ImageTexture.CreateFromImage(image);
+    }
 
     private static CpuParticles2D BuildSmokePuff(string name, Vector2 pos, bool faint)
     {

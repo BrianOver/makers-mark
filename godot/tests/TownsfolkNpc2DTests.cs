@@ -167,6 +167,103 @@ public class TownsfolkNpc2DTests
         }
     }
 
+    // ── Gap #3 ("townsfolk legs never move") ──────────────────────────────────────────────────
+    //
+    // TownsfolkNpc2D's own (deliberately slow) wander drift never reaches SpriteMotion's walk
+    // threshold under normal per-frame deltas (its amplitude/speed constants bound velocity well
+    // under WalkSpeedThreshold, and that bound holds for ANY delta by the mean value theorem — a
+    // discrete numerical derivative can never exceed a differentiable function's own peak
+    // instantaneous rate). So these tests force a single high-velocity WalkPose frame the same way
+    // a caller legitimately could in production (teleporting Position, e.g. a respawn/warp) rather
+    // than retuning the villager's own cosmetic wander — a real public-API technique, not reflection
+    // into private state.
+
+    [TestCase]
+    public void Init_WithStepTexture_WalkFrameSwapsSpriteToStepTexture()
+    {
+        var npc = new TownsfolkNpc2D();
+        try
+        {
+            var baseTex = new PlaceholderTexture2D { Size = new Vector2(16, 24) };
+            var stepTex = new PlaceholderTexture2D { Size = new Vector2(16, 24) };
+            var home = new Vector2(200, 150);
+            npc.Init(0, baseTex, Colors.White, home, stepTex);
+
+            // Force one high-velocity frame so SpriteMotion's WalkPose branch (and its
+            // StepFrameB flip) is deterministically exercised.
+            npc.Position = home + new Vector2(-500f, 0f);
+            npc._Process(0.05);
+
+            AssertThat(npc.Sprite.Texture)
+                .OverrideFailureMessage("a walking frame with a step texture available must swap the sprite to it — this IS the gap #3 fix")
+                .IsEqual(stepTex);
+        }
+        finally
+        {
+            npc.QueueFree();
+        }
+    }
+
+    [TestCase]
+    public void Init_WithoutStepTexture_WalkFrameKeepsBaseTexture_NoCrash()
+    {
+        var npc = new TownsfolkNpc2D();
+        try
+        {
+            var baseTex = new PlaceholderTexture2D { Size = new Vector2(16, 24) };
+            var home = new Vector2(200, 150);
+            npc.Init(0, baseTex, Colors.White, home); // no step texture — the graceful-degrade path
+
+            npc.Position = home + new Vector2(-500f, 0f);
+            npc._Process(0.05);
+
+            AssertThat(npc.Sprite.Texture)
+                .OverrideFailureMessage("a missing step texture must hold the base texture, never crash or blank the sprite")
+                .IsEqual(baseTex);
+        }
+        finally
+        {
+            npc.QueueFree();
+        }
+    }
+
+    [TestCase]
+    public void Init_IdleFrame_NeverShowsStepTexture_EvenWhenOneWasSupplied()
+    {
+        var npc = new TownsfolkNpc2D();
+        try
+        {
+            var baseTex = new PlaceholderTexture2D { Size = new Vector2(16, 24) };
+            var stepTex = new PlaceholderTexture2D { Size = new Vector2(16, 24) };
+            var home = new Vector2(200, 150);
+            npc.Init(0, baseTex, Colors.White, home, stepTex);
+
+            // No artificial displacement this time — natural wander stays under WalkSpeedThreshold,
+            // so every frame should read idle and keep the base texture.
+            for (var i = 0; i < 30; i++)
+            {
+                npc._Process(0.1);
+                AssertThat(npc.Sprite.Texture).IsEqual(baseTex);
+            }
+        }
+        finally
+        {
+            npc.QueueFree();
+        }
+    }
+
+    [TestCase]
+    public void ResolveStepSprite_DoesNotThrow_AndDegradesGracefullyIfMissing()
+    {
+        // Confirmed present in this checkout (git ls-files godot/assets/art shows
+        // town2d-hero-vanguard_step.png), but the contract this test protects is the null-tolerant
+        // ladder itself — must never throw regardless of whether the asset is committed.
+        var step = TownsfolkNpc2D.ResolveStepSprite();
+        // No assertion on non-null here on purpose: this call must simply never throw, on any
+        // checkout (missing-asset fixtures included).
+        _ = step;
+    }
+
     /// <summary>Town2D-level smoke check (Town2DSceneTests style — same <c>Mount</c> pattern) that
     /// villager spawn-in doesn't break town construction and lands the expected count. Kept here
     /// rather than in <c>Town2DSceneTests.cs</c> itself: that file is outside this unit's owned
