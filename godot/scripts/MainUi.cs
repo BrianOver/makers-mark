@@ -428,6 +428,18 @@ public partial class MainUi : Control
             ToastRemaining = RejectionToastSeconds;
         }
 
+        // Autosave on the day turning over. Evening is the natural boundary: the ledger has resolved,
+        // the raid is revealed, and nothing is mid-gesture — so a resumed campaign never lands the
+        // player inside a half-finished haggle or an open minigame.
+        //
+        // One rolling slot, written here and nowhere else. That is a design choice, not a shortcut:
+        // a per-action or multi-slot save would let a player reload to reroll a craft, and quality
+        // rolls are the thing this game asks you to live with.
+        if (completedPhase == DayPhase.Evening)
+        {
+            CampaignSave.Save(state);
+        }
+
         // The campaign's ending. Emitted once, ArcDirectorSystem.EndingDelayDays after the climax.
         // Rendered from the event's own tallies (see ChronicleScroll) rather than re-derived state.
         foreach (var evt in Adapter.LastEvents)
