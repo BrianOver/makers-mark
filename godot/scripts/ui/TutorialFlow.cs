@@ -102,7 +102,7 @@ public sealed partial class TutorialFlow : PanelContainer
     public event Action<string>? SecondProfessionPicked;
 
     /// <summary>A quick-travel row button was pressed, carrying the same building key
-    /// <c>Town3D.BuildingClicked</c> payloads use ("Forge"/"Shop"/"Tavern"/"Gate").</summary>
+    /// <c>Building2D</c>'s click event payloads use ("Forge"/"Shop"/"Tavern"/"Gate").</summary>
     public event Action<string>? QuickTravelRequested;
 
     private ItemId? _craftedItem;
@@ -183,7 +183,7 @@ public sealed partial class TutorialFlow : PanelContainer
     }
 
     /// <summary>The target building named in each step's copy (playtest F6) — the same click-keys
-    /// <c>Town3D.BuildingClicked</c>/<c>MainUi.OnTownBuildingClicked</c> already route on. Buy and
+    /// <c>Building2D</c>'s click event/<c>MainUi.OnTownBuildingClicked</c> already route on. Buy and
     /// Craft both happen at the Forge (vendor + anvil share the interior); Shelve at the Shop;
     /// PostBounty and the final watch at the Gate.</summary>
     private static readonly IReadOnlyDictionary<TutorialStep, string> StepBuilding = new Dictionary<TutorialStep, string>
