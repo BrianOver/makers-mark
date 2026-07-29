@@ -163,12 +163,93 @@ public partial class NewGameSelect : Control
         title.AddThemeFontSizeOverride("font_size", GameTheme.HeaderFontSize);
         layout.AddChild(title);
 
+        // Continue sits ABOVE the profession picker and only when there is something to resume.
+        // Above, because for a returning player it is the only thing on this screen they want; and
+        // conditional, because an always-present disabled Continue would advertise a feature the
+        // first-time player cannot use.
+        if (BuildContinue() is { } resume)
+        {
+            layout.AddChild(resume);
+        }
+
         _picker = BuildProfessionPicker();
         layout.AddChild(_picker);
 
         _primer = BuildPrimer();
         _primer.Visible = false; // shown only after a pick (OnProfessionPicked)
         layout.AddChild(_primer);
+    }
+
+    /// <summary>
+    /// The resume row, or null when there is no usable save. Built from <see cref="CampaignSave.Peek"/>,
+    /// which reads only the envelope — the world is not rebuilt until the player actually commits, so
+    /// arriving at this screen never pays to deserialize a campaign the player may not want.
+    ///
+    /// <para>A corrupt or schema-mismatched save reports "nothing to resume" (see
+    /// <see cref="CampaignSave"/>), so a bad file makes this row absent rather than making the front
+    /// door throw. Losing a save is bad; being unable to start a new game is worse.</para>
+    /// </summary>
+    private VBoxContainer? BuildContinue()
+    {
+        if (CampaignSave.Peek() is not { } save)
+        {
+            return null;
+        }
+
+        var row = new VBoxContainer { Name = "ContinueRow" };
+        row.AddThemeConstantOverride("separation", GameTheme.Space4);
+
+        var button = new Button
+        {
+            Name = "Continue",
+            Text = $"Continue — day {save.Day}",
+            CustomMinimumSize = new Vector2(0, PickButtonHeight),
+        };
+
+        // Styled as THE primary verb here, the way Begin is on the primer: a returning player's
+        // default action is to carry on, not to start over.
+        button.AddThemeStyleboxOverride("normal", GameTheme.ButtonStylePrimary());
+        button.AddThemeStyleboxOverride("hover", GameTheme.ButtonStylePrimary(GameTheme.ButtonVisualState.Hover));
+        button.AddThemeStyleboxOverride("pressed", GameTheme.ButtonStylePrimary(GameTheme.ButtonVisualState.Pressed));
+        button.Pressed += OnContinuePressed;
+        row.AddChild(button);
+
+        var blurb = new Label
+        {
+            Name = "ContinueBlurb",
+            Text = $"Pick up where you left off — {save.Phase.ToLowerInvariant()} of day {save.Day}. " +
+                   "Starting a new campaign replaces this save.",
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        };
+        blurb.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        row.AddChild(blurb);
+
+        return row;
+    }
+
+    /// <summary>Resume: rebuild the saved world and hand it to <c>MainUi</c> through the same
+    /// <c>AdapterOverride</c> seam a fresh campaign uses, so there is exactly one way into the game.</summary>
+    private void OnContinuePressed()
+    {
+        if (CampaignSave.TryLoad() is not { } state)
+        {
+            // The envelope parsed at Peek() but the world did not rebuild — already logged. Leave the
+            // player on this screen with the profession picker rather than loading a broken campaign.
+            GD.PushWarning("[NewGameSelect] Continue pressed but the save would not load — staying on the picker");
+            return;
+        }
+
+        GD.Print($"[NewGameSelect] resumed campaign: day {state.Day}, phase {state.Phase}");
+        MainUi.AdapterOverride = new SimAdapter(state);
+
+        if (SceneChange is not null)
+        {
+            SceneChange(MainScenePath);
+        }
+        else
+        {
+            GetTree().ChangeSceneToFile(MainScenePath);
+        }
     }
 
     private VBoxContainer BuildProfessionPicker()
@@ -327,6 +408,12 @@ public partial class NewGameSelect : Control
         }
 
         GD.Print($"[NewGameSelect] new campaign: profession {_pendingProfessionId}, seed {_pendingSeed}");
+
+        // Honour what the Continue blurb promises: a new campaign REPLACES the save. Clearing here
+        // rather than waiting for the new run's first autosave closes a real gap — quitting before
+        // that first Evening would otherwise leave Continue pointing at the campaign you just
+        // abandoned, which reads as the new game having silently failed to start.
+        CampaignSave.Clear();
 
         var state = GameComposition.NewCampaign(_pendingSeed, _pendingProfessionId);
         MainUi.AdapterOverride = new SimAdapter(state);
