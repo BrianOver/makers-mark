@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
@@ -31,6 +32,15 @@ namespace GodotClient.Minigames;
 /// player must execute it faithfully — mistakes cost score, talents (MinigameAssists, consumed by
 /// the sim scorer) forgive them. Hiding/discovering the notes (memory depth) is deliberate later
 /// tuning, not sim work: the seam only carries the pour list either way.</para>
+///
+/// <para><b>U4 — drag-to-pour + memory (presentation-only, plan 2026-07-28-002):</b> the canvas
+/// recognises a click-drag of a shelf bottle to the cauldron mouth and routes the release straight
+/// into the SAME <see cref="PourReagent"/> seam the palette buttons call (KTD-A) — a drop anywhere
+/// else shelves the bottle harmlessly. Recipe notes render in full for a recipe's first brew this
+/// session (<see cref="NotesFamiliar"/>, tracked client-side only — never sim state, never
+/// persisted through the seam), then fade; a recipe-book affordance re-shows them at no cost while
+/// hovered/held (<see cref="NotesVisible"/>) — the mandatory zero-cost, no-timing fallback (KTD-C).
+/// Which notes state is showing NEVER changes what <see cref="Submit"/> emits.</para>
 /// </summary>
 public sealed partial class AlchemyBrewPuzzle : PanelContainer
 {
@@ -59,6 +69,24 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
     private ProfessionDefinition? _profession;
     private ImmutableSortedSet<string> _unlockedTalents = ImmutableSortedSet<string>.Empty;
     private ImmutableList<int> _ideal = ImmutableList<int>.Empty;
+
+    // U4 memory depth — client-side-only session state (never sim state, never queued on the
+    // seam): which recipe ids this SAME puzzle instance has already completed a brew for. The
+    // panel is built once and reused across brews (see ForgePanel._brewPuzzle), so this survives
+    // Configure() the way "this session" implies; it is only ever added to, never persisted.
+    private readonly HashSet<string> _brewedRecipeIds = new(StringComparer.Ordinal);
+    private bool _recipeBookHovered;
+
+    /// <summary>True once this recipe has completed at least one brew this session — the trigger
+    /// for the notes to start fading. Never read by the sim; presentation only.</summary>
+    public bool NotesFamiliar => _brewedRecipeIds.Contains(RecipeId);
+
+    /// <summary>Whether the parchment recipe notes are currently legible: full detail before a
+    /// recipe's first completed brew this session, or whenever the recipe-book affordance is
+    /// hovered/held (the always-available, zero-cost, no-timing fallback) — faded from memory
+    /// otherwise. Purely a rendering switch: it never changes <see cref="Poured"/> or what
+    /// <see cref="Submit"/> emits.</summary>
+    public bool NotesVisible => !NotesFamiliar || _recipeBookHovered;
 
     private Label _titleLabel = null!;
     private Label _notesLabel = null!;
@@ -107,13 +135,17 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         Completed = false;
         WasCancelled = false;
         EmittedAction = null;
+        _recipeBookHovered = false; // a fresh open never inherits a stale hover/press from before
+        _canvas.ResetInteractionState();
 
         RepaintUi();
     }
 
     /// <summary>Pour one reagent (a discrete choice). Unknown ids and pours past the recipe's
-    /// count are ignored — the palette is the only intended entry point, this is just belt and
-    /// braces for scripted callers.</summary>
+    /// count are ignored — the palette is the only intended entry point; this is also the ONE
+    /// seam every input route ends in (palette button, keyboard, and the canvas's drag-drop
+    /// recogniser via <see cref="BrewCanvas.PourRequested"/> — KTD-A), so belt and braces for any
+    /// of them.</summary>
     public void PourReagent(int reagentId)
     {
         if (Completed || WasCancelled || reagentId < 0 || reagentId >= AlchemyReagents.Count
@@ -123,6 +155,30 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         }
 
         Poured = Poured.Add(reagentId);
+        RepaintUi();
+    }
+
+    /// <summary>Pure hit-test — is this canvas-local point over the cauldron (the drag-to-pour
+    /// drop target)? Delegates to the canvas so the geometry that <c>_Draw</c> paints and the
+    /// geometry a release is judged against can never drift apart. Public so a headless test can
+    /// drive the recogniser's decision without any real mouse.</summary>
+    public bool IsOverCauldron(Vector2 localPos) => _canvas.IsOverCauldron(localPos);
+
+    /// <summary>Pure hit-test for the recipe-book affordance (the memory fallback's hover/press
+    /// target) — same testability reasoning as <see cref="IsOverCauldron"/>.</summary>
+    public bool IsOverRecipeBook(Vector2 localPos) => _canvas.IsOverRecipeBook(localPos);
+
+    /// <summary>Seam the recipe-book hover/press recogniser terminates in (also directly callable
+    /// by a test): while true, notes show in full at no cost regardless of <see cref="NotesFamiliar"/>.
+    /// Presentation only — repaints, never touches <see cref="Poured"/> or the emitted action.</summary>
+    public void SetRecipeBookHovered(bool hovered)
+    {
+        if (_recipeBookHovered == hovered)
+        {
+            return;
+        }
+
+        _recipeBookHovered = hovered;
         RepaintUi();
     }
 
@@ -149,6 +205,7 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         }
 
         Completed = true;
+        _brewedRecipeIds.Add(RecipeId); // U4 memory: THIS recipe's notes fade from here on this session
         var puzzle = new AlchemyReagentPuzzle(Poured);
         // Preview only — the sim recomputes the authoritative grade from the SAME pure scorer
         // when the action resolves; this triple rides SubScores as ledger flavor data.
@@ -197,9 +254,18 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         body.AddChild(_notesLabel);
 
         // Fill the drawer (same reason as the forge canvas): a short strip left the panel mostly empty.
-        _canvas = new BrewCanvas { Name = "BrewCanvas", CustomMinimumSize = new Vector2(0, 340) };
+        // Size is seeded to the drawer's real footprint (DrawerHost.DrawerWidth x the min height)
+        // so the drag/hover hit-tests have sane geometry even before a live container layout pass
+        // runs (e.g. an unmounted headless test) — a real parent container still resizes it as
+        // usual once this is actually in the tree.
+        _canvas = new BrewCanvas
+        {
+            Name = "BrewCanvas", CustomMinimumSize = new Vector2(0, 340), Size = new Vector2(600, 340),
+        };
         _canvas.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         _canvas.SizeFlagsVertical = SizeFlags.ExpandFill;
+        _canvas.PourRequested += PourReagent;             // KTD-A: the drag-drop recogniser's ONE seam
+        _canvas.NotesHoverChanged += SetRecipeBookHovered; // recipe-book hover/press → the notes seam
         body.AddChild(_canvas);
 
         _pouredLabel = new Label { Name = "AlchemyBrewPoured", AutowrapMode = TextServer.AutowrapMode.WordSmart };
@@ -249,10 +315,13 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
             return;
         }
 
+        var notesVisible = NotesVisible;
         _titleLabel.Text = $"Brew: {RecipeId}";
         _notesLabel.Text = _ideal.IsEmpty
             ? string.Empty
-            : "Recipe — match the top row, pour left to right:";
+            : notesVisible
+                ? "Recipe — match the top row, pour left to right:"
+                : "Brewed from memory — hover the recipe book to peek, free, any time.";
         _pouredLabel.Text = Completed
             ? $"Brewed! (score {EmittedAction?.SubScores?[2]}‰)"
             : WasCancelled
@@ -264,6 +333,7 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         // property-only, exactly as the gdUnit tests drive it).
         _canvas.Ideal = _ideal;
         _canvas.Done = Completed;
+        _canvas.NotesVisible = notesVisible; // presentation only — never feeds Poured/the action
         _canvas.SetPoured(Poured);
         _canvas.QueueRedraw();
 
@@ -307,12 +377,37 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
     /// <para>The owning puzzle class stays <c>_Process</c>-free and property-only (as its gdUnit tests
     /// drive it): this canvas owns the animation clock and detects a new pour by diffing what it was
     /// last handed (<see cref="SetPoured"/>), so an Undo triggers no FX.</para>
+    ///
+    /// <para><b>U4 drag-to-pour:</b> the gesture is recognised entirely in here via the
+    /// <c>GuiInput</c> C# event (subscribed, not a <c>_GuiInput</c> override — the same idiom
+    /// <c>DrawerHost</c>'s dim veil uses, precisely so a headless test can drive it with
+    /// <c>EmitSignal(Control.SignalName.GuiInput, ...)</c> exactly like <c>UiTestSupport.Click</c>
+    /// does elsewhere): button-down over a shelf bottle picks it up, motion carries it, and
+    /// button-up either pours (over the cauldron, via <see cref="PourRequested"/> → the owner's
+    /// existing <c>PourReagent(int)</c>) or shelves it harmlessly. <see cref="IsOverCauldron"/> is
+    /// the same pure hit-test both the release decision and <c>_Draw</c>'s highlight ring use, so
+    /// they can never disagree. A small recipe-book icon (<see cref="IsOverRecipeBook"/>) is the
+    /// zero-cost, no-timing memory fallback: hovering or pressing it fires
+    /// <see cref="NotesHoverChanged"/> so the notes show in full for as long as it's held.</para>
     /// </summary>
     private sealed partial class BrewCanvas : Control
     {
         public ImmutableList<int> Ideal = ImmutableList<int>.Empty;
         public ImmutableList<int> Poured { get; private set; } = ImmutableList<int>.Empty;
         public bool Done;
+
+        /// <summary>Whether the parchment should render full reagent identities (true) or faded
+        /// memory silhouettes (false) — set by the owner every <c>RepaintUi</c>; purely visual,
+        /// read nowhere near <see cref="PourRequested"/> or any scoring path.</summary>
+        public bool NotesVisible = true;
+
+        /// <summary>Fires with the reagent id when a drag release lands on the cauldron — the
+        /// recogniser's ONE seam (KTD-A); the owner wires this straight to <c>PourReagent</c>.</summary>
+        public event Action<int>? PourRequested;
+
+        /// <summary>Fires whenever the recipe-book hover/press state changes — the owner wires
+        /// this to <c>SetRecipeBookHovered</c>.</summary>
+        public event Action<bool>? NotesHoverChanged;
 
         private static readonly Color TargetRing = new(1f, 0.92f, 0.72f, 0.55f);
         private static readonly Color EmptySocket = new(0.26f, 0.24f, 0.32f, 0.95f);
@@ -325,6 +420,9 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         private static readonly Color FireGlow = new(1.0f, 0.52f, 0.18f);
         private static readonly Color Fizzle = new(0.42f, 0.48f, 0.29f);
         private static readonly Color Caret = new(1.0f, 0.85f, 0.35f);
+        private static readonly Color FadedSlot = new(0.55f, 0.52f, 0.47f, 0.65f); // "memorized" silhouette
+        private static readonly Color BookClosed = new(0.42f, 0.26f, 0.16f);
+        private static readonly Color BookOpen = new(0.64f, 0.40f, 0.22f);
 
         // Fixed droplet/bubble/smoke offsets — deterministic, no RNG.
         private static readonly float[] DropSpread = { -5f, -2f, 0f, 2f, 4f, 6f };
@@ -345,6 +443,21 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         private Texture2D? _backdrop;
         private bool _texTried;
 
+        // U4 drag-to-pour + recipe-book hover/press state — pure presentation, never sim-visible.
+        private bool _dragging;
+        private int _dragReagent = -1;
+        private Vector2 _dragPos;
+        private bool _bookHovered;
+        private bool _bookPressed;
+
+        public BrewCanvas()
+        {
+            // Subscribed (not a `_GuiInput` override) so a headless test can drive the whole
+            // drag-to-pour recogniser via `EmitSignal(Control.SignalName.GuiInput, ...)` — the
+            // same seam `DrawerHost`'s dim veil and `UiTestSupport.Click` already rely on.
+            GuiInput += OnGuiInput;
+        }
+
         /// <summary>Feed the pour list; a GROWN list fires the one-shot pour FX (an Undo never does).</summary>
         public void SetPoured(ImmutableList<int> poured)
         {
@@ -358,6 +471,150 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
             }
 
             Poured = poured;
+        }
+
+        /// <summary>Clear any in-flight drag/hover so a reopened puzzle (Configure on a reused
+        /// panel — see ForgePanel._brewPuzzle) never carries a stale carried-bottle or hovered
+        /// book from the previous brew into the new one.</summary>
+        public void ResetInteractionState()
+        {
+            _dragging = false;
+            _dragReagent = -1;
+            _bookHovered = false;
+            _bookPressed = false;
+        }
+
+        /// <summary>The cauldron's hit region — the same rect <c>_Draw</c> paints the pot into, so
+        /// what you see is exactly what you can drop a bottle on. Pure function of <see cref="Size"/>.</summary>
+        private static Rect2 CauldronRect(Vector2 size)
+        {
+            var potW = Mathf.Min(size.X * 0.52f, 240f);
+            var potH = potW * 0.75f;
+            var potPos = new Vector2(size.X * 0.5f - potW / 2f, size.Y - potH - 6f);
+            return new Rect2(potPos, new Vector2(potW, potH));
+        }
+
+        /// <summary>Pure hit-test: is this LOCAL point over the cauldron? The drag-release
+        /// recogniser's decision, factored out so a headless test can drive it without any mouse
+        /// (KTD-A/B: the recogniser terminates in a seam, and no input float ever reaches scoring —
+        /// this is presentation-only routing, not a scorer, but the same discipline applies).</summary>
+        public bool IsOverCauldron(Vector2 localPos)
+        {
+            var size = Size;
+            return size.X > 0f && size.Y > 0f && CauldronRect(size).HasPoint(localPos);
+        }
+
+        /// <summary>The recipe-book affordance's rect — fixed bottom-left, clear of the pot, the
+        /// shelf, and the parchment regardless of pour count.</summary>
+        private static Rect2 RecipeBookRect(Vector2 size) => new(8f, size.Y - 34f, 26f, 26f);
+
+        /// <summary>Pure hit-test for the recipe-book affordance.</summary>
+        public bool IsOverRecipeBook(Vector2 localPos)
+        {
+            var size = Size;
+            return size.X > 0f && size.Y > 0f && RecipeBookRect(size).HasPoint(localPos);
+        }
+
+        /// <summary>Where shelf bottle <paramref name="reagentId"/> lives, mirroring
+        /// <see cref="DrawShelf"/>'s own layout math exactly — or null when the shelf isn't drawn
+        /// at all (a canvas too narrow to fit it beside the parchment).</summary>
+        private static Rect2? ShelfBottleRect(Vector2 size, int reagentId)
+        {
+            var count = AlchemyReagents.Count;
+            var shelfW = ShelfStep * count;
+            var x0 = size.X - shelfW - 10f;
+            if (x0 < size.X * 0.45f)
+            {
+                return null;
+            }
+
+            var cx = x0 + ShelfStep * (reagentId + 0.5f);
+            return new Rect2(cx - ShelfStep / 2f, ShelfY - 4f, ShelfStep, 44f);
+        }
+
+        private static int? ShelfBottleAt(Vector2 size, Vector2 localPos)
+        {
+            for (var id = 0; id < AlchemyReagents.Count; id++)
+            {
+                if (ShelfBottleRect(size, id) is { } rect && rect.HasPoint(localPos))
+                {
+                    return id;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>The whole drag-to-pour + recipe-book recogniser (KTD-A): every branch either
+        /// ends in <see cref="PourRequested"/> (the owner's existing <c>PourReagent(int)</c> seam)
+        /// or <see cref="NotesHoverChanged"/> — nothing here computes a grade or touches sim state.
+        /// Existing keyboard/button paths are untouched; this is a second route to the same seam.</summary>
+        private void OnGuiInput(InputEvent @event)
+        {
+            switch (@event)
+            {
+                case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } down:
+                {
+                    var picked = ShelfBottleAt(Size, down.Position);
+                    if (picked.HasValue)
+                    {
+                        _dragging = true;
+                        _dragReagent = picked.Value;
+                        _dragPos = down.Position;
+                        QueueRedraw();
+                    }
+                    else if (IsOverRecipeBook(down.Position) && !_bookHovered)
+                    {
+                        _bookPressed = true;
+                        _bookHovered = true;
+                        NotesHoverChanged?.Invoke(true);
+                        QueueRedraw();
+                    }
+
+                    break;
+                }
+
+                case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } up when _dragging:
+                {
+                    var reagent = _dragReagent;
+                    var overCauldron = IsOverCauldron(up.Position);
+                    _dragging = false;
+                    _dragReagent = -1;
+                    QueueRedraw();
+                    if (overCauldron)
+                    {
+                        PourRequested?.Invoke(reagent); // KTD-A: same seam the palette buttons call
+                    }
+                    // else: released off the cauldron — shelved harmlessly, no pour, no error state.
+
+                    break;
+                }
+
+                case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } when _bookPressed:
+                    _bookPressed = false;
+                    _bookHovered = false;
+                    NotesHoverChanged?.Invoke(false);
+                    QueueRedraw();
+                    break;
+
+                case InputEventMouseMotion motion when _dragging:
+                    _dragPos = motion.Position;
+                    QueueRedraw();
+                    break;
+
+                case InputEventMouseMotion motion when !_bookPressed:
+                {
+                    var hovering = IsOverRecipeBook(motion.Position);
+                    if (hovering != _bookHovered)
+                    {
+                        _bookHovered = hovering;
+                        NotesHoverChanged?.Invoke(hovering);
+                        QueueRedraw();
+                    }
+
+                    break;
+                }
+            }
         }
 
         public override void _Process(double delta)
@@ -390,10 +647,12 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
                 DrawTextureRect(_backdrop, new Rect2(Vector2.Zero, size), false);
             }
 
-            // ── layout ──
-            var potW = Mathf.Min(size.X * 0.52f, 240f);
-            var potH = potW * 0.75f;
-            var potPos = new Vector2(size.X * 0.5f - potW / 2f, size.Y - potH - 6f);
+            // ── layout ── (CauldronRect is the SAME rect IsOverCauldron hit-tests, so a drop
+            // lands exactly where the drawing says it will)
+            var cauldronRect = CauldronRect(size);
+            var potPos = cauldronRect.Position;
+            var potW = cauldronRect.Size.X;
+            var potH = cauldronRect.Size.Y;
             var mouth = new Rect2(potPos.X + potW * 0.17f, potPos.Y + potH * 0.16f, potW * 0.66f, potH * 0.21f);
             var interiorTop = mouth.Position.Y + mouth.Size.Y * 0.4f;
             var interiorBottom = potPos.Y + potH * 0.80f;
@@ -401,6 +660,7 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
             DrawFireGlow(potPos, potW, potH);
             DrawParchment(size, n);
             DrawShelf(size);
+            DrawRecipeBook(size);
 
             // Cauldron sprite (or a primitive pot).
             if (_cauldron is not null)
@@ -418,6 +678,7 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
             DrawLiquid(mouth, interiorTop, interiorBottom);
             DrawSockets(mouth, n);
             DrawPourStream(size, mouth);
+            DrawCarriedBottle(cauldronRect);
         }
 
         private void DrawFireGlow(Vector2 potPos, float potW, float potH)
@@ -429,7 +690,11 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         }
 
         /// <summary>The recipe: mini tinted bottles in pour order on a parchment strip, with a gold
-        /// caret under the next expected slot (the order IS the puzzle, so this stays loud).</summary>
+        /// caret under the next expected slot (the order IS the puzzle, so this stays loud) — UNLESS
+        /// <see cref="NotesVisible"/> is false (U4 memory depth), in which case each slot renders as
+        /// a plain grey "memorized" silhouette instead of its reagent's identity. The caret (just a
+        /// position, not an identity) and slot count still show either way — hovering/pressing the
+        /// recipe book is the always-available way back to full detail.</summary>
         private void DrawParchment(Vector2 size, int n)
         {
             var w = Mathf.Min(size.X * 0.62f, 34f * n + 24f);
@@ -441,8 +706,8 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
             for (var i = 0; i < n; i++)
             {
                 var cx = rect.Position.X + 10f + step * (i + 0.5f);
-                var c = ColorFor(Ideal[i]);
-                if (_bottle is not null)
+                var c = NotesVisible ? ColorFor(Ideal[i]) : FadedSlot;
+                if (_bottle is not null && NotesVisible)
                 {
                     DrawTextureRect(_bottle, new Rect2(new Vector2(cx - 7f, rect.Position.Y + 5f), new Vector2(14f, 19f)), false, c);
                 }
@@ -492,6 +757,49 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
                 {
                     DrawCircle(new Vector2(cx, ShelfY + 20f), 6f, c);
                 }
+            }
+        }
+
+        /// <summary>The recipe-book affordance (U4's mandatory zero-cost, no-timing memory
+        /// fallback): a small closed book, bottom-left, that lights up while hovered or held — the
+        /// SAME rect <see cref="IsOverRecipeBook"/> hit-tests.</summary>
+        private void DrawRecipeBook(Vector2 size)
+        {
+            var rect = RecipeBookRect(size);
+            DrawRect(rect, _bookHovered ? BookOpen : BookClosed);
+            DrawRect(rect, ParchmentEdge, filled: false, width: 1.5f);
+            var midX = rect.Position.X + rect.Size.X / 2f;
+            DrawLine(
+                new Vector2(midX, rect.Position.Y + 3f), new Vector2(midX, rect.Position.Y + rect.Size.Y - 3f),
+                Parchment, 1.5f);
+        }
+
+        /// <summary>The bottle riding the cursor mid-drag, plus a highlight ring on the cauldron
+        /// once the carried bottle is over a valid drop — pure feedback off input state the sim
+        /// never sees. <paramref name="cauldronRect"/> is the exact rect <see cref="IsOverCauldron"/>
+        /// judges the release against.</summary>
+        private void DrawCarriedBottle(Rect2 cauldronRect)
+        {
+            if (!_dragging || _dragReagent < 0)
+            {
+                return;
+            }
+
+            if (cauldronRect.HasPoint(_dragPos))
+            {
+                DrawArc(
+                    cauldronRect.Position + cauldronRect.Size / 2f, Mathf.Max(cauldronRect.Size.X, cauldronRect.Size.Y) * 0.55f,
+                    0f, Mathf.Tau, 32, new Color(MatchRing, 0.55f), 3f);
+            }
+
+            var c = ColorFor(_dragReagent);
+            if (_bottle is not null)
+            {
+                DrawTextureRect(_bottle, new Rect2(_dragPos - new Vector2(7f, 20f), new Vector2(14f, 26f)), false, c);
+            }
+            else
+            {
+                DrawCircle(_dragPos, 6f, c);
             }
         }
 
