@@ -29,10 +29,25 @@ namespace GodotClient.Panels;
 /// the aligned icon|name|price|owned|action strip — for the row's ONE clear, gate-checkable
 /// action (Unstock; Stock, whose real <see cref="UiKit.ListRow"/>'s enabled/whyNot mirrors the
 /// same soldConsumable refusal the old <c>GateButton</c> call did). Reprice (which needs its
-/// SpinBox alongside it) and the provenance "History" trigger stay in a secondary controlsRow
-/// below, unchanged Names. Rival Shelf stays on its original Card/ArtRect/StatChip layout — it is
-/// read-only (no per-item action exists to gate), so forcing a ListRow there would mean either a
-/// dead decorative button or a misleadingly Danger-tinted price; neither is an improvement.</para>
+/// price control alongside it) and the provenance "History" trigger stay in a secondary
+/// controlsRow below, unchanged Names. Rival Shelf stays on its original Card/ArtRect/StatChip
+/// layout — it is read-only (no per-item action exists to gate), so forcing a ListRow there would
+/// mean either a dead decorative button or a misleadingly Danger-tinted price; neither is an
+/// improvement.</para>
+///
+/// <para>U5 (plan <c>2026-07-28-002</c>, design doc §B6): "dressing the shelf is dragging goods
+/// onto it and flipping price tags". Every shelved-item card (<see cref="DragHandle"/>) and every
+/// unshelved-craft card (also a <see cref="DragHandle"/>, carrying its stock price) can be picked
+/// up and dropped onto the opposite side's <see cref="DropZone"/> — an empty shelf slot to stock,
+/// or the back-room strip to unstock — and every drop routes into the SAME public seam the
+/// existing button already calls (<see cref="PlaceOnShelf"/>/<see cref="RemoveFromShelf"/>/
+/// <see cref="Reprice"/> — KTD-A), so a headless test can drive either path and see the identical
+/// action land. <c>Price_{id}</c> is now a <see cref="PriceTag"/> (a reprice IS the flip); the
+/// existing test suite still looks up <c>StockPrice_{id}</c> as a <see cref="SpinBox"/>
+/// (<c>MainUiTests.ShopPanel_RendersHeroPassReason_AE4RenderHalf</c>), so the initial stock-price
+/// control stays a SpinBox — only the ALREADY-shelved item's reprice control becomes a tag. Shelf
+/// *position* stays purely cosmetic (an explicit non-goal — see the plan's Deferred section); the
+/// slot a craft lands in never reaches the seam.</para>
 /// </summary>
 public partial class ShopPanel : SimPanel
 {
@@ -122,7 +137,6 @@ public partial class ShopPanel : SimPanel
         if (state.Player.Shelf.IsEmpty)
         {
             AddLabel(section.Body, "Nothing shelved yet — craft at the forge, then stock it here.");
-            return;
         }
 
         foreach (var entry in state.Player.Shelf)
@@ -130,7 +144,14 @@ public partial class ShopPanel : SimPanel
             var item = state.Items[entry.Item.Value];
             var itemId = entry.Item;
 
-            var card = Card($"ShelfCard_{itemId.Value}");
+            // U5: the whole card is the drag-off-the-shelf handle (KTD-A: the drop it produces
+            // routes into the SAME RemoveFromShelf seam the Unstock button calls below).
+            var card = new DragHandle
+            {
+                Name = $"ShelfCard_{itemId.Value}",
+                PreviewText = $"Unshelve {item.Name}",
+                Payload = () => new Godot.Collections.Dictionary { ["kind"] = ShelvedKind, ["itemId"] = itemId.Value },
+            };
             section.Body.AddChild(card);
             var cardBody = new VBoxContainer();
             card.AddChild(cardBody);
@@ -147,26 +168,24 @@ public partial class ShopPanel : SimPanel
                 IconRegistry.Slot(item.Slot), item.Name));
 
             // UI-5: the aligned icon|name|price|owned|action strip — Unstock (always legal, no
-            // sim gate) is the shelf's one single-purpose quick action; Reprice needs its SpinBox
-            // alongside it, so it — and the provenance popup trigger — stay in the secondary
+            // sim gate) is the shelf's one single-purpose quick action; Reprice needs its price
+            // tag alongside it, so it — and the provenance popup trigger — stay in the secondary
             // controlsRow below, unchanged Names.
             var unstock = new Button { Name = $"Unstock_{itemId.Value}", Text = "Unstock" };
-            unstock.Pressed += () =>
-            {
-                Adapter!.Queue(new UnstockAction(itemId));
-                _feedback!.Text = $"queued: unstock {itemId}";
-            };
+            unstock.Pressed += () => RemoveFromShelf(itemId.Value);
             cardBody.AddChild(ListRow(
                 IconRegistry.Slot(item.Slot), $"{itemId} {item.Name} [{item.Quality}]", $"{entry.Price}g", "1",
                 unstock, enabled: true));
 
             var controlsRow = AddRow(cardBody);
-            var priceSpin = AddSpinBox(controlsRow, $"Price_{itemId.Value}", 1, 99999, entry.Price);
-            AddButton(controlsRow, $"Reprice_{itemId.Value}", "Reprice", () =>
-            {
-                Adapter!.Queue(new SetPriceAction(itemId, (int)priceSpin.Value));
-                _feedback!.Text = $"queued: reprice {itemId} to {(int)priceSpin.Value}g";
-            });
+            // U5: a reprice IS a tag flip now (design doc §B6) — MinValue stays the default 1, so
+            // the tag itself can never carry (and therefore never queue) a sub-1 price.
+            var priceTag = new PriceTag { Name = $"Price_{itemId.Value}", MinValue = 1, Value = entry.Price };
+            priceTag.ValueChanged += price => Reprice(itemId.Value, price);
+            controlsRow.AddChild(priceTag);
+            // Legacy Reprice button kept (existing test looks it up by name): queues the exact
+            // same action the tag's own edit would, through the same seam.
+            AddButton(controlsRow, $"Reprice_{itemId.Value}", "Reprice", () => Reprice(itemId.Value, priceTag.Value));
             // U5: "your craft writes the legends" made touchable — open the item's provenance
             // card (History entries + maker's mark + forge sub-scores) on click.
             AddButton(controlsRow, $"Provenance_{itemId.Value}", "History", () => OnShowProvenance(itemId));
@@ -180,12 +199,52 @@ public partial class ShopPanel : SimPanel
                 }
             }
         }
+
+        // U5: cosmetic empty-slot placeholders — the "back room strip" onto which an unshelved
+        // craft's DragHandle can be dropped. Shelf position never reaches the seam (out of scope
+        // per the plan), so a fixed count is exactly as meaningful as any other. Widened past
+        // ItemArtSize (R7-class guard, LayoutTests.MinReadableWidth = 100px): an HBox sibling
+        // caps a non-expand child to its own CustomMinimumSize, so a bare 56px art-tile square
+        // squeezed the "+ shelve here" label into the one-character-per-line collapse.
+        var slotsRow = AddRow(section.Body);
+        for (var i = 0; i < EmptyShelfSlotCount; i++)
+        {
+            var slot = new DropZone
+            {
+                Name = $"EmptyShelfSlot_{i}",
+                CustomMinimumSize = new Vector2(EmptyShelfSlotWidth, ItemArtSize),
+                Accepts = data => data.TryGetValue("kind", out var kind) && kind.AsString() == UnshelvedKind,
+                Drop = data => PlaceOnShelf(data["itemId"].AsInt32(), data["price"].AsInt32()),
+            };
+            var slotLabel = new Label
+            {
+                Text = "+ shelve here",
+                HorizontalAlignment = HorizontalAlignment.Center,
+                AutowrapMode = TextServer.AutowrapMode.Off,
+                CustomMinimumSize = new Vector2(EmptyShelfSlotWidth, 0),
+            };
+            slot.AddChild(slotLabel);
+            slotsRow.AddChild(slot);
+        }
     }
 
     private void BuildUnshelvedSection(GameState state)
     {
         var section = Section("Unshelved Crafts");
         _content!.AddChild(section.Root);
+
+        // U5: the "back room" landing strip — drop a shelved item's DragHandle here to pull it
+        // back off the shelf (routes into the SAME RemoveFromShelf seam the Unstock button
+        // calls). Present regardless of how many unshelved crafts there are.
+        var backRoom = new DropZone
+        {
+            Name = "BackRoomDropZone",
+            CustomMinimumSize = new Vector2(0, ListRowHeightHint),
+            Accepts = data => data.TryGetValue("kind", out var kind) && kind.AsString() == ShelvedKind,
+            Drop = data => RemoveFromShelf(data["itemId"].AsInt32()),
+        };
+        AddLabel(backRoom, "Drag a shelved item here to pull it back.");
+        section.Body.AddChild(backRoom);
 
         var unshelved = UnshelvedPlayerCrafts(state).ToList();
         if (unshelved.Count == 0)
@@ -196,7 +255,14 @@ public partial class ShopPanel : SimPanel
 
         foreach (var item in unshelved)
         {
-            var card = Card($"UnshelvedCard_{item.Id.Value}");
+            // U5: the whole card is the drag-onto-a-shelf-slot handle, carrying the item's
+            // current stock price (read live off the SpinBox alongside it at drag time — the
+            // SAME value the Stock button reads). Payload is wired below once priceSpin exists.
+            var card = new DragHandle
+            {
+                Name = $"UnshelvedCard_{item.Id.Value}",
+                PreviewText = $"Shelve {item.Name}",
+            };
             section.Body.AddChild(card);
             var cardBody = new VBoxContainer();
             card.AddChild(cardBody);
@@ -225,12 +291,14 @@ public partial class ShopPanel : SimPanel
                 Name = $"StockPrice_{item.Id.Value}", MinValue = 1, MaxValue = 99999, Rounded = true, Value = 10,
             };
             var itemId = item.Id;
-            var stock = new Button { Name = $"Stock_{item.Id.Value}", Text = "Stock" };
-            stock.Pressed += () =>
+            // U5: wire the drag payload now that priceSpin exists — read live at drag-start
+            // (identical to the Stock button's own read below).
+            card.Payload = () => new Godot.Collections.Dictionary
             {
-                Adapter!.Queue(new StockAction(itemId, (int)priceSpin.Value));
-                _feedback!.Text = $"queued: stock {itemId} at {(int)priceSpin.Value}g";
+                ["kind"] = UnshelvedKind, ["itemId"] = itemId.Value, ["price"] = (int)priceSpin.Value,
             };
+            var stock = new Button { Name = $"Stock_{item.Id.Value}", Text = "Stock" };
+            stock.Pressed += () => PlaceOnShelf(itemId.Value, (int)priceSpin.Value);
             var soldConsumable = item.Effect is not null
                 && state.EventLog.Any(e => e is ItemSold sold && sold.Item == itemId);
             cardBody.AddChild(ListRow(
@@ -368,5 +436,127 @@ public partial class ShopPanel : SimPanel
         // (PKD8-style single overlay), hidden until a card's History button opens it.
         _provenance = new ProvenanceCard { Visible = false };
         AddChild(_provenance);
+    }
+
+    // ── U5: restock as placement — drag-and-drop seams ────────────────────────────────────────
+
+    /// <summary>Number of cosmetic empty-slot placeholders drawn under Your Shelf — purely
+    /// decorative (position is out of scope per the plan's Deferred section), so any fixed count
+    /// is exactly as meaningful as any other.</summary>
+    private const int EmptyShelfSlotCount = 3;
+
+    /// <summary>Width (px) of an empty-shelf-slot placeholder — comfortably past
+    /// <c>LayoutTests.MinReadableWidth</c> (100px) so its label never trips the R7
+    /// one-character-per-line collapse canary.</summary>
+    private const float EmptyShelfSlotWidth = 120f;
+
+    /// <summary>Height (px) of the back-room drop strip in Unshelved Crafts.</summary>
+    private const float ListRowHeightHint = 32f;
+
+    /// <summary>Drag-payload discriminator for a shelved item's <see cref="DragHandle"/> (the
+    /// back-room <see cref="DropZone"/> only accepts this kind).</summary>
+    private const string ShelvedKind = "shelved";
+
+    /// <summary>Drag-payload discriminator for an unshelved craft's <see cref="DragHandle"/> (an
+    /// empty shelf slot's <see cref="DropZone"/> only accepts this kind).</summary>
+    private const string UnshelvedKind = "unshelved";
+
+    /// <summary>
+    /// U5 seam (KTD-A): places a craft on the shelf — queues the exact <see cref="StockAction"/>
+    /// a Stock button press OR a shelf-slot drop produces (design doc §B6: "drag goods onto shelf
+    /// slots"). The one funnel both paths call, so they can never drift apart.
+    /// </summary>
+    public void PlaceOnShelf(int itemId, int price)
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        var id = new ItemId(itemId);
+        Adapter.Queue(new StockAction(id, price));
+        _feedback!.Text = $"queued: stock {id} at {price}g";
+    }
+
+    /// <summary>
+    /// U5 seam (KTD-A): pulls a craft back off the shelf — queues the exact
+    /// <see cref="UnstockAction"/> an Unstock button press OR a drag-off-the-shelf drop produces.
+    /// </summary>
+    public void RemoveFromShelf(int itemId)
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        var id = new ItemId(itemId);
+        Adapter.Queue(new UnstockAction(id));
+        _feedback!.Text = $"queued: unstock {id}";
+    }
+
+    /// <summary>
+    /// U5 seam (KTD-A): reprices a shelved item — queues the exact <see cref="SetPriceAction"/> a
+    /// <see cref="PriceTag"/> edit OR the legacy Reprice button press produces. The tag's own
+    /// <c>MinValue = 1</c> clamp already keeps <paramref name="price"/> &gt;= 1 before this is
+    /// ever reached — this method never re-clamps, so a caller bypassing the tag cannot queue a
+    /// price the tag itself could never have shown.
+    /// </summary>
+    public void Reprice(int itemId, int price)
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        var id = new ItemId(itemId);
+        Adapter.Queue(new SetPriceAction(id, price));
+        _feedback!.Text = $"queued: reprice {id} to {price}g";
+    }
+
+    /// <summary>
+    /// U5: a pick-up-able card. Godot's native drag-and-drop virtuals
+    /// (<see cref="_GetDragData"/>/<see cref="Control._CanDropData"/>/<see cref="Control._DropData"/>)
+    /// have no signal twin the way <c>_GuiInput</c> has its <c>GuiInput</c> C# event, so — same
+    /// idiom as every other drag surface in this codebase (see <c>AlchemyBrewPuzzle.BrewCanvas</c>) —
+    /// this is a small subclass. <see cref="_GetDragData"/> is the ONLY override, and it does
+    /// nothing but build the payload <see cref="Payload"/> describes and show a text preview — no
+    /// sim read, no action queue. A headless test drives this directly
+    /// (<c>handle._GetDragData(Vector2.Zero)</c>), no mouse required.
+    /// </summary>
+    private sealed partial class DragHandle : PanelContainer
+    {
+        /// <summary>Builds this drag's payload (kind + itemId, and — for an unshelved craft —
+        /// its live stock price) at drag-start time. Assigned by the caller once the values it
+        /// closes over exist.</summary>
+        public System.Func<Godot.Collections.Dictionary>? Payload;
+
+        /// <summary>Text shown on the cursor while carried — cosmetic only.</summary>
+        public string PreviewText = string.Empty;
+
+        public override Variant _GetDragData(Vector2 atPosition)
+        {
+            SetDragPreview(new Label { Text = PreviewText });
+            return Payload?.Invoke() ?? new Godot.Collections.Dictionary();
+        }
+    }
+
+    /// <summary>
+    /// U5: a drop target — an empty shelf slot (accepts an unshelved craft, calls
+    /// <see cref="PlaceOnShelf"/>) or the back-room strip (accepts a shelved item, calls
+    /// <see cref="RemoveFromShelf"/>). Both overrides are the one-line seam calls KTD-A requires;
+    /// <see cref="_CanDropData"/> only ever tests the payload shape, never mutates anything. A
+    /// headless test drives this directly (<c>zone._DropData(Vector2.Zero, payload)</c>), no
+    /// mouse required.
+    /// </summary>
+    private sealed partial class DropZone : PanelContainer
+    {
+        public System.Func<Godot.Collections.Dictionary, bool>? Accepts;
+        public System.Action<Godot.Collections.Dictionary>? Drop;
+
+        public override bool _CanDropData(Vector2 atPosition, Variant data) =>
+            Accepts is not null && data.VariantType == Variant.Type.Dictionary && Accepts(data.AsGodotDictionary());
+
+        public override void _DropData(Vector2 atPosition, Variant data) =>
+            Drop?.Invoke(data.AsGodotDictionary());
     }
 }
