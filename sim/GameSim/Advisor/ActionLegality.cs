@@ -18,11 +18,24 @@ namespace GameSim.Advisor;
 /// DELIBERATELY REPLICATES every guard from <see cref="Crafting.CraftingHandlers"/>,
 /// <see cref="Economy.ShopHandlers"/>, <see cref="Economy.OreMarketHandlers"/>,
 /// <see cref="Economy.MaterialVendorHandlers"/>, <see cref="Bounties.BountyHandlers"/>,
-/// <see cref="Professions.ProfessionHandlers"/>, and <see cref="Expedition.CampHandlers"/> — a
-/// second copy of the same rules, on purpose (KTD9: outside <c>Contracts/</c>, no kernel
+/// <see cref="Professions.ProfessionHandlers"/>, <see cref="Expedition.CampHandlers"/>,
+/// <see cref="Economy.ForgeTierHandlers"/>, <see cref="Economy.ForgeSupplyHandlers"/>,
+/// <see cref="Economy.MasterworkAttemptHandlers"/>, and <see cref="Economy.LegendaryCommissionHandlers"/>
+/// — a second copy of the same rules, on purpose (KTD9: outside <c>Contracts/</c>, no kernel
 /// registration, no RNG). The 100-day kernel-parity property test
 /// (<c>ActionLegalityTests</c>) is the standing drift tripwire: any future handler change that
 /// isn't mirrored here fails that test, never silently.
+///
+/// <para>U4: <see cref="IsLegal"/>'s fallthrough THROWS <see cref="UnhandledActionException"/>
+/// instead of returning <c>false</c> for an action type this switch has no case for. This is what
+/// lets a reflection-driven test (<c>ActionLegalityTests</c>) tell "handled, the real answer
+/// happens to be false" apart from "never reached a case at all" — a plain <c>false</c> fallthrough
+/// is legal-shaped and silent (exactly how the four Phase-D gold-sink verbs went unmirrored:
+/// <see cref="UpgradeForgeAction"/>, <see cref="BuyForgeSupplyAction"/>,
+/// <see cref="MasterworkAttemptAction"/>, <see cref="CommissionLegendaryWorkAction"/> all reported
+/// ILLEGAL, forever, with no test failure). Every concrete <see cref="PlayerAction"/> derived type
+/// in <c>Contracts/</c> has a real case below; the throw only fires for a FUTURE type nobody has
+/// mirrored yet, which is exactly the drift this module exists to make loud.</para>
 ///
 /// Pure projection over <see cref="GameState"/>: no mutation, no RNG, no wall clock, no
 /// <c>Contracts/</c> edits.
@@ -56,7 +69,11 @@ public static class ActionLegality
         SuggestItemAction suggest => phase == DayPhase.Morning && SuggestItemLegal(state, suggest),
         HaggleResponseAction haggle => phase == DayPhase.Morning && HaggleResponseLegal(state, haggle),
         CloseCounterAction => phase == DayPhase.Morning && CloseCounterLegal(state),
-        _ => false,
+        UpgradeForgeAction => phase == DayPhase.Morning && UpgradeForgeLegal(state),
+        BuyForgeSupplyAction buyForgeSupply => phase == DayPhase.Morning && BuyForgeSupplyLegal(state, buyForgeSupply),
+        MasterworkAttemptAction masterwork => MasterworkAttemptLegal(state, masterwork),
+        CommissionLegendaryWorkAction commissionLegendary => CommissionLegendaryWorkLegal(state, commissionLegendary),
+        _ => throw new UnhandledActionException(action.GetType()),
     };
 
     /// <summary>
@@ -725,4 +742,199 @@ public static class ActionLegality
     /// (not already closing) and a customer must actually be at the counter.</summary>
     private static bool HasActiveSession(GameState state) =>
         state.Counter is { Closed: false, Active: not null };
+
+    // ---- ForgeTierHandlers.Apply guards (U4): ceiling, lock-and-key floor ore, gold, action-budget
+    // checked LAST — same order as the handler. ----
+    private static bool UpgradeForgeLegal(GameState state)
+    {
+        var tierIndex = Economy.ForgeTierHandlers.CurrentTierIndex(state.Player);
+
+        // 1. Already at the ceiling (Forge V) — nothing left to buy.
+        if (tierIndex > Economy.ForgeTierHandlers.MaxUpgradeIndex)
+        {
+            return false;
+        }
+
+        var oreKey = Economy.ForgeTierHandlers.OreKey[tierIndex];
+        var cost = Economy.ForgeTierHandlers.GoldCost[tierIndex];
+
+        // 2. Lock-and-key: must have the floor's ore in hand — gold alone never buys past the Mine.
+        var oreHave = state.Player.Materials.TryGetValue(oreKey, out var oreStock) ? oreStock : 0;
+        if (oreHave < Economy.ForgeTierHandlers.OreQuantity)
+        {
+            return false;
+        }
+
+        // 3. Gold.
+        if (state.Player.Gold < cost)
+        {
+            return false;
+        }
+
+        // 4. Day action-budget gate — checked LAST, like every other real-work handler.
+        return state.ActionSlotsRemaining > 0;
+    }
+
+    // ---- ForgeSupplyHandlers.Apply guards (U4): quantity, stocked supply key (via the shared
+    // UnitPrice formula — the one pricing source, same precedent as BuyMaterialLegal/QuoteCost),
+    // cost, action-budget checked LAST. ----
+    private static bool BuyForgeSupplyLegal(GameState state, BuyForgeSupplyAction action)
+    {
+        if (action.Quantity <= 0)
+        {
+            return false;
+        }
+
+        var unitPrice = Economy.ForgeSupplyHandlers.UnitPrice(action.SupplyKey);
+        if (unitPrice < 0)
+        {
+            return false;
+        }
+
+        var cost = action.Quantity * unitPrice;
+        if (cost > state.Player.Gold)
+        {
+            return false;
+        }
+
+        return state.ActionSlotsRemaining > 0;
+    }
+
+    // ---- MasterworkAttemptHandlers.Apply guards (U4): recipe/profession/selected, forge-tier gate
+    // (unlocked by ForgeTierHandlers progress), material grade/tier/quantity (same efficiency-node
+    // chain as CraftLegal), coal, flux, gold surcharge power-matched to forge tier, action-budget
+    // checked LAST — same order as the handler. Legal in any phase — the forge never closes, same
+    // as CraftAction/ReforgeHeirloomAction. ----
+    private static bool MasterworkAttemptLegal(GameState state, MasterworkAttemptAction action)
+    {
+        if (!ProfessionRegistry.TryGetRecipe(action.RecipeId, out var recipe))
+        {
+            return false;
+        }
+
+        if (!ProfessionRegistry.TryGet(recipe!.Profession, out var profession))
+        {
+            return false;
+        }
+
+        if (!state.Player.IsSelected(recipe.Profession))
+        {
+            return false;
+        }
+
+        var tierIndex = Economy.ForgeTierHandlers.CurrentTierIndex(state.Player);
+        if (tierIndex < Economy.MasterworkAttemptHandlers.RequiredForgeTierIndex)
+        {
+            return false;
+        }
+
+        if (!RecipeTable.MaterialGrades.ContainsKey(action.MaterialKey))
+        {
+            return false;
+        }
+
+        var talents = state.Player.TalentsFor(recipe.Profession);
+        if (profession!.TierGate.TryGetValue(recipe.Tier, out var gate) && !talents.Contains(gate))
+        {
+            return false;
+        }
+
+        var efficiency = profession.MaterialEfficiencyNode is { } eff && talents.Contains(eff) ? 1 : 0;
+        var neededMaterial = Math.Max(1, recipe.MaterialQuantity - efficiency);
+        var materialHave = state.Player.Materials.TryGetValue(action.MaterialKey, out var matStock) ? matStock : 0;
+        if (materialHave < neededMaterial)
+        {
+            return false;
+        }
+
+        var coalHave = state.Player.Materials.TryGetValue(Economy.ForgeSupplyHandlers.Coal, out var coalStock) ? coalStock : 0;
+        if (coalHave < Economy.MasterworkAttemptHandlers.CoalCost)
+        {
+            return false;
+        }
+
+        var fluxHave = state.Player.Materials.TryGetValue(Economy.ForgeSupplyHandlers.Flux, out var fluxStock) ? fluxStock : 0;
+        if (fluxHave < Economy.MasterworkAttemptHandlers.FluxCost)
+        {
+            return false;
+        }
+
+        var surcharge = Economy.MasterworkAttemptHandlers.GoldSurchargePerTier * (tierIndex + 1);
+        if (state.Player.Gold < surcharge)
+        {
+            return false;
+        }
+
+        return state.ActionSlotsRemaining > 0;
+    }
+
+    // ---- LegendaryCommissionHandlers.Apply guards (U4): campaign cap, recipe/profession/selected,
+    // material grade/tier/quantity (DOUBLE, no efficiency discount — the extravagant path, per the
+    // handler), gold power-matched to forge tier, action-budget checked LAST — same order as the
+    // handler. Legal in any phase, like a craft. ----
+    private static bool CommissionLegendaryWorkLegal(GameState state, CommissionLegendaryWorkAction action)
+    {
+        var used = state.Player.Materials.TryGetValue(Economy.LegendaryCommissionHandlers.CommissionsUsedKey, out var usedStock) ? usedStock : 0;
+        if (used >= Economy.LegendaryCommissionHandlers.MaxPerCampaign)
+        {
+            return false;
+        }
+
+        if (!ProfessionRegistry.TryGetRecipe(action.RecipeId, out var recipe))
+        {
+            return false;
+        }
+
+        if (!ProfessionRegistry.TryGet(recipe!.Profession, out var profession))
+        {
+            return false;
+        }
+
+        if (!state.Player.IsSelected(recipe.Profession))
+        {
+            return false;
+        }
+
+        if (!RecipeTable.MaterialGrades.ContainsKey(action.MaterialKey))
+        {
+            return false;
+        }
+
+        var talents = state.Player.TalentsFor(recipe.Profession);
+        if (profession!.TierGate.TryGetValue(recipe.Tier, out var gate) && !talents.Contains(gate))
+        {
+            return false;
+        }
+
+        var neededMaterial = recipe.MaterialQuantity * Economy.LegendaryCommissionHandlers.MaterialMultiplier;
+        var materialHave = state.Player.Materials.TryGetValue(action.MaterialKey, out var matStock) ? matStock : 0;
+        if (materialHave < neededMaterial)
+        {
+            return false;
+        }
+
+        var tierIndex = Economy.ForgeTierHandlers.CurrentTierIndex(state.Player);
+        var cost = Economy.LegendaryCommissionHandlers.BaseGold * (tierIndex + 1);
+        if (state.Player.Gold < cost)
+        {
+            return false;
+        }
+
+        return state.ActionSlotsRemaining > 0;
+    }
+}
+
+/// <summary>
+/// U4: thrown by <see cref="ActionLegality.IsLegal"/>'s switch fallthrough for any concrete
+/// <see cref="PlayerAction"/> derived type this module has no mirrored case for yet — the drift
+/// signal a reflection-driven test can catch that a silent <c>false</c> fallthrough could not (see
+/// <see cref="ActionLegality"/>'s class doc). Should never fire in production: every concrete type
+/// <c>Contracts/Actions.cs</c> defines has a case in the switch above. If it ever does fire, it
+/// means a new action type shipped without its legality mirror — exactly the bug this exists to
+/// surface loudly instead of silently reporting the new verb as permanently illegal.
+/// </summary>
+public sealed class UnhandledActionException(Type actionType)
+    : Exception($"ActionLegality.IsLegal has no case for action type '{actionType.Name}' — add one before shipping this action.")
+{
+    public Type ActionType { get; } = actionType;
 }

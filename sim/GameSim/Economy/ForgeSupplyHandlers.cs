@@ -29,8 +29,12 @@ public sealed class ForgeSupplyHandlers : IActionHandler
 
     /// <summary>Flat unit price, gold per unit. Coal is cheap and disposable; flux is the rare premium
     /// consumable (a full masterwork attempt spends <see cref="MasterworkAttemptHandlers.FluxCost"/> of
-    /// it), priced accordingly.</summary>
-    private static int UnitPrice(string supplyKey) => supplyKey switch
+    /// it), priced accordingly. Public (not private) so <see cref="Advisor.ActionLegality"/>'s mirror
+    /// reuses this SAME pricing formula instead of duplicating the magic numbers (U4 — the same
+    /// "call the one shared formula" precedent as <see cref="MaterialVendorHandlers.QuoteCost"/>).
+    /// Returns -1 (a "not stocked" sentinel) for any key that isn't <see cref="Coal"/> or
+    /// <see cref="Flux"/>.</summary>
+    public static int UnitPrice(string supplyKey) => supplyKey switch
     {
         Coal => 4,
         Flux => 40,

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Reflection;
 using GameSim;
 using GameSim.Advisor;
 using GameSim.Contracts;
@@ -21,11 +22,16 @@ namespace GameSim.Tests.Advisor;
 /// <para>MF-8: <see cref="BaselinePlayer"/> never opens the counter (PA3's atomic-equivalence pin
 /// depends on it), so the five counter verbs (<see cref="OpenCounterAction"/>,
 /// <see cref="PresentItemAction"/>, <see cref="SuggestItemAction"/>, <see cref="HaggleResponseAction"/>,
-/// <see cref="CloseCounterAction"/>) never reach a LIVE session under that policy alone — a naive
-/// "20/20 coverage" assertion driven only by <see cref="BaselinePlayer"/> would pass VACUOUSLY for
-/// those five. <see cref="ActionLegality_Covers20Of20ActionTypes_AcrossBaselineAndCounterPlayer"/>
-/// additionally drives the <see cref="CounterPlayer"/> harness policy (<c>Harness/</c>,
-/// <c>CounterPlayerTests.cs</c>) to reach a real open session and close that hole.</para>
+/// <see cref="CloseCounterAction"/>) never reach a LIVE session under that policy alone. This file's
+/// <see cref="CounterPlayerDrivenSession_LegalActionsMatchKernel_BothDirections"/> additionally
+/// drives the <see cref="CounterPlayer"/> harness policy (<c>Harness/</c>, <c>CounterPlayerTests.cs</c>)
+/// to reach a real open session and close that hole.</para>
+///
+/// <para>U4: <see cref="IsLegal_HasAnExplicitCase_ForEveryConcreteContractsActionType"/> is the
+/// dispatch-coverage tripwire that replaced a hand-enumerated 20-type list (the exact list that let
+/// Phase D's four gold-sink verbs go unmirrored — see <c>ActionLegality.cs</c>'s class doc). It
+/// discovers every concrete <see cref="PlayerAction"/> type by reflection over the Contracts
+/// assembly, so a future new verb is picked up with zero list maintenance.</para>
 /// </summary>
 public class ActionLegalityTests
 {
@@ -33,19 +39,6 @@ public class ActionLegalityTests
     private const int WarmupDays = 15;
     private const int CounterPlayerDays = 30;
     private const ulong Seed = 4242;
-
-    /// <summary>Every <see cref="PlayerAction"/> derived type registered on the contract (Actions.cs
-    /// <c>[JsonDerivedType]</c> list) — the 20/20 the parity test must reach. Pinned as an explicit
-    /// list (not reflection) so a future new verb makes this file fail to compile/assert rather than
-    /// silently shrinking the bar.</summary>
-    private static readonly ImmutableHashSet<Type> AllActionTypes = ImmutableHashSet.Create(
-        typeof(CraftAction), typeof(StockAction), typeof(SetPriceAction), typeof(UnstockAction),
-        typeof(BuyOreAction), typeof(BuyMaterialAction), typeof(PostBountyAction),
-        typeof(UnlockTalentAction), typeof(SetProfessionsAction), typeof(SendSupplyAction),
-        typeof(RecallPartyAction), typeof(OpenCounterAction), typeof(PresentItemAction),
-        typeof(SuggestItemAction), typeof(HaggleResponseAction), typeof(CloseCounterAction),
-        typeof(AcceptCommissionAction), typeof(DeclineCommissionAction), typeof(HonorMemorialAction),
-        typeof(ReforgeHeirloomAction));
 
     [Fact]
     public void EveryLegalAction_ReplayedThroughKernel_IsNeverRejected()
@@ -77,34 +70,99 @@ public class ActionLegalityTests
         Assert.Contains(typeof(CloseCounterAction), covered);
     }
 
+    /// <summary>
+    /// U4 — the drift tripwire. Reflection discovers every concrete (non-abstract) type deriving
+    /// from <see cref="PlayerAction"/> straight off the Contracts assembly — the exact list a
+    /// hand-maintained set (this test's predecessor) let rot the moment Phase D's four gold-sink
+    /// verbs (<see cref="UpgradeForgeAction"/>, <see cref="BuyForgeSupplyAction"/>,
+    /// <see cref="MasterworkAttemptAction"/>, <see cref="CommissionLegendaryWorkAction"/>) were added
+    /// to <c>Actions.cs</c> without a matching <see cref="ActionLegality"/> case: they silently fell
+    /// through to the switch's old <c>_ =&gt; false</c> arm forever, with no test ever failing,
+    /// because a real "no" from a correctly mirrored guard and "nobody wrote a case yet" are BOTH
+    /// just <c>false</c> — indistinguishable by reflection alone.
+    ///
+    /// <para>What makes this test able to tell them apart: <see cref="ActionLegality.IsLegal"/>'s
+    /// fallthrough now THROWS <see cref="UnhandledActionException"/> instead of returning
+    /// <c>false</c> (see <c>ActionLegality.cs</c>). For every discovered type this test builds a
+    /// minimal, guard-safe instance (<see cref="BuildMinimalInstance"/>) and calls
+    /// <see cref="ActionLegality.IsLegal"/> in every <see cref="DayPhase"/> — any real answer, true
+    /// or false, passes; only the unhandled-case throw fails. A future action type added to
+    /// Contracts without a mirrored case is caught the instant this test runs, regardless of whether
+    /// any harness policy ever organically drives it.</para>
+    /// </summary>
     [Fact]
-    public void ActionLegality_Covers20Of20ActionTypes_AcrossBaselineAndCounterPlayer()
+    public void IsLegal_HasAnExplicitCase_ForEveryConcreteContractsActionType()
     {
-        Assert.Equal(20, AllActionTypes.Count); // pins the total: a future new verb must bump this too
+        var actionTypes = typeof(PlayerAction).Assembly.GetTypes()
+            .Where(t => t.IsClass && !t.IsAbstract && typeof(PlayerAction).IsAssignableFrom(t))
+            .ToList();
 
-        var covered = new HashSet<Type>();
-        // A full 100-day BaselinePlayer run for the broad cross-section (commissions post, heroes
-        // die and leave memorials/reforgeable gear, talents unlock, ...) — everything EXCEPT the
-        // five counter verbs, which need a live session (MF-8).
-        var afterBaseline = RunParityCheck(GameComposition.NewCampaign(Seed), BaselinePlayer.ActionsFor, Days, covered);
-        // Continue the SAME evolved state (shelf already stocked from the run above) with a MERGED
-        // policy (see <see cref="CounterPlayerWithOngoingSupply"/>) to reach
-        // OpenCounter/PresentItem/SuggestItem/HaggleResponse/CloseCounter.
-        RunParityCheck(afterBaseline, CounterPlayerWithOngoingSupply, CounterPlayerDays, covered);
+        Assert.True(actionTypes.Count > 0,
+            "Reflection found zero concrete PlayerAction types — the Contracts assembly/type lookup itself is broken.");
 
-        // SendSupplyAction needs a live InFlight party (Camp phase) holding an UNSHELVED
-        // player-crafted consumable — BaselinePlayer never sends supplies (D5: "no camp verbs, no
-        // deep actions" — Camp verbs are a player-decided-phase feature, not baseline economy), so
-        // the organic 130-day run above can go the whole run without ever manufacturing that exact
-        // shape. Same spirit as MF-8's counter-session fixture: construct the one concrete
-        // opportunity directly and round-trip it through the real kernel rather than accept a
-        // vacuous "never observed" as coverage.
-        covered.UnionWith(SendSupplyFixtureCoverage());
-        covered.UnionWith(HaggleResponseFixtureCoverage());
+        var state = GameComposition.NewCampaign(Seed);
+        var unhandled = new List<string>();
 
-        var missing = AllActionTypes.Where(t => !covered.Contains(t)).Select(t => t.Name).ToList();
-        Assert.True(missing.Count == 0,
-            $"20/20 parity coverage failed — never exercised by LegalActions nor accepted from a driving policy: {string.Join(", ", missing)}");
+        foreach (var type in actionTypes)
+        {
+            var instance = BuildMinimalInstance(type);
+
+            foreach (var phase in Enum.GetValues<DayPhase>())
+            {
+                try
+                {
+                    ActionLegality.IsLegal(state, instance, phase);
+                }
+                catch (UnhandledActionException)
+                {
+                    unhandled.Add($"{type.Name} (phase {phase})");
+                }
+            }
+        }
+
+        Assert.True(unhandled.Count == 0,
+            $"ActionLegality.IsLegal has no case for: {string.Join(", ", unhandled)}");
+    }
+
+    /// <summary>Builds a minimal, guard-safe instance of a concrete <see cref="PlayerAction"/>
+    /// record via its primary (positional) constructor, purely by reflection — never a
+    /// hand-maintained fixture per type, so a newly added action type needs zero new code here to
+    /// be picked up. Every constructor parameter gets the most inert value its type allows (empty
+    /// string, zero/default, an empty immutable collection, or null for anything nullable) — chosen
+    /// so every CURRENT guard fails its own precondition harmlessly before <see cref="ActionLegality"/>
+    /// even finishes dispatching (every handler in this codebase reads via <c>TryGetValue</c>/<c>Any</c>,
+    /// never a throwing indexer, on an absent key) rather than throwing something unrelated to the
+    /// one thing this test checks: whether the switch has a case at all.</summary>
+    private static PlayerAction BuildMinimalInstance(Type type)
+    {
+        var ctor = type
+            .GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+            .Where(c => !(c.GetParameters().Length == 1 && c.GetParameters()[0].ParameterType == type))
+            .OrderByDescending(c => c.GetParameters().Length)
+            .First();
+
+        var args = ctor.GetParameters().Select(p => MinimalArg(p.ParameterType)).ToArray();
+        return (PlayerAction)ctor.Invoke(args);
+    }
+
+    private static object? MinimalArg(Type type)
+    {
+        if (type == typeof(string))
+        {
+            return string.Empty;
+        }
+
+        if (type == typeof(ImmutableSortedSet<string>))
+        {
+            return ImmutableSortedSet<string>.Empty;
+        }
+
+        if (type.IsValueType)
+        {
+            return Activator.CreateInstance(type);
+        }
+
+        return null; // any other nullable/reference param (ImmutableList<int>?, CraftPuzzleInput?, ...)
     }
 
     /// <summary>
@@ -174,8 +232,12 @@ public class ActionLegalityTests
     /// <summary>A concrete, deterministic SendSupplyAction opportunity (Camp phase, a live InFlight
     /// party, an unshelved player-crafted consumable in hand, gold to cover the runner's fee):
     /// checks BOTH directions through the real kernel exactly like <see cref="RunParityCheck"/>
-    /// does for an organically-reached state, then reports the single type it covers.</summary>
-    private static HashSet<Type> SendSupplyFixtureCoverage()
+    /// does for an organically-reached state. BaselinePlayer never sends supplies (D5: "no camp
+    /// verbs, no deep actions"), so an organic run alone never manufactures this exact shape —
+    /// construct the one concrete opportunity directly instead of accepting a vacuous "never
+    /// observed" as coverage.</summary>
+    [Fact]
+    public void SendSupplyAction_ConcreteOpportunity_MirrorAgreesWithKernel()
     {
         var fresh = GameComposition.NewCampaign(Seed);
         var hero = fresh.Heroes.Values.First(h => h.Alive);
@@ -216,23 +278,22 @@ public class ActionLegalityTests
         Assert.True(result.Rejected.IsEmpty,
             $"SendSupply fixture: kernel rejected a fixture ActionLegality reported legal: " +
             $"{string.Join("; ", result.Rejected.Select(r => r.Reason))}");
-
-        return new HashSet<Type> { typeof(SendSupplyAction) };
     }
 
     /// <summary>
     /// Phase B (B2, R-B5): a concrete, deterministic <see cref="HaggleResponseAction"/> opportunity
     /// — one rookie hero with empty gear and gold to spare, offered a shelf item their class can
     /// wear, guaranteed to open a haggle round and accept at the standing offer. Same "construct the
-    /// one concrete opportunity directly" precedent as <see cref="SendSupplyFixtureCoverage"/>: once
-    /// trait teeth are real (a Discerning veteran refusing Common, a Sentimental hero clinging to
-    /// already-worn gear, ...), an ORGANIC multi-week run's survivors can end up entirely maxed-out
-    /// or entirely gated, so this file's coverage no longer safely assumes an organic run reaches
-    /// every counter verb — a rookie's very first purchase never hits any of those gates
-    /// (KD3 no-softlock: the veteran gate is floor-depth gated; empty gear means no sentimental worn
-    /// item either), so this fixture is unaffected by trait variance by construction.
+    /// one concrete opportunity directly" precedent as
+    /// <see cref="SendSupplyAction_ConcreteOpportunity_MirrorAgreesWithKernel"/>: once trait teeth
+    /// are real (a Discerning veteran refusing Common, a Sentimental hero clinging to already-worn
+    /// gear, ...), an ORGANIC multi-week run's survivors can end up entirely maxed-out or entirely
+    /// gated — a rookie's very first purchase never hits any of those gates (KD3 no-softlock: the
+    /// veteran gate is floor-depth gated; empty gear means no sentimental worn item either), so this
+    /// fixture is unaffected by trait variance by construction.
     /// </summary>
-    private static HashSet<Type> HaggleResponseFixtureCoverage()
+    [Fact]
+    public void HaggleResponseAction_ConcreteOpportunity_MirrorAgreesWithKernel()
     {
         var fresh = GameComposition.NewCampaign(Seed);
         var rookie = fresh.Heroes.Values.First(h => h.Alive);
@@ -279,8 +340,6 @@ public class ActionLegalityTests
         Assert.True(haggleResult.Rejected.IsEmpty,
             $"HaggleResponse fixture: kernel rejected a fixture ActionLegality reported legal: " +
             $"{string.Join("; ", haggleResult.Rejected.Select(r => r.Reason))}");
-
-        return new HashSet<Type> { typeof(OpenCounterAction), typeof(PresentItemAction), typeof(HaggleResponseAction) };
     }
 
     [Theory]
