@@ -81,6 +81,15 @@ public partial class ForgePanel : SimPanel
     /// the orchestrator flips the flag alongside the talent remap (see the overlay's own class doc).</summary>
     private EngineeringBench? _engineeringBench;
 
+    /// <summary>U2 (plan <c>2026-07-28-004</c>): the tanner's scraping-frame overlay — the same
+    /// single-instance, self-contained-focus-overlay pattern as <see cref="_minigame"/>/
+    /// <see cref="_brewPuzzle"/>, opened by the "Scrape the hide" button an ACTIVE tanning recipe
+    /// renders where the blacksmith gets "Work the forge". Ships DORMANT: <c>TanningProfession</c>
+    /// does not set <c>ActiveCraft</c> (defaults false), so this branch never renders today — the
+    /// orchestrator flips it together with the profession's talent remap and a balance-gate
+    /// re-run. Presentation only: the sim scores the submitted <c>TanningScrapeInput</c> itself.</summary>
+    private TanningFrame? _tanningFrame;
+
     /// <summary>G1 (game-feel plan §"World VFX keyed to beat state"): the town's forge-station VFX
     /// surface — resolved lazily via <see cref="ResolveTown"/> rather than threaded through
     /// <c>MainUi</c> (this unit's scope keeps MainUi untouched beyond the build-stamp mount), and
@@ -252,6 +261,12 @@ public partial class ForgePanel : SimPanel
                             () => OnAssemblePressed(recipe, material, profession!, unlocked));
                         GateButton(assemble, affordable, $"Not enough {material} — need {needed}, have {have}.");
                     }
+                    else if (professionId == TanningProfession.Id)
+                    {
+                        var scrape = AddButton(controlsRow, $"Scrape_{recipe.RecipeId}", "Scrape the hide",
+                            () => OnScrapeHidePressed(recipe, material, profession!, unlocked));
+                        GateButton(scrape, affordable, $"Not enough {material} — need {needed}, have {have}.");
+                    }
                     else
                     {
                         var work = AddButton(controlsRow, $"WorkForge_{recipe.RecipeId}", "Work the forge",
@@ -396,6 +411,35 @@ public partial class ForgePanel : SimPanel
 
     /// <summary>Bench cancel queues nothing (PKD8) — just closes the overlay.</summary>
     private void OnAssembleCancelled() => _engineeringBench!.Visible = false;
+
+    /// <summary>U2: open the tanning frame overlay for this recipe/material — the "Scrape the
+    /// hide" path beside the auto-craft fallback, mirroring <see cref="OnBrewPressed"/>. The
+    /// patch seed is derived from the recipe id + the CURRENT day (no RNG), same reasoning as
+    /// <see cref="OnWorkForgePressed"/>'s path seed.</summary>
+    private void OnScrapeHidePressed(Recipe recipe, string material, ProfessionDefinition profession, ImmutableSortedSet<string> unlockedTalents)
+    {
+        EnsureBuilt();
+        var day = Adapter?.CurrentState.Day ?? 0;
+        _tanningFrame!.Configure(recipe, material, profession, unlockedTalents, day);
+        _tanningFrame.Visible = true;
+    }
+
+    /// <summary>The tanning frame's ONE completed run → the ONE queued <see cref="CraftAction"/>
+    /// (PKD8 single-action contract, same as <see cref="OnMinigameFinished"/>/<see cref="OnBrewFinished"/>).
+    /// The grade shown is the scorer's preview (SubScores[2] — coverage/ruin/grade order); the sim
+    /// recomputes it authoritatively on resolve.</summary>
+    private void OnTanningFrameFinished(CraftAction action)
+    {
+        Adapter?.Queue(action);
+        _tanningFrame!.Visible = false;
+        var preview = action.SubScores is { Count: 3 } scores ? scores[2] : 0;
+        _feedback!.Text = $"queued: scrape {action.RecipeId} with {action.MaterialKey} " +
+            $"(hide score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)}). " +
+            $"Queued — resolves when {Adapter?.CurrentState.Phase} ticks. Press Advance or wait.";
+    }
+
+    /// <summary>Tanning-frame cancel queues nothing (PKD8) — just closes the overlay.</summary>
+    private void OnTanningFrameCancelled() => _tanningFrame!.Visible = false;
 
     /// <summary>G1: every anvil strike gets the hammer clang; an on-beat strike additionally fires
     /// the spark-burst/flash world VFX. <paramref name="onBeat"/> is the SAME judgement
@@ -633,6 +677,15 @@ public partial class ForgePanel : SimPanel
         AddChild(_engineeringBench);
         _engineeringBench.Finished += OnAssembleFinished;
         _engineeringBench.Cancelled += OnAssembleCancelled;
+
+        // U2: the tanner's scraping-frame overlay — same self-contained-focus pattern, hidden
+        // until a "Scrape the hide" button opens it. Ships dormant behind ActiveCraft (see the
+        // field doc above) — built regardless so the wiring is ready the moment the orchestrator
+        // flips the flag.
+        _tanningFrame = new TanningFrame { Visible = false };
+        AddChild(_tanningFrame);
+        _tanningFrame.Finished += OnTanningFrameFinished;
+        _tanningFrame.Cancelled += OnTanningFrameCancelled;
 
         BuildCeremony();
         BuildSfx();
