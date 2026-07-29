@@ -27,7 +27,23 @@
          than a number to raise again.
 
          Sanity check when a run looks suspiciously fast: the engine suite should report several
-         hundred tests. 54 means the rebuild failed and you are looking at a lie. -->
+         hundred tests. 54 means the rebuild failed and you are looking at a lie.
+
+         SECOND CAUSE OF THE SAME LIE (found 2026-07-29): the rebuild timeout is not the only way
+         to get a green 54. Two gdUnit runs in flight at once — e.g. this checkout and an agent
+         worktree both running `dotnet test godot/tests` — also produce it, reported as
+
+             GdUnit4 Godot Runtime Test Runner ends with exit code: 100
+             Failed to connect: Connection timeout
+
+         followed by the same green 54. The runner cannot reach its Godot runtime, so it drops every
+         [RequireGodotRuntime] test exactly as the rebuild failure does. Raising the timeout above
+         does not help, because nothing timed out.
+
+         So: engine test runs across worktrees must be SERIALIZED. Before diagnosing a 54, check
+         whether another run was live (`tasklist | findstr Godot`) — and note that a bare
+         `dotnet test ... | tail` hides the non-zero exit code behind the pipe, which is how this
+         one initially read as a pass. -->
     <CompileProcessTimeout>360000</CompileProcessTimeout>
   </GdUnit4>
 </RunSettings>

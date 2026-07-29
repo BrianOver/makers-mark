@@ -32,3 +32,38 @@ makes a texture loadable. The durable fix is **both**:
 Regenerate sidecars only on the pinned engine (`.godot-version` is the source of truth). If a
 re-import rewrites uids/import metadata on unrelated assets, `git checkout --` those files before
 committing so only the intended sidecars land in the diff.
+
+## Two tracks: generated, and hand-authored (2026-07-29)
+
+Not everything here comes from SDXL, and the split is deliberate rather than historical.
+
+**Generated track** — backdrops, portraits, monsters, items, props, panel banners. Big enough that
+a diffusion render survives, so it goes through the ComfyUI/SDXL chain above and lands a
+provenance record in `art/build/<id>.build.json`.
+
+**Hand-authored pixel track** — the 20×36 town character bodies (`town2d-hero-*.png`), authored as
+explicit pixel grids in `tools/art/gen_town_sprites.py`. These are NOT generated, for the reason
+`docs/plans/2026-07-28-001-feat-animation-motion-adventure.md` already recorded: at sprite scale a
+diffusion render downsamples to mush, and it cannot hold identity or palette between a base frame
+and its step frame. Confirmed again on 2026-07-29 — an SDXL pass at 768 returned a two-view
+character turnaround in saturated purples, unusable before the downsample even began.
+
+So they are authored one pixel at a time. That buys three things the generated track cannot:
+
+- **The diff is the art.** A palette or silhouette change shows up as readable text in review.
+- **Byte-identical on every machine**, with no GPU in the loop — regenerate with
+  `python tools/art/gen_town_sprites.py`, drift-check with `--check`.
+- **The base and step frames differ ONLY in the legs**, which is what makes the 2-frame walk read
+  as a stride rather than a flicker. `godot/tests/TownSpriteArtTests.cs` pins that invariant, plus
+  the pinned 20×36 size, a minimum distinct-colour count (so art cannot silently regress to a flat
+  placeholder box), and the neutral-body contract `TownAssets2D.ForHero` depends on — bodies stay
+  desaturated so `ClassColors.RoleColor` can multiply the class colour in without double-tinting.
+
+Hand-authored assets get no `art/build/*.build.json`: that record's fields (seed, model, sampler,
+AI disclosure) describe a generation run, and filling them for a hand-drawn grid would be a
+fiction. The script itself, committed and diffable, IS the provenance.
+
+**Still placeholder-tier**, listed honestly so it is not mistaken for finished work: the three
+ground tiles (`town2d-tile-*`, 2-3 colours), `town2d-ground-atlas`, `town2d-prop-tree`,
+`town2d-prop-crate`, `mine-gate`, and `ui-frame-wood`. All are flat programmer art from a
+throwaway script. The hero bodies were done first because they are what the player watches move.

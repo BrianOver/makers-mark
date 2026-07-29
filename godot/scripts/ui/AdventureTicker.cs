@@ -70,9 +70,12 @@ public partial class AdventureTicker : PanelContainer
     /// <summary>
     /// Digest one completed tick's freshly stamped events into day-stamped marquee lines
     /// (R15). Filters to the ambient story surface: item sales, party departures, floor
-    /// records, gossip, and death (Evening-only — see the class doc). Unrecognized/irrelevant
-    /// event types render nothing; a batch with no qualifying event appends nothing (no
-    /// placeholder noise). Same-day repeats (identical formatted text) are deduped.
+    /// records, gossip, death (Evening-only — see the class doc), commission lifecycle,
+    /// arrivals, the drama director's daily incident, and the confidence spiral's
+    /// edge-triggered warnings. Unrecognized/irrelevant event types render nothing; a batch
+    /// with no qualifying event appends nothing (no placeholder noise). Same-day repeats
+    /// (identical formatted text) are deduped — which is also the spam guard, since a
+    /// widened allow-list is exactly how a marquee turns into a nag.
     /// </summary>
     public void OnPhaseCompleted(DayPhase completedPhase, int completedDay, GameState state, IEnumerable<GameEvent> events)
     {
@@ -148,7 +151,58 @@ public partial class AdventureTicker : PanelContainer
         AttributionBeatEvent e when completedPhase == DayPhase.Evening =>
             $"Home safe: {ItemName(state, e.Item)} — {e.Detail}.",
 
+        // ── Events that fired correctly for months and reached no player-visible surface ────────
+        // Everything below was computed by the sim and then dropped by this switch's `_ => null`.
+        // Chosen on one test: would a townsperson hear about it? A daily gauge movement would not.
+
+        RecruitArrived e => $"{HeroName(state, e.Hero)} has come to town looking for work.",
+
+        CommissionPosted e =>
+            $"{HeroName(state, e.Hero)} wants {e.Slot} work, {e.MinQuality} or better, by day {e.DeadlineDay} " +
+            $"— {e.PremiumGold}g over list.",
+        CommissionFulfilled e =>
+            $"{HeroName(state, e.Hero)} takes delivery of {ItemName(state, e.Item)} — {e.Premium}g premium.",
+        CommissionExpired e =>
+            $"{HeroName(state, e.Hero)} gave up waiting on that {e.Slot} commission.",
+
+        // The drama director's daily beat. Five authored incidents, so the prose lives here as a
+        // client-side display map — DirectorSystem emits a bare snake_case id and no sim-side
+        // renderer exists (checked: nothing in Flavor/ or the CLI narrates IncidentFired).
+        IncidentFired e => IncidentLine(e),
+
+        // The confidence spiral. All three are edge-triggered — once per crossing, never per day —
+        // so they cannot flood the strip.
+        RivalExpansionTriggered e =>
+            $"The rival stall is expanding — town confidence has slipped to {e.ConfidencePermille / 10}%.",
+        HeroConsideringLeaving e =>
+            $"{HeroName(state, e.Hero)} is talking about leaving town.",
+        TownConfidenceCollapsed e =>
+            $"The town has lost faith in its smith — {e.MissedAssessments} assessment(s) missed.",
+
+        // DELIBERATELY still silent here, and why:
+        //  • SupplyDelivered — confirmation of the player's OWN camp action, already shown by
+        //    CampPanel. Town gossip about a thing you just did reads as noise.
+        //  • MarketShareShifted — drifts EVERY day (MarketShareSystem, Evening). It is gauge
+        //    material, not news; in a marquee it would crowd out everything above.
         _ => null,
+    };
+
+    /// <summary>
+    /// Prose for the drama director's five authored incidents. Presentation-only, so it belongs
+    /// client-side; the magnitude is folded into the wording rather than stated, since "Severe"
+    /// as a bare adjective reads like a debug label.
+    /// </summary>
+    private static string IncidentLine(IncidentFired e) => e.IncidentId switch
+    {
+        "whispers_in_the_dark" => "Whispers out of the dark — the miners are uneasy.",
+        "goblin_probe" => "Something probed the mine mouth in the night and withdrew.",
+        "spider_brood_swells" => "The spider brood is swelling in the upper tunnels.",
+        "ghoul_warren_breaks" => "A ghoul warren has broken open deeper down.",
+        "the_forgeworm_stirs" => "The forgeworm stirs. The deep rock is warm to the touch.",
+
+        // Unknown id: a new incident landed in DirectorSystem.Catalog without copy here. Say
+        // something true rather than nothing, so the gap surfaces in play instead of vanishing.
+        _ => $"Word from the {e.VenueId}: {e.IncidentId.Replace('_', ' ')}.",
     };
 
     private static string ItemName(GameState state, ItemId id) =>
