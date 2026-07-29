@@ -6,6 +6,7 @@ using GameSim.Contracts;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
+using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -44,10 +45,12 @@ public class ShopPanelTests
             AssertThat(shopText).Contains(item.Quality.ToString());
             AssertThat(shopText).Contains($"{StockPrice}g");
 
-            // Reprice/Unstock controls survive the rethink under their pinned Names.
+            // Reprice/Unstock controls survive the rethink under their pinned Names. U5: Price_
+            // is now a PriceTag (design doc §B6, "a reprice IS a tag flip") — StockPrice_ stays a
+            // SpinBox (MainUiTests still drives it as one).
             Find<Button>(ui.Shop, $"Reprice_{itemId.Value}");
             Find<Button>(ui.Shop, $"Unstock_{itemId.Value}");
-            Find<SpinBox>(ui.Shop, $"Price_{itemId.Value}");
+            Find<PriceTag>(ui.Shop, $"Price_{itemId.Value}");
         }
         finally
         {
@@ -239,6 +242,156 @@ public class ShopPanelTests
             Items = ImmutableSortedDictionary<int, Item>.Empty.Add(item.Id.Value, item),
             Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(item.Id, 15)) },
         };
+    }
+
+    // ── U5 (plan 2026-07-28-002, design doc §B6): restock as placement + price tags ────────────
+    // KTD-A: every gesture (drag/drop, tag flip) terminates in the SAME public seam the pre-U5
+    // button already called (PlaceOnShelf/RemoveFromShelf/Reprice), so these scenarios drive the
+    // ACTUAL gesture — Control's `_GetDragData`/`_CanDropData`/`_DropData` are public virtuals
+    // inherited from `Control`, so a plain `Control`-typed find can invoke the overrides on the
+    // (private) DragHandle/DropZone subclasses directly — no mouse, no OS drag required.
+
+    [TestCase]
+    public void DropOnEmptyShelfSlot_QueuesTheIdenticalStockAction_TheStockButtonWouldProduce()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var itemId = CraftDagger(ui);
+            const int price = 77;
+            Find<SpinBox>(ui.Shop, $"StockPrice_{itemId.Value}").Value = price;
+
+            // Pick up the unshelved craft's card exactly as a real drag would: _GetDragData reads
+            // the SAME live SpinBox the Stock button reads.
+            var dragSource = Find<Control>(ui.Shop, $"UnshelvedCard_{itemId.Value}");
+            var payload = dragSource._GetDragData(Vector2.Zero);
+
+            var dropZone = Find<Control>(ui.Shop, "EmptyShelfSlot_0");
+            AssertThat(dropZone._CanDropData(Vector2.Zero, payload)).IsTrue();
+            dropZone._DropData(Vector2.Zero, payload);
+
+            var pending = ui.Adapter.PendingActions.OfType<StockAction>().ToList();
+            AssertThat(pending.Count).IsEqual(1);
+            AssertThat(pending[0].Item).IsEqual(itemId);
+            AssertThat(pending[0].Price).IsEqual(price);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void DragShelvedItemOffTheShelf_QueuesTheIdenticalUnstockAction_TheUnstockButtonWouldProduce()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var itemId = CraftDagger(ui);
+            Find<SpinBox>(ui.Shop, $"StockPrice_{itemId.Value}").Value = StockPrice;
+            PressEnabled(ui.Shop, $"Stock_{itemId.Value}");
+            ui.Adapter.AdvancePhase(); // lands the stock
+
+            var dragSource = Find<Control>(ui.Shop, $"ShelfCard_{itemId.Value}");
+            var payload = dragSource._GetDragData(Vector2.Zero);
+
+            var dropZone = Find<Control>(ui.Shop, "BackRoomDropZone");
+            AssertThat(dropZone._CanDropData(Vector2.Zero, payload)).IsTrue();
+            dropZone._DropData(Vector2.Zero, payload);
+
+            var pending = ui.Adapter.PendingActions.OfType<UnstockAction>().ToList();
+            AssertThat(pending.Count).IsEqual(1);
+            AssertThat(pending[0].Item).IsEqual(itemId);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ShelfSlotDropZone_RejectsAShelvedItemsPayload_AndBackRoomRejectsAnUnshelvedOne()
+    {
+        // The two drop zones are NOT interchangeable — a shelved-item payload dropped on a shelf
+        // slot (or an unshelved-craft payload dropped on the back room) must be refused so the
+        // wrong drag can never masquerade as the right one.
+        var ui = MountMainUi();
+        try
+        {
+            var itemId = CraftDagger(ui);
+            Find<SpinBox>(ui.Shop, $"StockPrice_{itemId.Value}").Value = StockPrice;
+            PressEnabled(ui.Shop, $"Stock_{itemId.Value}");
+            ui.Adapter.AdvancePhase(); // lands the stock
+
+            var shelfPayload = Find<Control>(ui.Shop, $"ShelfCard_{itemId.Value}")._GetDragData(Vector2.Zero);
+            AssertThat(Find<Control>(ui.Shop, "EmptyShelfSlot_0")._CanDropData(Vector2.Zero, shelfPayload)).IsFalse();
+
+            Variant unshelvedPayload =
+                new Godot.Collections.Dictionary { ["kind"] = "unshelved", ["itemId"] = itemId.Value, ["price"] = 5 };
+            AssertThat(Find<Control>(ui.Shop, "BackRoomDropZone")._CanDropData(Vector2.Zero, unshelvedPayload)).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void PriceTagEdit_QueuesSetPriceAction_WithExactlyTheShownInteger()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var itemId = CraftDagger(ui);
+            Find<SpinBox>(ui.Shop, $"StockPrice_{itemId.Value}").Value = StockPrice;
+            PressEnabled(ui.Shop, $"Stock_{itemId.Value}");
+            ui.Adapter.AdvancePhase(); // lands the stock
+
+            var tag = Find<PriceTag>(ui.Shop, $"Price_{itemId.Value}");
+            tag.SetValue(123);
+
+            AssertThat(tag.Value).IsEqual(123);
+            var pending = ui.Adapter.PendingActions.OfType<SetPriceAction>().ToList();
+            AssertThat(pending.Count).IsEqual(1);
+            AssertThat(pending[0].Item).IsEqual(itemId);
+            AssertThat(pending[0].Price).IsEqual(123);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void PriceTag_CanNeverQueueAPriceBelowOne()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var itemId = CraftDagger(ui);
+            Find<SpinBox>(ui.Shop, $"StockPrice_{itemId.Value}").Value = StockPrice;
+            PressEnabled(ui.Shop, $"Stock_{itemId.Value}");
+            ui.Adapter.AdvancePhase(); // lands the stock
+
+            var tag = Find<PriceTag>(ui.Shop, $"Price_{itemId.Value}");
+            tag.SetValue(-50); // below the floor — the tag itself must clamp, never queue it raw
+
+            AssertThat(tag.Value).IsEqual(1);
+            var pending = ui.Adapter.PendingActions.OfType<SetPriceAction>().ToList();
+            AssertThat(pending.Count).IsEqual(1);
+            AssertThat(pending[0].Item).IsEqual(itemId);
+            AssertThat(pending[0].Price).IsEqual(1);
+
+            // Nudging further down (already at the floor) must not re-queue a duplicate action —
+            // PriceTag.SetValue is a no-op once clamped-value == current value.
+            tag.Nudge(-10);
+            AssertThat(tag.Value).IsEqual(1);
+            AssertThat(ui.Adapter.PendingActions.OfType<SetPriceAction>().Count()).IsEqual(1);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
     }
 }
 #endif
