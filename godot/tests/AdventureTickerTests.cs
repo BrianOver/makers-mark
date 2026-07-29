@@ -266,8 +266,19 @@ public class AdventureTickerTests
         }
     }
 
+    /// <summary>
+    /// <para><b>Reclassified.</b> This case originally also fed <see cref="RecruitArrived"/> and
+    /// asserted it never rendered. That was reversed deliberately: in an inverted MMO the roster IS
+    /// the player's customer base, so a new hero walking into town is a new set of needs to sell
+    /// against — squarely player-relevant news, not chrome. It now renders, and
+    /// <see cref="UnsilencedEventTests.ConfidenceSpiral_EdgeTriggeredWarnings_Render"/> pins it.</para>
+    ///
+    /// <para><see cref="BountyPosted"/> stays silent for a different and still-valid reason: the
+    /// player posts bounties themselves, so a marquee line about one is the town reporting your own
+    /// action back to you.</para>
+    /// </summary>
     [TestCase]
-    public void IrrelevantEventTypes_NeverRender()
+    public void PlayerOwnActionEvents_NeverRender()
     {
         var ticker = new AdventureTicker();
         try
@@ -275,7 +286,6 @@ public class AdventureTickerTests
             ticker.Build();
             var state = StagedWorld();
             var events = ImmutableList.Create<GameEvent>(
-                new RecruitArrived(new HeroId(9)),
                 new BountyPosted(new BountyId(1), TargetFloor: 3, RewardGold: 5));
 
             ticker.OnPhaseCompleted(DayPhase.Morning, 1, state, events);

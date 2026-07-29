@@ -137,6 +137,10 @@ public partial class MainUi : Control
     /// <summary>Gate-b flag 3: the Bestiary gallery (all venues' monsters, a 2D portrait where one
     /// exists), opened from the Tavern's "Bestiary" hotspot.</summary>
     public BestiaryPanel Bestiary { get; private set; } = null!;
+    /// <summary>The campaign's ending screen — the reader for <see cref="CampaignEnded"/>, which
+    /// carried its own chronicle tallies for exactly this purpose and had no reader until now.
+    /// Opens itself on the ending tick; never halts the kernel (the town stays playable after).</summary>
+    public ChronicleScroll Chronicle { get; private set; } = null!;
     /// <summary>Wave 3 (U15): the commission board (<see cref="GameState.Commissions"/>) — opened
     /// from the Prepare-phase HUD button next to Forecast.</summary>
     public CommissionBoard Commissions { get; private set; } = null!;
@@ -265,6 +269,7 @@ public partial class MainUi : Control
         HeroCards.Bind(Adapter);
         Progress.Bind(Adapter);
         Ledger.Bind(Adapter);
+        Chronicle.Bind(Adapter);
         Camp.Bind(Adapter);
         Mirror.Bind(Adapter);
         Pip.Refresh(Adapter.CurrentState, Adapter.LastEvents); // not a SimPanel — no Bind() auto-refresh
@@ -361,6 +366,9 @@ public partial class MainUi : Control
         // U17: tick the bottom-edge adventure ticker marquee (no-op with no lines yet).
         Ticker.Tick(delta);
 
+        // Tick the ending chronicle's staged line reveal (no-op unless the scroll is open).
+        Chronicle.Tick(delta);
+
         // UI-4: tick the day-timeline's pulsing engaged-wait dot (no-op unless it's visible).
         Timeline.Tick(delta);
 
@@ -397,7 +405,20 @@ public partial class MainUi : Control
         // The raw kernel string never reaches a rendered control.
         if (Adapter.LastRejections.IsEmpty)
         {
-            ClearToast();
+            // Nothing the player did wrong this tick, so the banner is free for something the
+            // WORLD did. Rejections always win it — the player's own refused action is more urgent
+            // feedback than news, and stacking both in one strip would bury the refusal.
+            var notice = WorldNotice(Adapter.LastEvents, state);
+            if (notice is null)
+            {
+                ClearToast();
+            }
+            else
+            {
+                _toast.Text = notice;
+                _toastBanner.Visible = true;
+                ToastRemaining = RejectionToastSeconds;
+            }
         }
         else
         {
@@ -405,6 +426,17 @@ public partial class MainUi : Control
                 Adapter.LastRejections.Select(r => FriendlyRejection(r.Reason)).Distinct());
             _toastBanner.Visible = true; // U7: transient banner, hidden except while a toast is live
             ToastRemaining = RejectionToastSeconds;
+        }
+
+        // The campaign's ending. Emitted once, ArcDirectorSystem.EndingDelayDays after the climax.
+        // Rendered from the event's own tallies (see ChronicleScroll) rather than re-derived state.
+        foreach (var evt in Adapter.LastEvents)
+        {
+            if (evt is CampaignEnded ended)
+            {
+                Chronicle.ShowFor(ended);
+                break;
+            }
         }
 
         Tutorial.Advance(state, Adapter.LastEvents); // U23: this tick's events only (KTD5-safe)
@@ -685,6 +717,55 @@ public partial class MainUi : Control
             _goldPopElapsed = 0;
         }
     }
+
+    /// <summary>
+    /// The one world-event worth the toast banner this tick, or null.
+    ///
+    /// <para>Every event below fires correctly in the sim and, before this method existed, reached
+    /// no player-visible surface at all: the confidence spiral moved a gauge silently, the campaign
+    /// could hit its climax without a word, and the destitution stipend changed the player's gold
+    /// with no explanation. The gauges (Confidence/Rent/Assessment chips) show a LEVEL; none of them
+    /// marks the MOMENT it crossed a line, which is the part a player needs to react to.</para>
+    ///
+    /// <para>Deliberately returns ONE line, most consequential first, rather than concatenating.
+    /// A four-second strip that tries to say three things says none of them, and this project has
+    /// already been burned once by a notification that repeated itself into wallpaper. The quieter
+    /// members of this same family (recruits, commissions, the director's incidents) go to the
+    /// <see cref="AdventureTicker"/> instead, where they can scroll past without demanding
+    /// attention.</para>
+    /// </summary>
+    private static string? WorldNotice(IEnumerable<GameEvent> events, GameState state)
+    {
+        string? collapse = null, climax = null, leaving = null, rival = null, stipend = null;
+
+        foreach (var evt in events)
+        {
+            switch (evt)
+            {
+                case TownConfidenceCollapsed e:
+                    collapse = $"The town has lost faith in your forge — {e.MissedAssessments} assessment(s) missed. " +
+                               "Your talents and recipes stay with you.";
+                    break;
+                case ClimaxReached e:
+                    climax = $"Your heroes have reached floor {e.DeepestFloorReached}. Whatever is down there knows it.";
+                    break;
+                case HeroConsideringLeaving e:
+                    leaving = $"{HeroDisplayName(state, e.Hero)} is talking about leaving town.";
+                    break;
+                case RivalExpansionTriggered e:
+                    rival = $"The rival stall is expanding — confidence has slipped to {e.ConfidencePermille / 10}%.";
+                    break;
+                case RecoveryStipendGranted e:
+                    stipend = $"The guild advanced you {e.Amount}g to keep the forge lit.";
+                    break;
+            }
+        }
+
+        return collapse ?? climax ?? leaving ?? rival ?? stipend;
+    }
+
+    private static string HeroDisplayName(GameState state, HeroId id) =>
+        state.Heroes.TryGetValue(id.Value, out var hero) ? hero.Name : $"Hero #{id.Value}";
 
     /// <summary>1.0→1.25→1.0 bounce over the pop's duration — a symmetric sine hump standing in
     /// for the plan's "Trans.Elastic" (no engine Tween in this codebase; accumulated-delta only,
@@ -1334,6 +1415,13 @@ public partial class MainUi : Control
         AddChild(Bestiary);
         Bestiary.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Bestiary.VisibilityChanged += OnBestiaryVisibilityChanged;
+
+        // --- the ending chronicle: code-built modal sibling on the RaidForecastBoard precedent
+        //     (no scene, no import churn). Mounted LAST of the overlays so the campaign's closing
+        //     beat draws above the Ledger it arrives alongside.
+        Chronicle = new ChronicleScroll();
+        AddChild(Chronicle);
+        Chronicle.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
         // --- Wave 3 (U15) commission board: code-built modal sibling, mirroring RaidForecastBoard.
         //     Unlike Forecast it submits actions, so it needs the adapter handed in (Depths.Clock
