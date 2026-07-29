@@ -6,7 +6,6 @@ using System.Text;
 using Godot;
 using GdUnit4;
 using GameSim.Contracts;
-using GodotClient.Town3d;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 

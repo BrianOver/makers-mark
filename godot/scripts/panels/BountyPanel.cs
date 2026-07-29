@@ -130,7 +130,7 @@ public partial class BountyPanel : SimPanel
         }
 
         var legalPhase = state.Phase is DayPhase.Morning or DayPhase.Evening;
-        var reward = (int)(_rewardSpin?.Value ?? 0);
+        var reward = _rewardStack?.Value ?? 0;
         var affordable = state.Player.Gold >= reward;
         GateButton(
             _postButton,
