@@ -12,10 +12,13 @@ namespace GodotClient.Tests;
 
 /// <summary>
 /// Gate-b flag 3: <see cref="BestiaryPanel"/> is the venue-independent surface for the parked
-/// Gloomwood/Sunken-Crypt monster meshes. Pure projection of <see cref="VenueRegistry.All"/> +
-/// <see cref="AssetCatalog.MonsterModelFile"/> — no sim state, no <c>GameState</c>. Property-only:
-/// <see cref="MonsterView3D"/> stays render-disabled under the headless driver, so a selection
-/// loads/fits the mesh (asserted via <see cref="MonsterView3D.HasMonster"/>) without a render.
+/// Gloomwood/Sunken-Crypt monsters. Pure projection of <see cref="VenueRegistry.All"/> +
+/// <see cref="AssetCatalog.MonsterPortrait"/> — no sim state, no <c>GameState</c>.
+///
+/// <para>chore/kill-3d-residue: the retired <c>MonsterView3D</c> mesh preview (and its
+/// <c>SelectedHasMesh</c> test hook) is replaced by a plain 2D portrait
+/// (<see cref="BestiaryPanel.SelectedHasPortrait"/>) with procedural breathe/hover/reveal motion —
+/// no <see cref="SubViewport"/>, so no 3D-render-hang concern here at all anymore.</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -37,64 +40,108 @@ public class BestiaryPanelTests
     }
 
     [TestCase]
-    public void OnOpen_AutoSelectsFirstMonsterThatHasAMesh()
+    public void OnOpen_AutoSelectsFirstMonsterThatHasAPortrait()
     {
         var ui = MountMainUi();
         try
         {
             ui.Bestiary.ShowAll();
 
-            // Venues iterate Id-sorted (emberfall, gloomwood, mine, sunkencrypt); the first monster
-            // with a gen model is Gloomwood F1's Bramble Boar, so the viewer is never blank on open.
-            AssertThat(ui.Bestiary.SelectedHasMesh).IsTrue();
-            AssertThat(ui.Bestiary.SelectedKind).IsNotNull();
+            // Venues iterate Id-sorted (emberfall, gloomwood, mine, sunken-crypt); Emberfall's five
+            // monsters have no committed portrait, so the first WITH one is Gloomwood F1's Bramble
+            // Boar — the viewer is never blank on open.
+            AssertThat(ui.Bestiary.SelectedHasPortrait).IsTrue();
+            AssertThat(ui.Bestiary.SelectedKind).IsEqual("Bramble Boar");
         }
         finally { Unmount(ui); }
     }
 
     [TestCase]
-    public void SelectingVenueMonsterWithModel_ShowsRealMesh()
+    public void SelectingVenueMonsterWithPortrait_ShowsPortrait()
     {
         var ui = MountMainUi();
         try
         {
             ui.Bestiary.ShowAll();
-            PressEnabled(ui.Bestiary, "Bestiary_crypt-crab"); // Sunken Crypt F1 — has a gen model
+            PressEnabled(ui.Bestiary, "Bestiary_crypt-crab"); // Sunken Crypt F1 — has a committed portrait
 
             AssertThat(ui.Bestiary.SelectedKind).IsEqual("Crypt Crab");
-            AssertThat(ui.Bestiary.SelectedHasMesh).IsTrue();
+            AssertThat(ui.Bestiary.SelectedHasPortrait).IsTrue();
         }
         finally { Unmount(ui); }
     }
 
     [TestCase]
-    public void SelectingMonsterWithoutModel_FallsBackGracefully_NoMesh()
+    public void SelectingMonsterWithoutPortrait_FallsBackGracefully_NoPortrait()
     {
         var ui = MountMainUi();
         try
         {
             ui.Bestiary.ShowAll();
-            PressEnabled(ui.Bestiary, "Bestiary_cinder-imp"); // Emberfall — registered, no gen model yet
+            PressEnabled(ui.Bestiary, "Bestiary_cinder-imp"); // Emberfall — registered, no portrait art yet
 
             AssertThat(ui.Bestiary.SelectedKind).IsEqual("Cinder Imp");
-            AssertThat(ui.Bestiary.SelectedHasMesh).IsFalse(); // graceful: card, not a crash
+            AssertThat(ui.Bestiary.SelectedHasPortrait).IsFalse(); // graceful: card, not a crash
         }
         finally { Unmount(ui); }
     }
 
     [TestCase]
-    public void Close_HidesAndClearsTheMesh()
+    public void SelectingEmberfallMonster_WithGenMeshButNoPortrait_StillFallsBackGracefully()
+    {
+        // Slag Hound/Bellows-Mad/Molten Archivist/Undying Forge-Heart each had a retired GLB but
+        // were NEVER given a 2D portrait — deleting the mesh tree (chore/kill-3d-residue) drops
+        // these four from "shows art" to the same text-only card Cinder Imp always used, since no
+        // 2D substitute exists in the repo. Documented art gap (Emberfall isn't in
+        // VenueRegistry.LiveRotation yet), not a wiring defect — this pins the graceful-degrade
+        // behavior so a future 2D-portrait wave for Emberfall is a pure addition, not a fix.
+        var ui = MountMainUi();
+        try
+        {
+            ui.Bestiary.ShowAll();
+            PressEnabled(ui.Bestiary, "Bestiary_slag-hound");
+
+            AssertThat(ui.Bestiary.SelectedKind).IsEqual("Slag Hound");
+            AssertThat(ui.Bestiary.SelectedHasPortrait).IsFalse();
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void Close_HidesAndClearsThePortrait()
     {
         var ui = MountMainUi();
         try
         {
             ui.Bestiary.ShowAll();
-            AssertThat(ui.Bestiary.SelectedHasMesh).IsTrue();
+            AssertThat(ui.Bestiary.SelectedHasPortrait).IsTrue();
 
             PressEnabled(ui.Bestiary, "BestiaryClose");
 
             AssertThat(ui.Bestiary.Visible).IsFalse();
-            AssertThat(ui.Bestiary.SelectedHasMesh).IsFalse();
+            AssertThat(ui.Bestiary.SelectedHasPortrait).IsFalse();
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void Select_StartsFadedIn_ThenProcessRevealsTowardOpaque()
+    {
+        // The reveal fade-in (PortraitRevealSeconds): a fresh selection starts at alpha 0 and
+        // _Process eases it up — never an instant pop, never stuck at 0 (dead sticker) forever.
+        var ui = MountMainUi();
+        try
+        {
+            ui.Bestiary.ShowAll(); // auto-selects Bramble Boar
+            var portrait = Find<TextureRect>(ui.Bestiary, "BestiaryPortrait");
+            AssertThat(portrait.Modulate.A).IsEqual(0f);
+
+            ui.Bestiary._Process(0.1);
+            var firstAlpha = portrait.Modulate.A;
+            AssertThat(firstAlpha).IsGreater(0f);
+
+            ui.Bestiary._Process(1.0); // comfortably past PortraitRevealSeconds
+            AssertThat(portrait.Modulate.A).IsEqual(1f);
         }
         finally { Unmount(ui); }
     }

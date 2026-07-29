@@ -8,32 +8,52 @@ namespace GodotClient.Panels;
 
 /// <summary>
 /// The Bestiary (gate-b flag 3): a READ-ONLY "known threats" gallery — every registered venue's
-/// per-floor monster, with a real 3D mesh preview for the ones that have a generated model
-/// (<see cref="AssetCatalog.MonsterModelFile"/>) and a name/stats card for the rest. This is the
-/// venue-independent surface the parked Gloomwood/Sunken-Crypt monster meshes needed: those venues
-/// are registered (<see cref="VenueRegistry.All"/>) but not in the live raid rotation, so their
+/// per-floor monster, with a lit 2D portrait for the ones committed art exists for
+/// (<see cref="AssetCatalog.MonsterPortrait"/>) and a name/stats card for the rest. This is the
+/// venue-independent surface the parked Gloomwood/Sunken-Crypt monsters needed: those venues are
+/// registered (<see cref="VenueRegistry.All"/>) but not in the live raid rotation, so their
 /// monsters never reach <c>MineWatch</c>'s Mine-only milestone flash — here the player can still
 /// study them (framed as heroes' tavern tales of the depths).
 ///
 /// <para>Self-contained code-built modal, same idiom as <see cref="ProvenanceCard"/>/
 /// <see cref="RaidForecastBoard"/>: dim backdrop, centered card, a Close button; no SimAdapter
 /// binding — it reads the static <see cref="VenueRegistry"/> directly (adapter-only, KTD2). Reads
-/// no <c>GameState</c>, so it is the same for every campaign.</para>
+/// no <c>GameState</c>, so it is the same for every campaign (this is also why den-threat legibility
+/// — a live, per-campaign meter — lives on <c>MineWatch</c> instead, see that type's remarks, rather
+/// than being bolted onto this stateless panel).</para>
 ///
-/// <para>A single embedded <see cref="MonsterView3D"/> stage renders the SELECTED monster (the
-/// same single-stage pattern MineWatch uses — never N live 3D viewports). Headless-test safe:
-/// <see cref="MonsterView3D"/> keeps its viewport <c>Disabled</c> under the headless driver, so
-/// selecting a monster loads + fits the mesh (asserted via <see cref="MonsterView3D.HasMonster"/>)
-/// without ever scheduling a 3D render (3D-render-hang rule).</para>
+/// <para><b>chore/kill-3d-residue:</b> replaces the retired <c>MonsterView3D</c> mesh preview (an
+/// idle-spinning GLB in an isolated <see cref="SubViewport"/>) with a single <see cref="TextureRect"/>
+/// portrait, given tasteful procedural life via the house accumulated-delta idiom (<see
+/// cref="_Process"/> below, same recipe as <c>town2d/SpriteMotion</c>'s idle breath and
+/// <see cref="DelveStage"/>'s monster slide-in) so a selection never reads as a dead sticker: a slow
+/// breathe/hover loop plus a brief reveal fade-in on every fresh <see cref="Select"/>. Art coverage
+/// is NOT 1:1 with the old mesh set — Emberfall Foundry's four non-"Cinder Imp" monsters (gen'd a
+/// GLB but never a 2D portrait) fall all the way to the pre-existing text-only card, same as Cinder
+/// Imp always has; Emberfall is registered but not live (<see cref="VenueRegistry.LiveRotation"/>),
+/// so this is a real but low-stakes art gap, not a wiring defect (see the removal PR notes).</para>
 /// </summary>
 public partial class BestiaryPanel : Control
 {
+    /// <summary>Portrait box size — matches the retired 3D stage's render-target size so the card
+    /// layout is unchanged.</summary>
+    private static readonly Vector2 PortraitSize = new(256, 256);
+
+    private const float PortraitRevealSeconds = 0.35f; // fresh-selection fade-in duration
+    private const float PortraitBreathHz = 0.5f; // slow breathing cadence
+    private const float PortraitBreathAmplitude = 0.03f; // ±3% scale pulse
+    private const float PortraitHoverHz = 0.35f;
+    private const float PortraitHoverAmplitudePx = 3f; // gentle vertical hover
+
     private VBoxContainer _list = null!;
-    private MonsterView3D _monsterView = null!;
-    private TextureRect _monster3D = null!;
+    private TextureRect _monsterPortrait = null!;
     private Label _detailTitle = null!;
     private Label _detailBody = null!;
     private bool _built;
+
+    private double _portraitTime;
+    private float _portraitPhaseSeed;
+    private float _portraitReveal = 1f; // 0 at a fresh selection, ramps to 1 (see PortraitRevealSeconds)
 
     /// <summary>Total monster entries listed by the last <see cref="ShowAll"/> — test hook.</summary>
     public int MonsterCount { get; private set; }
@@ -42,15 +62,15 @@ public partial class BestiaryPanel : Control
     /// selection — test hook.</summary>
     public string? SelectedKind { get; private set; }
 
-    /// <summary>True iff the selected monster is showing a real 3D mesh (vs. the no-model card) —
-    /// test hook mirroring <see cref="MonsterView3D.HasMonster"/>.</summary>
-    public bool SelectedHasMesh => _monsterView.HasMonster;
+    /// <summary>True iff the selected monster is showing a real 2D portrait (vs. the no-art card) —
+    /// test hook, replaces the retired <c>SelectedHasMesh</c>.</summary>
+    public bool SelectedHasPortrait => _monsterPortrait.Texture is not null;
 
     public override void _Ready() => EnsureBuilt();
 
     /// <summary>Build (idempotent) the venue→monster list from <see cref="VenueRegistry.All"/> and
-    /// open the overlay. Auto-selects the first monster that has a 3D model so the viewer is never
-    /// blank on open.</summary>
+    /// open the overlay. Auto-selects the first monster that has a committed portrait so the viewer
+    /// is never blank on open.</summary>
     public void ShowAll()
     {
         EnsureBuilt();
@@ -62,7 +82,7 @@ public partial class BestiaryPanel : Control
         }
 
         var count = 0;
-        string? firstMeshKind = null;
+        string? firstPortraitKind = null;
         foreach (var venue in VenueRegistry.All.Values)
         {
             var header = AddLabel(_list, venue.DisplayName);
@@ -72,12 +92,12 @@ public partial class BestiaryPanel : Control
             foreach (var floor in venue.Floors)
             {
                 var kind = floor.MonsterKind;
-                var hasMesh = AssetCatalog.MonsterModelFile(kind) is not null;
+                var hasPortrait = AssetCatalog.MonsterPortrait(kind, VenueArtPrefix(venue.Id)) is not null;
                 var button = new Button
                 {
                     Name = $"Bestiary_{Slug(kind)}",
-                    Text = hasMesh ? $"F{floor.Floor}  {kind}  ✦" : $"F{floor.Floor}  {kind}",
-                    TooltipText = hasMesh ? "3D model available" : "no 3D model yet",
+                    Text = hasPortrait ? $"F{floor.Floor}  {kind}  ✦" : $"F{floor.Floor}  {kind}",
+                    TooltipText = hasPortrait ? "likeness on file" : "no likeness yet",
                     Alignment = HorizontalAlignment.Left,
                 };
                 // Capture loop values explicitly (closure over the iteration variable).
@@ -87,9 +107,9 @@ public partial class BestiaryPanel : Control
                 _list.AddChild(button);
 
                 count++;
-                if (hasMesh && firstMeshKind is null)
+                if (hasPortrait && firstPortraitKind is null)
                 {
-                    firstMeshKind = kind;
+                    firstPortraitKind = kind;
                     Select(venue, floor);
                 }
             }
@@ -101,7 +121,7 @@ public partial class BestiaryPanel : Control
 
     public void Close()
     {
-        _monsterView.ClearMonster();
+        _monsterPortrait.Texture = null; // matches the old ClearMonster contract: closed = nothing selected
         Visible = false;
     }
 
@@ -111,22 +131,87 @@ public partial class BestiaryPanel : Control
         var kind = floor.MonsterKind;
         SelectedKind = kind;
 
-        var showed3D = _monsterView.ShowMonster(kind);
-        if (showed3D && _monster3D.Texture is null && IsInsideTree())
+        var portrait = AssetCatalog.MonsterPortrait(kind, VenueArtPrefix(venue.Id));
+        _monsterPortrait.Texture = portrait;
+        _monsterPortrait.Visible = portrait is not null;
+        if (portrait is not null)
         {
-            // ViewportTexture needs a live viewport path — assigned lazily, mirroring MineWatch,
-            // so orphaned property-only tests never touch the render server.
-            _monster3D.Texture = _monsterView.GetTexture();
+            // Reset the reveal/breathe cycle so every fresh selection re-announces itself instead
+            // of picking up mid-loop (and a distinct per-kind phase so switching monsters never
+            // looks like the same figure re-skinned). Applied immediately (not left for the next
+            // _Process tick) so there is never a one-frame flash of the fully-opaque steady state
+            // before the fade-in starts.
+            _portraitTime = 0;
+            _portraitReveal = 0f;
+            _portraitPhaseSeed = PhaseSeedFor(kind);
+            _monsterPortrait.Modulate = new Color(1, 1, 1, 0f);
+            _monsterPortrait.Scale = Vector2.One * 0.92f;
+            _monsterPortrait.Position = Vector2.Zero;
         }
 
-        _monster3D.Visible = showed3D;
         _detailTitle.Text = $"{kind} — {venue.DisplayName} F{floor.Floor}";
         _detailBody.Text =
             $"HP {floor.MonsterHp}   Attack {floor.MonsterAttack}   Defense {floor.MonsterDefense}\n" +
             $"Gold/kill {floor.GoldPerKill}   Drops {floor.OreKey}\n\n" +
-            (showed3D
+            (portrait is not null
                 ? "A hero who has faced this one can tell you its shape."
                 : "No likeness has made it back to the tavern wall yet — only stories.");
+    }
+
+    /// <summary>
+    /// Slow breathe (scale) + hover (position) + reveal fade-in for the selected portrait — the
+    /// house accumulated-delta idiom (no Tween/AnimationPlayer, see <c>town2d/SpriteMotion</c>).
+    /// Guarded on visibility/texture so a closed or empty panel costs nothing per frame.
+    /// </summary>
+    public override void _Process(double delta)
+    {
+        if (!Visible || _monsterPortrait.Texture is null)
+        {
+            return;
+        }
+
+        _portraitTime += delta;
+        _portraitReveal = Mathf.Min(1f, _portraitReveal + (float)delta / PortraitRevealSeconds);
+
+        var breath = PortraitBreathAmplitude *
+            Mathf.Sin((float)(_portraitTime * PortraitBreathHz * Mathf.Tau) + _portraitPhaseSeed);
+        var hover = PortraitHoverAmplitudePx *
+            Mathf.Sin((float)(_portraitTime * PortraitHoverHz * Mathf.Tau) + _portraitPhaseSeed);
+
+        // Reveal eases scale in from slightly-small + fades alpha in, on top of the steady-state
+        // breathing — a fresh selection reads as arriving, not just appearing.
+        _monsterPortrait.Scale = Vector2.One * (1f + breath) * Mathf.Lerp(0.92f, 1f, _portraitReveal);
+        _monsterPortrait.Position = new Vector2(0, hover);
+        _monsterPortrait.Modulate = new Color(1, 1, 1, _portraitReveal);
+    }
+
+    /// <summary>Maps a venue's sim <see cref="VenueDefinition.Id"/> to the art-manifest prefix
+    /// <see cref="AssetCatalog.MonsterPortrait"/> expects. The Mine's monsters use the prefix-less
+    /// default ("monster-"); most other venues' art ids match their own sim Id — except Sunken
+    /// Crypt, whose committed ids drop the sim Id's hyphen ("sunken-crypt" sim-side, "sunkencrypt"
+    /// art-side; see <c>AssetCatalogTests</c>/<c>ArtWiringCoverageTests</c>). Presentation-only glue
+    /// — never renames anything on the <c>GameSim.Venues</c> side (KTD-C).</summary>
+    private static string? VenueArtPrefix(string venueId) => venueId switch
+    {
+        VenueRegistry.MineId => null,
+        "sunken-crypt" => "sunkencrypt",
+        _ => venueId,
+    };
+
+    /// <summary>Deterministic phase offset (radians) from a monster kind string, same purpose as
+    /// <c>SpriteMotion</c>'s id-derived idle-breath phase offset: a plain sum-of-chars hash (NOT
+    /// <see cref="string.GetHashCode()"/>, which .NET randomizes per process) so switching between
+    /// two kinds never coincidentally breathes in lockstep, and repeated runs against the same kind
+    /// always produce the same phase.</summary>
+    private static float PhaseSeedFor(string kind)
+    {
+        var hash = 0;
+        foreach (var c in kind)
+        {
+            hash = unchecked((hash * 31) + c);
+        }
+
+        return (hash & 0xFFFF) / 65536f * Mathf.Tau;
     }
 
     private void EnsureBuilt()
@@ -172,22 +257,30 @@ public partial class BestiaryPanel : Control
         _list = new VBoxContainer { Name = "BestiaryList", SizeFlagsHorizontal = SizeFlags.ExpandFill };
         leftScroll.AddChild(_list);
 
-        // Right: 3D mesh preview + detail card.
+        // Right: 2D portrait preview + detail card.
         var right = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         body.AddChild(right);
 
-        _monsterView = new MonsterView3D();
-        _monsterView.Build();
-        right.AddChild(_monsterView);
-
-        _monster3D = new TextureRect
+        // A plain Control "socket" (NOT a Container) holding the portrait — Containers reposition
+        // their children on every sort pass, which would fight the per-frame hover offset below
+        // (same "sibling, not a Container descendant" reasoning MineWatch/DelveStage use for their
+        // own animated nodes, one container tier down here since this whole panel is Control-based).
+        var portraitSocket = new Control
         {
-            Name = "BestiaryMesh",
-            CustomMinimumSize = MonsterView3D.ViewSize,
-            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            Name = "BestiaryPortraitSocket",
+            CustomMinimumSize = PortraitSize,
             SizeFlagsHorizontal = SizeFlags.ShrinkCenter,
         };
-        right.AddChild(_monster3D);
+        right.AddChild(portraitSocket);
+
+        _monsterPortrait = new TextureRect
+        {
+            Name = "BestiaryPortrait",
+            Size = PortraitSize,
+            PivotOffset = PortraitSize / 2f, // breathe/hover scale from the visual center, not top-left
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+        };
+        portraitSocket.AddChild(_monsterPortrait);
 
         _detailTitle = AddLabel(right, string.Empty);
         _detailTitle.Name = "BestiaryDetailTitle";

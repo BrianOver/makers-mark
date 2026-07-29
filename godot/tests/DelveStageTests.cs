@@ -17,8 +17,8 @@ namespace GodotClient.Tests;
 /// forget without leaking, and — the highest-value scenario — a <see
 /// cref="DelveBeatKind.SwallowedByDark"/> beat NEVER renders HP/pips for that hero, only the
 /// cloud. A real <see cref="SubViewport"/> is never involved (pure Node2D/Control construction),
-/// so this is 2D-only and headless-safe by construction — no 3D-render-hang risk (see
-/// <c>MonsterView3D</c> for that trap; irrelevant here).
+/// so this is 2D-only and headless-safe by construction — no 3D-render-hang risk (the retired
+/// <c>MonsterView3D</c>'s trap; irrelevant here, and gone entirely as of chore/kill-3d-residue).
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]

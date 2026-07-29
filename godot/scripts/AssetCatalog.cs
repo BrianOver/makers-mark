@@ -78,53 +78,6 @@ public static class AssetCatalog
     /// note: no image exists yet, per <c>TownSpecsExtra</c>).</summary>
     public static CanvasTexture? PlayerAvatar() => IconRegistry.Lit(PlayerAvatarId);
 
-    // ---- 3D gen monster meshes (MonsterView3D spectate stage) ---------------------------------
-
-    /// <summary>
-    /// AI-gen monster GLB file names under <c>res://assets/models/gen/</c> (loaded via
-    /// <see cref="GodotClient.Panels.MonsterView3D.InstantiateGenModel"/>), keyed by slugged Mine
-    /// monster kind. An EXPLICIT map (not slug composition like <see cref="MonsterPortraitId"/>)
-    /// because the gen pipeline shipped shortened file names ("monster-spider.glb", not
-    /// "monster-tunnel-spider.glb"). A kind with no entry ("forgeworm" — no gen model yet) resolves
-    /// null, which is <c>MonsterView3D</c>'s cue to keep the 2D portrait fallback.
-    /// </summary>
-    private static readonly Dictionary<string, string> MonsterModelFiles = new()
-    {
-        // Mine (MineWatch milestone flash)
-        ["cave-rat"] = "monster-cave-rat.glb",
-        ["tunnel-spider"] = "monster-spider.glb",
-        ["deep-ghoul"] = "monster-ghoul.glb",
-        ["ore-golem"] = "monster-ore-golem.glb",
-        // Venue monsters — surfaced in the Bestiary (Gloomwood F1/F2, Sunken Crypt F1). Keyed by
-        // the venue-floor MonsterKind slug (Slugify tolerates the display name), no venue prefix
-        // because the file names are already unique.
-        ["bramble-boar"] = "monster-bramble-boar.glb",
-        ["lantern-moth"] = "monster-lantern-moth.glb",
-        ["crypt-crab"] = "monster-crypt-crab.glb",
-        // Gloomwood F3/F4 (U-C4 second venue) — the deep bosses, gen'd 2026-07-26.
-        ["wicker-shepherd"] = "monster-wicker-shepherd.glb",
-        ["old-mossjaw"] = "monster-old-mossjaw.glb",
-        // Mine deep-floor + Sunken Crypt roster — gen'd 2026-07-26, completing those venues' 3D sets.
-        ["forgeworm"] = "monster-forgeworm.glb",
-        ["bog-wight"] = "monster-bog-wight.glb",
-        ["choir-of-teeth"] = "monster-choir-of-teeth.glb",
-        ["reliquary-mimic"] = "monster-reliquary-mimic.glb",
-        ["undertow"] = "monster-undertow.glb",
-        // Emberfall Foundry roster — gen'd 2026-07-26. "Cinder Imp" (F1) is deliberately left
-        // model-less as the fallback-path example for MonsterView3D/Bestiary tests.
-        ["molten-archivist"] = "monster-molten-archivist.glb",
-        ["slag-hound"] = "monster-slag-hound.glb",
-        ["bellows-mad"] = "monster-bellows-mad.glb",
-        ["undying-forge-heart"] = "monster-undying-forge-heart.glb",
-    };
-
-    /// <summary>Gen monster GLB file name for <paramref name="kind"/> (display name "Cave Rat" or
-    /// slug "cave-rat" — same <see cref="Slugify"/> tolerance as <see cref="MonsterPortraitId"/>),
-    /// or null when no 3D model has been generated for that kind yet. Null-tolerant like every
-    /// resolver here — never a throw.</summary>
-    public static string? MonsterModelFile(string kind) =>
-        MonsterModelFiles.TryGetValue(Slugify(kind), out var file) ? file : null;
-
     // ---- world-rework U14 (KTD6): feet-anchor offset table ------------------------------------
 
     /// <summary>

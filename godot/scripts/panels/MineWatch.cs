@@ -40,7 +40,12 @@ namespace GodotClient.Panels;
 /// whatever the phase gate says. The silhouette's monster kind has no event field to read (a
 /// <see cref="FloorRecordSet"/> carries no monster at all; an <see cref="AttributionBeatEvent"/>'s
 /// <c>Detail</c> only sometimes names one, in free text) — deterministically picked from the floor
-/// number over the committed roster instead (flavor, not a specific-encounter claim).</para>
+/// number over the committed roster instead (flavor, not a specific-encounter claim). A
+/// <see cref="DenThreatShifted"/> for the Mine rides the SAME flash mechanism (chore/kill-3d-residue):
+/// it is the only client-side reader of that event, giving the daily den-escalation pass (<c>
+/// DirectorSystem.TickDens</c>) an actual moment-in-time callout instead of a silent write — legible
+/// without a new panel, and complementary (not redundant) to <c>DepthsPanel</c>'s always-on tier
+/// line beneath this strip, which shows the CURRENT state rather than the moment it changed.</para>
 ///
 /// <para><b>Graceful degrade:</b> a missing "mine-backdrop" makes
 /// <see cref="HasContent"/> false and collapses the WHOLE strip forever, whatever the phase —
@@ -110,8 +115,6 @@ public partial class MineWatch : SubViewportContainer
     private PointLight2D _campfireLight = null!;
     private CpuParticles2D _embers = null!;
     private Sprite2D _monsterSlide = null!;
-    private MonsterView3D _monsterView = null!;
-    private Sprite2D _monster3DSlide = null!;
     private Label _recordBark = null!;
     private GradientTexture2D _lightGradient = null!;
 
@@ -171,14 +174,8 @@ public partial class MineWatch : SubViewportContainer
     /// <summary>Live backdrop tile count (test hook) — <c>ceil(containerWidth/BackdropTileWidth)+1</c>.</summary>
     public int BackdropTileCount => _backdropTiles.Count;
 
-    /// <summary>The 3D gen-monster stage the milestone flash prefers (test/tuning hook).</summary>
-    public MonsterView3D MonsterView => _monsterView;
-
-    /// <summary>True while the milestone flash is sliding the REAL 3D mesh (test hook).</summary>
-    public bool Monster3DSlideVisible => _monster3DSlide.Visible;
-
-    /// <summary>True while the flash fell back to the 2D dark silhouette (test hook).</summary>
-    public bool Monster2DSlideVisible => _monsterSlide.Visible;
+    /// <summary>True while the milestone flash is sliding the monster silhouette (test hook).</summary>
+    public bool MonsterSlideVisible => _monsterSlide.Visible;
 
     /// <summary>Current left-edge X of every backdrop tile, world/px units (test hook) — each tile
     /// spans <c>[X, X+BackdropTileWidth)</c>; used to assert full-width coverage through a scroll cycle.</summary>
@@ -274,24 +271,6 @@ public partial class MineWatch : SubViewportContainer
         _monsterSlide = new Sprite2D { Name = "MonsterSlide", Visible = false, Modulate = MonsterTint };
         _world.AddChild(_monsterSlide);
 
-        // 3D gen-monster stage (see MonsterView3D): the milestone flash prefers a REAL 3D mesh
-        // where one exists, sliding this viewport's texture across the strip in place of the 2D
-        // silhouette above. Both the viewport and its display sprite are siblings of _world —
-        // the sprite so the mesh's baked PBR colors are never dark-tinted by MineAmbient (same
-        // reason _recordBark lives there), the viewport because a SubViewport is not a CanvasItem.
-        // Renders only while showing and never headless (3D-render-hang rule — MonsterView3D doc).
-        _monsterView = new MonsterView3D();
-        _monsterView.Build();
-        _viewport.AddChild(_monsterView);
-
-        _monster3DSlide = new Sprite2D
-        {
-            Name = "Monster3DSlide",
-            Visible = false,
-            Scale = Vector2.One * (MonsterTargetWidth / MonsterView3D.ViewSize.X),
-        };
-        _viewport.AddChild(_monster3DSlide);
-
         _recordBark = new Label
         {
             Name = "RecordBark",
@@ -373,7 +352,8 @@ public partial class MineWatch : SubViewportContainer
             _embers.Emitting = false;
         }
 
-        var milestone = lastEvents.FirstOrDefault(e => e is FloorRecordSet or AttributionBeatEvent);
+        var milestone = lastEvents.FirstOrDefault(e =>
+            e is FloorRecordSet or AttributionBeatEvent or DenThreatShifted { VenueId: MineVenueId });
         if (milestone is not null)
         {
             QueueMilestone(state, milestone);
@@ -630,24 +610,6 @@ public partial class MineWatch : SubViewportContainer
         _recordBark.Text = BarkFor(state, evt);
         _recordBark.Visible = true;
 
-        // 3D-first: a kind with a gen GLB slides the real mesh (MonsterView3D's texture);
-        // a kind without one ("forgeworm") keeps the pre-existing 2D dark-silhouette path.
-        if (_monsterView.ShowMonster(monsterId))
-        {
-            if (_monster3DSlide.Texture is null && IsInsideTree())
-            {
-                // ViewportTexture needs a live viewport path — assigned lazily so orphaned
-                // (out-of-tree) property-only tests never touch the render server.
-                _monster3DSlide.Texture = _monsterView.GetTexture();
-            }
-
-            _monsterSlide.Visible = false;
-            _monster3DSlide.Position = new Vector2(-MonsterTargetWidth, StripHeight - 90f);
-            _monster3DSlide.Visible = true;
-            return;
-        }
-
-        _monster3DSlide.Visible = false;
         var monsterArt = AssetCatalog.MonsterPortrait(monsterId);
         if (monsterArt is not null)
         {
@@ -664,7 +626,6 @@ public partial class MineWatch : SubViewportContainer
         var progress = 1f - Mathf.Clamp(_milestoneRemaining / MilestoneSeconds, 0f, 1f);
         var slideX = Mathf.Lerp(-MonsterTargetWidth, DesignSize.X + MonsterTargetWidth, progress);
         _monsterSlide.Position = new Vector2(slideX, _monsterSlide.Position.Y);
-        _monster3DSlide.Position = new Vector2(slideX, _monster3DSlide.Position.Y);
 
         if (_milestoneRemaining > 0f)
         {
@@ -673,8 +634,6 @@ public partial class MineWatch : SubViewportContainer
 
         _milestoneRemaining = 0f;
         _monsterSlide.Visible = false;
-        _monster3DSlide.Visible = false;
-        _monsterView.ClearMonster(); // empties the stage AND turns viewport rendering back off
         _recordBark.Visible = false;
         if (State == WatchState.Hidden)
         {
@@ -687,6 +646,9 @@ public partial class MineWatch : SubViewportContainer
     {
         FloorRecordSet r => r.Floor,
         AttributionBeatEvent b => b.Floor,
+        // No floor rides a den-threat shift — pick the roster entry by tier so a worse den shows a
+        // correspondingly nastier silhouette (flavor only; DenTier is already 0..3, MonsterRoster 0..4).
+        DenThreatShifted d => Math.Clamp(d.ThreatTier + 1, 1, MonsterRoster.Length),
         _ => 1,
     };
 
@@ -694,6 +656,8 @@ public partial class MineWatch : SubViewportContainer
     {
         FloorRecordSet r => $"{HeroLabel(state, r.Hero)} sets a new depth record — floor {r.Floor}!",
         AttributionBeatEvent b => $"{HeroLabel(state, b.Hero)} — {BeatVerb(b.Beat)} (floor {b.Floor})",
+        DenThreatShifted { Lockdown: true } => "The Mine has been overrun — the routes here are locked down!",
+        DenThreatShifted d => $"The Mine's depths grow restless — den threat tier {d.ThreatTier} ({d.ThreatPermille / 10}%).",
         _ => string.Empty,
     };
 
