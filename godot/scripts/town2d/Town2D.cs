@@ -93,8 +93,8 @@ public partial class Town2D : Control
     /// run.</summary>
     public SimAdapter? Adapter { get; private set; }
 
-    /// <summary>T8-parity no-op setter (Town3D's own <see cref="GodotClient.Town3d.Town3D.Clock"/>
-    /// doc applies verbatim here — no per-frame decoration in this slice keys off clock state).</summary>
+    /// <summary>T8-parity no-op setter (the deleted <c>Town3D</c>'s own <c>Clock</c> doc applied
+    /// verbatim here — no per-frame decoration in this slice keys off clock state).</summary>
     public PhaseClock? Clock { set { } }
 
     private readonly Dictionary<string, Building2D> _buildingsByKey = new();

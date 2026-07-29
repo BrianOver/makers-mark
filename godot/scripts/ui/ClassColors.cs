@@ -5,9 +5,10 @@ namespace GodotClient.Ui;
 
 /// <summary>
 /// T7: class → presentation tint, moved VERBATIM out of <c>GodotClient.Town.HeroActor.RoleColor</c>
-/// so both the 2D town (still on the old method, unedited here) and the new 3D
-/// <see cref="GodotClient.Town3d.HeroActor3D"/> resolve the same color from one place. T8 repoints
-/// the 2D panels/actor at this method too and deletes the old one — this task only creates it.
+/// so every hero-drawing surface resolves the same color from one place — originally shared with
+/// the standalone 3D town's <c>HeroActor3D</c> (deleted U5); today's consumers are the 2.5D town's
+/// <see cref="GodotClient.Town2d.Town2D"/>/<see cref="GodotClient.Town2d.TownsfolkNpc2D"/> and the
+/// panels that render hero color chips (e.g. <c>HeroesPanel</c>/<c>MineWatch</c>).
 /// </summary>
 public static class ClassColors
 {
