@@ -73,6 +73,14 @@ public partial class ForgePanel : SimPanel
     /// Presentation only: the sim scores the submitted <c>AlchemyReagentPuzzle</c> itself.</summary>
     private AlchemyBrewPuzzle? _brewPuzzle;
 
+    /// <summary>U3 (plan 2026-07-28-004): the engineer's assembly-bench overlay — same
+    /// single-instance, self-contained-focus-overlay pattern as <see cref="_brewPuzzle"/>, opened by
+    /// an "Assemble" button an ACTIVE engineering recipe would render where the blacksmith gets
+    /// "Work the forge". <see cref="EngineeringProfession"/>'s <c>ActiveCraft</c> is false today, so
+    /// this branch never actually renders that button — the overlay ships wired but DORMANT until
+    /// the orchestrator flips the flag alongside the talent remap (see the overlay's own class doc).</summary>
+    private EngineeringBench? _engineeringBench;
+
     /// <summary>G1 (game-feel plan §"World VFX keyed to beat state"): the town's forge-station VFX
     /// surface — resolved lazily via <see cref="ResolveTown"/> rather than threaded through
     /// <c>MainUi</c> (this unit's scope keeps MainUi untouched beyond the build-stamp mount), and
@@ -233,6 +241,12 @@ public partial class ForgePanel : SimPanel
                             () => OnBrewPressed(recipe, material, profession!, unlocked));
                         GateButton(brew, affordable, $"Not enough {material} — need {needed}, have {have}.");
                     }
+                    else if (professionId == EngineeringProfession.Id)
+                    {
+                        var assemble = AddButton(controlsRow, $"Assemble_{recipe.RecipeId}", "Assemble (bench)",
+                            () => OnAssemblePressed(recipe, material, profession!, unlocked));
+                        GateButton(assemble, affordable, $"Not enough {material} — need {needed}, have {have}.");
+                    }
                     else
                     {
                         var work = AddButton(controlsRow, $"WorkForge_{recipe.RecipeId}", "Work the forge",
@@ -350,6 +364,33 @@ public partial class ForgePanel : SimPanel
 
     /// <summary>Brew cancel queues nothing (PKD8) — just closes the overlay.</summary>
     private void OnBrewCancelled() => _brewPuzzle!.Visible = false;
+
+    /// <summary>U3: open the assembly-bench overlay for this engineering recipe/material — the
+    /// "Assemble" path beside the auto-craft fallback, mirroring <see cref="OnBrewPressed"/>. Dormant
+    /// today (see <see cref="_engineeringBench"/>'s own doc) — never reachable until
+    /// <c>EngineeringProfession</c>'s <c>ActiveCraft</c> flips.</summary>
+    private void OnAssemblePressed(Recipe recipe, string material, ProfessionDefinition profession, ImmutableSortedSet<string> unlockedTalents)
+    {
+        EnsureBuilt();
+        _engineeringBench!.Configure(recipe, material, profession, unlockedTalents);
+        _engineeringBench.Visible = true;
+    }
+
+    /// <summary>The bench overlay's ONE completed run → the ONE queued <see cref="CraftAction"/>
+    /// (PKD8 single-action contract, same as <see cref="OnBrewFinished"/>). The grade shown is the
+    /// scorer's preview (SubScores[2]); the sim recomputes it authoritatively on resolve.</summary>
+    private void OnAssembleFinished(CraftAction action)
+    {
+        Adapter?.Queue(action);
+        _engineeringBench!.Visible = false;
+        var preview = action.SubScores is { Count: 3 } scores ? scores[2] : 0;
+        _feedback!.Text = $"queued: assemble {action.RecipeId} with {action.MaterialKey} " +
+            $"(assembly score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)}). " +
+            $"Queued — resolves when {Adapter?.CurrentState.Phase} ticks. Press Advance or wait.";
+    }
+
+    /// <summary>Bench cancel queues nothing (PKD8) — just closes the overlay.</summary>
+    private void OnAssembleCancelled() => _engineeringBench!.Visible = false;
 
     /// <summary>G1: every anvil strike gets the hammer clang; an on-beat strike additionally fires
     /// the spark-burst/flash world VFX. <paramref name="onBeat"/> is the SAME judgement
@@ -580,6 +621,13 @@ public partial class ForgePanel : SimPanel
         AddChild(_brewPuzzle);
         _brewPuzzle.Finished += OnBrewFinished;
         _brewPuzzle.Cancelled += OnBrewCancelled;
+
+        // U3: the engineer's assembly-bench overlay — same self-contained-focus pattern, hidden
+        // until an "Assemble" button opens it (dormant today — see the field's own doc).
+        _engineeringBench = new EngineeringBench { Visible = false };
+        AddChild(_engineeringBench);
+        _engineeringBench.Finished += OnAssembleFinished;
+        _engineeringBench.Cancelled += OnAssembleCancelled;
 
         BuildCeremony();
         BuildSfx();
