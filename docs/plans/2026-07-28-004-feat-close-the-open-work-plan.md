@@ -56,30 +56,61 @@ unit either finishes something half-landed or deletes something dead.
 
 ## Implementation Units
 
-### U1. Wire tanning + engineering into crafting, and flip `ActiveCraft`
+### U1. Wire tanning + engineering into crafting  *(the flip moved to U3b — see the correction)*
 
-**Goal:** the two scorers merged in #265 stop being dead code; both professions gain a real
-performance grade.
+> **CORRECTION, 2026-07-29.** This unit originally bundled the `ActiveCraft` flip and let U2/U3 depend
+> on it. **That ordering ships a regression, and the attempt proved it.** The flip changes what happens
+> when *no* overlay is present, and with the overlays unbuilt every tanning/engineering craft becomes
+> auto-craft:
+>
+> - `QualityRoller.RollActive` on a null puzzle uses the synthetic auto-craft grade 550 ± 25 jitter,
+>   landing in Common or Fine and hard-capped at Superior (PKD4). Measured: Superior → **Fine** on
+>   seed 4242 for both professions.
+> - `RollActive` deliberately never reads `FlatShifts`/`SlotShifts` (the PKD3 double-count fix), so the
+>   entire quality-talent chain becomes **dead data** — a player unlocks Master Tanner for "+8 quality"
+>   and receives nothing. That is exactly why alchemy retired its shift chain into `MinigameAssists` at
+>   its own flip; any profession going active must do the same remap.
+>
+> So the flip is now **U3b**, landing *with* the overlays, so there is always a way to earn the grade.
+> U1 is the inert wiring only, which is safe alone and makes the overlay work reviewable in isolation.
+> Shipped as #269.
+
+**Goal:** the two scorers merged in #265 stop being unreachable code — the handlers accept both puzzle
+shapes and score them — with **no behaviour change yet.**
 
 **Files:**
 - Modify: `sim/GameSim/Crafting/CraftingHandlers.cs` — extend the unsupported-puzzle guard (~line 91)
   to accept `TanningScrapeInput` and `EngineeringAssemblyInput`; add profession gates mirroring the
-  existing alchemy/forge pattern (~lines 96–106); add both grades into the `performanceGrade` fold
-  (~line 144).
-- Modify: `sim/GameSim/Professions/Tanning/TanningProfession.cs`, `.../Engineering/EngineeringProfession.cs`
-  — `ActiveCraft = true`.
-- Test: `sim/GameSim.Tests/` — accepted-puzzle coverage per profession, plus a rejection test proving a
-  puzzle submitted to the *wrong* profession is still refused.
+  existing alchemy/forge pattern (~lines 96–106); fold both grades into `performanceGrade` (~line 144).
 
-**Approach:** wiring first with `ActiveCraft` still false (proves acceptance without moving quality),
-then the flip as the second commit so a bisect can separate "wiring broke it" from "flip moved it".
+**Verification:** fast lane green and **unchanged** at 1428 — because `ActiveCraft` is still false, both
+new gates still reject and the fold is unreachable. That inertness is the deliverable.
+
+---
+
+### U3b. Flip `ActiveCraft`, with the talent remap and the balance gate
+
+**Depends on U2 AND U3** — never lands before both overlays.
+
+**Files:**
+- Modify: `sim/GameSim/Professions/Tanning/TanningProfession.cs`, `.../Engineering/EngineeringProfession.cs`
+  — `ActiveCraft: true`, **and** retire `FlatShifts`/`SlotShifts` into `MinigameAssists` 1:1 at alchemy's
+  50/70/80 ladder. The remap is mandatory, not optional polish: skipping it ships dead talents.
+- Modify: both scorers' `AssistBonusPermille` — keep `Armorer` Armor-scoped and `Gadgeteer`
+  Trinket-scoped, the way `AlchemyPuzzleScorer` scopes Potent Brews. A slot-scoped talent must not
+  silently widen to every recipe.
+- Test: re-pin the two auto-craft goldens (they WILL drop to Fine — that is the deliberate PKD4
+  consequence, and alchemy's golden did the same at its flip), and re-aim
+  `PassiveProfessions_..._NeverActive` to assert (a) the exact set of active professions, so no
+  profession flips by accident, and (b) that every active profession has retired its shifts. Half (b)
+  is the guard that would have caught the dead-talent bug.
 
 **Verification:** fast lane green; **balance gate re-run** (`--filter Category=Balance`) against the
-39/39 baseline; golden-replay result recorded in the PR body either way — if it moved, say by how much
-and why that is expected.
+39/39 baseline; golden-replay outcome stated in the PR body either way — if it moved, by how much and
+why that is expected.
 
-**Execution note:** this is the one unit where a green fast lane is not sufficient evidence. Report the
-balance numbers, not a summary of them.
+**Execution note:** the one unit where a green fast lane is not sufficient evidence. Report the balance
+numbers, not a summary of them.
 
 ---
 
@@ -189,18 +220,24 @@ read as a story or a log?") settles the Legend Engine ruling in roadmap §3.
 
 ## Dependencies
 
-- U2 and U3 depend on **U1** (nothing to submit to until the handlers accept the puzzles).
-- U2 and U3 are independent of each other and safely parallel — disjoint files.
+- **U1 depends on nothing** and lands first — it is inert by construction.
+- **U2 and U3 do NOT depend on U1's flip.** Each overlay ships DORMANT behind the `ActiveCraft` gate,
+  the same way the scorers shipped inert. They are independent of each other and safely parallel
+  (disjoint files), and each is reviewable on its own.
+- **U3b (the flip) depends on U2 AND U3.** This is the correction: the flip is what activates both
+  overlays, so it must never precede them or the professions get strictly worse in the shipped game.
 - U4, U5, U6 are independent of everything else and of each other.
-- **U7 depends on U1–U3** — feel-testing four crafts requires four crafts to exist.
+- **U7 depends on U3b** — feel-testing four crafts requires four *reachable* crafts, which means the
+  flip, not merely the overlays.
 
 ## Verification Contract
 
 | Unit | Fast lane | Engine suite | Balance gate | Real-launch playtest |
 |---|---|---|---|---|
-| U1 | required | — | **required** (39/39 baseline) | — |
+| U1 | required (unchanged count — inertness IS the evidence) | — | — | — |
 | U2 | — | required | — | required |
 | U3 | — | required | — | required |
+| U3b | required | required | **required** (39/39 baseline) | required |
 | U4 | required | — | — | — |
 | U5 | — | required (count delta stated) | — | required |
 | U6 | required | required | — | — |
