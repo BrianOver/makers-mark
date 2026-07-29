@@ -1,31 +1,44 @@
 # ASSETS — asset ledger
 
-One row per asset id. Kind: mesh / image / icon / music / sfx. Status: none / placeholder (Kenney-CC0 / primitive / gen-draft) / final. Overnight-gen (roadmap §4) consumes the `placeholder`+`needs-final` rows. Canonical detail lives in `docs/design/asset-manifest.md` + the AssetSpec registry; this is the tracking view.
+**Rebuilt 2026-07-28.** The previous version tracked a 3D asset pipeline that no longer exists. The 2.5D pixel-art pivot (#244-#249) retired TRELLIS.2 generation along with the 3D render layer it fed, which orphaned the entire mesh tree — see §Orphans, the largest cleanup finding in the repo.
 
-**Rule:** every asset is bound to a `CONTENT.md` id. No orphan assets; no `final` without an LFS file. (Manifest test enforces once wired.)
+One row per asset id. Kind: image / icon / music / sfx. Status: none / placeholder / final. Canonical detail lives in `docs/design/asset-manifest.md` + `art-manifest.json` + the AssetSpec registry; this is the tracking view.
 
-## Current state (2026-07-21)
+**Rule:** every asset binds to a `CONTENT.md` id. No orphan assets; no `final` without a file on disk. **There is no manifest test enforcing this** — see `SYSTEMS.md` §Drift note.
+
+## Current state (2026-07-28)
 | asset id | binds content | kind | status | source | notes |
 |---|---|---|---|---|---|
-| town-forge | (town) forge building | mesh | placeholder | TRELLIS.2 gen | first AI-gen 3D asset; PBR-textured (#167/#168) — the one real gen'd mesh |
-| town-tavern / town-market / town-mine-gate | town buildings | mesh | placeholder | Kenney / primitive | 2D specs exist; 3D placeholders |
-| hero figures (6 classes) | vanguard…skirmisher | image | placeholder | SDXL 2D | 3 lit figures (occultist/sentinel/skirmisher) still missing |
-| recipe icons (~23) | blacksmith/tanning recipes | icon | placeholder | partial | long tail deferred |
-| ore icons (~7) | Mine ores | icon | placeholder | partial | |
-| monster art (5 Mine) | mine monsters | image | placeholder | partial | Cult-of-Lamb charm rule (rounded, big eyes) |
-| palette families (house/hearth/gloomwood/crypt/den) | — (art system) | — | planned | PaletteRegistry | 5 families; not yet in code |
-| music / sfx | — | music/sfx | none | — | future phase; like art pipeline (much later) |
+| hero figures (6 classes) | vanguard…skirmisher | image | **final** | SDXL 2D | all six have diffuse + normal on disk and in `art-manifest.json`. The old row claimed 3 were missing — **wrong** |
+| mine monster art (5) | mine monsters | image | final | SDXL 2D | diffuse + normal present |
+| gloomwood monster art (4) | gloomwood monsters | image | **final** | SDXL 2D | bramble-boar / lantern-moth / old-mossjaw / wicker-shepherd, all with normals. **Had no row** |
+| gloomwood venue art (3) | gloomwood venue | image | final | SDXL 2D | backdrop / entrance / toll-booth. **Had no row** |
+| `town2d-*` sprite set | 2.5D town | image | final | SDXL + PIL | ground atlas, buildings, props, 5 pixel monsters, step frames |
+| painted panel banners + interiors | shop / tavern / bounty / heroes / minigames | image | final | SDXL, pixel-quantized | #248, #254-#256 |
+| palette families (house/hearth/gloomwood/crypt/den) | — (art system) | — | **built** | `art/GameArt/PaletteRegistry.cs` | all 5 implemented with prompt clauses + registry lookup. Old row said "not yet in code" — **wrong** |
+| recipe icons | 4 professions' recipes | icon | partial | mixed | **recount owed**: recipes now total 39 (16 + 7 + 8 + 8); the old "~23" predates alchemy + engineering's full sets |
+| ore / material icons | materials | icon | partial | mixed | **recount owed**: materials now total 21 (old row said ~7) |
+| faction emblems | 5 factions | icon | on disk, unrowed | SDXL | present in `godot/assets/art/` with no ledger binding |
+| music / sfx | — | music/sfx | none | — | future phase, deliberately not started |
 
-## Gen-candidate batches
-- **2026-07-21 — 3D MESHES PRODUCED.** Full pipeline ran end-to-end (SDXL → BiRefNet → TRELLIS.2 → GLB). **12 textured game-ready GLBs** (~8–12k faces each) staged in `godot/assets/models/gen/` + `art/gen-candidates/2026-07-21/glb/`: `monster-ore-golem, monster-cave-rat, monster-spider, monster-ghoul, mine-gate, well, ore-cart, anvil, barrel, tavern, bounty-board` (+ `forge` from #167). **10 excellent, bounty-board usable-plain, market-stall regenerated clean** (original source had duplicate stalls → TRELLIS rebuilt clutter). Not yet wired into the town — `TownAssets`/`BuildingKit` still point at Kenney meshes; swapping keys → gen GLBs is the next step (attended, verify via TOWN_SHOT). Source PNGs + 3-view render thumbnails in the candidates dir. Recipe: `docs/design/2026-07-21-3d-gen-pipeline-PROVEN.md`. Safety held all run: VRAM ≤5 GB, temp ≤53°C, RAM ≥17 GB free (guard-monitored).
-- Source images (2D, neutral-bg 3/4 view) double as placeholders + TRELLIS inputs; `batch_size 1` (batch 2 makes grids).
+**Untracked volume:** `godot/assets/art/` holds 157 PNGs; a large fraction (gloomwood art, faction emblems, engineering/alchemy item icons, `town2d-*` variants) has no `CONTENT.md` / `ASSETS.md` binding. Rowing all of them by hand is exactly the work the manifest test was supposed to make unnecessary.
 
-## Needs-final queue (overnight-gen targets, by phase)
-- **Phase A:** memorial props, gravestones, trophy/engraving meshes (bind: memorial wall, heirloom).
-- **Phase B:** trait-signaling hero cosmetics; bark/portrait variants.
-- **Phase C:** 2nd-venue tileset modules (shared trim sheets), that venue's monster meshes, station meshes for modifier-layer craft.
-- **Phase D:** era-variant town states, prestige cosmetics.
-- **Ongoing T1:** replace every `placeholder` above with `final`; then music/sfx pass.
+## Orphans — flagged for cleanup
+- **`godot/assets/models/` — ~1,627 files** (Kenney kits + TRELLIS gen GLBs). Its only source-code consumer is `godot/scripts/town3d/TownAssets.cs`, which is itself dead post-pivot. **This whole tree is dead weight** and should be deleted or archived alongside the U5 teardown in `docs/plans/2026-07-28-004-feat-close-the-open-work-plan.md`. Decide deliberately: it is large, it is in git history either way, and `MonsterView3D` is the one live 3D consumer left (it reads gen monster meshes for Bestiary and MineWatch).
+- **The 12 gen'd GLBs from the 2026-07-21 batch** (`monster-*`, `mine-gate`, `well`, `ore-cart`, `anvil`, `barrel`, `tavern`, `bounty-board`, `forge`) were never wired into the town before the pivot made them moot. They are a sunk cost, not a backlog.
+- Worktree litter seen during the audit: `_gen_town2d_*.py` scratch scripts and ~20 `*.import~RF*.TMP` files, untracked.
 
-## Discipline (roadmap §4)
-Author silhouettes/archetypes (~20%), gen variants (material/recolor/inscription), proceduralize the rest. Curation = gen budget (~60-90% reject). 10 distinct silhouettes > 100 near-identical meshes. Assets bind by name (IconRegistry null-tolerant) — never touch sim determinism.
+## The pipeline (current)
+SDXL generation → curation (~60-90% reject) → pixel post-process: crop to canvas aspect → hard LANCZOS downscale → palette quantize (MEDIANCUT) → brightness dim. Hand-author with PIL when generation fails a subject outright (the noticeboard failed twice and was drawn by hand).
+
+**Style cohesion is the binding constraint, not volume.** Painterly output clashes badly with pixel art, so existing good compositions get quantized rather than regenerated.
+
+## Discipline
+Author the silhouettes (~20%), generate the variants, proceduralize the rest. Curation is the budget — fan out generation, never curation. Ten distinct silhouettes beat a hundred near-identical ones. Assets bind by name (`IconRegistry` is null-tolerant) and are Godot-side only — they never touch sim determinism.
+
+## Needs-final queue
+The old queue was organised by roadmap phases that are now all closed. Current targets, in the order the game would benefit:
+1. Tanning + engineering item icons and their two new craft overlays' props (rides U2/U3 of plan `-004`).
+2. Sunken Crypt and Emberfall art — but **only if** those venues are activated; both are `built-inert` today, so generating for them now would be filler.
+3. Trait-signalling hero cosmetics (needs a decision on whether traits should be visually legible at all).
+4. Music / SFX — deliberately last.
