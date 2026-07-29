@@ -71,8 +71,7 @@ public sealed partial class DelveStage : Node2D
     private const float PipSpacing = 8f;
 
     /// <summary>Same dark-silhouette recipe as <see cref="MineWatch"/>'s own milestone-flash tint —
-    /// duplicated (not shared) per this codebase's own cross-lane precedent (e.g.
-    /// <c>MonsterView3D.MeshHeight</c> duplicating <c>Town3D.MeshHeight</c>), applied only when the
+    /// duplicated (not shared) per this codebase's own cross-lane precedent, applied only when the
     /// new pixel monster art (<c>town2d-monster-*</c>) is missing and the fallback painterly
     /// portrait is used instead.</summary>
     private static readonly Color FallbackMonsterTint = new(0.22f, 0.20f, 0.26f, 0.92f);

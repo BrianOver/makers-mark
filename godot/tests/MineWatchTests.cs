@@ -207,6 +207,83 @@ public class MineWatchTests
         }
     }
 
+    // ── chore/kill-3d-residue: DenThreatShifted rides the same milestone flash ──────────────────
+    // (DirectorSystem.TickDens writes VenueState.ThreatTier/Closed every Morning; before this,
+    // nothing in the client ever read the DenThreatShifted EVENT itself — DepthsPanel shows the
+    // steady-state tier, but the moment it changes was silent. MineWatch is the natural home: it
+    // already owns the milestone-flash mechanism and is Mine-scoped like the event filter below.)
+
+    [TestCase]
+    public void DenThreatShifted_Mine_FlashesBarkWithTier_EvenOutsideLivePhase()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var state = StagedWorld() with { Phase = DayPhase.Morning };
+            var events = ImmutableList.Create<GameEvent>(
+                new DenThreatShifted("mine", ThreatPermille: 260, ThreatTier: 1, Lockdown: false));
+
+            watch.Refresh(state, events);
+
+            AssertThat(watch.Visible).IsTrue(); // flash forces a brief show, same as FloorRecordSet
+            var bark = Find<Label>(watch, "RecordBark");
+            AssertThat(bark.Visible).IsTrue();
+            AssertThat(bark.Text).Contains("tier 1");
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void DenThreatShifted_Lockdown_BarksTheOverrunMessage()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var state = StagedWorld() with { Phase = DayPhase.Morning };
+            var events = ImmutableList.Create<GameEvent>(
+                new DenThreatShifted("mine", ThreatPermille: 1000, ThreatTier: 3, Lockdown: true));
+
+            watch.Refresh(state, events);
+
+            var bark = Find<Label>(watch, "RecordBark");
+            AssertThat(bark.Text).Contains("locked down");
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void DenThreatShifted_OtherVenue_NeverFlashesTheMineStrip()
+    {
+        // MineWatch is the Mine's OWN spectate strip — a Gloomwood den shift is Gloomwood's story,
+        // not the Mine's; DepthsPanel's Gloomwood tile is where that steady-state tier already
+        // shows (U-C4). No filter leak: the strip must stay fully hidden, same as no event at all.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var state = StagedWorld() with { Phase = DayPhase.Morning };
+            var events = ImmutableList.Create<GameEvent>(
+                new DenThreatShifted("gloomwood", ThreatPermille: 260, ThreatTier: 1, Lockdown: false));
+
+            watch.Refresh(state, events);
+
+            AssertThat(watch.Visible).IsFalse();
+            AssertThat(watch.State).IsEqual(MineWatch.WatchState.Hidden);
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
     [TestCase(1024f, 2)]
     [TestCase(1900f, 3)]
     [TestCase(2560f, 4)]

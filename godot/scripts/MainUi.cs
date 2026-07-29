@@ -134,7 +134,7 @@ public partial class MainUi : Control
     /// <summary>U10: the pre-sleep raid-forecast board (RaidForecast.ForTomorrow projection),
     /// chained after the day-end Ledger and re-openable from the HUD "Forecast" button.</summary>
     public RaidForecastBoard Forecast { get; private set; } = null!;
-    /// <summary>Gate-b flag 3: the Bestiary gallery (all venues' monsters, 3D mesh where one
+    /// <summary>Gate-b flag 3: the Bestiary gallery (all venues' monsters, a 2D portrait where one
     /// exists), opened from the Tavern's "Bestiary" hotspot.</summary>
     public BestiaryPanel Bestiary { get; private set; } = null!;
     /// <summary>Wave 3 (U15): the commission board (<see cref="GameState.Commissions"/>) — opened
