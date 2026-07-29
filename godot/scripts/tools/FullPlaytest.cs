@@ -174,9 +174,9 @@ public partial class FullPlaytest : Node
         }
         else
         {
-            // Tanning/engineering overlays ship DORMANT behind ActiveCraft (see plan 2026-07-28-004
-            // U3b) — record what a player would actually get today rather than pretending otherwise.
-            await ReportDormantCraft(ui, profession);
+            // Tanning and engineering went ACTIVE with U3b, so both overlays are now real surfaces
+            // a player can open — driven for the first time here.
+            await DriveOtherActiveCraft(ui, profession);
         }
 
         // ── every panel, every run ───────────────────────────────────────────────────────────
@@ -248,6 +248,45 @@ public partial class FullPlaytest : Node
         _report.AppendLine();
         _report.AppendLine($"**Run {_run} end:** day {end.Day}, gold {end.Player.Gold}, " +
                            $"items {end.Items.Count}, heroes {end.Heroes.Count}, events {end.EventLog.Count}");
+
+        // ── did the newly-surfaced events actually reach a player-visible surface? ───────────────
+        // Unit tests prove each formatter returns a string. Only a real campaign proves the events
+        // FIRE and land in the strip. A previous audit found ten event types being computed and then
+        // dropped by the ticker's allow-list, so an empty ticker after eight lived days is a
+        // regression to exactly that state — and it is invisible in a screenshot of a scrolling
+        // marquee that happens to be mid-gap.
+        var lines = ui.Ticker.Lines;
+        _report.AppendLine($"- ticker: {lines.Count} line(s) retained at run end");
+        foreach (var line in lines)
+        {
+            _report.AppendLine($"  - day {line.Day}: {line.Text}");
+        }
+
+        if (lines.Count == 0)
+        {
+            Note($"run {_run} ({profession}): ticker EMPTY after {DaysPerRun} days — nothing reached the strip");
+        }
+
+        // The passive hero systems, read the way the panels read them. Both were fully computed and
+        // had zero client readers until this wave, so "does the data exist to show" is worth
+        // recording separately from "does the chip render".
+        var needs = GameSim.Heroes.NeedsSystem.Snapshot(end);
+        var restless = 0;
+        var boycotting = 0;
+        foreach (var entry in needs)
+        {
+            if (entry.Boycotting)
+            {
+                boycotting++;
+            }
+            else if (entry.StreakDays > 0)
+            {
+                restless++;
+            }
+        }
+
+        _report.AppendLine($"- hero needs at run end: {restless} restless, {boycotting} boycotting " +
+                           $"(of {end.Heroes.Count} heroes)");
 
         // Broke-and-stuck is the single most-reported failure of this loop — call it out loudly.
         if (end.Player.Gold <= 0)
@@ -375,26 +414,54 @@ public partial class FullPlaytest : Node
         Shot($"r{_run}_mini_forge_open");
         await MotionBurst(ui, $"r{_run}_forge_motion", "forge overlay idle (hammer, coals, particles)");
 
-        var guard = 0;
-        while (mg.ShapeXPermille < 1000 && guard++ < 40)
+        // AIM AT THE CURVE. The first version of this loop pumped the bellows to 850 and then struck
+        // continuously all the way down to 140 — which completed the shape but scored 161/1000
+        // (Common) even at shapeX=1000, and I nearly filed that as "the forge grades too low".
+        //
+        // It is not a game defect. `ForgeScorer` buckets each strike by its distance from a TARGET
+        // HEAT CURVE (`|y - ForgePath.HeatAt(path, x)|`, three zones), so a strategy that ignores the
+        // curve earns a bad grade correctly. Striking blindly across a 710-permille heat sweep is
+        // simply playing badly, and an automated playtest that plays badly and then reports the game
+        // as broken is worse than no playtest at all.
+        //
+        // So: read the target at the current x, bellows up when cold, let the heat drift down when
+        // hot, and only strike inside the tolerance band. Now the grade is a real signal — if a
+        // curve-tracking driver STILL lands Common, that is a genuine finding worth reporting.
+        // The budget is counted in FRAMES, not in loop iterations, and that distinction is the whole
+        // difference between this working and not. The first curve-tracking version guarded on outer
+        // iterations, so cooling burned the budget: the heat drifts back at 50‰/sec against a bellows
+        // rise of 260‰/sec, meaning a single over-heated stretch can need hundreds of frames of
+        // simply WAITING. It exhausted its guard having landed shapeX=7 — worse than the blind
+        // striker it replaced. One decision per frame, with a generous frame budget, fixes it.
+        const int StrikeTolerance = 60;
+        const int FrameBudget = 4000;
+
+        var frames = 0;
+        while (mg.ShapeXPermille < 1000 && frames++ < FrameBudget)
         {
-            mg.BellowsStart();
-            var p = 0;
-            while (mg.HeatYPermille < 850 && p++ < 140)
+            var target = GameSim.Crafting.ForgePath.HeatAt(mg.Path, mg.ShapeXPermille);
+            var delta = mg.HeatYPermille - target;
+
+            if (delta < -StrikeTolerance)
             {
-                await Settle(2);
+                mg.BellowsStart(); // too cold for this stretch of the path
+            }
+            else
+            {
+                mg.BellowsStop();
+                if (delta <= StrikeTolerance)
+                {
+                    mg.ForgeStrike(); // inside the band — this is the scoring moment
+                }
+
+                // else: too hot. Bellows off and wait; the heat drifts down on its own.
             }
 
-            mg.BellowsStop();
             await Settle(1);
-
-            var s = 0;
-            while (mg.HeatYPermille > 140 && mg.ShapeXPermille < 1000 && s++ < 16)
-            {
-                mg.ForgeStrike();
-                await Settle(1);
-            }
         }
+
+        mg.BellowsStop();
+        _report.AppendLine($"- forge tracking: {frames} frames used of {FrameBudget}");
 
         Shot($"r{_run}_mini_forge_worked");
         await Settle(6);
@@ -445,20 +512,151 @@ public partial class FullPlaytest : Node
         _report.AppendLine("- brew: overlay opened and captured (pour sequence driven by the panel's own controls)");
     }
 
-    /// <summary>Record honestly what a tanner/engineer gets today: the overlays exist but are gated
-    /// off behind <c>ActiveCraft</c>, so the craft is auto-craft only. This is expected until U3b.</summary>
-    private async Task ReportDormantCraft(MainUi ui, string profession)
+    /// <summary>
+    /// Drive the tanning frame or the engineering bench for real.
+    ///
+    /// <para>This used to be <c>ReportDormantCraft</c>, which only recorded that both overlays were
+    /// gated off behind <c>ActiveCraft</c> and left a forward-looking anomaly saying "if the flip
+    /// ever lands, this run should drive its overlay". U3b landed the flip, the anomaly fired
+    /// exactly as intended, and this is the promised replacement — so a report can no longer say
+    /// "dormant" about something a player can now open.</para>
+    /// </summary>
+    private async Task DriveOtherActiveCraft(MainUi ui, string profession)
     {
         ui.OpenPanel("Forge");
         await Settle(8);
-        Shot($"r{_run}_mini_{profession}_dormant");
 
         var active = ProfessionRegistry.All.TryGetValue(profession, out var def) && def.ActiveCraft;
-        _report.AppendLine($"- {profession}: ActiveCraft={active} — overlay is gated off, craft is auto-craft only (expected pre-U3b)");
-        if (active)
+        if (!active)
         {
-            Note($"run {_run}: {profession} reports ActiveCraft=true — the flip landed, so this run should drive its overlay");
+            Shot($"r{_run}_mini_{profession}_passive");
+            _report.AppendLine($"- {profession}: ActiveCraft=false — auto-craft only, no overlay to drive");
+            return;
         }
+
+        // Find whichever entry button this profession's active craft renders. Buttons are named by
+        // verb + recipe id, so match on the prefix rather than hardcoding a recipe.
+        var verb = profession == TanningProfession.Id ? "Scrape" : "Assemble";
+        if (FindPrefixed(ui.Forge, verb + "_") is not Button entry)
+        {
+            Note($"run {_run}: {profession} is ActiveCraft but no '{verb}_*' button rendered — overlay unreachable");
+            return;
+        }
+
+        if (entry.Disabled)
+        {
+            // Almost always affordability. Buy, advance, and look once more before calling it.
+            foreach (var a in ActionLegality.LegalActions(ui.Adapter.CurrentState, ui.Adapter.CurrentState.Phase))
+            {
+                if (a.GetType().Name.Contains("BuyMaterial"))
+                {
+                    ui.Adapter.Queue(a);
+                }
+            }
+
+            ui.Adapter.AdvancePhase();
+            await Settle(6);
+            ui.OpenPanel("Forge");
+            await Settle(8);
+            entry = FindPrefixed(ui.Forge, verb + "_") as Button ?? entry;
+        }
+
+        if (entry.Disabled)
+        {
+            // Report WHY. `GateButton` puts the refusal reason on the tooltip, so quoting it turns
+            // "the button was gated" into an actionable line — the difference between a shrug and a
+            // finding. Without it there is no way to tell an unaffordable recipe from a broken gate.
+            var reason = string.IsNullOrWhiteSpace(entry.TooltipText) ? "(no reason on the tooltip)" : entry.TooltipText;
+            Note($"run {_run}: {profession} '{verb}' button still gated after buying materials — {reason}");
+            _report.AppendLine($"- {profession}: '{verb}' gated — {reason}");
+            return;
+        }
+
+        entry.EmitSignal(BaseButton.SignalName.Pressed);
+        await Settle(6);
+        Shot($"r{_run}_mini_{profession}_open");
+        await MotionBurst(ui, $"r{_run}_{profession}_motion", $"{profession} overlay idle");
+
+        if (profession == TanningProfession.Id)
+        {
+            if (ui.FindChild("TanningFrame", recursive: true, owned: false) is not TanningFrame frame)
+            {
+                Note($"run {_run}: TanningFrame node absent after pressing Scrape");
+                return;
+            }
+
+            // Work every cell, then submit — the whole-hide pass a player aiming for a clean grade
+            // would make.
+            for (var cell = 0; cell < TanningFrame.CellCount; cell++)
+            {
+                frame.ScrapeCell(cell);
+                await Settle(1);
+            }
+
+            Shot($"r{_run}_mini_tanning_worked");
+            frame.Submit();
+            await Settle(6);
+            _report.AppendLine($"- tanning: completed={frame.Completed} cancelled={frame.WasCancelled} " +
+                               $"(scraped all {TanningFrame.CellCount} cells, then submitted)");
+            if (!frame.Completed)
+            {
+                Note($"run {_run}: tanning scraped every cell but did not complete");
+            }
+        }
+        else
+        {
+            if (ui.FindChild("EngineeringBench", recursive: true, owned: false) is not EngineeringBench bench)
+            {
+                Note($"run {_run}: EngineeringBench node absent after pressing Assemble");
+                return;
+            }
+
+            // Seat one part per socket, then crank. The bench has no Submit — CrankStroke IS the
+            // commit, so the finale has to be driven to completion or nothing is emitted at all.
+            for (var socket = 0; socket < bench.SocketCount; socket++)
+            {
+                bench.Place(socket, socket);
+                await Settle(1);
+            }
+
+            Shot($"r{_run}_mini_engineering_seated");
+
+            var guard = 0;
+            while (!bench.Completed && guard++ < 200)
+            {
+                bench.CrankStroke();
+                await Settle(1);
+            }
+
+            _report.AppendLine($"- engineering: completed={bench.Completed} cancelled={bench.WasCancelled} " +
+                               $"crank={bench.CrankProgressPermille}‰ (seated {bench.SocketCount} sockets)");
+            if (!bench.Completed)
+            {
+                Note($"run {_run}: engineering bench never completed after {guard} crank strokes " +
+                     $"(crank stalled at {bench.CrankProgressPermille}‰)");
+            }
+        }
+    }
+
+    /// <summary>First descendant whose name starts with <paramref name="prefix"/>. Godot's
+    /// <c>FindChild</c> pattern matching does not cover "starts with" for arbitrary suffixes here,
+    /// and the recipe id in these button names varies per run.</summary>
+    private static Node? FindPrefixed(Node root, string prefix)
+    {
+        foreach (var child in root.GetChildren())
+        {
+            if (child.Name.ToString().StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return child;
+            }
+
+            if (FindPrefixed(child, prefix) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     // ── measurement helpers ─────────────────────────────────────────────────────────────────

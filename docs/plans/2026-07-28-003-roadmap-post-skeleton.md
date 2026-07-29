@@ -144,7 +144,19 @@ A system is complete — not a stub — when all eight hold:
 1. **Legend Engine: retire the specced module, or build it?** (§3) — wants an explicit yes/no. Currently blocking nothing, but it is the one skeleton row still ambiguous.
 2. ~~**`MonsterView3D`: keep or replace?**~~ **DECIDED 2026-07-29 — replaced.** `MonsterView3D`, both 3D model trees (1,605 files, ~312 MiB) and the project's last 3D `SubViewport` are deleted; `BestiaryPanel` renders a 2D portrait with procedural breathe/hover, and MineWatch uses the 2D silhouette path it already had. Emberfall's four non-Cinder-Imp monsters still need 2D art before that venue goes live.
 
-2b. **The recovered 07-27 design wave: does it supersede this roadmap's ordering, or get stamped SUPERSEDED?** ⚠️ **This doc was written without knowing that wave existed.** The five-pillars synthesis and plans `2026-07-27-001`…`-005` were authored on 2026-07-27, never committed, and were recovered on 2026-07-29 from a stale worktree (see `docs/plans/README.md`, "The 001–005 gap"). Five independent deep-dives converged on a root cause this roadmap does not state: **the demand map is weapon-first at two levels** — commissions are ~75% Weapon and every depth-stall gate is Weapon/Shield — so *two professions have a craft and two have only a customer*. If that holds, it reframes the profession and advisor work rather than adding to it. Read the synthesis before the next planning wave; do not let recency decide which document wins.
+2b. **The recovered 07-27 design wave: does it supersede this roadmap's ordering, or get stamped SUPERSEDED?** ⚠️ **This doc was written without knowing that wave existed.** The five-pillars synthesis and plans `2026-07-27-001`…`-005` were authored on 2026-07-27, never committed, and were recovered on 2026-07-29 from a stale worktree (see `docs/plans/README.md`, "The 001–005 gap"). Five independent deep-dives converged on a root cause this roadmap does not state: **the demand map is weapon-first at two levels** — commissions are ~75% Weapon and every depth-stall gate is Weapon/Shield — so *two professions have a craft and two have only a customer*. Read the synthesis before the next planning wave; do not let recency decide which document wins.
+
+   **It holds. Measured, the same day, independently.** A five-run × 8-day automated playtest of the shipped client (`godot/scripts/tools/FullPlaytest.cs`, which now logs every ticker line) produced **27 commissions**:
+
+   | Slot | Commissions |
+   |---|---|
+   | Weapon | 11 |
+   | Shield | 11 |
+   | Armor | 5 |
+   | **Consumable** | **0** |
+   | **Trinket** | **0** |
+
+   81% of demand is Weapon-or-Shield, and the two slots the Alchemist, Tanner and Engineer actually produce received **nothing across five campaigns**. So the synthesis's root cause is not a hypothesis to evaluate — it is a measured property of the shipped game, and it lands *after* U3b gave tanning and engineering real interactive crafts. That ordering is the point worth sitting with: those two professions now have the most recently-built craft surfaces in the game and still no demand to sell into.
 3. **Registry enforcement: build the manifest test, or drop the "source of truth" claim?** `docs/design/2026-07-21-operating-model.md` promised a test that cross-checks the ledgers against the code registries and fails the build on divergence. It was never built — which is precisely why the ledgers drifted for five days and had to be rebuilt by audit. Either give the claim teeth or stop making it.
 4. **CI throughput** — the sharding / Release / cache work sits unmerged on `ci/ci-throughput-speedup` and `feat/ci-parallel-balance`, pending sign-off because it edits `.github/`.
 5. **Prestige era** (old U-D5) — remains the explicit post-v1 deferral. Revisit only if the feel-test says the ending lands but the game wants a reason to continue.
