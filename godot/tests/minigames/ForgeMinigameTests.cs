@@ -2,10 +2,12 @@
 using System;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Threading.Tasks;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Professions;
 using GdUnit4;
+using Godot;
 using GodotClient.Minigames;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
@@ -271,6 +273,211 @@ public class ForgeMinigameTests
             AssertThat(overlay.WasCancelled).IsTrue();
             AssertThat(overlay.Visible).IsFalse();
             AssertThat(ui.Adapter.PendingActions.OfType<CraftAction>().Count()).IsEqual(0);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── U3 "forge feel pass": aimed strike, pump strokes, drag-to-quench (P002 plan) ───────────
+    // Presentation-only — none of these touch ForgeTraceInput/CraftAction/scoring; every gesture
+    // still terminates in the SAME public seams (ForgeStrike/PumpStroke/Plunge) the scenarios above
+    // already pin. _GuiInput is exercised directly with constructed InputEvents (no real mouse/
+    // window needed) since it is a plain public override — exactly the "tests call the seam
+    // directly" idiom KTD-A asks for.
+
+    [TestCase]
+    public void PumpStroke_RaisesHeatByExactlyOneQuantum_ClampedAt1000()
+    {
+        var mg = new ForgeMinigame();
+        try
+        {
+            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
+            var before = mg.HeatYPermille;
+
+            mg.PumpStroke();
+
+            AssertThat(mg.HeatYPermille).IsEqual(before + ForgeMinigame.PumpStrokeHeatPermille);
+
+            // Drive heat to the ceiling, then prove one more stroke clamps rather than overshoots.
+            var guard = 0;
+            while (mg.HeatYPermille < 1000 && guard++ < 100)
+            {
+                mg.PumpStroke();
+            }
+
+            AssertThat(mg.HeatYPermille).IsEqual(1000);
+            mg.PumpStroke();
+            AssertThat(mg.HeatYPermille).IsEqual(1000);
+        }
+        finally
+        {
+            mg.Free();
+        }
+    }
+
+    [TestCase]
+    public void RightDrag_QuantizesIntoPumpStrokes_ByFixedPixelThreshold()
+    {
+        var mg = new ForgeMinigame();
+        try
+        {
+            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
+            var before = mg.HeatYPermille;
+
+            mg._GuiInput(new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = true });
+            // Exactly 3 strokes' worth of downward motion, split across two motion events (the
+            // accumulator must persist across events, not reset each call).
+            mg._GuiInput(new InputEventMouseMotion { Relative = new Vector2(0, ForgeMinigame.PumpStrokeDragPixels * 2) });
+            mg._GuiInput(new InputEventMouseMotion { Relative = new Vector2(0, ForgeMinigame.PumpStrokeDragPixels) });
+
+            AssertThat(mg.HeatYPermille).IsEqual(before + ForgeMinigame.PumpStrokeHeatPermille * 3);
+
+            // A leftover fractional remainder (< N px) must NOT fire a fourth stroke yet.
+            var afterThree = mg.HeatYPermille;
+            mg._GuiInput(new InputEventMouseMotion { Relative = new Vector2(0, ForgeMinigame.PumpStrokeDragPixels - 1) });
+            AssertThat(mg.HeatYPermille).IsEqual(afterThree);
+
+            // Upward motion is ignored, never subtracted from the banked accumulator or from heat.
+            mg._GuiInput(new InputEventMouseMotion { Relative = new Vector2(0, -500) });
+            AssertThat(mg.HeatYPermille).IsEqual(afterThree);
+
+            // Releasing the button resets the accumulator — the leftover 17px is discarded, not
+            // carried into a fresh drag.
+            mg._GuiInput(new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false });
+            mg._GuiInput(new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = true });
+            mg._GuiInput(new InputEventMouseMotion { Relative = new Vector2(0, ForgeMinigame.PumpStrokeDragPixels - 1) });
+            AssertThat(mg.HeatYPermille).IsEqual(afterThree);
+        }
+        finally
+        {
+            mg.Free();
+        }
+    }
+
+    [TestCase]
+    public void WouldHit_TrueInsideBilletRect_FalseFarOutside()
+    {
+        var mg = new ForgeMinigame();
+        try
+        {
+            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
+
+            // Unmounted, so the canvas has never been laid out — the anchor resolves to the origin,
+            // but the SAME rect math a real, laid-out canvas would use is exercised either way.
+            var anchor = mg.BilletAnchor;
+            AssertThat(mg.WouldHit(anchor)).IsTrue();
+            AssertThat(mg.WouldHit(anchor + new Vector2(ForgeMinigame.BilletHitBoxSize / 2f - 2f, 0))).IsTrue();
+            AssertThat(mg.WouldHit(anchor + new Vector2(10_000, 10_000))).IsFalse();
+            AssertThat(mg.WouldHit(anchor + new Vector2(-10_000, 10_000))).IsFalse();
+        }
+        finally
+        {
+            mg.Free();
+        }
+    }
+
+    [TestCase]
+    public async Task WouldHit_ReflectsTheRealLaidOutCanvas_ThroughTheRealForgePanel()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            ui.Adapter.AdvancePhase();
+            ui.OpenPanel("Forge");
+            PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
+            var overlay = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
+            await SettleLayout(overlay); // container layout is deferred — let the canvas actually size itself
+
+            var anchor = overlay.BilletAnchor;
+            AssertThat(anchor.X).IsGreater(0f); // real layout ran — no longer the degenerate origin
+            AssertThat(overlay.WouldHit(anchor)).IsTrue();
+            AssertThat(overlay.WouldHit(anchor + new Vector2(2_000, 2_000))).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void SpaceStrike_StillWorks_WhenWouldHitWouldBeFalse()
+    {
+        var mg = new ForgeMinigame();
+        try
+        {
+            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
+
+            var farAway = mg.BilletAnchor + new Vector2(10_000, 10_000);
+            AssertThat(mg.WouldHit(farAway)).IsFalse(); // establishes aim would reject this spot
+
+            // Space never checks WouldHit at all — it is the unaimed, always-valid keyboard path.
+            var xBefore = mg.ShapeXPermille;
+            mg._GuiInput(new InputEventKey { Keycode = Key.Space, Pressed = true, Echo = false });
+            AssertThat(mg.ShapeXPermille).IsGreater(xBefore);
+        }
+        finally
+        {
+            mg.Free();
+        }
+    }
+
+    [TestCase]
+    public void LeftClick_OffTheBillet_DoesNotStrike_OnTheBilletDoes()
+    {
+        var mg = new ForgeMinigame();
+        try
+        {
+            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
+
+            var xBefore = mg.ShapeXPermille;
+            var farAway = mg.BilletAnchor + new Vector2(10_000, 10_000);
+            mg._GuiInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = farAway });
+            AssertThat(mg.ShapeXPermille).IsEqual(xBefore); // missed the billet — no-op
+
+            mg._GuiInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = mg.BilletAnchor });
+            AssertThat(mg.ShapeXPermille).IsGreater(xBefore); // landed on the billet — struck
+        }
+        finally
+        {
+            mg.Free();
+        }
+    }
+
+    [TestCase]
+    public async Task DragFromBillet_IntoQuenchZone_CallsPlunge_ThroughTheRealForgePanel()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            ui.Adapter.AdvancePhase();
+            ui.OpenPanel("Forge");
+            PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
+            var overlay = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
+
+            // Drive the tempo-synced run to completion FIRST, entirely on the manual accumulated
+            // Advance(delta) clock, before any real engine frame is ever pumped — SettleLayout
+            // below awaits real ProcessFrame signals, and letting even a few real frames land
+            // mid-loop would interleave a wall-clock _Process tick with this tempo-sensitive
+            // script and desync it (real _Process is otherwise never invoked in a synchronous
+            // gdUnit test, which is why every other scripted-run test here stays unmounted or
+            // avoids awaiting frames around the loop).
+            WorkBilletToEnd(overlay);
+            AssertThat(overlay.ShapeXPermille).IsGreaterEqual(1000);
+            AssertThat(overlay.Completed).IsFalse();
+
+            await SettleLayout(overlay); // NOW let the canvas actually size itself for the geometry below
+            AssertThat(overlay.IsInQuenchZone(overlay.QuenchZoneAnchor)).IsTrue(); // sanity on the zone itself
+
+            overlay._GuiInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = overlay.BilletAnchor });
+            overlay._GuiInput(new InputEventMouseMotion { Position = overlay.QuenchZoneAnchor });
+
+            AssertThat(overlay.Completed).IsTrue();
+            var pending = ui.Adapter.PendingActions.OfType<CraftAction>().ToList();
+            AssertThat(pending.Count).IsEqual(1);
         }
         finally
         {
