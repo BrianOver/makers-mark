@@ -49,6 +49,7 @@ public partial class BountyPanel : SimPanel
     private MineCrossSection? _floorSection;
     private CoinStack? _rewardStack;
     private PosterComposer? _poster;
+    private Button? _postButton;
 
     public override void _Ready() => EnsureBuilt();
 
@@ -113,6 +114,30 @@ public partial class BountyPanel : SimPanel
                 RenderJudgment(offSection.Body, judged);
             }
         }
+
+        GatePostButton(state);
+    }
+
+    /// <summary>Gate the Post button to when the sim will actually accept a bounty: bounties post in
+    /// the Morning or Evening only (<see cref="ActionLegality"/>), and the reward gold must be
+    /// affordable to escrow. Mirrors ForgePanel's buy/craft gating so a player never clicks a Post
+    /// that silently bounces (the click-through found this button clickable in every phase / with 0g).</summary>
+    private void GatePostButton(GameState state)
+    {
+        if (_postButton is null)
+        {
+            return;
+        }
+
+        var legalPhase = state.Phase is DayPhase.Morning or DayPhase.Evening;
+        var reward = _rewardStack?.Value ?? 0;
+        var affordable = state.Player.Gold >= reward;
+        GateButton(
+            _postButton,
+            legalPhase && affordable,
+            !legalPhase
+                ? "Bounties are posted in the Morning or Evening."
+                : $"Not enough gold to escrow {reward}g — you have {state.Player.Gold}g.");
     }
 
     /// <summary>Render one hero's accept/decline judgment as a small pinned sticky note (U6) —
@@ -178,7 +203,16 @@ public partial class BountyPanel : SimPanel
         _poster = new PosterComposer { Name = "BountyPoster" };
         form.AddChild(_poster);
 
-        AddButton(form, "PostBounty", "Post", OnPostPressed);
+        _postButton = AddButton(form, "PostBounty", "Post", OnPostPressed);
+
+        // Re-gate live as the player counts coins onto the desk — the escrow must stay affordable.
+        _rewardStack.ValueChanged += _ =>
+        {
+            if (Adapter is not null)
+            {
+                GatePostButton(Adapter.CurrentState);
+            }
+        };
 
         // Keep the poster's printed preview in sync with whatever the cross-section/coin stack
         // currently hold, and wire its drag-to-board gesture into the SAME seam the button uses.
