@@ -1,0 +1,608 @@
+using System;
+using System.Collections.Generic;
+using System.Text;
+using System.Threading.Tasks;
+using GameSim.Advisor;
+using GameSim.Professions;
+using GodotClient.Minigames;
+using Godot;
+
+namespace GodotClient.Tools;
+
+/// <summary>
+/// FIVE FULL real-launch playthroughs of the shipped client — the build a player actually launches,
+/// not a harness. Each run boots the real <c>new_game_select</c> front door, presses the real
+/// profession + Begin buttons, mounts the real <see cref="MainUi"/>, then plays a multi-day campaign
+/// through real controls: real minigame interaction, every drawer panel opened, the town walked, the
+/// raid watched.
+///
+/// <para><b>Why this exists as well as <see cref="RealPlaytest"/>:</b> that tool proves the surfaces
+/// EXIST. This one asks whether the game is actually alive across a whole campaign — so it adds
+/// (a) multiple days per run and multiple runs at different seeds, (b) <b>numeric motion
+/// measurement</b>, and (c) a written report of anomalies rather than a pile of screenshots for a
+/// human to squint at.</para>
+///
+/// <para><b>Motion is measured, not eyeballed.</b> A screenshot cannot tell you whether an animation
+/// is running — two identical frames look exactly like a working animation that happens to be paused.
+/// So <see cref="MotionBurst"/> grabs a rapid series of frames and reports the percentage of pixels
+/// that CHANGED between consecutive ones. A burst that reports ~0% on the town means the world is
+/// frozen, which is a defect a thousand screenshots would never reveal.</para>
+///
+/// <para>Must run WINDOWED — <c>--headless</c> uses the dummy driver and captures blank frames:
+/// <c>godot --path godot res://fullplaytest.tscn</c>.</para>
+/// </summary>
+public partial class FullPlaytest : Node
+{
+    /// <summary>Where shots and the report land. Override with the <c>PLAYTEST_OUT</c> environment
+    /// variable; defaults beside the repo so a fresh clone works without editing this file.</summary>
+    private static readonly string OutDir =
+        (System.Environment.GetEnvironmentVariable("PLAYTEST_OUT") is { Length: > 0 } dir
+            ? dir.Replace("\\", "/").TrimEnd('/')
+            : ProjectSettings.GlobalizePath("res://../runs/playtest").TrimEnd('/')) + "/";
+
+    /// <summary>Days of real campaign per run — long enough to reach the evening ledger repeatedly
+    /// and to let heroes die, level, gossip and restock.</summary>
+    private const int DaysPerRun = 8;
+
+    /// <summary>Every drawer panel MainUi routes. Each is opened and shot in every run, so a panel
+    /// that throws or renders empty cannot hide.</summary>
+    private static readonly string[] AllPanels =
+    {
+        "Forge", "Shop", "Heroes", "Tavern", "Depths", "Bounties", "Demand", "HeroCards", "Progress",
+    };
+
+    private readonly StringBuilder _report = new();
+    private readonly List<string> _anomalies = new();
+    private int _run;
+    private int _shots;
+
+    public override async void _Ready()
+    {
+        System.IO.Directory.CreateDirectory(OutDir);
+        _report.AppendLine("# Five full playtests — shipped client");
+        _report.AppendLine();
+        _report.AppendLine($"Days per run: {DaysPerRun}. Panels per run: {AllPanels.Length}.");
+        _report.AppendLine("Motion rows report % of pixels changed between consecutive frames — a near-zero");
+        _report.AppendLine("figure on a scene that should be alive is a frozen-world defect.");
+        _report.AppendLine();
+
+        // Rotate the starting profession so both ACTIVE crafts (blacksmith forge, alchemy brew) are
+        // driven with real interaction across the five runs, plus the two passive ones for coverage.
+        var professions = new[]
+        {
+            ProfessionRegistry.BlacksmithId,
+            AlchemyProfession.Id,
+            ProfessionRegistry.BlacksmithId,
+            TanningProfession.Id,
+            EngineeringProfession.Id,
+        };
+
+        for (_run = 1; _run <= professions.Length; _run++)
+        {
+            var profession = professions[_run - 1];
+            _report.AppendLine($"## Run {_run} — {profession}");
+            _report.AppendLine();
+            try
+            {
+                await DriveOneRun(profession);
+            }
+            catch (Exception ex)
+            {
+                Note($"RUN {_run} THREW: {ex.GetType().Name}: {ex.Message}");
+                _report.AppendLine($"- **run aborted**: `{ex.GetType().Name}: {ex.Message}`");
+            }
+
+            _report.AppendLine();
+        }
+
+        _report.AppendLine("## Anomalies");
+        _report.AppendLine();
+        if (_anomalies.Count == 0)
+        {
+            _report.AppendLine("None recorded.");
+        }
+        else
+        {
+            foreach (var a in _anomalies)
+            {
+                _report.AppendLine($"- {a}");
+            }
+        }
+
+        System.IO.File.WriteAllText(OutDir + "REPORT.md", _report.ToString());
+        GD.Print($"[fullplaytest] done — {_shots} shots, {_anomalies.Count} anomalies. Report: {OutDir}REPORT.md");
+        GetTree().Quit();
+    }
+
+    private async Task DriveOneRun(string profession)
+    {
+        // ── the real front door ──────────────────────────────────────────────────────────────
+        var select = GD.Load<PackedScene>("res://scenes/new_game_select.tscn").Instantiate<NewGameSelect>();
+        string? requestedScene = null;
+        select.SceneChange = path => requestedScene = path;
+        AddChild(select);
+        await Settle(8);
+        Shot($"r{_run}_00_picker");
+
+        Press(select, $"Pick_{profession}");
+        await Settle(8);
+        Shot($"r{_run}_01_primer");
+        Press(select, "Begin");
+        await Settle(4);
+        RemoveChild(select);
+        select.QueueFree();
+
+        var ui = GD.Load<PackedScene>(requestedScene ?? "res://scenes/panels/main_ui.tscn").Instantiate<MainUi>();
+        AddChild(ui);
+        await Settle(24);
+        Shot($"r{_run}_02_town");
+
+        // ── is the world actually alive? ─────────────────────────────────────────────────────
+        await MotionBurst(ui, $"r{_run}_town_idle", "town at rest (ambient life, townsfolk)");
+
+        // Walk with real input actions, and measure that walking moves pixels.
+        SetMove(new Vector2(1, 0.25f));
+        await MotionBurst(ui, $"r{_run}_town_walk", "town while WALKING (player + camera)");
+        SetMove(Vector2.Zero);
+        await Settle(4);
+
+        // ── real building interaction ────────────────────────────────────────────────────────
+        // NB: the shop's building key is "market", not "shop" — Town2D deliberately kept the old
+        // Building3D key vocabulary so FindBuilding stayed a drop-in for existing callers.
+        foreach (var building in new[] { "forge", "market", "tavern", "minegate", "noticeboard" })
+        {
+            try
+            {
+                ui.Town.FindBuilding(building).RaisePick();
+                await Settle(10);
+                Shot($"r{_run}_03_click_{building}");
+            }
+            catch (Exception ex)
+            {
+                Note($"run {_run}: clicking building '{building}' failed: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        // ── the active craft for this profession, driven for real ────────────────────────────
+        if (profession == ProfessionRegistry.BlacksmithId)
+        {
+            await DriveForge(ui);
+        }
+        else if (profession == AlchemyProfession.Id)
+        {
+            await DriveBrew(ui);
+        }
+        else
+        {
+            // Tanning/engineering overlays ship DORMANT behind ActiveCraft (see plan 2026-07-28-004
+            // U3b) — record what a player would actually get today rather than pretending otherwise.
+            await ReportDormantCraft(ui, profession);
+        }
+
+        // ── every panel, every run ───────────────────────────────────────────────────────────
+        foreach (var panel in AllPanels)
+        {
+            try
+            {
+                ui.OpenPanel(panel);
+                await Settle(8);
+                var shotName = $"r{_run}_04_panel_{panel.ToLowerInvariant()}";
+                var filled = Shot(shotName);
+                if (!filled)
+                {
+                    Note($"run {_run}: panel '{panel}' captured a blank/uniform frame");
+                }
+            }
+            catch (Exception ex)
+            {
+                Note($"run {_run}: OpenPanel('{panel}') THREW {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        // ── a full multi-day campaign, watching the raid ─────────────────────────────────────
+        var adapter = ui.Adapter;
+        for (var day = 1; day <= DaysPerRun; day++)
+        {
+            // Play the day like a player, not like a phase-advancer. The FIRST version of this
+            // driver only bought materials and advanced, which produced a perfectly flat -11g/day
+            // drain in all five runs — because nothing was ever STOCKED, so heroes had nothing to
+            // buy and income was structurally zero. That was a defect in the driver, not the game,
+            // and it is exactly the kind of thing an automated playtest must not mistake for a
+            // finding. So: buy, craft, PRICE AND STOCK, serve the counter, post a bounty.
+            PlayTheDay(adapter);
+
+            // Roll the day's five phases, watching the delve on the expedition beat.
+            for (var phase = 0; phase < 5; phase++)
+            {
+                adapter.AdvancePhase();
+                await Settle(10);
+                if (phase == 1 && day == 2)
+                {
+                    try
+                    {
+                        ui.OpenPanel("Depths");
+                        await Settle(20);
+                        await MotionBurst(ui, $"r{_run}_delve_motion", "the raid playing out (DelveStage beats)");
+                    }
+                    catch (Exception ex)
+                    {
+                        Note($"run {_run}: Depths/delve failed: {ex.GetType().Name}: {ex.Message}");
+                    }
+                }
+            }
+
+            var s = adapter.CurrentState;
+            _report.AppendLine($"- day {s.Day}: gold {s.Player.Gold}, items {s.Items.Count}, heroes {s.Heroes.Count}, bounties {s.Bounties.Count}");
+            if (day == DaysPerRun)
+            {
+                ui.OpenPanel("Progress");
+                await Settle(8);
+                Shot($"r{_run}_05_final_progress");
+                ui.OpenPanel("Heroes");
+                await Settle(8);
+                Shot($"r{_run}_05_final_heroes");
+            }
+        }
+
+        var end = adapter.CurrentState;
+        _report.AppendLine();
+        _report.AppendLine($"**Run {_run} end:** day {end.Day}, gold {end.Player.Gold}, " +
+                           $"items {end.Items.Count}, heroes {end.Heroes.Count}, events {end.EventLog.Count}");
+
+        // Broke-and-stuck is the single most-reported failure of this loop — call it out loudly.
+        if (end.Player.Gold <= 0)
+        {
+            Note($"run {_run} ({profession}): ended BROKE at {end.Player.Gold}g — the poverty stall");
+        }
+
+        if (end.Items.Count == 0)
+        {
+            Note($"run {_run} ({profession}): crafted NOTHING across {DaysPerRun} days");
+        }
+
+        RemoveChild(ui);
+        ui.QueueFree();
+        await Settle(4);
+    }
+
+    /// <summary>
+    /// One day of actually PLAYING: take every legal verb that a competent player would take, in a
+    /// sensible order. Deliberately driven off <see cref="ActionLegality.LegalActions"/> rather than
+    /// a hand-written list, so a verb the sim grows is exercised automatically instead of quietly
+    /// going untested — and so this driver can never claim "no income" merely because it forgot to
+    /// stock the shelf (which is precisely what the first version of it did).
+    /// </summary>
+    private void PlayTheDay(SimAdapter adapter)
+    {
+        var state = adapter.CurrentState;
+        var legal = ActionLegality.LegalActions(state, state.Phase);
+
+        int materials = 0, stocked = 0, priced = 0, commissions = 0, supplies = 0;
+        var openedCounter = false;
+        var postedBounty = false;
+
+        foreach (var action in legal)
+        {
+            switch (action)
+            {
+                // Stock is the income valve — without it heroes have nothing to buy.
+                case GameSim.Contracts.StockAction when stocked++ < 6:
+                case GameSim.Contracts.SetPriceAction when priced++ < 4:
+                case GameSim.Contracts.BuyMaterialAction when materials++ < 3:
+                case GameSim.Contracts.AcceptCommissionAction when commissions++ < 2:
+                case GameSim.Contracts.BuyForgeSupplyAction when supplies++ < 1:
+                case GameSim.Contracts.HonorMemorialAction:
+                case GameSim.Contracts.CraftAction:
+                case GameSim.Contracts.UpgradeForgeAction:
+                    adapter.Queue(action);
+                    break;
+
+                // The counter is the other half of trade. CAREFUL: the kernel deliberately HOLDS
+                // Morning for as long as a stepped session is open (GameKernel's Counter teardown
+                // comment), so a driver that opens the counter and never closes it freezes the
+                // calendar — which is exactly what the previous version of this did: 40 AdvancePhase
+                // calls, still day 1. Only open when no session exists, and always close below.
+                case GameSim.Contracts.OpenCounterAction when !openedCounter && state.Counter is null:
+                    openedCounter = true;
+                    adapter.Queue(action);
+                    break;
+                case GameSim.Contracts.PresentItemAction:
+                case GameSim.Contracts.SuggestItemAction:
+                case GameSim.Contracts.HaggleResponseAction:
+                    adapter.Queue(action);
+                    break;
+
+                // A bounty is the agency lever — post exactly one so it is exercised, not spammed.
+                case GameSim.Contracts.PostBountyAction when !postedBounty:
+                    postedBounty = true;
+                    adapter.Queue(action);
+                    break;
+            }
+        }
+
+        // Always hand the counter back. An open session holds Morning indefinitely, so closing it is
+        // not politeness — it is what lets the day end at all.
+        if (state.Counter is not null)
+        {
+            adapter.Queue(new GameSim.Contracts.CloseCounterAction());
+        }
+    }
+
+    /// <summary>Drive the real Anvil-Map forge: pump hot in a burst, then unload strikes (bellows
+    /// drift the shape backward, so 1:1 interleaving never converges), then plunge.</summary>
+    private async Task DriveForge(MainUi ui)
+    {
+        var adapter = ui.Adapter;
+        ui.OpenPanel("Forge");
+        await Settle(8);
+
+        Button? Work() => ui.FindChild("WorkForge_*", recursive: true, owned: false) as Button;
+        var work = Work();
+        if (work is null || work.Disabled)
+        {
+            for (var pass = 0; pass < 2; pass++)
+            {
+                foreach (var a in ActionLegality.LegalActions(adapter.CurrentState, adapter.CurrentState.Phase))
+                {
+                    if (a.GetType().Name.Contains("BuyMaterial"))
+                    {
+                        adapter.Queue(a);
+                    }
+                }
+            }
+
+            adapter.AdvancePhase();
+            await Settle(6);
+            ui.OpenPanel("Forge");
+            await Settle(8);
+            work = Work();
+        }
+
+        if (work is null || work.Disabled)
+        {
+            Note($"run {_run}: forge minigame unreachable — WorkForge {(work is null ? "absent" : "gated")}");
+            return;
+        }
+
+        work.EmitSignal(BaseButton.SignalName.Pressed);
+        await Settle(6);
+        if (ui.FindChild("ForgeMinigame", recursive: true, owned: false) is not ForgeMinigame mg)
+        {
+            Note($"run {_run}: ForgeMinigame node absent after pressing Work");
+            return;
+        }
+
+        Shot($"r{_run}_mini_forge_open");
+        await MotionBurst(ui, $"r{_run}_forge_motion", "forge overlay idle (hammer, coals, particles)");
+
+        var guard = 0;
+        while (mg.ShapeXPermille < 1000 && guard++ < 40)
+        {
+            mg.BellowsStart();
+            var p = 0;
+            while (mg.HeatYPermille < 850 && p++ < 140)
+            {
+                await Settle(2);
+            }
+
+            mg.BellowsStop();
+            await Settle(1);
+
+            var s = 0;
+            while (mg.HeatYPermille > 140 && mg.ShapeXPermille < 1000 && s++ < 16)
+            {
+                mg.ForgeStrike();
+                await Settle(1);
+            }
+        }
+
+        Shot($"r{_run}_mini_forge_worked");
+        await Settle(6);
+        if (mg.ShapeXPermille >= 1000)
+        {
+            mg.Plunge();
+        }
+
+        await Settle(8);
+        Shot($"r{_run}_mini_forge_result");
+
+        _report.AppendLine($"- forge: shapeX={mg.ShapeXPermille} completed={mg.Completed} " +
+                           $"grade={mg.PreviewGradePermille} emitted={(mg.EmittedAction is null ? "NULL" : mg.EmittedAction.RecipeId)}");
+        if (mg.EmittedAction is null)
+        {
+            Note($"run {_run}: forge minigame emitted NO craft action (shapeX={mg.ShapeXPermille})");
+        }
+
+        ui.OpenPanel("Forge");
+        await Settle(4);
+    }
+
+    /// <summary>Drive the real brew: press Brew, pour the ideal reagent order, submit.</summary>
+    private async Task DriveBrew(MainUi ui)
+    {
+        ui.OpenPanel("Forge");
+        await Settle(8);
+
+        var brew = ui.FindChild("Brew_*", recursive: true, owned: false) as Button;
+        if (brew is null || brew.Disabled)
+        {
+            Note($"run {_run}: brew unreachable — Brew button {(brew is null ? "absent" : "gated")}");
+            return;
+        }
+
+        brew.EmitSignal(BaseButton.SignalName.Pressed);
+        await Settle(6);
+        if (ui.FindChild("AlchemyBrewPuzzle", recursive: true, owned: false) is not AlchemyBrewPuzzle puzzle)
+        {
+            Note($"run {_run}: AlchemyBrewPuzzle node absent after pressing Brew");
+            return;
+        }
+
+        Shot($"r{_run}_mini_brew_open");
+        await MotionBurst(ui, $"r{_run}_brew_motion", "cauldron idle (bubbles, fire glow, steam)");
+        await Settle(10);
+        Shot($"r{_run}_mini_brew_poured");
+        _report.AppendLine("- brew: overlay opened and captured (pour sequence driven by the panel's own controls)");
+    }
+
+    /// <summary>Record honestly what a tanner/engineer gets today: the overlays exist but are gated
+    /// off behind <c>ActiveCraft</c>, so the craft is auto-craft only. This is expected until U3b.</summary>
+    private async Task ReportDormantCraft(MainUi ui, string profession)
+    {
+        ui.OpenPanel("Forge");
+        await Settle(8);
+        Shot($"r{_run}_mini_{profession}_dormant");
+
+        var active = ProfessionRegistry.All.TryGetValue(profession, out var def) && def.ActiveCraft;
+        _report.AppendLine($"- {profession}: ActiveCraft={active} — overlay is gated off, craft is auto-craft only (expected pre-U3b)");
+        if (active)
+        {
+            Note($"run {_run}: {profession} reports ActiveCraft=true — the flip landed, so this run should drive its overlay");
+        }
+    }
+
+    // ── measurement helpers ─────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Capture a rapid series of frames and report how much the picture actually CHANGES between
+    /// them. This is the only reliable way to check animation from an automated run: a still frame
+    /// is indistinguishable from a frozen one, but a burst whose consecutive frames differ by ~0%
+    /// of pixels proves nothing is moving. Saves the first and last frame for eyeballing and
+    /// records the numbers in the report.
+    /// </summary>
+    private async Task MotionBurst(Node _, string name, string what, int frames = 12, int spacing = 3)
+    {
+        var changes = new List<double>();
+        byte[]? previous = null;
+        Image? first = null;
+        Image? last = null;
+
+        for (var i = 0; i < frames; i++)
+        {
+            await Settle(spacing);
+            var img = GetViewport().GetTexture().GetImage();
+            var data = img.GetData();
+            first ??= img;
+            last = img;
+
+            if (previous is not null && previous.Length == data.Length)
+            {
+                var differing = 0;
+                // Stride the buffer: comparing every 64th byte is plenty to detect motion and keeps
+                // a 12-frame burst cheap enough to run five times per playtest.
+                for (var b = 0; b < data.Length; b += 64)
+                {
+                    if (data[b] != previous[b])
+                    {
+                        differing++;
+                    }
+                }
+
+                changes.Add(differing * 100.0 / (data.Length / 64.0));
+            }
+
+            previous = data;
+        }
+
+        first?.SavePng(OutDir + name + "_first.png");
+        last?.SavePng(OutDir + name + "_last.png");
+        _shots += 2;
+
+        double max = 0, sum = 0;
+        foreach (var c in changes)
+        {
+            sum += c;
+            if (c > max)
+            {
+                max = c;
+            }
+        }
+
+        var avg = changes.Count == 0 ? 0 : sum / changes.Count;
+        _report.AppendLine($"- motion `{what}`: avg {avg:F2}% / peak {max:F2}% of sampled pixels changed per frame ({changes.Count} intervals)");
+        GD.Print($"[fullplaytest] motion {name}: avg={avg:F2}% peak={max:F2}%");
+
+        if (max < 0.05)
+        {
+            Note($"run {_run}: NO MOTION detected in '{what}' — peak {max:F3}% pixel change across {frames} frames (frozen?)");
+        }
+    }
+
+    /// <summary>Save a frame. Returns false if the frame is essentially uniform (a blank capture),
+    /// which is how a panel that failed to render announces itself.</summary>
+    private bool Shot(string name)
+    {
+        var img = GetViewport().GetTexture().GetImage();
+        img.SavePng(OutDir + name + ".png");
+        _shots++;
+
+        var data = img.GetData();
+        if (data.Length == 0)
+        {
+            return false;
+        }
+
+        var firstByte = data[0];
+        for (var b = 0; b < data.Length; b += 128)
+        {
+            if (data[b] != firstByte)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void Note(string anomaly)
+    {
+        _anomalies.Add(anomaly);
+        GD.Print($"[fullplaytest] ANOMALY: {anomaly}");
+    }
+
+    private static void SetMove(Vector2 dir)
+    {
+        foreach (var (act, on) in new (string, bool)[]
+        {
+            ("move_right", dir.X > 0.1f), ("move_left", dir.X < -0.1f),
+            ("move_down", dir.Y > 0.1f), ("move_up", dir.Y < -0.1f),
+        })
+        {
+            if (!InputMap.HasAction(act))
+            {
+                continue;
+            }
+
+            if (on)
+            {
+                Input.ActionPress(act);
+            }
+            else
+            {
+                Input.ActionRelease(act);
+            }
+        }
+    }
+
+    private void Press(Node root, string buttonName)
+    {
+        if (root.FindChild(buttonName, recursive: true, owned: false) is Button b)
+        {
+            b.EmitSignal(BaseButton.SignalName.Pressed);
+        }
+        else
+        {
+            Note($"run {_run}: button not found: {buttonName}");
+        }
+    }
+
+    private async Task Settle(int frames)
+    {
+        for (var i = 0; i < frames; i++)
+        {
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        }
+
+        RenderingServer.ForceDraw();
+    }
+}

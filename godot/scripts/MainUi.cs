@@ -53,6 +53,10 @@ public partial class MainUi : Control
     private const float ObjectiveDockWidth = Ui.ObjectiveTracker.DockWidth;
     private const float ObjectiveDockMargin = 16f;
 
+    /// <summary>Height of the HUD's stat-chip row (Day/Phase/Gold/Heroes/rent/slot-pips), measured
+    /// from the pre-wrapper layout. Must be explicit — see StatChipsWrap's remark.</summary>
+    private const float StatRowHeight = 68f;
+
     /// <summary>Top offset of the objective chip's top-right dock — must clear the HUD header's
     /// bottom edge. Bumped from 64 to 108 for the two-row header (gate-b playtest, 2026-07-24): the
     /// stat chips moved to their own row, so the header is ~2x tall and the chip would otherwise sit
@@ -524,6 +528,22 @@ public partial class MainUi : Control
         var maxBottom = Mathf.Max(Objective.OffsetTop + ObjectiveDockMinBottomGap, viewportHeight - ObjectiveDockMargin);
         var contentHeight = Objective.GetCombinedMinimumSize().Y;
         Objective.OffsetBottom = Mathf.Min(Objective.OffsetTop + contentHeight, maxBottom);
+
+        // Stack the tutorial dock BELOW the objective card, measured — never at a magic offset.
+        // TutorialDockOffsetTop was `ObjectiveDockOffsetTop + 90f`, a constant that silently assumed
+        // both the header's height and the objective card's height. The 2026-07-29 HUD-overflow fix
+        // made the header shorter, the objective card moved up, and the tutorial dock stayed put —
+        // landing directly on top of the card so the quick-travel row covered the "Today" title and
+        // the advisor line. This is the exact drift this method's own remark warns about, so apply
+        // the same remedy: derive the position instead of tuning a number that will drift again.
+        if (Tutorial is not null)
+        {
+            // Both edges move together — OffsetBottom is an absolute offset from the same anchor, so
+            // shifting only the top would squash or invert the panel's height.
+            var tutorialTop = Mathf.Max(TutorialDockOffsetTop, Objective.OffsetBottom + ObjectiveDockMargin);
+            Tutorial.OffsetTop = tutorialTop;
+            Tutorial.OffsetBottom = tutorialTop + Tutorial.GetCombinedMinimumSize().Y;
+        }
     }
 
     /// <summary>U18/U15: the day-timeline's engaged-wait indicator mirrors <see cref="
@@ -996,8 +1016,37 @@ public partial class MainUi : Control
         // can never push a control off-screen (controls live on row 2).
         var statRow = new HBoxContainer { Name = "HudStatRow", ClipContents = true };
         headerColumn.AddChild(statRow);
+
+        // Layout-probe fix (2026-07-29): ClipContents caps DRAWING, not the reported minimum size.
+        // An HBoxContainer's minimum is the sum of its children's minimums, so the chip row still
+        // demanded 1174px and pushed the ROOT `Layout` container to 1198px inside a 1152px window —
+        // which is why "Act I" was clipped, the right-most tray icon was sliced, and the world/ticker
+        // sat 46px wider than the screen. Bounding the chips inside a plain (non-Container) Control
+        // with a fixed CustomMinimumSize is the same technique TimelineWrap below already uses, and
+        // it stops row 1 from ever driving the window wider than itself.
+        var statWrap = new Control
+        {
+            Name = "StatChipsWrap",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+
+            // The HEIGHT must be explicit. A plain Control reports no minimum of its own, and its
+            // FullRect child cannot give it one, so leaving Y at 0 collapsed the whole row and made
+            // Day/Gold/Heroes/rent/slot-pips vanish from the HUD — an information regression far
+            // worse than the clipping this wrapper exists to fix. 68px is the height the row measured
+            // before it was wrapped.
+            CustomMinimumSize = new Vector2(TimelineMinWidth, StatRowHeight),
+            ClipContents = true,
+        };
+        statRow.AddChild(statWrap);
         _statChips = new HBoxContainer { Name = "StatChips" };
-        statRow.AddChild(_statChips);
+        statWrap.AddChild(_statChips);
+
+        // A plain Control does NOT lay out its children — the first attempt at this used a TopLeft
+        // preset and the chips collapsed to zero size, so Day/Gold/Heroes/slot-pips disappeared from
+        // the HUD entirely. That is strictly worse than the clipping it was meant to fix. FullRect is
+        // what TimelineWrap's child uses for exactly this reason: the wrapper bounds the width the
+        // PARENT sees, while the child still fills the wrapper and renders normally.
+        _statChips.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
         // Row 2 (UI-4): the day-timeline PHASE DIAL (ExpandFill left) + the PRIMARY VERB cluster
         // (center) + the BOOKS TRAY (right, icon-only, recessed) — 3 zones, 16px apart.
@@ -1131,25 +1180,25 @@ public partial class MainUi : Control
 
         var ledgerButton = TrayButton("OpenLedger", IconRegistry.Glyph("skull"), "Ledger");
         ledgerButton.Pressed += () => Ledger.ShowFor(LastCompletedDay);
-        trayRow.AddChild(ledgerButton);
+        trayRow.AddChild(CapTrayIcon(ledgerButton));
 
         // U10: open the raid-forecast board on demand (day-end auto-open is the chained path in
         // OnLedgerVisibilityChanged). Reads live state so it always reflects the current roster.
         var forecastButton = TrayButton("OpenForecast", IconRegistry.Glyph("depths"), "Forecast");
         forecastButton.Pressed += () => Forecast.ShowForTomorrow(Adapter.CurrentState);
-        trayRow.AddChild(forecastButton);
+        trayRow.AddChild(CapTrayIcon(forecastButton));
 
         // Wave 3 (U15): open the commission board on demand — a Prepare-phase surface, same tray
         // as Forecast. Reads live state so it always reflects the current board.
         var commissionsButton = TrayButton("OpenCommissions", IconRegistry.Glyph("bounty"), "Commissions");
         commissionsButton.Pressed += () => Commissions.ShowOpen(Adapter.CurrentState);
-        trayRow.AddChild(commissionsButton);
+        trayRow.AddChild(CapTrayIcon(commissionsButton));
 
         // Wave 4 (U21): open the Legends Wall on demand — same tray as Forecast/Bestiary/Commissions.
         // Reads live state so it always reflects the current memorials/records/gear.
         var legendsButton = TrayButton("OpenLegends", IconRegistry.Glyph("rune"), "Legends");
         legendsButton.Pressed += () => Legends.ShowWall(Adapter.CurrentState);
-        trayRow.AddChild(legendsButton);
+        trayRow.AddChild(CapTrayIcon(legendsButton));
 
         // G1 (plan 2026-07-25-001, Slice 2): the demand telegraph had no player-visible entry —
         // DemandPanel was already registered in the Drawer (U6) and reachable via
@@ -1158,7 +1207,7 @@ public partial class MainUi : Control
         // call) rather than inventing a bespoke show method.
         var demandButton = TrayButton("OpenDemand", IconRegistry.Glyph("gossip"), "Demand");
         demandButton.Pressed += () => OpenPanel("Demand");
-        trayRow.AddChild(demandButton);
+        trayRow.AddChild(CapTrayIcon(demandButton));
 
         // Phase B, B1d: the hero digest (standing/deepest/XP-rank/deeds card per alive hero) had
         // no HUD entry — same tray as Demand/Legends above. Opens "HeroCards" (not "Heroes" —
@@ -1166,12 +1215,12 @@ public partial class MainUi : Control
         // TooltipText stays "Renown" per this unit's brief.
         var heroesButton = TrayButton("OpenHeroCards", IconRegistry.Glyph("shield"), "Renown");
         heroesButton.Pressed += () => OpenPanel("HeroCards");
-        trayRow.AddChild(heroesButton);
+        trayRow.AddChild(CapTrayIcon(heroesButton));
 
         // U-D4: the progression spine — same tray. Opens the five-ladder board.
         var progressButton = TrayButton("OpenProgress", IconRegistry.Glyph("weapon"), "Progress");
         progressButton.Pressed += () => OpenPanel("Progress");
-        trayRow.AddChild(progressButton);
+        trayRow.AddChild(CapTrayIcon(progressButton));
 
         // U6/U7 rejection banner: a transient, themed, player-phrased line — hidden
         // except while a toast is live (OnPhaseCompleted shows it, ClearToast/_Process
@@ -1324,6 +1373,14 @@ public partial class MainUi : Control
         Objective.Build();
         AddChild(Objective);
         Objective.SetAnchorsPreset(LayoutPreset.TopRight);
+
+        // NOTE (2026-07-29): the layout probe reports this dock's right edge 6px past the window,
+        // because the panel's own minimum is DockWidth PLUS its PanelContainer margins. Widening the
+        // span to reserve that chrome DOES fix the 6px — and it re-flowed the card's contents so the
+        // quick-travel row overlapped the "Today" title, which is far more visible than a 6px
+        // overhang. Left as-is deliberately: the 6px is cosmetic, the overlap was not. Fixing it
+        // properly means making the dock's internal height calculation width-aware
+        // (see UpdateObjectiveDock), which is its own change and not part of a HUD-overflow pass.
         Objective.OffsetLeft = -ObjectiveDockWidth - ObjectiveDockMargin;
         Objective.OffsetRight = -ObjectiveDockMargin;
         UpdateObjectiveDock(); // initial content-height dock (see method doc)
@@ -1461,8 +1518,29 @@ public partial class MainUi : Control
         Name = name,
         Icon = icon,
         TooltipText = tooltip,
-        CustomMinimumSize = new Vector2(28, 28),
+        CustomMinimumSize = new Vector2(TrayIconSize + 8, TrayIconSize + 8),
     };
+
+    /// <summary>Rendered edge of a Books Tray glyph, in px.</summary>
+    private const int TrayIconSize = 22;
+
+    /// <summary>
+    /// Cap a tray button's glyph so the TEXTURE stops driving the button's minimum width.
+    /// <para>Layout-probe finding (2026-07-29): <see cref="Control.CustomMinimumSize"/> is a FLOOR,
+    /// not a cap, so these nominally-28px icon-only buttons actually measured 88x76 — seven of them
+    /// made the tray 648px wide and pushed the header row past the window edge, rendering the
+    /// right-most icon sliced in half.</para>
+    /// <para>The first attempt used <c>ExpandIcon</c>, which fits the glyph to the button's CONTENT
+    /// rect — and with the tray's 4px margins plus button padding that rect was tiny, so all seven
+    /// icons collapsed to near-invisible dots. Trading a sliced icon for seven blank buttons is not
+    /// a fix. The <c>icon_max_width</c> theme constant is the correct lever: it bounds the glyph at a
+    /// definite size, which bounds the button's minimum, and the icon still renders legibly.</para>
+    /// </summary>
+    private static Button CapTrayIcon(Button button)
+    {
+        button.AddThemeConstantOverride("icon_max_width", TrayIconSize);
+        return button;
+    }
 
     /// <summary>Town hero click (R20): open the Heroes drawer with that hero's detail bound.</summary>
     private void OnTownHeroClicked(int heroValue)

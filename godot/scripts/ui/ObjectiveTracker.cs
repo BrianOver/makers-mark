@@ -173,7 +173,7 @@ public sealed partial class ObjectiveTracker : PanelContainer
         }
 
         _lastReasonText = text;
-        Reason.Text = text;
+        Reason.Text = Plain(text);
         TutorialDismiss.Visible = tutorialOverride is not null;
 
         foreach (var child in RankedList.GetChildren())
@@ -186,9 +186,29 @@ public sealed partial class ObjectiveTracker : PanelContainer
         {
             // Hollow glyph for every ranked-list entry (including the top one, shown again here
             // for the full-list view) — visually subordinate to the filled step glyph above.
-            RankedList.AddChild(new Label { Name = $"ObjectiveRank_{i}", Text = $"◇ {suggestions[i].Reason}" });
+            // Layout-probe fix (2026-07-29): these were bare Labels with no wrap, no clip and no
+            // width cap, so a verbose advisor reason ran up to 82px PAST the window edge — the
+            // ranked list was the one text surface in this panel that didn't get the same treatment
+            // the main Reason label (see Build) already had.
+            RankedList.AddChild(new Label
+            {
+                Name = $"ObjectiveRank_{i}",
+                Text = Plain($"◇ {suggestions[i].Reason}"),
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                CustomMinimumSize = new Vector2(DockWidth - 24, 0),
+                ClipText = true,
+            });
         }
     }
+
+    /// <summary>
+    /// Strip the markdown emphasis the sim's advisor/tutorial strings carry. Those strings are
+    /// shared with the CLI, where <c>**bold**</c> is meaningful; a Godot <see cref="Label"/> has no
+    /// markup parser, so it rendered the asterisks literally — the first tutorial step read
+    /// "Walk to the **Forge**". Presentation-side strip rather than a sim change, because the CLI
+    /// still wants the emphasis (and the sim must stay the single source of the wording).
+    /// </summary>
+    public static string Plain(string text) => text.Replace("**", string.Empty);
 
     /// <summary>UI-6: advance the body's dip-then-settle fade by one frame's delta — called from
     /// <c>MainUi._Process</c>, the same accumulated-delta place <c>TabFade</c>/the gold-chip pop

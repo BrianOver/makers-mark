@@ -29,7 +29,13 @@ public class TutorialFlowTests
         {
             AssertThat(ui.Tutorial.Active).IsTrue();
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
-            AssertThat(ui.Objective.Reason.Text).IsEqual(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!);
+            // The rendered label carries the tutorial copy with markdown emphasis STRIPPED — a Godot
+            // Label has no markup parser, so the raw string rendered literally as "Walk to the
+            // **Forge**" on screen (caught by the 2026-07-29 playtest screenshots). The assertion
+            // still pins the copy itself; it just compares through the same transformation the panel
+            // applies, so this cannot drift from what the player actually reads.
+            AssertThat(ui.Objective.Reason.Text)
+                .IsEqual(ObjectiveTracker.Plain(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!));
             AssertThat(ui.Objective.Reason.Text).StartsWith("Tutorial 1/5:");
             AssertThat(ui.Objective.TutorialDismiss.Visible).IsTrue();
 
