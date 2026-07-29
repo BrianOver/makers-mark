@@ -8,6 +8,7 @@ using GameSim.Kernel;
 using GdUnit4;
 using Godot;
 using GodotClient.Panels;
+using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -107,7 +108,7 @@ public class CounterPanelTests
             PressEnabled(ui.Shop, "Accept");
             PressEnabled(ui.Shop, "HoldFirm");
 
-            Find<SpinBox>(ui.Shop, "CounterPrice").Value = 37;
+            Find<CoinStack>(ui.Shop, "CounterPrice").SetValue(37);
             PressEnabled(ui.Shop, "Counter");
 
             PressEnabled(ui.Shop, "CloseCounter");
@@ -168,6 +169,224 @@ public class CounterPanelTests
             .IsEqual(directState.EventLog.OfType<CounterSaleClosed>().Count());
         AssertThat(uiState.EventLog.OfType<CounterSaleClosed>().Single().Price)
             .IsEqual(directState.EventLog.OfType<CounterSaleClosed>().Single().Price);
+    }
+
+    // ── U2 desk physicality (plan 2026-07-28-002, design doc §B5) ───────────────────────────────
+    // CounterDesk is a private nested Control (mirrors AlchemyBrewPuzzle's BrewCanvas), so every
+    // test below finds it as a plain Control by name and drives it ONLY through the GuiInput
+    // signal (EmitSignal) — the same seam UiTestSupport.Click and AlchemyBrewPuzzleTests already
+    // rely on, since CounterDesk subscribes via `GuiInput +=`, never a `_GuiInput` override.
+
+    [TestCase]
+    public void DragDropPresent_OverTheMat_QueuesTheIdenticalPresentActionAsTheButton()
+    {
+        // Path A: the real drag-drop gesture through CounterDesk's GuiInput event.
+        ItemId dragResult;
+        var uiDrag = MountMainUi(new SimAdapter(
+            CounterFixture(round: 1, interest: 100, patience: 3, goodwill: 0, standingOffer: null, presented: null)));
+        try
+        {
+            uiDrag.OpenPanel("Shop");
+            var desk = Find<Control>(uiDrag.Shop, "CounterDesk");
+
+            var shelfPos = new Vector2(20f, 20f); // the only shelved item's icon (shelf slot 0)
+            var matPos = new Vector2(244f, 97f);  // inside the counter mat
+
+            desk.EmitSignal(Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = shelfPos });
+            desk.EmitSignal(Control.SignalName.GuiInput,
+                new InputEventMouseMotion { Position = matPos });
+            desk.EmitSignal(Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = matPos });
+
+            dragResult = uiDrag.Adapter.PendingActions.OfType<PresentItemAction>().Single().Item;
+        }
+        finally
+        {
+            Unmount(uiDrag);
+        }
+
+        // Path B: the existing Present button, on an identically-seeded fresh session.
+        ItemId buttonResult;
+        var uiButton = MountMainUi(new SimAdapter(
+            CounterFixture(round: 1, interest: 100, patience: 3, goodwill: 0, standingOffer: null, presented: null)));
+        try
+        {
+            uiButton.OpenPanel("Shop");
+            PressEnabled(uiButton.Shop, $"Present_{ShopItemId.Value}");
+            buttonResult = uiButton.Adapter.PendingActions.OfType<PresentItemAction>().Single().Item;
+        }
+        finally
+        {
+            Unmount(uiButton);
+        }
+
+        AssertThat(dragResult).IsEqual(buttonResult);
+        AssertThat(dragResult).IsEqual(ShopItemId);
+    }
+
+    [TestCase]
+    public void DragDropPresent_ReleasedOffTheMat_ShelvesHarmlessly_QueuesNoAction()
+    {
+        var ui = MountMainUi(new SimAdapter(
+            CounterFixture(round: 1, interest: 100, patience: 3, goodwill: 0, standingOffer: null, presented: null)));
+        try
+        {
+            ui.OpenPanel("Shop");
+            var desk = Find<Control>(ui.Shop, "CounterDesk");
+
+            var shelfPos = new Vector2(20f, 20f);
+            desk.EmitSignal(Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = shelfPos });
+            desk.EmitSignal(Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = Vector2.Zero }); // off the mat
+
+            AssertThat(ui.Adapter.PendingActions.OfType<PresentItemAction>().Count()).IsEqual(0);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void CoinComposedCounterOffer_QueuesHaggleResponseCounter_WithExactlyTheComposedTotal()
+    {
+        var state = CounterFixture(round: 1, interest: 100, patience: 3, goodwill: 0, standingOffer: 10, presented: ShopItemId);
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            var coinStack = Find<CoinStack>(ui.Shop, "CounterPrice");
+
+            // Compose 133g by stacking coins from the floor (MinValue = 1): one 100, three 10s,
+            // two 1s on top of that starting 1 — the SAME AddCoins seam a click on each
+            // denomination stack calls (CoinStack's own KTD-A contract).
+            coinStack.SetValue(1);
+            coinStack.AddCoins(100);
+            coinStack.AddCoins(10);
+            coinStack.AddCoins(10);
+            coinStack.AddCoins(10);
+            coinStack.AddCoins(1);
+            coinStack.AddCoins(1);
+
+            PressEnabled(ui.Shop, "Counter");
+
+            var counterAction = ui.Adapter.PendingActions.OfType<HaggleResponseAction>()
+                .Single(a => a.Kind == HaggleResponseKind.Counter);
+            AssertThat(counterAction.Price!.Value).IsEqual(133);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Handshake_OneClick_QueuesTheIdenticalAcceptActionAsTheButton()
+    {
+        // Path A: the real handshake click through CounterDesk's GuiInput event.
+        int handshakeAccepts;
+        var uiHandshake = MountMainUi(new SimAdapter(
+            CounterFixture(round: 1, interest: 100, patience: 3, goodwill: 0, standingOffer: 10, presented: ShopItemId)));
+        try
+        {
+            uiHandshake.OpenPanel("Shop");
+            var desk = Find<Control>(uiHandshake.Shop, "CounterDesk");
+            var handshakePos = new Vector2(519f, 109f); // inside the handshake affordance
+
+            desk.EmitSignal(Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = handshakePos });
+
+            handshakeAccepts = uiHandshake.Adapter.PendingActions.OfType<HaggleResponseAction>()
+                .Count(a => a.Kind == HaggleResponseKind.Accept);
+        }
+        finally
+        {
+            Unmount(uiHandshake);
+        }
+
+        // Path B: the existing Accept button, on an identically-seeded fresh session.
+        int buttonAccepts;
+        var uiButton = MountMainUi(new SimAdapter(
+            CounterFixture(round: 1, interest: 100, patience: 3, goodwill: 0, standingOffer: 10, presented: ShopItemId)));
+        try
+        {
+            uiButton.OpenPanel("Shop");
+            PressEnabled(uiButton.Shop, "Accept");
+            buttonAccepts = uiButton.Adapter.PendingActions.OfType<HaggleResponseAction>()
+                .Count(a => a.Kind == HaggleResponseKind.Accept);
+        }
+        finally
+        {
+            Unmount(uiButton);
+        }
+
+        AssertThat(handshakeAccepts).IsEqual(1);
+        AssertThat(buttonAccepts).IsEqual(1);
+    }
+
+    [TestCase]
+    public void DeskPosture_AcrossMoodAndPatienceBuckets_NeverQueuesAnAction()
+    {
+        var happy = CounterFixture(round: 1, interest: 900, patience: 3, goodwill: 900, standingOffer: 10, presented: ShopItemId);
+        var wary = CounterFixture(round: 1, interest: 900, patience: 1, goodwill: -900, standingOffer: 10, presented: ShopItemId);
+
+        foreach (var fixture in new[] { happy, wary })
+        {
+            var ui = MountMainUi(new SimAdapter(fixture));
+            try
+            {
+                ui.OpenPanel("Shop");
+                AssertThat(ui.Adapter.PendingActions.Count).IsEqual(0);
+
+                // Idle hover (no press) over the desk — exercises the posture/tapping-foot
+                // presentation path repeatedly; must never touch the action queue.
+                var desk = Find<Control>(ui.Shop, "CounterDesk");
+                for (var i = 0; i < 4; i++)
+                {
+                    desk.EmitSignal(Control.SignalName.GuiInput,
+                        new InputEventMouseMotion { Position = new Vector2(2 + i, 2 + i) });
+                }
+
+                AssertThat(ui.Adapter.PendingActions.Count).IsEqual(0);
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+    }
+
+    [TestCase]
+    public void SpeechBubbleAndDeskRender_DuringARealWalkAway_QueueNoExtraActions()
+    {
+        var ui = MountMainUi(new SimAdapter(SingleHeroGuaranteedBuyState()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "OpenCounter");
+            ui.Adapter.AdvancePhase();
+            PressEnabled(ui.Shop, $"Present_{ShopItemId.Value}");
+            ui.Adapter.AdvancePhase();
+
+            for (var i = 0; i < 3; i++)
+            {
+                PressEnabled(ui.Shop, "HoldFirm");
+                ui.Adapter.AdvancePhase();
+            }
+
+            AssertThat(ui.Adapter.CurrentState.EventLog.OfType<CustomerWalked>().Count()).IsEqual(1);
+            AssertThat(ui.Adapter.PendingActions.Count).IsEqual(0); // every queued action already resolved
+
+            ui.OpenPanel("Shop"); // re-refresh: paints the walk-away speech bubble + a no-customer desk
+            AssertThat(RenderedText(ui.Shop)).Contains("patience ran out"); // still a real, readable Label
+            AssertThat(ui.Adapter.PendingActions.Count).IsEqual(0); // presentation queued nothing
+        }
+        finally
+        {
+            Unmount(ui);
+        }
     }
 
     // ── Faces (Moonlighter — pure render of the sim's computed verdict) ─────────────────────────
