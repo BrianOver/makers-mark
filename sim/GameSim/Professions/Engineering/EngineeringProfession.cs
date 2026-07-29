@@ -23,6 +23,16 @@ namespace GameSim.Professions;
 /// no Godot references — constant data (KTD2/KTD4). Materials are the shared Mine ore keys (grade
 /// proxy) until the P4 material registry lands. All collections are <c>ImmutableSorted*</c> with
 /// <see cref="StringComparer.Ordinal"/>, so iteration order never depends on registration order.
+///
+/// U3b (plan <c>2026-07-28-004</c>): engineering goes ACTIVE — crafts are graded by the
+/// engineering-bench overlay via <see cref="EngineeringAssemblyScorer"/> (<c>QualityRoller.RollActive</c>),
+/// exactly the blacksmith/alchemy/tanning PA2/PKD3 pattern. <see cref="ProfessionQualityModel.FlatShifts"/>/
+/// <see cref="ProfessionQualityModel.SlotShifts"/> are EMPTY (the double-count fix: <c>RollActive</c>
+/// never reads them) — the retired quality-shift chain (Precision/Fine Tolerance/Master Machinist)
+/// and the Trinket-scoped Gadgeteer specialist are remapped 1:1 into <see cref="MinigameAssists"/>
+/// at alchemy's 50/70/80 ladder, consumed by <see cref="EngineeringAssemblyScorer"/> as assembly
+/// forgiveness. <see cref="AlloyMastery"/> stays on the quality model — the material-mastery axis
+/// is untouched by the flip.
 /// </summary>
 public static class EngineeringProfession
 {
@@ -30,12 +40,13 @@ public static class EngineeringProfession
     public const string Id = "engineering";
 
     // ---- Talent node ids ----------------------------------------------------------------
-    // Quality-shift chain (+5 / +7 / +8), a Trinket slot specialist, a material-efficiency
-    // → mastery pair, and the tier unlock gates — the same shape as the blacksmith tree.
-    public const string Precision = "engineering-precision";              // flat +5 (chain root)
-    public const string FineTolerance = "engineering-fine-tolerance";     // flat +7 (needs precision)
-    public const string MasterMachinist = "engineering-master-machinist"; // flat +8 (needs fine-tolerance)
-    public const string Gadgeteer = "engineering-gadgeteer";              // Trinket slot +5 (needs precision)
+    // The retired quality-shift chain (now assembly-assist data — see MinigameAssists below), a
+    // Trinket slot specialist (also retired to an assist), a material-efficiency → mastery pair,
+    // and the tier unlock gates — the same shape as alchemy/tanning's post-flip trees.
+    public const string Precision = "engineering-precision";              // assist 50‰ (chain root)
+    public const string FineTolerance = "engineering-fine-tolerance";     // assist 70‰ (needs precision)
+    public const string MasterMachinist = "engineering-master-machinist"; // assist 80‰ (needs fine-tolerance)
+    public const string Gadgeteer = "engineering-gadgeteer";              // assist 50‰, Trinket recipes only (needs precision)
     public const string Salvage = "engineering-salvage";                 // material efficiency (-1, floor 1)
     public const string AlloyMastery = "engineering-alloy-mastery";      // material counts +1 grade (needs salvage)
     public const string Tier2Engineering = "engineering-tier-2";         // unlocks tier 2 recipes
@@ -44,10 +55,10 @@ public static class EngineeringProfession
     /// <summary>Talent mini-tree, keyed by node id. Sorted for deterministic iteration.</summary>
     private static readonly ImmutableSortedDictionary<string, TalentNode> Talents = new[]
     {
-        new TalentNode(Precision,        "Precision",        "Quality roll +5.",                                 ImmutableList<string>.Empty),
-        new TalentNode(FineTolerance,    "Fine Tolerance",   "Quality roll +7 (stacks with Precision).",         ImmutableList.Create(Precision)),
-        new TalentNode(MasterMachinist,  "Master Machinist", "Quality roll +8 (stacks with the chain).",         ImmutableList.Create(FineTolerance)),
-        new TalentNode(Gadgeteer,        "Gadgeteer",        "Quality roll +5 on trinket recipes.",              ImmutableList.Create(Precision)),
+        new TalentNode(Precision,        "Precision",        "Assembly scoring forgives small mistakes.",                    ImmutableList<string>.Empty),
+        new TalentNode(FineTolerance,    "Fine Tolerance",   "Assembly scoring forgives more (stacks with Precision).",      ImmutableList.Create(Precision)),
+        new TalentNode(MasterMachinist,  "Master Machinist", "The capstone — assembly scoring forgives most (stacks with the chain).", ImmutableList.Create(FineTolerance)),
+        new TalentNode(Gadgeteer,        "Gadgeteer",        "Extra assembly forgiveness on trinket recipes.",               ImmutableList.Create(Precision)),
         new TalentNode(Salvage,          "Salvage",          "Recipes consume one fewer material (minimum 1).",  ImmutableList<string>.Empty),
         new TalentNode(AlloyMastery,     "Alloy Mastery",    "Material counts as one grade higher for quality.", ImmutableList.Create(Salvage)),
         new TalentNode(Tier2Engineering, "Tier 2 Engineering", "Unlocks tier 2 recipes.",                        ImmutableList<string>.Empty),
@@ -80,10 +91,12 @@ public static class EngineeringProfession
     }.ToImmutableSortedDictionary(r => r.RecipeId, r => r, StringComparer.Ordinal);
 
     /// <summary>
-    /// The Engineering profession definition. Tier gates on tiers 2/3; quality chain and the
-    /// Trinket-scoped Gadgeteer specialist supply the per-talent shifts; the universal quality
-    /// math (±8/grade, threshold table) is shared by every profession and lives in
-    /// <see cref="QualityRoller"/>.
+    /// The Engineering profession definition — ACTIVE (U3b). Tier gates on tiers 2/3.
+    /// <see cref="ProfessionQualityModel.FlatShifts"/>/<see cref="ProfessionQualityModel.SlotShifts"/>
+    /// are EMPTY (the double-count fix); <see cref="AlloyMastery"/> stays as the material-mastery
+    /// axis. The four retired quality nodes are remapped 1:1 to <see cref="MinigameAssists"/>,
+    /// consumed sim-side by <see cref="EngineeringAssemblyScorer"/> as flat per-mille assembly
+    /// forgiveness.
     /// </summary>
     public static readonly ProfessionDefinition Definition = new(
         Id: Id,
@@ -97,15 +110,20 @@ public static class EngineeringProfession
         }.ToImmutableSortedDictionary(),
         MaterialEfficiencyNode: Salvage,
         Quality: new ProfessionQualityModel(
-            FlatShifts: new Dictionary<string, int>
-            {
-                [Precision] = 5,
-                [FineTolerance] = 7,
-                [MasterMachinist] = 8,
-            }.ToImmutableSortedDictionary(StringComparer.Ordinal),
-            SlotShifts: new Dictionary<string, SlotShift>
-            {
-                [Gadgeteer] = new SlotShift(ItemSlot.Trinket, 5),
-            }.ToImmutableSortedDictionary(StringComparer.Ordinal),
-            MaterialMasteryNode: AlloyMastery));
+            FlatShifts: ImmutableSortedDictionary<string, int>.Empty,
+            SlotShifts: ImmutableSortedDictionary<string, SlotShift>.Empty,
+            MaterialMasteryNode: AlloyMastery),
+        ActiveCraft: true,
+        MinigameAssists: new Dictionary<string, MinigameAssist>
+        {
+            // Precision: a steadier hand — small assembly mistakes are forgiven (mirrors Measured Pour's 50).
+            [Precision] = new MinigameAssist(SweetZoneWidthBonus: 50, DriftRateReduction: 0, OffBeatForgiveness: 0),
+            // Fine Tolerance: cleaner tolerances — more forgiveness (mirrors Careful Distillation's 70).
+            [FineTolerance] = new MinigameAssist(SweetZoneWidthBonus: 0, DriftRateReduction: 70, OffBeatForgiveness: 0),
+            // Master Machinist: the capstone — the most forgiveness (mirrors Master Alchemist's 80).
+            [MasterMachinist] = new MinigameAssist(SweetZoneWidthBonus: 0, DriftRateReduction: 0, OffBeatForgiveness: 80),
+            // Gadgeteer: extra forgiveness on Trinket recipes only (the scorer scopes this by the
+            // recipe's slot — mirrors Potent Brews' consumable-scoped 50).
+            [Gadgeteer] = new MinigameAssist(SweetZoneWidthBonus: 50, DriftRateReduction: 0, OffBeatForgiveness: 0),
+        }.ToImmutableSortedDictionary(StringComparer.Ordinal));
 }

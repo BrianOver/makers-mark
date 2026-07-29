@@ -191,10 +191,12 @@ public static class EngineeringAssemblyScorer
 
     /// <summary>
     /// Sums every unlocked talent's <see cref="MinigameAssist"/> triple into one flat forgiveness
-    /// bonus — the shared "talents are earned accessibility" channel. Engineering registers no assists
-    /// today, so this is 0; granting some is a DATA change on <see cref="EngineeringProfession"/>.
-    /// Deliberately does NOT re-read the quality-shift chain, which already applies in
-    /// <c>QualityRoller</c> — counting it twice would silently buff the profession.
+    /// bonus — the shared "talents are earned accessibility" channel (U3b).
+    /// <see cref="EngineeringProfession.Gadgeteer"/> is Trinket-recipe-scoped, mirroring the
+    /// retired <c>SlotShift</c> semantics exactly the way <see cref="AlchemyPuzzleScorer"/> scopes
+    /// Potent Brews to Consumable recipes. Deliberately does NOT re-read the quality-shift chain,
+    /// which already applies in <c>QualityRoller</c> — counting it twice would silently buff the
+    /// profession.
     /// </summary>
     private static int AssistBonusPermille(
         ProfessionDefinition profession, ImmutableSortedSet<string> unlockedTalents, ItemSlot recipeSlot)
@@ -203,6 +205,11 @@ public static class EngineeringAssemblyScorer
         foreach (var (nodeId, assist) in profession.MinigameAssists)
         {
             if (!unlockedTalents.Contains(nodeId))
+            {
+                continue;
+            }
+
+            if (nodeId == EngineeringProfession.Gadgeteer && recipeSlot != ItemSlot.Trinket)
             {
                 continue;
             }

@@ -37,22 +37,29 @@ public class TanningProfessionTests
     }
 
     [Fact]
-    public void Definition_QualityModel_HasExpectedShifts()
+    public void Definition_ActiveModel_RetiredShiftsBecameAssists_MasteryKept()
     {
-        Assert.Equal(5, Tan.Quality.FlatShifts[TanningProfession.SteadyHand]);
-        Assert.Equal(7, Tan.Quality.FlatShifts[TanningProfession.SuppleWork]);
-        Assert.Equal(8, Tan.Quality.FlatShifts[TanningProfession.MasterTanner]);
-
-        var armorer = Tan.Quality.SlotShifts[TanningProfession.Armorer];
-        Assert.Equal(ItemSlot.Armor, armorer.Slot);
-        Assert.Equal(5, armorer.Shift);
-
+        // U3b active flip, mirroring the blacksmith/alchemy PA2/PKD3 remap exactly: the retired
+        // quality-shift nodes must not ALSO shift any roll (double-count fix) — they live on as
+        // MinigameAssist data the in-sim scorer consumes — and the material-mastery axis is KEPT.
+        Assert.True(Tan.ActiveCraft);
+        Assert.Empty(Tan.Quality.FlatShifts);
+        Assert.Empty(Tan.Quality.SlotShifts);
         Assert.Equal(TanningProfession.HideMastery, Tan.Quality.MaterialMasteryNode);
         Assert.Equal(TanningProfession.Thrift, Tan.MaterialEfficiencyNode);
 
-        // Non-quality nodes never leak into the quality model.
-        Assert.False(Tan.Quality.FlatShifts.ContainsKey(TanningProfession.Thrift));
-        Assert.False(Tan.Quality.FlatShifts.ContainsKey(TanningProfession.Tier2Tanning));
+        // 1:1 remap of the four retired nodes, at alchemy's 50/70/80 ladder.
+        Assert.Equal(4, Tan.MinigameAssists.Count);
+        Assert.Equal(50, Tan.MinigameAssists[TanningProfession.SteadyHand].SweetZoneWidthBonus);
+        Assert.Equal(70, Tan.MinigameAssists[TanningProfession.SuppleWork].DriftRateReduction);
+        Assert.Equal(80, Tan.MinigameAssists[TanningProfession.MasterTanner].OffBeatForgiveness);
+        Assert.Equal(50, Tan.MinigameAssists[TanningProfession.Armorer].SweetZoneWidthBonus);
+
+        // Every assist node is a real talent node; non-quality nodes never leak into the map.
+        Assert.All(Tan.MinigameAssists.Keys, nodeId => Assert.True(Tan.TalentNodes.ContainsKey(nodeId)));
+        Assert.False(Tan.MinigameAssists.ContainsKey(TanningProfession.Thrift));
+        Assert.False(Tan.MinigameAssists.ContainsKey(TanningProfession.HideMastery));
+        Assert.False(Tan.MinigameAssists.ContainsKey(TanningProfession.Tier2Tanning));
     }
 
     // ---- Tier gating --------------------------------------------------------------------
@@ -128,15 +135,15 @@ public class TanningProfessionTests
         Assert.Equal(5 * ItemForge.QualityPercent(QualityGrade.Superior) / 100, item.Effect.Magnitude); // 6
     }
 
-    // ---- Quality distribution pins (deterministic; guard the shift values) --------------
+    // ---- Active-model distribution pins (deterministic; PKD3 semantics) -----------------
 
-    private static string RollDistribution(Recipe recipe, int materialGrade, ImmutableSortedSet<string> talents, ulong seed)
+    private static string ActiveRollDistribution(Recipe recipe, int materialGrade, ImmutableSortedSet<string> talents, int? grade, ulong seed)
     {
         var rng = new Pcg32(RngState.FromSeed(seed));
         var counts = new int[5];
         for (var i = 0; i < 1000; i++)
         {
-            counts[(int)QualityRoller.Roll(recipe, materialGrade, talents, Tan.Quality, rng)]++;
+            counts[(int)QualityRoller.RollActive(recipe, materialGrade, talents, Tan.Quality, rng, grade)]++;
         }
 
         Assert.Equal(1000, counts.Sum());
@@ -144,30 +151,35 @@ public class TanningProfessionTests
     }
 
     [Fact]
-    public void QualityDistribution_NoTalents_GradeEqualsTier_MatchesSharedBaseCurve()
+    public void ActiveRoll_RetiredTalents_ShiftTheRollByExactlyZero()
     {
-        // shift 0 (material grade == recipe tier, no quality talents): the roll is Roll100()
-        // straight into the shared threshold table, so tanning reproduces the exact base curve
-        // the blacksmith dagger golden pins (Poor 15 / Common 50 / Fine 25 / Superior 9 / Master 1).
-        var dist = RollDistribution(Tan.Recipes["tanning-hide-jerkin"], materialGrade: 1, ImmutableSortedSet<string>.Empty, seed: 1234);
-        Assert.Equal("146,513,247,85,9", dist);
+        // The PKD3 double-count pin, tanning edition (mirrors the blacksmith/alchemy): the
+        // retired quality nodes became scorer assists — unlocking every one of them must move
+        // the dominance ROLL's distribution by exactly nothing (only the puzzle grade they
+        // forgive moves, and that enters as the grade parameter, not a roll shift).
+        var recipe = Tan.Recipes["tanning-hide-jerkin"];
+        var none = ActiveRollDistribution(recipe, materialGrade: 1, ImmutableSortedSet<string>.Empty, grade: 700, seed: 1234);
+        var all = ActiveRollDistribution(
+            recipe, materialGrade: 1,
+            ImmutableSortedSet.Create(
+                TanningProfession.SteadyHand, TanningProfession.SuppleWork,
+                TanningProfession.MasterTanner, TanningProfession.Armorer),
+            grade: 700, seed: 1234);
+
+        Assert.Equal(none, all);
     }
 
     [Fact]
-    public void QualityDistribution_Armorer_ShiftsArmorRollsUp()
+    public void ActiveRoll_AutoCraft_NeverExceedsSuperior_AndGradeDominates()
     {
-        // Armorer (+5, Armor-scoped) applied to an Armor recipe shifts the curve up vs the base.
-        var talents = ImmutableSortedSet.Create(TanningProfession.Armorer);
-        var dist = RollDistribution(Tan.Recipes["tanning-hide-jerkin"], materialGrade: 1, talents, seed: 1234);
-        Assert.Equal("106,495,251,102,46", dist);
-    }
+        // Auto-craft (null grade, null puzzle) sits at the competent 550 baseline and is
+        // hard-capped below Masterwork (PKD4); a perfect in-sim-scored scrape (1000) with
+        // above-tier material is Masterwork-reachable — the puzzle is the only road to the top.
+        var recipe = Tan.Recipes["tanning-hide-jerkin"];
+        var auto = ActiveRollDistribution(recipe, materialGrade: 1, ImmutableSortedSet<string>.Empty, grade: null, seed: 1234);
+        Assert.Equal("0", auto.Split(',')[4]); // zero Masterwork out of 1000 auto-crafts
 
-    [Fact]
-    public void QualityDistribution_FullFlatChain_ShiftsRollsUp()
-    {
-        // Steady Hand + Supple Work + Master Tanner = +5+7+8 = +20 flat.
-        var talents = ImmutableSortedSet.Create(TanningProfession.SteadyHand, TanningProfession.SuppleWork, TanningProfession.MasterTanner);
-        var dist = RollDistribution(Tan.Recipes["tanning-hide-jerkin"], materialGrade: 1, talents, seed: 1234);
-        Assert.Equal("0,426,285,85,204", dist);
+        var perfect = ActiveRollDistribution(recipe, materialGrade: 2, ImmutableSortedSet<string>.Empty, grade: 1000, seed: 1234);
+        Assert.Equal(1000, int.Parse(perfect.Split(',')[4])); // every perfect scrape with grade-2 material is Masterwork
     }
 }

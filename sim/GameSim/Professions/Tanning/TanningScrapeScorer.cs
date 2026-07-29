@@ -170,11 +170,12 @@ public static class TanningScrapeScorer
 
     /// <summary>
     /// Sums every unlocked talent's <see cref="MinigameAssist"/> triple into one flat forgiveness
-    /// bonus — the same "talents are earned accessibility" channel the brew scorer uses. Tanning
-    /// currently registers no assists, so this is 0 today; granting some is a DATA change on
-    /// <see cref="TanningProfession"/>, never a change here. Deliberately does NOT re-read the
-    /// profession's quality-shift talents, which already apply in <c>QualityRoller</c> — counting
-    /// them twice would silently buff the profession.
+    /// bonus — the same "talents are earned accessibility" channel the brew scorer uses (U3b).
+    /// <see cref="TanningProfession.Armorer"/> is Armor-recipe-scoped, mirroring the retired
+    /// <c>SlotShift</c> semantics exactly the way <see cref="AlchemyPuzzleScorer"/> scopes Potent
+    /// Brews to Consumable recipes. Deliberately does NOT re-read the profession's quality-shift
+    /// talents, which already apply in <c>QualityRoller</c> — counting them twice would silently
+    /// buff the profession.
     /// </summary>
     private static int AssistBonusPermille(
         ProfessionDefinition profession, ImmutableSortedSet<string> unlockedTalents, ItemSlot recipeSlot)
@@ -183,6 +184,11 @@ public static class TanningScrapeScorer
         foreach (var (nodeId, assist) in profession.MinigameAssists)
         {
             if (!unlockedTalents.Contains(nodeId))
+            {
+                continue;
+            }
+
+            if (nodeId == TanningProfession.Armorer && recipeSlot != ItemSlot.Armor)
             {
                 continue;
             }

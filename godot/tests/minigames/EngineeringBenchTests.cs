@@ -427,12 +427,23 @@ public class EngineeringBenchTests
         }
     }
 
-    // ── ships dormant: no route to this overlay while ActiveCraft is false ────────────────────
+    // ── live: the flip (U3b) opened the route to this overlay ─────────────────────────────────
 
+    /// <summary>
+    /// <para>Inverted by U3b. This case previously asserted <c>ActiveCraft</c> was FALSE and that
+    /// <c>ForgePanel</c> rendered no Assemble button — the correct pin while the overlay shipped
+    /// deliberately dormant (#272), before there was any way for a player to earn the grade.</para>
+    ///
+    /// <para>U3b is precisely the change that flips it, so the assertion has to flip with it. Kept
+    /// as the same scenario rather than deleted, because the wiring it exercises — a profession
+    /// selection reaching the panel and producing the active-craft entry point instead of the plain
+    /// Craft button — is exactly what the flip is claiming to have done, and a deleted test claims
+    /// nothing.</para>
+    /// </summary>
     [TestCase]
-    public void EngineeringActiveCraftIsFalse_SoForgePanelNeverRendersAnAssembleButton()
+    public void EngineeringActiveCraftIsTrue_SoForgePanelRoutesThroughTheAssembleButton()
     {
-        AssertThat(Engineering.ActiveCraft).IsFalse(); // the gate this whole overlay stays behind
+        AssertThat(Engineering.ActiveCraft).IsTrue(); // flipped by U3b, with the talent remap
 
         var state = GameComposition.NewCampaign(2026) with
         {
@@ -447,13 +458,23 @@ public class EngineeringBenchTests
             ui.OpenPanel("Forge");
 
             var assemble = ui.Forge.FindChild("Assemble_engineering-bolt-thrower", recursive: true, owned: false);
-            AssertThat(assemble is null).IsTrue();
+            AssertThat(assemble is not null)
+                .OverrideFailureMessage(
+                    "ActiveCraft is true but ForgePanel rendered no Assemble button — the overlay is " +
+                    "unreachable, which means every engineering craft silently falls back to auto-craft.")
+                .IsTrue();
 
-            // The recipe still renders — just the plain (non-active-craft) Craft button, proving
-            // the row itself isn't hidden, only the Assemble path this overlay would add.
+            // The auto-craft path is still offered — deliberately, per ForgePanel's PA6/PKD4 note:
+            // an active profession keeps its instant Craft as an explicit, honestly-labelled
+            // fallback beside the minigame rather than being forced through the overlay. What the
+            // flip changes is the LABEL, and that relabel is the player-visible consequence worth
+            // pinning: "Craft" would read as the only way to make the thing.
             var craft = ui.Forge.FindChild("Craft_engineering-bolt-thrower", recursive: true, owned: false) as Button;
             AssertThat(craft is not null).IsTrue();
-            AssertThat(craft!.Text).IsEqual("Craft");
+            AssertThat(craft!.Text)
+                .OverrideFailureMessage(
+                    "An active profession's instant Craft must read as the fallback, not the default.")
+                .IsEqual("Auto-craft (competent)");
         }
         finally
         {
