@@ -1,5 +1,9 @@
 # Animation: Character Motion + Watchable Mine Adventure
 
+> **STATUS: COMPLETE (stamped 2026-07-28).** Shipped in the 2.5D pivot wave (#244): `godot/scripts/town2d/SpriteMotion.cs` drives HeroActor2D / PlayerController2D / TownsfolkNpc2D, step frames are on disk (`godot/assets/art/*_step.png`), and the watchable raid landed as `godot/scripts/DelveBeats.cs` + `godot/scripts/panels/DelveStage.cs` with five pixel monsters. Kept as the historical record. Do not execute.
+
+---
+
 *Date: 2026-07-28. Branch: `feat/2.5d-stardew`. Source: Fable research pass. Add MOTION animation — (1) character walk/idle cycles, (2) an animated, watchable replay of the heroes' Mine raid. Presentation-only (KTD): cosmetic replay of the sim's already-computed deterministic result; never re-sim, never touch sim RNG/clock/state.*
 
 ## Two reshaping findings

@@ -1,5 +1,9 @@
 # Phase C — The Hardening Window
 
+> **STATUS: COMPLETE (stamped 2026-07-28).** Every unit shipped to `main`: U-C1 craft-modifier layer (#221 slice 1, #223 slice 2), U-C2 active-craft depth / heat-band (#224), U-C3 drama director + U-C4 second venue (#230), U-C5 bounty flags (#225), U-C6 hero level-flip (#220). Kept as the historical record of what was decided and why. Do not execute.
+
+---
+
 Plan of record for the **one serial re-baseline batch**. Roadmap §2 Phase C + §7. Everything here perturbs the Pcg32 stream or moves CombatMath → each forces a deliberate golden-replay re-baseline. Sequence tight, one PR each, orchestrator-owned. Research basis: crafting-depth report + hero-AI (director) + comparable-games (Majesty bounties) + variety-tone (venues).
 
 ## Why batched

@@ -1,5 +1,9 @@
 # Phase D — Economy, Arc & Ending
 
+> **STATUS: COMPLETE (stamped 2026-07-28).** U-D1 gold sinks (#226), U-D2 guild heartbeat + U-D3 three-act arc and ending (#230), U-D4 progression spine (#231), all surfaced in the client (#232). U-D5 prestige era was the plan's own explicit post-v1 deferral and remains unbuilt by design. Kept as the historical record. Do not execute.
+
+---
+
 Plan of record for completeness: a taut economy + a real ending, so the game is *finished*, not endless. Roadmap §2 Phase D. Research basis: economy report (Lostgarden value-chains, Recettear/AtS/XCOM heartbeats, Papers-Please/Dredge/Hades endings, prestige math).
 
 ## Goal

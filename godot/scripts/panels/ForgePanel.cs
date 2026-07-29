@@ -8,7 +8,7 @@ using GameSim.Materials;
 using GameSim.Professions;
 using Godot;
 using GodotClient.Minigames;
-using GodotClient.Town3d;
+using GodotClient.Town2d;
 using GodotClient.Ui;
 
 namespace GodotClient.Panels;
@@ -84,8 +84,13 @@ public partial class ForgePanel : SimPanel
     /// <summary>G1 (game-feel plan §"World VFX keyed to beat state"): the town's forge-station VFX
     /// surface — resolved lazily via <see cref="ResolveTown"/> rather than threaded through
     /// <c>MainUi</c> (this unit's scope keeps MainUi untouched beyond the build-stamp mount), and
-    /// cached once found.</summary>
-    private Town3D? _town;
+    /// cached once found. U5: repointed from the deleted <c>Town3D</c> to its 2.5D-pivot
+    /// replacement <see cref="Town2D"/> — same node-name lookup, same VFX method names
+    /// (<c>ForgeGlow</c>/<c>ForgeGlowReset</c>/<c>ForgeSparkBurst</c>/<c>ForgeSteamPlume</c> all
+    /// exist on <see cref="Town2D"/> too), so this restores the world-VFX cues that had gone dead
+    /// (silently returning null every call) since <c>MainUi</c> stopped mounting a node named
+    /// "Town3D".</summary>
+    private Town2D? _town;
 
     // ── G1 result ceremony (game-feel plan §"Result ceremony") ────────────────────────────────
     private const double CeremonySeconds = 2.0;
@@ -474,20 +479,20 @@ public partial class ForgePanel : SimPanel
     };
 
     /// <summary>
-    /// G1: lazy scene-tree lookup for the Town3D sibling under MainUi — ForgePanel has no
+    /// G1: lazy scene-tree lookup for the Town2D sibling under MainUi — ForgePanel has no
     /// constructor-time reference to it (this unit's scope keeps MainUi untouched beyond the
     /// build-stamp mount), so the world-VFX cues above resolve it on first use and cache the
-    /// result. Null-tolerant everywhere it's called: a ForgePanel with no Town3D sibling (e.g. a
+    /// result. Null-tolerant everywhere it's called: a ForgePanel with no Town2D sibling (e.g. a
     /// future standalone-mounted test) simply gets no world VFX, never a throw.
     /// </summary>
-    private Town3D? ResolveTown()
+    private Town2D? ResolveTown()
     {
         if (_town is not null && GodotObject.IsInstanceValid(_town))
         {
             return _town;
         }
 
-        _town = GetTree()?.Root?.FindChild("Town3D", recursive: true, owned: false) as Town3D;
+        _town = GetTree()?.Root?.FindChild("Town2D", recursive: true, owned: false) as Town2D;
         return _town;
     }
 
@@ -610,7 +615,7 @@ public partial class ForgePanel : SimPanel
         _minigame.Finished += OnMinigameFinished;
         _minigame.Cancelled += OnMinigameCancelled;
         // G1 staging: forward the minigame's presentation-only cues to the forge station's world
-        // VFX (Town3D) and to this panel's own SFX — see each handler's own doc. The furnace glow
+        // VFX (Town2D) and to this panel's own SFX — see each handler's own doc. The furnace glow
         // itself is driven continuously off the live heat gauge in _Process, not an event.
         _minigame.Struck += OnMinigameStruck;
         _minigame.Quenched += OnMinigameQuenched;
