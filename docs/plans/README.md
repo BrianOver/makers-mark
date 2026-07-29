@@ -25,6 +25,30 @@ record" for work that other systems had largely obsoleted. Individual docs are n
 | Doc | Why |
 |---|---|
 | `2026-07-21-004-phaseA-legend-engine.md` | Reads as a complete plan of record. **Nothing in it was built** (no `sim/GameSim/Legends/`), but its payload arrived by another route (AttributionEngine, LegendQuery, Chronicle, memorials). Whether the specced sifter is still owed is open — roadmap `-003` §3. |
+| `2026-07-27-five-pillars-design-synthesis.md` (in `docs/design/`) + plans `2026-07-27-001` … `-005` | **RECOVERED 2026-07-29, UNRECONCILED.** See the note below — these were authored on 2026-07-27 but never committed, so the 07-28 replan wrote its roadmap without knowing they existed. They must be reconciled against `2026-07-28-003` before any of them is executed. |
+
+### The 001–005 gap, and why it matters
+
+The 07-27 numbering in this directory jumped straight to `-006` (the 2.5D pivot). That gap was not a
+numbering quirk: **plans `-001` through `-005` and the design synthesis they came from existed only as
+uncommitted files in a stale agent worktree**, and were found on 2026-07-29 while clearing worktrees.
+They are recovered here verbatim, unedited.
+
+This matters more than a filing error, for two reasons:
+
+1. **The 07-28 replan could not see them.** `2026-07-28-003` cites `-006` and the two measurement docs
+   (`2026-07-27-how-you-play.md`, `2026-07-27-gameplay-loop-analysis.md`) that the synthesis names as
+   its own predecessors — but never the synthesis or `-001`…`-005`. So the current sequencing authority
+   was written in ignorance of five implementation-ready plans derived from the same measurements.
+2. **They carry a root-cause claim the roadmap does not contain.** Five independent deep-dives
+   converged on one finding: the demand map is weapon-first at two levels (commissions are ~75% Weapon,
+   and every depth-stall gate is Weapon/Shield), so *two professions have a craft and two have only a
+   customer*. Nothing in `2026-07-28-003` says this.
+
+**Do not execute these, and do not assume the roadmap already covers them.** Either the synthesis's
+build order supersedes part of `-003`, or `-003`'s ordering stands and these get stamped SUPERSEDED —
+that is an owner call, not something to settle by whichever doc was read most recently. Tracked in
+roadmap `-003` §10 (open decisions).
 
 ## NEARLY DONE — one unit left
 
