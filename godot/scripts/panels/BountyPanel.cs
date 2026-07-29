@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using GameSim.Contracts;
@@ -8,22 +9,25 @@ using GodotClient.Ui;
 namespace GodotClient.Panels;
 
 /// <summary>
-/// The bounty board (R18 display + AE7 render half): a post form (floor 1..
-/// <see cref="MonsterTable.FloorCount"/>, reward gold) queueing
-/// <see cref="PostBountyAction"/>; the open bounties with the day's
-/// <see cref="BountyJudged"/> accept/decline reasons rendered inline on each card;
-/// judgments whose bounty already left the board listed below.
+/// The bounty board (R18 display + AE7 render half): pick a floor on a mine cross-section, set
+/// the reward with a <see cref="CoinStack"/>, and nail the poster to the board (or press
+/// <c>PostBounty</c>, or reach it via Tab+Enter) to queue <see cref="PostBountyAction"/>. Open
+/// bounties render with the day's <see cref="BountyJudged"/> accept/decline reasons pinned on
+/// each card as sticky notes; judgments whose bounty already left the board are listed below.
 ///
-/// <para>P007 polish (KTD2/KTD3): recomposed around <see cref="UiKit.Section"/>s — Post
-/// Bounty, Open Bounties, and (only when a judgment's bounty already left the board)
-/// Judgments Today — each open bounty a themed <see cref="Card"/> with a bounty-glyph
-/// <see cref="ArtRect"/> (a bounty has no per-post generated art concept, so this always
-/// exercises the KTD3 fallback placeholder) plus floor/reward <see cref="StatChip"/>s. Every
-/// sim read (<c>state.Bounties</c>, the day's <see cref="BountyJudged"/> grouping) and the
-/// <see cref="PostBountyAction"/> queue is unchanged from the pre-polish panel — only the
-/// visual composition changed. Control <c>Name</c>s (<c>BountyFloor</c>, <c>BountyReward</c>,
-/// <c>PostBounty</c>) are preserved verbatim so existing/new tests keep driving through the
-/// same signals.</para>
+/// <para>U6 (plan <c>2026-07-28-002</c>, design doc §B): presentation-only redesign of the old
+/// "type two numbers into SpinBoxes" post form. The floor <c>SpinBox</c> is replaced by
+/// <see cref="MineCrossSection"/> — a small stack of strata bands, darker with depth, that
+/// teaches the mine's shape instead of asking for a number; the reward <c>SpinBox</c> is replaced
+/// by <see cref="CoinStack"/> (U1, shared with the counter and shop lanes); posting gets a second,
+/// physical path via <see cref="PosterComposer"/> (drag the filled poster onto the board) on top
+/// of the existing button/Enter path. Every route funnels into the SAME
+/// <see cref="OnPostPressed"/> seam, which queues the identical <see cref="PostBountyAction"/> the
+/// old form produced — no sim edits, no changed seam signature. Control <c>Name</c>s
+/// (<c>BountyFloor</c>, <c>BountyReward</c>, <c>PostBounty</c>) are preserved on their replacement
+/// controls so a headless test can still find the post form by name; the concrete control TYPE
+/// behind each name changed, so callers must look them up as the new types (see
+/// <c>BountyPanelTests</c>).</para>
 /// </summary>
 public partial class BountyPanel : SimPanel
 {
@@ -36,10 +40,15 @@ public partial class BountyPanel : SimPanel
     /// themed fallback (glyph + caption).</summary>
     private const string BountyArtKey = "bounty-board-post";
 
+    /// <summary>Default reward the coin stack opens with — matches the old reward SpinBox's
+    /// starting value so a fresh panel behaves the same either way.</summary>
+    private const int DefaultReward = 25;
+
     private Label? _feedback;
     private VBoxContainer? _content;
-    private SpinBox? _floorSpin;
-    private SpinBox? _rewardSpin;
+    private MineCrossSection? _floorSection;
+    private CoinStack? _rewardStack;
+    private PosterComposer? _poster;
 
     public override void _Ready() => EnsureBuilt();
 
@@ -106,24 +115,30 @@ public partial class BountyPanel : SimPanel
         }
     }
 
+    /// <summary>Render one hero's accept/decline judgment as a small pinned sticky note (U6) —
+    /// same call sites as the old plain-text row, so on-card vs. off-board placement is
+    /// unchanged.</summary>
     private void RenderJudgment(Node parent, BountyJudged judged)
     {
         var verdict = judged.Accepted ? "ACCEPTED" : "declined";
-        var label = AddLabel(parent, $"      {HeroName(judged.Hero)} {verdict}: {judged.Reason}");
-        label.AddThemeColorOverride(
-            "font_color",
-            judged.Accepted ? new Color(0.5f, 1f, 0.5f) : new Color(1f, 0.7f, 0.4f));
+        var note = new StickyNote { Name = $"Judgment_{judged.Id.Value}" };
+        note.SetJudgment($"{HeroName(judged.Hero)} {verdict}: {judged.Reason}", judged.Accepted, judged.Id.Value);
+        parent.AddChild(note);
     }
 
+    /// <summary>The ONE seam every posting route funnels into (KTD-A): the Post button, Enter
+    /// while it has focus, and <see cref="PosterComposer.PostRequested"/> (dragging the filled
+    /// poster onto the board) all call this and queue the identical
+    /// <see cref="PostBountyAction"/> the old two-SpinBox form produced.</summary>
     private void OnPostPressed()
     {
-        if (Adapter is null)
+        if (Adapter is null || _floorSection is null || _rewardStack is null)
         {
             return;
         }
 
-        var floor = (int)_floorSpin!.Value;
-        var reward = (int)_rewardSpin!.Value;
+        var floor = _floorSection.SelectedFloor;
+        var reward = _rewardStack.Value;
         Adapter.Queue(new PostBountyAction(floor, reward));
         _feedback!.Text = $"queued: bounty — clear floor {floor} for {reward}g (gold escrowed on apply)";
     }
@@ -150,13 +165,354 @@ public partial class BountyPanel : SimPanel
         var formSection = Section("POST BOUNTY");
         body.AddChild(formSection.Root);
         var form = AddRow(formSection.Body);
+
         AddLabel(form, "floor:");
-        _floorSpin = AddSpinBox(form, "BountyFloor", 1, MonsterTable.FloorCount, 1);
+        _floorSection = new MineCrossSection { Name = "BountyFloor" };
+        form.AddChild(_floorSection);
+
         AddLabel(form, "reward gold:");
-        _rewardSpin = AddSpinBox(form, "BountyReward", 1, 100000, 25);
+        _rewardStack = new CoinStack { Name = "BountyReward" };
+        _rewardStack.SetValue(DefaultReward);
+        form.AddChild(_rewardStack);
+
+        _poster = new PosterComposer { Name = "BountyPoster" };
+        form.AddChild(_poster);
+
         AddButton(form, "PostBounty", "Post", OnPostPressed);
+
+        // Keep the poster's printed preview in sync with whatever the cross-section/coin stack
+        // currently hold, and wire its drag-to-board gesture into the SAME seam the button uses.
+        _floorSection.FloorSelected += _ => _poster.SetPreview(_floorSection.SelectedFloor, _rewardStack.Value);
+        _rewardStack.ValueChanged += _ => _poster.SetPreview(_floorSection.SelectedFloor, _rewardStack.Value);
+        _poster.PostRequested += OnPostPressed;
+        _poster.SetPreview(_floorSection.SelectedFloor, _rewardStack.Value);
 
         _content = new VBoxContainer { Name = "BountyContent" };
         body.AddChild(_content);
+    }
+}
+
+/// <summary>
+/// U6 (plan <c>2026-07-28-002</c>): the mine cross-section the "post bounty" form picks a floor
+/// from — a small vertical stack of strata bands, one per <see cref="MonsterTable.FloorCount"/>
+/// floor, darker with depth, each labeled with its floor number and monster (read straight off
+/// <see cref="MonsterTable"/> — no new sim call). Clicking a band, or Up/Down while focused,
+/// replaces the old floor <c>SpinBox</c> so posting teaches the mine's own shape instead of
+/// asking for a number.
+///
+/// <para><b>Seam contract (KTD-A).</b> Every recognizer — the click, the arrow keys — terminates
+/// in <see cref="SelectFloor"/>, an integer-only method a headless test can call directly or drive
+/// via the real <c>GuiInput</c> signal (<see cref="OnGuiInput"/> is subscribed as a C# event
+/// rather than a <c>_GuiInput</c> override, so <c>EmitSignal(Control.SignalName.GuiInput, …)</c>
+/// exercises the actual gesture — the same idiom <c>AlchemyBrewPuzzle.BrewCanvas</c> and
+/// <c>UiTestSupport.Click</c> already rely on). <see cref="FloorAt"/> is the pure hit-test both
+/// the recognizer and a test use, using FIXED band geometry (never live <see cref="Control.Size"/>,
+/// mirroring <c>CoinStack.DenominationAt</c>) so it is correct even on a bare, unmounted
+/// instance.</para>
+/// </summary>
+public partial class MineCrossSection : Control
+{
+    private const float StripWidth = 96f;
+    private const float BandHeight = 26f;
+
+    private static readonly Color BandEdge = new(0.12f, 0.10f, 0.08f, 0.9f);
+    private static readonly Color SelectedEdge = new(1f, 0.85f, 0.4f, 0.95f);
+    private static readonly Color LabelColor = new(0.92f, 0.90f, 0.84f);
+
+    private int _selected = 1;
+
+    /// <summary>Currently selected floor — always in 1..<see cref="MonsterTable.FloorCount"/>,
+    /// same non-empty default (1) the old SpinBox opened with.</summary>
+    public int SelectedFloor => _selected;
+
+    /// <summary>Raised whenever the selection actually changes, with the new floor.</summary>
+    public event Action<int>? FloorSelected;
+
+    public MineCrossSection()
+    {
+        CustomMinimumSize = new Vector2(StripWidth, BandHeight * MonsterTable.FloorCount);
+        FocusMode = FocusModeEnum.All;
+        MouseFilter = MouseFilterEnum.Stop;
+        GuiInput += OnGuiInput;
+    }
+
+    /// <summary>Which floor (1..FloorCount) a LOCAL point falls on, or 0 outside the strip — pure
+    /// and Size-independent, so the geometry is unit-testable without a single mouse event and
+    /// without a live container layout pass.</summary>
+    public int FloorAt(Vector2 localPos)
+    {
+        var bounds = new Rect2(0f, 0f, StripWidth, BandHeight * MonsterTable.FloorCount);
+        if (!bounds.HasPoint(localPos))
+        {
+            return 0;
+        }
+
+        var band = (int)(localPos.Y / BandHeight);
+        return Math.Clamp(band + 1, 1, MonsterTable.FloorCount);
+    }
+
+    /// <summary>Select a floor outright, clamped to the legal range — the ONE seam every gesture
+    /// (click, arrow key) terminates in (KTD-A).</summary>
+    public void SelectFloor(int floor)
+    {
+        var clamped = Math.Clamp(floor, 1, MonsterTable.FloorCount);
+        if (clamped == _selected)
+        {
+            return;
+        }
+
+        _selected = clamped;
+        QueueRedraw();
+        FloorSelected?.Invoke(_selected);
+    }
+
+    private void OnGuiInput(InputEvent @event)
+    {
+        switch (@event)
+        {
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } left:
+            {
+                var floor = FloorAt(left.Position);
+                if (floor > 0)
+                {
+                    GrabFocus();
+                    SelectFloor(floor);
+                    AcceptEvent();
+                }
+
+                break;
+            }
+
+            case InputEventKey { Pressed: true, Echo: false, Keycode: Key.Up }:
+                SelectFloor(_selected - 1);
+                AcceptEvent();
+                break;
+
+            case InputEventKey { Pressed: true, Echo: false, Keycode: Key.Down }:
+                SelectFloor(_selected + 1);
+                AcceptEvent();
+                break;
+        }
+    }
+
+    public override void _Draw()
+    {
+        var font = GetThemeDefaultFont();
+        var fontSize = GetThemeDefaultFontSize();
+
+        for (var i = 0; i < MonsterTable.FloorCount; i++)
+        {
+            var floor = i + 1;
+            var depthT = MonsterTable.FloorCount <= 1 ? 0f : i / (float)(MonsterTable.FloorCount - 1);
+            var shade = Mathf.Lerp(0.40f, 0.10f, depthT); // deeper = darker stratum
+            var band = new Rect2(0f, i * BandHeight, StripWidth, BandHeight);
+            DrawRect(band, new Color(shade * 1.05f, shade, shade * 0.95f));
+            var selected = floor == _selected;
+            DrawRect(band, selected ? SelectedEdge : BandEdge, filled: false, width: selected ? 2f : 1f);
+
+            if (font is not null)
+            {
+                var label = $"F{floor} {MonsterTable.MonsterKind(floor)}";
+                DrawString(
+                    font, new Vector2(4f, band.Position.Y + BandHeight * 0.66f), label,
+                    HorizontalAlignment.Left, StripWidth - 8f, fontSize, LabelColor);
+            }
+        }
+
+        if (HasFocus())
+        {
+            DrawRect(
+                new Rect2(0f, 0f, StripWidth, BandHeight * MonsterTable.FloorCount),
+                new Color(1f, 0.85f, 0.4f, 0.7f), filled: false, width: 1f);
+        }
+    }
+}
+
+/// <summary>
+/// U6: the filled-out poster — printed with the currently selected floor/reward — that can be
+/// dragged onto the board to post, alongside the existing Post button/Enter path. A single
+/// self-contained <see cref="Control"/> (poster + board drop zone) rather than two separate nodes,
+/// so the drag never has to cross a node boundary.
+///
+/// <para><b>Seam contract (KTD-A).</b> The drag recognizer (<see cref="OnGuiInput"/>, subscribed
+/// as a C# event so a headless test can drive it via <c>EmitSignal(Control.SignalName.GuiInput,
+/// …)</c> — same idiom as <c>AlchemyBrewPuzzle.BrewCanvas</c>) terminates in
+/// <see cref="PostRequested"/>, which <see cref="BountyPanel"/> wires straight to its existing
+/// <c>OnPostPressed</c> — the SAME seam the button calls. This control never reads or queues an
+/// action itself. <see cref="IsOverBoard"/> is the pure hit-test the recognizer and a test both
+/// use, using FIXED local rects (never live <see cref="Control.Size"/>), mirroring
+/// <see cref="MineCrossSection.FloorAt"/>.</para>
+/// </summary>
+public partial class PosterComposer : Control
+{
+    private static readonly Rect2 PosterHome = new(6f, 6f, 120f, 46f);
+    private static readonly Rect2 BoardZone = new(150f, 4f, 90f, 50f);
+
+    private static readonly Color PosterPaper = new(0.90f, 0.84f, 0.68f);
+    private static readonly Color PosterEdge = new(0.58f, 0.51f, 0.38f);
+    private static readonly Color BoardWood = new(0.28f, 0.19f, 0.12f);
+    private static readonly Color BoardEdge = new(0.14f, 0.10f, 0.06f);
+    private static readonly Color Ink = new(0.18f, 0.14f, 0.08f);
+
+    private int _floor = 1;
+    private int _reward;
+    private bool _dragging;
+    private Vector2 _dragPos;
+
+    /// <summary>Raised when a drag-release lands on the board — the caller wires this straight to
+    /// its existing post seam; queues nothing itself.</summary>
+    public event Action? PostRequested;
+
+    public PosterComposer()
+    {
+        CustomMinimumSize = new Vector2(250f, 60f);
+        MouseFilter = MouseFilterEnum.Stop;
+        GuiInput += OnGuiInput;
+    }
+
+    /// <summary>Refresh the poster's printed preview — called whenever the floor/reward selection
+    /// changes. Presentation only; never touches what a post queues.</summary>
+    public void SetPreview(int floor, int reward)
+    {
+        _floor = floor;
+        _reward = reward;
+        QueueRedraw();
+    }
+
+    /// <summary>Pure hit-test for the board (the drop target) — the same rect <c>_Draw</c> paints
+    /// it into, so a release lands exactly where the wood looks like it is.</summary>
+    public bool IsOverBoard(Vector2 localPos) => BoardZone.HasPoint(localPos);
+
+    private static bool IsOverPoster(Vector2 localPos) => PosterHome.HasPoint(localPos);
+
+    private void OnGuiInput(InputEvent @event)
+    {
+        switch (@event)
+        {
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } down
+                when IsOverPoster(down.Position):
+                _dragging = true;
+                _dragPos = down.Position;
+                QueueRedraw();
+                AcceptEvent();
+                break;
+
+            case InputEventMouseMotion motion when _dragging:
+                _dragPos = motion.Position;
+                QueueRedraw();
+                break;
+
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } up when _dragging:
+            {
+                _dragging = false;
+                var landed = IsOverBoard(up.Position);
+                QueueRedraw();
+                if (landed)
+                {
+                    PostRequested?.Invoke(); // KTD-A: same seam the Post button/Enter call
+                }
+                // else: released off the board — the poster settles back home, nothing queued.
+
+                break;
+            }
+        }
+    }
+
+    public override void _Draw()
+    {
+        DrawRect(BoardZone, BoardWood);
+        DrawRect(BoardZone, BoardEdge, filled: false, width: 2f);
+        // A couple of painted nail-heads, so an empty board still reads as a noticeboard.
+        DrawCircle(BoardZone.Position + new Vector2(14f, 10f), 2f, BoardEdge);
+        DrawCircle(BoardZone.Position + new Vector2(BoardZone.Size.X - 14f, 10f), 2f, BoardEdge);
+
+        var posterPos = _dragging ? _dragPos - PosterHome.Size / 2f : PosterHome.Position;
+        var posterRect = new Rect2(posterPos, PosterHome.Size);
+        DrawRect(posterRect, PosterPaper);
+        DrawRect(posterRect, PosterEdge, filled: false, width: 1.5f);
+
+        var font = GetThemeDefaultFont();
+        if (font is not null)
+        {
+            var fontSize = GetThemeDefaultFontSize();
+            DrawString(
+                font, posterRect.Position + new Vector2(6f, 18f), $"Floor {_floor}",
+                HorizontalAlignment.Left, posterRect.Size.X - 12f, fontSize, Ink);
+            DrawString(
+                font, posterRect.Position + new Vector2(6f, 36f), $"{_reward}g reward",
+                HorizontalAlignment.Left, posterRect.Size.X - 12f, fontSize, Ink);
+        }
+
+        if (_dragging && IsOverBoard(_dragPos))
+        {
+            DrawRect(BoardZone, new Color(1f, 0.9f, 0.5f, 0.25f));
+        }
+    }
+}
+
+/// <summary>
+/// U6: one hero's accept/decline judgment, painted as a small angled sticky note rather than a
+/// plain text row — a bounty card's judgments read as notes actually pinned to it. Presentation
+/// only (<c>_Draw</c> primitives, no new art assets); the tilt is a deterministic function of the
+/// judgment's own <see cref="EventId"/>, never wall-clock or engine RNG, so it is stable across
+/// runs and replays.
+/// </summary>
+public partial class StickyNote : Control
+{
+    private const float NoteWidth = 260f;
+    private const float NoteHeight = 34f;
+
+    private static readonly Color AcceptedPaper = new(0.95f, 0.90f, 0.55f);
+    private static readonly Color DeclinedPaper = new(0.95f, 0.80f, 0.58f); // warm amber, not alarm-red (R6)
+    private static readonly Color PaperEdge = new(0.50f, 0.44f, 0.20f, 0.7f);
+    private static readonly Color Ink = new(0.18f, 0.14f, 0.08f);
+    private static readonly Color PinColor = new(0.32f, 0.30f, 0.28f);
+
+    private string _text = string.Empty;
+    private bool _accepted;
+    private float _tiltDegrees;
+
+    /// <summary>The bound judgment text — exposed read-only so a test can assert on it directly
+    /// (the text is painted via <see cref="_Draw"/>, not a <see cref="Label"/>, so it never shows
+    /// up in <c>UiTestSupport.RenderedText</c>'s Label/Button/ItemList walk).</summary>
+    public string Text => _text;
+
+    public StickyNote()
+    {
+        CustomMinimumSize = new Vector2(NoteWidth, NoteHeight + 10f);
+        MouseFilter = MouseFilterEnum.Ignore; // decoration only — never eats a click meant for the card
+    }
+
+    /// <summary>Bind one judgment's note. <paramref name="tiltSeed"/> is a stable integer (the
+    /// judgment's own <see cref="EventId.Value"/>) so the "pinned by hand" tilt is deterministic.</summary>
+    public void SetJudgment(string text, bool accepted, int tiltSeed)
+    {
+        _text = text;
+        _accepted = accepted;
+        var band = ((tiltSeed % 7) + 7) % 7; // 0..6, sign-safe for negative ids
+        _tiltDegrees = (band - 3) * 1.4f; // deterministic ~[-4.2, +4.2] degrees
+        QueueRedraw();
+    }
+
+    public override void _Draw()
+    {
+        var rect = new Rect2(-NoteWidth / 2f + 4f, -NoteHeight / 2f, NoteWidth - 8f, NoteHeight);
+        var pivot = new Vector2(NoteWidth / 2f, NoteHeight / 2f + 4f);
+        var paper = _accepted ? AcceptedPaper : DeclinedPaper;
+
+        DrawSetTransform(pivot, Mathf.DegToRad(_tiltDegrees), Vector2.One);
+        DrawRect(rect, paper);
+        DrawRect(rect, PaperEdge, filled: false, width: 1f);
+        DrawCircle(new Vector2(0f, rect.Position.Y + 3f), 2f, PinColor); // the pin holding it up
+
+        var font = GetThemeDefaultFont();
+        if (font is not null)
+        {
+            DrawString(
+                font, new Vector2(rect.Position.X + 4f, 4f), _text,
+                HorizontalAlignment.Left, rect.Size.X - 8f, GetThemeDefaultFontSize(), Ink);
+        }
+
+        DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
     }
 }
