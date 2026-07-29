@@ -14,6 +14,10 @@ status: build-ready
 
 # Core Loop — Call & Response
 
+> **STATUS: COMPLETE (stamped 2026-07-28).** Slice 1 (#213), Slice 2 (#215), Slice 3 (#216) all shipped. One caveat for future readers: this plan's advisor-parity invariant (every legal action mirrored in the advisor) has since been broken by the Phase D sink verbs — the mirror in `sim/GameSim/Advisor/ActionLegality.cs` covers 20 of 24 action types. Kept as the historical record. Do not execute.
+
+---
+
 ## Goal Capsule
 
 Turn the player from a **peripheral optimizer** into a **participant** by making the core loop a

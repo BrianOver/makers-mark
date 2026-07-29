@@ -1,5 +1,16 @@
 # Watch-Surfaces — the Presentation Scheduler
 
+> **STATUS: MVP COMPLETE; U-W4/U-W5 remain post-skeleton by the plan's own design (stamped 2026-07-28).**
+> The declared MVP (§"MVP watch-surface") shipped: `sim/GameSim/Presentation/PresentationScheduler.cs`
+> + `Beat.cs` are the pure scheduler (U-W1), `Drama/ExpeditionRevealSystem.cs` and
+> `godot/scripts/ui/AdventureTicker.cs` are the reveal + ticker (U-W2), and the watchable raid landed
+> with `godot/scripts/DelveBeats.cs` + `panels/DelveStage.cs` (#244).
+> **Verify before executing anything here:** U-W3's return summary card could not be located by the
+> 2026-07-28 audit — confirm against code before assuming either way. U-W4 (scrying mirror) and U-W5
+> (town ceremony / departure) were explicitly deferred post-skeleton by this plan and are now T1/T2
+> backlog items, not scheduled work. Note the abstraction guardrail still holds and matters more after
+> the 2.5D pivot: deliberately abstract vignettes, never attempted combat choreography.
+
 Plan of record for the game's biggest de-risking: **can a pre-resolved deterministic raid be fun to WATCH?** Research basis: watchability report (paradox-of-suspense, Football Manager highlights, autobattlers, Omasse Grindcast, Orkin's law, Blaseball, RimWorld letter tiers).
 
 ## The insight
