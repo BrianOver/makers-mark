@@ -9,4 +9,25 @@
       <GODOT_BIN>C:\Tools\Godot\Godot_v4.6.3-stable_mono_win64\Godot_v4.6.3-stable_mono_win64_console.exe</GODOT_BIN>
     </EnvironmentVariables>
   </RunConfiguration>
+  <GdUnit4>
+    <!-- Why this exists: gdUnit4Net rebuilds the Godot project before running engine tests, and
+         the default timeout for that step is too tight on a busy machine. When it expires you get
+
+             Rebuild Godot Project ends with exit code: -1
+
+         followed by — and this is the dangerous part — a GREEN run of 54 tests instead of ~438.
+         Every [RequireGodotRuntime] test is silently DROPPED rather than failed. A suite that
+         passes while quietly skipping most of itself is the worst failure mode available to a
+         determinism-gated project, and it has cost multiple sessions real time being mistaken for
+         a flake.
+
+         6 minutes is far more than a healthy rebuild needs (~20s on an idle machine), so this is
+         not masking a slow build; it only stops a loaded machine from reporting a false green.
+         If you ever genuinely hit this timeout, treat it as a real problem to diagnose rather
+         than a number to raise again.
+
+         Sanity check when a run looks suspiciously fast: the engine suite should report several
+         hundred tests. 54 means the rebuild failed and you are looking at a lie. -->
+    <CompileProcessTimeout>360000</CompileProcessTimeout>
+  </GdUnit4>
 </RunSettings>
