@@ -301,9 +301,11 @@ public class MainUiTests
         var ui = MountMainUi();
         try
         {
-            // Post through the panel's form on day 1 Morning.
-            Find<SpinBox>(ui.Bounties, "BountyFloor").Value = ScriptedSession.BountyFloor;
-            Find<SpinBox>(ui.Bounties, "BountyReward").Value = ScriptedSession.BountyReward;
+            // Post through the panel's form on day 1 Morning. U6 (plan 2026-07-28-002) replaced
+            // the two SpinBoxes with a MineCrossSection (floor) and a CoinStack (reward) — same
+            // pinned Names, new control types, same PostBountyAction queued underneath.
+            Find<MineCrossSection>(ui.Bounties, "BountyFloor").SelectFloor(ScriptedSession.BountyFloor);
+            Find<CoinStack>(ui.Bounties, "BountyReward").SetValue(ScriptedSession.BountyReward);
             Press(ui.Bounties, "PostBounty");
             ui.Adapter.AdvancePhase(); // Morning: the post applies (gold escrowed)
 
@@ -319,12 +321,15 @@ public class MainUiTests
             AssertThat(judged.Count > 0).IsTrue();
 
             // AE7 render half: accept/decline reasons are on the rendered bounty board. U21:
-            // Bounties was hidden through the judging tick — open it before reading.
+            // Bounties was hidden through the judging tick — open it before reading. U6 moved each
+            // judgment's text off a plain Label onto a StickyNote's _Draw — RenderedText only
+            // walks Label/Button/ItemList, so read the notes' bound text directly instead.
             ui.OpenPanel("Bounties");
-            var bountyText = RenderedText(ui.Bounties);
+            var notes = ui.Bounties.FindChildren("Judgment_*", "Control", recursive: true, owned: false);
+            var noteText = string.Join('\n', notes.OfType<StickyNote>().Select(n => n.Text));
             foreach (var judgment in judged)
             {
-                AssertThat(bountyText).Contains(judgment.Reason);
+                AssertThat(noteText).Contains(judgment.Reason);
             }
         }
         finally

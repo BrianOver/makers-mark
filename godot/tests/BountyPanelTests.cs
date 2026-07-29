@@ -2,22 +2,25 @@
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Expedition;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
+using GodotClient.Panels;
+using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
 namespace GodotClient.Tests;
 
 /// <summary>
-/// P007 polish (R18/AE7/KTD2/KTD3): the bounty board rebuilt around <c>UiKit.Section</c>s —
-/// Post Bounty / Open Bounties — with each open bounty a themed <c>Card</c>. Every scenario
-/// drives the SAME sim read (<c>state.Bounties</c>) and action queue
-/// (<see cref="PostBountyAction"/>) the pre-polish panel used, through the real Controls
-/// (<see cref="Press"/>/<see cref="PressEnabled"/>) under their pinned <c>Name</c>s
-/// (<c>BountyFloor</c>/<c>BountyReward</c>/<c>PostBounty</c>), proving only the visual
-/// composition changed.
+/// U6 (plan <c>2026-07-28-002</c>): the bounty board's post form rebuilt around a mine
+/// cross-section (<see cref="MineCrossSection"/>) for the floor pick, a <see cref="CoinStack"/>
+/// for the reward, and a drag-to-board poster (<see cref="PosterComposer"/>) alongside the
+/// existing button/Enter path. Every scenario still drives the SAME action queue
+/// (<see cref="PostBountyAction"/>) the pre-U6 two-SpinBox form used — only the controls behind
+/// the pinned <c>Name</c>s (<c>BountyFloor</c>/<c>BountyReward</c>/<c>PostBounty</c>) changed type,
+/// from <c>SpinBox</c> to the new widgets above.
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -36,9 +39,11 @@ public class BountyPanelTests
             AssertThat(bountyText).Contains("OPEN BOUNTIES");
             AssertThat(bountyText).Contains($"clear floor {PostFloor} for {PostReward}g");
 
-            // The post form's controls survive the polish under their pinned Names.
-            Find<SpinBox>(ui.Bounties, "BountyFloor");
-            Find<SpinBox>(ui.Bounties, "BountyReward");
+            // The post form's controls survive the U6 redesign under their pinned Names — now the
+            // new widget types, not SpinBoxes.
+            Find<MineCrossSection>(ui.Bounties, "BountyFloor");
+            Find<CoinStack>(ui.Bounties, "BountyReward");
+            Find<PosterComposer>(ui.Bounties, "BountyPoster");
             Find<Button>(ui.Bounties, "PostBounty");
         }
         finally
@@ -69,14 +74,56 @@ public class BountyPanelTests
     }
 
     [TestCase]
-    public void PressingPostButton_QueuesPostBountyAction_InPendingActions()
+    public void SelectingFloorAndReward_PressingPostButton_QueuesPostBountyAction_InPendingActions()
     {
         var ui = MountMainUi();
         try
         {
-            Find<SpinBox>(ui.Bounties, "BountyFloor").Value = PostFloor;
-            Find<SpinBox>(ui.Bounties, "BountyReward").Value = PostReward;
+            Find<MineCrossSection>(ui.Bounties, "BountyFloor").SelectFloor(PostFloor);
+            Find<CoinStack>(ui.Bounties, "BountyReward").SetValue(PostReward);
             PressEnabled(ui.Bounties, "PostBounty");
+
+            var pending = ui.Adapter.PendingActions.OfType<PostBountyAction>().ToList();
+            AssertThat(pending.Count).IsEqual(1);
+            AssertThat(pending[0].TargetFloor).IsEqual(PostFloor);
+            AssertThat(pending[0].RewardGold).IsEqual(PostReward);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void StratumClick_ComposeCoins_DragPosterOntoBoard_QueuesSameAction_AsTheOldForm()
+    {
+        // U6's own scenario: drive the ACTUAL gestures (a real click on the cross-section, a real
+        // drag-release on the poster) rather than calling the seam methods directly, proving the
+        // recognizers wired via the GuiInput event actually reach PostBountyAction.
+        var ui = MountMainUi();
+        try
+        {
+            var cross = Find<MineCrossSection>(ui.Bounties, "BountyFloor");
+            var coins = Find<CoinStack>(ui.Bounties, "BountyReward");
+            var poster = Find<PosterComposer>(ui.Bounties, "BountyPoster");
+
+            var clickPos = new Vector2(10f, 26f * (PostFloor - 1) + 13f); // mid-band for PostFloor
+            cross.EmitSignal(
+                Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = clickPos });
+            AssertThat(cross.SelectedFloor).IsEqual(PostFloor);
+
+            coins.SetValue(PostReward); // CoinStack's own click zones are U1's concern, not ours
+
+            poster.EmitSignal(
+                Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = new Vector2(20f, 20f) });
+            poster.EmitSignal(
+                Control.SignalName.GuiInput,
+                new InputEventMouseMotion { Position = new Vector2(180f, 20f) });
+            poster.EmitSignal(
+                Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = new Vector2(180f, 20f) });
 
             var pending = ui.Adapter.PendingActions.OfType<PostBountyAction>().ToList();
             AssertThat(pending.Count).IsEqual(1);
@@ -104,6 +151,177 @@ public class BountyPanelTests
         finally
         {
             Unmount(ui);
+        }
+    }
+
+    // ── U6: MineCrossSection ──
+
+    [TestCase]
+    public void FloorAt_ReturnsTheBandFloor_AndZeroOutsideTheStrip()
+    {
+        var cross = new MineCrossSection();
+        try
+        {
+            for (var floor = 1; floor <= MonsterTable.FloorCount; floor++)
+            {
+                var midY = 26f * (floor - 1) + 13f;
+                AssertThat(cross.FloorAt(new Vector2(10f, midY))).IsEqual(floor);
+            }
+
+            AssertThat(cross.FloorAt(new Vector2(-5f, 10f))).IsEqual(0);     // left of the strip
+            AssertThat(cross.FloorAt(new Vector2(200f, 10f))).IsEqual(0);    // right of the strip
+            AssertThat(cross.FloorAt(new Vector2(10f, -5f))).IsEqual(0);     // above the shallowest band
+            AssertThat(cross.FloorAt(new Vector2(10f, 26f * MonsterTable.FloorCount + 5f))).IsEqual(0); // below the deepest
+        }
+        finally
+        {
+            cross.Free();
+        }
+    }
+
+    [TestCase]
+    public void SelectFloor_ClampsToTheLegalRange()
+    {
+        var cross = new MineCrossSection();
+        try
+        {
+            cross.SelectFloor(0);
+            AssertThat(cross.SelectedFloor).IsEqual(1);
+
+            cross.SelectFloor(MonsterTable.FloorCount + 50);
+            AssertThat(cross.SelectedFloor).IsEqual(MonsterTable.FloorCount);
+
+            cross.SelectFloor(-100);
+            AssertThat(cross.SelectedFloor).IsEqual(1);
+        }
+        finally
+        {
+            cross.Free();
+        }
+    }
+
+    [TestCase]
+    public void Click_OnABand_SelectsThatFloor_ViaTheRealGuiInputSignal()
+    {
+        var cross = new MineCrossSection();
+        try
+        {
+            var selected = -1;
+            cross.FloorSelected += f => selected = f;
+
+            cross.EmitSignal(
+                Control.SignalName.GuiInput,
+                new InputEventMouseButton
+                {
+                    ButtonIndex = MouseButton.Left, Pressed = true, Position = new Vector2(10f, 26f * 2 + 13f),
+                });
+
+            AssertThat(cross.SelectedFloor).IsEqual(3);
+            AssertThat(selected).IsEqual(3);
+        }
+        finally
+        {
+            cross.Free();
+        }
+    }
+
+    [TestCase]
+    public void ArrowKeys_StepTheSelection_ClampedAtTheEdges()
+    {
+        var cross = new MineCrossSection();
+        try
+        {
+            cross.EmitSignal(Control.SignalName.GuiInput, new InputEventKey { Keycode = Key.Down, Pressed = true });
+            AssertThat(cross.SelectedFloor).IsEqual(2);
+
+            cross.EmitSignal(Control.SignalName.GuiInput, new InputEventKey { Keycode = Key.Up, Pressed = true });
+            AssertThat(cross.SelectedFloor).IsEqual(1);
+
+            cross.EmitSignal(Control.SignalName.GuiInput, new InputEventKey { Keycode = Key.Up, Pressed = true });
+            AssertThat(cross.SelectedFloor).IsEqual(1); // clamped — never below floor 1
+        }
+        finally
+        {
+            cross.Free();
+        }
+    }
+
+    // ── U6: PosterComposer ──
+
+    [TestCase]
+    public void DragRelease_OverTheBoard_RaisesPostRequested()
+    {
+        var poster = new PosterComposer();
+        try
+        {
+            var raised = false;
+            poster.PostRequested += () => raised = true;
+            poster.SetPreview(PostFloor, PostReward);
+
+            poster.EmitSignal(
+                Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = new Vector2(20f, 20f) });
+            poster.EmitSignal(
+                Control.SignalName.GuiInput,
+                new InputEventMouseMotion { Position = new Vector2(180f, 20f) });
+            poster.EmitSignal(
+                Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = new Vector2(180f, 20f) });
+
+            AssertThat(raised).IsTrue();
+        }
+        finally
+        {
+            poster.Free();
+        }
+    }
+
+    [TestCase]
+    public void DragRelease_OffTheBoard_DoesNotRaisePostRequested()
+    {
+        var poster = new PosterComposer();
+        try
+        {
+            var raised = false;
+            poster.PostRequested += () => raised = true;
+
+            poster.EmitSignal(
+                Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = new Vector2(20f, 20f) });
+            poster.EmitSignal(
+                Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = Vector2.Zero });
+
+            AssertThat(raised).IsFalse();
+        }
+        finally
+        {
+            poster.Free();
+        }
+    }
+
+    [TestCase]
+    public void PressDown_OffThePoster_StartsNoDrag_ReleaseOverBoardRaisesNothing()
+    {
+        var poster = new PosterComposer();
+        try
+        {
+            var raised = false;
+            poster.PostRequested += () => raised = true;
+
+            // Press somewhere that is neither the poster nor the board — no drag armed.
+            poster.EmitSignal(
+                Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = new Vector2(60f, 60f) });
+            poster.EmitSignal(
+                Control.SignalName.GuiInput,
+                new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = new Vector2(180f, 20f) });
+
+            AssertThat(raised).IsFalse();
+        }
+        finally
+        {
+            poster.Free();
         }
     }
 
