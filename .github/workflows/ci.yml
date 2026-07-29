@@ -43,6 +43,16 @@ jobs:
 
   engine-tests:
     runs-on: ubuntu-latest
+    env:
+      # Floors for the shutdown-flake tolerance below. Safety comes from the COUNT, not from
+      # identifying the crash: if the suite ran and this many tests passed with zero failures, a
+      # SIGABRT during Godot's shutdown is cosmetic by definition, whatever exit code surfaced.
+      #
+      # Deliberately generous rather than exact, so adding or deleting tests needs no upkeep here.
+      # They only have to sit far above the catastrophic mode they exist to catch: a failed Godot
+      # rebuild silently drops every [RequireGodotRuntime] test and reports a green ~54.
+      ENGINE_MIN_PASSED: 300   # full suite runs 450+; a silent skip reports ~54
+      GUARD_MIN_PASSED: 20     # the MainUiTests subset runs ~30
     steps:
       # LFS on the engine lane ONLY (it renders the PNGs). Checkout skips auto-download so the
       # cache below can serve objects first, protecting the free-tier 1 GiB/month LFS bandwidth;
@@ -114,21 +124,38 @@ jobs:
             exit 0
           fi
 
-          # Both attempts failed. Tolerate ONLY the exact known shape: exit code 134 (SIGABRT)
-          # AND a definitive all-tests-passed marker in that same run's output. Any other exit
-          # code, or a "Failed: 0" marker missing/showing real failures, fails the step normally
-          # — this must never mask an actual test regression.
+          # Both attempts failed. Decide from the RESULTS, not from the exit code.
+          #
+          # This block used to read `exit_code -eq 134 && grep -q "Failed: 0"`, and every part of
+          # that was dead (verified against real run logs on 2026-07-29):
+          #   * the 134 belongs to the inner GODOT child process. gdUnit reports it as a log LINE
+          #     ("Godot Runtime Test Runner ends with exit code: 134") while the outer
+          #     `xvfb-run dotnet test` pipeline returns 1, so `-eq 134` never matched.
+          #   * vstest prints "Failed:     0" with PADDING, so a single-space "Failed: 0" pattern
+          #     never matched either — nor did "Passed: [0-9]+" in the message below it.
+          # The main step got away with it because the retry usually exits 0 and short-circuits
+          # above; the sibling silent-skip guard has no retry, so it blocked a fully-green
+          # docs-only PR (#279, engine step 457/457) with the message "not the tolerated shutdown
+          # flake" about precisely that flake.
           last_log=engine-tests-attempt2.log
           [ -f "$last_log" ] || last_log=engine-tests-attempt1.log
 
-          if [ "$exit_code" -eq 134 ] && grep -q "Failed: 0" "$last_log"; then
-            passed_count=$(grep -oE "Passed: [0-9]+" "$last_log" | tail -1 | grep -oE "[0-9]+")
-            echo "::warning::engine shutdown SIGABRT tolerated, all ${passed_count:-N} tests passed"
+          passed=$(grep -oE "Passed:[[:space:]]+[0-9]+" "$last_log" | tail -1 | grep -oE "[0-9]+")
+          failed=$(grep -oE "Failed:[[:space:]]+[0-9]+" "$last_log" | tail -1 | grep -oE "[0-9]+")
+          passed="${passed:-0}"
+          failed="${failed:-0}"
+          echo "::notice::engine results parsed from $last_log — passed=$passed failed=$failed (exit $exit_code)"
+
+          # A silent skip cannot satisfy this: it reports ~54, far under the floor. A genuine
+          # regression cannot either — it reports a nonzero Failed. A mid-run crash cannot, because
+          # the tests it never reached are missing from the count.
+          if [ "$failed" -eq 0 ] && [ "$passed" -ge "$ENGINE_MIN_PASSED" ]; then
+            echo "::warning::engine shutdown crash tolerated (exit $exit_code) — $passed tests ran and passed, 0 failed"
             exit 0
           fi
 
-          echo "::error::Engine tests failed for real (exit $exit_code) — not the tolerated shutdown flake."
-          exit "$exit_code"
+          echo "::error::Engine tests failed for real (exit $exit_code) — passed=$passed failed=$failed, floor $ENGINE_MIN_PASSED."
+          exit 1
       - name: Assert runtime suite actually ran (silent-skip guard, KTD3)
         run: |
           # Same Godot shutdown SIGABRT (exit 134 after a clean pass) that the main engine
@@ -143,18 +170,29 @@ jobs:
           exit_code="${PIPESTATUS[0]}"
           [ "$exit_code" -eq 0 ] && exit 0
 
-          # Tolerate ONLY the known shutdown flake: exit 134 (SIGABRT) AND proof the suite
-          # actually ran and passed — a nonzero Passed count with Failed: 0. A silent skip
-          # (0 tests) produces no "Passed: [1-9]" marker and still fails, which is the entire
-          # reason this guard exists (KTD3). Never let it mask a real skip or regression.
-          if [ "$exit_code" -eq 134 ] && grep -qE "Passed: [1-9][0-9]*" guard.log && grep -q "Failed: 0" guard.log; then
-            passed_count=$(grep -oE "Passed: [0-9]+" guard.log | tail -1 | grep -oE "[0-9]+")
-            echo "::warning::silent-skip guard: shutdown SIGABRT tolerated, MainUiTests ran and passed (${passed_count})"
+          # Decide from the RESULTS, not the exit code — see the long note in the engine step above
+          # for why the previous `exit_code -eq 134 && grep "Passed: [1-9]" && grep "Failed: 0"`
+          # predicate could never be satisfied (wrong process layer, plus vstest pads its summary
+          # with multiple spaces so neither grep matched). This step is where that cost real time:
+          # with no retry to short-circuit it, it blocked a green docs-only PR.
+          #
+          # The guard's purpose is unchanged and is what the floor enforces: prove the RUNTIME suite
+          # actually executed. A failed Godot rebuild drops every [RequireGodotRuntime] test, which
+          # for this filter means 0 — nowhere near GUARD_MIN_PASSED. TreatNoTestsAsError above is
+          # the second lock on the same door.
+          passed=$(grep -oE "Passed:[[:space:]]+[0-9]+" guard.log | tail -1 | grep -oE "[0-9]+")
+          failed=$(grep -oE "Failed:[[:space:]]+[0-9]+" guard.log | tail -1 | grep -oE "[0-9]+")
+          passed="${passed:-0}"
+          failed="${failed:-0}"
+          echo "::notice::silent-skip guard parsed passed=$passed failed=$failed (exit $exit_code)"
+
+          if [ "$failed" -eq 0 ] && [ "$passed" -ge "$GUARD_MIN_PASSED" ]; then
+            echo "::warning::silent-skip guard: shutdown crash tolerated (exit $exit_code) — MainUiTests ran and passed ($passed)"
             exit 0
           fi
 
-          echo "::error::silent-skip guard failed for real (exit $exit_code) — not the tolerated shutdown flake."
-          exit "$exit_code"
+          echo "::error::silent-skip guard failed for real (exit $exit_code) — passed=$passed failed=$failed, floor $GUARD_MIN_PASSED. The runtime suite did not demonstrably run."
+          exit 1
       - name: Restore csproj after tests
         if: always()
         run: git checkout -- godot/GodotClient.csproj
