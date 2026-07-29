@@ -75,19 +75,20 @@ public partial class ForgePanel : SimPanel
 
     /// <summary>U3 (plan 2026-07-28-004): the engineer's assembly-bench overlay — same
     /// single-instance, self-contained-focus-overlay pattern as <see cref="_brewPuzzle"/>, opened by
-    /// an "Assemble" button an ACTIVE engineering recipe would render where the blacksmith gets
-    /// "Work the forge". <see cref="EngineeringProfession"/>'s <c>ActiveCraft</c> is false today, so
-    /// this branch never actually renders that button — the overlay ships wired but DORMANT until
-    /// the orchestrator flips the flag alongside the talent remap (see the overlay's own class doc).</summary>
+    /// an "Assemble" button an ACTIVE engineering recipe renders where the blacksmith gets "Work the
+    /// forge". LIVE since U3b flipped <see cref="EngineeringProfession"/>'s <c>ActiveCraft</c>
+    /// alongside the mandatory talent remap; it shipped wired-but-dormant before that, because the
+    /// flip without an overlay to earn the grade in turns every craft into auto-craft and every
+    /// quality talent into dead data.</summary>
     private EngineeringBench? _engineeringBench;
 
     /// <summary>U2 (plan <c>2026-07-28-004</c>): the tanner's scraping-frame overlay — the same
     /// single-instance, self-contained-focus-overlay pattern as <see cref="_minigame"/>/
     /// <see cref="_brewPuzzle"/>, opened by the "Scrape the hide" button an ACTIVE tanning recipe
-    /// renders where the blacksmith gets "Work the forge". Ships DORMANT: <c>TanningProfession</c>
-    /// does not set <c>ActiveCraft</c> (defaults false), so this branch never renders today — the
-    /// orchestrator flips it together with the profession's talent remap and a balance-gate
-    /// re-run. Presentation only: the sim scores the submitted <c>TanningScrapeInput</c> itself.</summary>
+    /// renders where the blacksmith gets "Work the forge". LIVE since U3b set
+    /// <c>TanningProfession</c>'s <c>ActiveCraft</c> together with its talent remap and a
+    /// balance-gate re-run. Presentation only: the sim scores the submitted
+    /// <c>TanningScrapeInput</c> itself.</summary>
     private TanningFrame? _tanningFrame;
 
     /// <summary>G1 (game-feel plan §"World VFX keyed to beat state"): the town's forge-station VFX
@@ -386,9 +387,8 @@ public partial class ForgePanel : SimPanel
     private void OnBrewCancelled() => _brewPuzzle!.Visible = false;
 
     /// <summary>U3: open the assembly-bench overlay for this engineering recipe/material — the
-    /// "Assemble" path beside the auto-craft fallback, mirroring <see cref="OnBrewPressed"/>. Dormant
-    /// today (see <see cref="_engineeringBench"/>'s own doc) — never reachable until
-    /// <c>EngineeringProfession</c>'s <c>ActiveCraft</c> flips.</summary>
+    /// "Assemble" path beside the auto-craft fallback, mirroring <see cref="OnBrewPressed"/>. Reachable
+    /// since U3b flipped <c>EngineeringProfession</c>'s <c>ActiveCraft</c>.</summary>
     private void OnAssemblePressed(Recipe recipe, string material, ProfessionDefinition profession, ImmutableSortedSet<string> unlockedTalents)
     {
         EnsureBuilt();
@@ -672,16 +672,14 @@ public partial class ForgePanel : SimPanel
         _brewPuzzle.Cancelled += OnBrewCancelled;
 
         // U3: the engineer's assembly-bench overlay — same self-contained-focus pattern, hidden
-        // until an "Assemble" button opens it (dormant today — see the field's own doc).
+        // until an "Assemble" button opens it.
         _engineeringBench = new EngineeringBench { Visible = false };
         AddChild(_engineeringBench);
         _engineeringBench.Finished += OnAssembleFinished;
         _engineeringBench.Cancelled += OnAssembleCancelled;
 
         // U2: the tanner's scraping-frame overlay — same self-contained-focus pattern, hidden
-        // until a "Scrape the hide" button opens it. Ships dormant behind ActiveCraft (see the
-        // field doc above) — built regardless so the wiring is ready the moment the orchestrator
-        // flips the flag.
+        // until a "Scrape the hide" button opens it.
         _tanningFrame = new TanningFrame { Visible = false };
         AddChild(_tanningFrame);
         _tanningFrame.Finished += OnTanningFrameFinished;
