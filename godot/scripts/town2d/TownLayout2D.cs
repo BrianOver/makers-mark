@@ -19,6 +19,40 @@ public static class TownLayout2D
     /// <summary>Ground tile edge length, px (pivot plan pixel-discipline: 16×16 tiles).</summary>
     public const int TileSize = 16;
 
+    /// <summary>
+    /// Uniform downscale applied to every CHARACTER sprite (player, heroes, townsfolk) — the one
+    /// place the cast's world scale is decided.
+    ///
+    /// <para>Why: the generated character art is ~30x46px, which in a <see cref="TileSize"/>=16
+    /// world is a person very nearly THREE TILES TALL, while a building is five. A blacksmith
+    /// standing 60% the height of his own forge is what Brian's "buildings are too small and the
+    /// player model is massive" verdict was looking at — and the buildings were never the wrong
+    /// dial. At 0.5 a character is ~1.4 tiles and a building reads ~3.5x their height, which is the
+    /// proportion a top-down village actually reads correctly at.</para>
+    ///
+    /// <para>Applied via <see cref="CharacterArtRoot"/> — an intermediate node between the actor and
+    /// its sprite — rather than by re-generating the PNGs, so this stays one number to tune against a
+    /// screenshot. Deliberately NOT folded into the per-frame <c>Sprite.Scale</c> assignment:
+    /// <c>SpriteMotion</c> owns that value for walk squash/breath, and the feet-compensation offset
+    /// math in every actor's pose-apply inverts <c>Sprite.Scale</c> to keep the feet planted — an
+    /// extra constant factor in there silently breaks that inversion (it made the player's sprite
+    /// drift 11px off its own feet line). Keeping the constant on the parent leaves the pose math,
+    /// and the invariant tests that check it, exactly as they were. Exactly 0.5 keeps the decimation
+    /// a clean 2:1 under the Nearest filter instead of a resampling shimmer.</para>
+    /// </summary>
+    public const float CharacterSpriteScale = 0.5f;
+
+    /// <summary>Builds the per-actor node that carries <see cref="CharacterSpriteScale"/>: parent the
+    /// actor's <c>Sprite2D</c> to this instead of to the actor itself. Its origin coincides with the
+    /// actor's, so the sprite's feet-at-origin convention (and therefore the Y-sort baseline) is
+    /// unchanged; it only scales what hangs below it. Nothing outside the town2d actors depends on
+    /// the sprite's node PATH, so this extra level is invisible to the rest of the client.</summary>
+    public static Godot.Node2D CharacterArtRoot() => new()
+    {
+        Name = "Art",
+        Scale = new Godot.Vector2(CharacterSpriteScale, CharacterSpriteScale),
+    };
+
     /// <summary>Town grid extent in tiles (pivot plan: "town grid ≈40×28") — width deliberately
     /// equals the 640px viewport width exactly (no horizontal camera pan needed), height (28 ×
     /// 16 = 448px) exceeds the 360px viewport so the vertical <see cref="Camera2D"/> limit has

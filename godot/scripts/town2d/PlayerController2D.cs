@@ -95,7 +95,9 @@ public partial class PlayerController2D : CharacterBody2D
     public override void _Ready()
     {
         Sprite = BuildSprite();
-        AddChild(Sprite);
+        var art = TownLayout2D.CharacterArtRoot(); // carries the cast's world scale — see its doc
+        AddChild(art);
+        art.AddChild(Sprite);
 
         // THE PLAYER HAD NO COLLISION SHAPE AT ALL, and it broke two things at once — found by
         // Brian's human playtest (2026-07-29) reporting that pressing E at the forge did nothing.

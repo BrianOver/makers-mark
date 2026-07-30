@@ -568,6 +568,14 @@ public partial class MainUi : Control
         // real bottom-edge Y coordinate.
         var headerBottom = _hudHeader.GetCombinedMinimumSize().Y + ObjectiveDockMargin;
         var desiredTop = Mathf.Max(ObjectiveDockOffsetTop, headerBottom);
+
+        // The world sits full-rect BEHIND this opaque header, so the header hides the top ~quarter
+        // of it. Centering the camera on the player therefore put the player under, or just below,
+        // the header — standing at the forge door meant the forge itself was behind the HUD. Hand
+        // the town the header's measured height so it can bias the camera by it (Town2D does the
+        // canvas-scale math). Measured, not a constant, for exactly the reason above: the header's
+        // height has already drifted twice.
+        Town.TopObstructionPx = _hudHeader.GetCombinedMinimumSize().Y;
         Objective.OffsetTop = Mathf.Min(desiredTop, viewportHeight - ObjectiveDockMinBottomGap);
         var maxBottom = Mathf.Max(Objective.OffsetTop + ObjectiveDockMinBottomGap, viewportHeight - ObjectiveDockMargin);
         var contentHeight = Objective.GetCombinedMinimumSize().Y;

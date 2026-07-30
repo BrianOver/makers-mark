@@ -134,7 +134,9 @@ public partial class HeroActor2D : Node2D
         _spriteHeight = sprite.GetHeight();
 
         Sprite = BuildSprite(sprite, classColor);
-        AddChild(Sprite);
+        var art = TownLayout2D.CharacterArtRoot(); // carries the cast's world scale — see its doc
+        AddChild(art);
+        art.AddChild(Sprite);
 
         // M2: cache the base/step textures + construct the pose driver now that heroId/classId
         // are known — same id + "_step" suffix, resolved through the same IconRegistry.Art ladder

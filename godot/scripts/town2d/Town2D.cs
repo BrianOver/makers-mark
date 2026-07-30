@@ -44,14 +44,32 @@ namespace GodotClient.Town2d;
 /// </summary>
 public partial class Town2D : Control
 {
-    // Nominal SubViewport size. NOTE: the SubViewportContainer has Stretch=true, which overrides the
-    // live viewport size to the container's pixel size — so the actual zoom is set by the Camera2D's
-    // integer Zoom (see Build), not this constant. Kept for the overview-capture math + tests.
+    // Nominal SubViewport size. The live size is owned by the SubViewportContainer (Stretch=true
+    // with StretchShrink=2 — see Build), which sets it to window/2, so at the default 1152x648
+    // window the real canvas is 576x324, close to these numbers but not equal to them. Kept as the
+    // reference framing for the overview-capture math + tests.
     public const int ViewportWidth = 640;
     public const int ViewportHeight = 360;
 
-    /// <summary>Integer camera zoom for the Stardew-close framing (2x = crisp, no fractional shimmer).</summary>
-    private const float CameraZoom = 2f;
+    /// <summary>
+    /// Camera zoom. 1, deliberately: the Stardew-close framing is produced by the container's
+    /// <c>StretchShrink</c> (see <see cref="Build"/>), which is a TRUE low-res canvas upscaled by an
+    /// integer. Magnifying with camera zoom instead renders the world at full window resolution and
+    /// merely draws it big — smooth-edged sprites in a pixel-art game — and stacking the two
+    /// multiplied to 4x and pushed buildings off the top of the screen. One magnification dial only.
+    /// </summary>
+    private const float CameraZoom = 1f;
+
+    /// <summary>The container's <c>StretchShrink</c> (see <see cref="Build"/>) — how many screen
+    /// pixels one world pixel is drawn as. Named separately because <see cref="FollowPlayer"/> needs
+    /// it to convert a screen-space measurement back into world space.</summary>
+    public const int CanvasShrink = 3;
+
+    /// <summary>Height in SCREEN pixels of any opaque UI covering the top of this control — set by
+    /// <c>MainUi</c> from its HUD header's measured height (0 when the town is mounted bare, e.g. in
+    /// tests or the screenshot tool). <see cref="FollowPlayer"/> biases the camera by half of it so
+    /// the player is centered in the visible strip rather than the full viewport.</summary>
+    public float TopObstructionPx { get; set; }
 
     private const int TileSize = TownLayout2D.TileSize;
 
@@ -140,6 +158,22 @@ public partial class Town2D : Control
         {
             Name = "ViewportContainer",
             Stretch = true,
+            // The load-bearing half of Stretch. Stretch=true means the CONTAINER owns the child
+            // viewport's size — it overwrites WorldViewport.Size with (container size /
+            // StretchShrink) every layout pass. StretchShrink defaults to 1, so the world was being
+            // rendered at the full window resolution and then drawn 1:1: the entire "render a
+            // 640x360 pixel-art canvas and upscale it" plan was silently dead, and every number
+            // downstream of it (camera zoom, the Limit rect, TownLayout2D's "width deliberately
+            // equals the 640px viewport so no horizontal pan is needed") had been reasoned against
+            // a canvas that does not exist at runtime. That is why the town sat in the corner of a
+            // sea of grass at half the intended magnification.
+            //
+            // 3 gives a 384x216 canvas upscaled 3x into a 1152x648 window: a real low-res canvas,
+            // integer-upscaled, crisp under Nearest, showing 24x13.5 tiles of town. Tuned against a
+            // screenshot — 2 (576x324) framed the town too wide to read as a place you stand in,
+            // and combining 2 with the camera's old 2x zoom pushed in so far that buildings ran off
+            // the top of the screen. This is the ONLY magnification dial now: CameraZoom is 1.
+            StretchShrink = CanvasShrink,
             TextureFilter = TextureFilterEnum.Nearest,
         };
         ViewportContainer.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
@@ -149,20 +183,23 @@ public partial class Town2D : Control
         {
             Name = "Viewport",
             Size = new Vector2I(ViewportWidth, ViewportHeight),
-            // MUST stay false, and this false is load-bearing: a human playtest (2026-07-29) found
-            // that NO building could be entered by clicking, which makes the game unplayable past
-            // the town — you can walk around and never get into the forge.
+            // false is the idiomatic value for a container-wrapped SubViewport: let the parent
+            // SubViewportContainer translate a click into viewport space and forward it, which is
+            // what PhysicsObjectPicking below needs to pick anything.
             //
-            // With HandleInputLocally = true a SubViewport ignores input forwarded by its parent
-            // SubViewportContainer, so a click never reaches a building's Area2D and
-            // Building2D.OnInteractInputEvent — the whole real-click path — never fires. False lets
-            // the container translate the click into viewport space and hand it over, which is what
-            // PhysicsObjectPicking below needs in order to pick anything at all.
+            // CORRECTION (2026-07-30). This comment used to declare the false "load-bearing" and
+            // blame HandleInputLocally=true for the 2026-07-29 playtest finding that no building
+            // could be clicked. That causal story is NOT TRUE, and it was never tested — it was
+            // reasoned from the docs and then written down as fact. RealClickReachesBuildingTests
+            // now pushes a real click at a real screen position through this whole chain, and it
+            // passes with this flag set EITHER way. So whatever actually broke clicking that day,
+            // it was not this line.
             //
-            // Why no automated test caught it: every playtest and engine test enters a building
-            // through Building2D.RaisePick(), the documented test seam, which bypasses viewport
-            // input entirely. The seam proved the ROUTING worked while the only path a player has
-            // was dead. Coverage for "a click reaches the building" has to push real input.
+            // Left as false regardless (it is correct for this node layout), but the claim is gone.
+            // The guarantee now comes from a test that can fail, not from a confident comment —
+            // which is the same lesson as Building2D.RaisePick(): the old coverage entered buildings
+            // through a seam that skipped viewport input entirely, so it proved the routing worked
+            // while the only path a player has was dead.
             HandleInputLocally = false,
             PhysicsObjectPicking = true,
             Snap2DTransformsToPixel = true,
@@ -444,6 +481,8 @@ public partial class Town2D : Control
     /// not a party happens to be departing this tick.</summary>
     public override void _Process(double delta)
     {
+        FollowPlayer();
+
         if (Adapter is not null && _dayTint is not null)
         {
             DuskModulate.Color = _dayTint.Advance(delta, Adapter.CurrentState.Phase);
@@ -471,6 +510,40 @@ public partial class Town2D : Control
                 actor.MarchOutTo(mineDoor);
             }
         }
+    }
+
+    /// <summary>
+    /// Keeps the camera on the player, every frame.
+    ///
+    /// <para>THE CAMERA NEVER FOLLOWED. <see cref="Build"/> set <c>Cam.GlobalPosition = forgeDoor</c>
+    /// once and nothing ever moved it again, so walking away from the forge walked the player
+    /// straight off the edge of a frozen view — in a top-down game whose only control is WASD, that
+    /// is the whole game broken. It looked survivable in screenshots because the spawn point is in
+    /// frame; it is only wrong once you MOVE, which no automated check ever did (the playtest tools
+    /// teleport via <see cref="PlayerController2D.SpawnAt"/> and read sim state, they never watch the
+    /// view). <see cref="CameraFollowTests"/> now drives real movement and asserts the camera
+    /// tracked it.</para>
+    ///
+    /// <para>Assigning <see cref="Node2D.GlobalPosition"/> is the follow: the camera's own
+    /// <see cref="Camera2D.PositionSmoothingEnabled"/> (set in <see cref="Build"/>) eases the drawn
+    /// position toward it, and its <c>Limit*</c> rect clamps the view to the town, so this stays a
+    /// one-line target assignment rather than hand-rolled lerp + clamp. Null-guarded for the window
+    /// between <see cref="Node._Process"/> starting and <see cref="Build"/> having run.</para>
+    /// </summary>
+    private void FollowPlayer()
+    {
+        if (Cam is null || Player is null)
+        {
+            return;
+        }
+
+        // Centering on the player centers them in the VIEWPORT, but the top TopObstructionPx of that
+        // viewport is behind MainUi's opaque HUD header — so the player, and whichever building they
+        // are standing at, ended up under it. Lifting the camera target by half the hidden band
+        // centers the player in the strip that is actually visible. /CanvasShrink converts the
+        // header's screen pixels into world pixels (the canvas is upscaled by that factor).
+        var bias = TopObstructionPx / 2f / CanvasShrink;
+        Cam.GlobalPosition = Player.GlobalPosition - new Vector2(0f, bias);
     }
 
     private void ReturnSurvivors()
