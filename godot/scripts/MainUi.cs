@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Linq;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Audio;
 using GodotClient.Panels;
 using GodotClient.Town;
 using GodotClient.Town2d;
@@ -114,6 +115,10 @@ public partial class MainUi : Control
     public PhaseClock Clock { get; private set; } = null!;
     public DrawerHost Drawer { get; private set; } = null!;
     public Town2D Town { get; private set; } = null!;
+
+    /// <summary>The game's sound. Mounted alongside the town so every panel can find it via
+    /// <see cref="AudioDirector.For"/>.</summary>
+    public AudioDirector Audio { get; private set; } = null!;
     public ForgePanel Forge { get; private set; } = null!;
     public ShopPanel Shop { get; private set; } = null!;
     public HeroesPanel Heroes { get; private set; } = null!;
@@ -393,6 +398,12 @@ public partial class MainUi : Control
         var state = Adapter.CurrentState;
         GD.Print($"[MainUi] tick complete: day {completedDay} {completedPhase} -> day {state.Day} {state.Phase} " +
                  $"({Adapter.LastEvents.Count} events, {Adapter.LastRejections.Count} rejections)");
+
+        // Sound follows the same signal the HUD does, so a cue can never disagree with what is on
+        // screen. Phase-keyed rather than event-keyed for the bed: SetPhase ignores an unchanged
+        // phase, so calling it on every tick is correct and needs no boundary detection here.
+        Audio.SetPhase(state.Phase);
+        SoundTheTick(completedPhase, state);
         foreach (var rejected in Adapter.LastRejections)
         {
             // Dev log keeps the RAW kernel reason (org logging rule); the player only
@@ -1090,6 +1101,11 @@ public partial class MainUi : Control
         // sibling (the HUD layout, the DrawerHost, the modals) draws on top of it, and it is never
         // hidden by a drawer opening/closing (R1 world permanence). 2.5D pivot (U2): Town2D
         // replaces the grounded 3D town — same permanence contract, same event vocabulary. ---
+        // Mounted before the town so a cue fired during the first refresh already has somewhere to go.
+        Audio = new AudioDirector();
+        AddChild(Audio);
+        Audio.SetPhase(Adapter.CurrentState.Phase);
+
         Town = new Town2D { Name = "Town2D" };
         AddChild(Town);
         Town.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
@@ -1584,15 +1600,36 @@ public partial class MainUi : Control
         if (id == "Town")
         {
             Drawer.Close();
+            Audio.Play(Cue.PanelClose);
         }
         else
         {
             Drawer.Open(id);
             PanelFor(id).Refresh();
+            Audio.Play(Cue.PanelOpen);
         }
 
         TabFade.Trigger();
         UpdateEngaged();
+    }
+
+    /// <summary>
+    /// The tick's one sound, chosen by what actually happened. Deliberately ONE cue per tick and not a
+    /// cue per event: a busy Evening can carry a dozen sales and a death, and firing a sound for each
+    /// turns the most dramatic moment of the day into a burst of noise. Priority order is "worst news
+    /// first" — a refusal is the thing the player most needs to notice, then the day's own bell.
+    /// </summary>
+    private void SoundTheTick(DayPhase completedPhase, GameState state)
+    {
+        if (!Adapter.LastRejections.IsEmpty)
+        {
+            Audio.Play(Cue.Rejected);
+            return;
+        }
+
+        // Morning ending is the send-off: the party is actually leaving, which deserves its own cue
+        // rather than the generic bell.
+        Audio.Play(completedPhase == DayPhase.Morning ? Cue.PartyDepart : Cue.Bell);
     }
 
     /// <summary>The drawer-hosted panel registered under <paramref name="id"/> — "Town" is not a
