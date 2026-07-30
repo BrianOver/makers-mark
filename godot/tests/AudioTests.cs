@@ -153,6 +153,67 @@ public class AudioTests
         }
     }
 
+    /// <summary>The Mine's theme must be audible, loop cleanly, and NOT be one of the town beds — the
+    /// whole point is that down there sounds like a different place.</summary>
+    [TestCase]
+    public void TheUndergroundTheme_IsItsOwnPlace()
+    {
+        var pcm = Pcm(MusicBed.Underground());
+
+        AssertThat(Rms(pcm))
+            .OverrideFailureMessage($"The Mine theme is effectively silent (RMS {Rms(pcm):0.####}).")
+            .IsGreater(0.01f);
+
+        AssertThat(MusicBed.Underground().LoopMode).IsEqual(AudioStreamWav.LoopModeEnum.Forward);
+
+        var step = MathF.Abs(pcm[^1] - pcm[0]);
+        AssertThat(step)
+            .OverrideFailureMessage($"The Mine loop steps by {step:0.####} at its seam — an audible click every repeat.")
+            .IsLessEqual(Peak(pcm) * 0.25f);
+
+        foreach (var phase in AllPhases)
+        {
+            var town = Pcm(MusicBed.For(phase));
+            AssertThat(MathF.Abs(Rms(pcm) - Rms(town)) > 0.0001f)
+                .OverrideFailureMessage($"The Mine theme is indistinguishable from the {phase} bed.")
+                .IsTrue();
+        }
+    }
+
+    /// <summary>A scene takes the music and gives it back. The trap: <c>SetPhase</c> ignores an unchanged
+    /// phase, so if closing a scene did not explicitly restore the bed the game would fall silent until
+    /// the day happened to move on.</summary>
+    [TestCase]
+    public void AScene_TakesTheMusic_AndGivesItBack()
+    {
+        var director = new AudioDirector();
+        try
+        {
+            ((SceneTree)Engine.GetMainLoop()).Root.AddChild(director);
+            director.SetPhase(DayPhase.Morning);
+
+            director.SetScene("depths");
+            var underground = director.GetChildren().OfType<AudioStreamPlayer>()
+                .Any(p => p.Stream == MusicBed.Underground());
+            AssertThat(underground)
+                .OverrideFailureMessage("Opening the Depths did not switch the music to the Mine theme.")
+                .IsTrue();
+
+            director.SetScene(null);
+            var backToTown = director.GetChildren().OfType<AudioStreamPlayer>()
+                .Any(p => p.Stream == MusicBed.For(DayPhase.Morning));
+            AssertThat(backToTown)
+                .OverrideFailureMessage(
+                    "Closing the Depths left the Mine theme playing (or nothing). Leaving a scene has to " +
+                    "restore the day's bed explicitly — SetPhase early-returns on an unchanged phase.")
+                .IsTrue();
+        }
+        finally
+        {
+            director.Free();
+        }
+    }
+
     [TestCase]
     public void PhasesSoundDifferentFromEachOther()
     {

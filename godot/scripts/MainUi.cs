@@ -1601,12 +1601,15 @@ public partial class MainUi : Control
         {
             Drawer.Close();
             Audio.Play(Cue.PanelClose);
+            Audio.SetScene(null); // back above ground
         }
         else
         {
             Drawer.Open(id);
             PanelFor(id).Refresh();
             Audio.Play(Cue.PanelOpen);
+            // Watching the raid gets the Mine's own theme; every other panel stays with the day.
+            Audio.SetScene(id == "Depths" ? "depths" : null);
         }
 
         TabFade.Trigger();

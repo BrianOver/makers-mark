@@ -34,6 +34,8 @@ public static class MusicBed
 
     private static readonly Dictionary<DayPhase, AudioStreamWav> Cache = new();
 
+    private static AudioStreamWav? _underground;
+
     /// <summary>The loop for <paramref name="phase"/>, synthesized on first request and cached.</summary>
     public static AudioStreamWav For(DayPhase phase)
     {
@@ -44,6 +46,93 @@ public static class MusicBed
         }
 
         return stream;
+    }
+
+    /// <summary>
+    /// The Mine's own theme, for while the player is WATCHING the raid rather than standing in the town
+    /// — see <c>AudioDirector.SetScene</c>.
+    ///
+    /// <para>Brian's playtest: "where are the visuals to follow their adventure??" and "unclear what to
+    /// do during the expedition phase". Part of why the Depths read as inert is that it sounds exactly
+    /// like the town does. This is the same construction as a phase bed, pitched a fourth below the
+    /// deepest of them, with the melody removed entirely and replaced by a slow irregular drip and a
+    /// low pulse. No tune, because down here nobody is playing one — the point is that it feels like a
+    /// different PLACE, not a different mood.</para>
+    /// </summary>
+    public static AudioStreamWav Underground()
+    {
+        if (_underground is not null)
+        {
+            return _underground;
+        }
+
+        var buffer = new float[Synth.Samples(LoopSeconds)];
+        const float root = 73.42f; // D2 — a fourth under the Deep bed's 98Hz
+
+        AddDrone(buffer, SnapToLoop(root), 0.40f);
+        AddDrone(buffer, SnapToLoop(root * 1.5f), 0.16f);
+        // A tritone, very quiet: the one deliberately unsettled interval in the whole score. It never
+        // resolves because the Mine never does.
+        AddDrone(buffer, SnapToLoop(root * 1.414f), 0.07f);
+
+        // Cavern air: darker and heavier than the town's, and breathing more slowly.
+        var air = new float[buffer.Length];
+        for (var i = 0; i < air.Length; i++)
+        {
+            air[i] = Synth.Noise(i, seed: 909);
+        }
+
+        Synth.LowPass(air, 260f);
+        for (var i = 0; i < buffer.Length; i++)
+        {
+            var breath = 0.55f + 0.45f * MathF.Sin(2f * MathF.PI * i / buffer.Length); // one slow cycle
+            buffer[i] += air[i] * 0.22f * breath;
+        }
+
+        // Water, somewhere. Deterministically irregular spacing — an exactly periodic drip reads as a
+        // metronome, and a metronome reads as music, which is what this is avoiding.
+        for (var d = 0; d < 9; d++)
+        {
+            var jitter = (Synth.Noise(d, seed: 4242) + 1f) * 0.5f; // 0..1
+            var at = (d + jitter) * (LoopSeconds / 10f);
+            AddDrip(buffer, at, 1180f + jitter * 600f);
+        }
+
+        // A pulse on the beat of a slow heart — the only thing down here with a tempo.
+        for (var p = 0; p < 12; p++)
+        {
+            AddPulse(buffer, at: p * (LoopSeconds / 12f), hz: root * 0.5f);
+        }
+
+        Synth.Normalise(buffer, 0.5f);
+        _underground = Synth.ToStream(buffer, loop: true);
+        return _underground;
+    }
+
+    /// <summary>A single water drop: a short bright partial with a fast pitch drop, which is what makes
+    /// a sine read as a droplet instead of a bleep.</summary>
+    private static void AddDrip(float[] buffer, float at, float hz)
+    {
+        var start = Synth.Samples(at);
+        var end = Math.Min(buffer.Length, start + Synth.Samples(0.18f));
+        for (var i = start; i < end; i++)
+        {
+            var t = (i - start) / (float)Synth.SampleRate;
+            var sweep = hz * (1f - t * 1.6f); // falls away as it decays
+            buffer[i] += MathF.Sin(2f * MathF.PI * MathF.Max(sweep, 40f) * t) * 0.10f * Synth.Decay(t, 0.035f);
+        }
+    }
+
+    /// <summary>A soft sub-bass thud.</summary>
+    private static void AddPulse(float[] buffer, float at, float hz)
+    {
+        var start = Synth.Samples(at);
+        var end = Math.Min(buffer.Length, start + Synth.Samples(0.45f));
+        for (var i = start; i < end; i++)
+        {
+            var t = (i - start) / (float)Synth.SampleRate;
+            buffer[i] += MathF.Sin(2f * MathF.PI * hz * t) * 0.16f * Synth.Decay(t, 0.11f);
+        }
     }
 
     /// <summary>The musical character of one phase. Root is the drone's fundamental; <c>Third</c> is what
