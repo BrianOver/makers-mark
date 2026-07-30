@@ -398,6 +398,9 @@ public sealed partial class ForgeMinigame : PanelContainer
                 BellowsStop();
                 break;
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } mb:
+                // Clicking must not cost the player their keyboard — and if a child button holds
+                // focus, Space would press THAT instead of striking the billet.
+                UiKit.ReclaimKeyboard(this);
                 _quenchDragArmed = WouldHit(mb.Position);
                 if (_quenchDragArmed)
                 {
@@ -555,7 +558,12 @@ public sealed partial class ForgeMinigame : PanelContainer
         Name = "ForgeMinigame";
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Stop; // an open overlay owns clicks — never passes through to what it covers
-        FocusMode = FocusModeEnum.All; // so _GuiInput actually receives keyboard events
+
+        // Sets FocusMode AND actually takes focus. This line used to be a bare
+        // `FocusMode = FocusModeEnum.All;` commented "so _GuiInput actually receives keyboard
+        // events" — which it does not, on its own: being focus-ABLE is not being focused, so Space
+        // and Shift never arrived and the craft was unwinnable. See UiKit.ClaimKeyboard.
+        UiKit.ClaimKeyboard(this);
 
         var body = new VBoxContainer { Name = "ForgeMinigameBody" };
         AddChild(body);

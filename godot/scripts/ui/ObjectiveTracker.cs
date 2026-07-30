@@ -48,6 +48,22 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// font-size override), at a ~1.3x line-height multiplier.</summary>
     private const float ReasonMinHeight = ReasonMaxLines * GameTheme.BodyFontSize * 1.3f;
 
+    /// <summary>Line budget the height floor reserves for an UNCLAMPED tutorial step (see
+    /// <see cref="Refresh"/>'s tutorial branch). Four lines holds the longest step in
+    /// <c>TutorialFlow</c>'s chain at <see cref="DockWidth"/>; the label itself is unclamped, so a
+    /// longer one still renders — this only guarantees the room is reserved up front rather than
+    /// depending on a second layout pass.
+    ///
+    /// <para>Six, because a step's text is the instruction PLUS the live advisor reason appended
+    /// (see <c>TutorialFlow.StepText</c>) — e.g. "Walk to the Forge (walk there with WASD, or click
+    /// the ground to move) and click it — buy 2 copper…". That concatenation is why this card needs
+    /// so many lines; shortening the copy itself would be the better fix and is left as follow-up.</para></summary>
+    private const int TutorialMaxLines = 6;
+
+    /// <summary>Height floor for an unclamped tutorial step — same derivation as
+    /// <see cref="ReasonMinHeight"/>, just a taller line budget.</summary>
+    private const float TutorialMinHeight = TutorialMaxLines * GameTheme.BodyFontSize * 1.3f;
+
     /// <summary>Fade-in length (UI-6, accumulated-delta only — no engine Tween in this codebase,
     /// same contract as <c>TabFade</c>/the HUD gold-chip pop) for the body's dip-then-settle
     /// whenever a fresh step's text lands.</summary>
@@ -174,7 +190,29 @@ public sealed partial class ObjectiveTracker : PanelContainer
 
         _lastReasonText = text;
         Reason.Text = Plain(text);
-        TutorialDismiss.Visible = tutorialOverride is not null;
+
+        var isTutorial = tutorialOverride is not null;
+        TutorialDismiss.Visible = isTutorial;
+
+        // A TUTORIAL STEP IS NEVER ELLIPSIZED. The two-line clamp exists to stop a verbose advisor
+        // reason from growing this chip without bound, and for advisor text losing the tail is fine —
+        // it is a suggestion, and the full ranked list is one click away. A tutorial step is an
+        // INSTRUCTION, and the clamp was eating the half that says what to do: Brian's playtest read
+        // "Tutorial 1/5: Walk to the Forge (walk…" and reported it cut off, three times over three
+        // sessions. Unclamped for tutorial text, clamped for everything else; the height floor grows
+        // to match so the extra lines have somewhere to render (see ReasonMinHeight's own doc for why
+        // ClipText makes an explicit floor mandatory).
+        Reason.MaxLinesVisible = isTutorial ? -1 : ReasonMaxLines;
+        Reason.ClipText = !isTutorial;
+        // Unclamping the line count is not enough on its own — TrimEllipsis still ellipsizes at the
+        // rect's bottom edge, which is what left "…Buy 2 copper…" on screen after the first attempt
+        // at this fix. The trim behaviour has to go too.
+        Reason.TextOverrunBehavior = isTutorial
+            ? TextServer.OverrunBehavior.NoTrimming
+            : TextServer.OverrunBehavior.TrimEllipsis;
+        Reason.CustomMinimumSize = new Vector2(
+            DockWidth - 24,
+            isTutorial ? TutorialMinHeight : ReasonMinHeight);
 
         foreach (var child in RankedList.GetChildren())
         {

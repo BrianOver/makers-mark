@@ -33,7 +33,7 @@ public class RingBellHudTests
 
             PressEnabled(ui, "AdvancePhase"); // Morning → Expedition
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
-            AssertThat(Bell(ui).Text).IsEqual("Lower the winch");
+            AssertThat(Bell(ui).Text).IsEqual("Lower them into the mine");
             AssertThat(ClockLabel(ui).Text).Contains("Quest");
 
             PressEnabled(ui, "AdvancePhase"); // Expedition → Camp

@@ -40,6 +40,24 @@ public partial class BountyPanel : SimPanel
     /// themed fallback (glyph + caption).</summary>
     private const string BountyArtKey = "bounty-board-post";
 
+    /// <summary>Width floor (px) for a form label in the post-bounty rows — wide enough for
+    /// "reward gold:" at <see cref="GameTheme.BodyFontSize"/>. A hard floor, not just ExpandFill:
+    /// expand distributes leftover width and a crowded row has none, which is how these labels ended
+    /// up rendered one character per line. With a floor, a crowded row overflows visibly (a bug you
+    /// can SEE) instead of silently shredding its own text (a bug that reads as a broken menu).</summary>
+    private const float FormLabelMinWidth = 96f;
+
+    /// <summary>A form label that cannot collapse — see <see cref="FormLabelMinWidth"/>. Left-aligned
+    /// and non-expanding so the control beside it gets the rest of the row.</summary>
+    private static Label FormLabel(Node parent, string text)
+    {
+        var label = AddLabel(parent, text);
+        label.CustomMinimumSize = new Vector2(FormLabelMinWidth, 0);
+        label.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+        label.AutowrapMode = TextServer.AutowrapMode.Off;
+        return label;
+    }
+
     /// <summary>Default reward the coin stack opens with — matches the old reward SpinBox's
     /// starting value so a fresh panel behaves the same either way.</summary>
     private const int DefaultReward = 25;
@@ -189,21 +207,37 @@ public partial class BountyPanel : SimPanel
 
         var formSection = Section("POST BOUNTY");
         body.AddChild(formSection.Root);
-        var form = AddRow(formSection.Body);
 
-        AddLabel(form, "floor:");
+        // THIS WAS ONE HBOX HOLDING SIX WIDGETS and it collapsed on sight. Brian's playtest
+        // (2026-07-30): "bounties menu is broke" — the screenshot shows "r e w a r d  g o l d :"
+        // stacked one character per line, the floor list overlapping it, and the Post button pushed
+        // off the right edge of the window.
+        //
+        // AddLabel already sets ExpandFill specifically to dodge the one-character-per-line collapse
+        // (see its own comment), and that is not enough here: expand only distributes LEFTOVER width,
+        // and with a cross-section + coin stack + poster + button on one line there is none — the
+        // row's combined minimum exceeds the drawer, so every non-expand child takes its minimum and
+        // each autowrap label's minimum is about one character wide.
+        //
+        // The fix is to stop asking for more width than exists. One labelled control per row, so each
+        // row's minimum is one widget wide, plus an explicit label width floor so a label can never
+        // be squeezed to a column of letters again even if a future row does get crowded.
+        var floorRow = AddRow(formSection.Body);
+        FormLabel(floorRow, "floor:");
         _floorSection = new MineCrossSection { Name = "BountyFloor" };
-        form.AddChild(_floorSection);
+        floorRow.AddChild(_floorSection);
 
-        AddLabel(form, "reward gold:");
+        var rewardRow = AddRow(formSection.Body);
+        FormLabel(rewardRow, "reward gold:");
         _rewardStack = new CoinStack { Name = "BountyReward" };
         _rewardStack.SetValue(DefaultReward);
-        form.AddChild(_rewardStack);
+        rewardRow.AddChild(_rewardStack);
 
+        var posterRow = AddRow(formSection.Body);
         _poster = new PosterComposer { Name = "BountyPoster" };
-        form.AddChild(_poster);
+        posterRow.AddChild(_poster);
 
-        _postButton = AddButton(form, "PostBounty", "Post", OnPostPressed);
+        _postButton = AddButton(posterRow, "PostBounty", "Post", OnPostPressed);
 
         // Re-gate live as the player counts coins onto the desk — the escrow must stay affordable.
         _rewardStack.ValueChanged += _ =>
