@@ -113,8 +113,28 @@ public sealed partial class TutorialFlow : PanelContainer
         Name = "TutorialFlow";
         Visible = false; // hidden until an affordance goes live (RefreshAffordances) — no empty-panel sliver
 
-        var body = new VBoxContainer { Name = "TutorialFlowBody" };
-        AddChild(body);
+        // Body lives inside a ScrollContainer because this dock has a HARD height ceiling: it is
+        // anchored below the objective card and must still fit above the window's bottom edge
+        // (MainUi.UpdateObjectiveDock clamps it). A human playtest (2026-07-29) reported the panel
+        // "still cutoff" — the earlier fix stopped it OVERLAPPING the objective card but nothing
+        // stopped it running off the bottom of the screen, so its lower rows became unreachable.
+        //
+        // Clamping alone would hide content; clamping plus scrolling keeps every row reachable at
+        // any window size. Horizontal scrolling stays disabled so the autowrapped copy wraps on the
+        // real dock width instead of growing sideways.
+        var scroll = new ScrollContainer
+        {
+            Name = "TutorialFlowScroll",
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+        };
+        AddChild(scroll);
+
+        var body = new VBoxContainer
+        {
+            Name = "TutorialFlowBody",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+        };
+        scroll.AddChild(body);
 
         SecondProfessionButton = new Button
         {

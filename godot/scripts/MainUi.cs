@@ -586,7 +586,16 @@ public partial class MainUi : Control
             // shifting only the top would squash or invert the panel's height.
             var tutorialTop = Mathf.Max(TutorialDockOffsetTop, Objective.OffsetBottom + ObjectiveDockMargin);
             Tutorial.OffsetTop = tutorialTop;
-            Tutorial.OffsetBottom = tutorialTop + Tutorial.GetCombinedMinimumSize().Y;
+
+            // CLAMP to the window. The previous version sized purely to the content's minimum, which
+            // stopped the dock overlapping the objective card but let it run straight off the bottom
+            // of the screen — a human playtest found the panel "still cutoff" and its lower rows
+            // unreachable. Height is now whatever the content wants OR whatever room is actually
+            // left, whichever is smaller; TutorialFlow scrolls internally so nothing is lost when
+            // the clamp bites.
+            var available = GetViewportRect().Size.Y - tutorialTop - ObjectiveDockMargin;
+            var wanted = Tutorial.GetCombinedMinimumSize().Y;
+            Tutorial.OffsetBottom = tutorialTop + Mathf.Min(wanted, Mathf.Max(0f, available));
         }
     }
 
