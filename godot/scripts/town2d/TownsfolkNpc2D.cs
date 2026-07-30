@@ -142,7 +142,9 @@ public partial class TownsfolkNpc2D : Node2D
             Modulate = tint,
             Offset = new Vector2(0, -_spriteHeight / 2f),
         };
-        AddChild(Sprite);
+        var art = TownLayout2D.CharacterArtRoot(); // carries the cast's world scale — see its doc
+        AddChild(art);
+        art.AddChild(Sprite);
 
         // Gap #3: cache base/step textures exactly like HeroActor2D.Init does, now that the
         // resolved sprite is known.

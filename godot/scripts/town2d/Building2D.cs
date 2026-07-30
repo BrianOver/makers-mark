@@ -171,14 +171,18 @@ public partial class Building2D : Node2D
     {
         Name = "Label",
         Text = text,
-        Position = new Vector2(-size.X / 2f, -size.Y - 20f), // clear of the roof, centered above
-        Size = new Vector2(size.X, 16f),
+        // Nametags live INSIDE the world, so they are magnified by the same integer upscale the
+        // tiles are (see Town2D's StretchShrink) — a 12px font was landing on screen as ~36px of
+        // text stamped across the roof it was supposed to caption. These are world-pixel sizes, not
+        // screen sizes: keep them small.
+        Position = new Vector2(-size.X / 2f, -size.Y - 10f), // clear of the roof, centered above
+        Size = new Vector2(size.X, 8f),
         HorizontalAlignment = HorizontalAlignment.Center,
         LabelSettings = new LabelSettings
         {
-            FontSize = 12,
+            FontSize = 7,
             FontColor = LabelFontColor,
-            OutlineSize = 5,
+            OutlineSize = 3,
             OutlineColor = LabelOutlineColor,
             ShadowSize = 2,
             ShadowColor = LabelShadowColor,

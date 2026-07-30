@@ -31,6 +31,12 @@ public partial class ScreenshotTool : Node
         //    render captures every building at once (origin-aligned, no camera transform). ──
         int w = TownLayout2D.GridWidth * TownLayout2D.TileSize;
         int h = TownLayout2D.GridHeight * TownLayout2D.TileSize;
+        // Stretch=true makes the container OWN the viewport's size, so every Size assignment below
+        // is silently discarded with `Can't change the size of a SubViewport with a
+        // SubViewportContainer parent that has stretch enabled`. Both captures then came out at the
+        // window's size with identical framing — an overview that was not an overview and a
+        // "player view" that was not the player's view. Turn stretch off first and the sizes take.
+        town.ViewportContainer.Stretch = false;
         town.Cam.Enabled = false;
         town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
         town.WorldViewport.Size = new Vector2I(w, h);
