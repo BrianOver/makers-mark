@@ -192,7 +192,7 @@ public static class ObjectiveAdvisor
             i.PlayerCrafted && !shelved.Contains(i.Id.Value) && !equipped.Contains(i.Id.Value));
         if (stockable is not null)
         {
-            var price = Math.Max(1, (stockable.Stats.Attack + stockable.Stats.Defense) * 2);
+            var price = SuggestedPrice.For(stockable);
             var stock = new StockAction(stockable.Id, price);
             if (ActionLegality.IsLegal(state, stock, phase))
             {
@@ -482,7 +482,7 @@ public static class ObjectiveAdvisor
             return null;
         }
 
-        var price = Math.Max(1, (held.Stats.Attack + held.Stats.Defense) * 2);
+        var price = SuggestedPrice.For(held);
         var stock = new StockAction(held.Id, price);
         return ActionLegality.IsLegal(state, stock, phase)
             ? new Suggestion(stock, $"You crafted a {held.Quality} {held.Name} — shelve it, {demandLabel} wants it.")
