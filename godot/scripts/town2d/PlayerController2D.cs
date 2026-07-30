@@ -88,10 +88,39 @@ public partial class PlayerController2D : CharacterBody2D
     /// is a recorded dead-end per the pivot plan's playtest-harness section).</summary>
     private Vector2? _directInput;
 
+    /// <summary>Player body radius, in pixels. Sized under the sprite's feet rather than around the
+    /// whole sprite: a top-down body should collide with its footprint, not its head.</summary>
+    private const float BodyRadius = 6f;
+
     public override void _Ready()
     {
         Sprite = BuildSprite();
         AddChild(Sprite);
+
+        // THE PLAYER HAD NO COLLISION SHAPE AT ALL, and it broke two things at once — found by
+        // Brian's human playtest (2026-07-29) reporting that pressing E at the forge did nothing.
+        //
+        // A CharacterBody2D with no CollisionShape2D:
+        //   1. is invisible to Area2D.GetOverlappingBodies(), so WorldInput2D.FindNearestOverlapping
+        //      always returned null, no building ever became the active target, and E was
+        //      PERMANENTLY dead — not flaky, never once working.
+        //   2. collides with nothing, so the player walked straight through every building's
+        //      footprint. The town had no solidity.
+        //
+        // The old comment here claimed buildings "carry their own CollisionShape2D from U3, so
+        // MoveAndSlide alone handles obstacles". Half true and wholly misleading: MoveAndSlide needs
+        // a shape on the MOVING body too. Static geometry cannot stop a shapeless mover.
+        //
+        // A circle at the feet, not a box around the sprite: this is a top-down world, so what
+        // should touch a doorway is where the character stands. Keeping it small also means the
+        // player can actually get INTO the walkable strip in front of a building, which is what the
+        // interact area covers (Building2D's footprint is top-anchored, leaving the door row free).
+        AddChild(new CollisionShape2D
+        {
+            Name = "Body",
+            Shape = new CircleShape2D { Radius = BodyRadius },
+            Position = new Vector2(0f, -BodyRadius), // feet-anchored, matching the sprite's offset convention
+        });
 
         // Same resolved texture BuildSprite already sized the resting feet-offset from — capture
         // it once rather than re-resolving per frame in _Process.
