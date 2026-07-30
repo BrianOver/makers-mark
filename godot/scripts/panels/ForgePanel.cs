@@ -312,6 +312,7 @@ public partial class ForgePanel : SimPanel
         var rune = SelectedModifierId(_runeSelect, GameSim.Contracts.ModifierFamily.Rune);
         var fitting = SelectedModifierId(_fitSelect, GameSim.Contracts.ModifierFamily.Fitting);
         Adapter.Queue(new CraftAction(recipeId, material, RequestQuenchOil: oil, RequestRune: rune, RequestFitting: fitting));
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.CraftDone);
         // Craft has no phase term (CraftingHandlers accepts every phase) — the batch always
         // lands against whatever phase the sim is CURRENTLY sitting at (GameKernel.Tick applies
         // the queued batch before advancing), so the resolving phase IS the current one.
@@ -556,6 +557,8 @@ public partial class ForgePanel : SimPanel
     private void OnBuyMaterialPressed(string materialKey)
     {
         Adapter?.Queue(new BuyMaterialAction(materialKey, 1));
+        // Sound the CLICK, not the settlement: the player pressed Buy now, so the coin lands now.
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Coin);
         _feedback!.Text = $"queued: buy 1 {materialKey}. " +
             "Queued — resolves when Morning ticks. Press Advance or wait.";
     }

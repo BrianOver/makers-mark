@@ -475,6 +475,7 @@ public partial class ShopPanel : SimPanel
 
         var id = new ItemId(itemId);
         Adapter.Queue(new StockAction(id, price));
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Shelve);
         _feedback!.Text = $"queued: stock {id} at {price}g";
     }
 
