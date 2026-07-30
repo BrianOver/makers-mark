@@ -29,6 +29,78 @@ public sealed class GameKernel
     public bool Accepts(PlayerAction action, DayPhase phase) =>
         _handlers.Any(h => h.CanHandle(action, phase));
 
+    /// <summary>
+    /// Applies ONE action right now and returns the result — no phase systems, no phase advance.
+    ///
+    /// <para><b>Why this exists.</b> <see cref="Tick"/> is indivisible: it applies actions, runs the
+    /// phase's systems, AND advances the day/phase machine. That made every player action wait for the
+    /// bell, so spending 2 copper still read as 6 copper, and the tutorial (which watches the events a
+    /// tick produces) looked frozen after the player had already done the thing it asked for. Brian's
+    /// playtest, 2026-07-30: "since the crafts are queued (shouldn't be), the material list is
+    /// confusing as it doesn't update".</para>
+    ///
+    /// <para>So the workshop verbs — the ones that are the player's own two hands (buy, craft, stock,
+    /// reprice) — resolve immediately through here, while genuinely phase-scale commitments (posting a
+    /// bounty, sending the party into the mine) still ride the bell through <see cref="Tick"/>. See
+    /// <see cref="ActionTiming"/> for the split and the reasoning behind it.</para>
+    ///
+    /// <para><b>Determinism is preserved</b> (KTD4/KTD5): same seed + same action sequence still gives
+    /// a byte-identical world, because this walks the SAME handler-selection predicate, draws from the
+    /// SAME single RNG stream, and persists the stream snapshot exactly as <see cref="Tick"/> does. What
+    /// changes is the ORDER of draws relative to a phase's systems within that phase — which is why
+    /// this is a separate entry point rather than a change to <see cref="Tick"/>: every determinism,
+    /// golden-replay, and balance test drives <see cref="Tick"/> directly with batched actions and is
+    /// therefore bit-for-bit unaffected by this method existing.</para>
+    ///
+    /// <para>Phase legality is still the handler's call, exactly as in <see cref="Tick"/> — an action
+    /// illegal this phase comes back as a <see cref="RejectedAction"/> and changes nothing.</para>
+    /// </summary>
+    public TickResult ApplyNow(GameState state, PlayerAction action)
+    {
+        var rng = new Pcg32(state.Rng);
+        var sink = new EventCollector();
+        var rejected = ImmutableList.CreateBuilder<RejectedAction>();
+
+        var handler = _handlers.FirstOrDefault(h => h.CanHandle(action, state.Phase));
+        if (handler is null)
+        {
+            rejected.Add(new RejectedAction(action, $"No handler accepts {action.GetType().Name} during {state.Phase}."));
+        }
+        else
+        {
+            var (nextState, rejection) = handler.Apply(state, action, rng, sink);
+            if (rejection is not null)
+            {
+                rejected.Add(rejection);
+            }
+            else
+            {
+                state = nextState;
+            }
+        }
+
+        var nextEventId = state.NextEventId;
+        var stamped = ImmutableList.CreateBuilder<GameEvent>();
+        foreach (var raw in sink.Drain())
+        {
+            stamped.Add(raw with { Id = new EventId(nextEventId++), Day = state.Day });
+        }
+
+        // Deliberately NOT touched, unlike Tick: Day, Phase, Counter teardown, and the
+        // ActionSlotsRemaining reset all belong to the phase machine, and this is not a phase
+        // boundary. The RNG snapshot and the action log ARE persisted, because the draws really
+        // happened and the action really was taken — a save reloaded mid-phase must reflect both.
+        var newState = state with
+        {
+            Rng = rng.Snapshot(),
+            NextEventId = nextEventId,
+            EventLog = state.EventLog.AddRange(stamped),
+            ActionLog = state.ActionLog.Add(new LoggedBatch(state.Day, state.Phase, ImmutableList.Create(action))),
+        };
+
+        return new TickResult(newState, stamped.ToImmutable(), rejected.ToImmutable());
+    }
+
     public TickResult Tick(GameState state, ImmutableList<PlayerAction> actions)
     {
         var rng = new Pcg32(state.Rng);
