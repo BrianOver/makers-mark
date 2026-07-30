@@ -107,7 +107,7 @@ public static class ActionLegality
                 continue;
             }
 
-            var price = Math.Max(1, (item.Stats.Attack + item.Stats.Defense) * 2);
+            var price = SuggestedPrice.For(item);
             var candidate = new StockAction(item.Id, price);
             if (IsLegal(state, candidate, phase))
             {
