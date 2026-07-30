@@ -526,16 +526,33 @@ public static class UiKit
         ContentMarginBottom = GameTheme.Space4,
     };
 
-    /// <summary>Strip height (px) for a <see cref="DrawerHeader"/>.</summary>
-    public const float DrawerHeaderHeight = 40f;
+    /// <summary>
+    /// Strip height (px) for a <see cref="DrawerHeader"/>.
+    ///
+    /// <para>Was 40, which is too short for a <see cref="GameTheme.HeaderFontSize"/> display face: the
+    /// title's descenders overran the strip and bled into the content slot below it. That overhang was
+    /// invisible against an empty dark panel, so instead of being fixed it was worked around per-child —
+    /// <c>SceneBanner</c> carried a hand-tuned 14px top inset for exactly this reason. Anything that did
+    /// NOT know to compensate simply covered the title: Brian's playtest found the forge's Anvil Map
+    /// overlay drawn across the "FORGE" heading and its own close button ("Forge menus don't fit screen
+    /// correctly").</para>
+    ///
+    /// <para>56 clears the face outright, so overlays, banners, and anything added later are clear of the
+    /// title by construction rather than by each remembering to dodge it. Fixing the strip and deleting
+    /// the compensating inset is one change in one place instead of a growing set of magic numbers that
+    /// each drift independently.</para>
+    /// </summary>
+    public const float DrawerHeaderHeight = 56f;
 
     /// <summary>On-screen height (px) of a <see cref="SceneBanner"/> — the art is authored at half
     /// this so it lands on a crisp 2x pixel scale.</summary>
     public const float SceneBannerHeight = 140f;
 
-    /// <summary>Top inset (px) for a <see cref="SceneBanner"/> — clears the drawer title's
-    /// display-font descenders, which overrun <see cref="DrawerHeaderHeight"/>.</summary>
-    public const float SceneBannerTopInset = 14f;
+    /// <summary>Top inset (px) for a <see cref="SceneBanner"/>. Now 0: it existed solely to dodge the
+    /// drawer title's descenders, and <see cref="DrawerHeaderHeight"/> no longer lets them into the
+    /// content slot. Kept as a named dial rather than deleted so a future font swap has one obvious
+    /// place to compensate, instead of a bare literal reappearing inside the builder.</summary>
+    public const float SceneBannerTopInset = 0f;
 
     /// <summary>
     /// A painted interior banner for a drawer panel (e.g. the shop's shelves, the tavern's bar):
@@ -563,10 +580,8 @@ public static class UiKit
             MouseFilter = Control.MouseFilterEnum.Ignore,         // decoration must never eat clicks
         };
 
-        // Inset from the top: the drawer title's display-font descenders overrun the
-        // DrawerHeaderHeight strip above the content slot. That overhang was invisible against the
-        // empty dark panel, but a bright banner flush at y=0 collides with the title. Nudging the
-        // art down is contained here; changing the shared header height would move every panel.
+        // The host stays even at a zero inset: it is what keeps the banner's sizing independent of the
+        // panel's own content margins, and it is where a future font compensation would go.
         var host = new MarginContainer { Name = $"SceneBannerHost_{artId}", MouseFilter = Control.MouseFilterEnum.Ignore };
         host.AddThemeConstantOverride("margin_top", (int)SceneBannerTopInset);
         host.AddChild(rect);
