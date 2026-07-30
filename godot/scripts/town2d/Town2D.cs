@@ -149,7 +149,21 @@ public partial class Town2D : Control
         {
             Name = "Viewport",
             Size = new Vector2I(ViewportWidth, ViewportHeight),
-            HandleInputLocally = true,
+            // MUST stay false, and this false is load-bearing: a human playtest (2026-07-29) found
+            // that NO building could be entered by clicking, which makes the game unplayable past
+            // the town — you can walk around and never get into the forge.
+            //
+            // With HandleInputLocally = true a SubViewport ignores input forwarded by its parent
+            // SubViewportContainer, so a click never reaches a building's Area2D and
+            // Building2D.OnInteractInputEvent — the whole real-click path — never fires. False lets
+            // the container translate the click into viewport space and hand it over, which is what
+            // PhysicsObjectPicking below needs in order to pick anything at all.
+            //
+            // Why no automated test caught it: every playtest and engine test enters a building
+            // through Building2D.RaisePick(), the documented test seam, which bypasses viewport
+            // input entirely. The seam proved the ROUTING worked while the only path a player has
+            // was dead. Coverage for "a click reaches the building" has to push real input.
+            HandleInputLocally = false,
             PhysicsObjectPicking = true,
             Snap2DTransformsToPixel = true,
             Snap2DVerticesToPixel = true,
