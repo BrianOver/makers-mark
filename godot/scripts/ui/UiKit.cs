@@ -60,6 +60,56 @@ public static class UiKit
     /// the inner body VBox callers add rows/cards into.</summary>
     public readonly record struct SectionView(PanelContainer Root, VBoxContainer Body);
 
+    /// <summary>
+    /// Makes <paramref name="overlay"/> actually receive keyboard input, and keep receiving it.
+    ///
+    /// <para><b>Why this exists.</b> A <see cref="Control"/> only gets key events in
+    /// <c>_GuiInput</c> while it HAS FOCUS. Every minigame overlay set
+    /// <c>FocusMode = FocusModeEnum.All</c> — one even with the comment "so _GuiInput actually
+    /// receives keyboard events" — and then never called <see cref="Control.GrabFocus"/>. Declaring
+    /// yourself focus-able is not the same as being focused, so EVERY keyboard control in EVERY
+    /// minigame was dead: Space, Shift, the arrow keys, all of it. Found by Brian's playtest
+    /// (2026-07-30) reporting the forge could not be completed.</para>
+    ///
+    /// <para>In the forge that one omission made the craft unwinnable rather than merely awkward:
+    /// heat drains continuously and a strike's shape-advance is proportional to current heat, so
+    /// with the bellows (Shift) unreachable the heat floors, strikes stop advancing anything, and the
+    /// bellows-pump drag actively drifts shape back toward 0 — the "shape keeps resetting to zero"
+    /// symptom. A dead modifier key read as a broken game.</para>
+    ///
+    /// <para><b>Deferred</b> because an overlay claims focus during its own build, while its child
+    /// <see cref="Button"/>s are still being added, and often before it is even in the tree (grabbing
+    /// focus outside the tree does nothing at all). The deferred call runs once the whole build has
+    /// finished, so it wins that race. Guarded on still-valid/in-tree/visible, because an overlay can
+    /// be cancelled or freed between building and the deferred callback landing. Call
+    /// <see cref="ReclaimKeyboard"/> from the overlay's mouse-press handler to take focus back if a
+    /// button steals it mid-session (which also matters because Space on a focused Button presses
+    /// the Button instead of striking the billet).</para>
+    /// </summary>
+    public static void ClaimKeyboard(Control overlay)
+    {
+        overlay.FocusMode = Control.FocusModeEnum.All;
+
+        Callable.From(() =>
+        {
+            if (GodotObject.IsInstanceValid(overlay) && overlay.IsInsideTree() && overlay.IsVisibleInTree())
+            {
+                overlay.GrabFocus();
+            }
+        }).CallDeferred();
+    }
+
+    /// <summary>Take keyboard focus back immediately — for an overlay's own mouse-press handler, so
+    /// clicking inside it (or on one of its buttons) does not leave the keyboard pointed elsewhere.
+    /// Synchronous, unlike <see cref="ClaimKeyboard"/>: by press time the tree is long settled.</summary>
+    public static void ReclaimKeyboard(Control overlay)
+    {
+        if (!overlay.HasFocus())
+        {
+            overlay.GrabFocus();
+        }
+    }
+
     /// <summary>A plain themed card container — cascade-styled (see type remarks); callers add
     /// their own content (art + stat chips + buttons) as children.</summary>
     public static PanelContainer Card(string? name = null)

@@ -316,7 +316,7 @@ public sealed partial class TanningFrame : PanelContainer
         Name = "TanningFrame";
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Stop; // an open overlay owns clicks — never passes through
-        FocusMode = FocusModeEnum.All; // so _GuiInput actually receives keyboard events
+        UiKit.ClaimKeyboard(this); // FocusMode alone never focuses anything — see its doc
 
         var body = new VBoxContainer { Name = "TanningFrameBody" };
         AddChild(body);

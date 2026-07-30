@@ -376,7 +376,9 @@ public sealed partial class EngineeringBench : PanelContainer
         Name = "EngineeringBench";
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Stop; // an open overlay owns clicks — never passes through
-        FocusMode = FocusModeEnum.All;
+        // NB: focus goes on the CANVAS below, not on this panel. Unlike ForgeMinigame/TanningFrame
+        // (which override _GuiInput on the overlay itself), this bench's key handler lives on
+        // BenchCanvas — so focusing the overlay would leave the keys just as dead as no focus at all.
 
         var body = new VBoxContainer { Name = "EngineeringBenchBody" };
         AddChild(body);
@@ -399,6 +401,7 @@ public sealed partial class EngineeringBench : PanelContainer
         _canvas = new BenchCanvas { Name = "BenchCanvas", CustomMinimumSize = new Vector2(0, 340), Size = new Vector2(600, 340) };
         _canvas.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         _canvas.SizeFlagsVertical = SizeFlags.ExpandFill;
+        UiKit.ClaimKeyboard(_canvas); // the canvas owns OnGuiInput's key cases, so the canvas needs focus
         _canvas.PlaceRequested += Place;
         _canvas.PullRequested += RemoveFromSocket;
         _canvas.SocketCycleRequested += CycleSelectedSocket;
@@ -619,6 +622,7 @@ public sealed partial class EngineeringBench : PanelContainer
             switch (@event)
             {
                 case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } down:
+                    UiKit.ReclaimKeyboard(this); // clicking must not cost the player their keyboard
                     HandleLeftDown(down.Position);
                     break;
 

@@ -1036,7 +1036,10 @@ public partial class MainUi : Control
     private static string BellVerb(GameState state) => state.Phase switch
     {
         DayPhase.Morning => "Send them off",
-        DayPhase.Expedition => "Lower the winch",
+        // Was "Lower the winch". Brian read it as "lower the wench" and asked what it meant — the
+        // winch-house is internal vocabulary (see Expedition/CampHandlers) that leaked onto a button.
+        // A button label has to say what pressing it does; flavour is not worth a player not knowing.
+        DayPhase.Expedition => "Lower them into the mine",
         DayPhase.Camp => "Ring the return bell",
         DayPhase.ExpeditionDeep => "Ring the return bell",
         DayPhase.Evening => "Snuff the lanterns",
