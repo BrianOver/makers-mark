@@ -69,11 +69,21 @@ public class PlayerCanInteractTests
     [TestCase]
     public async System.Threading.Tasks.Task StandingInTheDoorway_TheForgeReportsThePlayerOverlapping()
     {
-        var town = new Town2D();
+        var town = new Town2D { Name = "Town2D" };
         try
         {
-            town.Build(new SimAdapter(2026));
+            town.SetAnchorsPreset(Control.LayoutPreset.FullRect);
             AddNodeToTree(town);
+            town.Build(new SimAdapter(2026));
+
+            // MUST come before any frame await. This is the only async runtime test that mounts a
+            // Town2D, and Town2D owns a live SubViewport — awaiting a tree signal with one rendering
+            // is the known gdUnit headless hang this project has been bitten by before. It killed
+            // CI on the first push of this file: the Godot runtime runner never reported, so EVERY
+            // [RequireGodotRuntime] suite vanished and the engine job went 502 tests -> 68 (the
+            // pure-.NET remainder), exit 137. Physics is unaffected by the render target, so
+            // disabling it costs this test nothing.
+            town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
 
             var forge = town.FindBuilding("forge");
             town.Player.GlobalPosition = forge.DoorAnchorGlobal;
