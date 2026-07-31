@@ -34,8 +34,15 @@ public sealed partial class AudioDirector : Node
     /// ambience, and a fast fade would draw attention to itself.</summary>
     private const float CrossfadeSeconds = 2.5f;
 
-    /// <summary>Bed level in dB. Well under the SFX so cues always read over the music.</summary>
-    private const float MusicDb = -16f;
+    /// <summary>
+    /// Bed level in dB. Well under the SFX so cues always read over the music.
+    ///
+    /// <para>Was -16, which the owner heard as "a little loud". -22 is roughly half the perceived loudness
+    /// (about 6dB per halving) and is the right target for something that plays continuously and is never
+    /// the thing being listened to. An options slider is the real answer; until then this errs quiet,
+    /// because ambience nobody notices is working and ambience someone turns off is not.</para>
+    /// </summary>
+    private const float MusicDb = -22f;
 
     private const float SilentDb = -60f;
 

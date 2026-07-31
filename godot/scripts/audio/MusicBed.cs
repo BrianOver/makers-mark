@@ -28,9 +28,30 @@ namespace GodotClient.Audio;
 /// </summary>
 public static class MusicBed
 {
-    /// <summary>Loop length. Long enough not to feel like a 4-bar jingle on repeat, short enough that
-    /// generating five of them at startup stays imperceptible (~1.3M samples each).</summary>
-    public const float LoopSeconds = 24f;
+    /// <summary>
+    /// Loop length.
+    ///
+    /// <para>Was 24s, which the owner heard immediately: "its a little loud and loops too quickly".
+    /// 24 seconds is short enough that the ear memorises the figure and then hears the seam as an event,
+    /// which is worse than a plain drone. 60s is 2.5x the cycle and — because <see cref="MelodySlots"/>
+    /// scales with it — 2.5x the number of distinct notes, so the tune itself is longer rather than the
+    /// same tune stretched.</para>
+    ///
+    /// <para>Cost is the reason it is not longer still: a bed is ~1.3M samples per 24s and is synthesized
+    /// on the main thread the first time its phase comes up, so tripling this triples a hitch the player
+    /// can feel. It lands inside the 2.5s crossfade that requested it, which is what makes 60s safe and
+    /// 180s not.</para>
+    /// </summary>
+    public const float LoopSeconds = 60f;
+
+    /// <summary>
+    /// Melody slots per loop, scaled to hold note DENSITY constant as <see cref="LoopSeconds"/> changes.
+    ///
+    /// <para>A fixed slot count would have turned the longer loop into the same number of notes spread
+    /// thinner — a sparser bed, not a longer one. Tying the two together means "make the track longer" is a
+    /// single-constant change and cannot silently alter the pacing.</para>
+    /// </summary>
+    private static int MelodySlots => (int)MathF.Round(LoopSeconds / 0.75f);
 
     private static readonly Dictionary<DayPhase, AudioStreamWav> Cache = new();
 
@@ -69,8 +90,11 @@ public static class MusicBed
         var buffer = new float[Synth.Samples(LoopSeconds)];
         const float root = 73.42f; // D2 — a fourth under the Deep bed's 98Hz
 
-        AddDrone(buffer, SnapToLoop(root), 0.40f);
+        // Same weighting change as the phase beds, and it matters most here: at D2 a 0.40 fundamental was
+        // the single boomiest thing in the game. The octave carries the pitch instead.
+        AddDrone(buffer, SnapToLoop(root), 0.19f);
         AddDrone(buffer, SnapToLoop(root * 1.5f), 0.16f);
+        AddDrone(buffer, SnapToLoop(root * 2f), 0.17f);
         // A tritone, very quiet: the one deliberately unsettled interval in the whole score. It never
         // resolves because the Mine never does.
         AddDrone(buffer, SnapToLoop(root * 1.414f), 0.07f);
@@ -82,26 +106,31 @@ public static class MusicBed
             air[i] = Synth.Noise(i, seed: 909);
         }
 
-        Synth.LowPass(air, 260f);
+        Synth.LowPass(air, 340f);
         for (var i = 0; i < buffer.Length; i++)
         {
             var breath = 0.55f + 0.45f * MathF.Sin(2f * MathF.PI * i / buffer.Length); // one slow cycle
-            buffer[i] += air[i] * 0.22f * breath;
+            buffer[i] += air[i] * 0.13f * breath;
         }
 
         // Water, somewhere. Deterministically irregular spacing — an exactly periodic drip reads as a
         // metronome, and a metronome reads as music, which is what this is avoiding.
-        for (var d = 0; d < 9; d++)
+        // Count scales with the loop so the drips stay ~2.5s apart instead of thinning out to one every
+        // six seconds as the loop lengthens.
+        var drips = (int)MathF.Round(LoopSeconds / 2.5f);
+        for (var d = 0; d < drips; d++)
         {
             var jitter = (Synth.Noise(d, seed: 4242) + 1f) * 0.5f; // 0..1
-            var at = (d + jitter) * (LoopSeconds / 10f);
+            var at = (d + jitter) * (LoopSeconds / (drips + 1));
             AddDrip(buffer, at, 1180f + jitter * 600f);
         }
 
-        // A pulse on the beat of a slow heart — the only thing down here with a tempo.
-        for (var p = 0; p < 12; p++)
+        // A pulse on the beat of a slow heart — the only thing down here with a tempo. Kept at one every
+        // two seconds as the loop lengthens, rather than a fixed count that would slow to a crawl.
+        var pulses = (int)MathF.Round(LoopSeconds / 2f);
+        for (var p = 0; p < pulses; p++)
         {
-            AddPulse(buffer, at: p * (LoopSeconds / 12f), hz: root * 0.5f);
+            AddPulse(buffer, at: p * (LoopSeconds / pulses), hz: root);
         }
 
         Synth.Normalise(buffer, 0.5f);
@@ -123,7 +152,14 @@ public static class MusicBed
         }
     }
 
-    /// <summary>A soft sub-bass thud.</summary>
+    /// <summary>
+    /// A soft low thud.
+    ///
+    /// <para>Quieter than it was (0.16 -> 0.09), and callers now pass the root rather than half of it. At
+    /// D2 halved that was a ~37Hz tone: below most speakers' useful range, so on small ones it is inaudible
+    /// wasted headroom and on large ones it is pure chest thump with no pitch. Neither is what "a slow
+    /// heartbeat under the mine" needed.</para>
+    /// </summary>
     private static void AddPulse(float[] buffer, float at, float hz)
     {
         var start = Synth.Samples(at);
@@ -131,7 +167,7 @@ public static class MusicBed
         for (var i = start; i < end; i++)
         {
             var t = (i - start) / (float)Synth.SampleRate;
-            buffer[i] += MathF.Sin(2f * MathF.PI * hz * t) * 0.16f * Synth.Decay(t, 0.11f);
+            buffer[i] += MathF.Sin(2f * MathF.PI * hz * t) * 0.09f * Synth.Decay(t, 0.11f);
         }
     }
 
@@ -164,10 +200,18 @@ public static class MusicBed
         var buffer = new float[Synth.Samples(LoopSeconds)];
 
         // ── Drone: root, fifth, octave, and the mood's third when it has one. Each is snapped to a
-        //    whole number of cycles across the loop so the waveform continues cleanly at the seam. ──
-        AddDrone(buffer, SnapToLoop(mood.RootHz), 0.34f);
+        //    whole number of cycles across the loop so the waveform continues cleanly at the seam.
+        //
+        //    Weighted UP the harmonic series, not down. The owner's note was "lower the base" — with the
+        //    fundamental as the loudest partial (it was 0.34, nearly double the fifth) the bed read as
+        //    boom rather than tone, and low frequencies are exactly what a small speaker reproduces
+        //    worst and a big one reproduces overwhelmingly. Moving that energy to the octave keeps the
+        //    same chord and the same perceived pitch while taking the weight out of it: the ear infers
+        //    the fundamental from the upper partials, so this sounds like the same note, quieter in the
+        //    chest. AudioTests pins the low-band share so this cannot silently drift back. ──
+        AddDrone(buffer, SnapToLoop(mood.RootHz), 0.17f);
         AddDrone(buffer, SnapToLoop(mood.RootHz * 1.5f), 0.20f);
-        AddDrone(buffer, SnapToLoop(mood.RootHz * 2f), 0.12f * mood.Brightness);
+        AddDrone(buffer, SnapToLoop(mood.RootHz * 2f), 0.19f * mood.Brightness);
         if (mood.ThirdSemitones > 0f)
         {
             AddDrone(buffer, SnapToLoop(mood.RootHz * MathF.Pow(2f, mood.ThirdSemitones / 12f)), 0.14f);
@@ -181,18 +225,21 @@ public static class MusicBed
             air[i] = Synth.Noise(i, seed: 101);
         }
 
-        Synth.LowPass(air, 420f);
+        // 520Hz rather than 420Hz, and quieter: low-passed noise is broadband weight, so it was adding
+        // to the same rumble the drone was. Opening the filter moves it from "rumble" to "air", which is
+        // what it was for.
+        Synth.LowPass(air, 520f);
         for (var i = 0; i < buffer.Length; i++)
         {
             var breath = 0.5f + 0.5f * MathF.Sin(2f * MathF.PI * 2f * i / buffer.Length); // 2 cycles/loop
-            buffer[i] += air[i] * 0.16f * breath;
+            buffer[i] += air[i] * 0.11f * breath;
         }
 
         // ── Melody: a pentatonic figure over a fixed slot grid, deterministically thinned. Pentatonic
         //    because every note of it consonates with a droning fifth, so no slot choice can ever land
         //    on a sour interval — which matters when the notes are picked by a hash rather than an ear. ──
         var scale = new[] { 0f, 2f, 4f, 7f, 9f, 12f, 14f, 16f };
-        const int slots = 32;
+        var slots = MelodySlots;
         var slotSeconds = LoopSeconds / slots;
         for (var s = 0; s < slots; s++)
         {
