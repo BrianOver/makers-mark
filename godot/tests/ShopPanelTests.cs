@@ -120,7 +120,7 @@ public class ShopPanelTests
             Find<SpinBox>(ui.Shop, $"StockPrice_{itemId.Value}").Value = StockPrice;
             PressEnabled(ui.Shop, $"Stock_{itemId.Value}");
 
-            var pending = ui.Adapter.PendingActions.OfType<StockAction>().ToList();
+            var pending = ui.Adapter.AppliedThisPhase.OfType<StockAction>().ToList();
             AssertThat(pending.Count).IsEqual(1);
             AssertThat(pending[0].Item).IsEqual(itemId);
             AssertThat(pending[0].Price).IsEqual(StockPrice);
@@ -270,7 +270,7 @@ public class ShopPanelTests
             AssertThat(dropZone._CanDropData(Vector2.Zero, payload)).IsTrue();
             dropZone._DropData(Vector2.Zero, payload);
 
-            var pending = ui.Adapter.PendingActions.OfType<StockAction>().ToList();
+            var pending = ui.Adapter.AppliedThisPhase.OfType<StockAction>().ToList();
             AssertThat(pending.Count).IsEqual(1);
             AssertThat(pending[0].Item).IsEqual(itemId);
             AssertThat(pending[0].Price).IsEqual(price);
@@ -299,7 +299,7 @@ public class ShopPanelTests
             AssertThat(dropZone._CanDropData(Vector2.Zero, payload)).IsTrue();
             dropZone._DropData(Vector2.Zero, payload);
 
-            var pending = ui.Adapter.PendingActions.OfType<UnstockAction>().ToList();
+            var pending = ui.Adapter.AppliedThisPhase.OfType<UnstockAction>().ToList();
             AssertThat(pending.Count).IsEqual(1);
             AssertThat(pending[0].Item).IsEqual(itemId);
         }
@@ -351,7 +351,7 @@ public class ShopPanelTests
             tag.SetValue(123);
 
             AssertThat(tag.Value).IsEqual(123);
-            var pending = ui.Adapter.PendingActions.OfType<SetPriceAction>().ToList();
+            var pending = ui.Adapter.AppliedThisPhase.OfType<SetPriceAction>().ToList();
             AssertThat(pending.Count).IsEqual(1);
             AssertThat(pending[0].Item).IsEqual(itemId);
             AssertThat(pending[0].Price).IsEqual(123);
@@ -377,7 +377,7 @@ public class ShopPanelTests
             tag.SetValue(-50); // below the floor — the tag itself must clamp, never queue it raw
 
             AssertThat(tag.Value).IsEqual(1);
-            var pending = ui.Adapter.PendingActions.OfType<SetPriceAction>().ToList();
+            var pending = ui.Adapter.AppliedThisPhase.OfType<SetPriceAction>().ToList();
             AssertThat(pending.Count).IsEqual(1);
             AssertThat(pending[0].Item).IsEqual(itemId);
             AssertThat(pending[0].Price).IsEqual(1);
@@ -386,7 +386,7 @@ public class ShopPanelTests
             // PriceTag.SetValue is a no-op once clamped-value == current value.
             tag.Nudge(-10);
             AssertThat(tag.Value).IsEqual(1);
-            AssertThat(ui.Adapter.PendingActions.OfType<SetPriceAction>().Count()).IsEqual(1);
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<SetPriceAction>().Count()).IsEqual(1);
         }
         finally
         {

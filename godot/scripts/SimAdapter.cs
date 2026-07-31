@@ -22,6 +22,17 @@ public sealed class SimAdapter
     private readonly GameKernel _kernel = GameComposition.BuildKernel();
     private readonly List<PlayerAction> _pending = [];
 
+    /// <summary>Events raised by immediately-resolved actions since the last <see cref="AdvancePhase"/>
+    /// — see <see cref="Queue"/>'s immediate branch for why they accumulate rather than overwrite.</summary>
+    private readonly List<GameEvent> _appliedThisPhase = [];
+
+    /// <summary>The immediately-resolved actions themselves — surfaced as <see cref="AppliedThisPhase"/>.</summary>
+    private readonly List<PlayerAction> _applied = [];
+
+    /// <summary>Refusals raised by immediately-resolved actions since the last <see cref="AdvancePhase"/>,
+    /// accumulated for the same reason as <see cref="_appliedThisPhase"/>.</summary>
+    private readonly List<RejectedAction> _rejectedThisPhase = [];
+
     public SimAdapter(ulong seed) => CurrentState = GameComposition.NewCampaign(seed);
 
     /// <summary>
@@ -56,14 +67,71 @@ public sealed class SimAdapter
     public IReadOnlyList<PlayerAction> PendingActions => _pending;
 
     /// <summary>
+    /// Workshop actions ALREADY APPLIED this phase, in submission order — the immediate-resolution
+    /// counterpart to <see cref="PendingActions"/> (see <see cref="Queue"/> and
+    /// <see cref="ActionTiming"/> for which verbs land here rather than in the queue). Cleared by
+    /// <see cref="AdvancePhase"/> alongside the queue.
+    ///
+    /// <para>Exists so "what did the player just do" is answerable for BOTH halves of the split. Without
+    /// it the only way to check an immediate action was to diff game state, which is a weaker assertion
+    /// than reading the action itself: it can tell you gold went down, but not that the price on the
+    /// StockAction was the one the price tag showed.</para>
+    /// </summary>
+    public IReadOnlyList<PlayerAction> AppliedThisPhase => _applied;
+
+    /// <summary>
     /// Raised after every <see cref="AdvancePhase"/> with the phase and day that were
     /// just processed (<see cref="CurrentState"/> is already the post-tick world).
     /// The Evening completion of day N is the Ledger trigger for day N.
     /// </summary>
     public event Action<DayPhase, int>? StateChanged;
 
-    /// <summary>Queue a player action for the next tick. Phase legality is the kernel's call, not ours.</summary>
-    public void Queue(PlayerAction action) => _pending.Add(action);
+    /// <summary>
+    /// Submit a player action. Workshop verbs (see <see cref="ActionTiming"/>) resolve IMMEDIATELY;
+    /// everything else queues for the next <see cref="AdvancePhase"/>. Phase legality is the kernel's
+    /// call either way, not ours.
+    ///
+    /// <para>Everything used to queue, which meant the world lied to the player: spend 2 copper and the
+    /// material list still read 6 until the bell, and the tutorial — which watches the events a tick
+    /// produces — looked frozen after the player had already done what it asked. Brian's playtest,
+    /// 2026-07-30. The method keeps the name <c>Queue</c> because every call site's INTENT is unchanged
+    /// ("submit this action"); only the timing of the workshop subset moved.</para>
+    ///
+    /// <para>An immediately-resolved action updates <see cref="CurrentState"/>, <see cref="LastEvents"/>
+    /// and <see cref="LastRejections"/> on the spot and raises <see cref="StateChanged"/> with the
+    /// CURRENT phase/day — nothing completed, so the phase and day are the ones still in progress. Any
+    /// listener that treats StateChanged as "a phase just ended" must therefore compare against its own
+    /// last-seen phase rather than assuming a boundary; <c>MainUi</c> already refreshes idempotently.</para>
+    /// </summary>
+    public void Queue(PlayerAction action)
+    {
+        if (!ActionTiming.ResolvesImmediately(action))
+        {
+            _pending.Add(action);
+            return;
+        }
+
+        var result = _kernel.ApplyNow(CurrentState, action);
+        CurrentState = result.NewState;
+        _applied.Add(action);
+
+        // LastEvents means "everything that has happened this phase", not "whatever happened most
+        // recently". Immediate actions accumulate here and AdvancePhase prepends them to the tick's
+        // own events, so a consumer that only wakes on a phase boundary — the narrator, the Ledger —
+        // still sees the purchases and crafts the player made during the phase. Overwriting instead
+        // would silently drop them: the buy would be visible for a few frames and then vanish from
+        // the record the Evening retells.
+        _appliedThisPhase.AddRange(result.Events);
+        LastEvents = _appliedThisPhase.ToImmutableList();
+
+        // Refusals accumulate too, and for a sharper reason than events do: the rejection TOAST is the
+        // only feedback a player gets when the sim says no. If an immediate action's refusal were
+        // overwritten by the next tick's (usually empty) rejection list, the toast would appear and then
+        // silently vanish at the bell — telling the player off and then hiding the evidence.
+        _rejectedThisPhase.AddRange(result.Rejected);
+        LastRejections = _rejectedThisPhase.ToImmutableList();
+        StateChanged?.Invoke(CurrentState.Phase, CurrentState.Day);
+    }
 
     /// <summary>Run one kernel tick with the queued batch. The queue is consumed either way.</summary>
     public TickResult AdvancePhase()
@@ -82,8 +150,17 @@ public sealed class SimAdapter
         var result = _kernel.Tick(CurrentState, _pending.ToImmutableList());
         _pending.Clear();
         CurrentState = result.NewState;
-        LastEvents = result.Events;
-        LastRejections = result.Rejected;
+        // The phase's full record: whatever the player did immediately during it, in order, then
+        // whatever the tick itself produced (see Queue's immediate branch for why).
+        LastEvents = _appliedThisPhase.Count == 0
+            ? result.Events
+            : _appliedThisPhase.ToImmutableList().AddRange(result.Events);
+        _appliedThisPhase.Clear();
+        _applied.Clear();
+        LastRejections = _rejectedThisPhase.Count == 0
+            ? result.Rejected
+            : _rejectedThisPhase.ToImmutableList().AddRange(result.Rejected);
+        _rejectedThisPhase.Clear();
         StateChanged?.Invoke(completedPhase, completedDay);
         return result;
     }

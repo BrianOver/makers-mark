@@ -1981,11 +1981,35 @@ public partial class MainUi : Control
     /// untouched) and never engages before a craft is queued at all — a fresh, untouched Morning
     /// still ticks exactly as before (<c>MainUiTests.ClosedDrawer_TimerExpiry_...</c>).
     /// </summary>
-    private bool Day1CraftToShelvePacingHold =>
-        Adapter.CurrentState.Day == 1
-        && Adapter.CurrentState.Phase == DayPhase.Morning
-        && Adapter.PendingActions.Any(a => a is CraftAction)
-        && !Adapter.PendingActions.Any(a => a is StockAction);
+    /// <summary>
+    /// True during the day-1 walk from the Forge to the Shop: the player has made something and not yet
+    /// shelved it, and the Morning must not expire out from under them (see <see cref="UpdateEngaged"/>).
+    ///
+    /// <para>Reads the WORLD, not the action queue. It used to ask whether a <c>CraftAction</c> was
+    /// pending and a <c>StockAction</c> was not — which stopped meaning anything the moment workshop
+    /// verbs began resolving immediately (see <c>ActionTiming</c>): neither action ever reaches
+    /// <c>PendingActions</c> now, so the hold silently evaluated false forever and the timer could expire
+    /// mid-walk again. Caught by <c>MainUiTests.Day1CraftQueuedButNotYetShelved...</c>, which is the
+    /// suite earning its keep.</para>
+    ///
+    /// <para>Asking the state instead is also just a better question. "Do I own a finished craft that is
+    /// not on a shelf" is the actual condition the pacing guard cares about, it stays true across a tick
+    /// or a reload, and it cannot be desynchronised from the queue's timing ever again.</para>
+    /// </summary>
+    private bool Day1CraftToShelvePacingHold
+    {
+        get
+        {
+            var state = Adapter.CurrentState;
+            if (state.Day != 1 || state.Phase != DayPhase.Morning)
+            {
+                return false;
+            }
+
+            var shelved = state.Player.Shelf.Select(entry => entry.Item.Value).ToHashSet();
+            return state.Items.Values.Any(item => item.PlayerCrafted && !shelved.Contains(item.Id.Value));
+        }
+    }
 
     /// <summary>
     /// U15/U21/U22 (KTD3/AE1/R7): real drawer/interior/modal state engages <see

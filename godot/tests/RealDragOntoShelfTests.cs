@@ -67,7 +67,7 @@ public class RealDragOntoShelfTests
 
             await DragMouse(ui, from, to);
 
-            var queued = ui.Adapter.PendingActions.OfType<StockAction>().ToList();
+            var queued = ui.Adapter.AppliedThisPhase.OfType<StockAction>().ToList();
             AssertThat(queued.Count)
                 .OverrideFailureMessage(
                     $"Dragging the card from {from} to the empty shelf slot at {to} with a real mouse " +

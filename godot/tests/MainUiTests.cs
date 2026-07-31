@@ -552,9 +552,19 @@ public class MainUiTests
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
             AssertThat(ui.Clock.Engaged).IsFalse(); // untouched fresh Morning: no special treatment
 
-            // The player crafts (queued for this Morning's batch), then walks away from the Forge
-            // toward the Shop — the bare world, no drawer open.
-            ui.Adapter.Queue(new CraftAction("dagger", "copper"));
+            // The player crafts, then walks away from the Forge toward the Shop — the bare world, no
+            // drawer open.
+            //
+            // The buy is now load-bearing. This used to queue a bare CraftAction and never care whether
+            // it was legal, because the hold only asked whether such an action was PENDING. Workshop
+            // verbs resolve immediately now (ActionTiming), so an unaffordable craft is refused on the
+            // spot and no item exists to hold the Morning for — the test has to make the craft actually
+            // succeed, which is a truer version of the scenario it always claimed to describe.
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
+            AssertThat(ui.Adapter.LastRejections.Count)
+                .OverrideFailureMessage("the setup craft was refused, so there is no unshelved item to hold the Morning for")
+                .IsEqual(0);
             ui.OpenPanel("Town");
             AssertThat(ui.Drawer.IsOpen).IsFalse();
             AssertThat(ui.Clock.Engaged).IsTrue(); // held: craft queued, no shelve yet
@@ -567,7 +577,7 @@ public class MainUiTests
 
             // The player reaches the Shop and shelves — once the matching StockAction is ALSO
             // queued, the hold releases even with the world bare again.
-            ui.Adapter.Queue(new StockAction(new ItemId(1), 10));
+            ui.Adapter.Queue(new StockAction(ScriptedSession.CraftedItem(ui.Adapter.CurrentState), 10));
             ui.OpenPanel("Town");
             AssertThat(ui.Clock.Engaged).IsFalse(); // released — craft AND shelve are both queued
 

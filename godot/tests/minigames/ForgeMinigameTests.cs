@@ -240,7 +240,7 @@ public class ForgeMinigameTests
 
             DriveGoodRun(overlay);
 
-            var pending = ui.Adapter.PendingActions.OfType<CraftAction>().ToList();
+            var pending = ui.Adapter.AppliedThisPhase.OfType<CraftAction>().ToList();
             AssertThat(pending.Count).IsEqual(1);
             AssertThat(pending[0].RecipeId).IsEqual(ScriptedSession.CraftRecipeId);
             AssertThat(pending[0].MaterialKey).IsEqual(ScriptedSession.CraftMaterial);
@@ -272,7 +272,7 @@ public class ForgeMinigameTests
 
             AssertThat(overlay.WasCancelled).IsTrue();
             AssertThat(overlay.Visible).IsFalse();
-            AssertThat(ui.Adapter.PendingActions.OfType<CraftAction>().Count()).IsEqual(0);
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<CraftAction>().Count()).IsEqual(0);
         }
         finally
         {
@@ -476,7 +476,7 @@ public class ForgeMinigameTests
             overlay._GuiInput(new InputEventMouseMotion { Position = overlay.QuenchZoneAnchor });
 
             AssertThat(overlay.Completed).IsTrue();
-            var pending = ui.Adapter.PendingActions.OfType<CraftAction>().ToList();
+            var pending = ui.Adapter.AppliedThisPhase.OfType<CraftAction>().ToList();
             AssertThat(pending.Count).IsEqual(1);
         }
         finally
