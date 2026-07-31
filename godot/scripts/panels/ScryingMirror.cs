@@ -16,14 +16,6 @@ namespace GodotClient.Panels;
 /// </summary>
 public partial class ScryingMirror : SimPanel
 {
-    /// <summary>Inset (px) from every window edge for the mirror card. Generous enough to read as a modal
-    /// floating over the town rather than a full-screen takeover, and the reason the card's size tracks the
-    /// WINDOW instead of its contents — see the layout note in Build.</summary>
-    private const float MirrorMargin = 64f;
-
-    /// <summary>Height (px) of the bottom-anchored close strip — see the anchoring note in Build.</summary>
-    private const float CloseRowHeight = 40f;
-
     private readonly JourneyFeed _feed = new();
     private int _selectedPartyKey = int.MinValue;
 
@@ -219,33 +211,20 @@ public partial class ScryingMirror : SimPanel
         // Anchoring to the window with a fixed margin makes the card's size a function of the WINDOW rather
         // than of its contents, so the close button cannot leave the screen however long the feed gets. The
         // feed's own ScrollContainer below already absorbs the overflow — that is what it was for.
-        var panel = Card("MirrorPanel");
-        panel.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        panel.OffsetLeft = MirrorMargin;
-        panel.OffsetTop = MirrorMargin;
-        panel.OffsetRight = -MirrorMargin;
-        panel.OffsetBottom = -MirrorMargin;
-        AddChild(panel);
-
-        // ── The close button is ANCHORED, not flowed. ──
+        // A FITTED card — see SimPanel.BuildFittedModalCard, which exists because this panel and CampPanel
+        // shipped the identical softlock.
         //
-        // Anchoring the card alone was not enough: a Control can never lay out smaller than its combined
-        // minimum size, and the feed's autowrap labels report a tall minimum (their height depends on a width
-        // that is not yet known when the minimum is computed). So a VBox holding header + feed + close still
-        // grew past the card and carried the close button with it — the first attempt at this fix moved it
-        // from y=832 to y=1163, which is further off screen, not less.
+        // This was a CenterContainer around a VBox with CustomMinimumSize (720, 460). A CenterContainer sizes
+        // its child to the child's combined MINIMUM and centres it, and the feed's autowrap labels report a
+        // tall minimum (their height depends on a width not yet known when the minimum is computed) — so the
+        // card grew with the feed and carried "Close" off the bottom of the window. Measured at y=832 in a
+        // 648px window, and Escape does not close the Mirror either, so there was no way out at all.
         //
-        // A plain Control host lets the parts be positioned by ANCHORS instead of by flow, so the close
-        // button's position is a function of the card's bottom edge and nothing else. However tall the feed
-        // gets, Close stays put. Flow layout cannot make that promise while any descendant can claim height.
-        var host = new Control { Name = "MirrorHost" };
-        host.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        panel.AddChild(host);
-
-        var box = new VBoxContainer { Name = "MirrorBox" };
-        box.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        box.OffsetBottom = -CloseRowHeight; // leave the bottom strip for Close
-        host.AddChild(box);
+        // Anchoring the card alone did NOT fix it (Close moved to y=1163 — further off screen), because a
+        // Control still cannot lay out smaller than its minimum. Only anchoring the close control itself makes
+        // its position a function of the card's edge instead of of flow.
+        var card = BuildFittedModalCard("MirrorPanel");
+        var box = card.Body;
 
         AddHeader(box, "THE SCRYING MIRROR");
 
@@ -264,16 +243,9 @@ public partial class ScryingMirror : SimPanel
         _feedBody = new VBoxContainer { Name = "MirrorFeedBody", SizeFlagsHorizontal = SizeFlags.ExpandFill };
         scroll.AddChild(_feedBody);
 
-        // Bottom-anchored: the one control whose reachability the whole surface depends on.
-        var closeRow = new Control { Name = "MirrorCloseRow" };
-        closeRow.SetAnchorsAndOffsetsPreset(LayoutPreset.BottomWide);
-        closeRow.OffsetTop = -CloseRowHeight;
-        host.AddChild(closeRow);
-
-        var close = new Button { Name = "MirrorClose", Text = "Close" };
-        close.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        close.Pressed += CloseMirror;
-        closeRow.AddChild(close);
+        // In the ANCHORED action row: the one control the whole surface's escapability depends on.
+        AddButton(card.ActionRow, "MirrorClose", "Close", CloseMirror)
+            .SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
         // U5: added LAST (after the panel body) so it draws over the feed, self-contained
         // (PKD8-style single overlay), hidden until a ★ attribution line opens it.
