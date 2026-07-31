@@ -76,6 +76,78 @@ public class MinigameKeyboardWorksTests
         }
     }
 
+    /// <summary>
+    /// THE REGRESSION MY FIRST FIX MISSED. Click an on-screen control button, THEN use the keyboard.
+    ///
+    /// <para>A focused <see cref="Button"/> consumes Space and Enter to press itself. So clicking the
+    /// visible "Bellows (hold Shift)" button once moved focus to it permanently: from then on Space
+    /// pumped the bellows instead of striking the billet, and Shift reached nothing at all. Brian's
+    /// second playtest, verbatim: "shift doesn't do and space seems to actually be the bellows" — after
+    /// the previous fix had already made the keyboard work on open.</para>
+    ///
+    /// <para>The earlier test only ever pressed keys on a freshly opened overlay, which is the one state
+    /// where the bug is invisible. Same shape as every other miss this project has had: the check looked
+    /// exactly where the defect was not.</para>
+    /// </summary>
+    [TestCase]
+    public async Task AfterClickingAControlButton_TheKeyboardStillBelongsToTheOverlay()
+    {
+        var mg = new ForgeMinigame { Name = "ForgeMinigame" };
+        try
+        {
+            AddNodeToTree(mg);
+            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, day: 0);
+            await AwaitFrames(2);
+
+            // A REAL mouse press on the button. EmitSignal(Pressed) does NOT move focus — I wrote this
+            // test that way first and it passed against the unguarded build, i.e. it was another seam
+            // test for the exact seam this whole class of bug hides behind. Focus only moves when Godot
+            // actually routes a click to the control.
+            var hammer = mg.FindChild("HammerStrike", recursive: true, owned: false) as Button;
+            AssertThat(hammer).OverrideFailureMessage("HammerStrike button not found.").IsNotNull();
+
+            var at = hammer!.GetGlobalRect().GetCenter();
+            AssertThat(hammer.GetGlobalRect().Size.X)
+                .OverrideFailureMessage("The button has no laid-out size, so a click cannot land on it.")
+                .IsGreater(1f);
+
+            var viewport = mg.GetViewport();
+            viewport.PushInput(new InputEventMouseButton
+            {
+                ButtonIndex = MouseButton.Left, Pressed = true, Position = at, GlobalPosition = at,
+            });
+            viewport.PushInput(new InputEventMouseButton
+            {
+                ButtonIndex = MouseButton.Left, Pressed = false, Position = at, GlobalPosition = at,
+            });
+            await AwaitFrames(2);
+
+            AssertThat(hammer.HasFocus())
+                .OverrideFailureMessage(
+                    "A control button took keyboard focus. While it holds focus, Space presses THAT " +
+                    "button instead of striking, and Shift never reaches the overlay at all — which is " +
+                    "exactly the reported bug. These buttons must be mouse-only (UiKit.MakeButtonsMouseOnly).")
+                .IsFalse();
+
+            // And prove the keys still work, not merely that focus looks right.
+            var before = mg.HeatYPermille;
+            PushKey(mg, Key.Shift, pressed: true);
+            mg.Advance(0.5);
+
+            AssertThat(mg.HeatYPermille)
+                .OverrideFailureMessage(
+                    $"After clicking a control button, holding Shift moved heat {before} -> " +
+                    $"{mg.HeatYPermille}. The bellows are unreachable from the keyboard, so the craft " +
+                    "cannot be completed.")
+                .IsGreater(before);
+        }
+        finally
+        {
+            PushKey(mg, Key.Shift, pressed: false);
+            mg.Free();
+        }
+    }
+
     /// <summary>Space is the accessible unaimed strike. Real key event, and shape must advance.</summary>
     [TestCase]
     public async Task PressingSpace_AsARealKeyEvent_StrikesTheBillet()

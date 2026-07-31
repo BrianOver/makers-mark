@@ -20,6 +20,7 @@ public partial class ScreenshotTool : Node
 
     public override async void _Ready()
     {
+        DevToolAudio.Silence(); // automated runs stay silent — see DevToolAudio
         var town = new Town2D { Name = "Town2D" };
         town.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         AddChild(town);

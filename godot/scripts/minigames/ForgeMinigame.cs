@@ -603,6 +603,10 @@ public sealed partial class ForgeMinigame : PanelContainer
         _cancelButton.Pressed += Cancel;
         buttonRow.AddChild(_cancelButton);
 
+        // Control buttons must never hold the keyboard — a focused Button eats Space to press
+        // itself, which is why clicking "Bellows" once made Space pump instead of strike.
+        UiKit.MakeButtonsMouseOnly(this);
+
         _built = true;
         RepaintUi();
     }

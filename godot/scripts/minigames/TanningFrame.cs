@@ -351,6 +351,10 @@ public sealed partial class TanningFrame : PanelContainer
         _cancelButton.Pressed += Cancel;
         buttonRow.AddChild(_cancelButton);
 
+        // Control buttons must never hold the keyboard — a focused Button eats Space/Enter to
+        // press itself, which stole the keys from this overlay after the first click.
+        UiKit.MakeButtonsMouseOnly(this);
+
         _built = true;
         RepaintUi();
     }

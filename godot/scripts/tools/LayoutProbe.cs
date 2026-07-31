@@ -18,6 +18,7 @@ public partial class LayoutProbe : Node
 {
     public override async void _Ready()
     {
+        DevToolAudio.Silence(); // automated runs stay silent — see DevToolAudio
         var select = GD.Load<PackedScene>("res://scenes/new_game_select.tscn").Instantiate<NewGameSelect>();
         string? requested = null;
         select.SceneChange = p => requested = p;
