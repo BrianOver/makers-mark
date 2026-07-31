@@ -191,6 +191,75 @@ public class RejectionUxTests
         }
     }
 
+    /// <summary>
+    /// A refusal must never be an unqualified shrug — whatever the reason string turns out to be.
+    ///
+    /// <para>Brian's playtest: 'I hit sent them off and it just said "it didn't work out"'. That was
+    /// <c>FriendlyRejection</c>'s catch-all, and it is the worst thing to tell someone whose action was
+    /// refused: it confirms the failure and withholds every clue about what to change. The rejection toast is
+    /// the ONLY feedback the sim gives when it says no.</para>
+    ///
+    /// <para><b>Deliberately fed a reason string nothing maps.</b> My first version of this test queued two
+    /// doomed Camp actions and asserted the rendered toast — and it passed with the fallback hard-wired back
+    /// to the bare shrug, because those actions get refused with "No handler accepts…", which an EXISTING
+    /// branch already maps. It was testing the wrong branch and proving nothing. Passing an unmatchable
+    /// reason is what actually exercises the fallback.</para>
+    ///
+    /// <para>Covers every action a player can be refused for, so a new action type inherits the guarantee
+    /// rather than silently reintroducing the shrug.</para>
+    /// </summary>
+    [TestCase]
+    public void AnUnmappedReason_StillNamesWhatWasRefused_NeverJustAShrug()
+    {
+        const string unmatchable = "zzz-no-mapping-will-ever-match-this-reason";
+        const string shrug = "That didn't work out.";
+
+        PlayerAction[] actions =
+        [
+            new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial),
+            new BuyMaterialAction(ScriptedSession.CraftMaterial, 1),
+            new StockAction(new ItemId(1), 10),
+            new UnstockAction(new ItemId(1)),
+            new SetPriceAction(new ItemId(1), 10),
+            new PostBountyAction(1, 10),
+            new SendSupplyAction(new HeroId(1), new ItemId(1)),
+            new RecallPartyAction(new HeroId(1)),
+            new AcceptCommissionAction(new HeroId(1)),
+        ];
+
+        var shrugged = actions
+            .Where(a => MainUi.FriendlyRejection(unmatchable, a) == shrug)
+            .Select(a => a.GetType().Name)
+            .ToList();
+
+        AssertThat(shrugged)
+            .OverrideFailureMessage(
+                "These actions fall through to the bare shrug when their reason is unrecognised: " +
+                $"[{string.Join(", ", shrugged)}]. A refusal has to name what was refused — see " +
+                "MainUi.LastResort. \"That didn't work out\" leaves the player with nothing to act on.")
+            .IsEmpty();
+
+        // The Camp/runner reasons that really were unmapped, quoted from the handlers that emit them
+        // (sim/GameSim/Expedition/CampHandlers.cs). Each previously produced the shrug.
+        string[] realReasons =
+        [
+            "One runner per party per day — this party's delivery is spent.",
+            "The recall bell has already rung for this party.",
+            "The recall bell has rung — the runner won't chase them.",
+            "No party is camped with hero-1.",
+        ];
+
+        var stillShrugging = realReasons
+            .Where(r => MainUi.FriendlyRejection(r, new RecallPartyAction(new HeroId(1))) == shrug)
+            .ToList();
+
+        AssertThat(stillShrugging)
+            .OverrideFailureMessage(
+                "These real kernel reasons still have no specific mapping:\n  " +
+                string.Join("\n  ", stillShrugging))
+            .IsEmpty();
+    }
+
     [TestCase]
     public void CleanTick_ClearsToastEarly()
     {
