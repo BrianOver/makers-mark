@@ -44,7 +44,7 @@ public class ForgeCraftTests
             // the deterministic path gdUnit can drive — not a drag gesture.
             PressEnabled(ui.Forge, $"Craft_{ScriptedSession.CraftRecipeId}");
 
-            var pending = ui.Adapter.PendingActions.OfType<CraftAction>().ToList();
+            var pending = ui.Adapter.AppliedThisPhase.OfType<CraftAction>().ToList();
             AssertThat(pending.Count).IsEqual(1);
             AssertThat(pending[0].RecipeId).IsEqual(ScriptedSession.CraftRecipeId);
             AssertThat(pending[0].MaterialKey).IsEqual(ScriptedSession.CraftMaterial);

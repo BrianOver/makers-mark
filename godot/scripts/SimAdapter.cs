@@ -26,6 +26,13 @@ public sealed class SimAdapter
     /// — see <see cref="Queue"/>'s immediate branch for why they accumulate rather than overwrite.</summary>
     private readonly List<GameEvent> _appliedThisPhase = [];
 
+    /// <summary>The immediately-resolved actions themselves — surfaced as <see cref="AppliedThisPhase"/>.</summary>
+    private readonly List<PlayerAction> _applied = [];
+
+    /// <summary>Refusals raised by immediately-resolved actions since the last <see cref="AdvancePhase"/>,
+    /// accumulated for the same reason as <see cref="_appliedThisPhase"/>.</summary>
+    private readonly List<RejectedAction> _rejectedThisPhase = [];
+
     public SimAdapter(ulong seed) => CurrentState = GameComposition.NewCampaign(seed);
 
     /// <summary>
@@ -58,6 +65,19 @@ public sealed class SimAdapter
 
     /// <summary>Actions queued for the next <see cref="AdvancePhase"/>, in submission order.</summary>
     public IReadOnlyList<PlayerAction> PendingActions => _pending;
+
+    /// <summary>
+    /// Workshop actions ALREADY APPLIED this phase, in submission order — the immediate-resolution
+    /// counterpart to <see cref="PendingActions"/> (see <see cref="Queue"/> and
+    /// <see cref="ActionTiming"/> for which verbs land here rather than in the queue). Cleared by
+    /// <see cref="AdvancePhase"/> alongside the queue.
+    ///
+    /// <para>Exists so "what did the player just do" is answerable for BOTH halves of the split. Without
+    /// it the only way to check an immediate action was to diff game state, which is a weaker assertion
+    /// than reading the action itself: it can tell you gold went down, but not that the price on the
+    /// StockAction was the one the price tag showed.</para>
+    /// </summary>
+    public IReadOnlyList<PlayerAction> AppliedThisPhase => _applied;
 
     /// <summary>
     /// Raised after every <see cref="AdvancePhase"/> with the phase and day that were
@@ -93,6 +113,7 @@ public sealed class SimAdapter
 
         var result = _kernel.ApplyNow(CurrentState, action);
         CurrentState = result.NewState;
+        _applied.Add(action);
 
         // LastEvents means "everything that has happened this phase", not "whatever happened most
         // recently". Immediate actions accumulate here and AdvancePhase prepends them to the tick's
@@ -102,7 +123,13 @@ public sealed class SimAdapter
         // the record the Evening retells.
         _appliedThisPhase.AddRange(result.Events);
         LastEvents = _appliedThisPhase.ToImmutableList();
-        LastRejections = result.Rejected;
+
+        // Refusals accumulate too, and for a sharper reason than events do: the rejection TOAST is the
+        // only feedback a player gets when the sim says no. If an immediate action's refusal were
+        // overwritten by the next tick's (usually empty) rejection list, the toast would appear and then
+        // silently vanish at the bell — telling the player off and then hiding the evidence.
+        _rejectedThisPhase.AddRange(result.Rejected);
+        LastRejections = _rejectedThisPhase.ToImmutableList();
         StateChanged?.Invoke(CurrentState.Phase, CurrentState.Day);
     }
 
@@ -129,7 +156,11 @@ public sealed class SimAdapter
             ? result.Events
             : _appliedThisPhase.ToImmutableList().AddRange(result.Events);
         _appliedThisPhase.Clear();
-        LastRejections = result.Rejected;
+        _applied.Clear();
+        LastRejections = _rejectedThisPhase.Count == 0
+            ? result.Rejected
+            : _rejectedThisPhase.ToImmutableList().AddRange(result.Rejected);
+        _rejectedThisPhase.Clear();
         StateChanged?.Invoke(completedPhase, completedDay);
         return result;
     }

@@ -245,7 +245,7 @@ public class LegendsWallTests
 
             PressEnabled(ui.Legends, $"Reforge_{WornWeaponId.Value}");
 
-            var reforge = ui.Adapter.PendingActions.OfType<ReforgeHeirloomAction>().Single();
+            var reforge = ui.Adapter.AppliedThisPhase.OfType<ReforgeHeirloomAction>().Single();
             AssertThat(reforge.SourceItem).IsEqual(WornWeaponId);
             AssertThat(reforge.RecipeId).IsEqual("dagger");
             AssertThat(reforge.MaterialKey).IsEqual("copper");

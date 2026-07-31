@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using GameSim;
 using GameSim.Contracts;
 using GameSim.Kernel;
@@ -53,12 +54,23 @@ public class SimAdapterTests
             while (adapter.CurrentState.Phase != DayPhase.Morning);
         }
 
-        // The same batches applied directly to a GameComposition kernel.
+        // The same batches applied directly to a GameComposition kernel — SPLIT THE SAME WAY the
+        // adapter splits them. This test's job is to prove the adapter contributes no rules of its own,
+        // and that claim now has to be made against the adapter's real contract: workshop verbs resolve
+        // through ApplyNow the moment they are submitted, everything else rides the batch into Tick (see
+        // ActionTiming). Replaying every action through Tick would compare the adapter against a
+        // BATCHING policy it no longer has, and the divergence it reported would be the test being out
+        // of date rather than the adapter being wrong.
         var kernel = GameComposition.BuildKernel();
         var direct = ScriptedSession.StartState();
         foreach (var batch in batches)
         {
-            direct = kernel.Tick(direct, batch).NewState;
+            foreach (var action in batch.Where(ActionTiming.ResolvesImmediately))
+            {
+                direct = kernel.ApplyNow(direct, action).NewState;
+            }
+
+            direct = kernel.Tick(direct, batch.Where(a => !ActionTiming.ResolvesImmediately(a)).ToImmutableList()).NewState;
         }
 
         AssertThat(SaveCodec.Serialize(adapter.CurrentState)).IsEqual(SaveCodec.Serialize(direct));
@@ -73,16 +85,30 @@ public class SimAdapterTests
         var observed = new List<(DayPhase Phase, int Day)>();
         adapter.StateChanged += (phase, day) => observed.Add((phase, day));
 
-        // An action no handler accepts during Expedition surfaces as a typed rejection.
+        // An action no handler accepts during this phase surfaces as a typed rejection. BuyOre is
+        // Evening-only AND a workshop verb (ActionTiming), so it now resolves — and is refused — the
+        // instant it is submitted rather than a phase later. That immediacy is the point of the split:
+        // the old behaviour told the player "no" one full phase after they asked.
         adapter.AdvancePhase(); // day 1 Morning
-        adapter.Queue(new BuyOreAction(new HeroId(1), "copper", 1));
-        adapter.AdvancePhase(); // day 1 Expedition — BuyOre is Evening-only
-
-        AssertThat(observed.Count).IsEqual(2);
-        AssertThat(observed[0]).IsEqual((DayPhase.Morning, 1));
-        AssertThat(observed[1]).IsEqual((DayPhase.Expedition, 1));
-        AssertThat(adapter.LastRejections.Count).IsEqual(1);
+        adapter.Queue(new BuyOreAction(new HeroId(1), "copper", 1)); // refused HERE, in Expedition
+        AssertThat(adapter.LastRejections.Count)
+            .OverrideFailureMessage("A phase-illegal workshop verb must be refused at submit time, not a phase later.")
+            .IsEqual(1);
         AssertThat(adapter.LastRejections[0].Reason).Contains("Expedition");
+
+        adapter.AdvancePhase(); // day 1 Expedition -> on
+
+        // Three, not two: submitting an immediately-resolved action raises StateChanged as well, because
+        // the world really did change (or, here, really did refuse to). The phase/day it carries are the
+        // CURRENT ones, since nothing completed.
+        AssertThat(observed.Count).IsEqual(3);
+        AssertThat(observed[0]).IsEqual((DayPhase.Morning, 1));
+        AssertThat(observed[1]).IsEqual((DayPhase.Expedition, 1)); // the refused submit
+        AssertThat(observed[2]).IsEqual((DayPhase.Expedition, 1)); // the tick that ended Expedition
+
+        // The refusal survives the tick — see SimAdapter's rejection-accumulation note. A toast that
+        // vanished at the bell would tell the player off and then hide the evidence.
+        AssertThat(adapter.LastRejections.Count).IsEqual(1);
         AssertThat(adapter.PendingActions.Count).IsEqual(0); // queue consumed either way
         AssertThat(adapter.LastEvents.Count > 0).IsTrue();   // expedition departure happened
 
