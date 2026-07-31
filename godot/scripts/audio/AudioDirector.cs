@@ -54,6 +54,10 @@ public sealed partial class AudioDirector : Node
 
     private DayPhase? _phase;
 
+    /// <summary>Non-null while a scene owns the music instead of the day's phase (see
+    /// <see cref="SetScene"/>).</summary>
+    private string? _scene;
+
     /// <summary>Master mute. Set before or after mounting; takes effect immediately.</summary>
     public bool Muted { get; private set; }
 
@@ -113,20 +117,60 @@ public sealed partial class AudioDirector : Node
     /// </summary>
     public void SetPhase(DayPhase phase)
     {
-        if (_phase == phase)
+        var changed = _phase != phase;
+        _phase = phase;
+
+        // A scene owns the music while it is open; the phase is still recorded above so closing the
+        // scene returns to the RIGHT bed even if the day moved on underneath it.
+        if (!changed || _scene is not null || Muted)
         {
             return;
         }
 
-        _phase = phase;
+        CrossfadeTo(MusicBed.For(phase));
+    }
+
+    /// <summary>
+    /// Hands the music to a named scene, or back to the day when <paramref name="scene"/> is null.
+    ///
+    /// <para>Watching the raid should not sound like standing in the town square. The Depths panel reads
+    /// as inert partly because it is sonically identical to everywhere else — "unclear what to do during
+    /// the expedition phase" was as much an atmosphere problem as an information one.</para>
+    ///
+    /// <para>Idempotent, so a panel can call it on every refresh without restarting the loop. Unknown
+    /// scene names fall back to the day's bed rather than to silence: a typo should be inaudible, not a
+    /// hole in the soundtrack.</para>
+    /// </summary>
+    public void SetScene(string? scene)
+    {
+        if (_scene == scene)
+        {
+            return;
+        }
+
+        _scene = scene;
 
         if (Muted)
         {
             return;
         }
 
+        var stream = scene switch
+        {
+            "depths" => MusicBed.Underground(),
+            _ => _phase is { } p ? MusicBed.For(p) : null,
+        };
+
+        if (stream is not null)
+        {
+            CrossfadeTo(stream);
+        }
+    }
+
+    private void CrossfadeTo(AudioStream stream)
+    {
         var incoming = _aIsActive ? _musicB : _musicA;
-        incoming.Stream = MusicBed.For(phase);
+        incoming.Stream = stream;
         incoming.VolumeDb = SilentDb;
         incoming.Play();
 
