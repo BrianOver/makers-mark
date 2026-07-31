@@ -709,6 +709,26 @@ public sealed class HumanPlayer
     /// </summary>
     public async Task WaitForLayout(Control control, int maxFrames = 240)
     {
+        if (!await TrySettleLayout(control, maxFrames))
+        {
+            throw new InvalidOperationException(
+                $"{Describe(control)}'s layout was still changing after {maxFrames} frames. Measuring it now " +
+                $"would measure an animation, not a layout.{TraceTail()}");
+        }
+    }
+
+    /// <summary>
+    /// Like <see cref="WaitForLayout"/> but reports whether it settled instead of throwing.
+    ///
+    /// <para>Some surfaces animate FOREVER by design — <c>BestiaryPanel</c> runs an idle breath in its own
+    /// <c>_Process</c> (the house accumulated-delta idiom), so its rects never hold still and the strict wait
+    /// above reports it as broken when nothing is wrong. A sweep over many surfaces needs to measure such a
+    /// panel anyway, accepting that its geometry is approximate, rather than abort on the first one that
+    /// moves. Callers that genuinely require a settled layout — a drawer mid-slide — keep using the strict
+    /// version.</para>
+    /// </summary>
+    public async Task<bool> TrySettleLayout(Control control, int maxFrames = 240)
+    {
         var previous = LayoutSignature(control);
         var stable = 0;
 
@@ -722,13 +742,11 @@ public sealed class HumanPlayer
 
             if (stable >= 3)
             {
-                return;
+                return true;
             }
         }
 
-        throw new InvalidOperationException(
-            $"{Describe(control)}'s layout was still changing after {maxFrames} frames. Measuring it now " +
-            $"would measure an animation, not a layout.{TraceTail()}");
+        return false;
     }
 
     /// <summary>

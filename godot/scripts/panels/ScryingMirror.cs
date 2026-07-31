@@ -16,6 +16,14 @@ namespace GodotClient.Panels;
 /// </summary>
 public partial class ScryingMirror : SimPanel
 {
+    /// <summary>Inset (px) from every window edge for the mirror card. Generous enough to read as a modal
+    /// floating over the town rather than a full-screen takeover, and the reason the card's size tracks the
+    /// WINDOW instead of its contents — see the layout note in Build.</summary>
+    private const float MirrorMargin = 64f;
+
+    /// <summary>Height (px) of the bottom-anchored close strip — see the anchoring note in Build.</summary>
+    private const float CloseRowHeight = 40f;
+
     private readonly JourneyFeed _feed = new();
     private int _selectedPartyKey = int.MinValue;
 
@@ -199,14 +207,45 @@ public partial class ScryingMirror : SimPanel
         dim.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(dim);
 
-        var center = new CenterContainer();
-        center.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(center);
-
+        // ANCHORED with margins, not centred.
+        //
+        // This was a CenterContainer holding a card whose VBox declared CustomMinimumSize (720, 460). A
+        // CenterContainer sizes its child to the child's combined MINIMUM and centres that, so as the feed
+        // grew the card grew with it — past the window, in both directions from the centre. The whole-game
+        // sweep caught the consequence: "MirrorClose" laid out at y=832 in a 648px window, i.e. 184px below
+        // the bottom edge, with Escape not closing the Mirror either. **Opening the Scrying Mirror was an
+        // unrecoverable softlock** — no reachable close control at all.
+        //
+        // Anchoring to the window with a fixed margin makes the card's size a function of the WINDOW rather
+        // than of its contents, so the close button cannot leave the screen however long the feed gets. The
+        // feed's own ScrollContainer below already absorbs the overflow — that is what it was for.
         var panel = Card("MirrorPanel");
-        center.AddChild(panel);
-        var box = new VBoxContainer { CustomMinimumSize = new Vector2(720, 460) };
-        panel.AddChild(box);
+        panel.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        panel.OffsetLeft = MirrorMargin;
+        panel.OffsetTop = MirrorMargin;
+        panel.OffsetRight = -MirrorMargin;
+        panel.OffsetBottom = -MirrorMargin;
+        AddChild(panel);
+
+        // ── The close button is ANCHORED, not flowed. ──
+        //
+        // Anchoring the card alone was not enough: a Control can never lay out smaller than its combined
+        // minimum size, and the feed's autowrap labels report a tall minimum (their height depends on a width
+        // that is not yet known when the minimum is computed). So a VBox holding header + feed + close still
+        // grew past the card and carried the close button with it — the first attempt at this fix moved it
+        // from y=832 to y=1163, which is further off screen, not less.
+        //
+        // A plain Control host lets the parts be positioned by ANCHORS instead of by flow, so the close
+        // button's position is a function of the card's bottom edge and nothing else. However tall the feed
+        // gets, Close stays put. Flow layout cannot make that promise while any descendant can claim height.
+        var host = new Control { Name = "MirrorHost" };
+        host.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        panel.AddChild(host);
+
+        var box = new VBoxContainer { Name = "MirrorBox" };
+        box.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        box.OffsetBottom = -CloseRowHeight; // leave the bottom strip for Close
+        host.AddChild(box);
 
         AddHeader(box, "THE SCRYING MIRROR");
 
@@ -225,7 +264,16 @@ public partial class ScryingMirror : SimPanel
         _feedBody = new VBoxContainer { Name = "MirrorFeedBody", SizeFlagsHorizontal = SizeFlags.ExpandFill };
         scroll.AddChild(_feedBody);
 
-        AddButton(box, "MirrorClose", "Close", CloseMirror);
+        // Bottom-anchored: the one control whose reachability the whole surface depends on.
+        var closeRow = new Control { Name = "MirrorCloseRow" };
+        closeRow.SetAnchorsAndOffsetsPreset(LayoutPreset.BottomWide);
+        closeRow.OffsetTop = -CloseRowHeight;
+        host.AddChild(closeRow);
+
+        var close = new Button { Name = "MirrorClose", Text = "Close" };
+        close.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        close.Pressed += CloseMirror;
+        closeRow.AddChild(close);
 
         // U5: added LAST (after the panel body) so it draws over the feed, self-contained
         // (PKD8-style single overlay), hidden until a ★ attribution line opens it.
