@@ -106,7 +106,9 @@ public class CameraFollowTests
             // Half the hidden band, converted from screen px to world px by the canvas upscale.
             // Derived here the same way Town2D derives it rather than hardcoded, so the two cannot
             // disagree about the shrink factor while both looking correct.
-            var expected = obstructionPx / 2f / Town2D.CanvasShrink;
+            // Reads the town's LIVE shrink, not a constant: it is derived from the window size now
+            // (Town2D.ShrinkFor), so a hardcoded 3 here would pass on one display and fail on another.
+            var expected = obstructionPx / 2f / town.CanvasShrink;
 
             AssertThat(offset)
                 .OverrideFailureMessage(
@@ -122,6 +124,41 @@ public class CameraFollowTests
             town.Player.SetDirectInput(null);
             town.Free();
         }
+    }
+
+    /// <summary>
+    /// The framing must hold the same amount of WORLD on screen at any window size.
+    ///
+    /// <para>The shrink used to be a hardcoded 3, so the canvas was window/3 and a bigger monitor simply
+    /// showed MORE WORLD rather than the same world larger — 24 tiles across at 1152, 40 at 1080p, 53 at
+    /// 1440p, everything looking progressively tinier the better the display. The first framing fix was
+    /// verified at 1152x648 and nowhere else, which is very likely why "buildings are too small, world
+    /// limited" survived it.</para>
+    ///
+    /// <para>Checks the pure ladder, so no window has to be resized. The tolerance is what an INTEGER
+    /// shrink can achieve: fractional would resample pixel art and shimmer, a worse trade than a tile or
+    /// two of drift.</para>
+    /// </summary>
+    [TestCase]
+    public void TheFraming_ShowsTheSameAmountOfWorld_AtEveryWindowSize()
+    {
+        const int tile = 16;
+        foreach (var width in new float[] { 1152, 1280, 1600, 1920, 2560, 3840 })
+        {
+            var shrink = Town2D.ShrinkFor(width);
+            var tilesVisible = width / shrink / tile;
+
+            AssertThat(tilesVisible is > 18f and < 30f)
+                .OverrideFailureMessage(
+                    $"At {width}px wide the town shows {tilesVisible:0.#} tiles (shrink {shrink}). The " +
+                    "framing should stay near 24 tiles at every resolution; drifting outside 18-30 means " +
+                    "the world changes size purely because of the monitor.")
+                .IsTrue();
+        }
+
+        AssertThat(Town2D.ShrinkFor(320))
+            .OverrideFailureMessage("A tiny window must still upscale by at least 2 — shrink 1 draws hairline pixels.")
+            .IsGreaterEqual(2);
     }
 
     private static void AddNodeToTree(Node node) => ((SceneTree)Engine.GetMainLoop()).Root.AddChild(node);

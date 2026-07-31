@@ -60,10 +60,39 @@ public partial class Town2D : Control
     /// </summary>
     private const float CameraZoom = 1f;
 
-    /// <summary>The container's <c>StretchShrink</c> (see <see cref="Build"/>) — how many screen
-    /// pixels one world pixel is drawn as. Named separately because <see cref="FollowPlayer"/> needs
-    /// it to convert a screen-space measurement back into world space.</summary>
-    public const int CanvasShrink = 3;
+    /// <summary>
+    /// How much of the world, in PIXELS OF WIDTH, should be on screen at once. 384px is 24 tiles —
+    /// the framing that was tuned against a screenshot and read correctly: close enough to feel like a
+    /// place you stand in, wide enough to see the next building.
+    ///
+    /// <para>This, not the shrink factor, is the real design intent. Holding it fixed is what makes the
+    /// framing resolution-independent.</para>
+    /// </summary>
+    private const int TargetVisibleWorldWidth = 384;
+
+    /// <summary>
+    /// The container's live <c>StretchShrink</c> — how many screen pixels one world pixel is drawn as.
+    /// <see cref="FollowPlayer"/> needs it to convert a screen-space measurement back to world space.
+    ///
+    /// <para><b>Was a hardcoded 3, which made the framing depend on the monitor.</b> The canvas is
+    /// window-size / shrink, so a fixed shrink means a bigger window shows MORE WORLD rather than the
+    /// same world larger: 24 tiles across at 1152x648, 40 at 1080p, 53 at 1440p. Everything would look
+    /// progressively tinier the better your display, which is very likely why "buildings are too small,
+    /// world limited" survived the first framing fix — that fix was verified at 1152x648 and nowhere
+    /// else.</para>
+    ///
+    /// <para>Derived from the viewport now, so tiles-on-screen stays put. Kept an INTEGER because these
+    /// are pixel-art textures under a Nearest filter: a fractional shrink resamples and shimmers, which
+    /// is worse than being a tile or two off the ideal framing. Floored at 2 so a small window cannot
+    /// end up at 1 (no upscale at all, hairline pixels).</para>
+    /// </summary>
+    public int CanvasShrink { get; private set; } = 3;
+
+    /// <summary>The integer shrink that puts <see cref="TargetVisibleWorldWidth"/> closest to on screen
+    /// for a window <paramref name="screenWidth"/> px wide. Pure, so a test can check the ladder without
+    /// resizing anything.</summary>
+    public static int ShrinkFor(float screenWidth) =>
+        Math.Max(2, (int)MathF.Round(screenWidth / TargetVisibleWorldWidth));
 
     /// <summary>Height in SCREEN pixels of any opaque UI covering the top of this control — set by
     /// <c>MainUi</c> from its HUD header's measured height (0 when the town is mounted bare, e.g. in
@@ -173,7 +202,7 @@ public partial class Town2D : Control
             // screenshot — 2 (576x324) framed the town too wide to read as a place you stand in,
             // and combining 2 with the camera's old 2x zoom pushed in so far that buildings ran off
             // the top of the screen. This is the ONLY magnification dial now: CameraZoom is 1.
-            StretchShrink = CanvasShrink,
+            StretchShrink = CanvasShrink, // recomputed for the real window size just below
             TextureFilter = TextureFilterEnum.Nearest,
         };
         ViewportContainer.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
@@ -207,6 +236,8 @@ public partial class Town2D : Control
             CanvasItemDefaultTextureFilter = Viewport.DefaultCanvasItemTextureFilter.Nearest,
         };
         ViewportContainer.AddChild(WorldViewport);
+        ApplyCanvasShrink();
+        Resized += ApplyCanvasShrink; // a resized window must re-derive, or the framing drifts again
 
         World = new Node2D { Name = "World" };
         WorldViewport.AddChild(World);
@@ -530,6 +561,30 @@ public partial class Town2D : Control
     /// one-line target assignment rather than hand-rolled lerp + clamp. Null-guarded for the window
     /// between <see cref="Node._Process"/> starting and <see cref="Build"/> having run.</para>
     /// </summary>
+    /// <summary>Re-derives <see cref="CanvasShrink"/> from the current viewport width and pushes it to
+    /// the container. Safe to call repeatedly — assigning the same value is a no-op, so wiring this to
+    /// <see cref="Control.Resized"/> costs nothing while the window is still.</summary>
+    private void ApplyCanvasShrink()
+    {
+        if (ViewportContainer is null)
+        {
+            return;
+        }
+
+        // The control's own width, not the OS window's: the town is full-rect inside MainUi, so these
+        // agree in the real game, and in a test that mounts it small the framing still follows the box
+        // it was actually given.
+        var width = Size.X > 1f ? Size.X : GetViewportRect().Size.X;
+        var shrink = ShrinkFor(width);
+        if (shrink == CanvasShrink && ViewportContainer.StretchShrink == shrink)
+        {
+            return;
+        }
+
+        CanvasShrink = shrink;
+        ViewportContainer.StretchShrink = shrink;
+    }
+
     private void FollowPlayer()
     {
         if (Cam is null || Player is null)
