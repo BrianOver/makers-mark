@@ -249,14 +249,15 @@ public partial class CampPanel : SimPanel
         dim.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(dim);
 
-        var center = new CenterContainer();
-        center.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(center);
-
-        var panel = new PanelContainer();
-        center.AddChild(panel);
-        var box = new VBoxContainer { CustomMinimumSize = new Vector2(640, 420) };
-        panel.AddChild(box);
+        // A FITTED card — see SimPanel.BuildFittedModalCard.
+        //
+        // This was a CenterContainer around a VBox with CustomMinimumSize (640, 420), and it produced a
+        // softlock: as parties camped below, the slate grew past the window (measured at 1152x1027 in a 648px
+        // window) and carried "Hold (close)" off screen with it. Since this modal OPENS ITSELF every Camp
+        // phase, the game was raising an undismissable window at the player unprompted. The Scrying Mirror had
+        // the identical bug, which is why the pattern now lives in one place.
+        var card = BuildFittedModalCard("CampCard");
+        var box = card.Body;
 
         _title = AddLabel(box, "WINCH-HOUSE SLATE — the party camps below");
         _title.Name = "CampTitle";
@@ -280,6 +281,9 @@ public partial class CampPanel : SimPanel
         _rejection.Name = "CampRejection";
         _rejection.AddThemeColorOverride("font_color", new Color(1f, 0.6f, 0.4f));
 
-        AddButton(box, "CampHold", "Hold (close)", CloseModal);
+        // In the ANCHORED action row, not at the end of the flowed body: this is the control the whole modal's
+        // escapability depends on, so its position must not depend on how much slate is above it.
+        AddButton(card.ActionRow, "CampHold", "Hold (close)", CloseModal)
+            .SizeFlagsHorizontal = SizeFlags.ExpandFill;
     }
 }
