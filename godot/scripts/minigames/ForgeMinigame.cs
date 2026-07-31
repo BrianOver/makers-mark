@@ -50,7 +50,33 @@ public sealed partial class ForgeMinigame : PanelContainer
 
     public const int HeatDrainPermillePerSecond = 70;
     public const int BellowsRaisePermillePerSecond = 260;
-    public const int BellowsDriftBackPermillePerSecond = 50;
+
+    /// <summary>
+    /// Shape lost per second while the bellows are held. <b>Was 50, which made the craft very nearly
+    /// unwinnable</b> — exactly what Brian reported: "also doesn't seem possible to complete? the shape keeps
+    /// resetting to zero", then "i am incapable of creating anything - something is wrong lol".
+    ///
+    /// <para><b>Sized from measurement, not feel</b> (<c>ForgeWinnabilityTests</c> + <c>ForgePlayer</c>).
+    /// A beginner lands ~1.6 strikes/second worth ~28 permille each = ~45/s gained, and spends roughly half
+    /// the run on the bellows. At 50/s of drift that is ~25/s lost against 45/s gained: over a full minute of
+    /// play, 64 strikes moved the shape a net ~290 of the 1000 needed. Not difficulty — a treadmill.</para>
+    ///
+    /// <para>8 leaves the mechanic doing its actual job — pumping costs you tempo, so you cannot idle on the
+    /// bellows — while a first-timer actually finishes. Measured after: a beginner completes on all five
+    /// swept seeds, a veteran averages ~430 permille in ~27s against the beginner's ~240 in ~40s. The tempo
+    /// bonus therefore reaches the outcome, which is what makes this a skill rather than a wait.</para>
+    ///
+    /// <para>Deliberately the ONLY knob moved. Heat drain and strike advance were also candidates, and an
+    /// earlier attempt changed all three at once — against a measurement that turned out to be wrong, because
+    /// the synthetic player was striking four times a second. Moving one constant keeps the next regression
+    /// attributable. The tempo bonus and its window are untouched: rhythm is the skill the minigame teaches,
+    /// and widening the window would make it easier by making it matter less.</para>
+    ///
+    /// <para>Client-side only: the balance gate drives scripted sim policies and never this overlay, so no
+    /// re-baseline.</para>
+    /// </summary>
+    public const int BellowsDriftBackPermillePerSecond = 8;
+
     public const int StrikeHeatCostPermille = 90;
     public const int StrikeBaseAdvancePermille = 35;
     public const double StrikeOnTempoBonusMultiplier = 2.2;
@@ -396,6 +422,18 @@ public sealed partial class ForgeMinigame : PanelContainer
                 break;
             case InputEventKey { Keycode: Key.Shift, Pressed: false }:
                 BellowsStop();
+                break;
+
+            // Enter finishes the craft. There was NO keyboard route to Plunge at all: Space struck and
+            // Shift pumped, but the finale was reachable only by mouse (drag-to-quench, or the button) —
+            // so a player working the keyboard could shape the billet all the way to 1000 and then find
+            // nothing that ended it. This class states keyboard parity as a principle for the strike
+            // ("Space stays unaimed/always valid (KTD-C keyboard parity)"); the finale was simply missed.
+            //
+            // Safe unconditionally: Plunge already returns early unless ShapeXPermille is 1000, so an
+            // early Enter does nothing rather than ending the craft short.
+            case InputEventKey { Keycode: Key.Enter or Key.KpEnter, Pressed: true, Echo: false }:
+                Plunge();
                 break;
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } mb:
                 // Clicking must not cost the player their keyboard — and if a child button holds
