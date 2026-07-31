@@ -110,6 +110,17 @@ public partial class PipDock : Control
         _built = true;
     }
 
+    /// <summary>
+    /// Hold the dock retracted while another surface owns the screen.
+    ///
+    /// <para>Set by <c>MainUi.UpdateEngaged</c> from the same "a drawer/interior/modal owns the screen"
+    /// predicate the objective chip uses. Without it the dock is governed by phase ALONE, so during
+    /// Expedition/Camp/Deep it slid in over whatever the player had opened — a rendered playtest caught it
+    /// sitting on top of the Depths panel, obscuring the Gloomwood venue card. The Depths panel is showing the
+    /// same party in more detail at that moment, so the dock is not merely overlapping, it is redundant.</para>
+    /// </summary>
+    public bool Suppressed { get; set; }
+
     /// <summary>Rebuild this tick's cards and recompute the dock's show/hide intent (KTD13). Call
     /// once per completed tick, same contract as every other panel's <c>Refresh</c>.</summary>
     public void Refresh(GameState state, ImmutableList<GameEvent> lastEvents)
@@ -148,10 +159,12 @@ public partial class PipDock : Control
         _feed.Advance(delta, paused: Clock is not null && !Clock.Playing);
         UpdateLabels();
 
-        var target = _wantsVisible ? 1f : 0f;
+        // Suppressed wins over the phase. Read here as well as in Refresh so the dock RETRACTS the moment a
+        // surface opens, rather than waiting for the next state tick to tell it.
+        var target = _wantsVisible && !Suppressed ? 1f : 0f;
         var step = (float)delta / SlideSeconds;
         _slideProgress = Mathf.MoveToward(_slideProgress, target, step);
-        Docked = _wantsVisible;
+        Docked = _wantsVisible && !Suppressed;
 
         // Slide from fully off-screen-right to docked, accumulated-delta only (no Tween).
         var hiddenOffsetX = DockWidth + 24f;

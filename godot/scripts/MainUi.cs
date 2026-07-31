@@ -2070,6 +2070,12 @@ public partial class MainUi : Control
         // owns the screen" — hides the chip for every one of those cases with no new wiring.
         Objective.Visible = !engaged;
 
+        // Same predicate for the journey dock. It was governed by PHASE alone, so during
+        // Expedition/Camp/Deep it slid in over whatever the player had opened — a rendered playtest caught it
+        // sitting on top of the Depths panel and obscuring the Gloomwood card. Redundant as well as
+        // overlapping: the Depths panel is showing that same party in more detail.
+        Pip.Suppressed = engaged;
+
         // T8: a drawer/interior/modal owns input while engaged — the 3D world's own click-to-
         // move/interact must not fight it for the same clicks underneath.
         Town.SetWorldInputEnabled(!engaged);
