@@ -105,6 +105,7 @@ public static class ConsequenceProbe
         var goldByDay = new Dictionary<int, List<int>>();
         var treadmill = new List<string>();
         var seedRows = new List<string>();
+        var tradeRows = new List<string>();
 
         for (var i = 0; i < seedCount; i++)
         {
@@ -114,6 +115,18 @@ public static class ConsequenceProbe
 
             // Legal-verb signature per day, to measure how fast the offered menu stops changing.
             var daySignature = new Dictionary<int, SortedSet<string>>();
+
+            // Does the shop actually SELL? A near-zero gold balance is ambiguous on its own, because
+            // BaselinePlayer buys ore greedily whenever it can afford to and so spends down to the floor
+            // every morning by design — "broke" and "fully reinvested" look identical in the balance. What
+            // separates them is whether stock ever leaves the shelf. Shelf entries are tracked by item id
+            // between ticks: an id that was shelved and is now gone was bought by a hero (this policy
+            // never unstocks), so vanished ids are sales.
+            var everShelved = new HashSet<int>();
+            var previousShelf = new HashSet<int>();
+            var sold = 0;
+            var goldEarned = 0;
+            var previousGold = state.Player.Gold;
 
             while (state.Day <= days)
             {
@@ -199,6 +212,19 @@ public static class ConsequenceProbe
                 var beforeDay = state.Day;
                 state = kernel.Tick(state, chosen).NewState;
 
+                var shelfNow = state.Player.Shelf.Select(e => e.Item.Value).ToHashSet();
+                sold += previousShelf.Count(id => !shelfNow.Contains(id));
+                everShelved.UnionWith(shelfNow);
+                previousShelf = shelfNow;
+
+                // Gross income, not the net balance: every gold the player took IN over the whole run.
+                if (state.Player.Gold > previousGold)
+                {
+                    goldEarned += state.Player.Gold - previousGold;
+                }
+
+                previousGold = state.Player.Gold;
+
                 if (state.Day != beforeDay)
                 {
                     if (!goldByDay.TryGetValue(beforeDay, out var golds))
@@ -243,6 +269,7 @@ public static class ConsequenceProbe
 
             var pairs = Math.Max(1, dayKeys.Count - 1);
             treadmill.Add($"| {seed} | {dayKeys.Count} | {identicalPairs * 100 / pairs}% | {longestRun} |");
+            tradeRows.Add($"| {seed} | {everShelved.Count} | {sold} | {goldEarned} | {goldEarned / Math.Max(1, days)} |");
             seedRows.Add($"| {seed} | {state.Player.Gold} | {state.Arc.Act} | "
                 + $"{state.Heroes.Values.Count(h => h.Alive)}/{state.Heroes.Count} |");
             output.WriteLine($"  seed {seed}: probed {days} days, menu unchanged on {identicalPairs * 100 / pairs}% "
@@ -252,7 +279,8 @@ public static class ConsequenceProbe
         var reportPath = Path.Combine(outDir, "consequence-report.md");
         try
         {
-            File.WriteAllText(reportPath, BuildReport(seedCount, startSeed, days, tallies, goldByDay, treadmill, seedRows));
+            File.WriteAllText(reportPath, BuildReport(
+                seedCount, startSeed, days, tallies, goldByDay, treadmill, seedRows, tradeRows));
         }
         catch (Exception ex)
         {
@@ -317,7 +345,8 @@ public static class ConsequenceProbe
         Dictionary<DayPhase, PhaseTally> tallies,
         Dictionary<int, List<int>> goldByDay,
         List<string> treadmill,
-        List<string> seedRows)
+        List<string> seedRows,
+        List<string> tradeRows)
     {
         var sb = new StringBuilder();
         sb.AppendLine("# Maker's Mark — Consequence Report");
@@ -452,6 +481,23 @@ public static class ConsequenceProbe
 
             var golds = goldByDay[day].OrderBy(g => g).ToList();
             sb.AppendLine($"| {day} | {golds[golds.Count / 2]} | {golds[0]} | {golds[^1]} |");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("## Does the shop sell? (trade volume)");
+        sb.AppendLine();
+        sb.AppendLine("A near-zero gold balance does NOT by itself mean the player is broke: the default "
+            + "policy buys ore greedily whenever it can afford to, so it spends down to the floor every "
+            + "morning and \"bankrupt\" looks identical to \"fully reinvested\" in the balance alone. This "
+            + "table is what distinguishes them. Items sold counts shelf entries that vanished (this policy "
+            + "never unstocks, so a vanished entry was bought); gold earned is GROSS income across the run, "
+            + "not the net balance.");
+        sb.AppendLine();
+        sb.AppendLine("| seed | items ever shelved | items sold | gold earned (gross) | gold earned / day |");
+        sb.AppendLine("|---|---|---|---|---|");
+        foreach (var row in tradeRows)
+        {
+            sb.AppendLine(row);
         }
 
         sb.AppendLine();
