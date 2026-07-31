@@ -1043,7 +1043,26 @@ public partial class MainUi : Control
         _ => state.Phase.ToString(),
     };
 
-    /// <summary>U3: the contextual bell label — what ringing it does from the current phase.</summary>
+    /// <summary>
+    /// U3: the contextual bell label — what ringing it does from the current phase.
+    ///
+    /// <para><b>State-aware, not phase-only, and that is the whole point.</b> The kernel walks every day
+    /// through Camp and ExpeditionDeep whether or not anyone is actually below (<c>GameKernel.Advance</c>
+    /// is unconditional). A party whose target floor sits inside stage 1 finishes at the Expedition tick
+    /// and walks home — so the player then rings two more bells about a mine that is empty. Labelling
+    /// those by phase alone produced three separate playtest complaints that were all this one bug:</para>
+    /// <list type="bullet">
+    /// <item>"hitting 'lower them into the mine' brings them back to the town??" — they came home because
+    /// their run was over, which the label denied.</item>
+    /// <item>"return bell does nothing but moved it to 'deep' phase??" — Camp's bell advances DEEPER.</item>
+    /// <item>"?? not able to see the heroes in the mine" — nobody was in the mine.</item>
+    /// </list>
+    ///
+    /// <para><b>Camp must never say "return bell".</b> That verb belongs to <c>RecallPartyAction</c>, a real
+    /// and different Camp action (see <c>CampPanel</c> / <c>CampHandlers.ApplyRecall</c>) which banks the
+    /// haul and surfaces the party. The phase bell at Camp does the OPPOSITE — it sends them to the deep
+    /// floors. Two controls one click apart cannot share a name while doing opposite things.</para>
+    /// </summary>
     private static string BellVerb(GameState state) => state.Phase switch
     {
         DayPhase.Morning => "Send them off",
@@ -1051,11 +1070,17 @@ public partial class MainUi : Control
         // winch-house is internal vocabulary (see Expedition/CampHandlers) that leaked onto a button.
         // A button label has to say what pressing it does; flavour is not worth a player not knowing.
         DayPhase.Expedition => "Lower them into the mine",
-        DayPhase.Camp => "Ring the return bell",
-        DayPhase.ExpeditionDeep => "Ring the return bell",
+        DayPhase.Camp => AnyoneBelow(state) ? "Let them press deeper" : "Close the vigil",
+        DayPhase.ExpeditionDeep => AnyoneBelow(state) ? "Ring the return bell" : "Close the vigil",
         DayPhase.Evening => "Snuff the lanterns",
         _ => "Advance",
     };
+
+    /// <summary>True while a party is parked below the checkpoint awaiting stage-2 resolution — the only
+    /// state in which the Camp/Deep phases have anything to be about. <c>InFlight</c> is populated by the
+    /// Expedition tick and cleared by <c>ExpeditionDeepSystem</c>, so it is exactly "is anyone down there
+    /// right now".</summary>
+    private static bool AnyoneBelow(GameState state) => !state.InFlight.IsEmpty;
 
     /// <summary>U3: a readout of what is still open this phase (per-type, not one opaque count),
     /// so the player knows what the bell will end. Empty when nothing is pending.</summary>
