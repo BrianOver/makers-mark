@@ -73,6 +73,25 @@ if (args.Length > 0 && args[0] == "decisions")
     return GameSim.Cli.DecisionLogger.Run(dSeeds, 2026UL, dDays, dOut, Console.Out, Console.Error);
 }
 
+// Consequence-probe mode: `-- probe [--seeds N] [--days N] [--out DIR]` forks every decision point and
+// applies every legal option to the fork, to find options that leave the world identical to inaction.
+// Where `decisions` measures how WIDE the menu is, this measures whether picking off it changes anything.
+if (args.Length > 0 && args[0] == "probe")
+{
+    var qSeeds = 5;
+    var qDays = 40;
+    var qOut = Path.Combine("runs", "probe");
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] == "--seeds" && i + 1 < args.Length && int.TryParse(args[i + 1], out var s)) { qSeeds = s; i++; }
+        else if (args[i] == "--days" && i + 1 < args.Length && int.TryParse(args[i + 1], out var d)) { qDays = d; i++; }
+        else if (args[i] == "--out" && i + 1 < args.Length) { qOut = args[i + 1]; i++; }
+        else { Console.Error.WriteLine($"probe: unknown/invalid arg near '{args[i]}' — usage: probe [--seeds N] [--days N] [--out DIR]"); return 1; }
+    }
+
+    return GameSim.Cli.ConsequenceProbe.Run(qSeeds, 2026UL, qDays, qOut, Console.Out, Console.Error);
+}
+
 // Interactive mode accepts ONLY `--seed N`. Anything else is a hard error — a typo'd batch
 // invocation ('Batch', misordered flags) must never fall through to the interactive REPL,
 // where redirected stdin would EOF and exit 0 having written zero chronicles (silent green).
