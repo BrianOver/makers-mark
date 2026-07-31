@@ -1632,7 +1632,17 @@ public partial class MainUi : Control
 
         // Morning ending is the send-off: the party is actually leaving, which deserves its own cue
         // rather than the generic bell.
-        Audio.Play(completedPhase == DayPhase.Morning ? Cue.PartyDepart : Cue.Bell);
+        var departing = completedPhase == DayPhase.Morning;
+        Audio.Play(departing ? Cue.PartyDepart : Cue.Bell);
+
+        // And show it. The HUD has been promising "watch them go" while the gate sat off screen at the
+        // north edge and the rally marker appeared outside the view — Brian never once saw a departure.
+        // Skipped while a drawer/modal owns the screen: yanking the camera behind a panel the player is
+        // reading is worse than missing the beat, and they would not see it anyway.
+        if (departing && !Drawer.IsOpen && !Interior.IsOpen && !Ledger.Visible)
+        {
+            Town.FocusOnMineGate();
+        }
     }
 
     /// <summary>The drawer-hosted panel registered under <paramref name="id"/> — "Town" is not a
