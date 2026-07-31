@@ -105,9 +105,64 @@ public abstract partial class SimPanel : Control
         return spin;
     }
 
+    /// <summary>
+    /// Report the space this panel's content actually needs, so a panel nested inside a
+    /// <see cref="Container"/> reserves room for itself.
+    ///
+    /// <para><b>Why this override is load-bearing.</b> <see cref="SimPanel"/> derives from
+    /// <see cref="Control"/>, not <see cref="Container"/>, and a plain Control does not derive a minimum
+    /// size from its children — only Containers do. So nesting one in a <see cref="VBoxContainer"/> gave it
+    /// ZERO height: it reserved no space, its own full-rect-anchored content overflowed that empty box, and
+    /// the next sibling in the VBox was laid out directly on top of it.</para>
+    ///
+    /// <para>That is not a cosmetic overlap. It is what made the Shop's "Open Counter" button unclickable —
+    /// <c>ShopPanel</c> nests <c>CounterPanel</c> above its shelf sections, so the shelf drop-zones were
+    /// drawn over the button and swallowed every click. Found by the human-playtest harness, which reported
+    /// the exact blocker (<c>DropZone 'EmptyShelfSlot_1'</c>); every property-based test passed throughout,
+    /// because each control's own properties were perfectly correct.</para>
+    ///
+    /// <para>Callers that rebuild content must follow with <see cref="Control.UpdateMinimumSize"/> — a plain
+    /// Control does not get told when a child's minimum size changes, so without that nudge the reserved
+    /// height stays whatever the first build asked for.</para>
+    /// </summary>
+    public override Vector2 _GetMinimumSize()
+    {
+        var minimum = Vector2.Zero;
+        foreach (var child in GetChildren())
+        {
+            // Skip hidden children: an overlay parked invisible (ProvenanceCard, the drawer's own
+            // registered-but-closed panels) must not reserve space it is not using.
+            if (child is Control { Visible: true } control)
+            {
+                minimum = minimum.Max(control.GetCombinedMinimumSize());
+            }
+        }
+
+        return minimum;
+    }
+
     protected static HBoxContainer AddRow(Node parent)
     {
         var row = new HBoxContainer();
+        parent.AddChild(row);
+        return row;
+    }
+
+    /// <summary>
+    /// A row that WRAPS onto further lines instead of growing wider — for any row whose child count is
+    /// driven by game state rather than fixed by the layout.
+    ///
+    /// <para><b>Use this, not <see cref="AddRow"/>, whenever the children come from a loop.</b> An
+    /// <see cref="HBoxContainer"/>'s minimum width is the sum of its children, and a Control can never lay
+    /// out narrower than its minimum — so a row of one chip per mine floor quietly forces its whole panel
+    /// past the drawer's right edge as floors unlock, with no scroller able to reach it (horizontal
+    /// scrolling is deliberately disabled; see <see cref="BuildScrollBody"/>). That is what cut off the
+    /// Demand panel's bounty board, and it is a time bomb rather than a typo: the layout is correct at
+    /// three floors and broken at six.</para>
+    /// </summary>
+    protected static HFlowContainer AddWrappingRow(Node parent)
+    {
+        var row = new HFlowContainer();
         parent.AddChild(row);
         return row;
     }

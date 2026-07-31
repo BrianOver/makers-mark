@@ -123,7 +123,10 @@ public partial class DemandPanel : SimPanel
         var section = Section("BOUNTY BOARD");
         _content!.AddChild(section.Root);
 
-        var floorRow = AddRow(section.Body);
+        // Wrapping, not a plain HBox: one chip per floor means the child count grows with the campaign,
+        // and an HBox's minimum width is the sum of its children — which pushed this panel 30px past the
+        // drawer's right edge and truncated the whole bounty board. See SimPanel.AddWrappingRow.
+        var floorRow = AddWrappingRow(section.Body);
         foreach (var floorMin in snapshot.BountyFloorMinimums)
         {
             floorRow.AddChild(StatChip($"Floor {floorMin.Floor}", $"≥{floorMin.MinimumRewardGold}g"));

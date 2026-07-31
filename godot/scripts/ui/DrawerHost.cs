@@ -89,8 +89,30 @@ public partial class DrawerHost : Control
     /// <summary>True while any panel is showing (mid-slide or fully open).</summary>
     public bool IsOpen => CurrentPanelId is not null;
 
+    /// <summary>
+    /// The panel content currently showing, or null when closed.
+    ///
+    /// <para>The companion to <see cref="CurrentPanelId"/> for anything that needs the panel's live
+    /// GEOMETRY rather than its identity. The host itself is a full-rect Control that never moves, so
+    /// watching the host to detect "has the drawer finished opening" always says yes immediately — this is
+    /// the node that actually slides. The human-playtest harness measures panel layout and read every
+    /// panel as off-screen until it waited on this instead.</para>
+    /// </summary>
+    public Control? CurrentContent => _current;
+
     /// <summary>The dim-under veil — also the click-out catcher (for tests).</summary>
     public ColorRect Veil => _dim;
+
+    /// <summary>
+    /// Every registered panel id, in registration order.
+    ///
+    /// <para>Exists so a coverage guard can assert that the human-playtest sweep
+    /// (<c>HumanPlaytestTests</c>) visits ALL of them. Without it, adding a tenth panel would silently
+    /// escape the fits-on-screen and real-click checks while the suite stayed green — the same
+    /// declare-it-then-forget-to-wire-it shape that has already shipped an entire dormant ground-tile
+    /// system and four invisible panel banners on this project.</para>
+    /// </summary>
+    public IReadOnlyCollection<string> RegisteredIds => _registered.Keys;
 
     /// <summary>Raised whenever the drawer closes (click-out, Esc, or an explicit <see
     /// cref="Close"/>) — MainUi uses this to keep the Engaged latch in sync.</summary>
