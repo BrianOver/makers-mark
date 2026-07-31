@@ -143,16 +143,26 @@ public class CameraFollowTests
     public void TheFraming_ShowsTheSameAmountOfWorld_AtEveryWindowSize()
     {
         const int tile = 16;
+
+        // Bounds DERIVED from the design constant, not written out. This test used to hardcode "near 24
+        // tiles" and went red the moment the framing was retuned for "world is a little... too zoomed in
+        // now" — which is a test asserting a magic number rather than the invariant it cares about. The
+        // invariant is only ever "the monitor must not change how much world you see"; what that amount IS
+        // belongs to Town2D. The +-25% band is the slack an integer-only shrink ladder forces.
+        var target = Town2D.TargetVisibleWorldWidth / (float)tile;
+        var floor = target * 0.75f;
+        var ceiling = target * 1.25f;
+
         foreach (var width in new float[] { 1152, 1280, 1600, 1920, 2560, 3840 })
         {
             var shrink = Town2D.ShrinkFor(width);
             var tilesVisible = width / shrink / tile;
 
-            AssertThat(tilesVisible is > 18f and < 30f)
+            AssertThat(tilesVisible > floor && tilesVisible < ceiling)
                 .OverrideFailureMessage(
                     $"At {width}px wide the town shows {tilesVisible:0.#} tiles (shrink {shrink}). The " +
-                    "framing should stay near 24 tiles at every resolution; drifting outside 18-30 means " +
-                    "the world changes size purely because of the monitor.")
+                    $"framing should stay near {target:0.#} tiles at every resolution; drifting outside " +
+                    $"{floor:0.#}-{ceiling:0.#} means the world changes size purely because of the monitor.")
                 .IsTrue();
         }
 

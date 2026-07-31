@@ -61,14 +61,22 @@ public partial class Town2D : Control
     private const float CameraZoom = 1f;
 
     /// <summary>
-    /// How much of the world, in PIXELS OF WIDTH, should be on screen at once. 384px is 24 tiles —
-    /// the framing that was tuned against a screenshot and read correctly: close enough to feel like a
-    /// place you stand in, wide enough to see the next building.
+    /// How much of the world, in PIXELS OF WIDTH, should be on screen at once. 576px is 36 tiles.
+    ///
+    /// <para>Was 384 (24 tiles), tuned against a single screenshot. The owner played it and said "world is
+    /// a little... too zoomed in now" — which is the same complaint as the earlier "buildings are too
+    /// small, world limited" seen from the other side: that fix corrected the SIZE of things and
+    /// overshot into standing too close to them.</para>
+    ///
+    /// <para>576 rather than something between: <see cref="ShrinkFor"/> must stay an INTEGER (pixel-art
+    /// textures under a Nearest filter shimmer on a fractional resample), so at a 1152px-wide window the
+    /// only choices either side of 3 are 2 and 4. 576 lands on shrink 2 — the single available step
+    /// outward. There is no finer dial here without giving up the crisp-pixel rule.</para>
     ///
     /// <para>This, not the shrink factor, is the real design intent. Holding it fixed is what makes the
-    /// framing resolution-independent.</para>
+    /// framing resolution-independent. STILL NEEDS A HUMAN EYE: nobody has looked at 36 tiles yet.</para>
     /// </summary>
-    private const int TargetVisibleWorldWidth = 384;
+    public const int TargetVisibleWorldWidth = 576;
 
     /// <summary>
     /// The container's live <c>StretchShrink</c> — how many screen pixels one world pixel is drawn as.
@@ -86,7 +94,15 @@ public partial class Town2D : Control
     /// is worse than being a tile or two off the ideal framing. Floored at 2 so a small window cannot
     /// end up at 1 (no upscale at all, hairline pixels).</para>
     /// </summary>
-    public int CanvasShrink { get; private set; } = 3;
+    /// Initialised from <see cref="ShrinkFor"/> at the project's default window width rather than a literal:
+    /// a hardcoded default silently disagreed with <see cref="TargetVisibleWorldWidth"/> the moment that
+    /// constant moved, which is the exact drift <see cref="ShrinkFor"/> exists to prevent. Only a fallback —
+    /// <c>ApplyCanvasShrink</c> replaces it from the live viewport on the first resize.
+    public int CanvasShrink { get; private set; } = ShrinkFor(DefaultWindowWidth);
+
+    /// <summary>The window width the project boots at (<c>project.godot</c>'s viewport width), used only to
+    /// seed <see cref="CanvasShrink"/> before the first resize reports a real one.</summary>
+    private const float DefaultWindowWidth = 1152f;
 
     /// <summary>The integer shrink that puts <see cref="TargetVisibleWorldWidth"/> closest to on screen
     /// for a window <paramref name="screenWidth"/> px wide. Pure, so a test can check the ladder without

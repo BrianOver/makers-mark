@@ -79,19 +79,31 @@ public static class SfxLibrary
             Synth.Normalise(buf, 0.35f);
         }),
 
-        Cue.PanelOpen => Build(0.28f, buf =>
+        // Owner's playtest: "opening shop noise is not good". It was a 0.28s broadband noise SWELL
+        // normalised to 0.5 — which is a hiss, and a rising hiss reads as static or a leak rather than as
+        // wood. Three things were wrong and all three matter for a cue that fires on every single panel
+        // open: it was too long, too broadband, and far too loud for something heard hundreds of times a
+        // session.
+        //
+        // Rebuilt as a latch and a slide, in that order, which is the actual event: a small wooden knock
+        // (two inharmonic partials, fast decay — inharmonic because a harmonic stack reads as a musical
+        // note, and a drawer is not tuned), then a short muffled brush of noise DECAYING rather than
+        // swelling, rolled off low enough to sit under the knock instead of hissing over it.
+        Cue.PanelOpen => Build(0.16f, buf =>
         {
-            // Wood and cloth: filtered noise swelling, with a low body under it. Rising, because it
-            // is the sound of something being revealed.
             for (var i = 0; i < buf.Length; i++)
             {
                 var t = i / (float)Synth.SampleRate;
-                buf[i] = Synth.Noise(i) * MathF.Min(1f, t * 6f) * Synth.Decay(t, 0.10f);
+                // Starts after the knock and fades: the panel slides once the latch has let go.
+                var slide = MathF.Max(0f, t - 0.02f);
+                buf[i] = Synth.Noise(i) * Synth.Decay(slide, 0.035f) * 0.5f;
             }
 
-            Synth.LowPass(buf, 900f);
-            Synth.AddPartial(buf, 150f, 0.35f, halfLife: 0.09f);
-            Synth.Normalise(buf, 0.5f);
+            Synth.LowPass(buf, 420f);
+            Synth.AddPartial(buf, 214f, 0.30f, halfLife: 0.030f);
+            Synth.AddPartial(buf, 397f, 0.16f, halfLife: 0.022f);
+            Synth.DeClick(buf);
+            Synth.Normalise(buf, 0.26f); // heard constantly — must not be the loudest thing in the game
         }),
 
         Cue.PanelClose => Build(0.22f, buf =>
