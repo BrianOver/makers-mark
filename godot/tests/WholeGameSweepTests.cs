@@ -163,6 +163,62 @@ public class WholeGameSweepTests
     }
 
     /// <summary>
+    /// No always-on-top widget may float over an open panel.
+    ///
+    /// <para>Found by rendering the game and looking at it: the journey dock (<c>PipDock</c>) is governed by
+    /// PHASE alone, so during Expedition/Camp/Deep it slid in over whatever the player had opened — the
+    /// screenshot showed it sitting on the Depths panel, covering the Gloomwood venue card. Redundant as well
+    /// as overlapping, since the Depths panel shows that same party in more detail.</para>
+    ///
+    /// <para>Checked during an expedition phase specifically, because that is the only time the dock wants to
+    /// be visible — running this in Morning would pass while proving nothing.</para>
+    /// </summary>
+    [TestCase]
+    public async Task NoFloatingWidget_CoversAnOpenPanel()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var player = new HumanPlayer(ui);
+            await player.WaitForLayout(ui);
+
+            // Into an expedition phase, where the dock wants the corner.
+            AdvanceToPhase(ui, DayPhase.Expedition);
+            ui.RefreshAll();
+            await player.Frames(30); // let the dock's slide settle either way
+
+            AssertThat(ui.Adapter.CurrentState.Phase)
+                .OverrideFailureMessage("Never reached an expedition phase, so the dock was never asked to show.")
+                .IsEqual(DayPhase.Expedition);
+
+            var overlaps = new List<string>();
+            foreach (var panel in new[] { "Depths", "Forge", "Shop" })
+            {
+                ui.OpenPanel(panel);
+                await player.TrySettleLayout(ui.Drawer.CurrentContent!);
+                await player.Frames(30); // the dock retracts over SlideSeconds
+
+                var content = ui.Drawer.CurrentContent!;
+                if (ui.Pip.Visible && ui.Pip.GetGlobalRect().Intersects(content.GetGlobalRect()))
+                {
+                    overlaps.Add(
+                        $"[{panel}] PipDock at {ui.Pip.GetGlobalRect()} covers the open panel at " +
+                        $"{content.GetGlobalRect()} (Docked={ui.Pip.Docked}, Suppressed={ui.Pip.Suppressed})");
+                }
+            }
+
+            AssertThat(overlaps)
+                .OverrideFailureMessage(
+                    "An always-on-top widget is drawn over an open panel's content:\n  " +
+                    string.Join("\n  ", overlaps) +
+                    "\n\nGate it on the same \"a surface owns the screen\" predicate the objective chip uses " +
+                    "(MainUi.UpdateEngaged -> PipDock.Suppressed).")
+                .IsEmpty();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
     /// Every surface must be dismissible, and dismissing it must give the game back.
     ///
     /// <para>A modal you cannot close is a softlock, and it is the single worst bug a surface can have —
