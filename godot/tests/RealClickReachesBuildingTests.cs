@@ -67,7 +67,8 @@ public class RealClickReachesBuildingTests
             // so a canvas point maps back to the screen by MULTIPLYING by shrink. The container is
             // full-rect at the origin, so there is no further offset to add.
             var canvasPoint = town.WorldViewport.GetCanvasTransform() * target;
-            var screenPoint = canvasPoint * Town2D.CanvasShrink;
+            // The town's LIVE shrink — derived from window size, so never hardcode it here.
+            var screenPoint = canvasPoint * town.CanvasShrink;
 
             PushClick(town, screenPoint);
             await AwaitFrames(4);
