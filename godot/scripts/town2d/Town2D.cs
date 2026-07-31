@@ -106,6 +106,18 @@ public partial class Town2D : Control
     /// so a departing party reads as a cluster, not a stack.</summary>
     private const float RallySpacingPx = 14f;
 
+    /// <summary>How long the camera lingers on the gate when a party leaves. Long enough to read the
+    /// moment, short enough that it never feels like the game took the controls away — the player can
+    /// walk throughout, and the camera returns to wherever they actually got to.</summary>
+    private const float MineGateFocusSeconds = 3.2f;
+
+    /// <summary>Where a focus beat is pointing, or null when the camera belongs to the player.</summary>
+    private Vector2? _focusTarget;
+
+    /// <summary>Seconds left on the current focus beat; 0 or less means the player has the camera.
+    /// Accumulated-delta, matching every other timer in this file — no engine Tween anywhere here.</summary>
+    private float _focusRemaining;
+
     public SubViewportContainer ViewportContainer { get; private set; } = null!;
     /// <summary>Named <c>WorldViewport</c> rather than <c>Viewport</c> to avoid shadowing the
     /// Godot <see cref="Godot.Viewport"/> TYPE (needed unqualified below for <see
@@ -512,6 +524,15 @@ public partial class Town2D : Control
     /// not a party happens to be departing this tick.</summary>
     public override void _Process(double delta)
     {
+        if (_focusRemaining > 0f)
+        {
+            _focusRemaining -= (float)delta;
+            if (_focusRemaining <= 0f)
+            {
+                _focusTarget = null;
+            }
+        }
+
         FollowPlayer();
 
         if (Adapter is not null && _dayTint is not null)
@@ -598,7 +619,48 @@ public partial class Town2D : Control
         // centers the player in the strip that is actually visible. /CanvasShrink converts the
         // header's screen pixels into world pixels (the canvas is upscaled by that factor).
         var bias = TopObstructionPx / 2f / CanvasShrink;
-        Cam.GlobalPosition = Player.GlobalPosition - new Vector2(0f, bias);
+
+        // A focus beat borrows the camera for a moment — see FocusOn. The player keeps walking
+        // underneath; the camera simply looks elsewhere and then glides back, since Camera2D's own
+        // position smoothing eases both directions for free.
+        var anchor = _focusRemaining > 0f && _focusTarget is { } focus ? focus : Player.GlobalPosition;
+        Cam.GlobalPosition = anchor - new Vector2(0f, bias);
+    }
+
+    /// <summary>
+    /// Points the camera at <paramref name="worldTarget"/> for <paramref name="seconds"/>, then hands it
+    /// back to the player.
+    ///
+    /// <para><b>Why:</b> the HUD promises "watch them go" when a party marches for the Mine, and you
+    /// could not — the camera stays glued to the player, the gate is at the far north edge of the town,
+    /// and the rally marker is off screen the moment it appears. Brian's playtest: "after sending off the
+    /// party, the little floor thing is off the screen — where are the visuals to follow their
+    /// adventure??" The departure is the most cinematic thing that happens in a day and nobody had ever
+    /// seen it.</para>
+    ///
+    /// <para>Deliberately a TIMED BORROW rather than a mode: no state to get stuck in, no way to leave
+    /// the player uncontrollable, and a second call simply retargets. Input is untouched throughout —
+    /// walking away during the beat is allowed, and the camera returning to wherever the player actually
+    /// got to is the correct behaviour rather than a snap-back.</para>
+    /// </summary>
+    public void FocusOn(Vector2 worldTarget, float seconds)
+    {
+        if (seconds <= 0f)
+        {
+            return;
+        }
+
+        _focusTarget = worldTarget;
+        _focusRemaining = seconds;
+    }
+
+    /// <summary>Convenience for the commonest focus beat: look at the mine gate as a party departs.</summary>
+    public void FocusOnMineGate(float seconds = MineGateFocusSeconds)
+    {
+        if (_buildingsByKey.TryGetValue("minegate", out var gate))
+        {
+            FocusOn(gate.DoorAnchorGlobal, seconds);
+        }
     }
 
     private void ReturnSurvivors()
