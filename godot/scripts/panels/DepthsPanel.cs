@@ -1,6 +1,8 @@
+using System;
 using System.Linq;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Ui;
 
 namespace GodotClient.Panels;
 
@@ -45,6 +47,17 @@ public partial class DepthsPanel : SimPanel
     /// <c>CustomMinimumSize</c> technique <c>HeroesPanel.RosterCardSize</c> uses), so the
     /// standings' autowrap labels never collapse to one character per line.</summary>
     private static readonly Vector2 VenueTileSize = new(360f, 0f);
+
+    /// <summary>
+    /// How many <see cref="VenueTileSize"/> columns fit in <paramref name="availableWidth"/> — at least
+    /// one, however narrow the container is.
+    ///
+    /// <para>Internal so a test can pin the arithmetic directly rather than inferring it from a laid-out
+    /// rect: the bug this replaces was a hardcoded column count that overflowed by 124px, and a guard that
+    /// can only see the symptom would not have caught it before the tiles existed to overflow.</para>
+    /// </summary>
+    internal static int ColumnsThatFit(float availableWidth) =>
+        Math.Max(1, (int)(availableWidth / VenueTileSize.X));
 
     private GridContainer? _venueGrid;
     private MineWatch? _mineWatch;
@@ -196,13 +209,19 @@ public partial class DepthsPanel : SimPanel
         };
         scroll.AddChild(body);
 
-        // GridContainer (not a flat VBox): today's single Mine tile fills column 1; a future
-        // venue tile (once the sim tracks per-venue records) drops in as another grid child
-        // with zero layout rework.
+        // GridContainer (not a flat VBox): venue tiles drop in as grid children with no layout rework.
+        //
+        // Columns are DERIVED from the space available, never asserted. A hardcoded 2 was the bug behind
+        // "depths menu is cut off still": two VenueTileSize columns demand 724px inside a 600px drawer,
+        // and because a Control cannot lay out narrower than its combined minimum size, the whole panel
+        // was forced past the drawer's right edge — where anchors cannot save it and the vertical-only
+        // ScrollContainer cannot reach it. With a second venue now live (the Gloomwood) it was visibly
+        // truncated. Deriving the count keeps the original intent — widen the drawer and the second
+        // column comes back by itself — while making the overflow arithmetically impossible.
         _venueGrid = new GridContainer
         {
             Name = "VenueGrid",
-            Columns = 2,
+            Columns = ColumnsThatFit(DrawerHost.DrawerWidth),
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
         };
         body.AddChild(_venueGrid);

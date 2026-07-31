@@ -1,0 +1,443 @@
+#if GDUNIT_TESTS
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using GdUnit4;
+using Godot;
+using static GdUnit4.Assertions;
+using static GodotClient.Tests.UiTestSupport;
+
+namespace GodotClient.Tests;
+
+/// <summary>
+/// Plays the real client the way a person does — through <see cref="HumanPlayer"/> only — and asserts
+/// the things a person notices and a property test cannot.
+///
+/// <para><b>Why this suite exists.</b> 531 tests were green while the owner reported the forge
+/// unusable, two menus cut off, and a bounty button that did nothing. Every one of those is invisible to
+/// the existing suites because they assert on node properties: a Label that is scrolled off screen still
+/// has the right <c>Text</c>, and a Button that something is drawn over still has the right
+/// <c>Disabled</c> flag. The owner's instruction was explicit — "I want you to actually make playtest
+/// that replicate human interaction to quit making these mistakes".</para>
+///
+/// <para><b>What each test here can prove.</b> Reachability and readability, mechanically, for every
+/// panel: nothing that carries text may hang outside the viewport, and every button the player can see
+/// must actually respond to a real click at its own coordinates. These are cheap, total, and they fail
+/// on exactly the class of bug that has been shipping.</para>
+///
+/// <para><b>Negative controls</b> (each verified by hand, 2026-07-30):
+/// <see cref="EveryPanel_FitsOnScreen"/> fails if <c>UiKit.DrawerHeaderHeight</c> is shrunk back to 40
+/// (the header then overlaps and pushes content past the bottom edge);
+/// <see cref="EveryVisibleButton_ActuallyRespondsToARealClick"/> fails if any panel's root
+/// <c>MouseFilter</c> is set to <c>Ignore</c>, and it is the only test in the repo that would.</para>
+/// </summary>
+[TestSuite]
+[RequireGodotRuntime]
+public class HumanPlaytestTests
+{
+    /// <summary>The drawer panels a player can open from the HUD. Kept as data so a new panel is one
+    /// line here rather than a new test nobody remembers to write.</summary>
+    private static readonly string[] Panels =
+        ["Forge", "Shop", "Heroes", "Tavern", "Depths", "Bounties", "Demand", "HeroCards", "Progress"];
+
+    /// <summary>How far down each panel the sweep pages. Bounded so a runaway scroller cannot turn this
+    /// suite into a multi-minute job; the loop exits early as soon as a panel stops revealing new buttons
+    /// AND stops scrolling, so the cap only bites on genuinely enormous content.</summary>
+    private const int MaxPagesPerPanel = 8;
+
+    /// <summary>
+    /// Open-and-settle: wait until the panel that actually slides has stopped moving.
+    ///
+    /// <para>Watching <c>ui.Drawer</c> does not work — the host is a full-rect Control that never moves, so
+    /// it reads as settled on the first frame while the content is still sliding in from the right edge.
+    /// Measuring then reported every panel in the game as off-screen, with fractional offsets like
+    /// <c>646.7778</c> as the tell. <c>Drawer.CurrentContent</c> is the node under animation.</para>
+    /// </summary>
+    /// <summary>
+    /// Open <paramref name="panel"/>, settle it, scroll down <paramref name="page"/> pages, and return the
+    /// buttons a player could click at that depth.
+    ///
+    /// <para>Re-establishing the whole position from scratch rather than remembering it: a click can close
+    /// the drawer, rebuild the content, and reset the scroll offset, so any cached handle — instance, name,
+    /// or scroll value — may be stale by the next line. This is the only state the sweep trusts.</para>
+    /// </summary>
+    private static async Task<IReadOnlyList<Button>> OpenAt(MainUi ui, HumanPlayer player, string panel, int page)
+    {
+        ui.OpenPanel(panel);
+        await SettlePanel(ui, player, panel);
+
+        var content = ui.Drawer.CurrentContent!;
+        for (var scroll = 0; scroll < page; scroll++)
+        {
+            await player.ScrollDown(content.GetGlobalRect().GetCenter());
+        }
+
+        return player.ClickableButtons(ui.Drawer.CurrentContent);
+    }
+
+    private static async Task SettlePanel(MainUi ui, HumanPlayer player, string panel)
+    {
+        var content = ui.Drawer.CurrentContent
+            ?? throw new System.InvalidOperationException(
+                $"OpenPanel(\"{panel}\") left the drawer with no current content — it did not open at all.");
+
+        await player.WaitForLayout(content);
+    }
+
+    /// <summary>
+    /// The sweep above must cover every panel that exists. Without this, a tenth panel would escape both
+    /// checks while the suite stayed green — and a coverage list that silently stops covering things is
+    /// the exact failure this whole suite was written to end.
+    /// </summary>
+    [TestCase]
+    public void ThePanelSweep_CoversEveryRegisteredPanel()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var registered = ui.Drawer.RegisteredIds.ToList();
+            var missing = registered.Except(Panels).ToList();
+
+            AssertThat(missing)
+                .OverrideFailureMessage(
+                    $"These panels are registered but never swept: [{string.Join(", ", missing)}]. " +
+                    "Add them to HumanPlaytestTests.Panels — an unswept panel gets no fits-on-screen or " +
+                    "real-click coverage at all.")
+                .IsEmpty();
+
+            AssertThat(Panels.Except(registered).ToList())
+                .OverrideFailureMessage("The sweep names panels that are not registered; it would throw on Open.")
+                .IsEmpty();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// No panel may demand more width than the drawer gives it.
+    ///
+    /// <para>This is the root cause behind "depths menu is cut off still", stated as an invariant. A
+    /// <see cref="Control"/> cannot lay out narrower than its combined minimum size, so a single over-wide
+    /// leaf pushes its whole ancestor chain past the drawer's edge — anchors do not prevent it, and the
+    /// vertical <c>ScrollContainer</c> cannot help because horizontal scrolling is deliberately disabled
+    /// (enabling it would give autowrap labels unbounded width and break wrapping instead).</para>
+    ///
+    /// <para>Asserted separately from <see cref="EveryPanel_FitsOnScreen"/> because it names the offending
+    /// control and the pixel budget, which is the difference between a fix and an investigation.</para>
+    /// </summary>
+    [TestCase]
+    public async Task NoPanel_DemandsMoreWidthThanTheDrawerGivesIt()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var player = new HumanPlayer(ui);
+            var offenders = new List<string>();
+
+            foreach (var panel in Panels)
+            {
+                ui.OpenPanel(panel);
+                await SettlePanel(ui, player, panel);
+
+                var content = ui.Drawer.CurrentContent!;
+                // Anything demanding MORE than the drawer's width is over budget. Equal is fine: a
+                // full-width child is exactly what an expanding container is supposed to produce.
+                offenders.AddRange(player
+                    .TooWideFor(content, GodotClient.Ui.DrawerHost.DrawerWidth + 1f)
+                    .Select(problem => $"[{panel}] {problem}"));
+            }
+
+            AssertThat(offenders)
+                .OverrideFailureMessage(
+                    $"The drawer is {GodotClient.Ui.DrawerHost.DrawerWidth}px wide. These controls demand " +
+                    "more, so their panels are cut off at the right edge:\n  " +
+                    string.Join("\n  ", offenders))
+                .IsEmpty();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// Controls that a container is supposed to keep apart must not be drawn on top of each other.
+    ///
+    /// <para>This is the invariant behind the Shop's dead "Open Counter" button. <c>ShopPanel</c> nests
+    /// <c>CounterPanel</c> above its shelf sections; <c>SimPanel</c> is a plain <see cref="Control"/>, which
+    /// reports no minimum size from its children, so the enclosing <c>VBoxContainer</c> gave it zero height
+    /// and laid the shelf drop-zones straight through it. The drop-zones then swallowed every click on the
+    /// button underneath.</para>
+    ///
+    /// <para>Nothing else in the repo looks at where controls sit RELATIVE to each other — every individual
+    /// property was correct throughout, which is exactly why 531 tests were green while the shop's main verb
+    /// did nothing.</para>
+    /// </summary>
+    [TestCase]
+    public async Task NoPanel_DrawsItsControlsOnTopOfEachOther()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var player = new HumanPlayer(ui);
+            var overlaps = new List<string>();
+
+            foreach (var panel in Panels)
+            {
+                ui.OpenPanel(panel);
+                await SettlePanel(ui, player, panel);
+
+                overlaps.AddRange(player
+                    .OverlappingSiblings(ui.Drawer.CurrentContent!)
+                    .Select(problem => $"[{panel}] {problem}"));
+            }
+
+            AssertThat(overlaps)
+                .OverrideFailureMessage(
+                    "Controls are drawn on top of each other inside a container that exists to prevent " +
+                    "exactly that. Whatever is on top will swallow clicks meant for what is underneath:\n  " +
+                    string.Join("\n  ", overlaps))
+                .IsEmpty();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// Nothing with text on it may sit outside the window. This is the "menu is cut off" detector, and
+    /// the reason it is mechanical rather than eyeballed: the owner has now reported it three times
+    /// ("Tutorial menu is still cutoff", "Forge menus don't fit screen correctly", "depths menu is cut
+    /// off still") against a suite that could not see it.
+    /// </summary>
+    [TestCase]
+    public async Task EveryPanel_FitsOnScreen()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var player = new HumanPlayer(ui);
+            var offenders = new List<string>();
+
+            foreach (var panel in Panels)
+            {
+                ui.OpenPanel(panel);
+                await SettlePanel(ui, player, panel);
+
+                offenders.AddRange(player.ClippedText().Select(problem => $"[{panel}] {problem}"));
+            }
+
+            AssertThat(offenders)
+                .OverrideFailureMessage(
+                    "Text is rendered outside the window, so a player cannot read it:\n  " +
+                    string.Join("\n  ", offenders) +
+                    "\n\nEvery one of these has the right Text property, which is why the property-based " +
+                    "suites pass. Fix by making the panel fit, not by trimming the text.")
+                .IsEmpty();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// Every button a player can see must respond to a real click at its own coordinates.
+    ///
+    /// <para><c>HumanPlayer.Click</c> proves the response via the button's own <c>Pressed</c> signal, so
+    /// a covering overlay or a swallowing <c>MouseFilter</c> fails here. That is the "bounties menu is
+    /// broke" / "i posted a bounty at the 'gate' but nothing happened?" class — a control that looks
+    /// perfect and is not reachable.</para>
+    ///
+    /// <para>Buttons are re-resolved by name each iteration and skipped if a previous click tore them
+    /// down (opening a sub-view, advancing a phase): the claim under test is reachability, not that every
+    /// button is idempotent.</para>
+    ///
+    /// <para><b>Scoped to the open panel's own content, deliberately.</b> The first version swept the whole
+    /// viewport and reported all nine HUD buttons as unreachable in every panel. That was correct
+    /// observation and wrong expectation: <c>DrawerHost</c> puts a click-catching veil over everything
+    /// behind the drawer, so the HUD really is inert while a panel is open — which is what a modal is for.
+    /// Asserting on the panel's own subtree keeps the claim true and still catches a dead button inside the
+    /// surface the player is actually looking at.</para>
+    /// </summary>
+    [TestCase]
+    public async Task EveryVisibleButton_ActuallyRespondsToARealClick()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var player = new HumanPlayer(ui);
+            var unreachable = new List<string>();
+            var clicked = 0;
+            var found = 0;
+            var clickedPerPanel = new Dictionary<string, int>();
+            var foundPerPanel = new Dictionary<string, int>();
+            var census = new List<string>();
+
+            foreach (var panel in Panels)
+            {
+                clickedPerPanel[panel] = 0;
+                foundPerPanel[panel] = 0;
+
+                // Page down through the panel the way a person does. Without scrolling the sweep only ever
+                // saw what happened to be above the fold — 14 buttons across all nine panels — while
+                // reporting itself as complete coverage.
+                for (var page = 0; page < MaxPagesPerPanel; page++)
+                {
+                    var count = (await OpenAt(ui, player, panel, page)).Count;
+                    found += count;
+                    foundPerPanel[panel] += count;
+                    if (page == 0)
+                    {
+                        census.Add($"{panel}: {player.DescribeButtons(ui.Drawer.CurrentContent)}");
+                    }
+
+                    // Click by INDEX, re-deriving the list before every single click.
+                    //
+                    // Two things rule out the obvious alternatives. Names are not identifiers: panels rebuild
+                    // their content on every refresh, so Godot's auto-generated names (@Button@1017 ->
+                    // @Button@2041) change underneath a lookup — that cost 11 of 20 buttons. And holding
+                    // instances does not work either: the FIRST click rebuilds the panel and frees every
+                    // other instance in the batch, which is why an instance-based pass clicked 9 of 46 and
+                    // honestly reported that it had proved nothing.
+                    //
+                    // Position in the freshly-derived clickable list is the one handle that survives a
+                    // rebuild of the same state.
+                    //
+                    // The panel is NOT reopened between clicks — only when a click actually closed the
+                    // drawer. Reopening unconditionally meant a full settle plus a re-scroll per button, and
+                    // CI runs this roughly 9x slower than a local machine (14 minutes against 96 seconds) on
+                    // a job already close to its timeout. A sweep that gets disabled for being slow protects
+                    // nothing.
+                    for (var i = 0; i < count; i++)
+                    {
+                        IReadOnlyList<Button> live;
+                        if (ui.Drawer.CurrentPanelId == panel && ui.Drawer.CurrentContent is { } stillOpen)
+                        {
+                            live = player.ClickableButtons(stillOpen);
+                        }
+                        else
+                        {
+                            live = await OpenAt(ui, player, panel, page);
+                        }
+
+                        if (i >= live.Count)
+                        {
+                            break; // the panel got shorter (a click consumed something) — nothing to reach
+                        }
+
+                        var button = live[i];
+                        var label = string.IsNullOrEmpty(button.Text) ? $"<{button.Name}>" : button.Text;
+                        try
+                        {
+                            await player.ClickControl(button, $"[{panel}] button \"{label}\"");
+                            clicked++;
+                            clickedPerPanel[panel]++;
+                        }
+                        catch (System.ObjectDisposedException)
+                        {
+                            // The click freed its own button (a purchase removing its row, a craft
+                            // rebuilding the list). Caught BEFORE InvalidOperationException because it
+                            // derives from it — otherwise every self-consuming button is reported as
+                            // "unreachable", which is the opposite of what happened: it worked so well it
+                            // deleted itself.
+                            clicked++;
+                            clickedPerPanel[panel]++;
+                        }
+                        catch (System.InvalidOperationException failure)
+                        {
+                            // Whole message, not just its first line: the useful half — which
+                            // mouse-stopping control is over the point — is on the lines after it, and
+                            // trimming to line 1 threw away exactly the diagnosis worth having.
+                            unreachable.Add(failure.Message);
+                        }
+                    }
+
+                    // Can this panel go deeper? Re-open first so the probe is not measuring a drawer some
+                    // click closed.
+                    await OpenAt(ui, player, panel, page);
+                    var content = ui.Drawer.CurrentContent!;
+                    if (!await player.ScrollDown(content.GetGlobalRect().GetCenter()))
+                    {
+                        break; // bottom reached (or nothing to scroll) — this panel is fully covered
+                    }
+                }
+            }
+
+            AssertThat(unreachable)
+                .OverrideFailureMessage(
+                    $"Clicked {clicked} buttons; these could not be reached by a real click:\n  " +
+                    string.Join("\n  ", unreachable))
+                .IsEmpty();
+
+            // ── Anti-fakery, per panel rather than in total. ──
+            //
+            // A sweep that clicked nothing would report "no unreachable buttons" and mean it as a pass, so
+            // non-vacuity has to be asserted. But a global count is the wrong guard: panels MUTATE as they
+            // are clicked (a purchase removes its row, a craft rebuilds the list), so found-vs-clicked has a
+            // legitimate gap and chasing that number upward only produces baroque test logic. What actually
+            // matters is that no panel was skipped entirely — that is what would hide a whole broken surface.
+            var untouched = Panels
+                .Where(p => foundPerPanel[p] > 0 && clickedPerPanel[p] == 0)
+                .ToList();
+
+            AssertThat(untouched)
+                .OverrideFailureMessage(
+                    $"These panels showed clickable buttons but none of them were ever actually clicked, so " +
+                    $"nothing was proved about them: [{string.Join(", ", untouched)}]. Per-panel tallies " +
+                    $"(clicked/found): " +
+                    string.Join(", ", Panels.Select(p => $"{p} {clickedPerPanel[p]}/{foundPerPanel[p]}")) +
+                    "\n\nButton census per panel:\n  " + string.Join("\n  ", census))
+                .IsEmpty();
+
+            AssertThat(clicked)
+                .OverrideFailureMessage(
+                    $"Only {clicked} real clicks landed across {Panels.Length} panels ({found} opportunities " +
+                    $"seen). Per panel (clicked/found): " +
+                    string.Join(", ", Panels.Select(p => $"{p} {clickedPerPanel[p]}/{foundPerPanel[p]}")) +
+                    ". Too few for the reachability claim below to mean anything.")
+                .IsGreaterEqual(Panels.Length);
+
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// Every phase must offer the player at least one thing to do besides ending it.
+    ///
+    /// <para>"Unclear what to do during the expedition phase" and "Expedition phase gives the player
+    /// nothing to do or watch" are the same report. A phase whose only clickable verb is the bell is a
+    /// phase that should not exist, and this is the cheapest possible guard against re-introducing one.
+    /// Reported as a hard failure rather than telemetry because it is a structural claim about the loop,
+    /// not a tuning value.</para>
+    /// </summary>
+    [TestCase]
+    public async Task NoPhase_LeavesThePlayerWithNothingToDoButRingTheBell()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var player = new HumanPlayer(ui);
+            var deadEnds = new List<string>();
+
+            for (var tick = 0; tick < MaxPhasesPerDay; tick++)
+            {
+                await player.Frames(4);
+
+                var phase = ui.Adapter.CurrentState.Phase;
+                var verbs = player.ClickableLabels()
+                    .Where(label => !label.Contains("bell") && !label.Contains("Send them off") &&
+                                    !label.Contains("Snuff") && !label.Contains("press deeper") &&
+                                    !label.Contains("Close the vigil") && !label.Contains("Advance"))
+                    .ToList();
+
+                if (verbs.Count == 0)
+                {
+                    deadEnds.Add($"{phase}: the only thing on screen is the bell");
+                }
+
+                ui.Adapter.AdvancePhase();
+                ui.RefreshAll();
+            }
+
+            AssertThat(deadEnds)
+                .OverrideFailureMessage(
+                    "These phases give the player nothing to do:\n  " + string.Join("\n  ", deadEnds) +
+                    "\n\nA phase whose only verb is 'end this phase' is a loading screen with extra steps.")
+                .IsEmpty();
+        }
+        finally { Unmount(ui); }
+    }
+}
+#endif

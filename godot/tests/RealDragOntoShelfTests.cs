@@ -28,9 +28,6 @@ namespace GodotClient.Tests;
 [RequireGodotRuntime]
 public class RealDragOntoShelfTests
 {
-    /// <summary>Godot needs the pointer to travel a few pixels with the button held before it treats
-    /// the gesture as a drag rather than a click; stepped so the motion is unambiguous.</summary>
-    private const int DragSteps = 6;
 
     [TestCase]
     public async Task DraggingAnUnshelvedCraftOntoAnEmptySlot_WithARealMouseGesture_QueuesTheStock()
@@ -53,19 +50,37 @@ public class RealDragOntoShelfTests
             ui.OpenPanel("Shop");
             await SettleLayout(ui);
 
+            var player = new HumanPlayer(ui);
             var card = Find<Control>(ui.Shop, $"UnshelvedCard_{itemId.Value}");
             var slot = Find<Control>(ui.Shop, "EmptyShelfSlot_0");
 
-            var from = card.GetGlobalRect().GetCenter();
-            var to = slot.GetGlobalRect().GetCenter();
-
-            AssertThat(card.IsVisibleInTree())
+            // Scroll the card into view before grabbing it.
+            //
+            // The shop's content is taller than the drawer, so on a fresh open the unshelved card sits below
+            // the fold — this test used to drag from y=726 in a 648px window and "fail". A player scrolls
+            // first, so the harness does too. (It started passing again the moment SimPanel began reserving
+            // real height for the nested CounterPanel, which pushed the card down — the fix was correct and
+            // this test's fixed coordinates were the thing that was wrong.)
+            AssertThat(await player.ScrollIntoView(card))
                 .OverrideFailureMessage(
-                    "The unshelved craft's card is not visible, so no real gesture can reach it — " +
-                    "this test cannot say anything about dragging until the card is on screen.")
+                    "Could not scroll the unshelved craft's card into view at all, so no real gesture can " +
+                    "reach it. A player cannot shelve what they cannot get on screen.")
                 .IsTrue();
 
-            await DragMouse(ui, from, to);
+            var from = player.VisiblePartOf(card).GetCenter();
+            var to = player.VisiblePartOf(slot).GetCenter();
+
+            // Both ends of the gesture have to be on screen AT THE SAME TIME — drag-to-shelve is impossible
+            // otherwise, and that would be a genuine design defect rather than a test problem.
+            AssertThat(player.VisiblePartOf(slot).Size.Y)
+                .OverrideFailureMessage(
+                    $"With the card scrolled into view at {from}, the target shelf slot is no longer visible " +
+                    $"({player.VisiblePartOf(slot)}). The drag source and its target cannot be on screen " +
+                    "together, so the shop's core verb is unperformable — reorder the sections or shorten " +
+                    "what sits between them.")
+                .IsGreater(4f);
+
+            await player.Drag(from, to);
 
             var queued = ui.Adapter.AppliedThisPhase.OfType<StockAction>().ToList();
             AssertThat(queued.Count)
@@ -85,44 +100,5 @@ public class RealDragOntoShelfTests
         }
     }
 
-    /// <summary>Press at <paramref name="from"/>, walk the pointer to <paramref name="to"/> with the
-    /// left button held (so Godot's own drag machinery starts the drag and tracks the target), then
-    /// release. Frames are pumped between events because Godot resolves drag start and drop-target
-    /// hovering during GUI processing, not inside PushInput.</summary>
-    private static async Task DragMouse(Node context, Vector2 from, Vector2 to)
-    {
-        var viewport = context.GetViewport();
-
-        viewport.PushInput(new InputEventMouseButton
-        {
-            ButtonIndex = MouseButton.Left,
-            Pressed = true,
-            Position = from,
-            GlobalPosition = from,
-        });
-        await SettleLayout(context);
-
-        for (var step = 1; step <= DragSteps; step++)
-        {
-            var at = from.Lerp(to, step / (float)DragSteps);
-            viewport.PushInput(new InputEventMouseMotion
-            {
-                Position = at,
-                GlobalPosition = at,
-                Relative = (to - from) / DragSteps,
-                ButtonMask = MouseButtonMask.Left, // held — without this it is a hover, not a drag
-            });
-            await SettleLayout(context);
-        }
-
-        viewport.PushInput(new InputEventMouseButton
-        {
-            ButtonIndex = MouseButton.Left,
-            Pressed = false,
-            Position = to,
-            GlobalPosition = to,
-        });
-        await SettleLayout(context);
-    }
 }
 #endif

@@ -60,6 +60,13 @@ public partial class CounterPanel : SimPanel
         // closed the session by walking (the last hero in queue) must still be legible here, not
         // only a customer who walked mid-session while others remain (R8 prose half).
         BuildWalkedToday(state);
+
+        // This panel is NESTED (ShopPanel puts it above the shelf sections), and SimPanel is a plain
+        // Control — which is told nothing when a child's minimum size changes. Without this nudge the
+        // enclosing VBoxContainer keeps reserving whatever height the FIRST build asked for, so a taller
+        // refresh overflows into the sibling below and its buttons end up under the shelf drop-zones,
+        // unclickable. See SimPanel._GetMinimumSize.
+        UpdateMinimumSize();
     }
 
     private void BuildClosedState(GameState state)
