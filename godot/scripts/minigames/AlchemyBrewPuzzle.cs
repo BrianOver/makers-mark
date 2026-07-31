@@ -303,6 +303,10 @@ public sealed partial class AlchemyBrewPuzzle : PanelContainer
         _cancel.Pressed += Cancel;
         buttonRow.AddChild(_cancel);
 
+        // Control buttons must never hold the keyboard — a focused Button eats Space/Enter to
+        // press itself, which stole the keys from this overlay after the first click.
+        UiKit.MakeButtonsMouseOnly(this);
+
         _built = true;
         RepaintUi();
     }

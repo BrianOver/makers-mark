@@ -79,9 +79,27 @@ public sealed partial class AudioDirector : Node
             ? context.GetTree()?.Root?.FindChild("AudioDirector", recursive: true, owned: false) as AudioDirector
             : null;
 
+    /// <summary>
+    /// Environment switch that starts the game silent. Set by every automated tool that drives the real
+    /// client (playtests, screenshots) so an unattended run cannot make noise on someone's machine —
+    /// Brian, mid-session: "please mute the game during playtests - you can record and optimize later."
+    ///
+    /// <para>An env var rather than a flag each tool remembers to pass: a tool ADDED later inherits the
+    /// mute for free, which is the opposite of the pattern that has bitten this project repeatedly
+    /// (declare the capability, forget the one call that activates it). Nothing about the audio path is
+    /// skipped — streams are still synthesized and cues still fire, so the tools still exercise the code
+    /// they are supposed to; only the output is silenced.</para>
+    /// </summary>
+    public const string MuteEnvVar = "MAKERSMARK_MUTE_AUDIO";
+
     public override void _Ready()
     {
         Name = "AudioDirector";
+
+        if (!string.IsNullOrEmpty(OS.GetEnvironment(MuteEnvVar)))
+        {
+            Muted = true;
+        }
 
         for (var i = 0; i < VoiceCount; i++)
         {

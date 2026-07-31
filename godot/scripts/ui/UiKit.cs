@@ -110,6 +110,41 @@ public static class UiKit
         }
     }
 
+    /// <summary>
+    /// Makes every <see cref="Button"/> under <paramref name="root"/> unfocusable, so none of them can
+    /// take the keyboard away from an overlay that owns it. Call AFTER the buttons exist.
+    ///
+    /// <para><b>Why this is necessary and not paranoia.</b> A focused <see cref="Button"/> consumes
+    /// Space and Enter to press ITSELF. So in the forge, clicking the on-screen "Bellows (hold Shift)"
+    /// button once moved focus to it permanently, and from then on Space pumped the bellows instead of
+    /// striking the billet, while Shift reached nothing at all. Brian's second playtest reported exactly
+    /// that: "shift doesn't do and space seems to actually be the bellows" — after the first fix had
+    /// already made the keyboard work on open.</para>
+    ///
+    /// <para>The first fix (<see cref="ClaimKeyboard"/>) grabbed focus when the overlay opened, which is
+    /// necessary and was not sufficient: the very next click on any control button handed it straight
+    /// back. <see cref="ReclaimKeyboard"/> cannot save it either, because a Button consumes the press
+    /// and the overlay's own <c>_GuiInput</c> never sees it.</para>
+    ///
+    /// <para>Removing focus rather than fighting over it is the fix that cannot regress. These buttons
+    /// are mouse affordances that duplicate keyboard verbs already handled by the overlay — nothing is
+    /// lost by making them mouse-only, and keyboard users are strictly better served by the overlay
+    /// keeping the keys. This is also why the buttons' labels name the key: they are a legend as much as
+    /// a control.</para>
+    /// </summary>
+    public static void MakeButtonsMouseOnly(Node root)
+    {
+        foreach (var child in root.GetChildren())
+        {
+            if (child is Button button)
+            {
+                button.FocusMode = Control.FocusModeEnum.None;
+            }
+
+            MakeButtonsMouseOnly(child);
+        }
+    }
+
     /// <summary>A plain themed card container — cascade-styled (see type remarks); callers add
     /// their own content (art + stat chips + buttons) as children.</summary>
     public static PanelContainer Card(string? name = null)

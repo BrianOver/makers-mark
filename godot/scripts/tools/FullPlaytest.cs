@@ -58,6 +58,7 @@ public partial class FullPlaytest : Node
 
     public override async void _Ready()
     {
+        DevToolAudio.Silence(); // automated runs stay silent — see DevToolAudio
         System.IO.Directory.CreateDirectory(OutDir);
         _report.AppendLine("# Five full playtests — shipped client");
         _report.AppendLine();

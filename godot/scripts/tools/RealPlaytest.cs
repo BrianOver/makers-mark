@@ -22,6 +22,7 @@ public partial class RealPlaytest : Node
 
     public override async void _Ready()
     {
+        DevToolAudio.Silence(); // automated runs stay silent — see DevToolAudio
         System.IO.Directory.CreateDirectory(OutDir);
 
         // ── 1. Real new-game front door ──
