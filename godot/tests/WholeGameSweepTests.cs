@@ -173,6 +173,30 @@ public class WholeGameSweepTests
     /// <para>Checked during an expedition phase specifically, because that is the only time the dock wants to
     /// be visible — running this in Morning would pass while proving nothing.</para>
     /// </summary>
+    /// <summary>
+    /// Pumps frames until the journey dock has stopped moving, instead of waiting a fixed frame count.
+    /// <para>
+    /// The dock slides over <c>SlideSeconds</c> — a duration in SECONDS — and this test used to wait 30
+    /// FRAMES for it. That only outlasts the slide below a certain frame rate, and this suite disables
+    /// SubViewport rendering, so frames can come much faster than real time; a fast run would sample the
+    /// dock mid-slide and report an overlap that resolves a moment later. The sibling bug in
+    /// <c>CameraFocusBeatTests</c> failed CI for exactly this reason.
+    /// </para>
+    /// </summary>
+    private static async Task SettleDock(HumanPlayer player, MainUi ui, int maxFrames = 600)
+    {
+        var previous = ui.Pip.GetGlobalRect();
+        var still = 0;
+
+        for (var frame = 0; frame < maxFrames && still < 2; frame++)
+        {
+            await player.Frames(1);
+            var now = ui.Pip.GetGlobalRect();
+            still = now == previous ? still + 1 : 0;
+            previous = now;
+        }
+    }
+
     [TestCase]
     public async Task NoFloatingWidget_CoversAnOpenPanel()
     {
@@ -185,7 +209,7 @@ public class WholeGameSweepTests
             // Into an expedition phase, where the dock wants the corner.
             AdvanceToPhase(ui, DayPhase.Expedition);
             ui.RefreshAll();
-            await player.Frames(30); // let the dock's slide settle either way
+            await SettleDock(player, ui);
 
             AssertThat(ui.Adapter.CurrentState.Phase)
                 .OverrideFailureMessage("Never reached an expedition phase, so the dock was never asked to show.")
@@ -196,7 +220,7 @@ public class WholeGameSweepTests
             {
                 ui.OpenPanel(panel);
                 await player.TrySettleLayout(ui.Drawer.CurrentContent!);
-                await player.Frames(30); // the dock retracts over SlideSeconds
+                await SettleDock(player, ui);
 
                 var content = ui.Drawer.CurrentContent!;
                 if (ui.Pip.Visible && ui.Pip.GetGlobalRect().Intersects(content.GetGlobalRect()))
