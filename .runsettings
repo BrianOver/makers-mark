@@ -43,7 +43,30 @@
          So: engine test runs across worktrees must be SERIALIZED. Before diagnosing a 54, check
          whether another run was live (`tasklist | findstr Godot`) — and note that a bare
          `dotnet test ... | tail` hides the non-zero exit code behind the pipe, which is how this
-         one initially read as a pass. -->
+         one initially read as a pass.
+
+         THIRD CAUSE (found 2026-08-01, CI only, still unexplained): the Godot runtime connection is
+         cancelled mid-session and the suite is truncated, reported as
+
+             Connection interrupted by cancellation requested
+             (stack in GodotRuntimeExecutor.ExecuteCommand / System.IO.Pipes.PipeStream.WriteAsyncCore)
+
+         Distinguishing marks, so nobody wastes hours blaming a test the way I did:
+           * the BLAMED TEST IS DIFFERENT EVERY RUN — HumanCampaignTests, then
+             Playtest3dClickThrough, then MainUiTests.ShopPanel_..., then ForgeCraftTests — while the
+             error text is identical. Whichever test is executing when the axe falls gets the blame.
+           * it is a WALL-CLOCK cap, not a per-test failure: two runs were cut at 9m37s and 9m41s
+             having completed 170 and 354 tests respectively. Same duration, wildly different counts.
+           * a commit touching ONLY .gitignore failed it while its parent passed all checks.
+           * it clears on `gh run rerun <id> --failed`, because it is load-dependent.
+
+         What it is NOT: gdUnit's <SessionTimeout>. That was tested — with
+         <SessionTimeout>40000</SessionTimeout> here, the local suite still ran all 550 tests in
+         2m15s, so the element is ignored under <GdUnit4>. Do not "fix" this by tuning it.
+
+         Note also that CI does not currently pass `--settings` at all (see .github/workflows/ci.yml),
+         so NONE of this file applies there — including the CompileProcessTimeout below. That is
+         tracked separately and is the first thing to fix before diagnosing further. -->
     <CompileProcessTimeout>360000</CompileProcessTimeout>
   </GdUnit4>
 </RunSettings>
