@@ -154,6 +154,79 @@ public class BountyPanelTests
         }
     }
 
+    // ── Gate: Post button is driven by ActionLegality, not a hand-rolled mirror ──
+    //
+    // Design doc 2026-07-30-human-playtest-harness.md's button census: "Bounties | 1, disabled |
+    // Cannot post a bounty on day 1, with no visible reason" — this panel's ONLY literal Button is
+    // the Post button, and its "why" previously lived in a tooltip alone, which a census (and a
+    // first-time player) never hovers to find. These three cover both halves of the fix: the
+    // reason is now ALSO a plain on-panel label (BountyGateReason), and the legality check itself
+    // now calls GameSim.Advisor.ActionLegality.IsLegal rather than re-deriving the rule inline.
+
+    [TestCase]
+    public void PostButton_DisabledOffMorningEvening_ReasonIsVisibleWithoutHovering()
+    {
+        var ui = MountMainUi(new SimAdapter(GameFactory.NewGame(9200) with { Phase = DayPhase.Expedition }));
+        try
+        {
+            var post = Find<Button>(ui.Bounties, "PostBounty");
+            AssertThat(post.Disabled).IsTrue();
+            AssertThat(post.TooltipText).Contains("Morning or Evening");
+
+            // The tooltip's on-panel twin — readable without a hover, which is exactly what the
+            // button census found this panel was missing.
+            AssertThat(Find<Label>(ui.Bounties, "BountyGateReason").Text).Contains("Morning or Evening");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void PostButton_DisabledWhenActionSlotsAreExhausted_EvenInAMorningWithGoldToSpare()
+    {
+        // Regression for the hand-rolled version this replaced: it checked only phase + gold, so a
+        // day with 0 action slots left rendered this button ENABLED — legal-looking right up until
+        // the queued PostBountyAction bounced off BountyHandlers.Apply's last guard. Delegating to
+        // ActionLegality.IsLegal (which mirrors that exact guard, checked last, same as the handler)
+        // is what makes this scenario fail the way it should: disabled, before the click.
+        var state = GameFactory.NewGame(9200) with { ActionSlotsRemaining = 0 };
+        AssertThat(state.Phase).IsEqual(DayPhase.Morning); // legal phase...
+        AssertThat(state.Player.Gold >= 25).IsTrue();      // ...and the escrow is affordable (the
+                                                            // panel's own CoinStack opens at 25g,
+                                                            // BountyPanel.DefaultReward) — only the
+                                                            // day's action-slot budget is empty.
+
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            var post = Find<Button>(ui.Bounties, "PostBounty");
+            AssertThat(post.Disabled).IsTrue();
+            AssertThat(post.TooltipText).Contains("action slots");
+            AssertThat(Find<Label>(ui.Bounties, "BountyGateReason").Text).Contains("action slots");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void PostButton_LegalOnAFreshCampaign_GateReasonRendersEmpty()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(Find<Button>(ui.Bounties, "PostBounty").Disabled).IsFalse();
+            AssertThat(Find<Label>(ui.Bounties, "BountyGateReason").Text).IsEqual(string.Empty);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── U6: MineCrossSection ──
 
     [TestCase]
