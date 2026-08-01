@@ -282,6 +282,26 @@ public class AudioTests
     }
 
     /// <summary>
+    /// U-audio-2 postmortem: this test's onset detector used a hardcoded ABSOLUTE PCM delta (0.06) as
+    /// "a pluck attack is a fast rise." That number was never actually testing note DENSITY — it was
+    /// testing "is this bed loud enough that its attacks exceed a fixed value," a loudness assertion
+    /// wearing a density assertion's name, and it only ever passed because it happened to sit just under
+    /// the attack size at the bed's old peak (0.5): 13 onsets measured there, barely clearing the &gt;12
+    /// floor below.
+    ///
+    /// <para>The moment this same PR dropped the bed peak 0.5 -> 0.42 alongside the drone rebalance
+    /// (<see cref="MusicBed.Build"/>) to answer the owner's separate "too loud" complaint, the identical
+    /// melody — MORE notes than before (130 vs 69 slots filled, because <see cref="MusicBed.MelodySlots"/>
+    /// correctly scaled with the longer loop) — produced onset deltas that fell under 0.06, and the count
+    /// silently went to zero. Verified with a throwaway console harness reproducing the exact shipped
+    /// synthesis math: isolating the loop-length change alone (new 120s, OLD peak/weights) still found 26
+    /// onsets; isolating the peak/weight change alone (OLD 60s loop, NEW peak/weights) already found ZERO.
+    /// That is proof, not a guess, that the level change broke the detector and the melody itself was
+    /// never the problem — the density fix from the PR before this one was, and remains, correct.</para>
+    /// </summary>
+    private const float OnsetThresholdFraction = 0.12f;
+
+    /// <summary>
     /// The loop must be long enough that the ear does not memorise it.
     ///
     /// <para>"loops too quickly" was a real defect at 24 seconds: short enough to learn, after which the
@@ -290,7 +310,15 @@ public class AudioTests
     ///
     /// <para>Also checks that the melody grid scaled WITH the loop. Lengthening <c>LoopSeconds</c> while
     /// leaving a fixed slot count would have produced the same number of notes spread thinner — a sparser
-    /// bed rather than a longer one, which is not what was asked for and would be easy to ship by accident.</para>
+    /// bed rather than a longer one, which is not what was asked for and would be easy to ship by accident.
+    /// The onset threshold is a <see cref="OnsetThresholdFraction"/> of THIS buffer's own peak rather than
+    /// an absolute PCM value — see that constant's doc for why an absolute number silently turned this
+    /// into a loudness test and broke on the very next legitimate level change. 0.12 was chosen by scanning
+    /// fractions against both the pre- and post-retune mixes: 0.14 and above under-detect even the mix this
+    /// test used to pass against (8 onsets on the new mix, 0 on the old one at 0.16); 0.08-0.10 over-detect
+    /// by an order of magnitude (250-700+ "onsets," which is harmonic-beat ripple inside a single note's
+    /// decay getting counted repeatedly, not one crossing per note) — 0.12 sits in the flat, well-behaved
+    /// part of that curve for both mixes.</para>
     /// </summary>
     [TestCase]
     public void TheMusicLoop_IsLongEnoughNotToBeMemorised()
@@ -303,11 +331,12 @@ public class AudioTests
 
         // Note density held constant: count actual note onsets rather than trusting the slot arithmetic.
         var pcm = Pcm(MusicBed.For(DayPhase.Morning));
+        var threshold = Peak(pcm) * OnsetThresholdFraction;
         var onsets = 0;
         for (var i = 1; i < pcm.Length; i++)
         {
             // A pluck attack is a fast rise; the drone underneath changes far more slowly than this.
-            if (MathF.Abs(pcm[i]) - MathF.Abs(pcm[i - 1]) > 0.06f)
+            if (MathF.Abs(pcm[i]) - MathF.Abs(pcm[i - 1]) > threshold)
             {
                 onsets++;
                 i += Synth.SampleRate / 20; // debounce one attack, don't count its ripple
@@ -316,9 +345,9 @@ public class AudioTests
 
         AssertThat(onsets)
             .OverrideFailureMessage(
-                $"Only {onsets} note attacks across {MusicBed.LoopSeconds}s. The melody grid did not scale " +
-                "with the loop length, so the track got longer by getting emptier rather than by having " +
-                "more music in it.")
+                $"Only {onsets} note attacks across {MusicBed.LoopSeconds}s (peak {Peak(pcm):0.####}, " +
+                $"onset threshold {threshold:0.####}). The melody grid did not scale with the loop length, " +
+                "so the track got longer by getting emptier rather than by having more music in it.")
             .IsGreater(12);
     }
 
