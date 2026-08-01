@@ -37,6 +37,34 @@ public enum Cue
 
     /// <summary>An action the sim refused.</summary>
     Rejected,
+
+    // ── The forge minigame's own voice.
+    //
+    //    It was not silent — ForgePanel has its own `_hammerSfx` player fed by a local `MakeTone` helper
+    //    (a plain sine, or two summed, under a linear fade). But three things were true and all three
+    //    hurt the interaction Brian could not get to work:
+    //
+    //      1. ONE hammer sound for both on-beat and off-beat strikes. The tempo bonus is worth 2.2x and
+    //         is the skill the minigame teaches — and it had no audible signal at all, so a player had to
+    //         watch the gauge to learn rhythm instead of hearing it.
+    //      2. The quench — the finale — had no sound, only a steam plume.
+    //      3. The bellows had no sound.
+    //
+    //    A pure sine with a linear fade also reads as a synth beep rather than struck steel, which
+    //    SfxLibrary's whole design note is about avoiding. These four cues move the forge onto the same
+    //    inharmonic-partial construction as the rest of the game and give the rhythm a voice. ──
+
+    /// <summary>A hammer blow that landed inside the tempo window — the one the player is aiming for.</summary>
+    HammerOnBeat,
+
+    /// <summary>A hammer blow that missed the tempo window: duller, and audibly worse.</summary>
+    HammerOffBeat,
+
+    /// <summary>The finale plunge — hot steel into the trough.</summary>
+    Quench,
+
+    /// <summary>One stroke of the bellows.</summary>
+    Bellows,
 }
 
 /// <summary>
@@ -118,6 +146,79 @@ public static class SfxLibrary
             Synth.LowPass(buf, 700f);
             Synth.AddPartial(buf, 110f, 0.45f, halfLife: 0.07f);
             Synth.Normalise(buf, 0.5f);
+        }),
+
+        // ── The forge. Both hammer cues share a shape and differ where the GAME differs: an on-beat
+        //    strike is worth 2.2x, so it rings brighter and longer, and an off-beat one lands dull. The
+        //    player should be able to hear whether they are playing well with their eyes on the billet. ──
+        Cue.HammerOnBeat => Build(0.34f, buf =>
+        {
+            // Struck steel: inharmonic partials (a harmonic stack reads as a tuned bell, an anvil is not
+            // tuned), near-instant attack, and the high partials dying first exactly as they do in metal.
+            Synth.AddPartial(buf, 520f, 0.50f, halfLife: 0.055f);
+            Synth.AddPartial(buf, 1237f, 0.40f, halfLife: 0.040f);
+            Synth.AddPartial(buf, 2790f, 0.28f, halfLife: 0.022f);
+            Synth.AddPartial(buf, 4310f, 0.16f, halfLife: 0.012f);
+
+            // The impact itself — a very short broadband tick under the ring.
+            for (var i = 0; i < Synth.Samples(0.012f) && i < buf.Length; i++)
+            {
+                buf[i] += Synth.Noise(i, seed: 21) * 0.5f;
+            }
+
+            Synth.DeClick(buf);
+            Synth.Normalise(buf, 0.55f);
+        }),
+
+        Cue.HammerOffBeat => Build(0.20f, buf =>
+        {
+            // Same blow, badly timed: lower, shorter, and without the bright upper partials, so it reads
+            // as a thud rather than a ring. Deliberately quieter too — a mistimed hit should not be the
+            // loudest thing in the session.
+            Synth.AddPartial(buf, 300f, 0.50f, halfLife: 0.030f);
+            Synth.AddPartial(buf, 690f, 0.22f, halfLife: 0.018f);
+            for (var i = 0; i < Synth.Samples(0.010f) && i < buf.Length; i++)
+            {
+                buf[i] += Synth.Noise(i, seed: 22) * 0.35f;
+            }
+
+            Synth.LowPass(buf, 1400f);
+            Synth.DeClick(buf);
+            Synth.Normalise(buf, 0.38f);
+        }),
+
+        Cue.Quench => Build(0.85f, buf =>
+        {
+            // Steam: a broadband hiss that swells for a moment as the steel goes in, then falls away.
+            // Low-passed only lightly — steam IS bright, unlike the wooden cues.
+            for (var i = 0; i < buf.Length; i++)
+            {
+                var t = i / (float)Synth.SampleRate;
+                var swell = MathF.Min(1f, t * 40f);            // fast in
+                buf[i] = Synth.Noise(i, seed: 31) * swell * Synth.Decay(t, 0.22f) * 0.7f;
+            }
+
+            Synth.LowPass(buf, 5200f);
+            // A short low thunk beneath it: the steel meeting the water, not just the steam leaving it.
+            Synth.AddPartial(buf, 128f, 0.32f, halfLife: 0.070f);
+            Synth.DeClick(buf);
+            Synth.Normalise(buf, 0.5f);
+        }),
+
+        Cue.Bellows => Build(0.30f, buf =>
+        {
+            // Air through leather: a soft breathy swell with no pitch at all. Quiet, because a player
+            // pumping the bellows in rhythm will trigger this many times a second.
+            for (var i = 0; i < buf.Length; i++)
+            {
+                var t = i / (float)Synth.SampleRate;
+                var breath = MathF.Sin(MathF.PI * MathF.Min(1f, t / 0.28f)); // in and back out
+                buf[i] = Synth.Noise(i, seed: 41) * breath;
+            }
+
+            Synth.LowPass(buf, 700f);
+            Synth.DeClick(buf);
+            Synth.Normalise(buf, 0.30f);
         }),
 
         Cue.Coin => Build(0.42f, buf =>

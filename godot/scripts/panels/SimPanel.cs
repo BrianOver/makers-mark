@@ -141,6 +141,62 @@ public abstract partial class SimPanel : Control
         return minimum;
     }
 
+    /// <summary>A fitted modal card: <paramref name="Body"/> for the content, <paramref name="ActionRow"/> for
+    /// the controls that must never leave the screen.</summary>
+    protected readonly record struct ModalCard(VBoxContainer Body, Control ActionRow);
+
+    /// <summary>Inset (px) from each window edge for a fitted modal card.</summary>
+    private const float ModalMargin = 64f;
+
+    /// <summary>Height (px) reserved for a fitted modal's bottom action row.</summary>
+    private const float ModalActionRowHeight = 40f;
+
+    /// <summary>
+    /// Build a modal card that CANNOT outgrow the window, with its dismiss controls anchored to the bottom.
+    ///
+    /// <para><b>Why this exists as a helper.</b> Two modals independently shipped the same softlock — the
+    /// Scrying Mirror and the Camp slate both used a <see cref="CenterContainer"/> around a
+    /// <c>VBoxContainer</c> with a <c>CustomMinimumSize</c>, and both put their close button at the end of that
+    /// box. A CenterContainer sizes its child to the child's combined MINIMUM and centres it, and a Control can
+    /// never lay out smaller than its minimum however its parent is anchored — so as the content grew (feed
+    /// beats, camped parties) the card grew past the window and carried the close button off screen. Measured:
+    /// the Mirror's Close at y=832 and the Camp slate 1027px tall, both in a 648px window. Neither could be
+    /// dismissed, and the Camp slate <b>opens itself</b> every Camp phase.</para>
+    ///
+    /// <para>The fix is structural, not a size tweak: the card is anchored to the WINDOW (so its size is a
+    /// function of the window, not of its contents) and the action row is anchored to the card's bottom edge (so
+    /// its position is a function of that edge, not of flow). Content goes in <see cref="ModalCard.Body"/> and
+    /// overflows into its own scroller; dismiss controls go in <see cref="ModalCard.ActionRow"/> and stay put.
+    /// Flow layout cannot make that promise while any descendant can claim height.</para>
+    /// </summary>
+    protected ModalCard BuildFittedModalCard(string cardName)
+    {
+        var panel = new PanelContainer { Name = cardName };
+        panel.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        panel.OffsetLeft = ModalMargin;
+        panel.OffsetTop = ModalMargin;
+        panel.OffsetRight = -ModalMargin;
+        panel.OffsetBottom = -ModalMargin;
+        AddChild(panel);
+
+        // A plain Control host, so the parts below are positioned by ANCHORS rather than by flow.
+        var host = new Control { Name = $"{cardName}Host" };
+        host.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        panel.AddChild(host);
+
+        var body = new VBoxContainer { Name = $"{cardName}Body" };
+        body.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        body.OffsetBottom = -ModalActionRowHeight;
+        host.AddChild(body);
+
+        var actionRow = new HBoxContainer { Name = $"{cardName}Actions" };
+        actionRow.SetAnchorsAndOffsetsPreset(LayoutPreset.BottomWide);
+        actionRow.OffsetTop = -ModalActionRowHeight;
+        host.AddChild(actionRow);
+
+        return new ModalCard(body, actionRow);
+    }
+
     protected static HBoxContainer AddRow(Node parent)
     {
         var row = new HBoxContainer();

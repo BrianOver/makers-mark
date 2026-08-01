@@ -43,3 +43,7 @@ tools/FlavorForge/config.json
 
 # Local time-tracking plugin data
 .timelog/
+
+# Manual playtest screenshots dropped next to the playable worktree — scratch, never source.
+# Untracked they show as dirty forever in Game/play, which makes a real change hard to spot.
+playTest_Images/

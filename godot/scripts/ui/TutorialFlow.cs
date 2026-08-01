@@ -158,9 +158,18 @@ public sealed partial class TutorialFlow : PanelContainer
         }
     }
 
-    /// <summary>The text that should override the HUD's top slot, or null when the live advisor
-    /// should show through unmodified (<see cref="Active"/> is false).</summary>
-    public string? TopSlotText(GameState state) => Active ? StepText(state) : null;
+    /// <summary>
+    /// The text that should override the HUD's top slot, or null when the live advisor should show through
+    /// unmodified (<see cref="Active"/> is false).
+    /// </summary>
+    /// <param name="openPanelId">
+    /// The drawer panel the player currently has open (<c>DrawerHost.CurrentPanelId</c>), or null when the
+    /// drawer is closed. Supplied by the caller rather than looked up here so this class keeps knowing
+    /// nothing about the UI tree; it is used only to stop the copy telling the player to walk somewhere they
+    /// are already standing.
+    /// </param>
+    public string? TopSlotText(GameState state, string? openPanelId = null) =>
+        Active ? StepText(state, openPanelId) : null;
 
     /// <summary>Playtest F6: the first-day chain used to name the ACTION ("Buy 2 copper") but
     /// never WHERE to go or HOW to get there, and during a phase that forbids the step's own
@@ -173,7 +182,7 @@ public sealed partial class TutorialFlow : PanelContainer
     /// variant (<see cref="WaitText"/>) instead of the raw actionable copy — restored automatically
     /// the next tick the phase allows it again, since this is a pure per-tick projection, never
     /// stored state.</summary>
-    private string StepText(GameState state)
+    private string StepText(GameState state, string? openPanelId)
     {
         var index = StepIndex(Step);
         if (!StepActionAvailable(Step, state.Phase))
@@ -183,19 +192,20 @@ public sealed partial class TutorialFlow : PanelContainer
 
         var suggestions = ObjectiveAdvisor.Suggest(state);
         var building = StepBuilding[Step];
+        var alreadyThere = openPanelId is not null && openPanelId == PanelIdFor(building);
         return Step switch
         {
             TutorialStep.BuyMaterial or TutorialStep.Craft =>
-                $"Tutorial {index}/5: {GoTo(building, includeMovementHint: Step == TutorialStep.BuyMaterial)} — " +
+                $"Tutorial {index}/5: {GoTo(building, includeMovementHint: Step == TutorialStep.BuyMaterial, alreadyThere)} — " +
                 (suggestions.Count > 0
                     ? suggestions[0].Reason
                     : "Buy material at the vendor, then craft at the anvil."),
             TutorialStep.Shelve =>
-                $"Tutorial {index}/5: {GoTo(building, includeMovementHint: false)} — " +
+                $"Tutorial {index}/5: {GoTo(building, includeMovementHint: false, alreadyThere)} — " +
                 (suggestions.FirstOrDefault(s => s.Action is StockAction)?.Reason
                     ?? "Shelve your finished item so heroes can buy it."),
             TutorialStep.PostBounty =>
-                $"Tutorial {index}/5: {GoTo(building, includeMovementHint: false)} — post a bounty at the mine gate; heroes may accept it before they depart.",
+                $"Tutorial {index}/5: {GoTo(building, includeMovementHint: false, alreadyThere)} — post a bounty at the mine gate; heroes may accept it before they depart.",
             TutorialStep.WatchDeparture =>
                 $"Tutorial {index}/5: Watch the party depart through the **{building}** — the chain completes when they head out.",
             _ => string.Empty,
@@ -217,9 +227,45 @@ public sealed partial class TutorialFlow : PanelContainer
 
     private const string MovementHint = "walk there with WASD, or click the ground to move";
 
-    private static string GoTo(string building, bool includeMovementHint) => includeMovementHint
-        ? $"Walk to the **{building}** ({MovementHint}) and click it"
-        : $"Walk to the **{building}** and click it";
+    /// <summary>
+    /// The "get to the right place" half of a step's instruction — or an acknowledgement that the player is
+    /// already there.
+    ///
+    /// <para><b>Why the acknowledgement matters.</b> Brian's playtest: "The tutorial isn't updating despite
+    /// entering the forge". The step machine was working correctly — step 1 needs the PURCHASE, not the
+    /// arrival — but the instruction reads "Walk to the Forge and click it — Buy 2 copper", so a player who
+    /// does the first clause and sees the text sit unchanged has every reason to conclude the tutorial is
+    /// stuck. Telling someone to do something they have just done is the bug.</para>
+    ///
+    /// <para>Once the step's own surface is open the copy names only what is LEFT, and the movement hint
+    /// drops away with it: repeating how to walk to a room you are standing in is noise.</para>
+    /// </summary>
+    private static string GoTo(string building, bool includeMovementHint, bool alreadyThere)
+    {
+        if (alreadyThere)
+        {
+            return $"You're at the **{building}**";
+        }
+
+        return includeMovementHint
+            ? $"Walk to the **{building}** ({MovementHint}) and click it"
+            : $"Walk to the **{building}** and click it";
+    }
+
+    /// <summary>
+    /// Maps a step's building name onto the drawer panel id that surface actually opens as, so
+    /// <see cref="StepText"/> can tell whether the player is already looking at it.
+    ///
+    /// <para>Needed because the two vocabularies disagree: the tutorial copy says "Gate" (the world's
+    /// click-key, per <see cref="StepBuilding"/>) while the drawer registers that surface as "Bounties".
+    /// Mapping explicitly rather than renaming either one — <see cref="StepBuilding"/>'s keys are the same
+    /// ones <c>Building2D</c>'s click events route on.</para>
+    /// </summary>
+    private static string PanelIdFor(string building) => building switch
+    {
+        "Gate" => "Bounties",
+        _ => building,
+    };
 
     /// <summary>Whether <paramref name="step"/>'s own action is legal THIS phase — mirrors
     /// <c>ActionLegality.IsLegal</c>'s exact phase gates for <c>BuyMaterialAction</c> (Morning

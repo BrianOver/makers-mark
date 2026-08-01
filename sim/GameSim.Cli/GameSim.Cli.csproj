@@ -8,4 +8,13 @@
   <ItemGroup>
     <ProjectReference Include="..\GameSim\GameSim.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- ConsequenceProbe's state fingerprint is the one thing that tool's output depends on, and the
+         way it fails is silent: a blind spot makes a working verb look dead. Testing it needs the
+         fingerprint itself, not a summary percentage, so the test project sees internals rather than
+         the seam being widened to public API. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>GameSim.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 </Project>

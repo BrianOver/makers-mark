@@ -434,7 +434,7 @@ public partial class MainUi : Control
         else
         {
             _toast.Text = string.Join("  ",
-                Adapter.LastRejections.Select(r => FriendlyRejection(r.Reason)).Distinct());
+                Adapter.LastRejections.Select(r => FriendlyRejection(r.Reason, r.Action)).Distinct());
             _toastBanner.Visible = true; // U7: transient banner, hidden except while a toast is live
             ToastRemaining = RejectionToastSeconds;
         }
@@ -536,12 +536,30 @@ public partial class MainUi : Control
     /// the day-timeline — refreshed together on every phase tick (never per frame; see
     /// <see cref="ObjectiveTracker.Refresh"/>/<see cref="DayTimeline.Refresh"/> remarks).
     /// </summary>
+    /// <summary>
+    /// Re-render just the objective/tutorial card — the ONLY thing that depends on which drawer is open.
+    ///
+    /// <para>Split out of <see cref="RefreshHud"/> because opening a panel must update the tutorial's copy
+    /// (it stops telling you to walk to the room you are standing in) and must NOT do a full HUD refresh.
+    /// Calling <c>RefreshHud</c> from <c>OpenPanel</c> made <c>Playtest3dClickThrough</c> — which opens every
+    /// panel in every phase across a whole session — run from 27 seconds to past the test runner's timeout,
+    /// taking ~200 other tests down with it. Cheap, targeted, and the same reason
+    /// <see cref="UpdateObjectiveDock"/> is its own method.</para>
+    /// </summary>
+    private void RefreshObjectiveLine()
+    {
+        var state = Adapter.CurrentState;
+        // The open drawer is passed in so the tutorial can stop telling the player to walk to a room they
+        // are already standing in — see TutorialFlow.GoTo.
+        Objective.Refresh(state, Tutorial.TopSlotText(state, Drawer.CurrentPanelId)); // U23: tutorial overrides the top slot only
+        UpdateObjectiveDock(); // Refresh can change the reason line's line count — re-dock to it
+    }
+
     private void RefreshHud()
     {
         RefreshStatus();
         var state = Adapter.CurrentState;
-        Objective.Refresh(state, Tutorial.TopSlotText(state)); // U23: tutorial overrides the top slot only
-        UpdateObjectiveDock(); // Refresh can change the reason line's line count — re-dock to it
+        RefreshObjectiveLine();
         Tutorial.RefreshAffordances(state);
         Timeline.Refresh(state.Phase, Waiting);
         UpdateClockLabel(); // U3/U4: bell verb + player-phase banner are state-driven — refresh on every tick, not only per-frame _Process
@@ -951,7 +969,14 @@ public partial class MainUi : Control
     /// goes to the dev log in <see cref="OnPhaseCompleted"/>). Ordered most-specific
     /// first; unknown reasons fall through to a generic friendly line.
     /// </summary>
-    private static string FriendlyRejection(string reason)
+    /// <remarks>
+    /// Public rather than private so <c>RejectionUxTests</c> can pin the mapping directly (same reason
+    /// <see cref="RejectionToastSeconds"/> is). That is a seam, and it is the right one here: this is a pure
+    /// string-to-string function, so calling it IS the unit — unlike the input-layer seams that hid real
+    /// bugs. End-to-end toast rendering stays covered by
+    /// <c>ForcedRejection_RendersPlayerPhrasedToast_ThenClears</c>, which drives real actions.
+    /// </remarks>
+    public static string FriendlyRejection(string reason, PlayerAction? action = null)
     {
         if (reason.StartsWith("Not enough gold", StringComparison.Ordinal)
             || reason.StartsWith("Can't pay the", StringComparison.Ordinal))
@@ -985,7 +1010,81 @@ public partial class MainUi : Control
             return "Sold consumables don't come back.";
         }
 
-        return "That didn't work out.";
+        // ── Camp / runner refusals. These were all falling through to the shrug below. ──
+        if (reason.StartsWith("One runner per party per day", StringComparison.Ordinal))
+        {
+            return "You've already sent this party a runner today.";
+        }
+
+        if (reason.Contains("recall bell has already rung", StringComparison.Ordinal))
+        {
+            return "You already rang the bell for this party.";
+        }
+
+        if (reason.Contains("recall bell has rung", StringComparison.Ordinal)
+            || reason.Contains("the runner can't reach them", StringComparison.Ordinal))
+        {
+            return "They're already on their way up — a runner can't catch them.";
+        }
+
+        if (reason.StartsWith("No party is camped with", StringComparison.Ordinal))
+        {
+            return "That hero isn't camped below.";
+        }
+
+        if (reason.Contains("is already in a hero's pack", StringComparison.Ordinal))
+        {
+            return "A hero is already carrying that.";
+        }
+
+        if (reason.Contains("is shelved", StringComparison.Ordinal))
+        {
+            return "Take it off the shelf first.";
+        }
+
+        if (reason.Contains("isn't your craft to send", StringComparison.Ordinal))
+        {
+            return "You can only send something you made.";
+        }
+
+        return LastResort(action);
+    }
+
+    /// <summary>
+    /// The line shown when no specific mapping matched — named after the ACTION, never a shrug.
+    ///
+    /// <para>Brian's playtest: 'I hit sent them off and it just said "it didn't work out"'. That was this
+    /// fallback, and it is the worst possible thing to tell someone whose action was refused: it confirms
+    /// failure and withholds every clue about what to change. A rejection toast is the ONLY feedback the sim
+    /// gives when it says no, so a catch-all has to at least name what was refused.</para>
+    ///
+    /// <para>Keyed on the action type rather than the reason string, deliberately: an unmapped reason is by
+    /// definition one nobody anticipated, but the action is always known. The raw kernel reason still never
+    /// renders — it goes to the dev log in <see cref="OnPhaseCompleted"/> — so this stays presentation-only.</para>
+    /// </summary>
+    private static string LastResort(PlayerAction? action) => action switch
+    {
+        CraftAction => "The forge turned that craft down — check your materials.",
+        BuyMaterialAction or BuyOreAction or BuyForgeSupplyAction => "That purchase didn't go through.",
+        StockAction or UnstockAction => "That didn't make it onto the shelf.",
+        SetPriceAction => "That price wouldn't stick.",
+        PostBountyAction => "That bounty wasn't posted.",
+        SendSupplyAction => "The runner didn't set out.",
+        RecallPartyAction => "The recall bell didn't reach them.",
+        null => "That didn't work out.",
+        _ => $"The {Humanize(action.GetType().Name)} didn't go through.",
+    };
+
+    /// <summary>"AcceptCommissionAction" -> "accept commission", so the catch-all above can name an action it
+    /// has no hand-written line for without printing a type name at the player.</summary>
+    private static string Humanize(string actionTypeName)
+    {
+        var trimmed = actionTypeName.EndsWith("Action", StringComparison.Ordinal)
+            ? actionTypeName[..^"Action".Length]
+            : actionTypeName;
+
+        var words = System.Text.RegularExpressions.Regex.Replace(trimmed, "(?<!^)([A-Z])", " $1");
+        return words.ToLowerInvariant();
     }
 
     private void UpdateClockLabel()
@@ -1637,6 +1736,16 @@ public partial class MainUi : Control
             Audio.SetScene(id == "Depths" ? "depths" : null);
         }
 
+        // The tutorial's copy depends on WHICH surface is open (it stops telling you to walk somewhere you
+        // are already standing), so opening or closing the drawer has to re-render that card as well as the
+        // panel. Without this the acknowledgement only appeared on the next state change — the same
+        // stale-instruction bug it exists to fix, just deferred.
+        //
+        // The CARD only, never the whole HUD: a full RefreshHud here took Playtest3dClickThrough (which opens
+        // every panel in every phase across a session) from 27 seconds to past the runner's timeout, which
+        // silently took ~200 unrelated tests down with it.
+        RefreshObjectiveLine();
+
         TabFade.Trigger();
         UpdateEngaged();
     }
@@ -2053,9 +2162,39 @@ public partial class MainUi : Control
     /// staged interior (<see cref="InteriorStage.IsOpen"/>), or modal overlay (Ledger/Camp/Mirror)
     /// engages the latch so an expired phase timer holds at the boundary instead of ticking.
     /// </summary>
+    /// <summary>
+    /// Parks the objective/tutorial dock against the left window edge instead of the right.
+    ///
+    /// <para>Only used to keep the tutorial card readable while a drawer owns the right-hand ~600px (see
+    /// <see cref="UpdateEngaged"/>). Anchors are flipped rather than the card being resized, so its own
+    /// content-height docking (<see cref="UpdateObjectiveDock"/>) keeps working untouched — that method owns
+    /// the vertical, this one owns the horizontal, and they do not need to know about each other.</para>
+    /// </summary>
+    private void DockObjectiveHorizontally(bool toLeftEdge)
+    {
+        if (toLeftEdge)
+        {
+            Objective.AnchorLeft = 0f;
+            Objective.AnchorRight = 0f;
+            Objective.OffsetLeft = ObjectiveDockMargin;
+            Objective.OffsetRight = ObjectiveDockMargin + ObjectiveDockWidth;
+            return;
+        }
+
+        Objective.AnchorLeft = 1f;
+        Objective.AnchorRight = 1f;
+        Objective.OffsetLeft = -ObjectiveDockWidth - ObjectiveDockMargin;
+        Objective.OffsetRight = -ObjectiveDockMargin;
+    }
+
     private void UpdateEngaged()
     {
-        var engaged = Drawer.IsOpen || Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible || Forecast.Visible || Bestiary.Visible || Commissions.Visible || Legends.Visible;
+        // Split out from `engaged` because the two cases leave the screen in different shapes: the side
+        // drawer occupies a fixed right-hand column, while an interior or a modal covers the middle of the
+        // window with no reliable free strip. Only the first one leaves anywhere to put the tutorial card.
+        var modalOwnsTheScreen = Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible
+            || Forecast.Visible || Bestiary.Visible || Commissions.Visible || Legends.Visible;
+        var engaged = Drawer.IsOpen || modalOwnsTheScreen;
 
         // U8: Clock.Engaged can ALSO be held by the day-1 craft→shelve pacing guard above —
         // deliberately NOT folded into `engaged` itself, which also drives the objective chip's
@@ -2068,7 +2207,31 @@ public partial class MainUi : Control
         // drawer's "Buy copper" row, and overlapped the Evening Ledger). Reusing this exact
         // "engaged" predicate — already the codebase's one definition of "a drawer/interior/modal
         // owns the screen" — hides the chip for every one of those cases with no new wiring.
-        Objective.Visible = !engaged;
+        //
+        // EXCEPT while the tutorial is running, when hiding it is the bug rather than the fix.
+        // Brian's playtest: "The tutorial isn't updating despite entering the forge" — he opened the
+        // Forge and the instruction card VANISHED, because this line hid it. An instruction you
+        // cannot read while carrying it out is worse than no instruction: the player is left
+        // guessing whether they already did the thing.
+        //
+        // Moved rather than left overlapping, which is what the original fix was right about: the
+        // drawer owns the right ~600px, so the card docks to the LEFT edge instead of hiding. The
+        // ordinary advisor chip still hides — it is background noise over a modal, and only the
+        // tutorial's copy is load-bearing at that moment.
+        //
+        // DRAWER ONLY. A first pass keyed this on `engaged` and broke
+        // HudBoundsTests.LedgerOpen_ObjectiveChip_NeverCoversLedger: an interior or a modal covers the middle
+        // of the window, so there is no free column to move to and "keep it readable" just puts it back on
+        // top of the thing the player is reading. Those surfaces carry their own copy anyway.
+        var keepTutorialReadable = Tutorial.Active && Drawer.IsOpen && !modalOwnsTheScreen;
+        Objective.Visible = !engaged || keepTutorialReadable;
+        DockObjectiveHorizontally(toLeftEdge: keepTutorialReadable);
+
+        // Same predicate for the journey dock. It was governed by PHASE alone, so during
+        // Expedition/Camp/Deep it slid in over whatever the player had opened — a rendered playtest caught it
+        // sitting on top of the Depths panel and obscuring the Gloomwood card. Redundant as well as
+        // overlapping: the Depths panel is showing that same party in more detail.
+        Pip.Suppressed = engaged;
 
         // T8: a drawer/interior/modal owns input while engaged — the 3D world's own click-to-
         // move/interact must not fight it for the same clicks underneath.

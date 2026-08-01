@@ -87,6 +87,24 @@ public sealed class ForgePlayer
 
         /// <summary>Someone who has learned the rhythm.</summary>
         public static Skill Veteran => new("veteran", 820, 480, 1, 90);
+
+        /// <summary>
+        /// Tempo-isolating pair: identical to <see cref="TempoLoose"/> in EVERY field except
+        /// <c>OffBeatPermille</c>.
+        /// <para>
+        /// "Does hitting the beat pay?" cannot be answered by comparing <see cref="Beginner"/> against
+        /// <see cref="Veteran"/>, which is what this suite tried first. Those two differ in four fields at
+        /// once — heat target, strike floor, reaction lag AND tempo — and they finish in different amounts
+        /// of simulated time, so a grade gap between them is not attributable to rhythm. Worse, the gap was
+        /// smaller than the run-to-run spread: CI measured beginner 426 permille (488, 387, 415, 412, 426)
+        /// against veteran 417 (374, 398, 432, 447, 434) and the assertion failed on what is plainly noise.
+        /// Holding everything else fixed makes the tempo bonus the only thing that can move the grade.
+        /// </para>
+        /// </summary>
+        public static Skill TempoTight => new("tempo-tight", 820, 480, 1, 40);
+
+        /// <summary>The loose half of the pair — see <see cref="TempoTight"/>.</summary>
+        public static Skill TempoLoose => new("tempo-loose", 820, 480, 1, 520);
     }
 
     /// <summary>What one run looked like. A trace, not a verdict — the assertions live in the test.</summary>

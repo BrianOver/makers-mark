@@ -199,14 +199,32 @@ public partial class ScryingMirror : SimPanel
         dim.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(dim);
 
-        var center = new CenterContainer();
-        center.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(center);
-
-        var panel = Card("MirrorPanel");
-        center.AddChild(panel);
-        var box = new VBoxContainer { CustomMinimumSize = new Vector2(720, 460) };
-        panel.AddChild(box);
+        // ANCHORED with margins, not centred.
+        //
+        // This was a CenterContainer holding a card whose VBox declared CustomMinimumSize (720, 460). A
+        // CenterContainer sizes its child to the child's combined MINIMUM and centres that, so as the feed
+        // grew the card grew with it — past the window, in both directions from the centre. The whole-game
+        // sweep caught the consequence: "MirrorClose" laid out at y=832 in a 648px window, i.e. 184px below
+        // the bottom edge, with Escape not closing the Mirror either. **Opening the Scrying Mirror was an
+        // unrecoverable softlock** — no reachable close control at all.
+        //
+        // Anchoring to the window with a fixed margin makes the card's size a function of the WINDOW rather
+        // than of its contents, so the close button cannot leave the screen however long the feed gets. The
+        // feed's own ScrollContainer below already absorbs the overflow — that is what it was for.
+        // A FITTED card — see SimPanel.BuildFittedModalCard, which exists because this panel and CampPanel
+        // shipped the identical softlock.
+        //
+        // This was a CenterContainer around a VBox with CustomMinimumSize (720, 460). A CenterContainer sizes
+        // its child to the child's combined MINIMUM and centres it, and the feed's autowrap labels report a
+        // tall minimum (their height depends on a width not yet known when the minimum is computed) — so the
+        // card grew with the feed and carried "Close" off the bottom of the window. Measured at y=832 in a
+        // 648px window, and Escape does not close the Mirror either, so there was no way out at all.
+        //
+        // Anchoring the card alone did NOT fix it (Close moved to y=1163 — further off screen), because a
+        // Control still cannot lay out smaller than its minimum. Only anchoring the close control itself makes
+        // its position a function of the card's edge instead of of flow.
+        var card = BuildFittedModalCard("MirrorPanel");
+        var box = card.Body;
 
         AddHeader(box, "THE SCRYING MIRROR");
 
@@ -225,7 +243,9 @@ public partial class ScryingMirror : SimPanel
         _feedBody = new VBoxContainer { Name = "MirrorFeedBody", SizeFlagsHorizontal = SizeFlags.ExpandFill };
         scroll.AddChild(_feedBody);
 
-        AddButton(box, "MirrorClose", "Close", CloseMirror);
+        // In the ANCHORED action row: the one control the whole surface's escapability depends on.
+        AddButton(card.ActionRow, "MirrorClose", "Close", CloseMirror)
+            .SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
         // U5: added LAST (after the panel body) so it draws over the feed, self-contained
         // (PKD8-style single overlay), hidden until a ★ attribution line opens it.

@@ -52,6 +52,56 @@ public class AudioTests
 
     private static float Peak(float[] s) => s.Length == 0 ? 0f : s.Max(MathF.Abs);
 
+    /// <summary>
+    /// A well-timed hammer blow must SOUND better than a mistimed one.
+    ///
+    /// <para>The forge's tempo bonus is worth 2.2x and is the only skill the minigame teaches — and it had no
+    /// audible signal at all: <c>ForgePanel</c> played one local sine for every strike regardless of timing, so
+    /// a player had to watch the gauge to learn rhythm instead of hearing it. Brian could not get the forge to
+    /// work and was judging it with that feedback missing.</para>
+    ///
+    /// <para>Asserted on measured brightness and length rather than "the buffers differ" — two cues can differ
+    /// byte-for-byte and still be indistinguishable to an ear, which is exactly the kind of check that passes
+    /// while the game feels dead. <c>EveryCue_SoundsDifferentFromEveryOther</c> already owns mere difference.</para>
+    /// </summary>
+    [TestCase]
+    public void AnOnBeatHammerBlow_SoundsBrighterAndLonger_ThanAMistimedOne()
+    {
+        var onBeat = Pcm(SfxLibrary.Get(Cue.HammerOnBeat));
+        var offBeat = Pcm(SfxLibrary.Get(Cue.HammerOffBeat));
+
+        // Share of energy ABOVE the low band. A ringing anvil keeps its upper partials; a dull mistimed thud
+        // does not. Reuses the same pole count the bass test justifies — one pole is far too gentle to
+        // separate bands and would report a confident wrong number.
+        float HighShare(float[] pcm)
+        {
+            var low = (float[])pcm.Clone();
+            for (var pole = 0; pole < BassFilterPoles; pole++)
+            {
+                Synth.LowPass(low, 900f);
+            }
+
+            var full = Rms(pcm);
+            return full <= 0f ? 0f : 1f - (Rms(low) / full);
+        }
+
+        var brightOn = HighShare(onBeat);
+        var brightOff = HighShare(offBeat);
+
+        AssertThat(brightOn > brightOff)
+            .OverrideFailureMessage(
+                $"An on-beat strike is {brightOn:P0} high-band energy and a mistimed one {brightOff:P0}. The " +
+                "good hit has to ring brighter, or the player cannot hear the difference between playing well " +
+                "and playing badly.")
+            .IsTrue();
+
+        AssertThat(onBeat.Length > offBeat.Length)
+            .OverrideFailureMessage(
+                $"An on-beat strike lasts {onBeat.Length} samples and a mistimed one {offBeat.Length}. The good " +
+                "hit should ring on; the bad one should die.")
+            .IsTrue();
+    }
+
     [TestCase]
     public void EveryCue_IsActuallyAudible_NotSilence()
     {

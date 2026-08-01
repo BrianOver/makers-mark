@@ -448,7 +448,13 @@ public partial class ForgePanel : SimPanel
     /// <see cref="ForgeMinigame.Struck"/>'s own doc) — never a second opinion.</summary>
     private void OnMinigameStruck(bool onBeat)
     {
-        _hammerSfx?.Play();
+        // The strike now SOUNDS different on-beat, through the shared SfxLibrary rather than this panel's
+        // local one-tone _hammerSfx. The tempo bonus is worth 2.2x and is the skill this minigame teaches;
+        // playing the same sine for a good hit and a bad one meant the player had to read the gauge to
+        // learn rhythm instead of hearing it. Null-tolerant like every other cue site: no director, no sound.
+        GodotClient.Audio.AudioDirector.For(this)?.Play(
+            onBeat ? GodotClient.Audio.Cue.HammerOnBeat : GodotClient.Audio.Cue.HammerOffBeat);
+
         if (onBeat)
         {
             ResolveTown()?.ForgeSparkBurst();
@@ -457,7 +463,13 @@ public partial class ForgePanel : SimPanel
 
     /// <summary>G1: the quench-lock world VFX (steam plume) — fired the instant the player plunges
     /// the stock, mirroring <see cref="ForgeMinigame.Quenched"/>'s own "before Lock scores it" timing.</summary>
-    private void OnMinigameQuenched() => ResolveTown()?.ForgeSteamPlume();
+    private void OnMinigameQuenched()
+    {
+        // The finale had a steam plume and no sound whatsoever — the single most satisfying moment in the
+        // craft was silent.
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Quench);
+        ResolveTown()?.ForgeSteamPlume();
+    }
 
     /// <summary>
     /// G1 result ceremony (game-feel plan §"Result ceremony"): grade stamp + quality-star row +

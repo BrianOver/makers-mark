@@ -86,11 +86,32 @@ public class ForgeWinnabilityTests
         // the log is that a balance change shows up as a visible shift rather than a silent one.
         GD.Print($"[forge-telemetry]\n{report}");
 
-        AssertThat(veteranGrade > beginnerGrade)
+        // Whether hitting the beat PAYS is asked with one variable moving, not four.
+        //
+        // This used to assert veteranGrade > beginnerGrade. Those two profiles differ in heat target,
+        // strike floor, reaction lag AND tempo, and they run for different lengths of simulated time, so a
+        // grade gap between them was never attributable to rhythm. The gap was also smaller than the
+        // run-to-run spread, so the assertion was a coin flip dressed as a claim — and CI called it, with
+        // beginner 426 permille against veteran 417 on a per-run spread of roughly +-60. The numbers above
+        // are still printed, because the beginner-vs-veteran shape is useful telemetry; it just cannot
+        // carry this claim.
+        var tight = await PlayEach(ForgePlayer.Skill.TempoTight);
+        var loose = await PlayEach(ForgePlayer.Skill.TempoLoose);
+        var tightGrade = MeanGrade(tight);
+        var looseGrade = MeanGrade(loose);
+
+        var tempoReport =
+            $"on-tempo:  mean grade {tightGrade:0} permille " +
+            $"({string.Join(", ", tight.Select(r => r.Run.GradePermille?.ToString() ?? "DNF"))})\n" +
+            $"off-tempo: mean grade {looseGrade:0} permille " +
+            $"({string.Join(", ", loose.Select(r => r.Run.GradePermille?.ToString() ?? "DNF"))})";
+        GD.Print($"[forge-tempo]\n{tempoReport}");
+
+        AssertThat(tightGrade > looseGrade)
             .OverrideFailureMessage(
-                "Playing well scores no better than playing adequately, so the tempo bonus is not " +
-                $"reaching the outcome:\n{report}\n\nStrikeOnTempoBonusMultiplier is " +
-                $"{ForgeMinigame.StrikeOnTempoBonusMultiplier}x inside a " +
+                "Striking ON the beat scores no better than striking off it, with every other input held " +
+                $"identical, so the tempo bonus is not reaching the outcome:\n{tempoReport}\n\n" +
+                $"StrikeOnTempoBonusMultiplier is {ForgeMinigame.StrikeOnTempoBonusMultiplier}x inside a " +
                 $"{ForgeMinigame.TempoOnBeatWindowPermille}-permille window; if that never shows up in the " +
                 "grade, the skill the game asks the player to learn does not pay.")
             .IsTrue();
