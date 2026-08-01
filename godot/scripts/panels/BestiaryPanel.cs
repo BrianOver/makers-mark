@@ -193,16 +193,12 @@ public partial class BestiaryPanel : Control
 
     /// <summary>Maps a venue's sim <see cref="VenueDefinition.Id"/> to the art-manifest prefix
     /// <see cref="AssetCatalog.MonsterPortrait"/> expects. The Mine's monsters use the prefix-less
-    /// default ("monster-"); most other venues' art ids match their own sim Id — except Sunken
-    /// Crypt, whose committed ids drop the sim Id's hyphen ("sunken-crypt" sim-side, "sunkencrypt"
-    /// art-side; see <c>AssetCatalogTests</c>/<c>ArtWiringCoverageTests</c>). Presentation-only glue
-    /// — never renames anything on the <c>GameSim.Venues</c> side (KTD-C).</summary>
-    private static string? VenueArtPrefix(string venueId) => venueId switch
-    {
-        VenueRegistry.MineId => null,
-        "sunken-crypt" => "sunkencrypt",
-        _ => venueId,
-    };
+    /// default ("monster-"); every other venue delegates to <see cref="AssetCatalog.VenueArtId"/>
+    /// (the one home of the "sunken-crypt" → "sunkencrypt" hyphen drop — this used to be a private
+    /// second copy here, which is how DepthsPanel's backdrop lookup missed the mapping entirely).
+    /// Presentation-only glue — never renames anything on the <c>GameSim.Venues</c> side (KTD-C).</summary>
+    private static string? VenueArtPrefix(string venueId) =>
+        venueId == VenueRegistry.MineId ? null : AssetCatalog.VenueArtId(venueId);
 
     /// <summary>Deterministic phase offset (radians) from a monster kind string, same purpose as
     /// <c>SpriteMotion</c>'s id-derived idle-breath phase offset: a plain sum-of-chars hash (NOT

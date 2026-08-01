@@ -115,12 +115,13 @@ public class RejectionUxTests
         var ui = MountMainUi(ScriptedSession.StartAdapter());
         try
         {
-            // U-C4: day-1 returns carry no ore now — early parties spread to Gloomwood, whose ore
-            // lands on day 2 and only opens for trade the next day. So the FIRST offering day's
-            // reveal is day 2's, which auto-opens during day-3 Morning: a queued buy would land in
-            // Morning and be rejected — every Buy on that fresh reveal renders Disabled.
-            AdvanceDay(ui); // → day 2 Morning
-            AdvanceDay(ui); // → day 3 Morning (day-2 Evening completed: its ledger is what auto-reveals)
+            // Banded-router re-baseline (2026-08-01): weak day-1 parties raid the Mine/Sunken
+            // Crypt again, so the FIRST offering day's reveal is day 1's (copper), which
+            // auto-opens during day-2 Morning: a queued buy would land in Morning and be
+            // rejected — every Buy on that fresh reveal renders Disabled. (The U-C4-era script
+            // waited for Gloomwood's day-2 greenheart; day-1 offers also EXPIRE after day-2
+            // Evening, so this scenario cannot run a day late.)
+            AdvanceDay(ui); // → day 2 Morning (day-1 Evening completed: its ledger is what auto-reveals)
             ui._Process(MainUi.ReturnRitualDelaySeconds + 0.1);
             AssertThat(ui.Ledger.Visible).IsTrue();
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
@@ -135,7 +136,7 @@ public class RejectionUxTests
                     .IsTrue();
             }
 
-            // Reopened AT day-3 Evening (pre-tick) — those day-2 offers are open and the buys land
+            // Reopened AT day-2 Evening (pre-tick) — those day-1 offers are open and the buys land
             // in Evening → legal.
             Press(ui.Ledger, "CloseLedger");
             AdvanceToPhase(ui, DayPhase.Evening);

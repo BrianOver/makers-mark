@@ -68,8 +68,13 @@ public class VenueHubTests
     [TestCase]
     public void VenueBackdropArt_Present_RendersRealArt_NotFallback()
     {
-        // "mine-backdrop" is committed as of art wave 2 (art/specs/mine/MineSpecs.cs) — the
-        // KTD3 fallback path this test used to exercise no longer applies to the Mine tile;
+        // Mine, Gloomwood, and Sunken Crypt backdrops are all committed (mine-backdrop /
+        // gloomwood-backdrop / sunkencrypt-backdrop — the Crypt's resolves through
+        // AssetCatalog.VenueArtId's hyphen drop, which this test caught missing when the T1 flip
+        // put the Crypt tile on screen over a silent fallback). Emberfall is the ONE live venue
+        // with NO committed backdrop yet — its tile's glyph fallback is pinned EXACTLY (count and
+        // location) so the owed Emberfall art wave flips this assertion consciously instead of a
+        // placeholder creeping in unnoticed anywhere else on the hub.
         // UiRenderSmokeTests.ArtAbsentWorld_ForcesArtRectFallback_OnShop still proves the
         // fallback contract itself via a genuinely-unregistered recipe id.
         var ui = MountMainUi();
@@ -77,8 +82,14 @@ public class VenueHubTests
         {
             var realArt = ui.Depths.FindChildren("ArtRect", "TextureRect", recursive: true, owned: false);
             AssertThat(realArt.Count > 0).IsTrue();
+
             var placeholders = ui.Depths.FindChildren("ArtRectFallback", "PanelContainer", recursive: true, owned: false);
-            AssertThat(placeholders.Count == 0).IsTrue();
+            AssertThat(placeholders.Count == 1).IsTrue(); // Emberfall's tile, and ONLY Emberfall's
+
+            var emberTile = Find<Control>(ui.Depths, "VenueTile_emberfall"); // throws if missing
+            AssertThat(emberTile.FindChildren("ArtRectFallback", "PanelContainer", recursive: true, owned: false).Count)
+                .IsEqual(1);
+
             AssertThat(RenderedText(ui.Depths)).Contains("The Mine");
         }
         finally

@@ -266,16 +266,17 @@ public class MainUiTests
             ui.OpenPanel("Shop"); // U21: RefreshAll is visibility-gated — open it so the freshly
                                   // crafted item's shelf row (SpinBox/Stock button) actually exists
 
-            // Day 4 Morning: shelve the dagger at 9999g through the shop panel's controls.
+            // Day 3 Morning: shelve the dagger at 9999g through the shop panel's controls (one
+            // day earlier than the U-C4-era script — see DriveToCraftedDagger's re-baseline note).
             var itemId = ScriptedSession.CraftedItem(ui.Adapter.CurrentState);
             Find<SpinBox>(ui.Shop, $"StockPrice_{itemId.Value}").Value = ScriptedSession.UnaffordablePrice;
             Press(ui.Shop, $"Stock_{itemId.Value}");
-            ui.Adapter.AdvancePhase(); // day 4 Morning: stock applies, then heroes shop and pass
+            ui.Adapter.AdvancePhase(); // day 3 Morning: stock applies, then heroes shop and pass
 
             var state = ui.Adapter.CurrentState;
             var passes = state.EventLog
                 .OfType<HeroPassedOnItem>()
-                .Where(pass => pass.Day == 4 && pass.Item == itemId)
+                .Where(pass => pass.Day == 3 && pass.Item == itemId)
                 .ToList();
             AssertThat(passes.Count > 0).IsTrue();
 
@@ -984,24 +985,26 @@ public class MainUiTests
     /// <summary>
     /// Drives the shared script through the real controls to a crafted-but-unshelved dagger.
     /// Must be mounted via <see cref="ScriptedSession.StartAdapter"/> so the dagger draws the
-    /// blacksmith's own starter copper (U-C4: early raid ore is Gloomwood's greenheart, not the
-    /// Mine's copper, and day-1 return cards carry no ore offers at all). Bounty posted day 1; the
-    /// first offering day's ore (greenheart on day 2, buyable once open at day-3 Evening) bought via
-    /// the reopened Ledger's Buy buttons; dagger craft queued via the Forge panel's Craft button.
-    /// Leaves the sim at day 4 Morning with one unshelved player craft.
+    /// blacksmith's own starter copper (the craft stays independent of raid routing either way).
+    /// Banded-router re-baseline (2026-08-01): weak day-1 parties raid the Mine/Sunken Crypt
+    /// again, so the FIRST offering day is day 1 (copper), open for trade at day-2 Evening and
+    /// EXPIRED by day-3 Evening — the drive runs one day earlier than the U-C4-era script that
+    /// waited for Gloomwood's day-2 greenheart. Bounty posted day 1; day-1 ore bought via the
+    /// reopened Ledger's Buy buttons at day-2 Evening; dagger craft queued via the Forge panel's
+    /// Craft button. Leaves the sim just past the day-2 Evening tick with one unshelved player
+    /// craft (heroes first shop it the NEXT Morning, day 3).
     /// </summary>
     private static void DriveToCraftedDagger(MainUi ui)
     {
-        AdvanceDay(ui);                          // day 1 → day 2 Morning
-        AdvanceDay(ui);                          // day 2 → day 3 Morning (day-2 ore offers now open)
-        AdvanceToPhase(ui, DayPhase.Evening);    // day 3 Morning → day 3 Evening (offers buyable)
+        AdvanceDay(ui);                          // day 1 → day 2 Morning (day-1 ore offers now open)
+        AdvanceToPhase(ui, DayPhase.Evening);    // day 2 Morning → day 2 Evening (offers buyable)
 
         ui.Ledger.CloseModal();
         var state = ui.Adapter.CurrentState;
-        AssertThat(state.Day).IsEqual(3);
+        AssertThat(state.Day).IsEqual(2);
         AssertThat(state.Phase).IsEqual(DayPhase.Evening);
 
-        // Reopen the ledger for the last completed day (day 2 — the first day that offered ore) and
+        // Reopen the ledger for the last completed day (day 1 — the first day that offered ore) and
         // buy its ore via the Buy buttons, now open + buyable at this Evening.
         Press(ui, "OpenLedger");
         AssertThat(ui.Ledger.ShownDay).IsEqual(ScriptedSession.EarlyOreDay(state));
@@ -1019,8 +1022,8 @@ public class MainUiTests
         AssertThat(RenderedText(ui.Forge)).Contains($"queued: craft {ScriptedSession.CraftRecipeId}");
         AssertThat(RenderedText(ui.Forge)).Contains("Queued — resolves when Evening ticks. Press Advance or wait.");
 
-        ui.Adapter.AdvancePhase(); // day 3 Evening: buys then craft apply in order
-        ui.Ledger.CloseModal();    // day-3 reveal is timer-gated (U12); close if a frame opened it
+        ui.Adapter.AdvancePhase(); // day 2 Evening: buys then craft apply in order
+        ui.Ledger.CloseModal();    // day-2 reveal is timer-gated (U12); close if a frame opened it
     }
 
     /// <summary>
