@@ -15,6 +15,15 @@ namespace GodotClient.Audio;
 /// is the same trade <see cref="SfxLibrary"/> makes. It is a bed, not a soundtrack: if a real
 /// composed track ever lands, this is what it replaces.</para>
 ///
+/// <para><b>U2 update: it landed, for three of five phases.</b> <c>AudioDirector</c>'s
+/// composed-track table now prefers a real track over <see cref="For"/> for Evening, Camp, and both
+/// Expedition phases — this class did not change to make room for that; it stayed exactly what its
+/// own header always said it would become for those phases: the thing being replaced. It remains the
+/// ONLY voice for Morning (no composed track exists yet) and for <see cref="Underground"/>, and it is
+/// still the ladder's fallback everywhere else — a missing or not-yet-pulled composed asset degrades
+/// here, not to silence. The three-tracks-of-five gap is deliberate (KTD-C: no new generation in this
+/// unit), not an oversight.</para>
+///
 /// <para><b>Why it changes with the phase.</b> The town already has a purple-dusk colour arc
 /// (<c>DayPhaseTint</c>) and answering "what time is it" in sound as well as light is most of what makes
 /// a place feel lived-in. Dawn sits on a bright major fifth; the two Quest phases drop to a bare open

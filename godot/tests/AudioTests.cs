@@ -6,6 +6,7 @@ using GameSim.Contracts;
 using GdUnit4;
 using Godot;
 using GodotClient.Audio;
+using GodotClient.Tools;
 using static GdUnit4.Assertions;
 
 namespace GodotClient.Tests;
@@ -470,6 +471,219 @@ public class AudioTests
         finally
         {
             director.Free();
+        }
+    }
+
+    /// <summary>
+    /// U2 (make-it-visible plan), KTD-B applied to audio: the census rule that already exists for art
+    /// (every id the shipped game references must resolve to real content), now covering
+    /// <see cref="AudioDirector.ComposedTrackIds"/>. Three composed tracks sat on disk and were never
+    /// wired into the game for days before this unit — this is the test that turns any FUTURE repeat
+    /// of exactly that ("committed but never referenced") red at PR time instead of silent for days.
+    /// </summary>
+    [TestCase]
+    public void EveryComposedTrack_LoadsAndLoops()
+    {
+        var ids = AudioDirector.ComposedTrackIds;
+
+        AssertThat(ids.Count)
+            .OverrideFailureMessage(
+                "AudioDirector.ComposedTrackIds is empty. If every composed track was deliberately " +
+                "reverted this floor should move with them — but an accidentally emptied table is " +
+                "exactly the silent regression this census exists to catch.")
+            .IsGreaterEqual(3);
+
+        foreach (var (phase, id) in ids)
+        {
+            var stream = AudioDirector.LoadComposedTrackForCensus(phase);
+
+            AssertThat(stream)
+                .OverrideFailureMessage(
+                    $"'{id}' is mapped to {phase} but did not load. Either the file under " +
+                    "godot/assets/audio/ is missing or misnamed, or its Git LFS content was never " +
+                    "pulled — either way this IS the 'on disk but not in the game' defect, now caught " +
+                    "here instead of days later.")
+                .IsNotNull();
+
+            var mp3 = stream as AudioStreamMP3;
+            AssertThat(mp3)
+                .OverrideFailureMessage($"'{id}' loaded as {stream?.GetType().Name}, not an AudioStreamMP3.")
+                .IsNotNull();
+
+            AssertThat(mp3!.Loop)
+                .OverrideFailureMessage(
+                    $"'{id}' ({phase}) is not marked to loop — the track would play once and the bed " +
+                    "would fall silent instead of continuing, from either the .import `loop=true` " +
+                    "param or the belt-and-suspenders set in AudioDirector.LoadComposed.")
+                .IsTrue();
+        }
+    }
+
+    /// <summary>
+    /// The dev A/B toggle (R3): pressing M must swap composed vs synth for the phase ALREADY
+    /// PLAYING, immediately and audibly — not merely flip a flag that only takes effect on the next
+    /// phase change, which would make the owner wait an entire day-phase to judge two tracks back to
+    /// back. Calls <c>_UnhandledKeyInput</c> directly (this suite's established pattern for
+    /// overridden lifecycle methods, e.g. <c>_Process</c> elsewhere in this file) rather than pumping
+    /// the input system through a frame.
+    ///
+    /// <para><b>Why this asserts on the AUDIBLE player, not "any player has stream X".</b> A first
+    /// version of this test checked <c>music.Any(p =&gt; p.Stream == X)</c> and failed on the SECOND
+    /// press even though the toggle was working correctly. Root cause: <c>AudioStreamPlayer.Stop()</c>
+    /// (called by <see cref="AudioDirector._Process"/> once a fade completes) does not clear
+    /// <c>.Stream</c> — a fully faded-out, silent player keeps whatever stream it last held. With only
+    /// two players round-robining, a THIRD crossfade reassigns the player that was silent two
+    /// crossfades ago back to a stream it already held — so "does any player have stream X" can stay
+    /// true from a stale, inaudible reference even after the toggle correctly swapped what is actually
+    /// playing. The toggle logic itself was never wrong; "any player has this stream" just is not the
+    /// same question as "what is currently playing," once more than two crossfades have happened. This
+    /// version asks the right question: after letting a crossfade land fully, exactly one player sits
+    /// at <c>MusicDb+trim</c> (audible) and the other at <c>SilentDb</c> (silent) — so the loudest one
+    /// IS the current bed, and its stream is the only one worth asserting on.</para>
+    /// </summary>
+    [TestCase]
+    public void TheABToggle_SwapsComposedAndSynthLive()
+    {
+        var director = new AudioDirector();
+        try
+        {
+            ((SceneTree)Engine.GetMainLoop()).Root.AddChild(director);
+
+            var music = director.GetChildren().OfType<AudioStreamPlayer>()
+                .Where(p => p.Name.ToString().StartsWith("Music")).ToList();
+
+            // Lets the current crossfade land fully (CrossfadeSeconds), then returns whichever player
+            // ended up audible — the one NOT sitting at SilentDb. Stale streams on the other, silent
+            // player (see the class doc above) never matter here because we only ever look at this one.
+            AudioStreamPlayer CurrentlyAudible()
+            {
+                director._Process(2.5); // CrossfadeSeconds
+                return music.OrderByDescending(p => p.VolumeDb).First();
+            }
+
+            director.SetPhase(DayPhase.Evening); // composed 'town-dusk' by default (_preferSynth starts false)
+            AssertThat(CurrentlyAudible().Stream == MusicBed.For(DayPhase.Evening))
+                .OverrideFailureMessage(
+                    "Evening started on the synth bed, not the composed track — the toggle has " +
+                    "nothing to prove otherwise against.")
+                .IsFalse();
+
+            var keyDown = new InputEventKey { PhysicalKeycode = Key.M, Pressed = true };
+
+            director._UnhandledKeyInput(keyDown);
+            AssertThat(CurrentlyAudible().Stream == MusicBed.For(DayPhase.Evening))
+                .OverrideFailureMessage("Pressing M did not swap Evening onto the synth bed.")
+                .IsTrue();
+
+            director._UnhandledKeyInput(keyDown);
+            AssertThat(CurrentlyAudible().Stream == MusicBed.For(DayPhase.Evening))
+                .OverrideFailureMessage("Pressing M a second time did not swap Evening back to the composed track.")
+                .IsFalse();
+
+            // A toggle that works once is not a toggle — confirm the CYCLE, not just one flip.
+            director._UnhandledKeyInput(keyDown);
+            AssertThat(CurrentlyAudible().Stream == MusicBed.For(DayPhase.Evening))
+                .OverrideFailureMessage("Pressing M a third time did not swap Evening onto the synth bed again — the toggle only flipped once.")
+                .IsTrue();
+        }
+        finally
+        {
+            director.Free();
+        }
+    }
+
+    /// <summary>
+    /// U2: composed tracks each carry a per-track <c>TrimDb</c> (see
+    /// <c>AudioDirector.ComposedTracks</c>) so a hot composed master does not simply play louder than
+    /// the bed it replaced — which means the two music players no longer always fade toward the SAME
+    /// target level. The regression this guards against: without per-player trim tracking, retriggering
+    /// a crossfade mid-transition would make the OUTGOING player snap to whatever level the NEW
+    /// target's trim implies instead of continuing from the level it was actually at — an audible pop
+    /// where a fade should be. Exercised across composed-to-composed (different trims),
+    /// synth-to-composed, and composed-to-synth.
+    /// </summary>
+    [TestCase]
+    public void CrossfadingBetweenDifferentTrims_NeverJumpsLevel()
+    {
+        var director = new AudioDirector();
+        try
+        {
+            ((SceneTree)Engine.GetMainLoop()).Root.AddChild(director);
+
+            void AssertNoJump(DayPhase from, DayPhase to)
+            {
+                director.SetPhase(from);
+                director._Process(2.5); // CrossfadeSeconds — let the fade land fully before recording
+
+                var players = director.GetChildren().OfType<AudioStreamPlayer>()
+                    .Where(p => p.Name.ToString().StartsWith("Music")).ToList();
+                var before = players.ToDictionary(p => p.Name.ToString(), p => p.VolumeDb);
+
+                director.SetPhase(to);
+                director._Process(0.001); // one instant into the NEW fade — should barely move yet
+
+                foreach (var p in players)
+                {
+                    var jump = MathF.Abs(p.VolumeDb - before[p.Name.ToString()]);
+                    AssertThat(jump)
+                        .OverrideFailureMessage(
+                            $"{p.Name} jumped {jump:0.0}dB in a single instant when {from} handed off " +
+                            $"to {to}. A crossfade must continue from the level a player was ACTUALLY " +
+                            "at, not snap toward the new target's trim.")
+                        .IsLess(1.0f);
+                }
+            }
+
+            AssertNoJump(DayPhase.Evening, DayPhase.Camp); // composed(-5dB) -> composed(0dB)
+            AssertNoJump(DayPhase.Camp, DayPhase.Morning); // composed(0dB) -> synth(0dB)
+            AssertNoJump(DayPhase.Morning, DayPhase.Expedition); // synth(0dB) -> composed(-4dB)
+        }
+        finally
+        {
+            director.Free();
+        }
+    }
+
+    /// <summary>
+    /// U2 update to the mute contract: composed tracks must not be able to sneak past
+    /// <see cref="AudioDirector.MuteEnvVar"/> the way the synth bed already could not. Every
+    /// automated tool in <c>tools/</c> relies on this env var to keep an unattended run silent
+    /// (<see cref="DevToolAudio.Silence"/>), and the composed-track ladder lives entirely inside the
+    /// same Muted-gated call path as the synth bed always did (<c>ApplyPhaseBed</c> is only reached
+    /// past the Muted check in <c>SetPhase</c>) — proven here structurally, not by trusting the
+    /// comment.
+    /// </summary>
+    [TestCase]
+    public void MuteEnvVar_StillSilencesEverything_WithComposedTracksInTheMix()
+    {
+        DevToolAudio.Silence(); // the exact call every automated tool makes before mounting MainUi
+        try
+        {
+            var director = new AudioDirector();
+            try
+            {
+                ((SceneTree)Engine.GetMainLoop()).Root.AddChild(director);
+                AssertThat(director.Muted)
+                    .OverrideFailureMessage("AudioDirector did not read MuteEnvVar on _Ready.")
+                    .IsTrue();
+
+                director.SetPhase(DayPhase.Evening); // a composed-mapped phase, not Morning
+                director.Play(Cue.Coin);
+
+                AssertThat(director.GetChildren().OfType<AudioStreamPlayer>().Any(p => p.Playing))
+                    .OverrideFailureMessage(
+                        "Something is audibly playing while MuteEnvVar is set — an automated run " +
+                        "would make noise.")
+                    .IsFalse();
+            }
+            finally
+            {
+                director.Free();
+            }
+        }
+        finally
+        {
+            OS.UnsetEnvironment(AudioDirector.MuteEnvVar);
         }
     }
 }
