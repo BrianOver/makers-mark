@@ -134,17 +134,47 @@ public partial class ScryingMirror : SimPanel
         }
 
         var card = _feed.Cards[selected];
+        var names = card.PartyNames.IsEmpty ? "Party" : string.Join(", ", card.PartyNames);
         _floorLabel!.Text = card.Stage == JourneyStage.Rumored
-            ? $"Bound for floor {card.TargetFloor} — rumored, not yet underway."
-            : $"Floor {card.DeepestFloorCleared}/{card.TargetFloor} — {card.Stage}";
+            ? $"{names} — bound for floor {card.TargetFloor} — rumored, not yet underway."
+            : $"{names} — Floor {card.DeepestFloorCleared}/{card.TargetFloor} — {card.Stage}";
 
         Clear(_feedBody!);
+
+        // U-EXP1: "what they carry that the player made" — a roster fact (Hero.Gear doesn't
+        // change mid-raid), so it renders unconditionally, every stage, never waiting on a beat
+        // to reveal it. Same clickable-button shape the ★ attribution beats below use (both open
+        // the identical ProvenanceCard) — the mirror's whole point is "your craft writes the
+        // legends" made touchable, and this is that payoff available from the moment of departure.
+        if (!card.Manifest.IsEmpty)
+        {
+            AddHeader(_feedBody!, "CARRYING YOUR WORK:");
+            foreach (var line in card.Manifest)
+            {
+                var manifestRow = AddRow(_feedBody!);
+                var manifestButton = AddButton(manifestRow, $"ManifestLine_{line.Item.Value}_{card.PartyKey}", line.Text,
+                    () => OnShowProvenance(line.Item));
+                manifestButton.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+                manifestButton.Alignment = HorizontalAlignment.Left;
+            }
+        }
+
         var revealed = _feed.Revealed(card);
         if (revealed.IsEmpty)
         {
-            AddLabel(_feedBody!, card.Stage == JourneyStage.Rumored
-                ? $"A party sets out for floor {card.TargetFloor}…"
-                : _feed.IdleLine(card.PartyKey));
+            // The manifest section above already told the whole departure story when it has
+            // anything to say — the bare "a party sets out" placeholder only earns its place when
+            // NOTHING in the party is player-crafted (nothing to click on above), so this never
+            // prints a redundant echo of the same manifest line the header just rendered.
+            if (card.Stage != JourneyStage.Rumored)
+            {
+                AddLabel(_feedBody!, _feed.IdleLine(card.PartyKey));
+            }
+            else if (card.Manifest.IsEmpty)
+            {
+                AddLabel(_feedBody!, $"A party sets out for floor {card.TargetFloor}…");
+            }
+
             return;
         }
 

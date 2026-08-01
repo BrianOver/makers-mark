@@ -481,9 +481,16 @@ public partial class MineWatch : SubViewportContainer
         var lines = CurrentBeats.TakeLast(FeedVisibleLines).ToList();
         if (lines.Count == 0)
         {
-            lines.Add(card.Stage == JourneyStage.Rumored
-                ? $"Rumor has it a party sets out for floor {card.TargetFloor}…"
-                : _feed.IdleLine(card.PartyKey));
+            // U-EXP1 (Expedition-watchable — owner-flagged twice: "the player just sits there"):
+            // Rumored cards carry zero JourneyBeat by design (JourneyStage's own doc; pinned by
+            // JourneyStreamTests) — this branch used to be the ONLY thing the strip ever showed
+            // for the entire Expedition phase, and it was a content-free "rumor has it" line with
+            // no roster and no gear. RumoredLines below reads the SAME state this strip already
+            // has (card.PartyNames/Manifest, resolved once in JourneyStream) to show who went and
+            // what they carry that the player made instead — the actual payoff, not a placeholder.
+            lines.AddRange(card.Stage == JourneyStage.Rumored
+                ? RumoredLines(card)
+                : [_feed.IdleLine(card.PartyKey)]);
         }
         else if (_feed.IsIdle(card))
         {
@@ -492,6 +499,20 @@ public partial class MineWatch : SubViewportContainer
 
         _feedLabel.Text = string.Join("\n", lines);
         _feedLabel.Visible = Visible;
+    }
+
+    /// <summary>U-EXP1: the strip's richer (multi-line) departure teaser — roster roll-call plus
+    /// up to <see cref="FeedVisibleLines"/>-1 manifest lines ("X carries your Y"), capped to the
+    /// same visible-line budget the combat-beat path already respects. Distinct from <c>PipDock</c>'s
+    /// single-line <see cref="JourneyStream.DepartureLine"/>: this strip has <see
+    /// cref="FeedVisibleLines"/> lines of real estate to spend and the corner dock has one — same
+    /// underlying <see cref="JourneyCard.Manifest"/> data, different-sized surfaces.</summary>
+    private static IReadOnlyList<string> RumoredLines(JourneyCard card)
+    {
+        var names = card.PartyNames.IsEmpty ? "A party" : string.Join(", ", card.PartyNames);
+        var lines = new List<string> { $"{names} set out for floor {card.TargetFloor}." };
+        lines.AddRange(card.Manifest.Take(FeedVisibleLines - 1).Select(m => m.Text));
+        return lines;
     }
 
     // ── phase rendering ──────────────────────────────────────────────────────────────────────

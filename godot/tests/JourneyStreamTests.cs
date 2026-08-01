@@ -38,6 +38,106 @@ public class JourneyStreamTests
         AssertThat(card.Beats.IsEmpty).IsTrue(); // rumored: no combat beats exist yet
     }
 
+    // ── U-EXP1 (Expedition-watchable, owner-flagged twice — "the player just sits there"):
+    // before this unit, DayPhase.Expedition rendered NOTHING but the bare rumor line above for the
+    // whole phase. These pin the fix: JourneyCard.Manifest/PartyNames surface who went and what
+    // player-crafted gear they carry the INSTANT the party departs — a roster fact (Hero.Gear),
+    // never a JourneyBeat, so the Beats.IsEmpty pin above is left completely untouched. ────────────
+
+    [TestCase]
+    public void Expedition_Phase_RumoredCard_ManifestNamesPlayerCraftedGear_NotVendorGear()
+    {
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+            .Add(1, Delver(1, "Torvald") with { Gear = new GearSet(new ItemId(1), new ItemId(2), null) })
+            .Add(2, Delver(2, "Elowen"));
+        var items = ImmutableSortedDictionary<int, Item>.Empty
+            .Add(1, CraftedItem(1, "Fine Iron Blade"))
+            .Add(2, VendorItem(2, "Rival Shield"));
+        var state = World() with { Phase = DayPhase.Expedition, Heroes = heroes, Items = items };
+        var plan = new PartyPlan(ImmutableList.Create(new HeroId(1), new HeroId(2)), TargetFloor: 3, VenueId: "mine");
+        var events = ImmutableList.Create<GameEvent>(new PartiesFormed(ImmutableList.Create(plan)));
+
+        var card = JourneyStream.Build(state, events).Single();
+
+        AssertThat(card.Beats.IsEmpty).IsTrue(); // still no combat beats — Manifest is a SEPARATE field
+        AssertThat(card.Manifest.Count).IsEqual(1); // the vendor shield never earns a line (no MakersMark)
+        AssertThat(card.Manifest[0].Text).IsEqual("Torvald carries your Fine Iron Blade.");
+        AssertThat(card.Manifest[0].Item).IsEqual(new ItemId(1));
+    }
+
+    [TestCase]
+    public void Expedition_Phase_RumoredCard_PartyNames_ResolvedInRosterOrder()
+    {
+        var state = World() with { Phase = DayPhase.Expedition };
+        var plan = new PartyPlan(ImmutableList.Create(new HeroId(2), new HeroId(1)), TargetFloor: 3, VenueId: "mine");
+        var events = ImmutableList.Create<GameEvent>(new PartiesFormed(ImmutableList.Create(plan)));
+
+        var card = JourneyStream.Build(state, events).Single();
+
+        AssertThat(string.Join(",", card.PartyNames)).IsEqual("H2,H1"); // roster order, not id order
+    }
+
+    [TestCase]
+    public void Expedition_Phase_NoPlayerCraftedGear_ManifestEmpty_NeverFabricatesALine()
+    {
+        // GearSet.Empty (Delver's default) — a fresh/bare-handed party. The whole point of KTD2
+        // purity here: no MakersMark means no line, ever, however tempting a placeholder would be.
+        var state = World() with { Phase = DayPhase.Expedition };
+        var plan = new PartyPlan(ImmutableList.Create(new HeroId(1)), TargetFloor: 3, VenueId: "mine");
+        var events = ImmutableList.Create<GameEvent>(new PartiesFormed(ImmutableList.Create(plan)));
+
+        var card = JourneyStream.Build(state, events).Single();
+
+        AssertThat(card.Manifest.IsEmpty).IsTrue();
+    }
+
+    [TestCase]
+    public void DepartureLine_PrefersManifestLine_OverPlaceholder_WhenCraftedGearPresent()
+    {
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+            .Add(1, Delver(1, "Torvald") with { Gear = new GearSet(new ItemId(1), null, null) });
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, CraftedItem(1, "Fine Iron Blade"));
+        var state = World() with { Phase = DayPhase.Expedition, Heroes = heroes, Items = items };
+        var plan = new PartyPlan(ImmutableList.Create(new HeroId(1)), TargetFloor: 3, VenueId: "mine");
+        var card = JourneyStream.Build(state, ImmutableList.Create<GameEvent>(new PartiesFormed(ImmutableList.Create(plan)))).Single();
+
+        var line = JourneyStream.DepartureLine(card);
+
+        AssertThat(line).IsEqual("Torvald carries your Fine Iron Blade.");
+        AssertThat(line.Contains("A party sets out")).IsFalse();
+    }
+
+    [TestCase]
+    public void DepartureLine_FallsBackToPlaceholder_WhenManifestEmpty()
+    {
+        var state = World() with { Phase = DayPhase.Expedition };
+        var plan = new PartyPlan(ImmutableList.Create(new HeroId(1)), TargetFloor: 5, VenueId: "mine");
+        var card = JourneyStream.Build(state, ImmutableList.Create<GameEvent>(new PartiesFormed(ImmutableList.Create(plan)))).Single();
+
+        var line = JourneyStream.DepartureLine(card);
+
+        AssertThat(line).IsEqual("A party sets out for floor 5…");
+    }
+
+    [TestCase]
+    public void Camp_Phase_StagedParty_ManifestAlsoPresent_SameGearFactRegardlessOfStage()
+    {
+        // The manifest is a ROSTER fact (gear doesn't change mid-raid), not a combat beat, so it
+        // must keep showing once the party stages at Camp too — not just at the Rumored moment.
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+            .Add(1, Delver(1, "Torvald") with { Gear = new GearSet(new ItemId(1), null, null) });
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, CraftedItem(1, "Fine Iron Blade"));
+        var inFlight = StagedParty(ImmutableList<FloorOutcome>.Empty); // Party is HeroId(1) already
+        var state = World() with
+        {
+            Phase = DayPhase.Camp, Heroes = heroes, Items = items, InFlight = ImmutableList.Create(inFlight),
+        };
+
+        var card = JourneyStream.Build(state, ImmutableList<GameEvent>.Empty).Single();
+
+        AssertThat(card.Manifest.Any(m => m.Text == "Torvald carries your Fine Iron Blade.")).IsTrue();
+    }
+
     [TestCase]
     public void Camp_Phase_StagedParty_ReadsInFlightFloors_Staged_NoAttributionYet()
     {

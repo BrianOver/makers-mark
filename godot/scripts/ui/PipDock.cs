@@ -188,17 +188,26 @@ public partial class PipDock : Control
         }
 
         var card = _feed.Cards[_activeIndex];
+        // U-EXP1: hero names instead of the generic "Party" label — the corner dock is the ONE
+        // surface guaranteed to render every raid tick regardless of which (if any) drawer is
+        // open (RefreshAll calls Pip.Refresh unconditionally), so it is the one place "who went"
+        // was worth the few extra characters even under this dock's tight width.
+        var names = card.PartyNames.IsEmpty ? "Party" : string.Join(", ", card.PartyNames);
         _partyLabel.Text = card.Stage == JourneyStage.Rumored
-            ? $"Party — floor {card.TargetFloor} (rumored)"
-            : $"Party — floor {card.DeepestFloorCleared}/{card.TargetFloor}";
+            ? $"{names} — floor {card.TargetFloor} (rumored)"
+            : $"{names} — floor {card.DeepestFloorCleared}/{card.TargetFloor}";
 
         var revealed = _feed.Revealed(card);
         CurrentBeats = revealed.Select(b => b.Text).ToImmutableList();
 
+        // U-EXP1: before any real beat exists (Rumored stage — see JourneyStream.DepartureLine),
+        // lead with "who carries what you made" instead of the bare "a party sets out" rumor —
+        // this one line is the emotional payoff the whole premise promises, and it is now known
+        // complete the instant the party departs.
         _feedLabel.Text = revealed.Count > 0
             ? revealed[^1].Text
             : card.Stage == JourneyStage.Rumored
-                ? $"A party sets out for floor {card.TargetFloor}…"
+                ? JourneyStream.DepartureLine(card)
                 : _feed.IdleLine(card.PartyKey);
     }
 }
