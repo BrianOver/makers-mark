@@ -58,9 +58,8 @@ public static class MusterPlan
             }
             else
             {
-                var partyDepth = party.Max(h => h.DeepestFloorReached);
                 var partyPower = CombatMath.PartyAveragePower(party, items);
-                venueId = VenueRouter.ChooseVenue(partyDepth, partyPower, VenueRegistry.LiveRotation, queueCounts);
+                venueId = VenueRouter.ChooseVenue(partyPower, VenueRegistry.LiveRotation, queueCounts);
             }
 
             queueCounts[venueId] = queueCounts.TryGetValue(venueId, out var count) ? count + 1 : 1;

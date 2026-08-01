@@ -93,6 +93,8 @@ public static class SunkenCryptVenue
                 }));
         }
 
-        return new VenueDefinition(Id, "The Sunken Crypt", floors.ToImmutable());
+        // EntryPower 0: a Mine-peer EARLY venue by design — same gate ladder, grade 1-5 ores.
+        // The router splits the early band between the Crypt and the Mine by queue length.
+        return new VenueDefinition(Id, "The Sunken Crypt", floors.ToImmutable(), EntryPower: 0);
     }
 }

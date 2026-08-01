@@ -77,6 +77,10 @@ public static class GloomwoodVenue
                 OreKey: ore[floor - 1]));
         }
 
-        return new VenueDefinition(Id, "The Gloomwood", floors.ToImmutable());
+        // EntryPower 35: the MID venue (grade 8-11 ores). 35 is the honest-baseline day-1-10
+        // median party power (measured 2026-08-01, 20-seed sweep) — a party crosses into the
+        // Gloomwood band about when it outgrows floor-1/2 starter content, matching this venue's
+        // own floor-3 gate (45) being the next real wall.
+        return new VenueDefinition(Id, "The Gloomwood", floors.ToImmutable(), EntryPower: 35);
     }
 }

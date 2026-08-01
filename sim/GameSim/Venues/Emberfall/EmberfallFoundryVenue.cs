@@ -100,6 +100,11 @@ public static class EmberfallFoundryVenue
                 }));
         }
 
-        return new VenueDefinition(Id, "The Emberfall Foundry", floors.ToImmutable());
+        // EntryPower 70: the ENDGAME venue (grade 12-16 ores). Router-side party power saturates
+        // at ~72-84 under the honest baseline (measured 2026-08-01, 20-seed sweep — the router
+        // never sees in-run craft/consumable modifiers, so its scale tops out well below the
+        // floor-5 gate of 100); 70 sits at the late-game median, so only geared-up veteran
+        // parties bank grade-12+ forge-ore.
+        return new VenueDefinition(Id, "The Emberfall Foundry", floors.ToImmutable(), EntryPower: 70);
     }
 }

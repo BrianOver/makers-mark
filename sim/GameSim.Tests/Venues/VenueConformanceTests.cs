@@ -87,6 +87,29 @@ public class VenueConformanceTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(AllVenueIds))]
+    public void EntryPower_IsNonNegative(string id)
+    {
+        // The router's progression band: negative would make a venue "reached" by every party AND
+        // sort below the EntryPower-0 early venues — a contradiction the comparator can't express.
+        Assert.InRange(VenueRegistry.All[id].EntryPower, 0, int.MaxValue);
+    }
+
+    [Fact]
+    public void EntryPowerBands_AreTheTunedRecord()
+    {
+        // The routing tuning record (2026-08-01, measured against the honest-baseline power curve:
+        // router-side party power spans ~6..84 and saturates ~72-84). Mine + Sunken Crypt are the
+        // EntryPower-0 early peers (queue-split), Gloomwood the mid band at the day-1-10 median
+        // power, Emberfall the endgame band at the late-game median. Change these consciously —
+        // they move every seed's venue distribution (and therefore the balance bands).
+        Assert.Equal(0, VenueRegistry.Mine.EntryPower);
+        Assert.Equal(0, VenueRegistry.All["sunken-crypt"].EntryPower);
+        Assert.Equal(35, VenueRegistry.All["gloomwood"].EntryPower);
+        Assert.Equal(70, VenueRegistry.All["emberfall"].EntryPower);
+    }
+
     [Fact]
     public void OreFloor_ReturnsZero_ForUnknownOre()
     {

@@ -112,6 +112,8 @@ public static class VenueRegistry
                 }));
         }
 
-        return new VenueDefinition(MineId, "The Mine", floors.ToImmutable());
+        // EntryPower 0: the Mine is the starter venue (and the structural bounty home, R18) —
+        // every fresh party is in its band from day one.
+        return new VenueDefinition(MineId, "The Mine", floors.ToImmutable(), EntryPower: 0);
     }
 }
