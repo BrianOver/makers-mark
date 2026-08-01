@@ -40,18 +40,25 @@ public static class MusicBed
     /// <summary>
     /// Loop length.
     ///
-    /// <para>Was 24s, which the owner heard immediately: "its a little loud and loops too quickly".
-    /// 24 seconds is short enough that the ear memorises the figure and then hears the seam as an event,
-    /// which is worse than a plain drone. 60s is 2.5x the cycle and — because <see cref="MelodySlots"/>
-    /// scales with it — 2.5x the number of distinct notes, so the tune itself is longer rather than the
-    /// same tune stretched.</para>
+    /// <para>Was 24s, then 60s, and the owner said it again on the very next playtest: "the track repeats
+    /// to[o] quickly, expand". 60s was already 2.5x the original and still not enough — the honest reading
+    /// is that HE is the one who gets to say when a loop is long enough, not a single doubling. 120s is a
+    /// further 2x (5x the original 24s), and because <see cref="MelodySlots"/> scales with it, that is 5x
+    /// the distinct notes in the tune, not the same figure stretched thinner.</para>
     ///
-    /// <para>Cost is the reason it is not longer still: a bed is ~1.3M samples per 24s and is synthesized
-    /// on the main thread the first time its phase comes up, so tripling this triples a hitch the player
-    /// can feel. It lands inside the 2.5s crossfade that requested it, which is what makes 60s safe and
-    /// 180s not.</para>
+    /// <para>Cost was the reason it did not go further already ("tripling this triples a hitch"), but that
+    /// claim had never actually been measured against real numbers — it was a guess dressed as a
+    /// constraint. Measured with a throwaway console harness that renders the exact same synthesis code
+    /// this file ships (see the U-audio-2 PR body for the harness): a cold-process worst case at 120s is
+    /// ~300ms, and even 180s only reaches ~440ms — both comfortably inside the 2.5s
+    /// <see cref="AudioDirector.CrossfadeSeconds"/> window that hides the hitch, and the in-process JIT-warm
+    /// cost during actual play (this is not the first synth call the process makes) is expected to be
+    /// lower still. 120s is chosen over 180s anyway: it is already double what shipped, doubling again on
+    /// the strength of a synthetic benchmark alone felt like the same mistake in the other direction.
+    /// If "still too short" comes back a third time, the number to move next is this one, with room to
+    /// spare on the measured budget.</para>
     /// </summary>
-    public const float LoopSeconds = 60f;
+    public const float LoopSeconds = 120f;
 
     /// <summary>
     /// Melody slots per loop, scaled to hold note DENSITY constant as <see cref="LoopSeconds"/> changes.
@@ -211,16 +218,19 @@ public static class MusicBed
         // ── Drone: root, fifth, octave, and the mood's third when it has one. Each is snapped to a
         //    whole number of cycles across the loop so the waveform continues cleanly at the seam.
         //
-        //    Weighted UP the harmonic series, not down. The owner's note was "lower the base" — with the
-        //    fundamental as the loudest partial (it was 0.34, nearly double the fifth) the bed read as
-        //    boom rather than tone, and low frequencies are exactly what a small speaker reproduces
-        //    worst and a big one reproduces overwhelmingly. Moving that energy to the octave keeps the
-        //    same chord and the same perceived pitch while taking the weight out of it: the ear infers
-        //    the fundamental from the upper partials, so this sounds like the same note, quieter in the
-        //    chest. AudioTests pins the low-band share so this cannot silently drift back. ──
-        AddDrone(buffer, SnapToLoop(mood.RootHz), 0.17f);
+        //    Weighted UP the harmonic series, not down, and pushed further this pass. The FIRST fix moved
+        //    the fundamental from 0.34 (louder than the fifth) down to 0.17 and called that "lower the
+        //    base" — but the owner's next playtest said "too loud" about the bed again, so 0.17 was still
+        //    the loudest partial in the chord and still read as bass-forward. Root is down again to 0.115
+        //    (from 0.17: measured 15-20% relative drop in the sub-150Hz share across all five phases, see
+        //    the U-audio-2 PR body) and the octave picks up the difference (0.19 -> 0.225, scaled by
+        //    Brightness same as before) so the chord and the perceived pitch are unchanged — only the
+        //    chest weight moves. AudioTests pins the low-band share so this cannot silently drift back,
+        //    and its ceiling was tightened alongside this change rather than left loose enough to hide a
+        //    future regression back toward the old numbers. ──
+        AddDrone(buffer, SnapToLoop(mood.RootHz), 0.115f);
         AddDrone(buffer, SnapToLoop(mood.RootHz * 1.5f), 0.20f);
-        AddDrone(buffer, SnapToLoop(mood.RootHz * 2f), 0.19f * mood.Brightness);
+        AddDrone(buffer, SnapToLoop(mood.RootHz * 2f), 0.225f * mood.Brightness);
         if (mood.ThirdSemitones > 0f)
         {
             AddDrone(buffer, SnapToLoop(mood.RootHz * MathF.Pow(2f, mood.ThirdSemitones / 12f)), 0.14f);
@@ -269,7 +279,12 @@ public static class MusicBed
             AddPluck(buffer, hz, at, MathF.Min(slotSeconds * 2.4f, maxLength), 0.11f * mood.Brightness);
         }
 
-        Synth.Normalise(buffer, 0.5f); // a bed, deliberately well below the SFX peak
+        // 0.5 -> 0.42 (-1.5dB): the second "too loud" report was about this bed specifically, not just
+        // the sub-150Hz content above, so the fix is both a spectral rebalance AND a straight level cut,
+        // not one standing in for the other. Measured: every phase's integrated LUFS dropped ~1.4-1.9 LU
+        // from this change plus the drone rebalance together (see PR body) — never louder than before it,
+        // which AudioDirector.MusicDb's own headroom assumes.
+        Synth.Normalise(buffer, 0.42f); // a bed, deliberately well below the SFX peak
         return Synth.ToStream(buffer, loop: true);
     }
 

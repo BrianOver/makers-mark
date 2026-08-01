@@ -282,6 +282,26 @@ public class AudioTests
     }
 
     /// <summary>
+    /// U-audio-2 postmortem: this test's onset detector used a hardcoded ABSOLUTE PCM delta (0.06) as
+    /// "a pluck attack is a fast rise." That number was never actually testing note DENSITY — it was
+    /// testing "is this bed loud enough that its attacks exceed a fixed value," a loudness assertion
+    /// wearing a density assertion's name, and it only ever passed because it happened to sit just under
+    /// the attack size at the bed's old peak (0.5): 13 onsets measured there, barely clearing the &gt;12
+    /// floor below.
+    ///
+    /// <para>The moment this same PR dropped the bed peak 0.5 -> 0.42 alongside the drone rebalance
+    /// (<see cref="MusicBed.Build"/>) to answer the owner's separate "too loud" complaint, the identical
+    /// melody — MORE notes than before (130 vs 69 slots filled, because <see cref="MusicBed.MelodySlots"/>
+    /// correctly scaled with the longer loop) — produced onset deltas that fell under 0.06, and the count
+    /// silently went to zero. Verified with a throwaway console harness reproducing the exact shipped
+    /// synthesis math: isolating the loop-length change alone (new 120s, OLD peak/weights) still found 26
+    /// onsets; isolating the peak/weight change alone (OLD 60s loop, NEW peak/weights) already found ZERO.
+    /// That is proof, not a guess, that the level change broke the detector and the melody itself was
+    /// never the problem — the density fix from the PR before this one was, and remains, correct.</para>
+    /// </summary>
+    private const float OnsetThresholdFraction = 0.12f;
+
+    /// <summary>
     /// The loop must be long enough that the ear does not memorise it.
     ///
     /// <para>"loops too quickly" was a real defect at 24 seconds: short enough to learn, after which the
@@ -290,7 +310,15 @@ public class AudioTests
     ///
     /// <para>Also checks that the melody grid scaled WITH the loop. Lengthening <c>LoopSeconds</c> while
     /// leaving a fixed slot count would have produced the same number of notes spread thinner — a sparser
-    /// bed rather than a longer one, which is not what was asked for and would be easy to ship by accident.</para>
+    /// bed rather than a longer one, which is not what was asked for and would be easy to ship by accident.
+    /// The onset threshold is a <see cref="OnsetThresholdFraction"/> of THIS buffer's own peak rather than
+    /// an absolute PCM value — see that constant's doc for why an absolute number silently turned this
+    /// into a loudness test and broke on the very next legitimate level change. 0.12 was chosen by scanning
+    /// fractions against both the pre- and post-retune mixes: 0.14 and above under-detect even the mix this
+    /// test used to pass against (8 onsets on the new mix, 0 on the old one at 0.16); 0.08-0.10 over-detect
+    /// by an order of magnitude (250-700+ "onsets," which is harmonic-beat ripple inside a single note's
+    /// decay getting counted repeatedly, not one crossing per note) — 0.12 sits in the flat, well-behaved
+    /// part of that curve for both mixes.</para>
     /// </summary>
     [TestCase]
     public void TheMusicLoop_IsLongEnoughNotToBeMemorised()
@@ -303,11 +331,12 @@ public class AudioTests
 
         // Note density held constant: count actual note onsets rather than trusting the slot arithmetic.
         var pcm = Pcm(MusicBed.For(DayPhase.Morning));
+        var threshold = Peak(pcm) * OnsetThresholdFraction;
         var onsets = 0;
         for (var i = 1; i < pcm.Length; i++)
         {
             // A pluck attack is a fast rise; the drone underneath changes far more slowly than this.
-            if (MathF.Abs(pcm[i]) - MathF.Abs(pcm[i - 1]) > 0.06f)
+            if (MathF.Abs(pcm[i]) - MathF.Abs(pcm[i - 1]) > threshold)
             {
                 onsets++;
                 i += Synth.SampleRate / 20; // debounce one attack, don't count its ripple
@@ -316,9 +345,9 @@ public class AudioTests
 
         AssertThat(onsets)
             .OverrideFailureMessage(
-                $"Only {onsets} note attacks across {MusicBed.LoopSeconds}s. The melody grid did not scale " +
-                "with the loop length, so the track got longer by getting emptier rather than by having " +
-                "more music in it.")
+                $"Only {onsets} note attacks across {MusicBed.LoopSeconds}s (peak {Peak(pcm):0.####}, " +
+                $"onset threshold {threshold:0.####}). The melody grid did not scale with the loop length, " +
+                "so the track got longer by getting emptier rather than by having more music in it.")
             .IsGreater(12);
     }
 
@@ -330,17 +359,32 @@ public class AudioTests
     /// fifth above it — see the comment at the cascade.</summary>
     private const int BassFilterPoles = 4;
 
-    /// <summary>Ceiling on the low-band energy share. Set from the measured post-fix values with headroom,
-    /// not from taste — see the git history of MusicBed for the before/after.</summary>
-    private const float MaxBassShare = 0.45f;
+    /// <summary>
+    /// Ceiling on the low-band energy share. Tightened 0.45 -> 0.35 in U-audio-2 alongside the second
+    /// "too loud" / bass-heavy report: the FIRST fix (0.34 -> 0.17 root amplitude) left a ceiling loose
+    /// enough (0.45) that it could not have caught its own regression back toward the old numbers — the
+    /// measured post-fix shares (14.8%-29.3% across the five phases, see the PR body) all clear 0.35 with
+    /// real headroom, so this is a floor pulled up to where the fix actually landed, not a number picked
+    /// to make the test pass.
+    /// </summary>
+    private const float MaxBassShare = 0.35f;
 
     /// <summary>The Mine's allowance. Higher because it is deliberately the lowest-pitched thing in the
     /// game (a fourth under the deepest town bed) — see the note at the comparison. Still a ceiling: it
-    /// caught the original 0.40-amplitude D2 fundamental and the ~37Hz sub-bass pulse under it.</summary>
+    /// caught the original 0.40-amplitude D2 fundamental and the ~37Hz sub-bass pulse under it. Left
+    /// untouched in U-audio-2 — the owner's repeat complaint was about the town beds he actually hears
+    /// every session, and Underground was never part of that report.</summary>
     private const float MaxUndergroundBassShare = 0.55f;
 
-    /// <summary>Floor on loop length. 24s was the reported defect; this is comfortably above it.</summary>
-    private const float MinLoopSeconds = 45f;
+    /// <summary>
+    /// Floor on loop length. 24s was the original reported defect, 45s was the floor when the fix landed
+    /// at 60s. The owner said "loops too quickly" again on the very next playtest with 60s shipped, so a
+    /// floor that 60s already cleared was not actually testing for "long enough" — it was testing for
+    /// "longer than the number everyone already agreed was too short." Raised to 90s alongside the fix
+    /// landing at 120s: comfortably below the new number (room to tune down slightly) but well above the
+    /// 60s that was already proven, twice, not to be enough.
+    /// </summary>
+    private const float MinLoopSeconds = 90f;
 
     /// <summary>A scene takes the music and gives it back. The trap: <c>SetPhase</c> ignores an unchanged
     /// phase, so if closing a scene did not explicitly restore the bed the game would fall silent until
@@ -684,6 +728,69 @@ public class AudioTests
         finally
         {
             OS.UnsetEnvironment(AudioDirector.MuteEnvVar);
+        }
+    }
+
+    /// <summary>
+    /// U-audio-2's own census, extending the KTD-B idea <see cref="EveryComposedTrack_LoadsAndLoops"/>
+    /// already applies to the composed table down onto <see cref="MusicBed"/> itself: every value
+    /// <see cref="DayPhase"/> can ever hold must resolve to a real, audible bed. Deliberately reads
+    /// <c>Enum.GetValues&lt;DayPhase&gt;()</c> rather than the hand-maintained <see cref="AllPhases"/>
+    /// array used by every other test in this file — <c>AllPhases</c> is exactly the kind of list a
+    /// future phase addition could be added to the enum and forgotten to add here, which would make
+    /// every OTHER test in this file silently skip it while still passing. This test cannot silently
+    /// skip a phase because it does not know the list in advance; it asks the enum, not a copy of it.
+    /// <see cref="MusicBed.For"/> always resolves something today (<c>MoodFor</c>'s <c>_</c> arm is the
+    /// fallback), so this is a regression guard against that ever stopping being true, not a check that
+    /// is expected to catch anything right now.
+    /// </summary>
+    [TestCase]
+    public void EveryDayPhase_ResolvesToANonSilentBed()
+    {
+        foreach (var phase in Enum.GetValues<DayPhase>())
+        {
+            var wav = MusicBed.For(phase);
+            AssertThat(wav)
+                .OverrideFailureMessage($"{phase} has no music bed at all — MusicBed.For returned null.")
+                .IsNotNull();
+
+            var pcm = Pcm(wav);
+            AssertThat(Rms(pcm))
+                .OverrideFailureMessage(
+                    $"{phase} resolves to a bed but it is effectively silent (RMS {Rms(pcm):0.####}) — " +
+                    "the exact 'on disk but nobody hears it' shape this census exists to catch.")
+                .IsGreater(0.01f);
+        }
+    }
+
+    /// <summary>
+    /// U-audio-2: "nothing you add may be louder than what it replaces." Each per-venue entrance cue
+    /// (<see cref="Cue.EnterForge"/>, <see cref="Cue.EnterTavern"/>, <see cref="Cue.EnterMarket"/>,
+    /// <see cref="Cue.EnterMineGate"/>, <see cref="Cue.EnterNoticeboard"/>) replaces
+    /// <see cref="Cue.PanelOpen"/> at exactly one Town2D building's entrance
+    /// (<c>MainUi.EntranceCueFor</c>) — the owner's complaint was that the generic cue was "too loud and
+    /// harsh," so a replacement that is merely DIFFERENT but equally loud would only fix half of it. Peak
+    /// is the right comparison here (not RMS/LUFS): these are all sub-half-second transients where what a
+    /// player perceives as "loud" is dominated by the peak hit, not the average level.
+    /// </summary>
+    [TestCase]
+    public void TheVenueCues_AreNeverLouderThanPanelOpen()
+    {
+        var panelOpenPeak = Peak(Pcm(SfxLibrary.Get(Cue.PanelOpen)));
+        var venueCues = new[]
+        {
+            Cue.EnterForge, Cue.EnterTavern, Cue.EnterMarket, Cue.EnterMineGate, Cue.EnterNoticeboard,
+        };
+
+        foreach (var cue in venueCues)
+        {
+            var peak = Peak(Pcm(SfxLibrary.Get(cue)));
+            AssertThat(peak)
+                .OverrideFailureMessage(
+                    $"{cue} peaks at {peak:0.###}, PanelOpen (the generic cue it replaces at its " +
+                    $"building) peaks at {panelOpenPeak:0.###}. A per-venue cue that is LOUDER than the " +
+                    "sound it replaces only fixes 'identical,' not 'too loud.'")
+                .IsLessEqual(panelOpenPeak);
         }
     }
 }

@@ -1742,7 +1742,7 @@ public partial class MainUi : Control
         {
             Drawer.Open(id);
             PanelFor(id).Refresh();
-            Audio.Play(Cue.PanelOpen);
+            Audio.Play(EntranceCueFor(id));
             // Watching the raid gets the Mine's own theme; every other panel stays with the day.
             Audio.SetScene(id == "Depths" ? "depths" : null);
         }
@@ -1789,6 +1789,26 @@ public partial class MainUi : Control
             Town.FocusOnMineGate();
         }
     }
+
+    /// <summary>
+    /// U-audio-2: which cue plays when <paramref name="id"/> opens. Owner's playtest: "Noises for the
+    /// buildings are identical as before... should make noises correlating to their building" — every
+    /// panel fired the same generic <see cref="Cue.PanelOpen"/> regardless of which of the five physical
+    /// Town2D buildings (or which non-building drawer) it was. Only the five real buildings — Forge,
+    /// Shop (the market stall), Tavern, Depths (the mine gate), Bounties (the noticeboard) — get their
+    /// own cue; Heroes/Demand/HeroCards/Progress are management surfaces with no building in the world
+    /// to correlate to, so they keep the generic knock-and-slide. A DATA TABLE for the same reason
+    /// <see cref="PanelFor"/> is one: adding a sixth building's cue later is a one-line edit here.
+    /// </summary>
+    private static Cue EntranceCueFor(string id) => id switch
+    {
+        "Forge" => Cue.EnterForge,
+        "Shop" => Cue.EnterMarket,
+        "Tavern" => Cue.EnterTavern,
+        "Depths" => Cue.EnterMineGate,
+        "Bounties" => Cue.EnterNoticeboard,
+        _ => Cue.PanelOpen,
+    };
 
     /// <summary>The drawer-hosted panel registered under <paramref name="id"/> — "Town" is not a
     /// drawer panel (the world is the permanent base, not routed through here).</summary>

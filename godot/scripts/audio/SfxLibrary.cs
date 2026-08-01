@@ -65,6 +65,43 @@ public enum Cue
 
     /// <summary>One stroke of the bellows.</summary>
     Bellows,
+
+    // ── Per-venue entrance cues (U-audio-2).
+    //
+    //    Owner's playtest, verbatim: "Noises for the buildings are identical as before - too loud and
+    //    harsh sounding. should make noises correlating to their building". Both true: every building —
+    //    forge, tavern, market, mine gate, noticeboard — fired the exact same generic Cue.PanelOpen
+    //    (MainUi.OpenPanel had one cue for every drawer, venue or not), and PanelOpen's knock-plus-slide
+    //    was the loudest, sharpest-attack cue a player hears CONSTANTLY, because it fired on every single
+    //    building. These five replace it at the five physical Town2D buildings only (OnTownBuildingClicked's
+    //    own vocabulary: forge/market/tavern/minegate/noticeboard) — Heroes/Demand/HeroCards/Progress are
+    //    not buildings and keep the generic PanelOpen. Each one is quieter than PanelOpen by measurement
+    //    (AudioTests.TheVenueCues_AreNeverLouderThanPanelOpen; see the PR body for the mean/max dBFS table)
+    //    — "identical, too loud" fixed as one change, not two, since a still-loud-but-different cue would
+    //    have only fixed half the complaint. ──
+
+    /// <summary>Entering the Forge: metal, muted — a soft anvil tap, not the bright ringing
+    /// <see cref="HammerOnBeat"/> the minigame itself uses (that one stays loud and bright on purpose —
+    /// it is the skill feedback, not ambience).</summary>
+    EnterForge,
+
+    /// <summary>Entering the Tavern: warm, wooden, a little crowd — a low wood knock with a soft murmur
+    /// underneath and a faint mug clink, nothing sharp.</summary>
+    EnterTavern,
+
+    /// <summary>Entering the Market: coins and cloth — a quiet bright jingle over a short cloth-like
+    /// rustle, both softened well below <see cref="Coin"/>'s own transaction-moment brightness.</summary>
+    EnterMarket,
+
+    /// <summary>Entering the Mine gate: stone and chain — a low stone thud with a short chain-link
+    /// rattle (three quick detuned partials), nothing metallic-bright the way the forge is.</summary>
+    EnterMineGate,
+
+    /// <summary>Entering the Noticeboard: paper and tack — the same material family as
+    /// <see cref="BountyPost"/> (that IS what a corkboard sounds like) but shorter, softer, and seeded
+    /// differently so the two stay distinguishable rather than firing the identical sound for two
+    /// different actions.</summary>
+    EnterNoticeboard,
 }
 
 /// <summary>
@@ -305,6 +342,110 @@ public static class SfxLibrary
             Synth.AddPartial(buf, 146f, 0.4f, halfLife: 0.09f);
             Synth.LowPass(buf, 800f);
             Synth.Normalise(buf, 0.4f);
+        }),
+
+        // ── Per-venue entrance cues. All use AddPartial's new `attack` (Synth.cs) to round off the
+        //    onset instead of the instant-envelope start every earlier cue relies on — "harsh" was
+        //    partly a level problem and partly a transient-shape one, and a soft attack is what fixes
+        //    the second half without touching a single existing cue (attack defaults to 0 = unchanged). ──
+
+        Cue.EnterForge => Build(0.30f, buf =>
+        {
+            // A muted anvil tap: same inharmonic-partial family as HammerOnBeat, one octave down and a
+            // fraction of the amplitude, with a soft attack instead of HammerOnBeat's instant strike —
+            // this is someone WALKING IN, not the moment of a swing.
+            for (var i = 0; i < Synth.Samples(0.02f) && i < buf.Length; i++)
+            {
+                buf[i] += Synth.Noise(i, seed: 61) * 0.30f;
+            }
+
+            Synth.AddPartial(buf, 311f, 0.34f, halfLife: 0.11f, attack: 0.006f);
+            Synth.AddPartial(buf, 622f, 0.16f, halfLife: 0.06f, attack: 0.008f);
+            Synth.AddPartial(buf, 933f, 0.07f, halfLife: 0.035f, attack: 0.010f);
+            Synth.LowPass(buf, 2600f); // takes the edge off the upper partial — the harshness complaint
+            Synth.Normalise(buf, 0.22f);
+        }),
+
+        Cue.EnterTavern => Build(0.42f, buf =>
+        {
+            // Wood knock, low murmur, one faint clink — warm and short rather than bright.
+            for (var i = 0; i < buf.Length; i++)
+            {
+                var t = i / (float)Synth.SampleRate;
+                buf[i] = Synth.Noise(i, seed: 71) * Synth.Decay(t, 0.14f) * 0.35f;
+            }
+
+            Synth.LowPass(buf, 900f); // murmur, not hiss — no bright noise energy at all
+            Synth.AddPartial(buf, 160f, 0.30f, halfLife: 0.09f, attack: 0.01f);
+            Synth.AddPartial(buf, 246f, 0.14f, halfLife: 0.07f, attack: 0.012f);
+            Synth.AddPartial(buf, 1480f, 0.08f, halfLife: 0.05f, attack: 0.02f); // the one mug clink
+            Synth.Normalise(buf, 0.22f);
+        }),
+
+        Cue.EnterMarket => Build(0.30f, buf =>
+        {
+            // Coin jingle plus a short cloth rustle, both well under Coin's own transaction brightness —
+            // this is ambient "you are standing among stalls," not a purchase.
+            for (var i = 0; i < buf.Length; i++)
+            {
+                var t = i / (float)Synth.SampleRate;
+                buf[i] = Synth.Noise(i, seed: 81) * Synth.Decay(t, 0.05f) * 0.25f; // cloth
+            }
+
+            Synth.LowPass(buf, 2200f);
+            Synth.AddPartial(buf, 1900f, 0.20f, halfLife: 0.06f, attack: 0.006f);
+            Synth.AddPartial(buf, 3550f, 0.11f, halfLife: 0.04f, attack: 0.008f);
+            Synth.Normalise(buf, 0.22f);
+        }),
+
+        Cue.EnterMineGate => Build(0.46f, buf =>
+        {
+            // Stone thud, low, plus a staggered three-link chain rattle — nothing metallic-bright, the
+            // opposite character from the forge.
+            for (var i = 0; i < buf.Length; i++)
+            {
+                var t = i / (float)Synth.SampleRate;
+                buf[i] = Synth.Noise(i, seed: 91) * Synth.Decay(t, 0.10f) * 0.4f;
+            }
+
+            Synth.LowPass(buf, 500f);
+            Synth.AddPartial(buf, 90f, 0.28f, halfLife: 0.14f, attack: 0.015f);
+
+            // Three quick detuned links, not a single tone — a chain does not ring on one pitch.
+            for (var link = 0; link < 3; link++)
+            {
+                var start = Synth.Samples(0.05f + link * 0.055f);
+                var end = Math.Min(buf.Length, start + Synth.Samples(0.05f));
+                for (var i = start; i < end; i++)
+                {
+                    var t = (i - start) / (float)Synth.SampleRate;
+                    buf[i] += MathF.Sin(2f * MathF.PI * (620f + link * 90f) * t) * 0.10f * Synth.Decay(t, 0.02f);
+                }
+            }
+
+            Synth.Normalise(buf, 0.22f);
+        }),
+
+        Cue.EnterNoticeboard => Build(0.20f, buf =>
+        {
+            // Same paper-then-tack material as BountyPost (a corkboard's own construction, see that
+            // cue), shorter and gentler, and re-seeded so the two do not collide byte-for-byte on
+            // EveryCue_SoundsDifferentFromEveryOther.
+            for (var i = 0; i < buf.Length; i++)
+            {
+                var t = i / (float)Synth.SampleRate;
+                buf[i] = Synth.Noise(i, seed: 12) * Synth.Decay(t, 0.022f) * 0.35f;
+            }
+
+            Synth.LowPass(buf, 2600f);
+            var tap = Synth.Samples(0.045f);
+            for (var i = tap; i < buf.Length; i++)
+            {
+                var t = (i - tap) / (float)Synth.SampleRate;
+                buf[i] += MathF.Sin(2f * MathF.PI * 1600f * t) * 0.28f * Synth.Decay(t, 0.008f);
+            }
+
+            Synth.Normalise(buf, 0.20f);
         }),
 
         _ => Build(0.05f, buf => Synth.AddPartial(buf, 440f, 0.4f, halfLife: 0.02f)),
