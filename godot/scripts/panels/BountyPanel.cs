@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using GameSim.Advisor;
 using GameSim.Contracts;
 using GameSim.Expedition;
 using Godot;
@@ -68,6 +69,7 @@ public partial class BountyPanel : SimPanel
     private CoinStack? _rewardStack;
     private PosterComposer? _poster;
     private Button? _postButton;
+    private Label? _gateReason;
 
     public override void _Ready() => EnsureBuilt();
 
@@ -136,26 +138,51 @@ public partial class BountyPanel : SimPanel
         GatePostButton(state);
     }
 
-    /// <summary>Gate the Post button to when the sim will actually accept a bounty: bounties post in
-    /// the Morning or Evening only (<see cref="ActionLegality"/>), and the reward gold must be
-    /// affordable to escrow. Mirrors ForgePanel's buy/craft gating so a player never clicks a Post
-    /// that silently bounces (the click-through found this button clickable in every phase / with 0g).</summary>
+    /// <summary>Gate the Post button to when the sim will actually accept THIS EXACT candidate
+    /// (the floor/reward the form currently holds) by asking <see cref="ActionLegality.IsLegal"/> —
+    /// not a hand-rolled re-derivation of its rule. A prior version re-checked only phase +
+    /// affordability inline, which drifted silent of a THIRD guard <c>BountyHandlers.Apply</c> also
+    /// enforces (day action-slot exhaustion, checked last — see <c>BountyHandlers.cs</c>): on a day
+    /// with 0 slots left, that version reported the button legal, right up until the click bounced.
+    /// Calling the real predicate makes that class of drift impossible to reintroduce — a future
+    /// guard added to <c>BountyHandlers</c>/mirrored into <c>ActionLegality</c> is picked up here
+    /// for free.
+    ///
+    /// <para>The player-facing reason is still hand-written (<see cref="ActionLegality.IsLegal"/>
+    /// only returns a bool), checked in the SAME order the handler applies its guards so the text
+    /// never contradicts the verdict. It is written to BOTH the button's tooltip (<see
+    /// cref="GateButton"/>'s existing R6 contract) AND <see cref="_gateReason"/>, a plain on-panel
+    /// label that never needs a hover — the human-playtest harness's button census (design doc
+    /// <c>2026-07-30-human-playtest-harness.md</c>) flagged Bounties as the one panel where a
+    /// disabled control with only a tooltip "reads as broken rather than gated": on a fresh
+    /// campaign's day 1 the Post button IS this panel's only <c>Button</c>, so a hover-only reason
+    /// leaves a first-time player nothing to read at all.</para>
+    /// </summary>
     private void GatePostButton(GameState state)
     {
-        if (_postButton is null)
+        if (_postButton is null || _floorSection is null || _rewardStack is null || _gateReason is null)
         {
             return;
         }
 
-        var legalPhase = state.Phase is DayPhase.Morning or DayPhase.Evening;
-        var reward = _rewardStack?.Value ?? 0;
-        var affordable = state.Player.Gold >= reward;
-        GateButton(
-            _postButton,
-            legalPhase && affordable,
-            !legalPhase
-                ? "Bounties are posted in the Morning or Evening."
-                : $"Not enough gold to escrow {reward}g — you have {state.Player.Gold}g.");
+        var floor = _floorSection.SelectedFloor;
+        var reward = _rewardStack.Value;
+        var candidate = new PostBountyAction(floor, reward);
+        var legal = ActionLegality.IsLegal(state, candidate, state.Phase);
+
+        // Same guard order BountyHandlers.Apply checks in (phase -> escrow gold -> action slots),
+        // so whichever reason prints is the one that actually made IsLegal return false. Floor
+        // range and "reward > 0" are omitted here: MineCrossSection/CoinStack clamp both to legal
+        // values by construction (SelectFloor / CoinStack.MinValue = 1), so those two guards can
+        // never be the reason THIS candidate is illegal.
+        var reason = state.Phase is not (DayPhase.Morning or DayPhase.Evening)
+            ? "Bounties are posted in the Morning or Evening."
+            : state.Player.Gold < reward
+                ? $"Not enough gold to escrow {reward}g — you have {state.Player.Gold}g."
+                : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+
+        GateButton(_postButton, legal, reason);
+        _gateReason.Text = legal ? string.Empty : reason;
     }
 
     /// <summary>Render one hero's accept/decline judgment as a small pinned sticky note (U6) —
@@ -239,7 +266,22 @@ public partial class BountyPanel : SimPanel
 
         _postButton = AddButton(posterRow, "PostBounty", "Post", OnPostPressed);
 
-        // Re-gate live as the player counts coins onto the desk — the escrow must stay affordable.
+        // Always-visible twin of the Post button's tooltip (see GatePostButton's doc comment) — a
+        // disabled control whose only explanation is a hover is exactly what read as "broke" to a
+        // first-time player in the human-playtest harness's button census.
+        _gateReason = AddLabel(formSection.Body, string.Empty);
+        _gateReason.Name = "BountyGateReason";
+        _gateReason.AddThemeColorOverride("font_color", GameTheme.WarnColor);
+
+        // Re-gate live as the player picks a floor or counts coins onto the desk — both are part of
+        // the exact candidate ActionLegality.IsLegal is asked about.
+        _floorSection.FloorSelected += _ =>
+        {
+            if (Adapter is not null)
+            {
+                GatePostButton(Adapter.CurrentState);
+            }
+        };
         _rewardStack.ValueChanged += _ =>
         {
             if (Adapter is not null)
