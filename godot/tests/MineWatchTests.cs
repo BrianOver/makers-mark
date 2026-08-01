@@ -339,6 +339,47 @@ public class MineWatchTests
     // ── U16: the in-panel journey feed (MineWatch evolves to carry it — KTD11/AE2) ─────────────
 
     [TestCase]
+    public void ExpeditionPhase_PartyDeparted_FeedShowsRosterAndCraftedGear_NotJustRumor()
+    {
+        // U-EXP1 (Expedition-watchable, owner-flagged twice: "the player just sits there"):
+        // before this unit, EVERY tick of the entire Expedition phase rendered nothing here but a
+        // content-free "Rumor has it a party sets out for floor N…" placeholder — no name, no
+        // gear, the whole premise's payoff ("the gear you forged, out in the world") invisible for
+        // the one phase the player is actually watching a raid depart. Pins the fix at the real
+        // render layer (JourneyStreamTests pins the same fact at the pure data layer): the strip's
+        // own feed label shows the hero's name AND the crafted item from the very first Refresh,
+        // reading nothing that isn't already on GameState (Hero.Gear + Item.Mark).
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var weapon = new ItemId(1);
+            var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+                .Add(1, Delver(1, "Torvald", "vanguard") with { Gear = new GearSet(weapon, null, null) });
+            var items = ImmutableSortedDictionary<int, Item>.Empty
+                .Add(1, new Item(weapon, "recipe", "Fine Iron Blade", ItemSlot.Weapon, QualityGrade.Fine,
+                    new ItemStats(1, 0, 1), new MakersMark("Player", 1), ImmutableList<ItemHistoryEntry>.Empty));
+            var state = GameFactory.NewGame(9098) with { Heroes = heroes, Items = items };
+            var plan = new PartyPlan(ImmutableList.Create(new HeroId(1)), TargetFloor: 2, VenueId: "mine");
+            var events = ImmutableList.Create<GameEvent>(
+                new PartyDeparted(ImmutableList.Create(new HeroId(1)), 2),
+                new PartiesFormed(ImmutableList.Create(plan)));
+
+            watch.Refresh(state with { Phase = DayPhase.Expedition }, events);
+
+            AssertThat(watch.State).IsEqual(MineWatch.WatchState.Marching); // figures still march (unchanged)
+            var feed = Find<Label>(watch, "JourneyFeedLabel");
+            AssertThat(feed.Visible).IsTrue();
+            AssertThat(feed.Text).Contains("Torvald");
+            AssertThat(feed.Text).Contains("Fine Iron Blade");
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
     public void CampPhase_FeedRevealsBeats_MonsterNameFromCombatEvent()
     {
         var watch = new MineWatch();

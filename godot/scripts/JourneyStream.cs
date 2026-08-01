@@ -35,11 +35,30 @@ public enum JourneyStage
 public sealed record JourneyBeat(int Floor, string Text, bool IsAttribution, ItemId? Item = null);
 
 /// <summary>
+/// U-EXP1 ("the Expedition phase gives the player nothing to watch" — owner-flagged twice): one
+/// "who's carrying what you forged" line, built from a hero's currently-equipped
+/// <see cref="Hero.Gear"/> cross-referenced against <see cref="Item.PlayerCrafted"/>. Deliberately
+/// NOT a <see cref="JourneyBeat"/>: a beat is combat that <see cref="JourneyPlayhead"/> times out
+/// across the phase because it doesn't exist yet at Rumored stage (<see cref="JourneyStage"/>'s own
+/// doc — pinned by <c>JourneyStreamTests.Expedition_Phase_BuildsRumoredCards_FromPartiesFormed_NoBeats</c>,
+/// which this unit leaves untouched on purpose). A manifest line is a ROSTER FACT: gear doesn't
+/// change mid-raid, so it is complete and true the instant the party departs — exactly the
+/// "who went, what they carry that the player MADE" payoff the Expedition phase was missing.
+/// <see cref="Item"/> is the same clickable target a proven ★ attribution beat carries —
+/// <c>ScryingMirror</c> opens the identical <see cref="GodotClient.Panels.ProvenanceCard"/> for it.
+/// </summary>
+public sealed record JourneyManifestLine(ItemId Item, string Text);
+
+/// <summary>
 /// One party's spectate card for the CURRENT tick — <see cref="PartyKey"/> (the party's minimum
 /// <see cref="HeroId"/>, stable across a day's ticks since v1 never changes a party's roster
 /// mid-expedition) is the identity <see cref="JourneyFeed"/> keys its per-party
 /// <see cref="JourneyPlayhead"/> on, so party tabs/PiP selection survive a phase transition that
 /// regenerates every <see cref="JourneyCard"/> from scratch.
+///
+/// <para><see cref="PartyNames"/> and <see cref="Manifest"/> (U-EXP1) are resolved ONCE here,
+/// same as every hero/item name already baked into <see cref="Beats"/>' text — every renderer gets
+/// display-ready strings, never a raw <see cref="HeroId"/> to resolve itself.</para>
 /// </summary>
 public sealed record JourneyCard(
     int PartyKey,
@@ -48,7 +67,9 @@ public sealed record JourneyCard(
     int DeepestFloorCleared,
     string VenueId,
     JourneyStage Stage,
-    ImmutableList<JourneyBeat> Beats);
+    ImmutableList<JourneyBeat> Beats,
+    ImmutableList<string> PartyNames,
+    ImmutableList<JourneyManifestLine> Manifest);
 
 /// <summary>
 /// KTD11 spectate-feed reader: a PURE function of <see cref="GameState"/> (+ the tick's
@@ -81,18 +102,19 @@ public static class JourneyStream
     public static ImmutableList<JourneyCard> Build(GameState state, ImmutableList<GameEvent> lastEvents) =>
         state.Phase switch
         {
-            DayPhase.Expedition => RumoredCards(lastEvents),
+            DayPhase.Expedition => RumoredCards(state, lastEvents),
             DayPhase.Camp or DayPhase.ExpeditionDeep or DayPhase.Evening => LiveCards(state),
             _ => ImmutableList<JourneyCard>.Empty, // Morning: nothing underground yet
         };
 
-    private static ImmutableList<JourneyCard> RumoredCards(ImmutableList<GameEvent> lastEvents) =>
+    private static ImmutableList<JourneyCard> RumoredCards(GameState state, ImmutableList<GameEvent> lastEvents) =>
         lastEvents.OfType<PartiesFormed>()
             .SelectMany(formed => formed.Parties)
             .Where(plan => !plan.Roster.IsEmpty)
             .Select(plan => new JourneyCard(
                 PartyKeyOf(plan.Roster), plan.Roster, plan.TargetFloor, DeepestFloorCleared: 0,
-                plan.VenueId, JourneyStage.Rumored, ImmutableList<JourneyBeat>.Empty))
+                plan.VenueId, JourneyStage.Rumored, ImmutableList<JourneyBeat>.Empty,
+                PartyNamesOf(plan.Roster, state.Heroes), BuildManifest(plan.Roster, state)))
             .ToImmutableList();
 
     private static ImmutableList<JourneyCard> LiveCards(GameState state)
@@ -107,7 +129,8 @@ public static class JourneyStream
                 state.Heroes, state.Items);
             cards.Add(new JourneyCard(
                 PartyKeyOf(inFlight.Party), inFlight.Party, inFlight.TargetFloor, inFlight.DeepestFloorCleared,
-                inFlight.VenueId, stage, beats));
+                inFlight.VenueId, stage, beats,
+                PartyNamesOf(inFlight.Party, state.Heroes), BuildManifest(inFlight.Party, state)));
         }
 
         foreach (var result in state.PendingExpeditions)
@@ -115,11 +138,67 @@ public static class JourneyStream
             var beats = BuildBeats(result.Floors, result.Deaths, result.Beats, state.Heroes, state.Items);
             cards.Add(new JourneyCard(
                 PartyKeyOf(result.Party), result.Party, result.TargetFloor, result.DeepestFloorCleared,
-                result.VenueId, JourneyStage.Resolved, beats));
+                result.VenueId, JourneyStage.Resolved, beats,
+                PartyNamesOf(result.Party, state.Heroes), BuildManifest(result.Party, state)));
         }
 
         return cards.ToImmutable();
     }
+
+    /// <summary>U-EXP1: resolved display names for a roster, party order, "Hero #N" fallback for a
+    /// dangling id (defensive — every real caller's roster resolves) — same convention as every
+    /// other name lookup in this file.</summary>
+    private static ImmutableList<string> PartyNamesOf(ImmutableList<HeroId> party, ImmutableSortedDictionary<int, Hero> heroes) =>
+        party.Select(id => HeroName(heroes, id)).ToImmutableList();
+
+    /// <summary>
+    /// U-EXP1: "who carries what you forged" — every party member's currently-equipped gear
+    /// (<see cref="Hero.Gear"/>, same four slots <see cref="Hero.GearScore"/> sums) filtered to
+    /// <see cref="Item.PlayerCrafted"/> only, so a rival-geared or bare-handed recruit contributes
+    /// nothing (never a fabricated line). Order is roster order, then Weapon/Shield/Armor/Trinket —
+    /// deterministic, no RNG, pure read of already-live <see cref="GameState"/> (KTD2). Valid at
+    /// EVERY stage (Rumored included — gear is known complete at departure, unlike combat), so this
+    /// is called from all three <see cref="JourneyCard"/> construction sites above.
+    /// </summary>
+    private static ImmutableList<JourneyManifestLine> BuildManifest(ImmutableList<HeroId> party, GameState state)
+    {
+        var lines = ImmutableList.CreateBuilder<JourneyManifestLine>();
+        foreach (var heroId in party)
+        {
+            if (!state.Heroes.TryGetValue(heroId.Value, out var hero))
+            {
+                continue; // graceful degrade — a dangling roster id renders nothing, never throws
+            }
+
+            foreach (var slot in new[] { hero.Gear.Weapon, hero.Gear.Shield, hero.Gear.Armor, hero.Gear.Trinket })
+            {
+                if (slot is not { } itemId
+                    || !state.Items.TryGetValue(itemId.Value, out var item)
+                    || !item.PlayerCrafted)
+                {
+                    continue;
+                }
+
+                lines.Add(new JourneyManifestLine(itemId, $"{hero.Name} carries your {item.Name}."));
+            }
+        }
+
+        return lines.ToImmutable();
+    }
+
+    /// <summary>
+    /// U-EXP1: the one-line departure teaser shown before any real <see cref="JourneyBeat"/> has
+    /// revealed — <c>MineWatch</c>'s in-strip feed and <c>PipDock</c>'s corner dock both need this
+    /// exact text, so it lives here once rather than as two copy-pasted branches that could drift.
+    /// Prefers the manifest's first "carries your X" line (the actual payoff the Expedition phase
+    /// was missing) over the old bare "a party sets out" placeholder; falls back to the placeholder
+    /// only when nobody in the party happens to be carrying anything player-crafted (a fresh or
+    /// rival-geared party) — never fabricates a manifest line that isn't true.
+    /// </summary>
+    public static string DepartureLine(JourneyCard card) =>
+        card.Manifest.IsEmpty
+            ? $"A party sets out for floor {card.TargetFloor}…"
+            : card.Manifest[0].Text + (card.Manifest.Count > 1 ? $" (+{card.Manifest.Count - 1} more)" : string.Empty);
 
     /// <summary>
     /// Renders one party's floors into ordered beats, self-censoring every death round (KTD5/R17/
