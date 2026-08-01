@@ -161,9 +161,21 @@ public class PlaytestLogTests
 
     private static string Dump(List<string> notes) => $"notes: [{string.Join(" | ", notes)}]";
 
+    /// <summary>
+    /// Only the MINIGAME notes, because this suite is about the minigame call sites.
+    ///
+    /// <para>It originally counted every note in the file, which made it a test about the whole
+    /// game's logging rather than about its own subject. It broke the moment an unrelated feature
+    /// started logging: wiring composed music added <c>"MUSIC: composed 'quest-wait' for
+    /// Expedition"</c> rows, the total went from 2 to 4, and a green feature branch went red for a
+    /// reason that had nothing to do with it. An exact count over a shared, append-only stream
+    /// couples a test to every future writer of that stream.</para>
+    /// </summary>
     private static List<string> Notes(string path) =>
         System.IO.File.Exists(path)
-            ? System.IO.File.ReadAllLines(path).Where(l => l.Contains("\"kind\":\"note\"")).ToList()
+            ? System.IO.File.ReadAllLines(path)
+                .Where(l => l.Contains("\"kind\":\"note\"") && l.Contains("\"what\":\"minigame "))
+                .ToList()
             : new List<string>();
 }
 #endif
