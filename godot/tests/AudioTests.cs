@@ -526,6 +526,20 @@ public class AudioTests
     /// back. Calls <c>_UnhandledKeyInput</c> directly (this suite's established pattern for
     /// overridden lifecycle methods, e.g. <c>_Process</c> elsewhere in this file) rather than pumping
     /// the input system through a frame.
+    ///
+    /// <para><b>Why this asserts on the AUDIBLE player, not "any player has stream X".</b> A first
+    /// version of this test checked <c>music.Any(p =&gt; p.Stream == X)</c> and failed on the SECOND
+    /// press even though the toggle was working correctly. Root cause: <c>AudioStreamPlayer.Stop()</c>
+    /// (called by <see cref="AudioDirector._Process"/> once a fade completes) does not clear
+    /// <c>.Stream</c> — a fully faded-out, silent player keeps whatever stream it last held. With only
+    /// two players round-robining, a THIRD crossfade reassigns the player that was silent two
+    /// crossfades ago back to a stream it already held — so "does any player have stream X" can stay
+    /// true from a stale, inaudible reference even after the toggle correctly swapped what is actually
+    /// playing. The toggle logic itself was never wrong; "any player has this stream" just is not the
+    /// same question as "what is currently playing," once more than two crossfades have happened. This
+    /// version asks the right question: after letting a crossfade land fully, exactly one player sits
+    /// at <c>MusicDb+trim</c> (audible) and the other at <c>SilentDb</c> (silent) — so the loudest one
+    /// IS the current bed, and its stream is the only one worth asserting on.</para>
     /// </summary>
     [TestCase]
     public void TheABToggle_SwapsComposedAndSynthLive()
@@ -535,11 +549,20 @@ public class AudioTests
         {
             ((SceneTree)Engine.GetMainLoop()).Root.AddChild(director);
 
-            director.SetPhase(DayPhase.Evening); // composed 'town-dusk' by default (_preferSynth starts false)
             var music = director.GetChildren().OfType<AudioStreamPlayer>()
                 .Where(p => p.Name.ToString().StartsWith("Music")).ToList();
 
-            AssertThat(music.Any(p => p.Stream == MusicBed.For(DayPhase.Evening)))
+            // Lets the current crossfade land fully (CrossfadeSeconds), then returns whichever player
+            // ended up audible — the one NOT sitting at SilentDb. Stale streams on the other, silent
+            // player (see the class doc above) never matter here because we only ever look at this one.
+            AudioStreamPlayer CurrentlyAudible()
+            {
+                director._Process(2.5); // CrossfadeSeconds
+                return music.OrderByDescending(p => p.VolumeDb).First();
+            }
+
+            director.SetPhase(DayPhase.Evening); // composed 'town-dusk' by default (_preferSynth starts false)
+            AssertThat(CurrentlyAudible().Stream == MusicBed.For(DayPhase.Evening))
                 .OverrideFailureMessage(
                     "Evening started on the synth bed, not the composed track — the toggle has " +
                     "nothing to prove otherwise against.")
@@ -548,14 +571,20 @@ public class AudioTests
             var keyDown = new InputEventKey { PhysicalKeycode = Key.M, Pressed = true };
 
             director._UnhandledKeyInput(keyDown);
-            AssertThat(music.Any(p => p.Stream == MusicBed.For(DayPhase.Evening)))
+            AssertThat(CurrentlyAudible().Stream == MusicBed.For(DayPhase.Evening))
                 .OverrideFailureMessage("Pressing M did not swap Evening onto the synth bed.")
                 .IsTrue();
 
             director._UnhandledKeyInput(keyDown);
-            AssertThat(music.Any(p => p.Stream == MusicBed.For(DayPhase.Evening)))
+            AssertThat(CurrentlyAudible().Stream == MusicBed.For(DayPhase.Evening))
                 .OverrideFailureMessage("Pressing M a second time did not swap Evening back to the composed track.")
                 .IsFalse();
+
+            // A toggle that works once is not a toggle — confirm the CYCLE, not just one flip.
+            director._UnhandledKeyInput(keyDown);
+            AssertThat(CurrentlyAudible().Stream == MusicBed.For(DayPhase.Evening))
+                .OverrideFailureMessage("Pressing M a third time did not swap Evening onto the synth bed again — the toggle only flipped once.")
+                .IsTrue();
         }
         finally
         {
