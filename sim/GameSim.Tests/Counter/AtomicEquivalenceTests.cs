@@ -121,8 +121,17 @@ public class AtomicEquivalenceTests
     // and NO new RNG draw SITE was added — the sibling PhaseBNoDrawGate pin confirms RngState.Inc
     // is UNCHANGED, only State moved (different draw count on the same stream, exactly the U-C3
     // shape above).
+    // RE-BASELINED AGAIN, same PR (2026-08-01 pre-merge review: Emberfall pulled back to DORMANT
+    // — built + banded but zero committed art, and it had measured 44% of all routing, i.e. half
+    // the game's raids pointed at placeholder glyphs): **Class 0b — values change, draw-free.**
+    // LiveRotation drops emberfall (no idle-trace party ever reached its 72 band in 30 days, so
+    // every routing decision — and therefore the ENTIRE RNG stream — is byte-identical: the
+    // sibling PhaseBNoDrawGate RngState pin did NOT move this time, State and Inc both equal).
+    // What moves the hash is the priced-pool contraction (19 → 14 keys, Emberfall's ladder waits
+    // for its art-gated go-live): the pool-derived, draw-free vendor/pricing surfaces serialize
+    // differently. One PR, two recorded re-pins, still ONE deliberate re-baseline window.
     private const string ExpectedPreCounterSha256 =
-        "776D0AA5ED3CCC257BF537593B800C2E8AFB23C417B5E31F1F8521EEC38AE503";
+        "C919592380B5D0B433063A9CFCCC9C2625C01708C41CF2038429B9A618300D5F";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

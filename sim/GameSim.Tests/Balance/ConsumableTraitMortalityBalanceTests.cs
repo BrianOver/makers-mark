@@ -167,10 +167,12 @@ public class ConsumableTraitMortalityBalanceTests
         // Wherever per-round monster damage outpaces the heal, pressing on is net-LETHAL, and the
         // sign of the mortality delta follows the venue/floor mix the router produces:
         //
-        //   - old tightest-fit router (pre-bands): reckless 359/491 (73%) vs prepared 326/490
+        //   - old tightest-fit router (pre-bands):     reckless 359/491 (73%) vs prepared 326/490
         //     (67%) died — Reckless worse, the old assertion held;
-        //   - banded router, same 90 seeds:        reckless 243/437 (56%) vs prepared 330/465
-        //     (71%) died — INVERTED, by a margin far outside sampling noise (~900 heroes).
+        //   - banded router, 4-venue rotation:         reckless 243/437 (56%) vs prepared 330/465
+        //     (71%) died — INVERTED, far outside sampling noise (~900 heroes);
+        //   - banded router, SHIPPING 3-venue rotation (Emberfall dormant): reckless 249/451
+        //     (55%) vs prepared 341/470 (73%) — the inversion is the router's, not Emberfall's.
         //
         // The inversion is a real, flagged GAME-DESIGN question (does "Prepared" deserve its
         // survival-positive flavor while the quaff rule converts guaranteed flees into fights?) —
