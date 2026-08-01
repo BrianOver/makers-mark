@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using GameSim.Contracts;
 using Godot;
 
@@ -46,6 +47,70 @@ public sealed partial class AudioDirector : Node
 
     private const float SilentDb = -60f;
 
+    /// <summary>One entry in <see cref="ComposedTracks"/>: which phase it replaces, and how far to
+    /// trim it relative to <see cref="MusicDb"/> so it reads at the same loudness as the bed it
+    /// stands in for. See the table's own doc comment for where <see cref="TrimDb"/> came from.</summary>
+    private readonly record struct ComposedTrack(string Id, string ResourcePath, float TrimDb);
+
+    /// <summary>
+    /// U2 (make-it-visible plan): which composed track, if any, replaces the synth bed for a phase.
+    /// A DATA TABLE, not a switch full of ifs — remapping a track to a different phase, or handing a
+    /// phase back to the synth bed, is a one-line edit here and nothing else. That matters because
+    /// the owner's post-sitting verdicts (U8: keep / revert / remap) need to be exactly that cheap.
+    ///
+    /// <para><b>Why these three phases and no others.</b> Only three tracks exist — town-dusk for
+    /// the evening light change, night-still for the quiet camp decision window, quest-wait for both
+    /// Expedition phases (the party is out either way; Deep gets the same track rather than a fourth
+    /// one that does not exist yet). Morning and the Mine's own <see cref="MusicBed.Underground"/>
+    /// theme have no composed entry and stay on the synth bed — the gap is stated, not papered over
+    /// (KTD-C: "no new music generation... only wiring the three tracks that exist").</para>
+    ///
+    /// <para><b>TrimDb, and why it is not just zero everywhere.</b> Measured with ffmpeg's
+    /// <c>loudnorm</c> analysis pass (integrated LUFS) run identically on each composed file AND on a
+    /// plain WAV render of the synth bed it replaces (see the U2 PR body for the exact numbers) — the
+    /// only available substitute for a listen, since nothing in this pipeline can hear (R8). Measured:
+    /// town-dusk -13.8 LUFS vs the Evening bed's -18.3 (4.5 LU hot); quest-wait -14.3 LUFS vs
+    /// Expedition/ExpeditionDeep's -17.9/-17.4 (3.1-3.6 LU hot, rounded down to -4dB for both so
+    /// neither ends up over its own bed); night-still -21.7 LUFS vs the Camp bed's -17.4 (already 4.3
+    /// LU QUIETER, so it keeps a zero trim — boosting a quiet track's gain to "catch up" would undo
+    /// the exact lesson <see cref="MusicDb"/>'s own retune already taught: "a little loud" -> err
+    /// quiet). This is a measured best-effort, not a verdict: the owner's in-game A/B
+    /// (<see cref="_UnhandledKeyInput"/>) is what actually confirms "comparable."</para>
+    /// </summary>
+    private static readonly Dictionary<DayPhase, ComposedTrack> ComposedTracks = new()
+    {
+        [DayPhase.Evening] = new ComposedTrack("town-dusk", "res://assets/audio/town-dusk.mp3", TrimDb: -5f),
+        [DayPhase.Camp] = new ComposedTrack("night-still", "res://assets/audio/night-still.mp3", TrimDb: 0f),
+        [DayPhase.Expedition] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.mp3", TrimDb: -4f),
+        [DayPhase.ExpeditionDeep] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.mp3", TrimDb: -4f),
+    };
+
+    /// <summary>Loaded composed streams, keyed by resource path so the same file backing two table
+    /// entries (quest-wait covers both Expedition phases) is decoded once, not twice.</summary>
+    private static readonly Dictionary<string, AudioStream> ComposedCache = new();
+
+    /// <summary>
+    /// Census surface (KTD-B applied to audio, U2): every phase this build currently maps to a
+    /// composed track, with its id — public, read-only, and ids-only (no stream) so
+    /// <c>AudioTests.EveryComposedTrack_LoadsAndLoops</c> can enumerate the table and assert each
+    /// entry resolves to real, loop-enabled audio without reaching into private state, and without
+    /// forcing every track to decode as a side effect of merely counting entries. This is exactly the
+    /// list that must never contain an id nobody can hear — "committed but never wired" (the fate of
+    /// these three tracks before this unit) fails <c>EveryComposedTrack_LoadsAndLoops</c> the moment
+    /// an id is added here without a file to back it, or removed from here without removing the file.
+    /// </summary>
+    public static IReadOnlyDictionary<DayPhase, string> ComposedTrackIds =>
+        ComposedTracks.ToDictionary(kv => kv.Key, kv => kv.Value.Id);
+
+    /// <summary>
+    /// Loads the composed track mapped to <paramref name="phase"/>, or null if none is mapped or it
+    /// failed to load. Test-only entry point into <see cref="LoadComposed"/> — the SAME loader
+    /// <see cref="ResolveBed"/> uses at runtime, so a green census means the game's actual code path
+    /// resolved real audio, not a parallel check that could quietly drift from what actually plays.
+    /// </summary>
+    public static AudioStream? LoadComposedTrackForCensus(DayPhase phase) =>
+        ComposedTracks.TryGetValue(phase, out var track) ? LoadComposed(track) : null;
+
     private readonly List<AudioStreamPlayer> _voices = new();
     private int _nextVoice;
 
@@ -54,6 +119,18 @@ public sealed partial class AudioDirector : Node
 
     /// <summary>True when <see cref="_musicA"/> is the one currently fading UP.</summary>
     private bool _aIsActive = true;
+
+    /// <summary>The <see cref="ComposedTrack.TrimDb"/> currently armed on each player, so a crossfade
+    /// already in flight fades FROM the level a player is actually at rather than assuming both
+    /// players always target the same <see cref="MusicDb"/> — see <see cref="_Process"/>.</summary>
+    private float _musicATrimDb;
+    private float _musicBTrimDb;
+
+    /// <summary>Dev A/B toggle (<see cref="_UnhandledKeyInput"/>): true forces the synth bed even
+    /// where a composed track is mapped, so the owner can flip back and forth and judge the two back
+    /// to back (R3). Composed is preferred by default (false) — the whole point of landing these
+    /// tracks is that they play unless told otherwise.</summary>
+    private bool _preferSynth;
 
     /// <summary>Seconds into the current crossfade, or -1 when no fade is in flight (mirrors the
     /// accumulated-delta idiom used by <c>TabFade</c> and <c>DayPhaseTint</c> — no engine Tween).</summary>
@@ -152,7 +229,125 @@ public sealed partial class AudioDirector : Node
             return;
         }
 
-        CrossfadeTo(MusicBed.For(phase));
+        ApplyPhaseBed(phase);
+    }
+
+    /// <summary>Resolves and crossfades to whichever bed <paramref name="phase"/> should be playing
+    /// right now (composed-first ladder via <see cref="ResolveBed"/>), and logs which one won. The
+    /// shared tail of <see cref="SetPhase"/> and <see cref="SetScene"/>'s day-bed fallback — both mean
+    /// "the town's own bed for this phase," so both go through the same resolution and the same log
+    /// line rather than two copies that could drift apart.</summary>
+    private void ApplyPhaseBed(DayPhase phase)
+    {
+        var (stream, trimDb, label) = ResolveBed(phase);
+        LogBedSwap(label, phase);
+        CrossfadeTo(stream, trimDb);
+    }
+
+    /// <summary>
+    /// Composed-first ladder (KTD-C): prefers <see cref="ComposedTracks"/> for <paramref name="phase"/>
+    /// unless the dev A/B toggle is forcing the synth ladder (<see cref="_preferSynth"/>), no composed
+    /// track is mapped to this phase, or the mapped one fails to load (missing LFS content on a bare
+    /// checkout). <see cref="MusicBed"/> is therefore always reachable and never removed — it is the
+    /// fallback for every gap in the table, not just a stepping stone this unit deletes.
+    /// </summary>
+    private (AudioStream Stream, float TrimDb, string Label) ResolveBed(DayPhase phase)
+    {
+        if (!_preferSynth && ComposedTracks.TryGetValue(phase, out var track))
+        {
+            var composed = LoadComposed(track);
+            if (composed is not null)
+            {
+                return (composed, track.TrimDb, $"composed '{track.Id}'");
+            }
+        }
+
+        return (MusicBed.For(phase), 0f, "synth bed");
+    }
+
+    /// <summary>
+    /// Loads (and caches) a composed track, or returns null after a LOUD warning if it cannot be
+    /// found — a checkout without its Git LFS content pulled must degrade to the synth bed audibly
+    /// documented in the log, never to a silent crash. Same NULL-TOLERANT-BUT-LOUD contract KTD-B
+    /// applies to art: the fallback stays; only its silence goes.
+    /// </summary>
+    private static AudioStream? LoadComposed(ComposedTrack track)
+    {
+        if (ComposedCache.TryGetValue(track.ResourcePath, out var cached))
+        {
+            return cached;
+        }
+
+        if (!ResourceLoader.Exists(track.ResourcePath))
+        {
+            GD.PushWarning(
+                $"[AudioDirector] composed track '{track.Id}' is missing at {track.ResourcePath} " +
+                "(Git LFS content not pulled?) — falling back to the synth bed.");
+            return null;
+        }
+
+        var stream = GD.Load<AudioStream>(track.ResourcePath);
+        if (stream is AudioStreamMP3 mp3)
+        {
+            // Belt-and-suspenders: the .import file's loop=true param already bakes this into the
+            // compiled resource, but every OTHER loop guarantee in this file is enforced in code, not
+            // metadata, and a stray future reimport must not be able to silently drop it either.
+            mp3.Loop = true;
+        }
+
+        ComposedCache[track.ResourcePath] = stream;
+        return stream;
+    }
+
+    /// <summary>The one line this whole unit exists to produce: which bed is actually playing, printed
+    /// so it is visible in any console AND written to the session log so "on disk but never in the
+    /// game" (the exact defect this unit fixes) is provably false in a played session's own record.</summary>
+    private static void LogBedSwap(string label, DayPhase phase)
+    {
+        var line = $"MUSIC: {label} for {phase}";
+        GD.Print(line);
+        PlaytestLog.Note(line);
+    }
+
+    /// <summary>
+    /// Dev A/B toggle: M flips composed vs synth and immediately re-applies whatever bed the current
+    /// phase/scene would resolve to, so the owner can flip back and forth on the SAME phase and judge
+    /// the two back to back (R3) rather than waiting for the day to move on. No <c>MainUi.cs</c> edit
+    /// needed — <c>Node</c> already receives unhandled input directly.
+    /// </summary>
+    public override void _UnhandledKeyInput(InputEvent @event)
+    {
+        if (@event is not InputEventKey { PhysicalKeycode: Key.M, Pressed: true, Echo: false })
+        {
+            return;
+        }
+
+        _preferSynth = !_preferSynth;
+        GetViewport()?.SetInputAsHandled();
+
+        var toggleLine = $"MUSIC: A/B toggle -> {(_preferSynth ? "synth preferred" : "composed preferred")}";
+        GD.Print(toggleLine);
+        PlaytestLog.Note(toggleLine);
+
+        ReapplyCurrentBed();
+    }
+
+    /// <summary>Re-resolves and crossfades to whatever SHOULD be playing right now, bypassing the
+    /// idempotent "unchanged phase/scene" guards on <see cref="SetPhase"/>/<see cref="SetScene"/> —
+    /// the A/B toggle needs exactly that bypass, since it changes what a phase resolves to without the
+    /// phase itself changing. No-ops while muted (nothing to swap the volume of) or under the Mine's
+    /// own <see cref="MusicBed.Underground"/> theme, which has no composed alternative to toggle to.</summary>
+    private void ReapplyCurrentBed()
+    {
+        if (Muted || _scene == "depths")
+        {
+            return;
+        }
+
+        if (_phase is { } phase)
+        {
+            ApplyPhaseBed(phase);
+        }
     }
 
     /// <summary>
@@ -180,24 +375,35 @@ public sealed partial class AudioDirector : Node
             return;
         }
 
-        var stream = scene switch
+        if (scene == "depths")
         {
-            "depths" => MusicBed.Underground(),
-            _ => _phase is { } p ? MusicBed.For(p) : null,
-        };
+            CrossfadeTo(MusicBed.Underground(), trimDb: 0f);
+            return;
+        }
 
-        if (stream is not null)
+        // Unknown/no scene: same "the day's own bed" fallback as before, now routed through the
+        // composed-first ladder so leaving a scene can come back to a composed track, not just synth.
+        if (_phase is { } p)
         {
-            CrossfadeTo(stream);
+            ApplyPhaseBed(p);
         }
     }
 
-    private void CrossfadeTo(AudioStream stream)
+    private void CrossfadeTo(AudioStream stream, float trimDb)
     {
         var incoming = _aIsActive ? _musicB : _musicA;
         incoming.Stream = stream;
         incoming.VolumeDb = SilentDb;
         incoming.Play();
+
+        if (_aIsActive)
+        {
+            _musicBTrimDb = trimDb;
+        }
+        else
+        {
+            _musicATrimDb = trimDb;
+        }
 
         _aIsActive = !_aIsActive;
         _fadeElapsed = 0;
@@ -244,8 +450,14 @@ public sealed partial class AudioDirector : Node
         var rising = _aIsActive ? _musicA : _musicB;
         var falling = _aIsActive ? _musicB : _musicA;
 
-        rising.VolumeDb = Mathf.Lerp(SilentDb, MusicDb, progress);
-        falling.VolumeDb = Mathf.Lerp(MusicDb, SilentDb, progress);
+        // Each player fades toward/from ITS OWN remembered trim (see _musicATrimDb/_musicBTrimDb),
+        // not a single shared MusicDb — a composed track that needs a -5dB trim must still crossfade
+        // in at -5dB, and whatever is fading OUT must fade from the level it was actually playing at.
+        var risingTrim = _aIsActive ? _musicATrimDb : _musicBTrimDb;
+        var fallingTrim = _aIsActive ? _musicBTrimDb : _musicATrimDb;
+
+        rising.VolumeDb = Mathf.Lerp(SilentDb, MusicDb + risingTrim, progress);
+        falling.VolumeDb = Mathf.Lerp(MusicDb + fallingTrim, SilentDb, progress);
 
         if (progress >= 1f)
         {
