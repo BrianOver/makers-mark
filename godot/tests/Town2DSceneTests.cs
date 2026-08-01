@@ -40,6 +40,44 @@ public class Town2DSceneTests
         finally { town.Free(); }
     }
 
+    /// <summary>
+    /// Every venue's sprite id must resolve to committed art, never to the flat-colour placeholder.
+    ///
+    /// <para>This exists because of a real, embarrassing miss: the <c>town2d-*</c> pixel buildings
+    /// were committed and imported, and the town went on drawing the older SDXL-era set for weeks
+    /// because <see cref="TownLayout2D.Venues"/> still named the bare ids. Nothing failed —
+    /// <c>TownAssets2D.ForVenue</c> is deliberately null-tolerant, so a wrong id silently degrades
+    /// to a coloured box, and a coloured box in a stylised town does not announce itself. The owner
+    /// found it by noticing the Forge roof was magenta.</para>
+    ///
+    /// <para><b>Resolving is not enough, which is the trap in the first version of this test.</b>
+    /// The old ids resolved perfectly — <c>forge.png</c> is committed and manifested too — so an
+    /// "art is not null" assertion would have passed happily through the entire bug. The invariant
+    /// that actually holds is which SET the town draws, so that is what is pinned: every venue id
+    /// is in the <c>town2d-</c> pixel family AND resolves.</para>
+    /// </summary>
+    [TestCase]
+    public void EveryVenueSpriteId_IsInThePixelSet_AndResolvesToCommittedArt()
+    {
+        foreach (var venue in TownLayout2D.Venues)
+        {
+            AssertThat(venue.SpriteId.StartsWith("town2d-"))
+                .OverrideFailureMessage(
+                    $"venue '{venue.Key}' draws sprite '{venue.SpriteId}', which is not in the "
+                    + "town2d-* pixel set. The pre-pivot SDXL buildings are still committed and still "
+                    + "resolve, so pointing a venue back at one is invisible at runtime — that is "
+                    + "exactly how the magenta-roofed Forge survived for weeks.")
+                .IsTrue();
+
+            AssertThat(IconRegistry.Art(venue.SpriteId))
+                .OverrideFailureMessage(
+                    $"venue '{venue.Key}' asks for sprite '{venue.SpriteId}' and got no art, so it "
+                    + "draws a flat placeholder box with nothing warning about it — either the id is "
+                    + "wrong or the PNG/manifest entry is missing")
+                .IsNotNull();
+        }
+    }
+
     [TestCase]
     public void Town2D_Built_GroundHasPaintedCells()
     {

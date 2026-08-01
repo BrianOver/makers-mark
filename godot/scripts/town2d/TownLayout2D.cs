@@ -84,17 +84,25 @@ public static class TownLayout2D
     /// north up the road (mirrors <c>Town3D</c>'s "gate departs north, square/market/tavern south"
     /// read, just pulled in tight instead of spread corner-to-corner). Tiles are hand-placed clear
     /// of each other's sprite footprint (see each <c>TownAssets2D.VenuePlaceholders</c> size, which
-    /// matches the real generated-art pixel dimensions 1:1) — verified by hand: forge's 4×5-tile
-    /// footprint (x11-15,y7-12) and tavern's 3.5×4.5-tile footprint (x11.25-14.75,y13.5-18) share
-    /// no row; market's 4×4 (x24-28,y8-12) and noticeboard's 2×3 (x25-27,y15-18) likewise don't.
+    /// matches the real generated-art pixel dimensions 1:1).
+    ///
+    /// <para><b>These draw the <c>town2d-*</c> pixel set</b> (2026-08-01). The ids used to be the
+    /// bare <c>forge</c>/<c>market</c>/<c>tavern</c>/<c>mine-gate</c>/<c>noticeboard</c> — the
+    /// SDXL-era buildings from before the 2.5D pivot, which is where the Forge's magenta roof
+    /// (#520051, a colour in no <c>town2d-*</c> asset) came from. The pixel set was committed and
+    /// simply never referenced, so the town drew the older art with nothing warning about it. The
+    /// pixel buildings are also smaller, so footprints only shrank: forge 64×80 = 4×5 tiles
+    /// (x11-15, y7-12), tavern 48×64 = 3×4 (x11.5-14.5, y14-18), market 64×64 = 4×4 (x24-28,
+    /// y8-12), board 32×32 = 2×2 (x25-27, y16-18), gate 48×48 = 3×3 (x18.5-21.5, y0-3) — forge/
+    /// tavern share no row (14 &gt; 12) and market/board share none either (16 &gt; 12).</para>
     /// </summary>
     public static readonly VenueLayout[] Venues =
     {
-        new("forge", "Forge", "forge", new Vector2I(13, 12)),
-        new("market", "Shop", "market", new Vector2I(26, 12)),
-        new("tavern", "Tavern", "tavern", new Vector2I(13, 18)),
-        new("minegate", "Gate", "mine-gate", new Vector2I(20, 3)),
-        new("noticeboard", "Bounties", "noticeboard", new Vector2I(26, 18)),
+        new("forge", "Forge", "town2d-forge", new Vector2I(13, 12)),
+        new("market", "Shop", "town2d-market", new Vector2I(26, 12)),
+        new("tavern", "Tavern", "town2d-tavern", new Vector2I(13, 18)),
+        new("minegate", "Gate", "town2d-mine-gate", new Vector2I(20, 3)),
+        new("noticeboard", "Bounties", "town2d-board", new Vector2I(26, 18)),
     };
 
     /// <summary>Where departing heroes rally (dwell as a cluster) before marching to the mine
