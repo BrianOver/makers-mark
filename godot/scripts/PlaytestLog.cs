@@ -106,6 +106,32 @@ public static class PlaytestLog
         }
     }
 
+    /// <summary>
+    /// Test-only: arm the recorder at <paramref name="path"/> without consulting the environment,
+    /// or disarm it with <c>null</c>.
+    ///
+    /// <para>The call sites are the part that rots — a refactor can move a minigame handler and the
+    /// log silently loses a verb with nothing failing. Proving they fire needs the recorder ON
+    /// inside one test, and this is a process-wide static, so the same test must be able to turn it
+    /// back OFF in a finally block before the other ~550 engine tests run. Hence a seam rather than
+    /// a test that sets the env var and hopes.</para>
+    /// </summary>
+    public static void RedirectForTests(string? path)
+    {
+        if (path is null)
+        {
+            _path = null;
+            _rows = 0;
+            return;
+        }
+
+        _path = null; // clear first so Begin-style re-entry guards do not block the redirect
+        _startedAt = Time.GetUnixTimeFromSystem();
+        System.IO.File.WriteAllText(path, "{\"kind\":\"session\",\"startedAt\":" + (long)_startedAt + ",\"provenance\":\"test\"}\n");
+        _path = path;
+        _rows = 0;
+    }
+
     /// <summary>One row per completed phase tick — the whole point of the file.</summary>
     public static void Tick(
         DayPhase completedPhase,
