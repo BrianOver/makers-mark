@@ -55,8 +55,18 @@
            * the BLAMED TEST IS DIFFERENT EVERY RUN — HumanCampaignTests, then
              Playtest3dClickThrough, then MainUiTests.ShopPanel_..., then ForgeCraftTests — while the
              error text is identical. Whichever test is executing when the axe falls gets the blame.
-           * it is a WALL-CLOCK cap, not a per-test failure: two runs were cut at 9m37s and 9m41s
-             having completed 170 and 354 tests respectively. Same duration, wildly different counts.
+           * it is a WALL-CLOCK cap, not a per-test failure: three runs were cut at 9m37s, 9m41s and
+             9m48s having completed 170, 354 and 266 tests respectively. Same duration, wildly
+             different counts.
+           * MEASURED 2026-08-01, and this corrects an earlier reading of the same failure: the cap
+             is NOT close to how long a healthy run takes. A passing CI engine run does all 550
+             tests in ~3m30s (3m29s and 3m21s measured), so the cap sits at ~2.8x the real runtime.
+             PR #311's own commit aborted at 9m48s/266 and then passed UNCHANGED on re-run at
+             3m21s/550 — same code, same suite size. So the sick run is ~6x slower per test than the
+             healthy one; the suite is not creeping up on a deadline. The ~14 minutes a green
+             engine-tests JOB takes is checkout + setup + restore + build + Godot import, and only
+             ~3m30s of it is the test run. Do not trim tests or raise timeouts to "buy headroom"
+             that already exists, and do not read a green 14-minute job as nearly-out-of-time.
            * a commit touching ONLY .gitignore failed it while its parent passed all checks.
            * it clears on `gh run rerun <id>` with the failed-only flag, because it is load-dependent.
 
