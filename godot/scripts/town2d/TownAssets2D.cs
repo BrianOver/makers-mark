@@ -36,14 +36,17 @@ public static class TownAssets2D
     /// buildings read apart from each other even with zero real art (KTD2/goal-4 "not bare gray").</summary>
     private static readonly Dictionary<string, (Vector2 Size, Color Color)> VenuePlaceholders = new()
     {
-        // Keys are the town2d-* sprite ids TownLayout2D.Venues asks for, and each Size is the real
-        // PNG's pixel dimensions (checked against the file headers, not guessed), so the layout's
-        // hand-placed tile math holds even on a checkout where the art has not imported yet.
-        ["town2d-forge"] = (new Vector2(64, 80), new Color(0.45f, 0.27f, 0.16f)),
-        ["town2d-market"] = (new Vector2(64, 64), new Color(0.30f, 0.42f, 0.38f)),
-        ["town2d-tavern"] = (new Vector2(48, 64), new Color(0.40f, 0.24f, 0.30f)),
-        ["town2d-mine-gate"] = (new Vector2(48, 48), new Color(0.18f, 0.16f, 0.22f)),
-        ["town2d-board"] = (new Vector2(32, 32), new Color(0.36f, 0.30f, 0.20f)),
+        // 2026-08-01 building-exterior receipt: reverted to the pre-#316 SDXL ids (see
+        // TownLayout2D.Venues for the full trace). Sizes are the real PNG header dimensions
+        // (measured, not guessed) -- the #316-era table for these same bare ids had approximate
+        // sizes (e.g. tavern 56x72 when tavern.png is actually 84x88), harmless back then only
+        // because ForVenue never fell through to this placeholder while the real PNG resolved.
+        // Worth getting exactly right now that these ids are live again.
+        ["forge"] = (new Vector2(72, 81), new Color(0.45f, 0.27f, 0.16f)),
+        ["market"] = (new Vector2(76, 62), new Color(0.30f, 0.42f, 0.38f)),
+        ["tavern"] = (new Vector2(84, 88), new Color(0.40f, 0.24f, 0.30f)),
+        ["mine-gate"] = (new Vector2(48, 48), new Color(0.18f, 0.16f, 0.22f)),
+        ["noticeboard"] = (new Vector2(44, 50), new Color(0.36f, 0.30f, 0.20f)),
     };
 
     private static readonly Vector2 DefaultVenueSize = new(64, 64);

@@ -86,23 +86,39 @@ public static class TownLayout2D
     /// of each other's sprite footprint (see each <c>TownAssets2D.VenuePlaceholders</c> size, which
     /// matches the real generated-art pixel dimensions 1:1).
     ///
-    /// <para><b>These draw the <c>town2d-*</c> pixel set</b> (2026-08-01). The ids used to be the
-    /// bare <c>forge</c>/<c>market</c>/<c>tavern</c>/<c>mine-gate</c>/<c>noticeboard</c> — the
-    /// SDXL-era buildings from before the 2.5D pivot, which is where the Forge's magenta roof
-    /// (#520051, a colour in no <c>town2d-*</c> asset) came from. The pixel set was committed and
-    /// simply never referenced, so the town drew the older art with nothing warning about it. The
-    /// pixel buildings are also smaller, so footprints only shrank: forge 64×80 = 4×5 tiles
-    /// (x11-15, y7-12), tavern 48×64 = 3×4 (x11.5-14.5, y14-18), market 64×64 = 4×4 (x24-28,
-    /// y8-12), board 32×32 = 2×2 (x25-27, y16-18), gate 48×48 = 3×3 (x18.5-21.5, y0-3) — forge/
-    /// tavern share no row (14 &gt; 12) and market/board share none either (16 &gt; 12).</para>
+    /// <para><b>These draw the pre-pivot SDXL set</b> (2026-08-01 building-exterior receipt —
+    /// see <c>runs/receipts/</c>, options A-D, and <c>art/pipeline/recolor-forge-roof.py</c>'s own
+    /// doc for the full trace). #316 swapped every venue to the <c>town2d-*</c> pixel set to kill
+    /// the Forge's magenta roof (#520051), which was real — but the owner's playtest verdict was
+    /// "the buildings look WORSE, we only asked for interior changes": he never asked for an
+    /// exterior swap and prefers this SDXL look. Measuring both sets confirms the pixel set's
+    /// regression is real too (its shared structural palette runs 0.14-0.35 saturation vs this
+    /// set's 0.16-0.41 — see <c>art/pipeline/boost-town2d-palette.py</c>'s own doc for the numbers),
+    /// so #316's fix and the owner's complaint are BOTH correct about their own building set. This
+    /// keeps the set he prefers and fixes the one thing that was actually broken in it: forge.png's
+    /// roof is recoloured terracotta (sampled from tavern.png's own shingles) by
+    /// <c>art/pipeline/recolor-forge-roof.py</c>, nothing else about the SDXL set changed.
+    /// Footprints use the real PNG dimensions (forge 72×81, market 76×62, tavern 84×88, gate
+    /// 48×48, noticeboard 44×50) at the SAME tile coordinates #316 used — verified clear: forge
+    /// spans world-Y 119-200, tavern 208-296 (8px gap); market spans Y 138-200, noticeboard
+    /// 246-296; the mine gate (Y8-56) shares no row with either.</para>
+    ///
+    /// <para><b>Switching options</b> (all four were rendered and compared, see the receipt):
+    /// back to the <c>town2d-*</c> pixel set (options A/C) — edit the five
+    /// <see cref="VenueLayout.SpriteId"/> strings below to their <c>town2d-*</c> equivalents AND mirror the same five keys in
+    /// <see cref="TownAssets2D.VenuePlaceholders"/> (that committed set is already boosted —
+    /// Option C, <c>art/pipeline/boost-town2d-palette.py</c> — not the original muddy one the
+    /// owner rejected). Back to the unrecoloured magenta roof (option B) — overwrite
+    /// <c>godot/assets/art/forge.png</c> with the frozen pre-fix copy at
+    /// <c>art/pipeline/sources/forge-sdxl-magenta.png</c>.</para>
     /// </summary>
     public static readonly VenueLayout[] Venues =
     {
-        new("forge", "Forge", "town2d-forge", new Vector2I(13, 12)),
-        new("market", "Shop", "town2d-market", new Vector2I(26, 12)),
-        new("tavern", "Tavern", "town2d-tavern", new Vector2I(13, 18)),
-        new("minegate", "Gate", "town2d-mine-gate", new Vector2I(20, 3)),
-        new("noticeboard", "Bounties", "town2d-board", new Vector2I(26, 18)),
+        new("forge", "Forge", "forge", new Vector2I(13, 12)),
+        new("market", "Shop", "market", new Vector2I(26, 12)),
+        new("tavern", "Tavern", "tavern", new Vector2I(13, 18)),
+        new("minegate", "Gate", "mine-gate", new Vector2I(20, 3)),
+        new("noticeboard", "Bounties", "noticeboard", new Vector2I(26, 18)),
     };
 
     /// <summary>Where departing heroes rally (dwell as a cluster) before marching to the mine
