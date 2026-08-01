@@ -36,16 +36,30 @@ public abstract partial class SimPanel : Control
     public abstract void Refresh();
 
     /// <summary>
-    /// Remove and free children immediately (not QueueFree) so a refresh leaves no
-    /// stale text in the tree. Only ever called from Refresh — never from a signal
-    /// handler of a node being cleared.
+    /// Detach children immediately, destroy them deferred.
+    ///
+    /// <para><b>This used to call <c>Free()</c> and it crashed the game.</b> The old doc claimed the
+    /// invariant "only ever called from Refresh — never from a signal handler of a node being
+    /// cleared." That invariant was false on the game's most common action. Pressing Craft runs
+    /// <c>OnCraftPressed</c> → <c>SimAdapter.Queue</c>, and Queue ticks the sim SYNCHRONOUSLY, which
+    /// fires <c>MainUi.OnPhaseCompleted</c> → <c>RefreshAll</c> → this panel's <c>Refresh</c> → here
+    /// — all still inside the pressed-signal emission of the very button being freed. Godot warned
+    /// ("Object was freed or unreferenced while a signal is being emitted from it") and then the
+    /// process died with signal 11. The owner hit it by clicking auto-craft; the same stack exists in
+    /// <c>ShopPanel.PlaceOnShelf</c>.</para>
+    ///
+    /// <para><c>RemoveChild</c> stays immediate, so a rebuild still starts from an empty parent and
+    /// leaves no stale rows — that was the real reason the original avoided <c>QueueFree</c>. Only
+    /// the destruction moves to the end of the frame, by which time no signal is in flight. Fixing it
+    /// here rather than at the call sites means every panel inherits it and no future handler has to
+    /// remember an invariant that was already being violated.</para>
     /// </summary>
     protected static void Clear(Node parent)
     {
         foreach (var child in parent.GetChildren())
         {
             parent.RemoveChild(child);
-            child.Free();
+            child.QueueFree();
         }
     }
 
