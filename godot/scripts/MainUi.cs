@@ -399,6 +399,12 @@ public partial class MainUi : Control
         GD.Print($"[MainUi] tick complete: day {completedDay} {completedPhase} -> day {state.Day} {state.Phase} " +
                  $"({Adapter.LastEvents.Count} events, {Adapter.LastRejections.Count} rejections)");
 
+        // One JSONL row per tick when MM_PLAYTEST_LOG is set (the launchers set it; a test run does
+        // not, so this is a no-op there). This is the same information as the GD.Print above plus the
+        // economy columns, written somewhere a later session can actually analyse — see PlaytestLog
+        // for why prose playtest reports kept failing us.
+        PlaytestLog.Tick(completedPhase, completedDay, state, Adapter.LastRejections, Adapter.LastEvents.Count);
+
         // Sound follows the same signal the HUD does, so a cue can never disagree with what is on
         // screen. Phase-keyed rather than event-keyed for the bed: SetPhase ignores an unchanged
         // phase, so calling it on every tick is correct and needs no boundary detection here.
@@ -1704,6 +1710,11 @@ public partial class MainUi : Control
         var buildStamp = new BuildStamp();
         AddChild(buildStamp);
         buildStamp.Build();
+
+        // Open the play-session log (no-op unless MM_PLAYTEST_LOG is set — see PlaytestLog). Done
+        // here rather than earlier because the build label is the provenance the log header records,
+        // and an unattributable log is the problem the stamp itself exists to prevent.
+        PlaytestLog.Begin(buildStamp.BuildLabel);
     }
 
     private static T InstantiatePanel<T>(string scenePath) where T : SimPanel =>
