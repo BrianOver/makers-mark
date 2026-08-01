@@ -70,15 +70,23 @@ public static class ClassRegistry
     /// The classes a recruit can roll, in the EXACT index order the old draw used
     /// (0→vanguard, 1→striker, 2→mystic). THIS IS THE RECRUIT DETERMINISM CONTRACT:
     /// <c>HeroRoster.CreateRecruit</c> draws <c>RecruitPool[rng.NextInt(0, RecruitPool.Length)]</c>,
-    /// which reproduces the old numeric role draw <c>rng.NextInt(0, 3)</c> byte-for-byte because
-    /// this array's order matches the old enum's numeric order (0→vanguard, 1→striker, 2→mystic).
-    /// Reordering or removing an entry
-    /// breaks every golden replay. A registered class is NOT automatically recruitable — this
-    /// pool stays the three built-ins unless a future, determinism-gated mechanism expands it;
-    /// new/add-on/test classes live in <see cref="All"/> but never here.
+    /// which reproduced the old numeric role draw <c>rng.NextInt(0, 3)</c> byte-for-byte while the
+    /// pool was the three built-ins. Reordering or REMOVING an entry breaks every golden replay;
+    /// APPENDING is a determinism-gated re-baseline (the draw's modulus changes). A registered
+    /// class is NOT automatically recruitable — new/add-on/test classes live in <see cref="All"/>
+    /// but never here until their own re-baseline window.
+    ///
+    /// <para>T1 content flip (relands PR #242): the three remaining fully-tuned classes are
+    /// APPENDED — built-in order preserved, then sentinel/skirmisher/occultist — in the same
+    /// re-baseline window as the Sunken Crypt / Emberfall venue flip (the operating model's
+    /// batch-the-re-baseliners rule; golden re-record rides at the end of this branch).</para>
     /// </summary>
     public static readonly ImmutableArray<string> RecruitPool =
-        ImmutableArray.Create(VanguardId, StrikerId, MysticId);
+        ImmutableArray.Create(
+            VanguardId, StrikerId, MysticId,
+            SentinelClass.Definition.Id,
+            SkirmisherClass.Definition.Id,
+            OccultistClass.Definition.Id);
 
     /// <summary>Resolve a class definition by key.</summary>
     public static bool TryGet(string classId, out ClassDefinition? definition)

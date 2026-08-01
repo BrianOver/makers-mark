@@ -36,15 +36,26 @@ public static class VenueRegistry
     /// <summary>
     /// The venues that are LIVE — the ones hero parties actually raid. THIS IS THE LIVE-VENUE
     /// CONTRACT (same rule as <c>ClassRegistry.RecruitPool</c>): a registered venue is NOT
-    /// automatically live just by being in <see cref="All"/>. Phase C U-C4: the deferred
-    /// multi-venue follow-on lands here — the Gloomwood joins the Mine as the SECOND live venue
-    /// (the determinism-gated re-baseline this comment used to defer), and <c>VenueRouter</c>
-    /// distributes bounty-free parties across the two by utility + queue length
-    /// (<c>ExpeditionSystem.Process</c> / <c>MusterPlan.Compute</c>). Add-on/test venues (Emberfall,
-    /// Sunken Crypt) still live in <see cref="All"/> but never here until THEIR own re-baseline.
+    /// automatically live just by being in <see cref="All"/>.
+    ///
+    /// <para>T1 content flip (docs/design/2026-07-26-overnight-strategy-synthesis.md, relands
+    /// PR #242): the two remaining fully-built venues join the rotation — <see cref="SunkenCrypt"/>
+    /// as an early venue peer of the Mine (EntryPower 0, grade 1-5 ores; the two split the early
+    /// band by queue length) and <see cref="Emberfall"/> as the endgame venue (EntryPower 70,
+    /// grade 12-16 ores — only geared-up veteran parties are routed there by <c>VenueRouter</c>'s
+    /// power bands). #242 was parked as a draft because the old tightest-fit router starved the
+    /// Mine and sent ~zero parties to the Crypt; the banded router landed first in this branch,
+    /// so the flip and the routing fix share ONE golden re-baseline. <c>MaterialRegistry.PricedPool</c>
+    /// flips in lockstep so returning ore is priceable at the Evening reveal, and
+    /// <c>ClassRegistry.RecruitPool</c> opens the three remaining classes in the SAME window
+    /// (the operating model's batch-the-re-baseliners rule).</para>
     /// </summary>
     public static readonly ImmutableArray<string> LiveRotation =
-        ImmutableArray.Create(MineId, Gloomwood.GloomwoodVenue.Id);
+        ImmutableArray.Create(
+            MineId,
+            Gloomwood.GloomwoodVenue.Id,
+            SunkenCrypt.SunkenCryptVenue.Id,
+            Emberfall.EmberfallFoundryVenue.Id);
 
     /// <summary>Resolve a venue definition by key.</summary>
     public static bool TryGet(string venueId, out VenueDefinition? definition)

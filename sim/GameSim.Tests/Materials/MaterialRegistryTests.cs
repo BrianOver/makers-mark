@@ -52,16 +52,24 @@ public class MaterialRegistryTests
     }
 
     [Fact]
-    public void PricedPool_IsTheFiveMineOresPlusTheFourGloomwoodOres_AndMaterialGradesMirrorsIt()
+    public void PricedPool_IsEveryLiveVenueOreLadder_AndMaterialGradesMirrorsIt()
     {
-        // Phase C U-C4: the Gloomwood's four ores join the pool in the SAME re-baseline that puts the
-        // Gloomwood into VenueRegistry.LiveRotation — a returning hero's loot must be priceable.
+        // A venue's ores join the pool in the SAME re-baseline that makes the venue live — a
+        // returning hero's loot must be priceable at the Evening reveal (OrePricing throws
+        // otherwise). T1 content flip (relands PR #242): Sunken Crypt's and Emberfall's ladders
+        // join the Mine's and the Gloomwood's.
         Assert.Equal(
-            new[] { "copper", "iron", "steel", "mithril", "adamant", "greenheart", "amberpitch", "moonresin", "heartwood" },
+            new[]
+            {
+                "copper", "iron", "steel", "mithril", "adamant",
+                "greenheart", "amberpitch", "moonresin", "heartwood",
+                "verdigris", "saltglass", "bonechalk", "drowned-silver", "abyss-pearl",
+                "firebrick", "slagiron", "quench-salt", "emberglass", "heartcoal",
+            },
             MaterialRegistry.PricedPool);
 
         // RecipeTable.MaterialGrades is byte-identical to the pool: same count, same keys.
-        Assert.Equal(9, RecipeTable.MaterialGrades.Count);
+        Assert.Equal(19, RecipeTable.MaterialGrades.Count);
         Assert.Equal(MaterialRegistry.PricedPool.OrderBy(k => k, StringComparer.Ordinal), RecipeTable.MaterialGrades.Keys);
     }
 

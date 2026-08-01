@@ -127,15 +127,15 @@ public class VenueConformanceTests
     }
 
     [Fact]
-    public void LiveRotation_IsExactlyMineAndGloomwood()
+    public void LiveRotation_IsExactlyTheFourBuiltVenues()
     {
-        // The live-venue contract (P4): a registered venue is NOT automatically live. Phase C U-C4
-        // lands the deferred second-venue re-baseline: the Gloomwood joins the Mine here, in this
-        // exact order (VenueRouter's queue-length tiebreak — and every existing golden replay that
-        // reads LiveRotation's order — depends on it). Emberfall and Sunken Crypt stay registered but
-        // NOT live until their own re-baseline.
+        // The live-venue contract (P4): a registered venue is NOT automatically live. T1 content
+        // flip (relands PR #242): all four fully-built venues are live, in this exact order —
+        // callers seed VenueRouter's queue dictionary from this array, and every golden replay
+        // that reads LiveRotation's order depends on it. A future venue joins only through its
+        // own determinism-gated re-baseline.
         Assert.Equal(
-            new[] { VenueRegistry.MineId, "gloomwood" },
+            new[] { VenueRegistry.MineId, "gloomwood", "sunken-crypt", "emberfall" },
             VenueRegistry.LiveRotation);
     }
 
