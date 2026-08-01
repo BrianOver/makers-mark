@@ -131,16 +131,36 @@ public partial class Building2D : Node2D
         }
     }
 
-    private static Area2D BuildInteractArea(Vector2 size) => BuildAreaWithRect("Interact", size);
-
-    private static Area2D BuildAreaWithRect(string name, Vector2 size)
+    /// <summary>
+    /// The interact area covers the building AND the doorway strip below it, where a player actually
+    /// stands to interact.
+    ///
+    /// <para><b>Why the strip, and why this was a latent bug.</b> The area used to be exactly the
+    /// sprite rect, whose bottom edge is the building's own Position row — but
+    /// <see cref="BuildDoorAnchor"/> puts the door anchor <see cref="DoorAnchorClearance"/> BELOW that
+    /// edge, deliberately, so nobody standing there fights the footprint collision. So a player on the
+    /// door anchor was outside the interact rect by construction, and E-interact only worked because
+    /// the old building art happened to be sized such that physics resolution nudged the body into
+    /// range. Swapping to the town2d pixel set (a slightly different sprite height) broke it, which is
+    /// how a coincidence got discovered — <c>PlayerCanInteractTests</c> went red on an art change.</para>
+    ///
+    /// <para>Extending down by the clearance plus the player's own body diameter makes the overlap
+    /// hold for ANY sprite size, so building art and interaction reachability stop being coupled.</para>
+    /// </summary>
+    private static Area2D BuildInteractArea(Vector2 size)
     {
-        var area = new Area2D { Name = name, Monitoring = true, InputPickable = true };
+        // The player's collider is a circle of radius PlayerController2D.BodyRadius (6) centred one
+        // radius above its feet, so its top sits one diameter above the anchor. 24 covers that with
+        // margin without reaching into the next tile row.
+        const float DoorwayStrip = DoorAnchorClearance + 24f;
+
+        var area = new Area2D { Name = "Interact", Monitoring = true, InputPickable = true };
         area.AddChild(new CollisionShape2D
         {
-            Name = name + "Shape",
-            Shape = new RectangleShape2D { Size = size },
-            Position = new Vector2(0f, -size.Y / 2f), // same offset as the sprite — covers the full building
+            Name = "InteractShape",
+            Shape = new RectangleShape2D { Size = new Vector2(size.X, size.Y + DoorwayStrip) },
+            // Covers local y -size.Y .. +DoorwayStrip: the sprite, plus the doorway below it.
+            Position = new Vector2(0f, -size.Y / 2f + (DoorwayStrip / 2f)),
         });
         return area;
     }

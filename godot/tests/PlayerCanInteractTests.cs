@@ -93,12 +93,22 @@ public class PlayerCanInteractTests
 
             var overlapping = forge.Interact.GetOverlappingBodies();
 
+            // The geometry goes in the message because a bare "does not overlap" sent me hunting
+            // collision masks when the actual cause was the sprite's height: swapping the building
+            // art changed size.Y, which moves the Interact rect, which moved the door anchor out of
+            // it. A failure that names the numbers points straight at that.
+            var shape = forge.Interact.GetChildren().OfType<CollisionShape2D>().First();
+            var rect = (RectangleShape2D)shape.Shape;
             AssertThat(overlapping.Contains(town.Player))
                 .OverrideFailureMessage(
-                    "The forge's Interact area does not report the player even with the player " +
-                    "standing on its door anchor. WorldInput2D.FindNearestOverlapping will return " +
-                    "null, so E-interact is dead. Check the player's CollisionShape2D and that the " +
-                    "area's collision mask includes the player's layer.")
+                    "The forge's Interact area does not report the player even with the player "
+                    + "standing on its door anchor. WorldInput2D.FindNearestOverlapping will return "
+                    + "null, so E-interact is dead.\n"
+                    + $"  sprite size:   {forge.Sprite.Texture?.GetSize()}\n"
+                    + $"  interact rect: size {rect.Size} at local {shape.Position} "
+                    + $"(covers local y {shape.Position.Y - (rect.Size.Y / 2f)} .. {shape.Position.Y + (rect.Size.Y / 2f)})\n"
+                    + $"  door anchor:   local {forge.DoorAnchor.Position}, global {forge.DoorAnchorGlobal}\n"
+                    + $"  building at:   {forge.GlobalPosition}, player at {town.Player.GlobalPosition}")
                 .IsTrue();
         }
         finally
