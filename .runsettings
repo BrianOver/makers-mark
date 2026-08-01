@@ -58,13 +58,13 @@
            * it is a WALL-CLOCK cap, not a per-test failure: two runs were cut at 9m37s and 9m41s
              having completed 170 and 354 tests respectively. Same duration, wildly different counts.
            * a commit touching ONLY .gitignore failed it while its parent passed all checks.
-           * it clears on `gh run rerun <id> --failed`, because it is load-dependent.
+           * it clears on `gh run rerun <id>` with the failed-only flag, because it is load-dependent.
 
          What it is NOT: gdUnit's <SessionTimeout>. That was tested — with
          <SessionTimeout>40000</SessionTimeout> here, the local suite still ran all 550 tests in
          2m15s, so the element is ignored under <GdUnit4>. Do not "fix" this by tuning it.
 
-         Note also that CI does not currently pass `--settings` at all (see .github/workflows/ci.yml),
+         Note also that CI does not currently pass a settings file at all (see .github/workflows/ci.yml),
          so NONE of this file applies there — including the CompileProcessTimeout below. That is
          tracked separately and is the first thing to fix before diagnosing further. -->
     <CompileProcessTimeout>360000</CompileProcessTimeout>
