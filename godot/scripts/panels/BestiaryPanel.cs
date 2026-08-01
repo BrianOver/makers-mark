@@ -30,9 +30,11 @@ namespace GodotClient.Panels;
 /// breathe/hover loop plus a brief reveal fade-in on every fresh <see cref="Select"/>. Art coverage
 /// is NOT 1:1 with the old mesh set — Emberfall Foundry's four non-"Cinder Imp" monsters (gen'd a
 /// GLB but never a 2D portrait) fall all the way to the pre-existing text-only card, same as Cinder
-/// Imp always has. Emberfall IS live since the T1 flip (<see cref="VenueRegistry.LiveRotation"/>),
-/// which raises this from low-stakes to a real portrait gap players can hit — still graceful
-/// degrade by design, not a wiring defect (see the removal PR notes; portrait wave owed).</para>
+/// Imp always has. Emberfall is built and banded but DORMANT (not in
+/// <see cref="VenueRegistry.LiveRotation"/>) precisely because none of its art exists yet — the
+/// bestiary still lists it (it iterates registered venues, not live ones), so this text-only card
+/// is the one place a player meets the Foundry before its art wave. Graceful degrade by design,
+/// not a wiring defect (see the removal PR notes; the art wave gates its go-live).</para>
 /// </summary>
 public partial class BestiaryPanel : Control
 {

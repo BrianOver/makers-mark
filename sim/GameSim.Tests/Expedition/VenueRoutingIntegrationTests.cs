@@ -24,15 +24,14 @@ public class VenueRoutingIntegrationTests
             .Concat(state.InFlight.Select(f => f.VenueId));
 
     [Fact]
-    public void RealCampaign_RoutesPartiesToAllFourLiveVenues_Over100Days()
+    public void RealCampaign_RoutesPartiesToEveryLiveVenue_Over100Days()
     {
         // THE distribution guard for the banded router: on this measured seed, a 100-day campaign
-        // sends parties to all four live venues (early band mine+crypt in the opening weeks, the
-        // Gloomwood mid band, Emberfall once veterans sustain power >= its entry). Seed 1 is one
-        // of the 17/20 sweep seeds whose roster reaches endgame power (2026-08-01 batch
-        // measurement) — if a future tuning change breaks this, the venue distribution moved:
-        // re-run the batch farm and re-place the EntryPower bands consciously, don't just swap
-        // the seed.
+        // sends parties to every live venue (early band mine+crypt in the opening weeks, the
+        // Gloomwood band once parties cross 55; dormant Emberfall re-joins this loop's coverage
+        // automatically when its art-gated go-live puts it back in LiveRotation). If a future
+        // tuning change breaks this, the venue distribution moved: re-run the batch farm and
+        // re-place the EntryPower bands consciously, don't just swap the seed.
         var kernel = GameComposition.BuildKernel();
         var state = GameComposition.NewCampaign(seed: 1);
 

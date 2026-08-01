@@ -18,7 +18,10 @@ namespace GameSim.Tests.Venues;
 public class VenueRouterTests
 {
     // Registered EntryPower bands (pinned by VenueConformanceTests): mine 0, sunken-crypt 0,
-    // gloomwood 55, emberfall 72.
+    // gloomwood 55, emberfall 72. Emberfall is dormant (not in LiveRotation) but stays in these
+    // rotations on purpose: the comparator must already handle its band correctly on the day the
+    // art-gated go-live appends it, and ChooseVenue takes the rotation as an argument precisely
+    // so liveness churn never touches this suite.
     private static readonly ImmutableArray<string> MineAndGloomwood =
         ImmutableArray.Create(VenueRegistry.MineId, "gloomwood");
 

@@ -56,20 +56,22 @@ public class MaterialRegistryTests
     {
         // A venue's ores join the pool in the SAME re-baseline that makes the venue live — a
         // returning hero's loot must be priceable at the Evening reveal (OrePricing throws
-        // otherwise). T1 content flip (relands PR #242): Sunken Crypt's and Emberfall's ladders
-        // join the Mine's and the Gloomwood's.
+        // otherwise). T1 content flip (relands PR #242): the Sunken Crypt's ladder joins the
+        // Mine's and the Gloomwood's. Emberfall's (firebrick..heartcoal) is deliberately ABSENT:
+        // the venue is dormant pending art (VenueRegistry.LiveRotation), and the pool doubles as
+        // the Forge vendor's shelf — pricing its grade-12+ forge-ore would sell the player
+        // materials no live venue can mint.
         Assert.Equal(
             new[]
             {
                 "copper", "iron", "steel", "mithril", "adamant",
                 "greenheart", "amberpitch", "moonresin", "heartwood",
                 "verdigris", "saltglass", "bonechalk", "drowned-silver", "abyss-pearl",
-                "firebrick", "slagiron", "quench-salt", "emberglass", "heartcoal",
             },
             MaterialRegistry.PricedPool);
 
         // RecipeTable.MaterialGrades is byte-identical to the pool: same count, same keys.
-        Assert.Equal(19, RecipeTable.MaterialGrades.Count);
+        Assert.Equal(14, RecipeTable.MaterialGrades.Count);
         Assert.Equal(MaterialRegistry.PricedPool.OrderBy(k => k, StringComparer.Ordinal), RecipeTable.MaterialGrades.Keys);
     }
 

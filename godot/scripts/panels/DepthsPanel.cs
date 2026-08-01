@@ -97,9 +97,11 @@ public partial class DepthsPanel : SimPanel
         _mineWatch!.Refresh(state, Adapter.LastEvents);
 
         Clear(_venueGrid!);
-        // U-C4: a tile per LIVE venue, straight from VenueRegistry.LiveRotation — all four after
-        // the T1 flip (Mine, Gloomwood, Sunken Crypt, Emberfall). Emberfall has no backdrop art
-        // yet; its ArtRect falls back to the depths glyph + venue-name caption, never a crash.
+        // U-C4: a tile per LIVE venue, straight from VenueRegistry.LiveRotation — Mine, Gloomwood,
+        // and Sunken Crypt after the T1 flip. Every live tile renders REAL committed backdrop art
+        // (VenueHubTests pins zero fallbacks on this panel); Emberfall stays dormant in the
+        // registry until its art lands, precisely so this grid never shows a glyph where a
+        // dungeon should be.
         foreach (var venueId in GameSim.Venues.VenueRegistry.LiveRotation)
         {
             _venueGrid!.AddChild(BuildVenueTile(state, venueId));

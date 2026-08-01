@@ -99,18 +99,20 @@ public class VenueConformanceTests
     [Fact]
     public void EntryPowerBands_AreTheTunedRecord()
     {
-        // The routing tuning record (2026-08-01, measured against the live 4-venue power curve:
+        // The routing tuning record (2026-08-01, measured against the banded-world power curve:
         // router-side party power ramps 30..54 (p25..p75) in days 1-10 and saturates at ~70-76).
         // Mine + Sunken Crypt are the EntryPower-0 early peers (queue-split), Gloomwood the mid
         // band placed at the day-10/20 boundary, Emberfall the endgame band at the late-game
-        // median. Change these consciously — they move every seed's venue distribution (and
-        // therefore the balance bands), and re-measure with the batch farm: the first Gloomwood
-        // placement (35) looked plausible and still starved the early venues to 3%, and the
-        // first Emberfall placement (70) let it soak 54% once the honest smith raised the curve.
-        // Measured at these values (20 seeds x 100 days): ember 44% / gloomwood 40% / mine 11% /
-        // crypt 3%; mine/gloomwood/crypt drawn on 20/20 seeds, ember on 17/20 — campaigns whose
-        // rosters death-spiral never sustain endgame power, and that stays true even at entry 70,
-        // so it is a campaign outcome, not a threshold artifact. Endgame is earned, not owed.
+        // median — tuned and READY while the venue itself is DORMANT pending art (see
+        // VenueRegistry.LiveRotation). Change these consciously — they move every seed's venue
+        // distribution (and therefore the balance bands), and re-measure with the batch farm: the
+        // first Gloomwood placement (35) looked plausible and still starved the early venues to
+        // 3%, and the first Emberfall placement (70) let it soak 54% once the honest smith raised
+        // the curve. Measured (20 seeds x 100 days), SHIPPING 3-venue rotation: gloomwood 86% /
+        // mine 10% / crypt 3%, all three drawn on 20/20 seeds — veterans concentrate in the top
+        // live band by design until Emberfall's go-live, which measured ember 44% / gloomwood
+        // 40% / mine 11% / crypt 3% (ember on 17/20 seeds; the 3 misses death-spiral below
+        // endgame power even at entry 70 — a campaign outcome, not a threshold artifact).
         Assert.Equal(0, VenueRegistry.Mine.EntryPower);
         Assert.Equal(0, VenueRegistry.All["sunken-crypt"].EntryPower);
         Assert.Equal(55, VenueRegistry.All["gloomwood"].EntryPower);
@@ -134,15 +136,18 @@ public class VenueConformanceTests
     }
 
     [Fact]
-    public void LiveRotation_IsExactlyTheFourBuiltVenues()
+    public void LiveRotation_IsExactlyMineGloomwoodAndCrypt()
     {
         // The live-venue contract (P4): a registered venue is NOT automatically live. T1 content
-        // flip (relands PR #242): all four fully-built venues are live, in this exact order —
-        // callers seed VenueRouter's queue dictionary from this array, and every golden replay
-        // that reads LiveRotation's order depends on it. A future venue joins only through its
-        // own determinism-gated re-baseline.
+        // flip (relands PR #242): the Sunken Crypt joins the Mine and Gloomwood, in this exact
+        // order — callers seed VenueRouter's queue dictionary from this array, and every golden
+        // replay that reads LiveRotation's order depends on it. Emberfall is deliberately ABSENT:
+        // built, banded (EntryPower 72), and dormant until its art wave — it measured 44% of all
+        // routed parties when briefly live, which would have pointed half the game's raids at
+        // placeholder glyphs (see VenueRegistry.LiveRotation's own doc). A venue joins only
+        // through its own determinism-gated re-baseline.
         Assert.Equal(
-            new[] { VenueRegistry.MineId, "gloomwood", "sunken-crypt", "emberfall" },
+            new[] { VenueRegistry.MineId, "gloomwood", "sunken-crypt" },
             VenueRegistry.LiveRotation);
     }
 

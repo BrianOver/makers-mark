@@ -68,15 +68,16 @@ public class VenueHubTests
     [TestCase]
     public void VenueBackdropArt_Present_RendersRealArt_NotFallback()
     {
-        // Mine, Gloomwood, and Sunken Crypt backdrops are all committed (mine-backdrop /
-        // gloomwood-backdrop / sunkencrypt-backdrop — the Crypt's resolves through
-        // AssetCatalog.VenueArtId's hyphen drop, which this test caught missing when the T1 flip
-        // put the Crypt tile on screen over a silent fallback). Emberfall is the ONE live venue
-        // with NO committed backdrop yet — its tile's glyph fallback is pinned EXACTLY (count and
-        // location) so the owed Emberfall art wave flips this assertion consciously instead of a
-        // placeholder creeping in unnoticed anywhere else on the hub.
-        // UiRenderSmokeTests.ArtAbsentWorld_ForcesArtRectFallback_OnShop still proves the
-        // fallback contract itself via a genuinely-unregistered recipe id.
+        // THE placeholder-free guard for the venue hub: every LIVE venue tile must render real
+        // committed backdrop art — zero ArtRectFallback anywhere on the panel. All three live
+        // backdrops exist (mine-backdrop / gloomwood-backdrop / sunkencrypt-backdrop — the
+        // Crypt's resolves through AssetCatalog.VenueArtId's hyphen drop, which this test caught
+        // missing when the T1 flip put the Crypt tile on screen over a silent fallback). This is
+        // also Emberfall's go-live gate: the venue is dormant in VenueRegistry.LiveRotation
+        // because it has NO backdrop art — anyone flipping it live before emberfall-backdrop is
+        // committed adds a fourth tile with a fallback and fails HERE, so the flip cannot ship
+        // placeholder-first. UiRenderSmokeTests.ArtAbsentWorld_ForcesArtRectFallback_OnShop still
+        // proves the fallback contract itself via a genuinely-unregistered recipe id.
         var ui = MountMainUi();
         try
         {
@@ -84,11 +85,7 @@ public class VenueHubTests
             AssertThat(realArt.Count > 0).IsTrue();
 
             var placeholders = ui.Depths.FindChildren("ArtRectFallback", "PanelContainer", recursive: true, owned: false);
-            AssertThat(placeholders.Count == 1).IsTrue(); // Emberfall's tile, and ONLY Emberfall's
-
-            var emberTile = Find<Control>(ui.Depths, "VenueTile_emberfall"); // throws if missing
-            AssertThat(emberTile.FindChildren("ArtRectFallback", "PanelContainer", recursive: true, owned: false).Count)
-                .IsEqual(1);
+            AssertThat(placeholders.Count == 0).IsTrue();
 
             AssertThat(RenderedText(ui.Depths)).Contains("The Mine");
         }

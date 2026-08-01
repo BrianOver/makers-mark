@@ -39,23 +39,31 @@ public static class VenueRegistry
     /// automatically live just by being in <see cref="All"/>.
     ///
     /// <para>T1 content flip (docs/design/2026-07-26-overnight-strategy-synthesis.md, relands
-    /// PR #242): the two remaining fully-built venues join the rotation — <see cref="SunkenCrypt"/>
-    /// as an early venue peer of the Mine (EntryPower 0, grade 1-5 ores; the two split the early
-    /// band by queue length) and <see cref="Emberfall"/> as the endgame venue (EntryPower 70,
-    /// grade 12-16 ores — only geared-up veteran parties are routed there by <c>VenueRouter</c>'s
-    /// power bands). #242 was parked as a draft because the old tightest-fit router starved the
-    /// Mine and sent ~zero parties to the Crypt; the banded router landed first in this branch,
-    /// so the flip and the routing fix share ONE golden re-baseline. <c>MaterialRegistry.PricedPool</c>
-    /// flips in lockstep so returning ore is priceable at the Evening reveal, and
-    /// <c>ClassRegistry.RecruitPool</c> opens the three remaining classes in the SAME window
-    /// (the operating model's batch-the-re-baseliners rule).</para>
+    /// PR #242): <see cref="SunkenCrypt"/> joins the rotation as an early venue peer of the Mine
+    /// (EntryPower 0, grade 1-5 ores; the two split the early band by queue length) — its art set
+    /// is complete (backdrop/entrance/all five monsters). #242 was parked as a draft because the
+    /// old tightest-fit router starved the Mine and sent ~zero parties to the Crypt; the banded
+    /// router landed first in this branch, so the flip and the routing fix share one golden
+    /// re-baseline window. <c>MaterialRegistry.PricedPool</c> flips in lockstep so returning ore
+    /// is priceable at the Evening reveal, and <c>ClassRegistry.RecruitPool</c> opens the three
+    /// remaining classes in the SAME window (the operating model's batch-the-re-baseliners rule).</para>
+    ///
+    /// <para><b><see cref="Emberfall"/> is BUILT, BANDED, and DORMANT — deliberately NOT live.</b>
+    /// Its mechanics are done (EntryPower 72 tuned against the measured curve, comparator-tested
+    /// in <c>VenueRouterTests</c>), but it has NO committed art at all — no backdrop, no monster
+    /// portraits — and a 20-seed sweep measured it taking 44% of ALL routed parties the moment it
+    /// went live: nearly half the game's raids pointed at placeholder glyphs. Finished-looking
+    /// content that renders as placeholder is exactly the failure this project keeps re-learning
+    /// (silent-fallbacks-hide-finished-work), so the venue waits for its art wave. Going live is
+    /// a one-line append here + its ore ladder into <c>MaterialRegistry.PricedPool</c>, gated by
+    /// <c>VenueHubTests.VenueBackdropArt_Present_RendersRealArt_NotFallback</c>, which FAILS on
+    /// any live venue tile that falls back — the flip cannot ship placeholder-first again.</para>
     /// </summary>
     public static readonly ImmutableArray<string> LiveRotation =
         ImmutableArray.Create(
             MineId,
             Gloomwood.GloomwoodVenue.Id,
-            SunkenCrypt.SunkenCryptVenue.Id,
-            Emberfall.EmberfallFoundryVenue.Id);
+            SunkenCrypt.SunkenCryptVenue.Id);
 
     /// <summary>Resolve a venue definition by key.</summary>
     public static bool TryGet(string venueId, out VenueDefinition? definition)
