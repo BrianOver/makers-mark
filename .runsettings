@@ -58,6 +58,11 @@
            * it is a WALL-CLOCK cap, not a per-test failure: three runs were cut at 9m37s, 9m41s and
              9m48s having completed 170, 354 and 266 tests respectively. Same duration, wildly
              different counts.
+           * THE CAP IS FIXED AND INDEPENDENT OF SUITE SIZE (measured 2026-08-01 on PR #314): that
+             job PASSED the whole suite, 550/550 in 3m13s, and then its 8-test silent-skip-guard step
+             was cut at 9m48s with the same message. Eight tests cannot take nine minutes of honest
+             work, so the runtime stalled at or near connect and the session simply sat there until
+             the deadline. Any run can draw the short straw, including a trivial one.
            * MEASURED 2026-08-01, and this corrects an earlier reading of the same failure: the cap
              is NOT close to how long a healthy run takes. A passing CI engine run does all 550
              tests in ~3m30s (3m29s and 3m21s measured), so the cap sits at ~2.8x the real runtime.
