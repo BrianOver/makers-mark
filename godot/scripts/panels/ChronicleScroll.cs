@@ -59,6 +59,12 @@ public partial class ChronicleScroll : SimPanel
 
     public void CloseScroll() => Visible = false;
 
+    /// <summary>Escape closes the chronicle — the shared mechanism (<see cref="ModalEscape"/>),
+    /// same TRUE-modal-overlay reasoning as <see cref="CampPanel"/>/<see cref="ScryingMirror"/>/
+    /// <see cref="LedgerModal"/>. Never halting the kernel (class doc) does not mean never
+    /// dismissible by the one universal close key.</summary>
+    public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, CloseScroll);
+
     /// <summary>
     /// Advance the staged reveal — called every frame from <c>MainUi._Process</c>, the same way
     /// <see cref="TabFade.Tick"/> and <see cref="AdventureTicker.Tick"/> are.

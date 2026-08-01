@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Ui;
 
 namespace GodotClient.Panels;
 
@@ -91,6 +92,15 @@ public partial class ScryingMirror : SimPanel
     }
 
     public void CloseMirror() => Visible = false;
+
+    /// <summary>Escape closes the mirror — the shared mechanism (<see cref="ModalEscape"/>), same
+    /// TRUE-modal-overlay reasoning as <see cref="CampPanel"/>/<see cref="LedgerModal"/>. This was
+    /// the OTHER unrecoverable softlock (see <see cref="EnsureBuilt"/>'s remarks): its Close button
+    /// could grow off the bottom of the window, and Escape did nothing either — there was no way out
+    /// at all. <see cref="_provenance"/> is added AFTER this panel's own content and gets first crack
+    /// at the same key (Godot's reverse-tree-order <c>_Input</c> dispatch), so an Escape while the
+    /// provenance popup is open closes THAT first, never both at once.</summary>
+    public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, CloseMirror);
 
     /// <summary>Select a party tab by index (test hook + tab-button handler).</summary>
     public void SelectParty(int index)

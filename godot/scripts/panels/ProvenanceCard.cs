@@ -53,6 +53,14 @@ public partial class ProvenanceCard : Control
 
     public void CloseCard() => Visible = false;
 
+    /// <summary>Escape closes the provenance popup — the shared mechanism (<see
+    /// cref="ModalEscape"/>). This card is nested inside whichever surface opened it (<see
+    /// cref="ScryingMirror"/>/<see cref="LegendsWall"/>) and added LAST there, so it sees Escape
+    /// FIRST (Godot's reverse-tree-order <c>_Input</c> dispatch) and must mark it handled itself —
+    /// otherwise the same press would fall through and close the parent surface underneath it too,
+    /// two overlays gone for one key press.</summary>
+    public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, CloseCard);
+
     private void Render(Item item)
     {
         Clear(_body!);

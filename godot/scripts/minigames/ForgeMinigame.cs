@@ -396,6 +396,18 @@ public sealed partial class ForgeMinigame : PanelContainer
         RepaintUi();
     }
 
+    /// <summary>Escape cancels the run — routed through <see cref="Cancel"/> (shared mechanism, <see
+    /// cref="ModalEscape"/>), never a bare hide: a bare hide would leave <see cref="WasCancelled"/>
+    /// false and <see cref="EmittedAction"/> null, so nothing here queues, but the run would also
+    /// never be marked cancelled — leaving the door open for a later call to still finish it.
+    /// Overrides <c>_Input</c> (not <c>_GuiInput</c>) deliberately: this overlay is nested DRAWER
+    /// CONTENT (inside <c>ForgePanel</c>, itself inside <c>DrawerHost</c>'s slot), which already owns
+    /// Escape for the WHOLE drawer. Godot calls <c>_Input</c> in reverse tree order — children before
+    /// parents — so this fires and marks the event handled before <c>DrawerHost</c> ever sees it; the
+    /// drawer would otherwise close out from under an in-progress craft instead of cancelling it
+    /// cleanly through the PKD8 contract.</summary>
+    public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, Cancel);
+
     /// <summary>Real-time input mapping — routes to the SAME public seam methods a scripted test or
     /// the button row drives, so there is exactly one code path for "what a gesture does" regardless
     /// of input source (KTD-A). Space always strikes unaimed (KTD-C accessible path); a left-click

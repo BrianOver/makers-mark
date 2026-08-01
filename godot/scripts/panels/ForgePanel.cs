@@ -566,6 +566,17 @@ public partial class ForgePanel : SimPanel
         _ceremonyRemaining = -1;
     }
 
+    /// <summary>Escape dismisses the result ceremony early — the same seam as the "Skip" button
+    /// (<see cref="HideCeremony"/>), shared mechanism (<see cref="ModalEscape"/>). Gated EXCLUSIVELY
+    /// on <c>_ceremony</c>'s own visibility — NEVER a blanket "close this panel" handler: <see
+    /// cref="ForgePanel"/> is DRAWER CONTENT (<c>DrawerHost</c> already owns Escape for the whole
+    /// drawer), so this must only intercept the one moment a nested full-rect overlay of its own is
+    /// up — exactly like the four minigame overlays already nested here do (<see
+    /// cref="ForgeMinigame._Input"/>'s remarks). When the ceremony is not showing this is a no-op and
+    /// marks nothing handled, so <c>DrawerHost</c>'s own Escape-close still runs normally.</summary>
+    public override void _Input(InputEvent @event) =>
+        ModalEscape.TryClose(@event, GetViewport(), _ceremony?.Visible ?? false, HideCeremony);
+
     private static int StarCountFor(QualityGrade band) => band switch
     {
         QualityGrade.Poor => 1,

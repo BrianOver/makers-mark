@@ -7,6 +7,7 @@ using GameSim.Factions;
 using GameSim.Kernel;
 using GameSim.Narrative;
 using Godot;
+using GodotClient.Ui;
 
 namespace GodotClient.Panels;
 
@@ -63,6 +64,12 @@ public partial class LedgerModal : SimPanel
     }
 
     public void CloseModal() => Visible = false;
+
+    /// <summary>Escape closes the Evening Ledger — the shared mechanism (<see
+    /// cref="ModalEscape"/>), same TRUE-modal-overlay reasoning as <see cref="CampPanel"/>/<see
+    /// cref="ScryingMirror"/>. Before this the Ledger only closed via its own ✕ button (the
+    /// whole-game sweep's own recorded finding).</summary>
+    public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, CloseModal);
 
     private void RenderCards(int day)
     {

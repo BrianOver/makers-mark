@@ -65,6 +65,11 @@ public partial class CommissionBoard : Control
 
     public void Close() => Visible = false;
 
+    /// <summary>Escape closes the commission board — the shared mechanism (<see
+    /// cref="ModalEscape"/>). Before this it only closed via its own ✕ button (the whole-game
+    /// sweep's own recorded finding).</summary>
+    public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, Close);
+
     private void RenderCommission(GameState state, Commission commission)
     {
         var heroName = state.Heroes.TryGetValue(commission.Hero.Value, out var hero) ? hero.Name : $"Hero {commission.Hero.Value}";

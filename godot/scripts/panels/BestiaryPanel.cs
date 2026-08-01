@@ -125,6 +125,11 @@ public partial class BestiaryPanel : Control
         Visible = false;
     }
 
+    /// <summary>Escape closes the bestiary — the shared mechanism (<see cref="ModalEscape"/>),
+    /// routed through the SAME <see cref="Close"/> the ✕ button calls (so the texture-clear
+    /// side-effect fires identically either way).</summary>
+    public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, Close);
+
     private void Select(VenueDefinition venue, VenueFloor floor)
     {
         EnsureBuilt();
