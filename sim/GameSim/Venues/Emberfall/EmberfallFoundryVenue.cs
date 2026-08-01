@@ -100,11 +100,13 @@ public static class EmberfallFoundryVenue
                 }));
         }
 
-        // EntryPower 70: the ENDGAME venue (grade 12-16 ores). Router-side party power saturates
-        // at ~72-84 under the honest baseline (measured 2026-08-01, 20-seed sweep — the router
-        // never sees in-run craft/consumable modifiers, so its scale tops out well below the
-        // floor-5 gate of 100); 70 sits at the late-game median, so only geared-up veteran
-        // parties bank grade-12+ forge-ore.
-        return new VenueDefinition(Id, "The Emberfall Foundry", floors.ToImmutable(), EntryPower: 70);
+        // EntryPower 72: the ENDGAME venue (grade 12-16 ores). Router-side party power saturates
+        // at ~70-76 (p25-p75) in the live 4-venue world (measured 2026-08-01, 20-seed x 100-day
+        // sweep — the router never sees in-run craft/consumable modifiers, so its scale tops out
+        // well below the floor-5 gate of 100); 72 is the late-game MEDIAN, so roughly the
+        // stronger half of veteran parties bank grade-12+ forge-ore and the rest keep the
+        // Gloomwood busy. The first placement (70) sat at late p25 and Emberfall soaked 54% of
+        // all routing — the honest smith's better gear pushed the whole curve over it.
+        return new VenueDefinition(Id, "The Emberfall Foundry", floors.ToImmutable(), EntryPower: 72);
     }
 }

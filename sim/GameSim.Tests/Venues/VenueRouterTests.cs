@@ -18,7 +18,7 @@ namespace GameSim.Tests.Venues;
 public class VenueRouterTests
 {
     // Registered EntryPower bands (pinned by VenueConformanceTests): mine 0, sunken-crypt 0,
-    // gloomwood 35, emberfall 70.
+    // gloomwood 55, emberfall 72.
     private static readonly ImmutableArray<string> MineAndGloomwood =
         ImmutableArray.Create(VenueRegistry.MineId, "gloomwood");
 
@@ -30,7 +30,7 @@ public class VenueRouterTests
     [Fact]
     public void WeakParty_BelowTheGloomwoodBand_StaysInTheMine()
     {
-        // Power 20 < Gloomwood's EntryPower 35: only the Mine's band (0) is reached, so the Mine
+        // Power 20 < Gloomwood's EntryPower 55: only the Mine's band (0) is reached, so the Mine
         // wins even though nothing is queued anywhere — weak parties are never routed onward.
         var chosen = VenueRouter.ChooseVenue(partyPower: 20, MineAndGloomwood, NoQueue);
         Assert.Equal(VenueRegistry.MineId, chosen);
@@ -39,23 +39,23 @@ public class VenueRouterTests
     [Fact]
     public void StrongerParty_IsRoutedOnward_ToTheHighestBandReached()
     {
-        // Power 35 reaches the Gloomwood band exactly (>= comparison); highest reached band wins.
-        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 35, MineAndGloomwood, NoQueue));
+        // Power 55 reaches the Gloomwood band exactly (>= comparison); highest reached band wins.
+        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 55, MineAndGloomwood, NoQueue));
 
-        // Power 70 reaches Emberfall's band exactly — the endgame venue outranks every lower band.
-        Assert.Equal("emberfall", VenueRouter.ChooseVenue(partyPower: 70, AllFour, NoQueue));
+        // Power 72 reaches Emberfall's band exactly — the endgame venue outranks every lower band.
+        Assert.Equal("emberfall", VenueRouter.ChooseVenue(partyPower: 72, AllFour, NoQueue));
 
-        // Power 69 is one short of Emberfall: the Gloomwood band (35) is the highest reached.
-        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 69, AllFour, NoQueue));
+        // Power 71 is one short of Emberfall: the Gloomwood band (55) is the highest reached.
+        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 71, AllFour, NoQueue));
     }
 
     [Fact]
     public void BandBeatsQueue_AStrongPartyNeverFallsBackToAnEmptyEarlyVenue()
     {
         // The band is a stronger signal than congestion: even with the Gloomwood heavily queued
-        // and the Mine empty, a band-35 party raids the Gloomwood. (Queue only splits PEERS.)
+        // and the Mine empty, a band-55 party raids the Gloomwood. (Queue only splits PEERS.)
         var queue = new Dictionary<string, int> { ["mine"] = 0, ["gloomwood"] = 50 };
-        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 40, MineAndGloomwood, queue));
+        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 60, MineAndGloomwood, queue));
     }
 
     [Fact]
@@ -100,7 +100,7 @@ public class VenueRouterTests
     {
         // A rotation with no EntryPower-0 venue (not the live shape, but the router must not
         // assume curation): a power-10 party reaches neither band — the LOWEST entry (nearest
-        // band, gloomwood 35 < emberfall 70) is the least-wrong home.
+        // band, gloomwood 55 < emberfall 72) is the least-wrong home.
         var midAndEnd = ImmutableArray.Create("gloomwood", "emberfall");
         Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 10, midAndEnd, NoQueue));
     }
@@ -120,7 +120,7 @@ public class VenueRouterTests
         // The comparator is a total order, so the left-to-right scan must land on the same venue
         // no matter how the live rotation happens to be ordered.
         var queue = new Dictionary<string, int> { ["mine"] = 1, ["sunken-crypt"] = 1 };
-        foreach (var power in new[] { 0, 10, 34, 35, 69, 70, 200 })
+        foreach (var power in new[] { 0, 10, 54, 55, 71, 72, 200 })
         {
             var expected = VenueRouter.ChooseVenue(power, AllFour, queue);
             var reversed = ImmutableArray.CreateRange(AllFour.Reverse());

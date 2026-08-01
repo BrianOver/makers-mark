@@ -77,10 +77,11 @@ public static class GloomwoodVenue
                 OreKey: ore[floor - 1]));
         }
 
-        // EntryPower 35: the MID venue (grade 8-11 ores). 35 is the honest-baseline day-1-10
-        // median party power (measured 2026-08-01, 20-seed sweep) — a party crosses into the
-        // Gloomwood band about when it outgrows floor-1/2 starter content, matching this venue's
-        // own floor-3 gate (45) being the next real wall.
-        return new VenueDefinition(Id, "The Gloomwood", floors.ToImmutable(), EntryPower: 35);
+        // EntryPower 55: the MID venue (grade 8-11 ores). Placed against the measured 4-venue
+        // power curve (2026-08-01, 20-seed x 100-day sweep: day-1-10 p50 is 41/p75 is 53, day
+        // 11-20 p50 is 60) so the first ~2 weeks of parties stay in the early band. The first
+        // placement (35, taken from the pre-flip curve) let parties cross within days 2-3 and
+        // the Gloomwood soaked 65% of all routing — early venues starved all over again.
+        return new VenueDefinition(Id, "The Gloomwood", floors.ToImmutable(), EntryPower: 55);
     }
 }
