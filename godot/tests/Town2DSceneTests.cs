@@ -50,24 +50,32 @@ public class Town2DSceneTests
     /// to a coloured box, and a coloured box in a stylised town does not announce itself. The owner
     /// found it by noticing the Forge roof was magenta.</para>
     ///
-    /// <para><b>Resolving is not enough, which is the trap in the first version of this test.</b>
-    /// The old ids resolved perfectly — <c>forge.png</c> is committed and manifested too — so an
-    /// "art is not null" assertion would have passed happily through the entire bug. The invariant
-    /// that actually holds is which SET the town draws, so that is what is pinned: every venue id
-    /// is in the <c>town2d-</c> pixel family AND resolves.</para>
+    /// <para><b>UPDATE (2026-08-01 building-exterior receipt): the family pin flipped BACK.</b>
+    /// #316 (the fix above) pinned every id to the <c>town2d-</c> family. But the owner's playtest
+    /// verdict on that pixel set was "these look WORSE, we only asked for interior changes" — he
+    /// prefers the SDXL look and never asked for an exterior swap, so <see
+    /// cref="TownLayout2D.Venues"/> reverted to the bare SDXL ids (with the one genuine defect,
+    /// the Forge's magenta roof, fixed in place — see <c>art/pipeline/recolor-forge-roof.py</c>).
+    /// This is exactly the "test pins a taste decision, taste changed, test must change with it"
+    /// case the U3 unit anticipated: the family assertion below now pins the OPPOSITE direction
+    /// (bare ids, NOT <c>town2d-</c>) so an accidental drift back to the pixel set — the same
+    /// silent-degrade shape, just reversed — still fails loudly instead of shipping unnoticed.
+    /// The resolves-to-real-art assertion is unchanged: it never encoded a taste, only "the id
+    /// isn't a typo/missing manifest entry," which holds regardless of which family is active.</para>
     /// </summary>
     [TestCase]
-    public void EveryVenueSpriteId_IsInThePixelSet_AndResolvesToCommittedArt()
+    public void EveryVenueSpriteId_IsInTheSdxlSet_AndResolvesToCommittedArt()
     {
         foreach (var venue in TownLayout2D.Venues)
         {
             AssertThat(venue.SpriteId.StartsWith("town2d-"))
                 .OverrideFailureMessage(
-                    $"venue '{venue.Key}' draws sprite '{venue.SpriteId}', which is not in the "
-                    + "town2d-* pixel set. The pre-pivot SDXL buildings are still committed and still "
-                    + "resolve, so pointing a venue back at one is invisible at runtime — that is "
-                    + "exactly how the magenta-roofed Forge survived for weeks.")
-                .IsTrue();
+                    $"venue '{venue.Key}' draws sprite '{venue.SpriteId}', which IS in the "
+                    + "town2d-* pixel set — but the 2026-08-01 receipt reverted every venue back to "
+                    + "the SDXL set at the owner's request (see TownLayout2D.Venues). Either this id "
+                    + "regressed back to the pixel family by accident, or the owner deliberately "
+                    + "chose to switch (options A/C) and this test's pin needs to flip again.")
+                .IsFalse();
 
             AssertThat(IconRegistry.Art(venue.SpriteId))
                 .OverrideFailureMessage(
