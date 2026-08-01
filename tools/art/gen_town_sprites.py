@@ -26,6 +26,26 @@ double-tint the moment `ClassColors.RoleColor` multiplied over it.
 
 Sizes match what is already on disk and what `TownAssets2D`/`TownLayout2D` lay out against
 (20x36 bodies) -- changing them would move every hand-placed tile coordinate in the town.
+(A second, LARGER direction -- redrawing at the `CharacterSpriteScale` headroom that
+`TownLayout2D.CharacterSpriteScale`'s doc describes -- is deliberately a separate, uncommitted
+script under `art/pipeline/candidates/`, not this file: this file's job is the town's hand-placed
+20x36 contract, not a size change, which is a Brian-eyes design call, not a quality pass.)
+
+QUALITY PASS (2026-08-01, feat/hero-sprite-quality)
+----------------------------------------------------
+Brian's repeated playtest verdict -- "the heroes/NPCs still look like booty" -- traced to this
+file: every class's torso/arm/leg fill was one FLAT tone ('m'), so the silhouette read as a
+cardboard cutout with no volume, no matter how crisp the outline around it was. The fix is a
+mechanical, silhouette-preserving re-shade, not a redraw: every maximal horizontal run of the
+flat 'm' fill is replaced with a light-to-dark gradient (added one new tone, 'i', below) using
+ONLY colours already sampled from committed siblings (same rule `gen-market.py` follows) --
+never colours picked by eye, never a new hue. Because the transform only recolors existing 'm'
+cells (every other character -- outline, accent, already-placed highlight/shadow -- is left
+byte-for-byte untouched), it is provably silhouette-safe: it cannot open a new transparent gap,
+cannot shift any outline pixel, and cannot desync a base frame from its step frame (both are
+built from the identical grids below, exactly as before). Same 20x36 canvas, same `--check`
+drift guard, same ids -- zero risk to `TownAssets2D`'s dynamic `sprite.GetHeight()` sizing or the
+census tests, which pin ids/resolution, never pixel content.
 
 Usage:
     python tools/art/gen_town_sprites.py [--out DIR] [--check]
@@ -47,6 +67,9 @@ PALETTE = {
     ".": (0, 0, 0, 0),          # transparent
     "o": (20, 15, 31, 255),     # Void — outline
     "d": (42, 36, 56, 255),     # Iron — deepest shading
+    "i": (61, 50, 66, 255),     # Iron-lit — QUALITY PASS: town2d-tavern's own body tone, sampled
+                                # verbatim (never picked by eye); sits between 'd' and 'm' so a
+                                # flat fill run can step through FOUR tones instead of two.
     "m": (110, 104, 128, 255),  # mid tone
     "l": (184, 176, 198, 255),  # light
     "h": (216, 207, 224, 255),  # Bone — highlight / rim
@@ -68,28 +91,28 @@ VANGUARD = [
     "....................",
     ".......oooooo.......",
     "......ohhhllmo......",
-    "......ohllmmmo......",
-    "......ohlommmo......",  # visor slit
-    "......ohlommmo......",
-    "......omllmmdo......",
+    "......ohlllmdo......",
+    "......ohlolmdo......",  # visor slit
+    "......ohlolmdo......",
+    "......omlllido......",
     ".......omllmo.......",
     "........oooo........",
     ".......omllmo.......",  # gorget
     "...oooomllllmoooo...",
-    "..ohhlmmllllmmmldo..",  # pauldrons, ember rim goes upper-left
-    ".oehhlmmllllmmmmldo.",
-    ".oehlmmmllllmmmmmdo.",
-    ".oehlmmmltttlmmmmdo.",  # circuit trace across the breastplate
-    "..ooolmmmlrlmmmlooo.",  # rune glyph at the heart
-    "ooooolmmmlllmmmlo...",
-    "ohhhmolmmmmmmmmlo...",  # slab shield, left arm — face lit so it reads as a plane
-    "ohhlmmolmmmmmmmlo...",
-    "ohlmmtmolmmmmmmlo...",  # shield boss carries the circuit trace
-    "ohlmmmmolmmmmmmlo...",
-    "ohlmmmmmolmmmmmlo...",
-    ".ohlmmmmolmmmmmlo...",
-    "..ooooooolmmmmmlo...",
-    ".......oomlmmlmoo...",
+    "..ohhllilllllmdldo..",  # pauldrons, ember rim goes upper-left
+    ".oehhllilllllmidldo.",
+    ".oehllmdllllllmiddo.",
+    ".oehllmdltttllmiddo.",  # circuit trace across the breastplate
+    "..ooollmdlrllmdlooo.",  # rune glyph at the heart
+    "ooooollmdllllmdlo...",
+    "ohhhmollllmmiidlo...",  # slab shield, left arm — face lit so it reads as a plane
+    "ohhlliolllmmiidlo...",
+    "ohllitmolllmmidlo...",  # shield boss carries the circuit trace
+    "ohllmidolllmmidlo...",
+    "ohlllmidolllmidlo...",
+    ".ohllmidolllmidlo...",
+    "..ooooooolllmidlo...",
+    ".......oomllilmoo...",
     "........olmoolmo....",
     "........olmoolmo....",
     "........olmoolmo....",
@@ -102,8 +125,15 @@ VANGUARD = [
     ".......oooooooooo...",
 ]
 
+# QUALITY-PASS NOTE (applies to every grid below): each maximal run of the original flat 'm'
+# fill was mechanically re-shaded into a light-to-dark gradient using the new 'i' tone (see
+# PALETTE) plus the existing 'l'/'m'/'d' steps -- e.g. row 4's "ohllmmmo" (one flat mid-tone
+# blob) became "ohlllmdo" (light rim -> mid -> shadow). Outline, transparency and every
+# already-placed accent character (o/e/t/r and any hand-placed h/l/d) are untouched, so the
+# silhouette, the holes-free guarantee, and base/step alignment are all identical to before —
+# only the fill has volume now. See this file's module doc for the full rationale.
 VANGUARD_STEP = VANGUARD[:25] + [
-    ".......oomlmmlmoo...",
+    ".......oomllilmoo...",
     ".......olmoo.olmo...",  # near leg swings forward, far leg trails
     "......olmo....olmo..",
     "......olmo....olmo..",
@@ -122,28 +152,28 @@ STRIKER = [
     "........oooo........",
     ".......ohhllo.......",
     "......ohhlllmo......",  # hood
-    "......ohlmmmmo......",
+    "......ohllmido......",
     "......ohlmoomo......",  # eyes in shadow
-    ".......olmmmo.......",
-    ".......olmmmo.......",
+    ".......ollmdo.......",
+    ".......ollmdo.......",
     "........oooo........",
     "........ollo........",
     ".....oooollooooo....",
-    "....ohhlmmllmmldo...",
-    "...oehlmmmllmmmmdo..",
-    "...oehlmmtllmmmmdo..",  # crossed strap with a circuit trace
-    "...oehlmmmllmmmmdo..",
-    "....ohlmmmrlmmmldo..",  # rune at the belt
-    "....oolmmmllmmmloo..",
-    "...ohdolmmllmmlodho.",  # blade hilt right, dagger left
-    "...ohdolmmllmmlodho.",
-    "...ohdo.olmmlo.odho.",
+    "....ohhllilllildo...",
+    "...oehllmdlllmiddo..",
+    "...oehllitlllmiddo..",  # crossed strap with a circuit trace
+    "...oehllmdlllmiddo..",
+    "....ohllmdrllmdldo..",  # rune at the belt
+    "....oollmdlllmdloo..",
+    "...ohdollilllilodho.",  # blade hilt right, dagger left
+    "...ohdollilllilodho.",
+    "...ohdo.ollilo.odho.",
     "...ohdo..ollo..odho.",
     "...ohdo..ollo..odho.",
     "....oo...ollo...oo..",
     ".........ollo.......",
     "........omllmo......",
-    "........olmmlo......",
+    "........ollilo......",
     "........olmoolo.....",
     "........olmoolo.....",
     "........odmoodo.....",
@@ -157,7 +187,7 @@ STRIKER = [
 
 STRIKER_STEP = STRIKER[:25] + [
     "........omllmo......",
-    ".......olmmlo.......",
+    ".......ollilo.......",
     "......olmo..olo.....",
     "......olmo..olo.....",
     ".....odmo....odo....",
@@ -174,35 +204,35 @@ MYSTIC = [
     "....................",
     ".......oooooo.......",
     "......ohhlllmo......",
-    ".....ohhllmmmmo.....",  # deep cowl
-    ".....ohlmooommo.....",
+    ".....ohhlllmido.....",  # deep cowl
+    ".....ohlmooolio.....",
     ".....ohlmoooomo.....",  # face is shadow only
-    "......olmmmmmo......",
-    ".......olmmmo.......",
+    "......olllmido......",
+    ".......ollmdo.......",
     "........oooo........",
     "........ollo........",
     "......ooollooo......",
-    ".....ohhlmllmmdo....",
-    "....oehhlmllmmmdo...",
-    "....oehlmmllmmmdo..o",  # staff enters upper right
-    "....oehlmtrtlmmdo.or",  # rune between two circuit traces
-    "....ohlmmmllmmmdo.or",
-    "...oohlmmmllmmmdoo.o",
-    "..ohdohlmmmllmmldo.o",
-    "..ohdo.olmmmllmlo.o.",
-    "..ohdo.olmmmllmlo.o.",
-    "...oo..olmmmllmlo.o.",
-    ".......olmmmllmlo.o.",
-    "......olmmmmlo......",
-    "......olmmmmlo......",
-    ".....olmmmmmmlo.....",
-    ".....olmmmmmmlo.....",
-    "....olmmmmmmmmlo....",
-    "....olmmmmmmmmlo....",
-    "...olmmmmmmmmmmlo...",
-    "...olmmmmmmmmmmlo...",
-    "...odmmmmmmmmmmdo...",
-    "...odmmmmmmmmmmdo...",
+    ".....ohhlmlllido....",
+    "....oehhlmlllmddo...",
+    "....oehllilllmddo..o",  # staff enters upper right
+    "....oehlmtrtllido.or",  # rune between two circuit traces
+    "....ohllmdlllmddo.or",
+    "...oohllmdlllmddoo.o",
+    "..ohdohllmdlllildo.o",
+    "..ohdo.ollmdllmlo.o.",
+    "..ohdo.ollmdllmlo.o.",
+    "...oo..ollmdllmlo.o.",
+    ".......ollmdllmlo.o.",
+    "......ollmidlo......",
+    "......ollmidlo......",
+    ".....olllmmidlo.....",
+    ".....olllmmidlo.....",
+    "....ollllmmiidlo....",
+    "....ollllmmiidlo....",
+    "...ollllmmmiiidlo...",
+    "...ollllmmmiiidlo...",
+    "...odlllmmmiiiddo...",
+    "...odlllmmmiiiddo...",
     "...oddddddddddddo...",
     "...oooooooooooooo...",
     "....................",
@@ -211,14 +241,14 @@ MYSTIC = [
 # The Mystic hovers rather than steps: the robe hides the legs entirely, so a leg-swap frame would
 # be invisible. Its step frame shifts the hem instead — the robe swaying as weight transfers.
 MYSTIC_STEP = MYSTIC[:25] + [
-    ".....olmmmmmmlo.....",
-    "....olmmmmmmlo......",
-    "...olmmmmmmmmlo.....",
-    "...olmmmmmmmmlo.....",
-    "..olmmmmmmmmmmlo....",
-    "..olmmmmmmmmmmlo....",
-    "..odmmmmmmmmmmdo....",
-    "..odmmmmmmmmmmdo....",
+    ".....olllmmidlo.....",
+    "....olllmmidlo......",
+    "...ollllmmiidlo.....",
+    "...ollllmmiidlo.....",
+    "..ollllmmmiiidlo....",
+    "..ollllmmmiiidlo....",
+    "..odlllmmmiiiddo....",
+    "..odlllmmmiiiddo....",
     "..oddddddddddddo....",
     "..oooooooooooooo....",
     "....................",
@@ -278,7 +308,10 @@ def main() -> int:
         if args.check:
             if not os.path.exists(path):
                 drift.append(f"{name}: no committed PNG at {path}")
-            elif list(Image.open(path).convert("RGBA").getdata()) != list(image.getdata()):
+            # get_flattened_data(), not the deprecated getdata() (Pillow 14 removes it, 2027-10-15)
+            # -- same call gen-market.py already uses for its own --check comparison.
+            elif (list(Image.open(path).convert("RGBA").get_flattened_data())
+                    != list(image.get_flattened_data())):
                 drift.append(f"{name}: committed PNG differs from the grid in this script")
             continue
 
