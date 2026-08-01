@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Ui;
 
 namespace GodotClient.Panels;
 
@@ -69,6 +70,15 @@ public partial class CampPanel : SimPanel
     }
 
     public void CloseModal() => Visible = false;
+
+    /// <summary>Escape closes the winch-house slate — the shared mechanism (<see
+    /// cref="ModalEscape"/>), not a bespoke handler. This IS a TRUE modal overlay (unlike most of
+    /// <see cref="SimPanel"/>'s other subclasses, which are drawer content <c>DrawerHost</c> already
+    /// owns Escape for — see <see cref="ModalEscape"/>'s own remarks on why that mechanism is not
+    /// just a base-class override). This was one of the two unrecoverable softlocks (see
+    /// <see cref="BuildFittedModalCard"/>'s remarks): its close button could grow off the bottom of
+    /// the window, and Escape did nothing either.</summary>
+    public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, CloseModal);
 
     private void Render()
     {

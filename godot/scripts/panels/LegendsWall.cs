@@ -78,6 +78,14 @@ public partial class LegendsWall : Control
 
     public void Close() => Visible = false;
 
+    /// <summary>Escape closes the legends wall — the shared mechanism (<see
+    /// cref="ModalEscape"/>). Before this it only closed via its own ✕ button (the whole-game
+    /// sweep's own recorded finding). <see cref="_provenance"/> is added AFTER this wall's own
+    /// content and gets first crack at the same key (Godot's reverse-tree-order <c>_Input</c>
+    /// dispatch), so Escape while the provenance popup is open closes THAT first, never both at
+    /// once.</summary>
+    public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, Close);
+
     private void RenderMemorials(GameState state)
     {
         AddHeader(_body!, "THE FALLEN");

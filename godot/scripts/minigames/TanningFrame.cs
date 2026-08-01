@@ -271,6 +271,14 @@ public sealed partial class TanningFrame : PanelContainer
         RepaintUi();
     }
 
+    /// <summary>Escape cancels the scrape — routed through <see cref="Cancel"/> (shared mechanism,
+    /// <see cref="ModalEscape"/>), never a bare hide (see <see cref="ForgeMinigame._Input"/>'s
+    /// remarks for why). Overrides <c>_Input</c>, not <c>_GuiInput</c>: this overlay is nested DRAWER
+    /// CONTENT (inside <c>ForgePanel</c>, itself inside <c>DrawerHost</c>'s slot), and Godot's
+    /// reverse-tree-order <c>_Input</c> dispatch (children before parents) is what lets this fire and
+    /// mark the event handled before <c>DrawerHost</c> ever sees it.</summary>
+    public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, Cancel);
+
     /// <summary>Real-time keyboard mapping — routes to the SAME public seam methods a scripted
     /// test or the button row drives (KTD-A, same idiom as <c>ForgeMinigame._GuiInput</c>): arrow
     /// keys move the cursor, Space scrapes the focused cell, and Enter is the keyboard equivalent

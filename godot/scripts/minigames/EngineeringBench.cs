@@ -324,6 +324,16 @@ public sealed partial class EngineeringBench : PanelContainer
         Cancelled?.Invoke();
     }
 
+    /// <summary>Escape cancels the assembly — routed through <see cref="Cancel"/> (shared mechanism,
+    /// <see cref="ModalEscape"/>), never a bare hide (see <see cref="ForgeMinigame._Input"/>'s
+    /// remarks for why). Overrides <c>_Input</c> on THIS PanelContainer regardless of which child
+    /// (<c>BenchCanvas</c>, see <see cref="EnsureBuilt"/>'s note) actually holds keyboard GUI focus —
+    /// <c>_Input</c> is a per-frame Node notification, not gated by <c>Control</c> focus. This overlay
+    /// is nested DRAWER CONTENT (inside <c>ForgePanel</c>, itself inside <c>DrawerHost</c>'s slot),
+    /// and Godot's reverse-tree-order <c>_Input</c> dispatch (children before parents) is what lets
+    /// this fire and mark the event handled before <c>DrawerHost</c> ever sees it.</summary>
+    public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, Cancel);
+
     /// <summary>
     /// Folds <see cref="_seatedPart"/>/<see cref="_fillOrder"/> into the scorer's flattened shape:
     /// exactly one (socketId, partId) pair per CURRENTLY-occupied socket, in first-touch order. A
