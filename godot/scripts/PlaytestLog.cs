@@ -89,7 +89,7 @@ public static class PlaytestLog
             }
 
             // Header row: what build produced the session. Without provenance a log is unattributable,
-            // which is the same reason play.ps1 stamps the build in the first place.
+            // which is the same reason play.bat stamps the build in the first place.
             System.IO.File.WriteAllText(
                 path,
                 "{\"kind\":\"session\",\"startedAt\":" + ((long)_startedAt)

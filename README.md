@@ -6,9 +6,16 @@ Built sim-first: the entire game is a deterministic, seeded, headless .NET simul
 
 ## Play
 
-- **Visual game** (lit 2.5D town): double-click **`play.bat`** (needs Godot 4.6.3-stable .NET at `C:\Tools\Godot\...` or `GODOT_BIN` set). Runs the game directly, no editor.
-- **Edit scenes**: **`edit.bat`** opens the Godot editor.
-- **Text game** (no Godot): double-click **`play-cli.bat`**, or `dotnet run --project sim/GameSim.Cli`. Type `help`.
+**Double-click `play.bat`. That is the only launcher.** It checks the checkout is on trunk, updates
+it, stamps the build, compiles, reimports assets, and launches with session logging on. Needs Godot
+4.6.3-stable .NET at `C:\Tools\Godot\...` or `GODOT_BIN` set.
+
+There used to be three ways to play and they behaved differently; the double-clickable one skipped
+the freshness checks, so the safe path was the one nobody took. If you are tempted to add a second
+launcher, edit `play.bat` instead.
+
+- **Edit scenes**: **`edit.bat`** opens the Godot editor. (Not a way to play — the editor.)
+- **Text/headless game**: `dotnet run --project sim/GameSim.Cli`, then type `help`.
 
 Tip: right-click `play.bat` → Send to → Desktop (create shortcut) for a one-click icon.
 
