@@ -330,17 +330,32 @@ public class AudioTests
     /// fifth above it — see the comment at the cascade.</summary>
     private const int BassFilterPoles = 4;
 
-    /// <summary>Ceiling on the low-band energy share. Set from the measured post-fix values with headroom,
-    /// not from taste — see the git history of MusicBed for the before/after.</summary>
-    private const float MaxBassShare = 0.45f;
+    /// <summary>
+    /// Ceiling on the low-band energy share. Tightened 0.45 -> 0.35 in U-audio-2 alongside the second
+    /// "too loud" / bass-heavy report: the FIRST fix (0.34 -> 0.17 root amplitude) left a ceiling loose
+    /// enough (0.45) that it could not have caught its own regression back toward the old numbers — the
+    /// measured post-fix shares (14.8%-29.3% across the five phases, see the PR body) all clear 0.35 with
+    /// real headroom, so this is a floor pulled up to where the fix actually landed, not a number picked
+    /// to make the test pass.
+    /// </summary>
+    private const float MaxBassShare = 0.35f;
 
     /// <summary>The Mine's allowance. Higher because it is deliberately the lowest-pitched thing in the
     /// game (a fourth under the deepest town bed) — see the note at the comparison. Still a ceiling: it
-    /// caught the original 0.40-amplitude D2 fundamental and the ~37Hz sub-bass pulse under it.</summary>
+    /// caught the original 0.40-amplitude D2 fundamental and the ~37Hz sub-bass pulse under it. Left
+    /// untouched in U-audio-2 — the owner's repeat complaint was about the town beds he actually hears
+    /// every session, and Underground was never part of that report.</summary>
     private const float MaxUndergroundBassShare = 0.55f;
 
-    /// <summary>Floor on loop length. 24s was the reported defect; this is comfortably above it.</summary>
-    private const float MinLoopSeconds = 45f;
+    /// <summary>
+    /// Floor on loop length. 24s was the original reported defect, 45s was the floor when the fix landed
+    /// at 60s. The owner said "loops too quickly" again on the very next playtest with 60s shipped, so a
+    /// floor that 60s already cleared was not actually testing for "long enough" — it was testing for
+    /// "longer than the number everyone already agreed was too short." Raised to 90s alongside the fix
+    /// landing at 120s: comfortably below the new number (room to tune down slightly) but well above the
+    /// 60s that was already proven, twice, not to be enough.
+    /// </summary>
+    private const float MinLoopSeconds = 90f;
 
     /// <summary>A scene takes the music and gives it back. The trap: <c>SetPhase</c> ignores an unchanged
     /// phase, so if closing a scene did not explicitly restore the bed the game would fall silent until
@@ -684,6 +699,69 @@ public class AudioTests
         finally
         {
             OS.UnsetEnvironment(AudioDirector.MuteEnvVar);
+        }
+    }
+
+    /// <summary>
+    /// U-audio-2's own census, extending the KTD-B idea <see cref="EveryComposedTrack_LoadsAndLoops"/>
+    /// already applies to the composed table down onto <see cref="MusicBed"/> itself: every value
+    /// <see cref="DayPhase"/> can ever hold must resolve to a real, audible bed. Deliberately reads
+    /// <c>Enum.GetValues&lt;DayPhase&gt;()</c> rather than the hand-maintained <see cref="AllPhases"/>
+    /// array used by every other test in this file — <c>AllPhases</c> is exactly the kind of list a
+    /// future phase addition could be added to the enum and forgotten to add here, which would make
+    /// every OTHER test in this file silently skip it while still passing. This test cannot silently
+    /// skip a phase because it does not know the list in advance; it asks the enum, not a copy of it.
+    /// <see cref="MusicBed.For"/> always resolves something today (<c>MoodFor</c>'s <c>_</c> arm is the
+    /// fallback), so this is a regression guard against that ever stopping being true, not a check that
+    /// is expected to catch anything right now.
+    /// </summary>
+    [TestCase]
+    public void EveryDayPhase_ResolvesToANonSilentBed()
+    {
+        foreach (var phase in Enum.GetValues<DayPhase>())
+        {
+            var wav = MusicBed.For(phase);
+            AssertThat(wav)
+                .OverrideFailureMessage($"{phase} has no music bed at all — MusicBed.For returned null.")
+                .IsNotNull();
+
+            var pcm = Pcm(wav);
+            AssertThat(Rms(pcm))
+                .OverrideFailureMessage(
+                    $"{phase} resolves to a bed but it is effectively silent (RMS {Rms(pcm):0.####}) — " +
+                    "the exact 'on disk but nobody hears it' shape this census exists to catch.")
+                .IsGreater(0.01f);
+        }
+    }
+
+    /// <summary>
+    /// U-audio-2: "nothing you add may be louder than what it replaces." Each per-venue entrance cue
+    /// (<see cref="Cue.EnterForge"/>, <see cref="Cue.EnterTavern"/>, <see cref="Cue.EnterMarket"/>,
+    /// <see cref="Cue.EnterMineGate"/>, <see cref="Cue.EnterNoticeboard"/>) replaces
+    /// <see cref="Cue.PanelOpen"/> at exactly one Town2D building's entrance
+    /// (<c>MainUi.EntranceCueFor</c>) — the owner's complaint was that the generic cue was "too loud and
+    /// harsh," so a replacement that is merely DIFFERENT but equally loud would only fix half of it. Peak
+    /// is the right comparison here (not RMS/LUFS): these are all sub-half-second transients where what a
+    /// player perceives as "loud" is dominated by the peak hit, not the average level.
+    /// </summary>
+    [TestCase]
+    public void TheVenueCues_AreNeverLouderThanPanelOpen()
+    {
+        var panelOpenPeak = Peak(Pcm(SfxLibrary.Get(Cue.PanelOpen)));
+        var venueCues = new[]
+        {
+            Cue.EnterForge, Cue.EnterTavern, Cue.EnterMarket, Cue.EnterMineGate, Cue.EnterNoticeboard,
+        };
+
+        foreach (var cue in venueCues)
+        {
+            var peak = Peak(Pcm(SfxLibrary.Get(cue)));
+            AssertThat(peak)
+                .OverrideFailureMessage(
+                    $"{cue} peaks at {peak:0.###}, PanelOpen (the generic cue it replaces at its " +
+                    $"building) peaks at {panelOpenPeak:0.###}. A per-venue cue that is LOUDER than the " +
+                    "sound it replaces only fixes 'identical,' not 'too loud.'")
+                .IsLessEqual(panelOpenPeak);
         }
     }
 }

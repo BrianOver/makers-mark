@@ -81,13 +81,30 @@ public static class Synth
     /// <summary>Adds a sine partial across the whole buffer with an exponential decay envelope. The
     /// building block for struck metal, bells, and plucked strings — a handful of partials at
     /// inharmonic ratios with different half-lives is most of what makes something sound like an
-    /// object rather than a beep.</summary>
-    public static void AddPartial(float[] buffer, float hz, float amplitude, float halfLife, float phase = 0f)
+    /// object rather than a beep.
+    ///
+    /// <para><b><paramref name="attack"/>, added for the town's per-venue cues.</b> Every existing
+    /// caller passes 0 (the default), which reproduces the exact prior behaviour byte-for-byte — a
+    /// partial at full envelope from sample 0. That instant onset is correct for struck-metal cues
+    /// (the anvil, the coin) where the transient IS the sound. It reads as harsh on softer cues: the
+    /// owner's "buildings sound too loud and harsh" turned out to include entering the tavern/market/
+    /// noticeboard through the SAME zero-attack partials the forge uses. A short linear ramp (a few
+    /// milliseconds) before the decay envelope takes over softens exactly those onsets without
+    /// touching a single existing cue, because nothing else passes a non-zero value.</para>
+    /// </summary>
+    public static void AddPartial(float[] buffer, float hz, float amplitude, float halfLife, float phase = 0f, float attack = 0f)
     {
         var step = 2f * MathF.PI * hz / SampleRate;
         for (var i = 0; i < buffer.Length; i++)
         {
-            buffer[i] += MathF.Sin(step * i + phase) * amplitude * Decay(i / (float)SampleRate, halfLife);
+            var t = i / (float)SampleRate;
+            var env = Decay(t, halfLife);
+            if (attack > 0f)
+            {
+                env *= MathF.Min(1f, t / attack);
+            }
+
+            buffer[i] += MathF.Sin(step * i + phase) * amplitude * env;
         }
     }
 

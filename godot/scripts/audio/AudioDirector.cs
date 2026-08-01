@@ -65,6 +65,19 @@ public sealed partial class AudioDirector : Node
     /// theme have no composed entry and stay on the synth bed — the gap is stated, not papered over
     /// (KTD-C: "no new music generation... only wiring the three tracks that exist").</para>
     ///
+    /// <para><b>U-audio-2: why the Morning gap is the one that actually mattered.</b> The owner's next
+    /// two playtests both never left Morning (zero phase-tick rows in the session log), so 100% of what
+    /// he heard was the one phase this table does not cover — the composed tracks landing here was, from
+    /// where he sat, indistinguishable from them not landing at all. Composing a fourth track for Morning
+    /// is out of scope for this pass (still no new generation), and none of the three existing moods
+    /// fits an opening, brightest-of-the-day phase without being a worse mismatch than the honest synth
+    /// bed it would replace — town-dusk is a light change AWAY from morning, night-still and quest-wait
+    /// are both "the day is on pause" moods, and Morning is the opposite of that. So the gap stays, but on
+    /// purpose and for a stated reason rather than by omission, and <see cref="MusicBed"/> — the one thing
+    /// that actually plays whenever he opens the game — got the bass-and-loop-length pass instead
+    /// (see its own header). If a fourth composed track for Morning ever lands, this table is the one and
+    /// only place a new entry needs to go.</para>
+    ///
     /// <para><b>TrimDb, and why it is not just zero everywhere.</b> Measured with ffmpeg's
     /// <c>loudnorm</c> analysis pass (integrated LUFS) run identically on each composed file AND on a
     /// plain WAV render of the synth bed it replaces (see the U2 PR body for the exact numbers) — the
