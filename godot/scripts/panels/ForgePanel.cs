@@ -332,6 +332,40 @@ public partial class ForgePanel : SimPanel
         var day = Adapter?.CurrentState.Day ?? 0;
         _minigame!.Configure(recipe, material, profession, unlockedTalents, day);
         _minigame.Visible = true;
+        LogMinigame("open", "forge", _minigame.RecipeId, _minigame.MaterialKey);
+    }
+
+    /// <summary>
+    /// One <see cref="PlaytestLog"/> line per active-craft overlay open / finish / cancel.
+    ///
+    /// <para>The phase ticks the log already writes cannot see any of this: they say the day
+    /// advanced and gold changed, not whether the player actually WORKED a craft, how long the run
+    /// took, what grade came out, or whether they walked out halfway. Those are precisely the
+    /// questions the overlays are on trial for — a nine-minute dagger and an unfelt tempo bonus are
+    /// both open findings — and an open/finish pair is a duration because every row carries
+    /// <c>t</c>.</para>
+    ///
+    /// <para>Cancel is logged deliberately, not just completion: abandoning a minigame is the
+    /// strongest "this is not fun" signal the game can record, and it is invisible to every other
+    /// surface.</para>
+    /// </summary>
+    private static void LogMinigame(string verb, string overlay, string recipeId, string material, string detail = "")
+    {
+        if (!PlaytestLog.Active)
+        {
+            return;
+        }
+
+        PlaytestLog.Note($"minigame {verb} {overlay} recipe={recipeId} mat={material}{detail}");
+    }
+
+    /// <summary>The preview grade the three score-triple overlays share (SubScores[2]), rendered
+    /// for the log the same way their feedback text renders it.</summary>
+    private static string PreviewDetail(CraftAction action)
+    {
+        var scores = action.SubScores ?? ImmutableList<int>.Empty;
+        var preview = scores.Count == 3 ? scores[2] : 0;
+        return $" grade={preview} sub={string.Join("/", scores)}";
     }
 
     /// <summary>The minigame's ONE completed run → the ONE queued <see cref="CraftAction"/>
@@ -351,6 +385,8 @@ public partial class ForgePanel : SimPanel
         // _minigame.Visible) stops on its own next frame — this just resets it right now instead
         // of waiting a frame.
         ResolveTown()?.ForgeGlowReset();
+        LogMinigame("done", "forge", action.RecipeId, action.MaterialKey,
+            $" grade={_minigame.PreviewGradePermille} sub={string.Join("/", action.SubScores ?? ImmutableList<int>.Empty)}");
         ShowCeremony(action);
     }
 
@@ -358,7 +394,12 @@ public partial class ForgePanel : SimPanel
     /// mid-run cancel never leaves it stuck at its elevated glow.</summary>
     private void OnMinigameCancelled()
     {
-        _minigame!.Visible = false;
+        // Logged BEFORE the teardown, not after: the reading of the run (how far the billet got
+        // before the player walked out) is the whole point of a cancel row, and reading it after
+        // the overlay is torn down risks reading a reset.
+        LogMinigame("cancel", "forge", _minigame!.RecipeId, _minigame.MaterialKey,
+            $" shape={_minigame.ShapeXPermille} heat={_minigame.HeatYPermille}");
+        _minigame.Visible = false;
         ResolveTown()?.ForgeGlowReset();
     }
 
@@ -369,6 +410,7 @@ public partial class ForgePanel : SimPanel
         EnsureBuilt();
         _brewPuzzle!.Configure(recipe, material, profession, unlockedTalents);
         _brewPuzzle.Visible = true;
+        LogMinigame("open", "brew", _brewPuzzle.RecipeId, _brewPuzzle.MaterialKey);
     }
 
     /// <summary>The brew overlay's ONE completed run → the ONE queued <see cref="CraftAction"/>
@@ -382,10 +424,15 @@ public partial class ForgePanel : SimPanel
         _feedback!.Text = $"queued: brew {action.RecipeId} with {action.MaterialKey} " +
             $"(brew score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)}). " +
             $"Queued — resolves when {Adapter?.CurrentState.Phase} ticks. Press Advance or wait.";
+        LogMinigame("done", "brew", action.RecipeId, action.MaterialKey, PreviewDetail(action));
     }
 
     /// <summary>Brew cancel queues nothing (PKD8) — just closes the overlay.</summary>
-    private void OnBrewCancelled() => _brewPuzzle!.Visible = false;
+    private void OnBrewCancelled()
+    {
+        _brewPuzzle!.Visible = false;
+        LogMinigame("cancel", "brew", _brewPuzzle.RecipeId, _brewPuzzle.MaterialKey);
+    }
 
     /// <summary>U3: open the assembly-bench overlay for this engineering recipe/material — the
     /// "Assemble" path beside the auto-craft fallback, mirroring <see cref="OnBrewPressed"/>. Reachable
@@ -395,6 +442,7 @@ public partial class ForgePanel : SimPanel
         EnsureBuilt();
         _engineeringBench!.Configure(recipe, material, profession, unlockedTalents);
         _engineeringBench.Visible = true;
+        LogMinigame("open", "assemble", _engineeringBench.RecipeId, _engineeringBench.MaterialKey);
     }
 
     /// <summary>The bench overlay's ONE completed run → the ONE queued <see cref="CraftAction"/>
@@ -408,10 +456,15 @@ public partial class ForgePanel : SimPanel
         _feedback!.Text = $"queued: assemble {action.RecipeId} with {action.MaterialKey} " +
             $"(assembly score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)}). " +
             $"Queued — resolves when {Adapter?.CurrentState.Phase} ticks. Press Advance or wait.";
+        LogMinigame("done", "assemble", action.RecipeId, action.MaterialKey, PreviewDetail(action));
     }
 
     /// <summary>Bench cancel queues nothing (PKD8) — just closes the overlay.</summary>
-    private void OnAssembleCancelled() => _engineeringBench!.Visible = false;
+    private void OnAssembleCancelled()
+    {
+        _engineeringBench!.Visible = false;
+        LogMinigame("cancel", "assemble", _engineeringBench.RecipeId, _engineeringBench.MaterialKey);
+    }
 
     /// <summary>U2: open the tanning frame overlay for this recipe/material — the "Scrape the
     /// hide" path beside the auto-craft fallback, mirroring <see cref="OnBrewPressed"/>. The
@@ -423,6 +476,7 @@ public partial class ForgePanel : SimPanel
         var day = Adapter?.CurrentState.Day ?? 0;
         _tanningFrame!.Configure(recipe, material, profession, unlockedTalents, day);
         _tanningFrame.Visible = true;
+        LogMinigame("open", "scrape", _tanningFrame.RecipeId, _tanningFrame.MaterialKey);
     }
 
     /// <summary>The tanning frame's ONE completed run → the ONE queued <see cref="CraftAction"/>
@@ -437,10 +491,15 @@ public partial class ForgePanel : SimPanel
         _feedback!.Text = $"queued: scrape {action.RecipeId} with {action.MaterialKey} " +
             $"(hide score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)}). " +
             $"Queued — resolves when {Adapter?.CurrentState.Phase} ticks. Press Advance or wait.";
+        LogMinigame("done", "scrape", action.RecipeId, action.MaterialKey, PreviewDetail(action));
     }
 
     /// <summary>Tanning-frame cancel queues nothing (PKD8) — just closes the overlay.</summary>
-    private void OnTanningFrameCancelled() => _tanningFrame!.Visible = false;
+    private void OnTanningFrameCancelled()
+    {
+        _tanningFrame!.Visible = false;
+        LogMinigame("cancel", "scrape", _tanningFrame.RecipeId, _tanningFrame.MaterialKey);
+    }
 
     /// <summary>G1: every anvil strike gets the hammer clang; an on-beat strike additionally fires
     /// the spark-burst/flash world VFX. <paramref name="onBeat"/> is the SAME judgement
