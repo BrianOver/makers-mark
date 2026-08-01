@@ -80,10 +80,22 @@ public class AssetResolutionCensusTests
     /// Ids known to be intentionally absent right now — checked before every resolve assertion so
     /// a genuinely-pending id (e.g. a second live venue's pixel set, or a registered-but-not-yet-
     /// recruitable class getting promoted into <see cref="ClassRegistry.RecruitPool"/> before its
-    /// art lands) is a one-line, reviewable addition instead of commenting out an assertion. Empty
-    /// today: every id this file enumerates is expected to resolve against the current checkout.
+    /// art lands) is a one-line, reviewable addition instead of commenting out an assertion.
+    ///
+    /// <para>T1 content flip (relands PR #242): sentinel/skirmisher/occultist joined
+    /// <see cref="ClassRegistry.RecruitPool"/> before their town pixel bodies were drawn — exactly
+    /// the promoted-before-art case this set exists for. Their PORTRAIT art (hero-sentinel.png et
+    /// al) and roster SVGs are committed, so <c>TownAssets2D.ForHero</c>'s documented next rung
+    /// (the roster SVG) renders them in town: wrong art style, never a crash, never a magenta box.
+    /// Remove each pair here when its <c>town2d-hero-*</c> set lands — the census then enforces it
+    /// forever.</para>
     /// </summary>
-    private static readonly HashSet<string> KnownPendingIds = new();
+    private static readonly HashSet<string> KnownPendingIds = new()
+    {
+        "town2d-hero-sentinel", "town2d-hero-sentinel_step",
+        "town2d-hero-skirmisher", "town2d-hero-skirmisher_step",
+        "town2d-hero-occultist", "town2d-hero-occultist_step",
+    };
 
     [TestCase]
     public void RecruitableHeroClasses_ResolveTheTownPixelBody_NotJustAnyFallback()

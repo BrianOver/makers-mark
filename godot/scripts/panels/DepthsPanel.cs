@@ -97,8 +97,9 @@ public partial class DepthsPanel : SimPanel
         _mineWatch!.Refresh(state, Adapter.LastEvents);
 
         Clear(_venueGrid!);
-        // U-C4: a tile per LIVE venue (the Mine AND Gloomwood, from VenueRegistry.LiveRotation) —
-        // the second venue is now real, so the hub is no longer Mine-only.
+        // U-C4: a tile per LIVE venue, straight from VenueRegistry.LiveRotation — all four after
+        // the T1 flip (Mine, Gloomwood, Sunken Crypt, Emberfall). Emberfall has no backdrop art
+        // yet; its ArtRect falls back to the depths glyph + venue-name caption, never a crash.
         foreach (var venueId in GameSim.Venues.VenueRegistry.LiveRotation)
         {
             _venueGrid!.AddChild(BuildVenueTile(state, venueId));

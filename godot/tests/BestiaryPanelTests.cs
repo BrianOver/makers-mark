@@ -92,9 +92,10 @@ public class BestiaryPanelTests
         // Slag Hound/Bellows-Mad/Molten Archivist/Undying Forge-Heart each had a retired GLB but
         // were NEVER given a 2D portrait — deleting the mesh tree (chore/kill-3d-residue) drops
         // these four from "shows art" to the same text-only card Cinder Imp always used, since no
-        // 2D substitute exists in the repo. Documented art gap (Emberfall isn't in
-        // VenueRegistry.LiveRotation yet), not a wiring defect — this pins the graceful-degrade
-        // behavior so a future 2D-portrait wave for Emberfall is a pure addition, not a fix.
+        // 2D substitute exists in the repo. Documented art gap — now player-reachable since the
+        // T1 flip put Emberfall in VenueRegistry.LiveRotation — not a wiring defect: this pins
+        // the graceful-degrade behavior so the owed Emberfall 2D-portrait wave is a pure
+        // addition, not a fix.
         var ui = MountMainUi();
         try
         {
