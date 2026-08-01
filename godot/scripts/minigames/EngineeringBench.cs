@@ -972,4 +972,28 @@ public sealed partial class EngineeringBench : PanelContainer
             }
         }
     }
+
+    /// <summary>
+    /// Claim the keyboard the moment this overlay actually appears on screen.
+    ///
+    /// <para>Focus used to be claimed once from <c>EnsureBuilt</c>, which production runs at boot
+    /// with the overlay HIDDEN — and <see cref="GodotClient.Ui.UiKit.ClaimKeyboard"/> defers its grab
+    /// behind an <c>IsVisibleInTree()</c> guard, so that grab silently did nothing and was never
+    /// retried. The overlay therefore never held the keyboard in the shipped game: Space pressed
+    /// whichever panel button still had focus, which re-opened and RESET the run, and the bellows key
+    /// reached nothing at all, leaving the craft impossible to finish.</para>
+    ///
+    /// <para>Claiming from the open path is not enough either — the drawer that hosts this overlay is
+    /// not visible in the tree yet on that frame, so the deferred grab misses again. The only moment
+    /// that is reliably correct is when THIS node becomes visible in the tree, which is exactly what
+    /// this notification reports. The overlay owns its own focus; no caller has to remember.</para>
+    /// </summary>
+    public override void _Notification(int what)
+    {
+        if (what == NotificationVisibilityChanged && IsVisibleInTree())
+        {
+            GodotClient.Ui.UiKit.ClaimKeyboard(this);
+        }
+    }
+
 }

@@ -332,7 +332,74 @@ public partial class ForgePanel : SimPanel
         var day = Adapter?.CurrentState.Day ?? 0;
         _minigame!.Configure(recipe, material, profession, unlockedTalents, day);
         _minigame.Visible = true;
+        OpenedOverlay(_minigame);
         LogMinigame("open", "forge", _minigame.RecipeId, _minigame.MaterialKey);
+    }
+
+    /// <summary>
+    /// Hand the keyboard to an overlay that was JUST shown — the step whose absence made every
+    /// active-craft minigame unplayable for a real keyboard player.
+    ///
+    /// <para><b>The bug.</b> Each overlay claims focus from its own <c>EnsureBuilt</c>, and
+    /// <see cref="UiKit.ClaimKeyboard"/> defers the grab behind an <c>IsVisibleInTree()</c> guard.
+    /// But production builds every overlay once at boot, HIDDEN (see <see cref="EnsureBuilt"/>), so
+    /// that deferred grab always found an invisible node and silently did nothing — and the open
+    /// path never asked again. The overlay therefore never held the keyboard in the shipped game.</para>
+    ///
+    /// <para><b>What the player got.</b> The click that opened the overlay left focus on the "Work
+    /// the forge" button behind it. A focused Godot Button eats Space, so pressing Space (the
+    /// overlay's own label says "Hammer (Space)") re-pressed that button, which re-ran Configure and
+    /// RESET the run to zero. Shift for the bellows reached nothing, heat stayed floored, and strike
+    /// advance scales with heat — so the craft could not be finished at all. The owner's session logs
+    /// show it exactly: two "open" rows two seconds apart, then silence.</para>
+    ///
+    /// <para><b>Why the tests missed it.</b> <c>MinigameKeyboardWorksTests</c> constructs the overlay
+    /// visible and mounts it at root — the one arrangement where the deferred grab succeeds, and the
+    /// one arrangement production never uses. A test that builds the object differently from the game
+    /// is not testing the game.</para>
+    /// </summary>
+    private static void OpenedOverlay(Control overlay) => UiKit.ClaimKeyboard(overlay);
+
+    /// <summary>
+    /// Closing the drawer must CANCEL an open craft overlay, not orphan it.
+    ///
+    /// <para><c>DrawerHost.Close</c> — reached by the ✕, by Escape, and by clicking the dim veil —
+    /// hides the drawer's content without telling it. The overlay's own <c>Visible</c> stayed true,
+    /// so an abandoned run kept ticking, kept driving the town's furnace glow through
+    /// <see cref="_Process"/>, and was still sitting there covering the panel the next time the
+    /// drawer opened. It also meant walking out of a craft produced no <c>cancel</c> row in the
+    /// session log — and abandonment is the strongest "this is not fun" signal the game can record.
+    /// Both of the owner's sessions ended exactly this way and left no trace of it.</para>
+    ///
+    /// <para>Hooked on visibility rather than on <c>DrawerHost.Closed</c> so it also covers switching
+    /// to another panel, or any future host that hides this panel by some other route.</para>
+    /// </summary>
+    public override void _Notification(int what)
+    {
+        if (what != NotificationVisibilityChanged || IsVisibleInTree())
+        {
+            return;
+        }
+
+        if (_minigame is { Visible: true })
+        {
+            _minigame.Cancel();
+        }
+
+        if (_brewPuzzle is { Visible: true })
+        {
+            _brewPuzzle.Cancel();
+        }
+
+        if (_engineeringBench is { Visible: true })
+        {
+            _engineeringBench.Cancel();
+        }
+
+        if (_tanningFrame is { Visible: true })
+        {
+            _tanningFrame.Cancel();
+        }
     }
 
     /// <summary>
@@ -410,6 +477,7 @@ public partial class ForgePanel : SimPanel
         EnsureBuilt();
         _brewPuzzle!.Configure(recipe, material, profession, unlockedTalents);
         _brewPuzzle.Visible = true;
+        OpenedOverlay(_brewPuzzle);
         LogMinigame("open", "brew", _brewPuzzle.RecipeId, _brewPuzzle.MaterialKey);
     }
 
@@ -442,6 +510,7 @@ public partial class ForgePanel : SimPanel
         EnsureBuilt();
         _engineeringBench!.Configure(recipe, material, profession, unlockedTalents);
         _engineeringBench.Visible = true;
+        OpenedOverlay(_engineeringBench);
         LogMinigame("open", "assemble", _engineeringBench.RecipeId, _engineeringBench.MaterialKey);
     }
 
@@ -476,6 +545,7 @@ public partial class ForgePanel : SimPanel
         var day = Adapter?.CurrentState.Day ?? 0;
         _tanningFrame!.Configure(recipe, material, profession, unlockedTalents, day);
         _tanningFrame.Visible = true;
+        OpenedOverlay(_tanningFrame);
         LogMinigame("open", "scrape", _tanningFrame.RecipeId, _tanningFrame.MaterialKey);
     }
 
