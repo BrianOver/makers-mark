@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Standalone pixel-diff console for receipt.ps1 (U1, make-it-visible plan).
+       TargetFramework comes from Directory.Build.props (KTD2 rule: never set it here).
+       Deliberately NOT added to Game.sln: it is a local dev-gate tool, not part of the
+       game or sim build; run it via "dotnet run" with a project path argument. Solution
+       membership is an orchestrator follow-up if ever wanted (see plan U1 file list). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>PixelDiff</RootNamespace>
+    <AssemblyName>PixelDiff</AssemblyName>
+    <!-- System.Drawing.Common is Windows-only (PlatformNotSupportedException elsewhere).
+         Acceptable here: this whole capture pipeline already requires a Windows desktop
+         GPU session (shot_harness.gd cannot render headless), so this tool never needs to
+         run anywhere else. NoWarn silences the CA1416 platform-compat analyzer accordingly. -->
+    <NoWarn>CA1416</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+  </ItemGroup>
+</Project>
