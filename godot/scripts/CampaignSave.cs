@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using GameSim.Contracts;
 using GameSim.Kernel;
 using Godot;
+using GodotClient.Tools;
 using GodotFileAccess = Godot.FileAccess;
 
 namespace GodotClient;
@@ -77,7 +78,7 @@ public static class CampaignSave
             using var file = GodotFileAccess.Open(SavePath, GodotFileAccess.ModeFlags.Write);
             if (file is null)
             {
-                GD.PushWarning($"[CampaignSave] could not open {SavePath} for write: {GodotFileAccess.GetOpenError()}");
+                EngineDistress.Warn($"[CampaignSave] could not open {SavePath} for write: {GodotFileAccess.GetOpenError()}");
                 return false;
             }
 
@@ -88,7 +89,7 @@ public static class CampaignSave
         {
             // Never rethrow: this runs inside a completed tick, and a failed autosave must not
             // destroy the session it was trying to protect.
-            GD.PushWarning($"[CampaignSave] save failed ({ex.GetType().Name}: {ex.Message})");
+            EngineDistress.Warn($"[CampaignSave] save failed ({ex.GetType().Name}: {ex.Message})");
             return false;
         }
     }
@@ -119,8 +120,8 @@ public static class CampaignSave
         }
         catch (Exception ex)
         {
-            GD.PushWarning($"[CampaignSave] save present but the world would not deserialize " +
-                           $"({ex.GetType().Name}: {ex.Message}) — treating as no save");
+            EngineDistress.Warn($"[CampaignSave] save present but the world would not deserialize " +
+                                $"({ex.GetType().Name}: {ex.Message}) — treating as no save");
             return null;
         }
     }
@@ -138,7 +139,7 @@ public static class CampaignSave
         }
         catch (Exception ex)
         {
-            GD.PushWarning($"[CampaignSave] could not clear the save ({ex.GetType().Name}: {ex.Message})");
+            EngineDistress.Warn($"[CampaignSave] could not clear the save ({ex.GetType().Name}: {ex.Message})");
         }
     }
 
@@ -154,21 +155,21 @@ public static class CampaignSave
             using var file = GodotFileAccess.Open(SavePath, GodotFileAccess.ModeFlags.Read);
             if (file is null)
             {
-                GD.PushWarning($"[CampaignSave] could not open {SavePath}: {GodotFileAccess.GetOpenError()}");
+                EngineDistress.Warn($"[CampaignSave] could not open {SavePath}: {GodotFileAccess.GetOpenError()}");
                 return null;
             }
 
             var envelope = JsonSerializer.Deserialize<Envelope>(file.GetAsText(), EnvelopeOptions);
             if (envelope is null || string.IsNullOrEmpty(envelope.State))
             {
-                GD.PushWarning("[CampaignSave] save file parsed to nothing usable — treating as no save");
+                EngineDistress.Warn("[CampaignSave] save file parsed to nothing usable — treating as no save");
                 return null;
             }
 
             if (envelope.SchemaVersion != Schema)
             {
-                GD.PushWarning($"[CampaignSave] save envelope is schema {envelope.SchemaVersion}, " +
-                               $"this build reads {Schema} — treating as no save");
+                EngineDistress.Warn($"[CampaignSave] save envelope is schema {envelope.SchemaVersion}, " +
+                                    $"this build reads {Schema} — treating as no save");
                 return null;
             }
 
@@ -176,8 +177,8 @@ public static class CampaignSave
         }
         catch (Exception ex)
         {
-            GD.PushWarning($"[CampaignSave] save file unreadable ({ex.GetType().Name}: {ex.Message}) " +
-                           "— treating as no save");
+            EngineDistress.Warn($"[CampaignSave] save file unreadable ({ex.GetType().Name}: {ex.Message}) " +
+                                "— treating as no save");
             return null;
         }
     }

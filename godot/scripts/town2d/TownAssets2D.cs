@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Godot;
+using GodotClient.Tools;
 
 namespace GodotClient.Town2d;
 
@@ -156,7 +157,7 @@ public static class TownAssets2D
     /// Builds (and caches) the flat-colour fallback texture for a missing id — and, per the class
     /// doc above, makes sure it never passes for real art: a 1px magenta border plus <paramref
     /// name="missingId"/> baked in as tiny pixel text (see <see cref="DrawLoudMarkers"/>), and one
-    /// <see cref="GD.PushWarning"/> + <see cref="PlaytestLog.Note"/> the FIRST time this exact id is
+    /// <see cref="EngineDistress.Warn"/> + <see cref="PlaytestLog.Note"/> the FIRST time this exact id is
     /// built (the cache check above already gates repeat calls, so this never spams per-frame).
     ///
     /// <para>Deliberately pure CPU pixel-poking (<see cref="Image.SetPixel"/> only) — no
@@ -181,7 +182,7 @@ public static class TownAssets2D
         var texture = ImageTexture.CreateFromImage(image);
         PlaceholderCache[cacheKey] = texture;
 
-        GD.PushWarning(
+        EngineDistress.Warn(
             $"[TownAssets2D] no committed art for '{missingId}' — showing a loud placeholder box "
             + "(magenta border + id text). This must never ship; see docs/plans/2026-08-01-001 U3.");
         PlaytestLog.Note($"placeholder-fallback:{missingId}");

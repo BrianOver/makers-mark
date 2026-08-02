@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Text;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Tools;
 
 namespace GodotClient;
 
@@ -101,7 +102,7 @@ public static class PlaytestLog
         catch (Exception ex)
         {
             // A logging failure must never cost the owner a play session.
-            GD.PushWarning($"[PlaytestLog] disabled — cannot open log: {ex.Message}");
+            EngineDistress.Warn($"[PlaytestLog] disabled — cannot open log: {ex.Message}");
             _path = null;
         }
     }
@@ -220,7 +221,7 @@ public static class PlaytestLog
         }
         catch (Exception ex)
         {
-            GD.PushWarning($"[PlaytestLog] write failed, disabling: {ex.Message}");
+            EngineDistress.Warn($"[PlaytestLog] write failed, disabling: {ex.Message}");
             _path = null;
         }
     }
