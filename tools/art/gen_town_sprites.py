@@ -87,6 +87,21 @@ hand-placed tile coordinates are untouched -- this is a canvas resize, not a lay
 the census never pinned dimensions (verified: `AssetResolutionCensusTests` checks resolution,
 not size).
 
+IMPORT SETTING EVERY `_step` PAIR MUST CARRY: `process/fix_alpha_border=false`
+-------------------------------------------------------------------------------
+Godot's default texture import bakes a filler RGB into fully-transparent (alpha 0) pixels near
+an opaque edge, to stop bilinear/mipmap sampling from bleeding a dark fringe in from outside a
+cutout -- irrelevant here (Nearest filtering, mipmaps off, by design, everywhere in this
+pipeline). Because a base/step pair's opaque legs/hem legitimately diverge below row 31, that
+border-fix can pick a DIFFERENT filler colour for the same transparent coordinate a row or two
+ABOVE the real divergence in each texture -- same alpha (invisible either way), different RGB,
+which `TownSpriteArtTests.StepFrames_DifferOnlyBelowTheWaist` still catches (it does not know a
+pixel's colour is meaningless once its alpha is 0). Caught in CI once (U6): the committed PNG
+BYTES were already byte-identical above row 31 (verified directly, bypassing Godot), so the
+generator's grids were never the bug -- the fix lives in each `.import` sidecar
+(`process/fix_alpha_border=false`), not here. Every `town2d-hero-*_step` pair, present or
+future, needs that setting or the walk-frame test can fail on a phantom diff.
+
 Usage:
     python tools/art/gen_town_sprites.py [--out DIR] [--check]
 
