@@ -95,11 +95,12 @@ public class NewGameSelectTests
             AssertThat(MainUi.AdapterOverride).IsNull();
 
             // 5-phase day, one line each, verbatim MainUi.PhaseLegend (R12) — never drifts.
+            // U2 (playtest-three plan): headers are PhaseVocab's words now, not the raw sim phases.
             var phaseLegend = Find<Label>(screen, "PhaseLegend");
             AssertThat(phaseLegend.Text).IsEqual(MainUi.PhaseLegend);
             var lines = phaseLegend.Text.Split('\n');
             AssertThat(lines.Length).IsEqual(5);
-            foreach (var phaseName in new[] { "Morning", "Expedition", "Camp", "Deep", "Evening" })
+            foreach (var phaseName in new[] { "Dawn/Prepare", "Quest", "Vigil", "Deep Vigil", "Night" })
             {
                 AssertThat(lines.Any(line => line.StartsWith(phaseName))).IsTrue();
             }

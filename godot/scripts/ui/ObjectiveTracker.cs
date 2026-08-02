@@ -283,13 +283,17 @@ public sealed partial class ObjectiveTracker : PanelContainer
 /// </summary>
 public sealed partial class DayTimeline : HBoxContainer
 {
+    /// <summary>U2 (playtest-three plan, KTD-B): labels come from <see cref="PhaseVocab"/> now,
+    /// not the raw sim phase names — this used to print "Camp"/"Deep" (<c>DayPhase.ToString()</c>
+    /// verbatim) directly above a HUD banner that already said "Vigil"/"Deep Vigil" for the exact
+    /// same moment, the split-brain vocabulary the owner's playtest flagged.</summary>
     private static readonly (DayPhase Phase, string Label)[] KernelOrder =
     {
-        (DayPhase.Morning, "Morning"),
-        (DayPhase.Expedition, "Expedition"),
-        (DayPhase.Camp, "Camp"),
-        (DayPhase.ExpeditionDeep, "Deep"),
-        (DayPhase.Evening, "Evening"),
+        (DayPhase.Morning, PhaseVocab.Display(DayPhase.Morning)),
+        (DayPhase.Expedition, PhaseVocab.Display(DayPhase.Expedition)),
+        (DayPhase.Camp, PhaseVocab.Display(DayPhase.Camp)),
+        (DayPhase.ExpeditionDeep, PhaseVocab.Display(DayPhase.ExpeditionDeep)),
+        (DayPhase.Evening, PhaseVocab.Display(DayPhase.Evening)),
     };
 
     /// <summary>Segment-pill underline thickness (px) — the "current phase" marker (UI-4).</summary>

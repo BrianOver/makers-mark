@@ -117,7 +117,10 @@ public static class TownLayout2D
         new("forge", "Forge", "forge", new Vector2I(13, 12)),
         new("market", "Shop", "market", new Vector2I(26, 12)),
         new("tavern", "Tavern", "tavern", new Vector2I(13, 18)),
-        new("minegate", "Gate", "mine-gate", new Vector2I(20, 3)),
+        // U2 (playtest-three plan): was "Gate" — bare enough to read as generic scenery next to a
+        // "Bounties" building that actually opens a DIFFERENT panel (Depths). Nametag only; the
+        // click-routing key ("minegate") and TownAssets2D's sprite id are untouched.
+        new("minegate", "Mine Gate", "mine-gate", new Vector2I(20, 3)),
         new("noticeboard", "Bounties", "noticeboard", new Vector2I(26, 18)),
     };
 
