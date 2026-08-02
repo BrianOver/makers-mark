@@ -229,7 +229,29 @@ public class AudioTests
                 .OverrideFailureMessage($"The Mine theme is indistinguishable from the {phase} bed.")
                 .IsTrue();
         }
+
+        // U7 (R7): "vigil music good but too much background static" — the cavern-air noise layer IS
+        // static on purpose, so this pins a SHARE ceiling (relative to the theme's own RMS), not an
+        // absolute amplitude — a master-level change to Underground() stays free to move without
+        // breaking this. MusicBed.UndergroundAirLayer() is the SAME production buffer summed into
+        // Underground() above, measured live rather than a frozen recipe copy, so this reacts if the
+        // amplitude/cutoff ever drifts back up. Measured (throwaway console harness): shipped
+        // (0.13/340Hz) ~7.2%, U7's tuned (0.07/260Hz) ~3.3% — the ceiling below sits well above the
+        // tuned value and well under the shipped one.
+        var airRms = Rms(MusicBed.UndergroundAirLayer());
+        var noiseShare = airRms / Rms(pcm);
+        AssertThat(noiseShare)
+            .OverrideFailureMessage(
+                $"The Underground theme's cavern-air layer is {noiseShare:P1} of the theme's own RMS " +
+                $"(ceiling {MaxUndergroundNoiseShare:P1}). That is the background static the owner " +
+                "asked to have cut — move UndergroundAirLayer's amplitude/cutoff back down, not the " +
+                "drips/pulse/drones (\"good but,\" not \"replace\").")
+            .IsLessEqual(MaxUndergroundNoiseShare);
     }
+
+    /// <summary>U7 ceiling for <see cref="TheUndergroundTheme_IsItsOwnPlace"/>'s noise-share check —
+    /// see that assertion's own doc for the measured before/after numbers.</summary>
+    private const float MaxUndergroundNoiseShare = 0.05f;
 
     /// <summary>
     /// "Lower the base" as a measurement rather than a memory.
@@ -591,6 +613,30 @@ public class AudioTests
     }
 
     /// <summary>
+    /// U6 (2026-08-02 shell-and-audio plan, R7/KTD-F): "no composed track ships with a positive
+    /// TrimDb again" — a boost is the code admitting a generation's own noise floor is wrong, and
+    /// boosting it lifts that noise floor right along with the sparse content. This is exactly how
+    /// <c>night-still-long</c>'s +5.45dB shipped and the owner heard "loud static randomly at night."
+    /// Reads <see cref="AudioDirector.ComposedTrackTrims"/> (the real table, not a copy) so a future
+    /// TrimDb edit is caught here regardless of which phase it lands on.
+    /// </summary>
+    [TestCase]
+    public void NoComposedTrack_EverCarriesAPositiveTrimDb()
+    {
+        foreach (var (phase, trim) in AudioDirector.ComposedTrackTrims)
+        {
+            AssertThat(trim)
+                .OverrideFailureMessage(
+                    $"{phase}'s composed track carries a +{trim:0.##}dB TrimDb. A positive trim boosts " +
+                    "a quiet generation's own noise floor right along with its content — night-still-long " +
+                    "shipped at +5.45dB and the boosted hiss was the owner's 'random loud static.' If a " +
+                    "generation needs a boost to reach level, the fix is a better generation (U9), never " +
+                    "a positive TrimDb.")
+                .IsLessEqual(0f);
+        }
+    }
+
+    /// <summary>
     /// The dev A/B toggle (R3): pressing M must swap composed vs synth for the phase ALREADY
     /// PLAYING, immediately and audibly — not merely flip a flag that only takes effect on the next
     /// phase change, which would make the owner wait an entire day-phase to judge two tracks back to
@@ -883,6 +929,128 @@ public class AudioTests
                     "The forge cues need a real 8-12ms attack on top of DeClick's shared 4ms fade, not just " +
                     "DeClick's own floor every cue already has.")
                 .IsGreater(instantRise);
+        }
+    }
+
+    /// <summary>
+    /// U8 (2026-08-02 shell-and-audio plan, R8): "Forge mini game noises are bad - too loud and
+    /// harsh (particularly the bellows shift since you have to hold)." The held gesture used to
+    /// normalize to 0.30 — double the level every venue-entrance cue (<see cref="Cue.EnterForge"/>,
+    /// <see cref="Cue.EnterTavern"/>, etc.) already settled on as "ambient, heard constantly, must
+    /// not be harsh." A player holding the bellows for a multi-second craft hears this cue far more
+    /// than any single venue entrance, so it has no business being louder than one.
+    /// </summary>
+    [TestCase]
+    public void Bellows_IsNoLouderThanAVenueCue()
+    {
+        var venueCues = new[]
+        {
+            Cue.EnterForge, Cue.EnterTavern, Cue.EnterMarket, Cue.EnterMineGate, Cue.EnterNoticeboard,
+        };
+        var venuePeak = venueCues.Max(c => Peak(Pcm(SfxLibrary.Get(c))));
+        var bellowsPeak = Peak(Pcm(SfxLibrary.Get(Cue.Bellows)));
+
+        AssertThat(bellowsPeak)
+            .OverrideFailureMessage(
+                $"Bellows peaks at {bellowsPeak:0.###}; the loudest venue-entrance cue peaks at " +
+                $"{venuePeak:0.###}. A gesture the player HOLDS for several seconds must sit at venue-cue " +
+                "level at most, not double it.")
+            .IsLessEqual(venuePeak);
+    }
+
+    /// <summary>
+    /// U8 (R8): <c>AudioDirector.StartLoop</c>/<c>StopLoop</c> — the held-bellows API. Asserts on the
+    /// dedicated loop voice's <c>Stream</c>/<c>VolumeDb</c>, the same script-owned properties
+    /// <see cref="CrossfadingBetweenDifferentTrims_NeverJumpsLevel"/> already proves reliable in this
+    /// suite, rather than on <c>AudioStreamPlayer.Playing</c>'s real-time completion state (which no
+    /// existing test in this file relies on, and which this suite cannot verify outside the
+    /// orchestrator's serial engine run) — so this stays deterministic under
+    /// <see cref="AudioDirector._Process"/>'s own accumulated-delta clock, never a frame count.
+    /// </summary>
+    [TestCase]
+    public void StartLoop_ArmsTheLoopVoice_AndStopLoopFadesThenStops()
+    {
+        var director = new AudioDirector();
+        try
+        {
+            ((SceneTree)Engine.GetMainLoop()).Root.AddChild(director);
+
+            director.StartLoop(Cue.Bellows);
+            var loopVoice = director.GetChildren().OfType<AudioStreamPlayer>()
+                .First(p => p.Name.ToString() == "LoopVoice");
+
+            AssertThat(loopVoice.Stream == SfxLibrary.Get(Cue.Bellows))
+                .OverrideFailureMessage("StartLoop did not arm the dedicated loop voice with the Bellows stream.")
+                .IsTrue();
+            AssertThat(loopVoice.VolumeDb)
+                .OverrideFailureMessage($"StartLoop left the loop voice at {loopVoice.VolumeDb}dB instead of audible.")
+                .IsEqual(0f);
+
+            director.StopLoop(Cue.Bellows);
+
+            // The release must FADE, not cut — an instant silence would click (DeClick only smooths a
+            // clip's own edges, never an arbitrary interruption point). One tiny step in: still close
+            // to full volume, nowhere near silent yet.
+            director._Process(0.01);
+            AssertThat(loopVoice.VolumeDb)
+                .OverrideFailureMessage(
+                    $"StopLoop dropped the loop voice to {loopVoice.VolumeDb}dB after only 10ms of a " +
+                    "120ms release — that reads as a cut, not a fade.")
+                .IsGreater(-6f);
+
+            // Comfortably past the release window: fully faded AND actually stopped.
+            director._Process(1.0);
+            AssertThat(loopVoice.Playing)
+                .OverrideFailureMessage("The loop voice never stopped once its release fade completed.")
+                .IsFalse();
+        }
+        finally
+        {
+            director.Free();
+        }
+    }
+
+    /// <summary>
+    /// U8 (R8): the held loop's own clip is short (a single ~0.3s breath) — a multi-second hold needs
+    /// MANY repeats, or the bellows would go silent after the first breath while still held. Rather
+    /// than depend on real playback timing to actually reach the clip's end (which this headless
+    /// suite cannot verify outside the orchestrator's serial engine run), this fires the loop voice's
+    /// own <c>Finished</c> signal directly — a deterministic way to exercise
+    /// <c>AudioDirector</c>'s retrigger handler without waiting on the audio server's real clock.
+    /// </summary>
+    [TestCase]
+    public void HeldLoop_RetriggersOnItsOwnClipEnding_UntilReleased()
+    {
+        var director = new AudioDirector();
+        try
+        {
+            ((SceneTree)Engine.GetMainLoop()).Root.AddChild(director);
+            director.StartLoop(Cue.Bellows);
+            var loopVoice = director.GetChildren().OfType<AudioStreamPlayer>()
+                .First(p => p.Name.ToString() == "LoopVoice");
+
+            loopVoice.Stream = null;
+            loopVoice.EmitSignal(AudioStreamPlayer.SignalName.Finished);
+
+            AssertThat(loopVoice.Stream == SfxLibrary.Get(Cue.Bellows))
+                .OverrideFailureMessage(
+                    "The held loop did not retrigger when its own clip finished — a hold longer than " +
+                    "one breath would go silent while still held.")
+                .IsTrue();
+
+            // Once released, the SAME clip ending must NOT retrigger again.
+            director.StopLoop(Cue.Bellows);
+            director._Process(1.0); // let the release fade complete and the voice actually stop
+            loopVoice.Stream = null;
+            loopVoice.EmitSignal(AudioStreamPlayer.SignalName.Finished);
+
+            AssertThat(loopVoice.Stream is null)
+                .OverrideFailureMessage("The loop voice retriggered again AFTER StopLoop released it.")
+                .IsTrue();
+        }
+        finally
+        {
+            director.Free();
         }
     }
 

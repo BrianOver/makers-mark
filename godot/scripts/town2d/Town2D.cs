@@ -110,12 +110,6 @@ public partial class Town2D : Control
     public static int ShrinkFor(float screenWidth) =>
         Math.Max(2, (int)MathF.Round(screenWidth / TargetVisibleWorldWidth));
 
-    /// <summary>Height in SCREEN pixels of any opaque UI covering the top of this control — set by
-    /// <c>MainUi</c> from its HUD header's measured height (0 when the town is mounted bare, e.g. in
-    /// tests or the screenshot tool). <see cref="FollowPlayer"/> biases the camera by half of it so
-    /// the player is centered in the visible strip rather than the full viewport.</summary>
-    public float TopObstructionPx { get; set; }
-
     private const int TileSize = TownLayout2D.TileSize;
 
     /// <summary>Party-file rally spacing (px) along X — mirrors <c>Town3D.RallySpotFor</c>'s spread
@@ -760,18 +754,19 @@ public partial class Town2D : Control
             return;
         }
 
-        // Centering on the player centers them in the VIEWPORT, but the top TopObstructionPx of that
-        // viewport is behind MainUi's opaque HUD header — so the player, and whichever building they
-        // are standing at, ended up under it. Lifting the camera target by half the hidden band
-        // centers the player in the strip that is actually visible. /CanvasShrink converts the
-        // header's screen pixels into world pixels (the canvas is upscaled by that factor).
-        var bias = TopObstructionPx / 2f / CanvasShrink;
-
+        // U2 (shell-and-audio plan, KTD-C): used to lift the camera target by half of
+        // MainUi's opaque HUD header height, because the header painted OVER the top of this
+        // full-rect viewport and hid whatever the player stood under. The header no longer
+        // overlaps the world at all — MainUi.BuildUi now mounts this control in LAYOUT FLOW
+        // below the header, so every pixel Town2D reports is already on-screen. Centering on
+        // the player centers them in the visible strip because the visible strip is now the
+        // whole viewport; no compensation term is needed, or correct, here.
+        //
         // A focus beat borrows the camera for a moment — see FocusOn. The player keeps walking
         // underneath; the camera simply looks elsewhere and then glides back, since Camera2D's own
         // position smoothing eases both directions for free.
         var anchor = _focusRemaining > 0f && _focusTarget is { } focus ? focus : Player.GlobalPosition;
-        Cam.GlobalPosition = anchor - new Vector2(0f, bias);
+        Cam.GlobalPosition = anchor;
     }
 
     /// <summary>

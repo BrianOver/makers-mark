@@ -78,17 +78,24 @@ public class CameraFollowTests
     }
 
     /// <summary>
-    /// The vertical companion, and the one that pins the HUD bias: the camera tracks Y too, and sits
-    /// a measured distance ABOVE the player rather than dead-centre, because MainUi's opaque header
-    /// covers the top of the same full-rect viewport the world renders into. Asserting the offset
-    /// (not just "it moved") is what stops the bias silently reverting to 0 or drifting to a
-    /// hand-tuned constant.
+    /// The vertical companion — and, since U2 (shell-and-audio plan, KTD-C), the regression net
+    /// for the retired HUD-bias term this test used to pin.
+    ///
+    /// <para><b>History:</b> the camera used to sit a measured distance ABOVE the player rather
+    /// than dead-centre, because MainUi's opaque header painted over the top of the same
+    /// full-rect viewport the world rendered into — <c>Town2D.TopObstructionPx</c> fed
+    /// <c>FollowPlayer</c> a half-band bias so the visible strip (not the whole viewport) centred
+    /// on the player. U2 restructured <c>MainUi.BuildUi</c> so the header sits in LAYOUT FLOW and
+    /// Town2D only ever occupies the region below it — the header can no longer occlude any part
+    /// of what Town2D reports, so there is no hidden band left to correct for, and
+    /// <c>TopObstructionPx</c>/the bias term are gone rather than retuned a third time (the exact
+    /// PT19 overcorrection this plan was warned not to repeat). This test now pins the OPPOSITE
+    /// fact: with nothing set, the camera sits EXACTLY on the player, not offset at all — a
+    /// reintroduced bias (even a well-intentioned one) would turn this red immediately.</para>
     /// </summary>
     [TestCase]
-    public async System.Threading.Tasks.Task WithATopObstruction_TheCameraSitsAboveThePlayerByHalfOfIt()
+    public async System.Threading.Tasks.Task NothingObstructsTheViewport_TheCameraSitsExactlyOnThePlayer()
     {
-        const float obstructionPx = 150f;
-
         var town = new Town2D { Name = "Town2D" };
         try
         {
@@ -97,27 +104,18 @@ public class CameraFollowTests
             town.Build(new SimAdapter(2026));
             town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
 
-            town.TopObstructionPx = obstructionPx;
             town.Player.SetDirectInput(Vector2.Down);
             await AwaitPhysicsFrames(WalkFrames);
 
             var offset = town.Player.GlobalPosition.Y - town.Cam.GlobalPosition.Y;
 
-            // Half the hidden band, converted from screen px to world px by the canvas upscale.
-            // Derived here the same way Town2D derives it rather than hardcoded, so the two cannot
-            // disagree about the shrink factor while both looking correct.
-            // Reads the town's LIVE shrink, not a constant: it is derived from the window size now
-            // (Town2D.ShrinkFor), so a hardcoded 3 here would pass on one display and fail on another.
-            var expected = obstructionPx / 2f / town.CanvasShrink;
-
             AssertThat(offset)
                 .OverrideFailureMessage(
-                    $"The camera sits {offset:0.##}px above the player; expected {expected:0.##}px " +
-                    "(half the HUD-covered band, in world pixels). At 0 the player is centered in a " +
-                    "viewport whose top quarter is behind the HUD, which hides whatever building they " +
-                    "are standing at — the forge, at spawn.")
-                // Same one-frame _Process/_PhysicsProcess allowance as the horizontal test.
-                .IsEqualApprox(expected, 2f);
+                    $"The camera sits {offset:0.##}px away from the player on Y; expected 0 — Town2D " +
+                    "no longer has any concept of a hidden band to correct for (U2 removed " +
+                    "TopObstructionPx because the world can no longer be occluded by construction). " +
+                    "A nonzero reading means a bias term crept back in.")
+                .IsEqualApprox(0f, 2f);
         }
         finally
         {
