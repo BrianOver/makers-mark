@@ -33,11 +33,26 @@ public class DayPhaseTintTests
     }
 
     [TestCase]
-    public void TintFor_Evening_MatchesTheOriginalFixedDuskTint()
+    public void TintFor_Evening_MatchesTheRetunedNightTint()
     {
-        // The palette-identity guarantee: Evening must stay the EXACT original dusk color so the
-        // established purple-dusk mood is preserved, not replaced by a new scheme.
-        AssertThat(DayPhaseTint.TintFor(DayPhase.Evening)).IsEqual(new Color(0.86f, 0.80f, 0.93f));
+        // U11 ("'night' phase is day"): Evening/"Night" was retuned off the original near-white
+        // dusk color (0.86, 0.80, 0.93) to a genuinely dark violet. Pinned to the exact shipping
+        // value so a future edit can't silently walk it back toward the old near-white constant.
+        AssertThat(DayPhaseTint.TintFor(DayPhase.Evening)).IsEqual(new Color(0.42f, 0.36f, 0.58f));
+    }
+
+    [TestCase]
+    public void TintFor_EveningVsMorning_PerChannelSeparationIsAtLeastPoint35()
+    {
+        // U11's own regression guard ("Night vs Dawn must differ"): the retune's whole point is
+        // that Night and Dawn can never again collapse toward the same near-white color. Pin a
+        // minimum per-channel gap so nobody can quietly narrow it back down.
+        var evening = DayPhaseTint.TintFor(DayPhase.Evening);
+        var morning = DayPhaseTint.TintFor(DayPhase.Morning);
+
+        AssertFloat(Mathf.Abs(morning.R - evening.R)).IsGreaterEqual(0.35f);
+        AssertFloat(Mathf.Abs(morning.G - evening.G)).IsGreaterEqual(0.35f);
+        AssertFloat(Mathf.Abs(morning.B - evening.B)).IsGreaterEqual(0.35f);
     }
 
     [TestCase]
@@ -64,18 +79,25 @@ public class DayPhaseTintTests
         // Legibility contract: brightness must monotonically read Morning (brightest) through
         // ExpeditionDeep (darkest) — the whole point of the fix is that the sky visibly answers
         // "what time is it".
+        //
+        // U11 retune note: Evening ("Night") used to sit ABOVE Camp ("Vigil") in brightness (the
+        // near-white 0.86 dusk tint was barely darker than daytime). KTD-6 explicitly places the
+        // retuned Evening BETWEEN Camp and ExpeditionDeep ("~0.45 luminance band, between today's
+        // Camp and ExpeditionDeep") — Night is now darker than Vigil, not lighter than it — which
+        // is also what makes the Night<->Dawn gap the single largest jump in the palette (see
+        // EveningTint's own doc). This test asserts the REALIZED order, not the pre-retune one.
         var morning = DayPhaseTint.TintFor(DayPhase.Morning);
         var expedition = DayPhaseTint.TintFor(DayPhase.Expedition);
-        var evening = DayPhaseTint.TintFor(DayPhase.Evening);
         var camp = DayPhaseTint.TintFor(DayPhase.Camp);
+        var evening = DayPhaseTint.TintFor(DayPhase.Evening);
         var deep = DayPhaseTint.TintFor(DayPhase.ExpeditionDeep);
 
         float Brightness(Color c) => c.R + c.G + c.B;
 
         AssertThat(Brightness(morning)).IsGreater(Brightness(expedition));
-        AssertThat(Brightness(expedition)).IsGreater(Brightness(evening));
-        AssertThat(Brightness(evening)).IsGreater(Brightness(camp));
-        AssertThat(Brightness(camp)).IsGreater(Brightness(deep));
+        AssertThat(Brightness(expedition)).IsGreater(Brightness(camp));
+        AssertThat(Brightness(camp)).IsGreater(Brightness(evening));
+        AssertThat(Brightness(evening)).IsGreater(Brightness(deep));
     }
 
     [TestCase]

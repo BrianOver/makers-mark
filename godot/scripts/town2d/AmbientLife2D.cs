@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using GameSim.Contracts;
 using Godot;
 
 namespace GodotClient.Town2d;
@@ -29,15 +30,42 @@ namespace GodotClient.Town2d;
 /// cref="BuildMineDust"/>), and a noticeboard notice that flutters at its pinned corner (<see
 /// cref="BuildNoticeboardPaper"/>). All three are procedural (flat-color textures/particles, same
 /// idiom as this file's existing lamp-glow/smoke-puff recipes) — no new art asset is invented.</para>
+///
+/// <para><b>U11 fix ("lamps glow at a fixed alpha all day, no window light, no darkness")</b>:
+/// <see cref="SetPhase"/> feeds this node the sim's current <see cref="DayPhase"/> every frame
+/// (mirrors how <see cref="DayPhaseTint"/> gets its phase from <c>Town2D._Process</c>) — lamp
+/// glow now ramps from nearly invisible at Morning/"Dawn" up to a strong warm glow at
+/// Evening/Camp/ExpeditionDeep ("Night"/"Vigil"/"Deep Vigil"), instead of sitting at one constant
+/// alpha regardless of the clock. The new "WindowGlow" group <see cref="Build"/> creates applies
+/// the exact same curve to a warm quad hand-placed at each of the five venues' own window/light
+/// anchor (<see cref="LampAlphaFor"/> is the single source of truth both groups read), so the
+/// town's darkened canvas reads as buildings with the lamps LIT rather than a uniformly dim
+/// scene.</para>
 /// </summary>
 public partial class AmbientLife2D : Node2D
 {
     private const int SmokeAmount = 9;
     private const double SmokeLifetime = 5.5;
 
+    /// <summary>Pre-U11 constant alpha — kept only as the transient seed value <see cref="Build"/>
+    /// paints on lamp/window sprites before the very first <see cref="SetPhase"/>/<see
+    /// cref="_Process"/> call recomputes it off the real phase (mirrors <see
+    /// cref="DayPhaseTint"/>'s "never start wrong for a frame" discipline in spirit, if not in
+    /// mechanism — the caller is expected to call <see cref="SetPhase"/> right after <see
+    /// cref="Build"/>, same as <c>Town2D.WireAmbientLife</c> does).</summary>
     private const float LampBaseAlpha = 0.55f;
+
     private const float LampFlickerAmplitude = 0.12f;
     private const float LampFlickerSpeed = 1.7f; // rad/sec
+
+    /// <summary>U11 (KTD-6b) lamp/window glow curve stops — Morning/"Dawn" nearly dark (lamps were
+    /// snuffed at first light), Expedition/"Quest" a faint daytime pilot glow, and
+    /// Evening/Camp/ExpeditionDeep ("Night"/"Vigil"/"Deep Vigil") all share the same strong
+    /// night-time band so every genuinely dark phase reads as genuinely lit.</summary>
+    private const float MorningLampAlpha = 0.06f;
+
+    private const float ExpeditionLampAlpha = 0.25f;
+    private const float NightLampAlpha = 0.78f; // Evening/Camp/ExpeditionDeep — mid of the 0.7-0.85 band
 
     /// <summary>Market awning sway cadence/amplitude — a slow, gentle cloth-in-the-breeze read.</summary>
     private const float AwningSwayHz = 0.5f;
@@ -58,9 +86,19 @@ public partial class AmbientLife2D : Node2D
     private static GradientTexture2D? _lampGlowTextureCache;
     private static ImageTexture? _awningTextureCache;
     private static ImageTexture? _paperTextureCache;
+    private static ImageTexture? _windowGlowTextureCache;
 
     private readonly List<(Sprite2D Sprite, float Phase)> _lampSprites = new();
+    private readonly List<Sprite2D> _windowSprites = new();
     private float _elapsed;
+
+    /// <summary>U11: the sim phase this frame — <see cref="SetPhase"/> is the only writer (called
+    /// by <c>Town2D</c> every <c>_Process</c> tick, same cadence as <see
+    /// cref="DayPhaseTint.Advance"/>). Defaults to <see cref="DayPhase.Expedition"/> (the
+    /// pre-U11 lamp alpha's closest daytime neighbor) so a <see cref="Build"/> call with no
+    /// follow-up <see cref="SetPhase"/> yet (e.g. a test that only wants to check flicker motion,
+    /// not phase response) still flickers within a safe, non-zero, sub-1.0 range.</summary>
+    private DayPhase _phase = DayPhase.Expedition;
 
     private Sprite2D? _marketAwning;
     private Sprite2D? _noticeboardPaper;
@@ -86,6 +124,11 @@ public partial class AmbientLife2D : Node2D
     /// its mouth. Null skips it.</param>
     /// <param name="noticeboardPaperPos">Gap #1: world position for the noticeboard's fluttering-
     /// paper cue. Null skips it.</param>
+    /// <param name="windowGlowPositions">U11: world positions for the warm window/light-source
+    /// glow quad at each venue (hand-placed anchor per venue, computed by the caller off that
+    /// building's own resolved sprite size — mirrors <paramref name="lanternPositions"/>'s "flat
+    /// list of world positions" shape). May be null or empty — degrades to no window glows, no
+    /// crash, same null-tolerance as every other optional group here.</param>
     public void Build(
         Vector2 forgeChimneyPos,
         Vector2? tavernChimneyPos,
@@ -93,7 +136,8 @@ public partial class AmbientLife2D : Node2D
         IReadOnlyList<Vector2>? lanternPositions,
         Vector2? marketAwningPos = null,
         Vector2? mineDustPos = null,
-        Vector2? noticeboardPaperPos = null)
+        Vector2? noticeboardPaperPos = null,
+        IReadOnlyList<Vector2>? windowGlowPositions = null)
     {
         var smokeGroup = new Node2D { Name = "ChimneySmoke" };
         AddChild(smokeGroup);
@@ -129,6 +173,27 @@ public partial class AmbientLife2D : Node2D
             }
         }
 
+        var windowGroup = new Node2D { Name = "WindowGlow" };
+        AddChild(windowGroup);
+        _windowSprites.Clear();
+        if (windowGlowPositions is { Count: > 0 })
+        {
+            for (var i = 0; i < windowGlowPositions.Count; i++)
+            {
+                var sprite = new Sprite2D
+                {
+                    Name = $"WindowGlow_{i}",
+                    Texture = WindowGlowTexture(),
+                    Centered = true,
+                    Position = windowGlowPositions[i],
+                    Modulate = new Color(1f, 0.72f, 0.38f, LampBaseAlpha),
+                    Material = new CanvasItemMaterial { BlendMode = CanvasItemMaterial.BlendModeEnum.Add },
+                };
+                windowGroup.AddChild(sprite);
+                _windowSprites.Add(sprite);
+            }
+        }
+
         var cueGroup = new Node2D { Name = "VenueCues" };
         AddChild(cueGroup);
 
@@ -152,19 +217,32 @@ public partial class AmbientLife2D : Node2D
         }
     }
 
-    /// <summary>Sine-flickers each lamp glow's alpha around <see cref="LampBaseAlpha"/>, and
-    /// (gap #1) sways the market awning / flutters the noticeboard paper — all pure
-    /// accumulated-delta cosmetics (no wall-clock read, KTD4/KTD5). A no-op for whichever group has
-    /// nothing built (e.g. zero lamps, or a layout that skipped a venue cue).</summary>
+    /// <summary>Sine-flickers each lamp glow's alpha around the current phase's baseline (<see
+    /// cref="LampAlphaFor"/>), does the exact same for every window glow, and (gap #1) sways the
+    /// market awning / flutters the noticeboard paper — all pure accumulated-delta cosmetics (no
+    /// wall-clock read, KTD4/KTD5). A no-op for whichever group has nothing built (e.g. zero
+    /// lamps, or a layout that skipped a venue cue).</summary>
     public override void _Process(double delta)
     {
         _elapsed += (float)delta;
 
+        var baseAlpha = LampAlphaFor(_phase);
+
         foreach (var (sprite, phase) in _lampSprites)
         {
-            var alpha = LampBaseAlpha + LampFlickerAmplitude * Mathf.Sin(_elapsed * LampFlickerSpeed + phase);
+            var alpha = baseAlpha + LampFlickerAmplitude * Mathf.Sin(_elapsed * LampFlickerSpeed + phase);
             var color = sprite.Modulate;
             color.A = alpha;
+            sprite.Modulate = color;
+        }
+
+        // U11: windows follow the SAME curve as lamps (no independent flicker phase-offset needed
+        // — a steady warm glow, unlike the lamp's per-post flicker, reads as light spilling through
+        // glass rather than an open flame).
+        foreach (var sprite in _windowSprites)
+        {
+            var color = sprite.Modulate;
+            color.A = baseAlpha;
             sprite.Modulate = color;
         }
 
@@ -182,9 +260,31 @@ public partial class AmbientLife2D : Node2D
         }
     }
 
+    /// <summary>U11: the ONLY writer of <see cref="_phase"/> — call every frame (mirrors <see
+    /// cref="DayPhaseTint.Advance"/>'s per-tick contract) so lamp/window glow always answers the
+    /// current sim phase, not a stale one from whenever <see cref="Build"/> ran.</summary>
+    public void SetPhase(DayPhase phase) => _phase = phase;
+
+    /// <summary>U11 (KTD-6b): the single source of truth both the lamp and window glow groups read
+    /// — Morning/"Dawn" nearly snuffed, Expedition/"Quest" a faint daytime pilot glow,
+    /// Evening/Camp/ExpeditionDeep ("Night"/"Vigil"/"Deep Vigil") all share the same strong
+    /// night-time band. Pure function of the phase alone, so it is directly testable with no live
+    /// node/scene tree (see <c>PhaseLightTests</c>).</summary>
+    public static float LampAlphaFor(DayPhase phase) => phase switch
+    {
+        DayPhase.Morning => MorningLampAlpha,
+        DayPhase.Expedition => ExpeditionLampAlpha,
+        DayPhase.Evening or DayPhase.Camp or DayPhase.ExpeditionDeep => NightLampAlpha,
+        _ => LampBaseAlpha,
+    };
+
     /// <summary>Test/inspection surface: live lamp-glow count (mirrors the count of positions
     /// <see cref="Build"/> was given).</summary>
     public int LampGlowCount() => _lampSprites.Count;
+
+    /// <summary>Test/inspection surface: live window-glow count (mirrors the count of positions
+    /// <see cref="Build"/> was given via <c>windowGlowPositions</c>).</summary>
+    public int WindowGlowCount() => _windowSprites.Count;
 
     /// <summary>Test/inspection surface: true once <see cref="Build"/> was given a non-null market
     /// awning position (gap #1).</summary>
@@ -252,6 +352,13 @@ public partial class AmbientLife2D : Node2D
     private static ImageTexture AwningTexture() => _awningTextureCache ??= SolidRectTexture(20, 8);
 
     private static ImageTexture PaperTexture() => _paperTextureCache ??= SolidRectTexture(10, 14);
+
+    /// <summary>U11: a small warm rectangle standing in for a lit window pane — same "flat
+    /// procedural swatch, tinted at draw time" idiom as <see cref="AwningTexture"/>/<see
+    /// cref="PaperTexture"/>, no new art asset invented. Sized to read as a modest window-glow
+    /// patch rather than a floodlight, additive-blended (see <see cref="Build"/>) so it lights the
+    /// painted wall around it instead of covering it.</summary>
+    private static ImageTexture WindowGlowTexture() => _windowGlowTextureCache ??= SolidRectTexture(9, 7);
 
     /// <summary>A plain opaque-white rectangle — tinted at draw time via each sprite's own <see
     /// cref="Sprite2D.Modulate"/> (mirrors <see cref="LampGlowTexture"/>'s "cached, tinted at draw
