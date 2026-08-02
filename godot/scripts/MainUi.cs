@@ -1293,6 +1293,10 @@ public partial class MainUi : Control
         Town.Clock = Clock;
         Town.HeroClicked += OnTownHeroClicked;
         Town.BuildingClicked += OnTownBuildingClicked;
+        // U1 (painted-interiors plan): a station's Picked already carries a routable action string
+        // (Town2D/InteriorRoom2D translate the station id → action before re-emitting), so it goes
+        // straight onto the SAME handler InteriorStage's hotspots used — no new routing method.
+        Town.StationActivated += OnInteriorHotspotActivated;
 
         var layout = new VBoxContainer { Name = "Layout" };
         layout.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
@@ -2078,16 +2082,36 @@ public partial class MainUi : Control
     }
 
     /// <summary>
-    /// Town building click/interact (R20, T8): 2.5D pivot (U2) — routes straight onto <see
-    /// cref="OpenPanel"/>, no staged interior and no camera push-in for this slice. <see
-    /// cref="Town2D"/>'s <see cref="Building2D"/> emits its lowercase venue keys
-    /// ("forge"/"market"/"tavern"/"minegate"/"noticeboard"); the legacy capitalized names
-    /// ("Forge"/"Shop"/"Tavern"/"Gate"/"Bounties") are accepted too since <see
-    /// cref="QuickTravel"/> and <c>TutorialFlow</c>'s own quick-travel row (out of this unit's
-    /// edit scope) still send them. Any unknown key falls back to the bare-world "Town" id.
+    /// Town building click/interact (R20, T8, U1 painted-interiors plan): <see cref="Town2D"/>'s
+    /// <see cref="Building2D"/> emits its lowercase venue keys ("forge"/"market"/"tavern"/
+    /// "minegate"/"noticeboard"); the legacy capitalized names ("Forge"/"Shop"/"Tavern"/"Gate"/
+    /// "Bounties") are accepted too since <see cref="QuickTravel"/> and <c>TutorialFlow</c>'s own
+    /// quick-travel row (out of this unit's edit scope) still send them.
+    ///
+    /// <para><b>U1 (R1/R9, data-gated):</b> a venue with an <see cref="InteriorLayout2D"/> row
+    /// (slice 1: "forge" only) puts the player INSIDE the walkable room instead — the drawer is
+    /// never again the direct response to that venue's interact. Every OTHER venue is unaffected:
+    /// no row, no room, same <see cref="OpenPanel"/> routing as before this plan. Any unknown key
+    /// falls back to the bare-world "Town" id.</para>
     /// </summary>
     private void OnTownBuildingClicked(string building)
     {
+        var venueKey = building switch
+        {
+            "forge" or "Forge" => "forge",
+            "market" or "Shop" => "market",
+            "tavern" or "Tavern" => "tavern",
+            "minegate" or "Gate" => "minegate",
+            "noticeboard" or "Bounties" => "noticeboard",
+            _ => null,
+        };
+
+        if (venueKey is not null && InteriorLayout2D.Rooms.ContainsKey(venueKey))
+        {
+            Town.EnterInterior(venueKey);
+            return;
+        }
+
         var panelId = building switch
         {
             "forge" or "Forge" => "Forge",
@@ -2187,6 +2211,33 @@ public partial class MainUi : Control
     {
         UpdateEngaged();
         TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
+    }
+
+    /// <summary>
+    /// U1 (painted-interiors plan): Esc exits the walkable room — the LAST rung of the #320
+    /// Escape-topmost ladder. Every true overlay (<see cref="DrawerHost"/>, <see
+    /// cref="ModalEscape"/>'s callers) lives as a CHILD of this <see cref="MainUi"/> Control, and
+    /// Godot dispatches <c>_Input</c> in reverse tree order — children before parents — so any of
+    /// them already consumed (and marked handled) this same Escape press before this method runs
+    /// whenever one was open (<see cref="EscapeClosesModalsTests"/> proves that ladder for the
+    /// existing overlays). The explicit guard below is defense in depth, not the only thing
+    /// stopping a double-close: it also keeps a SECOND, separate Esc press (once nothing is left
+    /// open) from doing anything but exit the room, never both at once.
+    /// </summary>
+    public override void _Input(InputEvent @event)
+    {
+        if (!Town.InteriorActive || @event is not InputEventKey { PhysicalKeycode: Key.Escape, Pressed: true })
+        {
+            return;
+        }
+
+        if (Drawer.IsOpen || ModalOwnsTheScreen())
+        {
+            return;
+        }
+
+        Town.ExitInterior();
+        GetViewport()?.SetInputAsHandled();
     }
 
     /// <summary>Reading the Ledger pauses the town; closing it resumes if it was running.</summary>
