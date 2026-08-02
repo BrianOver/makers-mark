@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
+using System.Linq;
 using GameSim;
 using GameSim.Contracts;
 using GameSim.Professions;
@@ -36,7 +37,7 @@ public class TutorialFlowTests
             // applies, so this cannot drift from what the player actually reads.
             AssertThat(ui.Objective.Reason.Text)
                 .IsEqual(ObjectiveTracker.Plain(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!));
-            AssertThat(ui.Objective.Reason.Text).StartsWith("Tutorial 1/5:");
+            AssertThat(ui.Objective.Reason.Text).StartsWith("Tutorial 1/4:");
             AssertThat(ui.Objective.TutorialDismiss.Visible).IsTrue();
 
             AssertThat(ui.Tutorial.SecondProfessionButton.Visible).IsFalse();
@@ -75,49 +76,132 @@ public class TutorialFlowTests
     }
 
     [TestCase]
-    public void EachStep_AdvancesOnlyOnItsOwnMatchingEvent_AcrossASeparateTickPerStep()
+    public void BuyThenCraft_AdvancesTheCounterByExactlyOne_NeverSkippingANumber()
     {
-        // Scripted day drive-through (plan test scenario): one action per phase-legal tick so
-        // each step's own transition is proven independently rather than a same-tick cascade.
+        // Regression for Brian's playtest: "crafted the first buckler [...] tutorial went from
+        // 1/5 to 3/5". BuyMaterial and Craft used to be separately NUMBERED steps (1 and 2), so a
+        // player who satisfied both in one compound "get your first item made" beat watched the
+        // counter jump two numbers at once — confusing even though the step machine itself was
+        // correct. They now share display slot 1 (StepIndex), so the on-screen counter can only
+        // ever move by exactly one, whatever combination of Buy/Craft the player actually did.
         var ui = MountMainUi();
         try
         {
-            // Step 1 (BuyMaterial): buy the recipe's base material — Morning only.
-            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
-            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
-            ui.Adapter.AdvancePhase(); // Morning -> Expedition
-            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Craft);
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
+            AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!).StartsWith("Tutorial 1/4:");
 
-            // Step 2 (Craft): CraftAction is phase-unrestricted (ActionLegality mirror).
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Craft); // internal step moved...
+            AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!)
+                .StartsWith("Tutorial 1/4:"); // ...but the ON-SCREEN number did not (same display slot)
+
             ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
-            ui.Adapter.AdvancePhase(); // Expedition -> Camp (this tick ALSO departs day 1's party —
-                                       // proves a same-tick PartyDeparted never completes early)
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Shelve);
+            AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!)
+                .StartsWith("Tutorial 2/4:"); // exactly one number further, never a jump to 3
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void PartyDeparting_CompletesTheChain_EvenWhenShelveAndPostBountyNeverHappened()
+    {
+        // Regression for Brian's playtest, the other half of the SAME report: "the heroes lined up
+        // and left" right after that first craft, and "posting the bounty doesn't do anything &
+        // doesn't update the tutorial" afterwards. A party's muster departs on its OWN
+        // Expedition-phase tick (day 1's own, here — see MusterSystem/ExpeditionSystem), a beat the
+        // player does not control. The old ladder only ever completed the chain on
+        // `Step == WatchDeparture && partyDeparted` THAT EXACT tick, so if Shelve/PostBounty had not
+        // caught up yet — exactly this scenario, a player who crafted and then just watched the
+        // party leave — Step was stranded behind forever: the departure event was gone the instant
+        // the tick ended, and no later bounty post could ever satisfy a ladder that was still
+        // waiting on Shelve. TutorialFlow.Advance's final check is now UNCONDITIONAL on Step for
+        // exactly this reason: the party leaving ends the day-1 chain no matter what the card was
+        // still asking for.
+        // Explicit profession-selecting campaign (like StarterKitCraft above) — the plain
+        // MountMainUi() default starts with EMPTY materials (see ExplicitBlacksmith_... in
+        // NewCampaignSeedingTests), so crafting straight off the starter kit needs the
+        // GameFactory.StarterCopper seeding that only the chosen-profession constructor gives.
+        var campaign = GameComposition.NewCampaign(ScriptedSession.Seed, ProfessionRegistry.BlacksmithId);
+        var ui = MountMainUi(new SimAdapter(campaign));
+        try
+        {
+            // Craft straight from the starter kit (no Buy at all) — Brian's exact sequence.
+            ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
+            ui.Adapter.AdvancePhase(); // Morning -> Expedition: no departure yet (see class doc — a
+                                       // day's OWN Expedition-phase systems run on ITS tick, not the
+                                       // tick that merely transitions INTO it).
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Shelve);
             AssertThat(ui.Tutorial.Completed).IsFalse();
 
-            // Step 3 (Shelve): StockAction is phase-unrestricted; the transition is a state check
-            // (no distinct event), proven by advancing purely off the resulting shelf contents.
+            ui.Adapter.AdvancePhase(); // Expedition -> Camp: day 1's own party departs THIS tick,
+                                       // with Shelve/PostBounty never having happened.
+            AssertThat(ui.Tutorial.Completed)
+                .OverrideFailureMessage(
+                    "The party departed but the tutorial did not complete — this is the exact dead " +
+                    "end Brian's playtest hit: Shelve/PostBounty never caught up, and a departure " +
+                    "event only ever fires on its own tick, so nothing could ever finish this chain " +
+                    "from here.")
+                .IsTrue();
+            AssertThat(ui.Tutorial.Active).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void BountyPostedBeforeCraftingIsNotWasted_CreditedOnceShelveCatchesUp()
+    {
+        // Regression for "posting the bounty doesn't do anything & doesn't update the tutorial" —
+        // a bounty posted OUT OF ORDER (here, before the player has crafted or shelved anything at
+        // all) used to land on a tick where Step was nowhere near PostBounty, so the old ladder's
+        // own gate silently dropped that BountyPosted event: the sim kept the bounty, but the
+        // tutorial had no memory of it once that tick ended. Advance now reads
+        // `state.EventLog.OfType<BountyPosted>().Any()` — a durable "has this ever happened" fact —
+        // so the early post is banked and credited the moment Shelve finally catches up, with no
+        // second bounty required.
+        //
+        // Explicit profession-selecting campaign (mirrors StarterKitCraft/PartyDeparting_...
+        // above) — the plain MountMainUi() default starts with EMPTY materials (see
+        // ExplicitBlacksmith_... in NewCampaignSeedingTests), and by the time this test reaches
+        // Craft it has already advanced past Morning (the vendor's only open phase), so there is
+        // no legal way to buy in this sequence at all. Only the chosen-profession constructor's
+        // GameFactory.StarterCopper seeding lets Craft (phase-unrestricted) succeed here.
+        var campaign = GameComposition.NewCampaign(ScriptedSession.Seed, ProfessionRegistry.BlacksmithId);
+        var ui = MountMainUi(new SimAdapter(campaign));
+        try
+        {
+            ui.Adapter.Queue(new PostBountyAction(ScriptedSession.BountyFloor, ScriptedSession.BountyReward));
+            ui.Adapter.AdvancePhase(); // Morning -> Expedition: the queued post lands NOW, well
+                                       // before Craft/Shelve exist.
+            AssertThat(ui.Tutorial.Step)
+                .OverrideFailureMessage("An out-of-order bounty post should not move a step it isn't for yet.")
+                .IsEqual(TutorialStep.BuyMaterial);
+
+            // Craft (off the starter kit — no Buy needed or even possible, Morning has passed)
+            // and shelve, same as any normal run — both immediate, no bell needed.
+            ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
+            AssertThat(ui.Adapter.LastRejections.Count)
+                .OverrideFailureMessage(
+                    $"The craft was rejected: [{string.Join("; ", ui.Adapter.LastRejections.Select(r => r.Reason))}] " +
+                    "— this test's whole premise needs it to actually resolve.")
+                .IsEqual(0);
             var craftedItem = ScriptedSession.CraftedItem(ui.Adapter.CurrentState);
             ui.Adapter.Queue(new StockAction(craftedItem, 50));
-            ui.Adapter.AdvancePhase(); // Camp -> ExpeditionDeep
-            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.PostBounty);
 
-            ui.Adapter.AdvancePhase(); // ExpeditionDeep -> Evening (nothing posted yet)
-            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.PostBounty);
-
-            // Step 4 (PostBounty): Morning-or-Evening only — Evening qualifies.
-            ui.Adapter.Queue(new PostBountyAction(ScriptedSession.BountyFloor, ScriptedSession.BountyReward));
-            ui.Adapter.AdvancePhase(); // Evening -> day 2 Morning
-            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.WatchDeparture);
-            AssertThat(ui.Adapter.CurrentState.Day).IsEqual(2);
-            AssertThat(ui.Tutorial.Completed).IsFalse();
-
-            // Step 5 (WatchDeparture): day 2's own muster departs at ITS Expedition-tick completion.
-            ui.Adapter.AdvancePhase(); // day 2 Morning -> Expedition (no departure event yet)
-            AssertThat(ui.Tutorial.Completed).IsFalse();
-            ui.Adapter.AdvancePhase(); // day 2 Expedition -> Camp: PartyDeparted fires
-            AssertThat(ui.Tutorial.Completed).IsTrue();
-            AssertThat(ui.Tutorial.Active).IsFalse();
+            // The already-posted bounty is credited the SAME instant Shelve completes — no re-post.
+            AssertThat(ui.Tutorial.Step)
+                .OverrideFailureMessage(
+                    "Shelve just completed and a bounty was already posted earlier — the chain should " +
+                    "have cascaded straight to WatchDeparture instead of sitting on PostBounty waiting " +
+                    "for a SECOND post that the player has no reason to make.")
+                .IsEqual(TutorialStep.WatchDeparture);
+            AssertThat(ui.Tutorial.Completed).IsFalse(); // the party hasn't departed yet
         }
         finally
         {
@@ -300,7 +384,7 @@ public class TutorialFlowTests
         try
         {
             var text = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            AssertThat(text).StartsWith("Tutorial 1/5:");
+            AssertThat(text).StartsWith("Tutorial 1/4:");
             AssertThat(text).Contains("Forge");
             AssertThat(text).Contains("WASD");
         }
@@ -311,11 +395,17 @@ public class TutorialFlowTests
     }
 
     [TestCase]
-    public void BuyMaterialStep_PhaseForbidsTheVendor_ShowsWaitVariant_ThenRestoresAndAdvancesNextMorning()
+    public void BuyMaterialStep_PhaseForbidsTheVendor_ShowsWaitVariant()
     {
         // Playtest F6's core complaint: on a fresh campaign the player can drift into Expedition
         // without ever buying (nothing forces it), and the Morning-only vendor is now closed —
         // the step must swap to a "come back" variant instead of repeating an impossible instruction.
+        //
+        // Truncated to the Expedition tick (this test used to keep cycling all the way to day 2's
+        // own Morning to prove the vendor reopens): the VERY NEXT AdvancePhase call is day 1's own
+        // party departing, which now completes the whole chain unconditionally (see
+        // PartyDeparting_CompletesTheChain_... above) — cycling further would only be asserting on
+        // a card that has already gone Active=false, which proves nothing about the vendor's gate.
         var ui = MountMainUi();
         try
         {
@@ -326,24 +416,9 @@ public class TutorialFlowTests
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
 
             var waitText = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            AssertThat(waitText).StartsWith("Tutorial 1/5:");
+            AssertThat(waitText).StartsWith("Tutorial 1/4:");
             AssertThat(waitText).Contains("Morning");
             AssertThat(waitText).NotContains("Walk to"); // the raw actionable instruction must be gone
-
-            // Cycle the rest of day 1 around to day 2's own Morning — the vendor reopens.
-            ui.Adapter.AdvancePhase(); // Expedition -> Camp
-            ui.Adapter.AdvancePhase(); // Camp -> ExpeditionDeep
-            ui.Adapter.AdvancePhase(); // ExpeditionDeep -> Evening
-            ui.Adapter.AdvancePhase(); // Evening -> day 2 Morning
-            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
-
-            var restoredText = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            AssertThat(restoredText).StartsWith("Tutorial 1/5:");
-            AssertThat(restoredText).Contains("Forge"); // the actionable copy is back, not the wait copy
-
-            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
-            ui.Adapter.AdvancePhase(); // Morning -> Expedition: MaterialPurchased lands, step advances
-            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Craft);
         }
         finally
         {
@@ -352,12 +427,16 @@ public class TutorialFlowTests
     }
 
     [TestCase]
-    public void PostBountyStep_PhaseForbidsTheBoard_ShowsWaitVariant_ThenActionableAtEveningAndAdvances()
+    public void PostBountyStep_PhaseForbidsTheBoard_ShowsWaitVariant()
     {
         // Same F6 gap on the bounty board: it only takes postings Morning-or-Evening
-        // (ActionLegality.IsLegal), so the Expedition/Camp/ExpeditionDeep window in between must
-        // show the deferred variant, then hand back the actionable "walk to the Gate" copy once
-        // Evening reopens it.
+        // (ActionLegality.IsLegal), so the Expedition window right after Morning must show the
+        // deferred variant instead of the raw "walk to the Gate" instruction.
+        //
+        // Truncated to the Expedition tick — see BuyMaterialStep_..._ShowsWaitVariant's own note:
+        // the VERY NEXT AdvancePhase call is day 1's own party departing, which now completes the
+        // chain unconditionally, so there is no later "Evening reopens the board" moment left to
+        // observe within this same day.
         var ui = MountMainUi();
         try
         {
@@ -370,25 +449,9 @@ public class TutorialFlowTests
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.PostBounty);
 
             var duringExpedition = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            AssertThat(duringExpedition).StartsWith("Tutorial 4/5:");
+            AssertThat(duringExpedition).StartsWith("Tutorial 3/4:");
             AssertThat(duringExpedition).Contains("Morning or Evening");
             AssertThat(duringExpedition).NotContains("Walk to");
-
-            ui.Adapter.AdvancePhase(); // Expedition -> Camp: still forbidden
-            AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!).NotContains("Walk to");
-
-            ui.Adapter.AdvancePhase(); // Camp -> ExpeditionDeep: still forbidden
-            AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!).NotContains("Walk to");
-
-            ui.Adapter.AdvancePhase(); // ExpeditionDeep -> Evening: the board reopens
-            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Evening);
-            var duringEvening = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            AssertThat(duringEvening).StartsWith("Tutorial 4/5:");
-            AssertThat(duringEvening).Contains("Gate");
-
-            ui.Adapter.Queue(new PostBountyAction(ScriptedSession.BountyFloor, ScriptedSession.BountyReward));
-            ui.Adapter.AdvancePhase(); // Evening -> day 2 Morning: BountyPosted lands, step advances
-            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.WatchDeparture);
         }
         finally
         {

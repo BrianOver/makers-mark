@@ -468,7 +468,9 @@ public partial class MainUi : Control
             }
         }
 
-        Tutorial.Advance(state, Adapter.LastEvents); // U23: this tick's events only (KTD5-safe)
+        // U23 (fix): reads GameState.EventLog durably now, not just this tick's LastEvents — see
+        // TutorialFlow.Advance's own doc for why a per-tick-only read could dead-end the chain.
+        Tutorial.Advance(state);
         RefreshAll();
         Town.OnPhaseCompleted(completedPhase);
         // U25 (c): the drawer's own ShopPanel.OnPhaseCompleted (LW3's lit customer strip) is
