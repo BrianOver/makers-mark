@@ -55,6 +55,12 @@
 # one frame of drift can accumulate before it's caught, versus the full ~90-320 frame settle
 # window if suppression silently never engages at all.
 #
+# U2 (shell-and-audio plan, docs/plans/2026-08-02-005): SHOT_STATE=MineGateFocus calls
+# Town2D.FocusOnMineGate() directly (rather than depending on a fresh seed-2026 campaign
+# actually forming/sending a party on day 1, which it may not) -- the deterministic receipt for
+# R1 ("the mine is off the screen at the top"), proving the gate is on screen once the header
+# no longer occludes the world.
+#
 # U11 (world-and-interiors plan, "night is dark, dawn is dawn"): SHOT_STATE=Phase0..Phase4
 # presses the REAL AdvancePhase bell N times (never an adapter/state injection seam) to land
 # on phase N of the day's actual 5-phase cycle -- Morning/"Dawn"=0 -> Expedition/"Quest"=1 ->
@@ -91,6 +97,12 @@ func _initialize() -> void:
 		_settle = 900
 	elif _state == "":
 		_settle = 90
+	elif _state == "MineGateFocus":
+		# U2: armed at frame 60 below; the focus beat's own smoothing settles ~40 frames after
+		# arming (measured), and the beat itself expires 3.2s (~192 frames) after arming, after
+		# which the camera reverts to the player. 130 (70 frames past arming) lands comfortably
+		# inside that window, past settle with margin, well short of expiry.
+		_settle = 130
 	else:
 		_settle = 320
 	_ui = load("res://scenes/panels/main_ui.tscn").instantiate()
@@ -186,6 +198,17 @@ func _process(_delta: float) -> bool:
 			var b2 = _ui.find_child("AdvancePhase", true, false)
 			if b2:
 				b2.emit_signal("pressed")
+		elif _state == "MineGateFocus":
+			# U2 (shell-and-audio plan): the receipt for R1 -- "the mine is off the screen at
+			# the top" -- proving the mine gate is reachable once the header no longer occludes
+			# the world. Calls Town2D.FocusOnMineGate() directly (the SAME beat a real send-off
+			# triggers, see MainUi.SoundTheTick) rather than depending on a fresh seed-2026
+			# campaign actually forming a party on day 1 (it may not, depending on roster/gold
+			# state) -- deterministic regardless of sim RNG, same call() bridge idiom as Mirror
+			# above. Second beat below waits for the camera's own settle.
+			var town0 = _ui.find_child("Town2D", true, false)
+			if town0:
+				town0.call("FocusOnMineGate", 3.2)
 		elif _ui.has_method("OnTownBuildingClicked"):
 			# Same entry point the town uses on building arrival (private C# method reached
 			# via the source-gen call() bridge).
