@@ -95,6 +95,34 @@ public class ForgeMinigameTests
         AssertThat(good.PreviewGrade).IsGreater(badGrade);
     }
 
+    /// <summary>
+    /// U3 pacing pass (2026-08-02-002 plan, "getting to 1000 is a LOT, it takes fuckin forever"):
+    /// pins how many strikes the on-tempo scripted drive needs, so a future pacing change is
+    /// caught here instead of at the next playtest. <see cref="ForgeMinigame.StrikeBaseAdvancePermille"/>
+    /// moved 35 → 40 for this pass — <b>not</b> the plan's proposed 50, because 50 measurably broke
+    /// <c>ForgeWinnabilityTests.LearningTheRhythm_ActuallyPaysOff</c>'s tempo-payoff invariant (see
+    /// that constant's own doc comment for the numbers). 21 was cross-checked against the real
+    /// <c>ForgePath</c>/<c>ForgeScorer</c> via a standalone harness before landing, not guessed —
+    /// but this is the first time it runs against the actual engine, so if CI disagrees by a
+    /// strike or two, trust the CI number and adjust this pin; don't just widen the assertion.
+    /// </summary>
+    [TestCase]
+    public void OnTempoDrive_NeedsThePinnedStrikeCount_PacingRegressionGuard()
+    {
+        var result = RunScript(DriveGoodRun);
+        var strikes = result.Trace.Strikes.Count / 2;
+
+        AssertThat(strikes)
+            .OverrideFailureMessage(
+                $"The on-tempo scripted drive took {strikes} strikes to finish a dagger; expected 21 " +
+                "(StrikeBaseAdvancePermille = 40). Rising means a pacing knob quietly got slower again " +
+                "(\"takes fuckin forever\", U3's whole complaint); falling further means someone pushed " +
+                "the knob toward 50+ again — re-run the tempo-spread math in StrikeBaseAdvancePermille's " +
+                "doc comment before trusting the new number, since that direction previously broke " +
+                "LearningTheRhythm_ActuallyPaysOff.")
+            .IsEqual(21);
+    }
+
     [TestCase]
     public void SameScriptTwice_ProducesIdenticalTraceAndGrade_NoHiddenRandomness()
     {

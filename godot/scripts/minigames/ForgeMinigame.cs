@@ -78,7 +78,40 @@ public sealed partial class ForgeMinigame : PanelContainer
     public const int BellowsDriftBackPermillePerSecond = 8;
 
     public const int StrikeHeatCostPermille = 90;
-    public const int StrikeBaseAdvancePermille = 35;
+
+    /// <summary>
+    /// U3 pacing pass (2026-08-02-002 plan, "getting to 1000 is a LOT, it takes fuckin forever"):
+    /// raised from 35, the value shipped with the Anvil Map rewrite. Was 35 → on-tempo play needed
+    /// ~21 strikes/~19s, a beginner ~28 strikes/~26.5s (measured via <c>ForgePlayer</c>, the same
+    /// honest-input harness <c>ForgeWinnabilityTests</c> uses — re-measured fresh for this pass,
+    /// since the OLD in-code claim of "~27s veteran / ~40s beginner" recorded on
+    /// <see cref="BellowsDriftBackPermillePerSecond"/> above no longer matches current constants;
+    /// that comment is stale and should not be trusted for future tuning either).
+    ///
+    /// <para><b>The plan's own proposal was 50, not 40 — rejected by measurement.</b> Raising this
+    /// to 50 does hit the plan's ≤15s/≤30s targets (measured: on-tempo ~13.7s, beginner ~19.3s) but
+    /// it BREAKS <c>ForgeWinnabilityTests.LearningTheRhythm_ActuallyPaysOff</c>'s own invariant: on
+    /// that test's exact seeds (1, 7, 19, 42, 101), striking on-beat scored a MEAN 357 permille
+    /// against off-beat's 379 — on-tempo play scoring *worse* than sloppy play, the assertion
+    /// `tightGrade > looseGrade` would go red. Swept across 40 extra seeds to rule out one unlucky
+    /// draw: on-beat wins only 16/40 (worse than a coin flip). The mechanism is structural, not a
+    /// bad constant — <see cref="ForgeScorer"/> only scores tempo accuracy on strikes that land
+    /// inside the forge zone (x 334..666), so shrinking total strikes-to-completion (a direct
+    /// effect of THIS knob) shrinks that zone's strike sample size, which drowns the tempo signal
+    /// in the (tempo-independent) continuous heat-tracking sub-score. The plan's assumption that
+    /// "the multiplier ratio is untouched so [the spread] should [hold] by construction" is false:
+    /// the ratio matters, but so does the sample size backing it, and this knob shrinks both at
+    /// once. 50 is a real regression risk to a real CI-gating test, not a paper one.</para>
+    ///
+    /// <para><b>40 lands the same measurement clean.</b> On-tempo ~17.3s (was ~19.2s), beginner
+    /// ~24.0s (was ~26.5s, already inside the ≤30s bar either way) — a genuine, felt cut, short of
+    /// the plan's aspirational ≤15s but proven safe: on the exact CI seeds, on-beat still scores a
+    /// clear 425 vs off-beat's 402 (was 429 vs 395), and the 40-seed sweep still gives on-beat the
+    /// win on 28/40 — the same robustness band as the untouched-adjacent value of 38, not the
+    /// eroding one past ~44. <see cref="StrikeHeatCostPermille"/> (the plan's authorized second
+    /// knob, 90→80) was NOT needed — beginner already clears 30s with room at either value.</para>
+    /// </summary>
+    public const int StrikeBaseAdvancePermille = 40;
     public const double StrikeOnTempoBonusMultiplier = 2.2;
     public const double TempoPeriodSeconds = 0.6;
     public const int TempoOnBeatWindowPermille = 180;
