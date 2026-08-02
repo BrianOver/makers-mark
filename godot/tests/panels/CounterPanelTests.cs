@@ -86,7 +86,7 @@ public class CounterPanelTests
             ui.OpenPanel("Shop");
             PressEnabled(ui.Shop, "OpenCounter");
 
-            AssertThat(ui.Adapter.PendingActions.OfType<OpenCounterAction>().Count()).IsEqual(1);
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<OpenCounterAction>().Count()).IsEqual(1);
         }
         finally
         {
@@ -199,7 +199,7 @@ public class CounterPanelTests
             desk.EmitSignal(Control.SignalName.GuiInput,
                 new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = matPos });
 
-            dragResult = uiDrag.Adapter.PendingActions.OfType<PresentItemAction>().Single().Item;
+            dragResult = uiDrag.Adapter.AppliedThisPhase.OfType<PresentItemAction>().Single().Item;
         }
         finally
         {
@@ -214,7 +214,7 @@ public class CounterPanelTests
         {
             uiButton.OpenPanel("Shop");
             PressEnabled(uiButton.Shop, $"Present_{ShopItemId.Value}");
-            buttonResult = uiButton.Adapter.PendingActions.OfType<PresentItemAction>().Single().Item;
+            buttonResult = uiButton.Adapter.AppliedThisPhase.OfType<PresentItemAction>().Single().Item;
         }
         finally
         {
@@ -241,7 +241,7 @@ public class CounterPanelTests
             desk.EmitSignal(Control.SignalName.GuiInput,
                 new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = Vector2.Zero }); // off the mat
 
-            AssertThat(ui.Adapter.PendingActions.OfType<PresentItemAction>().Count()).IsEqual(0);
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<PresentItemAction>().Count()).IsEqual(0);
         }
         finally
         {
@@ -272,7 +272,7 @@ public class CounterPanelTests
 
             PressEnabled(ui.Shop, "Counter");
 
-            var counterAction = ui.Adapter.PendingActions.OfType<HaggleResponseAction>()
+            var counterAction = ui.Adapter.AppliedThisPhase.OfType<HaggleResponseAction>()
                 .Single(a => a.Kind == HaggleResponseKind.Counter);
             AssertThat(counterAction.Price!.Value).IsEqual(133);
         }
@@ -298,7 +298,7 @@ public class CounterPanelTests
             desk.EmitSignal(Control.SignalName.GuiInput,
                 new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = handshakePos });
 
-            handshakeAccepts = uiHandshake.Adapter.PendingActions.OfType<HaggleResponseAction>()
+            handshakeAccepts = uiHandshake.Adapter.AppliedThisPhase.OfType<HaggleResponseAction>()
                 .Count(a => a.Kind == HaggleResponseKind.Accept);
         }
         finally
@@ -314,7 +314,7 @@ public class CounterPanelTests
         {
             uiButton.OpenPanel("Shop");
             PressEnabled(uiButton.Shop, "Accept");
-            buttonAccepts = uiButton.Adapter.PendingActions.OfType<HaggleResponseAction>()
+            buttonAccepts = uiButton.Adapter.AppliedThisPhase.OfType<HaggleResponseAction>()
                 .Count(a => a.Kind == HaggleResponseKind.Accept);
         }
         finally

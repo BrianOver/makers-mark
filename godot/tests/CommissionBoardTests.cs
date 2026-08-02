@@ -42,7 +42,7 @@ public class CommissionBoardTests
 
             PressEnabled(ui.Commissions, "CommissionAccept_1");
 
-            var accepted = ui.Adapter.PendingActions.OfType<AcceptCommissionAction>().Single();
+            var accepted = ui.Adapter.AppliedThisPhase.OfType<AcceptCommissionAction>().Single();
             AssertThat(accepted.Hero).IsEqual(new HeroId(1));
         }
         finally { Unmount(ui); }
@@ -59,7 +59,7 @@ public class CommissionBoardTests
 
             PressEnabled(ui.Commissions, "CommissionDecline_1");
 
-            var declined = ui.Adapter.PendingActions.OfType<DeclineCommissionAction>().Single();
+            var declined = ui.Adapter.AppliedThisPhase.OfType<DeclineCommissionAction>().Single();
             AssertThat(declined.Hero).IsEqual(new HeroId(1));
         }
         finally { Unmount(ui); }

@@ -119,7 +119,7 @@ public class ForgeCraftTests
             AssertThat(locked.Disabled).IsTrue();
 
             PressEnabled(ui.Forge, "Unlock_keen-eye");
-            var pending = ui.Adapter.PendingActions.OfType<UnlockTalentAction>().ToList();
+            var pending = ui.Adapter.AppliedThisPhase.OfType<UnlockTalentAction>().ToList();
             AssertThat(pending.Count).IsEqual(1);
             AssertThat(pending[0].NodeId).IsEqual("keen-eye");
         }

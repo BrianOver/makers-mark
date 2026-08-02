@@ -144,7 +144,8 @@ public class CampPanelTests
 
             Press(ui.Camp, "CampSend_1");
 
-            var send = ui.Adapter.PendingActions.OfType<SendSupplyAction>().Single();
+            // U1: SendSupply is an immediate verb now — read where it actually lands.
+            var send = ui.Adapter.AppliedThisPhase.OfType<SendSupplyAction>().Single();
             AssertThat(send.To.Value).IsEqual(1);
             AssertThat(send.Item.Value).IsEqual(SalveId);
         }
@@ -164,7 +165,8 @@ public class CampPanelTests
         {
             Press(ui.Camp, "CampRecall_1");
 
-            var recall = ui.Adapter.PendingActions.OfType<RecallPartyAction>().Single();
+            // U1: RecallParty is an immediate verb now — read where it actually lands.
+            var recall = ui.Adapter.AppliedThisPhase.OfType<RecallPartyAction>().Single();
             AssertThat(ui.Adapter.CurrentState.InFlight.Single().Party.Select(h => h.Value))
                 .Contains(recall.Member.Value);
         }
@@ -182,11 +184,16 @@ public class CampPanelTests
         var ui = MountAtCamp();
         try
         {
-            // Two deliveries to the same party in one batch: the first lands, the second is refused
-            // (one runner per party per day) — a real U4 handler string, rendered on the slate.
+            // Two deliveries to the same party: the first lands, the second is refused (one runner
+            // per party per day) — a real U4 handler string, rendered on the slate.
+            //
+            // U1 (loop-legibility) moved SendSupply to the immediate lane, so the refusal happens on
+            // the SECOND PRESS, not at the Camp tick. Advancing the phase here would step past the
+            // moment under test — and the point of the change is precisely that the player is told
+            // no while their hand is still on the button, instead of at a bell they may not connect
+            // to the click.
             Press(ui.Camp, "CampSend_1");
             Press(ui.Camp, "CampSend_1");
-            ui.Adapter.AdvancePhase(); // Camp tick applies the batch; rejection surfaces in LastRejections
 
             var rejected = ui.Adapter.LastRejections
                 .Single(r => r.Action is SendSupplyAction);
@@ -285,7 +292,8 @@ public class CampPanelTests
 
             // Still the SAME action, unchanged — U17 is UI framing only.
             Press(ui.Camp, "CampRecall_1");
-            var recall = ui.Adapter.PendingActions.OfType<RecallPartyAction>().Single();
+            // U1: RecallParty is an immediate verb now — read where it actually lands.
+            var recall = ui.Adapter.AppliedThisPhase.OfType<RecallPartyAction>().Single();
             AssertThat(recall.Member.Value).IsEqual(1);
         }
         finally
