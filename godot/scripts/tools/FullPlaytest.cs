@@ -195,11 +195,13 @@ public partial class FullPlaytest : Node
                 await Settle(10);
                 Shot($"r{_run}_03_click_{building}");
 
-                // U1 (painted-interiors plan): "forge" now enters a walkable room instead of
-                // opening the drawer directly (R1). Walk the room for real — press every
-                // station, shot each one, exit — rather than letting the click screenshot above
-                // stand in for the whole framework. Every OTHER venue still just opens its drawer
-                // (R9), so this block is a no-op for them.
+                // U1 (painted-interiors plan; world-and-interiors plan, docs/plans/2026-08-02-004,
+                // grew this to four rooms): "forge"/"market"/"tavern"/"minegate" all enter a
+                // walkable room instead of opening the drawer directly (R1) — only "noticeboard"
+                // still opens its drawer (KTD-2: a plank board has no inside). Walk the room for
+                // real — press every station, shot each one, exit — rather than letting the click
+                // screenshot above stand in for the whole framework. Generic over
+                // Town.InteriorActive, so this block is a no-op only for noticeboard.
                 if (ui.Town.InteriorActive)
                 {
                     var room = ui.Town.FindInteriorRoom(ui.Town.InteriorVenueKey!);
@@ -219,6 +221,20 @@ public partial class FullPlaytest : Node
                         if (ui.Drawer.IsOpen)
                         {
                             ui.Drawer.Close(); // reset so the next station's press isn't reading a stale open drawer
+                            await Settle(6);
+                        }
+
+                        // U1 (world-and-interiors plan): the gatehouse's "overlook" (Watch) and the
+                        // tavern's "storywall" (Legends) open code-built modals, not the drawer —
+                        // close those too, or they'd sit stacked over every subsequent station's shot.
+                        if (ui.Mirror.Visible)
+                        {
+                            ui.Mirror.CloseMirror();
+                            await Settle(6);
+                        }
+                        if (ui.Legends.Visible)
+                        {
+                            ui.Legends.Close();
                             await Settle(6);
                         }
                     }

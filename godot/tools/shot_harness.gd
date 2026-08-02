@@ -30,6 +30,12 @@
 # gate, PiP dock docked).
 # main_ui.tscn self-seeds a deterministic SimAdapter (seed 2026) on _Ready.
 #
+# U1 (world-and-interiors plan, docs/plans/2026-08-02-004): market/tavern/minegate grew rooms
+# too, same as the forge -- so the same "PanelId + Panel" bypass-state idiom ForgePanel
+# established is extended here for each: ShopPanel/TavernPanel/DepthsPanel open their drawer
+# directly by id, bypassing the room, so the "before" half of each new venue's receipt pair
+# stays reachable on the SAME build as the room "after" shot (SHOT_STATE=Shop/Tavern/Gate).
+#
 # SHOT_QUIET=1 (receipt.ps1's -Quiet): freezes AmbientLife2D -- chimney smoke, fireflies,
 # lamp flicker, market awning sway, noticeboard paper flutter, mine dust -- as early as
 # possible. That node accumulates real per-frame delta (not frame count) to drive its
@@ -111,6 +117,18 @@ func _process(_delta: float) -> bool:
 			# comparison against the room (same idiom as Demand/HeroCards above).
 			if _ui.has_method("OpenPanel"):
 				_ui.call("OpenPanel", "Forge")
+		elif _state == "ShopPanel":
+			# U1 (world-and-interiors plan): "Shop" now walks the player INTO the market room
+			# instead of opening the drawer directly (R1) -- same idiom as ForgePanel above,
+			# so the drawer-only "before" shot stays reachable for the receipt pair.
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Shop")
+		elif _state == "TavernPanel":
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Tavern")
+		elif _state == "DepthsPanel":
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Depths")
 		elif _state == "ForgeExit":
 			# U1 (painted-interiors plan): the second required receipt -- proves the exit
 			# door returns the player OUTSIDE. Enters the room the normal way; the second

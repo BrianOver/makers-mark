@@ -27,6 +27,10 @@ public class InteriorRoomTests
     private static readonly HashSet<string> KnownStationActions = new()
     {
         "Forge", "Shop", "Tavern", "Bounties", "Depths", "Bestiary", "Legends",
+        // U1 (world-and-interiors plan): "Watch" is the ONE new action string this unit adds —
+        // the gatehouse's "overlook" station, routed to MainUi.OnInteriorHotspotActivated's own
+        // Mirror.ShowMirror() case (same shape as Bestiary/Legends above).
+        "Watch",
     };
 
     /// <summary>U3: the section keys <c>ForgePanel.FocusSection</c> actually knows how to
@@ -43,21 +47,56 @@ public class InteriorRoomTests
         return town;
     }
 
-    [TestCase]
-    public void ForgeRoom_ExistsAtTownBuildTime_OffTheTownCameraFrame()
+    // U1 (world-and-interiors plan): parameterized over all four rooms — proving the off-frame
+    // property forge alone used to pin now covers market/tavern/minegate's own island offsets too.
+    [TestCase("forge")]
+    [TestCase("market")]
+    [TestCase("tavern")]
+    [TestCase("minegate")]
+    public void EveryRoom_ExistsAtTownBuildTime_OffTheTownCameraFrame(string venueKey)
     {
         var town = Mount();
         try
         {
-            var room = town.FindInteriorRoom("forge");
+            var room = town.FindInteriorRoom(venueKey);
 
             // KTD-1: the island must sit clear of the town's own camera limits (0..GridWidth*16),
             // so the two are never both in frame at once regardless of camera position.
             AssertThat(room.RoomRect.Position.X)
                 .OverrideFailureMessage(
-                    "The forge room's island offset must clear the town's own width "
+                    $"The '{venueKey}' room's island offset must clear the town's own width "
                     + $"({TownLayout2D.GridWidth * TownLayout2D.TileSize}px) — it is not off-frame.")
                 .IsGreaterEqual(TownLayout2D.GridWidth * TownLayout2D.TileSize);
+        }
+        finally { town.Free(); }
+    }
+
+    /// <summary>
+    /// U1 (world-and-interiors plan, KTD-1): "distinct island offsets so no camera clamp can ever
+    /// see two rooms" is a claim about every PAIR of rooms, not just each room versus the town —
+    /// this is the one place that pairwise property is actually checked, rather than trusted from
+    /// the four rooms' Y-offsets simply looking spaced out in <see cref="InteriorLayout2D"/>.
+    /// </summary>
+    [TestCase]
+    public void EveryPairOfRooms_HasNonOverlappingIslandRects()
+    {
+        var town = Mount();
+        try
+        {
+            var rects = InteriorLayout2D.Rooms.Keys.Select(k => (Key: k, Rect: town.FindInteriorRoom(k).RoomRect)).ToArray();
+
+            for (var i = 0; i < rects.Length; i++)
+            {
+                for (var j = i + 1; j < rects.Length; j++)
+                {
+                    AssertThat(rects[i].Rect.Intersects(rects[j].Rect))
+                        .OverrideFailureMessage(
+                            $"Rooms '{rects[i].Key}' and '{rects[j].Key}' have overlapping island "
+                            + "rects — a camera clamped to one could see the other. KTD-1 requires "
+                            + "every room's island offset to clear every OTHER room's, not just the town's.")
+                        .IsFalse();
+                }
+            }
         }
         finally { town.Free(); }
     }
@@ -83,17 +122,23 @@ public class InteriorRoomTests
         finally { town.Free(); }
     }
 
-    [TestCase]
-    public void ForgeRoom_ExitZonePresent_WithACollisionShape()
+    // U1 (world-and-interiors plan): parameterized over all four rooms — BuildExitZone is shared
+    // code (InteriorRoom2D.Build runs it for every RoomSpec identically), so this proves it holds
+    // for market/tavern/minegate's own rows too, not just the forge row it originally pinned.
+    [TestCase("forge")]
+    [TestCase("market")]
+    [TestCase("tavern")]
+    [TestCase("minegate")]
+    public void EveryRoom_ExitZonePresent_WithACollisionShape(string venueKey)
     {
         var town = Mount();
         try
         {
-            var room = town.FindInteriorRoom("forge");
+            var room = town.FindInteriorRoom(venueKey);
 
             AssertThat(room.ExitZone).IsNotNull();
             AssertThat(room.ExitZone.GetChildren().OfType<CollisionShape2D>().Any(s => s.Shape is not null))
-                .OverrideFailureMessage("The exit zone has no collision shape — walking onto the door tile could never trigger it.")
+                .OverrideFailureMessage($"The '{venueKey}' room's exit zone has no collision shape — walking onto the door tile could never trigger it.")
                 .IsTrue();
         }
         finally { town.Free(); }

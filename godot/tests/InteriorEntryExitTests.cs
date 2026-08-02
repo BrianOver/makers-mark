@@ -1,4 +1,5 @@
 #if GDUNIT_TESTS
+using System.Linq;
 using GdUnit4;
 using Godot;
 using GodotClient.Town2d;
@@ -55,6 +56,67 @@ public class InteriorEntryExitTests
             AssertThat((float)ui.Town.Cam.LimitRight).IsEqual(room.RoomRect.Position.X + room.RoomRect.Size.X);
             AssertThat((float)ui.Town.Cam.LimitTop).IsEqual(room.RoomRect.Position.Y);
             AssertThat((float)ui.Town.Cam.LimitBottom).IsEqual(room.RoomRect.Position.Y + room.RoomRect.Size.Y);
+        }
+        finally { Unmount(ui); }
+    }
+
+    // ── U1 (world-and-interiors plan): the forge tests above predate market/tavern/minegate having
+    // rows of their own. These parameterize the same entry/exit/camera-clamp round trip over all
+    // four venue keys — the framework claim (KTD-1: a new venue is a table row, not new code) only
+    // means something if it holds for every row, not just the one it was proven on first. ──────────
+
+    [TestCase("forge")]
+    [TestCase("market")]
+    [TestCase("tavern")]
+    [TestCase("minegate")]
+    public void EnteringAnyVenue_PutsThePlayerInsideItsOwnRoom_NotTheDrawer(string venueKey)
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.FindBuilding(venueKey).RaisePick();
+
+            AssertThat(ui.Town.InteriorActive)
+                .OverrideFailureMessage($"Pressing E/clicking '{venueKey}' must put the player INSIDE its room — R1's whole point.")
+                .IsTrue();
+            AssertThat(ui.Town.InteriorVenueKey).IsEqual(venueKey);
+            AssertThat(ui.Drawer.IsOpen)
+                .OverrideFailureMessage($"The drawer must never be the DIRECT response to a '{venueKey}' interact.")
+                .IsFalse();
+
+            var room = ui.Town.FindInteriorRoom(venueKey);
+            AssertThat(room.RoomRect.HasPoint(ui.Town.Player.GlobalPosition))
+                .OverrideFailureMessage($"The player must spawn inside '{venueKey}''s own room rect on entry.")
+                .IsTrue();
+            AssertThat((float)ui.Town.Cam.LimitLeft).IsEqual(room.RoomRect.Position.X);
+            AssertThat((float)ui.Town.Cam.LimitRight).IsEqual(room.RoomRect.Position.X + room.RoomRect.Size.X);
+            AssertThat((float)ui.Town.Cam.LimitTop).IsEqual(room.RoomRect.Position.Y);
+            AssertThat((float)ui.Town.Cam.LimitBottom).IsEqual(room.RoomRect.Position.Y + room.RoomRect.Size.Y);
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase("forge")]
+    [TestCase("market")]
+    [TestCase("tavern")]
+    [TestCase("minegate")]
+    public void ExitingAnyVenue_ReturnsThePlayerToItsOwnOutsideDoor_AndUnclampsTheCamera(string venueKey)
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.FindBuilding(venueKey).RaisePick();
+            var outsideDoor = ui.Town.FindBuilding(venueKey).DoorAnchorGlobal;
+
+            ui.Town.ExitInterior(); // the same call the exit zone's BodyEntered signal fires
+
+            AssertThat(ui.Town.InteriorActive).IsFalse();
+            AssertThat(ui.Town.InteriorVenueKey).IsNull();
+            AssertThat(ui.Town.Player.GlobalPosition)
+                .OverrideFailureMessage($"Exiting '{venueKey}' must return the player to ITS OWN outside door, not some other venue's.")
+                .IsEqual(outsideDoor);
+            AssertThat((float)ui.Town.Cam.LimitRight)
+                .IsEqual(TownLayout2D.GridWidth * TownLayout2D.TileSize);
         }
         finally { Unmount(ui); }
     }
@@ -229,6 +291,177 @@ public class InteriorEntryExitTests
         finally { Unmount(ui); }
     }
 
+    // ── U1 (world-and-interiors plan): each new room's stations, driven through the same
+    // real-click path as the forge tests above — every real-verb station opens ITS OWN routed
+    // surface (never the wrong one), and every flavor station is a toast, never a dead click. ──────
+
+    [TestCase]
+    public void MarketCounterPress_OpensTheShopPanel_OverTheRoom()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.FindBuilding("market").RaisePick();
+            var counter = ui.Town.FindInteriorRoom("market").Stations.First(s => s.Key == "counter");
+
+            counter.RaisePick();
+
+            AssertThat(ui.Drawer.IsOpen).IsTrue();
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Shop");
+            AssertThat(ui.Town.InteriorActive)
+                .OverrideFailureMessage("Opening the Shop panel from a station must NOT exit the market room.")
+                .IsTrue();
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void MarketLedgerPress_IsHonestFlavor_NeverOpensAPanel()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.FindBuilding("market").RaisePick();
+            var ledger = ui.Town.FindInteriorRoom("market").Stations.First(s => s.Key == "ledger");
+
+            ledger.RaisePick();
+
+            AssertThat(ui.Drawer.IsOpen)
+                .OverrideFailureMessage("The Ledger Desk has no routed action — MainUi has no 'Ledger' route — so pressing it must never open a panel.")
+                .IsFalse();
+            var toast = Find<Label>(ui, "RejectionToast");
+            AssertThat(toast.Text).IsEqual("You flip through the ledger. Nothing to buy or sell from these pages — try the counter.");
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void TavernBarPress_OpensTheTavernPanel_OverTheRoom()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.FindBuilding("tavern").RaisePick();
+            var bar = ui.Town.FindInteriorRoom("tavern").Stations.First(s => s.Key == "bar");
+
+            bar.RaisePick();
+
+            AssertThat(ui.Drawer.IsOpen).IsTrue();
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Tavern");
+            AssertThat(ui.Town.InteriorActive).IsTrue();
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void TavernStorywallPress_OpensTheLegendsWall_NotADrawerPanel()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.FindBuilding("tavern").RaisePick();
+            var storywall = ui.Town.FindInteriorRoom("tavern").Stations.First(s => s.Key == "storywall");
+
+            storywall.RaisePick();
+
+            AssertThat(ui.Legends.Visible)
+                .OverrideFailureMessage("The Story Wall must open the Legends Wall modal — the same route the Tavern's pre-existing 'Legends' action already uses.")
+                .IsTrue();
+            AssertThat(ui.Drawer.IsOpen)
+                .OverrideFailureMessage("Legends is a code-built modal, not a drawer panel.")
+                .IsFalse();
+            AssertThat(ui.Town.InteriorActive).IsTrue();
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void GatehouseMusterPress_OpensTheDepthsPanel_OverTheRoom()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.FindBuilding("minegate").RaisePick();
+            var muster = ui.Town.FindInteriorRoom("minegate").Stations.First(s => s.Key == "muster");
+
+            muster.RaisePick();
+
+            AssertThat(ui.Drawer.IsOpen).IsTrue();
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Depths");
+            AssertThat(ui.Town.InteriorActive).IsTrue();
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void GatehouseBountyLedgerPress_OpensTheBountiesPanel_OverTheRoom()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.FindBuilding("minegate").RaisePick();
+            var bountyLedger = ui.Town.FindInteriorRoom("minegate").Stations.First(s => s.Key == "bountyledger");
+
+            bountyLedger.RaisePick();
+
+            AssertThat(ui.Drawer.IsOpen).IsTrue();
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Bounties");
+            AssertThat(ui.Town.InteriorActive).IsTrue();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// R4/KTD-2: the ONE new action string this unit adds. Unlike every other real-verb station,
+    /// the Mirror is not a drawer panel — it's a code-built modal (same shape as Legends/Bestiary),
+    /// so this pins that pressing "The Overlook" reaches <c>ScryingMirror.ShowMirror()</c> without
+    /// ever touching the drawer.
+    /// </summary>
+    [TestCase]
+    public void GatehouseOverlookPress_OpensTheMirror_NotADrawerPanel()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.FindBuilding("minegate").RaisePick();
+            var overlook = ui.Town.FindInteriorRoom("minegate").Stations.First(s => s.Key == "overlook");
+
+            overlook.RaisePick();
+
+            AssertThat(ui.Mirror.Visible)
+                .OverrideFailureMessage("The Overlook's 'Watch' action must open the Mirror (Mirror.ShowMirror()).")
+                .IsTrue();
+            AssertThat(ui.Drawer.IsOpen)
+                .OverrideFailureMessage("The Mirror is a code-built modal, not a drawer panel.")
+                .IsFalse();
+            AssertThat(ui.Town.InteriorActive)
+                .OverrideFailureMessage("Opening the Mirror from the overlook must NOT exit the gatehouse room.")
+                .IsTrue();
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void GatehouseWinchPress_IsHonestFlavor_NeverOpensAPanel()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.FindBuilding("minegate").RaisePick();
+            var winch = ui.Town.FindInteriorRoom("minegate").Stations.First(s => s.Key == "winch");
+
+            winch.RaisePick();
+
+            AssertThat(ui.Drawer.IsOpen).IsFalse();
+            AssertThat(ui.Mirror.Visible)
+                .OverrideFailureMessage("The winch has no Action — it must never open the Mirror (or anything else).")
+                .IsFalse();
+            var toast = Find<Label>(ui, "RejectionToast");
+            AssertThat(toast.Text).IsEqual("The winch's chain hangs taut. It just raises the gate — try the muster board or the bounty ledger.");
+        }
+        finally { Unmount(ui); }
+    }
+
     [TestCase]
     public void ExitZone_ReturnsThePlayerOutside_AndUnclampsTheCamera()
     {
@@ -306,19 +539,26 @@ public class InteriorEntryExitTests
         finally { Unmount(ui); }
     }
 
+    /// <summary>
+    /// U1 (world-and-interiors plan, KTD-2): market/tavern/minegate all grew rooms this unit — the
+    /// noticeboard is now the ONLY venue still answering E with the bare drawer, exactly as KTD-2
+    /// says it should ("a plank board has no inside"). This test used to drive "market" (back when
+    /// that venue had no room yet, pre-this-unit); it now targets the one venue that is SUPPOSED to
+    /// keep this behavior forever, not one that is about to lose it.
+    /// </summary>
     [TestCase]
-    public void OtherVenues_StillOpenTheDrawerDirectly_NoRoomYet()
+    public void Noticeboard_StillOpensTheDrawerDirectly_NoRoomByDesign()
     {
         var ui = MountMainUi();
         try
         {
-            ui.Town.FindBuilding("market").RaisePick();
+            ui.Town.FindBuilding("noticeboard").RaisePick();
 
             AssertThat(ui.Town.InteriorActive)
-                .OverrideFailureMessage("R9: slice 1 is the Forge only — every other venue keeps today's drawer behavior.")
+                .OverrideFailureMessage("KTD-2: the noticeboard has no inside — a plank board has nothing to walk into.")
                 .IsFalse();
             AssertThat(ui.Drawer.IsOpen).IsTrue();
-            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Shop");
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Bounties");
         }
         finally { Unmount(ui); }
     }
@@ -350,19 +590,24 @@ public class InteriorEntryExitTests
         finally { Unmount(ui); }
     }
 
-    [TestCase]
-    public void FocusOnMineGate_IsSuppressed_WhileInsideTheRoom()
+    // U1 (world-and-interiors plan): parameterized over all four rooms — a departure focus beat
+    // must not fight ANY room's camera clamp, not just the forge's.
+    [TestCase("forge")]
+    [TestCase("market")]
+    [TestCase("tavern")]
+    [TestCase("minegate")]
+    public void FocusOnMineGate_IsSuppressed_WhileInsideAnyRoom(string venueKey)
     {
         var ui = MountMainUi();
         try
         {
-            ui.Town.FindBuilding("forge").RaisePick();
+            ui.Town.FindBuilding(venueKey).RaisePick();
             var before = ui.Town.Cam.GlobalPosition;
 
             ui.Town.FocusOnMineGate(seconds: 5f);
 
             AssertThat(ui.Town.Cam.GlobalPosition)
-                .OverrideFailureMessage("A departure focus beat must not fight the room's camera clamp.")
+                .OverrideFailureMessage($"A departure focus beat must not fight the '{venueKey}' room's camera clamp.")
                 .IsEqual(before);
         }
         finally { Unmount(ui); }
