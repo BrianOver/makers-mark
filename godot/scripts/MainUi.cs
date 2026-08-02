@@ -215,6 +215,7 @@ public partial class MainUi : Control
     private Button _playPause = null!;
     private Button _speed = null!;
     private Button _watch = null!;
+    private Button _fullscreen = null!;
     private bool _resumePlayOnLedgerClose;
     private bool _resumePlayOnCampClose;
     private bool _resumePlayOnMirrorClose;
@@ -1532,6 +1533,19 @@ public partial class MainUi : Control
         };
         verbRow.AddChild(_speed);
 
+        // Fullscreen toggle (owner playtest: "should be able to full screen the game" — there was
+        // no way to do it at all). Runtime-only via DisplayServer, never project.godot (deny-listed
+        // for agents) — window/stretch defaults stay whatever the project already ships. F11 (see
+        // _Input) is the primary path; this button is the discoverable one, same glyph-button
+        // convention as Auto/PlayPause/Speed above (no new icon asset).
+        _fullscreen = new Button
+        {
+            Name = "Fullscreen", Text = "⛶", ToggleMode = true, CustomMinimumSize = new Vector2(24, 24),
+            TooltipText = "Fullscreen (F11)", ButtonPressed = IsFullscreen(),
+        };
+        _fullscreen.Pressed += ToggleFullscreen;
+        verbRow.AddChild(_fullscreen);
+
         // --- UI-4 Zone 3: BOOKS TRAY (right) — Ledger/Forecast/Commissions/Legends/Demand/Renown/
         // Progress collapse to 28px icon-only buttons on a recessed (SurfaceDeep) tray; the full
         // names move to TooltipText. Icon picks reuse the existing glyph set rather than adding
@@ -2118,6 +2132,51 @@ public partial class MainUi : Control
         return button;
     }
 
+    /// <summary>
+    /// Test-only stand-in for the real OS window mode. Verified empirically (throwaway headless
+    /// script, per repo convention — the gdUnit suite itself is never run from an implementing
+    /// agent's worktree): under <c>--headless</c>, <see cref="DisplayServer.WindowSetMode"/> is a
+    /// no-op and <see cref="DisplayServer.WindowGetMode"/> always reports the same value regardless
+    /// of what was just set. A test asserting the real window state would pass or fail independent
+    /// of this code, proving nothing. Null in production (real <see cref="DisplayServer"/>); a test
+    /// sets a starting mode here to prove the TOGGLE LOGIC actually flips it, and must reset it to
+    /// null when done so later suites see the real engine again.
+    /// </summary>
+    public static DisplayServer.WindowMode? TestWindowMode;
+
+    private static DisplayServer.WindowMode CurrentWindowMode() => TestWindowMode ?? DisplayServer.WindowGetMode();
+
+    /// <summary>Whether the OS window is currently fullscreen, either the borderless or exclusive
+    /// mode — both read the same to the player and to <see cref="ToggleFullscreen"/>.</summary>
+    private static bool IsFullscreen() => CurrentWindowMode()
+        is DisplayServer.WindowMode.Fullscreen or DisplayServer.WindowMode.ExclusiveFullscreen;
+
+    /// <summary>
+    /// F11 / the HUD button: flip the OS window between windowed and fullscreen via
+    /// <see cref="DisplayServer"/> at RUNTIME. Deliberately not a <c>project.godot</c> setting
+    /// (deny-listed for agents; a `window/size/mode` default would also just pick one at launch,
+    /// not give the player a toggle) — borderless <see cref="DisplayServer.WindowMode.Fullscreen"/>
+    /// rather than <c>ExclusiveFullscreen</c>, since it does not mode-switch the monitor and plays
+    /// better with alt-tab. Syncs the HUD button's toggle state either way it was triggered.
+    /// </summary>
+    private void ToggleFullscreen()
+    {
+        var next = IsFullscreen() ? DisplayServer.WindowMode.Windowed : DisplayServer.WindowMode.Fullscreen;
+        if (TestWindowMode is not null)
+        {
+            TestWindowMode = next;
+        }
+        else
+        {
+            DisplayServer.WindowSetMode(next);
+        }
+
+        if (_fullscreen is not null)
+        {
+            _fullscreen.ButtonPressed = IsFullscreen();
+        }
+    }
+
     /// <summary>Town hero click (R20): open the Heroes drawer with that hero's detail bound.</summary>
     private void OnTownHeroClicked(int heroValue)
     {
@@ -2305,6 +2364,15 @@ public partial class MainUi : Control
     /// </summary>
     public override void _Input(InputEvent @event)
     {
+        // F11 fullscreen toggle: global, independent of interior/drawer/modal state (unlike the
+        // Escape ladder below) — there is no reason a player mid-panel shouldn't be able to hit it.
+        if (@event is InputEventKey { PhysicalKeycode: Key.F11, Pressed: true, Echo: false })
+        {
+            ToggleFullscreen();
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
         if (!Town.InteriorActive || @event is not InputEventKey { PhysicalKeycode: Key.Escape, Pressed: true })
         {
             return;

@@ -203,7 +203,13 @@ public partial class NewGameSelect : Control
         var button = new Button
         {
             Name = "Continue",
-            Text = $"Continue — day {save.Day}",
+            // Day AND phase, on the button itself, not just the blurb below it: the owner's
+            // repeated complaint ("Continue day 2 is still there") was partly a genuinely-stale
+            // save (autosave silently dead for two professions until PR #336) and partly this
+            // label not saying enough to tell a fresh checkpoint from an old one at a glance.
+            // "Continue — day 2" alone reads as "pick up where you left off"; spelling out the
+            // phase too ("Continue — Day 2, Dawn") makes it honest about exactly what will load.
+            Text = $"Continue — Day {save.Day}, {PhaseVocab.Display(save.Phase)}",
             CustomMinimumSize = new Vector2(0, PickButtonHeight),
         };
 

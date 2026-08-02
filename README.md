@@ -14,6 +14,12 @@ There used to be three ways to play and they behaved differently; the double-cli
 the freshness checks, so the safe path was the one nobody took. If you are tempted to add a second
 launcher, edit `play.bat` instead.
 
+**If this checkout also has a `play\` folder next to `play.bat`**, that folder is a second,
+separate worktree of the same repo and it has its own `play.bat` — that nested one, not this one,
+is the copy meant to be double-clicked. This one refuses and tells you so on its own (the "shared
+dev checkout" message); it exists here only because this checkout is also on `main` and every
+checkout of `main` carries the same tracked file.
+
 - **Edit scenes**: **`edit.bat`** opens the Godot editor. (Not a way to play — the editor.)
 - **Text/headless game**: `dotnet run --project sim/GameSim.Cli`, then type `help`.
 

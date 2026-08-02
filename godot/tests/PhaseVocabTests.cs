@@ -128,6 +128,45 @@ public class PhaseVocabTests
         }
     }
 
+    /// <summary>
+    /// The owner's repeated complaint ("Continue day 2 is still there") was two things at once: a
+    /// genuinely stale save (autosave silently dead for tanning/engineering until PR #336 fixed
+    /// the unregistered <c>CraftPuzzleInput</c> subtypes) and this button not saying enough to let
+    /// the player tell a fresh checkpoint from an old one without reading the blurb underneath it.
+    /// The button itself must now spell out day AND phase, not day alone.
+    /// </summary>
+    [TestCase]
+    public void ContinueButton_NamesDayAndPhase_NeverDayAlone()
+    {
+        var backup = Backup();
+        try
+        {
+            CampaignSave.Save(GameComposition.NewCampaign(3) with { Phase = DayPhase.Morning, Day = 2 });
+
+            var tree = (SceneTree)Engine.GetMainLoop();
+            var screen = GD.Load<PackedScene>("res://scenes/new_game_select.tscn").Instantiate<NewGameSelect>();
+            tree.Root.AddChild(screen);
+            try
+            {
+                var button = Find<Button>(screen, "Continue");
+                AssertThat(button.Text)
+                    .OverrideFailureMessage($"Continue button read \"{button.Text}\" — expected the day AND the phase word")
+                    .Contains("Day 2");
+                AssertThat(button.Text).Contains(PhaseVocab.Display(DayPhase.Morning));
+            }
+            finally
+            {
+                MainUi.AdapterOverride = null;
+                screen.GetParent()?.RemoveChild(screen);
+                screen.Free();
+            }
+        }
+        finally
+        {
+            Restore(backup);
+        }
+    }
+
     [TestCase]
     public void MineGateBuilding_IsNamedForWhatItOpens_NotBareSceneryWord()
     {
