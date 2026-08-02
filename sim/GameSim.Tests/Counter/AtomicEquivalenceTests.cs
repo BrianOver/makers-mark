@@ -130,8 +130,15 @@ public class AtomicEquivalenceTests
     // What moves the hash is the priced-pool contraction (19 → 14 keys, Emberfall's ladder waits
     // for its art-gated go-live): the pool-derived, draw-free vendor/pricing surfaces serialize
     // differently. One PR, two recorded re-pins, still ONE deliberate re-baseline window.
+    // RE-BASELINED AGAIN, same PR window (2026-08-01 Gloomwood band 55 → 72, the coordinator's
+    // three-venue spread pass): **Class 2 — routing decisions change.** Idle-trace parties that
+    // used to cross into the Gloomwood band at 55 now stay in the Mine/Crypt early band until 72,
+    // so WHICH venue mid-power parties raid — and every combat draw after they first cross 55 —
+    // shifts. Same stream, different position (PhaseBNoDrawGate: Inc byte-identical, State moved);
+    // no new draw site (the router is still pure integer comparison). Third recorded re-pin, one
+    // deliberate re-baseline window for the whole branch.
     private const string ExpectedPreCounterSha256 =
-        "C919592380B5D0B433063A9CFCCC9C2625C01708C41CF2038429B9A618300D5F";
+        "34CF8A6F1985CC6105BF70B73CFD7BAC55D9B915116B6C70ADD42DF88AB8F4D2";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

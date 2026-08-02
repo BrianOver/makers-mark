@@ -101,21 +101,22 @@ public class VenueConformanceTests
     {
         // The routing tuning record (2026-08-01, measured against the banded-world power curve:
         // router-side party power ramps 30..54 (p25..p75) in days 1-10 and saturates at ~70-76).
-        // Mine + Sunken Crypt are the EntryPower-0 early peers (queue-split), Gloomwood the mid
-        // band placed at the day-10/20 boundary, Emberfall the endgame band at the late-game
-        // median — tuned and READY while the venue itself is DORMANT pending art (see
-        // VenueRegistry.LiveRotation). Change these consciously — they move every seed's venue
-        // distribution (and therefore the balance bands), and re-measure with the batch farm: the
-        // first Gloomwood placement (35) looked plausible and still starved the early venues to
-        // 3%, and the first Emberfall placement (70) let it soak 54% once the honest smith raised
-        // the curve. Measured (20 seeds x 100 days), SHIPPING 3-venue rotation: gloomwood 86% /
-        // mine 10% / crypt 3%, all three drawn on 20/20 seeds — veterans concentrate in the top
-        // live band by design until Emberfall's go-live, which measured ember 44% / gloomwood
-        // 40% / mine 11% / crypt 3% (ember on 17/20 seeds; the 3 misses death-spiral below
-        // endgame power even at entry 70 — a campaign outcome, not a threshold artifact).
+        // Mine + Sunken Crypt are the EntryPower-0 early peers (queue-split); Gloomwood and
+        // dormant Emberfall share the veteran band at 72 — a deliberate tie, so Emberfall's
+        // art-gated go-live makes the two top venues queue-split peers instead of one strictly
+        // dominating. Change these consciously — they move every seed's venue distribution (and
+        // therefore the balance bands), and MEASURE with the batch farm, never reason it out:
+        // Gloomwood placements 35 and 55 both looked plausible and measured 65%+ and 86% venue
+        // share; the full sweep 55/65/68/70/71/72 measured 86/75/74/70/72/68% — the threshold
+        // lever saturates near ~68-70% in a three-venue world because the economy feeds back
+        // (Mine traffic sells the smith copper, gear improves, the fleet levels back over any
+        // bar below the ~81 power ceiling). Shipping row at these values: gloomwood 68% / mine
+        // 25% / crypt 7%, all three on 20/20 seeds; go-live sanity row: ember 42% / mine 26% /
+        // gloomwood 24% / crypt 6% (ember on 20/20 under the peer tie; gloomwood on 19/20 — the
+        // tie's ordinal bias favors "emberfall", re-tune at go-live if that reads starved).
         Assert.Equal(0, VenueRegistry.Mine.EntryPower);
         Assert.Equal(0, VenueRegistry.All["sunken-crypt"].EntryPower);
-        Assert.Equal(55, VenueRegistry.All["gloomwood"].EntryPower);
+        Assert.Equal(72, VenueRegistry.All["gloomwood"].EntryPower);
         Assert.Equal(72, VenueRegistry.All["emberfall"].EntryPower);
     }
 

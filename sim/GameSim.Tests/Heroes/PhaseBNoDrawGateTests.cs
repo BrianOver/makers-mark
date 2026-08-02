@@ -41,6 +41,9 @@ public class PhaseBNoDrawGateTests
         // draw COUNTS differ; and the RecruitPool growing 3 → 6 changes what each existing recruit
         // draw maps to. Same stream, different position: `Inc` is byte-identical to the U-C3 value
         // above — only `State` moved. The grep gate holds (no new `rng.` site; Venues/ has none).
-        Assert.Equal(new RngState(4500645089244275289UL, 13279888329118852579UL), state.Rng);
+        // RE-BASELINED (2026-08-01 same PR window, Gloomwood band 55 → 72): same class as above —
+        // mid-power idle parties now stay in the early band until 72, so their venues and combat
+        // draw counts shift again. `Inc` STILL byte-identical; only `State` moved.
+        Assert.Equal(new RngState(18014097083248745424UL, 13279888329118852579UL), state.Rng);
     }
 }

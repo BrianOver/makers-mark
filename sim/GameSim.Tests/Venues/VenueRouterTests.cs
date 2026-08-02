@@ -18,10 +18,11 @@ namespace GameSim.Tests.Venues;
 public class VenueRouterTests
 {
     // Registered EntryPower bands (pinned by VenueConformanceTests): mine 0, sunken-crypt 0,
-    // gloomwood 55, emberfall 72. Emberfall is dormant (not in LiveRotation) but stays in these
-    // rotations on purpose: the comparator must already handle its band correctly on the day the
-    // art-gated go-live appends it, and ChooseVenue takes the rotation as an argument precisely
-    // so liveness churn never touches this suite.
+    // gloomwood 72, emberfall 72 — the veteran band is a deliberate TIE so the two top venues are
+    // queue-split peers at Emberfall's go-live. Emberfall is dormant (not in LiveRotation) but
+    // stays in these rotations on purpose: the comparator must already handle its band correctly
+    // on the day the art-gated go-live appends it, and ChooseVenue takes the rotation as an
+    // argument precisely so liveness churn never touches this suite.
     private static readonly ImmutableArray<string> MineAndGloomwood =
         ImmutableArray.Create(VenueRegistry.MineId, "gloomwood");
 
@@ -33,7 +34,7 @@ public class VenueRouterTests
     [Fact]
     public void WeakParty_BelowTheGloomwoodBand_StaysInTheMine()
     {
-        // Power 20 < Gloomwood's EntryPower 55: only the Mine's band (0) is reached, so the Mine
+        // Power 20 < Gloomwood's EntryPower 72: only the Mine's band (0) is reached, so the Mine
         // wins even though nothing is queued anywhere — weak parties are never routed onward.
         var chosen = VenueRouter.ChooseVenue(partyPower: 20, MineAndGloomwood, NoQueue);
         Assert.Equal(VenueRegistry.MineId, chosen);
@@ -42,23 +43,40 @@ public class VenueRouterTests
     [Fact]
     public void StrongerParty_IsRoutedOnward_ToTheHighestBandReached()
     {
-        // Power 55 reaches the Gloomwood band exactly (>= comparison); highest reached band wins.
-        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 55, MineAndGloomwood, NoQueue));
+        // Power 72 reaches the Gloomwood band exactly (>= comparison); highest reached band wins.
+        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 72, MineAndGloomwood, NoQueue));
 
-        // Power 72 reaches Emberfall's band exactly — the endgame venue outranks every lower band.
+        // Power 71 is one short: the early band is the highest reached — the veteran band is a
+        // hard line, not a gradient.
+        Assert.Equal(VenueRegistry.MineId, VenueRouter.ChooseVenue(partyPower: 71, MineAndGloomwood, NoQueue));
+
+        // In the full four-venue rotation, power 72 reaches the TIED veteran band (gloomwood =
+        // emberfall = 72): equal band + equal queue falls to Ordinal id, "emberfall" < "gloomwood".
         Assert.Equal("emberfall", VenueRouter.ChooseVenue(partyPower: 72, AllFour, NoQueue));
-
-        // Power 71 is one short of Emberfall: the Gloomwood band (55) is the highest reached.
-        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 71, AllFour, NoQueue));
     }
 
     [Fact]
     public void BandBeatsQueue_AStrongPartyNeverFallsBackToAnEmptyEarlyVenue()
     {
         // The band is a stronger signal than congestion: even with the Gloomwood heavily queued
-        // and the Mine empty, a band-55 party raids the Gloomwood. (Queue only splits PEERS.)
+        // and the Mine empty, a veteran-band party raids the Gloomwood. (Queue only splits PEERS.)
         var queue = new Dictionary<string, int> { ["mine"] = 0, ["gloomwood"] = 50 };
-        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 60, MineAndGloomwood, queue));
+        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 80, MineAndGloomwood, queue));
+    }
+
+    [Fact]
+    public void VeteranBandPeers_GloomwoodAndEmberfall_SplitByQueue()
+    {
+        // The 72/72 tie in action — the go-live shape: with Emberfall already holding a party
+        // this tick, the next veteran party goes to the Gloomwood, and vice versa. This is what
+        // keeps Emberfall's go-live from strictly dominating the mid venue (measured go-live
+        // sanity row: ember 42% / gloomwood 24%, the residual skew being the Ordinal tie-break
+        // favoring "emberfall" on equal queues).
+        var emberQueued = new Dictionary<string, int> { ["emberfall"] = 1, ["gloomwood"] = 0 };
+        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 80, AllFour, emberQueued));
+
+        var gloomQueued = new Dictionary<string, int> { ["emberfall"] = 0, ["gloomwood"] = 1 };
+        Assert.Equal("emberfall", VenueRouter.ChooseVenue(partyPower: 80, AllFour, gloomQueued));
     }
 
     [Fact]
@@ -102,10 +120,11 @@ public class VenueRouterTests
     public void PartyBelowEveryBand_GetsTheNearestBand_NeverStranded()
     {
         // A rotation with no EntryPower-0 venue (not the live shape, but the router must not
-        // assume curation): a power-10 party reaches neither band — the LOWEST entry (nearest
-        // band, gloomwood 55 < emberfall 72) is the least-wrong home.
+        // assume curation): a power-10 party reaches neither band. Both entries tie at 72, so
+        // the nearest-band rule ties too and the pick falls through queue (equal) to Ordinal id
+        // ("emberfall" < "gloomwood") — the point is a deterministic pick exists, never a strand.
         var midAndEnd = ImmutableArray.Create("gloomwood", "emberfall");
-        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 10, midAndEnd, NoQueue));
+        Assert.Equal("emberfall", VenueRouter.ChooseVenue(partyPower: 10, midAndEnd, NoQueue));
     }
 
     [Fact]
@@ -123,7 +142,7 @@ public class VenueRouterTests
         // The comparator is a total order, so the left-to-right scan must land on the same venue
         // no matter how the live rotation happens to be ordered.
         var queue = new Dictionary<string, int> { ["mine"] = 1, ["sunken-crypt"] = 1 };
-        foreach (var power in new[] { 0, 10, 54, 55, 71, 72, 200 })
+        foreach (var power in new[] { 0, 10, 71, 72, 200 })
         {
             var expected = VenueRouter.ChooseVenue(power, AllFour, queue);
             var reversed = ImmutableArray.CreateRange(AllFour.Reverse());
