@@ -69,33 +69,44 @@ public sealed partial class AudioDirector : Node
     /// fallback for a missing/unpulled-LFS file and stays the Mine's own
     /// <see cref="MusicBed.Underground"/> theme untouched (no mine track this round).</para>
     ///
-    /// <para><b>night-still-long replaces night-still as Camp's FILE, not just its id.</b> The praised
-    /// original 60s <c>night-still.mp3</c> stays committed on disk — reverting Camp to it is a
-    /// one-line edit back to the old id/path/TrimDb, exactly the "revert is a table row" contract this
-    /// unit promised. The new file is a &gt;=180s regeneration of the SAME quiet-camp brief so the loop
-    /// stops completing often enough to announce itself (the owner's exact "loops too quickly," now
-    /// aimed at a composed track instead of the synth bed it was originally about).</para>
+    /// <para><b>U6 (2026-08-02 shell-and-audio plan) reverted Camp back to <c>night-still</c>.</b>
+    /// <c>night-still-long.mp3</c> measured -27.15 LUFS raw — quieter than the original 60s file's
+    /// own -21.7 raw despite the identical brief (ambient generation is not byte-reproducible across
+    /// a 3x-longer render even holding style constant) — and needed a +5.45dB BOOST to reach -21.7
+    /// effective, the one entry this table ever carried a POSITIVE TrimDb for. A windowed loudness
+    /// pass (ffmpeg <c>astats</c>, 10s frames; see
+    /// <c>docs/design/2026-08-02-composed-track-forensics.md</c>) showed why that was the wrong fix:
+    /// the file's own content sits at a near-constant -63 to -64dBFS windowed RMS for nearly the
+    /// entire 185s (two brief blips to -46/-56dB) — the generation is basically hiss riding under
+    /// silence, so the +5.45dB boost lifted that hiss right along with the sparse content, which is
+    /// what the owner heard as "loud static randomly at night." Boosting a quiet generation's own
+    /// noise floor was never going to fix that; only a better generation (U9, GPU-gated) or a
+    /// revert could. The praised original stays committed on disk — this is the one-line revert
+    /// back to its old id/path/TrimDb the "revert is a table row" contract (KTD-F) was built for.
+    /// The loop-length win trades back to 60s until U9 lands a clean ≥180s regeneration; that trade
+    /// is disclosed to the owner (Open Question 4), not hidden.</para>
     ///
     /// <para><b>TrimDb, and why it is not just zero everywhere.</b> Measured with ffmpeg's
     /// <c>loudnorm</c> analysis pass (integrated LUFS) on each composed file, same method U2 used.
     /// U2 trimmed each track to roughly match the SYNTH BED it replaced; U4 changes the reference —
     /// every composed track now targets the owner's own praised night-still LUFS (-21.7) directly
     /// (R5's ±1 LU contract), not whatever synth bed happens to sit next to it in the table. Measured
-    /// raws and the resulting effective (raw + TrimDb) level: town-dusk -13.8 (was -5dB -> -18.8
-    /// effective, now -8dB -> -21.8), quest-wait -14.3 (was -4dB -> -18.3 effective, now -7.5dB ->
-    /// -21.8), day-first-light -13.3 (new track, -8.4dB -> -21.7), night-still-long -27.15 (new
-    /// regeneration — quieter than the original 60s file's own -21.7 raw despite the same brief;
-    /// ambient generation is not byte-reproducible across a 3x-longer render even holding style
-    /// constant, so this one needs a +5.45dB BOOST rather than a cut to reach -21.7 effective — the
-    /// one entry in this table where TrimDb is positive). This is a measured best-effort, not a
-    /// verdict: the owner's in-game A/B (<see cref="_UnhandledKeyInput"/>) is what actually confirms
-    /// "comparable."</para>
+    /// raws and the resulting effective (raw + TrimDb) level: town-dusk -13.77 (was -5dB -> -18.8
+    /// effective, now -8dB -> -21.8), quest-wait -14.30 (was -4dB -> -18.3 effective, now -7.5dB ->
+    /// -21.8), day-first-light -13.30 (-8.4dB -> -21.7; U6 also cut a ~6s and a ~9s near-total-silence
+    /// dropout the same generation left mid-file and at its tail — see the forensics doc — the raw
+    /// LUFS the trim targets barely moved, -13.30 -> -13.32, since loudnorm's own gating already
+    /// discounted near-silence), night-still -21.73 (praised original, TrimDb 0 — no boost needed).
+    /// This is a measured best-effort, not a verdict: the owner's in-game A/B
+    /// (<see cref="_UnhandledKeyInput"/>) is what actually confirms "comparable." <b>No entry may
+    /// ever carry a positive TrimDb again</b> (R7/KTD-F) — <see cref="ComposedTrackTrims"/> is the
+    /// census surface <c>AudioTests</c> pins that against.</para>
     /// </summary>
     private static readonly Dictionary<DayPhase, ComposedTrack> ComposedTracks = new()
     {
         [DayPhase.Morning] = new ComposedTrack("day-first-light", "res://assets/audio/day-first-light.mp3", TrimDb: -8.4f),
         [DayPhase.Evening] = new ComposedTrack("town-dusk", "res://assets/audio/town-dusk.mp3", TrimDb: -8f),
-        [DayPhase.Camp] = new ComposedTrack("night-still-long", "res://assets/audio/night-still-long.mp3", TrimDb: 5.45f),
+        [DayPhase.Camp] = new ComposedTrack("night-still", "res://assets/audio/night-still.mp3", TrimDb: 0f),
         [DayPhase.Expedition] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.mp3", TrimDb: -7.5f),
         [DayPhase.ExpeditionDeep] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.mp3", TrimDb: -7.5f),
     };
@@ -118,6 +129,18 @@ public sealed partial class AudioDirector : Node
         ComposedTracks.ToDictionary(kv => kv.Key, kv => kv.Value.Id);
 
     /// <summary>
+    /// Census surface, the TrimDb half (U6, R7/KTD-F): every phase's composed-track code-side trim,
+    /// public and read-only so a regression test can pin "no entry may carry a positive TrimDb"
+    /// without reaching into <see cref="ComposedTracks"/>'s private state. A positive trim is the
+    /// code admitting a generation is wrong and boosting its way past that — <c>night-still-long</c>
+    /// shipped at +5.45dB, and the boosted noise floor was the owner's "loud static randomly at
+    /// night." If a generation needs a boost to reach level, the fix is a better generation (U9),
+    /// never a positive TrimDb.
+    /// </summary>
+    public static IReadOnlyDictionary<DayPhase, float> ComposedTrackTrims =>
+        ComposedTracks.ToDictionary(kv => kv.Key, kv => kv.Value.TrimDb);
+
+    /// <summary>
     /// Loads the composed track mapped to <paramref name="phase"/>, or null if none is mapped or it
     /// failed to load. Test-only entry point into <see cref="LoadComposed"/> — the SAME loader
     /// <see cref="ResolveBed"/> uses at runtime, so a green census means the game's actual code path
@@ -128,6 +151,37 @@ public sealed partial class AudioDirector : Node
 
     private readonly List<AudioStreamPlayer> _voices = new();
     private int _nextVoice;
+
+    /// <summary>
+    /// Dedicated voice for a HELD gesture's sustained loop (U8, R8) — separate from the pooled
+    /// <see cref="_voices"/> because a loop must not get stolen by round-robin mid-hold, and release
+    /// needs its own fade so a stop mid-buffer never clicks (<see cref="StopLoop"/>). One voice is
+    /// enough: only one gesture (the forge bellows) loops today.
+    ///
+    /// <para>Looping is driven by manually retriggering <see cref="Play"/> on <see cref="Finished"/>
+    /// (<see cref="OnLoopVoiceFinished"/>) rather than the stream's own baked-in <c>LoopMode</c> — the
+    /// SAME cached <see cref="SfxLibrary"/> stream that loops here must also stay safe to fire as a
+    /// plain one-shot on a POOLED voice elsewhere (a discrete <c>PumpStroke</c>); a stream-level
+    /// LoopMode would make every playback of it loop forever, one-shot or not.</para>
+    /// </summary>
+    private AudioStreamPlayer _loopVoice = null!;
+
+    /// <summary>The cue currently armed on <see cref="_loopVoice"/>, or null when nothing is
+    /// looping. <see cref="OnLoopVoiceFinished"/> and <see cref="StopLoop"/> both read this to decide
+    /// whether to keep breathing or let go.</summary>
+    private Cue? _loopCue;
+
+    /// <summary>True from <see cref="StopLoop"/> until its release fade lands — see
+    /// <see cref="_Process"/>.</summary>
+    private bool _loopReleasing;
+
+    private double _loopReleaseElapsed;
+
+    /// <summary>How long a released hold takes to fade to silence before the voice actually stops.
+    /// Short on purpose (this is a release, not a crossfade) but long enough that the stop is never a
+    /// click — an abrupt cut mid-buffer would click regardless of the clip's own DeClick fade, which
+    /// only smooths the CLIP's own edges, never an arbitrary interruption point.</summary>
+    private const float LoopReleaseSeconds = 0.12f;
 
     private AudioStreamPlayer _musicA = null!;
     private AudioStreamPlayer _musicB = null!;
@@ -211,6 +265,10 @@ public sealed partial class AudioDirector : Node
         _musicB = new AudioStreamPlayer { Name = "MusicB", VolumeDb = SilentDb };
         AddChild(_musicA);
         AddChild(_musicB);
+
+        _loopVoice = new AudioStreamPlayer { Name = "LoopVoice" };
+        AddChild(_loopVoice);
+        _loopVoice.Finished += OnLoopVoiceFinished;
     }
 
     /// <summary>
@@ -265,6 +323,74 @@ public sealed partial class AudioDirector : Node
         _nextVoice = (_nextVoice + 1) % _voices.Count;
         voice.Stream = SfxLibrary.Get(cue);
         voice.Play();
+    }
+
+    /// <summary>
+    /// Starts (or keeps alive) a HELD gesture's sustained loop on <see cref="_loopVoice"/> — U8, R8:
+    /// "the bellows shift since you have to hold" was the specific complaint, and a 0.3s one-shot per
+    /// grip was the wrong shape for a multi-second gesture. Idempotent for the SAME cue already
+    /// looping (calling it again mid-breath must not restart the clip's phase); a different cue
+    /// takes over the one dedicated voice immediately. No-op while <see cref="Muted"/>, matching
+    /// <see cref="Play"/>'s own contract.
+    /// </summary>
+    public void StartLoop(Cue cue)
+    {
+        if (_loopCue == cue && !_loopReleasing)
+        {
+            return; // already looping this cue — do not restart mid-breath
+        }
+
+        _loopCue = cue;
+        _loopReleasing = false;
+        _loopReleaseElapsed = -1;
+
+        if (Muted)
+        {
+            return;
+        }
+
+        _loopVoice.VolumeDb = 0f;
+        _loopVoice.Stream = SfxLibrary.Get(cue);
+        _loopVoice.Play();
+    }
+
+    /// <summary>
+    /// Releases the held loop with a short fade (<see cref="LoopReleaseSeconds"/>, driven by
+    /// <see cref="_Process"/>) instead of a hard <c>Stop()</c> — an instant cut mid-buffer would
+    /// click. A no-op if <paramref name="cue"/> is not the one currently armed (e.g. a stale call
+    /// after a different gesture already took the voice).
+    /// </summary>
+    public void StopLoop(Cue cue)
+    {
+        if (_loopCue != cue)
+        {
+            return;
+        }
+
+        if (Muted)
+        {
+            _loopCue = null;
+            _loopReleasing = false;
+            return;
+        }
+
+        _loopReleasing = true;
+        _loopReleaseElapsed = 0;
+    }
+
+    /// <summary>
+    /// Keeps a held breath going for as long as it is armed. The loop cue's own clip is short (a
+    /// single ~0.3s breath, seam-safe like a music-bed loop — see <see cref="Cue.Bellows"/>'s own
+    /// doc) — a multi-second hold needs many repeats, and this is the retrigger, never a new
+    /// gesture. Stops retriggering the instant <see cref="StopLoop"/> has armed the release fade.
+    /// </summary>
+    private void OnLoopVoiceFinished()
+    {
+        if (_loopCue is { } cue && !_loopReleasing && !Muted)
+        {
+            _loopVoice.Stream = SfxLibrary.Get(cue);
+            _loopVoice.Play();
+        }
     }
 
     /// <summary>
@@ -490,10 +616,30 @@ public sealed partial class AudioDirector : Node
         {
             voice.Stop();
         }
+
+        // Mute must actually stop EVERYTHING, including a held gesture's loop — otherwise a bellows
+        // hold started before mute would keep breathing silently-in-name-only until released.
+        _loopVoice.Stop();
+        _loopCue = null;
+        _loopReleasing = false;
+        _loopReleaseElapsed = -1;
     }
 
     public override void _Process(double delta)
     {
+        if (_loopReleasing)
+        {
+            _loopReleaseElapsed += delta;
+            var released = (float)Math.Clamp(_loopReleaseElapsed / LoopReleaseSeconds, 0, 1);
+            _loopVoice.VolumeDb = Mathf.Lerp(0f, SilentDb, released);
+            if (released >= 1f)
+            {
+                _loopVoice.Stop();
+                _loopReleasing = false;
+                _loopCue = null;
+            }
+        }
+
         if (_fadeElapsed < 0)
         {
             return;
