@@ -25,20 +25,28 @@ namespace GodotClient.Tests;
 [RequireGodotRuntime]
 public class TownSpriteArtTests
 {
-    /// <summary>What <c>TownAssets2D</c>/<c>TownLayout2D</c> lay the town out against. Changing it
-    /// moves every hand-placed tile coordinate, so it is pinned rather than derived.</summary>
-    private const int BodyWidth = 20;
-    private const int BodyHeight = 36;
+    /// <summary>What <c>TownAssets2D</c>/<c>TownLayout2D</c> lay the town out against. U6
+    /// (docs/plans/2026-08-02-002) resized the canvas 20x36 -> 26x44 (13x22 on screen at the fixed
+    /// 0.5 <c>CharacterSpriteScale</c>, still under the player's 15x23 — see
+    /// <c>CastProportionTests</c> for the permanent proportion pin) — a canvas resize, not a layout
+    /// change, since neither <c>TownLayout2D</c>'s tile coordinates nor this census pin size.</summary>
+    private const int BodyWidth = 26;
+    private const int BodyHeight = 44;
 
-    /// <summary>First row of the legs/hem. A step frame may differ at or below this row and
-    /// nowhere above it — that separation is what makes two frames read as a stride.</summary>
-    private const int LegsTopRow = 25;
+    /// <summary>First row of the legs/hem (U6: rows 0-1 empty margin, 2-12 head, 13-30 torso, then
+    /// legs/hem). A step frame may differ at or below this row and nowhere above it — that
+    /// separation is what makes two frames read as a stride.</summary>
+    private const int LegsTopRow = 31;
 
     /// <summary>A flat placeholder box is 2-3 colours. Real shading needs an outline, at least two
     /// body tones and a highlight, so anything under this is a regression to programmer art.</summary>
     private const int MinDistinctColors = 6;
 
-    private static readonly string[] Classes = ["vanguard", "striker", "mystic"];
+    /// <summary>U6: all six hero classes now have a hand-authored town body (sentinel/skirmisher/
+    /// occultist previously fell back to <c>IconRegistry.Sprite</c>'s roster SVG — see
+    /// <c>AssetResolutionCensusTests.KnownPendingIds</c>, now empty).</summary>
+    private static readonly string[] Classes =
+        ["vanguard", "sentinel", "striker", "skirmisher", "mystic", "occultist"];
 
     [TestCase]
     public void HeroBodies_AreThePinnedSize_AndCarryRealShading()
