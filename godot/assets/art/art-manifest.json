@@ -1,4 +1,10 @@
 {
+  "emberfall-backdrop": { "diffuse": true, "normal": false },
+  "emberfall-bellows-mad": { "diffuse": true, "normal": true },
+  "emberfall-cinder-imp": { "diffuse": true, "normal": true },
+  "emberfall-molten-archivist": { "diffuse": true, "normal": true },
+  "emberfall-slag-hound": { "diffuse": true, "normal": true },
+  "emberfall-undying-forge-heart": { "diffuse": true, "normal": true },
   "faction-crownsguard-emblem": { "diffuse": true, "normal": false },
   "faction-deepvein-emblem": { "diffuse": true, "normal": false },
   "forge": { "diffuse": true, "normal": false },

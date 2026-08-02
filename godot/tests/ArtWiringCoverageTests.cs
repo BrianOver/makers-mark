@@ -20,7 +20,11 @@ namespace GodotClient.Tests;
 /// icon per profession (blacksmith/tanning/engineering/alchemy), all 5 Mine monster portraits,
 /// both venues' backdrop+entrance (gloomwood/sunkencrypt) plus their floor monsters and props, all
 /// 8 town props, both faction crests, all 3 hero portraits, all 4 town buildings, and the Mine's
-/// own hub-tile backdrop.</para>
+/// own hub-tile backdrop. Task #80 (below) extends this with the Emberfall Foundry's backdrop +
+/// its 5 monster portraits — hand-authored pixel grids (no GPU/ComfyUI this session), same
+/// diffuse/normal contract as every SDXL-family sibling. The venue itself stays dormant
+/// (<c>GameSim.Venues.VenueRegistry.LiveRotation</c> unchanged) — this wave only unblocks the
+/// art; going live is a separate, not-yet-made balance decision.</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -62,6 +66,17 @@ public class ArtWiringCoverageTests
     private static readonly string[] SunkenCryptMonsterKinds =
     [
         "Crypt Crab", "Bog-Wight", "Choir of Teeth", "Reliquary Mimic", "The Undertow",
+    ];
+
+    // --- Emberfall art wave (task #80) -----------------------------------------------------
+
+    // EmberfallFoundryVenue.Build()'s 5 floor kinds (sim/GameSim/Venues/Emberfall/
+    // EmberfallFoundryVenue.cs) -- the venue is registered (GameSim.Venues.VenueRegistry.All)
+    // but DORMANT (not in VenueRegistry.LiveRotation): this wave only unblocks its art, it does
+    // not flip the venue live (a separate, not-yet-made balance decision).
+    private static readonly string[] EmberfallMonsterKinds =
+    [
+        "Cinder Imp", "Slag Hound", "The Bellows-Mad", "Molten Archivist", "The Undying Forge-Heart",
     ];
 
     // Venue props (GloomwoodSpecs.cs + SunkenCryptSpecs.cs) — no typed AssetCatalog resolver (same
@@ -247,6 +262,36 @@ public class ArtWiringCoverageTests
         var lit = IconRegistry.Lit(backdropId);
         AssertThat(lit).IsNotNull();
         AssertThat(lit!.NormalTexture).IsNull();
+    }
+
+    [TestCase]
+    public void EmberfallBackdrop_ResolvesWithoutNormal()
+    {
+        // Task #80's go-live gate, same shape as MineBackdrop_ResolvesWithoutNormal below: the
+        // venue is dormant (GameSim.Venues.VenueRegistry.LiveRotation doesn't include it) purely
+        // because its art didn't exist -- this is the census row that flips red-before/green-
+        // after the art lands (see VenueRegistry.LiveRotation's own remarks on the flip gate).
+        const string emberfallVenueId = "emberfall";
+        var backdropId = AssetCatalog.VenueBackdropId(emberfallVenueId);
+        AssertThat(backdropId).IsEqual("emberfall-backdrop");
+        AssertThat(AssetCatalog.VenueBackdrop(emberfallVenueId)).IsNotNull();
+        AssertThat(AssetCatalog.Has(backdropId)).IsTrue();
+        AssertThat(AssetCatalog.HasNormal(backdropId)).IsFalse();
+        var lit = IconRegistry.Lit(backdropId);
+        AssertThat(lit).IsNotNull();
+        AssertThat(lit!.NormalTexture).IsNull();
+    }
+
+    [TestCase]
+    public void AllFiveEmberfallMonsters_ResolveWithNormal()
+    {
+        // The exact five monsters EmberfallFoundryVenue.Build() spawns (task #80's PR body has
+        // the full roster trace) -- BestiaryPanel iterates VenueRegistry.All (not just
+        // LiveRotation), so a dormant venue's monsters are already reachable there today.
+        foreach (var kind in EmberfallMonsterKinds)
+        {
+            AssertMonsterResolvesWithNormal(kind, "emberfall");
+        }
     }
 
     [TestCase]

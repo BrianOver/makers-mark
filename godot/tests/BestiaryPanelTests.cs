@@ -3,6 +3,7 @@ using System.Linq;
 using GameSim.Venues;
 using GdUnit4;
 using Godot;
+using GodotClient;
 using GodotClient.Panels;
 using GodotClient.Town;
 using static GdUnit4.Assertions;
@@ -47,11 +48,12 @@ public class BestiaryPanelTests
         {
             ui.Bestiary.ShowAll();
 
-            // Venues iterate Id-sorted (emberfall, gloomwood, mine, sunken-crypt); Emberfall's five
-            // monsters have no committed portrait, so the first WITH one is Gloomwood F1's Bramble
-            // Boar — the viewer is never blank on open.
+            // Venues iterate Id-sorted (emberfall, gloomwood, mine, sunken-crypt). Task #80
+            // committed the Emberfall Foundry's backdrop + all five monster portraits, so the
+            // first monster WITH a portrait is now Emberfall F1's Cinder Imp — the viewer is
+            // never blank on open.
             AssertThat(ui.Bestiary.SelectedHasPortrait).IsTrue();
-            AssertThat(ui.Bestiary.SelectedKind).IsEqual("Bramble Boar");
+            AssertThat(ui.Bestiary.SelectedKind).IsEqual("Cinder Imp");
         }
         finally { Unmount(ui); }
     }
@@ -72,40 +74,37 @@ public class BestiaryPanelTests
     }
 
     [TestCase]
-    public void SelectingMonsterWithoutPortrait_FallsBackGracefully_NoPortrait()
+    public void SelectingEmberfallMonster_ShowsPortrait()
     {
+        // Task #80 closed the gap these two tests used to pin (pre-#80, EVERY Emberfall monster
+        // fell back to the text-only card — see git history for
+        // `SelectingMonsterWithoutPortrait_FallsBackGracefully_NoPortrait` and
+        // `SelectingEmberfallMonster_WithGenMeshButNoPortrait_StillFallsBackGracefully`, both
+        // retired here since their premise — a registered monster with no committed portrait —
+        // no longer exists anywhere in VenueRegistry.All). Cinder Imp F1 now resolves the same
+        // way Gloomwood/Sunken Crypt's monsters already did.
         var ui = MountMainUi();
         try
         {
             ui.Bestiary.ShowAll();
-            PressEnabled(ui.Bestiary, "Bestiary_cinder-imp"); // Emberfall — registered, no portrait art yet
+            PressEnabled(ui.Bestiary, "Bestiary_cinder-imp");
 
             AssertThat(ui.Bestiary.SelectedKind).IsEqual("Cinder Imp");
-            AssertThat(ui.Bestiary.SelectedHasPortrait).IsFalse(); // graceful: card, not a crash
+            AssertThat(ui.Bestiary.SelectedHasPortrait).IsTrue();
         }
         finally { Unmount(ui); }
     }
 
     [TestCase]
-    public void SelectingEmberfallMonster_WithGenMeshButNoPortrait_StillFallsBackGracefully()
+    public void UnregisteredMonsterKind_StillFallsBackGracefully_NoPortrait()
     {
-        // Slag Hound/Bellows-Mad/Molten Archivist/Undying Forge-Heart each had a retired GLB but
-        // were NEVER given a 2D portrait — deleting the mesh tree (chore/kill-3d-residue) drops
-        // these four from "shows art" to the same text-only card Cinder Imp always used, since no
-        // 2D substitute exists in the repo. Documented art gap (Emberfall is built + banded but
-        // DORMANT — held out of VenueRegistry.LiveRotation until this exact gap is filled), not a
-        // wiring defect: this pins the graceful-degrade behavior so the Emberfall art wave that
-        // gates its go-live is a pure addition, not a fix.
-        var ui = MountMainUi();
-        try
-        {
-            ui.Bestiary.ShowAll();
-            PressEnabled(ui.Bestiary, "Bestiary_slag-hound");
-
-            AssertThat(ui.Bestiary.SelectedKind).IsEqual("Slag Hound");
-            AssertThat(ui.Bestiary.SelectedHasPortrait).IsFalse();
-        }
-        finally { Unmount(ui); }
+        // The graceful-degrade contract itself (never a crash on a kind with no art) still needs
+        // a live pin now that every REGISTERED monster has a committed portrait (task #80 closed
+        // the last gap) — no button in ShowAll's own venue/floor iteration can reach an unknown
+        // kind any more, so this calls the same resolver the panel's Select() does directly
+        // (AssetCatalogTests.UnknownConcept_HasFalseAndNullReturn_NoThrow pins the non-Godot half
+        // of this same contract; this is the Godot-runtime half).
+        AssertThat(AssetCatalog.MonsterPortrait("no-such-monster")).IsNull();
     }
 
     [TestCase]
@@ -133,7 +132,7 @@ public class BestiaryPanelTests
         var ui = MountMainUi();
         try
         {
-            ui.Bestiary.ShowAll(); // auto-selects Bramble Boar
+            ui.Bestiary.ShowAll(); // auto-selects Cinder Imp (see OnOpen_AutoSelectsFirstMonsterThatHasAPortrait)
             var portrait = Find<TextureRect>(ui.Bestiary, "BestiaryPortrait");
             AssertThat(portrait.Modulate.A).IsEqual(0f);
 
