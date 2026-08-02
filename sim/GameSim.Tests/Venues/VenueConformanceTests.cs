@@ -137,18 +137,17 @@ public class VenueConformanceTests
     }
 
     [Fact]
-    public void LiveRotation_IsExactlyMineGloomwoodAndCrypt()
+    public void LiveRotation_IsExactlyMineGloomwoodCryptAndEmberfall()
     {
         // The live-venue contract (P4): a registered venue is NOT automatically live. T1 content
-        // flip (relands PR #242): the Sunken Crypt joins the Mine and Gloomwood, in this exact
-        // order — callers seed VenueRouter's queue dictionary from this array, and every golden
-        // replay that reads LiveRotation's order depends on it. Emberfall is deliberately ABSENT:
-        // built, banded (EntryPower 72), and dormant until its art wave — it measured 44% of all
-        // routed parties when briefly live, which would have pointed half the game's raids at
-        // placeholder glyphs (see VenueRegistry.LiveRotation's own doc). A venue joins only
-        // through its own determinism-gated re-baseline.
+        // flip (relands PR #242, landed #328): the Sunken Crypt joined the Mine and Gloomwood, in
+        // this exact order — callers seed VenueRouter's queue dictionary from this array, and every
+        // golden replay that reads LiveRotation's order depends on it. P3/task #45 unlock: Emberfall
+        // is APPENDED here (built, banded EntryPower 72, its own determinism-gated re-baseline) —
+        // it was held dormant by #328 solely for missing art (see VenueRegistry.LiveRotation's doc);
+        // this PR ships as a draft until `feat/emberfall-art-set` lands the backdrop/portraits.
         Assert.Equal(
-            new[] { VenueRegistry.MineId, "gloomwood", "sunken-crypt" },
+            new[] { VenueRegistry.MineId, "gloomwood", "sunken-crypt", "emberfall" },
             VenueRegistry.LiveRotation);
     }
 

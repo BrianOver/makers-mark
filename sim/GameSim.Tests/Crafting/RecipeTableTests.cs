@@ -59,11 +59,12 @@ public class RecipeTableTests
     public void MaterialGrades_MatchTheSpec()
     {
         // MaterialGrades derives from MaterialRegistry.PricedPool (M1 delegation). T1 content flip
-        // (relands PR #242): the Sunken Crypt's ore ladder joins the Mine's and the Gloomwood's,
-        // so the pool is 14 keys (dormant Emberfall's ladder waits for its art-gated go-live) — see
+        // (relands PR #242, landed #328): the Sunken Crypt's ore ladder joined the Mine's and the
+        // Gloomwood's. P3/task #45 unlock: Emberfall's ladder joins too now that the venue is live,
+        // so the pool is 19 keys — see
         // MaterialRegistryTests.PricedPool_IsEveryLiveVenueOreLadder_AndMaterialGradesMirrorsIt
         // for the full oracle. The five Mine grades stay byte-identical; only the count moved.
-        Assert.Equal(14, RecipeTable.MaterialGrades.Count);
+        Assert.Equal(19, RecipeTable.MaterialGrades.Count);
         Assert.Equal(1, RecipeTable.MaterialGrades["copper"]);
         Assert.Equal(2, RecipeTable.MaterialGrades["iron"]);
         Assert.Equal(3, RecipeTable.MaterialGrades["steel"]);

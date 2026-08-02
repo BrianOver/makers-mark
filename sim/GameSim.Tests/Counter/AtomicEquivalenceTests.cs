@@ -137,8 +137,20 @@ public class AtomicEquivalenceTests
     // shifts. Same stream, different position (PhaseBNoDrawGate: Inc byte-identical, State moved);
     // no new draw site (the router is still pure integer comparison). Third recorded re-pin, one
     // deliberate re-baseline window for the whole branch.
+    // RE-BASELINED (2026-08-02, P3/task #45 unlock — Emberfall flip, its own deliberate
+    // re-baseline): **Class 2 — routing decisions change, draw-free.** VenueRegistry.LiveRotation
+    // gains "emberfall" (band 72, tied with Gloomwood); over this 30-day idle trace at least one
+    // party now crosses into the 72 band and the Mine/Gloomwood/Emberfall tie-break (queue length,
+    // then Ordinal id) sends it to a DIFFERENT venue than before, shifting every combat draw after
+    // that crossing — unlike the #328 "no idle trace reaches 72" measurement, which was taken
+    // against the three-class baseline; the now-six-class RecruitPool changes hero power growth
+    // enough that this idle trace does cross. PhaseBNoDrawGateTests confirms this: Inc is
+    // byte-identical to the value above, only State moved — no new `rng.` draw site, the router is
+    // still pure integer comparison. MaterialRegistry.PricedPool also gains Emberfall's 5-key ore
+    // ladder in the same commit (pool-derived vendor/pricing surfaces reserialize regardless of
+    // whether the RNG stream moved — the #328 "Class 0b" precedent for the reverse direction).
     private const string ExpectedPreCounterSha256 =
-        "34CF8A6F1985CC6105BF70B73CFD7BAC55D9B915116B6C70ADD42DF88AB8F4D2";
+        "5B9A524E7CB67AF02A50446D2E0293BF8CCBDB4F1654669C678390F16A606AB5";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

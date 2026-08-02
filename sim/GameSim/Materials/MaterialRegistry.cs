@@ -84,22 +84,26 @@ public static class MaterialRegistry
     /// the second live venue, so its four ores join the pool HERE in the same re-baseline — a hero
     /// returning with greenheart/amberpitch/moonresin/heartwood must be priceable at the Evening
     /// reveal (<c>OrePricing.UnitPrice</c> throws for anything unpriced) or the reveal crashes.
-    /// T1 flip: the Sunken Crypt's five ores join the same way. Registered add-on materials with
-    /// no live venue (electrum, orichalcum, dormant Emberfall's ores) stay OUT of the pool until
-    /// THEIR venues go live.
+    /// T1 flip (PR #328): the Sunken Crypt's five ores join the same way. P3/task #45 unlock: the
+    /// Emberfall's five ores (firebrick..heartcoal, grade 12-16) join now that
+    /// <c>VenueRegistry.LiveRotation</c> includes it — see that flip's doc for why it was held
+    /// dormant until now (no committed art) and why this ships as a draft PR. Registered add-on
+    /// materials with no live venue (electrum, orichalcum) stay OUT of the pool until THEIR venues
+    /// go live.
     /// </summary>
     public static readonly ImmutableArray<string> PricedPool = ImmutableArray.Create(
         Copper, Iron, Steel, Mithril, Adamant,
         "greenheart", "amberpitch", "moonresin", "heartwood", // Gloomwood's four ores (raw literals —
         // matches how they're already registered above; no Venues.Gloomwood dependency from Materials.
-        // T1 content flip (relands PR #242): Sunken Crypt joins VenueRegistry.LiveRotation, so its
-        // ore ladder must be priceable at the Evening reveal in the same re-baseline —
-        // OrePricing.UnitPrice throws for anything a live venue mints that isn't in this pool.
-        // Emberfall's ladder (firebrick..heartcoal, grade 12-16) stays OUT: the venue is built,
-        // banded, and DORMANT pending its art wave (see VenueRegistry.LiveRotation), and the pool
-        // is also the Forge vendor's shelf — pricing forge-ore no live venue mints would sell the
-        // player grade-12+ materials the world cannot yet produce.
-        "verdigris", "saltglass", "bonechalk", "drowned-silver", "abyss-pearl"); // Sunken Crypt (grade 1-5)
+        // T1 content flip (relands PR #242, landed in #328): Sunken Crypt joins
+        // VenueRegistry.LiveRotation, so its ore ladder must be priceable at the Evening reveal in
+        // the same re-baseline — OrePricing.UnitPrice throws for anything a live venue mints that
+        // isn't in this pool.
+        "verdigris", "saltglass", "bonechalk", "drowned-silver", "abyss-pearl", // Sunken Crypt (grade 1-5)
+        // P3/task #45 unlock: Emberfall joins VenueRegistry.LiveRotation, so its ladder must be
+        // priceable at the Evening reveal in the same re-baseline. Was held out while the venue was
+        // dormant (built, banded, no committed art); see VenueRegistry.LiveRotation's doc.
+        "firebrick", "slagiron", "quench-salt", "emberglass", "heartcoal"); // Emberfall (grade 12-16)
 
     /// <summary>Resolve a material definition by key.</summary>
     public static bool TryGet(string id, out MaterialDefinition? definition)

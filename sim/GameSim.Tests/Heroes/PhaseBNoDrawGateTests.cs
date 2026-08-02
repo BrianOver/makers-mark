@@ -44,6 +44,14 @@ public class PhaseBNoDrawGateTests
         // RE-BASELINED (2026-08-01 same PR window, Gloomwood band 55 → 72): same class as above —
         // mid-power idle parties now stay in the early band until 72, so their venues and combat
         // draw counts shift again. `Inc` STILL byte-identical; only `State` moved.
-        Assert.Equal(new RngState(18014097083248745424UL, 13279888329118852579UL), state.Rng);
+        // RE-BASELINED (2026-08-02, P3/task #45 unlock — Emberfall flip): same class again —
+        // `VenueRegistry.LiveRotation` gains "emberfall" at band 72 (tied with Gloomwood), and this
+        // 30-day idle trace now has a party cross into that band (the six-class RecruitPool that
+        // #328 already shipped changes hero power growth vs. the three-class baseline the "no idle
+        // trace reaches 72" claim was measured against), so the Mine/Gloomwood/Emberfall tie-break
+        // sends it to a different venue and every downstream combat draw shifts. `Inc` is STILL
+        // byte-identical (13279888329118852579) — the router stays pure integer comparison, no new
+        // `rng.` draw site — only `State` moved.
+        Assert.Equal(new RngState(5771294674252808564UL, 13279888329118852579UL), state.Rng);
     }
 }
