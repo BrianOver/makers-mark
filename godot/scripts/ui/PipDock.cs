@@ -17,18 +17,32 @@ namespace GodotClient.Ui;
 /// (accumulated-delta only, no Tween — repo convention). Click the arrow to cycle the active party
 /// among however many are live; click the body to raise <see cref="ExpandRequested"/>, which
 /// <c>MainUi</c> wires to <c>ScryingMirror.ShowMirror</c>.
+///
+/// <para><b>U9 (world-and-interiors plan, R5) — "too small and unsure what its even supposed to
+/// show."</b> The dock now NAMES itself (<see cref="_titleLabel"/>, "SCRYING MIRROR" — it never
+/// said what it was), states its expand affordance in plain words ("Watch the delve ⤢" instead
+/// of the unlabelled "Mirror ⤢"), and shows a row of party HP pips (<see cref="_hpPipsRow"/>,
+/// plain <see cref="ColorRect"/>s — never a viewport, this dock stays text/rect-only by design)
+/// so the party's state reads at a glance without opening the Mirror at all. <see
+/// cref="DockHeight"/> grows 76→96px to fit the extra two rows without truncating anything.</para>
 /// </summary>
 public partial class PipDock : Control
 {
     private const float SlideSeconds = 0.35f; // accumulated-delta slide, not a Tween
     private const float DockWidth = 300f;
-    private const float DockHeight = 76f;
+    private const float DockHeight = 96f; // U9 (R5): was 76 — "too small" — grew for the title + HP pips rows
+
+    /// <summary>Fixed size of one party-member HP pip (U9, R5) — small enough that three (the v1
+    /// party cap, <c>MineWatch.MaxFigures</c>) sit comfortably inside <see cref="DockWidth"/>.</summary>
+    private static readonly Vector2 PipSize = new(18f, 12f);
 
     private PanelContainer _root = null!;
+    private Label _titleLabel = null!;
     private Label _feedLabel = null!;
     private Label _partyLabel = null!;
     private Button _cycleButton = null!;
     private Button _expandButton = null!;
+    private HBoxContainer _hpPipsRow = null!;
 
     private readonly JourneyFeed _feed = new();
     private int _activeIndex;
@@ -86,6 +100,18 @@ public partial class PipDock : Control
         var body = new VBoxContainer();
         _root.AddChild(body);
 
+        // U9 (R5): "unsure what its even supposed to show" — the dock never named itself. A
+        // small dim title, same styling convention as MainUi's own ClockLabel caption.
+        _titleLabel = new Label
+        {
+            Name = "PipTitle",
+            Text = "SCRYING MIRROR",
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        _titleLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        _titleLabel.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
+        body.AddChild(_titleLabel);
+
         var headerRow = new HBoxContainer();
         body.AddChild(headerRow);
 
@@ -96,7 +122,14 @@ public partial class PipDock : Control
         _cycleButton.Pressed += CycleActiveParty;
         headerRow.AddChild(_cycleButton);
 
-        _expandButton = new Button { Name = "PipExpand", Text = "Mirror ⤢" };
+        // U9 (R5): party HP at a glance — plain ColorRects (never a viewport in this dock),
+        // populated by UpdateHpPips from the same InFlight/Heroes data MineWatch's own Camp
+        // rendering reads. Empty (no children) whenever the active party's live hp isn't known
+        // yet (Expedition/Rumored — nothing fabricated).
+        _hpPipsRow = new HBoxContainer { Name = "PipHpPips" };
+        body.AddChild(_hpPipsRow);
+
+        _expandButton = new Button { Name = "PipExpand", Text = "Watch the delve ⤢" };
         _expandButton.Pressed += () => ExpandRequested?.Invoke();
         body.AddChild(_expandButton);
 
@@ -133,8 +166,60 @@ public partial class PipDock : Control
         }
 
         _wantsVisible = state.Phase is DayPhase.Expedition or DayPhase.Camp or DayPhase.ExpeditionDeep;
+        UpdateHpPips(state);
         UpdateLabels();
     }
+
+    /// <summary>
+    /// U9 (R5): rebuild the active party's HP pip row from <see cref="GameState.InFlight"/> — the
+    /// same live per-hero hp <c>MineWatch.RenderCamp</c> reads, matched to the dock's active card
+    /// by <see cref="JourneyStream.PartyKeyOf"/> (the same stable identity <see cref="_feed"/>
+    /// already keys its cards on). Empty whenever the active card has no matching InFlight entry
+    /// yet (Expedition/Rumored — hp isn't known, so nothing is fabricated) or once it resolved
+    /// (Camp/Deep only — the sim's only live-hp source).
+    /// </summary>
+    private void UpdateHpPips(GameState state)
+    {
+        foreach (var child in _hpPipsRow.GetChildren())
+        {
+            _hpPipsRow.RemoveChild(child);
+            child.QueueFree();
+        }
+
+        if (_activeIndex >= _feed.Cards.Count)
+        {
+            return;
+        }
+
+        var card = _feed.Cards[_activeIndex];
+        var inFlight = state.InFlight.FirstOrDefault(f => JourneyStream.PartyKeyOf(f.Party) == card.PartyKey);
+        if (inFlight is null)
+        {
+            return;
+        }
+
+        foreach (var heroId in inFlight.Party)
+        {
+            var hp = inFlight.Hp.TryGetValue(heroId.Value, out var hpValue) ? hpValue : 0;
+            var maxHp = state.Heroes.TryGetValue(heroId.Value, out var hero) ? hero.MaxHp : 0;
+            var fraction = maxHp > 0 ? Mathf.Clamp((float)hp / maxHp, 0f, 1f) : 1f;
+            var name = state.Heroes.TryGetValue(heroId.Value, out var named) ? named.Name : $"Hero #{heroId.Value}";
+
+            _hpPipsRow.AddChild(new ColorRect
+            {
+                Name = $"HpPip_{heroId.Value}",
+                CustomMinimumSize = PipSize,
+                Color = PipColorFor(fraction),
+                TooltipText = $"{name} — {hp}/{maxHp} hp",
+            });
+        }
+    }
+
+    /// <summary>Green above 60% hp, amber down to 30%, red below — same three-tier read
+    /// <c>MineWatch</c>'s slump pose already uses at the 40% line, widened to a full ramp since a
+    /// flat pip has no pose to fall back on.</summary>
+    private static Color PipColorFor(float fraction) =>
+        fraction >= 0.6f ? GameTheme.GoodColor : fraction >= 0.3f ? GameTheme.WarnColor : GameTheme.DangerColor;
 
     /// <summary>Cycle the active party among however many are live (test hook + button handler).</summary>
     public void CycleActiveParty()

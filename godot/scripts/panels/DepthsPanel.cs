@@ -29,6 +29,14 @@ namespace GodotClient.Panels;
 /// underground, collapsed to zero height otherwise. Refreshed every tick alongside the venue
 /// grid; degrades to fully inert (never shown) if its art is missing, so this panel's own
 /// pre-LW5 behavior is unchanged either way.</para>
+///
+/// <para><b>U9 (world-and-interiors plan, KTD-4).</b> This panel no longer constructs its own
+/// <see cref="MineWatch"/> — it is now a SINGLE shared instance <c>MainUi</c> owns and refreshes
+/// every tick regardless of host (constraint 4: never two live SubViewports). This panel is the
+/// strip's RESTING host: <see cref="MountWatch"/> parks it as the first child of the panel's own
+/// root VBox, exactly where it always sat, whenever <c>ScryingMirror</c> is not borrowing it.
+/// <see cref="Watch"/> reads the actual current child rather than a cached field, so it always
+/// answers "is the strip here right now", never a stale handle from before it was lent out.</para>
 /// </summary>
 public partial class DepthsPanel : SimPanel
 {
@@ -60,30 +68,39 @@ public partial class DepthsPanel : SimPanel
         Math.Max(1, (int)(availableWidth / VenueTileSize.X));
 
     private GridContainer? _venueGrid;
-    private MineWatch? _mineWatch;
-    private PhaseClock? _clock;
+    private VBoxContainer? _root;
 
-    /// <summary>The LW5 lit strip (test/tuning hook) — null only before the first <see
-    /// cref="_Ready"/>/<see cref="Refresh"/> call builds the panel.</summary>
-    public MineWatch? Watch => _mineWatch;
-
-    /// <summary>U25 follow-up (a): forwarded to <see cref="MineWatch.Clock"/> so its journey feed
-    /// pauses with the clock. Settable before <see cref="EnsureBuilt"/> has run (MainUi wires this
-    /// right after construction) — cached and re-applied once the strip actually exists.</summary>
-    public PhaseClock? Clock
-    {
-        get => _clock;
-        set
-        {
-            _clock = value;
-            if (_mineWatch is not null)
-            {
-                _mineWatch.Clock = value;
-            }
-        }
-    }
+    /// <summary>The strip currently mounted here (test/tuning hook) — null while <see
+    /// cref="ScryingMirror"/> has borrowed it instead (see <see cref="MountWatch"/>/<c>MainUi.Watch</c>).
+    /// Computed off the actual current child rather than a cached field, so it can never answer
+    /// stale (U9, KTD-4).</summary>
+    public MineWatch? Watch => _root?.GetChildren().OfType<MineWatch>().FirstOrDefault();
 
     public override void _Ready() => EnsureBuilt();
+
+    /// <summary>
+    /// U9 (world-and-interiors plan, KTD-4): accept the single shared <see cref="MineWatch"/>
+    /// instance, stealing it from wherever it currently sits (constraint 4 — exactly one parent,
+    /// ever) and parking it as this panel's FIRST child so it claims real layout height above the
+    /// venue grid, exactly the position it built itself into before this panel's own construction
+    /// owned it. Called by <c>MainUi</c> once at boot (the strip's resting default) and again
+    /// every time <see cref="ScryingMirror"/> hands it back on close.
+    /// </summary>
+    public void MountWatch(MineWatch watch)
+    {
+        EnsureBuilt();
+        if (watch.GetParent() != _root)
+        {
+            watch.GetParent()?.RemoveChild(watch);
+            _root!.AddChild(watch);
+            _root!.MoveChild(watch, 0);
+        }
+
+        // Depths is a DRAWER, not a Clock-pausing modal — restore the strip's normal
+        // "respect an actual player pause" contract (U25), which ScryingMirror force-overrides
+        // for as long as it borrows the strip (see MineWatch.ForceRevealWhilePaused's own doc).
+        watch.ForceRevealWhilePaused = false;
+    }
 
     public override void Refresh()
     {
@@ -94,7 +111,6 @@ public partial class DepthsPanel : SimPanel
         }
 
         var state = Adapter.CurrentState;
-        _mineWatch!.Refresh(state, Adapter.LastEvents);
 
         Clear(_venueGrid!);
         // U-C4: a tile per LIVE venue, straight from VenueRegistry.LiveRotation — Mine, Gloomwood,
@@ -176,7 +192,7 @@ public partial class DepthsPanel : SimPanel
 
     private void EnsureBuilt()
     {
-        if (_venueGrid is not null)
+        if (_root is not null)
         {
             return;
         }
@@ -185,14 +201,13 @@ public partial class DepthsPanel : SimPanel
         // so the depths watch strip claims real height ABOVE the scroll instead of the scroll
         // covering the whole panel and the strip overlapping it. The scroll below still fills
         // whatever height the strip doesn't claim (SizeFlagsVertical.ExpandFill).
+        //
+        // U9 (KTD-4): no longer constructs a MineWatch here — MainUi mounts the single shared
+        // instance into this VBox's first child slot via MountWatch, once _root exists.
         var root = new VBoxContainer { Name = "DepthsRoot" };
         root.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(root);
-
-        _mineWatch = new MineWatch();
-        root.AddChild(_mineWatch);
-        _mineWatch.Build();
-        _mineWatch.Clock = _clock;
+        _root = root;
 
         // Horizontal scroll disabled (U7/R7 precedent — BuildScrollBody's own reasoning): with it
         // enabled the child gets unbounded horizontal space, so autowrap labels lose their real

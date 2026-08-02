@@ -10,14 +10,24 @@ namespace GodotClient.Panels;
 
 /// <summary>
 /// LW5 — the depths watch: a lit <see cref="SubViewport"/> strip (SubViewport trap,
-/// SubViewport-scoped <see cref="CanvasModulate"/>, null-tolerant lit sprites) mounted at the top of
-/// <c>DepthsPanel</c>. Live ONLY while a party is underground —
-/// <see cref="DayPhase.Expedition"/>/<see cref="DayPhase.Camp"/>/
-/// <see cref="DayPhase.ExpeditionDeep"/> — collapsed to zero height otherwise, so the venue-hub
-/// grid beneath it renders exactly as it always has when nobody is raiding. Zero sim/Contracts
+/// SubViewport-scoped <see cref="CanvasModulate"/>, null-tolerant lit sprites). Live ONLY while a
+/// party is underground — <see cref="DayPhase.Expedition"/>/<see cref="DayPhase.Camp"/>/
+/// <see cref="DayPhase.ExpeditionDeep"/> — collapsed to zero height otherwise, so whichever host
+/// panel sits beneath it renders exactly as it always has when nobody is raiding. Zero sim/Contracts
 /// writes (KTD2): <see cref="Refresh"/> only ever READS <see cref="GameState"/> and the tick's
 /// <see cref="GameEvent"/> batch; every animation below is driven by accumulated frame delta
 /// (<see cref="_time"/>), never wall-clock, never engine RNG.
+///
+/// <para><b>U9 (world-and-interiors plan, KTD-4) — one shared instance, two borrowing hosts.</b>
+/// This class used to be constructed and owned by <c>DepthsPanel</c> alone; it is now a SINGLE
+/// instance <c>MainUi</c> constructs once and <see cref="Refresh"/>es unconditionally every tick
+/// (regardless of which host currently shows it), while <c>DepthsPanel</c> and <c>ScryingMirror</c>
+/// each borrow it via their own <c>MountWatch</c> — always by stealing it from wherever it
+/// currently sits (<c>Node.RemoveChild</c> before <c>AddChild</c>), so there is never a moment
+/// with two parents, let alone two live <see cref="SubViewport"/>s (constraint 4's central
+/// hazard). <see cref="ForceRevealWhilePaused"/> exists because the two hosts differ in one load-
+/// bearing way: <c>DepthsPanel</c> is a drawer that never touches <see cref="PhaseClock"/>, while
+/// <c>ScryingMirror</c> is a modal that always force-pauses it on open.</para>
 ///
 /// <para><b>State model.</b> The marching party is the most recent <see cref="PartyDeparted"/>
 /// party, cached across ticks — a <see cref="GameEvent"/> batch is momentary (only live in
@@ -89,6 +99,23 @@ public partial class MineWatch : SubViewportContainer
     /// pre-U25 behavior), never a crash.</summary>
     public PhaseClock? Clock { get; set; }
 
+    /// <summary>
+    /// U9 (world-and-interiors plan, KTD-4): the shared strip is now borrowed by two hosts —
+    /// <c>DepthsPanel</c> (a drawer, which never touches <see cref="Clock"/>) and
+    /// <c>ScryingMirror</c> (a modal that unconditionally force-pauses <see cref="PhaseClock"/>
+    /// while it is open, see <c>MainUi.OnMirrorVisibilityChanged</c>). Gating this strip's own
+    /// feed/beat reveal on <c>Clock.Playing</c> — correct while <c>DepthsPanel</c> owns it, so a
+    /// genuine player pause still freezes the story — would ALSO freeze it the instant a player
+    /// opened the Mirror to watch it, since that open is what paused the clock in the first
+    /// place. That is the exact bug <c>ScryingMirror</c>'s own feed was already fixed for (see its
+    /// <c>_Process</c> remarks: "gating this feed on Playing would freeze it the instant it
+    /// opens"). Each host sets this on <c>MountWatch</c> — false for <c>DepthsPanel</c> (restore
+    /// the normal pause-respecting contract), true for <c>ScryingMirror</c> (always keep
+    /// revealing while the player is looking at it) — so the same instance behaves correctly in
+    /// both homes.
+    /// </summary>
+    public bool ForceRevealWhilePaused { get; set; }
+
     private static readonly Color AmbientTint = new(0.30f, 0.33f, 0.52f); // dark-cool — contrast for the warm torch/fire
     private static readonly Color TorchColor = new(1f, 0.72f, 0.42f);
     private static readonly Color CampfireColor = new(1f, 0.55f, 0.24f);
@@ -111,6 +138,14 @@ public partial class MineWatch : SubViewportContainer
     private Texture2D? _backdropTexture;
     private readonly List<Sprite2D> _backdropTiles = [];
     private float _backdropContainerWidth = -1f; // -1 forces the first RebuildBackdropTiles call
+
+    /// <summary>U9 (KTD-4): which venue's art the backdrop currently shows — starts at the Mine
+    /// (matches <see cref="Build()"/>'s own default) and swaps via <see cref="ApplyVenueBackdrop"/>
+    /// the first time <see cref="Refresh"/> can resolve a REAL raided venue off <see
+    /// cref="GameState.InFlight"/>/<see cref="GameState.PendingExpeditions"/>. Never reset back to
+    /// Mine on its own — between raids (both empty) the strip is Hidden anyway, so the stale value
+    /// is invisible and the next departure's own Refresh resolves the real venue again.</summary>
+    private string _backdropVenueId = MineVenueId;
     private PointLight2D _torch = null!;
     private PointLight2D _campfireLight = null!;
     private CpuParticles2D _embers = null!;
@@ -162,6 +197,10 @@ public partial class MineWatch : SubViewportContainer
     /// <summary>True once "mine-backdrop" resolved — false degrades the WHOLE strip forever,
     /// whatever the phase (see type remarks).</summary>
     public bool HasContent { get; private set; }
+
+    /// <summary>The venue id (<c>VenueRegistry</c> key, e.g. "mine"/"gloomwood"/"sunken-crypt")
+    /// the currently-shown backdrop was resolved from (test/tuning hook, U9 KTD-4).</summary>
+    public string BackdropVenueId => _backdropVenueId;
 
     /// <summary>The lit world's dark-cool ambient tint (test/tuning hook).</summary>
     public CanvasModulate Ambient => _ambient;
@@ -303,13 +342,23 @@ public partial class MineWatch : SubViewportContainer
     }
 
     /// <summary>
-    /// Rebuild the strip's choreography from the live world. Called from <c>DepthsPanel.Refresh</c>
-    /// every tick (KTD2: reads <paramref name="state"/>/<paramref name="lastEvents"/> only — no
-    /// sim/Contracts writes, ever).
+    /// Rebuild the strip's choreography from the live world. Called once per tick, regardless of
+    /// which host currently mounts the strip (U9, KTD-4: <c>MainUi.RefreshAll</c> — MineWatch is a
+    /// single shared instance now, not something only its current host refreshes) — reads
+    /// <paramref name="state"/>/<paramref name="lastEvents"/> only, never writes sim/Contracts.
     /// </summary>
     public void Refresh(GameState state, ImmutableList<GameEvent> lastEvents)
     {
         Build();
+
+        // U9 (KTD-4): the backdrop follows the party's ACTUAL raided venue instead of always
+        // showing the Mine — resolved off the live/resolved party record, which already carries a
+        // VenueId (falls back to whatever was last known, "mine" on a fresh strip, whenever
+        // neither source has a party to read yet).
+        if (ResolveVenueId(state) is { } venueId && venueId != _backdropVenueId)
+        {
+            ApplyVenueBackdrop(venueId);
+        }
 
         if (!HasContent)
         {
@@ -437,15 +486,19 @@ public partial class MineWatch : SubViewportContainer
 
         // U16 (KTD11): accumulated-delta only, no engine Tween, no RNG — same contract as every
         // other animator in this file. U25 (a): feed pauses with the clock (paused ≠ engaged — an
-        // engaged surface keeps the feed flowing per KTD3), wired via Clock/DepthsPanel.
-        _feed.Advance(delta, paused: Clock is not null && !Clock.Playing);
+        // engaged surface keeps the feed flowing per KTD3), wired via Clock/DepthsPanel. U9
+        // (KTD-4): ForceRevealWhilePaused overrides this while ScryingMirror borrows the strip —
+        // see that property's doc for why (Mirror force-pauses the clock on open; without the
+        // override, opening it to watch the show would freeze the show).
+        var feedPaused = Clock is not null && !Clock.Playing && !ForceRevealWhilePaused;
+        _feed.Advance(delta, paused: feedPaused);
         UpdateFeedLabel();
 
         // A2 (+A3 FX): the beat-driven overlay's own playhead, same pause contract as _feed above.
         // SyncHeroSprites runs BEFORE any beat renders and BEFORE DelveStage.Process, so FX always
         // target this frame's already-bobbed figure (AnimateFigures ran earlier this same call).
         _delveStage.SyncHeroSprites(BuildHeroSpriteMap());
-        _delveHead.Advance(delta, paused: Clock is not null && !Clock.Playing);
+        _delveHead.Advance(delta, paused: feedPaused);
         var revealTarget = Math.Min(_delveHead.Revealed, _delveBeats.Count);
         for (; _delveRendered < revealTarget; _delveRendered++)
         {
@@ -750,6 +803,46 @@ public partial class MineWatch : SubViewportContainer
         {
             _campfireLight.Energy = 1.1f + 0.18f * Mathf.Sin(_time * 11f) * Mathf.Sin(_time * 1.7f);
         }
+    }
+
+    // ── U9 (KTD-4): venue-true backdrop ──────────────────────────────────────────────────────
+
+    /// <summary>The raided venue's id, read off whichever of the two live sources currently has a
+    /// party (in that order — a party can never be in both at once): a parked/camped run's <see
+    /// cref="InFlightExpedition.VenueId"/>, or a fully-resolved (never staged) run's <see
+    /// cref="ExpeditionResult.VenueId"/>. Null when neither has a party to read yet (no departure
+    /// this session, or the day has fully rolled over) — the caller leaves the backdrop exactly
+    /// where it was rather than resetting to the Mine on every quiet tick.</summary>
+    private static string? ResolveVenueId(GameState state) =>
+        !state.InFlight.IsEmpty ? state.InFlight[0].VenueId :
+        !state.PendingExpeditions.IsEmpty ? state.PendingExpeditions[0].VenueId :
+        null;
+
+    /// <summary>Swap the backdrop texture/tiles to <paramref name="venueId"/>'s art, tracking it so
+    /// <see cref="Refresh"/> only pays for a rebuild when the raided venue actually changes.
+    /// Graceful-degrades exactly like <see cref="Build(string)"/>'s own missing-art path: a venue
+    /// with no committed backdrop collapses the WHOLE strip (<see cref="HasContent"/> false) rather
+    /// than leaving stale tiles from the PREVIOUS venue on screen.</summary>
+    private void ApplyVenueBackdrop(string venueId)
+    {
+        _backdropVenueId = venueId;
+        _backdropTexture = IconRegistry.Art(AssetCatalog.VenueBackdropId(venueId));
+        HasContent = _backdropTexture is not null;
+
+        if (HasContent)
+        {
+            RebuildBackdropTiles(CurrentContainerWidth());
+            return;
+        }
+
+        foreach (var tile in _backdropTiles)
+        {
+            _world.RemoveChild(tile);
+            tile.Free();
+        }
+
+        _backdropTiles.Clear();
+        _backdropContainerWidth = -1f; // force a rebuild if a later venue's art resolves
     }
 
     // ── build helpers ────────────────────────────────────────────────────────────────────────

@@ -190,6 +190,15 @@ public partial class MainUi : Control
     /// <summary>U16 (KTD13): the bottom-right PiP journey dock.</summary>
     public PipDock Pip { get; private set; } = null!;
 
+    /// <summary>
+    /// U9 (world-and-interiors plan, KTD-4): the ONE live <see cref="MineWatch"/> instance —
+    /// constructed once here, refreshed every tick regardless of host (see <see cref="RefreshAll"/>),
+    /// and borrowed by <see cref="Depths"/> (its resting host) or <see cref="Mirror"/> (while open)
+    /// via each panel's own <c>MountWatch</c>. Never constructed a second time and never a child of
+    /// two panels at once — constraint 4's "exactly one live SubViewport, ever".
+    /// </summary>
+    public MineWatch Watch { get; private set; } = null!;
+
     /// <summary>The most recent day whose Evening completed — what the Ledger button reopens.</summary>
     public int LastCompletedDay { get; private set; }
 
@@ -294,6 +303,7 @@ public partial class MainUi : Control
         Ledger.Bind(Adapter);
         Chronicle.Bind(Adapter);
         Camp.Bind(Adapter);
+        Watch.Refresh(Adapter.CurrentState, Adapter.LastEvents); // U9: not a SimPanel — no Bind() auto-refresh
         Mirror.Bind(Adapter);
         Pip.Refresh(Adapter.CurrentState, Adapter.LastEvents); // not a SimPanel — no Bind() auto-refresh
 
@@ -555,6 +565,9 @@ public partial class MainUi : Control
     /// one via <see cref="OpenPanel"/> refreshes it on the spot, so nothing a player actually looks
     /// at is ever stale. Ledger/Camp/Mirror/Pip are unaffected — they were never tab-gated before
     /// U21 (LedgerModal/CampPanel stay FullRect overlays above the drawer) and stay unconditional.
+    /// U9 (KTD-4): <see cref="Watch"/> joins that unconditional set — it is a single shared
+    /// instance borrowed by whichever of Depths/Mirror is open, so it must stay fresh regardless
+    /// of which one that currently is (or neither, between raids).
     /// </summary>
     public void RefreshAll()
     {
@@ -567,6 +580,7 @@ public partial class MainUi : Control
 
         Ledger.Refresh();
         Camp.Refresh();
+        Watch.Refresh(Adapter.CurrentState, Adapter.LastEvents); // U9: refreshed regardless of host
         Mirror.Refresh();
         Pip.Refresh(Adapter.CurrentState, Adapter.LastEvents); // U16/KTD11: rebuild the PiP's cards once per tick
     }
@@ -1648,7 +1662,6 @@ public partial class MainUi : Control
         Heroes = InstantiatePanel<HeroesPanel>("res://scenes/panels/heroes_panel.tscn");
         Tavern = InstantiatePanel<TavernPanel>("res://scenes/panels/tavern_panel.tscn");
         Depths = InstantiatePanel<DepthsPanel>("res://scenes/panels/depths_panel.tscn");
-        Depths.Clock = Clock; // U25 (a): MineWatch's journey feed pauses with the clock
         Bounties = InstantiatePanel<BountyPanel>("res://scenes/panels/bounty_panel.tscn");
         Demand = InstantiatePanel<DemandPanel>("res://scenes/panels/demand_panel.tscn");
         HeroCards = InstantiatePanel<HeroPanel>("res://scenes/panels/hero_panel.tscn");
@@ -1697,6 +1710,18 @@ public partial class MainUi : Control
         Drawer.Register("Demand", Demand);
         Drawer.Register("HeroCards", HeroCards);
         Drawer.Register("Progress", Progress);
+
+        // --- U9 (world-and-interiors plan, KTD-4): the ONE live MineWatch instance (constraint
+        //     4 — pumping frames while any SubViewport renders hangs gdUnit headless, and a
+        //     second live instance would double both that hazard and the GPU cost). Depths is
+        //     registered above, so its MountWatch slot already exists — this is the strip's
+        //     resting home; ScryingMirror steals it for as long as it's open (see
+        //     OnMirrorVisibilityChanged) and hands it back on close. -------------------------
+        Watch = new MineWatch { Name = "MineWatch" };
+        Watch.Build();
+        Watch.Clock = Clock;
+        Depths.MountWatch(Watch);
+
         // LW6: the drawer-swap fade veil (was the tab-switch veil pre-U21) — a purely additive
         // CanvasLayer-100 overlay, triggered from OpenPanel below, and from a click-out/Esc close
         // that bypasses OpenPanel entirely (Drawer.Closed).
@@ -2513,11 +2538,21 @@ public partial class MainUi : Control
             // no sim event to read durably — this ONE hook covers both real entry points (the
             // persistent Watch button and the PiP dock's expand click), so either door teaches it.
             Tutorial.NotifyMirrorOpened();
+            // U9 (KTD-4): borrow the shared strip for as long as the Mirror is open — stealing it
+            // from Depths (its resting host) so there is never a second live SubViewport.
+            Mirror.MountWatch(Watch);
         }
-        else if (_resumePlayOnMirrorClose)
+        else
         {
-            Clock.Play();
-            _resumePlayOnMirrorClose = false;
+            // U9 (KTD-4): hand the strip back to its resting host the instant the Mirror closes —
+            // before the resume-play branch below, so a re-open a frame later never races an
+            // empty slot.
+            Depths.MountWatch(Watch);
+            if (_resumePlayOnMirrorClose)
+            {
+                Clock.Play();
+                _resumePlayOnMirrorClose = false;
+            }
         }
 
         UpdateEngaged();

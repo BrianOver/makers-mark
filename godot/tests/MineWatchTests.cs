@@ -35,8 +35,11 @@ public class MineWatchTests
         try
         {
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
-            var watch = ui.Depths.Watch;
+            // U9 (KTD-4): the shared instance lives on MainUi now — ui.Depths.Watch also resolves
+            // it (Depths is the resting host), see MineWatchRehostTests for that contract directly.
+            var watch = ui.Watch;
             AssertThat(watch).IsNotNull();
+            AssertThat(ReferenceEquals(ui.Depths.Watch, watch)).IsTrue();
             AssertThat(watch!.State).IsEqual(MineWatch.WatchState.Hidden);
             AssertThat(watch.Visible).IsFalse();
             AssertThat(watch.CustomMinimumSize).IsEqual(Vector2.Zero);
@@ -143,6 +146,115 @@ public class MineWatchTests
             AssertThat(watch.Visible).IsFalse();
             AssertThat(watch.CustomMinimumSize).IsEqual(Vector2.Zero);
             AssertThat(watch.FigureCount).IsEqual(0);
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    // ── U9 (world-and-interiors plan, KTD-4): venue-true backdrop ──────────────────────────────
+    // MineWatch.cs used to hardcode "mine" (KTD-4's own diagnosis); the backdrop now follows
+    // whichever venue the tracked party actually raided.
+
+    [TestCase]
+    public void Refresh_NoPartyYet_BackdropStaysMine()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            AssertThat(watch.BackdropVenueId).IsEqual("mine");
+
+            // Neither InFlight nor PendingExpeditions has a party to read a venue from.
+            watch.Refresh(StagedWorld() with { Phase = DayPhase.Morning }, ImmutableList<GameEvent>.Empty);
+
+            AssertThat(watch.BackdropVenueId)
+                .OverrideFailureMessage("Backdrop swapped with no party in InFlight/PendingExpeditions to read a venue from.")
+                .IsEqual("mine");
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void Refresh_InFlightGloomwoodParty_SwapsBackdropToGloomwood()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var camp = CampedParty() with { VenueId = "gloomwood" };
+            var state = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(camp) };
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            AssertThat(watch.BackdropVenueId).IsEqual("gloomwood");
+            AssertThat(watch.HasContent)
+                .OverrideFailureMessage(
+                    "gloomwood-backdrop is a committed art id (art-manifest.json) -- it must resolve, not degrade.")
+                .IsTrue();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void Refresh_ResolvedSunkenCryptParty_SwapsBackdrop_ThroughTheArtIdMapping()
+    {
+        // AssetCatalog.VenueArtId maps the sim id "sunken-crypt" to the committed art id
+        // "sunkencrypt" (a past silent-fallback bug, per that method's own doc) -- BackdropVenueId
+        // reports the SIM id (what ResolveVenueId read straight off ExpeditionResult.VenueId),
+        // while HasContent proves the ART id actually resolved through that mapping.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var result = new ExpeditionResult(
+                Party: ImmutableList.Create(new HeroId(1)), TargetFloor: 1, DeepestFloorCleared: 1,
+                Floors: ImmutableList<FloorOutcome>.Empty, Survivors: ImmutableList.Create(new HeroId(1)),
+                Deaths: ImmutableList<HeroId>.Empty, Beats: ImmutableList<AttributionBeat>.Empty,
+                Loot: ImmutableList<OreLoot>.Empty, GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty,
+                VenueId: "sunken-crypt");
+            var state = StagedWorld() with { Phase = DayPhase.Camp, PendingExpeditions = ImmutableList.Create(result) };
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            AssertThat(watch.BackdropVenueId).IsEqual("sunken-crypt");
+            AssertThat(watch.HasContent).IsTrue();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void Refresh_VenueUnchanged_NeverRebuildsBackdropTiles()
+    {
+        // Regression guard for ApplyVenueBackdrop's own contract ("only pay for a rebuild when the
+        // raided venue actually changes") -- repeated same-venue Refresh calls must not reset the
+        // backdrop's scroll position every tick.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var camp = CampedParty(); // VenueId "mine" -- same as the strip's own default
+            var state = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(camp) };
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+            watch._Process(0.5); // let the backdrop scroll a bit
+            var xBefore = watch.BackdropTileX.ToList();
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty); // same venue, second tick
+
+            AssertThat(watch.BackdropTileX.SequenceEqual(xBefore))
+                .OverrideFailureMessage("A same-venue Refresh rebuilt the backdrop tiles, resetting their scroll position.")
+                .IsTrue();
         }
         finally
         {
@@ -424,6 +536,39 @@ public class MineWatchTests
             clock.Play();
             watch._Process(100.0);
             AssertThat(watch.CurrentBeats.Any(b => b.Contains("cave-rat"))).IsTrue();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void ForceRevealWhilePaused_KeepsRevealingEvenWhileClockIsPaused()
+    {
+        // U9 (KTD-4): ScryingMirror sets this true for as long as it borrows the strip, because
+        // opening the Mirror unconditionally force-pauses PhaseClock (MainUi.OnMirrorVisibilityChanged).
+        // Without this override, "press Watch to see the show" would freeze the show at the exact
+        // moment a player opened it -- the same bug ScryingMirror's own feed was already fixed for.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var camp = CampedPartyWithFloors();
+            var state = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(camp) };
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            var clock = new PhaseClock(new SimAdapter(state));
+            clock.Pause();
+            watch.Clock = clock;
+            watch.ForceRevealWhilePaused = true;
+
+            watch._Process(100.0); // would stay clouded (see the test above) if the override failed
+            AssertThat(watch.CurrentBeats.Any(b => b.Contains("cave-rat")))
+                .OverrideFailureMessage(
+                    "ForceRevealWhilePaused did not override a paused Clock -- opening the Mirror " +
+                    "would freeze the show it exists to display.")
+                .IsTrue();
         }
         finally
         {

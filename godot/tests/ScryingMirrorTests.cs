@@ -67,5 +67,67 @@ public class ScryingMirrorTests
             Unmount(ui);
         }
     }
+
+    // ── U9 (world-and-interiors plan, KTD-4): the Mirror hosts the animated delve ──────────────
+    // The owner's complaint ("the watch has no animations - all text") traced to this panel being
+    // 100% Labels/Buttons while the animated MineWatch/DelveStage strip existed one door over,
+    // hosted only by DepthsPanel. See MineWatchRehostTests for the single-instance/re-parent
+    // proof; these two cover what THIS panel specifically must show once it borrows the strip.
+
+    [TestCase]
+    public void ShowMirror_DuringLiveExpedition_HostsTheAnimatedStrip()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            AdvanceToPhase(ui, DayPhase.Expedition);
+            ui.Mirror.ShowMirror();
+
+            var watch = ui.Mirror.Watch;
+            AssertThat(watch)
+                .OverrideFailureMessage(
+                    "ScryingMirror did not host the MineWatch strip -- the owner's complaint (\"all " +
+                    "text, no animations\") would still reproduce.")
+                .IsNotNull();
+            AssertThat(watch!.Visible).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ShowMirror_DuringCamp_BeatsKeepRevealing_DespiteTheMirrorsOwnPause()
+    {
+        // R4: "pressing Watch shows sprites fighting, not paragraphs" -- proves the
+        // ForceRevealWhilePaused fix end-to-end through the real MainUi wiring. ScryingMirror
+        // force-pauses PhaseClock on open (same as Ledger/Camp); without the override the
+        // borrowed strip's own beat reveal would freeze at the exact instant a player opened the
+        // Mirror to watch it -- the same bug this panel's OWN _feed was already fixed for (see
+        // this class's _Process remarks).
+        var ui = MountMainUi();
+        try
+        {
+            AdvanceToPhase(ui, DayPhase.Camp);
+            ui.Mirror.ShowMirror();
+            AssertThat(ui.Clock.Playing)
+                .OverrideFailureMessage("Precondition: opening the Mirror is supposed to force-pause the clock.")
+                .IsFalse();
+
+            var watch = ui.Mirror.Watch!;
+            watch._Process(100.0); // force full reveal -- would stay clouded if the pause froze it
+
+            AssertThat(watch.CurrentBeats.IsEmpty)
+                .OverrideFailureMessage(
+                    "The strip's beats never revealed while the Mirror was open -- opening it to " +
+                    "watch the show froze the show.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif

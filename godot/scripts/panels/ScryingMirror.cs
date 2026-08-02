@@ -14,6 +14,15 @@ namespace GodotClient.Panels;
 /// live party's journey the body shows; the body is a floor-progress line plus the party's
 /// time-stretched <see cref="JourneyFeed"/> beats, self-censored exactly like <c>MineWatch</c>'s
 /// in-panel feed (both read the same <see cref="JourneyStream"/>).
+///
+/// <para><b>U9 (world-and-interiors plan, KTD-4) — hosts the animated strip.</b> The owner's
+/// complaint ("the watch has no animations — all text") traced to this panel being 100% Labels
+/// and Buttons while an animated, sprite-level delve renderer (<c>MineWatch</c>/<c>DelveStage</c>)
+/// already existed one door over, hosted only by <c>DepthsPanel</c>. <see cref="_watchSlot"/> is
+/// the top band <c>MainUi</c> mounts that SHARED instance into via <see cref="MountWatch"/>
+/// whenever this panel opens (and releases back to <c>DepthsPanel</c> on close) — this panel
+/// never constructs a <c>MineWatch</c> of its own, so there is only ever one live instance
+/// (constraint 4). The strip renders ABOVE the party tabs/feed: sprites lead, text supports.</para>
 /// </summary>
 public partial class ScryingMirror : SimPanel
 {
@@ -24,6 +33,10 @@ public partial class ScryingMirror : SimPanel
     private Label? _floorLabel;
     private VBoxContainer? _feedBody;
 
+    /// <summary>U9 (KTD-4): the top band the shared <see cref="MineWatch"/> strip mounts into on
+    /// open — empty (zero height) whenever the strip is parked in <c>DepthsPanel</c> instead.</summary>
+    private VBoxContainer? _watchSlot;
+
     /// <summary>U5: the provenance popup — a single instance reused across ★ attribution lines,
     /// self-contained (this unit's scope keeps MainUi untouched), added as the LAST child in
     /// <see cref="EnsureBuilt"/> so it draws over the feed body.</summary>
@@ -31,6 +44,38 @@ public partial class ScryingMirror : SimPanel
 
     /// <summary>How many parties currently have a live card (test hook).</summary>
     public int PartyCount => _feed.Cards.Count;
+
+    /// <summary>The shared strip currently mounted here (test/tuning hook) — null while it's
+    /// parked in <c>DepthsPanel</c> instead (U9, KTD-4). Computed off the actual current child
+    /// rather than a cached field, so it can never answer stale.</summary>
+    public MineWatch? Watch => _watchSlot?.GetChildren().OfType<MineWatch>().FirstOrDefault();
+
+    /// <summary>
+    /// U9 (KTD-4): borrow the shared <see cref="MineWatch"/> strip for as long as the Mirror is
+    /// open — stealing it from wherever it currently sits (<c>DepthsPanel</c>, normally) so there
+    /// is never a second live parent (constraint 4). Mounted as the FIRST band of the card, above
+    /// the party tabs/feed (R4: "shows sprites, not paragraphs" — the animated strip is the
+    /// headline, the text feed is support underneath).
+    ///
+    /// <para>The Mirror unconditionally force-pauses <c>PhaseClock</c> while open (see
+    /// <c>MainUi.OnMirrorVisibilityChanged</c>) — gating the strip's own feed/beat reveal on
+    /// <c>PhaseClock.Playing</c> would freeze the show the instant a player opened it to watch it,
+    /// the exact bug this panel's OWN <see cref="_feed"/> was already fixed for (see this class's
+    /// <see cref="_Process"/> remarks: "gating this feed on Playing would freeze it the instant it
+    /// opens"). <see cref="MineWatch.ForceRevealWhilePaused"/> mirrors that same fix onto the
+    /// borrowed strip; <c>DepthsPanel.MountWatch</c> turns it back off when the strip returns.</para>
+    /// </summary>
+    public void MountWatch(MineWatch watch)
+    {
+        EnsureBuilt();
+        if (watch.GetParent() != _watchSlot)
+        {
+            watch.GetParent()?.RemoveChild(watch);
+            _watchSlot!.AddChild(watch);
+        }
+
+        watch.ForceRevealWhilePaused = true;
+    }
 
     /// <summary>The selected party's index within <see cref="JourneyFeed.Cards"/>, or -1 if none.</summary>
     public int SelectedIndex => _feed.Cards.FindIndex(c => c.PartyKey == _selectedPartyKey);
@@ -267,6 +312,12 @@ public partial class ScryingMirror : SimPanel
         var box = card.Body;
 
         AddHeader(box, "THE SCRYING MIRROR");
+
+        // U9 (KTD-4): the top band — MainUi mounts the shared MineWatch strip here on open (see
+        // MountWatch). Empty (zero height, MineWatch's own collapsed CustomMinimumSize) until
+        // then, so a panel opened before MainUi's first MountWatch call still lays out correctly.
+        _watchSlot = new VBoxContainer { Name = "MirrorWatchSlot" };
+        box.AddChild(_watchSlot);
 
         _tabRow = new HBoxContainer { Name = "MirrorPartyTabs" };
         box.AddChild(_tabRow);
