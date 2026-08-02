@@ -132,6 +132,22 @@ public partial class MainUi : Control
     /// </summary>
     public static SimAdapter? AdapterOverride { get; set; }
 
+    /// <summary>
+    /// U4 (shell-and-audio plan): scene-change hook for "Save & quit to title" — null = real
+    /// <c>GetTree().ChangeSceneToFile</c>. Tests stub this so pressing the button never tears down
+    /// the test scene tree (the exact seam <see cref="NewGameSelect.SceneChange"/> already
+    /// established for its own Continue/Begin presses).
+    /// </summary>
+    public Action<string>? SceneChange { get; set; }
+
+    /// <summary>
+    /// U4 (KTD-D): test seam for "a real quit was about to happen." Null in production, where
+    /// <see cref="SaveAndQuit"/> calls the real <see cref="SceneTree.Quit()"/> — which a test must
+    /// never do, since that would tear down the whole test process rather than just this scene.
+    /// Non-null in a test observes that the save-then-quit ROUTING fired without actually quitting.
+    /// </summary>
+    public Action? QuitOverride { get; set; }
+
     /// <summary>Test-observable count of DISTINCT rejection warnings actually pushed to the dev
     /// log (see the dedup guard in <see cref="OnPhaseCompleted"/>). <see cref="SimAdapter.LastRejections"/>
     /// is deliberately phase-cumulative, so a naive re-warn of the whole list on every immediate
@@ -275,6 +291,35 @@ public partial class MainUi : Control
     private bool _resumePlayOnCommissionsClose;
     /// <summary>Wave 4 (U21): mirror of the Bestiary/Forecast latch for the Legends Wall.</summary>
     private bool _resumePlayOnLegendsClose;
+    /// <summary>U4 (shell-and-audio plan): mirror of the Bestiary/Forecast latch for the in-game
+    /// system menu — pause while it owns the screen, resume on close when play was running.</summary>
+    private bool _resumePlayOnSystemMenuClose;
+
+    /// <summary>
+    /// U4: the in-game system menu (Esc's new bottom rung when nothing else owns the screen, and
+    /// its own top rung when it is the thing that's open — see <see cref="_Input"/>). Full-rect
+    /// dim + centered wood card, the same shape <see cref="NewGameSelect"/>'s title screen uses, so
+    /// pausing reads as "the same kind of screen" rather than a sixth different modal shape.
+    /// </summary>
+    private Control _systemMenu = null!;
+
+    /// <summary>The system menu's own button list (Resume/Settings/Save &amp; quit/Quit) — hidden
+    /// while its nested <see cref="_systemMenuSettings"/> sub-view is showing, exactly the
+    /// picker/primer toggle <see cref="NewGameSelect"/> already uses.</summary>
+    private VBoxContainer _systemMenuList = null!;
+
+    /// <summary>The system menu's "Settings" sub-view — a SECOND instance of the SAME <see
+    /// cref="SettingsPanel"/> class the title screen mounts, never a live-shared Control across
+    /// the two scenes (see that class's own doc).</summary>
+    private SettingsPanel _systemMenuSettings = null!;
+
+    /// <summary>
+    /// U4 (KTD-D): title-screen scene path the system menu's "Save &amp; quit to title" returns
+    /// to. Hardcoded here the same way <see cref="NewGameSelect.MainScenePath"/> and every existing
+    /// caller of <c>new_game_select.tscn</c> already hardcode their own direction's path — no
+    /// shared constant exists yet for either direction.
+    /// </summary>
+    private const string TitleScenePath = "res://scenes/new_game_select.tscn";
 
     /// <summary>
     /// U1 (playtest-three plan, KTD-A move 2): armed by <see cref="SoundTheTick"/> when the
@@ -300,6 +345,14 @@ public partial class MainUi : Control
         AdapterOverride = null; // consumed — the handoff is one-shot (see property doc)
         Clock = new PhaseClock(Adapter);
         RegisterQuickTravelActions(); // U23 (KTD4): runtime InputMap only, zero project.godot contact
+
+        // U4 (KTD-D): intercept the OS close request (the window's own X / Alt+F4) so it saves
+        // BEFORE quitting instead of the engine tearing the process down out from under an
+        // unsaved day. See _Notification/SaveAndQuit. A runtime SceneTree property, never
+        // project.godot (deny-listed) — and reset back to true the instant this MainUi hands off
+        // to the title screen (SaveAndReturnToTitle), so a window left open on THAT scene still
+        // closes the ordinary way with nothing left listening for the notification.
+        GetTree().AutoAcceptQuit = false;
 
         // U15 (KTD3 escape hatch): a saved manual-mode preference wins over PhaseClock's
         // ON-by-default so a player who deliberately went manual stays manual next launch.
@@ -339,6 +392,21 @@ public partial class MainUi : Control
         SyncCampModal(); // adopt an injected mid-day (parked) campaign — open the slate if already at Camp
         GD.Print($"[MainUi] campaign started, seed {Seed}");
         MaybeScreenshotAndQuit();
+    }
+
+    /// <summary>
+    /// U4 (KTD-D): the OS window's own close request (X button / Alt+F4) — save first, then quit,
+    /// same as the system menu's own "Quit game" (<see cref="SaveAndQuit"/>). Requires
+    /// <c>AutoAcceptQuit = false</c> (set in <see cref="_Ready"/>) or the engine would already have
+    /// torn the process down before this ever ran.
+    /// </summary>
+    public override void _Notification(int what)
+    {
+        base._Notification(what);
+        if (what == (int)NotificationWMCloseRequest)
+        {
+            SaveAndQuit();
+        }
     }
 
     // Dev tool (no-op in normal play): when TOWN_SHOT=<path> is set, render a few frames then
@@ -1828,6 +1896,15 @@ public partial class MainUi : Control
         Camp.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Camp.VisibilityChanged += OnCampVisibilityChanged;
 
+        // --- U4 (shell-and-audio plan): the in-game system menu — Esc's new rung (see _Input).
+        //     Code-built modal sibling on the RaidForecastBoard precedent (no scene, no import
+        //     churn), mounted last of the modal overlays so it draws above every one of them —
+        //     moot in practice (it only ever opens when nothing else is), but correct regardless.
+        _systemMenu = BuildSystemMenu();
+        _systemMenu.Visible = false;
+        AddChild(_systemMenu);
+        _systemMenu.VisibilityChanged += OnSystemMenuVisibilityChanged;
+
         // --- objective chip (U18/KTD13): a floating overlay sibling (like the modals above),
         //     anchored top-right at a FIXED width and nudged down by ObjectiveDockOffsetTop to
         //     clear the header row — stays visible over the bare town without shifting any
@@ -2107,10 +2184,19 @@ public partial class MainUi : Control
     /// unconditionally true. The last rung became unreachable and Esc stopped exiting the room.
     /// <c>InteriorEntryExitTests.Escape_WithNoDrawerOpen_ExitsTheRoom</c> caught it. A predicate that
     /// includes your own state is the wrong question to ask about everyone else's.</para>
+    ///
+    /// <para><b>Shell-and-audio plan U4:</b> the system menu (<see cref="_systemMenu"/>) joins this
+    /// list — it covers the screen exactly like Ledger/Camp/Mirror do, so <see
+    /// cref="UpdateEngaged"/>'s latch (world input suppressed, clock held) and the interior-exit
+    /// rung's own defensive re-check both already treat it correctly with no further changes.
+    /// <see cref="_Input"/>'s OWN system-menu rung asks <c>_systemMenu.Visible</c> directly, never
+    /// through this method — the same lesson the paragraph above already states: a rung must never
+    /// learn about its own state by asking the "is anyone ELSE open" question.</para>
     /// </summary>
     private bool AnOverlayOwnsTheScreen() =>
         Ledger.Visible || Camp.Visible || Mirror.Visible
-        || Forecast.Visible || Bestiary.Visible || Commissions.Visible || Legends.Visible;
+        || Forecast.Visible || Bestiary.Visible || Commissions.Visible || Legends.Visible
+        || _systemMenu.Visible;
 
     /// <summary>
     /// U-audio-2: which cue plays when <paramref name="id"/> opens. Owner's playtest: "Noises for the
@@ -2200,47 +2286,37 @@ public partial class MainUi : Control
     }
 
     /// <summary>
-    /// Test-only stand-in for the real OS window mode. Verified empirically (throwaway headless
-    /// script, per repo convention — the gdUnit suite itself is never run from an implementing
-    /// agent's worktree): under <c>--headless</c>, <see cref="DisplayServer.WindowSetMode"/> is a
-    /// no-op and <see cref="DisplayServer.WindowGetMode"/> always reports the same value regardless
-    /// of what was just set. A test asserting the real window state would pass or fail independent
-    /// of this code, proving nothing. Null in production (real <see cref="DisplayServer"/>); a test
-    /// sets a starting mode here to prove the TOGGLE LOGIC actually flips it, and must reset it to
-    /// null when done so later suites see the real engine again.
+    /// Test-only stand-in for the real OS window mode. U3 (shell-and-audio plan): MOVED to <see
+    /// cref="UiSettings.TestWindowMode"/> so the title screen's own F11 copy shares the exact same
+    /// seam instead of a second one — this forwarding property keeps every existing test
+    /// (<c>MainUi.TestWindowMode = ...</c>) compiling and passing unchanged. See <see
+    /// cref="UiSettings"/>'s own doc for why the seam is needed at all (headless
+    /// <see cref="DisplayServer.WindowSetMode"/> is a verified no-op).
     /// </summary>
-    public static DisplayServer.WindowMode? TestWindowMode;
+    public static DisplayServer.WindowMode? TestWindowMode
+    {
+        get => UiSettings.TestWindowMode;
+        set => UiSettings.TestWindowMode = value;
+    }
 
-    private static DisplayServer.WindowMode CurrentWindowMode() => TestWindowMode ?? DisplayServer.WindowGetMode();
-
-    /// <summary>Whether the OS window is currently fullscreen, either the borderless or exclusive
-    /// mode — both read the same to the player and to <see cref="ToggleFullscreen"/>.</summary>
-    private static bool IsFullscreen() => CurrentWindowMode()
-        is DisplayServer.WindowMode.Fullscreen or DisplayServer.WindowMode.ExclusiveFullscreen;
+    /// <summary>Whether the OS window is currently fullscreen — delegates to <see
+    /// cref="UiSettings.IsFullscreen"/> (U3: the one shared implementation both hosts read).</summary>
+    private static bool IsFullscreen() => UiSettings.IsFullscreen();
 
     /// <summary>
-    /// F11 / the HUD button: flip the OS window between windowed and fullscreen via
-    /// <see cref="DisplayServer"/> at RUNTIME. Deliberately not a <c>project.godot</c> setting
-    /// (deny-listed for agents; a `window/size/mode` default would also just pick one at launch,
-    /// not give the player a toggle) — borderless <see cref="DisplayServer.WindowMode.Fullscreen"/>
-    /// rather than <c>ExclusiveFullscreen</c>, since it does not mode-switch the monitor and plays
-    /// better with alt-tab. Syncs the HUD button's toggle state either way it was triggered.
+    /// F11 / the HUD button: flip the OS window between windowed and fullscreen. U3 moved the
+    /// actual <see cref="DisplayServer"/> call + persistence into <see
+    /// cref="UiSettings.ToggleFullscreen"/> (shared with the title screen's own F11 handler); this
+    /// wrapper's only remaining job is syncing THIS host's discoverable HUD button, since the
+    /// title screen has no equivalent button to sync (its own Settings checkbox syncs itself via
+    /// <see cref="SettingsPanel.Refresh"/> instead).
     /// </summary>
     private void ToggleFullscreen()
     {
-        var next = IsFullscreen() ? DisplayServer.WindowMode.Windowed : DisplayServer.WindowMode.Fullscreen;
-        if (TestWindowMode is not null)
-        {
-            TestWindowMode = next;
-        }
-        else
-        {
-            DisplayServer.WindowSetMode(next);
-        }
-
+        var isFull = UiSettings.ToggleFullscreen();
         if (_fullscreen is not null)
         {
-            _fullscreen.ButtonPressed = IsFullscreen();
+            _fullscreen.ButtonPressed = isFull;
         }
     }
 
@@ -2431,20 +2507,38 @@ public partial class MainUi : Control
     }
 
     /// <summary>
-    /// U1 (painted-interiors plan): Esc exits the walkable room — the LAST rung of the #320
-    /// Escape-topmost ladder. Every true overlay (<see cref="DrawerHost"/>, <see
-    /// cref="ModalEscape"/>'s callers) lives as a CHILD of this <see cref="MainUi"/> Control, and
-    /// Godot dispatches <c>_Input</c> in reverse tree order — children before parents — so any of
-    /// them already consumed (and marked handled) this same Escape press before this method runs
-    /// whenever one was open (<see cref="EscapeClosesModalsTests"/> proves that ladder for the
-    /// existing overlays). The explicit guard below is defense in depth, not the only thing
-    /// stopping a double-close: it also keeps a SECOND, separate Esc press (once nothing is left
-    /// open) from doing anything but exit the room, never both at once.
+    /// The full #320 Escape-topmost ladder, pinned end to end (<see cref="SystemMenuTests"/>'s
+    /// <c>EscapeLadder_*</c> cases prove this exact order):
+    ///
+    /// <list type="number">
+    /// <item>A true overlay (<see cref="DrawerHost"/>, <see cref="ModalEscape"/>'s callers) is a
+    /// CHILD of this <see cref="MainUi"/> Control, and Godot dispatches <c>_Input</c> in reverse
+    /// tree order — children before parents — so any of them already consumed (and marked handled)
+    /// this same Escape press before this method ever runs (<see
+    /// cref="EscapeClosesModalsTests"/> proves that for the existing overlays).</item>
+    /// <item><b>U4 (shell-and-audio plan) — the system menu's OWN rung, checked FIRST here:</b>
+    /// when it is the thing that's open, Esc closes it. Asked about ONLY ITSELF
+    /// (<c>_systemMenu.Visible</c>), never "is anything else open too" — the exact lesson <see
+    /// cref="AnOverlayOwnsTheScreen"/>'s own doc already states, and the one this rung would get
+    /// wrong if it reused that method instead. Nothing below needs to re-check the menu once this
+    /// closes it.</item>
+    /// <item>The walkable interior room exits (painted-interiors plan U1) — unchanged position and
+    /// logic, still gated behind the pre-existing defensive <c>Drawer.IsOpen ||
+    /// AnOverlayOwnsTheScreen()</c> re-check (defense in depth, not the only thing stopping a
+    /// double-close: Godot's own dispatch order already prevents that — see point 1).</item>
+    /// <item><b>U4's new BOTTOM rung:</b> in the bare town, with no drawer/modal/interior open,
+    /// Esc opens the system menu — replacing what used to be a silent no-op. Gated on the exact
+    /// same <c>!Drawer.IsOpen &amp;&amp; !AnOverlayOwnsTheScreen()</c> check as point 3's guard, so
+    /// the menu can never open ON TOP of something else that is (which is also why the menu can
+    /// never open while a minigame overlay owns an un-queued gesture — that overlay lives inside
+    /// the Forge drawer, so <c>Drawer.IsOpen</c> is already true).</item>
+    /// </list>
     /// </summary>
     public override void _Input(InputEvent @event)
     {
-        // F11 fullscreen toggle: global, independent of interior/drawer/modal state (unlike the
-        // Escape ladder below) — there is no reason a player mid-panel shouldn't be able to hit it.
+        // F11 fullscreen toggle: global, independent of interior/drawer/modal/system-menu state
+        // (unlike the Escape ladder below) — there is no reason a player mid-panel, or mid-pause,
+        // shouldn't be able to hit it.
         if (@event is InputEventKey { PhysicalKeycode: Key.F11, Pressed: true, Echo: false })
         {
             ToggleFullscreen();
@@ -2452,12 +2546,37 @@ public partial class MainUi : Control
             return;
         }
 
-        if (!Town.InteriorActive || @event is not InputEventKey { PhysicalKeycode: Key.Escape, Pressed: true })
+        if (@event is not InputEventKey { PhysicalKeycode: Key.Escape, Pressed: true })
         {
             return;
         }
 
-        // AnOverlayOwnsTheScreen, NOT ModalOwnsTheScreen: the latter now includes
+        // Ladder step 2 (see class doc): the system menu's own rung, topmost when it is the thing
+        // that's open.
+        if (_systemMenu.Visible)
+        {
+            CloseSystemMenu();
+            GetViewport()?.SetInputAsHandled();
+            return;
+        }
+
+        if (!Town.InteriorActive)
+        {
+            // Ladder step 4: nothing to back out of (no room), and — per the guard below — nothing
+            // else open either. Open the system menu. Any drawer/modal that WAS open already
+            // consumed this same Escape as a child (step 1) before this parent ever ran, so this
+            // re-check is the same defense-in-depth precedent as the interior-exit rung's own guard,
+            // not a sign that either one is expected to be true here.
+            if (!Drawer.IsOpen && !AnOverlayOwnsTheScreen())
+            {
+                OpenSystemMenu();
+                GetViewport()?.SetInputAsHandled();
+            }
+
+            return;
+        }
+
+        // Ladder step 3. AnOverlayOwnsTheScreen, NOT ModalOwnsTheScreen: the latter now includes
         // Town.InteriorActive, which this method has already required above — asking it here made the
         // guard unconditionally true and this rung dead. See AnOverlayOwnsTheScreen's doc.
         if (Drawer.IsOpen || AnOverlayOwnsTheScreen())
@@ -2631,6 +2750,190 @@ public partial class MainUi : Control
         UpdateEngaged(); // the Camp modal engages the latch too
         UpdateClockLabel();
         TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
+    }
+
+    /// <summary>U4: the system menu holds the town clock while open, same as every other modal
+    /// here (Ledger/Camp/Mirror/...) — pausing the day while the player reads a pause menu is the
+    /// whole point of a pause menu.</summary>
+    private void OnSystemMenuVisibilityChanged()
+    {
+        if (_systemMenu.Visible)
+        {
+            _resumePlayOnSystemMenuClose = Clock.Playing;
+            Clock.Pause();
+        }
+        else if (_resumePlayOnSystemMenuClose)
+        {
+            Clock.Play();
+            _resumePlayOnSystemMenuClose = false;
+        }
+
+        UpdateEngaged(); // the system menu engages the latch too — world input suppressed (R3)
+        UpdateClockLabel();
+        TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
+    }
+
+    /// <summary>
+    /// U4: builds the system menu — a full-rect dim + centered wood card (the same shape <see
+    /// cref="NewGameSelect"/>'s title screen uses) holding a button list (<see
+    /// cref="_systemMenuList"/>: Resume/Settings/Save &amp; quit to title/Quit game) and a nested
+    /// <see cref="SettingsPanel"/> sub-view, toggled the same way the title screen toggles its own
+    /// picker/primer/settings views — never more than one visible at once.
+    /// </summary>
+    private Control BuildSystemMenu()
+    {
+        var root = new Control { Name = "SystemMenu" };
+        root.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+
+        // Same job as DrawerHost's own dim veil: darken the screen AND absorb the click before it
+        // can reach the world/HUD underneath (Stop filter — Godot skips 2D physics picking once
+        // GUI input already consumed the event). No click-out-to-close here, deliberately: a pause
+        // menu should not vanish because of a stray click past its edge.
+        var dim = new ColorRect
+        {
+            Name = "SystemMenuDim", Color = new Color(0f, 0f, 0f, 0.55f), MouseFilter = MouseFilterEnum.Stop,
+        };
+        dim.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        root.AddChild(dim);
+
+        var center = new CenterContainer { Name = "SystemMenuCenter" };
+        center.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        root.AddChild(center);
+
+        var card = new PanelContainer { Name = "SystemMenuCard", CustomMinimumSize = new Vector2(420f, 0) };
+        card.AddThemeStyleboxOverride("panel", GameTheme.PanelStyleWood());
+        center.AddChild(card);
+
+        var margin = new MarginContainer { Name = "SystemMenuMargin" };
+        margin.AddThemeConstantOverride("margin_left", GameTheme.Space16);
+        margin.AddThemeConstantOverride("margin_right", GameTheme.Space16);
+        margin.AddThemeConstantOverride("margin_top", GameTheme.Space16);
+        margin.AddThemeConstantOverride("margin_bottom", GameTheme.Space16);
+        card.AddChild(margin);
+
+        var layout = new VBoxContainer { Name = "SystemMenuLayout" };
+        layout.AddThemeConstantOverride("separation", GameTheme.Space16);
+        margin.AddChild(layout);
+
+        var title = new Label
+        {
+            Name = "SystemMenuTitle", Text = "Paused",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            ThemeTypeVariation = GameTheme.HeaderThemeType,
+        };
+        title.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        title.AddThemeFontSizeOverride("font_size", GameTheme.HeaderFontSize);
+        layout.AddChild(title);
+
+        _systemMenuList = new VBoxContainer { Name = "SystemMenuList" };
+        _systemMenuList.AddThemeConstantOverride("separation", GameTheme.Space12);
+        layout.AddChild(_systemMenuList);
+
+        var resume = new Button { Name = "Resume", Text = "Resume", CustomMinimumSize = new Vector2(0, 44) };
+        StylePrimaryVerb(resume); // the default verb of a pause menu is to un-pause
+        resume.Pressed += CloseSystemMenu;
+        _systemMenuList.AddChild(resume);
+
+        var settingsButton = new Button
+        {
+            Name = "SystemMenuSettings", Text = "Settings", CustomMinimumSize = new Vector2(0, 44),
+        };
+        settingsButton.Pressed += () =>
+        {
+            _systemMenuList.Visible = false;
+            _systemMenuSettings.Refresh(); // the live window mode may have moved since Build()
+            _systemMenuSettings.Visible = true;
+        };
+        _systemMenuList.AddChild(settingsButton);
+
+        // Never a dead click (repo convention, BountyPanel's own gate precedent): both of these
+        // are ALWAYS safe to press the moment the menu is reachable at all — Adapter.CurrentState
+        // always exists once MainUi has mounted, and the menu itself can only ever be open when no
+        // minigame owns an un-queued gesture (see the class doc on _Input's bottom rung), so
+        // neither button needs a disabled state or a reason.
+        var saveQuit = new Button
+        {
+            Name = "SaveQuitToTitle", Text = "Save & quit to title", CustomMinimumSize = new Vector2(0, 44),
+        };
+        saveQuit.Pressed += SaveAndReturnToTitle;
+        _systemMenuList.AddChild(saveQuit);
+
+        var quitGame = new Button { Name = "QuitGame", Text = "Quit game", CustomMinimumSize = new Vector2(0, 44) };
+        quitGame.Pressed += SaveAndQuit;
+        _systemMenuList.AddChild(quitGame);
+
+        _systemMenuSettings = new SettingsPanel();
+        _systemMenuSettings.Build();
+        _systemMenuSettings.Visible = false;
+        _systemMenuSettings.Closed += () =>
+        {
+            _systemMenuSettings.Visible = false;
+            _systemMenuList.Visible = true;
+        };
+        layout.AddChild(_systemMenuSettings);
+
+        return root;
+    }
+
+    /// <summary>Opens the system menu, always resetting to its top-level button list — never
+    /// leaves it mid-Settings from whatever it was showing the last time it closed.</summary>
+    private void OpenSystemMenu()
+    {
+        _systemMenuSettings.Visible = false;
+        _systemMenuList.Visible = true;
+        _systemMenu.Visible = true;
+    }
+
+    private void CloseSystemMenu() => _systemMenu.Visible = false;
+
+    /// <summary>
+    /// "Save &amp; quit to title" (U4): save the live campaign, then hand off to the title screen
+    /// through the exact same seam <see cref="NewGameSelect"/> hands off TO <see cref="MainUi"/>
+    /// (<see cref="SceneChange"/>/<c>ChangeSceneToFile</c>). Clearing <see cref="AdapterOverride"/>
+    /// is defensive (KTD-E) — <see cref="_Ready"/> already consumes and clears it on the way IN, so
+    /// this is normally a no-op — but the title screen builds its own campaign fresh regardless of
+    /// anything left over in that static hand-off field, and a defensive clear costs nothing.
+    /// </summary>
+    private void SaveAndReturnToTitle()
+    {
+        CampaignSave.Save(Adapter.CurrentState);
+        AdapterOverride = null;
+        CloseSystemMenu();
+
+        // The window is about to show the title screen, which has no in-flight state that could
+        // make a bare OS-close unsafe — hand close-request handling back to the engine default
+        // (see _Ready's own comment) so a window left open there still closes the ordinary way.
+        GetTree().AutoAcceptQuit = true;
+
+        if (SceneChange is not null)
+        {
+            SceneChange(TitleScenePath);
+        }
+        else
+        {
+            GetTree().ChangeSceneToFile(TitleScenePath);
+        }
+    }
+
+    /// <summary>
+    /// The system menu's "Quit game" AND the OS window's own close request (<see
+    /// cref="_Notification"/>) both funnel through here (KTD-D): save first, then quit — so
+    /// Continue is never staler than the moment the player actually stopped. <see
+    /// cref="QuitOverride"/> lets a test observe that this routing fired without tearing down the
+    /// test process via a real <see cref="SceneTree.Quit()"/>.
+    /// </summary>
+    private void SaveAndQuit()
+    {
+        CampaignSave.Save(Adapter.CurrentState);
+
+        if (QuitOverride is not null)
+        {
+            QuitOverride();
+            return;
+        }
+
+        GetTree().AutoAcceptQuit = true;
+        GetTree().Quit();
     }
 
     /// <summary>
