@@ -97,33 +97,72 @@ public class CounterPanelTests
     [TestCase]
     public void EachHaggleControl_QueuesExactlyTheIntendedActionRecord()
     {
-        var state = CounterFixture(round: 1, interest: 100, patience: 3, goodwill: 0, standingOffer: 10, presented: ShopItemId);
+        // U1 (loop-legibility widening): every counter verb now resolves the INSTANT it's pressed
+        // (ActionTiming.ResolvesImmediately), so the old shape of this test — mash Present, Suggest,
+        // Accept, HoldFirm, Counter, CloseCounter in one straight run, then inspect the queue — has
+        // nothing left to inspect: PendingActions is empty by construction (nothing queues anymore),
+        // and by the time a mashed-through press reaches "HoldFirm" the round it was aimed at has
+        // already resolved and moved on (Accept closes the round-1 sale and promotes the NEXT
+        // customer, whose fresh round has no "HoldFirm" to hold — the button briefly wasn't even
+        // there under the old assumption). Driving one response per round against whatever the
+        // session is ACTUALLY offering — across three real customers, so a closing verb (Accept,
+        // Counter) never steps on a later control's target item — is what keeps this test's
+        // original intent (each control produces exactly the record it names) both real and true.
+        var itemA = new ItemId(601); // Accept target
+        var itemB = new ItemId(602); // Presented, then abandoned mid-round by itemC's Present — the
+                                      // HoldFirm target; never sold, stays on the shelf throughout.
+        var itemC = new ItemId(603); // Counter target
+        var state = ThreeCustomerGuaranteedBuyState(itemA, itemB, itemC);
         var ui = MountMainUi(new SimAdapter(state));
         try
         {
             ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "OpenCounter"); // hero 1 becomes the active customer
 
-            PressEnabled(ui.Shop, $"Present_{ShopItemId.Value}");
-            PressEnabled(ui.Shop, $"Suggest_{ShopItemId.Value}");
+            // ── Hero 1: Present, Suggest, Accept — closes the sale, promotes hero 2. ────────────
+            PressEnabled(ui.Shop, $"Present_{itemA.Value}"); // guaranteed Buy verdict opens round 1
+            PressEnabled(ui.Shop, $"Suggest_{itemA.Value}");
             PressEnabled(ui.Shop, "Accept");
+
+            // ── Hero 2: Present, HoldFirm — round advances, hero 2 stays active (no promotion). ─
+            PressEnabled(ui.Shop, $"Present_{itemB.Value}");
             PressEnabled(ui.Shop, "HoldFirm");
 
+            // Still hero 2: presenting a DIFFERENT item abandons the held round cleanly (CounterHandlers.
+            // ApplyPresent's own documented behaviour) and opens a fresh one — the real path to a second
+            // haggle control on the SAME customer without exhausting patience to force a walk.
+            PressEnabled(ui.Shop, $"Present_{itemC.Value}");
             Find<CoinStack>(ui.Shop, "CounterPrice").SetValue(37);
-            PressEnabled(ui.Shop, "Counter");
+            PressEnabled(ui.Shop, "Counter"); // closes hero 2's sale, promotes hero 3 (queue not empty yet)
 
+            // Hero 3 is now active and the session is still open — CloseCounter here exercises a real
+            // early close (hero 3 goes unserved), not a press against an already-closed session.
             PressEnabled(ui.Shop, "CloseCounter");
 
-            var pending = ui.Adapter.PendingActions;
-            AssertThat(pending.OfType<PresentItemAction>().Single().Item).IsEqual(ShopItemId);
-            AssertThat(pending.OfType<SuggestItemAction>().Single().Item).IsEqual(ShopItemId);
+            var applied = ui.Adapter.AppliedThisPhase;
 
-            var haggles = pending.OfType<HaggleResponseAction>().ToList();
+            var presents = applied.OfType<PresentItemAction>().ToList();
+            AssertThat(presents.Count).IsEqual(3);
+            AssertThat(presents.Any(a => a.Item == itemA)).IsTrue();
+            AssertThat(presents.Any(a => a.Item == itemB)).IsTrue();
+            AssertThat(presents.Any(a => a.Item == itemC)).IsTrue();
+
+            AssertThat(applied.OfType<SuggestItemAction>().Single().Item).IsEqual(itemA);
+
+            var haggles = applied.OfType<HaggleResponseAction>().ToList();
             AssertThat(haggles.Count(a => a.Kind == HaggleResponseKind.Accept)).IsEqual(1);
             AssertThat(haggles.Count(a => a.Kind == HaggleResponseKind.HoldFirm)).IsEqual(1);
             var counterAction = haggles.Single(a => a.Kind == HaggleResponseKind.Counter);
             AssertThat(counterAction.Price!.Value).IsEqual(37);
 
-            AssertThat(pending.OfType<CloseCounterAction>().Count()).IsEqual(1);
+            AssertThat(applied.OfType<CloseCounterAction>().Count()).IsEqual(1);
+
+            // The sales that actually closed (Accept, Counter) really did leave the shelf; the
+            // abandoned HoldFirm round never sold anything — Present alone never does.
+            var shelf = ui.Adapter.CurrentState.Player.Shelf.Select(e => e.Item).ToImmutableHashSet();
+            AssertThat(shelf.Contains(itemA)).IsFalse();
+            AssertThat(shelf.Contains(itemB)).IsTrue();
+            AssertThat(shelf.Contains(itemC)).IsFalse();
         }
         finally
         {
@@ -497,6 +536,44 @@ public class CounterPanelTests
             NextHeroId = 2,
             Items = ImmutableSortedDictionary<int, Item>.Empty.Add(ShopItemId.Value, TestBlade()),
             Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(ShopItemId, 8)) },
+        };
+    }
+
+    /// <summary>Three identical strikers (so any of the three items below is a guaranteed Buy for
+    /// whichever one is active — mirrors <see cref="SingleHeroGuaranteedBuyState"/>'s ratio, just not
+    /// hero-specific) queued behind three shelved items, one per haggle-control target — for
+    /// <see cref="EachHaggleControl_QueuesExactlyTheIntendedActionRecord"/>, which needs independent
+    /// customers/rounds so a sale that actually closes (Accept, Counter) never removes an item a
+    /// LATER control in the same test still needs on the shelf. No AdvancePhase in that test (every
+    /// counter verb is immediate under U1), so unlike <see cref="SingleHeroGuaranteedBuyState"/> there
+    /// is no real Tick for RecruitSystem to collide a NextHeroId against.</summary>
+    private static GameState ThreeCustomerGuaranteedBuyState(ItemId itemA, ItemId itemB, ItemId itemC)
+    {
+        var heroes = new[]
+            {
+                MakeHero(1, ClassRegistry.StrikerId, gold: 500),
+                MakeHero(2, ClassRegistry.StrikerId, gold: 500),
+                MakeHero(3, ClassRegistry.StrikerId, gold: 500),
+            }
+            .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+        var baseState = GameFactory.NewGame(7003, heroes);
+
+        Item Blade(ItemId id) => new(
+            id, "test-recipe", $"Test Blade {id.Value}", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(Attack: 5, Defense: 0, Weight: 2), new MakersMark("You", 1),
+            ImmutableList<ItemHistoryEntry>.Empty);
+
+        return baseState with
+        {
+            Items = ImmutableSortedDictionary<int, Item>.Empty
+                .Add(itemA.Value, Blade(itemA))
+                .Add(itemB.Value, Blade(itemB))
+                .Add(itemC.Value, Blade(itemC)),
+            Player = baseState.Player with
+            {
+                Shelf = ImmutableList.Create(
+                    new ShelfEntry(itemA, 8), new ShelfEntry(itemB, 8), new ShelfEntry(itemC, 8)),
+            },
         };
     }
 

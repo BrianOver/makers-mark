@@ -216,13 +216,23 @@ public partial class CampPanel : SimPanel
 
     private void OnSend(OptionButton pick, HeroId to)
     {
-        if (Adapter is null || pick.ItemCount == 0)
+        if (Adapter is null)
         {
             return;
         }
 
-        var selected = pick.Selected < 0 ? 0 : pick.Selected;
-        var itemValue = pick.GetItemMetadata(selected).AsInt32();
+        // AE4 (this panel never enforces a rule, see the class doc): an empty picker must NOT become
+        // a silent no-op. The picker goes empty the instant a delivery lands — the sent item moves
+        // into the hero's pack (CampHandlers.ApplySend), so HeldConsumables reports nothing held on
+        // the very next render, same render pass that also disables this button. A real click can't
+        // reach a Disabled button, but this suite's Press deliberately bypasses that (mirroring a
+        // double-click race), and that press must still reach the kernel: CampHandlers.ApplySend
+        // checks SupplySent/Recalled BEFORE it ever looks at the item, so any placeholder id still
+        // resolves to the real, typed "one runner per party per day" rejection instead of vanishing
+        // before the kernel ever sees it.
+        var itemValue = pick.ItemCount == 0
+            ? -1
+            : pick.GetItemMetadata(pick.Selected < 0 ? 0 : pick.Selected).AsInt32();
         Adapter.Queue(new SendSupplyAction(to, new ItemId(itemValue)));
     }
 
