@@ -54,49 +54,50 @@ public sealed partial class AudioDirector : Node
     private readonly record struct ComposedTrack(string Id, string ResourcePath, float TrimDb);
 
     /// <summary>
-    /// U2 (make-it-visible plan): which composed track, if any, replaces the synth bed for a phase.
-    /// A DATA TABLE, not a switch full of ifs — remapping a track to a different phase, or handing a
-    /// phase back to the synth bed, is a one-line edit here and nothing else. That matters because
-    /// the owner's post-sitting verdicts (U8: keep / revert / remap) need to be exactly that cheap.
+    /// Which composed track, if any, replaces the synth bed for a phase. A DATA TABLE, not a switch
+    /// full of ifs — remapping a track to a different phase, or handing a phase back to the synth
+    /// bed, is a one-line edit here and nothing else. That matters because the owner's post-sitting
+    /// verdicts (keep / revert / remap) need to be exactly that cheap.
     ///
-    /// <para><b>Why these three phases and no others.</b> Only three tracks exist — town-dusk for
-    /// the evening light change, night-still for the quiet camp decision window, quest-wait for both
-    /// Expedition phases (the party is out either way; Deep gets the same track rather than a fourth
-    /// one that does not exist yet). Morning and the Mine's own <see cref="MusicBed.Underground"/>
-    /// theme have no composed entry and stay on the synth bed — the gap is stated, not papered over
-    /// (KTD-C: "no new music generation... only wiring the three tracks that exist").</para>
+    /// <para><b>U4 (playtest-three plan) closed the Morning gap U2 stated on purpose.</b> U2 shipped
+    /// three composed tracks and explicitly left Morning on the synth bed — no existing mood fit an
+    /// opening, brightest-of-the-day phase without new generation. The owner then rejected the
+    /// synthesized Morning bed a THIRD time (#327 had already retuned its bass and loop length) —
+    /// proof the problem was synthesis-vs-composition, not a mix setting, so U4 generates
+    /// <c>day-first-light</c> instead of retuning <see cref="MusicBed"/> again. All five
+    /// <see cref="DayPhase"/> values now carry a composed entry; <see cref="MusicBed"/> remains the
+    /// fallback for a missing/unpulled-LFS file and stays the Mine's own
+    /// <see cref="MusicBed.Underground"/> theme untouched (no mine track this round).</para>
     ///
-    /// <para><b>U-audio-2: why the Morning gap is the one that actually mattered.</b> The owner's next
-    /// two playtests both never left Morning (zero phase-tick rows in the session log), so 100% of what
-    /// he heard was the one phase this table does not cover — the composed tracks landing here was, from
-    /// where he sat, indistinguishable from them not landing at all. Composing a fourth track for Morning
-    /// is out of scope for this pass (still no new generation), and none of the three existing moods
-    /// fits an opening, brightest-of-the-day phase without being a worse mismatch than the honest synth
-    /// bed it would replace — town-dusk is a light change AWAY from morning, night-still and quest-wait
-    /// are both "the day is on pause" moods, and Morning is the opposite of that. So the gap stays, but on
-    /// purpose and for a stated reason rather than by omission, and <see cref="MusicBed"/> — the one thing
-    /// that actually plays whenever he opens the game — got the bass-and-loop-length pass instead
-    /// (see its own header). If a fourth composed track for Morning ever lands, this table is the one and
-    /// only place a new entry needs to go.</para>
+    /// <para><b>night-still-long replaces night-still as Camp's FILE, not just its id.</b> The praised
+    /// original 60s <c>night-still.mp3</c> stays committed on disk — reverting Camp to it is a
+    /// one-line edit back to the old id/path/TrimDb, exactly the "revert is a table row" contract this
+    /// unit promised. The new file is a &gt;=180s regeneration of the SAME quiet-camp brief so the loop
+    /// stops completing often enough to announce itself (the owner's exact "loops too quickly," now
+    /// aimed at a composed track instead of the synth bed it was originally about).</para>
     ///
     /// <para><b>TrimDb, and why it is not just zero everywhere.</b> Measured with ffmpeg's
-    /// <c>loudnorm</c> analysis pass (integrated LUFS) run identically on each composed file AND on a
-    /// plain WAV render of the synth bed it replaces (see the U2 PR body for the exact numbers) — the
-    /// only available substitute for a listen, since nothing in this pipeline can hear (R8). Measured:
-    /// town-dusk -13.8 LUFS vs the Evening bed's -18.3 (4.5 LU hot); quest-wait -14.3 LUFS vs
-    /// Expedition/ExpeditionDeep's -17.9/-17.4 (3.1-3.6 LU hot, rounded down to -4dB for both so
-    /// neither ends up over its own bed); night-still -21.7 LUFS vs the Camp bed's -17.4 (already 4.3
-    /// LU QUIETER, so it keeps a zero trim — boosting a quiet track's gain to "catch up" would undo
-    /// the exact lesson <see cref="MusicDb"/>'s own retune already taught: "a little loud" -> err
-    /// quiet). This is a measured best-effort, not a verdict: the owner's in-game A/B
-    /// (<see cref="_UnhandledKeyInput"/>) is what actually confirms "comparable."</para>
+    /// <c>loudnorm</c> analysis pass (integrated LUFS) on each composed file, same method U2 used.
+    /// U2 trimmed each track to roughly match the SYNTH BED it replaced; U4 changes the reference —
+    /// every composed track now targets the owner's own praised night-still LUFS (-21.7) directly
+    /// (R5's ±1 LU contract), not whatever synth bed happens to sit next to it in the table. Measured
+    /// raws and the resulting effective (raw + TrimDb) level: town-dusk -13.8 (was -5dB -> -18.8
+    /// effective, now -8dB -> -21.8), quest-wait -14.3 (was -4dB -> -18.3 effective, now -7.5dB ->
+    /// -21.8), day-first-light -13.3 (new track, -8.4dB -> -21.7), night-still-long -27.15 (new
+    /// regeneration — quieter than the original 60s file's own -21.7 raw despite the same brief;
+    /// ambient generation is not byte-reproducible across a 3x-longer render even holding style
+    /// constant, so this one needs a +5.45dB BOOST rather than a cut to reach -21.7 effective — the
+    /// one entry in this table where TrimDb is positive). This is a measured best-effort, not a
+    /// verdict: the owner's in-game A/B (<see cref="_UnhandledKeyInput"/>) is what actually confirms
+    /// "comparable."</para>
     /// </summary>
     private static readonly Dictionary<DayPhase, ComposedTrack> ComposedTracks = new()
     {
-        [DayPhase.Evening] = new ComposedTrack("town-dusk", "res://assets/audio/town-dusk.mp3", TrimDb: -5f),
-        [DayPhase.Camp] = new ComposedTrack("night-still", "res://assets/audio/night-still.mp3", TrimDb: 0f),
-        [DayPhase.Expedition] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.mp3", TrimDb: -4f),
-        [DayPhase.ExpeditionDeep] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.mp3", TrimDb: -4f),
+        [DayPhase.Morning] = new ComposedTrack("day-first-light", "res://assets/audio/day-first-light.mp3", TrimDb: -8.4f),
+        [DayPhase.Evening] = new ComposedTrack("town-dusk", "res://assets/audio/town-dusk.mp3", TrimDb: -8f),
+        [DayPhase.Camp] = new ComposedTrack("night-still-long", "res://assets/audio/night-still-long.mp3", TrimDb: 5.45f),
+        [DayPhase.Expedition] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.mp3", TrimDb: -7.5f),
+        [DayPhase.ExpeditionDeep] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.mp3", TrimDb: -7.5f),
     };
 
     /// <summary>Loaded composed streams, keyed by resource path so the same file backing two table

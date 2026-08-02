@@ -189,6 +189,18 @@ public sealed partial class ForgeMinigame : PanelContainer
     /// steam-plume VFX at the moment the player plunges the stock.</summary>
     public event Action? Quenched;
 
+    /// <summary>
+    /// U5 (playtest-three plan): raised at the start of a bellows breath — <see cref="BellowsStart"/>
+    /// (Shift held) or one discrete <see cref="PumpStroke"/> (right-drag quantum) — whichever gesture
+    /// the player is actually using. Drives <see cref="GodotClient.Audio.Cue.Bellows"/>, a cue that
+    /// shipped synthesized but with ZERO call sites: "the bellows had no sound" (see that cue's own
+    /// doc) was never fixed because nothing ever raised it. Not raised every frame while held — that would
+    /// fire dozens of times a second off <c>_Process</c>'s continuous heat-raise and drown the mix;
+    /// one sound per breath/stroke is the gesture, same granularity as <see cref="Struck"/> firing
+    /// once per hammer blow rather than once per frame the key is down.
+    /// </summary>
+    public event Action? BellowsPumped;
+
     private readonly List<int> _samples = new();
     private readonly List<int> _strikes = new();
     private double _elapsed;
@@ -325,6 +337,7 @@ public sealed partial class ForgeMinigame : PanelContainer
         }
 
         IsPumping = true;
+        BellowsPumped?.Invoke();
         RepaintUi();
     }
 
@@ -352,6 +365,7 @@ public sealed partial class ForgeMinigame : PanelContainer
         var equivalentSeconds = PumpStrokeHeatPermille / (double)BellowsRaisePermillePerSecond;
         HeatYPermille = Math.Clamp(HeatYPermille + PumpStrokeHeatPermille, 0, 1000);
         ShapeXPermille = Math.Max(0, ShapeXPermille - (int)Math.Round(BellowsDriftBackPermillePerSecond * equivalentSeconds));
+        BellowsPumped?.Invoke();
         RepaintUi();
     }
 

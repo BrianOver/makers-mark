@@ -388,7 +388,22 @@ public class AudioTests
 
     /// <summary>A scene takes the music and gives it back. The trap: <c>SetPhase</c> ignores an unchanged
     /// phase, so if closing a scene did not explicitly restore the bed the game would fall silent until
-    /// the day happened to move on.</summary>
+    /// the day happened to move on.
+    ///
+    /// <para><b>U4 fix (playtest-three plan): "the day's bed" is no longer always the synth bed.</b>
+    /// This test used to compare the restored stream directly against <c>MusicBed.For(DayPhase.Morning)</c>
+    /// — correct back when Morning had no composed entry, since <c>ResolveBed</c>'s ladder had nowhere
+    /// else to land. U4 gave Morning a composed track (<c>day-first-light</c>), so Morning's bed is now
+    /// that file, not the synth one, and the hardcoded comparison went red — not because
+    /// <c>SetScene(null)</c> stopped restoring the bed, but because the TEST'S OWN assumption about what
+    /// "the bed" resolves to for Morning was stale. Fixed by asking the same composed-first question
+    /// production asks, via <c>AudioDirector.LoadComposedTrackForCensus</c> — the same public loader
+    /// <c>ResolveBed</c> itself calls (see that method's own doc) — falling back to the synth bed only if
+    /// no composed entry exists, exactly mirroring <c>ResolveBed</c>'s own ladder. This keeps the
+    /// invariant this test actually exists for (leaving a scene must restore SOME correct bed, not
+    /// silence or the leftover Mine theme) intact and phase-mapping-agnostic, rather than re-hardcoding a
+    /// second assumption that the next composed-track remap would just break again.</para>
+    /// </summary>
     [TestCase]
     public void AScene_TakesTheMusic_AndGivesItBack()
     {
@@ -406,12 +421,18 @@ public class AudioTests
                 .IsTrue();
 
             director.SetScene(null);
+
+            // Whatever Morning ACTUALLY resolves to today — composed if a track is mapped (true since
+            // U4), else the synth bed — never a hardcoded assumption about which one that is.
+            var expectedBed = AudioDirector.LoadComposedTrackForCensus(DayPhase.Morning)
+                ?? (AudioStream)MusicBed.For(DayPhase.Morning);
             var backToTown = director.GetChildren().OfType<AudioStreamPlayer>()
-                .Any(p => p.Stream == MusicBed.For(DayPhase.Morning));
+                .Any(p => p.Stream == expectedBed);
             AssertThat(backToTown)
                 .OverrideFailureMessage(
-                    "Closing the Depths left the Mine theme playing (or nothing). Leaving a scene has to " +
-                    "restore the day's bed explicitly — SetPhase early-returns on an unchanged phase.")
+                    "Closing the Depths left the Mine theme playing (or nothing) instead of Morning's " +
+                    "actual bed. Leaving a scene has to restore the day's bed explicitly — SetPhase " +
+                    "early-returns on an unchanged phase.")
                 .IsTrue();
         }
         finally
@@ -524,6 +545,12 @@ public class AudioTests
     /// <see cref="AudioDirector.ComposedTrackIds"/>. Three composed tracks sat on disk and were never
     /// wired into the game for days before this unit — this is the test that turns any FUTURE repeat
     /// of exactly that ("committed but never referenced") red at PR time instead of silent for days.
+    ///
+    /// <para>U4 (playtest-three plan) closed the one deliberate gap this table used to state on
+    /// purpose (Morning had no composed entry) — floor raised 3 -&gt; 5 to match the five DayPhase
+    /// keys the table now carries (Morning, Evening, Camp, Expedition, ExpeditionDeep), so an
+    /// accidental drop back toward the old gap is caught here too, not just a full empty-table
+    /// regression.</para>
     /// </summary>
     [TestCase]
     public void EveryComposedTrack_LoadsAndLoops()
@@ -532,10 +559,10 @@ public class AudioTests
 
         AssertThat(ids.Count)
             .OverrideFailureMessage(
-                "AudioDirector.ComposedTrackIds is empty. If every composed track was deliberately " +
-                "reverted this floor should move with them — but an accidentally emptied table is " +
-                "exactly the silent regression this census exists to catch.")
-            .IsGreaterEqual(3);
+                "AudioDirector.ComposedTrackIds has fewer than 5 entries. If a composed track was " +
+                "deliberately reverted this floor should move with it — but an accidentally emptied " +
+                "table (or a silently dropped phase) is exactly the regression this census exists to catch.")
+            .IsGreaterEqual(5);
 
         foreach (var (phase, id) in ids)
         {
@@ -643,8 +670,15 @@ public class AudioTests
     /// target level. The regression this guards against: without per-player trim tracking, retriggering
     /// a crossfade mid-transition would make the OUTGOING player snap to whatever level the NEW
     /// target's trim implies instead of continuing from the level it was actually at — an audible pop
-    /// where a fade should be. Exercised across composed-to-composed (different trims),
-    /// synth-to-composed, and composed-to-synth.
+    /// where a fade should be.
+    ///
+    /// <para>U4 (playtest-three plan) gave Morning a composed entry too, so all five
+    /// <see cref="DayPhase"/> values now default to composed — there is no longer a phase-driven
+    /// synth transition to exercise here (the dev A/B toggle is the only remaining path to the synth
+    /// bed, covered separately by <see cref="TheABToggle_SwapsComposedAndSynthLive"/>). What this test
+    /// exercises instead is arguably the harder case: three composed-to-composed handoffs with three
+    /// DIFFERENT trims, which is exactly the shape that would expose a trim-tracking bug a same-trim
+    /// transition could not.</para>
     /// </summary>
     [TestCase]
     public void CrossfadingBetweenDifferentTrims_NeverJumpsLevel()
@@ -678,9 +712,11 @@ public class AudioTests
                 }
             }
 
-            AssertNoJump(DayPhase.Evening, DayPhase.Camp); // composed(-5dB) -> composed(0dB)
-            AssertNoJump(DayPhase.Camp, DayPhase.Morning); // composed(0dB) -> synth(0dB)
-            AssertNoJump(DayPhase.Morning, DayPhase.Expedition); // synth(0dB) -> composed(-4dB)
+            // All three now composed-to-composed (U4), each pair with a different TrimDb — see
+            // AudioDirector.ComposedTracks for the current numbers.
+            AssertNoJump(DayPhase.Evening, DayPhase.Camp);
+            AssertNoJump(DayPhase.Camp, DayPhase.Morning);
+            AssertNoJump(DayPhase.Morning, DayPhase.Expedition);
         }
         finally
         {
@@ -792,6 +828,100 @@ public class AudioTests
                     "sound it replaces only fixes 'identical,' not 'too loud.'")
                 .IsLessEqual(panelOpenPeak);
         }
+    }
+
+    /// <summary>
+    /// U5 (playtest-three plan, R6): "the forge stops sounding like a fault." The building cues
+    /// already proved (#327) that a soft attack reads as better — this pins that the forge's own
+    /// worst offenders (the two hammer blows and the quench) got the same treatment.
+    ///
+    /// <para><b>Why this can't just check "sample 0 is near zero."</b> Every cue in the library
+    /// already passes that: <c>SfxLibrary.Build</c> unconditionally runs every buffer through
+    /// <see cref="Synth.DeClick"/>, a fixed ~4ms fade applied to ALL cues regardless of whether they
+    /// asked for a softer attack. A naive zero-crossing check would be satisfied by DeClick's own
+    /// floor and prove nothing about whether these three cues got anything extra. Instead this
+    /// measures how many samples it actually takes each cue to reach 90% of its own early peak —
+    /// <see cref="Cue.Coin"/> has no <c>attack</c> parameter anywhere in its recipe, so its rise is
+    /// bounded by DeClick's shared 4ms floor alone; the forge cues asked for an additional 8-12ms
+    /// ramp on top of that, so their rise must take measurably longer.</para>
+    /// </summary>
+    [TestCase]
+    public void HammerAndQuenchCues_RiseSlowerThanAnInstantAttackCue()
+    {
+        int RiseSamples(Cue cue)
+        {
+            var pcm = Pcm(SfxLibrary.Get(cue));
+            var window = Math.Min(pcm.Length, Synth.Samples(0.03f));
+            var peak = 0f;
+            for (var i = 0; i < window; i++)
+            {
+                peak = MathF.Max(peak, MathF.Abs(pcm[i]));
+            }
+
+            var target = peak * 0.9f;
+            for (var i = 0; i < window; i++)
+            {
+                if (MathF.Abs(pcm[i]) >= target)
+                {
+                    return i;
+                }
+            }
+
+            return window;
+        }
+
+        var instantRise = RiseSamples(Cue.Coin);
+
+        foreach (var cue in new[] { Cue.HammerOnBeat, Cue.HammerOffBeat, Cue.Quench })
+        {
+            var rise = RiseSamples(cue);
+            AssertThat(rise)
+                .OverrideFailureMessage(
+                    $"{cue} reaches 90% of its early peak in {rise} samples " +
+                    $"({rise / (float)Synth.SampleRate * 1000:0.#}ms) — no slower than Coin's " +
+                    $"instant-attack rise of {instantRise} samples ({instantRise / (float)Synth.SampleRate * 1000:0.#}ms). " +
+                    "The forge cues need a real 8-12ms attack on top of DeClick's shared 4ms fade, not just " +
+                    "DeClick's own floor every cue already has.")
+                .IsGreater(instantRise);
+        }
+    }
+
+    /// <summary>
+    /// U5 (R6): "the shop cue is byte-untouched." This is a FROZEN COPY of <see cref="Cue.EnterMarket"/>'s
+    /// exact synthesis recipe as it existed the moment U5 landed — the same <see cref="Synth"/> static
+    /// calls <see cref="SfxLibrary"/> itself uses, called here a second time and asserted byte-for-byte
+    /// equal to whatever <see cref="SfxLibrary.Get"/> actually produces. A future edit to EnterMarket's
+    /// recipe — even one parameter — makes this frozen copy diverge from production and turns this test
+    /// red; the only way it stays green is if nobody touches the shop cue. Deliberately NOT a hardcoded
+    /// hash constant: computing that constant would require running the engine suite once to learn it,
+    /// which no implementing agent may do (orchestrator-serial rule) — comparing two live computations of
+    /// the SAME recipe proves the same thing with no such dependency.
+    /// </summary>
+    [TestCase]
+    public void EnterMarket_IsByteUntouched()
+    {
+        var reference = new float[Synth.Samples(0.30f)];
+        for (var i = 0; i < reference.Length; i++)
+        {
+            var t = i / (float)Synth.SampleRate;
+            reference[i] = Synth.Noise(i, seed: 81) * Synth.Decay(t, 0.05f) * 0.25f;
+        }
+
+        Synth.LowPass(reference, 2200f);
+        Synth.AddPartial(reference, 1900f, 0.20f, halfLife: 0.06f, attack: 0.006f);
+        Synth.AddPartial(reference, 3550f, 0.11f, halfLife: 0.04f, attack: 0.008f);
+        Synth.Normalise(reference, 0.22f);
+        Synth.DeClick(reference); // SfxLibrary.Build's own final step, applied to every cue
+
+        var referenceBytes = Convert.ToBase64String(Synth.ToStream(reference).Data);
+        var actualBytes = Convert.ToBase64String(SfxLibrary.Get(Cue.EnterMarket).Data);
+
+        AssertThat(actualBytes)
+            .OverrideFailureMessage(
+                "EnterMarket's bytes moved. It is the one cue the owner called good — R6 requires it " +
+                "stays byte-for-byte identical while its neighbors (EnterForge/Tavern/MineGate/Noticeboard) " +
+                "get quieter around it.")
+            .IsEqual(referenceBytes);
     }
 }
 #endif
