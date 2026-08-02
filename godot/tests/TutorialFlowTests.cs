@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
+using System.Linq;
 using GameSim;
 using GameSim.Contracts;
 using GameSim.Professions;
@@ -164,7 +165,15 @@ public class TutorialFlowTests
         // `state.EventLog.OfType<BountyPosted>().Any()` — a durable "has this ever happened" fact —
         // so the early post is banked and credited the moment Shelve finally catches up, with no
         // second bounty required.
-        var ui = MountMainUi();
+        //
+        // Explicit profession-selecting campaign (mirrors StarterKitCraft/PartyDeparting_...
+        // above) — the plain MountMainUi() default starts with EMPTY materials (see
+        // ExplicitBlacksmith_... in NewCampaignSeedingTests), and by the time this test reaches
+        // Craft it has already advanced past Morning (the vendor's only open phase), so there is
+        // no legal way to buy in this sequence at all. Only the chosen-profession constructor's
+        // GameFactory.StarterCopper seeding lets Craft (phase-unrestricted) succeed here.
+        var campaign = GameComposition.NewCampaign(ScriptedSession.Seed, ProfessionRegistry.BlacksmithId);
+        var ui = MountMainUi(new SimAdapter(campaign));
         try
         {
             ui.Adapter.Queue(new PostBountyAction(ScriptedSession.BountyFloor, ScriptedSession.BountyReward));
@@ -174,8 +183,14 @@ public class TutorialFlowTests
                 .OverrideFailureMessage("An out-of-order bounty post should not move a step it isn't for yet.")
                 .IsEqual(TutorialStep.BuyMaterial);
 
-            // Craft and shelve, same as any normal run — both immediate, no bell needed.
+            // Craft (off the starter kit — no Buy needed or even possible, Morning has passed)
+            // and shelve, same as any normal run — both immediate, no bell needed.
             ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
+            AssertThat(ui.Adapter.LastRejections.Count)
+                .OverrideFailureMessage(
+                    $"The craft was rejected: [{string.Join("; ", ui.Adapter.LastRejections.Select(r => r.Reason))}] " +
+                    "— this test's whole premise needs it to actually resolve.")
+                .IsEqual(0);
             var craftedItem = ScriptedSession.CraftedItem(ui.Adapter.CurrentState);
             ui.Adapter.Queue(new StockAction(craftedItem, 50));
 
