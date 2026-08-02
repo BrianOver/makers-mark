@@ -131,6 +131,11 @@ Decisions (KD1–KD5), Scope Boundaries, and Open Questions (OQ1–OQ4) that all
 - Double-click `play.bat` — the ONLY launcher (needs Godot 4.6.3-stable mono at `C:\Tools\Godot\...`
   or `GODOT_BIN`). It self-contains the freshness gate, build, import and launch; args `stale` and
   `verify` exist and are rarely wanted. Do not add a second launcher — edit this one.
+- **If you're standing in the shared `c:\Code\Game` root (this checkout) and it also has a `play\`
+  subfolder**, double-click `play\play.bat` instead — that nested worktree is the playable copy.
+  The root's own `play.bat` refuses and says so (it exists here only because this root is a normal
+  checkout of `main` too, and `main` tracks the file); `play.bat container` overrides that refusal
+  for the rare case you mean to launch from the root on purpose.
 - Editor: `edit.bat`. Text/headless: `dotnet run --project sim/GameSim.Cli`.
 
 ## Key context pointers

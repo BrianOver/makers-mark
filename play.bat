@@ -2,9 +2,10 @@
 REM ============================================================================
 REM  THE launcher. There is exactly one. Double-click me.
 REM
-REM  Optional args (you will almost never want either):
-REM    stale    launch even if this checkout is behind/diverged from origin/main
-REM    verify   run the checks + build + import, then STOP without opening the game
+REM  Optional args (you will almost never want any of these):
+REM    stale     launch even if this checkout is behind/diverged from origin/main
+REM    verify    run the checks + build + import, then STOP without opening the game
+REM    container launch even from the shared dev/orchestrator checkout (see step 0)
 REM
 REM  Why one file: there used to be play.bat AND tools/play.ps1 AND play-cli.bat,
 REM  they behaved differently, and the double-clickable one skipped the staleness
@@ -13,6 +14,7 @@ REM  live in play.ps1 is inlined below. If you are tempted to add a second
 REM  launcher, edit this one instead.
 REM
 REM  What it does, in order:
+REM    0. refuses if this is the shared dev checkout, not the playable copy
 REM    1. refuses unless this checkout is on main and has no uncommitted code
 REM    2. fast-forwards to origin/main, refuses if the two have diverged
 REM    3. stamps branch/sha into the in-game corner label
@@ -23,13 +25,36 @@ pushd "%~dp0"
 
 set "ALLOW_STALE="
 set "VERIFY_ONLY="
+set "ALLOW_CONTAINER="
 :parseargs
 if "%~1"=="" goto argsdone
-if /i "%~1"=="stale"  set "ALLOW_STALE=1"
-if /i "%~1"=="verify" set "VERIFY_ONLY=1"
+if /i "%~1"=="stale"     set "ALLOW_STALE=1"
+if /i "%~1"=="verify"    set "VERIFY_ONLY=1"
+if /i "%~1"=="container" set "ALLOW_CONTAINER=1"
 shift
 goto parseargs
 :argsdone
+
+REM ---- 0. this checkout vs. the playable one ---------------------------------
+REM This same tracked file is checked out on this machine at TWO paths: a shared
+REM checkout that hosts agent worktrees under .claude\worktrees, and a separate
+REM "play" worktree at <this folder>\play meant to be the one you double-click
+REM (see README/HANDOFF). Because it is the same file, content can never tell
+REM the two apart -- git rm-ing it here would also remove it from the play
+REM worktree that needs it. This directory-shape check is the guard instead: only
+REM the container has its own nested play\play.bat sitting next to it.
+if defined ALLOW_CONTAINER goto containerdone
+if exist "%~dp0play\play.bat" (
+  echo.
+  echo   REFUSING TO LAUNCH -- this is the shared dev checkout, not the playable copy.
+  echo   Two play.bat exist on this machine by design: this one, and the real one at
+  echo     %~dp0play\play.bat
+  echo   Double-click THAT one instead.
+  echo     ^(to launch from here anyway: play.bat container^)
+  echo.
+  goto fail
+)
+:containerdone
 
 REM ---- Godot -----------------------------------------------------------------
 set "GODOT=%GODOT_BIN%"
