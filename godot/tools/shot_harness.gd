@@ -8,10 +8,14 @@
 # docs/design/2026-07-24-visual-playtest-loop.md).
 #
 # Invoke (via tools/shoot.ps1, which adds a timeout+kill safety net):
-#   SHOT_OUT=<abs png path>  SHOT_STATE=<""|Forge|Shop|Tavern|Gate>  SHOT_QUIET=<""|1>
+#   SHOT_OUT=<abs png path>  SHOT_STATE=<""|Forge|Shop|Tavern|Gate|SendOff|...>  SHOT_QUIET=<""|1>
 #   godot --path <godot dir> -s godot/tools/shot_harness.gd
 # Empty SHOT_STATE captures the town; a venue key enters that interior through the
 # production OnTownBuildingClicked path, then waits for the camera dolly to settle.
+# SendOff (U1, playtest-three plan) opens the Forge drawer, then presses the real
+# AdvancePhase bell through its own signal — the receipt for "send them off with a drawer
+# open" reachability fix, showing the resulting town view (drawer closed, camera on the
+# gate, PiP dock docked).
 # main_ui.tscn self-seeds a deterministic SimAdapter (seed 2026) on _Ready.
 #
 # SHOT_QUIET=1 (receipt.ps1's -Quiet): freezes AmbientLife2D -- chimney smoke, fireflies,
@@ -88,11 +92,42 @@ func _process(_delta: float) -> bool:
 			# Phase B Renown panel — drawer-hosted, opened by id.
 			if _ui.has_method("OpenPanel"):
 				_ui.call("OpenPanel", "HeroCards")
+		elif _state == "SendOff":
+			# U1 (playtest-three plan): the receipt for "clicked send them off with a drawer
+			# open — where are the visuals?" Open the Forge drawer here; the AdvancePhase
+			# bell itself is pressed a beat later (see the `_frames == 90` check below), once
+			# the drawer's own 0.22s slide-in has settled, mirroring the real player order
+			# (craft, THEN ring the bell) rather than pressing through mid-slide.
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Forge")
+		elif _state == "Mirror":
+			# U1: the second required receipt -- the first proof any human has seen the
+			# mirror render since it merged (#321). No drawer to open first; press the real
+			# bell straight away so a party has actually departed by the time the Mirror
+			# opens (see the frame==90 check below).
+			var b2 = _ui.find_child("AdvancePhase", true, false)
+			if b2:
+				b2.emit_signal("pressed")
 		elif _ui.has_method("OnTownBuildingClicked"):
 			# Same entry point the town uses on building arrival (private C# method reached
 			# via the source-gen call() bridge).
 			_ui.call("OnTownBuildingClicked", _state)
 		_entered = true
+	# SendOff's second beat: press the real bell button through its own signal (the exact path
+	# a player uses), a beat after the Forge drawer opened above -- this is what the departure
+	# choreography (drawer close, camera pan, PiP dock) is actually reacting to.
+	if _state == "SendOff" and _frames == 90:
+		var bell = _ui.find_child("AdvancePhase", true, false)
+		if bell:
+			bell.emit_signal("pressed")
+	# Mirror's second beat: the bell above (frame 60) has landed a party in Expedition by now --
+	# open the Scrying Mirror directly (ShowMirror is phase-ungated by design; see ScryingMirror
+	# and MainUi's new Watch control) so the receipt shows real roll-call/"CARRYING YOUR WORK"
+	# content, not an empty shell.
+	if _state == "Mirror" and _frames == 90:
+		var mirror = _ui.find_child("ScryingMirror", true, false)
+		if mirror:
+			mirror.call("ShowMirror")
 	if _frames >= _settle:
 		var img := root.get_texture().get_image()
 		var err := img.save_png(_out)
