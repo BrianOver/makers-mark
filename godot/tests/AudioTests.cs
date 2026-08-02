@@ -388,7 +388,22 @@ public class AudioTests
 
     /// <summary>A scene takes the music and gives it back. The trap: <c>SetPhase</c> ignores an unchanged
     /// phase, so if closing a scene did not explicitly restore the bed the game would fall silent until
-    /// the day happened to move on.</summary>
+    /// the day happened to move on.
+    ///
+    /// <para><b>U4 fix (playtest-three plan): "the day's bed" is no longer always the synth bed.</b>
+    /// This test used to compare the restored stream directly against <c>MusicBed.For(DayPhase.Morning)</c>
+    /// — correct back when Morning had no composed entry, since <c>ResolveBed</c>'s ladder had nowhere
+    /// else to land. U4 gave Morning a composed track (<c>day-first-light</c>), so Morning's bed is now
+    /// that file, not the synth one, and the hardcoded comparison went red — not because
+    /// <c>SetScene(null)</c> stopped restoring the bed, but because the TEST'S OWN assumption about what
+    /// "the bed" resolves to for Morning was stale. Fixed by asking the same composed-first question
+    /// production asks, via <c>AudioDirector.LoadComposedTrackForCensus</c> — the same public loader
+    /// <c>ResolveBed</c> itself calls (see that method's own doc) — falling back to the synth bed only if
+    /// no composed entry exists, exactly mirroring <c>ResolveBed</c>'s own ladder. This keeps the
+    /// invariant this test actually exists for (leaving a scene must restore SOME correct bed, not
+    /// silence or the leftover Mine theme) intact and phase-mapping-agnostic, rather than re-hardcoding a
+    /// second assumption that the next composed-track remap would just break again.</para>
+    /// </summary>
     [TestCase]
     public void AScene_TakesTheMusic_AndGivesItBack()
     {
@@ -406,12 +421,18 @@ public class AudioTests
                 .IsTrue();
 
             director.SetScene(null);
+
+            // Whatever Morning ACTUALLY resolves to today — composed if a track is mapped (true since
+            // U4), else the synth bed — never a hardcoded assumption about which one that is.
+            var expectedBed = AudioDirector.LoadComposedTrackForCensus(DayPhase.Morning)
+                ?? (AudioStream)MusicBed.For(DayPhase.Morning);
             var backToTown = director.GetChildren().OfType<AudioStreamPlayer>()
-                .Any(p => p.Stream == MusicBed.For(DayPhase.Morning));
+                .Any(p => p.Stream == expectedBed);
             AssertThat(backToTown)
                 .OverrideFailureMessage(
-                    "Closing the Depths left the Mine theme playing (or nothing). Leaving a scene has to " +
-                    "restore the day's bed explicitly — SetPhase early-returns on an unchanged phase.")
+                    "Closing the Depths left the Mine theme playing (or nothing) instead of Morning's " +
+                    "actual bed. Leaving a scene has to restore the day's bed explicitly — SetPhase " +
+                    "early-returns on an unchanged phase.")
                 .IsTrue();
         }
         finally
