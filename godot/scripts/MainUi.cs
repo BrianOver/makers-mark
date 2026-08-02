@@ -58,6 +58,27 @@ public partial class MainUi : Control
     /// from the pre-wrapper layout. Must be explicit — see StatChipsWrap's remark.</summary>
     private const float StatRowHeight = 68f;
 
+    /// <summary>
+    /// U2 (shell-and-audio plan, R2/KTD-C): the header's height BUDGET, shared with
+    /// <c>HudBoundsTests</c> (<c>godot/tests/HudBoundsTests.cs</c>) so the test and the layout it
+    /// polices can never silently drift apart. StatRowHeight/row-2 sizing above are the KNOBS
+    /// that must stay under this budget, never the other way around.
+    ///
+    /// <para><b>Measured, not the plan's proposed 100px.</b> The plan proposed "≤100px at
+    /// 1152×648, measured before finalizing" as an open question — a real headless+windowed
+    /// probe (<c>GetCombinedMinimumSize().Y</c> after the first tick mounts the full stat-chip
+    /// row) measured the CURRENT two-row header at 163px at that same window size, independent of
+    /// width or height (a PanelContainer's natural minimum is a function of its children, not the
+    /// window). Getting under 100px means either dropping a row or shrinking the Books
+    /// Tray/verb cluster measurably — a real visual redesign (moving the tray behind one menu
+    /// button, per Open Question 1), not a knob turn, and explicitly out of this structural
+    /// unit's scope (see the plan's Scope Boundaries: "Header visual redesign beyond the
+    /// budget... taste passes wait for his verdict"). 175px is the real measurement plus ~7%
+    /// headroom for font-metric variance — a regression pin on the CURRENT size, not a target to
+    /// shrink toward yet.</para>
+    /// </summary>
+    public const float HeaderBudgetPx = 175f;
+
     /// <summary>Top offset of the objective chip's top-right dock — must clear the HUD header's
     /// bottom edge. Bumped from 64 to 108 for the two-row header (gate-b playtest, 2026-07-24): the
     /// stat chips moved to their own row, so the header is ~2x tall and the chip would otherwise sit
@@ -214,6 +235,12 @@ public partial class MainUi : Control
     /// the moment the Books Tray zone made the header taller, which is exactly how the chip ended
     /// up overlapping the tray).</summary>
     private PanelContainer _hudHeader = null!;
+
+    /// <summary>U2 (shell-and-audio plan): test-observable handle on the header panel — lets
+    /// <c>HudBoundsTests</c> assert its rect never intersects <see cref="Town"/>'s and that its
+    /// measured height stays inside <see cref="HeaderBudgetPx"/>, without exposing the private
+    /// field itself.</summary>
+    public PanelContainer HudHeader => _hudHeader;
     private int _pendingLedgerDay;
     private HBoxContainer _statChips = null!;
     private Label _clockLabel = null!;
@@ -672,13 +699,14 @@ public partial class MainUi : Control
         var headerBottom = _hudHeader.GetCombinedMinimumSize().Y + ObjectiveDockMargin;
         var desiredTop = Mathf.Max(ObjectiveDockOffsetTop, headerBottom);
 
-        // The world sits full-rect BEHIND this opaque header, so the header hides the top ~quarter
-        // of it. Centering the camera on the player therefore put the player under, or just below,
-        // the header — standing at the forge door meant the forge itself was behind the HUD. Hand
-        // the town the header's measured height so it can bias the camera by it (Town2D does the
-        // canvas-scale math). Measured, not a constant, for exactly the reason above: the header's
-        // height has already drifted twice.
-        Town.TopObstructionPx = _hudHeader.GetCombinedMinimumSize().Y;
+        // U2 (shell-and-audio plan, KTD-C): the world used to sit full-rect BEHIND this opaque
+        // header, so the header hid the top ~quarter of it, and Town2D needed its own height fed
+        // in to bias the camera away from the hidden band (Town.TopObstructionPx, now deleted).
+        // BuildUi now mounts Town2D in LAYOUT FLOW below this header — the world's own rect
+        // already excludes the header, so there is nothing left to compensate for here. This
+        // chip's own dock math is unaffected: it is still a top-right OVERLAY spanning the full
+        // viewport (KTD-C keeps drawers/modals/the objective chip as overlays), so it still needs
+        // headerBottom to clear the Books Tray.
         Objective.OffsetTop = Mathf.Min(desiredTop, viewportHeight - ObjectiveDockMinBottomGap);
         var maxBottom = Mathf.Max(Objective.OffsetTop + ObjectiveDockMinBottomGap, viewportHeight - ObjectiveDockMargin);
         var contentHeight = Objective.GetCombinedMinimumSize().Y;
@@ -1301,31 +1329,20 @@ public partial class MainUi : Control
     {
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
-        // --- U21: TownWorld is now a PERMANENT FullRect base child — added FIRST so every later
-        // sibling (the HUD layout, the DrawerHost, the modals) draws on top of it, and it is never
-        // hidden by a drawer opening/closing (R1 world permanence). 2.5D pivot (U2): Town2D
-        // replaces the grounded 3D town — same permanence contract, same event vocabulary. ---
         // Mounted before the town so a cue fired during the first refresh already has somewhere to go.
         Audio = new AudioDirector();
         AddChild(Audio);
         Audio.SetPhase(Adapter.CurrentState.Phase);
 
-        Town = new Town2D { Name = "Town2D" };
-        AddChild(Town);
-        Town.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        Town.Build(Adapter);
-        Town.Clock = Clock;
-        Town.HeroClicked += OnTownHeroClicked;
-        Town.BuildingClicked += OnTownBuildingClicked;
-        // U3 (painted-interiors plan): a station's Picked now carries its WHOLE StationSpec
-        // (Action/Focus/HoverLine/FlavorLine), so it routes through its own OnStationActivated
-        // rather than straight onto OnInteriorHotspotActivated.
-        Town.StationActivated += OnStationActivated;
-        // U4: replaces the deleted InteriorStage.Exited wiring — fires on EITHER room-exit path
-        // (Esc or the door), re-syncing the engaged latch/deferred focus beat the same way every
-        // other modal-close path already does (see Town2D.InteriorExited's own doc).
-        Town.InteriorExited += OnInteriorExited;
-
+        // --- U2 (shell-and-audio plan, R1/KTD-C): Town2D used to mount here as a PERMANENT
+        // FullRect base child sitting BEHIND the whole `layout` column — which made the header's
+        // opaque top region occlusion of the world a matter of paint order, not layout: the world
+        // was always full-rect underneath, the header just drew over the top of it. That is what
+        // made the mine "off the screen at the top" (R1) possible in the first place, and it took
+        // TWO tuning passes (a camera bias, then that bias's own retune) to paper over it instead
+        // of fixing it. The world now mounts INSIDE `layout`'s own `WorldSlot` region (built
+        // below, after the header) — the one piece of vertical space the header does not claim —
+        // so there is no rect left for the header to occlude. See WorldSlot's own remark. ---
         var layout = new VBoxContainer { Name = "Layout" };
         layout.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(layout);
@@ -1644,18 +1661,40 @@ public partial class MainUi : Control
         _toast.AddThemeColorOverride("font_color", GameTheme.RejectionColor);
         _toastBanner.AddChild(_toast);
 
-        // U21: the world renders through this gap — a transparent, input-passthrough spacer
-        // claiming the exact vertical space the old TabContainer's ExpandFill claimed, so the
-        // header stays pinned top and the ticker stays pinned bottom without either drawing over
-        // (or blocking clicks into) the permanent world now visible underneath the whole Layout
-        // column.
+        // U21/U2: the ExpandFill row between the header and the ticker — claims exactly the
+        // vertical space neither of those two fixed-height rows wants, so the header stays
+        // pinned top and the ticker stays pinned bottom regardless of window height.
+        //
+        // U2 (shell-and-audio plan, R1/KTD-C): this USED to be a transparent, input-passthrough
+        // spacer over a full-rect Town2D mounted behind the whole Layout column — the header
+        // painted over the world's top band and MouseFilter.Ignore let clicks fall through to it.
+        // Town2D is now this Control's own child, anchored FullRect WITHIN it (below), so
+        // WorldSlot no longer needs to pass anything through to a layer behind it — it IS the
+        // world's layout box. Occlusion becomes structural: the header and the ticker each claim
+        // their own row in `layout`, WorldSlot gets whatever height is left over, and Town2D can
+        // never report a rect outside the box its own parent handed it.
         var worldSlot = new Control
         {
             Name = "WorldSlot",
             SizeFlagsVertical = SizeFlags.ExpandFill,
-            MouseFilter = MouseFilterEnum.Ignore,
         };
         layout.AddChild(worldSlot);
+
+        Town = new Town2D { Name = "Town2D" };
+        worldSlot.AddChild(Town);
+        Town.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        Town.Build(Adapter);
+        Town.Clock = Clock;
+        Town.HeroClicked += OnTownHeroClicked;
+        Town.BuildingClicked += OnTownBuildingClicked;
+        // U3 (painted-interiors plan): a station's Picked now carries its WHOLE StationSpec
+        // (Action/Focus/HoverLine/FlavorLine), so it routes through its own OnStationActivated
+        // rather than straight onto OnInteriorHotspotActivated.
+        Town.StationActivated += OnStationActivated;
+        // U4: replaces the deleted InteriorStage.Exited wiring — fires on EITHER room-exit path
+        // (Esc or the door), re-syncing the engaged latch/deferred focus beat the same way every
+        // other modal-close path already does (see Town2D.InteriorExited's own doc).
+        Town.InteriorExited += OnInteriorExited;
 
         Forge = InstantiatePanel<ForgePanel>("res://scenes/panels/forge_panel.tscn");
         Shop = InstantiatePanel<ShopPanel>("res://scenes/panels/shop_panel.tscn");
