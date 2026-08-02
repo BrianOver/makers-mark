@@ -36,9 +36,17 @@ public sealed class DayPhaseTint
     /// <summary>Soft lavender daylight — heroes are out raiding, town is quiet but lit.</summary>
     public static readonly Color ExpeditionTint = new(0.92f, 0.88f, 0.97f);
 
-    /// <summary>The original fixed <c>Town2D.DuskTint</c> value, kept verbatim as the Evening
-    /// stop — the palette's signature purple dusk.</summary>
-    public static readonly Color EveningTint = new(0.86f, 0.80f, 0.93f);
+    /// <summary>U11 retune ("'night' phase is day" / "Night -&gt; Dawn - no visual difference
+    /// really"): was the original fixed <c>Town2D.DuskTint</c> value verbatim, (0.86, 0.80, 0.93)
+    /// — near-white, indistinguishable from <see cref="MorningTint"/> at a glance. Dropped to a
+    /// genuinely dark violet so the phase the UI labels "Night" (<see
+    /// cref="GameSim.Contracts.DayPhase.Evening"/>, via <c>PhaseVocab</c>) actually reads as
+    /// night — sitting between <see cref="CampTint"/> and <see cref="ExpeditionDeepTint"/> (KTD-6:
+    /// <see cref="ExpeditionDeepTint"/> keeps its own "darkest, most tense hour" narrative meaning
+    /// as the stage-2 floors resolve; this stop is dark, not darkest). The Night&lt;-&gt;Dawn gap
+    /// is still the single largest jump in the whole palette (still same purple-dusk hue family —
+    /// Blue stays the dominant channel).</summary>
+    public static readonly Color EveningTint = new(0.42f, 0.36f, 0.58f);
 
     /// <summary>Deeper twilight purple — the party is camped below the checkpoint, town itself
     /// has gone fully dark for the night.</summary>

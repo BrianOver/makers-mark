@@ -48,6 +48,15 @@
 # frame from _process() until the node exists, then disables it on that same frame -- at most
 # one frame of drift can accumulate before it's caught, versus the full ~90-320 frame settle
 # window if suppression silently never engages at all.
+#
+# U11 (world-and-interiors plan, "night is dark, dawn is dawn"): SHOT_STATE=Phase0..Phase4
+# presses the REAL AdvancePhase bell N times (never an adapter/state injection seam) to land
+# on phase N of the day's actual 5-phase cycle -- Morning/"Dawn"=0 -> Expedition/"Quest"=1 ->
+# Camp/"Vigil"=2 -> ExpeditionDeep/"Deep Vigil"=3 -> Evening/"Night"=4 (GameKernel.Advance's
+# own order -- Evening is the LAST phase before the next day's Morning, not a "dusk" stop).
+# Settle is far longer than every other state (see _settle below) because DayPhaseTint EASES
+# toward its target at 0.6/sec rather than snapping -- capturing right after the last press
+# would show a mid-transition tint, not the phase's real one.
 
 extends SceneTree
 
@@ -68,8 +77,16 @@ func _initialize() -> void:
 		push_error("shot_harness: SHOT_OUT not set")
 		quit(1)
 		return
-	# Entering an interior needs extra frames for the camera push-in ease to settle.
-	_settle = 90 if _state == "" else 320
+	# Entering an interior needs extra frames for the camera push-in ease to settle. Phase
+	# captures need far more: DayPhaseTint's exponential ease converges at 0.6/sec, so a short
+	# settle would show a mid-ease tint rather than the phase's real one (see the U11 note
+	# above _initialize).
+	if _state.begins_with("Phase"):
+		_settle = 900
+	elif _state == "":
+		_settle = 90
+	else:
+		_settle = 320
 	_ui = load("res://scenes/panels/main_ui.tscn").instantiate()
 	root.add_child(_ui)
 	if _quiet:
@@ -123,6 +140,18 @@ func _process(_delta: float) -> bool:
 			# (frame 200 below) presses the actual station -- shelf, bellows, or anvil.
 			if _ui.has_method("OnTownBuildingClicked"):
 				_ui.call("OnTownBuildingClicked", "Forge")
+		elif _state.begins_with("Phase"):
+			# U11: press the real bell (Button.Pressed -> MainUi's own handler -> AdvanceNow ->
+			# SimAdapter.AdvancePhase, the exact player path -- never a state/adapter injection
+			# seam) N times to walk the day's actual 5-phase cycle up to phase N. All N presses
+			# land in this single frame; PhaseClock.AutoAdvance defaults OFF for a fresh
+			# campaign, so nothing else advances the phase out from under this on the long
+			# settle wait below.
+			var presses = int(_state.substr(5))
+			var bell = _ui.find_child("AdvancePhase", true, false)
+			if bell:
+				for _i in range(presses):
+					bell.emit_signal("pressed")
 		elif _state == "SendOff":
 			# U1 (playtest-three plan): the receipt for "clicked send them off with a drawer
 			# open — where are the visuals?" Open the Forge drawer here; the AdvancePhase

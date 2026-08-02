@@ -680,6 +680,11 @@ public partial class Town2D : Control
             // override reads correctly here despite DuskModulate covering the whole viewport.
             var eased = _dayTint.Advance(delta, Adapter.CurrentState.Phase);
             DuskModulate.Color = InteriorActive ? InteriorWarmTint : eased;
+
+            // U11: lamp/window glow reads the CURRENT phase directly (no easing — a hard phase
+            // change flips the lamps, only the sky color drifts) every tick, same cadence as the
+            // tint driver above.
+            _ambientLife?.SetPhase(Adapter.CurrentState.Phase);
         }
 
         if (_pendingMarchOut.Count == 0)
@@ -1045,8 +1050,9 @@ public partial class Town2D : Control
         _ambientLife = new AmbientLife2D { Name = "AmbientLife2D" };
         World.AddChild(_ambientLife);
 
+        var tavernBuilding = FindBuilding("tavern");
         var forgeChimneyPos = _forgeBuilding!.GlobalPosition + new Vector2(18f, -70f);
-        var tavernChimneyPos = FindBuilding("tavern").GlobalPosition + new Vector2(14f, -58f);
+        var tavernChimneyPos = tavernBuilding.GlobalPosition + new Vector2(14f, -58f);
         var townRect = new Rect2(0f, 0f, TownLayout2D.GridWidth * TileSize, TownLayout2D.GridHeight * TileSize);
         var lanternPositions = TownLayout2D.Props
             .Where(prop => prop.SpriteId == "town2d-prop-lantern")
@@ -1069,6 +1075,21 @@ public partial class Town2D : Control
         var noticeboardHeight = (float)(noticeboardBuilding.Sprite.Texture?.GetHeight() ?? 48);
         var noticeboardPaperPos = noticeboardBuilding.GlobalPosition + new Vector2(0f, -noticeboardHeight * 0.6f); // the board's face
 
+        // U11 ("lamps glow at a fixed alpha all day, no window light, no darkness"): one warm
+        // glow anchor per venue, hand-placed against that building's OWN resolved sprite size
+        // (same "fraction of the real PNG, never a hardcoded pixel number" idiom as the gap #1
+        // cues above) — a window pane for the forge/market/tavern facades, and a torch/lantern
+        // stand-in for the mine gate's windowless cave mouth and the noticeboard's own small
+        // hanging lamp.
+        var windowGlowPositions = new List<Vector2>
+        {
+            WindowAnchor(_forgeBuilding, -0.22f, -0.60f, 72f, 81f),
+            WindowAnchor(marketBuilding, -0.05f, -0.55f, 76f, 62f),
+            WindowAnchor(tavernBuilding, -0.28f, -0.62f, 84f, 88f),
+            WindowAnchor(mineBuilding, 0f, -0.45f, 48f, 48f),
+            WindowAnchor(noticeboardBuilding, -0.30f, -0.55f, 44f, 50f),
+        };
+
         _ambientLife.Build(
             forgeChimneyPos,
             tavernChimneyPos,
@@ -1076,7 +1097,25 @@ public partial class Town2D : Control
             lanternPositions,
             marketAwningPos,
             mineDustPos,
-            noticeboardPaperPos);
+            noticeboardPaperPos,
+            windowGlowPositions);
+
+        // Seed the correct phase immediately (mirrors DayPhaseTint's constructor-seeding
+        // discipline: never start wrong for even one frame) — _Process re-drives this every tick.
+        _ambientLife.SetPhase(Adapter!.CurrentState.Phase);
+    }
+
+    /// <summary>U11: a hand-placed window/light-source glow anchor for <see
+    /// cref="WireAmbientLife"/> — <paramref name="xFrac"/>/<paramref name="yFrac"/> are fractions
+    /// of that building's OWN resolved sprite size (negative Y is up, matching every other offset
+    /// in this file), falling back to <paramref name="fallbackWidth"/>/<paramref
+    /// name="fallbackHeight"/> (the venue's real committed PNG dimensions) if the texture somehow
+    /// failed to resolve.</summary>
+    private static Vector2 WindowAnchor(Building2D building, float xFrac, float yFrac, float fallbackWidth, float fallbackHeight)
+    {
+        var width = (float)(building.Sprite.Texture?.GetWidth() ?? fallbackWidth);
+        var height = (float)(building.Sprite.Texture?.GetHeight() ?? fallbackHeight);
+        return building.GlobalPosition + new Vector2(xFrac * width, yFrac * height);
     }
 
     private static CpuParticles2D BuildParticles(string name, Vector2 position, Color color, int amount, double lifetime) => new()
