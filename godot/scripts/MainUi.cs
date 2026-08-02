@@ -698,7 +698,9 @@ public partial class MainUi : Control
         separator.AddThemeColorOverride("font_color", GameTheme.TextDim);
         calendar.AddChild(separator);
 
-        var phaseChip = NamedStatChip("PhaseChip", "Phase", state.Phase.ToString(), UiKit.ChipTone.Accent);
+        // U2 (playtest-three plan): was state.Phase.ToString() — the same raw "Camp"/"ExpeditionDeep"
+        // leak the timeline strip and continue screen had, just in a third place. One vocabulary now.
+        var phaseChip = NamedStatChip("PhaseChip", "Phase", PhaseVocab.Display(state), UiKit.ChipTone.Accent);
         phaseChip.TooltipText = PhaseLegend;
         calendar.AddChild(phaseChip);
 
@@ -860,13 +862,20 @@ public partial class MainUi : Control
     /// Morning+Evening (<see cref="GameSim.Bounties.BountyHandlers"/>); BuyOre is Evening-only
     /// (<see cref="GameSim.Economy.OreMarketHandlers"/>); SendSupply/RecallParty are Camp-only
     /// (<see cref="GameSim.Expedition.CampHandlers"/>); craft/stock/price have no phase term at
-    /// all (legal every phase).</summary>
+    /// all (legal every phase).
+    ///
+    /// <para>U2 (playtest-three plan, KTD-B): headers are <see cref="PhaseVocab"/>'s words, not
+    /// the raw sim phase names — this used to say "Camp"/"Deep" while the HUD banner right below
+    /// it said "Vigil", one more split-brain surface. Kept as a literal (not built from
+    /// <see cref="PhaseVocab.Display(DayPhase)"/> calls) only because this is a <c>const</c>;
+    /// <see cref="GodotClient.Tests.PhaseVocabTests"/> pins the two against drifting apart.</para>
+    /// </summary>
     public const string PhaseLegend =
-        "Morning — parties muster and recruits arrive. Buy materials from the vendor, post bounties, craft, stock, and price.\n" +
-        "Expedition — parties descend toward their target floor. Craft, stock, and price; nothing else resolves until they return.\n" +
-        "Camp — a party pauses at its checkpoint before the deep floors. Send supply or recall the party; craft, stock, and price.\n" +
-        "Deep — camped parties push into the deeper floors and the run is decided. Craft, stock, and price; nothing else to do but wait.\n" +
-        "Evening — heroes return with loot and news. Buy their ore, post bounties, craft, stock, and price.";
+        "Dawn/Prepare — parties muster and recruits arrive. Buy materials from the vendor, post bounties, craft, stock, and price.\n" +
+        "Quest — parties descend toward their target floor. Craft, stock, and price; nothing else resolves until they return.\n" +
+        "Vigil — a party pauses at its checkpoint before the deep floors. Send supply or recall the party; craft, stock, and price.\n" +
+        "Deep Vigil — camped parties push into the deeper floors and the run is decided. Craft, stock, and price; nothing else to do but wait.\n" +
+        "Night — heroes return with loot and news. Buy their ore, post bounties, craft, stock, and price.";
 
     /// <summary>A <see cref="UiKit.StatChip"/> given a discoverable <see cref="Node.Name"/> so
     /// tests can locate the exact chip instead of scanning the whole HUD's rendered text.</summary>
@@ -1140,69 +1149,63 @@ public partial class MainUi : Control
         else
         {
             // U2/U3/U4: player-decided pacing. The bell verb + the phase banner name the player
-            // phase (Dawn/Prepare/Quest–Watch/Quest–Vigil/Night, mapped from the kernel phase, U4);
-            // an open-items readout replaces the countdown (U3); Quest–Watch shows a departure omen (U4).
+            // phase (Dawn/Prepare/Quest/Vigil/Deep Vigil/Night, mapped from the kernel phase via
+            // PhaseVocab, U2); an open-items readout replaces the countdown (U3); Expedition shows
+            // a departure omen (U4); Morning names who is ready to go (U2 — "the bell tells you
+            // who is ready to go").
             _advance.Text = BellVerb(state);
+            var tailParts = new System.Collections.Generic.List<string>();
+            if (state.Phase == DayPhase.Expedition)
+            {
+                tailParts.Add(DepartureOmen(state));
+            }
+
+            if (state.Phase == DayPhase.Morning)
+            {
+                var ready = HeroesReadyAtGateBadge(state);
+                if (!string.IsNullOrEmpty(ready))
+                {
+                    tailParts.Add(ready);
+                }
+            }
+
             var badge = OpenItemsBadge(state);
-            var omen = state.Phase == DayPhase.Expedition ? DepartureOmen(state) : string.Empty;
-            var tail = !string.IsNullOrEmpty(omen) ? $" — {omen}"
-                : !string.IsNullOrEmpty(badge) ? $" — {badge}"
-                : string.Empty;
+            if (!string.IsNullOrEmpty(badge))
+            {
+                tailParts.Add(badge);
+            }
+
+            var tail = tailParts.Count > 0 ? $" — {string.Join(" · ", tailParts)}" : string.Empty;
             _clockLabel.Text = $"{PlayerPhaseName(state)}{tail}";
         }
     }
 
-    /// <summary>U4: the player-facing phase banner, mapped from the kernel <see cref="DayPhase"/>
-    /// (never a new enum value). Morning splits into Dawn (no counter open) vs Prepare (counter
-    /// session open); Camp/ExpeditionDeep both read as the Quest–Vigil beat.</summary>
-    private static string PlayerPhaseName(GameState state) => state.Phase switch
-    {
-        DayPhase.Morning => state.Counter is { Closed: false } ? "Prepare" : "Dawn",
-        DayPhase.Expedition => "Quest — Watch",
-        DayPhase.Camp => "Quest — Vigil",
-        DayPhase.ExpeditionDeep => "Quest — Vigil",
-        DayPhase.Evening => "Night",
-        _ => state.Phase.ToString(),
-    };
+    /// <summary>U2 (playtest-three plan, KTD-B): the player-facing phase banner and bell verb now
+    /// live in ONE table, <see cref="PhaseVocab"/>, shared with <see
+    /// cref="GodotClient.Ui.ObjectiveTracker.DayTimeline"/>'s segment labels and
+    /// <c>NewGameSelect</c>'s continue blurb — was <c>MainUi.PlayerPhaseName</c>/<c>BellVerb</c>,
+    /// duplicated here and drifting from what the timeline strip printed (raw enum names).
+    /// Kept as thin local aliases so every existing call site below reads unchanged.</summary>
+    private static string PlayerPhaseName(GameState state) => PhaseVocab.Display(state);
 
-    /// <summary>
-    /// U3: the contextual bell label — what ringing it does from the current phase.
-    ///
-    /// <para><b>State-aware, not phase-only, and that is the whole point.</b> The kernel walks every day
-    /// through Camp and ExpeditionDeep whether or not anyone is actually below (<c>GameKernel.Advance</c>
-    /// is unconditional). A party whose target floor sits inside stage 1 finishes at the Expedition tick
-    /// and walks home — so the player then rings two more bells about a mine that is empty. Labelling
-    /// those by phase alone produced three separate playtest complaints that were all this one bug:</para>
-    /// <list type="bullet">
-    /// <item>"hitting 'lower them into the mine' brings them back to the town??" — they came home because
-    /// their run was over, which the label denied.</item>
-    /// <item>"return bell does nothing but moved it to 'deep' phase??" — Camp's bell advances DEEPER.</item>
-    /// <item>"?? not able to see the heroes in the mine" — nobody was in the mine.</item>
-    /// </list>
-    ///
-    /// <para><b>Camp must never say "return bell".</b> That verb belongs to <c>RecallPartyAction</c>, a real
-    /// and different Camp action (see <c>CampPanel</c> / <c>CampHandlers.ApplyRecall</c>) which banks the
-    /// haul and surfaces the party. The phase bell at Camp does the OPPOSITE — it sends them to the deep
-    /// floors. Two controls one click apart cannot share a name while doing opposite things.</para>
-    /// </summary>
-    private static string BellVerb(GameState state) => state.Phase switch
-    {
-        DayPhase.Morning => "Send them off",
-        // Was "Lower the winch". Brian read it as "lower the wench" and asked what it meant — the
-        // winch-house is internal vocabulary (see Expedition/CampHandlers) that leaked onto a button.
-        // A button label has to say what pressing it does; flavour is not worth a player not knowing.
-        DayPhase.Expedition => "Lower them into the mine",
-        DayPhase.Camp => AnyoneBelow(state) ? "Let them press deeper" : "Close the vigil",
-        DayPhase.ExpeditionDeep => AnyoneBelow(state) ? "Ring the return bell" : "Close the vigil",
-        DayPhase.Evening => "Snuff the lanterns",
-        _ => "Advance",
-    };
+    private static string BellVerb(GameState state) => PhaseVocab.BellVerb(state);
 
-    /// <summary>True while a party is parked below the checkpoint awaiting stage-2 resolution — the only
-    /// state in which the Camp/Deep phases have anything to be about. <c>InFlight</c> is populated by the
-    /// Expedition tick and cleared by <c>ExpeditionDeepSystem</c>, so it is exactly "is anyone down there
-    /// right now".</summary>
-    private static bool AnyoneBelow(GameState state) => !state.InFlight.IsEmpty;
+    /// <summary>U2: "who is ready to go" — the bell row names it instead of making the player
+    /// guess. Every living hero is ready to march the instant the bell rings (adapter-side read;
+    /// away-on-expedition heroes don't exist yet during Morning — <c>InFlight</c>/
+    /// <c>PendingExpeditions</c> are both torn down by the time Evening hands off to the next
+    /// day's Morning, see <c>ExpeditionDeepSystem</c>/<c>ExpeditionRevealSystem</c> — so a plain
+    /// Alive count is exactly the roster the send-off tick will actually muster from).</summary>
+    private static string HeroesReadyAtGateBadge(GameState state)
+    {
+        var ready = state.Heroes.Values.Count(h => h.Alive);
+        return ready switch
+        {
+            0 => string.Empty, // "no heroes" is the destitution floor's own message, not the bell's
+            1 => "1 hero ready at the gate",
+            _ => $"{ready} heroes ready at the gate",
+        };
+    }
 
     /// <summary>U3: a readout of what is still open this phase (per-type, not one opaque count),
     /// so the player knows what the bell will end. Empty when nothing is pending.</summary>
@@ -1381,15 +1384,37 @@ public partial class MainUi : Control
             // advance — GameKernel holds the day at Morning while Counter is { Closed: false }. Close
             // the session first so the day ALWAYS moves, and surface it so it is never a silent
             // abandon of a live haggle/queue (the "never silently discards a live decision" goal).
+            //
+            // U2 (playtest-three plan, KTD-G): GameKernel's Morning-hold (GameKernel.cs, Advance's
+            // `DayPhase.Morning when counter is { Closed: false }` branch) has no sim-side timeout —
+            // the close queued above always lands before this same tick's Advance runs (CloseCounterAction
+            // isn't in ActionTiming's immediate list, so it rides THIS AdvancePhase's batch), which is
+            // why the day never actually holds via this button today. The log note is the cheap,
+            // permanent detector KTD-G asks for regardless: if a future change ever breaks that
+            // ordering, "MORNING-HOLD" is grep-able in the session log the moment it happens instead
+            // of reading as a mysteriously stuck day with no evidence anywhere.
             if (state.Counter is { Closed: false } counter)
             {
                 Adapter.Queue(new CloseCounterAction());
                 ShowBellToast(counter.Round > 0
                     ? "Closed the counter mid-haggle — parties depart."
                     : "Closed the counter — parties depart.");
+                PlaytestLog.Note("MORNING-HOLD: counter open");
             }
 
             Clock.AdvanceNow(); // same advance the auto timer fires — player intent wins even engaged
+
+            // Defense in depth: if the close above somehow didn't land (see the note above — not
+            // reachable today, but the guard KTD-G actually asks for is "detectable", not "prevented
+            // by a second mechanism no one can see"), tell the truth instead of leaving the banner to
+            // silently repeat "Send them off" with no explanation.
+            if (Adapter.CurrentState.Phase == DayPhase.Morning && Adapter.CurrentState.Counter is { Closed: false })
+            {
+                // The note already fired above the moment an open counter was found — this only
+                // overrides the toast so the player is told the truth if the day genuinely held.
+                ShowBellToast("Close the counter first — the day waits on you");
+            }
+
             UpdateClockLabel();
         };
         verbRow.AddChild(_advance);

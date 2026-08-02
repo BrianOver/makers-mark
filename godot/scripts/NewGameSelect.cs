@@ -217,7 +217,11 @@ public partial class NewGameSelect : Control
         var blurb = new Label
         {
             Name = "ContinueBlurb",
-            Text = $"Pick up where you left off — {save.Phase.ToLowerInvariant()} of day {save.Day}. " +
+            // U2 (playtest-three plan, KTD-B): was save.Phase.ToLowerInvariant() — the stored save
+            // envelope's raw DayPhase.ToString(), so this could (and did) render "camp of day 5" or
+            // "expeditiondeep of day 12". PhaseVocab reads the same stored string back into the one
+            // vocabulary the HUD and timeline now share; the envelope's own format is untouched.
+            Text = $"Pick up where you left off — the {PhaseVocab.Display(save.Phase)} of day {save.Day}. " +
                    "Starting a new campaign replaces this save.",
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
