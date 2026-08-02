@@ -97,11 +97,10 @@ public class AssetResolutionCensusTests
         // shells + station art — framework lands here as loud placeholders (TownAssets2D's
         // magenta-bordered box, not silence); U2/U3/U4 paint the real pixels and remove these
         // lines one room at a time (red→green shown in each art unit's own PR body).
-        "town2d-market-interior-shell",
-        "town2d-station-market-counter",
-        "town2d-station-market-shelf",
-        "town2d-station-market-ledger",
-        "town2d-station-market-crates",
+        //
+        // U2 painted the market room (art/pipeline/gen-market-interior.py) — its five ids are
+        // committed art now, so they left this set (this is the "green" half of U2's own
+        // red→green PR body proof).
         "town2d-tavern-interior-shell",
         "town2d-station-tavern-bar",
         "town2d-station-tavern-table",
@@ -296,6 +295,11 @@ public class AssetResolutionCensusTests
     /// brief's own size (the plan text's one written record of what each station was SUPPOSED to
     /// be) so a future re-paint that quietly grows a sprite fails here — at table-validation time —
     /// instead of shifting collision the next time someone stands at the shelf.
+    ///
+    /// <para>World-and-interiors U2 (docs/plans/2026-08-02-004) extends the same table with the
+    /// four market stations — their sizes are authored fresh in
+    /// <c>art/pipeline/gen-market-interior.py</c> (no prior plan text pinned them the way KTD-5
+    /// pinned the forge's), so this dict is their one written record from here on.</para>
     /// </summary>
     [TestCase]
     public void ForgeStationArt_MatchesItsKtd5DeclaredFootprint_NeverShiftsCollision()
@@ -308,6 +312,10 @@ public class AssetResolutionCensusTests
             ["town2d-station-quench"] = new(24, 14),
             ["town2d-station-shelf"] = new(28, 32),
             ["town2d-station-rack"] = new(28, 32),
+            ["town2d-station-market-counter"] = new(40, 24),
+            ["town2d-station-market-shelf"] = new(28, 32),
+            ["town2d-station-market-ledger"] = new(24, 20),
+            ["town2d-station-market-crates"] = new(24, 20),
         };
 
         foreach (var room in InteriorLayout2D.Rooms.Values)
