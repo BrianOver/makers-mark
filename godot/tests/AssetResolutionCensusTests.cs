@@ -208,6 +208,33 @@ public class AssetResolutionCensusTests
         }
     }
 
+    /// <summary>
+    /// Missing-ore-icon fix: <see cref="GameSim.Materials.MaterialRegistry.PricedPool"/> (the sim's
+    /// own registry, not a hand-written list — a new ore added tomorrow is enumerated here for free)
+    /// is the exact set <c>ForgePanel</c>'s vendor shelf iterates, calling <c>IconRegistry.Ore(key)</c>
+    /// for every entry on every draw. Unlike <see cref="IconRegistry.Art"/>, <c>IconRegistry.Ore</c>
+    /// (<c>IconRegistry.Load</c>) has NO null-tolerant rung and no manifest gate — a missing
+    /// <c>res://assets/icons/ore_{key}.svg</c> is a native <c>core/io/resource_loader.cpp</c> ERROR at
+    /// runtime (260 of them, 5 distinct ids, one real playtest run), not a graceful placeholder. This
+    /// is the gap <see cref="AssertResolves"/> above cannot see, because it only ever reads the
+    /// generated-art manifest under <c>res://assets/art/</c>, a different loader for a different
+    /// directory.
+    /// </summary>
+    [TestCase]
+    public void PricedOreMaterials_ResolveTheirVendorIcon()
+    {
+        foreach (var key in GameSim.Materials.MaterialRegistry.PricedPool)
+        {
+            AssertThat(IconRegistry.Ore(key))
+                .OverrideFailureMessage(
+                    $"census: IconRegistry.Ore('{key}') does not resolve to a committed icon. "
+                    + $"'{key}' is in MaterialRegistry.PricedPool, so ForgePanel's vendor shelf draws "
+                    + "it every time the panel opens. IconRegistry.Ore has no null-tolerant fallback: "
+                    + "a missing SVG for it is a native engine ERROR at runtime, not a placeholder.")
+                .IsNotNull();
+        }
+    }
+
     // ── shared assertion ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
