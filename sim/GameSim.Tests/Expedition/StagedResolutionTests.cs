@@ -118,10 +118,12 @@ public class StagedResolutionTests
         // A hero that clears the TARGET floor and only then trips the too-hurt check has fully
         // succeeded — Halt == TargetReached. A post-floor quaff on the target floor (a use recorded
         // with Round past the fight's rounds) proves the too-hurt exit path was taken there, yet the
-        // run still classifies as TargetReached (D4 precedence). Ending a floor below the flee
-        // threshold while alive requires mid-fight mag-1 quaffs (a floor-clearing hero that dipped
-        // below the threshold without a salve would have fled), so the hero carries a stack of them;
-        // the config grid threads the needle of "grind the target floor down while staying alive".
+        // run still classifies as TargetReached (D4 precedence). 2026-08-01: the too-hurt bar is
+        // the DRINK line (50%), not the flee line — under flee-first ordering a hero can never end
+        // a cleared floor below the flee line, which briefly made this whole path unreachable and
+        // failed this test with "no too-hurt-at-target case". The hero still carries a stack of
+        // mag-1 salves so the post-floor quaff is the observable tell, and the config grid threads
+        // the needle of "grind the target floor down while staying alive".
         const int target = 2;
         var salves = Enumerable.Range(20, 14).Select(i => Salve(i, magnitude: 1)).ToArray();
         var pack = salves.Select(s => s.Id).ToArray();

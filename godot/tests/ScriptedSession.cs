@@ -16,13 +16,15 @@ namespace GodotClient.Tests;
 /// Actions are chosen from live state, so the same chooser drives the SimAdapter,
 /// the raw kernel, and the UI panels identically.
 ///
-/// <para>U-C4 (second venue) note: <c>VenueRouter</c> now spreads early parties
-/// across the Mine AND Gloomwood, so the FIRST raid ore returning heroes offer is
-/// Gloomwood's <c>greenheart</c>, not the Mine's <c>copper</c> (copper first surfaces
-/// ~day 3), and day-1 return cards carry no ore offers at all. The dagger craft is
-/// therefore decoupled from raid routing via <see cref="StartState"/> — the recipe's
-/// copper is pre-stocked into the blacksmith's own Materials so a craft never depends
-/// on which venue a hero raided or which day copper first appears.</para>
+/// <para>Routing note (2026-08-01 banded-router re-baseline, superseding the U-C4 note
+/// that stood here): <c>VenueRouter</c> now routes weak day-1 parties to the EARLY band
+/// (Mine + Sunken Crypt, both EntryPower 0), so day-1 return cards carry Mine copper
+/// again — seed 2026's day-1 offers are copper, open for trade at day-2 Evening and
+/// expired by day-3 Evening (measured via the session probe; the U-C4 world's first
+/// offering day was Gloomwood's day-2 greenheart). The dagger craft stays decoupled
+/// from raid routing via <see cref="StartState"/> — the recipe's copper is pre-stocked
+/// into the blacksmith's own Materials so a craft never depends on which venue a hero
+/// raided or which day copper first appears.</para>
 /// </summary>
 public static class ScriptedSession
 {
@@ -63,10 +65,10 @@ public static class ScriptedSession
 
     /// <summary>
     /// The first early return-card day that actually carries ore offers, paired with those offers.
-    /// Day-1 returns carry none now (U-C4: early parties spread to Gloomwood and its returns land
-    /// on day 2), so this scans forward from day 1 to the first day with any <c>OreOffers</c> and
-    /// returns them (any material — greenheart in the seed-2026 run). Yields <c>(0, empty)</c> when
-    /// no day has surfaced offers yet.
+    /// Deliberately routing-agnostic: scans forward from day 1 to the first day with any
+    /// <c>OreOffers</c> and returns them, whatever material the router's world surfaces first
+    /// (day-1 Mine copper under the 2026-08-01 banded router; day-2 Gloomwood greenheart in the
+    /// U-C4 world before it). Yields <c>(0, empty)</c> when no day has surfaced offers yet.
     /// </summary>
     public static (int Day, ImmutableList<OreOffered> Offers) EarlyOreOffers(GameState state)
     {

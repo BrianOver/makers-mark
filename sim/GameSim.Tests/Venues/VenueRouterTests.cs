@@ -6,97 +6,148 @@ using Xunit;
 namespace GameSim.Tests.Venues;
 
 /// <summary>
-/// Phase C U-C4: <see cref="VenueRouter"/>'s draw-free hero→venue comparator, tested in isolation
-/// from <see cref="VenueRegistry.LiveRotation"/> churn — a pure function of (depth, power, live ids,
-/// queue counts). Covers the three-stage priority order (clearability, then utility/headroom, then
-/// queue-length), determinism, and the total-order tiebreak.
+/// <see cref="VenueRouter"/>'s draw-free hero→venue comparator, tested in isolation from
+/// <see cref="VenueRegistry.LiveRotation"/> churn — a pure function of (power, live ids, queue
+/// counts). Covers the banded priority order (progression band by <see
+/// cref="VenueDefinition.EntryPower"/>, then queue-length, then Ordinal id), determinism, and the
+/// total-order tiebreak. The old headroom/"tightest fit" utility these tests used to pin is
+/// deliberately gone: it sent every party to the highest-gate venue it could clear (PR #242's
+/// measured skew — Gloomwood/Emberfall vacuumed the world, the Mine starved, the Sunken Crypt drew
+/// ~zero), so a test asserting fit behavior would be pinning the bug.
 /// </summary>
 public class VenueRouterTests
 {
+    // Registered EntryPower bands (pinned by VenueConformanceTests): mine 0, sunken-crypt 0,
+    // gloomwood 72, emberfall 72 — the veteran band is a deliberate TIE so the two top venues are
+    // queue-split peers at Emberfall's go-live. Emberfall is dormant (not in LiveRotation) but
+    // stays in these rotations on purpose: the comparator must already handle its band correctly
+    // on the day the art-gated go-live appends it, and ChooseVenue takes the rotation as an
+    // argument precisely so liveness churn never touches this suite.
     private static readonly ImmutableArray<string> MineAndGloomwood =
         ImmutableArray.Create(VenueRegistry.MineId, "gloomwood");
+
+    private static readonly ImmutableArray<string> AllFour =
+        ImmutableArray.Create(VenueRegistry.MineId, "gloomwood", "sunken-crypt", "emberfall");
 
     private static readonly Dictionary<string, int> NoQueue = new();
 
     [Fact]
-    public void FreshParty_AtEqualQueue_PicksLowerHeadroom_OrOrdinalTiebreak()
+    public void WeakParty_BelowTheGloomwoodBand_StaysInTheMine()
     {
-        // Floor 1's gate is 0 for BOTH the Mine and the Gloomwood, so a depth-0 party's headroom
-        // (partyPower - 0) is IDENTICAL at both venues — a true utility tie. With an empty queue on
-        // both sides, the comparator falls through to the final Ordinal-id tiebreak: "gloomwood" <
-        // "mine" (Ordinal), so the Gloomwood wins deterministically, not by chance.
-        var chosen = VenueRouter.ChooseVenue(partyDepth: 0, partyPower: 20, MineAndGloomwood, NoQueue);
-        Assert.Equal("gloomwood", chosen);
+        // Power 20 < Gloomwood's EntryPower 72: only the Mine's band (0) is reached, so the Mine
+        // wins even though nothing is queued anywhere — weak parties are never routed onward.
+        var chosen = VenueRouter.ChooseVenue(partyPower: 20, MineAndGloomwood, NoQueue);
+        Assert.Equal(VenueRegistry.MineId, chosen);
     }
 
     [Fact]
-    public void QueueLengthComparator_BreaksAUtilityTie_TowardTheShorterQueue()
+    public void StrongerParty_IsRoutedOnward_ToTheHighestBandReached()
     {
-        // Same utility tie as above (floor-1 gate 0 at both venues), but the Mine already has fewer
-        // parties queued this tick — the queue-length comparator overrides the ordinal fallback.
-        var queue = new Dictionary<string, int> { ["mine"] = 0, ["gloomwood"] = 3 };
-        var chosen = VenueRouter.ChooseVenue(partyDepth: 0, partyPower: 20, MineAndGloomwood, queue);
-        Assert.Equal("mine", chosen);
+        // Power 72 reaches the Gloomwood band exactly (>= comparison); highest reached band wins.
+        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 72, MineAndGloomwood, NoQueue));
+
+        // Power 71 is one short: the early band is the highest reached — the veteran band is a
+        // hard line, not a gradient.
+        Assert.Equal(VenueRegistry.MineId, VenueRouter.ChooseVenue(partyPower: 71, MineAndGloomwood, NoQueue));
+
+        // In the full four-venue rotation, power 72 reaches the TIED veteran band (gloomwood =
+        // emberfall = 72): equal band + equal queue falls to Ordinal id, "emberfall" < "gloomwood".
+        Assert.Equal("emberfall", VenueRouter.ChooseVenue(partyPower: 72, AllFour, NoQueue));
     }
 
     [Fact]
-    public void HeroesDistribute_AcrossBothLiveVenues_WhenRoutedSequentially()
+    public void BandBeatsQueue_AStrongPartyNeverFallsBackToAnEmptyEarlyVenue()
     {
-        // Simulates ExpeditionSystem's own sequential queue-bookkeeping: N identical depth-0 parties
-        // routed one after another, incrementing the chosen venue's count each time. If routing always
-        // picked one venue, every hero would pile onto it (the exact failure mode U-C4 exists to fix).
-        // With the queue-length comparator active, the picks must alternate/split roughly evenly.
-        var queueCounts = new Dictionary<string, int> { ["mine"] = 0, ["gloomwood"] = 0 };
+        // The band is a stronger signal than congestion: even with the Gloomwood heavily queued
+        // and the Mine empty, a veteran-band party raids the Gloomwood. (Queue only splits PEERS.)
+        var queue = new Dictionary<string, int> { ["mine"] = 0, ["gloomwood"] = 50 };
+        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 80, MineAndGloomwood, queue));
+    }
+
+    [Fact]
+    public void VeteranBandPeers_GloomwoodAndEmberfall_SplitByQueue()
+    {
+        // The 72/72 tie in action — the go-live shape: with Emberfall already holding a party
+        // this tick, the next veteran party goes to the Gloomwood, and vice versa. This is what
+        // keeps Emberfall's go-live from strictly dominating the mid venue (measured go-live
+        // sanity row: ember 42% / gloomwood 24%, the residual skew being the Ordinal tie-break
+        // favoring "emberfall" on equal queues).
+        var emberQueued = new Dictionary<string, int> { ["emberfall"] = 1, ["gloomwood"] = 0 };
+        Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyPower: 80, AllFour, emberQueued));
+
+        var gloomQueued = new Dictionary<string, int> { ["emberfall"] = 0, ["gloomwood"] = 1 };
+        Assert.Equal("emberfall", VenueRouter.ChooseVenue(partyPower: 80, AllFour, gloomQueued));
+    }
+
+    [Fact]
+    public void PeerVenues_SplitTheirBandByQueueLength()
+    {
+        // Mine and Sunken Crypt are both EntryPower 0 — true peers. A weak party goes to whichever
+        // has fewer parties routed this tick; on a full tie, Ordinal id ("mine" < "sunken-crypt").
+        var mineAndCrypt = ImmutableArray.Create(VenueRegistry.MineId, "sunken-crypt");
+
+        Assert.Equal(VenueRegistry.MineId, VenueRouter.ChooseVenue(partyPower: 10, mineAndCrypt, NoQueue));
+
+        var queue = new Dictionary<string, int> { ["mine"] = 2, ["sunken-crypt"] = 1 };
+        Assert.Equal("sunken-crypt", VenueRouter.ChooseVenue(partyPower: 10, mineAndCrypt, queue));
+    }
+
+    [Fact]
+    public void PeerVenues_RoutedSequentially_SplitEvenly()
+    {
+        // Simulates ExpeditionSystem's own sequential queue-bookkeeping: N identical weak parties
+        // routed one after another, incrementing the chosen venue's count each time. If routing
+        // always picked one venue, every hero would pile onto it (the exact failure mode the queue
+        // comparator exists to fix).
+        var mineAndCrypt = ImmutableArray.Create(VenueRegistry.MineId, "sunken-crypt");
+        var queueCounts = new Dictionary<string, int> { ["mine"] = 0, ["sunken-crypt"] = 0 };
         var picks = new List<string>();
 
         for (var i = 0; i < 10; i++)
         {
-            var chosen = VenueRouter.ChooseVenue(partyDepth: 0, partyPower: 20, MineAndGloomwood, queueCounts);
+            var chosen = VenueRouter.ChooseVenue(partyPower: 10, mineAndCrypt, queueCounts);
             picks.Add(chosen);
             queueCounts[chosen] = queueCounts[chosen] + 1;
         }
 
-        // Both venues got picked — routing is NOT a permanent lock onto a single "best" venue.
-        Assert.Contains("mine", picks);
-        Assert.Contains("gloomwood", picks);
-
-        // Perfectly balanced: with an initial tie (Ordinal → Gloomwood first) and the queue comparator
-        // strictly preferring the shorter queue thereafter, 10 identical parties split 5/5.
+        // Perfectly balanced: initial tie goes Ordinal ("mine"), the queue comparator strictly
+        // prefers the shorter queue thereafter — 10 identical parties split 5/5.
         Assert.Equal(5, picks.Count(p => p == "mine"));
-        Assert.Equal(5, picks.Count(p => p == "gloomwood"));
+        Assert.Equal(5, picks.Count(p => p == "sunken-crypt"));
     }
 
     [Fact]
-    public void UnclearableVenue_NeverBeatsAClearableOne_EvenWithAShorterQueue()
+    public void PartyBelowEveryBand_GetsTheNearestBand_NeverStranded()
     {
-        // A depth-4 party targets floor 5 at the Mine (gate 100) and floor 4 (clamped) at the
-        // Gloomwood (gate 75). With power 80 the party clears the Gloomwood's gate but NOT the Mine's
-        // — clearability (stage 1 of the comparator) must win over the queue-length tiebreak (stage 3)
-        // even when the Mine's queue is empty and the Gloomwood's is long.
-        var queue = new Dictionary<string, int> { ["mine"] = 0, ["gloomwood"] = 50 };
-        var chosen = VenueRouter.ChooseVenue(partyDepth: 4, partyPower: 80, MineAndGloomwood, queue);
-        Assert.Equal("gloomwood", chosen);
-    }
-
-    [Fact]
-    public void TightestFit_WinsOverLooserFit_WhenBothClear_RegardlessOfQueue()
-    {
-        // A depth-19 party (both venues clamp its candidate floor to their own top floor: Mine floor 5
-        // gate 100, Gloomwood floor 4 gate 75) with power 200 clears both gates comfortably. Headroom
-        // at the Mine (200-100=100) is smaller than at the Gloomwood (200-75=125), so the Mine is the
-        // tighter fit and wins stage 2 — even though the Gloomwood's queue is shorter.
-        var queue = new Dictionary<string, int> { ["mine"] = 5, ["gloomwood"] = 0 };
-        var chosen = VenueRouter.ChooseVenue(partyDepth: 19, partyPower: 200, MineAndGloomwood, queue);
-        Assert.Equal("mine", chosen);
+        // A rotation with no EntryPower-0 venue (not the live shape, but the router must not
+        // assume curation): a power-10 party reaches neither band. Both entries tie at 72, so
+        // the nearest-band rule ties too and the pick falls through queue (equal) to Ordinal id
+        // ("emberfall" < "gloomwood") — the point is a deterministic pick exists, never a strand.
+        var midAndEnd = ImmutableArray.Create("gloomwood", "emberfall");
+        Assert.Equal("emberfall", VenueRouter.ChooseVenue(partyPower: 10, midAndEnd, NoQueue));
     }
 
     [Fact]
     public void ChooseVenue_IsDeterministic_ForIdenticalInputs()
     {
         var queue = new Dictionary<string, int> { ["mine"] = 2, ["gloomwood"] = 1 };
-        var a = VenueRouter.ChooseVenue(partyDepth: 2, partyPower: 45, MineAndGloomwood, queue);
-        var b = VenueRouter.ChooseVenue(partyDepth: 2, partyPower: 45, MineAndGloomwood, queue);
+        var a = VenueRouter.ChooseVenue(partyPower: 45, MineAndGloomwood, queue);
+        var b = VenueRouter.ChooseVenue(partyPower: 45, MineAndGloomwood, queue);
         Assert.Equal(a, b);
+    }
+
+    [Fact]
+    public void ChooseVenue_IsOrderIndependent_AcrossRotationPermutations()
+    {
+        // The comparator is a total order, so the left-to-right scan must land on the same venue
+        // no matter how the live rotation happens to be ordered.
+        var queue = new Dictionary<string, int> { ["mine"] = 1, ["sunken-crypt"] = 1 };
+        foreach (var power in new[] { 0, 10, 71, 72, 200 })
+        {
+            var expected = VenueRouter.ChooseVenue(power, AllFour, queue);
+            var reversed = ImmutableArray.CreateRange(AllFour.Reverse());
+            Assert.Equal(expected, VenueRouter.ChooseVenue(power, reversed, queue));
+        }
     }
 
     [Fact]
@@ -104,24 +155,24 @@ public class VenueRouterTests
     {
         // An empty queue dictionary (no entries at all) must behave identically to explicit zeros —
         // callers seed the dictionary from LiveRotation, but ChooseVenue itself must not assume that.
-        var chosen = VenueRouter.ChooseVenue(partyDepth: 0, partyPower: 20, MineAndGloomwood, new Dictionary<string, int>());
-        Assert.Equal("gloomwood", chosen); // same ordinal-tiebreak result as the all-zero case
+        var chosen = VenueRouter.ChooseVenue(partyPower: 20, MineAndGloomwood, new Dictionary<string, int>());
+        Assert.Equal(VenueRegistry.MineId, chosen); // band-0 venue, same as the explicit-zero case
     }
 
     [Fact]
     public void EmptyLiveVenues_Throws()
     {
         Assert.Throws<ArgumentException>(() =>
-            VenueRouter.ChooseVenue(partyDepth: 0, partyPower: 20, ImmutableArray<string>.Empty, NoQueue));
+            VenueRouter.ChooseVenue(partyPower: 20, ImmutableArray<string>.Empty, NoQueue));
     }
 
     [Fact]
-    public void SingleLiveVenue_AlwaysWins_RegardlessOfClearability()
+    public void SingleLiveVenue_AlwaysWins_RegardlessOfBand()
     {
-        // A single-venue rotation (e.g. before Gloomwood went live) always returns that one venue,
-        // even when the party cannot clear its gate — routing never strands a party with no pick.
-        var oneVenue = ImmutableArray.Create(VenueRegistry.MineId);
-        var chosen = VenueRouter.ChooseVenue(partyDepth: 0, partyPower: 0, oneVenue, NoQueue);
-        Assert.Equal(VenueRegistry.MineId, chosen);
+        // A single-venue rotation always returns that one venue, even when the party is below its
+        // band — routing never strands a party with no pick.
+        var oneVenue = ImmutableArray.Create("emberfall");
+        var chosen = VenueRouter.ChooseVenue(partyPower: 0, oneVenue, NoQueue);
+        Assert.Equal("emberfall", chosen);
     }
 }

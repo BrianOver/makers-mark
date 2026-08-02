@@ -26,7 +26,10 @@ namespace GameSim.Tests.Balance;
 /// counted) grouped by their derived Consumable Stocking trait
 /// (<see cref="TraitEffects.ConsumableStockTargetFor"/>): <see cref="TraitId.Reckless"/> never
 /// restocks (target 0) while <see cref="TraitId.Prepared"/> restocks a little early (target 2) —
-/// with salves finally available, Reckless heroes should die measurably more often.
+/// with salves finally available, Prepared heroes must die measurably LESS than Reckless ones.
+/// (That direction was inverted until the 2026-08-01 quaff-ordering fix — see
+/// <see cref="SalvesStocked_PreparedHeroes_SurviveMeasurablyBetterThanReckless"/>'s doc for the
+/// full measurement history and the structural cause.)
 /// </summary>
 public class ConsumableTraitMortalityBalanceTests
 {
@@ -151,22 +154,56 @@ public class ConsumableTraitMortalityBalanceTests
 
     [Fact]
     [Trait("Category", "Balance")]
-    public void SalvesStocked_RecklessHeroes_DieMeasurablyMoreThanPrepared()
+    public void SalvesStocked_PreparedHeroes_SurviveMeasurablyBetterThanReckless()
     {
+        // THE DIRECTION IS THE POINT (owner ruling 2026-08-01: "prefer more prepared heroes").
+        // Preparation must read as insurance: a Prepared hero should die LESS than a Reckless
+        // one. That was not true before this window, and the history is worth keeping because
+        // it explains what the assertion is actually protecting:
+        //
+        //   - old tightest-fit router:              reckless 359/491 (73%) vs prepared 326/490
+        //     (67%) — accidentally correct, and the original test pinned that accident;
+        //   - banded router, gloomwood 55, 4-venue: reckless 243/437 (56%) vs prepared 330/465
+        //     (71%) — INVERTED by ~15pp: preparation was actively LETHAL;
+        //   - banded router, gloomwood 72, 3-venue: reckless 553/684 (81%) vs prepared 551/699
+        //     (79%) — inversion gone but the axis ~inert, ~2pp, inside noise.
+        //
+        // The cause was structural, not tuning: a stocked Heal item OVERRODE the flee decision
+        // and fought on, and fleeing is guaranteed survival — so carrying a salve swapped a safe
+        // exit for a fight the hero could lose, and the trait's sign followed wherever the
+        // router put the world's flee-moments. Fixed in ExpeditionResolver.FightMonster: flee is
+        // checked FIRST and is never cancelled; a salve is drunk while the hero is still ABOVE
+        // the flee line — when merely wounded (CombatMath.ShouldDrink) or, decisively, when the
+        // monster's worst-case next blow could kill (CombatMath.CouldDieNextRound). A plain
+        // wounded-% line alone measured just 0.9pp on an independent seed block; the
+        // lethal-risk clause is what makes preparation actually protective.
+        //
+        // Measured after the fix, two INDEPENDENT 90-seed blocks (the second is not this test's
+        // sweep — a fluke on one block cannot produce both):
+        //   seeds 2026..2115: reckless 376/470 (80.0%) vs prepared 292/463 (63.1%) — 16.9pp
+        //   seeds 5000..5089: reckless 355/463 (76.7%) vs prepared 328/496 (66.1%) — 10.6pp
+        // Prepared heroes are better off, not immortal: they still die ~2/3 of the time across
+        // 100 days, so the trait buys real insurance, not invulnerability.
+        //
+        // The gate below asserts the DIRECTION with a >=5pp margin, deliberately well under the
+        // measured 10.6pp so ordinary seed wobble never trips it — but any change that flattens
+        // the axis or flips it lethal again fails here, loudly.
         var totals = RunAllSeedsParallel();
         var (recklessTotal, recklessDied, preparedTotal, preparedDied) =
             (totals.RecklessTotal, totals.RecklessDied, totals.PreparedTotal, totals.PreparedDied);
 
-        // Integer-only mortality-rate comparison (KTD2: no floating point in sim-adjacent math) —
-        // recklessDied/recklessTotal > preparedDied/preparedTotal, cross-multiplied
-        // (both totals are positive per the engagement-guard test above):
-        var lhs = (long)recklessDied * preparedTotal;
-        var rhs = (long)preparedDied * recklessTotal;
+        // Integer-only rate comparison (KTD2: no floating point in sim-adjacent math):
+        // preparedDied/preparedTotal + 5pp <= recklessDied/recklessTotal, cross-multiplied
+        // (both totals are positive per the engagement-guard test above).
+        var preparedScaled = (long)preparedDied * recklessTotal;
+        var recklessScaled = (long)recklessDied * preparedTotal;
+        var margin5pp = (long)recklessTotal * preparedTotal / 20;
 
-        Assert.True(lhs > rhs,
-            $"Reckless mortality ({recklessDied}/{recklessTotal}) is not measurably worse than " +
-            $"Prepared ({preparedDied}/{preparedTotal}) even with salves actually stocked — the " +
-            "consumable-stocking trait axis shows no survival bite when consumables are available.");
+        Assert.True(preparedScaled + margin5pp <= recklessScaled,
+            $"Prepared mortality ({preparedDied}/{preparedTotal}) is not at least 5pp BELOW " +
+            $"Reckless ({recklessDied}/{recklessTotal}). Preparation must read as insurance — " +
+            "if a salve is again cancelling a survivable flee (ExpeditionResolver.FightMonster), " +
+            "the trait is lethal and backwards from its own fiction.");
     }
 
     [Fact]

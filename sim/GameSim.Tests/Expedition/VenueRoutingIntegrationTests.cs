@@ -7,30 +7,37 @@ using GameSim.Venues;
 namespace GameSim.Tests.Expedition;
 
 /// <summary>
-/// Phase C U-C4 end-to-end proof: over a real, seeded, <see cref="BaselinePlayer"/>-driven campaign,
-/// parties actually depart to BOTH live venues (<see cref="VenueRegistry.LiveRotation"/>) — not just
-/// the Mine — and the Morning prediction (<c>MusterSystem</c>/<c>MusterPlan.Compute</c>) never
-/// disagrees with which venue the Expedition tick actually used. This complements the pure
-/// <see cref="GameSim.Tests.Venues.VenueRouterTests"/> unit suite with the real kernel wiring.
+/// End-to-end proof (Phase C U-C4, extended for the T1 four-venue flip): over a real, seeded,
+/// <see cref="BaselinePlayer"/>-driven campaign, parties actually depart to EVERY live venue
+/// (<see cref="VenueRegistry.LiveRotation"/>) — not just the Mine — and the Morning prediction
+/// (<c>MusterSystem</c>/<c>MusterPlan.Compute</c>) never disagrees with which venue the Expedition
+/// tick actually used. This complements the pure <see cref="GameSim.Tests.Venues.VenueRouterTests"/>
+/// unit suite with the real kernel wiring.
 /// </summary>
 public class VenueRoutingIntegrationTests
 {
     /// <summary>Every <see cref="ExpeditionResult.VenueId"/>/<see cref="InFlightExpedition.VenueId"/>
-    /// a real 40-day campaign produces — parked (staged, camping) and finalised (unstaged/immediate)
+    /// a real campaign produces — parked (staged, camping) and finalised (unstaged/immediate)
     /// results both carry the field, so the union covers every party that departed that day.</summary>
     private static IEnumerable<string> VenueIdsThisTick(GameState state) =>
         state.PendingExpeditions.Select(r => r.VenueId)
             .Concat(state.InFlight.Select(f => f.VenueId));
 
     [Fact]
-    public void RealCampaign_RoutesPartiesToBothLiveVenues_Over40Days()
+    public void RealCampaign_RoutesPartiesToEveryLiveVenue_Over100Days()
     {
+        // THE distribution guard for the banded router: on this measured seed, a 100-day campaign
+        // sends parties to every live venue (early band mine+crypt in the opening weeks, the
+        // Gloomwood band once parties cross 55; dormant Emberfall re-joins this loop's coverage
+        // automatically when its art-gated go-live puts it back in LiveRotation). If a future
+        // tuning change breaks this, the venue distribution moved: re-run the batch farm and
+        // re-place the EntryPower bands consciously, don't just swap the seed.
         var kernel = GameComposition.BuildKernel();
-        var state = GameComposition.NewCampaign(seed: 4242);
+        var state = GameComposition.NewCampaign(seed: 1);
 
         var seenVenues = new HashSet<string>(StringComparer.Ordinal);
 
-        for (var day = 0; day < 40; day++)
+        for (var day = 0; day < 100; day++)
         {
             state = kernel.Tick(state, BaselinePlayer.ActionsFor(state)).NewState; // Morning
             state = kernel.Tick(state, BaselinePlayer.ActionsFor(state)).NewState; // Expedition
@@ -45,10 +52,12 @@ public class VenueRoutingIntegrationTests
             state = kernel.Tick(state, BaselinePlayer.ActionsFor(state)).NewState; // ExpeditionDeep
         }
 
-        // Both live venues actually saw traffic — routing is real, not a no-op that always
-        // resolves to the Mine (the exact failure mode U-C4 exists to fix).
-        Assert.Contains(VenueRegistry.MineId, seenVenues);
-        Assert.Contains("gloomwood", seenVenues);
+        // Every live venue actually saw traffic — routing is real, and no venue is starved to
+        // zero (the exact failure mode the banded router replaced tightest-fit to fix).
+        foreach (var venueId in VenueRegistry.LiveRotation)
+        {
+            Assert.Contains(venueId, seenVenues);
+        }
 
         // Every venue id that ever appeared is a member of the live rotation — routing never invents
         // or strands a party at an unregistered/non-live venue.

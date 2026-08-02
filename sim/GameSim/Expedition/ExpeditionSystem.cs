@@ -55,7 +55,7 @@ public sealed class ExpeditionSystem : IPhaseSystem
 
             // Phase C U-C4 routing: a bounty carries no venue id (bounties are structurally
             // Mine-scoped, R18 — "the Mine IS the map"), so an accepted bounty routes straight to the
-            // Mine; a bounty-free party is routed by VenueRouter's draw-free utility + queue-length
+            // Mine; a bounty-free party is routed by VenueRouter's draw-free power-band + queue-length
             // comparator (KTD2 — no RNG site added). Both call sites (here and MusterPlan.Compute)
             // run the identical sequence over the identical parties, so the Morning prediction never
             // disagrees with what this tick actually forms.
@@ -66,9 +66,8 @@ public sealed class ExpeditionSystem : IPhaseSystem
             }
             else
             {
-                var partyDepth = party.Max(h => h.DeepestFloorReached);
                 var partyPower = CombatMath.PartyAveragePower(party, state.Items);
-                venueId = VenueRouter.ChooseVenue(partyDepth, partyPower, VenueRegistry.LiveRotation, queueCounts);
+                venueId = VenueRouter.ChooseVenue(partyPower, VenueRegistry.LiveRotation, queueCounts);
             }
 
             queueCounts[venueId] = queueCounts.TryGetValue(venueId, out var count) ? count + 1 : 1;

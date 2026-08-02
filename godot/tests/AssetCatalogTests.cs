@@ -33,6 +33,15 @@ public class AssetCatalogTests
         AssertThat(AssetCatalog.VenueBackdropId("sunkencrypt")).IsEqual("sunkencrypt-backdrop");
         AssertThat(AssetCatalog.VenueEntranceId("sunkencrypt")).IsEqual("sunkencrypt-entrance");
 
+        // The SIM venue id composes the same art ids (AssetCatalog.VenueArtId owns the
+        // "sunken-crypt" → "sunkencrypt" hyphen drop): DepthsPanel passes LiveRotation ids
+        // straight in, and before this mapping was centralized its Crypt tile composed
+        // "sunken-crypt-backdrop" and silently fell back over real committed art.
+        AssertThat(AssetCatalog.VenueArtId("sunken-crypt")).IsEqual("sunkencrypt");
+        AssertThat(AssetCatalog.VenueArtId("sunkencrypt")).IsEqual("sunkencrypt"); // idempotent
+        AssertThat(AssetCatalog.VenueBackdropId("sunken-crypt")).IsEqual("sunkencrypt-backdrop");
+        AssertThat(AssetCatalog.VenueEntranceId("sunken-crypt")).IsEqual("sunkencrypt-entrance");
+
         // monster-<slug> for the plain Mine convention (MonsterSpecs.cs header) — a display name
         // ("Cave Rat") and an already-slugged fragment ("cave-rat") compose the same id.
         AssertThat(AssetCatalog.MonsterPortraitId("Cave Rat")).IsEqual("monster-cave-rat");

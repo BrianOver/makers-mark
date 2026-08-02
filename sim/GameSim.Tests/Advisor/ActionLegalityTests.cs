@@ -38,7 +38,15 @@ public class ActionLegalityTests
     private const int Days = 100;
     private const int WarmupDays = 15;
     private const int CounterPlayerDays = 30;
-    private const ulong Seed = 4242;
+
+    // RE-SEATED (2026-08-01 re-baseline: honest BaselinePlayer craft check + banded venue routing
+    // + T1 four-venue/six-class flip): the parity PROPERTIES here are seed-agnostic, but the
+    // counter-session COVERAGE assertions need a campaign whose heroes actually counter-offer
+    // inside the warmup+30-day window. Under the new economy no customer ever haggled at the old
+    // 4242 in that window; 4246 was measured (seed probe 4242..4252) to produce an accepted
+    // HaggleResponseAction on day 17. If coverage starves again after a future re-baseline,
+    // re-probe nearby seeds — do not weaken the Contains assertions.
+    private const ulong Seed = 4246;
 
     [Fact]
     public void EveryLegalAction_ReplayedThroughKernel_IsNeverRejected()

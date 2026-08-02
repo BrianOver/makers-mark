@@ -77,6 +77,18 @@ public static class GloomwoodVenue
                 OreKey: ore[floor - 1]));
         }
 
-        return new VenueDefinition(Id, "The Gloomwood", floors.ToImmutable());
+        // EntryPower 72: the veteran band — a deliberate TIE with dormant Emberfall's 72, so at
+        // Emberfall's art-gated go-live the two top venues become queue-split PEERS instead of
+        // one strictly dominating. Third placement, each measured with the 20-seed batch farm
+        // (2026-08-01): 35 let parties cross within days and Gloomwood soaked 65%+; 55 measured
+        // 86% in the shipping three-venue world; the full sweep 55/65/68/70/71/72 measured
+        // Gloomwood at 86/75/74/70/72/68% — the lever saturates near ~68-70% because the economy
+        // feeds back (parties pushed to the Mine sell the smith copper, gear improves, the fleet
+        // levels back over any bar below the ~81 power ceiling). 72 is the best reachable point:
+        // shipping 68/25/7 (gloomwood/mine/crypt), go-live sanity 42/26/24/6
+        // (ember/mine/gloomwood/crypt). Pushing below ~68% needs a routing-rule change (top-band
+        // congestion overflow), not a threshold — an open recommendation, deliberately not
+        // smuggled into a tuning pass.
+        return new VenueDefinition(Id, "The Gloomwood", floors.ToImmutable(), EntryPower: 72);
     }
 }

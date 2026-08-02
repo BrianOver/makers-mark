@@ -108,8 +108,37 @@ public class AtomicEquivalenceTests
     // Determinism holds (same seed+actions = identical state) and NO new stream was created — the sibling
     // PhaseBNoDrawGate pin confirms RngState.Inc is UNCHANGED, only State moved (one extra draw/day on the
     // same stream). The grep gate holds (rng. now confined to the 4 sites incl. Drama/DirectorSystem.cs).
+    // RE-BASELINED (2026-08-01 venue-router power bands + T1 flip, relands #242): **Class 1/2 —
+    // decisions AND draw counts change, one re-baseline for the whole branch.** Three changes land
+    // together, all of which move this idle trace for REAL: (1) VenueRouter now routes bounty-free
+    // parties by per-venue EntryPower bands instead of tightest-fit headroom, so WHICH venue every
+    // party raids — and therefore every combat draw after the first Morning — shifts; (2) the T1
+    // flip makes Sunken Crypt + Emberfall live and opens sentinel/skirmisher/occultist for
+    // recruitment (the RecruitPool draw's modulus changes from 3 to 6, re-rolling every recruit);
+    // (3) BaselinePlayer submits nothing on this zero-action trace, so its ActionLegality fix moves
+    // nothing HERE — it re-baselines the policy-driven suites instead. Determinism holds (same
+    // seed+actions = identical state; the balance gate's byte-identical-replay test still passes)
+    // and NO new RNG draw SITE was added — the sibling PhaseBNoDrawGate pin confirms RngState.Inc
+    // is UNCHANGED, only State moved (different draw count on the same stream, exactly the U-C3
+    // shape above).
+    // RE-BASELINED AGAIN, same PR (2026-08-01 pre-merge review: Emberfall pulled back to DORMANT
+    // — built + banded but zero committed art, and it had measured 44% of all routing, i.e. half
+    // the game's raids pointed at placeholder glyphs): **Class 0b — values change, draw-free.**
+    // LiveRotation drops emberfall (no idle-trace party ever reached its 72 band in 30 days, so
+    // every routing decision — and therefore the ENTIRE RNG stream — is byte-identical: the
+    // sibling PhaseBNoDrawGate RngState pin did NOT move this time, State and Inc both equal).
+    // What moves the hash is the priced-pool contraction (19 → 14 keys, Emberfall's ladder waits
+    // for its art-gated go-live): the pool-derived, draw-free vendor/pricing surfaces serialize
+    // differently. One PR, two recorded re-pins, still ONE deliberate re-baseline window.
+    // RE-BASELINED AGAIN, same PR window (2026-08-01 Gloomwood band 55 → 72, the coordinator's
+    // three-venue spread pass): **Class 2 — routing decisions change.** Idle-trace parties that
+    // used to cross into the Gloomwood band at 55 now stay in the Mine/Crypt early band until 72,
+    // so WHICH venue mid-power parties raid — and every combat draw after they first cross 55 —
+    // shifts. Same stream, different position (PhaseBNoDrawGate: Inc byte-identical, State moved);
+    // no new draw site (the router is still pure integer comparison). Third recorded re-pin, one
+    // deliberate re-baseline window for the whole branch.
     private const string ExpectedPreCounterSha256 =
-        "45F6B05CC66F855EAB069C873404E6AB63E3EC23677EFB1DBE2FF67F5C2359E1";
+        "34CF8A6F1985CC6105BF70B73CFD7BAC55D9B915116B6C70ADD42DF88AB8F4D2";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

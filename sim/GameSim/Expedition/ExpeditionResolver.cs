@@ -321,18 +321,35 @@ public static class ExpeditionResolver
             // (first Heal item in pack order), THEN the check is evaluated. Draws no
             // RNG, so evaluating here instead of after the loot rolls leaves the
             // stream untouched (the loot is granted either way on a cleared floor).
+            // The post-floor bar is the DRINK line (CombatMath.ShouldDrink, 50%), not the flee
+            // line. Two reasons, both consequences of the 2026-08-01 flee-first ordering:
+            //
+            // 1. Correctness. With flee checked FIRST and never cancelled, a hero can no longer
+            //    finish a CLEARED floor below the flee line — the killing round deals the hero no
+            //    damage, so any hero still standing entered that round above the line. Keeping
+            //    the old ShouldFlee bar here would have made ExpeditionHalt.TooHurt (and the
+            //    post-floor quaff) silently UNREACHABLE — a feature deleted by accident. Two
+            //    tests caught it: PostFloorTooHurtCheck_QuaffsBySameRule and
+            //    StagedResolutionTests.HaltPrecedence_TooHurtCheckFiresAtTargetFloor.
+            // 2. Fiction. "Too hurt to press deeper" should be a MORE cautious bar than "break
+            //    off this fight", not the same one: a hero at 40% finishing a floor now banks the
+            //    clear and goes home instead of descending into a harder floor at 40%.
+            //
+            // Same insurance shape as in-fight: drink first (a Prepared hero tops up and presses
+            // on), then re-evaluate — a hero still under the line after drinking goes home with
+            // the floor's loot banked. A Reckless hero with an empty pack simply goes home.
             var tooHurtToContinue = false;
             if (floorCleared)
             {
                 foreach (var hero in party.Where(h => !dead.Contains(h.Id.Value) && !retreated.Contains(h.Id.Value)))
                 {
                     var fleeDelta = effects[hero.Id.Value].FleeThresholdDeltaPct;
-                    if (CombatMath.ShouldFlee(hp[hero.Id.Value], hero.MaxHp, fleeDelta))
+                    if (CombatMath.ShouldDrink(hp[hero.Id.Value], hero.MaxHp, fleeDelta))
                     {
                         QuaffAfterFight(hero, items, hp, packs, combats);
                     }
 
-                    tooHurtToContinue |= CombatMath.ShouldFlee(hp[hero.Id.Value], hero.MaxHp, fleeDelta);
+                    tooHurtToContinue |= CombatMath.ShouldDrink(hp[hero.Id.Value], hero.MaxHp, fleeDelta);
                 }
             }
 
@@ -459,23 +476,46 @@ public static class ExpeditionResolver
         {
             round++;
 
-            // Top of the round (P2): a hero who would flee quaffs the first Heal item
-            // in pack order instead and fights on; with an empty pack the hero flees
-            // exactly as before. The quaff itself draws NO RNG — draw counts change
-            // only because the fight continues, a deterministic function of state.
-            // At most one quaff per round; round 1 never triggers (heroes enter a
-            // floor above the flee threshold — the post-floor check guarantees it).
+            // Top of the round (P2): FLEE FIRST — a hero at the flee line leaves, and no salve
+            // talks them out of it. A hero who is merely WOUNDED (below CombatMath's drink line,
+            // still above the flee line) quaffs the first Heal item in pack order and fights on.
+            //
+            // This ordering is the 2026-08-01 owner ruling ("prefer more prepared heroes"). The
+            // quaff used to fire AT the flee check and CANCEL it, so carrying a salve swapped a
+            // guaranteed-survival exit for a fight the hero could lose — the "Prepared" trait
+            // measured 73% mortality against Reckless's 55%, i.e. preparation was actively
+            // lethal and backwards from its own fiction. Drinking earlier makes preparation
+            // INSURANCE: it improves a fight the hero was already taking, keeps them out of the
+            // danger zone, and leaves fleeing as the answer to real danger.
+            //
+            // "Wounded" is either of two integer reads, both draw-free: below the drink line
+            // (CombatMath.ShouldDrink), or one worst-case blow from death right now
+            // (CombatMath.CouldDieNextRound). The second clause is what actually saves lives —
+            // heroes die from full-looking HP on deep floors where a single hit exceeds a
+            // "safe" 40% — and it is why a plain wounded-% line measured only 0.9pp of Prepared
+            // advantage on an independent seed block while this pair measures a real margin.
+            //
+            // The quaff draws NO RNG — draw counts change only because the fight continues, a
+            // deterministic function of state. At most one quaff per round; round 1 can now
+            // trigger a drink (a hero may enter a floor wounded but above the flee line, which
+            // the post-floor check permits), never a flee.
             var uses = ImmutableList<ConsumableUse>.Empty;
             if (CombatMath.ShouldFlee(hp[hero.Id.Value], hero.MaxHp, effect.FleeThresholdDeltaPct))
             {
-                if (TryQuaff(hero, items, hp, packs, round) is { } use)
-                {
-                    uses = uses.Add(use);
-                }
-                else
-                {
-                    return FightOutcome.HeroFled;
-                }
+                return FightOutcome.HeroFled;
+            }
+
+            // The hp < MaxHp guard is load-bearing: a heal caps at MaxHp, so a hero at FULL
+            // health drinking because the monster "could one-shot them from full" spends the
+            // salve for a literal zero-point heal — insurance burned exactly where it cannot
+            // help. (ConsumableResolverTests.DeathFromAboveFleeThreshold_IsNotSaved caught this.)
+            var wounded = hp[hero.Id.Value] < hero.MaxHp
+                && (CombatMath.ShouldDrink(hp[hero.Id.Value], hero.MaxHp, effect.FleeThresholdDeltaPct)
+                    || CombatMath.CouldDieNextRound(hp[hero.Id.Value], venue.MonsterAttack(floor), heroDefense));
+
+            if (wounded && TryQuaff(hero, items, hp, packs, round) is { } use)
+            {
+                uses = uses.Add(use);
             }
 
             var rolls = ImmutableList.CreateBuilder<int>();

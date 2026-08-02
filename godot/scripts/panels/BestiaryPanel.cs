@@ -30,8 +30,11 @@ namespace GodotClient.Panels;
 /// breathe/hover loop plus a brief reveal fade-in on every fresh <see cref="Select"/>. Art coverage
 /// is NOT 1:1 with the old mesh set — Emberfall Foundry's four non-"Cinder Imp" monsters (gen'd a
 /// GLB but never a 2D portrait) fall all the way to the pre-existing text-only card, same as Cinder
-/// Imp always has; Emberfall is registered but not live (<see cref="VenueRegistry.LiveRotation"/>),
-/// so this is a real but low-stakes art gap, not a wiring defect (see the removal PR notes).</para>
+/// Imp always has. Emberfall is built and banded but DORMANT (not in
+/// <see cref="VenueRegistry.LiveRotation"/>) precisely because none of its art exists yet — the
+/// bestiary still lists it (it iterates registered venues, not live ones), so this text-only card
+/// is the one place a player meets the Foundry before its art wave. Graceful degrade by design,
+/// not a wiring defect (see the removal PR notes; the art wave gates its go-live).</para>
 /// </summary>
 public partial class BestiaryPanel : Control
 {
@@ -192,16 +195,12 @@ public partial class BestiaryPanel : Control
 
     /// <summary>Maps a venue's sim <see cref="VenueDefinition.Id"/> to the art-manifest prefix
     /// <see cref="AssetCatalog.MonsterPortrait"/> expects. The Mine's monsters use the prefix-less
-    /// default ("monster-"); most other venues' art ids match their own sim Id — except Sunken
-    /// Crypt, whose committed ids drop the sim Id's hyphen ("sunken-crypt" sim-side, "sunkencrypt"
-    /// art-side; see <c>AssetCatalogTests</c>/<c>ArtWiringCoverageTests</c>). Presentation-only glue
-    /// — never renames anything on the <c>GameSim.Venues</c> side (KTD-C).</summary>
-    private static string? VenueArtPrefix(string venueId) => venueId switch
-    {
-        VenueRegistry.MineId => null,
-        "sunken-crypt" => "sunkencrypt",
-        _ => venueId,
-    };
+    /// default ("monster-"); every other venue delegates to <see cref="AssetCatalog.VenueArtId"/>
+    /// (the one home of the "sunken-crypt" → "sunkencrypt" hyphen drop — this used to be a private
+    /// second copy here, which is how DepthsPanel's backdrop lookup missed the mapping entirely).
+    /// Presentation-only glue — never renames anything on the <c>GameSim.Venues</c> side (KTD-C).</summary>
+    private static string? VenueArtPrefix(string venueId) =>
+        venueId == VenueRegistry.MineId ? null : AssetCatalog.VenueArtId(venueId);
 
     /// <summary>Deterministic phase offset (radians) from a monster kind string, same purpose as
     /// <c>SpriteMotion</c>'s id-derived idle-breath phase offset: a plain sum-of-chars hash (NOT

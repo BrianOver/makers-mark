@@ -72,12 +72,19 @@ public class ClassConformanceTests
     }
 
     [Fact]
-    public void RecruitPool_IsTheThreeBuiltIns_InDrawOrder()
+    public void RecruitPool_IsTheSixTunedClasses_InDrawOrder()
     {
-        // The recruit determinism contract: order maps 0→vanguard, 1→striker, 2→mystic so the
-        // draw is byte-identical to the old (role)rng.NextInt(0, 3). A guard against reordering.
+        // The recruit determinism contract: the built-in prefix keeps its exact old order
+        // (0→vanguard, 1→striker, 2→mystic) and the T1 content flip (relands PR #242) APPENDS
+        // sentinel/skirmisher/occultist — appending changes the draw's modulus, which is why the
+        // flip is a determinism-gated re-baseline; reordering would additionally scramble the
+        // built-in mapping for no reason. A guard against both.
         Assert.Equal(
-            new[] { ClassRegistry.VanguardId, ClassRegistry.StrikerId, ClassRegistry.MysticId },
+            new[]
+            {
+                ClassRegistry.VanguardId, ClassRegistry.StrikerId, ClassRegistry.MysticId,
+                "sentinel", "skirmisher", "occultist",
+            },
             ClassRegistry.RecruitPool);
     }
 

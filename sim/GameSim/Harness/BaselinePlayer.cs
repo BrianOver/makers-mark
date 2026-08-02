@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using GameSim.Advisor;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Professions;
@@ -8,8 +9,9 @@ namespace GameSim.Harness;
 /// <summary>
 /// The scripted baseline player policy (U10; moved from the Balance tests for the telemetry
 /// batch runner — one policy, shared by the balance gate and the CLI batch farm, never forked).
-/// Craft the best recipe materials allow, price at the rival's own formula (better stats win
-/// value ties), buy every affordable ore offer, unlock talents in prerequisite order.
+/// Craft the best recipe the kernel would accept (asked via <see cref="Advisor.ActionLegality"/>,
+/// never re-derived here), price at the rival's own formula (better stats win value ties), buy
+/// every affordable ore offer, unlock talents in prerequisite order.
 /// Deterministic — no RNG of its own, no IO, no wall clock: purity-safe inside GameSim.
 /// </summary>
 public static class BaselinePlayer
@@ -58,14 +60,21 @@ public static class BaselinePlayer
                     break;
                 }
 
+                // Ask ActionLegality, never re-derive the rule. This used to hand-roll
+                // `have >= recipe.MaterialQuantity`, which missed the material-efficiency talent
+                // discount (ActionLegality.CraftLegal: needed = Max(1, quantity - efficiency)) —
+                // the scripted smith refused ~90% of crafts the kernel would have accepted, so
+                // every balance number described a smith who wouldn't work. It also ignored the
+                // tier gate: the old check could emit a doomed craft for a tier-locked recipe
+                // (rejected, no craft that window) instead of walking down to a legal one.
                 foreach (var recipe in RecipeTable.All.Values
                              .OrderByDescending(r => r.Tier)
                              .ThenByDescending(r => r.BaseStats.Attack + r.BaseStats.Defense))
                 {
-                    var have = state.Player.Materials.GetValueOrDefault(recipe.MaterialKey);
-                    if (have >= recipe.MaterialQuantity)
+                    var candidate = new CraftAction(recipe.RecipeId, recipe.MaterialKey);
+                    if (ActionLegality.IsLegal(state, candidate, state.Phase))
                     {
-                        actions.Add(new CraftAction(recipe.RecipeId, recipe.MaterialKey));
+                        actions.Add(candidate);
                         break; // one craft per window keeps the policy simple and stable
                     }
                 }

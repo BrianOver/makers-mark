@@ -111,7 +111,7 @@ public class GloomwoodVenueTests
     {
         // Phase C U-C4: the Gloomwood is now the second live venue alongside the Mine —
         // VenueRouter distributes bounty-free parties across both (see VenueRouterTests /
-        // VenueConformanceTests.LiveRotation_IsExactlyMineAndGloomwood).
+        // VenueConformanceTests.LiveRotation_IsExactlyTheFourBuiltVenues).
         Assert.True(VenueRegistry.IsRegistered("gloomwood"));
         Assert.Contains("gloomwood", VenueRegistry.LiveRotation);
     }

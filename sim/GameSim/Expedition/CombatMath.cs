@@ -14,6 +14,29 @@ public static class CombatMath
     public const int RollSides = 6;          // rolls are NextInt(0, 6)
     public const int FleeThresholdPct = 25;  // hero flees below 25% MaxHp
 
+    /// <summary>Hero drinks a Heal consumable below 50% MaxHp — while still ABOVE the flee line
+    /// (<see cref="FleeThresholdPct"/>), so preparation is INSURANCE that keeps a hero out of the
+    /// danger zone, never a gamble that replaces a safe exit. See <see cref="ShouldDrink"/>.</summary>
+    public const int DrinkThresholdPct = 50;
+
+    /// <summary>
+    /// Whether the monster's WORST-CASE next blow (max roll) would drop this hero to 0 — the
+    /// hero is one hit from death right now. Pure integer arithmetic over the same
+    /// <see cref="MonsterDamage"/> formula the fight uses, so it can never disagree with the
+    /// damage actually dealt; draws no RNG (it asks "what is the worst the dice could do",
+    /// it does not roll them).
+    ///
+    /// <para>This is the trigger that makes preparation actually protective. A hero can die
+    /// while still ABOVE the flee line — hp falls from a "safe" 40% straight through 0 on one
+    /// deep-floor hit — so a fixed wounded-% drink line spends salves on scratches that were
+    /// never going to kill and leaves the pack empty at the moment that does. Measured: a plain
+    /// 50%-line drink left Prepared only 0.9pp better than Reckless on an independent seed
+    /// block (inside noise); gating the drink on real lethal risk is what converts the trait
+    /// into insurance.</para>
+    /// </summary>
+    public static bool CouldDieNextRound(int hp, int monsterAttack, int heroDefense) =>
+        hp <= MonsterDamage(monsterAttack, RollSides - 1, heroDefense);
+
     /// <summary>A class's flat attack contribution — pure data read (P3). Kept as a named
     /// seam so an add-on class's <see cref="ClassDefinition.BaseAttack"/> flows through the
     /// same math the built-ins use.</summary>
@@ -62,6 +85,29 @@ public static class CombatMath
     public static bool ShouldFlee(int hp, int maxHp, int thresholdDeltaPct)
     {
         var threshold = Math.Clamp(FleeThresholdPct + thresholdDeltaPct, 0, 100);
+        return hp * 100 < threshold * maxHp;
+    }
+
+    /// <summary>
+    /// Whether a wounded-but-not-fleeing hero drinks a Heal consumable: below
+    /// <see cref="DrinkThresholdPct"/> of MaxHp and NOT yet at the flee line. Callers check
+    /// <see cref="ShouldFlee"/> FIRST — a hero at the flee line leaves, and no salve talks them
+    /// out of it (owner ruling 2026-08-01: "prefer more prepared heroes").
+    ///
+    /// <para>The quaff used to fire AT the flee line, replacing a guaranteed-survival exit with a
+    /// fight the hero could lose — which made the "Prepared" trait actively LETHAL (measured 73%
+    /// mortality vs Reckless's 55%: Reckless fled home, Prepared stayed and died). Drinking
+    /// EARLIER, while there is still a healthy margin, is the fiction the trait names: the salve
+    /// improves a fight the hero was already taking, and fleeing stays the answer to real danger.</para>
+    ///
+    /// <para>Shares <paramref name="thresholdDeltaPct"/> with <see cref="ShouldFlee"/> so a
+    /// Coward's/Braveheart oil shifts both lines together and the drink band never inverts past
+    /// the flee band (a Coward's oil raising flee above 50 would otherwise make the hero flee
+    /// before ever drinking — correct, and this ordering preserves it). Integer-only, no RNG.</para>
+    /// </summary>
+    public static bool ShouldDrink(int hp, int maxHp, int thresholdDeltaPct)
+    {
+        var threshold = Math.Clamp(DrinkThresholdPct + thresholdDeltaPct, 0, 100);
         return hp * 100 < threshold * maxHp;
     }
 

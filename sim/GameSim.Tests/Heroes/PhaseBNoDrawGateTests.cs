@@ -35,6 +35,15 @@ public class PhaseBNoDrawGateTests
         // adding draws to the one stream only moves State. If this moves again, first check Inc (changed ⇒
         // a new stream, a real bug) then grep for a new `rng.` site outside the 4 allowed files (which now
         // include Drama/DirectorSystem.cs).
-        Assert.Equal(new RngState(1184884748625198882UL, 13279888329118852579UL), state.Rng);
+        // RE-BASELINED (2026-08-01 venue-router power bands + T1 flip, relands #242): NO new draw —
+        // the banded VenueRouter is draw-free by construction (pure integer comparison, same as the
+        // tightest-fit rule it replaced), but it routes parties to DIFFERENT venues, so combat
+        // draw COUNTS differ; and the RecruitPool growing 3 → 6 changes what each existing recruit
+        // draw maps to. Same stream, different position: `Inc` is byte-identical to the U-C3 value
+        // above — only `State` moved. The grep gate holds (no new `rng.` site; Venues/ has none).
+        // RE-BASELINED (2026-08-01 same PR window, Gloomwood band 55 → 72): same class as above —
+        // mid-power idle parties now stay in the early band until 72, so their venues and combat
+        // draw counts shift again. `Inc` STILL byte-identical; only `State` moved.
+        Assert.Equal(new RngState(18014097083248745424UL, 13279888329118852579UL), state.Rng);
     }
 }

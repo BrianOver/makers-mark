@@ -39,11 +39,25 @@ public static class AssetCatalog
         return $"{prefix}-{Slugify(kind)}";
     }
 
-    /// <summary>Venue backdrop id, e.g. "gloomwood" → "gloomwood-backdrop".</summary>
-    public static string VenueBackdropId(string venueId) => $"{venueId}-backdrop";
+    /// <summary>Art-manifest id fragment for a venue id: most venues' art ids match their sim id
+    /// verbatim, but Sunken Crypt's committed art drops the sim id's hyphen ("sunken-crypt"
+    /// sim-side, "sunkencrypt" art-side). Centralized HERE (the id-composition seam) after the T1
+    /// flip surfaced the cost of not doing so: DepthsPanel composed "sunken-crypt-backdrop", the
+    /// committed art is "sunkencrypt-backdrop", and the venue tile silently rendered the fallback
+    /// glyph over REAL, finished art — the exact silent-fallback failure shape #316 was.
+    /// Idempotent for already-art-form input ("sunkencrypt" passes through unchanged), so callers
+    /// holding either form compose the same id. Presentation-only glue — never renames anything
+    /// on the sim side (KTD-C: primitive strings, no GameSim reference).</summary>
+    public static string VenueArtId(string venueId) =>
+        venueId == "sunken-crypt" ? "sunkencrypt" : venueId;
 
-    /// <summary>Venue entrance id, e.g. "sunkencrypt" → "sunkencrypt-entrance".</summary>
-    public static string VenueEntranceId(string venueId) => $"{venueId}-entrance";
+    /// <summary>Venue backdrop id, e.g. "gloomwood" → "gloomwood-backdrop", "sunken-crypt" →
+    /// "sunkencrypt-backdrop" (via <see cref="VenueArtId"/>).</summary>
+    public static string VenueBackdropId(string venueId) => $"{VenueArtId(venueId)}-backdrop";
+
+    /// <summary>Venue entrance id, e.g. "sunken-crypt"/"sunkencrypt" → "sunkencrypt-entrance"
+    /// (via <see cref="VenueArtId"/>).</summary>
+    public static string VenueEntranceId(string venueId) => $"{VenueArtId(venueId)}-entrance";
 
     /// <summary>Hero portrait id for a <c>ClassRegistry</c> class id, e.g. "vanguard" → "hero-vanguard".</summary>
     public static string HeroPortraitId(string classId) => $"hero-{classId}";
