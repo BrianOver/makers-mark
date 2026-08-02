@@ -6,7 +6,6 @@ using Godot;
 using GodotClient.Audio;
 using GodotClient.Panels;
 using GodotClient.Tools;
-using GodotClient.Town;
 using GodotClient.Town2d;
 using GodotClient.Ui;
 
@@ -173,13 +172,6 @@ public partial class MainUi : Control
     public TabFade TabFade { get; private set; } = null!;
     public AdventureTicker Ticker { get; private set; } = null!;
 
-    /// <summary>U22 (R4/KTD10): the staged-interior framework — opens instead of the drawer on a
-    /// venue interact/click-arrival, then routes a hotspot press onto the same drawer id. 2.5D
-    /// pivot (U2): this slice's <see cref="OnTownBuildingClicked"/> routes straight to <see
-    /// cref="OpenPanel"/> instead, so nothing currently opens this stage — it stays wired
-    /// (hotspot/exit handlers intact) for a later reintroduction rather than torn out.</summary>
-    public InteriorStage Interior { get; private set; } = null!;
-
     /// <summary>U18 (R11/KTD13): the top-right objective chip — <c>ObjectiveAdvisor</c>'s top
     /// pick + reason, expandable to the ranked list.</summary>
     public ObjectiveTracker Objective { get; private set; } = null!;
@@ -250,7 +242,7 @@ public partial class MainUi : Control
     /// <summary>
     /// U1 (playtest-three plan, KTD-A move 2): armed by <see cref="SoundTheTick"/> when the
     /// departure tick lands while a genuine modal (Ledger/Camp/Mirror/Forecast/Bestiary/
-    /// Commissions/Legends, or the staged Interior) still owns the screen — the drawer is ALWAYS
+    /// Commissions/Legends, or the walkable interior room) still owns the screen — the drawer is ALWAYS
     /// closed on departure (move 1), but a modal is a deliberate player choice mid-Morning and
     /// yanking the camera behind it would still be invisible, one layer deeper than the reported
     /// bug. Cleared by <see cref="TryFireDeferredMineGateFocus"/>, called from every modal-close
@@ -390,9 +382,6 @@ public partial class MainUi : Control
         // U21: tick the drawer's accumulated-delta slide (no-op unless a slide is in flight).
         Drawer.Tick(delta);
 
-        // U22: tick the interior stage's accumulated-delta camera push-in (no-op unless open).
-        Interior.Tick(delta);
-
         // U17: tick the bottom-edge adventure ticker marquee (no-op with no lines yet).
         Ticker.Tick(delta);
 
@@ -516,8 +505,12 @@ public partial class MainUi : Control
         RefreshAll();
         Town.OnPhaseCompleted(completedPhase);
         // U25 (c): the drawer's own ShopPanel.OnPhaseCompleted (LW3's lit customer strip) is
-        // retired — Interior's own hook below is the ONE ShopStage choreography now.
-        Interior.OnPhaseCompleted(completedPhase, state, Adapter.LastEvents); // U22: ported into the shop interior too
+        // retired. U4 (painted-interiors plan): its replacement, InteriorStage's embedded
+        // ShopStage, is ALSO retired along with the dead InteriorStage host it rode in on — the
+        // shop choreography (ShopStage.QueueDay) currently has no live host in the game (see
+        // ShopStage's own class doc). Slice 2's market room is its next intended host; wiring a
+        // new call site here speculatively, before that room exists, is exactly the kind of code
+        // path with no player-visible payoff this plan's KTD-4 warns against.
         SyncCampModal(); // V7a: raise the winch-house slate the moment a party parks at Camp
 
         // U17: feed this tick's freshly stamped events to the bottom-edge adventure ticker.
@@ -1293,10 +1286,14 @@ public partial class MainUi : Control
         Town.Clock = Clock;
         Town.HeroClicked += OnTownHeroClicked;
         Town.BuildingClicked += OnTownBuildingClicked;
-        // U1 (painted-interiors plan): a station's Picked already carries a routable action string
-        // (Town2D/InteriorRoom2D translate the station id → action before re-emitting), so it goes
-        // straight onto the SAME handler InteriorStage's hotspots used — no new routing method.
-        Town.StationActivated += OnInteriorHotspotActivated;
+        // U3 (painted-interiors plan): a station's Picked now carries its WHOLE StationSpec
+        // (Action/Focus/HoverLine/FlavorLine), so it routes through its own OnStationActivated
+        // rather than straight onto OnInteriorHotspotActivated.
+        Town.StationActivated += OnStationActivated;
+        // U4: replaces the deleted InteriorStage.Exited wiring — fires on EITHER room-exit path
+        // (Esc or the door), re-syncing the engaged latch/deferred focus beat the same way every
+        // other modal-close path already does (see Town2D.InteriorExited's own doc).
+        Town.InteriorExited += OnInteriorExited;
 
         var layout = new VBoxContainer { Name = "Layout" };
         layout.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
@@ -1802,16 +1799,6 @@ public partial class MainUi : Control
         Pip.ExpandRequested += () => Mirror.ShowMirror();
         Pip.Clock = Clock; // U25 (a): PiP's journey feed pauses with the clock
 
-        // --- U22: InteriorStage — the staged-interior framework (R4/KTD10), mounted LAST so it
-        //     draws above the drawer/HUD/every modal. 2.5D pivot (U2): nothing currently opens it
-        //     (OnTownBuildingClicked routes straight to OpenPanel), but it stays wired — see
-        //     the Interior property's own doc. ---------------------------------------------
-        Interior = new InteriorStage();
-        AddChild(Interior);
-        Interior.Build();
-        Interior.HotspotActivated += OnInteriorHotspotActivated;
-        Interior.Exited += OnInteriorExited;
-
         // --- build-provenance stamp (deploy hygiene): a small always-visible corner label naming
         //     this build — mounted last so it draws over everything else. See BuildStamp's own
         //     doc; no other MainUi behavior changes here. ---
@@ -1947,7 +1934,7 @@ public partial class MainUi : Control
         Drawer.Close();
 
         // (2) a genuine MODAL (Ledger/Camp/Mirror/Forecast/Bestiary/Commissions/Legends, or the
-        // staged Interior) is a different case from a drawer: the player opened it on purpose
+        // walkable interior room) is a different case from a drawer: the player opened it on purpose
         // mid-Morning, and it is not this method's place to close it out from under them. Defer the
         // beat instead of dropping it — whichever modal-close path finds the screen clear next fires
         // it (TryFireDeferredMineGateFocus).
@@ -1978,13 +1965,18 @@ public partial class MainUi : Control
 
     /// <summary>
     /// True while a modal overlay (Ledger/Camp/Mirror/Forecast/Bestiary/Commissions/Legends) or the
-    /// staged Interior covers the middle of the screen — the "not a drawer" half of <see
+    /// walkable interior room covers the middle of the screen — the "not a drawer" half of <see
     /// cref="UpdateEngaged"/>'s engaged latch, pulled into its own method so U1's departure-focus
     /// pending beat (above) reads the EXACT same predicate instead of a second hand-copied clause
     /// list that could silently drift from it.
+    ///
+    /// <para>U4 (painted-interiors plan): <c>Interior.IsOpen</c> (the deleted, always-false
+    /// InteriorStage) is replaced with <see cref="Town2D.InteriorActive"/> — the room genuinely
+    /// covers the screen the same way a modal does, so it belongs in this predicate exactly the
+    /// way this doc already described "an interior" before U1 ever wired one up.</para>
     /// </summary>
     private bool ModalOwnsTheScreen() =>
-        Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible
+        Town.InteriorActive || Ledger.Visible || Camp.Visible || Mirror.Visible
         || Forecast.Visible || Bestiary.Visible || Commissions.Visible || Legends.Visible;
 
     /// <summary>
@@ -2109,6 +2101,11 @@ public partial class MainUi : Control
         if (venueKey is not null && InteriorLayout2D.Rooms.ContainsKey(venueKey))
         {
             Town.EnterInterior(venueKey);
+            // U4: the room covers the screen exactly like a modal (ModalOwnsTheScreen now reads
+            // Town.InteriorActive) — engage the latch the instant it opens, same as every OpenPanel/
+            // modal-open call site below already does. Town.InteriorExited (wired in BuildUi) is
+            // the matching release on the way back out.
+            UpdateEngaged();
             return;
         }
 
@@ -2178,10 +2175,40 @@ public partial class MainUi : Control
     }
 
     /// <summary>
-    /// A content hotspot (never exit) was pressed inside the interior — open the SAME drawer id
-    /// the hotspot's action names. 2.5D pivot (U2): <see cref="OnTownBuildingClicked"/> no longer
-    /// routes through <see cref="InteriorStage"/> to reach here (nothing currently opens the
-    /// stage), but the handler stays live and correct in case a later slice reintroduces it.
+    /// U3 (painted-interiors plan): the walkable room's own station router — a real click/E on one
+    /// of <see cref="InteriorLayout2D"/>'s forge stations. A flavor station (<see
+    /// cref="InteriorLayout2D.StationSpec.Action"/> null — Bellows/Quench) never opens a panel: it
+    /// shows its <see cref="InteriorLayout2D.StationSpec.FlavorLine"/> as a one-line toast, an
+    /// honest response rather than a silent dead click. A real-verb station routes through the
+    /// EXISTING <see cref="OnInteriorHotspotActivated"/> (same drawer-id vocabulary as ever), then
+    /// — if the row also names a <see cref="InteriorLayout2D.StationSpec.Focus"/> (Forge's
+    /// materials/craft split) — scrolls/flashes that section on the panel that just opened.
+    /// </summary>
+    private void OnStationActivated(InteriorLayout2D.StationSpec station)
+    {
+        if (station.Action is null)
+        {
+            // Honest flavor (U3): no verb here, ever — reuses the same rejection-toast banner
+            // every other transient one-liner in this class shows (ShowBellToast's own doc).
+            ShowBellToast(station.FlavorLine ?? $"{station.Label}: nothing to do here.");
+            return;
+        }
+
+        OnInteriorHotspotActivated(station.Action);
+
+        if (station.Focus is { } focus && PanelFor(station.Action) is ForgePanel forge)
+        {
+            forge.FocusSection(focus);
+        }
+    }
+
+    /// <summary>
+    /// A content hotspot (never exit) was pressed — open the SAME drawer id the hotspot's action
+    /// names. U3 (painted-interiors plan): <see cref="OnStationActivated"/> is the walkable room's
+    /// real caller now (a real-verb station's Action, after routing its optional Focus); kept as
+    /// its own method — string in, `OpenPanel`-or-modal out — rather than folded into
+    /// <see cref="OnStationActivated"/> directly, since the action-string shape is also what any
+    /// future slice-2 hotspot (KTD-3: a table row, never a new code path) will carry.
     /// </summary>
     private void OnInteriorHotspotActivated(string action)
     {
@@ -2443,13 +2470,6 @@ public partial class MainUi : Control
     }
 
     /// <summary>
-    /// U15/U21/U22 (KTD3/AE1/R7): real drawer/interior/modal state engages <see
-    /// cref="PhaseClock.Engaged"/> — the bare world (no drawer open, no interior staged, no modal
-    /// visible) is the only flowing surface; any open drawer (<see cref="DrawerHost.IsOpen"/>),
-    /// staged interior (<see cref="InteriorStage.IsOpen"/>), or modal overlay (Ledger/Camp/Mirror)
-    /// engages the latch so an expired phase timer holds at the boundary instead of ticking.
-    /// </summary>
-    /// <summary>
     /// Parks the objective/tutorial dock against the left window edge instead of the right.
     ///
     /// <para>Only used to keep the tutorial card readable while a drawer owns the right-hand ~600px (see
@@ -2474,6 +2494,18 @@ public partial class MainUi : Control
         Objective.OffsetRight = -ObjectiveDockMargin;
     }
 
+    /// <summary>
+    /// U15/U21/U22 (KTD3/AE1/R7): real drawer/interior/modal state engages <see
+    /// cref="PhaseClock.Engaged"/> — the bare world (no drawer open, no interior room entered, no
+    /// modal visible) is the only flowing surface; any open drawer (<see cref="DrawerHost.IsOpen"/>),
+    /// the walkable interior room (<see cref="Town2D.InteriorActive"/>, U4), or modal overlay
+    /// (Ledger/Camp/Mirror) engages the latch so an expired phase timer holds at the boundary
+    /// instead of ticking.
+    ///
+    /// <para>Doc note (found while sweeping U4's InteriorStage removal): this summary previously sat
+    /// orphaned a few members away, attached to nothing — moved here, onto the method it actually
+    /// describes.</para>
+    /// </summary>
     private void UpdateEngaged()
     {
         // Split out from `engaged` because the two cases leave the screen in different shapes: the side

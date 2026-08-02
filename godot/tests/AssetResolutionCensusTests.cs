@@ -265,6 +265,76 @@ public class AssetResolutionCensusTests
         }
     }
 
+    /// <summary>
+    /// U3 (painted-interiors plan, "also owed"): U2 authored the six forge station sprites BEFORE
+    /// U1 pushed the room/footprint code, judging each only on a standalone composite — never
+    /// against the actual tile spacing. <c>Building2D.Configure</c> derives a station's COLLISION
+    /// footprint directly from its texture's own pixel size (no separate declared-size field
+    /// anywhere), so an oversized sprite silently becomes an oversized hitbox that can reach into a
+    /// neighboring station or the room wall. This pins each shipped PNG to the KTD-5 authoring
+    /// brief's own size (the plan text's one written record of what each station was SUPPOSED to
+    /// be) so a future re-paint that quietly grows a sprite fails here — at table-validation time —
+    /// instead of shifting collision the next time someone stands at the shelf.
+    /// </summary>
+    [TestCase]
+    public void ForgeStationArt_MatchesItsKtd5DeclaredFootprint_NeverShiftsCollision()
+    {
+        var expectedSizes = new Dictionary<string, Vector2>
+        {
+            ["town2d-station-anvil"] = new(24, 20),
+            ["town2d-station-furnace"] = new(32, 40),
+            ["town2d-station-bellows"] = new(20, 14),
+            ["town2d-station-quench"] = new(24, 14),
+            ["town2d-station-shelf"] = new(28, 32),
+            ["town2d-station-rack"] = new(28, 32),
+        };
+
+        foreach (var room in InteriorLayout2D.Rooms.Values)
+        {
+            foreach (var station in room.Stations)
+            {
+                if (!expectedSizes.TryGetValue(station.SpriteId, out var expected))
+                {
+                    continue; // a future slice-2 station this test predates — not this unit's table to guess at
+                }
+
+                var art = IconRegistry.Art(station.SpriteId);
+                if (art is null)
+                {
+                    continue; // the census test above already fails loudly for a missing id
+                }
+
+                AssertThat(art.GetSize())
+                    .OverrideFailureMessage(
+                        $"'{station.SpriteId}' (station '{station.Id}' in room '{room.VenueKey}') is "
+                        + $"{art.GetSize()}px, but its declared KTD-5 footprint is {expected}px. "
+                        + "Building2D.Configure derives collision straight from texture size, so this "
+                        + "mismatch SHIFTS COLLISION at the station's tile — never a cosmetic-only diff.")
+                    .IsEqual(expected);
+            }
+        }
+
+        // Room shell art must match InteriorLayout2D's own computed room size the same way —
+        // TownAssets2D.ForShell is handed that exact size, so a mismatch here would mean the shell
+        // PNG and the room's actual walkable rect have silently drifted apart.
+        foreach (var room in InteriorLayout2D.Rooms.Values)
+        {
+            var shellArt = IconRegistry.Art(room.ShellSpriteId);
+            if (shellArt is null)
+            {
+                continue;
+            }
+
+            var expectedShellSize = new Vector2(
+                room.SizeTiles.X * TownLayout2D.TileSize, room.SizeTiles.Y * TownLayout2D.TileSize);
+            AssertThat(shellArt.GetSize())
+                .OverrideFailureMessage(
+                    $"'{room.ShellSpriteId}' (the '{room.VenueKey}' room's shell) is {shellArt.GetSize()}px, "
+                    + $"but the room's own declared size is {expectedShellSize}px.")
+                .IsEqual(expectedShellSize);
+        }
+    }
+
     // ── shared assertion ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>

@@ -61,6 +61,28 @@ public partial class ForgePanel : SimPanel
     private VBoxContainer? _recipeRows;
     private VBoxContainer? _talentRows;
 
+    // ── U3 (painted-interiors plan): FocusSection — the shelf/anvil stations' "press E, land on
+    // the right rows" affordance. Scrolls to and briefly flashes an EXISTING section (no new
+    // content, no verb change) — see FocusSection's own doc.
+    private ScrollContainer? _scroll;
+    private Control? _vendorSectionRoot;
+    private Control? _recipeSectionRoot;
+    private Control? _focusFlashTarget;
+    private double _focusFlashRemaining = -1;
+    private const float FocusFlashSeconds = 0.6f;
+
+    /// <summary>A warm "look here" pop that decays back to <see cref="Colors.White"/> over <see
+    /// cref="FocusFlashSeconds"/> — accumulated-delta only (this codebase's no-engine-Tween rule;
+    /// see <see cref="_Process"/>), the same idiom <c>Building2D.HighlightModulate</c> uses for a
+    /// station highlight.</summary>
+    private static readonly Color FocusFlashModulate = new(1.5f, 1.35f, 0.9f);
+
+    /// <summary>Test/inspection surface (mirrors <c>Building2D.IsHighlighted</c>): the last section
+    /// <see cref="FocusSection"/> was asked to focus, set BEFORE its frame-timing-sensitive
+    /// scroll/flash side effects — so a test can assert intent without racing the
+    /// <see cref="ScrollContainer"/>'s own deferred layout pass.</summary>
+    public string? LastFocusedSection { get; private set; }
+
     /// <summary>U23d: the Anvil Map forge overlay — a single instance reused across recipes,
     /// (re)configured per <see cref="OnWorkForgePressed"/> press. Built once in
     /// <see cref="EnsureBuilt"/> as the LAST child so it draws over the recipe/talent scroll body
@@ -137,6 +159,122 @@ public partial class ForgePanel : SimPanel
             {
                 HideCeremony();
             }
+        }
+
+        // U3: FocusSection's flash decay — same accumulated-delta-only idiom, no engine Tween.
+        if (_focusFlashRemaining >= 0)
+        {
+            _focusFlashRemaining -= delta;
+            if (_focusFlashRemaining <= 0)
+            {
+                _focusFlashTarget!.Modulate = Colors.White;
+                _focusFlashTarget = null;
+                _focusFlashRemaining = -1;
+            }
+            else
+            {
+                var t = (float)(_focusFlashRemaining / FocusFlashSeconds);
+                _focusFlashTarget!.Modulate = Colors.White.Lerp(FocusFlashModulate, t);
+            }
+        }
+    }
+
+    /// <summary>
+    /// U3 (painted-interiors plan, KTD-3): the Material Shelf/Anvil/Furnace stations' "press E,
+    /// land on the right rows" affordance — scrolls this panel to a named section and briefly
+    /// flashes it. Reuses the EXISTING section containers built by <see cref="EnsureBuilt"/>
+    /// ("materials" → the vendor/material rows, "craft" → the recipe cards) — no new content, no
+    /// verb change, just where the scroll body is already sitting when the drawer opens over the
+    /// room. A section name this panel does not recognize is a silent no-op HERE (recognized
+    /// values are enforced upstream, at room-build time, by <c>InteriorRoomTests
+    /// .EveryStationAction_IsARecognizedMainUiRoute_NeverADeadClick</c>'s <c>KnownFocusValues</c>
+    /// check — this method does not need to re-fail loudly for a case that table validation
+    /// already caught before the game ever ran).
+    /// </summary>
+    public void FocusSection(string section)
+    {
+        EnsureBuilt();
+        LastFocusedSection = section;
+
+        var target = section switch
+        {
+            "materials" => _vendorSectionRoot,
+            "craft" => _recipeSectionRoot,
+            _ => null,
+        };
+
+        if (target is null)
+        {
+            return;
+        }
+
+        DeferEnsureVisible(_scroll, target);
+        _focusFlashTarget = target;
+        _focusFlashRemaining = FocusFlashSeconds;
+    }
+
+    /// <summary>Safety ceiling for <see cref="DeferEnsureVisible"/>'s settle-poll — 240 frames (4s
+    /// at 60fps, matching <c>HumanPlayer.WaitForLayout</c>'s own default). Never the actual wait
+    /// condition (that is position stability, see its own doc); only stops a pathological case
+    /// (freed nodes, a layout that never settles) from polling forever.</summary>
+    private const int MaxFocusSettleFrames = 240;
+
+    /// <summary>Consecutive stable readings <see cref="DeferEnsureVisible"/> requires before
+    /// trusting the geometry — matches <c>HumanPlayer.TrySettleLayout</c>'s own threshold (a
+    /// single match can be a one-frame coincidence mid-cascade; three in a row is not).</summary>
+    private const int FocusSettleStableFramesRequired = 3;
+
+    /// <summary>
+    /// <see cref="FocusSection"/> is always called the SAME frame a station press just opened the
+    /// drawer (<c>MainUi.OnStationActivated</c>: <c>OpenPanel</c> then this, synchronously) — at
+    /// that instant TWO things are still unsettled: (1) <c>DrawerHost</c>'s own slide-in
+    /// (<c>DrawerHost.SlideSeconds</c> = 0.22s ≈ 13 frames) has this panel's WHOLE subtree
+    /// positioned off-screen (measured: the target's <c>GlobalPosition</c> sat at the drawer's
+    /// off-stage X the entire time — <c>EnsureControlVisible</c> cannot sensibly scroll a viewport
+    /// that is not where it will end up yet), and (2) Godot's own container-sort pass for the
+    /// vendor/recipe/talent rows <see cref="Refresh"/> just rebuilt has not run either (Godot's own
+    /// <c>ScrollContainer.EnsureControlVisible</c> doc: "This will not work on a node that was just
+    /// added during the same frame"). A single deferred call, and even a single
+    /// <see cref="SceneTree.ProcessFrame"/> wait, both measured NOT enough (receipt.ps1 captures:
+    /// the first landed on the SAME position for every section; the second overshot by exactly one
+    /// section) — so this polls for an actual STABILITY condition (this codebase's own rule: wait
+    /// on the condition, never a frame count) rather than guessing a frame count that would only be
+    /// correct for today's slide duration and today's row counts. Same fix, same reasoning, as
+    /// <c>godot/tests/HumanPlayer.WaitForLayout</c>'s own documented "never guess a frame count"
+    /// note (a DIFFERENT, test-only implementation of the identical problem — production code here
+    /// cannot depend on test-assembly helpers, so this is its own copy of the same idea).
+    /// </summary>
+    private async void DeferEnsureVisible(ScrollContainer? scroll, Control target)
+    {
+        var tree = GetTree();
+        if (tree is null)
+        {
+            return;
+        }
+
+        var previous = new Vector2(float.NaN, float.NaN);
+        var stable = 0;
+        for (var i = 0; i < MaxFocusSettleFrames; i++)
+        {
+            await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+            if (!GodotObject.IsInstanceValid(scroll) || !GodotObject.IsInstanceValid(target))
+            {
+                return;
+            }
+
+            var current = target.GlobalPosition;
+            stable = current == previous ? stable + 1 : 0;
+            previous = current;
+
+            if (stable >= FocusSettleStableFramesRequired)
+            {
+                break;
+            }
+        }
+
+        if (GodotObject.IsInstanceValid(scroll) && GodotObject.IsInstanceValid(target))
+        {
+            scroll!.EnsureControlVisible(target);
         }
     }
 
@@ -781,6 +919,10 @@ public partial class ForgePanel : SimPanel
         }
 
         var body = BuildScrollBody();
+        // U3: BuildScrollBody's own ScrollContainer is the parent it just added `body` to — kept
+        // here so FocusSection can call EnsureControlVisible without BuildScrollBody needing to
+        // change its own (test-load-bearing) return shape.
+        _scroll = body.GetParent() as ScrollContainer;
         _feedback = AddLabel(body, string.Empty);
         _feedback.Name = "ForgeFeedback";
         _materialsLabel = AddLabel(body, "MATERIALS:");
@@ -812,12 +954,16 @@ public partial class ForgePanel : SimPanel
         modRow.AddChild(_fitSelect);
 
         var vendorSection = Section("Morning Vendor");
+        vendorSection.Root.Name = "VendorSection"; // U3: distinguishes it from every other Section-built root (all named "Section" otherwise) for FocusSection/test/diagnostic lookup
         body.AddChild(vendorSection.Root);
+        _vendorSectionRoot = vendorSection.Root; // U3: FocusSection("materials") scroll/flash target
         _vendorRows = new VBoxContainer { Name = "VendorRows" };
         vendorSection.Body.AddChild(_vendorRows);
 
         var recipeSection = Section("Recipes");
+        recipeSection.Root.Name = "RecipeSection"; // U3: see VendorSection's own naming note above
         body.AddChild(recipeSection.Root);
+        _recipeSectionRoot = recipeSection.Root; // U3: FocusSection("craft") scroll/flash target
         _recipeRows = new VBoxContainer { Name = "RecipeRows" };
         recipeSection.Body.AddChild(_recipeRows);
 

@@ -18,6 +18,12 @@
 # (the "before" half of the U1 before/after pair) stays reachable for comparison. SHOT_STATE=
 # ForgeExit enters the room, then (frame 200) calls Town2D.ExitInterior() directly — the second
 # required U1 receipt, proving the exit door returns the player outside.
+# U3 (painted-interiors plan): ForgeShelf enters the room, then (frame 200) presses the Material
+# Shelf station directly (Building2D.RaisePick — the same call a click/E-interact fires) — the
+# receipt proving ForgePanel opens scrolled to its materials section. ForgeAnvil does the same for
+# the Anvil station (scrolled to the recipe cards instead) — the comparison receipt proving the
+# two land in visibly different places. ForgeFlavor does the same for the Bellows station — the
+# receipt proving a flavor press shows a one-line toast and never opens a panel.
 # SendOff (U1, playtest-three plan) opens the Forge drawer, then presses the real
 # AdvancePhase bell through its own signal — the receipt for "send them off with a drawer
 # open" reachability fix, showing the resulting town view (drawer closed, camera on the
@@ -112,6 +118,11 @@ func _process(_delta: float) -> bool:
 			# SendOff/Mirror above drive their own second beat through a real signal/call.
 			if _ui.has_method("OnTownBuildingClicked"):
 				_ui.call("OnTownBuildingClicked", "Forge")
+		elif _state == "ForgeShelf" or _state == "ForgeFlavor" or _state == "ForgeAnvil":
+			# U3 (painted-interiors plan): enter the room the normal way; the second beat
+			# (frame 200 below) presses the actual station -- shelf, bellows, or anvil.
+			if _ui.has_method("OnTownBuildingClicked"):
+				_ui.call("OnTownBuildingClicked", "Forge")
 		elif _state == "SendOff":
 			# U1 (playtest-three plan): the receipt for "clicked send them off with a drawer
 			# open — where are the visuals?" Open the Forge drawer here; the AdvancePhase
@@ -154,6 +165,23 @@ func _process(_delta: float) -> bool:
 		var town = _ui.find_child("Town2D", true, false)
 		if town:
 			town.call("ExitInterior")
+	if _state == "ForgeShelf" and _frames == 200:
+		# U3: the shelf station's own RaisePick -- the exact call a click/E-interact fires
+		# (Building2D.Configure names each station node "Building_{key}").
+		var shelf = _ui.find_child("Building_shelf", true, false)
+		if shelf:
+			shelf.call("RaisePick")
+	if _state == "ForgeFlavor" and _frames == 200:
+		# U3: the bellows station's own RaisePick -- proves the flavor toast, never a panel.
+		var bellows = _ui.find_child("Building_bellows", true, false)
+		if bellows:
+			bellows.call("RaisePick")
+	if _state == "ForgeAnvil" and _frames == 200:
+		# U3: the anvil station's own RaisePick -- the comparison receipt proving the shelf
+		# scrolls somewhere DIFFERENT (materials) than the anvil does (craft/recipe cards).
+		var anvil = _ui.find_child("Building_anvil", true, false)
+		if anvil:
+			anvil.call("RaisePick")
 	if _frames >= _settle:
 		var img := root.get_texture().get_image()
 		var err := img.save_png(_out)
