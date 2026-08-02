@@ -1393,26 +1393,40 @@ public partial class MainUi : Control
             // permanent detector KTD-G asks for regardless: if a future change ever breaks that
             // ordering, "MORNING-HOLD" is grep-able in the session log the moment it happens instead
             // of reading as a mysteriously stuck day with no evidence anywhere.
-            if (state.Counter is { Closed: false } counter)
+            var openCounter = state.Counter is { Closed: false } ? state.Counter : null;
+            if (openCounter is not null)
             {
                 Adapter.Queue(new CloseCounterAction());
-                ShowBellToast(counter.Round > 0
-                    ? "Closed the counter mid-haggle — parties depart."
-                    : "Closed the counter — parties depart.");
                 PlaytestLog.Note("MORNING-HOLD: counter open");
             }
 
             Clock.AdvanceNow(); // same advance the auto timer fires — player intent wins even engaged
 
-            // Defense in depth: if the close above somehow didn't land (see the note above — not
-            // reachable today, but the guard KTD-G actually asks for is "detectable", not "prevented
-            // by a second mechanism no one can see"), tell the truth instead of leaving the banner to
-            // silently repeat "Send them off" with no explanation.
-            if (Adapter.CurrentState.Phase == DayPhase.Morning && Adapter.CurrentState.Counter is { Closed: false })
+            // U2 bug fix: this toast is set AFTER AdvanceNow, not before. AdvanceNow synchronously
+            // fires OnPhaseCompleted (the StateChanged subscription below), which unconditionally
+            // manages the SAME toast banner (rejection > world notice > ClearToast()) — setting this
+            // message before AdvanceNow meant OnPhaseCompleted's own "nothing to report" ClearToast()
+            // wiped it out in the same frame, every time, since a plain counter-close+advance tick
+            // produces neither a rejection nor a WorldNotice event. That made the "Closed the counter
+            // — parties depart" confirmation (U5's whole point: never silently abandon a live haggle)
+            // dead code from the moment it shipped — a real playtest gap caught by
+            // PhaseVocabTests.RingingBell_AgainstAnOpenCounter..., not a test-timing issue. Setting it
+            // last makes THIS message the one that survives to render.
+            if (openCounter is not null)
             {
-                // The note already fired above the moment an open counter was found — this only
-                // overrides the toast so the player is told the truth if the day genuinely held.
-                ShowBellToast("Close the counter first — the day waits on you");
+                if (Adapter.CurrentState.Phase == DayPhase.Morning && Adapter.CurrentState.Counter is { Closed: false })
+                {
+                    // Defense in depth (KTD-G): the close somehow didn't land — not reachable today
+                    // (CloseCounterAction always lands in this same tick's batch), but if a future
+                    // change ever breaks that ordering, tell the truth instead of a stale bell verb.
+                    ShowBellToast("Close the counter first — the day waits on you");
+                }
+                else
+                {
+                    ShowBellToast(openCounter.Round > 0
+                        ? "Closed the counter mid-haggle — parties depart."
+                        : "Closed the counter — parties depart.");
+                }
             }
 
             UpdateClockLabel();
