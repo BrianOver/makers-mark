@@ -31,7 +31,7 @@ public partial class RealPlaytest : Node
         select.SceneChange = path => requestedScene = path;   // stub the tear-down; keep driving
         AddChild(select);
         await Settle(8);
-        Shot("00_picker");   // the actual profession picker a player first sees
+        Shot("00_title");   // U3: the title menu a player first sees (New Game reveals the picker)
 
         Press(select, $"Pick_{ProfessionRegistry.BlacksmithId}");
         await Settle(8);

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Globalization;
 using GameSim;
 using GameSim.Kernel;
 using GameSim.Professions;
@@ -11,24 +12,30 @@ using GodotClient.Ui;
 namespace GodotClient;
 
 /// <summary>
-/// New-game front door (Playable Core U4 R4; World Rework U11 R9/R11-13): "choose your primary
-/// profession" over <see cref="ProfessionRegistry.All"/> (add-on professions appear with zero
-/// screen changes) followed by a "your first day" primer card — the 5-phase day legend
-/// (verbatim <see cref="MainUi.PhaseLegend"/>, so this screen can never drift from the HUD's own
-/// copy), the living-clock behavior, and the campaign seed about to be used. Only "Begin" commits:
-/// it builds the campaign via <see cref="GameComposition.NewCampaign(ulong, string)"/> — starter
-/// stock seeded, day 1 immediately playable — hands it to <see cref="MainUi.AdapterOverride"/>,
-/// and swaps to the main scene. "Back" returns to the profession picker WITHOUT ever touching
-/// <see cref="MainUi.AdapterOverride"/> — picking is free to reconsider. Styled with the shared
-/// cozy theme (<see cref="GameTheme"/>): a dusk background behind a single centered wood-framed
-/// card (<see cref="GameTheme.PanelStyleWood"/>) that holds the picker or the primer — never both
-/// — so the card is never empty and never double-framed.
+/// The front door (shell-and-audio plan U3; supersedes Playable Core U4/World Rework U11's
+/// straight-to-picker screen — the owner's "need a menu for start screen, saving/loading, new game
+/// etc"): a TITLE MENU first — <b>Continue</b> (honest about exactly what it will load), <b>New
+/// Game</b>, <b>Settings</b>, <b>Quit</b> — with the "choose your primary profession" picker and
+/// "your first day" primer demoted to the New Game sub-flow behind it. Same card, same theme, same
+/// <see cref="MainUi.AdapterOverride"/> seam: only Begin ever commits a campaign, so "one way into
+/// the game" still holds even with a menu screen in front of it now. Only ONE of
+/// {title menu, picker, primer, settings} is ever visible at a time — every transition explicitly
+/// hides the others rather than trusting whichever one happened to be showing before.
 ///
-/// Purity note (R14): the nondeterministic seed source (wall clock) lives HERE, in the godot
+/// <para><b>FullPlaytest compatibility (do not "fix"):</b> the automated full-playthrough tool
+/// presses <c>Pick_&lt;profession&gt;</c> directly via <c>FindChild</c> + <c>EmitSignal</c>,
+/// bypassing "New Game" entirely (it does not care what is <see cref="Control.Visible"/> — a real
+/// player could not click a hidden button, but this harness fires the signal straight). That is why
+/// the picker is still built EAGERLY in <see cref="BuildUi"/> (just hidden) rather than lazily
+/// constructed the first time "New Game" is pressed — a lazy picker would leave nothing for that
+/// harness to find. <see cref="OnProfessionPicked"/> defensively hides the title menu too, so this
+/// bypass still lands in a single coherent view instead of primer-over-title-menu.</para>
+///
+/// <para>Purity note (R14): the nondeterministic seed source (wall clock) lives HERE, in the godot
 /// adapter layer — never in sim/. Both the seed source and the scene change are injectable so
 /// engine tests can pin the seed and stub the swap. The seed is drawn ONCE per pick (on
 /// <see cref="OnProfessionPicked"/>) and reused by Begin, so the seed the primer displays is
-/// exactly the seed the campaign is built with.
+/// exactly the seed the campaign is built with.</para>
 /// </summary>
 public partial class NewGameSelect : Control
 {
@@ -89,12 +96,14 @@ public partial class NewGameSelect : Control
     /// than full-bleed at any of this game's supported window sizes (1152×648 and up).</summary>
     private const float CardWidth = 600f;
 
-    /// <summary>Comfortable tap/click height (px) for a profession pick button — the raw engine
+    /// <summary>Comfortable tap/click height (px) for a menu/pick button — the raw engine
     /// default sized to its label alone, which read as a cramped single-line strip.</summary>
     private const float PickButtonHeight = 44f;
 
+    private VBoxContainer _titleMenu = null!;
     private VBoxContainer _picker = null!;
     private VBoxContainer _primer = null!;
+    private SettingsPanel _settings = null!;
     private Label _seedLabel = null!;
 
     /// <summary>The profession a pick chose, held while the primer is up; null in the picker
@@ -109,7 +118,32 @@ public partial class NewGameSelect : Control
         // any child Control so hover/pressed button states, fonts, and colors all come from the
         // one theme rather than per-node overrides sprinkled through this screen.
         Theme = GameTheme.Build();
+
+        // KTD-D: this scene is project.godot's `run/main_scene` — the one place a freshly opened
+        // OS window exists to re-apply a persisted fullscreen choice to. A scene change afterward
+        // (to MainUi, or back here via "Save & quit to title") never recreates that window, so
+        // nothing downstream needs to call this again.
+        UiSettings.ApplyPersisted();
+
         BuildUi();
+    }
+
+    /// <summary>
+    /// F11 anywhere (R3) — the title screen's own copy of the toggle <c>MainUi</c> already ships
+    /// (PR #354) via <see cref="UiSettings"/>, so neither host can drift from the other.
+    /// <c>_UnhandledKeyInput</c> (not <c>_Input</c>): this screen has no drawer/modal ladder to
+    /// race against, so there is nothing here that would ever consume the key first.
+    /// </summary>
+    public override void _UnhandledKeyInput(InputEvent @event)
+    {
+        if (@event is not InputEventKey { PhysicalKeycode: Key.F11, Pressed: true, Echo: false })
+        {
+            return;
+        }
+
+        UiSettings.ToggleFullscreen();
+        _settings?.Refresh(); // keep the Settings checkbox honest if it happens to be showing
+        GetViewport()?.SetInputAsHandled();
     }
 
     private void BuildUi()
@@ -155,7 +189,7 @@ public partial class NewGameSelect : Control
         var title = new Label
         {
             Name = "Title",
-            Text = "Maker's Mark — choose your primary profession",
+            Text = "Maker's Mark",
             HorizontalAlignment = HorizontalAlignment.Center,
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
             ThemeTypeVariation = GameTheme.HeaderThemeType,
@@ -164,21 +198,83 @@ public partial class NewGameSelect : Control
         title.AddThemeFontSizeOverride("font_size", GameTheme.HeaderFontSize);
         layout.AddChild(title);
 
-        // Continue sits ABOVE the profession picker and only when there is something to resume.
-        // Above, because for a returning player it is the only thing on this screen they want; and
-        // conditional, because an always-present disabled Continue would advertise a feature the
-        // first-time player cannot use.
-        if (BuildContinue() is { } resume)
-        {
-            layout.AddChild(resume);
-        }
+        // Exactly one of these four views is ever visible — every button below hides the view it
+        // leaves and shows the one it enters, never both.
+        _titleMenu = BuildTitleMenu();
+        layout.AddChild(_titleMenu);
 
         _picker = BuildProfessionPicker();
+        _picker.Visible = false; // shown only after "New Game" (OnNewGamePressed)
         layout.AddChild(_picker);
 
         _primer = BuildPrimer();
         _primer.Visible = false; // shown only after a pick (OnProfessionPicked)
         layout.AddChild(_primer);
+
+        _settings = new SettingsPanel();
+        _settings.Build();
+        _settings.Visible = false; // shown only after "Settings" (OnSettingsPressed)
+        _settings.Closed += OnSettingsClosed;
+        layout.AddChild(_settings);
+    }
+
+    /// <summary>The title menu: Continue (if there is anything to resume) above New Game/
+    /// Settings/Quit, exactly the owner's ask ("need a menu for start screen, saving/loading, new
+    /// game etc").</summary>
+    private VBoxContainer BuildTitleMenu()
+    {
+        var menu = new VBoxContainer { Name = "TitleMenu" };
+        menu.AddThemeConstantOverride("separation", GameTheme.Space16);
+
+        var resume = BuildContinue();
+        if (resume is not null)
+        {
+            menu.AddChild(resume);
+        }
+
+        var newGame = new Button
+        {
+            Name = "NewGame",
+            Text = "New Game",
+            CustomMinimumSize = new Vector2(0, PickButtonHeight),
+        };
+
+        // A returning player's default verb is Continue (styled Primary below). A first-time
+        // player has no Continue row at all — give New Game the same Primary treatment in THAT
+        // case, so the screen still reads as "one obvious first action" instead of four
+        // identically-weighted buttons with nothing to anchor on.
+        if (resume is null)
+        {
+            newGame.AddThemeStyleboxOverride("normal", GameTheme.ButtonStylePrimary());
+            newGame.AddThemeStyleboxOverride("hover", GameTheme.ButtonStylePrimary(GameTheme.ButtonVisualState.Hover));
+            newGame.AddThemeStyleboxOverride("pressed", GameTheme.ButtonStylePrimary(GameTheme.ButtonVisualState.Pressed));
+        }
+
+        newGame.Pressed += OnNewGamePressed;
+        menu.AddChild(newGame);
+
+        var settingsButton = new Button
+        {
+            Name = "SettingsButton",
+            Text = "Settings",
+            CustomMinimumSize = new Vector2(0, PickButtonHeight),
+        };
+        settingsButton.Pressed += OnSettingsPressed;
+        menu.AddChild(settingsButton);
+
+        // Never a dead click: GetTree().Quit() always works from the title screen — there is no
+        // in-flight state here that could make Quit unsafe (that caveat belongs to MainUi's
+        // system menu, KTD-D).
+        var quit = new Button
+        {
+            Name = "Quit",
+            Text = "Quit",
+            CustomMinimumSize = new Vector2(0, PickButtonHeight),
+        };
+        quit.Pressed += () => GetTree().Quit();
+        menu.AddChild(quit);
+
+        return menu;
     }
 
     /// <summary>
@@ -189,6 +285,12 @@ public partial class NewGameSelect : Control
     /// <para>A corrupt or schema-mismatched save reports "nothing to resume" (see
     /// <see cref="CampaignSave"/>), so a bad file makes this row absent rather than making the front
     /// door throw. Losing a save is bad; being unable to start a new game is worse.</para>
+    ///
+    /// <para><b>R4 (Continue tells the truth):</b> the label now names the profession (when the
+    /// envelope carries one — <see cref="CampaignSave.Envelope.ProfessionId"/>, U3/KTD-E) and the
+    /// blurb adds when the save was written (<see cref="CampaignSave.Envelope.SavedAtUtc"/>). Both
+    /// are trailing-optional on the envelope, so a pre-U3 save degrades to the plain
+    /// day/phase sentence rather than losing the row.</para>
     /// </summary>
     private VBoxContainer? BuildContinue()
     {
@@ -196,6 +298,11 @@ public partial class NewGameSelect : Control
         {
             return null;
         }
+
+        var professionName = save.ProfessionId is { } id && ProfessionRegistry.All.TryGetValue(id, out var profession)
+            ? profession.DisplayName
+            : null;
+        var savedAt = FormatSavedAt(save.SavedAtUtc);
 
         var row = new VBoxContainer { Name = "ContinueRow" };
         row.AddThemeConstantOverride("separation", GameTheme.Space4);
@@ -207,9 +314,11 @@ public partial class NewGameSelect : Control
             // repeated complaint ("Continue day 2 is still there") was partly a genuinely-stale
             // save (autosave silently dead for two professions until PR #336) and partly this
             // label not saying enough to tell a fresh checkpoint from an old one at a glance.
-            // "Continue — day 2" alone reads as "pick up where you left off"; spelling out the
-            // phase too ("Continue — Day 2, Dawn") makes it honest about exactly what will load.
-            Text = $"Continue — Day {save.Day}, {PhaseVocab.Display(save.Phase)}",
+            // U3 adds the profession name (when known) so the label also says WHOSE storefront
+            // it will resume, not just when.
+            Text = professionName is null
+                ? $"Continue — Day {save.Day}, {PhaseVocab.Display(save.Phase)}"
+                : $"Continue — {professionName} · Day {save.Day}, {PhaseVocab.Display(save.Phase)}",
             CustomMinimumSize = new Vector2(0, PickButtonHeight),
         };
 
@@ -228,14 +337,36 @@ public partial class NewGameSelect : Control
             // envelope's raw DayPhase.ToString(), so this could (and did) render "camp of day 5" or
             // "expeditiondeep of day 12". PhaseVocab reads the same stored string back into the one
             // vocabulary the HUD and timeline now share; the envelope's own format is untouched.
-            Text = $"Pick up where you left off — the {PhaseVocab.Display(save.Phase)} of day {save.Day}. " +
-                   "Starting a new campaign replaces this save.",
+            Text = $"Pick up where you left off — the {PhaseVocab.Display(save.Phase)} of day {save.Day}" +
+                   (savedAt is null ? "." : $", saved {savedAt}.") +
+                   " Starting a new campaign replaces this save.",
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
         blurb.AddThemeColorOverride("font_color", GameTheme.TextDim);
         row.AddChild(blurb);
 
         return row;
+    }
+
+    /// <summary>
+    /// Renders <paramref name="savedAtUtc"/> (ISO-8601 round-trip, <see
+    /// cref="CampaignSave.Envelope.SavedAtUtc"/>) as a short local-time phrase ("today 21:40" or
+    /// "Jul 30, 09:15"), or null when absent/unparseable — a pre-U3 save (missing the field
+    /// entirely) or a hand-edited file degrades to no saved-at clause rather than breaking the
+    /// row (KTD-E: trailing-optional, backward compatible).
+    /// </summary>
+    private static string? FormatSavedAt(string? savedAtUtc)
+    {
+        if (savedAtUtc is null || !DateTime.TryParse(
+                savedAtUtc, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var utc))
+        {
+            return null;
+        }
+
+        var local = utc.ToLocalTime();
+        return local.Date == DateTime.Now.Date
+            ? $"today {local:HH:mm}"
+            : $"{local:MMM d}, {local:HH:mm}";
     }
 
     /// <summary>Resume: rebuild the saved world and hand it to <c>MainUi</c> through the same
@@ -245,8 +376,8 @@ public partial class NewGameSelect : Control
         if (CampaignSave.TryLoad() is not { } state)
         {
             // The envelope parsed at Peek() but the world did not rebuild — already logged. Leave the
-            // player on this screen with the profession picker rather than loading a broken campaign.
-            EngineDistress.Warn("[NewGameSelect] Continue pressed but the save would not load — staying on the picker");
+            // player on this screen with the title menu rather than loading a broken campaign.
+            EngineDistress.Warn("[NewGameSelect] Continue pressed but the save would not load — staying on the title menu");
             return;
         }
 
@@ -263,10 +394,41 @@ public partial class NewGameSelect : Control
         }
     }
 
+    private void OnNewGamePressed()
+    {
+        _titleMenu.Visible = false;
+        _picker.Visible = true;
+    }
+
+    private void OnSettingsPressed()
+    {
+        _titleMenu.Visible = false;
+        _settings.Refresh(); // the live window mode may have moved since Build() (F11, or the OTHER host)
+        _settings.Visible = true;
+    }
+
+    private void OnSettingsClosed()
+    {
+        _settings.Visible = false;
+        _titleMenu.Visible = true;
+    }
+
     private VBoxContainer BuildProfessionPicker()
     {
         var picker = new VBoxContainer { Name = "ProfessionPicker" };
         picker.AddThemeConstantOverride("separation", GameTheme.Space16);
+
+        var pickerTitle = new Label
+        {
+            Name = "PickerTitle",
+            Text = "Choose your primary profession",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            ThemeTypeVariation = GameTheme.HeaderThemeType,
+        };
+        pickerTitle.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        pickerTitle.AddThemeFontSizeOverride("font_size", GameTheme.HeaderFontSize);
+        picker.AddChild(pickerTitle);
 
         // Registry-driven (deterministic iteration: ImmutableSortedDictionary, Ordinal).
         foreach (var profession in ProfessionRegistry.All.Values)
@@ -310,7 +472,25 @@ public partial class NewGameSelect : Control
         starterKitNote.AddThemeColorOverride("font_color", GameTheme.TextDim);
         picker.AddChild(starterKitNote);
 
+        var back = new Button
+        {
+            Name = "PickerBack",
+            Text = "Back",
+            CustomMinimumSize = new Vector2(0, PickButtonHeight),
+        };
+        back.Pressed += OnPickerBackPressed;
+        picker.AddChild(back);
+
         return picker;
+    }
+
+    /// <summary>Picker's own Back — up to the title menu (distinct from the primer's Back, which
+    /// only steps down to the picker). Nothing was committed by reaching the picker, so there is
+    /// nothing to undo.</summary>
+    private void OnPickerBackPressed()
+    {
+        _picker.Visible = false;
+        _titleMenu.Visible = true;
     }
 
     private VBoxContainer BuildPrimer()
@@ -398,6 +578,10 @@ public partial class NewGameSelect : Control
         _pendingSeed = SeedSource(); // drawn once here; Begin reuses it (display == what ships)
         _seedLabel.Text = $"Seed: {_pendingSeed}";
 
+        // Defensive (see class doc's FullPlaytest note): a caller that bypasses "New Game" and
+        // presses Pick_* directly must still land in a single coherent view, not primer-over-
+        // title-menu — so this hides the title menu too, not just the picker.
+        _titleMenu.Visible = false;
         _picker.Visible = false;
         _primer.Visible = true;
     }
