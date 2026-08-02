@@ -244,6 +244,18 @@ func _process(_delta: float) -> bool:
 			if bell:
 				for _i in range(4):
 					bell.emit_signal("pressed")
+		elif _state == "SystemMenu":
+			# U4 (shell-and-audio plan): the pause menu, U4's own new modal. OpenSystemMenu()/
+			# CloseSystemMenu() are private C# (not reachable through the call() bridge), so this
+			# drives the SAME real path Esc does at the engine level: set the found node's
+			# built-in `visible` property (a genuine engine-side Control property, exposed to
+			# every language) directly to true. That fires the real VisibilityChanged signal,
+			# which runs the actual OnSystemMenuVisibilityChanged handler (pause the clock,
+			# engage the latch, suppress world input) -- a fully production-wired state, not a
+			# painted-on facsimile.
+			var menu = _ui.find_child("SystemMenu", true, false)
+			if menu:
+				menu.visible = true
 		elif _ui.has_method("OnTownBuildingClicked"):
 			# Same entry point the town uses on building arrival (private C# method reached
 			# via the source-gen call() bridge).
