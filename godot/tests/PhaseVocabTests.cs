@@ -159,8 +159,23 @@ public class PhaseVocabTests
         }
     }
 
+    /// <summary>
+    /// KTD-G's guard end to end: the bell pressed against an open counter is logged (grep-able
+    /// evidence for the one theorized stuck-day cause), the day still moves (never silently
+    /// holds — U5's contract, unchanged), AND the confirmation toast actually renders.
+    ///
+    /// <para>That last assertion caught a real, pre-existing bug (not introduced by this unit,
+    /// present since PR #197): <c>MainUi</c>'s bell handler called <c>ShowBellToast</c> BEFORE
+    /// <c>Clock.AdvanceNow()</c>, but <c>AdvanceNow</c> synchronously fires
+    /// <c>OnPhaseCompleted</c>, which unconditionally re-decides the SAME toast banner (rejection
+    /// &gt; world notice &gt; <c>ClearToast()</c>) — and a plain counter-close+advance tick
+    /// produces neither, so <c>ClearToast()</c> always ran last and wiped the confirmation before
+    /// a frame ever rendered it. First observed as a CI failure on this exact assertion (empty
+    /// string, not "wrong text") — fixed at the source by moving the toast call to fire AFTER
+    /// <c>AdvanceNow</c> in <c>MainUi</c>'s bell handler, which this test now pins.</para>
+    /// </summary>
     [TestCase]
-    public void RingingBell_AgainstAnOpenCounter_LogsMorningHold_AndStillNeverSilentlyHolds()
+    public void RingingBell_AgainstAnOpenCounter_LogsMorningHold_ShowsTheToast_AndStillNeverSilentlyHolds()
     {
         var logPath = ProjectSettings.GlobalizePath("user://playtest-log-morninghold.jsonl");
         PlaytestLog.RedirectForTests(logPath);
@@ -173,10 +188,6 @@ public class PhaseVocabTests
 
             PressEnabled(ui, "AdvancePhase");
 
-            // KTD-G's guard: the bell pressed against an open counter is logged, grep-able evidence
-            // for the one theorized stuck-day cause — even though (see PhaseVocabTests' own doc and
-            // MainUi's bell handler) the close it queues always lands before this same tick's
-            // Advance, so the day still moves.
             var notes = System.IO.File.Exists(logPath)
                 ? System.IO.File.ReadAllLines(logPath).Where(l => l.Contains("\"kind\":\"note\"")).ToList()
                 : new System.Collections.Generic.List<string>();
@@ -185,7 +196,13 @@ public class PhaseVocabTests
                 .IsTrue();
 
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
-            AssertThat(Find<Label>(ui, "RejectionToast").Text).Contains("parties depart");
+
+            var toast = Find<Label>(ui, "RejectionToast").Text;
+            AssertThat(toast)
+                .OverrideFailureMessage(
+                    $"toast was \"{toast}\" — the confirmation was set before Clock.AdvanceNow() and got " +
+                    "wiped by OnPhaseCompleted's own ClearToast() before ever rendering")
+                .Contains("parties depart");
         }
         finally
         {
