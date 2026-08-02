@@ -149,9 +149,14 @@ public class InteriorEntryExitTests
             var room = ui.Town.FindInteriorRoom("forge");
             var player = new HumanPlayer(ui);
 
+            // Wait on the CONDITION, not on layout stability: FocusSection's EnsureControlVisible is
+            // deferred to the next idle frame and does not itself change any rect, so the layout can
+            // read "settled" for three frames while the scroll is still pending. That is why this
+            // passed locally and failed on every CI attempt — see HumanPlayer.WaitUntil's doc.
             room.Stations[0].RaisePick(); // anvil -> craft
+            var sawCraft = await player.WaitUntilSees("Work the forge");
             await player.WaitForLayout(ui.Forge);
-            AssertThat(player.Sees("Work the forge"))
+            AssertThat(sawCraft)
                 .OverrideFailureMessage(
                     "Anvil press must actually scroll the recipe cards into view — a recipe card's own "
                     + "\"Work the forge\" button must be readable on screen, not merely intended.")
@@ -163,8 +168,9 @@ public class InteriorEntryExitTests
                 .IsFalse();
 
             room.Stations[4].RaisePick(); // shelf -> materials (same open panel, re-focused)
+            var sawVendor = await player.WaitUntilSees("Buy 1");
             await player.WaitForLayout(ui.Forge);
-            AssertThat(player.Sees("Buy 1"))
+            AssertThat(sawVendor)
                 .OverrideFailureMessage("Shelf press must actually scroll the vendor's \"Buy 1\" rows into view.")
                 .IsTrue();
             AssertThat(player.Sees("Work the forge"))
@@ -252,13 +258,26 @@ public class InteriorEntryExitTests
             ui.Town.FindBuilding("forge").RaisePick();
             AssertThat(ui.Town.InteriorActive).IsTrue();
 
+            // State the precondition rather than assuming it: if something (a tutorial card, a
+            // narrator toast) is open over the room, an EARLIER rung of the #320 ladder correctly
+            // eats the key and this test would be measuring the wrong rung.
+            AssertThat(ui.Drawer.IsOpen)
+                .OverrideFailureMessage(
+                    "This test needs the room bare — a drawer is open, so Esc is expected to close that "
+                    + "first and the room-exit rung never runs. Fix the setup, not the ladder.")
+                .IsFalse();
+
             var player = new HumanPlayer(ui);
             player.Tap(Key.Escape);
-            await player.Frames(3);
 
-            AssertThat(ui.Town.InteriorActive)
+            // Poll the condition instead of hoping 3 frames is enough. Input dispatch, the Escape
+            // ladder and ExitInterior's teleport/camera-unclamp span an unknown number of frames, and
+            // CI (rendering disabled) does not spend them at the same rate a developer machine does.
+            var exited = await player.WaitUntil(() => !ui.Town.InteriorActive);
+
+            AssertThat(exited)
                 .OverrideFailureMessage("Esc with no drawer/modal open must exit the room — the last rung of the #320 ladder.")
-                .IsFalse();
+                .IsTrue();
         }
         finally { Unmount(ui); }
     }

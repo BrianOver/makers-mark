@@ -1976,7 +1976,23 @@ public partial class MainUi : Control
     /// way this doc already described "an interior" before U1 ever wired one up.</para>
     /// </summary>
     private bool ModalOwnsTheScreen() =>
-        Town.InteriorActive || Ledger.Visible || Camp.Visible || Mirror.Visible
+        Town.InteriorActive || AnOverlayOwnsTheScreen();
+
+    /// <summary>
+    /// <see cref="ModalOwnsTheScreen"/> minus the room itself — "is some overlay covering the screen
+    /// *on top of* wherever we are".
+    ///
+    /// <para><b>Why this split exists.</b> U4 correctly added <see cref="Town2D.InteriorActive"/> to
+    /// <see cref="ModalOwnsTheScreen"/>: the room does cover the screen like a modal, and the latch and
+    /// the mine-gate focus gate both want that. But the Escape ladder's room-exit rung in
+    /// <see cref="_Input"/> only runs <i>when the room is active</i> and then asked
+    /// <see cref="ModalOwnsTheScreen"/> whether anything else was open — which, after U4, was
+    /// unconditionally true. The last rung became unreachable and Esc stopped exiting the room.
+    /// <c>InteriorEntryExitTests.Escape_WithNoDrawerOpen_ExitsTheRoom</c> caught it. A predicate that
+    /// includes your own state is the wrong question to ask about everyone else's.</para>
+    /// </summary>
+    private bool AnOverlayOwnsTheScreen() =>
+        Ledger.Visible || Camp.Visible || Mirror.Visible
         || Forecast.Visible || Bestiary.Visible || Commissions.Visible || Legends.Visible;
 
     /// <summary>
@@ -2258,7 +2274,10 @@ public partial class MainUi : Control
             return;
         }
 
-        if (Drawer.IsOpen || ModalOwnsTheScreen())
+        // AnOverlayOwnsTheScreen, NOT ModalOwnsTheScreen: the latter now includes
+        // Town.InteriorActive, which this method has already required above — asking it here made the
+        // guard unconditionally true and this rung dead. See AnOverlayOwnsTheScreen's doc.
+        if (Drawer.IsOpen || AnOverlayOwnsTheScreen())
         {
             return;
         }
