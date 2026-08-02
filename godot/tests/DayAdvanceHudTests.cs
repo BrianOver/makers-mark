@@ -3,6 +3,7 @@ using System.Linq;
 using GameSim.Contracts;
 using GdUnit4;
 using Godot;
+using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -128,8 +129,9 @@ public class DayAdvanceHudTests
             var state = ui.Adapter.CurrentState;
             var alive = state.Heroes.Values.Count(h => h.Alive);
 
+            // U2 (playtest-three plan): the chip reads PhaseVocab now, not the raw enum.
             AssertThat(RenderedText(Find<Control>(ui, "DayChip"))).Contains($"{state.Day}");
-            AssertThat(RenderedText(Find<Control>(ui, "PhaseChip"))).Contains(state.Phase.ToString());
+            AssertThat(RenderedText(Find<Control>(ui, "PhaseChip"))).Contains(PhaseVocab.Display(state));
             AssertThat(RenderedText(Find<Control>(ui, "GoldChip"))).Contains($"{state.Player.Gold}g");
             AssertThat(RenderedText(Find<Control>(ui, "HeroesChip"))).Contains($"{alive}/{state.Heroes.Count}");
         }

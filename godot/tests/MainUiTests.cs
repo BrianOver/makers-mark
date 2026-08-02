@@ -59,8 +59,10 @@ public class MainUiTests
 
             // P007 U7: the status bar is now a themed HUD header of named stat chips —
             // day/phase/gold/heroes stay discoverable, each on its own chip.
+            // U2 (playtest-three plan): the chip reads PhaseVocab now, not the raw enum —
+            // Expedition -> "Quest".
             AssertThat(RenderedText(Find<Control>(ui, "DayChip"))).Contains($"{state.Day}");
-            AssertThat(RenderedText(Find<Control>(ui, "PhaseChip"))).Contains(state.Phase.ToString());
+            AssertThat(RenderedText(Find<Control>(ui, "PhaseChip"))).Contains(PhaseVocab.Display(state));
             AssertThat(RenderedText(Find<Control>(ui, "GoldChip"))).Contains($"{state.Player.Gold}g");
 
             // Hero roster renders every hero; detail pane renders the selected one. U21: closed
@@ -108,13 +110,15 @@ public class MainUiTests
         // P007 U7: the legend follows GameKernel.Tick's own transition table (Morning →
         // Expedition → Camp → ExpeditionDeep → Evening) — NOT the DayPhase enum's declaration
         // order, which lists Evening before Camp/ExpeditionDeep.
+        // U2 (playtest-three plan): headers are PhaseVocab's words now (Dawn/Prepare, Quest, Vigil,
+        // Deep Vigil, Night), not the raw sim phase names.
         var lines = MainUi.PhaseLegend.Split('\n');
         AssertThat(lines.Length).IsEqual(5);
-        AssertThat(lines[0]).StartsWith("Morning");
-        AssertThat(lines[1]).StartsWith("Expedition");
-        AssertThat(lines[2]).StartsWith("Camp");
-        AssertThat(lines[3]).StartsWith("Deep");
-        AssertThat(lines[4]).StartsWith("Evening");
+        AssertThat(lines[0]).StartsWith("Dawn/Prepare");
+        AssertThat(lines[1]).StartsWith("Quest");
+        AssertThat(lines[2]).StartsWith("Vigil");
+        AssertThat(lines[3]).StartsWith("Deep Vigil");
+        AssertThat(lines[4]).StartsWith("Night");
 
         var ui = MountMainUi();
         try
