@@ -98,14 +98,9 @@ public class AssetResolutionCensusTests
         // magenta-bordered box, not silence); U2/U3/U4 paint the real pixels and remove these
         // lines one room at a time (red→green shown in each art unit's own PR body).
         //
-        // U2 painted the market room (art/pipeline/gen-market-interior.py) — its five ids are
-        // committed art now, so they left this set (this is the "green" half of U2's own
-        // red→green PR body proof).
-        "town2d-tavern-interior-shell",
-        "town2d-station-tavern-bar",
-        "town2d-station-tavern-table",
-        "town2d-station-tavern-hearth",
-        "town2d-station-tavern-storywall",
+        // U2 painted the market and U3 the tavern (art/pipeline/gen-{market,tavern}-interior.py),
+        // so both id sets are committed art now and left this allowlist in their own units.
+        // Only the gatehouse is still pending.
         "town2d-gatehouse-interior-shell",
         "town2d-station-gate-muster",
         "town2d-station-gate-bounty",
@@ -316,6 +311,12 @@ public class AssetResolutionCensusTests
             ["town2d-station-market-shelf"] = new(28, 32),
             ["town2d-station-market-ledger"] = new(24, 20),
             ["town2d-station-market-crates"] = new(24, 20),
+            // U3 (tavern, gen-tavern-interior.py's own declared sizes): pinned so a future
+            // re-paint cannot silently grow a station into its neighbour's tile either.
+            ["town2d-station-tavern-hearth"] = new(40, 32),
+            ["town2d-station-tavern-bar"] = new(48, 28),
+            ["town2d-station-tavern-storywall"] = new(32, 36),
+            ["town2d-station-tavern-table"] = new(28, 24),
         };
 
         foreach (var room in InteriorLayout2D.Rooms.Values)
