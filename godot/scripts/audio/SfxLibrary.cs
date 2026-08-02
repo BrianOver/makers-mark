@@ -195,7 +195,13 @@ public static class SfxLibrary
         //    applied here: lower peaks (via Normalise's target, which rescales the WHOLE buffer
         //    including the noise burst — no need to touch individual amplitudes) plus a genuine 8-12ms
         //    attack ramp on every partial AND the broadband impact tick, which previously started at
-        //    full amplitude on sample 0. ──
+        //    full amplitude on sample 0.
+        //
+        //    U8 (2026-08-02 shell-and-audio plan, R8): "Forge mini game noises are bad - too loud and
+        //    harsh" — still true after U5's attack-ramp pass, so this time it is purely a level cut
+        //    (0.32/0.24/0.35 -> 0.22/0.16/0.26), same on/off-beat CONTRAST preserved (~1.38x either
+        //    way) so AnOnBeatHammerBlow_SoundsBrighterAndLonger stays meaningful — a uniform amplitude
+        //    scale never touches the spectral-share or rise-time math those tests actually measure. ──
         Cue.HammerOnBeat => Build(0.34f, buf =>
         {
             // Struck steel: inharmonic partials (a harmonic stack reads as a tuned bell, an anvil is not
@@ -217,7 +223,7 @@ public static class SfxLibrary
             }
 
             Synth.DeClick(buf);
-            Synth.Normalise(buf, 0.32f);
+            Synth.Normalise(buf, 0.22f); // U8: 0.32 -> 0.22
         }),
 
         Cue.HammerOffBeat => Build(0.20f, buf =>
@@ -237,7 +243,7 @@ public static class SfxLibrary
 
             Synth.LowPass(buf, 1400f);
             Synth.DeClick(buf);
-            Synth.Normalise(buf, 0.24f);
+            Synth.Normalise(buf, 0.16f); // U8: 0.24 -> 0.16
         }),
 
         Cue.Quench => Build(0.85f, buf =>
@@ -258,9 +264,17 @@ public static class SfxLibrary
             // U5: 10ms attack — this partial started at full amplitude on sample 0 before.
             Synth.AddPartial(buf, 128f, 0.32f, halfLife: 0.070f, attack: 0.010f);
             Synth.DeClick(buf);
-            Synth.Normalise(buf, 0.35f);
+            Synth.Normalise(buf, 0.26f); // U8: 0.35 -> 0.26
         }),
 
+        // U8 (2026-08-02 shell-and-audio plan, R8): "the bellows shift since you have to hold" was
+        // the specific complaint — a 0.30s one-shot per grip was the wrong shape for a multi-second
+        // gesture, and this clip's own envelope already starts AND ends at zero (sin(pi*t/0.28) is 0
+        // at t=0 and t=0.28), so it was already seam-safe for AudioDirector.StartLoop's manual
+        // retrigger without any shape change — only the level needed to move, from double the
+        // venue-cue normalize down to matching it (0.30 -> 0.15). The discrete PumpStroke path keeps
+        // firing this SAME cue as a one-shot via Play() (never the loop voice), so drag-pumping stays
+        // tactile at the same new, quieter level.
         Cue.Bellows => Build(0.30f, buf =>
         {
             // Air through leather: a soft breathy swell with no pitch at all. Quiet, because a player
@@ -274,7 +288,7 @@ public static class SfxLibrary
 
             Synth.LowPass(buf, 700f);
             Synth.DeClick(buf);
-            Synth.Normalise(buf, 0.30f);
+            Synth.Normalise(buf, 0.15f); // U8: 0.30 -> 0.15, venue-cue level
         }),
 
         Cue.Coin => Build(0.42f, buf =>
