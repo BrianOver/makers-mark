@@ -26,10 +26,10 @@ namespace GameSim.Tests.Balance;
 /// counted) grouped by their derived Consumable Stocking trait
 /// (<see cref="TraitEffects.ConsumableStockTargetFor"/>): <see cref="TraitId.Reckless"/> never
 /// restocks (target 0) while <see cref="TraitId.Prepared"/> restocks a little early (target 2) —
-/// with salves finally available, the two populations' mortality is MEASURED and pinned.
-/// (Neither the delta's direction nor its size is asserted since the 2026-08-01 router
-/// re-baseline — see <see cref="SalvesStocked_TraitMortality_IsThePinnedMeasurementRecord"/>'s
-/// doc for the measured inversion-then-collapse and the open design question it raises.)
+/// with salves finally available, Prepared heroes must die measurably LESS than Reckless ones.
+/// (That direction was inverted until the 2026-08-01 quaff-ordering fix — see
+/// <see cref="SalvesStocked_PreparedHeroes_SurviveMeasurablyBetterThanReckless"/>'s doc for the
+/// full measurement history and the structural cause.)
 /// </summary>
 public class ConsumableTraitMortalityBalanceTests
 {
@@ -154,45 +154,56 @@ public class ConsumableTraitMortalityBalanceTests
 
     [Fact]
     [Trait("Category", "Balance")]
-    public void SalvesStocked_TraitMortality_IsThePinnedMeasurementRecord()
+    public void SalvesStocked_PreparedHeroes_SurviveMeasurablyBetterThanReckless()
     {
-        // RE-BASELINED TWICE in the 2026-08-01 router window, and reshaped from a significance
-        // gate into a PINNED MEASUREMENT — read this before "fixing" a direction back in:
+        // THE DIRECTION IS THE POINT (owner ruling 2026-08-01: "prefer more prepared heroes").
+        // Preparation must read as insurance: a Prepared hero should die LESS than a Reckless
+        // one. That was not true before this window, and the history is worth keeping because
+        // it explains what the assertion is actually protecting:
         //
-        // This test originally asserted Reckless dies MORE than Prepared. That direction is not
-        // a property of the trait axis — it is a property of WHERE the world's flee-moments
-        // happen. A stocked Heal item does not shield a hero; it OVERRIDES the flee decision and
-        // fights on (ExpeditionResolver.FightMonster: a would-flee hero quaffs "instead and
-        // fights on"; fleeing itself is guaranteed survival). So Prepared = presses on, Reckless
-        // = flees home, and the delta's sign and SIZE follow the venue/floor mix the router
-        // produces:
+        //   - old tightest-fit router:              reckless 359/491 (73%) vs prepared 326/490
+        //     (67%) — accidentally correct, and the original test pinned that accident;
+        //   - banded router, gloomwood 55, 4-venue: reckless 243/437 (56%) vs prepared 330/465
+        //     (71%) — INVERTED by ~15pp: preparation was actively LETHAL;
+        //   - banded router, gloomwood 72, 3-venue: reckless 553/684 (81%) vs prepared 551/699
+        //     (79%) — inversion gone but the axis ~inert, ~2pp, inside noise.
         //
-        //   - old tightest-fit router:                    reckless 359/491 (73%) vs prepared
-        //     326/490 (67%) — Reckless worse, the old assertion held;
-        //   - banded router, gloomwood 55, 4-venue:       reckless 243/437 (56%) vs prepared
-        //     330/465 (71%) — INVERTED, ~15pp, far outside noise;
-        //   - banded router, gloomwood 55, 3-venue:       reckless 249/451 (55%) vs prepared
-        //     341/470 (73%) — inversion held without Emberfall;
-        //   - SHIPPING (gloomwood 72, 3-venue):           reckless 553/684 (81%) vs prepared
-        //     551/699 (79%) — the delta COLLAPSES to ~2pp, inside sampling noise: mid-power
-        //     parties now grind the Mine's deep floors, where one salve heal changes nothing
-        //     against attack-29 monsters. The axis is measurably ~INERT in the shipping world.
+        // The cause was structural, not tuning: a stocked Heal item OVERRODE the flee decision
+        // and fought on, and fleeing is guaranteed survival — so carrying a salve swapped a safe
+        // exit for a fight the hero could lose, and the trait's sign followed wherever the
+        // router put the world's flee-moments. Fixed in ExpeditionResolver.FightMonster: flee is
+        // checked FIRST and is never cancelled; a salve is drunk while the hero is still ABOVE
+        // the flee line — when merely wounded (CombatMath.ShouldDrink) or, decisively, when the
+        // monster's worst-case next blow could kill (CombatMath.CouldDieNextRound). A plain
+        // wounded-% line alone measured just 0.9pp on an independent seed block; the
+        // lethal-risk clause is what makes preparation actually protective.
         //
-        // Both facts — the earlier inversion and the current inertness — are the SAME design
-        // question, flagged to the owner in the router-rebaseline PR: the quaff-overrides-flee
-        // rule makes "Prepared" anywhere from a death sentence to a no-op depending on routing.
-        // Until that design pass happens, a significance gate in either direction would pin a
-        // world accident as intent, so this pins the exact measured aggregate instead
-        // (deterministic: fixed seeds, pure sim, commutative sum — byte-stable across runs and
-        // machines). Any future change that moves hero mortality moves these four numbers and
-        // fails HERE, loudly, with the full history above — the trait axis can never silently
-        // go unmeasured again (the blind spot this file exists to close), and every move is a
-        // conscious re-pin with its measurement recorded.
+        // Measured after the fix, two INDEPENDENT 90-seed blocks (the second is not this test's
+        // sweep — a fluke on one block cannot produce both):
+        //   seeds 2026..2115: reckless 376/470 (80.0%) vs prepared 292/463 (63.1%) — 16.9pp
+        //   seeds 5000..5089: reckless 355/463 (76.7%) vs prepared 328/496 (66.1%) — 10.6pp
+        // Prepared heroes are better off, not immortal: they still die ~2/3 of the time across
+        // 100 days, so the trait buys real insurance, not invulnerability.
+        //
+        // The gate below asserts the DIRECTION with a >=5pp margin, deliberately well under the
+        // measured 10.6pp so ordinary seed wobble never trips it — but any change that flattens
+        // the axis or flips it lethal again fails here, loudly.
         var totals = RunAllSeedsParallel();
+        var (recklessTotal, recklessDied, preparedTotal, preparedDied) =
+            (totals.RecklessTotal, totals.RecklessDied, totals.PreparedTotal, totals.PreparedDied);
 
-        Assert.Equal(new TraitMortality(
-            RecklessTotal: 684, RecklessDied: 553,
-            PreparedTotal: 699, PreparedDied: 551), totals);
+        // Integer-only rate comparison (KTD2: no floating point in sim-adjacent math):
+        // preparedDied/preparedTotal + 5pp <= recklessDied/recklessTotal, cross-multiplied
+        // (both totals are positive per the engagement-guard test above).
+        var preparedScaled = (long)preparedDied * recklessTotal;
+        var recklessScaled = (long)recklessDied * preparedTotal;
+        var margin5pp = (long)recklessTotal * preparedTotal / 20;
+
+        Assert.True(preparedScaled + margin5pp <= recklessScaled,
+            $"Prepared mortality ({preparedDied}/{preparedTotal}) is not at least 5pp BELOW " +
+            $"Reckless ({recklessDied}/{recklessTotal}). Preparation must read as insurance — " +
+            "if a salve is again cancelling a survivable flee (ExpeditionResolver.FightMonster), " +
+            "the trait is lethal and backwards from its own fiction.");
     }
 
     [Fact]

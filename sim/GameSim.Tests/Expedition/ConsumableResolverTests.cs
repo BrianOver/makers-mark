@@ -7,10 +7,12 @@ using GameSim.Venues;
 namespace GameSim.Tests.Expedition;
 
 /// <summary>
-/// The P2 auto-quaff rule: at the top of a round, a hero who would flee drinks the
-/// first Heal item in pack order instead and fights on. Deterministic, no RNG drawn
-/// for the quaff itself; with no Heal item in the pack, behavior is byte-identical
-/// to the pre-P2 resolver.
+/// The auto-quaff rule (P2, re-ordered 2026-08-01): at the top of a round, a hero at the flee
+/// line LEAVES — no salve cancels that — and a hero who is merely wounded (below the drink line,
+/// or one worst-case blow from death) drinks the first Heal item in pack order and fights on.
+/// Preparation is insurance for a fight the hero was already taking, never a gamble substituted
+/// for a safe exit. Deterministic, no RNG drawn for the quaff itself; with no Heal item in the
+/// pack, behavior is byte-identical to the pre-P2 resolver.
 /// </summary>
 public class ConsumableResolverTests
 {
@@ -37,10 +39,15 @@ public class ConsumableResolverTests
         result.Floors.SelectMany(f => f.Combats).SelectMany(c => c.Uses);
 
     [Fact]
-    public void QuaffInsteadOfFlee_RecordsUse_AtFleeThreshold_AndFightContinues()
+    public void QuaffFires_WhileStillAboveTheFleeLine_NeverInsteadOfFleeing()
     {
-        // A hero who would flee (hp below 25% MaxHp) with a salve in the pack quaffs
-        // and fights on. Seed-swept: deterministic per seed, so the found seed is
+        // RE-POINTED (2026-08-01, owner ruling "prefer more prepared heroes"): this test used to
+        // assert the OPPOSITE — that the quaff fires AT the flee line and cancels the flee. That
+        // rule made carrying a salve strictly lethal (a guaranteed-survival exit swapped for a
+        // fight the hero could lose; Prepared measured 73% mortality vs Reckless's 55%). The rule
+        // is now flee-FIRST: a hero at the flee line leaves, and a salve is drunk EARLIER, while
+        // the hero still has a margin. So the invariant flips — every recorded in-fight use must
+        // land ABOVE the flee line. Seed-swept: deterministic per seed, so the found seed is
         // stable forever (existing suite convention).
         var salve = Salve(10);
         var items = Catalog(salve);
@@ -51,15 +58,24 @@ public class ConsumableResolverTests
             var result = ExpeditionResolver.Resolve(
                 ImmutableList.Create(hero), items, VenueRegistry.Mine, targetFloor: 2, new Pcg32(RngState.FromSeed(seed)));
 
-            var use = AllUses(result).FirstOrDefault();
+            // In-fight uses only: the post-floor quaff has its own test and its own timing.
+            var use = result.Floors
+                .SelectMany(f => f.Combats.Select(c => new { Combat = c, Rounds = f.Combats.Count(x => x.Hero == c.Hero) }))
+                .SelectMany(x => x.Combat.Uses.Where(u => u.Round <= x.Rounds))
+                .FirstOrDefault();
             if (use is null)
             {
                 continue;
             }
 
-            // The quaff fired exactly at the flee rule and healed by the magnitude, capped.
-            Assert.True(CombatMath.ShouldFlee(use.HpBefore, hero.MaxHp),
-                $"quaff at {use.HpBefore}/{hero.MaxHp} — above the flee threshold");
+            // The drink happened while the hero was still SAFE to keep fighting — insurance,
+            // not a replacement for the exit.
+            Assert.False(CombatMath.ShouldFlee(use.HpBefore, hero.MaxHp),
+                $"quaff at {use.HpBefore}/{hero.MaxHp} — at or below the flee line, so it cancelled a survivable flee");
+
+            // Never spent for a zero-point heal: a full-health hero has no headroom to restore.
+            Assert.True(use.HpBefore < hero.MaxHp, "quaff burned at full health — heal capped to nothing");
+
             Assert.Equal(Math.Min(use.HpBefore + 6, hero.MaxHp), use.HpAfter);
             Assert.Equal(salve.Id, use.Item);
             return; // proven
@@ -183,6 +199,12 @@ public class ConsumableResolverTests
         // is recorded on the hero's last combat event with Round past the fight's
         // rounds (it healed after the fight's damage). Tuned so an in-fight +1 heal
         // leaves the hero below the threshold when the monster dies.
+        //
+        // 2026-08-01: the post-floor bar is now the DRINK line (50%), not the flee line — with
+        // flee checked first and never cancelled, a hero can no longer END a cleared floor below
+        // the flee line (the killing round deals them no damage), so the old bar made this whole
+        // branch unreachable. This test failing with "no post-floor quaff across 500 seeds" is
+        // exactly how that was caught; it asserts the drink-line rule now.
         var weapon = PlayerWeapon(20, attack: 5);
         var drops = new[] { Salve(10, magnitude: 1), Salve(11, magnitude: 1), Salve(12, magnitude: 1) };
         var items = Catalog([weapon, .. drops]);
@@ -202,8 +224,8 @@ public class ConsumableResolverTests
                     .FirstOrDefault(u => u.Round > rounds);
                 if (postFloorUse is not null)
                 {
-                    // Same rule: it fired below the flee threshold and healed capped.
-                    Assert.True(CombatMath.ShouldFlee(postFloorUse.HpBefore, hero.MaxHp));
+                    // Same rule: it fired below the DRINK line (the post-floor bar) and healed capped.
+                    Assert.True(CombatMath.ShouldDrink(postFloorUse.HpBefore, hero.MaxHp, 0));
                     Assert.Equal(Math.Min(postFloorUse.HpBefore + 1, hero.MaxHp), postFloorUse.HpAfter);
                     // And it sits on the hero's LAST event of the floor.
                     Assert.Contains(postFloorUse, floor.Combats.Last(c => c.Hero == hero.Id).Uses);
