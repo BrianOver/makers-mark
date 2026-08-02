@@ -72,9 +72,15 @@ public class CraftPuzzleRegistrationTests
     }
 
     /// <summary>
-    /// The census proves registration; this proves the registration actually works end-to-end for
-    /// the two types the bug hit. A round-trip through the real codec is the thing the playtest was
-    /// doing when it broke.
+    /// The census proves registration; this proves the registration actually works end-to-end. A
+    /// round-trip through the real codec is exactly what the client was doing when it broke.
+    ///
+    /// <para>Correctness is asserted as <b>byte-stability of the re-serialized save</b>, not record
+    /// equality. These puzzle records hold <c>ImmutableList&lt;int&gt;</c>, which does not override
+    /// <c>Equals</c>, so the compiler-generated record equality is reference equality on that member
+    /// and can never hold across a round-trip — an equality assertion here fails even when the save
+    /// is perfect. Byte-stability is also the stronger property: it is what the golden-replay
+    /// discipline actually depends on (KTD4).</para>
     /// </summary>
     [Theory]
     [MemberData(nameof(PuzzleSamples))]
@@ -85,11 +91,16 @@ public class CraftPuzzleRegistrationTests
         var batch = new LoggedBatch(state.Day, state.Phase, ImmutableList.Create<PlayerAction>(action));
         var withPuzzle = state with { ActionLog = state.ActionLog.Add(batch) };
 
+        // Serializing at all is half the point: an unregistered subtype throws NotSupportedException
+        // right here, which is the production defect this file exists for.
         var json = SaveCodec.Serialize(withPuzzle);
         var back = SaveCodec.Deserialize(json);
 
         var recovered = Assert.IsType<CraftAction>(back.ActionLog[^1].Actions[^1]);
-        Assert.Equal(puzzle, recovered.Puzzle);
+        Assert.NotNull(recovered.Puzzle);
+        Assert.IsType(puzzle.GetType(), recovered.Puzzle);
+        Assert.Equal(json, SaveCodec.Serialize(back));
+        Assert.Contains($"\"$puzzle\"", json);
         Assert.NotNull(label);
     }
 
