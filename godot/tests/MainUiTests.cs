@@ -739,11 +739,22 @@ public class MainUiTests
     {
         // LedgerModal/CampPanel stay FullRect overlays drawn above the drawer (U21) — proven here
         // functionally: the open drawer survives a Ledger open/close cycle untouched.
+        //
+        // U1 (playtest-three plan): drawer-open now has to come AFTER AdvanceDay, not before.
+        // Departure legitimately CLOSES an open drawer on purpose (SoundTheTick's Drawer.Close(),
+        // KTD-A move 1) at the Morning->Expedition boundary AdvanceDay walks through on its way to
+        // Evening — opening Forge first and then advancing a whole day used to prove nothing (this
+        // was written when nothing ever closed the drawer programmatically); now it would just
+        // prove the send-off fix itself, which is U1's own test file's job
+        // (SendOffOpensTheShowTests.cs), not this one's. Opening Forge AFTER the day has already
+        // turned over — and before the Return Ritual's delayed Ledger reveal, which is a wall-clock
+        // gate independent of any further phase tick — isolates what THIS test is actually about:
+        // the LEDGER opening/closing does not touch the drawer underneath it.
         var ui = MountMainUi();
         try
         {
-            ui.OpenPanel("Forge");
             AdvanceDay(ui);
+            ui.OpenPanel("Forge");
             ui._Process(MainUi.ReturnRitualDelaySeconds + 0.1); // Ledger opens
 
             AssertThat(ui.Ledger.Visible).IsTrue();

@@ -1848,6 +1848,22 @@ public partial class MainUi : Control
         // crash. Drawer.Closed already fires UpdateEngaged (see its subscription in BuildUi), so
         // Pip.Suppressed recomputes within this same call — the dock does not wait for a frame that
         // never arrives in a paused/test context.
+        //
+        // ORDERING HAZARD found via ShopPanelTests.VeteranHero_PassesOnPoorShelfItem...: this method
+        // runs INSIDE OnPhaseCompleted, BEFORE that method's own RefreshAll() call — and RefreshAll's
+        // per-drawer refresh (`if (Drawer.CurrentPanelId is { } openId) PanelFor(openId).Refresh();`)
+        // only fires while a panel is still registered as open. Calling Drawer.Close() here FIRST
+        // would null CurrentPanelId before RefreshAll ever runs, so the panel that was open for the
+        // exact tick that just closed it would silently never render that tick's own outcome (e.g. a
+        // hero's refusal reason) — stale until the player happens to reopen it. Refresh it explicitly,
+        // right here, before closing: the sim's CurrentState/LastEvents are already fully settled by
+        // this point (AdvancePhase completed before StateChanged fired), so this renders the true
+        // tick outcome; RefreshAll's own gated refresh then no-ops harmlessly once the drawer is shut.
+        if (Drawer.CurrentPanelId is { } closingPanelId)
+        {
+            PanelFor(closingPanelId).Refresh();
+        }
+
         Drawer.Close();
 
         // (2) a genuine MODAL (Ledger/Camp/Mirror/Forecast/Bestiary/Commissions/Legends, or the
