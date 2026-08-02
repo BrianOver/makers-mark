@@ -194,6 +194,39 @@ public partial class FullPlaytest : Node
                 ui.Town.FindBuilding(building).RaisePick();
                 await Settle(10);
                 Shot($"r{_run}_03_click_{building}");
+
+                // U1 (painted-interiors plan): "forge" now enters a walkable room instead of
+                // opening the drawer directly (R1). Walk the room for real — press every
+                // station, shot each one, exit — rather than letting the click screenshot above
+                // stand in for the whole framework. Every OTHER venue still just opens its drawer
+                // (R9), so this block is a no-op for them.
+                if (ui.Town.InteriorActive)
+                {
+                    var room = ui.Town.FindInteriorRoom(ui.Town.InteriorVenueKey!);
+                    foreach (var station in room.Stations)
+                    {
+                        try
+                        {
+                            station.RaisePick();
+                            await Settle(8);
+                            Shot($"r{_run}_03b_station_{station.Key}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Note($"run {_run}: station '{station.Key}' in room '{building}' failed: {ex.GetType().Name}: {ex.Message}");
+                        }
+
+                        if (ui.Drawer.IsOpen)
+                        {
+                            ui.Drawer.Close(); // reset so the next station's press isn't reading a stale open drawer
+                            await Settle(6);
+                        }
+                    }
+
+                    ui.Town.ExitInterior();
+                    await Settle(10);
+                    Shot($"r{_run}_03c_room_exit_{building}");
+                }
             }
             catch (Exception ex)
             {

@@ -156,6 +156,64 @@ public static class TownAssets2D
         return art ?? Placeholder("player", HeroPlaceholderSize, new Color(0.35f, 0.4f, 0.55f), "player_smith");
     }
 
+    /// <summary>U1 (painted-interiors plan): per-station placeholder footprint + tint — nominal
+    /// sizes are PINNED by KTD-5 (the plan U2 authors real art against), so a size mismatch here
+    /// would shift every station's collision/interact geometry the moment real art lands. Distinct
+    /// tints so six placeholder boxes crowded into one small room still read apart from each other.</summary>
+    private static readonly Dictionary<string, (Vector2 Size, Color Color)> StationPlaceholders = new()
+    {
+        ["town2d-station-anvil"] = (new Vector2(24, 20), new Color(0.32f, 0.32f, 0.36f)),
+        ["town2d-station-furnace"] = (new Vector2(32, 40), new Color(0.55f, 0.24f, 0.12f)),
+        ["town2d-station-bellows"] = (new Vector2(20, 14), new Color(0.40f, 0.28f, 0.18f)),
+        ["town2d-station-quench"] = (new Vector2(24, 14), new Color(0.20f, 0.32f, 0.38f)),
+        ["town2d-station-shelf"] = (new Vector2(28, 32), new Color(0.38f, 0.30f, 0.20f)),
+        ["town2d-station-rack"] = (new Vector2(28, 32), new Color(0.34f, 0.26f, 0.30f)),
+    };
+
+    private static readonly Vector2 DefaultStationSize = new(24, 24);
+    private static readonly Color DefaultStationColor = new(0.4f, 0.4f, 0.42f);
+
+    /// <summary>Interior-room shell placeholder tint (U1) — floor/wall canvas is one flat box sized
+    /// to the room's own dimensions (passed in, never hardcoded here, so it can never disagree with
+    /// <see cref="InteriorLayout2D"/>'s room table).</summary>
+    private static readonly Color ShellPlaceholderColor = new(0.24f, 0.20f, 0.16f);
+
+    /// <summary>
+    /// Resolves an interior station's sprite (KTD-2/KTD-6): generated art first (<see
+    /// cref="IconRegistry.Art"/>, same manifest ladder every other family here uses — null until U2
+    /// lands it), else a loud magenta-bordered placeholder box sized/tinted per <paramref
+    /// name="spriteId"/> — a station must never silently draw nothing before its real art exists.
+    /// </summary>
+    public static Texture2D ForStation(string spriteId)
+    {
+        var art = IconRegistry.Art(spriteId);
+        if (art is not null)
+        {
+            return art;
+        }
+
+        var (size, color) = StationPlaceholders.TryGetValue(spriteId, out var entry)
+            ? entry
+            : (DefaultStationSize, DefaultStationColor);
+        return Placeholder($"station:{spriteId}", size, color, spriteId);
+    }
+
+    /// <summary>
+    /// Resolves an interior room's shell (floor/walls) sprite: generated art first, else a loud
+    /// placeholder sized to <paramref name="size"/> (the room's own pixel dimensions, from <see
+    /// cref="InteriorLayout2D"/> — never a second hardcoded copy of that number).
+    /// </summary>
+    public static Texture2D ForShell(string spriteId, Vector2 size)
+    {
+        var art = IconRegistry.Art(spriteId);
+        if (art is not null)
+        {
+            return art;
+        }
+
+        return Placeholder($"shell:{spriteId}", size, ShellPlaceholderColor, spriteId);
+    }
+
     /// <summary>
     /// Builds (and caches) the flat-colour fallback texture for a missing id — and, per the class
     /// doc above, makes sure it never passes for real art: a 1px magenta border plus <paramref

@@ -12,6 +12,12 @@
 #   godot --path <godot dir> -s godot/tools/shot_harness.gd
 # Empty SHOT_STATE captures the town; a venue key enters that interior through the
 # production OnTownBuildingClicked path, then waits for the camera dolly to settle.
+# U1 (painted-interiors plan): SHOT_STATE=Forge now walks the player INTO the walkable forge
+# room (R1) — it drives the same production path, so this is automatic. SHOT_STATE=ForgePanel
+# bypasses the room and opens the ForgePanel DRAWER directly by id, so a drawer-only receipt
+# (the "before" half of the U1 before/after pair) stays reachable for comparison. SHOT_STATE=
+# ForgeExit enters the room, then (frame 200) calls Town2D.ExitInterior() directly — the second
+# required U1 receipt, proving the exit door returns the player outside.
 # SendOff (U1, playtest-three plan) opens the Forge drawer, then presses the real
 # AdvancePhase bell through its own signal — the receipt for "send them off with a drawer
 # open" reachability fix, showing the resulting town view (drawer closed, camera on the
@@ -92,6 +98,20 @@ func _process(_delta: float) -> bool:
 			# Phase B Renown panel — drawer-hosted, opened by id.
 			if _ui.has_method("OpenPanel"):
 				_ui.call("OpenPanel", "HeroCards")
+		elif _state == "ForgePanel":
+			# U1 (painted-interiors plan): "Forge" now walks the player INTO the room instead
+			# of opening the drawer directly (R1). This state bypasses the room and opens the
+			# ForgePanel drawer straight by id, so a drawer-only receipt stays possible for
+			# comparison against the room (same idiom as Demand/HeroCards above).
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Forge")
+		elif _state == "ForgeExit":
+			# U1 (painted-interiors plan): the second required receipt -- proves the exit
+			# door returns the player OUTSIDE. Enters the room the normal way; the second
+			# beat (frame 200 below) calls Town2D.ExitInterior() directly, mirroring how
+			# SendOff/Mirror above drive their own second beat through a real signal/call.
+			if _ui.has_method("OnTownBuildingClicked"):
+				_ui.call("OnTownBuildingClicked", "Forge")
 		elif _state == "SendOff":
 			# U1 (playtest-three plan): the receipt for "clicked send them off with a drawer
 			# open — where are the visuals?" Open the Forge drawer here; the AdvancePhase
@@ -128,6 +148,12 @@ func _process(_delta: float) -> bool:
 		var mirror = _ui.find_child("ScryingMirror", true, false)
 		if mirror:
 			mirror.call("ShowMirror")
+	if _state == "ForgeExit" and _frames == 200:
+		# The second beat: leave the room through the exit zone's own effect --
+		# Town2D.ExitInterior -- a direct test seam, not a separate code path.
+		var town = _ui.find_child("Town2D", true, false)
+		if town:
+			town.call("ExitInterior")
 	if _frames >= _settle:
 		var img := root.get_texture().get_image()
 		var err := img.save_png(_out)
