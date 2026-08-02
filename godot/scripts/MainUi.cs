@@ -1780,6 +1780,11 @@ public partial class MainUi : Control
             Audio.Play(EntranceCueFor(id));
             // Watching the raid gets the Mine's own theme; every other panel stays with the day.
             Audio.SetScene(id == "Depths" ? "depths" : null);
+            // U7 (tutorial 3-day arc): "meet your heroes" is a UI-only fact (no sim event for
+            // opening a panel) — this is the ONE router every real open funnels through (town
+            // clicks, quick-travel, tray buttons), so it is the one place to notify from. TutorialFlow
+            // itself decides whether id ("Tavern"/"HeroCards") is the one it is waiting on.
+            Tutorial.NotifyPanelOpened(id);
         }
 
         // The tutorial's copy depends on WHICH surface is open (it stops telling you to walk somewhere you
@@ -2234,6 +2239,10 @@ public partial class MainUi : Control
         {
             _resumePlayOnMirrorClose = Clock.Playing;
             Clock.Pause();
+            // U7 (tutorial 3-day arc): the day-1 capstone ("look in on them") is a UI-only fact with
+            // no sim event to read durably — this ONE hook covers both real entry points (the
+            // persistent Watch button and the PiP dock's expand click), so either door teaches it.
+            Tutorial.NotifyMirrorOpened();
         }
         else if (_resumePlayOnMirrorClose)
         {
