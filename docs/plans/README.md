@@ -17,6 +17,9 @@ record" for work that other systems had largely obsoleted. Individual docs are n
 | Doc | What it is |
 |---|---|
 | `2026-07-28-003-roadmap-post-skeleton.md` | **Sequencing authority.** Where the project is, what happens next, open decisions. Start here. |
+| `2026-08-02-002-feat-playtest-three-plan.md` | **Current execution wave**, from the owner's third playtest: send-off opens the show (the spectating that shipped but was unreachable), one vocabulary for phases/buildings, forge pacing, a generated day track, quieter cues, a 26×44 hero cast, and the 3-day tutorial. |
+| `2026-08-02-001-feat-painted-interiors-plan.md` | The walkable painted forge interior with clickable stations. Sequenced behind the wave above; `InteriorStage` turned out to be dead code the pivot orphaned. |
+| `2026-08-01-001-feat-make-it-visible-plan.md` | The receipts discipline: every player-facing change carries proof a human would see or hear it. `tools/receipt.ps1` came from its U1. |
 | `2026-07-28-004-feat-close-the-open-work-plan.md` | The current work plan: wire the two new crafts, teardown the dead 3D layer, advisor mirror, then the human feel-test gate. |
 | `2026-07-28-002-feat-interactive-professions-and-trade-plan.md` | U1–U6 shipped; **U7–U10 still open** (U7/U8 continue in `-004` above). Its research origin is `docs/design/2026-07-28-002-interaction-design-research.md`. |
 
