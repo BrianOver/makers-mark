@@ -138,6 +138,12 @@ public partial class ForgePanel : SimPanel
     private AudioStreamPlayer? _hammerSfx;
     private AudioStreamPlayer? _stingSfx;
 
+    /// <summary>U8 (2026-08-02 shell-and-audio plan, R8): true while the held-bellows loop is armed
+    /// on <see cref="GodotClient.Audio.AudioDirector.StartLoop"/> — the rising/falling edge latch
+    /// <see cref="_Process"/> polls <c>_minigame.IsPumping</c> against, so <c>StartLoop</c>/<c>StopLoop</c>
+    /// each fire exactly once per hold rather than every frame the gauge ticks.</summary>
+    private bool _bellowsLoopActive;
+
     public override void _Ready() => EnsureBuilt();
 
     public override void _Process(double delta)
@@ -148,6 +154,29 @@ public partial class ForgePanel : SimPanel
         if (_minigame is { Visible: true })
         {
             ResolveTown()?.ForgeGlow(_minigame.HeatYPermille);
+
+            // U8 (R8): the HELD bellows gets a sustained loop instead of a one-shot per grip, driven
+            // the same continuous-poll way as the furnace glow just above (IsPumping changes every
+            // frame the gauge does) rather than an event — BellowsPumped fires once per GESTURE
+            // (hold-start OR one discrete PumpStroke) and cannot itself tell those two apart without
+            // checking IsPumping anyway (see OnMinigameBellowsPumped).
+            if (_minigame.IsPumping && !_bellowsLoopActive)
+            {
+                GodotClient.Audio.AudioDirector.For(this)?.StartLoop(GodotClient.Audio.Cue.Bellows);
+                _bellowsLoopActive = true;
+            }
+            else if (!_minigame.IsPumping && _bellowsLoopActive)
+            {
+                GodotClient.Audio.AudioDirector.For(this)?.StopLoop(GodotClient.Audio.Cue.Bellows);
+                _bellowsLoopActive = false;
+            }
+        }
+        else if (_bellowsLoopActive)
+        {
+            // The overlay closed (cancel/finish) mid-hold — release the loop so it does not keep
+            // breathing into a drawer that is no longer open.
+            GodotClient.Audio.AudioDirector.For(this)?.StopLoop(GodotClient.Audio.Cue.Bellows);
+            _bellowsLoopActive = false;
         }
 
         // G1 ceremony auto-dismiss: accumulated-delta only (no engine Tween in this codebase —
@@ -748,12 +777,29 @@ public partial class ForgePanel : SimPanel
         ResolveTown()?.ForgeSteamPlume();
     }
 
-    /// <summary>U5: the bellows breath now has a sound. <see cref="GodotClient.Audio.Cue.Bellows"/>
-    /// shipped synthesized with zero call sites — this is the one wiring point (via
+    /// <summary>
+    /// U5: the bellows breath now has a sound. <see cref="GodotClient.Audio.Cue.Bellows"/> shipped
+    /// synthesized with zero call sites — this is the one wiring point (via
     /// <see cref="ForgeMinigame.BellowsPumped"/>) for both ways a player can pump (Shift hold or
-    /// right-drag). Null-tolerant like every other cue site here.</summary>
+    /// right-drag). Null-tolerant like every other cue site here.
+    ///
+    /// <para><b>U8 retune:</b> <see cref="ForgeMinigame.BellowsPumped"/> fires once per GESTURE — a
+    /// hold-start (<see cref="ForgeMinigame.BellowsStart"/>) OR one discrete
+    /// <see cref="ForgeMinigame.PumpStroke"/> — and by the time either raises this event,
+    /// <see cref="ForgeMinigame.IsPumping"/> already reflects which one it was (true only for a
+    /// hold-start; <c>PumpStroke</c> never touches it). The HELD case is now voiced by the continuous
+    /// loop poll in <see cref="_Process"/> instead — a one-shot here TOO would double-sound the grip
+    /// (loop-start and a one-shot landing in the same instant). Skipping it needed zero changes to
+    /// <see cref="ForgeMinigame"/> itself: the signal to skip was already sitting on the object that
+    /// raised the event.</para>
+    /// </summary>
     private void OnMinigameBellowsPumped()
     {
+        if (_minigame is { IsPumping: true })
+        {
+            return;
+        }
+
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Bellows);
     }
 
