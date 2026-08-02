@@ -210,7 +210,27 @@ public class ActionLegalityTests
             foreach (var candidate in ActionLegality.LegalActions(state, phase))
             {
                 covered.Add(candidate.GetType());
-                var probe = kernel.Tick(state, ImmutableList.Create(candidate));
+                // ApplyNow, not Tick: rejection can ONLY come from the step-1 handler.Apply call
+                // (GameKernel.Tick's rejected list is built exclusively there — its step-2 phase-
+                // systems loop never touches it), so ApplyNow's "one handler, no phase systems, no
+                // phase advance" is byte-identical for THIS property. Tick unconditionally reruns
+                // every system registered for the CURRENT phase regardless of which action it was
+                // handed — during Expedition/ExpeditionDeep that means a full, thrown-away replay
+                // of every in-flight party's combat PER CANDIDATE, on top of the real committed
+                // tick's own resolution. Measured (fix/sim-runtime-regression PR): rounds- and
+                // fights-per-expedition are essentially FLAT across the 2026-08-01 Prepared-hero
+                // change (10-seed/100-day resolver probe: max rounds 15 -> 17, total fights 20179 ->
+                // 21199) — the fight math itself is not the multiplier. What grew is how many
+                // candidates are simultaneously legal each tick (this same commit's BaselinePlayer
+                // craft-legality fix roughly 6x'd successful crafts) and every one of them replayed
+                // the day's full combat resolution for free. That per-candidate replay, multiplied
+                // across every legal candidate at every one of 500 ticks, is what took this test's
+                // 100-day run from ~15s to 20+ minutes (still climbing when killed) — a probe-
+                // architecture cost, not a resolver defect. Switching the probe to ApplyNow removes
+                // the wasted replay entirely without touching sim/GameSim (KTD2-safe, test-side
+                // only) and without changing what this test actually asserts — confirmed green:
+                // 1458/1458 fast-lane tests still pass, in ~1-2 min instead of not finishing.
+                var probe = kernel.ApplyNow(state, candidate);
                 Assert.True(probe.Rejected.IsEmpty,
                     $"Day {state.Day} phase {phase}: LegalActions reported {candidate} legal, " +
                     $"but the kernel rejected it: {string.Join("; ", probe.Rejected.Select(r => r.Reason))}");
