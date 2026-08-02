@@ -590,12 +590,25 @@ public partial class Town2D : Control
     /// survivors of any FINALIZED run walk home. Evening done → every remaining non-wandering
     /// actor whose hero is confirmed alive snaps home for the new day. Camp/unknown → no-op.
     /// </summary>
+    /// <summary>
+    /// Test/inspection surface: how many times the phase choreography has actually run.
+    ///
+    /// <para>Every immediate action used to reach this method (<c>MainUi</c> called it on the shared
+    /// <c>StateChanged</c> event without checking whether a phase had completed), so Stock in Morning
+    /// re-marched the party out and any action mid-raid re-walked them home. Nothing observed the
+    /// difference, so nothing could pin it. This counter is what
+    /// <c>ImmediateActionsDoNotReplayThePhaseTests</c> watches.</para>
+    /// </summary>
+    public int PhaseChoreographyRuns { get; private set; }
+
     public void OnPhaseCompleted(DayPhase completedPhase)
     {
         if (Adapter is null)
         {
             return;
         }
+
+        PhaseChoreographyRuns++;
 
         switch (completedPhase)
         {

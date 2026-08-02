@@ -503,7 +503,23 @@ public partial class MainUi : Control
         // TutorialFlow.Advance's own doc for why a per-tick-only read could dead-end the chain.
         Tutorial.Advance(state);
         RefreshAll();
-        Town.OnPhaseCompleted(completedPhase);
+
+        // Only run the town's phase choreography when a phase ACTUALLY completed.
+        //
+        // `StateChanged` has two callers. A real tick advances the phase, so `completedPhase` differs
+        // from the post-event `state.Phase`. `SimAdapter.Queue`'s immediate-action branch (buy, craft,
+        // stock, reprice — the 2026-07-30 fix) also raises it, with the CURRENT, un-advanced phase,
+        // because nothing completed. The audio path below already tells those apart; this call did not,
+        // so every immediate action replayed the choreography for whatever phase happened to be current.
+        //
+        // Owner's playtest, two complaints with one cause: "hitting stock keeps sending the heroes out"
+        // (Stock in Morning re-ran DepartWanderingHeroes) and "why did the heroes come back to the town
+        // visually?" (any immediate action during Expedition/ExpeditionDeep re-ran ReturnSurvivors,
+        // marching the party home mid-raid and contradicting the fiction).
+        if (completedPhase != state.Phase)
+        {
+            Town.OnPhaseCompleted(completedPhase);
+        }
         // U25 (c): the drawer's own ShopPanel.OnPhaseCompleted (LW3's lit customer strip) is
         // retired. U4 (painted-interiors plan): its replacement, InteriorStage's embedded
         // ShopStage, is ALSO retired along with the dead InteriorStage host it rode in on — the
@@ -1887,7 +1903,27 @@ public partial class MainUi : Control
         // have been a far worse regression than the bug this method exists to fix. `state` is already
         // the POST-event CurrentState (fetched by the caller, OnPhaseCompleted), so the comparison
         // costs nothing extra.
-        var departing = completedPhase == DayPhase.Morning && completedPhase != state.Phase;
+        // Nothing completed — an immediate action just reported itself. Say nothing.
+        //
+        // The guard below correctly stopped an immediate action from firing PartyDepart, but then fell
+        // straight through to `Cue.Bell` for it: a 1.6s bronze bell on EVERY accepted craft, buy,
+        // shelve and reprice. Owner's playtest, two complaints with this one cause — "doing anything in
+        // the forge changes the music" (a long tonal bell over a -22 dB bed reads as the music
+        // changing) and "shop stock sound was changed... it's now a scary bell instead of the
+        // shop/register noise" (Shelve's own cue, then the bell on top of it). Starting a fresh
+        // campaign fires a burst of immediate actions, which is the "restarting had a lot of strange
+        // noises" report too.
+        //
+        // The bell belongs to the day advancing. This method's own doc says "the tick's one sound" —
+        // an immediate action is not a tick.
+        if (completedPhase == state.Phase)
+        {
+            return;
+        }
+
+        // Morning ending is the send-off: the party is actually leaving, which deserves its own cue
+        // rather than the generic bell.
+        var departing = completedPhase == DayPhase.Morning;
         Audio.Play(departing ? Cue.PartyDepart : Cue.Bell);
 
         if (!departing)
