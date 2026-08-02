@@ -94,26 +94,34 @@ public class InteriorRoomTests
         finally { town.Free(); }
     }
 
+    /// <summary>
+    /// Fixed post-review: U2 (a parallel unit) landed real committed art for all seven pinned ids
+    /// before this PR merged, so none of <see cref="InteriorLayout2D"/>'s own ids are "missing"
+    /// anymore — iterating the live room's stations no longer exercises the placeholder path at
+    /// all (every corner pixel is real paint, not magenta). Forcing a deliberately bogus id through
+    /// the SAME ladder (<see cref="TownAssets2D.ForStation"/>/<see cref="TownAssets2D.ForShell"/>)
+    /// is what actually proves the loud-placeholder MECHANISM, independent of whether any
+    /// particular id currently has art — it must keep failing loudly for as long as this game ships
+    /// any unresolved id, real ones included.
+    /// </summary>
     [TestCase]
     public void MissingStationAndShellArt_RendersLoudPlaceholders_NotSilentBoxes()
     {
-        var town = Mount();
-        try
-        {
-            var room = town.FindInteriorRoom("forge");
+        const string bogusStationId = "town2d-station-u1-test-does-not-exist";
+        var stationImage = TownAssets2D.ForStation(bogusStationId).GetImage();
+        AssertThat(stationImage.GetPixel(0, 0))
+            .OverrideFailureMessage(
+                $"TownAssets2D.ForStation('{bogusStationId}') did not render a loud "
+                + "magenta-bordered placeholder for an unresolved id — corner pixel was not magenta.")
+            .IsEqual(new Color(1f, 0f, 1f));
 
-            foreach (var station in room.Stations)
-            {
-                var image = station.Sprite.Texture!.GetImage();
-                AssertThat(image.GetPixel(0, 0))
-                    .OverrideFailureMessage(
-                        $"station '{station.Key}' has no committed art yet (expected pre-U2) but "
-                        + "must render TownAssets2D's loud magenta-bordered placeholder, never a "
-                        + "silent flat box — corner pixel was not magenta.")
-                    .IsEqual(new Color(1f, 0f, 1f));
-            }
-        }
-        finally { town.Free(); }
+        const string bogusShellId = "town2d-forge-interior-shell-u1-test-does-not-exist";
+        var shellImage = TownAssets2D.ForShell(bogusShellId, new Vector2(64, 64)).GetImage();
+        AssertThat(shellImage.GetPixel(0, 0))
+            .OverrideFailureMessage(
+                $"TownAssets2D.ForShell('{bogusShellId}') did not render a loud magenta-bordered "
+                + "placeholder for an unresolved id — corner pixel was not magenta.")
+            .IsEqual(new Color(1f, 0f, 1f));
     }
 
     [TestCase]
@@ -139,6 +147,17 @@ public class InteriorRoomTests
     /// rather than merely existing as an unenforced rect. Rendering is disabled BEFORE the first
     /// awaited frame (standing constraint 4) — pumping frames while any SubViewport renders is the
     /// documented gdUnit headless hang.
+    ///
+    /// <para><b>Fixed post-review:</b> the original version spawned the player at local X=8, which
+    /// is INSIDE the left wall's own 0..16 (one tile) footprint, not beside it — the player started
+    /// embedded in the wall's collision shape. <c>CharacterBody2D.MoveAndSlide</c> depenetrates an
+    /// already-overlapping start position as part of its own recovery step, and for a body starting
+    /// dead-center in a symmetric overlap that resolution direction is not something this test can
+    /// rely on — combined with the "walk left" input, it reliably pushed the player OUT through the
+    /// wall's outer face, which read as "the wall did not block them" for a reason that had nothing
+    /// to do with whether the wall actually blocks a real approach. Spawning inside the walkable
+    /// interior (tile (5,7): clear of every station and of the wall itself) and walking INTO the
+    /// wall from there is the scenario that actually matters, and is what a real player does.</para>
     /// </summary>
     [TestCase]
     public async System.Threading.Tasks.Task ForgeRoom_PerimeterWalls_BlockThePlayer()
@@ -149,18 +168,34 @@ public class InteriorRoomTests
             town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
 
             var room = town.FindInteriorRoom("forge");
-            town.Player.SpawnAt(room.RoomRect.Position + new Vector2(8f, room.RoomRect.Size.Y / 2f));
-            town.Player.SetDirectInput(Vector2.Left); // straight at the left wall
+            var start = room.RoomRect.Position + TownLayout2D.TileToWorld(new Vector2I(5, 7));
+            town.Player.SpawnAt(start);
+            town.Player.SetDirectInput(Vector2.Left); // walk toward the left wall from clear ground
 
             var tree = (SceneTree)Engine.GetMainLoop();
-            for (var i = 0; i < 60; i++)
+            for (var i = 0; i < 90; i++)
             {
                 await tree.ToSignal(tree, SceneTree.SignalName.PhysicsFrame);
             }
 
-            AssertThat(town.Player.GlobalPosition.X)
-                .OverrideFailureMessage("The forge room's left wall did not block the player — they walked clean through the perimeter.")
-                .IsGreaterEqual(room.RoomRect.Position.X);
+            var finalX = town.Player.GlobalPosition.X;
+
+            // The wall assertion below is meaningless if the player never actually walked toward
+            // it — this is the "movement itself works" precondition CameraFollowTests' own doc
+            // insists on checking before trusting a downstream position assertion.
+            AssertThat(finalX)
+                .OverrideFailureMessage(
+                    $"The player never walked left at all (at {finalX:0.##}, started at "
+                    + $"{start.X:0.##}) — the wall assertion below cannot mean anything until "
+                    + "movement itself works.")
+                .IsLess(start.X - 20f);
+
+            AssertThat(finalX)
+                .OverrideFailureMessage(
+                    $"The forge room's left wall did not block the player — they reached "
+                    + $"{finalX:0.##}, past the wall's inner face at "
+                    + $"{room.RoomRect.Position.X + TownLayout2D.TileSize:0.##}.")
+                .IsGreaterEqual(room.RoomRect.Position.X + TownLayout2D.TileSize);
         }
         finally
         {

@@ -655,6 +655,13 @@ public class TutorialFlowTests
             AssertThat(ui.Tutorial.QuickTravelUnlocked).IsTrue();
             AssertThat(ui.Tutorial.QuickTravelRow.Visible).IsTrue();
 
+            // DriveWholeArcToCompletion's own Commission step opens the Tavern drawer
+            // (ui.OpenPanel("Tavern")) and never closes it — that is correct behavior for THAT
+            // step, but it leaves an unrelated drawer open here. Close it explicitly so the
+            // assertions below test quick-travel's OWN effect from a clean slate, not whatever the
+            // arc happened to leave on screen.
+            ui.Drawer.Close();
+
             ui.QuickTravel("Forge");
             // U1 (painted-interiors plan): quick-travel now enters the walkable forge room, same
             // as a walked arrival would (content parity, R9) — no drawer opens directly.
