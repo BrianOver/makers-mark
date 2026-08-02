@@ -57,7 +57,15 @@ public static class SaveCodec
     /// <summary>Registers <see cref="CraftPuzzleInput"/>'s derived types for polymorphic
     /// (de)serialization — the runtime equivalent of the <c>[JsonPolymorphic]</c> +
     /// <c>[JsonDerivedType]</c> pair the deny-listed <c>Contracts/</c> base cannot carry yet.
-    /// New puzzle-scored professions add one <c>DerivedTypes.Add</c> line here.</summary>
+    /// New puzzle-scored professions add one <c>DerivedTypes.Add</c> line here.
+    ///
+    /// <para><b>Forgetting a line here is a silent save-corrupting defect, not a compile error.</b>
+    /// An unregistered subtype makes <c>Serialize</c> throw <c>NotSupportedException</c> the moment a
+    /// player crafts with it; the Godot autosave catches that and only pushes a warning, so the
+    /// campaign quietly stops saving. Tanning and engineering shipped their puzzles without their
+    /// lines and every autosave after such a craft failed. <c>CraftPuzzleRegistrationTests</c> now
+    /// enumerates the assembly and fails when this list is not exhaustive — that census, not this
+    /// comment, is what keeps the next profession honest.</para></summary>
     private static void AddCraftPuzzlePolymorphism(JsonTypeInfo typeInfo)
     {
         if (typeInfo.Type != typeof(CraftPuzzleInput))
@@ -76,7 +84,23 @@ public static class SaveCodec
         // golden trace is byte-unaffected (BaselinePlayer never forges with a puzzle).
         typeInfo.PolymorphismOptions.DerivedTypes.Add(
             new JsonDerivedType(typeof(GameSim.Crafting.ForgeTraceInput), "forgeTrace"));
+        // Task #30 wired the tanning and engineering puzzles but never registered them, so an
+        // engineer's or tanner's craft rode the ActionLog into a serializer that had never heard of
+        // it. Discriminators follow the established camelCase-of-the-craft naming.
+        typeInfo.PolymorphismOptions.DerivedTypes.Add(
+            new JsonDerivedType(typeof(GameSim.Professions.EngineeringAssemblyInput), "engineeringAssembly"));
+        typeInfo.PolymorphismOptions.DerivedTypes.Add(
+            new JsonDerivedType(typeof(GameSim.Professions.TanningScrapeInput), "tanningScrape"));
     }
+
+    /// <summary>The concrete <see cref="CraftPuzzleInput"/> types this codec can actually write,
+    /// read back out of the live options object rather than re-listed by hand. A test that compares
+    /// a second hand-written list against the first proves nothing; this reads the registration
+    /// itself, so <c>CraftPuzzleRegistrationTests</c> is measuring the real thing.</summary>
+    public static IReadOnlyList<Type> RegisteredPuzzleTypes =>
+        Options.GetTypeInfo(typeof(CraftPuzzleInput)).PolymorphismOptions is { } polymorphism
+            ? polymorphism.DerivedTypes.Select(d => d.DerivedType).ToList()
+            : [];
 
     public static string Serialize(GameState state) => JsonSerializer.Serialize(state, Options);
 
