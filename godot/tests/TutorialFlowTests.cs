@@ -599,7 +599,7 @@ public class TutorialFlowTests
 
             // The milestone (class doc: first BountyPaid) is a persistent state fact — injected
             // directly rather than simulating a full accept-and-return cycle, mirroring
-            // InteriorStageTests.GuaranteedSaleState's own fixture-injection convention.
+            // ShopStageTests.GuaranteedSaleState's own fixture-injection convention.
             var paidBounty = new Bounty(new BountyId(1), TargetFloor: 1, RewardGold: 5,
                 PostedOnDay: 1, AcceptedBy: null, Paid: true);
             ui.Tutorial.RefreshAffordances(ui.Adapter.CurrentState with
@@ -640,8 +640,7 @@ public class TutorialFlowTests
         {
             AssertThat(ui.Tutorial.QuickTravelUnlocked).IsFalse();
             ui.QuickTravel("Forge");
-            AssertThat(ui.Interior.IsOpen).IsFalse(); // locked — no-op before completion
-            AssertThat(ui.Town.InteriorActive).IsFalse(); // U1: the walkable room is equally locked
+            AssertThat(ui.Town.InteriorActive).IsFalse(); // locked — no-op before completion
 
             // U7: the real 3-day path to Completed — DriveWholeArcToCompletion's own tests already
             // pin every intermediate step, so this only needs the end state.

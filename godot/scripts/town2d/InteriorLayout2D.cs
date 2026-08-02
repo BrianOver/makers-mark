@@ -23,19 +23,36 @@ namespace GodotClient.Town2d;
 /// .EveryStationAction_IsARecognizedMainUiRoute_NeverADeadClick</c> fails loudly if a row here ever
 /// names an action nothing knows how to open (this repo's recurring "dead click" failure class).</para>
 ///
-/// <para><b>Bellows/Quench route to "Forge" for now, deliberately.</b> The plan calls these two
-/// "flavor, see U3" — U3 differentiates them into an honest hover-only response (never pretending to
-/// be a verb). Until U3 lands, routing them to the SAME real, tested Forge panel the anvil/furnace
-/// open is a genuine verb (never a dead click) rather than inventing a half-finished flavor action
-/// this unit does not own building. U3 changes exactly these two rows.</para>
+/// <para><b>U3 — honest differentiation.</b> A station's <see cref="StationSpec.Action"/> is now
+/// nullable: non-null means "this station opens a real, tested surface" (Anvil/Furnace/Shelf →
+/// <c>Forge</c>, optionally with <see cref="StationSpec.Focus"/> telling <c>ForgePanel.FocusSection</c>
+/// which section to land on; Rack → <c>Shop</c>). <c>null</c> means "honest flavor" (Bellows/Quench):
+/// no verb exists, so pressing E must never silently do nothing — <see cref="StationSpec.HoverLine"/>
+/// is shown instead of the usual "E · {Label}" prompt (never promising an interact it does not have),
+/// and <see cref="StationSpec.FlavorLine"/> is the one-line toast <c>MainUi</c> shows on press. Both
+/// must be set whenever <see cref="StationSpec.Action"/> is null — <c>InteriorRoomTests
+/// .EveryStationAction_IsARecognizedMainUiRoute_NeverADeadClick</c> fails loudly on a flavor row
+/// missing either, the same "never a dead click" contract the Action check enforces.</para>
 /// </summary>
 public static class InteriorLayout2D
 {
     /// <summary>One physical station inside a room: its own stable id (nametag/lookup — NOT the
     /// click-key, since several stations can share one <paramref name="Action"/>), display label
     /// (the HUD "E · {Label}" prompt), sprite id (<see cref="TownAssets2D.ForStation"/>), the LOCAL
-    /// tile position within the room's own grid, and the action string it opens on press.</summary>
-    public readonly record struct StationSpec(string Id, string Label, string SpriteId, Vector2I Tile, string Action);
+    /// tile position within the room's own grid, and the action string it opens on press — or
+    /// <see langword="null"/> for an honest flavor station (see the class doc's U3 paragraph).
+    /// <paramref name="Focus"/> is Forge-only (<c>ForgePanel.FocusSection</c>'s section key, e.g.
+    /// "materials"/"craft"); <paramref name="HoverLine"/>/<paramref name="FlavorLine"/> are flavor-only
+    /// (required together whenever <paramref name="Action"/> is null, forbidden when it is not).</summary>
+    public readonly record struct StationSpec(
+        string Id,
+        string Label,
+        string SpriteId,
+        Vector2I Tile,
+        string? Action,
+        string? Focus = null,
+        string? HoverLine = null,
+        string? FlavorLine = null);
 
     /// <summary>One venue's walkable room: which venue it answers for, the shell sprite id, the
     /// room's size in tiles, its island offset in WORLD pixels (KTD-1 — a far-off region of the same
@@ -75,11 +92,20 @@ public static class InteriorLayout2D
                 ForgeDoorTile,
                 new[]
                 {
-                    new StationSpec("anvil", "Anvil", "town2d-station-anvil", new Vector2I(12, 7), "Forge"),
-                    new StationSpec("furnace", "Furnace", "town2d-station-furnace", new Vector2I(6, 5), "Forge"),
-                    new StationSpec("bellows", "Bellows", "town2d-station-bellows", new Vector2I(8, 5), "Forge"),
-                    new StationSpec("quench", "Quench Trough", "town2d-station-quench", new Vector2I(15, 7), "Forge"),
-                    new StationSpec("shelf", "Material Shelf", "town2d-station-shelf", new Vector2I(4, 10), "Forge"),
+                    // U3: Anvil/Furnace both open the craft flow (the minigames live behind it) —
+                    // Focus "craft" lands ForgePanel on the recipe cards.
+                    new StationSpec("anvil", "Anvil", "town2d-station-anvil", new Vector2I(12, 7), "Forge", Focus: "craft"),
+                    new StationSpec("furnace", "Furnace", "town2d-station-furnace", new Vector2I(6, 5), "Forge", Focus: "craft"),
+                    // U3: honest flavor — no verb, a hover line while proximate and a one-line
+                    // toast on press, never a dead click pretending to be a station with a job.
+                    new StationSpec("bellows", "Bellows", "town2d-station-bellows", new Vector2I(8, 5), Action: null,
+                        HoverLine: "Old bellows — feeds the furnace, nothing to work here",
+                        FlavorLine: "You give the bellows a pump. The furnace does the real work."),
+                    new StationSpec("quench", "Quench Trough", "town2d-station-quench", new Vector2I(15, 7), Action: null,
+                        HoverLine: "Quench trough — the anvil handles the real quenching",
+                        FlavorLine: "The water ripples. Nothing to craft here — try the anvil."),
+                    // U3: the shelf is the vendor/materials half of the Forge panel, not craft.
+                    new StationSpec("shelf", "Material Shelf", "town2d-station-shelf", new Vector2I(4, 10), "Forge", Focus: "materials"),
                     new StationSpec("rack", "Finished Goods", "town2d-station-rack", new Vector2I(19, 10), "Shop"),
                 }),
         };

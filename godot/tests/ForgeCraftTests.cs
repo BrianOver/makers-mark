@@ -129,6 +129,55 @@ public class ForgeCraftTests
         }
     }
 
+    // ── U3 (painted-interiors plan): FocusSection sibling coverage — the station-driven
+    // scroll/flash must never collapse the panel it lands on (mirrors
+    // ZeroMaterials_RendersInsufficientChip_DisablesCraftButton_NoLayoutCollapse's own contract,
+    // just for the NEW entry point rather than a fresh Refresh) ──────────────────────────────────
+
+    [TestCase]
+    public void FocusSection_CraftAndMaterials_NeverCollapsesTheLayout()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            ui.Forge.FocusSection("craft");
+            AssertThat(ui.Forge.LastFocusedSection).IsEqual("craft");
+            // The recipe card itself still stands with real content — never a blank/collapsed panel.
+            AssertThat(RenderedText(ui.Forge)).Contains("Dagger");
+            AssertThat(ui.Forge.FindChildren($"RecipeCard_{ScriptedSession.CraftRecipeId}", "PanelContainer",
+                recursive: true, owned: false).Count > 0).IsTrue();
+
+            ui.Forge.FocusSection("materials");
+            AssertThat(ui.Forge.LastFocusedSection).IsEqual("materials");
+            AssertThat(RenderedText(ui.Forge)).Contains("copper"); // a vendor row for the craft material
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void FocusSection_UnknownSection_IsANoOp_NeverThrows()
+    {
+        // Table-validation (InteriorRoomTests.KnownFocusValues) is what stops a bogus Focus from
+        // ever shipping in InteriorLayout2D — this only proves FocusSection itself degrades
+        // quietly rather than throwing if it is ever handed a value outside that table.
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Forge");
+            ui.Forge.FocusSection("not-a-real-section");
+            AssertThat(ui.Forge.LastFocusedSection).IsEqual("not-a-real-section");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── U23d: the Anvil Map overlay opens through the same real Controls (property-level and
     // real-drive Anvil Map coverage itself lives in ForgeMinigameTests) ──────────────────────────
 

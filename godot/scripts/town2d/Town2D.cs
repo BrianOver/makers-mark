@@ -160,10 +160,21 @@ public partial class Town2D : Control
     public event Action<int>? HeroClicked;
 
     /// <summary>U1 (painted-interiors plan): re-emits <see cref="InteriorRoom2D.StationActivated"/>
-    /// — an already-routable action string ("Forge"/"Shop"/...), mirroring how <see
-    /// cref="BuildingClicked"/> re-emits <see cref="Building2D.Picked"/> for town buildings.
-    /// <c>MainUi</c> subscribes this straight onto its existing <c>OnInteriorHotspotActivated</c>.</summary>
-    public event Action<string>? StationActivated;
+    /// — the WHOLE <see cref="InteriorLayout2D.StationSpec"/> (U3: Action/Focus/HoverLine/FlavorLine
+    /// together), mirroring how <see cref="BuildingClicked"/> re-emits <see cref="Building2D.Picked"/>
+    /// for town buildings. <c>MainUi</c> subscribes this onto its own <c>OnStationActivated</c>,
+    /// which routes a real verb (with its optional Focus) through the existing
+    /// <c>OnInteriorHotspotActivated</c> or shows an honest flavor toast.</summary>
+    public event Action<InteriorLayout2D.StationSpec>? StationActivated;
+
+    /// <summary>U4 (painted-interiors plan): raised at the END of <see cref="ExitInterior"/> — the
+    /// ONE method both room-exit paths (Esc, and the door <see cref="InteriorRoom2D.ExitZone"/>)
+    /// already funnel through, so this fires regardless of which one the player used. Replaces the
+    /// deleted <c>InteriorStage.Exited</c>'s wiring: <c>MainUi</c> subscribes this straight onto its
+    /// existing <c>OnInteriorExited</c> (re-syncs the engaged latch, fires any deferred departure
+    /// focus beat) — without it, entering the room engaging <see cref="MainUi"/>'s modal latch
+    /// (via <see cref="InteriorActive"/>) would have nothing to disengage it again on the way out.</summary>
+    public event Action? InteriorExited;
 
     /// <summary>U1: true while the player is inside a walkable interior room (KTD-1, island
     /// placement) rather than the bare town. Gates the mine-gate departure focus beat (<see
@@ -514,6 +525,7 @@ public partial class Town2D : Control
         Cam.ResetSmoothing();
 
         WorldInputNode.Configure(Player, _buildingsByKey.Values.ToList());
+        InteriorExited?.Invoke();
     }
 
     /// <summary>Live hero-actor count (test/inspection surface).</summary>
@@ -922,7 +934,7 @@ public partial class Town2D : Control
             var room = new InteriorRoom2D();
             World.AddChild(room);
             room.Build(spec);
-            room.StationActivated += action => StationActivated?.Invoke(action);
+            room.StationActivated += stationSpec => StationActivated?.Invoke(stationSpec);
 
             foreach (var station in room.Stations)
             {

@@ -59,12 +59,13 @@ public partial class InteriorRoom2D : Node2D
 
     private readonly List<Building2D> _stations = new();
 
-    /// <summary>Raised when a station is picked (E/click) — carries its <see
-    /// cref="InteriorLayout2D.StationSpec.Action"/> string directly (already in the vocabulary
-    /// <c>MainUi.OnInteriorHotspotActivated</c> routes), not the station's own id. <c>Town2D</c>
-    /// re-emits this as its own <c>StationActivated</c> event, mirroring how <see
-    /// cref="Building2D.Picked"/> → <c>Town2D.BuildingClicked</c> already works for town buildings.</summary>
-    public event System.Action<string>? StationActivated;
+    /// <summary>Raised when a station is picked (E/click) — carries the station's WHOLE <see
+    /// cref="InteriorLayout2D.StationSpec"/> (U3: Action/Focus/HoverLine/FlavorLine together, not
+    /// just the action string) so <c>MainUi</c> can route a real verb (with its optional Focus) or
+    /// an honest flavor response without a second lookup. <c>Town2D</c> re-emits this as its own
+    /// <c>StationActivated</c> event, mirroring how <see cref="Building2D.Picked"/> →
+    /// <c>Town2D.BuildingClicked</c> already works for town buildings.</summary>
+    public event System.Action<InteriorLayout2D.StationSpec>? StationActivated;
 
     /// <summary>Builds every child fresh — call once per instance (mirrors every other
     /// code-built-node <c>Configure</c>/<c>Build</c> in this codebase).</summary>
@@ -155,10 +156,15 @@ public partial class InteriorRoom2D : Node2D
             var station = new Building2D();
             var sprite = TownAssets2D.ForStation(stationSpec.SpriteId);
             var worldPos = spec.WorldOffset + TownLayout2D.TileToWorld(stationSpec.Tile);
-            station.Configure(stationSpec.Id, stationSpec.Label, sprite, worldPos);
+            // U3: a flavor station (null Action) gets its HoverLine (WorldInput2D's honest
+            // proximity prompt, replacing "E · {Label}") and a dimmed nametag — never dressed up
+            // to look like it promises a verb it does not have.
+            station.Configure(stationSpec.Id, stationSpec.Label, sprite, worldPos,
+                hoverLine: stationSpec.HoverLine, dimNametag: stationSpec.Action is null);
 
-            var action = stationSpec.Action; // captured per-iteration (C# foreach scoping) — safe
-            station.Picked += _ => StationActivated?.Invoke(action);
+            // stationSpec is the foreach iteration variable — a fresh binding per iteration (C# 5+
+            // semantics), so capturing it directly in the closure is safe (no aliasing bug).
+            station.Picked += _ => StationActivated?.Invoke(stationSpec);
 
             _stations.Add(station);
         }

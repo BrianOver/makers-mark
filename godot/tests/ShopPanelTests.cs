@@ -59,10 +59,11 @@ public class ShopPanelTests
     }
 
     // U25 (c): StageStrip_IsMountedOutsideTheScrollBody_SoItStaysVisibleWhilScrolling deleted —
-    // the drawer's own lit customer strip (ShopPanel.Stage) it pinned is retired as redundant now
-    // that InteriorStage hosts the richer choreography for the shop interior (see
-    // ShopStageTests.MorningSale_StagesOneBoughtCustomer_AndPopsTheGoldChip, retargeted at
-    // ui.Interior.ShopStage, for the equivalent coverage that survives).
+    // the drawer's own lit customer strip (ShopPanel.Stage) it pinned is retired as redundant.
+    // U4 (painted-interiors plan): the InteriorStage-hosted richer choreography that superseded it
+    // is ALSO gone now (InteriorStage deleted) — ShopStage.QueueDay has no live host at all as of
+    // U4 (see ShopStage's own class doc); the equivalent coverage that survives is
+    // ShopStageTests.MorningSale_PopsTheGoldChip, which only asserts the still-live gold-chip pop.
 
     [TestCase]
     public void ShelfCard_PriceLabel_ShrinksToContent_InsteadOfStretchingFullPanelWidth()

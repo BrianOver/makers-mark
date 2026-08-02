@@ -107,7 +107,12 @@ public partial class WorldInput2D : Node2D
         ActiveTarget?.SetHighlighted(false);
         ActiveTarget = target;
         ActiveTarget?.SetHighlighted(true);
-        PromptText = ActiveTarget != null ? $"E · {ActiveTarget.NameLabel.Text}" : string.Empty;
+        // U3 (painted-interiors plan): a station with an honest-flavor HoverLine (Building2D, no
+        // real verb) shows THAT instead of the usual "E · {Label}" — never promising an interact
+        // the station does not have, even though E still fires a one-line response (MainUi's toast).
+        PromptText = ActiveTarget is null
+            ? string.Empty
+            : ActiveTarget.HoverLine ?? $"E · {ActiveTarget.NameLabel.Text}";
     }
 
     /// <summary>Test seam raising the same interact code path a real "interact" (E) press would —

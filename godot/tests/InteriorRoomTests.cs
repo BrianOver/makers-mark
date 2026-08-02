@@ -29,6 +29,11 @@ public class InteriorRoomTests
         "Forge", "Shop", "Tavern", "Bounties", "Depths", "Bestiary", "Legends",
     };
 
+    /// <summary>U3: the section keys <c>ForgePanel.FocusSection</c> actually knows how to
+    /// scroll/flash — a station naming any other <c>Focus</c> is caught HERE (table-validation
+    /// time), not discovered as "the shelf press opened the panel but never scrolled anywhere."</summary>
+    private static readonly HashSet<string> KnownFocusValues = new() { "materials", "craft" };
+
     private static Town2D Mount()
     {
         var town = new Town2D { Name = "Town2D" };
@@ -131,6 +136,26 @@ public class InteriorRoomTests
         {
             foreach (var station in room.Stations)
             {
+                if (station.Action is null)
+                {
+                    // U3: a null Action is only ever legitimate as HONEST FLAVOR (Bellows/Quench)
+                    // — never a plain omission. Both lines are mandatory here, or pressing E is a
+                    // silent dead click wearing a "this was deliberate" costume.
+                    AssertThat(!string.IsNullOrWhiteSpace(station.HoverLine))
+                        .OverrideFailureMessage(
+                            $"station '{station.Id}' in room '{room.VenueKey}' has no Action (flavor-"
+                            + "only) but no HoverLine either — WorldInput2D would fall back to "
+                            + "promising 'E · {Label}' for a station with no verb. Never ship a dead click.")
+                        .IsTrue();
+                    AssertThat(!string.IsNullOrWhiteSpace(station.FlavorLine))
+                        .OverrideFailureMessage(
+                            $"station '{station.Id}' in room '{room.VenueKey}' has no Action (flavor-"
+                            + "only) but no FlavorLine either — pressing E would silently do nothing. "
+                            + "Never ship a dead click.")
+                        .IsTrue();
+                    continue;
+                }
+
                 AssertThat(KnownStationActions.Contains(station.Action))
                     .OverrideFailureMessage(
                         $"station '{station.Id}' in room '{room.VenueKey}' routes to action "
@@ -138,6 +163,16 @@ public class InteriorRoomTests
                         + "handler for — pressing this station would silently do nothing. Never "
                         + "ship a dead click.")
                     .IsTrue();
+
+                if (station.Focus is not null)
+                {
+                    AssertThat(KnownFocusValues.Contains(station.Focus))
+                        .OverrideFailureMessage(
+                            $"station '{station.Id}' in room '{room.VenueKey}' names Focus "
+                            + $"'{station.Focus}', which ForgePanel.FocusSection has no section for — "
+                            + "the panel would open but never scroll anywhere.")
+                        .IsTrue();
+                }
             }
         }
     }

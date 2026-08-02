@@ -53,6 +53,12 @@ public partial class Building2D : Node2D
 
     public Godot.Vector2 DoorAnchorGlobal => DoorAnchor.GlobalPosition;
 
+    /// <summary>U3 (painted-interiors plan): an honest-flavor station's proximity description —
+    /// <see cref="WorldInput2D"/> shows this INSTEAD OF the usual "E · {Label}" prompt while this
+    /// building is the active target, so a station with no real verb never dresses its prompt up
+    /// to look like one. Null for every ordinary (real-verb) building/station.</summary>
+    public string? HoverLine { get; private set; }
+
     /// <summary>Test/inspection surface for <see cref="SetHighlighted"/> (mirrors
     /// <c>Building3D.IsHighlighted</c>) — callers read intent through this flag rather than
     /// reaching into <see cref="CanvasItem.Modulate"/> state.</summary>
@@ -68,11 +74,19 @@ public partial class Building2D : Node2D
     /// <c>YSortEnabled</c> parent sort heroes correctly behind/in-front of a building by their own
     /// feet line, instead of by sprite-center (which would read as heroes floating mid-wall).
     /// </summary>
-    public void Configure(string key, string nametag, Godot.Texture2D sprite, Godot.Vector2 worldPos)
+    /// <param name="hoverLine">U3: an honest-flavor station's proximity description (see <see
+    /// cref="HoverLine"/>) — null for every ordinary building/station.</param>
+    /// <param name="dimNametag">U3: true dims this building's nametag (see <see cref="BuildLabel"/>)
+    /// so an honest-flavor station never reads as visually equal to a real verb — decoration only,
+    /// never the thing that decides whether E does anything (see <see cref="HoverLine"/> for that).</param>
+    public void Configure(
+        string key, string nametag, Godot.Texture2D sprite, Godot.Vector2 worldPos,
+        string? hoverLine = null, bool dimNametag = false)
     {
         Key = key;
         Name = $"Building_{key}";
         Position = worldPos;
+        HoverLine = hoverLine;
 
         var size = sprite?.GetSize() ?? FallbackSize;
         if (size.X <= 0f || size.Y <= 0f)
@@ -96,7 +110,7 @@ public partial class Building2D : Node2D
         Footprint = BuildFootprint(size);
         AddChild(Footprint);
 
-        NameLabel = BuildLabel(nametag, size);
+        NameLabel = BuildLabel(nametag, size, dimNametag);
         AddChild(NameLabel);
 
         DoorAnchor = BuildDoorAnchor();
@@ -183,11 +197,18 @@ public partial class Building2D : Node2D
     private static readonly Color LabelOutlineColor = new(0.08f, 0.06f, 0.10f, 0.92f); // dusk-dark, near-opaque
     private static readonly Color LabelShadowColor = new(0f, 0f, 0f, 0.35f);
 
+    /// <summary>U3: an honest-flavor station's nametag color — the SAME parchment hue, just
+    /// dimmed (never a different hue that could read as "broken"/"disabled" rather than "flavor,
+    /// not a verb"). Applied only when <see cref="BuildLabel"/>'s <c>dim</c> is true.</summary>
+    private static readonly Color DimLabelFontColor = LabelFontColor.Darkened(0.45f);
+
     /// <summary>A crisp outlined nametag (the 2D twin of <c>Building3D.BuildLabel</c>'s
     /// <c>OutlineSize</c> Label3D) — small warm-white text with a near-opaque dusk-dark outline plus
     /// a soft drop shadow, so the name stays legible over grass, cobble, OR a building roof instead
-    /// of reading as raw unstyled white text stamped on the sprite.</summary>
-    private static Label BuildLabel(string text, Vector2 size) => new()
+    /// of reading as raw unstyled white text stamped on the sprite. <paramref name="dim"/> (U3):
+    /// an honest-flavor station's nametag renders dimmer so it never visually promises a verb it
+    /// does not have — see <see cref="HoverLine"/> for the actual (non-visual) honesty mechanism.</summary>
+    private static Label BuildLabel(string text, Vector2 size, bool dim = false) => new()
     {
         Name = "Label",
         Text = text,
@@ -201,7 +222,7 @@ public partial class Building2D : Node2D
         LabelSettings = new LabelSettings
         {
             FontSize = 7,
-            FontColor = LabelFontColor,
+            FontColor = dim ? DimLabelFontColor : LabelFontColor,
             OutlineSize = 3,
             OutlineColor = LabelOutlineColor,
             ShadowSize = 2,

@@ -718,6 +718,46 @@ public sealed class HumanPlayer
     }
 
     /// <summary>
+    /// Wait until <paramref name="condition"/> holds, then return true; return false if it never does.
+    /// The frame count is a hang guard, NOT the expected exit — the condition is.
+    ///
+    /// <para><b>Why this exists and when to prefer it over <see cref="WaitForLayout"/>.</b> Settling the
+    /// layout is not the same as waiting for the thing you are about to assert. A deferred, non-layout
+    /// side effect — <c>ScrollContainer.EnsureControlVisible</c> queued for the next idle frame is the
+    /// case that bit us — can still be pending while the geometry is already stable for three frames, so
+    /// <see cref="TrySettleLayout"/> honestly reports "settled" at the un-scrolled position and the
+    /// assertion after it reads a screen that has not finished changing. Locally the deferred call
+    /// happened to land inside the settle window; in CI, where rendering is disabled and frames are
+    /// cheaper, it did not — <c>InteriorEntryExitTests</c> passed on a developer machine and failed on
+    /// every CI attempt.</para>
+    ///
+    /// <para>So: wait on the condition you are testing. A fixed <c>Frames(n)</c> before an assertion is
+    /// the same bug wearing a smaller number.</para>
+    /// </summary>
+    public async Task<bool> WaitUntil(Func<bool> condition, int maxFrames = 240)
+    {
+        for (var frame = 0; frame < maxFrames; frame++)
+        {
+            if (condition())
+            {
+                return true;
+            }
+
+            await Frames(1);
+        }
+
+        return condition();
+    }
+
+    /// <summary>
+    /// <see cref="WaitUntil"/> specialised to on-screen text: wait until the player could actually read
+    /// <paramref name="fragment"/>. Returns whether it ever became readable, so the caller's own
+    /// failure message survives.
+    /// </summary>
+    public Task<bool> WaitUntilSees(string fragment, int maxFrames = 240) =>
+        WaitUntil(() => Sees(fragment), maxFrames);
+
+    /// <summary>
     /// Like <see cref="WaitForLayout"/> but reports whether it settled instead of throwing.
     ///
     /// <para>Some surfaces animate FOREVER by design — <c>BestiaryPanel</c> runs an idle breath in its own
