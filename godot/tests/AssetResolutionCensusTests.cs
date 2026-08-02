@@ -174,6 +174,44 @@ public class AssetResolutionCensusTests
             + "paints comes from this one texture's atlas coords.");
     }
 
+    /// <summary>
+    /// U2 (painted-interiors plan, docs/plans/2026-08-02-001) — the seven Forge-interior art ids
+    /// (one room shell + six station props) authored by <c>art/pipeline/gen-forge-interior.py</c>
+    /// and mounted by <c>InteriorRoom2D</c> (U1, a parallel branch). Hardcoded here rather than
+    /// read off <c>InteriorLayout2D</c>'s table (the pattern every other test in this file
+    /// follows): U1 had not merged onto this branch when this test was authored, so there was no
+    /// live table to enumerate yet. Asserted directly against <see cref="IconRegistry.Art"/>
+    /// rather than through <see cref="AssertResolves"/>'s <see cref="KnownPendingIds"/> escape
+    /// hatch on purpose: once this unit's PNGs are committed there is no legitimate "pending"
+    /// state left for these ids, so this must fail loudly even if a stale KnownPendingIds entry
+    /// for one of them survives a merge with U1 (which ships these same ids as placeholders).
+    /// </summary>
+    private static readonly string[] ForgeInteriorArtIds =
+    {
+        "town2d-forge-interior-shell",
+        "town2d-station-anvil",
+        "town2d-station-furnace",
+        "town2d-station-bellows",
+        "town2d-station-quench",
+        "town2d-station-shelf",
+        "town2d-station-rack",
+    };
+
+    [TestCase]
+    public void ForgeInteriorArtIds_ResolveToCommittedArt_NeverAPlaceholder()
+    {
+        foreach (var id in ForgeInteriorArtIds)
+        {
+            AssertThat(IconRegistry.Art(id))
+                .OverrideFailureMessage(
+                    $"census: '{id}' (U2, painted-interiors plan) does not resolve to committed "
+                    + "art. InteriorRoom2D mounts this id for the Forge room shell/stations; a "
+                    + "miss renders TownAssets2D's loud magenta placeholder, which this unit "
+                    + "exists to retire.")
+                .IsNotNull();
+        }
+    }
+
     // ── shared assertion ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
