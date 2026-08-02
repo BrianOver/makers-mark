@@ -117,18 +117,15 @@ public static class MusicBed
         // resolves because the Mine never does.
         AddDrone(buffer, SnapToLoop(root * 1.414f), 0.07f);
 
-        // Cavern air: darker and heavier than the town's, and breathing more slowly.
-        var air = new float[buffer.Length];
-        for (var i = 0; i < air.Length; i++)
-        {
-            air[i] = Synth.Noise(i, seed: 909);
-        }
-
-        Synth.LowPass(air, 340f);
+        // Cavern air (U7, R7: "vigil music good but too much background static" — this layer IS
+        // static ON PURPOSE, just tuned too hot). Factored into UndergroundAirLayer() below so
+        // AudioTests can measure its energy SHARE of the full theme straight off this real buffer —
+        // never a frozen side-copy of the amplitude/cutoff that would stop tracking a future change
+        // here.
+        var air = UndergroundAirLayer();
         for (var i = 0; i < buffer.Length; i++)
         {
-            var breath = 0.55f + 0.45f * MathF.Sin(2f * MathF.PI * i / buffer.Length); // one slow cycle
-            buffer[i] += air[i] * 0.13f * breath;
+            buffer[i] += air[i];
         }
 
         // Water, somewhere. Deterministically irregular spacing — an exactly periodic drip reads as a
@@ -154,6 +151,38 @@ public static class MusicBed
         Synth.Normalise(buffer, 0.5f);
         _underground = Synth.ToStream(buffer, loop: true);
         return _underground;
+    }
+
+    /// <summary>
+    /// U7 (2026-08-02 shell-and-audio plan, R7/R8): the Underground bed's own "cavern air" noise
+    /// layer — low-passed noise breathing on one slow cycle per loop, pulled out of
+    /// <see cref="Underground"/> into its own method so <c>AudioTests</c> can measure its RMS share
+    /// of the full theme directly off a REAL buffer, not a re-typed copy of the amplitude/cutoff that
+    /// would silently stop reacting the next time either number moves.
+    ///
+    /// <para>Amplitude 0.13 -&gt; 0.07 and low-pass 340Hz -&gt; 260Hz: darker AND quieter — measured
+    /// (throwaway console harness, same method <see cref="LoopSeconds"/>'s own doc used) to roughly
+    /// halve this layer's RMS share of the whole theme (~7.2% -&gt; ~3.3%). Drips/pulse/drones are
+    /// untouched: he said "good but," not "replace" (U7's own Approach).</para>
+    /// </summary>
+    public static float[] UndergroundAirLayer()
+    {
+        var length = Synth.Samples(LoopSeconds);
+        var air = new float[length];
+        for (var i = 0; i < length; i++)
+        {
+            air[i] = Synth.Noise(i, seed: 909);
+        }
+
+        Synth.LowPass(air, 260f); // U7: 340 -> 260Hz, darker
+
+        for (var i = 0; i < length; i++)
+        {
+            var breath = 0.55f + 0.45f * MathF.Sin(2f * MathF.PI * i / length); // one slow cycle
+            air[i] *= 0.07f * breath; // U7: 0.13 -> 0.07, the actual cut
+        }
+
+        return air;
     }
 
     /// <summary>A single water drop: a short bright partial with a fast pitch drop, which is what makes
