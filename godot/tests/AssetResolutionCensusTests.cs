@@ -82,20 +82,16 @@ public class AssetResolutionCensusTests
     /// recruitable class getting promoted into <see cref="ClassRegistry.RecruitPool"/> before its
     /// art lands) is a one-line, reviewable addition instead of commenting out an assertion.
     ///
-    /// <para>T1 content flip (relands PR #242): sentinel/skirmisher/occultist joined
-    /// <see cref="ClassRegistry.RecruitPool"/> before their town pixel bodies were drawn — exactly
-    /// the promoted-before-art case this set exists for. Their PORTRAIT art (hero-sentinel.png et
-    /// al) and roster SVGs are committed, so <c>TownAssets2D.ForHero</c>'s documented next rung
-    /// (the roster SVG) renders them in town: wrong art style, never a crash, never a magenta box.
-    /// Remove each pair here when its <c>town2d-hero-*</c> set lands — the census then enforces it
-    /// forever.</para>
+    /// <para>U6 (docs/plans/2026-08-02-002) closed the last entries this set ever held: T1's
+    /// content flip (relands PR #242) promoted sentinel/skirmisher/occultist into <see
+    /// cref="ClassRegistry.RecruitPool"/> before their town pixel bodies were drawn, so their
+    /// <c>town2d-hero-*</c> ids resolved via <c>TownAssets2D.ForHero</c>'s next rung (the roster
+    /// SVG) instead — wrong art style, never a crash, never a magenta box, but not what ships.
+    /// <c>tools/art/gen_town_sprites.py</c> now authors all six classes at 26x44, so every id below
+    /// resolves to its real town body and the census enforces it forever. Empty, not deleted: the
+    /// shape stays ready for the next promoted-before-art class.</para>
     /// </summary>
-    private static readonly HashSet<string> KnownPendingIds = new()
-    {
-        "town2d-hero-sentinel", "town2d-hero-sentinel_step",
-        "town2d-hero-skirmisher", "town2d-hero-skirmisher_step",
-        "town2d-hero-occultist", "town2d-hero-occultist_step",
-    };
+    private static readonly HashSet<string> KnownPendingIds = new();
 
     [TestCase]
     public void RecruitableHeroClasses_ResolveTheTownPixelBody_NotJustAnyFallback()

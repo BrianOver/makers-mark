@@ -25,20 +25,28 @@ namespace GodotClient.Tests;
 [RequireGodotRuntime]
 public class TownSpriteArtTests
 {
-    /// <summary>What <c>TownAssets2D</c>/<c>TownLayout2D</c> lay the town out against. Changing it
-    /// moves every hand-placed tile coordinate, so it is pinned rather than derived.</summary>
-    private const int BodyWidth = 20;
-    private const int BodyHeight = 36;
+    /// <summary>What <c>TownAssets2D</c>/<c>TownLayout2D</c> lay the town out against. U6
+    /// (docs/plans/2026-08-02-002) resized the canvas 20x36 -> 26x44 (13x22 on screen at the fixed
+    /// 0.5 <c>CharacterSpriteScale</c>, still under the player's 15x23 — see
+    /// <c>CastProportionTests</c> for the permanent proportion pin) — a canvas resize, not a layout
+    /// change, since neither <c>TownLayout2D</c>'s tile coordinates nor this census pin size.</summary>
+    private const int BodyWidth = 26;
+    private const int BodyHeight = 44;
 
-    /// <summary>First row of the legs/hem. A step frame may differ at or below this row and
-    /// nowhere above it — that separation is what makes two frames read as a stride.</summary>
-    private const int LegsTopRow = 25;
+    /// <summary>First row of the legs/hem (U6: rows 0-1 empty margin, 2-12 head, 13-30 torso, then
+    /// legs/hem). A step frame may differ at or below this row and nowhere above it — that
+    /// separation is what makes two frames read as a stride.</summary>
+    private const int LegsTopRow = 31;
 
     /// <summary>A flat placeholder box is 2-3 colours. Real shading needs an outline, at least two
     /// body tones and a highlight, so anything under this is a regression to programmer art.</summary>
     private const int MinDistinctColors = 6;
 
-    private static readonly string[] Classes = ["vanguard", "striker", "mystic"];
+    /// <summary>U6: all six hero classes now have a hand-authored town body (sentinel/skirmisher/
+    /// occultist previously fell back to <c>IconRegistry.Sprite</c>'s roster SVG — see
+    /// <c>AssetResolutionCensusTests.KnownPendingIds</c>, now empty).</summary>
+    private static readonly string[] Classes =
+        ["vanguard", "sentinel", "striker", "skirmisher", "mystic", "occultist"];
 
     [TestCase]
     public void HeroBodies_AreThePinnedSize_AndCarryRealShading()
@@ -76,6 +84,23 @@ public class TownSpriteArtTests
     /// <summary>
     /// The invariant that makes the 2-frame walk work. If a step frame differs above the hem, the
     /// swap reads as the sprite being replaced rather than taking a step.
+    ///
+    /// <para>U6 tripped this in CI on all six classes despite the committed PNGs being
+    /// byte-identical above row 31 (verified directly against the on-disk bytes, bypassing Godot
+    /// entirely). The actual cause: every <c>town2d-hero-*.png(.import)</c> inherited Godot's
+    /// default <c>process/fix_alpha_border=true</c>, which bakes a filler RGB into fully
+    /// transparent (alpha 0) pixels near an opaque edge — a mitigation for bilinear/mipmap
+    /// sampling bleeding into an edge, which is irrelevant here (this pipeline is Nearest
+    /// filtering, mipmaps off, by design). Because the opaque legs legitimately diverge between
+    /// base/step starting at row 31+, the border-fix picked a different filler colour for a
+    /// same-coordinate transparent pixel a couple of rows ABOVE the divergence (e.g. row 29) in
+    /// each imported texture — same alpha (0, invisible either way), different RGB, which
+    /// <c>Image.GetPixel</c> equality below still catches. Fix landed in the 12 <c>.import</c>
+    /// sidecars (<c>process/fix_alpha_border=false</c>), not the PNGs or the generator: the
+    /// authored pixel grids were already correct by construction (see
+    /// <c>tools/art/gen_town_sprites.py</c>'s own doc — base/step share every row above the
+    /// legs/hem by construction). Any FUTURE <c>town2d-hero-*_step</c> pair must ship the same
+    /// setting, or this reproduces.</para>
     /// </summary>
     [TestCase]
     public void StepFrames_DifferOnlyBelowTheWaist()

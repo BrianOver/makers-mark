@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://byljed3veuemi"
-path="res://.godot/imported/town2d-hero-mystic_step.png-73822fb88b5a825247df6f11e4b60b94.ctex"
+uid="uid://c1gsh0k1grulf"
+path="res://.godot/imported/town2d-hero-sentinel.png-7d7b2ca20aedf1b3d43538c83d292d17.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/art/town2d-hero-mystic_step.png"
-dest_files=["res://.godot/imported/town2d-hero-mystic_step.png-73822fb88b5a825247df6f11e4b60b94.ctex"]
+source_file="res://assets/art/town2d-hero-sentinel.png"
+dest_files=["res://.godot/imported/town2d-hero-sentinel.png-7d7b2ca20aedf1b3d43538c83d292d17.ctex"]
 
 [params]
 

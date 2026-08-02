@@ -118,18 +118,21 @@ public static class TownAssets2D
     }
 
     /// <summary>
-    /// Resolves a hero's neutral body sprite: a class-distinctive generated hero sprite
-    /// ("hero-{classId}") first, then the hand-authored <see cref="IconRegistry.Sprite"/> SVG
-    /// (already committed per-class art, used elsewhere e.g. <c>HeroesPanel</c>), then a flat
-    /// neutral placeholder — the class tint itself is applied by the caller (<see
+    /// Resolves a hero's neutral body sprite: the hand-authored <c>town2d-hero-{classId}</c> town
+    /// body first (<c>tools/art/gen_town_sprites.py</c>, 26×44 as of U6 — all six
+    /// <see cref="GameSim.Classes.ClassRegistry.RecruitPool"/> classes have one; see
+    /// <c>godot/tests/AssetResolutionCensusTests.cs</c>'s now-empty <c>KnownPendingIds</c>), then
+    /// the hand-authored <see cref="IconRegistry.Sprite"/> roster SVG (a portrait-shaped fallback
+    /// for a class promoted into the recruit pool before its town body lands), then a flat neutral
+    /// placeholder — the class tint itself is applied by the caller (<see
     /// cref="Town2D.ReconcileHeroes"/> passes <see cref="GodotClient.Ui.ClassColors.RoleColor"/>
     /// into <c>HeroActor2D.Init</c>'s own modulate), never baked in here.
     /// </summary>
     public static Texture2D ForHero(string classId)
     {
-        // Prefer the 16×24 town body sprite (U6 pack): the bare "hero-{classId}" id resolves to the
-        // 512×768 roster PORTRAIT used by HeroesPanel — mounting that in the 640×360 town SubViewport
-        // renders a hero as a screen-filling portrait, not a walking body. Town bodies win here.
+        // The bare "hero-{classId}" id (no "town2d-" prefix) resolves to the 512×768 roster
+        // PORTRAIT used by HeroesPanel — mounting that in the 640×360 town SubViewport renders a
+        // hero as a screen-filling portrait, not a walking body. Town bodies win here.
         var body = IconRegistry.Art($"town2d-hero-{classId}");
         if (body is not null)
         {
