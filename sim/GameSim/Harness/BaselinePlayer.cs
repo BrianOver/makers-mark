@@ -83,10 +83,20 @@ public static class BaselinePlayer
 
             case DayPhase.Camp:
             case DayPhase.ExpeditionDeep:
-                // D5: the baseline holds at the new staged ticks — no camp verbs, no deep actions.
-                // The balance gate keeps measuring the SAME policy across 5 phases (bands must not
-                // move from the two empty ticks). The kill-risk-1 send/never-send A/B lives in a
-                // test-local scripted policy (U4), never here — BaselinePlayer is never forked.
+                // D5: the baseline holds at the staged ticks — no camp verbs, no deep actions. The
+                // balance gate keeps measuring the SAME policy across the day's raid phases (bands
+                // must not move from the empty player-action window). The kill-risk-1 send/never-send
+                // A/B lives in a test-local scripted policy (U4), never here — BaselinePlayer is
+                // never forked.
+                //
+                // 2026-08-02 loop-legibility widening (KTD-D(1)): these two phases (and Expedition)
+                // are no longer walked AT ALL on a day nobody raids — GameKernel.Advance collapses
+                // Morning straight to Evening when the roster has no alive hero to form a party. The
+                // BaselinePlayer's real-campaign roster always has heroes once installed (U10's
+                // starting six + recruit trickle), so this branch is still reached on every ordinary
+                // balance-gate day; it just no longer describes the every-day case as "two empty
+                // ticks" the way the harness comment used to — a day with truly nobody to send is
+                // now a Morning->Evening fold, not a walk through these two phases with zero actions.
                 break;
 
             case DayPhase.Evening:

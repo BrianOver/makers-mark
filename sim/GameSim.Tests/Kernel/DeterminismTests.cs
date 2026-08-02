@@ -68,8 +68,17 @@ public class DeterminismTests
     [Fact]
     public void EmptyWorld_TicksWithoutError()
     {
-        var state = RunDays(seed: 7, days: 3);
-        Assert.Equal(4, state.Day); // day 1 + 3 full days
+        // 2026-08-02 (KTD-D(1) phase collapse): an empty world (zero heroes) is the true
+        // "nobody-down-there" case every day, so each day is now Morning -> Evening only — 2 ticks,
+        // not 5 — never touching Expedition/Camp/ExpeditionDeep.
+        var kernel = new GameKernel(ImmutableList<IPhaseSystem>.Empty, ImmutableList<IActionHandler>.Empty);
+        var state = GameFactory.NewGame(seed: 7);
+        for (var i = 0; i < 3 * 2; i++)
+        {
+            state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
+        }
+
+        Assert.Equal(4, state.Day); // day 1 + 3 full (collapsed) days
         Assert.Equal(DayPhase.Morning, state.Phase);
     }
 

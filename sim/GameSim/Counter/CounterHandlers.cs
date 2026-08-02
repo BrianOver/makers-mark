@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Kernel;
 
 namespace GameSim.Counter;
 
@@ -33,7 +34,7 @@ public sealed class CounterHandlers : IActionHandler
         action switch
         {
             OpenCounterAction open => ApplyOpen(state, open, events),
-            PresentItemAction present => ApplyPresent(state, present),
+            PresentItemAction present => ApplyPresent(state, present, events),
             SuggestItemAction suggest => ApplySuggest(state, suggest),
             HaggleResponseAction haggle => ApplyHaggle(state, haggle, events),
             CloseCounterAction close => ApplyClose(state, close),
@@ -77,11 +78,16 @@ public sealed class CounterHandlers : IActionHandler
     }
 
     /// <summary>Shows a shelved item to the active customer (opener move). Records the intent on
-    /// <see cref="CounterState.Presented"/>; <see cref="CounterQueueSystem"/> resolves it this same
-    /// tick (walk immediately on a Pass verdict, else open a haggle round). Presenting a DIFFERENT
-    /// item while a round is already open abandons that round (a fresh pitch starts clean); re-
-    /// presenting the SAME item mid-round is a harmless no-op — the round stays exactly as it was.</summary>
-    private static (GameState, RejectedAction?) ApplyPresent(GameState state, PresentItemAction action)
+    /// <see cref="CounterState.Presented"/>, then resolves it immediately in the SAME handler call
+    /// (walk on a Pass verdict, else open a haggle round) via
+    /// <see cref="CounterQueueSystem.ResolvePresentedItem"/> — the 2026-08-02 loop-legibility widening
+    /// moved this verb to <see cref="ActionTiming"/>'s immediate lane, and <see cref="GameKernel.ApplyNow"/>
+    /// never runs a phase's systems pass, so the resolution that used to wait for
+    /// <see cref="CounterQueueSystem.Process"/> now has to happen right here (see that class's remarks).
+    /// Presenting a DIFFERENT item while a round is already open abandons that round (a fresh pitch
+    /// starts clean); re-presenting the SAME item mid-round is a harmless no-op — the round stays
+    /// exactly as it was (the resolve call sees <c>Round &gt; 0</c> and does nothing further).</summary>
+    private static (GameState, RejectedAction?) ApplyPresent(GameState state, PresentItemAction action, IEventSink events)
     {
         var (session, rejection) = RequireActiveSession(state, action);
         if (rejection is not null)
@@ -104,7 +110,8 @@ public sealed class CounterHandlers : IActionHandler
             ? session with { Round = 0, InterestPermille = 0, StandingOfferGold = null, Presented = action.Item }
             : session with { Presented = action.Item };
 
-        return (state with { Counter = updated }, null);
+        var resolved = CounterQueueSystem.ResolvePresentedItem(state with { Counter = updated }, events);
+        return (resolved, null);
     }
 
     /// <summary>Upsell a complementary item: bumps the session Interest meter

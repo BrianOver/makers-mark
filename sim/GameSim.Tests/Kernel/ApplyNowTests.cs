@@ -108,21 +108,26 @@ public class ApplyNowTests
     }
 
     /// <summary>
-    /// The split itself: the workshop resolves now, the world's commitments wait for the bell. Guards
-    /// against a future action type quietly becoming instant — the classifier is deny-by-default and
-    /// this pins both sides of that.
+    /// The split itself: the workshop AND (2026-08-02 loop-legibility widening, KTD-A) every
+    /// conversation/signal resolve now; only the three deliberate ceremony verbs still wait for the
+    /// bell. A hand-picked sample here — the exhaustive, mutation-checked pin over all 24
+    /// <see cref="PlayerAction"/> types (reflection-enumerated, so a new type or a flipped lane fails
+    /// by name) lives in <c>ActionTimingConformanceTests</c>.
     /// </summary>
     [Fact]
-    public void ActionTiming_ClassifiesWorkshopVerbsInstant_AndWorldCommitmentsQueued()
+    public void ActionTiming_ClassifiesWorkshopAndConversationVerbsInstant_AndCeremonyVerbsQueued()
     {
         Assert.True(ActionTiming.ResolvesImmediately(new BuyMaterialAction("copper", 1)));
         Assert.True(ActionTiming.ResolvesImmediately(new CraftAction("dagger", "copper")));
         Assert.True(ActionTiming.ResolvesImmediately(new StockAction(new ItemId(1), 10)));
         Assert.True(ActionTiming.ResolvesImmediately(new SetPriceAction(new ItemId(1), 10)));
+        Assert.True(ActionTiming.ResolvesImmediately(new PostBountyAction(1, 25)));
+        Assert.True(ActionTiming.ResolvesImmediately(new RecallPartyAction(new HeroId(1))));
+        Assert.True(ActionTiming.ResolvesImmediately(new UnlockTalentAction("node", "blacksmith")));
+        Assert.True(ActionTiming.ResolvesImmediately(new OpenCounterAction()));
 
-        Assert.False(ActionTiming.ResolvesImmediately(new PostBountyAction(1, 25)));
-        Assert.False(ActionTiming.ResolvesImmediately(new RecallPartyAction(new HeroId(1))));
-        Assert.False(ActionTiming.ResolvesImmediately(new UnlockTalentAction("node", "blacksmith")));
-        Assert.False(ActionTiming.ResolvesImmediately(new OpenCounterAction()));
+        Assert.False(ActionTiming.ResolvesImmediately(new UpgradeForgeAction()));
+        Assert.False(ActionTiming.ResolvesImmediately(new SetProfessionsAction(ImmutableSortedSet.Create("blacksmith"))));
+        Assert.False(ActionTiming.ResolvesImmediately(new CommissionLegendaryWorkAction("dagger", "copper")));
     }
 }

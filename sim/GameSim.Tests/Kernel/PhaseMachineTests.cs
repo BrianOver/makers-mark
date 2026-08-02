@@ -11,6 +11,14 @@ public class PhaseMachineTests
         ImmutableList<IPhaseSystem>.Empty,
         ImmutableList<IActionHandler>.Empty);
 
+    /// <summary>A single live hero — post-2026-08-02 (KTD-D(1)) several of this file's tests need one
+    /// so a heroless "nobody-down-there" collapse (see PhaseCollapseTests) doesn't short-circuit the
+    /// raw phase-walk machinery this file is actually testing.</summary>
+    private static Hero MakeHero(int id) => new(
+        new HeroId(id), $"Hero{id}", "vanguard", Level: 1, MaxHp: 25, Gold: 0,
+        GearSet.Empty, ImmutableList<ItemMemory>.Empty,
+        Alive: true, DeepestFloorReached: 0, DiedOnDay: null);
+
     [Fact]
     public void EmptyCampAndDeepTicks_DrawNoRng()
     {
@@ -58,7 +66,14 @@ public class PhaseMachineTests
     [Fact]
     public void PhasesAdvance_FivePhaseDay_ThenNextDay()
     {
-        var state = GameFactory.NewGame(seed: 1);
+        // A live hero is required post-2026-08-02 (KTD-D(1) phase collapse): a heroless world is now
+        // the "nobody-down-there" case and folds Morning straight to Evening (see
+        // PhaseCollapseTests) — this test's own job is the raw five-phase walk machinery, so it needs
+        // a party to actually host.
+        var state = GameFactory.NewGame(seed: 1) with
+        {
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, MakeHero(1)),
+        };
         Assert.Equal((1, DayPhase.Morning), (state.Day, state.Phase));
 
         state = Kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
@@ -92,7 +107,13 @@ public class PhaseMachineTests
     [Fact]
     public void ActionLog_RecordsEveryBatchInOrder()
     {
-        var state = GameFactory.NewGame(seed: 1);
+        // A live hero (post-2026-08-02 KTD-D(1)): this test is about ActionLog ordering across a
+        // Morning->Expedition transition, not about whether a party forms — a heroless world would
+        // now collapse straight to Evening (PhaseCollapseTests).
+        var state = GameFactory.NewGame(seed: 1) with
+        {
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, MakeHero(1)),
+        };
         var batch1 = ImmutableList.Create<PlayerAction>(new SetPriceAction(new ItemId(1), 10));
         var batch2 = ImmutableList.Create<PlayerAction>(new UnstockAction(new ItemId(1)));
 
