@@ -8,7 +8,8 @@ using Godot;
 
 namespace GodotClient.Ui;
 
-/// <summary>The scripted first-day chain (U23) — advances left to right; never regresses.</summary>
+/// <summary>The scripted 3-day apprenticeship chain (U23 day 1; U7 "playtest three" plan extends it
+/// through days 2-3) — advances left to right; never regresses.</summary>
 public enum TutorialStep
 {
     BuyMaterial,
@@ -16,6 +17,28 @@ public enum TutorialStep
     Shelve,
     PostBounty,
     WatchDeparture,
+
+    /// <summary>U7 day-1 capstone: open the Scrying Mirror (U1's persistent Watch control is the
+    /// taught affordance) and look in on the party that just departed.</summary>
+    LookIn,
+
+    /// <summary>U7 day 2: open the counter (Morning-only) and serve a customer through to a sale.</summary>
+    OpenCounter,
+
+    /// <summary>U7 day 2: the vigil — when a party camps below the checkpoint, send a supply or
+    /// ring the recall bell.</summary>
+    Vigil,
+
+    /// <summary>U7 day 2: the evening — buy any ore a returning hero is offering, then ring the
+    /// bell ("Snuff the lanterns") to close the day.</summary>
+    EveningClose,
+
+    /// <summary>U7 day 3: read one hero — open Hero Cards or the Tavern.</summary>
+    MeetHeroes,
+
+    /// <summary>U7 day 3, final step: accept or decline a commission. Completing this ends the
+    /// chain (R5's quick-travel unlock is exactly <see cref="TutorialFlow.Completed"/>).</summary>
+    Commission,
 }
 
 /// <summary>
@@ -26,18 +49,35 @@ public enum TutorialStep
 ///
 /// <para><b>Tutorial chain:</b> <see cref="TopSlotText"/> overrides <see
 /// cref="ObjectiveTracker"/>'s top slot (the owner, <c>MainUi</c>, passes it into <see
-/// cref="ObjectiveTracker.Refresh"/>) for as long as <see cref="Active"/> — four DISPLAYED
-/// milestones (<see cref="StepIndex"/>: acquire-and-craft material, shelve, post a bounty, watch
-/// the party depart) keyed to whatever the chosen profession's own recipe list actually is (never
-/// hardcoded to blacksmith's "buckler" — <c>ObjectiveAdvisor.Suggest</c> and every recipe lookup
-/// this class touches are filtered through <c>PlayerState.SelectedProfessions</c>). Every one of
-/// those milestones — and the internal <see cref="TutorialStep.BuyMaterial"/>/<see
-/// cref="TutorialStep.Craft"/> split beneath the first one — is now driven by <see
+/// cref="ObjectiveTracker.Refresh"/>) for as long as <see cref="Active"/> — TEN displayed
+/// milestones (<see cref="StepIndex"/>, <see cref="TotalSteps"/>) spanning three in-game days,
+/// keyed to whatever the chosen profession's own recipe list actually is (never hardcoded to
+/// blacksmith's "buckler" — <c>ObjectiveAdvisor.Suggest</c> and every recipe lookup this class
+/// touches are filtered through <c>PlayerState.SelectedProfessions</c>). Day 1 (acquire-and-craft
+/// material, shelve, post a bounty, watch the party depart, then look in on them via the Scrying
+/// Mirror) is the U23/correctness-work ladder this class always had, driven by <see
 /// cref="Advance"/> reading DURABLE facts off the full <see cref="GameState.EventLog"/>, not a
 /// single tick's events. See <see cref="Advance"/>'s own doc for why: Brian's playtest hit two
 /// dead-end shapes this fixes — a two-number jump (1/5 straight to 3/5) when the starter kit let a
 /// player skip buying, and a bounty that "doesn't do anything" because it was posted out of the
 /// ladder's expected order.</para>
+///
+/// <para><b>U7 ("playtest three" plan) extends the SAME chain through days 2-3</b> — Brian
+/// reverse-engineered the counter, the camp verbs, the evening ore market, and hero
+/// reading/commissions from nothing; this teaches all four, plus U1's Watch/Mirror entry (the day-1
+/// capstone), before handing the loop over. Two of the new steps (<see
+/// cref="TutorialStep.LookIn"/>, <see cref="TutorialStep.MeetHeroes"/>) key off UI navigation that
+/// carries no durable sim fact at all (opening the Mirror, opening a hero panel) — <c>MainUi</c>
+/// calls <see cref="NotifyMirrorOpened"/>/<see cref="NotifyPanelOpened"/> directly from the SAME
+/// hooks it already had for those surfaces. The rest read new durable facts
+/// (<c>CounterSaleClosed</c>, <c>SupplyDelivered</c>/<c>PartyRecalled</c>, <c>ActionLog</c>) exactly
+/// like day 1's ladder, gated to their day via <see cref="StepMinDay"/> so an early, perfectly
+/// legal experiment (e.g. working the counter before day 2 "officially" starts) cannot instantly
+/// steal the credit for a lesson the player has not actually reached yet — see <see
+/// cref="Advance"/>'s own remarks. A day-based backstop (<see cref="BackstopDay"/>) inherits day
+/// 1's own "nothing can strand this card forever" guarantee for the whole 3-day arc, covering the
+/// UI-only steps and any RNG-shaped fact (a hero willing to buy, a party actually camping) that
+/// might not occur on the taught day.</para>
 ///
 /// <para><b>Dismissible, persisted at <c>user://</c> (KTD2 — never the sim save):</b> <see
 /// cref="Dismiss"/> and chain completion both set a flag this class never clears itself; <see
@@ -191,8 +231,12 @@ public sealed partial class TutorialFlow : PanelContainer
         }
 
         var suggestions = ObjectiveAdvisor.Suggest(state);
-        var building = StepBuilding[Step];
-        var alreadyThere = openPanelId is not null && openPanelId == PanelIdFor(building);
+        // Not every U7 step names a single town building (LookIn/Vigil/EveningClose/Commission are
+        // tray/HUD affordances, not a walk-there destination) — TryGetValue rather than the direct
+        // indexer used pre-U7, so those steps fall through with an empty building/alreadyThere
+        // instead of a KeyNotFoundException.
+        var building = StepBuilding.TryGetValue(Step, out var b) ? b : string.Empty;
+        var alreadyThere = building.Length > 0 && openPanelId is not null && openPanelId == PanelIdFor(building);
         return Step switch
         {
             TutorialStep.BuyMaterial or TutorialStep.Craft =>
@@ -205,9 +249,26 @@ public sealed partial class TutorialFlow : PanelContainer
                 (suggestions.FirstOrDefault(s => s.Action is StockAction)?.Reason
                     ?? "Shelve your finished item so heroes can buy it."),
             TutorialStep.PostBounty =>
-                $"Tutorial {index}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — post a bounty at the mine gate; heroes may accept it before they depart.",
+                $"Tutorial {index}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — post a bounty; heroes may accept it before they depart.",
             TutorialStep.WatchDeparture =>
-                $"Tutorial {index}/{TotalSteps}: Watch the party depart through the **{building}** — the chain completes when they head out.",
+                $"Tutorial {index}/{TotalSteps}: Watch the party depart through the **{building}** — then look in on them.",
+            // U7 day-1 capstone: no town building — the taught affordance is U1's persistent Watch
+            // control on the bell row (reachable through Expedition/Camp/ExpeditionDeep).
+            TutorialStep.LookIn =>
+                $"Tutorial {index}/{TotalSteps}: Press **👁 Watch** on the bell row to open the Scrying Mirror and look in on them.",
+            TutorialStep.OpenCounter =>
+                $"Tutorial {index}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — open the counter and serve whoever walks in.",
+            // U7 vigil: no walk-there destination — the winch-house slate opens itself the moment a
+            // party camps below the checkpoint (CampPanel.ShowModal, called from MainUi's own
+            // SyncCampModal every Camp tick); the lesson is which of its two verbs to press.
+            TutorialStep.Vigil =>
+                $"Tutorial {index}/{TotalSteps}: When the winch-house slate opens, send them a supply or ring the recall bell.",
+            TutorialStep.EveningClose =>
+                $"Tutorial {index}/{TotalSteps}: Evening — buy any ore a hero's offering, then ring the bell (**Snuff the lanterns**) to close the day.",
+            TutorialStep.MeetHeroes =>
+                $"Tutorial {index}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — or open **Hero Cards** from the tray — and read one hero.",
+            TutorialStep.Commission =>
+                $"Tutorial {index}/{TotalSteps}: Open **Commissions** from the tray and Accept or Decline one — the loop is yours after this.",
             _ => string.Empty,
         };
     }
@@ -215,14 +276,28 @@ public sealed partial class TutorialFlow : PanelContainer
     /// <summary>The target building named in each step's copy (playtest F6) — the same click-keys
     /// <c>Building2D</c>'s click event/<c>MainUi.OnTownBuildingClicked</c> already route on. Buy and
     /// Craft both happen at the Forge (vendor + anvil share the interior); Shelve at the Shop;
-    /// PostBounty and the final watch at the Gate.</summary>
+    /// the final watch at the Gate. Steps with no single walk-there destination (U7: LookIn, Vigil,
+    /// EveningClose, Commission — all tray/HUD affordances) are deliberately absent; <see
+    /// cref="StepText"/> reads this via <c>TryGetValue</c>, never the bare indexer.
+    ///
+    /// <para><b>PostBounty was "Gate" — a real, pre-existing dead end, fixed here in passing.</b>
+    /// The Gate building opens the Depths panel (<c>MainUi.OnTownBuildingClicked</c>: "minegate" or
+    /// "Gate" =&gt; "Depths"), not the bounty board — bounties live at the separately labelled
+    /// "Bounties" noticeboard (<c>TownLayout2D.Venues</c>). Telling the player to walk to the Gate to
+    /// post a bounty sent them to the wrong building; the correctness pass (#333) fixed the chain's
+    /// event-tracking dead ends but never touched this routing bug. Not part of U7's new day-2/3
+    /// steps, but it sits in the same Day-1 ladder this file already owns and a 3-day arc should not
+    /// carry a known dead end forward, so it is fixed here rather than left for whichever unit
+    /// touches this file next.</para></summary>
     private static readonly IReadOnlyDictionary<TutorialStep, string> StepBuilding = new Dictionary<TutorialStep, string>
     {
         [TutorialStep.BuyMaterial] = "Forge",
         [TutorialStep.Craft] = "Forge",
         [TutorialStep.Shelve] = "Shop",
-        [TutorialStep.PostBounty] = "Gate",
+        [TutorialStep.PostBounty] = "Bounties", // FIX (see doc above) — was "Gate", a dead end
         [TutorialStep.WatchDeparture] = "Gate",
+        [TutorialStep.OpenCounter] = "Shop",
+        [TutorialStep.MeetHeroes] = "Tavern",
     };
 
     private const string MovementHint = "walk there with WASD, or click the ground to move";
@@ -256,21 +331,48 @@ public sealed partial class TutorialFlow : PanelContainer
     /// Maps a step's building name onto the drawer panel id that surface actually opens as, so
     /// <see cref="StepText"/> can tell whether the player is already looking at it.
     ///
-    /// <para>Needed because the two vocabularies disagree: the tutorial copy says "Gate" (the world's
-    /// click-key, per <see cref="StepBuilding"/>) while the drawer registers that surface as "Bounties".
-    /// Mapping explicitly rather than renaming either one — <see cref="StepBuilding"/>'s keys are the same
-    /// ones <c>Building2D</c>'s click events route on.</para>
+    /// <para>Needed because the two vocabularies disagree: the tutorial copy names the world's
+    /// click-key (<see cref="StepBuilding"/>) while the drawer registers some surfaces under a
+    /// different id. "Gate" maps to "Depths" — <c>MainUi.OnTownBuildingClicked</c> routes
+    /// "minegate"/"Gate" to the Depths panel (the mine, not the bounty board — see
+    /// <see cref="StepBuilding"/>'s own remarks on the PostBounty bug this fixed), so
+    /// WatchDeparture's "already there" check needs the real mapping. Every other key (Forge/Shop/
+    /// Bounties/Tavern) already matches its own panel id 1:1, so the default arm covers them.</para>
     /// </summary>
     private static string PanelIdFor(string building) => building switch
     {
-        "Gate" => "Bounties",
+        "Gate" => "Depths",
         _ => building,
+    };
+
+    /// <summary>U7: the day this step's own instruction becomes reachable at all, checked BEFORE
+    /// <see cref="StepActionAvailable"/>'s phase gate. Steps absent here default to day 1 (day-1's
+    /// own ladder plus <see cref="TutorialStep.LookIn"/>, which needs no day gate — it only ever
+    /// becomes current once the party has already departed, which is itself Day 1's own event).
+    ///
+    /// <para>Without this, a stray but perfectly legal early action (working the counter, or
+    /// sending a camp supply, before the chain has even reached that rung) would sit in <see
+    /// cref="GameState.EventLog"/> as a durable fact and instantly complete the OpenCounter/Vigil
+    /// step the moment <see cref="Step"/> reaches it — even on Day 1 — which would teach nothing;
+    /// the whole point of a paced 3-day arc is that the player DOES the thing on the day it is
+    /// taught. Gating the completion check on <c>state.Day &gt;= StepMinDay[step]</c> (see
+    /// <see cref="Advance"/>) means an early fact is still credited (never punish doing the right
+    /// thing early — the same philosophy day 1's own bounty-before-shelve credit already
+    /// established) but only once the day it belongs to actually arrives.</para></summary>
+    private static readonly IReadOnlyDictionary<TutorialStep, int> StepMinDay = new Dictionary<TutorialStep, int>
+    {
+        [TutorialStep.OpenCounter] = 2,
+        [TutorialStep.Vigil] = 2,
+        [TutorialStep.MeetHeroes] = 3,
+        [TutorialStep.Commission] = 3,
     };
 
     /// <summary>Whether <paramref name="step"/>'s own action is legal THIS phase — mirrors
     /// <c>ActionLegality.IsLegal</c>'s exact phase gates for <c>BuyMaterialAction</c> (Morning
     /// only) and <c>PostBountyAction</c> (Morning or Evening); Craft/Stock are phase-unrestricted
-    /// there too, and WatchDeparture has no player action to gate at all.
+    /// there too, and WatchDeparture has no player action to gate at all. U7: also mirrors
+    /// <c>CounterHandlers.ApplyOpen</c>'s Morning-only gate for OpenCounter (no action-slot check —
+    /// opening the counter does not spend one).
     ///
     /// <para>Also mirrors the LAST guard both those handlers check — <c>state.ActionSlotsRemaining
     /// &gt; 0</c> — the same gap <c>BountyPanel</c>'s own Post button used to have before it started
@@ -278,20 +380,46 @@ public sealed partial class TutorialFlow : PanelContainer
     /// ActionLegality, not a hand-rolled rule"): a hand-rolled phase-only check reports the step
     /// actionable right up until a real click on a slot-exhausted day bounces. Folding it in here
     /// closes that same gap for the tutorial card.</para></summary>
-    private static bool StepActionAvailable(GameState state, TutorialStep step, DayPhase phase) => step switch
+    private static bool StepActionAvailable(GameState state, TutorialStep step, DayPhase phase)
     {
-        TutorialStep.BuyMaterial => phase == DayPhase.Morning && state.ActionSlotsRemaining > 0,
-        TutorialStep.PostBounty => (phase is DayPhase.Morning or DayPhase.Evening) && state.ActionSlotsRemaining > 0,
-        _ => true,
-    };
+        if (StepMinDay.TryGetValue(step, out var minDay) && state.Day < minDay)
+        {
+            return false;
+        }
+
+        return step switch
+        {
+            TutorialStep.BuyMaterial => phase == DayPhase.Morning && state.ActionSlotsRemaining > 0,
+            TutorialStep.PostBounty => (phase is DayPhase.Morning or DayPhase.Evening) && state.ActionSlotsRemaining > 0,
+            TutorialStep.OpenCounter => phase == DayPhase.Morning,
+            _ => true,
+        };
+    }
 
     /// <summary>The deferred "comes back later" variant (playtest F6) shown in place of the raw
-    /// instruction whenever <see cref="StepActionAvailable"/> is false for the current phase — the
-    /// action-slot case is checked FIRST so the printed reason always matches whichever guard
-    /// actually made the step unavailable (a day that is still Morning but out of slots must never
-    /// print "the vendor only trades in the Morning").</summary>
+    /// instruction whenever <see cref="StepActionAvailable"/> is false — the day-not-reached case
+    /// (U7) is checked FIRST (it is the more fundamental reason), then the action-slot case, then
+    /// phase, so the printed reason always matches whichever guard actually made the step
+    /// unavailable (a day that is still Morning but out of slots must never print "the vendor only
+    /// trades in the Morning", and a step three days away must never print a phase excuse).</summary>
     private static string WaitText(GameState state, TutorialStep step, int index)
     {
+        if (StepMinDay.TryGetValue(step, out var minDay) && state.Day < minDay)
+        {
+            return step switch
+            {
+                TutorialStep.OpenCounter =>
+                    $"Tutorial {index}/{TotalSteps}: The counter is a Day {minDay} lesson — for now, press Next/Advance to move things along.",
+                TutorialStep.Vigil =>
+                    $"Tutorial {index}/{TotalSteps}: The vigil is a Day {minDay} lesson — for now, press Next/Advance to move things along.",
+                TutorialStep.MeetHeroes =>
+                    $"Tutorial {index}/{TotalSteps}: Meeting your heroes is a Day {minDay} lesson — for now, press Next/Advance to move things along.",
+                TutorialStep.Commission =>
+                    $"Tutorial {index}/{TotalSteps}: Your first commission choice is a Day {minDay} lesson — for now, press Next/Advance to move things along.",
+                _ => string.Empty,
+            };
+        }
+
         if (state.ActionSlotsRemaining <= 0)
         {
             return step switch
@@ -309,23 +437,26 @@ public sealed partial class TutorialFlow : PanelContainer
             TutorialStep.BuyMaterial =>
                 $"Tutorial {index}/{TotalSteps}: The Forge's material vendor only trades in the Morning — it opens back up next Morning. Nothing to do here until then.",
             TutorialStep.PostBounty =>
-                $"Tutorial {index}/{TotalSteps}: The Gate's bounty board only takes postings in the Morning or Evening — come back then to post yours.",
+                $"Tutorial {index}/{TotalSteps}: The Bounties board only takes postings in the Morning or Evening — come back then to post yours.",
+            TutorialStep.OpenCounter =>
+                $"Tutorial {index}/{TotalSteps}: The counter only opens in the Morning — it reopens next Morning.",
             _ => string.Empty,
         };
     }
 
-    /// <summary>The denominator of the "Tutorial N/{TotalSteps}" counter — four DISPLAYED
-    /// milestones, not five. See <see cref="StepIndex"/>: <see cref="TutorialStep.BuyMaterial"/> and
-    /// <see cref="TutorialStep.Craft"/> now share display slot 1, because on a fresh day 1 the
-    /// starter kit (<c>GameFactory.StarterCopper</c>) already covers a tier-1 craft, so "buy" is
-    /// nearly always skipped — the two were never independently observable moments to a player, only
-    /// one compound "get your first item made" instruction. Showing them as separate numbers is what
-    /// produced Brian's playtest report ("crafted the first buckler [...] tutorial went from 1/5 to
-    /// 3/5"): the counter skipped a number the player never saw completed, which reads as broken
-    /// even though the step machine itself was internally correct. Merging the DISPLAY (not the
-    /// enum — <see cref="Advance"/> still tracks both internally) makes every visible jump exactly
-    /// one number, matching what the player actually did.</summary>
-    private const int TotalSteps = 4;
+    /// <summary>The denominator of the "Tutorial N/{TotalSteps}" counter — TEN displayed milestones
+    /// across three days, not the eleven raw <see cref="TutorialStep"/> values. See <see
+    /// cref="StepIndex"/>: <see cref="TutorialStep.BuyMaterial"/> and <see cref="TutorialStep.Craft"/>
+    /// still share display slot 1, because on a fresh day 1 the starter kit
+    /// (<c>GameFactory.StarterCopper</c>) already covers a tier-1 craft, so "buy" is nearly always
+    /// skipped — the two were never independently observable moments to a player, only one compound
+    /// "get your first item made" instruction. Showing them as separate numbers is what produced
+    /// Brian's playtest report ("crafted the first buckler [...] tutorial went from 1/5 to 3/5"): the
+    /// counter skipped a number the player never saw completed, which reads as broken even though the
+    /// step machine itself was internally correct. Merging the DISPLAY (not the enum — <see
+    /// cref="Advance"/> still tracks both internally) makes every visible jump exactly one number,
+    /// matching what the player actually did.</summary>
+    private const int TotalSteps = 10;
 
     private static int StepIndex(TutorialStep step) => step switch
     {
@@ -334,6 +465,12 @@ public sealed partial class TutorialFlow : PanelContainer
         TutorialStep.Shelve => 2,
         TutorialStep.PostBounty => 3,
         TutorialStep.WatchDeparture => 4,
+        TutorialStep.LookIn => 5,
+        TutorialStep.OpenCounter => 6,
+        TutorialStep.Vigil => 7,
+        TutorialStep.EveningClose => 8,
+        TutorialStep.MeetHeroes => 9,
+        TutorialStep.Commission => 10,
         _ => 0,
     };
 
@@ -362,11 +499,33 @@ public sealed partial class TutorialFlow : PanelContainer
     /// still a chain of independent <c>if</c>s (each re-reading the just-updated <see cref="Step"/>)
     /// so a player who batches several legal actions into one Morning submission still cascades
     /// through every step in one call, exactly as before — the only change is that each check now
-    /// asks a durable fact instead of "did this exact event arrive this exact tick". The FINAL check
-    /// is deliberately UNCONDITIONAL on <see cref="Step"/>: a party actually departing is the day's
-    /// one truly autonomous event (nothing the player does gates it), so it always completes the
-    /// chain, whatever step the card is still sitting on — the one guarantee that makes a dead end
-    /// on this chain structurally impossible.</para>
+    /// asks a durable fact instead of "did this exact event arrive this exact tick". Day 1's own
+    /// FINAL check is deliberately UNCONDITIONAL on <see cref="Step"/> (within day 1): a party
+    /// actually departing is the day's one truly autonomous event (nothing the player does gates
+    /// it), so it always advances the chain into day 2, whatever day-1 step the card is still
+    /// sitting on.</para>
+    ///
+    /// <para><b>U7 extends the ladder through days 2-3</b> with the SAME durable-fact contract:
+    /// <c>CounterSaleClosed</c> for OpenCounter, <c>SupplyDelivered</c>/<c>PartyRecalled</c> for
+    /// Vigil, and <see cref="GameState.ActionLog"/> (the kernel's OWN submitted-action history,
+    /// alongside <see cref="GameState.EventLog"/>) for Commission — <c>AcceptCommissionAction</c>/
+    /// <c>DeclineCommissionAction</c> emit no distinct <see cref="GameEvent"/> of their own (see
+    /// <c>CommissionHandlers</c>), so the action log is the durable fact to read instead. Each new
+    /// check is additionally gated on <see cref="StepMinDay"/> (see that member's own doc for why).
+    /// EveningClose has no event to key on at all — evening closing IS the day rolling over, so
+    /// <c>state.Day</c> reaching the next day back to it directly. LookIn and MeetHeroes key off UI
+    /// navigation with no durable fact whatsoever (opening the Mirror, opening a hero panel) — see
+    /// <see cref="NotifyMirrorOpened"/>/<see cref="NotifyPanelOpened"/>, called directly from
+    /// <c>MainUi</c>'s existing hooks for those surfaces, not from here.</para>
+    ///
+    /// <para><b><see cref="BackstopDay"/> inherits day 1's unconditional guarantee for the whole
+    /// arc.</b> This state-only method cannot see the two UI-only steps' facts, and Day 2/3's own
+    /// facts (a hero willing to buy at the counter, a party actually camping below the checkpoint,
+    /// an open commission) are real sim outcomes this file has no business forcing — so instead of
+    /// a per-step unconditional bump (which would teach nothing by skipping the very lesson), one
+    /// day of grace past the intended Day-3 finish closes the chain regardless of <see
+    /// cref="Step"/>, exactly preserving "nothing the player does or fails to do can strand this
+    /// card forever" without short-circuiting the steps that DO resolve on their own day.</para>
     /// </summary>
     public void Advance(GameState state)
     {
@@ -404,12 +563,92 @@ public sealed partial class TutorialFlow : PanelContainer
             Step = TutorialStep.WatchDeparture;
         }
 
-        // Unconditional on Step (class/method doc above): the party's own departure ends the day-1
-        // chain even if Shelve/PostBounty never caught up, so nothing the player does — or fails to
-        // do — can strand this card on screen forever.
-        if (partyDeparted)
+        // Unconditional across every day-1 step (class/method doc above): the party's own departure
+        // opens day 2 — U7 retargets this from Complete() to LookIn, day 1's new capstone — even if
+        // Shelve/PostBounty never caught up. Guarded to day-1 steps only so a LATER day's own muster
+        // departing (day 2+) cannot regress a chain that has already moved on to LookIn or beyond.
+        var onDay1Ladder = Step is TutorialStep.BuyMaterial or TutorialStep.Craft or TutorialStep.Shelve
+            or TutorialStep.PostBounty or TutorialStep.WatchDeparture;
+        if (onDay1Ladder && partyDeparted)
+        {
+            Step = TutorialStep.LookIn;
+        }
+
+        // U7 day 2: OpenCounter/Vigil read new durable facts, gated to their day (StepMinDay doc).
+        if (Step == TutorialStep.OpenCounter
+            && state.Day >= StepMinDay[TutorialStep.OpenCounter]
+            && state.EventLog.OfType<CounterSaleClosed>().Any())
+        {
+            Step = TutorialStep.Vigil;
+        }
+
+        if (Step == TutorialStep.Vigil
+            && state.Day >= StepMinDay[TutorialStep.Vigil]
+            && (state.EventLog.OfType<SupplyDelivered>().Any() || state.EventLog.OfType<PartyRecalled>().Any()))
+        {
+            Step = TutorialStep.EveningClose;
+        }
+
+        // EveningClose has no event of its own: closing the evening IS the day rolling over, so
+        // reaching day 3 is the proof (no separate day-gate needed — this step is only ever current
+        // once Vigil's own Day>=2 gate has already passed).
+        if (Step == TutorialStep.EveningClose && state.Day >= 3)
+        {
+            Step = TutorialStep.MeetHeroes;
+        }
+
+        // U7 day 3, final step: no distinct event exists for Accept/Decline (CommissionHandlers
+        // doc) — GameState.ActionLog (the kernel's OWN submitted-action history) is the durable
+        // fact instead. Completing this ends the whole chain.
+        if (Step == TutorialStep.Commission
+            && state.Day >= StepMinDay[TutorialStep.Commission]
+            && state.ActionLog.Any(batch => batch.Actions.Any(a => a is AcceptCommissionAction or DeclineCommissionAction)))
         {
             Complete();
+        }
+
+        // U7 backstop (method doc): guarded on !Completed so a chain that just completed above
+        // (or on a prior tick) does not re-Save() every subsequent tick for the rest of the
+        // campaign — Complete() itself is otherwise idempotent, this just keeps it a single write.
+        if (!Completed && state.Day >= BackstopDay)
+        {
+            Complete();
+        }
+    }
+
+    /// <summary>U7: one day of grace past the intended Day-3 finish (method doc on <see
+    /// cref="Advance"/>) — the whole-arc equivalent of day 1's own unconditional-on-Step
+    /// guarantee, sized to the LONGEST realistic path (day 1's own ladder is guaranteed to reach
+    /// <see cref="TutorialStep.LookIn"/> by day 1's Expedition tick at the latest, per that ladder's
+    /// own unconditional bump), so a day of grace after day 3 is real slack, not a hair's-width
+    /// margin.</summary>
+    private const int BackstopDay = 4;
+
+    /// <summary>U7 day-1 capstone: <see cref="TutorialStep.LookIn"/> is a UI-only fact (opening the
+    /// Scrying Mirror carries no sim event to read durably) — <c>MainUi</c> calls this directly from
+    /// the SAME <c>ScryingMirror.VisibilityChanged</c> hook that already covers BOTH of the Mirror's
+    /// real entry points (the persistent Watch button and the PiP dock's expand click), so either
+    /// door teaches the step. A no-op once <see cref="Step"/> has moved past LookIn (or the chain is
+    /// inactive) — repeat visits to the Mirror on day 3 must not re-fire anything, matching every
+    /// other step's "only counts once, only while current" contract.</summary>
+    public void NotifyMirrorOpened()
+    {
+        if (Active && Step == TutorialStep.LookIn)
+        {
+            Step = TutorialStep.OpenCounter;
+        }
+    }
+
+    /// <summary>U7 day 3: <see cref="TutorialStep.MeetHeroes"/> is likewise UI-only — reading one
+    /// hero's card is a panel open, not a sim fact. <c>MainUi.OpenPanel</c> (the single router every
+    /// drawer open funnels through — town clicks, quick-travel, and tray buttons alike) calls this on
+    /// every real open; only "Tavern" or "HeroCards" advances the step, and only while it is
+    /// actually current.</summary>
+    public void NotifyPanelOpened(string panelId)
+    {
+        if (Active && Step == TutorialStep.MeetHeroes && panelId is "Tavern" or "HeroCards")
+        {
+            Step = TutorialStep.Commission;
         }
     }
 

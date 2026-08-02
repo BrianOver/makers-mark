@@ -84,7 +84,16 @@ public class TutorialAllProfessionsTests
             // it — asserting the card is NEVER left blank while still active (the exact shape of
             // "cannot continue") and that the chain actually finishes rather than stalling behind
             // an unsatisfiable step.
-            var maxTicks = MaxPhasesPerDay * 2;
+            //
+            // U7 (tutorial 3-day arc): this suite never opens the Scrying Mirror, the counter, a
+            // camped party, a hero panel, or a commission — none of the day-2/3 lessons it never
+            // performs. It only reaches Completed at all via TutorialFlow's own BackstopDay (one
+            // day of grace past the intended Day-3 finish), which needs real days to elapse — the
+            // old bound (two days' worth of ticks) was sized for the one-day chain this suite
+            // predates and is nowhere near enough now. Widened generously (six days' worth) rather
+            // than tuned to the exact backstop tick, so a future BackstopDay change does not make
+            // this bound fragile again.
+            var maxTicks = MaxPhasesPerDay * 6;
             for (var tick = 0; tick < maxTicks && !ui.Tutorial.Completed; tick++)
             {
                 if (ui.Tutorial.Active)
