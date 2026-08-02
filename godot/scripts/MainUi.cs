@@ -2364,6 +2364,18 @@ public partial class MainUi : Control
             return;
         }
 
+        // U1 (world-and-interiors plan): the gatehouse's "overlook" station — the ONE new action
+        // string this unit adds. Same routing shape as Bestiary/Legends above: a code-built modal,
+        // not a drawer id, so it must be caught here before OpenPanel (which only knows drawer ids
+        // and would throw ArgumentOutOfRangeException for "Watch"). During non-live phases the
+        // Mirror already renders its own honest "nobody below" empty state — no extra plumbing
+        // needed here for that case.
+        if (action == "Watch")
+        {
+            Mirror.ShowMirror();
+            return;
+        }
+
         OpenPanel(action);
     }
 

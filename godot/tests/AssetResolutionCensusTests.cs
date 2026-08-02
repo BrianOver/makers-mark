@@ -91,7 +91,28 @@ public class AssetResolutionCensusTests
     /// resolves to its real town body and the census enforces it forever. Empty, not deleted: the
     /// shape stays ready for the next promoted-before-art class.</para>
     /// </summary>
-    private static readonly HashSet<string> KnownPendingIds = new();
+    private static readonly HashSet<string> KnownPendingIds = new()
+    {
+        // U1 (world-and-interiors plan, docs/plans/2026-08-02-004): market/tavern/gatehouse room
+        // shells + station art — framework lands here as loud placeholders (TownAssets2D's
+        // magenta-bordered box, not silence); U2/U3/U4 paint the real pixels and remove these
+        // lines one room at a time (red→green shown in each art unit's own PR body).
+        "town2d-market-interior-shell",
+        "town2d-station-market-counter",
+        "town2d-station-market-shelf",
+        "town2d-station-market-ledger",
+        "town2d-station-market-crates",
+        "town2d-tavern-interior-shell",
+        "town2d-station-tavern-bar",
+        "town2d-station-tavern-table",
+        "town2d-station-tavern-hearth",
+        "town2d-station-tavern-storywall",
+        "town2d-gatehouse-interior-shell",
+        "town2d-station-gate-muster",
+        "town2d-station-gate-bounty",
+        "town2d-station-gate-overlook",
+        "town2d-station-gate-winch",
+    };
 
     [TestCase]
     public void RecruitableHeroClasses_ResolveTheTownPixelBody_NotJustAnyFallback()
