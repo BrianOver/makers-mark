@@ -199,7 +199,7 @@ public class ShopStageTests
     }
 
     [TestCase]
-    public void MorningSale_StagesOneBoughtCustomer_AndPopsTheGoldChip()
+    public void MorningSale_PopsTheGoldChip()
     {
         var ui = MountMainUi(new SimAdapter(GuaranteedSaleState()));
         try
@@ -213,12 +213,11 @@ public class ShopStageTests
             AssertThat(sale).IsNotNull();
             AssertThat(ui.Adapter.CurrentState.Player.Gold).IsGreater(goldBefore);
 
-            // U25 (c): the drawer's own ShopPanel.Stage strip is retired — InteriorStage's own
-            // embedded ShopStage is the ONE choreography now, and it queues regardless of whether
-            // the shop interior is currently staged (InteriorStage.OnPhaseCompleted's own contract).
-            AssertThat(ui.Interior.ShopStage).IsNotNull();
-            AssertThat(ui.Interior.ShopStage.QueuedRuns.Count).IsEqual(1);
-            AssertThat(ui.Interior.ShopStage.QueuedRuns[0].Bought).IsTrue();
+            // U4 (painted-interiors plan): the drawer's own ShopPanel.Stage strip, AND the
+            // InteriorStage-hosted embedded ShopStage that superseded it, are both retired —
+            // ShopStage.QueueDay currently has no live host at all (see ShopStage's own class doc;
+            // slice 2's walkable market room is its next intended one). This test now only proves
+            // what's still actually live: the sale landing and the gold-chip pop it triggers.
 
             // Gold-pop tween property assertions (accumulated-delta, no engine Tween): the
             // StatusBar's gold VALUE label bounces 1.0 -> ~1.25 -> 1.0 over 0.3s.

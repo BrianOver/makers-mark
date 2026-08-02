@@ -1,11 +1,9 @@
 #if GDUNIT_TESTS
-using System.Linq;
 using GameSim.Venues;
 using GdUnit4;
 using Godot;
 using GodotClient;
 using GodotClient.Panels;
-using GodotClient.Town;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -146,14 +144,12 @@ public class BestiaryPanelTests
         finally { Unmount(ui); }
     }
 
-    [TestCase]
-    public void TavernInterior_CarriesABestiaryHotspot_RoutingToTheBestiaryAction()
-    {
-        // The reachability contract: the Tavern's declarative hotspot table offers "Bestiary",
-        // whose action MainUi routes to BestiaryPanel.ShowAll (see OnInteriorHotspotActivated).
-        var tavern = InteriorStage.Venues["tavern"];
-        var bestiary = tavern.Hotspots.Single(h => h.Action == "Bestiary");
-        AssertThat(bestiary.Label).IsEqual("Bestiary");
-    }
+    // U4 (painted-interiors plan): TavernInterior_CarriesABestiaryHotspot_RoutingToTheBestiaryAction
+    // deleted — it asserted a row in town.InteriorStage.Venues, the pre-2.5D-pivot staged-overlay
+    // table this plan's U4 deletes. It was not covering anything reachable in the live 2.5D game:
+    // nothing has routed a click through InteriorStage since the pivot, so the Tavern's Bestiary
+    // hotspot was already unreachable before this deletion (R9: slice 1 is the Forge room only —
+    // Tavern has no InteriorLayout2D row yet). MainUi.OnInteriorHotspotActivated's own "Bestiary" ->
+    // Bestiary.ShowAll() routing stays live and correct for whenever slice 2's Tavern room lands.
 }
 #endif

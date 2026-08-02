@@ -9,14 +9,18 @@ namespace GodotClient.Panels;
 /// <summary>
 /// LW3 (living-world plan, 2026-07-19-001) — the Moonlighter core loop made visible: a slim lit
 /// strip (SubViewport pattern, ~1024x220). U25 (c): the drawer-hosted <see cref="ShopPanel"/> copy
-/// of this strip (the LW3 original mount point) is retired as redundant now that <see
-/// cref="GodotClient.Town.InteriorStage"/> hosts its own instance for the shop interior (<see
-/// cref="GodotClient.Town.InteriorStage.ShopStage"/>) — that is this class's ONE live mount point
-/// today.
+/// of this strip (the LW3 original mount point) was retired as redundant once the (since-deleted)
+/// <c>town.InteriorStage</c> hosted its own instance for the shop interior. U4 (painted-interiors
+/// plan): that host is gone too — <c>InteriorStage</c> was the pre-2.5D-pivot staged-overlay
+/// framework the walkable-room plan supersedes, and nothing routes a click to it anymore. This
+/// class HAS NO LIVE MOUNT POINT as of U4: its own suite (<c>ShopStageTests</c>) still exercises it
+/// directly, but no production code ever calls <see cref="QueueDay"/>/<see cref="Advance"/> today.
+/// Slice 2's walkable market room (<c>InteriorLayout2D</c>'s next row, same U1/U2/U3 pattern the
+/// Forge room proved) is its intended NEXT host — kept rather than deleted for exactly that reason.
 ///
-/// <para><see cref="QueueDay"/> is fed by its host (<c>InteriorStage.OnPhaseCompleted</c>) with ONE
-/// Morning tick's <c>Adapter.LastEvents</c> — never the whole-game <c>EventLog</c> — so a
-/// re-render never replays yesterday's customers. Each <see cref="ItemSold"/>/<see cref="HeroPassedOnItem"/>
+/// <para><see cref="QueueDay"/> is fed by its (currently absent) host with ONE Morning tick's
+/// <c>Adapter.LastEvents</c> — never the whole-game <c>EventLog</c> — so a re-render never replays
+/// yesterday's customers, whenever a host calls it again. Each <see cref="ItemSold"/>/<see cref="HeroPassedOnItem"/>
 /// event stages one customer run, staggered by the stage's own accumulated clock (never
 /// wall-clock, never engine RNG — the same determinism contract every other decoration on this
 /// project holds): walk in from the left → stop at a shelf slot → judged-item highlight + one of
