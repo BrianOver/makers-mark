@@ -174,10 +174,20 @@ public partial class ForgePanel : SimPanel
             // batch against state.Phase before advancing), so the buy is legal exactly
             // while the sim still sits AT Morning. ListRow inlines the exact GateButton
             // contract (Disabled + player-phrased tooltip) itself.
-            var legal = state.Phase == DayPhase.Morning && quote <= state.Player.Gold;
+            // The action budget belongs in this gate too. It was missing, and the omission was
+            // reachable by a human: in Morning with enough gold but zero slots left, the row stayed
+            // enabled, the click queued an action the handler then rejected, and the feedback line
+            // still said "Queued — resolves when Morning ticks". A dead click that confirms itself
+            // is worse than a disabled one. BountyPanel already gates on slots; this now matches it,
+            // including its phase -> gold -> slots reason precedence.
+            var legal = state.Phase == DayPhase.Morning
+                && quote <= state.Player.Gold
+                && state.ActionSlotsRemaining > 0;
             var whyNot = state.Phase != DayPhase.Morning
                 ? "The vendor sells in the Morning."
-                : "You can't afford that yet.";
+                : quote > state.Player.Gold
+                    ? "You can't afford that yet."
+                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
             _vendorRows!.AddChild(ListRow(IconRegistry.Ore(key), key, $"{quote}g", have.ToString(), buy, legal, whyNot));
         }
 
