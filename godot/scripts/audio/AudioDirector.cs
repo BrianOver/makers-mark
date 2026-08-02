@@ -213,9 +213,49 @@ public sealed partial class AudioDirector : Node
         AddChild(_musicB);
     }
 
+    /// <summary>
+    /// Test/inspection surface: the last cue <see cref="Play"/> was ASKED for, recorded even while
+    /// <see cref="Muted"/>.
+    ///
+    /// <para>Automated runs mute audio, which made "which cue did this path choose?" unobservable — so
+    /// a bug where every immediate action rang the day's bell over the music bed shipped and was only
+    /// caught by the owner playing the game. Recording the request (not the playback) costs nothing,
+    /// works muted, and lets a test pin cue CHOICE without asserting on sound.</para>
+    /// </summary>
+    public Cue? LastCuePlayed { get; private set; }
+
+    private readonly System.Collections.Generic.List<Cue> _recentCues = [];
+
+    /// <summary>Cap on <see cref="RecentCues"/> — a rolling window, not a session log.</summary>
+    private const int RecentCueMemory = 64;
+
+    /// <summary>
+    /// Every cue requested since the last <see cref="ClearRecentCues"/>, oldest first, capped at
+    /// <see cref="RecentCueMemory"/>.
+    ///
+    /// <para><b>Why the list and not just <see cref="LastCuePlayed"/>.</b> "Last cue" is not enough to
+    /// prove a cue did NOT fire: several call sites play their own cue immediately after queueing an
+    /// action, so a spurious cue raised inside the queue can be overwritten before anyone looks. The
+    /// first version of <c>ImmediateActionsDoNotReplayThePhaseTests</c> asserted on
+    /// <see cref="LastCuePlayed"/>, passed with the fix reverted, and would have shipped a test that
+    /// pinned nothing. Absence needs a window, not a snapshot.</para>
+    /// </summary>
+    public System.Collections.Generic.IReadOnlyList<Cue> RecentCues => _recentCues;
+
+    /// <summary>Drops the <see cref="RecentCues"/> window so a test can scope it to one interaction.</summary>
+    public void ClearRecentCues() => _recentCues.Clear();
+
     /// <summary>Fires <paramref name="cue"/> on the next pooled voice. No-op while <see cref="Muted"/>.</summary>
     public void Play(Cue cue)
     {
+        LastCuePlayed = cue;
+        if (_recentCues.Count >= RecentCueMemory)
+        {
+            _recentCues.RemoveAt(0);
+        }
+
+        _recentCues.Add(cue);
+
         if (Muted || _voices.Count == 0)
         {
             return;
