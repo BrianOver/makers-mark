@@ -26,16 +26,18 @@ public enum TutorialStep
 ///
 /// <para><b>Tutorial chain:</b> <see cref="TopSlotText"/> overrides <see
 /// cref="ObjectiveTracker"/>'s top slot (the owner, <c>MainUi</c>, passes it into <see
-/// cref="ObjectiveTracker.Refresh"/>) for as long as <see cref="Active"/> — five steps keyed to
-/// whatever the chosen profession's starter recipe actually is (never hardcoded to blacksmith's
-/// "copper"): buy material, craft, shelve, post a bounty, watch the party depart. <see
-/// cref="Advance"/> reads THIS tick's events only (<c>Adapter.LastEvents</c>, the same KTD5-safe
-/// contract <c>AdventureTicker</c>/<c>Town.OnPhaseCompleted</c> already honor) — never the whole
-/// <c>EventLog</c>. The BuyMaterial→Craft transition also fires directly off <see
-/// cref="ItemCrafted"/> (skipping the intermediate MaterialPurchased check) because
-/// <c>GameFactory.StarterCopper</c> already covers a tier-1 craft's material cost on day 1 for
-/// every profession — a player who crafts straight from the starter kit without ever buying must
-/// still advance, or the chain would softlock on step 1 forever.</para>
+/// cref="ObjectiveTracker.Refresh"/>) for as long as <see cref="Active"/> — four DISPLAYED
+/// milestones (<see cref="StepIndex"/>: acquire-and-craft material, shelve, post a bounty, watch
+/// the party depart) keyed to whatever the chosen profession's own recipe list actually is (never
+/// hardcoded to blacksmith's "buckler" — <c>ObjectiveAdvisor.Suggest</c> and every recipe lookup
+/// this class touches are filtered through <c>PlayerState.SelectedProfessions</c>). Every one of
+/// those milestones — and the internal <see cref="TutorialStep.BuyMaterial"/>/<see
+/// cref="TutorialStep.Craft"/> split beneath the first one — is now driven by <see
+/// cref="Advance"/> reading DURABLE facts off the full <see cref="GameState.EventLog"/>, not a
+/// single tick's events. See <see cref="Advance"/>'s own doc for why: Brian's playtest hit two
+/// dead-end shapes this fixes — a two-number jump (1/5 straight to 3/5) when the starter kit let a
+/// player skip buying, and a bounty that "doesn't do anything" because it was posted out of the
+/// ladder's expected order.</para>
 ///
 /// <para><b>Dismissible, persisted at <c>user://</c> (KTD2 — never the sim save):</b> <see
 /// cref="Dismiss"/> and chain completion both set a flag this class never clears itself; <see
@@ -104,8 +106,6 @@ public sealed partial class TutorialFlow : PanelContainer
     /// <summary>A quick-travel row button was pressed, carrying the same building key
     /// <c>Building2D</c>'s click event payloads use ("Forge"/"Shop"/"Tavern"/"Gate").</summary>
     public event Action<string>? QuickTravelRequested;
-
-    private ItemId? _craftedItem;
 
     /// <summary>Build the (initially all-hidden) chrome. Call once, before <see cref="Load"/>.</summary>
     public void Build()
@@ -185,9 +185,9 @@ public sealed partial class TutorialFlow : PanelContainer
     private string StepText(GameState state, string? openPanelId)
     {
         var index = StepIndex(Step);
-        if (!StepActionAvailable(Step, state.Phase))
+        if (!StepActionAvailable(state, Step, state.Phase))
         {
-            return WaitText(Step, index);
+            return WaitText(state, Step, index);
         }
 
         var suggestions = ObjectiveAdvisor.Suggest(state);
@@ -196,18 +196,18 @@ public sealed partial class TutorialFlow : PanelContainer
         return Step switch
         {
             TutorialStep.BuyMaterial or TutorialStep.Craft =>
-                $"Tutorial {index}/5: {GoTo(building, includeMovementHint: Step == TutorialStep.BuyMaterial, alreadyThere)} — " +
+                $"Tutorial {index}/{TotalSteps}: {GoTo(building, includeMovementHint: Step == TutorialStep.BuyMaterial, alreadyThere)} — " +
                 (suggestions.Count > 0
                     ? suggestions[0].Reason
                     : "Buy material at the vendor, then craft at the anvil."),
             TutorialStep.Shelve =>
-                $"Tutorial {index}/5: {GoTo(building, includeMovementHint: false, alreadyThere)} — " +
+                $"Tutorial {index}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — " +
                 (suggestions.FirstOrDefault(s => s.Action is StockAction)?.Reason
                     ?? "Shelve your finished item so heroes can buy it."),
             TutorialStep.PostBounty =>
-                $"Tutorial {index}/5: {GoTo(building, includeMovementHint: false, alreadyThere)} — post a bounty at the mine gate; heroes may accept it before they depart.",
+                $"Tutorial {index}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — post a bounty at the mine gate; heroes may accept it before they depart.",
             TutorialStep.WatchDeparture =>
-                $"Tutorial {index}/5: Watch the party depart through the **{building}** — the chain completes when they head out.",
+                $"Tutorial {index}/{TotalSteps}: Watch the party depart through the **{building}** — the chain completes when they head out.",
             _ => string.Empty,
         };
     }
@@ -270,91 +270,131 @@ public sealed partial class TutorialFlow : PanelContainer
     /// <summary>Whether <paramref name="step"/>'s own action is legal THIS phase — mirrors
     /// <c>ActionLegality.IsLegal</c>'s exact phase gates for <c>BuyMaterialAction</c> (Morning
     /// only) and <c>PostBountyAction</c> (Morning or Evening); Craft/Stock are phase-unrestricted
-    /// there too, and WatchDeparture has no player action to gate at all.</summary>
-    private static bool StepActionAvailable(TutorialStep step, DayPhase phase) => step switch
+    /// there too, and WatchDeparture has no player action to gate at all.
+    ///
+    /// <para>Also mirrors the LAST guard both those handlers check — <c>state.ActionSlotsRemaining
+    /// &gt; 0</c> — the same gap <c>BountyPanel</c>'s own Post button used to have before it started
+    /// asking <c>ActionLegality.IsLegal</c> directly (#317, "bounty Post button now mirrors
+    /// ActionLegality, not a hand-rolled rule"): a hand-rolled phase-only check reports the step
+    /// actionable right up until a real click on a slot-exhausted day bounces. Folding it in here
+    /// closes that same gap for the tutorial card.</para></summary>
+    private static bool StepActionAvailable(GameState state, TutorialStep step, DayPhase phase) => step switch
     {
-        TutorialStep.BuyMaterial => phase == DayPhase.Morning,
-        TutorialStep.PostBounty => phase is DayPhase.Morning or DayPhase.Evening,
+        TutorialStep.BuyMaterial => phase == DayPhase.Morning && state.ActionSlotsRemaining > 0,
+        TutorialStep.PostBounty => (phase is DayPhase.Morning or DayPhase.Evening) && state.ActionSlotsRemaining > 0,
         _ => true,
     };
 
     /// <summary>The deferred "comes back later" variant (playtest F6) shown in place of the raw
-    /// instruction whenever <see cref="StepActionAvailable"/> is false for the current phase.</summary>
-    private static string WaitText(TutorialStep step, int index) => step switch
+    /// instruction whenever <see cref="StepActionAvailable"/> is false for the current phase — the
+    /// action-slot case is checked FIRST so the printed reason always matches whichever guard
+    /// actually made the step unavailable (a day that is still Morning but out of slots must never
+    /// print "the vendor only trades in the Morning").</summary>
+    private static string WaitText(GameState state, TutorialStep step, int index)
     {
-        TutorialStep.BuyMaterial =>
-            $"Tutorial {index}/5: The Forge's material vendor only trades in the Morning — it opens back up next Morning. Nothing to do here until then.",
-        TutorialStep.PostBounty =>
-            $"Tutorial {index}/5: The Gate's bounty board only takes postings in the Morning or Evening — come back then to post yours.",
-        _ => string.Empty,
-    };
+        if (state.ActionSlotsRemaining <= 0)
+        {
+            return step switch
+            {
+                TutorialStep.BuyMaterial =>
+                    $"Tutorial {index}/{TotalSteps}: No action slots left today — press Next/Advance to move things along; the vendor and the anvil are both still there tomorrow.",
+                TutorialStep.PostBounty =>
+                    $"Tutorial {index}/{TotalSteps}: No action slots left today — press Next/Advance to move things along; the board reopens tomorrow.",
+                _ => string.Empty,
+            };
+        }
+
+        return step switch
+        {
+            TutorialStep.BuyMaterial =>
+                $"Tutorial {index}/{TotalSteps}: The Forge's material vendor only trades in the Morning — it opens back up next Morning. Nothing to do here until then.",
+            TutorialStep.PostBounty =>
+                $"Tutorial {index}/{TotalSteps}: The Gate's bounty board only takes postings in the Morning or Evening — come back then to post yours.",
+            _ => string.Empty,
+        };
+    }
+
+    /// <summary>The denominator of the "Tutorial N/{TotalSteps}" counter — four DISPLAYED
+    /// milestones, not five. See <see cref="StepIndex"/>: <see cref="TutorialStep.BuyMaterial"/> and
+    /// <see cref="TutorialStep.Craft"/> now share display slot 1, because on a fresh day 1 the
+    /// starter kit (<c>GameFactory.StarterCopper</c>) already covers a tier-1 craft, so "buy" is
+    /// nearly always skipped — the two were never independently observable moments to a player, only
+    /// one compound "get your first item made" instruction. Showing them as separate numbers is what
+    /// produced Brian's playtest report ("crafted the first buckler [...] tutorial went from 1/5 to
+    /// 3/5"): the counter skipped a number the player never saw completed, which reads as broken
+    /// even though the step machine itself was internally correct. Merging the DISPLAY (not the
+    /// enum — <see cref="Advance"/> still tracks both internally) makes every visible jump exactly
+    /// one number, matching what the player actually did.</summary>
+    private const int TotalSteps = 4;
 
     private static int StepIndex(TutorialStep step) => step switch
     {
         TutorialStep.BuyMaterial => 1,
-        TutorialStep.Craft => 2,
-        TutorialStep.Shelve => 3,
-        TutorialStep.PostBounty => 4,
-        TutorialStep.WatchDeparture => 5,
+        TutorialStep.Craft => 1,
+        TutorialStep.Shelve => 2,
+        TutorialStep.PostBounty => 3,
+        TutorialStep.WatchDeparture => 4,
         _ => 0,
     };
 
     /// <summary>
-    /// Advance the chain from THIS tick's freshly stamped events only (<c>Adapter.LastEvents</c>)
-    /// — called by <c>MainUi.OnPhaseCompleted</c> every tick. No-op once <see cref="Active"/> is
-    /// false. See class doc for why the BuyMaterial→Craft edge also matches <see
-    /// cref="ItemCrafted"/> directly (the starter-kit softlock guard) and why Shelve's own
-    /// transition is a post-loop STATE check rather than an event match (<see cref="StockAction"/>
-    /// stamps no distinct event). Deliberately a LADDER of independent <c>if</c>s (each re-reading
-    /// the just-updated <see cref="Step"/>) rather than a single per-event switch: a player who
-    /// batches buy+craft+stock+post-bounty into ONE Morning submission (all four are legal the
-    /// same phase) must cascade through every step this SAME tick, however the kernel orders that
-    /// tick's own event list — a switch keyed to "what Step was when THIS event was visited" would
-    /// miss a later step whose own event already arrived earlier in the same batch.
+    /// Advance the chain from DURABLE facts read off the full campaign history (<see
+    /// cref="GameState.EventLog"/> plus live <see cref="PlayerState"/>) — called by
+    /// <c>MainUi.OnPhaseCompleted</c> every tick. No-op once <see cref="Active"/> is false.
+    ///
+    /// <para><b>Why not THIS tick's events only (the old contract).</b> Brian's playtest hit two
+    /// distinct dead-ends that turned out to share one cause. First: "As soon as i crafted the
+    /// first buckler, the heroes lined up and left then tutorial went from 1/5 to 3/5" — a party's
+    /// muster departs on ITS OWN Expedition-phase tick, a beat the player does not control, and the
+    /// old ladder only completed the chain on <c>Step == WatchDeparture &amp;&amp; partyDeparted</c>
+    /// THIS SAME TICK. If Shelve/PostBounty had not caught up yet when that tick landed, Step was
+    /// still behind, the departure event was gone the instant that tick ended (<c>LastEvents</c> is
+    /// per-tick), and nothing could ever complete the chain from that world state again — the exact
+    /// definition of a dead end. Second: "posting the bounty doesn't do anything &amp; doesn't
+    /// update the tutorial" — a bounty posted OUT OF ORDER (before Shelve had completed, say) landed
+    /// on a tick where <c>Step != PostBounty</c>, so the old ladder's own gate silently dropped that
+    /// BountyPosted event; the player really had posted it, and the sim really did keep it, but the
+    /// tutorial had no memory of anything beyond the current tick to credit it with later.</para>
+    ///
+    /// <para><see cref="GameState.EventLog"/> is the kernel's own append-only history (every
+    /// <c>Tick</c>/<c>ApplyNow</c> call adds to it, never prunes) — using it turns each milestone
+    /// into "has this ever happened", which cannot be lost to timing or order. The ladder below is
+    /// still a chain of independent <c>if</c>s (each re-reading the just-updated <see cref="Step"/>)
+    /// so a player who batches several legal actions into one Morning submission still cascades
+    /// through every step in one call, exactly as before — the only change is that each check now
+    /// asks a durable fact instead of "did this exact event arrive this exact tick". The FINAL check
+    /// is deliberately UNCONDITIONAL on <see cref="Step"/>: a party actually departing is the day's
+    /// one truly autonomous event (nothing the player does gates it), so it always completes the
+    /// chain, whatever step the card is still sitting on — the one guarantee that makes a dead end
+    /// on this chain structurally impossible.</para>
     /// </summary>
-    public void Advance(GameState state, IEnumerable<GameEvent> events)
+    public void Advance(GameState state)
     {
         if (!Active)
         {
             return;
         }
 
-        ItemCrafted? crafted = null;
-        var materialPurchased = false;
-        var bountyPosted = false;
-        var partyDeparted = false;
-        foreach (var gameEvent in events)
-        {
-            switch (gameEvent)
-            {
-                case MaterialPurchased:
-                    materialPurchased = true;
-                    break;
-                case ItemCrafted itemCrafted:
-                    crafted = itemCrafted;
-                    break;
-                case BountyPosted:
-                    bountyPosted = true;
-                    break;
-                case PartyDeparted:
-                    partyDeparted = true;
-                    break;
-            }
-        }
+        var materialPurchased = state.EventLog.OfType<MaterialPurchased>().Any();
+        var crafted = state.EventLog.OfType<ItemCrafted>().Any();
+        // A shelved item proves the step; an already-sold player listing proves it happened in the
+        // past even though the shelf itself no longer holds it (StockLegal requires shelving before
+        // a sale can ever occur, so FromPlayerShop is proof, not a guess).
+        var shelved = state.Player.Shelf.Count > 0 || state.EventLog.OfType<ItemSold>().Any(sold => sold.FromPlayerShop);
+        var bountyPosted = state.EventLog.OfType<BountyPosted>().Any();
+        var partyDeparted = state.EventLog.OfType<PartyDeparted>().Any();
 
         if (Step == TutorialStep.BuyMaterial && materialPurchased)
         {
             Step = TutorialStep.Craft;
         }
 
-        if (Step is TutorialStep.BuyMaterial or TutorialStep.Craft && crafted is not null)
+        if (Step is TutorialStep.BuyMaterial or TutorialStep.Craft && crafted)
         {
-            _craftedItem = crafted.Item;
             Step = TutorialStep.Shelve;
         }
 
-        if (Step == TutorialStep.Shelve && _craftedItem is { } craftedItemId
-            && state.Player.Shelf.Any(s => s.Item.Value == craftedItemId.Value))
+        if (Step == TutorialStep.Shelve && shelved)
         {
             Step = TutorialStep.PostBounty;
         }
@@ -364,7 +404,10 @@ public sealed partial class TutorialFlow : PanelContainer
             Step = TutorialStep.WatchDeparture;
         }
 
-        if (Step == TutorialStep.WatchDeparture && partyDeparted)
+        // Unconditional on Step (class/method doc above): the party's own departure ends the day-1
+        // chain even if Shelve/PostBounty never caught up, so nothing the player does — or fails to
+        // do — can strand this card on screen forever.
+        if (partyDeparted)
         {
             Complete();
         }

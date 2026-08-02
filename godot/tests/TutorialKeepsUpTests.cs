@@ -17,11 +17,11 @@ namespace GodotClient.Tests;
 /// one symptom seen from both ends — the card sits still while you work, then jumps several steps at once
 /// when the phase ticks.</para>
 ///
-/// <para><b>Why the existing suite cannot see it.</b> <c>TutorialFlowTests</c> calls
-/// <c>TutorialFlow.Advance(state, events)</c> directly with a hand-built event list, which proves the step
-/// machine's transitions are right and says nothing about whether the game ever CALLS it at the moment the
-/// player acts. That distinction is the whole bug — and it is the same seam-shaped blind spot as the dead
-/// keyboard and the cut-off menus.</para>
+/// <para><b>Why the existing suite cannot see it.</b> <c>TutorialFlowTests</c> drives
+/// <c>TutorialFlow.Advance(state)</c> only indirectly, through <c>SimAdapter.Queue</c>/<c>AdvancePhase</c>
+/// on a mounted <c>MainUi</c>, which proves the step machine's transitions are right and says nothing about
+/// whether the game ever CALLS it at the moment the player acts. That distinction is the whole bug — and it
+/// is the same seam-shaped blind spot as the dead keyboard and the cut-off menus.</para>
 ///
 /// <para>So these drive the real client through <see cref="HumanPlayer"/> and assert on the text actually on
 /// screen.</para>
