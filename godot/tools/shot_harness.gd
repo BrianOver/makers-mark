@@ -95,6 +95,12 @@ func _initialize() -> void:
 	# above _initialize).
 	if _state.begins_with("Phase"):
 		_settle = 900
+	elif _state == "GateNight":
+		# U4 (world-and-interiors plan): DayPhaseTint's ease (see the U11 note above) needs the
+		# same long convergence window Phase4 gets, PLUS room-entry settle time on top (the
+		# camera push-in, entered later once the tint has actually landed -- see frame 920
+		# below).
+		_settle = 1200
 	elif _state == "":
 		_settle = 90
 	elif _state == "MineGateFocus":
@@ -214,14 +220,16 @@ func _process(_delta: float) -> bool:
 			# (Town2D.cs, applied whenever InteriorActive) overrides the exterior's phase tint
 			# entirely, so a receipt of the ROOM alone can never show a "dark phase" difference by
 			# construction -- that override IS the feature being verified. What this state proves
-			# instead: the room still reads exactly as readable after the exterior has advanced
-			# away from a fresh Morning start as it does at Dawn. Three bell presses (here, then
-			# frames 90 and 120 below) walk Morning -> Expedition -> Camp -> ExpeditionDeep (this
-			# save stages -- see the frame-120 comment below for why); the gatehouse opens at
-			# frame 210, once the third press has actually landed.
-			var bell1 = _ui.find_child("AdvancePhase", true, false)
-			if bell1:
-				bell1.emit_signal("pressed")
+			# instead: the room reads exactly as readable once the exterior has actually reached
+			# Evening/"Night" (genuinely dark post-U11/#357, tint ~0.42) as it does at a fresh
+			# Dawn. Same idiom as Phase4 above -- 4 presses in this one frame walk Morning ->
+			# Expedition -> Camp -> ExpeditionDeep -> Evening -- except this state ALSO enters the
+			# gatehouse afterward (frame 920, once the tint's ease has actually converged; see
+			# _settle above for why the wait is so long).
+			var bell = _ui.find_child("AdvancePhase", true, false)
+			if bell:
+				for _i in range(4):
+					bell.emit_signal("pressed")
 		elif _ui.has_method("OnTownBuildingClicked"):
 			# Same entry point the town uses on building arrival (private C# method reached
 			# via the source-gen call() bridge).
@@ -242,22 +250,10 @@ func _process(_delta: float) -> bool:
 		var mirror = _ui.find_child("ScryingMirror", true, false)
 		if mirror:
 			mirror.call("ShowMirror")
-	# GateNight's second beat: bell press #2 (Expedition -> Camp/"Vigil" on this staged save).
-	if _state == "GateNight" and _frames == 90:
-		var bell2 = _ui.find_child("AdvancePhase", true, false)
-		if bell2:
-			bell2.emit_signal("pressed")
-	# GateNight's third beat: a staged run lands Camp ("Vigil", tint 0.55) after press #2,
-	# not Evening -- press once more here (frame 120) toward the genuinely darkest phase
-	# (ExpeditionDeep/"Deep Vigil", tint 0.30) so the dark-phase comparison is as strong as
-	# this branch (pre-U11 -- Evening itself is still the bugged near-white 0.86 tint U11
-	# fixes) can honestly make it. Entry (originally frame 150) moves to frame 210 to give
-	# this third beat room to land first.
-	if _state == "GateNight" and _frames == 120:
-		var bell3 = _ui.find_child("AdvancePhase", true, false)
-		if bell3:
-			bell3.emit_signal("pressed")
-	if _state == "GateNight" and _frames == 210:
+	# GateNight's second beat: the tint's ease has now converged (see _settle above) --
+	# enter the gatehouse the same way every other venue receipt does
+	# (OnTownBuildingClicked's "Gate" -> "minegate" mapping, MainUi.cs).
+	if _state == "GateNight" and _frames == 920:
 		if _ui.has_method("OnTownBuildingClicked"):
 			_ui.call("OnTownBuildingClicked", "Gate")
 	if _state == "ForgeExit" and _frames == 200:
