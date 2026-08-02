@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Tools;
 
 namespace GodotClient.Audio;
 
@@ -293,7 +294,7 @@ public sealed partial class AudioDirector : Node
 
         if (!ResourceLoader.Exists(track.ResourcePath))
         {
-            GD.PushWarning(
+            EngineDistress.Warn(
                 $"[AudioDirector] composed track '{track.Id}' is missing at {track.ResourcePath} " +
                 "(Git LFS content not pulled?) — falling back to the synth bed.");
             return null;

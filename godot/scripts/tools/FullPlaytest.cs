@@ -96,6 +96,13 @@ public partial class FullPlaytest : Node
             _report.AppendLine();
         }
 
+        // Anything Godot itself pushed as a warning or error during these five runs — a rejected
+        // action, a failed autosave, a missing resource — BEFORE anomalies is finalized, so the
+        // count below and the exit code both reflect it. See ReportEngineDistress's own doc for
+        // why this is the whole point of this file: a run that throws and still says "0
+        // anomalies" is worse than no harness at all.
+        ReportEngineDistress();
+
         _report.AppendLine("## Anomalies");
         _report.AppendLine();
         if (_anomalies.Count == 0)
@@ -112,7 +119,37 @@ public partial class FullPlaytest : Node
 
         System.IO.File.WriteAllText(OutDir + "REPORT.md", _report.ToString());
         GD.Print($"[fullplaytest] done — {_shots} shots, {_anomalies.Count} anomalies. Report: {OutDir}REPORT.md");
-        GetTree().Quit();
+
+        // A nonzero anomaly count must be visible WITHOUT reading the report body — a caller (a
+        // person, or CI) checking only the process exit code must still see the run was unclean.
+        GetTree().Quit(ExitCodeFor(_anomalies.Count));
+    }
+
+    /// <summary>The process exit code for <paramref name="anomalyCount"/> anomalies — nonzero
+    /// whenever any were found. Extracted so it is unit-testable without booting a scene. Public
+    /// like <see cref="MainUi.FriendlyRejection"/> — GodotClient.Tests is a separate assembly with
+    /// no InternalsVisibleTo grant.</summary>
+    public static int ExitCodeFor(int anomalyCount) => anomalyCount > 0 ? 1 : 0;
+
+    /// <summary>
+    /// Fold every distinct <see cref="EngineDistress"/> message recorded so far this process into
+    /// <see cref="_anomalies"/>.
+    ///
+    /// <para><b>Why <see cref="EngineDistress"/> and not Godot's own log file:</b> the first
+    /// version of this scanned <c>user://logs/godot.log</c> directly (file logging is confirmed ON
+    /// BY DEFAULT for this project — verified empirically, since <c>project.godot</c> is
+    /// deny-listed and could not be edited to force it). That measured out as unreadable: this SAME
+    /// process cannot open a file Godot's own writer still has open — a real run threw
+    /// <c>IOException: being used by another process</c> here, every time. Every
+    /// <c>GD.PushWarning</c>/<c>GD.PushError</c> call site this client owns now goes through
+    /// <see cref="EngineDistress"/> instead, which has no such dependency.</para>
+    /// </summary>
+    private void ReportEngineDistress()
+    {
+        foreach (var group in EngineLogAnomalies.Scan(EngineDistress.Messages))
+        {
+            Note(group.Count > 1 ? $"{group.Message} (x{group.Count})" : group.Message);
+        }
     }
 
     private async Task DriveOneRun(string profession)
@@ -317,7 +354,7 @@ public partial class FullPlaytest : Node
         var state = adapter.CurrentState;
         var legal = ActionLegality.LegalActions(state, state.Phase);
 
-        int materials = 0, stocked = 0, priced = 0, commissions = 0, supplies = 0;
+        int materials = 0, stocked = 0, priced = 0, commissions = 0, supplies = 0, crafted = 0;
         var openedCounter = false;
         var postedBounty = false;
 
@@ -332,7 +369,14 @@ public partial class FullPlaytest : Node
                 case GameSim.Contracts.AcceptCommissionAction when commissions++ < 2:
                 case GameSim.Contracts.BuyForgeSupplyAction when supplies++ < 1:
                 case GameSim.Contracts.HonorMemorialAction:
-                case GameSim.Contracts.CraftAction:
+                // Throttled to ONE, like every other multi-candidate verb above — unlike those,
+                // this was unbounded, and `legal` lists every AFFORDABLE-AT-SNAPSHOT recipe. Craft
+                // #1 spends materials immediately (CraftAction resolves immediately — ActionTiming),
+                // so craft #2 checks legality against a state a real player would never see: one
+                // where its own ingredients already got spent by a sibling candidate that shares the
+                // same material. Measured on a real run: 275 of 368 duplicate-warned rejections were
+                // exactly this — "Not enough copper" — a driver artifact, not a game bug (see PR).
+                case GameSim.Contracts.CraftAction when crafted++ < 1:
                 case GameSim.Contracts.UpgradeForgeAction:
                     adapter.Queue(action);
                     break;

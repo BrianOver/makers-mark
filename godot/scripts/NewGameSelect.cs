@@ -5,6 +5,7 @@ using GameSim;
 using GameSim.Kernel;
 using GameSim.Professions;
 using Godot;
+using GodotClient.Tools;
 using GodotClient.Ui;
 
 namespace GodotClient;
@@ -235,7 +236,7 @@ public partial class NewGameSelect : Control
         {
             // The envelope parsed at Peek() but the world did not rebuild — already logged. Leave the
             // player on this screen with the profession picker rather than loading a broken campaign.
-            GD.PushWarning("[NewGameSelect] Continue pressed but the save would not load — staying on the picker");
+            EngineDistress.Warn("[NewGameSelect] Continue pressed but the save would not load — staying on the picker");
             return;
         }
 

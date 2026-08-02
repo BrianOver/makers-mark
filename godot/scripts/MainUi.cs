@@ -5,6 +5,7 @@ using GameSim.Contracts;
 using Godot;
 using GodotClient.Audio;
 using GodotClient.Panels;
+using GodotClient.Tools;
 using GodotClient.Town;
 using GodotClient.Town2d;
 using GodotClient.Ui;
@@ -110,6 +111,18 @@ public partial class MainUi : Control
     /// a later mount.
     /// </summary>
     public static SimAdapter? AdapterOverride { get; set; }
+
+    /// <summary>Test-observable count of DISTINCT rejection warnings actually pushed to the dev
+    /// log (see the dedup guard in <see cref="OnPhaseCompleted"/>). <see cref="SimAdapter.LastRejections"/>
+    /// is deliberately phase-cumulative, so a naive re-warn of the whole list on every immediate
+    /// action re-logs already-reported refusals — measured on a real playtest run, that turned 83
+    /// genuine rejections into 368 duplicate warnings. This counts what actually got pushed, so a
+    /// test can pin the fix rather than trust the console.</summary>
+    public int RejectionWarningsEmitted { get; private set; }
+
+    /// <summary>How many entries of <see cref="Adapter"/>'s cumulative <c>LastRejections</c> have
+    /// already been warned about this phase — see <see cref="OnPhaseCompleted"/>.</summary>
+    private int _rejectionsWarned;
 
     public SimAdapter Adapter { get; private set; } = null!;
     public PhaseClock Clock { get; private set; } = null!;
@@ -422,12 +435,29 @@ public partial class MainUi : Control
         // phase, so calling it on every tick is correct and needs no boundary detection here.
         Audio.SetPhase(state.Phase);
         SoundTheTick(completedPhase, state);
-        foreach (var rejected in Adapter.LastRejections)
+
+        // Adapter.LastRejections ACCUMULATES for the whole phase (SimAdapter's own doc: every
+        // immediately-resolved action's refusal is appended, and OnPhaseCompleted fires again on
+        // EVERY such action — see SimAdapter.Queue). Warning about the WHOLE list each time
+        // re-logs rejections already reported on an earlier call in this same phase. Only the NEW
+        // tail is genuinely new news; a list that SHRANK means SimAdapter cleared its accumulator
+        // (AdvancePhase truly completed a phase), so start counting fresh from there.
+        var rejections = Adapter.LastRejections;
+        if (rejections.Count < _rejectionsWarned)
         {
+            _rejectionsWarned = 0;
+        }
+
+        for (var i = _rejectionsWarned; i < rejections.Count; i++)
+        {
+            var rejected = rejections[i];
             // Dev log keeps the RAW kernel reason (org logging rule); the player only
             // ever sees the friendly toast below.
-            GD.PushWarning($"[MainUi] rejected {rejected.Action.GetType().Name}: {rejected.Reason}");
+            EngineDistress.Warn($"[MainUi] rejected {rejected.Action.GetType().Name}: {rejected.Reason}");
+            RejectionWarningsEmitted++;
         }
+
+        _rejectionsWarned = rejections.Count;
 
         // U6 (R6) toast half: surfaced refusals render as a short player-phrased line
         // that auto-clears (wall-clock in _Process, or here on the next clean tick).
