@@ -600,6 +600,15 @@ public partial class ForgePanel : SimPanel
         ResolveTown()?.ForgeSteamPlume();
     }
 
+    /// <summary>U5: the bellows breath now has a sound. <see cref="GodotClient.Audio.Cue.Bellows"/>
+    /// shipped synthesized with zero call sites — this is the one wiring point (via
+    /// <see cref="ForgeMinigame.BellowsPumped"/>) for both ways a player can pump (Shift hold or
+    /// right-drag). Null-tolerant like every other cue site here.</summary>
+    private void OnMinigameBellowsPumped()
+    {
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Bellows);
+    }
+
     /// <summary>
     /// G1 result ceremony (game-feel plan §"Result ceremony"): grade stamp + quality-star row +
     /// the 3 beat sub-score pips, shown over the now-hidden minigame overlay for
@@ -818,6 +827,7 @@ public partial class ForgePanel : SimPanel
         // itself is driven continuously off the live heat gauge in _Process, not an event.
         _minigame.Struck += OnMinigameStruck;
         _minigame.Quenched += OnMinigameQuenched;
+        _minigame.BellowsPumped += OnMinigameBellowsPumped;
 
         // Phase B: the alchemist's reagent-puzzle overlay — same self-contained-focus pattern,
         // hidden until a "Brew" button opens it.

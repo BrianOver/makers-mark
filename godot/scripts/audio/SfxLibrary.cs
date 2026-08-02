@@ -187,47 +187,65 @@ public static class SfxLibrary
 
         // ── The forge. Both hammer cues share a shape and differ where the GAME differs: an on-beat
         //    strike is worth 2.2x, so it rings brighter and longer, and an off-beat one lands dull. The
-        //    player should be able to hear whether they are playing well with their eyes on the billet. ──
+        //    player should be able to hear whether they are playing well with their eyes on the billet.
+        //
+        //    U5 (playtest-three plan): "sounds like a fault, not a hit" — these three were the loudest
+        //    peaks in the whole SFX set AND the only ones with a fully instant attack (the building
+        //    cues already got soft attacks in #327 and were rated "better" immediately). Same fix
+        //    applied here: lower peaks (via Normalise's target, which rescales the WHOLE buffer
+        //    including the noise burst — no need to touch individual amplitudes) plus a genuine 8-12ms
+        //    attack ramp on every partial AND the broadband impact tick, which previously started at
+        //    full amplitude on sample 0. ──
         Cue.HammerOnBeat => Build(0.34f, buf =>
         {
             // Struck steel: inharmonic partials (a harmonic stack reads as a tuned bell, an anvil is not
-            // tuned), near-instant attack, and the high partials dying first exactly as they do in metal.
-            Synth.AddPartial(buf, 520f, 0.50f, halfLife: 0.055f);
-            Synth.AddPartial(buf, 1237f, 0.40f, halfLife: 0.040f);
-            Synth.AddPartial(buf, 2790f, 0.28f, halfLife: 0.022f);
-            Synth.AddPartial(buf, 4310f, 0.16f, halfLife: 0.012f);
+            // tuned), a short 8-10ms attack rather than an instant onset, and the high partials dying
+            // first exactly as they do in metal.
+            Synth.AddPartial(buf, 520f, 0.50f, halfLife: 0.055f, attack: 0.010f);
+            Synth.AddPartial(buf, 1237f, 0.40f, halfLife: 0.040f, attack: 0.009f);
+            Synth.AddPartial(buf, 2790f, 0.28f, halfLife: 0.022f, attack: 0.008f);
+            Synth.AddPartial(buf, 4310f, 0.16f, halfLife: 0.012f, attack: 0.008f);
 
-            // The impact itself — a very short broadband tick under the ring.
-            for (var i = 0; i < Synth.Samples(0.012f) && i < buf.Length; i++)
+            // The impact itself — a short broadband tick under the ring, now ramped in over the same
+            // ~10ms window as the partials above instead of starting at full amplitude on sample 0.
+            var impactWindow = Math.Min(Synth.Samples(0.012f), buf.Length);
+            var impactAttack = Synth.Samples(0.010f);
+            for (var i = 0; i < impactWindow; i++)
             {
-                buf[i] += Synth.Noise(i, seed: 21) * 0.5f;
+                var ramp = MathF.Min(1f, (i + 1) / (float)impactAttack);
+                buf[i] += Synth.Noise(i, seed: 21) * 0.5f * ramp;
             }
 
             Synth.DeClick(buf);
-            Synth.Normalise(buf, 0.55f);
+            Synth.Normalise(buf, 0.32f);
         }),
 
         Cue.HammerOffBeat => Build(0.20f, buf =>
         {
             // Same blow, badly timed: lower, shorter, and without the bright upper partials, so it reads
             // as a thud rather than a ring. Deliberately quieter too — a mistimed hit should not be the
-            // loudest thing in the session.
-            Synth.AddPartial(buf, 300f, 0.50f, halfLife: 0.030f);
-            Synth.AddPartial(buf, 690f, 0.22f, halfLife: 0.018f);
-            for (var i = 0; i < Synth.Samples(0.010f) && i < buf.Length; i++)
+            // loudest thing in the session. Same U5 soft-attack treatment as the on-beat strike.
+            Synth.AddPartial(buf, 300f, 0.50f, halfLife: 0.030f, attack: 0.010f);
+            Synth.AddPartial(buf, 690f, 0.22f, halfLife: 0.018f, attack: 0.009f);
+            var impactWindow = Math.Min(Synth.Samples(0.010f), buf.Length);
+            var impactAttack = Synth.Samples(0.009f);
+            for (var i = 0; i < impactWindow; i++)
             {
-                buf[i] += Synth.Noise(i, seed: 22) * 0.35f;
+                var ramp = MathF.Min(1f, (i + 1) / (float)impactAttack);
+                buf[i] += Synth.Noise(i, seed: 22) * 0.35f * ramp;
             }
 
             Synth.LowPass(buf, 1400f);
             Synth.DeClick(buf);
-            Synth.Normalise(buf, 0.38f);
+            Synth.Normalise(buf, 0.24f);
         }),
 
         Cue.Quench => Build(0.85f, buf =>
         {
             // Steam: a broadband hiss that swells for a moment as the steel goes in, then falls away.
-            // Low-passed only lightly — steam IS bright, unlike the wooden cues.
+            // Low-passed only lightly — steam IS bright, unlike the wooden cues. The swell itself
+            // already ramps over ~25ms (t * 40), so the instant attack this unit fixes was the low
+            // thunk below, not the steam.
             for (var i = 0; i < buf.Length; i++)
             {
                 var t = i / (float)Synth.SampleRate;
@@ -237,9 +255,10 @@ public static class SfxLibrary
 
             Synth.LowPass(buf, 5200f);
             // A short low thunk beneath it: the steel meeting the water, not just the steam leaving it.
-            Synth.AddPartial(buf, 128f, 0.32f, halfLife: 0.070f);
+            // U5: 10ms attack — this partial started at full amplitude on sample 0 before.
+            Synth.AddPartial(buf, 128f, 0.32f, halfLife: 0.070f, attack: 0.010f);
             Synth.DeClick(buf);
-            Synth.Normalise(buf, 0.5f);
+            Synth.Normalise(buf, 0.35f);
         }),
 
         Cue.Bellows => Build(0.30f, buf =>
@@ -363,7 +382,7 @@ public static class SfxLibrary
             Synth.AddPartial(buf, 622f, 0.16f, halfLife: 0.06f, attack: 0.008f);
             Synth.AddPartial(buf, 933f, 0.07f, halfLife: 0.035f, attack: 0.010f);
             Synth.LowPass(buf, 2600f); // takes the edge off the upper partial — the harshness complaint
-            Synth.Normalise(buf, 0.22f);
+            Synth.Normalise(buf, 0.15f); // U5: 0.22 -> 0.15 (~-13.2 -> ~-16.5 dBFS), quieter still
         }),
 
         Cue.EnterTavern => Build(0.42f, buf =>
@@ -379,7 +398,7 @@ public static class SfxLibrary
             Synth.AddPartial(buf, 160f, 0.30f, halfLife: 0.09f, attack: 0.01f);
             Synth.AddPartial(buf, 246f, 0.14f, halfLife: 0.07f, attack: 0.012f);
             Synth.AddPartial(buf, 1480f, 0.08f, halfLife: 0.05f, attack: 0.02f); // the one mug clink
-            Synth.Normalise(buf, 0.22f);
+            Synth.Normalise(buf, 0.15f); // U5: 0.22 -> 0.15 (~-13.2 -> ~-16.5 dBFS), quieter still
         }),
 
         Cue.EnterMarket => Build(0.30f, buf =>
@@ -423,7 +442,7 @@ public static class SfxLibrary
                 }
             }
 
-            Synth.Normalise(buf, 0.22f);
+            Synth.Normalise(buf, 0.15f); // U5: 0.22 -> 0.15 (~-13.2 -> ~-16.5 dBFS), quieter still
         }),
 
         Cue.EnterNoticeboard => Build(0.20f, buf =>
@@ -445,7 +464,7 @@ public static class SfxLibrary
                 buf[i] += MathF.Sin(2f * MathF.PI * 1600f * t) * 0.28f * Synth.Decay(t, 0.008f);
             }
 
-            Synth.Normalise(buf, 0.20f);
+            Synth.Normalise(buf, 0.14f); // U5: 0.20 -> 0.14, matching the other venue-cue trims
         }),
 
         _ => Build(0.05f, buf => Synth.AddPartial(buf, 440f, 0.4f, halfLife: 0.02f)),
