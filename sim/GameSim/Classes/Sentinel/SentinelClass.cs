@@ -11,9 +11,9 @@ namespace GameSim.Classes;
 ///
 /// Pure data: integer stats only, no RNG, no wall clock, no floats, no Godot references (KTD2/KTD4).
 /// <see cref="ClassDefinition.ColorRgb"/> is a presentation hint the sim never reads (Godot multiplies
-/// it onto a neutral hero figure). Registered-inert: a registered class is NOT recruitable
-/// (<see cref="ClassRegistry.RecruitPool"/> stays frozen at the three built-ins), so shipping this
-/// definition moves no existing seed's world.
+/// it onto a neutral hero figure). Recruitable: <see cref="ClassRegistry.RecruitPool"/> opened this
+/// class (alongside Skirmisher and Occultist) in PR #328 (2026-08-01, T1 content flip) — a real
+/// determinism-gated re-baseline, not the byte-identical no-op this doc originally described.
 /// </summary>
 public static class SentinelClass
 {

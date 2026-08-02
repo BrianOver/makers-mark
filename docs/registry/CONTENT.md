@@ -2,6 +2,8 @@
 
 **Rebuilt 2026-07-28** against `origin/main` @ `8d35f03`. The previous version was seeded 2026-07-21 and had drifted badly: ~15 rows said `planned` for shipped work, several counts were wrong (traits, flavor lines, materials), and an entire venue + its faction + its 5 monsters were absent. See `SYSTEMS.md` §Drift note.
 
+**Spot-fixed 2026-08-02** (P3/task #45, `feat/p3-unlock-emberfall`): PR #328 (2026-08-01) flipped the three add-on hero classes and the Sunken Crypt live and this ledger had not caught up — hero classes, venues, monsters, materials, and factions rows corrected below. Rest of the file unaudited since the 07-28 pass.
+
 Every content noun. **Tier** = adding *more of this kind* is T1/T2/T3. **Status** — `idea` · `planned` (no code) · `flight` (in progress) · `built` (complete and reachable in play) · `built-inert` (complete, registered, tested, deliberately not activated — the state `LiveRotation` / `RecruitPool` / `PricedPool` create). **Asset** — none/placeholder/final.
 
 `built` is a claim, not a proof: there is no manifest test. Verify against code before relying on a row.
@@ -19,11 +21,11 @@ Every content noun. **Tier** = adding *more of this kind* is T1/T2/T3. **Status*
 | necromancer-assistant / magician-assistant | T3 | planned | none | need caster classes |
 | husbandry-raising | T2 | idea | none | byproduct keys |
 
-## Hero classes (framework: built — 6 registered, RecruitPool frozen at 3)
+## Hero classes (framework: built — 6 registered, all 6 in RecruitPool)
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| vanguard / striker / mystic | T2 | built | final | the 3 recruitable combat roles |
-| occultist / sentinel / skirmisher | T2 | built-inert | **final** | registered, not in `RecruitPool`. Old row claimed "3 lit figures missing art" — **wrong**: all six have diffuse + normal on disk and in `art-manifest.json` |
+| vanguard / striker / mystic | T2 | built | final | the original 3 recruitable combat roles |
+| occultist / sentinel / skirmisher | T2 | **built + live** | final | P3/task #45: `ClassRegistry.RecruitPool` opened all three in PR #328 (2026-08-01) — old row said `built-inert`/frozen at 3, now stale. Reachability verified by a 20-seed x 100-day batch sweep: 27-43 recruits each |
 | healer role (4th archetype) | T3 | planned | none | part of the combined re-baseline |
 | necromancer / magician (casters) | T3 | planned | none | needs a companion/minion entity in the resolver |
 
@@ -38,13 +40,13 @@ Every content noun. **Tier** = adding *more of this kind* is T1/T2/T3. **Status*
 |---|---|---|---|---|
 | trait set | T2 | built | – | **10 traits across 5 axes** (`Heroes/TraitDefinition.cs`, #218/#219), shop-teeth wired. Old row said "~16, planned" — 10 hash-derived is the shipped design, and the 16-authored design was rejected |
 
-## Venues (framework: built — 4 registered, 2 live)
+## Venues (framework: built — 4 registered, 3 live)
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
 | mine (5 floors) | T2 | built | final | |
 | gloomwood (4 floors, Wardens) | T2 | **built + live** | final | in `LiveRotation` since #230 — old row said "planned, go-live = Phase C" |
-| sunken-crypt (5 floors, Tidewrit) | T2 | **built-inert** | placeholder | fully coded and registered (Crypt Crab → The Undertow); not in `LiveRotation`. Old row's `planned` implied no code |
-| **emberfall-foundry (5 floors, Ashguild)** | T2 | **built-inert** | placeholder | `Venues/Emberfall/EmberfallFoundryVenue.cs` — Cinder Imp → Undying Forge-Heart, den palette. **Had no row at all** |
+| sunken-crypt (5 floors, Tidewrit) | T2 | **built + live** | final | joined `LiveRotation` in PR #328 (2026-08-01, T1 flip) — old row said `built-inert` |
+| **emberfall-foundry (5 floors, Ashguild)** | T2 | **built-inert** | placeholder | `Venues/Emberfall/EmberfallFoundryVenue.cs` — Cinder Imp → Undying Forge-Heart, den palette. P3/task #45: flip is coded on `feat/p3-unlock-emberfall` (VenueRegistry.LiveRotation + MaterialRegistry.PricedPool) but held as a draft PR pending `feat/emberfall-art-set` — no committed backdrop/portraits yet |
 | venue routing | T3 | built | – | `VenueRouter.cs` distributes by utility + queue length |
 | venue fatigue / closures | T3 | planned | none | genuinely absent — the old row bundled this with routing |
 | volcano-den | T2 | idea | none | |
@@ -54,7 +56,7 @@ Every content noun. **Tier** = adding *more of this kind* is T1/T2/T3. **Status*
 |---|---|---|---|---|
 | mine 5 (Cave Rat → Forgeworm) | T2 | built | final | diffuse + normal present |
 | gloomwood 4 (Bramble Boar, Lantern Moth, Wicker Shepherd, Old Mossjaw) | T2 | **built + live** | **final** | live with their venue; art finished (incl. normals) but had **no asset rows** |
-| sunken-crypt 5 | T2 | built-inert | placeholder | code complete, venue not live |
+| sunken-crypt 5 | T2 | **built + live** | **final** | code complete, venue live since #328; all 5 diffuse+normal on disk (`sunkencrypt-crypt-crab`..`-undertow`) — old row said `built-inert`/placeholder |
 | **emberfall 5** | T2 | built-inert | placeholder | **had no row** |
 | monster-variant framework (multi/floor) | T3 | planned | none | |
 | named / mood variants | T2 | planned | none | |
@@ -64,7 +66,7 @@ Every content noun. **Tier** = adding *more of this kind* is T1/T2/T3. **Status*
 ## Economy / materials (framework: built)
 | id | tier | status | asset | notes |
 |---|---|---|---|---|
-| materials | T2 | built | placeholder | **21 total, 9 in the live `PricedPool`** (5 Mine + 4 Gloomwood). Old row said "5 Mine ores + 2 inert" — a large undercount |
+| materials | T2 | built | placeholder | **21 total, 14 in the live `PricedPool`** (5 Mine + 4 Gloomwood + 5 Sunken Crypt, since PR #328). Old row said "9 in the pool" — stale pre-#328 count. Emberfall's 5-key ladder joins in the same commit as its venue flip (P3/task #45, draft pending art) |
 | material registry (M1) | T3 | built | – | `Materials/MaterialRegistry.cs` (#62) — old row called it a `planned` unblocker |
 | gold sinks | T3 | built | – | 5 shipped (#226): forge tier, forge supply, masterwork attempts, legendary commissions, guild dues |
 | campaign arc + ending | T3 | built | – | `Arc/ArcDirectorSystem.cs` (#230): three acts + climax + ending with chronicle summary |
@@ -77,7 +79,7 @@ Every content noun. **Tier** = adding *more of this kind* is T1/T2/T3. **Status*
 | deepvein | T2 | built + live | placeholder | the live tariff faction |
 | crownsguard (Law) | T2 | built-inert | placeholder | M1 shipped, but no live venue mints electrum/orichalcum, so it still cannot move balance bands (`MaterialRegistry.cs:58-61`) |
 | gloomwood-wardens | T2 | built | placeholder | supplies live Gloomwood's 4 ores (`GloomwoodVenue.cs:27`). Whether it yet produces a distinct in-game effect is **unverified** |
-| tidewrit-salvors | T2 | built-inert | none | rides the not-live Sunken Crypt |
+| tidewrit-salvors | T2 | built + live | none | rides the now-live Sunken Crypt (since #328) — old row said "not-live" |
 | **ashguild** | T2 | built-inert | none | Emberfall's faction, `Factions/Ashguild/AshguildFaction.cs`. **Had no row** |
 | shadow-syndicate / grand-conservatory | T3 | planned | none | confirmed absent from `FactionRegistry.All` |
 | tax engine / inspections / perks | T3 | planned | none | post-skeleton |
