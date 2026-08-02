@@ -104,8 +104,14 @@ public class CounterPhaseHoldTests
     public void NoCounterOpened_MorningAdvancesNormally_NeverHolds()
     {
         // Sanity companion to the atomic-equivalence pin: with Counter untouched (null), the
-        // Morning->Expedition edge fires on the very first tick, exactly as before PA3.
-        var state = GameFactory.NewGame(seed: 704);
+        // Morning->Expedition edge fires on the very first tick, exactly as before PA3. A live hero
+        // is required post-2026-08-02 (KTD-D(1)) so this scenario isn't ALSO the "nobody-down-there"
+        // collapse case (PhaseCollapseTests covers that one) — this test's own job is Counter==null,
+        // never the party-formation question.
+        var state = GameFactory.NewGame(seed: 704) with
+        {
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, MakeHero(1)),
+        };
         var kernel = Kernel();
 
         state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;

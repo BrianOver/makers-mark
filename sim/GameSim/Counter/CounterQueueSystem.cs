@@ -2,27 +2,26 @@ using System.Collections.Immutable;
 using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Heroes;
+using GameSim.Kernel;
 
 namespace GameSim.Counter;
 
 /// <summary>
-/// Morning stepped-queue resolution (PKD5/PKD6). Runs AFTER every action in the tick's batch has
-/// been applied (systems pass, step 2 of <c>GameKernel.Tick</c>) — so a batch that presents an item
-/// resolves that customer's role-fit verdict the SAME tick it was shown.
+/// Morning stepped-queue resolution (PKD5/PKD6). Historically ran only AFTER every action in the
+/// tick's batch had been applied (systems pass, step 2 of <c>GameKernel.Tick</c>) — so a batch that
+/// presents an item resolved that customer's role-fit verdict the SAME tick it was shown.
 ///
-/// PA4 (plan 2026-07-21-002) replaces PA3's placeholder ("present a strict upgrade → instant sale
-/// at list price") with the real haggle economics: a presented item that fails
-/// <see cref="ShoppingAi.EvaluateItem"/> (role mismatch, too heavy, unaffordable, not an upgrade)
-/// still walks immediately — there is no round to negotiate over an item the hero doesn't want.
-/// A presented item that PASSES that verdict no longer closes instantly; it OPENS a haggle round
-/// (<see cref="HaggleResolver.OpenRound"/>) with a standing offer the player then Accepts, HoldFirms,
-/// or Counters via <see cref="HaggleResponseAction"/> (resolved synchronously in
-/// <see cref="CounterHandlers"/> — see that file's remarks for why haggle resolution does NOT defer
-/// to this system). Draws ZERO RNG throughout (PA4 hard constraint).
-///
-/// A tick with nothing NEWLY presented does nothing here: once a round is open
-/// (<see cref="CounterState.Round"/> &gt; 0) this system is a no-op for that customer — the
-/// haggle handler owns every subsequent step until the sale closes or the customer walks.
+/// <para><b>2026-08-02 loop-legibility widening (KTD-A):</b> <see cref="PresentItemAction"/> moved to
+/// <see cref="ActionTiming"/>'s immediate lane, and <see cref="GameKernel.ApplyNow"/> never runs a
+/// phase's systems (by contract) — so this class's resolution logic had to stop living ONLY in
+/// <see cref="Process"/> (the systems-pass entry point) or every counter session would silently stall
+/// the instant Present stopped riding the bell. <see cref="ResolvePresentedItem"/> is that same logic,
+/// extracted so <see cref="CounterHandlers.Apply"/> can call it directly and synchronously the moment
+/// Present is applied — <see cref="Process"/> now just forwards to it, for the Tick-driven batches that
+/// still exist (the CLI, and every sim test that drives <see cref="GameKernel.Tick"/> directly). Calling
+/// it twice for the same presentment is safe by construction: once the handler has resolved it, the
+/// guard conditions below (no fresh <c>Presented</c>, or a round already open) make the systems-pass
+/// call a no-op — see <see cref="ActionTiming"/>'s remarks for the full account.</para>
 /// </summary>
 public sealed class CounterQueueSystem : IPhaseSystem
 {
@@ -30,7 +29,27 @@ public sealed class CounterQueueSystem : IPhaseSystem
 
     public string Name => "counter-queue";
 
-    public GameState Process(GameState state, IDeterministicRng rng, IEventSink events)
+    public GameState Process(GameState state, IDeterministicRng rng, IEventSink events) =>
+        ResolvePresentedItem(state, events);
+
+    /// <summary>
+    /// PA4 (plan 2026-07-21-002) replaces PA3's placeholder ("present a strict upgrade → instant sale
+    /// at list price") with the real haggle economics: a presented item that fails
+    /// <see cref="ShoppingAi.EvaluateItem"/> (role mismatch, too heavy, unaffordable, not an upgrade)
+    /// still walks immediately — there is no round to negotiate over an item the hero doesn't want.
+    /// A presented item that PASSES that verdict no longer closes instantly; it OPENS a haggle round
+    /// (<see cref="HaggleResolver.OpenRound"/>) with a standing offer the player then Accepts, HoldFirms,
+    /// or Counters via <see cref="HaggleResponseAction"/> (resolved synchronously in
+    /// <see cref="CounterHandlers"/> — see that file's remarks for why haggle resolution does NOT defer
+    /// to this method). Draws ZERO RNG throughout (PA4 hard constraint).
+    ///
+    /// A call with nothing NEWLY presented does nothing: once a round is open
+    /// (<see cref="CounterState.Round"/> &gt; 0) this is a no-op for that customer — the haggle handler
+    /// owns every subsequent step until the sale closes or the customer walks. That guard is exactly
+    /// what makes calling this once from <see cref="CounterHandlers.ApplyPresent"/> and again (a no-op)
+    /// from <see cref="Process"/> in the same Tick safe.
+    /// </summary>
+    internal static GameState ResolvePresentedItem(GameState state, IEventSink events)
     {
         var counter = state.Counter;
         if (counter is null || counter.Active is not { } activeId || counter.Presented is not { } presentedId)

@@ -83,7 +83,10 @@ public class BountyPanelTests
             Find<CoinStack>(ui.Bounties, "BountyReward").SetValue(PostReward);
             PressEnabled(ui.Bounties, "PostBounty");
 
-            var pending = ui.Adapter.PendingActions.OfType<PostBountyAction>().ToList();
+            // U1 (loop-legibility): PostBounty resolves immediately now — the owner's "posting the
+            // bounty queues it, nothing happens" is exactly why. It lands in AppliedThisPhase, not
+            // PendingActions. The action and its fields are what this test pins; only the lane moved.
+            var pending = ui.Adapter.AppliedThisPhase.OfType<PostBountyAction>().ToList();
             AssertThat(pending.Count).IsEqual(1);
             AssertThat(pending[0].TargetFloor).IsEqual(PostFloor);
             AssertThat(pending[0].RewardGold).IsEqual(PostReward);
@@ -125,7 +128,10 @@ public class BountyPanelTests
                 Control.SignalName.GuiInput,
                 new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = new Vector2(180f, 20f) });
 
-            var pending = ui.Adapter.PendingActions.OfType<PostBountyAction>().ToList();
+            // U1 (loop-legibility): PostBounty resolves immediately now — the owner's "posting the
+            // bounty queues it, nothing happens" is exactly why. It lands in AppliedThisPhase, not
+            // PendingActions. The action and its fields are what this test pins; only the lane moved.
+            var pending = ui.Adapter.AppliedThisPhase.OfType<PostBountyAction>().ToList();
             AssertThat(pending.Count).IsEqual(1);
             AssertThat(pending[0].TargetFloor).IsEqual(PostFloor);
             AssertThat(pending[0].RewardGold).IsEqual(PostReward);

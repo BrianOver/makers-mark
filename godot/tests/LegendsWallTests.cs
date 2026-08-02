@@ -209,7 +209,7 @@ public class LegendsWallTests
 
             PressEnabled(ui.Legends, $"Honor_{FallenHeroId.Value}");
 
-            var honored = ui.Adapter.PendingActions.OfType<HonorMemorialAction>().Single();
+            var honored = ui.Adapter.AppliedThisPhase.OfType<HonorMemorialAction>().Single();
             AssertThat(honored.Hero).IsEqual(FallenHeroId);
         }
         finally

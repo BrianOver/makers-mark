@@ -137,12 +137,27 @@ public class BuyUpdatesTheCountImmediatelyTests
     }
 
     /// <summary>
-    /// A bounty is a commitment the world has to act on, so it still rides the bell — the split is a
-    /// deliberate design line (see <c>ActionTiming</c>), not an oversight, and this pins it so a later
-    /// "make everything instant" change has to argue with a test first.
+    /// Posting a bounty puts it on the board NOW.
+    ///
+    /// <para><b>This test used to assert the opposite</b>, and said so deliberately: "a bounty is a
+    /// commitment the world has to act on, so it still rides the bell... this pins it so a later
+    /// 'make everything instant' change has to argue with a test first." That was the right way to
+    /// hold the line, and the argument has now been made and won.</para>
+    ///
+    /// <para>The owner's playtest: <i>"Posting the bounty queues it - nothing happens so the tutorial
+    /// is stuck at 3."</i> The old reasoning was sound about the FICTION — heroes do have to read the
+    /// board — but it produced a click with no answer, and a tutorial step that could never complete
+    /// because it waited on an action sitting in a queue. The loop-legibility plan's KTD-A resolves
+    /// this generally: an action resolves now unless the world must move before it means anything.
+    /// A bounty is written on the board the moment you write it; whether a hero has read it yet is
+    /// the world's business, not the click's.</para>
+    ///
+    /// <para>So the pin is inverted, not deleted: the board must change on the press, and nothing may
+    /// be left queued. If someone later wants bounties back on the bell, they now have to argue with
+    /// this test — which is the same protection, pointed the other way.</para>
     /// </summary>
     [TestCase]
-    public async Task PostingABounty_StillWaitsForTheBell()
+    public async Task PostingABounty_PutsItOnTheBoardImmediately()
     {
         var ui = MountMainUi();
         try
@@ -155,10 +170,14 @@ public class BuyUpdatesTheCountImmediatelyTests
 
             AssertThat(ui.Adapter.CurrentState.Bounties.Count)
                 .OverrideFailureMessage(
-                    "Posting a bounty took effect immediately. Heroes have to read the board for a " +
-                    "bounty to mean anything, so it belongs to the day's clock — see ActionTiming.")
-                .IsEqual(before);
-            AssertThat(ui.Adapter.PendingActions.Count).IsEqual(1);
+                    "Posting a bounty did not change the board. The press must answer itself — a "
+                    + "bounty that only appears on the next bell is the \"nothing happens\" the owner "
+                    + "reported, and it dead-ends the tutorial step that waits for it.")
+                .IsEqual(before + 1);
+
+            AssertThat(ui.Adapter.PendingActions.OfType<PostBountyAction>().Count())
+                .OverrideFailureMessage("The bounty resolved AND stayed queued — it must not do both.")
+                .IsEqual(0);
         }
         finally
         {
