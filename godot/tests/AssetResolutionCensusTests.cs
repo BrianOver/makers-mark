@@ -235,6 +235,36 @@ public class AssetResolutionCensusTests
         }
     }
 
+    /// <summary>
+    /// U1's OWN table-driven twin of <see cref="ForgeInteriorArtIds_ResolveToCommittedArt_NeverAPlaceholder"/>
+    /// above (U2, landed first onto main) — reads ids straight from <see
+    /// cref="InteriorLayout2D.Rooms"/> rather than a hand-copied array, the pattern every other
+    /// case in this file follows, so a future slice-2 room (market/tavern/minegate) is covered the
+    /// moment its row lands here with zero edits to this test. Deliberately kept alongside the
+    /// hardcoded U2 case above rather than deleting one: U2 already merged and is not this unit's
+    /// file to rewrite, and the two are cheap, harmless duplication rather than a real conflict —
+    /// both must stay green together.
+    /// </summary>
+    [TestCase]
+    public void InteriorRoomSpriteIds_ResolveToCommittedArt()
+    {
+        foreach (var room in InteriorLayout2D.Rooms.Values)
+        {
+            AssertResolves(
+                room.ShellSpriteId,
+                $"'{room.ShellSpriteId}' is the '{room.VenueKey}' room's shell (floor/walls) — "
+                + "InteriorRoom2D.Build draws it for every player who enters.");
+
+            foreach (var station in room.Stations)
+            {
+                AssertResolves(
+                    station.SpriteId,
+                    $"'{station.SpriteId}' is the '{station.Id}' station in the '{room.VenueKey}' "
+                    + "room — InteriorRoom2D.BuildStations draws it for every player who enters.");
+            }
+        }
+    }
+
     // ── shared assertion ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>

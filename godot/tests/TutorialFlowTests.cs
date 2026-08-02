@@ -641,6 +641,7 @@ public class TutorialFlowTests
             AssertThat(ui.Tutorial.QuickTravelUnlocked).IsFalse();
             ui.QuickTravel("Forge");
             AssertThat(ui.Interior.IsOpen).IsFalse(); // locked — no-op before completion
+            AssertThat(ui.Town.InteriorActive).IsFalse(); // U1: the walkable room is equally locked
 
             // U7: the real 3-day path to Completed — DriveWholeArcToCompletion's own tests already
             // pin every intermediate step, so this only needs the end state.
@@ -655,9 +656,11 @@ public class TutorialFlowTests
             AssertThat(ui.Tutorial.QuickTravelRow.Visible).IsTrue();
 
             ui.QuickTravel("Forge");
-            // 2.5D pivot: quick-travel opens the venue's drawer directly now (no staged interior).
-            AssertThat(ui.Drawer.IsOpen).IsTrue();
-            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Forge");
+            // U1 (painted-interiors plan): quick-travel now enters the walkable forge room, same
+            // as a walked arrival would (content parity, R9) — no drawer opens directly.
+            AssertThat(ui.Town.InteriorActive).IsTrue();
+            AssertThat(ui.Town.InteriorVenueKey).IsEqual("forge");
+            AssertThat(ui.Drawer.IsOpen).IsFalse();
         }
         finally
         {
