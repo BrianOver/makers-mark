@@ -209,6 +209,7 @@ public partial class MainUi : Control
     private Button _auto = null!;
     private Button _playPause = null!;
     private Button _speed = null!;
+    private Button _watch = null!;
     private bool _resumePlayOnLedgerClose;
     private bool _resumePlayOnCampClose;
     private bool _resumePlayOnMirrorClose;
@@ -232,6 +233,17 @@ public partial class MainUi : Control
     private bool _resumePlayOnCommissionsClose;
     /// <summary>Wave 4 (U21): mirror of the Bestiary/Forecast latch for the Legends Wall.</summary>
     private bool _resumePlayOnLegendsClose;
+
+    /// <summary>
+    /// U1 (playtest-three plan, KTD-A move 2): armed by <see cref="SoundTheTick"/> when the
+    /// departure tick lands while a genuine modal (Ledger/Camp/Mirror/Forecast/Bestiary/
+    /// Commissions/Legends, or the staged Interior) still owns the screen — the drawer is ALWAYS
+    /// closed on departure (move 1), but a modal is a deliberate player choice mid-Morning and
+    /// yanking the camera behind it would still be invisible, one layer deeper than the reported
+    /// bug. Cleared by <see cref="TryFireDeferredMineGateFocus"/>, called from every modal-close
+    /// path, the moment nothing is left covering the town.
+    /// </summary>
+    private bool _pendingMineGateFocus;
 
     // ── LW3: gold-chip bounce-scale pop (StatusBar region) ────────────────────────────────────
     // No engine Tween in this codebase (accumulated-delta math only, so the pop is deterministic
@@ -1108,6 +1120,9 @@ public partial class MainUi : Control
         _speed.Visible = Clock.AutoAdvance;
 
         var state = Adapter.CurrentState;
+        // U1: only meaningful while a party is actually out there — nothing to watch at Dawn/
+        // Prepare (nobody has left yet) or Night (everybody is already home).
+        _watch.Visible = state.Phase is DayPhase.Expedition or DayPhase.Camp or DayPhase.ExpeditionDeep;
         if (Clock.AutoAdvance)
         {
             _advance.Text = "Skip"; // Innkeeper's Clock (opt-in auto): the bell is the exception
@@ -1378,6 +1393,24 @@ public partial class MainUi : Control
             UpdateClockLabel();
         };
         verbRow.AddChild(_advance);
+
+        // U1 (playtest-three plan, KTD-A move 3): a SECOND, PERSISTENT entry to the Scrying
+        // Mirror, next to the bell rather than gated behind it. The owner's loudest playtest line
+        // — "clicked send them off... WHERE ARE THE VISUALS OF WHAT THEY ARE DOING??" — traced to
+        // the corner PiP dock (Pip.ExpandRequested, wired below) being the ONLY door in, and that
+        // dock is suppressed by the very drawer/modal a player has open when the day ends
+        // (UpdateEngaged's `engaged` latch). This button sits outside that latch entirely and
+        // calls ShowMirror() straight — Mirror content is already phase-ungated (see
+        // ScryingMirror), so the one new gate is THIS button's own visibility (UpdateClockLabel),
+        // never a second copy of the dock's suppression. The dock stays as the ambient
+        // affordance; this is the guaranteed one.
+        _watch = new Button
+        {
+            Name = "WatchButton", Text = "👁 Watch", CustomMinimumSize = new Vector2(0, 36),
+            TooltipText = "Watch the raid — opens the Scrying Mirror",
+        };
+        _watch.Pressed += () => Mirror.ShowMirror();
+        verbRow.AddChild(_watch);
 
         // UI-4: Auto/Pause/Speed collapse to small 24px icon buttons (Text is a short glyph, the
         // descriptive word lives on TooltipText, refreshed every UpdateClockLabel tick). Node
@@ -1779,18 +1812,102 @@ public partial class MainUi : Control
 
         // Morning ending is the send-off: the party is actually leaving, which deserves its own cue
         // rather than the generic bell.
-        var departing = completedPhase == DayPhase.Morning;
+        //
+        // `completedPhase == state.Phase` catches the OTHER caller of this event: SimAdapter.Queue's
+        // immediate-action branch (buy/craft/stock/reprice — the 2026-07-30 fix) raises StateChanged
+        // with the CURRENT, un-advanced phase, because nothing actually completed — see Queue's own
+        // doc. Without this guard every accepted craft/buy during Morning read as "the party just
+        // departed": the wrong cue today, and — once this unit wired Drawer.Close() below to
+        // `departing` — the Forge/Shop drawer slamming shut under the player's own click, which would
+        // have been a far worse regression than the bug this method exists to fix. `state` is already
+        // the POST-event CurrentState (fetched by the caller, OnPhaseCompleted), so the comparison
+        // costs nothing extra.
+        var departing = completedPhase == DayPhase.Morning && completedPhase != state.Phase;
         Audio.Play(departing ? Cue.PartyDepart : Cue.Bell);
+
+        if (!departing)
+        {
+            return;
+        }
 
         // And show it. The HUD has been promising "watch them go" while the gate sat off screen at the
         // north edge and the rally marker appeared outside the view — Brian never once saw a departure.
-        // Skipped while a drawer/modal owns the screen: yanking the camera behind a panel the player is
-        // reading is worse than missing the beat, and they would not see it anyway.
-        if (departing && !Drawer.IsOpen && !Interior.IsOpen && !Ledger.Visible)
+        //
+        // U1 (playtest-three plan, KTD-A): the ORIGINAL gate here was `!Drawer.IsOpen &&
+        // !Interior.IsOpen && !Ledger.Visible` — skip the whole beat while a surface owns the screen.
+        // That IS the reported bug: a normal Morning ends with a drawer open (craft, then send them
+        // off), so the common case skipped the pan every time and the PiP dock stayed suppressed
+        // underneath it. "Clicked send them off; not sure what's happening next... WHERE ARE THE
+        // VISUALS" was this gate firing correctly, every day, on the one drawer that is open at the
+        // exact click that causes it.
+        //
+        // Fix, per KTD-A: (1) CLOSE the open drawer instead of stepping around it — legitimate,
+        // because the player just deliberately ended Morning, and a drawer's verbs are all Morning
+        // verbs. DrawerHost.Close() is safe re: #331 (see SimPanel.Clear's doc): it only flips
+        // CurrentPanelId and starts the slide-out animation (Tick, driven from _Process) — it frees
+        // nothing synchronously, so calling it here, inside OnPhaseCompleted's stack (itself
+        // synchronous with whatever pressed the bell), cannot repeat the "freed a node mid-signal"
+        // crash. Drawer.Closed already fires UpdateEngaged (see its subscription in BuildUi), so
+        // Pip.Suppressed recomputes within this same call — the dock does not wait for a frame that
+        // never arrives in a paused/test context.
+        //
+        // ORDERING HAZARD found via ShopPanelTests.VeteranHero_PassesOnPoorShelfItem...: this method
+        // runs INSIDE OnPhaseCompleted, BEFORE that method's own RefreshAll() call — and RefreshAll's
+        // per-drawer refresh (`if (Drawer.CurrentPanelId is { } openId) PanelFor(openId).Refresh();`)
+        // only fires while a panel is still registered as open. Calling Drawer.Close() here FIRST
+        // would null CurrentPanelId before RefreshAll ever runs, so the panel that was open for the
+        // exact tick that just closed it would silently never render that tick's own outcome (e.g. a
+        // hero's refusal reason) — stale until the player happens to reopen it. Refresh it explicitly,
+        // right here, before closing: the sim's CurrentState/LastEvents are already fully settled by
+        // this point (AdvancePhase completed before StateChanged fired), so this renders the true
+        // tick outcome; RefreshAll's own gated refresh then no-ops harmlessly once the drawer is shut.
+        if (Drawer.CurrentPanelId is { } closingPanelId)
         {
+            PanelFor(closingPanelId).Refresh();
+        }
+
+        Drawer.Close();
+
+        // (2) a genuine MODAL (Ledger/Camp/Mirror/Forecast/Bestiary/Commissions/Legends, or the
+        // staged Interior) is a different case from a drawer: the player opened it on purpose
+        // mid-Morning, and it is not this method's place to close it out from under them. Defer the
+        // beat instead of dropping it — whichever modal-close path finds the screen clear next fires
+        // it (TryFireDeferredMineGateFocus).
+        if (ModalOwnsTheScreen())
+        {
+            _pendingMineGateFocus = true;
+            return;
+        }
+
+        Town.FocusOnMineGate();
+    }
+
+    /// <summary>
+    /// (3) Fires the departure focus beat <see cref="SoundTheTick"/> deferred because a modal owned
+    /// the screen at the actual send-off tick. Called from every modal-close path (each surface's
+    /// own <c>VisibilityChanged</c> handler, plus <see cref="OnInteriorExited"/>) so the pan lands
+    /// the instant nothing is left covering the town — however many modals the player opens and
+    /// closes in between, and regardless of which one happens to be the last to go.
+    /// </summary>
+    private void TryFireDeferredMineGateFocus()
+    {
+        if (_pendingMineGateFocus && !ModalOwnsTheScreen())
+        {
+            _pendingMineGateFocus = false;
             Town.FocusOnMineGate();
         }
     }
+
+    /// <summary>
+    /// True while a modal overlay (Ledger/Camp/Mirror/Forecast/Bestiary/Commissions/Legends) or the
+    /// staged Interior covers the middle of the screen — the "not a drawer" half of <see
+    /// cref="UpdateEngaged"/>'s engaged latch, pulled into its own method so U1's departure-focus
+    /// pending beat (above) reads the EXACT same predicate instead of a second hand-copied clause
+    /// list that could silently drift from it.
+    /// </summary>
+    private bool ModalOwnsTheScreen() =>
+        Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible
+        || Forecast.Visible || Bestiary.Visible || Commissions.Visible || Legends.Visible;
 
     /// <summary>
     /// U-audio-2: which cue plays when <paramref name="id"/> opens. Owner's playtest: "Noises for the
@@ -1995,6 +2112,7 @@ public partial class MainUi : Control
     private void OnInteriorExited()
     {
         UpdateEngaged();
+        TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
     }
 
     /// <summary>Reading the Ledger pauses the town; closing it resumes if it was running.</summary>
@@ -2023,6 +2141,7 @@ public partial class MainUi : Control
 
         UpdateEngaged(); // the Ledger modal engages the latch too
         UpdateClockLabel();
+        TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
     }
 
     /// <summary>U10: mirror of <see cref="OnLedgerVisibilityChanged"/> for the raid-forecast board —
@@ -2047,6 +2166,7 @@ public partial class MainUi : Control
 
         UpdateEngaged();
         UpdateClockLabel();
+        TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
     }
 
     /// <summary>Gate-b flag 3: mirror of the Forecast/Ledger latch for the Bestiary modal — pause
@@ -2065,6 +2185,7 @@ public partial class MainUi : Control
 
         UpdateEngaged();
         UpdateClockLabel();
+        TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
     }
 
     /// <summary>Wave 3 (U15): mirror of the Bestiary/Forecast latch for the commission board — pause
@@ -2083,6 +2204,7 @@ public partial class MainUi : Control
 
         UpdateEngaged();
         UpdateClockLabel();
+        TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
     }
 
     /// <summary>Wave 4 (U21): mirror of the Bestiary/Forecast latch for the Legends Wall — pause
@@ -2101,6 +2223,7 @@ public partial class MainUi : Control
 
         UpdateEngaged();
         UpdateClockLabel();
+        TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
     }
 
     /// <summary>The scrying mirror holds the town clock while open, same as Ledger/Camp — reading a
@@ -2120,6 +2243,7 @@ public partial class MainUi : Control
 
         UpdateEngaged();
         UpdateClockLabel();
+        TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
     }
 
     /// <summary>The camp decision window holds the town clock; Hold (close) resumes it if it was running.</summary>
@@ -2138,6 +2262,7 @@ public partial class MainUi : Control
 
         UpdateEngaged(); // the Camp modal engages the latch too
         UpdateClockLabel();
+        TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
     }
 
     /// <summary>
@@ -2225,8 +2350,7 @@ public partial class MainUi : Control
         // Split out from `engaged` because the two cases leave the screen in different shapes: the side
         // drawer occupies a fixed right-hand column, while an interior or a modal covers the middle of the
         // window with no reliable free strip. Only the first one leaves anywhere to put the tutorial card.
-        var modalOwnsTheScreen = Interior.IsOpen || Ledger.Visible || Camp.Visible || Mirror.Visible
-            || Forecast.Visible || Bestiary.Visible || Commissions.Visible || Legends.Visible;
+        var modalOwnsTheScreen = ModalOwnsTheScreen(); // U1: shared with SoundTheTick's departure gate
         var engaged = Drawer.IsOpen || modalOwnsTheScreen;
 
         // U8: Clock.Engaged can ALSO be held by the day-1 craft→shelve pacing guard above —
