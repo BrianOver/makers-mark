@@ -1,6 +1,7 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
 using System.Linq;
+using System.Threading.Tasks;
 using GameSim.Contracts;
 using GameSim.Drama;
 using GameSim.Narrative;
@@ -972,6 +973,87 @@ public class MainUiTests
         finally
         {
             Unmount(ui);
+        }
+    }
+
+    // ── Fullscreen (owner playtest: "should be able to full screen the game" — no way to do it). ──
+    //
+    // DisplayServer.WindowSetMode/WindowGetMode are no-ops under --headless (verified by a
+    // throwaway headless script, per repo convention: setting Fullscreen then reading back still
+    // reported the pre-set mode) — asserting the REAL window state here would pass or fail
+    // independent of MainUi's own logic. MainUi.TestWindowMode is the seam that lets these tests
+    // pin a starting mode and prove the TOGGLE LOGIC (F11 handler, button handler, button-state
+    // sync) actually flips it, without touching the real engine call.
+
+    [TestCase]
+    public void FullscreenButton_ReflectsTheStartingWindowMode()
+    {
+        MainUi.TestWindowMode = DisplayServer.WindowMode.Fullscreen;
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(Find<Button>(ui, "Fullscreen").ButtonPressed)
+                .OverrideFailureMessage("Started fullscreen, but the HUD button didn't show it pressed at mount.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+            MainUi.TestWindowMode = null;
+        }
+    }
+
+    [TestCase]
+    public async Task F11_TogglesFullscreen_AndSyncsTheHudButton()
+    {
+        MainUi.TestWindowMode = DisplayServer.WindowMode.Windowed;
+        var ui = MountMainUi();
+        try
+        {
+            var button = Find<Button>(ui, "Fullscreen");
+            AssertThat(button.ButtonPressed).IsFalse();
+
+            var player = new HumanPlayer(ui);
+            player.Tap(Key.F11);
+            await player.Frames(1);
+
+            AssertThat(MainUi.TestWindowMode)
+                .OverrideFailureMessage("F11 did not flip the window mode to Fullscreen.")
+                .IsEqual(DisplayServer.WindowMode.Fullscreen);
+            AssertThat(button.ButtonPressed)
+                .OverrideFailureMessage("Window went fullscreen but the HUD button never synced to pressed.")
+                .IsTrue();
+
+            player.Tap(Key.F11);
+            await player.Frames(1);
+
+            AssertThat(MainUi.TestWindowMode).IsEqual(DisplayServer.WindowMode.Windowed);
+            AssertThat(button.ButtonPressed).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+            MainUi.TestWindowMode = null;
+        }
+    }
+
+    [TestCase]
+    public void PressingTheFullscreenButton_TogglesTheSameAsF11()
+    {
+        MainUi.TestWindowMode = DisplayServer.WindowMode.Windowed;
+        var ui = MountMainUi();
+        try
+        {
+            Press(ui, "Fullscreen");
+
+            AssertThat(MainUi.TestWindowMode)
+                .OverrideFailureMessage("Pressing the HUD button did not flip the window mode.")
+                .IsEqual(DisplayServer.WindowMode.Fullscreen);
+        }
+        finally
+        {
+            Unmount(ui);
+            MainUi.TestWindowMode = null;
         }
     }
 
