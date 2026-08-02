@@ -159,6 +159,32 @@ public partial class Town2D : Control
     /// <summary>Re-emits <see cref="HeroActor2D.Picked"/> — hero id.</summary>
     public event Action<int>? HeroClicked;
 
+    /// <summary>U1 (painted-interiors plan): re-emits <see cref="InteriorRoom2D.StationActivated"/>
+    /// — an already-routable action string ("Forge"/"Shop"/...), mirroring how <see
+    /// cref="BuildingClicked"/> re-emits <see cref="Building2D.Picked"/> for town buildings.
+    /// <c>MainUi</c> subscribes this straight onto its existing <c>OnInteriorHotspotActivated</c>.</summary>
+    public event Action<string>? StationActivated;
+
+    /// <summary>U1: true while the player is inside a walkable interior room (KTD-1, island
+    /// placement) rather than the bare town. Gates the mine-gate departure focus beat (<see
+    /// cref="FocusOnMineGate"/>) — everything else (drawer/modal engagement, the objective chip)
+    /// is unaffected: the room IS the world, not an overlay (KTD-4).</summary>
+    public bool InteriorActive { get; private set; }
+
+    /// <summary>The venue key of the currently-entered room, or null outside one (test/MainUi
+    /// visibility).</summary>
+    public string? InteriorVenueKey { get; private set; }
+
+    /// <summary>Warm constant modulate for the room's interior (U1 slice-1 answer to "the room
+    /// would otherwise read purple" — <see cref="DuskModulate"/> tints the WHOLE viewport, and the
+    /// room/town are never on screen at once, so overriding it while <see cref="InteriorActive"/>
+    /// reads identically to a per-subtree tint would without needing a second <see
+    /// cref="CanvasModulate"/> — Godot supports at most one per canvas). Flagged for the owner's
+    /// eye at the U1 receipt (plan Open Question 1); U2/a later pass may make this phase-aware.</summary>
+    private static readonly Color InteriorWarmTint = new(1.05f, 0.92f, 0.78f);
+
+    private readonly Dictionary<string, InteriorRoom2D> _interiorRooms = new();
+
     /// <summary>The adapter <see cref="Build"/> was given. Null only before <see cref="Build"/> has
     /// run.</summary>
     public SimAdapter? Adapter { get; private set; }
@@ -280,6 +306,7 @@ public partial class Town2D : Control
         YSort.AddChild(BuildingsRoot);
         BuildBuildings();
         BuildProps();
+        BuildInteriorRooms(); // U1: island rooms exist off-frame from the start, same as the town
 
         Player = new PlayerController2D { Name = "Player" };
         YSort.AddChild(Player);
@@ -420,6 +447,75 @@ public partial class Town2D : Control
             ? building
             : throw new InvalidOperationException($"No building named '{key}' in Town2D.");
 
+    /// <summary>Look up a built interior room by venue key (test/inspection surface, mirrors <see
+    /// cref="FindBuilding"/>'s own contract) — throws if <see cref="Build"/> hasn't run or the
+    /// venue has no <see cref="InteriorLayout2D"/> row.</summary>
+    public InteriorRoom2D FindInteriorRoom(string venueKey) =>
+        _interiorRooms.TryGetValue(venueKey, out var room)
+            ? room
+            : throw new InvalidOperationException($"No interior room for venue '{venueKey}' in Town2D.");
+
+    /// <summary>
+    /// U1 (KTD-1, island placement): teleports the player into <paramref name="venueKey"/>'s
+    /// walkable interior room and clamps the camera to it — no town hide/show, no reparenting, no
+    /// new SubViewport; the town keeps existing off-frame exactly as it does off-camera today.
+    /// No-op if already inside a room, or if <paramref name="venueKey"/> has no <see
+    /// cref="InteriorLayout2D"/> row (<c>MainUi.OnTownBuildingClicked</c> checks that table before
+    /// calling this, so the second case is defensive only, mirroring <see cref="FindBuilding"/>'s
+    /// throw-on-unknown-key contract would be too strict here — a stale/legacy building key with no
+    /// room row must fall through to the drawer, not throw).
+    /// </summary>
+    public void EnterInterior(string venueKey)
+    {
+        if (InteriorActive || !_interiorRooms.TryGetValue(venueKey, out var room))
+        {
+            return;
+        }
+
+        InteriorActive = true;
+        InteriorVenueKey = venueKey;
+
+        Player.SpawnAt(room.DoorAnchorGlobal);
+
+        Cam.LimitLeft = (int)room.RoomRect.Position.X;
+        Cam.LimitTop = (int)room.RoomRect.Position.Y;
+        Cam.LimitRight = (int)(room.RoomRect.Position.X + room.RoomRect.Size.X);
+        Cam.LimitBottom = (int)(room.RoomRect.Position.Y + room.RoomRect.Size.Y);
+        Cam.GlobalPosition = room.DoorAnchorGlobal;
+        Cam.ResetSmoothing(); // avoid a long glide-in from wherever the camera sat in town (mirrors Build()'s own post-snap ResetSmoothing)
+
+        WorldInputNode.Configure(Player, room.Stations); // re-point interact/highlight scanning at the room's stations
+    }
+
+    /// <summary>
+    /// Reverses <see cref="EnterInterior"/>: teleports the player back to <see
+    /// cref="InteriorVenueKey"/>'s building door anchor, unclamps the camera to the town's own
+    /// bounds, and re-points <see cref="WorldInputNode"/> at the town's buildings. No-op outside a
+    /// room (double-Esc / walking back over the exit zone twice is safe).
+    /// </summary>
+    public void ExitInterior()
+    {
+        if (!InteriorActive)
+        {
+            return;
+        }
+
+        var doorAnchor = FindBuilding(InteriorVenueKey!).DoorAnchorGlobal;
+        InteriorActive = false;
+        InteriorVenueKey = null;
+
+        Player.SpawnAt(doorAnchor);
+
+        Cam.LimitLeft = 0;
+        Cam.LimitTop = 0;
+        Cam.LimitRight = TownLayout2D.GridWidth * TileSize;
+        Cam.LimitBottom = TownLayout2D.GridHeight * TileSize;
+        Cam.GlobalPosition = doorAnchor;
+        Cam.ResetSmoothing();
+
+        WorldInputNode.Configure(Player, _buildingsByKey.Values.ToList());
+    }
+
     /// <summary>Live hero-actor count (test/inspection surface).</summary>
     public int HeroActorCount() => _heroActors.Count;
 
@@ -553,7 +649,12 @@ public partial class Town2D : Control
 
         if (Adapter is not null && _dayTint is not null)
         {
-            DuskModulate.Color = _dayTint.Advance(delta, Adapter.CurrentState.Phase);
+            // U1: the eased driver keeps advancing even while inside a room (so exiting resumes
+            // exactly where dusk should be, no jump) — only the RENDERED color is overridden to a
+            // warm constant while InteriorActive. See InteriorWarmTint's own doc for why a global
+            // override reads correctly here despite DuskModulate covering the whole viewport.
+            var eased = _dayTint.Advance(delta, Adapter.CurrentState.Phase);
+            DuskModulate.Color = InteriorActive ? InteriorWarmTint : eased;
         }
 
         if (_pendingMarchOut.Count == 0)
@@ -670,9 +771,19 @@ public partial class Town2D : Control
         _focusRemaining = seconds;
     }
 
-    /// <summary>Convenience for the commonest focus beat: look at the mine gate as a party departs.</summary>
+    /// <summary>Convenience for the commonest focus beat: look at the mine gate as a party departs.
+    /// U1: suppressed while <see cref="InteriorActive"/> — the camera is clamped to the room rect,
+    /// and a departure pan would fight that clamp and rip the player's view out of the room mid-day.
+    /// Simply dropped, not deferred (contrast <c>MainUi</c>'s modal-owns-the-screen pending-beat
+    /// path): a beat that would have fired while the player happened to be inside the forge is an
+    /// acceptable, deliberately cheap simplification for this slice.</summary>
     public void FocusOnMineGate(float seconds = MineGateFocusSeconds)
     {
+        if (InteriorActive)
+        {
+            return;
+        }
+
         if (_buildingsByKey.TryGetValue("minegate", out var gate))
         {
             FocusOn(gate.DoorAnchorGlobal, seconds);
@@ -793,6 +904,40 @@ public partial class Town2D : Control
             {
                 Ground.AddChild(node);
             }
+        }
+    }
+
+    /// <summary>
+    /// U1 (painted-interiors plan): instantiates every <see cref="InteriorLayout2D.Rooms"/> entry —
+    /// called once from <see cref="Build"/>, right after <see cref="BuildProps"/> so <see
+    /// cref="YSort"/> already exists. Each room's shell/walls/exit-zone mount under the room's own
+    /// node (built off-frame at its island offset — KTD-1); each room's STATIONS mount as direct
+    /// children of <see cref="YSort"/> itself (see <see cref="InteriorRoom2D"/>'s own class doc for
+    /// why: they must share the town's flat Y-sort scope with the player, not a nested one).
+    /// </summary>
+    private void BuildInteriorRooms()
+    {
+        foreach (var spec in InteriorLayout2D.Rooms.Values)
+        {
+            var room = new InteriorRoom2D();
+            World.AddChild(room);
+            room.Build(spec);
+            room.StationActivated += action => StationActivated?.Invoke(action);
+
+            foreach (var station in room.Stations)
+            {
+                YSort.AddChild(station);
+            }
+
+            room.ExitZone.BodyEntered += body =>
+            {
+                if (body == Player && InteriorActive && InteriorVenueKey == spec.VenueKey)
+                {
+                    ExitInterior();
+                }
+            };
+
+            _interiorRooms[spec.VenueKey] = room;
         }
     }
 
