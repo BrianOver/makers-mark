@@ -78,7 +78,24 @@ public static class UiTestSupport
     /// to observe what <c>MainUi._Ready</c> itself applied (e.g. asserting the persisted
     /// setting/AE1 default landed) before this override would mask it.
     /// </param>
-    public static MainUi MountMainUi(SimAdapter? adapterOverride, bool forceGated = true)
+    /// <param name="keepRendering">
+    /// Leave the mount's SubViewports rendering. Defaults FALSE — every mount stops rendering unless
+    /// a test opts in, and that default is deliberate.
+    ///
+    /// <para><b>Why the default flipped (2026-08-03).</b> Rendering while a test holds a mount is the
+    /// documented gdUnit headless hang, and the guard used to be one hand-written line per test naming
+    /// <c>ui.Town.WorldViewport</c>. That line is a list of one, maintained by memory, and it went
+    /// stale: <c>MineWatch</c>'s constructor builds a SECOND viewport ("MineViewport") at
+    /// <c>UpdateMode.Always</c>, so tests that opened the watch panel kept rendering while the code
+    /// above them claimed rendering was off. It cost a full day of debugging, and produced three
+    /// confident wrong diagnoses (a "fixed wall-clock cap", a "random flaky test", and a
+    /// peak-vs-residue memory theory) before anyone checked the premise.
+    ///
+    /// <para>So this is no longer something a test must remember. Opting IN is visible in a diff and
+    /// needs a reason; forgetting to opt OUT was invisible and needed nothing. Only pass true when the
+    /// test genuinely asserts on rendered pixels, and say why at the call site.</para>
+    /// </param>
+    public static MainUi MountMainUi(SimAdapter? adapterOverride, bool forceGated = true, bool keepRendering = false)
     {
         var tree = (SceneTree)Engine.GetMainLoop();
         var ui = GD.Load<PackedScene>("res://scenes/panels/main_ui.tscn").Instantiate<MainUi>();
@@ -88,6 +105,13 @@ public static class UiTestSupport
         {
             ui.Clock.Pause();          // tests drive phases explicitly
             ui.Clock.SetAutoAdvance(false); // U15: never let a persisted/ON default fire a tick
+        }
+
+        if (!keepRendering)
+        {
+            // Walks the tree rather than naming a field, so the next viewport anybody adds is covered
+            // on the day it is added. See the keepRendering doc for what the naming approach cost.
+            DisableAllRendering(ui);
         }
 
         return ui;
