@@ -5,6 +5,7 @@ using System.Linq;
 using GameSim.Contracts;
 using GameSim.Professions;
 using Godot;
+using GodotClient.Panels;
 using GodotClient.Ui;
 
 namespace GodotClient.Town2d;
@@ -777,7 +778,7 @@ public partial class Town2D : Control
             var actor = _heroActors[heroId];
             _heroActors.Remove(heroId);
             HeroesRoot.RemoveChild(actor);
-            actor.QueueFree();
+            PanelGraveyard.Bury(actor); // detached => parentless => nothing else would ever free it
         }
     }
 
@@ -1440,11 +1441,11 @@ public partial class Town2D : Control
             foreach (var station in old.Stations)
             {
                 YSort.RemoveChild(station);
-                station.QueueFree();
+                PanelGraveyard.Bury(station);
             }
 
             World.RemoveChild(old);
-            old.QueueFree();
+            PanelGraveyard.Bury(old);
         }
 
         MountInteriorRoom(InteriorLayout2D.WorkshopRoomFor(_workshopProfessionOrder));

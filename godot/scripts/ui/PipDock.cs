@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Panels;
 
 namespace GodotClient.Ui;
 
@@ -180,10 +181,13 @@ public partial class PipDock : Control
     /// </summary>
     private void UpdateHpPips(GameState state)
     {
+        // Same detach-now/destroy-deferred contract as SimPanel.Clear, and the same leak without the
+        // registry: this runs on every refresh, and a detached node is parentless, so neither
+        // ui.Free() nor a frame that never comes ever destroys it. See PanelGraveyard.
         foreach (var child in _hpPipsRow.GetChildren())
         {
             _hpPipsRow.RemoveChild(child);
-            child.QueueFree();
+            PanelGraveyard.Bury(child);
         }
 
         if (_activeIndex >= _feed.Cards.Count)

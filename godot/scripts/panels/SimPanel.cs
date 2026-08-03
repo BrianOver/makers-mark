@@ -54,13 +54,25 @@ public abstract partial class SimPanel : Control
     /// the destruction moves to the end of the frame, by which time no signal is in flight. Fixing it
     /// here rather than at the call sites means every panel inherits it and no future handler has to
     /// remember an invariant that was already being violated.</para>
+    ///
+    /// <para><b>Why the detached child is also handed to <see cref="PanelGraveyard"/>.</b> The two
+    /// steps above are individually right and jointly leak in any host that never finishes a frame.
+    /// <c>RemoveChild</c> makes the node parentless, so <c>UiTestSupport.Unmount</c>'s synchronous
+    /// <c>ui.Free()</c> has nothing to cascade through to it, and <c>QueueFree</c> only defers to a
+    /// frame boundary an engine test never reaches — so every rebuild stranded its whole previous
+    /// subtree in the shared Godot runtime for the rest of the session (~468,000 nodes across this
+    /// suite; 375,655 from the click-through playtest alone). The registry keeps a handle so
+    /// <c>MainUi</c> can destroy the stragglers at mount/unmount. It does not change WHEN a node dies
+    /// in the running game (still end-of-frame, still signal-safe) and it deliberately leaves the
+    /// node parentless, so nothing here becomes visible to a tree walk that could not see it before.
+    /// See <see cref="PanelGraveyard"/> for why this is a registry rather than a hidden node.</para>
     /// </summary>
     protected static void Clear(Node parent)
     {
         foreach (var child in parent.GetChildren())
         {
             parent.RemoveChild(child);
-            child.QueueFree();
+            PanelGraveyard.Bury(child);
         }
     }
 
