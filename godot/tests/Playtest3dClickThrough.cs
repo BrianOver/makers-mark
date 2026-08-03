@@ -42,7 +42,30 @@ namespace GodotClient.Tests;
 [RequireGodotRuntime]
 public class Playtest3dClickThrough
 {
-    private const int Days = 40;
+    /// <summary>
+    /// In-game days the sweep plays. Was 40; 12 since 2026-08-03. BOTH numbers were measured on the
+    /// full suite, and the measurements are the only reason this is 12:
+    ///
+    /// <list type="bullet">
+    ///   <item><description>40 days + all rendering disabled: suite TRUNCATED at 532 of 803, runtime
+    ///   cancelled.</description></item>
+    ///   <item><description>12 days + all rendering disabled: full suite, 803 of 803, sweep itself
+    ///   ~8s.</description></item>
+    /// </list>
+    ///
+    /// <para>Both factors are load-bearing and neither alone is enough. Rendering was the bigger
+    /// surprise — a second SubViewport (MineWatch's, at <c>UpdateMode.Always</c>) was never disabled,
+    /// so the sweep rendered its whole run while the code claimed rendering was off — but fixing it
+    /// did NOT make 40 days affordable. I reverted this to 40 once on the theory that rendering was
+    /// the whole story, and the run above is what said otherwise. Do not repeat that: change this
+    /// number only against a full-suite measurement.</para>
+    ///
+    /// <para><b>Hard floor:</b> the panel order rotates by day so no single panel can hog the day's
+    /// action budget, so fewer than <c>AllPanels.Length</c> days means some panel NEVER leads and its
+    /// verbs go unexercised — the exact coverage hole the rotation exists to close. 12 gives all 9
+    /// panels a lead with margin.</para>
+    /// </summary>
+    private const int Days = 12;
 
     /// <summary>
     /// Wall-clock ceiling this test enforces on ITSELF. Sized from measurement, not guesswork: an
@@ -52,23 +75,42 @@ public class Playtest3dClickThrough
     /// multi-minute external stall this budget exists to pre-empt. If this trips, investigate
     /// before raising it — see the overrun assertion's own message.
     ///
-    /// <para>Investigated and DELIBERATELY NOT FIXED here: this run also warns of 375,655 orphan
-    /// Control nodes (gdUnit's own orphan-node count) — <see cref="SimPanel"/>'s <c>Clear()</c>
-    /// helper <c>QueueFree()</c>s the old rows on every panel Refresh() rather than <c>Free()</c>ing
-    /// them immediately (correctly — an immediate Free() would destroy a Button mid-EmitSignal on
-    /// its OWN Pressed handler, since an immediate action's Queue() re-enters RefreshAll on the same
-    /// call stack), and this test's tight synchronous loop never yields a process frame for Godot to
-    /// actually flush that queue. A per-tick <c>await ToSignal(tree, ProcessFrame)</c> was tried and
-    /// MEASURED to make things dramatically worse, not better: 36s became 5+ minutes (killed before
-    /// completion) with both live SubViewports (Town's and MineWatch's own "MineViewport",
-    /// UpdateMode.Always from construction) disabled first. Disabling rendering stops the
-    /// compositor, not Town2D's own per-frame world simulation (NPCs, ambient life, animation) —
-    /// pumping a real frame pays that live-world cost ~180 times, which dwarfs the orphan-node
-    /// saving. Left as an orphan-node WARNING (harmless to CI's pass/fail signal; see
-    /// fix/bound-the-clickthrough-sweep's PR body for the recommended owner follow-up), not fixed
-    /// in this PR.</para>
+    /// <para><b>The detached-node PEAK is bounded per phase tick — do not remove the drain.</b>
+    /// <see cref="SimPanel"/>'s <c>Clear()</c> helper <c>QueueFree()</c>s the old rows on every panel
+    /// Refresh() rather than <c>Free()</c>ing them immediately (correctly — an immediate Free() would
+    /// destroy a Button mid-EmitSignal on its OWN Pressed handler, since an immediate action's
+    /// Queue() re-enters RefreshAll on the same call stack), and this test's tight synchronous loop
+    /// never yields a process frame for Godot to actually flush that queue. PanelGraveyard (#377)
+    /// bounds the RESIDUE — everything is destroyed at Unmount — but this test still HELD ~375,655
+    /// detached nodes (~1.3 GB Godot RSS) at its peak, and under that pressure the shared gdUnit
+    /// runtime dies mid-session: measured 2026-08-03, full local suites truncated at 528-530 of ~800
+    /// ("Connection interrupted by cancellation requested", or exit -1073741819 / 139 — same root,
+    /// two exits), blaming whichever test held the runtime when it fell. So the sweep now drains the
+    /// graveyard once per phase tick (<see cref="MainUi.DrainDetachedPanelsForTests"/> — see its
+    /// safety contract; the tick boundary is outside every Pressed emission), bounding the peak to
+    /// one tick's rebuilds, and asserts that bound via <see cref="PeakDetachedNodeBudget"/>.</para>
+    ///
+    /// <para>A per-tick <c>await ToSignal(tree, ProcessFrame)</c> was tried FIRST and MEASURED to
+    /// make things dramatically worse, not better: 36s became 5+ minutes (killed before completion)
+    /// with both live SubViewports (Town's and MineWatch's own "MineViewport", UpdateMode.Always
+    /// from construction) disabled first. Disabling rendering stops the compositor, not Town2D's own
+    /// per-frame world simulation (NPCs, ambient life, animation) — pumping a real frame pays that
+    /// live-world cost ~180 times, which dwarfs the orphan-node saving. The drain gets the flush
+    /// without buying the frame.</para>
     /// </summary>
     private static readonly TimeSpan SessionBudget = TimeSpan.FromSeconds(90);
+
+    /// <summary>
+    /// Ceiling on how many detached-but-alive nodes (Godot's own orphan counter, over this test's
+    /// starting baseline) the sweep may hold at any phase-tick boundary. The per-tick drain is what
+    /// keeps this small; the assertion is what keeps the drain from being silently lost — without
+    /// it, deleting those calls changes nothing this test reports and the suite goes back to dying
+    /// two-thirds in with the blame on some unrelated test. Sized like <see cref="SessionBudget"/>:
+    /// from measurement, with headroom for content growth (more panels/recipes/rows per rebuild),
+    /// an order of magnitude under the known-fatal 375k. If this trips, a rebuild got much heavier
+    /// or a drain call went missing — find which before raising it.
+    /// </summary>
+    private const int PeakDetachedNodeBudget = 60_000;
 
     /// <summary>
     /// The verb prefixes in <see cref="ClickablePrefixes"/> this sweep can ACTUALLY reach today,
@@ -96,9 +138,32 @@ public class Playtest3dClickThrough
     /// fact, not a hope. See fix/bound-the-clickthrough-sweep's PR body for the recommended owner
     /// follow-up.
     /// </summary>
+    /// <remarks>
+    /// <para><b>Two entries were REMOVED from this list on 2026-08-03, after the rotation fix let the
+    /// sweep run to completion and the guard could finally be believed.</b> Both were expectations a
+    /// blind sweep cannot satisfy, and neither removal loses coverage:</para>
+    /// <list type="bullet">
+    ///   <item><description><b>"HeroCard"</b> — impossible by construction, not merely hard.
+    ///   <c>HeroesPanel</c>'s <c>HeroCard_{id}</c> overlay is a toggle whose Pressed handler calls
+    ///   <c>RenderDetail(...)</c> and nothing else. It queues NO action, so "landed" (this test's
+    ///   definition: the adapter's pending or applied count grew) can never be true for it, no matter
+    ///   how many days run. It is still CLICKED every pass via <see cref="ClickablePrefixes"/>, which
+    ///   is the coverage that was ever real here — that opening a hero's detail view does not
+    ///   throw.</description></item>
+    ///   <item><description><b>"CampSend"</b> — the sweep destroys its own precondition.
+    ///   <c>CampPanel</c> gates Send on <c>!held.IsEmpty</c> (there must be something in your hands to
+    ///   send), and this sweep presses <c>Stock</c> whenever it is enabled, which empties them. So the
+    ///   greedy click order guarantees the Send button is disabled by the time Camp is reached. That is
+    ///   a driver artifact, not a game defect. Real coverage lives in <c>CampPanelTests</c>, which sets
+    ///   the state up deliberately and presses <c>CampSend_1</c> — including the one-runner-per-day
+    ///   rule, which needs two presses and so could never be expressed here.</description></item>
+    /// </list>
+    /// <para>Do not "restore" either without reading the above — adding them back makes this test fail
+    /// forever for reasons that have nothing to do with the app.</para>
+    /// </remarks>
     private static readonly string[] ExpectedReachableVerbs =
     {
-        "BuyMat", "Craft", "Unlock", "PostBounty", "Stock", "CampSend", "CampRecall", "HeroCard",
+        "BuyMat", "Craft", "Unlock", "PostBounty", "Stock", "CampRecall",
     };
 
     /// <summary>Panels a player opens and acts in each day (drawer + the commission/legend surfaces).</summary>
@@ -142,16 +207,18 @@ public class Playtest3dClickThrough
         var ui = MountMainUi(new GodotClient.SimAdapter(
             GameSim.GameComposition.NewCampaign(2026UL, GameSim.Professions.ProfessionRegistry.BlacksmithId)));
 
-        // MainUi owns a Town2D with a live SubViewport, and this is by far the longest-lived mount in
-        // the suite — 40 days x 9 panels of clicking. Left rendering, it takes the gdUnit Godot
-        // runtime down with it: measured 2026-08-03, two local full-suite runs died at test 528 and
-        // 529 of 787 with "Connection interrupted by cancellation requested", blaming whichever test
-        // held the runtime when the axe fell. That is the failure the repo had recorded as
-        // "CI only, still unexplained" — it reproduces locally, on an idle machine, with no other
-        // gdUnit run in flight. CI hides it because CI disables rendering wholesale, which is why the
-        // same commit does 787 tests there and 529 here. Thirteen other MainUi tests already do this;
-        // the sweep needed it most and was the one test missing it.
-        ui.Town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+        // Stop EVERY viewport, not just Town's. This is the longest-lived mount in the suite, and left
+        // rendering it takes the shared gdUnit runtime down with it — local full-suite runs died around
+        // test 530 of ~800 with "Connection interrupted by cancellation requested" or a segfault,
+        // blaming whichever test held the runtime when the axe fell.
+        //
+        // The one-line `ui.Town.WorldViewport` guard that thirteen other tests use was NOT enough here,
+        // and finding out why cost most of a day: MineWatch's constructor builds a SECOND viewport
+        // ("MineViewport") at UpdateMode.Always, so this sweep — which opens the watch panel every
+        // phase — kept rendering the whole way through while the code above it claimed rendering was
+        // off. DisableAllRendering walks the tree, so it cannot go stale the way a hand-written list of
+        // one did.
+        DisableAllRendering(ui);
 
         var outcomes = new List<ClickOutcome>();
         var crashes = new List<string>();
@@ -163,6 +230,8 @@ public class Playtest3dClickThrough
         var overBudget = false;
         var daysCompleted = 0;
         var phasesCompleted = 0;
+        var orphansAtStart = OrphanNodeCount();
+        var peakDetached = 0;
 
         try
         {
@@ -233,6 +302,16 @@ public class Playtest3dClickThrough
 
                     phasesCompleted++;
 
+                    // Bound the PEAK, not just the residue: sample the high-water mark, then destroy
+                    // everything this tick's rebuilds detached. Safe HERE and only here-shaped
+                    // places: every EmitSignal above has returned and AdvancePhase has unwound, so no
+                    // panel signal is in flight — the same condition that makes MainUi's mount/
+                    // unmount drains safe (see DrainDetachedPanelsForTests' contract). Without this,
+                    // the sweep held ~375k detached nodes to its end and the SHARED runtime died
+                    // two-thirds of the way through the suite — see SessionBudget's doc.
+                    peakDetached = Math.Max(peakDetached, OrphanNodeCount() - orphansAtStart);
+                    MainUi.DrainDetachedPanelsForTests();
+
                     // Self-imposed ceiling — see SessionBudget's own doc. Checked once per phase tick
                     // so an overrun is caught close to where it happened, not just once per day.
                     if (stopwatch.Elapsed > SessionBudget)
@@ -257,7 +336,9 @@ public class Playtest3dClickThrough
             var state = ui.Adapter.CurrentState;
             var missingReachable = ExpectedReachableVerbs.Where(v => !verbsClickedOk.Contains(v)).ToList();
             WriteReport(BuildReport(state, outcomes, crashes, rejections, verbsClickedOk, itemsCraftedClicks)
-                + BuildBudgetSection(stopwatch.Elapsed, overBudget, daysCompleted, phasesCompleted, verbsClickedOk, missingReachable));
+                + BuildBudgetSection(
+                    stopwatch.Elapsed, overBudget, daysCompleted, phasesCompleted, verbsClickedOk,
+                    missingReachable, peakDetached));
 
             // The core assertion a player cares about: clicking through the whole UI never crashed.
             // Checked regardless of the budget outcome — a crash is the more important signal either way.
@@ -294,6 +375,17 @@ public class Playtest3dClickThrough
                     + "ExpectedReachableVerbs needs updating. Do not let this go quiet.")
                     .IsEmpty();
                 AssertThat(state.Day >= Days).IsTrue();
+
+                AssertThat(peakDetached)
+                    .OverrideFailureMessage(
+                        $"The sweep held {peakDetached} detached nodes at a phase-tick boundary "
+                        + $"(budget {PeakDetachedNodeBudget}). Either the per-tick "
+                        + "MainUi.DrainDetachedPanelsForTests() call went missing, or panel rebuilds "
+                        + "got an order of magnitude heavier. At ~375k held nodes the SHARED gdUnit "
+                        + "runtime dies mid-session (stall or 0xC0000005) and truncates the suite "
+                        + "while blaming an unrelated test — see PeakDetachedNodeBudget's doc before "
+                        + "touching this number.")
+                    .IsLess(PeakDetachedNodeBudget);
             }
         }
         finally
@@ -306,7 +398,7 @@ public class Playtest3dClickThrough
     /// present so a healthy run's report shows the margin it finished with, not just a failure's.</summary>
     private static string BuildBudgetSection(
         TimeSpan elapsed, bool overBudget, int daysCompleted, int phasesCompleted,
-        HashSet<string> verbsClickedOk, List<string> missingReachable)
+        HashSet<string> verbsClickedOk, List<string> missingReachable, int peakDetached)
     {
         var sb = new StringBuilder();
         sb.AppendLine();
@@ -317,6 +409,8 @@ public class Playtest3dClickThrough
         sb.AppendLine($"- Days completed: {daysCompleted}/{Days} ({phasesCompleted} phase ticks)");
         sb.AppendLine($"- Reachable verbs clicked: {verbsClickedOk.Count}/{ExpectedReachableVerbs.Length}"
             + (missingReachable.Count == 0 ? " (all)" : $" — MISSING: {string.Join(", ", missingReachable)}"));
+        sb.AppendLine($"- Peak detached nodes held at a tick boundary: {peakDetached} "
+            + $"(budget {PeakDetachedNodeBudget}; was ~375,655 before the per-tick drain)");
         return sb.ToString();
     }
 
@@ -378,9 +472,9 @@ public class Playtest3dClickThrough
             GameSim.GameComposition.NewCampaign(2026UL, GameSim.Professions.ProfessionRegistry.BlacksmithId));
         var ui = MountMainUi(starter);
 
-        // Same 40-day mount, same reason — see the sibling test's note on the live SubViewport taking
-        // the gdUnit runtime down.
-        ui.Town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+        // Same long mount, same reason — see the sibling test's note on why this must stop EVERY
+        // viewport and not just Town's.
+        DisableAllRendering(ui);
 
         var craftsLanded = 0;
         try
@@ -413,6 +507,12 @@ public class Playtest3dClickThrough
                 }
 
                 AdvanceDay(ui, 1);
+
+                // Same peak-bounding as the sibling sweep (see its per-tick drain comment): 40 days
+                // of RefreshAll-per-tick rebuilds in a frameless host add up here too. Once per day
+                // is enough for this test's much lighter click pattern, and this point is outside
+                // every Pressed emission and every AdvancePhase stack.
+                MainUi.DrainDetachedPanelsForTests();
             }
 
             var state = ui.Adapter.CurrentState;
@@ -487,6 +587,11 @@ public class Playtest3dClickThrough
     }
 
     private static string Trim(string s) => s.Length > 160 ? s[..160] : s;
+
+    /// <summary>Live nodes belonging to no tree — the engine's own counter, the same quantity
+    /// gdUnit's per-test orphan warning reports (see <c>PanelRebuildDoesNotLeakNodesTests</c>).</summary>
+    private static int OrphanNodeCount() =>
+        (int)Performance.GetMonitor(Performance.Monitor.ObjectOrphanNodeCount);
 
     private static string BuildReport(
         GameState state, List<ClickOutcome> outcomes, List<string> crashes,

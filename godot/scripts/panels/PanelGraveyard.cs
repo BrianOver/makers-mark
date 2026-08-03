@@ -97,7 +97,10 @@ internal static class PanelGraveyard
     /// Destroy anything still standing, now.
     ///
     /// <para>Only safe where no panel signal can be in flight — <c>MainUi</c> calls it on
-    /// NOTIFICATION_ENTER/EXIT_TREE, i.e. mount and unmount, never from inside a refresh. Freeing a
+    /// NOTIFICATION_ENTER/EXIT_TREE, i.e. mount and unmount, never from inside a refresh; the long
+    /// frameless playtests additionally call it between phase ticks via
+    /// <c>MainUi.DrainDetachedPanelsForTests</c> (see its doc for why the peak needs bounding, not
+    /// just the residue). Freeing a
     /// node that is already on the <c>SceneTree</c> deletion queue is fine: the queue stores object
     /// IDs and validates each against <c>ObjectDB</c> before deleting, so an entry we destroyed
     /// early is skipped rather than double-freed.</para>

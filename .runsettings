@@ -98,6 +98,14 @@
            * SimPanel rebuilds that QueueFree children in a test that never yields a frame. QueueFree
              defers to end-of-frame, so nothing is ever actually freed. Do NOT "fix" this by awaiting
              a frame per phase tick — that was measured at 36s -> 5+ minutes on the sweep.
+             RESOLVED SINCE, in two halves (both must stay): PanelGraveyard + the MainUi mount/unmount
+             drains (#377) destroy the residue so nothing leaks ACROSS tests, and the long click-through
+             playtests drain per phase tick via MainUi.DrainDetachedPanelsForTests so the PEAK held
+             WITHIN a test stays bounded (was ~375k nodes / ~1.3 GB RSS — enough on its own to kill the
+             runtime two-thirds through the suite; reproduced 2026-08-03 with the residue fix already
+             in: runner exit -1073741819, suite truncated at 533 of ~800 in 9m44s, both signatures in
+             the same log). The sweep asserts its own peak (PeakDetachedNodeBudget)
+             so losing those drain calls fails THAT test instead of a random later one.
 
          What this corrects in the THIRD block, with measurements:
            * NOT CI-only. It reproduced twice on an idle local machine with NO other gdUnit run in
