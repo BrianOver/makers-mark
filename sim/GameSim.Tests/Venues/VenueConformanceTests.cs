@@ -101,23 +101,31 @@ public class VenueConformanceTests
     {
         // The routing tuning record (2026-08-01, measured against the banded-world power curve:
         // router-side party power ramps 30..54 (p25..p75) in days 1-10 and saturates at ~70-76).
-        // Mine + Sunken Crypt are the EntryPower-0 early peers (queue-split); Gloomwood and
-        // dormant Emberfall share the veteran band at 72 — a deliberate tie, so Emberfall's
-        // art-gated go-live makes the two top venues queue-split peers instead of one strictly
-        // dominating. Change these consciously — they move every seed's venue distribution (and
-        // therefore the balance bands), and MEASURE with the batch farm, never reason it out:
-        // Gloomwood placements 35 and 55 both looked plausible and measured 65%+ and 86% venue
-        // share; the full sweep 55/65/68/70/71/72 measured 86/75/74/70/72/68% — the threshold
-        // lever saturates near ~68-70% in a three-venue world because the economy feeds back
-        // (Mine traffic sells the smith copper, gear improves, the fleet levels back over any
-        // bar below the ~81 power ceiling). Shipping row at these values: gloomwood 68% / mine
-        // 25% / crypt 7%, all three on 20/20 seeds; go-live sanity row: ember 42% / mine 26% /
-        // gloomwood 24% / crypt 6% (ember on 20/20 under the peer tie; gloomwood on 19/20 — the
-        // tie's ordinal bias favors "emberfall", re-tune at go-live if that reads starved).
+        // Mine + Sunken Crypt are the EntryPower-0 early peers (queue-split). Gloomwood sits at
+        // 72; Emberfall sits at 79 — NOT a tie (see below). Change these consciously — they move
+        // every seed's venue distribution (and therefore the balance bands), and MEASURE with the
+        // batch farm, never reason it out: Gloomwood placements 35 and 55 both looked plausible
+        // and measured 65%+ and 86% venue share; the full sweep 55/65/68/70/71/72 measured
+        // 86/75/74/70/72/68% — the threshold lever saturates near ~68-70% in a three-venue world
+        // because the economy feeds back (Mine traffic sells the smith copper, gear improves, the
+        // fleet levels back over any bar below the ~81 power ceiling). Shipping row at these
+        // values: gloomwood 68% / mine 25% / crypt 7%, all three on 20/20 seeds.
+        //
+        // Emberfall go-live (2026-08-02, P3/task #45): first shipped tied at 72 (go-live sanity:
+        // ember 42% / mine 26% / gloomwood 24% / crypt 6%), but a full 20-seed x 100-day sweep on
+        // the real branch measured the tie handing Emberfall 41.4% of ALL routed parties and
+        // collapsing Gloomwood from a same-codebase pre-flip 64.3% down to 19.5% — the ordinal
+        // tie-break ("emberfall" < "gloomwood") wins every close call, so a "peer" band in practice
+        // starved Gloomwood. Re-tuned to 79 (search at 72/76/78/79/80 measured gloomwood/emberfall
+        // shares of 19.5/41.4, 29.1/35.3, 40.7/23.4, 50.5/14.6, 57.2/7.3 — full search recorded in
+        // `EmberfallFoundryVenue.Build`'s doc): Gloomwood back to a 50.5% majority (a substantial
+        // mid-game destination again), Emberfall a real-but-secondary 14.6% endgame share (clearly
+        // above dormant Sunken Crypt's flat 8%, clearly below Gloomwood) — later-game content, not
+        // co-primary. Reversible in one line; re-measure before moving it.
         Assert.Equal(0, VenueRegistry.Mine.EntryPower);
         Assert.Equal(0, VenueRegistry.All["sunken-crypt"].EntryPower);
         Assert.Equal(72, VenueRegistry.All["gloomwood"].EntryPower);
-        Assert.Equal(72, VenueRegistry.All["emberfall"].EntryPower);
+        Assert.Equal(79, VenueRegistry.All["emberfall"].EntryPower);
     }
 
     [Fact]
@@ -143,9 +151,10 @@ public class VenueConformanceTests
         // flip (relands PR #242, landed #328): the Sunken Crypt joined the Mine and Gloomwood, in
         // this exact order — callers seed VenueRouter's queue dictionary from this array, and every
         // golden replay that reads LiveRotation's order depends on it. P3/task #45 unlock: Emberfall
-        // is APPENDED here (built, banded EntryPower 72, its own determinism-gated re-baseline) —
-        // it was held dormant by #328 solely for missing art (see VenueRegistry.LiveRotation's doc);
-        // this PR ships as a draft until `feat/emberfall-art-set` lands the backdrop/portraits.
+        // is APPENDED here (built, banded EntryPower 79 as of the go-live re-tune — see
+        // `EntryPowerBands_AreTheTunedRecord` — its own determinism-gated re-baseline) — it was
+        // held dormant by #328 solely for missing art (see VenueRegistry.LiveRotation's doc); this
+        // PR ships as a draft until `feat/emberfall-art-set` lands the backdrop/portraits.
         Assert.Equal(
             new[] { VenueRegistry.MineId, "gloomwood", "sunken-crypt", "emberfall" },
             VenueRegistry.LiveRotation);

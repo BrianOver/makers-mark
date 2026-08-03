@@ -52,6 +52,15 @@ public class PhaseBNoDrawGateTests
         // sends it to a different venue and every downstream combat draw shifts. `Inc` is STILL
         // byte-identical (13279888329118852579) — the router stays pure integer comparison, no new
         // `rng.` draw site — only `State` moved.
-        Assert.Equal(new RngState(5771294674252808564UL, 13279888329118852579UL), state.Rng);
+        // RE-BASELINED AGAIN (2026-08-02, same-day go-live re-tune — EntryPower 72 -> 79): the tie
+        // above is exactly what this re-tune removes. This idle party still crosses into
+        // Gloomwood's unchanged 72 band within 30 days, but no longer reaches Emberfall's now-79
+        // band, so it routes to Gloomwood — the SAME choice the pre-Emberfall-flip trace made.
+        // `State` reverts to that earlier pinned value (18014097083248745424, the value the
+        // comment above replaced) — a clean tell that this re-tune undoes exactly the one routing
+        // decision the tie changed, nothing else. `Inc` is STILL byte-identical
+        // (13279888329118852579) — no new `rng.` draw site, the router is still pure integer
+        // comparison.
+        Assert.Equal(new RngState(18014097083248745424UL, 13279888329118852579UL), state.Rng);
     }
 }

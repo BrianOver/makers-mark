@@ -149,8 +149,20 @@ public class AtomicEquivalenceTests
     // still pure integer comparison. MaterialRegistry.PricedPool also gains Emberfall's 5-key ore
     // ladder in the same commit (pool-derived vendor/pricing surfaces reserialize regardless of
     // whether the RNG stream moved — the #328 "Class 0b" precedent for the reverse direction).
+    // RE-BASELINED AGAIN (2026-08-02, same-day go-live re-tune — Emberfall EntryPower 72 -> 79,
+    // measured against a fresh 20-seed x 100-day batch-farm sweep that found the 72/72 tie handing
+    // Emberfall 41.4% of ALL routed parties and Gloomwood only 19.5%, down from a same-codebase
+    // pre-flip 64.3% — see EmberfallFoundryVenue.Build's doc for the full search across 72-80):
+    // **Class 2 — routing decisions change, draw-free, same class as the entry above.** The idle
+    // party that crossed into the tied 72 band now reaches ONLY Gloomwood's unchanged 72 band
+    // (Emberfall's is 79) and routes there — PhaseBNoDrawGateTests confirms the RngState.State
+    // this produces is byte-identical to the value pinned BEFORE Emberfall ever joined the tie,
+    // which is exactly the expected shape: un-tying the bands undoes that one routing decision and
+    // nothing else. No new `rng.` draw site. PricedPool is untouched by this commit (EntryPower is
+    // not a pool key), so this hash move is entirely the routing/serialization change, not a
+    // materials change.
     private const string ExpectedPreCounterSha256 =
-        "5B9A524E7CB67AF02A50446D2E0293BF8CCBDB4F1654669C678390F16A606AB5";
+        "72317E10EA22747696B7732636471B589C890761EECA920D4ADBDDBFDD2A960A";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
