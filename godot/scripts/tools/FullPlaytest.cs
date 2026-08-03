@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using GameSim.Advisor;
 using GameSim.Professions;
 using GodotClient.Minigames;
+using GodotClient.Town2d;
 using Godot;
 
 namespace GodotClient.Tools;
@@ -288,6 +290,18 @@ public partial class FullPlaytest : Node
 
         // ── a full multi-day campaign, watching the raid ─────────────────────────────────────
         var adapter = ui.Adapter;
+
+        // U10 (world-and-interiors plan, KTD-5): captured the FIRST time any day's expedition
+        // resolves with at least one survivor, whichever day/phase that turns out to be — NOT
+        // hardcoded to "day 1, phase 1". PlayTheDay can legally open a counter session whose close
+        // request reads a stale pre-action GameState snapshot (see PlayTheDay's own `state.Counter
+        // is not null` check at the end), so Morning sometimes holds an extra AdvancePhase press
+        // and the day/phase-loop's OWN counters drift out of sync with the sim's real Day/Phase —
+        // confirmed by this run's own report showing `s.Day` repeating across two outer-loop
+        // iterations. Keying this capture on "PendingExpeditions just gained survivors" rather
+        // than a fixed (day, phase) pair makes it correct regardless of that drift.
+        var capturedReturnCeremony = false;
+
         for (var day = 1; day <= DaysPerRun; day++)
         {
             // Play the day like a player, not like a phase-advancer. The FIRST version of this
@@ -334,6 +348,53 @@ public partial class FullPlaytest : Node
                     catch (Exception ex)
                     {
                         Note($"run {_run}: Depths/delve failed: {ex.GetType().Name}: {ex.Message}");
+                    }
+                }
+                if (!capturedReturnCeremony)
+                {
+                    // U10 (world-and-interiors plan, KTD-5): fires the FIRST time ANY expedition
+                    // resolves with a survivor, whichever real (day, phase) that turns out to be —
+                    // see capturedReturnCeremony's own doc for why this cannot be pinned to a fixed
+                    // (day, phase) pair. Wait for the real march-out to finish, then past
+                    // Town2D.MinDelveShowSeconds, then measure the emergence itself — proving the
+                    // walk-in actually animates, not just that it eventually happens.
+                    try
+                    {
+                        var survivorIds = adapter.CurrentState.PendingExpeditions
+                            .SelectMany(r => r.Survivors)
+                            .Select(id => id.Value)
+                            .ToList();
+
+                        if (survivorIds.Count > 0)
+                        {
+                            capturedReturnCeremony = true; // one capture per run, win or lose below
+
+                            var marchedOut = false;
+                            for (var f = 0; f < 300 && !marchedOut; f += 5)
+                            {
+                                await Settle(5);
+                                marchedOut = survivorIds.All(id =>
+                                    ui.Town.FindHeroActor(id)?.State == HeroActor2D.HeroTownState.Away);
+                            }
+
+                            if (!marchedOut)
+                            {
+                                Note($"run {_run}: survivors never finished marching out to Away within 300 frames — return-ceremony motion capture skipped");
+                            }
+                            else
+                            {
+                                // ~60fps windowed run (this tool's own precondition — see the class
+                                // doc's "must run WINDOWED" note): 500 frames comfortably clears
+                                // MinDelveShowSeconds (8s) real time before measuring.
+                                await Settle(500);
+                                await MotionBurst(ui, $"r{_run}_return_ceremony_motion", "survivors emerging from the gate (U10 return ceremony)");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        capturedReturnCeremony = true; // don't retry every remaining tick of the run
+                        Note($"run {_run}: return-ceremony motion capture failed: {ex.GetType().Name}: {ex.Message}");
                     }
                 }
             }

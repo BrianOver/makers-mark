@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Linq;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Venues;
 using Godot;
 using GodotClient.Audio;
 using GodotClient.Panels;
@@ -335,6 +336,11 @@ public partial class MainUi : Control
     /// yanking the camera behind it would still be invisible, one layer deeper than the reported
     /// bug. Cleared by <see cref="TryFireDeferredMineGateFocus"/>, called from every modal-close
     /// path, the moment nothing is left covering the town.
+    ///
+    /// <para>U10 (world-and-interiors plan): also armed by <see cref="OnPartyEmerging"/> for the
+    /// RETURN half of the same beat — one flag, one deferral rule, regardless of which direction
+    /// the party is walking; a modal open at the exact moment either beat wants the camera defers
+    /// it identically.</para>
     /// </summary>
     private bool _pendingMineGateFocus;
 
@@ -1904,6 +1910,9 @@ public partial class MainUi : Control
         // (Esc or the door), re-syncing the engaged latch/deferred focus beat the same way every
         // other modal-close path already does (see Town2D.InteriorExited's own doc).
         Town.InteriorExited += OnInteriorExited;
+        // U10 (world-and-interiors plan, KTD-5): the return half of the departure focus beat —
+        // fires once a queued survivor group's show floor elapses and its walk-in actually begins.
+        Town.PartyEmerging += OnPartyEmerging;
 
         Forge = InstantiatePanel<ForgePanel>("res://scenes/panels/forge_panel.tscn");
         Shop = InstantiatePanel<ShopPanel>("res://scenes/panels/shop_panel.tscn");
@@ -2285,6 +2294,32 @@ public partial class MainUi : Control
         }
 
         Town.FocusOnMineGate();
+    }
+
+    /// <summary>
+    /// U10 (world-and-interiors plan, KTD-5): the return half of the departure beat above —
+    /// <see cref="Town2D.PartyEmerging"/> fires once a queued survivor group's show floor elapses
+    /// and its staggered walk-in actually begins. Reuses the SAME deferred-focus plumbing
+    /// <see cref="SoundTheTick"/>'s departure beat already established (<see
+    /// cref="_pendingMineGateFocus"/> / <see cref="TryFireDeferredMineGateFocus"/>) — a modal open
+    /// at the exact moment the party re-emerges defers the camera exactly the way a modal open at
+    /// send-off defers it (#335's own rule, reused rather than re-derived). The narrator toast is
+    /// NOT modal-gated (unlike the camera): it uses the same always-visible banner every other
+    /// bell/rejection toast renders through, so the player reads it even with a drawer open.
+    /// </summary>
+    private void OnPartyEmerging(string venueId)
+    {
+        if (ModalOwnsTheScreen())
+        {
+            _pendingMineGateFocus = true;
+        }
+        else
+        {
+            Town.FocusOnMineGate();
+        }
+
+        var venueName = VenueRegistry.All.TryGetValue(venueId, out var venue) ? venue.DisplayName : "the depths";
+        ShowBellToast($"The party returns from {venueName}...");
     }
 
     /// <summary>

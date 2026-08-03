@@ -129,6 +129,35 @@ func _initialize() -> void:
 		# which the camera reverts to the player. 130 (70 frames past arming) lands comfortably
 		# inside that window, past settle with margin, well short of expiry.
 		_settle = 130
+	elif _state == "ReturnQuestEmpty":
+		# U10 (world-and-interiors plan, KTD-5): armed at frame 60 below (both bell presses land
+		# in that one frame) -- this settle deliberately lands WELL INSIDE Town2D's
+		# MinDelveShowSeconds (8s, ~480 real frames at 60fps) hold, after the party has had time to
+		# actually march out to Away but long before the show floor could possibly have cleared.
+		# The receipt this proves: while the HUD reads Quest/Vigil, the town is empty of party --
+		# not a teleport-quick round trip.
+		_settle = 240
+	elif _state == "ReturnEmerge":
+		# U10: the same double-bell-press as ReturnQuestEmpty, but settled far past
+		# MinDelveShowSeconds (8s) plus march-out, landing WHILE the narrator toast
+		# ("The party returns from...", MainUi.RejectionToastSeconds = 4s) is still on screen --
+		# MainUi.OnPartyEmerging fires the toast at the exact instant the walk-in begins, so this
+		# is calibrated (empirically, capturing early enough that the 4s window hasn't closed) to
+		# land inside that beat, not after it has already faded.
+		_settle = 900
+	elif _state == "ReturnAtNight":
+		# U10: four bell presses (not two) land the day at Evening/"Night" -- the survivor group
+		# is already queued (and de-duplicated, Town2D._queuedReturnHeroIds) by the SECOND press,
+		# so pressing on through Camp/ExpeditionDeep afterward does not re-queue it; it only
+		# advances the PHASE (and therefore DayPhaseTint's target) while the SAME hold keeps
+		# counting. This is the ORDINARY shape for any staged (Camp) return in real play --
+		# ReturnSurvivors' second call site is OnPhaseCompleted(ExpeditionDeep), which always lands
+		# on Evening -- so "does a returning party stay visible at Night" is not an edge case, it
+		# is the common one. 950: DayPhaseTint's ease converging (Phase4/GateNight's own 900-1200
+		# frame precedent) and the show floor clearing land in roughly the same window (both are
+		# driven off the same real per-frame delta), so this also catches MainUi's narrator toast
+		# (RejectionToastSeconds = 4s) still on screen, same as ReturnEmerge's own calibration.
+		_settle = 950
 	else:
 		_settle = 320
 	_ui = load("res://scenes/panels/main_ui.tscn").instantiate()
@@ -328,6 +357,27 @@ func _process(_delta: float) -> bool:
 			# _mount_hero_candidate's own doc).
 			var pose = _state.substr(len("HeroCandidate")).to_lower()
 			_mount_hero_candidate(pose)
+		elif _state == "ReturnQuestEmpty" or _state == "ReturnEmerge":
+			# U10 (world-and-interiors plan, KTD-5): the exact original bug's reproduction --
+			# press the bell that ends Morning, then IMMEDIATELY press it again to end
+			# Expedition, ZERO frames apart (the same synchronous-click shape
+			# ExpeditionSystem.cs's unstaged resolve + the old immediate ReturnSurvivors snap
+			# produced -- see Town2D.ReturnSurvivors' own doc). A fresh seed-2026 campaign's
+			# day 1 is always unstaged: every starting hero's DeepestFloorReached is 0, so
+			# day 1's target floor is always 1. What differs between the two states is only
+			# how long this harness waits before capturing (see _settle above).
+			var return_bell = _ui.find_child("AdvancePhase", true, false)
+			if return_bell:
+				return_bell.emit_signal("pressed")
+				return_bell.emit_signal("pressed")
+		elif _state == "ReturnAtNight":
+			# U10: same reproduction, but four presses (Morning -> Expedition -> Camp ->
+			# ExpeditionDeep) land the day at Evening/"Night" -- see _settle above for why
+			# pressing on through Camp/ExpeditionDeep does not re-queue or reset the hold.
+			var night_bell = _ui.find_child("AdvancePhase", true, false)
+			if night_bell:
+				for _i in range(4):
+					night_bell.emit_signal("pressed")
 		elif _ui.has_method("OnTownBuildingClicked"):
 			# Same entry point the town uses on building arrival (private C# method reached
 			# via the source-gen call() bridge).
