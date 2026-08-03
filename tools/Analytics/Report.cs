@@ -41,6 +41,7 @@ public static class Report
         var deathsByRole = new SortedDictionary<string, int>();
         var beatsByType = new SortedDictionary<string, int>();
         var passReasons = new Dictionary<string, int>(StringComparer.Ordinal);
+        var partiesByVenue = new SortedDictionary<string, int>(StringComparer.Ordinal);
         var playerSales = 0;
         var rivalSales = 0;
         var playerRevenue = 0;
@@ -48,6 +49,7 @@ public static class Report
         var gossipCount = 0;
         var bountyAccepts = 0;
         var bountyDeclines = 0;
+        var totalDeaths = 0;
 
         foreach (var run in runs)
         {
@@ -56,9 +58,22 @@ public static class Report
                 switch (gameEvent)
                 {
                     case HeroDied died:
+                        totalDeaths++;
                         deathsByFloor[died.Floor] = deathsByFloor.GetValueOrDefault(died.Floor) + 1;
                         var role = roleByHero.TryGetValue((run.Seed, died.Hero.Value), out var r) ? r : "Unknown";
                         deathsByRole[role] = deathsByRole.GetValueOrDefault(role) + 1;
+                        break;
+                    case PartiesFormed formed:
+                        // Morning-muster venue assignment (GameSim.Venues.VenueRouter, via
+                        // MusterSystem) — the Morning prediction and the authoritative Expedition
+                        // tick run the identical routing sequence over the identical parties
+                        // (VenueRouter's own doc), so tallying the prediction here counts real
+                        // routed destinations, not a guess.
+                        foreach (var party in formed.Parties)
+                        {
+                            partiesByVenue[party.VenueId] = partiesByVenue.GetValueOrDefault(party.VenueId) + 1;
+                        }
+
                         break;
                     case AttributionBeatEvent beat:
                         beatsByType[beat.Beat.ToString()] = beatsByType.GetValueOrDefault(beat.Beat.ToString()) + 1;
@@ -104,7 +119,27 @@ public static class Report
         var totalDays = Math.Max(1, runs.Sum(r => r.Day - 1));
         var totalBeats = beatsByType.Values.Sum();
 
+        sb.AppendLine("## Venue routing");
+        sb.AppendLine();
+        sb.AppendLine("Where bounty-free parties actually raid (`VenueRouter`'s banded comparator), tallied "
+            + "from every `PartiesFormed` event across the corpus — the share each live venue draws of ALL "
+            + "routed parties, not just a per-seed snapshot.");
+        sb.AppendLine();
+        var totalRouted = partiesByVenue.Values.Sum();
+        sb.AppendLine("| Venue | Parties routed | Share |");
+        sb.AppendLine("|---|---|---|");
+        foreach (var (venue, count) in partiesByVenue.OrderByDescending(kv => kv.Value))
+        {
+            var share = totalRouted > 0 ? count * 100.0 / totalRouted : 0.0;
+            sb.AppendLine($"| {venue} | {count} | {share:0.0}% |");
+        }
+
+        sb.AppendLine($"| **Total** | **{totalRouted}** | |");
+
+        sb.AppendLine();
         sb.AppendLine("## Deaths");
+        sb.AppendLine();
+        sb.AppendLine($"Total: {totalDeaths}");
         sb.AppendLine();
         sb.AppendLine("| Floor | Deaths |  | Role | Deaths |");
         sb.AppendLine("|---|---|---|---|---|");
