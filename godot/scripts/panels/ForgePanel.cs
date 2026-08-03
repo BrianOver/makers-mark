@@ -488,15 +488,12 @@ public partial class ForgePanel : SimPanel
         var oil = SelectedModifierId(_oilSelect, GameSim.Contracts.ModifierFamily.QuenchOil);
         var rune = SelectedModifierId(_runeSelect, GameSim.Contracts.ModifierFamily.Rune);
         var fitting = SelectedModifierId(_fitSelect, GameSim.Contracts.ModifierFamily.Fitting);
-        Adapter.Queue(new CraftAction(recipeId, material, RequestQuenchOil: oil, RequestRune: rune, RequestFitting: fitting));
+        var action = new CraftAction(recipeId, material, RequestQuenchOil: oil, RequestRune: rune, RequestFitting: fitting);
+        Adapter.Queue(action);
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.CraftDone);
-        // Craft has no phase term (CraftingHandlers accepts every phase) — the batch always
-        // lands against whatever phase the sim is CURRENTLY sitting at (GameKernel.Tick applies
-        // the queued batch before advancing), so the resolving phase IS the current one.
         var mods = new[] { oil, rune, fitting }.Where(m => m is not null).ToArray();
         var modText = mods.Length == 0 ? string.Empty : $" + [{string.Join(", ", mods)}]";
-        _feedback!.Text = $"queued: craft {recipeId} with {material}{modText}. " +
-            $"Queued — resolves when {Adapter.CurrentState.Phase} ticks. Press Advance or wait.";
+        _feedback!.Text = Confirm(action, $"Crafted {recipeId} with {material}{modText}");
     }
 
     /// <summary>U23d: open the Anvil Map forge overlay for this recipe/material — the "Work the
@@ -621,9 +618,9 @@ public partial class ForgePanel : SimPanel
     {
         Adapter?.Queue(action);
         _minigame!.Visible = false;
-        _feedback!.Text = $"queued: anvil-map craft {action.RecipeId} with {action.MaterialKey} " +
-            $"(preview grade {_minigame.PreviewGradePermille}, sub-scores {string.Join("/", action.SubScores ?? ImmutableList<int>.Empty)}). " +
-            $"Queued — resolves when {Adapter?.CurrentState.Phase} ticks. Press Advance or wait.";
+        _feedback!.Text = Confirm(action,
+            $"Forged {action.RecipeId} with {action.MaterialKey} " +
+            $"(preview grade {_minigame.PreviewGradePermille}, sub-scores {string.Join("/", action.SubScores ?? ImmutableList<int>.Empty)})");
 
         // The overlay closes immediately above, so _Process's continuous glow poll (gated on
         // _minigame.Visible) stops on its own next frame — this just resets it right now instead
@@ -666,9 +663,9 @@ public partial class ForgePanel : SimPanel
         Adapter?.Queue(action);
         _brewPuzzle!.Visible = false;
         var preview = action.SubScores is { Count: 3 } scores ? scores[2] : 0;
-        _feedback!.Text = $"queued: brew {action.RecipeId} with {action.MaterialKey} " +
-            $"(brew score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)}). " +
-            $"Queued — resolves when {Adapter?.CurrentState.Phase} ticks. Press Advance or wait.";
+        _feedback!.Text = Confirm(action,
+            $"Brewed {action.RecipeId} with {action.MaterialKey} " +
+            $"(brew score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})");
         LogMinigame("done", "brew", action.RecipeId, action.MaterialKey, PreviewDetail(action));
     }
 
@@ -699,9 +696,9 @@ public partial class ForgePanel : SimPanel
         Adapter?.Queue(action);
         _engineeringBench!.Visible = false;
         var preview = action.SubScores is { Count: 3 } scores ? scores[2] : 0;
-        _feedback!.Text = $"queued: assemble {action.RecipeId} with {action.MaterialKey} " +
-            $"(assembly score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)}). " +
-            $"Queued — resolves when {Adapter?.CurrentState.Phase} ticks. Press Advance or wait.";
+        _feedback!.Text = Confirm(action,
+            $"Assembled {action.RecipeId} with {action.MaterialKey} " +
+            $"(assembly score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})");
         LogMinigame("done", "assemble", action.RecipeId, action.MaterialKey, PreviewDetail(action));
     }
 
@@ -735,9 +732,9 @@ public partial class ForgePanel : SimPanel
         Adapter?.Queue(action);
         _tanningFrame!.Visible = false;
         var preview = action.SubScores is { Count: 3 } scores ? scores[2] : 0;
-        _feedback!.Text = $"queued: scrape {action.RecipeId} with {action.MaterialKey} " +
-            $"(hide score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)}). " +
-            $"Queued — resolves when {Adapter?.CurrentState.Phase} ticks. Press Advance or wait.";
+        _feedback!.Text = Confirm(action,
+            $"Scraped {action.RecipeId} with {action.MaterialKey} " +
+            $"(hide score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})");
         LogMinigame("done", "scrape", action.RecipeId, action.MaterialKey, PreviewDetail(action));
     }
 
@@ -898,11 +895,9 @@ public partial class ForgePanel : SimPanel
 
     private void OnUnlockPressed(string nodeId, string professionId)
     {
-        Adapter?.Queue(new UnlockTalentAction(nodeId, professionId));
-        // UnlockTalent likewise has no phase term — same current-phase reasoning as OnCraftPressed.
-        var phase = Adapter?.CurrentState.Phase;
-        _feedback!.Text = $"queued: unlock {nodeId}. " +
-            $"Queued — resolves when {phase} ticks. Press Advance or wait.";
+        var action = new UnlockTalentAction(nodeId, professionId);
+        Adapter?.Queue(action);
+        _feedback!.Text = Confirm(action, $"Unlocked {nodeId}");
     }
 
     /// <summary>Queues a one-unit vendor buy (Morning-only in the sim; the U6 gate disables the
@@ -911,11 +906,11 @@ public partial class ForgePanel : SimPanel
     /// so unlike craft/unlock this action's resolving phase is never the current one off-Morning.</summary>
     private void OnBuyMaterialPressed(string materialKey)
     {
-        Adapter?.Queue(new BuyMaterialAction(materialKey, 1));
+        var action = new BuyMaterialAction(materialKey, 1);
+        Adapter?.Queue(action);
         // Sound the CLICK, not the settlement: the player pressed Buy now, so the coin lands now.
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Coin);
-        _feedback!.Text = $"queued: buy 1 {materialKey}. " +
-            "Queued — resolves when Morning ticks. Press Advance or wait.";
+        _feedback!.Text = Confirm(action, $"Bought 1 {materialKey}");
     }
 
     private string SelectedMaterialOr(string recipeDefault)

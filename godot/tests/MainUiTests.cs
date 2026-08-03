@@ -150,17 +150,23 @@ public class MainUiTests
     }
 
     [TestCase]
-    public void ForgePanel_BuyMaterialFeedback_NamesMorningAsResolvingPhase()
+    public void ForgePanel_BuyMaterialFeedback_ConfirmsImmediately_NamesNoFuturePhase()
     {
-        // BuyMaterial is Morning-only (MaterialVendorHandlers.CanHandle) — a fresh game starts at
-        // day 1 Morning, so the vendor row is live and the queue feedback names Morning.
+        // This test used to assert the OPPOSITE and pin the exact bug this unit fixes: BuyMaterial
+        // resolves IMMEDIATELY (ActionTiming.ResolvesImmediately), so a feedback line naming
+        // "Morning" as a future resolving phase was the reported lie — the coin already left the
+        // player's hand. See SimPanel.Confirm for the fix (derives the sentence off ActionTiming
+        // instead of a hardcoded per-panel string).
         var ui = MountMainUi();
         try
         {
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
             var key = GameSim.Materials.MaterialRegistry.PricedPool[0];
             Press(ui.Forge, $"BuyMat_{key}");
-            AssertThat(RenderedText(ui.Forge)).Contains("Queued — resolves when Morning ticks. Press Advance or wait.");
+            var text = RenderedText(ui.Forge);
+            AssertThat(text).Contains($"Bought 1 {key}");
+            AssertThat(text).NotContains("resolves when");
+            AssertThat(text).NotContains("Press Advance");
         }
         finally
         {
@@ -1114,10 +1120,11 @@ public class MainUiTests
 
         Press(ui.Ledger, "CloseLedger");
 
-        // Queue the craft through the forge panel's action path (default material = copper).
+        // Craft through the forge panel's action path (default material = copper). CraftAction
+        // resolves IMMEDIATELY (ActionTiming) — the feedback says it happened, not that it is
+        // still waiting on the Evening bell.
         Press(ui.Forge, $"Craft_{ScriptedSession.CraftRecipeId}");
-        AssertThat(RenderedText(ui.Forge)).Contains($"queued: craft {ScriptedSession.CraftRecipeId}");
-        AssertThat(RenderedText(ui.Forge)).Contains("Queued — resolves when Evening ticks. Press Advance or wait.");
+        AssertThat(RenderedText(ui.Forge)).Contains($"Crafted {ScriptedSession.CraftRecipeId}");
 
         ui.Adapter.AdvancePhase(); // day 2 Evening: buys then craft apply in order
         ui.Ledger.CloseModal();    // day-2 reveal is timer-gated (U12); close if a frame opened it

@@ -1,5 +1,6 @@
 using System;
 using GameSim.Contracts;
+using GameSim.Kernel;
 using Godot;
 using GodotClient.Ui;
 
@@ -118,6 +119,39 @@ public abstract partial class SimPanel : Control
         parent.AddChild(spin);
         return spin;
     }
+
+    /// <summary>
+    /// The confirmation line for an action the player just took — derives whether it HAPPENED
+    /// already or is still waiting for the bell from the ONE source of truth,
+    /// <see cref="ActionTiming.ResolvesImmediately"/>, instead of a panel hardcoding its own
+    /// sentence at every call site.
+    ///
+    /// <para><b>Why this exists.</b> The 2026-08-02 loop-legibility widening (see
+    /// <see cref="ActionTiming"/>'s own remarks) moved 21 of 24 action types to resolve the
+    /// instant the player takes them — including opening/closing the counter, presenting,
+    /// suggesting, haggling, crafting, buying, and unlocking a talent. <see cref="CounterPanel"/>
+    /// and <see cref="ForgePanel"/> kept printing the OLD deferred sentence regardless of which
+    /// branch the action actually took: "Queued — resolves when Morning ticks. Press Advance or
+    /// wait." for an action that had already happened. Brian's playtest: "Open counter does
+    /// nothing - tutorial stuck at 6", "opening the counter queues", "you have a TON of past
+    /// 'queued' actions which don't interact with our game well lol". The counter really did
+    /// open; the SENTENCE lied about it, so the player pressed Advance believing nothing had
+    /// happened and burned the phase for nothing. The defect was never the ~14 individual
+    /// strings — it was that each one was hand-written instead of read off
+    /// <see cref="ActionTiming"/>, so the words and the kernel's own timing could drift apart,
+    /// and did.</para>
+    ///
+    /// <para>Immediate says <paramref name="whatHappened"/> HAPPENED — past tense, no instruction
+    /// to advance, because the player's own hands already did it. Deferred keeps the EXACT
+    /// reviewed wording ("Queued — resolves when ... ticks. Press Advance or wait.") — that
+    /// promise is still true for the three genuine bell-riders (a forge upgrade, a profession
+    /// change, a Guild commission): the world has to act before the click means anything, so it
+    /// is right to say so.</para>
+    /// </summary>
+    protected string Confirm(PlayerAction action, string whatHappened) =>
+        ActionTiming.ResolvesImmediately(action)
+            ? $"{whatHappened}."
+            : $"{whatHappened}. Queued — resolves when {Adapter?.CurrentState.Phase} ticks. Press Advance or wait.";
 
     /// <summary>
     /// Report the space this panel's content actually needs, so a panel nested inside a

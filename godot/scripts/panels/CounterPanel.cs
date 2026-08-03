@@ -74,8 +74,9 @@ public partial class CounterPanel : SimPanel
         AddLabel(_body!, "The counter is quiet — open it to serve this morning's customers.");
         var open = AddButton(_body!, "OpenCounter", "Open Counter", () =>
         {
-            Adapter!.Queue(new OpenCounterAction());
-            _feedback!.Text = "queued: open counter. Queued — resolves when Morning ticks. Press Advance or wait.";
+            var action = new OpenCounterAction();
+            Adapter!.Queue(action);
+            _feedback!.Text = Confirm(action, "Opened the counter");
         });
         // Mirrors CounterHandlers.ApplyOpen: Morning-only CanHandle, and rejects only while an
         // unclosed session is already live — which can't be true here (this branch only runs
@@ -98,8 +99,9 @@ public partial class CounterPanel : SimPanel
         // branch — so CloseCounter is unconditionally legal here; no GateButton mirror needed.
         AddButton(_body!, "CloseCounter", "Close Counter", () =>
         {
-            Adapter!.Queue(new CloseCounterAction());
-            _feedback!.Text = "queued: close counter. Queued — resolves when Morning ticks. Press Advance or wait.";
+            var action = new CloseCounterAction();
+            Adapter!.Queue(action);
+            _feedback!.Text = Confirm(action, "Closed the counter");
         });
     }
 
@@ -196,16 +198,18 @@ public partial class CounterPanel : SimPanel
     /// (KTD-A) — queues the identical <see cref="PresentItemAction"/> either way.</summary>
     private void QueuePresent(ItemId itemId)
     {
-        Adapter!.Queue(new PresentItemAction(itemId));
-        _feedback!.Text = $"queued: present {itemId}. Queued — resolves when Morning ticks. Press Advance or wait.";
+        var action = new PresentItemAction(itemId);
+        Adapter!.Queue(action);
+        _feedback!.Text = Confirm(action, $"Presented {ItemName(itemId)}");
     }
 
     /// <summary>The ONE seam both the Accept button and the desk's handshake click call (KTD-A) —
     /// queues the identical Accept <see cref="HaggleResponseAction"/> either way.</summary>
     private void QueueAccept()
     {
-        Adapter!.Queue(new HaggleResponseAction(HaggleResponseKind.Accept));
-        _feedback!.Text = "queued: accept the standing offer. Queued — resolves when Morning ticks. Press Advance or wait.";
+        var action = new HaggleResponseAction(HaggleResponseKind.Accept);
+        Adapter!.Queue(action);
+        _feedback!.Text = Confirm(action, "Accepted the standing offer");
     }
 
     private void BuildPresentedAndOffer(GameState state, CounterState counter)
@@ -254,8 +258,9 @@ public partial class CounterPanel : SimPanel
 
             var suggest = AddButton(row, $"Suggest_{itemId.Value}", "Suggest", () =>
             {
-                Adapter!.Queue(new SuggestItemAction(itemId));
-                _feedback!.Text = $"queued: suggest {itemId}. Queued — resolves when Morning ticks. Press Advance or wait.";
+                var action = new SuggestItemAction(itemId);
+                Adapter!.Queue(action);
+                _feedback!.Text = Confirm(action, $"Suggested {ItemName(itemId)}");
             });
             GateButton(suggest, legal, "No active customer is at the counter.");
         }
@@ -277,8 +282,9 @@ public partial class CounterPanel : SimPanel
 
         var hold = AddButton(row, "HoldFirm", "Hold Firm", () =>
         {
-            Adapter!.Queue(new HaggleResponseAction(HaggleResponseKind.HoldFirm));
-            _feedback!.Text = "queued: hold firm. Queued — resolves when Morning ticks. Press Advance or wait.";
+            var action = new HaggleResponseAction(HaggleResponseKind.HoldFirm);
+            Adapter!.Queue(action);
+            _feedback!.Text = Confirm(action, "Held firm");
         });
         GateButton(hold, legal, "No standing offer to respond to — present an item first.");
 
@@ -296,8 +302,9 @@ public partial class CounterPanel : SimPanel
         row.AddChild(priceStack);
         var counterBtn = AddButton(row, "Counter", "Counter", () =>
         {
-            Adapter!.Queue(new HaggleResponseAction(HaggleResponseKind.Counter, priceStack.Value));
-            _feedback!.Text = $"queued: counter at {priceStack.Value}g. Queued — resolves when Morning ticks. Press Advance or wait.";
+            var action = new HaggleResponseAction(HaggleResponseKind.Counter, priceStack.Value);
+            Adapter!.Queue(action);
+            _feedback!.Text = Confirm(action, $"Countered at {priceStack.Value}g");
         });
         GateButton(counterBtn, legal, "No standing offer to respond to — present an item first.");
     }
