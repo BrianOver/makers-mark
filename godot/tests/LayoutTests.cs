@@ -241,13 +241,22 @@ public class LayoutTests
 
     /// <summary>
     /// P007 U3/U4/U5/U6/UI-5: <c>UiKit.StatChip</c>/<c>ArtRect</c>-fallback/<c>PortraitFrame</c>/
-    /// <c>ListRow</c> labels (the price/atk/def pills, art-miss captions, and the Forge vendor/
-    /// Shop shelf rows' fixed 64px "Price"/40px "Owned" columns) are intentionally small,
+    /// <c>ListRow</c>/<c>IconChip</c> labels (the price/atk/def pills, art-miss captions, the
+    /// Forge vendor/Shop shelf rows' fixed 64px "Price"/40px "Owned" columns, and a compact
+    /// icon+value pill like the Evening Ledger's gold readout) are intentionally small,
     /// fixed-size widgets — proven non-null and discoverable by <c>UiKitTests</c> — not the R7
     /// autowrap collapse this canary hunts, which only afflicts a WordSmart label
     /// (<c>SimPanel.AddLabel</c>/<c>AddHeader</c>) handed too little width by its container.
     /// Identified by walking up to the nearest ancestor Godot name the kit itself assigns those
     /// widgets (<see cref="GodotClient.Ui.UiKit"/>).
+    ///
+    /// <para><b>IconChip added (U7, loop-legibility plan):</b> <c>LedgerModal</c>'s new gold
+    /// purse readout is a <c>UiKit.IconChip</c>, which — like <c>StatChip</c>/
+    /// <c>StatChipCompact</c> before it — deliberately renders a short numeral ("8g") at its own
+    /// natural minimum width, never claiming the row's expand space. Without this entry the
+    /// canary can't tell that shape apart from an actual collapsed autowrap label and false-flags
+    /// it, exactly the "Defense value of 6" false-positive risk <c>StatChip</c>'s own remarks
+    /// already describe — same fix, same reasoning, new widget name.</para>
     ///
     /// <para><b>StartsWith, not exact-match (P007 U5 fix):</b> Godot auto-disambiguates sibling
     /// node names — a THIRD <c>StatChip</c> added to the same parent (e.g. a recipe card's
@@ -255,8 +264,8 @@ public class LayoutTests
     /// exact <c>== "StatChip"</c> check would then miss it and false-flag a perfectly legitimate
     /// narrow numeral (e.g. a Defense value of "6") as an R7 collapse. A prefix match still only
     /// matches names the kit itself assigns (no other builder in this codebase names a node
-    /// <c>StatChip*</c>/<c>PortraitFrame*</c>/<c>ArtRectFallback*</c>/<c>ListRow*</c>), so it stays
-    /// precise.</para>
+    /// <c>StatChip*</c>/<c>PortraitFrame*</c>/<c>ArtRectFallback*</c>/<c>ListRow*</c>/
+    /// <c>IconChip*</c>), so it stays precise.</para>
     /// </summary>
     private static bool IsCompactKitWidgetLabel(Label label)
     {
@@ -266,7 +275,8 @@ public class LayoutTests
             if (name.StartsWith("StatChip", StringComparison.Ordinal)
                 || name.StartsWith("ArtRectFallback", StringComparison.Ordinal)
                 || name.StartsWith("PortraitFrame", StringComparison.Ordinal)
-                || name.StartsWith("ListRow", StringComparison.Ordinal))
+                || name.StartsWith("ListRow", StringComparison.Ordinal)
+                || name.StartsWith("IconChip", StringComparison.Ordinal))
             {
                 return true;
             }
