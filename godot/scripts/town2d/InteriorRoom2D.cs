@@ -159,8 +159,13 @@ public partial class InteriorRoom2D : Node2D
             // U3: a flavor station (null Action) gets its HoverLine (WorldInput2D's honest
             // proximity prompt, replacing "E · {Label}") and a dimmed nametag — never dressed up
             // to look like it promises a verb it does not have.
+            // U12: the inverse cue for a REAL station — a pulsing warm-glow tell, so "this carries
+            // a verb" reads from across the room, not only once close enough to see the nametag's
+            // dim/bright color. Exactly non-null Action gets one; flavor gets nothing beyond the
+            // dim nametag it already had.
             station.Configure(stationSpec.Id, stationSpec.Label, sprite, worldPos,
-                hoverLine: stationSpec.HoverLine, dimNametag: stationSpec.Action is null);
+                hoverLine: stationSpec.HoverLine, dimNametag: stationSpec.Action is null,
+                showTell: stationSpec.Action is not null);
 
             // stationSpec is the foreach iteration variable — a fresh binding per iteration (C# 5+
             // semantics), so capturing it directly in the closure is safe (no aliasing bug).

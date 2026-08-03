@@ -12,6 +12,18 @@ namespace GodotClient.Town2d;
 /// front of the door — the point heroes/the player rally to. Ported from
 /// <c>town3d/Building3D.cs</c>; ClickKey collapses into <see cref="Key"/> (2D town emits one
 /// click-key vocabulary, matching <c>Town3D.ClickKey</c>'s values, e.g. "Forge"/"Shop"/"Tavern").
+///
+/// <para><b>U12 (world-and-interiors plan, "stations you can read across the room"):</b> an
+/// opt-in "tell" layer (<see cref="Tell"/>) — a small warm glow, additive-blended, sine-pulsing
+/// alpha (the exact idiom <c>AmbientLife2D</c>'s lamp-flicker already uses, just this file's own
+/// copy per that class's own "no cross-class reach-in" precedent) anchored over the sprite's own
+/// centroid. <see cref="Configure"/>'s <c>showTell</c> flag (default <see langword="false"/> —
+/// town buildings never opt in) is the ONLY thing that turns it on; <see cref="InteriorRoom2D"/>
+/// passes <c>true</c> exactly when a station's <c>Action</c> is non-null (a real verb), so a
+/// player can tell "this does something" from across the room, before hover, before click — never
+/// from the nametag's dim/bright color alone (#349's cue, which only reads once you are already
+/// close enough to read 7px world-pixel text). A flavor station gets nothing beyond that dim
+/// nametag, unchanged.</para>
 /// </summary>
 public partial class Building2D : Node2D
 {
@@ -30,6 +42,45 @@ public partial class Building2D : Node2D
     private const float FootprintHeightFraction = 0.6f;
 
     private static readonly Color HighlightModulate = new(1.35f, 1.35f, 1.1f);
+
+    /// <summary>U12: the tell's warm hue — brighter/more saturated gold than <c>AmbientLife2D</c>'s
+    /// lamp warm-orange, so a verb station's glow never reads as "just another lamp" at a glance,
+    /// while staying in the same warm-light family as every other glow this town already draws.
+    /// Pushed toward near-white-gold (first measured pass at a muted amber read as invisible
+    /// against the room's own bright <c>InteriorWarmTint</c> — additive warm-on-warm has almost no
+    /// contrast; a receipt proved it, see the class doc's U12 paragraph) — high channel values are
+    /// what actually pops against a warm-lit room, not hue choice.</summary>
+    private static readonly Color TellColor = new(1f, 0.95f, 0.55f);
+
+    /// <summary>U12: alpha at the pulse's midline — swings symmetrically by <see
+    /// cref="TellPulseAmplitude"/>, so the tell ranges roughly 0.25 (trough) .. 0.85 (peak).
+    /// Raised twice past the plan text's original "~0.15 amplitude around 0.30" pass: a first
+    /// receipt at that value measured a real but nearly imperceptible pixel diff (0.4-0.6%)
+    /// against the room's own bright warm tint (additive glow has weak contrast on a warm-on-warm
+    /// background, unlike <c>AmbientLife2D</c>'s lamp glow which pops against actual darkness); a
+    /// second receipt at 0.30/0.45 read clearly against dark walls (Bar, Muster Board) but was
+    /// still faint over stations standing on the room's own bright floor tiles (Anvil, Material
+    /// Shelf) — additive blending's absolute brightness delta is background-independent, but human
+    /// contrast perception is roughly proportional (Weber-Fechner), so the SAME delta reads far
+    /// weaker against a bright floor than a dark wall. This value was the one that read clearly
+    /// over BOTH kinds of background in an un-zoomed, native-resolution receipt.</summary>
+    private const float TellBaseAlpha = 0.55f;
+
+    private const float TellPulseAmplitude = 0.30f;
+
+    /// <summary>U12: a slow "breathing" cadence (2s full period) — deliberately much slower than
+    /// <c>AmbientLife2D</c>'s lamp flicker (which reads as guttering flame), because this is a UI
+    /// affordance ("look here, this does something"), not a light source imitating fire.</summary>
+    private const float TellPulseHz = 0.5f;
+
+    /// <summary>U12: same radial white→transparent falloff recipe as <c>AmbientLife2D
+    /// .LampGlowTexture</c> (cached process-wide, tinted at draw time via <see cref="Tell"/>'s own
+    /// <see cref="CanvasItem.Modulate"/>) — this file owns its own copy rather than reaching into
+    /// that class, mirroring its own documented "no cross-class reach-in" rule for this exact
+    /// texture shape.</summary>
+    private static GradientTexture2D? _tellGlowTextureCache;
+
+    private float _tellElapsed;
 
     /// <summary>Stable identity AND click-key vocabulary in one — the 2D town has a single flat
     /// key space (matches <c>Town3D.FindBuilding</c>'s lookup key and the values MainUi's
@@ -59,6 +110,13 @@ public partial class Building2D : Node2D
     /// to look like one. Null for every ordinary (real-verb) building/station.</summary>
     public string? HoverLine { get; private set; }
 
+    /// <summary>U12: the tell glow sprite, or <see langword="null"/> when <see cref="Configure"/>
+    /// was not asked to build one (every flavor station, every town building). Exposed directly
+    /// (not just a bool) so a test can both assert presence/absence AND read the live pulse's
+    /// <see cref="CanvasItem.Modulate"/> alpha across frames to prove it actually animates rather
+    /// than sitting at one fixed value.</summary>
+    public Sprite2D? Tell { get; private set; }
+
     /// <summary>Test/inspection surface for <see cref="SetHighlighted"/> (mirrors
     /// <c>Building3D.IsHighlighted</c>) — callers read intent through this flag rather than
     /// reaching into <see cref="CanvasItem.Modulate"/> state.</summary>
@@ -79,9 +137,13 @@ public partial class Building2D : Node2D
     /// <param name="dimNametag">U3: true dims this building's nametag (see <see cref="BuildLabel"/>)
     /// so an honest-flavor station never reads as visually equal to a real verb — decoration only,
     /// never the thing that decides whether E does anything (see <see cref="HoverLine"/> for that).</param>
+    /// <param name="showTell">U12: true builds the pulsing warm-glow <see cref="Tell"/> layer over
+    /// this building's sprite — the sight-level "this carries a verb" cue. Default false: town
+    /// buildings never opt in (only <see cref="InteriorRoom2D"/> passes true, and only for a
+    /// station whose <c>Action</c> is non-null).</param>
     public void Configure(
         string key, string nametag, Godot.Texture2D sprite, Godot.Vector2 worldPos,
-        string? hoverLine = null, bool dimNametag = false)
+        string? hoverLine = null, bool dimNametag = false, bool showTell = false)
     {
         Key = key;
         Name = $"Building_{key}";
@@ -103,6 +165,16 @@ public partial class Building2D : Node2D
         };
         AddChild(Sprite);
 
+        // U12: drawn immediately after the sprite (so it overlays it; additive blend means draw
+        // order barely matters visually, but this keeps it logically "attached to" the sprite it
+        // tells about) — before Interact/Footprint (non-visual physics nodes) and NameLabel (which
+        // lives in a disjoint screen region above the roof, so ordering against it never matters).
+        if (showTell)
+        {
+            Tell = BuildTell(size);
+            AddChild(Tell);
+        }
+
         Interact = BuildInteractArea(size);
         AddChild(Interact);
         Interact.InputEvent += OnInteractInputEvent;
@@ -116,6 +188,71 @@ public partial class Building2D : Node2D
         DoorAnchor = BuildDoorAnchor();
         AddChild(DoorAnchor);
     }
+
+    /// <summary>U12: sine-pulses <see cref="Tell"/>'s alpha around <see cref="TellBaseAlpha"/> —
+    /// a no-op when this building was not configured with one (every flavor station, every town
+    /// building). Accumulates real per-frame delta, not a deterministic sim tick — the same
+    /// documented "particles + <c>_Process</c> flicker are fine" cosmetic carve-out
+    /// <c>AmbientLife2D</c>'s own lamp flicker already relies on (KTD4/KTD5: no sim/Contracts
+    /// read, nothing here is gameplay state).</summary>
+    public override void _Process(double delta)
+    {
+        if (Tell is null)
+        {
+            return;
+        }
+
+        _tellElapsed += (float)delta;
+        var alpha = TellBaseAlpha + TellPulseAmplitude * Mathf.Sin(_tellElapsed * TellPulseHz * Mathf.Tau);
+        var color = Tell.Modulate;
+        color.A = alpha;
+        Tell.Modulate = color;
+    }
+
+    /// <summary>Fraction of the station's WIDER dimension the glow's diameter fills — deliberately
+    /// past 1.0 (a halo that pokes out beyond the sprite's own silhouette on every side), not
+    /// "two-thirds and contained" as first tried: a glow that stays entirely inside the sprite's
+    /// own bounds reads as a tint on the object, not a light source next to it, and measured
+    /// nearly invisible at play scale (see <see cref="TellColor"/>'s doc). An aura that visibly
+    /// extends past the object's edges is what a glance actually catches from across the room.</summary>
+    private const float TellDiameterFraction = 1.35f;
+
+    /// <summary>Builds the tell glow sprite centered on the SAME point <see cref="Sprite"/> itself
+    /// is centered on (local Y = -size.Y/2, matching <see cref="Sprite2D.Offset"/> above) — a soft,
+    /// roughly-circular warm halo around the station's own art (uniformly scaled off the sprite's
+    /// WIDER dimension, never independently stretched to the full width/height — a tall thin
+    /// station would otherwise get an elongated oval instead of a glow).</summary>
+    private static Sprite2D BuildTell(Vector2 size)
+    {
+        var diameter = Mathf.Max(size.X, size.Y) * TellDiameterFraction;
+        return new Sprite2D
+        {
+            Name = "Tell",
+            Texture = TellGlowTexture(),
+            Centered = true,
+            Position = new Vector2(0f, -size.Y / 2f),
+            Scale = new Vector2(diameter, diameter) / 32f, // TellGlowTexture is a fixed 32x32 canvas
+            Modulate = new Color(TellColor.R, TellColor.G, TellColor.B, TellBaseAlpha),
+            Material = new CanvasItemMaterial { BlendMode = CanvasItemMaterial.BlendModeEnum.Add },
+        };
+    }
+
+    /// <summary>Small radial white→transparent falloff — identical recipe to <c>AmbientLife2D
+    /// .LampGlowTexture</c>, kept as this file's own independent copy per that class's own
+    /// cross-class-reach-in rule (see the class doc's U12 paragraph).</summary>
+    private static GradientTexture2D TellGlowTexture() => _tellGlowTextureCache ??= new GradientTexture2D
+    {
+        Gradient = new Gradient
+        {
+            Colors = [new Color(1, 1, 1, 1), new Color(1, 1, 1, 0.4f), new Color(1, 1, 1, 0)],
+            Offsets = [0f, 0.5f, 1f],
+        },
+        Width = 32,
+        Height = 32,
+        Fill = GradientTexture2D.FillEnum.Radial,
+        FillFrom = new Vector2(0.5f, 0.5f),
+        FillTo = new Vector2(1f, 0.5f),
+    };
 
     /// <summary>Brightens (or restores) the sprite's modulate — the 2D analog of
     /// <c>Building3D</c>'s per-surface emission swap; a flat <see cref="CanvasItem.Modulate"/>

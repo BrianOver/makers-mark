@@ -222,6 +222,80 @@ public class InteriorRoomTests
         }
     }
 
+    // U12 (world-and-interiors plan, "stations you can read across the room"): a station's
+    // Building2D.Tell must exist iff its InteriorLayout2D.StationSpec.Action is non-null (a real
+    // verb) — the sight-level cue this unit adds on top of #349's dim-nametag/HoverLine
+    // differentiation. Parameterized over all four rooms so a future room row inherits the
+    // check for free, same as the dead-click guard above.
+    [TestCase("forge")]
+    [TestCase("market")]
+    [TestCase("tavern")]
+    [TestCase("minegate")]
+    public void EveryRoom_VerbStationsCarryTheTell_FlavorStationsDoNot(string venueKey)
+    {
+        var town = Mount();
+        try
+        {
+            var spec = InteriorLayout2D.Rooms[venueKey];
+            var room = town.FindInteriorRoom(venueKey);
+
+            AssertThat(room.Stations.Count)
+                .OverrideFailureMessage($"room '{venueKey}': built station count doesn't match its table — the loop below would silently compare the wrong pairs.")
+                .IsEqual(spec.Stations.Length);
+
+            for (var i = 0; i < spec.Stations.Length; i++)
+            {
+                var stationSpec = spec.Stations[i];
+                var building = room.Stations[i];
+
+                AssertThat(building.Key)
+                    .OverrideFailureMessage($"room '{venueKey}' station index {i}: table/build order mismatch (expected '{stationSpec.Id}').")
+                    .IsEqual(stationSpec.Id);
+
+                if (stationSpec.Action is null)
+                {
+                    AssertThat(building.Tell)
+                        .OverrideFailureMessage(
+                            $"flavor station '{stationSpec.Id}' in room '{venueKey}' has a Tell — "
+                            + "only a real verb (non-null Action) may carry the sight-level pulse; "
+                            + "a flavor station reading as interactive from across the room is worse than the dead-click problem this unit fixes.")
+                        .IsNull();
+                }
+                else
+                {
+                    AssertThat(building.Tell)
+                        .OverrideFailureMessage(
+                            $"verb station '{stationSpec.Id}' in room '{venueKey}' (Action='{stationSpec.Action}') "
+                            + "has no Tell — it will not read as interactive from across the room before hover/click.")
+                        .IsNotNull();
+                }
+            }
+        }
+        finally { town.Free(); }
+    }
+
+    // The town's own outdoor buildings (Forge/Shop/Tavern/Gate/Noticeboard exteriors) must render
+    // byte-for-byte unchanged — Building2D.Configure's showTell flag defaults to false, and
+    // Town2D.BuildBuildings' one Configure call site (the only outdoor call site) never passes it.
+    [TestCase("forge")]
+    [TestCase("market")]
+    [TestCase("tavern")]
+    [TestCase("minegate")]
+    [TestCase("noticeboard")]
+    public void OutdoorTownBuildings_NeverCarryATell(string key)
+    {
+        var town = Mount();
+        try
+        {
+            var building = town.FindBuilding(key);
+
+            AssertThat(building.Tell)
+                .OverrideFailureMessage($"outdoor building '{key}' has a Tell node — U12's tell is opt-in for interior stations only; town buildings must be unaffected.")
+                .IsNull();
+        }
+        finally { town.Free(); }
+    }
+
     /// <summary>
     /// The one physics test in this file: proves the perimeter wall actually blocks the player,
     /// rather than merely existing as an unenforced rect. Rendering is disabled BEFORE the first
