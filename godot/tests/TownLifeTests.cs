@@ -272,10 +272,20 @@ public class TownLifeTests
             var leftHome = false;
 
             // No real frame pump here — _Process is called directly as a plain method, so
-            // Town2D's live SubViewport is never asked to render (see class doc).
+            // Town2D's live SubViewport is never asked to render (see class doc). Town2D._Process
+            // does NOT cascade to its children's own _Process (that dispatch is an ENGINE-loop
+            // behavior, only real for a node tree the SceneTree is actually ticking) — it only
+            // feeds each villager's SetPhase. The errand walk itself lives in
+            // TownsfolkNpc2D._Process, so each one must be driven directly too, exactly like the
+            // bare-node tests above do for a single instance.
             for (var i = 0; i < 300 && !leftHome; i++)
             {
                 town._Process(0.2);
+                foreach (var npc in town.Townsfolk)
+                {
+                    npc._Process(0.2);
+                }
+
                 leftHome = town.Townsfolk
                     .Select((n, idx) => n.Position.DistanceTo(homes[idx]))
                     .Any(d => d > 20f);
