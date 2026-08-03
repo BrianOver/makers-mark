@@ -599,7 +599,7 @@ public class TutorialFlowTests
 
             // The milestone (class doc: first BountyPaid) is a persistent state fact — injected
             // directly rather than simulating a full accept-and-return cycle, mirroring
-            // ShopStageTests.GuaranteedSaleState's own fixture-injection convention.
+            // DayAdvanceHudTests.GuaranteedSaleState's own fixture-injection convention.
             var paidBounty = new Bounty(new BountyId(1), TargetFloor: 1, RewardGold: 5,
                 PostedOnDay: 1, AcceptedBy: null, Paid: true);
             ui.Tutorial.RefreshAffordances(ui.Adapter.CurrentState with

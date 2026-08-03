@@ -20,8 +20,8 @@ namespace GodotClient.Minigames;
 /// with a hammer strike (advance X, cost heat, bonus near the tempo window), bellows (hold: raise
 /// heat, shape drifts back slightly — mutually exclusive with hammering), and a finale plunge once
 /// the shape reaches the end. Runs on the SAME accumulated-clock <see cref="Advance"/> pattern the
-/// old minigame (and <c>ShopStage</c>) already prove — no wall-clock, no engine RNG anywhere in the
-/// path that shapes the emitted trace.
+/// old minigame (and the deleted <c>ShopStage</c>, now <c>MarketLife2D</c>) already prove — no
+/// wall-clock, no engine RNG anywhere in the path that shapes the emitted trace.
 ///
 /// <para><b>Adapter-only (KTD2):</b> this class only captures the presentation-layer trace — an
 /// INTEGER (xPermille, yPermille) sample stream plus strike events, quantized at a fixed cadence
@@ -269,7 +269,8 @@ public sealed partial class ForgeMinigame : PanelContainer
 
     /// <summary>Advance the run by <paramref name="delta"/> accumulated-clock seconds — public so
     /// tests drive scripted runs deterministically (no wall-clock, no engine RNG; the same house
-    /// pattern <c>ShopStage.Advance</c>/the old <c>ForgeMinigame</c> already prove). Heat drains
+    /// pattern <c>MarketLife2D.Advance</c> (formerly <c>ShopStage.Advance</c>)/the old
+    /// <c>ForgeMinigame</c> already prove). Heat drains
     /// over time (the pursuit pressure) unless the bellows are held, in which case heat rises and
     /// shape drifts back slightly (can't hammer while pumping). Samples the cursor at a fixed
     /// cadence, capped at <see cref="MaxSamples"/> pairs.</summary>

@@ -220,6 +220,15 @@ public partial class Town2D : Control
     private CpuParticles2D? _forgeSteam;
     private AmbientLife2D? _ambientLife;
 
+    /// <summary>U5 (world-and-interiors plan, KTD-8): the market room's customer choreography —
+    /// null only if the "market" row is ever removed from <see cref="InteriorLayout2D.Rooms"/>
+    /// (defensive; every shipped build has it). Mounted directly under <see cref="YSort"/> in
+    /// <see cref="BuildInteriorRooms"/> (the SAME flat, non-Y-sort-enabled wrapper role
+    /// <see cref="TownsfolkRoot"/> plays), fed this tick's events every <see cref="Refresh"/> —
+    /// see <see cref="MarketLife2D.QueueDay"/>'s own doc for why it must be THIS tick's events
+    /// only, never the whole log.</summary>
+    private MarketLife2D? _marketLife;
+
     /// <summary>Gap #4 fix ("day/night is a lie"): eases <see cref="DuskModulate"/>'s tint toward
     /// whatever <see cref="Adapter"/>'s current <see cref="DayPhase"/> calls for, every frame (see
     /// <see cref="_Process"/>) — seeded in <see cref="Build"/> at the campaign's actual starting
@@ -373,8 +382,21 @@ public partial class Town2D : Control
         ReconcileHeroes();
     }
 
-    /// <summary>T8-parity drop-in for <c>Refresh()</c> — called every tick the world is visible.</summary>
-    public void Refresh() => ReconcileHeroes();
+    /// <summary>T8-parity drop-in for <c>Refresh()</c> — called every tick the world is visible.
+    /// U5: also feeds <see cref="_marketLife"/> this tick's events — the SAME
+    /// <c>Adapter.CurrentState</c>/<c>Adapter.LastEvents</c> pair <c>MainUi</c> already hands
+    /// <c>Watch</c>/<c>Pip</c> every tick (see <c>MainUi.RefreshAll</c>), so a shop event can never
+    /// disagree between what the HUD reports and what the market room stages. Harmless on every
+    /// non-shop tick — <see cref="MarketLife2D.QueueDay"/> just stages nothing when the batch has
+    /// no matching event.</summary>
+    public void Refresh()
+    {
+        ReconcileHeroes();
+        if (Adapter is not null)
+        {
+            _marketLife?.QueueDay(Adapter.CurrentState, Adapter.LastEvents);
+        }
+    }
 
     /// <summary>Gates BOTH proximity/interact (<see cref="WorldInputNode"/>) and the player's own
     /// WASD/seek (<see cref="PlayerController2D.SetInputEnabled"/>) — <see
@@ -528,6 +550,11 @@ public partial class Town2D : Control
     /// <summary>Live cosmetic-villager count (test/inspection surface) — mirrors <see
     /// cref="HeroActorCount"/>'s shape for <see cref="TownsfolkNpc2D"/>.</summary>
     public int TownsfolkCount() => TownsfolkRoot.GetChildCount();
+
+    /// <summary>Test/inspection surface: the market room's live customer choreography, or null
+    /// before <see cref="Build"/> has run (mirrors <see cref="FindInteriorRoom"/>'s own
+    /// null-before-Build contract).</summary>
+    public MarketLife2D? MarketLife => _marketLife;
 
     /// <summary>The lowest-HeroId live actor (test/inspection surface) — deterministic even though
     /// dictionary enumeration order is an implementation detail. Throws if <see
@@ -963,6 +990,17 @@ public partial class Town2D : Control
             };
 
             _interiorRooms[spec.VenueKey] = room;
+
+            // U5 (world-and-interiors plan, KTD-8): the market room additionally gets its
+            // customer choreography — a plain (non-Y-sort-enabled) wrapper under YSort, mirroring
+            // TownsfolkRoot's own precedent, so each customer Y-sorts individually against the
+            // player rather than as one blob (see MarketLife2D's own class doc).
+            if (spec.VenueKey == "market")
+            {
+                _marketLife = new MarketLife2D();
+                YSort.AddChild(_marketLife);
+                _marketLife.Build(room);
+            }
         }
     }
 

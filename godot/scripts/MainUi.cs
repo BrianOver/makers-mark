@@ -560,11 +560,10 @@ public partial class MainUi : Control
         }
         // U25 (c): the drawer's own ShopPanel.OnPhaseCompleted (LW3's lit customer strip) is
         // retired. U4 (painted-interiors plan): its replacement, InteriorStage's embedded
-        // ShopStage, is ALSO retired along with the dead InteriorStage host it rode in on — the
-        // shop choreography (ShopStage.QueueDay) currently has no live host in the game (see
-        // ShopStage's own class doc). Slice 2's market room is its next intended host; wiring a
-        // new call site here speculatively, before that room exists, is exactly the kind of code
-        // path with no player-visible payoff this plan's KTD-4 warns against.
+        // ShopStage, was ALSO retired along with the dead InteriorStage host it rode in on.
+        // U5 (world-and-interiors plan): ShopStage itself is now deleted — its choreography
+        // landed in Town2D.MarketLife2D, hosted by the market room and fed every tick from
+        // Town2D.Refresh() (called below via RefreshAll), not from this MainUi tick hook.
         SyncCampModal(); // V7a: raise the winch-house slate the moment a party parks at Camp
 
         // U17: feed this tick's freshly stamped events to the bottom-edge adventure ticker.
