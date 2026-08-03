@@ -126,15 +126,25 @@ public class HeroReturnCeremonyTests
                     "The show floor elapsed but the group is still queued — TickPendingReturns regressed.")
                 .IsFalse();
 
+            // The group left the queue — its staggered file-out (mirrors departure's own
+            // FileExitStaggerSeconds stagger) is now in flight. Only the FIRST hero begins
+            // WalkingIn on this exact tick; the rest peel off staggered, same as departure — so
+            // this waits on the CONDITION ("nobody is still frozen at Away") rather than asserting
+            // every survivor is WalkingIn simultaneously (which the initial version of this test
+            // got away with only because its +1.0s nudge happened to swamp the stagger too).
+            // Bounded well under a second MinDelveShowSeconds wait, so a regression that gated the
+            // rest of the party behind another floor would still be caught here.
+            var emergenceStarted = await player.WaitUntil(
+                () => survivorIds.All(id => ui.Town.FindHeroActor(id)?.State != HeroActor2D.HeroTownState.Away),
+                maxFrames: 120);
+
+            AssertThat(emergenceStarted)
+                .OverrideFailureMessage("Survivors never started their staggered walk-in once the show floor cleared.")
+                .IsTrue();
+
             foreach (var id in survivorIds)
             {
-                var actor = ui.Town.FindHeroActor(id)!;
-                AssertThat(actor.State)
-                    .OverrideFailureMessage(
-                        $"Hero {id} should be mid emergence walk-in (WalkingIn) the instant the " +
-                        "floor clears.")
-                    .IsEqual(HeroActor2D.HeroTownState.WalkingIn);
-                AssertThat(actor.Visible)
+                AssertThat(ui.Town.FindHeroActor(id)!.Visible)
                     .OverrideFailureMessage($"Hero {id} must be visible again once the emergence begins.")
                     .IsTrue();
             }
@@ -270,22 +280,52 @@ public class HeroReturnCeremonyTests
             // MinDelveShowSeconds before ReturnSurvivors is ever called, unlike the unstaged fast path.
             town._Process(50.0);
 
-            town.OnPhaseCompleted(DayPhase.ExpeditionDeep); // queues the group (ReturnSurvivors)
-            town._Process(0.001); // the "same tick" nudge — TickPendingReturns' actual check
-
-            AssertThat(town.AnyReturnPending)
-                .OverrideFailureMessage(
-                    "A staged return whose actors already cleared the show floor must emerge on " +
-                    "the SAME tick ReturnSurvivors queues it, not wait an extra MinDelveShowSeconds " +
-                    "— \"staged (Camp) runs unchanged\" regressed.")
-                .IsFalse();
-
+            // Precondition, asserted explicitly and separately from the consequence below (review
+            // finding): if this fails, the FIXTURE is broken (the away-time accumulator never saw
+            // the big-delta tick, or an actor isn't Away yet) — not the design under test. Without
+            // this split, a fixture regression and a real design regression report the identical
+            // failure below and cannot be told apart.
             foreach (var id in partyIds)
             {
-                AssertThat(town.FindHeroActor(id.Value)!.State)
-                    .OverrideFailureMessage($"Hero {id.Value} should already be mid emergence walk-in.")
-                    .IsEqual(HeroActor2D.HeroTownState.WalkingIn);
+                AssertThat(town.AwaySecondsFor(id.Value))
+                    .OverrideFailureMessage(
+                        $"Setup: hero {id.Value} is not past the show floor yet " +
+                        $"({town.AwaySecondsFor(id.Value)}s < {Town2D.MinDelveShowSeconds}s) — the " +
+                        "fixture, not Town2D, is broken.")
+                    .IsGreaterEqual(Town2D.MinDelveShowSeconds);
             }
+
+            town.OnPhaseCompleted(DayPhase.ExpeditionDeep); // queues the group (ReturnSurvivors)
+
+            // Wait on the CONDITION, not a guessed duration (review finding — HumanPlayer.WaitUntil
+            // is exactly this): a staged return whose actors are already past the floor must clear
+            // Town2D.AnyReturnPending within a handful of real frames, nowhere close to another
+            // MinDelveShowSeconds-scale wait (~480 frames at 60fps). Bounding this at 60 is the
+            // actual assertion — if a regression re-added a second floor-wait here, this would time
+            // out and fail loudly instead of silently passing on an over-generous cap.
+            var clearedWithoutExtraDelay = await player.WaitUntil(() => !town.AnyReturnPending, maxFrames: 60);
+
+            AssertThat(clearedWithoutExtraDelay)
+                .OverrideFailureMessage(
+                    "A staged return whose actors already cleared the show floor must emerge " +
+                    "within a handful of frames, not wait an extra MinDelveShowSeconds — " +
+                    "\"staged (Camp) runs unchanged\" regressed.")
+                .IsTrue();
+
+            // The group left the queue — now let the staggered file-out (mirrors departure's own
+            // FileExitStaggerSeconds stagger) actually finish. Only the FIRST hero begins walking
+            // in on the exact tick the group clears; the rest peel off staggered, same as
+            // departure — asserting "all WalkingIn on this one tick" (the first version of this
+            // test) was wrong about the design, not a regression in it. Bounded well under a
+            // second show-floor wait, so a regression that gated the REST behind another
+            // MinDelveShowSeconds would still be caught here.
+            var allHome = await player.WaitUntil(
+                () => partyIds.All(id => town.FindHeroActor(id.Value)?.State == HeroActor2D.HeroTownState.Wandering),
+                maxFrames: 300);
+
+            AssertThat(allHome)
+                .OverrideFailureMessage("Survivors never completed their staggered walk-in back to Wandering.")
+                .IsTrue();
         }
         finally
         {
