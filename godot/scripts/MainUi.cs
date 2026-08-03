@@ -477,6 +477,29 @@ public partial class MainUi : Control
         }
     }
 
+    /// <summary>
+    /// Destroy every detached panel subtree NOW — the test host's stand-in for the frame that
+    /// flushes the deletion queue in the running game.
+    ///
+    /// <para><b>Why a test needs this at all.</b> The mount/unmount drains above bound the RESIDUE a
+    /// test leaves behind, but not the PEAK it holds while running: a frameless long-lived mount
+    /// (<c>Playtest3dClickThrough</c> — 40 in-game days of real button presses, every landed click
+    /// refreshing every panel) buried ~375,000 nodes between mount and unmount, ~1.3 GB of Godot RSS,
+    /// and under that pressure the SHARED gdUnit runtime dies mid-session (stall or 0xC0000005),
+    /// truncating whatever tests happened to come later. Draining between phase ticks bounds the peak
+    /// to one tick's rebuilds.</para>
+    ///
+    /// <para><b>Safety contract — same as <see cref="_Notification"/>'s drains:</b> call ONLY where
+    /// no panel signal can be in flight. A test's own loop between two ticks qualifies (every
+    /// <c>EmitSignal</c> has returned, <c>SimAdapter.AdvancePhase</c> has unwound); anything
+    /// reachable from inside a <c>Pressed</c> handler does NOT — an immediate action's refresh buries
+    /// the emitting button itself, and freeing it there is the signal-11 crash
+    /// <c>ClearDuringSignalTests</c> pins. That is also why this is a hand-invoked ForTests seam and
+    /// not another automatic hook: no production call site below ENTER/EXIT_TREE can prove the
+    /// stack is emission-free. The running game never needs it — a frame always arrives.</para>
+    /// </summary>
+    public static void DrainDetachedPanelsForTests() => PanelGraveyard.Drain();
+
     // Dev tool (no-op in normal play): when TOWN_SHOT=<path> is set, render a few frames then
     // save the whole viewport (3D town + HUD) to that PNG and quit. Lets an agent verify the
     // town visually on a real GPU (headless can't render 3D). Guarded — never fires without the

@@ -123,6 +123,38 @@ public static class UiTestSupport
         UiSettings.DeleteForTests();
     }
 
+    /// <summary>
+    /// Stop EVERY SubViewport under <paramref name="root"/> from rendering — not just the one you
+    /// happen to know about.
+    ///
+    /// <para><b>Why this exists.</b> Awaiting frames while any SubViewport renders is the documented
+    /// gdUnit headless hang, and the usual guard is one hand-written line naming
+    /// <c>ui.Town.WorldViewport</c>. That line is a list of one, maintained by memory, and it went
+    /// stale: <c>MineWatch</c>'s constructor builds a SECOND viewport ("MineViewport") at
+    /// <c>UpdateMode.Always</c>, so a long test that opened the watch panel kept rendering all the
+    /// way through while its author believed rendering was off. Measured 2026-08-03 on the
+    /// click-through sweep, which disabled Town's viewport and nothing else.</para>
+    ///
+    /// <para>Walking the tree instead of naming one field means the next viewport anybody adds is
+    /// covered on the day it is added, with no test to remember to update.</para>
+    /// </summary>
+    public static int DisableAllRendering(Node root)
+    {
+        var stopped = 0;
+        if (root is SubViewport viewport)
+        {
+            viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+            stopped++;
+        }
+
+        foreach (var child in root.GetChildren())
+        {
+            stopped += DisableAllRendering(child);
+        }
+
+        return stopped;
+    }
+
     /// <summary>Find a (code-built, unowned) control by name anywhere under root.</summary>
     public static T Find<T>(Node root, string name) where T : Node =>
         root.FindChild(name, recursive: true, owned: false) as T
