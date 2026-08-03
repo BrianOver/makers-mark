@@ -61,9 +61,10 @@ public class ShopPanelTests
     // U25 (c): StageStrip_IsMountedOutsideTheScrollBody_SoItStaysVisibleWhilScrolling deleted —
     // the drawer's own lit customer strip (ShopPanel.Stage) it pinned is retired as redundant.
     // U4 (painted-interiors plan): the InteriorStage-hosted richer choreography that superseded it
-    // is ALSO gone now (InteriorStage deleted) — ShopStage.QueueDay has no live host at all as of
-    // U4 (see ShopStage's own class doc); the equivalent coverage that survives is
-    // ShopStageTests.MorningSale_PopsTheGoldChip, which only asserts the still-live gold-chip pop.
+    // was ALSO retired (InteriorStage deleted). U5 (world-and-interiors plan): ShopStage itself is
+    // now deleted too — its choreography lives in Town2D.MarketLife2D (MarketLifeTests.cs), hosted
+    // by the walkable market room. The gold-chip-pop coverage that survives independently of any of
+    // this moved to DayAdvanceHudTests.MorningSale_PopsTheGoldChip.
 
     [TestCase]
     public void ShelfCard_PriceLabel_ShrinksToContent_InsteadOfStretchingFullPanelWidth()

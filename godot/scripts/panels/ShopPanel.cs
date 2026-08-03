@@ -391,10 +391,11 @@ public partial class ShopPanel : SimPanel
         }
 
         // U25 (c): the LW3 lit customer strip that used to live here (BuildStageStrip) is
-        // retired — U22's shop InteriorStage hosts its own, richer ShopStage choreography now
-        // (InteriorStage.ShopStage), so this drawer strip was a redundant, duplicate-choreography
-        // second copy. A plain root VBox anchored full-rect (kept, rather than reverting to
-        // BuildScrollBody, since the drawer-content shape is otherwise unchanged).
+        // retired — the walkable market room now carries the shop's own choreography
+        // (Town2D.MarketLife2D, U5 of the world-and-interiors plan), so this drawer strip was a
+        // redundant, duplicate-choreography second copy. A plain root VBox anchored full-rect
+        // (kept, rather than reverting to BuildScrollBody, since the drawer-content shape is
+        // otherwise unchanged).
         var root = new VBoxContainer { Name = "ShopRoot" };
         root.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(root);

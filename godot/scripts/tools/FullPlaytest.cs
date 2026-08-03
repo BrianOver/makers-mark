@@ -303,6 +303,26 @@ public partial class FullPlaytest : Node
             {
                 adapter.AdvancePhase();
                 await Settle(10);
+                if (phase == 0 && day == 2)
+                {
+                    // U5 (world-and-interiors plan): phase 0 just completed Morning — PlayTheDay's
+                    // stock/price/counter-session activity above stages MarketLife2D's customer
+                    // choreography off THIS tick's Adapter.LastEvents (Town2D.Refresh() feeds it
+                    // every tick, see MarketLife2D.QueueDay's own doc). Walk into the market room
+                    // right now to prove customers are actually alive, not merely instantiated.
+                    try
+                    {
+                        ui.Town.EnterInterior("market");
+                        await Settle(20);
+                        await MotionBurst(ui, $"r{_run}_market_life_motion", "the market room mid-choreography (customers shopping)");
+                        ui.Town.ExitInterior();
+                        await Settle(6);
+                    }
+                    catch (Exception ex)
+                    {
+                        Note($"run {_run}: market life motion capture failed: {ex.GetType().Name}: {ex.Message}");
+                    }
+                }
                 if (phase == 1 && day == 2)
                 {
                     try

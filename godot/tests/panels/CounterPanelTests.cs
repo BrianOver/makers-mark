@@ -8,6 +8,7 @@ using GameSim.Kernel;
 using GdUnit4;
 using Godot;
 using GodotClient.Panels;
+using GodotClient.Town2d;
 using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
@@ -16,7 +17,9 @@ namespace GodotClient.Tests;
 
 /// <summary>
 /// PA7 (plan 2026-07-21-002, PKD6/PKD8): the stepped Morning counter service played through the
-/// real <see cref="CounterPanel"/>/<see cref="ShopPanel"/>/<see cref="ShopStage"/> Controls — bind
+/// real <see cref="CounterPanel"/>/<see cref="ShopPanel"/> Controls, and (U5, world-and-interiors
+/// plan) <see cref="MarketLife2D"/>'s market-room choreography, which absorbed the deleted
+/// <c>ShopStage</c>'s classification statics verbatim — bind
 /// (an open mid-haggle <see cref="CounterState"/> fixture and the null-Counter arrange-only
 /// layout), action fidelity (each button queues exactly the PA1 action it names, and a scripted
 /// stepped morning driven through UI signals ONLY matches the same actions applied directly to
@@ -431,19 +434,19 @@ public class CounterPanelTests
     // ── Faces (Moonlighter — pure render of the sim's computed verdict) ─────────────────────────
 
     [TestCase]
-    public void ShopStage_ClassifyCounterSale_PinnedIsHeart_UnpinnedIsSmile()
+    public void MarketLife_ClassifyCounterSale_PinnedIsHeart_UnpinnedIsSmile()
     {
-        AssertThat(ShopStage.ClassifyCounterSale(pinned: true)).IsEqual(ShopStage.EmoteKind.Heart);
-        AssertThat(ShopStage.ClassifyCounterSale(pinned: false)).IsEqual(ShopStage.EmoteKind.Smile);
+        AssertThat(MarketLife2D.ClassifyCounterSale(pinned: true)).IsEqual(MarketLife2D.EmoteKind.Heart);
+        AssertThat(MarketLife2D.ClassifyCounterSale(pinned: false)).IsEqual(MarketLife2D.EmoteKind.Smile);
     }
 
     [TestCase]
-    public void ShopStage_ClassifyCounterWalk_PatienceReasonIsFrown_EveryOtherReasonIsShrug()
+    public void MarketLife_ClassifyCounterWalk_PatienceReasonIsFrown_EveryOtherReasonIsShrug()
     {
-        AssertThat(ShopStage.ClassifyCounterWalk("the customer's patience ran out"))
-            .IsEqual(ShopStage.EmoteKind.Frown);
-        AssertThat(ShopStage.ClassifyCounterWalk("the price never met their willingness"))
-            .IsEqual(ShopStage.EmoteKind.Shrug);
+        AssertThat(MarketLife2D.ClassifyCounterWalk("the customer's patience ran out"))
+            .IsEqual(MarketLife2D.EmoteKind.Frown);
+        AssertThat(MarketLife2D.ClassifyCounterWalk("the price never met their willingness"))
+            .IsEqual(MarketLife2D.EmoteKind.Shrug);
     }
 
     [TestCase]
@@ -519,7 +522,7 @@ public class CounterPanelTests
 
     /// <summary>A one-hero, one-item world whose item's value ratio (gain/price) guarantees a
     /// Buy verdict from <c>ShoppingAi.EvaluateItem</c> — the SAME check <c>CounterQueueSystem</c>
-    /// gates a haggle round's opening on (mirrors <c>ShopStageTests.GuaranteedSaleState</c>'s
+    /// gates a haggle round's opening on (mirrors <c>DayAdvanceHudTests.GuaranteedSaleState</c>'s
     /// proven fixture shape, adapted to a single hero for a deterministic queue).</summary>
     private static GameState SingleHeroGuaranteedBuyState()
     {
