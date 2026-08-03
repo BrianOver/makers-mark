@@ -196,6 +196,20 @@ func _process(_delta: float) -> bool:
 			# (craft, THEN ring the bell) rather than pressing through mid-slide.
 			if _ui.has_method("OpenPanel"):
 				_ui.call("OpenPanel", "Forge")
+		elif _state == "Ledger":
+			# U7 (loop-legibility plan, R10): drive a whole day with zero player actions --
+			# heroes muster and raid autonomously (A2), so day 1 produces a real return the
+			# Ledger can show. Bell presses below (frames 90/120/150/180) walk the day's
+			# current five phases (Morning/Expedition/Camp/ExpeditionDeep/Evening) the same
+			# way SendOff/Mirror press the real bell button rather than faking a tick. The
+			# reveal itself is real-time-gated (MainUi's Return Ritual, ReturnRitualDelaySeconds)
+			# -- a frame-counted wait against a wall-clock gate is exactly the "frame count is
+			# not a duration" trap, so frame 220 calls LedgerModal.ShowFor directly instead
+			# (the same "call the panel's own public show method" idiom Mirror/Bestiary already
+			# use above), once day 1 has fully rolled over.
+			var bell_l = _ui.find_child("AdvancePhase", true, false)
+			if bell_l:
+				bell_l.emit_signal("pressed")
 		elif _state == "Mirror":
 			# U1: the second required receipt -- the first proof any human has seen the
 			# mirror render since it merged (#321). No drawer to open first; press the real
@@ -279,6 +293,23 @@ func _process(_delta: float) -> bool:
 		var anvil = _ui.find_child("Building_anvil", true, false)
 		if anvil:
 			anvil.call("RaisePick")
+	# Ledger's remaining beats: walk the rest of day 1's five phases (frame 60 above already
+	# pressed the bell once, ending Morning) at the same 30-frame spacing SendOff/Mirror use,
+	# then force the reveal open directly once day 1 has rolled over (see the elif above for
+	# why this skips the real-time Return Ritual rather than waiting on it).
+	if _state == "Ledger" and (_frames == 90 or _frames == 120 or _frames == 150 or _frames == 180):
+		var ledger_bell = _ui.find_child("AdvancePhase", true, false)
+		if ledger_bell:
+			ledger_bell.emit_signal("pressed")
+	if _state == "Ledger" and _frames == 220:
+		# Press the REAL "OpenLedger" tray button (MainUi's Books Tray) rather than calling
+		# LedgerModal.ShowFor directly -- this sidesteps BOTH the real-time Return Ritual wait
+		# (a frame-counted wait against a wall-clock gate is exactly the "frame count is not a
+		# duration" trap) AND any GDScript-call()-arity guesswork against a C# default
+		# parameter, by driving the exact button a player clicks.
+		var open_ledger = _ui.find_child("OpenLedger", true, false)
+		if open_ledger:
+			open_ledger.emit_signal("pressed")
 	if _frames >= _settle:
 		var img := root.get_texture().get_image()
 		var err := img.save_png(_out)

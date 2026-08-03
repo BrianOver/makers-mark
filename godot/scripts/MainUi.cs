@@ -386,7 +386,11 @@ public partial class MainUi : Control
             {
                 LedgerDelayRemaining = 0;
                 _showForecastOnLedgerClose = true; // U10: the auto-revealed day-end Ledger chains to the forecast
-                Ledger.ShowFor(_pendingLedgerDay);
+                // U7 (loop-legibility plan, R10): the ledger's own one-line tutorial explainer,
+                // wired ONLY to the automatic Return-Ritual reveal — ConsumeLedgerTip returns
+                // non-null exactly once per campaign, so a manual reopen (OpenLedger tray button,
+                // OnLedgerVisibilityChanged's forecast chain) never re-asks for it.
+                Ledger.ShowFor(_pendingLedgerDay, Tutorial.ConsumeLedgerTip());
             }
         }
 

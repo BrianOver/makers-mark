@@ -122,6 +122,13 @@ public sealed partial class TutorialFlow : PanelContainer
     /// <see cref="Completed"/> (a dismiss never counts as finishing it).</summary>
     public bool Dismissed { get; private set; }
 
+    /// <summary>U7 (loop-legibility plan, R10): true once the Evening Ledger's own one-line
+    /// explainer has been consumed via <see cref="ConsumeLedgerTip"/> — persisted like <see
+    /// cref="Completed"/>/<see cref="Dismissed"/> so it never plays twice in one campaign,
+    /// independent of <see cref="Active"/> (class doc's "three adapter-gated affordances" shape,
+    /// now a fourth).</summary>
+    public bool HasSeenLedgerTip { get; private set; }
+
     /// <summary>True while the chain should be overriding the HUD's top slot.</summary>
     public bool Active => !Completed && !Dismissed;
 
@@ -659,6 +666,29 @@ public sealed partial class TutorialFlow : PanelContainer
         Save();
     }
 
+    /// <summary>
+    /// The Evening Ledger's own one-line explainer (U7, R10: "explain with the tutorial if
+    /// gameplay relevant"), consumed ONCE ever per campaign — <c>MainUi</c> calls this only from
+    /// the automatic Return-Ritual reveal (never a manual reopen), so the first Ledger the player
+    /// ever sees carries the line and every later one does not.
+    ///
+    /// <para>Deliberately independent of <see cref="Active"/>/<see cref="Step"/>: the Ledger
+    /// matters to every profession the moment a party first returns, not only to a player still
+    /// inside the 3-day chain — a player who dismissed or already completed it still deserves
+    /// this one line the first time the Ledger has anything to show.</para>
+    /// </summary>
+    public string? ConsumeLedgerTip()
+    {
+        if (HasSeenLedgerTip)
+        {
+            return null;
+        }
+
+        HasSeenLedgerTip = true;
+        Save();
+        return "This is the day's story — read who came home, what they found, and what it cost.";
+    }
+
     private void Complete()
     {
         Completed = true;
@@ -748,6 +778,7 @@ public sealed partial class TutorialFlow : PanelContainer
 
             Completed = data.Completed;
             Dismissed = data.Dismissed;
+            HasSeenLedgerTip = data.HasSeenLedgerTip;
         }
         catch (System.Text.Json.JsonException)
         {
@@ -759,7 +790,7 @@ public sealed partial class TutorialFlow : PanelContainer
     {
         using var file = Godot.FileAccess.Open(SavePath, Godot.FileAccess.ModeFlags.Write);
         file?.StoreString(System.Text.Json.JsonSerializer.Serialize(
-            new PersistedData { Completed = Completed, Dismissed = Dismissed }));
+            new PersistedData { Completed = Completed, Dismissed = Dismissed, HasSeenLedgerTip = HasSeenLedgerTip }));
     }
 
     /// <summary>Test-only teardown: delete the persisted file so a suite can never leak a
@@ -776,5 +807,6 @@ public sealed partial class TutorialFlow : PanelContainer
     {
         public bool Completed { get; set; }
         public bool Dismissed { get; set; }
+        public bool HasSeenLedgerTip { get; set; }
     }
 }
