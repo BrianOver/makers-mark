@@ -1,5 +1,7 @@
 #if GDUNIT_TESTS
 using System.Linq;
+using GameSim;
+using GameSim.Contracts;
 using GdUnit4;
 using Godot;
 using GodotClient.Town2d;
@@ -609,6 +611,149 @@ public class InteriorEntryExitTests
             AssertThat(ui.Town.Cam.GlobalPosition)
                 .OverrideFailureMessage($"A departure focus beat must not fight the '{venueKey}' room's camera clamp.")
                 .IsEqual(before);
+        }
+        finally { Unmount(ui); }
+    }
+
+    // ── U7 (world-and-interiors plan, KTD-3): the workshop follows the profession. An alchemist
+    // start must never see the anvil room — R3's whole point ("an alchemist never crafts at an
+    // anvil"). Drives the same real production path (Building2D.RaisePick, station RaisePick) every
+    // other test in this file uses, just against a non-blacksmith campaign. ──────────────────────
+
+    [TestCase]
+    public void AlchemistStart_EntersABrewingRoom_NotTheSmithy()
+    {
+        var state = GameComposition.NewCampaign(seed: 2026, startingProfession: "alchemy");
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Town.FindBuilding("forge").RaisePick();
+
+            AssertThat(ui.Town.InteriorActive).IsTrue();
+            var room = ui.Town.FindInteriorRoom("forge");
+
+            // Alchemy is the ONLY selected profession, so the composed room is exactly alchemy's
+            // own station set (WorkshopVocab), in declared order — no anvil, no furnace anywhere.
+            var stationIds = room.Stations.Select(s => s.Key).ToArray();
+            AssertThat(stationIds)
+                .OverrideFailureMessage(
+                    "An alchemist's workshop must be furnished with alchemy's own stations, not "
+                    + "the blacksmith's — R3's whole point.")
+                .IsEqual(new[] { "cauldron", "still", "reagent-shelf", "potion-rack", "herb-bundles" });
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void AlchemistStart_WorkshopIsNamedAndSignedForAlchemy()
+    {
+        var state = GameComposition.NewCampaign(seed: 2026, startingProfession: "alchemy");
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            AssertThat(ui.Town.FindBuilding("forge").NameLabel.Text)
+                .OverrideFailureMessage("The workshop's exterior nametag must follow the profession (KTD-3) — an alchemist never sees \"Forge\".")
+                .IsEqual("Apothecary");
+            AssertThat(ui.Town.WorkshopNametag).IsEqual("Apothecary");
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void AlchemistStart_CauldronPress_OpensForgePanel_ScrolledToTheCraftSection()
+    {
+        var state = GameComposition.NewCampaign(seed: 2026, startingProfession: "alchemy");
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Town.FindBuilding("forge").RaisePick();
+            var cauldron = ui.Town.FindInteriorRoom("forge").Stations[0]; // declared first for alchemy
+            AssertThat(cauldron.Key).IsEqual("cauldron");
+
+            cauldron.RaisePick();
+
+            // ForgePanel already renders every profession's craft flow correctly (verified during
+            // planning) — this pins the ROOM now matching it: the cauldron opens the same drawer
+            // id ("Forge") as the anvil does, scrolled to the same "craft" section, so the alchemy
+            // recipe cards (with their own "Brew" reagent-puzzle button) are what the player sees.
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Forge");
+            AssertThat(ui.Forge.LastFocusedSection).IsEqual("craft");
+
+            // The drawer HEADER (what the player actually reads) must say "Apothecary", not the
+            // bare registration id ("Forge") HumanizePanelId would otherwise print — KTD-3's
+            // "drawer title follows the profession" requirement, proven from a real station press,
+            // not just a direct QuickTravel/OpenPanel call.
+            var title = Find<Label>(ui.Drawer, "Title");
+            AssertThat(title.Text)
+                .OverrideFailureMessage("The workshop drawer's title must follow the profession (KTD-3), not the registration id \"Forge\".")
+                .IsEqual("Apothecary");
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void BlacksmithStart_WorkshopRoom_IsUnchangedFromThePreU7Layout()
+    {
+        // The zero-regression pin (this unit's own contract): a blacksmith-only campaign must see
+        // byte-identical station ids/order to the pre-U7 forge row, in the live built room, not
+        // just in InteriorLayout2D's own static table.
+        var ui = MountMainUi(); // default seed-2026 campaign — blacksmith (GameComposition's default)
+        try
+        {
+            ui.Town.FindBuilding("forge").RaisePick();
+            var room = ui.Town.FindInteriorRoom("forge");
+            var stationIds = room.Stations.Select(s => s.Key).ToArray();
+
+            AssertThat(stationIds)
+                .OverrideFailureMessage("A blacksmith start must see zero change from the pre-U7 forge room.")
+                .IsEqual(new[] { "anvil", "furnace", "bellows", "quench", "shelf", "rack" });
+            AssertThat(ui.Town.FindBuilding("forge").NameLabel.Text).IsEqual("Forge");
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// U7 (world-and-interiors plan): "Second-profession-added-mid-run rebuilds the room on next
+    /// entry" — the unit's own structural fix (rooms are otherwise built once at
+    /// <c>Town2D.Build</c> time). Drives the REAL production path a player takes
+    /// (<c>MainUi.OnSecondProfessionPicked</c>'s own queue-then-day-boundary shape — <see
+    /// cref="SetProfessionsAction"/> resolves at a day boundary, never immediately) rather than
+    /// reaching into <c>Town2D</c>'s private state.
+    /// </summary>
+    [TestCase]
+    public void SecondProfessionAddedMidRun_RebuildsTheWorkshopOnNextEntry_UnionOfBothSets()
+    {
+        var ui = MountMainUi(); // blacksmith default — started first, so stays primary below
+        try
+        {
+            var current = ui.Adapter.CurrentState.Player.SelectedProfessions;
+            ui.Adapter.Queue(new SetProfessionsAction(current.Add("alchemy")));
+            AdvanceDay(ui); // SetProfessionsAction resolves at the next day boundary, not now
+
+            AssertThat(ui.Adapter.CurrentState.Player.IsSelected("alchemy"))
+                .OverrideFailureMessage("Setup check: the second profession must have actually resolved before this test means anything.")
+                .IsTrue();
+
+            ui.Town.FindBuilding("forge").RaisePick(); // triggers RebuildWorkshopIfStale before entry
+
+            var room = ui.Town.FindInteriorRoom("forge");
+            var stationIds = room.Stations.Select(s => s.Key).ToArray();
+
+            AssertThat(stationIds.Contains("anvil"))
+                .OverrideFailureMessage("Blacksmith's own stations must survive a second profession joining — union, never replace.")
+                .IsTrue();
+            AssertThat(stationIds.Contains("cauldron"))
+                .OverrideFailureMessage("Alchemy's stations must appear the next time the player enters the workshop.")
+                .IsTrue();
+            AssertThat(stationIds.Length)
+                .OverrideFailureMessage("Expected all 6 blacksmith + 5 alchemy stations, no loss and no duplicate mount.")
+                .IsEqual(11);
+
+            // Blacksmith started the campaign FIRST — it stays primary (and the building's own
+            // nametag) even after alchemy joins mid-run (this unit's "primary = first selected"
+            // rule, not the sim's alphabetical SelectedProfessions order).
+            AssertThat(ui.Town.WorkshopNametag).IsEqual("Forge");
+            AssertThat(ui.Town.FindBuilding("forge").NameLabel.Text).IsEqual("Forge");
         }
         finally { Unmount(ui); }
     }

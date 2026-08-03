@@ -175,8 +175,12 @@ public partial class DrawerHost : Control
 
     /// <summary>Open (or replace) the drawer with the panel registered under <paramref
     /// name="id"/>. While another panel is already showing, this REPLACES it — close-then-open,
-    /// never a stack.</summary>
-    public void Open(string id)
+    /// never a stack. <paramref name="titleOverride"/> (U7, world-and-interiors plan): the header's
+    /// title text when the caller has a better one than <see cref="HumanizePanelId"/>'s bare id
+    /// humanization — e.g. the workshop's profession-true nametag ("Apothecary") instead of the
+    /// literal panel id ("Forge"), which stays the registration/routing id regardless (KTD-3(b)).
+    /// Null (the default) keeps every existing caller's behavior byte-identical.</summary>
+    public void Open(string id, string? titleOverride = null)
     {
         if (!_registered.TryGetValue(id, out var content))
         {
@@ -194,14 +198,14 @@ public partial class DrawerHost : Control
         Visible = true;
         _opening = true;
         _slideElapsed = 0;
-        RebuildHeader(id);
+        RebuildHeader(id, titleOverride);
         ApplySlide(0f);
     }
 
     /// <summary>Rebuild the header strip for the panel that just opened (UI-5) — cheap (one small
     /// Control tree) and simplest correct option since <see cref="UiKit.DrawerHeader"/> bakes its
     /// title/icon in at construction rather than exposing setters.</summary>
-    private void RebuildHeader(string id)
+    private void RebuildHeader(string id, string? titleOverride = null)
     {
         foreach (var child in _headerHost.GetChildren())
         {
@@ -210,7 +214,8 @@ public partial class DrawerHost : Control
         }
 
         var glyphName = HeaderGlyphByPanelId.TryGetValue(id, out var mapped) ? mapped : DefaultHeaderGlyph;
-        var header = UiKit.DrawerHeader(HumanizePanelId(id), IconRegistry.Glyph(glyphName), Close);
+        var title = titleOverride ?? HumanizePanelId(id);
+        var header = UiKit.DrawerHeader(title, IconRegistry.Glyph(glyphName), Close);
         header.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         _headerHost.AddChild(header);
     }

@@ -111,6 +111,20 @@ public sealed partial class TutorialFlow : PanelContainer
         ("Gate", "Gate"),
     ];
 
+    /// <summary>U7 (world-and-interiors plan, KTD-3): the workshop's current player-facing
+    /// nametag/station-noun — pushed in by <c>MainUi</c> via <see cref="SetWorkshopVocab"/> from
+    /// the SAME resolution the actual building/drawer use (<c>Town2D.WorkshopNametag</c>/
+    /// <c>StationNoun</c>), so this class never derives profession vocabulary independently and
+    /// can never disagree with the world (the exact "one room, several names" bug #339 already
+    /// fixed once — see this unit's own PR body for the full seam note). Defaults keep every
+    /// caller that never invokes <see cref="SetWorkshopVocab"/> (most existing tests) reading the
+    /// pre-U7 "Forge"/"anvil" text byte-for-byte.</summary>
+    private string _workshopNametag = "Forge";
+
+    private string _workshopStationNoun = "anvil";
+
+    private Button? _quickTravelForgeButton;
+
     /// <summary>Current chain step. Never regresses; only <see cref="Advance"/> moves it forward.</summary>
     public TutorialStep Step { get; private set; } = TutorialStep.BuyMaterial;
 
@@ -199,11 +213,44 @@ public sealed partial class TutorialFlow : PanelContainer
         body.AddChild(QuickTravelRow);
         foreach (var (label, building) in QuickTravelVenues)
         {
-            var button = new Button { Name = $"QuickTravel_{building}", Text = label };
+            // U7: the Forge slot's button starts on the static "Forge" label like every other
+            // caller-not-yet-set default, then SetWorkshopVocab retexts it in place if/when a
+            // caller (MainUi) knows the real profession-true nametag.
+            var button = new Button { Name = $"QuickTravel_{building}", Text = building == "Forge" ? _workshopNametag : label };
             button.Pressed += () => QuickTravelRequested?.Invoke(building);
             QuickTravelRow.AddChild(button);
+
+            if (building == "Forge")
+            {
+                _quickTravelForgeButton = button;
+            }
         }
     }
+
+    /// <summary>
+    /// U7 (world-and-interiors plan, KTD-3): pushes the workshop's CURRENT profession-true
+    /// vocabulary in from <c>MainUi</c> (which reads it off <c>Town2D.WorkshopNametag</c>/
+    /// <c>StationNoun</c> — the single source every surface shares). Called once at boot
+    /// (immediately after <see cref="Build"/>) and again every <c>MainUi.RefreshHud</c> tick, so a
+    /// profession added mid-run updates this class's copy the same tick the workshop room itself
+    /// rebuilds (<c>Town2D.RebuildWorkshopIfStale</c>).
+    /// </summary>
+    public void SetWorkshopVocab(string nametag, string stationNoun)
+    {
+        _workshopNametag = nametag;
+        _workshopStationNoun = stationNoun;
+        if (_quickTravelForgeButton is not null)
+        {
+            _quickTravelForgeButton.Text = nametag;
+        }
+    }
+
+    /// <summary>The workshop's current display name for a <see cref="StepBuilding"/> ROUTING value
+    /// ("Forge" only resolves through <see cref="_workshopNametag"/>; every other building name is
+    /// already player-facing text as-is). Kept separate from the routing value itself so <see
+    /// cref="PanelIdFor"/>/<see cref="GoTo"/>'s "already there" comparison keeps working against
+    /// the stable routing vocabulary while only the RENDERED text swaps.</summary>
+    private string DisplayName(string building) => building == "Forge" ? _workshopNametag : building;
 
     /// <summary>
     /// The text that should override the HUD's top slot, or null when the live advisor should show through
@@ -244,27 +291,31 @@ public sealed partial class TutorialFlow : PanelContainer
         // instead of a KeyNotFoundException.
         var building = StepBuilding.TryGetValue(Step, out var b) ? b : string.Empty;
         var alreadyThere = building.Length > 0 && openPanelId is not null && openPanelId == PanelIdFor(building);
+        // World-and-interiors U7 (KTD-3): the RENDERED name follows the workshop's profession
+        // (DisplayName) while `building` itself stays the stable routing vocabulary PanelIdFor/
+        // GoTo's "already there" check reads above — never rename the plumbing, only the text.
+        var displayBuilding = DisplayName(building);
         return Step switch
         {
             TutorialStep.BuyMaterial or TutorialStep.Craft =>
-                $"Tutorial {index}/{TotalSteps}: {GoTo(building, includeMovementHint: Step == TutorialStep.BuyMaterial, alreadyThere)} — " +
+                $"Tutorial {index}/{TotalSteps}: {GoTo(displayBuilding, includeMovementHint: Step == TutorialStep.BuyMaterial, alreadyThere)} — " +
                 (suggestions.Count > 0
                     ? suggestions[0].Reason
-                    : "Buy material at the vendor, then craft at the anvil."),
+                    : $"Buy material at the vendor, then craft at the {_workshopStationNoun}."),
             TutorialStep.Shelve =>
-                $"Tutorial {index}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — " +
+                $"Tutorial {index}/{TotalSteps}: {GoTo(displayBuilding, includeMovementHint: false, alreadyThere)} — " +
                 (suggestions.FirstOrDefault(s => s.Action is StockAction)?.Reason
                     ?? "Shelve your finished item so heroes can buy it."),
             TutorialStep.PostBounty =>
-                $"Tutorial {index}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — post a bounty; heroes may accept it before they depart.",
+                $"Tutorial {index}/{TotalSteps}: {GoTo(displayBuilding, includeMovementHint: false, alreadyThere)} — post a bounty; heroes may accept it before they depart.",
             TutorialStep.WatchDeparture =>
-                $"Tutorial {index}/{TotalSteps}: Watch the party depart through the **{building}** — then look in on them.",
+                $"Tutorial {index}/{TotalSteps}: Watch the party depart through the **{displayBuilding}** — then look in on them.",
             // U7 day-1 capstone: no town building — the taught affordance is U1's persistent Watch
             // control on the bell row (reachable through Expedition/Camp/ExpeditionDeep).
             TutorialStep.LookIn =>
                 $"Tutorial {index}/{TotalSteps}: Press **👁 Watch** on the bell row to open the Scrying Mirror and look in on them.",
             TutorialStep.OpenCounter =>
-                $"Tutorial {index}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — open the counter and serve whoever walks in.",
+                $"Tutorial {index}/{TotalSteps}: {GoTo(displayBuilding, includeMovementHint: false, alreadyThere)} — open the counter and serve whoever walks in.",
             // U7 vigil: no walk-there destination — the winch-house slate opens itself the moment a
             // party camps below the checkpoint (CampPanel.ShowModal, called from MainUi's own
             // SyncCampModal every Camp tick); the lesson is which of its two verbs to press.
@@ -273,7 +324,7 @@ public sealed partial class TutorialFlow : PanelContainer
             TutorialStep.EveningClose =>
                 $"Tutorial {index}/{TotalSteps}: Evening — buy any ore a hero's offering, then ring the bell (**Snuff the lanterns**) to close the day.",
             TutorialStep.MeetHeroes =>
-                $"Tutorial {index}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — or open **Hero Cards** from the tray — and read one hero.",
+                $"Tutorial {index}/{TotalSteps}: {GoTo(displayBuilding, includeMovementHint: false, alreadyThere)} — or open **Hero Cards** from the tray — and read one hero.",
             TutorialStep.Commission =>
                 $"Tutorial {index}/{TotalSteps}: Open **Commissions** from the tray and Accept or Decline one — the loop is yours after this.",
             _ => string.Empty,
@@ -409,7 +460,7 @@ public sealed partial class TutorialFlow : PanelContainer
     /// phase, so the printed reason always matches whichever guard actually made the step
     /// unavailable (a day that is still Morning but out of slots must never print "the vendor only
     /// trades in the Morning", and a step three days away must never print a phase excuse).</summary>
-    private static string WaitText(GameState state, TutorialStep step, int index)
+    private string WaitText(GameState state, TutorialStep step, int index)
     {
         if (StepMinDay.TryGetValue(step, out var minDay) && state.Day < minDay)
         {
@@ -442,7 +493,7 @@ public sealed partial class TutorialFlow : PanelContainer
         return step switch
         {
             TutorialStep.BuyMaterial =>
-                $"Tutorial {index}/{TotalSteps}: The Forge's material vendor only trades in the Morning — it opens back up next Morning. Nothing to do here until then.",
+                $"Tutorial {index}/{TotalSteps}: The {_workshopNametag}'s material vendor only trades in the Morning — it opens back up next Morning. Nothing to do here until then.",
             TutorialStep.PostBounty =>
                 $"Tutorial {index}/{TotalSteps}: The Bounties board only takes postings in the Morning or Evening — come back then to post yours.",
             TutorialStep.OpenCounter =>

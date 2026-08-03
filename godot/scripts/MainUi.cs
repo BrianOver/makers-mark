@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Linq;
+using GameSim;
 using GameSim.Contracts;
 using Godot;
 using GodotClient.Audio;
@@ -339,9 +340,41 @@ public partial class MainUi : Control
     private Label? _goldValueLabel;
     private double _goldPopElapsed = -1;
 
+    /// <summary>
+    /// The fallback campaign when nothing set <see cref="AdapterOverride"/> — real play always
+    /// goes through <c>NewGameSelect</c> (which always sets the override), so this path is a
+    /// direct scene launch (a test, or a tool). U7 (world-and-interiors plan) receipt seam:
+    /// <c>SHOT_PROFESSION</c> lets <c>tools/receipt.ps1</c>/<c>shot_harness.gd</c> capture a
+    /// non-blacksmith start without a real profession pick — set the env var on the process
+    /// launching Godot (see <c>shot_harness.gd</c>'s own header), never read anywhere else.
+    /// Absent/empty (every normal launch) keeps the pre-U7 seed-only campaign byte-identical.
+    /// </summary>
+    private SimAdapter BuildDefaultAdapter()
+    {
+        var professionOverride = System.Environment.GetEnvironmentVariable("SHOT_PROFESSION");
+        if (string.IsNullOrEmpty(professionOverride))
+        {
+            return new SimAdapter((ulong)Seed);
+        }
+
+        var state = GameComposition.NewCampaign((ulong)Seed, professionOverride);
+
+        // U7 receipt seam ONLY: a second profession, unioned directly (bypassing the real
+        // SetProfessionsAction/day-boundary path a player actually takes — legitimate for a
+        // receipt capture, never for real play) so a dual-profession workshop can be rendered
+        // without scripting a multi-day drive just to take a screenshot.
+        var secondProfession = System.Environment.GetEnvironmentVariable("SHOT_PROFESSION2");
+        if (!string.IsNullOrEmpty(secondProfession))
+        {
+            state = state with { Player = state.Player with { SelectedProfessions = state.Player.SelectedProfessions.Add(secondProfession) } };
+        }
+
+        return new SimAdapter(state);
+    }
+
     public override void _Ready()
     {
-        Adapter = AdapterOverride ?? new SimAdapter((ulong)Seed);
+        Adapter = AdapterOverride ?? BuildDefaultAdapter();
         AdapterOverride = null; // consumed — the handoff is one-shot (see property doc)
         Clock = new PhaseClock(Adapter);
         RegisterQuickTravelActions(); // U23 (KTD4): runtime InputMap only, zero project.godot contact
@@ -732,6 +765,7 @@ public partial class MainUi : Control
         RefreshStatus();
         var state = Adapter.CurrentState;
         RefreshObjectiveLine();
+        Tutorial.SetWorkshopVocab(Town.WorkshopNametag, Town.WorkshopStationNoun);
         Tutorial.RefreshAffordances(state);
         Timeline.Refresh(state.Phase, Waiting);
         UpdateClockLabel(); // U3/U4: bell verb + player-phase banner are state-driven — refresh on every tick, not only per-frame _Process
@@ -1942,6 +1976,11 @@ public partial class MainUi : Control
         //     Stacked below the objective chip in the same top-right column (KTD13 precedent). --
         Tutorial = new TutorialFlow { CustomMinimumSize = new Vector2(ObjectiveDockWidth, 0) };
         Tutorial.Build();
+        // U7 (world-and-interiors plan, KTD-3): seed the tutorial's workshop vocabulary from the
+        // SAME resolution the building/drawer already use (Town.WorkshopNametag/StationNoun) —
+        // Town.Build ran above, so this is never stale on the very first frame. RefreshHud keeps
+        // it live if a second profession changes it mid-run.
+        Tutorial.SetWorkshopVocab(Town.WorkshopNametag, Town.WorkshopStationNoun);
         AddChild(Tutorial);
         // Dock at the FULL objective width via explicit offsets, NOT LayoutPresetMode.Minsize:
         // Minsize snapshots the collapsed build-time min width into the offset, pinning a sliver-
@@ -2009,7 +2048,10 @@ public partial class MainUi : Control
         }
         else
         {
-            Drawer.Open(id);
+            // U7 (world-and-interiors plan, KTD-3): the workshop drawer's title follows the
+            // profession (Town.WorkshopNametag) — the registration/routing id ("Forge") never
+            // changes, only the header text a player actually reads.
+            Drawer.Open(id, id == "Forge" ? Town.WorkshopNametag : null);
             PanelFor(id).Refresh();
             Audio.Play(EntranceCueFor(id));
             // Watching the raid gets the Mine's own theme; every other panel stays with the day.

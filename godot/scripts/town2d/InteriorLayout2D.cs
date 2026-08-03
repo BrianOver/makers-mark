@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using GameSim.Professions;
 using Godot;
 
 namespace GodotClient.Town2d;
@@ -123,24 +124,14 @@ public static class InteriorLayout2D
                 ForgeRoomSizeTiles,
                 ForgeRoomOffset,
                 ForgeDoorTile,
-                new[]
-                {
-                    // U3: Anvil/Furnace both open the craft flow (the minigames live behind it) —
-                    // Focus "craft" lands ForgePanel on the recipe cards.
-                    new StationSpec("anvil", "Anvil", "town2d-station-anvil", new Vector2I(12, 7), "Forge", Focus: "craft"),
-                    new StationSpec("furnace", "Furnace", "town2d-station-furnace", new Vector2I(6, 5), "Forge", Focus: "craft"),
-                    // U3: honest flavor — no verb, a hover line while proximate and a one-line
-                    // toast on press, never a dead click pretending to be a station with a job.
-                    new StationSpec("bellows", "Bellows", "town2d-station-bellows", new Vector2I(8, 5), Action: null,
-                        HoverLine: "Old bellows — feeds the furnace, nothing to work here",
-                        FlavorLine: "You give the bellows a pump. The furnace does the real work."),
-                    new StationSpec("quench", "Quench Trough", "town2d-station-quench", new Vector2I(15, 7), Action: null,
-                        HoverLine: "Quench trough — the anvil handles the real quenching",
-                        FlavorLine: "The water ripples. Nothing to craft here — try the anvil."),
-                    // U3: the shelf is the vendor/materials half of the Forge panel, not craft.
-                    new StationSpec("shelf", "Material Shelf", "town2d-station-shelf", new Vector2I(4, 10), "Forge", Focus: "materials"),
-                    new StationSpec("rack", "Finished Goods", "town2d-station-rack", new Vector2I(19, 10), "Shop"),
-                }),
+                // U7 (world-and-interiors plan, KTD-3): the STATIC default is blacksmith's own set —
+                // read from WorkshopVocab (the single source of truth) rather than re-inlined here,
+                // so this row and WorkshopRoomFor's blacksmith-only union can never drift apart
+                // (the unit's own zero-regression pin: a blacksmith-only room must be byte-identical
+                // to this pre-U7 row). A live session with a DIFFERENT/dual profession selection
+                // never reads this static entry for the "forge" venue — see WorkshopRoomFor and
+                // Town2D's own doc for how the actual composed room is resolved at build/entry time.
+                WorkshopVocab.StationsFor(ProfessionRegistry.BlacksmithId).ToArray()),
             // U1 (world-and-interiors plan): the market room. ShopPanel has no FocusSection (unlike
             // ForgePanel) at the time this row was authored, so counter/shelf-a/shelf-b all open a
             // plain Shop with no Focus — the plan's "Focus stock if ShopPanel grows a section anchor
@@ -210,5 +201,41 @@ public static class InteriorLayout2D
         };
 
         return rooms.ToDictionary(r => r.VenueKey);
+    }
+
+    /// <summary>
+    /// U7 (world-and-interiors plan, KTD-3): the workshop's ACTUAL composed room for a player's
+    /// current profession selection — same shell/size/door as the static <see cref="Rooms"/>
+    /// <c>"forge"</c> row (KTD-3: one shared shell, never per-profession buildings); <see
+    /// cref="RoomSpec.Stations"/> is replaced with the UNION of every selected profession's own set
+    /// (<see cref="WorkshopVocab"/>), deduplicated by profession id so a stale duplicate can never
+    /// double-mount a station.
+    ///
+    /// <para><paramref name="orderedProfessions"/>'s first element is the PRIMARY profession — this
+    /// method never reads that ordering itself (station placement is symmetric: every selected
+    /// profession's full set appears, regardless of primary/secondary); only <see
+    /// cref="WorkshopVocab.NametagFor"/>/<see cref="WorkshopVocab.SignboardSpriteIdFor"/>/<see
+    /// cref="WorkshopVocab.StationNounFor"/> care which one leads. See <c>Town2D</c>'s own doc for
+    /// how that ordering is derived from the sim's unordered <c>ImmutableSortedSet</c> state.</para>
+    ///
+    /// <para>Tile zones are disjoint by construction (each profession's stations sit on Y rows no
+    /// other profession ever uses — see <see cref="WorkshopVocab"/>'s own doc), so any two selected
+    /// professions' sets union into the shared shell with no tile collision, whatever the
+    /// selection.</para>
+    /// </summary>
+    public static RoomSpec WorkshopRoomFor(IReadOnlyList<string> orderedProfessions)
+    {
+        var baseSpec = Rooms["forge"];
+        if (orderedProfessions.Count == 0)
+        {
+            return baseSpec; // defensive: every real campaign always has >=1 selected profession
+        }
+
+        var stations = orderedProfessions
+            .Distinct()
+            .SelectMany(WorkshopVocab.StationsFor)
+            .ToArray();
+
+        return baseSpec with { Stations = stations };
     }
 }
