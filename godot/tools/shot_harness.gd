@@ -69,6 +69,14 @@
 # Settle is far longer than every other state (see _settle below) because DayPhaseTint EASES
 # toward its target at 0.6/sec rather than snapping -- capturing right after the last press
 # would show a mid-transition tint, not the phase's real one.
+#
+# U13 (world-and-interiors plan, "hero visuals, third round"): SHOT_STATE=HeroCandidateClosed/
+# Mid/Open mounts one of the three motion-candidate striker leg poses
+# (art/pipeline/gen-hero-candidates-r3.py) directly beside the player -- see
+# _mount_hero_candidate below. Candidate-only: the textures load by raw res:// path, never
+# through IconRegistry/AssetCatalog, so they cannot register a census row or otherwise enter the
+# production resolution path. Used to render the "would a smoother stride read as more alive"
+# receipt series for the owner's pick; no candidate here ships by default.
 
 extends SceneTree
 
@@ -115,6 +123,37 @@ func _initialize() -> void:
 	root.add_child(_ui)
 	if _quiet:
 		_try_suppress_ambient_vfx() # in case a future refactor DOES build it synchronously
+
+## U13 (world-and-interiors plan, KTD-7/U13): mounts one of the three motion-candidate striker
+## frames (art/pipeline/gen-hero-candidates-r3.py) directly beside the player, at the SAME
+## CharacterSpriteScale (0.5) every real actor uses, for an honest in-world scale comparison.
+## Loaded by raw res:// path -- deliberately NOT through IconRegistry/AssetCatalog, so this
+## candidate can never resolve through the production art path or register a census row (the
+## PNGs live under res://assets/candidates/, a directory IconRegistry never looks at at all).
+## This is receipt-only scaffolding: nothing production reads "HeroCandidate*" as a state, and
+## no shipped script constructs a Sprite2D this way.
+func _mount_hero_candidate(pose: String) -> void:
+	var tex = load("res://assets/candidates/heroes-r3/striker-candidate-" + pose + ".png")
+	if tex == null:
+		push_error("shot_harness: no candidate texture for pose '%s'" % pose)
+		return
+	var wrapper := Node2D.new()
+	wrapper.name = "HeroCandidateArt"
+	wrapper.scale = Vector2(0.5, 0.5) # TownLayout2D.CharacterSpriteScale, mirrored here since
+	# GDScript cannot call a C# static const directly -- kept in sync by the shared comment above.
+	var sprite := Sprite2D.new()
+	sprite.texture = tex
+	sprite.centered = true
+	sprite.offset = Vector2(0, -tex.get_height() / 2.0) # feet-at-origin, matching HeroActor2D's convention
+	wrapper.add_child(sprite)
+	var anchor_pos := Vector2(200, 200)
+	var player = _ui.find_child("Player", true, false)
+	if player:
+		anchor_pos = player.position + Vector2(56, 0) # a few tiles clear of the player, never overlapping
+	wrapper.position = anchor_pos
+	var ysort = _ui.find_child("YSort", true, false)
+	if ysort:
+		ysort.add_child(wrapper)
 
 func _try_suppress_ambient_vfx() -> void:
 	# Node.PROCESS_MODE_DISABLED stops both AmbientLife2D's own _Process (the lamp/awning/
@@ -256,6 +295,14 @@ func _process(_delta: float) -> bool:
 			var menu = _ui.find_child("SystemMenu", true, false)
 			if menu:
 				menu.visible = true
+		elif _state == "HeroCandidateClosed" or _state == "HeroCandidateMid" or _state == "HeroCandidateOpen":
+			# U13 (world-and-interiors plan): the motion-candidate receipt series -- three stills
+			# of the striker's candidate leg poses (closed/mid/open, see
+			# art/pipeline/gen-hero-candidates-r3.py) mounted beside the player at play scale.
+			# Candidates only; nothing here is the production render path (see
+			# _mount_hero_candidate's own doc).
+			var pose = _state.substr(len("HeroCandidate")).to_lower()
+			_mount_hero_candidate(pose)
 		elif _ui.has_method("OnTownBuildingClicked"):
 			# Same entry point the town uses on building arrival (private C# method reached
 			# via the source-gen call() bridge).
