@@ -452,12 +452,28 @@ public partial class MainUi : Control
     /// <c>AutoAcceptQuit = false</c> (set in <see cref="_Ready"/>) or the engine would already have
     /// torn the process down before this ever ran.
     /// </summary>
+    /// <param name="what">
+    /// Also drains <see cref="PanelGraveyard"/> on both tree transitions. Every panel rebuild detaches
+    /// its old subtree and <c>QueueFree</c>s it (<see cref="SimPanel.Clear"/> — it must, or it would
+    /// free a button mid-emission), which self-cleans in the running game because a frame always
+    /// arrives, but strands the whole subtree in an engine test that never yields one: the node is
+    /// parentless, so <c>Unmount</c>'s <c>ui.Free()</c> cannot reach it either. Mount and unmount are
+    /// the two moments where no panel signal can possibly be in flight, so they are the only safe
+    /// places to destroy the stragglers by hand. Draining on ENTER as well as EXIT means a test that
+    /// mounts without unmounting cannot bequeath its residue to the next one.
+    /// </param>
     public override void _Notification(int what)
     {
         base._Notification(what);
-        if (what == (int)NotificationWMCloseRequest)
+        switch (what)
         {
-            SaveAndQuit();
+            case (int)NotificationWMCloseRequest:
+                SaveAndQuit();
+                break;
+            case (int)NotificationEnterTree:
+            case (int)NotificationExitTree:
+                PanelGraveyard.Drain();
+                break;
         }
     }
 
