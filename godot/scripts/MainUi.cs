@@ -485,6 +485,25 @@ public partial class MainUi : Control
         tree.Quit();
     }
 
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play) — queues the same day-1 tutorial
+    /// ladder <c>TutorialFlowTests.DriveDay1ToLookIn</c> drives for real in the engine suite
+    /// (buy material -&gt; craft -&gt; shelve -&gt; post a bounty, all four immediate lane per
+    /// U1), reachable via <c>godot/tools/shot_harness.gd</c>'s source-gen <c>call()</c> bridge
+    /// (the same bridge <c>OnTownBuildingClicked</c>/<c>ShowMirror</c> already use for other
+    /// receipt states) so <c>SHOT_STATE=TutorialLookIn</c> can reach <see
+    /// cref="Ui.TutorialStep.LookIn"/> deterministically after one more real bell press,
+    /// without a GDScript caller needing to construct C# <see cref="PlayerAction"/> records.
+    /// </summary>
+    public void Dev_QueueDay1TutorialLadder()
+    {
+        var craftedItemId = new ItemId(Adapter.CurrentState.NextItemId);
+        Adapter.Queue(new BuyMaterialAction("copper", 2));
+        Adapter.Queue(new CraftAction("dagger", "copper"));
+        Adapter.Queue(new StockAction(craftedItemId, 50));
+        Adapter.Queue(new PostBountyAction(5, 10));
+    }
+
     public override void _Process(double delta)
     {
         if (Clock is null)
