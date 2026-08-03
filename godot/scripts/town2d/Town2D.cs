@@ -172,6 +172,17 @@ public partial class Town2D : Control
     /// (via <see cref="InteriorActive"/>) would have nothing to disengage it again on the way out.</summary>
     public event Action? InteriorExited;
 
+    /// <summary>U10 (world-and-interiors plan, KTD-5): raised the instant a queued survivor
+    /// group's show floor (<see cref="MinDelveShowSeconds"/>) elapses and its staggered walk-in
+    /// actually begins — never at the moment <see cref="ReturnSurvivors"/> first queues it. The
+    /// venue id is the SAME one <see cref="ExpeditionResult.VenueId"/> carries (KTD-4's
+    /// venue-true precedent), so a subscriber can name where the party is coming FROM.
+    /// <c>MainUi</c> subscribes this onto the exact deferred-focus plumbing its own departure beat
+    /// (<see cref="SoundTheTick"/>/<c>_pendingMineGateFocus</c>) already established, plus the
+    /// narrator toast — see that subscription's own doc for why reusing rather than duplicating
+    /// the modal-deferral rule is the correct move (#335).</summary>
+    public event Action<string>? PartyEmerging;
+
     /// <summary>U1: true while the player is inside a walkable interior room (KTD-1, island
     /// placement) rather than the bare town. Gates the mine-gate departure focus beat (<see
     /// cref="FocusOnMineGate"/>) — everything else (drawer/modal engagement, the objective chip)
@@ -215,6 +226,68 @@ public partial class Town2D : Control
     /// <summary>How far apart (seconds) successive party members peel off toward the gate
     /// (<c>Town3D.FileExitStaggerSeconds</c>, ported verbatim).</summary>
     private const float FileExitStaggerSeconds = 0.35f;
+
+    /// <summary>
+    /// U10 (world-and-interiors plan, KTD-5): the minimum real seconds a survivor must have stood
+    /// at <see cref="HeroActor2D.HeroTownState.Away"/> before <see cref="ReturnSurvivors"/>'s
+    /// queued group may begin its emergence walk-in — the show floor that stops "why did the
+    /// heroes come back to the town visually?" from recurring.
+    ///
+    /// <para>An unstaged (target floor 1) expedition resolves and reveals
+    /// <c>PendingExpeditions</c> on the SAME <c>AdvancePhase</c> tick that ends the Expedition
+    /// phase (<c>ExpeditionSystem.cs:84-106</c>) — often before the party has even finished
+    /// marching to the gate the PREVIOUS tick queued. Without a floor, <see
+    /// cref="ReturnSurvivors"/> firing <see cref="HeroActor2D.ReturnTo"/> in that same call reads
+    /// as a teleport: the departure animation had zero seconds to register. This constant is
+    /// measured against <em>each actor's own</em> accumulated Away time (<see
+    /// cref="_awaySeconds"/>), not against when the tick fired — a staged (Camp) return has
+    /// already accumulated far more than this by the time it resolves days later, so the floor is
+    /// invisible there by construction (it can only ever hold up the fast, same-day path).</para>
+    ///
+    /// <para>8s: long enough that the PiP dock/Mine Watch strip the party mustered into is
+    /// actually readable for a beat before they reappear, short enough it never reads as the game
+    /// stalling on an empty town.</para>
+    /// </summary>
+    public const float MinDelveShowSeconds = 8f;
+
+    /// <summary>How long (real seconds, accumulated delta — KTD4/KTD5, no wall-clock reads) each
+    /// hero id has continuously held <see cref="HeroActor2D.HeroTownState.Away"/> — what <see
+    /// cref="MinDelveShowSeconds"/> is measured against. <see cref="_Process"/> accumulates this
+    /// every frame for actors currently Away and drops the entry the instant an actor leaves Away
+    /// (arrival home, a forced <see cref="SnapRemainingHeroesHome"/>), so a hero's NEXT expedition
+    /// later in the campaign starts this clock fresh rather than inheriting today's total.</summary>
+    private readonly Dictionary<int, float> _awaySeconds = new();
+
+    /// <summary>One <see cref="ReturnSurvivors"/> batch — one per finalized <c>ExpeditionResult</c>
+    /// with survivors — awaiting its emergence beat (KTD-5's show floor). Grouped per expedition
+    /// (not merged into one town-wide list) so the narrator line and staggered walk-in only ever
+    /// describe ONE venue at a time (KTD-4's venue-true precedent). Deliberately NOT persisted
+    /// anywhere (KTD-5: "the floor only stretches presentation inside a live session, never
+    /// state") — a reload rebuilds every actor fresh via <see cref="ReconcileHeroes"/>'s ordinary
+    /// Wandering default (see that method's own doc), so a hold that never resolved before a
+    /// reload cannot leave anyone stuck invisible; it simply never existed for the new session.</summary>
+    private sealed class PendingReturn
+    {
+        public required List<int> HeroIds;
+        public required string VenueId;
+    }
+
+    private readonly List<PendingReturn> _pendingReturns = new();
+
+    /// <summary>Hero ids already queued in <see cref="_pendingReturns"/> — <see
+    /// cref="ReturnSurvivors"/> is re-invoked at BOTH the Expedition and ExpeditionDeep phase
+    /// completions (both read the same durable <c>GameState.PendingExpeditions</c>, cleared only
+    /// by the Evening reveal), so without this a survivor already queued — or already walking
+    /// home — would be queued a second time by the later call.</summary>
+    private readonly HashSet<int> _queuedReturnHeroIds = new();
+
+    /// <summary>Staggered emergence walk-ins actually in flight — the return-side twin of <see
+    /// cref="_pendingMarchOut"/>, firing <see cref="HeroActor2D.ReturnTo"/> (not
+    /// <see cref="HeroActor2D.MarchOutTo"/>) once each entry's delay elapses. A separate queue
+    /// rather than reusing <see cref="_pendingMarchOut"/> because the two run in opposite
+    /// directions and a departure mid-file-out overlapping a return mid-file-in is a real
+    /// (if rare) scenario this file must not conflate.</summary>
+    private readonly List<(HeroActor2D Actor, float RemainingSeconds, Vector2 GateAnchor)> _pendingReturnWalk = new();
 
     private Building2D? _forgeBuilding;
     private Sprite2D? _forgeGlowOverlay;
@@ -648,6 +721,22 @@ public partial class Town2D : Control
     /// cref="ReconcileHeroes"/> has never produced any actor.</summary>
     public HeroActor2D FirstHeroActor() => _heroActors.Values.OrderBy(a => a.HeroIdValue).First();
 
+    /// <summary>The live actor for a specific hero id (test/inspection surface), or null if that
+    /// hero has no actor (never alive-and-present, or freed on death/roster removal) — the
+    /// by-id twin of <see cref="FindBuilding"/> for heroes rather than venues.</summary>
+    public HeroActor2D? FindHeroActor(int heroId) => _heroActors.GetValueOrDefault(heroId);
+
+    /// <summary>U10 test/inspection surface: true while any survivor group is still waiting on the
+    /// KTD-5 show floor (queued in <see cref="_pendingReturns"/>, not yet handed to <see
+    /// cref="_pendingReturnWalk"/>) — i.e. <see cref="ReturnSurvivors"/> has run but nobody in the
+    /// batch has begun their emergence walk-in yet.</summary>
+    public bool AnyReturnPending => _pendingReturns.Count > 0;
+
+    /// <summary>U10 test/inspection surface: real seconds <paramref name="heroId"/> has
+    /// continuously held <see cref="HeroActor2D.HeroTownState.Away"/>, or 0 if they are not
+    /// currently Away — what <see cref="MinDelveShowSeconds"/> is measured against.</summary>
+    public float AwaySecondsFor(int heroId) => _awaySeconds.GetValueOrDefault(heroId);
+
     /// <summary>
     /// Reconciles <see cref="HeroesRoot"/> against <c>Adapter.CurrentState.Heroes</c> — adds a
     /// <see cref="HeroActor2D"/> for every ALIVE hero without one yet, and removes the actor for
@@ -802,6 +891,38 @@ public partial class Town2D : Control
             }
         }
 
+        // U10 (KTD-5): accumulate/reset each actor's Away timer every frame, regardless of
+        // whether anything is currently queued for return — so a group that queues LATER already
+        // carries an accurate elapsed total instead of starting the show floor's clock from zero
+        // at enqueue time (see MinDelveShowSeconds' own doc for why that distinction is the fix).
+        TickAwayTimers(delta);
+
+        TickPendingMarchOut(delta);
+        TickPendingReturns(delta);
+        TickPendingReturnWalk(delta);
+    }
+
+    /// <summary>U10 (KTD-5): every frame, every actor currently <see
+    /// cref="HeroActor2D.HeroTownState.Away"/> accrues one more tick of <see cref="_awaySeconds"/>;
+    /// everyone else's entry is dropped so a hero's NEXT expedition starts the clock fresh rather
+    /// than inheriting today's total (see the field's own doc).</summary>
+    private void TickAwayTimers(double delta)
+    {
+        foreach (var actor in _heroActors.Values)
+        {
+            if (actor.State == HeroActor2D.HeroTownState.Away)
+            {
+                _awaySeconds[actor.HeroIdValue] = _awaySeconds.GetValueOrDefault(actor.HeroIdValue) + (float)delta;
+            }
+            else
+            {
+                _awaySeconds.Remove(actor.HeroIdValue);
+            }
+        }
+    }
+
+    private void TickPendingMarchOut(double delta)
+    {
         if (_pendingMarchOut.Count == 0)
         {
             return;
@@ -822,6 +943,99 @@ public partial class Town2D : Control
             if (_heroActors.ContainsValue(actor))
             {
                 actor.MarchOutTo(mineDoor);
+            }
+        }
+    }
+
+    /// <summary>
+    /// U10 (KTD-5): the show-floor check — moves a queued group from <see
+    /// cref="_pendingReturns"/> into <see cref="_pendingReturnWalk"/> (and fires <see
+    /// cref="PartyEmerging"/>) the instant EVERY surviving member has cleared <see
+    /// cref="MinDelveShowSeconds"/> of accumulated Away time (<see cref="_awaySeconds"/>).
+    ///
+    /// <para>Condition (a) from KTD-5 ("the phase vocabulary has left Quest") needs no runtime
+    /// check here: <see cref="ReturnSurvivors"/> is only ever called from <see
+    /// cref="OnPhaseCompleted"/> for the Expedition/ExpeditionDeep case, and by the time that
+    /// fires <c>Adapter.CurrentState.Phase</c> has already advanced past whichever of those it
+    /// was — true by construction of the ONE call site, not something this method re-derives.</para>
+    ///
+    /// <para>A group with nobody left to bring home (every member died or was otherwise freed
+    /// before their own floor elapsed) is simply dropped — nothing to animate, and <see
+    /// cref="SnapRemainingHeroesHome"/> already owns the safety net for anyone who genuinely
+    /// cannot resolve here.</para>
+    /// </summary>
+    private void TickPendingReturns(double delta)
+    {
+        if (_pendingReturns.Count == 0)
+        {
+            return;
+        }
+
+        var mineDoor = FindBuilding("minegate").DoorAnchorGlobal;
+        for (var i = _pendingReturns.Count - 1; i >= 0; i--)
+        {
+            var pending = _pendingReturns[i];
+            var actors = pending.HeroIds
+                .Select(id => _heroActors.TryGetValue(id, out var a) ? a : null)
+                .Where(a => a is not null)
+                .Select(a => a!)
+                .ToList();
+
+            if (actors.Count == 0)
+            {
+                _pendingReturns.RemoveAt(i);
+                foreach (var id in pending.HeroIds)
+                {
+                    _queuedReturnHeroIds.Remove(id);
+                }
+
+                continue;
+            }
+
+            if (actors.Any(a => !_awaySeconds.TryGetValue(a.HeroIdValue, out var t) || t < MinDelveShowSeconds))
+            {
+                continue; // at least one survivor hasn't cleared the show floor yet
+            }
+
+            _pendingReturns.RemoveAt(i);
+            foreach (var id in pending.HeroIds)
+            {
+                _queuedReturnHeroIds.Remove(id);
+            }
+
+            for (var h = 0; h < actors.Count; h++)
+            {
+                _pendingReturnWalk.Add((actors[h], h * FileExitStaggerSeconds, mineDoor));
+            }
+
+            PartyEmerging?.Invoke(pending.VenueId);
+        }
+    }
+
+    /// <summary>U10: fires each queued survivor's <see cref="HeroActor2D.ReturnTo"/> — FROM the
+    /// gate door anchor (KTD-5), staggered by <see cref="FileExitStaggerSeconds"/> exactly like
+    /// <see cref="TickPendingMarchOut"/> staggers the opposite direction.</summary>
+    private void TickPendingReturnWalk(double delta)
+    {
+        if (_pendingReturnWalk.Count == 0)
+        {
+            return;
+        }
+
+        for (var i = _pendingReturnWalk.Count - 1; i >= 0; i--)
+        {
+            var (actor, remaining, gateAnchor) = _pendingReturnWalk[i];
+            remaining -= (float)delta;
+            if (remaining > 0f)
+            {
+                _pendingReturnWalk[i] = (actor, remaining, gateAnchor);
+                continue;
+            }
+
+            _pendingReturnWalk.RemoveAt(i);
+            if (_heroActors.ContainsValue(actor))
+            {
+                actor.ReturnTo(gateAnchor);
             }
         }
     }
@@ -936,20 +1150,58 @@ public partial class Town2D : Control
         }
     }
 
+    /// <summary>
+    /// U10 (world-and-interiors plan, KTD-5): no longer snaps a survivor home on the spot. This
+    /// only QUEUES the group into <see cref="_pendingReturns"/> — <see cref="TickPendingReturns"/>
+    /// (run every frame from <see cref="_Process"/>) is what actually fires <see
+    /// cref="HeroActor2D.ReturnTo"/>, once the show floor clears. Queuing rather than acting here
+    /// is the fix for "why did the heroes come back to the town visually?": this method is called
+    /// from <see cref="OnPhaseCompleted"/> for BOTH the Expedition and ExpeditionDeep completions,
+    /// and for an unstaged (target floor 1) run the FIRST of those calls can land on the very same
+    /// tick a departing actor is still mid-march — snapping <see cref="HeroActor2D.ReturnTo"/> then
+    /// would have shown a hero who never even finished leaving suddenly walking back in.
+    ///
+    /// <para>Grouped per <c>ExpeditionResult</c> (one <see cref="PendingReturn"/> per venue, not one
+    /// town-wide bag) and de-duplicated via <see cref="_queuedReturnHeroIds"/> — <c>PendingExpeditions</c>
+    /// is durable sim state (cleared only by the Evening reveal), so the SAME finalized result is read
+    /// again by the ExpeditionDeep-completion call for an unstaged run, and would otherwise be
+    /// queued twice.</para>
+    /// </summary>
     private void ReturnSurvivors()
     {
-        var survivors = Adapter!.CurrentState.PendingExpeditions
-            .SelectMany(expedition => expedition.Survivors)
-            .Select(id => id.Value)
-            .ToHashSet();
-
-        foreach (var actor in _heroActors.Values
-                     .Where(a => a.State == HeroActor2D.HeroTownState.Away && survivors.Contains(a.HeroIdValue)))
+        foreach (var expedition in Adapter!.CurrentState.PendingExpeditions)
         {
-            actor.ReturnTo(HomeFor(actor.HeroIdValue));
+            var ids = expedition.Survivors
+                .Select(id => id.Value)
+                .Where(id => !_queuedReturnHeroIds.Contains(id) &&
+                             _heroActors.TryGetValue(id, out var actor) &&
+                             actor.State != HeroActor2D.HeroTownState.Wandering)
+                .ToList();
+
+            if (ids.Count == 0)
+            {
+                continue;
+            }
+
+            _pendingReturns.Add(new PendingReturn { HeroIds = ids, VenueId = expedition.VenueId });
+            foreach (var id in ids)
+            {
+                _queuedReturnHeroIds.Add(id);
+            }
         }
     }
 
+    /// <summary>
+    /// U10 addendum: also clears every piece of the show-floor's live-session bookkeeping
+    /// (<see cref="_pendingReturns"/>/<see cref="_pendingReturnWalk"/>/<see
+    /// cref="_queuedReturnHeroIds"/>/<see cref="_awaySeconds"/>). This is the edge-case safety
+    /// valve KTD-5 names explicitly: if a hold somehow has not resolved by the moment the NEW day
+    /// begins (every actor below is about to be forced to <c>Wandering</c> regardless), leaving
+    /// stale entries around would have <see cref="TickPendingReturns"/> keep checking a group
+    /// against actors that are already home — at best a no-op, at worst a confusing second
+    /// walk-in animation replayed over an actor that never left <c>Wandering</c>. Clearing here
+    /// keeps this method's existing role as the unconditional fallback honest.
+    /// </summary>
     private void SnapRemainingHeroesHome()
     {
         var heroes = Adapter!.CurrentState.Heroes;
@@ -959,6 +1211,11 @@ public partial class Town2D : Control
         {
             actor.SetState(HeroActor2D.HeroTownState.Wandering);
         }
+
+        _pendingReturns.Clear();
+        _pendingReturnWalk.Clear();
+        _queuedReturnHeroIds.Clear();
+        _awaySeconds.Clear();
     }
 
     /// <summary>Deterministic wander-band home per hero id (no RNG, KTD2/KTD4) — a 2D twin of
