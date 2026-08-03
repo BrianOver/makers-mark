@@ -87,6 +87,19 @@ public sealed class SimAdapter
     public event Action<DayPhase, int>? StateChanged;
 
     /// <summary>
+    /// U3 (loop-legibility plan, KTD-B): raised the instant <see cref="Queue"/> DEFERS an action
+    /// to the bell (see <see cref="ActionTiming"/>) — never for an immediately-resolved one
+    /// (<see cref="StateChanged"/> already answers those). The action is already present in
+    /// <see cref="PendingActions"/> by the time this fires.
+    ///
+    /// <para>This is the ONE shared signal every deferred submission raises, regardless of which
+    /// panel called <see cref="Queue"/> — so the bell tray and its acknowledgment toast need no
+    /// per-panel wiring: <c>MainUi</c> subscribes exactly once, and a future panel that submits a
+    /// fourth bell-rider gets the tray/toast for free the moment it calls <see cref="Queue"/>.</para>
+    /// </summary>
+    public event Action<PlayerAction>? ActionQueued;
+
+    /// <summary>
     /// Submit a player action. Workshop verbs (see <see cref="ActionTiming"/>) resolve IMMEDIATELY;
     /// everything else queues for the next <see cref="AdvancePhase"/>. Phase legality is the kernel's
     /// call either way, not ours.
@@ -108,6 +121,7 @@ public sealed class SimAdapter
         if (!ActionTiming.ResolvesImmediately(action))
         {
             _pending.Add(action);
+            ActionQueued?.Invoke(action);
             return;
         }
 
@@ -163,5 +177,40 @@ public sealed class SimAdapter
         _rejectedThisPhase.Clear();
         StateChanged?.Invoke(completedPhase, completedDay);
         return result;
+    }
+
+    /// <summary>
+    /// U3 (loop-legibility plan, KTD-B): pull a still-pending action off the bell before it rings.
+    /// Returns false — never a silent no-op — if <paramref name="action"/> is no longer in the
+    /// queue (already withdrawn, or a tick already consumed it); callers must surface that to the
+    /// player rather than let a stale withdraw button pretend to work.
+    ///
+    /// <para><b>Reference-based removal, deliberately not <see cref="List{T}.Remove"/>.</b> Concrete
+    /// <see cref="PlayerAction"/> types are records, so two structurally-equal-but-distinct pending
+    /// submissions (e.g. two separate <see cref="UpgradeForgeAction"/> clicks, which compare equal
+    /// by value) must not let one chip's withdraw button remove the OTHER chip's entry. Matching by
+    /// <see cref="object.ReferenceEquals"/> against the exact instance the tray chip was built from
+    /// guarantees the withdrawn entry is the one the player actually clicked.</para>
+    ///
+    /// <para><b>Why this is determinism-free.</b> <see cref="AdvancePhase"/> is the only place
+    /// <see cref="_pending"/> ever reaches the kernel (<c>_kernel.Tick(CurrentState, _pending...)</c>).
+    /// Removing an action from that list before <see cref="AdvancePhase"/> runs means the kernel,
+    /// the event log, and the replay/save format never observe it — there is nothing to re-baseline,
+    /// because an action the kernel never saw cannot appear in its output. Two runs that differ only
+    /// by a withdraw-before-the-bell are byte-identical after the tick (see
+    /// <c>BellTrayTests.Withdraw_MakesTheActionNeverReachTheKernel_DeterminismFree</c>).</para>
+    /// </summary>
+    public bool Withdraw(PlayerAction action)
+    {
+        for (var i = 0; i < _pending.Count; i++)
+        {
+            if (ReferenceEquals(_pending[i], action))
+            {
+                _pending.RemoveAt(i);
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -103,6 +103,12 @@ func _initialize() -> void:
 		_settle = 1200
 	elif _state == "":
 		_settle = 90
+	elif _state == "BellTray":
+		# U3 (loop-legibility plan, KTD-B): a plain HUD chip, no camera move -- but the
+		# ack toast auto-clears after MainUi.RejectionToastSeconds (4s = 240 frames), so the
+		# default 320-frame settle below would already show the tray chip WITHOUT the toast.
+		# 90 (the plain-town default) lands comfortably inside the toast's window.
+		_settle = 90
 	elif _state == "MineGateFocus":
 		# U2: armed at frame 60 below; the focus beat's own smoothing settles ~40 frames after
 		# arming (measured), and the beat itself expires 3.2s (~192 frames) after arming, after
@@ -218,6 +224,19 @@ func _process(_delta: float) -> bool:
 			var b2 = _ui.find_child("AdvancePhase", true, false)
 			if b2:
 				b2.emit_signal("pressed")
+		elif _state == "BellTray":
+			# U3 (loop-legibility plan, KTD-B): the receipt for the bell tray holding a
+			# pending bell-rider chip + its withdraw control. No submit BUTTON exists yet
+			# for UpgradeForge/CommissionLegendaryWork (their panels are other units' work);
+			# SetProfessionsAction already has one real, wired production entry point --
+			# MainUi.OnSecondProfessionPicked(professionId) (the U23 earn-2nd-profession
+			# affordance) -- so this drives THAT directly, the same "call the real method,
+			# skip the not-yet-reachable precondition" idiom MineGateFocus/Mirror use above.
+			# A fresh seed-2026 campaign starts blacksmith-only, so "alchemy" is a genuine
+			# second selection -- SimAdapter.Queue defers it (ActionTiming), which is exactly
+			# the tray/ack-toast path this receipt exists to show.
+			if _ui.has_method("OnSecondProfessionPicked"):
+				_ui.call("OnSecondProfessionPicked", "alchemy")
 		elif _state == "MineGateFocus":
 			# U2 (shell-and-audio plan): the receipt for R1 -- "the mine is off the screen at
 			# the top" -- proving the mine gate is reachable once the header no longer occludes

@@ -252,6 +252,11 @@ public partial class MainUi : Control
     private Button _speed = null!;
     private Button _watch = null!;
     private Button _fullscreen = null!;
+
+    /// <summary>U3 (loop-legibility plan, KTD-B): the bell tray — one chip per
+    /// <see cref="SimAdapter.PendingActions"/> entry, rebuilt (never mutated) by
+    /// <see cref="RefreshBellTray"/> so it can never drift from the real queue.</summary>
+    private HBoxContainer _bellTray = null!;
     private bool _resumePlayOnLedgerClose;
     private bool _resumePlayOnCampClose;
     private bool _resumePlayOnMirrorClose;
@@ -317,6 +322,10 @@ public partial class MainUi : Control
         UpdateEngaged(); // no drawer open, no modal open — starts disengaged
 
         Adapter.StateChanged += OnPhaseCompleted;
+        // U3 (KTD-B): the ONE subscription that answers every deferred submit, regardless of
+        // which panel called Adapter.Queue — see SimAdapter.ActionQueued's own doc for why this
+        // beats per-panel wiring.
+        Adapter.ActionQueued += OnActionQueued;
         Town.Bind(Adapter);
         Forge.Bind(Adapter);
         Shop.Bind(Adapter);
@@ -589,6 +598,20 @@ public partial class MainUi : Control
     }
 
     /// <summary>
+    /// U3 (loop-legibility plan, KTD-B): the ONE place a deferred submission gets acknowledged,
+    /// no matter which panel called <see cref="SimAdapter.Queue"/> — see
+    /// <see cref="SimAdapter.ActionQueued"/>'s own doc for why a single subscription replaces
+    /// per-panel toast wiring. Immediate actions never raise this event at all (their answer is
+    /// the state change itself, plus whatever <see cref="OnPhaseCompleted"/> already surfaces);
+    /// a deferred one gets an instant toast naming the bell's promise, and the tray chip.
+    /// </summary>
+    private void OnActionQueued(PlayerAction action)
+    {
+        ShowBellToast(PendingVerbVocab.BellPromise(action));
+        RefreshBellTray();
+    }
+
+    /// <summary>
     /// Re-render the status bar, the permanent world, and every currently-visible surface from
     /// CurrentState. U21: VISIBILITY-GATED — a load-bearing perf change now that the world always
     /// renders. The five drawer panels NOT currently open never get a Refresh() call here; opening
@@ -667,6 +690,77 @@ public partial class MainUi : Control
         Tutorial.RefreshAffordances(state);
         Timeline.Refresh(state.Phase, Waiting);
         UpdateClockLabel(); // U3/U4: bell verb + player-phase banner are state-driven — refresh on every tick, not only per-frame _Process
+        RefreshBellTray(); // U3 (KTD-B): keep the tray honest on every tick too, not only on submit
+    }
+
+    /// <summary>
+    /// U3 (loop-legibility plan, KTD-B): rebuild the bell tray straight from
+    /// <see cref="SimAdapter.PendingActions"/> — clear-then-compose (the same pattern every other
+    /// rebuilt HUD row here uses, e.g. <see cref="RefreshStatus"/>'s <c>_statChips</c>), so the
+    /// tray can never lie about what the bell will actually do. Called both from
+    /// <see cref="OnActionQueued"/> (the instant a submit defers) and every <see cref="RefreshHud"/>
+    /// tick (so a tick that clears <c>_pending</c>, or a withdraw, is reflected too).
+    /// </summary>
+    private void RefreshBellTray()
+    {
+        foreach (var child in _bellTray.GetChildren())
+        {
+            _bellTray.RemoveChild(child);
+            child.Free();
+        }
+
+        foreach (var pending in Adapter.PendingActions)
+        {
+            _bellTray.AddChild(BuildBellTrayChip(pending));
+        }
+    }
+
+    /// <summary>
+    /// One bell-tray chip: <see cref="PendingVerbVocab.DisplayName"/> plus a "✕" withdraw
+    /// control wired to <see cref="SimAdapter.Withdraw"/>. Closes over the EXACT
+    /// <paramref name="action"/> instance from <see cref="SimAdapter.PendingActions"/> so
+    /// <see cref="SimAdapter.Withdraw"/>'s reference-based removal takes down this chip's own
+    /// entry, never a structurally-equal sibling's. A withdraw that fails (the tick beat the
+    /// click) never fails silently — it toasts why, same as every other refused verb in this
+    /// class (house rule: never a dead click).
+    /// </summary>
+    private Control BuildBellTrayChip(PlayerAction action)
+    {
+        var chip = new PanelContainer { Name = "BellTrayChip" };
+        var row = new HBoxContainer { Name = "BellTrayChipRow" };
+        row.AddThemeConstantOverride("separation", GameTheme.Space8);
+        chip.AddChild(row);
+
+        var verbName = PendingVerbVocab.DisplayName(action);
+        var label = new Label { Name = "Verb", Text = verbName };
+        label.AddThemeColorOverride("font_color", GameTheme.BodyTextColor);
+        label.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
+        row.AddChild(label);
+
+        var withdraw = new Button
+        {
+            Name = "Withdraw",
+            Text = "✕",
+            TooltipText = $"Withdraw \"{verbName}\" — before the bell, it never happens",
+            CustomMinimumSize = new Vector2(22, 22),
+        };
+        withdraw.Pressed += () =>
+        {
+            if (Adapter.Withdraw(action))
+            {
+                RefreshBellTray();
+            }
+            else
+            {
+                // Not reachable through normal play (single-threaded tick loop), but a stale
+                // withdraw must never sit there pretending to work if it ever is.
+                ShowBellToast($"Too late — \"{verbName}\" already left with the bell.");
+                RefreshBellTray();
+            }
+        };
+        row.AddChild(withdraw);
+
+        return chip;
     }
 
     /// <summary>
@@ -1579,6 +1673,16 @@ public partial class MainUi : Control
         };
         _fullscreen.Pressed += ToggleFullscreen;
         verbRow.AddChild(_fullscreen);
+
+        // U3 (loop-legibility plan, KTD-B): the bell tray sits under the verb row, on the same
+        // bell zone as Skip/Watch/Auto — one chip per action still waiting for the bell
+        // (UpgradeForge/SetProfessions/CommissionLegendaryWork today; PendingVerbVocab covers any
+        // future bell-rider). Built empty; RefreshBellTray (called from RefreshHud and from
+        // OnActionQueued the instant a submit defers) populates it straight off
+        // Adapter.PendingActions — no shadow list, so the tray can never lie about the queue.
+        _bellTray = new HBoxContainer { Name = "BellTray" };
+        _bellTray.AddThemeConstantOverride("separation", GameTheme.Space8);
+        verbCluster.AddChild(_bellTray);
 
         // --- UI-4 Zone 3: BOOKS TRAY (right) — Ledger/Forecast/Commissions/Legends/Demand/Renown/
         // Progress collapse to 28px icon-only buttons on a recessed (SurfaceDeep) tray; the full
