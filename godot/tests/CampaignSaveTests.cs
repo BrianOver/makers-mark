@@ -1,7 +1,9 @@
 #if GDUNIT_TESTS
+using System;
 using GameSim.Contracts;
 using GameSim.Kernel;
 using GameSim;
+using GameSim.Professions;
 using GdUnit4;
 using Godot;
 using GodotClient;
@@ -183,6 +185,59 @@ public class CampaignSaveTests
             CampaignSave.Save(GameComposition.NewCampaign(5) with { Day = 9 });
 
             AssertThat(CampaignSave.Peek()!.Day).IsEqual(9);
+        }
+        finally
+        {
+            Restore(backup);
+        }
+    }
+
+    // ── U3 (shell-and-audio plan, KTD-E): the envelope's trailing-optional Continue fields ───────
+
+    /// <summary>The happy path this unit adds: <see cref="CampaignSave.Envelope.ProfessionId"/>/
+    /// <see cref="CampaignSave.Envelope.SavedAtUtc"/> round-trip through <see cref="CampaignSave.Save"/>
+    /// and come back out of <see cref="CampaignSave.Peek"/> — the fields <c>NewGameSelect</c>'s
+    /// Continue label reads, tested here at the API layer rather than through rendered text.</summary>
+    [TestCase]
+    public void Save_RecordsProfessionIdAndSavedAtUtc_PeekReturnsThem()
+    {
+        var backup = Backup();
+        try
+        {
+            var fixedNow = new DateTime(2026, 8, 2, 21, 40, 0, DateTimeKind.Utc);
+            CampaignSave.UtcNowSource = () => fixedNow;
+
+            CampaignSave.Save(GameComposition.NewCampaign(9, AlchemyProfession.Id) with { Day = 5 });
+
+            var summary = CampaignSave.Peek();
+            AssertThat(summary).IsNotNull();
+            AssertThat(summary!.ProfessionId).IsEqual(AlchemyProfession.Id);
+            AssertThat(summary.SavedAtUtc).IsEqual(fixedNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            CampaignSave.UtcNowSource = static () => DateTime.UtcNow;
+            Restore(backup);
+        }
+    }
+
+    /// <summary>KTD-E's whole point: a schema-1 envelope written before this unit — missing
+    /// <c>ProfessionId</c>/<c>SavedAtUtc</c> from the JSON entirely, not merely null — still parses
+    /// (<see cref="CampaignSave.Schema"/> stays 1) and <see cref="CampaignSave.Peek"/> reports the
+    /// two new fields as null rather than throwing or refusing the whole save.</summary>
+    [TestCase]
+    public void PreU3Envelope_MissingTrailingFields_StillPeeks_WithNullProfessionAndSavedAt()
+    {
+        var backup = Backup();
+        try
+        {
+            Write($"{{\"SchemaVersion\":{CampaignSave.Schema},\"Day\":3,\"Phase\":\"Morning\",\"State\":\"x\"}}");
+
+            var summary = CampaignSave.Peek();
+            AssertThat(summary).IsNotNull();
+            AssertThat(summary!.Day).IsEqual(3);
+            AssertThat(summary.ProfessionId).IsNull();
+            AssertThat(summary.SavedAtUtc).IsNull();
         }
         finally
         {

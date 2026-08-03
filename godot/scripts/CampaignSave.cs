@@ -1,4 +1,6 @@
 using System;
+using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GameSim.Contracts;
@@ -54,12 +56,32 @@ public static class CampaignSave
         WriteIndented = false,
     };
 
-    /// <summary>The metadata the Continue button needs without paying to rebuild the world.</summary>
-    public sealed record Envelope(int SchemaVersion, int Day, string Phase, string State);
+    /// <summary>
+    /// The metadata the Continue button needs without paying to rebuild the world.
+    ///
+    /// <para><b>U3 (shell-and-audio plan, KTD-E):</b> <see cref="ProfessionId"/> and
+    /// <see cref="SavedAtUtc"/> are TRAILING-OPTIONAL (default <c>null</c>) so a schema-1 envelope
+    /// written before this unit — missing both keys entirely — still deserializes cleanly
+    /// (<see cref="Schema"/> stays 1; this is not the sim's own trailing-optional-property
+    /// discipline, but the same idea applied to the envelope). A save from before this unit simply
+    /// renders Continue without the profession/saved-at clauses — degraded, never broken.</para>
+    /// </summary>
+    public sealed record Envelope(
+        int SchemaVersion, int Day, string Phase, string State,
+        string? ProfessionId = null, string? SavedAtUtc = null);
 
     /// <summary>A save's headline, for the Continue button's label. Null when there is nothing to
-    /// resume — which is also what a corrupt file reports.</summary>
-    public sealed record Summary(int Day, string Phase);
+    /// resume — which is also what a corrupt file reports. <see cref="ProfessionId"/>/
+    /// <see cref="SavedAtUtc"/> are null for a pre-U3 save (see <see cref="Envelope"/>'s doc).</summary>
+    public sealed record Summary(int Day, string Phase, string? ProfessionId, string? SavedAtUtc);
+
+    /// <summary>
+    /// Wall-clock source for <see cref="Envelope.SavedAtUtc"/> — real UTC now by default (legal
+    /// here, in the godot/ adapter layer; forbidden in <c>sim/</c>). Tests pin it for a
+    /// deterministic, assertable timestamp — the same injectable-nondeterminism idiom as
+    /// <c>NewGameSelect.SeedSource</c>.
+    /// </summary>
+    public static Func<DateTime> UtcNowSource { get; set; } = static () => DateTime.UtcNow;
 
     /// <summary>Whether a resumable campaign exists. Cheap: a stat, not a parse.</summary>
     public static bool Exists() => GodotFileAccess.FileExists(SavePath);
@@ -72,7 +94,15 @@ public static class CampaignSave
     {
         try
         {
-            var envelope = new Envelope(Schema, state.Day, state.Phase.ToString(), SaveCodec.Serialize(state));
+            // R4/KTD-E: which profession's storefront to name on Continue, and when this was
+            // written — read from the live state/wall-clock, never from the sim's own bytes
+            // (SaveCodec stays untouched). SelectedProfessions is sorted, not insertion-ordered, so
+            // for the (rare) two-profession case this names WHICHEVER sorts first — informative
+            // either way, and never wrong (both are genuinely selected).
+            var professionId = state.Player.SelectedProfessions.FirstOrDefault();
+            var savedAtUtc = UtcNowSource().ToString("O", CultureInfo.InvariantCulture);
+            var envelope = new Envelope(
+                Schema, state.Day, state.Phase.ToString(), SaveCodec.Serialize(state), professionId, savedAtUtc);
             var json = JsonSerializer.Serialize(envelope, EnvelopeOptions);
 
             using var file = GodotFileAccess.Open(SavePath, GodotFileAccess.ModeFlags.Write);
@@ -98,7 +128,9 @@ public static class CampaignSave
     public static Summary? Peek()
     {
         var envelope = ReadEnvelope();
-        return envelope is null ? null : new Summary(envelope.Day, envelope.Phase);
+        return envelope is null
+            ? null
+            : new Summary(envelope.Day, envelope.Phase, envelope.ProfessionId, envelope.SavedAtUtc);
     }
 
     /// <summary>

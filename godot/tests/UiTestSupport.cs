@@ -95,6 +95,15 @@ public static class UiTestSupport
 
     public static void Unmount(MainUi ui)
     {
+        // U4 (shell-and-audio plan, KTD-D): MainUi._Ready sets GetTree().AutoAcceptQuit = false so
+        // the real OS close-request path can save first. That is a SceneTree-global flag, not a
+        // per-node one, and it survives this instance being freed — a test that mounts MainUi and
+        // never exercises "Save & quit"/"Quit game" (which are the only things that flip it back)
+        // would otherwise leak `false` into every later suite in this same headless process,
+        // including whatever teardown the test runner itself relies on to exit. Reset it BEFORE
+        // freeing, mirroring the ClockSettings/TutorialFlow leak guards below.
+        ui.GetTree().AutoAcceptQuit = true;
+
         ui.GetParent()?.RemoveChild(ui);
         ui.Free();
 
@@ -107,6 +116,11 @@ public static class UiTestSupport
         // U23: same leak guard for the tutorial-flow chain's own user:// file — a completed/
         // dismissed flag from one test must never suppress the next suite's tutorial chip.
         TutorialFlow.DeleteForTests();
+
+        // U4: same leak guard for the shell's fullscreen preference (UiSettings) — a test that
+        // toggled it via the Settings checkbox or F11 must never leave a persisted choice for a
+        // later suite (or the developer's own real user:// data) to inherit.
+        UiSettings.DeleteForTests();
     }
 
     /// <summary>Find a (code-built, unowned) control by name anywhere under root.</summary>

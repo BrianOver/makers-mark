@@ -1,25 +1,33 @@
 #if GDUNIT_TESTS
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using GameSim;
 using GameSim.Contracts;
 using GameSim.Kernel;
 using GameSim.Professions;
 using GdUnit4;
 using Godot;
+using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
+using GodotFileAccess = Godot.FileAccess;
 
 namespace GodotClient.Tests;
 
 /// <summary>
-/// U4/World-Rework-U11 engine-lane scenarios: the new-game front door renders one button per
-/// registered profession from the real scene file with a blurb + shared starter-kit note
-/// (R9), pressing one reveals the "your first day" primer (5-phase legend, clock note, seed —
-/// R11-13) WITHOUT touching <see cref="MainUi.AdapterOverride"/>, Back returns to the picker
-/// with nothing committed, and only Begin builds a seeded campaign through the real
-/// <see cref="GameSim.GameComposition"/> path into <see cref="MainUi.AdapterOverride"/>. The
-/// scene change is stubbed (injectable <see cref="NewGameSelect.SceneChange"/>) so the test
-/// tree is never torn down.
+/// U4/World-Rework-U11 engine-lane scenarios, extended by the 2026-08-02 shell-and-audio plan's U3
+/// ("the front door: a title screen that is a menu"): the front door now opens on a TITLE MENU
+/// (Continue/New Game/Settings/Quit) with the "choose your primary profession" picker and "your
+/// first day" primer demoted to the New Game sub-flow behind it. The scene change is stubbed
+/// (injectable <see cref="NewGameSelect.SceneChange"/>) so the test tree is never torn down.
+///
+/// <para><b>Save-state hygiene:</b> <see cref="NewGameSelect.BuildContinue"/> reads
+/// <see cref="CampaignSave"/>, which shares <c>user://campaign.json</c> with the real game AND with
+/// <c>CampaignSaveTests</c>. Every test that cares whether/what Continue renders backs the file up
+/// first and restores it in a <c>finally</c> — the same discipline <c>CampaignSaveTests</c> already
+/// uses, duplicated locally rather than shared across files (repo convention: small test helpers
+/// are cheap to keep self-contained per suite).</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -29,7 +37,7 @@ public class NewGameSelectTests
     {
         var tree = (SceneTree)Engine.GetMainLoop();
         var screen = GD.Load<PackedScene>("res://scenes/new_game_select.tscn").Instantiate<NewGameSelect>();
-        tree.Root.AddChild(screen); // triggers _Ready: buttons built from ProfessionRegistry
+        tree.Root.AddChild(screen); // triggers _Ready: title menu + buttons built from ProfessionRegistry
         return screen;
     }
 
@@ -38,14 +46,59 @@ public class NewGameSelectTests
         MainUi.AdapterOverride = null; // never leak a picked campaign into later suites
         screen.GetParent()?.RemoveChild(screen);
         screen.Free();
+
+        // U4: leak guard for the shell's fullscreen preference — a test that toggled Settings or
+        // F11 must never leave a persisted choice for a later suite (or the developer's own real
+        // user:// data) to inherit. Mirrors MainUi's own Unmount guard (UiTestSupport.cs).
+        UiSettings.DeleteForTests();
+    }
+
+    // ── the title menu itself (U3) ──────────────────────────────────────────────────────────────
+
+    [TestCase]
+    public void FreshMount_ShowsOnlyTheTitleMenu_PickerPrimerAndSettingsHidden()
+    {
+        var backup = Backup();
+        try
+        {
+            CampaignSave.Clear(); // deterministic: no Continue row for this assertion
+            var screen = Mount();
+            try
+            {
+                AssertThat(Find<VBoxContainer>(screen, "TitleMenu").Visible).IsTrue();
+                AssertThat(Find<VBoxContainer>(screen, "ProfessionPicker").Visible).IsFalse();
+                AssertThat(Find<VBoxContainer>(screen, "Primer").Visible).IsFalse();
+                AssertThat(Find<SettingsPanel>(screen, "SettingsPanel").Visible).IsFalse();
+
+                // No save exists — no Continue row, but the other three menu entries are always there.
+                AssertThat(screen.FindChild("ContinueRow", recursive: true, owned: false)).IsNull();
+                AssertThat(Find<Button>(screen, "NewGame")).IsNotNull();
+                AssertThat(Find<Button>(screen, "SettingsButton")).IsNotNull();
+                AssertThat(Find<Button>(screen, "Quit")).IsNotNull();
+            }
+            finally
+            {
+                Unmount(screen);
+            }
+        }
+        finally
+        {
+            Restore(backup);
+        }
     }
 
     [TestCase]
-    public void RendersOneButtonPerRegisteredProfession_WithBlurbs_AndHiddenPrimer()
+    public void NewGame_RevealsThePicker_AndHidesTheTitleMenu()
     {
         var screen = Mount();
         try
         {
+            Press(screen, "NewGame");
+
+            AssertThat(Find<VBoxContainer>(screen, "TitleMenu").Visible)
+                .OverrideFailureMessage("New Game must hide the title menu — only one view is ever visible.")
+                .IsFalse();
+
             AssertThat(ProfessionRegistry.All.Count).IsEqual(4);
             foreach (var profession in ProfessionRegistry.All.Values)
             {
@@ -57,16 +110,17 @@ public class NewGameSelectTests
                 AssertThat(blurb.Text).IsNotEmpty();
             }
 
-            // Exactly the four profession buttons under the picker — no extra "classic" default
-            // path (scope pin), and the shared starter-kit note is present. Recursive (not
-            // direct-child) count: the cozy restyle groups each button+blurb into its own
-            // "PickRow_{id}" sub-container for tighter visual grouping, so the buttons are one
-            // level deeper than the picker itself — the count of 4 is still the real assertion.
+            // The four profession buttons under the picker (no extra "classic" default path,
+            // scope pin) PLUS the picker's own "PickerBack" — five, not four. Recursive (not
+            // direct-child) count: the cozy restyle groups each pick button+blurb into its own
+            // "PickRow_{id}" sub-container, one level deeper than the picker itself, while
+            // PickerBack sits as a direct child alongside those rows — this single recursive
+            // count catches both shapes.
             var picker = Find<VBoxContainer>(screen, "ProfessionPicker");
             var buttons = picker.FindChildren("*", "Button", recursive: true, owned: false)
                 .OfType<Button>()
                 .Count();
-            AssertThat(buttons).IsEqual(4);
+            AssertThat(buttons).IsEqual(5);
             AssertThat(Find<Label>(screen, "StarterKitNote").Text).IsNotEmpty();
 
             // The primer never shows before a pick.
@@ -80,6 +134,166 @@ public class NewGameSelectTests
     }
 
     [TestCase]
+    public void PickerBack_ReturnsToTheTitleMenu_WithoutLeakingACampaign()
+    {
+        var screen = Mount();
+        try
+        {
+            MainUi.AdapterOverride = null;
+            Press(screen, "NewGame");
+            Press(screen, "PickerBack");
+
+            AssertThat(Find<VBoxContainer>(screen, "TitleMenu").Visible)
+                .OverrideFailureMessage("The picker's own Back returns to the title menu.")
+                .IsTrue();
+            AssertThat(Find<VBoxContainer>(screen, "ProfessionPicker").Visible).IsFalse();
+            AssertThat(MainUi.AdapterOverride).IsNull();
+        }
+        finally
+        {
+            Unmount(screen);
+        }
+    }
+
+    [TestCase]
+    public void Settings_TogglesFullscreen_AndPersistsViaUiSettings()
+    {
+        UiSettings.TestWindowMode = DisplayServer.WindowMode.Windowed;
+        var screen = Mount();
+        try
+        {
+            Press(screen, "SettingsButton");
+
+            AssertThat(Find<VBoxContainer>(screen, "TitleMenu").Visible)
+                .OverrideFailureMessage("Settings must hide the title menu — only one view is ever visible.")
+                .IsFalse();
+            var settings = Find<SettingsPanel>(screen, "SettingsPanel");
+            AssertThat(settings.Visible).IsTrue();
+
+            var toggle = Find<CheckButton>(screen, "FullscreenToggle");
+            AssertThat(toggle.ButtonPressed).IsFalse();
+
+            toggle.EmitSignal(CheckButton.SignalName.Toggled, true);
+
+            AssertThat(UiSettings.TestWindowMode)
+                .OverrideFailureMessage("The Settings checkbox did not flip the window mode.")
+                .IsEqual(DisplayServer.WindowMode.Fullscreen);
+            AssertThat(UiSettings.LoadFullscreen() == true)
+                .OverrideFailureMessage("Fullscreen must persist (KTD-D) so it survives a restart.")
+                .IsTrue();
+            AssertThat(toggle.ButtonPressed).IsTrue();
+
+            Press(screen, "SettingsBack");
+            AssertThat(settings.Visible).IsFalse();
+            AssertThat(Find<VBoxContainer>(screen, "TitleMenu").Visible).IsTrue();
+        }
+        finally
+        {
+            Unmount(screen);
+            UiSettings.TestWindowMode = null;
+        }
+    }
+
+    // ── R4: Continue tells the truth ────────────────────────────────────────────────────────────
+
+    [TestCase]
+    public void Continue_IsAbsent_WhenNoSaveExists()
+    {
+        var backup = Backup();
+        try
+        {
+            CampaignSave.Clear();
+            var screen = Mount();
+            try
+            {
+                AssertThat(screen.FindChild("ContinueRow", recursive: true, owned: false))
+                    .OverrideFailureMessage("No save should mean no Continue row at all, not a disabled one.")
+                    .IsNull();
+            }
+            finally
+            {
+                Unmount(screen);
+            }
+        }
+        finally
+        {
+            Restore(backup);
+        }
+    }
+
+    [TestCase]
+    public void Continue_NamesTheProfessionDayAndPhase_AndWhenItWasSaved()
+    {
+        var backup = Backup();
+        try
+        {
+            CampaignSave.UtcNowSource = () => DateTime.UtcNow; // real "now" — always renders as "today"
+            CampaignSave.Save(GameComposition.NewCampaign(11, AlchemyProfession.Id) with { Day = 4 });
+
+            var screen = Mount();
+            try
+            {
+                var button = Find<Button>(screen, "Continue");
+                AssertThat(button.Text).Contains(ProfessionRegistry.All[AlchemyProfession.Id].DisplayName);
+                AssertThat(button.Text).Contains("Day 4");
+
+                var blurb = Find<Label>(screen, "ContinueBlurb");
+                AssertThat(blurb.Text)
+                    .OverrideFailureMessage($"Blurb did not name when the save was written: '{blurb.Text}'")
+                    .Contains("saved today");
+            }
+            finally
+            {
+                Unmount(screen);
+            }
+        }
+        finally
+        {
+            CampaignSave.UtcNowSource = static () => DateTime.UtcNow;
+            Restore(backup);
+        }
+    }
+
+    /// <summary>KTD-E backward compatibility: a schema-1 envelope written before this unit has
+    /// neither <c>ProfessionId</c> nor <c>SavedAtUtc</c> in its JSON at all (not merely null) —
+    /// Continue must still appear, just without the profession/saved-at clauses.</summary>
+    [TestCase]
+    public void Continue_DegradesGracefully_ForAPreU3Save_MissingProfessionAndSavedAt()
+    {
+        var backup = Backup();
+        try
+        {
+            // "State" only needs to be non-empty — Peek()/BuildContinue never deserialize the world
+            // (see CampaignSave.Peek's own doc); a placeholder is honest here because this test is
+            // about the ENVELOPE'S missing trailing fields, not save corruption (that is
+            // CampaignSaveTests' job).
+            Write($"{{\"SchemaVersion\":{CampaignSave.Schema},\"Day\":7,\"Phase\":\"Camp\",\"State\":\"x\"}}");
+
+            var screen = Mount();
+            try
+            {
+                var button = Find<Button>(screen, "Continue");
+                AssertThat(button.Text).IsEqual("Continue — Day 7, Vigil");
+
+                var blurb = Find<Label>(screen, "ContinueBlurb");
+                AssertThat(blurb.Text)
+                    .OverrideFailureMessage($"A pre-U3 save must not claim a saved-at time it never recorded: '{blurb.Text}'")
+                    .NotContains("saved");
+            }
+            finally
+            {
+                Unmount(screen);
+            }
+        }
+        finally
+        {
+            Restore(backup);
+        }
+    }
+
+    // ── the New Game sub-flow (unchanged behavior, now reached via New Game) ───────────────────
+
+    [TestCase]
     public void Pick_ShowsPrimer_ListingAllFivePhases_WithClockNoteAndSeed_NeverTouchingAdapter()
     {
         var screen = Mount();
@@ -87,6 +301,7 @@ public class NewGameSelectTests
         try
         {
             MainUi.AdapterOverride = null;
+            Press(screen, "NewGame");
             Press(screen, "Pick_blacksmith");
 
             // Picker hides, primer shows — no campaign built yet (a pick is reversible).
@@ -125,6 +340,7 @@ public class NewGameSelectTests
         try
         {
             MainUi.AdapterOverride = null;
+            Press(screen, "NewGame");
             Press(screen, "Pick_blacksmith");
 
             var fantasy = Find<Label>(screen, "FantasyNote").Text;
@@ -146,6 +362,7 @@ public class NewGameSelectTests
         try
         {
             MainUi.AdapterOverride = null;
+            Press(screen, "NewGame");
             Press(screen, "Pick_alchemy");
             AssertThat(Find<VBoxContainer>(screen, "Primer").Visible).IsTrue();
 
@@ -184,6 +401,7 @@ public class NewGameSelectTests
         try
         {
             MainUi.AdapterOverride = null;
+            Press(screen, "NewGame");
             Press(screen, $"Pick_{professionId}");
             Press(screen, "Begin");
 
@@ -217,6 +435,7 @@ public class NewGameSelectTests
         try
         {
             MainUi.AdapterOverride = null;
+            Press(first, "NewGame");
             Press(first, "Pick_engineering");
             Press(first, "Begin");
             stateA = MainUi.AdapterOverride!.CurrentState;
@@ -233,6 +452,7 @@ public class NewGameSelectTests
         try
         {
             MainUi.AdapterOverride = null;
+            Press(second, "NewGame");
             Press(second, "Pick_engineering");
             Press(second, "Begin");
             stateB = MainUi.AdapterOverride!.CurrentState;
@@ -243,6 +463,33 @@ public class NewGameSelectTests
         }
 
         AssertThat(SaveCodec.Serialize(stateA)).IsEqual(SaveCodec.Serialize(stateB));
+    }
+
+    // ── helpers: never clobber a real campaign (CampaignSaveTests precedent, duplicated) ────────
+
+    private static string? Backup() => GodotFileAccess.FileExists(CampaignSave.SavePath) ? Read() : null;
+
+    private static void Restore(string? backup)
+    {
+        if (backup is null)
+        {
+            CampaignSave.Clear();
+            return;
+        }
+
+        Write(backup);
+    }
+
+    private static string Read()
+    {
+        using var file = GodotFileAccess.Open(CampaignSave.SavePath, GodotFileAccess.ModeFlags.Read);
+        return file.GetAsText();
+    }
+
+    private static void Write(string contents)
+    {
+        using var file = GodotFileAccess.Open(CampaignSave.SavePath, GodotFileAccess.ModeFlags.Write);
+        file.StoreString(contents);
     }
 }
 #endif
