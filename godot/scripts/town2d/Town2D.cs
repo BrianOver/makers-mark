@@ -1122,6 +1122,17 @@ public partial class Town2D : Control
         };
 
         _interiorRooms[spec.VenueKey] = room;
+
+        // U5 (world-and-interiors plan, KTD-8): the market room additionally gets its customer
+        // choreography — a plain (non-Y-sort-enabled) wrapper under YSort, mirroring TownsfolkRoot's
+        // own precedent, so each customer Y-sorts individually against the player rather than as one
+        // blob (see MarketLife2D's own class doc).
+        if (spec.VenueKey == "market")
+        {
+            _marketLife = new MarketLife2D();
+            YSort.AddChild(_marketLife);
+            _marketLife.Build(room);
+        }
     }
 
     /// <summary>
@@ -1142,26 +1153,6 @@ public partial class Town2D : Control
                 station.QueueFree();
             }
 
-            room.ExitZone.BodyEntered += body =>
-            {
-                if (body == Player && InteriorActive && InteriorVenueKey == spec.VenueKey)
-                {
-                    ExitInterior();
-                }
-            };
-
-            _interiorRooms[spec.VenueKey] = room;
-
-            // U5 (world-and-interiors plan, KTD-8): the market room additionally gets its
-            // customer choreography — a plain (non-Y-sort-enabled) wrapper under YSort, mirroring
-            // TownsfolkRoot's own precedent, so each customer Y-sorts individually against the
-            // player rather than as one blob (see MarketLife2D's own class doc).
-            if (spec.VenueKey == "market")
-            {
-                _marketLife = new MarketLife2D();
-                YSort.AddChild(_marketLife);
-                _marketLife.Build(room);
-            }
             World.RemoveChild(old);
             old.QueueFree();
         }
