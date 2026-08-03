@@ -95,6 +95,12 @@ func _initialize() -> void:
 	# above _initialize).
 	if _state.begins_with("Phase"):
 		_settle = 900
+	elif _state == "GateNight":
+		# U4 (world-and-interiors plan): DayPhaseTint's ease (see the U11 note above) needs the
+		# same long convergence window Phase4 gets, PLUS room-entry settle time on top (the
+		# camera push-in, entered later once the tint has actually landed -- see frame 920
+		# below).
+		_settle = 1200
 	elif _state == "":
 		_settle = 90
 	elif _state == "MineGateFocus":
@@ -209,6 +215,21 @@ func _process(_delta: float) -> bool:
 			var town0 = _ui.find_child("Town2D", true, false)
 			if town0:
 				town0.call("FocusOnMineGate", 3.2)
+		elif _state == "GateNight":
+			# U4 (world-and-interiors plan): the gatehouse's own warm InteriorWarmTint constant
+			# (Town2D.cs, applied whenever InteriorActive) overrides the exterior's phase tint
+			# entirely, so a receipt of the ROOM alone can never show a "dark phase" difference by
+			# construction -- that override IS the feature being verified. What this state proves
+			# instead: the room reads exactly as readable once the exterior has actually reached
+			# Evening/"Night" (genuinely dark post-U11/#357, tint ~0.42) as it does at a fresh
+			# Dawn. Same idiom as Phase4 above -- 4 presses in this one frame walk Morning ->
+			# Expedition -> Camp -> ExpeditionDeep -> Evening -- except this state ALSO enters the
+			# gatehouse afterward (frame 920, once the tint's ease has actually converged; see
+			# _settle above for why the wait is so long).
+			var bell = _ui.find_child("AdvancePhase", true, false)
+			if bell:
+				for _i in range(4):
+					bell.emit_signal("pressed")
 		elif _ui.has_method("OnTownBuildingClicked"):
 			# Same entry point the town uses on building arrival (private C# method reached
 			# via the source-gen call() bridge).
@@ -229,6 +250,12 @@ func _process(_delta: float) -> bool:
 		var mirror = _ui.find_child("ScryingMirror", true, false)
 		if mirror:
 			mirror.call("ShowMirror")
+	# GateNight's second beat: the tint's ease has now converged (see _settle above) --
+	# enter the gatehouse the same way every other venue receipt does
+	# (OnTownBuildingClicked's "Gate" -> "minegate" mapping, MainUi.cs).
+	if _state == "GateNight" and _frames == 920:
+		if _ui.has_method("OnTownBuildingClicked"):
+			_ui.call("OnTownBuildingClicked", "Gate")
 	if _state == "ForgeExit" and _frames == 200:
 		# The second beat: leave the room through the exit zone's own effect --
 		# Town2D.ExitInterior -- a direct test seam, not a separate code path.

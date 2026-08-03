@@ -98,14 +98,9 @@ public class AssetResolutionCensusTests
         // magenta-bordered box, not silence); U2/U3/U4 paint the real pixels and remove these
         // lines one room at a time (red→green shown in each art unit's own PR body).
         //
-        // U2 painted the market and U3 the tavern (art/pipeline/gen-{market,tavern}-interior.py),
-        // so both id sets are committed art now and left this allowlist in their own units.
-        // Only the gatehouse is still pending.
-        "town2d-gatehouse-interior-shell",
-        "town2d-station-gate-muster",
-        "town2d-station-gate-bounty",
-        "town2d-station-gate-overlook",
-        "town2d-station-gate-winch",
+        // U2 (market), U3 (tavern) and U4 (gatehouse) have all painted their rooms, so every
+        // interior id is committed art and this allowlist is empty. A new room's placeholder ids
+        // come back here only for as long as its own art unit is unfinished.
     };
 
     [TestCase]
@@ -317,6 +312,13 @@ public class AssetResolutionCensusTests
             ["town2d-station-tavern-bar"] = new(48, 28),
             ["town2d-station-tavern-storywall"] = new(32, 36),
             ["town2d-station-tavern-table"] = new(28, 24),
+            // U4 (gatehouse) — read off the committed PNGs, same protection as the sets above:
+            // a re-paint cannot silently grow a station into its neighbour's tile.
+            ["town2d-gatehouse-interior-shell"] = new(288, 176),
+            ["town2d-station-gate-muster"] = new(28, 40),
+            ["town2d-station-gate-bounty"] = new(26, 36),
+            ["town2d-station-gate-overlook"] = new(40, 20),
+            ["town2d-station-gate-winch"] = new(28, 44),
         };
 
         foreach (var room in InteriorLayout2D.Rooms.Values)
