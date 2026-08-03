@@ -269,6 +269,17 @@ public partial class Town2D : Control
     /// single-source rule as <see cref="WorkshopNametag"/>.</summary>
     public string WorkshopStationNoun => WorkshopVocab.StationNounFor(_workshopProfessionOrder);
 
+    /// <summary>U6 (world-and-interiors plan): every spawned villager, so <see cref="_Process"/>
+    /// can feed each one the current <see cref="DayPhase"/> (mirrors <see
+    /// cref="_ambientLife"/>'s own <c>SetPhase</c> cadence) — kept alongside <see
+    /// cref="TownsfolkRoot"/> rather than re-querying its children every frame.</summary>
+    private readonly List<TownsfolkNpc2D> _townsfolk = new();
+
+    /// <summary>U6: patron seating inside the tavern room — null only if the tavern has no
+    /// <see cref="InteriorLayout2D"/> row (defensive; every real build has one) or its "Patron
+    /// Table" stations were renamed out from under <see cref="WireTavernLife"/>.</summary>
+    private TavernLife2D? _tavernLife;
+
     /// <summary>Gap #4 fix ("day/night is a lie"): eases <see cref="DuskModulate"/>'s tint toward
     /// whatever <see cref="Adapter"/>'s current <see cref="DayPhase"/> calls for, every frame (see
     /// <see cref="_Process"/>) — seeded in <see cref="Build"/> at the campaign's actual starting
@@ -380,6 +391,7 @@ public partial class Town2D : Control
         TownsfolkRoot = new Node2D { Name = "Townsfolk" };
         YSort.AddChild(TownsfolkRoot);
         BuildTownsfolk();
+        WireTavernLife(); // U6: needs BuildInteriorRooms' tavern row + stations, already built above
 
         Fx = new Node2D { Name = "Fx" };
         World.AddChild(Fx);
@@ -418,6 +430,7 @@ public partial class Town2D : Control
         // T8-parity: populate Heroes from the adapter's initial state now; Refresh() re-runs this
         // every tick once MainUi wires it up (U2).
         Bind(adapter);
+        RefreshTavernLife(); // U6: seat present heroes immediately — don't wait for the first tick's Refresh()
     }
 
     /// <summary>T8-parity drop-in for the old <c>Bind(SimAdapter)</c> call site (see
@@ -435,7 +448,9 @@ public partial class Town2D : Control
     /// <c>Watch</c>/<c>Pip</c> every tick (see <c>MainUi.RefreshAll</c>), so a shop event can never
     /// disagree between what the HUD reports and what the market room stages. Harmless on every
     /// non-shop tick — <see cref="MarketLife2D.QueueDay"/> just stages nothing when the batch has
-    /// no matching event.</summary>
+    /// no matching event. U6: also reseats tavern patrons off the same reconciled hero states (see
+    /// <see cref="RefreshTavernLife"/> — hero presence only changes on a tick, not every render
+    /// frame).</summary>
     public void Refresh()
     {
         ReconcileHeroes();
@@ -443,6 +458,8 @@ public partial class Town2D : Control
         {
             _marketLife?.QueueDay(Adapter.CurrentState, Adapter.LastEvents);
         }
+
+        RefreshTavernLife();
     }
 
     /// <summary>Gates BOTH proximity/interact (<see cref="WorldInputNode"/>) and the player's own
@@ -528,6 +545,15 @@ public partial class Town2D : Control
         _interiorRooms.TryGetValue(venueKey, out var room)
             ? room
             : throw new InvalidOperationException($"No interior room for venue '{venueKey}' in Town2D.");
+
+    /// <summary>U6: test/inspection surface for the tavern's patron seating — null only if <see
+    /// cref="WireTavernLife"/> found no tavern row/table stations (never expected on a real
+    /// build).</summary>
+    public TavernLife2D? TavernLife => _tavernLife;
+
+    /// <summary>U6: test/inspection surface for the live villager list <see cref="_Process"/>
+    /// feeds phase updates to (mirrors <see cref="FirstHeroActor"/>'s shape).</summary>
+    public IReadOnlyList<TownsfolkNpc2D> Townsfolk => _townsfolk;
 
     /// <summary>
     /// U1 (KTD-1, island placement): teleports the player into <paramref name="venueKey"/>'s
@@ -767,6 +793,13 @@ public partial class Town2D : Control
             // change flips the lamps, only the sky color drifts) every tick, same cadence as the
             // tint driver above.
             _ambientLife?.SetPhase(Adapter.CurrentState.Phase);
+
+            // U6: townsfolk gate NEW errands off the same phase (see TownsfolkNpc2D.IsErrandHours)
+            // — a handful of nodes, cheap regardless of the per-frame cadence.
+            foreach (var npc in _townsfolk)
+            {
+                npc.SetPhase(Adapter.CurrentState.Phase);
+            }
         }
 
         if (_pendingMarchOut.Count == 0)
@@ -1244,13 +1277,82 @@ public partial class Town2D : Control
         // Gap #3 fix: resolve the step-B texture once (shared by every villager — they all reuse
         // the vanguard body) and hand it to each Init call; null-tolerant if it's ever absent.
         var stepSprite = TownsfolkNpc2D.ResolveStepSprite();
+
+        // U6: every venue's own door anchor, in TownLayout2D.Venues' fixed array order (a stable,
+        // deterministic sequence — a Dictionary's enumeration order is an implementation detail,
+        // this array's is not) — the pool an errand's id-seeded rotation picks from.
+        var errandTargets = TownLayout2D.Venues
+            .Select(v => _buildingsByKey[v.Key].DoorAnchorGlobal)
+            .ToList();
+
+        _townsfolk.Clear();
         for (var i = 0; i < TownsfolkHomeTiles.Length; i++)
         {
             var npc = new TownsfolkNpc2D();
             npc.Init(i, TownsfolkNpc2D.ResolveSprite(), TownsfolkNpc2D.CivilianTint(i), TownLayout2D.TileToWorld(TownsfolkHomeTiles[i]), stepSprite);
+            npc.SetErrandTargets(errandTargets);
             TownsfolkRoot.AddChild(npc);
+            _townsfolk.Add(npc);
         }
     }
+
+    /// <summary>U6: mounts <see cref="TavernLife2D"/> at the tavern room's own "Patron Table"
+    /// station positions (<c>InteriorLayout2D</c>'s <c>"table-a"</c>/<c>"table-b"</c> rows, U1-
+    /// pinned as seating anchors) — a plain wrapper directly under <see cref="YSort"/> (mirrors
+    /// <see cref="HeroesRoot"/>/<see cref="TownsfolkRoot"/>'s own "flat Y-sort scope" precedent,
+    /// see <see cref="InteriorRoom2D"/>'s class doc for why a nested Y-sort container would sort
+    /// as one blob instead). Called once from <see cref="Build"/>, after <see
+    /// cref="BuildInteriorRooms"/> so the tavern's stations already exist with resolved positions.
+    /// No-op (leaves <see cref="_tavernLife"/> null) if the tavern row or its table stations are
+    /// ever renamed out from under this — defensive, never expected on a real build.</summary>
+    private void WireTavernLife()
+    {
+        if (!_interiorRooms.TryGetValue("tavern", out var tavernRoom))
+        {
+            return;
+        }
+
+        var seatAnchors = tavernRoom.Stations
+            .Where(s => s.Key is "table-a" or "table-b")
+            .Select(s => s.Position)
+            .ToList();
+
+        if (seatAnchors.Count == 0)
+        {
+            return;
+        }
+
+        _tavernLife = new TavernLife2D { Name = "TavernLife2D" };
+        YSort.AddChild(_tavernLife);
+        _tavernLife.Build(seatAnchors);
+    }
+
+    /// <summary>U6: assigns present (<see cref="HeroActor2D.HeroTownState.Wandering"/>) heroes to
+    /// tavern seats — called from <see cref="Refresh"/> (once per sim tick, not once per render
+    /// frame: hero presence only ever changes on a tick, see <see cref="TavernLife2D"/>'s own class
+    /// doc). A hero mid-rally/march/away is excluded by the state filter alone — the guard against
+    /// the same hero reading as both wandering the square and seated in the tavern.</summary>
+    private void RefreshTavernLife()
+    {
+        if (_tavernLife is null || Adapter is null)
+        {
+            return;
+        }
+
+        var present = _heroActors.Values
+            .Where(a => a.State == HeroActor2D.HeroTownState.Wandering)
+            .OrderBy(a => a.HeroIdValue)
+            .Select(a => (a.HeroIdValue, a.ClassId, MoodPermilleFor(a.HeroIdValue)))
+            .ToList();
+
+        _tavernLife.Refresh(present);
+    }
+
+    /// <summary>Reads the live sim <c>MoodPermille</c> for a hero id — the same field
+    /// <c>TavernPanel</c>/<c>CounterPanel</c> already read; 0 (neutral) if the hero has somehow
+    /// left the roster the same tick its actor is still being torn down.</summary>
+    private int MoodPermilleFor(int heroId) =>
+        Adapter!.CurrentState.Heroes.TryGetValue(heroId, out var hero) ? hero.MoodPermille : 0;
 
     /// <summary>Locates the forge building and wires a glow overlay + spark/steam particles near
     /// its door — called once at the tail of <see cref="Build"/>, after <see cref="BuildBuildings"/>
