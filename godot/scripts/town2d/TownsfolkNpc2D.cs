@@ -1,13 +1,28 @@
+using System.Collections.Generic;
+using GameSim.Contracts;
 using Godot;
 
 namespace GodotClient.Town2d;
 
 /// <summary>
 /// Cosmetic wandering villager for the 2.5D town — pure ambience, zero gameplay surface. Unlike
-/// <see cref="HeroActor2D"/> this node has NO state machine (no Rallying/WalkingOut/Away/WalkingIn),
-/// NO <c>Area2D</c> pick zone, and NO <c>Picked</c> event: it exists purely to make the town read as
-/// populated, and is never clicked, never tied to a sim hero, and never affects anything the sim
-/// tracks (KTD2: presentation-only, no RNG/clock/state read).
+/// <see cref="HeroActor2D"/> this node has NO pick zone and NO <c>Picked</c> event: it exists purely
+/// to make the town read as populated, and is never clicked, never tied to a sim hero, and never
+/// affects anything the sim tracks (KTD2: presentation-only, no RNG/clock read beyond the phase
+/// input below).
+///
+/// <para><b>U6 (world-and-interiors plan, R9 "make more lively"):</b> gained an ERRAND mode
+/// (<see cref="ErrandPhase"/>) alongside the original idle lissajous drift — a villager now
+/// periodically walks a real path to a venue door (<see cref="SetErrandTargets"/>, a deterministic
+/// id-seeded rotation, no RNG), dwells there a beat, and walks home again, via the SAME
+/// <c>StepToward</c> step-frame-walker idiom <see cref="HeroActor2D"/> already uses for
+/// Rally/MarchOut/Return — the idle lissajous wander becomes what happens BETWEEN errands, not the
+/// whole of a villager's behavior anymore. <see cref="SetPhase"/> (mirrors <see
+/// cref="AmbientLife2D.SetPhase"/>'s per-tick contract) gates when a NEW errand may START to
+/// <see cref="IsErrandHours"/> (Morning/"Dawn", Expedition/"Quest") so the town does not read
+/// equally busy at Evening/"Night" as at Dawn — PR #357's whole point, undone if townsfolk ignored
+/// it. An errand already under way always finishes normally (walk home, never a mid-street
+/// freeze/teleport) regardless of a phase flip mid-walk — only the START of the next one is gated.
 ///
 /// <para><b>Reuses <see cref="HeroActor2D"/>'s idioms rather than inventing new ones</b>: the same
 /// deterministic per-id lissajous wander-drift formula (<see cref="WanderingPosition"/>, id-seeded
@@ -33,10 +48,42 @@ public partial class TownsfolkNpc2D : Node2D
 
     private const float WanderAmplitudeY = 5f;
 
-    /// <summary>Nominal pace used only to normalize <see cref="SpriteMotion"/>'s walk/idle cadence
-    /// (mirrors <see cref="HeroActor2D.WalkSpeed"/>'s role) — villagers never travel anywhere, so
-    /// this is a cosmetic-only constant, not a real movement speed.</summary>
-    private const float NominalPace = 60f;
+    /// <summary>U6: villagers' real walking pace while erranding (px/sec) — also fed to <see
+    /// cref="SpriteMotion"/> as the normalizing full pace (mirrors <see
+    /// cref="HeroActor2D.WalkSpeed"/>'s dual role AND its public visibility — tests pin the
+    /// no-teleport contract against this exact number). Well above <see
+    /// cref="SpriteMotion.WalkSpeedThreshold"/> (20) so an errand actually plays the walk pose, and
+    /// deliberately slower than <see cref="HeroActor2D.WalkSpeed"/> (260) — villagers putter to an
+    /// errand, they don't march. Pre-U6 this constant was named <c>NominalPace</c> and never
+    /// exceeded the wander drift's own tiny velocity (villagers "never travelled anywhere"); U6 is
+    /// exactly the unit that makes it a real speed.</summary>
+    public const float ErrandWalkSpeed = 60f;
+
+    /// <summary>How long a villager idles (wandering) at home between errands, once one completes
+    /// — long enough that the town reads calm, not frantic (a livelier town is the goal, not a
+    /// chaotic one).</summary>
+    private const double ErrandCooldownSeconds = 22.0;
+
+    /// <summary>How long a villager dwells at the errand destination before heading home — a brief
+    /// beat, not a full visit.</summary>
+    private const double ErrandDwellSeconds = 4.5;
+
+    /// <summary>Per-villager stagger for the FIRST errand only (id-seeded, no RNG) — spreads
+    /// departures so four villagers don't all leave home on the same frame the town loads.</summary>
+    private const double FirstErrandOffsetSeconds = 2.0;
+
+    private const double FirstErrandStaggerSeconds = 1.5;
+
+    /// <summary>One villager's errand state — <see cref="ErrandPhase.Idle"/> is the original
+    /// lissajous wander (now also the "between errands" resting state); the other three drive a real
+    /// <see cref="StepToward"/> walk to/from an errand target (see class doc).</summary>
+    private enum ErrandPhase
+    {
+        Idle,
+        WalkingOut,
+        Dwelling,
+        WalkingHome,
+    }
 
     private static readonly Color[] CivilianPalette =
     {
@@ -81,6 +128,34 @@ public partial class TownsfolkNpc2D : Node2D
     /// tolerant — <see cref="ApplySpritePose"/> just keeps showing <see cref="_baseTex"/> if no
     /// step art was supplied (mirrors <see cref="HeroActor2D._stepTex"/>'s exact contract).</summary>
     private Texture2D? _stepTex;
+
+    // ── U6: errand state (world-and-interiors plan, R9) ──────────────────────────────────────
+
+    /// <summary>Door anchors an errand may walk to — supplied by <see cref="Town2D"/> via <see
+    /// cref="SetErrandTargets"/> (a fixed, ordered list; NOT resolved here so this class stays
+    /// free of any <c>TownLayout2D</c>/building lookup). Empty (the default) means "never leaves
+    /// home" — the pre-U6 behavior, still exercised by every existing test that never calls <see
+    /// cref="SetErrandTargets"/>.</summary>
+    private IReadOnlyList<Vector2> _errandTargets = System.Array.Empty<Vector2>();
+
+    /// <summary>U6/U11: the sim's current phase, mirroring <see
+    /// cref="AmbientLife2D.SetPhase"/>'s per-tick contract — read only by <see
+    /// cref="IsErrandHours"/> to gate the START of a new errand cycle.</summary>
+    private DayPhase _phase = DayPhase.Morning;
+
+    private ErrandPhase _errandPhase = ErrandPhase.Idle;
+
+    /// <summary>Counts down while <see cref="ErrandPhase.Idle"/>; a new errand starts once this
+    /// reaches zero AND <see cref="IsErrandHours"/> says so (otherwise it just holds at zero,
+    /// re-checked every frame, until the phase turns).</summary>
+    private double _errandCooldown;
+
+    private double _dwellRemaining;
+    private Vector2 _errandDestination;
+
+    /// <summary>Deterministic rotation cursor through <see cref="_errandTargets"/> — increments
+    /// once per completed round trip, no RNG.</summary>
+    private int _errandRotation;
 
     /// <summary>
     /// Resolve the shared neutral body sprite villagers reuse — the same "town2d-hero-vanguard"
@@ -153,24 +228,54 @@ public partial class TownsfolkNpc2D : Node2D
 
         _motion = new SpriteMotion(index * 2.1f);
 
+        // U6: id-seeded stagger for the FIRST errand only — every later cycle re-seeds from
+        // ErrandCooldownSeconds (see AdvanceWalkingHome), no RNG either way.
+        _errandCooldown = FirstErrandOffsetSeconds + index * FirstErrandStaggerSeconds;
+
+        // U6: seed each villager's rotation cursor from its OWN index (rather than every
+        // villager starting at the same targets[0]) so the first errand already sends them to
+        // DIFFERENT doors, not a flock beelining for the same one — SetErrandTargets hasn't run
+        // yet at Init time, so this is applied mod the list length once it arrives (AdvanceIdle).
+        _errandRotation = index;
+
         Visible = true;
     }
 
+    /// <summary>U6: supplies the venue door anchors an errand can walk to — a deterministic
+    /// id-seeded rotation through this list (<see cref="_errandRotation"/>), no RNG (KTD2/KTD4/
+    /// KTD5). Null/empty degrades to "never leaves home", the exact pre-U6 contract every existing
+    /// caller/test that skips this method still gets.</summary>
+    public void SetErrandTargets(IReadOnlyList<Vector2> venueDoors) => _errandTargets = venueDoors;
+
+    /// <summary>U6/U11: the sim's current <see cref="DayPhase"/> — call every frame (mirrors <see
+    /// cref="AmbientLife2D.SetPhase"/>'s contract; <see cref="Town2D"/> calls both from the same
+    /// <c>_Process</c> tick). Gates only the START of a new errand (see <see
+    /// cref="IsErrandHours"/>) — an errand already under way always finishes, so a phase flip
+    /// mid-walk never recalls or freezes anyone.</summary>
+    public void SetPhase(DayPhase phase) => _phase = phase;
+
+    /// <summary>U6 (PR #357 follow-through): "daytime" for errand purposes — the same two phases
+    /// <see cref="AmbientLife2D.LampAlphaFor"/> treats as bright/awake (Morning/"Dawn",
+    /// Expedition/"Quest"). Evening/Camp/ExpeditionDeep ("Night"/"Vigil"/"Deep Vigil") never start
+    /// a NEW errand, so the town does not read equally busy after dark as it does at dawn.</summary>
+    private static bool IsErrandHours(DayPhase phase) => phase is DayPhase.Morning or DayPhase.Expedition;
+
     /// <summary>
-    /// Per-frame ambient drift — off the sim path, pure function of accumulated delta (no RNG, no
-    /// wall-clock, KTD2/KTD4/KTD5): same index/home plus the same delta sequence always lands at the
-    /// same <see cref="Node2D.Position"/>.
+    /// Per-frame advance — off the sim path, pure function of accumulated delta (no RNG, no
+    /// wall-clock, KTD2/KTD4/KTD5): same index/home/targets plus the same delta sequence always
+    /// lands at the same <see cref="Node2D.Position"/>.
     /// </summary>
     public override void _Process(double delta)
     {
         _townTime += delta;
 
-        var basePos = WanderingPosition();
+        var basePos = AdvanceErrand(delta);
         var moved = basePos - Position;
         var velocity = delta > 0.0 ? moved / (float)delta : Vector2.Zero;
 
-        // Position (the Y-sort key/feet baseline) is set from the wander formula alone — the pose
-        // below is applied to the CHILD Sprite only, exactly the HeroActor2D/SpriteMotion contract.
+        // Position (the Y-sort key/feet baseline) is set from the errand/wander state alone — the
+        // pose below is applied to the CHILD Sprite only, exactly the HeroActor2D/SpriteMotion
+        // contract.
         Position = basePos;
 
         if (Mathf.Abs(moved.X) >= 0.01f)
@@ -178,8 +283,92 @@ public partial class TownsfolkNpc2D : Node2D
             Sprite.FlipH = moved.X < 0f;
         }
 
-        var pose = _motion.Advance(delta, velocity, NominalPace);
+        var pose = _motion.Advance(delta, velocity, ErrandWalkSpeed);
         ApplySpritePose(pose);
+    }
+
+    /// <summary>Dispatches to the current <see cref="ErrandPhase"/>'s own advance — mirrors <see
+    /// cref="HeroActor2D._Process"/>'s own state-switch shape.</summary>
+    private Vector2 AdvanceErrand(double delta) => _errandPhase switch
+    {
+        ErrandPhase.WalkingOut => AdvanceWalkingOut(delta),
+        ErrandPhase.Dwelling => AdvanceDwelling(delta),
+        ErrandPhase.WalkingHome => AdvanceWalkingHome(delta),
+        _ => AdvanceIdle(delta),
+    };
+
+    /// <summary>Idle/wandering: counts the errand cooldown down and, once it (and the clock) allow
+    /// it, kicks off the next errand in the deterministic rotation — otherwise this is exactly the
+    /// original lissajous drift.</summary>
+    private Vector2 AdvanceIdle(double delta)
+    {
+        if (_errandTargets.Count > 0)
+        {
+            _errandCooldown -= delta;
+            if (_errandCooldown <= 0.0 && IsErrandHours(_phase))
+            {
+                _errandDestination = _errandTargets[_errandRotation % _errandTargets.Count];
+                _errandRotation++;
+                _errandPhase = ErrandPhase.WalkingOut;
+            }
+        }
+
+        return WanderingPosition();
+    }
+
+    private Vector2 AdvanceWalkingOut(double delta)
+    {
+        StepToward(_errandDestination, delta, out var arrived);
+        if (arrived)
+        {
+            _errandPhase = ErrandPhase.Dwelling;
+            _dwellRemaining = ErrandDwellSeconds;
+        }
+
+        return _logicalPosition;
+    }
+
+    private Vector2 AdvanceDwelling(double delta)
+    {
+        _dwellRemaining -= delta;
+        if (_dwellRemaining <= 0.0)
+        {
+            _errandPhase = ErrandPhase.WalkingHome;
+        }
+
+        return _logicalPosition;
+    }
+
+    private Vector2 AdvanceWalkingHome(double delta)
+    {
+        StepToward(Home, delta, out var arrived);
+        if (arrived)
+        {
+            _errandPhase = ErrandPhase.Idle;
+            _errandCooldown = ErrandCooldownSeconds;
+        }
+
+        return _logicalPosition;
+    }
+
+    /// <summary>Moves <see cref="_logicalPosition"/> toward <paramref name="target"/> at <see
+    /// cref="ErrandWalkSpeed"/>, consuming only the slice of <paramref name="delta"/> the remaining
+    /// distance needs — same step-frame-walker idiom as <see cref="HeroActor2D.StepToward"/>
+    /// (an errand that teleports is not an errand: arrival always costs the real travel time).
+    /// </summary>
+    private void StepToward(Vector2 target, double delta, out bool arrived)
+    {
+        var distance = _logicalPosition.DistanceTo(target);
+        var timeToArrive = distance / ErrandWalkSpeed;
+        if (delta >= timeToArrive)
+        {
+            _logicalPosition = target;
+            arrived = true;
+            return;
+        }
+
+        _logicalPosition = _logicalPosition.MoveToward(target, ErrandWalkSpeed * (float)delta);
+        arrived = false;
     }
 
     /// <summary>Applies a <see cref="SpriteMotion.Pose"/> to the CHILD <see cref="Sprite"/> only —
