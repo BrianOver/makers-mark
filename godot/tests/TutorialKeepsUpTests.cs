@@ -96,6 +96,95 @@ public class TutorialKeepsUpTests
     }
 
     /// <summary>
+    /// U5 (loop-legibility plan): the overlay must keep up the same way the checklist/top-slot
+    /// text do — a pulse still lit on the forge after the step has moved on to Shelve is just as
+    /// confusing as stale text, and this suite's whole premise (see class doc) is proving the
+    /// REAL client reacts, not a state injection.
+    /// </summary>
+    [TestCase]
+    public async Task BuyingAndCrafting_MovesTheOverlaysPulse_FromForgeToMarket()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var player = new HumanPlayer(ui);
+            await player.Frames(4);
+
+            AssertThat(ui.Overlay.PulsingBuildingKey)
+                .OverrideFailureMessage("BuyMaterial's own anchor (forge) is not pulsing on a fresh mount.")
+                .IsEqual("forge");
+
+            ui.OpenPanel("Forge");
+            await player.WaitForLayout(ui.Drawer.CurrentContent!);
+
+            // The queued CraftAction below needs ScriptedSession.CopperNeeded (2) units of
+            // ScriptedSession.CraftMaterial specifically ("dagger" is a copper recipe) — the
+            // Forge's own buy button is "Buy 1" per press (ForgePanel.OnBuyMaterialPressed), so
+            // this clicks it CopperNeeded times, re-finding the button by name after each press
+            // (buying rebuilds the vendor rows, freeing the prior Button reference — same
+            // ObjectDisposedException shape BuyingMaterial_MovesTheTutorialOn_WithoutRingingTheBell
+            // already guards above). A single click (the bug this test shipped with, never
+            // actually run before CI) leaves the player one copper short, so the queued CraftAction
+            // is silently rejected and Step never leaves Craft.
+            for (var i = 0; i < ScriptedSession.CopperNeeded; i++)
+            {
+                var buy = player.ClickableButtons(ui.Drawer.CurrentContent)
+                    .FirstOrDefault(b => b.Name.ToString() == $"BuyMat_{ScriptedSession.CraftMaterial}");
+                AssertThat(buy)
+                    .OverrideFailureMessage(
+                        $"No affordable \"{ScriptedSession.CraftMaterial}\" buy button was reachable in the " +
+                        $"Forge on day 1 (buy {i + 1}/{ScriptedSession.CopperNeeded}). On screen: " +
+                        $"[{string.Join(" | ", player.ClickableLabels(ui.Drawer.CurrentContent))}]")
+                    .IsNotNull();
+
+                var described = $"Forge \"{buy!.Text}\" ({buy.Name})";
+                try
+                {
+                    await player.ClickControl(buy, described);
+                }
+                catch (System.ObjectDisposedException)
+                {
+                    // The click worked so well it deleted its own button.
+                }
+
+                await player.Frames(4);
+            }
+
+            AssertThat(ui.Adapter.LastEvents.OfType<MaterialPurchased>().Any())
+                .OverrideFailureMessage("The click did not produce a MaterialPurchased event.")
+                .IsTrue();
+            var copperHeld = ui.Adapter.CurrentState.Player.Materials.TryGetValue(ScriptedSession.CraftMaterial, out var held) ? held : 0;
+            AssertThat(copperHeld)
+                .OverrideFailureMessage(
+                    $"Bought {ScriptedSession.CopperNeeded} rounds of {ScriptedSession.CraftMaterial} by real " +
+                    $"click but the player holds {copperHeld} — the queued CraftAction below would reject silently.")
+                .IsGreaterEqual(ScriptedSession.CopperNeeded);
+
+            // Craft (immediate) to reach Shelve — the claim under test is the OVERLAY's own
+            // reaction to a step change, not a second click-path proof of buying (that is
+            // BuyingMaterial_MovesTheTutorialOn_WithoutRingingTheBell above). Deliberately does
+            // NOT also queue a StockAction here: Shelve's own IsDone is `Shelf.Count > 0`, so
+            // stocking immediately would race the chain straight past Shelve to PostBounty
+            // BEFORE this assertion ever observes it — same "OnPhaseCompleted fires again on
+            // EVERY immediate action" mechanic Advance's own doc describes — which would point
+            // the overlay at "noticeboard", not "market", and fail this test's own stated claim.
+            ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
+            AssertThat(ui.Tutorial.Step).IsEqual(GodotClient.Ui.TutorialStep.Shelve);
+
+            // Wait on the CONDITION, never a frame count — even though SimAdapter.Queue's
+            // immediate branch refreshes the HUD synchronously, this is the honest idiom this
+            // suite already uses everywhere else.
+            var moved = await player.WaitUntil(() => ui.Overlay.PulsingBuildingKey == "market");
+            AssertThat(moved)
+                .OverrideFailureMessage(
+                    $"The tutorial moved to Shelve but the overlay is still pulsing " +
+                    $"\"{ui.Overlay.PulsingBuildingKey ?? "(nothing)"}\" instead of the market.")
+                .IsTrue();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
     /// The card must stop telling the player to walk somewhere they are already standing.
     ///
     /// <para>This is what "The tutorial isn't updating despite entering the forge" actually was. The step

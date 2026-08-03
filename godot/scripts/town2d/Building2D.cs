@@ -260,7 +260,59 @@ public partial class Building2D : Node2D
     public void SetHighlighted(bool on)
     {
         IsHighlighted = on;
-        Sprite.Modulate = on ? HighlightModulate : Colors.White;
+        if (!_tutorialPulsing)
+        {
+            Sprite.Modulate = on ? HighlightModulate : Colors.White;
+        }
+    }
+
+    /// <summary>U5 (loop-legibility plan): warm gold pulse, distinct from <see
+    /// cref="HighlightModulate"/>'s cool brighten so a tutorial-pointed building never reads as
+    /// merely hovered — the same glow language this class already uses for "you can click this",
+    /// aimed instead at "the tutorial wants you here". <see cref="GodotClient.Ui.TutorialOverlay"/>
+    /// is the only caller.</summary>
+    private static readonly Color TutorialPulseColor = new(1.4f, 1.05f, 0.3f);
+
+    /// <summary>Pulse period/floor — mirrors <c>DayTimeline</c>'s own waiting-dot idiom
+    /// (accumulated-delta, no engine Tween in this codebase).</summary>
+    private const double TutorialPulsePeriodSeconds = 1.1;
+
+    private const float TutorialPulseMinAlpha = 0.35f;
+
+    private bool _tutorialPulsing;
+    private double _tutorialPulseElapsed;
+
+    /// <summary>Test/inspection surface (mirrors <see cref="IsHighlighted"/>).</summary>
+    public bool IsTutorialPulsing => _tutorialPulsing;
+
+    /// <summary>Start/stop the tutorial's pointing pulse. While running it owns <see
+    /// cref="Sprite"/>'s <see cref="CanvasItem.Modulate"/> every <see cref="TickTutorialPulse"/>
+    /// call; turning it off restores whatever <see cref="SetHighlighted"/> last asked for (hover
+    /// and the tutorial pulse are independent flags — last-write-wins while pulsing, restored on
+    /// stop).</summary>
+    public void SetTutorialPulsing(bool on)
+    {
+        _tutorialPulsing = on;
+        _tutorialPulseElapsed = 0;
+        if (!on)
+        {
+            Sprite.Modulate = IsHighlighted ? HighlightModulate : Colors.White;
+        }
+    }
+
+    /// <summary>Advance the pulse by one frame's delta — no-op unless <see
+    /// cref="SetTutorialPulsing"/> is currently on.</summary>
+    public void TickTutorialPulse(double delta)
+    {
+        if (!_tutorialPulsing)
+        {
+            return;
+        }
+
+        _tutorialPulseElapsed += delta;
+        var phase = (float)((_tutorialPulseElapsed % TutorialPulsePeriodSeconds) / TutorialPulsePeriodSeconds);
+        var t = TutorialPulseMinAlpha + (1f - TutorialPulseMinAlpha) * (0.5f + 0.5f * Mathf.Sin(Mathf.Tau * phase));
+        Sprite.Modulate = Colors.White.Lerp(TutorialPulseColor, t);
     }
 
     /// <summary>Test seam (also the real click path's terminus, see

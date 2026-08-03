@@ -219,6 +219,10 @@ public partial class MainUi : Control
     /// quick-travel unlock — see <see cref="TutorialFlow"/>'s own class doc.</summary>
     public TutorialFlow Tutorial { get; private set; } = null!;
 
+    /// <summary>U5 (loop-legibility plan): the tutorial's pointing overlay — see <see
+    /// cref="TutorialOverlay"/>'s own class doc.</summary>
+    public TutorialOverlay Overlay { get; private set; } = null!;
+
     /// <summary>U18 (R12/KTD13): the top-bar-center day-timeline widget — live phase highlight
     /// + the U15 engaged-wait indicator.</summary>
     public DayTimeline Timeline { get; private set; } = null!;
@@ -481,6 +485,25 @@ public partial class MainUi : Control
         tree.Quit();
     }
 
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play) — queues the same day-1 tutorial
+    /// ladder <c>TutorialFlowTests.DriveDay1ToLookIn</c> drives for real in the engine suite
+    /// (buy material -&gt; craft -&gt; shelve -&gt; post a bounty, all four immediate lane per
+    /// U1), reachable via <c>godot/tools/shot_harness.gd</c>'s source-gen <c>call()</c> bridge
+    /// (the same bridge <c>OnTownBuildingClicked</c>/<c>ShowMirror</c> already use for other
+    /// receipt states) so <c>SHOT_STATE=TutorialLookIn</c> can reach <see
+    /// cref="Ui.TutorialStep.LookIn"/> deterministically after one more real bell press,
+    /// without a GDScript caller needing to construct C# <see cref="PlayerAction"/> records.
+    /// </summary>
+    public void Dev_QueueDay1TutorialLadder()
+    {
+        var craftedItemId = new ItemId(Adapter.CurrentState.NextItemId);
+        Adapter.Queue(new BuyMaterialAction("copper", 2));
+        Adapter.Queue(new CraftAction("dagger", "copper"));
+        Adapter.Queue(new StockAction(craftedItemId, 50));
+        Adapter.Queue(new PostBountyAction(5, 10));
+    }
+
     public override void _Process(double delta)
     {
         if (Clock is null)
@@ -551,6 +574,10 @@ public partial class MainUi : Control
 
         // UI-6: tick the objective note's body fade-in (no-op unless a fresh step just landed).
         Objective.Tick(delta);
+
+        // U5 (loop-legibility plan): tick the tutorial's pointing pulse/outline (no-op with
+        // nothing anchored — i.e. whenever the tutorial is inactive).
+        Overlay.Tick(delta);
 
         // U23 (R5): quick-travel hotkeys — inert until the tutorial chain completes.
         if (Tutorial.QuickTravelUnlocked)
@@ -783,11 +810,49 @@ public partial class MainUi : Control
     private void RefreshObjectiveLine()
     {
         var state = Adapter.CurrentState;
-        // The open drawer is passed in so the tutorial can stop telling the player to walk to a room they
-        // are already standing in — see TutorialFlow.GoTo.
-        Objective.Refresh(state, Tutorial.TopSlotText(state, Drawer.CurrentPanelId)); // U23: tutorial overrides the top slot only
+        // The player's current location is passed in so the tutorial can stop telling the player
+        // to walk to a room they are already standing in — see TutorialFlow.GoTo. U5: this is no
+        // longer just the open drawer id — a walkable INTERIOR (the forge) never touches
+        // Drawer.CurrentPanelId at all, which is exactly why "the tutorial isn't updating despite
+        // entering the forge" survived a drawer-only check (see CurrentLocationPanelId).
+        var locationId = CurrentLocationPanelId();
+        Objective.Refresh(
+            state,
+            Tutorial.TopSlotText(state, locationId), // U23: tutorial overrides the top slot only
+            Tutorial.Active ? Tutorial.Checklist(state) : null); // U5: the checklist ticks alongside it
+        Overlay.RefreshAnchor(Tutorial.Active ? Tutorial.CurrentAnchor : TutorialAnchor.None, Town, this);
         UpdateObjectiveDock(); // Refresh can change the reason line's line count — re-dock to it
     }
+
+    /// <summary>
+    /// U5 (loop-legibility plan): the player's current location in the SAME vocabulary
+    /// <c>OnTownBuildingClicked</c>'s own panel-id switch uses ("Forge"/"Shop"/"Tavern"/"Depths"/
+    /// "Bounties"), or null when neither a drawer nor a walkable interior is open.
+    ///
+    /// <para>Before U5 the tutorial's "you're at X" ack read <see cref="DrawerHost.CurrentPanelId"/>
+    /// alone — correct for every venue routed through <c>OpenPanel</c>, but a venue with a walkable
+    /// <see cref="Town2d.InteriorLayout2D"/> room (the forge) is routed through <see
+    /// cref="Town2d.Town2D.EnterInterior"/> instead, which never touches the drawer at all. That is
+    /// the exact mechanism behind "the tutorial isn't updating despite entering the forge" — the
+    /// drawer-only check could never see it. Falling back to the entered interior's own venue key
+    /// (mapped through the same vocabulary) fixes it without adding a second parameter everywhere
+    /// this value is threaded through.</para>
+    /// </summary>
+    private string? CurrentLocationPanelId() =>
+        Drawer.CurrentPanelId ?? (Town.InteriorActive ? PanelIdForVenue(Town.InteriorVenueKey!) : null);
+
+    /// <summary>Venue key (<c>Town2D.FindBuilding</c>'s own lowercase vocabulary) -&gt; drawer
+    /// panel id — mirrors <see cref="OnTownBuildingClicked"/>'s own panelId switch for the venues
+    /// that have one (every real venue does).</summary>
+    private static string? PanelIdForVenue(string venueKey) => venueKey switch
+    {
+        "forge" => "Forge",
+        "market" => "Shop",
+        "tavern" => "Tavern",
+        "minegate" => "Depths",
+        "noticeboard" => "Bounties",
+        _ => null,
+    };
 
     private void RefreshHud()
     {
@@ -2125,6 +2190,17 @@ public partial class MainUi : Control
         Pip.ExpandRequested += () => Mirror.ShowMirror();
         Pip.Clock = Clock; // U25 (a): PiP's journey feed pauses with the clock
 
+        // --- U5 (loop-legibility plan): the tutorial's pointing overlay — a screen-space pulsing
+        //     outline for HUD anchors (the world-space building pulse lives on Building2D itself,
+        //     ticked through this same overlay — see TutorialOverlay's own class doc). Mounted
+        //     late (mirrors Mirror/Pip above) so its outline draws above whatever it points at,
+        //     including a modal card (the Vigil step's CampCard). Ignores the mouse entirely — a
+        //     pure visual pointer, never a click target and never in the way of one. -------------
+        Overlay = new TutorialOverlay();
+        AddChild(Overlay);
+        Overlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        Overlay.Build();
+
         // --- build-provenance stamp (deploy hygiene): a small always-visible corner label naming
         //     this build — mounted last so it draws over everything else. See BuildStamp's own
         //     doc; no other MainUi behavior changes here. ---
@@ -2541,7 +2617,22 @@ public partial class MainUi : Control
             // modal-open call site below already does. Town.InteriorExited (wired in BuildUi) is
             // the matching release on the way back out.
             UpdateEngaged();
+
+            // U5 (loop-legibility plan): the checklist sub-tick ("Arrived") and the "you're at X"
+            // swap must fire on THIS route too — a walkable interior never touches
+            // Drawer.CurrentPanelId at all (see CurrentLocationPanelId's own doc), which is exactly
+            // why "the tutorial isn't updating despite entering the forge" survived a drawer-only
+            // check. Called AFTER EnterInterior/UpdateEngaged so CurrentLocationPanelId already
+            // sees the new room — the non-interior route below gets the same call for free at the
+            // end of OpenPanel, which runs after Drawer.Open has set CurrentPanelId.
+            Tutorial.NotifyEnteredBuilding(venueKey);
+            RefreshObjectiveLine();
             return;
+        }
+
+        if (venueKey is not null)
+        {
+            Tutorial.NotifyEnteredBuilding(venueKey);
         }
 
         var panelId = building switch

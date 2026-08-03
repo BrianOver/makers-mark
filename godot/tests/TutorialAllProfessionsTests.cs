@@ -104,6 +104,16 @@ public class TutorialAllProfessionsTests
                             $"{professionId}: tutorial still active on tick {tick} but showing no instruction " +
                             "— a player would have nothing readable to act on.")
                         .IsFalse();
+
+                    // U5 (loop-legibility plan): the registry's anchor is profession-independent
+                    // (buildings/HUD controls, never a recipe), so every one of the four professions
+                    // walking this same chain must always have something concrete to point at —
+                    // never TutorialAnchorKind.None while still active, on any tick, for any profession.
+                    AssertThat(ui.Tutorial.CurrentAnchor.Kind)
+                        .OverrideFailureMessage(
+                            $"{professionId}: tutorial active on tick {tick} ({ui.Tutorial.Step}) but its " +
+                            "anchor is None — the overlay would have nothing to point at.")
+                        .IsNotEqual(TutorialAnchorKind.None);
                 }
 
                 ui.Adapter.AdvancePhase();

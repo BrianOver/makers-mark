@@ -160,6 +160,18 @@ func _initialize() -> void:
 		_settle = 950
 	else:
 		_settle = 320
+	# U5 (loop-legibility plan): SHOT_RESET_TUTORIAL=1 deletes the persisted
+	# user://tutorial_flow.json BEFORE the scene mounts -- TutorialFlow.Load() reads whatever
+	# that file says regardless of which fresh seed-2026 campaign SimAdapter just started, so a
+	# machine that already has a Completed/Dismissed chain saved from an earlier session (this
+	# file lives in the OS user-data folder, not the repo -- it survives across branches/
+	# worktrees) would otherwise show the LIVE advisor instead of the tutorial for a receipt
+	# that specifically wants to prove the tutorial's own overlay/checklist. Off by default --
+	# zero effect on every other capture.
+	if OS.get_environment("SHOT_RESET_TUTORIAL") == "1":
+		var tutorial_save_path := "user://tutorial_flow.json"
+		if FileAccess.file_exists(tutorial_save_path):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(tutorial_save_path))
 	_ui = load("res://scenes/panels/main_ui.tscn").instantiate()
 	root.add_child(_ui)
 	if _quiet:
@@ -311,6 +323,18 @@ func _process(_delta: float) -> bool:
 			# the tray/ack-toast path this receipt exists to show.
 			if _ui.has_method("OnSecondProfessionPicked"):
 				_ui.call("OnSecondProfessionPicked", "alchemy")
+		elif _state == "TutorialLookIn":
+			# U5 (loop-legibility plan): the receipt for LookIn's own HUD anchor
+			# (WatchButton) -- queue the SAME day-1 ladder TutorialFlowTests.DriveDay1ToLookIn
+			# drives for real in the engine suite (buy -> craft -> shelve -> post a bounty, all
+			# four immediate per U1) via the dev-only call() bridge, then press the real bell
+			# once; the SECOND press (frame 90 below) is what actually lands the party's own
+			# departure, which is the fact that advances the chain to LookIn.
+			if _ui.has_method("Dev_QueueDay1TutorialLadder"):
+				_ui.call("Dev_QueueDay1TutorialLadder")
+			var bell3 = _ui.find_child("AdvancePhase", true, false)
+			if bell3:
+				bell3.emit_signal("pressed")
 		elif _state == "MineGateFocus":
 			# U2 (shell-and-audio plan): the receipt for R1 -- "the mine is off the screen at
 			# the top" -- proving the mine gate is reachable once the header no longer occludes
@@ -398,6 +422,14 @@ func _process(_delta: float) -> bool:
 		var mirror = _ui.find_child("ScryingMirror", true, false)
 		if mirror:
 			mirror.call("ShowMirror")
+	# TutorialLookIn's second beat: the bell above (frame 60) only landed Morning -> Expedition;
+	# a party's own departure happens on Expedition's OWN tick, so this second press is what
+	# actually advances TutorialFlow.Step to LookIn (see TutorialStepDef's own doc on the
+	# day-1-unconditional muster row for why this is the "party departed" fact, not a click).
+	if _state == "TutorialLookIn" and _frames == 90:
+		var bell5 = _ui.find_child("AdvancePhase", true, false)
+		if bell5:
+			bell5.emit_signal("pressed")
 	# GateNight's second beat: the tint's ease has now converged (see _settle above) --
 	# enter the gatehouse the same way every other venue receipt does
 	# (OnTownBuildingClicked's "Gate" -> "minegate" mapping, MainUi.cs).
