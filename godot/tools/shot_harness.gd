@@ -61,6 +61,12 @@
 # R1 ("the mine is off the screen at the top"), proving the gate is on screen once the header
 # no longer occludes the world.
 #
+# U7 (world-and-interiors plan, KTD-3): SHOT_PROFESSION=<professionId> (read directly by
+# MainUi.BuildDefaultAdapter in C#, not by this GDScript file) starts the self-seeded campaign
+# with that profession instead of the default — e.g. SHOT_PROFESSION=alchemy plus
+# SHOT_STATE=Forge captures an alchemist's workshop room instead of the blacksmith's. Unset
+# (every normal launch) keeps the pre-U7 seed-only campaign byte-identical.
+#
 # U11 (world-and-interiors plan, "night is dark, dawn is dawn"): SHOT_STATE=Phase0..Phase4
 # presses the REAL AdvancePhase bell N times (never an adapter/state injection seam) to land
 # on phase N of the day's actual 5-phase cycle -- Morning/"Dawn"=0 -> Expedition/"Quest"=1 ->

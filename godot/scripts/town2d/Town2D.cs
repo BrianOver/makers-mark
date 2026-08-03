@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Professions;
 using Godot;
 using GodotClient.Ui;
 
@@ -228,6 +230,44 @@ public partial class Town2D : Control
     /// see <see cref="MarketLife2D.QueueDay"/>'s own doc for why it must be THIS tick's events
     /// only, never the whole log.</summary>
     private MarketLife2D? _marketLife;
+    /// <summary>U7 (world-and-interiors plan, KTD-3): the venue key the shared workshop shell
+    /// always answers to (deliberately never renamed — <c>MainUi</c> routing, quick-travel, and
+    /// the tutorial's <c>StepBuilding</c> all key off this string; only the vocabulary/dressing
+    /// swap by profession).</summary>
+    private const string WorkshopVenueKey = "forge";
+
+    /// <summary>
+    /// PRIMARY-FIRST profession order for the workshop's vocabulary (<see cref="WorkshopVocab"/>).
+    /// Captured once in <see cref="Build"/> from <c>Adapter.CurrentState.Player.SelectedProfessions</c>
+    /// — a sorted SET with no chronological memory of its own (KTD2: nothing in <c>Contracts</c>
+    /// tracks "which was picked first") — and then only ever APPENDED to (see <see
+    /// cref="RebuildWorkshopIfStale"/>), never recomputed from scratch, so the profession a
+    /// campaign actually started with stays primary for the rest of the session even after a
+    /// second one is added mid-run.
+    ///
+    /// <para>A fresh campaign's <see cref="Build"/> call always sees exactly one selected
+    /// profession (the pick <c>NewGameSelect</c> made), so this is exact in the common case. A
+    /// RESUMED save that already held two professions before this <see cref="Town2D"/> instance
+    /// ever existed has no historical order to recover — see <see
+    /// cref="ResolveInitialWorkshopOrder"/>'s own doc for that fallback.</para>
+    /// </summary>
+    private IReadOnlyList<string> _workshopProfessionOrder = Array.Empty<string>();
+
+    /// <summary>The exact profession set the currently-mounted workshop room/building dressing
+    /// reflects — compared against the live sim state in <see cref="RebuildWorkshopIfStale"/> so a
+    /// profession added mid-run rebuilds the room on the player's NEXT entry, per this unit's own
+    /// "rooms are built once at startup" structural fix.</summary>
+    private ImmutableSortedSet<string> _workshopBuiltFor = ImmutableSortedSet<string>.Empty;
+
+    /// <summary>The workshop's current player-facing nametag (<see cref="WorkshopVocab.NametagFor"/>
+    /// over <see cref="_workshopProfessionOrder"/>) — read by <c>MainUi</c> for the drawer title and
+    /// pushed into <c>TutorialFlow</c> so neither surface ever derives it independently (the
+    /// vocabulary-seam risk #339 already fixed once).</summary>
+    public string WorkshopNametag => WorkshopVocab.NametagFor(_workshopProfessionOrder);
+
+    /// <summary>The workshop's current tutorial station noun ("anvil"/"cauldron"/...) — same
+    /// single-source rule as <see cref="WorkshopNametag"/>.</summary>
+    public string WorkshopStationNoun => WorkshopVocab.StationNounFor(_workshopProfessionOrder);
 
     /// <summary>Gap #4 fix ("day/night is a lie"): eases <see cref="DuskModulate"/>'s tint toward
     /// whatever <see cref="Adapter"/>'s current <see cref="DayPhase"/> calls for, every frame (see
@@ -248,6 +288,13 @@ public partial class Town2D : Control
     {
         Adapter = adapter;
         TownInput.RegisterActions();
+
+        // U7 (world-and-interiors plan): capture the workshop's primary-first profession order
+        // ONCE, before BuildBuildings/BuildInteriorRooms read it (see _workshopProfessionOrder's
+        // own doc for why this must never be recomputed from scratch later).
+        var startingProfessions = adapter.CurrentState.Player.SelectedProfessions;
+        _workshopProfessionOrder = ResolveInitialWorkshopOrder(startingProfessions);
+        _workshopBuiltFor = startingProfessions;
 
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
@@ -494,7 +541,21 @@ public partial class Town2D : Control
     /// </summary>
     public void EnterInterior(string venueKey)
     {
-        if (InteriorActive || !_interiorRooms.TryGetValue(venueKey, out var room))
+        if (InteriorActive)
+        {
+            return;
+        }
+
+        // U7 (world-and-interiors plan): a profession picked mid-run rebuilds the workshop room on
+        // the player's NEXT entry (rooms are built once at startup — see RebuildWorkshopIfStale's
+        // own doc) — checked before the room lookup below so a stale dictionary entry is never
+        // teleported into.
+        if (venueKey == WorkshopVenueKey)
+        {
+            RebuildWorkshopIfStale();
+        }
+
+        if (!_interiorRooms.TryGetValue(venueKey, out var room))
         {
             return;
         }
@@ -883,11 +944,63 @@ public partial class Town2D : Control
         {
             var building = new Building2D();
             var sprite = TownAssets2D.ForVenue(venue.SpriteId);
-            building.Configure(venue.Key, venue.Nametag, sprite, TownLayout2D.TileToWorld(venue.Tile));
+            // U7 (world-and-interiors plan, KTD-3): the workshop's nametag follows the profession
+            // (WorkshopNametag) instead of TownLayout2D's static default; every other venue is
+            // unaffected (TownLayout2D.Venues's own doc: the static "Forge" entry stays the
+            // fallback any GameState-free reader still sees).
+            var nametag = venue.Key == WorkshopVenueKey ? WorkshopNametag : venue.Nametag;
+            building.Configure(venue.Key, nametag, sprite, TownLayout2D.TileToWorld(venue.Tile));
             building.Picked += key => BuildingClicked?.Invoke(key);
             BuildingsRoot.AddChild(building);
             _buildingsByKey[venue.Key] = building;
+
+            if (venue.Key == WorkshopVenueKey)
+            {
+                MountWorkshopSignboard(building);
+            }
         }
+    }
+
+    private Sprite2D? _workshopSignboard;
+
+    /// <summary>U7 (world-and-interiors plan): the exterior signboard overlay — a small sprite
+    /// hung above the nametag, swapped per profession (<c>town2d-sign-{professionId}</c>, pinned
+    /// for U8's art). The cheap, honest exterior answer KTD-3 asks for THIS unit (full
+    /// per-profession exterior art is an owner-gated follow-up, plan Open Question 3).</summary>
+    private void MountWorkshopSignboard(Building2D building)
+    {
+        var texture = TownAssets2D.ForProp(WorkshopVocab.SignboardSpriteIdFor(_workshopProfessionOrder));
+
+        if (_workshopSignboard is not null)
+        {
+            _workshopSignboard.QueueFree();
+        }
+
+        var buildingSize = building.Sprite.Texture?.GetSize() ?? new Vector2(64f, 80f);
+        _workshopSignboard = new Sprite2D
+        {
+            Name = "WorkshopSignboard",
+            Texture = texture,
+            Centered = true,
+            // Hangs clear above the nametag (which itself sits at -size.Y - 10, see
+            // Building2D.BuildLabel) — cosmetic overlay only, no collision of its own.
+            Position = new Vector2(0f, -buildingSize.Y - 26f),
+        };
+        building.AddChild(_workshopSignboard);
+    }
+
+    /// <summary>Re-renders the workshop building's nametag + signboard for the CURRENT <see
+    /// cref="_workshopProfessionOrder"/> — called by <see cref="RebuildWorkshopIfStale"/> whenever
+    /// a profession changes mid-run.</summary>
+    private void UpdateWorkshopBuildingDressing()
+    {
+        if (!_buildingsByKey.TryGetValue(WorkshopVenueKey, out var building))
+        {
+            return;
+        }
+
+        building.NameLabel.Text = WorkshopNametag;
+        MountWorkshopSignboard(building);
     }
 
     /// <summary>Fallback footprint for a prop whose resolved texture reports a zero/negative size
@@ -971,37 +1084,133 @@ public partial class Town2D : Control
     {
         foreach (var spec in InteriorLayout2D.Rooms.Values)
         {
-            var room = new InteriorRoom2D();
-            World.AddChild(room);
-            room.Build(spec);
-            room.StationActivated += stationSpec => StationActivated?.Invoke(stationSpec);
+            // U7 (world-and-interiors plan, KTD-3): the workshop's ACTUAL room is composed from
+            // the current profession selection, never the static "forge" table row directly (that
+            // row stays the blacksmith-only default other readers rely on — see
+            // InteriorLayout2D's own doc on its "forge" entry).
+            var effectiveSpec = spec.VenueKey == WorkshopVenueKey
+                ? InteriorLayout2D.WorkshopRoomFor(_workshopProfessionOrder)
+                : spec;
+            MountInteriorRoom(effectiveSpec);
+        }
+    }
 
-            foreach (var station in room.Stations)
+    /// <summary>Builds and mounts one interior room from <paramref name="spec"/> — factored out of
+    /// <see cref="BuildInteriorRooms"/> (U7) so <see cref="RebuildWorkshopRoom"/> can remount just
+    /// the workshop without repeating the wiring (shell/walls/exit-zone via <see
+    /// cref="InteriorRoom2D.Build"/>, stations onto the flat <see cref="YSort"/> scope, the
+    /// exit-zone's <c>BodyEntered</c> → <see cref="ExitInterior"/>, and the room's own
+    /// <c>StationActivated</c> re-emit).</summary>
+    private void MountInteriorRoom(InteriorLayout2D.RoomSpec spec)
+    {
+        var room = new InteriorRoom2D();
+        World.AddChild(room);
+        room.Build(spec);
+        room.StationActivated += stationSpec => StationActivated?.Invoke(stationSpec);
+
+        foreach (var station in room.Stations)
+        {
+            YSort.AddChild(station);
+        }
+
+        room.ExitZone.BodyEntered += body =>
+        {
+            if (body == Player && InteriorActive && InteriorVenueKey == spec.VenueKey)
             {
-                YSort.AddChild(station);
+                ExitInterior();
+            }
+        };
+
+        _interiorRooms[spec.VenueKey] = room;
+
+        // U5 (world-and-interiors plan, KTD-8): the market room additionally gets its customer
+        // choreography — a plain (non-Y-sort-enabled) wrapper under YSort, mirroring TownsfolkRoot's
+        // own precedent, so each customer Y-sorts individually against the player rather than as one
+        // blob (see MarketLife2D's own class doc).
+        if (spec.VenueKey == "market")
+        {
+            _marketLife = new MarketLife2D();
+            YSort.AddChild(_marketLife);
+            _marketLife.Build(room);
+        }
+    }
+
+    /// <summary>
+    /// U7 (world-and-interiors plan): the unit's one structural change — rooms are built ONCE at
+    /// startup (<see cref="BuildInteriorRooms"/>), so a profession added mid-run (<c>MainUi
+    /// .OnSecondProfessionPicked</c>) needs its own remount path. Tears down the currently-mounted
+    /// workshop room (stations + the room node itself) and rebuilds it from <see
+    /// cref="_workshopProfessionOrder"/> via the SAME <see cref="MountInteriorRoom"/> the initial
+    /// build uses, then re-renders the building's nametag/signboard to match.
+    /// </summary>
+    private void RebuildWorkshopRoom()
+    {
+        if (_interiorRooms.TryGetValue(WorkshopVenueKey, out var old))
+        {
+            foreach (var station in old.Stations)
+            {
+                YSort.RemoveChild(station);
+                station.QueueFree();
             }
 
-            room.ExitZone.BodyEntered += body =>
-            {
-                if (body == Player && InteriorActive && InteriorVenueKey == spec.VenueKey)
-                {
-                    ExitInterior();
-                }
-            };
+            World.RemoveChild(old);
+            old.QueueFree();
+        }
 
-            _interiorRooms[spec.VenueKey] = room;
+        MountInteriorRoom(InteriorLayout2D.WorkshopRoomFor(_workshopProfessionOrder));
+        UpdateWorkshopBuildingDressing();
+    }
 
-            // U5 (world-and-interiors plan, KTD-8): the market room additionally gets its
-            // customer choreography — a plain (non-Y-sort-enabled) wrapper under YSort, mirroring
-            // TownsfolkRoot's own precedent, so each customer Y-sorts individually against the
-            // player rather than as one blob (see MarketLife2D's own class doc).
-            if (spec.VenueKey == "market")
+    /// <summary>
+    /// Checked at the top of <see cref="EnterInterior"/> for the workshop venue only: if a
+    /// profession has been confirmed by the sim since the room was last built/rebuilt (<see
+    /// cref="_workshopBuiltFor"/>), extend <see cref="_workshopProfessionOrder"/> (never dropping
+    /// the existing primary — new ids are only ever APPENDED) and rebuild the room in place before
+    /// the player walks in. A no-op the overwhelming majority of calls (nothing changed since the
+    /// last entry), so this never adds a per-entry cost beyond one set-equality check.
+    /// </summary>
+    private void RebuildWorkshopIfStale()
+    {
+        var current = Adapter!.CurrentState.Player.SelectedProfessions;
+        if (current.SetEquals(_workshopBuiltFor))
+        {
+            return;
+        }
+
+        var order = _workshopProfessionOrder.Where(current.Contains).ToList();
+        foreach (var id in current)
+        {
+            if (!order.Contains(id))
             {
-                _marketLife = new MarketLife2D();
-                YSort.AddChild(_marketLife);
-                _marketLife.Build(room);
+                order.Add(id);
             }
         }
+
+        _workshopProfessionOrder = order.Count > 0 ? order : current.ToArray();
+        _workshopBuiltFor = current;
+        RebuildWorkshopRoom();
+    }
+
+    /// <summary>
+    /// The workshop's PRIMARY-first profession order at boot (see <see
+    /// cref="_workshopProfessionOrder"/>'s own doc). A fresh campaign's <see cref="Build"/> always
+    /// sees exactly one selected profession, which is trivially exact. A RESUMED save that already
+    /// held two before this instance existed has no historical "which was picked first" to recover
+    /// (KTD2: <c>Contracts</c> stores an unordered set) — this falls back to keeping blacksmith
+    /// primary if present (the long-standing pre-U7 default, least likely to surprise a returning
+    /// player), else the set's own alphabetical order. Cosmetic-only approximation, named here
+    /// rather than silently guessed.
+    /// </summary>
+    private static IReadOnlyList<string> ResolveInitialWorkshopOrder(ImmutableSortedSet<string> selected)
+    {
+        if (selected.Count <= 1)
+        {
+            return selected.ToArray();
+        }
+
+        return selected.Contains(ProfessionRegistry.BlacksmithId)
+            ? new[] { ProfessionRegistry.BlacksmithId }.Concat(selected.Where(p => p != ProfessionRegistry.BlacksmithId)).ToArray()
+            : selected.ToArray();
     }
 
     /// <summary>Deterministic wander-home tiles for the cosmetic <see cref="TownsfolkNpc2D"/>

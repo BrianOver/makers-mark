@@ -491,5 +491,32 @@ public class NewGameSelectTests
         using var file = GodotFileAccess.Open(CampaignSave.SavePath, GodotFileAccess.ModeFlags.Write);
         file.StoreString(contents);
     }
+
+    /// <summary>
+    /// U7 (world-and-interiors plan, KTD-3): "rethink the whole start picking" — the pick's world
+    /// consequence stated at pick time, one row per registered profession, read straight off the
+    /// SAME <see cref="GodotClient.Town2d.WorkshopVocab"/> table the actual workshop building
+    /// resolves through (never a second hand-copied name table that could drift from it).
+    /// </summary>
+    [TestCase]
+    public void EveryProfessionRow_StatesItsWorkshopNametag()
+    {
+        var screen = Mount();
+        try
+        {
+            foreach (var profession in ProfessionRegistry.All.Values)
+            {
+                var note = Find<Label>(screen, $"WorkshopNote_{profession.Id}");
+                var expectedNametag = GodotClient.Town2d.WorkshopVocab.NametagFor(new[] { profession.Id });
+
+                AssertThat(note.Text)
+                    .OverrideFailureMessage(
+                        $"'{profession.Id}'s pick row must state its actual workshop nametag "
+                        + $"('{expectedNametag}'), the SAME one WorkshopVocab/Town2D resolves at play time.")
+                    .Contains(expectedNametag);
+            }
+        }
+        finally { Unmount(screen); }
+    }
 }
 #endif

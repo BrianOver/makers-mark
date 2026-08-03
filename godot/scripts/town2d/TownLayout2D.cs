@@ -62,7 +62,17 @@ public static class TownLayout2D
     public const int GridHeight = 28;
 
     /// <summary>One venue's placement: the tile its Y-sort line (front-door row) sits on, plus the
-    /// sprite id <see cref="TownAssets2D"/> resolves through the art manifest/fallback ladder.</summary>
+    /// sprite id <see cref="TownAssets2D"/> resolves through the art manifest/fallback ladder.
+    ///
+    /// <para><b>U7 (world-and-interiors plan, KTD-3):</b> <see cref="Nametag"/> is a STATIC
+    /// default only — the workshop ("forge") venue's REAL nametag follows the player's selected
+    /// profession(s) via <see cref="WorkshopVocab.NametagFor"/>, resolved at build/rebuild time in
+    /// <c>Town2D.BuildBuildings</c> (which has the live <c>GameState</c> this struct never does).
+    /// This table has no GameState access, so its "forge" row keeps reading "Forge" — the
+    /// blacksmith default any GameState-free consumer of <see cref="Venues"/> still sees. The
+    /// venue KEY itself ("forge") never changes (KTD-3(b): it is load-bearing across <c>MainUi</c>
+    /// routing, quick-travel, and the tutorial's <c>StepBuilding</c>).</para>
+    /// </summary>
     public readonly record struct VenueLayout(string Key, string Nametag, string SpriteId, Vector2I Tile);
 
     /// <summary>One static prop's placement: sprite id (resolved via <see

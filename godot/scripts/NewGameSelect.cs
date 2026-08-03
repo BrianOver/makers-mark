@@ -7,6 +7,7 @@ using GameSim.Kernel;
 using GameSim.Professions;
 using Godot;
 using GodotClient.Tools;
+using GodotClient.Town2d;
 using GodotClient.Ui;
 
 namespace GodotClient;
@@ -458,6 +459,20 @@ public partial class NewGameSelect : Control
             };
             blurb.AddThemeColorOverride("font_color", GameTheme.TextDim);
             row.AddChild(blurb);
+
+            // U7 (world-and-interiors plan, KTD-3): "rethink the whole start picking" — the pick's
+            // world consequence, stated at pick time. A single-profession row has no primary
+            // ambiguity (WorkshopVocab.NametagFor's ordering only matters once a second profession
+            // joins mid-run), so this is always the exact nametag that profession's workshop opens
+            // under from day 1.
+            var workshopNote = new Label
+            {
+                Name = $"WorkshopNote_{id}",
+                Text = $"Your workshop: the {WorkshopVocab.NametagFor(new[] { id })}.",
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            };
+            workshopNote.AddThemeColorOverride("font_color", GameTheme.TextDim);
+            row.AddChild(workshopNote);
         }
 
         // Starter kit is uniform across professions (GameFactory R4/KD3) — one shared note

@@ -101,6 +101,29 @@ public class AssetResolutionCensusTests
         // U2 (market), U3 (tavern) and U4 (gatehouse) have all painted their rooms, so every
         // interior id is committed art and this allowlist is empty. A new room's placeholder ids
         // come back here only for as long as its own art unit is unfinished.
+
+        // U7 (world-and-interiors plan): the three non-blacksmith profession station sets (13
+        // sprites — WorkshopVocab's alchemy/engineering/tanning entries) plus all four exterior
+        // signboard overlays (blacksmith's included — signboards are new in this unit, not a
+        // repaint of anything committed). U8 paints them and removes these 17 lines (red→green
+        // shown in that unit's own PR body); this unit ships the framework only.
+        "town2d-station-alch-cauldron",
+        "town2d-station-alch-still",
+        "town2d-station-alch-shelf",
+        "town2d-station-alch-rack",
+        "town2d-station-alch-herbs",
+        "town2d-station-eng-bench",
+        "town2d-station-eng-gears",
+        "town2d-station-eng-crate",
+        "town2d-station-eng-flywheel",
+        "town2d-station-tan-frame",
+        "town2d-station-tan-hides",
+        "town2d-station-tan-rack",
+        "town2d-station-tan-vats",
+        "town2d-sign-blacksmith",
+        "town2d-sign-alchemy",
+        "town2d-sign-engineering",
+        "town2d-sign-tanning",
     };
 
     [TestCase]
@@ -271,6 +294,39 @@ public class AssetResolutionCensusTests
                     station.SpriteId,
                     $"'{station.SpriteId}' is the '{station.Id}' station in the '{room.VenueKey}' "
                     + "room — InteriorRoom2D.BuildStations draws it for every player who enters.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// U7 (world-and-interiors plan): the workshop's PER-PROFESSION station sets (<see
+    /// cref="WorkshopVocab.ByProfession"/>) never appear in the STATIC <see
+    /// cref="InteriorLayout2D.Rooms"/> table the test above reads (that "forge" row stays the
+    /// blacksmith-only default — the profession-composed room only exists at runtime, built by
+    /// <see cref="InteriorLayout2D.WorkshopRoomFor"/> from live <c>GameState</c>). Reading <see
+    /// cref="WorkshopVocab.ByProfession"/> directly instead covers every profession's station set
+    /// PLUS the four exterior signboards regardless of which profession(s) a save actually picked —
+    /// the same "read straight off the table the render path itself reads" discipline as every
+    /// other case in this file.
+    /// </summary>
+    [TestCase]
+    public void WorkshopVocabArtIds_ResolveToCommittedArt()
+    {
+        foreach (var (professionId, vocab) in WorkshopVocab.ByProfession)
+        {
+            AssertResolves(
+                vocab.SignboardSpriteId,
+                $"'{vocab.SignboardSpriteId}' is '{professionId}'s exterior signboard overlay — "
+                + "Town2D.MountWorkshopSignboard draws it over the workshop building whenever "
+                + $"'{professionId}' is the primary selected profession.");
+
+            foreach (var station in vocab.Stations)
+            {
+                AssertResolves(
+                    station.SpriteId,
+                    $"'{station.SpriteId}' is the '{station.Id}' station in '{professionId}'s "
+                    + "WorkshopVocab station set — InteriorRoom2D.BuildStations draws it for every "
+                    + $"player who has '{professionId}' selected.");
             }
         }
     }
