@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using GameSim.Advisor;
 using GameSim.Contracts;
 using Godot;
@@ -69,9 +70,29 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// whenever a fresh step's text lands.</summary>
     private const double ReasonFadeSeconds = 0.25;
 
+    /// <summary>U5: the checklist's own height ceiling — up to ten rows (plus an occasional gating
+    /// note) would otherwise grow this chip past the window on a short viewport, the exact "still
+    /// cutoff" class of bug <c>TutorialFlow</c>'s own dock already learned this lesson from (see
+    /// its <c>Build</c> doc). Scrolls internally past this height rather than growing the whole
+    /// dock or clipping content with no way to reach it.</summary>
+    private const float ChecklistMaxHeight = 140f;
+
     public Label Reason { get; private set; } = null!;
     public Button Expand { get; private set; } = null!;
     public VBoxContainer RankedList { get; private set; } = null!;
+
+    /// <summary>U5 (loop-legibility plan, R7): the tutorial's own checklist — every displayed
+    /// step, ticked as it completes, rendered from <see cref="TutorialFlow.Checklist"/>. Visible
+    /// only while <see cref="Refresh"/> is given a non-null <c>checklist</c> (i.e. only while the
+    /// tutorial is <see cref="TutorialFlow.Active"/>) — never shown once the chain is dismissed or
+    /// completed, same gate <see cref="TutorialDismiss"/> already uses.</summary>
+    public VBoxContainer TutorialChecklist { get; private set; } = null!;
+
+    /// <summary>The scrollable wrapper around <see cref="TutorialChecklist"/> (see <see
+    /// cref="ChecklistMaxHeight"/>'s own doc) — this, not <see cref="TutorialChecklist"/> itself,
+    /// is what <see cref="RefreshTutorialChecklist"/> shows/hides, so the scrollbar chrome never
+    /// lingers empty.</summary>
+    private ScrollContainer _checklistScroll = null!;
 
     /// <summary>U23: visible only while <see cref="Refresh"/> is given a tutorial override —
     /// dismisses the first-run chain (<c>TutorialFlow.Dismiss</c>, wired by <c>MainUi</c>) without
@@ -153,6 +174,23 @@ public sealed partial class ObjectiveTracker : PanelContainer
         };
         actionsRow.AddChild(TutorialDismiss);
 
+        // U5: the tutorial checklist — sits below the actions row, above the (unrelated) live
+        // advisor ranked list, and is Clear-then-composed by Refresh() exactly like RankedList
+        // below (same "no checklist yet" contract: hidden until Refresh hands it real rows).
+        // Scrolls internally past ChecklistMaxHeight (see that const's own doc) rather than
+        // growing this whole chip past the window on a short viewport.
+        _checklistScroll = new ScrollContainer
+        {
+            Name = "ObjectiveTutorialChecklistScroll",
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            CustomMinimumSize = new Vector2(0, ChecklistMaxHeight),
+            Visible = false,
+        };
+        body.AddChild(_checklistScroll);
+
+        TutorialChecklist = new VBoxContainer { Name = "ObjectiveTutorialChecklist" };
+        _checklistScroll.AddChild(TutorialChecklist);
+
         RankedList = new VBoxContainer { Name = "ObjectiveRankedList", Visible = false };
         body.AddChild(RankedList);
     }
@@ -167,7 +205,11 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// cref="Tick"/>) whenever the rendered text actually changed — a same-text re-render (a tick
     /// that didn't move the advisor's top pick) never restarts the dip.
     /// </summary>
-    public void Refresh(GameState state, string? tutorialOverride = null)
+    /// <param name="checklist">U5 (loop-legibility plan, R7): <see cref="TutorialFlow.Checklist"/>'s
+    /// own projection, or null while the tutorial is not <see cref="TutorialFlow.Active"/>. Renders
+    /// as a tick-list in <see cref="TutorialChecklist"/>, independent of <paramref
+    /// name="tutorialOverride"/> (the top-slot line) so either can be reasoned about on its own.</param>
+    public void Refresh(GameState state, string? tutorialOverride = null, IReadOnlyList<ChecklistRow>? checklist = null)
     {
         var suggestions = ObjectiveAdvisor.Suggest(state);
         var text = tutorialOverride ?? (suggestions.Count > 0 ? suggestions[0].Reason : NoObjectiveText);
@@ -214,6 +256,8 @@ public sealed partial class ObjectiveTracker : PanelContainer
             DockWidth - 24,
             isTutorial ? TutorialMinHeight : ReasonMinHeight);
 
+        RefreshTutorialChecklist(checklist);
+
         foreach (var child in RankedList.GetChildren())
         {
             RankedList.RemoveChild(child);
@@ -236,6 +280,74 @@ public sealed partial class ObjectiveTracker : PanelContainer
                 CustomMinimumSize = new Vector2(DockWidth - 24, 0),
                 ClipText = true,
             });
+        }
+    }
+
+    /// <summary>
+    /// U5 (loop-legibility plan, R7): Clear-then-compose the checklist from <paramref
+    /// name="rows"/> (<see cref="TutorialFlow.Checklist"/>'s own projection) — hidden entirely
+    /// when null/empty (tutorial inactive, or a caller that never passes one — <see
+    /// cref="Refresh"/>'s own default is null, so every existing non-tutorial call site is
+    /// unaffected). A done row dims; the current row carries the filled glyph plus (R7) its own
+    /// gating note when the step is not currently actionable ("a Morning task — rest until dawn"
+    /// rather than the old, confusing "press Next/Advance") and a small "Arrived" mark once <see
+    /// cref="TutorialFlow.NotifyEnteredBuilding"/>'s ratchet has fired for it.
+    /// </summary>
+    private void RefreshTutorialChecklist(IReadOnlyList<ChecklistRow>? rows)
+    {
+        foreach (var child in TutorialChecklist.GetChildren())
+        {
+            TutorialChecklist.RemoveChild(child);
+            child.Free();
+        }
+
+        _checklistScroll.Visible = rows is { Count: > 0 };
+        if (rows is null)
+        {
+            return;
+        }
+
+        foreach (var row in rows)
+        {
+            var glyph = row.Done ? "✓" : row.Current ? "◆" : "○";
+            var glyphColor = row.Done ? GameTheme.GoodColor : row.Current ? GameTheme.WarnColor : GameTheme.TextDim;
+
+            var line = new HBoxContainer { Name = $"TutorialChecklistRow_{row.DisplayIndex}" };
+            line.AddThemeConstantOverride("separation", GameTheme.Space8);
+            TutorialChecklist.AddChild(line);
+
+            var glyphLabel = new Label { Text = glyph };
+            glyphLabel.AddThemeColorOverride("font_color", glyphColor);
+            line.AddChild(glyphLabel);
+
+            var suffix = row.VisitedAnchor ? "  ✓ Arrived" : string.Empty;
+            var textLabel = new Label
+            {
+                Name = "TutorialChecklistLabel",
+                Text = Plain(row.Label) + suffix,
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                CustomMinimumSize = new Vector2(DockWidth - 40, 0),
+                ClipText = true,
+            };
+            if (row.Done)
+            {
+                textLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
+            }
+
+            line.AddChild(textLabel);
+
+            if (row.Current && row.GatingNote is { } note)
+            {
+                var noteLabel = new Label
+                {
+                    Name = "TutorialChecklistGatingNote",
+                    Text = Plain(note),
+                    AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                    CustomMinimumSize = new Vector2(DockWidth - 24, 0),
+                };
+                noteLabel.AddThemeColorOverride("font_color", GameTheme.WarnColor);
+                TutorialChecklist.AddChild(noteLabel);
+            }
         }
     }
 

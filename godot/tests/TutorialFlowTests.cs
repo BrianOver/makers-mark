@@ -381,6 +381,56 @@ public class TutorialFlowTests
     }
 
     [TestCase]
+    public void Checklist_MarksEveryPriorSlotDone_CurrentSlotCurrent_LaterSlotsNeither()
+    {
+        // U5 (loop-legibility plan): the registry conversion's own regression guard — the
+        // checklist is a fresh surface (TutorialFlow.Checklist), not something the pre-U5 suite
+        // could have pinned. Proves it tracks a REAL drive, not just a single injected state.
+        var ui = MountMainUi();
+        try
+        {
+            var opening = ui.Tutorial.Checklist(ui.Adapter.CurrentState);
+            AssertThat(opening.Count).IsEqual(TutorialFlow.TotalSteps);
+            AssertThat(opening.Single(r => r.Current).DisplayIndex).IsEqual(1);
+            AssertThat(opening.Count(r => r.Done)).IsEqual(0);
+            AssertThat(ui.Tutorial.CurrentAnchor.Kind)
+                .OverrideFailureMessage("A fresh Day-1 mount's current step has no anchor to point at.")
+                .IsNotEqual(TutorialAnchorKind.None);
+
+            DriveDay1ToLookIn(ui); // -> LookIn, display slot 5
+            var midChain = ui.Tutorial.Checklist(ui.Adapter.CurrentState);
+            var currentRow = midChain.Single(r => r.Current);
+            AssertThat(currentRow.DisplayIndex).IsEqual(5);
+
+            foreach (var row in midChain)
+            {
+                if (row.DisplayIndex < 5)
+                {
+                    AssertThat(row.Done)
+                        .OverrideFailureMessage($"Slot {row.DisplayIndex} should read Done once slot 5 is current.")
+                        .IsTrue();
+                }
+                else if (row.DisplayIndex > 5)
+                {
+                    AssertThat(row.Done)
+                        .OverrideFailureMessage($"Slot {row.DisplayIndex} should not read Done yet.")
+                        .IsFalse();
+                    AssertThat(row.Current).IsFalse();
+                }
+            }
+
+            // Every real step in the arc has a concrete on-screen target — the registry itself is
+            // pinned by TutorialRegistryConformanceTests; this pins that the LIVE property tracks
+            // it correctly through an actual drive, not just at construction.
+            AssertThat(ui.Tutorial.CurrentAnchor.Kind).IsNotEqual(TutorialAnchorKind.None);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void LookInStep_CompletesOnlyOnMirrorShown_NeverBeforeItIsCurrent()
     {
         var ui = MountMainUi();
