@@ -77,18 +77,24 @@ public static class GloomwoodVenue
                 OreKey: ore[floor - 1]));
         }
 
-        // EntryPower 72: the veteran band — a deliberate TIE with dormant Emberfall's 72, so at
-        // Emberfall's art-gated go-live the two top venues become queue-split PEERS instead of
-        // one strictly dominating. Third placement, each measured with the 20-seed batch farm
-        // (2026-08-01): 35 let parties cross within days and Gloomwood soaked 65%+; 55 measured
-        // 86% in the shipping three-venue world; the full sweep 55/65/68/70/71/72 measured
-        // Gloomwood at 86/75/74/70/72/68% — the lever saturates near ~68-70% because the economy
-        // feeds back (parties pushed to the Mine sell the smith copper, gear improves, the fleet
-        // levels back over any bar below the ~81 power ceiling). 72 is the best reachable point:
-        // shipping 68/25/7 (gloomwood/mine/crypt), go-live sanity 42/26/24/6
-        // (ember/mine/gloomwood/crypt). Pushing below ~68% needs a routing-rule change (top-band
-        // congestion overflow), not a threshold — an open recommendation, deliberately not
-        // smuggled into a tuning pass.
+        // EntryPower 72: the veteran band. Third placement, each measured with the 20-seed batch
+        // farm (2026-08-01): 35 let parties cross within days and Gloomwood soaked 65%+; 55
+        // measured 86% in the shipping three-venue world; the full sweep 55/65/68/70/71/72
+        // measured Gloomwood at 86/75/74/70/72/68% — the lever saturates near ~68-70% because the
+        // economy feeds back (parties pushed to the Mine sell the smith copper, gear improves,
+        // the fleet levels back over any bar below the ~81 power ceiling). 72 is the best
+        // reachable point in the shipping three-venue world: 68/25/7 (gloomwood/mine/crypt).
+        // Pushing below ~68% needs a routing-rule change (top-band congestion overflow), not a
+        // threshold — an open recommendation, deliberately not smuggled into a tuning pass.
+        //
+        // NOT a tie with Emberfall (2026-08-02 correction): this band was ALSO set to 72 at
+        // Emberfall's go-live so the two top venues would be queue-split peers — measured
+        // go-live sanity 42/26/24/6 (ember/mine/gloomwood/crypt) — but that let Emberfall's
+        // ordinal-tiebreak advantage eat most of Gloomwood's traffic on a full 20-seed sweep
+        // (41.4% Emberfall vs. 19.5% Gloomwood; see `EmberfallFoundryVenue.Build`'s doc for the
+        // full search). Emberfall's own band moved to 79 instead — Gloomwood's 72 is UNCHANGED
+        // and no longer tied with anything; it is simply the highest band any party below 79
+        // reaches.
         return new VenueDefinition(Id, "The Gloomwood", floors.ToImmutable(), EntryPower: 72);
     }
 }

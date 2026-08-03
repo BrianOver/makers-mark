@@ -17,8 +17,8 @@ namespace GameSim.Venues.Emberfall;
 /// <para><b>Five floors, Mine-peer gates 0/15/35/60/100.</b> A deliberate peer of the Mine's gate
 /// curve — same structural difficulty ladder — so the monster stats mirror the Mine's peer formulas
 /// (HP 12+10f, attack 5+6f, defense 2+2f, gold 5+3f); the venues differ in NAMES, ORES, and
-/// atmosphere, not difficulty. Final stat tuning rides go-live (wave-D D8); until then the venue is
-/// registered but NOT in <see cref="VenueRegistry.LiveRotation"/>, so it moves no seed's world.</para>
+/// atmosphere, not difficulty. Structural gates are unchanged since go-live; the venue's PROGRESSION
+/// placement lives entirely in <see cref="VenueDefinition.EntryPower"/> below.</para>
 ///
 /// <para><b>Ore ladder (den palette family).</b> firebrick → slagiron → quench-salt → emberglass →
 /// heartcoal, one per floor, unique within the venue (the <c>OreFloor</c> inversion guards
@@ -100,14 +100,35 @@ public static class EmberfallFoundryVenue
                 }));
         }
 
-        // EntryPower 72: the ENDGAME band, tuned and READY while the venue sits DORMANT (not in
-        // VenueRegistry.LiveRotation — no committed art yet; see that doc). Placement record from
-        // the 4-venue measurement (2026-08-01, 20-seed x 100-day sweep): router-side party power
-        // saturates at ~70-76 (p25-p75) — the router never sees in-run craft/consumable
-        // modifiers, so its scale tops out well below the floor-5 gate of 100 — and 72 is the
-        // late-game MEDIAN, which routed the stronger half of veteran parties here (44% of all
-        // routing). The first placement (70) sat at late p25 and soaked 54%. Re-measure with the
-        // batch farm at go-live: the curve moves whenever crafting/routing moves.
-        return new VenueDefinition(Id, "The Emberfall Foundry", floors.ToImmutable(), EntryPower: 72);
+        // EntryPower 79 (2026-08-02, P3/task #45 go-live re-tune — raised from 72): flipping
+        // LiveRotation live at the tied 72 (Gloomwood's own band) handed Emberfall 41.4% of ALL
+        // routed parties on a fresh 20-seed x 100-day BaselinePlayer sweep taken on THIS branch
+        // (`dotnet run --project sim/GameSim.Cli -- batch --seeds 20 --seed 1 --days 100`,
+        // tallied from every PartiesFormed event via `tools/Analytics`) — collapsing Gloomwood
+        // from a same-codebase pre-flip reference of 64.3% down to 19.5%. MaterialRegistry's own
+        // grade ladder says this was never the intent: Gloomwood mints grade 8-11 ore, Emberfall
+        // grade 12-16 — a full tier later — so a same-band tie was a routing accident, not a
+        // design statement. This is a THRESHOLD, not a gradient: router-side party power (which
+        // never sees in-run craft/consumable modifiers) clusters tightly in the high-70s at
+        // endgame, so the share swings hard over a few points — measured at each candidate on the
+        // identical sweep:
+        //   EntryPower  72  76  78  79  80   (pre-flip reference, Emberfall dormant: gloomwood 64.3%)
+        //   gloomwood  19.5 29.1 40.7 50.5 57.2
+        //   emberfall  41.4 35.3 23.4 14.6  7.3
+        //   mine       30.5 27.6 27.9 26.9 27.5   (flat — Mine's band is untouched by this lever)
+        //   crypt       8.6  8.0  8.0  8.0  8.0   (flat — Crypt's band is untouched by this lever)
+        // 79 is the chosen landing: Gloomwood is back to an outright majority (50.5%, a
+        // "substantial mid-game destination" again, not fully restored to its dormant-Emberfall
+        // 64.3% but a clear plurality), Emberfall keeps a real endgame share (14.6% — comfortably
+        // above dormant Sunken Crypt's flat 8.0%, so it reads as "the venue for parties that have
+        // outgrown Gloomwood," not a rounding error) without being co-primary with it. 80 was
+        // rejected: Emberfall's 7.3% share there dips BELOW the early-game Crypt's 8.0%, which
+        // would make the newly-shipped endgame content look barely reached. Hero deaths (243) and
+        // trade volume/items-sold (1057) both land closer to the pre-flip reference (257 deaths,
+        // 1077 sold) than the as-is 72 tie did (230 deaths, 1022 sold) — this value undoes most of
+        // the difficulty/economy drift the tied band introduced, not just the routing share.
+        // THIS IS A TUNED CONSTANT, reversible in one line — re-measure with the batch farm before
+        // moving it; the curve moves whenever crafting/routing moves (per the note this replaces).
+        return new VenueDefinition(Id, "The Emberfall Foundry", floors.ToImmutable(), EntryPower: 79);
     }
 }
