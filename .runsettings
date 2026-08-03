@@ -45,8 +45,10 @@
          `dotnet test ... | tail` hides the non-zero exit code behind the pipe, which is how this
          one initially read as a pass.
 
-         THIRD CAUSE (found 2026-08-01, CI only, still unexplained): the Godot runtime connection is
-         cancelled mid-session and the suite is truncated, reported as
+         THIRD CAUSE (found 2026-08-01; a reproducible trigger for it found 2026-08-03, see the
+         FOURTH block below — which supersedes this one's "CI only" and "wall-clock cap" readings for
+         full-suite runs, and leaves the 8-test-step datum below still unexplained): the Godot runtime
+         connection is cancelled mid-session and the suite is truncated, reported as
 
              Connection interrupted by cancellation requested
              (stack in GodotRuntimeExecutor.ExecuteCommand / System.IO.Pipes.PipeStream.WriteAsyncCore)
@@ -74,6 +76,51 @@
              that already exists, and do not read a green 14-minute job as nearly-out-of-time.
            * a commit touching ONLY .gitignore failed it while its parent passed all checks.
            * it clears on `gh run rerun <id>` with the failed-only flag, because it is load-dependent.
+
+         FOURTH (found 2026-08-03): the truncation is RESOURCE PRESSURE inside the shared Godot
+         runtime, not a sick test. gdUnit's "Detected <N> orphan nodes during test execution!" warning
+         counts nodes still ALIVE when a test ends — leaked, and leaked into a runtime that every
+         later test in the session shares. A local full-suite run shows dozens of tests leaking, many
+         in the hundreds and several in the thousands (602, 625, 2094, 4188, 4861 measured in one
+         run), and the session dies once the pressure is high enough. It dies in one of two ways:
+
+             Connection interrupted by cancellation requested       (it stalls; the THIRD block above)
+             GdUnit4 Godot Runtime Test Runner ends with exit code: -1073741819
+                                                     (0xC0000005 ACCESS_VIOLATION — it segfaults)
+
+         Both were reproduced locally on 2026-08-03, on an idle machine, with zero other Godot
+         processes running. Same root, two exits.
+
+         Two things make it worse and are worth fixing on sight, but NEITHER is the root:
+           * a long-lived mount left RENDERING. Playtest3dClickThrough held a live SubViewport across
+             40 in-game days of real button presses; it now disables it after mounting, as thirteen
+             other MainUi tests already did.
+           * SimPanel rebuilds that QueueFree children in a test that never yields a frame. QueueFree
+             defers to end-of-frame, so nothing is ever actually freed. Do NOT "fix" this by awaiting
+             a frame per phase tick — that was measured at 36s -> 5+ minutes on the sweep.
+
+         What this corrects in the THIRD block, with measurements:
+           * NOT CI-only. It reproduced twice on an idle local machine with NO other gdUnit run in
+             flight (checked: zero Godot processes), on branch fix/bound-the-clickthrough-sweep.
+           * NOT a wall-clock cap, at least for full-suite runs. Two local runs stopped after 528 and
+             529 tests of 787 — the SAME PLACE — while taking 1m38s and 9m49s respectively. A clock
+             cannot stop at the same test twice. That is the mirror image of the CI datum above (same
+             duration, wildly different counts), and cumulative pressure explains both: how far the
+             session gets depends on how much has leaked, and how long it then takes to die depends
+             on whether it stalls or faults.
+           * It explains why the BLAMED TEST LOOKS RANDOM without needing a sick test at all. The axe
+             falls on whoever holds the runtime when it goes, which depends on order and timing.
+           * It explains why CI and local disagree on the same commit — 787 tests there, 529 here.
+             Rendering disabled lowers the pressure, so CI gets further. A local run is the harsher
+             one, which makes it the better place to reproduce this.
+
+         So when a truncation appears, do NOT start by bisecting for a guilty test. Start by reading
+         the orphan-node warnings in the log: the leak total is the signal, and the biggest leakers are
+         where the work is. A real fix reduces orphans; raising a timeout does nothing.
+
+         Still open: the PR #314 datum above, where an 8-test guard STEP was cut at 9m48s. Eight tests
+         cannot render for nine minutes, so that instance has some other trigger and this block does
+         not claim it.
 
          What it is NOT: gdUnit's <SessionTimeout>. That was tested — with
          <SessionTimeout>40000</SessionTimeout> here, the local suite still ran all 550 tests in

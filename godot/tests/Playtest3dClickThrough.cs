@@ -141,6 +141,18 @@ public class Playtest3dClickThrough
         // starter-stock-less bare SimAdapter(seed) MountMainUi() defaults to.
         var ui = MountMainUi(new GodotClient.SimAdapter(
             GameSim.GameComposition.NewCampaign(2026UL, GameSim.Professions.ProfessionRegistry.BlacksmithId)));
+
+        // MainUi owns a Town2D with a live SubViewport, and this is by far the longest-lived mount in
+        // the suite — 40 days x 9 panels of clicking. Left rendering, it takes the gdUnit Godot
+        // runtime down with it: measured 2026-08-03, two local full-suite runs died at test 528 and
+        // 529 of 787 with "Connection interrupted by cancellation requested", blaming whichever test
+        // held the runtime when the axe fell. That is the failure the repo had recorded as
+        // "CI only, still unexplained" — it reproduces locally, on an idle machine, with no other
+        // gdUnit run in flight. CI hides it because CI disables rendering wholesale, which is why the
+        // same commit does 787 tests there and 529 here. Thirteen other MainUi tests already do this;
+        // the sweep needed it most and was the one test missing it.
+        ui.Town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+
         var outcomes = new List<ClickOutcome>();
         var crashes = new List<string>();
         var rejections = new Dictionary<string, int>();
@@ -157,12 +169,26 @@ public class Playtest3dClickThrough
             for (var day = 0; day < Days && !overBudget; day++)
             {
                 var ticks = 0;
+
+                // The order rotates with the day, because the day's action budget is finite and a
+                // FIXED order silently starves whatever comes last. Found by this test's own
+                // ExpectedReachableVerbs guard on its first CI run (2026-08-03): with Forge always
+                // first, the forge's Buy/Craft rows spent all ActionBudget.SlotsPerDay slots every
+                // single morning for all 40 days,
+                // so PostBounty / CampSend / HeroCard were ALREADY DISABLED every time the sweep
+                // arrived and were skipped as "gated off" — reading as "these verbs have no control"
+                // when in fact the sweep had spent the player's day before it got there. Rotating
+                // means each panel leads on roughly 1 day in 9 with a full budget in hand, which is
+                // also closer to how a player actually wanders the UI.
+                var lead = day % AllPanels.Length;
+                var panelsThisDay = AllPanels.Skip(lead).Concat(AllPanels.Take(lead)).ToArray();
+
                 do
                 {
                     // Click EVERY phase — Camp send/recall render only during Camp, BuyOre only in the
                     // Evening, etc. Opening panels only in Morning (the old bug) missed them all and
                     // produced false "verb has no 3D control" findings.
-                    foreach (var panel in AllPanels)
+                    foreach (var panel in panelsThisDay)
                     {
                         var host = HostFor(ui, panel);
                         if (host is null)
@@ -260,8 +286,12 @@ public class Playtest3dClickThrough
                 // landed at least once in a full, un-truncated run.
                 AssertThat(missingReachable).OverrideFailureMessage(
                     "Sweep completed within budget but never landed a verb this test expects to reach: "
-                    + string.Join(", ", missingReachable) + ". Either the click path broke, or the app "
-                    + "changed enough that ExpectedReachableVerbs needs updating — do not let this go quiet.")
+                    + string.Join(", ", missingReachable) + ". Three things do this, in order of how "
+                    + "often they turn out to be the cause: (1) an earlier panel spent the whole action "
+                    + "budget before the sweep arrived, so the button was disabled — the panel order "
+                    + "rotates per day precisely to stop that, check the rotation still covers this "
+                    + "panel; (2) the click path broke; (3) the app changed enough that "
+                    + "ExpectedReachableVerbs needs updating. Do not let this go quiet.")
                     .IsEmpty();
                 AssertThat(state.Day >= Days).IsTrue();
             }
@@ -347,6 +377,11 @@ public class Playtest3dClickThrough
         var starter = new GodotClient.SimAdapter(
             GameSim.GameComposition.NewCampaign(2026UL, GameSim.Professions.ProfessionRegistry.BlacksmithId));
         var ui = MountMainUi(starter);
+
+        // Same 40-day mount, same reason — see the sibling test's note on the live SubViewport taking
+        // the gdUnit runtime down.
+        ui.Town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+
         var craftsLanded = 0;
         try
         {
