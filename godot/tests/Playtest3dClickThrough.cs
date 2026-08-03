@@ -1,6 +1,7 @@
 #if GDUNIT_TESTS
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using Godot;
@@ -23,12 +24,82 @@ namespace GodotClient.Tests;
 /// <para>Excludes the real-time minigame widgets (hammer/bellows/plunge/brew, reagent picks) — those
 /// need frame-driven input and a separate interactive test; clicking them blind would pump the
 /// 3D-render-hang path. Everything else a player clicks in the daily loop is exercised here.</para>
+///
+/// <para><b>Self-imposed budget (fix/bound-the-clickthrough-sweep):</b> this test used to have NO
+/// cost ceiling of its own. Its own history already shows what that costs — a full HUD refresh
+/// added to <c>MainUi.OpenPanel</c> once took it from 27s to past the gdUnit RUNNER's own external
+/// timeout, silently taking ~200 unrelated tests down with it (see <c>MainUi.OpenPanel</c>'s
+/// <c>RefreshObjectiveLine</c> doc — that specific regression was fixed, but nothing stopped the
+/// NEXT one). The game keeps growing (more panels, more recipes, more buttons), and every one of
+/// those is a real, legitimate extra click this sweep is right to make — so instead of trimming
+/// coverage to buy back time, this test now polices its OWN wall clock (<see
+/// cref="SessionBudget"/>): an overrun fails THIS test, with a message naming exactly how far it
+/// got, instead of running long enough for gdUnit's own external cancellation to axe whichever
+/// test happens to be running — this one or 200 others — with an opaque "Connection interrupted"
+/// line and no attribution.</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
 public class Playtest3dClickThrough
 {
     private const int Days = 40;
+
+    /// <summary>
+    /// Wall-clock ceiling this test enforces on ITSELF. Sized from measurement, not guesswork: an
+    /// isolated warm run of this exact test measured 36s. 90s is ~2.5x that measured cost:
+    /// comfortable headroom for CI being slower than a local warm run and for legitimate future
+    /// growth (more recipes/panels/monsters), while staying an order of magnitude under the
+    /// multi-minute external stall this budget exists to pre-empt. If this trips, investigate
+    /// before raising it — see the overrun assertion's own message.
+    ///
+    /// <para>Investigated and DELIBERATELY NOT FIXED here: this run also warns of 375,655 orphan
+    /// Control nodes (gdUnit's own orphan-node count) — <see cref="SimPanel"/>'s <c>Clear()</c>
+    /// helper <c>QueueFree()</c>s the old rows on every panel Refresh() rather than <c>Free()</c>ing
+    /// them immediately (correctly — an immediate Free() would destroy a Button mid-EmitSignal on
+    /// its OWN Pressed handler, since an immediate action's Queue() re-enters RefreshAll on the same
+    /// call stack), and this test's tight synchronous loop never yields a process frame for Godot to
+    /// actually flush that queue. A per-tick <c>await ToSignal(tree, ProcessFrame)</c> was tried and
+    /// MEASURED to make things dramatically worse, not better: 36s became 5+ minutes (killed before
+    /// completion) with both live SubViewports (Town's and MineWatch's own "MineViewport",
+    /// UpdateMode.Always from construction) disabled first. Disabling rendering stops the
+    /// compositor, not Town2D's own per-frame world simulation (NPCs, ambient life, animation) —
+    /// pumping a real frame pays that live-world cost ~180 times, which dwarfs the orphan-node
+    /// saving. Left as an orphan-node WARNING (harmless to CI's pass/fail signal; see
+    /// fix/bound-the-clickthrough-sweep's PR body for the recommended owner follow-up), not fixed
+    /// in this PR.</para>
+    /// </summary>
+    private static readonly TimeSpan SessionBudget = TimeSpan.FromSeconds(90);
+
+    /// <summary>
+    /// The verb prefixes in <see cref="ClickablePrefixes"/> this sweep can ACTUALLY reach today,
+    /// given how <see cref="HostFor"/>/<see cref="AllPanels"/> are wired — asserted at the end of a
+    /// budget-respecting run so a future regression that silently stops a verb from landing fails
+    /// loudly here, instead of the report quietly going short. Deliberately SMALLER than
+    /// <see cref="ClickablePrefixes"/>: six of those prefixes match no Button this test's own click
+    /// path can reach, independent of this change (found auditing coverage for this same PR, not
+    /// introduced by it) —
+    ///   - "Accept": the only literal "Accept"-named button lives on <c>CounterPanel</c>'s
+    ///     present-&gt;haggle-&gt;close sub-flow, which <c>OpenCounter</c> is deliberately never
+    ///     clicked (see <see cref="ClickablePrefixes"/>'s own note) — a dedicated flow test owns it.
+    ///   - "Decline": no Button anywhere in the client is named "Decline*"; the commission board's
+    ///     buttons are "CommissionAccept_"/"CommissionDecline_", which do not start with
+    ///     "Accept"/"Decline" either.
+    ///   - "Honor"/"Reforge": these buttons live on <c>LegendsWall</c>, a MainUi-root sibling modal
+    ///     (opened from a HUD tray button / Tavern hotspot) — not nested under ANY of <see
+    ///     cref="AllPanels"/>'s hosts, so <see cref="EnabledClickableButtonNames"/> never walks into it.
+    ///   - "Price": every "Price"-named control in the client (ShopPanel's <c>PriceTag</c>,
+    ///     UiKit's list-row price label) is a <see cref="Label"/>/non-Button Control, never a Button.
+    ///   - "BuyOre": lives on <c>LedgerModal</c>, also a MainUi-root sibling never opened via
+    ///     <see cref="HostFor"/> — same structural gap as Honor/Reforge.
+    /// None of that is fixed here (out of scope for a budget change — each is a real, separate
+    /// wiring decision); it is recorded so "still covers everything it ever covered" is a checked
+    /// fact, not a hope. See fix/bound-the-clickthrough-sweep's PR body for the recommended owner
+    /// follow-up.
+    /// </summary>
+    private static readonly string[] ExpectedReachableVerbs =
+    {
+        "BuyMat", "Craft", "Unlock", "PostBounty", "Stock", "CampSend", "CampRecall", "HeroCard",
+    };
 
     /// <summary>Panels a player opens and acts in each day (drawer + the commission/legend surfaces).</summary>
     private static readonly string[] DrawerPanels =
@@ -76,9 +147,14 @@ public class Playtest3dClickThrough
         var verbsClickedOk = new HashSet<string>();
         var itemsCraftedClicks = 0;
 
+        var stopwatch = Stopwatch.StartNew();
+        var overBudget = false;
+        var daysCompleted = 0;
+        var phasesCompleted = 0;
+
         try
         {
-            for (var day = 0; day < Days; day++)
+            for (var day = 0; day < Days && !overBudget; day++)
             {
                 var ticks = 0;
                 do
@@ -129,26 +205,89 @@ public class Playtest3dClickThrough
                         rejections[key] = rejections.GetValueOrDefault(key) + 1;
                     }
 
+                    phasesCompleted++;
+
+                    // Self-imposed ceiling — see SessionBudget's own doc. Checked once per phase tick
+                    // so an overrun is caught close to where it happened, not just once per day.
+                    if (stopwatch.Elapsed > SessionBudget)
+                    {
+                        overBudget = true;
+                        break;
+                    }
+
                     if (++ticks > MaxPhasesPerDay)
                     {
                         break;
                     }
                 }
                 while (ui.Adapter.CurrentState.Phase != DayPhase.Morning);
+
+                if (!overBudget)
+                {
+                    daysCompleted = day + 1;
+                }
             }
 
             var state = ui.Adapter.CurrentState;
-            WriteReport(BuildReport(state, outcomes, crashes, rejections, verbsClickedOk, itemsCraftedClicks));
+            var missingReachable = ExpectedReachableVerbs.Where(v => !verbsClickedOk.Contains(v)).ToList();
+            WriteReport(BuildReport(state, outcomes, crashes, rejections, verbsClickedOk, itemsCraftedClicks)
+                + BuildBudgetSection(stopwatch.Elapsed, overBudget, daysCompleted, phasesCompleted, verbsClickedOk, missingReachable));
 
             // The core assertion a player cares about: clicking through the whole UI never crashed.
+            // Checked regardless of the budget outcome — a crash is the more important signal either way.
             AssertThat(crashes).OverrideFailureMessage(
                 "Clicking real UI buttons threw:\n  " + string.Join("\n  ", crashes)).IsEmpty();
-            AssertThat(state.Day >= Days).IsTrue();
+
+            if (overBudget)
+            {
+                // Fails THIS test, with the cause named, and leaves the rest of the engine suite to
+                // run — the whole point of self-policing instead of relying on the runner's own
+                // external cancellation (which takes an arbitrary, unrelated slice of the suite with it).
+                AssertThat(overBudget).OverrideFailureMessage(
+                    $"PlayTheClient_ByClicking exceeded its {SessionBudget.TotalSeconds:F0}s self-imposed "
+                    + $"budget after {stopwatch.Elapsed.TotalSeconds:F1}s, completing {daysCompleted}/{Days} "
+                    + $"days ({phasesCompleted} phase ticks). Verbs clicked before the cutoff: "
+                    + $"{verbsClickedOk.Count}/{ExpectedReachableVerbs.Length} "
+                    + $"({string.Join(", ", verbsClickedOk.OrderBy(v => v))}). This means the game genuinely "
+                    + "grew more expensive to click through — real news, not a false alarm. Confirm it is "
+                    + "legitimate growth (more panels/recipes/buttons), not a per-click regression, THEN raise "
+                    + "SessionBudget deliberately with a comment recording the new measurement.").IsFalse();
+            }
+            else
+            {
+                // Coverage must not quietly shrink: every verb this sweep is known to be able to reach
+                // (see ExpectedReachableVerbs' own doc for the ones it structurally cannot) must have
+                // landed at least once in a full, un-truncated run.
+                AssertThat(missingReachable).OverrideFailureMessage(
+                    "Sweep completed within budget but never landed a verb this test expects to reach: "
+                    + string.Join(", ", missingReachable) + ". Either the click path broke, or the app "
+                    + "changed enough that ExpectedReachableVerbs needs updating — do not let this go quiet.")
+                    .IsEmpty();
+                AssertThat(state.Day >= Days).IsTrue();
+            }
         }
         finally
         {
             Unmount(ui);
         }
+    }
+
+    /// <summary>Renders the self-imposed-budget outcome for <see cref="WriteReport"/> — always
+    /// present so a healthy run's report shows the margin it finished with, not just a failure's.</summary>
+    private static string BuildBudgetSection(
+        TimeSpan elapsed, bool overBudget, int daysCompleted, int phasesCompleted,
+        HashSet<string> verbsClickedOk, List<string> missingReachable)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine();
+        sb.AppendLine("## Self-imposed session budget");
+        sb.AppendLine();
+        sb.AppendLine($"- Budget: {SessionBudget.TotalSeconds:F0}s — elapsed: {elapsed.TotalSeconds:F1}s "
+            + $"({(overBudget ? "EXCEEDED — this test fails itself, see assertion" : "within budget")})");
+        sb.AppendLine($"- Days completed: {daysCompleted}/{Days} ({phasesCompleted} phase ticks)");
+        sb.AppendLine($"- Reachable verbs clicked: {verbsClickedOk.Count}/{ExpectedReachableVerbs.Length}"
+            + (missingReachable.Count == 0 ? " (all)" : $" — MISSING: {string.Join(", ", missingReachable)}"));
+        return sb.ToString();
     }
 
     /// <summary>Press every enabled verb button in a panel's tree (the real click path), recording
@@ -159,7 +298,15 @@ public class Playtest3dClickThrough
     {
         foreach (var name in EnabledClickableButtonNames(host))
         {
-            var before = ui.Adapter.PendingActions.Count;
+            // "Landed" means EITHER queue: SimAdapter.Queue's 2026-08-02 widening (U1, PR #358)
+            // moved most workshop/counter/commission/camp verbs from deferred to resolving
+            // IMMEDIATELY (BuyMaterial/Craft/Stock/PostBounty/SendSupply/RecallParty/AcceptCommission/
+            // ...) — those never touch PendingActions (the deferred queue) at all; they land straight
+            // into AppliedThisPhase instead. Checking PendingActions alone (the pre-widening check)
+            // silently reads every one of those verbs as a permanent no-op — exactly the "silently
+            // shrunk coverage" this suite exists to catch, caught here by ExpectedReachableVerbs.
+            var pendingBefore = ui.Adapter.PendingActions.Count;
+            var appliedBefore = ui.Adapter.AppliedThisPhase.Count;
             try
             {
                 if (host.FindChild(name, recursive: true, owned: false) is not Button btn || btn.Disabled)
@@ -176,7 +323,8 @@ public class Playtest3dClickThrough
                 continue;
             }
 
-            var landed = ui.Adapter.PendingActions.Count > before;
+            var landed = ui.Adapter.PendingActions.Count > pendingBefore
+                || ui.Adapter.AppliedThisPhase.Count > appliedBefore;
             outcomes.Add(new ClickOutcome(panel, name, landed ? "queued action" : "no-op"));
             if (landed)
             {
@@ -209,7 +357,12 @@ public class Playtest3dClickThrough
                 foreach (var name in EnabledClickableButtonNames(ui.Forge)
                              .Where(n => n.StartsWith("Craft_", StringComparison.Ordinal)))
                 {
-                    var before = ui.Adapter.PendingActions.Count;
+                    // CraftAction resolves IMMEDIATELY (SimAdapter.Queue, 2026-08-02 widening, U1 PR
+                    // #358) — it never touches PendingActions (the deferred queue), only
+                    // AppliedThisPhase. Checking PendingActions alone would read every successful
+                    // craft as a no-op — see ClickVerbButtons' own note on the same fix.
+                    var pendingBefore = ui.Adapter.PendingActions.Count;
+                    var appliedBefore = ui.Adapter.AppliedThisPhase.Count;
                     var btn = ui.Forge.FindChild(name, recursive: true, owned: false) as Button;
                     if (btn is null || btn.Disabled)
                     {
@@ -217,7 +370,8 @@ public class Playtest3dClickThrough
                     }
 
                     btn.EmitSignal(BaseButton.SignalName.Pressed);
-                    if (ui.Adapter.PendingActions.Count > before)
+                    if (ui.Adapter.PendingActions.Count > pendingBefore
+                        || ui.Adapter.AppliedThisPhase.Count > appliedBefore)
                     {
                         craftsLanded++;
                     }
