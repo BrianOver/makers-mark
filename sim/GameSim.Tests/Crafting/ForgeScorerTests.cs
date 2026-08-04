@@ -341,4 +341,119 @@ public class ForgeScorerTests
         Assert.Equal(first.Moments, second.Moments);
         Assert.Equal(first.SubScores, second.SubScores);
     }
+
+    // =====================================================================================
+    // U6 — strike-count decoupling (docs/plans/2026-08-04-001-feat-verify-by-playing-plan.md)
+    //
+    // Characterized before touching ForgeScorer.cs, using this same 40-seed setup (see the PR
+    // body for the full before/after table):
+    //   BEFORE (x-window-gated strikes): N=20 wins 37/40, N=40 wins 40/40, N=50 wins 40/40.
+    //   AFTER  (every strike counted):   N=20 wins 40/40, N=40 wins 40/40, N=50 wins 40/40.
+    // N=20 is where the old scorer's forgeStrikeCount shrinks to ~6 (only strikes whose x fell
+    // in (333,666] survived), and that undersized sample let 3/40 seeds' sloppy players win on
+    // luck alone. Scoring every strike removes the weak point without touching the strong ones.
+    // =====================================================================================
+
+    /// <summary>A player with a fixed skill LEVEL but bimodal per-strike outcomes (mostly close
+    /// to the beat, occasionally a whiff) — more realistic than a tight uniform band, and it is
+    /// exactly this heavy tail that made the old x-windowed sample noisy at low strike counts.
+    /// x is spread across the FULL [0,1000] shape axis (not confined to the forge third) — under
+    /// the fixed scorer x no longer matters at all; under the old scorer this is what shrank
+    /// the counted sample as <paramref name="count"/> fell.</summary>
+    private static ImmutableList<int> ScriptedStrikes(int seed, int count, int whiffPct, int floor, int range)
+    {
+        var rng = new Random(seed);
+        var builder = ImmutableList.CreateBuilder<int>();
+        for (var i = 0; i < count; i++)
+        {
+            var x = count > 1 ? i * 1000 / (count - 1) : 500;
+            var tempoError = rng.Next(100) < whiffPct ? 999 : floor + rng.Next(range);
+            builder.Add(x);
+            builder.Add(tempoError);
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static ImmutableList<int> OnTempoStrikes(int seed, int count) =>
+        ScriptedStrikes(seed, count, whiffPct: 25, floor: 0, range: 150);
+
+    // A distinct RNG stream (seed transformed, not reused) so the sloppy draw is independent of
+    // the on-tempo draw for the same seed index.
+    private static ImmutableList<int> SloppyStrikes(int seed, int count) =>
+        ScriptedStrikes(seed * 7919 + 1, count, whiffPct: 40, floor: 60, range: 220);
+
+    private static int GradeFor(int seed, int count, bool onTempo)
+    {
+        var path = ForgePath.Generate(Dagger.Tier, Dagger.Slot, Dagger.BaseStats.Weight, pathSeed: seed);
+        var strikes = onTempo ? OnTempoStrikes(seed, count) : SloppyStrikes(seed, count);
+        return Score(Dagger, path, strikes, pathSeed: seed).GradePermille;
+    }
+
+    [Theory]
+    [InlineData(20)] // shorter candidate length (U7 territory)
+    [InlineData(40)] // roughly today's run length
+    [InlineData(50)] // the length that measurably broke the old scorer's win rate (37/40)
+    public void OnTempoBeatsSloppy_AcrossSeedSet_AtStrikeCount(int strikeCount)
+    {
+        const int SeedCount = 40;
+        var wins = 0;
+        for (var seed = 0; seed < SeedCount; seed++)
+        {
+            if (GradeFor(seed, strikeCount, onTempo: true) > GradeFor(seed, strikeCount, onTempo: false))
+            {
+                wins++;
+            }
+        }
+
+        Assert.True(wins == SeedCount, $"on-tempo should beat sloppy on every seed at N={strikeCount}; won {wins}/{SeedCount}");
+    }
+
+    /// <summary>The core property U7 is blocked on: an identically-accurate player scores the
+    /// same whether the craft asks for 20 strikes or 50. Uses a period-10 repeating tempo-error
+    /// cycle — 10 divides both 20 and 50, so each count completes whole cycles and the exact
+    /// same per-strike distribution is sampled either way; x is spread across the full run so a
+    /// window-gated scorer would NOT be invariant here (it would only ever see a positional
+    /// slice of the cycle, and that slice's size and phase both change with the count).</summary>
+    [Fact]
+    public void ScoreInvariantToStrikeCount_ForIdenticallyAccuratePlayer()
+    {
+        int[] cycle = { 10, 220, 40, 180, 30, 200, 20, 190, 5, 210 }; // period 10, mean 110.5
+        static ImmutableList<int> CyclicStrikes(int count, int[] cycle)
+        {
+            var builder = ImmutableList.CreateBuilder<int>();
+            for (var i = 0; i < count; i++)
+            {
+                var x = count > 1 ? i * 1000 / (count - 1) : 500;
+                builder.Add(x);
+                builder.Add(cycle[i % cycle.Length]);
+            }
+
+            return builder.ToImmutable();
+        }
+
+        var path = ForgePath.Generate(Dagger.Tier, Dagger.Slot, Dagger.BaseStats.Weight, pathSeed: 700);
+        var score20 = Score(Dagger, path, CyclicStrikes(20, cycle), pathSeed: 700);
+        var score50 = Score(Dagger, path, CyclicStrikes(50, cycle), pathSeed: 700);
+
+        Assert.Equal(score20.GradePermille, score50.GradePermille);
+        Assert.Equal(score20.SubScores, score50.SubScores);
+    }
+
+    /// <summary>Grade-boundary regression guard (QualityRoller.RollActive's active-model bands:
+    /// &lt;200 Poor, &lt;550 Common, &lt;780 Fine, &lt;930 Superior, else Masterwork). Pins that
+    /// the characterized on-tempo/sloppy runs still land in the buckets they landed in before
+    /// this change — the fix must not quietly re-baseline anyone's craft outcome.</summary>
+    [Theory]
+    [InlineData(20)]
+    [InlineData(40)]
+    [InlineData(50)]
+    public void GradeBoundaries_UnchangedBuckets_ForCharacterizedRuns(int strikeCount)
+    {
+        var onGrade = GradeFor(seed: 1, strikeCount, onTempo: true);
+        var slopGrade = GradeFor(seed: 1, strikeCount, onTempo: false);
+
+        Assert.True(onGrade is >= 780 and < 930, $"on-tempo grade {onGrade} should stay in the Superior band (perfect heat control caps out below Masterwork here)");
+        Assert.True(slopGrade is >= 780 and < 930, $"sloppy grade {slopGrade} should stay in the Superior band (perfect heat control still carries it)");
+    }
 }
