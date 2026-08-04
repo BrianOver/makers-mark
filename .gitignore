@@ -11,6 +11,10 @@ godot/.godot/
 # Claude Code worktrees
 .claude/worktrees/
 
+# tools/engine-test.ps1's log + receipt — per-machine evidence of the last local suite run,
+# never shared (a receipt from another machine proves nothing about yours).
+.claude/engine-test/
+
 # Human stable-playable worktree (see HANDOFF.md — double-click play/play.bat)
 /play/
 

@@ -30,9 +30,43 @@ it by re-entering the same commands with `--seed <s>`, or debug from its exporte
 | Sim fast lane | `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter Category!=Balance` | nothing |
 | Balance gate | `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter Category=Balance` | nothing |
 | Art conformance | `dotnet test art/GameArt.Tests/GameArt.Tests.csproj` | nothing |
-| Engine tests | `dotnet test godot/tests --settings .runsettings` | Godot 4.6.3 via GODOT_BIN; a display (CI uses xvfb) |
+| Engine tests | **`.\tools\engine-test.ps1`** (NOT `dotnet test godot/tests` by hand) | Godot 4.6.3 via GODOT_BIN; a display (CI uses xvfb) |
 
 Run the fast lane before reporting ANY work done (CLAUDE.md rule 1).
+
+### 2a. The engine lane lies to you, so it has a wrapper
+
+**Always `.\tools\engine-test.ps1`. Never `dotnet test godot/tests` directly.** Every trap below has
+been hit for real, most more than once, and each produced a *confident wrong answer* rather than an
+error. The script fails on all of them.
+
+| Trap | What you see | Why it fools you |
+|---|---|---|
+| Two concurrent runs | `Passed: 87 ... Duration: 579 ms` | Not a fast suite — a runtime that never connected. gdUnit DROPS every `[RequireGodotRuntime]` test and still prints `Passed!` |
+| Piping to `tail`/`head` | success | A bash pipeline returns the LAST command's exit code, hiding a failed run |
+| Runtime dies mid-session | `Passed!` for a partial suite | The summary counts what finished. `ENGINE_MIN_PASSED=300` against ~800 tests means half the suite can vanish and still clear CI's floor |
+| Testing `C:\Code\Game` | green | That root is a coordination checkout nobody updates — it was ~130 PRs stale on 2026-08-03. You measured old code |
+
+**The count is the check, not the word "Passed".** Healthy is ~800. If you see 500-ish, the runtime
+died; read §5 before theorising.
+
+### 2b. Four rules that came from losing a day to this
+
+1. **Verify the precondition before theorising about the symptom.** On 2026-08-03 a stale one-line
+   guard disabled *one* SubViewport while `MineWatch`'s constructor built a second — so tests
+   rendered while the code above them said they didn't. Three confident diagnoses were built on that
+   false premise (a "fixed wall-clock cap", a "random flaky test", a memory-pressure theory) before
+   anyone checked whether rendering was actually off. `MountMainUi` now disables all rendering by
+   default; opting in is visible in a diff, forgetting to opt out was invisible.
+2. **CI is a gate, not a test loop.** Get local green first. `engine-test.ps1` writes a receipt
+   naming the commit it verified — a push should match it. Three red pushes of one branch in a day
+   is three notifications to the owner and zero information you couldn't have had locally.
+3. **Serialize engine runs, and prove it.** One gdUnit run at a time, machine-wide. The script
+   refuses to start while any Godot process lives; if you bypass it, check
+   `Get-Process *Godot*` yourself first.
+4. **Change a measured number only with a new measurement.** A day-count on the click-through sweep
+   was cut, reverted on reasoning, then re-applied when the run disagreed — two full suite runs to
+   learn what one would have said.
 
 ## 3. Where logs & artifacts live
 
