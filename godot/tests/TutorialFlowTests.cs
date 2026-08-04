@@ -843,5 +843,171 @@ public class TutorialFlowTests
             Unmount(ui);
         }
     }
+
+    // ── Root-cause fix: owner playtest, verbatim — "The tutorial is missing?" ──────────────────
+    //
+    // TutorialFlow.Load() runs unconditionally on EVERY MainUi mount, New Game and Continue
+    // alike, because a same-campaign restart is supposed to keep exactly the Dismissed/Completed/
+    // Step it left with — Dismiss_MidChain_PersistsAndNeverReprompts_AfterRemount above proves
+    // that on purpose. Nothing distinguished "reload the SAME campaign" from "start a genuinely
+    // NEW one": user://tutorial_flow.json outlives every campaign, so a tutorial finished or
+    // dismissed on any earlier run (including one abandoned mid-session) silently suppressed the
+    // WHOLE chain — Active=false, no on-screen sign why — on every New Game after it. That is
+    // "the tutorial is missing": correct-looking code, gated by a flag from a campaign the player
+    // can no longer see. The fix: NewGameSelect.OnBeginPressed now calls
+    // TutorialFlow.ResetForNewGame() in the same spot it already calls CampaignSave.Clear().
+    //
+    // These two tests drive the REAL front door (NewGameSelect -> New Game -> Pick -> Begin), not
+    // a direct GameComposition.NewCampaign call — the bug lived in that wiring, not in
+    // TutorialFlow's own step machine, so a test that bypasses NewGameSelect cannot see it.
+
+    private static NewGameSelect MountNewGameSelect()
+    {
+        var tree = (SceneTree)Engine.GetMainLoop();
+        var screen = GD.Load<PackedScene>("res://scenes/new_game_select.tscn").Instantiate<NewGameSelect>();
+        tree.Root.AddChild(screen);
+        return screen;
+    }
+
+    private static void UnmountNewGameSelect(NewGameSelect screen)
+    {
+        MainUi.AdapterOverride = null; // never leak a picked campaign into a later suite
+        screen.GetParent()?.RemoveChild(screen);
+        screen.Free();
+    }
+
+    /// <summary>Same path <c>TutorialFlow.SavePath</c> writes to (private there) — hardcoded here
+    /// the same way <c>shot_harness.gd</c> already does, and the same raw-JSON-write idiom
+    /// <c>NewGameSelectTests</c> uses for a hand-built <c>CampaignSave</c> envelope.</summary>
+    private const string TutorialSavePath = "user://tutorial_flow.json";
+
+    [TestCase("blacksmith")]
+    [TestCase("tanning")]
+    [TestCase("engineering")]
+    [TestCase("alchemy")]
+    public void NewGame_AfterAnEarlierCampaignDismissedTheTutorial_Step1StillShowsUp_OnTheOrdinaryStartingScreen(
+        string professionId)
+    {
+        // Simulate the owner's actual situation: an EARLIER campaign on this install dismissed the
+        // tutorial. A bare, untethered TutorialFlow instance writes to the SAME shared user://
+        // file real play uses (TutorialRegistryConformanceTests.MidTutorialProgress_..."s own
+        // "second independent instance reading the same file" idiom, used here to WRITE instead).
+        var stale = new TutorialFlow();
+        stale.Build();
+        try
+        {
+            stale.Dismiss();
+        }
+        finally
+        {
+            stale.Free();
+        }
+
+        var screen = MountNewGameSelect();
+        screen.SceneChange = _ => { }; // never tear down the test tree (NewGameSelectTests precedent)
+        try
+        {
+            Press(screen, "NewGame");
+            Press(screen, $"Pick_{professionId}");
+            Press(screen, "Begin");
+
+            var adapter = MainUi.AdapterOverride;
+            AssertThat(adapter)
+                .OverrideFailureMessage($"{professionId}: Begin did not build a campaign — this test proves nothing.")
+                .IsNotNull();
+
+            var ui = MountMainUi(adapter);
+            try
+            {
+                AssertThat(ui.Tutorial.Dismissed)
+                    .OverrideFailureMessage(
+                        $"{professionId}: New Game inherited a PRIOR campaign's DISMISSED tutorial flag — " +
+                        "exactly the owner's report, \"The tutorial is missing?\": correct-looking code, " +
+                        "suppressed by a stale user:// flag from a campaign the player can no longer see.")
+                    .IsFalse();
+                AssertThat(ui.Tutorial.Completed).IsFalse();
+                AssertThat(ui.Tutorial.Active).IsTrue();
+                AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
+
+                // "The ordinary starting view... without the player having to open anything."
+                AssertThat(ui.Drawer.IsOpen).IsFalse();
+                AssertThat(ui.Town.InteriorActive).IsFalse();
+
+                AssertThat(ui.Objective.Reason.Text)
+                    .OverrideFailureMessage(
+                        $"{professionId}: the tutorial's first step is not readable on screen in the ordinary " +
+                        $"starting view. Rendered: \"{ui.Objective.Reason.Text}\"")
+                    .StartsWith("Tutorial 1/10:");
+
+                var tracker = ui.FindChild("ObjectiveTracker", recursive: true, owned: false) as Control;
+                AssertThat(tracker)
+                    .OverrideFailureMessage("No ObjectiveTracker node in the tree at all.")
+                    .IsNotNull();
+                AssertThat(tracker!.IsVisibleInTree())
+                    .OverrideFailureMessage("The tutorial's text exists but the tracker rendering it is not visible.")
+                    .IsTrue();
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+        finally
+        {
+            UnmountNewGameSelect(screen);
+        }
+    }
+
+    [TestCase]
+    public void NewGame_AfterAnEarlierCampaignCompletedTheWholeChain_Step1StillShowsUp_NotHiddenAsDone()
+    {
+        // The OTHER persisted terminal flag (Completed, distinct from Dismissed — class doc) —
+        // a fix that only cleared one would still leave this half of the bug live. Written as raw
+        // JSON (Complete() itself is private) matching TutorialFlow.PersistedData's shape; Step
+        // serializes as its underlying int (System.Text.Json default for an enum with no
+        // converter) — Commission is the terminal step, the exact state a finished 3-day chain
+        // would have saved.
+        using (var file = Godot.FileAccess.Open(TutorialSavePath, Godot.FileAccess.ModeFlags.Write))
+        {
+            file.StoreString(
+                $"{{\"Completed\":true,\"Dismissed\":false,\"HasSeenLedgerTip\":false,\"Step\":{(int)TutorialStep.Commission}}}");
+        }
+
+        var screen = MountNewGameSelect();
+        screen.SceneChange = _ => { };
+        try
+        {
+            Press(screen, "NewGame");
+            Press(screen, "Pick_blacksmith");
+            Press(screen, "Begin");
+
+            var adapter = MainUi.AdapterOverride;
+            AssertThat(adapter)
+                .OverrideFailureMessage("Begin did not build a campaign — this test proves nothing.")
+                .IsNotNull();
+
+            var ui = MountMainUi(adapter);
+            try
+            {
+                AssertThat(ui.Tutorial.Completed)
+                    .OverrideFailureMessage(
+                        "New Game inherited a PRIOR campaign's COMPLETED tutorial flag — the owner's exact " +
+                        "report (\"the tutorial is missing\") for the Completed half of the persisted state, " +
+                        "not just Dismissed.")
+                    .IsFalse();
+                AssertThat(ui.Tutorial.Active).IsTrue();
+                AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
+                AssertThat(ui.Objective.Reason.Text).StartsWith("Tutorial 1/10:");
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+        finally
+        {
+            UnmountNewGameSelect(screen);
+        }
+    }
 }
 #endif
