@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
@@ -11,9 +12,15 @@ namespace GodotClient.Panels;
 /// party parks at <see cref="DayPhase.Camp"/> with a non-empty <see cref="GameState.InFlight"/>.
 /// It renders the decision facts straight off the live <see cref="InFlightExpedition"/> — who is
 /// camped below the checkpoint, each hero's hp and heals-left (Heal consumables still in the
-/// working pack), the target floor — and offers exactly two verbs: pay the runner to Send ONE
-/// held consumable to a camped hero (<see cref="SendSupplyAction"/>), or ring the Recall bell
-/// (<see cref="RecallPartyAction"/>). Hold (close) leaves the party to press on.
+/// working pack), the target floor — and offers exactly THREE verbs (U1, plan 2026-08-03-001,
+/// KTD-A): pay the runner to Send ONE held consumable to a camped hero
+/// (<see cref="SendSupplyAction"/>), ring the Recall bell (<see cref="RecallPartyAction"/>), or
+/// Send them deeper — which both closes this slate AND raises <see cref="SendDeeperRequested"/>,
+/// the ONLY way <see cref="RaidConductor.Beat.VigilStop"/> ever ends (<c>MainUi</c> wires it to
+/// <see cref="RaidConductor.ResolveVigil"/>). This is what "the third button ticks Camp; the phase
+/// bell stops cosplaying as a fourth option" means: the old SEPARATE phase bell that used to end
+/// Camp (see <c>PhaseVocab.BellVerb</c>'s history) is gone, and its job moved onto this modal's own
+/// third verb — there is no other way to leave the vigil.
 ///
 /// The panel NEVER enforces a rule (AE4 legibility): it submits the action and renders the
 /// kernel's typed <c>TickResult.Rejected</c> reasons verbatim. Server-side <c>SupplySent</c> is the
@@ -48,6 +55,12 @@ public partial class CampPanel : SimPanel
     private Label? _title;
     private VBoxContainer? _parties;
     private Label? _rejection;
+
+    /// <summary>U1 (KTD-A): the third verb — "Send them deeper" closes this slate AND raises this
+    /// event. <c>MainUi</c> wires it to <see cref="RaidConductor.ResolveVigil"/>, the only path that
+    /// ever ends <see cref="RaidConductor.Beat.VigilStop"/>. Mirrors <c>PipDock.ExpandRequested</c>'s
+    /// own child-raises-an-event-parent-drives-the-adapter shape.</summary>
+    public event Action? SendDeeperRequested;
 
     public override void _Ready() => EnsureBuilt();
 
@@ -279,7 +292,11 @@ public partial class CampPanel : SimPanel
         var card = BuildFittedModalCard("CampCard");
         var box = card.Body;
 
-        _title = AddLabel(box, "WINCH-HOUSE SLATE — the party camps below");
+        // U1 (KTD-A) question copy: names the actual decision (send supplies / bring them home /
+        // send them deeper) instead of a bare label — this modal IS the vigil's one real stop, so
+        // its title is the question the player is being stopped to answer.
+        _title = AddLabel(box,
+            "They've made camp above the deep floors. Send supplies, bring them home — or send them deeper.");
         _title.Name = "CampTitle";
 
         // Horizontal scroll disabled (U7/R7): the slate column follows the box's 640px width
@@ -303,7 +320,17 @@ public partial class CampPanel : SimPanel
 
         // In the ANCHORED action row, not at the end of the flowed body: this is the control the whole modal's
         // escapability depends on, so its position must not depend on how much slate is above it.
-        AddButton(card.ActionRow, "CampHold", "Hold (close)", CloseModal)
+        //
+        // U1 (KTD-A): was "CampHold"/"Hold (close)" — a bare dismiss that left a SEPARATE phase bell
+        // to actually end Camp. That bell is retired (PhaseVocab.BellVerb), so this is now the third
+        // verb: closing the slate AND raising SendDeeperRequested in the same press, the only way the
+        // vigil stop ever ends. Same anchored-action-row position, same softlock-proof structure
+        // (BuildFittedModalCard) — only what pressing it DOES changed.
+        AddButton(card.ActionRow, "CampDeeper", "Send them deeper", () =>
+            {
+                CloseModal();
+                SendDeeperRequested?.Invoke();
+            })
             .SizeFlagsHorizontal = SizeFlags.ExpandFill;
     }
 }

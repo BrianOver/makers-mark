@@ -56,33 +56,26 @@ public static class PhaseVocab
         System.Enum.TryParse<DayPhase>(phaseName, out var phase) ? Display(phase) : phaseName;
 
     /// <summary>
-    /// U3 (moved verbatim from <c>MainUi.BellVerb</c>): the contextual bell label — what ringing it
-    /// does from the current phase, state-aware rather than phase-only.
+    /// U3 (moved verbatim from <c>MainUi.BellVerb</c>), U1 (plan 2026-08-03-001, KTD-A "the two-bell
+    /// day"): the contextual bell label — what pressing the HUD's one advance control does from the
+    /// current phase, state-aware rather than phase-only.
     ///
-    /// <para><b>Camp must never say "return bell".</b> That verb belongs to
-    /// <c>RecallPartyAction</c>, a real and different Camp action (<c>CampPanel</c> /
-    /// <c>CampHandlers.ApplyRecall</c>) which banks the haul and surfaces the party. The phase bell
-    /// at Camp does the OPPOSITE — it sends the party to the deep floors. Two controls one click
-    /// apart cannot share a name while doing opposite things (three playtest complaints traced to
-    /// exactly this: "hitting 'lower them into the mine' brings them back to the town??", "return
-    /// bell does nothing but moved it to 'deep' phase??", "not able to see the heroes in the
-    /// mine").</para>
+    /// <para><b>Only Morning and Evening keep a real bell.</b> Expedition/Camp/ExpeditionDeep are the
+    /// <see cref="RaidConductor"/>'s span now — the player has no phase-specific verb in any of the
+    /// three (KTD-A's presentation contract: "a phase is player-operated iff the player has
+    /// phase-specific verbs in it"), so the control reads as a skip-ahead, never a bell. The three
+    /// retired labels — "Lower them into the mine", "Let them press deeper" / "Ring the return bell",
+    /// "Close the vigil" — traced to three separate playtest complaints ("hitting 'lower them into
+    /// the mine' brings them back to the town??", "return bell does nothing but moved it to 'deep'
+    /// phase??", "not able to see the heroes in the mine") whose real cause was the STRUCTURE (a
+    /// player-cranked bell over a span with nothing to decide), not any one label's wording — U1
+    /// retires the structure, so no replacement label is owed for any of the three.</para>
     /// </summary>
     public static string BellVerb(GameState state) => state.Phase switch
     {
         DayPhase.Morning => "Send them off",
-        // Was "Lower the winch" — internal winch-house vocabulary that leaked onto a button and
-        // read as "lower the wench" at a glance. A label has to say what pressing it does.
-        DayPhase.Expedition => "Lower them into the mine",
-        DayPhase.Camp => AnyoneBelow(state) ? "Let them press deeper" : "Close the vigil",
-        DayPhase.ExpeditionDeep => AnyoneBelow(state) ? "Ring the return bell" : "Close the vigil",
+        DayPhase.Expedition or DayPhase.Camp or DayPhase.ExpeditionDeep => "Hurry the day along",
         DayPhase.Evening => "Snuff the lanterns",
         _ => "Advance",
     };
-
-    /// <summary>True while a party is parked below the checkpoint awaiting stage-2 resolution —
-    /// the only state in which the Camp/Deep phases have anything to be about. <c>InFlight</c> is
-    /// populated by the Expedition tick and cleared by <c>ExpeditionDeepSystem</c>, so it is
-    /// exactly "is anyone down there right now".</summary>
-    private static bool AnyoneBelow(GameState state) => !state.InFlight.IsEmpty;
 }

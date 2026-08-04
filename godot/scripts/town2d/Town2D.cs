@@ -733,6 +733,16 @@ public partial class Town2D : Control
     /// batch has begun their emergence walk-in yet.</summary>
     public bool AnyReturnPending => _pendingReturns.Count > 0;
 
+    /// <summary>
+    /// U1 (plan 2026-08-03-001, KTD-A): true while the Morning-end departure choreography is still
+    /// mid-cascade — <see cref="DepartWanderingHeroes"/> has scheduled a dwell-then-file-peel-off
+    /// timer in <see cref="_pendingMarchOut"/> for at least one actor that has not yet reached its
+    /// own <see cref="HeroActor2D.MarchOutTo"/> call (see <see cref="TickPendingMarchOut"/>). This is
+    /// <see cref="GodotClient.RaidConductor"/>'s SendOff completion condition — the departure show it
+    /// waits on before performing the stage-1 tick.
+    /// </summary>
+    public bool AnyDeparturePending => _pendingMarchOut.Count > 0;
+
     /// <summary>U10 test/inspection surface: real seconds <paramref name="heroId"/> has
     /// continuously held <see cref="HeroActor2D.HeroTownState.Away"/>, or 0 if they are not
     /// currently Away — what <see cref="MinDelveShowSeconds"/> is measured against.</summary>
