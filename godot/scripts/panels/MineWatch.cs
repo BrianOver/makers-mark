@@ -194,6 +194,22 @@ public partial class MineWatch : SubViewportContainer
     /// <summary>The strip's current choreography state (test/tuning hook).</summary>
     public WatchState State { get; private set; } = WatchState.Hidden;
 
+    /// <summary>
+    /// 2026-08-04 (repo task #67, owner playtest: "Lower into the mine has them return??? what
+    /// logic is that lol"): true during Camp/ExpeditionDeep when the tracked party is NOT actually
+    /// camped (<see cref="GameState.InFlight"/> empty) — every hero's trip already resolved whole
+    /// at the Expedition tick (floor 1 is structurally unstaged, or stage 1 ended badly) and is
+    /// sitting in <see cref="GameState.PendingExpeditions"/> waiting to be paced out here. Without
+    /// this flag the strip kept animating the marching figures and playing back the SAME beats a
+    /// live descent would show, with nothing telling the player the outcome was already decided —
+    /// exactly the "why did they just come back" confusion <see cref="CampPanel"/>'s own "ALREADY
+    /// BACK TODAY" section exists to prevent, except that section only renders when
+    /// <see cref="CampPanel.ShowModal"/> actually opens (non-empty InFlight, <c>MainUi.SyncCampModal</c>)
+    /// — precisely the one case that does NOT need the reassurance. This is that same honesty,
+    /// moved onto the always-visible strip for the case that DOES need it (test/tuning hook).
+    /// </summary>
+    public bool AlreadyBackThisCycle { get; private set; }
+
     /// <summary>True once "mine-backdrop" resolved — false degrades the WHOLE strip forever,
     /// whatever the phase (see type remarks).</summary>
     public bool HasContent { get; private set; }
@@ -382,6 +398,12 @@ public partial class MineWatch : SubViewportContainer
             _currentParty = ImmutableList<HeroId>.Empty; // never let a stale party carry into next day
         }
 
+        // repo task #67: Camp/ExpeditionDeep with nobody actually camped — the party's whole trip
+        // already finished at the Expedition tick (see AlreadyBackThisCycle's own doc). Read BEFORE
+        // the State/RenderMarch branch below so UpdateFeedLabel (called at the end of this method,
+        // and every frame after from _Process) always sees this tick's real answer.
+        AlreadyBackThisCycle = live && state.Phase is DayPhase.Camp or DayPhase.ExpeditionDeep && state.InFlight.IsEmpty;
+
         if (live && state.Phase == DayPhase.Camp && !state.InFlight.IsEmpty)
         {
             State = WatchState.Camped;
@@ -515,9 +537,20 @@ public partial class MineWatch : SubViewportContainer
     private Dictionary<int, Sprite2D> BuildHeroSpriteMap() =>
         _figures.ToDictionary(f => f.HeroId.Value, f => f.Sprite);
 
+    /// <summary>repo task #67: the honest lead line prepended whenever <see
+    /// cref="AlreadyBackThisCycle"/> is true — same vocabulary as <c>CampPanel</c>'s "ALREADY BACK
+    /// TODAY" section ("back from the mine; the full story awaits tonight's Ledger") so a player who
+    /// has seen one recognizes the other, without naming survivors/floor/death (KTD5/AE2: the
+    /// resolved beats replayed below already self-censor deaths, but this lead line must not leak
+    /// anything the beats themselves don't).</summary>
+    private const string AlreadyBackCaption = "Already back — the tale continues below.";
+
     /// <summary>Renders the tracked party's revealed beats (KTD11 time-stretch) as up to
     /// <see cref="FeedVisibleLines"/> lines, falling back to the rumor line (Expedition phase, no
-    /// beats yet) or the censored idle loop (stream exhaustion) when there is nothing to show.</summary>
+    /// beats yet) or the censored idle loop (stream exhaustion) when there is nothing to show.
+    /// Reserves one line for <see cref="AlreadyBackCaption"/> when <see cref="AlreadyBackThisCycle"/>
+    /// (repo task #67) — the strip is replaying an already-decided run, not watching a live one, and
+    /// nothing else on this always-visible surface said so.</summary>
     private void UpdateFeedLabel()
     {
         if (_feed.Cards.IsEmpty)
@@ -531,7 +564,8 @@ public partial class MineWatch : SubViewportContainer
         var revealed = _feed.Revealed(card);
         CurrentBeats = revealed.Select(b => b.Text).ToImmutableList();
 
-        var lines = CurrentBeats.TakeLast(FeedVisibleLines).ToList();
+        var budget = AlreadyBackThisCycle ? FeedVisibleLines - 1 : FeedVisibleLines;
+        var lines = CurrentBeats.TakeLast(budget).ToList();
         if (lines.Count == 0)
         {
             // U-EXP1 (Expedition-watchable — owner-flagged twice: "the player just sits there"):
@@ -541,6 +575,9 @@ public partial class MineWatch : SubViewportContainer
             // no roster and no gear. RumoredLines below reads the SAME state this strip already
             // has (card.PartyNames/Manifest, resolved once in JourneyStream) to show who went and
             // what they carry that the player made instead — the actual payoff, not a placeholder.
+            // (AlreadyBackThisCycle is never true alongside a Rumored card — that stage only exists
+            // at the Expedition phase, this flag only at Camp/ExpeditionDeep — so the budget above
+            // and RumoredLines' own fixed FeedVisibleLines-1 sizing never fight over the same line.)
             lines.AddRange(card.Stage == JourneyStage.Rumored
                 ? RumoredLines(card)
                 : [_feed.IdleLine(card.PartyKey)]);
@@ -548,6 +585,11 @@ public partial class MineWatch : SubViewportContainer
         else if (_feed.IsIdle(card))
         {
             lines.Add(_feed.IdleLine(card.PartyKey));
+        }
+
+        if (AlreadyBackThisCycle)
+        {
+            lines.Insert(0, AlreadyBackCaption);
         }
 
         _feedLabel.Text = string.Join("\n", lines);
