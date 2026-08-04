@@ -51,7 +51,8 @@ param(
     [string]$RepoRoot,
     [string]$OutDir,
     [string]$Endpoint = 'http://127.0.0.1:11434',
-    [int]$TurnTimeoutSec = 90
+    [int]$TurnTimeoutSec = 90,
+    [int]$NumCtx = 8192
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,6 +66,62 @@ function Die($lines) {
         foreach ($line in $lines[1..($lines.Count - 1)]) { Write-Host $line -ForegroundColor Red }
     }
     exit 1
+}
+
+# JSON-escape a string by hand.
+#
+# DO NOT reintroduce ConvertTo-Json on the request path. Measured 2026-08-04: a 2.5 KB prompt file in
+# a nested hashtable serialized to a 46,614,552-character body, and ollama answered
+#     {"error":"invalid character 't' after object key:value pair"}
+# on every single call. Windows PowerShell 5.1's ConvertTo-Json wraps the string rather than emitting
+# it (`{"value":"..."}`) and the nesting blows up from there. The failure looked exactly like a broken
+# model -- three retries per turn, 22 turns, every one dead -- which is why this note is here instead
+# of a one-line fix nobody can explain later. ConvertFrom-Json is fine; only this direction is cursed.
+function JsonEsc([string]$s) {
+    if ($null -eq $s) { return '' }
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($ch in $s.ToCharArray()) {
+        $code = [int]$ch
+        if ($ch -eq '"') { [void]$sb.Append('\"') }
+        elseif ($ch -eq '\') { [void]$sb.Append('\\') }
+        elseif ($ch -eq "`n") { [void]$sb.Append('\n') }
+        elseif ($ch -eq "`r") { [void]$sb.Append('\r') }
+        elseif ($ch -eq "`t") { [void]$sb.Append('\t') }
+        elseif ($code -lt 32 -or $code -gt 126) { [void]$sb.Append('\u' + $code.ToString('x4')) }
+        else { [void]$sb.Append($ch) }
+    }
+    return $sb.ToString()
+}
+
+function Invoke-Model($systemPrompt, $userText, $imagePath) {
+    $imagesJson = ''
+    if ($imagePath -and (Test-Path $imagePath)) {
+        $b64 = [System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes($imagePath))
+        $imagesJson = ',"images":["' + $b64 + '"]'
+    }
+
+    # num_ctx must be set explicitly. llava:7b defaults to a 4096-token context and ollama HARD
+    # ERRORS past it rather than truncating:
+    #   {"error":{"code":400,"message":"request (6052 tokens) exceeds the available context size
+    #             (4096 tokens), try increasing it","type":"exceed_context_size_error"}}
+    # Measured 2026-08-04 on the judge pass. A screen digest plus a turn log passes 4096 quickly, so
+    # without this the harness works for a while and then dies exactly when it has something to say.
+    $body = '{"model":"' + (JsonEsc $Model) + '","stream":false,"options":{"num_ctx":' + $NumCtx + '},"messages":[' +
+            '{"role":"system","content":"' + (JsonEsc $systemPrompt) + '"},' +
+            '{"role":"user","content":"' + (JsonEsc $userText) + '"' + $imagesJson + '}]}'
+
+    # Send bytes, not a string: Invoke-RestMethod would otherwise re-encode, and the body is large.
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+    try {
+        $resp = Invoke-RestMethod -Uri ($Endpoint + '/api/chat') -Method Post -Body $bytes -ContentType 'application/json' -TimeoutSec 300
+    } catch {
+        # Surface what ollama actually said. A bare "(400) Bad Request" cost a whole debugging pass
+        # once already -- the useful text is in ErrorDetails, and PowerShell hides it by default.
+        $detail = ''
+        if ($_.ErrorDetails) { $detail = ' :: ' + $_.ErrorDetails.Message }
+        throw ('ollama ' + $_.Exception.Message + $detail + ' (body was ' + $body.Length + ' chars)')
+    }
+    return $resp.message.content
 }
 
 # --- Paths --------------------------------------------------------------------------------------
@@ -107,10 +164,25 @@ if (-not $Scripted) {
     $freeGb  = [math]::Round(($totalMb - $usedMb) / 1024.0, 1)
 
     Say ('GPU: ' + $freeGb + ' GB free, ' + $tempC + ' C')
-    if ($freeGb -lt $MinFreeGb) {
+
+    # A model already resident is NOT a second job. The floor exists to stop us STARTING work the card
+    # cannot hold; if ollama is already holding the exact model we are about to drive, the allocation
+    # has happened and refusing on the remaining free VRAM would refuse our own model. Measured
+    # 2026-08-04: after a warm-up, llava:7b holds ~5 GB and free drops to 9.1 GB, which tripped the
+    # gate against the very model it had just loaded. Temperature is still enforced either way.
+    $resident = @()
+    try {
+        $ps = Invoke-RestMethod -Uri ($Endpoint + '/api/ps') -TimeoutSec 10
+        $resident = @($ps.models | ForEach-Object { $_.name })
+    } catch { }
+
+    if ($resident -contains $Model) {
+        Say ($Model + ' is already loaded, so the free-VRAM floor does not apply to it')
+    } elseif ($freeGb -lt $MinFreeGb) {
         Die @(
             ('only ' + $freeGb + ' GB VRAM free, floor is ' + $MinFreeGb + ' GB.'),
-            'Project rule: never risk the machine. Close the other GPU job (ComfyUI, another model) first.'
+            ('Resident models: ' + (($resident -join ', ') + '')),
+            'Project rule: never risk the machine. Free it first (ollama stop <model>, close ComfyUI).'
         )
     }
     if ($tempC -gt $MaxTempC) {
@@ -134,16 +206,18 @@ if (-not $Scripted) {
     # "unknown model architecture: 'mllama'". Finding that out on turn 1 of a real run, after
     # launching the game, wastes the run and reads like a game bug.
     Say ('warming ' + $Model)
-    $warmBody = @{ model = $Model; stream = $false; messages = @(@{ role = 'user'; content = 'reply with the single word ok' }) } | ConvertTo-Json -Depth 6 -Compress
+    # Warm through the SAME path a real turn uses, prompt file included. A warm-up that skips the
+    # system prompt proves nothing: the 2026-08-04 failure was triggered by the prompt's own length,
+    # so a short bespoke warm-up passed while all 22 real turns failed.
     $warm = $null
-    try { $warm = Invoke-RestMethod -Uri ($Endpoint + '/api/chat') -Method Post -Body $warmBody -ContentType 'application/json' -TimeoutSec 300 } catch {
+    try { $warm = Invoke-Model (Get-Content (Join-Path $PSScriptRoot 'agent-playtest\prompts\act.md') -Raw) 'Reply with the single word ok.' $null } catch {
         Die @(
             ('model ' + $Model + ' is pulled but will not run.'),
             ('ollama said: ' + $_.Exception.Message),
             'If this is an architecture error, that model is unsupported by this ollama build -- pick another.'
         )
     }
-    if (-not $warm.message) { Die @(('model ' + $Model + ' returned no message on a warm-up request.')) }
+    if (-not $warm) { Die @(('model ' + $Model + ' returned nothing on a warm-up request through the real prompt path.')) }
 }
 
 # --- Launch the client --------------------------------------------------------------------------
@@ -154,7 +228,10 @@ if (-not (Test-Path $godot)) { Die @(('Godot not found at ' + $godot + '. Set GO
 $env:AGENT_PLAYTEST = '1'
 $env:AGENT_PLAYTEST_DIR = $OutDir
 Say ('launching client (out: ' + $OutDir + ')')
-$proc = Start-Process -FilePath $godot -ArgumentList @('--path', (Join-Path $RepoRoot 'godot')) -PassThru
+# The SCENE must be named explicitly. `--path godot` alone boots the game's main scene, so the
+# bridge never runs and the driver waits out its timeout on a client that was never asked to play --
+# measured on the first scripted run, which sat for 90s and then reported "scripted run complete".
+$proc = Start-Process -FilePath $godot -ArgumentList @('--path', (Join-Path $RepoRoot 'godot'), 'res://agentplaytest.tscn') -PassThru
 
 # Fixed command sequence for -Scripted: prove the channel end to end with no model. Deliberately
 # includes an illegal press so the refusal path is exercised on every scripted run.
@@ -187,21 +264,6 @@ function Wait-ForFile($path, $timeoutSec) {
     return $null
 }
 
-function Invoke-Model($systemPrompt, $userText, $imagePath) {
-    $userMsg = @{ role = 'user'; content = $userText }
-    if ($imagePath -and (Test-Path $imagePath)) {
-        $bytes = [System.IO.File]::ReadAllBytes($imagePath)
-        $userMsg.images = @([System.Convert]::ToBase64String($bytes))
-    }
-    $body = @{
-        model    = $Model
-        stream   = $false
-        messages = @(@{ role = 'system'; content = $systemPrompt }, $userMsg)
-    } | ConvertTo-Json -Depth 8 -Compress
-
-    $resp = Invoke-RestMethod -Uri ($Endpoint + '/api/chat') -Method Post -Body $body -ContentType 'application/json' -TimeoutSec 300
-    return $resp.message.content
-}
 
 $actPrompt = ''
 $judgePrompt = ''
@@ -281,7 +343,9 @@ try {
                 # action against the control list case-insensitively and rewrite it as a press.
                 $verbs = @('press', 'move', 'key', 'advance', 'stop')
                 if ($verbs -notcontains $parsed.action) {
-                    $match = @($state.controls | Where-Object { $_.name -ieq $parsed.action }) | Select-Object -First 1
+                    # Match on LABEL too. llava repeatedly answered {"action":"Buy 2 copper"} -- the on-screen
+                    # label, not the control name. That is a correct intention in the wrong field.
+                    $match = @($state.controls | Where-Object { $_.name -ieq $parsed.action -or $_.label -ieq $parsed.action }) | Select-Object -First 1
                     if ($match) {
                         Say ('normalized "' + $parsed.action + '" to press ' + $match.name)
                         $parsed = [pscustomobject]@{ action = 'press'; target = $match.name; why = $parsed.why }
@@ -328,9 +392,20 @@ try {
 Say ('stopped after ' + $turn + ' turns: ' + $stopReason)
 
 # --- Judge pass ---------------------------------------------------------------------------------
-$log = ''
-if (Test-Path $turnlogPath) { $log = Get-Content $turnlogPath -Raw }
-if (-not $log) { $log = ($history -join [Environment]::NewLine) }
+$fullLog = ''
+if (Test-Path $turnlogPath) { $fullLog = Get-Content $turnlogPath -Raw }
+if (-not $fullLog) { $fullLog = ($history -join [Environment]::NewLine) }
+
+# Cap what the JUDGE is sent. The bridge's turnlog carries the whole screen digest per turn, so it
+# reaches tens of KB fast (57 KB in 22 turns, measured), and a 7B model's context is the smaller
+# constraint anyway. The FULL log is still written to findings.md below -- only the model's copy is
+# trimmed, and it is trimmed from the FRONT so the most recent turns survive.
+$log = $fullLog
+$judgeCap = 6000
+if ($log.Length -gt $judgeCap) {
+    $log = '(earlier turns trimmed)' + [Environment]::NewLine + $log.Substring($log.Length - $judgeCap)
+    Say ('judge input trimmed to last ' + $judgeCap + ' chars of ' + $fullLog.Length)
+}
 
 $header = @(
     '# Agent playtest findings',
@@ -341,9 +416,25 @@ $header = @(
     ''
 )
 
+# A run that played NOTHING is a failure, whatever mode it was in. The first scripted run sat for 90s
+# on a client that had never been asked to play, then printed "scripted run complete" and exited 0 --
+# the same shape of lie as a truncated test suite reporting "Passed!". Never again from this script.
+if ($turn -eq 0) {
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('NOTHING WAS PLAYED. ' + $stopReason))
+    Die @(
+        ('zero turns were played: ' + $stopReason),
+        '',
+        'The client never wrote a state file. Usual causes, in order:',
+        '  1. the scene was not launched (the bridge only runs in res://agentplaytest.tscn)',
+        '  2. AGENT_PLAYTEST / AGENT_PLAYTEST_DIR did not reach the process',
+        '  3. the client crashed on boot -- check for a Godot error window',
+        ('Artifacts (may be empty): ' + $OutDir)
+    )
+}
+
 if ($Scripted) {
     Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('Scripted run -- no model judged this. The channel was exercised, including one deliberate illegal press.', '', '## Turn log', '', $log))
-    Say ('scripted run complete. Channel log: ' + $findingsPath)
+    Say ('scripted run complete, ' + $turn + ' turns. Channel log: ' + $findingsPath)
     exit 0
 }
 
@@ -359,14 +450,16 @@ if ($stuckFindings.Count -gt 0) {
     $judgeInput += ($stuckFindings | ForEach-Object { '- ' + $_ })
 }
 $findings = ''
-try { $findings = Invoke-Model $judgePrompt (($judgeInput) -join [Environment]::NewLine) $framePath } catch { Warn ('judge call failed: ' + $_.Exception.Message) }
+# No image on the judge pass: the LOG is what carries the findings, and a 134 KB frame costs
+# context that the log needs. Visual findings come from the act turns, which do see frames.
+try { $findings = Invoke-Model $judgePrompt (($judgeInput) -join [Environment]::NewLine) $null } catch { Warn ('judge call failed: ' + $_.Exception.Message) }
 
 if (-not $findings) {
     Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('JUDGE FAILED -- no findings written. Raw turn log below.', '', $log))
     Die @('the judge pass produced nothing. The turn log is still in ' + $findingsPath + '.')
 }
 
-Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @($findings, '', '---', '', '## Turn log', '', $log))
+Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @($findings, "", "---", "", "## Turn log", "", $fullLog))
 
 Write-Host ''
 Say ('findings written: ' + $findingsPath)
