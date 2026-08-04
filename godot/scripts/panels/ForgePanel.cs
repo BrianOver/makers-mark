@@ -1171,17 +1171,30 @@ public partial class ForgePanel : SimPanel
 
     /// <summary>
     /// G1 result ceremony (game-feel plan §"Result ceremony"): a themed card — centered over a
-    /// FullRect, input-blocking (<c>MouseFilter.Stop</c>, same idiom the minigame overlay itself
-    /// uses) backdrop — built once, added LAST (after <see cref="_minigame"/>) so it draws over
+    /// FullRect backdrop — built once, added LAST (after <see cref="_minigame"/>) so it draws over
     /// everything else in this panel, hidden until <see cref="ShowCeremony"/> arms it.
+    ///
+    /// <para><b>Unlike the minigame overlays, this backdrop does NOT claim <c>MouseFilter.Stop</c>.</b>
+    /// It is a celebratory toast, not a decision-gating modal (contrast <c>CommissionBoard</c>/
+    /// <c>LedgerModal</c>, which pair a full-block filter with a visible dimming <c>ColorRect</c> so the
+    /// block is honest) — it auto-dismisses on its own after <see cref="CeremonySeconds"/> and carries
+    /// no dimmer at all, so blocking the WHOLE panel behind it would be invisible: everything except
+    /// the small centered card looks completely normal and clickable, yet every click there would
+    /// silently do nothing until the timer (or Skip) cleared it. Root-caused from a CI-only failure of
+    /// <c>HumanPlaytestTests.EveryVisibleButton_ActuallyRespondsToARealClick</c> (PR #382): a player who
+    /// finishes a craft and immediately reaches for a different control (a talent card, a vendor row)
+    /// within that window found the click eaten by a FullRect <c>Stop</c> filter here. Only <c>card</c>
+    /// below keeps <c>Stop</c> (its own default), so Skip/Escape and clicks ON the card still work —
+    /// everything outside it now passes straight through to the panel underneath, same as if this
+    /// overlay were not here at all.</para>
     /// </summary>
     private void BuildCeremony()
     {
-        _ceremony = new Control { Name = "ForgeCeremonyOverlay", Visible = false, MouseFilter = MouseFilterEnum.Stop };
+        _ceremony = new Control { Name = "ForgeCeremonyOverlay", Visible = false, MouseFilter = MouseFilterEnum.Ignore };
         _ceremony.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(_ceremony);
 
-        var center = new CenterContainer { Name = "ForgeCeremonyCenter" };
+        var center = new CenterContainer { Name = "ForgeCeremonyCenter", MouseFilter = MouseFilterEnum.Ignore };
         center.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         _ceremony.AddChild(center);
 
