@@ -1,6 +1,13 @@
 * text=auto
 *.sh eol=lf
 
+# Godot writes .import metadata with LF, but `text=auto` on Windows wants CRLF in the working tree
+# — so every editor or headless run left ~80 .import files showing as modified with ZERO content
+# change. That phantom dirt is not cosmetic: `tools/engine-test.ps1` refuses to vouch for a commit
+# when the tree is dirty, so a clean local receipt was impossible right after the run that earned
+# it, and real changes were invisible in the noise. Pinning LF matches what Godot actually writes.
+*.import eol=lf
+
 # Generated art PNGs (diffuse + normal) via Git LFS. Scope is the Godot asset tree ONLY —
 # `art/**` would LFS-ify C# spec source and miss this PNG tree (art-pipeline-architecture.md §4).
 godot/assets/art/**/*.png filter=lfs diff=lfs merge=lfs -text
