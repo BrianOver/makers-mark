@@ -306,13 +306,30 @@ try {
                 $tail = $history[[math]::Max(0, $history.Count - 6)..($history.Count - 1)]
                 $recent = 'Recent turns:' + [Environment]::NewLine + ($tail -join [Environment]::NewLine)
             }
+            # Surroundings + the interact prompt are what let the model be a PLAYER rather than a
+            # button-presser. Without them the first honest run reached day 2 having never entered a
+            # building: it had no way to know a forge existed somewhere to its left. Both come
+            # straight from the running town (state.json), so this narrates the world, never invents it.
+            $around = ''
+            if ($state.nearby -and @($state.nearby).Count -gt 0) {
+                $around = 'Around you (walk with move, then press interact when inRange):' + [Environment]::NewLine +
+                    ((@($state.nearby) | Select-Object -First 6 | ForEach-Object {
+                        '  ' + $_.key + ' [' + $_.label + '] ' + $_.direction + ' ' + $_.distance + 'px inRange=' + $_.inRange
+                    }) -join [Environment]::NewLine)
+            }
+            $prompt2d = ''
+            if ($state.interactPrompt) { $prompt2d = 'Interact prompt on screen: ' + $state.interactPrompt }
+
             $userText = @(
                 ('Turn ' + $turn + ' of ' + $Turns + '.'),
                 ('Day ' + $state.day + ', phase ' + $state.phase + ', at ' + $state.location + '. canMove=' + $state.canMove + '. Gold ' + $state.gold + ', action slots left ' + $state.actionSlotsRemaining + '.'),
                 ('Last outcome: ' + $state.lastOutcome),
+                $prompt2d,
                 '',
                 'On screen:',
                 (($state.screenText | ForEach-Object { '  ' + $_ }) -join [Environment]::NewLine),
+                '',
+                $around,
                 '',
                 'Controls:',
                 (($state.controls | ForEach-Object { '  ' + $_.name + ' [' + $_.label + '] enabled=' + $_.enabled }) -join [Environment]::NewLine),
