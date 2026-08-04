@@ -160,8 +160,17 @@ public sealed class AgentPlaytestBridge
             return Array.Empty<NearbyDigest>();
         }
 
-        IReadOnlyList<Town2d.Building2D> targets = ui.Town.InteriorActive
-            ? ui.Town.FindInteriorRoom(ui.Town.InteriorVenueKey).Stations
+        // InteriorActive implies a venue key in practice, but FindInteriorRoom THROWS on a missing
+        // one — and this runs inside the per-turn digest, so an inconsistent state would kill the
+        // whole playtest turn rather than costing one field. Degrade to "nothing nearby" instead.
+        var venueKey = ui.Town.InteriorActive ? ui.Town.InteriorVenueKey : null;
+        if (ui.Town.InteriorActive && string.IsNullOrEmpty(venueKey))
+        {
+            return Array.Empty<NearbyDigest>();
+        }
+
+        IReadOnlyList<Town2d.Building2D> targets = venueKey is not null
+            ? ui.Town.FindInteriorRoom(venueKey).Stations
             : ui.Town.BuildingsRoot.GetChildren().OfType<Town2d.Building2D>().ToList();
 
         var from = ui.Town.Player.GlobalPosition;
