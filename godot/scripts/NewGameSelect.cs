@@ -625,6 +625,14 @@ public partial class NewGameSelect : Control
         // abandoned, which reads as the new game having silently failed to start.
         CampaignSave.Clear();
 
+        // Root-cause fix (owner playtest: "The tutorial is missing?"): TutorialFlow persists its
+        // own Completed/Dismissed/Step at a SEPARATE user:// file that outlives the sim save above
+        // — MainUi.BuildUi loads it unconditionally on every mount, so a tutorial finished or
+        // dismissed on any earlier campaign silently suppressed the whole chain (Active=false, no
+        // on-screen sign why) on every New Game after it. A brand-new campaign must start with a
+        // brand-new tutorial, exactly like it starts with a brand-new sim save.
+        Ui.TutorialFlow.ResetForNewGame();
+
         var state = GameComposition.NewCampaign(_pendingSeed, _pendingProfessionId);
         MainUi.AdapterOverride = new SimAdapter(state);
 

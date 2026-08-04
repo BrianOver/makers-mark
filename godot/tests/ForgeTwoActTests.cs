@@ -73,6 +73,75 @@ public class ForgeTwoActTests
             .IsGreater(skilled.CombinedSeconds);
     }
 
+    /// <summary>
+    /// The BEGINNER run also has a ceiling. The owner's complaint was 19.2s; the two-act split cut a
+    /// skilled run to ~9.7s but left a beginner at ~19.5s — within a hair of the number he called too
+    /// long, and a beginner is exactly who complains. <c>ForgeMinigame.AssistPerOverrunStrike</c> is
+    /// the lever: once a run has spent its strike budget, each further blow pays more.
+    ///
+    /// <para>The bar here is deliberately looser than the skilled bar. A beginner SHOULD be slower —
+    /// the test above pins that ordering, and this one must not fight it. What this pins is that
+    /// "slower" cannot mean "back where we started": a badly-heated billet has to close out in
+    /// clearly less than the 19.2s that drew the complaint, with headroom against the ordering pin.</para>
+    ///
+    /// <para>Change this number only against a measured run, never by reasoning about the constants —
+    /// the last attempt to shorten a run by intuition (cutting the tempo period) made the skilled
+    /// case 20% WORSE via beat/mash aliasing, and only the measurement caught it.</para>
+    ///
+    /// <para>Measured with the assist in place: beginner Act 1 11.6s/28 strikes (was 15.5s/38) plus
+    /// Act 2's unchanged 4.0s auto-timeout = 15.6s combined, against 19.5s before. Act 2's fixed
+    /// window is now the single largest slice of a beginner run — shortening it would cut more
+    /// wall-clock than any further assist, but it would also shrink the plunge window for everyone,
+    /// so it is a difficulty decision for the owner rather than a pacing tweak.</para>
+    /// </summary>
+    [TestCase]
+    public void BeginnerRun_StaysUnderTheComplaintThreshold()
+    {
+        var beginner = PlayBothActs(demonstratedAccuracyPermille: 0, pumpUntilPermille: 700, strikeAbovePermille: 320, decisivePlunge: false);
+
+        AssertThat(beginner.Act1Completed).IsTrue();
+        AssertThat(beginner.Act2Completed).IsTrue();
+
+        AssertThat(beginner.CombinedSeconds)
+            .OverrideFailureMessage(
+                $"A beginner run took {beginner.CombinedSeconds:0.0}s combined (Act 1 " +
+                $"{beginner.Act1Seconds:0.0}s/{beginner.Act1Strikes}st + Act 2 " +
+                $"{beginner.Act2Seconds:0.0}s). The owner called 19.2s too long. A beginner is who " +
+                "complains, so the overrun assist must keep a poorly-heated billet well under that.")
+            .IsLess(17.0);
+    }
+
+    /// <summary>
+    /// The assist must not be a stealth difficulty cut for someone who is already good. A skilled run
+    /// finishes at or within a strike of its own (reduced) budget, so its assist multiplier stays at
+    /// or near 1.0 — the beginner is the only one it meaningfully pays.
+    /// </summary>
+    [TestCase]
+    public void Assist_BarelyTouchesASkilledRun()
+    {
+        var act1 = new ForgeMinigame();
+        act1.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith,
+            ImmutableSortedSet<string>.Empty, TestDay, demonstratedAccuracyPermille: 1000);
+
+        AssertThat(act1.AssistEngaged)
+            .OverrideFailureMessage("The assist was already engaged before a single strike landed.")
+            .IsFalse();
+        AssertThat(act1.AssistMultiplier).IsEqual(1.0);
+
+        DriveAct1ToCompletion(act1, pumpUntilPermille: 900, strikeAbovePermille: 500);
+
+        AssertThat(act1.Completed).IsTrue();
+        AssertThat(act1.AssistMultiplier)
+            .OverrideFailureMessage(
+                $"A skilled run finished with assist {act1.AssistMultiplier:0.00}x after " +
+                $"{act1.StrikesLanded} strikes against a budget of {act1.RequiredStrikes}. The assist " +
+                "is meant for a struggling player; paying a skilled one this much makes the skill " +
+                "curve meaningless.")
+            .IsLessEqual(1.0 + ForgeMinigame.AssistPerOverrunStrike);
+
+        act1.QueueFree();
+    }
+
     /// <summary>R6, "high metals are more precise": <see cref="QuenchMinigame"/>'s acceptable-plunge
     /// band narrows as recipe tier rises — a pure function, so this needs no overlay at all.</summary>
     [TestCase]

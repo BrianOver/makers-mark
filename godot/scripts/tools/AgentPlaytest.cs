@@ -39,7 +39,33 @@ public sealed record StateDigest(
     [property: JsonPropertyName("canMove")] bool CanMove,
     [property: JsonPropertyName("screenText")] IReadOnlyList<string> ScreenText,
     [property: JsonPropertyName("controls")] IReadOnlyList<ControlDigest> Controls,
+    [property: JsonPropertyName("interactPrompt")] string InteractPrompt,
+    [property: JsonPropertyName("nearby")] IReadOnlyList<NearbyDigest> Nearby,
     [property: JsonPropertyName("lastOutcome")] string LastOutcome);
+
+/// <summary>
+/// One thing the player can walk to and interact with, as seen from where they are standing right now
+/// — a town building outdoors, or a station once inside a room (both are <c>Building2D</c>, so one
+/// shape covers both).
+///
+/// <para><b>Why this field exists.</b> The first honest agent run reached day 2 without ever entering
+/// a building, and the run's own limitation note blamed a missing verb. That was wrong: the bridge
+/// could already reach the interact path through <c>key</c> + the <c>"interact"</c> InputMap action.
+/// What the model lacked was the other half of being a player — it could not SEE that a forge existed
+/// somewhere to its left. A human reads the town off the screen in one glance; a model handed only
+/// button names cannot, so it pressed buttons, which is exactly what it did.</para>
+///
+/// <para>This stays honest — it reports position and direction, the same information the rendered
+/// frame carries, and it does NOT hand over a teleport or a shortcut. The model still has to walk
+/// there and still has to press interact, and <see cref="InRange"/> tells it when walking worked,
+/// which is what the on-screen interact prompt tells a human.</para>
+/// </summary>
+public sealed record NearbyDigest(
+    [property: JsonPropertyName("key")] string Key,
+    [property: JsonPropertyName("label")] string Label,
+    [property: JsonPropertyName("direction")] string Direction,
+    [property: JsonPropertyName("distance")] int Distance,
+    [property: JsonPropertyName("inRange")] bool InRange);
 
 /// <summary>
 /// What the driver (a human, a script, or U2's model loop) writes to <c>command.json</c>. Every
@@ -109,7 +135,83 @@ public sealed class AgentPlaytestBridge
             CanMove: ui.Town.WorldInputNode.Enabled,
             ScreenText: ScreenObservation.VisibleText(ui, viewport),
             Controls: controls,
+            InteractPrompt: ui.Town.WorldInputNode.PromptText,
+            Nearby: Surroundings(ui),
             LastOutcome: lastOutcome);
+    }
+
+    /// <summary>How far from a target's door the player counts as "in range" (px). Deliberately
+    /// derived from nothing: it is a REPORTING threshold for the model's benefit only. The real
+    /// gate is <c>WorldInput2D</c>'s own Area2D overlap, which is why <see
+    /// cref="StateDigest.InteractPrompt"/> — the town's actual prompt — travels alongside it as the
+    /// authoritative signal. If the two ever disagree, believe the prompt.</summary>
+    private const float InRangeReportingPx = 96f;
+
+    /// <summary>
+    /// The walkable things around the player, nearest first: town buildings outdoors, or the room's
+    /// stations once inside. Both are <c>Building2D</c>, so the interior case needs no second shape.
+    /// Empty whenever the player cannot walk at all (a drawer or overlay owns the screen) — in that
+    /// state there is nothing to walk to and listing distant buildings would invite the model to try.
+    /// </summary>
+    private static IReadOnlyList<NearbyDigest> Surroundings(MainUi ui)
+    {
+        if (ui.Drawer.IsOpen || !ui.Town.WorldInputNode.Enabled)
+        {
+            return Array.Empty<NearbyDigest>();
+        }
+
+        // InteriorActive implies a venue key in practice, but FindInteriorRoom THROWS on a missing
+        // one — and this runs inside the per-turn digest, so an inconsistent state would kill the
+        // whole playtest turn rather than costing one field. Degrade to "nothing nearby" instead.
+        var venueKey = ui.Town.InteriorActive ? ui.Town.InteriorVenueKey : null;
+        if (ui.Town.InteriorActive && string.IsNullOrEmpty(venueKey))
+        {
+            return Array.Empty<NearbyDigest>();
+        }
+
+        IReadOnlyList<Town2d.Building2D> targets = venueKey is not null
+            ? ui.Town.FindInteriorRoom(venueKey).Stations
+            : ui.Town.BuildingsRoot.GetChildren().OfType<Town2d.Building2D>().ToList();
+
+        var from = ui.Town.Player.GlobalPosition;
+        return targets
+            .Where(GodotObject.IsInstanceValid)
+            .Select(b =>
+            {
+                var offset = b.DoorAnchorGlobal - from;
+                return new NearbyDigest(
+                    Key: b.Key,
+                    Label: b.NameLabel.Text,
+                    Direction: Bearing(offset),
+                    Distance: (int)Math.Round(offset.Length()),
+                    InRange: offset.Length() <= InRangeReportingPx);
+            })
+            .OrderBy(n => n.Distance)
+            .ToList();
+    }
+
+    /// <summary>Reduces an offset to the words the move verb actually accepts, so the model can act
+    /// on it without doing vector arithmetic: the dominant axis, plus the secondary one when the
+    /// offset is genuinely diagonal (both axes within 2x of each other).</summary>
+    private static string Bearing(Vector2 offset)
+    {
+        var horizontal = offset.X >= 0 ? "right" : "left";
+        var vertical = offset.Y >= 0 ? "down" : "up";
+        var ax = Math.Abs(offset.X);
+        var ay = Math.Abs(offset.Y);
+
+        if (ax <= 1f && ay <= 1f)
+        {
+            return "here";
+        }
+
+        var diagonal = ax > 0.5f && ay > 0.5f && Math.Max(ax, ay) / Math.Min(ax, ay) < 2f;
+        if (diagonal)
+        {
+            return ax >= ay ? $"{horizontal}+{vertical}" : $"{vertical}+{horizontal}";
+        }
+
+        return ax >= ay ? horizontal : vertical;
     }
 
     /// <summary>"town", "interior:&lt;venueKey&gt;", or "panel:&lt;id&gt;" — a drawer panel takes

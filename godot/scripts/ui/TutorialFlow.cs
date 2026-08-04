@@ -1009,15 +1009,39 @@ public sealed partial class TutorialFlow : PanelContainer
             }));
     }
 
-    /// <summary>Test-only teardown: delete the persisted file so a suite can never leak a
-    /// completed/dismissed chain across runs (mirrors <c>MainUi.ClockSettings.DeleteForTests</c>).</summary>
-    public static void DeleteForTests()
+    /// <summary>
+    /// Root-cause fix (owner playtest: "The tutorial is missing?"): delete the persisted
+    /// Completed/Dismissed/Step file so a genuinely NEW campaign never inherits a prior
+    /// campaign's finished-or-dismissed chain. <see cref="NewGameSelect.OnBeginPressed"/> calls
+    /// this in the exact same spot it already calls <see cref="CampaignSave.Clear"/> — that call
+    /// clears the SIM save, this clears the UI-preference save, and "New Game replaces
+    /// everything from the last run" needs both.
+    ///
+    /// <para><b>Why this was missing.</b> <see cref="Load"/> runs unconditionally in
+    /// <c>MainUi.BuildUi</c> on every mount — New Game and Continue alike — because a Continue
+    /// (same campaign, different session) is supposed to keep exactly the progress/dismiss state
+    /// it left with (<see cref="TutorialRegistryConformanceTests.MidTutorialProgress_PersistsAcrossAReload_WithNoDismissOrComplete"/>,
+    /// <see cref="TutorialFlowTests.Dismiss_MidChain_PersistsAndNeverReprompts_AfterRemount"/>).
+    /// Nothing distinguished "reload the SAME campaign" from "start a DIFFERENT one" — <see
+    /// cref="Godot.FileAccess"/> at <c>user://tutorial_flow.json</c> outlives every campaign, so a
+    /// tutorial completed or dismissed on any earlier run (including one abandoned mid-session)
+    /// silently suppressed <see cref="Active"/> — and with it the ENTIRE chain, top-slot override
+    /// included — for every New Game after it, forever, with no on-screen sign why. That is
+    /// exactly "the tutorial is missing": correct-looking code with no visible defect, gated by a
+    /// stale flag from a campaign the player can no longer see.</para>
+    /// </summary>
+    public static void ResetForNewGame()
     {
         if (Godot.FileAccess.FileExists(SavePath))
         {
             Godot.DirAccess.RemoveAbsolute(ProjectSettings.GlobalizePath(SavePath));
         }
     }
+
+    /// <summary>Test-only teardown alias — see <see cref="ResetForNewGame"/>, the production
+    /// method this forwards to (mirrors <c>MainUi.ClockSettings.DeleteForTests</c>'s own naming
+    /// for the OTHER user:// preference file).</summary>
+    public static void DeleteForTests() => ResetForNewGame();
 
     private sealed class PersistedData
     {

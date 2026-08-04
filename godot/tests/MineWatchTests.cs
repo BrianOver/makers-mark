@@ -606,6 +606,125 @@ public class MineWatchTests
         }
     }
 
+    // ── repo task #67: honest narration when nobody is actually camped ─────────────────────────
+    // Owner playtest: "Lower into the mine has them return??? what logic is that lol" — the
+    // kernel still ticks Camp/ExpeditionDeep even when a party's whole trip already resolved
+    // inside the Expedition tick (floor-1 unstaged, or a bad stage-1 ending), so InFlight comes
+    // out empty and there is nothing to camp over or resolve. No kernel change was made (see
+    // EmptyMineScenarioTests on the sim side for why, and for the InFlight truth table this flag
+    // reads) — this is the Godot-side fix: AlreadyBackThisCycle names the case, and
+    // UpdateFeedLabel prepends an honest caption instead of leaving the strip to replay an
+    // already-decided run with nothing telling the player the outcome was already sealed.
+
+    [TestCase]
+    public void AlreadyBackThisCycle_True_CampPhase_ResolvedPartyButNothingCamped()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var state = StagedWorld() with
+            {
+                Phase = DayPhase.Camp,
+                PendingExpeditions = ImmutableList.Create(ResolvedResult()),
+            };
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            AssertThat(watch.AlreadyBackThisCycle).IsTrue();
+            var feed = Find<Label>(watch, "JourneyFeedLabel");
+            AssertThat(feed.Text).Contains("Already back");
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void AlreadyBackThisCycle_True_ExpeditionDeepPhase_ResolvedPartyButNothingCamped()
+    {
+        // Same shape one phase later — the Deep tick has nothing left to resolve either.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var state = StagedWorld() with
+            {
+                Phase = DayPhase.ExpeditionDeep,
+                PendingExpeditions = ImmutableList.Create(ResolvedResult()),
+            };
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            AssertThat(watch.AlreadyBackThisCycle).IsTrue();
+            var feed = Find<Label>(watch, "JourneyFeedLabel");
+            AssertThat(feed.Text).Contains("Already back");
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void AlreadyBackThisCycle_False_WhenAPartyIsGenuinelyCamped()
+    {
+        // The contrast case: InFlight non-empty — a real vigil, no caption needed or wanted.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var camp = CampedPartyWithFloors();
+            var state = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(camp) };
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            AssertThat(watch.AlreadyBackThisCycle).IsFalse();
+            var feed = Find<Label>(watch, "JourneyFeedLabel");
+            AssertThat(feed.Text).NotContains("Already back");
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void AlreadyBackThisCycle_False_DuringExpeditionPhase_EvenBeforeTheOutcomeIsKnown()
+    {
+        // The Marching figures at the Expedition phase itself are genuinely still in progress —
+        // this flag is Camp/ExpeditionDeep-only by construction (MineWatch.Refresh), regardless
+        // of what that tick is about to decide.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var departed = ImmutableList.Create<GameEvent>(
+                new PartyDeparted(ImmutableList.Create(new HeroId(1), new HeroId(2), new HeroId(3)), 2));
+
+            watch.Refresh(StagedWorld() with { Phase = DayPhase.Expedition }, departed);
+
+            AssertThat(watch.AlreadyBackThisCycle).IsFalse();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    /// <summary>A clean (no-death) resolved run — the same shape a floor-1 unstaged first trip
+    /// produces, just without the death-round noise <see cref="DeathRound_NeverAppearsInMineWatchFeed_RendersCloudInstead"/>
+    /// already covers.</summary>
+    private static ExpeditionResult ResolvedResult() => new(
+        Party: ImmutableList.Create(new HeroId(1)), TargetFloor: 1, DeepestFloorCleared: 1,
+        Floors: ImmutableList.Create(
+            new FloorOutcome(1, true, ImmutableList.Create(
+                new CombatEvent(1, new HeroId(1), "cave-rat", ImmutableList.Create(3), 5, 0, true, null)))),
+        Survivors: ImmutableList.Create(new HeroId(1)), Deaths: ImmutableList<HeroId>.Empty,
+        Beats: ImmutableList<AttributionBeat>.Empty, Loot: ImmutableList<OreLoot>.Empty,
+        GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty);
+
     // ── A2 (+A3 FX): the beat-driven DelveStage overlay, wired through the real Refresh/_Process
     // playhead (DelveStageTests exercises DelveStage directly with handcrafted beats; these prove
     // the FULL wiring — GameState → RefreshDelveBeats → the playhead → DelveStage.RenderBeat).

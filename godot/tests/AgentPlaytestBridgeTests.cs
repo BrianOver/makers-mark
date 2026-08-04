@@ -197,6 +197,102 @@ public class AgentPlaytestBridgeTests
         }
     }
 
+    /// <summary>
+    /// The observation has to tell the model the town EXISTS. The first honest agent run reached day 2
+    /// without ever entering a building; its own limitation note blamed a missing "enter" verb, which
+    /// was wrong — <c>key</c> + the <c>interact</c> InputMap action already reached the same code path a
+    /// human's E press does. The real gap was that a model handed only button names has no way to know
+    /// a forge is somewhere to its left, so it pressed buttons, which is exactly what it did.
+    ///
+    /// <para>This pins the fix as a PLAYER could use it: the forge is listed, it has a direction and a
+    /// distance, and walking that direction actually closes the distance. Anything less and the model
+    /// is guessing.</para>
+    /// </summary>
+    [TestCase]
+    public async Task Surroundings_NameTheTownsBuildings_WithADirectionThatActuallyWorks()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            await SettleLayout(ui);
+            var bridge = new AgentPlaytestBridge(ui);
+
+            var digest = bridge.BuildDigest(ui, 1, "(start)");
+            AssertThat(digest.Nearby.Count)
+                .OverrideFailureMessage(
+                    "The digest listed nothing to walk to while standing in the town. A model with no " +
+                    "surroundings cannot enter a building, which is how a green suite coexisted with a " +
+                    "run that never went indoors.")
+                .IsGreater(0);
+
+            var forge = digest.Nearby.FirstOrDefault(n => n.Key.Equals("forge", System.StringComparison.OrdinalIgnoreCase));
+            AssertThat(forge)
+                .OverrideFailureMessage(
+                    "The forge — the building this game is ABOUT — was not among the things reported as " +
+                    $"reachable. Reported: {string.Join(", ", digest.Nearby.Select(n => n.Key))}.")
+                .IsNotNull();
+            AssertThat(forge!.InRange)
+                .OverrideFailureMessage(
+                    $"The forge was {forge.Distance}px away and not reported in range, even though the " +
+                    "player spawns on its doorstep. A first turn that cannot tell it is already standing " +
+                    "at the forge is the whole problem this field exists to fix.")
+                .IsTrue();
+
+            // The direction must be ACTIONABLE, not decorative: moving the way it points has to reduce
+            // the distance. Measured against a FAR building on purpose — the forge is 8px away at spawn
+            // and walking into it just presses the player against its own footprint, which would test
+            // collision rather than the bearing.
+            var far = digest.Nearby.OrderByDescending(n => n.Distance).First();
+            var axis = far.Direction.Split('+')[0];
+            var outcome = await bridge.Apply(ui, new AgentCommand("move", Dir: axis, Frames: 40));
+            AssertThat(outcome).StartsWith("moved");
+
+            var closer = bridge.BuildDigest(ui, 2, outcome).Nearby.First(n => n.Key == far.Key);
+            AssertThat(closer.Distance)
+                .OverrideFailureMessage(
+                    $"Walking '{axis}' — the direction the digest itself reported for {far.Key} " +
+                    $"({far.Direction}) — did not get closer to it: {far.Distance}px -> " +
+                    $"{closer.Distance}px. The bearing is wrong, so a model following it walks away.")
+                .IsLess(far.Distance);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Inside a room the same field must switch to the room's own stations — otherwise the
+    /// model gets indoors and is once again blind, which is where the interiors work actually needs
+    /// checking (the owner's "why have the interactive things if they just open the same menu").</summary>
+    [TestCase]
+    public async Task Surroundings_BecomeTheRoomsStations_OnceInside()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.EnterInterior("forge");
+            await SettleLayout(ui);
+            var bridge = new AgentPlaytestBridge(ui);
+
+            var inside = bridge.BuildDigest(ui, 1, "(entered forge)").Nearby;
+            AssertThat(inside.Count)
+                .OverrideFailureMessage("Inside the forge, the digest reported nothing to walk to.")
+                .IsGreater(0);
+
+            var stationKeys = ui.Town.FindInteriorRoom("forge").Stations.Select(s => s.Key).ToHashSet();
+            AssertThat(inside.All(n => stationKeys.Contains(n.Key)))
+                .OverrideFailureMessage(
+                    "Inside a room the surroundings must be that room's stations, not the town's " +
+                    $"buildings. Reported: {string.Join(", ", inside.Select(n => n.Key))}; the room's " +
+                    $"stations are: {string.Join(", ", stationKeys)}.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     [TestCase]
     public async Task CommandTimeout_EndsTheLoopCleanly_AndWritesWhatItHad()
     {

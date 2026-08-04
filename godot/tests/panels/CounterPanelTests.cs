@@ -508,6 +508,335 @@ public class CounterPanelTests
         }
     }
 
+    // ── Next-step legibility + verb consequences (owner playtest, 2026-08-04) ───────────────────
+    // "Counter worked - person buying but really unsure WHAt to do after?" and "i hit suggest and
+    // interest went up but nothing happened lol" — the counter used to move a bare number with no
+    // statement of what it meant or what to do next. Every assertion below reads ONLY visible
+    // on-screen text (CounterFeedback / the panel's rendered body), never internal state.
+
+    [TestCase]
+    public void NextStep_RoundOpen_NamesTheClosingVerbsAndTheRealPatienceGap_BeforeAnyPress()
+    {
+        var state = CounterFixture(round: 1, interest: 0, patience: 3, goodwill: 0, standingOffer: 10, presented: ShopItemId);
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            var text = RenderedText(ui.Shop);
+
+            // Stated BEFORE any button is pressed — the panel does not wait for a press to explain
+            // itself. No invented "interest needed" threshold: the real closing rule (Accept/Counter
+            // close it, Hold Firm risks the customer's patience) is named honestly instead.
+            AssertThat(text).Contains("Next step");
+            AssertThat(text).Contains("10g");
+            AssertThat(text).Contains("Test Blade");
+            AssertThat(text).Contains("Accept to close the sale now");
+            AssertThat(text).Contains("Hold Firm");
+            AssertThat(text).Contains("3 patience rounds left");
+            AssertThat(text).Contains("walks away with nothing bought");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void NextStep_NoRoundYetOpen_InstructsPresentingAnItem_BeforeAnyPress()
+    {
+        var state = CounterFixture(round: 0, interest: 0, patience: 3, goodwill: 0, standingOffer: null, presented: null);
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            var text = RenderedText(ui.Shop);
+
+            AssertThat(text).Contains("Next step");
+            AssertThat(text).Contains("present an item from the shelf to Buyer1");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Suggest_ComplementaryEmptySlot_ReportsInterestRoseAndThatItDoesNotTouchThisRound()
+    {
+        // Buyer1's Gear is empty (MakeHero) and Test Blade is a Weapon — a genuine complementary
+        // empty slot (HaggleResolver.IsComplementaryEmptySlot), so the upsell bonus really lands.
+        var state = CounterFixture(round: 0, interest: 0, patience: 3, goodwill: 0, standingOffer: null, presented: null);
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, $"Suggest_{ShopItemId.Value}");
+
+            var feedback = Find<Label>(ui.Shop, "CounterFeedback").Text;
+            AssertThat(feedback).Contains("Suggested Test Blade");
+            // The owner-reported confusion, answered directly: the number moved AND why nothing
+            // else visibly changed (it affects a FUTURE round/presentment, not this one).
+            AssertThat(feedback).Contains("interest rose 0 to 80");
+            AssertThat(feedback).Contains("not this one");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Suggest_SlotAlreadyEquipped_ReportsInterestHeldAndWhy()
+    {
+        var baseState = CounterFixture(round: 0, interest: 0, patience: 3, goodwill: 0, standingOffer: null, presented: null);
+        var occupiedHero = baseState.Heroes[1] with { Gear = baseState.Heroes[1].Gear.WithSlot(ItemSlot.Weapon, new ItemId(9999)) };
+        var state = baseState with { Heroes = baseState.Heroes.SetItem(1, occupiedHero) };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, $"Suggest_{ShopItemId.Value}"); // Weapon slot — already filled, so no bonus
+
+            var feedback = Find<Label>(ui.Shop, "CounterFeedback").Text;
+            AssertThat(feedback).Contains("Suggested Test Blade");
+            AssertThat(feedback).Contains("interest held at 0");
+            AssertThat(feedback).Contains("isn't what Buyer1 needs right now");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void HoldFirm_RoundAdvances_ReportsTheNewStandingOfferAndPatienceRemaining()
+    {
+        var ui = MountMainUi(new SimAdapter(SingleHeroGuaranteedBuyState()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "OpenCounter");
+            PressEnabled(ui.Shop, $"Present_{ShopItemId.Value}"); // round 1 opens (immediate)
+            PressEnabled(ui.Shop, "HoldFirm"); // patience 3 -> 2; not exhausted
+
+            var feedback = Find<Label>(ui.Shop, "CounterFeedback").Text;
+            AssertThat(feedback).Contains("Held firm");
+            AssertThat(feedback).Contains("reconsider");
+            AssertThat(feedback).Contains("new standing offer");
+            AssertThat(feedback).Contains("2 patience rounds left");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void HoldFirm_PatienceExhausted_ReportsTheWalkAwayAndTheNextCustomer()
+    {
+        var ui = MountMainUi(new SimAdapter(SingleHeroGuaranteedBuyState()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "OpenCounter");
+            PressEnabled(ui.Shop, $"Present_{ShopItemId.Value}");
+
+            PressEnabled(ui.Shop, "HoldFirm");
+            PressEnabled(ui.Shop, "HoldFirm");
+            PressEnabled(ui.Shop, "HoldFirm"); // 3rd HoldFirm exhausts InitialPatienceRounds (3)
+
+            var feedback = Find<Label>(ui.Shop, "CounterFeedback").Text;
+            AssertThat(feedback).Contains("patience ran out");
+            AssertThat(feedback).Contains("walked away with nothing bought");
+            // The lone hero in this fixture empties the queue — the honest "what's next" answer.
+            AssertThat(feedback).Contains("that was the last customer this morning");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Accept_ReportsTheItemPriceHeroAndTheNextCustomer()
+    {
+        // Two heroes queued so Accept's "what's next" clause names a REAL next customer, not just
+        // a closed session — answers "person buying but unsure what to do after".
+        var hero1 = MakeHero(1, ClassRegistry.StrikerId, gold: 500);
+        var hero2 = MakeHero(2, ClassRegistry.StrikerId, gold: 500);
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(hero1.Id.Value, hero1).Add(hero2.Id.Value, hero2);
+        var baseState = GameFactory.NewGame(7010, heroes);
+        var counter = new CounterState(
+            Queue: ImmutableList.Create(hero1.Id, hero2.Id),
+            Active: hero1.Id,
+            Round: 1,
+            InterestPermille: 0,
+            PatienceRounds: 3,
+            GoodwillPermille: 0,
+            Presented: ShopItemId,
+            StandingOfferGold: 45,
+            Served: ImmutableSortedSet<int>.Empty,
+            Closed: false);
+        var state = baseState with
+        {
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(ShopItemId.Value, TestBlade()),
+            Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(ShopItemId, 60)) },
+            Counter = counter,
+        };
+
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "Accept");
+
+            var feedback = Find<Label>(ui.Shop, "CounterFeedback").Text;
+            AssertThat(feedback).Contains("Sold Test Blade to Buyer1 for 45g");
+            AssertThat(feedback).Contains("Buyer2 is up next");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void CounterVerb_PriceAboveTheRoundCeiling_ReportsTheFleeceAndTheNextCustomer()
+    {
+        // Deterministic fleece: Striker's class factor is neutral (1000 permille) and this fixture
+        // starts every meter at 0/fresh, so round-1's ceiling is 980 permille of true willingness —
+        // true willingness equals the list price itself here (8g), so ceiling = 7g. Countering at
+        // the full 8g list price is therefore ALWAYS above ceiling — a real, provable fleece, not a
+        // coin flip (WillingnessModel.Band/ResolveCounter, sim/GameSim/Counter).
+        var itemA = new ItemId(801);
+        var itemB = new ItemId(802);
+        var itemC = new ItemId(803);
+        var state = ThreeCustomerGuaranteedBuyState(itemA, itemB, itemC);
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "OpenCounter");
+            PressEnabled(ui.Shop, $"Present_{itemA.Value}"); // round 1 opens for Buyer1
+
+            Find<CoinStack>(ui.Shop, "CounterPrice").SetValue(8); // the shelf list price itself
+            PressEnabled(ui.Shop, "Counter");
+
+            var feedback = Find<Label>(ui.Shop, "CounterFeedback").Text;
+            AssertThat(feedback).Contains("Countered at 8g");
+            AssertThat(feedback).Contains("sold Test Blade 801 to Buyer1 for 8g");
+            AssertThat(feedback).Contains("felt like a fleece");
+            AssertThat(feedback).Contains("goodwill dropped");
+            AssertThat(feedback).Contains("Buyer2 is up next");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── Customer voice (U2, plan 2026-08-03-001-feat-loop-structure-plan.md, KTD-B) ─────────────
+    // Owner playtest: "Counter worked - person buying but really unsure WHAt to do after?" and
+    // "i hit suggest and interest went up but nothing happened lol" — the customer never said
+    // anything. Every assertion below reads ONLY visible on-screen text (never CustomerVoice
+    // internals directly — those are pinned separately in CustomerVoiceTests).
+
+    [TestCase]
+    public void ActiveCustomer_OpensWithAStatedWant_NamingTheirGearGapAndTheirOwnGold()
+    {
+        // Buyer1's Gear is GearSet.Empty (MakeHero) — RaidForecast.MissingItemSlots reports Weapon
+        // first — and their gold is the fixture's own 500, never a rounded or invented figure.
+        var state = CounterFixture(round: 0, interest: 0, patience: 3, goodwill: 0, standingOffer: null, presented: null);
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            var text = RenderedText(ui.Shop);
+
+            AssertThat(text).Contains("Buyer1");
+            AssertThat(text).Contains("Looking for a weapon");
+            AssertThat(text).Contains("500g");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void NoActiveCustomer_RendersNoWantLineBubble()
+    {
+        var ui = MountMainUi(); // fresh campaign — Counter is null (PKD6), nobody is at the counter
+        try
+        {
+            ui.OpenPanel("Shop");
+            var text = RenderedText(ui.Shop);
+
+            AssertThat(text.Contains("Looking for")).IsFalse();
+            AssertThat(text.Contains("Just browsing")).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void PresentingTheWantedSlot_AtAFairPrice_OpensARound_NotAWalk_AndSpeaksInterest()
+    {
+        // SingleHeroGuaranteedBuyState's shelved item IS a weapon — the same slot the want line
+        // (Weapon first, gear empty) names — presented at its own fair list price.
+        var ui = MountMainUi(new SimAdapter(SingleHeroGuaranteedBuyState()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "OpenCounter");
+            var wantText = RenderedText(ui.Shop);
+            AssertThat(wantText).Contains("Looking for a weapon");
+
+            PressEnabled(ui.Shop, $"Present_{ShopItemId.Value}");
+            var text = RenderedText(ui.Shop);
+
+            // A round opened (a real standing offer, not the "—" empty placeholder) — never a walk.
+            AssertThat(ui.Adapter.CurrentState.Counter!.Round).IsGreater(0);
+            AssertThat(ui.Adapter.CurrentState.Counter.StandingOfferGold is not null).IsTrue();
+            AssertThat(ui.Adapter.CurrentState.EventLog.OfType<CustomerWalked>().Count()).IsEqual(0);
+            AssertThat(text.Contains("passed (")).IsFalse(); // the walk-away consequence phrase
+
+            // The customer's own spoken reply to the Buy verdict (CustomerVoice.PresentReply).
+            AssertThat(text).Contains("Test Blade? I could use that.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Suggest_FittingEmptySlot_RendersTheInterestedSpokenReply_AndTheInterestChipMovesSameRefresh()
+    {
+        var state = CounterFixture(round: 0, interest: 0, patience: 3, goodwill: 0, standingOffer: null, presented: null);
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, $"Suggest_{ShopItemId.Value}");
+
+            var text = RenderedText(ui.Shop);
+            var feedback = Find<Label>(ui.Shop, "CounterFeedback").Text;
+
+            // The spoken reply (owner playtest: give the meter movement a voice)...
+            AssertThat(feedback).Contains("Test Blade? ...I do lack one.");
+            // ...and the Interest chip itself moved, in the SAME refresh (no bare number with no
+            // comment, and no comment with no number either).
+            AssertThat(text).Contains("80");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── Fixtures ─────────────────────────────────────────────────────────────────────────────────
 
     private static Hero MakeHero(int id, string classId, int gold) => new(
