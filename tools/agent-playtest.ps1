@@ -286,8 +286,18 @@ try {
 
         # Stuck detection (R2). A model that stares at an unchanged screen must be REPORTED, never
         # mistaken for a clean run -- that is the whole failure mode this harness exists to end.
+        # The digest MUST include where the player is standing. Without it, walking across town reads
+        # as four identical turns, so the detector fired STUCK on a model that was moving correctly and
+        # then nudged it away from walking -- the harness manufacturing the symptom it exists to report.
+        # Nearest-target distance is the position proxy: it changes as the player walks and needs no
+        # new field. Rounded to 16px so sub-pixel drift is not mistaken for progress.
         $enabled = @($state.controls | Where-Object { $_.enabled } | ForEach-Object { $_.name })
-        $digest = ($state.phase + '|' + $state.location + '|' + (($state.screenText) -join ';') + '|' + ($enabled -join ','))
+        $whereabouts = ''
+        if ($state.nearby -and @($state.nearby).Count -gt 0) {
+            $nearest = @($state.nearby)[0]
+            $whereabouts = $nearest.key + '@' + [math]::Round($nearest.distance / 16)
+        }
+        $digest = ($state.phase + '|' + $state.location + '|' + $whereabouts + '|' + (($state.screenText) -join ';') + '|' + ($enabled -join ','))
         if ($digestSeen.ContainsKey($digest)) { $digestSeen[$digest] = $digestSeen[$digest] + 1 } else { $digestSeen[$digest] = 1 }
         if ($digestSeen[$digest] -eq 4) {
             $note = 'STUCK: the screen was identical for 4 turns at ' + $state.location + ' / ' + $state.phase + '. Enabled controls: ' + ($enabled -join ', ')
@@ -310,12 +320,19 @@ try {
             # button-presser. Without them the first honest run reached day 2 having never entered a
             # building: it had no way to know a forge existed somewhere to its left. Both come
             # straight from the running town (state.json), so this narrates the world, never invents it.
+            # An in-range target must NOT be reported as a direction to walk. The first agent run
+            # walked "down" into the forge's own footprint eight times from 8px away -- the player
+            # spawns on its doorstep, so the bearing was true and useless. Say the actionable thing.
             $around = ''
             if ($state.nearby -and @($state.nearby).Count -gt 0) {
-                $around = 'Around you (walk with move, then press interact when inRange):' + [Environment]::NewLine +
-                    ((@($state.nearby) | Select-Object -First 6 | ForEach-Object {
-                        '  ' + $_.key + ' [' + $_.label + '] ' + $_.direction + ' ' + $_.distance + 'px inRange=' + $_.inRange
-                    }) -join [Environment]::NewLine)
+                $lines = @(@($state.nearby) | Select-Object -First 6 | ForEach-Object {
+                    if ($_.inRange) {
+                        '  ' + $_.key + ' [' + $_.label + '] YOU ARE HERE - press interact to use it (do not walk)'
+                    } else {
+                        '  ' + $_.key + ' [' + $_.label + '] ' + $_.direction + ' ' + $_.distance + 'px away'
+                    }
+                })
+                $around = 'Around you:' + [Environment]::NewLine + ($lines -join [Environment]::NewLine)
             }
             $prompt2d = ''
             if ($state.interactPrompt) { $prompt2d = 'Interact prompt on screen: ' + $state.interactPrompt }
@@ -476,7 +493,42 @@ if (-not $findings) {
     Die @('the judge pass produced nothing. The turn log is still in ' + $findingsPath + '.')
 }
 
-Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @($findings, "", "---", "", "## Turn log", "", $fullLog))
+# ---------------------------------------------------------------------------
+# Fabrication guard. A 7B judge invents defects that read as real ones, and asking it to
+# "quote the log" does not stop it: one run reported that the screen said OFFRED and should say
+# OFFERED, when the log contains OFFERED thirteen times and OFFRED nowhere in the game or the run.
+# A fabricated finding is worse than none -- it sends you fixing what was never observed -- so
+# every claim about on-screen text is now CHECKED against the log instead of trusted.
+#
+# The check is deliberately narrow: SCREAMING_CASE tokens and control-name-shaped words are the
+# things a judge quotes verbatim and the things we can verify mechanically. Prose is left alone,
+# because flagging ordinary English would bury the real signal.
+$unsupported = @()
+$logHaystack = $fullLog.ToUpperInvariant()
+$quoted = [regex]::Matches($findings, '(?<![A-Za-z0-9_])[A-Z][A-Z0-9_]{3,}(?![A-Za-z0-9_])')
+foreach ($m in $quoted) {
+    $token = $m.Value
+    if ($logHaystack.Contains($token)) { continue }
+    if ($unsupported -contains $token) { continue }
+    $unsupported += $token
+}
+
+$guardNote = @()
+if ($unsupported.Count -gt 0) {
+    Write-Host ''
+    Warn ('FABRICATION GUARD: ' + $unsupported.Count + ' quoted token(s) appear nowhere in the turn log:')
+    foreach ($t in $unsupported) { Warn ('  ' + $t + '  <- not in the log; treat this finding as invented until a human confirms it') }
+    $guardNote = @(
+        '',
+        '## Fabrication guard',
+        '',
+        ('These tokens are quoted in the findings above but appear NOWHERE in the turn log, so the ' +
+         'findings that rely on them are unsupported by anything the agent actually saw:'),
+        ''
+    ) + ($unsupported | ForEach-Object { '- `' + $_ + '`' })
+}
+
+Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @($findings) + $guardNote + @("", "---", "", "## Turn log", "", $fullLog))
 
 Write-Host ''
 Say ('findings written: ' + $findingsPath)
@@ -486,4 +538,7 @@ Write-Host ''
 Warn 'Read these before trusting them. The acceptance bar for this harness is that it independently'
 Warn 'names something a human would also flag. Vacuous praise means the prompts need work, not that'
 Warn 'the game is fine.'
+if ($unsupported.Count -gt 0) {
+    Warn 'At least one finding quotes text the agent never saw -- see the fabrication guard above.'
+}
 exit 0

@@ -328,14 +328,42 @@ public sealed class AgentPlaytestBridge
         return $"advanced -> day {before.Day} {before.Phase} to day {after.Day} {after.Phase}";
     }
 
-    private static Vector2? ParseDirection(string? dir) => dir?.Trim().ToLowerInvariant() switch
+    /// <summary>
+    /// Parses a move direction, accepting a composite like <c>"right+down"</c> as well as a single
+    /// axis. The composite form is not a nicety: <see cref="Bearing"/> reports diagonal targets that
+    /// way, and a first agent run refused three moves with <c>unknown move dir 'right+down'</c> —
+    /// the harness telling the model a direction its own move verb could not act on.
+    /// </summary>
+    private static Vector2? ParseDirection(string? dir)
     {
-        "up" => new Vector2(0, -1),
-        "down" => new Vector2(0, 1),
-        "left" => new Vector2(-1, 0),
-        "right" => new Vector2(1, 0),
-        _ => null,
-    };
+        if (string.IsNullOrWhiteSpace(dir))
+        {
+            return null;
+        }
+
+        var total = Vector2.Zero;
+        foreach (var part in dir.Trim().ToLowerInvariant().Split('+', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var axis = part.Trim() switch
+            {
+                "up" => new Vector2(0, -1),
+                "down" => new Vector2(0, 1),
+                "left" => new Vector2(-1, 0),
+                "right" => new Vector2(1, 0),
+                _ => Vector2.Zero,
+            };
+
+            if (axis == Vector2.Zero)
+            {
+                return null; // any unknown component makes the whole direction untrustworthy
+            }
+
+            total += axis;
+        }
+
+        // Opposed components ("left+right") cancel to zero — refuse rather than silently stand still.
+        return total == Vector2.Zero ? null : total.Normalized();
+    }
 
     /// <summary>
     /// The full turn loop: settle, observe (state.json + frame.png), poll for command.json,

@@ -242,18 +242,68 @@ public class AgentPlaytestBridgeTests
             // the distance. Measured against a FAR building on purpose — the forge is 8px away at spawn
             // and walking into it just presses the player against its own footprint, which would test
             // collision rather than the bearing.
+            //
+            // Send the bearing back VERBATIM. An earlier version of this test split off the primary
+            // axis first, which hid the defect a real agent run then found: the move verb rejected
+            // three commands with "unknown move dir 'right+down'" because Bearing reports diagonals
+            // that way. A test that sanitises the harness's own output cannot catch the harness lying.
             var far = digest.Nearby.OrderByDescending(n => n.Distance).First();
-            var axis = far.Direction.Split('+')[0];
-            var outcome = await bridge.Apply(ui, new AgentCommand("move", Dir: axis, Frames: 40));
+            var outcome = await bridge.Apply(ui, new AgentCommand("move", Dir: far.Direction, Frames: 40));
             AssertThat(outcome).StartsWith("moved");
 
             var closer = bridge.BuildDigest(ui, 2, outcome).Nearby.First(n => n.Key == far.Key);
             AssertThat(closer.Distance)
                 .OverrideFailureMessage(
-                    $"Walking '{axis}' — the direction the digest itself reported for {far.Key} " +
-                    $"({far.Direction}) — did not get closer to it: {far.Distance}px -> " +
+                    $"Walking '{far.Direction}' — the direction the digest itself reported for " +
+                    $"{far.Key} — did not get closer to it: {far.Distance}px -> " +
                     $"{closer.Distance}px. The bearing is wrong, so a model following it walks away.")
                 .IsLess(far.Distance);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// Every bearing <see cref="AgentPlaytestBridge"/> can emit must be a direction its own move verb
+    /// accepts. A real agent run refused three moves with <c>unknown move dir 'right+down'</c> — the
+    /// harness handing the model a word it would then reject. This walks the diagonal forms explicitly
+    /// so the two halves cannot drift apart again.
+    /// </summary>
+    [TestCase]
+    public async Task EveryBearingTheHarnessEmits_IsADirectionTheMoveVerbAccepts()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            await SettleLayout(ui);
+            var bridge = new AgentPlaytestBridge(ui);
+
+            string[] bearings =
+            [
+                "up", "down", "left", "right",
+                "right+down", "down+right", "left+up", "up+left", "right+up", "down+left",
+            ];
+
+            foreach (var bearing in bearings)
+            {
+                var outcome = await bridge.Apply(ui, new AgentCommand("move", Dir: bearing, Frames: 2));
+                AssertThat(outcome)
+                    .OverrideFailureMessage(
+                        $"The move verb refused '{bearing}', a bearing the digest itself can report: " +
+                        $"'{outcome}'. Every direction the harness emits must be one it accepts.")
+                    .StartsWith("moved");
+            }
+
+            // Nonsense and self-cancelling input must still be refused rather than silently standing
+            // still — a move that reports success without moving is how a dead harness looks healthy.
+            foreach (var bad in new[] { "sideways", "left+right", "up+banana", "+", "" })
+            {
+                AssertThat(await bridge.Apply(ui, new AgentCommand("move", Dir: bad, Frames: 2)))
+                    .OverrideFailureMessage($"The move verb accepted the meaningless direction '{bad}'.")
+                    .StartsWith("refused");
+            }
         }
         finally
         {
