@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Text;
 using GameSim;
+using GameSim.Advisor;
 using GameSim.Contracts;
 using GdUnit4;
 using static GdUnit4.Assertions;
@@ -29,9 +30,6 @@ namespace GodotClient.Tests;
 [RequireGodotRuntime]
 public class PlayableLoopTests
 {
-    /// <summary>Default shelf price: AddSpinBox's initial value on the Stock row (ShopPanel).</summary>
-    private const int DefaultStockPrice = 10;
-
     /// <summary>
     /// Fresh campaign through the U4 static handoff — the same
     /// <see cref="GameComposition.NewCampaign(ulong)"/> world the new-game flow seeds.
@@ -187,18 +185,26 @@ public class PlayableLoopTests
         ui.OpenPanel("Shop"); // U21: open Shop so the fresh unshelved craft actually renders
         AssertThat(RenderedText(ui.Shop)).Contains("Dagger");
 
-        // Day-1 Camp: shelve the dagger from the Shop tab (StockAction is all-phases).
+        // U6 (auto pricing): the StockPrice_ SpinBox is pre-filled with SuggestedPrice.For — the
+        // player never has to touch it — so the expected shelf price IS the suggestion, not a
+        // hand-picked constant.
+        var suggestedPrice = SuggestedPrice.For(ui.Adapter.CurrentState.Items[crafted.Value]);
+
+        // Day-1 Camp: shelve the dagger from the Shop tab (StockAction is all-phases), with ZERO
+        // price interaction — Stock is pressed as-is, no SpinBox edit.
         PressEnabled(ui.Shop, $"Stock_{crafted.Value}");
         PressEnabled(ui, "AdvancePhase");
         Step("Camp tick: stock landed");
         var shelf = ui.Adapter.CurrentState.Player.Shelf;
         AssertThat(shelf.Count).IsEqual(1);
         AssertThat(shelf[0].Item).IsEqual(crafted);
-        AssertThat(shelf[0].Price).IsEqual(DefaultStockPrice);
+        AssertThat(shelf[0].Price).IsEqual(suggestedPrice);
         var shopText = RenderedText(ui.Shop);
         AssertThat(shopText).Contains("Dagger");
         // P007 U3: price moved from an inline "— Ng" suffix into its own StatChip value label.
-        AssertThat(shopText).Contains($"{DefaultStockPrice}g");
+        AssertThat(shopText).Contains($"{suggestedPrice}g");
+        // U6: the auto price must never look like a silent guess — its origin is on screen too.
+        AssertThat(shopText).Contains("suggested");
 
         // Ride the gated clock to day-2 Morning: ExpeditionDeep, then Evening (day rolls).
         PressEnabled(ui, "AdvancePhase");

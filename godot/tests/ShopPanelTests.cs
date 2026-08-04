@@ -2,6 +2,7 @@
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
+using GameSim.Advisor;
 using GameSim.Contracts;
 using GameSim.Kernel;
 using GdUnit4;
@@ -126,6 +127,75 @@ public class ShopPanelTests
             AssertThat(pending.Count).IsEqual(1);
             AssertThat(pending[0].Item).IsEqual(itemId);
             AssertThat(pending[0].Price).IsEqual(StockPrice);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void StockingWithNoPriceInteraction_AutoPricesAtTheSuggestion_AndShowsWhereItCameFrom()
+    {
+        // Owner playtest note, verbatim: "The store pricing should be auto tbh - focus less on
+        // this for now." The player must be able to sell without ever touching a price control —
+        // this drives Stock exactly as-is, with no SpinBox edit, and proves the landed price is
+        // the Advisor's own SuggestedPrice, shown on screen with its provenance.
+        var ui = MountMainUi();
+        try
+        {
+            var itemId = CraftDagger(ui);
+
+            var suggested = SuggestedPrice.For(ui.Adapter.CurrentState.Items[itemId.Value]);
+            var spin = Find<SpinBox>(ui.Shop, $"StockPrice_{itemId.Value}");
+            AssertThat((int)spin.Value).IsEqual(suggested); // pre-filled — zero interaction needed
+
+            // No blocking price prompt anywhere under the panel: a real modal would be an
+            // AcceptDialog (ConfirmationDialog derives from it too), and none exists.
+            AssertThat(ui.Shop.FindChildren("*", "AcceptDialog", recursive: true, owned: false).Count)
+                .IsEqual(0);
+
+            PressEnabled(ui.Shop, $"Stock_{itemId.Value}");
+            ui.Adapter.AdvancePhase(); // lands the stock
+
+            var shelf = ui.Adapter.CurrentState.Player.Shelf;
+            AssertThat(shelf.Count).IsEqual(1);
+            AssertThat(shelf[0].Item).IsEqual(itemId);
+            AssertThat(shelf[0].Price).IsEqual(suggested);
+
+            // The UI shows the chosen price AND names it as a suggestion — never a silent guess.
+            var shopText = RenderedText(ui.Shop);
+            AssertThat(shopText).Contains($"{suggested}g");
+            AssertThat(shopText).Contains("suggested");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void OverridingTheSuggestedPrice_BeforeStocking_LandsTheCustomPrice_LabeledCustom()
+    {
+        // The suggestion must stay a default, not a floor or a lock — an override is still one
+        // SpinBox edit away, and once it lands the UI must stop calling it "suggested".
+        var ui = MountMainUi();
+        try
+        {
+            var itemId = CraftDagger(ui);
+            var suggested = SuggestedPrice.For(ui.Adapter.CurrentState.Items[itemId.Value]);
+            var overridden = suggested + 37;
+
+            Find<SpinBox>(ui.Shop, $"StockPrice_{itemId.Value}").Value = overridden;
+            PressEnabled(ui.Shop, $"Stock_{itemId.Value}");
+            ui.Adapter.AdvancePhase(); // lands the stock
+
+            var shelf = ui.Adapter.CurrentState.Player.Shelf;
+            AssertThat(shelf[0].Price).IsEqual(overridden);
+
+            var shopText = RenderedText(ui.Shop);
+            AssertThat(shopText).Contains($"{overridden}g");
+            AssertThat(shopText).Contains("custom");
         }
         finally
         {

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using GameSim.Advisor;
 using GameSim.Contracts;
 using Godot;
 using GodotClient.Ui;
@@ -48,6 +49,15 @@ namespace GodotClient.Panels;
 /// control stays a SpinBox — only the ALREADY-shelved item's reprice control becomes a tag. Shelf
 /// *position* stays purely cosmetic (an explicit non-goal — see the plan's Deferred section); the
 /// slot a craft lands in never reaches the seam.</para>
+///
+/// <para>U6 (owner playtest note: "the store pricing should be auto tbh"): pricing is no
+/// longer a chore the player must do before they can sell. Every unshelved craft's
+/// <c>StockPrice_{id}</c> SpinBox now defaults to <see cref="SuggestedPrice.For"/> — the same
+/// formula the Advisor already used — so pressing Stock (or dragging the card onto a shelf
+/// slot) with zero price interaction produces a real, sensible price. The SpinBox stays live
+/// and editable for anyone who wants to override it; a "priced at Ng — suggested/custom" hint
+/// (recomputed on every edit, both here and on the already-shelved card) always names the
+/// price and where it came from, so an auto-price never reads as a silent guess.</para>
 /// </summary>
 public partial class ShopPanel : SimPanel
 {
@@ -177,6 +187,14 @@ public partial class ShopPanel : SimPanel
                 IconRegistry.Slot(item.Slot), $"{itemId} {item.Name} [{item.Quality}]", $"{entry.Price}g", "1",
                 unstock, enabled: true));
 
+            // U6 (auto pricing): names the price AND its provenance on the actual shelved item —
+            // an auto-price must never look like a silent guess. Recomputed every Refresh, so a
+            // Reprice that lands always re-derives suggested-vs-custom off the live entry.Price.
+            var priceOrigin = AddLabel(
+                cardBody, $"priced at {entry.Price}g — {PriceOrigin(entry.Price, item)}");
+            priceOrigin.Name = $"PriceOrigin_{itemId.Value}";
+            priceOrigin.AddThemeColorOverride("font_color", GameTheme.TextDim);
+
             var controlsRow = AddRow(cardBody);
             // U5: a reprice IS a tag flip now (design doc §B6) — MinValue stays the default 1, so
             // the tag itself can never carry (and therefore never queue) a sub-1 price.
@@ -286,9 +304,20 @@ public partial class ShopPanel : SimPanel
             // are already filtered by UnshelvedPlayerCrafts, and the SpinBox floor of 1 keeps
             // prices positive) drives ListRow's own enabled/whyNot. Priced "—": the real price is
             // whatever the SpinBox alongside holds at press time, never a stale pre-filled quote.
+            //
+            // U6 (auto pricing, owner note "the store pricing should be auto tbh"): the SpinBox
+            // now DEFAULTS to SuggestedPrice.For(item) rather than a flat 10, so a bare Stock
+            // press (or a drag straight onto a shelf slot, which reads this same live Value) sells
+            // at a real, item-specific price with zero pricing interaction. It stays a live,
+            // editable override for anyone who wants one.
+            var suggested = SuggestedPrice.For(item);
             var priceSpin = new SpinBox
             {
-                Name = $"StockPrice_{item.Id.Value}", MinValue = 1, MaxValue = 99999, Rounded = true, Value = 10,
+                Name = $"StockPrice_{item.Id.Value}",
+                MinValue = 1,
+                MaxValue = 99999,
+                Rounded = true,
+                Value = suggested,
             };
             var itemId = item.Id;
             // U5: wire the drag payload now that priceSpin exists — read live at drag-start
@@ -307,6 +336,15 @@ public partial class ShopPanel : SimPanel
 
             var controlsRow = AddRow(cardBody);
             controlsRow.AddChild(priceSpin);
+            // U6 (auto pricing): names the pre-filled price AND its provenance BEFORE the player
+            // ever presses Stock, so the default never reads as a silent guess. Recomputed on
+            // every edit — nudging the SpinBox off the suggestion flips it from "suggested" to
+            // "custom" live, no press required to see which one is about to land.
+            var priceHint = AddLabel(controlsRow, $"priced at {suggested}g — {PriceOrigin(suggested, item)}");
+            priceHint.Name = $"PriceHint_{item.Id.Value}";
+            priceHint.AddThemeColorOverride("font_color", GameTheme.TextDim);
+            priceSpin.ValueChanged += value =>
+                priceHint.Text = $"priced at {(int)value}g — {PriceOrigin((int)value, item)}";
             // U5: same provenance popup as the shelf section above.
             AddButton(controlsRow, $"Provenance_{item.Id.Value}", "History", () => OnShowProvenance(item.Id));
         }
@@ -477,7 +515,13 @@ public partial class ShopPanel : SimPanel
         var id = new ItemId(itemId);
         Adapter.Queue(new StockAction(id, price));
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Shelve);
-        _feedback!.Text = $"queued: stock {id} at {price}g";
+        // U6 (auto pricing): names the price's origin in the immediate feedback too, not just the
+        // persistent shelf-card hint — the item is already in state (it is being SHELVED, not
+        // created), so the lookup is always safe.
+        var origin = Adapter.CurrentState.Items.TryGetValue(itemId, out var item)
+            ? PriceOrigin(price, item)
+            : "custom";
+        _feedback!.Text = $"queued: stock {id} — priced at {price}g — {origin}";
     }
 
     /// <summary>
@@ -495,6 +539,14 @@ public partial class ShopPanel : SimPanel
         Adapter.Queue(new UnstockAction(id));
         _feedback!.Text = $"queued: unstock {id}";
     }
+
+    /// <summary>U6 (auto pricing): "suggested" when <paramref name="price"/> is exactly what
+    /// <see cref="SuggestedPrice.For"/> would price <paramref name="item"/> at right now, else
+    /// "custom" — the one word every price-provenance label in this panel (pre-stock hint,
+    /// shelved-card hint, stock feedback) renders, so the phrasing can never drift between the
+    /// three call sites.</summary>
+    private static string PriceOrigin(int price, Item item) =>
+        price == SuggestedPrice.For(item) ? "suggested" : "custom";
 
     /// <summary>
     /// U5 seam (KTD-A): reprices a shelved item — queues the exact <see cref="SetPriceAction"/> a
