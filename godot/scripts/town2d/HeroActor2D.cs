@@ -365,11 +365,24 @@ public partial class HeroActor2D : Node2D
     /// pixel art that must be tinted per class to read apart, so the tint stays. Offsets its
     /// origin up by half the RESOLVED texture's own height (<see cref="_spriteHeight"/>) so <see
     /// cref="Position"/> stays the feet/Y-sort line for any sprite size.</summary>
+    /// <summary>U3 (2026-08-04 COLOUR + MATERIAL pass): <paramref name="classColor"/> is no
+    /// longer applied as <see cref="CanvasItem.Modulate"/>. Hero body art used to be neutral
+    /// grey specifically so this whole-sprite multiply could carry class identity; it now bakes
+    /// a real per-class garment colour (sourced from the same <c>ClassDefinition.ColorRgb</c>
+    /// this parameter is resolved from — see <c>Town2D.ReconcileHeroes</c>'s caller) with the
+    /// armour left in a NEUTRAL steel ramp for material contrast (see
+    /// <c>tools/art/gen_town_sprites.py</c>'s own doc). Multiplying that by <paramref
+    /// name="classColor"/> would wash the neutral steel back into whatever hue it happens to be —
+    /// exactly the bug this pass exists to fix, just relocated into the armour — so <see
+    /// cref="Sprite2D.Modulate"/> stays <see cref="Colors.White"/>, the same "full-colour art
+    /// stays untinted" rule <c>PlayerController2D</c>'s own art already followed. The parameter
+    /// itself is kept (not removed) since callers still resolve and pass it, and a future
+    /// non-body use (a pick-ring tint, say) may still want it.</summary>
     private Sprite2D BuildSprite(Texture2D sprite, Color classColor) => new()
     {
         Name = "Sprite",
         Texture = sprite,
-        Modulate = classColor,
+        Modulate = Colors.White,
         Offset = new Vector2(0, -_spriteHeight / 2f),
     };
 

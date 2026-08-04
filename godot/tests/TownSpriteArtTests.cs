@@ -16,8 +16,10 @@ namespace GodotClient.Tests;
 /// still need a guard, because the failure modes here are silent: art can regress to a flat
 /// placeholder rectangle without breaking a single compile, a step frame can drift so that the
 /// whole body changes between frames instead of just the legs — which the eye reads as flicker, not
-/// walking — and (U3 below) a "4-frame gait" can silently be four copies of a 2-frame swap, or two
-/// classes' outlines can silently converge. All four are caught below.</para>
+/// walking — a "4-frame gait" can silently be four copies of a 2-frame swap, two classes'
+/// outlines can silently converge, and (2026-08-04 COLOUR + MATERIAL pass) two classes' garment
+/// colours can silently converge or a class can lose its skin-tone region. All six are caught
+/// below.</para>
 ///
 /// <para>These read the COMMITTED pixels rather than re-running the generator, so they also catch
 /// the case where someone edits a PNG by hand and the script silently disagrees with what ships.
@@ -44,10 +46,34 @@ public class TownSpriteArtTests
 
     /// <summary>A flat placeholder box is 2-3 colours. Real shading needs an outline, at least two
     /// body tones and a highlight, so anything under this is a regression to programmer art.
-    /// Measured (2026-08-04, post-U3 redraw): every class has 8 or 9 distinct opaque colours;
-    /// this floor sits one below that measured minimum so a genuine regression trips it without
+    /// Measured (2026-08-04, post-COLOUR+MATERIAL pass): every class has 12-15 distinct opaque
+    /// colours (up from 8-9 pre-pass, now that armour/cloth/skin/hair are all separate ramps);
+    /// this floor sits two below that measured minimum so a genuine regression trips it without
     /// making the test flaky against a future one-tone tweak.</summary>
-    private const int MinDistinctColors = 7;
+    private const int MinDistinctColors = 10;
+
+    /// <summary>The shared skin tone every class's face/skin-peek region uses
+    /// (<c>tools/art/gen_town_sprites.py</c>'s <c>'f'</c> letter) — one fantasy-tan RGB, reused
+    /// everywhere rather than picked per class, matching the file's own "never a colour invented
+    /// per class" discipline for shared tones.</summary>
+    private static readonly Color SkinTone = Color.Color8(196, 148, 110);
+
+    /// <summary>Per-channel tolerance for matching <see cref="SkinTone"/> against a loaded pixel —
+    /// generous enough to survive PNG/Godot import rounding, tight enough that it could never
+    /// match a class's garment or steel tones (the closest neighbour, Sentinel's bronze cloth
+    /// light stop, is well over 40 per channel away).</summary>
+    private const float SkinToneTolerance = 10f / 255f;
+
+    /// <summary>Minimum skin-tone pixels for <see cref="EveryClass_CarriesASkinToneRegion"/>.
+    /// Measured (2026-08-04): Mystic/Occultist (the two cowled casters, deliberately just a
+    /// shadow-edge hint per their own established "shadowed face" silhouette) are the thinnest at
+    /// 6px; every other class is 8-40px. This floor sits two below that measured minimum.</summary>
+    private const int MinSkinPixels = 4;
+
+    /// <summary>Minimum Euclidean RGB distance (0-255 scale per channel) between any two classes'
+    /// dominant garment colour — see <see cref="EveryClass_HasADistinctDominantGarmentHue"/>'s own
+    /// doc for the metric and the measured numbers this is chosen against.</summary>
+    private const double MinGarmentColorDistance = 30.0;
 
     /// <summary>U3: the real 4-frame alternating gait (see <c>SpriteMotion.Pose.WalkFrame</c>) —
     /// base/"_step" are frames 1/3 (the two mirrored CONTACT poses, kept under their pre-U3 ids so
@@ -268,66 +294,152 @@ public class TownSpriteArtTests
     }
 
     /// <summary>
-    /// <c>TownAssets2D.ForHero</c>'s documented contract: bodies ship neutral so
-    /// <c>HeroActor2D</c> can multiply the class colour in via modulate. A saturated body would
-    /// double-tint the moment <c>ClassColors.RoleColor</c> lands on it.
+    /// SUPERSEDES the pre-2026-08-04 <c>HeroBodies_StayNeutral_SoEngineTintDoesNotDoubleUp</c>
+    /// test, which asserted the OPPOSITE of what this now checks: that bodies stayed
+    /// desaturated so <c>HeroActor2D</c> could multiply a class colour in via <c>Modulate</c>.
+    /// That was the right invariant for a neutral-grey sprite; it is the WRONG one now that the
+    /// art itself carries a real per-class garment colour sourced from
+    /// <c>ClassDefinition.ColorRgb</c> (see <c>gen_town_sprites.py</c>'s own COLOUR + MATERIAL
+    /// PASS doc) — which is exactly why <c>HeroActor2D.BuildSprite</c>'s <c>Modulate</c> changed
+    /// from <c>classColor</c> to <c>Colors.White</c> in the same pass (multiplying an
+    /// already-coloured, material-differentiated sprite by an unrelated runtime tint would wash
+    /// the neutral STEEL back into whatever hue the tint happens to be, undoing the material
+    /// contrast this pass exists to add).
     ///
-    /// <para>Measured over the LIT body only, and that qualifier is load-bearing. The style bible's
-    /// darks are deliberately purple-blacks — Void <c>#140f1f</c> reads at 0.52 saturation and Iron
-    /// <c>#2a2438</c> at 0.36 — so a naive "dominant opaque pixel" check fails on a slim sprite
-    /// where the outline is simply the most common colour. It did, on the Striker, the first time
-    /// this test ran. The outline is correct and the test was wrong: what a modulate visibly
-    /// multiplies is the lit surface, so that is what gets measured. The accents (ember rim, teal
-    /// circuit, arcane rune) are intentionally saturated and are a handful of pixels each, so
-    /// checking the dominant tone rather than the maximum is what keeps them legal.</para>
+    /// <para><b>Metric.</b> Among pixels with saturation &gt; 0.3 AND value &gt; 0.3 (excludes the
+    /// style bible's purple-black darks, which read at S≈0.36-0.52 despite being intended as
+    /// neutral shading, not garment colour — the exact trap the OLD test's own doc already
+    /// recorded), the most-common-by-count colour is each class's "dominant garment colour".
+    /// Compared pairwise by Euclidean RGB distance (0-255 per channel).</para>
+    ///
+    /// <para><b>Threshold.</b> Measured (2026-08-04, this pass's committed art): the closest pair
+    /// is Vanguard/Skirmisher at 46.4; every other pair is 48 or higher, several above 200 (e.g.
+    /// anything against Mystic's bright violet). <see cref="MinGarmentColorDistance"/> (30) sits
+    /// comfortably below that floor. Deliberately NOT a hue-angle-only check: Mystic (bright
+    /// violet) and Occultist (dark violet) are only 12 degrees apart in hue BY DESIGN — the
+    /// sim's own <c>ClassDefinition.ColorRgb</c> comment calls Occultist's "deeper and less
+    /// saturated than the Mystic's bright violet" — so a hue-only metric would wrongly fail a
+    /// pair the sim's own data model treats as intentionally close in hue but far apart in
+    /// value/saturation; a full RGB distance correctly credits that separation.</para>
     /// </summary>
     [TestCase]
-    public void HeroBodies_StayNeutral_SoEngineTintDoesNotDoubleUp()
+    public void EveryClass_HasADistinctDominantGarmentHue()
     {
-        // Above the style bible's Iron/Void darks (V 0.22 and below) — i.e. the mid, light and
-        // highlight tones that make up the readable surface of the sprite.
-        const float LitValueFloor = 0.35f;
+        var dominant = Classes.ToDictionary(classId => classId, classId => DominantGarmentColor(Load($"town2d-hero-{classId}")));
 
+        for (var i = 0; i < Classes.Length; i++)
+        {
+            for (var j = i + 1; j < Classes.Length; j++)
+            {
+                var (classA, classB) = (Classes[i], Classes[j]);
+                var distance = RgbDistance255(dominant[classA], dominant[classB]);
+
+                AssertThat(distance)
+                    .OverrideFailureMessage(
+                        $"'{classA}' ({dominant[classA]}) and '{classB}' ({dominant[classB]})'s dominant " +
+                        $"garment colours are only {distance:F1} apart (floor {MinGarmentColorDistance:F0}) " +
+                        "— they read as the same colour across the room, not two distinct classes (R3).")
+                    .IsGreaterEqual(MinGarmentColorDistance);
+            }
+        }
+    }
+
+    /// <summary>
+    /// R3, the review's explicit ask: "a visible face area with a skin tone... the single biggest
+    /// 'that's a person' cue". Every class carries at least <see cref="MinSkinPixels"/> pixels of
+    /// the shared <see cref="SkinTone"/> — a full face for the two open-faced classes (Striker,
+    /// Skirmisher), a visor-slit/jaw peek for the two full-helm tanks (Vanguard, Sentinel — no
+    /// room for more without contradicting their own closed-helm silhouette), and a dim hint at
+    /// the shadow-hood's edge for the two cowled casters (Mystic/Occultist's faces are
+    /// deliberately shadowed BY DESIGN — see their own head-row comments — so a FULL face here
+    /// would contradict the class's own established look, not just add detail).
+    /// </summary>
+    [TestCase]
+    public void EveryClass_CarriesASkinToneRegion()
+    {
         foreach (var classId in Classes)
         {
             var image = Load($"town2d-hero-{classId}");
-            var counts = new Dictionary<Color, int>();
+            var skinPixels = CountSkinTonePixels(image);
 
-            for (var y = 0; y < image.GetHeight(); y++)
-            {
-                for (var x = 0; x < image.GetWidth(); x++)
-                {
-                    var pixel = image.GetPixel(x, y);
-                    if (pixel.A == 0 || pixel.V <= LitValueFloor)
-                    {
-                        continue;
-                    }
-
-                    counts[pixel] = counts.GetValueOrDefault(pixel) + 1;
-                }
-            }
-
-            AssertThat(counts.Count)
-                .OverrideFailureMessage($"town2d-hero-{classId} has no lit body tones at all")
-                .IsGreater(0);
-
-            var dominant = new Color(0, 0, 0);
-            var best = 0;
-            foreach (var (color, count) in counts)
-            {
-                if (count > best)
-                {
-                    best = count;
-                    dominant = color;
-                }
-            }
-
-            AssertThat(dominant.S)
+            AssertThat(skinPixels)
                 .OverrideFailureMessage(
-                    $"town2d-hero-{classId}'s dominant LIT body colour has saturation {dominant.S} — " +
-                    "bodies must stay neutral; the class colour arrives via modulate.")
-                .IsLessEqual(0.3f);
+                    $"town2d-hero-{classId} has only {skinPixels} skin-tone pixels (floor " +
+                    $"{MinSkinPixels}) — every class needs a real, visible skin-tone region (R3).")
+                .IsGreaterEqual(MinSkinPixels);
         }
+    }
+
+    /// <summary>Pixels with saturation &gt; 0.3 AND value &gt; 0.3 (see
+    /// <see cref="EveryClass_HasADistinctDominantGarmentHue"/>'s doc for why), the most common by
+    /// count.</summary>
+    private static Color DominantGarmentColor(Image image)
+    {
+        const float SaturationFloor = 0.3f;
+        const float ValueFloor = 0.3f;
+
+        var counts = new Dictionary<Color, int>();
+        for (var y = 0; y < image.GetHeight(); y++)
+        {
+            for (var x = 0; x < image.GetWidth(); x++)
+            {
+                var pixel = image.GetPixel(x, y);
+                if (pixel.A == 0 || pixel.S <= SaturationFloor || pixel.V <= ValueFloor)
+                {
+                    continue;
+                }
+
+                counts[pixel] = counts.GetValueOrDefault(pixel) + 1;
+            }
+        }
+
+        AssertThat(counts.Count).OverrideFailureMessage("no saturated garment pixels found at all").IsGreater(0);
+
+        var dominant = new Color(0, 0, 0);
+        var best = 0;
+        foreach (var (color, count) in counts)
+        {
+            if (count > best)
+            {
+                best = count;
+                dominant = color;
+            }
+        }
+
+        return dominant;
+    }
+
+    private static double RgbDistance255(Color a, Color b)
+    {
+        double dr = (a.R - b.R) * 255.0;
+        double dg = (a.G - b.G) * 255.0;
+        double db = (a.B - b.B) * 255.0;
+        return System.Math.Sqrt(dr * dr + dg * dg + db * db);
+    }
+
+    private static int CountSkinTonePixels(Image image)
+    {
+        var count = 0;
+        for (var y = 0; y < image.GetHeight(); y++)
+        {
+            for (var x = 0; x < image.GetWidth(); x++)
+            {
+                var pixel = image.GetPixel(x, y);
+                if (pixel.A == 0)
+                {
+                    continue;
+                }
+
+                if (System.Math.Abs(pixel.R - SkinTone.R) <= SkinToneTolerance
+                    && System.Math.Abs(pixel.G - SkinTone.G) <= SkinToneTolerance
+                    && System.Math.Abs(pixel.B - SkinTone.B) <= SkinToneTolerance)
+                {
+                    count++;
+                }
+            }
+        }
+
+        return count;
     }
 
     private static Image Load(string id)

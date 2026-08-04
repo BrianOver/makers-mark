@@ -12,9 +12,10 @@ namespace GodotClient.Town2d;
 /// bodies there without repainting the shell PR #359 shipped bare tables for).
 ///
 /// <para><b>Cosmetic duplicates, not the real actor.</b> A seated patron is a fresh figure built
-/// from the same hero-class body art + <see cref="ClassColors.RoleColor"/> tint every hero-
-/// drawing surface already uses (mirrors <see cref="Town2D.ReconcileHeroes"/>'s own resolution) —
-/// it is NOT the wandering <see cref="HeroActor2D"/> instance, so seating never touches
+/// from the same hero-class body art every hero-drawing surface already uses (mirrors <see
+/// cref="Town2D.ReconcileHeroes"/>'s own resolution) — untinted (<see cref="Colors.White"/>) since
+/// U3 (2026-08-04 COLOUR + MATERIAL pass) baked the class colour into the art itself; it is NOT
+/// the wandering <see cref="HeroActor2D"/> instance, so seating never touches
 /// rally/march state. <see cref="Refresh"/> only OFFERS a seat to a hero whose <see
 /// cref="HeroActor2D.State"/> is <see cref="HeroActor2D.HeroTownState.Wandering"/> (present, not
 /// mid-rally/march/away) — the guard that keeps a hero from reading as both wandering the square
@@ -119,8 +120,11 @@ public partial class TavernLife2D : Node2D
 
             var (heroId, classId, mood) = offered[i];
             seat.OccupiedHeroId = heroId;
+            // U3 (2026-08-04 COLOUR + MATERIAL pass): no RoleColor Modulate — the body art now
+            // bakes its own per-class garment colour with a neutral steel armour ramp (see
+            // HeroActor2D's own U3 comment); multiplying by RoleColor here would double-tint it.
             seat.Figure.Texture = TownAssets2D.ForHero(classId);
-            seat.Figure.Modulate = ClassColors.RoleColor(classId);
+            seat.Figure.Modulate = Colors.White;
             var height = seat.Figure.Texture?.GetHeight() ?? 24f;
             seat.Figure.Offset = new Vector2(0f, -height / 2f);
             seat.Figure.Visible = true;

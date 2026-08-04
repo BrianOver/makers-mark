@@ -76,6 +76,8 @@
   "panel_banner_tavern": { "diffuse": true, "normal": false },
   "player_smith": { "diffuse": true, "normal": false },
   "player_smith_step": { "diffuse": true, "normal": false },
+  "player_smith_walk2": { "diffuse": true, "normal": false },
+  "player_smith_walk4": { "diffuse": true, "normal": false },
   "props-forge-salamander": { "diffuse": true, "normal": true },
   "props-laundry-line": { "diffuse": true, "normal": true },
   "props-market-crates": { "diffuse": true, "normal": true },

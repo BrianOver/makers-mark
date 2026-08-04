@@ -347,18 +347,21 @@ public partial class MarketLife2D : Node2D
 
         var baseTex = TownAssets2D.ForHero(pending.Info.ClassId);
         var stepTex = IconRegistry.Art($"town2d-hero-{pending.Info.ClassId}_step");
-        var tint = ClassColors.RoleColor(pending.Info.ClassId);
         var height = baseTex.GetHeight();
 
         var root = new Node2D { Name = $"MarketCustomer_{pending.Info.Hero.Value}", Position = _doorAnchor };
         var art = TownLayout2D.CharacterArtRoot(); // carries the cast's world scale — see its doc
         root.AddChild(art);
 
+        // U3 (2026-08-04 COLOUR + MATERIAL pass): no RoleColor Modulate — the body art now bakes
+        // its own per-class garment colour with a neutral steel armour ramp (see HeroActor2D's
+        // own U3 comment for the full reasoning); multiplying by RoleColor here would double-tint
+        // it the same way it would on HeroActor2D's own sprite.
         var sprite = new Sprite2D
         {
             Name = "Sprite",
             Texture = baseTex,
-            Modulate = tint,
+            Modulate = Colors.White,
             Offset = new Vector2(0, -height / 2f),
         };
         art.AddChild(sprite);

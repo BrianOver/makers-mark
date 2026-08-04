@@ -16,13 +16,59 @@ palette. That makes them reviewable in a diff, editable without a GPU, and byte-
 every machine -- and it is the only way to guarantee the walk frames differ ONLY in the legs,
 which is what makes the gait read as walking instead of flickering.
 
-NEUTRAL BY CONTRACT
--------------------
-`TownAssets2D.ForHero` documents that hero bodies "are drawn neutral-tinted so HeroActor2D can
-multiply in the class color via modulate ... never baked in here". So the palette below is
-deliberately desaturated: the class identity lives in the SILHOUETTE (slab shield / light
-leathers / flared robe), and the colour arrives in-engine. Baking a crimson Striker here would
-double-tint the moment `ClassColors.RoleColor` multiplied over it.
+NEUTRAL BY CONTRACT -- SUPERSEDED 2026-08-04 (see COLOUR + MATERIAL PASS below)
+---------------------------------------------------------------------------------
+`TownAssets2D.ForHero` used to document that hero bodies "are drawn neutral-tinted so
+HeroActor2D can multiply in the class color via modulate ... never baked in here". That was true
+through U6: the palette was desaturated, and `HeroActor2D.BuildSprite` multiplied the whole
+sprite by `ClassColors.RoleColor` at runtime. The colour + material pass below replaces that --
+see its own section for why a single whole-sprite multiply can never give steel and cloth
+different material contrast, which is the reason `HeroActor2D`'s modulate is now `White` (see
+that file's own U3 comment) instead of `classColor`.
+
+COLOUR + MATERIAL PASS (2026-08-04, same U3 unit, second round)
+-------------------------------------------------------------------
+The first U3 pass (bigger canvas, real gait, per-class silhouette) shipped with EVERY class in
+the same desaturated grey-bone ramp plus one accent pixel each -- reviewed against a contact
+sheet and correctly called out as still reading "as one grey figure in six shapes": bigger and
+better-shaped is not the same as "looks like a person," and a per-class ACCENT pixel is not a
+per-class COLOUR identity. Three changes, in the art itself (not a runtime tint -- see above):
+
+  1. Per-class GARMENT colour, sourced from the same place the rest of the game already gets it:
+     `ClassDefinition.ColorRgb` (`sim/GameSim/Classes/**`) -- steel-blue Vanguard, bronze
+     Sentinel, crimson Striker, emerald Skirmisher, violet Mystic, dark-violet Occultist. Using
+     the SIM's own pinned hue (rather than picking a new one here) means the walking body now
+     agrees with every panel/chip that already shows that colour, and gives a documented,
+     non-arbitrary source for each choice. `cloth_ramp()` derives a light/mid/dark/deepest ramp
+     from each hue by a fixed lerp-toward-white/black formula (deterministic, no eyeballing).
+
+  2. MATERIAL contrast: armour (helm/shield/greaves) stays in the original neutral steel ramp
+     (o/d/i/m/l/h) -- unchanged, so it still reads as metal, not tinted cloth. Only the CLOTH
+     regions (the flank/gambeson sleeve on shielded classes; the full leather/robe on the other
+     four) are re-let onto four new placeholder letters (`c`/`n`/`k`/`w` -- light/mid/dark/
+     deepest) that `to_cloth()` mechanically substitutes for their neutral equivalents
+     (l->c, m->n, i->k, d->w) in the ASCII BEFORE it is coloured, then a per-class palette (see
+     `class_palette()`) fills those four letters with that class's own ramp. Steel and cloth
+     therefore differ in BOTH hue and in how hard the light/dark step is (the neutral ramp's
+     highlight-to-outline jump stays large and abrupt -- hard specular; the derived cloth ramp's
+     four stops are closer together -- soft matte), which is what makes the shading read as two
+     different MATERIALS rather than one tone recoloured.
+
+  3. SKIN ('f') + HAIR ('j'), one shared tone each (a fantasy tan and a dark brown -- picked once,
+     reused everywhere, same "no eyeballing per class" discipline as the garment ramps): every
+     class gets a real skin-tone patch (the single biggest "that's a person" cue per the review),
+     placed wherever its established silhouette actually exposes flesh -- a visor-slit cheek
+     peek for the two full-helm tanks (no room for more without contradicting "closed helm"),
+     full face + hair for the two open-faced classes (Striker/Skirmisher), and a dim glimpse at
+     the shadow-hood's edge for the two cowled casters (their faces are deliberately shadowed BY
+     DESIGN -- a full face would contradict Mystic/Occultist's own established silhouette). Two
+     adjacent 'o' (void) pixels flanked by skin read as eyes at this scale without a dedicated
+     eye colour.
+
+This is why `HeroActor2D`'s per-hero `Modulate` changed from `classColor` to `White`: multiplying
+an ALREADY-coloured, material-differentiated sprite by an unrelated runtime tint would wash the
+steel back into whatever hue `classColor` happens to be (the exact bug this pass exists to fix,
+just moved into the armour instead of out of it) and silently retune every hue chosen here.
 
 QUALITY PASS (2026-08-01, feat/hero-sprite-quality)
 ----------------------------------------------------
@@ -137,7 +183,68 @@ PALETTE = {
     "e": (224, 145, 63, 255),   # Ember — candle rim light, upper-left only
     "t": (63, 176, 172, 255),   # Coolant — the one faint circuit trace every metal object carries
     "r": (107, 76, 154, 255),   # Arcane — the one rune glyph
+    "f": (196, 148, 110, 255),  # Skin — one shared fantasy-tan tone, every class, never per-class
+    "j": (58, 42, 34, 255),     # Hair — one shared dark-brown tone, every class that shows any
 }
+
+# ── per-class garment colour + material contrast (2026-08-04 COLOUR + MATERIAL PASS) ─────────────
+# 'c'/'n'/'k'/'w' (cloth light/mid/dark/deepest) are PLACEHOLDER letters: they are never in
+# PALETTE above, only in the per-class palette class_palette() returns, so the same ASCII grid
+# renders in a different class's own hue by construction (never a second copy of the grid).
+
+WHITE_RGB = (255, 255, 255)
+BLACK_RGB = (0, 0, 0)
+
+
+def _lerp_rgb(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int, int]:
+    return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3)) + (255,)  # type: ignore[return-value]
+
+
+def cloth_ramp(hue: tuple[int, int, int]) -> dict[str, tuple[int, int, int, int]]:
+    """Four cloth tones derived from one class hue by a fixed formula (never picked by eye,
+    never per-class-tuned by hand): light/mid stay close to the hue (a SOFT, low-contrast step,
+    unlike the neutral steel ramp's hard highlight-to-outline jump — see the module doc's
+    MATERIAL contrast point), dark/deepest fall toward black for the shaded side."""
+    return {
+        "c": _lerp_rgb(hue, WHITE_RGB, 0.50),
+        "n": _lerp_rgb(hue, WHITE_RGB, 0.12),
+        "k": _lerp_rgb(hue, BLACK_RGB, 0.30),
+        "w": _lerp_rgb(hue, BLACK_RGB, 0.55),
+    }
+
+
+# Sourced verbatim from sim/GameSim/Classes/**'s ClassDefinition.ColorRgb (the SAME hue every
+# hero panel/chip/ledger row already shows for this class) -- never a colour invented here.
+CLASS_HUES: dict[str, tuple[int, int, int]] = {
+    "vanguard": (69, 130, 181),     # steel blue — sim/GameSim/Classes/ClassRegistry.cs
+    "sentinel": (176, 141, 87),     # bronze — sim/GameSim/Classes/Sentinel/SentinelClass.cs
+    "striker": (219, 20, 61),       # crimson — ClassRegistry.cs
+    "skirmisher": (46, 204, 113),   # emerald — Skirmisher/SkirmisherClass.cs
+    "mystic": (138, 43, 227),       # violet — ClassRegistry.cs
+    "occultist": (85, 26, 110),     # dark violet — Occultist/OccultistClass.cs
+}
+
+# The player carries no ClassDefinition (he is not a hero) -- a worn-leather-apron brown, deliberately
+# distinct from every hue above so the smith never reads as an off-duty hero of any class.
+PLAYER_HUE: tuple[int, int, int] = (110, 74, 42)
+
+
+def class_palette(class_id: str) -> dict[str, tuple[int, int, int, int]]:
+    """The base PALETTE plus this class's cloth ramp merged in -- the one dict render() needs to
+    draw this class's sprites. A KeyError here (unknown class_id) is a real authoring bug, so it
+    is left to raise rather than silently falling back to some default hue."""
+    return {**PALETTE, **cloth_ramp(CLASS_HUES[class_id])}
+
+
+_CLOTH_MAP = {"l": "c", "m": "n", "i": "k", "d": "w"}
+
+
+def to_cloth(s: str) -> str:
+    """Mechanically remaps the neutral steel letters to their cloth-ramp equivalents
+    (l->c, m->n, i->k, d->w), leaving every other character (outline, accents, transparency)
+    untouched. Applied to whichever REGION of a class's ASCII should read as garment rather than
+    armour -- see the module doc's MATERIAL contrast point."""
+    return "".join(_CLOTH_MAP.get(ch, ch) for ch in s)
 
 # ── canvas (U3 2026-08-04: 26x44 -> 40x64) ───────────────────────────────────────────────────────
 WIDTH, HEIGHT = 40, 64
@@ -276,8 +383,8 @@ OLD_HEAD_VANGUARD = [
     orow(ocentered("o" * 10)),  # 2 crown
     orow(ocentered(mirror("ohhll"))),  # 3
     orow(ocentered(mirror("ohllm"))),  # 4
-    orow(ocentered(mirror("ohloo"))),  # 5 visor slit
-    orow(ocentered(mirror("ohloo"))),  # 6 visor slit
+    orow(ocentered(mirror("ohlfo"))),  # 5 visor slit — skin peek flanking the shadowed centre
+    orow(ocentered(mirror("ohlfo"))),  # 6 visor slit — skin peek flanking the shadowed centre
     orow(ocentered(mirror("ohlmi"))),  # 7
     orow(ocentered(mirror("ohlm"))),  # 8 taper
     orow(ocentered(mirror("ohl"))),  # 9 chin
@@ -287,9 +394,12 @@ OLD_HEAD_VANGUARD = [
 ]
 assert len(OLD_HEAD_VANGUARD) == 11
 
-FLANK = "lllmiddlo"  # right chest/arm strip, 9 chars, held constant across the shield side
-FLANK_TRACE = "tllmiddlo"
-FLANK_RUNE = "rllmiddlo"
+# Right chest/arm strip, 9 chars, held constant across the shield side — the gambeson sleeve
+# under the pauldron, so it is CLOTH (to_cloth()'d, coloured steel-blue by class_palette()) while
+# the shield/plate on the other side of the row stays the neutral steel ramp untouched.
+FLANK = to_cloth("lllmiddlo")
+FLANK_TRACE = to_cloth("tllmiddlo")
+FLANK_RUNE = to_cloth("rllmiddlo")
 
 OLD_TORSO_VANGUARD = [
     orow(ocentered(mirror("oooimmlll"))),  # 13 shoulders (symmetric)
@@ -321,17 +431,17 @@ OLD_HEAD_SENTINEL = [
     orow(ocentered(mirror("oohlmi"))),  # 5 no slit -- full plate
     orow(ocentered(mirror("oohlmi"))),  # 6
     orow(ocentered(mirror("oohlmd"))),  # 7 cheek shadow
-    orow(ocentered(mirror("oohlm"))),  # 8 taper
-    orow(ocentered(mirror("oohl"))),  # 9 chin
+    orow(ocentered(mirror("oohfm"))),  # 8 taper — skin begins (no visor slit to use instead)
+    orow(ocentered(mirror("oohf"))),  # 9 chin — jaw-skin peek continues
     orow(ocentered("o" * 6)),  # 10 neck gap
     orow(ocentered(mirror("oommll"))),  # 11 gorget (wider)
     orow(ocentered(mirror("ooiimmll"))),  # 12 gorget -> shoulder lead-in
 ]
 assert len(OLD_HEAD_SENTINEL) == 11
 
-FLANK_SEN = "lllmiddlo"
-FLANK_SEN_TRACE = "tllmiddlo"
-FLANK_SEN_RUNE = "rllmiddlo"
+FLANK_SEN = to_cloth("lllmiddlo")  # gambeson sleeve, coloured bronze — same reasoning as Vanguard's FLANK
+FLANK_SEN_TRACE = to_cloth("tllmiddlo")
+FLANK_SEN_RUNE = to_cloth("rllmiddlo")
 
 OLD_TORSO_SENTINEL = [
     orow(ocentered(mirror("ooidmmlll"))),  # 13 shoulders (symmetric)
@@ -360,8 +470,8 @@ OLD_HEAD_STRIKER = [
     orow(ocentered("o" * 8)),  # 2 hood point
     orow(ocentered(mirror("ohhl"))),  # 3
     orow(ocentered(mirror("ohhll"))),  # 4 hood widens
-    orow(ocentered(mirror("ohllm"))),  # 5
-    orow(ocentered(mirror("ohlmo"))),  # 6 eyes in shadow
+    orow(ocentered(mirror("ohllj"))),  # 5 hair fringe at the hood edge
+    orow(ocentered(mirror("ohlfo"))),  # 6 skin cheeks flanking eyes-in-shadow
     orow(ocentered(mirror("ollm"))),  # 7 taper
     orow(ocentered(mirror("ollm"))),  # 8 hold
     orow(ocentered(mirror("oll"))),  # 9 chin
@@ -371,63 +481,71 @@ OLD_HEAD_STRIKER = [
 ]
 assert len(OLD_HEAD_STRIKER) == 11
 
+# No shield, so the WHOLE torso is leather, not just a flank strip — every content string below
+# is to_cloth()'d (coloured crimson by class_palette()); the hilt highlights inside the overlay
+# overrides stay literal 'h'/'o'/'d' (steel), a small metal accent against the leather field.
 OLD_TORSO_STRIKER = [
-    orow(ocentered(mirror("ooimlll"))),  # 13 shoulders (symmetric, narrower)
-    ooverlay("oohlliddo", {6: "e"}),  # 14 shoulders — ember upper-left ONLY
-    ooverlay("oohllmdo", {6: "e"}),  # 15 ember continues
-    ooverlay("oollmiddo", {12: "t"}),  # 16 coolant trace, single centre pixel
-    ooverlay("oollmiddo", {12: "r"}),  # 17 rune at the belt, single centre pixel
-    orow(ocentered(mirror("oollmido"))),  # 18 chest
-    orow(ocentered(mirror("oollmido"))),  # 19 hold
-    orow(ocentered(mirror("oolmiddo"))),  # 20 waist narrows
-    orow(ocentered(mirror("oolmiddo"))),  # 21 hold
-    ooverlay("oolmiddo", {6: "o", 7: "h", 8: "h", 17: "o", 18: "h", 19: "h"}),  # 22 hilts appear
-    ooverlay("oolmiddo", {6: "o", 7: "d", 8: "o", 17: "o", 18: "d", 19: "o"}),  # 23 hilts
-    ooverlay("oolmiddo", {7: "o", 8: "d", 18: "d", 19: "o"}),  # 24 blades taper
-    ooverlay("oolmiddo", {7: "d", 8: "o", 18: "o", 19: "d"}),  # 25 blade tips
-    orow(ocentered(mirror("oolmiddo"))),  # 26 torso resumes below the hilts
-    orow(ocentered(mirror("oolmiddo"))),  # 27 hold
-    orow(ocentered(mirror("oolmido"))),  # 28 waist taper
-    orow(ocentered(mirror("oolmdo"))),  # 29 waist taper, near hip
-    orow(ocentered(mirror("ooilmmi"))),  # 30 hips
+    orow(ocentered(mirror(to_cloth("ooimlll")))),  # 13 shoulders (symmetric, narrower)
+    ooverlay(to_cloth("oohlliddo"), {6: "e"}),  # 14 shoulders — ember upper-left ONLY
+    ooverlay(to_cloth("oohllmdo"), {6: "e"}),  # 15 ember continues
+    ooverlay(to_cloth("oollmiddo"), {12: "t"}),  # 16 coolant trace, single centre pixel
+    ooverlay(to_cloth("oollmiddo"), {12: "r"}),  # 17 rune at the belt, single centre pixel
+    orow(ocentered(mirror(to_cloth("oollmido")))),  # 18 chest
+    orow(ocentered(mirror(to_cloth("oollmido")))),  # 19 hold
+    orow(ocentered(mirror(to_cloth("oolmiddo")))),  # 20 waist narrows
+    orow(ocentered(mirror(to_cloth("oolmiddo")))),  # 21 hold
+    ooverlay(to_cloth("oolmiddo"), {6: "o", 7: "h", 8: "h", 17: "o", 18: "h", 19: "h"}),  # 22 hilts appear
+    ooverlay(to_cloth("oolmiddo"), {6: "o", 7: "d", 8: "o", 17: "o", 18: "d", 19: "o"}),  # 23 hilts
+    ooverlay(to_cloth("oolmiddo"), {7: "o", 8: "d", 18: "d", 19: "o"}),  # 24 blades taper
+    ooverlay(to_cloth("oolmiddo"), {7: "d", 8: "o", 18: "o", 19: "d"}),  # 25 blade tips
+    orow(ocentered(mirror(to_cloth("oolmiddo")))),  # 26 torso resumes below the hilts
+    orow(ocentered(mirror(to_cloth("oolmiddo")))),  # 27 hold
+    orow(ocentered(mirror(to_cloth("oolmido")))),  # 28 waist taper
+    orow(ocentered(mirror(to_cloth("oolmdo")))),  # 29 waist taper, near hip
+    orow(ocentered(mirror(to_cloth("ooilmmi")))),  # 30 hips
 ]
 assert len(OLD_TORSO_STRIKER) == 18
 
-# SKIRMISHER — light flanker: open cap, quiver strap, crossed daggers at the belt.
+# SKIRMISHER — light flanker: open cap, quiver strap, crossed daggers at the belt. "More face
+# shows than the Striker's shadow-eyes" per the class doc, so rows 6-9 are the exposed jaw/chin
+# (skin), not cap fabric — cap fabric (cloth-ified, emerald) stops at row 5's hairline.
 OLD_HEAD_SKIRMISHER = [
-    orow(ocentered("o" * 8)),  # 2 cap crown
-    orow(ocentered(mirror("ohhl"))),  # 3
-    orow(ocentered(mirror("ohll"))),  # 4 cap widens
-    orow(ocentered(mirror("ohlm"))),  # 5 face lighter than the Striker's shadow-eyes
-    orow(ocentered(mirror("ollm"))),  # 6
-    orow(ocentered(mirror("oll"))),  # 7 taper
-    orow(ocentered(mirror("oll"))),  # 8 hold
-    orow(ocentered(mirror("oll"))),  # 9 chin
+    orow(ocentered(to_cloth("o" * 8))),  # 2 cap crown
+    orow(ocentered(mirror(to_cloth("ohhl")))),  # 3
+    orow(ocentered(mirror(to_cloth("ohlj")))),  # 4 cap widens, hair peeks at the brim
+    orow(ocentered(mirror("ohfo"))),  # 5 skin cheeks flanking eyes (open face, not cap)
+    orow(ocentered(mirror("offo"))),  # 6 jaw, skin
+    orow(ocentered(mirror("off"))),  # 7 jaw taper, skin
+    orow(ocentered(mirror("off"))),  # 8 hold, skin
+    orow(ocentered(mirror("of"))),  # 9 chin, skin
     orow(ocentered("o" * 6)),  # 10 neck gap
-    orow(ocentered(mirror("ommll"))),  # 11 gorget
-    orow(ocentered(mirror("ooimmll"))),  # 12 gorget -> shoulder lead-in
+    orow(ocentered(mirror(to_cloth("ommll")))),  # 11 collar
+    orow(ocentered(mirror(to_cloth("ooimmll")))),  # 12 collar -> shoulder lead-in
 ]
 assert len(OLD_HEAD_SKIRMISHER) == 11
 
+# Leather + cap, no shield — the whole torso is to_cloth()'d (coloured emerald), same reasoning
+# as Striker's; the quiver strap and dagger accents stay literal 'i'/'d'/'h'/'o' (leather-strap
+# brown-black and steel blade highlights are already distinct from the emerald leather field).
 OLD_TORSO_SKIRMISHER = [
-    orow(ocentered(mirror("ooimlll"))),  # 13 shoulders (leaner, symmetric)
-    ooverlay("oohlliddo", {6: "e", 20: "i", 21: "d"}),  # 14 ember left, quiver right begins
-    ooverlay("oohllmdo", {19: "i", 20: "d"}),  # 15 quiver strap continues
-    ooverlay("oolmiddo", {12: "t", 18: "i", 19: "d"}),  # 16 coolant trace, quiver
-    ooverlay("oolmiddo", {12: "r"}),  # 17 rune at the belt
-    orow(ocentered(mirror("oolmido"))),  # 18 chest, leaner taper
-    orow(ocentered(mirror("oolmido"))),  # 19 hold
-    orow(ocentered(mirror("olmido"))),  # 20 waist narrows
-    orow(ocentered(mirror("olmido"))),  # 21 hold
-    ooverlay("olmido", {10: "o", 11: "h", 14: "h", 15: "o"}),  # 22 crossed daggers appear
-    ooverlay("olmido", {9: "o", 10: "d", 15: "d", 16: "o"}),  # 23 daggers cross
-    ooverlay("olmido", {11: "o", 12: "d", 13: "d", 14: "o"}),  # 24 blade tips converge
-    orow(ocentered(mirror("olmido"))),  # 25 daggers end
-    orow(ocentered(mirror("olmido"))),  # 26 waist
-    orow(ocentered(mirror("olmdo"))),  # 27 waist taper
-    orow(ocentered(mirror("olmdo"))),  # 28 hold
-    orow(ocentered(mirror("olmo"))),  # 29 near hip
-    orow(ocentered(mirror("ooilmmi"))),  # 30 hips
+    orow(ocentered(mirror(to_cloth("ooimlll")))),  # 13 shoulders (leaner, symmetric)
+    ooverlay(to_cloth("oohlliddo"), {6: "e", 20: "i", 21: "d"}),  # 14 ember left, quiver right begins
+    ooverlay(to_cloth("oohllmdo"), {19: "i", 20: "d"}),  # 15 quiver strap continues
+    ooverlay(to_cloth("oolmiddo"), {12: "t", 18: "i", 19: "d"}),  # 16 coolant trace, quiver
+    ooverlay(to_cloth("oolmiddo"), {12: "r"}),  # 17 rune at the belt
+    orow(ocentered(mirror(to_cloth("oolmido")))),  # 18 chest, leaner taper
+    orow(ocentered(mirror(to_cloth("oolmido")))),  # 19 hold
+    orow(ocentered(mirror(to_cloth("olmido")))),  # 20 waist narrows
+    orow(ocentered(mirror(to_cloth("olmido")))),  # 21 hold
+    ooverlay(to_cloth("olmido"), {10: "o", 11: "h", 14: "h", 15: "o"}),  # 22 crossed daggers appear
+    ooverlay(to_cloth("olmido"), {9: "o", 10: "d", 15: "d", 16: "o"}),  # 23 daggers cross
+    ooverlay(to_cloth("olmido"), {11: "o", 12: "d", 13: "d", 14: "o"}),  # 24 blade tips converge
+    orow(ocentered(mirror(to_cloth("olmido")))),  # 25 daggers end
+    orow(ocentered(mirror(to_cloth("olmido")))),  # 26 waist
+    orow(ocentered(mirror(to_cloth("olmdo")))),  # 27 waist taper
+    orow(ocentered(mirror(to_cloth("olmdo")))),  # 28 hold
+    orow(ocentered(mirror(to_cloth("olmo")))),  # 29 near hip
+    orow(ocentered(mirror(to_cloth("ooilmmi")))),  # 30 hips
 ]
 assert len(OLD_TORSO_SKIRMISHER) == 18
 
@@ -436,36 +554,38 @@ OLD_HEAD_MYSTIC = [
     orow(ocentered("o" * 10)),  # 2 crown
     orow(ocentered(mirror("ohhlll"))),  # 3
     orow(ocentered(mirror("ohhlllm"))),  # 4 cowl flares
-    orow(ocentered(mirror("ohlmoo"))),  # 5 shadow face starts
-    orow(ocentered(mirror("ohlmoo"))),  # 6 face is shadow
+    orow(ocentered(mirror("ohlfoo"))),  # 5 shadow face — a hint of skin at the shadow's edge
+    orow(ocentered(mirror("ohlfoo"))),  # 6 face is (mostly) shadow — same skin hint
     orow(ocentered(mirror("ohllm"))),  # 7 chin under cowl
     orow(ocentered(mirror("ollm"))),  # 8 taper
     orow(ocentered(mirror("oll"))),  # 9 chin
     orow(ocentered("o" * 6)),  # 10 neck gap
-    orow(ocentered(mirror("ommll"))),  # 11 gorget
-    orow(ocentered(mirror("ooimmll"))),  # 12 gorget -> shoulder lead-in
+    orow(ocentered(mirror(to_cloth("ommll")))),  # 11 gorget
+    orow(ocentered(mirror(to_cloth("ooimmll")))),  # 12 gorget -> shoulder lead-in
 ]
 assert len(OLD_HEAD_MYSTIC) == 11
 
+# The whole torso is robe (to_cloth()'d, coloured violet) — the staff/rune accents stay literal
+# 'm'/'d'/'r' (a wooden staff and its rune are not the robe fabric).
 OLD_TORSO_MYSTIC = [
-    orow(ocentered(mirror("ooiimmll"))),  # 13 shoulders (robed, wider)
-    ooverlay("oohlliddo", {6: "e"}),  # 14 ember upper-left
-    ooverlay("oohllmdo", {6: "e", 21: "m", 22: "m", 23: "d", 24: "d"}),  # 15 hand reaches, staff
-    ooverlay("oolmiddo", {12: "t", 21: "m", 22: "d", 23: "d", 24: "d"}),  # 16 coolant trace + staff
-    ooverlay("oolmiddo", {12: "r", 24: "r"}),  # 17 rune on chest + on the staff
-    ooverlay("oollmiddo", {24: "d"}),  # 18 chest widens, staff
-    ooverlay("oollmiddo", {24: "d"}),  # 19 hold, staff
-    ooverlay("oolllmiddo", {24: "d"}),  # 20 robe widens, staff
-    ooverlay("oolllmiddo", {24: "d"}),  # 21 hold, staff
-    ooverlay("ooilllmiddo", {24: "d"}),  # 22 robe widens, staff
-    ooverlay("ooilllmiddo", {24: "d"}),  # 23 hold, staff
-    ooverlay("ooilllmiddo", {24: "d"}),  # 24 hold, staff
-    ooverlay("ooilllmiddo", {24: "d"}),  # 25 hold, staff
-    orow(ocentered(mirror("ooilllmiddo"))),  # 26 robe continues, staff released
-    orow(ocentered(mirror("oolllmiddo"))),  # 27 robe cinches at the waist
-    orow(ocentered(mirror("oollmiddo"))),  # 28 waist
-    orow(ocentered(mirror("oolmiddo"))),  # 29 waist, narrowest point
-    orow(ocentered(mirror("ooimmll"))),  # 30 hip lead-in
+    orow(ocentered(mirror(to_cloth("ooiimmll")))),  # 13 shoulders (robed, wider)
+    ooverlay(to_cloth("oohlliddo"), {6: "e"}),  # 14 ember upper-left
+    ooverlay(to_cloth("oohllmdo"), {6: "e", 21: "m", 22: "m", 23: "d", 24: "d"}),  # 15 hand reaches, staff
+    ooverlay(to_cloth("oolmiddo"), {12: "t", 21: "m", 22: "d", 23: "d", 24: "d"}),  # 16 coolant trace + staff
+    ooverlay(to_cloth("oolmiddo"), {12: "r", 24: "r"}),  # 17 rune on chest + on the staff
+    ooverlay(to_cloth("oollmiddo"), {24: "d"}),  # 18 chest widens, staff
+    ooverlay(to_cloth("oollmiddo"), {24: "d"}),  # 19 hold, staff
+    ooverlay(to_cloth("oolllmiddo"), {24: "d"}),  # 20 robe widens, staff
+    ooverlay(to_cloth("oolllmiddo"), {24: "d"}),  # 21 hold, staff
+    ooverlay(to_cloth("ooilllmiddo"), {24: "d"}),  # 22 robe widens, staff
+    ooverlay(to_cloth("ooilllmiddo"), {24: "d"}),  # 23 hold, staff
+    ooverlay(to_cloth("ooilllmiddo"), {24: "d"}),  # 24 hold, staff
+    ooverlay(to_cloth("ooilllmiddo"), {24: "d"}),  # 25 hold, staff
+    orow(ocentered(mirror(to_cloth("ooilllmiddo")))),  # 26 robe continues, staff released
+    orow(ocentered(mirror(to_cloth("oolllmiddo")))),  # 27 robe cinches at the waist
+    orow(ocentered(mirror(to_cloth("oollmiddo")))),  # 28 waist
+    orow(ocentered(mirror(to_cloth("oolmiddo")))),  # 29 waist, narrowest point
+    orow(ocentered(mirror(to_cloth("ooimmll")))),  # 30 hip lead-in
 ]
 assert len(OLD_TORSO_MYSTIC) == 18
 
@@ -474,36 +594,38 @@ OLD_HEAD_OCCULTIST = [
     ooverlay("o" * 4, {7: "d", 18: "d"}),  # 2 crown + two small horn-tips
     orow(ocentered(mirror("ohhll"))),  # 3 cowl (pointier than the Mystic's)
     orow(ocentered(mirror("ohhllm"))),  # 4 cowl flares sharply
-    orow(ocentered(mirror("ohlmoo"))),  # 5 shadow face starts
-    orow(ocentered(mirror("ohlmoo"))),  # 6 face is shadow
+    orow(ocentered(mirror("ohlfoo"))),  # 5 shadow face — a hint of skin at the shadow's edge
+    orow(ocentered(mirror("ohlfoo"))),  # 6 face is (mostly) shadow — same skin hint
     orow(ocentered(mirror("ohllm"))),  # 7 chin under cowl
     orow(ocentered(mirror("ollm"))),  # 8 taper
     orow(ocentered(mirror("oll"))),  # 9 chin
     orow(ocentered("o" * 6)),  # 10 neck gap
-    orow(ocentered(mirror("ommll"))),  # 11 gorget
-    orow(ocentered(mirror("ooimmll"))),  # 12 gorget -> shoulder lead-in
+    orow(ocentered(mirror(to_cloth("ommll")))),  # 11 gorget
+    orow(ocentered(mirror(to_cloth("ooimmll")))),  # 12 gorget -> shoulder lead-in
 ]
 assert len(OLD_HEAD_OCCULTIST) == 11
 
+# The whole torso is robe (to_cloth()'d, coloured dark-violet — deeper/less saturated than
+# Mystic's per ClassDefinition.ColorRgb) — staff/rune/eye accents stay literal, same as Mystic's.
 OLD_TORSO_OCCULTIST = [
-    orow(ocentered(mirror("ooiimmll"))),  # 13 shoulders (robed, wider)
-    ooverlay("oohlliddo", {6: "e"}),  # 14 ember upper-left
-    ooverlay("oohllmdo", {6: "e", 21: "m", 22: "m", 23: "d", 24: "d"}),  # 15 hand reaches, staff
-    ooverlay("oolmiddo", {11: "r", 13: "d", 21: "m", 22: "d", 23: "d", 24: "d"}),  # 16 rune+eye, staff
-    ooverlay("oolmiddo", {11: "d", 13: "r", 24: "r"}),  # 17 rune+eye glyph, staff continues
-    ooverlay("oollmiddo", {24: "d"}),  # 18 chest widens, staff
-    ooverlay("oollmiddo", {24: "d"}),  # 19 hold, staff
-    ooverlay("oolllmiddo", {24: "d"}),  # 20 robe widens, staff
-    ooverlay("oolllmiddo", {24: "d"}),  # 21 hold, staff
-    ooverlay("ooilllmiddo", {24: "d"}),  # 22 robe widens, staff
-    ooverlay("ooilllmiddo", {24: "d"}),  # 23 hold, staff
-    ooverlay("ooilllmiddo", {24: "d"}),  # 24 hold, staff
-    ooverlay("ooilllmiddo", {24: "d"}),  # 25 hold, staff
-    orow(ocentered(mirror("ooilllmiddo"))),  # 26 robe continues, staff released
-    orow(ocentered(mirror("oolllmiddo"))),  # 27 robe cinches at the waist
-    orow(ocentered(mirror("oollmiddo"))),  # 28 waist
-    orow(ocentered(mirror("oolmiddo"))),  # 29 waist, narrowest point
-    orow(ocentered(mirror("ooimmll"))),  # 30 hip lead-in
+    orow(ocentered(mirror(to_cloth("ooiimmll")))),  # 13 shoulders (robed, wider)
+    ooverlay(to_cloth("oohlliddo"), {6: "e"}),  # 14 ember upper-left
+    ooverlay(to_cloth("oohllmdo"), {6: "e", 21: "m", 22: "m", 23: "d", 24: "d"}),  # 15 hand reaches, staff
+    ooverlay(to_cloth("oolmiddo"), {11: "r", 13: "d", 21: "m", 22: "d", 23: "d", 24: "d"}),  # 16 rune+eye, staff
+    ooverlay(to_cloth("oolmiddo"), {11: "d", 13: "r", 24: "r"}),  # 17 rune+eye glyph, staff continues
+    ooverlay(to_cloth("oollmiddo"), {24: "d"}),  # 18 chest widens, staff
+    ooverlay(to_cloth("oollmiddo"), {24: "d"}),  # 19 hold, staff
+    ooverlay(to_cloth("oolllmiddo"), {24: "d"}),  # 20 robe widens, staff
+    ooverlay(to_cloth("oolllmiddo"), {24: "d"}),  # 21 hold, staff
+    ooverlay(to_cloth("ooilllmiddo"), {24: "d"}),  # 22 robe widens, staff
+    ooverlay(to_cloth("ooilllmiddo"), {24: "d"}),  # 23 hold, staff
+    ooverlay(to_cloth("ooilllmiddo"), {24: "d"}),  # 24 hold, staff
+    ooverlay(to_cloth("ooilllmiddo"), {24: "d"}),  # 25 hold, staff
+    orow(ocentered(mirror(to_cloth("ooilllmiddo")))),  # 26 robe continues, staff released
+    orow(ocentered(mirror(to_cloth("oolllmiddo")))),  # 27 robe cinches at the waist
+    orow(ocentered(mirror(to_cloth("oollmiddo")))),  # 28 waist
+    orow(ocentered(mirror(to_cloth("oolmiddo")))),  # 29 waist, narrowest point
+    orow(ocentered(mirror(to_cloth("ooimmll")))),  # 30 hip lead-in
 ]
 assert len(OLD_TORSO_OCCULTIST) == 18
 
@@ -558,11 +680,20 @@ for _y in range(0, 2):
 # ── the four walk-cycle frames (shared skeleton) ──────────────────────────────────────────────────
 # See the module doc's WALK-CYCLE DESIGN section. Bands sized so 4+6+4+3+2 = 19 = LEGS_ROWS.
 
-THIGH = "olllmddo"  # 8 chars — never moves across frames (hips barely move in a stride)
-SHIN = "odmmiddo"   # 8 chars
-ANKLE = "odmiddo"   # 7 chars
-BOOT = "ohhmdo"     # 6 chars — the part that goes missing on a lifted foot
-SOLE = "oooo"       # 4 chars — ditto
+# Steel greaves+boots (Vanguard/Sentinel — armoured legs, stay in the neutral ramp).
+STEEL_THIGH = "olllmddo"  # 8 chars — never moves across frames (hips barely move in a stride)
+STEEL_SHIN = "odmmiddo"   # 8 chars
+STEEL_ANKLE = "odmiddo"   # 7 chars
+STEEL_BOOT = "ohhmdo"     # 6 chars — the part that goes missing on a lifted foot
+STEEL_SOLE = "oooo"       # 4 chars — ditto
+
+# Leather trousers+boots (Striker/Skirmisher — to_cloth()'d, coloured by class_palette() same as
+# their torso, so a class's legs and torso are visibly the SAME material/colour, not two guesses).
+CLOTH_THIGH = to_cloth(STEEL_THIGH)
+CLOTH_SHIN = to_cloth(STEEL_SHIN)
+CLOTH_ANKLE = to_cloth(STEEL_ANKLE)
+CLOTH_BOOT = STEEL_BOOT  # boots themselves stay leather-dark/steel-buckled either way
+CLOTH_SOLE = STEEL_SOLE
 
 
 def _lower_row(band: str, front: str, liftable: bool) -> str:
@@ -579,13 +710,21 @@ def _lower_row(band: str, front: str, liftable: bool) -> str:
     return left_content[::-1] + right_content
 
 
-def build_legs_frame(front: str, sway_amount: int) -> list[str]:
+def build_legs_frame(
+    front: str,
+    sway_amount: int,
+    thigh: str = STEEL_THIGH,
+    shin: str = STEEL_SHIN,
+    ankle: str = STEEL_ANKLE,
+    boot: str = STEEL_BOOT,
+    sole: str = STEEL_SOLE,
+) -> list[str]:
     content_rows: list[str] = []
-    content_rows += [mirror(THIGH) for _ in range(4)]
-    content_rows += [_lower_row(SHIN, front, liftable=False) for _ in range(6)]
-    content_rows += [_lower_row(ANKLE, front, liftable=False) for _ in range(4)]
-    content_rows += [_lower_row(BOOT, front, liftable=True) for _ in range(3)]
-    content_rows += [_lower_row(SOLE, front, liftable=True) for _ in range(2)]
+    content_rows += [mirror(thigh) for _ in range(4)]
+    content_rows += [_lower_row(shin, front, liftable=False) for _ in range(6)]
+    content_rows += [_lower_row(ankle, front, liftable=False) for _ in range(4)]
+    content_rows += [_lower_row(boot, front, liftable=True) for _ in range(3)]
+    content_rows += [_lower_row(sole, front, liftable=True) for _ in range(2)]
     assert len(content_rows) == LEGS_ROWS
 
     return [row(_sway(centered(r), sway_amount)) for r in content_rows]
@@ -602,17 +741,24 @@ LEGS_F3 = build_legs_frame("right", sway_amount=1)
 LEGS_F2 = build_legs_frame("none", sway_amount=-1)
 LEGS_F4 = build_legs_frame("none", sway_amount=1)
 
+_cloth_leg_kwargs = dict(thigh=CLOTH_THIGH, shin=CLOTH_SHIN, ankle=CLOTH_ANKLE, boot=CLOTH_BOOT, sole=CLOTH_SOLE)
+CLOTH_LEGS_F1 = build_legs_frame("left", sway_amount=-1, **_cloth_leg_kwargs)
+CLOTH_LEGS_F2 = build_legs_frame("none", sway_amount=-1, **_cloth_leg_kwargs)
+CLOTH_LEGS_F3 = build_legs_frame("right", sway_amount=1, **_cloth_leg_kwargs)
+CLOTH_LEGS_F4 = build_legs_frame("none", sway_amount=1, **_cloth_leg_kwargs)
+
 # ── the four hem-sway frames (mystic/occultist — the robe hides the legs, so the HEM carries the
 # motion, exactly as the pre-U3 HEM_STEP already did; this just widens two sway magnitudes into
 # four so all four frames are pairwise distinct) ──────────────────────────────────────────────────
 
-# Mystic: a wide, smoothly-belled hem (the widest band reaches col-width 24).
+# Mystic: a wide, smoothly-belled hem (the widest band reaches col-width 24). to_cloth()'d so the
+# robe's hem is the SAME violet ramp as its torso.
 HEM_BANDS_MYSTIC = [
-    (3, "ooilmmi"),      # rows 0-2: narrow, near the waist — barely sways
-    (3, "oollmmid"),     # rows 3-5
-    (3, "oolllmmid"),    # rows 6-8
-    (3, "ooilllmmid"),   # rows 9-11
-    (3, "ooddilllmmid"),  # rows 12-14: widest point of the bell
+    (3, to_cloth("ooilmmi")),      # rows 0-2: narrow, near the waist — barely sways
+    (3, to_cloth("oollmmid")),     # rows 3-5
+    (3, to_cloth("oolllmmid")),    # rows 6-8
+    (3, to_cloth("ooilllmmid")),   # rows 9-11
+    (3, to_cloth("ooddilllmmid")),  # rows 12-14: widest point of the bell
 ]
 HEM_EDGE_WIDTH_MYSTIC = 24
 
@@ -623,11 +769,11 @@ HEM_EDGE_WIDTH_MYSTIC = 24
 # Mystic's (so build_hem_frame below stays one function), each band a couple of columns
 # narrower, plus the ragged (tattered, not smooth-curved) edge at the very bottom.
 HEM_BANDS_OCCULTIST = [
-    (3, "ooil"),         # rows 0-2
-    (3, "oolmi"),        # rows 3-5
-    (3, "oollmi"),       # rows 6-8
-    (3, "ooilmi"),       # rows 9-11
-    (3, "ooddilmi"),     # rows 12-14: much narrower than Mystic's widest band
+    (3, to_cloth("ooil")),         # rows 0-2
+    (3, to_cloth("oolmi")),        # rows 3-5
+    (3, to_cloth("oollmi")),       # rows 6-8
+    (3, to_cloth("ooilmi")),       # rows 9-11
+    (3, to_cloth("ooddilmi")),     # rows 12-14: much narrower than Mystic's widest band
 ]
 HEM_EDGE_WIDTH_OCCULTIST = 14
 
@@ -638,7 +784,9 @@ def build_hem_frame(shift: int, bands: list[tuple[int, str]], edge_width: int) -
         band_shift = shift if band_index >= 2 else 0  # waist barely moves; hem does the swaying
         for _ in range(count):
             content_rows.append(_sway(centered(mirror(half)), band_shift))
-    content_rows += [_sway(centered("d" * edge_width), shift) for _ in range(2)]  # hem edge
+    # Hem edge is the robe's own deepest cloth tone (a coloured trim, not a neutral shadow line);
+    # ground contact stays neutral 'o' — that one row is the universal ground-shadow, not fabric.
+    content_rows += [_sway(centered("w" * edge_width), shift) for _ in range(2)]  # hem edge
     content_rows += [_sway(centered("o" * edge_width), shift) for _ in range(2)]  # ground contact
     assert len(content_rows) == LEGS_ROWS
     return [row(r) for r in content_rows]
@@ -683,7 +831,7 @@ def assemble(upper: list[str], lower: list[str]) -> list[str]:
     return full
 
 
-SPRITES = {
+HERO_GRIDS: dict[str, list[str]] = {
     "town2d-hero-vanguard": assemble(UPPER_VANGUARD, LEGS_F1),
     "town2d-hero-vanguard_walk2": assemble(UPPER_VANGUARD, LEGS_F2),
     "town2d-hero-vanguard_step": assemble(UPPER_VANGUARD, LEGS_F3),
@@ -692,14 +840,14 @@ SPRITES = {
     "town2d-hero-sentinel_walk2": assemble(UPPER_SENTINEL, LEGS_F2),
     "town2d-hero-sentinel_step": assemble(UPPER_SENTINEL, LEGS_F3),
     "town2d-hero-sentinel_walk4": assemble(UPPER_SENTINEL, LEGS_F4),
-    "town2d-hero-striker": assemble(UPPER_STRIKER, LEGS_F1),
-    "town2d-hero-striker_walk2": assemble(UPPER_STRIKER, LEGS_F2),
-    "town2d-hero-striker_step": assemble(UPPER_STRIKER, LEGS_F3),
-    "town2d-hero-striker_walk4": assemble(UPPER_STRIKER, LEGS_F4),
-    "town2d-hero-skirmisher": assemble(UPPER_SKIRMISHER, LEGS_F1),
-    "town2d-hero-skirmisher_walk2": assemble(UPPER_SKIRMISHER, LEGS_F2),
-    "town2d-hero-skirmisher_step": assemble(UPPER_SKIRMISHER, LEGS_F3),
-    "town2d-hero-skirmisher_walk4": assemble(UPPER_SKIRMISHER, LEGS_F4),
+    "town2d-hero-striker": assemble(UPPER_STRIKER, CLOTH_LEGS_F1),
+    "town2d-hero-striker_walk2": assemble(UPPER_STRIKER, CLOTH_LEGS_F2),
+    "town2d-hero-striker_step": assemble(UPPER_STRIKER, CLOTH_LEGS_F3),
+    "town2d-hero-striker_walk4": assemble(UPPER_STRIKER, CLOTH_LEGS_F4),
+    "town2d-hero-skirmisher": assemble(UPPER_SKIRMISHER, CLOTH_LEGS_F1),
+    "town2d-hero-skirmisher_walk2": assemble(UPPER_SKIRMISHER, CLOTH_LEGS_F2),
+    "town2d-hero-skirmisher_step": assemble(UPPER_SKIRMISHER, CLOTH_LEGS_F3),
+    "town2d-hero-skirmisher_walk4": assemble(UPPER_SKIRMISHER, CLOTH_LEGS_F4),
     "town2d-hero-mystic": assemble(UPPER_MYSTIC, HEM_F1),
     "town2d-hero-mystic_walk2": assemble(UPPER_MYSTIC, HEM_F2),
     "town2d-hero-mystic_step": assemble(UPPER_MYSTIC, HEM_F3),
@@ -710,27 +858,134 @@ SPRITES = {
     "town2d-hero-occultist_walk4": assemble(UPPER_OCCULTIST, OCCULTIST_HEM_F4),
 }
 
+# name -> (grid, palette) — each hero id's palette is the base PALETTE plus ITS class's cloth
+# ramp; the class id is the id's own middle segment ("town2d-hero-<classId>[_suffix]").
+SPRITES: dict[str, tuple[list[str], dict[str, tuple[int, int, int, int]]]] = {
+    name: (grid, class_palette(name.removeprefix("town2d-hero-").split("_")[0]))
+    for name, grid in HERO_GRIDS.items()
+}
+
+
+# ── PLAYER SMITH (2026-08-04 second round): brought up to the SAME treatment as the heroes above
+# -- bigger canvas, real 4-frame gait, baked colour, a real face -- so the player is not the one
+# crude sprite left once the heroes carry all of this. No prior generator source existed for
+# `player_smith.png` (committed once, by hand, in the 2.5D pivot PR) -- authored fresh here at
+# OLD_WIDTH=26 using the exact same helpers/idiom as every class above, then upscaled the same way.
+# ────────────────────────────────────────────────────────────────────────────────────────────────
+PLAYER_WIDTH, PLAYER_HEIGHT = 44, 68
+PLAYER_MARGIN_ROWS = 3
+PLAYER_HEAD_ROWS = 17
+PLAYER_TORSO_ROWS = 28
+PLAYER_LEGS_ROWS = 20
+assert PLAYER_MARGIN_ROWS + PLAYER_HEAD_ROWS + PLAYER_TORSO_ROWS + PLAYER_LEGS_ROWS == PLAYER_HEIGHT
+
+# CastProportionTests' "player stays tallest" pin: 68 > 64 (hero HEIGHT) at the same
+# CharacterSpriteScale -- the one size fact U4 needs from this file (see the module's own note).
+assert PLAYER_HEIGHT > HEIGHT
+
+# Bare head: hair on top (no helmet), then skin/eyes -- unlike every hero class, nothing hides the
+# player's face, so this is the one class-like figure that gets a FULL face rather than a peek.
+OLD_HEAD_PLAYER = [
+    orow(ocentered("j" * 10)),  # 2 hair crown
+    orow(ocentered(mirror("jjhl"))),  # 3 hair with a highlight sheen
+    orow(ocentered(mirror("jffhl"))),  # 4 hairline meets forehead skin
+    orow(ocentered(mirror("jffo"))),  # 5 eyes (o,o centre) flanked by skin, temple hair at the edge
+    orow(ocentered(mirror("off"))),  # 6 cheeks
+    orow(ocentered(mirror("of"))),  # 7 jaw
+    orow(ocentered(mirror("of"))),  # 8 jaw hold
+    orow(ocentered(mirror("f"))),  # 9 chin point
+    orow(ocentered("o" * 6)),  # 10 neck gap
+    orow(ocentered(mirror("ommll"))),  # 11 shirt collar
+    orow(ocentered(mirror("ooimmll"))),  # 12 collar -> shoulder lead-in
+]
+assert len(OLD_HEAD_PLAYER) == 11
+
+# Shirt (neutral, outer) with a leather apron (cloth-ramp letters n/k/w directly, coloured by
+# PLAYER_HUE) bibbed over the centre -- the apron WIDENS going down the chest then narrows again
+# at the waist tie, same "outer=material A, inner=material B" trick the shielded classes use for
+# armour-vs-cloth, here for shirt-vs-apron.
+OLD_TORSO_PLAYER = [
+    orow(ocentered(mirror("ooimmlll"))),  # 13 shoulders (shirt)
+    orow(ocentered(mirror("ohhllnk"))),  # 14 collar -> apron strap begins
+    orow(ocentered(mirror("ohllmnk"))),  # 15
+    orow(ocentered(mirror("ollmnkw"))),  # 16 apron widens
+    orow(ocentered(mirror("ollnkw"))),  # 17
+    orow(ocentered(mirror("olnkww"))),  # 18
+    orow(ocentered(mirror("onkkww"))),  # 19 apron bib dominant
+    orow(ocentered(mirror("onkkww"))),  # 20 hold
+    orow(ocentered(mirror("onkkww"))),  # 21 hold
+    orow(ocentered(mirror("onkkw"))),  # 22 apron narrows toward the waist tie
+    orow(ocentered(mirror("onkw"))),  # 23
+    orow(ocentered(mirror("onkw"))),  # 24 hold
+    orow(ocentered(mirror("olkw"))),  # 25 shirt/trouser waistband returns
+    orow(ocentered(mirror("olmw"))),  # 26
+    orow(ocentered(mirror("olmd"))),  # 27
+    orow(ocentered(mirror("oomd"))),  # 28
+    orow(ocentered(mirror("oomd"))),  # 29 hold, near hip
+    orow(ocentered(mirror("ooilmmi"))),  # 30 hips (feeds the legs)
+]
+assert len(OLD_TORSO_PLAYER) == 18
+
+
+def _upscale(head: list[str], torso: list[str], width: int, head_rows: int, torso_rows: int) -> list[str]:
+    scaled_head = nn_scale(head, width, head_rows)
+    scaled_torso = nn_scale(torso, width, torso_rows)
+    combined = scaled_head + scaled_torso
+    assert len(combined) == head_rows + torso_rows
+    return combined
+
+
+UPPER_PLAYER = _upscale(OLD_HEAD_PLAYER, OLD_TORSO_PLAYER, PLAYER_WIDTH, PLAYER_HEAD_ROWS, PLAYER_TORSO_ROWS)
+
+# Legs reuse the STEEL leg frames (dark trousers/boots read fine in the same neutral ramp as
+# armoured greaves) rescaled to the player's own canvas — same alternating-gait guarantee, no
+# second gait implementation to keep in sync.
+PLAYER_LEGS_F1 = nn_scale(LEGS_F1, PLAYER_WIDTH, PLAYER_LEGS_ROWS)
+PLAYER_LEGS_F2 = nn_scale(LEGS_F2, PLAYER_WIDTH, PLAYER_LEGS_ROWS)
+PLAYER_LEGS_F3 = nn_scale(LEGS_F3, PLAYER_WIDTH, PLAYER_LEGS_ROWS)
+PLAYER_LEGS_F4 = nn_scale(LEGS_F4, PLAYER_WIDTH, PLAYER_LEGS_ROWS)
+
+PLAYER_EMPTY_MARGIN = ["." * PLAYER_WIDTH] * PLAYER_MARGIN_ROWS
+
+
+def _assemble_player(lower: list[str]) -> list[str]:
+    full = PLAYER_EMPTY_MARGIN + UPPER_PLAYER + lower
+    assert len(full) == PLAYER_HEIGHT
+    for r in full:
+        assert len(r) == PLAYER_WIDTH
+    return full
+
+
+_player_palette = {**PALETTE, **cloth_ramp(PLAYER_HUE)}
+
+PLAYER_SPRITES: dict[str, tuple[list[str], dict[str, tuple[int, int, int, int]]]] = {
+    "player_smith": (_assemble_player(PLAYER_LEGS_F1), _player_palette),
+    "player_smith_walk2": (_assemble_player(PLAYER_LEGS_F2), _player_palette),
+    "player_smith_step": (_assemble_player(PLAYER_LEGS_F3), _player_palette),
+    "player_smith_walk4": (_assemble_player(PLAYER_LEGS_F4), _player_palette),
+}
+
 
 def die(message: str) -> None:
     print(f"gen_town_sprites.py: error: {message}", file=sys.stderr)
     raise SystemExit(1)
 
 
-def render(grid: list[str], name: str) -> Image.Image:
-    """Rasterize one ASCII grid. Validates shape loudly — a short row would silently shift
-    every pixel after it, which is exactly the kind of defect a diff cannot show."""
-    if len(grid) != HEIGHT:
-        die(f"{name}: expected {HEIGHT} rows, got {len(grid)}")
+def render(grid: list[str], name: str, palette: dict[str, tuple[int, int, int, int]], width: int, height: int) -> Image.Image:
+    """Rasterize one ASCII grid against `palette`. Validates shape loudly — a short row would
+    silently shift every pixel after it, which is exactly the kind of defect a diff cannot show."""
+    if len(grid) != height:
+        die(f"{name}: expected {height} rows, got {len(grid)}")
 
-    image = Image.new("RGBA", (WIDTH, HEIGHT), PALETTE["."])
+    image = Image.new("RGBA", (width, height), palette["."])
     pixels = image.load()
     for y, row_str in enumerate(grid):
-        if len(row_str) != WIDTH:
-            die(f"{name}: row {y} is {len(row_str)} chars, expected {WIDTH}")
+        if len(row_str) != width:
+            die(f"{name}: row {y} is {len(row_str)} chars, expected {width}")
         for x, char in enumerate(row_str):
-            if char not in PALETTE:
+            if char not in palette:
                 die(f"{name}: row {y} col {x} uses '{char}', which is not in the palette")
-            pixels[x, y] = PALETTE[char]
+            pixels[x, y] = palette[char]
 
     return image
 
@@ -747,9 +1002,13 @@ def main() -> int:
         help="compare against committed PNGs instead of writing; non-zero exit on any difference")
     args = parser.parse_args()
 
+    all_sprites = {**SPRITES, **PLAYER_SPRITES}
+
     drift = []
-    for name, grid in SPRITES.items():
-        image = render(grid, name)
+    for name, (grid, palette) in all_sprites.items():
+        width = PLAYER_WIDTH if name.startswith("player_smith") else WIDTH
+        height = PLAYER_HEIGHT if name.startswith("player_smith") else HEIGHT
+        image = render(grid, name, palette, width, height)
         path = os.path.join(args.out, f"{name}.png")
 
         if args.check:
@@ -763,7 +1022,7 @@ def main() -> int:
             continue
 
         image.save(path)
-        print(f"wrote {path} ({WIDTH}x{HEIGHT})")
+        print(f"wrote {path} ({width}x{height})")
 
     if drift:
         for line in drift:
@@ -771,7 +1030,7 @@ def main() -> int:
         return 1
 
     if args.check:
-        print(f"no drift — {len(SPRITES)} sprites match their committed PNGs")
+        print(f"no drift — {len(all_sprites)} sprites match their committed PNGs")
 
     return 0
 
