@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Godot;
+using GodotClient.Tools;
 
 namespace GodotClient.Tests;
 
@@ -121,8 +122,12 @@ public sealed class HumanPlayer
     /// a 1152px window. A strict enclosure test called that off screen and this harness confidently
     /// reported every panel in the game as broken. A detector that cries wolf gets switched off, which
     /// would have cost more than the bugs it finds.</para>
+    ///
+    /// <para>Delegates to <see cref="ScreenObservation.WindowRect"/> (U1, verify-by-playing plan) —
+    /// same math (<see cref="EdgeTolerancePx"/> matches <see cref="ScreenObservation.EdgeTolerancePx"/>),
+    /// now shared with <c>AgentPlaytest</c> instead of duplicated.</para>
     /// </summary>
-    private Rect2 WindowRect => Inflate(_viewport.GetVisibleRect());
+    private Rect2 WindowRect => ScreenObservation.WindowRect(_viewport);
 
     // ─────────────────────────────── Observing ───────────────────────────────
 
@@ -417,16 +422,11 @@ public sealed class HumanPlayer
     /// HUD as broken, which is the veil doing its job. Pass the open panel's content and the claim becomes
     /// the one worth making: everything the player is being shown *inside this surface* works.</para>
     /// </summary>
-    public IReadOnlyList<Button> ClickableButtons(Node? root = null)
-    {
-        var window = WindowRect;
-        return Descendants(root ?? _viewport)
-            .OfType<Button>()
-            .Where(b => GodotObject.IsInstanceValid(b) && b.IsVisibleInTree() && !b.Disabled)
-            .Where(b => b.Size.X > 1f && b.Size.Y > 1f)
-            .Where(b => window.Encloses(b.GetGlobalRect()))
-            .ToList();
-    }
+    // Delegates to ScreenObservation.ClickableButtons (U1, verify-by-playing plan) — AgentPlaytest
+    // needs the identical "visible, enabled, sized, on screen" definition from a different
+    // assembly; shared here instead of duplicated.
+    public IReadOnlyList<Button> ClickableButtons(Node? root = null) =>
+        ScreenObservation.ClickableButtons(root ?? _viewport, _viewport);
 
     /// <summary>
     /// Why a surface has no clickable buttons — absent, hidden, disabled, or off screen.
@@ -436,21 +436,10 @@ public sealed class HumanPlayer
     /// and "the panel has no buttons" (a build bug), "they are all Disabled" (correct gating on day 1), and
     /// "they are below a fold that will not scroll" (a layout bug) all look identical from the outside.</para>
     /// </summary>
-    public string DescribeButtons(Node? root = null)
-    {
-        var all = Descendants(root ?? _viewport).OfType<Button>().ToList();
-        var window = WindowRect;
-
-        var hidden = all.Count(b => !b.IsVisibleInTree());
-        var disabled = all.Count(b => b.IsVisibleInTree() && b.Disabled);
-        var collapsed = all.Count(b => b.IsVisibleInTree() && !b.Disabled && (b.Size.X <= 1f || b.Size.Y <= 1f));
-        var offScreen = all.Count(b =>
-            b.IsVisibleInTree() && !b.Disabled && b.Size.X > 1f && b.Size.Y > 1f &&
-            !window.Encloses(b.GetGlobalRect()));
-
-        return $"{all.Count} buttons total: {hidden} hidden, {disabled} disabled, {collapsed} zero-sized, " +
-               $"{offScreen} off screen, {ClickableButtons(root).Count} clickable";
-    }
+    // Delegates to ScreenObservation.DescribeButtons (U1, verify-by-playing plan) — same reasoning
+    // as ClickableButtons above.
+    public string DescribeButtons(Node? root = null) =>
+        ScreenObservation.DescribeButtons(root ?? _viewport, _viewport);
 
     /// <summary>Labels of <see cref="ClickableButtons"/>, for a readable "what can I even do here" dump.</summary>
     public IReadOnlyList<string> ClickableLabels(Node? root = null) =>
@@ -912,35 +901,10 @@ public sealed class HumanPlayer
 
     private void Log(string entry) => _trace.Add(entry);
 
-    private IEnumerable<(Control Node, string Text, Rect2 Rect)> AllTextNodes()
-    {
-        foreach (var node in Descendants(_viewport))
-        {
-            switch (node)
-            {
-                case Button button:
-                    yield return (button, button.Text, button.GetGlobalRect());
-                    break;
-                case Label label:
-                    yield return (label, label.Text, label.GetGlobalRect());
-                    break;
-                case RichTextLabel rich:
-                    yield return (rich, rich.Text, rich.GetGlobalRect());
-                    break;
-                case ItemList list:
-                {
-                    var joined = new StringBuilder();
-                    for (var i = 0; i < list.ItemCount; i++)
-                    {
-                        joined.AppendLine(list.GetItemText(i));
-                    }
-
-                    yield return (list, joined.ToString(), list.GetGlobalRect());
-                    break;
-                }
-            }
-        }
-    }
+    // Delegates to ScreenObservation.AllTextNodes (U1, verify-by-playing plan) — same tree walk
+    // AgentPlaytest needs from a different assembly, now shared rather than duplicated.
+    private IEnumerable<(Control Node, string Text, Rect2 Rect)> AllTextNodes() =>
+        ScreenObservation.AllTextNodes(_viewport);
 
     private IEnumerable<(Control Node, string Text)> VisibleTextNodes()
     {
@@ -967,23 +931,13 @@ public sealed class HumanPlayer
     /// <para>World-space visibility is a real concern with a real owner: the camera's limits and
     /// <c>Town2D</c>'s framing, covered by <c>CameraFollowTests</c> and <c>Town2DSceneTests</c>. It is not
     /// this harness's question, and answering it in the wrong units would only produce false alarms.</para>
+    ///
+    /// <para>Delegates to <see cref="ScreenObservation.Descendants"/> (U1, verify-by-playing plan) —
+    /// <c>AgentPlaytest</c>, a production dev tool in a different assembly this test-only type cannot
+    /// be referenced from, needs the exact same walk, so it now lives in one shared place instead of
+    /// two copies silently drifting apart.</para>
     /// </summary>
-    private static IEnumerable<Node> Descendants(Node root)
-    {
-        foreach (var child in root.GetChildren())
-        {
-            if (child is SubViewport)
-            {
-                continue;
-            }
-
-            yield return child;
-            foreach (var grandchild in Descendants(child))
-            {
-                yield return grandchild;
-            }
-        }
-    }
+    private static IEnumerable<Node> Descendants(Node root) => ScreenObservation.Descendants(root);
 
     private static string Describe(Node node) => $"{node.GetType().Name} '{node.Name}'";
 
