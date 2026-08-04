@@ -42,9 +42,14 @@ public class RingBellHudTests
         new ItemId(id), "plate", "Plate", ItemSlot.Armor, QualityGrade.Common,
         new ItemStats(0, defense, 8), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
 
+    // NextHeroId is bumped past the two hand-assigned ids — left at its GameFactory default (1),
+    // RecruitSystem's Morning trickle (fires on ANY fresh roster short of six, unconditionally)
+    // mints its recruit at id 1 and collides with Strong(1) already in the dictionary (crashed
+    // this exact way — see RaidConductorTests.StagedWorld's own doc for the full trace).
     private static GameState StagedWorld() => GameFactory.NewGame(6) with
     {
         Phase = DayPhase.Morning,
+        NextHeroId = 3,
         Heroes = new[] { Strong(1), Strong(2) }.ToImmutableSortedDictionary(h => h.Id.Value, h => h),
         Items = new[] { Weapon(90, 30), Armor(91, 20) }.ToImmutableSortedDictionary(i => i.Id.Value, i => i),
     };

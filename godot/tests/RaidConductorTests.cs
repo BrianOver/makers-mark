@@ -45,10 +45,16 @@ public class RaidConductorTests
         new ItemId(id), "plate", "Plate", ItemSlot.Armor, QualityGrade.Common,
         new ItemStats(0, defense, 8), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
 
-    /// <summary>A Day-1 Morning world with two heroes guaranteed to clear stage 1 clean and park.</summary>
+    /// <summary>A Day-1 Morning world with two heroes guaranteed to clear stage 1 clean and park.
+    /// NextHeroId is bumped past the two hand-assigned ids — left at its GameFactory default (1),
+    /// RecruitSystem's Morning trickle (fires on ANY fresh roster short of six, unconditionally,
+    /// per its own "an idle gate rests at zero" doc) mints its recruit at id 1 and collides with
+    /// Strong(1) already in the dictionary, throwing out of ImmutableSortedDictionary.Add instead
+    /// of a readable test failure.</summary>
     private static GameState StagedWorld() => GameFactory.NewGame(StagedSeed) with
     {
         Phase = DayPhase.Morning,
+        NextHeroId = 3,
         Heroes = new[] { Strong(1), Strong(2) }.ToImmutableSortedDictionary(h => h.Id.Value, h => h),
         Items = new[] { Weapon(90, 30), Armor(91, 20) }.ToImmutableSortedDictionary(i => i.Id.Value, i => i),
     };

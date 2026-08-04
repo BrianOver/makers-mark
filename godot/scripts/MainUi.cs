@@ -572,22 +572,31 @@ public partial class MainUi : Control
             return;
         }
 
-        // U1 (KTD-A): Clock's own opt-in auto-advance timer must never fire during the raid span —
-        // Conductor is the SOLE driver of Expedition/Camp/ExpeditionDeep now, and running both in
-        // the same frame would double-tick the phase (Clock.Update ticks once via
-        // Adapter.AdvancePhase directly; Conductor.Resync would then see that tick, resync its own
-        // Current, and its OWN Update — still running in this same call — could tick again on top
-        // of it). Gating to Idle (Morning/Evening) leaves the opt-in Innkeeper's Clock's behavior
-        // for those two phases completely unchanged.
+        // U1 (KTD-A): Clock's own opt-in auto-advance timer and Conductor are MUTUALLY EXCLUSIVE
+        // within one frame — never both, an if/else, not two unconditional calls in a row. Both
+        // ultimately ride the same PhaseClock.AdvanceNow path, and PhaseClock's own contract is "at
+        // most one advance per call — a huge delta can never skip phases silently" (see its Update
+        // doc). Calling both here would violate that the instant a single large delta straddled BOTH
+        // thresholds at once: Clock.Update ticks Morning -> Expedition, RaidConductor.Resync (fired
+        // synchronously off that SAME tick) flips Current from Idle to SendOff, and — if the second
+        // call still ran with the same oversized delta — Conductor.Update would immediately consume
+        // ITS OWN threshold too, landing two phases forward (Expedition straight through to Camp) in
+        // one frame. Caught by two engine tests asserting a large auto-advance delta lands EXACTLY
+        // at Expedition (DayAdvanceHudTests/MainUiTests): both failed with "'Expedition' but is
+        // 'Camp'" until this became an if/else. Checking Current ONCE, before either call, is what
+        // makes it exclusive — Conductor.Update only ever runs in the SAME frame Clock.Update did NOT.
         if (Conductor.Current == RaidConductor.Beat.Idle)
         {
             Clock.Update(delta);
         }
+        else
+        {
+            // Independent of Clock.AutoAdvance — the raid span auto-plays regardless of whether the
+            // player opted into the (Morning/Evening-only) Innkeeper's Clock. A no-op whenever
+            // Conductor.Current is VigilStop (see its own Update doc).
+            Conductor.Update(delta);
+        }
 
-        // Independent of Clock.AutoAdvance — the raid span auto-plays regardless of whether the
-        // player opted into the (Morning/Evening-only) Innkeeper's Clock. A no-op whenever
-        // Conductor.Current is Idle or VigilStop (see its own Update doc).
-        Conductor.Update(delta);
         UpdateClockLabel();
 
         // Return Ritual gate (U12, U2 revision): the reveal lands a fixed UNSCALED

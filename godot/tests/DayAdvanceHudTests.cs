@@ -80,7 +80,7 @@ public class DayAdvanceHudTests
     }
 
     [TestCase]
-    public void AutoToggle_FiresSameAdvanceOnTimer_DisablingStopsIt()
+    public void AutoToggle_FiresSameAdvanceOnTimer_DisablingStopsIt_ForTheMorningPhaseItGates()
     {
         var ui = MountMainUi();
         try
@@ -100,21 +100,50 @@ public class DayAdvanceHudTests
             AssertThat(ui.Clock.Playing).IsTrue();
 
             // One frame >= the phase duration drives exactly one tick through PhaseClock.
-            // Update -> the SAME SimAdapter.AdvancePhase the AdvancePhase button calls.
+            // Update -> the SAME SimAdapter.AdvancePhase the AdvancePhase button calls. U1
+            // (KTD-A): MainUi._Process makes Clock.Update and Conductor.Update mutually
+            // exclusive per frame (Conductor.Current == Idle gates which one runs) — exactly
+            // ONE tick happens here, landing at Expedition, never cascading into the
+            // conductor's own SendOff beat in the same frame.
             ui._Process(PhaseClock.MorningSeconds);
             AssertThat(ui.Adapter.CurrentState.Day).IsEqual(1);
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
+            AssertThat(ui.Conductor.Current).IsEqual(RaidConductor.Beat.SendOff);
 
-            // Disabling auto stops the timer cold: further huge deltas never touch the sim.
+            // Disabling auto stops the TIMER cold — but only for the phase it ever gated in the
+            // first place. It never governed the raid span: RaidConductor.Update runs from
+            // _Process independent of Clock.AutoAdvance (U1's own "why this is not the rejected
+            // living clock" — the conductor is not a phase timer with an opt-out, the phases it
+            // owns have no player verb to protect), so huge deltas keep walking the now-armed
+            // SendOff beat forward regardless of this toggle. A fresh Day-1 campaign is
+            // guaranteed unstaged (every hero's first trip targets floor 1, structurally below
+            // the staging checkpoint), so nobody parks and this reaches Evening with zero further
+            // player input.
             PressEnabled(ui, "AutoAdvance");
             AssertThat(ui.Clock.AutoAdvance).IsFalse();
+            for (var frame = 0; frame < 8 && ui.Conductor.Current != RaidConductor.Beat.Idle; frame++)
+            {
+                ui._Process(PhaseClock.MorningSeconds * 10);
+            }
+
+            AssertThat(ui.Adapter.CurrentState.Day).IsEqual(1);
+            AssertThat(ui.Adapter.CurrentState.InFlight.IsEmpty)
+                .OverrideFailureMessage("Fixture premise failed: someone parked on a fresh day 1.")
+                .IsTrue();
+            AssertThat(ui.Adapter.CurrentState.Phase)
+                .OverrideFailureMessage("The raid span must keep advancing via _Process even with Clock.AutoAdvance disabled — it was never gated by that toggle.")
+                .IsEqual(DayPhase.Evening);
+            AssertThat(ui.Conductor.Current).IsEqual(RaidConductor.Beat.Idle);
+
+            // NOW Evening is a real bell phase again, and IT is gated by AutoAdvance being off:
+            // further huge deltas are harmless here, same as Morning was at the top of this test.
             for (var frame = 0; frame < 5; frame++)
             {
                 ui._Process(PhaseClock.MorningSeconds * 10);
             }
 
             AssertThat(ui.Adapter.CurrentState.Day).IsEqual(1);
-            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Evening);
         }
         finally
         {
