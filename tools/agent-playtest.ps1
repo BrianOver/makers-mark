@@ -286,8 +286,18 @@ try {
 
         # Stuck detection (R2). A model that stares at an unchanged screen must be REPORTED, never
         # mistaken for a clean run -- that is the whole failure mode this harness exists to end.
+        # The digest MUST include where the player is standing. Without it, walking across town reads
+        # as four identical turns, so the detector fired STUCK on a model that was moving correctly and
+        # then nudged it away from walking -- the harness manufacturing the symptom it exists to report.
+        # Nearest-target distance is the position proxy: it changes as the player walks and needs no
+        # new field. Rounded to 16px so sub-pixel drift is not mistaken for progress.
         $enabled = @($state.controls | Where-Object { $_.enabled } | ForEach-Object { $_.name })
-        $digest = ($state.phase + '|' + $state.location + '|' + (($state.screenText) -join ';') + '|' + ($enabled -join ','))
+        $whereabouts = ''
+        if ($state.nearby -and @($state.nearby).Count -gt 0) {
+            $nearest = @($state.nearby)[0]
+            $whereabouts = $nearest.key + '@' + [math]::Round($nearest.distance / 16)
+        }
+        $digest = ($state.phase + '|' + $state.location + '|' + $whereabouts + '|' + (($state.screenText) -join ';') + '|' + ($enabled -join ','))
         if ($digestSeen.ContainsKey($digest)) { $digestSeen[$digest] = $digestSeen[$digest] + 1 } else { $digestSeen[$digest] = 1 }
         if ($digestSeen[$digest] -eq 4) {
             $note = 'STUCK: the screen was identical for 4 turns at ' + $state.location + ' / ' + $state.phase + '. Enabled controls: ' + ($enabled -join ', ')
@@ -310,12 +320,19 @@ try {
             # button-presser. Without them the first honest run reached day 2 having never entered a
             # building: it had no way to know a forge existed somewhere to its left. Both come
             # straight from the running town (state.json), so this narrates the world, never invents it.
+            # An in-range target must NOT be reported as a direction to walk. The first agent run
+            # walked "down" into the forge's own footprint eight times from 8px away -- the player
+            # spawns on its doorstep, so the bearing was true and useless. Say the actionable thing.
             $around = ''
             if ($state.nearby -and @($state.nearby).Count -gt 0) {
-                $around = 'Around you (walk with move, then press interact when inRange):' + [Environment]::NewLine +
-                    ((@($state.nearby) | Select-Object -First 6 | ForEach-Object {
-                        '  ' + $_.key + ' [' + $_.label + '] ' + $_.direction + ' ' + $_.distance + 'px inRange=' + $_.inRange
-                    }) -join [Environment]::NewLine)
+                $lines = @(@($state.nearby) | Select-Object -First 6 | ForEach-Object {
+                    if ($_.inRange) {
+                        '  ' + $_.key + ' [' + $_.label + '] YOU ARE HERE - press interact to use it (do not walk)'
+                    } else {
+                        '  ' + $_.key + ' [' + $_.label + '] ' + $_.direction + ' ' + $_.distance + 'px away'
+                    }
+                })
+                $around = 'Around you:' + [Environment]::NewLine + ($lines -join [Environment]::NewLine)
             }
             $prompt2d = ''
             if ($state.interactPrompt) { $prompt2d = 'Interact prompt on screen: ' + $state.interactPrompt }

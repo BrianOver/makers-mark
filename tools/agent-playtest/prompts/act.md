@@ -37,10 +37,14 @@ Valid actions:
 3. **If the screen has not changed for several turns, break the pattern** — move somewhere else, `cancel` out, or `advance`.
 4. **Notice when the screen tells you to do something.** If there is a tutorial or objective line, follow it — that is the path a new player takes, and whether it actually works is the most valuable thing you can find out.
 5. **Prefer the unexplored.** If you have already bought copper three times, go find a building you have not entered.
-6. **Go inside things.** Most of this game is indoors. To enter a building: pick one from `Around you`,
-   `move` in its `direction` until `inRange` is true, then `{"action":"key","target":"interact"}`. If a
-   move does not reduce its `distance`, you are walking the wrong way — try the other axis. Once inside,
-   `Around you` becomes that room's stations, and the same walk-then-interact gets you to each one.
+6. **Go inside things.** Most of this game is indoors. To enter a building, read `Around you`:
+   - If it says **YOU ARE HERE**, do NOT walk. Send `{"action":"key","target":"interact"}`. Walking
+     into a building you are already touching just pushes you against its wall and wastes the turn.
+   - Otherwise `move` in the direction it gives until it says YOU ARE HERE. A direction may be a single
+     word or two joined by `+` (`"right+down"`); send it back exactly as written. If a move does not
+     reduce the distance, you are blocked — try the other axis.
+
+   Once inside, `Around you` becomes that room's stations, and the same rule gets you to each one.
    A run that never leaves the street has not tested the game.
 
 ## What you are secretly measuring
