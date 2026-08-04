@@ -35,24 +35,48 @@ namespace GodotClient.Town2d;
 /// <para><b>U3 — honest differentiation.</b> A station's <see cref="StationSpec.Action"/> is now
 /// nullable: non-null means "this station opens a real, tested surface" (Anvil/Furnace/Shelf →
 /// <c>Forge</c>, optionally with <see cref="StationSpec.Focus"/> telling <c>ForgePanel.FocusSection</c>
-/// which section to land on; Rack → <c>Shop</c>). <c>null</c> means "honest flavor" (Bellows/Quench):
+/// which section to land on; Rack → <c>Shop</c>). <c>null</c> means "honest flavor" (Quench):
 /// no verb exists, so pressing E must never silently do nothing — <see cref="StationSpec.HoverLine"/>
 /// is shown instead of the usual "E · {Label}" prompt (never promising an interact it does not have),
 /// and <see cref="StationSpec.FlavorLine"/> is the one-line toast <c>MainUi</c> shows on press. Both
 /// must be set whenever <see cref="StationSpec.Action"/> is null — <c>InteriorRoomTests
 /// .EveryStationAction_IsARecognizedMainUiRoute_NeverADeadClick</c> fails loudly on a flavor row
 /// missing either, the same "never a dead click" contract the Action check enforces.</para>
+///
+/// <para><b>U5 (verify-by-playing plan, KTD-D) — station identity is DATA.</b> <see cref="Action"/>
+/// alone used to BE the route, and two stations naming the same <c>(Action, Focus)</c> pair were
+/// byte-identical clicks with nobody able to see it (anvil/furnace, the market's two shelves,
+/// alchemy's cauldron/still). <see cref="StationSpec.Verb"/> is the station's own verb — the second
+/// half of its route, alongside <see cref="Action"/> — so <c>(Action, Verb)</c> is the tuple
+/// <c>StationIdentityTests</c>'s reflective guard asserts is unique across every station in every
+/// building (and across every profession's own set, since up to two can be selected and unioned
+/// into the shared workshop — <see cref="WorkshopVocab"/>). <see cref="Copy"/> is the station's own
+/// on-screen line (<c>MainUi.OnStationActivated</c> toasts it on a real-verb press, the same seam
+/// <see cref="FlavorLine"/> already used for flavor presses) — required whenever <see cref="Action"/>
+/// is non-null, exactly mirroring the flavor pair's "required together" rule. <see
+/// cref="CombinesWith"/> is the ONE sanctioned exception to the uniqueness guard: two stations that
+/// name each other (a mutual pair, e.g. the forge's anvil+bellows) may share a route on purpose —
+/// they resolve to one combined act, not two independent ones — and the guard checks the pairing is
+/// exactly mutual, never a one-sided claim.</para>
 /// </summary>
 public static class InteriorLayout2D
 {
     /// <summary>One physical station inside a room: its own stable id (nametag/lookup — NOT the
     /// click-key, since several stations can share one <paramref name="Action"/>), display label
     /// (the HUD "E · {Label}" prompt), sprite id (<see cref="TownAssets2D.ForStation"/>), the LOCAL
-    /// tile position within the room's own grid, and the action string it opens on press — or
-    /// <see langword="null"/> for an honest flavor station (see the class doc's U3 paragraph).
+    /// tile position within the room's own grid, and the action string (U5: the station's
+    /// "resolution surface") it opens on press — or <see langword="null"/> for an honest flavor
+    /// station (see the class doc's U3 paragraph).
     /// <paramref name="Focus"/> is Forge-only (<c>ForgePanel.FocusSection</c>'s section key, e.g.
     /// "materials"/"craft"); <paramref name="HoverLine"/>/<paramref name="FlavorLine"/> are flavor-only
-    /// (required together whenever <paramref name="Action"/> is null, forbidden when it is not).</summary>
+    /// (required together whenever <paramref name="Action"/> is null, forbidden when it is not).
+    /// <paramref name="Verb"/>/<paramref name="Copy"/> (U5, KTD-D) are the real-station counterpart —
+    /// required together whenever <paramref name="Action"/> is non-null: <paramref name="Verb"/> is
+    /// this station's half of the <c>(Action, Verb)</c> route the reflective guard checks for
+    /// uniqueness; <paramref name="Copy"/> is its own one-line toast. <paramref name="CombinesWith"/>
+    /// (U5) names a MUTUAL partner station id this one is allowed to share a route with — the forge's
+    /// anvil/bellows pair, wired for U7's paired minigame to build on; every other station leaves it
+    /// <see langword="null"/>.</summary>
     public readonly record struct StationSpec(
         string Id,
         string Label,
@@ -61,7 +85,10 @@ public static class InteriorLayout2D
         string? Action,
         string? Focus = null,
         string? HoverLine = null,
-        string? FlavorLine = null);
+        string? FlavorLine = null,
+        string? Verb = null,
+        string? Copy = null,
+        string? CombinesWith = null);
 
     /// <summary>One venue's walkable room: which venue it answers for, the shell sprite id, the
     /// room's size in tiles, its island offset in WORLD pixels (KTD-1 — a far-off region of the same
@@ -147,9 +174,16 @@ public static class InteriorLayout2D
                 MarketDoorTile,
                 new[]
                 {
-                    new StationSpec("counter", "Sales Counter", "town2d-station-market-counter", new Vector2I(10, 6), "Shop"),
-                    new StationSpec("shelf-a", "Display Shelf", "town2d-station-market-shelf", new Vector2I(5, 3), "Shop"),
-                    new StationSpec("shelf-b", "Display Shelf", "town2d-station-market-shelf", new Vector2I(14, 3), "Shop"),
+                    // U5 (verify-by-playing plan, KTD-D): the reported collision — "the market's two
+                    // shelves are the same drawer with a different scroll anchor plus a 0.6s flash."
+                    // ShopPanel has no FocusSection to differentiate on, so the fix is each station's
+                    // own Verb/Copy/Label — three distinct on-screen identities, one route each.
+                    new StationSpec("counter", "Sales Counter", "town2d-station-market-counter", new Vector2I(10, 6), "Shop",
+                        Verb: "Haggle", Copy: "You step up to the sales counter."),
+                    new StationSpec("shelf-a", "Wares Shelf", "town2d-station-market-shelf", new Vector2I(5, 3), "Shop",
+                        Verb: "Browse Wares", Copy: "You browse the wares laid out on this shelf."),
+                    new StationSpec("shelf-b", "Curio Shelf", "town2d-station-market-shelf", new Vector2I(14, 3), "Shop",
+                        Verb: "Browse Curios", Copy: "You browse this shelf's odds and ends."),
                     new StationSpec("ledger", "Ledger Desk", "town2d-station-market-ledger", new Vector2I(3, 8), Action: null,
                         HoverLine: "Ledger desk — the books live in the day-end tally, not here",
                         FlavorLine: "You flip through the ledger. Nothing to buy or sell from these pages — try the counter."),
@@ -171,12 +205,19 @@ public static class InteriorLayout2D
                     new StationSpec("hearth", "Hearth", "town2d-station-tavern-hearth", new Vector2I(11, 2), Action: null,
                         HoverLine: "Hearth — keeps the room warm, nothing to work here",
                         FlavorLine: "The hearth crackles. Warm, but there's nothing to craft or buy from a fire."),
-                    new StationSpec("bar", "The Bar", "town2d-station-tavern-bar", new Vector2I(4, 6), "Tavern"),
-                    new StationSpec("storywall", "Story Wall", "town2d-station-tavern-storywall", new Vector2I(18, 6), "Legends"),
+                    new StationSpec("bar", "The Bar", "town2d-station-tavern-bar", new Vector2I(4, 6), "Tavern",
+                        Verb: "Order a Round", Copy: "You order a round at the bar."),
+                    new StationSpec("storywall", "Story Wall", "town2d-station-tavern-storywall", new Vector2I(18, 6), "Legends",
+                        Verb: "Read the Wall", Copy: "You read the legends pinned to the story wall."),
                     // U6 (world-and-interiors plan, follow-up): these tiles double as patron seating
                     // anchors — kept as plain data here, no seating logic in this unit.
-                    new StationSpec("table-a", "Patron Table", "town2d-station-tavern-table", new Vector2I(8, 9), "Tavern"),
-                    new StationSpec("table-b", "Patron Table", "town2d-station-tavern-table", new Vector2I(14, 9), "Tavern"),
+                    // U5 (verify-by-playing plan, KTD-D): both tables used to share bar's exact
+                    // ("Tavern", null) route — a three-way collision the reflective guard now catches.
+                    // Own Label/Verb/Copy per table fixes it without touching TavernPanel.
+                    new StationSpec("table-a", "Fireside Table", "town2d-station-tavern-table", new Vector2I(8, 9), "Tavern",
+                        Verb: "Eavesdrop", Copy: "You take the fireside table, catching the room's talk."),
+                    new StationSpec("table-b", "Corner Table", "town2d-station-tavern-table", new Vector2I(14, 9), "Tavern",
+                        Verb: "Swap Stories", Copy: "You take the corner table, trading stories with the regulars."),
                 }),
             // U1 (world-and-interiors plan, KTD-2): the gatehouse — "everything about the mine
             // happens at the gate." "overlook" is the ONE new action string this unit adds:
@@ -191,9 +232,12 @@ public static class InteriorLayout2D
                 GatehouseDoorTile,
                 new[]
                 {
-                    new StationSpec("overlook", "The Overlook", "town2d-station-gate-overlook", new Vector2I(9, 2), "Watch"),
-                    new StationSpec("muster", "Muster Board", "town2d-station-gate-muster", new Vector2I(5, 5), "Depths"),
-                    new StationSpec("bountyledger", "Bounty Ledger", "town2d-station-gate-bounty", new Vector2I(12, 5), "Bounties"),
+                    new StationSpec("overlook", "The Overlook", "town2d-station-gate-overlook", new Vector2I(9, 2), "Watch",
+                        Verb: "Watch the Depths", Copy: "You lean into the overlook, watching the depths below."),
+                    new StationSpec("muster", "Muster Board", "town2d-station-gate-muster", new Vector2I(5, 5), "Depths",
+                        Verb: "Muster Heroes", Copy: "You check the muster board for who's ready to descend."),
+                    new StationSpec("bountyledger", "Bounty Ledger", "town2d-station-gate-bounty", new Vector2I(12, 5), "Bounties",
+                        Verb: "Post a Bounty", Copy: "You flip open the bounty ledger."),
                     new StationSpec("winch", "Gate Winch", "town2d-station-gate-winch", new Vector2I(9, 7), Action: null,
                         HoverLine: "Gate winch — raises the portcullis, nothing to manage from here",
                         FlavorLine: "The winch's chain hangs taut. It just raises the gate — try the muster board or the bounty ledger."),

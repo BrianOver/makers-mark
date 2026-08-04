@@ -78,16 +78,29 @@ public static class WorkshopVocab
             "Forge", "anvil", "town2d-sign-blacksmith",
             new[]
             {
-                new InteriorLayout2D.StationSpec("anvil", "Anvil", "town2d-station-anvil", new Vector2I(12, 7), "Forge", Focus: "craft"),
-                new InteriorLayout2D.StationSpec("furnace", "Furnace", "town2d-station-furnace", new Vector2I(6, 5), "Forge", Focus: "craft"),
-                new InteriorLayout2D.StationSpec("bellows", "Bellows", "town2d-station-bellows", new Vector2I(8, 5), Action: null,
-                    HoverLine: "Old bellows — feeds the furnace, nothing to work here",
-                    FlavorLine: "You give the bellows a pump. The furnace does the real work."),
+                // U5 (verify-by-playing plan, KTD-D): the reported collision — anvil/furnace both
+                // named ("Forge","craft") with nothing else to tell them apart. Own Verb/Copy fixes
+                // it without a new ForgePanel section (there are only "materials"/"craft" to land
+                // on). CombinesWith wires the owner's "anvil + bellows work together" pairing (R5) —
+                // U7 builds the real paired minigame; this unit is the data link plus the shared
+                // route the reflective guard is told to allow for a MUTUAL pair only.
+                new InteriorLayout2D.StationSpec("anvil", "Anvil", "town2d-station-anvil", new Vector2I(12, 7), "Forge", Focus: "craft",
+                    Verb: "Shape", Copy: "You set the glowing bar on the anvil, ready to shape it.", CombinesWith: "bellows"),
+                new InteriorLayout2D.StationSpec("furnace", "Furnace", "town2d-station-furnace", new Vector2I(6, 5), "Forge", Focus: "materials",
+                    Verb: "Stoke", Copy: "You stoke the furnace, driving the coals hot for the next heat."),
+                // U5: bellows is no longer honest-flavor — it is one half of the anvil's combined
+                // act (R5), so it now shares the anvil's own route on purpose (CombinesWith, above
+                // and below, is checked MUTUAL by the reflective guard). HoverLine/FlavorLine are
+                // flavor-only and are dropped now that Action is real.
+                new InteriorLayout2D.StationSpec("bellows", "Bellows", "town2d-station-bellows", new Vector2I(8, 5), "Forge", Focus: "craft",
+                    Verb: "Shape", Copy: "You work the bellows, feeding the anvil's heat while you shape.", CombinesWith: "anvil"),
                 new InteriorLayout2D.StationSpec("quench", "Quench Trough", "town2d-station-quench", new Vector2I(15, 7), Action: null,
                     HoverLine: "Quench trough — the anvil handles the real quenching",
                     FlavorLine: "The water ripples. Nothing to craft here — try the anvil."),
-                new InteriorLayout2D.StationSpec("shelf", "Material Shelf", "town2d-station-shelf", new Vector2I(4, 10), "Forge", Focus: "materials"),
-                new InteriorLayout2D.StationSpec("rack", "Finished Goods", "town2d-station-rack", new Vector2I(19, 10), "Shop"),
+                new InteriorLayout2D.StationSpec("shelf", "Material Shelf", "town2d-station-shelf", new Vector2I(4, 10), "Forge", Focus: "materials",
+                    Verb: "Browse", Copy: "You browse the material shelf."),
+                new InteriorLayout2D.StationSpec("rack", "Finished Goods", "town2d-station-rack", new Vector2I(19, 10), "Shop",
+                    Verb: "Sell Goods", Copy: "You look over the finished-goods rack, ready to sell."),
             }),
 
         // Row y=2/3 — clear of blacksmith's y=5/7/10, tanning's y=9, and engineering's y=11.
@@ -95,10 +108,18 @@ public static class WorkshopVocab
             "Apothecary", "cauldron", "town2d-sign-alchemy",
             new[]
             {
-                new InteriorLayout2D.StationSpec("cauldron", "Cauldron", "town2d-station-alch-cauldron", new Vector2I(6, 2), "Forge", Focus: "craft"),
-                new InteriorLayout2D.StationSpec("still", "Still", "town2d-station-alch-still", new Vector2I(12, 2), "Forge", Focus: "craft"),
-                new InteriorLayout2D.StationSpec("reagent-shelf", "Reagent Shelf", "town2d-station-alch-shelf", new Vector2I(18, 2), "Forge", Focus: "materials"),
-                new InteriorLayout2D.StationSpec("potion-rack", "Potion Rack", "town2d-station-alch-rack", new Vector2I(9, 3), "Shop"),
+                // U5 (verify-by-playing plan, KTD-D): the reported collision — cauldron/still both
+                // named ("Forge","craft"). Own Verb/Copy differentiates the click; Verbs are also
+                // kept globally distinct from every other profession's own set, since up to two
+                // professions can be selected at once and their stations union into one room.
+                new InteriorLayout2D.StationSpec("cauldron", "Cauldron", "town2d-station-alch-cauldron", new Vector2I(6, 2), "Forge", Focus: "craft",
+                    Verb: "Brew", Copy: "You lean over the cauldron, ready to brew."),
+                new InteriorLayout2D.StationSpec("still", "Still", "town2d-station-alch-still", new Vector2I(12, 2), "Forge", Focus: "craft",
+                    Verb: "Distill", Copy: "You tend the still, coaxing out the essence."),
+                new InteriorLayout2D.StationSpec("reagent-shelf", "Reagent Shelf", "town2d-station-alch-shelf", new Vector2I(18, 2), "Forge", Focus: "materials",
+                    Verb: "Browse Reagents", Copy: "You browse the reagent shelf."),
+                new InteriorLayout2D.StationSpec("potion-rack", "Potion Rack", "town2d-station-alch-rack", new Vector2I(9, 3), "Shop",
+                    Verb: "Sell Potions", Copy: "You look over the potion rack, ready to sell."),
                 new InteriorLayout2D.StationSpec("herb-bundles", "Herb Bundles", "town2d-station-alch-herbs", new Vector2I(15, 3), Action: null,
                     HoverLine: "Drying herb bundles — the still does the real work",
                     FlavorLine: "Dried herbs, ready for the still. Nothing to craft directly from the bundle."),
@@ -109,9 +130,12 @@ public static class WorkshopVocab
             "Workbench Hall", "workbench", "town2d-sign-engineering",
             new[]
             {
-                new InteriorLayout2D.StationSpec("bench", "Workbench", "town2d-station-eng-bench", new Vector2I(5, 11), "Forge", Focus: "craft"),
-                new InteriorLayout2D.StationSpec("gear-rack", "Gear Rack", "town2d-station-eng-gears", new Vector2I(10, 11), "Forge", Focus: "materials"),
-                new InteriorLayout2D.StationSpec("parts-crate", "Parts Crate", "town2d-station-eng-crate", new Vector2I(15, 11), "Shop"),
+                new InteriorLayout2D.StationSpec("bench", "Workbench", "town2d-station-eng-bench", new Vector2I(5, 11), "Forge", Focus: "craft",
+                    Verb: "Tinker", Copy: "You settle at the workbench, tools in hand."),
+                new InteriorLayout2D.StationSpec("gear-rack", "Gear Rack", "town2d-station-eng-gears", new Vector2I(10, 11), "Forge", Focus: "materials",
+                    Verb: "Browse Gears", Copy: "You browse the gear rack."),
+                new InteriorLayout2D.StationSpec("parts-crate", "Parts Crate", "town2d-station-eng-crate", new Vector2I(15, 11), "Shop",
+                    Verb: "Sell Parts", Copy: "You dig through the parts crate, ready to sell."),
                 new InteriorLayout2D.StationSpec("flywheel", "Flywheel", "town2d-station-eng-flywheel", new Vector2I(20, 11), Action: null,
                     HoverLine: "An idle flywheel — a curiosity, nothing to work here",
                     FlavorLine: "The flywheel spins down slowly. Nothing to craft from it directly."),
@@ -122,9 +146,12 @@ public static class WorkshopVocab
             "Tannery", "scrape frame", "town2d-sign-tanning",
             new[]
             {
-                new InteriorLayout2D.StationSpec("scrape-frame", "Scrape Frame", "town2d-station-tan-frame", new Vector2I(5, 9), "Forge", Focus: "craft"),
-                new InteriorLayout2D.StationSpec("hide-rack", "Hide Rack", "town2d-station-tan-hides", new Vector2I(10, 9), "Forge", Focus: "materials"),
-                new InteriorLayout2D.StationSpec("goods-rack", "Goods Rack", "town2d-station-tan-rack", new Vector2I(15, 9), "Shop"),
+                new InteriorLayout2D.StationSpec("scrape-frame", "Scrape Frame", "town2d-station-tan-frame", new Vector2I(5, 9), "Forge", Focus: "craft",
+                    Verb: "Scrape", Copy: "You bend over the scrape frame, hide in hand."),
+                new InteriorLayout2D.StationSpec("hide-rack", "Hide Rack", "town2d-station-tan-hides", new Vector2I(10, 9), "Forge", Focus: "materials",
+                    Verb: "Browse Hides", Copy: "You browse the hide rack."),
+                new InteriorLayout2D.StationSpec("goods-rack", "Goods Rack", "town2d-station-tan-rack", new Vector2I(15, 9), "Shop",
+                    Verb: "Sell Leatherwork", Copy: "You look over the tannery's goods rack, ready to sell."),
                 new InteriorLayout2D.StationSpec("vats", "Tanning Vats", "town2d-station-tan-vats", new Vector2I(20, 9), Action: null,
                     HoverLine: "Tanning vats — the scrape frame does the real work",
                     FlavorLine: "The vats reek of tannin. Nothing to craft directly from a vat."),
