@@ -192,7 +192,12 @@ public class Playtest3dClickThrough
     private static readonly string[] SkipExact =
     {
         "ProvenanceClose", "CloseLedger", "ForecastClose", "BestiaryClose", "CommissionClose",
-        "LegendsWallClose", "CampHold", "ForgeCeremonySkip", "ForgeMinigameCancel", "BrewCancel",
+        // U1 (plan 2026-08-03-001): "CampHold"/"Hold (close)" is retired — the camp slate's third
+        // verb is now "CampDeeper" ("Send them deeper"), which both closes the slate AND ticks
+        // Camp -> ExpeditionDeep (RaidConductor.ResolveVigil). Skipped for the same reason Hold
+        // always was: this sweep's job is exercising the day's economic verbs, not driving the day
+        // forward itself (it already does that via its own AdvancePhase() call each loop).
+        "LegendsWallClose", "CampDeeper", "ForgeCeremonySkip", "ForgeMinigameCancel", "BrewCancel",
         "BrewSubmit", "BrewUndo", "HammerStrike", "Bellows", "Plunge",
     };
 

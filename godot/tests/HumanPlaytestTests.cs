@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using GameSim.Contracts;
 using GdUnit4;
 using Godot;
 using static GdUnit4.Assertions;
@@ -394,16 +395,21 @@ public class HumanPlaytestTests
     }
 
     /// <summary>
-    /// Every phase must offer the player at least one thing to do besides ending it.
+    /// Morning and Evening must each offer the player at least one thing to do besides ending it.
     ///
     /// <para>"Unclear what to do during the expedition phase" and "Expedition phase gives the player
-    /// nothing to do or watch" are the same report. A phase whose only clickable verb is the bell is a
-    /// phase that should not exist, and this is the cheapest possible guard against re-introducing one.
-    /// Reported as a hard failure rather than telemetry because it is a structural claim about the loop,
-    /// not a tuning value.</para>
+    /// nothing to do or watch" were the reports this test used to police across all five phases. U1
+    /// (plan 2026-08-03-001, KTD-A "the two-bell day") is the fix for exactly that complaint, by
+    /// DESIGN: Expedition/Camp/ExpeditionDeep no longer ask the player for a phase-specific verb at
+    /// all — <see cref="RaidConductor"/> plays them as a show, and "the only control is Hurry" there
+    /// is the intended shape, not the bug this test used to catch. The claim narrows to the two
+    /// phases that keep a real decision — the ones with an actual phase-specific verb — and the raid
+    /// span in between is forced through deterministically (<see cref="RaidConductor.Hurry"/>,
+    /// answering the one real stop through its own Control), never by a real-time wait: THAT
+    /// question belongs to <c>RaidConductorTests</c>, not this human-reachability suite.</para>
     /// </summary>
     [TestCase]
-    public async Task NoPhase_LeavesThePlayerWithNothingToDoButRingTheBell()
+    public async Task MorningAndEvening_AlwaysGiveThePlayerARealVerb_TheRaidSpanPlaysItselfInBetween()
     {
         var ui = MountMainUi();
         try
@@ -411,23 +417,51 @@ public class HumanPlaytestTests
             var player = new HumanPlayer(ui);
             var deadEnds = new List<string>();
 
-            for (var tick = 0; tick < MaxPhasesPerDay; tick++)
+            for (var day = 0; day < 2; day++)
             {
                 await player.Frames(4);
-
-                var phase = ui.Adapter.CurrentState.Phase;
-                var verbs = player.ClickableLabels()
-                    .Where(label => !label.Contains("bell") && !label.Contains("Send them off") &&
-                                    !label.Contains("Snuff") && !label.Contains("press deeper") &&
-                                    !label.Contains("Close the vigil") && !label.Contains("Advance"))
+                var morningVerbs = player.ClickableLabels()
+                    .Where(label => !label.Contains("Send them off"))
                     .ToList();
-
-                if (verbs.Count == 0)
+                if (morningVerbs.Count == 0)
                 {
-                    deadEnds.Add($"{phase}: the only thing on screen is the bell");
+                    deadEnds.Add($"day {ui.Adapter.CurrentState.Day} Morning: the only thing on screen is the bell");
                 }
 
-                ui.Adapter.AdvancePhase();
+                PressEnabled(ui, "AdvancePhase"); // Send them off — the real Morning bell
+                ui.RefreshAll();
+
+                // The raid span plays itself (U1) except the one real stop (the vigil) — forced
+                // through here rather than timed, since a real-time wait belongs to a different
+                // suite (see class doc above).
+                for (var guard = 0; guard < 8 && ui.Conductor.Current != RaidConductor.Beat.Idle; guard++)
+                {
+                    if (ui.Conductor.Current == RaidConductor.Beat.VigilStop)
+                    {
+                        Press(ui.Camp, "CampDeeper");
+                    }
+                    else
+                    {
+                        ui.Conductor.Hurry();
+                    }
+                }
+
+                ui.RefreshAll();
+                await player.Frames(4);
+
+                AssertThat(ui.Adapter.CurrentState.Phase)
+                    .OverrideFailureMessage("The raid span never handed control back at Evening.")
+                    .IsEqual(DayPhase.Evening);
+
+                var eveningVerbs = player.ClickableLabels()
+                    .Where(label => !label.Contains("Snuff"))
+                    .ToList();
+                if (eveningVerbs.Count == 0)
+                {
+                    deadEnds.Add($"day {ui.Adapter.CurrentState.Day} Evening: the only thing on screen is the bell");
+                }
+
+                PressEnabled(ui, "AdvancePhase"); // Snuff the lanterns — the real Evening bell
                 ui.RefreshAll();
             }
 

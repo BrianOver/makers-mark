@@ -27,7 +27,7 @@ namespace GodotClient.Tests;
 public class DayAdvanceHudTests
 {
     [TestCase]
-    public void AdvanceButton_Press_AdvancesExactlyOnePhase()
+    public void AdvanceButton_MorningBell_TicksExactlyOnePhase()
     {
         var ui = MountMainUi();
         try
@@ -35,14 +35,43 @@ public class DayAdvanceHudTests
             AssertThat(ui.Adapter.CurrentState.Day).IsEqual(1);
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
 
+            // Morning keeps a real bell (U1, KTD-A) — one press, one tick, same as always.
             PressEnabled(ui, "AdvancePhase");
             AssertThat(ui.Adapter.CurrentState.Day).IsEqual(1);
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 
-            // A second press ticks exactly one more phase — never more, never zero.
-            PressEnabled(ui, "AdvancePhase");
-            AssertThat(ui.Adapter.CurrentState.Day).IsEqual(1);
-            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Camp);
+    /// <summary>
+    /// U1 (plan 2026-08-03-001, KTD-A): once the conductor owns the span, the SAME "AdvancePhase"
+    /// control is Hurry — a skip-to-the-next-stop, not a one-tick bell — and can legitimately tick
+    /// MULTIPLE phases from one press. A fresh Day-1 campaign is guaranteed unstaged (every hero's
+    /// first-ever trip targets floor 1, which is structurally below the staging checkpoint —
+    /// <c>ExpeditionSystem.CheckpointFor</c>), so nobody parks and there is no vigil stop between
+    /// Expedition and Evening: one Hurry press reaches Evening directly, the plan's own "an empty
+    /// Camp/Deep costs ~a second of show, not a click."
+    /// </summary>
+    [TestCase]
+    public void AdvanceButton_DuringTheRaidSpan_IsHurry_ReachesEveningInOnePress_WhenNobodyParks()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            PressEnabled(ui, "AdvancePhase"); // Morning -> Expedition (the real bell)
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
+
+            PressEnabled(ui, "AdvancePhase"); // Hurry now — not a bell
+            AssertThat(ui.Adapter.CurrentState.InFlight.IsEmpty)
+                .OverrideFailureMessage("Fixture premise failed: someone parked on a fresh day 1.")
+                .IsTrue();
+            AssertThat(ui.Adapter.CurrentState.Phase)
+                .OverrideFailureMessage("Hurry on an unstaged day must reach Evening in one press — nothing between SendOff and Idle stops it.")
+                .IsEqual(DayPhase.Evening);
+            AssertThat(ui.Conductor.Current).IsEqual(RaidConductor.Beat.Idle);
         }
         finally
         {

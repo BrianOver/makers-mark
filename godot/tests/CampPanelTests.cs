@@ -50,13 +50,21 @@ public class CampPanelTests
         ImmutableList<ItemHistoryEntry>.Empty, new ConsumableEffect(ConsumableKind.Heal, 6));
 
     /// <summary>A day-1 world already at Expedition (skips Morning's shopping/recruit noise): two
-    /// strong vanguards → one party, plus a single held marked salve. 100g start covers the fee.</summary>
+    /// strong vanguards → one party, plus a single held marked salve. 100g start covers the fee.
+    /// Also pre-stocks the dagger's copper (mirrors <see cref="ScriptedSession.StartState"/>'s own
+    /// technique) so a test can drive a REAL craft — never a synthetic item — while the vigil stop
+    /// is armed (U1 scope-ruling: "closing the modal must leave the stop armed... and the player
+    /// must be able to move, enter the forge, and craft while it is held").</summary>
     private static GameState ExpeditionWorld() => GameFactory.NewGame(CampSeed) with
     {
         Phase = DayPhase.Expedition,
         Heroes = new[] { Strong(1), Strong(2) }.ToImmutableSortedDictionary(h => h.Id.Value, h => h),
         Items = new[] { Weapon(90, 30), Armor(91, 20), Salve(SalveId) }
             .ToImmutableSortedDictionary(i => i.Id.Value, i => i),
+        Player = GameFactory.NewGame(CampSeed).Player with
+        {
+            Materials = GameFactory.NewGame(CampSeed).Player.Materials.SetItem(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded),
+        },
     };
 
     /// <summary>Mount at Expedition, then tick into Camp so the real phase hook raises the slate.</summary>
@@ -318,22 +326,160 @@ public class CampPanelTests
         }
     }
 
-    // ── 6. Hold: close → nothing queued; the day advances normally ───────────────────────────
+    // ── 6. Send them deeper: closes the slate AND ticks Camp forward (U1, KTD-A) ──────────────
 
+    /// <summary>
+    /// U1 (plan 2026-08-03-001): "CampHold"/"Hold (close)" is retired — there is no longer a
+    /// separate phase bell to press afterward, so the modal's own third verb both closes the slate
+    /// and ends the vigil stop (<c>RaidConductor.ResolveVigil</c>), ticking Camp → ExpeditionDeep
+    /// directly. Nothing is queued because this is a direct tick, not a deferred action.
+    /// </summary>
     [TestCase]
-    public void Hold_ClosesSlate_QueuesNothing_DayAdvances()
+    public void SendThemDeeper_ClosesSlate_AndTicksCampForward_NothingQueued()
     {
         var ui = MountAtCamp();
         try
         {
-            Press(ui.Camp, "CampHold");
+            AssertThat(ui.Conductor.Current).IsEqual(RaidConductor.Beat.VigilStop);
+
+            Press(ui.Camp, "CampDeeper");
+
             AssertThat(ui.Camp.Visible).IsFalse();
             AssertThat(ui.Adapter.PendingActions.Count).IsEqual(0);
-
-            AdvanceDay(ui); // day 1 Camp → day 2 Morning, no camp action in flight
-            AssertThat(ui.Adapter.CurrentState.Day).IsEqual(2);
-            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+            AssertThat(ui.Adapter.CurrentState.Phase)
+                .OverrideFailureMessage("Send them deeper must tick Camp -> ExpeditionDeep directly.")
+                .IsEqual(DayPhase.ExpeditionDeep);
+            AssertThat(ui.Conductor.Current).IsEqual(RaidConductor.Beat.DeepTick);
             AssertThat(ui.Adapter.LastRejections.Count).IsEqual(0);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── 7. The vigil round trip (U1 scope-ruling, load-bearing): close, craft, come back, send ──
+
+    /// <summary>
+    /// The design's core verb, verbatim from the scope ruling: "while the party is camped, the
+    /// player leaves the stop, walks to the forge, crafts a potion, comes back, and sends it down."
+    /// Proves the mechanism through real Controls: closing the slate never ends the stop, world
+    /// input comes back so the player could walk anywhere, a real craft lands while the slate is
+    /// closed, that craft's own StateChanged reopens the slate on its own (no player navigation
+    /// needed to "come back"), and a held consumable can then be sent and the vigil answered for
+    /// real. The sim-side attribution chain (CampHandlers' front-insert, AttributionEngine proving
+    /// <c>PotionLifesave</c> for a specific craft) is untouched and out of scope here (zero sim
+    /// diff) — this unit's job is that the STOP survives the round trip, not the sim's payoff for it.
+    /// </summary>
+    [TestCase]
+    public void VigilRoundTrip_CloseCraftComeBackSend_ThePlayerCanActWhileTheStopIsArmed()
+    {
+        var ui = MountAtCamp();
+        try
+        {
+            AssertThat(ui.Conductor.Current).IsEqual(RaidConductor.Beat.VigilStop);
+            AssertThat(ui.Camp.Visible).IsTrue();
+            AssertThat(ui.Town.WorldInputNode.Enabled)
+                .OverrideFailureMessage("The slate owns the screen — world input should be blocked while it is up.")
+                .IsFalse();
+
+            // Leave the stop: close the slate (the real Escape path, not a bare property write).
+            ui.Camp._Input(new InputEventKey { PhysicalKeycode = Key.Escape, Pressed = true });
+
+            AssertThat(ui.Camp.Visible).IsFalse();
+            AssertThat(ui.Conductor.Current)
+                .OverrideFailureMessage("Closing the slate must never end the vigil stop.")
+                .IsEqual(RaidConductor.Beat.VigilStop);
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Camp);
+            AssertThat(ui.Town.WorldInputNode.Enabled)
+                .OverrideFailureMessage("World input must come back once the slate closes — the player must be able to walk to the forge.")
+                .IsTrue();
+
+            // Walk to the forge and craft — a real, all-phases immediate action, landing while the
+            // slate is closed and the stop is still armed.
+            ui.OpenPanel("Forge");
+            PressEnabled(ui.Forge, $"Craft_{ScriptedSession.CraftRecipeId}");
+            var freshCraft = ui.Adapter.LastEvents.OfType<ItemCrafted>().SingleOrDefault();
+            AssertThat(freshCraft)
+                .OverrideFailureMessage("Setup failed: the craft never landed — nothing to send down.")
+                .IsNotNull();
+
+            // "Comes back": the craft's own immediate-action StateChanged re-triggers SyncCampModal
+            // (Phase is still Camp, InFlight still non-empty) — the slate reopens on its own, no
+            // extra navigation needed to reach it again.
+            AssertThat(ui.Camp.Visible)
+                .OverrideFailureMessage("The slate should reopen on its own once a real action lands — the player should not have to hunt for a way back.")
+                .IsTrue();
+            AssertThat(ui.Conductor.Current).IsEqual(RaidConductor.Beat.VigilStop);
+
+            // Send a held consumable down. The dagger just crafted above is a WEAPON (no
+            // ConsumableEffect), so it never enters the Send picker at all — that filter
+            // (CampPanel.HeldConsumables) is unrelated to this unit and untouched; the crafting
+            // half of the round trip is what this test proves with the dagger, and the fixture's
+            // own pre-placed Salve (a real held consumable) is what proves the send-then-resolve
+            // half. Wiring a full Alchemy-profession potion craft is a separate, heavier fixture
+            // this test does not need to stand up to prove the mechanism.
+            var pick = Find<OptionButton>(ui.Camp, "CampPick_1");
+            var salveIndex = -1;
+            for (var i = 0; i < pick.ItemCount; i++)
+            {
+                if (pick.GetItemMetadata(i).AsInt32() == SalveId)
+                {
+                    salveIndex = i;
+                    break;
+                }
+            }
+
+            AssertThat(salveIndex)
+                .OverrideFailureMessage("The held salve never appeared in the Send picker (setup regression).")
+                .IsGreaterEqual(0);
+            pick.Select(salveIndex);
+
+            Press(ui.Camp, "CampSend_1");
+            var send = ui.Adapter.AppliedThisPhase.OfType<SendSupplyAction>().Single();
+            AssertThat(send.Item.Value).IsEqual(SalveId);
+
+            // Finally answer the vigil for real — the round trip ends where it must: a real tick.
+            Press(ui.Camp, "CampDeeper");
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.ExpeditionDeep);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// No-softlock guard: if the player closed the slate and comes back to the HUD's own bell-row
+    /// control instead of walking back to it, that control must reopen the slate rather than no-op
+    /// — CampPanel has a history of exactly this shape of unrecoverable stop (BuildFittedModalCard's
+    /// own remarks). Proves there are TWO independent ways back (the automatic reopen-on-action
+    /// proven above, and this deliberate one), never zero.
+    /// </summary>
+    [TestCase]
+    public void NoSoftlock_TheBellRowReopensTheSlate_WhenClosedWhileTheStopIsArmed()
+    {
+        var ui = MountAtCamp();
+        try
+        {
+            ui.Camp._Input(new InputEventKey { PhysicalKeycode = Key.Escape, Pressed = true });
+            AssertThat(ui.Camp.Visible).IsFalse();
+            AssertThat(ui.Conductor.Current).IsEqual(RaidConductor.Beat.VigilStop);
+
+            var bell = Find<Button>(ui, "AdvancePhase");
+            AssertThat(bell.Text)
+                .OverrideFailureMessage("The bell-row control should offer a deliberate way back to a closed, armed vigil.")
+                .IsEqual("Return to the vigil");
+
+            PressEnabled(ui, "AdvancePhase");
+
+            AssertThat(ui.Camp.Visible)
+                .OverrideFailureMessage("Pressing the reopen control must actually reopen the slate.")
+                .IsTrue();
+            AssertThat(ui.Conductor.Current)
+                .OverrideFailureMessage("Reopening the slate must never itself resolve the vigil.")
+                .IsEqual(RaidConductor.Beat.VigilStop);
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Camp);
         }
         finally
         {
