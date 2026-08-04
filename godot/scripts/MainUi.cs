@@ -3340,6 +3340,32 @@ public partial class MainUi : Control
         var modalOwnsTheScreen = ModalOwnsTheScreen(); // U1: shared with SoundTheTick's departure gate
         var engaged = Drawer.IsOpen || modalOwnsTheScreen;
 
+        // "Does something cover the screen?" and "may the player walk?" are DIFFERENT QUESTIONS, and
+        // conflating them froze the player inside every room.
+        //
+        // A walkable interior answers YES to the first (hold the clock, hide the advisor chip — it does
+        // cover the screen) and YES to the second as well (it is a playable space; walking around IS the
+        // feature). A drawer or an overlay answers YES and NO. One predicate cannot say both, so there
+        // are two below.
+        //
+        // What this cost, from the 2026-08-03 playtest: "I am unable to move around inside the forge",
+        // "Unable to leave the forge via E or moving - escape worked", "i was unable to post as i
+        // couldn't leave the forge so stuck on tutorial 3". Introduced by #349 (cb5e7c1) when
+        // Town.InteriorActive joined ModalOwnsTheScreen so the Escape rung and the bell's departure gate
+        // would treat a room like a modal — correct for both of those, and silently fatal here.
+        //
+        // The room's exit is a zone you WALK ONTO (InteriorRoom2D's ExitZone sits on the door tile), so a
+        // frozen player cannot leave by design; Escape survived only because it is a UI rung in _Input.
+        // Station clicks survived too, via Area2D physics picking, which is why the room looked
+        // half-alive: menus opened, legs did not work.
+        //
+        // Note the third occurrence of one lesson: see AnOverlayOwnsTheScreen's own doc, which already
+        // records this predicate being wrong for the Escape rung. Fixing it for one consumer and leaving
+        // the others is what happened twice. If a fourth consumer appears, ask which of the two questions
+        // it is really asking.
+        var inRoom = Town.InteriorActive;
+        var worldInputBlocked = Drawer.IsOpen || AnOverlayOwnsTheScreen();
+
         // U8: Clock.Engaged can ALSO be held by the day-1 craft→shelve pacing guard above —
         // deliberately NOT folded into `engaged` itself, which also drives the objective chip's
         // visibility and Town's world-input gate a few lines down: the player must still see the
@@ -3367,7 +3393,17 @@ public partial class MainUi : Control
         // HudBoundsTests.LedgerOpen_ObjectiveChip_NeverCoversLedger: an interior or a modal covers the middle
         // of the window, so there is no free column to move to and "keep it readable" just puts it back on
         // top of the thing the player is reading. Those surfaces carry their own copy anyway.
-        var keepTutorialReadable = Tutorial.Active && Drawer.IsOpen && !modalOwnsTheScreen;
+        // A ROOM keeps the card too, for the same reason the drawer does. The 2026-08-03 playtest reported
+        // "The tutorial is missing?" while stuck on step 3 — it was not missing, it was ACTIVE and hidden
+        // by this line, because a room made `modalOwnsTheScreen` true and gave `Drawer.IsOpen` no chance
+        // to be. Worst case of all: the instruction disappears exactly while the player is inside the
+        // building it told them to enter, so they cannot tell whether they already did the thing.
+        //
+        // Overlays still hide it, which is what the DRAWER ONLY note below was right about — Ledger/Camp/
+        // Mirror carry their own copy and fill the middle, so there is nowhere to move the card to.
+        // HudBoundsTests.LedgerOpen_ObjectiveChip_NeverCoversLedger pins that and still passes: an overlay
+        // is excluded here, a room is not.
+        var keepTutorialReadable = Tutorial.Active && (Drawer.IsOpen || inRoom) && !AnOverlayOwnsTheScreen();
         Objective.Visible = !engaged || keepTutorialReadable;
         DockObjectiveHorizontally(toLeftEdge: keepTutorialReadable);
 
@@ -3377,9 +3413,10 @@ public partial class MainUi : Control
         // overlapping: the Depths panel is showing that same party in more detail.
         Pip.Suppressed = engaged;
 
-        // T8: a drawer/interior/modal owns input while engaged — the 3D world's own click-to-
-        // move/interact must not fight it for the same clicks underneath.
-        Town.SetWorldInputEnabled(!engaged);
+        // T8: a drawer or an overlay owns input — the world's own click-to-move/interact must not fight
+        // it for the same clicks underneath. A ROOM does not: see worldInputBlocked's own note above for
+        // what using `engaged` here cost.
+        Town.SetWorldInputEnabled(!worldInputBlocked);
 
         // U18: the engaged latch flips on this discrete event (drawer open/close / modal
         // open-close), not only on a phase tick — the waiting indicator must track it here too,
