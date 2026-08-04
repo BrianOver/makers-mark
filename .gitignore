@@ -55,3 +55,7 @@ playTest_Images/
 # tools/agent-playtest.ps1's run artifacts (state/frame/turnlog/findings) - per-run, per-machine.
 # The findings worth keeping get committed to docs/playtests/ deliberately.
 .claude/agent-playtest/
+
+# Python bytecode from the art generators (tools/art/*.py)
+__pycache__/
+*.pyc

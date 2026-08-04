@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cpa5p0b0g47ao"
-path="res://.godot/imported/player_smith_step.png-996fd51ea70bd019e8e44bb1dfff49c4.ctex"
+uid="uid://sbont4ezemrfl"
+path="res://.godot/imported/town2d-hero-sentinel_walk4.png-5d11bbaed5a8c9f8d0df2ec0ea428edc.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/art/player_smith_step.png"
-dest_files=["res://.godot/imported/player_smith_step.png-996fd51ea70bd019e8e44bb1dfff49c4.ctex"]
+source_file="res://assets/art/town2d-hero-sentinel_walk4.png"
+dest_files=["res://.godot/imported/town2d-hero-sentinel_walk4.png-5d11bbaed5a8c9f8d0df2ec0ea428edc.ctex"]
 
 [params]
 

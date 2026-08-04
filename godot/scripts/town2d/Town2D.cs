@@ -1532,9 +1532,12 @@ public partial class Town2D : Control
     /// </summary>
     private void BuildTownsfolk()
     {
-        // Gap #3 fix: resolve the step-B texture once (shared by every villager — they all reuse
-        // the vanguard body) and hand it to each Init call; null-tolerant if it's ever absent.
+        // Gap #3 / U3 fix: resolve the step-B/walk2/walk4 textures once (shared by every
+        // villager — they all reuse the vanguard body) and hand them to each Init call;
+        // null-tolerant if any is ever absent.
         var stepSprite = TownsfolkNpc2D.ResolveStepSprite();
+        var walk2Sprite = TownsfolkNpc2D.ResolveWalk2Sprite();
+        var walk4Sprite = TownsfolkNpc2D.ResolveWalk4Sprite();
 
         // U6: every venue's own door anchor, in TownLayout2D.Venues' fixed array order (a stable,
         // deterministic sequence — a Dictionary's enumeration order is an implementation detail,
@@ -1547,7 +1550,14 @@ public partial class Town2D : Control
         for (var i = 0; i < TownsfolkHomeTiles.Length; i++)
         {
             var npc = new TownsfolkNpc2D();
-            npc.Init(i, TownsfolkNpc2D.ResolveSprite(), TownsfolkNpc2D.CivilianTint(i), TownLayout2D.TileToWorld(TownsfolkHomeTiles[i]), stepSprite);
+            npc.Init(
+                i,
+                TownsfolkNpc2D.ResolveSprite(),
+                TownsfolkNpc2D.CivilianTint(i),
+                TownLayout2D.TileToWorld(TownsfolkHomeTiles[i]),
+                stepSprite,
+                walk2Sprite,
+                walk4Sprite);
             npc.SetErrandTargets(errandTargets);
             TownsfolkRoot.AddChild(npc);
             _townsfolk.Add(npc);

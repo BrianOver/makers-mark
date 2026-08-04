@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System.Collections.Generic;
+using System.Linq;
 using GdUnit4;
 using Godot;
 using static GdUnit4.Assertions;
@@ -13,9 +14,12 @@ namespace GodotClient.Tests;
 /// <para>These assets do not go through the SDXL pipeline and so are not covered by
 /// <c>art/GameArt.Tests/AssetConformanceTests</c>, whose contract is spec/seed/prompt-shaped. They
 /// still need a guard, because the failure modes here are silent: art can regress to a flat
-/// placeholder rectangle without breaking a single compile, and a step frame can drift so that the
+/// placeholder rectangle without breaking a single compile, a step frame can drift so that the
 /// whole body changes between frames instead of just the legs — which the eye reads as flicker, not
-/// walking. Both are caught below.</para>
+/// walking — a "4-frame gait" can silently be four copies of a 2-frame swap, two classes'
+/// outlines can silently converge, and (2026-08-04 COLOUR + MATERIAL pass) two classes' garment
+/// colours can silently converge or a class can lose its skin-tone region. All six are caught
+/// below.</para>
 ///
 /// <para>These read the COMMITTED pixels rather than re-running the generator, so they also catch
 /// the case where someone edits a PNG by hand and the script silently disagrees with what ships.
@@ -25,22 +29,62 @@ namespace GodotClient.Tests;
 [RequireGodotRuntime]
 public class TownSpriteArtTests
 {
-    /// <summary>What <c>TownAssets2D</c>/<c>TownLayout2D</c> lay the town out against. U6
-    /// (docs/plans/2026-08-02-002) resized the canvas 20x36 -> 26x44 (13x22 on screen at the fixed
-    /// 0.5 <c>CharacterSpriteScale</c>, still under the player's 15x23 — see
-    /// <c>CastProportionTests</c> for the permanent proportion pin) — a canvas resize, not a layout
-    /// change, since neither <c>TownLayout2D</c>'s tile coordinates nor this census pin size.</summary>
-    private const int BodyWidth = 26;
-    private const int BodyHeight = 44;
+    /// <summary>What <c>TownAssets2D</c>/<c>TownLayout2D</c> lay the town out against. U3
+    /// (2026-08-04 verify-by-playing plan, R3) resized the canvas 26x44 -> 40x64 — "26x44 is too
+    /// few pixels to carry detail at gameplay distance" per the plan's own words — a canvas
+    /// resize, not a layout change, since neither <c>TownLayout2D</c>'s tile coordinates nor this
+    /// census pin world scale (that retune is deliberately deferred to U4, see the plan's KTD-F).</summary>
+    private const int BodyWidth = 40;
+    private const int BodyHeight = 64;
 
-    /// <summary>First row of the legs/hem (U6: rows 0-1 empty margin, 2-12 head, 13-30 torso, then
-    /// legs/hem). A step frame may differ at or below this row and nowhere above it — that
-    /// separation is what makes two frames read as a stride.</summary>
-    private const int LegsTopRow = 31;
+    /// <summary>First row of the legs/hem (U3: rows 0-2 empty margin, 3-18 head, 19-44 torso, then
+    /// legs/hem — <c>gen_town_sprites.py</c>'s own <c>LEGS_TOP_ROW</c> constant, kept in sync by
+    /// hand since this test intentionally reads committed pixels rather than importing the
+    /// generator). A walk frame may differ at or below this row and nowhere above it — that
+    /// separation is what makes the frames read as a stride, not a whole-body swap.</summary>
+    private const int LegsTopRow = 45;
 
     /// <summary>A flat placeholder box is 2-3 colours. Real shading needs an outline, at least two
-    /// body tones and a highlight, so anything under this is a regression to programmer art.</summary>
-    private const int MinDistinctColors = 6;
+    /// body tones and a highlight, so anything under this is a regression to programmer art.
+    /// Measured (2026-08-04, post-COLOUR+MATERIAL pass): every class has 12-15 distinct opaque
+    /// colours (up from 8-9 pre-pass, now that armour/cloth/skin/hair are all separate ramps);
+    /// this floor sits two below that measured minimum so a genuine regression trips it without
+    /// making the test flaky against a future one-tone tweak.</summary>
+    private const int MinDistinctColors = 10;
+
+    /// <summary>The shared skin tone every class's face/skin-peek region uses
+    /// (<c>tools/art/gen_town_sprites.py</c>'s <c>'f'</c> letter) — one fantasy-tan RGB, reused
+    /// everywhere rather than picked per class, matching the file's own "never a colour invented
+    /// per class" discipline for shared tones.</summary>
+    private static readonly Color SkinTone = Color.Color8(196, 148, 110);
+
+    /// <summary>Per-channel tolerance for matching <see cref="SkinTone"/> against a loaded pixel —
+    /// generous enough to survive PNG/Godot import rounding, tight enough that it could never
+    /// match a class's garment or steel tones (the closest neighbour, Sentinel's bronze cloth
+    /// light stop, is well over 40 per channel away).</summary>
+    private const float SkinToneTolerance = 10f / 255f;
+
+    /// <summary>Minimum skin-tone pixels for <see cref="EveryClass_CarriesASkinToneRegion"/>.
+    /// Measured (2026-08-04): Mystic/Occultist (the two cowled casters, deliberately just a
+    /// shadow-edge hint per their own established "shadowed face" silhouette) are the thinnest at
+    /// 6px; every other class is 8-40px. This floor sits two below that measured minimum.</summary>
+    private const int MinSkinPixels = 4;
+
+    /// <summary>Minimum Euclidean RGB distance (0-255 scale per channel) between any two classes'
+    /// dominant garment colour — see <see cref="EveryClass_HasADistinctDominantGarmentHue"/>'s own
+    /// doc for the metric and the measured numbers this is chosen against.</summary>
+    private const double MinGarmentColorDistance = 30.0;
+
+    /// <summary>U3: the real 4-frame alternating gait (see <c>SpriteMotion.Pose.WalkFrame</c>) —
+    /// base/"_step" are frames 1/3 (the two mirrored CONTACT poses, kept under their pre-U3 ids so
+    /// every existing null-tolerant consumer keeps working), "_walk2"/"_walk4" are frames 2/4 (the
+    /// two PASSING poses). Order here matches <c>SpriteMotion.Pose.WalkFrame</c>'s 0-3 mapping.</summary>
+    private static readonly string[] GaitSuffixes = [string.Empty, "_walk2", "_step", "_walk4"];
+
+    /// <summary>Silhouette-distinctness floor for <see
+    /// cref="AnyTwoClasses_HaveDistinctSilhouettes"/> — see that test's own doc for the metric and
+    /// the measured numbers this is chosen against.</summary>
+    private const double MinSilhouetteDistance = 0.08;
 
     /// <summary>U6: all six hero classes now have a hand-authored town body (sentinel/skirmisher/
     /// occultist previously fell back to <c>IconRegistry.Sprite</c>'s roster SVG — see
@@ -53,7 +97,7 @@ public class TownSpriteArtTests
     {
         foreach (var classId in Classes)
         {
-            foreach (var suffix in new[] { string.Empty, "_step" })
+            foreach (var suffix in GaitSuffixes)
             {
                 var id = $"town2d-hero-{classId}{suffix}";
                 var image = Load(id);
@@ -137,66 +181,265 @@ public class TownSpriteArtTests
     }
 
     /// <summary>
-    /// <c>TownAssets2D.ForHero</c>'s documented contract: bodies ship neutral so
-    /// <c>HeroActor2D</c> can multiply the class colour in via modulate. A saturated body would
-    /// double-tint the moment <c>ClassColors.RoleColor</c> lands on it.
-    ///
-    /// <para>Measured over the LIT body only, and that qualifier is load-bearing. The style bible's
-    /// darks are deliberately purple-blacks — Void <c>#140f1f</c> reads at 0.52 saturation and Iron
-    /// <c>#2a2438</c> at 0.36 — so a naive "dominant opaque pixel" check fails on a slim sprite
-    /// where the outline is simply the most common colour. It did, on the Striker, the first time
-    /// this test ran. The outline is correct and the test was wrong: what a modulate visibly
-    /// multiplies is the lit surface, so that is what gets measured. The accents (ember rim, teal
-    /// circuit, arcane rune) are intentionally saturated and are a handful of pixels each, so
-    /// checking the dominant tone rather than the maximum is what keeps them legal.</para>
+    /// U3: the fourth explicit gait requirement — "all four gait frames are pairwise distinct".
+    /// <see cref="StepFrames_DifferOnlyBelowTheWaist"/> already proves base/"_step" differ from
+    /// each other; this closes the remaining five pairs (base/"_walk2", base/"_walk4",
+    /// "_walk2"/"_step", "_walk2"/"_walk4", "_step"/"_walk4") so a lazy generator that ships four
+    /// copies of a 2-frame swap (e.g. "_walk2" == "_walk4") cannot pass silently.
     /// </summary>
     [TestCase]
-    public void HeroBodies_StayNeutral_SoEngineTintDoesNotDoubleUp()
+    public void AllFourGaitFrames_ArePairwiseDistinct()
     {
-        // Above the style bible's Iron/Void darks (V 0.22 and below) — i.e. the mid, light and
-        // highlight tones that make up the readable surface of the sprite.
-        const float LitValueFloor = 0.35f;
+        foreach (var classId in Classes)
+        {
+            var images = GaitSuffixes.Select(suffix => Load($"town2d-hero-{classId}{suffix}")).ToArray();
 
+            for (var i = 0; i < images.Length; i++)
+            {
+                for (var j = i + 1; j < images.Length; j++)
+                {
+                    var identical = true;
+                    for (var y = 0; identical && y < BodyHeight; y++)
+                    {
+                        for (var x = 0; x < BodyWidth; x++)
+                        {
+                            if (images[i].GetPixel(x, y) != images[j].GetPixel(x, y))
+                            {
+                                identical = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    AssertThat(identical)
+                        .OverrideFailureMessage(
+                            $"town2d-hero-{classId}{GaitSuffixes[i]} and {GaitSuffixes[j]} are " +
+                            "pixel-identical — the 4-frame gait needs four DISTINCT poses, not " +
+                            "duplicates of each other.")
+                        .IsFalse();
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// U3 (R3): "a Vanguard must read differently from a Mystic at a glance, by OUTLINE, not just
+    /// palette" — the plan's own words. Measures the fraction of the 40x64 canvas where one
+    /// class's opaque/transparent status (its silhouette) disagrees with another's — a symmetric-
+    /// difference-over-union (Jaccard distance) over the ALPHA channel only, so a colour-only
+    /// difference (e.g. two classes sharing a body shape but different accent tints) scores zero
+    /// here even though it would matter to <see cref="HeroBodies_StayNeutral_SoEngineTintDoesNotDoubleUp"/>'s
+    /// concerns — this test is deliberately blind to colour, on purpose, because the plan
+    /// explicitly calls out outline as the thing palette differences do NOT substitute for.
+    ///
+    /// <para><b>Threshold.</b> Measured (2026-08-04, this pass's actual committed art, all 15
+    /// class pairs): the closest pair is striker/skirmisher at 0.115; every other pair is 0.12 or
+    /// higher, several above 0.30. <see cref="MinSilhouetteDistance"/> (0.08) sits comfortably
+    /// below that measured floor — enough margin that a future accent tweak to any one class
+    /// doesn't make this flaky — while still being far above what two classes sharing (or nearly
+    /// sharing) a body shape would score.</para>
+    /// </summary>
+    [TestCase]
+    public void AnyTwoClasses_HaveDistinctSilhouettes()
+    {
+        var masks = Classes.ToDictionary(classId => classId, classId => OpacityMask(Load($"town2d-hero-{classId}")));
+
+        for (var i = 0; i < Classes.Length; i++)
+        {
+            for (var j = i + 1; j < Classes.Length; j++)
+            {
+                var (classA, classB) = (Classes[i], Classes[j]);
+                var (maskA, maskB) = (masks[classA], masks[classB]);
+
+                var xor = 0;
+                var union = 0;
+                for (var k = 0; k < maskA.Length; k++)
+                {
+                    if (maskA[k] != maskB[k])
+                    {
+                        xor++;
+                    }
+
+                    if (maskA[k] || maskB[k])
+                    {
+                        union++;
+                    }
+                }
+
+                var distance = union == 0 ? 0.0 : (double)xor / union;
+
+                AssertThat(distance)
+                    .OverrideFailureMessage(
+                        $"'{classA}' and '{classB}' silhouettes differ by only {distance:F3} of " +
+                        $"their opaque footprint (floor {MinSilhouetteDistance:F2}) — they read as " +
+                        "the same shape at gameplay distance; a class must be distinguishable by " +
+                        "OUTLINE, not just palette (R3).")
+                    .IsGreaterEqual(MinSilhouetteDistance);
+            }
+        }
+    }
+
+    private static bool[] OpacityMask(Image image)
+    {
+        var mask = new bool[BodyWidth * BodyHeight];
+        for (var y = 0; y < BodyHeight; y++)
+        {
+            for (var x = 0; x < BodyWidth; x++)
+            {
+                mask[y * BodyWidth + x] = image.GetPixel(x, y).A > 0;
+            }
+        }
+
+        return mask;
+    }
+
+    /// <summary>
+    /// SUPERSEDES the pre-2026-08-04 <c>HeroBodies_StayNeutral_SoEngineTintDoesNotDoubleUp</c>
+    /// test, which asserted the OPPOSITE of what this now checks: that bodies stayed
+    /// desaturated so <c>HeroActor2D</c> could multiply a class colour in via <c>Modulate</c>.
+    /// That was the right invariant for a neutral-grey sprite; it is the WRONG one now that the
+    /// art itself carries a real per-class garment colour sourced from
+    /// <c>ClassDefinition.ColorRgb</c> (see <c>gen_town_sprites.py</c>'s own COLOUR + MATERIAL
+    /// PASS doc) — which is exactly why <c>HeroActor2D.BuildSprite</c>'s <c>Modulate</c> changed
+    /// from <c>classColor</c> to <c>Colors.White</c> in the same pass (multiplying an
+    /// already-coloured, material-differentiated sprite by an unrelated runtime tint would wash
+    /// the neutral STEEL back into whatever hue the tint happens to be, undoing the material
+    /// contrast this pass exists to add).
+    ///
+    /// <para><b>Metric.</b> Among pixels with saturation &gt; 0.3 AND value &gt; 0.3 (excludes the
+    /// style bible's purple-black darks, which read at S≈0.36-0.52 despite being intended as
+    /// neutral shading, not garment colour — the exact trap the OLD test's own doc already
+    /// recorded), the most-common-by-count colour is each class's "dominant garment colour".
+    /// Compared pairwise by Euclidean RGB distance (0-255 per channel).</para>
+    ///
+    /// <para><b>Threshold.</b> Measured (2026-08-04, this pass's committed art): the closest pair
+    /// is Vanguard/Skirmisher at 46.4; every other pair is 48 or higher, several above 200 (e.g.
+    /// anything against Mystic's bright violet). <see cref="MinGarmentColorDistance"/> (30) sits
+    /// comfortably below that floor. Deliberately NOT a hue-angle-only check: Mystic (bright
+    /// violet) and Occultist (dark violet) are only 12 degrees apart in hue BY DESIGN — the
+    /// sim's own <c>ClassDefinition.ColorRgb</c> comment calls Occultist's "deeper and less
+    /// saturated than the Mystic's bright violet" — so a hue-only metric would wrongly fail a
+    /// pair the sim's own data model treats as intentionally close in hue but far apart in
+    /// value/saturation; a full RGB distance correctly credits that separation.</para>
+    /// </summary>
+    [TestCase]
+    public void EveryClass_HasADistinctDominantGarmentHue()
+    {
+        var dominant = Classes.ToDictionary(classId => classId, classId => DominantGarmentColor(Load($"town2d-hero-{classId}")));
+
+        for (var i = 0; i < Classes.Length; i++)
+        {
+            for (var j = i + 1; j < Classes.Length; j++)
+            {
+                var (classA, classB) = (Classes[i], Classes[j]);
+                var distance = RgbDistance255(dominant[classA], dominant[classB]);
+
+                AssertThat(distance)
+                    .OverrideFailureMessage(
+                        $"'{classA}' ({dominant[classA]}) and '{classB}' ({dominant[classB]})'s dominant " +
+                        $"garment colours are only {distance:F1} apart (floor {MinGarmentColorDistance:F0}) " +
+                        "— they read as the same colour across the room, not two distinct classes (R3).")
+                    .IsGreaterEqual(MinGarmentColorDistance);
+            }
+        }
+    }
+
+    /// <summary>
+    /// R3, the review's explicit ask: "a visible face area with a skin tone... the single biggest
+    /// 'that's a person' cue". Every class carries at least <see cref="MinSkinPixels"/> pixels of
+    /// the shared <see cref="SkinTone"/> — a full face for the two open-faced classes (Striker,
+    /// Skirmisher), a visor-slit/jaw peek for the two full-helm tanks (Vanguard, Sentinel — no
+    /// room for more without contradicting their own closed-helm silhouette), and a dim hint at
+    /// the shadow-hood's edge for the two cowled casters (Mystic/Occultist's faces are
+    /// deliberately shadowed BY DESIGN — see their own head-row comments — so a FULL face here
+    /// would contradict the class's own established look, not just add detail).
+    /// </summary>
+    [TestCase]
+    public void EveryClass_CarriesASkinToneRegion()
+    {
         foreach (var classId in Classes)
         {
             var image = Load($"town2d-hero-{classId}");
-            var counts = new Dictionary<Color, int>();
+            var skinPixels = CountSkinTonePixels(image);
 
-            for (var y = 0; y < image.GetHeight(); y++)
-            {
-                for (var x = 0; x < image.GetWidth(); x++)
-                {
-                    var pixel = image.GetPixel(x, y);
-                    if (pixel.A == 0 || pixel.V <= LitValueFloor)
-                    {
-                        continue;
-                    }
-
-                    counts[pixel] = counts.GetValueOrDefault(pixel) + 1;
-                }
-            }
-
-            AssertThat(counts.Count)
-                .OverrideFailureMessage($"town2d-hero-{classId} has no lit body tones at all")
-                .IsGreater(0);
-
-            var dominant = new Color(0, 0, 0);
-            var best = 0;
-            foreach (var (color, count) in counts)
-            {
-                if (count > best)
-                {
-                    best = count;
-                    dominant = color;
-                }
-            }
-
-            AssertThat(dominant.S)
+            AssertThat(skinPixels)
                 .OverrideFailureMessage(
-                    $"town2d-hero-{classId}'s dominant LIT body colour has saturation {dominant.S} — " +
-                    "bodies must stay neutral; the class colour arrives via modulate.")
-                .IsLessEqual(0.3f);
+                    $"town2d-hero-{classId} has only {skinPixels} skin-tone pixels (floor " +
+                    $"{MinSkinPixels}) — every class needs a real, visible skin-tone region (R3).")
+                .IsGreaterEqual(MinSkinPixels);
         }
+    }
+
+    /// <summary>Pixels with saturation &gt; 0.3 AND value &gt; 0.3 (see
+    /// <see cref="EveryClass_HasADistinctDominantGarmentHue"/>'s doc for why), the most common by
+    /// count.</summary>
+    private static Color DominantGarmentColor(Image image)
+    {
+        const float SaturationFloor = 0.3f;
+        const float ValueFloor = 0.3f;
+
+        var counts = new Dictionary<Color, int>();
+        for (var y = 0; y < image.GetHeight(); y++)
+        {
+            for (var x = 0; x < image.GetWidth(); x++)
+            {
+                var pixel = image.GetPixel(x, y);
+                if (pixel.A == 0 || pixel.S <= SaturationFloor || pixel.V <= ValueFloor)
+                {
+                    continue;
+                }
+
+                counts[pixel] = counts.GetValueOrDefault(pixel) + 1;
+            }
+        }
+
+        AssertThat(counts.Count).OverrideFailureMessage("no saturated garment pixels found at all").IsGreater(0);
+
+        var dominant = new Color(0, 0, 0);
+        var best = 0;
+        foreach (var (color, count) in counts)
+        {
+            if (count > best)
+            {
+                best = count;
+                dominant = color;
+            }
+        }
+
+        return dominant;
+    }
+
+    private static double RgbDistance255(Color a, Color b)
+    {
+        double dr = (a.R - b.R) * 255.0;
+        double dg = (a.G - b.G) * 255.0;
+        double db = (a.B - b.B) * 255.0;
+        return System.Math.Sqrt(dr * dr + dg * dg + db * db);
+    }
+
+    private static int CountSkinTonePixels(Image image)
+    {
+        var count = 0;
+        for (var y = 0; y < image.GetHeight(); y++)
+        {
+            for (var x = 0; x < image.GetWidth(); x++)
+            {
+                var pixel = image.GetPixel(x, y);
+                if (pixel.A == 0)
+                {
+                    continue;
+                }
+
+                if (System.Math.Abs(pixel.R - SkinTone.R) <= SkinToneTolerance
+                    && System.Math.Abs(pixel.G - SkinTone.G) <= SkinToneTolerance
+                    && System.Math.Abs(pixel.B - SkinTone.B) <= SkinToneTolerance)
+                {
+                    count++;
+                }
+            }
+        }
+
+        return count;
     }
 
     private static Image Load(string id)

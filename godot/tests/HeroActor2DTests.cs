@@ -37,21 +37,33 @@ public class HeroActor2DTests
     }
 
     /// <summary>Coverage for the sprite-alignment fix: real gen'd hero body art varies in pixel
-    /// size (no longer a fixed 16x24), and hero bodies are neutral light-grey art that MUST stay
-    /// class-tinted to read apart (unlike the player, which carries its own full-color art and
-    /// stays untinted). Uses a distinctive non-white <c>classColor</c> and an off-placeholder
-    /// texture height so neither assertion could pass by coincidence.</summary>
+    /// size (no longer a fixed 16x24). U3 (2026-08-04 COLOUR + MATERIAL pass) INVERTED the tint
+    /// half of this test's old contract: hero body art used to be neutral light-grey and MUST
+    /// stay class-tinted via <c>Modulate</c> to read apart; it now bakes a real per-class garment
+    /// colour into the art itself (steel armour stays neutral for material contrast — see
+    /// <c>tools/art/gen_town_sprites.py</c>'s doc), so <c>Modulate</c> multiplying it by
+    /// <c>classColor</c> would double-tint the steel. The player's own art was ALWAYS full-colour
+    /// and ALWAYS stayed untinted — this test now proves heroes follow that same rule, not the
+    /// opposite of it. Still uses a distinctive non-white <c>classColor</c> so a regression back
+    /// to tinting could not pass by coincidence (White is also the identity multiply, so a bug
+    /// that left the old tint in would only be caught by asserting against a NON-white input).</summary>
     [TestCase]
-    public void Init_TintsSpriteWithClassColor_AndSetsDynamicFeetOffsetFromTextureHeight()
+    public void Init_LeavesSpriteUntinted_AndSetsDynamicFeetOffsetFromTextureHeight()
     {
         var actor = new HeroActor2D();
         try
         {
-            var classColor = new Color(0.2f, 0.6f, 0.9f); // distinctive — proves the tint is real, not a White no-op
+            var classColor = new Color(0.2f, 0.6f, 0.9f); // distinctive — proves a real non-white input still leaves White
             var texture = new PlaceholderTexture2D { Size = new Vector2(40, 64) }; // taller than the old 24px constant
             actor.Init(9, "vanguard", classColor, texture, new Vector2(100, 100));
 
-            AssertThat(actor.Sprite.Modulate).IsEqual(classColor);
+            AssertThat(actor.Sprite.Modulate)
+                .OverrideFailureMessage(
+                    "HeroActor2D.BuildSprite must leave Modulate at White — the garment colour now " +
+                    "lives baked into the art (see gen_town_sprites.py's COLOUR + MATERIAL pass); " +
+                    "multiplying by classColor here would double-tint it and wash out the neutral " +
+                    "steel armour.")
+                .IsEqual(Colors.White);
 
             var textureHeight = actor.Sprite.Texture.GetHeight();
             AssertThat(textureHeight).IsEqual(64);

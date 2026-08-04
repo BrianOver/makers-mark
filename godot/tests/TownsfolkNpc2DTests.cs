@@ -178,6 +178,12 @@ public class TownsfolkNpc2DTests
     // than retuning the villager's own cosmetic wander — a real public-API technique, not reflection
     // into private state.
 
+    /// <summary>U3 (2026-08-04 COLOUR + MATERIAL pass): with <c>StepHz</c>=3.2 and a forced
+    /// speed-ratio clamp of 1.0 (see below), <c>WalkFrame</c> reaches quarter-phase 2 ("_step")
+    /// only once accumulated time is in [0.3125, 0.46875)s — <c>0.05</c>s (the pre-U3 delta,
+    /// when a single positive-<c>sin</c> half-period was enough to flip the old 2-frame
+    /// <c>StepFrameB</c> almost immediately) no longer reaches it under the real 4-frame quarter
+    /// split. <c>0.39</c>s sits centred in that window with margin either side.</summary>
     [TestCase]
     public void Init_WithStepTexture_WalkFrameSwapsSpriteToStepTexture()
     {
@@ -190,12 +196,12 @@ public class TownsfolkNpc2DTests
             npc.Init(0, baseTex, Colors.White, home, stepTex);
 
             // Force one high-velocity frame so SpriteMotion's WalkPose branch (and its
-            // StepFrameB flip) is deterministically exercised.
+            // WalkFrame quarter-phase advance) is deterministically exercised.
             npc.Position = home + new Vector2(-500f, 0f);
-            npc._Process(0.05);
+            npc._Process(0.39);
 
             AssertThat(npc.Sprite.Texture)
-                .OverrideFailureMessage("a walking frame with a step texture available must swap the sprite to it — this IS the gap #3 fix")
+                .OverrideFailureMessage("a walking frame with a step texture available, at the accumulated time WalkFrame reaches quarter-phase 2, must swap the sprite to it — this IS the gap #3 fix")
                 .IsEqual(stepTex);
         }
         finally
@@ -215,7 +221,7 @@ public class TownsfolkNpc2DTests
             npc.Init(0, baseTex, Colors.White, home); // no step texture — the graceful-degrade path
 
             npc.Position = home + new Vector2(-500f, 0f);
-            npc._Process(0.05);
+            npc._Process(0.39);
 
             AssertThat(npc.Sprite.Texture)
                 .OverrideFailureMessage("a missing step texture must hold the base texture, never crash or blank the sprite")

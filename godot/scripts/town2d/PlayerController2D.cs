@@ -68,6 +68,13 @@ public partial class PlayerController2D : CharacterBody2D
     /// placeholder box.</summary>
     private Texture2D? _stepTex;
 
+    /// <summary>U3 (2026-08-04 verify-by-playing plan, R3): the two ADDITIONAL gait frames
+    /// ("player_smith_walk2"/"_walk4") that complete the real 4-frame alternating gait — same
+    /// null-tolerant resolution as <see cref="_stepTex"/>.</summary>
+    private Texture2D? _walk2Tex;
+
+    private Texture2D? _walk4Tex;
+
     /// <summary>Non-null while a <see cref="MoveToTile"/> seek is in progress; cleared on arrival
     /// (within <see cref="ArriveThreshold"/> of the target) or the instant nonzero WASD input
     /// appears (a real player grabbing the stick always wins — mirrors
@@ -129,6 +136,8 @@ public partial class PlayerController2D : CharacterBody2D
         _baseTex = (Texture2D)Sprite.Texture;
         _spriteHeight = _baseTex.GetHeight();
         _stepTex = ResolveStepTexture();
+        _walk2Tex = ResolveWalkTexture("_walk2");
+        _walk4Tex = ResolveWalkTexture("_walk4");
     }
 
     /// <summary>
@@ -153,7 +162,13 @@ public partial class PlayerController2D : CharacterBody2D
             -_spriteHeight / 2f + pose.BobY + _spriteHeight / 2f * (1f - pose.Scale.Y));
         Sprite.Rotation = pose.LeanRadians;
         Sprite.Scale = pose.Scale;
-        Sprite.Texture = pose.StepFrameB && _stepTex != null ? _stepTex : _baseTex;
+        Sprite.Texture = pose.WalkFrame switch
+        {
+            1 when _walk2Tex != null => _walk2Tex,
+            2 when _stepTex != null => _stepTex,
+            3 when _walk4Tex != null => _walk4Tex,
+            _ => _baseTex,
+        };
 
         // Facing: flip-only (single ¾-side-view art), player currently had no left-facing at all.
         if (Mathf.Abs(Velocity.X) > 1f)
@@ -310,6 +325,22 @@ public partial class PlayerController2D : CharacterBody2D
         }
 
         return null;
+    }
+
+    /// <summary>U3: null-tolerant resolution for the two ADDITIONAL gait frames
+    /// ("player_smith_walk2"/"_walk4") — same ladder/contract as <see cref="ResolveStepTexture"/>,
+    /// parameterized by suffix so both share one implementation.</summary>
+    private static Texture2D? ResolveWalkTexture(string suffix)
+    {
+        var id = PlayerSpriteId + suffix;
+        var generated = IconRegistry.Art(id);
+        if (generated is not null)
+        {
+            return generated;
+        }
+
+        var svgPath = $"res://assets/sprites/{id}.svg";
+        return ResourceLoader.Exists(svgPath) ? GD.Load<Texture2D>(svgPath) : null;
     }
 
     /// <summary>Distinct flat-color placeholder (smith-apron blue-grey) sized to <see

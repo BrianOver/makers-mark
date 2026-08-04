@@ -69,9 +69,17 @@ public sealed class SpriteMotion
     /// <item><description><see cref="StepFrameB"/> selects the M4-derived step-B texture
     /// instead of the base texture; this class only reports the flag — it never swaps
     /// textures itself.</description></item>
+    /// <item><description><see cref="WalkFrame"/> (U3, 2026-08-04 verify-by-playing plan, R3):
+    /// which of FOUR gait textures to show — 0 = base, 1 = "_walk2", 2 = "_step", 3 =
+    /// "_walk4" (ids per <c>tools/art/gen_town_sprites.py</c>'s U3 section). Supersedes
+    /// <see cref="StepFrameB"/> for any consumer that has all four frames; kept alongside it
+    /// (rather than replacing it) so an already-working 2-frame consumer (<c>PlayerController2D</c>,
+    /// which only ever got a base/step pair) needs no change. Always 0 while idle — a caller that
+    /// only reads <see cref="WalkFrame"/> and ignores <see cref="StepFrameB"/> still shows the
+    /// base texture at rest, exactly like the 2-frame path always did.</description></item>
     /// </list></para>
     /// </summary>
-    public readonly record struct Pose(float BobY, float LeanRadians, Vector2 Scale, bool StepFrameB);
+    public readonly record struct Pose(float BobY, float LeanRadians, Vector2 Scale, bool StepFrameB, int WalkFrame);
 
     /// <summary>Per-actor idle-breath phase offset (radians), typically derived from a
     /// deterministic id (e.g. <c>HeroActor2D.HeroIdValue</c>, mirroring the existing
@@ -113,7 +121,7 @@ public sealed class SpriteMotion
         // Scale.X moves inverse to Scale.Y — a cheap "volume preserving" squash/stretch read
         // rather than a flat one-axis pulse.
         var scale = new Vector2(1f - breath, 1f + breath);
-        return new Pose(BobY: 0f, LeanRadians: 0f, Scale: scale, StepFrameB: false);
+        return new Pose(BobY: 0f, LeanRadians: 0f, Scale: scale, StepFrameB: false, WalkFrame: 0);
     }
 
     private Pose WalkPose(float speed, float velocityX, float walkSpeed)
@@ -143,6 +151,16 @@ public sealed class SpriteMotion
 
         var stepFrameB = rawSin >= 0f;
 
-        return new Pose(bobY, lean, scale, stepFrameB);
+        // U3 (2026-08-04 verify-by-playing plan, R3): a REAL 4-frame alternating gait, replacing
+        // the 2-frame symmetric pose swap. sinArg's full period (Tau in sinArg-space) is one
+        // complete stride — both feet back to where they started — so quartering it gives four
+        // equal phases: 0 (base, matches the idle/rest texture so a walk-start never pops), 1
+        // ("_walk2", a passing pose), 2 ("_step", the mirrored contact pose), 3 ("_walk4", the
+        // other passing pose). Quartering (not the StepFrameB half-period above) is deliberate:
+        // StepFrameB only ever needed two states, WalkFrame needs four evenly-spaced ones.
+        var strideArg = sinArg % Mathf.Tau;
+        var walkFrame = Mathf.Clamp((int)(strideArg / (Mathf.Tau / 4f)), 0, 3);
+
+        return new Pose(bobY, lean, scale, stepFrameB, walkFrame);
     }
 }

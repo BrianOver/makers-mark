@@ -104,6 +104,15 @@ public partial class HeroActor2D : Node2D
     /// land it, in which case <see cref="ApplySpritePose"/> just keeps showing the base texture.</summary>
     private Texture2D? _stepTex;
 
+    /// <summary>U3 (2026-08-04 verify-by-playing plan, R3): the two ADDITIONAL gait frames
+    /// ("_walk2"/"_walk4") that make the walk a real 4-frame alternating cycle instead of the old
+    /// base/_step 2-frame swap. Same null-tolerant resolution ladder as <see cref="_stepTex"/> —
+    /// a class missing either id just never selects it (<see cref="ApplySpritePose"/> falls back
+    /// to the base texture), never a crash or a placeholder flash.</summary>
+    private Texture2D? _walk2Tex;
+
+    private Texture2D? _walk4Tex;
+
     /// <summary>
     /// Build the sprite + pick zone and pin the deterministic wander parameters. Mirrors
     /// <c>HeroActor3D.Configure</c> — <paramref name="spawn"/> becomes both <see cref="Home"/>
@@ -143,6 +152,8 @@ public partial class HeroActor2D : Node2D
         // TownAssets2D.ForHero used for the base (null-tolerant: no _step art until M4 lands it).
         _baseTex = sprite;
         _stepTex = IconRegistry.Art($"town2d-hero-{classId}_step");
+        _walk2Tex = IconRegistry.Art($"town2d-hero-{classId}_walk2");
+        _walk4Tex = IconRegistry.Art($"town2d-hero-{classId}_walk4");
         _motion = new SpriteMotion(heroId * 1.7f);
 
         Pick = BuildPick();
@@ -255,8 +266,20 @@ public partial class HeroActor2D : Node2D
             -_spriteHeight / 2f + pose.BobY + _spriteHeight / 2f * (1f - pose.Scale.Y));
         Sprite.Rotation = pose.LeanRadians;
         Sprite.Scale = pose.Scale;
-        Sprite.Texture = pose.StepFrameB && _stepTex != null ? _stepTex : _baseTex;
+        Sprite.Texture = ResolveWalkFrameTexture(pose.WalkFrame);
     }
+
+    /// <summary>U3: the real 4-frame gait — maps <see cref="SpriteMotion.Pose.WalkFrame"/> (0-3)
+    /// to whichever of the four resolved textures exists, falling back to the base texture for
+    /// any frame this checkout is missing (a partial art drop degrades to fewer visible poses,
+    /// never a crash or a null texture).</summary>
+    private Texture2D ResolveWalkFrameTexture(int walkFrame) => walkFrame switch
+    {
+        1 when _walk2Tex != null => _walk2Tex,
+        2 when _stepTex != null => _stepTex,
+        3 when _walk4Tex != null => _walk4Tex,
+        _ => _baseTex,
+    };
 
     /// <summary>Deterministic lissajous drift for the current accumulated time (pure function of
     /// id + t, no RNG) — <c>HeroActor3D.WanderingBasePosition</c>, X/Z ground axes replaced by
@@ -342,11 +365,24 @@ public partial class HeroActor2D : Node2D
     /// pixel art that must be tinted per class to read apart, so the tint stays. Offsets its
     /// origin up by half the RESOLVED texture's own height (<see cref="_spriteHeight"/>) so <see
     /// cref="Position"/> stays the feet/Y-sort line for any sprite size.</summary>
+    /// <summary>U3 (2026-08-04 COLOUR + MATERIAL pass): <paramref name="classColor"/> is no
+    /// longer applied as <see cref="CanvasItem.Modulate"/>. Hero body art used to be neutral
+    /// grey specifically so this whole-sprite multiply could carry class identity; it now bakes
+    /// a real per-class garment colour (sourced from the same <c>ClassDefinition.ColorRgb</c>
+    /// this parameter is resolved from — see <c>Town2D.ReconcileHeroes</c>'s caller) with the
+    /// armour left in a NEUTRAL steel ramp for material contrast (see
+    /// <c>tools/art/gen_town_sprites.py</c>'s own doc). Multiplying that by <paramref
+    /// name="classColor"/> would wash the neutral steel back into whatever hue it happens to be —
+    /// exactly the bug this pass exists to fix, just relocated into the armour — so <see
+    /// cref="Sprite2D.Modulate"/> stays <see cref="Colors.White"/>, the same "full-colour art
+    /// stays untinted" rule <c>PlayerController2D</c>'s own art already followed. The parameter
+    /// itself is kept (not removed) since callers still resolve and pass it, and a future
+    /// non-body use (a pick-ring tint, say) may still want it.</summary>
     private Sprite2D BuildSprite(Texture2D sprite, Color classColor) => new()
     {
         Name = "Sprite",
         Texture = sprite,
-        Modulate = classColor,
+        Modulate = Colors.White,
         Offset = new Vector2(0, -_spriteHeight / 2f),
     };
 
