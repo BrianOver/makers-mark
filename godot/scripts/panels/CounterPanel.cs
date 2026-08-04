@@ -89,6 +89,7 @@ public partial class CounterPanel : SimPanel
         var hero = counter.Active is { } activeId && state.Heroes.TryGetValue(activeId.Value, out var h) ? h : null;
 
         BuildActiveCustomerCard(hero);
+        BuildNextStep(counter, hero);
         BuildMeters(counter);
         BuildDesk(state, counter, hero);
         BuildPresentedAndOffer(state, counter);
@@ -144,6 +145,45 @@ public partial class CounterPanel : SimPanel
         _ => UiKit.ChipTone.Neutral,
     };
 
+    /// <summary>
+    /// Owner playtest ("person buying but really unsure WHAt to do after?"): states, in player
+    /// words, what actually closes THIS sale — read BEFORE the player presses anything, every
+    /// Refresh. There is no hidden interest threshold that closes a sale (Interest only ever
+    /// widens the band a FUTURE round or presentment computes, per <c>HaggleResolver</c>/
+    /// <c>WillingnessModel</c>); the sale closes only when the player presses Accept (takes the
+    /// standing offer) or Counter (always closes, at the named price — <c>ResolveCounter</c>
+    /// never rejects on price alone once it clears the afford/positive checks the button already
+    /// gates on). Hold Firm is the one path that can end the sale WITHOUT a purchase: it burns a
+    /// Patience round and the customer walks once that hits zero — the real "remaining gap" this
+    /// panel can honestly report, so it is named here rather than an invented number.
+    /// </summary>
+    private void BuildNextStep(CounterState counter, Hero? hero)
+    {
+        string text;
+        if (hero is null)
+        {
+            // PromoteActive only ever leaves Active null when the Queue is also empty (ApplyOpen/
+            // Advance both derive Active from the queue head) — Close Counter is the only move left.
+            text = "No customers waiting this morning — Close Counter when you're done arranging stock.";
+        }
+        else if (counter.StandingOfferGold is { } offer && counter.Presented is { } presentedId)
+        {
+            var word = counter.PatienceRounds == 1 ? "round" : "rounds";
+            text = $"Next step: {hero.Name}'s standing offer is {offer}g for {ItemName(presentedId)}. " +
+                   "Accept to close the sale now, Counter with your own price (always closes the deal — " +
+                   $"for better or worse), or Hold Firm to push for more — {counter.PatienceRounds} " +
+                   $"patience {word} left before {hero.Name} walks away with nothing bought.";
+        }
+        else
+        {
+            text = $"Next step: present an item from the shelf to {hero.Name} to open the negotiation " +
+                   "(Suggest a fitting item first to raise their interest for a stronger opening offer).";
+        }
+
+        var label = AddLabel(_body!, text);
+        label.Name = "CounterNextStep";
+    }
+
     /// <summary>Interest/Patience/Goodwill/Round — the sim's own integers rendered 1:1, no
     /// UI-side arithmetic (CounterPanelTests pins this).</summary>
     private void BuildMeters(CounterState counter)
@@ -195,21 +235,76 @@ public partial class CounterPanel : SimPanel
     }
 
     /// <summary>The ONE seam both the Present button and the desk's drag-drop recogniser call
-    /// (KTD-A) — queues the identical <see cref="PresentItemAction"/> either way.</summary>
+    /// (KTD-A) — queues the identical <see cref="PresentItemAction"/> either way, then reports
+    /// what actually happened. Present is an <see cref="ActionTiming"/> immediate verb, so
+    /// <see cref="CounterQueueSystem"/>'s resolve pass (internal — not cref-able from here) has
+    /// ALREADY run (opened a round or walked the customer) by the time <see cref="SimAdapter.Queue"/>
+    /// returns — read that off the fresh <see cref="CustomerCountered"/>/<see cref="CustomerWalked"/>
+    /// events rather than assuming either outcome (owner playtest: a bare "Presented X" said
+    /// nothing about which one happened).</summary>
     private void QueuePresent(ItemId itemId)
     {
+        var beforeCount = Adapter!.CurrentState.EventLog.Count;
         var action = new PresentItemAction(itemId);
         Adapter!.Queue(action);
-        _feedback!.Text = Confirm(action, $"Presented {ItemName(itemId)}");
+        var newEvents = Adapter!.CurrentState.EventLog.Skip(beforeCount).ToList();
+
+        string consequence;
+        if (newEvents.OfType<CustomerCountered>().LastOrDefault() is { } countered)
+        {
+            consequence = $"they're interested — standing offer {countered.OfferGold}g. Accept it, " +
+                          "Counter with your own price, or Hold Firm for more";
+        }
+        else if (newEvents.OfType<CustomerWalked>().LastOrDefault() is { } walked)
+        {
+            consequence = $"{HeroName(walked.Hero)} passed ({walked.Reason}) — {DescribeNextCustomer()}";
+        }
+        else
+        {
+            consequence = "no reaction yet — try again";
+        }
+
+        _feedback!.Text = Confirm(action, $"Presented {ItemName(itemId)} — {consequence}");
     }
 
     /// <summary>The ONE seam both the Accept button and the desk's handshake click call (KTD-A) —
-    /// queues the identical Accept <see cref="HaggleResponseAction"/> either way.</summary>
+    /// queues the identical Accept <see cref="HaggleResponseAction"/> either way, then names the
+    /// sale it just closed (item, hero, price) and what the counter looks like next — Accept
+    /// never rejects once <see cref="BuildHaggleControls"/>'s <c>legal</c> gate allows the press
+    /// (the sim's Accept branch — internal, not cref-able from here — is unconditional once a
+    /// standing offer exists).</summary>
     private void QueueAccept()
     {
+        var before = Adapter!.CurrentState.Counter;
+        var itemName = before?.Presented is { } presentedId ? ItemName(presentedId) : "the item";
+        var heroName = before?.Active is { } activeId ? HeroName(activeId) : "the customer";
+        var offer = before?.StandingOfferGold ?? 0;
+
         var action = new HaggleResponseAction(HaggleResponseKind.Accept);
         Adapter!.Queue(action);
-        _feedback!.Text = Confirm(action, "Accepted the standing offer");
+
+        _feedback!.Text = Confirm(action, $"Sold {itemName} to {heroName} for {offer}g — {DescribeNextCustomer()}");
+    }
+
+    /// <summary>Names what the counter looks like right after an action just resolved it — the
+    /// shared "what's next" clause every closing/losing verb's consequence sentence ends on, so
+    /// the player is never left staring at a changed number with no idea what to do with it.</summary>
+    private string DescribeNextCustomer()
+    {
+        var counter = Adapter!.CurrentState.Counter;
+        if (counter is null)
+        {
+            return "the counter is closed for the morning";
+        }
+
+        if (counter.Active is { } activeId)
+        {
+            return $"{HeroName(activeId)} is up next";
+        }
+
+        return counter.Closed
+            ? "that was the last customer this morning"
+            : "no one else is waiting — arranging stock only";
     }
 
     private void BuildPresentedAndOffer(GameState state, CounterState counter)
@@ -258,9 +353,26 @@ public partial class CounterPanel : SimPanel
 
             var suggest = AddButton(row, $"Suggest_{itemId.Value}", "Suggest", () =>
             {
+                // Owner playtest ("hit suggest and interest went up but nothing happened lol"):
+                // Suggest never touches the CURRENT standing offer — HaggleResolver.ApplySuggestBonus
+                // only raises CounterState.InterestPermille, which the NEXT Present/HoldFirm reads
+                // into WillingnessModel.TrueWillingness. Nothing visibly changing this round is
+                // correct behavior, so say so honestly instead of leaving a bare number to explain
+                // itself. Capture the before-value off the CLOSURE's own counter (this Refresh's
+                // state, i.e. before this press) rather than re-reading Adapter afterward.
+                var before = counter.InterestPermille;
+                var heroName = counter.Active is { } activeId ? HeroName(activeId) : "the customer";
+
                 var action = new SuggestItemAction(itemId);
                 Adapter!.Queue(action);
-                _feedback!.Text = Confirm(action, $"Suggested {ItemName(itemId)}");
+                var after = Adapter!.CurrentState.Counter?.InterestPermille ?? before;
+
+                var consequence = after > before
+                    ? $"interest rose {before} to {after} — a stronger offer on the next round or " +
+                      "item, not this one"
+                    : $"interest held at {before} — {item.Name} isn't what {heroName} needs right now";
+
+                _feedback!.Text = Confirm(action, $"Suggested {item.Name} — {consequence}");
             });
             GateButton(suggest, legal, "No active customer is at the counter.");
         }
@@ -282,9 +394,29 @@ public partial class CounterPanel : SimPanel
 
         var hold = AddButton(row, "HoldFirm", "Hold Firm", () =>
         {
+            var beforeCount = Adapter!.CurrentState.EventLog.Count;
             var action = new HaggleResponseAction(HaggleResponseKind.HoldFirm);
             Adapter!.Queue(action);
-            _feedback!.Text = Confirm(action, "Held firm");
+            var newEvents = Adapter!.CurrentState.EventLog.Skip(beforeCount).ToList();
+
+            string consequence;
+            if (newEvents.OfType<CustomerWalked>().LastOrDefault() is { } walked)
+            {
+                consequence = $"{HeroName(walked.Hero)}'s patience ran out and they walked away with " +
+                              $"nothing bought — {DescribeNextCustomer()}";
+            }
+            else if (Adapter!.CurrentState.Counter is { StandingOfferGold: { } newOffer } after)
+            {
+                var word = after.PatienceRounds == 1 ? "round" : "rounds";
+                consequence = $"they reconsider — new standing offer {newOffer}g " +
+                              $"({after.PatienceRounds} patience {word} left)";
+            }
+            else
+            {
+                consequence = "no reaction yet — try again";
+            }
+
+            _feedback!.Text = Confirm(action, $"Held firm — {consequence}");
         });
         GateButton(hold, legal, "No standing offer to respond to — present an item first.");
 
@@ -302,9 +434,41 @@ public partial class CounterPanel : SimPanel
         row.AddChild(priceStack);
         var counterBtn = AddButton(row, "Counter", "Counter", () =>
         {
-            var action = new HaggleResponseAction(HaggleResponseKind.Counter, priceStack.Value);
+            // Counter always closes the sale once it clears the afford/positive checks GateButton
+            // already mirrors (ResolveCounter's three outcomes — fleece, pin, plain — all call
+            // CloseSale) — so unlike Hold Firm there is no "nothing happened" branch to report here.
+            var before = Adapter!.CurrentState.Counter;
+            var itemName = before?.Presented is { } presentedId ? ItemName(presentedId) : "the item";
+            var heroName = before?.Active is { } activeId ? HeroName(activeId) : "the customer";
+            var goodwillBefore = before?.GoodwillPermille ?? 0;
+            var beforeCount = Adapter!.CurrentState.EventLog.Count;
+            var price = priceStack.Value;
+
+            var action = new HaggleResponseAction(HaggleResponseKind.Counter, price);
             Adapter!.Queue(action);
-            _feedback!.Text = Confirm(action, $"Countered at {priceStack.Value}g");
+
+            var newEvents = Adapter!.CurrentState.EventLog.Skip(beforeCount).ToList();
+            string consequence;
+            if (newEvents.OfType<CounterSaleClosed>().LastOrDefault() is { } closed)
+            {
+                // Pinned is explicit on the event; a fleece isn't, so read it off the ONE field a
+                // fleece actually moves (Goodwill drops — WillingnessModel.FleeceGoodwillPenaltyPermille,
+                // internal, not cref-able from here) rather than re-deriving the ceiling ourselves.
+                var goodwillAfter = Adapter!.CurrentState.Counter?.GoodwillPermille ?? goodwillBefore;
+                var flavor = closed.Pinned
+                    ? "you read them exactly right — they're delighted"
+                    : goodwillAfter < goodwillBefore
+                        ? "but that price felt like a fleece — their goodwill dropped"
+                        : "sale closed";
+                consequence = $"sold {itemName} to {heroName} for {closed.Price}g ({flavor}) — " +
+                              DescribeNextCustomer();
+            }
+            else
+            {
+                consequence = "no reaction yet — try again";
+            }
+
+            _feedback!.Text = Confirm(action, $"Countered at {price}g — {consequence}");
         });
         GateButton(counterBtn, legal, "No standing offer to respond to — present an item first.");
     }
