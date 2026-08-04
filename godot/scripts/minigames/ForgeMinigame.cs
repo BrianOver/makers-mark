@@ -118,6 +118,37 @@ public sealed partial class ForgeMinigame : PanelContainer
     /// cref="RequiredStrikes"/>'s own doc for the measurement.</summary>
     public const int MinRequiredStrikes = 18;
 
+    /// <summary>
+    /// Per-strike payoff bonus granted for each strike landed BEYOND <see cref="RequiredStrikes"/>
+    /// — the low-accuracy assist (owner playtest, third report of "takes too long").
+    ///
+    /// <para><b>Why an overrun assist and not a shorter strike requirement.</b> A beginner does not
+    /// overrun because <see cref="RequiredStrikes"/> is too high; they overrun because a strike's
+    /// payoff scales with heat (<see cref="ForgeStrike"/>), and a beginner lets heat sag. At an
+    /// average heat around 550‰ each strike banks barely half its nominal advance, which is exactly
+    /// why the measured beginner run took ~38 strikes to cover a 21-strike distance. Lowering
+    /// <see cref="BaseRequiredStrikes"/> would shorten a GOOD run (which is already short) without
+    /// touching the bad one, and cutting <see cref="TempoPeriodSeconds"/> was measured to make the
+    /// skilled run WORSE via beat/mash aliasing. So the assist is keyed on the one thing that
+    /// actually identifies a struggling player: still swinging after the strike budget is spent.</para>
+    ///
+    /// <para>It cannot help a skilled player meaningfully — they finish at or near their budget, so
+    /// their overrun is 0-1 strikes — and it never makes a bad run score well: quality comes from
+    /// <c>ForgeScorer</c> over the heat/tempo trace, which the assist does not touch. It only stops
+    /// a poorly-heated billet from turning into a two-minute grind.</para>
+    /// </summary>
+    public const double AssistPerOverrunStrike = 0.4;
+
+    /// <summary>Ceiling on the overrun assist (see <see cref="AssistPerOverrunStrike"/>) — a strike
+    /// never pays more than this multiple of its nominal advance, so the act cannot end in a single
+    /// runaway blow and the shape bar never jumps in a way that reads as a bug.
+    ///
+    /// <para>Measured: raising this to 4.5 changed the beginner run by nothing at all (28 strikes /
+    /// 11.6s either way), because a run completes before the overrun grows large enough for the cap
+    /// to bind. It is kept at the tighter value for the visual reason above, not the pacing one.</para>
+    /// </summary>
+    public const double MaxAssistMultiplier = 3.0;
+
     /// <summary>Aimed-strike hit box: a left-click only registers as a strike inside this generous
     /// square (px), centred on the billet's actual screen anchor — Space stays unaimed/always valid
     /// (KTD-C keyboard parity).</summary>
@@ -178,6 +209,20 @@ public sealed partial class ForgeMinigame : PanelContainer
     /// just more frequent.
     /// </summary>
     public int RequiredStrikes { get; private set; } = BaseRequiredStrikes;
+
+    /// <summary>
+    /// Payoff multiplier from the low-accuracy assist: 1.0 until this run has spent its strike
+    /// budget, then climbing by <see cref="AssistPerOverrunStrike"/> per extra strike up to
+    /// <see cref="MaxAssistMultiplier"/>. Read by <see cref="ForgeStrike"/> and shown to the
+    /// player once it engages, so an unusually large blow is explained rather than mysterious.
+    /// </summary>
+    public double AssistMultiplier => Math.Min(
+        MaxAssistMultiplier,
+        1.0 + (AssistPerOverrunStrike * Math.Max(0, StrikesLanded - RequiredStrikes)));
+
+    /// <summary>Whether the assist is currently doing anything — the condition the readout uses,
+    /// kept here so the UI and the tests agree on one definition of "engaged".</summary>
+    public bool AssistEngaged => StrikesLanded > RequiredStrikes;
 
     /// <summary>A read-only PARTIAL preview of Act 1's own smelt+forge zones, computed once
     /// <see cref="ShapingDone"/> fires by calling the SAME pure <c>ForgeScorer.Score</c> on the
@@ -342,7 +387,7 @@ public sealed partial class ForgeMinigame : PanelContainer
         RecordStrike(tempoError);
 
         var multiplier = onTempo ? StrikeOnTempoBonusMultiplier : 1.0;
-        var advance = (int)Math.Round(_strikeAdvancePermille * (HeatYPermille / 1000.0) * multiplier);
+        var advance = (int)Math.Round(_strikeAdvancePermille * (HeatYPermille / 1000.0) * multiplier * AssistMultiplier);
         ShapeXPermille = Math.Clamp(ShapeXPermille + Math.Max(0, advance), 0, ShapingFinishPermille);
         HeatYPermille = Math.Clamp(HeatYPermille - StrikeHeatCostPermille, 0, 1000);
 
@@ -694,7 +739,13 @@ public sealed partial class ForgeMinigame : PanelContainer
             ? "Cancelled."
             : Completed
                 ? "Shaped! Quenching next..."
-                : $"Strike {StrikesLanded}/{RequiredStrikes} — Heat {HeatYPermille} — {(IsPumping ? "pumping" : "idle")}";
+                : AssistEngaged
+                    // Past the strike budget the count reads "23/21", which on its own looks like a
+                    // failure state. Name what is actually happening instead: the assist is paying
+                    // more per blow so the act closes out. See AssistPerOverrunStrike.
+                    ? $"Strike {StrikesLanded}/{RequiredStrikes} — Heat {HeatYPermille} — "
+                      + $"{(IsPumping ? "pumping" : "idle")} — the billet is yielding, keep going"
+                    : $"Strike {StrikesLanded}/{RequiredStrikes} — Heat {HeatYPermille} — {(IsPumping ? "pumping" : "idle")}";
 
         _hammerButton.Disabled = Completed || WasCancelled || IsPumping;
         _bellowsButton.Disabled = Completed || WasCancelled;
