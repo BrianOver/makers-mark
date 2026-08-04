@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System.Collections.Generic;
+using System.Linq;
 using GdUnit4;
 using Godot;
 using static GdUnit4.Assertions;
@@ -13,9 +14,10 @@ namespace GodotClient.Tests;
 /// <para>These assets do not go through the SDXL pipeline and so are not covered by
 /// <c>art/GameArt.Tests/AssetConformanceTests</c>, whose contract is spec/seed/prompt-shaped. They
 /// still need a guard, because the failure modes here are silent: art can regress to a flat
-/// placeholder rectangle without breaking a single compile, and a step frame can drift so that the
+/// placeholder rectangle without breaking a single compile, a step frame can drift so that the
 /// whole body changes between frames instead of just the legs — which the eye reads as flicker, not
-/// walking. Both are caught below.</para>
+/// walking — and (U3 below) a "4-frame gait" can silently be four copies of a 2-frame swap, or two
+/// classes' outlines can silently converge. All four are caught below.</para>
 ///
 /// <para>These read the COMMITTED pixels rather than re-running the generator, so they also catch
 /// the case where someone edits a PNG by hand and the script silently disagrees with what ships.
@@ -25,22 +27,38 @@ namespace GodotClient.Tests;
 [RequireGodotRuntime]
 public class TownSpriteArtTests
 {
-    /// <summary>What <c>TownAssets2D</c>/<c>TownLayout2D</c> lay the town out against. U6
-    /// (docs/plans/2026-08-02-002) resized the canvas 20x36 -> 26x44 (13x22 on screen at the fixed
-    /// 0.5 <c>CharacterSpriteScale</c>, still under the player's 15x23 — see
-    /// <c>CastProportionTests</c> for the permanent proportion pin) — a canvas resize, not a layout
-    /// change, since neither <c>TownLayout2D</c>'s tile coordinates nor this census pin size.</summary>
-    private const int BodyWidth = 26;
-    private const int BodyHeight = 44;
+    /// <summary>What <c>TownAssets2D</c>/<c>TownLayout2D</c> lay the town out against. U3
+    /// (2026-08-04 verify-by-playing plan, R3) resized the canvas 26x44 -> 40x64 — "26x44 is too
+    /// few pixels to carry detail at gameplay distance" per the plan's own words — a canvas
+    /// resize, not a layout change, since neither <c>TownLayout2D</c>'s tile coordinates nor this
+    /// census pin world scale (that retune is deliberately deferred to U4, see the plan's KTD-F).</summary>
+    private const int BodyWidth = 40;
+    private const int BodyHeight = 64;
 
-    /// <summary>First row of the legs/hem (U6: rows 0-1 empty margin, 2-12 head, 13-30 torso, then
-    /// legs/hem). A step frame may differ at or below this row and nowhere above it — that
-    /// separation is what makes two frames read as a stride.</summary>
-    private const int LegsTopRow = 31;
+    /// <summary>First row of the legs/hem (U3: rows 0-2 empty margin, 3-18 head, 19-44 torso, then
+    /// legs/hem — <c>gen_town_sprites.py</c>'s own <c>LEGS_TOP_ROW</c> constant, kept in sync by
+    /// hand since this test intentionally reads committed pixels rather than importing the
+    /// generator). A walk frame may differ at or below this row and nowhere above it — that
+    /// separation is what makes the frames read as a stride, not a whole-body swap.</summary>
+    private const int LegsTopRow = 45;
 
     /// <summary>A flat placeholder box is 2-3 colours. Real shading needs an outline, at least two
-    /// body tones and a highlight, so anything under this is a regression to programmer art.</summary>
-    private const int MinDistinctColors = 6;
+    /// body tones and a highlight, so anything under this is a regression to programmer art.
+    /// Measured (2026-08-04, post-U3 redraw): every class has 8 or 9 distinct opaque colours;
+    /// this floor sits one below that measured minimum so a genuine regression trips it without
+    /// making the test flaky against a future one-tone tweak.</summary>
+    private const int MinDistinctColors = 7;
+
+    /// <summary>U3: the real 4-frame alternating gait (see <c>SpriteMotion.Pose.WalkFrame</c>) —
+    /// base/"_step" are frames 1/3 (the two mirrored CONTACT poses, kept under their pre-U3 ids so
+    /// every existing null-tolerant consumer keeps working), "_walk2"/"_walk4" are frames 2/4 (the
+    /// two PASSING poses). Order here matches <c>SpriteMotion.Pose.WalkFrame</c>'s 0-3 mapping.</summary>
+    private static readonly string[] GaitSuffixes = [string.Empty, "_walk2", "_step", "_walk4"];
+
+    /// <summary>Silhouette-distinctness floor for <see
+    /// cref="AnyTwoClasses_HaveDistinctSilhouettes"/> — see that test's own doc for the metric and
+    /// the measured numbers this is chosen against.</summary>
+    private const double MinSilhouetteDistance = 0.08;
 
     /// <summary>U6: all six hero classes now have a hand-authored town body (sentinel/skirmisher/
     /// occultist previously fell back to <c>IconRegistry.Sprite</c>'s roster SVG — see
@@ -53,7 +71,7 @@ public class TownSpriteArtTests
     {
         foreach (var classId in Classes)
         {
-            foreach (var suffix in new[] { string.Empty, "_step" })
+            foreach (var suffix in GaitSuffixes)
             {
                 var id = $"town2d-hero-{classId}{suffix}";
                 var image = Load(id);
@@ -134,6 +152,119 @@ public class TownSpriteArtTests
                 .OverrideFailureMessage($"town2d-hero-{classId}_step is identical to its base frame")
                 .IsGreater(0);
         }
+    }
+
+    /// <summary>
+    /// U3: the fourth explicit gait requirement — "all four gait frames are pairwise distinct".
+    /// <see cref="StepFrames_DifferOnlyBelowTheWaist"/> already proves base/"_step" differ from
+    /// each other; this closes the remaining five pairs (base/"_walk2", base/"_walk4",
+    /// "_walk2"/"_step", "_walk2"/"_walk4", "_step"/"_walk4") so a lazy generator that ships four
+    /// copies of a 2-frame swap (e.g. "_walk2" == "_walk4") cannot pass silently.
+    /// </summary>
+    [TestCase]
+    public void AllFourGaitFrames_ArePairwiseDistinct()
+    {
+        foreach (var classId in Classes)
+        {
+            var images = GaitSuffixes.Select(suffix => Load($"town2d-hero-{classId}{suffix}")).ToArray();
+
+            for (var i = 0; i < images.Length; i++)
+            {
+                for (var j = i + 1; j < images.Length; j++)
+                {
+                    var identical = true;
+                    for (var y = 0; identical && y < BodyHeight; y++)
+                    {
+                        for (var x = 0; x < BodyWidth; x++)
+                        {
+                            if (images[i].GetPixel(x, y) != images[j].GetPixel(x, y))
+                            {
+                                identical = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    AssertThat(identical)
+                        .OverrideFailureMessage(
+                            $"town2d-hero-{classId}{GaitSuffixes[i]} and {GaitSuffixes[j]} are " +
+                            "pixel-identical — the 4-frame gait needs four DISTINCT poses, not " +
+                            "duplicates of each other.")
+                        .IsFalse();
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// U3 (R3): "a Vanguard must read differently from a Mystic at a glance, by OUTLINE, not just
+    /// palette" — the plan's own words. Measures the fraction of the 40x64 canvas where one
+    /// class's opaque/transparent status (its silhouette) disagrees with another's — a symmetric-
+    /// difference-over-union (Jaccard distance) over the ALPHA channel only, so a colour-only
+    /// difference (e.g. two classes sharing a body shape but different accent tints) scores zero
+    /// here even though it would matter to <see cref="HeroBodies_StayNeutral_SoEngineTintDoesNotDoubleUp"/>'s
+    /// concerns — this test is deliberately blind to colour, on purpose, because the plan
+    /// explicitly calls out outline as the thing palette differences do NOT substitute for.
+    ///
+    /// <para><b>Threshold.</b> Measured (2026-08-04, this pass's actual committed art, all 15
+    /// class pairs): the closest pair is striker/skirmisher at 0.115; every other pair is 0.12 or
+    /// higher, several above 0.30. <see cref="MinSilhouetteDistance"/> (0.08) sits comfortably
+    /// below that measured floor — enough margin that a future accent tweak to any one class
+    /// doesn't make this flaky — while still being far above what two classes sharing (or nearly
+    /// sharing) a body shape would score.</para>
+    /// </summary>
+    [TestCase]
+    public void AnyTwoClasses_HaveDistinctSilhouettes()
+    {
+        var masks = Classes.ToDictionary(classId => classId, classId => OpacityMask(Load($"town2d-hero-{classId}")));
+
+        for (var i = 0; i < Classes.Length; i++)
+        {
+            for (var j = i + 1; j < Classes.Length; j++)
+            {
+                var (classA, classB) = (Classes[i], Classes[j]);
+                var (maskA, maskB) = (masks[classA], masks[classB]);
+
+                var xor = 0;
+                var union = 0;
+                for (var k = 0; k < maskA.Length; k++)
+                {
+                    if (maskA[k] != maskB[k])
+                    {
+                        xor++;
+                    }
+
+                    if (maskA[k] || maskB[k])
+                    {
+                        union++;
+                    }
+                }
+
+                var distance = union == 0 ? 0.0 : (double)xor / union;
+
+                AssertThat(distance)
+                    .OverrideFailureMessage(
+                        $"'{classA}' and '{classB}' silhouettes differ by only {distance:F3} of " +
+                        $"their opaque footprint (floor {MinSilhouetteDistance:F2}) — they read as " +
+                        "the same shape at gameplay distance; a class must be distinguishable by " +
+                        "OUTLINE, not just palette (R3).")
+                    .IsGreaterEqual(MinSilhouetteDistance);
+            }
+        }
+    }
+
+    private static bool[] OpacityMask(Image image)
+    {
+        var mask = new bool[BodyWidth * BodyHeight];
+        for (var y = 0; y < BodyHeight; y++)
+        {
+            for (var x = 0; x < BodyWidth; x++)
+            {
+                mask[y * BodyWidth + x] = image.GetPixel(x, y).A > 0;
+            }
+        }
+
+        return mask;
     }
 
     /// <summary>

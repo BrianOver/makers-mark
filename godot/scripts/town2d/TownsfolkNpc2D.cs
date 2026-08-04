@@ -129,6 +129,14 @@ public partial class TownsfolkNpc2D : Node2D
     /// step art was supplied (mirrors <see cref="HeroActor2D._stepTex"/>'s exact contract).</summary>
     private Texture2D? _stepTex;
 
+    /// <summary>U3 (2026-08-04 verify-by-playing plan, R3): the two ADDITIONAL gait frames
+    /// villagers reuse from the shared vanguard body ("town2d-hero-vanguard_walk2"/"_walk4"),
+    /// completing the real 4-frame alternating gait (mirrors <see cref="HeroActor2D._walk2Tex"/>/
+    /// <see cref="HeroActor2D._walk4Tex"/>'s exact null-tolerant contract).</summary>
+    private Texture2D? _walk2Tex;
+
+    private Texture2D? _walk4Tex;
+
     // ── U6: errand state (world-and-interiors plan, R9) ──────────────────────────────────────
 
     /// <summary>Door anchors an errand may walk to — supplied by <see cref="Town2D"/> via <see
@@ -179,6 +187,13 @@ public partial class TownsfolkNpc2D : Node2D
     /// </summary>
     public static Texture2D? ResolveStepSprite() => IconRegistry.Art("town2d-hero-vanguard_step");
 
+    /// <summary>U3: the two additional shared-vanguard-body gait frames (see <see
+    /// cref="_walk2Tex"/>/<see cref="_walk4Tex"/>'s doc) — same null-tolerant resolution ladder
+    /// as <see cref="ResolveStepSprite"/>.</summary>
+    public static Texture2D? ResolveWalk2Sprite() => IconRegistry.Art("town2d-hero-vanguard_walk2");
+
+    public static Texture2D? ResolveWalk4Sprite() => IconRegistry.Art("town2d-hero-vanguard_walk4");
+
     /// <summary>Deterministic civilian tint for the given villager index — cycles a small muted
     /// browns/greens/grays palette, deliberately disjoint from any <c>ClassColors.RoleColor</c> hero
     /// tint so villagers read as background dressing, not off-duty heroes.</summary>
@@ -192,8 +207,17 @@ public partial class TownsfolkNpc2D : Node2D
     /// name="stepSprite"/> (gap #3) is optional and defaults to null — existing callers that only
     /// pass the base four arguments keep the pre-fix no-swap behavior; <see
     /// cref="Town2D.BuildTownsfolk"/> passes <see cref="ResolveStepSprite"/>'s real result.
+    /// <paramref name="walk2Sprite"/>/<paramref name="walk4Sprite"/> (U3) complete the 4-frame
+    /// gait the same optional, null-tolerant way.
     /// </summary>
-    public void Init(int index, Texture2D sprite, Color tint, Vector2 home, Texture2D? stepSprite = null)
+    public void Init(
+        int index,
+        Texture2D sprite,
+        Color tint,
+        Vector2 home,
+        Texture2D? stepSprite = null,
+        Texture2D? walk2Sprite = null,
+        Texture2D? walk4Sprite = null)
     {
         NpcIndex = index;
         Home = home;
@@ -221,10 +245,12 @@ public partial class TownsfolkNpc2D : Node2D
         AddChild(art);
         art.AddChild(Sprite);
 
-        // Gap #3: cache base/step textures exactly like HeroActor2D.Init does, now that the
-        // resolved sprite is known.
+        // Gap #3 / U3: cache base/step/walk2/walk4 textures exactly like HeroActor2D.Init does,
+        // now that the resolved sprite is known.
         _baseTex = sprite;
         _stepTex = stepSprite;
+        _walk2Tex = walk2Sprite;
+        _walk4Tex = walk4Sprite;
 
         _motion = new SpriteMotion(index * 2.1f);
 
@@ -381,10 +407,16 @@ public partial class TownsfolkNpc2D : Node2D
             -_spriteHeight / 2f + pose.BobY + _spriteHeight / 2f * (1f - pose.Scale.Y));
         Sprite.Rotation = pose.LeanRadians;
         Sprite.Scale = pose.Scale;
-        // Gap #3 fix: the same step-frame swap HeroActor2D/PlayerController2D already do — this
-        // line was the whole gap (SpriteMotion.Pose.StepFrameB was already being computed above,
-        // just never consumed here).
-        Sprite.Texture = pose.StepFrameB && _stepTex != null ? _stepTex : _baseTex;
+        // U3: the real 4-frame gait (mirrors HeroActor2D.ResolveWalkFrameTexture exactly) — the
+        // original gap #3 fix only wired the 2-frame StepFrameB swap; this replaces it with all
+        // four frames, falling back toward the base texture for any this checkout is missing.
+        Sprite.Texture = pose.WalkFrame switch
+        {
+            1 when _walk2Tex != null => _walk2Tex,
+            2 when _stepTex != null => _stepTex,
+            3 when _walk4Tex != null => _walk4Tex,
+            _ => _baseTex,
+        };
     }
 
     /// <summary>Deterministic lissajous drift for the current accumulated time (pure function of

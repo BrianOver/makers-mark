@@ -104,6 +104,15 @@ public partial class HeroActor2D : Node2D
     /// land it, in which case <see cref="ApplySpritePose"/> just keeps showing the base texture.</summary>
     private Texture2D? _stepTex;
 
+    /// <summary>U3 (2026-08-04 verify-by-playing plan, R3): the two ADDITIONAL gait frames
+    /// ("_walk2"/"_walk4") that make the walk a real 4-frame alternating cycle instead of the old
+    /// base/_step 2-frame swap. Same null-tolerant resolution ladder as <see cref="_stepTex"/> —
+    /// a class missing either id just never selects it (<see cref="ApplySpritePose"/> falls back
+    /// to the base texture), never a crash or a placeholder flash.</summary>
+    private Texture2D? _walk2Tex;
+
+    private Texture2D? _walk4Tex;
+
     /// <summary>
     /// Build the sprite + pick zone and pin the deterministic wander parameters. Mirrors
     /// <c>HeroActor3D.Configure</c> — <paramref name="spawn"/> becomes both <see cref="Home"/>
@@ -143,6 +152,8 @@ public partial class HeroActor2D : Node2D
         // TownAssets2D.ForHero used for the base (null-tolerant: no _step art until M4 lands it).
         _baseTex = sprite;
         _stepTex = IconRegistry.Art($"town2d-hero-{classId}_step");
+        _walk2Tex = IconRegistry.Art($"town2d-hero-{classId}_walk2");
+        _walk4Tex = IconRegistry.Art($"town2d-hero-{classId}_walk4");
         _motion = new SpriteMotion(heroId * 1.7f);
 
         Pick = BuildPick();
@@ -255,8 +266,20 @@ public partial class HeroActor2D : Node2D
             -_spriteHeight / 2f + pose.BobY + _spriteHeight / 2f * (1f - pose.Scale.Y));
         Sprite.Rotation = pose.LeanRadians;
         Sprite.Scale = pose.Scale;
-        Sprite.Texture = pose.StepFrameB && _stepTex != null ? _stepTex : _baseTex;
+        Sprite.Texture = ResolveWalkFrameTexture(pose.WalkFrame);
     }
+
+    /// <summary>U3: the real 4-frame gait — maps <see cref="SpriteMotion.Pose.WalkFrame"/> (0-3)
+    /// to whichever of the four resolved textures exists, falling back to the base texture for
+    /// any frame this checkout is missing (a partial art drop degrades to fewer visible poses,
+    /// never a crash or a null texture).</summary>
+    private Texture2D ResolveWalkFrameTexture(int walkFrame) => walkFrame switch
+    {
+        1 when _walk2Tex != null => _walk2Tex,
+        2 when _stepTex != null => _stepTex,
+        3 when _walk4Tex != null => _walk4Tex,
+        _ => _baseTex,
+    };
 
     /// <summary>Deterministic lissajous drift for the current accumulated time (pure function of
     /// id + t, no RNG) — <c>HeroActor3D.WanderingBasePosition</c>, X/Z ground axes replaced by
