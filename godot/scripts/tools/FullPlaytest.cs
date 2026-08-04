@@ -640,9 +640,14 @@ public partial class FullPlaytest : Node
         // IsPumping, or once Completed/WasCancelled — so the next attempt should log those three
         // fields per frame rather than counting calls, which is the mistake made here. The counters
         // below therefore report OBSERVED STATE, not intentions.
+        // U7 (verify-by-playing plan): ForgeMinigame is now ONLY Act 1 (stops at ShapingFinishPermille,
+        // 666 — the sim's own forge-zone end — instead of 1000) and hands off to a SEPARATE
+        // QuenchMinigame overlay for Act 2 (the quench) via ShapingDone rather than building the
+        // craft's CraftAction itself. This loop drives Act 1 to completion, then Act 2's single
+        // decisive Plunge — the two-act chain end to end.
         var frames = 0;
         var guard = 0;
-        while (mg.ShapeXPermille < 1000 && guard++ < 40)
+        while (!mg.Completed && guard++ < 40)
         {
             mg.BellowsStart();
             var p = 0;
@@ -657,7 +662,7 @@ public partial class FullPlaytest : Node
             frames++;
 
             var s = 0;
-            while (mg.HeatYPermille > 140 && mg.ShapeXPermille < 1000 && s++ < 16)
+            while (mg.HeatYPermille > 140 && !mg.Completed && s++ < 16)
             {
                 mg.ForgeStrike();
                 await Settle(1);
@@ -667,24 +672,38 @@ public partial class FullPlaytest : Node
 
         mg.BellowsStop();
         _report.AppendLine(
-            $"- forge tracking: {frames} frames, {guard} heat cycles — shape {mg.ShapeXPermille}‰, " +
+            $"- forge Act 1: {frames} frames, {guard} heat cycles — shape {mg.ShapeXPermille}‰, " +
             $"heat {mg.HeatYPermille}‰, pumping={mg.IsPumping}, completed={mg.Completed}, cancelled={mg.WasCancelled}");
 
         Shot($"r{_run}_mini_forge_worked");
         await Settle(6);
-        if (mg.ShapeXPermille >= 1000)
+
+        if (!mg.Completed)
         {
-            mg.Plunge();
+            Note($"run {_run}: forge Act 1 never reached its finish line (shapeX={mg.ShapeXPermille})");
+            ui.OpenPanel("Forge");
+            await Settle(4);
+            return;
         }
 
+        if (ui.FindChild("QuenchMinigame", recursive: true, owned: false) is not QuenchMinigame quench)
+        {
+            Note($"run {_run}: QuenchMinigame node absent after Act 1's ShapingDone");
+            ui.OpenPanel("Forge");
+            await Settle(4);
+            return;
+        }
+
+        Shot($"r{_run}_mini_quench_open");
+        quench.Plunge(); // the ONE decisive input Act 2 asks for
         await Settle(8);
         Shot($"r{_run}_mini_forge_result");
 
-        _report.AppendLine($"- forge: shapeX={mg.ShapeXPermille} completed={mg.Completed} " +
-                           $"grade={mg.PreviewGradePermille} emitted={(mg.EmittedAction is null ? "NULL" : mg.EmittedAction.RecipeId)}");
-        if (mg.EmittedAction is null)
+        _report.AppendLine($"- forge Act 2 (quench): completed={quench.Completed} " +
+                           $"grade={quench.PreviewGradePermille} emitted={(quench.EmittedAction is null ? "NULL" : quench.EmittedAction.RecipeId)}");
+        if (quench.EmittedAction is null)
         {
-            Note($"run {_run}: forge minigame emitted NO craft action (shapeX={mg.ShapeXPermille})");
+            Note($"run {_run}: quench emitted NO craft action");
         }
 
         ui.OpenPanel("Forge");

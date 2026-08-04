@@ -101,17 +101,25 @@ public class EscapeClosesModalsTests
             player.Tap(Key.Escape);
             await player.Frames(2);
 
+            var shapingDoneFired = false;
+            forge.ShapingDone += _ => shapingDoneFired = true;
+
             AssertThat(forge.WasCancelled)
                 .OverrideFailureMessage("Escape must cancel the run through Cancel() — a bare node-hide would leave WasCancelled false.")
                 .IsTrue();
             AssertThat(forge.Completed)
-                .OverrideFailureMessage("Escape must never mark the run Completed — that is Plunge()'s job alone.")
+                .OverrideFailureMessage("Escape must never mark the run Completed — Act 1 only completes by reaching its own finish line.")
                 .IsFalse();
-            AssertThat(forge.EmittedAction)
-                .OverrideFailureMessage(
-                    "Cancel() must queue NOTHING (PKD8 single-action contract) — EmittedAction is only ever set by " +
-                    "Finished/Plunge. A non-null value here means Escape both cancelled AND queued the craft.")
-                .IsNull();
+
+            // Cancel() must queue NOTHING (PKD8 single-action contract): Act 1 never builds a
+            // CraftAction at all — only Act 2 (QuenchMinigame) does, on ITS OWN Plunge — so driving
+            // this cancelled overlay further must never raise ShapingDone either.
+            forge.Advance(1.0);
+            player.Tap(Key.Space);
+            await player.Frames(1);
+            AssertThat(shapingDoneFired)
+                .OverrideFailureMessage("A cancelled Act 1 must never fire ShapingDone, even if driven further after Escape.")
+                .IsFalse();
         }
         finally { forge.Free(); }
     }

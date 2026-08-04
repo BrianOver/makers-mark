@@ -9,8 +9,11 @@ using GodotClient.Minigames;
 namespace GodotClient.Tests;
 
 /// <summary>
-/// Plays the forge minigame the way a person does: watch the heat gauge, pump when it sags, strike on the
-/// beat, and be imperfect about all of it.
+/// Plays ACT 1 of the two-act forge (<see cref="ForgeMinigame"/>, U7 "verify by playing" plan) the way a
+/// person does: watch the heat gauge, pump when it sags, strike on the beat, and be imperfect about all of
+/// it. "Play" here means finishing the SHAPING act — <see cref="ForgeMinigame.Completed"/> flips the instant
+/// the shape reaches Act 1's finish line, with no manual finale; Act 2 (the quench) is a separate overlay
+/// this class does not drive.
 ///
 /// <para><b>What this answers that no existing test could.</b> The forge suites drive
 /// <c>ForgeStrike()</c>/<c>BellowsStart()</c> and check the arithmetic, so they establish that the API
@@ -110,7 +113,10 @@ public sealed class ForgePlayer
     /// <summary>What one run looked like. A trace, not a verdict — the assertions live in the test.</summary>
     /// <param name="Completed">Did the billet ever finish.</param>
     /// <param name="ElapsedSeconds">Simulated seconds spent.</param>
-    /// <param name="GradePermille">The preview grade at the end, or null if it never finished.</param>
+    /// <param name="GradePermille">Act 1's own PARTIAL preview grade at the end (quench zone
+    /// necessarily scores 0 — Act 2 is a separate overlay this class does not drive), or null if
+    /// it never finished. A pessimistic lower bound, useful for RELATIVE comparisons (does tempo
+    /// pay, is a veteran pinned at the floor) — never the craft's real grade.</param>
     /// <param name="Strikes">Hammer blows landed.</param>
     /// <param name="LowestHeatPermille">The worst the heat ever got — a heat floor of 0 with no progress is
     /// the "shape keeps resetting to zero" death spiral.</param>
@@ -139,29 +145,20 @@ public sealed class ForgePlayer
         var strikes = 0;
         var lowestHeat = _forge.HeatYPermille;
         var seenHeat = _forge.HeatYPermille;
-        var seenShape = _forge.ShapeXPermille;
-        var pending = new Queue<(int Heat, int Shape)>();
+        var pending = new Queue<int>();
         var lastStruckBeat = -1;
 
         while (!_forge.Completed && elapsed < PatienceSeconds)
         {
-            // Reaction lag: act on what the gauges said ReactionSteps ago, not on this instant. Without it
+            // Reaction lag: act on what the gauge said ReactionSteps ago, not on this instant. Without it
             // the policy is superhuman and would happily certify a minigame no person could operate.
-            pending.Enqueue((_forge.HeatYPermille, _forge.ShapeXPermille));
+            pending.Enqueue(_forge.HeatYPermille);
             if (pending.Count > _skill.ReactionSteps)
             {
-                (seenHeat, seenShape) = pending.Dequeue();
+                seenHeat = pending.Dequeue();
             }
 
-            if (seenShape >= 1000)
-            {
-                // The finale. Enter, not a button click, because the claim worth making is that the whole
-                // craft is completable FROM THE KEYBOARD — which is the thing that was broken.
-                _player.Release(Key.Shift);
-                _pumping = false;
-                _player.Tap(Key.Enter);
-            }
-            else if (_pumping)
+            if (_pumping)
             {
                 if (seenHeat >= _skill.PumpUntilPermille)
                 {

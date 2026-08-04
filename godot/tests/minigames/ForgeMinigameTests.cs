@@ -15,15 +15,14 @@ using static GodotClient.Tests.UiTestSupport;
 namespace GodotClient.Tests;
 
 /// <summary>
-/// U23d: the "Anvil Map" forge overlay — the shared-target-line contract (this overlay renders
-/// EXACTLY the polyline <c>ForgePath</c>/<c>ForgeScorer</c> regenerate sim-side from the SAME
-/// seed), the captured trace's shape (even-length, in-range, capped Samples/Strikes), the
-/// single-action contract (PKD8), and same-script determinism. Every scenario drives
-/// <see cref="ForgeMinigame"/> through its public <c>Advance(double)</c>/input-seam methods
-/// (<c>ForgeStrike</c>/<c>BellowsStart</c>/<c>BellowsStop</c>/<c>Plunge</c>) — no wall-clock, no
-/// engine RNG anywhere in the driven path, so "same script twice" is a real determinism pin, not
-/// a coincidence. PROPERTY-ONLY: the Anvil Map is a plain 2D <c>Control</c> canvas, never a 3D
-/// <c>SubViewport</c> — the known gdUnit headless-hang trap never applies here.
+/// ACT 1 (U7 "verify by playing" plan) of the two-act forge — the shared-target-line contract
+/// (this overlay renders EXACTLY the polyline <c>ForgePath</c>/<c>ForgeScorer</c> regenerate
+/// sim-side from the SAME seed), the captured PARTIAL trace's shape (even-length, in-range, capped
+/// Samples/Strikes), and same-script determinism. Every scenario drives <see cref="ForgeMinigame"/>
+/// through its public <c>Advance(double)</c>/input-seam methods — no wall-clock, no engine RNG
+/// anywhere in the driven path. Act 2 (the quench) and the full two-act chain live in
+/// <c>ForgeTwoActTests</c> — this suite is Act 1's own unit-level mechanics only.
+/// PROPERTY-ONLY: the Anvil Map is a plain 2D <c>Control</c> canvas, never a 3D <c>SubViewport</c>.
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -33,36 +32,39 @@ public class ForgeMinigameTests
     private static readonly Recipe DaggerRecipe = ProfessionRegistry.AllRecipes[ScriptedSession.CraftRecipeId];
 
     [TestCase]
-    public void EmittedTrace_HasEvenLengthSamplesAndStrikes_ValuesInRange_RespectsCap()
+    public void ShapingResult_HasEvenLengthSamplesAndStrikes_ValuesInRange_RespectsCap()
     {
         var mg = new ForgeMinigame();
         try
         {
+            ForgeMinigame.ShapingResult? result = null;
+            mg.ShapingDone += r => result = r;
             mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
 
-            DriveGoodRun(mg);
+            WorkBilletToEnd(mg);
 
             AssertThat(mg.Completed).IsTrue();
-            var trace = mg.EmittedAction!.Puzzle as ForgeTraceInput;
-            AssertThat(trace is not null).IsTrue();
-            AssertThat(trace!.Samples.Count % 2).IsEqual(0);
-            AssertThat(trace.Strikes.Count % 2).IsEqual(0);
-            AssertThat(trace.Samples.Count / 2).IsLessEqual(ForgeMinigame.MaxSamples);
-            AssertThat(trace.Strikes.Count / 2).IsLessEqual(ForgeMinigame.MaxSamples);
+            AssertThat(result is not null).IsTrue();
+            var r = result!.Value;
+            AssertThat(r.Samples.Count % 2).IsEqual(0);
+            AssertThat(r.Strikes.Count % 2).IsEqual(0);
+            AssertThat(r.Samples.Count / 2).IsLessEqual(ForgeMinigame.MaxSamples);
+            AssertThat(r.Strikes.Count / 2).IsLessEqual(ForgeMinigame.MaxSamples);
 
-            foreach (var value in trace.Samples)
+            foreach (var value in r.Samples)
             {
                 AssertThat(value).IsGreaterEqual(0);
                 AssertThat(value).IsLessEqual(1000);
             }
 
-            foreach (var value in trace.Strikes)
+            foreach (var value in r.Strikes)
             {
                 AssertThat(value).IsGreaterEqual(0);
                 AssertThat(value).IsLessEqual(1000);
             }
 
-            AssertThat(trace.PathSeed).IsEqual(mg.PathSeed);
+            AssertThat(r.PathSeed).IsEqual(mg.PathSeed);
+            AssertThat(r.StrikesLanded).IsEqual(mg.StrikesLanded);
         }
         finally
         {
@@ -73,14 +75,12 @@ public class ForgeMinigameTests
     [TestCase]
     public void GoodRun_TracksPathBetter_ThanBadRun_HigherPreviewGrade()
     {
-        var good = RunScript(DriveGoodRun);
+        var good = RunScript(WorkBilletToEnd);
 
         // A deliberately pathological trace over the SAME target line: heat pinned scorching-hot the
         // whole way (ignoring the target curve entirely) with maximally off-beat forge strikes. Scored
         // by the same pure scorer, this is what "not tracking the path" looks like — a real driven,
-        // path-following run must beat it. (Constructed rather than driven because the forge physics
-        // punish bad play with stalled progress, so a sloppy run can't reliably reach the path end at
-        // all — the ForgeScorerTests cover the driven-perfect-vs-worst ranking on synthetic traces.)
+        // path-following run must beat it.
         var badSamples = ImmutableList.CreateBuilder<int>();
         for (var x = 0; x <= 1000; x += 40)
         {
@@ -96,38 +96,26 @@ public class ForgeMinigameTests
     }
 
     /// <summary>
-    /// U3 pacing pass (2026-08-02-002 plan, "getting to 1000 is a LOT, it takes fuckin forever"):
-    /// pins how many strikes the on-tempo scripted drive needs, so a future pacing change is
-    /// caught here instead of at the next playtest. <see cref="ForgeMinigame.StrikeBaseAdvancePermille"/>
-    /// moved 35 → 40 for this pass — <b>not</b> the plan's proposed 50, because 50 measurably broke
-    /// <c>ForgeWinnabilityTests.LearningTheRhythm_ActuallyPaysOff</c>'s tempo-payoff invariant (see
-    /// that constant's own doc comment for the numbers). 21 was cross-checked against the real
-    /// <c>ForgePath</c>/<c>ForgeScorer</c> via a standalone harness before landing, not guessed —
-    /// but this is the first time it runs against the actual engine, so if CI disagrees by a
-    /// strike or two, trust the CI number and adjust this pin; don't just widen the assertion.
+    /// U7 (2026-08-04-001 plan): regression guard for the measured-safe skill-curve floor. Below
+    /// ~15 required strikes, a standalone harness referencing the REAL <c>ForgeScorer</c> found
+    /// <c>ForgeWinnabilityTests</c>' <c>TempoTight</c>/<c>TempoLoose</c> invariant starts losing on
+    /// the 5 CI seeds — not U6's old bug, but ordinary sampling noise from too few strikes. 21/18
+    /// is the measured-robust pair (tempo-tight 313.2 vs tempo-loose 298.2, a +15 margin). If either
+    /// constant moves, re-run that sweep before trusting the new number — this pin exists so a
+    /// future "make it faster" pass cannot silently reopen the exact bug class this unit closed.
     /// </summary>
     [TestCase]
-    public void OnTempoDrive_NeedsThePinnedStrikeCount_PacingRegressionGuard()
+    public void RequiredStrikeConstants_StayAtTheMeasuredSafeValues()
     {
-        var result = RunScript(DriveGoodRun);
-        var strikes = result.Trace.Strikes.Count / 2;
-
-        AssertThat(strikes)
-            .OverrideFailureMessage(
-                $"The on-tempo scripted drive took {strikes} strikes to finish a dagger; expected 21 " +
-                "(StrikeBaseAdvancePermille = 40). Rising means a pacing knob quietly got slower again " +
-                "(\"takes fuckin forever\", U3's whole complaint); falling further means someone pushed " +
-                "the knob toward 50+ again — re-run the tempo-spread math in StrikeBaseAdvancePermille's " +
-                "doc comment before trusting the new number, since that direction previously broke " +
-                "LearningTheRhythm_ActuallyPaysOff.")
-            .IsEqual(21);
+        AssertThat(ForgeMinigame.BaseRequiredStrikes).IsEqual(21);
+        AssertThat(ForgeMinigame.MinRequiredStrikes).IsEqual(18);
     }
 
     [TestCase]
     public void SameScriptTwice_ProducesIdenticalTraceAndGrade_NoHiddenRandomness()
     {
-        var first = RunScript(DriveGoodRun);
-        var second = RunScript(DriveGoodRun);
+        var first = RunScript(WorkBilletToEnd);
+        var second = RunScript(WorkBilletToEnd);
 
         AssertThat(second.Trace.Samples).ContainsExactly(first.Trace.Samples);
         AssertThat(second.Trace.Strikes).ContainsExactly(first.Trace.Strikes);
@@ -162,7 +150,7 @@ public class ForgeMinigameTests
     [TestCase]
     public void UnlockedAssists_ImprovePreviewGrade_ForTheIdenticalTrace()
     {
-        var result = RunScript(DriveGoodRun);
+        var result = RunScript(WorkBilletToEnd);
 
         var baselineScore = ForgeScorer.Score(DaggerRecipe, result.Trace, ImmutableSortedSet<string>.Empty, ProfessionRegistry.Blacksmith);
         AssertThat(result.PreviewGrade).IsEqual(baselineScore.GradePermille); // the preview IS this same pure scorer
@@ -184,7 +172,9 @@ public class ForgeMinigameTests
         {
             mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
             var cancelledCount = 0;
+            var shapingDoneCount = 0;
             mg.Cancelled += () => cancelledCount++;
+            mg.ShapingDone += _ => shapingDoneCount++;
 
             mg.Advance(0.05);
             mg.ForgeStrike();
@@ -193,34 +183,14 @@ public class ForgeMinigameTests
 
             AssertThat(mg.WasCancelled).IsTrue();
             AssertThat(mg.Completed).IsFalse();
-            AssertThat(mg.EmittedAction is null).IsTrue();
+            AssertThat(shapingDoneCount).IsEqual(0);
             AssertThat(cancelledCount).IsEqual(1);
 
             // A cancelled run never finishes, even if driven further.
             mg.Advance(5.0);
             mg.ForgeStrike();
-            mg.Plunge();
-            AssertThat(mg.EmittedAction is null).IsTrue();
-        }
-        finally
-        {
-            mg.Free();
-        }
-    }
-
-    [TestCase]
-    public void Plunge_BeforeShapeReachesPathEnd_IsANoOp()
-    {
-        var mg = new ForgeMinigame();
-        try
-        {
-            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
-
-            mg.Plunge();
-
             AssertThat(mg.Completed).IsFalse();
-            AssertThat(mg.ShapeXPermille).IsLess(1000);
-            AssertThat(mg.EmittedAction is null).IsTrue();
+            AssertThat(shapingDoneCount).IsEqual(0);
         }
         finally
         {
@@ -253,36 +223,6 @@ public class ForgeMinigameTests
     }
 
     [TestCase]
-    public void CompletedRun_QueuesExactlyOneCraftAction_CarryingTheForgeTracePuzzle_ThroughTheRealForgePanel()
-    {
-        var ui = MountMainUi();
-        try
-        {
-            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
-            ui.Adapter.AdvancePhase();
-            ui.OpenPanel("Forge");
-
-            PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
-            var overlay = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
-            AssertThat(overlay.Visible).IsTrue();
-
-            DriveGoodRun(overlay);
-
-            var pending = ui.Adapter.AppliedThisPhase.OfType<CraftAction>().ToList();
-            AssertThat(pending.Count).IsEqual(1);
-            AssertThat(pending[0].RecipeId).IsEqual(ScriptedSession.CraftRecipeId);
-            AssertThat(pending[0].MaterialKey).IsEqual(ScriptedSession.CraftMaterial);
-            AssertThat(pending[0].PerformanceGrade is null).IsTrue(); // the trace is the source; sim scores it
-            AssertThat(pending[0].Puzzle is ForgeTraceInput).IsTrue();
-            AssertThat(overlay.Visible).IsFalse(); // the overlay closes on completion
-        }
-        finally
-        {
-            Unmount(ui);
-        }
-    }
-
-    [TestCase]
     public void Cancel_MidRun_ThroughTheRealForgePanel_QueuesNoAction()
     {
         var ui = MountMainUi();
@@ -308,12 +248,10 @@ public class ForgeMinigameTests
         }
     }
 
-    // ── U3 "forge feel pass": aimed strike, pump strokes, drag-to-quench (P002 plan) ───────────
+    // ── U3 "forge feel pass": aimed strike, pump strokes (P002 plan) ────────────────────────────
     // Presentation-only — none of these touch ForgeTraceInput/CraftAction/scoring; every gesture
-    // still terminates in the SAME public seams (ForgeStrike/PumpStroke/Plunge) the scenarios above
-    // already pin. _GuiInput is exercised directly with constructed InputEvents (no real mouse/
-    // window needed) since it is a plain public override — exactly the "tests call the seam
-    // directly" idiom KTD-A asks for.
+    // still terminates in the SAME public seams (ForgeStrike/PumpStroke) the scenarios above
+    // already pin.
 
     [TestCase]
     public void PumpStroke_RaisesHeatByExactlyOneQuantum_ClampedAt1000()
@@ -474,56 +412,17 @@ public class ForgeMinigameTests
         }
     }
 
-    [TestCase]
-    public async Task DragFromBillet_IntoQuenchZone_CallsPlunge_ThroughTheRealForgePanel()
-    {
-        var ui = MountMainUi();
-        try
-        {
-            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
-            ui.Adapter.AdvancePhase();
-            ui.OpenPanel("Forge");
-            PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
-            var overlay = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
-
-            // Drive the tempo-synced run to completion FIRST, entirely on the manual accumulated
-            // Advance(delta) clock, before any real engine frame is ever pumped — SettleLayout
-            // below awaits real ProcessFrame signals, and letting even a few real frames land
-            // mid-loop would interleave a wall-clock _Process tick with this tempo-sensitive
-            // script and desync it (real _Process is otherwise never invoked in a synchronous
-            // gdUnit test, which is why every other scripted-run test here stays unmounted or
-            // avoids awaiting frames around the loop).
-            WorkBilletToEnd(overlay);
-            AssertThat(overlay.ShapeXPermille).IsGreaterEqual(1000);
-            AssertThat(overlay.Completed).IsFalse();
-
-            await SettleLayout(overlay); // NOW let the canvas actually size itself for the geometry below
-            AssertThat(overlay.IsInQuenchZone(overlay.QuenchZoneAnchor)).IsTrue(); // sanity on the zone itself
-
-            overlay._GuiInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = overlay.BilletAnchor });
-            overlay._GuiInput(new InputEventMouseMotion { Position = overlay.QuenchZoneAnchor });
-
-            AssertThat(overlay.Completed).IsTrue();
-            var pending = ui.Adapter.AppliedThisPhase.OfType<CraftAction>().ToList();
-            AssertThat(pending.Count).IsEqual(1);
-        }
-        finally
-        {
-            Unmount(ui);
-        }
-    }
-
     // ── Scripted-run drivers — pure Advance(delta)/input-seam calls, no wall-clock, no RNG ────
 
-    /// <summary>Works the billet to the path end on-tempo, tracking the target line's heat (pumping
-    /// toward <see cref="ForgePath.HeatAt"/> at the current shape-x, floored at a workable heat so
-    /// strikes — whose advance scales with heat — always progress and the run never stalls). Every
-    /// strike lands on a tempo-period boundary, so it earns the on-beat advance bonus and a clean
-    /// forge-strike score. Shared by the good and bad runs so they differ ONLY in the finish.</summary>
+    /// <summary>Works the billet to Act 1's OWN finish line (<see cref="ForgeMinigame.ShapingFinishPermille"/>,
+    /// not the sim's full 1000-domain) on-tempo, tracking the target line's heat (pumping toward
+    /// <see cref="ForgePath.HeatAt"/> at the current shape-x, floored at a workable heat so strikes
+    /// always progress and the run never stalls). Every strike lands on a tempo-period boundary, so
+    /// it earns the on-beat advance bonus and a clean forge-strike score.</summary>
     private static void WorkBilletToEnd(ForgeMinigame mg)
     {
         var guard = 0;
-        while (mg.ShapeXPermille < 1000)
+        while (!mg.Completed)
         {
             var target = Math.Max(ForgePath.HeatAt(mg.Path, mg.ShapeXPermille), 500);
             if (mg.HeatYPermille < target - 40)
@@ -540,36 +439,22 @@ public class ForgeMinigameTests
 
             if (++guard > 5000)
             {
-                throw new InvalidOperationException("run never reached the path end");
+                throw new InvalidOperationException("run never reached Act 1's finish line");
             }
         }
     }
-
-    /// <summary>A competent run: works the billet to the end on-tempo, then lets heat drain toward
-    /// the quench trough (the path's final heat) before plunging — a clean quench.</summary>
-    private static void DriveGoodRun(ForgeMinigame mg)
-    {
-        WorkBilletToEnd(mg);
-
-        var trough = ForgePath.HeatAt(mg.Path, 1000);
-        var guard = 0;
-        while (mg.HeatYPermille > trough + 40 && guard++ < 500)
-        {
-            mg.Advance(ForgeMinigame.TempoPeriodSeconds);
-        }
-
-        mg.Plunge();
-    }
-
 
     private static ScriptResult RunScript(Action<ForgeMinigame> script)
     {
         var mg = new ForgeMinigame();
         try
         {
+            ForgeMinigame.ShapingResult? result = null;
+            mg.ShapingDone += r => result = r;
             mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
             script(mg);
-            var trace = (ForgeTraceInput)mg.EmittedAction!.Puzzle!;
+            var r = result!.Value;
+            var trace = new ForgeTraceInput(r.Samples, r.Strikes, r.PathSeed);
             return new ScriptResult(mg.PreviewGradePermille!.Value, trace);
         }
         finally

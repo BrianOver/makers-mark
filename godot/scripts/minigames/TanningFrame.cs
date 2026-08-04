@@ -230,7 +230,8 @@ public sealed partial class TanningFrame : PanelContainer
     public Vector2 ReleaseClipAnchor => _canvas.ReleaseClipAnchor;
 
     /// <summary>A point guaranteed to fall inside <see cref="IsOverDropZone"/>'s hit region, in
-    /// this overlay's own local space (mirrors <c>ForgeMinigame.QuenchZoneAnchor</c>).</summary>
+    /// this overlay's own local space (mirrors the same "test-support anchor" idiom
+    /// <c>ForgeMinigame.BilletAnchor</c> uses).</summary>
     public Vector2 DropZoneAnchor => _canvas.DropZoneAnchor;
 
     /// <summary>Commit the hide: builds the ONE <see cref="TanningScrapeInput"/>/<see cref="CraftAction"/>
