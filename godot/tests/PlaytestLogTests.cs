@@ -71,23 +71,35 @@ public class PlaytestLogTests
                 Unmount(ui);
             }
 
-            // ── a completed craft carries the grade ───────────────────────────────────────────
+            // ── a completed craft (both acts) carries the grade ───────────────────────────────
             ui = MountMainUi();
             try
             {
                 OpenAnvilMap(ui);
-                var overlay = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
-                DriveToPlunge(overlay);
-                AssertThat(overlay.Completed).IsTrue();
+                var act1 = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
+                DriveToShapingDone(act1);
+                AssertThat(act1.Completed).IsTrue();
+                AssertThat(act1.Visible).IsFalse(); // Act 1 hides itself the instant Act 2 opens
+
+                // note[2] = "open forge" (this block's OpenAnvilMap), note[3] = "open quench"
+                // (Act 1's ShapingDone handing off to Act 2 — OnShapingDone's own LogMinigame call).
+                var afterAct1 = Notes(path);
+                AssertThat(afterAct1.Count).OverrideFailureMessage(Dump(afterAct1)).IsEqual(4);
+                AssertThat(afterAct1[3]).Contains("minigame open quench");
+
+                var act2 = Find<QuenchMinigame>(ui.Forge, "QuenchMinigame");
+                AssertThat(act2.Visible).IsTrue();
+                act2.Plunge();
+                AssertThat(act2.Completed).IsTrue();
 
                 var notes = Notes(path);
-                AssertThat(notes.Count).OverrideFailureMessage(Dump(notes)).IsEqual(4);
-                AssertThat(notes[3]).Contains("minigame done forge");
+                AssertThat(notes.Count).OverrideFailureMessage(Dump(notes)).IsEqual(5);
+                AssertThat(notes[4]).Contains("minigame done forge");
 
                 // The grade is why a "done" row beats a tick: it answers whether the run the player
                 // just sweated through actually paid.
-                AssertThat(notes[3]).Contains($"grade={overlay.PreviewGradePermille}");
-                AssertThat(notes[3]).Contains("sub=");
+                AssertThat(notes[4]).Contains($"grade={act2.PreviewGradePermille}");
+                AssertThat(notes[4]).Contains("sub=");
             }
             finally
             {
@@ -129,13 +141,13 @@ public class PlaytestLogTests
         PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
     }
 
-    /// <summary>Works the billet to the path end on-tempo and plunges — the same public
+    /// <summary>Works the billet to Act 1's own finish line on-tempo — the same public
     /// <c>Advance</c>/input seams <c>ForgeMinigameTests</c>' scripted drivers use (no wall-clock,
-    /// no RNG), reduced to the shortest run that reaches a completed craft.</summary>
-    private static void DriveToPlunge(ForgeMinigame mg)
+    /// no RNG), reduced to the shortest run that reaches <see cref="ForgeMinigame.ShapingDone"/>.</summary>
+    private static void DriveToShapingDone(ForgeMinigame mg)
     {
         var guard = 0;
-        while (mg.ShapeXPermille < 1000)
+        while (!mg.Completed)
         {
             var target = Math.Max(ForgePath.HeatAt(mg.Path, mg.ShapeXPermille), 500);
             if (mg.HeatYPermille < target - 40)
@@ -152,11 +164,9 @@ public class PlaytestLogTests
 
             if (++guard > 5000)
             {
-                throw new InvalidOperationException("run never reached the path end");
+                throw new InvalidOperationException("run never reached Act 1's finish line");
             }
         }
-
-        mg.Plunge();
     }
 
     private static string Dump(List<string> notes) => $"notes: [{string.Join(" | ", notes)}]";

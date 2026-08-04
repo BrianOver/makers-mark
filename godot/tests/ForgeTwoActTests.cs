@@ -1,0 +1,414 @@
+#if GDUNIT_TESTS
+using System;
+using System.Collections.Immutable;
+using System.Linq;
+using System.Threading.Tasks;
+using GameSim.Contracts;
+using GameSim.Crafting;
+using GameSim.Professions;
+using GdUnit4;
+using Godot;
+using GodotClient.Minigames;
+using static GdUnit4.Assertions;
+using static GodotClient.Tests.UiTestSupport;
+
+namespace GodotClient.Tests;
+
+/// <summary>
+/// U7 (2026-08-04-001 "verify by playing" plan): the two-act forge chain — <see cref="ForgeMinigame"/>
+/// (Act 1, bellows+anvil worked together) handing off via <see cref="ForgeMinigame.ShapingDone"/> to
+/// <see cref="QuenchMinigame"/> (Act 2, the single timed plunge). This is the owner's third repeated
+/// complaint about forge pacing ("Dude the forge mini game is identical - still takes too long") and
+/// his own description of the fix ("anvil + bellows work together then you squelch the item") — this
+/// suite is the receipt that both landed together, not just the length knob a third time.
+///
+/// <para>Every scenario drives the REAL <see cref="ForgeMinigame"/>/<see cref="QuenchMinigame"/>
+/// instances through their public <c>Advance(double)</c>/input seams — no wall-clock, no engine RNG.
+/// House style follows <c>ForgeMinigameTests</c>/<c>BuyUpdatesTheCountImmediatelyTests</c>:
+/// <c>MountMainUi</c> disables rendering by default (no viewport line needed).</para>
+/// </summary>
+[TestSuite]
+[RequireGodotRuntime]
+public class ForgeTwoActTests
+{
+    private const int TestDay = 0;
+    private static readonly Recipe DaggerRecipe = ProfessionRegistry.AllRecipes[ScriptedSession.CraftRecipeId];
+
+    /// <summary>
+    /// A skilled run finishes fast; a beginner run finishes slower but still finishes.
+    ///
+    /// <para>"Skilled" here is NOT <c>ForgePlayer</c>'s one-swing-per-beat cadence (that throttle is
+    /// <c>ForgeWinnabilityTests</c>' own choice to look human-plausible for a DIFFERENT invariant —
+    /// tempo-accuracy scoring — and keeping it here would conflate "how fast can this be played" with
+    /// "does the tempo bonus pay", two separate questions). A practiced player mashes the instant heat
+    /// allows rather than idling between beats; this is what a real skilled player's hands actually do.
+    /// Measured via a standalone harness against the REAL <c>ForgePath</c>/<c>ForgeScorer</c> before
+    /// this pin landed: skilled Act 1 ~8.6s (19 strikes) + a decisive Act 2 plunge ~1.2s = ~9.7s
+    /// combined; beginner Act 1 ~15.5s (38 strikes) + Act 2's ~4.0s auto-timeout = ~19.5s combined.</para>
+    /// </summary>
+    [TestCase]
+    public void SkilledRun_FinishesBothActsUnderTenSeconds_BeginnerRun_TakesLongerButFinishes()
+    {
+        var skilled = PlayBothActs(demonstratedAccuracyPermille: 1000, pumpUntilPermille: 900, strikeAbovePermille: 500, decisivePlunge: true);
+        var beginner = PlayBothActs(demonstratedAccuracyPermille: 0, pumpUntilPermille: 700, strikeAbovePermille: 320, decisivePlunge: false);
+
+        AssertThat(skilled.Act1Completed).IsTrue();
+        AssertThat(skilled.Act2Completed).IsTrue();
+        AssertThat(beginner.Act1Completed).IsTrue();
+        AssertThat(beginner.Act2Completed).IsTrue();
+
+        AssertThat(skilled.CombinedSeconds)
+            .OverrideFailureMessage(
+                $"A skilled scripted run took {skilled.CombinedSeconds:0.0}s combined (Act 1 " +
+                $"{skilled.Act1Seconds:0.0}s/{skilled.Act1Strikes}st + Act 2 {skilled.Act2Seconds:0.0}s), " +
+                "over the plan's ~10s bar. This is the owner's third repeated complaint about forge " +
+                "pacing — a fourth 'still too long' is not acceptable.")
+            .IsLess(10.5);
+
+        AssertThat(beginner.CombinedSeconds)
+            .OverrideFailureMessage(
+                $"A beginner ({beginner.CombinedSeconds:0.0}s combined) did not take longer than a " +
+                $"skilled player ({skilled.CombinedSeconds:0.0}s) — the skill curve (R6, required " +
+                "strikes falling with demonstrated accuracy) is not reaching wall-clock time.")
+            .IsGreater(skilled.CombinedSeconds);
+    }
+
+    /// <summary>R6, "high metals are more precise": <see cref="QuenchMinigame"/>'s acceptable-plunge
+    /// band narrows as recipe tier rises — a pure function, so this needs no overlay at all.</summary>
+    [TestCase]
+    public void QuenchBand_NarrowsForAHigherTierMetal()
+    {
+        var tier1 = QuenchMinigame.BandHalfWidthPermilleForTier(1);
+        var tier3 = QuenchMinigame.BandHalfWidthPermilleForTier(3);
+
+        AssertThat(tier3)
+            .OverrideFailureMessage(
+                $"Tier 3's acceptable-plunge band ({tier3}‰) is not narrower than tier 1's ({tier1}‰) — " +
+                "\"high metals are more precise\" is not implemented.")
+            .IsLess(tier1);
+    }
+
+    /// <summary>R6, "you get faster as you get better": <see cref="ForgeMinigame.RequiredStrikes"/>
+    /// falls as the caller's demonstrated accuracy rises — a later craft needs fewer strikes than a
+    /// first one, without needing to drive a whole run to observe it.</summary>
+    [TestCase]
+    public void DemonstratedAccuracy_LowersTheRequiredStrikeCount_OnALaterCraft()
+    {
+        var mg = new ForgeMinigame();
+        try
+        {
+            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
+            var firstCraftRequired = mg.RequiredStrikes; // no accuracy argument — a first craft
+            AssertThat(firstCraftRequired).IsEqual(ForgeMinigame.BaseRequiredStrikes);
+
+            // The SAME recipe, a later craft this session, with a proven track record fed in —
+            // exactly how ForgePanel carries _demonstratedAccuracyPermille across crafts.
+            mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay,
+                demonstratedAccuracyPermille: 1000);
+            var laterCraftRequired = mg.RequiredStrikes;
+            AssertThat(laterCraftRequired).IsEqual(ForgeMinigame.MinRequiredStrikes);
+
+            AssertThat(laterCraftRequired)
+                .OverrideFailureMessage(
+                    $"A later craft with a proven track record still needs {laterCraftRequired} strikes, " +
+                    $"same as a first craft's {firstCraftRequired} — demonstrated accuracy is not lowering " +
+                    "the required strike count.")
+                .IsLess(firstCraftRequired);
+        }
+        finally
+        {
+            mg.Free();
+        }
+    }
+
+    /// <summary>Act 2 is pre-built (like every other craft overlay) but stays HIDDEN until Act 1's own
+    /// <see cref="ForgeMinigame.ShapingDone"/> fires — there is no button, key, or state that opens it
+    /// early.</summary>
+    [TestCase]
+    public void Act1_CannotBeSkippedIntoAct2()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            ui.Adapter.AdvancePhase();
+            ui.OpenPanel("Forge");
+            PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
+
+            var quench = Find<QuenchMinigame>(ui.Forge, "QuenchMinigame");
+            AssertThat(quench.Visible)
+                .OverrideFailureMessage("Act 2 is visible the instant Act 1 opens — there is a skip path.")
+                .IsFalse();
+
+            var act1 = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
+            act1.Advance(0.5);
+            act1.ForgeStrike(); // one strike — nowhere near Act 1's own finish line
+
+            AssertThat(act1.Completed).IsFalse();
+            AssertThat(quench.Visible)
+                .OverrideFailureMessage("Act 2 became visible before Act 1 reached its finish line — a skip path exists.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Cancelling Act 1 leaves no partial item and no spent material — Act 1 never builds a
+    /// <see cref="CraftAction"/> at all (only Act 2 does, on its own Plunge), so there is nothing for a
+    /// cancel to un-do.</summary>
+    [TestCase]
+    public void CancellingAct1_LeavesNoPartialItemAndNoSpentMaterial()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            ui.Adapter.AdvancePhase();
+            var materialBefore = ui.Adapter.CurrentState.Player.Materials.GetValueOrDefault(ScriptedSession.CraftMaterial);
+
+            ui.OpenPanel("Forge");
+            PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
+            var act1 = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
+            act1.Advance(0.5);
+            act1.ForgeStrike(); // real progress, so the cancel is not just abandoning an untouched run
+
+            PressEnabled(ui.Forge, "ForgeMinigameCancel");
+
+            AssertThat(act1.WasCancelled).IsTrue();
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<CraftAction>().Count())
+                .OverrideFailureMessage("Cancelling Act 1 queued a CraftAction — a partial item was produced.")
+                .IsEqual(0);
+            AssertThat(ui.Adapter.CurrentState.Player.Materials.GetValueOrDefault(ScriptedSession.CraftMaterial))
+                .OverrideFailureMessage("Cancelling Act 1 spent material that was never turned into anything.")
+                .IsEqual(materialBefore);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// PT1 was a dead-keyboard bug from a missing <c>GrabFocus</c> equivalent — the overlay claimed
+    /// focus-ABLE but never actually FOCUSED. The two-act split adds a SECOND overlay swap (Act 1
+    /// hides, Act 2 shows) where the same mistake could silently reappear. This proves the keyboard
+    /// genuinely reaches Act 2 the instant it opens: Space plunges immediately with no prior click.
+    /// </summary>
+    [TestCase]
+    public async Task KeyboardFocus_LandsOnAct2_WhenAct1Ends()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            ui.Adapter.AdvancePhase();
+            ui.OpenPanel("Forge");
+            PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
+
+            var act1 = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
+            DriveAct1ToCompletion(act1, pumpUntilPermille: 900, strikeAbovePermille: 500);
+            AssertThat(act1.Completed).IsTrue();
+
+            var quench = Find<QuenchMinigame>(ui.Forge, "QuenchMinigame");
+            AssertThat(quench.Visible).IsTrue();
+
+            var player = new HumanPlayer(ui);
+            await player.Frames(2); // ClaimKeyboard's focus grab is deferred — see UiKit.ClaimKeyboard
+
+            AssertThat(quench.HasFocus())
+                .OverrideFailureMessage("Act 2 opened but never actually took focus (focus-ABLE is not focused).")
+                .IsTrue();
+
+            player.Tap(Key.Space);
+            await player.Frames(1);
+
+            AssertThat(quench.Completed)
+                .OverrideFailureMessage(
+                    "Space did not reach Act 2 the instant it opened — the exact PT1 shape (an overlay " +
+                    "that LOOKS open but the keyboard still points somewhere else, e.g. the 'Work the " +
+                    "forge' button behind it).")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>"Forge another like it" (loop-structure plan KTD-C): once a recipe+material has a
+    /// proven trace, a repeat craft re-queues it at one click and skips BOTH acts entirely.</summary>
+    [TestCase]
+    public void RepeatCraft_SkipsTheMeterEntirely()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded * 3));
+            ui.Adapter.AdvancePhase();
+            ui.OpenPanel("Forge");
+
+            var buttonName = $"ForgeAnother_{ScriptedSession.CraftRecipeId}";
+            AssertThat(ui.Forge.FindChild(buttonName, recursive: true, owned: false))
+                .OverrideFailureMessage("The repeat-craft button exists before any minigame craft has ever completed.")
+                .IsNull();
+
+            PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
+            var act1 = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
+            DriveAct1ToCompletion(act1, pumpUntilPermille: 900, strikeAbovePermille: 500);
+            var quench = Find<QuenchMinigame>(ui.Forge, "QuenchMinigame");
+            quench.Plunge();
+
+            var craftsAfterFirst = ui.Adapter.AppliedThisPhase.OfType<CraftAction>().Count();
+            AssertThat(craftsAfterFirst).IsEqual(1);
+
+            var repeatButton = Find<Button>(ui.Forge, buttonName);
+            AssertThat(repeatButton.Disabled)
+                .OverrideFailureMessage("The repeat-craft button is disabled even though the material was bought 3x over.")
+                .IsFalse();
+
+            repeatButton.EmitSignal(BaseButton.SignalName.Pressed);
+
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<CraftAction>().Count())
+                .OverrideFailureMessage("Pressing 'Forge another like it' did not queue a second CraftAction.")
+                .IsEqual(craftsAfterFirst + 1);
+            AssertThat(act1.Visible)
+                .OverrideFailureMessage("Repeat-craft opened Act 1 — it must skip the meter entirely, not replay it.")
+                .IsFalse();
+            AssertThat(quench.Visible)
+                .OverrideFailureMessage("Repeat-craft opened Act 2 — it must skip the meter entirely, not replay it.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── Scripted-run drivers — pure Advance(delta)/input-seam calls, no wall-clock, no RNG ────
+
+    /// <summary>One full craft, both acts, off-panel (no <c>MainUi</c> needed) — for the timing scenario,
+    /// which needs precise control over the simulated clock and does not touch the sim's action queue at
+    /// all. Rapid-fire: strikes the instant heat allows rather than waiting for a tempo beat, which is
+    /// what a practiced player's hands actually do (see the test's own remarks on why this differs from
+    /// <c>ForgePlayer</c>'s one-swing-per-beat cadence).</summary>
+    private static PlayResult PlayBothActs(
+        int demonstratedAccuracyPermille, int pumpUntilPermille, int strikeAbovePermille, bool decisivePlunge)
+    {
+        const double stepSeconds = 0.02;
+        const double patienceSeconds = 60.0;
+
+        var act1 = new ForgeMinigame();
+        QuenchMinigame? act2 = null;
+        try
+        {
+            ForgeMinigame.ShapingResult? handoff = null;
+            act1.ShapingDone += r => handoff = r;
+            act1.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay,
+                demonstratedAccuracyPermille);
+
+            var act1Seconds = 0.0;
+            var pumping = false;
+            while (!act1.Completed && act1Seconds < patienceSeconds)
+            {
+                if (pumping)
+                {
+                    if (act1.HeatYPermille >= pumpUntilPermille)
+                    {
+                        act1.BellowsStop();
+                        pumping = false;
+                    }
+                }
+                else if (act1.HeatYPermille < strikeAbovePermille)
+                {
+                    act1.BellowsStart();
+                    pumping = true;
+                }
+                else
+                {
+                    act1.ForgeStrike();
+                }
+
+                if (act1.Completed)
+                {
+                    break;
+                }
+
+                act1.Advance(stepSeconds);
+                act1Seconds += stepSeconds;
+            }
+
+            act2 = new QuenchMinigame();
+            act2.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, handoff!.Value);
+
+            var act2Seconds = 0.0;
+            while (!act2.Completed && act2Seconds < patienceSeconds)
+            {
+                act2.Advance(stepSeconds);
+                act2Seconds += stepSeconds;
+                if (decisivePlunge && Math.Abs(act2.HeatYPermille - act2.TargetTroughPermille) <= act2.BandHalfWidthPermille)
+                {
+                    act2.Plunge();
+                }
+            }
+
+            return new PlayResult(act1.Completed, act1Seconds, act1.StrikesLanded, act2.Completed, act2Seconds);
+        }
+        finally
+        {
+            act1.Free();
+            act2?.Free();
+        }
+    }
+
+    /// <summary>Drives a REAL, panel-mounted <see cref="ForgeMinigame"/> (Act 1) to completion —
+    /// same rapid-fire shape as <see cref="PlayBothActs"/>, for the scenarios that need the real
+    /// <c>MainUi</c>/<c>ForgePanel</c> wiring (the handoff to Act 2) rather than a standalone pair.</summary>
+    private static void DriveAct1ToCompletion(ForgeMinigame act1, int pumpUntilPermille, int strikeAbovePermille)
+    {
+        const double stepSeconds = 0.02;
+        var guardSeconds = 0.0;
+        var pumping = false;
+        while (!act1.Completed && guardSeconds < 60.0)
+        {
+            if (pumping)
+            {
+                if (act1.HeatYPermille >= pumpUntilPermille)
+                {
+                    act1.BellowsStop();
+                    pumping = false;
+                }
+            }
+            else if (act1.HeatYPermille < strikeAbovePermille)
+            {
+                act1.BellowsStart();
+                pumping = true;
+            }
+            else
+            {
+                act1.ForgeStrike();
+            }
+
+            if (act1.Completed)
+            {
+                break;
+            }
+
+            act1.Advance(stepSeconds);
+            guardSeconds += stepSeconds;
+        }
+
+        if (!act1.Completed)
+        {
+            throw new InvalidOperationException("Act 1 never reached its finish line within the patience budget.");
+        }
+    }
+
+    private readonly record struct PlayResult(
+        bool Act1Completed, double Act1Seconds, int Act1Strikes, bool Act2Completed, double Act2Seconds)
+    {
+        public double CombinedSeconds => Act1Seconds + Act2Seconds;
+    }
+}
+#endif

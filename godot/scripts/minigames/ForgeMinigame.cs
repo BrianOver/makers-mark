@@ -11,33 +11,61 @@ using GodotClient.Ui;
 namespace GodotClient.Minigames;
 
 /// <summary>
-/// U23d ("Anvil Map"): the tactile forge overlay — a HARD REPLACEMENT of the old three-beat
-/// Smelt/Forge/Quench minigame. Renders the shared target line
-/// (<see cref="GameSim.Crafting.ForgePath.Generate"/>/<see cref="GameSim.Crafting.ForgePath.HeatAt"/>
-/// — the SAME sim-owned polyline the scorer grades against, so what the player aims at is exactly
-/// what gets scored) on a plain 2D canvas (never a 3D <c>SubViewport</c> — a known gdUnit headless
-/// hang) and drives a cursor (the billet: X = shape progress, Y = current heat) the player steers
-/// with a hammer strike (advance X, cost heat, bonus near the tempo window), bellows (hold: raise
-/// heat, shape drifts back slightly — mutually exclusive with hammering), and a finale plunge once
-/// the shape reaches the end. Runs on the SAME accumulated-clock <see cref="Advance"/> pattern the
-/// old minigame (and the deleted <c>ShopStage</c>, now <c>MarketLife2D</c>) already prove — no
-/// wall-clock, no engine RNG anywhere in the path that shapes the emitted trace.
+/// U7 (2026-08-04-001 "verify by playing" plan): ACT 1 of the two-act forge — "anvil + bellows
+/// work together" (the owner's own description), the paired heat/shape act. Renders the shared
+/// target line (<see cref="GameSim.Crafting.ForgePath.Generate"/>/<see cref="GameSim.Crafting.ForgePath.HeatAt"/>
+/// — the SAME sim-owned polyline the scorer grades against) on a plain 2D canvas (never a 3D
+/// <c>SubViewport</c> — a known gdUnit headless hang) and drives a cursor (the billet: X = shape
+/// progress, Y = current heat) the player steers with a hammer strike (advance X, cost heat,
+/// bonus near the tempo window) and the bellows (hold: raise heat, shape drifts back slightly —
+/// mutually exclusive with hammering). Runs on the SAME accumulated-clock <see cref="Advance"/>
+/// pattern the rest of this codebase's minigames prove — no wall-clock, no engine RNG anywhere
+/// in the path that shapes the emitted trace.
+///
+/// <para><b>This is HALF a craft, not the whole one (the U7 split).</b> Earlier revisions of this
+/// class owned the entire 0..1000 meter AND the finale plunge — which is exactly why two prior
+/// pacing fixes ("Dude the forge mini game is identical - still takes too long") failed: they
+/// moved the length knob on a single long meter instead of splitting it. This class now stops at
+/// <see cref="ShapingFinishPermille"/> (the sim's own forge-zone boundary, <c>ForgePath.ForgeZoneEnd</c>)
+/// and hands off to <see cref="QuenchMinigame"/> — "then you squelch the item" — via
+/// <see cref="ShapingDone"/>. Splitting at that exact x is not arbitrary: it is the boundary the
+/// SIM scorer already uses to bucket smelt/forge samples from quench samples
+/// (<c>ForgeScorer</c>'s three zones), so Act 1's trace is a legitimate, independently-scorable
+/// prefix of the full craft rather than an ad-hoc cut.</para>
+///
+/// <para><b>The skill curve (R6): required strikes fall as demonstrated accuracy rises.</b>
+/// <see cref="RequiredStrikes"/> is computed in <see cref="Configure"/> from the caller's own
+/// <c>demonstratedAccuracyPermille</c> (the player's session-scoped track record, owned by
+/// <c>ForgePanel</c> — never persisted to the sim save) and directly sets how far EACH strike
+/// advances the shape (<see cref="ShapingFinishPermille"/> divided across
+/// <see cref="RequiredStrikes"/> strikes) — so a proven player covers the same distance in fewer,
+/// bigger strikes.</para>
+///
+/// <para><b><see cref="BaseRequiredStrikes"/>/<see cref="MinRequiredStrikes"/> = 21/18 — measured
+/// against the CI-gating invariant, not guessed.</b> A standalone harness referencing the REAL
+/// <c>ForgePath</c>/<c>ForgeScorer</c> directly (no Godot) swept the required-strike floor against
+/// <c>ForgeWinnabilityTests</c>' own <c>TempoTight</c>/<c>TempoLoose</c> pair — the exact invariant
+/// that went red at 50 strikes before U6. Below ~15 required strikes the tempo-tight mean grade
+/// started LOSING to tempo-loose on the 5 CI seeds (e.g. at 9 strikes it flips outright) — not U6's
+/// old bug (strike-count-coupled scoring), but ordinary sampling noise: too few strikes makes ANY
+/// per-strike average unreliable, however it is computed. 18 sits in the empirically robust zone
+/// (measured: tempo-tight 313.2 vs tempo-loose 298.2, a healthy +15 margin) while still being 14%
+/// fewer strikes than a first-craft player needs. A rapid-fire (no artificial one-swing-per-beat
+/// throttle) scripted run at 18 required strikes finishes Act 1 in ~8.6s (19 strikes); chained into
+/// <see cref="QuenchMinigame"/>'s own decisive plunge that is ~9.7s combined — under the plan's ~10s
+/// bar. A first-craft player (<see cref="BaseRequiredStrikes"/> = 21, unchanged from the value
+/// already CI-proven safe) still finishes, just slower (~15.5s Act 1 in the same driver shape).</para>
+///
+/// <para>This is the SAME mechanism that answers "high metals are more precise" — <see
+/// cref="QuenchMinigame"/> narrows ITS OWN band by tier — so the two owner asks come from one
+/// skill-curve SYSTEM, not two unrelated knobs.</para>
 ///
 /// <para><b>Adapter-only (KTD2):</b> this class only captures the presentation-layer trace — an
 /// INTEGER (xPermille, yPermille) sample stream plus strike events, quantized at a fixed cadence
-/// and capped at <see cref="MaxSamples"/> pairs. It builds ONE <see cref="ForgeTraceInput"/> and
-/// rides it on <see cref="CraftAction.Puzzle"/> (PKD1 dual-mode craft seam) — the actual quality
+/// and capped at <see cref="MaxSamples"/> pairs. <see cref="ShapingDone"/> hands that PARTIAL
+/// trace (plus the ending heat) to whatever opens <see cref="QuenchMinigame"/>; the actual quality
 /// math (deviation scoring, grade fold, RNG jitter, material ceiling) lives sim-side in
-/// <c>ForgeScorer</c>/<c>QualityRoller</c> and never runs here. <see cref="PreviewGradePermille"/>/
-/// <see cref="PreviewSubScores"/> call that SAME pure scorer read-only for an immediate UI preview
-/// (mirrors <c>AlchemyBrewPuzzle</c>'s own preview) — never a second set of rules.</para>
-///
-/// <para><b>Single-action contract (PKD8, same as the old minigame and the alchemist's puzzle):</b>
-/// <see cref="Finished"/> fires EXACTLY ONCE, on <see cref="Plunge"/>, carrying one
-/// <see cref="CraftAction"/> whose <see cref="CraftAction.Puzzle"/> is the captured
-/// <see cref="ForgeTraceInput"/> (<see cref="CraftAction.PerformanceGrade"/> stays null — the
-/// trace is the single source the sim scores); <see cref="Cancel"/> raises <see cref="Cancelled"/>
-/// instead and the caller queues nothing.</para>
+/// <c>ForgeScorer</c>/<c>QualityRoller</c> and never runs here.</para>
 /// </summary>
 public sealed partial class ForgeMinigame : PanelContainer
 {
@@ -53,74 +81,46 @@ public sealed partial class ForgeMinigame : PanelContainer
 
     /// <summary>
     /// Shape lost per second while the bellows are held. <b>Was 50, which made the craft very nearly
-    /// unwinnable</b> — exactly what Brian reported: "also doesn't seem possible to complete? the shape keeps
-    /// resetting to zero", then "i am incapable of creating anything - something is wrong lol".
+    /// unwinnable</b> — exactly what Brian reported: "also doesn't seem possible to complete? the shape
+    /// keeps resetting to zero", then "i am incapable of creating anything - something is wrong lol".
     ///
     /// <para><b>Sized from measurement, not feel</b> (<c>ForgeWinnabilityTests</c> + <c>ForgePlayer</c>).
-    /// A beginner lands ~1.6 strikes/second worth ~28 permille each = ~45/s gained, and spends roughly half
-    /// the run on the bellows. At 50/s of drift that is ~25/s lost against 45/s gained: over a full minute of
-    /// play, 64 strikes moved the shape a net ~290 of the 1000 needed. Not difficulty — a treadmill.</para>
-    ///
-    /// <para>8 leaves the mechanic doing its actual job — pumping costs you tempo, so you cannot idle on the
-    /// bellows — while a first-timer actually finishes. Measured after: a beginner completes on all five
-    /// swept seeds, a veteran averages ~430 permille in ~27s against the beginner's ~240 in ~40s. The tempo
-    /// bonus therefore reaches the outcome, which is what makes this a skill rather than a wait.</para>
-    ///
-    /// <para>Deliberately the ONLY knob moved. Heat drain and strike advance were also candidates, and an
-    /// earlier attempt changed all three at once — against a measurement that turned out to be wrong, because
-    /// the synthetic player was striking four times a second. Moving one constant keeps the next regression
-    /// attributable. The tempo bonus and its window are untouched: rhythm is the skill the minigame teaches,
-    /// and widening the window would make it easier by making it matter less.</para>
-    ///
-    /// <para>Client-side only: the balance gate drives scripted sim policies and never this overlay, so no
-    /// re-baseline.</para>
+    /// 8 leaves the mechanic doing its actual job — pumping costs you tempo, so you cannot idle on the
+    /// bellows — while a first-timer actually finishes. Unchanged by the U7 two-act split: this constant
+    /// governs the heat/shape ECONOMY, not the finish line, and that economy is exactly what the owner
+    /// called out as fun ("anvil + bellows work together") — only the distance to travel and the
+    /// per-strike payoff moved.</para>
     /// </summary>
     public const int BellowsDriftBackPermillePerSecond = 8;
 
     public const int StrikeHeatCostPermille = 90;
-
-    /// <summary>
-    /// U3 pacing pass (2026-08-02-002 plan, "getting to 1000 is a LOT, it takes fuckin forever"):
-    /// raised from 35, the value shipped with the Anvil Map rewrite. Was 35 → on-tempo play needed
-    /// ~21 strikes/~19s, a beginner ~28 strikes/~26.5s (measured via <c>ForgePlayer</c>, the same
-    /// honest-input harness <c>ForgeWinnabilityTests</c> uses — re-measured fresh for this pass,
-    /// since the OLD in-code claim of "~27s veteran / ~40s beginner" recorded on
-    /// <see cref="BellowsDriftBackPermillePerSecond"/> above no longer matches current constants;
-    /// that comment is stale and should not be trusted for future tuning either).
-    ///
-    /// <para><b>The plan's own proposal was 50, not 40 — rejected by measurement.</b> Raising this
-    /// to 50 does hit the plan's ≤15s/≤30s targets (measured: on-tempo ~13.7s, beginner ~19.3s) but
-    /// it BREAKS <c>ForgeWinnabilityTests.LearningTheRhythm_ActuallyPaysOff</c>'s own invariant: on
-    /// that test's exact seeds (1, 7, 19, 42, 101), striking on-beat scored a MEAN 357 permille
-    /// against off-beat's 379 — on-tempo play scoring *worse* than sloppy play, the assertion
-    /// `tightGrade > looseGrade` would go red. Swept across 40 extra seeds to rule out one unlucky
-    /// draw: on-beat wins only 16/40 (worse than a coin flip). The mechanism is structural, not a
-    /// bad constant — <see cref="ForgeScorer"/> only scores tempo accuracy on strikes that land
-    /// inside the forge zone (x 334..666), so shrinking total strikes-to-completion (a direct
-    /// effect of THIS knob) shrinks that zone's strike sample size, which drowns the tempo signal
-    /// in the (tempo-independent) continuous heat-tracking sub-score. The plan's assumption that
-    /// "the multiplier ratio is untouched so [the spread] should [hold] by construction" is false:
-    /// the ratio matters, but so does the sample size backing it, and this knob shrinks both at
-    /// once. 50 is a real regression risk to a real CI-gating test, not a paper one.</para>
-    ///
-    /// <para><b>40 lands the same measurement clean.</b> On-tempo ~17.3s (was ~19.2s), beginner
-    /// ~24.0s (was ~26.5s, already inside the ≤30s bar either way) — a genuine, felt cut, short of
-    /// the plan's aspirational ≤15s but proven safe: on the exact CI seeds, on-beat still scores a
-    /// clear 425 vs off-beat's 402 (was 429 vs 395), and the 40-seed sweep still gives on-beat the
-    /// win on 28/40 — the same robustness band as the untouched-adjacent value of 38, not the
-    /// eroding one past ~44. <see cref="StrikeHeatCostPermille"/> (the plan's authorized second
-    /// knob, 90→80) was NOT needed — beginner already clears 30s with room at either value.</para>
-    /// </summary>
-    public const int StrikeBaseAdvancePermille = 40;
     public const double StrikeOnTempoBonusMultiplier = 2.2;
     public const double TempoPeriodSeconds = 0.6;
     public const int TempoOnBeatWindowPermille = 180;
 
-    // ── U3 "forge feel pass" knobs (P002 interactive-professions plan) — still adapter-only: only
-    // the resulting integer PumpStroke()/ForgeStrike()/Plunge() seam calls ever cross KTD2. ───────
+    /// <summary>
+    /// Act 1's finish line — the SAME boundary <c>ForgeScorer</c> already uses to end its "forge"
+    /// sample bucket (<c>ForgePath.ForgeZoneEnd</c>, 666). Referencing the sim's own constant
+    /// rather than duplicating the number means the two can never drift apart: whatever x the
+    /// scorer treats as "smelt+forge finished, quench begins" is exactly the x this overlay stops
+    /// at and hands to <see cref="QuenchMinigame"/>.
+    /// </summary>
+    public const int ShapingFinishPermille = ForgePath.ForgeZoneEnd;
+
+    /// <summary>Strikes required to finish Act 1 with NO demonstrated accuracy yet (a first craft,
+    /// or a different recipe this session has no track record on) — unchanged from the value
+    /// already CI-proven safe against the tempo invariant. See <see cref="RequiredStrikes"/>.</summary>
+    public const int BaseRequiredStrikes = 21;
+
+    /// <summary>Strikes required at maximum demonstrated accuracy (1000‰) — the skill floor a
+    /// proven player converges toward, and the lowest value measured to keep
+    /// <c>ForgeWinnabilityTests</c>' tempo-tight-beats-tempo-loose invariant robust. See <see
+    /// cref="RequiredStrikes"/>'s own doc for the measurement.</summary>
+    public const int MinRequiredStrikes = 18;
+
     /// <summary>Aimed-strike hit box: a left-click only registers as a strike inside this generous
     /// square (px), centred on the billet's actual screen anchor — Space stays unaimed/always valid
-    /// (KTD-C keyboard parity). Exact pixel tuning is deferred to the real window per the plan.</summary>
+    /// (KTD-C keyboard parity).</summary>
     public const float BilletHitBoxSize = 96f;
 
     /// <summary>One bellows pump stroke's fixed heat quantum (per-mille) — the discrete counterpart
@@ -131,24 +131,24 @@ public sealed partial class ForgeMinigame : PanelContainer
     /// <summary>Downward right-drag pixels per <see cref="PumpStroke"/> call.</summary>
     public const int PumpStrokeDragPixels = 18;
 
-    /// <summary>Width (as a fraction of the canvas) of the generous right-edge drag-to-quench hit
-    /// zone approximating where <c>AnvilMapCanvas.DrawQuenchZone</c> paints the trough.</summary>
-    public const float QuenchZoneWidthFraction = 0.16f;
-
     public string RecipeId { get; private set; } = string.Empty;
     public string MaterialKey { get; private set; } = string.Empty;
 
     /// <summary>The integer seed selecting this craft's forging-line variant — derived
     /// deterministically from the recipe id + day (<see cref="Configure"/>), never RNG, and
-    /// carried verbatim on the emitted <see cref="ForgeTraceInput.PathSeed"/> so the sim
-    /// regenerates the IDENTICAL line this overlay rendered.</summary>
+    /// carried forward through <see cref="ShapingDone"/> so <see cref="QuenchMinigame"/> and the
+    /// sim regenerate the IDENTICAL line this overlay rendered.</summary>
     public int PathSeed { get; private set; }
 
-    /// <summary>The shared target line (<c>ForgePath.Generate</c>) this overlay renders — the
-    /// SAME polyline the sim scorer regenerates from <see cref="PathSeed"/>.</summary>
+    /// <summary>The shared target line (<c>ForgePath.Generate</c>) this overlay renders — spans the
+    /// FULL sim domain (x 0..1000) even though this act only travels x 0..<see cref="ShapingFinishPermille"/>,
+    /// because the heat GAUGE reads ahead of the cursor (<see cref="AnvilMapCanvas"/>'s anticipation
+    /// cue) and because <see cref="QuenchMinigame"/> regenerates the SAME path from the SAME seed
+    /// for its own x 667..1000 stretch.</summary>
     public ImmutableList<int> Path { get; private set; } = ImmutableList<int>.Empty;
 
-    /// <summary>Shape progress, per-mille [0..1000] — the cursor's X axis.</summary>
+    /// <summary>Shape progress, per-mille — the cursor's X axis. Clamped to
+    /// [0, <see cref="ShapingFinishPermille"/>]: this act never sees x beyond its own finish line.</summary>
     public int ShapeXPermille { get; private set; }
 
     /// <summary>Current heat, per-mille [0..1000] — the cursor's Y axis.</summary>
@@ -158,25 +158,49 @@ public sealed partial class ForgeMinigame : PanelContainer
     /// (the two inputs are mutually exclusive, per spec).</summary>
     public bool IsPumping { get; private set; }
 
+    /// <summary>True once <see cref="ShapeXPermille"/> has reached <see cref="ShapingFinishPermille"/> —
+    /// Act 1 is done and <see cref="ShapingDone"/> has fired exactly once.</summary>
     public bool Completed { get; private set; }
+
     public bool WasCancelled { get; private set; }
 
-    /// <summary>The exact action <see cref="Finished"/> carried — test/inspection visibility.</summary>
-    public CraftAction? EmittedAction { get; private set; }
+    /// <summary>How many strikes this run has landed so far — test/inspection surface and the
+    /// player-facing progress readout (against <see cref="RequiredStrikes"/>).</summary>
+    public int StrikesLanded => _strikes.Count / 2;
 
-    /// <summary>A read-only UI preview of the grade <c>ForgeScorer</c> will compute for this exact
-    /// trace (same pure scorer, called here only for immediate feedback) — NEVER written onto
-    /// <see cref="CraftAction.PerformanceGrade"/>, which stays null per the dual-mode contract.</summary>
+    /// <summary>
+    /// Strikes needed to finish Act 1 THIS run, computed once in <see cref="Configure"/> from the
+    /// caller's demonstrated accuracy: <see cref="BaseRequiredStrikes"/> at 0‰ falling linearly to
+    /// <see cref="MinRequiredStrikes"/> at 1000‰. Falling <see cref="RequiredStrikes"/> is the whole
+    /// mechanism behind "you get faster as you get better" (R6) — it does not just shorten the
+    /// count, it directly sets each strike's shape payoff (<see cref="ShapingFinishPermille"/>
+    /// divided across this many strikes), so a proven player's swings are literally bigger, not
+    /// just more frequent.
+    /// </summary>
+    public int RequiredStrikes { get; private set; } = BaseRequiredStrikes;
+
+    /// <summary>A read-only PARTIAL preview of Act 1's own smelt+forge zones, computed once
+    /// <see cref="ShapingDone"/> fires by calling the SAME pure <c>ForgeScorer.Score</c> on the
+    /// trace captured so far (quench zone necessarily scores 0 — Act 2 hasn't run yet — so this is
+    /// a pessimistic lower bound, never the craft's real grade). Telemetry/test surface only; never
+    /// shown as "the grade" in the readout, which would misrepresent an unfinished craft.</summary>
     public int? PreviewGradePermille { get; private set; }
 
-    /// <summary>The scorer's smelt/forge/quench preview triple — rides <see cref="CraftAction.SubScores"/>
-    /// as ledger flavor DATA (same role as the old beat sub-scores), never rules.</summary>
-    public ImmutableList<int>? PreviewSubScores { get; private set; }
+    private int _strikeAdvancePermille;
+    private Recipe? _recipe;
+    private ProfessionDefinition? _profession;
+    private ImmutableSortedSet<string> _unlockedTalents = ImmutableSortedSet<string>.Empty;
 
-    /// <summary>Raised EXACTLY ONCE, on <see cref="Plunge"/>, with the one action to queue.</summary>
-    public event Action<CraftAction>? Finished;
+    /// <summary>Raised EXACTLY ONCE, the instant <see cref="ShapeXPermille"/> reaches
+    /// <see cref="ShapingFinishPermille"/> — Act 1's handoff to <see cref="QuenchMinigame"/>.
+    /// Carries the partial trace (samples/strikes so far), the ending heat, and the path seed;
+    /// no <see cref="CraftAction"/> exists yet — the craft is not scoreable until Act 2 supplies
+    /// the quench-zone samples.</summary>
+    public event Action<ShapingResult>? ShapingDone;
 
-    /// <summary>Raised on <see cref="Cancel"/> — the caller queues nothing.</summary>
+    /// <summary>Raised on <see cref="Cancel"/> — the caller queues nothing and spends nothing:
+    /// Act 1 never builds a <see cref="CraftAction"/>, so an abandoned run leaves no partial item
+    /// and no spent material by construction (there is nothing to un-queue).</summary>
     public event Action? Cancelled;
 
     /// <summary>Raised inside <see cref="ForgeStrike"/> with whether THAT strike landed inside the
@@ -185,43 +209,40 @@ public sealed partial class ForgeMinigame : PanelContainer
     /// spark-burst/flash VFX + hammer-clang SFX (G1 staging, same idiom as the old minigame).</summary>
     public event Action<bool>? Struck;
 
-    /// <summary>Raised inside <see cref="Plunge"/>, before the run finishes — drives the
-    /// steam-plume VFX at the moment the player plunges the stock.</summary>
-    public event Action? Quenched;
-
     /// <summary>
-    /// U5 (playtest-three plan): raised at the start of a bellows breath — <see cref="BellowsStart"/>
-    /// (Shift held) or one discrete <see cref="PumpStroke"/> (right-drag quantum) — whichever gesture
-    /// the player is actually using. Drives <see cref="GodotClient.Audio.Cue.Bellows"/>, a cue that
-    /// shipped synthesized but with ZERO call sites: "the bellows had no sound" (see that cue's own
-    /// doc) was never fixed because nothing ever raised it. Not raised every frame while held — that would
-    /// fire dozens of times a second off <c>_Process</c>'s continuous heat-raise and drown the mix;
-    /// one sound per breath/stroke is the gesture, same granularity as <see cref="Struck"/> firing
-    /// once per hammer blow rather than once per frame the key is down.
+    /// Raised at the start of a bellows breath — <see cref="BellowsStart"/> (Shift held) or one
+    /// discrete <see cref="PumpStroke"/> (right-drag quantum) — whichever gesture the player is
+    /// actually using. Drives <see cref="GodotClient.Audio.Cue.Bellows"/>.
     /// </summary>
     public event Action? BellowsPumped;
+
+    /// <summary>The Act 1 -> Act 2 handoff payload — everything <see cref="QuenchMinigame"/> needs
+    /// to continue the SAME trace without re-deriving anything sim-side.</summary>
+    /// <param name="Samples">Act 1's captured (xPermille, yPermille) sample stream so far.</param>
+    /// <param name="Strikes">Act 1's captured (xPermille, tempoErrorPermille) strike stream so far.</param>
+    /// <param name="PathSeed">The seed both acts and the sim regenerate the SAME <c>ForgePath</c> from.</param>
+    /// <param name="HeatYPermille">The heat Act 1 ended on — Act 2's quench starts from here, cooling further.</param>
+    /// <param name="StrikesLanded">How many strikes Act 1 took — carried for telemetry/UI only.</param>
+    public readonly record struct ShapingResult(
+        ImmutableList<int> Samples,
+        ImmutableList<int> Strikes,
+        int PathSeed,
+        int HeatYPermille,
+        int StrikesLanded);
 
     private readonly List<int> _samples = new();
     private readonly List<int> _strikes = new();
     private double _elapsed;
     private double _sampleAccumulator;
 
-    // ── U3 input-gesture state — plumbing only, never crosses KTD2 (every gesture still ends in
-    // ForgeStrike()/PumpStroke()/Plunge()) ──────────────────────────────────────────────────────
-    private bool _quenchDragArmed;         // true once a left-press has landed on the billet
-    private bool _pumpDragArmed;           // true while the right button is held
+    private bool _pumpDragArmed;
     private double _pumpDragAccumulatorPixels;
-
-    private Recipe? _recipe;
-    private ProfessionDefinition? _profession;
-    private ImmutableSortedSet<string> _unlockedTalents = ImmutableSortedSet<string>.Empty;
 
     private Label _titleLabel = null!;
     private AnvilMapCanvas _canvas = null!;
     private Label _readoutLabel = null!;
     private Button _hammerButton = null!;
     private Button _bellowsButton = null!;
-    private Button _plungeButton = null!;
     private Button _cancelButton = null!;
     private bool _built;
 
@@ -231,14 +252,15 @@ public sealed partial class ForgeMinigame : PanelContainer
 
     /// <summary>
     /// Bind a fresh run for this recipe/material/talent context and regenerate the shared target
-    /// line from a seed derived (no RNG — <c>StableHash</c>, the same project-owned hash
-    /// <c>ForgePath</c> itself uses) from the recipe id + <paramref name="day"/>, so reopening the
-    /// SAME recipe on a different day gets a different — but still deterministic and sim-agreeing
-    /// — line. Safe to call repeatedly (e.g. the player reopens for a different recipe) — always
-    /// leaves a clean, un-completed run.
+    /// line from a seed derived (no RNG — <c>StableHash</c>) from the recipe id + <paramref name="day"/>.
+    /// Safe to call repeatedly — always leaves a clean, un-completed run.
     /// </summary>
+    /// <param name="demonstratedAccuracyPermille">The player's session-scoped track record (owned
+    /// by the caller, e.g. <c>ForgePanel</c> — never persisted to the sim save), 0..1000. Defaults
+    /// to 0 (no history) so every EXISTING call site compiles unchanged.</param>
     public void Configure(
-        Recipe recipe, string materialKey, ProfessionDefinition profession, ImmutableSortedSet<string> unlockedTalents, int day)
+        Recipe recipe, string materialKey, ProfessionDefinition profession, ImmutableSortedSet<string> unlockedTalents, int day,
+        int demonstratedAccuracyPermille = 0)
     {
         EnsureBuilt();
 
@@ -251,14 +273,17 @@ public sealed partial class ForgeMinigame : PanelContainer
         PathSeed = unchecked((int)StableHash.Avalanche(StableHash.Mix(StableHash.HashString(recipe.RecipeId), unchecked((ulong)day))));
         Path = ForgePath.Generate(recipe.Tier, recipe.Slot, recipe.BaseStats.Weight, PathSeed);
 
+        var accuracy = Math.Clamp(demonstratedAccuracyPermille, 0, 1000);
+        var reduction = (int)Math.Round((BaseRequiredStrikes - MinRequiredStrikes) * (accuracy / 1000.0));
+        RequiredStrikes = Math.Clamp(BaseRequiredStrikes - reduction, MinRequiredStrikes, BaseRequiredStrikes);
+        _strikeAdvancePermille = (int)Math.Round(ShapingFinishPermille / (double)RequiredStrikes);
+
         ShapeXPermille = 0;
         HeatYPermille = ForgePath.HeatAt(Path, 0);
         IsPumping = false;
         Completed = false;
         WasCancelled = false;
-        EmittedAction = null;
         PreviewGradePermille = null;
-        PreviewSubScores = null;
         _samples.Clear();
         _strikes.Clear();
         _elapsed = 0;
@@ -268,12 +293,10 @@ public sealed partial class ForgeMinigame : PanelContainer
     }
 
     /// <summary>Advance the run by <paramref name="delta"/> accumulated-clock seconds — public so
-    /// tests drive scripted runs deterministically (no wall-clock, no engine RNG; the same house
-    /// pattern <c>MarketLife2D.Advance</c> (formerly <c>ShopStage.Advance</c>)/the old
-    /// <c>ForgeMinigame</c> already prove). Heat drains
-    /// over time (the pursuit pressure) unless the bellows are held, in which case heat rises and
-    /// shape drifts back slightly (can't hammer while pumping). Samples the cursor at a fixed
-    /// cadence, capped at <see cref="MaxSamples"/> pairs.</summary>
+    /// tests drive scripted runs deterministically (no wall-clock, no engine RNG). Heat drains
+    /// over time unless the bellows are held, in which case heat rises and shape drifts back
+    /// slightly (can't hammer while pumping). Samples the cursor at a fixed cadence, capped at
+    /// <see cref="MaxSamples"/> pairs.</summary>
     public void Advance(double delta)
     {
         if (Completed || WasCancelled || delta <= 0)
@@ -304,12 +327,12 @@ public sealed partial class ForgeMinigame : PanelContainer
     }
 
     /// <summary>Hammer strike: advances shape-X proportional to the CURRENT heat (a cold billet
-    /// barely moves), costs heat, and advances further when it lands inside the tempo window.
-    /// No-op while pumping (mutually exclusive inputs) or once the shape has already reached the
-    /// path's end (only <see cref="Plunge"/> is legal there).</summary>
+    /// barely moves) and to <see cref="RequiredStrikes"/> (fewer strikes required = bigger payoff
+    /// per strike), costs heat, and advances further when it lands inside the tempo window.
+    /// No-op while pumping (mutually exclusive inputs) or once Act 1 is already done.</summary>
     public void ForgeStrike()
     {
-        if (Completed || WasCancelled || IsPumping || ShapeXPermille >= 1000)
+        if (Completed || WasCancelled || IsPumping)
         {
             return;
         }
@@ -319,13 +342,18 @@ public sealed partial class ForgeMinigame : PanelContainer
         RecordStrike(tempoError);
 
         var multiplier = onTempo ? StrikeOnTempoBonusMultiplier : 1.0;
-        var advance = (int)Math.Round(StrikeBaseAdvancePermille * (HeatYPermille / 1000.0) * multiplier);
-        ShapeXPermille = Math.Clamp(ShapeXPermille + Math.Max(0, advance), 0, 1000);
+        var advance = (int)Math.Round(_strikeAdvancePermille * (HeatYPermille / 1000.0) * multiplier);
+        ShapeXPermille = Math.Clamp(ShapeXPermille + Math.Max(0, advance), 0, ShapingFinishPermille);
         HeatYPermille = Math.Clamp(HeatYPermille - StrikeHeatCostPermille, 0, 1000);
 
         Struck?.Invoke(onTempo);
         _canvas.OnStruck(onTempo);
         RepaintUi();
+
+        if (ShapeXPermille >= ShapingFinishPermille)
+        {
+            FinishShaping();
+        }
     }
 
     /// <summary>Start holding the bellows — heat rises, shape drifts back slightly, hammering is
@@ -349,13 +377,11 @@ public sealed partial class ForgeMinigame : PanelContainer
         RepaintUi();
     }
 
-    /// <summary>One bellows PUMP STROKE — the discrete counterpart to holding the bellows (U3): raises
+    /// <summary>One bellows PUMP STROKE — the discrete counterpart to holding the bellows: raises
     /// heat by exactly <see cref="PumpStrokeHeatPermille"/> (clamped at 1000) and applies the SAME
     /// shape-drifts-back rule <see cref="Advance"/> already uses while pumping, scaled to the
-    /// equivalent time slice this quantum represents (<c>quantum / BellowsRaisePermillePerSecond</c>
-    /// seconds) — so a flurry of strokes behaves like holding the bellows for that long. This is the
-    /// seam every stroke gesture (drag-quantized right-click, or a future dedicated key) terminates
-    /// in — no wall-clock, no RNG, callable directly by a headless test.</summary>
+    /// equivalent time slice this quantum represents. No wall-clock, no RNG, callable directly by
+    /// a headless test.</summary>
     public void PumpStroke()
     {
         if (Completed || WasCancelled)
@@ -370,13 +396,10 @@ public sealed partial class ForgeMinigame : PanelContainer
         RepaintUi();
     }
 
-    /// <summary>Pure hit-test for an aimed strike (U3): true iff <paramref name="localPos"/> — in
-    /// THIS overlay's own local coordinate space, exactly what <see cref="InputEventMouseButton.Position"/>
-    /// carries when <see cref="_GuiInput"/> receives it — falls within a generous
-    /// <see cref="BilletHitBoxSize"/>px square centred on where the billet is actually drawn
-    /// (mirrors <c>AnvilMapCanvas.BilletAnchor</c>). Side-effect-free, so a headless test can call it
-    /// directly; on a freshly-built, unmounted overlay the anchor resolves to the origin (no layout
-    /// has run yet), which still exercises the exact same rect math.</summary>
+    /// <summary>Pure hit-test for an aimed strike: true iff <paramref name="localPos"/> — in
+    /// THIS overlay's own local coordinate space — falls within a generous
+    /// <see cref="BilletHitBoxSize"/>px square centred on where the billet is actually drawn.
+    /// Side-effect-free, so a headless test can call it directly.</summary>
     public bool WouldHit(Vector2 localPos)
     {
         var anchor = BilletAnchorInPanelSpace();
@@ -384,54 +407,14 @@ public sealed partial class ForgeMinigame : PanelContainer
         return Math.Abs(localPos.X - anchor.X) <= half && Math.Abs(localPos.Y - anchor.Y) <= half;
     }
 
-    /// <summary>Pure hit-test for the drag-to-quench gesture's destination (U3): true iff
-    /// <paramref name="localPos"/> (same local space as <see cref="WouldHit"/>) falls in a generous
-    /// right-edge strip approximating where <c>AnvilMapCanvas.DrawQuenchZone</c> paints the trough —
-    /// exact pixel matching isn't needed for a drop target this size (plan's deferred pixel-tuning
-    /// note). False before any layout has sized the canvas.</summary>
-    public bool IsInQuenchZone(Vector2 localPos)
-    {
-        var size = _canvas.Size;
-        if (size.X <= 0 || size.Y <= 0)
-        {
-            return false;
-        }
-
-        var topLeft = ToPanelSpace(new Vector2(size.X * (1f - QuenchZoneWidthFraction), 0f));
-        var bottomRight = ToPanelSpace(new Vector2(size.X, size.Y));
-        return localPos.X >= Math.Min(topLeft.X, bottomRight.X) && localPos.X <= Math.Max(topLeft.X, bottomRight.X)
-            && localPos.Y >= Math.Min(topLeft.Y, bottomRight.Y) && localPos.Y <= Math.Max(topLeft.Y, bottomRight.Y);
-    }
-
     /// <summary>The billet's current screen anchor, in this overlay's own local space — exposed
     /// read-only purely so a headless test can locate <see cref="WouldHit"/>'s hit box without
     /// duplicating canvas-private layout math.</summary>
     public Vector2 BilletAnchor => BilletAnchorInPanelSpace();
 
-    /// <summary>A point guaranteed to fall inside <see cref="IsInQuenchZone"/>'s hit region, in this
-    /// overlay's own local space — same test-support rationale as <see cref="BilletAnchor"/>.</summary>
-    public Vector2 QuenchZoneAnchor => ToPanelSpace(new Vector2(
-        _canvas.Size.X * (1f - QuenchZoneWidthFraction / 2f), _canvas.Size.Y * 0.6f));
-
-    /// <summary>Quench finale: plunge the cursor now. Legal only once the shape has reached the
-    /// path's end (x &gt;= 1000) — the player is expected to stop pumping/hammering there and let
-    /// the natural heat drain carry the cursor down toward the trough before plunging. Captures
-    /// the plunge instant as the final trace sample, builds the ONE <see cref="ForgeTraceInput"/>/
-    /// <see cref="CraftAction"/> (PKD8), and raises <see cref="Finished"/>.</summary>
-    public void Plunge()
-    {
-        if (Completed || WasCancelled || ShapeXPermille < 1000)
-        {
-            return;
-        }
-
-        RecordSample();
-        Quenched?.Invoke();
-        _canvas.OnQuenched();
-        Finish();
-    }
-
-    /// <summary>Abandon the run — queues nothing (<see cref="Cancelled"/> only).</summary>
+    /// <summary>Abandon the run — queues nothing (<see cref="Cancelled"/> only). Leaves no partial
+    /// item and no spent material: Act 1 never builds a <see cref="CraftAction"/> at all, so there
+    /// is nothing for a cancel to un-do.</summary>
     public void Cancel()
     {
         if (Completed || WasCancelled)
@@ -445,26 +428,18 @@ public sealed partial class ForgeMinigame : PanelContainer
     }
 
     /// <summary>Escape cancels the run — routed through <see cref="Cancel"/> (shared mechanism, <see
-    /// cref="ModalEscape"/>), never a bare hide: a bare hide would leave <see cref="WasCancelled"/>
-    /// false and <see cref="EmittedAction"/> null, so nothing here queues, but the run would also
-    /// never be marked cancelled — leaving the door open for a later call to still finish it.
-    /// Overrides <c>_Input</c> (not <c>_GuiInput</c>) deliberately: this overlay is nested DRAWER
-    /// CONTENT (inside <c>ForgePanel</c>, itself inside <c>DrawerHost</c>'s slot), which already owns
-    /// Escape for the WHOLE drawer. Godot calls <c>_Input</c> in reverse tree order — children before
-    /// parents — so this fires and marks the event handled before <c>DrawerHost</c> ever sees it; the
-    /// drawer would otherwise close out from under an in-progress craft instead of cancelling it
-    /// cleanly through the PKD8 contract.</summary>
+    /// cref="ModalEscape"/>). Overrides <c>_Input</c> (not <c>_GuiInput</c>) deliberately: this
+    /// overlay is nested DRAWER CONTENT, which already owns Escape for the WHOLE drawer. Godot
+    /// calls <c>_Input</c> in reverse tree order — children before parents — so this fires and
+    /// marks the event handled before the drawer ever sees it.</summary>
     public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, Cancel);
 
     /// <summary>Real-time input mapping — routes to the SAME public seam methods a scripted test or
     /// the button row drives, so there is exactly one code path for "what a gesture does" regardless
-    /// of input source (KTD-A). Space always strikes unaimed (KTD-C accessible path); a left-click
-    /// only strikes if it lands on the billet (<see cref="WouldHit"/>) and, held, arms a
-    /// drag-to-quench that fires <see cref="Plunge"/> once the drag enters the trough
-    /// (<see cref="IsInQuenchZone"/>); Shift keeps working exactly as before (held bellows); a
-    /// right-button DRAG quantizes into discrete <see cref="PumpStroke"/> calls every
-    /// <see cref="PumpStrokeDragPixels"/> of downward motion (KTD-B — no raw float ever reaches a
-    /// scorer).</summary>
+    /// of input source. Space always strikes unaimed (accessible path); a left-click only strikes if
+    /// it lands on the billet (<see cref="WouldHit"/>); Shift holds the bellows; a right-button DRAG
+    /// quantizes into discrete <see cref="PumpStroke"/> calls every <see cref="PumpStrokeDragPixels"/>
+    /// of downward motion (no raw float ever reaches a scorer).</summary>
     public override void _GuiInput(InputEvent @event)
     {
         if (Completed || WasCancelled)
@@ -483,31 +458,15 @@ public sealed partial class ForgeMinigame : PanelContainer
             case InputEventKey { Keycode: Key.Shift, Pressed: false }:
                 BellowsStop();
                 break;
-
-            // Enter finishes the craft. There was NO keyboard route to Plunge at all: Space struck and
-            // Shift pumped, but the finale was reachable only by mouse (drag-to-quench, or the button) —
-            // so a player working the keyboard could shape the billet all the way to 1000 and then find
-            // nothing that ended it. This class states keyboard parity as a principle for the strike
-            // ("Space stays unaimed/always valid (KTD-C keyboard parity)"); the finale was simply missed.
-            //
-            // Safe unconditionally: Plunge already returns early unless ShapeXPermille is 1000, so an
-            // early Enter does nothing rather than ending the craft short.
-            case InputEventKey { Keycode: Key.Enter or Key.KpEnter, Pressed: true, Echo: false }:
-                Plunge();
-                break;
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } mb:
                 // Clicking must not cost the player their keyboard — and if a child button holds
                 // focus, Space would press THAT instead of striking the billet.
                 UiKit.ReclaimKeyboard(this);
-                _quenchDragArmed = WouldHit(mb.Position);
-                if (_quenchDragArmed)
+                if (WouldHit(mb.Position))
                 {
                     ForgeStrike();
                 }
 
-                break;
-            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false }:
-                _quenchDragArmed = false;
                 break;
             case InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: true }:
                 _pumpDragArmed = true;
@@ -518,12 +477,6 @@ public sealed partial class ForgeMinigame : PanelContainer
                 _pumpDragAccumulatorPixels = 0;
                 break;
             case InputEventMouseMotion mm:
-                if (_quenchDragArmed && IsInQuenchZone(mm.Position))
-                {
-                    Plunge();
-                    _quenchDragArmed = false;
-                }
-
                 if (_pumpDragArmed)
                 {
                     AccumulatePumpDrag(mm.Relative.Y);
@@ -536,7 +489,7 @@ public sealed partial class ForgeMinigame : PanelContainer
     /// <summary>Quantizes the right-button drag into discrete <see cref="PumpStroke"/> calls: every
     /// <see cref="PumpStrokeDragPixels"/> of DOWNWARD motion (pulling the bellows handle down) fires
     /// one stroke; upward jitter is ignored rather than subtracted, so an unsteady hand never loses
-    /// banked progress. No raw float ever reaches a scorer — only the resulting PumpStroke calls do.</summary>
+    /// banked progress.</summary>
     private void AccumulatePumpDrag(float relativeY)
     {
         if (relativeY <= 0)
@@ -553,27 +506,24 @@ public sealed partial class ForgeMinigame : PanelContainer
     }
 
     /// <summary>Mirrors <c>AnvilMapCanvas.BilletAnchor</c> exactly, but as a free function with zero
-    /// coupling to the canvas's private draw-time internals (nothing here reaches into
-    /// <see cref="AnvilMapCanvas"/> other than its public <see cref="Control.Size"/>/transform).</summary>
+    /// coupling to the canvas's private draw-time internals.</summary>
     private static Vector2 BilletAnchorFor(Vector2 canvasSize) => new(canvasSize.X * 0.45f, canvasSize.Y * 0.79f);
 
     private Vector2 BilletAnchorInPanelSpace() => ToPanelSpace(BilletAnchorFor(_canvas.Size));
 
     /// <summary>Translates a point from the Anvil Map canvas's own local coordinate space into this
-    /// overlay's local space (composing global transforms) — so hit-tests can compare directly
-    /// against the raw local position a mouse event already carries when it reaches
-    /// <see cref="_GuiInput"/>, with zero conversion needed at the call site.</summary>
+    /// overlay's local space (composing global transforms).</summary>
     private Vector2 ToPanelSpace(Vector2 canvasLocalPos)
     {
         var globalPos = _canvas.GetGlobalTransform() * canvasLocalPos;
         return GetGlobalTransform().AffineInverse() * globalPos;
     }
 
-    /// <summary>G1 result ceremony (unchanged from the old minigame): a presentation-only PREVIEW
-    /// of which <see cref="QualityGrade"/> band a folded per-mille grade is heading toward —
-    /// mirrors <c>QualityRoller.RollActive</c>'s own band thresholds (200/550/780/930) but
-    /// deliberately WITHOUT its ±25 jitter or its material-grade ceiling. Public/static so a test
-    /// can pin the band thresholds independently of a live run.</summary>
+    /// <summary>G1 result ceremony banding: a presentation-only PREVIEW of which
+    /// <see cref="QualityGrade"/> band a folded per-mille grade is heading toward — mirrors
+    /// <c>QualityRoller.RollActive</c>'s own band thresholds (200/550/780/930) but deliberately
+    /// WITHOUT its ±25 jitter or its material-grade ceiling. Static/pure so every craft overlay
+    /// (this one's Act 2 sibling, plus Brew/Assemble/Scrape) shares ONE banding rule.</summary>
     public static QualityGrade PreviewGrade(int performanceGradePermille)
     {
         var clamped = Math.Clamp(performanceGradePermille, 0, 1000);
@@ -611,7 +561,7 @@ public sealed partial class ForgeMinigame : PanelContainer
 
     /// <summary>Distance from the nearest tempo-metronome pulse, mapped to [0, 1000] (0 = dead on
     /// beat, 1000 = exactly off-beat at the half-period). A pure function of the accumulated clock
-    /// — no engine RNG, no wall-clock — so the same strike timing always grades identically.</summary>
+    /// — no engine RNG, no wall-clock.</summary>
     private int TempoErrorPermilleNow()
     {
         var phase = _elapsed % TempoPeriodSeconds;
@@ -620,30 +570,24 @@ public sealed partial class ForgeMinigame : PanelContainer
         return (int)Math.Round(Math.Clamp(distance / halfPeriod, 0.0, 1.0) * 1000.0);
     }
 
-    private void Finish()
+    private void FinishShaping()
     {
         Completed = true;
-        var samples = ImmutableList.CreateRange(_samples);
-        var strikes = ImmutableList.CreateRange(_strikes);
-        var puzzle = new ForgeTraceInput(samples, strikes, PathSeed);
 
-        // Read-only preview off the SAME pure sim scorer (mirrors AlchemyBrewPuzzle's own
-        // preview) — never written back as rules, purely for the ceremony/feedback text below.
         if (_recipe is not null && _profession is not null)
         {
-            var preview = ForgeScorer.Score(_recipe, puzzle, _unlockedTalents, _profession);
-            PreviewGradePermille = preview.GradePermille;
-            PreviewSubScores = preview.SubScores;
+            var partial = new ForgeTraceInput(ImmutableList.CreateRange(_samples), ImmutableList.CreateRange(_strikes), PathSeed);
+            PreviewGradePermille = ForgeScorer.Score(_recipe, partial, _unlockedTalents, _profession).GradePermille;
         }
 
-        // U23c orchestrator wires ForgeScorer into CraftingHandlers.ApplyCraft so a submitted
-        // ForgeTraceInput actually resolves (today the puzzle-validation gate there only
-        // recognizes AlchemyReagentPuzzle and rejects anything else) — PerformanceGrade stays
-        // null here regardless; the trace is the single source of truth the sim will score.
-        var action = new CraftAction(RecipeId, MaterialKey, PerformanceGrade: null, Puzzle: puzzle, SubScores: PreviewSubScores);
-        EmittedAction = action;
+        var result = new ShapingResult(
+            ImmutableList.CreateRange(_samples),
+            ImmutableList.CreateRange(_strikes),
+            PathSeed,
+            HeatYPermille,
+            StrikesLanded);
         RepaintUi();
-        Finished?.Invoke(action);
+        ShapingDone?.Invoke(result);
     }
 
     private void EnsureBuilt()
@@ -657,10 +601,8 @@ public sealed partial class ForgeMinigame : PanelContainer
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Stop; // an open overlay owns clicks — never passes through to what it covers
 
-        // Sets FocusMode AND actually takes focus. This line used to be a bare
-        // `FocusMode = FocusModeEnum.All;` commented "so _GuiInput actually receives keyboard
-        // events" — which it does not, on its own: being focus-ABLE is not being focused, so Space
-        // and Shift never arrived and the craft was unwinnable. See UiKit.ClaimKeyboard.
+        // Sets FocusMode AND actually takes focus — see UiKit.ClaimKeyboard's own doc for why a
+        // bare FocusMode assignment alone left the craft unplayable from the keyboard.
         UiKit.ClaimKeyboard(this);
 
         var body = new VBoxContainer { Name = "ForgeMinigameBody" };
@@ -693,10 +635,6 @@ public sealed partial class ForgeMinigame : PanelContainer
         _bellowsButton.ButtonUp += BellowsStop;
         buttonRow.AddChild(_bellowsButton);
 
-        _plungeButton = new Button { Name = "Plunge", Text = "Plunge!" };
-        _plungeButton.Pressed += Plunge;
-        buttonRow.AddChild(_plungeButton);
-
         _cancelButton = new Button { Name = "ForgeMinigameCancel", Text = "Cancel" };
         _cancelButton.Pressed += Cancel;
         buttonRow.AddChild(_cancelButton);
@@ -710,8 +648,7 @@ public sealed partial class ForgeMinigame : PanelContainer
     }
 
     // Last-rendered label state — so the per-frame RepaintUi (called from _Process→Advance every
-    // frame) only rebuilds the readout/title strings when something actually changed, instead of
-    // allocating four interpolated strings every single frame on the hot path.
+    // frame) only rebuilds the readout/title strings when something actually changed.
     private int _lastShapeX = int.MinValue;
     private int _lastHeatY = int.MinValue;
     private bool _lastPumping;
@@ -720,8 +657,7 @@ public sealed partial class ForgeMinigame : PanelContainer
 
     /// <summary>Render-only — reads the current run state, writes no scoring state. Called after
     /// every state-changing call above AND every frame via <see cref="Advance"/> (for the canvas's
-    /// live tempo/heat animation); the label/button rebuild is gated on an actual state change so
-    /// the per-frame path allocates nothing.</summary>
+    /// live tempo/heat animation); the label/button rebuild is gated on an actual state change.</summary>
     private void RepaintUi()
     {
         if (!_built)
@@ -729,9 +665,8 @@ public sealed partial class ForgeMinigame : PanelContainer
             return;
         }
 
-        // Canvas: fed + redrawn every call — the draw is cheap 2D primitives and the tempo ring +
-        // heat glow need a continuous redraw to animate.
         _canvas.Path = Path;
+        _canvas.ShapeFinishPermille = ShapingFinishPermille;
         _canvas.CursorXPermille = ShapeXPermille;
         _canvas.CursorYPermille = HeatYPermille;
         _canvas.TempoErrorPermille = TempoErrorPermilleNow();
@@ -753,38 +688,34 @@ public sealed partial class ForgeMinigame : PanelContainer
         _lastCompleted = Completed;
         _lastCancelled = WasCancelled;
 
-        _titleLabel.Text = $"Anvil Map: {RecipeId}";
+        _titleLabel.Text = $"Shape it: {RecipeId}";
 
         _readoutLabel.Text = WasCancelled
             ? "Cancelled."
             : Completed
-                ? $"Done — grade {PreviewGradePermille}."
-                : ShapeXPermille >= 1000
-                    ? $"Shaped! Let it cool, then Plunge — Heat {HeatYPermille}"
-                    : $"Shape {ShapeXPermille}/1000 — Heat {HeatYPermille} — {(IsPumping ? "pumping" : "idle")}";
+                ? "Shaped! Quenching next..."
+                : $"Strike {StrikesLanded}/{RequiredStrikes} — Heat {HeatYPermille} — {(IsPumping ? "pumping" : "idle")}";
 
-        _hammerButton.Disabled = Completed || WasCancelled || IsPumping || ShapeXPermille >= 1000;
+        _hammerButton.Disabled = Completed || WasCancelled || IsPumping;
         _bellowsButton.Disabled = Completed || WasCancelled;
-        _plungeButton.Disabled = Completed || WasCancelled || ShapeXPermille < 1000;
     }
 
     /// <summary>
-    /// The forge cross-section: a side-view of the smith's fire (coal bed hot at the top, anvil +
-    /// quench trough cold at the bottom) where the billet — a real heat-glowing, morphing sprite
-    /// held in tongs — is steered along the shared target line (<see cref="Path"/>). A metronome
-    /// hammer winds up and falls exactly on the tempo beat so the player can time on-tempo strikes;
-    /// strikes throw a spark burst + a small shake, the bellows brighten the coals, and the plunge
-    /// billows steam. Plain <see cref="_Draw"/> primitives + a handful of nearest-filtered sprites
-    /// (each null-checked with a primitive fallback so headless CI still renders) — never a 3D
-    /// <c>SubViewport</c> (a known gdUnit headless hang). All motion is accumulated-frame-delta only
-    /// (no wall-clock, no RNG — spark patterns come from a fixed table). X = shape progress
-    /// (left→right), Y = heat (bottom cold → top hot).
+    /// The forge cross-section: a side-view of the smith's fire where the billet — a real
+    /// heat-glowing, morphing sprite held in tongs — is steered along the shared target line
+    /// (<see cref="Path"/>). A metronome hammer winds up and falls exactly on the tempo beat so the
+    /// player can time on-tempo strikes; strikes throw a spark burst + a small shake, and the
+    /// bellows brighten the coals. Plain <see cref="_Draw"/> primitives + a handful of
+    /// nearest-filtered sprites (each null-checked with a primitive fallback so headless CI still
+    /// renders) — never a 3D <c>SubViewport</c>. X = shape progress (left→right, this act's own
+    /// [0, <see cref="ShapeFinishPermille"/>] range), Y = heat (bottom cold → top hot, full [0,1000]).
     /// </summary>
     private sealed partial class AnvilMapCanvas : Control
     {
         public ImmutableList<int> Path = ImmutableList<int>.Empty;
         public int CursorXPermille;
         public int CursorYPermille;
+        public int ShapeFinishPermille = 1000; // this act's own finish line — see ForgeMinigame.ShapingFinishPermille
         public int TempoErrorPermille = 1000;         // 0 = dead on-beat, 1000 = fully off-beat
         public int TempoOnBeatWindowPermille = 180;
         public float TempoPhase;                       // 0..1 through the beat period (fed each frame)
@@ -797,8 +728,6 @@ public sealed partial class ForgeMinigame : PanelContainer
         private static readonly Color CoalEmber = new(1.0f, 0.48f, 0.16f);
         private static readonly Color AnvilSteel = new(0.20f, 0.21f, 0.27f);
         private static readonly Color AnvilFace = new(0.30f, 0.31f, 0.38f);
-        private static readonly Color WoodDark = new(0.34f, 0.22f, 0.13f);
-        private static readonly Color WaterTeal = new(0.25f, 0.45f, 0.52f);
         private static readonly Color TargetAhead = new(1.0f, 0.80f, 0.44f);
         private static readonly Color TargetGlow = new(1.0f, 0.55f, 0.20f);
         private static readonly Color TargetBehind = new(0.40f, 0.37f, 0.44f);
@@ -831,14 +760,13 @@ public sealed partial class ForgeMinigame : PanelContainer
             public Color To;
         }
 
-        /// <summary>U3 hit-stop: seconds still owed to freezing <see cref="_anim"/> after an on-tempo
+        /// <summary>Hit-stop: seconds still owed to freezing <see cref="_anim"/> after an on-tempo
         /// strike (~<see cref="HitStopSeconds"/>) — accumulated and drained via the SAME
         /// <see cref="_Process"/> accumulated-clock pattern as everything else here; never a sleep,
         /// never a wall-clock read.</summary>
         public const float HitStopSeconds = 0.04f;
 
         private readonly List<Particle> _sparks = new();
-        private readonly List<Particle> _steam = new();
         private float _anim;
         private float _hitStopRemaining;
         private float _shake;
@@ -852,9 +780,9 @@ public sealed partial class ForgeMinigame : PanelContainer
         {
             var dt = (float)delta;
 
-            // Hit-stop (U3): an on-tempo strike owes ~40ms of frozen animation clock — skip
-            // advancing _anim while that's still owed (particles/shake/ring keep moving; only the
-            // ambient coal/hammer-swing clock pauses, which is what actually reads as "impact").
+            // Hit-stop: an on-tempo strike owes ~40ms of frozen animation clock — skip advancing
+            // _anim while that's still owed (particles/shake/ring keep moving; only the ambient
+            // coal/hammer-swing clock pauses, which is what actually reads as "impact").
             if (_hitStopRemaining > 0f)
             {
                 _hitStopRemaining = Math.Max(0f, _hitStopRemaining - dt);
@@ -865,7 +793,6 @@ public sealed partial class ForgeMinigame : PanelContainer
             }
 
             StepParticles(_sparks, dt, gravity: 320f);
-            StepParticles(_steam, dt, gravity: -30f);
             if (_shake > 0f) _shake = Math.Max(0f, _shake - 14f * dt);
             if (_ring >= 0f) { _ring += dt; if (_ring > 0.15f) _ring = -1f; }
             QueueRedraw();
@@ -899,24 +826,7 @@ public sealed partial class ForgeMinigame : PanelContainer
             if (onTempo)
             {
                 _ring = 0f;
-                _hitStopRemaining = HitStopSeconds; // U3: freeze the ambient clock briefly on impact
-            }
-        }
-
-        /// <summary>Quench FX: a plume of steam from the billet (driven by the sim's Quenched event).</summary>
-        public void OnQuenched()
-        {
-            var origin = BilletAnchor(Size);
-            for (var i = 0; i < 10; i++)
-            {
-                var (ang, spd) = SparkDirs[i];
-                _steam.Add(new Particle
-                {
-                    Pos = origin + new Vector2((i - 5) * 2f, 0),
-                    Vel = new Vector2(Mathf.Cos(Mathf.DegToRad(ang)) * 12f, -40f - spd * 0.1f),
-                    Life = 1.2f, MaxLife = 1.2f,
-                    From = new Color(0.95f, 0.95f, 1f, 0.8f), To = new Color(0.8f, 0.85f, 0.95f, 0f),
-                });
+                _hitStopRemaining = HitStopSeconds;
             }
         }
 
@@ -945,9 +855,8 @@ public sealed partial class ForgeMinigame : PanelContainer
             var shake = _shake > 0f ? new Vector2(ShakeTable[(int)(_anim * 60f) % 4].X, ShakeTable[(int)(_anim * 60f) % 4].Y) * _shake : Vector2.Zero;
             DrawSetTransform(shake, 0f, Vector2.One);
 
-            // With the painted forge interior in place, the procedural furnace/anvil/trough would
-            // fight it — the art already IS the room. They stay only as the no-art fallback, and the
-            // heat band survives as a low-alpha glow that still says "up here is hot".
+            // With the painted forge interior in place, the procedural furnace/anvil would fight
+            // it — the art already IS the room. They stay only as the no-art fallback.
             var art = _backdrop is not null;
             if (art)
             {
@@ -962,14 +871,10 @@ public sealed partial class ForgeMinigame : PanelContainer
 
             var hasPath = Path.Count >= 4 && Path.Count % 2 == 0;
 
-            // The workbench read: a heat gauge at the furnace (with the forging guide's sweet spot
-            // marked on it), the billet resting on the anvil, and a shape meter — instead of a
-            // polyline with a dot travelling along it.
             if (hasPath)
             {
                 DrawHeatGauge(size);
                 DrawShapeMeter(size);
-                DrawQuenchZone(size, art);
             }
 
             if (!art)
@@ -977,8 +882,6 @@ public sealed partial class ForgeMinigame : PanelContainer
                 DrawAnvil(size);
             }
 
-            // The billet must REST on something — a compact anvil is drawn under it even over the
-            // painted room (whose own props sit elsewhere), so the steel never floats in mid-air.
             var billet = BilletAnchor(size);
             DrawAnvilStand(billet);
             DrawBillet(billet);
@@ -1015,7 +918,6 @@ public sealed partial class ForgeMinigame : PanelContainer
                 DrawRect(new Rect2(cx - 4, bedH - 13, 8, 5), new Color(c.R, c.G * 1.1f, c.B, c.A * 0.8f));
             }
 
-            // Flame licks along the bottom edge of the coal bed.
             for (var i = 0; i < Coals.Length; i += 2)
             {
                 var cx = Coals[i].Fx * size.X;
@@ -1031,9 +933,8 @@ public sealed partial class ForgeMinigame : PanelContainer
         /// <summary>
         /// The furnace heat gauge: a vertical thermometer showing the billet's CURRENT heat, with the
         /// forging guide's ideal heat for this point in the shaping marked on it as a bright sweet-spot
-        /// band (plus a small arrow showing which way the ideal is about to move, so the player can
-        /// anticipate instead of chasing). This is what replaces the old target polyline — the same
-        /// numbers the sim scores, read as an instrument on the wall rather than a plot to trace.
+        /// band. This is what replaces the old target polyline — the same numbers the sim scores, read
+        /// as an instrument on the wall rather than a plot to trace.
         /// </summary>
         private void DrawHeatGauge(Vector2 size)
         {
@@ -1045,11 +946,9 @@ public sealed partial class ForgeMinigame : PanelContainer
 
             float YFor(int permille) => bottom - Math.Clamp(permille, 0, 1000) / 1000f * h;
 
-            // Housing.
             DrawRect(new Rect2(x - 4, top - 5, w + 8, h + 10), new Color(0.07f, 0.06f, 0.10f, 0.82f));
             DrawRect(new Rect2(x - 4, top - 5, w + 8, h + 10), new Color(0.45f, 0.40f, 0.34f, 0.9f), filled: false, width: 2f);
 
-            // Column: cold at the bottom, forge-hot at the top.
             const int cells = 16;
             for (var i = 0; i < cells; i++)
             {
@@ -1058,8 +957,6 @@ public sealed partial class ForgeMinigame : PanelContainer
                 DrawRect(new Rect2(x, cy, w, h / cells + 1f), new Color(HeatColor(f), 0.30f));
             }
 
-            // Sweet spot: the ideal heat for the CURRENT shaping progress, from the same guide the
-            // scorer grades against.
             var target = InterpTargetHeat(CursorXPermille);
             var bandTop = YFor(target + SweetSpotHalfWidthPermille);
             var bandBottom = YFor(target - SweetSpotHalfWidthPermille);
@@ -1068,7 +965,6 @@ public sealed partial class ForgeMinigame : PanelContainer
             DrawRect(new Rect2(x - 2, bandTop, w + 4, bandBottom - bandTop), new Color(band, 0.22f));
             DrawRect(new Rect2(x - 2, bandTop, w + 4, bandBottom - bandTop), new Color(band, 0.95f), filled: false, width: 2f);
 
-            // Where the ideal is heading next (anticipation cue).
             var ahead = InterpTargetHeat(Math.Min(1000, CursorXPermille + 90));
             if (Math.Abs(ahead - target) > 25)
             {
@@ -1080,7 +976,6 @@ public sealed partial class ForgeMinigame : PanelContainer
                     new Color(TargetAhead, 0.9f));
             }
 
-            // The mercury: current heat, glowing in its own heat colour.
             var my = YFor(CursorYPermille);
             var heatFrac = Math.Clamp(CursorYPermille / 1000f, 0f, 1f);
             DrawRect(new Rect2(x, my, w, bottom - my), new Color(HeatColor(heatFrac), 0.92f));
@@ -1122,8 +1017,9 @@ public sealed partial class ForgeMinigame : PanelContainer
             DrawColoredPolygon(pts, col);
         }
 
-        /// <summary>The shape meter: how far the bar has been drawn out toward the finished piece —
-        /// segmented, so each on-tempo strike visibly claims another notch. Replaces "X position".</summary>
+        /// <summary>The shape meter: how far the bar has been drawn out toward THIS ACT's finish
+        /// line (<see cref="ShapeFinishPermille"/>, not the sim's full 1000-domain) — segmented, so
+        /// each on-tempo strike visibly claims another notch.</summary>
         private void DrawShapeMeter(Vector2 size)
         {
             const int cells = 12;
@@ -1133,13 +1029,14 @@ public sealed partial class ForgeMinigame : PanelContainer
             var cw = w / cells;
 
             DrawRect(new Rect2(x - 3, y - 4, w + 6, 20f), new Color(0.07f, 0.06f, 0.10f, 0.82f));
-            var filled = Mathf.CeilToInt(Math.Clamp(CursorXPermille / 1000f, 0f, 1f) * cells);
+            var fraction = ShapeFinishPermille > 0 ? Math.Clamp(CursorXPermille / (float)ShapeFinishPermille, 0f, 1f) : 0f;
+            var filled = Mathf.CeilToInt(fraction * cells);
             for (var i = 0; i < cells; i++)
             {
                 var r = new Rect2(x + i * cw + 1f, y, cw - 2f, 12f);
                 if (i < filled)
                 {
-                    var done = CursorXPermille >= 1000;
+                    var done = CursorXPermille >= ShapeFinishPermille;
                     var c = done
                         ? new Color(0.55f, 0.9f, 1f).Lerp(Colors.White, 0.5f + 0.5f * Mathf.Sin(_anim * 5f))
                         : TargetAhead;
@@ -1156,7 +1053,6 @@ public sealed partial class ForgeMinigame : PanelContainer
         {
             var faceY = size.Y - 4f; // y=0 heat line sits at the anvil face
             DrawRect(new Rect2(0, faceY, size.X, size.Y - faceY + 2f), AnvilFace);
-            // A stout anvil body centered low.
             var cx = size.X * 0.5f;
             DrawColoredPolygon(
                 new[]
@@ -1184,37 +1080,6 @@ public sealed partial class ForgeMinigame : PanelContainer
             }
         }
 
-        /// <summary>The quench point. Over art it's a translucent shimmer pool + a glow (the painted
-        /// room already has vessels, so a hard wooden box would read as pasted on); without art it
-        /// falls back to the drawn trough.</summary>
-        private void DrawQuenchZone(Vector2 size, bool art)
-        {
-            var endY = Path[^1];
-            var waterTop = ToCanvasPoint(1000, endY, size).Y;
-            var x0 = size.X - 44f;
-            var ready = CursorXPermille >= 1000;
-            var water = ready
-                ? WaterTeal.Lerp(new Color(0.55f, 0.9f, 1f), 0.5f + 0.5f * Mathf.Sin(_anim * 4f))
-                : WaterTeal;
-
-            if (!art)
-            {
-                DrawRect(new Rect2(x0, waterTop - 3, 42, size.Y - waterTop + 3), WoodDark);
-            }
-
-            DrawRect(new Rect2(x0 + 2, waterTop, 38, size.Y - waterTop - 2), new Color(water, art ? 0.5f : 0.9f));
-            if (ready)
-            {
-                DrawRect(new Rect2(x0, waterTop - 2, 42, 3f), new Color(0.7f, 0.95f, 1f, 0.75f));
-            }
-
-            for (var s = 0; s < 2; s++)
-            {
-                var sy = waterTop + 4 + s * 6 + 1.5f * Mathf.Sin(_anim * 3f + s);
-                DrawLine(new Vector2(x0 + 3, sy), new Vector2(x0 + 39, sy), new Color(1f, 1f, 1f, 0.3f), 1f);
-            }
-        }
-
         private void DrawBillet(Vector2 cursor)
         {
             var heatFrac = Math.Clamp(CursorYPermille / 1000f, 0f, 1f);
@@ -1223,7 +1088,8 @@ public sealed partial class ForgeMinigame : PanelContainer
             DrawCircle(cursor, glowR * 1.5f, new Color(body, 0.16f)); // wide bloom, reads over art
             DrawCircle(cursor, glowR, new Color(body, 0.34f));        // heat halo
 
-            var frame = CursorXPermille >= 900 ? 3 : CursorXPermille >= 650 ? 2 : CursorXPermille >= 300 ? 1 : 0;
+            var shapeFraction = ShapeFinishPermille > 0 ? CursorXPermille / (float)ShapeFinishPermille : 0f;
+            var frame = shapeFraction >= 0.9f ? 3 : shapeFraction >= 0.65f ? 2 : shapeFraction >= 0.3f ? 1 : 0;
             var tex = _billet[frame];
             if (tex is not null)
             {
@@ -1276,13 +1142,6 @@ public sealed partial class ForgeMinigame : PanelContainer
             {
                 var t = 1f - p.Life / p.MaxLife;
                 DrawRect(new Rect2(p.Pos - new Vector2(1.5f, 1.5f), new Vector2(3, 3)), p.From.Lerp(p.To, t));
-            }
-
-            foreach (var p in _steam)
-            {
-                var t = 1f - p.Life / p.MaxLife;
-                var c = p.From.Lerp(p.To, t);
-                DrawCircle(p.Pos, 3f + 5f * t, c);
             }
         }
 
@@ -1347,10 +1206,6 @@ public sealed partial class ForgeMinigame : PanelContainer
 
             return Path[^1];
         }
-
-        private static Vector2 ToCanvasPoint(int xPermille, int yPermille, Vector2 size) => new(
-            Math.Clamp(xPermille, 0, 1000) / 1000f * size.X,
-            size.Y - Math.Clamp(yPermille, 0, 1000) / 1000f * size.Y);
     }
 
     /// <summary>
@@ -1359,14 +1214,10 @@ public sealed partial class ForgeMinigame : PanelContainer
     /// <para>Focus used to be claimed once from <c>EnsureBuilt</c>, which production runs at boot
     /// with the overlay HIDDEN — and <see cref="GodotClient.Ui.UiKit.ClaimKeyboard"/> defers its grab
     /// behind an <c>IsVisibleInTree()</c> guard, so that grab silently did nothing and was never
-    /// retried. The overlay therefore never held the keyboard in the shipped game: Space pressed
-    /// whichever panel button still had focus, which re-opened and RESET the run, and the bellows key
-    /// reached nothing at all, leaving the craft impossible to finish.</para>
-    ///
-    /// <para>Claiming from the open path is not enough either — the drawer that hosts this overlay is
-    /// not visible in the tree yet on that frame, so the deferred grab misses again. The only moment
-    /// that is reliably correct is when THIS node becomes visible in the tree, which is exactly what
-    /// this notification reports. The overlay owns its own focus; no caller has to remember.</para>
+    /// retried. The only moment that is reliably correct is when THIS node becomes visible in the
+    /// tree, which is exactly what this notification reports. The overlay owns its own focus; no
+    /// caller has to remember — <see cref="QuenchMinigame"/> repeats this exact pattern for the
+    /// SAME reason on Act 2's handoff (PT1's dead-keyboard bug, do not reintroduce it).</para>
     /// </summary>
     public override void _Notification(int what)
     {
@@ -1375,5 +1226,4 @@ public sealed partial class ForgeMinigame : PanelContainer
             GodotClient.Ui.UiKit.ClaimKeyboard(this);
         }
     }
-
 }

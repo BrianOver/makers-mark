@@ -83,11 +83,36 @@ public partial class ForgePanel : SimPanel
     /// <see cref="ScrollContainer"/>'s own deferred layout pass.</summary>
     public string? LastFocusedSection { get; private set; }
 
-    /// <summary>U23d: the Anvil Map forge overlay — a single instance reused across recipes,
-    /// (re)configured per <see cref="OnWorkForgePressed"/> press. Built once in
-    /// <see cref="EnsureBuilt"/> as the LAST child so it draws over the recipe/talent scroll body
-    /// (PKD8 self-contained focus overlay); hidden except while a run is in progress.</summary>
+    /// <summary>U23d/U7: the Anvil Map forge overlay — ACT 1 of the two-act forge, a single
+    /// instance reused across recipes, (re)configured per <see cref="OnWorkForgePressed"/> press.
+    /// Built once in <see cref="EnsureBuilt"/> as the LAST child so it draws over the recipe/talent
+    /// scroll body (PKD8 self-contained focus overlay); hidden except while a run is in progress.</summary>
     private ForgeMinigame? _minigame;
+
+    /// <summary>U7 (verify-by-playing plan): ACT 2 of the two-act forge — the quench. Shown the
+    /// instant <see cref="_minigame"/> raises <see cref="ForgeMinigame.ShapingDone"/>
+    /// (<see cref="OnShapingDone"/>); this is the overlay that actually owns the craft's ONE
+    /// <see cref="CraftAction"/>.</summary>
+    private QuenchMinigame? _quench;
+
+    /// <summary>The recipe/profession/talent context <see cref="OnWorkForgePressed"/> opened Act 1
+    /// with — Act 1's own <see cref="ForgeMinigame.ShapingDone"/> payload carries only the trace,
+    /// not this context, so it is remembered here across the Act 1 -> Act 2 handoff.</summary>
+    private Recipe? _openForgeRecipe;
+    private ProfessionDefinition? _openForgeProfession;
+    private ImmutableSortedSet<string> _openForgeUnlockedTalents = ImmutableSortedSet<string>.Empty;
+
+    /// <summary>U7: the player's session-scoped track record — the LAST completed forge's grade,
+    /// fed into the NEXT <see cref="ForgeMinigame.Configure"/> call so <see
+    /// cref="ForgeMinigame.RequiredStrikes"/> can fall as demonstrated accuracy rises (R6).
+    /// Adapter-side only, never persisted to the sim save — the same session-scoped precedent the
+    /// loop-structure plan's KTD-C describes for "forge another like it".</summary>
+    private int _demonstratedAccuracyPermille;
+
+    /// <summary>U7 / loop-structure plan KTD-C ("forge another like it"): the exact trace the LAST
+    /// completed forge of each (recipe, material) captured, so a repeat craft can re-queue it at
+    /// one click and skip both acts entirely. Session-scoped, adapter-side — never in the sim save.</summary>
+    private readonly Dictionary<(string RecipeId, string MaterialKey), ForgeTraceInput> _lastForgeTraces = new();
 
     /// <summary>Phase B: the alchemist's reagent-puzzle overlay — the same single-instance,
     /// self-contained-focus-overlay pattern as <see cref="_minigame"/>, opened by the "Brew"
@@ -450,6 +475,15 @@ public partial class ForgePanel : SimPanel
                         var work = AddButton(controlsRow, $"WorkForge_{recipe.RecipeId}", "Work the forge",
                             () => OnWorkForgePressed(recipe, material, profession!, unlocked));
                         GateButton(work, affordable, $"Not enough {material} — need {needed}, have {have}.");
+
+                        // U7 / loop-structure KTD-C: once THIS recipe+material has a proven trace,
+                        // offer to re-queue it at one click instead of re-playing both acts.
+                        if (_lastForgeTraces.ContainsKey((recipe.RecipeId, material)))
+                        {
+                            var repeat = AddButton(controlsRow, $"ForgeAnother_{recipe.RecipeId}", "Forge another like it",
+                                () => RepeatLastForge(recipe.RecipeId, material));
+                            GateButton(repeat, affordable, $"Not enough {material} — need {needed}, have {have}.");
+                        }
                     }
                 }
             }
@@ -504,10 +538,56 @@ public partial class ForgePanel : SimPanel
     {
         EnsureBuilt();
         var day = Adapter?.CurrentState.Day ?? 0;
-        _minigame!.Configure(recipe, material, profession, unlockedTalents, day);
+
+        // Remembered across the Act 1 -> Act 2 handoff (OnShapingDone) — ForgeMinigame.ShapingDone
+        // carries only the trace, not this context.
+        _openForgeRecipe = recipe;
+        _openForgeProfession = profession;
+        _openForgeUnlockedTalents = unlockedTalents;
+
+        _minigame!.Configure(recipe, material, profession, unlockedTalents, day, _demonstratedAccuracyPermille);
         _minigame.Visible = true;
         OpenedOverlay(_minigame);
         LogMinigame("open", "forge", _minigame.RecipeId, _minigame.MaterialKey);
+    }
+
+    /// <summary>
+    /// U7: Act 1 -> Act 2 handoff. <see cref="ForgeMinigame.ShapingDone"/> fires exactly once, the
+    /// instant the shape reaches Act 1's finish line — this hides Act 1 and configures/shows the
+    /// quench with the SAME recipe/profession/talent context <see cref="OnWorkForgePressed"/>
+    /// opened with, plus the carried trace/heat. There is no path from Act 1's button row into Act
+    /// 2 other than this handler, so Act 1 cannot be skipped into Act 2.
+    /// </summary>
+    private void OnShapingDone(ForgeMinigame.ShapingResult result)
+    {
+        _minigame!.Visible = false;
+
+        if (_openForgeRecipe is null || _openForgeProfession is null)
+        {
+            return; // defensive — Configure always sets these first; never actually null in practice
+        }
+
+        _quench!.Configure(_openForgeRecipe, _minigame.MaterialKey, _openForgeProfession, _openForgeUnlockedTalents, result);
+        _quench.Visible = true;
+        OpenedOverlay(_quench); // PT1 precedent: the deferred keyboard grab misses unless re-asked here too
+        LogMinigame("open", "quench", _quench.RecipeId, _quench.MaterialKey, $" strikes={result.StrikesLanded}");
+    }
+
+    /// <summary>"Forge another like it" (U7 / loop-structure plan KTD-C): re-queue the EXACT trace
+    /// the last completed forge of this recipe+material captured — same materials, same slot cost,
+    /// same sim scoring path — WITHOUT opening either act. Skips the meter entirely.</summary>
+    private void RepeatLastForge(string recipeId, string materialKey)
+    {
+        if (Adapter is null || !_lastForgeTraces.TryGetValue((recipeId, materialKey), out var trace))
+        {
+            return;
+        }
+
+        var action = new CraftAction(recipeId, materialKey, PerformanceGrade: null, Puzzle: trace);
+        Adapter.Queue(action);
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.CraftDone);
+        _feedback!.Text = Confirm(action, $"Forged another {recipeId} with {materialKey} (reusing the proven trace)");
+        LogMinigame("repeat", "forge", recipeId, materialKey);
     }
 
     /// <summary>
@@ -560,6 +640,11 @@ public partial class ForgePanel : SimPanel
             _minigame.Cancel();
         }
 
+        if (_quench is { Visible: true })
+        {
+            _quench.Cancel();
+        }
+
         if (_brewPuzzle is { Visible: true })
         {
             _brewPuzzle.Cancel();
@@ -609,30 +694,44 @@ public partial class ForgePanel : SimPanel
         return $" grade={preview} sub={string.Join("/", scores)}";
     }
 
-    /// <summary>The minigame's ONE completed run → the ONE queued <see cref="CraftAction"/>
-    /// (PKD8 single-action contract) — then the overlay closes and the G1 result ceremony opens
-    /// over it. <see cref="CraftAction.PerformanceGrade"/> stays null (the trace rides
+    /// <summary>Act 2's ONE completed run → the ONE queued <see cref="CraftAction"/> (PKD8
+    /// single-action contract) — then the overlay closes and the G1 result ceremony opens over it.
+    /// <see cref="CraftAction.PerformanceGrade"/> stays null (the trace rides
     /// <see cref="CraftAction.Puzzle"/> instead); the preview grade shown here reads
-    /// <see cref="ForgeMinigame.PreviewGradePermille"/>, the SAME pure sim scorer read-only.</summary>
-    private void OnMinigameFinished(CraftAction action)
+    /// <see cref="QuenchMinigame.PreviewGradePermille"/>, the SAME pure sim scorer read-only.
+    /// Also records the trace for "forge another like it" and this run's grade as the player's new
+    /// demonstrated accuracy for the NEXT craft's <see cref="ForgeMinigame.RequiredStrikes"/>.</summary>
+    private void OnQuenchFinished(CraftAction action)
     {
+        // Recorded BEFORE Queue: Queue may synchronously trigger this panel's own Refresh() (the
+        // same immediate-update path BuyUpdatesTheCountImmediatelyTests pins for vendor rows), and
+        // the recipe row's "Forge another like it" button reads _lastForgeTraces — it must see this
+        // run's trace on that SAME rebuild, not one press later.
+        if (action.Puzzle is ForgeTraceInput trace)
+        {
+            _lastForgeTraces[(action.RecipeId, action.MaterialKey)] = trace;
+        }
+
+        _demonstratedAccuracyPermille = _quench!.PreviewGradePermille ?? _demonstratedAccuracyPermille;
+
         Adapter?.Queue(action);
-        _minigame!.Visible = false;
+        _quench.Visible = false;
         _feedback!.Text = Confirm(action,
             $"Forged {action.RecipeId} with {action.MaterialKey} " +
-            $"(preview grade {_minigame.PreviewGradePermille}, sub-scores {string.Join("/", action.SubScores ?? ImmutableList<int>.Empty)})");
+            $"(preview grade {_quench.PreviewGradePermille}, sub-scores {string.Join("/", action.SubScores ?? ImmutableList<int>.Empty)})");
 
         // The overlay closes immediately above, so _Process's continuous glow poll (gated on
         // _minigame.Visible) stops on its own next frame — this just resets it right now instead
         // of waiting a frame.
         ResolveTown()?.ForgeGlowReset();
         LogMinigame("done", "forge", action.RecipeId, action.MaterialKey,
-            $" grade={_minigame.PreviewGradePermille} sub={string.Join("/", action.SubScores ?? ImmutableList<int>.Empty)}");
+            $" grade={_quench.PreviewGradePermille} sub={string.Join("/", action.SubScores ?? ImmutableList<int>.Empty)}");
         ShowCeremony(action);
     }
 
-    /// <summary>Cancel queues nothing (PKD8) — just closes the overlay and resets the furnace so a
-    /// mid-run cancel never leaves it stuck at its elevated glow.</summary>
+    /// <summary>Act 1 cancel queues nothing (PKD8) — Act 1 never builds a <see cref="CraftAction"/>
+    /// at all, so there is nothing to un-queue: no partial item, no spent material. Just closes the
+    /// overlay and resets the furnace so a mid-run cancel never leaves it stuck at its elevated glow.</summary>
     private void OnMinigameCancelled()
     {
         // Logged BEFORE the teardown, not after: the reading of the run (how far the billet got
@@ -641,6 +740,17 @@ public partial class ForgePanel : SimPanel
         LogMinigame("cancel", "forge", _minigame!.RecipeId, _minigame.MaterialKey,
             $" shape={_minigame.ShapeXPermille} heat={_minigame.HeatYPermille}");
         _minigame.Visible = false;
+        ResolveTown()?.ForgeGlowReset();
+    }
+
+    /// <summary>Act 2 cancel ALSO queues nothing — the craft's ONE <see cref="CraftAction"/> is
+    /// only ever built in <see cref="OnQuenchFinished"/>, so abandoning the quench leaves no
+    /// partial item and no spent material either, same guarantee as cancelling Act 1.</summary>
+    private void OnQuenchCancelled()
+    {
+        LogMinigame("cancel", "quench", _quench!.RecipeId, _quench.MaterialKey,
+            $" heat={_quench.HeatYPermille}");
+        _quench.Visible = false;
         ResolveTown()?.ForgeGlowReset();
     }
 
@@ -656,7 +766,7 @@ public partial class ForgePanel : SimPanel
     }
 
     /// <summary>The brew overlay's ONE completed run → the ONE queued <see cref="CraftAction"/>
-    /// (PKD8 single-action contract, same as <see cref="OnMinigameFinished"/>). The grade shown
+    /// (PKD8 single-action contract, same as <see cref="OnQuenchFinished"/>). The grade shown
     /// is the scorer's preview (SubScores[2]); the sim recomputes it authoritatively on resolve.</summary>
     private void OnBrewFinished(CraftAction action)
     {
@@ -724,7 +834,7 @@ public partial class ForgePanel : SimPanel
     }
 
     /// <summary>The tanning frame's ONE completed run → the ONE queued <see cref="CraftAction"/>
-    /// (PKD8 single-action contract, same as <see cref="OnMinigameFinished"/>/<see cref="OnBrewFinished"/>).
+    /// (PKD8 single-action contract, same as <see cref="OnQuenchFinished"/>/<see cref="OnBrewFinished"/>).
     /// The grade shown is the scorer's preview (SubScores[2] — coverage/ruin/grade order); the sim
     /// recomputes it authoritatively on resolve.</summary>
     private void OnTanningFrameFinished(CraftAction action)
@@ -765,7 +875,7 @@ public partial class ForgePanel : SimPanel
     }
 
     /// <summary>G1: the quench-lock world VFX (steam plume) — fired the instant the player plunges
-    /// the stock, mirroring <see cref="ForgeMinigame.Quenched"/>'s own "before Lock scores it" timing.</summary>
+    /// the stock, mirroring <see cref="QuenchMinigame.Quenched"/>'s own "before Finish scores it" timing.</summary>
     private void OnMinigameQuenched()
     {
         // The finale had a steam plume and no sound whatsoever — the single most satisfying moment in the
@@ -809,7 +919,7 @@ public partial class ForgePanel : SimPanel
     /// </summary>
     private void ShowCeremony(CraftAction action)
     {
-        var band = ForgeMinigame.PreviewGrade(_minigame?.PreviewGradePermille ?? 0);
+        var band = ForgeMinigame.PreviewGrade(_quench?.PreviewGradePermille ?? 0);
         _ceremonyGrade!.Text = $"{band}!";
         _ceremonyGrade.AddThemeColorOverride("font_color", GradeColor(band));
         var filled = StarCountFor(band);
@@ -1013,18 +1123,26 @@ public partial class ForgePanel : SimPanel
         _talentRows = new VBoxContainer { Name = "TalentRows" };
         talentSection.Body.AddChild(_talentRows);
 
-        // U23d: the Anvil Map forge overlay — added LAST (after the scroll body above) so it
-        // draws on top, self-contained (PKD8), hidden until "Work the forge" opens it.
+        // U23d/U7: the Anvil Map forge overlay — ACT 1, added LAST (after the scroll body above)
+        // so it draws on top, self-contained (PKD8), hidden until "Work the forge" opens it.
         _minigame = new ForgeMinigame { Visible = false };
         AddChild(_minigame);
-        _minigame.Finished += OnMinigameFinished;
+        _minigame.ShapingDone += OnShapingDone;
         _minigame.Cancelled += OnMinigameCancelled;
         // G1 staging: forward the minigame's presentation-only cues to the forge station's world
         // VFX (Town2D) and to this panel's own SFX — see each handler's own doc. The furnace glow
         // itself is driven continuously off the live heat gauge in _Process, not an event.
         _minigame.Struck += OnMinigameStruck;
-        _minigame.Quenched += OnMinigameQuenched;
         _minigame.BellowsPumped += OnMinigameBellowsPumped;
+
+        // U7: ACT 2, the quench — same self-contained-focus pattern, hidden until Act 1's
+        // ShapingDone (OnShapingDone) configures and shows it. This overlay owns the craft's ONE
+        // CraftAction (OnQuenchFinished).
+        _quench = new QuenchMinigame { Visible = false };
+        AddChild(_quench);
+        _quench.Finished += OnQuenchFinished;
+        _quench.Cancelled += OnQuenchCancelled;
+        _quench.Quenched += OnMinigameQuenched;
 
         // Phase B: the alchemist's reagent-puzzle overlay — same self-contained-focus pattern,
         // hidden until a "Brew" button opens it.

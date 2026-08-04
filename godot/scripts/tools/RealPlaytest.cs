@@ -219,9 +219,11 @@ public partial class RealPlaytest : Node
 
         // Real interaction (the strategy a player learns): the bellows drift the shape BACK while
         // pumping, so don't interleave 1:1 — pump the billet HOT in one burst, then unload a rapid
-        // strike run (no drift while hammering) that carries the shape forward. Repeat to the end.
+        // strike run (no drift while hammering) that carries the shape forward. Repeat until Act 1's
+        // own finish line (U7: ForgeMinigame stops at ShapingFinishPermille and hands off to a
+        // separate QuenchMinigame for Act 2 — it no longer plunges itself).
         int guard = 0;
-        while (mg.ShapeXPermille < 1000 && guard++ < 40)
+        while (!mg.Completed && guard++ < 40)
         {
             mg.BellowsStart();
             int p = 0;
@@ -229,24 +231,30 @@ public partial class RealPlaytest : Node
             mg.BellowsStop(); await Settle(1);
 
             int s = 0;
-            while (mg.HeatYPermille > 140 && mg.ShapeXPermille < 1000 && s++ < 16)
+            while (mg.HeatYPermille > 140 && !mg.Completed && s++ < 16)
             {
                 mg.ForgeStrike();
                 await Settle(1);
             }
         }
-        GD.Print($"[realplaytest] minigame drive end: shapeX={mg.ShapeXPermille} heat={mg.HeatYPermille} guard={guard}");
+        GD.Print($"[realplaytest] Act 1 drive end: shapeX={mg.ShapeXPermille} heat={mg.HeatYPermille} guard={guard} completed={mg.Completed}");
 
         Shot("04b_minigame_mid");
 
-        await Settle(6);                 // let heat drain toward the quench trough
-        if (mg.ShapeXPermille >= 1000) mg.Plunge();
+        if (!mg.Completed || ui.FindChild("QuenchMinigame", recursive: true, owned: false) is not QuenchMinigame quench)
+        {
+            GD.Print("[realplaytest] Act 2 (quench) SKIPPED — Act 1 never finished or QuenchMinigame absent");
+            return;
+        }
+
+        await Settle(6); // let heat drain toward the quench trough before the decisive plunge
+        quench.Plunge();
         await Settle(8);
         Shot("04c_minigame_result");
 
-        GD.Print($"[realplaytest] minigame: shapeX={mg.ShapeXPermille} completed={mg.Completed} " +
-                 $"emitted={(mg.EmittedAction is null ? "NULL" : mg.EmittedAction.RecipeId)} " +
-                 $"previewGrade={mg.PreviewGradePermille}");
+        GD.Print($"[realplaytest] quench: completed={quench.Completed} " +
+                 $"emitted={(quench.EmittedAction is null ? "NULL" : quench.EmittedAction.RecipeId)} " +
+                 $"previewGrade={quench.PreviewGradePermille}");
 
         // Close any result ceremony so the rest of the playtest continues cleanly.
         ui.OpenPanel("Forge");
