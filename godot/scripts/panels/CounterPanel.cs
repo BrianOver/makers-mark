@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Heroes;
 using Godot;
 using GodotClient.Ui;
 
@@ -88,11 +89,12 @@ public partial class CounterPanel : SimPanel
     {
         var hero = counter.Active is { } activeId && state.Heroes.TryGetValue(activeId.Value, out var h) ? h : null;
 
-        BuildActiveCustomerCard(hero);
+        BuildActiveCustomerCard(state, hero);
         BuildNextStep(counter, hero);
         BuildMeters(counter);
         BuildDesk(state, counter, hero);
         BuildPresentedAndOffer(state, counter);
+        BuildPresentReplyBubble(counter);
         BuildShelfActions(state, counter);
         BuildHaggleControls(counter, hero);
 
@@ -106,7 +108,7 @@ public partial class CounterPanel : SimPanel
         });
     }
 
-    private void BuildActiveCustomerCard(Hero? hero)
+    private void BuildActiveCustomerCard(GameState state, Hero? hero)
     {
         var card = Card("ActiveCustomerCard");
         _body!.AddChild(card);
@@ -127,6 +129,28 @@ public partial class CounterPanel : SimPanel
 
         var moodRow = AddRow(infoCol);
         moodRow.AddChild(StatChip("Mood", MoodHint(hero.MoodPermille), MoodTone(hero.MoodPermille)));
+
+        // U2 (owner playtest, "unsure WHAt to do after"): the customer opens with a stated want,
+        // derived read-only from the sim's own gear-gap query / EvaluateItem preview
+        // (CustomerVoice.WantLine) — never a second rule set, so Present can never contradict what
+        // is spoken here.
+        cardBody.AddChild(BuildSpeechBubble($"{hero.Name}: \"{CustomerVoice.WantLine(hero, state)}\""));
+    }
+
+    /// <summary>The customer's spoken reply once a round is actually open — a pure function of
+    /// <see cref="CounterState.Round"/>/<see cref="CounterState.Presented"/>, which the sim only ever
+    /// sets on a realized Buy verdict (a Pass never opens a round — <see cref="GameSim.Counter.CounterQueueSystem"/>).
+    /// The Pass reply already renders via <see cref="BuildWalkedToday"/>'s own bubble, so this is
+    /// Buy-only by construction and renders nothing before anything has been presented.</summary>
+    private void BuildPresentReplyBubble(CounterState counter)
+    {
+        if (counter.Round <= 0 || counter.Presented is not { } presentedId || counter.Active is not { } activeId)
+        {
+            return;
+        }
+
+        var reply = CustomerVoice.PresentReply(ShoppingVerdictKind.Buy, ItemName(presentedId), passReason: string.Empty);
+        _body!.AddChild(BuildSpeechBubble($"{HeroName(activeId)}: \"{reply}\""));
     }
 
     /// <summary>A presentational bucket over the sim's signed <see cref="Hero.MoodPermille"/> —
@@ -366,13 +390,20 @@ public partial class CounterPanel : SimPanel
                 var action = new SuggestItemAction(itemId);
                 Adapter!.Queue(action);
                 var after = Adapter!.CurrentState.Counter?.InterestPermille ?? before;
+                var interestRose = after > before;
 
-                var consequence = after > before
+                var consequence = interestRose
                     ? $"interest rose {before} to {after} — a stronger offer on the next round or " +
                       "item, not this one"
                     : $"interest held at {before} — {item.Name} isn't what {heroName} needs right now";
 
-                _feedback!.Text = Confirm(action, $"Suggested {item.Name} — {consequence}");
+                // Owner playtest ("interest went up but nothing happened lol"): give the meter
+                // movement a voice. Derived from the SAME before/after delta above (the sim's own
+                // ApplySuggestBonus already decided whether the upsell fit) — never a second guess
+                // at fit, so this can never contradict the Interest chip in the same refresh.
+                var reply = CustomerVoice.SuggestReply(item.Name, interestRose);
+
+                _feedback!.Text = Confirm(action, $"Suggested {item.Name} — {consequence} — {heroName}: \"{reply}\"");
             });
             GateButton(suggest, legal, "No active customer is at the counter.");
         }
@@ -483,7 +514,11 @@ public partial class CounterPanel : SimPanel
         var walkedToday = state.EventLog.OfType<CustomerWalked>().Where(e => e.Day == state.Day).ToList();
         foreach (var walked in walkedToday)
         {
-            _body!.AddChild(BuildSpeechBubble($"{HeroName(walked.Hero)}: \"{walked.Reason}\""));
+            // Routed through the SAME reply table Present's Buy branch uses (CustomerVoice.PresentReply)
+            // so every ShoppingVerdictKind renders through one exhaustive seam — the Pass branch
+            // returns walked.Reason verbatim, so this is a no-op change to what's actually shown.
+            var reply = CustomerVoice.PresentReply(ShoppingVerdictKind.Pass, itemName: string.Empty, walked.Reason);
+            _body!.AddChild(BuildSpeechBubble($"{HeroName(walked.Hero)}: \"{reply}\""));
         }
     }
 

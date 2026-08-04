@@ -735,6 +735,108 @@ public class CounterPanelTests
         }
     }
 
+    // ── Customer voice (U2, plan 2026-08-03-001-feat-loop-structure-plan.md, KTD-B) ─────────────
+    // Owner playtest: "Counter worked - person buying but really unsure WHAt to do after?" and
+    // "i hit suggest and interest went up but nothing happened lol" — the customer never said
+    // anything. Every assertion below reads ONLY visible on-screen text (never CustomerVoice
+    // internals directly — those are pinned separately in CustomerVoiceTests).
+
+    [TestCase]
+    public void ActiveCustomer_OpensWithAStatedWant_NamingTheirGearGapAndTheirOwnGold()
+    {
+        // Buyer1's Gear is GearSet.Empty (MakeHero) — RaidForecast.MissingItemSlots reports Weapon
+        // first — and their gold is the fixture's own 500, never a rounded or invented figure.
+        var state = CounterFixture(round: 0, interest: 0, patience: 3, goodwill: 0, standingOffer: null, presented: null);
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            var text = RenderedText(ui.Shop);
+
+            AssertThat(text).Contains("Buyer1");
+            AssertThat(text).Contains("Looking for a weapon");
+            AssertThat(text).Contains("500g");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void NoActiveCustomer_RendersNoWantLineBubble()
+    {
+        var ui = MountMainUi(); // fresh campaign — Counter is null (PKD6), nobody is at the counter
+        try
+        {
+            ui.OpenPanel("Shop");
+            var text = RenderedText(ui.Shop);
+
+            AssertThat(text.Contains("Looking for")).IsFalse();
+            AssertThat(text.Contains("Just browsing")).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void PresentingTheWantedSlot_AtAFairPrice_OpensARound_NotAWalk_AndSpeaksInterest()
+    {
+        // SingleHeroGuaranteedBuyState's shelved item IS a weapon — the same slot the want line
+        // (Weapon first, gear empty) names — presented at its own fair list price.
+        var ui = MountMainUi(new SimAdapter(SingleHeroGuaranteedBuyState()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "OpenCounter");
+            var wantText = RenderedText(ui.Shop);
+            AssertThat(wantText).Contains("Looking for a weapon");
+
+            PressEnabled(ui.Shop, $"Present_{ShopItemId.Value}");
+            var text = RenderedText(ui.Shop);
+
+            // A round opened (a real standing offer, not the "—" empty placeholder) — never a walk.
+            AssertThat(ui.Adapter.CurrentState.Counter!.Round).IsGreater(0);
+            AssertThat(ui.Adapter.CurrentState.Counter.StandingOfferGold is not null).IsTrue();
+            AssertThat(ui.Adapter.CurrentState.EventLog.OfType<CustomerWalked>().Count()).IsEqual(0);
+            AssertThat(text.Contains("passed (")).IsFalse(); // the walk-away consequence phrase
+
+            // The customer's own spoken reply to the Buy verdict (CustomerVoice.PresentReply).
+            AssertThat(text).Contains("Test Blade? I could use that.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Suggest_FittingEmptySlot_RendersTheInterestedSpokenReply_AndTheInterestChipMovesSameRefresh()
+    {
+        var state = CounterFixture(round: 0, interest: 0, patience: 3, goodwill: 0, standingOffer: null, presented: null);
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, $"Suggest_{ShopItemId.Value}");
+
+            var text = RenderedText(ui.Shop);
+            var feedback = Find<Label>(ui.Shop, "CounterFeedback").Text;
+
+            // The spoken reply (owner playtest: give the meter movement a voice)...
+            AssertThat(feedback).Contains("Test Blade? ...I do lack one.");
+            // ...and the Interest chip itself moved, in the SAME refresh (no bare number with no
+            // comment, and no comment with no number either).
+            AssertThat(text).Contains("80");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── Fixtures ─────────────────────────────────────────────────────────────────────────────────
 
     private static Hero MakeHero(int id, string classId, int gold) => new(
