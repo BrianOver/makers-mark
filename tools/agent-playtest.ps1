@@ -493,7 +493,42 @@ if (-not $findings) {
     Die @('the judge pass produced nothing. The turn log is still in ' + $findingsPath + '.')
 }
 
-Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @($findings, "", "---", "", "## Turn log", "", $fullLog))
+# ---------------------------------------------------------------------------
+# Fabrication guard. A 7B judge invents defects that read as real ones, and asking it to
+# "quote the log" does not stop it: one run reported that the screen said OFFRED and should say
+# OFFERED, when the log contains OFFERED thirteen times and OFFRED nowhere in the game or the run.
+# A fabricated finding is worse than none -- it sends you fixing what was never observed -- so
+# every claim about on-screen text is now CHECKED against the log instead of trusted.
+#
+# The check is deliberately narrow: SCREAMING_CASE tokens and control-name-shaped words are the
+# things a judge quotes verbatim and the things we can verify mechanically. Prose is left alone,
+# because flagging ordinary English would bury the real signal.
+$unsupported = @()
+$logHaystack = $fullLog.ToUpperInvariant()
+$quoted = [regex]::Matches($findings, '(?<![A-Za-z0-9_])[A-Z][A-Z0-9_]{3,}(?![A-Za-z0-9_])')
+foreach ($m in $quoted) {
+    $token = $m.Value
+    if ($logHaystack.Contains($token)) { continue }
+    if ($unsupported -contains $token) { continue }
+    $unsupported += $token
+}
+
+$guardNote = @()
+if ($unsupported.Count -gt 0) {
+    Write-Host ''
+    Warn ('FABRICATION GUARD: ' + $unsupported.Count + ' quoted token(s) appear nowhere in the turn log:')
+    foreach ($t in $unsupported) { Warn ('  ' + $t + '  <- not in the log; treat this finding as invented until a human confirms it') }
+    $guardNote = @(
+        '',
+        '## Fabrication guard',
+        '',
+        ('These tokens are quoted in the findings above but appear NOWHERE in the turn log, so the ' +
+         'findings that rely on them are unsupported by anything the agent actually saw:'),
+        ''
+    ) + ($unsupported | ForEach-Object { '- `' + $_ + '`' })
+}
+
+Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @($findings) + $guardNote + @("", "---", "", "## Turn log", "", $fullLog))
 
 Write-Host ''
 Say ('findings written: ' + $findingsPath)
@@ -503,4 +538,7 @@ Write-Host ''
 Warn 'Read these before trusting them. The acceptance bar for this harness is that it independently'
 Warn 'names something a human would also flag. Vacuous praise means the prompts need work, not that'
 Warn 'the game is fine.'
+if ($unsupported.Count -gt 0) {
+    Warn 'At least one finding quotes text the agent never saw -- see the fabrication guard above.'
+}
 exit 0
