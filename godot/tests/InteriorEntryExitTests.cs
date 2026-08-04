@@ -264,6 +264,14 @@ public class InteriorEntryExitTests
         finally { Unmount(ui); }
     }
 
+    /// <summary>
+    /// U5 (verify-by-playing plan): this test used to drive the Bellows — the pre-U5 honest-flavor
+    /// example. U5 wires the Bellows into the Anvil's own combined act (R5, <see
+    /// cref="InteriorLayout2D.StationSpec.CombinesWith"/>), so it is a real station now (see
+    /// <see cref="StationIdentityTests.CombinesWithPair_OpensTheSamePairedSession_NotTwoIndependentOnes"/>
+    /// for its own coverage). The Quench Trough is the forge's remaining honest-flavor station and
+    /// takes over as this file's pin for the "null Action never opens a panel" contract.
+    /// </summary>
     [TestCase]
     public void FlavorStationPress_NeverOpensAPanel_ShowsOneToastLineInstead()
     {
@@ -271,10 +279,10 @@ public class InteriorEntryExitTests
         try
         {
             ui.Town.FindBuilding("forge").RaisePick();
-            var bellows = ui.Town.FindInteriorRoom("forge").Stations[2]; // declared 3rd in InteriorLayout2D
-            AssertThat(bellows.Key).IsEqual("bellows");
+            var quench = ui.Town.FindInteriorRoom("forge").Stations[3]; // declared 4th in InteriorLayout2D
+            AssertThat(quench.Key).IsEqual("quench");
 
-            bellows.RaisePick();
+            quench.RaisePick();
 
             AssertThat(ui.Drawer.IsOpen)
                 .OverrideFailureMessage(
@@ -288,7 +296,7 @@ public class InteriorEntryExitTests
             var toast = Find<Label>(ui, "RejectionToast");
             AssertThat(toast.Text)
                 .OverrideFailureMessage("The flavor click must show its one-line response as a toast — never silently nothing.")
-                .IsEqual("You give the bellows a pump. The furnace does the real work.");
+                .IsEqual("The water ripples. Nothing to craft here — try the anvil.");
         }
         finally { Unmount(ui); }
     }

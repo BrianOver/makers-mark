@@ -16,11 +16,21 @@ namespace GodotClient.Tools;
 /// </summary>
 public partial class ScreenshotTool : Node
 {
-    private const string OutDir = "C:/Users/Brian Over/.claude/jobs/624aa73c/tmp/";
+    /// <summary>Where shots land. Override with the <c>SCREENSHOT_OUT</c> environment variable;
+    /// defaults beside the repo so a fresh clone works without editing this file. This used to be
+    /// a hardcoded personal temp path committed to the repo (found in the U1 verify-by-playing
+    /// audit) — nobody else's checkout had that directory, and it silently swallowed every image
+    /// this tool ever produced on any other machine. <see cref="FullPlaytest.OutDir"/> already
+    /// established this env-var-with-repo-relative-fallback pattern; this just adopts it.</summary>
+    private static readonly string OutDir =
+        (System.Environment.GetEnvironmentVariable("SCREENSHOT_OUT") is { Length: > 0 } dir
+            ? dir.Replace("\\", "/").TrimEnd('/')
+            : ProjectSettings.GlobalizePath("res://../runs/screenshot").TrimEnd('/')) + "/";
 
     public override async void _Ready()
     {
         DevToolAudio.Silence(); // automated runs stay silent — see DevToolAudio
+        System.IO.Directory.CreateDirectory(OutDir); // the repo-relative default does not exist yet on a fresh clone
         var town = new Town2D { Name = "Town2D" };
         town.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         AddChild(town);
@@ -130,8 +140,7 @@ public partial class ScreenshotTool : Node
 
     private void CaptureWindow(string path)
     {
-        var image = GetViewport().GetTexture().GetImage();
-        var err = image.SavePng(path);
+        var (image, err) = FrameCapture.SaveAsPng(GetViewport(), path);
         GD.Print($"[screenshot] {path} -> {err} ({image.GetWidth()}x{image.GetHeight()})");
     }
 
@@ -146,8 +155,7 @@ public partial class ScreenshotTool : Node
 
     private static void Capture(Town2D town, string path)
     {
-        var image = town.WorldViewport.GetTexture().GetImage();
-        var err = image.SavePng(path);
+        var (image, err) = FrameCapture.SaveAsPng(town.WorldViewport, path);
         GD.Print($"[screenshot] {path} -> {err} ({image.GetWidth()}x{image.GetHeight()})");
     }
 }

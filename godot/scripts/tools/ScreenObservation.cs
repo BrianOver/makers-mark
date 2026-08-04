@@ -1,0 +1,180 @@
+using System.Collections.Generic;
+using System.Linq;
+using Godot;
+
+namespace GodotClient.Tools;
+
+/// <summary>
+/// The honest "what can a person actually see and click right now" logic, shared between
+/// <c>godot/tests/HumanPlayer.cs</c> (its <c>Screen()</c>/<c>ClickableButtons()</c>/
+/// <c>DescribeButtons()</c>) and <see cref="AgentPlaytest"/> (U1, verify-by-playing plan).
+///
+/// <para><b>Why this file exists instead of AgentPlaytest calling HumanPlayer directly.</b>
+/// <c>HumanPlayer.cs</c> lives under <c>godot/tests/</c> and compiles only inside
+/// <c>GodotClient.Tests.csproj</c> under the <c>GDUNIT_TESTS</c> define — a separate assembly
+/// that references <c>GodotClient.csproj</c> (this project), never the other way around. A dev
+/// tool under <c>godot/scripts/tools/</c> is part of <c>GodotClient.csproj</c> itself and
+/// physically cannot see that type. Rather than re-implement the same tree-walk and
+/// visible/enabled logic a second time (and let the two definitions of "what's on screen"
+/// silently drift apart), the shared piece lives here and <c>HumanPlayer</c> now delegates to
+/// it.</para>
+/// </summary>
+public static class ScreenObservation
+{
+    /// <summary>Pixels a control may hang outside the viewport before it counts as clipped — one
+    /// pixel of tolerance absorbs container-layout rounding (a drawer's slide easing settles to a
+    /// sub-pixel residual rather than an exact integer). Mirrors HumanPlayer's own constant.</summary>
+    public const float EdgeTolerancePx = 1f;
+
+    /// <summary>
+    /// Walks the tree but STOPS at a nested <see cref="SubViewport"/> — a coordinate-space
+    /// boundary, not just a node. Controls inside one report <c>GetGlobalRect()</c> in that
+    /// viewport's own space (Town2D's world viewport is additionally scaled/scrolled by its own
+    /// camera), so comparing those rects to the outer window's rect compares unrelated numbers.
+    /// </summary>
+    public static IEnumerable<Node> Descendants(Node root)
+    {
+        foreach (var child in root.GetChildren())
+        {
+            if (child is SubViewport)
+            {
+                continue;
+            }
+
+            yield return child;
+            foreach (var grandchild in Descendants(child))
+            {
+                yield return grandchild;
+            }
+        }
+    }
+
+    /// <summary>Every text-bearing control under <paramref name="root"/>, with its own text and
+    /// global rect — the raw material <see cref="Screen"/> and the clipped-text detector both
+    /// filter down from.</summary>
+    public static IEnumerable<(Control Node, string Text, Rect2 Rect)> AllTextNodes(Node root)
+    {
+        foreach (var node in Descendants(root))
+        {
+            switch (node)
+            {
+                case Button button:
+                    yield return (button, button.Text, button.GetGlobalRect());
+                    break;
+                case Label label:
+                    yield return (label, label.Text, label.GetGlobalRect());
+                    break;
+                case RichTextLabel rich:
+                    yield return (rich, rich.Text, rich.GetGlobalRect());
+                    break;
+                case ItemList list:
+                {
+                    var joined = new System.Text.StringBuilder();
+                    for (var i = 0; i < list.ItemCount; i++)
+                    {
+                        joined.AppendLine(list.GetItemText(i));
+                    }
+
+                    yield return (list, joined.ToString(), list.GetGlobalRect());
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>Every piece of text a person could actually read right now, one entry per
+    /// text-bearing control — skips anything not <see cref="CanvasItem.IsVisibleInTree"/> or
+    /// entirely outside <paramref name="viewport"/>'s visible rect.</summary>
+    public static IReadOnlyList<string> VisibleText(Node root, Viewport viewport)
+    {
+        var visible = viewport.GetVisibleRect();
+        var result = new List<string>();
+        foreach (var (node, text, rect) in AllTextNodes(root))
+        {
+            if (!string.IsNullOrWhiteSpace(text) && node.IsVisibleInTree() && visible.Intersects(rect))
+            {
+                result.Add(text);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary><see cref="VisibleText"/> joined into one block, matching
+    /// <c>HumanPlayer.Screen()</c>'s shape for callers that want a single string.</summary>
+    public static string Screen(Node root, Viewport viewport) => string.Join("\n", VisibleText(root, viewport));
+
+    /// <summary>The viewport's visible rect grown by <see cref="EdgeTolerancePx"/> — the rect
+    /// every "is this on screen" question must be asked against (see HumanPlayer.WindowRect).</summary>
+    public static Rect2 WindowRect(Viewport viewport) => viewport.GetVisibleRect().Grow(EdgeTolerancePx);
+
+    /// <summary>Every button a person could click right now: visible, enabled, laid out to a real
+    /// size, and fully inside the viewport. Mirrors <c>HumanPlayer.ClickableButtons</c>.</summary>
+    public static IReadOnlyList<Button> ClickableButtons(Node root, Viewport viewport)
+    {
+        var window = WindowRect(viewport);
+        return Descendants(root)
+            .OfType<Button>()
+            .Where(b => GodotObject.IsInstanceValid(b) && b.IsVisibleInTree() && !b.Disabled)
+            .Where(b => b.Size.X > 1f && b.Size.Y > 1f)
+            .Where(b => window.Encloses(b.GetGlobalRect()))
+            .ToList();
+    }
+
+    /// <summary>Why a surface has no clickable buttons — absent, hidden, disabled, zero-sized, or
+    /// off screen. Mirrors <c>HumanPlayer.DescribeButtons</c>.</summary>
+    public static string DescribeButtons(Node root, Viewport viewport)
+    {
+        var all = Descendants(root).OfType<Button>().ToList();
+        var window = WindowRect(viewport);
+
+        var hidden = all.Count(b => !b.IsVisibleInTree());
+        var disabled = all.Count(b => b.IsVisibleInTree() && b.Disabled);
+        var collapsed = all.Count(b => b.IsVisibleInTree() && !b.Disabled && (b.Size.X <= 1f || b.Size.Y <= 1f));
+        var offScreen = all.Count(b =>
+            b.IsVisibleInTree() && !b.Disabled && b.Size.X > 1f && b.Size.Y > 1f &&
+            !window.Encloses(b.GetGlobalRect()));
+
+        return $"{all.Count} buttons total: {hidden} hidden, {disabled} disabled, {collapsed} zero-sized, " +
+               $"{offScreen} off screen, {ClickableButtons(root, viewport).Count} clickable";
+    }
+
+    /// <summary>
+    /// Every VISIBLE button under <paramref name="root"/> — enabled or not — with the label a
+    /// person reads and its enabled state. This is <see cref="AgentPlaytest"/>'s own addition
+    /// (not one of HumanPlayer's existing members): the agent channel's <c>controls</c> digest
+    /// deliberately includes disabled buttons too, with <c>enabled: false</c>, so a local model
+    /// can see what exists and is currently unavailable rather than only ever seeing a shrinking
+    /// list it can never explain.
+    /// </summary>
+    public static IReadOnlyList<(string Name, string Label, bool Enabled)> ObservedControls(Node root)
+    {
+        var result = new List<(string, string, bool)>();
+        foreach (var node in Descendants(root))
+        {
+            if (node is Button button && button.IsVisibleInTree())
+            {
+                var label = string.IsNullOrEmpty(button.Text) ? $"<{button.Name}>" : button.Text;
+                result.Add((button.Name.ToString(), label, !button.Disabled));
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>The visible button named <paramref name="name"/> under <paramref name="root"/>, or
+    /// null. Scoped to VISIBLE buttons only, same honesty rule as <see cref="ObservedControls"/> —
+    /// a hidden button with a matching name is not something a player could have named either.</summary>
+    public static Button? FindVisibleButtonByName(Node root, string name)
+    {
+        foreach (var node in Descendants(root))
+        {
+            if (node is Button button && button.IsVisibleInTree() && button.Name == name)
+            {
+                return button;
+            }
+        }
+
+        return null;
+    }
+}

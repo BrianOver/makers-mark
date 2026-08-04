@@ -2742,12 +2742,26 @@ public partial class MainUi : Control
     /// <summary>
     /// U3 (painted-interiors plan): the walkable room's own station router — a real click/E on one
     /// of <see cref="InteriorLayout2D"/>'s forge stations. A flavor station (<see
-    /// cref="InteriorLayout2D.StationSpec.Action"/> null — Bellows/Quench) never opens a panel: it
-    /// shows its <see cref="InteriorLayout2D.StationSpec.FlavorLine"/> as a one-line toast, an
-    /// honest response rather than a silent dead click. A real-verb station routes through the
-    /// EXISTING <see cref="OnInteriorHotspotActivated"/> (same drawer-id vocabulary as ever), then
-    /// — if the row also names a <see cref="InteriorLayout2D.StationSpec.Focus"/> (Forge's
-    /// materials/craft split) — scrolls/flashes that section on the panel that just opened.
+    /// cref="InteriorLayout2D.StationSpec.Action"/> null — Quench, and every other building's own
+    /// flavor props) never opens a panel: it shows its <see
+    /// cref="InteriorLayout2D.StationSpec.FlavorLine"/> as a one-line toast, an honest response
+    /// rather than a silent dead click. A real-verb station routes through the EXISTING <see
+    /// cref="OnInteriorHotspotActivated"/> (same drawer-id vocabulary as ever), then — if the row
+    /// also names a <see cref="InteriorLayout2D.StationSpec.Focus"/> (Forge's materials/craft split)
+    /// — scrolls/flashes that section on the panel that just opened.
+    ///
+    /// <para><b>U5 (verify-by-playing plan, KTD-D):</b> station identity now resolves through the
+    /// TABLE, not a switch — every real station also toasts its own <see
+    /// cref="InteriorLayout2D.StationSpec.Copy"/> line, the real-verb counterpart to a flavor
+    /// station's <c>FlavorLine</c> toast above. This is what makes "pressing the anvil" read
+    /// differently from "pressing the furnace" even though both still land on the same Forge panel
+    /// — the owner's complaint was never that they open different code paths, it was that nothing
+    /// about the press itself told the two apart. A <see
+    /// cref="InteriorLayout2D.StationSpec.CombinesWith"/> pair (the forge's anvil+bellows) is NOT
+    /// special-cased here: both members already carry the identical <c>Action</c>/<c>Focus</c>, so
+    /// pressing either one resolves to the exact same panel/section — one combined session, not two
+    /// independent ones — while each still toasts its own <c>Copy</c> line (<see
+    /// cref="StationIdentityTests"/> pins both halves of that contract).</para>
     /// </summary>
     private void OnStationActivated(InteriorLayout2D.StationSpec station)
     {
@@ -2765,6 +2779,10 @@ public partial class MainUi : Control
         {
             forge.FocusSection(focus);
         }
+
+        // U5 (KTD-D): the real-verb station's own on-screen line — required whenever Action is
+        // non-null (InteriorLayout2D.StationSpec's own doc), so the fallback below is defensive only.
+        ShowBellToast(station.Copy ?? $"You work the {station.Label}.");
     }
 
     /// <summary>

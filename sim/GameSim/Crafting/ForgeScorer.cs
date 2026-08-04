@@ -48,9 +48,15 @@ public readonly record struct ForgeScore(int GradePermille, ImmutableList<int> S
 /// (<c>|y - ForgePath.HeatAt(path, x)|</c>) is bucketed into one of three zones by its x
 /// (smelt/forge/quench, the same thirds <see cref="ForgePath"/> shapes) and converted to a
 /// per-mille sub-score (1000 = zero deviation, falling off linearly, floored at 0). The forge
-/// zone additionally folds in strike tempo accuracy — a forge with no strikes at all scores
-/// poorly there by construction, mirroring <see cref="ForgeTraceInput.Strikes"/>'s own contract.
-/// The three sub-scores fold 300/400/300 into the final grade.</para>
+/// zone additionally folds in strike tempo accuracy, scored over EVERY strike in the trace and
+/// averaged by the TOTAL strike count (U6, Wave "verify by playing") — not gated to strikes whose
+/// x happens to land inside the forge x-window. A strike's tempo error is already a self-contained
+/// off-beat measure; gating it by x additionally coupled the scorer to how many total strikes a
+/// craft used (fewer strikes -&gt; fewer of them randomly land in the window -&gt; the average is
+/// drawn from a shrinking, noisier sample) instead of to how well the player actually kept tempo.
+/// A forge with no strikes at all still scores poorly there by construction, mirroring
+/// <see cref="ForgeTraceInput.Strikes"/>'s own contract. The three sub-scores fold 300/400/300
+/// into the final grade.</para>
 ///
 /// <para><b>Talent assists</b> mirror the blacksmith's <see cref="ProfessionDefinition.MinigameAssists"/>
 /// exactly as documented on <see cref="Professions.ProfessionRegistry.Blacksmith"/>: Keen Eye
@@ -168,23 +174,19 @@ public static class ForgeScorer
             }
         }
 
+        // Every strike counts, regardless of where along the shape axis it landed (U6): a
+        // strike's tempoError is already a self-contained off-beat measure, so gating it by x
+        // only shrank the averaged sample as total strike count fell — see the class doc.
         var strikePairCount = strikes.Count / 2; // a trailing odd int is defensively dropped
         var forgeStrikeSum = 0;
-        var forgeStrikeCount = 0;
         for (var i = 0; i < strikePairCount; i++)
         {
-            var x = strikes[i * 2];
             var tempoError = strikes[i * 2 + 1];
-
-            if (x <= SmeltZoneEnd || x > ForgeZoneEnd)
-            {
-                continue; // only forge-beat strikes count — the same zone the samples fold into
-            }
-
             var penalty = Math.Max(0, tempoError - offBeatForgiveness);
             forgeStrikeSum += SubscoreFor(penalty);
-            forgeStrikeCount++;
         }
+
+        var forgeStrikeCount = strikePairCount;
 
         var smeltScore = smeltCount > 0 ? smeltSum / smeltCount : 0;
         var forgeSampleAvg = forgeSampleCount > 0 ? forgeSampleSum / forgeSampleCount : 0;
