@@ -355,6 +355,101 @@ public class ForgeTwoActTests
         }
     }
 
+    /// <summary>
+    /// PR #382 CI receipt (<c>HumanPlaytestTests.EveryVisibleButton_ActuallyRespondsToARealClick</c>):
+    /// finishing a craft opens <c>ForgePanel</c>'s G1 result ceremony over a real 2-second WALL-CLOCK
+    /// timer (<c>ShowCeremony</c>/<c>CeremonySeconds</c>, decremented by real <c>_Process</c> delta) —
+    /// but the overlay's hit-test area is the panel's whole <c>FullRect</c>, not just the small centered
+    /// card it actually draws. Any click elsewhere in the Forge panel that lands before that real time
+    /// elapses (or before the player hits Skip) is silently swallowed, even though nothing is visibly
+    /// covering it. CI hit this reliably (its per-frame wall-clock time is smaller, so the same handful
+    /// of pumped test frames covers far less real time than locally — see
+    /// docs/frame-count-is-not-a-duration in project memory); this test reproduces it deterministically
+    /// on ANY machine, no wall-clock race needed, because zero real seconds can possibly have elapsed
+    /// between the synchronous <see cref="QuenchMinigame.Plunge"/> call and the very next click.
+    ///
+    /// <para>Re-clicks "Work the forge" itself (bought 3x the needed copper, so material remains after
+    /// one craft) rather than a Talent "Unlock" button: completing a craft ALSO makes the recipe row
+    /// grow a new "Forge another like it" button (<see cref="ForgePanel.OnQuenchFinished"/> records the
+    /// trace before <c>Refresh()</c> runs), and — a second, independent layout defect this test does
+    /// NOT chase — that widens the whole scroll body by exactly the new button's width (measured: 592px
+    /// to 746px), shifting every right-anchored control (a Talent "Unlock" button among them) sideways
+    /// by the same amount. "Work the forge" sits earlier in its own row and stays on screen either way,
+    /// so it isolates the ceremony behavior this test is actually about from that separate bug.</para>
+    /// </summary>
+    [TestCase]
+    public async Task ForgeCeremony_DoesNotSwallowAClickOutsideItsOwnCard()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded * 3));
+            ui.Adapter.AdvancePhase();
+            ui.OpenPanel("Forge");
+
+            var player = new HumanPlayer(ui);
+            await player.WaitForLayout(ui.Drawer.CurrentContent!); // let the drawer's open-slide settle first
+
+            var workForgeName = $"WorkForge_{ScriptedSession.CraftRecipeId}";
+            var workForgeBefore = Find<Button>(ui.Forge, workForgeName);
+            AssertThat(workForgeBefore.Disabled)
+                .OverrideFailureMessage("WorkForge is disabled even after buying 3x the needed material — the test's setup is wrong, not the game.")
+                .IsFalse();
+
+            // The Vendor section (every priced material, one row each) sits above Recipes, so
+            // "Work the forge" starts below the fold on a fresh campaign — scroll it into view by
+            // computed offset rather than a wheel-notch count (which depends on how tall the page
+            // happens to be, not what this test is about).
+            var scroller = ScrollContainerAncestorOf(workForgeBefore);
+            var scrollMargin = 40f;
+            var scrollTarget = Mathf.Max(0f,
+                workForgeBefore.GetGlobalRect().Position.Y - scroller.GetGlobalRect().Position.Y - scrollMargin);
+            scroller.ScrollVertical = (int)scrollTarget;
+            await player.WaitForLayout(workForgeBefore);
+
+            await player.ClickControl(workForgeBefore, "Work the forge (before the craft)"); // sanity: reachable before the ceremony ever exists
+
+            var act1 = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
+            DriveAct1ToCompletion(act1, pumpUntilPermille: 900, strikeAbovePermille: 500);
+            var quench = Find<QuenchMinigame>(ui.Forge, "QuenchMinigame");
+            quench.Plunge(); // -> OnQuenchFinished -> ShowCeremony, synchronously, zero frames pumped since
+
+            var ceremony = Find<Control>(ui.Forge, "ForgeCeremonyOverlay");
+            AssertThat(ceremony.Visible)
+                .OverrideFailureMessage("The ceremony never showed — this test is not exercising the overlay it means to.")
+                .IsTrue();
+
+            // Refresh() rebuilt the recipe row (same recipe id, a NEW Button instance, still enabled —
+            // 2x the needed copper remains) — re-resolve by name and settle the queue_sort() the rebuild
+            // just queued (a few frames: real-world milliseconds, nowhere near the 2 real seconds
+            // CeremonySeconds needs).
+            var workForgeAfter = Find<Button>(ui.Forge, workForgeName);
+            AssertThat(workForgeAfter.Disabled)
+                .OverrideFailureMessage("WorkForge became disabled after one craft even though 2x the needed material remains.")
+                .IsFalse();
+            await player.WaitForLayout(workForgeAfter);
+            await player.ClickControl(workForgeAfter, "Work the forge (right after the craft)");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Nearest <see cref="ScrollContainer"/> ancestor, or throws.</summary>
+    private static ScrollContainer ScrollContainerAncestorOf(Control control)
+    {
+        for (var parent = control.GetParent(); parent is not null; parent = parent.GetParent())
+        {
+            if (parent is ScrollContainer scroller)
+            {
+                return scroller;
+            }
+        }
+
+        throw new InvalidOperationException($"{control.Name} has no ScrollContainer ancestor.");
+    }
+
     // ── Scripted-run drivers — pure Advance(delta)/input-seam calls, no wall-clock, no RNG ────
 
     /// <summary>One full craft, both acts, off-panel (no <c>MainUi</c> needed) — for the timing scenario,
