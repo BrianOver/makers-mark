@@ -53,7 +53,19 @@
 param(
     [string]$RepoRoot,
     [int]$MinTests = 780,
-    [string]$Filter
+    [string]$Filter,
+
+    # How long to WAIT for another run to finish before giving up. The machine is serialized (one
+    # gdUnit runtime at a time), and callers used to be told "wait and retry" in prose -- which meant
+    # agents sat idle for hours doing nothing while a run they could not see held the machine. The
+    # waiting belongs here, bounded and visible, so a caller either gets the machine or gets told to
+    # come back with a real deadline attached. 0 means fail immediately if the machine is busy.
+    [int]$MaxWaitMinutes = 10,
+
+    # Hard cap on the run itself. A healthy full run is ~4-7 minutes on this machine; a STALLED one
+    # has been measured at ~9m48s before CI cancelled it. Without a cap, one stalled host holds the
+    # machine indefinitely and every other caller's wait expires for no reason.
+    [int]$RunTimeoutMinutes = 20
 )
 
 $ErrorActionPreference = 'Stop'
@@ -87,17 +99,43 @@ if (-not (Test-Path (Join-Path $RepoRoot 'godot\tests'))) {
     Fail @(("no godot\tests under '" + $RepoRoot + "' - is that a worktree of this repo?"))
 }
 
-# --- Trap 1: serialization ----------------------------------------------------------------------
-$live = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like '*Godot*' })
-if ($live.Count -gt 0) {
+# --- Trap 1: serialization, with a bounded wait --------------------------------------------------
+# Two gdUnit runs cannot share a runtime. The second one DROPS every [RequireGodotRuntime] test and
+# still prints "Passed!", which is indistinguishable from a real pass unless you check the count.
+#
+# The wait is bounded and reported. Unbounded waiting is what actually cost hours: callers were told
+# in prose to "wait and retry", so they idled with no deadline and no visibility into who held the
+# machine. Now the script waits, says how long it has waited, and quits with a real answer.
+function GodotProcesses {
+    return @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like '*Godot*' })
+}
+
+$waitDeadline = (Get-Date).AddMinutes($MaxWaitMinutes)
+$announcedWait = $false
+while ($true) {
+    $live = GodotProcesses
+    if ($live.Count -eq 0) { break }
+
     $ids = ($live | ForEach-Object { $_.ProcessName + ' (pid ' + $_.Id + ')' }) -join ', '
-    Fail @(
-        ([string]$live.Count + ' Godot process(es) already running: ' + $ids),
-        '',
-        'Two gdUnit runs cannot share a runtime. The second one DROPS every [RequireGodotRuntime]',
-        'test and still prints "Passed!", which is indistinguishable from a real pass unless you',
-        'check the count. Wait for the other run, or stop those processes if they are orphans.'
-    )
+    if ((Get-Date) -ge $waitDeadline) {
+        Fail @(
+            ([string]$live.Count + ' Godot process(es) still running after waiting ' + $MaxWaitMinutes + ' minute(s): ' + $ids),
+            '',
+            'The machine is serialized: a second gdUnit run silently drops every runtime test.',
+            'This is a real answer, not a hint to keep waiting -- do NOT sit in a retry loop.',
+            'Either come back later, or if those processes are orphans from a dead run, stop them:',
+            '  Get-Process Godot* | Stop-Process -Force'
+        )
+    }
+
+    if (-not $announcedWait) {
+        Write-Host ('engine-test: machine busy (' + $ids + '); waiting up to ' + $MaxWaitMinutes + ' min') -ForegroundColor Yellow
+        $announcedWait = $true
+    }
+    Start-Sleep -Seconds 15
+}
+if ($announcedWait) {
+    Write-Host 'engine-test: machine free, proceeding' -ForegroundColor Cyan
 }
 
 $sha = (& git -C $RepoRoot rev-parse HEAD).Trim()
@@ -118,10 +156,68 @@ $settings = Join-Path $RepoRoot '.runsettings'
 $testArgs = @('test', (Join-Path $RepoRoot 'godot\tests'), '--settings', $settings, '--nologo')
 if ($Filter) { $testArgs += @('--filter', $Filter) }
 
-& dotnet $testArgs > $log 2>&1
-$testExit = $LASTEXITCODE
+# TRAP 5, and this one made the whole script LIE on failure.
+#
+# The original line was `& dotnet $testArgs > $log 2>&1`. In Windows PowerShell 5.1, redirecting a
+# native process's stderr inside PowerShell wraps each line in an ErrorRecord -- and with
+# $ErrorActionPreference='Stop' set at the top of this script, the FIRST stderr line becomes a
+# script-terminating NativeCommandError. A genuine test failure writes its assertion message to
+# stderr, so the script died at this line with a 31-line log containing only build output, no
+# summary, no failed-test names. The honest-failure reporting further down never ran.
+#
+# Diagnosed the hard way: two full runs of a branch with 7 real failures reported only
+# "dotnet.exe : Expecting be equal:" and were misread as a stale test runner. Running
+# `dotnet test` directly, outside PowerShell, produced the real summary immediately.
+#
+# Start-Process redirects at the OS level, so stderr never becomes a PowerShell error object. It also
+# gives a killable handle, which is what makes RunTimeoutMinutes possible at all.
+$errLog = Join-Path $logDir 'last-run.err.log'
+$proc = Start-Process -FilePath 'dotnet' -ArgumentList $testArgs -NoNewWindow -PassThru `
+    -RedirectStandardOutput $log -RedirectStandardError $errLog
 
-$text = Get-Content $log -Raw
+$timedOut = $false
+if (-not $proc.WaitForExit($RunTimeoutMinutes * 60 * 1000)) {
+    $timedOut = $true
+    Write-Host ''
+    Write-Host ('engine-test: run exceeded ' + $RunTimeoutMinutes + ' min - killing it so it stops holding the machine') -ForegroundColor Red
+    try { $proc.Kill($true) } catch { try { $proc.Kill() } catch { } }
+    $proc.WaitForExit(30000) | Out-Null
+    # A stalled test host leaves Godot children behind; they would block every later run.
+    foreach ($stray in GodotProcesses) {
+        try { Stop-Process -Id $stray.Id -Force -ErrorAction SilentlyContinue } catch { }
+    }
+}
+# Read the exit code only after a full (argument-less) WaitForExit. WaitForExit(ms) returning true
+# does NOT guarantee the process object has its ExitCode populated -- the first version of this
+# printed "exit=" empty, and since empty -ne 0 is TRUE in PowerShell, a genuinely GREEN run would
+# have been reported as a failure. Defaulting to a nonzero sentinel keeps the honest direction: if we
+# cannot read the code, do not claim success.
+$testExit = 99
+if (-not $timedOut) { $proc.WaitForExit() }
+try { $testExit = [int]$proc.ExitCode } catch { $testExit = 99 }
+
+# stdout and stderr are separate files now, so the analysis below must read BOTH -- the failure
+# messages this script reports live in stderr.
+$text = ''
+if (Test-Path $log) { $text = (Get-Content $log -Raw) }
+if (-not $text) { $text = '' }
+$errText = ''
+if (Test-Path $errLog) { $errText = (Get-Content $errLog -Raw) }
+if ($errText) {
+    $text = $text + "`n" + $errText
+    Add-Content -Path $log -Encoding utf8 -Value @('', '--- stderr ---', '', $errText)
+}
+
+if ($timedOut) {
+    Fail @(
+        ('the run was KILLED after ' + $RunTimeoutMinutes + ' minutes.'),
+        'A healthy full run takes about 4-7 minutes here, so this was a stall, not slowness.',
+        'Any Godot strays it left behind have been stopped, so the machine is free for the next run.',
+        ('Read the log before re-running: ' + $log),
+        'Start with the orphan-node warnings - a stall has twice been resource pressure in the',
+        'shared runtime. See .runsettings and docs/debugging.md section 2a.'
+    )
+}
 if (-not $text) { $text = '' }
 
 # --- Trap 3: the run may have died while claiming success ----------------------------------------
