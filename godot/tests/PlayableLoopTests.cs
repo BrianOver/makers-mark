@@ -56,14 +56,25 @@ public class PlayableLoopTests
 
     // ── 2. Gated clock integration over the mounted shell ────────────────────────────────
 
+    /// <summary>
+    /// U1 (plan 2026-08-03-001, KTD-A) rewrite: <c>Clock.AutoAdvance</c> ("the Innkeeper's Clock")
+    /// now only ever gates Morning and Evening — the two phases with a real bell. The raid span
+    /// (Expedition/Camp/ExpeditionDeep) is <see cref="RaidConductor"/>'s alone, driven from
+    /// <c>MainUi._Process</c> UNCONDITIONALLY (see <c>MainUi._Process</c>'s own remarks on why
+    /// <c>Clock.Update</c> is gated to <c>Conductor.Current == Idle</c> to prevent a double-tick) —
+    /// so "gated" no longer means "huge deltas are harmless" once the bell has left Morning. The old
+    /// version of this test proved the opposite (AutoAdvance OFF held Camp inert too) and would
+    /// silently pass for the wrong reason under the new architecture; this version pins what is
+    /// actually true now.
+    /// </summary>
     [TestCase]
-    public void GatedClock_ProcessInert_AdvanceTicksOnce_AutoToggleDrives()
+    public void GatedClock_HoldsMorningAndEveningInert_ButTheRaidSpanAlwaysAdvancesViaProcess()
     {
         var ui = MountFreshCampaign();
         try
         {
             // Auto is OFF by default (U2/R1): arbitrarily large frame deltas through the
-            // REAL _Process path leave the sim untouched.
+            // REAL _Process path leave Morning untouched.
             AssertThat(ui.Clock.AutoAdvance).IsFalse();
             for (var frame = 0; frame < 5; frame++)
             {
@@ -77,31 +88,34 @@ public class PlayableLoopTests
             PressEnabled(ui, "AdvancePhase");
             AssertThat(ui.Adapter.CurrentState.Day).IsEqual(1);
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
+            AssertThat(ui.Conductor.Current).IsEqual(RaidConductor.Beat.SendOff);
 
-            // Opt into auto mode through its real Controls. MountMainUi paused the clock,
-            // so PlayPause resumes it — both presses drive the same buttons a player sees.
-            PressEnabled(ui, "AutoAdvance");
-            AssertThat(ui.Clock.AutoAdvance).IsTrue();
-            PressEnabled(ui, "PlayPause");
-            AssertThat(ui.Clock.Playing).IsTrue();
+            // The raid span is NEVER gated: RaidConductor.Update runs from _Process independent of
+            // Clock.AutoAdvance (still OFF here, unchanged from the assertion above), so huge
+            // deltas keep walking it forward on their own. A fresh Day-1 campaign is guaranteed
+            // unstaged — every hero's first-ever trip targets floor 1, structurally below the
+            // staging checkpoint (ExpeditionSystem.CheckpointFor) — so nobody parks and this reaches
+            // Evening with zero further player input.
+            for (var frame = 0; frame < 8 && ui.Conductor.Current != RaidConductor.Beat.Idle; frame++)
+            {
+                ui._Process(PhaseClock.MorningSeconds * 10);
+            }
 
-            // One frame ≥ the phase duration → _Process drives exactly ONE tick (Update
-            // caps one advance per call — a huge delta can never skip phases). Bounded,
-            // no wall-clock sleeping anywhere.
-            ui._Process(PhaseClock.MorningSeconds);
             AssertThat(ui.Adapter.CurrentState.Day).IsEqual(1);
-            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Camp);
+            AssertThat(ui.Adapter.CurrentState.Phase)
+                .OverrideFailureMessage("The raid span must advance via _Process regardless of Clock.AutoAdvance being off.")
+                .IsEqual(DayPhase.Evening);
+            AssertThat(ui.Conductor.Current).IsEqual(RaidConductor.Beat.Idle);
 
-            // Toggle back to gated: accrued time and huge deltas are harmless again.
-            PressEnabled(ui, "AutoAdvance");
-            AssertThat(ui.Clock.AutoAdvance).IsFalse();
+            // Evening is a real bell phase again — gated (AutoAdvance still off throughout) is
+            // inert here too, same as Morning was.
             for (var frame = 0; frame < 5; frame++)
             {
                 ui._Process(PhaseClock.MorningSeconds * 10);
             }
 
             AssertThat(ui.Adapter.CurrentState.Day).IsEqual(1);
-            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Camp);
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Evening);
         }
         finally
         {
@@ -134,13 +148,16 @@ public class PlayableLoopTests
     }
 
     /// <summary>
-    /// The driven loop: buy 2x copper (Morning tick) → craft the dagger (Expedition tick)
-    /// → stock it at the default price (Camp tick) → ride the gated Advance to the day-2
-    /// Morning tick, where HeroShoppingSystem (a MORNING system) has every alive hero
-    /// browse the shelf — the sale opportunity. Returns a step-by-step transcript of all
-    /// rendered text (the determinism test compares two runs byte-for-byte). Every step
-    /// re-asserts the two loop-level invariants: zero kernel rejections so far, and the
-    /// raw "REJECTED:" string absent from ALL rendered text (R6).
+    /// The driven loop: buy 2x copper (Morning tick) → craft the dagger → stock it at the default
+    /// price (both immediate, all-phases verbs — U1's two-bell day no longer offers a separate
+    /// Camp/ExpeditionDeep bell to do them "in") → ride Hurry through the decision-free raid span
+    /// (a fresh Day-1 campaign is always unstaged — every hero's first trip targets floor 1, which
+    /// is structurally below the staging checkpoint, so nobody parks and one Hurry press reaches
+    /// Evening directly) → the real Evening bell rolls the day → day-2 Morning tick, where
+    /// HeroShoppingSystem (a MORNING system) has every alive hero browse the shelf — the sale
+    /// opportunity. Returns a step-by-step transcript of all rendered text (the determinism test
+    /// compares two runs byte-for-byte). Every step re-asserts the two loop-level invariants: zero
+    /// kernel rejections so far, and the raw "REJECTED:" string absent from ALL rendered text (R6).
     /// </summary>
     private static string DriveLoop(MainUi ui)
     {
@@ -160,10 +177,10 @@ public class PlayableLoopTests
         Step("fresh campaign, day-1 Morning");
 
         // Day-1 Morning: two vendor buys (dagger = 2x copper; BuyMat buys 1 per press),
-        // then the gated Advance lands them on the Morning tick.
+        // then the real Morning bell lands them on the Morning tick.
         PressEnabled(ui.Forge, $"BuyMat_{ScriptedSession.CraftMaterial}");
         PressEnabled(ui.Forge, $"BuyMat_{ScriptedSession.CraftMaterial}");
-        PressEnabled(ui, "AdvancePhase");
+        PressEnabled(ui, "AdvancePhase"); // Send them off: Morning -> Expedition
         Step("Morning tick: vendor buys landed");
         AssertThat(ui.Adapter.LastEvents.OfType<MaterialPurchased>().Count()).IsEqual(2);
         // U21: RefreshAll is visibility-gated — open Forge for a fresh read/Disabled state.
@@ -174,12 +191,16 @@ public class PlayableLoopTests
         var copperOwned = copperRow.GetParent()?.FindChild("Owned", recursive: false, owned: false) as Godot.Label;
         AssertThat(copperOwned?.Text).IsEqual($"×{ScriptedSession.CopperNeeded}");
         AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
+        AssertThat(ui.Conductor.Current)
+            .OverrideFailureMessage("The conductor should now own the span — the bell just left Morning for real.")
+            .IsEqual(RaidConductor.Beat.SendOff);
 
-        // Day-1 Expedition: the copper is HELD now, so the U6 craft gate is open
-        // (crafting is legal in all phases — the forge never closes).
+        // The copper is HELD now, so the U6 craft gate is open — crafting is legal in all phases,
+        // and there is no longer a separate Expedition/Camp bell to press "in between": both this
+        // and the stock below are immediate, all-phases verbs pressed back to back while the raid
+        // conductor holds the span.
         PressEnabled(ui.Forge, $"Craft_{ScriptedSession.CraftRecipeId}");
-        PressEnabled(ui, "AdvancePhase");
-        Step("Expedition tick: craft landed");
+        Step("craft landed");
         AssertThat(ui.Adapter.LastEvents.OfType<ItemCrafted>().Count()).IsEqual(1);
         var crafted = ScriptedSession.CraftedItem(ui.Adapter.CurrentState);
         ui.OpenPanel("Shop"); // U21: open Shop so the fresh unshelved craft actually renders
@@ -190,11 +211,10 @@ public class PlayableLoopTests
         // hand-picked constant.
         var suggestedPrice = SuggestedPrice.For(ui.Adapter.CurrentState.Items[crafted.Value]);
 
-        // Day-1 Camp: shelve the dagger from the Shop tab (StockAction is all-phases), with ZERO
-        // price interaction — Stock is pressed as-is, no SpinBox edit.
+        // Shelve the dagger from the Shop tab (StockAction is all-phases), with ZERO price
+        // interaction — Stock is pressed as-is, no SpinBox edit.
         PressEnabled(ui.Shop, $"Stock_{crafted.Value}");
-        PressEnabled(ui, "AdvancePhase");
-        Step("Camp tick: stock landed");
+        Step("stock landed");
         var shelf = ui.Adapter.CurrentState.Player.Shelf;
         AssertThat(shelf.Count).IsEqual(1);
         AssertThat(shelf[0].Item).IsEqual(crafted);
@@ -206,9 +226,16 @@ public class PlayableLoopTests
         // U6: the auto price must never look like a silent guess — its origin is on screen too.
         AssertThat(shopText).Contains("suggested");
 
-        // Ride the gated clock to day-2 Morning: ExpeditionDeep, then Evening (day rolls).
-        PressEnabled(ui, "AdvancePhase");
-        Step("ExpeditionDeep tick");
+        // Ride Hurry through the decision-free raid span. One press is enough: nobody parks on a
+        // fresh day 1 (see method doc), so there is no vigil stop between here and Evening.
+        PressEnabled(ui, "AdvancePhase"); // Hurry, not a bell — Expedition -> Camp -> ExpeditionDeep -> Evening
+        Step("raid span: reached Evening");
+        AssertThat(ui.Adapter.CurrentState.Phase)
+            .OverrideFailureMessage("One Hurry press should reach Evening directly on an unstaged day.")
+            .IsEqual(DayPhase.Evening);
+        AssertThat(ui.Conductor.Current).IsEqual(RaidConductor.Beat.Idle);
+
+        // The real Evening bell rolls the day.
         PressEnabled(ui, "AdvancePhase");
         Step("Evening tick: day rolled");
         AssertThat(ui.Adapter.CurrentState.Day).IsEqual(2);

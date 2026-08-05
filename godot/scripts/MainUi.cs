@@ -164,6 +164,15 @@ public partial class MainUi : Control
 
     public SimAdapter Adapter { get; private set; } = null!;
     public PhaseClock Clock { get; private set; } = null!;
+
+    /// <summary>U1 (plan 2026-08-03-001, KTD-A "the two-bell day"): sequences the raid span
+    /// (Expedition/Camp/ExpeditionDeep) as a show instead of three player-cranked bells. Constructed
+    /// right after <see cref="Clock"/>, BEFORE <c>Adapter.StateChanged += OnPhaseCompleted</c> below —
+    /// its own constructor subscribes to the same event, so this ordering guarantees its beat is
+    /// already resynced by the time <see cref="OnPhaseCompleted"/> (and the <see
+    /// cref="UpdateClockLabel"/> it triggers) reads <see cref="Conductor"/> on any given tick.</summary>
+    public RaidConductor Conductor { get; private set; } = null!;
+
     public DrawerHost Drawer { get; private set; } = null!;
     public Town2D Town { get; private set; } = null!;
 
@@ -392,6 +401,17 @@ public partial class MainUi : Control
         Adapter = AdapterOverride ?? BuildDefaultAdapter();
         AdapterOverride = null; // consumed — the handoff is one-shot (see property doc)
         Clock = new PhaseClock(Adapter);
+
+        // U1 (KTD-A): constructed here — BEFORE Adapter.StateChanged += OnPhaseCompleted below — so
+        // its own StateChanged subscription (registered in its constructor) runs FIRST on every tick
+        // and Current is already resynced by the time OnPhaseCompleted reads it. The delegates close
+        // over the Town/Watch PROPERTIES rather than a captured value, so it is safe to construct
+        // this before BuildUi() has actually built Town — nothing below reads them until a real
+        // frame's Conductor.Update, long after _Ready has returned.
+        Conductor = new RaidConductor(Adapter, Clock,
+            departureShowDone: () => !Town.AnyDeparturePending,
+            homecomingShowDone: () => !Town.AnyReturnPending);
+
         RegisterQuickTravelActions(); // U23 (KTD4): runtime InputMap only, zero project.godot contact
 
         // U4 (KTD-D): intercept the OS close request (the window's own X / Alt+F4) so it saves
@@ -435,6 +455,8 @@ public partial class MainUi : Control
         Ledger.Bind(Adapter);
         Chronicle.Bind(Adapter);
         Camp.Bind(Adapter);
+        // U1 (KTD-A): the vigil's third verb is the only way RaidConductor.Beat.VigilStop ever ends.
+        Camp.SendDeeperRequested += Conductor.ResolveVigil;
         Watch.Refresh(Adapter.CurrentState, Adapter.LastEvents); // U9: not a SimPanel — no Bind() auto-refresh
         Mirror.Bind(Adapter);
         Pip.Refresh(Adapter.CurrentState, Adapter.LastEvents); // not a SimPanel — no Bind() auto-refresh
@@ -550,7 +572,31 @@ public partial class MainUi : Control
             return;
         }
 
-        Clock.Update(delta);
+        // U1 (KTD-A): Clock's own opt-in auto-advance timer and Conductor are MUTUALLY EXCLUSIVE
+        // within one frame — never both, an if/else, not two unconditional calls in a row. Both
+        // ultimately ride the same PhaseClock.AdvanceNow path, and PhaseClock's own contract is "at
+        // most one advance per call — a huge delta can never skip phases silently" (see its Update
+        // doc). Calling both here would violate that the instant a single large delta straddled BOTH
+        // thresholds at once: Clock.Update ticks Morning -> Expedition, RaidConductor.Resync (fired
+        // synchronously off that SAME tick) flips Current from Idle to SendOff, and — if the second
+        // call still ran with the same oversized delta — Conductor.Update would immediately consume
+        // ITS OWN threshold too, landing two phases forward (Expedition straight through to Camp) in
+        // one frame. Caught by two engine tests asserting a large auto-advance delta lands EXACTLY
+        // at Expedition (DayAdvanceHudTests/MainUiTests): both failed with "'Expedition' but is
+        // 'Camp'" until this became an if/else. Checking Current ONCE, before either call, is what
+        // makes it exclusive — Conductor.Update only ever runs in the SAME frame Clock.Update did NOT.
+        if (Conductor.Current == RaidConductor.Beat.Idle)
+        {
+            Clock.Update(delta);
+        }
+        else
+        {
+            // Independent of Clock.AutoAdvance — the raid span auto-plays regardless of whether the
+            // player opted into the (Morning/Evening-only) Innkeeper's Clock. A no-op whenever
+            // Conductor.Current is VigilStop (see its own Update doc).
+            Conductor.Update(delta);
+        }
+
         UpdateClockLabel();
 
         // Return Ritual gate (U12, U2 revision): the reveal lands a fixed UNSCALED
@@ -1544,7 +1590,15 @@ public partial class MainUi : Control
             // PhaseVocab, U2); an open-items readout replaces the countdown (U3); Expedition shows
             // a departure omen (U4); Morning names who is ready to go (U2 — "the bell tells you
             // who is ready to go").
-            _advance.Text = BellVerb(state);
+            //
+            // U1 (KTD-A, scope-ruling addendum): the vigil stop holds until answered, and closing
+            // its modal (Escape) must never leave the player with no visible way back to it — this
+            // control becomes the deliberate reopen affordance whenever the stop is armed and its
+            // slate is closed, instead of a Hurry that would (correctly) no-op there and read as
+            // dead.
+            _advance.Text = Conductor.Current == RaidConductor.Beat.VigilStop && !Camp.Visible
+                ? "Return to the vigil"
+                : BellVerb(state);
             var tailParts = new System.Collections.Generic.List<string>();
             if (state.Phase == DayPhase.Expedition)
             {
@@ -1767,6 +1821,35 @@ public partial class MainUi : Control
         _advance.AddThemeFontSizeOverride("font_size", GameTheme.HudValueFontSize);
         _advance.Pressed += () =>
         {
+            // U1 (KTD-A, scope-ruling addendum): the vigil stop holds until ANSWERED, not until the
+            // modal closes — closing it (Escape) is a deliberate "go craft something first" beat,
+            // never a silent way to strand the day. If the player closed the slate and comes back to
+            // THIS control instead of walking back to it, reopen it here rather than no-op Hurry —
+            // an armed-but-unreachable stop is exactly the softlock shape CampPanel has a history of.
+            if (Conductor.Current == RaidConductor.Beat.VigilStop)
+            {
+                if (!Camp.Visible)
+                {
+                    Camp.ShowModal();
+                }
+
+                UpdateClockLabel();
+                return;
+            }
+
+            // U1 (KTD-A): while the conductor owns the rest of the span (Expedition/
+            // Camp-with-nobody-parked/ExpeditionDeep), this SAME control renders "Hurry the day
+            // along" (PhaseVocab.BellVerb) and does exactly that — skip to the next stop — instead
+            // of the Morning/Evening bell logic below, which never applies to those phases any more
+            // (no counter to hold, no phase-specific verb to have queued). Idle covers Morning and
+            // Evening both.
+            if (Conductor.Current != RaidConductor.Beat.Idle)
+            {
+                Conductor.Hurry();
+                UpdateClockLabel();
+                return;
+            }
+
             var state = Adapter.CurrentState;
             // U5: ringing the bell while a counter session is open would otherwise silently fail to
             // advance — GameKernel holds the day at Morning while Counter is { Closed: false }. Close

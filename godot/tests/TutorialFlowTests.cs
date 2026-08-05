@@ -639,6 +639,50 @@ public class TutorialFlowTests
         }
     }
 
+    /// <summary>
+    /// U1 (plan 2026-08-03-001) load-bearing safety net, flagged by a parallel investigation: the
+    /// Vigil step's own completion fact (<c>SupplyDelivered</c>/<c>PartyRecalled</c>) can only ever
+    /// fire if a party actually parks — and <c>ExpeditionSystem.CheckpointFor</c> means EVERY hero's
+    /// first-ever trip (day 1, and any later day where nobody has yet cleared floor 1) is
+    /// structurally unstaged, so a real campaign can plausibly reach the Vigil step's Day-2 gate and
+    /// still never see the slate open. A kernel-level attempt to skip empty phases was tried and
+    /// reverted specifically because it stranded this exact step forever. This pins that the
+    /// GENERIC backstop (<see cref="Backstop_ClosesTheChain_EvenWhenAUiOnlyStepIsNeverPerformed"/>'s
+    /// own mechanism) also rescues THIS step, specifically, when no camp event ever fires — not just
+    /// the UI-only steps that test already covers.
+    /// </summary>
+    [TestCase]
+    public void VigilStep_NeverParks_TheGenericBackstopStillClosesTheChain()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            DriveDay1ToLookIn(ui);
+            ui.Mirror.ShowMirror(); // LookIn -> OpenCounter
+            CraftedAdvance(ui, day: 2, new CounterSaleClosed(new HeroId(1), new ItemId(1), 10, Pinned: false));
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Vigil);
+
+            // Day 2 arrives, the Vigil step is current — and NO SupplyDelivered/PartyRecalled event
+            // ever fires (the real-world case whenever nobody parks). Advancing the day alone must
+            // not complete it early...
+            CraftedAdvance(ui, day: 3);
+            AssertThat(ui.Tutorial.Step)
+                .OverrideFailureMessage("The day rolling over completed the Vigil step without its own event — IsDone is checking the wrong fact.")
+                .IsEqual(TutorialStep.Vigil);
+            AssertThat(ui.Tutorial.Completed).IsFalse();
+
+            // ...but a party that never parks must not strand the chain forever either.
+            CraftedAdvance(ui, day: 4);
+            AssertThat(ui.Tutorial.Completed)
+                .OverrideFailureMessage("Stuck on Vigil (nobody ever parked) past the backstop day — the chain never closed.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     [TestCase]
     public void SecondProfessionAffordance_AbsentBeforeMilestone_PresentAfter_SubmittingYieldsTwoProfessions()
     {
