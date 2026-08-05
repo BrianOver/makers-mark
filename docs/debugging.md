@@ -46,11 +46,32 @@ error. The script fails on all of them.
 | Piping to `tail`/`head` | success | A bash pipeline returns the LAST command's exit code, hiding a failed run |
 | Runtime dies mid-session | `Passed!` for a partial suite | The summary counts what finished. `ENGINE_MIN_PASSED=300` against ~800 tests means half the suite can vanish and still clear CI's floor |
 | Testing `C:\Code\Game` | green | That root is a coordination checkout nobody updates — it was ~130 PRs stale on 2026-08-03. You measured old code |
+| **The wrapper itself, pre-2026-08-04** | `dotnet.exe : Expecting be equal:` and a 31-line log | The wrapper was hiding real failures. See below — this cost an hour of looking in the wrong place |
 
-**The count is the check, not the word "Passed".** Healthy is ~800. If you see 500-ish, the runtime
-died; read §5 before theorising.
+**The count is the check, not the word "Passed".** Healthy is ~880 (2026-08-04). If you see 500-ish,
+the runtime died; read §5 before theorising.
 
-### 2b. Four rules that came from losing a day to this
+**If a run log ends right after the build output with no summary, suspect the SHELL, not the test
+framework.** In Windows PowerShell 5.1, redirecting a native process's stderr (`2>&1`) wraps each line
+in an ErrorRecord, and with `$ErrorActionPreference = 'Stop'` the *first* stderr line becomes a
+script-terminating error. A genuine assertion failure writes to stderr — so the wrapper died at its
+own run line and skipped every line of its own failure reporting. Fixed by going through
+`Start-Process` with OS-level redirects (PR #387). Recorded here because the symptom points squarely
+at the test runner while the cause is the shell.
+
+A second trap in the same fix: `WaitForExit(ms)` returning true does **not** guarantee `ExitCode` is
+populated. It read as empty, and `'' -ne 0` is **true** in PowerShell — which would have reported a
+*green* run as a failure. Read the code after an argument-less `WaitForExit()` and default to a
+nonzero sentinel: an unreadable exit code must never become a claimed success.
+
+**The wrapper now waits for the machine instead of telling you to.** `-MaxWaitMinutes` (default 10)
+waits, names which process holds the machine, then refuses with a message stating it is a final
+answer. **A refusal is not a hint to retry** — sessions used to idle for hours against a run they
+could not see. `-RunTimeoutMinutes` (default 20) kills a stalled run and stops its Godot strays, so
+one stall cannot make every other caller's wait expire for nothing. A healthy full run is 4–7 minutes
+here; a stall was measured at ~9m48s.
+
+### 2b. Six rules that came from losing a day to this
 
 1. **Verify the precondition before theorising about the symptom.** On 2026-08-03 a stale one-line
    guard disabled *one* SubViewport while `MineWatch`'s constructor built a second — so tests
@@ -61,12 +82,22 @@ died; read §5 before theorising.
 2. **CI is a gate, not a test loop.** Get local green first. `engine-test.ps1` writes a receipt
    naming the commit it verified — a push should match it. Three red pushes of one branch in a day
    is three notifications to the owner and zero information you couldn't have had locally.
-3. **Serialize engine runs, and prove it.** One gdUnit run at a time, machine-wide. The script
-   refuses to start while any Godot process lives; if you bypass it, check
-   `Get-Process *Godot*` yourself first.
+3. **Serialize engine runs, and prove it.** One gdUnit run at a time, machine-wide. The script now
+   waits up to 10 minutes and then refuses; if you bypass it, check `Get-Process *Godot*` yourself
+   first. **Never poll for a slot in a loop** — that is how a background session spends 300k tokens
+   and pushes nothing.
 4. **Change a measured number only with a new measurement.** A day-count on the click-through sweep
    was cut, reverted on reasoning, then re-applied when the run disagreed — two full suite runs to
    learn what one would have said.
+5. **A tool that checks for lies can lie.** Both defects in §2a's last row were in
+   `engine-test.ps1` itself — the thing built to stop the suite from lying. When the wrapper's own
+   output is your only evidence, run the underlying command once, raw, to confirm the wrapper is
+   telling you the truth. That one step would have saved an hour.
+6. **Same commit, different result means the bug is timing-dependent — not that the suite is flaky.**
+   On 2026-08-04 one commit gave 7 failures and then 879/879 on consecutive runs. The cause was real:
+   `MainUi._Process` ticked both the clock and the raid conductor in one frame, so an oversized frame
+   delta could satisfy two phase thresholds at once. "Flaky test" was the comfortable read and the
+   wrong one — a player would hit it on a slow frame.
 
 ## 3. Where logs & artifacts live
 
