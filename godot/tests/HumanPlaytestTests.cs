@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using GameSim.Contracts;
 using GdUnit4;
 using Godot;
+using GodotClient.Minigames;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -152,6 +153,74 @@ public class HumanPlaytestTests
                     $"The drawer is {GodotClient.Ui.DrawerHost.DrawerWidth}px wide. These controls demand " +
                     "more, so their panels are cut off at the right edge:\n  " +
                     string.Join("\n  ", offenders))
+                .IsEmpty();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// The guard above only ever measures a FRESH panel. Completing a craft mutates
+    /// <c>ForgePanel</c>'s own session state (<c>_lastForgeTraces</c>) and adds a "Forge another
+    /// like it" button to that recipe's row — a state the sweep above never reaches, which is
+    /// why it stayed green while the drawer widened underneath the owner (repo task #100).
+    ///
+    /// <para>Forge-specific rather than folded into the sweep above: of every panel that loop
+    /// covers, only the Forge adds a control to an existing row purely as a result of a player
+    /// action taken THIS session (see <c>ForgePanel.OnQuenchFinished</c>), so it is the only one
+    /// that needs a post-action variant of the width guard. A new panel that grows the same way
+    /// should get its own sibling here, not a change to the loop's fixed <c>Panels</c> sweep.</para>
+    /// </summary>
+    [TestCase]
+    public async Task NoPanel_DemandsMoreWidthThanTheDrawerGivesIt_AfterACompletedCraft()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var player = new HumanPlayer(ui);
+
+            // 3x the needed copper: enough for the one craft this test drives, with plenty left so
+            // "Work the forge" is still enabled afterward — not what this test is about, but a
+            // disabled button would fail PressEnabled below for the wrong reason.
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded * 3));
+            ui.Adapter.AdvancePhase();
+
+            ui.OpenPanel("Forge");
+            await SettlePanel(ui, player, "Forge");
+
+            var contentBefore = ui.Drawer.CurrentContent!;
+            var unlockBefore = Find<Button>(contentBefore, "Unlock_keen-eye");
+            var widthBefore = contentBefore.GetCombinedMinimumSize().X;
+            var unlockXBefore = unlockBefore.GetGlobalRect().Position.X;
+
+            PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
+            var act1 = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
+            ForgeTwoActTests.DriveAct1ToCompletion(act1, pumpUntilPermille: 900, strikeAbovePermille: 500);
+            var quench = Find<QuenchMinigame>(ui.Forge, "QuenchMinigame");
+            quench.Plunge(); // -> OnQuenchFinished -> Refresh(), synchronously: the recipe row now
+                              // has "Forge another like it" too (_lastForgeTraces records the trace
+                              // BEFORE Refresh runs, so this same rebuild already reflects it).
+
+            var contentAfter = ui.Drawer.CurrentContent!;
+            await player.WaitForLayout(contentAfter); // Refresh()'s queue_sort() is deferred — settle it.
+
+            AssertThat(ui.Forge.FindChild($"ForgeAnother_{ScriptedSession.CraftRecipeId}", recursive: true, owned: false))
+                .OverrideFailureMessage(
+                    "The craft completed but never grew a repeat-craft button — this test is not " +
+                    "exercising the post-craft state it means to.")
+                .IsNotNull();
+
+            var widthAfter = contentAfter.GetCombinedMinimumSize().X;
+            var unlockAfter = Find<Button>(ui.Forge, "Unlock_keen-eye");
+            var unlockXAfter = unlockAfter.GetGlobalRect().Position.X;
+
+            var offenders = player.TooWideFor(contentAfter, GodotClient.Ui.DrawerHost.DrawerWidth + 1f).ToList();
+
+            AssertThat(offenders)
+                .OverrideFailureMessage(
+                    $"Completing a craft grew the panel from {widthBefore:0.#}px to {widthAfter:0.#}px " +
+                    $"(drawer is {GodotClient.Ui.DrawerHost.DrawerWidth}px wide) and moved the Talent " +
+                    $"'Unlock' button from x={unlockXBefore:0.#} to x={unlockXAfter:0.#}. These controls " +
+                    "now demand more than the drawer's width:\n  " + string.Join("\n  ", offenders))
                 .IsEmpty();
         }
         finally { Unmount(ui); }

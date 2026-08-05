@@ -434,7 +434,17 @@ public partial class ForgePanel : SimPanel
                 // Affordability lighting (KTD5) is a VISUAL MIRROR ONLY, read off the same
                 // state.Player.Materials the gate below reads — the kernel's CraftAction stays
                 // the real gate; a stale-enabled press is still honestly rejected downstream.
-                var controlsRow = AddRow(cardBody);
+                //
+                // Wrapping, not a plain HBox (repo task #100): this row's child count is NOT fixed —
+                // completing a craft adds a "Forge another like it" button here mid-session
+                // (_lastForgeTraces below), and an HBox's minimum width is the sum of its children.
+                // That pushed the whole scroll body from 570px to 754px in a 600px-wide drawer
+                // (measured), shifting every later-laid-out control sideways by the new button's
+                // width — a Talent "Unlock" button was observed landing under an unrelated card.
+                // Same fix as SimPanel.AddWrappingRow's own precedent (DemandPanel's bounty floor
+                // chips): wrap instead of growing. See NoPanel_DemandsMoreWidthThanTheDrawerGivesIt_
+                // AfterACompletedCraft (HumanPlaytestTests.cs), which failed red before this line.
+                var controlsRow = AddWrappingRow(cardBody);
                 controlsRow.AddChild(StatChip(
                     material, $"{recipe.MaterialQuantity}x (have {have})",
                     affordable ? UiKit.ChipTone.Positive : UiKit.ChipTone.Neutral));

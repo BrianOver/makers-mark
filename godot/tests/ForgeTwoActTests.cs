@@ -371,11 +371,17 @@ public class ForgeTwoActTests
     /// <para>Re-clicks "Work the forge" itself (bought 3x the needed copper, so material remains after
     /// one craft) rather than a Talent "Unlock" button: completing a craft ALSO makes the recipe row
     /// grow a new "Forge another like it" button (<see cref="ForgePanel.OnQuenchFinished"/> records the
-    /// trace before <c>Refresh()</c> runs), and — a second, independent layout defect this test does
-    /// NOT chase — that widens the whole scroll body by exactly the new button's width (measured: 592px
-    /// to 746px), shifting every right-anchored control (a Talent "Unlock" button among them) sideways
-    /// by the same amount. "Work the forge" sits earlier in its own row and stays on screen either way,
-    /// so it isolates the ceremony behavior this test is actually about from that separate bug.</para>
+    /// trace before <c>Refresh()</c> runs). At the time this test was written that was a SECOND,
+    /// independent layout defect this test deliberately did not chase — the row's growth widened the
+    /// whole scroll body by exactly the new button's width (measured then: 592px to 746px), shifting
+    /// every later-laid-out control (a Talent "Unlock" button among them) sideways by the same amount.
+    /// "Work the forge" sits earlier in its own row and stayed on screen either way, which is why this
+    /// test isolated the ceremony behavior from that other bug rather than depending on a fix for it.
+    /// That defect is now fixed (repo task #100: <c>controlsRow</c> wraps instead of growing, see
+    /// <c>ForgePanel</c>'s recipe-row comment) and covered by its own dedicated regression test,
+    /// <c>HumanPlaytestTests.NoPanel_DemandsMoreWidthThanTheDrawerGivesIt_AfterACompletedCraft</c> — this
+    /// test's own re-click of "Work the forge" (rather than "Unlock") stays unchanged since that isolation
+    /// was never the bug, just a deliberate scope boundary.</para>
     /// </summary>
     [TestCase]
     public async Task ForgeCeremony_DoesNotSwallowAClickOutsideItsOwnCard()
@@ -528,8 +534,10 @@ public class ForgeTwoActTests
 
     /// <summary>Drives a REAL, panel-mounted <see cref="ForgeMinigame"/> (Act 1) to completion —
     /// same rapid-fire shape as <see cref="PlayBothActs"/>, for the scenarios that need the real
-    /// <c>MainUi</c>/<c>ForgePanel</c> wiring (the handoff to Act 2) rather than a standalone pair.</summary>
-    private static void DriveAct1ToCompletion(ForgeMinigame act1, int pumpUntilPermille, int strikeAbovePermille)
+    /// <c>MainUi</c>/<c>ForgePanel</c> wiring (the handoff to Act 2) rather than a standalone pair.
+    /// Internal (not private): <see cref="HumanPlaytestTests"/> reuses this exact driver rather than
+    /// hand-rolling a second copy of the same rapid-fire loop for its own post-craft width guard.</summary>
+    internal static void DriveAct1ToCompletion(ForgeMinigame act1, int pumpUntilPermille, int strikeAbovePermille)
     {
         const double stepSeconds = 0.02;
         var guardSeconds = 0.0;
