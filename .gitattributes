@@ -11,13 +11,17 @@
 # Same trap, same author: Godot also writes .uid resource ids with LF.
 *.uid eol=lf
 
-# Generated art PNGs (diffuse + normal) via Git LFS. Scope is the Godot asset tree ONLY —
-# `art/**` would LFS-ify C# spec source and miss this PNG tree (art-pipeline-architecture.md §4).
-godot/assets/art/**/*.png filter=lfs diff=lfs merge=lfs -text
-
-# Kenney CC0 low-poly GLB model kits (town/characters/nature/castle) via Git LFS.
-godot/assets/models/**/*.glb filter=lfs diff=lfs merge=lfs -text
-
-# Composed music tracks (U2 of the make-it-visible plan) via Git LFS — same reasoning as the PNG
-# tree above: these are mastered audio, not source, and do not belong in the plain git object store.
-godot/assets/audio/**/*.mp3 filter=lfs diff=lfs merge=lfs -text
+# Git LFS is RETIRED here (owner's call, 2026-08-06). Binary assets are stored as ordinary git
+# objects. They must still never be line-ending-mangled, hence `-text` without the lfs filters.
+#
+# The whole asset tree is 74 MB across 216 files, which is unremarkable for git and not worth a
+# second storage system, a smudge/clean filter on every checkout, or an LFS quota to run out of.
+#
+# NOTE ON HISTORY: this stops LFS going forward only. Commits before this one still hold LFS
+# pointers for these paths (951 historical objects), so checking out an OLD revision of an asset
+# still needs the LFS client. Purging that too means `git lfs migrate export --everything` plus a
+# force-push of main, which rewrites every hash, breaks every open PR and worktree, and pulls all
+# ~951 historical versions into the pack. That is an owner decision, not a cleanup.
+godot/assets/art/**/*.png -text
+godot/assets/models/**/*.glb -text
+godot/assets/audio/**/*.mp3 -text
