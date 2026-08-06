@@ -2,6 +2,7 @@ using System;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Venues;
 using Godot;
 using GodotClient.Ui;
 
@@ -33,6 +34,14 @@ namespace GodotClient.Panels;
 /// every label's exact text, and the lifecycle (<see cref="ShowModal"/>/<see cref="Render"/>)
 /// are unchanged, so the existing golden <c>CampPanelTests</c>/<c>MainUiTests</c> scenarios stay
 /// green.</para>
+///
+/// <para>Hero-facing-day H1 (docs/design/2026-08-04-hero-facing-day.md §3.3): the slate now
+/// states the stakes in hero terms — the floor(s) and monster(s) still ahead, read off the SAME
+/// <see cref="GameSim.Venues.VenueRegistry"/> data the resolver rolls against (never an invented
+/// risk score) — and names "of which yours: N" on the heals-left line, the exact count the
+/// player's own SendSupply would add to. <see cref="OpenForgeRequested"/> makes the
+/// craft-and-send round trip (already mechanically real — see <c>CampPanelTests.VigilRoundTrip</c>)
+/// discoverable: a real button, not a fact the player had to already know.</para>
 /// </summary>
 public partial class CampPanel : SimPanel
 {
@@ -61,6 +70,19 @@ public partial class CampPanel : SimPanel
     /// ever ends <see cref="RaidConductor.Beat.VigilStop"/>. Mirrors <c>PipDock.ExpandRequested</c>'s
     /// own child-raises-an-event-parent-drives-the-adapter shape.</summary>
     public event Action? SendDeeperRequested;
+
+    /// <summary>
+    /// Hero-facing-day H1 (docs/design/2026-08-04-hero-facing-day.md §3.3 V-2): the discoverable
+    /// "Forge something for them" verb. Before this the round trip (close the slate, walk to the
+    /// forge, craft, come back, send) was mechanically possible — <c>CampPanelTests</c>'
+    /// <c>VigilRoundTrip</c> proved it — but nothing on screen ever told the player it existed.
+    /// Pressing this button closes the slate (same as Escape, the vigil stop stays armed — see
+    /// <see cref="SendDeeperRequested"/>'s own doc for why closing never ends it) AND raises this
+    /// event; <c>MainUi</c> wires it straight to <c>OpenPanel("Forge")</c>. The slate reopens on its
+    /// own the moment a real action lands (<c>SyncCampModal</c>'s existing StateChanged hook) — the
+    /// same "come back" mechanism the round-trip test already exercises manually.
+    /// </summary>
+    public event Action? OpenForgeRequested;
 
     public override void _Ready() => EnsureBuilt();
 
@@ -153,6 +175,17 @@ public partial class CampPanel : SimPanel
         card.AddChild(cardBody);
 
         AddHeader(cardBody, $"PARTY CAMPED — below floor {party.CheckpointFloor}, pressing for floor {party.TargetFloor}");
+
+        // Hero-facing-day H1 §3.3 V-1: name what is actually still down there, read straight off
+        // the SAME venue data ExpeditionResolver/ExpeditionDeepSystem will roll against — never a
+        // second rule set, never an invented risk score. This is the "what is likely to kill them
+        // below" half of the vigil's question.
+        var venue = VenueRegistry.Require(party.VenueId);
+        var floorsAhead = string.Join(", ", Enumerable
+            .Range(party.CheckpointFloor + 1, party.TargetFloor - party.CheckpointFloor)
+            .Select(floor => $"floor {floor} ({venue.MonsterKind(floor)})"));
+        AddLabel(cardBody, $"Still ahead, in the dark: {floorsAhead}.");
+
         AddLabel(cardBody, $"Runner: {fee}g per delivery");
 
         // Supply picker: the player's held consumables (exactly the send-legal set the kernel accepts).
@@ -179,9 +212,14 @@ public partial class CampPanel : SimPanel
             var hp = party.Hp.TryGetValue(member.Value, out var value) ? value : 0;
             var maxHp = state.Heroes.TryGetValue(member.Value, out var hero) ? hero.MaxHp : 0;
             var heals = HealsLeft(state, party, member);
+            var yours = YoursHealsLeft(state, party, member);
 
             var row = AddRow(cardBody);
-            AddLabel(row, $"{HeroName(member)} — hp {hp}/{maxHp}, {heals} heals left");
+            // Hero-facing-day H1 §3.3 V-1: "of which yours: N" — the player's own morning (or
+            // vigil-forge) provisioning, counted separately from whatever the hero bought on their
+            // own. This is the "what specifically would help" half of the vigil's question: it is
+            // the exact number this hero's own SendSupply delivery would add to.
+            AddLabel(row, $"{HeroName(member)} — hp {hp}/{maxHp}, {heals} heals left (of which yours: {yours})");
 
             var to = member;
             var send = new Button
@@ -255,6 +293,17 @@ public partial class CampPanel : SimPanel
             ? pack.Count(id => state.Items.TryGetValue(id.Value, out var item) && item.Effect is { Kind: ConsumableKind.Heal })
             : 0;
 
+    /// <summary>Of <see cref="HealsLeft"/>, how many are the player's OWN marked craft (a Morning
+    /// stock, or a fresh vigil-forge send) rather than something the hero bought for themselves.
+    /// Same <see cref="Item.PlayerCrafted"/> gate the sim's attribution engine reads when it proves
+    /// a Provisioned/PotionLifesave beat — this label and that beat can never disagree.</summary>
+    private static int YoursHealsLeft(GameState state, InFlightExpedition party, HeroId member) =>
+        party.Packs.TryGetValue(member.Value, out var pack)
+            ? pack.Count(id => state.Items.TryGetValue(id.Value, out var item)
+                && item.Effect is { Kind: ConsumableKind.Heal }
+                && item.PlayerCrafted)
+            : 0;
+
     /// <summary>
     /// The player's HELD consumables: player-crafted, in the player's own hands — not shelved,
     /// not on the rival's shelf, not already in a hero's pack. Mirrors the ownership gate in
@@ -298,6 +347,20 @@ public partial class CampPanel : SimPanel
         _title = AddLabel(box,
             "They've made camp above the deep floors. Send supplies, bring them home — or send them deeper.");
         _title.Name = "CampTitle";
+
+        // Hero-facing-day H1 (§3.3 V-2): the discoverable verb. Before this, "close the slate, walk
+        // to the forge, craft, come back, send" was mechanically real (CampPanelTests'
+        // VigilRoundTrip proves it) but never once stated on screen — the design's own diagnosis:
+        // "today a player has no way to discover this." This line and the button below are the fix.
+        var forgeHint = AddLabel(box,
+            "Nothing to send yet? You can leave this stop, work the forge, and come back — the vigil holds until you answer it.");
+        forgeHint.Name = "CampForgeHint";
+
+        AddButton(box, "CampForge", "Forge something for them", () =>
+        {
+            CloseModal();
+            OpenForgeRequested?.Invoke();
+        });
 
         // Horizontal scroll disabled (U7/R7): the slate column follows the box's 640px width
         // so autowrap labels wrap on real width instead of collapsing to 1 char per line.

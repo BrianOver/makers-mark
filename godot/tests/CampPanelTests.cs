@@ -67,6 +67,37 @@ public class CampPanelTests
         },
     };
 
+    // ── Hero-facing-day H1 (docs/design/2026-08-04-hero-facing-day.md §3.3): the vigil chain ──
+    //
+    // A single frail hero, seed and stats found by an offline search over GameComposition's own
+    // REAL production kernel (system registration order is the determinism contract — see
+    // GameComposition's class doc), NOT a hand-picked subset: seed 3 + this exact hero/gear
+    // reliably parks at floor-1 checkpoint, then dies in stage 2 UNLESS the front-inserted item
+    // is a healing consumable — reproducing, through the real forge and real Send button (never
+    // an injected fixture), the exact chain CampHandlersTests' own marquee test proves at the
+    // sim layer: a camp-delivered player-marked item earns a PotionLifesave beat at Evening.
+
+    private const ulong VigilChainSeed = 3;
+
+    private static Hero Kess() => new(
+        new HeroId(1), "Kess", "vanguard", Level: 3, MaxHp: 18, Gold: 30,
+        new GearSet(new ItemId(90), null, new ItemId(91)), ImmutableList<ItemMemory>.Empty,
+        Alive: true, DeepestFloorReached: 1, DiedOnDay: null);
+
+    /// <summary>Day-1 world at Expedition, one frail hero, pre-stocked with exactly the copper a
+    /// real field-salve craft needs (Tier 1, 2x copper — same requirement the dagger fixture
+    /// already relies on) so the vigil-chain test can forge the ANSWER for real, not place it.</summary>
+    private static GameState VigilChainWorld() => GameFactory.NewGame(VigilChainSeed) with
+    {
+        Phase = DayPhase.Expedition,
+        Heroes = new[] { Kess() }.ToImmutableSortedDictionary(h => h.Id.Value, h => h),
+        Items = new[] { Weapon(90, 6), Armor(91, 6) }.ToImmutableSortedDictionary(i => i.Id.Value, i => i),
+        Player = GameFactory.NewGame(VigilChainSeed).Player with
+        {
+            Materials = ImmutableSortedDictionary<string, int>.Empty.Add("copper", 2),
+        },
+    };
+
     /// <summary>Mount at Expedition, then tick into Camp so the real phase hook raises the slate.</summary>
     private static MainUi MountAtCamp()
     {
@@ -480,6 +511,118 @@ public class CampPanelTests
                 .OverrideFailureMessage("Reopening the slate must never itself resolve the vigil.")
                 .IsEqual(RaidConductor.Beat.VigilStop);
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Camp);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── 8. The vigil chain, end to end (hero-facing-day H1): the acceptance test for the whole
+    // feature — a real craft during a held vigil, sent for real, reaching the player's own
+    // Night ledger with the mark named. ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// docs/design/2026-08-04-hero-facing-day.md §3.3/§9 DoD-2, verbatim: "A player who forges a
+    /// salve at the vigil stop and sends it can, that same Night, point to the beat that names it
+    /// — the full chain witnessed in one day." This drives every link for real (never an injected
+    /// fixture): the slate states the stakes in hero terms, the player discovers and takes the
+    /// forge-and-send verb through the new "Forge something for them" affordance, crafts a REAL
+    /// field-salve, sends it, answers the vigil, and the raid plays out for real (real RNG, the
+    /// production kernel) into a Night ledger line naming that exact item and that it saved Kess's
+    /// life. Seed/hero fixture per <see cref="VigilChainWorld"/>'s own doc.
+    /// </summary>
+    [TestCase]
+    public void VigilChain_CraftDuringHeldStop_SendIt_AttributedOutcomeReachesTheLedger()
+    {
+        var ui = MountMainUi(new SimAdapter(VigilChainWorld()));
+        try
+        {
+            ui.Adapter.AdvancePhase(); // Expedition -> Camp: Kess parks alone, hurt, no heals yet
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Camp);
+            AssertThat(ui.Conductor.Current).IsEqual(RaidConductor.Beat.VigilStop);
+            AssertThat(ui.Camp.Visible).IsTrue();
+
+            // H1 §3.3 V-1/V-2: the slate states the stakes in hero terms (what's still down
+            // there, read off the same venue data the resolver rolls against) and names the
+            // craft-and-send verb as something the player can take RIGHT NOW.
+            var stakesText = RenderedText(ui.Camp);
+            AssertThat(stakesText).Contains("Tunnel Spider"); // floor 2's monster — the real threat ahead
+            AssertThat(stakesText).Contains("Forge something for them");
+            AssertThat(stakesText)
+                .OverrideFailureMessage("The slate must say the stop survives a trip to the forge.")
+                .Contains("the vigil holds until you answer it");
+            AssertThat(stakesText).Contains("of which yours: 0"); // nothing sent yet
+
+            // Discover and take the verb: leave the stop, forge the answer, come back.
+            Press(ui.Camp, "CampForge");
+            AssertThat(ui.Camp.Visible).IsFalse();
+            AssertThat(ui.Conductor.Current)
+                .OverrideFailureMessage("Opening the forge from the slate must never end the vigil stop.")
+                .IsEqual(RaidConductor.Beat.VigilStop);
+
+            PressEnabled(ui.Forge, "Craft_field-salve");
+            var crafted = ui.Adapter.LastEvents.OfType<ItemCrafted>().SingleOrDefault();
+            AssertThat(crafted)
+                .OverrideFailureMessage("Setup failed: the field-salve never crafted — nothing to send down.")
+                .IsNotNull();
+
+            // "Comes back" on its own — the same mechanism VigilRoundTrip proves.
+            AssertThat(ui.Camp.Visible)
+                .OverrideFailureMessage("The slate should reopen on its own once the craft lands.")
+                .IsTrue();
+
+            var pick = Find<OptionButton>(ui.Camp, "CampPick_1");
+            var index = -1;
+            for (var i = 0; i < pick.ItemCount; i++)
+            {
+                if (pick.GetItemMetadata(i).AsInt32() == crafted!.Item.Value)
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            AssertThat(index)
+                .OverrideFailureMessage("The freshly-forged salve never appeared in the Send picker.")
+                .IsGreaterEqual(0);
+            pick.Select(index);
+
+            Press(ui.Camp, "CampSend_1");
+            var send = ui.Adapter.AppliedThisPhase.OfType<SendSupplyAction>().Single();
+            AssertThat(send.Item.Value).IsEqual(crafted!.Item.Value);
+
+            // H1 §3.3 V-1: the payoff-preview updates the instant the delivery lands — "yours"
+            // now counts the player's own send, not just whatever the hero happened to buy.
+            AssertThat(RenderedText(ui.Camp)).Contains("of which yours: 1");
+
+            Press(ui.Camp, "CampDeeper"); // answer the vigil for real
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.ExpeditionDeep);
+
+            // The raid span plays itself from here (U1) — forced through deterministically
+            // (HumanPlaytestTests/RingBellHudTests precedent), never by a real-time wait.
+            for (var guard = 0; guard < 8 && ui.Conductor.Current != RaidConductor.Beat.Idle; guard++)
+            {
+                ui.Conductor.Hurry();
+            }
+
+            AssertThat(ui.Adapter.CurrentState.Phase)
+                .OverrideFailureMessage("The raid span never handed control back at Evening.")
+                .IsEqual(DayPhase.Evening);
+
+            PressEnabled(ui, "AdvancePhase"); // the real Evening bell — fires the reveal
+            ui._Process(MainUi.ReturnRitualDelaySeconds + 0.1); // Return Ritual elapses -> Ledger opens
+
+            AssertThat(ui.Ledger.Visible).IsTrue();
+            var ledgerText = RenderedText(ui.Ledger);
+            // The acceptance test for the whole feature: the Night ledger line that is different
+            // because the player forged and sent that exact item during the held vigil.
+            AssertThat(ledgerText)
+                .OverrideFailureMessage("The Night ledger never named the delivered salve's own mark.")
+                .Contains("Field Salve saved Kess's life");
+            AssertThat(ui.Adapter.CurrentState.Heroes[1].Alive)
+                .OverrideFailureMessage("Kess should have survived stage 2 thanks to the delivered salve.")
+                .IsTrue();
         }
         finally
         {

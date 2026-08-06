@@ -457,6 +457,10 @@ public partial class MainUi : Control
         Camp.Bind(Adapter);
         // U1 (KTD-A): the vigil's third verb is the only way RaidConductor.Beat.VigilStop ever ends.
         Camp.SendDeeperRequested += Conductor.ResolveVigil;
+        // Hero-facing-day H1 (§3.3 V-2): "Forge something for them" closes the slate (the vigil
+        // stays armed — SyncCampModal reopens it the instant a real action lands) and jumps
+        // straight to the forge, so the discoverable verb is one click, not "go find it yourself".
+        Camp.OpenForgeRequested += () => OpenPanel("Forge");
         Watch.Refresh(Adapter.CurrentState, Adapter.LastEvents); // U9: not a SimPanel — no Bind() auto-refresh
         Mirror.Bind(Adapter);
         Pip.Refresh(Adapter.CurrentState, Adapter.LastEvents); // not a SimPanel — no Bind() auto-refresh
