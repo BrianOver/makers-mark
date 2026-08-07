@@ -1,12 +1,18 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
+using System.Linq;
 using GameSim.Contracts;
+using GameSim.Factions;
+using GameSim.Factions.Wardens;
 using GameSim.Kernel;
 using GameSim.Venues;
 using GdUnit4;
+using Godot;
+using GodotClient;
 using GodotClient.Panels;
 using GodotClient.Ui;
 using static GdUnit4.Assertions;
+using static GodotClient.Tests.UiTestSupport;
 
 namespace GodotClient.Tests;
 
@@ -148,10 +154,20 @@ public class UnsilencedEventTests
     }
 
     /// <summary>
-    /// The two deliberate exclusions. <see cref="SupplyDelivered"/> confirms the player's own camp
-    /// action (CampPanel already shows it) and <see cref="MarketShareShifted"/> drifts every single
-    /// Evening — in a finite marquee it would crowd out the news above. Pinned so the decision is
-    /// visible rather than looking like an oversight.
+    /// The three deliberate exclusions. <see cref="SupplyDelivered"/> confirms the player's own
+    /// camp action (CampPanel already shows it) and <see cref="MarketShareShifted"/> drifts every
+    /// single Evening — in a finite marquee it would crowd out the news above.
+    ///
+    /// <para><see cref="TariffApplied"/> (U5(b) ruling) joins them here rather than getting a
+    /// renderer: it is the per-purchase price delta ONE buy's standing-at-the-time produced — like
+    /// <see cref="SupplyDelivered"/>, confirmation of the player's OWN action (their own buy,
+    /// already reflected in their own gold total and material count) rather than town news. The
+    /// actual news — that the faction's standing itself crossed a line — is what
+    /// <see cref="FactionStandingShifted"/> announces instead (see
+    /// <c>FactionStanding_ThresholdCrossing_RendersExactlyOneLine_NamingTheFaction</c> below);
+    /// voicing the per-buy arithmetic too would say the same fact twice in one marquee.</para>
+    ///
+    /// Pinned so every one of these decisions is visible rather than looking like an oversight.
     /// </summary>
     [TestCase]
     public void DeliberateExclusions_StaySilentInTheMarquee()
@@ -166,7 +182,8 @@ public class UnsilencedEventTests
                 StagedWorld(),
                 ImmutableList.Create<GameEvent>(
                     new SupplyDelivered(new HeroId(1), new ItemId(1), Fee: 5),
-                    new MarketShareShifted(Permille: 120, RivalGained: true)));
+                    new MarketShareShifted(Permille: 120, RivalGained: true),
+                    new TariffApplied(FactionRegistry.DeepveinId, "copper", BaseLineCost: 100, PlayerCost: 90, Delta: -10)));
 
             AssertThat(ticker.Lines.Count).IsEqual(0);
             AssertThat(ticker.DisplayText).IsEmpty();
@@ -199,6 +216,199 @@ public class UnsilencedEventTests
             ticker.Free();
         }
     }
+
+    // ── faction standing (U5(b)/U5(c), R9) ─────────────────────────────────────────────────────
+    // Faction standing was an entirely invisible economy layer before this pass: PlayerState.Standing
+    // silently moved ore prices every Evening, and FactionStandingShifted had zero renderers anywhere
+    // in godot/. These cover the two new surfaces: the ticker's edge-triggered cause line (b, below)
+    // and MainUi's non-zero-only standing chips (c, below). The TariffApplied silence ruling is pinned
+    // above, folded into DeliberateExclusions_StaySilentInTheMarquee.
+
+    [TestCase]
+    public void FactionStanding_ThresholdCrossing_RendersExactlyOneLine_NamingTheFaction()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            var state = StagedWorld();
+            var favored = new FactionStandingShifted(
+                FactionRegistry.DeepveinId, FactionRegistry.Deepvein.DisplayName, StandingShiftDirection.Favored);
+
+            ticker.OnPhaseCompleted(DayPhase.Evening, completedDay: 4, state, ImmutableList.Create<GameEvent>(favored));
+
+            AssertThat(ticker.Lines.Count).IsEqual(1);
+            AssertThat(ticker.DisplayText).Contains(FactionRegistry.Deepvein.DisplayName);
+            AssertThat(ticker.DisplayText).Contains("remember your custom");
+
+            var cooled = new FactionStandingShifted(
+                FactionRegistry.DeepveinId, FactionRegistry.Deepvein.DisplayName, StandingShiftDirection.Cooled);
+            ticker.OnPhaseCompleted(DayPhase.Morning, completedDay: 5, state, ImmutableList.Create<GameEvent>(cooled));
+
+            // Day 4's line is still retained (MaxDaysRetained=3, and 4 > 5-3) alongside day 5's.
+            AssertThat(ticker.Lines.Count).IsEqual(2);
+            AssertThat(ticker.DisplayText).Contains("cooling toward your shop");
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
+    /// <summary>
+    /// The important one: pins the edge-trigger against the REAL sim, not a hand-built event. A
+    /// single Morning of drift (Deepvein's DriftStep=2) moves standing from 10 to 8 — nowhere near
+    /// either voicing boundary (FavoredExit = cap*2/5 = 40, FavoredEnter = cap/2 = 50) — so
+    /// <c>FactionDriftSystem</c> emits nothing, and the ticker fed that tick's real event batch
+    /// must render no faction line. A daily gauge movement would not reach a townsperson's ears.
+    /// </summary>
+    [TestCase]
+    public void FactionStanding_SubThresholdMorningDrift_RendersNoLine()
+    {
+        var start = GameFactory.NewGame(9099);
+        var withStanding = start with { Player = start.Player.WithStanding(FactionRegistry.DeepveinId, 10) };
+        var adapter = new SimAdapter(withStanding);
+
+        adapter.AdvancePhase(); // day 1's Morning: FactionDriftSystem runs, steps 10 -> 8
+
+        AssertThat(adapter.CurrentState.Player.StandingFor(FactionRegistry.DeepveinId)).IsEqual(8);
+        AssertThat(adapter.LastEvents.OfType<FactionStandingShifted>().Count()).IsEqual(0);
+
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            ticker.OnPhaseCompleted(DayPhase.Morning, completedDay: 1, adapter.CurrentState, adapter.LastEvents);
+
+            AssertThat(ticker.DisplayText).NotContains(FactionRegistry.Deepvein.DisplayName);
+            AssertThat(ticker.DisplayText).NotContains("remember your custom");
+            AssertThat(ticker.DisplayText).NotContains("cooling toward your shop");
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
+    [TestCase]
+    public void FactionStanding_BuyingOreRaisesStanding_ChipAppears_AndDiscountsTheNextBuy()
+    {
+        var ui = MountMainUi(new SimAdapter(EveningOreWorld(totalQuantity: 200, unitPrice: 10, gold: 100_000)));
+        try
+        {
+            // Neutral standing: U5(c)'s "zero shows nothing" — no chip yet.
+            AssertThat(ui.FindChild("StandingChip_deepvein", recursive: true, owned: false)).IsNull();
+
+            var beforeFirstBuy = ui.Adapter.CurrentState.Player.Gold;
+            ui.Adapter.Queue(new BuyOreAction(new HeroId(1), "copper", 100));
+            var afterFirstBuy = ui.Adapter.CurrentState.Player.Gold;
+            var firstCost = beforeFirstBuy - afterFirstBuy;
+
+            AssertThat(firstCost).IsEqual(1000); // neutral standing: full price, 100 x 10g
+            AssertThat(ui.Adapter.CurrentState.Player.StandingFor(FactionRegistry.DeepveinId))
+                .IsEqual(FactionRegistry.Deepvein.RiseStep);
+
+            var chip = Find<Control>(ui, "StandingChip_deepvein");
+            AssertThat(RenderedText(chip)).Contains($"{FactionRegistry.Deepvein.RiseStep}");
+
+            ui.Adapter.Queue(new BuyOreAction(new HeroId(1), "copper", 100));
+            var afterSecondBuy = ui.Adapter.CurrentState.Player.Gold;
+            var secondCost = afterFirstBuy - afterSecondBuy;
+
+            // The next buy's price reflects the standing the first buy just earned: same quantity,
+            // same unit price, cheaper.
+            AssertThat(secondCost).IsLess(firstCost);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void FactionStanding_DecaysAcrossMornings_ChipValueDrops_AndDisappearsAtZero()
+    {
+        var driftStep = FactionRegistry.Deepvein.DriftStep;
+        var start = GameFactory.NewGame(9101);
+
+        // Two steps above neutral, mounted right at Morning (day 1's own starting phase) — ONE
+        // AdvancePhase() call runs exactly that Morning's systems (FactionDriftSystem included)
+        // and stops there, so this needs no assumption about how the rest of a zero-hero day behaves.
+        var twoStepsUp = start with { Player = start.Player.WithStanding(FactionRegistry.DeepveinId, driftStep * 2) };
+        var ui = MountMainUi(new SimAdapter(twoStepsUp));
+        try
+        {
+            AssertThat(RenderedText(Find<Control>(ui, "StandingChip_deepvein"))).Contains($"{driftStep * 2}");
+
+            ui.Adapter.AdvancePhase();
+
+            AssertThat(ui.Adapter.CurrentState.Player.StandingFor(FactionRegistry.DeepveinId)).IsEqual(driftStep);
+            AssertThat(RenderedText(Find<Control>(ui, "StandingChip_deepvein"))).Contains($"{driftStep}");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+
+        // A second, independent Morning exactly one step from neutral — drift never overshoots
+        // (FactionDriftSystem.StepTowardZero), so this snaps straight to 0, and the chip must
+        // vanish entirely rather than render "0".
+        var oneStepUp = start with { Player = start.Player.WithStanding(FactionRegistry.DeepveinId, driftStep) };
+        var ui2 = MountMainUi(new SimAdapter(oneStepUp));
+        try
+        {
+            ui2.Adapter.AdvancePhase();
+
+            AssertThat(ui2.Adapter.CurrentState.Player.StandingFor(FactionRegistry.DeepveinId)).IsEqual(0);
+            AssertThat(ui2.FindChild("StandingChip_deepvein", recursive: true, owned: false)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui2);
+        }
+    }
+
+    /// <summary>
+    /// The Gloomwood Wardens are registered (their four nature-ores extend the material ladder)
+    /// but have no live venue in rotation (<see cref="WardensFaction"/>'s own doc: "registered, not
+    /// in the live rotation") — nothing in real play can ever raise their standing above neutral,
+    /// so they can never produce a chip (and, structurally, never a ticker line either — the
+    /// renderer only ever sees an event the sim actually stamps, and nothing can stamp one for a
+    /// faction whose ore no live venue ever offers). Contrasted here against Deepvein, which DOES
+    /// carry standing in this same state, so the chip row's "non-zero only" filter is proven to be
+    /// about the VALUE, not a coincidence of an otherwise-empty state.
+    /// </summary>
+    [TestCase]
+    public void FactionStanding_NoLiveOreSource_NeverProducesAChip()
+    {
+        var start = GameFactory.NewGame(9102);
+        var mixedStanding = start with
+        {
+            Player = start.Player.WithStanding(FactionRegistry.DeepveinId, FactionRegistry.Deepvein.RiseStep),
+        };
+        var ui = MountMainUi(new SimAdapter(mixedStanding));
+        try
+        {
+            AssertThat(ui.FindChild($"StandingChip_{WardensFaction.Id}", recursive: true, owned: false)).IsNull();
+            AssertThat(Find<Control>(ui, $"StandingChip_{FactionRegistry.DeepveinId}")).IsNotNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>An Evening world with one hero and one open Deepvein-ore offer, purse deep enough
+    /// for two full-price buys — the fixture <see cref="FactionStanding_BuyingOreRaisesStanding_ChipAppears_AndDiscountsTheNextBuy"/>
+    /// drives twice in the same Evening to observe the tariff move between them.</summary>
+    private static GameState EveningOreWorld(int totalQuantity, int unitPrice, int gold) =>
+        GameFactory.NewGame(9100) with
+        {
+            Phase = DayPhase.Evening,
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, Delver(1, "V1", "vanguard")),
+            Player = PlayerState.NewGame(gold),
+            OpenOreOffers = ImmutableList.Create(new OreOffered(new HeroId(1), "copper", totalQuantity, unitPrice)),
+        };
 
     // ── the ending chronicle ────────────────────────────────────────────────────────────────────
 
