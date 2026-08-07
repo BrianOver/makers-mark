@@ -1517,6 +1517,24 @@ public partial class MainUi : Control
             return "You can only send something you made.";
         }
 
+        // U8a: ProfessionHandlers.ApplySet's own typed reasons — reachable if a stale-enabled
+        // Confirm (or a test forcing the click, ProgressionPanel's own doc) submits an
+        // out-of-range pick that the client-side mirror should have already caught.
+        if (reason.StartsWith("Must select at least one profession", StringComparison.Ordinal))
+        {
+            return "Pick at least one profession.";
+        }
+
+        if (reason.StartsWith("Cannot select more than", StringComparison.Ordinal))
+        {
+            return "You can only practice up to two professions at once.";
+        }
+
+        if (reason.StartsWith("Unknown profession", StringComparison.Ordinal))
+        {
+            return "That trade isn't one the Guild recognizes.";
+        }
+
         return LastResort(action);
     }
 
