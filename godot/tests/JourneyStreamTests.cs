@@ -92,6 +92,36 @@ public class JourneyStreamTests
     }
 
     [TestCase]
+    public void Expedition_Phase_RumoredCard_Manifest_NeverCapped_AllThreeHeroesNamed()
+    {
+        // U2 (the send-off unit): the FeedVisibleLines-1 cap that silently dropped a party's 3rd
+        // carried item lived entirely in MineWatch's own (now-retired) RumoredLines renderer,
+        // never in BuildManifest itself. Pinned here at the pure data layer — the one this unit's
+        // manifest-consuming renderers (MineWatch's departure slate, PipDock) all read from — so a
+        // future renderer cannot reintroduce the same class of bug by assuming a cap belongs
+        // upstream of it.
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+            .Add(1, Delver(1, "Torvald") with { Gear = new GearSet(new ItemId(1), null, null) })
+            .Add(2, Delver(2, "Elowen") with { Gear = new GearSet(new ItemId(2), null, null) })
+            .Add(4, Delver(4, "Brask") with { Gear = new GearSet(new ItemId(3), null, null) });
+        var items = ImmutableSortedDictionary<int, Item>.Empty
+            .Add(1, CraftedItem(1, "Fine Iron Blade"))
+            .Add(2, CraftedItem(2, "Fine Iron Bow"))
+            .Add(3, CraftedItem(3, "Fine Iron Staff"));
+        var state = World() with { Phase = DayPhase.Expedition, Heroes = heroes, Items = items };
+        var plan = new PartyPlan(
+            ImmutableList.Create(new HeroId(1), new HeroId(2), new HeroId(4)), TargetFloor: 3, VenueId: "mine");
+        var events = ImmutableList.Create<GameEvent>(new PartiesFormed(ImmutableList.Create(plan)));
+
+        var card = JourneyStream.Build(state, events).Single();
+
+        AssertThat(card.Manifest.Count).IsEqual(3);
+        AssertThat(card.Manifest.Any(m => m.Text.Contains("Fine Iron Blade"))).IsTrue();
+        AssertThat(card.Manifest.Any(m => m.Text.Contains("Fine Iron Bow"))).IsTrue();
+        AssertThat(card.Manifest.Any(m => m.Text.Contains("Fine Iron Staff"))).IsTrue();
+    }
+
+    [TestCase]
     public void DepartureLine_PrefersManifestLine_OverPlaceholder_WhenCraftedGearPresent()
     {
         var heroes = ImmutableSortedDictionary<int, Hero>.Empty
