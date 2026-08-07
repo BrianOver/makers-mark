@@ -872,12 +872,13 @@ never blurs the two.
 | Three venues, banded draw-free routing, per-venue ore ladders (14 of 21 materials priced) | **BUILT** | `VenueRegistry.cs:62-66` |
 | Emberfall Foundry | **BUILT-INERT** — mechanics done and banded; **no committed art at all**; flip blocked by an art-presence gate test | `VenueRegistry.cs:51-60`; draft PR #346 (§9.1) |
 | Economy heartbeats: rent, Guild assessment + Confidence, rival share, destitution floor, bounty D_q + board minimums | **BUILT** | `RentSystem.cs`, `GuildAssessmentSystem.cs`, `BountyRules.cs` |
-| The four endgame gold sinks: UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | **BUILT, CLI-ONLY** — no on-screen affordance at all; 3 of 4 have bell-tray strings waiting, zero have buttons | `sim/GameSim.Cli/Program.cs:608-660`; `PendingVerbVocab.cs:31-43`; §9.10 |
+| The four endgame gold sinks: UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | **BUILT — and SHIPPED 2026-08-07** (wave U3/U4, R2 ruled build). All four now have buttons; all 24 actions are reachable. *Corrected: this row previously said "3 of 4 have bell-tray strings waiting" — it was **2 of 4**. The third `PendingVerbVocab` entry is `SetProfessions`, not a sink, and the other two sinks resolve immediately so they never needed a tray entry — which is precisely why nothing flagged them.* | `godot/scripts/panels/ForgePanel.cs` (Foundry section); `godot/tests/ActionReachabilityCensusTests.cs` |
 | Three-act arc: act flips, ending screen (world stays open) | **BUILT** — the ending renders *when it fires*; reachability is unasserted (defect below) and unconfirmed on a real screen | `ArcDirectorSystem.cs`; `panels/ChronicleScroll.cs` |
 | The climax's *content* (Final Commission / Warden of the Heart) | **DESIGNED** — `ClimaxReached` fires as a bare seam, by its own admission | `Contracts/Events.cs:293-297`; §9.7 |
 | Title/system menus, tutorial, audio pass one, machine playtest harness | **BUILT** | |
 | Night leads with the mark (reveal ordering — beats first, sale-and-deed grouped) | **DESIGNED** (loop-plan U5/H3) — cheapest unshipped piece of the answer half | |
-| Send-off slate (H4), deep-stakes slate (H5), vigil hero-chips (V-3) | **DESIGNED** (hero-facing-day) | |
+| Send-off slate (H4) | **SHIPPED 2026-08-07** (wave U2). *Correction: this row was stale — `MineWatch.RumoredLines` and `JourneyStream.DepartureLine` already rendered "X carries your Y" at departure, so the headline passed at HEAD with zero code. What was actually owed, and is now done: the manifest was capped at 2 lines (a party of three each carrying your work silently dropped one), it was buried in a scrolling strip rather than staged as a moment, and it had no honest empty state.* | `godot/scripts/panels/MineWatch.cs` |
+| Deep-stakes slate (H5), vigil hero-chips (V-3) | **DESIGNED** (hero-facing-day) — H5 still behind P5/R1, V-3 still behind R1 | |
 | Tavern's two acts (commission handshake AM / ore handshake PM) | **DESIGNED — in flight** as PR #393 at this writing | |
 | Building-minigames wave (alchemy Draw, tanning Dip, engineering act split) | **DESIGNED** — sequenced after the loop work by its own doc | |
 | Demand-hazard engine, demand-gated profession unlocks, Master Voss, Ledger-of-Legends screen | **DESIGNED** (five-pillars Waves 2/4/5) — not started | §9.4 |
@@ -902,6 +903,19 @@ Stale claims still sitting in older docs, each one now false in code:
   CLI-only (§9.10).
 - Any doc calling Emberfall "art complete" — **wrong**: no committed art at all
   (`VenueRegistry.cs:51-60`; PR #346 touches no art files).
+
+### Fixed 2026-08-07 — the defect this document missed entirely
+
+- **The Evening ledger quoted one price and the kernel charged another.** `LedgerModal.cs:211`
+  printed the hero's base ask while `OreMarketHandlers` charged the standing-tariffed cost; the
+  tariffed number existed client-side only inside the disabled-button affordability gate and never
+  reached a label. Whenever faction standing was non-zero, the number on screen and the number
+  charged differed. Benign only because standing is positive-only (KTD8) so the surprise was always
+  a discount — but a reveal that lies is §10.5's interrupt class, and it sat on the flagship Night
+  surface. It also meant **the game's only faction lever had been live and unplayable**: buying a
+  faction's ore is the sole thing that raises standing, standing is the sole thing that moves the
+  price, and the player could see neither. Fixed in wave U1 (line total, faction named) with U5
+  surfacing the cause and the state. The aggregate-vs-per-unit rounding trap is pinned by test.
 
 ### Known defects and drift on this commit — recorded, deliberately not fixed in this PR
 
@@ -1304,11 +1318,14 @@ full argument). Silence now means (c); a one-line veto restores (a) or (b).
 Until R1 lands, **no further vigil work ships** (this is the plan's one amendment to
 §9.6's blessed order — V-3 waits here, not first).
 
-**R2 — the unreachable endgame (§9.10).** Default: **build the screens in v1** (P6) — four
-buttons over a sim that is already built, tested, and balance-integrated; godot-only; no
-re-baseline; it retires the "money with no meaning" finding where players actually play. The
-alternative — defer past v1 — is legitimate but must be said out loud: it writes "the
-shipped v1 economy dead-ends at ~day 30" into §8 as an accepted fact rather than a silence.
+**R2 — the unreachable endgame (§9.10). RULED 2026-08-07: BUILD. ✅ DONE.** The owner's
+instruction — *"get all current recommendations from the docs and items that CLI, but somehow not
+in the actually game into the playable game"* — is this ruling, spoken. P6 shipped the same day as
+the reachability wave (P6a the Foundry, P6b Masterwork + Legendary), godot-only, no re-baseline.
+**All 24 player actions are now reachable from the Godot client**, enforced from here on by a
+reflection census (`godot/tests/ActionReachabilityCensusTests.cs`) that fails by name on any
+action without a surface or a reasoned exclusion. The alternative — defer past v1 — is no longer
+live. Subordinate wave doc: `docs/plans/2026-08-07-001-feat-reachability-wave-plan.md`.
 
 **R3 — Emberfall (§9.1).** Default: **park draft #346 explicitly, past v1.** Record
 EntryPower 79 as the ruled routing point on the branch; note that the flip is art-blocked,
@@ -1334,12 +1351,12 @@ tally-ending.
 
 | # | Item | Size | Blocked by | §10 filter line | Status |
 |---|------|------|-----------|-----------------|--------|
-| P1 | **Night leads with the mark** (loop U5 / H3): the reveal opens with the attribution beat; sale-and-deed grouped by item | session, godot-only | nothing | Hero: tonight's bearer of your marked item. Ledger line: *is* the item — the beat becomes the opening card | OPEN |
-| P2 | **The send-off names your work** (H4 / Q-1): the departure slate captions which marchers carry your items | session, godot-only | nothing (reads better after P1) | Hero: the named marchers. Ledger line: the antecedent Night points back to | OPEN |
+| P1 | **Night leads with the mark** (loop U5 / H3): the reveal opens with the attribution beat; sale-and-deed grouped by item | session, godot-only | nothing | Hero: tonight's bearer of your marked item. Ledger line: *is* the item — the beat becomes the opening card | **DONE** 2026-08-07 (wave U1) |
+| P2 | **The send-off names your work** (H4 / Q-1): the departure slate captions which marchers carry your items | session, godot-only | nothing (reads better after P1) | Hero: the named marchers. Ledger line: the antecedent Night points back to | **DONE** 2026-08-07 (wave U2) — and see the §8 correction: the naive version was already shipped; what was owed was the 2-line cap, the staging, and an honest empty state |
 | P3 | **Protect the finale**: two-sided balance assertions (floor 5 *reached* by day ≤N on the main seed; ending *fires* within 100 days) + one scripted full-length client run confirming Act III on the real HUD | session, tests-only | nothing | Invariant: the campaign has an end. (Chain-test clause 3 — protect the substrate) | OPEN |
 | P4 | **The human feel-test** (§9.8): `play.ps1`, one real evening, the five written questions — with the fifth (the boredom day) checked against the measured day-11 wall | an evening (owner) | P1+P2 merged — *with a deadline, not a dependency* (see ties) | Not a build item — the gate that rules 9.3, 9.5, 9.7, confirms R4/R6, and re-dates day-11 | OPEN — **put it on the calendar now** (§12, review C: the bottleneck is the owner, not the agents) |
 | P5 | **The vigil branch**: (a) surface the irony, or (b) retune wave, or (c) damp compensation — V-3's hero-chips ride whichever branch wins | (a) session / (b) wave + **re-baseline** / (c) session-wave + **re-baseline** | **R1** | Hero: the camped party. Ledger line: the delivery's `Provisioned`/`PotionLifesave` beat — or the death delta, depending on the branch | BLOCKED (R1) |
-| P6 | **Endgame surfaces**: buttons + bell-tray wiring for UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | ~2 sessions, godot-only | **R2** (default: build) | Hero: whoever carries the guaranteed Masterwork. Ledger line: the attempt's cost and the resulting item's beats | BLOCKED (R2) |
+| P6 | **Endgame surfaces**: buttons + bell-tray wiring for UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | ~2 sessions, godot-only | R2 — **RULED: build** | Hero: whoever carries the guaranteed Masterwork. Ledger line: the attempt's cost and the resulting item's beats | **DONE** 2026-08-07 (wave U3/U4). Dominance measured before shipping the buttons: 17.0% of crafted value flows through purchased attempts at Tier II with a 5000g reserve — hand-work keeps the field. `BaselinePlayer` untouched, no re-baseline |
 | P7 | **The day-11 program**: demand-hazard engine + demand-gated profession debuts (five-pillars Wave 2) | **wave + Contracts micro-PRs + re-baseline** — the expensive one; needs its own plan doc written against this section | P4 (re-confirm the question shortage before the biggest spend) | Hero: the one who needs what only a Tanner or Engineer makes this week. Ledger line: the typed demand fulfilled; `BeatType.ToolAssist` finally gets its emitter | BLOCKED (P4) |
 | P8 | **Finish the hero-facing day**: H5 stakes slate → H6 morning aims → H7 survivor's handshake | 3 sessions, godot-side | P1/P2 (slate patterns) | Each carries the hero-facing-day doc's own per-item ledger lines | OPEN after P1/P2 |
 | P9 | **The Final Commission climax** (§9.7) | wave; likely **Contracts + re-baseline** | P4 (sequencing only — **R6 rules it owed**; P4 can waive it only with an unexpectedly strong verdict on the tally-ending) | Hero: the chosen bearer at the Heart. Ledger line: the commission fulfilled at the climax | OWED (R6), after P4 |
@@ -1456,6 +1473,11 @@ So, binding rules for every session that touches this repo:
    same PR as the work; re-ordering happens as a visible diff *here*, argued in review —
    never as a fresh planning doc. (P7 gets a subordinate plan doc for its own wave, written
    against this section, when its turn comes.)
+   **Amended 2026-08-07:** the same carve-out is granted, explicitly rather than assumed, to
+   `docs/plans/2026-08-07-001-feat-reachability-wave-plan.md` for the reachability items it
+   enumerates — P1, P2, P6a/b, and the legibility rows this section had not swept for. Granting it
+   by name is the point: that doc leaned on the P7 parenthesis for two-thirds of its scope, which
+   would have been a fig leaf. A wave doc is legitimate only when this section says so.
 5. **The measurement rule.** When new data contradicts this plan — P4 moves the boredom
    day, P3's assertions fail, a sweep overturns a tuning claim — the plan amends in the
    same PR that lands the finding. A plan that cannot lose an argument with a measurement
