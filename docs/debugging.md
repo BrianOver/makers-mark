@@ -47,6 +47,7 @@ error. The script fails on all of them.
 | Runtime dies mid-session | `Passed!` for a partial suite | The summary counts what finished. `ENGINE_MIN_PASSED=300` against ~800 tests means half the suite can vanish and still clear CI's floor |
 | Testing `C:\Code\Game` | green | That root is a coordination checkout nobody updates — it was ~130 PRs stale on 2026-08-03. You measured old code |
 | **The wrapper itself, pre-2026-08-04** | `dotnet.exe : Expecting be equal:` and a 31-line log | The wrapper was hiding real failures. See below — this cost an hour of looking in the wrong place |
+| **The wrapper itself, pre-2026-08-07** | `PASS - 945 tests, runtime healthy.` + a receipt | The run was `Failed: 5, Passed: 940`. The runner exited **0 with five failures** and the wrapper's only failure check was the exit code. See below |
 
 **The count is the check, not the word "Passed".** Healthy is ~880 (2026-08-04). If you see 500-ish,
 the runtime died; read §5 before theorising.
@@ -63,6 +64,24 @@ A second trap in the same fix: `WaitForExit(ms)` returning true does **not** gua
 populated. It read as empty, and `'' -ne 0` is **true** in PowerShell — which would have reported a
 *green* run as a failure. Read the code after an argument-less `WaitForExit()` and default to a
 nonzero sentinel: an unreadable exit code must never become a claimed success.
+
+**A third lie, found 2026-08-07: the runner can report failures AND exit 0.** A real wave produced
+`Failed: 5, Passed: 940, Total: 945` with process exit code **0**. The wrapper's only failure check
+was `$testExit -ne 0`, so it printed `PASS - 945 tests, runtime healthy`, wrote a receipt vouching
+for the commit, and the failures were reported to the owner as green *twice* before CI caught them.
+Note the shape: this is the mirror image of the trap two rows above — that one was a floor with no
+failure check, this one was a failure check with no floor on its own honesty.
+
+Fixed by summing every `Failed:\s+(\d+)` in the log and refusing on nonzero **regardless of exit
+code**, printing an explicit note when the two disagree. **The count is authoritative; the exit code
+is advisory.** The fix earned itself immediately: on the very next run it caught two more failures
+the exit code would have hidden again.
+
+**So a green claim needs three independent facts, and any one alone is forgeable:** the suite ran
+(`Total` vs the floor), nothing failed (the parsed `Failed` count, *not* exit status), and the
+runtime survived (death signatures). Before believing any harness's verdict — including this one's —
+run `grep -E "Failed:\s+[0-9]+" .claude/engine-test/last-run.log` yourself. It costs nothing and has
+now caught two different lies from two different layers.
 
 **The wrapper now waits for the machine instead of telling you to.** `-MaxWaitMinutes` (default 10)
 waits, names which process holds the machine, then refuses with a message stating it is a final
