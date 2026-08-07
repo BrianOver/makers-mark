@@ -7,6 +7,7 @@ using GameSim.Kernel;
 using GdUnit4;
 using Godot;
 using GodotClient.Panels;
+using GodotClient.Tools;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -451,16 +452,19 @@ public class MineWatchTests
     // ── U16: the in-panel journey feed (MineWatch evolves to carry it — KTD11/AE2) ─────────────
 
     [TestCase]
-    public void ExpeditionPhase_PartyDeparted_FeedShowsRosterAndCraftedGear_NotJustRumor()
+    public void ExpeditionPhase_PartyDeparted_FeedShowsRoster_SlateNamesCraftedGear()
     {
         // U-EXP1 (Expedition-watchable, owner-flagged twice: "the player just sits there"):
-        // before this unit, EVERY tick of the entire Expedition phase rendered nothing here but a
+        // before that unit, EVERY tick of the entire Expedition phase rendered nothing here but a
         // content-free "Rumor has it a party sets out for floor N…" placeholder — no name, no
         // gear, the whole premise's payoff ("the gear you forged, out in the world") invisible for
-        // the one phase the player is actually watching a raid depart. Pins the fix at the real
-        // render layer (JourneyStreamTests pins the same fact at the pure data layer): the strip's
-        // own feed label shows the hero's name AND the crafted item from the very first Refresh,
-        // reading nothing that isn't already on GameState (Hero.Gear + Item.Mark).
+        // the one phase the player is actually watching a raid depart.
+        //
+        // U2 (the send-off unit) split this in two: the crafted item used to live in THIS same
+        // feed label (capped, and swept away by combat beats once Camp started — "burial, not
+        // ceremony") and now lives on the departure slate instead, uncapped and persistent for as
+        // long as the party is tracked (see DepartureSlate_* tests below for that surface's own
+        // coverage). This test now pins only what the scrolling feed still owns: the roll call.
         var watch = new MineWatch();
         try
         {
@@ -483,7 +487,234 @@ public class MineWatchTests
             var feed = Find<Label>(watch, "JourneyFeedLabel");
             AssertThat(feed.Visible).IsTrue();
             AssertThat(feed.Text).Contains("Torvald");
-            AssertThat(feed.Text).Contains("Fine Iron Blade");
+
+            // The crafted item is no longer part of the scrolling feed — it is the departure
+            // slate's whole job now (RenderedText reaches it regardless of SubViewport nesting;
+            // DepartureSlate_EscapesTheSubViewportBoundary below pins that it ALSO reaches a
+            // production playtest walker, not just this test helper).
+            AssertThat(feed.Text.Contains("Fine Iron Blade")).IsFalse();
+            AssertThat(watch.DepartureSlateLines.Single()).IsEqual("Torvald carries your Fine Iron Blade.");
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    // ── U2 (the send-off unit): the departure slate ─────────────────────────────────────────────
+    // The naive version of "at departure the slate names that hero and that item" already passed
+    // before this unit (single hero, single item never hits any cap). These pin the three real
+    // deltas the plan called out: the FeedVisibleLines-1 cap silently dropping a party's 3rd
+    // carried item, an honest empty state where the old code had none, and that the slate
+    // actually escapes MineWatch's own SubViewport boundary (ScreenObservation.Descendants stops
+    // at one) so a production playtest walker — not just this test file's own Find<T>/RenderedText
+    // helpers, which never respected that boundary either way — can read it.
+
+    [TestCase]
+    public void ExpeditionPhase_PartyOfThree_EachCarryingCraftedGear_AllThreeNamedOnSlate()
+    {
+        // THE failing-first test for this unit. The primary assertion below (RenderedText, an
+        // existing helper that walks the WHOLE node tree, slate or no slate) is deliberately
+        // written against API that already existed pre-change, so it is checkable by inspection
+        // against the actual pre-change source rather than only against a hook this unit adds:
+        // pre-change, MineWatch's only manifest renderer was RumoredLines, which computed
+        // card.Manifest.Take(FeedVisibleLines - 1) with FeedVisibleLines == 3, i.e. Take(2) — for
+        // a party of three heroes (roster order 1,2,3) each carrying one player-crafted item, that
+        // keeps only hero 1 and hero 2's lines and silently drops hero 3's "Fine Iron Staff" line,
+        // which would appear NOWHERE in the tree (confirmed against git HEAD's MineWatch.cs before
+        // touching it — this session cannot run gdUnit/tools/engine-test.ps1 to observe it fail
+        // live, so this is a traced-by-hand red, not an executed one; said plainly in the report).
+        // Post-fix, the departure slate carries every manifest line, uncapped, which the
+        // DepartureSlateLines assertions below additionally pin at the new surface directly.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var w1 = new ItemId(1);
+            var w2 = new ItemId(2);
+            var w3 = new ItemId(3);
+            var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+                .Add(1, Delver(1, "Torvald", "vanguard") with { Gear = new GearSet(w1, null, null) })
+                .Add(2, Delver(2, "Elowen", "striker") with { Gear = new GearSet(w2, null, null) })
+                .Add(3, Delver(3, "Brask", "mystic") with { Gear = new GearSet(w3, null, null) });
+            var items = ImmutableSortedDictionary<int, Item>.Empty
+                .Add(1, new Item(w1, "recipe", "Fine Iron Blade", ItemSlot.Weapon, QualityGrade.Fine,
+                    new ItemStats(1, 0, 1), new MakersMark("Player", 1), ImmutableList<ItemHistoryEntry>.Empty))
+                .Add(2, new Item(w2, "recipe", "Fine Iron Bow", ItemSlot.Weapon, QualityGrade.Fine,
+                    new ItemStats(1, 0, 1), new MakersMark("Player", 1), ImmutableList<ItemHistoryEntry>.Empty))
+                .Add(3, new Item(w3, "recipe", "Fine Iron Staff", ItemSlot.Weapon, QualityGrade.Fine,
+                    new ItemStats(1, 0, 1), new MakersMark("Player", 1), ImmutableList<ItemHistoryEntry>.Empty));
+            var state = GameFactory.NewGame(9097) with { Heroes = heroes, Items = items };
+            var plan = new PartyPlan(
+                ImmutableList.Create(new HeroId(1), new HeroId(2), new HeroId(3)), TargetFloor: 2, VenueId: "mine");
+            var events = ImmutableList.Create<GameEvent>(
+                new PartyDeparted(ImmutableList.Create(new HeroId(1), new HeroId(2), new HeroId(3)), 2),
+                new PartiesFormed(ImmutableList.Create(plan)));
+
+            watch.Refresh(state with { Phase = DayPhase.Expedition }, events);
+
+            // Primary assertion — checkable against pre-change code by inspection (RenderedText
+            // already existed; it walks the whole tree regardless of where the text lives).
+            var everywhere = RenderedText(watch);
+            AssertThat(everywhere).Contains("Fine Iron Blade");
+            AssertThat(everywhere).Contains("Fine Iron Bow");
+            AssertThat(everywhere)
+                .OverrideFailureMessage(
+                    "Hero 3's carried item ('Fine Iron Staff') was dropped nowhere in the tree — this " +
+                    "is the FeedVisibleLines-1 cap bug this unit fixes (pre-change: card.Manifest.Take(2)).")
+                .Contains("Fine Iron Staff");
+
+            // Post-fix precision: the same three lines on the new surface, uncapped.
+            AssertThat(watch.DepartureSlateLines.Count).IsEqual(3);
+            AssertThat(watch.DepartureSlateLines.Any(l => l.Contains("Fine Iron Blade"))).IsTrue();
+            AssertThat(watch.DepartureSlateLines.Any(l => l.Contains("Fine Iron Bow"))).IsTrue();
+            AssertThat(watch.DepartureSlateLines.Any(l => l.Contains("Fine Iron Staff"))).IsTrue();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void ExpeditionPhase_NoPlayerCraftedGear_SlateShowsHonestEmptyState_NotBarePlaceholder()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var state = StagedWorld(); // Delver's default GearSet.Empty — a bare-handed party
+            var plan = new PartyPlan(ImmutableList.Create(new HeroId(1)), TargetFloor: 2, VenueId: "mine");
+            var events = ImmutableList.Create<GameEvent>(
+                new PartyDeparted(ImmutableList.Create(new HeroId(1)), 2),
+                new PartiesFormed(ImmutableList.Create(plan)));
+
+            watch.Refresh(state with { Phase = DayPhase.Expedition }, events);
+
+            AssertThat(watch.DepartureSlateLines.Count).IsEqual(1);
+            AssertThat(watch.DepartureSlateLines.Single())
+                .IsEqual("Nobody in this party carries anything you forged.");
+            // The icon+text shape LedgerModal.AddEmptyState uses, not the bare "A party sets out…"
+            // JourneyStream.DepartureLine falls back to (that fallback stays PipDock's own, untouched).
+            var icon = Find<TextureRect>(watch, "DepartureSlateEmptyIcon");
+            AssertThat(icon.Texture).IsNotNull();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void ExpeditionPhase_OneHeroTwoCraftedItems_BothNamed_NoDuplication()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var weapon = new ItemId(1);
+            var armor = new ItemId(2);
+            var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+                .Add(1, Delver(1, "Torvald", "vanguard") with { Gear = new GearSet(weapon, null, armor) });
+            var items = ImmutableSortedDictionary<int, Item>.Empty
+                .Add(1, new Item(weapon, "recipe", "Fine Iron Blade", ItemSlot.Weapon, QualityGrade.Fine,
+                    new ItemStats(1, 0, 1), new MakersMark("Player", 1), ImmutableList<ItemHistoryEntry>.Empty))
+                .Add(2, new Item(armor, "recipe", "Fine Iron Plate", ItemSlot.Armor, QualityGrade.Fine,
+                    new ItemStats(0, 2, 0), new MakersMark("Player", 1), ImmutableList<ItemHistoryEntry>.Empty));
+            var state = GameFactory.NewGame(9095) with { Heroes = heroes, Items = items };
+            var plan = new PartyPlan(ImmutableList.Create(new HeroId(1)), TargetFloor: 2, VenueId: "mine");
+            var events = ImmutableList.Create<GameEvent>(
+                new PartyDeparted(ImmutableList.Create(new HeroId(1)), 2),
+                new PartiesFormed(ImmutableList.Create(plan)));
+
+            watch.Refresh(state with { Phase = DayPhase.Expedition }, events);
+
+            AssertThat(watch.DepartureSlateLines.Count).IsEqual(2);
+            AssertThat(watch.DepartureSlateLines.Count(l => l.Contains("Fine Iron Blade"))).IsEqual(1);
+            AssertThat(watch.DepartureSlateLines.Count(l => l.Contains("Fine Iron Plate"))).IsEqual(1);
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void ExpeditionPhase_RivalBoughtGear_NeverNamedOnSlate()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var weapon = new ItemId(1); // player-crafted
+            var rivalShield = new ItemId(2); // vendor stock, no MakersMark
+            var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+                .Add(1, Delver(1, "Torvald", "vanguard") with { Gear = new GearSet(weapon, rivalShield, null) });
+            var items = ImmutableSortedDictionary<int, Item>.Empty
+                .Add(1, new Item(weapon, "recipe", "Fine Iron Blade", ItemSlot.Weapon, QualityGrade.Fine,
+                    new ItemStats(1, 0, 1), new MakersMark("Player", 1), ImmutableList<ItemHistoryEntry>.Empty))
+                .Add(2, new Item(rivalShield, "recipe", "Rival Shield", ItemSlot.Shield, QualityGrade.Common,
+                    new ItemStats(0, 1, 0), Mark: null, History: ImmutableList<ItemHistoryEntry>.Empty));
+            var state = GameFactory.NewGame(9094) with { Heroes = heroes, Items = items };
+            var plan = new PartyPlan(ImmutableList.Create(new HeroId(1)), TargetFloor: 2, VenueId: "mine");
+            var events = ImmutableList.Create<GameEvent>(
+                new PartyDeparted(ImmutableList.Create(new HeroId(1)), 2),
+                new PartiesFormed(ImmutableList.Create(plan)));
+
+            watch.Refresh(state with { Phase = DayPhase.Expedition }, events);
+
+            AssertThat(watch.DepartureSlateLines.Count).IsEqual(1); // the rival shield earns no line
+            AssertThat(watch.DepartureSlateLines.Any(l => l.Contains("Fine Iron Blade"))).IsTrue();
+            AssertThat(watch.DepartureSlateLines.Any(l => l.Contains("Rival Shield"))).IsFalse();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void DepartureSlate_EscapesTheSubViewportBoundary_VisibleToScreenObservation()
+    {
+        // U2 verification note: MineWatch's OWN content built before this unit (_recordBark,
+        // _feedLabel, DelveStage) all live inside `_viewport` (a child SubViewport) and are
+        // therefore invisible to ScreenObservation.Descendants — it deliberately stops at a
+        // SubViewport boundary and never looks inside one (see that method's own remarks), which
+        // is also the walk AgentPlaytest's digest and HumanPlayer.Screen() are both built on. The
+        // departure slate is a sibling of _viewport (a direct child of `this`, the
+        // SubViewportContainer) specifically so this unit's "the AgentPlaytest digest can see the
+        // slate's text" scenario is actually true — proven here against the real shared walker,
+        // not a hand-rolled substitute.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var weapon = new ItemId(1);
+            var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+                .Add(1, Delver(1, "Torvald", "vanguard") with { Gear = new GearSet(weapon, null, null) });
+            var items = ImmutableSortedDictionary<int, Item>.Empty
+                .Add(1, new Item(weapon, "recipe", "Fine Iron Blade", ItemSlot.Weapon, QualityGrade.Fine,
+                    new ItemStats(1, 0, 1), new MakersMark("Player", 1), ImmutableList<ItemHistoryEntry>.Empty));
+            var state = GameFactory.NewGame(9096) with { Heroes = heroes, Items = items };
+            var plan = new PartyPlan(ImmutableList.Create(new HeroId(1)), TargetFloor: 2, VenueId: "mine");
+            var events = ImmutableList.Create<GameEvent>(
+                new PartyDeparted(ImmutableList.Create(new HeroId(1)), 2),
+                new PartiesFormed(ImmutableList.Create(plan)));
+
+            watch.Refresh(state with { Phase = DayPhase.Expedition }, events);
+
+            var reachableOutsideViewports = ScreenObservation.AllTextNodes(watch).Select(n => n.Text).ToList();
+
+            AssertThat(reachableOutsideViewports.Any(t => t.Contains("Fine Iron Blade")))
+                .OverrideFailureMessage(
+                    "The departure slate's text was not reachable outside the SubViewport boundary — " +
+                    "AgentPlaytest/HumanPlayer would never see it.")
+                .IsTrue();
+
+            // Contrast: the roll-call feed lives INSIDE _viewport (unchanged by this unit) and stays
+            // invisible to the very same walk — confirming the slate's placement is what makes the
+            // difference, not a change to how ScreenObservation itself works.
+            AssertThat(reachableOutsideViewports.Any(t => t.Contains("set out for floor"))).IsFalse();
         }
         finally
         {
