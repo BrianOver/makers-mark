@@ -508,6 +508,92 @@ public class ForgeCraftTests
         finally { Unmount(ui); }
     }
 
+    // ── U8c: the buymat quantity stepper — pure friction relief riding this panel's vendor row.
+    // It names no ledger line and changes no hero's outcome; the one real hazard is the action
+    // budget (BuyMaterialAction must cost ONE slot per LINE, never one slot per unit) — that is
+    // what the first test below actually proves. ──────────────────────────────────────────────
+
+    [TestCase]
+    public void BuyingTenCopperInOneClick_SpendsExactlyOneActionSlot_DropsGoldByTheFullQuote_StockRisesByTen()
+    {
+        var fullQuote = MaterialVendorHandlers.QuoteCost(MaterialRegistry.Copper, 10);
+        var ui = MountMainUi(FoundryCampaign(gold: fullQuote));
+        try
+        {
+            ui.OpenPanel("Forge");
+            var startingSlots = ui.Adapter.CurrentState.ActionSlotsRemaining;
+
+            var qty = Find<SpinBox>(ui.Forge, $"BuyMatQty_{MaterialRegistry.Copper}");
+            qty.Value = 10; // the same SpinBox.Value-drives-ValueChanged idiom ShopPanelTests uses
+            AssertThat(qty.Value).IsEqual(10.0); // sanity: the stepper actually took the value
+
+            // The button's own re-paint (wired to the SpinBox) is the client half of the contract
+            // this unit adds — proven here alongside the kernel-level assertions below.
+            var buy = Find<Button>(ui.Forge, $"BuyMat_{MaterialRegistry.Copper}");
+            AssertThat(buy.Text).IsEqual("Buy 10");
+            AssertThat(buy.Disabled).IsFalse();
+
+            // KTD5 evidence: a real Pressed signal, not a hand-built action — same idiom as every
+            // other PressEnabled call in this file.
+            PressEnabled(ui.Forge, $"BuyMat_{MaterialRegistry.Copper}");
+
+            var after = ui.Adapter.CurrentState;
+            // THE hazard this unit calls out: one click, one slot — never ten.
+            AssertThat(after.ActionSlotsRemaining).IsEqual(startingSlots - 1);
+            AssertThat(after.Player.Gold).IsEqual(0); // fullQuote spent, to the gold piece
+            AssertThat(after.Player.Materials[MaterialRegistry.Copper]).IsEqual(10);
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase(0)]
+    [TestCase(-5)]
+    public void NonPositiveQuantity_QueuedDirectly_RejectedWithNoStateChange(int quantity)
+    {
+        // The SpinBox floors at 1 (MinValue), so a real click can never submit this — same
+        // "prove the kernel refuses it even if some future edit ever let a bad value through"
+        // idiom as MissingFlux_MasterworkRowDisabled_QueueingAnywayRejectsWithNoPartialConsumption
+        // above, for the OTHER end of the same guard (MaterialVendorHandlers.Apply check 1).
+        var ui = MountMainUi(FoundryCampaign(gold: 1000));
+        try
+        {
+            ui.OpenPanel("Forge");
+            var before = ui.Adapter.CurrentState;
+
+            ui.Adapter.Queue(new BuyMaterialAction(MaterialRegistry.Copper, quantity));
+
+            AssertThat(ui.Adapter.LastRejections.Count).IsEqual(1);
+            AssertThat(ui.Adapter.CurrentState.Player.Gold).IsEqual(before.Player.Gold);
+            AssertThat(ui.Adapter.CurrentState.Player.Materials.ContainsKey(MaterialRegistry.Copper)).IsFalse();
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void BuyMatQtyStepper_DefaultsToOne_UnaffordableQuantity_DisablesTheSameButton()
+    {
+        // Exactly enough gold for 1 copper, not for 2 — proves the button's initial paint (qty
+        // untouched) still gates on the 1-unit default, byte-identical to before this unit, and
+        // that dialing the SAME row up to 2 flips the SAME button to Disabled with a live reason.
+        var oneQuote = MaterialVendorHandlers.QuoteCost(MaterialRegistry.Copper, 1);
+        var ui = MountMainUi(FoundryCampaign(gold: oneQuote));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            var buy = Find<Button>(ui.Forge, $"BuyMat_{MaterialRegistry.Copper}");
+            AssertThat(buy.Text).IsEqual("Buy 1");
+            AssertThat(buy.Disabled).IsFalse();
+
+            Find<SpinBox>(ui.Forge, $"BuyMatQty_{MaterialRegistry.Copper}").Value = 2;
+
+            AssertThat(buy.Text).IsEqual("Buy 2");
+            AssertThat(buy.Disabled).IsTrue();
+            AssertThat(buy.TooltipText).Contains("can't afford");
+        }
+        finally { Unmount(ui); }
+    }
+
     /// <summary>Select a <c>MaterialSelect</c> item by its displayed text (never a hardcoded
     /// index — <c>RecipeTable.MaterialGrades</c> is alphabetical, not insertion-order) and emit
     /// the same <c>ItemSelected</c> signal a real dropdown pick fires, driving the panel's

@@ -20,7 +20,10 @@ namespace GodotClient.Panels;
 /// <see cref="CraftAction"/>), plus each profession's talent mini-tree with Unlock buttons
 /// (queues <see cref="UnlockTalentAction"/>), plus the Morning vendor's buy rows (Playable
 /// Core U3): one row per <see cref="MaterialRegistry.PricedPool"/> key with its marked-up
-/// price, queueing <see cref="BuyMaterialAction"/>. Unlock enablement calls
+/// price, queueing <see cref="BuyMaterialAction"/>. A <c>SpinBox</c> quantity stepper (U8c) sits
+/// under each row — the console's <c>buymat &lt;material&gt; &lt;qty&gt;</c> already bought any
+/// amount in one action slot; the button now does too, defaulting to 1 (byte-identical to before
+/// that unit) when nothing is touched. Unlock enablement calls
 /// <see cref="ProfessionDefinition.CanUnlock"/> — sim-owned validation, only rendered here.
 ///
 /// <para>P007 U5 (R12/KTD2/KTD3/KTD5 — resolves OQ4 to click-to-craft): recipe rows are now
@@ -364,35 +367,73 @@ public partial class ForgePanel : SimPanel
         // single-unit price. Display quote only — the sim's MaterialVendorHandlers reprices
         // authoritatively on apply; this mirrors its exact formula (ceilDiv over sim-owned
         // constants), no rules here.
+        //
+        // U8c: a quantity stepper beside the SAME Buy button — booked as pure friction relief
+        // (it names no ledger line, changes no hero's outcome), not a path feature. The button
+        // still defaults to buying 1 with nothing touched (byte-identical initial gate/price to
+        // before this unit), so every existing "press BuyMat_x N times" test still buys 1 per
+        // press; the stepper only ADDS the option to dial in a bigger single purchase.
         Clear(_vendorRows!);
         foreach (var key in MaterialRegistry.PricedPool)
         {
-            var unit = MaterialRegistry.UnitPrice(key);
-            var quote = (int)(((long)unit * (1000 + MaterialVendorHandlers.VendorMarkupPermille) + 999) / 1000);
             var have = state.Player.Materials.TryGetValue(key, out var owned) ? owned : 0;
 
-            var buy = new Button { Name = $"BuyMat_{key}", Text = "Buy 1" };
-            buy.Pressed += () => OnBuyMaterialPressed(key);
-            // U6 gate, mirroring MaterialVendorHandlers: Morning-only CanHandle + the gold
-            // check. Landing phase = the CURRENT phase (GameKernel.Tick applies the queued
-            // batch against state.Phase before advancing), so the buy is legal exactly
-            // while the sim still sits AT Morning. ListRow inlines the exact GateButton
-            // contract (Disabled + player-phrased tooltip) itself.
+            // U6 gate, mirroring MaterialVendorHandlers: Morning-only CanHandle + the gold check.
+            // Landing phase = the CURRENT phase (GameKernel.Tick applies the queued batch against
+            // state.Phase before advancing), so the buy is legal exactly while the sim still sits
+            // AT Morning. ListRow inlines the exact GateButton contract (Disabled + player-phrased
+            // tooltip) itself.
             // The action budget belongs in this gate too. It was missing, and the omission was
             // reachable by a human: in Morning with enough gold but zero slots left, the row stayed
             // enabled, the click queued an action the handler then rejected, and the feedback line
             // still said "Queued — resolves when Morning ticks". A dead click that confirms itself
             // is worse than a disabled one. BountyPanel already gates on slots; this now matches it,
             // including its phase -> gold -> slots reason precedence.
-            var legal = state.Phase == DayPhase.Morning
-                && quote <= state.Player.Gold
-                && state.ActionSlotsRemaining > 0;
-            var whyNot = state.Phase != DayPhase.Morning
-                ? "The vendor sells in the Morning."
-                : quote > state.Player.Gold
-                    ? "You can't afford that yet."
-                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
-            _vendorRows!.AddChild(ListRow(IconRegistry.Ore(key), key, $"{quote}g", have.ToString(), buy, legal, whyNot));
+            //
+            // MaterialVendorHandlers.QuoteCost is the ONE pricing formula (its own class doc) —
+            // this used to hand-inline the same ceilDiv, now parameterized on quantity so the
+            // gate below can be re-run for whatever quantity the stepper holds.
+            (int Quote, bool Legal, string WhyNot) Gate(int qty)
+            {
+                var q = MaterialVendorHandlers.QuoteCost(key, qty);
+                var ok = state.Phase == DayPhase.Morning && q <= state.Player.Gold && state.ActionSlotsRemaining > 0;
+                var reason = state.Phase != DayPhase.Morning
+                    ? "The vendor sells in the Morning."
+                    : q > state.Player.Gold
+                        ? "You can't afford that yet."
+                        : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                return (q, ok, reason);
+            }
+
+            var qtySpin = new SpinBox
+            {
+                Name = $"BuyMatQty_{key}",
+                MinValue = 1,
+                MaxValue = 9999,
+                Rounded = true,
+                Value = 1,
+            };
+
+            var buy = new Button { Name = $"BuyMat_{key}", Text = "Buy 1" };
+            buy.Pressed += () => OnBuyMaterialPressed(key, (int)qtySpin.Value);
+
+            var initial = Gate(1);
+            _vendorRows!.AddChild(ListRow(IconRegistry.Ore(key), key, $"{initial.Quote}g", have.ToString(), buy, initial.Legal, initial.WhyNot));
+
+            // The stepper itself — a thin row right under the ListRow (ShopPanel's priceSpin
+            // precedent), re-gating the SAME Buy button live against whatever quantity is dialed
+            // in, rather than only ever the 1-unit default.
+            var qtyRow = AddRow(_vendorRows!);
+            AddLabel(qtyRow, "  qty:");
+            qtyRow.AddChild(qtySpin);
+            qtySpin.ValueChanged += value =>
+            {
+                var qty = (int)value;
+                var gate = Gate(qty);
+                buy.Text = $"Buy {qty}";
+                buy.Disabled = !gate.Legal;
+                buy.TooltipText = gate.Legal ? string.Empty : gate.WhyNot;
+            };
         }
 
         // U3 (the Foundry): tier/coal/flux chips + the Upgrade/Buy-supply rows. ActionLegality's
@@ -1170,17 +1211,20 @@ public partial class ForgePanel : SimPanel
         _feedback!.Text = Confirm(action, $"Unlocked {nodeId}");
     }
 
-    /// <summary>Queues a one-unit vendor buy (Morning-only in the sim; the U6 gate disables the
-    /// row off-Morning, and a rejection that still surfaces becomes MainUi's toast). Fixed to
+    /// <summary>Queues a vendor buy (Morning-only in the sim; the U6 gate disables the row
+    /// off-Morning, and a rejection that still surfaces becomes MainUi's toast). Fixed to
     /// Morning — <see cref="GameSim.Economy.MaterialVendorHandlers"/>'s CanHandle is Morning-only,
-    /// so unlike craft/unlock this action's resolving phase is never the current one off-Morning.</summary>
-    private void OnBuyMaterialPressed(string materialKey)
+    /// so unlike craft/unlock this action's resolving phase is never the current one off-Morning.
+    /// <paramref name="quantity"/> is the U8c stepper's live value (defaults to 1, unchanged from
+    /// before that unit) — <see cref="GameSim.Economy.MaterialVendorHandlers"/> spends exactly ONE
+    /// action slot for the whole line regardless of quantity, never one slot per unit.</summary>
+    private void OnBuyMaterialPressed(string materialKey, int quantity)
     {
-        var action = new BuyMaterialAction(materialKey, 1);
+        var action = new BuyMaterialAction(materialKey, quantity);
         Adapter?.Queue(action);
         // Sound the CLICK, not the settlement: the player pressed Buy now, so the coin lands now.
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Coin);
-        _feedback!.Text = Confirm(action, $"Bought 1 {materialKey}");
+        _feedback!.Text = Confirm(action, $"Bought {quantity} {materialKey}");
     }
 
     /// <summary>U3: the forge-tier upgrade — always a BELL-RIDER (<see cref="GameSim.Kernel.ActionTiming"/>
@@ -1195,7 +1239,8 @@ public partial class ForgePanel : SimPanel
     }
 
     /// <summary>U3: coal/flux from the forge supplier — resolves immediately (mirrors
-    /// <see cref="OnBuyMaterialPressed"/>'s one-unit shape exactly).</summary>
+    /// <see cref="OnBuyMaterialPressed"/>'s immediate-resolve shape). Still a fixed one-unit
+    /// buy — U8c's quantity stepper is scoped to the Morning material vendor row only.</summary>
     private void OnBuyForgeSupplyPressed(string supplyKey)
     {
         var action = new BuyForgeSupplyAction(supplyKey, 1);
