@@ -587,6 +587,65 @@ public partial class ForgePanel : SimPanel
                         }
                     }
                 }
+
+                // U4 (P6b): the masterwork attempt — a purchased GUARANTEE standing right beside
+                // whichever craft path this card already offers, on every profession's recipes
+                // (MasterworkAttemptHandlers/ActionLegality.MasterworkAttemptLegal are
+                // profession-agnostic — see ProfessionRegistry.TryGetRecipe's global lookup).
+                // MasterworkAttemptLegal returns a bare bool (no whyNot) — same contract as the
+                // Foundry section above — so this recomputes the SAME ordered checks
+                // (MasterworkAttemptHandlers.Apply steps 3/7/8/9) to write a specific reason.
+                // Material affordability reuses this card's own needed/have/affordable —
+                // MasterworkAttemptHandlers' material-quantity math (efficiency talent, floor 1)
+                // is identical to CraftAction's. Zero RNG on the sim side (see that handler's
+                // class doc) — copy says "guaranteed", never "chance".
+                var atMasterworkTier = tierIndex >= MasterworkAttemptHandlers.RequiredForgeTierIndex;
+                var mwCoalOk = coalHave >= MasterworkAttemptHandlers.CoalCost;
+                var mwFluxOk = fluxHave >= MasterworkAttemptHandlers.FluxCost;
+                var mwSurcharge = MasterworkAttemptHandlers.GoldSurchargePerTier * (tierIndex + 1);
+                var mwGoldOk = state.Player.Gold >= mwSurcharge;
+                var mwLegal = atMasterworkTier && affordable && mwCoalOk && mwFluxOk && mwGoldOk
+                    && state.ActionSlotsRemaining > 0;
+                var mwWhyNot = !atMasterworkTier
+                    ? $"Requires Forge Tier {MasterworkAttemptHandlers.RequiredForgeTierIndex + 2} or higher (workshop is Tier {TierRoman[tierIndex]})."
+                    : !affordable
+                        ? $"Not enough {material} — need {needed}, have {have}."
+                        : !mwCoalOk
+                            ? $"Not enough coal — need {MasterworkAttemptHandlers.CoalCost}, have {coalHave}."
+                            : !mwFluxOk
+                                ? $"Not enough flux — need {MasterworkAttemptHandlers.FluxCost}, have {fluxHave}."
+                                : !mwGoldOk
+                                    ? $"Not enough gold — need {mwSurcharge}, have {state.Player.Gold}."
+                                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                var masterwork = AddButton(controlsRow, $"Masterwork_{recipe.RecipeId}", "Masterwork Attempt (guaranteed)",
+                    () => OnMasterworkPressed(recipe.RecipeId, material));
+                GateButton(masterwork, mwLegal, mwWhyNot);
+
+                // U4 (P6b): commission one of the era's capped legendary works — same card, same
+                // selected material, DOUBLE quantity (LegendaryCommissionHandlers.MaterialMultiplier,
+                // no efficiency discount — the extravagant path). "N of 4 left" is read off the
+                // handler's own reserved counter key, never a locally re-derived number. Also a
+                // bare-bool ActionLegality mirror, same idiom as the masterwork gate just above.
+                var commissionsUsed = state.Player.Materials.TryGetValue(LegendaryCommissionHandlers.CommissionsUsedKey, out var usedStock) ? usedStock : 0;
+                var commissionsRemaining = LegendaryCommissionHandlers.MaxPerCampaign - commissionsUsed;
+                var legendaryCapped = commissionsUsed >= LegendaryCommissionHandlers.MaxPerCampaign;
+                var legendaryNeeded = recipe.MaterialQuantity * LegendaryCommissionHandlers.MaterialMultiplier;
+                var legendaryMaterialOk = have >= legendaryNeeded;
+                var legendaryCost = LegendaryCommissionHandlers.BaseGold * (tierIndex + 1);
+                var legendaryGoldOk = state.Player.Gold >= legendaryCost;
+                var legendaryLegal = !legendaryCapped && legendaryMaterialOk && legendaryGoldOk
+                    && state.ActionSlotsRemaining > 0;
+                var legendaryWhyNot = legendaryCapped
+                    ? $"All {LegendaryCommissionHandlers.MaxPerCampaign} legendary commissions for this era are already spoken for."
+                    : !legendaryMaterialOk
+                        ? $"Not enough {material} — need {legendaryNeeded}, have {have}."
+                        : !legendaryGoldOk
+                            ? $"Not enough gold — need {legendaryCost}, have {state.Player.Gold}."
+                            : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                var legendary = AddButton(controlsRow, $"Commission_{recipe.RecipeId}",
+                    $"Commission Legendary ({commissionsRemaining} of {LegendaryCommissionHandlers.MaxPerCampaign} left)",
+                    () => OnCommissionLegendaryPressed(recipe.RecipeId, material));
+                GateButton(legendary, legendaryLegal, legendaryWhyNot);
             }
 
             foreach (var node in profession.TalentNodes.Values)
@@ -1143,6 +1202,35 @@ public partial class ForgePanel : SimPanel
         Adapter?.Queue(action);
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Coin);
         _feedback!.Text = Confirm(action, $"Bought 1 {supplyKey}");
+    }
+
+    /// <summary>U4 (P6b): the masterwork attempt — resolves IMMEDIATELY
+    /// (<see cref="MasterworkAttemptHandlers"/> is all-phase, like <see cref="CraftAction"/>),
+    /// spending coal + flux + gold + the recipe's materials for a GUARANTEED Superior-or-better
+    /// mint (see that handler's class doc — zero RNG, never a "chance"). Standing right beside the
+    /// Craft/Work-the-forge/etc. button on the SAME recipe card: gold buys certainty, not a better
+    /// roll at the same minigame.</summary>
+    private void OnMasterworkPressed(string recipeId, string materialKey)
+    {
+        var action = new MasterworkAttemptAction(recipeId, materialKey);
+        Adapter?.Queue(action);
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.CraftDone);
+        _feedback!.Text = Confirm(action, $"Masterwork attempt on {recipeId} with {materialKey} (guarantees Superior or better)");
+    }
+
+    /// <summary>U4 (P6b): commission one of the era's capped legendary works — always a BELL-RIDER
+    /// (<see cref="GameSim.Kernel.ActionTiming"/> defers <see cref="CommissionLegendaryWorkAction"/>
+    /// unconditionally, same as <see cref="OnUpgradeForgePressed"/>'s forge upgrade), so this
+    /// always queues; <see cref="Confirm"/> reads that off the shared source and appends the bell
+    /// wording itself. The Guild furnishes what a commission this large needs from your forge — the
+    /// work that comes back still bears your mark, same as every other mint this panel produces
+    /// (<see cref="GameSim.Crafting.ItemForge.Forge"/> always stamps one; see
+    /// <see cref="PendingVerbVocab.BellPromise"/>'s own updated wording).</summary>
+    private void OnCommissionLegendaryPressed(string recipeId, string materialKey)
+    {
+        var action = new CommissionLegendaryWorkAction(recipeId, materialKey);
+        Adapter?.Queue(action);
+        _feedback!.Text = Confirm(action, $"Commissioned a legendary {recipeId} from {materialKey}");
     }
 
     private string SelectedMaterialOr(string recipeDefault)

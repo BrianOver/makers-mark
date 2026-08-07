@@ -217,8 +217,10 @@ public class ForgeCraftTests
     /// <summary>Default seed-2026 campaign with gold/copper/forge-tier/coal/flux overridden —
     /// mirrors <c>RejectionUxTests.CampaignWith</c>'s override shape, widened for the Foundry's
     /// own reserved-key state (<see cref="ForgeTierHandlers.ForgeTierKey"/>, <see
-    /// cref="ForgeSupplyHandlers.Coal"/>/<see cref="ForgeSupplyHandlers.Flux"/>).</summary>
-    private static SimAdapter FoundryCampaign(int gold, int copper = 0, int tierIndex = 0, int coal = 0, int flux = 0)
+    /// cref="ForgeSupplyHandlers.Coal"/>/<see cref="ForgeSupplyHandlers.Flux"/>). U4 (P6b) adds
+    /// <paramref name="commissionsUsed"/> for <see cref="LegendaryCommissionHandlers.CommissionsUsedKey"/> —
+    /// additive, default 0, so every existing call site is unaffected.</summary>
+    private static SimAdapter FoundryCampaign(int gold, int copper = 0, int tierIndex = 0, int coal = 0, int flux = 0, int commissionsUsed = 0)
     {
         var state = GameComposition.NewCampaign(ScriptedSession.Seed);
         var materials = ImmutableSortedDictionary<string, int>.Empty;
@@ -226,8 +228,133 @@ public class ForgeCraftTests
         if (tierIndex > 0) materials = materials.SetItem(ForgeTierHandlers.ForgeTierKey, tierIndex);
         if (coal > 0) materials = materials.SetItem(ForgeSupplyHandlers.Coal, coal);
         if (flux > 0) materials = materials.SetItem(ForgeSupplyHandlers.Flux, flux);
+        if (commissionsUsed > 0) materials = materials.SetItem(LegendaryCommissionHandlers.CommissionsUsedKey, commissionsUsed);
 
         return new SimAdapter(state with { Player = state.Player with { Gold = gold, Materials = materials } });
+    }
+
+    // ── U4 (P6b): the two last dead verbs — MasterworkAttemptAction (a purchased GUARANTEE,
+    // resolves immediately) and CommissionLegendaryWorkAction (capped at 4/campaign, a bell-rider)
+    // — both sim-complete since Phase D, both now buttons on every recipe card beside whichever
+    // craft path that card already offers. ──────────────────────────────────────────────────────
+
+    [TestCase]
+    public void BelowForgeTierTwo_MasterworkRowDisabled_ReasonNamesTheTierGate_TierChipShowsCurrentTier()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 999_999, copper: 100, coal: 10, flux: 10)); // tierIndex defaults to 0 (Forge I)
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            AssertThat(RenderedText(ui.Forge)).Contains("Forge I");
+
+            var masterwork = Find<Button>(ui.Forge, $"Masterwork_{ScriptedSession.CraftRecipeId}");
+            var state = ui.Adapter.CurrentState;
+            AssertThat(ActionLegality.IsLegal(state, new MasterworkAttemptAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial), state.Phase)).IsFalse();
+            AssertThat(masterwork.Disabled).IsTrue();
+            AssertThat(masterwork.TooltipText).Contains("Forge Tier");
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void AtForgeTierTwo_Affordable_MasterworkAttemptSucceeds_ConsumesExactCoalFluxAndSurcharge_MintsPlayerCraftedItem()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 500, copper: 10, tierIndex: 1, coal: 3, flux: 1));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            var state = ui.Adapter.CurrentState;
+            AssertThat(ActionLegality.IsLegal(state, new MasterworkAttemptAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial), state.Phase)).IsTrue();
+            var masterwork = Find<Button>(ui.Forge, $"Masterwork_{ScriptedSession.CraftRecipeId}");
+            AssertThat(masterwork.Disabled).IsFalse();
+
+            // KTD5 evidence: a real Pressed signal, not a hand-built action.
+            PressEnabled(ui.Forge, $"Masterwork_{ScriptedSession.CraftRecipeId}");
+
+            var after = ui.Adapter.CurrentState;
+            AssertThat(after.Player.Gold).IsEqual(300); // 500 - 100*(1+1) = 200 surcharge at Tier II
+            AssertThat(after.Player.Materials[ForgeSupplyHandlers.Coal]).IsEqual(0);
+            AssertThat(after.Player.Materials[ForgeSupplyHandlers.Flux]).IsEqual(0);
+            AssertThat(after.Player.Materials[MaterialRegistry.Copper]).IsEqual(8); // 10 - 2 (dagger's MaterialQuantity)
+
+            var minted = after.Items.Values.Single(i => i.RecipeId == ScriptedSession.CraftRecipeId);
+            AssertThat(minted.Quality == QualityGrade.Superior || minted.Quality == QualityGrade.Masterwork).IsTrue();
+            // "A purchased masterwork still earns attribution beats" — the mint-time half of that
+            // proof (the full end-to-end beat is proven at the sim level in
+            // MasterworkAttemptHandlersTests, which does not need a Godot runtime to exercise).
+            AssertThat(minted.PlayerCrafted).IsTrue();
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void MissingFlux_MasterworkRowDisabled_QueueingAnywayRejectsWithNoPartialConsumption()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 500, copper: 10, tierIndex: 1, coal: 3, flux: 0));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            var masterwork = Find<Button>(ui.Forge, $"Masterwork_{ScriptedSession.CraftRecipeId}");
+            AssertThat(masterwork.Disabled).IsTrue();
+            AssertThat(masterwork.TooltipText).Contains("flux");
+
+            // Row disabled is proven above; also prove the KERNEL itself refuses it with NO
+            // partial consumption, same style as BuyingCoal_WithInsufficientGold_Rejects... above —
+            // a future edit that ever let a stale-enabled row through must still cost nothing.
+            ui.Adapter.Queue(new MasterworkAttemptAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
+
+            AssertThat(ui.Adapter.LastRejections.Count).IsEqual(1);
+            AssertThat(ui.Adapter.CurrentState.Player.Gold).IsEqual(500);
+            AssertThat(ui.Adapter.CurrentState.Player.Materials[ForgeSupplyHandlers.Coal]).IsEqual(3);
+            AssertThat(ui.Adapter.CurrentState.Player.Materials.ContainsKey(ForgeSupplyHandlers.Flux)).IsFalse();
+            AssertThat(ui.Adapter.CurrentState.Player.Materials[MaterialRegistry.Copper]).IsEqual(10);
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void LegendaryCommission_AtCap_RowDisabled_ReasonNamesTheCap_CounterReadsZeroRemaining()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 999_999, copper: 100, commissionsUsed: LegendaryCommissionHandlers.MaxPerCampaign));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            var state = ui.Adapter.CurrentState;
+            AssertThat(ActionLegality.IsLegal(state, new CommissionLegendaryWorkAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial), state.Phase)).IsFalse();
+            var commission = Find<Button>(ui.Forge, $"Commission_{ScriptedSession.CraftRecipeId}");
+            AssertThat(commission.Disabled).IsTrue();
+            AssertThat(commission.TooltipText).Contains("already spoken for");
+            AssertThat(commission.Text).Contains($"0 of {LegendaryCommissionHandlers.MaxPerCampaign}");
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void LegendaryCommission_Affordable_QueuesAsBellRider_TrayShowsVocabString()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 999_999, copper: 100));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            var state = ui.Adapter.CurrentState;
+            AssertThat(ActionLegality.IsLegal(state, new CommissionLegendaryWorkAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial), state.Phase)).IsTrue();
+            var commission = Find<Button>(ui.Forge, $"Commission_{ScriptedSession.CraftRecipeId}");
+            AssertThat(commission.Disabled).IsFalse();
+
+            // KTD5 evidence: a real Pressed signal.
+            PressEnabled(ui.Forge, $"Commission_{ScriptedSession.CraftRecipeId}");
+
+            var queuedAction = new CommissionLegendaryWorkAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial);
+            AssertThat(ui.Adapter.PendingActions.OfType<CommissionLegendaryWorkAction>().Count()).IsEqual(1);
+            var chip = Find<HBoxContainer>(ui, "BellTray").GetChild(0);
+            AssertThat(Find<Label>(chip, "Verb").Text).IsEqual(PendingVerbVocab.DisplayName(queuedAction));
+        }
+        finally { Unmount(ui); }
     }
 
     [TestCase]
