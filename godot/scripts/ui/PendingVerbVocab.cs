@@ -40,7 +40,7 @@ public static class PendingVerbVocab
     {
         UpgradeForgeAction => "At the bell: the forge rises to its next tier.",
         SetProfessionsAction => "At the bell: your professions change.",
-        CommissionLegendaryWorkAction => "At the bell: the Guild takes your commission.",
+        CommissionLegendaryWorkAction => "At the bell: the Guild furnishes what your forge needs — the legendary work that comes back is still yours.",
         _ => throw Unnamed(action),
     };
 

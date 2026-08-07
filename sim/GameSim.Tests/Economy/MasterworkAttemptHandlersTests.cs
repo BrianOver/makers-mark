@@ -1,7 +1,9 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Economy;
+using GameSim.Expedition;
 using GameSim.Kernel;
+using GameSim.Venues;
 
 namespace GameSim.Tests.Economy;
 
@@ -164,6 +166,60 @@ public class MasterworkAttemptHandlersTests
 
         Assert.NotNull(rejected);
         Assert.Contains("Unknown recipe", rejected.Reason);
+    }
+
+    /// <summary>U4 (P6b) report requirement: "a purchased masterwork still earns attribution beats
+    /// and still shows up in the Night ledger's lead card" — asserted END TO END, not just at the
+    /// mint. Mints via the REAL handler, hands the result to a hero as their weapon, and runs it
+    /// through the SAME <see cref="ExpeditionResolver"/>/<see cref="AttributionEngine"/> path
+    /// every ordinary hand-craft is scored with (mirrors <c>AttributionTests.Ae1_...</c>'s own
+    /// pattern) — never a shortcut that only proves <see cref="Item.PlayerCrafted"/> was stamped.
+    /// A seed sweep (same style as that suite's lethal-save tests) rather than one fixed seed,
+    /// since a killing blow depends on the recorded combat rolls, not just gear stats.</summary>
+    [Fact]
+    public void MintedItem_IsPlayerCrafted_AndProducesAnAttributionBeat_WhenAHeroCarriesItIntoCombat()
+    {
+        var state = Ready("copper", 2);
+        var (after, rejected, _) = Apply(state, new MasterworkAttemptAction("dagger", "copper"));
+        Assert.Null(rejected);
+
+        var minted = Assert.Single(after.Items.Values);
+        Assert.True(minted.PlayerCrafted);
+
+        var hero = new Hero(
+            new HeroId(1), "Torvald", "vanguard", Level: 3, MaxHp: 30, Gold: 50,
+            new GearSet(minted.Id, null, null), ImmutableList<ItemMemory>.Empty,
+            Alive: true, DeepestFloorReached: 4, DiedOnDay: null);
+
+        var found = false;
+        for (ulong seed = 0; seed < 200 && !found; seed++)
+        {
+            var result = ExpeditionResolver.Resolve(
+                ImmutableList.Create(hero), after.Items, VenueRegistry.Mine, targetFloor: 2, new Pcg32(RngState.FromSeed(seed)));
+            found = result.Beats.Any(b => b.Item == minted.Id);
+        }
+
+        Assert.True(found,
+            "No attribution beat ever credited the purchased masterwork's item id across 200 seeds — " +
+            "the sink would be bypassing the proof chain the plan calls load-bearing.");
+    }
+
+    /// <summary>U4 (P6b) report requirement: "whether any consumable recipe is masterwork-eligible
+    /// (you were asked to check)." field-salve lives in the SAME <c>RecipeTable</c> gear recipes
+    /// share, and this handler's own <c>Apply</c> (see class doc) has no <see cref="ItemSlot"/> or
+    /// <see cref="ConsumableEffect"/> check anywhere in its gate chain — so yes, uniformly
+    /// eligible, same as every other recipe.</summary>
+    [Fact]
+    public void ConsumableRecipe_IsMasterworkEligible_NoSlotRestrictionInTheHandler()
+    {
+        var state = Ready("copper", 2); // field-salve's MaterialQuantity is also 2 copper
+
+        var (after, rejected, events) = Apply(state, new MasterworkAttemptAction("field-salve", "copper"));
+
+        Assert.Null(rejected);
+        var crafted = Assert.Single(events.OfType<ItemCrafted>());
+        Assert.True(crafted.Quality >= QualityGrade.Superior);
+        Assert.True(Assert.Single(after.Items.Values).PlayerCrafted);
     }
 
     [Fact]
