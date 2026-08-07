@@ -464,6 +464,12 @@ public class UnsilencedEventTests
         }
     }
 
+    /// <summary>The two calls are 2 days apart, not the GuildAssessmentSystem's real 7-day
+    /// cadence: <see cref="AdventureTicker.MaxDaysRetained"/> is a 3-day rolling window (by
+    /// design — the strip must not grow unbounded across a long campaign), so a real 7-day gap
+    /// would purge the Passed line before the Missed one ever landed, and this test would be
+    /// asserting a marquee state a player could never actually see. Staying inside the window
+    /// is what proves the two lines coexist without one evicting or overwriting the other.</summary>
     [TestCase]
     public void GuildAssessment_PassedAndMissed_Render()
     {
@@ -481,7 +487,7 @@ public class UnsilencedEventTests
             AssertThat(ticker.DisplayText).Contains("Next dues: 90g");
 
             ticker.OnPhaseCompleted(
-                DayPhase.Morning, completedDay: 14, StagedWorld(),
+                DayPhase.Morning, completedDay: 9, StagedWorld(),
                 ImmutableList.Create<GameEvent>(
                     new GuildAssessmentMissed(DuesDueGold: 90, NextDuesGold: 157, MissedAssessments: 1, ConfidencePermille: 600)));
 

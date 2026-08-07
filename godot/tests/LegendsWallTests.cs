@@ -251,10 +251,20 @@ public class LegendsWallTests
     [TestCase]
     public void ReforgeButton_DefaultPickers_ReforgesTheSourceItemsOwnRecipe_MintsTheHeirloom()
     {
-        var ui = MountMainUi();
+        // The Reforge button queues against ui.Adapter (LegendsWall.Adapter is the SAME
+        // reference MainUi hands every panel, wired in MainUi's constructor) — NOT against
+        // whatever GameState ShowWall was last called with. MountMainUi() with no override
+        // builds its own default fresh campaign, so a bare MountMainUi() here would render the
+        // pickers off WorldWithFallenHero() while the actual queue-and-apply ran against an
+        // unrelated empty-Items/empty-Materials game, and the kernel would correctly reject a
+        // reforge of an item it had never heard of. Mounting WITH the fixture (the same pattern
+        // every other actionable-fixture test in this suite uses, e.g. BountyPanelTests,
+        // CommissionBoardTests) keeps the rendered state and the applied-against state identical.
+        var world = WorldWithFallenHero();
+        var ui = MountMainUi(new SimAdapter(world));
         try
         {
-            ui.Legends.ShowWall(WorldWithFallenHero());
+            ui.Legends.ShowWall(world);
 
             // U8b: default selections (nothing touched) still reforge "the same sword in the
             // same metal" — the exact one-click behavior this unit's pickers must preserve.
@@ -286,13 +296,16 @@ public class LegendsWallTests
     [TestCase]
     public void ChoosingADifferentRecipeAndMaterial_MintsTheChosenCombination_NotTheSourceItemsOwnRecipe()
     {
-        var ui = MountMainUi();
+        // See ReforgeButton_DefaultPickers_...'s comment: mount WITH the fixture so ui.Adapter
+        // (what Reforge actually queues against) matches what ShowWall renders.
+        // Shortsword/iron needs 3 iron (Tier 1, no talent gate) — a combination that is NOT
+        // the source dagger's own recipe (Tier 1, copper).
+        var materials = ImmutableSortedDictionary<string, int>.Empty.Add("iron", 3);
+        var world = WorldWithFallenHero(materials: materials);
+        var ui = MountMainUi(new SimAdapter(world));
         try
         {
-            // Shortsword/iron needs 3 iron (Tier 1, no talent gate) — a combination that is NOT
-            // the source dagger's own recipe (Tier 1, copper).
-            var materials = ImmutableSortedDictionary<string, int>.Empty.Add("iron", 3);
-            ui.Legends.ShowWall(WorldWithFallenHero(materials: materials));
+            ui.Legends.ShowWall(world);
 
             SelectByText(Find<OptionButton>(ui.Legends, $"ReforgeRecipeSelect_{WornWeaponId.Value}"), "Shortsword");
             SelectByText(Find<OptionButton>(ui.Legends, $"ReforgeMaterialSelect_{WornWeaponId.Value}"), "iron");
@@ -337,10 +350,14 @@ public class LegendsWallTests
     [TestCase]
     public void IllegalMaterial_QueuedDirectly_TypedRejection_NothingConsumed()
     {
-        var ui = MountMainUi();
+        // See ReforgeButton_DefaultPickers_...'s comment: mount WITH the fixture so
+        // ui.Adapter.Queue below actually applies against the world that has the fallen hero,
+        // the worn item, and the 2 copper — not an unrelated default fresh campaign.
+        var world = WorldWithFallenHero();
+        var ui = MountMainUi(new SimAdapter(world));
         try
         {
-            ui.Legends.ShowWall(WorldWithFallenHero());
+            ui.Legends.ShowWall(world);
 
             // The picker can never offer an unregistered key (this unit's scenario 2) — proven
             // the same way this codebase already proves "a stale-enabled row" can't slip past the

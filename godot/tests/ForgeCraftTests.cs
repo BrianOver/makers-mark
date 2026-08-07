@@ -428,8 +428,15 @@ public class ForgeCraftTests
         finally { Unmount(ui); }
     }
 
+    /// <summary>The <c>BuySupply_*</c> row carries no quantity stepper — only the ore vendor rows
+    /// (<c>BuyMat_*</c>/<c>BuyMatQty_*</c>, U8c) do — so every press buys exactly 1 unit AND spends
+    /// one of the day's <see cref="ActionBudget.SlotsPerDay"/> (5) action slots, same as any other
+    /// real-work handler (<see cref="ForgeSupplyHandlers.Apply"/> guard 5, checked last). This
+    /// pins the honest ceiling for a single Morning — five presses succeed, the sixth is correctly
+    /// disabled — rather than the ten-presses-in-one-day premise the previous version of this test
+    /// assumed (which no stepper ever made true).</summary>
     [TestCase]
-    public void BuyingCoal_TenTimes_DropsGoldByForty_IncrementsCoalChip()
+    public void BuyingCoal_FiveTimesInOneDay_SpendsTheWholeActionBudget_SixthRowIsDisabled()
     {
         var ui = MountMainUi(FoundryCampaign(gold: 100));
         try
@@ -437,14 +444,20 @@ public class ForgeCraftTests
             ui.OpenPanel("Forge");
             var startingGold = ui.Adapter.CurrentState.Player.Gold;
 
-            for (var i = 0; i < 10; i++)
+            for (var i = 0; i < ActionBudget.SlotsPerDay; i++)
             {
                 PressEnabled(ui.Forge, $"BuySupply_{ForgeSupplyHandlers.Coal}");
             }
 
-            AssertThat(ui.Adapter.CurrentState.Player.Gold).IsEqual(startingGold - 10 * ForgeSupplyHandlers.UnitPrice(ForgeSupplyHandlers.Coal));
-            AssertThat(ui.Adapter.CurrentState.Player.Materials[ForgeSupplyHandlers.Coal]).IsEqual(10);
-            AssertThat(RenderedText(ui.Forge)).Contains("10"); // the Coal stat chip's own value
+            AssertThat(ui.Adapter.CurrentState.Player.Gold)
+                .IsEqual(startingGold - ActionBudget.SlotsPerDay * ForgeSupplyHandlers.UnitPrice(ForgeSupplyHandlers.Coal));
+            AssertThat(ui.Adapter.CurrentState.Player.Materials[ForgeSupplyHandlers.Coal]).IsEqual(ActionBudget.SlotsPerDay);
+            AssertThat(ui.Adapter.CurrentState.ActionSlotsRemaining).IsEqual(0);
+            AssertThat(RenderedText(ui.Forge)).Contains(ActionBudget.SlotsPerDay.ToString()); // the Coal stat chip's own value
+
+            var sixthRow = Find<Button>(ui.Forge, $"BuySupply_{ForgeSupplyHandlers.Coal}");
+            AssertThat(sixthRow.Disabled).IsTrue();
+            AssertThat(sixthRow.TooltipText).Contains("No action slots left today");
         }
         finally { Unmount(ui); }
     }
