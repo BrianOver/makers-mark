@@ -1,9 +1,11 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text.RegularExpressions;
 using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Factions;
 using GameSim.Kernel;
 using GameSim.Materials;
 using GdUnit4;
@@ -193,6 +195,262 @@ public class LedgerModalTests
 
             ui.Ledger.ShowFor(1, secondTip);
             AssertThat(RenderedText(ui.Ledger)).NotContains(firstTip!);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void TutorialTip_RendersBelowTheLeadCard_NotAboveEveryCard()
+    {
+        // U1: the tutorial tip used to render ABOVE every card; it now drops below the LEAD card
+        // (DrivenDay's own lead is Thistle — HeroId 1, the sole beat-bearer — so the reorder does
+        // not move it here; this test is purely about the tip's new position).
+        var ui = MountMainUi(new SimAdapter(DrivenDay()));
+        try
+        {
+            ui.Ledger.ShowFor(1, "explainer");
+
+            var leadCard = Find<Control>(ui.Ledger, "LedgerCard_0");
+            var cardsContainer = leadCard.GetParent();
+            var leadIndex = ChildIndex(cardsContainer, "LedgerCard_0");
+            var tipIndex = ChildIndex(cardsContainer, "LedgerTutorialTip");
+            var secondCardIndex = ChildIndex(cardsContainer, "LedgerCard_1");
+
+            AssertThat(tipIndex).IsGreater(leadIndex);
+            AssertThat(tipIndex).IsLess(secondCardIndex);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Three same-day survivors: two beatless (HeroId 1 and 2) and ONE beat-bearer at
+    /// the HIGHEST HeroId (3) — under the old HeroId-ascending order it would have rendered
+    /// LAST. <paramref name="anyBeats"/> false drops the beat entirely, for the fallback
+    /// scenario (U1 test contract 2).</summary>
+    private static GameState ThreeHeroDay(bool anyBeats)
+    {
+        var lowId = new HeroId(1);
+        var midId = new HeroId(2);
+        var beatId = new HeroId(3);
+
+        static Hero Survivor(HeroId id, string name) => new(
+            id, name, ClassRegistry.VanguardId, Level: 1, MaxHp: 20, Gold: 0,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+            DeepestFloorReached: 1, DiedOnDay: null);
+
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+            .Add(lowId.Value, Survivor(lowId, "HeroLow"))
+            .Add(midId.Value, Survivor(midId, "HeroMid"))
+            .Add(beatId.Value, Survivor(beatId, "HeroBeat"));
+
+        var events = ImmutableList.CreateBuilder<GameEvent>();
+        events.Add(new PartyReturned(ImmutableList.Create(lowId, midId, beatId)) { Id = new EventId(1), Day = 1 });
+        if (anyBeats)
+        {
+            events.Add(new AttributionBeatEvent(
+                BeatType.KillingBlow, BeatItemId, beatId, Floor: 1, "HeroBeat's blade finished it")
+            { Id = new EventId(2), Day = 1 });
+        }
+
+        return GameFactory.NewGame(9101, heroes) with { EventLog = events.ToImmutable() };
+    }
+
+    /// <summary>Child index of the first node named <paramref name="name"/> directly under
+    /// <paramref name="parent"/> — used to prove render ORDER (the tutorial tip's new position,
+    /// U1), not just presence.</summary>
+    private static int ChildIndex(Node parent, string name)
+    {
+        var children = parent.GetChildren();
+        for (var i = 0; i < children.Count; i++)
+        {
+            if (children[i].Name == name)
+            {
+                return i;
+            }
+        }
+
+        throw new System.InvalidOperationException($"No child named '{name}' under {parent.Name}.");
+    }
+
+    [TestCase]
+    public void BeatBearingCard_RendersFirst_AheadOfLowerHeroIdCards()
+    {
+        var ui = MountMainUi(new SimAdapter(ThreeHeroDay(anyBeats: true)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, "LedgerCard_0"))).Contains("HeroBeat");
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, "LedgerCard_1"))).Contains("HeroLow");
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, "LedgerCard_2"))).Contains("HeroMid");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void NoBeatsAnyHero_FallsBackToHeroIdOrder_NoCrashNoEmptyLeadCard()
+    {
+        var ui = MountMainUi(new SimAdapter(ThreeHeroDay(anyBeats: false)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            AssertThat(LedgerQuery.ReturnCards(ui.Adapter.CurrentState, 1).Count).IsEqual(3);
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, "LedgerCard_0"))).Contains("HeroLow");
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, "LedgerCard_1"))).Contains("HeroMid");
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, "LedgerCard_2"))).Contains("HeroBeat");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void CardOrder_IsDeterministic_AcrossIdenticalConstructions()
+    {
+        string Capture()
+        {
+            var ui = MountMainUi(new SimAdapter(ThreeHeroDay(anyBeats: true)));
+            try
+            {
+                ui.Ledger.ShowFor(1);
+                return string.Join(
+                    "||",
+                    Enumerable.Range(0, 3).Select(i => RenderedText(Find<Control>(ui.Ledger, $"LedgerCard_{i}"))));
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+
+        AssertThat(Capture()).IsEqual(Capture());
+    }
+
+    /// <summary>U5a rider: a lone day-1 return with ONE ore offer, hand-built so its
+    /// standing-tariffed price can be driven directly rather than farmed off real campaign RNG.
+    /// The sim sits AT day-1 Evening (<c>BuyOreLegal</c>'s own precondition) with the SAME offer
+    /// mirrored into <see cref="GameState.OpenOreOffers"/>, so the Ledger's Buy button is enabled
+    /// and a press resolves through the REAL <c>OreMarketHandlers.Apply</c> kernel path.</summary>
+    private static GameState OreOfferDay(int standing, int quantity, int unitPrice)
+    {
+        var sellerId = new HeroId(1);
+        var seller = new Hero(
+            sellerId, "Vendra", ClassRegistry.VanguardId, Level: 2, MaxHp: 24, Gold: 0,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+            DeepestFloorReached: 1, DiedOnDay: null);
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(sellerId.Value, seller);
+
+        var offer = new OreOffered(sellerId, MaterialRegistry.Copper, quantity, unitPrice);
+        var events = ImmutableList.Create<GameEvent>(
+            new PartyReturned(ImmutableList.Create(sellerId)) { Id = new EventId(1), Day = 1 },
+            offer with { Id = new EventId(2), Day = 1 });
+
+        var baseState = GameFactory.NewGame(9101, heroes);
+        return baseState with
+        {
+            Phase = DayPhase.Evening,
+            Player = baseState.Player.WithStanding(FactionRegistry.DeepveinId, standing),
+            EventLog = events,
+            OpenOreOffers = ImmutableList.Create(offer),
+        };
+    }
+
+    /// <summary>The "for Ng total" figure the Ledger actually rendered — read off the real Label
+    /// text (never a pricing formula), so the follow-up assertion in every U5a test below is
+    /// against the SHOWN number.</summary>
+    private static int ShownOreTotal(string renderedText)
+    {
+        var match = Regex.Match(renderedText, @"for (\d+)g total");
+        AssertThat(match.Success)
+            .OverrideFailureMessage($"No 'for Ng total' ore line found in:\n{renderedText}")
+            .IsTrue();
+        return int.Parse(match.Groups[1].Value);
+    }
+
+    private const string BuyButtonName = "BuyOre_1_" + MaterialRegistry.Copper;
+
+    [TestCase]
+    public void OreOffer_AtNeutralStanding_ShowsLineTotalEqualToKernelCharge()
+    {
+        var ui = MountMainUi(new SimAdapter(OreOfferDay(standing: 0, quantity: 3, unitPrice: 5)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+            var shown = ShownOreTotal(RenderedText(ui.Ledger));
+            AssertThat(shown).IsEqual(15); // 3 * 5g, no faction tariff at neutral standing
+
+            var goldBefore = ui.Adapter.CurrentState.Player.Gold;
+            PressEnabled(ui.Ledger, BuyButtonName);
+            var charged = goldBefore - ui.Adapter.CurrentState.Player.Gold;
+
+            // The kernel's actual deduction (OreMarketHandlers.Apply), not a recomputed mirror.
+            AssertThat(charged).IsEqual(shown);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void OreOffer_AtPositiveStanding_ShowsDiscountedTotal_NamesFaction_ChargeMatchesExactly()
+    {
+        var ui = MountMainUi(new SimAdapter(OreOfferDay(standing: 40, quantity: 3, unitPrice: 5)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+            var text = RenderedText(ui.Ledger);
+            var shown = ShownOreTotal(text);
+
+            AssertThat(shown < 15).IsTrue(); // strictly discounted off the 15g undiscounted line
+            AssertThat(text).Contains("Deepvein Consortium");
+            AssertThat(text).Contains("favor");
+
+            var goldBefore = ui.Adapter.CurrentState.Player.Gold;
+            PressEnabled(ui.Ledger, BuyButtonName);
+            var charged = goldBefore - ui.Adapter.CurrentState.Player.Gold;
+
+            // Scenario 7's own bar: assert against the KERNEL's real charge (gold actually
+            // deducted by OreMarketHandlers.Apply), never a re-derivation of the client-side
+            // TariffedCost/PricedOffer mirror — a mirror asserted against itself proves nothing.
+            AssertThat(charged).IsEqual(shown);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void OreOffer_PerUnitRoundingWouldDiffer_ShownTotalStillMatchesLineCharge()
+    {
+        // 7 x 3g at the Deepvein cap (standing 100/100 -> the max 10% discount): a NAIVE
+        // per-unit tariff rounds 3g's own 10% off back to 3g (round-to-nearest of 2.7 is 3 — the
+        // OreMarketHandlers doc's own "rounds a cheap-ore nudge to zero"), so 7 * that "corrected"
+        // unit price would silently overcharge (21g) relative to the real aggregate-line tariff
+        // (19g = round(21 * 0.9)). The fix must price the LINE, never invent a per-unit figure.
+        var ui = MountMainUi(new SimAdapter(OreOfferDay(standing: 100, quantity: 7, unitPrice: 3)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+            var shown = ShownOreTotal(RenderedText(ui.Ledger));
+            AssertThat(shown).IsEqual(19);
+
+            var goldBefore = ui.Adapter.CurrentState.Player.Gold;
+            PressEnabled(ui.Ledger, BuyButtonName);
+            var charged = goldBefore - ui.Adapter.CurrentState.Player.Gold;
+
+            AssertThat(charged).IsEqual(shown);
         }
         finally
         {
