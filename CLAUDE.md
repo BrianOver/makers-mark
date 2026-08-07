@@ -31,7 +31,7 @@ Debugging anything? `docs/debugging.md` — deterministic repro recipe, log map,
 
 ## Hard rules
 
-1. **Tests green before done.** No work is reportable as complete until the fast lane passes locally and CI is green on the PR.
+1. **Merged is done. Nothing else is.** No work is reportable as complete until the fast lane passes locally, CI is green, and the PR is squash-merged to `main`. Arm `gh pr merge --auto --squash --delete-branch` in the same breath as `gh pr create` — every PR, docs included. A green unmerged PR is not done; it is inventory, and inventory is where work goes missing.
 2. **Engine pin.** Godot 4.6.3-stable .NET ONLY (`.godot-version` is the source of truth). Never open or re-save `godot/` with any other editor version — newer editors silently rewrite scenes/import metadata and break CI.
 3. **TargetFramework lives in `Directory.Build.props` only — EXCEPT `godot/GodotClient.csproj`, which pins `net10.0` explicitly.** Godot injects `net8.0` whenever the element is absent (import + gdUnit4Net adapter rebuilds), so absence is the hazard there. Never add a TFM to any other csproj, and never commit a `net8.0` value anywhere.
 4. **Sim purity (KTD2).** `sim/GameSim/` has ZERO Godot references. All game rules live there. `godot/` is adapter-only: render state, submit actions. No RNG outside the kernel's injected stream; no wall-clock reads in the sim; no transcendental `Math.*` in sim code (cross-OS float drift).
@@ -46,6 +46,8 @@ Debugging anything? `docs/debugging.md` — deterministic repro recipe, log map,
 9. **Branch = open PR. Worktree = live session.** A branch with no open PR is deleted on sight, local and remote (`gh pr list --state merged` is the truth — squash-merge makes `git branch --merged` a liar). Remove every worktree you created before the session ends; max 5 exist at once, since engine tests serialize anyway and more workers only queue collisions. Worker prompts name their base ref, and the worker's FIRST command greps for a symbol the prompt claims is already there — a miss is stop-and-report, never reimplement.
 
 10. **Raw output outranks any harness.** Completion reports quote the runner's own `Failed: N, Passed: N` line, never a wrapper's verdict. A wrapper computing PASS from an exit code is itself the defect — `tools/engine-test.ps1` has done it twice.
+
+11. **Merge is not a question, and merged is not deployed.** "Want it merged?", "Merge order?", "Say the word" — those sentences do not exist here. Review happens on `main`; `git revert` is the undo, not an unmerged branch. A turn may not end while a PR this session opened sits green-and-unmerged, or a commit sits unpushed. And landing on `main` is still not the game: the playable checkout is the shared root, `play.bat` is its only sync point, and a completion report quotes `origin/main`'s SHA and says what will launch. A report that stops at "PR opened" is reporting work that does not yet exist.
 
 ## Multi-agent rules
 
