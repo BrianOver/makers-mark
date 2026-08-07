@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Factions;
 using GameSim.Venues;
 using Godot;
 using GodotClient.Audio;
@@ -1176,6 +1178,11 @@ public partial class MainUi : Control
         // from BuildSlotPips per this unit's brief).
         wealthHands.AddChild(BuildSlotPips(state.ActionSlotsRemaining, ActionBudget.SlotsPerDay));
 
+        // U5(c) (faction-standing plan): a chip per faction whose standing has actually moved off
+        // neutral. Folded into WEALTH+HANDS (not DUES) — standing is a discount the player earned,
+        // not a scarcity/heartbeat gauge.
+        wealthHands.AddChild(BuildStandingChips(state.Player.Standing));
+
         // Expanding spacer: pushes the DUES cluster flush to the wood-framed bar's right edge.
         _statChips.AddChild(new Control { Name = "StatChipsSpacer", SizeFlagsHorizontal = SizeFlags.ExpandFill });
 
@@ -1421,6 +1428,51 @@ public partial class MainUi : Control
             };
             pip.SetMeta("filled", lit);
             row.AddChild(pip);
+        }
+
+        return row;
+    }
+
+    /// <summary>
+    /// U5(c) (faction-standing plan, R9): one small chip per faction whose standing has moved off
+    /// neutral. Standing is a single positive-only lever (buying that faction's ore,
+    /// <see cref="GameSim.Economy.OreMarketHandlers"/>) with a single effect (that faction's ore
+    /// discount) that decays every Morning (<see cref="FactionDriftSystem"/>) — a faction still at 0 (never
+    /// traded, or drifted all the way back) renders no chip at all, so the HUD's footprint never
+    /// outgrows the mechanism's footprint into a reputation ladder the sim doesn't run.
+    ///
+    /// <para>Iterates <see cref="FactionRegistry.All"/>'s own sorted (ordinal) key order rather
+    /// than <paramref name="standing"/>'s insertion order, so the row's left-to-right order is
+    /// stable across saves/refreshes regardless of the order factions were first traded with. Each
+    /// chip borrows the faction's own first supplied ore as its icon — the concrete thing the
+    /// standing number is actually about — falling back to the gold glyph for the defensive case
+    /// of a faction registered with no ore keys.</para>
+    /// </summary>
+    private static Control BuildStandingChips(ImmutableSortedDictionary<string, int>? standing)
+    {
+        var row = new HBoxContainer { Name = "StandingChips" };
+        row.AddThemeConstantOverride("separation", GameTheme.Space8);
+        if (standing is null)
+        {
+            return row;
+        }
+
+        foreach (var factionId in FactionRegistry.All.Keys)
+        {
+            var value = standing.TryGetValue(factionId, out var v) ? v : 0;
+            if (value == 0 || !FactionRegistry.TryGet(factionId, out var faction) || faction is null)
+            {
+                continue; // neutral — never traded, or drifted fully back — nothing to show (R9)
+            }
+
+            var icon = faction.SuppliesOreKeys.IsEmpty
+                ? IconRegistry.Glyph("gold")
+                : IconRegistry.Ore(faction.SuppliesOreKeys[0]);
+            var chip = NamedIconChip(
+                $"StandingChip_{factionId}", icon, $"{value}", UiKit.ChipTone.Positive,
+                $"{faction.DisplayName}: standing {value}/{faction.StandingCap} — their ore sells cheaper. " +
+                "Buying more raises it; it drifts back toward neutral every Morning you don't.");
+            row.AddChild(chip);
         }
 
         return row;

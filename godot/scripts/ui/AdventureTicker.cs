@@ -71,8 +71,9 @@ public partial class AdventureTicker : PanelContainer
     /// Digest one completed tick's freshly stamped events into day-stamped marquee lines
     /// (R15). Filters to the ambient story surface: item sales, party departures, floor
     /// records, gossip, death (Evening-only — see the class doc), commission lifecycle,
-    /// arrivals, the drama director's daily incident, and the confidence spiral's
-    /// edge-triggered warnings. Unrecognized/irrelevant event types render nothing; a batch
+    /// arrivals, the drama director's daily incident, the confidence spiral's edge-triggered
+    /// warnings, and (U5(b)) the faction-standing gauge's own edge-triggered threshold crossings.
+    /// Unrecognized/irrelevant event types render nothing; a batch
     /// with no qualifying event appends nothing (no placeholder noise). Same-day repeats
     /// (identical formatted text) are deduped — which is also the spam guard, since a
     /// widened allow-list is exactly how a marquee turns into a nag.
@@ -179,11 +180,28 @@ public partial class AdventureTicker : PanelContainer
         TownConfidenceCollapsed e =>
             $"The town has lost faith in its smith — {e.MissedAssessments} assessment(s) missed.",
 
+        // U5(b) (faction-standing plan, R9): the faction standing gauge, edge-triggered exactly
+        // like the confidence spiral above. FactionDriftSystem and OreMarketHandlers only ever
+        // stamp this event on a threshold CROSSING (FactionStandingThresholds.Crossing) — never on
+        // the daily gauge step itself — so this line can never fire from ordinary Morning drift; it
+        // passes this file's own admission test ("would a townsperson hear about it? A daily gauge
+        // movement would not."). Copy stays scoped to the one mechanism the sim actually runs — a
+        // discount rising or fading — not a reputation system it doesn't.
+        FactionStandingShifted e => e.Direction == StandingShiftDirection.Favored
+            ? $"The {e.FactionName} remember your custom now — their ore comes cheaper."
+            : $"The {e.FactionName} are cooling toward your shop — their ore costs more now.",
+
         // DELIBERATELY still silent here, and why:
         //  • SupplyDelivered — confirmation of the player's OWN camp action, already shown by
         //    CampPanel. Town gossip about a thing you just did reads as noise.
         //  • MarketShareShifted — drifts EVERY day (MarketShareSystem, Evening). It is gauge
         //    material, not news; in a marquee it would crowd out everything above.
+        //  • TariffApplied (U5(b)) — the per-purchase price delta that ONE buy's standing-at-the-
+        //    time produced. Like SupplyDelivered, this is confirmation of the player's OWN action
+        //    (their own buy, already reflected in their own gold total and material count on
+        //    screen) rather than town news. The actual news — that the faction's standing itself
+        //    crossed a line — is what FactionStandingShifted above already announces; voicing the
+        //    per-buy arithmetic too would say the same fact a second time in the same marquee.
         _ => null,
     };
 
