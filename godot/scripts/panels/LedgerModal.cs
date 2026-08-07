@@ -101,17 +101,11 @@ public partial class LedgerModal : SimPanel
         _feedback!.Text = string.Empty;
         Clear(_cards!);
 
-        if (_tutorialTip is not null)
-        {
-            var tip = AddLabel(_cards!, $"💬 {_tutorialTip}");
-            tip.Name = "LedgerTutorialTip";
-            tip.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
-        }
-
         var state = Adapter.CurrentState;
-        var cards = LedgerQuery.ReturnCards(state, day);
+        var cards = LeadWithAttribution(LedgerQuery.ReturnCards(state, day));
         if (cards.IsEmpty)
         {
+            AddTutorialTip();
             AddEmptyState();
             return;
         }
@@ -119,9 +113,41 @@ public partial class LedgerModal : SimPanel
         for (var i = 0; i < cards.Count; i++)
         {
             _cards!.AddChild(BuildReturnCard(state, cards[i], i));
+            if (i == 0)
+            {
+                // U1: the attribution beat is the spine of the game (R11) — the tutorial tip now
+                // drops BELOW the lead card instead of sitting above every card, so the beat is
+                // the very first thing the player's eye lands on.
+                AddTutorialTip();
+            }
         }
 
         RenderRetelling(day);
+    }
+
+    /// <summary>
+    /// U1 (Night leads with the mark): a beat-bearing card leads the reveal instead of whichever
+    /// hero happens to have the lowest HeroId. Client-side only — <see cref="LedgerQuery"/> stays
+    /// HeroId-ordered (zero-sim-diff) — via a STABLE sort on "carries any beat", so cards that tie
+    /// (all beat-bearing, or none at all) keep their original HeroId-ascending relative order. A
+    /// day with no beats anywhere therefore falls back to exactly the old HeroId order.
+    /// </summary>
+    private static ImmutableList<ReturnCard> LeadWithAttribution(ImmutableList<ReturnCard> cards) =>
+        cards.OrderByDescending(card => !card.Beats.IsEmpty).ToImmutableList();
+
+    /// <summary>U7's own one-line tutorial explainer (R10), now hoisted to render after the lead
+    /// card (U1) rather than above every card — see <see cref="_tutorialTip"/>'s doc for the
+    /// once-ever contract this field mirrors.</summary>
+    private void AddTutorialTip()
+    {
+        if (_tutorialTip is null)
+        {
+            return;
+        }
+
+        var tip = AddLabel(_cards!, $"💬 {_tutorialTip}");
+        tip.Name = "LedgerTutorialTip";
+        tip.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
     }
 
     /// <summary>A day with no returns still reads as an intentional state (U7 test contract:
@@ -208,7 +234,7 @@ public partial class LedgerModal : SimPanel
             {
                 var row = AddRow(oreSection.Body);
                 AddIcon(row, IconRegistry.Ore(ore.MaterialKey));
-                AddLabel(row, $"offers {ore.Quantity}x {ore.MaterialKey} at {ore.UnitPrice}g each");
+                AddLabel(row, OreOfferLine(Adapter!.CurrentState, ore));
                 var offer = ore;
                 var buy = AddButton(row, $"BuyOre_{ore.From.Value}_{ore.MaterialKey}", "Buy", () =>
                 {
@@ -411,20 +437,59 @@ public partial class LedgerModal : SimPanel
     /// ±MaxAdjustmentPerMille). The kernel reprices authoritatively on apply — no rule
     /// lives here.
     /// </summary>
-    private static int TariffedCost(GameState state, OreOffered offer)
+    private static int TariffedCost(GameState state, OreOffered offer) => PricedOffer(state, offer).Cost;
+
+    /// <summary>
+    /// U5a rider: the row used to print the hero's BASE ask ({unit price}g each) — a number the
+    /// kernel never charges once faction standing moves off neutral, since the tariff (below)
+    /// applies to the AGGREGATE line only, never per-unit (a "corrected per-unit price" would
+    /// re-introduce the exact rounding lie this fix removes). Buying is whole-offer-or-nothing
+    /// (no partial buy), so a line total is also the only number that corresponds to something the
+    /// player can actually pay. Names the supplying faction only when its tariff actually moved
+    /// the price — a neutral-standing offer reads identically to the pre-fix base-ask line, just
+    /// summed instead of per-unit.
+    /// </summary>
+    private static string OreOfferLine(GameState state, OreOffered offer)
+    {
+        var (cost, adjPerMille, faction) = PricedOffer(state, offer);
+        var line = $"offers {offer.Quantity}x {offer.MaterialKey} for {cost}g total";
+        if (faction is null || adjPerMille == 0)
+        {
+            return line;
+        }
+
+        // Round-to-nearest per-mille -> percent for the flavor note only; the charged gold above
+        // never goes through this rounding (it comes straight off PricedOffer's Cost).
+        var percent = (Math.Abs(adjPerMille) + 5) / 10;
+        return adjPerMille > 0
+            ? $"{line} ({faction.DisplayName} favor −{percent}%)"
+            : $"{line} ({faction.DisplayName} surcharge +{percent}%)";
+    }
+
+    /// <summary>
+    /// Shared quote for both the gating check (<see cref="TariffedCost"/>) and the display line
+    /// (<see cref="OreOfferLine"/>) — computed exactly once so the two can never drift apart.
+    /// Mirrors <see cref="GameSim.Economy.OreMarketHandlers.Apply"/>'s own pricing step
+    /// byte-for-byte: base ask on the AGGREGATE line (quantity * unit price, never per-unit —
+    /// KTD4's own reasoning), standing-at-cap scaled through the faction's public knobs via
+    /// <see cref="IntegerCurves.MulDiv"/>, clamped to ±MaxAdjustmentPerMille. The kernel reprices
+    /// authoritatively on apply — no rule lives here, only the mirror.
+    /// </summary>
+    private static (int Cost, long AdjPerMille, FactionDefinition? Faction) PricedOffer(GameState state, OreOffered offer)
     {
         var baseLineCost = offer.Quantity * offer.UnitPrice;
         var faction = FactionRegistry.ByOreKey(offer.MaterialKey);
         if (faction is null)
         {
-            return baseLineCost;
+            return (baseLineCost, 0, null);
         }
 
         long max = faction.MaxAdjustmentPerMille;
         var adj = Math.Clamp(
             IntegerCurves.MulDiv(state.Player.StandingFor(faction.Id), faction.MaxAdjustmentPerMille, faction.StandingCap),
             -max, max);
-        return (int)IntegerCurves.MulDiv(baseLineCost, 1000 - adj, 1000);
+        var cost = (int)IntegerCurves.MulDiv(baseLineCost, 1000 - adj, 1000);
+        return (cost, adj, faction);
     }
 
     private static ImmutableList<Hero> PartyHeroes(GameState state, ImmutableList<HeroId> ids)

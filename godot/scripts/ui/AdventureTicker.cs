@@ -71,8 +71,11 @@ public partial class AdventureTicker : PanelContainer
     /// Digest one completed tick's freshly stamped events into day-stamped marquee lines
     /// (R15). Filters to the ambient story surface: item sales, party departures, floor
     /// records, gossip, death (Evening-only — see the class doc), commission lifecycle,
-    /// arrivals, the drama director's daily incident, and the confidence spiral's
-    /// edge-triggered warnings. Unrecognized/irrelevant event types render nothing; a batch
+    /// arrivals, the drama director's daily incident, the confidence spiral's edge-triggered
+    /// warnings, (U5(b)) the faction-standing gauge's own edge-triggered threshold crossings, and
+    /// (U7) the four cadence-periodic/edge-triggered economic moments: rent paid/missed, guild
+    /// assessment passed/missed, a hero's rank-up crossing, and a paid-out bounty.
+    /// Unrecognized/irrelevant event types render nothing; a batch
     /// with no qualifying event appends nothing (no placeholder noise). Same-day repeats
     /// (identical formatted text) are deduped — which is also the spam guard, since a
     /// widened allow-list is exactly how a marquee turns into a nag.
@@ -179,11 +182,63 @@ public partial class AdventureTicker : PanelContainer
         TownConfidenceCollapsed e =>
             $"The town has lost faith in its smith — {e.MissedAssessments} assessment(s) missed.",
 
+        // U5(b) (faction-standing plan, R9): the faction standing gauge, edge-triggered exactly
+        // like the confidence spiral above. FactionDriftSystem and OreMarketHandlers only ever
+        // stamp this event on a threshold CROSSING (FactionStandingThresholds.Crossing) — never on
+        // the daily gauge step itself — so this line can never fire from ordinary Morning drift; it
+        // passes this file's own admission test ("would a townsperson hear about it? A daily gauge
+        // movement would not."). Copy stays scoped to the one mechanism the sim actually runs — a
+        // discount rising or fading — not a reputation system it doesn't.
+        // The cooled line says the DISCOUNT fades, never that the price rises. Standing's negative
+        // half is dormant in this core (KTD8; FactionDriftSystem.StepTowardZero floors at 0), and
+        // "Cooled" fires when standing merely drops back through the favored-exit boundary — often
+        // still well above zero. So ore never costs more than the neutral base ask, and "costs more
+        // now" would advertise a surcharge mechanic the sim cannot run.
+        FactionStandingShifted e => e.Direction == StandingShiftDirection.Favored
+            ? $"The {e.FactionName} remember your custom now — their ore comes cheaper."
+            : $"The {e.FactionName} are cooling toward your shop — their ore's discount is fading.",
+
+        // U7 (moment-lines batch): four economic moments that move the player's gold and, until
+        // now, said nothing about it. RentSystem/GuildAssessmentSystem run their own cadences
+        // (10-day rent, 7-day guild dues — RentState.CadenceDays / GuildAssessmentState.CadenceDays)
+        // rather than firing every Morning, so these clear this file's own admission test: a
+        // townsperson would hear about a bill coming due, not about a gauge ticking down. Copy
+        // reads straight off each event's own payload (amount paid/owed, the next amount due, the
+        // miss count) rather than inventing numbers the sim didn't hand over.
+        RentPaid e =>
+            $"Rent paid — {e.AmountGold}g to the guild. Next due: {e.NextAmountDueGold}g.",
+        RentMissed e =>
+            $"Rent went unpaid — {e.AmountDueGold}g owed, {e.MissedPayments} missed payment(s) now. " +
+            $"The guild's patience is thinning; next due climbs to {e.NextAmountDueGold}g.",
+
+        GuildAssessmentPassed e =>
+            $"Guild Assessment paid — {e.DuesPaidGold}g. Next dues: {e.NextDuesGold}g.",
+        GuildAssessmentMissed e =>
+            $"Guild Assessment missed — {e.DuesDueGold}g unpaid, {e.MissedAssessments} time(s) now. " +
+            $"Next dues climb to {e.NextDuesGold}g.",
+
+        // The cosmetic rank ladder (HeroRank.For, already visible in the Tavern roster) only
+        // becomes news on the CROSSING. ExpeditionRevealSystem stamps this event solely when a
+        // hero's new rank differs from their old one — ordinary XP gain within a rank emits
+        // nothing at all — so there is no per-XP-tick spam for this line to guard against.
+        HeroRankUp e => $"{HeroName(state, e.Hero)} has risen to {e.Rank}.",
+
+        // BountyPaid is the town paying out — news, unlike its sibling BountyPosted (still silent;
+        // see AdventureTickerTests.PlayerOwnActionEvents_NeverRender): posting is the player's own
+        // action read back at them, paying out is someone else's gold moving.
+        BountyPaid e => $"{HeroName(state, e.To)} collects {e.RewardGold}g on a completed bounty.",
+
         // DELIBERATELY still silent here, and why:
         //  • SupplyDelivered — confirmation of the player's OWN camp action, already shown by
         //    CampPanel. Town gossip about a thing you just did reads as noise.
         //  • MarketShareShifted — drifts EVERY day (MarketShareSystem, Evening). It is gauge
         //    material, not news; in a marquee it would crowd out everything above.
+        //  • TariffApplied (U5(b)) — the per-purchase price delta that ONE buy's standing-at-the-
+        //    time produced. Like SupplyDelivered, this is confirmation of the player's OWN action
+        //    (their own buy, already reflected in their own gold total and material count on
+        //    screen) rather than town news. The actual news — that the faction's standing itself
+        //    crossed a line — is what FactionStandingShifted above already announces; voicing the
+        //    per-buy arithmetic too would say the same fact a second time in the same marquee.
         _ => null,
     };
 

@@ -166,6 +166,22 @@ public partial class MineWatch : SubViewportContainer
     private readonly JourneyFeed _feed = new();
     private Label _feedLabel = null!;
 
+    /// <summary>
+    /// U2 (the send-off unit): the departure slate — every player-crafted item the tracked party
+    /// carries, named ONCE and legibly, instead of sharing a few lines of scroll budget with
+    /// roll-call text and (once combat starts) getting swept away by beats before a player could
+    /// read it. See <see cref="UpdateDepartureSlate"/> for why this is a direct child of
+    /// <c>this</c> (the <see cref="SubViewportContainer"/>) rather than of <see cref="_viewport"/>
+    /// (the <see cref="SubViewport"/> itself).
+    /// </summary>
+    private PanelContainer _departureSlate = null!;
+    private VBoxContainer _departureSlateBody = null!;
+
+    /// <summary>The departure slate's currently rendered lines, in manifest order — either every
+    /// <see cref="JourneyManifestLine.Text"/> the tracked party carries, or a single honest
+    /// empty-state sentence when nobody does (test/tuning hook, U2).</summary>
+    public ImmutableList<string> DepartureSlateLines { get; private set; } = ImmutableList<string>.Empty;
+
     /// <summary>A2 (+A3 FX), plan <c>2026-07-28-001</c> Part 2: the beat-driven combat overlay
     /// (floor chip, current-floor monster + HP bar, hit/quaff/death-cloud FX) layered over the
     /// figures built above. Mounted as a sibling of <see cref="_world"/> (never a descendant) —
@@ -354,6 +370,30 @@ public partial class MineWatch : SubViewportContainer
         _delveStage.Build();
         _viewport.AddChild(_delveStage);
 
+        // U2 (the send-off unit): the departure slate is added to `this` — the SubViewportContainer
+        // itself — NOT to _viewport like every label above. That is deliberate: ScreenObservation
+        // .Descendants (the tree-walk AgentPlaytest's digest and HumanPlayer.Screen() both share)
+        // stops at a SubViewport boundary and never looks inside one, so _recordBark/_feedLabel/
+        // DelveStage are all invisible to that harness today. A sibling of _viewport still draws
+        // on top of the SubViewport's own rendered texture (normal CanvasItem draw order — later-
+        // added siblings draw over earlier ones) while staying reachable by that walk, which is the
+        // one property this particular content needs: a player (or an agent playing the game)
+        // actually being able to read it, not just this strip's own decorative chrome.
+        _departureSlate = UiKit.Card("DepartureSlate");
+        _departureSlate.MouseFilter = MouseFilterEnum.Ignore; // decoration only — never eats a click
+        _departureSlate.Position = new Vector2(10f, 6f);
+        _departureSlate.CustomMinimumSize = new Vector2(260f, 0f); // real wrap width — see AddLabel's own R7 remarks
+        _departureSlate.Visible = false; // Refresh's first UpdateDepartureSlate call decides
+        AddChild(_departureSlate);
+
+        _departureSlateBody = new VBoxContainer { Name = "DepartureSlateBody" };
+        _departureSlate.AddChild(_departureSlateBody);
+
+        var slateHeader = new Label { Name = "DepartureSlateHeader", Text = "THE SEND-OFF" };
+        slateHeader.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        slateHeader.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
+        _departureSlateBody.AddChild(slateHeader);
+
         _built = true;
     }
 
@@ -435,6 +475,7 @@ public partial class MineWatch : SubViewportContainer
 
         UpdateFeedLabel();
         RefreshDelveBeats(state, live);
+        UpdateDepartureSlate(_feed.Cards.Count > 0 ? _feed.Cards[0] : null);
     }
 
     /// <summary>
@@ -572,12 +613,17 @@ public partial class MineWatch : SubViewportContainer
             // Rumored cards carry zero JourneyBeat by design (JourneyStage's own doc; pinned by
             // JourneyStreamTests) — this branch used to be the ONLY thing the strip ever showed
             // for the entire Expedition phase, and it was a content-free "rumor has it" line with
-            // no roster and no gear. RumoredLines below reads the SAME state this strip already
-            // has (card.PartyNames/Manifest, resolved once in JourneyStream) to show who went and
-            // what they carry that the player made instead — the actual payoff, not a placeholder.
+            // no roster at all. RumoredLines below reads the SAME state this strip already has
+            // (card.PartyNames, resolved once in JourneyStream) to show WHO went — the "what they
+            // carry" half of the payoff moved to UpdateDepartureSlate (U2, the send-off unit):
+            // RumoredLines used to also append up to FeedVisibleLines-1 manifest lines here,
+            // silently dropping a party's 3rd carried item and sharing this shrinking scroll
+            // budget with roll-call text and (once combat starts) combat beats — "burial, not
+            // ceremony". The departure slate shows EVERY manifest line, uncapped, as its own
+            // moment instead.
             // (AlreadyBackThisCycle is never true alongside a Rumored card — that stage only exists
             // at the Expedition phase, this flag only at Camp/ExpeditionDeep — so the budget above
-            // and RumoredLines' own fixed FeedVisibleLines-1 sizing never fight over the same line.)
+            // never fights RumoredLines for the same line.)
             lines.AddRange(card.Stage == JourneyStage.Rumored
                 ? RumoredLines(card)
                 : [_feed.IdleLine(card.PartyKey)]);
@@ -596,18 +642,93 @@ public partial class MineWatch : SubViewportContainer
         _feedLabel.Visible = Visible;
     }
 
-    /// <summary>U-EXP1: the strip's richer (multi-line) departure teaser — roster roll-call plus
-    /// up to <see cref="FeedVisibleLines"/>-1 manifest lines ("X carries your Y"), capped to the
-    /// same visible-line budget the combat-beat path already respects. Distinct from <c>PipDock</c>'s
-    /// single-line <see cref="JourneyStream.DepartureLine"/>: this strip has <see
-    /// cref="FeedVisibleLines"/> lines of real estate to spend and the corner dock has one — same
-    /// underlying <see cref="JourneyCard.Manifest"/> data, different-sized surfaces.</summary>
+    /// <summary>U-EXP1: the strip's roll-call line for the Expedition phase — who went, and for
+    /// which floor. U2 (the send-off unit) moved the per-item "X carries your Y" lines this used
+    /// to append (capped to <see cref="FeedVisibleLines"/>-1, silently dropping a party's 3rd
+    /// carried item) OFF this scrolling label and onto <see cref="_departureSlate"/> — a moment a
+    /// player can actually read, uncapped, instead of a few seconds sharing scroll budget with
+    /// combat beats. <c>PipDock</c>'s own single-line <see cref="JourneyStream.DepartureLine"/> is
+    /// untouched by this unit — that dock has room for exactly one line and keeps preferring the
+    /// first manifest line there.</summary>
     private static IReadOnlyList<string> RumoredLines(JourneyCard card)
     {
         var names = card.PartyNames.IsEmpty ? "A party" : string.Join(", ", card.PartyNames);
-        var lines = new List<string> { $"{names} set out for floor {card.TargetFloor}." };
-        lines.AddRange(card.Manifest.Take(FeedVisibleLines - 1).Select(m => m.Text));
-        return lines;
+        return [$"{names} set out for floor {card.TargetFloor}."];
+    }
+
+    /// <summary>
+    /// U2 (the send-off unit): rebuild the departure slate from <paramref name="card"/>'s <see
+    /// cref="JourneyCard.Manifest"/> — the SAME manifest <see cref="JourneyStream.BuildManifest"/>
+    /// already produces for every other spectate surface (never a second builder). Every line
+    /// renders, never capped — the cap this unit's plan flagged lived in the old
+    /// <see cref="RumoredLines"/>, not here. An honest empty state (icon + sentence, same shape as
+    /// <c>LedgerModal.AddEmptyState</c>) replaces the bare placeholder whenever nobody in the
+    /// tracked party carries anything player-crafted — <see cref="JourneyStream.DepartureLine"/>'s
+    /// own "A party sets out…" fallback stays exactly as-is for <c>PipDock</c>, which has no room
+    /// for this ceremony; this slate does.
+    ///
+    /// <para>Shown for as long as this party is tracked (Rumored through Held/Resolved, mirroring
+    /// <see cref="Visible"/>) rather than only at the instant of departure — gear is a roster fact
+    /// that does not change mid-raid (<see cref="JourneyStream.BuildManifest"/>'s own doc), so
+    /// there is nothing dishonest about it staying legible for the whole trip. Hidden together
+    /// with the rest of the strip's chrome once the day exits the live window (<paramref
+    /// name="card"/> is null whenever <see cref="JourneyFeed.Cards"/> has nothing to show).</para>
+    /// </summary>
+    private void UpdateDepartureSlate(JourneyCard? card)
+    {
+        // Keep the header (index 0); drop everything else and rebuild — same detach-then-defer
+        // shape as every other panel rebuild in this codebase (PanelGraveyard's own doc: a
+        // rebuild that never reaches a frame boundary must not leak the previous subtree).
+        foreach (var child in _departureSlateBody.GetChildren().Skip(1))
+        {
+            _departureSlateBody.RemoveChild(child);
+            PanelGraveyard.Bury(child);
+        }
+
+        if (card is null)
+        {
+            _departureSlate.Visible = false;
+            DepartureSlateLines = ImmutableList<string>.Empty;
+            return;
+        }
+
+        _departureSlate.Visible = Visible;
+
+        if (card.Manifest.IsEmpty)
+        {
+            const string emptyText = "Nobody in this party carries anything you forged.";
+            var row = new HBoxContainer { Name = "DepartureSlateEmptyRow" };
+            _departureSlateBody.AddChild(row);
+            row.AddChild(new TextureRect
+            {
+                Name = "DepartureSlateEmptyIcon",
+                Texture = IconRegistry.Glyph("rune"),
+                CustomMinimumSize = new Vector2(16f, 16f),
+                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                MouseFilter = MouseFilterEnum.Ignore,
+            });
+            row.AddChild(new Label
+            {
+                Name = "DepartureSlateEmptyLabel",
+                Text = emptyText,
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            });
+            DepartureSlateLines = ImmutableList.Create(emptyText);
+            return;
+        }
+
+        foreach (var line in card.Manifest)
+        {
+            _departureSlateBody.AddChild(new Label
+            {
+                Name = $"DepartureSlateLine_{line.Item.Value}",
+                Text = line.Text,
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            });
+        }
+
+        DepartureSlateLines = card.Manifest.Select(m => m.Text).ToImmutableList();
     }
 
     // ── phase rendering ──────────────────────────────────────────────────────────────────────

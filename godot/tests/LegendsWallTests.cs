@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Kernel;
 using GdUnit4;
@@ -169,8 +170,20 @@ public class LegendsWallTests
 
     /// <summary>A fallen hero (Sera) whose Memorial and matching <see cref="HeroDied"/> record
     /// line up — the exact shape <see cref="LegendsWall"/> needs to render both an Honor button
-    /// (un-honored memorial) and a Reforge button (a worn item not yet reforged).</summary>
-    private static GameState WorldWithFallenHero(bool honored = false, bool alreadyReforged = false)
+    /// (un-honored memorial) and a Reforge row (a worn item not yet reforged). Sparse by
+    /// construction (<see cref="GearSet"/> has ONLY a Weapon, no Shield/Armor/Trinket) — this is
+    /// the fixture <see cref="SparseGear_OnlyBuildsRowsForWornSlots_NeverThrows"/> also leans on,
+    /// proving U8b's pickers never choke on a hero who died with less than a full loadout.
+    ///
+    /// <para>U8b: <paramref name="materials"/> defaults to 2 copper — exactly what "dagger"
+    /// (the worn item's own recipe) needs — now that the Reforge button gates on real
+    /// <see cref="ReforgeGate"/> legality (parity with <c>ActionLegality.ReforgeHeirloomLegal</c>,
+    /// this unit's own KEY CONSTRAINT) rather than only "is Adapter set". Before this unit the
+    /// button had no material gate at all, so a fresh zero-material save still rendered it
+    /// enabled and let a doomed reforge queue and get silently rejected — the exact "dead click"
+    /// antipattern <c>ForgePanel</c>'s own vendor-row comment already calls out.</para></summary>
+    private static GameState WorldWithFallenHero(
+        bool honored = false, bool alreadyReforged = false, ImmutableSortedDictionary<string, int>? materials = null)
     {
         var baseState = GameFactory.NewGame(6010);
         var weapon = new Item(
@@ -188,8 +201,21 @@ public class LegendsWallTests
             });
         }
 
+        // The fallen hero must still be IN state.Heroes, flagged dead — that is what the sim
+        // actually produces (ExpeditionRevealSystem.cs:70 does Heroes.SetItem(... Alive = false,
+        // DiedOnDay ...), it never removes the record). Without her,
+        // HeirloomHandlers.cs:135 cannot resolve a name and the lineage degrades to "of a fallen
+        // hero" — which made this fixture disagree with every real campaign, and made the reforge
+        // read as anonymous exactly where R6's "the dead persist as inheritance" is the point.
+        var fallen = new Hero(
+            FallenHeroId, "Sera", ClassRegistry.StrikerId, Level: 2, MaxHp: 24, Gold: 0,
+            Gear: wornGear, Memories: ImmutableList<ItemMemory>.Empty, Alive: false,
+            DeepestFloorReached: 3, DiedOnDay: 3);
+
         return baseState with
         {
+            Player = baseState.Player with { Materials = materials ?? ImmutableSortedDictionary<string, int>.Empty.Add("copper", 2) },
+            Heroes = baseState.Heroes.SetItem(FallenHeroId.Value, fallen),
             Items = ImmutableSortedDictionary<int, Item>.Empty.Add(WornWeaponId.Value, weapon),
             Drama = baseState.Drama with
             {
@@ -236,12 +262,29 @@ public class LegendsWallTests
     }
 
     [TestCase]
-    public void ReforgeButton_QueuesReforgeHeirloomAction_UsingSourceItemsOwnRecipe()
+    public void ReforgeButton_DefaultPickers_ReforgesTheSourceItemsOwnRecipe_MintsTheHeirloom()
     {
-        var ui = MountMainUi();
+        // The Reforge button queues against ui.Adapter (LegendsWall.Adapter is the SAME
+        // reference MainUi hands every panel, wired in MainUi's constructor) — NOT against
+        // whatever GameState ShowWall was last called with. MountMainUi() with no override
+        // builds its own default fresh campaign, so a bare MountMainUi() here would render the
+        // pickers off WorldWithFallenHero() while the actual queue-and-apply ran against an
+        // unrelated empty-Items/empty-Materials game, and the kernel would correctly reject a
+        // reforge of an item it had never heard of. Mounting WITH the fixture (the same pattern
+        // every other actionable-fixture test in this suite uses, e.g. BountyPanelTests,
+        // CommissionBoardTests) keeps the rendered state and the applied-against state identical.
+        var world = WorldWithFallenHero();
+        var ui = MountMainUi(new SimAdapter(world));
         try
         {
-            ui.Legends.ShowWall(WorldWithFallenHero());
+            ui.Legends.ShowWall(world);
+
+            // U8b: default selections (nothing touched) still reforge "the same sword in the
+            // same metal" — the exact one-click behavior this unit's pickers must preserve.
+            var recipeSelect = Find<OptionButton>(ui.Legends, $"ReforgeRecipeSelect_{WornWeaponId.Value}");
+            var materialSelect = Find<OptionButton>(ui.Legends, $"ReforgeMaterialSelect_{WornWeaponId.Value}");
+            AssertThat(recipeSelect.GetItemText(recipeSelect.Selected)).IsEqual("Dagger");
+            AssertThat(materialSelect.GetItemText(materialSelect.Selected)).IsEqual("copper");
 
             PressEnabled(ui.Legends, $"Reforge_{WornWeaponId.Value}");
 
@@ -249,6 +292,119 @@ public class LegendsWallTests
             AssertThat(reforge.SourceItem).IsEqual(WornWeaponId);
             AssertThat(reforge.RecipeId).IsEqual("dagger");
             AssertThat(reforge.MaterialKey).IsEqual("copper");
+
+            // Assert the RESULT, not just that the action was accepted (this unit's own test
+            // scenario 1): a real heirloom, minted, carrying the lineage forward.
+            AssertThat(ui.Adapter.LastRejections.IsEmpty).IsTrue();
+            var minted = ui.Adapter.CurrentState.Items.Values.Single(i => i.Id != WornWeaponId);
+            AssertThat(minted.RecipeId).IsEqual("dagger");
+            AssertThat(minted.HeirloomLineage).IsEqual("forged from the Rusty Dagger of Sera");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ChoosingADifferentRecipeAndMaterial_MintsTheChosenCombination_NotTheSourceItemsOwnRecipe()
+    {
+        // See ReforgeButton_DefaultPickers_...'s comment: mount WITH the fixture so ui.Adapter
+        // (what Reforge actually queues against) matches what ShowWall renders.
+        // Shortsword/iron needs 3 iron (Tier 1, no talent gate) — a combination that is NOT
+        // the source dagger's own recipe (Tier 1, copper).
+        var materials = ImmutableSortedDictionary<string, int>.Empty.Add("iron", 3);
+        var world = WorldWithFallenHero(materials: materials);
+        var ui = MountMainUi(new SimAdapter(world));
+        try
+        {
+            ui.Legends.ShowWall(world);
+
+            SelectByText(Find<OptionButton>(ui.Legends, $"ReforgeRecipeSelect_{WornWeaponId.Value}"), "Shortsword");
+            SelectByText(Find<OptionButton>(ui.Legends, $"ReforgeMaterialSelect_{WornWeaponId.Value}"), "iron");
+
+            PressEnabled(ui.Legends, $"Reforge_{WornWeaponId.Value}");
+
+            var reforge = ui.Adapter.AppliedThisPhase.OfType<ReforgeHeirloomAction>().Single();
+            AssertThat(reforge.RecipeId).IsEqual("shortsword");
+            AssertThat(reforge.MaterialKey).IsEqual("iron");
+
+            AssertThat(ui.Adapter.LastRejections.IsEmpty).IsTrue();
+            var minted = ui.Adapter.CurrentState.Items.Values.Single(i => i.Id != WornWeaponId);
+            AssertThat(minted.RecipeId).IsEqual("shortsword");
+            AssertThat(minted.HeirloomLineage).IsEqual("forged from the Rusty Dagger of Sera");
+            AssertThat(ui.Adapter.CurrentState.Player.Materials["iron"]).IsEqual(0); // all 3 consumed
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void NotEnoughMaterialForTheChosenCombination_RowDisabled_ReasonNamesTheShortfall()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            // Zero materials at all — dagger/copper's own default (needs 2) is unaffordable.
+            ui.Legends.ShowWall(WorldWithFallenHero(materials: ImmutableSortedDictionary<string, int>.Empty));
+
+            var button = Find<Button>(ui.Legends, $"Reforge_{WornWeaponId.Value}");
+            AssertThat(button.Disabled).IsTrue();
+            AssertThat(button.TooltipText).Contains("Not enough copper");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void IllegalMaterial_QueuedDirectly_TypedRejection_NothingConsumed()
+    {
+        // See ReforgeButton_DefaultPickers_...'s comment: mount WITH the fixture so
+        // ui.Adapter.Queue below actually applies against the world that has the fallen hero,
+        // the worn item, and the 2 copper — not an unrelated default fresh campaign.
+        var world = WorldWithFallenHero();
+        var ui = MountMainUi(new SimAdapter(world));
+        try
+        {
+            ui.Legends.ShowWall(world);
+
+            // The picker can never offer an unregistered key (this unit's scenario 2) — proven
+            // the same way this codebase already proves "a stale-enabled row" can't slip past the
+            // kernel elsewhere (ForgeCraftTests.MissingFlux_..._QueueingAnywayRejectsWithNoPartialConsumption):
+            // queue the illegal combination directly and confirm the KERNEL still refuses it, with
+            // no partial consumption.
+            ui.Adapter.Queue(new ReforgeHeirloomAction(WornWeaponId, "dagger", "unobtainium"));
+
+            AssertThat(ui.Adapter.LastRejections.Count).IsEqual(1);
+            AssertThat(ui.Adapter.CurrentState.Items.Values.Any(i => i.Id != WornWeaponId)).IsFalse();
+            AssertThat(ui.Adapter.CurrentState.Player.Materials.ContainsKey("copper")).IsTrue();
+            AssertThat(ui.Adapter.CurrentState.Player.Materials["copper"]).IsEqual(2); // untouched
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void SparseGear_OnlyBuildsRowsForWornSlots_NeverThrows()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            // WorldWithFallenHero's GearSet carries ONLY a Weapon (Shield/Armor/Trinket null) —
+            // this unit's own scenario 3 (pickers must default sanely, never crash, on sparse
+            // recorded gear). ShowWall completing at all, plus exactly one Reforge row, is the
+            // proof: three missing slots produced zero rows and zero exceptions.
+            ui.Legends.ShowWall(WorldWithFallenHero());
+
+            AssertThat(ui.Legends.Visible).IsTrue();
+            var reforgeButtons = ui.Legends.FindChildren("Reforge_*", "Button", recursive: true, owned: false);
+            AssertThat(reforgeButtons.Count).IsEqual(1);
         }
         finally
         {
@@ -270,6 +426,24 @@ public class LegendsWallTests
         {
             Unmount(ui);
         }
+    }
+
+    /// <summary>Select an <see cref="OptionButton"/> item by its displayed text (never a
+    /// hardcoded index) and emit the same <c>ItemSelected</c> signal a real dropdown pick fires —
+    /// mirrors <c>ForgeCraftTests.SelectMaterialByKey</c>'s own idiom for the sibling picker.</summary>
+    private static void SelectByText(OptionButton select, string text)
+    {
+        for (var i = 0; i < select.ItemCount; i++)
+        {
+            if (select.GetItemText(i) == text)
+            {
+                select.Selected = i;
+                select.EmitSignal(OptionButton.SignalName.ItemSelected, i);
+                return;
+            }
+        }
+
+        throw new InvalidOperationException($"No option '{text}' in '{select.Name}'.");
     }
 }
 #endif

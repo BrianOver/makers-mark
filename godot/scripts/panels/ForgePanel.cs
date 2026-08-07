@@ -20,7 +20,10 @@ namespace GodotClient.Panels;
 /// <see cref="CraftAction"/>), plus each profession's talent mini-tree with Unlock buttons
 /// (queues <see cref="UnlockTalentAction"/>), plus the Morning vendor's buy rows (Playable
 /// Core U3): one row per <see cref="MaterialRegistry.PricedPool"/> key with its marked-up
-/// price, queueing <see cref="BuyMaterialAction"/>. Unlock enablement calls
+/// price, queueing <see cref="BuyMaterialAction"/>. A <c>SpinBox</c> quantity stepper (U8c) sits
+/// under each row — the console's <c>buymat &lt;material&gt; &lt;qty&gt;</c> already bought any
+/// amount in one action slot; the button now does too, defaulting to 1 (byte-identical to before
+/// that unit) when nothing is touched. Unlock enablement calls
 /// <see cref="ProfessionDefinition.CanUnlock"/> — sim-owned validation, only rendered here.
 ///
 /// <para>P007 U5 (R12/KTD2/KTD3/KTD5 — resolves OQ4 to click-to-craft): recipe rows are now
@@ -60,6 +63,18 @@ public partial class ForgePanel : SimPanel
     private VBoxContainer? _vendorRows;
     private VBoxContainer? _recipeRows;
     private VBoxContainer? _talentRows;
+
+    // ── U3 (the Foundry, gold sink 1 + 3a): forge-tier chip, coal/flux stock chips, and the two
+    // Morning sinks (UpgradeForgeAction, BuyForgeSupplyAction) — sim-complete since Phase D but
+    // reachable from no screen the shipped client had. See this field group's own row builder in
+    // Refresh() for the ActionLegality mirror (UpgradeForgeLegal/BuyForgeSupplyLegal expose bare
+    // bools, never a reason — the strings here are hand-written client-side, same contract as the
+    // Morning vendor rows just above).
+    private VBoxContainer? _foundryRows;
+
+    /// <summary>Display tier for <see cref="ForgeTierHandlers.CurrentTierIndex"/> (0..4) — index 0
+    /// is the free starting baseline, shown "Forge I" per the unit brief.</summary>
+    private static readonly string[] TierRoman = { "I", "II", "III", "IV", "V" };
 
     // ── U3 (painted-interiors plan): FocusSection — the shelf/anvil stations' "press E, land on
     // the right rows" affordance. Scrolls to and briefly flashes an EXISTING section (no new
@@ -352,35 +367,152 @@ public partial class ForgePanel : SimPanel
         // single-unit price. Display quote only — the sim's MaterialVendorHandlers reprices
         // authoritatively on apply; this mirrors its exact formula (ceilDiv over sim-owned
         // constants), no rules here.
+        //
+        // U8c: a quantity stepper beside the SAME Buy button — booked as pure friction relief
+        // (it names no ledger line, changes no hero's outcome), not a path feature. The button
+        // still defaults to buying 1 with nothing touched (byte-identical initial gate/price to
+        // before this unit), so every existing "press BuyMat_x N times" test still buys 1 per
+        // press; the stepper only ADDS the option to dial in a bigger single purchase.
         Clear(_vendorRows!);
         foreach (var key in MaterialRegistry.PricedPool)
         {
-            var unit = MaterialRegistry.UnitPrice(key);
-            var quote = (int)(((long)unit * (1000 + MaterialVendorHandlers.VendorMarkupPermille) + 999) / 1000);
             var have = state.Player.Materials.TryGetValue(key, out var owned) ? owned : 0;
 
-            var buy = new Button { Name = $"BuyMat_{key}", Text = "Buy 1" };
-            buy.Pressed += () => OnBuyMaterialPressed(key);
-            // U6 gate, mirroring MaterialVendorHandlers: Morning-only CanHandle + the gold
-            // check. Landing phase = the CURRENT phase (GameKernel.Tick applies the queued
-            // batch against state.Phase before advancing), so the buy is legal exactly
-            // while the sim still sits AT Morning. ListRow inlines the exact GateButton
-            // contract (Disabled + player-phrased tooltip) itself.
+            // U6 gate, mirroring MaterialVendorHandlers: Morning-only CanHandle + the gold check.
+            // Landing phase = the CURRENT phase (GameKernel.Tick applies the queued batch against
+            // state.Phase before advancing), so the buy is legal exactly while the sim still sits
+            // AT Morning. ListRow inlines the exact GateButton contract (Disabled + player-phrased
+            // tooltip) itself.
             // The action budget belongs in this gate too. It was missing, and the omission was
             // reachable by a human: in Morning with enough gold but zero slots left, the row stayed
             // enabled, the click queued an action the handler then rejected, and the feedback line
             // still said "Queued — resolves when Morning ticks". A dead click that confirms itself
             // is worse than a disabled one. BountyPanel already gates on slots; this now matches it,
             // including its phase -> gold -> slots reason precedence.
-            var legal = state.Phase == DayPhase.Morning
-                && quote <= state.Player.Gold
+            //
+            // MaterialVendorHandlers.QuoteCost is the ONE pricing formula (its own class doc) —
+            // this used to hand-inline the same ceilDiv, now parameterized on quantity so the
+            // gate below can be re-run for whatever quantity the stepper holds.
+            (int Quote, bool Legal, string WhyNot) Gate(int qty)
+            {
+                var q = MaterialVendorHandlers.QuoteCost(key, qty);
+                var ok = state.Phase == DayPhase.Morning && q <= state.Player.Gold && state.ActionSlotsRemaining > 0;
+                var reason = state.Phase != DayPhase.Morning
+                    ? "The vendor sells in the Morning."
+                    : q > state.Player.Gold
+                        ? "You can't afford that yet."
+                        : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                return (q, ok, reason);
+            }
+
+            var qtySpin = new SpinBox
+            {
+                Name = $"BuyMatQty_{key}",
+                MinValue = 1,
+                MaxValue = 9999,
+                Rounded = true,
+                Value = 1,
+            };
+
+            var buy = new Button { Name = $"BuyMat_{key}", Text = "Buy 1" };
+            buy.Pressed += () => OnBuyMaterialPressed(key, (int)qtySpin.Value);
+
+            var initial = Gate(1);
+            _vendorRows!.AddChild(ListRow(IconRegistry.Ore(key), key, $"{initial.Quote}g", have.ToString(), buy, initial.Legal, initial.WhyNot));
+
+            // The stepper itself — a thin row right under the ListRow (ShopPanel's priceSpin
+            // precedent), re-gating the SAME Buy button live against whatever quantity is dialed
+            // in, rather than only ever the 1-unit default.
+            var qtyRow = AddRow(_vendorRows!);
+            AddLabel(qtyRow, "  qty:");
+            qtyRow.AddChild(qtySpin);
+            qtySpin.ValueChanged += value =>
+            {
+                var qty = (int)value;
+                var gate = Gate(qty);
+                buy.Text = $"Buy {qty}";
+                buy.Disabled = !gate.Legal;
+                buy.TooltipText = gate.Legal ? string.Empty : gate.WhyNot;
+            };
+        }
+
+        // U3 (the Foundry): tier/coal/flux chips + the Upgrade/Buy-supply rows. ActionLegality's
+        // UpgradeForgeLegal/BuyForgeSupplyLegal return a bare bool (no whyNot) — this mirrors their
+        // exact gate order (phase, then the handler's own ceiling/ore/gold/slots order) and writes
+        // the reason strings client-side, same contract the vendor row above already follows.
+        Clear(_foundryRows!);
+        var tierIndex = ForgeTierHandlers.CurrentTierIndex(state.Player);
+        var coalHave = state.Player.Materials.TryGetValue(ForgeSupplyHandlers.Coal, out var coalStock) ? coalStock : 0;
+        var fluxHave = state.Player.Materials.TryGetValue(ForgeSupplyHandlers.Flux, out var fluxStock) ? fluxStock : 0;
+
+        var foundryChips = AddRow(_foundryRows!);
+        foundryChips.AddChild(StatChip("Tier", $"Forge {TierRoman[tierIndex]}"));
+        foundryChips.AddChild(StatChip("Coal", coalHave.ToString()));
+        foundryChips.AddChild(StatChip("Flux", fluxHave.ToString()));
+
+        // UpgradeForgeAction is a BELL-RIDER (ActionTiming defers it) — Queue() puts it on the
+        // bell tray rather than resolving it now; PendingVerbVocab already names it.
+        var atCeiling = tierIndex > ForgeTierHandlers.MaxUpgradeIndex;
+        string upgradeName;
+        Texture2D? upgradeIcon;
+        string upgradePrice;
+        string upgradeOwned;
+        bool upgradeLegal;
+        string upgradeWhyNot;
+        if (atCeiling)
+        {
+            upgradeName = $"Forge {TierRoman[tierIndex]} (max)";
+            upgradeIcon = null;
+            upgradePrice = "—";
+            upgradeOwned = string.Empty;
+            upgradeLegal = false;
+            upgradeWhyNot = "The forge is already at Tier V — the maximum.";
+        }
+        else
+        {
+            var oreKey = ForgeTierHandlers.OreKey[tierIndex];
+            var upgradeCost = ForgeTierHandlers.GoldCost[tierIndex];
+            var oreHave = state.Player.Materials.TryGetValue(oreKey, out var oreStock) ? oreStock : 0;
+
+            upgradeName = $"Forge {TierRoman[tierIndex + 1]}";
+            upgradeIcon = IconRegistry.Ore(oreKey);
+            upgradePrice = $"{upgradeCost}g + {ForgeTierHandlers.OreQuantity} {oreKey}";
+            upgradeOwned = $"{oreHave}/{ForgeTierHandlers.OreQuantity} {oreKey}";
+            upgradeLegal = state.Phase == DayPhase.Morning
+                && oreHave >= ForgeTierHandlers.OreQuantity
+                && upgradeCost <= state.Player.Gold
                 && state.ActionSlotsRemaining > 0;
-            var whyNot = state.Phase != DayPhase.Morning
-                ? "The vendor sells in the Morning."
-                : quote > state.Player.Gold
+            upgradeWhyNot = state.Phase != DayPhase.Morning
+                ? "The forge upgrades in the Morning."
+                : oreHave < ForgeTierHandlers.OreQuantity
+                    ? $"Not enough {oreKey} — need {ForgeTierHandlers.OreQuantity}, have {oreHave}."
+                    : upgradeCost > state.Player.Gold
+                        ? "You can't afford that yet."
+                        : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+        }
+
+        var upgradeButton = new Button { Name = "UpgradeForge", Text = "Upgrade" };
+        upgradeButton.Pressed += OnUpgradeForgePressed;
+        _foundryRows!.AddChild(ListRow(upgradeIcon, upgradeName, upgradePrice, upgradeOwned, upgradeButton, upgradeLegal, upgradeWhyNot));
+
+        // BuyForgeSupplyAction resolves IMMEDIATELY (not a bell-rider) — same shape as the
+        // material vendor rows above, just priced off ForgeSupplyHandlers.UnitPrice instead of
+        // MaterialRegistry (coal/flux are deliberately not in PricedPool — see that handler's doc).
+        foreach (var supplyKey in new[] { ForgeSupplyHandlers.Coal, ForgeSupplyHandlers.Flux })
+        {
+            var unitPrice = ForgeSupplyHandlers.UnitPrice(supplyKey);
+            var supplyHave = state.Player.Materials.TryGetValue(supplyKey, out var supplyStock) ? supplyStock : 0;
+            var buySupply = new Button { Name = $"BuySupply_{supplyKey}", Text = "Buy 1" };
+            buySupply.Pressed += () => OnBuyForgeSupplyPressed(supplyKey);
+            var supplyLegal = state.Phase == DayPhase.Morning
+                && unitPrice <= state.Player.Gold
+                && state.ActionSlotsRemaining > 0;
+            var supplyWhyNot = state.Phase != DayPhase.Morning
+                ? "The forge supplier sells in the Morning."
+                : unitPrice > state.Player.Gold
                     ? "You can't afford that yet."
                     : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
-            _vendorRows!.AddChild(ListRow(IconRegistry.Ore(key), key, $"{quote}g", have.ToString(), buy, legal, whyNot));
+            _foundryRows!.AddChild(ListRow(null, supplyKey, $"{unitPrice}g", supplyHave.ToString(), buySupply, supplyLegal, supplyWhyNot));
         }
 
         Clear(_recipeRows!);
@@ -496,6 +628,84 @@ public partial class ForgePanel : SimPanel
                         }
                     }
                 }
+
+                // U4 (P6b): the masterwork attempt — a purchased GUARANTEE standing right beside
+                // whichever craft path this card already offers, on every profession's recipes
+                // (MasterworkAttemptHandlers/ActionLegality.MasterworkAttemptLegal are
+                // profession-agnostic — see ProfessionRegistry.TryGetRecipe's global lookup).
+                // MasterworkAttemptLegal returns a bare bool (no whyNot) — same contract as the
+                // Foundry section above — so this recomputes the SAME ordered checks
+                // (MasterworkAttemptHandlers.Apply steps 3/7/8/9) to write a specific reason.
+                // Material affordability reuses this card's own needed/have/affordable —
+                // MasterworkAttemptHandlers' material-quantity math (efficiency talent, floor 1)
+                // is identical to CraftAction's. Zero RNG on the sim side (see that handler's
+                // class doc) — copy says "guaranteed", never "chance".
+                // Both new gates must ALSO mirror the handlers' recipe tier-gate talent check
+                // (MasterworkAttemptHandlers.Apply guard 5, LegendaryCommissionHandlers.Apply
+                // guard 5) or a talent-locked recipe shows an enabled button the sim then rejects.
+                // `unlocked` is this card's own talent set (see :527). NOTE: the plain Craft button
+                // above has this same gap and is NOT fixed here — pre-existing, booked, not a §2
+                // link break, and widening this diff to chase it is exactly the drift the plan bans.
+                var tierTalentOk = !(profession is not null
+                    && profession.TierGate.TryGetValue(recipe.Tier, out var tierGateNode)
+                    && !unlocked.Contains(tierGateNode));
+
+                var atMasterworkTier = tierIndex >= MasterworkAttemptHandlers.RequiredForgeTierIndex;
+                var mwCoalOk = coalHave >= MasterworkAttemptHandlers.CoalCost;
+                var mwFluxOk = fluxHave >= MasterworkAttemptHandlers.FluxCost;
+                var mwSurcharge = MasterworkAttemptHandlers.GoldSurchargePerTier * (tierIndex + 1);
+                var mwGoldOk = state.Player.Gold >= mwSurcharge;
+                var mwLegal = atMasterworkTier && tierTalentOk && affordable && mwCoalOk && mwFluxOk && mwGoldOk
+                    && state.ActionSlotsRemaining > 0;
+                // Display tier is index + 1 (index 0 = Forge I), so the REQUIRED display tier is
+                // RequiredForgeTierIndex + 1 — matching the handler's own rejection string at
+                // MasterworkAttemptHandlers.cs:79. An earlier "+ 2" here advertised Tier III for a
+                // gate that opens at Tier II, and the test only asserted the words "Forge Tier"
+                // rather than the number, so it could not catch the drift.
+                var mwWhyNot = !atMasterworkTier
+                    ? $"Requires Forge Tier {MasterworkAttemptHandlers.RequiredForgeTierIndex + 1} or higher (workshop is Tier {TierRoman[tierIndex]})."
+                    : !tierTalentOk
+                        ? $"This recipe is tier {recipe.Tier} — unlock its talent first."
+                        : !affordable
+                        ? $"Not enough {material} — need {needed}, have {have}."
+                        : !mwCoalOk
+                            ? $"Not enough coal — need {MasterworkAttemptHandlers.CoalCost}, have {coalHave}."
+                            : !mwFluxOk
+                                ? $"Not enough flux — need {MasterworkAttemptHandlers.FluxCost}, have {fluxHave}."
+                                : !mwGoldOk
+                                    ? $"Not enough gold — need {mwSurcharge}, have {state.Player.Gold}."
+                                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                var masterwork = AddButton(controlsRow, $"Masterwork_{recipe.RecipeId}", "Masterwork Attempt (guaranteed)",
+                    () => OnMasterworkPressed(recipe.RecipeId, material));
+                GateButton(masterwork, mwLegal, mwWhyNot);
+
+                // U4 (P6b): commission one of the era's capped legendary works — same card, same
+                // selected material, DOUBLE quantity (LegendaryCommissionHandlers.MaterialMultiplier,
+                // no efficiency discount — the extravagant path). "N of 4 left" is read off the
+                // handler's own reserved counter key, never a locally re-derived number. Also a
+                // bare-bool ActionLegality mirror, same idiom as the masterwork gate just above.
+                var commissionsUsed = state.Player.Materials.TryGetValue(LegendaryCommissionHandlers.CommissionsUsedKey, out var usedStock) ? usedStock : 0;
+                var commissionsRemaining = LegendaryCommissionHandlers.MaxPerCampaign - commissionsUsed;
+                var legendaryCapped = commissionsUsed >= LegendaryCommissionHandlers.MaxPerCampaign;
+                var legendaryNeeded = recipe.MaterialQuantity * LegendaryCommissionHandlers.MaterialMultiplier;
+                var legendaryMaterialOk = have >= legendaryNeeded;
+                var legendaryCost = LegendaryCommissionHandlers.BaseGold * (tierIndex + 1);
+                var legendaryGoldOk = state.Player.Gold >= legendaryCost;
+                var legendaryLegal = !legendaryCapped && tierTalentOk && legendaryMaterialOk && legendaryGoldOk
+                    && state.ActionSlotsRemaining > 0;
+                var legendaryWhyNot = legendaryCapped
+                    ? $"All {LegendaryCommissionHandlers.MaxPerCampaign} legendary commissions for this era are already spoken for."
+                    : !tierTalentOk
+                        ? $"This recipe is tier {recipe.Tier} — unlock its talent first."
+                        : !legendaryMaterialOk
+                        ? $"Not enough {material} — need {legendaryNeeded}, have {have}."
+                        : !legendaryGoldOk
+                            ? $"Not enough gold — need {legendaryCost}, have {state.Player.Gold}."
+                            : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                var legendary = AddButton(controlsRow, $"Commission_{recipe.RecipeId}",
+                    $"Commission Legendary ({commissionsRemaining} of {LegendaryCommissionHandlers.MaxPerCampaign} left)",
+                    () => OnCommissionLegendaryPressed(recipe.RecipeId, material));
+                GateButton(legendary, legendaryLegal, legendaryWhyNot);
             }
 
             foreach (var node in profession.TalentNodes.Values)
@@ -1020,17 +1230,71 @@ public partial class ForgePanel : SimPanel
         _feedback!.Text = Confirm(action, $"Unlocked {nodeId}");
     }
 
-    /// <summary>Queues a one-unit vendor buy (Morning-only in the sim; the U6 gate disables the
-    /// row off-Morning, and a rejection that still surfaces becomes MainUi's toast). Fixed to
+    /// <summary>Queues a vendor buy (Morning-only in the sim; the U6 gate disables the row
+    /// off-Morning, and a rejection that still surfaces becomes MainUi's toast). Fixed to
     /// Morning — <see cref="GameSim.Economy.MaterialVendorHandlers"/>'s CanHandle is Morning-only,
-    /// so unlike craft/unlock this action's resolving phase is never the current one off-Morning.</summary>
-    private void OnBuyMaterialPressed(string materialKey)
+    /// so unlike craft/unlock this action's resolving phase is never the current one off-Morning.
+    /// <paramref name="quantity"/> is the U8c stepper's live value (defaults to 1, unchanged from
+    /// before that unit) — <see cref="GameSim.Economy.MaterialVendorHandlers"/> spends exactly ONE
+    /// action slot for the whole line regardless of quantity, never one slot per unit.</summary>
+    private void OnBuyMaterialPressed(string materialKey, int quantity)
     {
-        var action = new BuyMaterialAction(materialKey, 1);
+        var action = new BuyMaterialAction(materialKey, quantity);
         Adapter?.Queue(action);
         // Sound the CLICK, not the settlement: the player pressed Buy now, so the coin lands now.
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Coin);
-        _feedback!.Text = Confirm(action, $"Bought 1 {materialKey}");
+        _feedback!.Text = Confirm(action, $"Bought {quantity} {materialKey}");
+    }
+
+    /// <summary>U3: the forge-tier upgrade — always a BELL-RIDER (<see cref="GameSim.Kernel.ActionTiming"/>
+    /// defers <see cref="UpgradeForgeAction"/> unconditionally), so this always queues rather than
+    /// applying; <see cref="Confirm"/> reads that off the shared source and appends the bell
+    /// wording itself.</summary>
+    private void OnUpgradeForgePressed()
+    {
+        var action = new UpgradeForgeAction();
+        Adapter?.Queue(action);
+        _feedback!.Text = Confirm(action, "Requested a forge upgrade");
+    }
+
+    /// <summary>U3: coal/flux from the forge supplier — resolves immediately (mirrors
+    /// <see cref="OnBuyMaterialPressed"/>'s immediate-resolve shape). Still a fixed one-unit
+    /// buy — U8c's quantity stepper is scoped to the Morning material vendor row only.</summary>
+    private void OnBuyForgeSupplyPressed(string supplyKey)
+    {
+        var action = new BuyForgeSupplyAction(supplyKey, 1);
+        Adapter?.Queue(action);
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Coin);
+        _feedback!.Text = Confirm(action, $"Bought 1 {supplyKey}");
+    }
+
+    /// <summary>U4 (P6b): the masterwork attempt — resolves IMMEDIATELY
+    /// (<see cref="MasterworkAttemptHandlers"/> is all-phase, like <see cref="CraftAction"/>),
+    /// spending coal + flux + gold + the recipe's materials for a GUARANTEED Superior-or-better
+    /// mint (see that handler's class doc — zero RNG, never a "chance"). Standing right beside the
+    /// Craft/Work-the-forge/etc. button on the SAME recipe card: gold buys certainty, not a better
+    /// roll at the same minigame.</summary>
+    private void OnMasterworkPressed(string recipeId, string materialKey)
+    {
+        var action = new MasterworkAttemptAction(recipeId, materialKey);
+        Adapter?.Queue(action);
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.CraftDone);
+        _feedback!.Text = Confirm(action, $"Masterwork attempt on {recipeId} with {materialKey} (guarantees Superior or better)");
+    }
+
+    /// <summary>U4 (P6b): commission one of the era's capped legendary works — always a BELL-RIDER
+    /// (<see cref="GameSim.Kernel.ActionTiming"/> defers <see cref="CommissionLegendaryWorkAction"/>
+    /// unconditionally, same as <see cref="OnUpgradeForgePressed"/>'s forge upgrade), so this
+    /// always queues; <see cref="Confirm"/> reads that off the shared source and appends the bell
+    /// wording itself. The Guild furnishes what a commission this large needs from your forge — the
+    /// work that comes back still bears your mark, same as every other mint this panel produces
+    /// (<see cref="GameSim.Crafting.ItemForge.Forge"/> always stamps one; see
+    /// <see cref="PendingVerbVocab.BellPromise"/>'s own updated wording).</summary>
+    private void OnCommissionLegendaryPressed(string recipeId, string materialKey)
+    {
+        var action = new CommissionLegendaryWorkAction(recipeId, materialKey);
+        Adapter?.Queue(action);
+        _feedback!.Text = Confirm(action, $"Commissioned a legendary {recipeId} from {materialKey}");
     }
 
     private string SelectedMaterialOr(string recipeDefault)
@@ -1120,6 +1384,14 @@ public partial class ForgePanel : SimPanel
         _vendorSectionRoot = vendorSection.Root; // U3: FocusSection("materials") scroll/flash target
         _vendorRows = new VBoxContainer { Name = "VendorRows" };
         vendorSection.Body.AddChild(_vendorRows);
+
+        // U3: the Foundry — forge-tier/coal/flux chips plus the Upgrade/Buy-supply rows, beside
+        // the Morning vendor rows just built above.
+        var foundrySection = Section("Foundry");
+        foundrySection.Root.Name = "FoundrySection";
+        body.AddChild(foundrySection.Root);
+        _foundryRows = new VBoxContainer { Name = "FoundryRows" };
+        foundrySection.Body.AddChild(_foundryRows);
 
         var recipeSection = Section("Recipes");
         recipeSection.Root.Name = "RecipeSection"; // U3: see VendorSection's own naming note above

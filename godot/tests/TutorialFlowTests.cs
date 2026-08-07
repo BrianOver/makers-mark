@@ -1053,5 +1053,169 @@ public class TutorialFlowTests
             UnmountNewGameSelect(screen);
         }
     }
+
+    // ── U8a (loop-legibility plan): the general profession-switch surface, ProgressionPanel's own
+    // "YOUR PROFESSIONS" header. TutorialFlow's own picker (SecondProfessionAffordance_... above)
+    // is add-only and gated behind a milestone + "fewer than 2 selected" — this is the fix for the
+    // gap that leaves: once a save already has 2 professions (exactly what that picker nudges a
+    // player into), there is no other path to change either one, ever. These tests drive the NEW
+    // surface directly through ProgressionPanel's real Controls, never GameSim.Professions state. ──
+
+    /// <summary>Scenarios 1, 5, 6 (U8a brief) in one round trip: the surface exists and works in a
+    /// state that has moved past the tutorial entirely (<see cref="DriveWholeArcToCompletion"/>,
+    /// this file's own real-completion helper), a genuine click reaches the kernel
+    /// (<see cref="PressEnabled"/> — fails loudly if Confirm ever renders Disabled here), and the
+    /// switch is judged by the ACTUAL craftable set afterward, not merely by whether the submit was
+    /// accepted.</summary>
+    [TestCase]
+    public void ChangeProfessionsSurface_ReachableAfterTutorialCompletes_RealConfirmClick_ChangesCraftableRecipes()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            DriveWholeArcToCompletion(ui);
+            AssertThat(ui.Tutorial.Completed).IsTrue();
+
+            // Starting point: blacksmith only (PlayerState.NewGame's own default) — the Forge lists
+            // blacksmith's dagger and nothing from tanning.
+            ui.OpenPanel("Forge");
+            var tanningRecipeId = ProfessionRegistry.All[TanningProfession.Id].Recipes.Keys
+                .OrderBy(id => id, System.StringComparer.Ordinal).First();
+            AssertThat(ui.Forge.FindChild($"RecipeCard_{ScriptedSession.CraftRecipeId}", recursive: true, owned: false))
+                .OverrideFailureMessage("Precondition failed: blacksmith's own dagger recipe should render before any switch.")
+                .IsNotNull();
+            AssertThat(ui.Forge.FindChild($"RecipeCard_{tanningRecipeId}", recursive: true, owned: false)).IsNull();
+
+            // Switch blacksmith -> tanning through the general surface (never the tutorial's own
+            // add-only picker, which this state has already left behind).
+            ui.OpenPanel("Progress");
+            Find<Button>(ui.Progress, $"ProfessionToggle_{ProfessionRegistry.BlacksmithId}").ButtonPressed = false;
+            Find<Button>(ui.Progress, $"ProfessionToggle_{TanningProfession.Id}").ButtonPressed = true;
+            ui.Progress.Refresh(); // recompute Confirm's gate off the freshly-poked toggles, same as a live re-render would
+
+            PressEnabled(ui.Progress, "ConfirmProfessions"); // scenario 6: a real click, not just an enabled flag
+
+            // Still a bell-rider: the submit alone changes nothing yet.
+            AssertThat(ui.Adapter.CurrentState.Player.SelectedProfessions)
+                .IsEqual(ImmutableSortedSet.Create(ProfessionRegistry.BlacksmithId));
+
+            ui.Adapter.AdvancePhase(); // rings the bell
+            AssertThat(ui.Adapter.LastRejections.Count)
+                .OverrideFailureMessage("A legal 1-profession pick was rejected at the bell — this proves nothing below.")
+                .IsEqual(0);
+            AssertThat(ui.Adapter.CurrentState.Player.SelectedProfessions)
+                .IsEqual(ImmutableSortedSet.Create(TanningProfession.Id));
+
+            // The actual craftable set, not just the accepted submission (U8a brief, scenario 1).
+            ui.OpenPanel("Forge");
+            AssertThat(ui.Forge.FindChild($"RecipeCard_{ScriptedSession.CraftRecipeId}", recursive: true, owned: false))
+                .OverrideFailureMessage("Blacksmith's dagger recipe still renders after switching away from blacksmith.")
+                .IsNull();
+            AssertThat(ui.Forge.FindChild($"RecipeCard_{tanningRecipeId}", recursive: true, owned: false))
+                .OverrideFailureMessage("Tanning's own recipe never rendered after switching to tanning.")
+                .IsNotNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Scenario 2 (U8a brief): Confirm submits a real <see cref="SetProfessionsAction"/>,
+    /// which is a bell-rider (<c>ActionTiming.ResolvesImmediately</c> false) — it must land on the
+    /// bell tray under its existing <see cref="PendingVerbVocab"/> string, the same tray/vocab every
+    /// other bell-rider uses (<c>BellTrayTests</c> covers the vocab table itself; this proves THIS
+    /// surface's submit path actually reaches it).</summary>
+    [TestCase]
+    public void ConfirmProfessions_QueuesAsABellRider_AndAddsTheExistingTrayChip()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Progress");
+            Find<Button>(ui.Progress, $"ProfessionToggle_{TanningProfession.Id}").ButtonPressed = true;
+            ui.Progress.Refresh();
+
+            var tray = Find<HBoxContainer>(ui, "BellTray");
+            AssertThat(tray.GetChildCount()).IsEqual(0);
+
+            PressEnabled(ui.Progress, "ConfirmProfessions");
+
+            AssertThat(tray.GetChildCount()).IsEqual(1);
+            var chip = tray.GetChild(0);
+            AssertThat(Find<Label>(chip, "Verb").Text)
+                .IsEqual(PendingVerbVocab.DisplayName(new SetProfessionsAction(ImmutableSortedSet.Create("blacksmith"))));
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Scenario 3 (U8a brief): 3 professions is out of range
+    /// (<c>ProfessionHandlers.MaxSelected</c> = 2) — Confirm must render Disabled (the KEY
+    /// CONSTRAINT's enabled-state parity with <c>ActionLegality.SetProfessionsLegal</c>), and a
+    /// forced press (CampPanel.OnSend's own "a real click can't reach a Disabled button, but this
+    /// suite's Press deliberately bypasses that" precedent) must still resolve through the kernel's
+    /// OWN typed rejection at the bell, changing nothing.</summary>
+    [TestCase]
+    public void ConfirmProfessions_ThreeSelected_ConfirmDisabled_ForcedSubmitRejectedByTheKernel_NoStateChange()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var before = ui.Adapter.CurrentState.Player.SelectedProfessions;
+            ui.OpenPanel("Progress");
+            Find<Button>(ui.Progress, $"ProfessionToggle_{ProfessionRegistry.BlacksmithId}").ButtonPressed = true;
+            Find<Button>(ui.Progress, $"ProfessionToggle_{TanningProfession.Id}").ButtonPressed = true;
+            Find<Button>(ui.Progress, $"ProfessionToggle_{EngineeringProfession.Id}").ButtonPressed = true;
+            ui.Progress.Refresh();
+
+            AssertThat(Find<Button>(ui.Progress, "ConfirmProfessions").Disabled)
+                .OverrideFailureMessage("Confirm must mirror ActionLegality.SetProfessionsLegal and disable on a 3-profession pick.")
+                .IsTrue();
+
+            Press(ui.Progress, "ConfirmProfessions");
+            ui.Adapter.AdvancePhase();
+
+            AssertThat(ui.Adapter.LastRejections.Count).IsEqual(1);
+            AssertThat(ui.Adapter.LastRejections[0].Reason).StartsWith("Cannot select more than");
+            AssertThat(ui.Adapter.CurrentState.Player.SelectedProfessions).IsEqual(before);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Scenario 4 (U8a brief): the same contract as the 3-profession case, at the other
+    /// edge — 0 professions selected.</summary>
+    [TestCase]
+    public void ConfirmProfessions_ZeroSelected_ConfirmDisabled_ForcedSubmitRejectedByTheKernel_NoStateChange()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var before = ui.Adapter.CurrentState.Player.SelectedProfessions;
+            ui.OpenPanel("Progress");
+            Find<Button>(ui.Progress, $"ProfessionToggle_{ProfessionRegistry.BlacksmithId}").ButtonPressed = false;
+            ui.Progress.Refresh();
+
+            AssertThat(Find<Button>(ui.Progress, "ConfirmProfessions").Disabled)
+                .OverrideFailureMessage("Confirm must mirror ActionLegality.SetProfessionsLegal and disable on a 0-profession pick.")
+                .IsTrue();
+
+            Press(ui.Progress, "ConfirmProfessions");
+            ui.Adapter.AdvancePhase();
+
+            AssertThat(ui.Adapter.LastRejections.Count).IsEqual(1);
+            AssertThat(ui.Adapter.LastRejections[0].Reason).StartsWith("Must select at least one profession");
+            AssertThat(ui.Adapter.CurrentState.Player.SelectedProfessions).IsEqual(before);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif

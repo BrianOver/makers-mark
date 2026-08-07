@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Crafting;
 using GameSim.Drama;
 using GameSim.Professions;
 using Godot;
@@ -22,14 +23,27 @@ namespace GodotClient.Panels;
 ///
 /// <para>Wave 4c (U18/U20): unlike the read-only Wave 4 wall, this one now submits player
 /// actions from the memorial rows — an "Honor" button per un-honored <see cref="Memorial"/>
-/// (queues <see cref="HonorMemorialAction"/>) and a "Reforge" button per still-reforgeable piece
-/// of a fallen hero's worn gear (queues <see cref="ReforgeHeirloomAction"/>, reusing the source
-/// item's own recipe + its baseline material key — a one-click default, not a full recipe
-/// picker; scope-controlled per the unit spec). Carries its own settable <see cref="Adapter"/>
-/// (the <see cref="CommissionBoard"/> precedent) rather than a <c>SimAdapter</c>-bound
-/// <see cref="SimPanel"/> base — <see cref="ShowWall"/> still takes the live
-/// <see cref="GameState"/> explicitly, so rendering never depends on <see cref="Adapter"/> being
-/// set; only the new buttons do (null-safe: disabled when unset).</para>
+/// (queues <see cref="HonorMemorialAction"/>) and a "Reforge" row per still-reforgeable piece
+/// of a fallen hero's worn gear (queues <see cref="ReforgeHeirloomAction"/>). Carries its own
+/// settable <see cref="Adapter"/> (the <see cref="CommissionBoard"/> precedent) rather than a
+/// <c>SimAdapter</c>-bound <see cref="SimPanel"/> base — <see cref="ShowWall"/> still takes the
+/// live <see cref="GameState"/> explicitly, so rendering never depends on <see cref="Adapter"/>
+/// being set; only the new buttons do (null-safe: disabled when unset).</para>
+///
+/// <para>U8b (this unit): the Reforge row used to hardcode the source item's own recipe and that
+/// recipe's baseline material key — a one-click default with no choice, even though the console
+/// player has always had one (<c>reforge-heirloom &lt;item&gt; &lt;recipe&gt; &lt;material&gt;</c>).
+/// It now carries a recipe <see cref="OptionButton"/> (every registered recipe, <see
+/// cref="ProfessionRegistry.AllRecipes"/>, defaulting to the source item's own) and a material
+/// <see cref="OptionButton"/> (every <see cref="RecipeTable.MaterialGrades"/> key, defaulting to
+/// the source item's recipe's baseline) — same programmatic OptionButton idiom as <see
+/// cref="ForgePanel"/>'s modifier selectors, not a new selector shape. A bare press with
+/// nothing touched still reforges "the same sword in the same metal" exactly as before; the
+/// pickers only ADD the choice. <see cref="ReforgeGate"/> mirrors <c>HeirloomHandlers.Apply</c>'s
+/// guards 4-9 client-side (the bare-bool <c>ActionLegality.ReforgeHeirloomLegal</c> contract —
+/// reason strings are written here, never extracted from the sim), live-recomputed whenever
+/// either picker changes so the SAME button always gates the CURRENTLY chosen combination, not
+/// just whatever combination happened to be on screen when the row was built.</para>
 /// </summary>
 public partial class LegendsWall : Control
 {
@@ -121,11 +135,11 @@ public partial class LegendsWall : Control
         }
     }
 
-    /// <summary>Wave 4c (U20): one "Reforge" row per still-eligible piece of
+    /// <summary>Wave 4c (U20) / U8b: one "Reforge" row per still-eligible piece of
     /// <paramref name="hero"/>'s worn-at-death gear — a real item, recorded on that hero's
-    /// <see cref="HeroDied"/> event, not already reforged. Reuses the item's OWN recipe id and
-    /// that recipe's baseline material key as the one-click default (a full recipe/material
-    /// picker is out of scope for this minimal surface — the sim handler is what matters).</summary>
+    /// <see cref="HeroDied"/> event, not already reforged. A slot the hero never wore (sparse
+    /// gear — e.g. no shield/trinket) simply produces no row for that slot; nothing here can
+    /// throw on a missing slot, only skip it (the existing guard chain below, unchanged).</summary>
     private void RenderReforgeOptions(GameState state, HeroId hero, HashSet<int> reforgedSourceIds)
     {
         var died = state.EventLog.OfType<HeroDied>().FirstOrDefault(d => d.Hero == hero);
@@ -134,27 +148,128 @@ public partial class LegendsWall : Control
             return;
         }
 
+        // Deterministic option lists, built once per row: every registered recipe (any
+        // profession — a console player is free to reforge into a recipe belonging to a
+        // profession they haven't selected too; the illegal combination just surfaces its own
+        // typed rejection, same as the CLI) and every priced-pool material grade. Both are
+        // ImmutableSortedDictionary-backed (ordinal key order), so index<->id mapping is stable
+        // across a rebuild.
+        var recipeOptions = ProfessionRegistry.AllRecipes.Values.ToList();
+        var materialOptions = RecipeTable.MaterialGrades.Keys.ToList();
+
         foreach (var slotItem in new[] { died.WornGear.Weapon, died.WornGear.Shield, died.WornGear.Armor, died.WornGear.Trinket })
         {
             if (slotItem is not { } itemId
                 || reforgedSourceIds.Contains(itemId.Value)
                 || !state.Items.TryGetValue(itemId.Value, out var item)
-                || !ProfessionRegistry.TryGetRecipe(item.RecipeId, out var recipe))
+                || !ProfessionRegistry.TryGetRecipe(item.RecipeId, out var ownRecipe))
             {
                 continue;
             }
 
             var row = AddRow(_body!);
-            var label = AddLabel(row, $"    reforge {item.Name}?");
+            var label = AddLabel(row, $"    reforge {item.Name} into:");
             label.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
-            var recipeId = recipe!.RecipeId;
-            var materialKey = recipe.MaterialKey;
+            var recipeSelect = new OptionButton { Name = $"ReforgeRecipeSelect_{itemId.Value}" };
+            var recipeDefaultIndex = 0;
+            for (var i = 0; i < recipeOptions.Count; i++)
+            {
+                recipeSelect.AddItem(recipeOptions[i].Name);
+                if (recipeOptions[i].RecipeId == ownRecipe!.RecipeId)
+                {
+                    recipeDefaultIndex = i;
+                }
+            }
+
+            recipeSelect.Selected = recipeDefaultIndex;
+            row.AddChild(recipeSelect);
+
+            var materialSelect = new OptionButton { Name = $"ReforgeMaterialSelect_{itemId.Value}" };
+            var materialDefaultIndex = 0;
+            for (var i = 0; i < materialOptions.Count; i++)
+            {
+                materialSelect.AddItem(materialOptions[i]);
+                if (materialOptions[i] == ownRecipe!.MaterialKey)
+                {
+                    materialDefaultIndex = i;
+                }
+            }
+
+            materialSelect.Selected = materialDefaultIndex;
+            row.AddChild(materialSelect);
+
             var button = new Button { Name = $"Reforge_{itemId.Value}", Text = "Reforge" };
-            button.Pressed += () => Adapter?.Queue(new ReforgeHeirloomAction(itemId, recipeId, materialKey));
-            button.Disabled = Adapter is null;
+            button.Pressed += () => Adapter?.Queue(new ReforgeHeirloomAction(
+                itemId, recipeOptions[recipeSelect.Selected].RecipeId, materialOptions[materialSelect.Selected]));
             row.AddChild(button);
+
+            // Enabled-state parity with legality (KEY CONSTRAINT: ActionLegality's predicates are
+            // bare bools, so the reason string lives here, client-side) — re-painted every time
+            // either picker changes, so the button always gates the CURRENTLY chosen combination.
+            void Repaint()
+            {
+                var chosenRecipe = recipeOptions[recipeSelect.Selected];
+                var chosenMaterial = materialOptions[materialSelect.Selected];
+                var (legal, whyNot) = ReforgeGate(state, chosenRecipe, chosenMaterial);
+                button.Disabled = Adapter is null || !legal;
+                button.TooltipText = Adapter is null
+                    ? string.Empty
+                    : legal ? string.Empty : whyNot;
+            }
+
+            recipeSelect.ItemSelected += _ => Repaint();
+            materialSelect.ItemSelected += _ => Repaint();
+            Repaint();
         }
+    }
+
+    /// <summary>Mirrors <c>HeirloomHandlers.Apply</c>'s guards 4-9 (the SAME recipe/profession/
+    /// material/tier/quantity/action-budget chain <c>CraftingHandlers</c> uses) for a candidate
+    /// (<paramref name="recipe"/>, <paramref name="materialKey"/>) pair — guards 1-3 (source item
+    /// real / worn by a fallen hero / not already reforged) are already true for any row this is
+    /// called from, since <see cref="RenderReforgeOptions"/> only builds a row once those hold.
+    /// <c>ActionLegality.ReforgeHeirloomLegal</c> is private and returns a bare bool (this
+    /// codebase's standing precedent — see that class's own doc), so this recomputes the same
+    /// ordered checks to write a specific reason, the exact contract <see cref="ForgePanel"/>'s
+    /// Foundry/Masterwork gates already follow.</summary>
+    private static (bool Legal, string WhyNot) ReforgeGate(GameState state, Recipe recipe, string materialKey)
+    {
+        if (!ProfessionRegistry.TryGet(recipe.Profession, out var profession))
+        {
+            return (false, $"Recipe '{recipe.RecipeId}' belongs to unknown profession '{recipe.Profession}'.");
+        }
+
+        if (!state.Player.IsSelected(recipe.Profession))
+        {
+            return (false, $"Profession '{recipe.Profession}' is not selected.");
+        }
+
+        if (!RecipeTable.MaterialGrades.ContainsKey(materialKey))
+        {
+            return (false, $"Unknown material '{materialKey}'.");
+        }
+
+        var talents = state.Player.TalentsFor(recipe.Profession);
+        if (profession!.TierGate.TryGetValue(recipe.Tier, out var gate) && !talents.Contains(gate))
+        {
+            return (false, $"Recipe '{recipe.RecipeId}' is tier {recipe.Tier}; requires talent '{gate}'.");
+        }
+
+        var efficiency = profession.MaterialEfficiencyNode is { } eff && talents.Contains(eff) ? 1 : 0;
+        var needed = Math.Max(1, recipe.MaterialQuantity - efficiency);
+        var have = state.Player.Materials.TryGetValue(materialKey, out var stock) ? stock : 0;
+        if (have < needed)
+        {
+            return (false, $"Not enough {materialKey}: need {needed}, have {have}.");
+        }
+
+        if (state.ActionSlotsRemaining <= 0)
+        {
+            return (false, $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.");
+        }
+
+        return (true, string.Empty);
     }
 
     private void RenderDepthsRecords(GameState state)

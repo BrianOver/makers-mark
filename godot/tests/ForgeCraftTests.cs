@@ -1,10 +1,16 @@
 #if GDUNIT_TESTS
 using System;
+using System.Collections.Immutable;
 using System.Linq;
+using GameSim;
+using GameSim.Advisor;
 using GameSim.Contracts;
+using GameSim.Economy;
+using GameSim.Materials;
 using GdUnit4;
 using Godot;
 using GodotClient.Minigames;
+using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -202,6 +208,410 @@ public class ForgeCraftTests
         {
             Unmount(ui);
         }
+    }
+
+    // ── U3 (the Foundry): forge-tier chip, coal/flux stock chips, UpgradeForgeAction (bell-rider),
+    // BuyForgeSupplyAction (immediate) — the two Morning sinks that were fully sim-implemented and
+    // console-reachable but had no button in the shipped client. ──────────────────────────────────
+
+    /// <summary>Default seed-2026 campaign with gold/copper/forge-tier/coal/flux overridden —
+    /// mirrors <c>RejectionUxTests.CampaignWith</c>'s override shape, widened for the Foundry's
+    /// own reserved-key state (<see cref="ForgeTierHandlers.ForgeTierKey"/>, <see
+    /// cref="ForgeSupplyHandlers.Coal"/>/<see cref="ForgeSupplyHandlers.Flux"/>). U4 (P6b) adds
+    /// <paramref name="commissionsUsed"/> for <see cref="LegendaryCommissionHandlers.CommissionsUsedKey"/> —
+    /// additive, default 0, so every existing call site is unaffected.</summary>
+    private static SimAdapter FoundryCampaign(int gold, int copper = 0, int tierIndex = 0, int coal = 0, int flux = 0, int commissionsUsed = 0)
+    {
+        var state = GameComposition.NewCampaign(ScriptedSession.Seed);
+        var materials = ImmutableSortedDictionary<string, int>.Empty;
+        if (copper > 0) materials = materials.SetItem(MaterialRegistry.Copper, copper);
+        if (tierIndex > 0) materials = materials.SetItem(ForgeTierHandlers.ForgeTierKey, tierIndex);
+        if (coal > 0) materials = materials.SetItem(ForgeSupplyHandlers.Coal, coal);
+        if (flux > 0) materials = materials.SetItem(ForgeSupplyHandlers.Flux, flux);
+        if (commissionsUsed > 0) materials = materials.SetItem(LegendaryCommissionHandlers.CommissionsUsedKey, commissionsUsed);
+
+        return new SimAdapter(state with { Player = state.Player with { Gold = gold, Materials = materials } });
+    }
+
+    // ── U4 (P6b): the two last dead verbs — MasterworkAttemptAction (a purchased GUARANTEE,
+    // resolves immediately) and CommissionLegendaryWorkAction (capped at 4/campaign, a bell-rider)
+    // — both sim-complete since Phase D, both now buttons on every recipe card beside whichever
+    // craft path that card already offers. ──────────────────────────────────────────────────────
+
+    [TestCase]
+    public void BelowForgeTierTwo_MasterworkRowDisabled_ReasonNamesTheTierGate_TierChipShowsCurrentTier()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 999_999, copper: 100, coal: 10, flux: 10)); // tierIndex defaults to 0 (Forge I)
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            AssertThat(RenderedText(ui.Forge)).Contains("Forge I");
+
+            var masterwork = Find<Button>(ui.Forge, $"Masterwork_{ScriptedSession.CraftRecipeId}");
+            var state = ui.Adapter.CurrentState;
+            AssertThat(ActionLegality.IsLegal(state, new MasterworkAttemptAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial), state.Phase)).IsFalse();
+            AssertThat(masterwork.Disabled).IsTrue();
+            // Assert the NUMBER, not just the words. The gate opens at Forge Tier II
+            // (RequiredForgeTierIndex 1, display tier index + 1), and the handler's own rejection
+            // says the same. A `Contains("Forge Tier")` assertion passed while this string
+            // advertised Tier III, which is exactly how the off-by-one shipped.
+            AssertThat(masterwork.TooltipText)
+                .Contains($"Forge Tier {MasterworkAttemptHandlers.RequiredForgeTierIndex + 1} or higher");
+            AssertThat(masterwork.TooltipText).NotContains(
+                $"Forge Tier {MasterworkAttemptHandlers.RequiredForgeTierIndex + 2}");
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void AtForgeTierTwo_Affordable_MasterworkAttemptSucceeds_ConsumesExactCoalFluxAndSurcharge_MintsPlayerCraftedItem()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 500, copper: 10, tierIndex: 1, coal: 3, flux: 1));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            var state = ui.Adapter.CurrentState;
+            AssertThat(ActionLegality.IsLegal(state, new MasterworkAttemptAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial), state.Phase)).IsTrue();
+            var masterwork = Find<Button>(ui.Forge, $"Masterwork_{ScriptedSession.CraftRecipeId}");
+            AssertThat(masterwork.Disabled).IsFalse();
+
+            // KTD5 evidence: a real Pressed signal, not a hand-built action.
+            PressEnabled(ui.Forge, $"Masterwork_{ScriptedSession.CraftRecipeId}");
+
+            var after = ui.Adapter.CurrentState;
+            AssertThat(after.Player.Gold).IsEqual(300); // 500 - 100*(1+1) = 200 surcharge at Tier II
+            AssertThat(after.Player.Materials[ForgeSupplyHandlers.Coal]).IsEqual(0);
+            AssertThat(after.Player.Materials[ForgeSupplyHandlers.Flux]).IsEqual(0);
+            AssertThat(after.Player.Materials[MaterialRegistry.Copper]).IsEqual(8); // 10 - 2 (dagger's MaterialQuantity)
+
+            var minted = after.Items.Values.Single(i => i.RecipeId == ScriptedSession.CraftRecipeId);
+            AssertThat(minted.Quality == QualityGrade.Superior || minted.Quality == QualityGrade.Masterwork).IsTrue();
+            // "A purchased masterwork still earns attribution beats" — the mint-time half of that
+            // proof (the full end-to-end beat is proven at the sim level in
+            // MasterworkAttemptHandlersTests, which does not need a Godot runtime to exercise).
+            AssertThat(minted.PlayerCrafted).IsTrue();
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void MissingFlux_MasterworkRowDisabled_QueueingAnywayRejectsWithNoPartialConsumption()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 500, copper: 10, tierIndex: 1, coal: 3, flux: 0));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            var masterwork = Find<Button>(ui.Forge, $"Masterwork_{ScriptedSession.CraftRecipeId}");
+            AssertThat(masterwork.Disabled).IsTrue();
+            AssertThat(masterwork.TooltipText).Contains("flux");
+
+            // Row disabled is proven above; also prove the KERNEL itself refuses it with NO
+            // partial consumption, same style as BuyingCoal_WithInsufficientGold_Rejects... above —
+            // a future edit that ever let a stale-enabled row through must still cost nothing.
+            ui.Adapter.Queue(new MasterworkAttemptAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
+
+            AssertThat(ui.Adapter.LastRejections.Count).IsEqual(1);
+            AssertThat(ui.Adapter.CurrentState.Player.Gold).IsEqual(500);
+            AssertThat(ui.Adapter.CurrentState.Player.Materials[ForgeSupplyHandlers.Coal]).IsEqual(3);
+            AssertThat(ui.Adapter.CurrentState.Player.Materials.ContainsKey(ForgeSupplyHandlers.Flux)).IsFalse();
+            AssertThat(ui.Adapter.CurrentState.Player.Materials[MaterialRegistry.Copper]).IsEqual(10);
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void LegendaryCommission_AtCap_RowDisabled_ReasonNamesTheCap_CounterReadsZeroRemaining()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 999_999, copper: 100, commissionsUsed: LegendaryCommissionHandlers.MaxPerCampaign));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            var state = ui.Adapter.CurrentState;
+            AssertThat(ActionLegality.IsLegal(state, new CommissionLegendaryWorkAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial), state.Phase)).IsFalse();
+            var commission = Find<Button>(ui.Forge, $"Commission_{ScriptedSession.CraftRecipeId}");
+            AssertThat(commission.Disabled).IsTrue();
+            AssertThat(commission.TooltipText).Contains("already spoken for");
+            AssertThat(commission.Text).Contains($"0 of {LegendaryCommissionHandlers.MaxPerCampaign}");
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void LegendaryCommission_Affordable_QueuesAsBellRider_TrayShowsVocabString()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 999_999, copper: 100));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            var state = ui.Adapter.CurrentState;
+            AssertThat(ActionLegality.IsLegal(state, new CommissionLegendaryWorkAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial), state.Phase)).IsTrue();
+            var commission = Find<Button>(ui.Forge, $"Commission_{ScriptedSession.CraftRecipeId}");
+            AssertThat(commission.Disabled).IsFalse();
+
+            // KTD5 evidence: a real Pressed signal.
+            PressEnabled(ui.Forge, $"Commission_{ScriptedSession.CraftRecipeId}");
+
+            var queuedAction = new CommissionLegendaryWorkAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial);
+            AssertThat(ui.Adapter.PendingActions.OfType<CommissionLegendaryWorkAction>().Count()).IsEqual(1);
+            var chip = Find<HBoxContainer>(ui, "BellTray").GetChild(0);
+            AssertThat(Find<Label>(chip, "Verb").Text).IsEqual(PendingVerbVocab.DisplayName(queuedAction));
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void FreshSave_TierChipReadsForgeI_UpgradeRowDisabled_ReasonNamesMissingCopper()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Forge"); // fresh default campaign: zero copper, Morning day 1
+
+            AssertThat(RenderedText(ui.Forge)).Contains("Forge I");
+
+            var upgrade = Find<Button>(ui.Forge, "UpgradeForge");
+            var state = ui.Adapter.CurrentState;
+            var legal = ActionLegality.IsLegal(state, new UpgradeForgeAction(), state.Phase);
+            AssertThat(legal).IsFalse(); // sanity: the scenario really is illegal, not a stale mirror
+            AssertThat(upgrade.Disabled).IsEqual(!legal);
+            AssertThat(upgrade.TooltipText).Contains("copper");
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void AffordableUpgrade_InMorning_EnablesRow_PressQueuesBellRider_TrayShowsDisplayName()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: ForgeTierHandlers.GoldCost[0], copper: ForgeTierHandlers.OreQuantity));
+        try
+        {
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+            ui.OpenPanel("Forge");
+
+            var state = ui.Adapter.CurrentState;
+            var legal = ActionLegality.IsLegal(state, new UpgradeForgeAction(), state.Phase);
+            AssertThat(legal).IsTrue(); // sanity: the scenario really is legal
+            var upgrade = Find<Button>(ui.Forge, "UpgradeForge");
+            AssertThat(upgrade.Disabled).IsFalse();
+
+            PressEnabled(ui.Forge, "UpgradeForge");
+
+            AssertThat(ui.Adapter.PendingActions.OfType<UpgradeForgeAction>().Count()).IsEqual(1);
+            var chip = Find<HBoxContainer>(ui, "BellTray").GetChild(0);
+            AssertThat(Find<Label>(chip, "Verb").Text).IsEqual(PendingVerbVocab.DisplayName(new UpgradeForgeAction()));
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void SameAffordableState_InEvening_DisablesRow_ReasonNamesThePhase()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: ForgeTierHandlers.GoldCost[0], copper: ForgeTierHandlers.OreQuantity));
+        try
+        {
+            AdvanceToPhase(ui, DayPhase.Evening);
+            ui.OpenPanel("Forge");
+
+            var state = ui.Adapter.CurrentState;
+            var legal = ActionLegality.IsLegal(state, new UpgradeForgeAction(), state.Phase);
+            AssertThat(legal).IsFalse(); // sanity: Morning-only, and it is Evening now
+
+            var upgrade = Find<Button>(ui.Forge, "UpgradeForge");
+            AssertThat(upgrade.Disabled).IsTrue();
+            AssertThat(upgrade.TooltipText).Contains("Morning");
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>The <c>BuySupply_*</c> row carries no quantity stepper — only the ore vendor rows
+    /// (<c>BuyMat_*</c>/<c>BuyMatQty_*</c>, U8c) do — so every press buys exactly 1 unit AND spends
+    /// one of the day's <see cref="ActionBudget.SlotsPerDay"/> (5) action slots, same as any other
+    /// real-work handler (<see cref="ForgeSupplyHandlers.Apply"/> guard 5, checked last). This
+    /// pins the honest ceiling for a single Morning — five presses succeed, the sixth is correctly
+    /// disabled — rather than the ten-presses-in-one-day premise the previous version of this test
+    /// assumed (which no stepper ever made true).</summary>
+    [TestCase]
+    public void BuyingCoal_FiveTimesInOneDay_SpendsTheWholeActionBudget_SixthRowIsDisabled()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 100));
+        try
+        {
+            ui.OpenPanel("Forge");
+            var startingGold = ui.Adapter.CurrentState.Player.Gold;
+
+            for (var i = 0; i < ActionBudget.SlotsPerDay; i++)
+            {
+                PressEnabled(ui.Forge, $"BuySupply_{ForgeSupplyHandlers.Coal}");
+            }
+
+            AssertThat(ui.Adapter.CurrentState.Player.Gold)
+                .IsEqual(startingGold - ActionBudget.SlotsPerDay * ForgeSupplyHandlers.UnitPrice(ForgeSupplyHandlers.Coal));
+            AssertThat(ui.Adapter.CurrentState.Player.Materials[ForgeSupplyHandlers.Coal]).IsEqual(ActionBudget.SlotsPerDay);
+            AssertThat(ui.Adapter.CurrentState.ActionSlotsRemaining).IsEqual(0);
+            AssertThat(RenderedText(ui.Forge)).Contains(ActionBudget.SlotsPerDay.ToString()); // the Coal stat chip's own value
+
+            var sixthRow = Find<Button>(ui.Forge, $"BuySupply_{ForgeSupplyHandlers.Coal}");
+            AssertThat(sixthRow.Disabled).IsTrue();
+            AssertThat(sixthRow.TooltipText).Contains("No action slots left today");
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>Flux mirrors coal's row exactly (same handler, different key/price) — this proves
+    /// its OWN button is a real, independently-clickable path rather than assuming coal's coverage
+    /// carries over.</summary>
+    [TestCase]
+    public void BuyingFlux_PressEnabled_DropsGoldByUnitPrice_IncrementsFluxChip()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 100));
+        try
+        {
+            ui.OpenPanel("Forge");
+            var startingGold = ui.Adapter.CurrentState.Player.Gold;
+
+            PressEnabled(ui.Forge, $"BuySupply_{ForgeSupplyHandlers.Flux}");
+
+            AssertThat(ui.Adapter.CurrentState.Player.Gold).IsEqual(startingGold - ForgeSupplyHandlers.UnitPrice(ForgeSupplyHandlers.Flux));
+            AssertThat(ui.Adapter.CurrentState.Player.Materials[ForgeSupplyHandlers.Flux]).IsEqual(1);
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void BuyingCoal_WithInsufficientGold_RejectsWithNoStateChange()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 0));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            // The row itself renders Disabled for this state (proven by the enable-mirror tests
+            // above) — the insufficient-gold path is exercised the same way RejectionUxTests does,
+            // queuing directly to prove the KERNEL still refuses it even if some future edit ever
+            // let a stale-enabled row through.
+            AssertThat(Find<Button>(ui.Forge, $"BuySupply_{ForgeSupplyHandlers.Coal}").Disabled).IsTrue();
+
+            ui.Adapter.Queue(new BuyForgeSupplyAction(ForgeSupplyHandlers.Coal, 1));
+
+            AssertThat(ui.Adapter.LastRejections.Count).IsEqual(1);
+            AssertThat(ui.Adapter.CurrentState.Player.Gold).IsEqual(0);
+            AssertThat(ui.Adapter.CurrentState.Player.Materials.ContainsKey(ForgeSupplyHandlers.Coal)).IsFalse();
+            AssertThat(RenderedText(ui)).Contains("You can't afford that yet.");
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void AtMaxTier_UpgradeRowDisabled_ReasonNamesTheMaximum()
+    {
+        var maxTierIndex = ForgeTierHandlers.MaxUpgradeIndex + 1; // Forge V — nothing left to buy
+        var ui = MountMainUi(FoundryCampaign(gold: 999_999, tierIndex: maxTierIndex));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            AssertThat(ForgeTierHandlers.CurrentTierIndex(ui.Adapter.CurrentState.Player)).IsEqual(maxTierIndex);
+            var state = ui.Adapter.CurrentState;
+            var legal = ActionLegality.IsLegal(state, new UpgradeForgeAction(), state.Phase);
+            AssertThat(legal).IsFalse();
+
+            var upgrade = Find<Button>(ui.Forge, "UpgradeForge");
+            AssertThat(upgrade.Disabled).IsTrue();
+            AssertThat(upgrade.TooltipText).Contains("maximum");
+            AssertThat(RenderedText(ui.Forge)).Contains("Forge V");
+        }
+        finally { Unmount(ui); }
+    }
+
+    // ── U8c: the buymat quantity stepper — pure friction relief riding this panel's vendor row.
+    // It names no ledger line and changes no hero's outcome; the one real hazard is the action
+    // budget (BuyMaterialAction must cost ONE slot per LINE, never one slot per unit) — that is
+    // what the first test below actually proves. ──────────────────────────────────────────────
+
+    [TestCase]
+    public void BuyingTenCopperInOneClick_SpendsExactlyOneActionSlot_DropsGoldByTheFullQuote_StockRisesByTen()
+    {
+        var fullQuote = MaterialVendorHandlers.QuoteCost(MaterialRegistry.Copper, 10);
+        var ui = MountMainUi(FoundryCampaign(gold: fullQuote));
+        try
+        {
+            ui.OpenPanel("Forge");
+            var startingSlots = ui.Adapter.CurrentState.ActionSlotsRemaining;
+
+            var qty = Find<SpinBox>(ui.Forge, $"BuyMatQty_{MaterialRegistry.Copper}");
+            qty.Value = 10; // the same SpinBox.Value-drives-ValueChanged idiom ShopPanelTests uses
+            AssertThat(qty.Value).IsEqual(10.0); // sanity: the stepper actually took the value
+
+            // The button's own re-paint (wired to the SpinBox) is the client half of the contract
+            // this unit adds — proven here alongside the kernel-level assertions below.
+            var buy = Find<Button>(ui.Forge, $"BuyMat_{MaterialRegistry.Copper}");
+            AssertThat(buy.Text).IsEqual("Buy 10");
+            AssertThat(buy.Disabled).IsFalse();
+
+            // KTD5 evidence: a real Pressed signal, not a hand-built action — same idiom as every
+            // other PressEnabled call in this file.
+            PressEnabled(ui.Forge, $"BuyMat_{MaterialRegistry.Copper}");
+
+            var after = ui.Adapter.CurrentState;
+            // THE hazard this unit calls out: one click, one slot — never ten.
+            AssertThat(after.ActionSlotsRemaining).IsEqual(startingSlots - 1);
+            AssertThat(after.Player.Gold).IsEqual(0); // fullQuote spent, to the gold piece
+            AssertThat(after.Player.Materials[MaterialRegistry.Copper]).IsEqual(10);
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase(0)]
+    [TestCase(-5)]
+    public void NonPositiveQuantity_QueuedDirectly_RejectedWithNoStateChange(int quantity)
+    {
+        // The SpinBox floors at 1 (MinValue), so a real click can never submit this — same
+        // "prove the kernel refuses it even if some future edit ever let a bad value through"
+        // idiom as MissingFlux_MasterworkRowDisabled_QueueingAnywayRejectsWithNoPartialConsumption
+        // above, for the OTHER end of the same guard (MaterialVendorHandlers.Apply check 1).
+        var ui = MountMainUi(FoundryCampaign(gold: 1000));
+        try
+        {
+            ui.OpenPanel("Forge");
+            var before = ui.Adapter.CurrentState;
+
+            ui.Adapter.Queue(new BuyMaterialAction(MaterialRegistry.Copper, quantity));
+
+            AssertThat(ui.Adapter.LastRejections.Count).IsEqual(1);
+            AssertThat(ui.Adapter.CurrentState.Player.Gold).IsEqual(before.Player.Gold);
+            AssertThat(ui.Adapter.CurrentState.Player.Materials.ContainsKey(MaterialRegistry.Copper)).IsFalse();
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void BuyMatQtyStepper_DefaultsToOne_UnaffordableQuantity_DisablesTheSameButton()
+    {
+        // Exactly enough gold for 1 copper, not for 2 — proves the button's initial paint (qty
+        // untouched) still gates on the 1-unit default, byte-identical to before this unit, and
+        // that dialing the SAME row up to 2 flips the SAME button to Disabled with a live reason.
+        var oneQuote = MaterialVendorHandlers.QuoteCost(MaterialRegistry.Copper, 1);
+        var ui = MountMainUi(FoundryCampaign(gold: oneQuote));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            var buy = Find<Button>(ui.Forge, $"BuyMat_{MaterialRegistry.Copper}");
+            AssertThat(buy.Text).IsEqual("Buy 1");
+            AssertThat(buy.Disabled).IsFalse();
+
+            Find<SpinBox>(ui.Forge, $"BuyMatQty_{MaterialRegistry.Copper}").Value = 2;
+
+            AssertThat(buy.Text).IsEqual("Buy 2");
+            AssertThat(buy.Disabled).IsTrue();
+            AssertThat(buy.TooltipText).Contains("can't afford");
+        }
+        finally { Unmount(ui); }
     }
 
     /// <summary>Select a <c>MaterialSelect</c> item by its displayed text (never a hardcoded
