@@ -205,8 +205,13 @@ public static class InteriorLayout2D
                     new StationSpec("hearth", "Hearth", "town2d-station-tavern-hearth", new Vector2I(11, 2), Action: null,
                         HoverLine: "Hearth — keeps the room warm, nothing to work here",
                         FlavorLine: "The hearth crackles. Warm, but there's nothing to craft or buy from a fire."),
+                    // Hero-facing-day plan (2026-08-04) / minigames doc §3.6: the bar is where
+                    // Act 2 (The Handshake) closes whatever thread the corner table surfaced in
+                    // Act 1 (Work the Room) — CombinesWith names that cooperation as DATA, the
+                    // same anvil+bellows precedent, even though (unlike the forge) the two halves
+                    // already carry distinct Verbs and so needed no route-collision exception.
                     new StationSpec("bar", "The Bar", "town2d-station-tavern-bar", new Vector2I(4, 6), "Tavern",
-                        Verb: "Order a Round", Copy: "You order a round at the bar."),
+                        Verb: "Order a Round", Copy: "You order a round at the bar.", CombinesWith: "table-b"),
                     new StationSpec("storywall", "Story Wall", "town2d-station-tavern-storywall", new Vector2I(18, 6), "Legends",
                         Verb: "Read the Wall", Copy: "You read the legends pinned to the story wall."),
                     // U6 (world-and-interiors plan, follow-up): these tiles double as patron seating
@@ -214,10 +219,13 @@ public static class InteriorLayout2D
                     // U5 (verify-by-playing plan, KTD-D): both tables used to share bar's exact
                     // ("Tavern", null) route — a three-way collision the reflective guard now catches.
                     // Own Label/Verb/Copy per table fixes it without touching TavernPanel.
+                    // table-a keeps its OWN Eavesdrop route (hero-facing-day plan, §3.6) — gossip
+                    // only, deliberately NOT part of the Work the Room / Handshake pair below.
                     new StationSpec("table-a", "Fireside Table", "town2d-station-tavern-table", new Vector2I(8, 9), "Tavern",
                         Verb: "Eavesdrop", Copy: "You take the fireside table, catching the room's talk."),
                     new StationSpec("table-b", "Corner Table", "town2d-station-tavern-table", new Vector2I(14, 9), "Tavern",
-                        Verb: "Swap Stories", Copy: "You take the corner table, trading stories with the regulars."),
+                        Verb: "Swap Stories", Copy: "You take the corner table, trading stories with the regulars.",
+                        CombinesWith: "bar"),
                 }),
             // U1 (world-and-interiors plan, KTD-2): the gatehouse — "everything about the mine
             // happens at the gate." "overlook" is the ONE new action string this unit adds:
