@@ -1,28 +1,98 @@
 ---
 type: design
-title: "Maker's Mark — The Game: what it is, how it plays, why it is built this way"
-date: 2026-08-06
-status: central document of record for the game's design intent
+title: "Maker's Mark — the central document: what it is, how it plays, why it is built this way, and the plan"
+updated: 2026-08-06
+status: THE living central document of record — the one place to look; update it in the same PR as the work
 origin: >
   owner brief 2026-08-06 — "pause and regroup about how the core game mechanic plays…
   document a full idea of how the player interacts with the game. The idea behind the game,
   everything… so that when we are developing there's a lot more focus on things."
+  Consolidated 2026-08-06 from the two prior central documents plus three external model
+  reviews the owner collected.
 audience: the owner first; then anyone — human or agent — who needs to understand the game
   before touching it
 rule: >
   every mechanical claim below was checked against the code at the commit this document
-  landed on — three times. A first pass was written from the design docs and plans; a
-  second, independent pass (docs/design/2026-08-06-mechanics-ground-truth.md) was written
-  from source only, with docs/ deliberately unread; the third was the collision of the two,
-  and the source-only pass won every factual dispute. A fourth, hostile-review lap then
-  attacked the collided text — re-verified its contested claims against source, grounded
-  the pitch language the earlier laps let stand, and added the plan of record (§11).
+  landed on — through five laps. A first pass was written from the design docs and plans; a
+  second, independent pass was written from source only, with docs/ deliberately unread
+  (it survives intact as Appendix A and wins every factual dispute); the third was the
+  collision of the two, and the source-only pass won every dispute the collision found. A
+  fourth, hostile-review lap attacked the collided text — re-verified its contested claims
+  against source, grounded the pitch language the earlier laps let stand, and added the plan
+  of record (§11). A fifth lap (2026-08-06) evaluated three external model reviews
+  recommendation-by-recommendation — adopt / adapt / reject, each verdict grounded in code
+  or measurement — and rolled the survivors in (§12).
   Where an older design document and the code disagree, the code wins and the disagreement
   is named. Where something does NOT exist — or exists but cannot be reached from the
   screen — it is marked so, unmistakably.
 ---
 
-# Maker's Mark — The Game
+# Maker's Mark
+
+## Executive summary
+
+**What it is.** Maker's Mark is an inverted MMO: you are the town blacksmith — the NPC — and
+the heroes are the game's AI: six-or-fewer autonomous, permadeath adventurers who shop with
+their own gold, pick their own targets, and live or die by what you made. No verb in the game
+commands a hero ("influence, never orders"). The crown jewel is the attribution engine: a
+deterministic counterfactual replay that *proves*, from the recorded dice, that your specific
+item turned a specific fight. "My sword saved his life" is never flavor text here; it is a
+theorem. The whole game is arranged around making that proof happen and making it felt:
+**craft → carry → proof → witness**.
+
+**Where it actually stands.** The sim is real and disciplined: five-phase deterministic
+kernel, four playable professions with four interactive crafts, three live venues, permadeath
+heroes with traits and memories, save/load, a CI balance gate, byte-identical replay. The
+morning (cause) side works by machine measurement; the proof engine works by test. But: the
+witnessing is half-staged — the send-off doesn't name your work and the Night reveal buries
+its own headline; four of the 24 player actions — the entire endgame economy — are reachable
+only in the console, not the shipped client; the camp phase, the fiction's centerpiece, runs
+zero simulation systems, and its flagship verb (the supply run) measurably *raises* deaths at
+campaign scale; the measured boredom wall is day 11–13; and nothing in CI proves a campaign
+can reach its own ending.
+
+**The single biggest risk.** No human being has ever played this game to completion — every
+"player" in the entire evidence corpus is a scripted machine persona. The mechanisms are
+verified; the *feeling* is not. Whether the first attribution line produces in a person what
+it produces in a transcript is the most important unanswered question in this document, and
+the plan treats it that way (P4).
+
+**The immediate plan (§11).** Phase 0: six one-line rulings from the owner (R1–R6, one
+sitting, no code). Then the critical path: **P1** the Night reveal leads with your mark →
+**P2** the send-off names your work → **P3** CI proof the campaign can end → **P4 the owner's
+one real evening at the keyboard** — the gate most remaining rulings wait on — then the vigil
+branch (P5), the endgame surfaces (P6), and the day-11 demand program (P7).
+
+**What the external reviews changed (§12).** Three outside model reviews were evaluated
+recommendation-by-recommendation. Most recommendations confirmed what is already built or
+already planned — useful independent signal, and it is recorded as such. Four things were
+genuinely adopted: a new focus-filter law (**"hand-work must beat passive systems, or the
+passive system must not exist"**), a recorded default for the provisioning ruling (damp the
+risk-compensation push), the game's honest identity (**Spiritfarer-cozy: warmth about loss**
+— not Stardew-cozy), and a commitment that the **Final Commission ending is owed** (new R6).
+The full adopt/adapt/reject ledger, per review and per recommendation, is §12.
+
+## Contents
+
+| § | Section | What it holds |
+|---|---------|---------------|
+| [1](#1-what-this-game-is-in-one-page) | What this game is, in one page | The premise, honestly stated |
+| [2](#2-the-spine--from-your-hands-to-their-story) | The spine | The causal chain, link by link, with the code trace |
+| [3](#3-how-to-play) | How to play | A day, the first week, day 30, the six dilemmas |
+| [4](#4-the-phases--what-each-one-is-for) | The phases | What each phase asks, and its honest state |
+| [5](#5-the-core-systems) | The core systems | Each system: what, why, and the cost of cutting it |
+| [6](#6-why-it-is-built-this-way) | Why it is built this way | Architecture as design decisions |
+| [7](#7-inspirations--what-was-taken-what-was-refused) | Inspirations | What was taken, what was refused, and why |
+| [8](#8-what-is-built-what-is-designed-what-is-wished-for) | Built / designed / wished-for | The status ledger; corrections; known defects |
+| [9](#9-the-known-tensions-and-open-questions--for-the-owner-to-rule-on) | Open questions | §9.1–§9.10, each phrased for a one-line ruling |
+| [10](#10-what-focus-means-from-here--the-filter) | The focus filter | The eight tests a piece of work must pass |
+| [11](#11-the-plan-of-record--from-the-gold-outward) | The plan of record | Rulings R1–R6, path P1–P9, the cut list, the drift defense |
+| [12](#12-the-external-reviews--what-came-from-outside-and-what-we-did-with-it) | **The external reviews** | Every outside recommendation: adopt / adapt / reject, with reasons |
+| [13](#13-glossary) | Glossary | Terms of art |
+| [14](#14-the-documents-behind-this-one) | The documents behind this one | Where the full arguments live |
+| [A](#appendix-a--mechanics-ground-truth-derived-from-source-2026-08-06) | **Appendix A — mechanics ground truth** | The source-only control pass; the arbiter for any mechanical dispute |
+
+---
 
 This is the one central document. It says what the game is, walks the whole causal chain the
 game exists to deliver, teaches a new player how to play it, explains what every phase and
@@ -30,18 +100,19 @@ every system is *for*, defends the architecture in design terms, names the inspi
 what we took or refused from each, sorts everything into **built / designed / wished-for**,
 lists the open questions that need the owner's ruling, gives a working definition of
 "focus" — the test a piece of work must pass to count as moving the game forward rather than
-sideways — and ends with the payoff of all of it: **the plan of record (§11)**, the ordered,
-cut-listed path from what exists today to the game the rest of this document describes.
+sideways — carries the plan of record (§11), the ordered, cut-listed path from what exists
+today to the game the rest of this document describes, and accounts for every external
+recommendation the owner collected (§12).
 
 It is long on purpose. It is written to be argued with: mark it up, strike sections, rule on
 the questions in §9, and the marked-up version becomes the goal we develop against.
 
-It has a companion: `docs/design/2026-08-06-mechanics-ground-truth.md`, the same game
-described **from source only** — written with `docs/` deliberately unread, every claim
-line-cited. It exists because this project's documentation has repeatedly drifted from its
-code, and the owner keeps discovering that "this exists" meant "this was planned." When a
-mechanical argument starts, settle it there; this document carries the design intent and
-the honest status of every piece, and it defers to the companion on any fact of mechanism.
+It carries its own arbiter: **Appendix A**, the same game described **from source only** —
+written with `docs/` deliberately unread, every claim line-cited. It exists because this
+project's documentation has repeatedly drifted from its code, and the owner keeps
+discovering that "this exists" meant "this was planned." When a mechanical argument starts,
+settle it there; the body of this document carries the design intent and the honest status
+of every piece, and it defers to Appendix A on any fact of mechanism.
 
 Because that confusion is the core complaint, every piece of the game named below carries
 one of five status labels, and they are never blurred:
@@ -52,7 +123,7 @@ content flip) · **DESIGNED** (agreed on paper, no code) · **WISHED-FOR** (no c
 of record). The consolidated table in §8 is the at-a-glance ledger.
 
 Terms of art (a **bell**, a **vigil**, a **mark**, a **delve**, a **slot**) are defined at
-first use and collected in the glossary (§12). File references look like
+first use and collected in the glossary (§13). File references look like
 `sim/GameSim/Kernel/GameKernel.cs:188`
 and point at the real code so any claim can be verified in one jump.
 
@@ -98,7 +169,9 @@ The feeling we are building toward is the feeling of mattering to people you can
 the quiet pride of a craftsman whose work is out there doing things, the dread of the vigil
 when a party you outfitted is camped above the deep floors, and the strange tenderness of a
 town that remembers — every sword with a history, every death with a name, every legend with
-a maker's mark on it.
+a maker's mark on it. Call that feeling by its honest name, because "cozy" undersells the
+graveyard: this is not Stardew-cozy but **Spiritfarer-cozy — warmth about loss** (§5.7; the
+naming is adopted from the external-review lap, §12).
 
 It is a small game on purpose — complete systems, modest content ("half vision": one town,
 three live venues, ~39 recipes, and a cast you can actually know because it is never larger
@@ -186,7 +259,7 @@ a hero *chose* to accept your bounty, which commits the party to that floor
 (`sim/GameSim/Expedition/ExpeditionSystem.cs:50-82`); acceptance itself is a legible
 greed-vs-reputation score, Majesty-style, never a command
 (`sim/GameSim/Bounties/BountyRules.cs:21-70`). Name the whole price of that sentence,
-because the companion document does and earlier drafts here did not: an accepted bounty is
+because Appendix A does and earlier drafts here did not: an accepted bounty is
 **the one order money can buy**. It overrides the party's own target floor, routes them to
 the Mine unconditionally, and — the part our own docs kept quiet — *suspends the acceptor's
 competence-retreat rule* through the bounty floor: a hero who would normally peel off at
@@ -248,7 +321,7 @@ this is the chain a debugger actually walks:
 `AttributionEngine.ComputeBeats` replays those recorded rolls counterfactually
 (`Expedition/AttributionEngine.cs:19-145`) → Evening `ExpeditionRevealSystem.Reveal` stamps
 the beat onto the item's `History` and the bearer's `ItemMemory` → next Morning
-`GossipSystem` retells it, citing the real `EventId`. The companion document's §4 carries
+`GossipSystem` retells it, citing the real `EventId`. Appendix A §4 carries
 this same trace with every intermediate line number.
 
 **The honest caveat, and the current battleground:** every link above is *recorded* end to
@@ -654,6 +727,14 @@ game about watching people die from reading as either grimdark or slapstick. **C
 remove:** the proof layer (§5.6) stays true but stops being *told*; the game reads as a
 spreadsheet with a graveyard.
 
+**Identity note — adopted 2026-08-06 (§12, review C).** What is actually built is not
+Stardew-cozy; it is **Spiritfarer-cozy: warmth *about loss***. Permadeath is the game's only
+stake (§5.3), Prepared heroes die ~63–66% (`ConsumableTraitMortalityBalanceTests.cs:159-206`),
+and the memorial → heirloom → lineage loop is the emotional center. That is a stronger and
+more distinctive identity than generic cozy — own it deliberately in tone now and in any
+eventual store copy: players arriving for Stardew will bounce off the graveyard, and the
+players who would love this game will never find it under a "cozy sim" label.
+
 ### 5.8 The advisor and legibility
 
 A pure suggestion engine (`Advisor/ObjectiveAdvisor.cs`) over a legality mirror that now
@@ -766,7 +847,7 @@ so it doesn't get re-planned by a fresh session).
 
 The project's own registries (`docs/registry/SYSTEMS.md`, `CONTENT.md`) carry the row-level
 detail and their own drift warnings. This is the load-bearing summary, verified against code
-on this commit and collided with the source-only companion. **A reader should trust these
+on this commit and collided with the source-only control pass (now Appendix A). **A reader should trust these
 buckets over any older document, including the registries where named.** The distinction
 that keeps biting is BUILT vs **BUILT, CLI-ONLY**: repeatedly, "implemented and tested"
 has been reported as "shipped" when no screen could reach it. Under the project's own rule —
@@ -778,7 +859,7 @@ never blurs the two.
 | Piece | Status | Verify at |
 |---|---|---|
 | Five-phase deterministic kernel; golden replay + 100-day balance gates; save/load + autosave | **BUILT** | `GameKernel.cs:188-198`; `godot/scripts/CampaignSave.cs` |
-| 24 player actions, typed rejections everywhere | **BUILT** — but only 20 reachable on screen | `Contracts/Actions.cs:10-35`; companion §1 has the per-action table |
+| 24 player actions, typed rejections everywhere | **BUILT** — but only 20 reachable on screen | `Contracts/Actions.cs:10-35`; Appendix A §1 has the per-action table |
 | The two-bell day: conducted middle, untimed vigil stop, camp verbs, craft-and-send round trip | **BUILT** (#388, #392) | `godot/scripts/RaidConductor.cs`, `panels/CampPanel.cs` |
 | Camp-phase *systems* — anything the vigil actually simulates | **NOT BUILT** — zero registered systems run in Camp | `GameComposition.cs:57-77` |
 | Four professions, four interactive crafts, all `ActiveCraft: true` | **BUILT** | `CraftingHandlers.cs:92-120` |
@@ -850,7 +931,7 @@ Stale claims still sitting in older docs, each one now false in code:
   `BeatType.ToolAssist` has no emitter (deliberate contract-ahead-of-content); talent
   points cost nothing ("talent-point economy deferred" — `CraftingHandlers.cs:332`).
 
-The companion document's §7 carries the full dead-and-vestigial list with line cites.
+Appendix A §7 carries the full dead-and-vestigial list with line cites.
 
 ---
 
@@ -858,8 +939,10 @@ The companion document's §7 carries the full dead-and-vestigial list with line 
 
 Each phrased so a one-line answer unblocks work. The first three are the ones sitting
 longest without a ruling. The plan of record (§11) sequences the work these rulings gate,
-states a default for each, and gathers the four that block its critical path into its
-Phase 0 — ruling there rules here.
+states a default for each, and gathers the ones that touch its critical path into its
+Phase 0 (R1–R6) — ruling there rules here. Four of these questions were also ruled on by
+the external reviews; where a review's argument was adopted, the question below carries an
+"amended" block naming it, and §12 carries the full verdict table.
 
 ### 9.1 The Emberfall flip (draft PR #346 — sitting as a draft since 08-02, four days)
 
@@ -910,6 +993,15 @@ whether the tier-narrowed quench band (140/100/70‰) is the right difficulty ax
 narrow further at the top end. **Question: should a beginner's craft get faster (assist), or
 is ~20 seconds an acceptable apprenticeship?**
 
+**Amended 2026-08-06 (external-review lap, §12).** This question now carries a recorded
+default: **the assist** — inverse session-skill (bigger shape-per-strike while demonstrated
+accuracy is low), which preserves the covenant exactly as the current session-skill rule
+does: labor shrinks, the accuracy target never widens. Review C's argument tipped a
+long-open question into a default: ~19.5s with the beginner being exactly who complains is
+a first-session killer, and first sessions decide whether anyone but the owner ever plays
+this. P4 confirms the default rather than reopening the question; the build itself stays in
+the cut list's tuning bucket until then.
+
 ### 9.4 The demand map — how much of the five-pillars program still stands?
 
 The code has already absorbed the sharpest finding (consumable/trinket commissions exist;
@@ -934,6 +1026,16 @@ knobs. **Question: should serving the counter out-earn passive
 shelving (making personal service the premium channel), or stay a flavor-equal alternative?
 This decides whether we tune willingness/premiums or leave them.**
 
+**Amended 2026-08-06 (external-review lap, §12).** The direction is now ruled by the newly
+adopted filter law (§10, test 8 — hand-work must beat passive systems, or the passive system
+must not exist): **personal service becomes the premium channel** — better pins, higher
+willingness, goodwill compounding into commission premiums. Two consequences, kept separate:
+(1) the *tuning wave* is sim-side (willingness/premium math, likely re-baseline) and is
+sequenced by R5's queue — it does not displace P1–P6; (2) the *honesty gap* is booked as a
+rider now (§11.4): the UI implies "push too hard and lose them" and the resolver says a
+counter-offer cannot lose — either the copy tells the truth, or the tuning wave adds a real
+walk risk. Staged tension the sim doesn't cash is this project's own named failure class.
+
 ### 9.6 The middle of the day — confirm the build order
 
 The hero-facing-day document (§4) is the loop authority, its rule is agreed, and its first
@@ -952,6 +1054,15 @@ whether it *lands* — that is a feel question. The old plans' richer climax (a 
 Commission forged for a chosen hero, watched at the Heart) exists only as prose. **Question:
 after the feel-test, is the shipped ending the v1 ending, or is the Final Commission beat
 owed before we call the campaign complete?**
+
+**Amended 2026-08-06 (external-review lap, §12).** Default flipped: **the Final Commission
+is owed** (new ruling R6, §11.3). Review C's argument, adopted: the game's thesis is "your
+craft writes the legends," and the current climax is a threshold event with a tally
+(`ArcDirectorSystem.cs:57-110`; `ClimaxReached` is a bare seam by its own admission,
+`Contracts/Events.cs:293-297`) — the ending that pays off the premise is forging one named
+piece for one named hero to carry to the Heart. Not before the loop wave; but the campaign
+is not "complete" without it, and ruling it now stops later re-litigation. P4 can waive it
+only with an unexpectedly strong verdict on the shipped tally-ending.
 
 ### 9.8 The human feel-test itself
 
@@ -994,6 +1105,19 @@ the risk-compensation push (e.g. the post-floor quaff no longer resets the too-h
 
 **Question: is the irony intentional (and worth surfacing to the player), or a defect to
 retune? One line decides whether the vigil's flagship verb is a tragedy or a bug.**
+
+**Amended 2026-08-06 (external-review lap, §12).** The fork stays the owner's, but it now
+carries a recorded default: **(c)**. The argument that tipped a refused-default into a
+recommendation, from review C and adopted here: *a tragedy requires a tradeoff.* If
+provisioning bought depth at the cost of blood, "your kindness emboldens them" would be a
+beautiful theme — but the measurement says supply loses on **both** axes (+29 deaths *and*
+−12 target-reached). That is not tragic irony; it is a dominated verb, and the project's own
+theater law makes a verb that changes outcomes for the worse strictly worse than theater
+(§10, test 8). Option (a) remains available, but it now has to argue against both the camp
+test's own in-source comment and an independent reviewer who read the same numbers. Under
+(c), individual saves stay provable, only the risk-compensation push is damped, and the
+sweep re-runs until supply trades depth against survival — a real dilemma with two goods;
+*then* "the well-supplied dare too much" can go into gossip honestly.
 
 ### 9.10 The unreachable endgame — do the four sinks get screens, or get cut from v1?
 
@@ -1057,6 +1181,17 @@ in the Godot client by a player at a keyboard. Sim-complete, test-green, CLI-pro
 *ready*, not done — the four Phase-D sinks (§9.10) are the standing monument to what
 happens when this clause is skipped: an entire endgame economy reported as built that no
 player has ever touched.
+
+**8. The dominance test** *(adopted 2026-08-06 from external review C — §12)*. For any
+human verb that has a passive alternative: **hand-work must beat the passive system, or the
+passive system must not exist.** This extends test 2 downward: a verb that occupies the
+hands without changing an outcome is theater (banned); a verb that changes outcomes *for the
+worse* is strictly worse than theater. The review's contribution was to name what our own
+documents circled as two separate tuning questions — the counter out-earned ~10× by the
+invisible atomic pass (§9.5) and the camp supply run measuring +29 deaths / −12
+target-reached (§9.9) — as **one systemic defect: the game teaching players to skip its own
+humanity.** Any new human verb answers this test at design time, against the passive
+baseline, with a measurement.
 
 ### The filter, applied — three real pieces from the last two weeks
 
@@ -1142,9 +1277,11 @@ runs out of meaning on screen, and nothing in CI proves a campaign can end.
 
 ### 11.3 Phase 0 — the rulings (owner, one sitting, no code)
 
-Five one-liners. Each names its default so silence has a meaning, except R1, which is a
-genuine fork this plan refuses to assume — it gates the vigil, the game's most-invested
-surface, and each branch sends different work.
+Six one-liners. Each names its default so silence has a meaning. R1 was originally a
+genuine fork this plan refused to assume — it gates the vigil, the game's most-invested
+surface, and each branch sends different work; the external-review lap (§12) argued it into
+a recorded default of (c), but the fork below is preserved in full and the line is still
+the owner's to write.
 
 **R1 — the provisioning irony (§9.9). The fork, explicitly:**
 - **(a) It is a tragedy — keep it and surface it.** Consequence: the vigil's flagship verb
@@ -1159,6 +1296,10 @@ surface, and each branch sends different work.
 - **(c) Split — keep individual saves, damp only the risk-compensation push** (e.g. the
   post-floor quaff no longer resets the too-hurt check). Consequence: session-to-wave;
   **balance re-baseline**; the theme survives in muted form and the verb stops being a trap.
+
+**Recorded default (2026-08-06, §12): (c)** — a tragedy requires a tradeoff, and a verb that
+loses on both measured axes is a dominated verb, not a theme (§9.9's amendment carries the
+full argument). Silence now means (c); a one-line veto restores (a) or (b).
 
 Until R1 lands, **no further vigil work ships** (this is the plan's one amendment to
 §9.6's blessed order — V-3 waits here, not first).
@@ -1181,6 +1322,14 @@ is a composer pass over existing data, never the specced sifter.
 **R5 — bless this plan's order** (subsumes §9.6's question). One line makes this section
 the sequencing authority and ends per-session re-litigation.
 
+**R6 — the Final Commission (§9.7; added 2026-08-06 from §12).** Default: **it is owed.**
+The campaign is not "complete" while its climax is a threshold event with a tally; the
+ending that pays off "your craft writes the legends" is one named piece, forged for one
+named hero, carried to the Heart. P9 stays sequenced after P4 — this ruling changes P9's
+*status* (owed, not conditional), not its place in line. Ruled now so nobody re-litigates
+it later; P4 can waive it only with an unexpectedly strong verdict on the shipped
+tally-ending.
+
 ### 11.4 The critical path
 
 | # | Item | Size | Blocked by | §10 filter line | Status |
@@ -1188,12 +1337,12 @@ the sequencing authority and ends per-session re-litigation.
 | P1 | **Night leads with the mark** (loop U5 / H3): the reveal opens with the attribution beat; sale-and-deed grouped by item | session, godot-only | nothing | Hero: tonight's bearer of your marked item. Ledger line: *is* the item — the beat becomes the opening card | OPEN |
 | P2 | **The send-off names your work** (H4 / Q-1): the departure slate captions which marchers carry your items | session, godot-only | nothing (reads better after P1) | Hero: the named marchers. Ledger line: the antecedent Night points back to | OPEN |
 | P3 | **Protect the finale**: two-sided balance assertions (floor 5 *reached* by day ≤N on the main seed; ending *fires* within 100 days) + one scripted full-length client run confirming Act III on the real HUD | session, tests-only | nothing | Invariant: the campaign has an end. (Chain-test clause 3 — protect the substrate) | OPEN |
-| P4 | **The human feel-test** (§9.8): `play.ps1`, one real evening, the five written questions — with the fifth (the boredom day) checked against the measured day-11 wall | an evening (owner) | P1+P2 merged | Not a build item — the gate that rules 9.3, 9.5, 9.7, confirms R4, and re-dates day-11 | OPEN |
+| P4 | **The human feel-test** (§9.8): `play.ps1`, one real evening, the five written questions — with the fifth (the boredom day) checked against the measured day-11 wall | an evening (owner) | P1+P2 merged — *with a deadline, not a dependency* (see ties) | Not a build item — the gate that rules 9.3, 9.5, 9.7, confirms R4/R6, and re-dates day-11 | OPEN — **put it on the calendar now** (§12, review C: the bottleneck is the owner, not the agents) |
 | P5 | **The vigil branch**: (a) surface the irony, or (b) retune wave, or (c) damp compensation — V-3's hero-chips ride whichever branch wins | (a) session / (b) wave + **re-baseline** / (c) session-wave + **re-baseline** | **R1** | Hero: the camped party. Ledger line: the delivery's `Provisioned`/`PotionLifesave` beat — or the death delta, depending on the branch | BLOCKED (R1) |
 | P6 | **Endgame surfaces**: buttons + bell-tray wiring for UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | ~2 sessions, godot-only | **R2** (default: build) | Hero: whoever carries the guaranteed Masterwork. Ledger line: the attempt's cost and the resulting item's beats | BLOCKED (R2) |
 | P7 | **The day-11 program**: demand-hazard engine + demand-gated profession debuts (five-pillars Wave 2) | **wave + Contracts micro-PRs + re-baseline** — the expensive one; needs its own plan doc written against this section | P4 (re-confirm the question shortage before the biggest spend) | Hero: the one who needs what only a Tanner or Engineer makes this week. Ledger line: the typed demand fulfilled; `BeatType.ToolAssist` finally gets its emitter | BLOCKED (P4) |
 | P8 | **Finish the hero-facing day**: H5 stakes slate → H6 morning aims → H7 survivor's handshake | 3 sessions, godot-side | P1/P2 (slate patterns) | Each carries the hero-facing-day doc's own per-item ledger lines | OPEN after P1/P2 |
-| P9 | **The Final Commission climax** (§9.7) | wave; likely **Contracts + re-baseline** | P4 saying the shipped ending does *not* land | Hero: the chosen bearer at the Heart. Ledger line: the commission fulfilled at the climax | CONDITIONAL (P4) |
+| P9 | **The Final Commission climax** (§9.7) | wave; likely **Contracts + re-baseline** | P4 (sequencing only — **R6 rules it owed**; P4 can waive it only with an unexpectedly strong verdict on the tally-ending) | Hero: the chosen bearer at the Heart. Ledger line: the commission fulfilled at the climax | OWED (R6), after P4 |
 
 **Ordering ties, named with tiebreaks:**
 - **P1 vs P2** — either order works. Tiebreak: P1 first, because it pays off every marked
@@ -1205,15 +1354,37 @@ the sequencing authority and ends per-session re-litigation.
   under §10.5, and the plan re-orders around fixing it before anything else ships.
 - **P4 now vs P4 after P1/P2** — testing now measures staging debt already diagnosed;
   testing after P1/P2 measures what we do not know. One evening either way; spend it on the
-  unknown.
+  unknown. **Amendment (§12, review C):** this tiebreak is a deadline, not a dependency —
+  P4 goes on the calendar *now*, and if P1/P2 have not merged by the scheduled evening, P4
+  proceeds without them. The review's sharpest observation stands on our own record: five
+  days and 2,100+ lines of design writing landed while 9.8 sat undone. Every remaining big
+  ruling (legends, ending, boredom day) is gated on that one evening; it is worth more than
+  the next three PRs, and no further document-writing lap may displace it.
 - **P6 vs P7** — if R2 says build, P6 goes first: one-tenth the cost, no re-baseline, and
   P7 needs its own plan ceremony regardless.
+- **P5 vs P8's H5** — P5 (the vigil branch) lands before the H5 stakes slate: H5 stages the
+  camp signal that R1's branch may retune, and #392 already demonstrated what building
+  presentation on an unruled signal costs (§9.9). (Adopted from §12, review C — its one
+  insertion into the blessed order.)
 
 **Riders** (small correctness work that never displaces a path item — it rides with the
 first session touching its area): the worn-trinket double-sell fix (§8 defects — a §2
 link-2 honesty break, sim-side, draw-free so no re-baseline expected); the
 `ConsumesSlot` predicate rewrite with its test corrected rather than appeased; the stale
-comment sweep (`ProfessionHandlers`, `CraftingHandlers`, `ShopHandlers`, `Actions.cs:149`).
+comment sweep (`ProfessionHandlers`, `CraftingHandlers`, `ShopHandlers`, `Actions.cs:149`);
+the counter honesty-gap copy fix (§9.5's amendment — the surface stops implying a walk risk
+the resolver does not roll, until/unless the 9.5 tuning wave adds a real one).
+
+**Design notes adopted from §12** (bind the items they name, cost nothing today):
+- **H5 / D-1 stakes slates state stakes qualitatively — never survival percentages.**
+  "This looks dangerous," not "38% wipe risk." Two reasons: interpretation is the player's
+  half of the watching (review B's genuinely new nuance), and resolve-at-departure means
+  the sim already *knows* the outcome mid-day — a printed number could only lie or leak
+  (§10 test 4 applied to arithmetic).
+- **The building-minigames wave, when P4 unblocks it, must preserve the thinking-vs-reflex
+  contrast across professions** (kinetic forge/engineering vs clockless alchemy/tanning) —
+  if every craft becomes fast-twitch, the register warps into a chore simulator (review A's
+  one adaptable contribution; the current four crafts already honor it).
 
 ### 11.5 The cut list
 
@@ -1239,13 +1410,21 @@ Focus is made of noes. Each entry names what it is and why it loses.
   personally like it built. It still loses, twice over: the filter ranks making the
   *existing* proof felt (P1–P4) above making autonomy deeper, and P7 beats it for the one
   big-sim slot on measured need (day-11 is a measured wall; shallow autonomy is not).
+  **Convergence note (§12.4):** all three external reviews independently push deeper
+  individual-hero attachment as the game's long-term engine — the strongest cross-review
+  agreement on anything. That triple vote is recorded here as evidence, and it makes this
+  cut the named **post-v1 queue leader** — but it still does not displace P7, for the same
+  measured reason.
 - **Erenshor M4 death-cause typing** — unless P4 flags death reports as illegible.
 - **The building-minigames wave** (alchemy Draw, tanning Dip, engineering act split) —
   gated on P4's "do four crafts feel like four skills." One exception may promote: the brew
   puzzle renders its own answer key (§5.1), and if P4 confirms it reads as a form, fixing
   *that one* is a session, not a wave.
 - **Counter economics (§9.5) and forge beginner assist (§9.3)** — tuning knobs, not builds;
-  both wait for P4's human data.
+  both wait for P4's human data. **Amended (§12):** both now carry recorded directions —
+  premium-channel for the counter, inverse-assist for the beginner — so P4 confirms a
+  default instead of opening a debate; the builds themselves stay deferred and never
+  displace a path item.
 - **Every §8 wished-for row** — casters/companions/healer, enchanter/food/husbandry, venue
   fatigue, monster variants, disasters, vanity economy, fan letters, scrolls, music
   generation. No code, no plan of record, and now formally: not v1.
@@ -1294,7 +1473,173 @@ on whether a person does.
 
 ---
 
-## 12. Glossary
+## 12. The external reviews — what came from outside, and what we did with it
+
+On 2026-08-06 the owner collected design reviews from three other AI models and asked for
+them to be considered and rolled in. This section is the full accounting: every substantive
+recommendation, a verdict — **ADOPT** (better than what we had; changed this document),
+**ADAPT** (a real point, folded in with corrections), **CONFIRMS** (independently arrives at
+something already built or already planned — genuinely useful signal, recorded as such), or
+**REJECT** (does not survive contact with the code or with a measurement, which is cited) —
+and the reason, grounded. Nothing was absorbed on authority; nothing was rejected on pride.
+
+**Provenance.** The three raw texts are preserved verbatim in git history — the
+consolidation's staging commit adds them under `docs/design/` and the consolidation commit
+removes them, so `git log --follow docs/design/MAKERS-MARK.md` finds the commit and
+`git show <staging-commit>:docs/design/<file>` retrieves any of them exactly as received:
+
+| Review | File (in history) | What it had read |
+|---|---|---|
+| **A** | `gemini-code-1786070286251.txt` (Gemini) | Some of our design logs or summaries — it knows the quench band, the vigil, the boards — but not the code and not the measurements |
+| **B** | `Makers_Mark_Recommendations.txt` (unattributed) | Neither the code nor the docs — it reasons from the premise alone |
+| **C** | `makers-mark-recommendations-2026-08-06.txt` | Our actual documents, by its own header: the central doc, the ground truth, hero-facing-day, all-building-minigames, the audio forensics — and it argues with our measurements. Weighted accordingly |
+
+**The two discounts applied throughout, per the evaluation brief.** First, *flattery*: all
+three open with praise ("a brilliant, high-attraction premise"; "much closer to a genuinely
+new game than it first appears"; "the concept is strong"). The praise was read and
+discarded, and nothing the prior laps established was softened by it — the four hard facts
+stand exactly as written: **no human has ever played this game to completion (§3.2, §9.8);
+the boredom wall is measured at day 11–13, not day 30 (§3.3); nothing in CI proves a
+campaign can end (§3.3, §8 defects); and the bounty is the one order money can buy (§2
+link 3).** Second, *assumed features*: every recommendation was checked against Appendix A
+before a verdict — reviews A and B each recommend against or on top of things that do not
+exist as they imagine (noted in their tables), which is exactly why the ground-truth
+appendix, not any review, stays the arbiter.
+
+**The scoreboard:**
+
+| Review | Substantive recs | Adopted | Adapted | Confirmations | Rejected |
+|---|---|---|---|---|---|
+| A (Gemini) | 9 | 0 | 1 | 6 | 2 |
+| B (unattributed) | 15 | 1 | 2 | 8 | 4 |
+| C (2026-08-06) | 13 | 7 | 0 | 6 | 0 |
+
+### 12.1 Review A — Gemini
+
+Fluent, warm, and almost entirely a mirror: it read enough of our material to hand our own
+design laws back to us in its own words. That has real value — six independent confirmations
+of choices we made for stated reasons — but it contributes no new mechanism, and its one
+active *ordering* recommendation points backwards, because it never saw the balance suite.
+
+| # | Recommendation | Verdict | Grounding |
+|---|---|---|---|
+| A1 | Don't fill the mid-day with superficial reflex minigames; treat Quest/Vigil as observation-and-preparation windows | **CONFIRMS** | Already law twice over: the theater ban (§10 test 2) and the hero-facing-day rule (§4). The middle's content is the smith's own hands, staging, and the one camp question. |
+| A2 | Elevate the Vigil as the emotional centerpiece; halt the world; let the player forge from inside the stop ("the world waiting while I hammer out this potion") | **CONFIRMS** | Built, exactly as described: the untimed vigil stop (#388) and the craft-and-send round trip (#392, `CampPanel.cs`). But note the blind spot: the review celebrates a verb the balance suite measures as harmful at scale (§9.9) — it recommends the presentation without knowing the signal underneath points the wrong way. |
+| A3 | Higher tiers should change hero *behavior* and survival thresholds, not grant flat stat bumps (a Masterwork shield should change defensive posture / retreat threshold) | **CONFIRMS** | Built, by explicit rule: no craft modifier is a stat bump — they move hero-AI decision thresholds (flee line ±8%/tier, Leech, Lodestone — `CraftModifiers.cs`; Appendix A §8 surprise 3). Quality's stat multipliers stay deliberately separate and legible. |
+| A4 | Preserve the thinking-vs-reflex contrast across professions (kinetic forge/engineering vs clockless alchemy/tanning) so the game never warps into a chore simulator | **ADAPT** | The current four crafts already honor it; the review's contribution is making it *binding* — recorded as an acceptance criterion on the deferred building-minigames wave (§11.4 design notes). |
+| A5 | Make hero personalities readable at a glance — visible traits, history, gear-gap indicators on the boards | **CONFIRMS** | Built: derivation-only traits, the muster board's empty-slot forecast, Phase B's card-level legibility (§5.2). The behavior-level half remains deliberately cut (§11.5). |
+| A6 | Let the attribution engine shine — the Night ledger prominently celebrates your items' specific deeds | **CONFIRMS** | This is P1 ("night leads with the mark"), the plan's topmost item, arrived at independently. One of three independent votes for it (§12.4). |
+| A7 | **"Prioritize the Vigil loop first"** (its #1 next-step priority) | **REJECT** | The firmest rejection in this section. The vigil's flagship verb measures **+29 deaths and −12 target-reached** over 20 seeds × 100 days (`CampProvisioningBalanceTests.cs:23-37`), and #392 already built presentation on that wrong-way signal — the camp test's own comment asked for the retune *first*. More vigil investment before R1 rules deepens the rework. The plan holds all further vigil work behind R1 (§11.3), and review C — the one that read the measurements — agrees with us against review A. |
+| A8 | Keep the economy honest: no "theater verbs" that consume time without influencing outcomes | **CONFIRMS** | Our own named law, returned verbatim (§6, §10 test 2 — "bounty theater"). |
+| A9 | Protect the "cozy-yet-stakes-driven" tone | **REJECT** (superseded) | "Cozy" is the wrong word for a game whose Prepared heroes die ~63–66%. Review C's identity ruling — Spiritfarer-cozy, warmth about loss — is sharper and was adopted instead (§5.7). |
+
+### 12.2 Review B — the premise-only review
+
+The most interesting review *as evidence*. It saw neither code nor docs, reasoned purely
+from the premise — and independently reinvented five systems that are already built (traits,
+sentimental attachment, gossip, item histories, the march-past) and one item already on the
+plan (P2). When a model that has never seen the game derives its feature set from the
+premise alone, that is real evidence the premise implies the design. Its one genuinely new
+contribution was adopted. Its biggest ask is the cut that hurts, and stays cut.
+
+| # | Recommendation | Verdict | Grounding |
+|---|---|---|---|
+| B1 | The real loop is Observe → Understand → Craft → Watch → Feel; the goal is not more mid-day tasks but "make the player unable to look away" | **ADAPT** | A good phrasing of the witnessing deficit §11.1 names, and it supports the H4/H5 staging program. Rejected as a *substitute* for verbs: the day-11 wall is a measured **question shortage** (§3.3), and watching, however gripping, adds no questions. The loop authority stands: hands *and* stakes, not stakes instead of hands. |
+| B2 | Make relationships the primary long-term progression — "Oh thank God Sarah survived" | **REJECT for v1** | This is Phase-B-behavior / Erenshor-M5, already on the cut list as "the cut that hurts" (§11.5): P1–P4 (make the existing proof felt) and P7 (the measured day-11 wall) outrank unmeasured autonomy depth for the one big-sim slot. The triple-review convergence on this theme is recorded (§12.4) and makes it the named post-v1 queue leader — but a third vote is not a measurement. |
+| B3 | Give heroes memorable quirks: refuses potions, always bargains, never bargains, loyal to your shop, only buys quality | **CONFIRMS** | Reinvented our trait table without seeing it: Reckless carries a heal-restock target of 0 (`TraitEffects.cs:121-129`), Thrifty/Spendthrift moves haggle and bounty greed, Discerning shifts the quality gate, and sentimental attachment keeps storied gear over small upgrades (`ShoppingAi.cs:164-175`). More axes stay post-v1. |
+| B4 | Never erase mistakes — let failure create memorials, heirlooms, legends | **CONFIRMS** | Built end to end: permadeath → memorial naming the worn gear → heirloom reforging with lineage → legends and the famous dead (§2 link 5, §5.6). |
+| B5 | …and scars, retirements, apprentices (a hero loses an arm and returns) | **REJECT** | Contradicts the code twice: no injury persists — working HP initializes to MaxHp at resolve (`ExpeditionResolver.cs:33`), and heroes never leave the roster — `HeroConsideringLeaving` is "a legible warning, never an automatic departure" (`Contracts/Events.cs:276-280`), both deliberate (§5.3). Injury persistence would be a determinism-and-balance program nothing on the path justifies. Item-side inheritance (the heirloom line) already carries the "apprentice inherits" beat. |
+| B6 | Heroes should surprise players — sometimes choosing gear because it's lucky, family, or liked | **ADAPT** | The sentiment rule already does this *legibly* (storied gear resists displacement, with a typed reason). Anything further must stay legible: an autonomous world the player can't read is indistinguishable from randomness (§5.8), so illegible whimsy is rejected on the same ground the legibility law was built on. |
+| B7 | Avoid reducing the game to Craft → Money → Upgrade | **CONFIRMS** | §11.1's own ruling: the economy is the feeder, not the gold. |
+| B8 | **Preserve uncertainty — never expose survival percentages; present "this looks dangerous" and let the player interpret** | **ADOPT** | The one genuinely new nuance in this review, now binding on the H5/D-1 stakes slates (§11.4 design notes). It also closes an honesty trap the review couldn't have known: resolve-at-departure means the sim already knows the outcome mid-day, so a printed probability could only lie or leak. |
+| B9 | The player enables success rather than controlling it; heroes deserve credit | **CONFIRMS** | PKD7, structurally enforced (§6). |
+| B10 | Tiny personal letters from heroes ("Your shield held. Thought you'd like to know.") | **CONFIRMS** (wished-for) | Independently names an existing wished-for row (§8: "fan letters"). Stays wished-for — but the convergence is noted, and the cheapest honest version on the books is a gossip-voice variant reading real attribution beats in second person. No code, no plan, not v1. |
+| B11 | Let the town react naturally — baker comments, children admire, tavern patrons discuss | **CONFIRMS** | Built: gossip retells only real stamped events, ≤3 lines/day, four frozen voices (§5.7). |
+| B12 | Expand living item histories; histories become collectibles | **CONFIRMS** | Built: append-only `History`, provenance cards, signed works, heirloom lineage (§2 link 1, §5.6). |
+| B13 | **The Window** — each morning heroes physically walk past your shop wearing what you made | **CONFIRMS** | The march-past exists (the conducted send-off, §3.1); the missing half — *naming* which marchers carry your work — is precisely P2/H4, already the plan's second item. The second independent external vote for P2 (§12.4). |
+| B14 | Filter rule: "does this make me care more about a specific hero?" | **REJECT** as a replacement | Softer than the house filter and admits the exact failure the filter exists to catch: caring without an outcome is theater. Ours requires the hero *whose outcome changes* and the ledger line that proves it (§10). Kept as a friendly phrasing, not a test. |
+| B15 | Vision statement: "a cozy simulation where you never become the hero…" | **REJECT** ("cozy") | Same measurement as A9 — 63–66% mortality among the *careful* heroes is not cozy. The north star stays "your craft writes the legends"; the identity ruling adopted is C12's. |
+
+### 12.3 Review C — the one that read the documents
+
+The clear money's-worth winner. It read the central document, the ground truth, and the
+measurements; most of its rulings confirm the plan's own defaults (recorded below — six
+independent confirmations from the only reviewer in a position to check them); and it moved
+this document in seven places, including the single best idea any of the three produced.
+
+| # | Recommendation | Verdict | Grounding |
+|---|---|---|---|
+| C1 | **The pattern the docs circle but never name: the game's two most human verbs (counter, camp supply) are both strictly dominated by doing nothing — one systemic defect, not two tuning questions. Principle: "hand-work must beat passive systems, or the passive system must not exist."** | **ADOPT** | The best single idea from the external lap. Our own documents carried both measurements (§9.5's ~10×, §9.9's +29/−12) as separate open questions; the review unified them and named the law. Now §10 test 8, extending the theater ban downward: a verb that changes outcomes for the worse is strictly worse than theater. |
+| C2 | §9.9 is a **defect, not a tragedy** — "a tragedy requires a tradeoff," and supply loses on *both* axes; take option (c), and do it before more vigil presentation lands | **ADOPT** | The argument is correct against our own numbers (+29 deaths *and* −12 target-reached — no tradeoff, a dominated verb). R1 now carries recorded default (c); the fork is preserved and the line stays the owner's (§11.3). The "before more vigil presentation" sequencing was already the plan's one amendment to §9.6 — convergence noted. |
+| C3 | §9.5: make the counter the **premium channel**, and fix the honesty gap (the UI implies a walk risk that a counter-offer never carries — add real risk or make the surface tell the truth) | **ADOPT** | The direction now follows from adopted test 8 (§9.5 amendment); the honesty gap is booked as a rider (§11.4) — "staged tension the sim doesn't cash" is our own named failure class, caught here by an outside reader. Tuning wave sequenced by R5's queue; it does not displace P1–P6. |
+| C4 | §9.10: wire the Phase-D sinks in v1, after H3 — "a 5–6× gold pile with nowhere to go undermines every economic decision" | **CONFIRMS** | R2's default (build, P6) and its placement (after P1) as already written. |
+| C5 | §9.3: assist the beginner via **inverse session-skill** — bigger shape-per-strike at low demonstrated accuracy; labor shrinks, the accuracy target never widens | **ADOPT** | The mechanism was already §9.3's "most likely" candidate; the review's first-session argument tipped it into a recorded default (§9.3 amendment). P4 confirms rather than reopens. |
+| C6 | §9.1: rule EntryPower **79**; park #346 explicitly with a written note — "a draft that implies one-click-away when the venue has zero art is exactly the drift this project keeps getting burned by" | **CONFIRMS** | R3's default, verbatim, including the reasoning. |
+| C7 | §9.2: retire the Legend Engine module, keep the promise; if legends read as logs, the fix is a composer pass over existing data | **CONFIRMS** | R4's default, verbatim. |
+| C8 | §9.7: **the Final Commission is owed** — the thesis is "your craft writes the legends" and the current climax is a threshold event with a tally; rule it now so nobody re-litigates | **ADOPT** | New ruling R6; P9 flips from CONDITIONAL to OWED, sequencing unchanged (§9.7 amendment, §11.3). The one adopted item that *commits* future spend — flagged as such so the owner's Phase-0 sitting can veto it consciously. |
+| C9 | §9.6: bless the build order as written, with one insertion — the 9.9 retune before H5, Phase-D surfaces after H3 | **CONFIRMS + ADOPT** | The order was already blessed-pending-R5; the P5-before-H5 pin is adopted into the ordering ties (§11.4) — H5 stages the exact signal R1's branch may retune. |
+| C10 | §9.8: **schedule the feel-test — the bottleneck is now the owner, not the agents.** "2,100+ lines of design writing in five days while 9.8 sits undone is its own signal"; the evening is worth more than the next three PRs | **ADOPT** | Adopted as a deadline-not-dependency amendment on P4 (§11.4): calendar now; if P1/P2 haven't merged by the scheduled evening, P4 proceeds without them. The jab lands on this very lap — this consolidation is itself more design writing — which is precisely why the amendment bans further document laps from displacing the evening. |
+| C11 | §9.4: the demand-hazard engine stays the next big sim program after the loop wave and the 9.9 retune — "two professions have the newest craft surfaces with the least reason to use them" | **CONFIRMS** | P7 as written, including its position behind P4. |
+| C12 | **"Cozy" needs an honest modifier: this is Spiritfarer-cozy — warmth about loss — not Stardew-cozy; own it in tone and marketing** | **ADOPT** | Now in §1 and §5.7. The identity was latent in our tone law ("warmth yes, punchlines no") and the mortality numbers; the review named it, and the name changes how the game should eventually be sold. |
+| C13 | Audio: hold the U9 acceptance bar from the composed-track forensics (raw LUFS ≈ −21.7, no positive TrimDb, ≥180s, no windowed RMS dropout near the noise floor) | **CONFIRMS** | The bar is the forensics doc's own (`docs/design/2026-08-02-composed-track-forensics.md`); recorded here so the "silent hole" failure class stays dead. |
+
+### 12.4 Where the reviews converge — and what that is worth
+
+Independent agreement is evidence; here is all of it, judged:
+
+1. **The Night reveal is the payoff and must lead (A6, B1/B10's intimacy asks, C4's
+   H3-anchored ordering — plus our own P1).** Three reviews and four prior laps point at the
+   same top item. P1's position is now the most-corroborated sequencing fact in the project.
+2. **The morning march-past wearing your work (A2's send-off framing, B13's Window — plus
+   our P2).** Two external votes for the plan's second item, one from a review that had
+   never seen the plan. P2 stands, order unchanged.
+3. **Individual-hero attachment is the long-term engine (A5, B2/B3/B4, C's feel-test
+   question "can you name three heroes by personality").** The strongest *cross-review*
+   agreement — and the one place all three lean on something v1 defers. Verdict: recorded
+   as evidence on the cut list (§11.5); the Phase-B-behavior/M5 program is the named
+   post-v1 queue leader; it still does not displace P7, because day-11 is measured and the
+   attachment wall is not. If P4's evening contradicts that — if the felt problem is "I
+   don't care about anyone" rather than "there's nothing to decide" — the measurement rule
+   (§11.6.5) reopens this in the same PR that lands the finding.
+4. **No theater; the middle is preparation and witness, not busywork (A1, B1, C's whole
+   frame).** Confirms the law already on record. Nobody outside proposed a mid-delve verb —
+   the one anti-premise idea this project has had to kill repeatedly — which is mildly
+   reassuring about the premise's legibility.
+5. **What none of them found:** a factual error in the central document (C corrected
+   nothing, it added rulings; A and B were not equipped to check), or a missed *system*.
+   The two reviews that never read the balance suite both steered, with full confidence,
+   toward the exact verb the suite measures as lethal at scale (A7, and B's camp-adjacent
+   warmth) — the cleanest demonstration this project has of why generic design advice
+   defers to Appendix A, and why the ground truth had to survive this consolidation intact.
+
+### 12.5 The diffs — everything in this document that changed because of the reviews
+
+For the reader who wants the outside contribution as a diff list: **§10 test 8** (the
+dominance law — C1); **§9.9 + R1** recorded default (c) with the tragedy-requires-a-tradeoff
+argument (C2); **§9.5** ruled direction (premium channel) plus the honesty-gap rider in
+§11.4 (C3); **§9.3** recorded default (inverse assist — C5); **§9.7 + R6 + P9** the Final
+Commission ruled owed (C8); **§11.4** P4 deadline-not-dependency and calendar-now (C10),
+the P5-before-H5 ordering pin (C9), and the two design notes (no survival percentages —
+B8; thinking-vs-reflex contrast binding on the minigame wave — A4); **§1 + §5.7** the
+Spiritfarer-cozy identity (C12); **§11.5** the triple-convergence note making
+attachment-depth the post-v1 queue leader (A5/B2/C). Everything else in this document
+stands as the four prior laps wrote it.
+
+### 12.6 The money's worth, plainly
+
+**A** returned our own laws with a warmer voice and one backwards priority — its value is
+six confirmations, at the cost of needing the balance suite to catch its headline advice.
+**B** is the premise run through a model with no access, and the result reads like an
+archaeology of our own decisions — five built systems and P2 reinvented from first
+principles, one adopted nuance (B8), and its rejections were cheap to write because the
+code answers them by line number. **C** did what a reviewer is for: read the record, argued
+with the measurements, unified two open questions under one law, and forced four defaults
+that had been sitting unruled. If only one of the three had been commissioned, C is the one
+that was worth the asking.
+
+---
+
+## 13. Glossary
 
 | Term | Meaning |
 |---|---|
@@ -1316,22 +1661,28 @@ on whether a person does.
 | **PKD7 / "influence, never orders"** | The design law: no player verb commands a hero or touches resolution through mood. |
 | **Bounty theater** | The named failure class: a verb or surface that occupies the player without changing any outcome. Banned. |
 | **BUILT / BUILT, CLI-ONLY / BUILT-INERT / DESIGNED / WISHED-FOR** | The five status labels (defined in the preamble, ledger in §8). CLI-only is *not shipped* — DEPLOYED means the Godot client. |
-| **P1…P9 / the path** | Items of the plan of record (§11.4) — the sequencing authority for v1 work. R1…R5 are its Phase-0 rulings. |
-| **The companion / ground truth** | `docs/design/2026-08-06-mechanics-ground-truth.md` — the source-only control document; the arbiter for any mechanical dispute. |
+| **P1…P9 / the path** | Items of the plan of record (§11.4) — the sequencing authority for v1 work. R1…R6 are its Phase-0 rulings. |
+| **The ground truth / Appendix A** | The source-only control pass at the end of this document — the same game described from code alone, every claim line-cited; the arbiter for any mechanical dispute. Absorbed from `docs/design/2026-08-06-mechanics-ground-truth.md` on 2026-08-06. |
+| **The dominance test** | §10 test 8, adopted from the external-review lap: hand-work must beat passive systems, or the passive system must not exist. |
+| **Review A / B / C** | The three external model reviews evaluated in §12; raw texts preserved in git history at the consolidation's staging commit. |
 
 ---
 
-## 13. The documents behind this one
+## 14. The documents behind this one
 
 This document stands alone, but it compresses a real paper trail. Where you want the full
 argument:
 
-- **Mechanics arbiter:** `docs/design/2026-08-06-mechanics-ground-truth.md` — the same game
+- **Mechanics arbiter:** **Appendix A** of this document (absorbed intact from
+  `docs/design/2026-08-06-mechanics-ground-truth.md` on 2026-08-06) — the same game
   described from source only, `docs/` deliberately unread, every claim line-cited. Written
-  as an independent control pass against this document and collided with it on 2026-08-06;
-  the source-only pass won every factual dispute the collision found (this version carries
+  as an independent control pass against this document and collided with it; the
+  source-only pass won every factual dispute the collision found (this version carries
   the corrections). When a mechanical argument starts, settle it there first — it is the
   place a "the code does X" claim goes to live or die.
+- **External reviews:** the three raw review texts (§12) are preserved verbatim in git
+  history — the consolidation's staging commit adds them under `docs/design/`, the
+  consolidation commit removes them; §12 carries every recommendation with its verdict.
 - **Loop authority:** `docs/design/2026-08-04-hero-facing-day.md` (the phase-by-phase verb
   program and the formal withdrawal of "two bells completes the loop");
   `docs/plans/2026-08-03-001-feat-loop-structure-plan.md` (the two-bell diagnosis and units);
@@ -1349,10 +1700,265 @@ argument:
 *Everything in this document was verified against the repository on the day it was written —
 verified again by collision with an independent source-only pass, which caught real errors
 the first pass carried (an endgame reported as reachable, a venue reported as art-complete,
-a haggle risk that does not exist), and then attacked by a hostile-review lap, which caught
+a haggle risk that does not exist), then attacked by a hostile-review lap, which caught
 the errors the collision carried (player reports cited where no player exists, a boredom
 wall dated day 30 when the measurement says day 11, a recall statistic quoted at half its
 price, a bought order softened into a suggestion, a finale no test protects) and added the
-plan of record (§11). When the code moves, update this document or mark the section stale —
-an out-of-date central document is worse than none, and this project has measured that
-twice. The companion is the cheap re-check: it cites lines, not intentions.*
+plan of record (§11), and finally collided with three external model reviews (§12), which
+were themselves checked against the code before anything was absorbed. When the code moves,
+update this document or mark the section stale — an out-of-date central document is worse
+than none, and this project has measured that twice. Appendix A is the cheap re-check: it
+cites lines, not intentions.*
+
+---
+
+## Appendix A — Mechanics Ground Truth (derived from source, 2026-08-06)
+
+> **Absorbed unchanged** from `docs/design/2026-08-06-mechanics-ground-truth.md` on
+> 2026-08-06: headings demoted one level to fit this document, not a word otherwise touched.
+> This appendix is the mechanical arbiter — it was written from source only, with `docs/`
+> deliberately unread, and it wins any factual dispute with the body of this document.
+> Section references inside it (§1–§8) refer to the appendix's own sections. Line numbers
+> are pinned at commit `0dfe3a8`; when the code moves, re-verify here first.
+
+**Method.** This document was written by reading the CODE ONLY — `sim/GameSim/`, `sim/GameSim.Tests/`, `sim/GameSim.Cli/`, and `godot/scripts/` — with `docs/` deliberately unread. It is the control arm against the documentation-derived design account: where the two disagree, the disagreement is the finding. Every claim carries a `path/file.cs:line` citation so it can be checked. Line numbers are as of commit `0dfe3a8` on this branch.
+
+**One-paragraph summary of what the game actually is, per the code.** A deterministic, integer-only, five-phase-per-day simulation (`sim/GameSim/Kernel/GameKernel.cs:188-198`) in which the player runs a craft shop (24 action types, `sim/GameSim/Contracts/Actions.cs:10-35`), six-or-fewer autonomous heroes shop each Morning by a pure gear-score-per-gold rule (`sim/GameSim/Heroes/HeroShoppingSystem.cs`), form parties and raid one of three live venues each day (`sim/GameSim/Expedition/ExpeditionSystem.cs`), and the entire raid is resolved as a pure function at departure and merely *revealed* at Evening (`sim/GameSim/Drama/ExpeditionRevealSystem.cs`). The player's craft reaches the heroes only through prices and shelves — "influence, never orders" is enforced structurally, not aspirationally. A counterfactual attribution engine proves, from recorded dice, whether a specific player item saved a specific hero's life (`sim/GameSim/Expedition/AttributionEngine.cs`).
+
+---
+
+### 1. The complete action inventory
+
+There are exactly 24 `PlayerAction` types (`sim/GameSim/Contracts/Actions.cs:10-35`). Phase legality is decided **only** by each handler's `CanHandle` (`sim/GameSim/Kernel/GameKernel.cs:30-31`); timing (instant vs. bell) is decided **only** by `ActionTiming.ResolvesImmediately` (`sim/GameSim/Kernel/ActionTiming.cs:75-129`); whether it costs one of the day's 5 action slots is decided by an `ActionSlotsRemaining` gate inside each handler (see §6). The Godot client submits everything through `SimAdapter.Queue`, which routes instant actions to `GameKernel.ApplyNow` and queues bell-riders for the next `Tick` (`godot/scripts/SimAdapter.cs:119-148`).
+
+| # | Action | Effect | Legal phases (handler) | Timing | Slot? | Godot surface |
+|---|--------|--------|------------------------|--------|-------|---------------|
+| 1 | `CraftAction` | Consume materials, roll ONE `Roll100`, mint item (`Crafting/CraftingHandlers.cs:40-238`) | ALL phases — no phase filter (`Crafting/CraftingHandlers.cs:29-30`) | Now | Yes (`:130,228`) | ForgePanel button + 4 minigames (`godot/scripts/panels/ForgePanel.cs:535,596`; `minigames/QuenchMinigame.cs:279`, `AlchemyBrewPuzzle.cs:213`, `EngineeringBench.cs:371`, `TanningFrame.cs:256`) |
+| 2 | `StockAction` | Shelve a player-crafted item at a price (`Economy/ShopHandlers.cs:42-98`) | ALL (`ShopHandlers.cs:25-26`) | Now | No | ShopPanel (`godot/scripts/panels/ShopPanel.cs:516`) |
+| 3 | `SetPriceAction` | Reprice a shelf entry (`ShopHandlers.cs:100-121`) | ALL | Now | No | ShopPanel (`ShopPanel.cs:566`) |
+| 4 | `UnstockAction` | Remove a shelf entry (`ShopHandlers.cs:123-141`) | ALL | Now | No | ShopPanel (`ShopPanel.cs:539`) |
+| 5 | `BuyOreAction` | Buy from a returning hero's ore offer; hero gets base ask, player pays tariffed cost (`Economy/OreMarketHandlers.cs:38-165`) | Evening ONLY (`OreMarketHandlers.cs:35-36`) | Now | Yes (`:104,148`) | LedgerModal (`godot/scripts/panels/LedgerModal.cs:215`) |
+| 6 | `BuyMaterialAction` | Buy any priced-pool material at +25% markup (`Economy/MaterialVendorHandlers.cs`) | Morning ONLY (`MaterialVendorHandlers.cs:45-46`) | Now | Yes (`:96`) | ForgePanel vendor row (`ForgePanel.cs:1029`) |
+| 7 | `PostBountyAction` | Escrow gold on a target floor; heroes judge it next Expedition tick (`Bounties/BountyHandlers.cs:18-60`) | Morning or Evening (`BountyHandlers.cs:15-16`) | Now | Yes (`:42,58`) | BountyPanel (`godot/scripts/panels/BountyPanel.cs:212`) |
+| 8 | `UnlockTalentAction` | Unlock a talent node — **zero cost**, prerequisites only (`CraftingHandlers.cs:304-338`, "talent-point economy deferred" `:332`) | ALL | Now | No | ForgePanel talent tree (`ForgePanel.cs:1018`) |
+| 9 | `SetProfessionsAction` | Select 1–2 professions; gates craftable recipes (`Professions/ProfessionHandlers.cs:34-57`) | ALL (`ProfessionHandlers.cs:25`) | **Bell** (`ActionTiming.cs:126`) | No | MainUi tutorial second-profession picker only (`godot/scripts/MainUi.cs:2826`) |
+| 10 | `SendSupplyAction` | Pay runner fee (6+3×floor g), front-insert one held consumable into a camped hero's pack (`Expedition/CampHandlers.cs:52-143`) | Camp ONLY (`CampHandlers.cs:34-35`) | Now | No | CampPanel (`godot/scripts/panels/CampPanel.cs:287`) |
+| 11 | `RecallPartyAction` | Ring the bell: party banks stage-1 gains, surfaces without rolling stage 2 (`CampHandlers.cs:150-171`) | Camp ONLY | Now | No | CampPanel (`CampPanel.cs:263`) |
+| 12 | `OpenCounterAction` | Flip Morning into stepped counter service (`Counter/CounterHandlers.cs`) | Morning ONLY (`CounterHandlers.cs:28-30`) | Now | No | CounterPanel (`godot/scripts/panels/CounterPanel.cs:78`) |
+| 13 | `PresentItemAction` | Show a shelf item to the active customer; verdict resolves in the handler itself (`Counter/CounterQueueSystem.cs:52-93`) | Morning ONLY | Now | No | CounterPanel (`CounterPanel.cs:272`) |
+| 14 | `SuggestItemAction` | Upsell; +80‰ Interest if it lands on a complementary empty slot (`Counter/HaggleResolver.cs:73-76`) | Morning ONLY | Now | No | CounterPanel (`CounterPanel.cs:390`) |
+| 15 | `HaggleResponseAction` | Accept / HoldFirm / Counter against the standing offer (`HaggleResolver.cs:82-159`) | Morning ONLY | Now | No | CounterPanel (`CounterPanel.cs:307,429,478`) |
+| 16 | `CloseCounterAction` | End the session; unserved heroes fall back to atomic shopping (`CounterHandlers.cs`) | Morning ONLY | Now | No | CounterPanel (`CounterPanel.cs:105`); MainUi force-close (`MainUi.cs:1874`) |
+| 17 | `AcceptCommissionAction` | Lock a hero's gear request; fulfillment pays list + premium (`Heroes/CommissionHandlers.cs:30-41`) | Morning ONLY (`CommissionHandlers.cs:18-19`) | Now | No | CommissionBoard (`godot/scripts/panels/CommissionBoard.cs:96`) |
+| 18 | `DeclineCommissionAction` | Remove an open commission, no penalty (`CommissionHandlers.cs:43-52`) | Morning ONLY | Now | No | CommissionBoard (`CommissionBoard.cs:101`) |
+| 19 | `HonorMemorialAction` | Flip a memorial's `Honored` once; idempotent (`Drama/FarewellHandlers.cs`) | Evening ONLY (`FarewellHandlers.cs:20-21`) | Now | No | LegendsWall (`godot/scripts/panels/LegendsWall.cs:115`) |
+| 20 | `ReforgeHeirloomAction` | Reforge a fallen hero's recorded worn gear into a lineage-carrying item; ordinary auto-craft roll (`Crafting/HeirloomHandlers.cs:41-154`) | ALL (`HeirloomHandlers.cs:39`) | Now | Yes (`:121,147`) | LegendsWall (`LegendsWall.cs:154`) |
+| 21 | `UpgradeForgeAction` | Buy the next forge tier: 400/1600/6400/25600 g + 25 floor-ore (`Economy/ForgeTierHandlers.cs:46-54`) | Morning ONLY (`ForgeTierHandlers.cs:61-62`) | **Bell** (`ActionTiming.cs:125`) | Yes (`:99,113`) | **NONE — unreachable in Godot.** CLI only (`sim/GameSim.Cli/Program.cs:608`). Bell-tray vocab exists (`godot/scripts/ui/PendingVerbVocab.cs:31,41`); no button constructs it. |
+| 22 | `BuyForgeSupplyAction` | Buy coal (4 g) / flux (40 g) (`Economy/ForgeSupplyHandlers.cs:37-42`) | Morning ONLY (`ForgeSupplyHandlers.cs:44-45`) | Now | Yes (`:91`) | **NONE — unreachable in Godot.** CLI only (`Program.cs:627`). |
+| 23 | `MasterworkAttemptAction` | 3 coal + 1 flux + 100 g×tier + materials → guaranteed Superior (Masterwork if material outgrades recipe); requires Forge Tier II; ZERO RNG (`Economy/MasterworkAttemptHandlers.cs:30-158`) | ALL (`MasterworkAttemptHandlers.cs:47`) | Now | Yes (`:126,152`) | **NONE — unreachable in Godot; not even bell-tray vocab.** CLI only (`Program.cs:643`). |
+| 24 | `CommissionLegendaryWorkAction` | 3000 g×tier + 2× materials → guaranteed Masterwork; capped 4/campaign (`Economy/LegendaryCommissionHandlers.cs:23-38`) | ALL (`LegendaryCommissionHandlers.cs:40`) | **Bell** (`ActionTiming.cs:127`) | Yes (`:127`) | **NONE — unreachable in Godot.** CLI only (`Program.cs:660`). |
+
+**Reachability verdict.** 20 of 24 actions are reachable from the Godot client; the four Phase-D gold sinks (#21–24) are implemented, tested, CLI-reachable, and **have no on-screen affordance at all**. Three of the four even have their bell-tray display strings pre-registered (`godot/scripts/ui/PendingVerbVocab.cs:31-43`) — the plumbing shipped ahead of the buttons, and the buttons never landed. Under the project's own "DEPLOYED means 3D, not CLI" rule, the entire Phase-D economy endgame is not shipped.
+
+No Godot panel is orphaned. Roughly half of the panels are pure read-only displays by design (HeroesPanel, TavernPanel, DepthsPanel, DemandPanel, HeroCards, ProgressionPanel, MineWatch, RaidForecastBoard, BestiaryPanel, ChronicleScroll, ScryingMirror, DelveStage, ProvenanceCard) — they submit nothing and exist to make the sim legible. The CLI (`sim/GameSim.Cli/Program.cs`) is a strict superset of the Godot client's action reach.
+
+**Timing model.** 21 of 24 actions resolve instantly via `ApplyNow` (`GameKernel.cs:59-103`), which applies the one action, persists RNG + action log, and does NOT advance the phase or reset budgets. Exactly three ride the bell as deliberate ceremony: `UpgradeForgeAction`, `SetProfessionsAction`, `CommissionLegendaryWorkAction` (`ActionTiming.cs:121-128`). The list is deny-by-default: any future action type queues until someone opts it in (`ActionTiming.cs:60-62`).
+
+---
+
+### 2. The phase machine, exactly
+
+One `Tick` = apply queued actions → run this phase's systems in registration order → stamp events → advance phase (`GameKernel.cs:105-173`). Day order is defined **only** by `Advance` (`GameKernel.cs:188-198`), never by enum value:
+
+```
+Morning → Expedition → Camp → ExpeditionDeep → Evening → (Day+1) Morning
+```
+
+Two state-aware exceptions (`GameKernel.cs:190-191`):
+- An open, unfinished counter session **holds** the day at Morning indefinitely (`GameKernel.cs:190`; pinned by `sim/GameSim.Tests/Kernel/CounterPhaseHoldTests.cs:31-101`).
+- With **zero living heroes**, Morning folds straight to Evening — Expedition/Camp/ExpeditionDeep are skipped entirely (`GameKernel.cs:191,216-217`; `NoRaidToHost` is true only when `PartyFormation.FormParties` returns empty, which requires no one alive). Pinned by `sim/GameSim.Tests/Kernel/PhaseCollapseTests.cs:44-95`.
+
+Per-phase system order is the determinism contract (`sim/GameSim/GameComposition.cs:57-77`):
+
+**Morning** (12 systems, in order): `DirectorSystem` (drama pacing — the day's ONE unconditional RNG draw) → `FactionDriftSystem` (standing decays toward 0) → `CounterQueueSystem` (stepped-counter resolution) → `RentSystem` → `GuildAssessmentSystem` → `DestitutionRecoverySystem` (no-softlock floor) → `RivalRestockSystem` (mints missing rival stock) → `RecruitSystem` (roster refill) → `GossipSystem` (voices *yesterday's* stamped events, max 3 lines — `Drama/GossipGenerator.cs:50`) → `HeroShoppingSystem` (every alive hero buys at most one gear item + one consumable) → `CommissionSystem` (expiry + posting) → `MusterSystem` (**must be last**: emits `PartiesFormed`, the roster/floor/venue prediction that must byte-match the Expedition tick — `Heroes/MusterSystem.cs:78-108`).
+
+**Expedition** (2): `BountyJudgingSystem` (first-accept loop, visible `BountyJudged` events — `Bounties/BountySystems.cs:12-29`) → `ExpeditionSystem` (forms parties, routes venues, resolves stage 1 at departure — `Expedition/ExpeditionSystem.cs:37-112`).
+
+**Camp** (0): **no registered system has `Phase == Camp`** (`GameComposition.cs:58-77`; the only kernel reference to Camp is the transition at `GameKernel.cs:194`). Camp exists purely as the action window for `SendSupply`/`RecallParty`. On a day when no party parked, the Camp tick — and the Deep tick after it — changes nothing the player can observe; the player rings the bell through two empty phases.
+
+**ExpeditionDeep** (1): `ExpeditionDeepSystem` finalizes every parked `InFlight` party on the live RNG stream (`Expedition/ExpeditionDeepSystem.cs:27-47`).
+
+**Evening** (4): `ExpeditionRevealSystem` (applies deaths/gold/records/beats/XP/ore — §4) → `BountyPayoutSystem` (pay, refund-on-death, refund-on-expiry — `BountySystems.cs:43-84`) → `ArcDirectorSystem` (act thresholds — `Arc/ArcDirectorSystem.cs:57-88`) → `MarketShareSystem` (**must be last**: reads whether any action slot was spent today before the kernel resets the budget — `Economy/MarketShareSystem.cs:33-48`).
+
+Kernel bookkeeping at the phase boundary: the counter session is torn down the instant the day leaves Morning (`GameKernel.cs:163`), and `ActionSlotsRemaining` resets to 5 only when the Day number actually increments (`GameKernel.cs:169`).
+
+**Held-Morning guard.** Because a counter session re-runs every Morning system per tick, every once-per-day Morning system (Director, Rent, Assessment, RivalRestock, Recruit, Gossip, Commission) skips while `Counter is { Closed: false }` (e.g. `Economy/RentSystem.cs:53-56`); `CounterQueueSystem` registers ahead of them so the closing tick fires them exactly once.
+
+---
+
+### 3. The expedition truth
+
+**Party formation** (`Heroes/PartyFormation.cs:18-63`): alive heroes only, HeroId order. Parties of 3, each seeded with an anchor-class hero (Vanguard/Sentinel via `ClassDefinition.IsAnchor`) when available; leftovers form one smaller party, even solo. No player input touches this — ever.
+
+**Target floor** (`Expedition/ExpeditionSystem.cs:136-152`): `clamp(max(party's DeepestFloorReached) + 1, 1, venue.FloorCount)` — heroes push exactly one floor past their best — **unless** a party member accepted a bounty, in which case the bounty's floor overrides (R18's one "order" the player can buy).
+
+**Venue routing** (`Venues/VenueRouter.cs:58-125`): bounty parties always go to the Mine (bounties are structurally Mine-scoped — `ExpeditionSystem.cs:57-66`); bounty-free parties are routed draw-free by band (highest reached `EntryPower` wins), then queue length, then venue id. Live rotation = Mine, Gloomwood, Sunken Crypt (`Venues/VenueRegistry.cs:62-66`). Emberfall is built, tuned (EntryPower 72), and deliberately dormant — no art (`VenueRegistry.cs:51-60`).
+
+**Staged resolution.** The checkpoint is `min(1, target−1)` (`ExpeditionSystem.cs:26-31`) — i.e. camp always sits below floor 1, and a floor-1 target is unstaged (whole run resolves at the Expedition tick).
+
+A party **parks** (becomes `InFlightExpedition`, emits `PartyCampReport`) if and only if stage 1 (floors 1..checkpoint) ended with raw halt `TargetReached`: every stage-1 floor cleared, nobody dead, nobody too hurt (`Expedition/ExpeditionResolver.cs:99-128`). Any other stage-1 ending — gate held, floor lost, wipe, too-hurt — **finalizes immediately at the Expedition tick with no camp report**; the town still learns nothing until Evening (KTD5, `ExpeditionResolver.cs:104-106`). The parked record carries HP/packs/gold/floors/loot but deliberately **no RNG state** — stage-2 dice are provably undrawn while the party camps (`Contracts/Expedition.cs:78-82`).
+
+**What the player can do below ground** (Camp phase, both draw-free):
+- `SendSupplyAction`: one delivery per party per day, consumables only, must be the player's own unshelved craft, fee = 6 + 3×checkpoint = 9 g at the v1 checkpoint (`Expedition/CampHandlers.cs:28-32`) — priced deliberately above the pinned 8 g salve sale price so sending always costs more than selling (`CampHandlers.cs:24-27`). Front-inserted, so it is drunk first (`CampHandlers.cs:123-131`).
+- `RecallPartyAction`: stage 2 never rolls; halt = `Recalled`; stage-1 clears/ore/gold bank (`ExpeditionResolver.cs:159-165`).
+
+That is the complete list. The player cannot re-gear, heal, redirect, or reinforce a party underground.
+
+**The floor loop** (`ExpeditionResolver.cs:247-397`), per floor:
+1. Standing fighters (not dead, not retreated); none left → `PartyWiped`.
+2. **Structural gate**: `PartyAveragePower < venue.Gate(floor)` → `GateHeld`, no roll (`ExpeditionResolver.cs:288-292`). Mine gates: 0/15/35/60/100 (`VenueRegistry.cs:100-109`). The rival catalog's best loadout sums to 54, so rival-only gear can never clear floor 5 (`Economy/RivalCatalog.cs:25-29`).
+3. Each fighter fights the floor's monster 1-v-1 in HeroId order (`ExpeditionResolver.cs:297-313`). Per round (`FightMonster`, `:459-577`): flee check FIRST (below 25% MaxHp, no salve cancels it — the 2026-08-01 owner ruling, `:479-501`); then quaff if wounded (below 50% or one worst-case blow from death, `CombatMath.cs:37-38`, at most one heal per round, only if actually below MaxHp `:512-516`); then hero d6 attack, monster d6 counter if alive. Damage = `max(1, atk + roll − def)` (`Expedition/CombatMath.cs:70-75`). A hero death or flee leaves the floor uncleared (`:303-311`).
+4. Cleared floor: post-floor "too hurt to continue" check at the 50% drink line — drink first, re-check; still under → banks the clear and the run ends `TooHurt` (`:341-354,379-384`).
+5. Ore loot: every standing survivor draws 1–3 units of the floor's ore (+Lodestone bonus) (`:371-377`).
+6. **Competence retreat** (TUNING-C): any hero for whom the NEXT floor exceeds `DeepestFloorReached + 1` peels off — banked, still a Survivor, fights no deeper (`:393,405-426`). A bounty acceptor is exempt through the bounty floor (`ExpeditionSystem.cs:122-125`).
+
+**Halt precedence** (D4): `DeepestCleared == TargetFloor` is ALWAYS `TargetReached`, whatever ended the loop (`ExpeditionResolver.cs:194-195`; pinned `sim/GameSim.Tests/Expedition/StagedResolutionTests.cs:92-161`).
+
+**Death is decided at departure.** All rolls happen at the Expedition/Deep ticks; Evening only reveals. There is no rescue window for a death that has already been computed — `PendingExpeditions` already contains the corpse while the player is still living the same day.
+
+**Full HP every morning.** Working HP is initialized to `MaxHp` at resolve time (`ExpeditionResolver.cs:33,86`); no injury persists between days. The only persistent hero state: gold, gear, pack, memories, XP/Level, mood, depth record, Alive.
+
+---
+
+### 4. The causal chain, verified end to end
+
+One concrete path from hammer to legend, every function named:
+
+1. **Craft** — player clicks Forge (or finishes the two-act minigame): `ForgePanel` builds `CraftAction` (`godot/scripts/panels/ForgePanel.cs:535`; minigame path `QuenchMinigame.cs:279` → `ForgePanel.cs:727`) → `SimAdapter.Queue` → `GameKernel.ApplyNow` (`SimAdapter.cs:128`) → `CraftingHandlers.ApplyCraft` (`Crafting/CraftingHandlers.cs:40`) → grade resolution (`ForgeScorer.Score` for a hand trace `:145-147`; batch echo `:154-159`; puzzle scorers `:165-171`) → `QualityRoller.RollActive` (`Crafting/QualityRoller.cs:147-173`) → `ItemForge.Forge` (`Crafting/ItemForge.cs:34-57`, MakersMark "You") → optional modifier stamping (`CraftingHandlers.cs:263-302`) → optional signing (`Crafting/ArtifactSigning.cs:53-57`) → `ItemCrafted` event.
+2. **Shelve** — `StockAction` (`Economy/ShopHandlers.cs:42-98`; player-crafted only `:54`).
+3. **Sale** — next Morning `HeroShoppingSystem.Process` (`Heroes/HeroShoppingSystem.cs:39-75`): accepted-commission fulfillment first (`CommissionHandlers.TryFulfillFromShelf`, `Heroes/CommissionHandlers.cs:73-140`, guaranteed sale bypassing all verdict gates), else `EvaluateGearCandidates` → `ShoppingAi.EvaluateItem` (`Heroes/ShoppingAi.cs:110-187`) → `ApplyPurchase` equips the item, moves gold hero→player, emits `ItemSold` (`HeroShoppingSystem.cs:323-361`). Alternatively the player sells it by hand at the counter: `PresentItemAction` → `CounterQueueSystem.ResolvePresentedItem` (`Counter/CounterQueueSystem.cs:52-93`) → `HaggleResolver.OpenRound/ResolveHaggleResponse/CloseSale` (`Counter/HaggleResolver.cs:49-190`).
+4. **March** — same Morning, `MusterSystem` predicts (`Heroes/MusterSystem.cs:93-108`); Expedition tick: `BountyJudgingSystem.Process` → `ExpeditionSystem.Process` → `PartyFormation.FormParties` → `VenueRouter.ChooseVenue` → `ExpeditionResolver.ResolveStage1`, where `CombatMath.HeroAttack` reads the equipped weapon's Attack (`Expedition/CombatMath.cs:51-52`) and every roll is recorded into `CombatEvent.RecordedRolls` (`ExpeditionResolver.cs:521-534`).
+5. **Attribute** — at result-build time, `AttributionEngine.ComputeBeats` replays the recorded rolls counterfactually (`ExpeditionResolver.cs:218` → `Expedition/AttributionEngine.cs:19-145`): killing blow by a marked weapon (`:60-67`); lethal save = recompute the recorded hit without each marked defensive item, beat iff the hero lived and would have died (`:69-96`); breakpoint clear = party average would have missed the gate without the item (`:117-139`); Provisioned/PotionLifesave from recorded `ConsumableUse` data (`:156-229`). Beats exist ONLY for player-crafted items (`:231-232`) — rival gear can never earn a legend.
+6. **Reveal** — Evening, `ExpeditionRevealSystem.Reveal` (`Drama/ExpeditionRevealSystem.cs:51-236`): `PartyReturned` → deaths flip `Alive`, raise a `Memorial` naming the worn gear (`:59-78`) → loot gold to survivors only (`:80-92`) → depth records (`:94-112`) → each beat becomes an `AttributionBeatEvent` AND a permanent `ItemHistoryEntry` ("kill"/"save") on the item AND an `ItemMemory` on the bearer (`:114-150`) → XP/rank/level (`:184-217`) → ore offers minted (`:219-233`).
+7. **Echo** — next Morning `GossipSystem` voices yesterday's stamped events, ≤3 lines, each citing a real `EventId` (`Drama/GossipSystem.cs:33-60`, `GossipGenerator.cs:50`). `RelationshipBands`, `NeedsSystem`, `LegendQuery`, `RelationshipSystem` are all pure re-derivations over the same event log.
+
+**The chain is complete in code**, end to end, with no stubs. The partially-wired part is the *surface*: attribution lands on ProvenanceCard/LegendsWall/ledger prose, but the Phase-D sinks that would spend the resulting wealth are CLI-only (§1), and the arc's Climax event is explicitly a bare seam — `ClimaxReached` fires with no content behind it ("the Final Commission / Warden-of-the-Heart content the plan describes is a later, orchestrator-wired hook — this event is the seam it lands on", `Contracts/Events.cs:293-297`).
+
+---
+
+### 5. What the heroes actually decide, and on what inputs
+
+Hero autonomy is real but narrow: it is five deterministic, RNG-free decision rules over integers. No hero has goals, memory of intent, or plans — "personality" is derived arithmetic.
+
+1. **What to buy** (`Heroes/ShoppingAi.cs:110-187`), fixed check order: role fit (shield-allowed, weight cap) → veteran quality gate (floor ≥3 refuses below Common, trait-shifted ±1 grade — `ShoppingAi.cs:68-81,137-142`) → affordability → sentimental attachment (worn gear with ≥3 recorded deeds isn't displaced by a gain <5 — `:164-175`) → strict gear-score improvement. Winner = best gain-per-gold by integer cross-multiplication (`:251-267`). Inputs: class definition, gold, worn gear, item stats/quality, own memories. A boycotting hero (6+ days without buying from the player — `Heroes/NeedsSystem.cs:53`) reads player prices +40% for ranking only (`HeroShoppingSystem.cs:169-182`) — bias, never a block.
+2. **What price to tolerate** (`Counter/WillingnessModel.cs:135-147`): `list × (classFactor + Interest + mood + qualityBonus + traitBonus) / 1000`, capped at gold on hand. Class factors: Vanguard 1150 / Sentinel 1120 / Striker 1000 / Occultist 980 / Mystic 950 / Skirmisher 820 (`:36-45`). Quality: Poor −120‰ … Masterwork +220‰ (`:103-111`).
+3. **Whether to take a bounty** (`Bounties/BountyRules.cs:73-109`): refuse anything past `DeepestFloorReached + 1`; else accept iff `greed × reward − 20×level / floor ≥ 100 × floor`. Greed = 10 (14 Spendthrift, 6 Thrifty). First accepting hero in HeroId order claims it (`:121-142`). Every judgment emits a reason that names the arithmetic verbatim.
+4. **How deep to go / when to stop** (§3): target = own record + 1; flee below 25% HP; drink below 50% or when one worst-case hit from death; retreat at personal competence ceiling; "too hurt" ends the day. Craft modifiers shift the flee line ±8%/tier (`Crafting/CraftModifiers.cs:76-77`) — the one place the player's craft changes hero *behavior*, not just stats.
+5. **Whether to restock heals** (`HeroShoppingSystem.cs:252-300`): buy the single cheapest Heal when pack is below the trait target — Prepared 2, neutral 1, Reckless 0 (`Heroes/TraitEffects.cs:121-129`).
+
+**Traits are a hash, not a roll.** Each hero's 2 traits are recomputed on every read from `hash(HeroId, Name)` across 5 opposing axes — never stored, never drawn, campaign-invariant, so the starting six have the same traits in every campaign (`Heroes/TraitDefinition.cs:57-141`). Trait teeth are shop-side only plus bounty greed; nothing else in the raid reads them.
+
+**Identity of the cast**: fixed starting six (Torvald/Brunhilde Vanguard, Kael/Sable Striker, Elowen/Moss Mystic — `Heroes/HeroRoster.cs:37-51`); recruits are 3 RNG draws (name from a 24-name append-only pool, class from a 6-class pool, gold 30–60 — `HeroRoster.cs:67-85`), at most one per 2 Mornings while roster <6 (`Drama/RecruitSystem.cs:22-27`).
+
+**Mood is influence-only, structurally** (PKD7): `Hero.MoodPermille` is written by counter pins/fleeces (±60/−80 — `WillingnessModel.cs:82-88`), commission fulfillment/expiry (+100/−100), kin-of-the-dead seed (+60); it is read only by willingness math and gossip/bands. Party formation, floor choice, and expedition resolution never read it (`Contracts/Heroes.cs:61-67`).
+
+**Relationships and needs are read models, not state**: hero↔hero edges (ComradeBond +20, Grief +35, Grudge −30, 40-day linear decay, 2 outbids → RivalrySeed) are re-derived from the event log on every read (`Heroes/RelationshipSystem.cs:65-81`); nothing in the sim acts on them — they are narration inputs only.
+
+---
+
+### 6. The numbers that matter
+
+**Player start**: 100 g, 6 copper, blacksmith (or chosen profession) (`Kernel/GameFactory.cs:10-13`).
+
+**Action budget**: 5 slots/day (`Contracts/ActionBudget.cs:18`), reset only on day increment (`GameKernel.cs:169`). Slot-spending handlers (9): Craft, BuyOre, BuyMaterial, PostBounty, ReforgeHeirloom, UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork (each handler's `ActionSlotsRemaining - 1` site; see §7 for the drifted `ConsumesSlot` predicate).
+
+**Quality (passive roll)** (`Crafting/QualityRoller.cs:20-36,75-96`): `Roll100 + 8×(materialGrade + mastery − tier) + talent shifts`; ≤14 Poor / 15–64 Common / 65–89 Fine / 90–98 Superior / ≥99 Masterwork. Base odds at even material: 15/50/25/9/1%.
+
+**Quality (active/blacksmith-alchemist-tanner-engineer)** (`QualityRoller.cs:147-190`): `clamp(grade,0,1000) + jitter(±25)`; <200 Poor / <550 Common / <780 Fine / <930 Superior / ≥930 Masterwork. Material ceiling: under-tier caps Fine, even caps Superior, over-tier uncapped. Auto-craft grade = 550, hard-capped Superior — **the minigame is the only road to a rolled Masterwork** (`:167-170`). Batch echo: one hand-forge seeds up to 4 same-day auto-crafts at grade decaying −80‰/copy, floored at 550 (`CraftingHandlers.cs:21-27`).
+
+**Item stats**: quality multiplier 80/100/115/135/160% on Attack/Defense/heal magnitude; weight never scales (`Crafting/ItemForge.cs:20-28`).
+
+**Recipes**: 39 total — blacksmith 16 incl. Field Salve Heal-6 (`Crafting/RecipeTable.cs:54-82`), tanning 7, alchemy 8, engineering 8 (all using the same mine ores as inputs — `Professions/*/`). Trinket-slot recipes exist only in engineering/alchemy.
+
+**Materials** (`Materials/MaterialRegistry.cs:49-102`): priced pool of 14 (mine: copper 3 g/g1 … adamant 18 g/g5; gloomwood g8–11 at 36–54 g; sunken-crypt g1–5 at 3–18 g). Vendor markup +25% ceil (`Economy/MaterialVendorHandlers.cs:31,39-43`); hero ore offers sell at base — always cheaper than the vendor.
+
+**Combat** (`Expedition/CombatMath.cs`, `Venues/VenueRegistry.cs:94-137`): d6 rolls (0–5); hero atk = classBase + 2×level + weapon; def = level + shield + armor. Class bases: Vanguard 29 HP/4 atk, Striker 24/6, Mystic 20/3 (weight cap 4) (`Classes/ClassRegistry.cs:26-56`). Mine floor f: HP 12+10f, atk 5+6f, def 2+2f, gold 5+3f, gates 0/15/35/60/100. Flee <25%, drink <50%.
+
+**XP/Level** (`Heroes/HeroXp.cs:18-30,42-50,75-89`): 10 survive + 5/floor + 15/credited beat; ladder 0/50/150/300/500/800 = Novice→Legend = Level 1→6; Level feeds combat directly (U-C6 flip).
+
+**Counter** (`Counter/WillingnessModel.cs`): patience 3 rounds (±1 by trait); band round 1 = 82–98% of willingness, +9%/round; pin window ±6% (mood +60); fleece = counter above ceiling (mood −80); Interest cap 300‰ (present +150 role-fit, suggest +80).
+
+**Commissions** (`Heroes/CommissionSystem.cs:43-55,188-220`): ≤3 open, 5-day deadline, premium = 15 + 10×targetFloor + band bonus (Regular 10/Patron 25/Sworn 50); min quality = max(floor bar: <3 Common, 3–4 Fine, ≥5 Superior; band bar: Patron Fine, Sworn Superior). Fulfillment: +100 mood; accepted-then-expired: −100 mood; ignored posts expire silently.
+
+**Bounties** (`Bounties/BountyRules.cs:13-19,80`): escrowed at post; expiry 3 days (refund); UI floor hint 10 g/floor; acceptance bar D_q ≥ 100×floor.
+
+**Economy clocks**: Rent 30 g base / 10 days / +15% paid, +35% missed / cap 500 / confidence −150 missed, +40 paid (`Economy/RentSystem.cs:24-37`, `Contracts/World.cs:112-115`). Guild assessment 20 g base / 7 days / +50% paid, +75% missed / cap 800 (`Economy/GuildAssessmentSystem.cs:53-61`); confidence −10/day passive, +80 depth record, +50 beat, −100 death, +100 pass, −50 miss (`:42-51`); thresholds: <400 rival expands (+60‰ share/day), <200 hero considers leaving, 0 = one-shot soft-fail latch — **no era reset exists** (U-D5 unimplemented, `:25-27`). Destitution floor 10 g, fires only at a proven dead-end (`Economy/DestitutionRecoverySystem.cs:37-38`).
+
+**Rival** (`Economy/RivalCatalog.cs:42-69`, `RivalRestockSystem.cs:27-30,85-90`, `MarketShareSystem.cs:23-27`): 6 fixed Common lines, price = 2×statSum, stat caps 20/16/18 (loadout 54 < gate 100); share +150‰ on a fully idle day, −100‰ on any working day; discount ≤40% at full share.
+
+**Factions** (`Factions/FactionRegistry.cs:27-34`): only Deepvein is live (all 5 mine ores). Standing +5/buy, cap 100, −2/morning drift, max effect = 10% ore discount. Crownsguard/Ashguild/Wardens/Tidewrit are built but drive nothing (Deepvein is the only registered ore supplier the tariff path can find for live ores).
+
+**Drama director** (`Drama/DirectorSystem.cs:118-137`): tension +220/death +45/record +25/return, −40/day, −450 on fire; fires at Peak with ≥3-day refire gap or 12-day drought pity; incident category gated by deepest floor, magnitude by survived count, **never by gold** (`:59-66`).
+
+**Arc** (`Arc/ArcDirectorSystem.cs:36-46`): Act II at floor 3, Act III + Climax at floor 5, Ending 5 days later; world stays open after (`Contracts/Events.cs:299-303`).
+
+**Signing** (`Crafting/ArtifactSigning.cs:36,43-45`): Masterwork + all three sub-scores ≥950; name from a frozen 12-name pool hashed on campaign identity.
+
+**Craft modifiers** (`Crafting/CraftModifiers.cs:23-26,71-128`): Coward's/Braveheart oil ±8%/tier flee line; Leech rune 3 HP/tier on kill; Lodestone +1 ore/tier. Slots by grade 0/1/2/3/3; tier cap: mithril+ = 2, else 1; Masterwork grants +1 tier on the first modifier.
+
+**Balance gate = executable design intent** (Category=Balance, all driven by `Harness/BaselinePlayer`): floor 3 by day ≤40 and floor 5 not before day 8; player gold never negative; 3–6 alive at day 100; ≥60 attribution beats in the last 60 days (`sim/GameSim.Tests/Balance/BalanceSimTests.cs:16-29,77-98`). Gold conservation: town total moves by exactly −rivalSales −Σtariff −vendorCost +stipend, asserted per tick (`sim/GameSim.Tests/Economy/GoldConservationTests.cs:171-174`).
+
+---
+
+### 7. Dead and vestigial code — where drift has already happened
+
+1. **The four Phase-D gold sinks have no UI** (§1). Sim + CLI + tests complete; `PendingVerbVocab` strings pre-registered for three; zero Godot buttons. The economy's entire late-game spend loop is unreachable in the shipped client.
+2. **`ActionBudget.ConsumesSlot` has drifted from reality.** The Contracts predicate names 4 action types (`Contracts/ActionBudget.cs:26-27`) and a test pins "exactly the four" (`sim/GameSim.Tests/Kernel/ActionBudgetTests.cs:18-31`) — but **nine** handlers actually decrement the slot counter (grep `ActionSlotsRemaining - 1`: BountyHandlers:58, ForgeTierHandlers:113, LegendaryCommissionHandlers:127, ForgeSupplyHandlers:91, MasterworkAttemptHandlers:152, OreMarketHandlers:148, CraftingHandlers:228, MaterialVendorHandlers:96, HeirloomHandlers:147). No runtime code calls `ConsumesSlot` at all — `MarketShareSystem` reads the counter directly (`MarketShareSystem.cs:35`). The predicate is documentation-only and its pinning test now pins a false claim.
+3. **`ProfessionHandlers`'s class doc says it is not registered — it is.** "`this handler is NOT yet wired into GameComposition.BuildKernel`" (`Professions/ProfessionHandlers.cs:16-18`) vs. the actual registration (`GameComposition.cs:84`). Stale comment; the action is live.
+4. **`ShopHandlers` bearer check misses the Trinket slot.** Stocking rejects an item equipped as Weapon/Shield/Armor (`Economy/ShopHandlers.cs:59-66`) but not a worn Trinket — and trinket recipes exist (engineering `EngineeringProfession.cs:83-84`, alchemy `AlchemyProfession.cs:89-90`). A player-crafted trinket a hero is wearing can be re-shelved and sold to a second hero while the first still wears it. Compare `HeirloomHandlers.WoreItem` (`Crafting/HeirloomHandlers.cs:156-157`) and `DestitutionRecoverySystem` (`:85`), which both include Trinket. Suspected duplication defect (not fixed here per task constraints).
+5. **`BeatType.ToolAssist` has no emitter** — reserved for the Engineering add-on, declared and serialized but never produced (`Contracts/Enums.cs:63`). Deliberate contract-ahead-of-content.
+6. **Dormant content behind registries** (deliberate, pinned by tests): Emberfall venue (built, banded, no art — `VenueRegistry.cs:51-60`); electrum/orichalcum + Emberfall ore ladder outside the priced pool (`MaterialRegistry.cs:91-102`); Crownsguard et al. factions registered but supplying no live ore; the `CraftPuzzleInput` seam's four scorers are live but `SimulateActiveForge`'s heat-band policy path (`QualityRoller.cs:218-244`) is reachable only from minigame plumbing, never auto-craft.
+7. **Stale phase-count comments**: `CraftingHandlers.cs:8-9` and `ShopHandlers.cs:10-11` say "ALL THREE phases" — the day has had five phases since staged resolution landed; the handlers are in fact legal in all five (no phase filter). `Actions.cs:149` calls `HonorMemorialAction` "Evening/Night-legal"; no Night phase exists — the handler is Evening-only (`Drama/FarewellHandlers.cs:20-21`).
+8. **`RentState.ConfidencePermille`'s doc says "deliberately NOT wired yet"** (`Contracts/World.cs:106-108`) — it has since been wired by `GuildAssessmentSystem` (which the same file's later record documents). Only the first comment is stale; harmless but misleading to a reader who stops early.
+9. **`Bounty.Paid` field is never set true** — payout *removes* the bounty instead (`Contracts/Expedition.cs:106`; `BountySystems.cs:59`). Vestigial field, serialized forever.
+10. **Talent points cost nothing** — "the talent-point economy is deliberately deferred" (`CraftingHandlers.cs:13-16,332`), so `UnlockTalentAction` is a free, monotone unlock; BaselinePlayer unlocks one per morning for free (`Harness/BaselinePlayer.cs:26-36`).
+
+---
+
+### 8. Surprises — both directions
+
+**Richer than advertised:**
+
+1. **Attribution is real counterfactual math, not flavor.** "Your shield saved his life" is only claimed when replaying the recorded monster roll *without the shield's Defense* would have dropped the hero to ≤0 while he actually lived (`AttributionEngine.cs:69-96`). Same rigor for gate breakpoints and potion lifesaves. Very few games compute this honestly; this one does, and pins it in tests.
+2. **The determinism discipline is total.** One PCG32 stream, exactly four legitimate consumer sites (resolver, quality roller, recruit factory, drama director — `DirectorSystem.cs:9-10`); every other system is provably draw-free; traits/signing/gossip identity are hashes, not draws; 100-day byte-identical replay is a test (`BalanceSimTests.cs:100-105`). "Same seed + same actions = same world" is genuinely true.
+3. **Craft modifiers change behavior, not numbers.** No modifier is a stat bump — by explicit rule they move hero-AI decision thresholds (flee line, heal-on-kill, ore greed) (`Contracts/Items.cs:16-22`, `CraftModifiers.cs:6-12`). The player literally forges personality adjustments.
+4. **The balance suite encodes an emergent finding most designs never measure: provisioning kills.** Blanket salve-stocking *raises* party mortality ~+35–59% across seeds (risk compensation — topped-up heroes push one floor deeper and die there), and the camp send-supply verb measurably raises aggregate deaths too; both are pinned as documented behavior, not bugs (`sim/GameSim.Tests/Balance/SalveProvisioningBalanceTests.cs:126-157`, `Balance/CampProvisioningBalanceTests.cs:23-37`). Even after the flee-first fix, Prepared heroes die ~63–66% (only ≥5pp better than Reckless — `Balance/ConsumableTraitMortalityBalanceTests.cs:159-206`). **The game's healing economy is, by its own measurements, a trap the fiction sells as safety.**
+5. **The advisor is a full parallel rules mirror.** `ActionLegality` deliberately re-implements every handler's guard chain and keeps itself honest with a 100-day kernel-parity property test plus a throw-on-unmirrored-action rule (`Advisor/ActionLegality.cs:13-38`) — added after the four Phase-D verbs sat "illegal, forever, silently" in the mirror.
+6. **Four playable professions with four distinct minigames** (heat-trace forge, reagent brew, hide scrape, assembly bench), all scored in-sim as pure integer functions (`CraftingHandlers.cs:91-171`), all dual-wieldable (pick 2 — `ProfessionHandlers.cs:23`).
+
+**Thinner than advertised:**
+
+7. **"Autonomous heroes" are five arithmetic rules** (§5). There is no goal system, no needs simulation beyond a purchase-streak counter, no inter-hero behavior — relationships are narration-only derivations. The autonomy premise is honest at the *decision* level but there is no *life* behind it.
+8. **The Camp phase — the vigil the game's fiction leans on — runs zero systems and exists on most days as two empty bell-rings** (§2). Its two verbs are also, per the balance suite, net-harmful to use (surprise #4). The dramatic centerpiece phase is mechanically the thinnest phase in the game.
+9. **The campaign ending is a threshold and a tally.** Act II = someone reached floor 3; Act III + "Climax" = someone reached floor 5; Ending = 5 days later, fire one event with six counters on it (`ArcDirectorSystem.cs:57-110`). The climactic Final Commission the event doc gestures at does not exist (`Contracts/Events.cs:293-297`).
+10. **Heroes never leave, and the town can't die.** `HeroConsideringLeaving` is explicitly "a legible warning, never an automatic departure" (`Contracts/Events.cs:276-280`); confidence collapse latches one event and changes nothing else; destitution is rescued every Morning; rent/dues cap out. The only irreversible things in the entire simulation are hero deaths and the arc's forward day-stamps.
+11. **Counter haggling cannot lose a sale by countering.** Every `Counter(price)` closes the sale — above the ceiling is a *fleece* (sale + mood penalty), not a refusal (`HaggleResolver.cs:124-159`). Only patience exhaustion or an unwanted item walks. The risk the UI implies ("push too hard and lose them") does not exist within a round.
+12. **Rival competition is a price knob.** The rival never reacts to the player's stock, never improves, never runs out; it re-mints 6 fixed Common items every morning and discounts them only by the idleness meter (`RivalRestockSystem.cs:36-76`).
+13. **Quality's ceiling logic makes ore, not skill, the gate to the top band** — an even-tier material caps at Superior no matter how perfect the trace; over-tier ore uncaps it (`QualityRoller.cs:160-170,185-190`) — while auto-craft is capped at Superior no matter the material. Masterwork therefore requires BOTH the minigame AND over-graded ore (or the CLI-only masterwork/legendary sinks).
+
+---
+
+### Appendix: file → subsystem index
+
+| Subsystem | Files |
+|---|---|
+| Kernel | `sim/GameSim/Kernel/{GameKernel,ActionTiming,GameFactory,Pcg32,IntegerCurves,SaveCodec}.cs`, composition root `sim/GameSim/GameComposition.cs` |
+| Contracts (deny-listed) | `sim/GameSim/Contracts/*.cs` |
+| Crafting | `sim/GameSim/Crafting/{CraftingHandlers,QualityRoller,ItemForge,RecipeTable,TalentTree,CraftModifiers,ForgeScorer,ForgePath,ForgeTraceInput,HeatBandForge,ArtifactSigning,HeirloomHandlers}.cs` |
+| Heroes | `sim/GameSim/Heroes/{HeroRoster,HeroShoppingSystem,ShoppingAi,PartyFormation,MusterSystem,CommissionSystem,CommissionHandlers,TraitDefinition,TraitEffects,NeedsSystem,RelationshipBands,RelationshipSystem,HeroXp,HeroIdentity,HeroOps,RaidForecast}.cs` |
+| Expedition | `sim/GameSim/Expedition/{ExpeditionSystem,ExpeditionDeepSystem,ExpeditionResolver,CombatMath,AttributionEngine,CampHandlers,MonsterTable}.cs`, `sim/GameSim/Venues/*` |
+| Economy | `sim/GameSim/Economy/*.cs`, `sim/GameSim/Materials/*` |
+| Drama | `sim/GameSim/Drama/*.cs`, `sim/GameSim/Arc/ArcDirectorSystem.cs`, `sim/GameSim/Factions/*` |
+| Counter | `sim/GameSim/Counter/{CounterHandlers,CounterQueueSystem,HaggleResolver,WillingnessModel}.cs` |
+| Advisor (read models) | `sim/GameSim/Advisor/*.cs`, `sim/GameSim/Drama/{DemandBoard,GoldLedger,LedgerQuery,LegendQuery,DayLog}.cs`, `sim/GameSim/Progression/*` |
+| Surfaces | `godot/scripts/panels/*`, `godot/scripts/minigames/*`, `godot/scripts/town2d/*`, `godot/scripts/{MainUi,SimAdapter}.cs`; CLI `sim/GameSim.Cli/Program.cs` |
