@@ -61,6 +61,18 @@ public partial class ForgePanel : SimPanel
     private VBoxContainer? _recipeRows;
     private VBoxContainer? _talentRows;
 
+    // ── U3 (the Foundry, gold sink 1 + 3a): forge-tier chip, coal/flux stock chips, and the two
+    // Morning sinks (UpgradeForgeAction, BuyForgeSupplyAction) — sim-complete since Phase D but
+    // reachable from no screen the shipped client had. See this field group's own row builder in
+    // Refresh() for the ActionLegality mirror (UpgradeForgeLegal/BuyForgeSupplyLegal expose bare
+    // bools, never a reason — the strings here are hand-written client-side, same contract as the
+    // Morning vendor rows just above).
+    private VBoxContainer? _foundryRows;
+
+    /// <summary>Display tier for <see cref="ForgeTierHandlers.CurrentTierIndex"/> (0..4) — index 0
+    /// is the free starting baseline, shown "Forge I" per the unit brief.</summary>
+    private static readonly string[] TierRoman = { "I", "II", "III", "IV", "V" };
+
     // ── U3 (painted-interiors plan): FocusSection — the shelf/anvil stations' "press E, land on
     // the right rows" affordance. Scrolls to and briefly flashes an EXISTING section (no new
     // content, no verb change) — see FocusSection's own doc.
@@ -381,6 +393,85 @@ public partial class ForgePanel : SimPanel
                     ? "You can't afford that yet."
                     : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
             _vendorRows!.AddChild(ListRow(IconRegistry.Ore(key), key, $"{quote}g", have.ToString(), buy, legal, whyNot));
+        }
+
+        // U3 (the Foundry): tier/coal/flux chips + the Upgrade/Buy-supply rows. ActionLegality's
+        // UpgradeForgeLegal/BuyForgeSupplyLegal return a bare bool (no whyNot) — this mirrors their
+        // exact gate order (phase, then the handler's own ceiling/ore/gold/slots order) and writes
+        // the reason strings client-side, same contract the vendor row above already follows.
+        Clear(_foundryRows!);
+        var tierIndex = ForgeTierHandlers.CurrentTierIndex(state.Player);
+        var coalHave = state.Player.Materials.TryGetValue(ForgeSupplyHandlers.Coal, out var coalStock) ? coalStock : 0;
+        var fluxHave = state.Player.Materials.TryGetValue(ForgeSupplyHandlers.Flux, out var fluxStock) ? fluxStock : 0;
+
+        var foundryChips = AddRow(_foundryRows!);
+        foundryChips.AddChild(StatChip("Tier", $"Forge {TierRoman[tierIndex]}"));
+        foundryChips.AddChild(StatChip("Coal", coalHave.ToString()));
+        foundryChips.AddChild(StatChip("Flux", fluxHave.ToString()));
+
+        // UpgradeForgeAction is a BELL-RIDER (ActionTiming defers it) — Queue() puts it on the
+        // bell tray rather than resolving it now; PendingVerbVocab already names it.
+        var atCeiling = tierIndex > ForgeTierHandlers.MaxUpgradeIndex;
+        string upgradeName;
+        Texture2D? upgradeIcon;
+        string upgradePrice;
+        string upgradeOwned;
+        bool upgradeLegal;
+        string upgradeWhyNot;
+        if (atCeiling)
+        {
+            upgradeName = $"Forge {TierRoman[tierIndex]} (max)";
+            upgradeIcon = null;
+            upgradePrice = "—";
+            upgradeOwned = string.Empty;
+            upgradeLegal = false;
+            upgradeWhyNot = "The forge is already at Tier V — the maximum.";
+        }
+        else
+        {
+            var oreKey = ForgeTierHandlers.OreKey[tierIndex];
+            var upgradeCost = ForgeTierHandlers.GoldCost[tierIndex];
+            var oreHave = state.Player.Materials.TryGetValue(oreKey, out var oreStock) ? oreStock : 0;
+
+            upgradeName = $"Forge {TierRoman[tierIndex + 1]}";
+            upgradeIcon = IconRegistry.Ore(oreKey);
+            upgradePrice = $"{upgradeCost}g + {ForgeTierHandlers.OreQuantity} {oreKey}";
+            upgradeOwned = $"{oreHave}/{ForgeTierHandlers.OreQuantity} {oreKey}";
+            upgradeLegal = state.Phase == DayPhase.Morning
+                && oreHave >= ForgeTierHandlers.OreQuantity
+                && upgradeCost <= state.Player.Gold
+                && state.ActionSlotsRemaining > 0;
+            upgradeWhyNot = state.Phase != DayPhase.Morning
+                ? "The forge upgrades in the Morning."
+                : oreHave < ForgeTierHandlers.OreQuantity
+                    ? $"Not enough {oreKey} — need {ForgeTierHandlers.OreQuantity}, have {oreHave}."
+                    : upgradeCost > state.Player.Gold
+                        ? "You can't afford that yet."
+                        : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+        }
+
+        var upgradeButton = new Button { Name = "UpgradeForge", Text = "Upgrade" };
+        upgradeButton.Pressed += OnUpgradeForgePressed;
+        _foundryRows!.AddChild(ListRow(upgradeIcon, upgradeName, upgradePrice, upgradeOwned, upgradeButton, upgradeLegal, upgradeWhyNot));
+
+        // BuyForgeSupplyAction resolves IMMEDIATELY (not a bell-rider) — same shape as the
+        // material vendor rows above, just priced off ForgeSupplyHandlers.UnitPrice instead of
+        // MaterialRegistry (coal/flux are deliberately not in PricedPool — see that handler's doc).
+        foreach (var supplyKey in new[] { ForgeSupplyHandlers.Coal, ForgeSupplyHandlers.Flux })
+        {
+            var unitPrice = ForgeSupplyHandlers.UnitPrice(supplyKey);
+            var supplyHave = state.Player.Materials.TryGetValue(supplyKey, out var supplyStock) ? supplyStock : 0;
+            var buySupply = new Button { Name = $"BuySupply_{supplyKey}", Text = "Buy 1" };
+            buySupply.Pressed += () => OnBuyForgeSupplyPressed(supplyKey);
+            var supplyLegal = state.Phase == DayPhase.Morning
+                && unitPrice <= state.Player.Gold
+                && state.ActionSlotsRemaining > 0;
+            var supplyWhyNot = state.Phase != DayPhase.Morning
+                ? "The forge supplier sells in the Morning."
+                : unitPrice > state.Player.Gold
+                    ? "You can't afford that yet."
+                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+            _foundryRows!.AddChild(ListRow(null, supplyKey, $"{unitPrice}g", supplyHave.ToString(), buySupply, supplyLegal, supplyWhyNot));
         }
 
         Clear(_recipeRows!);
@@ -1033,6 +1124,27 @@ public partial class ForgePanel : SimPanel
         _feedback!.Text = Confirm(action, $"Bought 1 {materialKey}");
     }
 
+    /// <summary>U3: the forge-tier upgrade — always a BELL-RIDER (<see cref="GameSim.Kernel.ActionTiming"/>
+    /// defers <see cref="UpgradeForgeAction"/> unconditionally), so this always queues rather than
+    /// applying; <see cref="Confirm"/> reads that off the shared source and appends the bell
+    /// wording itself.</summary>
+    private void OnUpgradeForgePressed()
+    {
+        var action = new UpgradeForgeAction();
+        Adapter?.Queue(action);
+        _feedback!.Text = Confirm(action, "Requested a forge upgrade");
+    }
+
+    /// <summary>U3: coal/flux from the forge supplier — resolves immediately (mirrors
+    /// <see cref="OnBuyMaterialPressed"/>'s one-unit shape exactly).</summary>
+    private void OnBuyForgeSupplyPressed(string supplyKey)
+    {
+        var action = new BuyForgeSupplyAction(supplyKey, 1);
+        Adapter?.Queue(action);
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Coin);
+        _feedback!.Text = Confirm(action, $"Bought 1 {supplyKey}");
+    }
+
     private string SelectedMaterialOr(string recipeDefault)
     {
         var selected = _materialSelect!.Selected;
@@ -1120,6 +1232,14 @@ public partial class ForgePanel : SimPanel
         _vendorSectionRoot = vendorSection.Root; // U3: FocusSection("materials") scroll/flash target
         _vendorRows = new VBoxContainer { Name = "VendorRows" };
         vendorSection.Body.AddChild(_vendorRows);
+
+        // U3: the Foundry — forge-tier/coal/flux chips plus the Upgrade/Buy-supply rows, beside
+        // the Morning vendor rows just built above.
+        var foundrySection = Section("Foundry");
+        foundrySection.Root.Name = "FoundrySection";
+        body.AddChild(foundrySection.Root);
+        _foundryRows = new VBoxContainer { Name = "FoundryRows" };
+        foundrySection.Body.AddChild(_foundryRows);
 
         var recipeSection = Section("Recipes");
         recipeSection.Root.Name = "RecipeSection"; // U3: see VendorSection's own naming note above
