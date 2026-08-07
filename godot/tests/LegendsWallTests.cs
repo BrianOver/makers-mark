@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Kernel;
 using GdUnit4;
@@ -200,9 +201,21 @@ public class LegendsWallTests
             });
         }
 
+        // The fallen hero must still be IN state.Heroes, flagged dead — that is what the sim
+        // actually produces (ExpeditionRevealSystem.cs:70 does Heroes.SetItem(... Alive = false,
+        // DiedOnDay ...), it never removes the record). Without her,
+        // HeirloomHandlers.cs:135 cannot resolve a name and the lineage degrades to "of a fallen
+        // hero" — which made this fixture disagree with every real campaign, and made the reforge
+        // read as anonymous exactly where R6's "the dead persist as inheritance" is the point.
+        var fallen = new Hero(
+            FallenHeroId, "Sera", ClassRegistry.StrikerId, Level: 2, MaxHp: 24, Gold: 0,
+            Gear: wornGear, Memories: ImmutableList<ItemMemory>.Empty, Alive: false,
+            DeepestFloorReached: 3, DiedOnDay: 3);
+
         return baseState with
         {
             Player = baseState.Player with { Materials = materials ?? ImmutableSortedDictionary<string, int>.Empty.Add("copper", 2) },
+            Heroes = baseState.Heroes.SetItem(FallenHeroId.Value, fallen),
             Items = ImmutableSortedDictionary<int, Item>.Empty.Add(WornWeaponId.Value, weapon),
             Drama = baseState.Drama with
             {
