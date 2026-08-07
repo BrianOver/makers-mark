@@ -1,0 +1,50 @@
+# Game Design Recommendations & Review: NPC Shopkeeper & Hero Simulation
+
+Your game concept—inverting the classic MMO dynamic so that the player is the crafting NPC whose actions indirectly shape, make, or break autonomous heroes—is a brilliant, high-attraction premise. It directly addresses the "invisible merchant" trope by turning supply chains, timing, and preparation into a cozy, high-stakes simulation loop.
+
+Based on your current design progress and the core loop mechanics, here are targeted recommendations and critical architectural considerations to ensure the game delivers on its unique promise.
+
+---
+
+## 1. Recommendations on Core Flow & Day Structure
+
+### Guard Against the "Busywork Trap" in the Middle Phase
+* The Challenge: As noted in your design logs, the middle of the day (when heroes are out on quests) can easily devolve into dead time where the player simply hand-cranks through empty phases or performs meaningless micro-tasks just to stay busy.
+* The Solution: Avoid adding superficial reflex mini-games to phases where no meaningful choices are being made. Instead, treat the mid-day phases (Expedition and Camp/Vigil) as observation and preparation windows. The player watches their choices play out, tracks party health via the scrying/forecast mirrors, and races against the clock to forge critical salves or emergency gear for the upcoming Vigil checkpoint.
+
+### Elevate the Vigil as the Emotional Centerpiece
+* The Recommendation: Make the Camp/Vigil phase the dramatic anchor of your game loop. When a party successfully clears stage 1 and camps, the world should completely halt on a high-tension decision: Do they push deeper for legendary ore, or do I use my finite resources to send a runner with a vital healing salve?
+* Actionable Detail: When the player opens the forge during a Vigil stop, the feeling of "the world waiting while I hammer out this specific potion" creates a powerful, intimate connection between the player's hands and the heroes' survival.
+
+---
+
+## 2. Refinements to the Crafting & Minigame Layer
+
+### Link Crafting Precision Directly to Hero Survival
+* The Principle: Every tier of material and every percentage of precision in your minigames (like the quench band or alchemy cut) should correlate directly to a mechanic down in the mines.
+* Recommendation: Ensure that higher-tier items don't just grant flat stat bonuses, but unlock unique behavior modifications or survival thresholds for the heroes. For instance, a Masterwork-tier shield forged with precise timing shouldn't just absorb more damage; it should change the hero's defensive posture or reduce their retreat threshold, directly preventing a wipe during a brutal stage-2 boss floor.
+
+### Maintain the Contrast Between "Thinking" and "Reflex" Crafts
+* Recommendation: Preserve the intentional design contrast across your professions:
+  * Blacksmithing & Engineering: Kinetic, rhythmic, and precision-timed (bellows, anvil strikes, crank windups).
+  * Alchemy & Tanning: Methodical, spatial, and clockless (cauldron pour orders, hide scraping).
+* Why? This prevents gameplay fatigue. If every single building required fast-twitch reflex minigames, the "cozy simulation" vibe would quickly warp into a high-stress chore simulator.
+
+---
+
+## 3. Deepening Hero Autonomy & Legibility
+
+### Make Hero Personalities Readable at a Glance
+* The Challenge: Because heroes are autonomous and cannot be directly commanded, the player must be able to understand why a hero behaves the way they do.
+* Recommendation: Lean heavily into visible traits, history, and gear-gap indicators on the Muster and Demand boards. When a "Reckless" hero charges into the deep floors with inadequate healing gear, the player should instantly recognize the looming danger and feel motivated to intercept them at the market counter or prep a rescue payload for the Vigil.
+
+### Let the Attribution Engine Shine
+* The Recommendation: Ensure the Night reveal ledger prominently celebrates your items' specific deeds (e.g., "Emberbite turned the killing blow on floor 3" or "Your Iron Salve granted a Lethal Save"). This feedback loop is your game's primary dopamine hit. Seeing a weapon you spent 20 seconds crafting save a hero's life hours later closes the narrative arc in a deeply satisfying way.
+
+---
+
+## Summary of Next-Step Priorities
+
+1. Prioritize the Vigil Loop First: Ensure the Camp/Vigil stop is fully playable, emotionally resonant, and seamlessly tied to immediate crafting actions.
+2. Keep the Economy Honest: Avoid adding "theater" verbs (actions that consume player time without influencing hero outcomes or ledger results).
+3. Protect the Cozy-Yet-Stakes-Driven Tone: Balance the relaxing rhythm of the morning shop-keeping and crafting minigames with the genuine tension of waiting for the evening reveal.

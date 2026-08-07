@@ -1,0 +1,133 @@
+Recommendations for Maker’s Mark
+
+Overall Impression
+
+You are much closer to a genuinely new game than it first appears. The
+core idea is not “cozy crafting.” The core idea is being emotionally
+invested in autonomous AI characters through craftsmanship instead of
+combat.
+
+The real loop is: Observe -> Understand -> Craft -> Watch -> Feel
+
+The “watch” phase is the unique part of the experience.
+
+Major Recommendation
+
+The goal should not simply be to give the player more things to do
+during the middle of the day.
+
+Instead ask: “How do we make the player unable to look away?”
+
+Watching heroes should itself be engaging because the player is
+emotionally invested.
+
+Heroes Become “Your” Heroes
+
+Over time, players should stop thinking: “The Paladin”
+
+and instead think: “Oh thank God Sarah survived.”
+
+Relationships should become the primary long-term progression, more
+important than recipes or buildings.
+
+Hero Personality
+
+Heroes should have memorable quirks: - Refuses potions - Loves ugly
+equipment - Always bargains - Never bargains - Only buys blue gear -
+Loyal to your shop despite weaker equipment
+
+Players remember personalities more than optimization.
+
+Failure Creates Stories
+
+Never erase mistakes.
+
+Instead let failure create: - Memorials - Scars - Retirements -
+Heirlooms - Apprentices - Legends
+
+Example: A hero loses an arm because of poor armor, then later returns
+smiling and asks for another shield.
+
+Heroes Should Surprise Players
+
+Heroes should not always optimize.
+
+Sometimes they choose gear because: - It’s lucky. - It belonged to
+family. - They simply like it.
+
+This reinforces that they are people rather than algorithms.
+
+Emotional Loop
+
+Observe Hero Understand Hero Help Hero Watch Outcome Remember Story Care
+More Tomorrow
+
+Avoid reducing the game to: Craft -> Money -> Upgrade
+
+Preserve Uncertainty
+
+Avoid exposing perfect survival percentages.
+
+Instead present information like: “This looks dangerous.”
+
+Allow players to interpret situations.
+
+Maintain Hero Agency
+
+The player enables success rather than controlling it.
+
+Heroes still deserve credit for surviving.
+
+Letters
+
+One of the strongest possible additions is tiny personal letters.
+
+Examples:
+
+“Your shield held. Thought you’d like to know.”
+
+“The potion tasted awful. Worked though.”
+
+These do more for attachment than long dialogue trees.
+
+Town Reaction
+
+Let the town react naturally.
+
+Examples: - Baker comments on a hero you helped. - Children admire
+famous weapons. - Tavern patrons discuss successful expeditions.
+
+Living Item Histories
+
+Continue expanding item provenance.
+
+Example history: Forged Day 3 Killed Goblin King Saved Sarah Reforged
+after death Inherited by apprentice Retired
+
+These histories become collectibles in themselves.
+
+The Window
+
+A potentially iconic feature:
+
+Each morning heroes physically walk past your shop toward adventure.
+
+Players watch them leave wearing equipment they crafted.
+
+Eventually the player worries about specific heroes returning.
+
+This simple recurring scene reinforces the entire emotional premise.
+
+Biggest Design Rule
+
+Whenever considering a new mechanic ask:
+
+“Does this make me care more about a specific hero?”
+
+If the answer is no, it is probably secondary.
+
+Suggested Vision Statement
+
+Maker’s Mark is a cozy simulation where you never become the hero—you
+become the craftsman whose work shapes legends, one relationship at a
+time.
