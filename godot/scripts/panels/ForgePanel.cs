@@ -640,16 +640,33 @@ public partial class ForgePanel : SimPanel
                 // MasterworkAttemptHandlers' material-quantity math (efficiency talent, floor 1)
                 // is identical to CraftAction's. Zero RNG on the sim side (see that handler's
                 // class doc) — copy says "guaranteed", never "chance".
+                // Both new gates must ALSO mirror the handlers' recipe tier-gate talent check
+                // (MasterworkAttemptHandlers.Apply guard 5, LegendaryCommissionHandlers.Apply
+                // guard 5) or a talent-locked recipe shows an enabled button the sim then rejects.
+                // `unlocked` is this card's own talent set (see :527). NOTE: the plain Craft button
+                // above has this same gap and is NOT fixed here — pre-existing, booked, not a §2
+                // link break, and widening this diff to chase it is exactly the drift the plan bans.
+                var tierTalentOk = !(profession is not null
+                    && profession.TierGate.TryGetValue(recipe.Tier, out var tierGateNode)
+                    && !unlocked.Contains(tierGateNode));
+
                 var atMasterworkTier = tierIndex >= MasterworkAttemptHandlers.RequiredForgeTierIndex;
                 var mwCoalOk = coalHave >= MasterworkAttemptHandlers.CoalCost;
                 var mwFluxOk = fluxHave >= MasterworkAttemptHandlers.FluxCost;
                 var mwSurcharge = MasterworkAttemptHandlers.GoldSurchargePerTier * (tierIndex + 1);
                 var mwGoldOk = state.Player.Gold >= mwSurcharge;
-                var mwLegal = atMasterworkTier && affordable && mwCoalOk && mwFluxOk && mwGoldOk
+                var mwLegal = atMasterworkTier && tierTalentOk && affordable && mwCoalOk && mwFluxOk && mwGoldOk
                     && state.ActionSlotsRemaining > 0;
+                // Display tier is index + 1 (index 0 = Forge I), so the REQUIRED display tier is
+                // RequiredForgeTierIndex + 1 — matching the handler's own rejection string at
+                // MasterworkAttemptHandlers.cs:79. An earlier "+ 2" here advertised Tier III for a
+                // gate that opens at Tier II, and the test only asserted the words "Forge Tier"
+                // rather than the number, so it could not catch the drift.
                 var mwWhyNot = !atMasterworkTier
-                    ? $"Requires Forge Tier {MasterworkAttemptHandlers.RequiredForgeTierIndex + 2} or higher (workshop is Tier {TierRoman[tierIndex]})."
-                    : !affordable
+                    ? $"Requires Forge Tier {MasterworkAttemptHandlers.RequiredForgeTierIndex + 1} or higher (workshop is Tier {TierRoman[tierIndex]})."
+                    : !tierTalentOk
+                        ? $"This recipe is tier {recipe.Tier} — unlock its talent first."
+                        : !affordable
                         ? $"Not enough {material} — need {needed}, have {have}."
                         : !mwCoalOk
                             ? $"Not enough coal — need {MasterworkAttemptHandlers.CoalCost}, have {coalHave}."
@@ -674,11 +691,13 @@ public partial class ForgePanel : SimPanel
                 var legendaryMaterialOk = have >= legendaryNeeded;
                 var legendaryCost = LegendaryCommissionHandlers.BaseGold * (tierIndex + 1);
                 var legendaryGoldOk = state.Player.Gold >= legendaryCost;
-                var legendaryLegal = !legendaryCapped && legendaryMaterialOk && legendaryGoldOk
+                var legendaryLegal = !legendaryCapped && tierTalentOk && legendaryMaterialOk && legendaryGoldOk
                     && state.ActionSlotsRemaining > 0;
                 var legendaryWhyNot = legendaryCapped
                     ? $"All {LegendaryCommissionHandlers.MaxPerCampaign} legendary commissions for this era are already spoken for."
-                    : !legendaryMaterialOk
+                    : !tierTalentOk
+                        ? $"This recipe is tier {recipe.Tier} — unlock its talent first."
+                        : !legendaryMaterialOk
                         ? $"Not enough {material} — need {legendaryNeeded}, have {have}."
                         : !legendaryGoldOk
                             ? $"Not enough gold — need {legendaryCost}, have {state.Player.Gold}."

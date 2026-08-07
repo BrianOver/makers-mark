@@ -189,9 +189,14 @@ public partial class AdventureTicker : PanelContainer
         // passes this file's own admission test ("would a townsperson hear about it? A daily gauge
         // movement would not."). Copy stays scoped to the one mechanism the sim actually runs — a
         // discount rising or fading — not a reputation system it doesn't.
+        // The cooled line says the DISCOUNT fades, never that the price rises. Standing's negative
+        // half is dormant in this core (KTD8; FactionDriftSystem.StepTowardZero floors at 0), and
+        // "Cooled" fires when standing merely drops back through the favored-exit boundary — often
+        // still well above zero. So ore never costs more than the neutral base ask, and "costs more
+        // now" would advertise a surcharge mechanic the sim cannot run.
         FactionStandingShifted e => e.Direction == StandingShiftDirection.Favored
             ? $"The {e.FactionName} remember your custom now — their ore comes cheaper."
-            : $"The {e.FactionName} are cooling toward your shop — their ore costs more now.",
+            : $"The {e.FactionName} are cooling toward your shop — their ore's discount is fading.",
 
         // U7 (moment-lines batch): four economic moments that move the player's gold and, until
         // now, said nothing about it. RentSystem/GuildAssessmentSystem run their own cadences

@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Professions;
 using GdUnit4;
 using Godot;
 using static GdUnit4.Assertions;
@@ -258,6 +259,66 @@ public class RejectionUxTests
             .OverrideFailureMessage(
                 "These real kernel reasons still have no specific mapping:\n  " +
                 string.Join("\n  ", stillShrugging))
+            .IsEmpty();
+    }
+
+    /// <summary>
+    /// The profession-switch surface (U8a) added three <c>FriendlyRejection</c> branches, and this pins
+    /// them the way the function's own doc comment intends — it is public precisely so this suite can
+    /// call it directly.
+    ///
+    /// <para><b>The reason strings come from the KERNEL, not from literals retyped here.</b> Every
+    /// mapping in <c>FriendlyRejection</c> is a <c>StartsWith</c> against wording owned by
+    /// <c>ProfessionHandlers</c>. A literal copied into this test would keep passing after the handler
+    /// reworded its refusal, while the shipped client silently fell back to the generic shrug — the
+    /// "computed correctly, dropped before it reaches a pixel" failure this file exists to catch. So
+    /// each case drives the real handler through the real kernel and feeds whatever it actually said
+    /// into the mapper.</para>
+    /// </summary>
+    [TestCase]
+    public void ProfessionRefusals_AreMapped_UsingTheKernelsOwnWording_NeverAShrug()
+    {
+        const string shrug = "That didn't work out.";
+        var registered = ProfessionRegistry.All.Keys.ToList();
+
+        // Zero selected, over the cap, and an unregistered id — the three guards
+        // ProfessionHandlers.Apply enforces, in its own order.
+        PlayerAction[] doomed =
+        [
+            new SetProfessionsAction([]),
+            new SetProfessionsAction([.. registered, "one-profession-too-many"]),
+            new SetProfessionsAction(["no-such-profession"]),
+        ];
+
+        var unmapped = new List<string>();
+        foreach (var action in doomed)
+        {
+            // Through the real adapter and the real kernel, so the reason is whatever the shipped
+            // handler actually produces. SetProfessionsAction is a bell-rider, so the refusal lands
+            // on the tick, not on submission.
+            var adapter = ScriptedSession.StartAdapter();
+            adapter.Queue(action);
+            adapter.AdvancePhase();
+
+            var rejected = adapter.LastRejections.FirstOrDefault(r => r.Action is SetProfessionsAction);
+            AssertThat(rejected)
+                .OverrideFailureMessage(
+                    $"{action.GetType().Name} with {((SetProfessionsAction)action).Professions.Count} " +
+                    "profession(s) was expected to be refused, but the kernel accepted it.")
+                .IsNotNull();
+
+            var friendly = MainUi.FriendlyRejection(rejected!.Reason, action);
+            if (friendly == shrug)
+            {
+                unmapped.Add($"{rejected.Reason}  ->  {friendly}");
+            }
+        }
+
+        AssertThat(unmapped)
+            .OverrideFailureMessage(
+                "These real ProfessionHandlers refusals fall through to the bare shrug, so the " +
+                "profession surface tells the player nothing about what to change:\n  " +
+                string.Join("\n  ", unmapped))
             .IsEmpty();
     }
 

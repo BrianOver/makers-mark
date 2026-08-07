@@ -40,7 +40,14 @@ public static class PendingVerbVocab
     {
         UpgradeForgeAction => "At the bell: the forge rises to its next tier.",
         SetProfessionsAction => "At the bell: your professions change.",
-        CommissionLegendaryWorkAction => "At the bell: the Guild furnishes what your forge needs — the legendary work that comes back is still yours.",
+        // The player supplies EVERYTHING here: LegendaryCommissionHandlers.Apply deducts
+        // BaseGold x (tier+1) from Player.Gold and MaterialMultiplier x the recipe's materials from
+        // Player.Materials, then mints a guaranteed Masterwork. No Guild, no patron, no external
+        // supplier appears anywhere in that handler. An earlier version of this line said the Guild
+        // "takes your commission" (wrong: the item never leaves you), and the fix for that said the
+        // Guild "furnishes what your forge needs" (also wrong, and worse: it invented a
+        // resource-supplying NPC the sim does not implement). Say what the handler does.
+        CommissionLegendaryWorkAction => "At the bell: double stock and coin, and the work leaves your anvil a masterwork.",
         _ => throw Unnamed(action),
     };
 

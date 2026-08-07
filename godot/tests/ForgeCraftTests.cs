@@ -252,7 +252,14 @@ public class ForgeCraftTests
             var state = ui.Adapter.CurrentState;
             AssertThat(ActionLegality.IsLegal(state, new MasterworkAttemptAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial), state.Phase)).IsFalse();
             AssertThat(masterwork.Disabled).IsTrue();
-            AssertThat(masterwork.TooltipText).Contains("Forge Tier");
+            // Assert the NUMBER, not just the words. The gate opens at Forge Tier II
+            // (RequiredForgeTierIndex 1, display tier index + 1), and the handler's own rejection
+            // says the same. A `Contains("Forge Tier")` assertion passed while this string
+            // advertised Tier III, which is exactly how the off-by-one shipped.
+            AssertThat(masterwork.TooltipText)
+                .Contains($"Forge Tier {MasterworkAttemptHandlers.RequiredForgeTierIndex + 1} or higher");
+            AssertThat(masterwork.TooltipText).NotContains(
+                $"Forge Tier {MasterworkAttemptHandlers.RequiredForgeTierIndex + 2}");
         }
         finally { Unmount(ui); }
     }
