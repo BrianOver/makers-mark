@@ -72,7 +72,9 @@ public partial class AdventureTicker : PanelContainer
     /// (R15). Filters to the ambient story surface: item sales, party departures, floor
     /// records, gossip, death (Evening-only — see the class doc), commission lifecycle,
     /// arrivals, the drama director's daily incident, the confidence spiral's edge-triggered
-    /// warnings, and (U5(b)) the faction-standing gauge's own edge-triggered threshold crossings.
+    /// warnings, (U5(b)) the faction-standing gauge's own edge-triggered threshold crossings, and
+    /// (U7) the four cadence-periodic/edge-triggered economic moments: rent paid/missed, guild
+    /// assessment passed/missed, a hero's rank-up crossing, and a paid-out bounty.
     /// Unrecognized/irrelevant event types render nothing; a batch
     /// with no qualifying event appends nothing (no placeholder noise). Same-day repeats
     /// (identical formatted text) are deduped — which is also the spam guard, since a
@@ -190,6 +192,36 @@ public partial class AdventureTicker : PanelContainer
         FactionStandingShifted e => e.Direction == StandingShiftDirection.Favored
             ? $"The {e.FactionName} remember your custom now — their ore comes cheaper."
             : $"The {e.FactionName} are cooling toward your shop — their ore costs more now.",
+
+        // U7 (moment-lines batch): four economic moments that move the player's gold and, until
+        // now, said nothing about it. RentSystem/GuildAssessmentSystem run their own cadences
+        // (10-day rent, 7-day guild dues — RentState.CadenceDays / GuildAssessmentState.CadenceDays)
+        // rather than firing every Morning, so these clear this file's own admission test: a
+        // townsperson would hear about a bill coming due, not about a gauge ticking down. Copy
+        // reads straight off each event's own payload (amount paid/owed, the next amount due, the
+        // miss count) rather than inventing numbers the sim didn't hand over.
+        RentPaid e =>
+            $"Rent paid — {e.AmountGold}g to the guild. Next due: {e.NextAmountDueGold}g.",
+        RentMissed e =>
+            $"Rent went unpaid — {e.AmountDueGold}g owed, {e.MissedPayments} missed payment(s) now. " +
+            $"The guild's patience is thinning; next due climbs to {e.NextAmountDueGold}g.",
+
+        GuildAssessmentPassed e =>
+            $"Guild Assessment paid — {e.DuesPaidGold}g. Next dues: {e.NextDuesGold}g.",
+        GuildAssessmentMissed e =>
+            $"Guild Assessment missed — {e.DuesDueGold}g unpaid, {e.MissedAssessments} time(s) now. " +
+            $"Next dues climb to {e.NextDuesGold}g.",
+
+        // The cosmetic rank ladder (HeroRank.For, already visible in the Tavern roster) only
+        // becomes news on the CROSSING. ExpeditionRevealSystem stamps this event solely when a
+        // hero's new rank differs from their old one — ordinary XP gain within a rank emits
+        // nothing at all — so there is no per-XP-tick spam for this line to guard against.
+        HeroRankUp e => $"{HeroName(state, e.Hero)} has risen to {e.Rank}.",
+
+        // BountyPaid is the town paying out — news, unlike its sibling BountyPosted (still silent;
+        // see AdventureTickerTests.PlayerOwnActionEvents_NeverRender): posting is the player's own
+        // action read back at them, paying out is someone else's gold moving.
+        BountyPaid e => $"{HeroName(state, e.To)} collects {e.RewardGold}g on a completed bounty.",
 
         // DELIBERATELY still silent here, and why:
         //  • SupplyDelivered — confirmation of the player's OWN camp action, already shown by

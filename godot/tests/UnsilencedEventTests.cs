@@ -410,6 +410,172 @@ public class UnsilencedEventTests
             OpenOreOffers = ImmutableList.Create(new OreOffered(new HeroId(1), "copper", totalQuantity, unitPrice)),
         };
 
+    // ── economic moments (U7, the moment-lines batch) ──────────────────────────────────────────
+    // Four events that move the player's gold and, before this pass, told the player nothing:
+    // RentPaid/RentMissed (RentSystem, 10-day cadence), GuildAssessmentPassed/Missed
+    // (GuildAssessmentSystem, 7-day cadence), HeroRankUp (a rank-CROSSING only — ordinary XP gain
+    // emits no event at all), and BountyPaid (the town paying out, unlike BountyPosted's own-action
+    // silence pinned above in PlayerOwnActionEvents_NeverRender / AdventureTickerTests.cs).
+
+    [TestCase]
+    public void RentPaid_RendersOneLine_NamingAmountAndNextDue()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            ticker.OnPhaseCompleted(
+                DayPhase.Morning, completedDay: 10, StagedWorld(),
+                ImmutableList.Create<GameEvent>(new RentPaid(AmountGold: 40, NextAmountDueGold: 46)));
+
+            AssertThat(ticker.Lines.Count).IsEqual(1);
+            AssertThat(ticker.DisplayText).Contains("Rent paid — 40g");
+            AssertThat(ticker.DisplayText).Contains("Next due: 46g");
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
+    /// <summary>Missed rent reads with an escalated tone (unpaid amount, miss count, and the
+    /// climbing next-due figure) rather than the plain paid line — RentSystem's own chip/tooltip on
+    /// <c>MainUi</c> is untouched by this unit (still reads <see cref="RentState"/> directly), so
+    /// this only pins the NEW marquee surface, not a re-test of the existing gauge.</summary>
+    [TestCase]
+    public void RentMissed_RendersWithEscalatedTone()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            ticker.OnPhaseCompleted(
+                DayPhase.Morning, completedDay: 20, StagedWorld(),
+                ImmutableList.Create<GameEvent>(
+                    new RentMissed(AmountDueGold: 46, NextAmountDueGold: 62, MissedPayments: 2, ConfidencePermille: 700)));
+
+            AssertThat(ticker.Lines.Count).IsEqual(1);
+            AssertThat(ticker.DisplayText).Contains("Rent went unpaid — 46g owed, 2 missed payment(s) now");
+            AssertThat(ticker.DisplayText).Contains("next due climbs to 62g");
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
+    [TestCase]
+    public void GuildAssessment_PassedAndMissed_Render()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            ticker.OnPhaseCompleted(
+                DayPhase.Morning, completedDay: 7, StagedWorld(),
+                ImmutableList.Create<GameEvent>(
+                    new GuildAssessmentPassed(DuesPaidGold: 60, NextDuesGold: 90, ConfidencePermille: 820)));
+
+            AssertThat(ticker.Lines.Count).IsEqual(1);
+            AssertThat(ticker.DisplayText).Contains("Guild Assessment paid — 60g");
+            AssertThat(ticker.DisplayText).Contains("Next dues: 90g");
+
+            ticker.OnPhaseCompleted(
+                DayPhase.Morning, completedDay: 14, StagedWorld(),
+                ImmutableList.Create<GameEvent>(
+                    new GuildAssessmentMissed(DuesDueGold: 90, NextDuesGold: 157, MissedAssessments: 1, ConfidencePermille: 600)));
+
+            AssertThat(ticker.Lines.Count).IsEqual(2);
+            AssertThat(ticker.DisplayText).Contains("Guild Assessment missed — 90g unpaid, 1 time(s) now");
+            AssertThat(ticker.DisplayText).Contains("Next dues climb to 157g");
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
+    /// <summary>Pins the crossing-only contract at the ticker's own boundary: it renders when
+    /// handed a <see cref="HeroRankUp"/>, and stays silent when a day's batch has none — which is
+    /// exactly what ordinary XP gain under a rank threshold produces. The sim-side half of the
+    /// guarantee (a survivor who stays under the next threshold never gets one stamped at all) is
+    /// proven in <c>ExpeditionRevealSystemTests.Survivor_AccruesXp_ForSurvivalAndDepth_NoBeats</c>
+    /// and <c>.CrossingARankThreshold_EmitsNamedHeroRankUp</c> — the same structural argument this
+    /// file's class doc already makes for <see cref="HeroDied"/>.</summary>
+    [TestCase]
+    public void HeroRankUp_RendersOnCrossing_NotOnOrdinaryXpGain()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            var state = StagedWorld();
+
+            ticker.OnPhaseCompleted(
+                DayPhase.Evening, completedDay: 6, state,
+                ImmutableList.Create<GameEvent>(new HeroRankUp(new HeroId(1), "Delver")));
+
+            AssertThat(ticker.Lines.Count).IsEqual(1);
+            AssertThat(ticker.DisplayText).Contains("V1 has risen to Delver");
+
+            // Ordinary XP gain within a rank stamps no HeroRankUp at all — nothing new to render.
+            ticker.OnPhaseCompleted(DayPhase.Evening, completedDay: 7, state, ImmutableList<GameEvent>.Empty);
+
+            AssertThat(ticker.Lines.Count).IsEqual(1);
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
+    /// <summary>The two bounty events pinned together deliberately, so the distinction can never
+    /// silently drift apart: <see cref="BountyPaid"/> is the town paying out (news), while
+    /// <see cref="BountyPosted"/> — the player's own action read back at them — stays silent (also
+    /// pinned standalone by <c>AdventureTickerTests.PlayerOwnActionEvents_NeverRender</c>).</summary>
+    [TestCase]
+    public void BountyPaid_Renders_AndBountyPosted_StillRendersNothing()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            var events = ImmutableList.Create<GameEvent>(
+                new BountyPosted(new BountyId(1), TargetFloor: 4, RewardGold: 50),
+                new BountyPaid(new BountyId(2), new HeroId(1), RewardGold: 75));
+
+            ticker.OnPhaseCompleted(DayPhase.Evening, completedDay: 8, StagedWorld(), events);
+
+            AssertThat(ticker.Lines.Count).IsEqual(1);
+            AssertThat(ticker.DisplayText).Contains("V1 collects 75g on a completed bounty");
+            AssertThat(ticker.DisplayText).NotContains("50g");
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
+    /// <summary>A day with none of the four U7 economic moments must add nothing — the no-
+    /// placeholder-noise contract <see cref="AdventureTicker.OnPhaseCompleted"/> already documents.</summary>
+    [TestCase]
+    public void EconomicMoments_DayWithNoneOfTheFour_RendersNothing()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            ticker.OnPhaseCompleted(DayPhase.Morning, completedDay: 5, StagedWorld(), ImmutableList<GameEvent>.Empty);
+
+            AssertThat(ticker.Lines.Count).IsEqual(0);
+            AssertThat(ticker.DisplayText).IsEmpty();
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
     // ── the ending chronicle ────────────────────────────────────────────────────────────────────
 
     [TestCase]
