@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Classes;
@@ -40,6 +41,23 @@ namespace GodotClient.Panels;
 /// threshold yet, no pair has a qualifying shared-event edge yet), matching
 /// <see cref="NeedsSystem.Snapshot"/>'s own "a bark, not a status dump" design: nothing new is
 /// invented when the sim has nothing to report.</para>
+///
+/// <para>U6 (a third zero-client-reader gap closed the same way): <see cref="HeroDecisionExplained"/>
+/// is stamped in two places — <c>HeroShoppingSystem</c> (chosen gear vs. the runner-up, when the
+/// player's own shelf was on one side of the decision or the other) and <c>MusterSystem</c> (a
+/// party's accepted bounty overriding its default target floor) — and rendered nowhere in the
+/// client before this. Both sources share one event shape (Chosen/RunnerUp/Reason/GapPermille)
+/// keyed by a <see cref="HeroId"/> (the shopping hero, or the muster party's leader), so one
+/// per-hero reader (<see cref="DecisionsToday"/>, mirroring <see cref="ShopPanel"/>'s
+/// <c>PassesToday</c> grouping of <see cref="HeroPassedOnItem"/>) covers both without caring
+/// which system stamped it — this panel is literally "the guild hall the heroes muster in"
+/// (see <see cref="EnsureBuilt"/>'s banner remark), so a muster-floor decision belongs here as
+/// much as a shopping one. The line reuses <c>GameSim.Cli.EventNarration</c>'s exact wording for
+/// the two surfaces to never drift, only dropping the redundant hero-name prefix the CLI needs
+/// and this card already has. Deliberately NOT on <c>AdventureTicker</c>: it fires per shopping
+/// hero every morning, which would crowd the news above it out of a finite marquee — the same
+/// reason <c>MarketShareShifted</c> is a pinned ticker exclusion
+/// (<c>AdventureTickerTests</c>/<c>UnsilencedEventTests</c>).</para>
 /// </summary>
 public partial class HeroPanel : SimPanel
 {
@@ -78,17 +96,46 @@ public partial class HeroPanel : SimPanel
         // rescans the whole EventLog, so batching it here avoids an O(heroes^2) refresh.
         var needsByHero = NeedsSystem.Snapshot(state).ToImmutableDictionary(e => e.Hero.Value);
 
+        // U6: same batching rationale — one EventLog scan for the whole roster instead of one
+        // per card.
+        var decisionsToday = DecisionsToday(state);
+
         foreach (var hero in alive)
         {
-            RenderHeroCard(section.Body, hero, state, needsByHero);
+            RenderHeroCard(section.Body, hero, state, needsByHero, decisionsToday);
         }
+    }
+
+    /// <summary>U6: today's <see cref="HeroDecisionExplained"/> cards, grouped by the hero they
+    /// belong to. Mirrors <see cref="ShopPanel"/>'s <c>PassesToday</c> — same "only what
+    /// happened today" filter, same per-hero/per-item bucketing shape — applied to the OTHER
+    /// zero-client-reader legibility event (see the type remarks for why one reader covers both
+    /// <c>HeroShoppingSystem</c>'s and <c>MusterSystem</c>'s stamps).</summary>
+    private static Dictionary<int, List<HeroDecisionExplained>> DecisionsToday(GameState state)
+    {
+        var decisions = new Dictionary<int, List<HeroDecisionExplained>>();
+        foreach (var gameEvent in state.EventLog)
+        {
+            if (gameEvent is HeroDecisionExplained decision && gameEvent.Day == state.Day)
+            {
+                if (!decisions.TryGetValue(decision.Hero.Value, out var list))
+                {
+                    decisions[decision.Hero.Value] = list = [];
+                }
+
+                list.Add(decision);
+            }
+        }
+
+        return decisions;
     }
 
     /// <summary>One hero card: name/class header, a standing/deepest/XP/rank/needs chip row, a
     /// summed-deeds line, an optional trait-chip row (B2), and an optional relationship-chip row
     /// (B3) naming who this hero bonds with or resents.</summary>
     private void RenderHeroCard(
-        Node parent, Hero hero, GameState state, ImmutableDictionary<int, NeedsEntry> needsByHero)
+        Node parent, Hero hero, GameState state, ImmutableDictionary<int, NeedsEntry> needsByHero,
+        Dictionary<int, List<HeroDecisionExplained>> decisionsToday)
     {
         var card = Card($"HeroCard_{hero.Id.Value}");
         parent.AddChild(card);
@@ -147,6 +194,24 @@ public partial class HeroPanel : SimPanel
                 var relChip = StatChip(RelationshipChipLabel(edge.Kind), otherName, RelationshipChipTone(edge.Kind));
                 relChip.TooltipText = $"{RelationshipSystem.Phrase(edge.Kind)} {otherName} (strength {edge.Value}).";
                 relRow.AddChild(relChip);
+            }
+        }
+
+        // U6: today's "why" card(s) for this hero — a shopping decision that touched the
+        // player's own shelf, or (leader only) a bounty overriding the party's default target
+        // floor. Same Chosen/RunnerUp/Reason/GapPermille wording GameSim.Cli.EventNarration
+        // already prints for the CLI, minus the redundant hero-name prefix this card already
+        // carries in its header above. Absent whenever the sim itself declined to stamp one
+        // (HeroShoppingSystem's early-return when neither side of the decision touched the
+        // player's shelf) — this reader never invents an explanation the sim didn't make.
+        if (decisionsToday.TryGetValue(hero.Id.Value, out var decisions))
+        {
+            foreach (var decision in decisions)
+            {
+                var why = AddLabel(
+                    body,
+                    $"  ◆ {decision.Chosen} over {decision.RunnerUp}: {decision.Reason} ({decision.GapPermille}‰ gap)");
+                why.AddThemeColorOverride("font_color", GameTheme.TextDim);
             }
         }
     }
