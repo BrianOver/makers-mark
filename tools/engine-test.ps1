@@ -265,11 +265,30 @@ if ($suiteTotal -lt $MinTests) {
     )
 }
 
-if ($testExit -ne 0) {
+# --- Trap 4: the runner can report failures AND still exit 0 -------------------------------------
+# Observed 2026-08-07 on a real wave: the summary line read "Failed: 5, Passed: 940, Total: 945"
+# and the process exit code was 0. This script's ONLY failure check was `$testExit -ne 0`, so it
+# printed "PASS - 945 tests, runtime healthy", wrote a receipt, and the failures were reported to
+# the owner as green twice before CI caught them.
+#
+# That is the same mistake this file's own header warns about for Total: trusting one number the
+# runner happens to emit instead of reading what actually happened. The count is authoritative and
+# the exit code is advisory -- never the other way round. Sum every suite's Failed: (a run can emit
+# more than one summary line) and refuse on any nonzero, whatever the process claimed.
+$failedTotal = 0
+foreach ($m in [regex]::Matches($text, 'Failed:\s+(\d+)')) { $failedTotal += [int]$m.Groups[1].Value }
+
+if ($failedTotal -gt 0 -or $testExit -ne 0) {
     Write-Host ''
-    Write-Host ('engine-test: ' + $suiteTotal + ' tests ran and REAL failures were reported:') -ForegroundColor Red
+    Write-Host ('engine-test: ' + $suiteTotal + ' tests ran and REAL failures were reported (Failed: ' +
+        $failedTotal + ', exit=' + $testExit + '):') -ForegroundColor Red
     foreach ($f in [regex]::Matches($text, '(?m)^\s*Failed\s+(\S+)')) {
         Write-Host ('  ' + $f.Groups[1].Value) -ForegroundColor Red
+    }
+    if ($failedTotal -gt 0 -and $testExit -eq 0) {
+        Write-Host ''
+        Write-Host ('NOTE: the runner exited 0 despite ' + $failedTotal + ' failure(s). The count is ' +
+            'what counts; the exit code lied.') -ForegroundColor Yellow
     }
     Write-Host ''
     Write-Host ('This is an honest failure, not a truncation - the suite ran. Full log: ' + $log)
