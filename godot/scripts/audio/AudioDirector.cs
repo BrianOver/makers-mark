@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Presentation;
 using Godot;
 using GodotClient.Tools;
 
@@ -269,7 +270,134 @@ public sealed partial class AudioDirector : Node
         _loopVoice = new AudioStreamPlayer { Name = "LoopVoice" };
         AddChild(_loopVoice);
         _loopVoice.Finished += OnLoopVoiceFinished;
+
+        _narratorVoice = new AudioStreamPlayer { Name = "NarratorVoice", VolumeDb = NarratorDb };
+        AddChild(_narratorVoice);
     }
+
+    // ---- the narrator ------------------------------------------------------------------------
+    //
+    // Sparse, triggered, and slotless. NarratorVoiceDirector (sim-side, deterministic) decides WHAT
+    // is said; everything here is playback. The voice carries no information — the screen keeps every
+    // fact — so a missing recording costs atmosphere and never meaning.
+
+    /// <summary>
+    /// Where the narrator sits against the bed. The music bed plays at <see cref="MusicDb"/> (-22),
+    /// and speech has to read clearly over it without becoming the loudest thing in the game; the
+    /// lines are baked to a fixed loudness at content time so this one number is the whole mix.
+    ///
+    /// <para>Negative, and it stays negative. The <c>night-still-long</c> +5.45dB boost is why
+    /// <see cref="ComposedTrackTrims"/> exists as a census surface — a generation that needs a boost
+    /// to reach level is a bad generation, and the fix is a better take, never a positive trim.</para>
+    /// </summary>
+    private const float NarratorDb = -14f;
+
+    /// <summary>Dedicated player, never pooled. A narrator cut off mid-sentence by a round-robin
+    /// steal is worse than one that never spoke — same reasoning as <see cref="_loopVoice"/>.</summary>
+    private AudioStreamPlayer _narratorVoice = null!;
+
+    /// <summary>Folder holding the baked lines. One place builds this path.</summary>
+    private const string NarratorAudioDir = "res://assets/audio/narrator/";
+
+    /// <summary>The resource path for a line id — the contract the committed filenames key on.</summary>
+    public static string NarratorResourcePath(string audioId) => $"{NarratorAudioDir}{audioId}.ogg";
+
+    /// <summary>
+    /// One narrator request, recorded whether or not audio backed it.
+    ///
+    /// <para><see cref="Voiced"/> is the whole point. A partial library is legal and expected — lines
+    /// are written before they are recorded — so "no audio" must be an observable, testable state
+    /// rather than something indistinguishable from a broken resolver. This repo has shipped
+    /// committed-but-inaudible assets before precisely because absence looked like silence.</para>
+    /// </summary>
+    public readonly record struct NarratorRequest(string AudioId, string Text, bool Voiced);
+
+    private readonly List<NarratorRequest> _recentNarratorLines = [];
+
+    /// <summary>The last line the narrator was ASKED to speak, recorded even while muted.</summary>
+    public NarratorRequest? LastNarratorLine { get; private set; }
+
+    /// <summary>Rolling window of narrator requests, oldest first. Absence needs a window, not a
+    /// snapshot — the same lesson <see cref="RecentCues"/> was rewritten to learn.</summary>
+    public IReadOnlyList<NarratorRequest> RecentNarratorLines => _recentNarratorLines;
+
+    /// <summary>Drops the narrator window so a test can scope it to one ceremony.</summary>
+    public void ClearRecentNarratorLines() => _recentNarratorLines.Clear();
+
+    /// <summary>
+    /// Speak one line for a moment that earned it, or record a text-only request when no recording
+    /// exists yet. Returns the line's text so a caller can show it on screen regardless — the screen
+    /// is the source of truth and never waits on audio.
+    ///
+    /// <para>A request arriving while the narrator is already speaking is DROPPED, not queued: two
+    /// stacked lines are a mess, and a line that arrives late has missed the moment it was for.</para>
+    /// </summary>
+    public string SpeakNarrator(NarratorVoiceDirector.Trigger trigger, ulong campaignId, ulong eventId)
+    {
+        var previous = LastNarratorLineIndexFor(trigger);
+        var index = NarratorVoiceDirector.ChooseLine(trigger, campaignId, eventId, previous);
+        var audioId = NarratorVoiceDirector.AudioId(trigger, index);
+        var text = NarratorVoiceDirector.Lines[trigger][index];
+        var path = NarratorResourcePath(audioId);
+
+        var voiced = false;
+        if (!ResourceLoader.Exists(path))
+        {
+            EngineDistress.Warn(
+                $"[AudioDirector] narrator line '{audioId}' has no recording at {path} — the line is "
+                + "on screen but nothing will be heard. This is legal while the library is partial.");
+        }
+        else if (_narratorVoice is not null && !_narratorVoice.Playing && !Muted)
+        {
+            _narratorVoice.Stream = GD.Load<AudioStream>(path);
+            _narratorVoice.Play();
+            voiced = true;
+        }
+
+        var request = new NarratorRequest(audioId, text, voiced);
+        LastNarratorLine = request;
+        _recentNarratorLines.Add(request);
+        if (_recentNarratorLines.Count > RecentCueMemory)
+        {
+            _recentNarratorLines.RemoveAt(0);
+        }
+
+        var line = voiced ? $"VOICE: spoke {audioId}" : $"VOICE: text-only (no audio) {audioId}";
+        GD.Print(line);
+        PlaytestLog.Note(line);
+
+        return text;
+    }
+
+    /// <summary>Index of the last line spoken for this trigger, or -1 — feeds the no-repeat rule.</summary>
+    private int LastNarratorLineIndexFor(NarratorVoiceDirector.Trigger trigger)
+    {
+        var slug = NarratorVoiceDirector.TriggerSlug(trigger) + "-";
+        for (var i = _recentNarratorLines.Count - 1; i >= 0; i--)
+        {
+            var id = _recentNarratorLines[i].AudioId;
+            if (id.StartsWith(slug, StringComparison.Ordinal)
+                && int.TryParse(id[slug.Length..], out var index))
+            {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// Census surface: every line the library declares, as (audioId, resourcePath). Public and
+    /// ids-only so a test can assert both directions — every declared line's file is loadable when
+    /// present, and every committed file under the narrator folder is declared. A committed recording
+    /// nobody can trigger is the "on disk but never in the game" defect that
+    /// <see cref="ComposedTrackIds"/> exists to prevent for music.
+    /// </summary>
+    public static IReadOnlyList<(string AudioId, string ResourcePath)> NarratorLibrary =>
+        NarratorVoiceDirector.Lines
+            .SelectMany(kv => Enumerable.Range(0, kv.Value.Length)
+                .Select(i => NarratorVoiceDirector.AudioId(kv.Key, i)))
+            .Select(id => (id, NarratorResourcePath(id)))
+            .ToList();
 
     /// <summary>
     /// Test/inspection surface: the last cue <see cref="Play"/> was ASKED for, recorded even while
