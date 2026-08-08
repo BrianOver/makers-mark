@@ -25,3 +25,4 @@
 godot/assets/art/**/*.png -text
 godot/assets/models/**/*.glb -text
 godot/assets/audio/**/*.mp3 -text
+godot/assets/audio/**/*.ogg -text

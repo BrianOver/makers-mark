@@ -296,22 +296,6 @@ public sealed partial class AudioDirector : Node
     /// steal is worse than one that never spoke — same reasoning as <see cref="_loopVoice"/>.</summary>
     private AudioStreamPlayer _narratorVoice = null!;
 
-    /// <summary>Folder holding the baked lines. One place builds this path.</summary>
-    private const string NarratorAudioDir = "res://assets/audio/narrator/";
-
-    /// <summary>The resource path for a line id — the contract the committed filenames key on.</summary>
-    public static string NarratorResourcePath(string audioId) => $"{NarratorAudioDir}{audioId}.ogg";
-
-    /// <summary>
-    /// One narrator request, recorded whether or not audio backed it.
-    ///
-    /// <para><see cref="Voiced"/> is the whole point. A partial library is legal and expected — lines
-    /// are written before they are recorded — so "no audio" must be an observable, testable state
-    /// rather than something indistinguishable from a broken resolver. This repo has shipped
-    /// committed-but-inaudible assets before precisely because absence looked like silence.</para>
-    /// </summary>
-    public readonly record struct NarratorRequest(string AudioId, string Text, bool Voiced);
-
     private readonly List<NarratorRequest> _recentNarratorLines = [];
 
     /// <summary>The last line the narrator was ASKED to speak, recorded even while muted.</summary>
@@ -338,7 +322,7 @@ public sealed partial class AudioDirector : Node
         var index = NarratorVoiceDirector.ChooseLine(trigger, campaignId, eventId, previous);
         var audioId = NarratorVoiceDirector.AudioId(trigger, index);
         var text = NarratorVoiceDirector.Lines[trigger][index];
-        var path = NarratorResourcePath(audioId);
+        var path = NarratorLines.ResourcePath(audioId);
 
         var voiced = false;
         if (!ResourceLoader.Exists(path))
@@ -385,19 +369,8 @@ public sealed partial class AudioDirector : Node
         return -1;
     }
 
-    /// <summary>
-    /// Census surface: every line the library declares, as (audioId, resourcePath). Public and
-    /// ids-only so a test can assert both directions — every declared line's file is loadable when
-    /// present, and every committed file under the narrator folder is declared. A committed recording
-    /// nobody can trigger is the "on disk but never in the game" defect that
-    /// <see cref="ComposedTrackIds"/> exists to prevent for music.
-    /// </summary>
-    public static IReadOnlyList<(string AudioId, string ResourcePath)> NarratorLibrary =>
-        NarratorVoiceDirector.Lines
-            .SelectMany(kv => Enumerable.Range(0, kv.Value.Length)
-                .Select(i => NarratorVoiceDirector.AudioId(kv.Key, i)))
-            .Select(id => (id, NarratorResourcePath(id)))
-            .ToList();
+    // The library and its resource paths live in NarratorLines, deliberately off this Node — see
+    // that file for the crash that put them there.
 
     /// <summary>
     /// Test/inspection surface: the last cue <see cref="Play"/> was ASKED for, recorded even while
