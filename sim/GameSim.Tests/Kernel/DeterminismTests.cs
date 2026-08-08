@@ -4,6 +4,10 @@ using GameSim.Kernel;
 
 namespace GameSim.Tests.Kernel;
 
+// LAW:sim-purity-determinism
+// The golden replay — the proof half of the law whose token half lives in SimPurityCensusTests.
+// Tagged for ConstitutionTests (CLAUDE.md rule 12), which fails if this tag or this file goes away.
+
 /// <summary>
 /// Covers AE5's foundation: same seed + same actions = byte-identical world.
 /// These tests are the project's spine — a failure here is a build-blocking defect (KTD4).
