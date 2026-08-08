@@ -8,6 +8,11 @@ using GameSim.Professions;
 
 namespace GameSim.Tests.Economy;
 
+// LAW:skipping-stays-legal
+// A player who does nothing must still have a game tomorrow — the mechanical half of the law.
+// The other half ("its cost is named in copy, never engineered") is judgment and is deliberately
+// not mechanized; see ConstitutionTests (CLAUDE.md rule 12).
+
 /// <summary>
 /// The un-losability proof (Playable Core R5/KD3): <see cref="DestitutionRecoverySystem"/> must
 /// fire at a TRUE dead-end and ONLY there — the floor is a rescue, not a handout. The dead-end

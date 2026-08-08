@@ -674,9 +674,12 @@ So, binding rules for every session that touches this repo:
    goes to `.claude/tasks/BOARD.md` as a booked line with a one-sentence filter verdict,
    and ships later *with* the next wave in its area. Booking takes thirty seconds;
    drifting takes the week.
-3. **The receipt rule.** Every PR description names the plan item it serves (`P1`,
-   `P5(a)`, `rider: trinket double-sell`) or says `overhead — booked`. The merged list of
-   any week is auditable against this table at a glance.
+3. **The receipt rule.** Every PR description carries one line beginning `Serves:` — the plan
+   item it serves (`Serves: P1`, `Serves: P5(a)`), the spine link it defends
+   (`Serves: link4`), `Serves: substrate`, or `Serves: overhead — booked`. The literal prefix
+   is the point: the merged list of any week is auditable in one grep, which is how the
+   hundred-reasonable-PRs erosion in CLAUDE.md rule 12 becomes visible at all. The receipt
+   asserts presence, never truth — a false one is a rule-8 lie living in git.
 4. **The single-source rule.** This section is the only v1 plan. Status changes land in the
    same PR as the work; re-ordering happens as a visible diff *here*, argued in review —
    never as a fresh planning doc. (P7 gets a subordinate plan doc for its own wave, written
