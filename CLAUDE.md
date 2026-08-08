@@ -1,6 +1,24 @@
 # Maker's Mark — agent operating rules
 
-Inverted-MMO game: player = blacksmith NPC, autonomous AI heroes raid the Mine. Plan: `docs/design/MAKERS-MARK.md` §11 + the active wave doc in `docs/plans/`, if one exists. Read both before working.
+## The game, before anything else
+
+**A specific person's fate provably turned on work your hands did, and you were watching when it happened.**
+
+*Emberbite turned the killing blow on floor 3. Torvald lives.*
+
+That line is the product. You are the blacksmith NPC in someone else's RPG; six autonomous heroes raid the Mine on their own judgment and die permanently. Five links carry the sentence, and every one of them is a real mechanism:
+
+1. **You make a thing, and it is provably yours** — every craft is stamped `MakersMark`, and the whole chain keys on that stamp.
+2. **It reaches a hero through four honest channels** — shelf, counter, commission, vigil runner. Each ends with the hero deciding.
+3. **The hero carries it into the dark on their own judgment** — parties form without you and pick their own depth.
+4. **The game proves it mattered** — a counterfactual replay of the recorded fight, with your item removed. Only player-crafted items earn beats. There is no participation credit.
+5. **The outcome becomes the town's memory, with your name in it** — ledger, gossip, legends wall, chronicle, memorial.
+
+Six decisions are what the game is actually made of: sell the good one or hold it for the hero who needs it; price for the sale or the relationship; fill the empty slot or upgrade the full one; spend the slot or bank it; buy the ore or buy the goodwill; send the runner or trust their judgment.
+
+**Read this before you pick up work, not after.** The failure this heading exists to prevent is real and has happened repeatedly: a session opens this file, reads the commands and the rules, reasons entirely about process, and spends the night fixing whatever was broken in front of it. Fifteen playtest findings and three rounds of scattered fixes did not move the owner's complaint; the structural waves did. Work that serves no link above is work that made the repo tidier and the game no better.
+
+So: **before taking work, name the link or plan item it serves — that is the `Serves:` line, and it chooses the work rather than justifying it afterwards.** If nothing you are about to do serves a link, do not build it and do not stop to ask: book it and take the topmost item on the critical path (§11.4) that does. Autonomy is the point; drifting while autonomous is the thing to avoid. What the game IS lives in `docs/design/THE-GAME.md`; the plan of record is `docs/design/MAKERS-MARK.md` §11, and the owner's standing direction is §11.7.
 
 ## Commands
 

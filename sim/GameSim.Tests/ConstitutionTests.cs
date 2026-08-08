@@ -143,6 +143,62 @@ public class ConstitutionTests
             + string.Join("\n  ", missing));
     }
 
+    /// <summary>
+    /// The compass. Rule 12 stops a session breaking a law; nothing stops a session building
+    /// something lawful that serves nothing — which is the drift that actually happens on autonomous
+    /// runs. The cause is structural rather than a discipline failure: a file that opens with build
+    /// commands and branch rules teaches whoever reads it to reason about process, and the game
+    /// itself was a link to another document a session might never open. So the game comes first in
+    /// the file, and this test keeps it there.
+    ///
+    /// <para>It asserts position, not just presence: the game must appear before the commands. A
+    /// later edit that keeps the words but pushes them below the tooling has undone the entire point
+    /// while leaving every phrase intact.</para>
+    /// </summary>
+    [Fact]
+    public void ClaudeMd_LeadsWithTheGame_BeforeTheTooling()
+    {
+        var claudeMd = File.ReadAllText(Path.Combine(RepoRoot(), "CLAUDE.md"));
+
+        var game = claudeMd.IndexOf("## The game, before anything else", StringComparison.Ordinal);
+        var commands = claudeMd.IndexOf("## Commands", StringComparison.Ordinal);
+
+        Assert.True(game >= 0,
+            "CLAUDE.md no longer opens with the game. Every session reads this file and reasons from "
+            + "what it finds first; without this section the default frame is 'what is broken' rather "
+            + "than 'what does this game need', which is the drift it exists to prevent.");
+        Assert.True(commands < 0 || game < commands,
+            "The game section is still in CLAUDE.md but now sits below the tooling. A session reads "
+            + "top-down and forms its frame before it gets there, so this is the same failure with "
+            + "the words still present.");
+
+        var opening = claudeMd[game..(commands > game ? commands : claudeMd.Length)];
+
+        // The product sentence and the five links, checked by their load-bearing phrases. These are
+        // the same claims THE-GAME.md makes; if one is edited away, a session loses the frame the
+        // whole file is built to give it.
+        string[] required =
+        [
+            "provably turned on work your hands did",
+            "provably yours",
+            "four honest channels",
+            "their own judgment",
+            "proves it mattered",
+            "town's memory",
+        ];
+
+        var missing = required
+            .Where(phrase => !opening.Contains(phrase, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        Assert.True(missing.Count == 0,
+            "The opening no longer states what the game is. Missing:\n  " + string.Join("\n  ", missing));
+
+        // The Serves: line has to be introduced here, where work is chosen — not only in §11.6 where
+        // it reads as paperwork filed after the fact.
+        Assert.Contains("Serves:", opening, StringComparison.Ordinal);
+    }
+
     private static IEnumerable<string> SourceFiles()
     {
         foreach (var area in new[] { Path.Combine("sim"), Path.Combine("godot", "scripts"), Path.Combine("godot", "tests") })
