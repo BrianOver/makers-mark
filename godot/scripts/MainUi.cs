@@ -5,6 +5,7 @@ using System.Linq;
 using GameSim;
 using GameSim.Contracts;
 using GameSim.Factions;
+using GameSim.Presentation;
 using GameSim.Venues;
 using Godot;
 using GodotClient.Audio;
@@ -275,6 +276,11 @@ public partial class MainUi : Control
     /// field itself.</summary>
     public PanelContainer HudHeader => _hudHeader;
     private int _pendingLedgerDay;
+
+    /// <summary>Which moment, if any, earned the narrator on the night now waiting to be revealed.
+    /// Chosen when the Evening tick resolves and spoken when the Ledger opens — see the capture site
+    /// for why it cannot be decided at reveal time.</summary>
+    private NarratorVoiceDirector.Trigger? _pendingLedgerVoice;
     private HBoxContainer _statChips = null!;
     private Label _clockLabel = null!;
     private PanelContainer _toastBanner = null!;
@@ -621,6 +627,18 @@ public partial class MainUi : Control
                 // non-null exactly once per campaign, so a manual reopen (OpenLedger tray button,
                 // OnLedgerVisibilityChanged's forecast chain) never re-asks for it.
                 Ledger.ShowFor(_pendingLedgerDay, Tutorial.ConsumeLedgerTip());
+
+                // Only the automatic Return-Ritual reveal speaks. Reopening the ledger from the tray
+                // re-reads the same night, and a narrator that recites on every re-read is the
+                // repetition that kills the whole feature.
+                if (_pendingLedgerVoice is { } trigger)
+                {
+                    // Rng.Inc is the campaign's identity everywhere flavor is picked (GossipSystem
+                    // passes exactly this as campaignId) — one notion of "which campaign", not two.
+                    Audio?.SpeakNarrator(
+                        trigger, Adapter.CurrentState.Rng.Inc, (ulong)_pendingLedgerDay);
+                    _pendingLedgerVoice = null;
+                }
             }
         }
 
@@ -817,6 +835,12 @@ public partial class MainUi : Control
             LastCompletedDay = completedDay;
             _pendingLedgerDay = completedDay;
             LedgerDelayRemaining = ReturnRitualDelaySeconds;
+
+            // The narrator decides here, not at reveal time: LastEvents is THIS tick's, and by the
+            // time the Return-Ritual delay elapses it may have moved on. Which moment earned a voice
+            // is a fact about the night that just resolved, so it is captured with the day it belongs
+            // to. Null on a quiet night, which is most nights — silence is the default posture.
+            _pendingLedgerVoice = NarratorVoiceDirector.SelectForNight(Adapter.LastEvents);
             // The reveal fires from _Process when the gate elapses; the Ledger's
             // visibility handler pauses the clock at that point.
         }
@@ -876,12 +900,27 @@ public partial class MainUi : Control
         if (state.InFlight.IsEmpty)
         {
             Camp.CloseModal();
+            _spokeVigilForDay = 0; // the party surfaced; the next parking is a new moment
         }
         else if (state.Phase == DayPhase.Camp)
         {
             Camp.ShowModal();
+
+            // The held breath at the winch-house — the other moment the whole day is built to stage.
+            // Once per parking, not once per sync: this runs on every phase tick while a party is
+            // camped, and a narrator that re-announces the pause every tick is unbearable.
+            if (_spokeVigilForDay != state.Day)
+            {
+                _spokeVigilForDay = state.Day;
+                Audio?.SpeakNarrator(
+                    NarratorVoiceDirector.Trigger.VigilOpening, state.Rng.Inc, (ulong)state.Day);
+            }
         }
     }
+
+    /// <summary>Day whose vigil opening the narrator has already spoken, or 0. Guards the once-per-
+    /// parking rule in <see cref="SyncCampModal"/>.</summary>
+    private int _spokeVigilForDay;
 
     /// <summary>
     /// U18 (R11/R12): the stat-chip row plus the two new HUD widgets — the objective chip and
