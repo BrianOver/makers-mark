@@ -4,7 +4,8 @@
 
 This document describes the game as it exists. It is not a plan and contains no proposals — where
 something is absent, it says so as a fact about the game rather than as work owed. The planning
-half lives separately, in `MAKERS-MARK.md` §8–§12.
+half lives separately, in `MAKERS-MARK.md` §8–§12; the owner's standing direction for where the
+game goes next is §11.7 there.
 
 ---
 
@@ -30,16 +31,17 @@ arrives on your screen that night with the hero's name in it.
 
 That line is the product. Everything else is machinery for producing it.
 
-**Influence, never orders.** You shape what heroes can do; you never choose what they do. There is
-exactly one exception, and it is the game's most interesting economic verb: a posted bounty is an
-order you can buy. Escrow gold against a target floor and a hero may accept it, overriding their own
-depth judgment. They weigh it themselves. Sometimes they take it and die on the floor you paid them
-to reach.
+**Influence, never orders.** You shape what heroes can do; you never choose what they do. The one
+lever aimed at *where* they go is the bounty, and it is still only an offer: you escrow gold against
+a floor, and every eligible hero weighs it for themselves against their greed, their level and the
+depth. One of them may take it. Sometimes they take it and die on the floor you paid them to reach.
+The mechanism, move by move, is §4.5.
 
-**Small on purpose.** Six hero classes, four professions, three live venues, a five-floor mine, a
-campaign that resolves in about six weeks of in-game days. The scope is deliberately narrow so that
-every system is finished rather than sketched — the ambition is depth of consequence, not breadth of
-content.
+**Narrow now, by choice.** Six hero classes, four professions, three live venues, a five-floor mine,
+a campaign that resolves in about six weeks of in-game days. The narrowness is a focus decision, not
+a ceiling: it exists so every system ships finished rather than sketched, and the architecture is
+built to widen — content can sit inert in the code until a determinism-gated flip turns it on. Deep
+before wide.
 
 **The register is cozy, and the cozy is load-bearing.** This is a warm game about loss. Heroes die
 permanently. Their gear comes back to your anvil as an heirloom you can reforge, carrying their
@@ -336,9 +338,21 @@ A commission is a named hero's specific request — slot, minimum quality, five-
 on delivery. Weapons, shields, armour, consumables and trinkets can all be asked for; trinkets only
 by heroes who have been around long enough to want one.
 
-A bounty is the inverse: you escrow gold against a floor, and heroes judge the offer themselves next
-expedition. It is the only order money can buy, and the money is at risk — a bounty refunds if the
-taker dies or the offer expires unclaimed.
+A bounty is the inverse, and it is the game's only lever aimed at *where* heroes go. It runs in four
+moves:
+
+1. **You escrow.** Gold against a target floor — say 60 on floor 3. It leaves your purse when you
+   post it, not when someone takes it.
+2. **They weigh it.** On the next expedition tick every eligible hero judges the offer for
+   themselves: greed against reward, against their own level and the floor's depth. The judgment is
+   legible rather than hidden — each evaluation emits its reasoning.
+3. **One of them commits.** The first hero to accept takes their whole party to that floor,
+   overriding the depth the party would otherwise have chosen.
+4. **It pays, or it doesn't.** They clear the floor and the taker collects. Or they die there. Or
+   nobody wants it, the offer expires, and your gold comes back.
+
+Your money is at risk and the decision is never yours. That is why this does not break
+influence-never-orders: you can aim an offer, and any hero can refuse it.
 
 *Without it:* the relationship is one-directional and the town never initiates.
 
@@ -451,6 +465,18 @@ Stated as description. These are properties of the game as it stands, not gaps a
   irreversible facts are deaths and the calendar.
 - **Demand leans toward the blacksmith.** Heroes ask for gear, consumables and trinkets, but nothing
   in the world specifically *needs* what only a tanner or an engineer can make.
+- **Nothing is spoken aloud.** Four written narrator voices carry the prose and a director paces
+  them, but the game is read, not heard. There is no narrator in the ear.
+- **Most of what the town knows arrives as text on a board.** Two surfaces deliver information
+  through a person — the customer at the counter states their want before you present anything, and
+  the tavern patron carries their business face to face. Everything else is posted: the muster
+  forecast, the commission board, the bounty board, the night's ledger.
+- **Professions are picked, not accumulated.** A shop runs one or two at a time and may swap between
+  them mid-campaign at the bell. There is no ladder that opens all four over a campaign, and no
+  discipline beyond the four.
+- **A run gets one camp, however deep it is going.** The checkpoint fires once, whether the party is
+  bound for floor 2 or floor 5 — so the game's one reach-into-the-dark moment happens exactly as
+  often on a shallow run as on the run where everything is at stake.
 - **Talents are free.** They cost prerequisites, not points; there is no skill-point economy.
 - **Provisioning saves the one and endangers the many.** A topped-up party dares one floor deeper,
   and the deep floors are where heroes die. Both effects are measured and real. The game states the
@@ -473,7 +499,7 @@ Stated as description. These are properties of the game as it stands, not gaps a
 | **Standing / favour** | Your reputation with an ore faction. Rises when you buy their ore, decays toward neutral, and discounts their prices. |
 | **The atomic pass** | The invisible morning shopping sweep where heroes buy from the shelf without a counter session. |
 | **Commission** | A named hero's specific request, with a deadline and a premium. |
-| **Bounty** | Escrowed gold against a target floor — the one order money can buy. |
+| **Bounty** | Escrowed gold against a target floor — the one lever aimed at where heroes go, and still an offer they can refuse. |
 | **Heirloom** | An item reforged from a dead hero's recorded gear, carrying their lineage forward. |
 | **Signed work** | An item whose maker chose to name it. |
 | **Golden replay** | The determinism test: same seed and actions reproduce the same world byte for byte. |
