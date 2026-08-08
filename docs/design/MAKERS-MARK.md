@@ -224,6 +224,11 @@ surfaces in the game with the least reason to use them. **Question: does the dem
 engine (five-pillars Wave 2) stay the next big sim program after the loop wave, or is it
 superseded by something in this document's margins?**
 
+**Ruled 2026-08-07 (§11.7.7).** It stays, and it is promoted: the demand-hazard engine becomes a
+prerequisite of fluid professions rather than a parallel program. Profession unlocks are
+demand-gated story beats, so the engine is now the unlock trigger *and* the demand fix for the
+non-blacksmith professions in one piece of work. Sequence it first, or alongside.
+
 ### 9.5 The counter vs the atomic pass
 
 The counter is the game's best face-to-face moment and, measured, a worse income channel
@@ -257,6 +262,12 @@ bless this order (or reorder it), so the next sessions stop re-litigating it.** 
 (§11) adopts this order with one argued amendment: V-3 moves *behind* the §9.9 ruling,
 because #392 already built vigil presentation on the exact signal §9.9 questions, and
 polishing that surface further before the ruling deepens the potential rework.
+
+**Ruled 2026-08-07 (§11.7.3–11.7.5).** The order stands, and the standard it is built to changed:
+every phase owes a verb that changes an outcome or a surface that reveals the player's stake, and
+information arrives through a face rather than a board wherever it can. The middle of the day
+gains no intervention verb — live mid-delve delivery is refused for the three reasons in §11.7.5 —
+but it gains a second window: the camp speaks first, and deep-bound runs earn a second checkpoint.
 
 ### 9.7 The ending, and what "done" looks like
 
@@ -680,7 +691,132 @@ So, binding rules for every session that touches this repo:
    same PR that lands the finding. A plan that cannot lose an argument with a measurement
    is a wish.
 
-### 11.7 The bet
+### 11.7 Owner direction — 2026-08-07: experience, phases, narrator, progression
+
+The owner's rulings from the 2026-08-07 review of `THE-GAME.md`. These are decisions, not
+suggestions: work proposed from here must trace to a ruling below or to the standing laws in
+§11.7.8. Anything tracing to neither gets parked and raised. **Documentation only at the time
+of this ruling — no sim changes, no re-baselines, no implementation sequencing yet.**
+
+**11.7.1 The bounty explanation is rewritten, and the phrase is retired.** "A posted bounty is
+an order you can buy" is dead. It contradicted influence-never-orders in six words, and that
+collision *was* the confusion. Replacement framing: the bounty is the one lever aimed at
+**where** they go, and they still choose to take it. The description now walks the four moves —
+escrow, their judgment, one hero committing the party, then payout or death or refund
+(`THE-GAME.md` §4.5). No mechanical change; copy and documentation only.
+
+**11.7.2 "Small on purpose" is replaced by "narrow now, built to grow."** The game is not small
+forever; it is narrow *now* as a focus decision. Every system ships finished rather than
+sketched, and the architecture — built-inert content, determinism-gated flips, re-baseline
+ceremonies — exists precisely so it can widen later. **Guard, mandatory:** "built to grow" is a
+statement about post-v1 sequencing and never a licence for breadth work now. The Completeness
+Bar and the §10 filter stand unchanged. A session reading this as permission to start new
+content has read it wrong.
+
+**11.7.3 No important information without a face.** Reading boards is boring. Sim information
+must be *experienced* — dialogue, scenes, characters — not posted. Boards stay as reference
+surfaces; dialogue becomes the delivery. The pattern is already proven twice in-project: the
+customer speaks first (CustomerVoice, a read-only derivation from the hero's own state) and the
+tavern handshake. Extend that pattern; do not invent a second mechanism.
+
+**The constraint that survives this ruling:** the simulation is *not* reduced or scripted to
+achieve it. The sim already computes everything the boards say, and the attribution proof, the
+moat and the golden replay all depend on it staying pure. Presentation may stage, select, voice
+and pace sim facts. It may never script outcomes or invent facts the sim did not produce.
+Scripted moments are made by staging real data, never by faking it.
+
+**11.7.4 Every phase owes the player something to do and a reason to watch.** "Something to do"
+means a verb that changes an outcome, *or* a surface that reveals the player's own stake — verb
+count for its own sake is the busy-day trap, already named and still banned. The per-phase gaps
+adopted as the program: Dawn gets a spoken headline and a one-click path from a gap line to the
+forge pre-loaded with the answering recipe; Quest gets item chips on the marchers carrying your
+work and one line of conductor copy when a vigil is coming, so crafting during the march stops
+being tribal knowledge; Vigil gets trait and relationship chips plus the per-hero survival math
+the sim already computes; Deep Vigil gets the stakes slate and item flares on moments that will
+become beats (honest, because stage 2 is already resolved when the show plays); Night deals the
+reveal as cards with rhythm and previews an heirloom's lineage before committing. Across all of
+them, one story threads the day — the same hero and item recurring from the morning headline to
+the night card. Continuity of reference is the cheapest large experience win available.
+
+**11.7.5 Reaching into the dark: more windows, not live delivery.** The instinct is right —
+reaching into the dark is the game's best feeling. The mechanism of sending items live mid-delve
+is refused, because it breaks three load-bearing things at once: raids must stay pure functions
+or the attribution proof dies, decisions must stay untimed, and heroes must not become units you
+tend. What is adopted instead: **the camp speaks first** — the vigil slate opens with the party's
+own ask, derived read-only from their state the same way CustomerVoice is, turning a dashboard
+the player evaluates into a request the player answers (zero sim change; this is staging). And
+**checkpoints scale with depth** — deep-bound runs earn a second camp, so the best moment fires
+twice on exactly the runs where the stakes are highest. Precedent is Darkest Dungeon, which
+scales camps with dungeon length while never permitting intervention in a fight. The second
+checkpoint is a priced sim unit with a re-baseline, sequenced later. Gate provisioning stays
+deferred, built only if telemetry shows heroes systematically under-buying heals.
+
+**11.7.6 The game gains a narrator.** Darkest-Dungeon-style, AI-generated voice, and plausibly
+the highest feel-per-cost item on the table because the writing already exists: four frozen
+voices, ~1,470 authored lines, a pacing director and a tone law. Rules it ships under:
+
+- **Sparse and triggered, never continuous.** Darkest Dungeon's narrator works because he fires
+  on kills, deaths and thresholds. Continuous narration worked once, in a short novelty, and
+  would wear immediately here. Trigger set: attribution beats, deaths, depth records, act turns,
+  and the vigil stop opening — daily-capped exactly as gossip already is.
+- **Voice, not new writing.** The narrator speaks the existing frozen lines and curated additions
+  in the same register. The tone law applies unchanged: warm, dry, never grim, never cute; deaths
+  with dignity.
+- **One primary voice for v1.** All four text voices stay; one gets the microphone first.
+- **Pipeline, mandatory shape: generate → human-curate → freeze.** Lines are generated at content
+  time, reviewed, and committed as static audio. Runtime *selection* stays deterministic from real
+  events. This preserves the frozen-voices discipline, the golden replay, and testability.
+
+**Shipping note (verified 2026-08).** Steam's AI disclosure policy separates pre-generated content
+that ships with the game from content generated at runtime. Baked voice lines are pre-generated —
+a disclosure checkbox and a brief description. Runtime generation requires documented guardrails
+and carries platform risk. One more independent reason the standing refusal of runtime LLMs in the
+sim is correct, and it is reaffirmed here.
+
+**11.7.7 Progression becomes fluid, and unlocks are demand-gated.** Long-run "pick a profession"
+does not hold. The player accumulates disciplines across a campaign — blacksmith, then alchemy
+early, then later disciplines — giving the mid-game more to open. Refinements that ship with it:
+
+- **Unlocks are story beats, not menu picks.** A profession opens when the world starts needing
+  it: *three heroes came back poisoned from Gloomwood; the town needs an alchemist.* This promotes
+  the five-pillars demand-gated design already on the books, and makes every unlock an event in
+  the town's story, which is this game's grammar. The typical order can still follow the owner's
+  ladder, since demand tracks venue progression anyway.
+- **The demand-hazard engine is a prerequisite, not a nice-to-have.** Measured demand already
+  skews blacksmith under pick-2; adding professions to a world that only asks for swords
+  multiplies the "newest surfaces, least reason to use them" problem. Sequence demand first, or
+  together — this rules §9.4.
+- **Enchanting is probably a graduation, not a fifth pipeline.** The modifier layer — quench oils,
+  runes, fittings, behaviour-shifting and slot-exclusive — is already proto-enchanting. Grow that
+  layer into the discipline rather than building a new pipeline. Spellcrafting is genuinely
+  net-new content; it parks post-v1 behind the same demand engine.
+- **Identity guard.** Pick-2 created build identity. Accumulation must preserve who-you-are
+  through mastery depth — talents, tiers, the mark's reputation — so "I do everything" does not
+  flatten into "I am nothing in particular."
+- **The governor already exists.** The five-slot day rations output, so more professions deepen
+  the daily triage decision instead of multiplying busywork. Keep the budget; it is what makes
+  breadth playable.
+- **Determinism note.** Each unlock is a content flip — a determinism event with a re-baseline
+  ceremony, same as a venue go-live. Plan them as such.
+
+**11.7.8 The laws none of the above weakens.** Influence never orders; no timers on decisions;
+every verb changes an outcome or reveals the player's stake; show only what the sim decided;
+sim purity and determinism; no runtime LLMs in the sim; skipping stays legal and its cost is
+named in copy, never engineered.
+
+**11.7.9 What this changes about sequencing.** The demand-hazard engine rises — it is now both
+the unlock trigger for 11.7.7 and the demand fix for the non-blacksmith professions, in one
+program. The narrator is the standing highest feel-per-cost candidate. The second checkpoint is
+a priced sim unit for a later wave. The 11.7.3 and 11.7.4 staging items are zero-sim and
+art-light, and can interleave with anything.
+
+**11.7.10 Open, for the owner.** Which of the four voices gets the microphone first, and does the
+pacing director or the event type decide when text falls back to voice? Is the second checkpoint
+at a fixed floor or derived from the target? Is enchanting-as-graduated-modifiers accepted, or is
+a distinct pipeline owed for feel? Does spellcrafting make v1.x at all? And how many disciplines
+should one campaign realistically open — all of them, or most-but-not-all, so campaigns differ?
+
+### 11.8 The bet
 
 If everything above is done and only one thing worked, it must be this: **a human being at
 a keyboard, on an ordinary evening, watches the Night ledger open with a beat that names an
