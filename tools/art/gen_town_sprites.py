@@ -629,6 +629,109 @@ OLD_TORSO_OCCULTIST = [
 ]
 assert len(OLD_TORSO_OCCULTIST) == 18
 
+# ── TOWNSFOLK CIVILIANS (U6, world-and-interiors plan) ────────────────────────────────────────────
+# TownsfolkNpc2D.ResolveSprite() used to hand every background villager the VANGUARD hero body
+# (closed great-helm, slab shield, steel-blue baked cloth) with a runtime colour multiply — several
+# identically-shaped "civilians" walking the plaza reads as reuse within seconds, and the shield/
+# pauldron silhouette makes them look like off-duty adventurers, not townsfolk. Two bodies, same
+# 40x64 canvas / 26-wide authoring grid / 4-frame gait every hero class already uses, but genuinely
+# civilian: bare head + hair (no helm), a plain full-cloth tunic (no shield, no pauldron, no
+# weapon/quiver/staff, no rune/ember/coolant accents — those mark a hero touched by the Mine, a
+# townsperson is deliberately plainer), and the leg frames REUSE the existing CLOTH_LEGS_F1..F4
+# built below (those are letter-only, hue-agnostic — see build_legs_frame — so no new leg art is
+# needed, just a new palette).
+#
+# Neither hue is invented here: both are the exact 0-1 floats already committed and reviewed in
+# TownsfolkNpc2D.CivilianPalette (godot/scripts/town2d/TownsfolkNpc2D.cs), converted 0-1 -> 0-255
+# the same way every other literal in this file already is (round(x * 255)). Reusing that existing
+# pair rather than picking two new RGB triples keeps the "never a colour invented per class"
+# discipline this file has followed since the quality pass.
+CIVILIAN_BROAD_HUE: tuple[int, int, int] = (115, 92, 56)   # "brown" — CivilianPalette[0]
+CIVILIAN_SLIGHT_HUE: tuple[int, int, int] = (82, 107, 77)  # "muted green" — CivilianPalette[1]
+
+# BROAD — stocky build: wide cropped-hair skull, square jaw that holds its width instead of
+# tapering, thick neck. No helm (townsfolk don't wear one).
+OLD_HEAD_CIVILIAN_BROAD = [
+    orow(ocentered("j" * 12)),  # 2 crown — broad skull, cropped hair
+    orow(ocentered(mirror("jjhl"))),  # 3 hair sheen
+    orow(ocentered(mirror("jffhl"))),  # 4 hairline meets brow
+    orow(ocentered(mirror("jffo"))),  # 5 eyes flanked by skin
+    orow(ocentered(mirror("offo"))),  # 6 cheeks, broad
+    orow(ocentered(mirror("off"))),  # 7 jaw — holds its width (square jaw), no taper yet
+    orow(ocentered(mirror("off"))),  # 8 jaw hold
+    orow(ocentered(mirror("of"))),  # 9 chin — still broad, flat, not pointed
+    orow(ocentered("o" * 8)),  # 10 neck gap — thick neck
+    orow(ocentered(mirror(to_cloth("ommmll")))),  # 11 collar — thick neck/collar, cloth (brown)
+    orow(ocentered(mirror(to_cloth("ooimmmll")))),  # 12 collar -> shoulder lead-in, wide
+]
+assert len(OLD_HEAD_CIVILIAN_BROAD) == 11
+
+# Whole torso is plain cloth (to_cloth()'d, coloured brown) — no shield, no pauldron, no weapon:
+# a stocky silhouette that stays wide from chest to belly before narrowing at the very end, unlike
+# every hero class's earlier waist taper.
+OLD_TORSO_CIVILIAN_BROAD = [
+    orow(ocentered(mirror(to_cloth("oiimmmlll")))),  # 13 shoulders — wide, symmetric
+    orow(ocentered(mirror(to_cloth("oohlliidd")))),  # 14 upper chest, broad
+    orow(ocentered(mirror(to_cloth("oohllmidd")))),  # 15
+    orow(ocentered(mirror(to_cloth("ooollmidd")))),  # 16 chest
+    orow(ocentered(mirror(to_cloth("ooollmidd")))),  # 17 hold
+    orow(ocentered(mirror(to_cloth("oooollmid")))),  # 18 chest, still wide
+    orow(ocentered(mirror(to_cloth("oooollmid")))),  # 19 hold
+    orow(ocentered(mirror(to_cloth("ooollmid")))),  # 20 belly — stocky build stays wide here
+    orow(ocentered(mirror(to_cloth("ooollmid")))),  # 21 hold
+    orow(ocentered(mirror(to_cloth("ooollmid")))),  # 22 hold
+    orow(ocentered(mirror(to_cloth("oollmid")))),  # 23 waist begins narrowing (late, unlike heroes)
+    orow(ocentered(mirror(to_cloth("oollmid")))),  # 24 hold
+    orow(ocentered(mirror(to_cloth("oolmid")))),  # 25 waist
+    orow(ocentered(mirror(to_cloth("oolmid")))),  # 26 hold
+    orow(ocentered(mirror(to_cloth("oolmd")))),  # 27 waist taper
+    orow(ocentered(mirror(to_cloth("oolmd")))),  # 28 hold
+    orow(ocentered(mirror(to_cloth("oomd")))),  # 29 near hip
+    orow(ocentered(mirror(to_cloth("ooilmmi")))),  # 30 hips (shared convention, every class ends here)
+]
+assert len(OLD_TORSO_CIVILIAN_BROAD) == 18
+
+# SLIGHT — leaner build: narrower skull, longer hair, jaw that narrows immediately to a pointed
+# chin, slender neck. A simple tunic that narrows to a cinched waist then flares into a hem — the
+# one silhouette beat this pair uses that no hero class has (heroes only ever narrow toward the
+# hips), so BROAD/SLIGHT read as two different garments, not just two widths of the same one.
+OLD_HEAD_CIVILIAN_SLIGHT = [
+    orow(ocentered("j" * 8)),  # 2 crown — narrower skull, hair started already
+    orow(ocentered(mirror("jjjhl"))),  # 3 hair, longer strands than BROAD's crop
+    orow(ocentered(mirror("jffhl"))),  # 4 hairline meets brow
+    orow(ocentered(mirror("jffo"))),  # 5 eyes flanked by skin
+    orow(ocentered(mirror("off"))),  # 6 cheeks, narrow
+    orow(ocentered(mirror("of"))),  # 7 jaw — narrows immediately (slight build)
+    orow(ocentered(mirror("of"))),  # 8 jaw hold
+    orow(ocentered(mirror("f"))),  # 9 chin — comes to a point, unlike BROAD's flat chin
+    orow(ocentered("o" * 6)),  # 10 neck gap — slender neck
+    orow(ocentered(mirror(to_cloth("ommll")))),  # 11 collar, cloth (green)
+    orow(ocentered(mirror(to_cloth("ooimmll")))),  # 12 collar -> shoulder lead-in
+]
+assert len(OLD_HEAD_CIVILIAN_SLIGHT) == 11
+
+OLD_TORSO_CIVILIAN_SLIGHT = [
+    orow(ocentered(mirror(to_cloth("ooimlll")))),  # 13 shoulders — narrow, symmetric
+    orow(ocentered(mirror(to_cloth("oohllidd")))),  # 14 upper chest
+    orow(ocentered(mirror(to_cloth("oohllmdd")))),  # 15
+    orow(ocentered(mirror(to_cloth("oollmidd")))),  # 16 chest
+    orow(ocentered(mirror(to_cloth("oollmidd")))),  # 17 hold
+    orow(ocentered(mirror(to_cloth("oolmido")))),  # 18 chest taper — narrows quickly (slight build)
+    orow(ocentered(mirror(to_cloth("oolmido")))),  # 19 hold
+    orow(ocentered(mirror(to_cloth("olmido")))),  # 20 waist narrows
+    orow(ocentered(mirror(to_cloth("olmido")))),  # 21 hold
+    orow(ocentered(mirror(to_cloth("olmdo")))),  # 22 waist — narrowest point of the whole figure
+    orow(ocentered(mirror(to_cloth("olmdo")))),  # 23 hold
+    orow(ocentered(mirror(to_cloth("oolmido")))),  # 24 tunic hem begins flaring back out
+    orow(ocentered(mirror(to_cloth("oolmiddo")))),  # 25 hem flares
+    orow(ocentered(mirror(to_cloth("oollmiddo")))),  # 26 hem flares more — widest point of the hem
+    orow(ocentered(mirror(to_cloth("oollmiddo")))),  # 27 hold
+    orow(ocentered(mirror(to_cloth("oolmiddo")))),  # 28 hem narrows back in toward the legs
+    orow(ocentered(mirror(to_cloth("oolmido")))),  # 29 near hip
+    orow(ocentered(mirror(to_cloth("ooilmmi")))),  # 30 hips (shared convention, every class ends here)
+]
+assert len(OLD_TORSO_CIVILIAN_SLIGHT) == 18
+
 # ── upscale each class's head/torso, then add the ONE outline-only accent per "twin" pair ────────
 
 
@@ -646,6 +749,9 @@ UPPER_STRIKER = upper_body(OLD_HEAD_STRIKER, OLD_TORSO_STRIKER)
 UPPER_SKIRMISHER = upper_body(OLD_HEAD_SKIRMISHER, OLD_TORSO_SKIRMISHER)
 UPPER_MYSTIC = upper_body(OLD_HEAD_MYSTIC, OLD_TORSO_MYSTIC)
 UPPER_OCCULTIST = upper_body(OLD_HEAD_OCCULTIST, OLD_TORSO_OCCULTIST)
+
+UPPER_CIVILIAN_BROAD = upper_body(OLD_HEAD_CIVILIAN_BROAD, OLD_TORSO_CIVILIAN_BROAD)
+UPPER_CIVILIAN_SLIGHT = upper_body(OLD_HEAD_CIVILIAN_SLIGHT, OLD_TORSO_CIVILIAN_SLIGHT)
 
 # Sentinel vs Vanguard: both shielded tanks, previously distinguished mostly by the shield's
 # width (a few px) and colour-only rune/trace placement -- measured silhouette distance only
@@ -866,6 +972,37 @@ SPRITES: dict[str, tuple[list[str], dict[str, tuple[int, int, int, int]]]] = {
 }
 
 
+# ── TOWNSFOLK CIVILIAN sprites — reuse the existing cloth-leg frames (letter-only, hue-agnostic;
+# see build_legs_frame) rather than building a third leg-frame set. Not routed through
+# class_palette()/CLASS_HUES: those are keyed by SIM class id and raise on an unknown key by
+# design (civilians are not a sim class) — a small dedicated helper instead.
+CIVILIAN_HUES: dict[str, tuple[int, int, int]] = {
+    "broad": CIVILIAN_BROAD_HUE,
+    "slight": CIVILIAN_SLIGHT_HUE,
+}
+
+
+def civilian_palette(civilian_id: str) -> dict[str, tuple[int, int, int, int]]:
+    return {**PALETTE, **cloth_ramp(CIVILIAN_HUES[civilian_id])}
+
+
+CIVILIAN_GRIDS: dict[str, list[str]] = {
+    "town2d-townsfolk-broad": assemble(UPPER_CIVILIAN_BROAD, CLOTH_LEGS_F1),
+    "town2d-townsfolk-broad_walk2": assemble(UPPER_CIVILIAN_BROAD, CLOTH_LEGS_F2),
+    "town2d-townsfolk-broad_step": assemble(UPPER_CIVILIAN_BROAD, CLOTH_LEGS_F3),
+    "town2d-townsfolk-broad_walk4": assemble(UPPER_CIVILIAN_BROAD, CLOTH_LEGS_F4),
+    "town2d-townsfolk-slight": assemble(UPPER_CIVILIAN_SLIGHT, CLOTH_LEGS_F1),
+    "town2d-townsfolk-slight_walk2": assemble(UPPER_CIVILIAN_SLIGHT, CLOTH_LEGS_F2),
+    "town2d-townsfolk-slight_step": assemble(UPPER_CIVILIAN_SLIGHT, CLOTH_LEGS_F3),
+    "town2d-townsfolk-slight_walk4": assemble(UPPER_CIVILIAN_SLIGHT, CLOTH_LEGS_F4),
+}
+
+CIVILIAN_SPRITES: dict[str, tuple[list[str], dict[str, tuple[int, int, int, int]]]] = {
+    name: (grid, civilian_palette(name.removeprefix("town2d-townsfolk-").split("_")[0]))
+    for name, grid in CIVILIAN_GRIDS.items()
+}
+
+
 # ── PLAYER SMITH (2026-08-04 second round): brought up to the SAME treatment as the heroes above
 # -- bigger canvas, real 4-frame gait, baked colour, a real face -- so the player is not the one
 # crude sprite left once the heroes carry all of this. No prior generator source existed for
@@ -1002,7 +1139,7 @@ def main() -> int:
         help="compare against committed PNGs instead of writing; non-zero exit on any difference")
     args = parser.parse_args()
 
-    all_sprites = {**SPRITES, **PLAYER_SPRITES}
+    all_sprites = {**SPRITES, **PLAYER_SPRITES, **CIVILIAN_SPRITES}
 
     drift = []
     for name, (grid, palette) in all_sprites.items():

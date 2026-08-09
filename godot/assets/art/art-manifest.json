@@ -165,6 +165,14 @@
   "town2d-tile-cobble": { "diffuse": true, "normal": false },
   "town2d-tile-grass": { "diffuse": true, "normal": false },
   "town2d-tile-path": { "diffuse": true, "normal": false },
+  "town2d-townsfolk-broad": { "diffuse": true, "normal": false },
+  "town2d-townsfolk-broad_step": { "diffuse": true, "normal": false },
+  "town2d-townsfolk-broad_walk2": { "diffuse": true, "normal": false },
+  "town2d-townsfolk-broad_walk4": { "diffuse": true, "normal": false },
+  "town2d-townsfolk-slight": { "diffuse": true, "normal": false },
+  "town2d-townsfolk-slight_step": { "diffuse": true, "normal": false },
+  "town2d-townsfolk-slight_walk2": { "diffuse": true, "normal": false },
+  "town2d-townsfolk-slight_walk4": { "diffuse": true, "normal": false },
   "town2d-well": { "diffuse": true, "normal": false },
   "ui-frame-wood": { "diffuse": true, "normal": false }
 }
