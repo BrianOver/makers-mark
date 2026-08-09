@@ -698,6 +698,17 @@ So, binding rules for every session that touches this repo:
    interrupt-class (a §2 link-4 break), which is why it leads a wave instead of being booked.
    The grant covers P3 and that leak set only; the art rows in it ride as capped overhead and may
    never displace a path item.
+   **Amended 2026-08-09:** granted, by name, to
+   `docs/plans/2026-08-09-001-feat-the-shell-around-the-game-plan.md` — the playtest harness, the
+   export/shipping path, and the settings menu. This is the second and final live wave doc; the
+   two-doc cap is now full and nothing further may be written until one of them dies on merge.
+   The grant is **entirely substrate and capped overhead** — not one unit in it is a §2 link item,
+   and none may displace a path item. It earns the slot on one argument: the harness was reporting
+   completed runs it had not performed (§A), which makes every finding it has produced since
+   2026-08-04 suspect, and a compromised instrument is a substrate defect rather than a chore.
+   Its §C5 carries a genuine law question — a settings menu is where the seven laws can be broken
+   by something shaped like a courtesy — and the tripwire it specifies is binding on any future
+   settings work whether or not the rest of that wave ships.
 5. **The measurement rule.** When new data contradicts this plan — P4 moves the boredom
    day, P3's assertions fail, a sweep overturns a tuning claim — the plan amends in the
    same PR that lands the finding. A plan that cannot lose an argument with a measurement
