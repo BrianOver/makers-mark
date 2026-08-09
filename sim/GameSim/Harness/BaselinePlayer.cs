@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using GameSim.Advisor;
 using GameSim.Contracts;
 using GameSim.Crafting;
+using GameSim.Materials;
 using GameSim.Professions;
 
 namespace GameSim.Harness;
@@ -11,7 +12,8 @@ namespace GameSim.Harness;
 /// batch runner — one policy, shared by the balance gate and the CLI batch farm, never forked).
 /// Craft the best recipe the kernel would accept (asked via <see cref="Advisor.ActionLegality"/>,
 /// never re-derived here), price at the rival's own formula (better stats win value ties), buy
-/// every affordable ore offer, unlock talents in prerequisite order.
+/// every affordable ore offer it can fit in the day's action budget — best grade first, since the
+/// purse never covers them all — and unlock talents in prerequisite order.
 /// Deterministic — no RNG of its own, no IO, no wall clock: purity-safe inside GameSim.
 /// </summary>
 public static class BaselinePlayer
@@ -100,14 +102,38 @@ public static class BaselinePlayer
                 break;
 
             case DayPhase.Evening:
-                // Buy every ore offer the purse can afford, in offer order — but only while the
-                // day still has action slots (G3): each buy spends one, so the baseline now stops
-                // at the budget instead of emitting doomed, would-be-rejected buys. Rejected buys
-                // never mutated state, so the 100-day balance bands are byte-identical either way;
-                // this just keeps the ActionLog clean (no RejectedAction spam).
+                // Buy every ore offer the purse can afford — but only while the day still has
+                // action slots (G3): each buy spends one, so the baseline stops at the budget
+                // instead of emitting doomed, would-be-rejected buys.
+                //
+                // BEST ORE FIRST (2026-08-09). This loop used to walk `state.OpenOreOffers` in
+                // its natural order, which is the order the reveal appended loot: floor 1 first,
+                // then floor 2, and so on (`ExpeditionRevealSystem`, `ExpeditionResolver` banks
+                // ore per cleared floor ascending). The purse cannot cover every offer — measured
+                // median gold at the Evening tick is 2-4g — so "first affordable wins" silently
+                // resolved to "ALWAYS BUY THE SHALLOWEST, WORST ORE ON THE LIST." Measured over
+                // 100 days: the market offered 208 units of steel across 108 offers, 36 of them
+                // affordable at the moment the player looked, and the scripted smith bought
+                // exactly zero — peak steel held was 0, peak iron 4, while peak copper was 51.
+                // 87% of its 84 crafts were the tier-1 shortsword, and not one tier-3 item existed
+                // in any of 11 seeds despite every tier talent being unlocked by day 8.
+                //
+                // This is a harness defect of the SAME CLASS as the one #328 fixed in the craft
+                // branch above (a hand-rolled rule that made the scripted smith refuse ~90% of
+                // legal crafts, so every balance number described a smith who wouldn't work).
+                // Sorting by material grade, then cheapest-first within a grade, is the minimal
+                // correction
+                // that matches this loop's own stated intent: it still buys only what it can
+                // afford, still respects the slot budget, and still emits no rejected action.
+                // It is NOT a competence upgrade — the policy makes no new KIND of decision.
                 var gold = state.Player.Gold;
                 var slots = state.ActionSlotsRemaining;
-                foreach (var offer in state.OpenOreOffers)
+                var offers = state.OpenOreOffers
+                    .OrderByDescending(o => MaterialRegistry.Grade(o.MaterialKey))
+                    .ThenBy(o => o.Quantity * o.UnitPrice)
+                    .ThenBy(o => o.MaterialKey, StringComparer.Ordinal)
+                    .ThenBy(o => o.From.Value);
+                foreach (var offer in offers)
                 {
                     if (slots <= 0)
                     {

@@ -108,10 +108,33 @@ public static class QualityRoller
     /// <see cref="IDeterministicRng.Roll100"/> draw maps to exactly [-25, +25].</summary>
     private const int ActiveJitterMax = 25;
 
-    /// <summary>Auto-craft's competent-but-capped grade (PKD4): a null <c>PerformanceGrade</c>
+    /// <summary>
+    /// Auto-craft's competent-but-capped grade (PKD4): a null <c>PerformanceGrade</c>
     /// (and, once Phase B lands puzzle-scored professions, a null <c>CraftPuzzleInput</c> too —
-    /// Phase A's puzzle is always null) resolves here rather than at the player's real skill.</summary>
-    private const int AutoCraftGrade = 550;
+    /// Phase A's puzzle is always null) resolves here rather than at the player's real skill.
+    ///
+    /// <para><b>Raised 550 → 800 (2026-08-09, owner ruling "raise power growth", §11.8.2).</b>
+    /// 550 sat EXACTLY on the Common/Fine band seam, and the jitter half-width is 25 — so the
+    /// effective grade of every auto-craft in the game's history fell in [525, 575], which is to
+    /// say Common-or-Fine on a coin flip and <b>nothing else, ever</b>. Measured over 11 seeds ×
+    /// 100 days: of the 176 items equipped by living heroes at day 100, <b>Common = 140, Fine = 36,
+    /// Superior = 0, Masterwork = 0</b>. The "hard-capped at Superior" clause below was therefore
+    /// vacuous — auto-craft could not approach the cap it was capped at — and the player's own
+    /// work came out quality-indistinguishable from the rival vendor's flat-Common shop stock
+    /// (<c>RivalCatalog</c>), which is a direct hit on §2 link 1: the mark is supposed to mean
+    /// something. Equipped gear is 71% of <c>CombatMath.PartyAveragePower</c>, so this one seam
+    /// was holding the whole power curve down.</para>
+    ///
+    /// <para>800 puts the jitter band at [775, 825] — just above the Fine/Superior seam (780), so
+    /// auto-craft lands Superior with a short Fine tail: competent, with the cap still doing real
+    /// work. PKD4 is untouched — the hard cap below still forbids Masterwork on this path, so the
+    /// minigame remains the ONLY road to Masterwork. Two neighbours were measured and rejected:
+    /// 780 (the pure one-band shift, straddling the seam 50/50) reaches a party-power median of
+    /// only 95 and misses the 100 gate; 850 ([825, 875]) is Superior with no tail at all, which
+    /// deletes auto-craft's quality variance entirely for the same median (100) that 800 beats
+    /// at 101.</para>
+    /// </summary>
+    private const int AutoCraftGrade = 800;
 
     /// <summary>
     /// The active-model dominance roll (PA2/PKD3): <paramref name="performanceGrade"/> (a
