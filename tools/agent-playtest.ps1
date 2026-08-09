@@ -38,8 +38,40 @@
 .PARAMETER MinFreeGb
     GPU free-VRAM floor. Default 14, per the project's hard GPU rule.
 
+.PARAMETER Scope
+    Which question this run is answering (A4/A5, "the shell around the game" plan). The act loop
+    (observe, ask the model, apply the command) is IDENTICAL in all three -- only the prompt content
+    and the findings.md contents change:
+
+      Full  (default) -- today's behaviour. A full, unscoped sweep of the game.
+      Diff  -- "what did I just break." Derives the files that changed since origin/main and tells
+               the model to look at their mapped surfaces first. If the map cannot resolve a changed
+               file, or there is no diff at all, the run says so LOUDLY in findings.md and the
+               console rather than quietly acting like a full sweep was the intended Diff result.
+      Scout -- "is this still the game it says it is." The SAME act loop, judged at the end by a
+               different prompt seeded with docs/design/THE-GAME.md (the five spine links, the six
+               decisions, the seven laws) instead of the bug-hunting judge.md. Also launches the two
+               mechanical detectors that already exist (FullPlaytest's engine-log-anomaly and
+               frozen-world motion checks; Playtest3dRecorder's dead-3D-surface map) and folds their
+               own reports into the same findings.md. The judgement half is EVIDENCE for the owner to
+               read, never a gate -- it cannot fail the build and never edits a design doc.
+
+    Every scope names itself in findings.md's own header, so a report can never be mistaken for a
+    different scope's.
+
+.PARAMETER MechanicalTimeoutMin
+    Scout only. Per-stage timeout for the two mechanical detectors (FullPlaytest's real 5-launch
+    campaign, then the filtered `dotnet test godot/tests` run for Playtest3dRecorder). A stage that
+    exceeds this is killed and reported as TIMED OUT in findings.md, not silently omitted.
+
 .EXAMPLE
     .\tools\agent-playtest.ps1 -Turns 40
+
+.EXAMPLE
+    .\tools\agent-playtest.ps1 -Scope Diff -Turns 25
+
+.EXAMPLE
+    .\tools\agent-playtest.ps1 -Scope Scout -Turns 60
 #>
 [CmdletBinding()]
 param(
@@ -52,8 +84,18 @@ param(
     [string]$OutDir,
     [string]$Endpoint = 'http://127.0.0.1:11434',
     [int]$TurnTimeoutSec = 90,
-    [int]$NumCtx = 8192
+    [int]$NumCtx = 8192,
+    [ValidateSet('Full', 'Diff', 'Scout')]
+    [string]$Scope = 'Full',
+    [int]$MechanicalTimeoutMin = 15
 )
+
+# A4/A5: the diff-to-surface map, the per-turn prompt builder, and Scout's mechanical detectors are
+# split into their own dot-sourced files for one reason -- they need no Godot, no ollama, and no
+# VRAM to prove, and this script needs all three. See tools/test-agent-playtest-modes.ps1.
+. (Join-Path $PSScriptRoot 'agent-playtest\scope-map.ps1')
+. (Join-Path $PSScriptRoot 'agent-playtest\turn-prompt.ps1')
+. (Join-Path $PSScriptRoot 'agent-playtest\mechanical.ps1')
 
 $ErrorActionPreference = 'Stop'
 
@@ -303,9 +345,35 @@ function Wait-ForFile($path, $timeoutSec) {
 
 $actPrompt = ''
 $judgePrompt = ''
+$diffScopeInfo = $null
 if (-not $Scripted) {
     $actPrompt = Get-Content (Join-Path $PSScriptRoot 'agent-playtest\prompts\act.md') -Raw
-    $judgePrompt = Get-Content (Join-Path $PSScriptRoot 'agent-playtest\prompts\judge.md') -Raw
+
+    # A5: Scout is judged by a different prompt -- the design-doc-seeded question about decisions
+    # and boredom, not the bug-hunting judge.md. Full and Diff keep judge.md unchanged.
+    $judgePromptFile = 'agent-playtest\prompts\judge.md'
+    if ($Scope -eq 'Scout') { $judgePromptFile = 'agent-playtest\prompts\scout-judge.md' }
+    $judgePrompt = Get-Content (Join-Path $PSScriptRoot $judgePromptFile) -Raw
+
+    # A4: Diff appends "what changed today" to the SYSTEM prompt, so it rides along on every turn
+    # rather than only the first one. No new judgement machinery -- this is a prompt and a map.
+    if ($Scope -eq 'Diff') {
+        $changedFiles = Get-ChangedFilesAgainstMain -RepoRoot $RepoRoot
+        $diffScopeInfo = Get-ScopeDiffSection -ChangedFiles $changedFiles
+        $actPrompt = $actPrompt + [Environment]::NewLine + [Environment]::NewLine + '## Scope: Diff' + [Environment]::NewLine + $diffScopeInfo.Text
+        if ($diffScopeInfo.FellBack) {
+            Warn ('SCOPE DIFF FELL BACK TOWARD A FULL SWEEP -- ' + $diffScopeInfo.UnresolvedCount + ' of ' +
+                $diffScopeInfo.ChangedCount + ' changed file(s) unmapped, or no diff was found against origin/main.')
+        } else {
+            Say ('scope: Diff -- ' + $diffScopeInfo.ChangedCount + ' changed file(s), all mapped to a surface')
+        }
+    } elseif ($Scope -eq 'Scout') {
+        $actPrompt = $actPrompt + [Environment]::NewLine + [Environment]::NewLine +
+            '## Scope: Scout' + [Environment]::NewLine +
+            'This run also judges whether the game is doing its job, using a question seeded from the ' +
+            'design docs at the end. Play exactly as you always would -- explore, go inside things, ' +
+            'follow the tutorial -- do not change how you act because of this note.'
+    }
 }
 
 try {
@@ -347,50 +415,16 @@ try {
             $idx = [math]::Min($turn - 1, $scriptedPlan.Count - 1)
             $command = $scriptedPlan[$idx]
         } else {
-            $recent = ''
+            $recentLines = @()
             if ($history.Count -gt 0) {
-                $tail = $history[[math]::Max(0, $history.Count - 6)..($history.Count - 1)]
-                $recent = 'Recent turns:' + [Environment]::NewLine + ($tail -join [Environment]::NewLine)
+                $recentLines = $history[[math]::Max(0, $history.Count - 6)..($history.Count - 1)]
             }
-            # Surroundings + the interact prompt are what let the model be a PLAYER rather than a
-            # button-presser. Without them the first honest run reached day 2 having never entered a
-            # building: it had no way to know a forge existed somewhere to its left. Both come
-            # straight from the running town (state.json), so this narrates the world, never invents it.
-            # An in-range target must NOT be reported as a direction to walk. The first agent run
-            # walked "down" into the forge's own footprint eight times from 8px away -- the player
-            # spawns on its doorstep, so the bearing was true and useless. Say the actionable thing.
-            $around = ''
-            if ($state.nearby -and @($state.nearby).Count -gt 0) {
-                $lines = @(@($state.nearby) | Select-Object -First 6 | ForEach-Object {
-                    if ($_.inRange) {
-                        '  ' + $_.key + ' [' + $_.label + '] YOU ARE HERE - press interact to use it (do not walk)'
-                    } else {
-                        '  ' + $_.key + ' [' + $_.label + '] ' + $_.direction + ' ' + $_.distance + 'px away'
-                    }
-                })
-                $around = 'Around you:' + [Environment]::NewLine + ($lines -join [Environment]::NewLine)
-            }
-            $prompt2d = ''
-            if ($state.interactPrompt) { $prompt2d = 'Interact prompt on screen: ' + $state.interactPrompt }
-
-            $userText = @(
-                ('Turn ' + $turn + ' of ' + $Turns + '.'),
-                ('Day ' + $state.day + ', phase ' + $state.phase + ', at ' + $state.location + '. canMove=' + $state.canMove + '. Gold ' + $state.gold + ', action slots left ' + $state.actionSlotsRemaining + '.'),
-                ('Last outcome: ' + $state.lastOutcome),
-                $prompt2d,
-                '',
-                'On screen:',
-                (($state.screenText | ForEach-Object { '  ' + $_ }) -join [Environment]::NewLine),
-                '',
-                $around,
-                '',
-                'Controls:',
-                (($state.controls | ForEach-Object { '  ' + $_.name + ' [' + $_.label + '] enabled=' + $_.enabled }) -join [Environment]::NewLine),
-                '',
-                $recent,
-                '',
-                'Answer with one JSON object only.'
-            ) -join [Environment]::NewLine
+            # Surroundings, the interact prompt, and the beat all come straight off state.json (see
+            # Build-ActUserText in agent-playtest\turn-prompt.ps1), so this narrates the world, never
+            # invents it. Extracted to its own file so the beat-wiring fix below is provable with a
+            # stubbed state object instead of a live Godot+ollama run -- see
+            # tools/test-agent-playtest-modes.ps1.
+            $userText = Build-ActUserText -State $state -Turn $turn -Turns $Turns -RecentHistory $recentLines
 
             $attempts = 0
             $imageMissingThisTurn = $false
@@ -459,6 +493,10 @@ try {
     if ($proc -and -not $proc.HasExited) {
         Say 'closing client'
         try { Stop-Process -Id $proc.Id -Force -Confirm:$false } catch { }
+        # Scout launches a SECOND Godot process later (FullPlaytest) once this one is gone -- the
+        # machine's gdUnit/Godot runtime is serialized (see tools/engine-test.ps1's own trap 1), so
+        # this waits for the OS to actually finish tearing this one down before anything else starts.
+        try { $proc.WaitForExit(10000) } catch { }
     }
     $env:AGENT_PLAYTEST = ''
     $env:AGENT_PLAYTEST_DIR = ''
@@ -497,12 +535,15 @@ if ($log.Length -gt $judgeCap) {
     Say ('judge input trimmed to last ' + $judgeCap + ' chars of ' + $fullLog.Length)
 }
 
-$titleLine = '# Agent playtest findings'
-if ($degraded) { $titleLine = '# DEGRADED -- agent playtest findings' }
+# Every scope names itself here, so a report can never be mistaken for a different scope's --
+# see this file's own .PARAMETER Scope doc for what Full/Diff/Scout each answer.
+$titleLine = '# Agent playtest findings (Scope: ' + $Scope + ')'
+if ($degraded) { $titleLine = '# DEGRADED -- agent playtest findings (Scope: ' + $Scope + ')' }
 
 $header = @(
     $titleLine,
     '',
+    ('- scope: ' + $Scope),
     ('- model: ' + $Model),
     ('- turns: ' + $turn + ' (stopped: ' + $stopReason + ')'),
     ('- model-driven turns: ' + $modelDrivenTurns),
@@ -512,6 +553,15 @@ $header = @(
     ('- playtest log (day/phase/beat/cause per tick, every action): ' + $playtestLogPath),
     ''
 )
+if ($Scope -eq 'Diff' -and $diffScopeInfo) {
+    $fallBackNote = ''
+    if ($diffScopeInfo.FellBack) { $fallBackNote = ' (FELL BACK to a full sweep -- see below)' }
+    $header += @(
+        ('- diff scope: ' + $diffScopeInfo.ChangedCount + ' changed file(s) vs origin/main, ' +
+            $diffScopeInfo.UnresolvedCount + ' unmapped' + $fallBackNote),
+        ''
+    )
+}
 if ($degraded) {
     $header = @(
         ('DEGRADED: ' + $fallbackTurns + ' of ' + $turn + ' turns (' + $fallbackPct + '%) fell back to ' +
@@ -544,6 +594,18 @@ if ($Scripted) {
     exit 0
 }
 
+# A5: Scout's mechanical half. Deliberately sequential and deliberately BEFORE the judge call, so
+# a failed judge pass (Die, below) still leaves a findings.md carrying whatever the detectors found
+# -- the two halves are independent evidence and one going wrong must never cost the other. The act
+# loop's own Godot process is fully gone by now (see the WaitForExit in the finally block above),
+# so this is not a second concurrent runtime.
+$mechanicalSection = @()
+if ($Scope -eq 'Scout') {
+    Say 'scope: Scout -- running mechanical detectors (FullPlaytest, Playtest3dRecorder)'
+    $mechanicalText = Invoke-MechanicalDetectors -RepoRoot $RepoRoot -OutDir $OutDir -Godot $godot -TimeoutMinutes $MechanicalTimeoutMin
+    $mechanicalSection = @('', '---', '') + @($mechanicalText)
+}
+
 Say 'asking the model to write findings'
 $judgeInput = @(
     'Here is the full log of the session you just played.',
@@ -561,7 +623,7 @@ $findings = ''
 try { $findings = Invoke-Model $judgePrompt (($judgeInput) -join [Environment]::NewLine) $null } catch { Warn ('judge call failed: ' + $_.Exception.Message) }
 
 if (-not $findings) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('JUDGE FAILED -- no findings written. Raw turn log below.', '', $log))
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('JUDGE FAILED -- no findings written. Raw turn log below.') + $mechanicalSection + @('', $log))
     Die @('the judge pass produced nothing. The turn log is still in ' + $findingsPath + '.')
 }
 
@@ -600,7 +662,7 @@ if ($unsupported.Count -gt 0) {
     ) + ($unsupported | ForEach-Object { '- `' + $_ + '`' })
 }
 
-Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @($findings) + $guardNote + @("", "---", "", "## Turn log", "", $fullLog))
+Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @($findings) + $guardNote + $mechanicalSection + @("", "---", "", "## Turn log", "", $fullLog))
 
 Write-Host ''
 Say ('findings written: ' + $findingsPath)
