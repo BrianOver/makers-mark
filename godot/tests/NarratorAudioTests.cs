@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System.Linq;
+using GameSim.Presentation;
 using GdUnit4;
 using Godot;
 using GodotClient.Audio;
@@ -33,7 +34,17 @@ public class NarratorAudioTests
     public void EveryNarratorLine_ResolvesToRealLoadableAudio()
     {
         var ids = NarratorLines.AllAudioIds;
-        AssertInt(ids.Count).IsEqual(20);
+
+        // DERIVED, not a literal. This assertion was `IsEqual(20)` and went red the first time the
+        // library grew — which taught nothing except that someone had added lines on purpose. The
+        // claim worth making is that the CLIENT's id list matches the SIM's library exactly: a
+        // client that knows about fewer lines than the director can pick is a client that will
+        // eventually be asked for a file it has never heard of.
+        var expected = NarratorVoiceDirector.Lines.Sum(pair => pair.Value.Length);
+        AssertInt(ids.Count).OverrideFailureMessage(
+            $"the client knows {ids.Count} narrator recordings; the director can pick {expected}. "
+            + "Every line the sim can choose must have a file the client can name.")
+            .IsEqual(expected);
 
         foreach (var audioId in ids)
         {

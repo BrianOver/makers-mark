@@ -742,6 +742,11 @@ public partial class MainUi : Control
 
         _rejectionsWarned = rejections.Count;
 
+        // Milestones speak OUTSIDE the rejection branch below. A player who mistyped an action on
+        // the same tick their campaign reached its climax should still hear the climax — the toast
+        // strip has to choose one line, but the voice is a different channel and does not.
+        SpeakMilestones(Adapter.LastEvents, state);
+
         // U6 (R6) toast half: surfaced refusals render as a short player-phrased line
         // that auto-clears (wall-clock in _Process, or here on the next clean tick).
         // The raw kernel string never reaches a rendered control.
@@ -1301,6 +1306,46 @@ public partial class MainUi : Control
     /// <see cref="AdventureTicker"/> instead, where they can scroll past without demanding
     /// attention.</para>
     /// </summary>
+    /// <summary>
+    /// The three campaign milestones that earn a voice: the act turn, the climax, and the ending.
+    ///
+    /// <para>Each is a once-per-campaign event in the sim, but "the sim emits it once" is not the
+    /// same claim as "the client sees it once" — events are re-read on reload, and a re-read that
+    /// re-speaks would turn the rarest line in the game into a bug. Hence the latch, which is the
+    /// client's own memory of what it has already said.</para>
+    ///
+    /// <para><see cref="CampaignAct"/> advancing had NO presentation of any kind before this —
+    /// not a toast, not a ticker line — despite being the moment permadeath starts to bite. The
+    /// climax and the ending already had text; they were simply silent.</para>
+    /// </summary>
+    private void SpeakMilestones(IEnumerable<GameEvent> events, GameState state)
+    {
+        foreach (var evt in events)
+        {
+            var trigger = evt switch
+            {
+                CampaignEnded => NarratorVoiceDirector.Trigger.CampaignEnding,
+                ClimaxReached => NarratorVoiceDirector.Trigger.ClimaxReached,
+                ActAdvanced => NarratorVoiceDirector.Trigger.ActAdvanced,
+                _ => (NarratorVoiceDirector.Trigger?)null,
+            };
+
+            if (trigger is not { } t || !_spokenMilestones.Add(t))
+            {
+                continue;
+            }
+
+            // Rng.Inc is the campaign's identity everywhere flavor is picked; the day is the
+            // event id, matching how the ledger voice keys its own pick.
+            Audio?.SpeakNarrator(t, state.Rng.Inc, (ulong)state.Day);
+        }
+    }
+
+    /// <summary>What the narrator has already said this session. A campaign milestone that speaks
+    /// twice is worse than one that never speaks: the second time teaches the player it was never
+    /// a milestone at all.</summary>
+    private readonly System.Collections.Generic.HashSet<NarratorVoiceDirector.Trigger> _spokenMilestones = [];
+
     private static string? WorldNotice(IEnumerable<GameEvent> events, GameState state)
     {
         string? collapse = null, climax = null, leaving = null, rival = null, stipend = null;

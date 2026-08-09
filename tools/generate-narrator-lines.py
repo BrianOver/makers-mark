@@ -51,13 +51,25 @@ VRAM_FLOOR_BYTES = 14 * 1000 ** 3
 
 # What the C# pins. A parse that finds a different shape is a parse that is wrong --
 # and silently generating 3 lines instead of 6 would leave the library quietly partial.
-EXPECTED = {"VigilOpening": 6, "DeathEpitaph": 6, "ProvenSave": 4, "KillingBlow": 4}
+EXPECTED = {
+    "VigilOpening": 6,
+    "DeathEpitaph": 6,
+    "ProvenSave": 4,
+    "KillingBlow": 4,
+    # Campaign milestones: once each per campaign, so three lines is plenty of variety.
+    "ActAdvanced": 3,
+    "ClimaxReached": 3,
+    "CampaignEnding": 3,
+}
 
 SLUG = {
     "VigilOpening": "vigil-opening",
     "DeathEpitaph": "death-epitaph",
     "ProvenSave": "proven-save",
     "KillingBlow": "killing-blow",
+    "ActAdvanced": "act-advanced",
+    "ClimaxReached": "climax-reached",
+    "CampaignEnding": "campaign-ending",
 }
 
 # Baked loudness. Every line lands at the same level so ONE number in AudioDirector

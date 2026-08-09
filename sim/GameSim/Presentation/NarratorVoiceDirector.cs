@@ -40,6 +40,19 @@ public static class NarratorVoiceDirector
 
         /// <summary>Your work landed the blow that ended it.</summary>
         KillingBlow,
+
+        // The three below are CAMPAIGN MILESTONES, not nightly beats. Each fires at most once in a
+        // campaign, which is why they can be voiced without ever becoming wallpaper — the argument
+        // that keeps the nightly list short does not apply to a thing that happens once.
+
+        /// <summary>The arc turned. Permadeath starts to bite and the wall starts filling.</summary>
+        ActAdvanced,
+
+        /// <summary>The deepest floor stopped being a rumour.</summary>
+        ClimaxReached,
+
+        /// <summary>The campaign reached its end. The loudest silence in the game until now.</summary>
+        CampaignEnding,
     }
 
     /// <summary>
@@ -81,6 +94,24 @@ public static class NarratorVoiceDirector
                 "One strike, and the argument was settled.",
                 "It held. It bit. It finished.",
                 "Made in the morning. Decisive by dark.",
+            ],
+            [Trigger.ActAdvanced] =
+            [
+                "The town has started keeping count.",
+                "Something shifted. Nobody announced it.",
+                "Names are collecting on that wall. That is how you know.",
+            ],
+            [Trigger.ClimaxReached] =
+            [
+                "The mine has been patient. That ends here.",
+                "Something down there finally noticed you were coming.",
+                "The deepest floor stopped being a rumour this morning.",
+            ],
+            [Trigger.CampaignEnding] =
+            [
+                "Every ledger closes eventually. This one just did.",
+                "The forge keeps its own accounting. This much of it is done.",
+                "What was made here outlasts the making of it.",
             ],
         }.ToImmutableDictionary();
 
@@ -153,6 +184,9 @@ public static class NarratorVoiceDirector
         Trigger.DeathEpitaph => "death-epitaph",
         Trigger.ProvenSave => "proven-save",
         Trigger.KillingBlow => "killing-blow",
+        Trigger.ActAdvanced => "act-advanced",
+        Trigger.ClimaxReached => "climax-reached",
+        Trigger.CampaignEnding => "campaign-ending",
         _ => "unknown",
     };
 }

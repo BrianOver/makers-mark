@@ -99,7 +99,61 @@ public class NarratorVoiceDirectorTests
         Assert.Equal(6, NarratorVoiceDirector.Lines[Trigger.DeathEpitaph].Length);
         Assert.Equal(4, NarratorVoiceDirector.Lines[Trigger.ProvenSave].Length);
         Assert.Equal(4, NarratorVoiceDirector.Lines[Trigger.KillingBlow].Length);
-        Assert.Equal(4, NarratorVoiceDirector.Lines.Count);
+        Assert.Equal(3, NarratorVoiceDirector.Lines[Trigger.ActAdvanced].Length);
+        Assert.Equal(3, NarratorVoiceDirector.Lines[Trigger.ClimaxReached].Length);
+        Assert.Equal(3, NarratorVoiceDirector.Lines[Trigger.CampaignEnding].Length);
+        Assert.Equal(7, NarratorVoiceDirector.Lines.Count);
+    }
+
+    /// <summary>
+    /// Every trigger has lines, and every trigger has a slug that is not the fallback. The failure
+    /// this catches is a new Trigger added to the enum and nowhere else: it compiles, it selects,
+    /// and it asks the client to play "unknown-00.ogg" — a file that does not exist and a silence
+    /// nobody can distinguish from a quiet night.
+    /// </summary>
+    [Fact]
+    public void EveryTrigger_HasLinesAndASlug()
+    {
+        foreach (Trigger trigger in Enum.GetValues<Trigger>())
+        {
+            Assert.True(NarratorVoiceDirector.Lines.ContainsKey(trigger),
+                $"{trigger} has no lines");
+            Assert.NotEmpty(NarratorVoiceDirector.Lines[trigger]);
+            Assert.NotEqual("unknown", NarratorVoiceDirector.TriggerSlug(trigger));
+        }
+    }
+
+    /// <summary>
+    /// The three milestones fire at most once a campaign, which is the entire argument for voicing
+    /// them at all. <see cref="NarratorVoiceDirector.SelectForNight"/> is the NIGHTLY selector and
+    /// must never return one — a milestone arriving through the ledger path would speak on a night
+    /// the milestone did not happen.
+    /// </summary>
+    [Fact]
+    public void TheNightlySelector_NeverReturnsAMilestone()
+    {
+        var milestones = new[] { Trigger.ActAdvanced, Trigger.ClimaxReached, Trigger.CampaignEnding };
+        var source = File.ReadAllText(DirectorSourcePath());
+        var selector = source[source.IndexOf("public static Trigger? SelectForNight", StringComparison.Ordinal)..];
+        selector = selector[..selector.IndexOf("public static int ChooseLine", StringComparison.Ordinal)];
+
+        foreach (var milestone in milestones)
+        {
+            Assert.DoesNotContain($"Trigger.{milestone}", selector);
+        }
+    }
+
+    private static string DirectorSourcePath()
+    {
+        var dir = new DirectoryInfo(Path.GetDirectoryName(
+            System.Reflection.Assembly.GetExecutingAssembly().Location)!);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Game.sln")))
+        {
+            dir = dir.Parent;
+        }
+
+        Assert.NotNull(dir);
+        return Path.Combine(dir!.FullName, "sim", "GameSim", "Presentation", "NarratorVoiceDirector.cs");
     }
 
     /// <summary>
