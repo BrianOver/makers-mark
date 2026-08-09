@@ -73,7 +73,20 @@
       "WebFetch(domain:store.steampowered.com)",
       "WebFetch(domain:reddit.com)",
       "WebFetch(domain:www.reddit.com)",
-      "mcp__comfyui"
+      "mcp__comfyui",
+
+      "Bash(cd *)",
+      "Bash(command -v *)",
+      "Bash(nvidia-smi *)",
+      "Bash(powershell.exe *)",
+      "Bash(powershell *)",
+      "Bash(tasklist)",
+      "Bash(ollama *)",
+      "Bash(python -c *)",
+      "Bash(python3 -c *)",
+      "Bash(xargs *)",
+      "Read(//c/Tools/**)",
+      "Edit(//c/Code/**)"
     ],
     "deny": [
       "Bash(rm *)",
