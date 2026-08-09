@@ -82,6 +82,15 @@ public partial class ForgePanel : SimPanel
     private ScrollContainer? _scroll;
     private Control? _vendorSectionRoot;
     private Control? _recipeSectionRoot;
+
+    // ── station split (owner playtest, 2026-08): "the entire point of having different things to
+    // click on inside is to help sort this sort of menu" — Gear Rack (Focus "materials") and
+    // Workbench (Focus "craft") used to open this SAME panel, merely scrolled to a different
+    // starting row; scrolling still reached the other station's controls from either entry. These
+    // two roots make the split real: FocusSection shows exactly one and hides the other, so a
+    // station opens ONLY its own job. See FocusSection/ResetFocus's own docs.
+    private VBoxContainer? _materialsViewRoot;
+    private VBoxContainer? _craftViewRoot;
     private Control? _focusFlashTarget;
     private double _focusFlashRemaining = -1;
     private const float FocusFlashSeconds = 0.6f;
@@ -97,6 +106,17 @@ public partial class ForgePanel : SimPanel
     /// scroll/flash side effects — so a test can assert intent without racing the
     /// <see cref="ScrollContainer"/>'s own deferred layout pass.</summary>
     public string? LastFocusedSection { get; private set; }
+
+    /// <summary>Test/inspection surface, same idiom as <see cref="LastFocusedSection"/>: whether the
+    /// Morning Vendor + Foundry buy-side content is currently on screen. False the instant a
+    /// craft-focused station narrows the panel — the assertion that stops the vendor and the
+    /// crafting rows from silently merging back onto one page.</summary>
+    public bool MaterialsViewVisible => _materialsViewRoot?.Visible ?? true;
+
+    /// <summary>Test/inspection surface: whether the material-picker/modifiers/recipes/talents
+    /// crafting content is currently on screen. False the instant a materials-focused station
+    /// narrows the panel.</summary>
+    public bool CraftViewVisible => _craftViewRoot?.Visible ?? true;
 
     /// <summary>U23d/U7: the Anvil Map forge overlay — ACT 1 of the two-act forge, a single
     /// instance reused across recipes, (re)configured per <see cref="OnWorkForgePressed"/> press.
@@ -250,15 +270,25 @@ public partial class ForgePanel : SimPanel
 
     /// <summary>
     /// U3 (painted-interiors plan, KTD-3): the Material Shelf/Anvil/Furnace stations' "press E,
-    /// land on the right rows" affordance — scrolls this panel to a named section and briefly
-    /// flashes it. Reuses the EXISTING section containers built by <see cref="EnsureBuilt"/>
-    /// ("materials" → the vendor/material rows, "craft" → the recipe cards) — no new content, no
-    /// verb change, just where the scroll body is already sitting when the drawer opens over the
-    /// room. A section name this panel does not recognize is a silent no-op HERE (recognized
-    /// values are enforced upstream, at room-build time, by <c>InteriorRoomTests
-    /// .EveryStationAction_IsARecognizedMainUiRoute_NeverADeadClick</c>'s <c>KnownFocusValues</c>
-    /// check — this method does not need to re-fail loudly for a case that table validation
-    /// already caught before the game ever ran).
+    /// land on the right rows" affordance. Reuses the EXISTING section containers built by
+    /// <see cref="EnsureBuilt"/> ("materials" → the vendor/material rows, "craft" → the recipe
+    /// cards) — no new content, no verb change.
+    ///
+    /// <para><b>Station split (owner playtest, 2026-08).</b> This used to ONLY scroll/flash — both
+    /// the vendor rows and the recipe/talent rows stayed mounted and reachable by scrolling no
+    /// matter which station opened the panel, so a Gear Rack press and a Workbench press opened
+    /// what was functionally the same page. The owner's complaint named the actual design rule this
+    /// broke: a walkable room full of distinct, clickable stations only sorts the menu if each
+    /// station shows JUST its own job. So this now also hides the OTHER half —
+    /// <see cref="_materialsViewRoot"/> for "craft", <see cref="_craftViewRoot"/> for "materials" —
+    /// rather than merely losing the scroll position. <see cref="ResetFocus"/> is the undo, called
+    /// by <c>MainUi.OpenPanel</c> on every fresh (non-station) open.</para>
+    ///
+    /// <para>A section name this panel does not recognize is a silent no-op for the
+    /// show/hide split too (recognized values are enforced upstream, at room-build time, by
+    /// <c>InteriorRoomTests.EveryStationAction_IsARecognizedMainUiRoute_NeverADeadClick</c>'s
+    /// <c>KnownFocusValues</c> check — this method does not need to re-fail loudly for a case that
+    /// table validation already caught before the game ever ran).</para>
     /// </summary>
     public void FocusSection(string section)
     {
@@ -277,9 +307,33 @@ public partial class ForgePanel : SimPanel
             return;
         }
 
+        _materialsViewRoot!.Visible = section == "materials";
+        _craftViewRoot!.Visible = section == "craft";
+
         DeferEnsureVisible(_scroll, target);
         _focusFlashTarget = target;
         _focusFlashRemaining = FocusFlashSeconds;
+    }
+
+    /// <summary>
+    /// Station split (owner playtest, 2026-08): undoes a prior <see cref="FocusSection"/> narrowing
+    /// back to the full, undivided panel. <c>MainUi.OpenPanel</c> calls this on every FRESH open of
+    /// the Forge drawer, BEFORE a station's own <see cref="FocusSection"/> call (if any) narrows it
+    /// back down for that one open.
+    ///
+    /// <para>Without this, narrowing would silently stick on the one shared panel instance: visit
+    /// the Gear Rack (narrows to materials), leave, then press Camp's "Forge something for them"
+    /// shortcut or reopen via a playtest tool's bare <c>OpenPanel("Forge")</c> — neither of those
+    /// callers ever names a station or a <see cref="InteriorLayout2D.StationSpec.Focus"/>, so
+    /// without a reset they would inherit whatever a PREVIOUS room visit last narrowed the panel
+    /// to, instead of the full panel those non-station callers have always shown.</para>
+    /// </summary>
+    public void ResetFocus()
+    {
+        EnsureBuilt();
+        LastFocusedSection = null;
+        _materialsViewRoot!.Visible = true;
+        _craftViewRoot!.Visible = true;
     }
 
     /// <summary>Safety ceiling for <see cref="DeferEnsureVisible"/>'s settle-poll — 240 frames (4s
@@ -1350,9 +1404,18 @@ public partial class ForgePanel : SimPanel
         _scroll = body.GetParent() as ScrollContainer;
         _feedback = AddLabel(body, string.Empty);
         _feedback.Name = "ForgeFeedback";
-        _materialsLabel = AddLabel(body, "MATERIALS:");
 
-        var selectRow = AddRow(body);
+        // Station split: everything buy-side lives under _materialsViewRoot, everything craft-side
+        // under _craftViewRoot — see FocusSection's own doc for why this pair exists. Both start
+        // visible (the ResetFocus default); a station's FocusSection call is what narrows to one.
+        _materialsViewRoot = new VBoxContainer { Name = "MaterialsView" };
+        body.AddChild(_materialsViewRoot);
+        _craftViewRoot = new VBoxContainer { Name = "CraftView" };
+        body.AddChild(_craftViewRoot);
+
+        _materialsLabel = AddLabel(_materialsViewRoot, "MATERIALS:");
+
+        var selectRow = AddRow(_craftViewRoot);
         AddLabel(selectRow, "Craft with:");
         _materialSelect = new OptionButton { Name = "MaterialSelect" };
         _materialSelect.AddItem(RecipeDefaultOption);
@@ -1369,7 +1432,7 @@ public partial class ForgePanel : SimPanel
         // UI-5: Title Case Section wrapper (was an ALL-CAPS AddHeader label) — matches ShopPanel's
         // existing Section-based screens.
         var modifiersSection = Section("Modifiers (Optional)");
-        body.AddChild(modifiersSection.Root);
+        _craftViewRoot.AddChild(modifiersSection.Root);
         var modRow = AddRow(modifiersSection.Body);
         _oilSelect = BuildModifierSelect("OilSelect", GameSim.Contracts.ModifierFamily.QuenchOil);
         _runeSelect = BuildModifierSelect("RuneSelect", GameSim.Contracts.ModifierFamily.Rune);
@@ -1380,28 +1443,29 @@ public partial class ForgePanel : SimPanel
 
         var vendorSection = Section("Morning Vendor");
         vendorSection.Root.Name = "VendorSection"; // U3: distinguishes it from every other Section-built root (all named "Section" otherwise) for FocusSection/test/diagnostic lookup
-        body.AddChild(vendorSection.Root);
+        _materialsViewRoot.AddChild(vendorSection.Root);
         _vendorSectionRoot = vendorSection.Root; // U3: FocusSection("materials") scroll/flash target
         _vendorRows = new VBoxContainer { Name = "VendorRows" };
         vendorSection.Body.AddChild(_vendorRows);
 
-        // U3: the Foundry — forge-tier/coal/flux chips plus the Upgrade/Buy-supply rows, beside
-        // the Morning vendor rows just built above.
+        // U3: the Foundry — forge-tier/coal/flux chips plus the Upgrade/Buy-supply rows. Buy-side,
+        // same as the Morning vendor rows just built above — lives in the SAME view root (station
+        // split: the Gear Rack's "materials" focus is the one job both of these serve).
         var foundrySection = Section("Foundry");
         foundrySection.Root.Name = "FoundrySection";
-        body.AddChild(foundrySection.Root);
+        _materialsViewRoot.AddChild(foundrySection.Root);
         _foundryRows = new VBoxContainer { Name = "FoundryRows" };
         foundrySection.Body.AddChild(_foundryRows);
 
         var recipeSection = Section("Recipes");
         recipeSection.Root.Name = "RecipeSection"; // U3: see VendorSection's own naming note above
-        body.AddChild(recipeSection.Root);
+        _craftViewRoot.AddChild(recipeSection.Root);
         _recipeSectionRoot = recipeSection.Root; // U3: FocusSection("craft") scroll/flash target
         _recipeRows = new VBoxContainer { Name = "RecipeRows" };
         recipeSection.Body.AddChild(_recipeRows);
 
         var talentSection = Section("Talents");
-        body.AddChild(talentSection.Root);
+        _craftViewRoot.AddChild(talentSection.Root);
         _talentRows = new VBoxContainer { Name = "TalentRows" };
         talentSection.Body.AddChild(_talentRows);
 
