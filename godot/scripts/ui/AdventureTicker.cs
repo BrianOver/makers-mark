@@ -72,9 +72,11 @@ public partial class AdventureTicker : PanelContainer
     /// (R15). Filters to the ambient story surface: item sales, party departures, floor
     /// records, gossip, death (Evening-only — see the class doc), commission lifecycle,
     /// arrivals, the drama director's daily incident, the confidence spiral's edge-triggered
-    /// warnings, (U5(b)) the faction-standing gauge's own edge-triggered threshold crossings, and
+    /// warnings, (U5(b)) the faction-standing gauge's own edge-triggered threshold crossings,
     /// (U7) the four cadence-periodic/edge-triggered economic moments: rent paid/missed, guild
-    /// assessment passed/missed, a hero's rank-up crossing, and a paid-out bounty.
+    /// assessment passed/missed, a hero's rank-up crossing, and a paid-out bounty, and (U3) two
+    /// moments that fired into total silence until now: a craft signed into a named legend, and
+    /// a fallen hero's memorial rite performed.
     /// Unrecognized/irrelevant event types render nothing; a batch
     /// with no qualifying event appends nothing (no placeholder noise). Same-day repeats
     /// (identical formatted text) are deduped — which is also the spam guard, since a
@@ -167,6 +169,18 @@ public partial class AdventureTicker : PanelContainer
             $"{HeroName(state, e.Hero)} takes delivery of {ItemName(state, e.Item)} — {e.Premium}g premium.",
         CommissionExpired e =>
             $"{HeroName(state, e.Hero)} gave up waiting on that {e.Slot} commission.",
+
+        // U3: these two fired into total silence for as long as they've existed (Wave 4 and
+        // Wave 4c respectively) — no ticker case, no player-visible feedback at all. Signing a
+        // work is the moment "your craft writes the legends" stops being a metaphor; honoring a
+        // memorial is a deliberate rite the player chose to perform over a named dead hero. Both
+        // clear this file's own admission test easily — a townsperson would certainly hear about
+        // either. Names come straight off the event payload (SignedName/HeroName), same as
+        // GossipEmitted above.
+        ItemSigned e =>
+            $"Your {ItemName(state, e.Item)} is signed into legend as \"{e.SignedName}\".",
+        MemorialHonored e =>
+            $"The town bids farewell to {e.HeroName} — the rite is done.",
 
         // The drama director's daily beat. Five authored incidents, so the prose lives here as a
         // client-side display map — DirectorSystem emits a bare snake_case id and no sim-side
