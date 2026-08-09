@@ -24,6 +24,17 @@ public class BalanceSimTests
     // calibrated against buggy clear logic). Floor-5 pacing (~day 12) is a playtest knob —
     // raise floor gates or slow advancement if first-session content should last longer.
     private const int NoFloor5BeforeDay = 8;
+
+    // Upper bound: floor 5 must be reached inside the campaign's own 100-day window — the old
+    // ">=" band alone can't see a campaign that never reaches floor 5 at all (FirstFloor5Day stays
+    // int.MaxValue, which satisfies ">= 8" perfectly). MEASURED 2026-08-08 (U5 characterization):
+    // on the main seed (2026) AND all 10 SeedSweep_CoreBands_Hold seeds (1, 7, 42, 99, 1234, 5678,
+    // 31337, 777, 2468, 13579), floor 5 is NEVER reached within 100 days under current baseline
+    // play — every run plateaus at floor 3 (seeds 2026, 5678) or floor 4 (the other 9), and Act III
+    // never fires as a result (see ArcBalanceTests). No seed produced a positive example to derive
+    // a tighter number from, so this bound is set to the window itself; the assertions below are
+    // EXPECTED TO FAIL on main until a follow-up balance unit lets a party clear floor 5.
+    private const int Floor5ByDay = Days;
     private const int MinAliveAtEnd = 3;      // recruit trickle keeps the town alive
     private const int GrinWindowDays = 60;    // grin-rate measured over the last N days
     private const int MinBeatsPerWindow = 60; // ≥1 attribution beat per day once rolling
@@ -85,6 +96,8 @@ public class BalanceSimTests
 
         Assert.True(stats.FirstFloor5Day >= NoFloor5BeforeDay,
             $"floor 5 cleared on day {stats.FirstFloor5Day} — before the day-{NoFloor5BeforeDay} trivialization ceiling");
+        Assert.True(stats.FirstFloor5Day <= Floor5ByDay,
+            $"floor 5 never reached within {Floor5ByDay} days (first: {(stats.FirstFloor5Day == int.MaxValue ? "never" : stats.FirstFloor5Day.ToString())})");
 
         Assert.True(stats.MinPlayerGold >= 0, $"player went insolvent (min gold {stats.MinPlayerGold})");
 
@@ -126,6 +139,8 @@ public class BalanceSimTests
         Assert.InRange(alive, 1, 6);
         Assert.True(stats.FirstFloor5Day >= NoFloor5BeforeDay,
             $"seed {seed}: floor 5 on day {stats.FirstFloor5Day} — trivialized");
+        Assert.True(stats.FirstFloor5Day <= Floor5ByDay,
+            $"seed {seed}: floor 5 never reached within {Floor5ByDay} days (first: {(stats.FirstFloor5Day == int.MaxValue ? "never" : stats.FirstFloor5Day.ToString())})");
     }
 
     [Fact]

@@ -22,6 +22,18 @@ public class ArcBalanceTests
     private const int NoActIIBeforeDay = 1;  // floor 3 cannot happen on day 1
     private const int NoActIIIBeforeDay = 8; // mirrors BalanceSimTests.NoFloor5BeforeDay
 
+    // Upper bound: Act III (and the Ending it schedules) must fire inside the campaign's own
+    // 100-day window — a one-sided ">=" band can't see an arc that never reaches its finale, which
+    // is exactly the blind spot this unit exists to close. MEASURED 2026-08-08 (U5
+    // characterization): on the main seed (2026) AND all 10 sweep seeds used by
+    // BalanceSimTests.SeedSweep_CoreBands_Hold (1, 7, 42, 99, 1234, 5678, 31337, 777, 2468, 13579),
+    // Act III never fires within 100 days under current baseline play — every run plateaus in Act
+    // II (deepest floor reached: 3 or 4; the floor-5 wall is never broken). There is no positive
+    // example to derive a tighter bound from, so this is set to the window itself; the assertions
+    // below are EXPECTED TO FAIL on main until a follow-up balance unit lets a party clear floor 5.
+    // See the commit body for the full per-seed table.
+    private const int ActIIIByDay = Days;
+
     [Fact]
     [Trait("Category", "Balance")]
     public void HundredDay_ArcPaces_Sanely_OnMainSeed()
@@ -40,15 +52,13 @@ public class ArcBalanceTests
         Assert.True(arc.ActIIStartDay > NoActIIBeforeDay,
             $"Act II fired on day {arc.ActIIStartDay} — implausibly early (floor {ArcDirectorSystem.ActIIFloorThreshold} same-day as day 1)");
 
-        if (arc.ActIIIStartDay > 0)
-        {
-            Assert.True(arc.ActIIIStartDay >= NoActIIIBeforeDay,
-                $"Act III/Climax fired on day {arc.ActIIIStartDay} — before the day-{NoActIIIBeforeDay} trivialization ceiling");
-        }
+        Assert.True(arc.ActIIIStartDay > 0,
+            $"Act III never fired in {Days} days (arc stuck at {arc.Act} — the floor-5 wall was never broken)");
+        Assert.InRange(arc.ActIIIStartDay, NoActIIIBeforeDay, ActIIIByDay);
 
-        if (arc.EndingDay > 0)
-        {
-            Assert.Equal(arc.ActIIIStartDay + ArcDirectorSystem.EndingDelayDays, arc.EndingDay);
-        }
+        Assert.True(arc.EndingDay > 0,
+            $"the campaign never reached its Ending in {Days} days (arc stuck at {arc.Act})");
+        Assert.InRange(arc.EndingDay, NoActIIIBeforeDay + ArcDirectorSystem.EndingDelayDays, Days);
+        Assert.Equal(arc.ActIIIStartDay + ArcDirectorSystem.EndingDelayDays, arc.EndingDay);
     }
 }
