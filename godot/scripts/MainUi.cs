@@ -2522,6 +2522,19 @@ public partial class MainUi : Control
             // profession (Town.WorkshopNametag) — the registration/routing id ("Forge") never
             // changes, only the header text a player actually reads.
             Drawer.Open(id, id == "Forge" ? Town.WorkshopNametag : null);
+
+            // Station split (owner playtest, 2026-08): a station click narrows the Forge panel to
+            // just its own job by calling ForgePanel.FocusSection right after THIS method returns
+            // (OnStationActivated, below) — but this method is also the bare, non-station open
+            // (Camp's "Forge something for them" shortcut, direct OpenPanel("Forge") calls from
+            // playtest tooling), which never calls FocusSection at all. Reset here, on every open,
+            // so a bare open always shows the full panel rather than silently inheriting whatever a
+            // PREVIOUS room visit last narrowed it to. See ForgePanel.ResetFocus's own doc.
+            if (id == "Forge")
+            {
+                Forge.ResetFocus();
+            }
+
             PanelFor(id).Refresh();
             Audio.Play(EntranceCueFor(id));
             // Watching the raid gets the Mine's own theme; every other panel stays with the day.
