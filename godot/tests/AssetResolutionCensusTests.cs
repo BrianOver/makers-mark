@@ -82,61 +82,32 @@ public class AssetResolutionCensusTests
     /// recruitable class getting promoted into <see cref="ClassRegistry.RecruitPool"/> before its
     /// art lands) is a one-line, reviewable addition instead of commenting out an assertion.
     ///
-    /// <para>U6 (docs/plans/2026-08-02-002) closed the last entries this set ever held: T1's
+    /// <para>U6 (docs/plans/2026-08-02-002) closed the last entries this set held for a while: T1's
     /// content flip (relands PR #242) promoted sentinel/skirmisher/occultist into <see
     /// cref="ClassRegistry.RecruitPool"/> before their town pixel bodies were drawn, so their
     /// <c>town2d-hero-*</c> ids resolved via <c>TownAssets2D.ForHero</c>'s next rung (the roster
     /// SVG) instead — wrong art style, never a crash, never a magenta box, but not what ships.
     /// <c>tools/art/gen_town_sprites.py</c> now authors all six classes at 26x44, so every id below
-    /// resolves to its real town body and the census enforces it forever. Empty, not deleted: the
-    /// shape stays ready for the next promoted-before-art class.</para>
+    /// resolves to its real town body and the census enforces it forever.</para>
+    ///
+    /// <para><b>BUG (2026-08-09) — this set is now EMPTY, and <see
+    /// cref="KnownPendingIds_StaysEmpty_AnAllowlistWithNoExpiryIsTheActualDefect"/> below asserts it
+    /// stays that way.</b> U7 (world-and-interiors plan) pinned 17 ids here for the three
+    /// non-blacksmith profession station sets plus all four exterior signboards, meaning to hold
+    /// them only until U8 painted the pixels and removed the lines "one profession at a time." U8
+    /// never ran. The engineering four sat here for a full week before anyone noticed a real player
+    /// saw magenta boxes for every Workbench Hall station; alchemy/tanning/every signboard sat here
+    /// even longer, quietly, because nothing ever re-checked whether a "pending" id still deserved
+    /// to be. That is the actual failure mode this set enables: <see cref="AssertResolves"/> below
+    /// skips its assertion entirely for anything listed here, so the census can enumerate an id
+    /// forever without ever proving it draws. Two fixes landed together: (1) every id that was ever
+    /// in this set now has committed art and a no-escape-hatch case below (mirroring <see
+    /// cref="EngineeringStationArtIds_ResolveToCommittedArt_NeverAPlaceholder"/>'s own precedent) so
+    /// a future re-add cannot silently regress it, and (2) the set itself is asserted empty, so
+    /// adding anything back here — even for a legitimate reason — is a change someone has to notice
+    /// and justify, not a line that quietly starts aging the moment it is pending.</para>
     /// </summary>
-    private static readonly HashSet<string> KnownPendingIds = new()
-    {
-        // U1 (world-and-interiors plan, docs/plans/2026-08-02-004): market/tavern/gatehouse room
-        // shells + station art — framework lands here as loud placeholders (TownAssets2D's
-        // magenta-bordered box, not silence); U2/U3/U4 paint the real pixels and remove these
-        // lines one room at a time (red→green shown in each art unit's own PR body).
-        //
-        // U2 (market), U3 (tavern) and U4 (gatehouse) have all painted their rooms, so every
-        // interior id is committed art and this allowlist is empty. A new room's placeholder ids
-        // come back here only for as long as its own art unit is unfinished.
-
-        // U7 (world-and-interiors plan): the three non-blacksmith profession station sets (13
-        // sprites — WorkshopVocab's alchemy/engineering/tanning entries) plus all four exterior
-        // signboard overlays (blacksmith's included — signboards are new in this unit, not a
-        // repaint of anything committed). U8 was supposed to paint them and remove these lines
-        // one profession at a time (red→green shown in that unit's own PR body); it never ran.
-        //
-        // BUG (2026-08-09): this allowlist sat here for a full week with the engineering station
-        // ids inside it, so a real player who selected Engineering saw TownAssets2D's loud
-        // magenta placeholder for all four of its stations, and every census/CI run stayed green
-        // the whole time — the allowlist is precisely what let a census that PROVES an id
-        // resolves stop proving it DRAWS: <see cref="AssertResolves"/> below skips the assertion
-        // entirely for anything listed here, so an id can sit "pending" indefinitely with nobody
-        // ever re-checking whether it should still be. This is why engineering's four ids leave
-        // the list in this same fix (real art landed, see art/pipeline/gen-engineering-
-        // interior.py) AND gain their own no-escape-hatch case below
-        // (<see cref="EngineeringStationArtIds_ResolveToCommittedArt_NeverAPlaceholder"/>,
-        // mirroring <see cref="ForgeInteriorArtIds_ResolveToCommittedArt_NeverAPlaceholder"/>) —
-        // so this specific regression (a finished id quietly re-added here, or simply never
-        // removed) fails loudly even if this comment block is ignored. Alchemy/tanning/every
-        // signboard remain genuinely unpainted and stay allowlisted; they were not what the
-        // owner reported and are not repainted by this fix.
-        "town2d-station-alch-cauldron",
-        "town2d-station-alch-still",
-        "town2d-station-alch-shelf",
-        "town2d-station-alch-rack",
-        "town2d-station-alch-herbs",
-        "town2d-station-tan-frame",
-        "town2d-station-tan-hides",
-        "town2d-station-tan-rack",
-        "town2d-station-tan-vats",
-        "town2d-sign-blacksmith",
-        "town2d-sign-alchemy",
-        "town2d-sign-engineering",
-        "town2d-sign-tanning",
-    };
+    private static readonly HashSet<string> KnownPendingIds = new();
 
     [TestCase]
     public void RecruitableHeroClasses_ResolveTheTownPixelBody_NotJustAnyFallback()
@@ -294,6 +265,127 @@ public class AssetResolutionCensusTests
     }
 
     /// <summary>
+    /// Bug fix (2026-08-09), same shape as <see
+    /// cref="EngineeringStationArtIds_ResolveToCommittedArt_NeverAPlaceholder"/> immediately above:
+    /// the five Alchemy (Apothecary) station ids — <see cref="WorkshopVocab.ByProfession"/>'s
+    /// <c>AlchemyProfession.Id</c> row — sat in <see cref="KnownPendingIds"/> since U7 with no PNG
+    /// and no manifest entry. Real art now lands via art/pipeline/gen-alchemy-interior.py; this
+    /// case asserts <see cref="IconRegistry.Art"/> directly with no allowlist in the call path, so
+    /// a future re-add to <see cref="KnownPendingIds"/> cannot silently regress these five again.
+    /// </summary>
+    private static readonly string[] AlchemyStationArtIds =
+    {
+        "town2d-station-alch-cauldron",
+        "town2d-station-alch-still",
+        "town2d-station-alch-shelf",
+        "town2d-station-alch-rack",
+        "town2d-station-alch-herbs",
+    };
+
+    [TestCase]
+    public void AlchemyStationArtIds_ResolveToCommittedArt_NeverAPlaceholder()
+    {
+        foreach (var id in AlchemyStationArtIds)
+        {
+            AssertThat(IconRegistry.Art(id))
+                .OverrideFailureMessage(
+                    $"census: '{id}' (Alchemy / Apothecary station) does not resolve to committed "
+                    + "art. WorkshopVocab mounts this id whenever a player has Alchemy selected; a "
+                    + "miss renders TownAssets2D's loud magenta placeholder.")
+                .IsNotNull();
+        }
+    }
+
+    /// <summary>
+    /// Bug fix (2026-08-09), same shape as the Engineering/Alchemy cases above: the four Tanning
+    /// (Tannery) station ids — <see cref="WorkshopVocab.ByProfession"/>'s <c>TanningProfession.Id</c>
+    /// row — sat in <see cref="KnownPendingIds"/> since U7 with no PNG and no manifest entry. Real
+    /// art now lands via art/pipeline/gen-tanning-interior.py; this case asserts <see
+    /// cref="IconRegistry.Art"/> directly with no allowlist in the call path, so a future re-add to
+    /// <see cref="KnownPendingIds"/> cannot silently regress these four again.
+    /// </summary>
+    private static readonly string[] TanningStationArtIds =
+    {
+        "town2d-station-tan-frame",
+        "town2d-station-tan-hides",
+        "town2d-station-tan-rack",
+        "town2d-station-tan-vats",
+    };
+
+    [TestCase]
+    public void TanningStationArtIds_ResolveToCommittedArt_NeverAPlaceholder()
+    {
+        foreach (var id in TanningStationArtIds)
+        {
+            AssertThat(IconRegistry.Art(id))
+                .OverrideFailureMessage(
+                    $"census: '{id}' (Tanning / Tannery station) does not resolve to committed "
+                    + "art. WorkshopVocab mounts this id whenever a player has Tanning selected; a "
+                    + "miss renders TownAssets2D's loud magenta placeholder.")
+                .IsNotNull();
+        }
+    }
+
+    /// <summary>
+    /// Bug fix (2026-08-09), same shape again: the four exterior workshop signboard overlays — <see
+    /// cref="WorkshopVocab.ByProfession"/>'s own <c>SignboardSpriteId</c> per profession, including
+    /// blacksmith's — sat in <see cref="KnownPendingIds"/> since U7 with no PNG and no manifest
+    /// entry (unlike the station sets, no signboard of any kind existed before this fix — see
+    /// art/pipeline/gen-workshop-signboards.py's own doc). <c>Town2D.MountWorkshopSignboard</c>
+    /// draws whichever one matches the workshop's current primary profession, so a miss meant the
+    /// building simply hung nothing above its nametag regardless of profession. This case asserts
+    /// <see cref="IconRegistry.Art"/> directly with no allowlist in the call path, so a future
+    /// re-add to <see cref="KnownPendingIds"/> cannot silently regress these four again.
+    /// </summary>
+    private static readonly string[] WorkshopSignboardArtIds =
+    {
+        "town2d-sign-blacksmith",
+        "town2d-sign-alchemy",
+        "town2d-sign-engineering",
+        "town2d-sign-tanning",
+    };
+
+    [TestCase]
+    public void WorkshopSignboardArtIds_ResolveToCommittedArt_NeverAPlaceholder()
+    {
+        foreach (var id in WorkshopSignboardArtIds)
+        {
+            AssertThat(IconRegistry.Art(id))
+                .OverrideFailureMessage(
+                    $"census: '{id}' does not resolve to committed art. "
+                    + "Town2D.MountWorkshopSignboard draws whichever one matches the workshop's "
+                    + "current primary profession; a miss means the building hangs no signboard "
+                    + "at all.")
+                .IsNotNull();
+        }
+    }
+
+    /// <summary>
+    /// The guard behind the guard: <see cref="KnownPendingIds"/> is not an inventory of currently-
+    /// missing art, it is a hole in <see cref="AssertResolves"/>'s own assertion, and every id that
+    /// has ever gone in it sat unpainted for far longer than anyone intended before this fix (a full
+    /// week for engineering; since U7 — 2026-08-02 — for alchemy/tanning/every signboard, this same
+    /// fix). Emptying the set once does not, by itself, stop the next "just add it here for now"
+    /// edit from starting the whole cycle over. This case fails the moment anything is added back,
+    /// forcing the ONLY closure this repo now considers legitimate: paint the art and add a
+    /// no-escape-hatch case (see the four cases immediately above this one) instead of allowlisting
+    /// the gap away.
+    /// </summary>
+    [TestCase]
+    public void KnownPendingIds_StaysEmpty_AnAllowlistWithNoExpiryIsTheActualDefect()
+    {
+        AssertThat(KnownPendingIds)
+            .OverrideFailureMessage(
+                "KnownPendingIds picked up a new entry. This set is what let 17 art ids "
+                + "(engineering/alchemy/tanning/signboards) sit unpainted for a week or more while "
+                + "the census stayed green, because AssertResolves skips its own assertion for "
+                + "anything listed here. Do not allowlist a missing id — paint it (see "
+                + "art/pipeline/gen-*-interior.py / gen-workshop-signboards.py for the pattern) and "
+                + "add a no-escape-hatch IconRegistry.Art(id) case instead.")
+            .IsEmpty();
+    }
+
+    /// <summary>
     /// Missing-ore-icon fix: <see cref="GameSim.Materials.MaterialRegistry.PricedPool"/> (the sim's
     /// own registry, not a hand-written list — a new ore added tomorrow is enumerated here for free)
     /// is the exact set <c>ForgePanel</c>'s vendor shelf iterates, calling <c>IconRegistry.Ore(key)</c>
@@ -434,6 +526,19 @@ public class AssetResolutionCensusTests
             ["town2d-station-eng-gears"] = new(28, 32),
             ["town2d-station-eng-crate"] = new(24, 20),
             ["town2d-station-eng-flywheel"] = new(24, 24),
+            // Bug fix (2026-08-09): alchemy's five stations, authored fresh by
+            // art/pipeline/gen-alchemy-interior.py.
+            ["town2d-station-alch-cauldron"] = new(24, 24),
+            ["town2d-station-alch-still"] = new(20, 32),
+            ["town2d-station-alch-shelf"] = new(28, 32),
+            ["town2d-station-alch-rack"] = new(28, 32),
+            ["town2d-station-alch-herbs"] = new(20, 20),
+            // Bug fix (2026-08-09): tanning's four stations, authored fresh by
+            // art/pipeline/gen-tanning-interior.py.
+            ["town2d-station-tan-frame"] = new(32, 20),
+            ["town2d-station-tan-hides"] = new(28, 32),
+            ["town2d-station-tan-rack"] = new(28, 32),
+            ["town2d-station-tan-vats"] = new(28, 20),
         };
 
         foreach (var room in InteriorLayout2D.Rooms.Values)

@@ -40,6 +40,24 @@ public static class IconRegistry
         _ => "weapon",
     });
 
+    /// <summary>
+    /// U7 (proof-the-player-never-sees plan, 2026-08-08): the rival shelf's CATEGORY icon id —
+    /// one hand-painted sprite per <see cref="ItemSlot"/> (weapon/shield/armor), not one per
+    /// synthetic <c>GameSim.Economy.RivalCatalog</c> entry id. That catalog is fixed data
+    /// RivalRestockSystem mints instances from — binding art to the slot instead of the specific
+    /// recipe id (<c>"rival-blade-1"</c>, <c>"rival-shield-2"</c>, ...) means a future catalog
+    /// addition resolves to real, already-painted art the moment it exists, since every entry
+    /// already carries a slot and there are only three. See art/pipeline/gen-rival-icons.py for
+    /// the three sprites this composes onto (<c>item-rival-weapon/-shield/-armor</c>).
+    /// </summary>
+    public static string RivalCategoryArtId(ItemSlot slot) => slot switch
+    {
+        ItemSlot.Weapon => "item-rival-weapon",
+        ItemSlot.Shield => "item-rival-shield",
+        ItemSlot.Armor => "item-rival-armor",
+        _ => "item-rival-weapon",
+    };
+
     public static Texture2D Ore(string materialKey) => Load(IconDir, $"ore_{materialKey}");
 
     public static Texture2D Glyph(string name) => Load(IconDir, name); // gold, bounty, gossip, depths, skull, rune

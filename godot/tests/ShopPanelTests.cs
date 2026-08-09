@@ -1,6 +1,7 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
 using System.Linq;
+using System.Threading.Tasks;
 using GameSim;
 using GameSim.Advisor;
 using GameSim.Contracts;
@@ -544,6 +545,69 @@ public class ShopPanelTests
             Items = baseState.Items.Add(item.Id.Value, item),
             Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(item.Id, 20)) },
         };
+    }
+
+    // ── U7 (proof-the-player-never-sees plan): rival card art ─────────────────────────────────
+
+    /// <summary>Same fixture shape as <c>LayoutTests.RivalShelfWorld</c> (a fresh campaign's
+    /// RivalShelf starts empty — RivalRestockSystem only fills it over several real days), seeded
+    /// here directly with one entry per ItemSlot so all three rival category icons are exercised
+    /// in a single mount.</summary>
+    private static GameState RivalShelfAllCategoriesWorld()
+    {
+        var weapon = GameSim.Economy.RivalCatalog.Entries.First(e => e.Slot == ItemSlot.Weapon);
+        var shield = GameSim.Economy.RivalCatalog.Entries.First(e => e.Slot == ItemSlot.Shield);
+        var armor = GameSim.Economy.RivalCatalog.Entries.First(e => e.Slot == ItemSlot.Armor);
+        var items = new[]
+            {
+                GameSim.Economy.RivalCatalog.Mint(new ItemId(900), weapon),
+                GameSim.Economy.RivalCatalog.Mint(new ItemId(901), shield),
+                GameSim.Economy.RivalCatalog.Mint(new ItemId(902), armor),
+            }
+            .ToImmutableSortedDictionary(i => i.Id.Value, i => i);
+        var shelf = ImmutableList.Create(
+            new ShelfEntry(new ItemId(900), weapon.Price),
+            new ShelfEntry(new ItemId(901), shield.Price),
+            new ShelfEntry(new ItemId(902), armor.Price));
+
+        return GameComposition.NewCampaign(9302) with { Items = items, RivalShelf = shelf };
+    }
+
+    /// <summary>
+    /// U7 (proof-the-player-never-sees plan): before this unit, every rival card's ArtRect hit
+    /// UiKit's no-manifest-hit placeholder branch (ArtRectFallback — a bordered box with the raw
+    /// id as its caption) because AssetCatalog.ItemIconId(item.RecipeId) composed a synthetic id
+    /// ("item-rival-blade-2") no PNG has ever existed for. IconRegistry.RivalCategoryArtId now
+    /// resolves each rival item to one of three committed category icons instead. This proves the
+    /// real-art branch (ArtRectCaptioned) renders for all three slots, and the placeholder never
+    /// does — a card-level assertion, not just the id-resolution census in
+    /// AssetResolutionCensusTests/ArtWiringCoverageTests.
+    /// </summary>
+    [TestCase]
+    public async Task RivalCards_EveryCategory_RenderRealArt_NeverThePlaceholderBox()
+    {
+        var ui = MountMainUi(new SimAdapter(RivalShelfAllCategoriesWorld()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            await SettleLayout(ui);
+
+            foreach (var itemId in new[] { 900, 901, 902 })
+            {
+                var card = Find<PanelContainer>(ui.Shop, $"RivalCard_{itemId}");
+                AssertThat(card.FindChild("ArtRectFallback", recursive: true, owned: false))
+                    .OverrideFailureMessage(
+                        $"RivalCard_{itemId} rendered the generic slot placeholder instead of its "
+                        + "category icon — see IconRegistry.RivalCategoryArtId.")
+                    .IsNull();
+                AssertThat(card.FindChild("ArtRectCaptioned", recursive: true, owned: false))
+                    .IsNotNull();
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
     }
 }
 #endif
