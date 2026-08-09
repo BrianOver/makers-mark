@@ -7,9 +7,22 @@ config_version=5
 
 config/name="Maker's Mark"
 config/description="Inverted MMO: you are the blacksmith NPC; autonomous AI heroes raid the Mine."
+config/version="0.1.0-alpha"
 config/features=PackedStringArray("4.6", "C#")
+config/icon="res://icon.svg"
 
 run/main_scene="res://scenes/new_game_select.tscn"
+
+[display]
+
+; These are Godot's OWN defaults, written down rather than changed. The game has been
+; played, screenshotted and layout-tested at 1152x648 for months (the unclickable-Unlock
+; defect in #382 was found at exactly this size), so making the number explicit is a
+; no-op today and a fixed reference the moment an export preset or a window-mode setting
+; starts asking what "default" means. Stretch mode is deliberately left alone: the panels
+; were tuned without it, and turning it on here would silently re-scale every layout.
+window/size/viewport_width=1152
+window/size/viewport_height=648
 
 [dotnet]
 

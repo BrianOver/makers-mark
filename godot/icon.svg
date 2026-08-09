@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- The maker's mark itself: a struck anvil. Dusk palette, matching the town's own
+       purple-dusk ground and ember-orange accent, so the taskbar icon reads as this game
+       and not as a generic tool. Authored as flat shapes at 128px because the project's
+       whole art idiom is deliberate pixels, not gradients. -->
+  <rect width="128" height="128" rx="18" fill="#241c33"/>
+
+  <!-- ember glow under the horn -->
+  <ellipse cx="64" cy="86" rx="30" ry="9" fill="#e2703a" opacity="0.28"/>
+
+  <!-- anvil: face, waist, base -->
+  <path d="M26 52 h62 l12 -10 v14 l-14 8 H44 l-6 10 h30 v8 H32 l8 -18 H26 z"
+        fill="#c9c6d4"/>
+  <path d="M26 52 h62 l12 -10 v6 l-14 6 H26 z" fill="#e8e6f0"/>
+  <rect x="28" y="94" width="72" height="10" rx="3" fill="#8c88a0"/>
+
+  <!-- the strike: three sparks off the face -->
+  <g fill="#ffb45c">
+    <circle cx="82" cy="40" r="3.5"/>
+    <circle cx="94" cy="30" r="2.5"/>
+    <circle cx="72" cy="30" r="2"/>
+  </g>
+</svg>
