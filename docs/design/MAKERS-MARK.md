@@ -689,6 +689,15 @@ So, binding rules for every session that touches this repo:
    enumerates — P1, P2, P6a/b, and the legibility rows this section had not swept for. Granting it
    by name is the point: that doc leaned on the P7 parenthesis for two-thirds of its scope, which
    would have been a fig leaf. A wave doc is legitimate only when this section says so.
+   **Amended 2026-08-08:** granted, by name, to
+   `docs/plans/2026-08-08-001-feat-proof-the-player-never-sees-plan.md`, which carries **P3** and
+   a set of link-4/link-5 leaks three audits found the same night: the sim computes the proof and
+   the client discards it. The worst of them is not a gap in the plan, it is a gap in the *game* —
+   `CampNarration.Attribution` writes the causal sentence naming what the player did, and it lives
+   in `GameSim.Cli`, a project the Godot client does not reference. That is §11.6 rule 2
+   interrupt-class (a §2 link-4 break), which is why it leads a wave instead of being booked.
+   The grant covers P3 and that leak set only; the art rows in it ride as capped overhead and may
+   never displace a path item.
 5. **The measurement rule.** When new data contradicts this plan — P4 moves the boredom
    day, P3's assertions fail, a sweep overturns a tuning claim — the plan amends in the
    same PR that lands the finding. A plan that cannot lose an argument with a measurement
