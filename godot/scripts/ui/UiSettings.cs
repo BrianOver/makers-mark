@@ -73,10 +73,14 @@ public static class UiSettings
     }
 
     /// <summary>
-    /// Re-apply a persisted fullscreen preference to the real window. Called once, from the title
-    /// screen's <c>_Ready</c> — see the class doc for why that is the one correct call site. No-op
-    /// on a fresh install (nothing persisted yet — stays windowed, matching <c>project.godot</c>'s
-    /// own default) and no-op if the window is already in the persisted mode.
+    /// Re-apply every persisted WINDOW-level preference (fullscreen, UI scale) to the real window.
+    /// Called once, from the title screen's <c>_Ready</c> — see the class doc for why that is the
+    /// one correct call site: <c>project.godot</c>'s main scene is the only place a freshly opened
+    /// OS window exists to apply anything to, and neither preference needs re-applying after a
+    /// later scene change (the root <see cref="Window"/> survives a <c>ChangeSceneToFile</c>
+    /// unchanged). No-op on a fresh install for fullscreen (nothing persisted yet — stays windowed,
+    /// matching <c>project.godot</c>'s own default); UI scale always re-applies its own default
+    /// (1.0) on a fresh install too, which is a true no-op against the engine's own starting value.
     /// </summary>
     public static void ApplyPersisted()
     {
@@ -84,6 +88,8 @@ public static class UiSettings
         {
             Apply(DisplayServer.WindowMode.Fullscreen);
         }
+
+        ApplyUiScaleToWindow(LoadUiScale());
     }
 
     /// <summary>Null when no settings file exists yet — a fresh install stays windowed, the
@@ -172,6 +178,103 @@ public static class UiSettings
         SaveData(data);
     }
 
+    // ---- UI scale (C4, 2026-08-09 shell-and-audio-menu plan) -----------------------------------
+    //
+    // One root knob (Window.ContentScaleFactor), because the theme is code-built with fixed sizes
+    // (GameTheme.Build) — a single multiplier over the whole window is cheap; anything finer-grained
+    // (per-panel, per-font-size) is not, and nothing here asks for that.
+
+    public const float DefaultUiScale = 1f;
+    public const float MinUiScale = 1f;
+    public const float MaxUiScale = 1.5f;
+
+    public static float LoadUiScale() => Math.Clamp(LoadDataOrDefault().UiScale, MinUiScale, MaxUiScale);
+
+    public static void SaveUiScale(float scale)
+    {
+        var data = LoadDataOrDefault();
+        data.UiScale = Math.Clamp(scale, MinUiScale, MaxUiScale);
+        SaveData(data);
+    }
+
+    /// <summary>Apply an explicit UI scale to the real window AND persist it — the Settings
+    /// slider's own verb, mirroring <see cref="SetFullscreen"/>'s "apply + persist together" shape
+    /// (there is no separate mixer-style director to hand this to; the window itself is the only
+    /// thing that owns <c>ContentScaleFactor</c>).</summary>
+    public static void SetUiScale(float scale)
+    {
+        var clamped = Math.Clamp(scale, MinUiScale, MaxUiScale);
+        ApplyUiScaleToWindow(clamped);
+        SaveUiScale(clamped);
+    }
+
+    /// <summary>Unlike <see cref="DisplayServer.WindowSetMode"/>, <see
+    /// cref="Window.ContentScaleFactor"/> is a plain property on the root <see cref="Window"/> node
+    /// itself (not a deferred OS call), so it reads back exactly what was set even under
+    /// <c>--headless</c> — no <see cref="TestWindowMode"/>-style fake seam needed for a test to
+    /// prove this actually took effect. <see cref="Engine.GetMainLoop"/> is the static seam to the
+    /// live <see cref="SceneTree"/>'s root Window from a non-Node static class.</summary>
+    private static void ApplyUiScaleToWindow(float scale)
+    {
+        if (Engine.GetMainLoop() is SceneTree tree && tree.Root is { } root)
+        {
+            root.ContentScaleFactor = scale;
+        }
+    }
+
+    // ---- key bindings (C3, 2026-08-09 shell-and-audio-menu plan) -------------------------------
+    //
+    // The rebind screen (SettingsPanel) writes here by ACTION NAME -> PhysicalKeycode (int, boxed
+    // Key). Never Keycode (KTD — C2's own rule): a rebind stored as a layout-dependent keycode would
+    // be a bug on any non-QWERTY layout, the exact defect C2 landed to prevent.
+
+    public static Key? LoadKeyBinding(string action)
+    {
+        var data = LoadDataOrDefault();
+        return data.KeyBindings.TryGetValue(action, out var raw) ? (Key)raw : null;
+    }
+
+    public static void SaveKeyBinding(string action, Key physicalKeycode)
+    {
+        var data = LoadDataOrDefault();
+        data.KeyBindings[action] = (int)physicalKeycode;
+        SaveData(data);
+    }
+
+    /// <summary>Reset-to-defaults' own counterpart to <see cref="SaveKeyBinding"/> — removes the
+    /// override so a later <see cref="ApplyPersistedBindingIfAny"/> (a fresh boot, or a scene that
+    /// registers this action for the first time this session) never re-applies it.</summary>
+    public static void ClearKeyBinding(string action)
+    {
+        var data = LoadDataOrDefault();
+        if (data.KeyBindings.Remove(action))
+        {
+            SaveData(data);
+        }
+    }
+
+    /// <summary>
+    /// Called from <c>TownInput</c>/<c>MinigameInput</c>'s own <c>AddActionIfMissing</c>, right
+    /// after an action's hardcoded defaults are registered — the one choke point every rebindable
+    /// action passes through on first use, whichever scene (Town2D or a minigame) happens to create
+    /// it first in a given session. Without this, a rebind saved in a PRIOR session would silently
+    /// revert to the hardcoded default the moment the game restarted, because <see
+    /// cref="InputMap"/> itself is never persisted by the engine — only the CHOICE is, here.
+    /// No-op if nothing was ever rebound for <paramref name="action"/>, or if the action does not
+    /// (yet) exist — the caller only reaches this after <c>InputMap.AddAction</c>, so the latter
+    /// should not happen in practice.
+    /// </summary>
+    public static void ApplyPersistedBindingIfAny(string action)
+    {
+        if (LoadKeyBinding(action) is not { } key || !InputMap.HasAction(action))
+        {
+            return;
+        }
+
+        InputMap.ActionEraseEvents(action);
+        InputMap.ActionAddEvent(action, new InputEventKey { PhysicalKeycode = key });
+    }
+
     /// <summary>
     /// C5's tripwire (2026-08-09 shell-and-audio-menu plan) — the exact set of keys this store ever
     /// writes to <c>user://ui_settings.json</c>, name-only so a pinning test can assert the set
@@ -193,6 +296,12 @@ public static class UiSettings
     /// key may suppress sim-produced output (a pacing bug is fixed in content, never in a mute); no
     /// key may feed the kernel or the scorer; and every default here must reproduce the FULL game,
     /// never a pre-skipped one.</para>
+    ///
+    /// <para><b>C3/C4 additions, judged against the same rule:</b> <c>UiScale</c> changes how the
+    /// world LOOKS (a render-time multiplier), nothing more. <c>KeyBindings</c> changes how a
+    /// player's press REACHES a verb the game already offers — it can move which key fires
+    /// <c>forge_strike</c>, never add a new outcome, remove a decision, or touch the vigil's own
+    /// hold-open (that hold is enforced sim-side and has no key at all). Both pass.</para>
     /// </summary>
     public static readonly IReadOnlyList<string> PersistedKeys = new[]
     {
@@ -202,6 +311,8 @@ public static class UiSettings
         nameof(Data.SfxVolume),
         nameof(Data.NarratorVolume),
         nameof(Data.Muted),
+        nameof(Data.UiScale),
+        nameof(Data.KeyBindings),
     };
 
     /// <summary>Best-effort current settings, or a fresh default set — missing/unreadable/corrupt
@@ -257,5 +368,7 @@ public static class UiSettings
         public float SfxVolume { get; set; } = DefaultVolume;
         public float NarratorVolume { get; set; } = DefaultVolume;
         public bool Muted { get; set; }
+        public float UiScale { get; set; } = DefaultUiScale;
+        public Dictionary<string, int> KeyBindings { get; set; } = new();
     }
 }

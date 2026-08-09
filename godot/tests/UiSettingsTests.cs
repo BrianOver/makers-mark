@@ -245,6 +245,8 @@ public class UiSettingsTests
             "SfxVolume",
             "NarratorVolume",
             "Muted",
+            "UiScale",
+            "KeyBindings",
         ];
 
         AssertThat(UiSettings.PersistedKeys)
@@ -256,6 +258,162 @@ public class UiSettingsTests
                 + "game, never a pre-skipped one). Update the expected array above in the SAME PR, "
                 + "with a reviewer's eyes on exactly that question.")
             .ContainsExactly(expected);
+    }
+
+    // ---- UI scale (C4) --------------------------------------------------------------------------
+
+    [TestCase]
+    public void FreshInstall_UiScaleDefaultsToOne()
+    {
+        UiSettings.DeleteForTests();
+        AssertThat(UiSettings.LoadUiScale()).IsEqualApprox(1f, 0.001f);
+    }
+
+    [TestCase]
+    public void SetUiScale_AppliesToTheRealWindow_AndPersists()
+    {
+        UiSettings.DeleteForTests();
+        var tree = (SceneTree)Engine.GetMainLoop();
+        var originalScale = tree.Root.ContentScaleFactor;
+        try
+        {
+            UiSettings.SetUiScale(1.25f);
+
+            AssertThat(tree.Root.ContentScaleFactor)
+                .OverrideFailureMessage(
+                    "SetUiScale must apply to the real root Window immediately — unlike WindowMode, "
+                    + "ContentScaleFactor is a plain node property, not a deferred OS call, so no "
+                    + "TestWindowMode-style seam is needed to observe it even under --headless.")
+                .IsEqualApprox(1.25f, 0.001f);
+            AssertThat(UiSettings.LoadUiScale()).IsEqualApprox(1.25f, 0.001f);
+        }
+        finally
+        {
+            tree.Root.ContentScaleFactor = originalScale; // never leak a scaled window into later suites
+            UiSettings.DeleteForTests();
+        }
+    }
+
+    [TestCase]
+    public void SetUiScale_ClampsToTheDocumentedRange()
+    {
+        UiSettings.DeleteForTests();
+        var tree = (SceneTree)Engine.GetMainLoop();
+        var originalScale = tree.Root.ContentScaleFactor;
+        try
+        {
+            UiSettings.SetUiScale(9f);
+            AssertThat(UiSettings.LoadUiScale()).IsEqualApprox(UiSettings.MaxUiScale, 0.001f);
+
+            UiSettings.SetUiScale(0f);
+            AssertThat(UiSettings.LoadUiScale()).IsEqualApprox(UiSettings.MinUiScale, 0.001f);
+        }
+        finally
+        {
+            tree.Root.ContentScaleFactor = originalScale;
+            UiSettings.DeleteForTests();
+        }
+    }
+
+    // ---- key bindings (C3) ------------------------------------------------------------------------
+
+    [TestCase]
+    public void FreshInstall_HasNoKeyBindingOverride()
+    {
+        UiSettings.DeleteForTests();
+        AssertThat(UiSettings.LoadKeyBinding("move_up") is null).IsTrue();
+    }
+
+    [TestCase]
+    public void SaveKeyBinding_RoundTripsThroughLoad_AndClearRemovesIt()
+    {
+        UiSettings.DeleteForTests();
+        try
+        {
+            UiSettings.SaveKeyBinding("move_up", Key.I);
+            AssertThat(UiSettings.LoadKeyBinding("move_up")).IsEqual(Key.I);
+
+            UiSettings.ClearKeyBinding("move_up");
+            AssertThat(UiSettings.LoadKeyBinding("move_up") is null).IsTrue();
+        }
+        finally
+        {
+            UiSettings.DeleteForTests();
+        }
+    }
+
+    /// <summary>
+    /// The actual point of C3's persistence: a rebind saved in a PRIOR session must win over the
+    /// hardcoded default the moment the action is (re)created — <c>InputMap</c> itself is never
+    /// persisted by the engine, only this choice is. Simulates a cold boot by erasing the action
+    /// entirely and re-registering it from scratch, exactly as <c>TownInput</c>/<c>MinigameInput</c>'s
+    /// own <c>AddActionIfMissing</c> does on the FIRST real creation of a session.
+    /// </summary>
+    [TestCase]
+    public void ApplyPersistedBindingIfAny_OverridesAFreshlyRegisteredDefault()
+    {
+        UiSettings.DeleteForTests();
+        var originalEvents = InputMap.HasAction("move_up")
+            ? InputMap.ActionGetEvents("move_up")
+            : new Godot.Collections.Array<InputEvent>();
+        try
+        {
+            UiSettings.SaveKeyBinding("move_up", Key.I);
+
+            InputMap.EraseAction("move_up"); // simulate "this session has never created it yet"
+            InputMap.AddAction("move_up");
+            InputMap.ActionAddEvent("move_up", new InputEventKey { PhysicalKeycode = Key.W }); // the hardcoded default
+            InputMap.ActionAddEvent("move_up", new InputEventKey { PhysicalKeycode = Key.Up });
+
+            UiSettings.ApplyPersistedBindingIfAny("move_up");
+
+            var events = InputMap.ActionGetEvents("move_up");
+            AssertThat(events.Count).IsEqual(1);
+            AssertThat(((InputEventKey)events[0]).PhysicalKeycode)
+                .OverrideFailureMessage("A persisted rebind must replace the hardcoded default, not sit alongside it.")
+                .IsEqual(Key.I);
+        }
+        finally
+        {
+            InputMap.ActionEraseEvents("move_up");
+            foreach (var evt in originalEvents)
+            {
+                InputMap.ActionAddEvent("move_up", evt);
+            }
+
+            UiSettings.DeleteForTests();
+        }
+    }
+
+    [TestCase]
+    public void ApplyPersistedBindingIfAny_WithNothingSaved_LeavesTheDefaultAlone()
+    {
+        UiSettings.DeleteForTests();
+        var originalEvents = InputMap.HasAction("move_up")
+            ? InputMap.ActionGetEvents("move_up")
+            : new Godot.Collections.Array<InputEvent>();
+        try
+        {
+            InputMap.EraseAction("move_up");
+            InputMap.AddAction("move_up");
+            InputMap.ActionAddEvent("move_up", new InputEventKey { PhysicalKeycode = Key.W });
+
+            UiSettings.ApplyPersistedBindingIfAny("move_up");
+
+            var events = InputMap.ActionGetEvents("move_up");
+            AssertThat(events.Count).IsEqual(1);
+            AssertThat(((InputEventKey)events[0]).PhysicalKeycode).IsEqual(Key.W);
+        }
+        finally
+        {
+            InputMap.ActionEraseEvents("move_up");
+            foreach (var evt in originalEvents)
+            {
+                InputMap.ActionAddEvent("move_up", evt);
+            }
+
+            UiSettings.DeleteForTests();
+        }
     }
 }
 #endif

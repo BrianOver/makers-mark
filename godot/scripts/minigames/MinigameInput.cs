@@ -1,4 +1,5 @@
 using Godot;
+using GodotClient.Ui;
 
 namespace GodotClient.Minigames;
 
@@ -86,5 +87,9 @@ public static class MinigameInput
         {
             InputMap.ActionAddEvent(action, new InputEventKey { PhysicalKeycode = key });
         }
+
+        // C3: a rebind saved in a PRIOR session must win over these hardcoded defaults — the
+        // InputMap itself is never persisted by the engine, only this choice is (UiSettings).
+        UiSettings.ApplyPersistedBindingIfAny(action);
     }
 }

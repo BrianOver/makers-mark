@@ -99,6 +99,35 @@ public sealed partial class ForgeMinigame : PanelContainer
     public const int TempoOnBeatWindowPermille = 180;
 
     /// <summary>
+    /// C3 (2026-08-09 shell-and-audio-menu plan) — the escape hatch that matters more than the
+    /// rebind list around it. A key held shorter than this REAL WALL-CLOCK duration is read as a
+    /// TAP, not a hold: the bellows keep running past release, and the SAME key's next press stops
+    /// them. Above this threshold, releasing the key stops the bellows immediately, exactly as it
+    /// always has.
+    ///
+    /// <para><b>Real wall-clock, deliberately, not <see cref="_elapsed"/>.</b> <see
+    /// cref="ForgePlayer"/> (the scripted skill-curve harness behind <c>ForgeWinnabilityTests</c>'
+    /// pinned numbers) calls <see cref="Node.SetProcess"/><c>(false)</c> specifically because "this
+    /// policy owns the clock" and drives <see cref="Advance"/> in fixed simulated steps that can be
+    /// far shorter than a human's real reaction time — measuring THAT against a real-time threshold
+    /// would read a scripted 0.05s pump as a tap and silently corrupt a pinned measurement. Gated on
+    /// <see cref="Node.IsProcessing"/> in <see cref="_GuiInput"/>: while a caller has taken the
+    /// clock away from the engine, this feature does not exist at all and every press/release pair
+    /// behaves exactly as it did before C3. A live session never calls <c>SetProcess(false)</c>, so
+    /// a real player always gets the escape hatch.</para>
+    ///
+    /// <para>This exists because holding <c>bellows</c> (Shift by default) for real windows of time
+    /// runs into three concrete accessibility failures, none of which require opening a settings
+    /// menu to hit: on Windows, ~8 seconds on Shift triggers FilterKeys and five taps trigger
+    /// StickyKeys — the OS itself interrupts the craft — and a left-handed mouse user or a
+    /// one-handed player needs a hand free for Space while something else holds Shift down, which a
+    /// pure hold-gesture never allows. Tap-to-toggle removes the HOLD requirement entirely for
+    /// anyone who wants it, while changing nothing for a player who never notices — holding past
+    /// this threshold is bit-for-bit the old behaviour.</para>
+    /// </summary>
+    public const double BellowsTapMaxHoldSeconds = 0.35;
+
+    /// <summary>
     /// Act 1's finish line — the SAME boundary <c>ForgeScorer</c> already uses to end its "forge"
     /// sample bucket (<c>ForgePath.ForgeZoneEnd</c>, 666). Referencing the sim's own constant
     /// rather than duplicating the number means the two can never drift apart: whatever x the
@@ -283,6 +312,22 @@ public sealed partial class ForgeMinigame : PanelContainer
     private bool _pumpDragArmed;
     private double _pumpDragAccumulatorPixels;
 
+    /// <summary>C3's bellows tap-to-toggle state machine — see <see
+    /// cref="BellowsTapMaxHoldSeconds"/> and <see cref="_GuiInput"/> for the full mechanism.</summary>
+    private enum BellowsGesture
+    {
+        Idle,
+        AwaitingRelease,
+        ToggledOn,
+    }
+
+    private BellowsGesture _bellowsGesture = BellowsGesture.Idle;
+
+    /// <summary>Real wall-clock ms (<see cref="Time.GetTicksMsec"/>) of the current
+    /// press-awaiting-release window's start — see <see cref="BellowsTapMaxHoldSeconds"/>'s own doc
+    /// for why this is wall-clock and not <see cref="_elapsed"/>.</summary>
+    private ulong _bellowsPressedAtMsec;
+
     private Label _titleLabel = null!;
     private AnvilMapCanvas _canvas = null!;
     private Label _readoutLabel = null!;
@@ -333,6 +378,7 @@ public sealed partial class ForgeMinigame : PanelContainer
         _strikes.Clear();
         _elapsed = 0;
         _sampleAccumulator = 0;
+        _bellowsGesture = BellowsGesture.Idle;
 
         RepaintUi();
     }
@@ -487,7 +533,12 @@ public sealed partial class ForgeMinigame : PanelContainer
     /// class changing at all. <c>forge_strike</c> always strikes unaimed (accessible path); a
     /// left-click only strikes if it lands on the billet (<see cref="WouldHit"/>); <c>bellows</c>
     /// holds the bellows (its press check allows echo — a held Shift's OS auto-repeat must keep
-    /// re-arming the pump exactly as it always has); a right-button DRAG quantizes into discrete
+    /// re-arming the pump exactly as it always has) — UNLESS the press-release pair was shorter than
+    /// <see cref="BellowsTapMaxHoldSeconds"/>, in which case C3's tap-to-toggle escape hatch takes
+    /// over: the bellows keep running past release, and the key's NEXT press stops them (the mouse
+    /// button, <see cref="_bellowsButton"/>, is unaffected — it stays pure hold, since the
+    /// accessibility problem this solves is specific to a held KEYBOARD modifier); a right-button
+    /// DRAG quantizes into discrete
     /// <see cref="PumpStroke"/> calls every <see cref="PumpStrokeDragPixels"/> of downward motion (no
     /// raw float ever reaches a scorer).</summary>
     public override void _GuiInput(InputEvent @event)
@@ -505,13 +556,58 @@ public sealed partial class ForgeMinigame : PanelContainer
 
         if (@event.IsActionPressed("bellows", allowEcho: true))
         {
-            BellowsStart();
+            if (_bellowsGesture == BellowsGesture.ToggledOn)
+            {
+                // A tap while toggled ON stops it — "tap to stop" (never reached via OS echo: the
+                // key is not physically held while ToggledOn, so no echo event can occur here).
+                BellowsStop();
+                _bellowsGesture = BellowsGesture.Idle;
+                return;
+            }
+
+            // IsProcessing() is false only when a caller has taken the clock away from the engine
+            // (ForgePlayer's "this policy owns the clock") — see BellowsTapMaxHoldSeconds' own doc
+            // for why a real-time tap/hold read is meaningless (and dangerous) there. In that case
+            // this whole gesture-tracking block is skipped and the release below always behaves as
+            // a plain hold, bit-for-bit the pre-C3 code.
+            if (!IsProcessing())
+            {
+                _bellowsGesture = BellowsGesture.Idle;
+            }
+            else if (@event is not InputEventKey { Echo: true })
+            {
+                // A genuine new press (or the on-screen button's own synthetic event, which never
+                // echoes) starts a fresh hold-vs-tap measurement window. An OS auto-repeat ECHO
+                // mid-hold falls through here and touches nothing, leaving the ORIGINAL press's
+                // timestamp and AwaitingRelease state exactly as they were.
+                _bellowsPressedAtMsec = Time.GetTicksMsec();
+                _bellowsGesture = BellowsGesture.AwaitingRelease;
+            }
+
+            BellowsStart(); // every press AND every OS auto-repeat echo keeps the pump/cue going
             return;
         }
 
         if (@event.IsActionReleased("bellows"))
         {
+            if (_bellowsGesture != BellowsGesture.AwaitingRelease)
+            {
+                BellowsStop(); // plain hold (IsProcessing() was false at press time) — stop as always
+                _bellowsGesture = BellowsGesture.Idle;
+                return;
+            }
+
+            if ((Time.GetTicksMsec() - _bellowsPressedAtMsec) / 1000.0 < BellowsTapMaxHoldSeconds)
+            {
+                // A quick TAP: leave the bellows running rather than stopping on release. Fixes
+                // FilterKeys/StickyKeys/the one-handed case without touching the hold gesture, which
+                // still works exactly as before for anyone who holds past the threshold.
+                _bellowsGesture = BellowsGesture.ToggledOn;
+                return;
+            }
+
             BellowsStop();
+            _bellowsGesture = BellowsGesture.Idle;
             return;
         }
 
@@ -693,7 +789,14 @@ public sealed partial class ForgeMinigame : PanelContainer
         _hammerButton.Pressed += ForgeStrike;
         buttonRow.AddChild(_hammerButton);
 
-        _bellowsButton = new Button { Name = "Bellows", Text = $"Bellows (hold {MinigameInput.KeyLabelFor("bellows")})" };
+        // C3: names the tap-to-toggle escape hatch right on the button a player already looks at —
+        // no settings menu required to discover it. The button itself stays hold-only (its own
+        // ButtonDown/ButtonUp pair below); the hint is about the KEY the label already names.
+        _bellowsButton = new Button
+        {
+            Name = "Bellows",
+            Text = $"Bellows (hold {MinigameInput.KeyLabelFor("bellows")}, or tap to toggle)",
+        };
         _bellowsButton.ButtonDown += BellowsStart;
         _bellowsButton.ButtonUp += BellowsStop;
         buttonRow.AddChild(_bellowsButton);
