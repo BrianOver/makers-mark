@@ -1,7 +1,9 @@
 #if GDUNIT_TESTS
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using GameSim.Contracts;
 using GdUnit4;
 using Godot;
@@ -634,6 +636,69 @@ public class AudioTests
                     "generation needs a boost to reach level, the fix is a better generation (U9), never " +
                     "a positive TrimDb.")
                 .IsLessEqual(0f);
+        }
+    }
+
+    /// <summary>
+    /// U-audio-fingerprint (2026-08-09, fix/night-music-is-static): the TrimDb sign guard above only
+    /// catches a generation admitting it is too quiet — it says nothing if a phase's FILE is quietly
+    /// swapped for a bad take at TrimDb 0, which is exactly how the original defect would have shipped
+    /// had night-still-long.mp3 been left at 0dB instead of +5.45dB. Measuring loudness at test time
+    /// would need to decode compressed MP3 PCM, which this codebase has no engine-side decoder for (see
+    /// <see cref="Pcm(AudioStreamWav)"/> above — that trick only works for the SFX library's raw
+    /// <c>AudioStreamWav</c> data); the workable alternative is to pin exactly which bytes were already
+    /// measured and approved, offline, the same way <c>ComposedTrackTrims</c> pins TrimDb.
+    ///
+    /// <para>Measured 2026-08-09 with soundfile/pyloudnorm (decode -&gt; integrated LUFS, plus per-second
+    /// RMS across the opening 10s to check for real dynamics): day-first-light -13.28 LUFS (10s RMS
+    /// spread 53.8dB), town-dusk -15.30 LUFS (spread 42.3dB), quest-wait -14.30 LUFS (spread 14.4dB),
+    /// night-still -21.74 LUFS (spread 26.4dB) — all comfortably dynamic. For comparison, the rejected
+    /// night-still-long.mp3 measured -27.12 LUFS integrated but only 0.75dB of RMS spread across its
+    /// opening 10s: a flat, near-constant noise floor with no musical dynamics at all, the numeric
+    /// signature behind "random static noises." That file was deleted from the repo in this same commit
+    /// rather than left as an orphan a future edit could re-wire.</para>
+    ///
+    /// <para>Any future regeneration, re-encode, or newly-wired id fails this test with no approved hash
+    /// — which is the point: it forces whoever changes the bytes to re-run the measurement above and
+    /// deliberately vouch for the new file before updating <see cref="ApprovedTrackHashes"/>, rather
+    /// than letting a bad take ship silently the way night-still-long did.</para>
+    /// </summary>
+    private static readonly Dictionary<string, string> ApprovedTrackHashes = new(StringComparer.Ordinal)
+    {
+        ["day-first-light"] = "E9BD76933A4B191A94ABCFFB3527D22AF85BDBEE6CDCCFDA24377D3DBF20FE3B",
+        ["town-dusk"] = "DE58857D30581878C12110DFE3F1954BEADA4D4B67126BC98C3A19518542BFDC",
+        ["quest-wait"] = "891C6842028F358A8C2285C719B8B9A29422395FEB779E8C888EFAFCBE170367",
+        ["night-still"] = "E70FFCCDF8ABEEAE015D2FCDA0356118E1C998EA7D4ED48EF75DAA731ED5FDEB",
+    };
+
+    [TestCase]
+    public void EveryComposedTrack_MatchesItsApprovedLoudnessFingerprint()
+    {
+        foreach (var (phase, id) in AudioDirector.ComposedTrackIds)
+        {
+            var path = ProjectSettings.GlobalizePath($"res://assets/audio/{id}.mp3");
+
+            AssertThat(File.Exists(path))
+                .OverrideFailureMessage(
+                    $"{phase} maps to composed track '{id}' but {path} does not exist on disk — either " +
+                    "the file was removed without updating AudioDirector.ComposedTracks, or it was " +
+                    "renamed and this fingerprint census was not updated to match.")
+                .IsTrue();
+
+            var actualHash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
+            var isApproved = ApprovedTrackHashes.TryGetValue(id, out var expectedHash)
+                && string.Equals(actualHash, expectedHash, StringComparison.Ordinal);
+
+            AssertThat(isApproved)
+                .OverrideFailureMessage(
+                    $"{phase}'s composed track '{id}' hashes to {actualHash}, which is not in " +
+                    "ApprovedTrackHashes. This is either a brand-new id that was never loudness-checked, " +
+                    "or existing bytes silently changed under an id this test already trusted. Before " +
+                    "adding/updating the hash: decode the file (soundfile/pyloudnorm or ffmpeg loudnorm), " +
+                    "check its integrated LUFS against its neighbours and its per-second RMS spread over " +
+                    "the opening ~10s — under ~2dB of spread is a flat noise floor, not music, and is " +
+                    "exactly how night-still-long.mp3 shipped as 'random static' at night.")
+                .IsTrue();
         }
     }
 

@@ -76,17 +76,28 @@ public sealed partial class AudioDirector : Node
     /// own -21.7 raw despite the identical brief (ambient generation is not byte-reproducible across
     /// a 3x-longer render even holding style constant) — and needed a +5.45dB BOOST to reach -21.7
     /// effective, the one entry this table ever carried a POSITIVE TrimDb for. A windowed loudness
-    /// pass (ffmpeg <c>astats</c>, 10s frames; see
-    /// <c>docs/design/2026-08-02-composed-track-forensics.md</c>) showed why that was the wrong fix:
-    /// the file's own content sits at a near-constant -63 to -64dBFS windowed RMS for nearly the
-    /// entire 185s (two brief blips to -46/-56dB) — the generation is basically hiss riding under
-    /// silence, so the +5.45dB boost lifted that hiss right along with the sparse content, which is
-    /// what the owner heard as "loud static randomly at night." Boosting a quiet generation's own
-    /// noise floor was never going to fix that; only a better generation (U9, GPU-gated) or a
-    /// revert could. The praised original stays committed on disk — this is the one-line revert
-    /// back to its old id/path/TrimDb the "revert is a table row" contract (KTD-F) was built for.
-    /// The loop-length win trades back to 60s until U9 lands a clean ≥180s regeneration; that trade
-    /// is disclosed to the owner (Open Question 4), not hidden.</para>
+    /// pass (ffmpeg <c>astats</c>, 10s frames; the forensics doc that recorded it has since been
+    /// deleted per this repo's "docs die on merge" rule — the finding lives here and in git history
+    /// instead) showed why that was the wrong fix: the file's own content sits at a near-constant -63
+    /// to -64dBFS windowed RMS for nearly the entire 185s (two brief blips to -46/-56dB) — the
+    /// generation is basically hiss riding under silence, so the +5.45dB boost lifted that hiss right
+    /// along with the sparse content, which is what the owner heard as "loud static randomly at
+    /// night." Boosting a quiet generation's own noise floor was never going to fix that; only a
+    /// better generation (U9, GPU-gated) or a revert could. The praised original stays committed on
+    /// disk — this is the one-line revert back to its old id/path/TrimDb the "revert is a table row"
+    /// contract (KTD-F) was built for. The loop-length win trades back to 60s until U9 lands a clean
+    /// ≥180s regeneration; that trade is disclosed to the owner (Open Question 4), not hidden.</para>
+    ///
+    /// <para><b>fix/night-music-is-static (2026-08-09) deleted night-still-long.mp3 outright.</b> The
+    /// table above had already stopped wiring it, but the bad generation stayed committed on disk for
+    /// a week as an orphan a future one-line edit could re-wire without any test noticing (the sign
+    /// guard below only rejects a POSITIVE TrimDb, not a bad file at TrimDb 0). Re-measured with
+    /// soundfile/pyloudnorm rather than ffmpeg this time: -27.12 LUFS integrated, and only 0.75dB of
+    /// per-second RMS spread across its opening 10 seconds versus 14-54dB for every track actually
+    /// shipped — a flat noise floor, not music. It is gone now, and
+    /// <c>AudioTests.EveryComposedTrack_MatchesItsApprovedLoudnessFingerprint</c> pins the surviving
+    /// four files' bytes so a future swap-in of something similarly bad fails loudly instead of
+    /// waiting for another human playtest to catch it by ear.</para>
     ///
     /// <para><b>TrimDb, and why it is not just zero everywhere.</b> Measured with ffmpeg's
     /// <c>loudnorm</c> analysis pass (integrated LUFS) on each composed file, same method U2 used.
