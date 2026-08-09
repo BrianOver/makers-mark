@@ -235,6 +235,21 @@ public partial class BountyPanel : SimPanel
         var formSection = Section("POST BOUNTY");
         body.AddChild(formSection.Root);
 
+        // The panel taught nothing. Every widget here was legible on its own — a floor, a reward, a
+        // Post button — and none of them said what the transaction IS, so the owner's read was
+        // "need to explain how the bounties work further - confusing". The only copy the panel had
+        // was failure copy (the gate reasons below) and after-the-fact judgment stickies. Four
+        // facts, in the order a first-time poster meets them: the gold goes now, a hero chooses,
+        // the hero keeps it, and a refusal is about the price. Built once, never per-tick.
+        var explainer = AddLabel(
+            formSection.Body,
+            "A bounty pays a hero to reach one floor of the Mine. The reward leaves your purse when you post it. "
+            + "The first hero who judges it worth that floor takes the job, steers their whole party that deep, "
+            + "and keeps the gold — deeper floors need bigger rewards, and heroes refuse the ones they think "
+            + "thin. Unclaimed after three days, the gold comes back to you.");
+        explainer.Name = "BountyExplainer";
+        explainer.AddThemeColorOverride("font_color", GameTheme.TextDim);
+
         // THIS WAS ONE HBOX HOLDING SIX WIDGETS and it collapsed on sight. Brian's playtest
         // (2026-07-30): "bounties menu is broke" — the screenshot shows "r e w a r d  g o l d :"
         // stacked one character per line, the floor list overlapping it, and the Post button pushed
