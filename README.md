@@ -50,9 +50,21 @@ Godot editor work: open `godot/` with exactly the version in `.godot-version`.
 
 | Path | What |
 |------|------|
-| `docs/plans/` | The plan of record (13 implementation units) |
+| `docs/design/THE-GAME.md` | What the game IS — read this one first |
+| `docs/design/MAKERS-MARK.md` | §11 is the plan of record; §11.4 is the critical path |
+| `docs/plans/` | At most two live wave docs, each granted by name in §11.6 |
 | `sim/GameSim/` | Pure simulation core — all game rules, zero Godot |
 | `sim/GameSim.Tests/` | xUnit suites incl. 100-day balance sim (`Category=Balance`) |
 | `sim/GameSim.Cli/` | Text-mode playable surface |
 | `godot/` | Presentation: town scene + management panels (adapters only) |
 | `CLAUDE.md` | Agent operating rules — read before contributing |
+
+## Credits and licences
+
+**Voice derived from the CSTR VCTK Corpus (University of Edinburgh), CC BY 4.0.**
+
+The narrator's twenty spoken lines are cloned from a recorded human — speaker p254 of the
+VCTK Corpus, released under CC BY 4.0, which permits this use and requires that credit. The
+reference clip and the full reasoning live in `tools/narrator/ATTRIBUTION.md`, and a test
+pins this line in place: an attribution that depends on someone remembering is an
+attribution that gets dropped the first time the library is regenerated.
