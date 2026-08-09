@@ -28,11 +28,19 @@ public sealed record ControlDigest(
 /// cref="ScreenObservation"/>, the helper this unit extracted so a test-assembly-only type
 /// (<c>HumanPlayer</c>) and this production dev tool never carry two competing definitions of
 /// "what's on screen".
+///
+/// <para><see cref="Beat"/> (A3, "the shell around the game" plan) is <c>RaidConductor.Current</c>
+/// as a string — added because <c>RaidConductor</c> landed after U1 and introduced <see
+/// cref="RaidConductor.Beat.VigilStop"/>, a real held-open decision with no timer, and this digest
+/// had no field for it at all. Without it the model cannot tell "the world is showing a raid" from
+/// "the world is waiting on me at the vigil", and its most likely move at the single most important
+/// moment of the day is to <c>advance</c> straight past it.</para>
 /// </summary>
 public sealed record StateDigest(
     [property: JsonPropertyName("turn")] int Turn,
     [property: JsonPropertyName("day")] int Day,
     [property: JsonPropertyName("phase")] string Phase,
+    [property: JsonPropertyName("beat")] string Beat,
     [property: JsonPropertyName("actionSlotsRemaining")] int ActionSlotsRemaining,
     [property: JsonPropertyName("gold")] int Gold,
     [property: JsonPropertyName("location")] string Location,
@@ -129,6 +137,7 @@ public sealed class AgentPlaytestBridge
             Turn: turn,
             Day: state.Day,
             Phase: state.Phase.ToString(),
+            Beat: ui.Conductor.Current.ToString(),
             ActionSlotsRemaining: state.ActionSlotsRemaining,
             Gold: state.Player.Gold,
             Location: Location(ui),
@@ -389,13 +398,22 @@ public sealed class AgentPlaytestBridge
 
             var digest = BuildDigest(ui, turn, lastOutcome);
             System.IO.File.WriteAllText(statePath, JsonSerializer.Serialize(digest, JsonOptions));
-            FrameCapture.SaveAsPng(ui.GetViewport(), framePath);
+            var (frameImage, frameSaveError) = FrameCapture.SaveAsPng(ui.GetViewport(), framePath);
+            var frameLooksReal = FrameLooksReal(frameImage);
+            if (!frameLooksReal)
+            {
+                GD.PrintErr(
+                    $"[agent-playtest] turn {turn}: frame.png is BLANK/UNIFORM (save={frameSaveError}) — " +
+                    "the eye is not actually open. See FrameCapture.cs's --headless contract.");
+            }
 
             turnLog.AppendLine($"## Turn {turn}");
             turnLog.AppendLine(
-                $"- day {digest.Day} phase {digest.Phase} location {digest.Location} gold {digest.Gold} " +
-                $"canMove {digest.CanMove} slots {digest.ActionSlotsRemaining}");
+                $"- day {digest.Day} phase {digest.Phase} beat {digest.Beat} location {digest.Location} " +
+                $"gold {digest.Gold} canMove {digest.CanMove} slots {digest.ActionSlotsRemaining}");
             turnLog.AppendLine($"- screen: {string.Join(" | ", digest.ScreenText)}");
+            turnLog.AppendLine(
+                $"- frame: {(frameLooksReal ? "captured (non-blank)" : "BLANK/UNIFORM — degraded capture, see FrameCapture.cs headless contract")}");
             FlushLog(outDir, turnLog);
 
             var command = await WaitForCommand(commandPath, commandTimeoutMs);
@@ -427,6 +445,35 @@ public sealed class AgentPlaytestBridge
 
     private static void FlushLog(string outDir, StringBuilder turnLog) =>
         System.IO.File.WriteAllText(System.IO.Path.Combine(outDir, "turnlog.md"), turnLog.ToString());
+
+    /// <summary>
+    /// True when <paramref name="image"/> shows real variation rather than one flat color — ported
+    /// from <see cref="FullPlaytest"/>'s own blank-capture check (<c>Shot</c>, FullPlaytest.cs
+    /// ~977-1001) so the bridge uses the SAME approach instead of a second, independently-drifting
+    /// one. <c>--headless</c> produces a blank-but-valid PNG by contract (see <see
+    /// cref="FrameCapture"/>'s own doc comment) — before this, nothing in the bridge's own path ever
+    /// checked for it, which is exactly how a run can prove the file channel works while the eye is
+    /// actually closed.
+    /// </summary>
+    public static bool FrameLooksReal(Image image)
+    {
+        var data = image.GetData();
+        if (data.Length == 0)
+        {
+            return false;
+        }
+
+        var firstByte = data[0];
+        for (var b = 0; b < data.Length; b += 128)
+        {
+            if (data[b] != firstByte)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Polls for <paramref name="path"/> until it exists or <paramref name="timeoutMs"/> elapses.

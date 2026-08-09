@@ -381,5 +381,52 @@ public class AgentPlaytestBridgeTests
             }
         }
     }
+
+    /// <summary>
+    /// A2 ("the shell around the game" plan): of the eight cases in this class, only
+    /// <c>CommandTimeout_EndsTheLoopCleanly_AndWritesWhatItHad</c> reaches <c>RunLoop</c> — the sole
+    /// path that calls <c>FrameCapture.SaveAsPng</c> — and it never once references <c>frame.png</c>.
+    /// The suite proved the file channel and could not prove a picture was taken. <c>--headless</c>
+    /// produces a blank-but-valid PNG by contract (<see cref="FrameCapture"/>'s own doc comment), so
+    /// "the file exists" is not the same claim as "the eye is open" — this asserts both, reading the
+    /// actual bytes RunLoop wrote back off disk rather than trusting the in-memory capture.
+    /// </summary>
+    [TestCase]
+    public async Task RunLoop_CapturesAFrame_ThatIsNotBlank()
+    {
+        var ui = MountMainUi();
+        var outDir = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), "agent-playtest-bridge-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var bridge = new AgentPlaytestBridge(ui);
+
+            // command.json is never written — same timeout-driven shutdown as the sibling test above.
+            // One turn is enough: RunLoop captures frame.png BEFORE it ever waits on a command, so
+            // this proves the eye is open on the very first real turn, not just on a lucky one.
+            await bridge.RunLoop(ui, outDir, maxTurns: 1, commandTimeoutMs: 300);
+
+            var framePath = System.IO.Path.Combine(outDir, "frame.png");
+            AssertThat(System.IO.File.Exists(framePath))
+                .OverrideFailureMessage($"frame.png was never written to {outDir} — the channel A2 exists to prove is broken.")
+                .IsTrue();
+
+            var frame = Image.LoadFromFile(framePath);
+            AssertThat(AgentPlaytestBridge.FrameLooksReal(frame))
+                .OverrideFailureMessage(
+                    "frame.png on disk is uniform — every sampled byte equals the first. This is exactly " +
+                    "the blank-but-valid frame FrameCapture.cs documents for --headless: the file channel " +
+                    "works and the eye is still closed.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+            if (System.IO.Directory.Exists(outDir))
+            {
+                System.IO.Directory.Delete(outDir, recursive: true);
+            }
+        }
+    }
 }
 #endif

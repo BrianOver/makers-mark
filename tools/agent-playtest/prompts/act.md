@@ -46,6 +46,7 @@ Valid actions:
 
    Once inside, `Around you` becomes that room's stations, and the same rule gets you to each one.
    A run that never leaves the street has not tested the game.
+7. **If `beat` reads `VigilStop`, the world has stopped and is waiting on you.** A party is parked at the vigil with no timer running out — that is a real decision the day is holding open, not a loading screen. Go open Camp and use its own verb to send them deeper; do not `advance` past it.
 
 ## What you are secretly measuring
 
