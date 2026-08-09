@@ -481,10 +481,15 @@ public sealed partial class ForgeMinigame : PanelContainer
 
     /// <summary>Real-time input mapping — routes to the SAME public seam methods a scripted test or
     /// the button row drives, so there is exactly one code path for "what a gesture does" regardless
-    /// of input source. Space always strikes unaimed (accessible path); a left-click only strikes if
-    /// it lands on the billet (<see cref="WouldHit"/>); Shift holds the bellows; a right-button DRAG
-    /// quantizes into discrete <see cref="PumpStroke"/> calls every <see cref="PumpStrokeDragPixels"/>
-    /// of downward motion (no raw float ever reaches a scorer).</summary>
+    /// of input source. The keyboard side goes through <see cref="MinigameInput"/>'s
+    /// <c>forge_strike</c>/<c>bellows</c> actions (C2, "input substrate before any rebind UI") —
+    /// never a raw <see cref="Key"/> match — so a rebind screen can move these keys without this
+    /// class changing at all. <c>forge_strike</c> always strikes unaimed (accessible path); a
+    /// left-click only strikes if it lands on the billet (<see cref="WouldHit"/>); <c>bellows</c>
+    /// holds the bellows (its press check allows echo — a held Shift's OS auto-repeat must keep
+    /// re-arming the pump exactly as it always has); a right-button DRAG quantizes into discrete
+    /// <see cref="PumpStroke"/> calls every <see cref="PumpStrokeDragPixels"/> of downward motion (no
+    /// raw float ever reaches a scorer).</summary>
     public override void _GuiInput(InputEvent @event)
     {
         if (Completed || WasCancelled)
@@ -492,17 +497,26 @@ public sealed partial class ForgeMinigame : PanelContainer
             return;
         }
 
+        if (@event.IsActionPressed("forge_strike"))
+        {
+            ForgeStrike();
+            return;
+        }
+
+        if (@event.IsActionPressed("bellows", allowEcho: true))
+        {
+            BellowsStart();
+            return;
+        }
+
+        if (@event.IsActionReleased("bellows"))
+        {
+            BellowsStop();
+            return;
+        }
+
         switch (@event)
         {
-            case InputEventKey { Keycode: Key.Space, Pressed: true, Echo: false }:
-                ForgeStrike();
-                break;
-            case InputEventKey { Keycode: Key.Shift, Pressed: true }:
-                BellowsStart();
-                break;
-            case InputEventKey { Keycode: Key.Shift, Pressed: false }:
-                BellowsStop();
-                break;
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } mb:
                 // Clicking must not cost the player their keyboard — and if a child button holds
                 // focus, Space would press THAT instead of striking the billet.
@@ -642,6 +656,8 @@ public sealed partial class ForgeMinigame : PanelContainer
             return;
         }
 
+        MinigameInput.RegisterActions(); // C2: forge_strike/bellows must exist before any _GuiInput can fire
+
         Name = "ForgeMinigame";
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Stop; // an open overlay owns clicks — never passes through to what it covers
@@ -671,11 +687,13 @@ public sealed partial class ForgeMinigame : PanelContainer
         var buttonRow = new HBoxContainer { Name = "ForgeMinigameButtons" };
         body.AddChild(buttonRow);
 
-        _hammerButton = new Button { Name = "HammerStrike", Text = "Hammer (Space)" };
+        // C2: the label reads the LIVE InputMap binding instead of a hardcoded key name — a
+        // hardcoded prompt is exactly the defect a rebind screen cannot ship honestly on top of.
+        _hammerButton = new Button { Name = "HammerStrike", Text = $"Hammer ({MinigameInput.KeyLabelFor("forge_strike")})" };
         _hammerButton.Pressed += ForgeStrike;
         buttonRow.AddChild(_hammerButton);
 
-        _bellowsButton = new Button { Name = "Bellows", Text = "Bellows (hold Shift)" };
+        _bellowsButton = new Button { Name = "Bellows", Text = $"Bellows (hold {MinigameInput.KeyLabelFor("bellows")})" };
         _bellowsButton.ButtonDown += BellowsStart;
         _bellowsButton.ButtonUp += BellowsStop;
         buttonRow.AddChild(_bellowsButton);

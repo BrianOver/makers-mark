@@ -281,10 +281,11 @@ public sealed partial class TanningFrame : PanelContainer
     public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, Cancel);
 
     /// <summary>Real-time keyboard mapping — routes to the SAME public seam methods a scripted
-    /// test or the button row drives (KTD-A, same idiom as <c>ForgeMinigame._GuiInput</c>): arrow
-    /// keys move the cursor, Space scrapes the focused cell, and Enter is the keyboard equivalent
-    /// of dragging the hide off the frame (submit) — a dedicated key so the commit gesture never
-    /// depends on mouse precision.</summary>
+    /// test or the button row drives (KTD-A, same idiom as <c>ForgeMinigame._GuiInput</c>): the
+    /// <c>move_*</c> actions move the cursor, <c>scrape</c> scrapes the focused cell, and
+    /// <c>confirm</c> is the keyboard equivalent of dragging the hide off the frame (submit) — a
+    /// dedicated key so the commit gesture never depends on mouse precision. Every case is a <see
+    /// cref="MinigameInput"/> action (C2), never a raw <see cref="Key"/> match.</summary>
     public override void _GuiInput(InputEvent @event)
     {
         if (Completed || WasCancelled)
@@ -292,26 +293,29 @@ public sealed partial class TanningFrame : PanelContainer
             return;
         }
 
-        switch (@event)
+        if (@event.IsActionPressed("move_left"))
         {
-            case InputEventKey { Keycode: Key.Left, Pressed: true, Echo: false }:
-                MoveCursor(-1, 0);
-                break;
-            case InputEventKey { Keycode: Key.Right, Pressed: true, Echo: false }:
-                MoveCursor(1, 0);
-                break;
-            case InputEventKey { Keycode: Key.Up, Pressed: true, Echo: false }:
-                MoveCursor(0, -1);
-                break;
-            case InputEventKey { Keycode: Key.Down, Pressed: true, Echo: false }:
-                MoveCursor(0, 1);
-                break;
-            case InputEventKey { Keycode: Key.Space, Pressed: true, Echo: false }:
-                ScrapeFocusedCell();
-                break;
-            case InputEventKey { Keycode: Key.Enter or Key.KpEnter, Pressed: true, Echo: false }:
-                Submit();
-                break;
+            MoveCursor(-1, 0);
+        }
+        else if (@event.IsActionPressed("move_right"))
+        {
+            MoveCursor(1, 0);
+        }
+        else if (@event.IsActionPressed("move_up"))
+        {
+            MoveCursor(0, -1);
+        }
+        else if (@event.IsActionPressed("move_down"))
+        {
+            MoveCursor(0, 1);
+        }
+        else if (@event.IsActionPressed("scrape"))
+        {
+            ScrapeFocusedCell();
+        }
+        else if (@event.IsActionPressed("confirm"))
+        {
+            Submit();
         }
     }
 
@@ -321,6 +325,8 @@ public sealed partial class TanningFrame : PanelContainer
         {
             return;
         }
+
+        MinigameInput.RegisterActions(); // C2: move_*/scrape/confirm must exist before _GuiInput can fire
 
         Name = "TanningFrame";
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
@@ -348,7 +354,8 @@ public sealed partial class TanningFrame : PanelContainer
         var buttonRow = new HBoxContainer { Name = "TanningFrameButtons" };
         body.AddChild(buttonRow);
 
-        _scrapeFocusedButton = new Button { Name = "ScrapeFocusedCell", Text = "Scrape (Space)" };
+        // C2: reads the LIVE InputMap binding instead of a hardcoded key name.
+        _scrapeFocusedButton = new Button { Name = "ScrapeFocusedCell", Text = $"Scrape ({MinigameInput.KeyLabelFor("scrape")})" };
         _scrapeFocusedButton.Pressed += ScrapeFocusedCell;
         buttonRow.AddChild(_scrapeFocusedButton);
 

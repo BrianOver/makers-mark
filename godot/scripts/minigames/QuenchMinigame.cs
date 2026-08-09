@@ -234,7 +234,9 @@ public sealed partial class QuenchMinigame : PanelContainer
     /// order reasoning as <see cref="ForgeMinigame._Input"/>.</summary>
     public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, Cancel);
 
-    /// <summary>Space/Enter plunge; nothing else to input here — Act 2 has no aim, no bellows, just
+    /// <summary>The <c>plunge</c> action (C2, <see cref="MinigameInput"/>) — Space/Enter/KpEnter,
+    /// same as before, just routed through the <see cref="InputMap"/> instead of a raw <see
+    /// cref="Key"/> match; nothing else to input here — Act 2 has no aim, no bellows, just
     /// timing.</summary>
     public override void _GuiInput(InputEvent @event)
     {
@@ -243,11 +245,9 @@ public sealed partial class QuenchMinigame : PanelContainer
             return;
         }
 
-        switch (@event)
+        if (@event.IsActionPressed("plunge"))
         {
-            case InputEventKey { Keycode: Key.Space or Key.Enter or Key.KpEnter, Pressed: true, Echo: false }:
-                Plunge();
-                break;
+            Plunge();
         }
     }
 
@@ -289,6 +289,8 @@ public sealed partial class QuenchMinigame : PanelContainer
             return;
         }
 
+        MinigameInput.RegisterActions(); // C2: plunge must exist before any _GuiInput can fire
+
         Name = "QuenchMinigame";
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Stop;
@@ -313,7 +315,8 @@ public sealed partial class QuenchMinigame : PanelContainer
         var buttonRow = new HBoxContainer { Name = "QuenchMinigameButtons" };
         body.AddChild(buttonRow);
 
-        _plungeButton = new Button { Name = "QuenchPlunge", Text = "Plunge! (Space)" };
+        // C2: reads the LIVE InputMap binding instead of a hardcoded key name.
+        _plungeButton = new Button { Name = "QuenchPlunge", Text = $"Plunge! ({MinigameInput.KeyLabelFor("plunge")})" };
         _plungeButton.Pressed += Plunge;
         buttonRow.AddChild(_plungeButton);
 

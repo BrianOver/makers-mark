@@ -379,15 +379,68 @@ public class ForgeMinigameTests
             var farAway = mg.BilletAnchor + new Vector2(10_000, 10_000);
             AssertThat(mg.WouldHit(farAway)).IsFalse(); // establishes aim would reject this spot
 
-            // Space never checks WouldHit at all — it is the unaimed, always-valid keyboard path.
+            // forge_strike never checks WouldHit at all — it is the unaimed, always-valid keyboard
+            // path. PhysicalKeycode (not Keycode) — C2 standardised the whole input substrate on
+            // physical keys, and a real keypress populates both fields, but a synthetic test event
+            // must match whichever field the InputMap action was actually registered against.
             var xBefore = mg.ShapeXPermille;
-            mg._GuiInput(new InputEventKey { Keycode = Key.Space, Pressed = true, Echo = false });
+            mg._GuiInput(new InputEventKey { PhysicalKeycode = Key.Space, Pressed = true, Echo = false });
             AssertThat(mg.ShapeXPermille).IsGreater(xBefore);
         }
         finally
         {
             mg.Free();
         }
+    }
+
+    // ── C2 (input substrate plan): forge_strike/bellows are InputMap actions, not raw keys ─────
+
+    [TestCase]
+    public void ForgeStrikeAction_FollowsARebind_TheOldPhysicalKeyStopsWorking()
+    {
+        WithTemporaryBinding("forge_strike", new InputEventKey { PhysicalKeycode = Key.F }, () =>
+        {
+            var mg = new ForgeMinigame();
+            try
+            {
+                mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
+
+                // The key this overlay used to hard-match (Space) must now be a no-op...
+                var xBefore = mg.ShapeXPermille;
+                mg._GuiInput(new InputEventKey { PhysicalKeycode = Key.Space, Pressed = true, Echo = false });
+                AssertThat(mg.ShapeXPermille).IsEqual(xBefore);
+
+                // ...and the NEWLY bound physical key fires the exact same ForgeStrike behaviour.
+                mg._GuiInput(new InputEventKey { PhysicalKeycode = Key.F, Pressed = true, Echo = false });
+                AssertThat(mg.ShapeXPermille).IsGreater(xBefore);
+            }
+            finally
+            {
+                mg.Free();
+            }
+        });
+    }
+
+    [TestCase]
+    public void HammerButtonLabel_ReadsTheLiveInputMapBinding_NotAFrozenLiteral()
+    {
+        WithTemporaryBinding("forge_strike", new InputEventKey { PhysicalKeycode = Key.F }, () =>
+        {
+            var mg = new ForgeMinigame();
+            try
+            {
+                mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
+
+                // A prompt that hardcodes "(Space)" would lie the instant a rebind screen moves this
+                // key — this is the exact defect C2 exists to close before any rebind UI ships.
+                var hammerButton = Find<Button>(mg, "HammerStrike");
+                AssertThat(hammerButton.Text).IsEqual("Hammer (F)");
+            }
+            finally
+            {
+                mg.Free();
+            }
+        });
     }
 
     [TestCase]

@@ -184,6 +184,33 @@ public static class UiTestSupport
         root.FindChild(name, recursive: true, owned: false) as T
         ?? throw new InvalidOperationException($"No {typeof(T).Name} named '{name}' under {root.Name}.");
 
+    /// <summary>
+    /// C2 (input substrate plan): temporarily replaces every <see cref="InputMap"/> event on
+    /// <paramref name="action"/> with <paramref name="temporary"/>, runs <paramref name="body"/>,
+    /// then restores the original events — so a test proving "this minigame reads the LIVE
+    /// InputMap, not a hardcoded key" never leaks a changed keybinding into whichever test the
+    /// gdUnit runner happens to execute next in the same process. <see cref="InputMap"/> is a
+    /// process-wide singleton, so this is the one safe way to prove a rebind actually takes effect.
+    /// </summary>
+    public static void WithTemporaryBinding(string action, InputEventKey temporary, Action body)
+    {
+        var original = InputMap.ActionGetEvents(action);
+        InputMap.ActionEraseEvents(action);
+        InputMap.ActionAddEvent(action, temporary);
+        try
+        {
+            body();
+        }
+        finally
+        {
+            InputMap.ActionEraseEvents(action);
+            foreach (var evt in original)
+            {
+                InputMap.ActionAddEvent(action, evt);
+            }
+        }
+    }
+
     /// <summary>Press a button the way a user would — through its pressed signal.</summary>
     public static void Press(Node root, string buttonName) =>
         Find<Button>(root, buttonName).EmitSignal(BaseButton.SignalName.Pressed);
