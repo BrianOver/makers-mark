@@ -5,6 +5,7 @@ using GameSim.Contracts;
 using GameSim.Presentation;
 using Godot;
 using GodotClient.Tools;
+using GodotClient.Ui;
 
 namespace GodotClient.Audio;
 
@@ -178,6 +179,12 @@ public sealed partial class AudioDirector : Node
 
     private double _loopReleaseElapsed;
 
+    /// <summary>The loop voice's own gain (<see cref="SfxGainDb"/>) at the moment <see
+    /// cref="StopLoop"/> armed the release — the fade's actual starting point, captured live rather
+    /// than assumed to be 0dB, so a mixer slider dragged before or during a hold is what the release
+    /// fades FROM, not a stale default.</summary>
+    private float _loopReleaseStartDb;
+
     /// <summary>How long a released hold takes to fade to silence before the voice actually stops.
     /// Short on purpose (this is a release, not a crossfade) but long enough that the stop is never a
     /// click — an abrupt cut mid-buffer would click regardless of the clip's own DeClick fade, which
@@ -201,6 +208,16 @@ public sealed partial class AudioDirector : Node
     /// to back (R3). Composed is preferred by default (false) — the whole point of landing these
     /// tracks is that they play unless told otherwise.</summary>
     private bool _preferSynth;
+
+    /// <summary>C1 (2026-08-09 shell-and-audio-menu plan): gate for the M hotkey below. Before this
+    /// unit, M flipped <see cref="_preferSynth"/> from ANY screen, unhandled, with no on-screen
+    /// explanation — a diagnostic left live in a shipping build, and a live footgun now that players
+    /// own their own mix through Settings. Off by default; the owner's own A/B judging (R3) still
+    /// needs it during content review, so it is gated, not deleted, behind the same env-var idiom as
+    /// <see cref="MuteEnvVar"/>.</summary>
+    public const string DevHotkeysEnvVar = "MAKERSMARK_DEV_AUDIO_HOTKEYS";
+
+    private bool _devHotkeysEnabled;
 
     /// <summary>Seconds into the current crossfade, or -1 when no fade is in flight (mirrors the
     /// accumulated-delta idiom used by <c>TabFade</c> and <c>DayPhaseTint</c> — no engine Tween).</summary>
@@ -246,14 +263,143 @@ public sealed partial class AudioDirector : Node
     /// </summary>
     public const string MuteEnvVar = "MAKERSMARK_MUTE_AUDIO";
 
+    // ---- the mixer (C1, 2026-08-09 shell-and-audio-menu plan) ---------------------------------
+    //
+    // Four linear (0..1) PREFERENCE faders layered ON TOP of the MASTERING levels above (MusicDb,
+    // NarratorDb, and every ComposedTrack's own TrimDb) — never collapsed into them. TrimDb answers
+    // "does this generation read at the same loudness as its neighbours"; these answer "how loud
+    // does the PLAYER want the game" — two different questions asked by two different people at two
+    // different times, and conflating them is exactly how the night-still-long +5.45dB static
+    // incident happened (see ComposedTracks' own doc). 1.0 (every default below) reproduces today's
+    // constants exactly, so shipping this unit changes nothing for a player who never opens Settings.
+
+    /// <summary>1.0 = today's existing mix, unchanged. The factory default for all four faders.</summary>
+    public const float DefaultVolume = 1f;
+
+    public float MasterVolume { get; private set; } = DefaultVolume;
+    public float MusicVolume { get; private set; } = DefaultVolume;
+    public float SfxVolume { get; private set; } = DefaultVolume;
+    public float NarratorVolume { get; private set; } = DefaultVolume;
+
+    /// <summary>Converts a linear 0..1 fader to dB, floored at <see cref="SilentDb"/> — the same
+    /// "gone" floor every fade in this file already uses — rather than letting a fader dragged to
+    /// zero produce negative infinity and poison every dB arithmetic downstream of it.</summary>
+    private static float GainDb(float linear01) =>
+        linear01 <= 0.0001f ? SilentDb : Mathf.Max(SilentDb, Mathf.LinearToDb(linear01));
+
+    /// <summary>Master and a category fader are independent linear gains, so their COMBINED gain is
+    /// their PRODUCT converted to dB once — never two dB values simply added, which would double-
+    /// count the floor the moment either fader is near zero.</summary>
+    private float MixGainDb(float categoryVolume) =>
+        GainDb(Mathf.Clamp(MasterVolume, 0f, 1f) * Mathf.Clamp(categoryVolume, 0f, 1f));
+
+    private float SfxGainDb() => MixGainDb(SfxVolume);
+
+    /// <summary>The music bed's real target dB for a given <see cref="ComposedTrack.TrimDb"/> —
+    /// mastering (<paramref name="trimDb"/>) plus preference (<see cref="MixGainDb"/>), computed
+    /// fresh every call so a fader dragged mid-crossfade is reflected on the very next <see
+    /// cref="_Process"/> tick with no special-cased "reapply" path for the in-flight-fade case.</summary>
+    private float MusicTargetDb(float trimDb) => MusicDb + trimDb + MixGainDb(MusicVolume);
+
+    public void SetMasterVolume(float volume)
+    {
+        MasterVolume = Mathf.Clamp(volume, 0f, 1f);
+        ApplyMusicMixerVolume();
+        ApplySfxMixerVolume();
+        RefreshNarratorVolume();
+    }
+
+    public void SetMusicVolume(float volume)
+    {
+        MusicVolume = Mathf.Clamp(volume, 0f, 1f);
+        ApplyMusicMixerVolume();
+    }
+
+    public void SetSfxVolume(float volume)
+    {
+        SfxVolume = Mathf.Clamp(volume, 0f, 1f);
+        ApplySfxMixerVolume();
+    }
+
+    /// <summary>0 is legal here, and it means something different than everywhere else on this
+    /// panel: the narrator carries no information the screen does not already carry (see <see
+    /// cref="SpeakNarrator"/>'s own doc), so a silenced narrator is indistinguishable from a voice
+    /// library that was never recorded. This slider only ever touches <see cref="_narratorVoice"/>'s
+    /// gain — <see cref="SpeakNarrator"/> still writes the line to the screen and to <see
+    /// cref="RecentNarratorLines"/> at every volume, including zero. No setting anywhere may
+    /// suppress the narrator's TEXT.</summary>
+    public void SetNarratorVolume(float volume)
+    {
+        NarratorVolume = Mathf.Clamp(volume, 0f, 1f);
+        RefreshNarratorVolume();
+    }
+
+    /// <summary>Re-levels whatever bed is CURRENTLY playing right now, bypassing the fade — needed
+    /// because <see cref="_Process"/> only recomputes volume while a crossfade is actually in flight
+    /// (<c>_fadeElapsed &gt;= 0</c>); a settled bed's player would otherwise sit at its OLD target
+    /// until the next phase change gave <see cref="_Process"/> a reason to touch it again.</summary>
+    private void ApplyMusicMixerVolume()
+    {
+        if (_fadeElapsed >= 0)
+        {
+            return; // a fade is in flight — _Process recomputes MusicTargetDb every frame already
+        }
+
+        var active = _aIsActive ? _musicA : _musicB;
+        if (!active.Playing)
+        {
+            return; // nothing airborne yet — the next SetPhase/CrossfadeTo will read the new fader
+        }
+
+        var trim = _aIsActive ? _musicATrimDb : _musicBTrimDb;
+        active.VolumeDb = MusicTargetDb(trim);
+    }
+
+    /// <summary>Live-updates a bellows hold already in progress, so dragging the SFX or Master
+    /// slider while gripping the forge is heard immediately rather than on the next gesture. A
+    /// pooled one-shot reads <see cref="SfxGainDb"/> fresh at its own <see cref="Play"/> call and
+    /// needs no equivalent — it is already gone by the time a slider could move.</summary>
+    private void ApplySfxMixerVolume()
+    {
+        if (_loopCue is not null && !_loopReleasing)
+        {
+            _loopVoice.VolumeDb = SfxGainDb();
+        }
+    }
+
+    private void RefreshNarratorVolume() => _narratorVoice.VolumeDb = NarratorDb + MixGainDb(NarratorVolume);
+
+    /// <summary>
+    /// Re-applies whatever mix the player last saved (Settings' four faders, and Mute) — call once,
+    /// right after mounting a fresh instance. <c>MainUi.BuildUi</c> is the one real call site, the
+    /// same "explicit call right after construction" idiom <see cref="UiSettings.ApplyPersisted"/>
+    /// already uses for the OS window.
+    ///
+    /// <para>Deliberately NOT folded into <see cref="_Ready"/> itself: every existing test in
+    /// <c>AudioTests</c> constructs a bare <c>new AudioDirector()</c> expecting today's exact
+    /// defaults (no fader trimmed, nothing muted unless <see cref="MuteEnvVar"/> says so), and
+    /// reading a disk file inside the constructor would make every one of those tests depend on
+    /// whatever <c>ui_settings.json</c> happens to be sitting in the sandbox — precisely the
+    /// shared-mutable-state hazard <c>UiSettingsTests</c>' own class doc already warns about, now
+    /// reaching a suite that has nothing to do with Settings.</para>
+    /// </summary>
+    public void ApplyPersistedMixer()
+    {
+        SetMasterVolume(UiSettings.LoadMasterVolume());
+        SetMusicVolume(UiSettings.LoadMusicVolume());
+        SetSfxVolume(UiSettings.LoadSfxVolume());
+        SetNarratorVolume(UiSettings.LoadNarratorVolume());
+        // MuteEnvVar (automated tools) always wins over a stale "unmuted" preference on disk — OR,
+        // never overwrite, so a real boot only ADDS the player's own saved mute on top of it.
+        SetMuted(Muted || UiSettings.LoadMuted());
+    }
+
     public override void _Ready()
     {
         Name = "AudioDirector";
 
-        if (!string.IsNullOrEmpty(OS.GetEnvironment(MuteEnvVar)))
-        {
-            Muted = true;
-        }
+        Muted = !string.IsNullOrEmpty(OS.GetEnvironment(MuteEnvVar));
+        _devHotkeysEnabled = !string.IsNullOrEmpty(OS.GetEnvironment(DevHotkeysEnvVar));
 
         for (var i = 0; i < VoiceCount; i++)
         {
@@ -271,8 +417,9 @@ public sealed partial class AudioDirector : Node
         AddChild(_loopVoice);
         _loopVoice.Finished += OnLoopVoiceFinished;
 
-        _narratorVoice = new AudioStreamPlayer { Name = "NarratorVoice", VolumeDb = NarratorDb };
+        _narratorVoice = new AudioStreamPlayer { Name = "NarratorVoice" };
         AddChild(_narratorVoice);
+        RefreshNarratorVolume();
     }
 
     // ---- the narrator ------------------------------------------------------------------------
@@ -422,6 +569,7 @@ public sealed partial class AudioDirector : Node
 
         var voice = _voices[_nextVoice];
         _nextVoice = (_nextVoice + 1) % _voices.Count;
+        voice.VolumeDb = SfxGainDb();
         voice.Stream = SfxLibrary.Get(cue);
         voice.Play();
     }
@@ -450,7 +598,7 @@ public sealed partial class AudioDirector : Node
             return;
         }
 
-        _loopVoice.VolumeDb = 0f;
+        _loopVoice.VolumeDb = SfxGainDb();
         _loopVoice.Stream = SfxLibrary.Get(cue);
         _loopVoice.Play();
     }
@@ -475,6 +623,7 @@ public sealed partial class AudioDirector : Node
             return;
         }
 
+        _loopReleaseStartDb = _loopVoice.VolumeDb; // fade from wherever the mixer actually has it
         _loopReleasing = true;
         _loopReleaseElapsed = 0;
     }
@@ -489,6 +638,7 @@ public sealed partial class AudioDirector : Node
     {
         if (_loopCue is { } cue && !_loopReleasing && !Muted)
         {
+            _loopVoice.VolumeDb = SfxGainDb(); // live: a slider dragged mid-hold is heard next breath
             _loopVoice.Stream = SfxLibrary.Get(cue);
             _loopVoice.Play();
         }
@@ -595,10 +745,17 @@ public sealed partial class AudioDirector : Node
     /// Dev A/B toggle: M flips composed vs synth and immediately re-applies whatever bed the current
     /// phase/scene would resolve to, so the owner can flip back and forth on the SAME phase and judge
     /// the two back to back (R3) rather than waiting for the day to move on. No <c>MainUi.cs</c> edit
-    /// needed — <c>Node</c> already receives unhandled input directly.
+    /// needed — <c>Node</c> already receives unhandled input directly. Gated behind <see
+    /// cref="DevHotkeysEnvVar"/> (C1) — see that constant's own doc for why an unexplained hotkey
+    /// that silently changes the mix cannot stay live now that players own it through Settings.
     /// </summary>
     public override void _UnhandledKeyInput(InputEvent @event)
     {
+        if (!_devHotkeysEnabled)
+        {
+            return;
+        }
+
         if (@event is not InputEventKey { PhysicalKeycode: Key.M, Pressed: true, Echo: false })
         {
             return;
@@ -691,8 +848,9 @@ public sealed partial class AudioDirector : Node
         _fadeElapsed = 0;
     }
 
-    /// <summary>Silences everything and stops the bed, or restores it. Kept as one switch so a future
-    /// options screen has exactly one thing to bind.</summary>
+    /// <summary>Silences everything and stops the bed, or restores it. Kept as one switch so an
+    /// options screen has exactly one thing to bind — <see cref="SettingsPanel"/>'s Mute toggle (C1)
+    /// is that binding; persistence is <see cref="UiSettings"/>'s job, not this method's.</summary>
     public void SetMuted(bool muted)
     {
         Muted = muted;
@@ -732,7 +890,7 @@ public sealed partial class AudioDirector : Node
         {
             _loopReleaseElapsed += delta;
             var released = (float)Math.Clamp(_loopReleaseElapsed / LoopReleaseSeconds, 0, 1);
-            _loopVoice.VolumeDb = Mathf.Lerp(0f, SilentDb, released);
+            _loopVoice.VolumeDb = Mathf.Lerp(_loopReleaseStartDb, SilentDb, released);
             if (released >= 1f)
             {
                 _loopVoice.Stop();
@@ -758,8 +916,8 @@ public sealed partial class AudioDirector : Node
         var risingTrim = _aIsActive ? _musicATrimDb : _musicBTrimDb;
         var fallingTrim = _aIsActive ? _musicBTrimDb : _musicATrimDb;
 
-        rising.VolumeDb = Mathf.Lerp(SilentDb, MusicDb + risingTrim, progress);
-        falling.VolumeDb = Mathf.Lerp(MusicDb + fallingTrim, SilentDb, progress);
+        rising.VolumeDb = Mathf.Lerp(SilentDb, MusicTargetDb(risingTrim), progress);
+        falling.VolumeDb = Mathf.Lerp(MusicTargetDb(fallingTrim), SilentDb, progress);
 
         if (progress >= 1f)
         {

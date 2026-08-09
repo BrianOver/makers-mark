@@ -1853,6 +1853,7 @@ public partial class MainUi : Control
         // Mounted before the town so a cue fired during the first refresh already has somewhere to go.
         Audio = new AudioDirector();
         AddChild(Audio);
+        Audio.ApplyPersistedMixer(); // C1: the player's saved mix, before anything plays
         Audio.SetPhase(Adapter.CurrentState.Phase);
 
         // --- U2 (shell-and-audio plan, R1/KTD-C): Town2D used to mount here as a PERMANENT

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text.Json;
 using Godot;
 
@@ -113,8 +114,129 @@ public static class UiSettings
 
     public static void SaveFullscreen(bool fullscreen)
     {
+        var data = LoadDataOrDefault();
+        data.Fullscreen = fullscreen;
+        SaveData(data);
+    }
+
+    // ---- the mixer (C1, 2026-08-09 shell-and-audio-menu plan) ---------------------------------
+    //
+    // Growing the SAME file, not a second one (sprawl is this repo's own named recurring defect) —
+    // so every Save* below goes through LoadDataOrDefault/SaveData's read-modify-write rather than
+    // SaveFullscreen's old shape (a bare `new Data { Fullscreen = fullscreen }`), which would have
+    // silently reset every OTHER field back to its default the moment two different preferences were
+    // ever saved in the same session.
+
+    /// <summary>1.0 = full volume, matching <c>AudioDirector.DefaultVolume</c> — today's existing
+    /// mix, unchanged, for a player who never opens Settings.</summary>
+    public const float DefaultVolume = 1f;
+
+    public static float LoadMasterVolume() => LoadDataOrDefault().MasterVolume;
+    public static float LoadMusicVolume() => LoadDataOrDefault().MusicVolume;
+    public static float LoadSfxVolume() => LoadDataOrDefault().SfxVolume;
+    public static float LoadNarratorVolume() => LoadDataOrDefault().NarratorVolume;
+    public static bool LoadMuted() => LoadDataOrDefault().Muted;
+
+    public static void SaveMasterVolume(float volume)
+    {
+        var data = LoadDataOrDefault();
+        data.MasterVolume = volume;
+        SaveData(data);
+    }
+
+    public static void SaveMusicVolume(float volume)
+    {
+        var data = LoadDataOrDefault();
+        data.MusicVolume = volume;
+        SaveData(data);
+    }
+
+    public static void SaveSfxVolume(float volume)
+    {
+        var data = LoadDataOrDefault();
+        data.SfxVolume = volume;
+        SaveData(data);
+    }
+
+    public static void SaveNarratorVolume(float volume)
+    {
+        var data = LoadDataOrDefault();
+        data.NarratorVolume = volume;
+        SaveData(data);
+    }
+
+    public static void SaveMuted(bool muted)
+    {
+        var data = LoadDataOrDefault();
+        data.Muted = muted;
+        SaveData(data);
+    }
+
+    /// <summary>
+    /// C5's tripwire (2026-08-09 shell-and-audio-menu plan) — the exact set of keys this store ever
+    /// writes to <c>user://ui_settings.json</c>, name-only so a pinning test can assert the set
+    /// without touching Godot or parsing JSON. Styled after <c>ConstitutionTests</c>' pinned-set
+    /// pattern (<c>sim/GameSim.Tests/ConstitutionTests.cs</c>).
+    ///
+    /// <para><b>The rule this pin enforces:</b> a setting may change how the world SOUNDS, LOOKS,
+    /// and READS. It may never change what the world DECIDES. The concrete risk is an "auto-advance
+    /// the vigil" or "default vigil choice" preference — it would delete the one reach-into-the-dark
+    /// decision the whole day stages, and it would arrive here looking exactly like a courtesy: one
+    /// more legal-looking line in this same JSON blob. <c>ClientAuthorityCensusTests</c> (the sim's
+    /// own "no timers on decisions" law) has no way to see it coming, because nothing about a
+    /// preference looks like a <c>Stopwatch</c>.</para>
+    ///
+    /// <para>So the key set itself is pinned, in a compiled file, the same way the seven laws pin
+    /// their exception counts (CLAUDE.md rule 12). Adding a persisted key is therefore a
+    /// red-then-reviewed diff HERE — never a quiet new line on disk that nobody had to look at
+    /// twice. Three more traps, named so the next addition is judged against them explicitly: no
+    /// key may suppress sim-produced output (a pacing bug is fixed in content, never in a mute); no
+    /// key may feed the kernel or the scorer; and every default here must reproduce the FULL game,
+    /// never a pre-skipped one.</para>
+    /// </summary>
+    public static readonly IReadOnlyList<string> PersistedKeys = new[]
+    {
+        nameof(Data.Fullscreen),
+        nameof(Data.MasterVolume),
+        nameof(Data.MusicVolume),
+        nameof(Data.SfxVolume),
+        nameof(Data.NarratorVolume),
+        nameof(Data.Muted),
+    };
+
+    /// <summary>Best-effort current settings, or a fresh default set — missing/unreadable/corrupt
+    /// file all collapse to the same "nothing persisted yet" answer <see cref="LoadFullscreen"/>
+    /// already established, except this helper is used for READ-MODIFY-WRITE (see every Save* method
+    /// above) where "nothing yet" and "explicitly default" are the same thing, unlike Fullscreen's
+    /// own null-means-never-saved contract, which stays on its own read path for exactly that
+    /// reason.</summary>
+    private static Data LoadDataOrDefault()
+    {
+        if (!Godot.FileAccess.FileExists(Path))
+        {
+            return new Data();
+        }
+
+        using var file = Godot.FileAccess.Open(Path, Godot.FileAccess.ModeFlags.Read);
+        if (file is null)
+        {
+            return new Data(); // unreadable — fail soft, never block boot
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<Data>(file.GetAsText()) ?? new Data();
+        }
+        catch (JsonException)
+        {
+            return new Data(); // corrupt file — fail soft
+        }
+    }
+
+    private static void SaveData(Data data)
+    {
         using var file = Godot.FileAccess.Open(Path, Godot.FileAccess.ModeFlags.Write);
-        file?.StoreString(JsonSerializer.Serialize(new Data { Fullscreen = fullscreen }));
+        file?.StoreString(JsonSerializer.Serialize(data));
     }
 
     /// <summary>Test-only teardown: delete the file so suites never leak a preference across runs
@@ -130,5 +252,10 @@ public static class UiSettings
     private sealed class Data
     {
         public bool Fullscreen { get; set; }
+        public float MasterVolume { get; set; } = DefaultVolume;
+        public float MusicVolume { get; set; } = DefaultVolume;
+        public float SfxVolume { get; set; } = DefaultVolume;
+        public float NarratorVolume { get; set; } = DefaultVolume;
+        public bool Muted { get; set; }
     }
 }
