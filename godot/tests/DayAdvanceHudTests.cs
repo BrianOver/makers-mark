@@ -121,6 +121,13 @@ public class DayAdvanceHudTests
             // player input.
             PressEnabled(ui, "AutoAdvance");
             AssertThat(ui.Clock.AutoAdvance).IsFalse();
+
+            // 2026-08-09: the apprenticeship chain now HOLDS the raid span open at its Watch step
+            // (RaidConductor's own hold doc), and a fresh mount is always mid-chain. This test is
+            // about what the Auto TOGGLE does and does not gate, not about the tutorial — dismissing
+            // the chain keeps that the only variable. PlayableLoopTests pins the hold itself.
+            ui.Tutorial.Dismiss();
+
             for (var frame = 0; frame < 8 && ui.Conductor.Current != RaidConductor.Beat.Idle; frame++)
             {
                 ui._Process(PhaseClock.MorningSeconds * 10);

@@ -28,8 +28,34 @@ namespace GodotClient;
 /// eventually. <b>Day-1 reality check:</b> every hero's first-ever trip targets floor 1, which is
 /// structurally unstaged (<c>ExpeditionSystem.CheckpointFor</c>: checkpoint &lt; 1 whenever the
 /// target floor is 1) — so <see cref="Beat.VigilStop"/> is the UNCOMMON case, not the common one, and
-/// <see cref="Update"/>'s empty-InFlight path must carry every day (not just day 1) through Camp and
+/// <see cref="Update"/>'s empty-InFlight path carries every day (not just day 1) through Camp and
 /// ExpeditionDeep on its own with zero stop.</para>
+///
+/// <para><b>...which is exactly how one bell reached Night.</b> Owner report, 2026-08-09: "i clicked
+/// send them off and it auto jumped to night???? yet this is still on tutorial 5??? this is a
+/// critical bug as it skipped most the game and prevented me from playing more". Measured on a fresh
+/// day 1: <b>4.77 real seconds</b> from the Morning bell to Evening with zero further input, of which
+/// the two empty beats are <see cref="EmptyBeatSeconds"/> each. The apprenticeship chain's own step 5
+/// ("Press 👁 Watch to look in on them") is issued on the Expedition→Camp tick — the tick that emits
+/// <c>PartyDeparted</c> — and the Watch control exists only while the phase is Expedition/Camp/
+/// ExpeditionDeep (<c>MainUi.UpdateClockLabel</c>), so the player had <b>exactly 2.00 seconds</b> to
+/// answer an instruction the game had only just printed. A timer that destroys the answer to a
+/// question the game is still asking is a timer ON a decision (§11.7.8), and no amount of show
+/// pacing makes it not one.</para>
+///
+/// <para><b>The hold (2026-08-09 fix).</b> The shows keep their timers; the timers now stop dead
+/// while the player owes an answer this span is the only place to give. Two sources, checked every
+/// <see cref="Update"/>: <see cref="PhaseClock.Engaged"/> — the "flows-but-waits" latch that has
+/// governed the phase clock since U15 and that this class was simply never wired to, so a drawer, a
+/// walkable interior or a modal now holds the raid span exactly as it already held Morning — and the
+/// injected <c>showHeld</c> predicate, which <c>MainUi</c> feeds the one on-screen ask that lives
+/// inside this span and nowhere else. <b>Held means paused, not deferred:</b> unlike <see
+/// cref="PhaseClock.Update"/>'s engaged branch (which keeps accruing to the cap so a disengage ticks
+/// immediately), <see cref="_elapsed"/> does NOT accrue while held — otherwise leaving the forge
+/// after a minute would fire the whole rest of the day in one frame, which is the reported bug with
+/// extra steps. <b>And the hold binds the TIMER only:</b> <see cref="Hurry"/> — the player's own
+/// press — walks straight through it, because skipping stays legal and its cost is named in copy,
+/// never engineered (§11.7.8). The day waits on the player; it never traps them.</para>
 ///
 /// <para><b>Ticking:</b> every phase advance below rides <see cref="PhaseClock.AdvanceNow"/> — the
 /// SAME path the bell and the opt-in auto-clock use — so replay format and RNG draw order are
@@ -72,15 +98,44 @@ public sealed class RaidConductor
     private readonly PhaseClock _clock;
     private readonly Func<bool> _departureShowDone;
     private readonly Func<bool> _homecomingShowDone;
+    private readonly Func<bool> _showHeld;
 
     private double _elapsed;
 
-    public RaidConductor(SimAdapter adapter, PhaseClock clock, Func<bool> departureShowDone, Func<bool> homecomingShowDone)
+    /// <param name="showHeld">
+    /// "The player owes an answer that only this span can receive" — see the class doc's own hold
+    /// section. Checked every <see cref="Update"/>; while true, the show's timers stop (and do not
+    /// accrue) so the phase cannot move. <see cref="Hurry"/> ignores it entirely: the player's own
+    /// press is always allowed through. <c>MainUi</c> passes the apprenticeship chain's Watch step;
+    /// <see cref="PhaseClock.Engaged"/> is folded in by <see cref="Update"/> itself and does NOT
+    /// need to be repeated here.
+    /// </param>
+    public RaidConductor(
+        SimAdapter adapter,
+        PhaseClock clock,
+        Func<bool> departureShowDone,
+        Func<bool> homecomingShowDone,
+        Func<bool> showHeld)
     {
         _adapter = adapter;
         _clock = clock;
         _departureShowDone = departureShowDone;
         _homecomingShowDone = homecomingShowDone;
+        _showHeld = showHeld;
+
+        // The vigil must be armed the instant this class exists, not merely on the next transition.
+        // Current used to start at Idle unconditionally, which is a law break on exactly one shape:
+        // a campaign RESUMED at Camp with a party already parked (CampaignSave stores the phase, and
+        // MainUi._Ready builds this over whatever it loaded). Idle routes MainUi._Process into
+        // Clock.Update — so the opt-in Innkeeper's Clock times the vigil away on a wall-clock timer,
+        // measured, Camp -> ExpeditionDeep with the party still parked — and routes the bell press
+        // into Clock.AdvanceNow() rather than the reopen-the-slate branch, ending an unanswered
+        // decision outright. Deriving the parked-Camp case (and ONLY that case: the show beats have
+        // no decision at stake, and a resumed show simply keeps its bell, which is harmless) closes
+        // both doors with no behaviour change for any other phase.
+        Current = adapter.CurrentState is { Phase: DayPhase.Camp, InFlight.IsEmpty: false }
+            ? Beat.VigilStop
+            : Beat.Idle;
 
         // Self-subscribed (not driven by an external "notify" call) so this class is fully
         // standalone-testable — construct it over a bare SimAdapter/PhaseClock, tick either one any
@@ -92,7 +147,17 @@ public sealed class RaidConductor
 
     /// <summary>The beat the conductor is currently in — read every frame by the HUD (Hurry caption,
     /// bell-vs-Hurry routing) and by the Camp modal wiring.</summary>
-    public Beat Current { get; private set; } = Beat.Idle;
+    public Beat Current { get; private set; }
+
+    /// <summary>
+    /// True while a show beat is running but its timer is held — the player owes an answer, or a
+    /// surface owns the screen (class doc's hold section). Surfaced so the HUD can say so rather
+    /// than leaving a visibly stopped day unexplained: the law allows skipping, but only when its
+    /// cost is NAMED in copy. False in <see cref="Beat.Idle"/>/<see cref="Beat.VigilStop"/>, which
+    /// have no timer to hold in the first place.
+    /// </summary>
+    public bool ShowHeld =>
+        Current is not (Beat.Idle or Beat.VigilStop) && (_clock.Engaged || _showHeld());
 
     /// <summary>
     /// Re-derive <see cref="Current"/> from the adapter's own post-tick state. Fires on EVERY
@@ -143,6 +208,15 @@ public sealed class RaidConductor
             return; // Idle: a real bell owns this phase. VigilStop: the one timer-free stop.
         }
 
+        if (_clock.Engaged || _showHeld())
+        {
+            // Held: the player owes an answer, or a surface owns the screen. Return BEFORE accruing
+            // — a held show is paused, not deferred (class doc). Accruing here would bank the whole
+            // wait and fire every remaining beat the frame the hold lifts, which is the reported bug
+            // wearing a different hat.
+            return;
+        }
+
         _elapsed += deltaSeconds;
 
         switch (Current)
@@ -184,6 +258,11 @@ public sealed class RaidConductor
     /// skips <see cref="Beat.VigilStop"/> past unseen: the loop below stops the INSTANT it reaches
     /// Idle (Evening's own bell) or VigilStop (the modal's own decision), so a party that parks is
     /// always still sitting there, un-hurried-past, the moment this returns.
+    ///
+    /// <para>Deliberately ignores the <see cref="ShowHeld"/> hold. The hold exists to stop a TIMER
+    /// from answering for the player; this method IS the player (the bell-row control's own press).
+    /// Skipping stays legal — §11.7.8 — so the only thing a hold ever costs is that the day sits
+    /// still until someone chooses to move it.</para>
     /// </summary>
     public void Hurry()
     {

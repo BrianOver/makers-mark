@@ -5,6 +5,7 @@ using GameSim;
 using GameSim.Advisor;
 using GameSim.Contracts;
 using GdUnit4;
+using Godot;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -90,12 +91,20 @@ public class PlayableLoopTests
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
             AssertThat(ui.Conductor.Current).IsEqual(RaidConductor.Beat.SendOff);
 
-            // The raid span is NEVER gated: RaidConductor.Update runs from _Process independent of
-            // Clock.AutoAdvance (still OFF here, unchanged from the assertion above), so huge
-            // deltas keep walking it forward on their own. A fresh Day-1 campaign is guaranteed
-            // unstaged — every hero's first-ever trip targets floor 1, structurally below the
-            // staging checkpoint (ExpeditionSystem.CheckpointFor) — so nobody parks and this reaches
-            // Evening with zero further player input.
+            // 2026-08-09: the apprenticeship chain now HOLDS the raid span open at its Watch step
+            // (RaidConductor's own hold doc — the fix for "i clicked send them off and it auto
+            // jumped to night???? yet this is still on tutorial 5"), and a fresh mount is always
+            // mid-chain. This test is about the Clock-vs-Conductor ROUTING, not about the tutorial,
+            // so it dismisses the chain and asserts the routing on its own terms; the hold itself is
+            // pinned by TutorialWatchStep_HoldsTheRaidSpanOpen_... below and by RaidConductorTests.
+            ui.Tutorial.Dismiss();
+
+            // The raid span is NEVER gated by the Innkeeper's Clock: RaidConductor.Update runs from
+            // _Process independent of Clock.AutoAdvance (still OFF here, unchanged from the
+            // assertion above), so huge deltas keep walking it forward on their own. A fresh Day-1
+            // campaign is guaranteed unstaged — every hero's first-ever trip targets floor 1,
+            // structurally below the staging checkpoint (ExpeditionSystem.CheckpointFor) — so nobody
+            // parks and, with nothing owed, this reaches Evening with zero further player input.
             for (var frame = 0; frame < 8 && ui.Conductor.Current != RaidConductor.Beat.Idle; frame++)
             {
                 ui._Process(PhaseClock.MorningSeconds * 10);
@@ -116,6 +125,105 @@ public class PlayableLoopTests
 
             AssertThat(ui.Adapter.CurrentState.Day).IsEqual(1);
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Evening);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// The owner's 2026-08-09 report, end to end through the real mounted shell: "i clicked send
+    /// them off and it auto jumped to night???? yet this is still on tutorial 5??? this is a
+    /// critical bug as it skipped most the game and prevented me from playing more."
+    ///
+    /// <para>The mechanism, measured before the fix: the chain's Watch step is printed on the
+    /// Expedition→Camp tick (its predecessor's completion fact is <c>PartyDeparted</c>, which fires
+    /// on that tick), while the Watch control itself is only on the bell row during
+    /// Expedition/Camp/ExpeditionDeep — and the two empty beats between those two facts are
+    /// <see cref="RaidConductor.EmptyBeatSeconds"/> each. Two seconds to answer an instruction the
+    /// game had only just given, after which the button was gone and the step could not be completed
+    /// at all. This drives it with a delta per frame so large that EVERY pinned max in the conductor
+    /// is crossed on every single frame — if any timer is still allowed to run, the day is at Night
+    /// by frame two.</para>
+    /// </summary>
+    [TestCase]
+    public void TutorialWatchStep_HoldsTheRaidSpanOpen_TheWatchButtonIsStillThereWhenThePlayerLooks()
+    {
+        var ui = MountFreshCampaign();
+        try
+        {
+            PressEnabled(ui, "AdvancePhase"); // "Send them off" — the one press the owner made
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
+
+            for (var frame = 0; frame < 40; frame++)
+            {
+                ui._Process(PhaseClock.MorningSeconds * 10);
+            }
+
+            AssertThat(ui.Tutorial.Step)
+                .OverrideFailureMessage("Fixture premise failed: the party never departed, so the Watch step is not current.")
+                .IsEqual(Ui.TutorialStep.LookIn);
+            AssertThat(ui.Adapter.CurrentState.Phase)
+                .OverrideFailureMessage(
+                    "The day reached Night on its own while the tutorial was still asking the player to " +
+                    "press Watch — the reported bug, exactly.")
+                .IsNotEqual(DayPhase.Evening);
+            AssertThat(Find<Button>(ui, "WatchButton").Visible)
+                .OverrideFailureMessage("The step names a control that is no longer on screen.")
+                .IsTrue();
+            AssertThat(ui.Conductor.ShowHeld)
+                .OverrideFailureMessage("The span stopped, but nothing on the HUD would say why.")
+                .IsTrue();
+            AssertThat(RenderedText(ui)).Contains("the day waits on you");
+
+            // Answering it releases the hold through the REAL hook (the Watch button's own press).
+            PressEnabled(ui, "WatchButton");
+            AssertThat(ui.Tutorial.Step).IsEqual(Ui.TutorialStep.OpenCounter);
+            ui.Mirror.CloseMirror(); // the open Mirror engages the clock latch — close it to disengage
+            AssertThat(ui.Conductor.ShowHeld).IsFalse();
+
+            for (var frame = 0; frame < 8 && ui.Conductor.Current != RaidConductor.Beat.Idle; frame++)
+            {
+                ui._Process(PhaseClock.MorningSeconds * 10);
+            }
+
+            AssertThat(ui.Adapter.CurrentState.Phase)
+                .OverrideFailureMessage("Once answered, the span must run on to Evening exactly as it always did.")
+                .IsEqual(DayPhase.Evening);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Skipping stays legal (§11.7.8): the held day is never a trap — the same bell-row
+    /// control, reading "Hurry the day along", walks straight through the hold in one press.</summary>
+    [TestCase]
+    public void HeldRaidSpan_IsNeverATrap_TheBellRowStillHurriesStraightThroughIt()
+    {
+        var ui = MountFreshCampaign();
+        try
+        {
+            PressEnabled(ui, "AdvancePhase"); // Send them off
+            for (var frame = 0; frame < 40; frame++)
+            {
+                ui._Process(PhaseClock.MorningSeconds * 10);
+            }
+
+            AssertThat(ui.Conductor.ShowHeld).IsTrue();
+
+            PressEnabled(ui, "AdvancePhase"); // Hurry the day along — the player's own choice
+
+            AssertThat(ui.Adapter.CurrentState.Phase)
+                .OverrideFailureMessage("The hold refused the player's own press — that is a softlock, not a stop.")
+                .IsEqual(DayPhase.Evening);
+            AssertThat(ui.Tutorial.Step)
+                .OverrideFailureMessage(
+                    "A step the player deliberately hurried past must move on, not keep naming a Watch " +
+                    "control that Night does not have.")
+                .IsEqual(Ui.TutorialStep.OpenCounter);
         }
         finally
         {
