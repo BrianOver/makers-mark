@@ -225,6 +225,53 @@ public class AdventureTickerTests
         }
     }
 
+    // ── U3: signing and honoring, previously silent ─────────────────────────────────────────────
+
+    [TestCase]
+    public void ItemSigned_Renders_ItemNameAndSignedName()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            var state = StagedWorld();
+            var events = ImmutableList.Create<GameEvent>(
+                new ItemSigned(new ItemId(1), "Widowmaker"));
+
+            ticker.OnPhaseCompleted(DayPhase.Evening, 1, state, events);
+
+            AssertThat(ticker.Lines.Count).IsEqual(1);
+            AssertThat(ticker.DisplayText).Contains("Dagger");
+            AssertThat(ticker.DisplayText).Contains("Widowmaker");
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
+    [TestCase]
+    public void MemorialHonored_Renders_HeroName()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            var state = StagedWorld();
+            var events = ImmutableList.Create<GameEvent>(
+                new MemorialHonored(new HeroId(1), "V1"));
+
+            ticker.OnPhaseCompleted(DayPhase.Evening, 1, state, events);
+
+            AssertThat(ticker.Lines.Count).IsEqual(1);
+            AssertThat(ticker.DisplayText).Contains("V1");
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
     [TestCase]
     public void SameDayRepeat_Dedupes()
     {
