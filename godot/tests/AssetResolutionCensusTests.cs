@@ -105,17 +105,29 @@ public class AssetResolutionCensusTests
         // U7 (world-and-interiors plan): the three non-blacksmith profession station sets (13
         // sprites — WorkshopVocab's alchemy/engineering/tanning entries) plus all four exterior
         // signboard overlays (blacksmith's included — signboards are new in this unit, not a
-        // repaint of anything committed). U8 paints them and removes these 17 lines (red→green
-        // shown in that unit's own PR body); this unit ships the framework only.
+        // repaint of anything committed). U8 was supposed to paint them and remove these lines
+        // one profession at a time (red→green shown in that unit's own PR body); it never ran.
+        //
+        // BUG (2026-08-09): this allowlist sat here for a full week with the engineering station
+        // ids inside it, so a real player who selected Engineering saw TownAssets2D's loud
+        // magenta placeholder for all four of its stations, and every census/CI run stayed green
+        // the whole time — the allowlist is precisely what let a census that PROVES an id
+        // resolves stop proving it DRAWS: <see cref="AssertResolves"/> below skips the assertion
+        // entirely for anything listed here, so an id can sit "pending" indefinitely with nobody
+        // ever re-checking whether it should still be. This is why engineering's four ids leave
+        // the list in this same fix (real art landed, see art/pipeline/gen-engineering-
+        // interior.py) AND gain their own no-escape-hatch case below
+        // (<see cref="EngineeringStationArtIds_ResolveToCommittedArt_NeverAPlaceholder"/>,
+        // mirroring <see cref="ForgeInteriorArtIds_ResolveToCommittedArt_NeverAPlaceholder"/>) —
+        // so this specific regression (a finished id quietly re-added here, or simply never
+        // removed) fails loudly even if this comment block is ignored. Alchemy/tanning/every
+        // signboard remain genuinely unpainted and stay allowlisted; they were not what the
+        // owner reported and are not repainted by this fix.
         "town2d-station-alch-cauldron",
         "town2d-station-alch-still",
         "town2d-station-alch-shelf",
         "town2d-station-alch-rack",
         "town2d-station-alch-herbs",
-        "town2d-station-eng-bench",
-        "town2d-station-eng-gears",
-        "town2d-station-eng-crate",
-        "town2d-station-eng-flywheel",
         "town2d-station-tan-frame",
         "town2d-station-tan-hides",
         "town2d-station-tan-rack",
@@ -237,6 +249,46 @@ public class AssetResolutionCensusTests
                     + "art. InteriorRoom2D mounts this id for the Forge room shell/stations; a "
                     + "miss renders TownAssets2D's loud magenta placeholder, which this unit "
                     + "exists to retire.")
+                .IsNotNull();
+        }
+    }
+
+    /// <summary>
+    /// Bug fix (2026-08-09): the four Engineering (Workbench Hall) station ids — <see
+    /// cref="WorkshopVocab.ByProfession"/>'s <c>EngineeringProfession.Id</c> row — sat in <see
+    /// cref="KnownPendingIds"/> for a full week after U7 shipped the framework, because U8 (the
+    /// unit meant to paint them and remove the four lines) never ran. <see
+    /// cref="WorkshopVocabArtIds_ResolveToCommittedArt"/> below iterates every profession's
+    /// station set through <see cref="AssertResolves"/>, but that method's <see
+    /// cref="KnownPendingIds"/> escape hatch is exactly what let these four resolve to nothing
+    /// while the census stayed green — a real player who selected Engineering saw
+    /// <c>TownAssets2D</c>'s loud magenta placeholder for all four stations the whole time. Same
+    /// no-escape-hatch shape as <see cref="ForgeInteriorArtIds_ResolveToCommittedArt_NeverAPlaceholder"/>
+    /// immediately above, deliberately duplicating that coverage rather than only fixing the
+    /// allowlist: an allowlist entry can always be silently re-added by a future edit, but a case
+    /// that asserts <see cref="IconRegistry.Art"/> directly, with no allowlist in the call path at
+    /// all, cannot be defeated that way.
+    /// </summary>
+    private static readonly string[] EngineeringStationArtIds =
+    {
+        "town2d-station-eng-bench",
+        "town2d-station-eng-gears",
+        "town2d-station-eng-crate",
+        "town2d-station-eng-flywheel",
+    };
+
+    [TestCase]
+    public void EngineeringStationArtIds_ResolveToCommittedArt_NeverAPlaceholder()
+    {
+        foreach (var id in EngineeringStationArtIds)
+        {
+            AssertThat(IconRegistry.Art(id))
+                .OverrideFailureMessage(
+                    $"census: '{id}' (Engineering / Workbench Hall station) does not resolve to "
+                    + "committed art. WorkshopVocab mounts this id whenever a player has "
+                    + "Engineering selected; a miss renders TownAssets2D's loud magenta "
+                    + "placeholder — exactly the 'random unloaded/non generated assets' bug this "
+                    + "case exists to keep fixed.")
                 .IsNotNull();
         }
     }
@@ -375,6 +427,13 @@ public class AssetResolutionCensusTests
             ["town2d-station-gate-bounty"] = new(26, 36),
             ["town2d-station-gate-overlook"] = new(40, 20),
             ["town2d-station-gate-winch"] = new(28, 44),
+            // Bug fix (2026-08-09): engineering's four stations, authored fresh by
+            // art/pipeline/gen-engineering-interior.py (no prior plan text pinned them, same as
+            // the market/tavern/gate sets above).
+            ["town2d-station-eng-bench"] = new(32, 20),
+            ["town2d-station-eng-gears"] = new(28, 32),
+            ["town2d-station-eng-crate"] = new(24, 20),
+            ["town2d-station-eng-flywheel"] = new(24, 24),
         };
 
         foreach (var room in InteriorLayout2D.Rooms.Values)
@@ -398,6 +457,38 @@ public class AssetResolutionCensusTests
                         + $"{art.GetSize()}px, but its declared KTD-5 footprint is {expected}px. "
                         + "Building2D.Configure derives collision straight from texture size, so this "
                         + "mismatch SHIFTS COLLISION at the station's tile — never a cosmetic-only diff.")
+                    .IsEqual(expected);
+            }
+        }
+
+        // Bug fix (2026-08-09): InteriorLayout2D.Rooms's static "forge" row only ever carries
+        // blacksmith's OWN station set (see that table's own doc) — alchemy/engineering/tanning
+        // never appear in it at all, so the loop above alone could never have caught a size drift
+        // on any of their stations. WorkshopVocab.ByProfession is the live table InteriorRoom2D
+        // actually draws from at runtime (via InteriorLayout2D.WorkshopRoomFor); reading it
+        // directly here closes that blind spot for every profession, not just engineering, using
+        // the same null-tolerant "unpainted ids are the census test's job, not this one" skip.
+        foreach (var (professionId, vocab) in WorkshopVocab.ByProfession)
+        {
+            foreach (var station in vocab.Stations)
+            {
+                if (!expectedSizes.TryGetValue(station.SpriteId, out var expected))
+                {
+                    continue;
+                }
+
+                var art = IconRegistry.Art(station.SpriteId);
+                if (art is null)
+                {
+                    continue; // the census test above already fails loudly for a missing id
+                }
+
+                AssertThat(art.GetSize())
+                    .OverrideFailureMessage(
+                        $"'{station.SpriteId}' (station '{station.Id}' in '{professionId}'s "
+                        + $"WorkshopVocab set) is {art.GetSize()}px, but its declared footprint is "
+                        + $"{expected}px. Building2D.Configure derives collision straight from "
+                        + "texture size, so this mismatch SHIFTS COLLISION at the station's tile.")
                     .IsEqual(expected);
             }
         }
