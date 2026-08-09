@@ -561,7 +561,7 @@ tally-ending.
 |---|------|------|-----------|-----------------|--------|
 | P1 | **Night leads with the mark** (loop U5 / H3): the reveal opens with the attribution beat; sale-and-deed grouped by item | session, godot-only | nothing | Hero: tonight's bearer of your marked item. Ledger line: *is* the item — the beat becomes the opening card | **DONE** 2026-08-07 (wave U1) |
 | P2 | **The send-off names your work** (H4 / Q-1): the departure slate captions which marchers carry your items | session, godot-only | nothing (reads better after P1) | Hero: the named marchers. Ledger line: the antecedent Night points back to | **DONE** 2026-08-07 (wave U2) — and see the §8 correction: the naive version was already shipped; what was owed was the 2-line cap, the staging, and an honest empty state |
-| P3 | **Protect the finale**: two-sided balance assertions (floor 5 *reached* by day ≤N on the main seed; ending *fires* within 100 days) + one scripted full-length client run confirming Act III on the real HUD | session, tests-only | nothing | Invariant: the campaign has an end. (Chain-test clause 3 — protect the substrate) | OPEN |
+| P3 | **Protect the finale**: two-sided balance assertions (floor 5 *reached* by day ≤N on the main seed; ending *fires* within 100 days) + one scripted full-length client run confirming Act III on the real HUD | session, tests-only | nothing | Invariant: the campaign has an end. (Chain-test clause 3 — protect the substrate) | **ASSERTIONS WRITTEN AND RED** 2026-08-08 (draft #413). They fired on their first run: the campaign cannot reach its own ending. See §11.8 — this is now the top of the critical path |
 | P4 | **The human feel-test** (§9.8): `play.ps1`, one real evening, the five written questions — with the fifth (the boredom day) checked against the measured day-11 wall | an evening (owner) | P1+P2 merged — *with a deadline, not a dependency* (see ties) | Not a build item — the gate that rules 9.3, 9.5, 9.7, confirms R4/R6, and re-dates day-11 | OPEN — **put it on the calendar now** (§12, review C: the bottleneck is the owner, not the agents) |
 | P5 | **The vigil branch**: (a) surface the irony, or (b) retune wave, or (c) damp compensation — V-3's hero-chips ride whichever branch wins | (a) session / (b) wave + **re-baseline** / (c) session-wave + **re-baseline** | **R1** | Hero: the camped party. Ledger line: the delivery's `Provisioned`/`PotionLifesave` beat — or the death delta, depending on the branch | BLOCKED (R1) |
 | P6 | **Endgame surfaces**: buttons + bell-tray wiring for UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | ~2 sessions, godot-only | R2 — **RULED: build** | Hero: whoever carries the guaranteed Masterwork. Ledger line: the attempt's cost and the resulting item's beats | **DONE** 2026-08-07 (wave U3/U4). Dominance measured before shipping the buttons: 17.0% of crafted value flows through purchased attempts at Tier II with a 5000g reserve — hand-work keeps the field. `BaselinePlayer` untouched, no re-baseline |
@@ -828,7 +828,60 @@ at a fixed floor or derived from the target? Is enchanting-as-graduated-modifier
 a distinct pipeline owed for feel? Does spellcrafting make v1.x at all? And how many disciplines
 should one campaign realistically open — all of them, or most-but-not-all, so campaigns differ?
 
-### 11.8 The bet
+### 11.8 The finale is unreachable — measured 2026-08-08, root cause found
+
+P3's assertions were written and went red on their first run. This is not a test that needs
+tuning. It is the finding P3 existed to produce, and under §11.6 rule 2 it is interrupt-class:
+a §2 link-5 break, since a campaign with no end has no memory to end with.
+
+**The measurement.** 100-day `BaselinePlayer` runs, 11 seeds, then 44 runs across four scripted
+policies of increasing competence. Every single run: floor 3 by day 3-4, **floor 4 by day 3-5,
+and floor 5 never**. Act II by day 4, **Act III never, Climax never, Ending never**. Not
+borderline — unanimous, and identical across a baseline smith and a smith crafting Masterworks
+every day, which is what rules out "the harness under-plays it."
+
+**Root cause: the Gloomwood routing trap.** Gloomwood's `EntryPower` is 72
+(`sim/GameSim/Venues/Gloomwood/GloomwoodVenue.cs:92`), which sits *between* the Mine's floor-4
+gate (60) and its floor-5 gate of 100 (`sim/GameSim/Venues/VenueRegistry.cs:107`).
+`VenueRouter.IsBetter` (`sim/GameSim/Venues/VenueRouter.cs:101-125`) permanently prefers the
+highest band a party has reached — so the moment a party's power crosses 72, every future trip
+routes to Gloomwood, a venue with **only four floors**. The party is now strong enough to be
+taken out of the five-floor venues and can never be routed back, because the only return path
+is `PostBountyAction` and no shipped scripted policy ever posts one.
+
+A second mechanism compounds it: `ApplyCompetenceRetreat`
+(`sim/GameSim/Expedition/ExpeditionResolver.cs:405-426`) caps each hero at +1 floor per trip, so
+by the time a hero earns floor-5 eligibility her power has usually already tripped the reroute.
+
+**Ruled out.** `ArcDirectorSystem` is not miscalibrated — it reads a legitimate venue-agnostic
+signal at the intended threshold and faithfully reports a depth the expedition layer never
+produces. And the old "BaselinePlayer refuses 90% of legal crafts" finding is **stale**: it was
+fixed in #328 and measured at zero craft rejections across all 44 runs. Any doc or task still
+asserting it should be corrected, not repeated.
+
+**The fix is an owner decision, because every option is a balance lever and each implies a
+re-baseline.** Three, with the tradeoff named:
+1. **Raise Gloomwood's `EntryPower`** above the practical floor-5 power band — stops the four-floor
+   venue stealing parties that should be finishing a five-floor one. Cleanest fix for the trap
+   itself; changes which venue mid-power parties see, and §11.5's parked Emberfall decision
+   already shows how sensitive venue share is to this number.
+2. **Lower the floor-5 gate** on the Mine and the Sunken Crypt. Smallest diff, but it treats the
+   symptom: the trap still exists, it just becomes survivable.
+3. **Give the router a real return path** for veteran parties. Most faithful to the design, most
+   work, and it needs a rule for when a party chooses to go back.
+
+Two harness gaps should be fixed alongside whichever lever wins, because they are why the read
+was murky: `BaselinePlayer` submits one craft a day against a five-slot budget, and never sets
+`CraftAction.PerformanceGrade`, which caps every scripted craft below the Fine-plus breakpoint
+(`sim/GameSim/Crafting/QualityRoller.cs:147-173`). Neither is the cause — fixing both still never
+reached floor 5 — but both distort every balance number the repo currently records.
+
+**A note on the instrument.** `tools/Analytics` reported 15 anomalies over the same runs, all LOW
+or MEDIUM, and **none of them was "the campaign never ends."** An anomaly detector that cannot
+see a missing ending is a detector reporting on the weather inside a burning building. Whatever
+lever wins, the analytics pass owes an arc-completion check.
+
+### 11.9 The bet
 
 If everything above is done and only one thing worked, it must be this: **a human being at
 a keyboard, on an ordinary evening, watches the Night ledger open with a beat that names an
