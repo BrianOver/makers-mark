@@ -82,7 +82,10 @@ public partial class TavernLife2D : Node2D
             var figure = new Sprite2D
             {
                 Name = $"Patron_{_seats.Count}",
-                Texture = TownsfolkNpc2D.ResolveSprite(), // neutral body; Refresh swaps to the real class art once occupied
+                // Placeholder body while the seat is empty (Visible=false below) — Refresh always
+                // overwrites this with the real occupant's own hero body before the seat is ever
+                // shown, so which civilian id is picked here is inert; "broad" is as good as any.
+                Texture = TownsfolkNpc2D.ResolveSprite(TownsfolkNpc2D.CivilianIds[0]),
                 Visible = false,
             };
             var art = TownLayout2D.CharacterArtRoot();

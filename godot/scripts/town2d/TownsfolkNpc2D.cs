@@ -32,11 +32,19 @@ namespace GodotClient.Town2d;
 /// on), and the same dynamic feet-offset-from-resolved-texture-height convention <see
 /// cref="HeroActor2D.BuildSprite"/> uses (real art varies in pixel size).</para>
 ///
-/// <para><b>Civilian art</b>: no dedicated villager art exists yet, so <see cref="ResolveSprite"/>
-/// reuses the neutral hero body sprite ("town2d-hero-vanguard", the same neutral-grey body
-/// <see cref="TownAssets2D.ForHero"/> resolves for heroes) tinted with a muted civilian palette (see
-/// <see cref="CivilianTint"/>) — browns/greens/grays, deliberately NOT any <c>ClassColors.RoleColor</c>
-/// value, so villagers read as distinct background dressing rather than off-duty heroes. Null-
+/// <para><b>Civilian art (U6 "townsfolk are not heroes" fix):</b> villagers used to reuse the
+/// VANGUARD hero body tinted with a runtime civilian palette — several identically-shaped
+/// "civilians" walking the plaza read as obvious reuse within seconds, and the shield/pauldron
+/// silhouette made them look like off-duty adventurers, not townsfolk. <see cref="ResolveSprite"/>
+/// now resolves one of TWO dedicated, hand-authored civilian bodies (<see cref="CivilianIds"/>:
+/// "broad"/"slight" — <c>tools/art/gen_town_sprites.py</c>'s TOWNSFOLK CIVILIANS section), each a
+/// bare-headed, no-shield/no-pauldron/no-weapon silhouette with its own BAKED garment colour
+/// (reused, not invented — see that file's own doc), same 40x64 canvas and 4-frame gait every hero
+/// class already uses. Because the colour is baked into the art itself (the same "baked, not
+/// runtime-tinted" contract <c>HeroActor2D</c>'s own U3 pass established), <see cref="Town2D.BuildTownsfolk"/>
+/// hands <see cref="Init"/> a plain <see cref="Colors.White"/> tint now, never a colour multiply —
+/// <see cref="Init"/>'s own tint PARAMETER stays fully general (still just <c>Modulate = tint</c>,
+/// pinned by <c>TownsfolkNpc2DTests</c>) for any future caller that legitimately wants one. Null-
 /// tolerant: falls back to a small flat-color placeholder if the art isn't loaded (fresh checkout).</para>
 /// </summary>
 public partial class TownsfolkNpc2D : Node2D
@@ -85,13 +93,12 @@ public partial class TownsfolkNpc2D : Node2D
         WalkingHome,
     }
 
-    private static readonly Color[] CivilianPalette =
-    {
-        new(0.45f, 0.36f, 0.22f), // brown
-        new(0.32f, 0.42f, 0.30f), // muted green
-        new(0.40f, 0.38f, 0.34f), // muted grey-brown
-        new(0.36f, 0.30f, 0.24f), // dark brown
-    };
+    /// <summary>The two dedicated civilian body ids (U6) — "broad" (stocky) and "slight" (leaner),
+    /// each backing a full <c>town2d-townsfolk-{id}[_step|_walk2|_walk4]</c> art set. <see
+    /// cref="Town2D.BuildTownsfolk"/> alternates villagers through this array (index mod length,
+    /// no RNG — KTD5) so the town reads as a handful of different people rather than four copies
+    /// of one.</summary>
+    public static readonly string[] CivilianIds = { "broad", "slight" };
 
     private static readonly Vector2 PlaceholderSize = new(16, 24);
     private static readonly Color PlaceholderColor = new(0.55f, 0.5f, 0.42f);
@@ -129,9 +136,9 @@ public partial class TownsfolkNpc2D : Node2D
     /// step art was supplied (mirrors <see cref="HeroActor2D._stepTex"/>'s exact contract).</summary>
     private Texture2D? _stepTex;
 
-    /// <summary>U3 (2026-08-04 verify-by-playing plan, R3): the two ADDITIONAL gait frames
-    /// villagers reuse from the shared vanguard body ("town2d-hero-vanguard_walk2"/"_walk4"),
-    /// completing the real 4-frame alternating gait (mirrors <see cref="HeroActor2D._walk2Tex"/>/
+    /// <summary>U3 (2026-08-04 verify-by-playing plan, R3): the two ADDITIONAL gait frames for
+    /// this villager's own civilian body ("town2d-townsfolk-{id}_walk2"/"_walk4", U6), completing
+    /// the real 4-frame alternating gait (mirrors <see cref="HeroActor2D._walk2Tex"/>/
     /// <see cref="HeroActor2D._walk4Tex"/>'s exact null-tolerant contract).</summary>
     private Texture2D? _walk2Tex;
 
@@ -166,38 +173,32 @@ public partial class TownsfolkNpc2D : Node2D
     private int _errandRotation;
 
     /// <summary>
-    /// Resolve the shared neutral body sprite villagers reuse — the same "town2d-hero-vanguard"
-    /// body art <see cref="TownAssets2D.ForHero"/> resolves for the vanguard class (neutral-grey,
-    /// meant to be tinted by the caller), falling back to a small flat-color placeholder if the
-    /// real art isn't loaded (fresh checkout, no manifest yet). Cached — repeated calls (one per
-    /// spawned villager) never rebuild the placeholder image.
+    /// Resolve one civilian body's base sprite — <paramref name="civilianId"/> is one of <see
+    /// cref="CivilianIds"/> ("broad"/"slight"), resolved as <c>"town2d-townsfolk-{civilianId}"</c>
+    /// (<c>tools/art/gen_town_sprites.py</c>'s TOWNSFOLK CIVILIANS section), falling back to a
+    /// small flat-color placeholder if the real art isn't loaded (fresh checkout, no manifest
+    /// yet). Cached — repeated calls (one per spawned villager) never rebuild the placeholder
+    /// image.
     /// </summary>
-    public static Texture2D ResolveSprite() =>
-        IconRegistry.Art("town2d-hero-vanguard") ?? PlaceholderTexture();
+    public static Texture2D ResolveSprite(string civilianId) =>
+        IconRegistry.Art($"town2d-townsfolk-{civilianId}") ?? PlaceholderTexture();
 
     /// <summary>
-    /// Gap #3 fix: resolves the shared body's 2-frame step-B variant — <c>"town2d-hero-
-    /// vanguard_step"</c>, the SAME id/suffix convention <see cref="HeroActor2D.Init"/> uses
-    /// (<c>$"town2d-hero-{classId}_step"</c>) for its own step swap, since townsfolk always reuse
-    /// the vanguard body. Confirmed committed for this build (<c>git ls-files godot/assets/art</c>
-    /// lists <c>town2d-hero-vanguard_step.png</c>) — null ONLY on a checkout where that asset is
-    /// missing (e.g. a stripped test fixture), in which case the caller degrades to no swap, never
-    /// a crash or a placeholder-box flash (mirrors <see cref="HeroActor2D._stepTex"/>'s exact
-    /// null-tolerant contract).
+    /// Resolves one civilian body's 2-frame step-B variant — <c>"town2d-townsfolk-
+    /// {civilianId}_step"</c>, the SAME id/suffix convention <see cref="HeroActor2D.Init"/> uses
+    /// (<c>$"town2d-hero-{classId}_step"</c>) for its own step swap. Null ONLY on a checkout
+    /// where that asset is missing (e.g. a stripped test fixture), in which case the caller
+    /// degrades to no swap, never a crash or a placeholder-box flash (mirrors <see
+    /// cref="HeroActor2D._stepTex"/>'s exact null-tolerant contract).
     /// </summary>
-    public static Texture2D? ResolveStepSprite() => IconRegistry.Art("town2d-hero-vanguard_step");
+    public static Texture2D? ResolveStepSprite(string civilianId) => IconRegistry.Art($"town2d-townsfolk-{civilianId}_step");
 
-    /// <summary>U3: the two additional shared-vanguard-body gait frames (see <see
+    /// <summary>The two additional gait frames for the given civilian body (see <see
     /// cref="_walk2Tex"/>/<see cref="_walk4Tex"/>'s doc) — same null-tolerant resolution ladder
     /// as <see cref="ResolveStepSprite"/>.</summary>
-    public static Texture2D? ResolveWalk2Sprite() => IconRegistry.Art("town2d-hero-vanguard_walk2");
+    public static Texture2D? ResolveWalk2Sprite(string civilianId) => IconRegistry.Art($"town2d-townsfolk-{civilianId}_walk2");
 
-    public static Texture2D? ResolveWalk4Sprite() => IconRegistry.Art("town2d-hero-vanguard_walk4");
-
-    /// <summary>Deterministic civilian tint for the given villager index — cycles a small muted
-    /// browns/greens/grays palette, deliberately disjoint from any <c>ClassColors.RoleColor</c> hero
-    /// tint so villagers read as background dressing, not off-duty heroes.</summary>
-    public static Color CivilianTint(int index) => CivilianPalette[((index % CivilianPalette.Length) + CivilianPalette.Length) % CivilianPalette.Length];
+    public static Texture2D? ResolveWalk4Sprite(string civilianId) => IconRegistry.Art($"town2d-townsfolk-{civilianId}_walk4");
 
     /// <summary>
     /// Build the sprite and pin the deterministic wander parameters. <paramref name="sprite"/>/

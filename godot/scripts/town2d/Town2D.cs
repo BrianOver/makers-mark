@@ -1542,12 +1542,17 @@ public partial class Town2D : Control
     /// </summary>
     private void BuildTownsfolk()
     {
-        // Gap #3 / U3 fix: resolve the step-B/walk2/walk4 textures once (shared by every
-        // villager — they all reuse the vanguard body) and hand them to each Init call;
-        // null-tolerant if any is ever absent.
-        var stepSprite = TownsfolkNpc2D.ResolveStepSprite();
-        var walk2Sprite = TownsfolkNpc2D.ResolveWalk2Sprite();
-        var walk4Sprite = TownsfolkNpc2D.ResolveWalk4Sprite();
+        // U6 ("townsfolk are not heroes" fix): resolve BOTH dedicated civilian bodies' base/step/
+        // walk2/walk4 textures once each (mirrors the old shared-vanguard resolve, just once per
+        // body instead of once total) and hand villagers one set each, alternating by index —
+        // null-tolerant per body if any frame is ever absent.
+        var bodies = TownsfolkNpc2D.CivilianIds.ToDictionary(
+            id => id,
+            id => (
+                Base: TownsfolkNpc2D.ResolveSprite(id),
+                Step: TownsfolkNpc2D.ResolveStepSprite(id),
+                Walk2: TownsfolkNpc2D.ResolveWalk2Sprite(id),
+                Walk4: TownsfolkNpc2D.ResolveWalk4Sprite(id)));
 
         // U6: every venue's own door anchor, in TownLayout2D.Venues' fixed array order (a stable,
         // deterministic sequence — a Dictionary's enumeration order is an implementation detail,
@@ -1559,15 +1564,20 @@ public partial class Town2D : Control
         _townsfolk.Clear();
         for (var i = 0; i < TownsfolkHomeTiles.Length; i++)
         {
+            var civilianId = TownsfolkNpc2D.CivilianIds[i % TownsfolkNpc2D.CivilianIds.Length];
+            var body = bodies[civilianId];
             var npc = new TownsfolkNpc2D();
             npc.Init(
                 i,
-                TownsfolkNpc2D.ResolveSprite(),
-                TownsfolkNpc2D.CivilianTint(i),
+                body.Base,
+                // The civilian bodies bake their own garment colour (gen_town_sprites.py's
+                // TOWNSFOLK CIVILIANS section) — a runtime tint here would wash it out, the same
+                // fix U3 made for HeroActor2D's Modulate.
+                Colors.White,
                 TownLayout2D.TileToWorld(TownsfolkHomeTiles[i]),
-                stepSprite,
-                walk2Sprite,
-                walk4Sprite);
+                body.Step,
+                body.Walk2,
+                body.Walk4);
             npc.SetErrandTargets(errandTargets);
             TownsfolkRoot.AddChild(npc);
             _townsfolk.Add(npc);

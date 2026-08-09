@@ -2,6 +2,7 @@
 using System.Linq;
 using GdUnit4;
 using Godot;
+using GodotClient;
 using GodotClient.Town2d;
 using static GdUnit4.Assertions;
 
@@ -262,12 +263,42 @@ public class TownsfolkNpc2DTests
     public void ResolveStepSprite_DoesNotThrow_AndDegradesGracefullyIfMissing()
     {
         // Confirmed present in this checkout (git ls-files godot/assets/art shows
-        // town2d-hero-vanguard_step.png), but the contract this test protects is the null-tolerant
-        // ladder itself — must never throw regardless of whether the asset is committed.
-        var step = TownsfolkNpc2D.ResolveStepSprite();
-        // No assertion on non-null here on purpose: this call must simply never throw, on any
-        // checkout (missing-asset fixtures included).
-        _ = step;
+        // town2d-townsfolk-broad_step.png), but the contract this test protects is the
+        // null-tolerant ladder itself — must never throw regardless of whether the asset is
+        // committed, for EITHER civilian id.
+        foreach (var civilianId in TownsfolkNpc2D.CivilianIds)
+        {
+            var step = TownsfolkNpc2D.ResolveStepSprite(civilianId);
+            // No assertion on non-null here on purpose: this call must simply never throw, on any
+            // checkout (missing-asset fixtures included).
+            _ = step;
+        }
+    }
+
+    /// <summary>U6: the two dedicated civilian bodies actually resolve real committed art (not
+    /// just "doesn't throw") — pins the fix this unit exists for: villagers must no longer fall
+    /// back to (or reuse) the Vanguard hero body.</summary>
+    [TestCase]
+    public void ResolveSprite_BothCivilianIds_ResolveDistinctRealArt()
+    {
+        AssertThat(TownsfolkNpc2D.CivilianIds.Length).IsEqual(2);
+
+        var vanguard = IconRegistry.Art("town2d-hero-vanguard");
+        var resolved = TownsfolkNpc2D.CivilianIds
+            .Select(TownsfolkNpc2D.ResolveSprite)
+            .ToList();
+
+        foreach (var texture in resolved)
+        {
+            AssertThat(texture).IsNotNull();
+            AssertThat(texture)
+                .OverrideFailureMessage("a civilian body must not resolve to the Vanguard hero body")
+                .IsNotEqual(vanguard);
+        }
+
+        AssertThat(resolved[0])
+            .OverrideFailureMessage("the two civilian bodies must be distinct textures, not the same body twice")
+            .IsNotEqual(resolved[1]);
     }
 
     /// <summary>Town2D-level smoke check (Town2DSceneTests style — same <c>Mount</c> pattern) that

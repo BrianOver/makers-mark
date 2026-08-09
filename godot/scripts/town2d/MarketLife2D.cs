@@ -22,7 +22,9 @@ namespace GodotClient.Town2d;
 /// four-way emote mapping (<see cref="EmoteGlyph"/>, a direct port of <c>ShopStage.ShopEmoteGlyph</c>).
 /// What changes is WHERE customers walk and HOW they're drawn: a fixed 1024px design-space strip
 /// with a portrait-style figure becomes real anchors inside the market room with the same
-/// <c>town2d-hero-*</c> body art every hero/townsperson already uses.</para>
+/// <c>town2d-hero-*</c> body art every hero already uses (U6: dedicated <c>town2d-townsfolk-*</c>
+/// bodies exist for <see cref="TownsfolkNpc2D"/>'s own cosmetic villagers, distinct from a
+/// customer here, who is always a real visiting hero).</para>
 ///
 /// <para><b>Why a customer can never cross the counter's or a shelf's own blocking footprint</b>
 /// (<see cref="Building2D.Footprint"/>): every customer walks ONLY between two kinds of anchor —
