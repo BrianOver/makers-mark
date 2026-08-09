@@ -165,6 +165,18 @@ public partial class MainUi : Control
     /// already been warned about this phase — see <see cref="OnPhaseCompleted"/>.</summary>
     private int _rejectionsWarned;
 
+    /// <summary>
+    /// The playtest-log "cause" for whichever tick fires next — set immediately before each of the
+    /// few calls that can actually trigger <see cref="SimAdapter.AdvancePhase"/> (a button press, or
+    /// <see cref="RaidConductor"/>/<see cref="PhaseClock"/>'s own per-frame auto-drivers in <see
+    /// cref="_Process"/>), cleared right after. <see cref="OnPhaseCompleted"/> reads it into <see
+    /// cref="PlaytestLog.Tick"/> the instant a tick actually happens — see that method's own doc for
+    /// why an unattributed real transition is exactly the bug this exists to catch. Left set across a
+    /// whole <see cref="RaidConductor.Hurry"/> call on purpose: Hurry can chain several ticks in one
+    /// press, and every one of them really was that press, not a mystery.
+    /// </summary>
+    private string _pendingTickCause = "";
+
     public SimAdapter Adapter { get; private set; } = null!;
     public PhaseClock Clock { get; private set; } = null!;
 
@@ -420,6 +432,12 @@ public partial class MainUi : Control
             departureShowDone: () => !Town.AnyDeparturePending,
             homecomingShowDone: () => !Town.AnyReturnPending);
 
+        // So PlaytestLog rows can report the current beat without PlaytestLog (or SimAdapter, which
+        // has no idea RaidConductor exists) taking a hard dependency on this class — see
+        // PlaytestLog.BeatProvider's own doc. Set unconditionally: cheap when the log is inactive,
+        // and idempotent if a future test mounts a second MainUi in the same process.
+        PlaytestLog.BeatProvider = () => Conductor.Current.ToString();
+
         RegisterQuickTravelActions(); // U23 (KTD4): runtime InputMap only, zero project.godot contact
 
         // U4 (KTD-D): intercept the OS close request (the window's own X / Alt+F4) so it saves
@@ -464,7 +482,14 @@ public partial class MainUi : Control
         Chronicle.Bind(Adapter);
         Camp.Bind(Adapter);
         // U1 (KTD-A): the vigil's third verb is the only way RaidConductor.Beat.VigilStop ever ends.
-        Camp.SendDeeperRequested += Conductor.ResolveVigil;
+        // Wrapped (rather than += Conductor.ResolveVigil directly) so the resulting Camp -> Deep tick
+        // carries an honest cause in the playtest log instead of reading as an unattributed auto-tick.
+        Camp.SendDeeperRequested += () =>
+        {
+            _pendingTickCause = "press:SendDeeper";
+            Conductor.ResolveVigil();
+            _pendingTickCause = "";
+        };
         // Hero-facing-day H1 (§3.3 V-2): "Forge something for them" closes the slate (the vigil
         // stays armed — SyncCampModal reopens it the instant a real action lands) and jumps
         // straight to the forge, so the discoverable verb is one click, not "go find it yourself".
@@ -597,8 +622,13 @@ public partial class MainUi : Control
         // at Expedition (DayAdvanceHudTests/MainUiTests): both failed with "'Expedition' but is
         // 'Camp'" until this became an if/else. Checking Current ONCE, before either call, is what
         // makes it exclusive — Conductor.Update only ever runs in the SAME frame Clock.Update did NOT.
+        // Named BEFORE either call, cleared right after — whichever one actually ticks the phase
+        // (most frames, neither does) picks up the correct unattended cause with no further wiring.
+        // See _pendingTickCause's own doc for why this is the one deliberate exception that stays
+        // set across a whole multi-tick call (Hurry, not reachable from here) rather than one tick.
         if (Conductor.Current == RaidConductor.Beat.Idle)
         {
+            _pendingTickCause = "auto:innkeepers-clock";
             Clock.Update(delta);
         }
         else
@@ -606,8 +636,11 @@ public partial class MainUi : Control
             // Independent of Clock.AutoAdvance — the raid span auto-plays regardless of whether the
             // player opted into the (Morning/Evening-only) Innkeeper's Clock. A no-op whenever
             // Conductor.Current is VigilStop (see its own Update doc).
+            _pendingTickCause = "auto:conductor-beat-elapsed";
             Conductor.Update(delta);
         }
+
+        _pendingTickCause = "";
 
         UpdateClockLabel();
 
@@ -701,6 +734,22 @@ public partial class MainUi : Control
         }
     }
 
+    /// <summary>
+    /// Ticks the phase with an explicit playtest-log cause attached — the seam
+    /// <c>AgentPlaytestBridge</c>'s <c>advance</c> verb uses (<c>AgentPlaytest.cs</c>'s own doc: there
+    /// is no in-game button for it, since real time passage is <see cref="PhaseClock"/>'s own
+    /// wall-clock timer, so the bridge calls <see cref="SimAdapter.AdvancePhase"/> directly). Without
+    /// this, every automated-harness "advance" turn would tick the phase with <see
+    /// cref="_pendingTickCause"/> still empty — reading in the log exactly like the unattributed
+    /// auto-tick this whole trail exists to catch, even though a real driver genuinely asked for it.
+    /// </summary>
+    public void AdvancePhaseWithCause(string cause)
+    {
+        _pendingTickCause = cause;
+        Adapter.AdvancePhase();
+        _pendingTickCause = "";
+    }
+
     private void OnPhaseCompleted(DayPhase completedPhase, int completedDay)
     {
         var state = Adapter.CurrentState;
@@ -711,7 +760,7 @@ public partial class MainUi : Control
         // not, so this is a no-op there). This is the same information as the GD.Print above plus the
         // economy columns, written somewhere a later session can actually analyse — see PlaytestLog
         // for why prose playtest reports kept failing us.
-        PlaytestLog.Tick(completedPhase, completedDay, state, Adapter.LastRejections, Adapter.LastEvents.Count);
+        PlaytestLog.Tick(completedPhase, completedDay, state, Adapter.LastRejections, Adapter.LastEvents.Count, _pendingTickCause);
 
         // Sound follows the same signal the HUD does, so a cue can never disagree with what is on
         // screen. Phase-keyed rather than event-keyed for the bed: SetPhase ignores an unchanged
@@ -1992,6 +2041,10 @@ public partial class MainUi : Control
                     Camp.ShowModal();
                 }
 
+                // No tick happens here — record the press anyway. A press that gets redirected is
+                // still a fact about what the player did, and PlaytestLog.Action only ever sees
+                // SimAdapter.Queue calls, never a blocked/no-op press like this one.
+                PlaytestLog.Note("press AdvancePhase while VigilStop — reopened Camp modal");
                 UpdateClockLabel();
                 return;
             }
@@ -2004,7 +2057,15 @@ public partial class MainUi : Control
             // Evening both.
             if (Conductor.Current != RaidConductor.Beat.Idle)
             {
+                // Set for the WHOLE call, not just its first tick: Hurry can chain SendOff -> Camp ->
+                // Deep -> Evening in one press (nobody parked — the common day-1 case), and every one
+                // of those ticks really was caused by this one press, not a mystery each. This is
+                // deliberately the same cascade the owner's "jumped straight to night" report
+                // describes — the log should now show N tick rows sharing this exact cause and
+                // timestamp instead of looking like N unexplained advances.
+                _pendingTickCause = "press:Hurry";
                 Conductor.Hurry();
+                _pendingTickCause = "";
                 UpdateClockLabel();
                 return;
             }
@@ -2030,7 +2091,9 @@ public partial class MainUi : Control
                 PlaytestLog.Note("MORNING-HOLD: counter open");
             }
 
+            _pendingTickCause = "press:AdvancePhase";
             Clock.AdvanceNow(); // same advance the auto timer fires — player intent wins even engaged
+            _pendingTickCause = "";
 
             // U2 bug fix: this toast is set AFTER AdvanceNow, not before. AdvanceNow synchronously
             // fires OnPhaseCompleted (the StateChanged subscription below), which unconditionally

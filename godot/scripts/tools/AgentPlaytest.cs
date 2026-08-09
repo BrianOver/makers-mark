@@ -332,7 +332,10 @@ public sealed class AgentPlaytestBridge
     private static string ApplyAdvance(MainUi ui)
     {
         var before = ui.Adapter.CurrentState;
-        ui.Adapter.AdvancePhase();
+        // Attributed, not a bare Adapter.AdvancePhase() — see AdvancePhaseWithCause's own doc for why
+        // an un-tagged automated tick would read exactly like the bug this playtest trail exists to
+        // catch (an unexplained phase advance) even though the driver genuinely asked for this one.
+        ui.AdvancePhaseWithCause("press:bridge-advance");
         var after = ui.Adapter.CurrentState;
         return $"advanced -> day {before.Day} {before.Phase} to day {after.Day} {after.Phase}";
     }

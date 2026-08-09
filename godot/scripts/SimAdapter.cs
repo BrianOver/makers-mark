@@ -122,12 +122,17 @@ public sealed class SimAdapter
         {
             _pending.Add(action);
             ActionQueued?.Invoke(action);
+            // No-op unless MM_PLAYTEST_LOG is set (PlaytestLog.Active) — see PlaytestLog.Action's own
+            // doc. This is the ONE choke point every panel's submit passes through, immediate or
+            // bell-queued, so a future verb needs no call site of its own to show up in the trail.
+            PlaytestLog.Action(action.GetType().Name, immediate: false, CurrentState.Day, CurrentState.Phase);
             return;
         }
 
         var result = _kernel.ApplyNow(CurrentState, action);
         CurrentState = result.NewState;
         _applied.Add(action);
+        PlaytestLog.Action(action.GetType().Name, immediate: true, CurrentState.Day, CurrentState.Phase);
 
         // LastEvents means "everything that has happened this phase", not "whatever happened most
         // recently". Immediate actions accumulate here and AdvancePhase prepends them to the tick's

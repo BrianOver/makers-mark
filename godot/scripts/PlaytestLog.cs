@@ -32,6 +32,19 @@ namespace GodotClient;
 ///
 /// <para>KTD2: adapter-side only. Nothing here is read by the sim, and the sim never sees a clock —
 /// the wall-clock reads live in this file, not across the seam.</para>
+///
+/// <para><b>2026-08-09 extension — the trail a bug needs.</b> The owner hit a critical bug (pressing
+/// send-off jumped the day straight to night, skipping most of the game) and there was NO artifact
+/// anyone could use to reconstruct what happened: the tick row above told you the day advanced, never
+/// WHY — a player press and an unattended timer produced an identical row. Two things were added to
+/// close that gap. First, <see cref="Tick"/> now carries <c>beat</c> (<c>RaidConductor.Current</c>,
+/// via <see cref="BeatProvider"/> — see its own doc for why this file does not reference
+/// <c>RaidConductor</c> directly) and <c>cause</c> (who/what asked for this tick — a button press by
+/// name, or an auto-driver by name). A cascade of same-cause "auto:*" rows sharing one timestamp,
+/// or a single "press:Hurry" cause spanning several rows, is now grep-able instead of theorized.
+/// Second, <see cref="Action"/> records every player-submitted verb (immediate or bell-queued)
+/// independent of whether it moved the phase at all — the piece neither the old tick row nor a
+/// GD.Print history could answer: WHICH of the day's several actions came before the jump.</para>
 /// </summary>
 public static class PlaytestLog
 {
@@ -40,8 +53,17 @@ public static class PlaytestLog
     private const string EnvVar = "MM_PLAYTEST_LOG";
 
     private static string? _path;
-    private static double _startedAt;
+    private static ulong _startedAtMsec;
     private static int _rows;
+
+    /// <summary>
+    /// Set once by <c>MainUi</c> right after it builds its <c>RaidConductor</c>, so every row below
+    /// can report the current beat without this file — or <c>SimAdapter</c>, which has no idea
+    /// <c>RaidConductor</c> exists — taking a hard dependency on it. A test that never sets this (or
+    /// unit tests that construct a bare <see cref="SimAdapter"/> with no UI at all) simply gets "?",
+    /// which is honest: there is no conductor to ask.
+    /// </summary>
+    public static Func<string>? BeatProvider { get; set; }
 
     /// <summary>True once <see cref="Begin"/> has opened a file. Everything else short-circuits on
     /// this, so an ordinary test run never touches the filesystem.</summary>
@@ -64,7 +86,12 @@ public static class PlaytestLog
             return;
         }
 
-        _startedAt = Time.GetUnixTimeFromSystem();
+        // Ticks-since-engine-start, NOT wall-clock: a monotonic clock the OS cannot rewind mid-session
+        // (NTP sync, DST, a sleeping laptop's clock catching up on wake) — every row's "t" is
+        // (now - _startedAtMsec), so it can only ever count up. Wall time (Unix epoch) still stamps
+        // the header below, because THAT number's job is calendar attribution, not elapsed duration.
+        _startedAtMsec = Time.GetTicksMsec();
+        var startedAtUnix = (long)Time.GetUnixTimeFromSystem();
 
         try
         {
@@ -77,7 +104,7 @@ public static class PlaytestLog
                 repo = System.IO.Path.GetDirectoryName(repo) ?? repo;
                 var dir = System.IO.Path.Combine(repo, "runs", "playtest");
                 System.IO.Directory.CreateDirectory(dir);
-                path = System.IO.Path.Combine(dir, $"session-{(long)_startedAt}.jsonl");
+                path = System.IO.Path.Combine(dir, $"session-{startedAtUnix}.jsonl");
             }
             else
             {
@@ -93,7 +120,7 @@ public static class PlaytestLog
             // which is the same reason play.bat stamps the build in the first place.
             System.IO.File.WriteAllText(
                 path,
-                "{\"kind\":\"session\",\"startedAt\":" + ((long)_startedAt)
+                "{\"kind\":\"session\",\"startedAt\":" + startedAtUnix
                 + ",\"provenance\":\"" + Escape(provenance) + "\"}\n");
 
             _path = path;
@@ -127,19 +154,53 @@ public static class PlaytestLog
         }
 
         _path = null; // clear first so Begin-style re-entry guards do not block the redirect
-        _startedAt = Time.GetUnixTimeFromSystem();
-        System.IO.File.WriteAllText(path, "{\"kind\":\"session\",\"startedAt\":" + (long)_startedAt + ",\"provenance\":\"test\"}\n");
+        _startedAtMsec = Time.GetTicksMsec();
+        var startedAtUnix = (long)Time.GetUnixTimeFromSystem();
+        System.IO.File.WriteAllText(path, "{\"kind\":\"session\",\"startedAt\":" + startedAtUnix + ",\"provenance\":\"test\"}\n");
         _path = path;
         _rows = 0;
     }
 
-    /// <summary>One row per completed phase tick — the whole point of the file.</summary>
+    /// <summary>Elapsed session time, monotonic seconds with one decimal — every row's <c>t</c>.</summary>
+    private static string ElapsedSeconds() =>
+        ((Time.GetTicksMsec() - _startedAtMsec) / 1000.0).ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>The current <c>RaidConductor.Current</c> beat, via <see cref="BeatProvider"/> — "?"
+    /// when nothing set one (no conductor in this process) or the provider itself throws (a log row
+    /// must never be the thing that crashes the game — see the class's fail-soft contract).</summary>
+    private static string CurrentBeat()
+    {
+        try
+        {
+            return BeatProvider?.Invoke() ?? "?";
+        }
+        catch
+        {
+            return "?";
+        }
+    }
+
+    /// <summary>
+    /// One row per completed phase tick — the whole point of the file.
+    ///
+    /// <para><paramref name="cause"/> is what asked for THIS tick: a button by name
+    /// (<c>"press:AdvancePhase"</c>, <c>"press:Hurry"</c>, <c>"press:SendDeeper"</c>) or an
+    /// unattended driver by name (<c>"auto:innkeepers-clock"</c>, <c>"auto:conductor-beat-elapsed"</c>)
+    /// — set by <c>MainUi</c> immediately around whichever call actually triggers the tick, and empty
+    /// for the many rows that are not a real transition at all (<paramref name="completedPhase"/>
+    /// unchanged — an immediate action mid-phase; see <see cref="SimAdapter.Queue"/>'s own doc).
+    /// A real transition with an EMPTY cause would be the bug's exact signature — a day advancing
+    /// with nothing on record that asked for it — so every known trigger is wired to set one; if a
+    /// future caller adds a new way to tick the phase and forgets to, this field says so instead of
+    /// silently reading like "the AdvancePhase button did it".</para>
+    /// </summary>
     public static void Tick(
         DayPhase completedPhase,
         int completedDay,
         GameState state,
         ImmutableList<RejectedAction> rejections,
-        int eventCount)
+        int eventCount,
+        string cause = "")
     {
         if (_path is null)
         {
@@ -163,9 +224,11 @@ public static class PlaytestLog
 
         var sb = new StringBuilder();
         sb.Append("{\"kind\":\"tick\",\"t\":")
-          .Append((Time.GetUnixTimeFromSystem() - _startedAt).ToString("F1", System.Globalization.CultureInfo.InvariantCulture))
+          .Append(ElapsedSeconds())
           .Append(",\"day\":").Append(state.Day)
           .Append(",\"phase\":\"").Append(state.Phase).Append('"')
+          .Append(",\"beat\":\"").Append(Escape(CurrentBeat())).Append('"')
+          .Append(",\"cause\":\"").Append(Escape(cause)).Append('"')
           .Append(",\"fromDay\":").Append(completedDay)
           .Append(",\"fromPhase\":\"").Append(completedPhase).Append('"')
           .Append(",\"gold\":").Append(state.Player.Gold)
@@ -208,9 +271,36 @@ public static class PlaytestLog
             return;
         }
 
-        Append("{\"kind\":\"note\",\"t\":"
-            + (Time.GetUnixTimeFromSystem() - _startedAt).ToString("F1", System.Globalization.CultureInfo.InvariantCulture)
-            + ",\"what\":\"" + Escape(what) + "\"}\n");
+        Append("{\"kind\":\"note\",\"t\":" + ElapsedSeconds() + ",\"what\":\"" + Escape(what) + "\"}\n");
+    }
+
+    /// <summary>
+    /// One row per player-submitted action — immediate or bell-queued — independent of whether it
+    /// caused a phase tick at all. This is the piece a <c>tick</c> row alone cannot answer: a tick
+    /// says the day advanced, never WHICH of the day's several actions (buy, craft, price, close the
+    /// counter) preceded it. Wired at <see cref="SimAdapter.Queue"/>'s one choke point — every action
+    /// from every panel and every dev tool passes through there — so a future verb needs no call site
+    /// of its own to be recorded.
+    /// </summary>
+    /// <param name="actionName">The action's own type name (<c>action.GetType().Name</c>) — matches
+    /// what the <c>rejects</c> array in <see cref="Tick"/> already reports for a refused one, so the
+    /// two read as one vocabulary.</param>
+    /// <param name="immediate">True if the kernel already applied it (workshop verbs); false if it
+    /// is merely queued for the next bell (<see cref="ActionTiming"/> decides which).</param>
+    public static void Action(string actionName, bool immediate, int day, DayPhase phase)
+    {
+        if (_path is null)
+        {
+            return;
+        }
+
+        Append("{\"kind\":\"action\",\"t\":" + ElapsedSeconds()
+            + ",\"day\":" + day
+            + ",\"phase\":\"" + phase + "\""
+            + ",\"beat\":\"" + Escape(CurrentBeat()) + "\""
+            + ",\"action\":\"" + Escape(actionName) + "\""
+            + ",\"immediate\":" + (immediate ? "true" : "false")
+            + "}\n");
     }
 
     private static void Append(string line)
