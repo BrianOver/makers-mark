@@ -7,6 +7,7 @@ using GdUnit4;
 using Godot;
 using GodotClient.Audio;
 using GodotClient.Tools;
+using GodotClient.Ui;
 using static GdUnit4.Assertions;
 
 namespace GodotClient.Tests;
@@ -661,6 +662,11 @@ public class AudioTests
     [TestCase]
     public void TheABToggle_SwapsComposedAndSynthLive()
     {
+        // C1 (2026-08-09 shell-and-audio-menu plan) gated this hotkey behind a dev flag — off by
+        // default now that players own their own mix through Settings. Set BEFORE _Ready reads it
+        // (AddChild below, not construction, is what fires _Ready), same idiom as MuteEnvVar's own
+        // MuteEnvVar_StillSilencesEverything_WithComposedTracksInTheMix test.
+        OS.SetEnvironment(AudioDirector.DevHotkeysEnvVar, "1");
         var director = new AudioDirector();
         try
         {
@@ -706,6 +712,190 @@ public class AudioTests
         finally
         {
             director.Free();
+            OS.UnsetEnvironment(AudioDirector.DevHotkeysEnvVar);
+        }
+    }
+
+    /// <summary>
+    /// C1 (2026-08-09 shell-and-audio-menu plan): the footgun this unit exists to close. Before this
+    /// unit, M silently flipped the composed/synth A/B toggle from ANY screen with no on-screen
+    /// explanation — now that players own their own mix through <c>SettingsPanel</c>, that hotkey
+    /// must stay inert unless <see cref="AudioDirector.DevHotkeysEnvVar"/> is explicitly set. This is
+    /// the mirror image of <see cref="TheABToggle_SwapsComposedAndSynthLive"/> above: same key event,
+    /// gate left at its OFF default, and the bed must not move at all.
+    /// </summary>
+    [TestCase]
+    public void MHotkey_DoesNothing_UnlessTheDevFlagIsSet()
+    {
+        OS.UnsetEnvironment(AudioDirector.DevHotkeysEnvVar); // belt-and-suspenders: prove the default is off
+        var director = new AudioDirector();
+        try
+        {
+            ((SceneTree)Engine.GetMainLoop()).Root.AddChild(director);
+
+            var music = director.GetChildren().OfType<AudioStreamPlayer>()
+                .Where(p => p.Name.ToString().StartsWith("Music")).ToList();
+
+            director.SetPhase(DayPhase.Evening);
+            director._Process(2.5); // let the crossfade land
+            var before = music.OrderByDescending(p => p.VolumeDb).First().Stream;
+
+            var keyDown = new InputEventKey { PhysicalKeycode = Key.M, Pressed = true };
+            director._UnhandledKeyInput(keyDown);
+            director._Process(2.5);
+
+            var after = music.OrderByDescending(p => p.VolumeDb).First().Stream;
+            AssertThat(after == before)
+                .OverrideFailureMessage(
+                    "Pressing M changed the audible bed even though DevHotkeysEnvVar was not set — " +
+                    "the hotkey must stay inert by default now that players own the mix in Settings.")
+                .IsTrue();
+        }
+        finally
+        {
+            director.Free();
+        }
+    }
+
+    /// <summary>
+    /// C1's mixer: the music PREFERENCE fader must re-level an already-settled bed immediately
+    /// (no fade in flight to hide behind), and by EXACTLY its own linear-to-dB conversion — proving
+    /// the preference layer stacks additively on top of whatever mastering level (MusicDb+TrimDb)
+    /// the bed already had, never replacing or collapsing it (the two-layer contract TrimDb's own
+    /// doc comment insists on).
+    /// </summary>
+    [TestCase]
+    public void SetMusicVolume_ReLevelsTheSettledBed_ByExactlyItsOwnGain()
+    {
+        var director = new AudioDirector();
+        try
+        {
+            ((SceneTree)Engine.GetMainLoop()).Root.AddChild(director);
+            director.SetPhase(DayPhase.Evening);
+            director._Process(2.5); // let the crossfade land — nothing left in flight
+
+            var music = director.GetChildren().OfType<AudioStreamPlayer>()
+                .Where(p => p.Name.ToString().StartsWith("Music")).ToList();
+            var before = music.OrderByDescending(p => p.VolumeDb).First().VolumeDb;
+
+            director.SetMusicVolume(0.25f);
+
+            var after = music.OrderByDescending(p => p.VolumeDb).First().VolumeDb;
+            AssertThat(after - before)
+                .OverrideFailureMessage(
+                    "SetMusicVolume(0.25) must re-level the already-settled bed right away by exactly "
+                    + "Mathf.LinearToDb(0.25) — a fader is a linear gain stacked on top of the "
+                    + "mastering level, never a replacement for it.")
+                .IsEqualApprox(Mathf.LinearToDb(0.25f), 0.01f);
+        }
+        finally
+        {
+            director.Free();
+        }
+    }
+
+    /// <summary>C1's mixer: the SFX fader scales the very next pooled voice's gain — SFX carry no
+    /// other baked-in baseline in this file, so at the Master default (1.0) the voice's dB should
+    /// land on exactly the fader's own linear-to-dB conversion.</summary>
+    [TestCase]
+    public void SetSfxVolume_ScalesThePooledVoiceGain()
+    {
+        var director = new AudioDirector();
+        try
+        {
+            ((SceneTree)Engine.GetMainLoop()).Root.AddChild(director);
+            director.SetSfxVolume(0.5f);
+            director.Play(Cue.Coin);
+
+            var voice = director.GetChildren().OfType<AudioStreamPlayer>()
+                .First(p => p.Name.ToString().StartsWith("Voice") && p.Playing);
+
+            AssertThat(voice.VolumeDb)
+                .OverrideFailureMessage(
+                    "A cue played at SfxVolume=0.5 (Master at its 1.0 default) should sit at exactly "
+                    + "Mathf.LinearToDb(0.5).")
+                .IsEqualApprox(Mathf.LinearToDb(0.5f), 0.01f);
+        }
+        finally
+        {
+            director.Free();
+        }
+    }
+
+    /// <summary>
+    /// C1's mixer: zero is a LEGAL, fully-supported narrator setting — the architecture's own rule
+    /// (<c>AudioDirector.SpeakNarrator</c>'s doc) is that the narrator carries no information the
+    /// screen does not already carry, so a silenced narrator is indistinguishable from a voice
+    /// library that was never recorded. This only proves the dedicated player's GAIN actually drops;
+    /// <c>SpeakNarrator</c> itself still writes text at every volume, including zero — that half of
+    /// the contract is the skipping law, not a mixer number, and is not re-proven here.
+    /// </summary>
+    [TestCase]
+    public void SetNarratorVolume_Zero_ActuallySilencesTheDedicatedVoice()
+    {
+        var director = new AudioDirector();
+        try
+        {
+            ((SceneTree)Engine.GetMainLoop()).Root.AddChild(director);
+            var narratorVoice = director.GetChildren().OfType<AudioStreamPlayer>()
+                .First(p => p.Name == "NarratorVoice");
+            var atFullVolume = narratorVoice.VolumeDb;
+
+            director.SetNarratorVolume(0f);
+
+            AssertThat(narratorVoice.VolumeDb)
+                .OverrideFailureMessage(
+                    "SetNarratorVolume(0) did not lower the dedicated narrator player's gain — zero "
+                    + "must be a real, reachable setting, not a state nothing enforces.")
+                .IsLess(atFullVolume);
+        }
+        finally
+        {
+            director.Free();
+        }
+    }
+
+    /// <summary>
+    /// C1's boot-time re-apply: <c>ApplyPersistedMixer</c> is the one glue point between
+    /// <c>UiSettings</c>' storage and a live director's state (<c>MainUi.BuildUi</c>'s one real call
+    /// site), exercised nowhere else in this suite. Brackets its own
+    /// <c>UiSettings.DeleteForTests()</c> before AND after so no sibling test in this process — none
+    /// of which expect a persisted mix to exist at all — can inherit what this one wrote.
+    /// </summary>
+    [TestCase]
+    public void ApplyPersistedMixer_PullsEverySavedFaderAndMute_OntoAFreshDirector()
+    {
+        UiSettings.DeleteForTests();
+        try
+        {
+            UiSettings.SaveMasterVolume(0.6f);
+            UiSettings.SaveMusicVolume(0.4f);
+            UiSettings.SaveSfxVolume(0.3f);
+            UiSettings.SaveNarratorVolume(0f);
+            UiSettings.SaveMuted(true);
+
+            var director = new AudioDirector();
+            try
+            {
+                ((SceneTree)Engine.GetMainLoop()).Root.AddChild(director);
+                director.ApplyPersistedMixer();
+
+                AssertThat(director.MasterVolume).IsEqualApprox(0.6f, 0.001f);
+                AssertThat(director.MusicVolume).IsEqualApprox(0.4f, 0.001f);
+                AssertThat(director.SfxVolume).IsEqualApprox(0.3f, 0.001f);
+                AssertThat(director.NarratorVolume).IsEqualApprox(0f, 0.001f);
+                AssertThat(director.Muted)
+                    .OverrideFailureMessage("A saved Muted:true was not picked up on boot.")
+                    .IsTrue();
+            }
+            finally
+            {
+                director.Free();
+            }
+        }
+        finally
+        {
+            UiSettings.DeleteForTests();
         }
     }
 
