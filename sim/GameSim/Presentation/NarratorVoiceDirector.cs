@@ -71,6 +71,10 @@ public static class NarratorVoiceDirector
                 "Camp. The word does a great deal of work down there.",
                 "Somewhere below, the floor they have not yet earned.",
                 "They are asking. Not aloud, and not for long.",
+                "The dark keeps its own clock. Yours just stopped.",
+                "Quiet, up here. Quieter, down there.",
+                "They stopped where they were told. That is the whole of their trust in you.",
+                "One word decides this, and there is no clock on it.",
             ],
             [Trigger.DeathEpitaph] =
             [
@@ -80,6 +84,10 @@ public static class NarratorVoiceDirector
                 "Raise a quiet one.",
                 "The gear came home. Its owner did not.",
                 "Not every hand you arm comes back to shake yours.",
+                "A name moves from the roster to the wall tonight.",
+                "The bunkhouse holds one less voice than it did this morning.",
+                "The forge outlives the hands it arms. It always has.",
+                "The mine does not give back what it decides to keep.",
             ],
             [Trigger.ProvenSave] =
             [
@@ -87,6 +95,12 @@ public static class NarratorVoiceDirector
                 "Somewhere between the blow and the body, your work got in the way.",
                 "A near thing, and yours was the thing it was near.",
                 "They will not know what saved them. You will.",
+                "Death had the angle. Your work had the answer.",
+                "The blow landed. It did not land hard enough to matter.",
+                "Something turned the ending aside tonight, and it was not luck.",
+                "The wound was real. The ending was not.",
+                "Whatever almost happened tonight, did not.",
+                "Your work stood between them and the end of their story.",
             ],
             [Trigger.KillingBlow] =
             [
@@ -94,6 +108,12 @@ public static class NarratorVoiceDirector
                 "One strike, and the argument was settled.",
                 "It held. It bit. It finished.",
                 "Made in the morning. Decisive by dark.",
+                "The fight ended the moment your work arrived.",
+                "No second blow was needed. Yours was enough.",
+                "Steel spoke last. It usually does, when it is good steel.",
+                "The last word tonight was forged, not spoken.",
+                "It ended clean. No flourish needed.",
+                "One good edge, and the matter was closed.",
             ],
             [Trigger.ActAdvanced] =
             [

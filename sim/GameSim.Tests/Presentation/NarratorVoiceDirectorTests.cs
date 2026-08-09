@@ -95,10 +95,10 @@ public class NarratorVoiceDirectorTests
     [Fact]
     public void TheLibraryIsPinned_BecauseAnIndexIsAFilename()
     {
-        Assert.Equal(6, NarratorVoiceDirector.Lines[Trigger.VigilOpening].Length);
-        Assert.Equal(6, NarratorVoiceDirector.Lines[Trigger.DeathEpitaph].Length);
-        Assert.Equal(4, NarratorVoiceDirector.Lines[Trigger.ProvenSave].Length);
-        Assert.Equal(4, NarratorVoiceDirector.Lines[Trigger.KillingBlow].Length);
+        Assert.Equal(10, NarratorVoiceDirector.Lines[Trigger.VigilOpening].Length);
+        Assert.Equal(10, NarratorVoiceDirector.Lines[Trigger.DeathEpitaph].Length);
+        Assert.Equal(10, NarratorVoiceDirector.Lines[Trigger.ProvenSave].Length);
+        Assert.Equal(10, NarratorVoiceDirector.Lines[Trigger.KillingBlow].Length);
         Assert.Equal(3, NarratorVoiceDirector.Lines[Trigger.ActAdvanced].Length);
         Assert.Equal(3, NarratorVoiceDirector.Lines[Trigger.ClimaxReached].Length);
         Assert.Equal(3, NarratorVoiceDirector.Lines[Trigger.CampaignEnding].Length);
