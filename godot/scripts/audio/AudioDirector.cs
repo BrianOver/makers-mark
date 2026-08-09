@@ -76,38 +76,74 @@ public sealed partial class AudioDirector : Node
     /// own -21.7 raw despite the identical brief (ambient generation is not byte-reproducible across
     /// a 3x-longer render even holding style constant) — and needed a +5.45dB BOOST to reach -21.7
     /// effective, the one entry this table ever carried a POSITIVE TrimDb for. A windowed loudness
-    /// pass (ffmpeg <c>astats</c>, 10s frames; see
-    /// <c>docs/design/2026-08-02-composed-track-forensics.md</c>) showed why that was the wrong fix:
-    /// the file's own content sits at a near-constant -63 to -64dBFS windowed RMS for nearly the
-    /// entire 185s (two brief blips to -46/-56dB) — the generation is basically hiss riding under
-    /// silence, so the +5.45dB boost lifted that hiss right along with the sparse content, which is
-    /// what the owner heard as "loud static randomly at night." Boosting a quiet generation's own
-    /// noise floor was never going to fix that; only a better generation (U9, GPU-gated) or a
-    /// revert could. The praised original stays committed on disk — this is the one-line revert
-    /// back to its old id/path/TrimDb the "revert is a table row" contract (KTD-F) was built for.
-    /// The loop-length win trades back to 60s until U9 lands a clean ≥180s regeneration; that trade
-    /// is disclosed to the owner (Open Question 4), not hidden.</para>
+    /// pass (ffmpeg <c>astats</c>, 10s frames; the forensics doc that recorded it has since been
+    /// deleted per this repo's "docs die on merge" rule — the finding lives here and in git history
+    /// instead) showed why that was the wrong fix: the file's own content sits at a near-constant -63
+    /// to -64dBFS windowed RMS for nearly the entire 185s (two brief blips to -46/-56dB) — the
+    /// generation is basically hiss riding under silence, so the +5.45dB boost lifted that hiss right
+    /// along with the sparse content, which is what the owner heard as "loud static randomly at
+    /// night." Boosting a quiet generation's own noise floor was never going to fix that; only a
+    /// better generation (U9, GPU-gated) or a revert could. The praised original stays committed on
+    /// disk — this is the one-line revert back to its old id/path/TrimDb the "revert is a table row"
+    /// contract (KTD-F) was built for. The loop-length win trades back to 60s until U9 lands a clean
+    /// ≥180s regeneration; that trade is disclosed to the owner (Open Question 4), not hidden.</para>
+    ///
+    /// <para><b>fix/night-music-is-static (2026-08-09) deleted night-still-long.mp3 outright.</b> The
+    /// table above had already stopped wiring it, but the bad generation stayed committed on disk for
+    /// a week as an orphan a future one-line edit could re-wire without any test noticing (the sign
+    /// guard below only rejects a POSITIVE TrimDb, not a bad file at TrimDb 0). Re-measured with
+    /// soundfile/pyloudnorm rather than ffmpeg this time: -27.12 LUFS integrated, and only 0.75dB of
+    /// per-second RMS spread across its opening 10 seconds versus 14-54dB for every track actually
+    /// shipped — a flat noise floor, not music. It is gone now, and
+    /// <c>AudioTests.EveryComposedTrack_MatchesItsApprovedLoudnessFingerprint</c> pins the surviving
+    /// four files' bytes so a future swap-in of something similarly bad fails loudly instead of
+    /// waiting for another human playtest to catch it by ear.</para>
+    ///
+    /// <para><b>That first pass did not explain the owner's own words.</b> He heard static WHILE
+    /// PLAYING, and night-still.mp3 (Camp, the mid-raid decision window) measured clean. The Camp
+    /// phase is a brief background beat, though — the phase a player actually SITS with at day's end,
+    /// for up to <see cref="PhaseClock.EveningSeconds"/> (45s, or longer if manual), watching dusk
+    /// fall before the day-end Ledger reveals what the raid cost, is <c>Evening</c> ->
+    /// <c>town-dusk.mp3</c>. Measuring it with ffmpeg's <c>ebur128</c>/<c>loudnorm</c> (true peak is
+    /// an OVERSAMPLED measurement, ITU-R BS.1770 — a file can clip on reconstruction even when no
+    /// single stored sample exceeds 0dBFS) found it sitting at <b>+1.71 dBTP</b> — inter-sample
+    /// clipping, audible as exactly the crackle/distortion "random static noises" describes, and
+    /// sustained for nearly a minute of real listening time every single day. <c>day-first-light.mp3</c>
+    /// (Morning, the dawn track the owner praised) checked out at +0.03 dBTP — not what he
+    /// complained about, but still technically clipping and fixed alongside it rather than left for
+    /// the next playtest to rediscover. <c>quest-wait.mp3</c> (-1.40 dBTP) and <c>night-still.mp3</c>
+    /// (-2.99 dBTP) both already had real headroom and were left untouched.</para>
+    ///
+    /// <para>Fixed by reducing the FILE's own level, never by widening a downstream trim to mask
+    /// it — the same principle night-still-long's own incident established, applied to a different
+    /// failure shape. Both files were decoded, gained down (town-dusk -3.5dB, day-first-light
+    /// -1.5dB — chosen so re-encoding at their original bitrates still lands with headroom to spare,
+    /// not shaved to the edge again) and re-encoded to MP3 at their original bitrate/sample rate
+    /// (town-dusk 128kbps, day-first-light 320kbps, both 48kHz stereo) with ffmpeg. Re-measured true
+    /// peak after: town-dusk -2.39 dBTP, day-first-light -1.48 dBTP — both now comfortably below the
+    /// -1.0 dBTP ceiling <c>AudioTests.EveryComposedTrack_StaysUnderItsTruePeakCeiling</c> pins. TrimDb below
+    /// moved to hold each track's EFFECTIVE loudness exactly where it was (the player hears no
+    /// change): town-dusk's raw LUFS shifted from -13.77 to -17.94 with the gain cut, so its trim
+    /// moved from -8dB to -3.8dB (still a cut, never a boost); day-first-light's raw moved -13.32 ->
+    /// -14.82, trim -8.4dB -> -6.9dB.</para>
     ///
     /// <para><b>TrimDb, and why it is not just zero everywhere.</b> Measured with ffmpeg's
     /// <c>loudnorm</c> analysis pass (integrated LUFS) on each composed file, same method U2 used.
     /// U2 trimmed each track to roughly match the SYNTH BED it replaced; U4 changes the reference —
     /// every composed track now targets the owner's own praised night-still LUFS (-21.7) directly
     /// (R5's ±1 LU contract), not whatever synth bed happens to sit next to it in the table. Measured
-    /// raws and the resulting effective (raw + TrimDb) level: town-dusk -13.77 (was -5dB -> -18.8
-    /// effective, now -8dB -> -21.8), quest-wait -14.30 (was -4dB -> -18.3 effective, now -7.5dB ->
-    /// -21.8), day-first-light -13.30 (-8.4dB -> -21.7; U6 also cut a ~6s and a ~9s near-total-silence
-    /// dropout the same generation left mid-file and at its tail — see the forensics doc — the raw
-    /// LUFS the trim targets barely moved, -13.30 -> -13.32, since loudnorm's own gating already
-    /// discounted near-silence), night-still -21.73 (praised original, TrimDb 0 — no boost needed).
-    /// This is a measured best-effort, not a verdict: the owner's in-game A/B
+    /// raws and the resulting effective (raw + TrimDb) level, current as of the true-peak fix above:
+    /// town-dusk -17.94 (-3.8dB -> -21.74), quest-wait -14.30 (-7.5dB -> -21.8, unchanged), day-first-
+    /// light -14.82 (-6.9dB -> -21.72), night-still -21.73 (praised original, TrimDb 0 — no boost
+    /// needed, unchanged). This is a measured best-effort, not a verdict: the owner's in-game A/B
     /// (<see cref="_UnhandledKeyInput"/>) is what actually confirms "comparable." <b>No entry may
     /// ever carry a positive TrimDb again</b> (R7/KTD-F) — <see cref="ComposedTrackTrims"/> is the
     /// census surface <c>AudioTests</c> pins that against.</para>
     /// </summary>
     private static readonly Dictionary<DayPhase, ComposedTrack> ComposedTracks = new()
     {
-        [DayPhase.Morning] = new ComposedTrack("day-first-light", "res://assets/audio/day-first-light.mp3", TrimDb: -8.4f),
-        [DayPhase.Evening] = new ComposedTrack("town-dusk", "res://assets/audio/town-dusk.mp3", TrimDb: -8f),
+        [DayPhase.Morning] = new ComposedTrack("day-first-light", "res://assets/audio/day-first-light.mp3", TrimDb: -6.9f),
+        [DayPhase.Evening] = new ComposedTrack("town-dusk", "res://assets/audio/town-dusk.mp3", TrimDb: -3.8f),
         [DayPhase.Camp] = new ComposedTrack("night-still", "res://assets/audio/night-still.mp3", TrimDb: 0f),
         [DayPhase.Expedition] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.mp3", TrimDb: -7.5f),
         [DayPhase.ExpeditionDeep] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.mp3", TrimDb: -7.5f),

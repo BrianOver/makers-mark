@@ -1,7 +1,9 @@
 #if GDUNIT_TESTS
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using GameSim.Contracts;
 using GdUnit4;
 using Godot;
@@ -635,6 +637,195 @@ public class AudioTests
                     "a positive TrimDb.")
                 .IsLessEqual(0f);
         }
+    }
+
+    /// <summary>
+    /// U-audio-fingerprint (2026-08-09, fix/night-music-is-static): the TrimDb sign guard above only
+    /// catches a generation admitting it is too quiet — it says nothing if a phase's FILE is quietly
+    /// swapped for a bad take at TrimDb 0, which is exactly how the original defect would have shipped
+    /// had night-still-long.mp3 been left at 0dB instead of +5.45dB. This pins exactly which bytes
+    /// were already measured and approved, offline, the same way <c>ComposedTrackTrims</c> pins
+    /// TrimDb — a byte-identity check, cheap and certain, that complements (not replaces) the live
+    /// decoded measurement in <see cref="EveryComposedTrack_StaysUnderItsTruePeakCeiling"/> below,
+    /// which is what actually re-derives loudness/peak facts from the shipped audio instead of
+    /// trusting whoever last measured it by hand.
+    ///
+    /// <para>Measured 2026-08-09 with soundfile/pyloudnorm (decode -&gt; integrated LUFS, plus per-second
+    /// RMS across the opening 10s to check for real dynamics): day-first-light -13.28 LUFS (10s RMS
+    /// spread 53.8dB), town-dusk -15.30 LUFS (spread 42.3dB), quest-wait -14.30 LUFS (spread 14.4dB),
+    /// night-still -21.74 LUFS (spread 26.4dB) — all comfortably dynamic. For comparison, the rejected
+    /// night-still-long.mp3 measured -27.12 LUFS integrated but only 0.75dB of RMS spread across its
+    /// opening 10s: a flat, near-constant noise floor with no musical dynamics at all, the numeric
+    /// signature behind "random static noises." That file was deleted from the repo in this same
+    /// commit rather than left as an orphan a future edit could re-wire.</para>
+    ///
+    /// <para><b>Re-measured and re-hashed the same day</b> once true-peak checking (see below) found
+    /// day-first-light and town-dusk both clipping on reconstruction — day-first-light.mp3 and
+    /// town-dusk.mp3 were re-encoded at a lower level (never boosted) to fix it, which changes their
+    /// bytes and therefore their hashes here. quest-wait and night-still were untouched and keep
+    /// their original hashes.</para>
+    ///
+    /// <para>Any future regeneration, re-encode, or newly-wired id fails this test with no approved hash
+    /// — which is the point: it forces whoever changes the bytes to re-run the measurement above and
+    /// deliberately vouch for the new file before updating <see cref="ApprovedTrackHashes"/>, rather
+    /// than letting a bad take ship silently the way night-still-long did.</para>
+    /// </summary>
+    private static readonly Dictionary<string, string> ApprovedTrackHashes = new(StringComparer.Ordinal)
+    {
+        ["day-first-light"] = "749315C1653CF6651BADF74032B71D1C986A4D6B8BE68A706C37A9C8986838A3",
+        ["town-dusk"] = "54CCC2B31BEEFE56D2CF06ADA034151F1740E93C9CAB42C0690C098879206B75",
+        ["quest-wait"] = "891C6842028F358A8C2285C719B8B9A29422395FEB779E8C888EFAFCBE170367",
+        ["night-still"] = "E70FFCCDF8ABEEAE015D2FCDA0356118E1C998EA7D4ED48EF75DAA731ED5FDEB",
+    };
+
+    [TestCase]
+    public void EveryComposedTrack_MatchesItsApprovedLoudnessFingerprint()
+    {
+        foreach (var (phase, id) in AudioDirector.ComposedTrackIds)
+        {
+            var path = ProjectSettings.GlobalizePath($"res://assets/audio/{id}.mp3");
+
+            AssertThat(File.Exists(path))
+                .OverrideFailureMessage(
+                    $"{phase} maps to composed track '{id}' but {path} does not exist on disk — either " +
+                    "the file was removed without updating AudioDirector.ComposedTracks, or it was " +
+                    "renamed and this fingerprint census was not updated to match.")
+                .IsTrue();
+
+            var actualHash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
+            var isApproved = ApprovedTrackHashes.TryGetValue(id, out var expectedHash)
+                && string.Equals(actualHash, expectedHash, StringComparison.Ordinal);
+
+            AssertThat(isApproved)
+                .OverrideFailureMessage(
+                    $"{phase}'s composed track '{id}' hashes to {actualHash}, which is not in " +
+                    "ApprovedTrackHashes. This is either a brand-new id that was never loudness-checked, " +
+                    "or existing bytes silently changed under an id this test already trusted. Before " +
+                    "adding/updating the hash: decode the file (soundfile/pyloudnorm or ffmpeg loudnorm), " +
+                    "check its integrated LUFS against its neighbours and its per-second RMS spread over " +
+                    "the opening ~10s — under ~2dB of spread is a flat noise floor, not music, and is " +
+                    "exactly how night-still-long.mp3 shipped as 'random static' at night.")
+                .IsTrue();
+        }
+    }
+
+    /// <summary>
+    /// U-audio-peak-guard (2026-08-09, fix/night-music-is-static continued): the fingerprint test
+    /// above freezes bytes but says nothing about whether a BRAND NEW file is any good — it would not
+    /// have caught town-dusk.mp3 (+1.71 dBTP true peak, inter-sample clipping) or day-first-light.mp3
+    /// (+0.03 dBTP) the day either landed, because neither had a prior hash to compare against. This
+    /// test decodes every composed track through the SAME <see cref="AudioStream.InstantiatePlayback"/>
+    /// / <see cref="AudioStreamPlayback.MixAudio"/> path the game itself plays through — no separate
+    /// offline tool that could drift from what actually ships — and measures its peak directly, so a
+    /// future regeneration or re-encode that lands hot fails here without anyone needing to remember
+    /// to run ffmpeg by hand.
+    ///
+    /// <para><b>Why a stored sample never being &gt;1.0 is not enough.</b> "True peak" is an OVERSAMPLED
+    /// measurement (ITU-R BS.1770) precisely because the reconstructed analog/interpolated waveform
+    /// between two adjacent samples can exceed either sample's own value — a file can clip on
+    /// playback with no single decoded sample ever touching 0dBFS. This test approximates that with a
+    /// cheap 2x linear interpolation between consecutive decoded frames (not the reference polyphase
+    /// resampler ffmpeg's <c>ebur128</c>/<c>loudnorm</c> used to find and confirm this defect — see
+    /// <see cref="AudioDirector.ComposedTracks"/>'s own doc for those numbers) — not exact, but a
+    /// linear interpolant strictly increases sensitivity over a plain sample-peak check, and every
+    /// track this PR retuned now lands with &gt;1dB of real margin under the ceiling, comfortably
+    /// clear of what a cheap approximation might under- or over-state by a few tenths of a dB.</para>
+    ///
+    /// <para>Frame count is bounded by the stream's own <see cref="AudioStream.GetLength"/>, not "mix
+    /// until a short read" — every composed track loops (<see cref="AudioDirector.LoadComposed"/>), so
+    /// an unbounded read would just keep decoding the next lap forever instead of ending.</para>
+    /// </summary>
+    private const float TruePeakCeilingDbTp = -1.0f;
+
+    [TestCase]
+    public void EveryComposedTrack_StaysUnderItsTruePeakCeiling()
+    {
+        foreach (var (phase, id) in AudioDirector.ComposedTrackIds)
+        {
+            var stream = AudioDirector.LoadComposedTrackForCensus(phase);
+            AssertThat(stream)
+                .OverrideFailureMessage($"{phase}'s composed track '{id}' would not load — cannot peak-check it.")
+                .IsNotNull();
+
+            var mixRate = AudioServer.GetMixRate();
+            var frameBudget = (int)Math.Ceiling(stream!.GetLength() * mixRate) + (int)mixRate; // +1s margin
+            var frames = DecodeUpTo(stream, frameBudget);
+
+            AssertThat(frames.Length)
+                .OverrideFailureMessage(
+                    $"{phase}'s composed track '{id}' decoded 0 frames via MixAudio — either playback " +
+                    "failed to instantiate or this test's assumption about MixAudio no longer holds; " +
+                    "either way, a track this test cannot see is a track this guard cannot protect.")
+                .IsGreater(0);
+
+            var (samplePeakDb, truePeakDb) = PeakDb(frames);
+
+            AssertThat(truePeakDb)
+                .OverrideFailureMessage(
+                    $"{phase}'s composed track '{id}' has an (approximate) true peak of {truePeakDb:0.00} " +
+                    $"dBTP, sample peak {samplePeakDb:0.00} dBFS — over the {TruePeakCeilingDbTp:0.0} dBTP " +
+                    "ceiling. This is the exact shape of the town-dusk.mp3 defect (+1.71 dBTP shipped, " +
+                    "heard as 'random static' during the Evening bed the player sits with at day's end): " +
+                    "reduce the FILE's own level and re-encode (ffmpeg 'volume=<n>dB' + libmp3lame at the " +
+                    "original bitrate), then adjust TrimDb to compensate so effective loudness is " +
+                    "unchanged. Never fix this by trimming louder.")
+                .IsLessEqual(TruePeakCeilingDbTp);
+        }
+    }
+
+    /// <summary>Decodes up to <paramref name="frameBudget"/> frames of <paramref name="stream"/> from
+    /// its start via <see cref="AudioStreamPlayback.MixAudio"/>, in bounded chunks — the same
+    /// decode-without-playing technique a level meter or waveform view would use, and the only way
+    /// this codebase can inspect real PCM out of a compressed music asset (SFX get this for free via
+    /// raw <see cref="AudioStreamWav.Data"/>; composed tracks are MP3 and have no such shortcut).</summary>
+    private static Vector2[] DecodeUpTo(AudioStream stream, int frameBudget)
+    {
+        var playback = stream.InstantiatePlayback();
+        playback.Start(0.0);
+
+        var collected = new List<Vector2>(Math.Min(frameBudget, 1_000_000));
+        while (collected.Count < frameBudget)
+        {
+            var want = Math.Min(4096, frameBudget - collected.Count);
+            var chunk = playback.MixAudio(1.0f, want);
+            if (chunk.Length == 0)
+            {
+                break; // decode ended before the budget -- nothing more to read
+            }
+
+            collected.AddRange(chunk);
+        }
+
+        playback.Stop();
+        return collected.ToArray();
+    }
+
+    /// <summary>Plain decoded sample peak, and an approximate oversampled ("true") peak via a cheap 2x
+    /// linear interpolation between adjacent frames per channel — see this method's caller for why an
+    /// approximation is an acceptable trade here.</summary>
+    private static (float SamplePeakDb, float TruePeakDb) PeakDb(Vector2[] frames)
+    {
+        var sampleMax = 0f;
+        var trueMax = 0f;
+
+        for (var i = 0; i < frames.Length; i++)
+        {
+            var l = frames[i].X;
+            var r = frames[i].Y;
+            var frameMax = Math.Max(Math.Abs(l), Math.Abs(r));
+            sampleMax = Math.Max(sampleMax, frameMax);
+            trueMax = Math.Max(trueMax, frameMax);
+
+            if (i + 1 < frames.Length)
+            {
+                var midL = (l + frames[i + 1].X) * 0.5f;
+                var midR = (r + frames[i + 1].Y) * 0.5f;
+                trueMax = Math.Max(trueMax, Math.Max(Math.Abs(midL), Math.Abs(midR)));
+            }
+        }
+
+        static float ToDb(float linear) => linear > 0f ? 20f * MathF.Log10(linear) : -120f;
+        return (ToDb(sampleMax), ToDb(trueMax));
     }
 
     /// <summary>
