@@ -56,9 +56,14 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// depending on a second layout pass.
     ///
     /// <para>Six, because a step's text is the instruction PLUS the live advisor reason appended
-    /// (see <c>TutorialFlow.StepText</c>) — e.g. "Walk to the Forge (walk there with WASD, or click
-    /// the ground to move) and click it — buy 2 copper…". That concatenation is why this card needs
-    /// so many lines; shortening the copy itself would be the better fix and is left as follow-up.</para></summary>
+    /// (see <c>TutorialFlow.StepText</c>) — e.g. "Walk to the Forge (WASD, or click the ground to
+    /// move) and press E, or click it — Buy 2 copper…". That concatenation is why this card needs so
+    /// many lines. The copy itself is now held to this budget from the other side:
+    /// <c>TutorialCopyIsFollowableTests.NoStepsCopy_OutgrowsTheObjectiveCardsOwnUnclampedLineBudget</c>
+    /// fails a step that outgrows six lines, because tutorial text renders UNCLAMPED (see
+    /// <see cref="Refresh"/>) and a long enough line therefore grows this chip off the screen rather
+    /// than being trimmed — anything that needs more room belongs in the step's TeachNote, which
+    /// renders inside the scrolling checklist and costs no height at all.</para></summary>
     private const int TutorialMaxLines = 6;
 
     /// <summary>Height floor for an unclamped tutorial step — same derivation as
@@ -372,6 +377,24 @@ public sealed partial class ObjectiveTracker : PanelContainer
             }
 
             line.AddChild(textLabel);
+
+            // The current step's "what this mechanism is" line. Until this shipped, every one of
+            // TutorialFlow.Registry's ten TeachNotes was written, reviewed, and rendered by nobody
+            // — a step's instruction told the player what to press and nothing ever told them what
+            // the thing they were pressing DOES. The owner asking to "explain how the bounties work
+            // further" was asking for a paragraph the game already had and never showed.
+            if (row.Current && row.TeachNote is { } teach)
+            {
+                var teachLabel = new Label
+                {
+                    Name = "TutorialChecklistTeachNote",
+                    Text = Plain(teach),
+                    AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                    CustomMinimumSize = new Vector2(DockWidth - 24, 0),
+                };
+                teachLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
+                TutorialChecklist.AddChild(teachLabel);
+            }
 
             if (row.Current && row.GatingNote is { } note)
             {

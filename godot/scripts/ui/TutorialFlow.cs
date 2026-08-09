@@ -75,9 +75,17 @@ public readonly record struct TutorialAnchor(TutorialAnchorKind Kind, string? Ke
 
 /// <summary>One row of the checklist (<see cref="TutorialFlow.Checklist"/>) — one per DISPLAYED
 /// slot (<see cref="TutorialStepDef.DisplayIndex"/>; BuyMaterial/Craft share slot 1, so this is
-/// NOT one row per <see cref="TutorialStep"/>). Rendered by <see cref="ObjectiveTracker"/>.</summary>
+/// NOT one row per <see cref="TutorialStep"/>). Rendered by <see cref="ObjectiveTracker"/>.
+///
+/// <para><see cref="TeachNote"/> is non-null ONLY on the current row — it is the step's "what this
+/// mechanism actually is" line (<see cref="TutorialStepDef.TeachNote"/>), which until this unit was
+/// written into the registry and then rendered by nobody: ten paragraphs of teaching copy that no
+/// player has ever read, pinned non-empty by a test that never checked anyone could see it. The
+/// owner's "need to explain how the bounties work further" was asking for a surface that already
+/// existed in the data and was missing from the screen.</para></summary>
 public readonly record struct ChecklistRow(
-    int DisplayIndex, string Label, bool Done, bool Current, bool VisitedAnchor, string? GatingNote);
+    int DisplayIndex, string Label, bool Done, bool Current, bool VisitedAnchor, string? GatingNote,
+    string? TeachNote = null);
 
 /// <summary>
 /// U5 (loop-legibility plan, KTD-E): one step's full metadata — the registry row that replaces
@@ -219,7 +227,8 @@ public sealed partial class TutorialFlow : PanelContainer
         new(
             Step: TutorialStep.BuyMaterial, DisplayIndex: 1, Anchor: TutorialAnchor.ForBuilding("forge"), MinDay: 1,
             ShortLabel: "Buy material, then craft your first item",
-            TeachNote: "Materials come from the Forge's vendor; crafting turns them into gear to sell or gift.",
+            TeachNote: "Inside a building you walk up to a station and press E to use it. The material vendor "
+                       + "and the crafting station are both stations in your workshop.",
             IsDone: state => state.EventLog.OfType<MaterialPurchased>().Any(),
             AdvanceFrom: [TutorialStep.BuyMaterial], AdvancesTo: TutorialStep.Craft),
         new(
@@ -232,8 +241,9 @@ public sealed partial class TutorialFlow : PanelContainer
             AdvanceFrom: [TutorialStep.BuyMaterial, TutorialStep.Craft], AdvancesTo: TutorialStep.Shelve),
         new(
             Step: TutorialStep.Shelve, DisplayIndex: 2, Anchor: TutorialAnchor.ForBuilding("market"), MinDay: 1,
-            ShortLabel: "Shelve it in the Shop",
-            TeachNote: "Heroes only buy what's on the shelf — a crafted item sits in your bag until you stock it.",
+            ShortLabel: "Stock your craft on the Shop's shelf",
+            TeachNote: "Heroes only ever buy what is on the shelf. A finished craft sits in your bag, invisible "
+                       + "to them, until you stock it — the button for that is labelled Stock.",
             // A shelved item proves the step; an already-sold player listing proves it happened in
             // the past even though the shelf no longer holds it (StockLegal requires shelving
             // before a sale can ever occur, so FromPlayerShop is proof, not a guess).
@@ -241,14 +251,21 @@ public sealed partial class TutorialFlow : PanelContainer
             AdvanceFrom: [TutorialStep.Shelve], AdvancesTo: TutorialStep.PostBounty),
         new(
             Step: TutorialStep.PostBounty, DisplayIndex: 3, Anchor: TutorialAnchor.ForBuilding("noticeboard"), MinDay: 1,
-            ShortLabel: "Post a bounty at the noticeboard",
-            TeachNote: "A bounty asks heroes to fetch something specific from the Mine for a reward.",
+            ShortLabel: "Post a bounty at the Bounties board",
+            // The old note said a bounty "asks heroes to fetch something specific from the Mine",
+            // which is not what the sim does at all: PostBountyAction names a FLOOR, never an item.
+            // A teaching line that describes a mechanism the game does not have is worse than none.
+            TeachNote: "A bounty is a paid request to reach one floor of the Mine. The reward leaves your purse "
+                       + "the moment you post it; the first hero who judges it worth that floor takes the job, "
+                       + "steers their whole party that deep, and keeps the gold. Too thin a reward for the "
+                       + "floor and every hero refuses. Nobody takes it in three days, the gold comes back.",
             IsDone: state => state.EventLog.OfType<BountyPosted>().Any(),
             AdvanceFrom: [TutorialStep.PostBounty], AdvancesTo: TutorialStep.WatchDeparture),
         new(
             Step: TutorialStep.WatchDeparture, DisplayIndex: 4, Anchor: TutorialAnchor.ForBuilding("minegate"), MinDay: 1,
-            ShortLabel: "Watch the party leave through the Mine Gate",
-            TeachNote: "The Mine Gate is where a mustered party departs for the Mine each Morning.",
+            ShortLabel: "Send the party off, and watch them go",
+            TeachNote: "Nothing departs on its own. Ending the Morning is what sends the mustered party out; "
+                       + "the view follows them to the Mine Gate on its own once you do.",
             IsDone: state => state.EventLog.OfType<PartyDeparted>().Any(),
             // Unconditional across the WHOLE day-1 ladder (class/TutorialStepDef doc): a party's
             // own departure is the day's one truly autonomous event, so it advances the chain into
@@ -262,42 +279,50 @@ public sealed partial class TutorialFlow : PanelContainer
         new(
             Step: TutorialStep.LookIn, DisplayIndex: 5, Anchor: TutorialAnchor.ForHud("WatchButton"), MinDay: 1,
             ShortLabel: "Press Watch to look in on them",
-            TeachNote: "The Scrying Mirror shows the raid live — press Watch any time a party is out.",
+            TeachNote: "The Scrying Mirror shows the raid live, floor by floor, including which of your work "
+                       + "each hero is carrying. The Watch button appears whenever a party is underground.",
             // UI-only: no durable sim fact exists for "opened the Mirror" — NotifyMirrorOpened
             // advances this directly. IsDone stays false so Advance()'s own pass never fires it.
             IsDone: _ => false,
             AdvanceFrom: [TutorialStep.LookIn], AdvancesTo: TutorialStep.OpenCounter),
         new(
             Step: TutorialStep.OpenCounter, DisplayIndex: 6, Anchor: TutorialAnchor.ForBuilding("market"), MinDay: 2,
-            ShortLabel: "Serve a customer at the counter",
-            TeachNote: "The Shop's counter is a live haggle — open it, present an item, and answer their offer.",
+            ShortLabel: "Open the counter and serve a customer",
+            TeachNote: "The counter is a live haggle. You present something off your shelf, the customer names "
+                       + "an offer, and you take it, hold your price, or name your own.",
             IsDone: state => state.EventLog.OfType<CounterSaleClosed>().Any(),
             AdvanceFrom: [TutorialStep.OpenCounter], AdvancesTo: TutorialStep.Vigil),
         new(
             Step: TutorialStep.Vigil, DisplayIndex: 7, Anchor: TutorialAnchor.ForHud("CampCard"), MinDay: 2,
-            ShortLabel: "Answer the vigil: supply, recall, or press on",
-            TeachNote: "When a party camps below the checkpoint, you decide whether they push deeper.",
+            ShortLabel: "Answer the camped party: Send, or Recall",
+            TeachNote: "A camped party waits on your answer before it goes further. A supply costs a runner's "
+                       + "fee and reaches them underground; a recall brings them home short of their target. "
+                       + "Sending them deeper is the third answer, and it spends nothing of yours.",
             IsDone: state => state.EventLog.OfType<SupplyDelivered>().Any() || state.EventLog.OfType<PartyRecalled>().Any(),
             AdvanceFrom: [TutorialStep.Vigil], AdvancesTo: TutorialStep.EveningClose),
         new(
             Step: TutorialStep.EveningClose, DisplayIndex: 8, Anchor: TutorialAnchor.ForHud("AdvancePhase"), MinDay: 1,
-            ShortLabel: "Buy ore, then ring the bell",
-            TeachNote: "Evening is the day's last trade — then the bell closes it and rolls to tomorrow.",
+            ShortLabel: "Buy ore in the Ledger, then close the day",
+            TeachNote: "Evening is the day's last trade. Heroes who came home sell their ore in the Ledger, "
+                       + "cheaper than the morning vendor, and the bell then rolls the day to tomorrow.",
             // Evening closing IS the day rolling over — no event exists to key on; day 3 arriving
             // is the proof, and this step is only ever current once Vigil's own Day>=2 gate passed.
             IsDone: state => state.Day >= 3,
             AdvanceFrom: [TutorialStep.EveningClose], AdvancesTo: TutorialStep.MeetHeroes),
         new(
             Step: TutorialStep.MeetHeroes, DisplayIndex: 9, Anchor: TutorialAnchor.ForHud("OpenHeroCards"), MinDay: 3,
-            ShortLabel: "Read a hero's card",
-            TeachNote: "Hero Cards show standing, gear, and deeds — the roster behind every raid.",
+            ShortLabel: "Open Renown and read a hero's card",
+            TeachNote: "Hero Cards show standing, gear, and deeds — the roster behind every raid. They are the "
+                       + "tray's Renown book; the tray's buttons carry no words, only icons and tooltips.",
             // UI-only, same shape as LookIn — NotifyPanelOpened advances this directly.
             IsDone: _ => false,
             AdvanceFrom: [TutorialStep.MeetHeroes], AdvancesTo: TutorialStep.Commission),
         new(
             Step: TutorialStep.Commission, DisplayIndex: 10, Anchor: TutorialAnchor.ForHud("OpenCommissions"), MinDay: 3,
             ShortLabel: "Accept or decline a commission",
-            TeachNote: "A commission is a standing request a hero brings you directly — your call.",
+            TeachNote: "A commission is a hero asking you directly for one thing: a named slot, at a minimum "
+                       + "quality, by a deadline, for a premium over the shelf price. Declining is a real "
+                       + "answer — it costs you the premium, not the hero.",
             // No distinct GameEvent exists for Accept/Decline (CommissionHandlers' own doc) —
             // GameState.ActionLog (the kernel's own submitted-action history) is the durable fact.
             IsDone: state => state.ActionLog.Any(batch => batch.Actions.Any(a => a is AcceptCommissionAction or DeclineCommissionAction)),
@@ -468,7 +493,15 @@ public sealed partial class TutorialFlow : PanelContainer
     /// stop the copy telling the player to walk somewhere they are already standing.
     /// </param>
     public string? TopSlotText(GameState state, string? openPanelId = null) =>
-        Active ? StepText(state, openPanelId) : null;
+        Active ? StepText(ByStep[Step], state, openPanelId) : null;
+
+    /// <summary>The copy ANY step would show against <paramref name="state"/> — the inspection
+    /// surface the followability suite reads, so every one of the ten lines can be audited without
+    /// driving a campaign through three in-game days to reach it (and, more importantly, without
+    /// this suite depending on the phase/beat machinery at all). Identical to what <see
+    /// cref="TopSlotText"/> renders when <paramref name="step"/> is the current one.</summary>
+    public string CopyFor(TutorialStep step, GameState state, string? openPanelId = null) =>
+        StepText(ByStep[step], state, openPanelId);
 
     /// <summary>Playtest F6: the first-day chain used to name the ACTION ("Buy 2 copper") but
     /// never WHERE to go or HOW to get there, and during a phase that forbids the step's own
@@ -479,9 +512,8 @@ public sealed partial class TutorialFlow : PanelContainer
     /// cref="StepActionAvailable"/>, mirroring <c>ActionLegality.IsLegal</c>'s own phase gates for
     /// <c>BuyMaterialAction</c>/<c>PostBountyAction</c>), swaps in the deferred/"comes back"
     /// variant (<see cref="WaitText"/>) instead of the raw actionable copy.</summary>
-    private string StepText(GameState state, string? openPanelId)
+    private string StepText(TutorialStepDef def, GameState state, string? openPanelId)
     {
-        var def = ByStep[Step];
         if (!StepActionAvailable(state, def))
         {
             return WaitText(state, def);
@@ -496,41 +528,72 @@ public sealed partial class TutorialFlow : PanelContainer
         // vocabulary IsAtAnchor/PanelIdForVenue read — never rename the plumbing, only the text.
         var building = def.Anchor.Kind == TutorialAnchorKind.Building ? BuildingDisplayName(def.Anchor.Key!) : string.Empty;
         var alreadyThere = building.Length > 0 && IsAtAnchor(def, openPanelId);
-        return Step switch
+        return def.Step switch
         {
             TutorialStep.BuyMaterial or TutorialStep.Craft =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: Step == TutorialStep.BuyMaterial, alreadyThere)} — " +
+                $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: def.Step == TutorialStep.BuyMaterial, alreadyThere)} — " +
                 (suggestions.Count > 0
                     ? suggestions[0].Reason
-                    : $"Buy material at the vendor, then craft at the {_workshopStationNoun}."),
+                    : $"Buy material at the vendor, then craft at the {_workshopStationNoun}.") +
+                " Inside, press **E** at a station.",
             TutorialStep.Shelve =>
                 $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — " +
                 (suggestions.FirstOrDefault(s => s.Action is StockAction)?.Reason
-                    ?? "Shelve your finished item so heroes can buy it."),
+                    ?? "Shelve your finished item so heroes can buy it.") +
+                " Find it under **Unshelved Crafts** and press **Stock** — or drag it to a **+ shelve here** slot.",
             TutorialStep.PostBounty =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — post a bounty; heroes may accept it before they depart.",
+                $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — under " +
+                "**POST BOUNTY** pick a floor, set the reward on the coins, then press **Post**. The gold goes now; " +
+                "the hero who gets there keeps it.",
+            // The departure is not a thing the player watches happen TO them: ending the Morning is
+            // what causes it (MainUi.SoundTheTick pans the camera to the gate on the Morning tick).
+            // Naming only the gate answered WHERE and left the owner's actual question — "HOW to
+            // watch them depart??" — unanswered, because the answer is a button somewhere else.
             TutorialStep.WatchDeparture =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: Watch the party depart through the **{building}** — then look in on them.",
+                $"Tutorial {def.DisplayIndex}/{TotalSteps}: They leave when the Morning ends — press **{MorningBell(state)}**, " +
+                $"the wide button at the top of the screen. The view swings to the **{building}** and follows them out.",
             // Day-1 capstone: no town building — the taught affordance is the persistent Watch
-            // control on the bell row (reachable through Expedition/Camp/ExpeditionDeep).
+            // control beside the bell (reachable through Expedition/Camp/ExpeditionDeep). "On the
+            // bell row" named a piece of layout vocabulary that appears nowhere on screen.
             TutorialStep.LookIn =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: Press **👁 Watch** on the bell row to open the Scrying Mirror and look in on them.",
+                $"Tutorial {def.DisplayIndex}/{TotalSteps}: Press **👁 Watch**, beside the wide button at the top of the " +
+                "screen, to open the Scrying Mirror and look in on them.",
             TutorialStep.OpenCounter =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — open the counter and serve whoever walks in.",
-            // Vigil: no walk-there destination — the winch-house slate opens itself the moment a
-            // party camps below the checkpoint (CampPanel.ShowModal, called from MainUi's own
-            // SyncCampModal every Camp tick); the lesson is which of its two verbs to press.
+                $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — press " +
+                "**Open Counter** at the top of the Shop panel, then **Present** a shelved item and answer with " +
+                "**Accept**, **Hold Firm**, or **Counter**.",
+            // Vigil: no walk-there destination — the camp card opens itself the moment a party camps
+            // below the checkpoint (CampPanel.ShowModal, called from MainUi's own SyncCampModal every
+            // Camp tick); the lesson is which of its verbs to press. "The winch-house slate" and "the
+            // recall bell" were both names for things the screen labels differently.
             TutorialStep.Vigil =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: When the winch-house slate opens, send them a supply or ring the recall bell.",
+                $"Tutorial {def.DisplayIndex}/{TotalSteps}: When they camp, a card fills the screen. Pick a supply and " +
+                "press **Send**, or press **Recall** to bring them home.",
             TutorialStep.EveningClose =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: Evening — buy any ore a hero's offering, then ring the bell (**Snuff the lanterns**) to close the day.",
+                $"Tutorial {def.DisplayIndex}/{TotalSteps}: Evening. The **EVENING LEDGER** opens itself — press **Buy** " +
+                $"under **ORE OFFERED**, then close it and press **{EveningBell(state)}** at the top of the screen.",
+            // The tray's seven buttons have EMPTY Text (MainUi.TrayButton) — the words live only in
+            // tooltips, and HeroCards' tooltip reads "Renown". Telling a stranger to "open Hero
+            // Cards from the tray" sent them looking for two words that are on screen nowhere.
             TutorialStep.MeetHeroes =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: Open **Hero Cards** from the tray — or walk to the Tavern — and read one hero.",
+                $"Tutorial {def.DisplayIndex}/{TotalSteps}: The tray is the icon buttons at the top right — no words, so " +
+                "hover for the tooltip and press **Renown**. (The Tavern works too.) Read one hero.",
             TutorialStep.Commission =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: Open **Commissions** from the tray and Accept or Decline one — the loop is yours after this.",
+                $"Tutorial {def.DisplayIndex}/{TotalSteps}: In that tray at the top right, press the icon tipped " +
+                "**Commissions**, then **Accept** or **Decline** one — the loop is yours after this.",
             _ => string.Empty,
         };
     }
+
+    /// <summary>The bell's OWN current label for the phase this step is really about, read from
+    /// <see cref="PhaseVocab.BellVerb"/> rather than retyped here — the copy quotes a control by the
+    /// exact words printed on it, and cannot drift when that label is next reworded (the class of
+    /// defect this whole unit exists to close: copy naming a control the screen calls something
+    /// else). Projected onto the phase rather than read live, because both steps can be current
+    /// during a phase other than the one they instruct about.</summary>
+    private static string MorningBell(GameState state) => PhaseVocab.BellVerb(state with { Phase = DayPhase.Morning });
+
+    private static string EveningBell(GameState state) => PhaseVocab.BellVerb(state with { Phase = DayPhase.Evening });
 
     /// <summary>The town-facing display name for a <see cref="TutorialAnchorKind.Building"/>
     /// anchor's venue key — reads <see cref="TownLayout2D.Venues"/>'s own <c>Nametag</c> for every
@@ -567,9 +630,10 @@ public sealed partial class TutorialFlow : PanelContainer
     /// half means an ack that already fired keeps reading true even if the LIVE location check
     /// alone would flicker (e.g. a panel that closes itself mid-step).</summary>
     private bool IsAtAnchor(TutorialStepDef def, string? openPanelId) =>
-        (openPanelId is not null && openPanelId == PanelIdForVenue(def.Anchor.Key!)) || VisitedCurrentAnchor;
+        (openPanelId is not null && openPanelId == PanelIdForVenue(def.Anchor.Key!))
+        || _visitedAnchorForStep.Contains(def.DisplayIndex);
 
-    private const string MovementHint = "walk there with WASD, or click the ground to move";
+    private const string MovementHint = "WASD, or click the ground to move";
 
     /// <summary>
     /// The "get to the right place" half of a step's instruction — or an acknowledgement that the player is
@@ -591,9 +655,12 @@ public sealed partial class TutorialFlow : PanelContainer
             return $"You're at the **{building}**";
         }
 
+        // "and click it" was the only gesture named, but the buildings a player is sent to are
+        // entered by walking up and pressing E as often as by clicking the sprite — and a stranger
+        // who clicks and misses has no second thing to try. Name both doors.
         return includeMovementHint
-            ? $"Walk to the **{building}** ({MovementHint}) and click it"
-            : $"Walk to the **{building}** and click it";
+            ? $"Walk to the **{building}** ({MovementHint}) and press **E**, or click it"
+            : $"Walk to the **{building}** and press **E**, or click it";
     }
 
     /// <summary>Whether <paramref name="def"/>'s own action is legal THIS phase — mirrors
@@ -655,10 +722,16 @@ public sealed partial class TutorialFlow : PanelContainer
         {
             return def.Step switch
             {
+                // "press Next/Advance" named a button that does not exist: the one advance control
+                // is labelled for whatever it is about to do ("Send them off", "Snuff the
+                // lanterns"), so the two words a stranger was told to look for are never on screen.
+                // Same defect the owner already caught once in the day-gate branch.
                 TutorialStep.BuyMaterial =>
-                    $"Tutorial {index}/{TotalSteps}: No action slots left today — press Next/Advance to move things along; the vendor and the anvil are both still there tomorrow.",
+                    $"Tutorial {index}/{TotalSteps}: No action slots left today — the wide button at the top of the " +
+                    $"screen moves the day along; the vendor and the {_workshopStationNoun} are both still there tomorrow.",
                 TutorialStep.PostBounty =>
-                    $"Tutorial {index}/{TotalSteps}: No action slots left today — press Next/Advance to move things along; the board reopens tomorrow.",
+                    $"Tutorial {index}/{TotalSteps}: No action slots left today — the wide button at the top of the " +
+                    "screen moves the day along; the board reopens tomorrow.",
                 _ => string.Empty,
             };
         }
@@ -729,7 +802,11 @@ public sealed partial class TutorialFlow : PanelContainer
             var current = def.DisplayIndex == currentIndex;
             var visited = current && def.Anchor.Kind == TutorialAnchorKind.Building && VisitedCurrentAnchor;
             var gating = current ? GatingNote(state, ByStep[Step]) : null;
-            rows.Add(new ChecklistRow(def.DisplayIndex, def.ShortLabel, done, current, visited, gating));
+            // Both notes read the CURRENT step's own row, not this display slot's first row —
+            // BuyMaterial and Craft share slot 1, and while Step is Craft it is Craft's note that
+            // is true. Only the current row carries one: ten notes at once is a wall, not a lesson.
+            var teach = current ? ByStep[Step].TeachNote : null;
+            rows.Add(new ChecklistRow(def.DisplayIndex, def.ShortLabel, done, current, visited, gating, teach));
         }
 
         return rows;
