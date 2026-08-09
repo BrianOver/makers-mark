@@ -36,7 +36,19 @@
     makes every failure ambiguous.
 
 .PARAMETER MinFreeGb
-    GPU free-VRAM floor. Default 14, per the project's hard GPU rule.
+    GPU free-VRAM floor. Default 8.
+
+    This used to be 14, copied from the project's hard GPU rule -- and the copy was wrong,
+    because that rule guards a different risk. 14GB is the GENERATION floor: SDXL and TRELLIS
+    allocate unpredictably, can balloon mid-job, and taking the owner's daily-driver machine
+    down is the failure it exists to prevent. Inference is not that shape. llava:7b is a
+    quantised 7B vision model resident at roughly 4-5GB, allocated once at load and flat
+    thereafter.
+
+    Applying the generation floor here cost real work: with a browser and a game open, 12.4GB
+    free is ordinary, and the harness refused runs it could have completed comfortably. 8 leaves
+    headroom over the model's actual footprint without pretending an inference job is a
+    generation job. Raise it with -MinFreeGb if a bigger vision model is ever pinned.
 
 .PARAMETER Scope
     Which question this run is answering (A4/A5, "the shell around the game" plan). The act loop
@@ -78,7 +90,7 @@ param(
     [int]$Turns = 40,
     [string]$Model = 'llava:7b',
     [switch]$Scripted,
-    [int]$MinFreeGb = 14,
+    [int]$MinFreeGb = 8,
     [int]$MaxTempC = 83,
     [string]$RepoRoot,
     [string]$OutDir,
