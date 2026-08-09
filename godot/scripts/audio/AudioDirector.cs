@@ -99,26 +99,51 @@ public sealed partial class AudioDirector : Node
     /// four files' bytes so a future swap-in of something similarly bad fails loudly instead of
     /// waiting for another human playtest to catch it by ear.</para>
     ///
+    /// <para><b>That first pass did not explain the owner's own words.</b> He heard static WHILE
+    /// PLAYING, and night-still.mp3 (Camp, the mid-raid decision window) measured clean. The Camp
+    /// phase is a brief background beat, though — the phase a player actually SITS with at day's end,
+    /// for up to <see cref="PhaseClock.EveningSeconds"/> (45s, or longer if manual), watching dusk
+    /// fall before the day-end Ledger reveals what the raid cost, is <c>Evening</c> ->
+    /// <c>town-dusk.mp3</c>. Measuring it with ffmpeg's <c>ebur128</c>/<c>loudnorm</c> (true peak is
+    /// an OVERSAMPLED measurement, ITU-R BS.1770 — a file can clip on reconstruction even when no
+    /// single stored sample exceeds 0dBFS) found it sitting at <b>+1.71 dBTP</b> — inter-sample
+    /// clipping, audible as exactly the crackle/distortion "random static noises" describes, and
+    /// sustained for nearly a minute of real listening time every single day. <c>day-first-light.mp3</c>
+    /// (Morning, the dawn track the owner praised) checked out at +0.03 dBTP — not what he
+    /// complained about, but still technically clipping and fixed alongside it rather than left for
+    /// the next playtest to rediscover. <c>quest-wait.mp3</c> (-1.40 dBTP) and <c>night-still.mp3</c>
+    /// (-2.99 dBTP) both already had real headroom and were left untouched.</para>
+    ///
+    /// <para>Fixed by reducing the FILE's own level, never by widening a downstream trim to mask
+    /// it — the same principle night-still-long's own incident established, applied to a different
+    /// failure shape. Both files were decoded, gained down (town-dusk -3.5dB, day-first-light
+    /// -1.5dB — chosen so re-encoding at their original bitrates still lands with headroom to spare,
+    /// not shaved to the edge again) and re-encoded to MP3 at their original bitrate/sample rate
+    /// (town-dusk 128kbps, day-first-light 320kbps, both 48kHz stereo) with ffmpeg. Re-measured true
+    /// peak after: town-dusk -2.39 dBTP, day-first-light -1.48 dBTP — both now comfortably below the
+    /// -1.0 dBTP ceiling <c>AudioTests.EveryComposedTrack_StaysUnderItsTruePeakCeiling</c> pins. TrimDb below
+    /// moved to hold each track's EFFECTIVE loudness exactly where it was (the player hears no
+    /// change): town-dusk's raw LUFS shifted from -13.77 to -17.94 with the gain cut, so its trim
+    /// moved from -8dB to -3.8dB (still a cut, never a boost); day-first-light's raw moved -13.32 ->
+    /// -14.82, trim -8.4dB -> -6.9dB.</para>
+    ///
     /// <para><b>TrimDb, and why it is not just zero everywhere.</b> Measured with ffmpeg's
     /// <c>loudnorm</c> analysis pass (integrated LUFS) on each composed file, same method U2 used.
     /// U2 trimmed each track to roughly match the SYNTH BED it replaced; U4 changes the reference —
     /// every composed track now targets the owner's own praised night-still LUFS (-21.7) directly
     /// (R5's ±1 LU contract), not whatever synth bed happens to sit next to it in the table. Measured
-    /// raws and the resulting effective (raw + TrimDb) level: town-dusk -13.77 (was -5dB -> -18.8
-    /// effective, now -8dB -> -21.8), quest-wait -14.30 (was -4dB -> -18.3 effective, now -7.5dB ->
-    /// -21.8), day-first-light -13.30 (-8.4dB -> -21.7; U6 also cut a ~6s and a ~9s near-total-silence
-    /// dropout the same generation left mid-file and at its tail — see the forensics doc — the raw
-    /// LUFS the trim targets barely moved, -13.30 -> -13.32, since loudnorm's own gating already
-    /// discounted near-silence), night-still -21.73 (praised original, TrimDb 0 — no boost needed).
-    /// This is a measured best-effort, not a verdict: the owner's in-game A/B
+    /// raws and the resulting effective (raw + TrimDb) level, current as of the true-peak fix above:
+    /// town-dusk -17.94 (-3.8dB -> -21.74), quest-wait -14.30 (-7.5dB -> -21.8, unchanged), day-first-
+    /// light -14.82 (-6.9dB -> -21.72), night-still -21.73 (praised original, TrimDb 0 — no boost
+    /// needed, unchanged). This is a measured best-effort, not a verdict: the owner's in-game A/B
     /// (<see cref="_UnhandledKeyInput"/>) is what actually confirms "comparable." <b>No entry may
     /// ever carry a positive TrimDb again</b> (R7/KTD-F) — <see cref="ComposedTrackTrims"/> is the
     /// census surface <c>AudioTests</c> pins that against.</para>
     /// </summary>
     private static readonly Dictionary<DayPhase, ComposedTrack> ComposedTracks = new()
     {
-        [DayPhase.Morning] = new ComposedTrack("day-first-light", "res://assets/audio/day-first-light.mp3", TrimDb: -8.4f),
-        [DayPhase.Evening] = new ComposedTrack("town-dusk", "res://assets/audio/town-dusk.mp3", TrimDb: -8f),
+        [DayPhase.Morning] = new ComposedTrack("day-first-light", "res://assets/audio/day-first-light.mp3", TrimDb: -6.9f),
+        [DayPhase.Evening] = new ComposedTrack("town-dusk", "res://assets/audio/town-dusk.mp3", TrimDb: -3.8f),
         [DayPhase.Camp] = new ComposedTrack("night-still", "res://assets/audio/night-still.mp3", TrimDb: 0f),
         [DayPhase.Expedition] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.mp3", TrimDb: -7.5f),
         [DayPhase.ExpeditionDeep] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.mp3", TrimDb: -7.5f),
