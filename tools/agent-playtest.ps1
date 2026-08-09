@@ -58,7 +58,16 @@ param(
 $ErrorActionPreference = 'Stop'
 
 function Say($text)  { Write-Host ('agent-playtest: ' + $text) -ForegroundColor Cyan }
-function Warn($text) { Write-Host ('agent-playtest: ' + $text) -ForegroundColor Yellow }
+function Warn($text) {
+    Write-Host ('agent-playtest: ' + $text) -ForegroundColor Yellow
+    # This is the whole point of A1: warnings used to go to the console only, so an unattended
+    # run that degraded overnight left no record of it. $driverLog is a script-scope path set
+    # once near the top of the file; Warn is never called before that assignment runs.
+    if ($driverLog) {
+        $line = '[' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '] ' + $text
+        try { Add-Content -Path $driverLog -Value $line -Encoding utf8 } catch { }
+    }
+}
 function Die($lines) {
     Write-Host ''
     Write-Host ('AGENT-PLAYTEST REFUSED: ' + $lines[0]) -ForegroundColor Red
@@ -95,9 +104,18 @@ function JsonEsc([string]$s) {
 
 function Invoke-Model($systemPrompt, $userText, $imagePath) {
     $imagesJson = ''
-    if ($imagePath -and (Test-Path $imagePath)) {
-        $b64 = [System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes($imagePath))
-        $imagesJson = ',"images":["' + $b64 + '"]'
+    if ($imagePath) {
+        if (Test-Path $imagePath) {
+            $b64 = [System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes($imagePath))
+            $imagesJson = ',"images":["' + $b64 + '"]'
+        } else {
+            # A caller that passed a path meant to attach a frame. A missing frame silently
+            # becoming a text-only request used to be invisible; now it is warned and counted
+            # by the caller via $imageMissingThisTurn. Callers that intentionally send no image
+            # (warm-up, judge pass) pass $null and never reach this branch.
+            $script:imageMissingThisTurn = $true
+            Warn ('frame missing at model-call time: ' + $imagePath + ' -- sending text-only request')
+        }
     }
 
     # num_ctx must be set explicitly. llava:7b defaults to a 4096-token context and ollama HARD
@@ -249,6 +267,13 @@ $stuckFindings = New-Object System.Collections.ArrayList
 $turn = 0
 $stopReason = 'turn budget reached'
 
+# A1 honesty counters. A run that mostly pressed advance must not read like a run the model
+# played -- these three numbers are what let the header and the exit code tell the difference.
+$modelDrivenTurns = 0
+$fallbackTurns = 0
+$imagelessTurns = 0
+$imageMissingThisTurn = $false
+
 function Wait-ForFile($path, $timeoutSec) {
     $deadline = (Get-Date).AddSeconds($timeoutSec)
     while ((Get-Date) -lt $deadline) {
@@ -357,6 +382,7 @@ try {
             ) -join [Environment]::NewLine
 
             $attempts = 0
+            $imageMissingThisTurn = $false
             while ($attempts -lt 3 -and -not $command) {
                 $attempts++
                 $reply = ''
@@ -402,7 +428,11 @@ try {
             if (-not $command) {
                 $command = '{"action":"advance","why":"driver fallback: model gave no usable command"}'
                 Warn 'falling back to advance'
+                $fallbackTurns++
+            } else {
+                $modelDrivenTurns++
             }
+            if ($imageMissingThisTurn) { $imagelessTurns++ }
         }
 
         $parsedCmd = $command | ConvertFrom-Json
@@ -425,6 +455,20 @@ try {
 
 Say ('stopped after ' + $turn + ' turns: ' + $stopReason)
 
+# A1: this is the number the whole unit exists to produce. "The model played N turns" and "the
+# model failed N times and the driver pressed advance N times" used to write an identical
+# findings.md and an identical exit code. They no longer do.
+$degradeFloor = 0.25
+$fallbackRatio = 0.0
+if ($turn -gt 0) { $fallbackRatio = [double]$fallbackTurns / [double]$turn }
+$degraded = ($turn -gt 0) -and ($fallbackRatio -gt $degradeFloor)
+$fallbackPct = [math]::Round($fallbackRatio * 100, 1)
+
+Say ('model-driven turns: ' + $modelDrivenTurns + ', fallback turns: ' + $fallbackTurns + ' (' + $fallbackPct + '%), imageless turns: ' + $imagelessTurns + ' of ' + $turn + ' total')
+if ($degraded) {
+    Warn ('DEGRADED: fallback ratio ' + $fallbackPct + '% exceeds the ' + ($degradeFloor * 100) + '% floor -- this run mostly pressed advance, not played')
+}
+
 # --- Judge pass ---------------------------------------------------------------------------------
 $fullLog = ''
 if (Test-Path $turnlogPath) { $fullLog = Get-Content $turnlogPath -Raw }
@@ -441,14 +485,29 @@ if ($log.Length -gt $judgeCap) {
     Say ('judge input trimmed to last ' + $judgeCap + ' chars of ' + $fullLog.Length)
 }
 
+$titleLine = '# Agent playtest findings'
+if ($degraded) { $titleLine = '# DEGRADED -- agent playtest findings' }
+
 $header = @(
-    '# Agent playtest findings',
+    $titleLine,
     '',
     ('- model: ' + $Model),
     ('- turns: ' + $turn + ' (stopped: ' + $stopReason + ')'),
+    ('- model-driven turns: ' + $modelDrivenTurns),
+    ('- fallback turns: ' + $fallbackTurns + ' (' + $fallbackPct + '% of total)'),
+    ('- imageless turns: ' + $imagelessTurns),
     ('- artifacts: ' + $OutDir),
     ''
 )
+if ($degraded) {
+    $header = @(
+        ('DEGRADED: ' + $fallbackTurns + ' of ' + $turn + ' turns (' + $fallbackPct + '%) fell back to ' +
+         '"advance" because the model gave no usable command. That is over the ' + ($degradeFloor * 100) +
+         '% floor -- this run mostly pressed advance, not played, and its findings below should be read ' +
+         'with that in mind.'),
+        ''
+    ) + $header
+}
 
 # A run that played NOTHING is a failure, whatever mode it was in. The first scripted run sat for 90s
 # on a client that had never been asked to play, then printed "scripted run complete" and exited 0 --
@@ -540,5 +599,9 @@ Warn 'names something a human would also flag. Vacuous praise means the prompts 
 Warn 'the game is fine.'
 if ($unsupported.Count -gt 0) {
     Warn 'At least one finding quotes text the agent never saw -- see the fabrication guard above.'
+}
+if ($degraded) {
+    Warn ('DEGRADED run: ' + $fallbackTurns + ' of ' + $turn + ' turns (' + $fallbackPct + '%) were the driver pressing advance, not the model playing. Exiting non-zero.')
+    exit 1
 }
 exit 0
