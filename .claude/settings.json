@@ -1,5 +1,5 @@
 {
-  "_comment": "Project-wide Claude Code permission baseline (checked in) — every session AND background subagent on this repo inherits allow/deny (confirmed: sub-agents inherit the parent's rules). Personal extras go in .claude/settings.local.json (gitignored). Scope: build/test/git/gh, common read-only pipe helpers, pinned Godot + ComfyUI + Ollama local tooling, docs-research web domains. IMPORTANT for agents: NEVER cd-prefix commands (a compound is permission-checked per-subcommand, and `cd <path>` is a Read-path check) — use `git -C <abs>`, `gh --repo`, absolute paths, and the Monitor tool instead of `for`/`sleep` poll loops. deny block below is the hard destructive-op boundary (no rm/del, no non-localhost curl). 2026-08-02: added the automation GLUE an unattended run needs — jq/comm/diff/tee/xargs/basename/dirname/date/stat/touch/mv, true/false, the Windows-path form of the Godot binary (the /c/Tools form did not cover `C:/Tools/...`), and the PowerShell verbs the art/receipt scripts use. Deployment itself (git/gh/dotnet/godot) was already allowed; overnight runs were stalling on the helpers around it, not on the deploy. The rm/del deny is deliberate and was NOT relaxed — agents that need scratch cleanup should write to $CLAUDE_JOB_DIR/tmp or leave the file and say so.",
+  "_comment": "Project-wide Claude Code permission baseline (checked in) — every session AND background subagent on this repo inherits allow/deny (confirmed: sub-agents inherit the parent's rules). Personal extras go in .claude/settings.local.json (gitignored). Scope: build/test/git/gh, common read-only pipe helpers, pinned Godot + ComfyUI + Ollama local tooling, docs-research web domains. IMPORTANT for agents: NEVER cd-prefix commands (a compound is permission-checked per-subcommand, and `cd <path>` is a Read-path check) — use `git -C <abs>`, `gh --repo`, absolute paths, and the Monitor tool instead of `for`/`sleep` poll loops. deny block below is the hard destructive-op boundary (no rm/del, no non-localhost curl). 2026-08-02: added the automation GLUE an unattended run needs — jq/comm/diff/tee/xargs/basename/dirname/date/stat/touch/mv, true/false, the Windows-path form of the Godot binary (the /c/Tools form did not cover `C:/Tools/...`), and the PowerShell verbs the art/receipt scripts use. Deployment itself (git/gh/dotnet/godot) was already allowed; overnight runs were stalling on the helpers around it, not on the deploy. 2026-08-09 (owner ruling): the blanket rm/del deny WAS relaxed, because it stopped real work — an agent could not delete its own scratch file or a directory of already-ingested screenshots, and the workaround was to leave litter behind and apologise for it. Targeted deletes are now allowed; RECURSIVE deletes stay denied (rm -r / -rf / -fr, Remove-Item -Recurse). Deny outranks allow, so `rm scratch.txt` runs and `rm -rf <dir>` still stops and asks. That is where the danger actually lives: subagents run unattended in worktrees, one bad path variable in a recursive delete is unrecoverable, while a wrong single-file delete is one `git checkout` away. Do not 'simplify' this by deleting the deny block.",
   "permissions": {
     "allow": [
       "Bash(git *)",
@@ -86,17 +86,21 @@
       "Bash(python3 -c *)",
       "Bash(xargs *)",
       "Read(//c/Tools/**)",
-      "Edit(//c/Code/**)"
-    ],
-    "deny": [
+      "Edit(//c/Code/**)",
+
       "Bash(rm *)",
-      "Bash(rm -rf *)",
-      "Bash(rmdir *)",
       "Bash(del *)",
+      "Bash(rmdir *)",
       "PowerShell(Remove-Item *)",
       "PowerShell(rm *)",
-      "PowerShell(rmdir *)",
-      "PowerShell(del *)"
+      "PowerShell(del *)",
+      "PowerShell(rmdir *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(rm -r *)",
+      "Bash(rm -fr *)",
+      "PowerShell(Remove-Item -Recurse *)"
     ]
   },
   "enableAllProjectMcpServers": true,
