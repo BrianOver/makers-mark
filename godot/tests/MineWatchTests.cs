@@ -234,6 +234,110 @@ public class MineWatchTests
         }
     }
 
+    // ── repo fix/u8-mount-the-unmounted-props: venue props are MOUNTED, not merely resolvable ──
+    // ArtWiringCoverageTests.VenueProps_ResolveWithNormal already proves gloomwood-mushroom-
+    // cluster/gloomwood-toll-booth/sunkencrypt-donation-plate resolve to a texture through
+    // IconRegistry.Lit. That is a different claim from "something draws it" -- these three
+    // committed, normal-mapped props sat generated-but-unmounted (no scene ever instantiated
+    // them) until MineWatch.ApplyVenueProps, and the coverage test above could not have caught
+    // that gap because it never asked whether a scene drew anything. These tests walk the LIVE
+    // scene tree (Find<Sprite2D>/FindChild), the same technique CampPhase_ReadsInFlightHp... uses
+    // to prove a hero figure is actually there, not just that BuildFigureSprite didn't throw.
+
+    [TestCase]
+    public void Refresh_InFlightGloomwoodParty_MountsBothGloomwoodProps()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var camp = CampedParty() with { VenueId = "gloomwood" };
+            var state = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(camp) };
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            var mushroomCluster = Find<Sprite2D>(watch, "VenueProp_gloomwood-mushroom-cluster");
+            AssertThat(mushroomCluster.Texture).IsNotNull();
+            AssertThat(mushroomCluster.Visible).IsTrue();
+
+            var tollBooth = Find<Sprite2D>(watch, "VenueProp_gloomwood-toll-booth");
+            AssertThat(tollBooth.Texture).IsNotNull();
+            AssertThat(tollBooth.Visible).IsTrue();
+
+            // Sunken Crypt's own prop must never leak into a Gloomwood run.
+            AssertThat(watch.FindChild("VenueProp_sunkencrypt-donation-plate", recursive: true, owned: false))
+                .IsNull();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void Refresh_ResolvedSunkenCryptParty_MountsDonationPlate_ThroughTheArtIdMapping()
+    {
+        // Same art-id-mapping subtlety as Refresh_ResolvedSunkenCryptParty_SwapsBackdrop above
+        // (sim id "sunken-crypt", committed art id "sunkencrypt-donation-plate") -- the prop must
+        // mount through the very same VenuePropIdsByVenueId key BackdropVenueId reports, proving
+        // the two tables agree.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var result = new ExpeditionResult(
+                Party: ImmutableList.Create(new HeroId(1)), TargetFloor: 1, DeepestFloorCleared: 1,
+                Floors: ImmutableList<FloorOutcome>.Empty, Survivors: ImmutableList.Create(new HeroId(1)),
+                Deaths: ImmutableList<HeroId>.Empty, Beats: ImmutableList<AttributionBeat>.Empty,
+                Loot: ImmutableList<OreLoot>.Empty, GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty,
+                VenueId: "sunken-crypt");
+            var state = StagedWorld() with { Phase = DayPhase.Camp, PendingExpeditions = ImmutableList.Create(result) };
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            var donationPlate = Find<Sprite2D>(watch, "VenueProp_sunkencrypt-donation-plate");
+            AssertThat(donationPlate.Texture).IsNotNull();
+            AssertThat(donationPlate.Visible).IsTrue();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void Refresh_VenueSwapsAway_UnmountsThePreviousVenuesProps()
+    {
+        // Regression guard for ApplyVenueProps' own clear-then-rebuild contract, mirroring
+        // Refresh_VenueUnchanged_NeverRebuildsBackdropTiles below for the backdrop itself -- a
+        // party's venue props must not survive into the NEXT venue's strip (the Mine owns none).
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var gloomwoodCamp = CampedParty() with { VenueId = "gloomwood" };
+            var gloomwoodState = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(gloomwoodCamp) };
+            watch.Refresh(gloomwoodState, ImmutableList<GameEvent>.Empty);
+            AssertThat(watch.FindChild("VenueProp_gloomwood-mushroom-cluster", recursive: true, owned: false))
+                .IsNotNull();
+
+            var mineCamp = CampedParty(); // VenueId "mine" -- owns no props
+            var mineState = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(mineCamp) };
+            watch.Refresh(mineState, ImmutableList<GameEvent>.Empty);
+
+            AssertThat(watch.FindChild("VenueProp_gloomwood-mushroom-cluster", recursive: true, owned: false))
+                .OverrideFailureMessage("Gloomwood's mushroom cluster survived a venue swap back to the Mine.")
+                .IsNull();
+            AssertThat(watch.FindChild("VenueProp_gloomwood-toll-booth", recursive: true, owned: false))
+                .OverrideFailureMessage("Gloomwood's toll booth survived a venue swap back to the Mine.")
+                .IsNull();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
     [TestCase]
     public void Refresh_VenueUnchanged_NeverRebuildsBackdropTiles()
     {

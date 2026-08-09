@@ -78,6 +78,7 @@ public partial class MineWatch : SubViewportContainer
     private const float HeroTargetWidth = 64f;
     private const float FigureSpacing = 86f;
     private const float MonsterTargetWidth = 160f;
+    private const float PropTargetWidth = 80f; // smaller than a monster, bigger than a hero — background scenery
     private const float MilestoneSeconds = 2.6f;
     private const float LowHpFraction = 0.4f; // below this, a camped hero's pose slumps
     private const float SlumpOffsetY = 14f;
@@ -130,6 +131,30 @@ public partial class MineWatch : SubViewportContainer
         "cave-rat", "tunnel-spider", "deep-ghoul", "ore-golem", "forgeworm",
     ];
 
+    /// <summary>Fixed screen-space anchor slots for venue-specific static Prop decoration (never
+    /// random — determinism/testability, repo convention): index 0 holds a venue's first prop id,
+    /// index 1 its second. Extend this before any venue needs a 3rd.</summary>
+    private static readonly Vector2[] VenuePropSlots =
+    [
+        new(70f, StripHeight - 30f),
+        new(954f, StripHeight - 50f),
+    ];
+
+    /// <summary>Committed Prop ids (art wave, <c>GloomwoodSpecs.cs</c>/<c>SunkenCryptSpecs.cs</c>)
+    /// per RAIDED (sim) venue id — three generated, normal-mapped props that resolved through
+    /// <c>ArtWiringCoverageTests.VenueProps_ResolveWithNormal</c> but nothing ever drew them until
+    /// this table (repo <c>fix/u8-mount-the-unmounted-props</c>): "an id resolves to a texture" and
+    /// "something draws it" had silently drifted apart. Keyed by the SAME sim venue id <see
+    /// cref="ResolveVenueId"/>/<see cref="BackdropVenueId"/> already report ("sunken-crypt", not
+    /// "sunkencrypt" — see <see cref="AssetCatalog.VenueArtId"/>'s own split); each prop id's own
+    /// art-side prefix is already baked into the literal, so no further mapping is needed here.</summary>
+    private static readonly ImmutableDictionary<string, string[]> VenuePropIdsByVenueId =
+        ImmutableDictionary.CreateRange(new[]
+        {
+            KeyValuePair.Create("gloomwood", new[] { "gloomwood-mushroom-cluster", "gloomwood-toll-booth" }),
+            KeyValuePair.Create("sunken-crypt", new[] { "sunkencrypt-donation-plate" }),
+        });
+
     private readonly record struct Figure(Sprite2D Sprite, Vector2 BasePosition, float Phase, HeroId HeroId);
 
     private SubViewport _viewport = null!;
@@ -138,6 +163,11 @@ public partial class MineWatch : SubViewportContainer
     private Texture2D? _backdropTexture;
     private readonly List<Sprite2D> _backdropTiles = [];
     private float _backdropContainerWidth = -1f; // -1 forces the first RebuildBackdropTiles call
+
+    /// <summary>Static Prop decoration mounted for the strip's current raided venue (see
+    /// <see cref="VenuePropIdsByVenueId"/>/<see cref="ApplyVenueProps"/>) — empty for the Mine or
+    /// any venue with no entry there.</summary>
+    private readonly List<Sprite2D> _venueProps = [];
 
     /// <summary>U9 (KTD-4): which venue's art the backdrop currently shows — starts at the Mine
     /// (matches <see cref="Build()"/>'s own default) and swaps via <see cref="ApplyVenueBackdrop"/>
@@ -341,6 +371,11 @@ public partial class MineWatch : SubViewportContainer
 
         _monsterSlide = new Sprite2D { Name = "MonsterSlide", Visible = false, Modulate = MonsterTint };
         _world.AddChild(_monsterSlide);
+
+        // repo fix/u8-mount-the-unmounted-props: mount whatever venue props this strip's current
+        // backdrop venue owns — "mine" (the default here) has none, so this is a no-op until
+        // ApplyVenueBackdrop later swaps to a venue that does.
+        ApplyVenueProps(_backdropVenueId);
 
         _recordBark = new Label
         {
@@ -991,6 +1026,7 @@ public partial class MineWatch : SubViewportContainer
         _backdropVenueId = venueId;
         _backdropTexture = IconRegistry.Art(AssetCatalog.VenueBackdropId(venueId));
         HasContent = _backdropTexture is not null;
+        ApplyVenueProps(venueId);
 
         if (HasContent)
         {
@@ -1006,6 +1042,57 @@ public partial class MineWatch : SubViewportContainer
 
         _backdropTiles.Clear();
         _backdropContainerWidth = -1f; // force a rebuild if a later venue's art resolves
+    }
+
+    /// <summary>
+    /// (Re)builds <see cref="_venueProps"/> for <paramref name="venueId"/> — clears whatever the
+    /// PREVIOUS venue mounted (a venue absent from <see cref="VenuePropIdsByVenueId"/>, like the
+    /// Mine, ends up with zero), then mounts each of its committed prop ids at its own fixed
+    /// <see cref="VenuePropSlots"/> anchor. Lit exactly like a hero/monster figure — the resolved
+    /// <see cref="CanvasTexture"/> assigned straight to <see cref="Sprite2D.Texture"/>, so the
+    /// strip's own Light2D/CanvasModulate world picks up the committed normal map automatically
+    /// (same technique as <see cref="BuildFigureSprite"/>; no special normal-map handling needed
+    /// beyond that one assignment). Added to <see cref="_world"/> AFTER the backdrop/lights/FX
+    /// nodes <see cref="Build(string)"/> already built and BEFORE this same <see cref="Refresh"/>
+    /// call rebuilds this tick's hero figures (<see cref="RenderMarch"/>/<see cref="RenderCamp"/>
+    /// always run after <see cref="ApplyVenueBackdrop"/>) — so a prop always draws in front of the
+    /// scrolling backdrop and behind whichever heroes are currently marching past it. A missing
+    /// prop id degrades that ONE slot only (skipped, never a crash), the same graceful-degrade
+    /// contract every other resolver in this file follows.
+    /// </summary>
+    private void ApplyVenueProps(string venueId)
+    {
+        foreach (var sprite in _venueProps)
+        {
+            _world.RemoveChild(sprite);
+            sprite.Free();
+        }
+
+        _venueProps.Clear();
+
+        if (!VenuePropIdsByVenueId.TryGetValue(venueId, out var propIds))
+        {
+            return;
+        }
+
+        for (var i = 0; i < propIds.Length && i < VenuePropSlots.Length; i++)
+        {
+            var lit = IconRegistry.Lit(propIds[i]);
+            if (lit is null)
+            {
+                continue; // graceful degrade — an ungenerated prop id skips its slot, never a crash
+            }
+
+            var sprite = new Sprite2D
+            {
+                Name = $"VenueProp_{propIds[i]}",
+                Texture = lit,
+                Position = VenuePropSlots[i],
+            };
+            ScaleToWidth(sprite, lit, PropTargetWidth);
+            _world.AddChild(sprite);
+            _venueProps.Add(sprite);
+        }
     }
 
     // ── build helpers ────────────────────────────────────────────────────────────────────────
