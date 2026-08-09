@@ -409,11 +409,19 @@ public partial class ShopPanel : SimPanel
             var card = Card($"RivalCard_{entry.Item.Value}");
             section.Body.AddChild(card);
             var headerRow = AddRow(card);
+            // U7 (proof-the-player-never-sees plan): rival items resolve through a CATEGORY icon
+            // (IconRegistry.RivalCategoryArtId, keyed on ItemSlot) rather than
+            // AssetCatalog.ItemIconId(item.RecipeId) — the recipe id is a synthetic catalog key
+            // ("rival-blade-2") with no committed art and never will have per-id art (see that
+            // method's own doc), so composing it here always hit ArtRect's placeholder branch.
+            // IconRegistry.Slot(item.Slot) stays as the defensive fallback glyph for the
+            // placeholder box, same as before, in the impossible case the category PNG is ever
+            // missing from a checkout.
             headerRow.AddChild(ArtRect(
-                AssetCatalog.ItemIconId(item.RecipeId), new Vector2(ItemArtSize, ItemArtSize),
+                IconRegistry.RivalCategoryArtId(item.Slot), new Vector2(ItemArtSize, ItemArtSize),
                 // Caption restored (item.Name): on a manifest MISS this is the ONLY place the
                 // placeholder's caption comes from — dropping it here would show the raw asset
-                // key (e.g. "item-rival-blade-2") instead of the item name. On a HIT it now also
+                // key (e.g. "item-rival-weapon") instead of the item name. On a HIT it now also
                 // renders under the icon (ArtRect's real-art branch honors it) alongside the
                 // fuller infoCol line below — a little redundant, never wrong or ugly.
                 IconRegistry.Slot(item.Slot), item.Name));

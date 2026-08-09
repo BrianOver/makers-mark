@@ -1,4 +1,5 @@
 #if GDUNIT_TESTS
+using GameSim.Contracts;
 using GdUnit4;
 using Godot;
 using GodotClient;
@@ -110,6 +111,30 @@ public class ArtWiringCoverageTests
 
             // Edge: item icons are flat menu art (AssetSpec.NormalMap=false) — Lit still degrades
             // to a diffuse-only CanvasTexture (lights read flat), never null/crash.
+            AssertThat(AssetCatalog.HasNormal(id)).IsFalse();
+            var lit = IconRegistry.Lit(id);
+            AssertThat(lit).IsNotNull();
+            AssertThat(lit!.DiffuseTexture).IsNotNull();
+            AssertThat(lit.NormalTexture).IsNull();
+        }
+    }
+
+    /// <summary>
+    /// U7 (proof-the-player-never-sees plan): the rival shelf's three CATEGORY icons (<see
+    /// cref="IconRegistry.RivalCategoryArtId"/>, one per <c>ItemSlot</c> — weapon/shield/armor,
+    /// never one per synthetic <c>RivalCatalog</c> entry id) — same flat-menu-art, no-normal
+    /// contract as <see cref="ItemIcons_OnePerProfession_ResolveAndHaveNoNormal"/> above, since
+    /// these render through the exact same <c>ShopPanel</c> <c>ArtRect</c> call.
+    /// </summary>
+    [TestCase]
+    public void RivalCategoryIcons_OnePerSlot_ResolveAndHaveNoNormal()
+    {
+        foreach (var slot in new[] { ItemSlot.Weapon, ItemSlot.Shield, ItemSlot.Armor })
+        {
+            var id = IconRegistry.RivalCategoryArtId(slot);
+            AssertThat(IconRegistry.Art(id)).IsNotNull();
+            AssertThat(AssetCatalog.Has(id)).IsTrue();
+
             AssertThat(AssetCatalog.HasNormal(id)).IsFalse();
             var lit = IconRegistry.Lit(id);
             AssertThat(lit).IsNotNull();
