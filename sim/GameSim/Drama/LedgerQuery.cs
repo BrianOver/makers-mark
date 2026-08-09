@@ -49,7 +49,8 @@ public static class LedgerQuery
         var records = new Dictionary<int, int>();
         var earned = new Dictionary<int, int>();
 
-        foreach (var gameEvent in DayLog.For(state.EventLog, day))
+        var dayEvents = DayLog.For(state.EventLog, day);
+        foreach (var gameEvent in dayEvents)
         {
             switch (gameEvent)
             {
@@ -96,7 +97,7 @@ public static class LedgerQuery
             cards.Add(new ReturnCard(
                 new HeroId(heroValue), name, died is null, floor,
                 goldEarned, purse, heroBeats, heroOres,
-                FateLine(state.Rng.Inc, day, heroValue, name, died, floor, goldEarned)));
+                FateLine(state.Rng.Inc, day, heroValue, name, died, floor, goldEarned, dayEvents)));
         }
 
         return cards.ToImmutable();
@@ -109,6 +110,14 @@ public static class LedgerQuery
     /// a death card hashes on its stamped <see cref="HeroDied"/> event id (real, logged);
     /// a survivor card on <c>StableHash.Mix(day, heroId)</c> — deterministic and per-hero
     /// distinct without an event lookup. Draws no RNG (the engine API takes none).
+    ///
+    /// <para>U1 (attribution reaches the game): the causal sentence tying THIS hero's fate to
+    /// the day's Camp-phase decision — <see cref="CampNarration.Attribution"/> — is appended
+    /// when their party actually carried a live camp slate today. Every other surface (Godot's
+    /// LedgerModal included) reads only this field, never <c>GameSim.Cli</c>'s own console
+    /// print, so the clause has to live here to be seen by anyone but the CLI. A hero whose
+    /// party never opened a checkpoint window gets a null attribution and the flavor sentence
+    /// renders exactly as it always has — never a fabricated "you did nothing".</para>
     /// </summary>
     private static string FateLine(
         ulong campaignId,
@@ -117,22 +126,27 @@ public static class LedgerQuery
         string heroName,
         HeroDied? died,
         int floor,
-        int goldEarned)
+        int goldEarned,
+        ImmutableList<GameEvent> dayEvents)
     {
         var voice = VoiceProfile.VoiceFor(campaignId, heroValue);
-        return died is not null
+        var survived = died is null;
+        var flavor = survived
             ? FlavorEngine.Render(
-                LedgerPack.Pack,
-                LedgerPack.Died + FlavorEngine.KeySeparator + voice,
-                FlavorEngine.Slots(("hero", heroName), ("floor", Digits(floor))),
-                campaignId,
-                eventId: unchecked((ulong)died.Id.Value))
-            : FlavorEngine.Render(
                 LedgerPack.Pack,
                 LedgerPack.Survived + FlavorEngine.KeySeparator + voice,
                 FlavorEngine.Slots(("hero", heroName), ("floor", Digits(floor)), ("gold", Digits(goldEarned))),
                 campaignId,
-                eventId: StableHash.Mix(unchecked((ulong)day), unchecked((ulong)heroValue)));
+                eventId: StableHash.Mix(unchecked((ulong)day), unchecked((ulong)heroValue)))
+            : FlavorEngine.Render(
+                LedgerPack.Pack,
+                LedgerPack.Died + FlavorEngine.KeySeparator + voice,
+                FlavorEngine.Slots(("hero", heroName), ("floor", Digits(floor))),
+                campaignId,
+                eventId: unchecked((ulong)died!.Id.Value));
+
+        var attribution = CampNarration.Attribution(dayEvents, new HeroId(heroValue), survived);
+        return attribution is null ? flavor : $"{flavor} — {attribution}";
     }
 
     private static string Digits(int value) => value.ToString(CultureInfo.InvariantCulture);
