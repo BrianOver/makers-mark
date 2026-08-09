@@ -52,8 +52,8 @@ tools/FlavorForge/config.json
 # Untracked they show as dirty forever in Game/play, which makes a real change hard to spot.
 playTest_Images/
 
-# tools/agent-playtest.ps1's run artifacts (state/frame/turnlog/findings) - per-run, per-machine.
-# The findings worth keeping get committed to docs/playtests/ deliberately.
+# tools/agent-playtest.ps1's run artifacts (state/frame/turnlog/findings/playtest-log.jsonl) -
+# per-run, per-machine. The findings worth keeping get committed to docs/playtests/ deliberately.
 .claude/agent-playtest/
 
 # Python bytecode from the art generators (tools/art/*.py)

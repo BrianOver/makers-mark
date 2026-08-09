@@ -164,8 +164,15 @@ $framePath   = Join-Path $OutDir 'frame.png'
 $turnlogPath = Join-Path $OutDir 'turnlog.md'
 $findingsPath= Join-Path $OutDir 'findings.md'
 $driverLog   = Join-Path $OutDir 'driver.log'
+# PlaytestLog.cs's JSONL trail (day/phase/beat/cause per tick, one row per player action) -- the
+# client writes this itself once MM_PLAYTEST_LOG names a path (set on the launched process below).
+# Before this, the harness's own explicit "advance" turns and the client's real button presses left
+# NO reconstructable trail at all -- only this script's own turnlog.md, which never saw inside the
+# client (no phase/beat/cause, no immediate actions). Same directory as everything else this run
+# produces, so one folder answers "what happened in this run".
+$playtestLogPath = Join-Path $OutDir 'playtest-log.jsonl'
 
-foreach ($stale in @($statePath, $cmdPath, $framePath, $turnlogPath, $findingsPath, $driverLog)) {
+foreach ($stale in @($statePath, $cmdPath, $framePath, $turnlogPath, $findingsPath, $driverLog, $playtestLogPath)) {
     if (Test-Path $stale) { Move-Item $stale ($stale + '.prev') -Force }
 }
 
@@ -245,7 +252,11 @@ if (-not (Test-Path $godot)) { Die @(('Godot not found at ' + $godot + '. Set GO
 
 $env:AGENT_PLAYTEST = '1'
 $env:AGENT_PLAYTEST_DIR = $OutDir
-Say ('launching client (out: ' + $OutDir + ')')
+# PlaytestLog.cs (godot/scripts/PlaytestLog.cs) is opt-in, gated on this var alone -- unset, an
+# automated run left NO reconstructable trail of what the client actually did (day/phase/beat,
+# every action, every phase transition and its cause), only this script's own turn-by-turn digest.
+$env:MM_PLAYTEST_LOG = $playtestLogPath
+Say ('launching client (out: ' + $OutDir + ', playtest log: ' + $playtestLogPath + ')')
 # The SCENE must be named explicitly. `--path godot` alone boots the game's main scene, so the
 # bridge never runs and the driver waits out its timeout on a client that was never asked to play --
 # measured on the first scripted run, which sat for 90s and then reported "scripted run complete".
@@ -451,6 +462,7 @@ try {
     }
     $env:AGENT_PLAYTEST = ''
     $env:AGENT_PLAYTEST_DIR = ''
+    $env:MM_PLAYTEST_LOG = ''
 }
 
 Say ('stopped after ' + $turn + ' turns: ' + $stopReason)
@@ -497,6 +509,7 @@ $header = @(
     ('- fallback turns: ' + $fallbackTurns + ' (' + $fallbackPct + '% of total)'),
     ('- imageless turns: ' + $imagelessTurns),
     ('- artifacts: ' + $OutDir),
+    ('- playtest log (day/phase/beat/cause per tick, every action): ' + $playtestLogPath),
     ''
 )
 if ($degraded) {
