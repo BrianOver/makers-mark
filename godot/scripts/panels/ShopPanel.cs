@@ -115,8 +115,49 @@ public partial class ShopPanel : SimPanel
         var passesToday = PassesToday(state);
 
         BuildShelfSection(state, passesToday);
+        BuildForecastSection(state);
         BuildUnshelvedSection(state);
         BuildRivalSection(state);
+    }
+
+    /// <summary>
+    /// U2 (plan "who would buy this"): surfaces <see cref="HeroForecast.ForShelfAsItStands"/> —
+    /// the same "as the shelf stands" shadow-tick the CLI's hero card already prints
+    /// (<c>Program.PrintHeroCard</c>) — for every living hero, right where the player is standing
+    /// when they make the sell-the-good-one-or-hold-it-for-the-hero-who-needs-it call. Read-only:
+    /// no action queued, no sim mutation, recomputed fresh every <see cref="Refresh"/> off the
+    /// live <c>state</c> so it can never go stale against a reprice/stock/unstock that just landed.
+    ///
+    /// <para>Wording is deliberately the CLI's own ("as the shelf stands: would buy X — reason" /
+    /// "would buy nothing — reason") with only the hero's name prefixed — two phrasings of one
+    /// forecast is a drift bug waiting to happen.</para>
+    /// </summary>
+    private void BuildForecastSection(GameState state)
+    {
+        var section = Section("Who Would Buy This");
+        _content!.AddChild(section.Root);
+
+        if (state.Player.Shelf.IsEmpty)
+        {
+            AddLabel(section.Body, "Nothing on the shelf to forecast — stock something first.");
+            return;
+        }
+
+        var aliveHeroes = state.Heroes.Values.Where(h => h.Alive).ToList();
+        if (aliveHeroes.Count == 0)
+        {
+            AddLabel(section.Body, "  (no heroes in town to forecast for)");
+            return;
+        }
+
+        foreach (var hero in aliveHeroes)
+        {
+            var forecast = HeroForecast.ForShelfAsItStands(state, hero.Id);
+            var heroName = HeroName(hero.Id);
+            AddLabel(section.Body, forecast.WouldBuy
+                ? $"  {heroName} — as the shelf stands: would buy {forecast.ItemName} — {forecast.Reason}"
+                : $"  {heroName} — as the shelf stands: would buy nothing — {forecast.Reason}");
+        }
     }
 
     /// <summary>The day's pass-reasons, grouped per item (R8/AE4 — the legible half).</summary>

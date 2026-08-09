@@ -465,5 +465,85 @@ public class ShopPanelTests
             Unmount(ui);
         }
     }
+
+    // ── U2 (plan "who would buy this"): HeroForecast.ForShelfAsItStands surfaced read-only ─────
+    // (sim/GameSim/Advisor/HeroForecast.cs) — was called by the CLI's hero card and by nothing in
+    // the Godot client, so the player was choosing sell-or-hold blind while the sim already knew
+    // the answer. Same forecast-exactness guarantee the sim tests pin (HeroForecastTests.cs):
+    // this only proves the PRESENTATION reads it correctly, never re-derives the verdict itself.
+
+    [TestCase]
+    public void ForecastSection_KnownHeroAndKnownItem_RendersAForecastRowNamingBoth()
+    {
+        var ui = MountMainUi(new SimAdapter(KnownBuyerAndItemState()));
+        try
+        {
+            var shopText = RenderedText(ui.Shop);
+            AssertThat(shopText).Contains("Who Would Buy This");
+            AssertThat(shopText).Contains(KnownForecastHeroName);
+            AssertThat(shopText).Contains(KnownForecastItemName);
+            AssertThat(shopText).Contains($"as the shelf stands: would buy {KnownForecastItemName}");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void FreshCampaign_EmptyShelf_ForecastSection_RendersHonestEmptyState_NotBlank()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(ui.Adapter.CurrentState.Player.Shelf.IsEmpty).IsTrue();
+
+            var shopText = RenderedText(ui.Shop);
+            AssertThat(shopText).Contains("Who Would Buy This");
+            AssertThat(shopText).Contains("Nothing on the shelf to forecast");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    private const string KnownForecastHeroName = "Torvald the Forecast Buyer";
+    private const string KnownForecastItemName = "Sunfire Blade";
+    private static readonly ItemId KnownForecastItemId = new(93011);
+
+    /// <summary>One hero (empty gear, plentiful gold, weapon-eligible class), one shelf item
+    /// (an affordable strict upgrade), rival shelf cleared so nothing else competes for the buy —
+    /// same shape as <c>HeroForecastTests.Forecast_PredictsTheExactItemTheRealSystemThenBuys</c>
+    /// (sim/GameSim.Tests/Heroes/HeroForecastTests.cs), so the forecast is guaranteed a Buy verdict
+    /// rather than hoping the default roster happens to want this item.</summary>
+    private static GameState KnownBuyerAndItemState()
+    {
+        var baseState = GameComposition.NewCampaign(9301);
+        var item = new Item(
+            KnownForecastItemId, "test-forecast-sword", KnownForecastItemName, ItemSlot.Weapon,
+            QualityGrade.Common, new ItemStats(Attack: 8, Defense: 0, Weight: 3),
+            new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+        var buyer = baseState.Heroes.Values.First();
+        var heroes = baseState.Heroes.SetItem(
+            buyer.Id.Value,
+            buyer with
+            {
+                Name = KnownForecastHeroName,
+                ClassId = "vanguard",
+                Gold = 100,
+                Gear = GearSet.Empty,
+                DeepestFloorReached = 0,
+            });
+
+        return baseState with
+        {
+            Heroes = heroes,
+            RivalShelf = ImmutableList<ShelfEntry>.Empty,
+            Items = baseState.Items.Add(item.Id.Value, item),
+            Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(item.Id, 20)) },
+        };
+    }
 }
 #endif
