@@ -375,6 +375,56 @@ public class EngineeringBenchTests
         }
     }
 
+    // ── C2 (input substrate plan): crank_stroke/confirm/pull_part are InputMap actions ─────────
+
+    [TestCase]
+    public void CrankStrokeAction_FollowsARebind_TheOldPhysicalKeyStopsWorking()
+    {
+        WithTemporaryBinding("crank_stroke", new InputEventKey { PhysicalKeycode = Godot.Key.F }, () =>
+        {
+            var bench = new EngineeringBench();
+            try
+            {
+                bench.Configure(Tier1Recipe, "copper", Engineering, ImmutableSortedSet<string>.Empty);
+                var canvas = Find<Control>(bench, "BenchCanvas");
+
+                // The key this canvas used to hard-match (Space) must now be a no-op...
+                Key(canvas, Godot.Key.Space);
+                AssertThat(bench.CrankProgressPermille).IsEqual(0);
+
+                // ...and the NEWLY bound physical key fires the exact same CrankStroke behaviour.
+                Key(canvas, Godot.Key.F);
+                AssertThat(bench.CrankProgressPermille).IsEqual(1000 / EngineeringBench.CrankStrokesRequired);
+            }
+            finally
+            {
+                bench.Free();
+            }
+        });
+    }
+
+    [TestCase]
+    public void SeatButtonLabel_ReadsTheLiveInputMapBinding_NotAFrozenLiteral()
+    {
+        WithTemporaryBinding("confirm", new InputEventKey { PhysicalKeycode = Godot.Key.F }, () =>
+        {
+            var bench = new EngineeringBench();
+            try
+            {
+                bench.Configure(Tier1Recipe, "copper", Engineering, ImmutableSortedSet<string>.Empty);
+
+                // A prompt that hardcodes "(Enter)" would lie the instant a rebind screen moves this
+                // key — this is the exact defect C2 exists to close before any rebind UI ships.
+                var seatButton = Find<Button>(bench, "EngineeringBenchSeat");
+                AssertThat(seatButton.Text).IsEqual("Seat (F)");
+            }
+            finally
+            {
+                bench.Free();
+            }
+        });
+    }
+
     [TestCase]
     public void EntirelyKeyboardDrivenAssembly_ProducesTheIdenticalPayload_AsDirectPlaceCalls()
     {
@@ -484,8 +534,11 @@ public class EngineeringBenchTests
 
     // ── helpers ────────────────────────────────────────────────────────────────────────────────
 
+    // PhysicalKeycode (not Keycode) — C2 standardised BenchCanvas.HandleKey on InputMap actions
+    // registered by physical key, so a synthetic test event must set the same field a real keypress
+    // populates alongside Keycode.
     private static void Key(Control canvas, Key keycode) =>
-        canvas.EmitSignal(Control.SignalName.GuiInput, new InputEventKey { Keycode = keycode, Pressed = true, Echo = false });
+        canvas.EmitSignal(Control.SignalName.GuiInput, new InputEventKey { PhysicalKeycode = keycode, Pressed = true, Echo = false });
 
     private static CraftAction RunSeatingScript(Recipe recipe, System.Action<EngineeringBench> script)
     {

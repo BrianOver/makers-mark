@@ -488,12 +488,13 @@ public class TanningFrameTests
             viaKeyboard.Configure(HideRecipe, "copper", Tanning, ImmutableSortedSet<string>.Empty, TestDay);
             viaDirectCalls.Configure(HideRecipe, "copper", Tanning, ImmutableSortedSet<string>.Empty, TestDay);
 
-            // Right, Right, Down, Space — via real keyboard events.
-            viaKeyboard._GuiInput(new InputEventKey { Keycode = Key.Right, Pressed = true, Echo = false });
-            viaKeyboard._GuiInput(new InputEventKey { Keycode = Key.Right, Pressed = true, Echo = false });
-            viaKeyboard._GuiInput(new InputEventKey { Keycode = Key.Down, Pressed = true, Echo = false });
-            viaKeyboard._GuiInput(new InputEventKey { Keycode = Key.Space, Pressed = true, Echo = false });
-            viaKeyboard._GuiInput(new InputEventKey { Keycode = Key.Space, Pressed = true, Echo = false });
+            // Right, Right, Down, Space — via real keyboard events. PhysicalKeycode (not Keycode):
+            // C2 standardised _GuiInput on InputMap actions registered by physical key.
+            viaKeyboard._GuiInput(new InputEventKey { PhysicalKeycode = Key.Right, Pressed = true, Echo = false });
+            viaKeyboard._GuiInput(new InputEventKey { PhysicalKeycode = Key.Right, Pressed = true, Echo = false });
+            viaKeyboard._GuiInput(new InputEventKey { PhysicalKeycode = Key.Down, Pressed = true, Echo = false });
+            viaKeyboard._GuiInput(new InputEventKey { PhysicalKeycode = Key.Space, Pressed = true, Echo = false });
+            viaKeyboard._GuiInput(new InputEventKey { PhysicalKeycode = Key.Space, Pressed = true, Echo = false });
 
             // The SAME script via the direct seams the button row/a scripted test would call.
             viaDirectCalls.MoveCursor(1, 0);
@@ -526,7 +527,7 @@ public class TanningFrameTests
             viaKeyboard.ScrapeCell(2);
             viaDrag.ScrapeCell(2);
 
-            viaKeyboard._GuiInput(new InputEventKey { Keycode = Key.Enter, Pressed = true, Echo = false });
+            viaKeyboard._GuiInput(new InputEventKey { PhysicalKeycode = Key.Enter, Pressed = true, Echo = false });
 
             var canvas = Find<Control>(viaDrag, "HideCanvas");
             canvas.EmitSignal(Control.SignalName.GuiInput,
@@ -547,6 +548,55 @@ public class TanningFrameTests
         }
     }
 
+    // ── C2 (input substrate plan): scrape/confirm/move_* are InputMap actions, not raw keys ────
+
+    [TestCase]
+    public void ScrapeAction_FollowsARebind_TheOldPhysicalKeyStopsWorking()
+    {
+        WithTemporaryBinding("scrape", new InputEventKey { PhysicalKeycode = Key.F }, () =>
+        {
+            var frame = new GodotClient.Minigames.TanningFrame();
+            try
+            {
+                frame.Configure(HideRecipe, "copper", Tanning, ImmutableSortedSet<string>.Empty, TestDay);
+
+                // The key this overlay used to hard-match (Space) must now be a no-op...
+                frame._GuiInput(new InputEventKey { PhysicalKeycode = Key.Space, Pressed = true, Echo = false });
+                AssertThat(frame.CellPasses[frame.CursorIndex]).IsEqual(0);
+
+                // ...and the NEWLY bound physical key fires the exact same ScrapeFocusedCell behaviour.
+                frame._GuiInput(new InputEventKey { PhysicalKeycode = Key.F, Pressed = true, Echo = false });
+                AssertThat(frame.CellPasses[frame.CursorIndex]).IsEqual(1);
+            }
+            finally
+            {
+                frame.Free();
+            }
+        });
+    }
+
+    [TestCase]
+    public void ScrapeButtonLabel_ReadsTheLiveInputMapBinding_NotAFrozenLiteral()
+    {
+        WithTemporaryBinding("scrape", new InputEventKey { PhysicalKeycode = Key.F }, () =>
+        {
+            var frame = new GodotClient.Minigames.TanningFrame();
+            try
+            {
+                frame.Configure(HideRecipe, "copper", Tanning, ImmutableSortedSet<string>.Empty, TestDay);
+
+                // A prompt that hardcodes "(Space)" would lie the instant a rebind screen moves this
+                // key — this is the exact defect C2 exists to close before any rebind UI ships.
+                var scrapeButton = Find<Button>(frame, "ScrapeFocusedCell");
+                AssertThat(scrapeButton.Text).IsEqual("Scrape (F)");
+            }
+            finally
+            {
+                frame.Free();
+            }
+        });
+    }
+
     [TestCase]
     public void ArrowKeys_ClampAtGridEdges_ThroughTheRealGuiInputSeam()
     {
@@ -555,8 +605,8 @@ public class TanningFrameTests
         {
             frame.Configure(HideRecipe, "copper", Tanning, ImmutableSortedSet<string>.Empty, TestDay);
 
-            frame._GuiInput(new InputEventKey { Keycode = Key.Left, Pressed = true, Echo = false });
-            frame._GuiInput(new InputEventKey { Keycode = Key.Up, Pressed = true, Echo = false });
+            frame._GuiInput(new InputEventKey { PhysicalKeycode = Key.Left, Pressed = true, Echo = false });
+            frame._GuiInput(new InputEventKey { PhysicalKeycode = Key.Up, Pressed = true, Echo = false });
             AssertThat(frame.CursorIndex).IsEqual(0); // already at the top-left corner
         }
         finally

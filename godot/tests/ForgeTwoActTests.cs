@@ -442,6 +442,59 @@ public class ForgeTwoActTests
         }
     }
 
+    // ── C2 (input substrate plan): plunge is an InputMap action, not a raw key ──────────────────
+
+    [TestCase]
+    public void PlungeAction_FollowsARebind_TheOldPhysicalKeyStopsWorking()
+    {
+        WithTemporaryBinding("plunge", new InputEventKey { PhysicalKeycode = Key.F }, () =>
+        {
+            var quench = new QuenchMinigame();
+            try
+            {
+                var handoff = new ForgeMinigame.ShapingResult(
+                    ImmutableList<int>.Empty, ImmutableList<int>.Empty, PathSeed: 0, HeatYPermille: 500, StrikesLanded: 0);
+                quench.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, handoff);
+
+                // The keys this overlay used to hard-match (Space/Enter/KpEnter) must now be a no-op...
+                quench._GuiInput(new InputEventKey { PhysicalKeycode = Key.Space, Pressed = true, Echo = false });
+                AssertThat(quench.Completed).IsFalse();
+
+                // ...and the NEWLY bound physical key fires the exact same Plunge behaviour.
+                quench._GuiInput(new InputEventKey { PhysicalKeycode = Key.F, Pressed = true, Echo = false });
+                AssertThat(quench.Completed).IsTrue();
+            }
+            finally
+            {
+                quench.Free();
+            }
+        });
+    }
+
+    [TestCase]
+    public void PlungeButtonLabel_ReadsTheLiveInputMapBinding_NotAFrozenLiteral()
+    {
+        WithTemporaryBinding("plunge", new InputEventKey { PhysicalKeycode = Key.F }, () =>
+        {
+            var quench = new QuenchMinigame();
+            try
+            {
+                var handoff = new ForgeMinigame.ShapingResult(
+                    ImmutableList<int>.Empty, ImmutableList<int>.Empty, PathSeed: 0, HeatYPermille: 500, StrikesLanded: 0);
+                quench.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, handoff);
+
+                // A prompt that hardcodes "(Space)" would lie the instant a rebind screen moves this
+                // key — this is the exact defect C2 exists to close before any rebind UI ships.
+                var plungeButton = Find<Button>(quench, "QuenchPlunge");
+                AssertThat(plungeButton.Text).IsEqual("Plunge! (F)");
+            }
+            finally
+            {
+                quench.Free();
+            }
+        });
+    }
+
     /// <summary>Nearest <see cref="ScrollContainer"/> ancestor, or throws.</summary>
     private static ScrollContainer ScrollContainerAncestorOf(Control control)
     {

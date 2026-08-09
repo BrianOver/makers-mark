@@ -383,6 +383,8 @@ public sealed partial class EngineeringBench : PanelContainer
             return;
         }
 
+        MinigameInput.RegisterActions(); // C2: move_*/confirm/pull_part/crank_stroke must exist first
+
         Name = "EngineeringBench";
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Stop; // an open overlay owns clicks — never passes through
@@ -427,15 +429,16 @@ public sealed partial class EngineeringBench : PanelContainer
         var buttonRow = new HBoxContainer { Name = "EngineeringBenchButtons" };
         body.AddChild(buttonRow);
 
-        _seatButton = new Button { Name = "EngineeringBenchSeat", Text = "Seat (Enter)" };
+        // C2: every label below reads the LIVE InputMap binding instead of a hardcoded key name.
+        _seatButton = new Button { Name = "EngineeringBenchSeat", Text = $"Seat ({MinigameInput.KeyLabelFor("confirm")})" };
         _seatButton.Pressed += SeatSelected;
         buttonRow.AddChild(_seatButton);
 
-        _pullButton = new Button { Name = "EngineeringBenchPull", Text = "Remove (Backspace)" };
+        _pullButton = new Button { Name = "EngineeringBenchPull", Text = $"Remove ({MinigameInput.KeyLabelFor("pull_part")})" };
         _pullButton.Pressed += PullSelected;
         buttonRow.AddChild(_pullButton);
 
-        _crankButton = new Button { Name = "EngineeringBenchCrank", Text = "Turn Crank (Space)" };
+        _crankButton = new Button { Name = "EngineeringBenchCrank", Text = $"Turn Crank ({MinigameInput.KeyLabelFor("crank_stroke")})" };
         _crankButton.Pressed += CrankStroke;
         buttonRow.AddChild(_crankButton);
 
@@ -672,8 +675,8 @@ public sealed partial class EngineeringBench : PanelContainer
 
                     break;
 
-                case InputEventKey { Pressed: true, Echo: false } key:
-                    HandleKey(key.Keycode);
+                case InputEventKey key:
+                    HandleKey(key);
                     break;
             }
         }
@@ -752,18 +755,20 @@ public sealed partial class EngineeringBench : PanelContainer
             }
         }
 
-        private void HandleKey(Key keycode)
+        /// <summary>C2 (<see cref="MinigameInput"/>): every branch is now an <see
+        /// cref="InputMap"/> action check, never a raw <see cref="Key"/> match — <see
+        /// cref="InputEvent.IsActionPressed(Godot.StringName,System.Boolean,System.Boolean)"/>'s
+        /// default <c>allowEcho: false</c> already reproduces the old outer
+        /// <c>Pressed: true, Echo: false</c> gate, so no case here needs to re-check either.</summary>
+        private void HandleKey(InputEventKey key)
         {
-            switch (keycode)
-            {
-                case Key.Left: SocketCycleRequested?.Invoke(-1); break;
-                case Key.Right: SocketCycleRequested?.Invoke(1); break;
-                case Key.Up: PartCycleRequested?.Invoke(-1); break;
-                case Key.Down: PartCycleRequested?.Invoke(1); break;
-                case Key.Enter or Key.KpEnter: SeatRequested?.Invoke(); break;
-                case Key.Backspace or Key.Delete: PullSelectedRequested?.Invoke(); break;
-                case Key.Space: CrankStrokeRequested?.Invoke(); break;
-            }
+            if (key.IsActionPressed("move_left")) { SocketCycleRequested?.Invoke(-1); return; }
+            if (key.IsActionPressed("move_right")) { SocketCycleRequested?.Invoke(1); return; }
+            if (key.IsActionPressed("move_up")) { PartCycleRequested?.Invoke(-1); return; }
+            if (key.IsActionPressed("move_down")) { PartCycleRequested?.Invoke(1); return; }
+            if (key.IsActionPressed("confirm")) { SeatRequested?.Invoke(); return; }
+            if (key.IsActionPressed("pull_part")) { PullSelectedRequested?.Invoke(); return; }
+            if (key.IsActionPressed("crank_stroke")) { CrankStrokeRequested?.Invoke(); return; }
         }
 
         public bool IsOverCrank(Vector2 localPos) => Size.X > 0f && Size.Y > 0f && CrankRect(Size).HasPoint(localPos);
