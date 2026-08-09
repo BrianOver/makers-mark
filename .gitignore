@@ -59,3 +59,8 @@ playTest_Images/
 # Python bytecode from the art generators (tools/art/*.py)
 __pycache__/
 *.pyc
+
+# Exported game builds. A Windows export is ~160MB (a 104MB self-contained exe, a 62MB
+# .pck, and 231 bundled .NET runtime files); it is a build OUTPUT, reproducible from
+# godot/export_presets.cfg by tools/export-windows.ps1, and must never enter git history.
+build/
