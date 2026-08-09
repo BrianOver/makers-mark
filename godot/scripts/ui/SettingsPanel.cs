@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using Godot;
 using GodotClient.Audio;
+using GodotClient.Minigames;
+using GodotClient.Town2d;
 
 namespace GodotClient.Ui;
 
@@ -55,6 +58,80 @@ public partial class SettingsPanel : VBoxContainer
     /// <see cref="Refresh"/> can resync both without hunting through children by name.</summary>
     private readonly record struct VolumeRow(HSlider Slider, Label ValueLabel);
 
+    // ---- UI scale (C4) --------------------------------------------------------------------------
+
+    private HSlider _uiScaleSlider = null!;
+    private Label _uiScaleValueLabel = null!;
+
+    // ---- rebinding (C3) -------------------------------------------------------------------------
+    //
+    // The EXACT ~8 actions the plan calls for (move x4, interact, strike, bellows, confirm).
+    // PhysicalKeycode throughout (C2's own rule — a rebind stored as a layout-dependent Keycode is a
+    // bug on any non-QWERTY layout). Defaults here mirror TownInput/MinigameInput's own registration
+    // verbatim; RegisterActions() is called at the top of Build() precisely so this list is never
+    // read before those defaults exist, regardless of whether the player reaches Settings from the
+    // title screen (before Town2D/any minigame has ever built) or the in-game system menu.
+    private static readonly string[] RebindableActions =
+    {
+        "move_up", "move_down", "move_left", "move_right", "interact", "forge_strike", "bellows", "confirm",
+    };
+
+    private static readonly Dictionary<string, Key[]> DefaultKeysByAction = new()
+    {
+        ["move_up"] = new[] { Key.W, Key.Up },
+        ["move_down"] = new[] { Key.S, Key.Down },
+        ["move_left"] = new[] { Key.A, Key.Left },
+        ["move_right"] = new[] { Key.D, Key.Right },
+        ["interact"] = new[] { Key.E },
+        ["forge_strike"] = new[] { Key.Space },
+        ["bellows"] = new[] { Key.Shift },
+        ["confirm"] = new[] { Key.Enter, Key.KpEnter },
+    };
+
+    /// <summary>Human labels for every action this panel either exposes as rebindable OR checks for
+    /// CONFLICTS against (the latter set is wider than <see cref="RebindableActions"/> — see <see
+    /// cref="FindConflictingAction"/>'s own doc for why a non-editable action still has to be
+    /// checked).</summary>
+    private static readonly Dictionary<string, string> ActionLabels = new()
+    {
+        ["move_up"] = "Move up",
+        ["move_down"] = "Move down",
+        ["move_left"] = "Move left",
+        ["move_right"] = "Move right",
+        ["interact"] = "Interact",
+        ["forge_strike"] = "Forge strike",
+        ["bellows"] = "Bellows",
+        ["confirm"] = "Confirm",
+        ["cancel"] = "Cancel / back",
+        ["plunge"] = "Plunge",
+        ["scrape"] = "Scrape",
+        ["crank_stroke"] = "Crank",
+        ["pull_part"] = "Pull part",
+    };
+
+    /// <summary>Every action a rebind could collide with — wider than <see
+    /// cref="RebindableActions"/> because a rebind that silently steals <c>plunge</c>'s or
+    /// <c>confirm</c>'s key is a real footgun even though this panel never lets a player edit those
+    /// two directly. Engine-internal <c>ui_*</c> actions are deliberately excluded — those are not
+    /// game verbs a player would recognise as "already taken."</summary>
+    private static readonly string[] ConflictCheckActions =
+    {
+        "move_up", "move_down", "move_left", "move_right", "interact", "cancel",
+        "forge_strike", "bellows", "confirm", "plunge", "scrape", "crank_stroke", "pull_part",
+    };
+
+    private readonly record struct RebindRow(string Action, Button KeyButton);
+
+    private readonly List<RebindRow> _rebindRows = new();
+    private Label _rebindStatusLabel = null!;
+
+    /// <summary>Non-null while a rebind row is waiting for the next keypress — see <see
+    /// cref="_Input"/>.</summary>
+    private string? _armedAction;
+    private Button? _armedButton;
+
+    private static string DisplayName(string action) => ActionLabels.TryGetValue(action, out var label) ? label : action;
+
     /// <summary>Idempotent-guarded like every other code-built node on this project (<see
     /// cref="DrawerHost.Build"/> precedent) — safe to call once per instance.</summary>
     public void Build()
@@ -63,6 +140,13 @@ public partial class SettingsPanel : VBoxContainer
         {
             return;
         }
+
+        // C3: every rebindable (and conflict-checkable) action must exist in the InputMap before
+        // this panel reads a single KeyLabelFor call below — guarded by InputMap.HasAction, so this
+        // is a safe no-op on every call after the first. Without this, opening Settings from the
+        // TITLE screen (before Town2D or any minigame has ever built) would read every row as "?".
+        TownInput.RegisterActions();
+        MinigameInput.RegisterActions();
 
         Name = "SettingsPanel";
         AddThemeConstantOverride("separation", GameTheme.Space16);
@@ -98,9 +182,97 @@ public partial class SettingsPanel : VBoxContainer
         _muteToggle.Toggled += OnMuteToggled;
         AddChild(_muteToggle);
 
+        // ---- UI scale (C4) ----------------------------------------------------------------------
+        // One root knob (Window.ContentScaleFactor) — the theme is code-built with fixed sizes
+        // (GameTheme.Build), which is exactly why one multiplier over the whole window is cheap and
+        // anything finer-grained (per-panel, per-font-size) is not.
+        var scaleLabel = new Label { Name = "UiScaleLabel", Text = "UI scale" };
+        AddChild(scaleLabel);
+
+        var scaleRow = new HBoxContainer { Name = "UiScaleRow" };
+        scaleRow.AddThemeConstantOverride("separation", GameTheme.Space12);
+        AddChild(scaleRow);
+
+        var initialScalePercent = Math.Clamp(UiSettings.LoadUiScale(), UiSettings.MinUiScale, UiSettings.MaxUiScale) * 100.0;
+        _uiScaleSlider = new HSlider
+        {
+            Name = "UiScaleSlider",
+            MinValue = UiSettings.MinUiScale * 100.0,
+            MaxValue = UiSettings.MaxUiScale * 100.0,
+            Step = 5,
+            Value = initialScalePercent,
+            CustomMinimumSize = new Vector2(220, 0),
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+        };
+        scaleRow.AddChild(_uiScaleSlider);
+
+        _uiScaleValueLabel = new Label { Name = "UiScaleValue", CustomMinimumSize = new Vector2(44, 0), Text = FormatPercent(initialScalePercent) };
+        scaleRow.AddChild(_uiScaleValueLabel);
+
+        _uiScaleSlider.ValueChanged += value =>
+        {
+            _uiScaleValueLabel.Text = FormatPercent(value);
+            UiSettings.SetUiScale((float)(value / 100.0));
+        };
+
+        // ---- rebinding (C3) ----------------------------------------------------------------------
+        var controlsTitle = new Label
+        {
+            Name = "ControlsTitle",
+            Text = "Controls",
+            ThemeTypeVariation = GameTheme.HeaderThemeType,
+        };
+        controlsTitle.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        AddChild(controlsTitle);
+
+        _rebindStatusLabel = new Label { Name = "RebindStatus", Text = string.Empty };
+        AddChild(_rebindStatusLabel);
+
+        foreach (var action in RebindableActions)
+        {
+            var row = new HBoxContainer { Name = $"Rebind_{action}_Row" };
+            row.AddThemeConstantOverride("separation", GameTheme.Space12);
+            AddChild(row);
+
+            var label = new Label
+            {
+                Name = $"Rebind_{action}_Label",
+                Text = DisplayName(action),
+                CustomMinimumSize = new Vector2(140, 0),
+            };
+            row.AddChild(label);
+
+            var keyButton = new Button { Name = $"Rebind_{action}_Key", Text = MinigameInput.KeyLabelFor(action) };
+            var capturedAction = action; // loop-variable capture — each row's closure must bind ITS OWN action
+            var capturedButton = keyButton;
+            keyButton.Pressed += () => BeginRebind(capturedAction, capturedButton);
+            row.AddChild(keyButton);
+
+            _rebindRows.Add(new RebindRow(action, keyButton));
+        }
+
+        var resetBindings = new Button { Name = "ResetBindingsToDefaults", Text = "Reset controls to defaults" };
+        resetBindings.Pressed += ResetBindingsToDefaults;
+        AddChild(resetBindings);
+
         var back = new Button { Name = "SettingsBack", Text = "Back", CustomMinimumSize = new Vector2(0, 44) };
-        back.Pressed += () => Closed?.Invoke();
+        back.Pressed += () =>
+        {
+            // Leaving mid-capture must not leave a live trap: without this, pressing Back while a
+            // row is armed would leave _armedAction set on a now-HIDDEN panel, and the player's very
+            // next keypress ANYWHERE in the game (with no status label visible to explain why) would
+            // silently complete the stale rebind. _Input's own Visible guard below is defense in
+            // depth for the same failure; this is the honest fix at the source.
+            CancelArmedRebind();
+            Closed?.Invoke();
+        };
         AddChild(back);
+
+        // Every Button on this panel must be mouse-only, same idiom as ForgeMinigame's own buttons
+        // (UiKit.MakeButtonsMouseOnly's own doc): a focused Button consumes the very next Space/Enter
+        // to press ITSELF, which would silently eat the keypress a "press a key to rebind" row exists
+        // to capture (see _Input below).
+        UiKit.MakeButtonsMouseOnly(this);
     }
 
     /// <summary>
@@ -157,6 +329,20 @@ public partial class SettingsPanel : VBoxContainer
         RefreshRow(_sfxRow, UiSettings.LoadSfxVolume());
         RefreshRow(_narratorRow, UiSettings.LoadNarratorVolume());
         _muteToggle.SetPressedNoSignal(UiSettings.LoadMuted());
+
+        var scalePercent = Math.Clamp(UiSettings.LoadUiScale(), UiSettings.MinUiScale, UiSettings.MaxUiScale) * 100.0;
+        _uiScaleSlider.SetValueNoSignal(scalePercent);
+        _uiScaleValueLabel.Text = FormatPercent(scalePercent);
+
+        // A rebind made through the OTHER instance of this panel (title screen vs system menu) must
+        // show up here too — same "read the live InputMap, never a stale snapshot" rule C2 already
+        // established for every minigame prompt.
+        CancelArmedRebind();
+        _rebindStatusLabel.Text = string.Empty;
+        foreach (var row in _rebindRows)
+        {
+            row.KeyButton.Text = MinigameInput.KeyLabelFor(row.Action);
+        }
     }
 
     private static void RefreshRow(VolumeRow row, float linear01)
@@ -210,5 +396,158 @@ public partial class SettingsPanel : VBoxContainer
     {
         UiSettings.SaveMuted(muted);
         AudioDirector.For(this)?.SetMuted(muted);
+    }
+
+    // ---- rebinding (C3) ---------------------------------------------------------------------------
+    //
+    // Press-to-rebind: clicking a row's key Button arms it, then the NEXT physical keypress anywhere
+    // is captured by _Input (below) and either applied or rejected as a conflict. Escape cancels the
+    // capture without rebinding Escape itself.
+
+    private void BeginRebind(string action, Button button)
+    {
+        if (_armedAction == action)
+        {
+            return; // a second click on the SAME row while already armed is a no-op, not a re-arm
+        }
+
+        CancelArmedRebind(); // a different row was mid-capture — restore its label before arming this one
+
+        _armedAction = action;
+        _armedButton = button;
+        button.Text = "Press a key…";
+        _rebindStatusLabel.Text = $"{DisplayName(action)}: press any key (Esc cancels)";
+    }
+
+    /// <summary>Restores whichever row is currently armed to its live InputMap label, with no
+    /// rebind applied — called by a fresh <see cref="BeginRebind"/> on another row, by <see
+    /// cref="Refresh"/> (the panel is about to be hidden or re-shown), and by an Escape capture.
+    /// Safe to call when nothing is armed.</summary>
+    private void CancelArmedRebind()
+    {
+        if (_armedAction is not null && _armedButton is not null)
+        {
+            _armedButton.Text = MinigameInput.KeyLabelFor(_armedAction);
+        }
+
+        _armedAction = null;
+        _armedButton = null;
+    }
+
+    /// <summary>
+    /// Captures the rebind keypress. Overrides <c>_Input</c> (not <c>_UnhandledKeyInput</c>)
+    /// deliberately, mirroring <c>ForgeMinigame.Cancel</c>'s own reasoning: this panel is nested
+    /// content inside a host that already owns Escape for its own close/back behaviour (the title
+    /// screen's own menu, or <c>MainUi</c>'s system menu via <c>ModalEscape</c>). Godot calls
+    /// <c>_Input</c> in reverse tree order — children before parents — so while a row is armed, THIS
+    /// method sees Escape and marks it handled before the host's own close-on-Escape ever does;
+    /// pressing Escape here must cancel the CAPTURE, not close the whole menu underneath it. When no
+    /// row is armed this method does nothing and marks nothing handled, so every other key (F11,
+    /// Escape-to-close, …) behaves exactly as it did before this unit. Also gated on <see
+    /// cref="CanvasItem.IsVisibleInTree"/> (not just this node's own <see cref="Control.Visible"/>
+    /// — a hidden ANCESTOR, e.g. the system menu itself closing via "Resume" rather than this
+    /// panel's own Back button, must count too): the Back button already cancels an in-flight
+    /// capture before hiding (see its handler in <see cref="Build"/>), but this guard is defense in
+    /// depth against every OTHER way the panel can stop being shown — a hidden, still-armed panel
+    /// must never steal the player's next keypress anywhere else in the game.
+    /// </summary>
+    public override void _Input(InputEvent @event)
+    {
+        if (!IsVisibleInTree() || _armedAction is null || @event is not InputEventKey { Pressed: true, Echo: false } keyEvent)
+        {
+            return;
+        }
+
+        GetViewport().SetInputAsHandled();
+
+        var action = _armedAction;
+        var button = _armedButton!;
+        _armedAction = null;
+        _armedButton = null;
+
+        if (keyEvent.PhysicalKeycode == Key.Escape)
+        {
+            button.Text = MinigameInput.KeyLabelFor(action);
+            _rebindStatusLabel.Text = "Rebind cancelled.";
+            return;
+        }
+
+        ApplyOrRejectRebind(action, button, keyEvent.PhysicalKeycode);
+    }
+
+    /// <summary>Applies the captured key if nothing else already holds it, or rejects it and names
+    /// the conflicting action — CLAUDE.md's rule for this unit is explicit: "conflict detection must
+    /// be real: binding a key already taken tells the player which action holds it." A rejected
+    /// capture leaves BOTH actions' bindings untouched — this panel never auto-swaps two actions'
+    /// keys out from under the player.</summary>
+    private void ApplyOrRejectRebind(string action, Button button, Key physicalKey)
+    {
+        var conflict = FindConflictingAction(physicalKey, excluding: action);
+        if (conflict is not null)
+        {
+            button.Text = MinigameInput.KeyLabelFor(action); // restore — the rebind is REJECTED
+            var keyLabel = new InputEventKey { PhysicalKeycode = physicalKey }.AsTextPhysicalKeycode();
+            _rebindStatusLabel.Text = $"{keyLabel} is already bound to {DisplayName(conflict)} — pick another key.";
+            return;
+        }
+
+        InputMap.ActionEraseEvents(action);
+        InputMap.ActionAddEvent(action, new InputEventKey { PhysicalKeycode = physicalKey });
+        UiSettings.SaveKeyBinding(action, physicalKey);
+
+        button.Text = MinigameInput.KeyLabelFor(action);
+        _rebindStatusLabel.Text = $"{DisplayName(action)} is now {MinigameInput.KeyLabelFor(action)}.";
+    }
+
+    /// <summary>Scans <see cref="ConflictCheckActions"/> — every action a rebind can realistically
+    /// collide with, not only the ~8 rows this panel lets a player edit — for an existing physical
+    /// key match. Real detection: it reads the live <see cref="InputMap"/>, the same source every
+    /// minigame prompt already reads (C2), never a hand-maintained "taken" list that could drift
+    /// from what is actually bound.</summary>
+    private static string? FindConflictingAction(Key physicalKey, string excluding)
+    {
+        foreach (var candidate in ConflictCheckActions)
+        {
+            if (candidate == excluding || !InputMap.HasAction(candidate))
+            {
+                continue;
+            }
+
+            foreach (var evt in InputMap.ActionGetEvents(candidate))
+            {
+                if (evt is InputEventKey key && key.PhysicalKeycode == physicalKey)
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Restores every rebindable action to its hardcoded default AND clears the persisted
+    /// override, so a fresh boot never re-applies a discarded rebind through <see
+    /// cref="UiSettings.ApplyPersistedBindingIfAny"/>.</summary>
+    private void ResetBindingsToDefaults()
+    {
+        CancelArmedRebind();
+
+        foreach (var (action, defaultKeys) in DefaultKeysByAction)
+        {
+            InputMap.ActionEraseEvents(action);
+            foreach (var key in defaultKeys)
+            {
+                InputMap.ActionAddEvent(action, new InputEventKey { PhysicalKeycode = key });
+            }
+
+            UiSettings.ClearKeyBinding(action);
+        }
+
+        foreach (var row in _rebindRows)
+        {
+            row.KeyButton.Text = MinigameInput.KeyLabelFor(row.Action);
+        }
+
+        _rebindStatusLabel.Text = "Controls reset to defaults.";
     }
 }
