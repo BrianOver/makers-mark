@@ -1,11 +1,11 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
 
-namespace GameSim.Cli;
+namespace GameSim.Drama;
 
 /// <summary>
 /// U3 (C3, R3): the pure "what to print" half of the Camp reframe — extracted the same way
-/// <see cref="EventNarration"/> is (its own doc: "so the mapping is unit-testable"), so these
+/// <c>GameSim.Cli.EventNarration</c> is (its own doc: "so the mapping is unit-testable"), so these
 /// render decisions are pinned directly by a test rather than only reachable by parsing
 /// Program.cs's stdout. Both members are pure projections over already-recorded state/events: no
 /// mutation, no RNG draw (KTD-2 — the window-closed line and the fate attribution are DERIVED,

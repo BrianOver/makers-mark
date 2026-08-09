@@ -1,8 +1,8 @@
 using System.Collections.Immutable;
-using GameSim.Cli;
 using GameSim.Contracts;
+using GameSim.Drama;
 
-namespace GameSim.Tests.Cli;
+namespace GameSim.Tests.Drama;
 
 /// <summary>
 /// U3 (C3, R3): pins the pure "what to print" half of the Camp reframe — extracted from

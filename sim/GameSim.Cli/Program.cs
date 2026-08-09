@@ -1363,35 +1363,16 @@ void PrintLedger(GameState s, int day, ImmutableList<GoldLedgerEntry> oreSpend, 
     if (!cards.IsEmpty)
     {
         Console.WriteLine($"  ── EVENING LEDGER, day {day} ──");
-        var dayEvents = s.EventLog.Where(e => e.Day == day).ToImmutableList();
 
-        // N2 (a): a live camp slate's PartyCampReport covers every member of the party, so calling
-        // CampNarration.Attribution once per RETURN CARD printed the SAME "you held the checkpoint
-        // window..." line once per hero — 5-6x/evening for a single party's one checkpoint choice
-        // (playtest finding). Print it ONCE per party instead: first card whose party hasn't been
-        // attributed yet this ledger triggers it, keyed on the party roster from PartyCampReport.
-        // A mixed-fate party (one dies, others live) reports its worst outcome — "any member died"
-        // picks the more consequential branch of Attribution's existing matrix, never sugarcoating
-        // a death by reading only a survivor's own card.
-        var attributedParties = new List<ImmutableList<HeroId>>();
+        // U1 (attribution reaches the game): the camp-decision attribution clause now lives on
+        // ReturnCard.FateLine itself (LedgerQuery, so Godot's LedgerModal sees it too) — printing
+        // it again here from CampNarration.Attribution directly would be a second copy of the
+        // same sentence that can drift from the first. FateLine already carries it per hero.
         foreach (var card in cards)
         {
             // U5: fate prose lives on the card (LedgerPack via FlavorEngine) — hero name,
             // floor, and gold earned are guaranteed verbatim in the line (R4).
             Console.WriteLine($"  {card.FateLine}");
-
-            var partyReport = dayEvents.OfType<PartyCampReport>().FirstOrDefault(r => r.Party.Contains(card.Hero));
-            if (partyReport is not null && !attributedParties.Any(p => p.SequenceEqual(partyReport.Party)))
-            {
-                attributedParties.Add(partyReport.Party);
-                var anyDied = partyReport.Party.Any(h => cards.Any(c => c.Hero == h && !c.Survived));
-                var attribution = CampNarration.Attribution(dayEvents, card.Hero, survived: !anyDied);
-                if (attribution is not null)
-                {
-                    var roster = string.Join(", ", partyReport.Party.Select(h => HeroName(s, h)));
-                    Console.WriteLine($"      — [{roster}] {attribution}");
-                }
-            }
 
             foreach (var beat in card.Beats)
             {

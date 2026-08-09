@@ -158,6 +158,36 @@ public class LedgerQueryTests
     }
 
     [Fact]
+    public void FateLine_IncludesRecallAttribution_WhenPartyCampReportedAndRecalled()
+    {
+        // The defect this unit fixes: the causal sentence tying a Camp-phase decision to a
+        // hero's fate (CampNarration.Attribution) only ever reached the CLI's own console
+        // print — Godot's LedgerModal reads ONLY ReturnCard.FateLine, so it never saw the bell
+        // get rung. Hand-append the camp events RevealedDay()'s fixture never produces (its
+        // ExpeditionResult has no checkpoint stage), same day as the reveal, then assert the
+        // recall bell shows up on Torvald's own fate line.
+        var state = RevealedDay();
+        state = state with
+        {
+            EventLog = state.EventLog.AddRange(new GameEvent[]
+            {
+                new PartyCampReport(
+                    ImmutableList.Create(new HeroId(1)),
+                    CampedBelowFloor: 1, TargetFloor: 2,
+                    HpByHero: ImmutableSortedDictionary<int, int>.Empty,
+                    HealsLeftByHero: ImmutableSortedDictionary<int, int>.Empty)
+                { Id = new EventId(9001), Day = 1 },
+                new PartyRecalled(ImmutableList.Create(new HeroId(1))) { Id = new EventId(9002), Day = 1 },
+            }),
+        };
+
+        var survivor = LedgerQuery.ReturnCards(state, day: 1)[0];
+
+        Assert.Equal(new HeroId(1), survivor.Hero);
+        Assert.Contains("recall", survivor.FateLine, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ReturnCards_QuietDay_ProducesNoCards()
     {
         var state = RevealedDay();
