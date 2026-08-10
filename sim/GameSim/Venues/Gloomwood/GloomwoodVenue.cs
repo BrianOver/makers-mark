@@ -20,7 +20,8 @@ namespace GameSim.Venues.Gloomwood;
 /// <item><b>F4 Old Mossjaw</b> — the venue boss; the forest's oldest, mossiest jaw.</item>
 /// </list>
 ///
-/// Gates 0/20/45/75 are non-decreasing with depth (conformance). Its four ore keys —
+/// Gates 0/20/45/73 are non-decreasing with depth (conformance; floor 4 re-gated 2026-08-10, see
+/// <c>Build</c>'s own comment). Its four ore keys —
 /// <c>greenheart</c>/<c>amberpitch</c>/<c>moonresin</c>/<c>heartwood</c> — are unique within the
 /// venue (the <see cref="VenueDefinition.OreFloor"/> inversion pins it) and are its own, disjoint from
 /// the Mine's <c>copper…adamant</c>: the Gloomwood mints nature-ores, never Mine ore. Supplied to the
@@ -50,9 +51,10 @@ public static class GloomwoodVenue
     public const string Heartwood = "heartwood";
 
     /// <summary>
-    /// The Gloomwood, four floors deep. Gates 0/20/45/75 (non-decreasing); monster stats and rewards
-    /// climb with depth; the boss (Old Mossjaw) is the heaviest. All values positive (conformance).
-    /// Ore keys ascend greenheart → heartwood in rarity.
+    /// The Gloomwood, four floors deep. Gates 0/20/45/73 (non-decreasing, floor 4 re-gated
+    /// 2026-08-10 — see <see cref="Build"/>'s own comment); monster stats and rewards climb with
+    /// depth; the boss (Old Mossjaw) is the heaviest. All values positive (conformance). Ore keys
+    /// ascend greenheart → heartwood in rarity.
     /// </summary>
     public static readonly VenueDefinition Definition = Build();
 
@@ -60,7 +62,7 @@ public static class GloomwoodVenue
     {
         var floors = ImmutableArray.CreateBuilder<VenueFloor>(4);
 
-        var gate = new[] { 0, 20, 45, 75 };
+        var gate = new[] { 0, 20, 45, 73 };
         var kind = new[] { "Bramble Boar", "Lantern Moth", "The Wicker Shepherd", "Old Mossjaw" };
         var ore = new[] { Greenheart, Amberpitch, Moonresin, Heartwood };
 
@@ -84,7 +86,24 @@ public static class GloomwoodVenue
         // power-band field (was 72, tuned against a continuous party-power signal that saturated
         // below the Mine's floor-5 gate and permanently stole mid-power parties before they ever
         // finished a 5-floor venue — the §11.8 routing trap; the tuning history for that dead
-        // mechanism lives in git, not here). Gates stay 0/20/45/75 pending L3's re-gate.
+        // mechanism lives in git, not here).
+        //
+        // Floor 4 (Old Mossjaw, the boss) re-gated 75 -> 73, L3 (2026-08-10). MEASURED READING,
+        // documented here per §11.6 rule 5: TargetFloorFor keys on a hero's GLOBAL
+        // DeepestFloorReached (shared across every venue), so a party graduating the Mine at floor
+        // 5 targets Gloomwood's floor 4 (its OWN deepest) on the very FIRST trip — floors 1-3's low
+        // gates (0/20/45) are trivially passed en route and never the practical bottleneck; only
+        // the boss gate controls pacing. Characterized (this PR's Characterize tool, main seed 2026
+        // + 10 sweep seeds) across five candidate gates: 90 and 80 stranded most seeds for the
+        // full 100-day window (party power plateaus 74-81 without rung-1 gear — a WALL, same
+        // failure class as the pre-L3 Mine); 76 stranded 2 of 11 and spread the rest 3-35 days; 70
+        // reached every seed but in only 1-2 days (too fast). 73 is the one value where all 11
+        // seeds clear AND every seed takes at least 1 day: measured deltas were 1-4 days after
+        // graduation (not 8-12 as the plan's own proposal named) with zero deaths on every seed —
+        // a graduating party's power (measured 70-74) sits close enough to the practical Tier-3-gear
+        // ceiling (measured plateau ~74-81 absent rung-1 gear) that there is little room to engineer
+        // a longer, universally-safe gap without a gear-economy change outside L3's scope. Reported
+        // in this PR's characterization tables, flagged for L6/a later wave rather than widened here.
         return new VenueDefinition(Id, "The Gloomwood", floors.ToImmutable(), LadderRank: 1);
     }
 }

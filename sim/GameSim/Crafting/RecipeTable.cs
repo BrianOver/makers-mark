@@ -79,6 +79,26 @@ public static class RecipeTable
         // Heal(6) scaled by the same quality table as gear stats.
         new Recipe("field-salve",  "Field Salve",  BlacksmithProfession, ItemSlot.Consumable, Tier: 1, "copper", MaterialQuantity: 2,
             new ItemStats(Attack: 0, Defense: 0, Weight: 0), new ConsumableEffect(ConsumableKind.Heal, Magnitude: 6)),
+
+        // ---- Rung 1 (the forward ladder, plan 2026-08-10-003 L3): Gloomwood-ore recipes ---
+        // Tier 8-9, gated by MATERIAL AVAILABILITY, not a talent node — greenheart/amberpitch/
+        // moonresin only enter Player.Materials via Gloomwood loot, which only flows once a
+        // party graduates (Hero.LadderRank 0 -> 1, L1). Pre-graduation, BaselinePlayer's
+        // Expedition-phase craft loop (OrderByDescending(Tier) — these sort FIRST) always finds
+        // them ActionLegality-illegal for want of material and falls through to the Tier 1-3
+        // rows unchanged (confirmed draw-neutral pre-graduation by characterization, this PR).
+        // This is also the QualityRoller correctness fix the plan names: recipes topped out at
+        // Tier 3 while Gloomwood ore grades 8-11, so a grade-11 material against a Tier-3 recipe
+        // produced an oversized shift under the passive model; a Tier 8-9 home for grade 8-11
+        // material keeps that shift bounded (pinned by QualityRollerTests).
+        new Recipe("gloomsteel-blade", "Gloomsteel Blade", BlacksmithProfession, ItemSlot.Weapon, Tier: 8, "greenheart", MaterialQuantity: 4,
+            new ItemStats(Attack: 60, Defense: 0, Weight: 12)),
+        new Recipe("wardenweave-mail", "Wardenweave Mail", BlacksmithProfession, ItemSlot.Armor, Tier: 9, "amberpitch", MaterialQuantity: 5,
+            new ItemStats(Attack: 0, Defense: 50, Weight: 14)),
+        // Moonresin Draught: the salve upgrade the plan names by number — Heal 18 vs Field
+        // Salve's 6, a real answer to floors where monsters hit for 25-30 (§11.8/plan design).
+        new Recipe("moonresin-draught", "Moonresin Draught", BlacksmithProfession, ItemSlot.Consumable, Tier: 9, "moonresin", MaterialQuantity: 2,
+            new ItemStats(Attack: 0, Defense: 0, Weight: 0), new ConsumableEffect(ConsumableKind.Heal, Magnitude: 18)),
     }.ToImmutableSortedDictionary(r => r.RecipeId, r => r, StringComparer.Ordinal);
 
     /// <summary>Lookup by recipe id.</summary>

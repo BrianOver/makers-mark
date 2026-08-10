@@ -162,21 +162,30 @@ public class VenueConformanceTests
         var mine = VenueRegistry.Mine;
 
         // Golden literals — the exact values the pre-P4 static MonsterTable held, reproduced here
-        // independently so this is a real cross-check, not a tautology.
+        // independently so this is a real cross-check, not a tautology. Floor 5's gate, HP, and
+        // Attack are the deliberate exceptions: re-gated/re-scaled by the forward-ladder plan
+        // (2026-08-10-003 L3, §11.8's fix) — gate 100 -> 70 (100 was measured a WALL: party power
+        // plateaus 55-78, never crosses it in 100 days on any seed) and HP 62 -> 50 / Attack 35 ->
+        // 26 (the formula values were deadly enough at gate power to kill the one veteran deep
+        // enough to attempt floor 5, resetting progress for weeks on some seeds); see
+        // VenueRegistry.BuildMine's own comment for the full measurement. Every other floor and
+        // every other floor-5 number stays byte-identical to the old table.
         Assert.Equal("mine", mine.Id);
         Assert.Equal(5, mine.FloorCount);
 
-        var gate = new[] { 0, 15, 35, 60, 100 };
+        var gate = new[] { 0, 15, 35, 60, 70 };
         var kind = new[] { "Cave Rat", "Tunnel Spider", "Deep Ghoul", "Ore Golem", "The Forgeworm" };
         var ore = new[] { "copper", "iron", "steel", "mithril", "adamant" };
+        var hp = new[] { 22, 32, 42, 52, 50 };     // 12+10f, floor 5 re-scaled (was 62)
+        var attack = new[] { 11, 17, 23, 29, 26 }; // 5+6f, floor 5 re-scaled (was 35)
 
         for (var floor = 1; floor <= 5; floor++)
         {
             Assert.Equal(gate[floor - 1], mine.Gate(floor));
             Assert.Equal(kind[floor - 1], mine.MonsterKind(floor));
             Assert.Equal(ore[floor - 1], mine.OreKey(floor));
-            Assert.Equal(12 + 10 * floor, mine.MonsterHp(floor));
-            Assert.Equal(5 + 6 * floor, mine.MonsterAttack(floor));
+            Assert.Equal(hp[floor - 1], mine.MonsterHp(floor));
+            Assert.Equal(attack[floor - 1], mine.MonsterAttack(floor));
             Assert.Equal(2 + 2 * floor, mine.MonsterDefense(floor));
             Assert.Equal(5 + 3 * floor, mine.GoldPerKill(floor));
 

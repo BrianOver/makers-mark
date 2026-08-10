@@ -45,9 +45,16 @@ public class GloomwoodVenueTests
     }
 
     [Fact]
-    public void Gates_Are_0_20_45_75_AndNonDecreasing()
+    public void Gates_Are_0_20_45_73_AndNonDecreasing()
     {
-        var expected = new[] { 0, 20, 45, 75 };
+        // Floor 4 (the boss) re-gated 75 -> 73 (forward-ladder plan 2026-08-10-003 L3): Gloomwood
+        // is now rung 1, entered only by graduating the Mine/Sunken Crypt (rank 0), and a graduating
+        // party's global DeepestFloorReached (5) means their FIRST Gloomwood trip targets floor 4
+        // (the boss) directly — see GloomwoodVenue.Build's own comment for the full measurement
+        // (73 sits inside the measured 70-74 graduation-power band on all 11 characterized seeds,
+        // clearing the boss 1-4 days after graduation with zero deaths, where 75-90 stranded 2-6
+        // of those seeds for 100 days).
+        var expected = new[] { 0, 20, 45, 73 };
         for (var floor = 1; floor <= 4; floor++)
         {
             Assert.Equal(expected[floor - 1], Gloomwood.Gate(floor));

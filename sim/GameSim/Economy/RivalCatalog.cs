@@ -25,9 +25,12 @@ public sealed record RivalCatalogEntry(
 ///
 /// HARD CONSTRAINT (AE3/R9): stats must never exceed Attack 20 (weapon), Defense 16
 /// (shield), Defense 18 (armor) — Common tier-2 equivalents. The best possible
-/// all-rival loadout scores 20+16+18 = 54, far below MonsterTable.Gate(5) = 100, so
-/// rival-only parties structurally cannot clear Floor 5. RivalCatalogTests asserts
-/// these caps; raising any stat past them is a product-breaking change.
+/// all-rival loadout scores 20+16+18 = 54, below <c>MonsterTable.Gate(5)</c> (70 —
+/// re-gated 2026-08-10, forward-ladder plan 2026-08-10-003 L3; was 100, margin 46, now
+/// margin 16), so rival-only parties structurally cannot clear Floor 5.
+/// RivalCatalogTests asserts these caps AND re-derives the live gate value (never a
+/// hardcoded 100) — raising any stat past them, or re-gating floor 5 down near 54, is a
+/// product-breaking change either one would silently catch.
 ///
 /// Roles: mystics carry at most weight 4 (ShoppingAi.MysticMaxWeight) and never use
 /// shields — the Traveler's Sword (weight 4) and Padded Jerkin (weight 3) are the

@@ -46,7 +46,9 @@ public class SunkenCryptVenueTests
     [Fact]
     public void Floors_PinTheNamedGatesKindsAndOres()
     {
-        var gate = new[] { 0, 15, 35, 60, 100 };
+        // Floor 5 re-gated 100 -> 70 (forward-ladder plan 2026-08-10-003 L3), byte-identical to
+        // VenueRegistry.Mine's own re-gate — see that gate's comment for the measurement.
+        var gate = new[] { 0, 15, 35, 60, 70 };
         for (var floor = 1; floor <= 5; floor++)
         {
             Assert.Equal(floor, Crypt.Floors[floor - 1].Floor); // ascending, 1-based, index 0 == floor 1

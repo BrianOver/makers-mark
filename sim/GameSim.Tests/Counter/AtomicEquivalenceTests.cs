@@ -180,8 +180,22 @@ public class AtomicEquivalenceTests
     // trace; verified by running the fast lane both with and without this unit's diff (git stash) and
     // confirming this exact SHA in both runs, plus the sibling PhaseBNoDrawGateTests RngState pin
     // (Inc AND State) unchanged in both runs too.
+    // GOLDEN RE-BASELINE #3 OF 5 (forward-ladder plan 2026-08-10-003, L3 — gates + rung-1 recipes):
+    // **Class 2 — routing/combat decisions change, same stream different position.** The Tier 8-9
+    // RecipeTable rows are draw-neutral alone on this trace (isolated via git-stash, verified
+    // byte-identical to the L2 value with only the recipes present — no player action is ever
+    // submitted here, so nothing ever reaches them). The move is entirely the Mine/Sunken-Crypt
+    // floor-5 re-gate (100 -> 70) plus its monster re-scale (HP 62 -> 50, Attack 35 -> 26) — see
+    // VenueRegistry.BuildMine's own comment for the measurement. This idle trace's heroes shop the
+    // RIVAL vendor autonomously even with zero player actions (HeroShoppingSystem needs none), and
+    // a fully rival-geared level-6 hero reaches power up to baseAttack+72 (RivalCatalog's AE3
+    // caps) — above the new 70 gate, short of the old 100. Confirmed directly (temporary hero-state
+    // dump, this PR, reverted before commit): 3 of 10 heroes on this trace reach LadderRank 2 (both
+    // the Mine graduation and the Gloomwood boss, re-gated 75 -> 73, clear) by day 30. See
+    // PhaseBNoDrawGateTests.cs's matching ledger entry for the full account — `Inc` is STILL
+    // byte-identical there (same stream, only `State` moved; no new draw site).
     private const string ExpectedPreCounterSha256 =
-        "8DF23E515D001A8B007A35972676A4B62FB8B15CAF782745DCA6D18BA59668E9";
+        "90AF9C816D9B24DBCCDF53CE80C016C5BAE1A26E8D0900121DC9F5DEDCDB4563";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
