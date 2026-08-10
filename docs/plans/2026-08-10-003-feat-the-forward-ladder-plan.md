@@ -116,14 +116,27 @@ Mine-liveness band.
   event + SaveCodec round-trip. Nothing writes it yet — draw-neutral. Save-fixture test.
 - **L1 — Graduation + rank router** (re-baseline #1): `VenueDefinition.LadderRank`,
   `EntryPower` deleted, increment-on-clear, `IsBetter` rewrite, `MusterPlan` symmetry,
-  interim party rank = MIN. Tests per the contract above. From L1 on, the EXISTING
-  one-sided arc tests turn green (floor 5 fires day 11–15 the moment the router stops
-  stealing parties) — the wave never merges red.
+  interim party rank = MIN. Tests per the contract above.
+  **MEASUREMENT CORRECTION, recorded by L1's own characterization (§11.6 rule 5 — the
+  plan amends in the PR that lands the finding):** the "floor 5 fires day 11–15 once the
+  router stops stealing parties" expectation was STALE — it traced to a 2026-07-14
+  measurement predating guild dues, tariffs, and the drama director. Measured on L1's
+  build: party power plateaus at 63–73 by day ~15 under BOTH scripted policies, below
+  the Mine's floor-5 gate (100), so floor 5 still never clears and Gloomwood is never
+  entered — the router working correctly against a gate the economy can no longer
+  reach. The mechanism is proven by synthetic-rank tests; the arc tests stay vacuously
+  green, not exercised. The gate-vs-power gap moves to L3, whose characterization now
+  covers RUNG 0's boss gate as well as Gloomwood's.
 - **L2 — Cohort formation** (re-baseline #2): group-by-rank then anchor/id within;
   leftovers per cohort; deterministic, no RNG.
-- **L3 — Gloomwood becomes rung 1** (re-baseline #3): re-gates + monster stats +
-  Tier 8–9 recipes incl. moonresin draught. Characterization first; boss falls in 8–12
-  days on the main seed.
+- **L3 — ALL the gates, characterized, then Gloomwood becomes rung 1** (re-baseline
+  #3): first characterize measured party power by day on the current economy; set the
+  Mine/Crypt floor-5 gate so a well-geared rung-0 party clears it in 8–18 days (the
+  plan's own gate rule: the boss gate sets rung duration — 100 vs a measured 63–73
+  plateau is not a gate, it is a wall); then Gloomwood re-gates + monster stats +
+  Tier 8–9 recipes incl. moonresin draught, boss falling 8–12 days after graduation.
+  Rung-tier recipes may raise the power ceiling — re-measure after adding them and set
+  gates against the POST-recipe curve, not the pre-recipe plateau.
 - **L4 — Emberfall goes live as rung 2** (re-baseline #4): LiveRotation + PricedPool
   12–16 + Ashguild path + re-gates + Tier 12–14 recipes. The backdrop-art guard must
   pass. Re-run #92's share measurement and record it obsolete (share is stage-keyed
