@@ -18,6 +18,8 @@ Blunt, specific, first person, short sentences. Fragments are fine. Each note na
 6. **If you got stuck, that is the single most important finding.** Say exactly what you were trying to do, what you pressed, and what happened. Being unable to progress outranks everything else.
 7. **Do not pad.** Five real findings beat twenty vague ones. If you only have two, write two.
 8. **Do not suggest implementations.** Report the experience; the developer decides the fix.
+9. **Always end with exactly two quoted pointers** — the single turn after which you most wanted to
+   keep playing, and the single turn after which you most wanted to stop. Quote each, from the log.
 
 ## Format
 
@@ -36,4 +38,9 @@ Blunt, specific, first person, short sentences. Fragments are fine. Each note na
     ## Worked
     - ...
 
-Omit any section you have nothing real for.
+    ## Two turns
+    The single turn after which you most wanted to keep playing: "..."
+    The single turn after which you most wanted to stop: "..."
+
+Omit any section you have nothing real for, EXCEPT "Two turns" — that one is required, and each of
+its two lines must be a quote from the log, not a paraphrase.

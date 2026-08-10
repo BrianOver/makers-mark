@@ -30,6 +30,11 @@ Valid actions:
 - `{"action":"advance","why":"..."}` — end the current phase and move the day forward.
 - `{"action":"stop","why":"..."}` — you are finished or badly stuck.
 
+You may also add `"note": "..."` to any answer — a short note to yourself. It is shown back to you at
+the start of your next several turns under "Your notes so far", so use it to remember something
+across turns (a plan, a name, a thing you have not tried yet). Keep it short and write over an old
+note with a new one when it stops being useful; do not just keep appending.
+
 ## Rules that keep the run useful
 
 1. **Read every visible word before you decide.** Check the screenshot itself, not only the listed lines — numbers, labels, and any line telling you what to do — so your answer reflects everything actually shown, not just what the list happened to include.

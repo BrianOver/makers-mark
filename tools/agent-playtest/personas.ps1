@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
     Pure logic for U4 (playtest-harness wave): several distinct players, not one player played N
-    times. Four today (sceptic retired, W3 -- see the SCEPTIC RETIRED note below); the roster grows
-    to six once W4 (docs/plans/2026-08-10-002) adds monkey and attached.
+    times. Six today: first-timer, veteran, speedrunner, completionist (U4), sceptic retired (W3 --
+    see the SCEPTIC RETIRED note below), monkey and attached added (W4, docs/plans/2026-08-10-002).
 
 .DESCRIPTION
     One act.md persona ("curious, slightly impatient") drove every run of the last sweep, so thirty
@@ -34,10 +34,41 @@
     deleted; an unknown-persona test in tools/test-agent-playtest-modes.ps1 pins that
     Resolve-PersonaChoice rejects it loudly rather than silently accepting a name whose file is gone.
 
+    MONKEY AND ATTACHED (W4, docs/plans/2026-08-10-002): monkey is model-free (tools/agent-playtest/
+    monkey.ps1 owns its command logic; it never reads a prompts/personas/*.md file at all, since it
+    never calls a model -- see agent-playtest.ps1's own persona-branch for where it short-circuits).
+    attached has a real prompts/personas/attached.md file like the original four, plus driver-side
+    hero-tracking logic in tools/agent-playtest/attached.ps1.
+
+    PERSONA FRONT-MATTER (W4, docs/plans/2026-08-10-002, joins table): before this wave, EVERY file
+    under prompts/personas/ started directly at "## Who you are" with no header of any kind --
+    verified live before writing this, per the plan's own joins-table instruction. This is an
+    AMENDMENT to that format, not a pre-existing convention: a persona .md file MAY now open with a
+    line-delimited "---" block ending in its own "---" line, holding `Key: value` pairs, before its
+    normal "## Who you are" text resumes. The ONLY recognized key today is `PatienceMultiplier` (case-
+    insensitive), a number that scales temperament.ps1's own $script:PatienceStart for THIS persona's
+    runs -- and only the START value, never the drain/reset weights (ruling 8: a persona having a
+    generally longer or shorter fuse is one defensible number; per-persona DRAIN weights would be the
+    exact invented-numbers-at-N<=2 problem the ruling exists to prevent). Any OTHER key throws loudly
+    (Split-PersonaFrontMatter, below) -- a typo'd key silently doing nothing would be indistinguishable
+    from "this persona has no special patience," the same silent-fallback shape this file already
+    fixed twice over (A1/A6, cited above). None of the four original files carry this block; adding
+    one is opt-in per persona.
+
+        ---
+        PatienceMultiplier: 1.5
+        ---
+        ## Who you are
+        ...
+
+    Split-PersonaFrontMatter strips this block (if present) before the text ever reaches
+    Build-PersonaActPrompt, so it never reaches the model -- the model only ever sees the persona's
+    normal knowledge/goal prose, exactly as before this amendment for every file that does not use it.
+
     STYLE NOTE: ASCII-only, no here-strings, no ternary/??, matching every file it is dot-sourced by.
 #>
 
-$script:KnownPersonas = @('first-timer', 'veteran', 'speedrunner', 'completionist')
+$script:KnownPersonas = @('first-timer', 'veteran', 'speedrunner', 'completionist', 'monkey', 'attached')
 
 # Resolves -Persona into one of the known real names ($script:KnownPersonas). "random" picks one FOR
 # THIS RUN via $Random (overridable so a test can assert on the choice instead of trusting
@@ -84,8 +115,82 @@ function Build-PersonaActPrompt {
         throw ('persona file not found: ' + $personaPath)
     }
 
-    $personaText = (Get-Content $personaPath -Raw).Trim()
-    return $ActProtocolText.Replace('{{PERSONA}}', $personaText)
+    # W4: strip any front-matter block BEFORE substitution -- the model must only ever see the
+    # persona's normal knowledge/goal prose, never the temperament-scaling header. A file with no
+    # front-matter (every one of the original four) round-trips through this unchanged.
+    $personaRaw = Get-Content $personaPath -Raw
+    $personaSplit = Split-PersonaFrontMatter -RawText $personaRaw
+    return $ActProtocolText.Replace('{{PERSONA}}', $personaSplit.Body)
+}
+
+# --- W4: persona front-matter (temperament amendment) ---------------------------------------------
+# See this file's own header for the format and the reasoning. Kept to exactly one recognized key on
+# purpose -- see the header's own note on why an unrecognized key must throw rather than be ignored.
+$script:KnownPersonaFrontMatterKeys = @('patiencemultiplier')
+
+# Splits a persona file's raw text into its front-matter (if any) and its Body -- the text that
+# actually reaches Build-PersonaActPrompt's substitution. A file with no leading "---" block returns
+# the WHOLE text, trimmed, as Body and PatienceMultiplier=1.0 (no scaling) -- the exact behavior every
+# pre-W4 persona file already had, preserved unchanged for files that never opt into this amendment.
+function Split-PersonaFrontMatter {
+    param([Parameter(Mandatory)][string]$RawText)
+
+    $multiplier = 1.0
+    $body = $RawText
+
+    $m = [regex]::Match($RawText, '(?s)^---\r?\n(.*?)\r?\n---\r?\n?(.*)$')
+    if ($m.Success) {
+        $frontMatterText = $m.Groups[1].Value
+        $body = $m.Groups[2].Value
+
+        foreach ($line in ($frontMatterText -split "`r?`n")) {
+            $trimmedLine = $line.Trim()
+            if (-not $trimmedLine) { continue }
+
+            $kv = [regex]::Match($trimmedLine, '^([A-Za-z0-9_]+)\s*:\s*(.+)$')
+            if (-not $kv.Success) {
+                throw ('persona front-matter line does not parse as "key: value" -- "' + $trimmedLine + '"')
+            }
+
+            $key = $kv.Groups[1].Value.ToLowerInvariant()
+            $value = $kv.Groups[2].Value.Trim()
+            if ($script:KnownPersonaFrontMatterKeys -notcontains $key) {
+                throw ('unknown persona front-matter key "' + $kv.Groups[1].Value + '" -- only ' +
+                    'PatienceMultiplier is recognized (it scales the temperament START value only, ' +
+                    'never the drain/reset weights -- ruling 8, docs/plans/2026-08-10-002).')
+            }
+
+            if ($key -eq 'patiencemultiplier') {
+                $parsedNum = 0.0
+                if (-not [double]::TryParse($value, [ref]$parsedNum)) {
+                    throw ('persona front-matter PatienceMultiplier must be a number, got "' + $value + '"')
+                }
+                $multiplier = $parsedNum
+            }
+        }
+    }
+
+    return [pscustomobject]@{ Body = $body.Trim(); PatienceMultiplier = $multiplier }
+}
+
+# The driver's own entry point for temperament initialization -- reads the same persona file
+# Build-PersonaActPrompt just read (a second, cheap file read; kept separate rather than folding the
+# multiplier into Build-PersonaActPrompt's own return value, which every existing caller and test
+# treats as a plain string) and returns only the scaling number, defaulting to 1.0 (no scaling) for a
+# persona file with no front-matter block at all -- which, today, is every one of the original four.
+function Get-PersonaPatienceMultiplier {
+    param(
+        [Parameter(Mandatory)][string]$PersonaName,
+        [Parameter(Mandatory)][string]$PersonasDir
+    )
+
+    $personaPath = Join-Path $PersonasDir ($PersonaName + '.md')
+    if (-not (Test-Path $personaPath)) {
+        throw ('persona file not found: ' + $personaPath)
+    }
+    $raw = Get-Content $personaPath -Raw
+    $split = Split-PersonaFrontMatter -RawText $raw
+    return $split.PatienceMultiplier
 }
 
 # A short, stable hash of the assembled prompt -- put in findings.md's header alongside the persona
