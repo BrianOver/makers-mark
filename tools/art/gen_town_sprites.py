@@ -465,19 +465,25 @@ OLD_TORSO_SENTINEL = [
 ]
 assert len(OLD_TORSO_SENTINEL) == 18
 
-# STRIKER — hooded duelist: pointed hood, crossed strap, dual blade hilts, no shield.
+# STRIKER — hooded duelist: pointed hood, crossed strap, dual blade hilts, no shield. The hood is
+# FABRIC, same leather/cloth material as the rest of this class's no-armor body (see the module
+# doc's MATERIAL contrast point) -- to_cloth()'d exactly like the torso below it, so the hood reads
+# as the same crimson leather rather than the neutral steel ramp every full-helm class's headwear
+# correctly uses. Before this pass every hood/cowl class (this one, Mystic, Occultist) skipped that
+# wrap and so wore what read as a steel helmet -- Skirmisher's cap already got this treatment;
+# this brings the other three hood-wearers in line with it.
 OLD_HEAD_STRIKER = [
-    orow(ocentered("o" * 8)),  # 2 hood point
-    orow(ocentered(mirror("ohhl"))),  # 3
-    orow(ocentered(mirror("ohhll"))),  # 4 hood widens
-    orow(ocentered(mirror("ohllj"))),  # 5 hair fringe at the hood edge
-    orow(ocentered(mirror("ohlfo"))),  # 6 skin cheeks flanking eyes-in-shadow
-    orow(ocentered(mirror("ollm"))),  # 7 taper
-    orow(ocentered(mirror("ollm"))),  # 8 hold
-    orow(ocentered(mirror("oll"))),  # 9 chin
+    orow(ocentered(to_cloth("o" * 8))),  # 2 hood point
+    orow(ocentered(mirror(to_cloth("ohhl")))),  # 3
+    orow(ocentered(mirror(to_cloth("ohhll")))),  # 4 hood widens
+    orow(ocentered(mirror(to_cloth("ohllj")))),  # 5 hair fringe at the hood edge
+    orow(ocentered(mirror(to_cloth("ohlfo")))),  # 6 skin cheeks flanking eyes-in-shadow
+    orow(ocentered(mirror(to_cloth("ollm")))),  # 7 taper
+    orow(ocentered(mirror(to_cloth("ollm")))),  # 8 hold
+    orow(ocentered(mirror(to_cloth("oll")))),  # 9 chin
     orow(ocentered("o" * 6)),  # 10 neck gap
-    orow(ocentered(mirror("ommll"))),  # 11 gorget
-    orow(ocentered(mirror("ooimmll"))),  # 12 gorget -> shoulder lead-in
+    orow(ocentered(mirror(to_cloth("ommll")))),  # 11 gorget
+    orow(ocentered(mirror(to_cloth("ooimmll")))),  # 12 gorget -> shoulder lead-in
 ]
 assert len(OLD_HEAD_STRIKER) == 11
 
@@ -549,16 +555,18 @@ OLD_TORSO_SKIRMISHER = [
 ]
 assert len(OLD_TORSO_SKIRMISHER) == 18
 
-# MYSTIC — deep cowl, shadow face, staff enters frame on the right, rune between traces.
+# MYSTIC — deep cowl, shadow face, staff enters frame on the right, rune between traces. The cowl
+# is robe fabric, not a helmet -- to_cloth()'d like the torso below it (see the STRIKER head's own
+# comment for why this wrap was missing before this pass on every hood/cowl class but Skirmisher).
 OLD_HEAD_MYSTIC = [
-    orow(ocentered("o" * 10)),  # 2 crown
-    orow(ocentered(mirror("ohhlll"))),  # 3
-    orow(ocentered(mirror("ohhlllm"))),  # 4 cowl flares
-    orow(ocentered(mirror("ohlfoo"))),  # 5 shadow face — a hint of skin at the shadow's edge
-    orow(ocentered(mirror("ohlfoo"))),  # 6 face is (mostly) shadow — same skin hint
-    orow(ocentered(mirror("ohllm"))),  # 7 chin under cowl
-    orow(ocentered(mirror("ollm"))),  # 8 taper
-    orow(ocentered(mirror("oll"))),  # 9 chin
+    orow(ocentered(to_cloth("o" * 10))),  # 2 crown
+    orow(ocentered(mirror(to_cloth("ohhlll")))),  # 3
+    orow(ocentered(mirror(to_cloth("ohhlllm")))),  # 4 cowl flares
+    orow(ocentered(mirror(to_cloth("ohlfoo")))),  # 5 shadow face — a hint of skin at the shadow's edge
+    orow(ocentered(mirror(to_cloth("ohlfoo")))),  # 6 face is (mostly) shadow — same skin hint
+    orow(ocentered(mirror(to_cloth("ohllm")))),  # 7 chin under cowl
+    orow(ocentered(mirror(to_cloth("ollm")))),  # 8 taper
+    orow(ocentered(mirror(to_cloth("oll")))),  # 9 chin
     orow(ocentered("o" * 6)),  # 10 neck gap
     orow(ocentered(mirror(to_cloth("ommll")))),  # 11 gorget
     orow(ocentered(mirror(to_cloth("ooimmll")))),  # 12 gorget -> shoulder lead-in
@@ -589,16 +597,19 @@ OLD_TORSO_MYSTIC = [
 ]
 assert len(OLD_TORSO_MYSTIC) == 18
 
-# OCCULTIST — deep cowl with two small horn-tips, a paired rune-and-eye glyph, staff.
+# OCCULTIST — deep cowl with two small horn-tips, a paired rune-and-eye glyph, staff. Cowl fabric
+# to_cloth()'d like Mystic's (see that class's own comment); the horn-tip overrides stay literal
+# 'd' (Iron deepest) -- a horn is keratin/bone, not cloth, so it deliberately keeps the hard neutral
+# tone as a material contrast against the now-soft cowl around it, same trick as a hilt against leather.
 OLD_HEAD_OCCULTIST = [
-    ooverlay("o" * 4, {7: "d", 18: "d"}),  # 2 crown + two small horn-tips
-    orow(ocentered(mirror("ohhll"))),  # 3 cowl (pointier than the Mystic's)
-    orow(ocentered(mirror("ohhllm"))),  # 4 cowl flares sharply
-    orow(ocentered(mirror("ohlfoo"))),  # 5 shadow face — a hint of skin at the shadow's edge
-    orow(ocentered(mirror("ohlfoo"))),  # 6 face is (mostly) shadow — same skin hint
-    orow(ocentered(mirror("ohllm"))),  # 7 chin under cowl
-    orow(ocentered(mirror("ollm"))),  # 8 taper
-    orow(ocentered(mirror("oll"))),  # 9 chin
+    ooverlay(to_cloth("o" * 4), {7: "d", 18: "d"}),  # 2 crown + two small horn-tips
+    orow(ocentered(mirror(to_cloth("ohhll")))),  # 3 cowl (pointier than the Mystic's)
+    orow(ocentered(mirror(to_cloth("ohhllm")))),  # 4 cowl flares sharply
+    orow(ocentered(mirror(to_cloth("ohlfoo")))),  # 5 shadow face — a hint of skin at the shadow's edge
+    orow(ocentered(mirror(to_cloth("ohlfoo")))),  # 6 face is (mostly) shadow — same skin hint
+    orow(ocentered(mirror(to_cloth("ohllm")))),  # 7 chin under cowl
+    orow(ocentered(mirror(to_cloth("ollm")))),  # 8 taper
+    orow(ocentered(mirror(to_cloth("oll")))),  # 9 chin
     orow(ocentered("o" * 6)),  # 10 neck gap
     orow(ocentered(mirror(to_cloth("ommll")))),  # 11 gorget
     orow(ocentered(mirror(to_cloth("ooimmll")))),  # 12 gorget -> shoulder lead-in
@@ -671,8 +682,11 @@ assert len(OLD_HEAD_CIVILIAN_BROAD) == 11
 # every hero class's earlier waist taper.
 OLD_TORSO_CIVILIAN_BROAD = [
     orow(ocentered(mirror(to_cloth("oiimmmlll")))),  # 13 shoulders — wide, symmetric
-    orow(ocentered(mirror(to_cloth("oohlliidd")))),  # 14 upper chest, broad
-    orow(ocentered(mirror(to_cloth("oohllmidd")))),  # 15
+    # Ember upper-left on rows 14-15, same two-row treatment every unshielded hero class's torso
+    # already carries (style-bible "candle-glow rim light, upper-left edge of focal objects") --
+    # civilians previously had NONE, the one lighting gap between them and the hero cast.
+    ooverlay(to_cloth("oohlliidd"), {6: "e"}),  # 14 upper chest, broad
+    ooverlay(to_cloth("oohllmidd"), {6: "e"}),  # 15 ember continues
     orow(ocentered(mirror(to_cloth("ooollmidd")))),  # 16 chest
     orow(ocentered(mirror(to_cloth("ooollmidd")))),  # 17 hold
     orow(ocentered(mirror(to_cloth("oooollmid")))),  # 18 chest, still wide
@@ -712,8 +726,10 @@ assert len(OLD_HEAD_CIVILIAN_SLIGHT) == 11
 
 OLD_TORSO_CIVILIAN_SLIGHT = [
     orow(ocentered(mirror(to_cloth("ooimlll")))),  # 13 shoulders — narrow, symmetric
-    orow(ocentered(mirror(to_cloth("oohllidd")))),  # 14 upper chest
-    orow(ocentered(mirror(to_cloth("oohllmdd")))),  # 15
+    # Ember upper-left on rows 14-15 — see CIVILIAN_BROAD's own comment; index differs (7, not 6)
+    # because this class's narrower 8-char left-string shifts the centering pad by one column.
+    ooverlay(to_cloth("oohllidd"), {7: "e"}),  # 14 upper chest
+    ooverlay(to_cloth("oohllmdd"), {7: "e"}),  # 15
     orow(ocentered(mirror(to_cloth("oollmidd")))),  # 16 chest
     orow(ocentered(mirror(to_cloth("oollmidd")))),  # 17 hold
     orow(ocentered(mirror(to_cloth("oolmido")))),  # 18 chest taper — narrows quickly (slight build)
