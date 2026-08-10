@@ -7,12 +7,14 @@ using GameSim.Venues;
 namespace GameSim.Tests.Expedition;
 
 /// <summary>
-/// End-to-end proof (Phase C U-C4, extended for the T1 four-venue flip): over a real, seeded,
-/// <see cref="BaselinePlayer"/>-driven campaign, parties actually depart to EVERY live venue
-/// (<see cref="VenueRegistry.LiveRotation"/>) — not just the Mine — and the Morning prediction
-/// (<c>MusterSystem</c>/<c>MusterPlan.Compute</c>) never disagrees with which venue the Expedition
-/// tick actually used. This complements the pure <see cref="GameSim.Tests.Venues.VenueRouterTests"/>
-/// unit suite with the real kernel wiring.
+/// End-to-end proof (Phase C U-C4, extended for the T1 four-venue flip; REWRITTEN for the forward
+/// ladder — owner ruling 2026-08-10, plan 2026-08-10-003 L1, §11.8's fix): over a real, seeded,
+/// <see cref="BaselinePlayer"/>-driven campaign, parties depart to a live venue, never an invented
+/// or unregistered one, and the Morning prediction (<c>MusterSystem</c>/<c>MusterPlan.Compute</c>)
+/// never disagrees with which venue the Expedition tick actually used. This complements the pure
+/// <see cref="GameSim.Tests.Venues.VenueRouterTests"/> unit suite and the rank-controlled
+/// <see cref="LadderRoutingTests"/> with the real kernel wiring under UNCONTROLLED (organic economy)
+/// play.
 /// </summary>
 public class VenueRoutingIntegrationTests
 {
@@ -24,14 +26,22 @@ public class VenueRoutingIntegrationTests
             .Concat(state.InFlight.Select(f => f.VenueId));
 
     [Fact]
-    public void RealCampaign_RoutesPartiesToEveryLiveVenue_Over100Days()
+    public void RealCampaign_RoutesPartiesToTheStarterTier_Over100Days_NeverStrandsOrInvents()
     {
-        // THE distribution guard for the banded router: on this measured seed, a 100-day campaign
-        // sends parties to every live venue (early band mine+crypt in the opening weeks, the
-        // Gloomwood band once parties cross 55; dormant Emberfall re-joins this loop's coverage
-        // automatically when its art-gated go-live puts it back in LiveRotation). If a future
-        // tuning change breaks this, the venue distribution moved: re-run the batch farm and
-        // re-place the EntryPower bands consciously, don't just swap the seed.
+        // The distribution guard for the RANK router. Every hero starts at rank 0, so BOTH rank-0
+        // peers (Mine, Sunken Crypt) must see traffic — that queue-split is still real, still tested.
+        //
+        // Gloomwood (rank 1) is DELIBERATELY NOT asserted here anymore. Under the old EntryPower
+        // router this test proved every live venue got traffic because power alone opened the door;
+        // under the ladder, a venue only opens once a party GRADUATES (clears its current rung's
+        // bottom floor), and that is an economy-pace question, not a routing one. Measured on this
+        // exact seed (characterization run, L1 PR body): BaselinePlayer's party-average power
+        // plateaus at 63-73 by day ~15 and never moves again in 100 days — short of the Mine/Crypt
+        // floor-5 gate (100) — so nobody graduates and Gloomwood legitimately never sees a party.
+        // That ceiling is independent of this router (it is a function of gear/level growth, which
+        // this PR does not touch) and is already flagged as a finding for the plan's later units
+        // (L3/L4 raise the craft-side ceiling with higher-tier rung recipes). Pinning "Gloomwood gets
+        // traffic in 100 days" here would be pinning today's economy pace, not the router's contract.
         var kernel = GameComposition.BuildKernel();
         var state = GameComposition.NewCampaign(seed: 1);
 
@@ -52,12 +62,10 @@ public class VenueRoutingIntegrationTests
             state = kernel.Tick(state, BaselinePlayer.ActionsFor(state)).NewState; // ExpeditionDeep
         }
 
-        // Every live venue actually saw traffic — routing is real, and no venue is starved to
-        // zero (the exact failure mode the banded router replaced tightest-fit to fix).
-        foreach (var venueId in VenueRegistry.LiveRotation)
-        {
-            Assert.Contains(venueId, seenVenues);
-        }
+        // Both rank-0 peers saw traffic — routing is real, and neither starter venue is starved to
+        // zero (the exact failure mode the banded router, and now the ranked router, both guard).
+        Assert.Contains(VenueRegistry.MineId, seenVenues);
+        Assert.Contains("sunken-crypt", seenVenues);
 
         // Every venue id that ever appeared is a member of the live rotation — routing never invents
         // or strands a party at an unregistered/non-live venue.
@@ -65,6 +73,12 @@ public class VenueRoutingIntegrationTests
         {
             Assert.Contains(venueId, VenueRegistry.LiveRotation);
         }
+
+        // No hero's LadderRank ever moved — the observed side effect of the same power ceiling: with
+        // nobody clearing a bottom floor, graduation never fires on this seed, which is itself a
+        // pin on today's measured pace (not a claim the mechanism is inert — see LadderRoutingTests
+        // and ExpeditionRevealSystemTests for the directly-forced graduation proofs).
+        Assert.All(state.Heroes.Values, hero => Assert.Equal(0, hero.LadderRank));
     }
 
     [Fact]

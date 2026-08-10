@@ -53,12 +53,12 @@ public sealed class ExpeditionSystem : IPhaseSystem
             var bounty = state.Bounties.FirstOrDefault(b =>
                 b.AcceptedBy is { } acceptor && partyIds.Contains(acceptor));
 
-            // Phase C U-C4 routing: a bounty carries no venue id (bounties are structurally
-            // Mine-scoped, R18 — "the Mine IS the map"), so an accepted bounty routes straight to the
-            // Mine; a bounty-free party is routed by VenueRouter's draw-free power-band + queue-length
-            // comparator (KTD2 — no RNG site added). Both call sites (here and MusterPlan.Compute)
-            // run the identical sequence over the identical parties, so the Morning prediction never
-            // disagrees with what this tick actually forms.
+            // The forward ladder (L1, §11.8's fix) routing: a bounty carries no venue id (bounties
+            // are structurally Mine-scoped, R18 — "the Mine IS the map"), so an accepted bounty
+            // routes straight to the Mine; a bounty-free party is routed by VenueRouter's draw-free
+            // rank + queue-length comparator (KTD2 — no RNG site added). Both call sites (here and
+            // MusterPlan.Compute) run the identical sequence over the identical parties, so the
+            // Morning prediction never disagrees with what this tick actually forms.
             string venueId;
             if (bounty is not null)
             {
@@ -66,8 +66,11 @@ public sealed class ExpeditionSystem : IPhaseSystem
             }
             else
             {
-                var partyPower = CombatMath.PartyAveragePower(party, state.Items);
-                venueId = VenueRouter.ChooseVenue(partyPower, VenueRegistry.LiveRotation, queueCounts);
+                // Interim party-rank rule (L1; L2's cohort formation supersedes it): MIN of the
+                // party's members' LadderRank, so a mixed-rank party routes no higher than its
+                // least-graduated member — never marches a rookie's slot into a rung she hasn't earned.
+                var partyRank = party.Min(h => h.LadderRank);
+                venueId = VenueRouter.ChooseVenue(partyRank, VenueRegistry.LiveRotation, queueCounts);
             }
 
             queueCounts[venueId] = queueCounts.TryGetValue(venueId, out var count) ? count + 1 : 1;

@@ -3,37 +3,44 @@ using System.Collections.Immutable;
 namespace GameSim.Venues;
 
 /// <summary>
-/// Deterministic, DRAW-FREE hero→venue routing: given a party's gear power, picks which LIVE venue
-/// (<see cref="VenueRegistry.LiveRotation"/>) it raids today. A banded comparator, integer-only
+/// Deterministic, DRAW-FREE hero→venue routing: given a party's ladder rank, picks which LIVE venue
+/// (<see cref="VenueRegistry.LiveRotation"/>) it raids today. A ranked comparator, integer-only
 /// throughout (KTD2 — no RNG, no floats, no transcendental <c>Math.*</c>):
 ///
 /// <list type="number">
-/// <item><b>Progression band.</b> Every venue declares an <see cref="VenueDefinition.EntryPower"/>
-/// (0 = early venue). A party is IN a venue's band when <c>partyPower &gt;= EntryPower</c>. Among
-/// venues whose band the party has reached, the HIGHEST EntryPower wins: weak parties stay in the
-/// early venues, stronger parties are routed onward — the progression the venue roster is built
-/// around. If the party is below EVERY live band (possible only in a rotation with no
-/// EntryPower-0 venue), the LOWEST EntryPower — the nearest band — wins: routing never strands a
-/// party with no pick.</item>
-/// <item><b>Queue length.</b> Venues tied on band (e.g. the gate-identical, both-EntryPower-0
-/// Mine and Sunken Crypt) split traffic toward whichever has fewer parties already routed THIS
-/// TICK (<paramref name="queueCounts"/> in <see cref="ChooseVenue"/>), so peer venues share the
-/// band instead of one taking everything.</item>
+/// <item><b>Eligibility.</b> Every venue declares a <see cref="VenueDefinition.LadderRank"/>
+/// (0 = starter tier). A party is ELIGIBLE for a venue when <c>partyRank &gt;= venue.LadderRank</c>.
+/// Eligible venues beat ineligible ones outright. Among ELIGIBLE venues, the HIGHEST LadderRank
+/// wins — the party's frontier: a party sent as far up the ladder as it has earned. Among
+/// INELIGIBLE venues (possible only in a rotation with no rank-0 venue), the LOWEST LadderRank —
+/// the nearest rung — wins: routing never strands a party with no pick.</item>
+/// <item><b>Queue length.</b> Venues tied on rank (e.g. the gate-identical, both-rank-0 Mine and
+/// Sunken Crypt) split traffic toward whichever has fewer parties already routed THIS TICK
+/// (<paramref name="queueCounts"/> in <see cref="ChooseVenue"/>), so peer venues share the rung
+/// instead of one taking everything.</item>
 /// <item><b>Venue id (Ordinal).</b> Final deterministic tiebreak — the comparator is a total
 /// order, so two distinct venue ids never tie all the way down.</item>
 /// </list>
 ///
-/// <para><b>Why bands replaced the old headroom utility.</b> The first router ranked clearable
-/// venues by smallest <c>power - gate(candidateFloor)</c> ("tightest fit"). Because higher-gate
-/// venues always fit tighter for any party that can clear them, that rule sent every mid-power
-/// party to the highest-gate venue it could survive — Gloomwood vacuumed the world, the Mine
-/// starved, and the Sunken Crypt (gate-identical to the Mine but later in Ordinal order) drew
-/// ~zero. Measured in PR #242's 15-seed sweep. Gates also cannot tell the Mine from Emberfall at
-/// all (identical ladders, grade-1..5 vs grade-12..16 ore), and router-side power never sees the
-/// in-run craft/consumable modifiers the resolver applies at real gate checks — so both the fit
-/// rule AND its clearability input are deliberately gone, replaced by the explicit per-venue
-/// band. Floor targeting still lives in <c>ExpeditionSystem.TargetFloorFor</c>, which is why this
-/// router no longer reads the party's depth record.</para>
+/// <para><b>Why rank replaced the power band (the §11.8 fix).</b> The prior router read
+/// <c>CombatMath.PartyAveragePower</c> — a continuous, non-monotonic signal that wobbles with gear
+/// and roster churn — against a per-venue <c>EntryPower</c> threshold, and permanently preferred
+/// the highest band a party had EVER reached. Power saturated (~70–76 router-side, measured) below
+/// the Mine's floor-5 gate (100), so the moment a party's power crossed Gloomwood's band it was
+/// routed there forever — a 4-floor venue — and could never route back to finish a 5-floor one
+/// (§11.8, 2026-08-08). Every threshold value was swept and the lever saturates: the fix is not a
+/// better number, it is a different signal. <see cref="Hero.LadderRank"/> only ever increments, on
+/// a bottom-floor clear, so oscillation is impossible BY CONSTRUCTION — a party can fall back to a
+/// lower-ranked venue (its own frontier has no live venue yet) but a rank itself never regresses,
+/// so once a live rank-2 venue exists, a rank-2 party never permanently re-strands in rank-1
+/// territory the way the old latch could. <c>partyPower</c> leaves routing entirely (still used for
+/// the in-venue floor gate, <c>ExpeditionResolver</c>'s <c>venue.Gate(floor)</c> check — an
+/// unrelated, unchanged mechanism, AE3).</para>
+///
+/// <para>The band-vs-headroom history this router replaced (PR #242's tightest-fit skew, the
+/// 2026-08-01 EntryPower placement sweep) lives in git, not here — see
+/// <c>VenueRegistry</c>/<c>GloomwoodVenue</c>/<c>EmberfallFoundryVenue</c> history for the deleted
+/// field's tuning archaeology.</para>
 ///
 /// Callers own the queue bookkeeping: increment <c>queueCounts[chosenId]</c> after each pick, so
 /// parties processed later in the SAME tick see the updated count. Both the Morning prediction
@@ -43,7 +50,7 @@ namespace GameSim.Venues;
 ///
 /// Bounty-driven parties do NOT call this: a <c>Bounty</c> carries no venue id (bounties are
 /// structurally Mine-scoped, R18 — "the Mine IS the map"), so a party with an accepted bounty routes
-/// straight to the Mine; only bounty-free parties are routed by band.
+/// straight to the Mine; only bounty-free parties are routed by rank.
 /// </summary>
 public static class VenueRouter
 {
@@ -51,12 +58,16 @@ public static class VenueRouter
     /// Choose the live venue a bounty-free party raids today. Pure integer comparison — draws no RNG,
     /// so routing can never become a new RNG-draw site (KTD2).
     /// </summary>
-    /// <param name="partyPower">The party's average effective power (<c>CombatMath.PartyAveragePower</c>).</param>
+    /// <param name="partyRank">The party's ladder rank for routing purposes — interim rule (L1):
+    /// the MIN of its members' <see cref="Hero.LadderRank"/>, so a mixed-rank party routes no
+    /// higher than its least-graduated member. L2's cohort formation groups parties by rank before
+    /// they ever reach this call, at which point every member of a formed party shares one rank and
+    /// MIN becomes a no-op over a single-valued set — named here so the successor is traceable.</param>
     /// <param name="liveVenueIds">The live rotation to choose among (<see cref="VenueRegistry.LiveRotation"/>).</param>
     /// <param name="queueCounts">Parties already routed to each venue id THIS TICK, prior to this pick.
     /// A missing key reads as zero (no parties routed there yet).</param>
     public static string ChooseVenue(
-        int partyPower,
+        int partyRank,
         ImmutableArray<string> liveVenueIds,
         IReadOnlyDictionary<string, int> queueCounts)
     {
@@ -66,12 +77,12 @@ public static class VenueRouter
         }
 
         var bestId = liveVenueIds[0];
-        var best = RankKey(bestId, partyPower, queueCounts);
+        var best = RankKey(bestId, partyRank, queueCounts);
 
         for (var i = 1; i < liveVenueIds.Length; i++)
         {
             var id = liveVenueIds[i];
-            var key = RankKey(id, partyPower, queueCounts);
+            var key = RankKey(id, partyRank, queueCounts);
             if (IsBetter(key, best))
             {
                 bestId = id;
@@ -82,38 +93,50 @@ public static class VenueRouter
         return bestId;
     }
 
-    /// <summary>The comparator's keys, in priority order: has the party reached this venue's band,
-    /// how far up the progression ladder the band sits, how long the queue is, and the venue id
+    /// <summary>The comparator's keys, in priority order: has the party reached this venue's rung,
+    /// how far up the ladder the rung sits, how long the queue is, and the venue id
     /// (final, always-decisive tiebreak).</summary>
-    private static (bool InBand, int EntryPower, int Queue, string Id) RankKey(
-        string venueId, int partyPower, IReadOnlyDictionary<string, int> queueCounts)
+    private static (bool Eligible, int LadderRank, int Queue, string Id) RankKey(
+        string venueId, int partyRank, IReadOnlyDictionary<string, int> queueCounts)
     {
         var venue = VenueRegistry.Require(venueId);
         var queue = queueCounts.TryGetValue(venueId, out var count) ? count : 0;
-        return (partyPower >= venue.EntryPower, venue.EntryPower, queue, venueId);
+        return (partyRank >= venue.LadderRank, venue.LadderRank, queue, venueId);
     }
 
-    /// <summary>True iff <paramref name="candidate"/> outranks <paramref name="incumbent"/> under the
-    /// comparator's priority order (InBand; then highest EntryPower among reached bands, lowest among
-    /// unreached; then smallest Queue; then Ordinal Id). The Id fallback makes this a total order over
-    /// distinct venue ids — never returns true for two identical keys, so <see cref="ChooseVenue"/>'s
-    /// left-to-right scan is order-independent.</summary>
+    /// <summary>
+    /// True iff <paramref name="candidate"/> outranks <paramref name="incumbent"/> under the
+    /// comparator's priority order (Eligible; then highest LadderRank among eligible rungs, lowest
+    /// among ineligible; then smallest Queue; then Ordinal Id). The Id fallback makes this a total
+    /// order over distinct venue ids — never returns true for two identical keys, so
+    /// <see cref="ChooseVenue"/>'s left-to-right scan is order-independent.
+    ///
+    /// <para><b>Total-order proof (unchanged shape from the EntryPower comparator it replaces):</b>
+    /// each of the four fields is itself totally ordered (bool, int, int, then Ordinal string as the
+    /// terminal tiebreak), and the fields are compared in a fixed, never-revisited sequence — so for
+    /// any two DISTINCT venue ids, exactly one of <c>IsBetter(a,b)</c> / <c>IsBetter(b,a)</c> is true
+    /// (antisymmetry + totality), and transitivity holds because each field's comparison is
+    /// transitive and the sequence never contradicts an earlier field's verdict. The Id field can
+    /// never itself tie for two distinct venues (Ordinal string equality implies identity), which is
+    /// what guarantees the chain terminates in a strict answer rather than a tie.</para>
+    /// </summary>
     private static bool IsBetter(
-        (bool InBand, int EntryPower, int Queue, string Id) candidate,
-        (bool InBand, int EntryPower, int Queue, string Id) incumbent)
+        (bool Eligible, int LadderRank, int Queue, string Id) candidate,
+        (bool Eligible, int LadderRank, int Queue, string Id) incumbent)
     {
-        if (candidate.InBand != incumbent.InBand)
+        if (candidate.Eligible != incumbent.Eligible)
         {
-            return candidate.InBand;
+            return candidate.Eligible;
         }
 
-        if (candidate.EntryPower != incumbent.EntryPower)
+        if (candidate.LadderRank != incumbent.LadderRank)
         {
-            // Reached bands: send the party as far up the ladder as it has earned. Unreached
-            // bands (no EntryPower-0 venue live): the nearest band is the least-wrong home.
-            return candidate.InBand
-                ? candidate.EntryPower > incumbent.EntryPower
-                : candidate.EntryPower < incumbent.EntryPower;
+            // Eligible rungs: send the party as far up the ladder as it has earned (the party's
+            // frontier). Ineligible rungs (no rank-0 venue live): the nearest rung is the
+            // least-wrong home — the never-strand rule, preserved from the EntryPower router.
+            return candidate.Eligible
+                ? candidate.LadderRank > incumbent.LadderRank
+                : candidate.LadderRank < incumbent.LadderRank;
         }
 
         if (candidate.Queue != incumbent.Queue)

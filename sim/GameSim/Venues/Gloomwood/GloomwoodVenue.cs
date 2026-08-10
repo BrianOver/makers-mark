@@ -77,18 +77,14 @@ public static class GloomwoodVenue
                 OreKey: ore[floor - 1]));
         }
 
-        // EntryPower 72: the veteran band — a deliberate TIE with dormant Emberfall's 72, so at
-        // Emberfall's art-gated go-live the two top venues become queue-split PEERS instead of
-        // one strictly dominating. Third placement, each measured with the 20-seed batch farm
-        // (2026-08-01): 35 let parties cross within days and Gloomwood soaked 65%+; 55 measured
-        // 86% in the shipping three-venue world; the full sweep 55/65/68/70/71/72 measured
-        // Gloomwood at 86/75/74/70/72/68% — the lever saturates near ~68-70% because the economy
-        // feeds back (parties pushed to the Mine sell the smith copper, gear improves, the fleet
-        // levels back over any bar below the ~81 power ceiling). 72 is the best reachable point:
-        // shipping 68/25/7 (gloomwood/mine/crypt), go-live sanity 42/26/24/6
-        // (ember/mine/gloomwood/crypt). Pushing below ~68% needs a routing-rule change (top-band
-        // congestion overflow), not a threshold — an open recommendation, deliberately not
-        // smuggled into a tuning pass.
-        return new VenueDefinition(Id, "The Gloomwood", floors.ToImmutable(), EntryPower: 72);
+        // LadderRank 1 (the forward ladder, owner ruling 2026-08-10, plan 2026-08-10-003 L1):
+        // Gloomwood is the first rung past the Mine/Crypt starter tier — a party reaches it only
+        // by graduating (Hero.LadderRank incrementing on a rank-0 venue's bottom-floor clear), not
+        // by a power reading that could wobble back down. This REPLACES the deleted EntryPower
+        // power-band field (was 72, tuned against a continuous party-power signal that saturated
+        // below the Mine's floor-5 gate and permanently stole mid-power parties before they ever
+        // finished a 5-floor venue — the §11.8 routing trap; the tuning history for that dead
+        // mechanism lives in git, not here). Gates stay 0/20/45/75 pending L3's re-gate.
+        return new VenueDefinition(Id, "The Gloomwood", floors.ToImmutable(), LadderRank: 1);
     }
 }

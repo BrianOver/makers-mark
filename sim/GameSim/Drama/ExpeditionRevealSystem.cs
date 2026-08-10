@@ -1,22 +1,28 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Heroes;
+using GameSim.Venues;
 
 namespace GameSim.Drama;
 
 /// <summary>
 /// The Evening reveal (KTD5's second half): consumes every pending
 /// <see cref="ExpeditionResult"/>, in departure order, and applies it to the world —
-/// deaths and memorials (R13/F4), loot gold (R17), depth records (R15), attribution
-/// beats onto item histories and hero memories (R11/F3), and the ore market (R6).
+/// deaths and memorials (R13/F4), loot gold (R17), depth records (R15), ladder graduation
+/// (the forward ladder, plan 2026-08-10-003 L1), attribution beats onto item histories and
+/// hero memories (R11/F3), and the ore market (R6).
 ///
 /// Emission order per result is fixed (determinism contract): PartyReturned, HeroDied*,
-/// FloorRecordSet*, AttributionBeatEvent*, OreOffered*. Draws no RNG — the expedition
-/// was fully resolved at departure; the Evening only tells the town about it.
+/// FloorRecordSet*, VenueGraduated?, AttributionBeatEvent*, OreOffered*. Draws no RNG — the
+/// expedition was fully resolved at departure; the Evening only tells the town about it.
 ///
 /// Bookkeeping rules this system owns (pinned by tests):
 /// - Loot gold reaches SURVIVORS only — a dead hero's purse and ore are lost with them.
 /// - Depth records are set by survivors only, on strict improvement.
+/// - Graduation (<see cref="Hero.LadderRank"/>) fires on a survivor whose rank equals the
+///   cleared venue's rank, exactly when <see cref="ExpeditionResult.DeepestFloorCleared"/> hits
+///   the venue's bottom floor — this is the ONLY write site for the field, so it is monotonic
+///   by construction (never assigns anything but venue rank + 1).
 /// - Killing blows append "kill" and lethal saves "save" to the item's history and the
 ///   bearer's <see cref="ItemMemory"/>; breakpoint clears surface as events/gossip only
 ///   (R12 tallies count kills and saves; ItemMemory has no third counter).
@@ -109,6 +115,37 @@ public sealed class ExpeditionRevealSystem : IPhaseSystem
                 },
             };
             events.Emit(new FloorRecordSet(heroId, result.DeepestFloorCleared));
+        }
+
+        // 3b. Graduation — the forward ladder (owner ruling 2026-08-10, plan 2026-08-10-003 L1,
+        // §11.8's fix). Clearing a venue's BOTTOM floor promotes every SURVIVING member whose
+        // LadderRank equals the venue's own rank — pure post-resolution state edit, draws no RNG.
+        // Bounty-driven clears count (a bounty result is a normal ExpeditionResult, VenueId "mine").
+        // Idempotent by the rank-equality guard: a hero already above the venue's rank (promoted by
+        // an earlier clear, e.g. a teammate's separate party finishing the same venue earlier this
+        // same Evening) does not re-graduate, and a dead hero (excluded from Survivors) never does.
+        // Monotonic by construction: this is the ONLY write site for Hero.LadderRank, and it only
+        // ever assigns venue.LadderRank + 1 — never a smaller value — so no code path can decrement it.
+        var graduatedVenue = VenueRegistry.Require(result.VenueId);
+        if (result.DeepestFloorCleared == graduatedVenue.FloorCount)
+        {
+            var graduates = ImmutableList.CreateBuilder<HeroId>();
+            foreach (var heroId in result.Survivors)
+            {
+                if (state.Heroes.TryGetValue(heroId.Value, out var hero) && hero.LadderRank == graduatedVenue.LadderRank)
+                {
+                    state = state with
+                    {
+                        Heroes = state.Heroes.SetItem(heroId.Value, hero with { LadderRank = graduatedVenue.LadderRank + 1 }),
+                    };
+                    graduates.Add(heroId);
+                }
+            }
+
+            if (graduates.Count > 0)
+            {
+                events.Emit(new VenueGraduated(result.VenueId, graduates.ToImmutable(), graduatedVenue.LadderRank + 1));
+            }
         }
 
         // 4. Attribution beats (R11/F3/AE1/AE2): surface every proven beat, tally kills

@@ -246,6 +246,137 @@ public class ExpeditionRevealSystemTests
         Assert.Empty(tick.Events.OfType<OreOffered>());
     }
 
+    // ---- Ladder graduation (owner ruling 2026-08-10, plan 2026-08-10-003 L1, §11.8's fix) ----
+
+    [Fact]
+    public void ClearingTheBottomFloor_PromotesSurvivingSameRankMembers_EmitsOneVenueGraduated()
+    {
+        // Fresh heroes start at LadderRank 0 (NewWorld default) — the Mine's own rank. Clearing its
+        // bottom floor (5) graduates every surviving member to rank 1, in ONE event naming both.
+        var state = NewWorld();
+        var result = Result(party: [1, 2], survivors: [1, 2], deaths: [], targetFloor: 5, deepestCleared: 5);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.Equal(1, tick.NewState.Heroes[1].LadderRank);
+        Assert.Equal(1, tick.NewState.Heroes[2].LadderRank);
+
+        var graduated = Assert.Single(tick.Events.OfType<VenueGraduated>());
+        Assert.Equal("mine", graduated.VenueId);
+        Assert.Equal(1, graduated.NewRank);
+        Assert.Equal(new[] { new HeroId(1), new HeroId(2) }, graduated.Graduates);
+    }
+
+    [Fact]
+    public void DeadHeroes_NeverGraduate_EvenOnABottomFloorClear()
+    {
+        var state = NewWorld();
+        var result = Result(
+            party: [1, 2], survivors: [1], deaths: [2],
+            targetFloor: 5, deepestCleared: 5,
+            floors: [new FloorOutcome(5, false, [Combat(5, 2, "The Forgeworm", taken: 40)])]);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.Equal(1, tick.NewState.Heroes[1].LadderRank); // survivor graduates
+        Assert.Equal(0, tick.NewState.Heroes[2].LadderRank); // dead hero never does
+
+        var graduated = Assert.Single(tick.Events.OfType<VenueGraduated>());
+        Assert.Equal(new[] { new HeroId(1) }, graduated.Graduates); // the dead hero is not named
+    }
+
+    [Fact]
+    public void HeroAlreadyAboveTheVenuesRank_DoesNotReGraduate_Idempotent()
+    {
+        // Monotonicity guard: a hero already past the Mine's rank (0) — say she graduated Gloomwood
+        // already — must not increment again just because a Mine run cleared floor 5. This is also
+        // the multi-clear-same-day guard: a teammate's earlier result this same Evening already
+        // promoted her.
+        var state = NewWorld();
+        state = state with { Heroes = state.Heroes.SetItem(1, state.Heroes[1] with { LadderRank = 1 }) };
+        var result = Result(party: [1], survivors: [1], deaths: [], targetFloor: 5, deepestCleared: 5);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.Equal(1, tick.NewState.Heroes[1].LadderRank); // unchanged — NOT bumped to 2
+        Assert.Empty(tick.Events.OfType<VenueGraduated>()); // nobody qualified — no event at all
+    }
+
+    [Fact]
+    public void ClearingShortOfTheBottomFloor_NeverGraduates()
+    {
+        // The Mine is 5 floors deep — clearing floor 4 (its own competence-retreat ceiling for a
+        // fresh party) is real progress but not a graduation.
+        var state = NewWorld();
+        var result = Result(party: [1], survivors: [1], deaths: [], targetFloor: 4, deepestCleared: 4);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.Equal(0, tick.NewState.Heroes[1].LadderRank);
+        Assert.Empty(tick.Events.OfType<VenueGraduated>());
+    }
+
+    [Fact]
+    public void ClearingAHigherRungsBottomFloor_UsesThatVenuesRank()
+    {
+        // Graduation reads the CLEARED venue's own rank, not always the Mine's — a rank-1 hero who
+        // clears Gloomwood's bottom floor (4) graduates to rank 2, the same mechanism one rung up.
+        var state = NewWorld();
+        state = state with { Heroes = state.Heroes.SetItem(1, state.Heroes[1] with { LadderRank = 1 }) };
+        var result = Result(party: [1], survivors: [1], deaths: [], targetFloor: 4, deepestCleared: 4)
+            with { VenueId = "gloomwood" };
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.Equal(2, tick.NewState.Heroes[1].LadderRank);
+        var graduated = Assert.Single(tick.Events.OfType<VenueGraduated>());
+        Assert.Equal("gloomwood", graduated.VenueId);
+        Assert.Equal(2, graduated.NewRank);
+    }
+
+    [Fact]
+    public void RankOnlyEverIncrements_AcrossASequenceOfReveals()
+    {
+        // A hero below the venue's rank never graduates (only same-rank does), and a hero at or
+        // above never regresses — pinned across a short SEQUENCE of reveals, not just one call.
+        var state = NewWorld();
+        state = state with { Heroes = state.Heroes.SetItem(1, state.Heroes[1] with { LadderRank = 0 }) };
+
+        // Day 1: clears the Mine's bottom floor — 0 -> 1.
+        var afterFirst = TickEvening(AtEvening(state, Result(party: [1], survivors: [1], deaths: [], targetFloor: 5, deepestCleared: 5)));
+        Assert.Equal(1, afterFirst.NewState.Heroes[1].LadderRank);
+
+        // Day 2: another Mine clear — she is already rank 1, above the Mine's rank 0, so this is a
+        // no-op (idempotent), never a decrement or a second bump.
+        var afterSecond = TickEvening(AtEvening(afterFirst.NewState, Result(party: [1], survivors: [1], deaths: [], targetFloor: 5, deepestCleared: 5)));
+        Assert.Equal(1, afterSecond.NewState.Heroes[1].LadderRank);
+        Assert.Empty(afterSecond.Events.OfType<VenueGraduated>());
+
+        // Day 3: clears Gloomwood's bottom floor (rank 1, matching her current rank) — 1 -> 2.
+        var afterThird = TickEvening(AtEvening(
+            afterSecond.NewState,
+            Result(party: [1], survivors: [1], deaths: [], targetFloor: 4, deepestCleared: 4) with { VenueId = "gloomwood" }));
+        Assert.Equal(2, afterThird.NewState.Heroes[1].LadderRank);
+    }
+
+    [Fact]
+    public void BountyDrivenClear_AtTheMine_StillGraduates()
+    {
+        // L1 scope item 5: the pre-router bounty short-circuit is unaffected by the ladder — a
+        // bounty-driven expedition is still an ordinary ExpeditionResult (VenueId "mine" by
+        // contract default), so clearing floor 5 under a bounty graduates exactly like any other
+        // Mine clear. Graduation reads ONLY the result's venue/floor/survivors — never whether a
+        // bounty drove the trip.
+        var state = NewWorld();
+        var result = Result(party: [1], survivors: [1], deaths: [], targetFloor: 5, deepestCleared: 5);
+        Assert.Equal("mine", result.VenueId); // contract default — this IS the bounty-scoped venue
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.Equal(1, tick.NewState.Heroes[1].LadderRank);
+        Assert.Single(tick.Events.OfType<VenueGraduated>());
+    }
+
     // ---- Wipe and bookkeeping edges ----
 
     [Fact]

@@ -146,8 +146,29 @@ public class AtomicEquivalenceTests
     // this re-pin, the same both-equal signature as the 2026-08-01 Emberfall-dormant re-pin
     // above). Golden re-baseline #0 of the ladder wave's five — the save-shape one the plan's L0
     // names "save-fixture only."
+    // GOLDEN RE-BASELINE #1 OF 5 (forward-ladder plan 2026-08-10-003, L1 — graduation + rank
+    // router, §11.8's fix): **Class 2 — routing decisions change, same stream different position.**
+    // VenueRouter.ChooseVenue now keys on Hero.LadderRank (MIN of party members, interim) instead
+    // of CombatMath.PartyAveragePower against a per-venue EntryPower band — EntryPower is deleted.
+    // Every hero starts, and on this idle trace STAYS, at LadderRank 0 (heroes still fight — a
+    // zero-ACTION trace means the smith crafts/shops nothing, not that expeditions stop — so XP and
+    // Level accrue daily even with empty gear; but nobody ever clears a bottom floor to graduate),
+    // so every bounty-free party's rank is 0 the whole 30 days. The OLD EntryPower router read a
+    // DIFFERENT signal for the same fights: raw party power off the same accruing Level, and this
+    // exact idle trace is on record crossing the old Gloomwood band mid-run — two prior re-pins in
+    // this file's own ledger (2026-08-01, "venue-router power bands" and "Gloomwood band 55 → 72")
+    // exist BECAUSE this trace's power passes through the band region and permanently rerouted a
+    // party there under the old sticky-highest-band rule. Under the ladder, that same party has no
+    // path to Gloomwood at all (rank 0, never graduates) — it stays in the Mine/Sunken-Crypt rank-0
+    // pair the entire 30 days instead, so which of the two peers it lands on (and every downstream
+    // combat draw after the divergence point) shifts. The tell this is legitimate and not a new
+    // stream: the sibling PhaseBNoDrawGateTests RngState pin shows `Inc` UNCHANGED
+    // (13279888329118852579) and only `State` moved — same stream, different position, exactly the
+    // 2026-08-01 EntryPower-placement re-pins' own signature, not a new draw site (the router is
+    // still pure integer comparison; MIN over LadderRank adds no RNG). Determinism holds (same
+    // seed+actions = identical state).
     private const string ExpectedPreCounterSha256 =
-        "5BE5A1B6785D90AE76EFB9109A6B6B4CCB5516E51268006F952FDDDBB7E326D0";
+        "8DF23E515D001A8B007A35972676A4B62FB8B15CAF782745DCA6D18BA59668E9";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

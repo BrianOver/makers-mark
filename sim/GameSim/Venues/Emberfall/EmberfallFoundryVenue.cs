@@ -100,14 +100,14 @@ public static class EmberfallFoundryVenue
                 }));
         }
 
-        // EntryPower 72: the ENDGAME band, tuned and READY while the venue sits DORMANT (not in
-        // VenueRegistry.LiveRotation — no committed art yet; see that doc). Placement record from
-        // the 4-venue measurement (2026-08-01, 20-seed x 100-day sweep): router-side party power
-        // saturates at ~70-76 (p25-p75) — the router never sees in-run craft/consumable
-        // modifiers, so its scale tops out well below the floor-5 gate of 100 — and 72 is the
-        // late-game MEDIAN, which routed the stronger half of veteran parties here (44% of all
-        // routing). The first placement (70) sat at late p25 and soaked 54%. Re-measure with the
-        // batch farm at go-live: the curve moves whenever crafting/routing moves.
-        return new VenueDefinition(Id, "The Emberfall Foundry", floors.ToImmutable(), EntryPower: 72);
+        // LadderRank 2 (the forward ladder, owner ruling 2026-08-10, plan 2026-08-10-003 L1): the
+        // endgame rung, ranked and READY while the venue sits DORMANT (not in
+        // VenueRegistry.LiveRotation — no committed art yet; see that doc). This REPLACES the
+        // deleted EntryPower power-band field (was 72, a continuous party-power threshold that
+        // saturated well below any floor-5 gate — the tuning history for that dead mechanism lives
+        // in git, not here). A party reaches rank 2 only by graduating Gloomwood (rank 1), so
+        // Emberfall's share of routed parties is now a function of how many parties climb the
+        // ladder, not a threshold — re-measure with the batch farm at L4's art-gated go-live.
+        return new VenueDefinition(Id, "The Emberfall Foundry", floors.ToImmutable(), LadderRank: 2);
     }
 }
