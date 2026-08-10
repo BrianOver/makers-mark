@@ -103,7 +103,7 @@ public class VenueConformanceTests
         // §11.8's fix): Mine + Sunken Crypt are the rank-0 starter peers (queue-split); Gloomwood is
         // rank 1, the first rung reached only by graduating (a bottom-floor clear incrementing
         // Hero.LadderRank, never a power reading); Emberfall is rank 2, the endgame rung, ranked
-        // and ready while dormant (no live art yet — see VenueRegistry.LiveRotation). Unlike the
+        // since L1 and LIVE since L4 (see VenueRegistry.LiveRotation). Unlike the
         // deleted EntryPower bands, THESE RANKS DO NOT TIE — a party eligible for both Gloomwood and
         // Emberfall always prefers Emberfall outright (no queue-split "peer" relationship between
         // rungs; peers only ever share ONE rung, per VenueRouterTests). Change these consciously —
@@ -131,17 +131,17 @@ public class VenueConformanceTests
     }
 
     [Fact]
-    public void LiveRotation_IsExactlyMineGloomwoodAndCrypt()
+    public void LiveRotation_IsExactlyMineGloomwoodCryptAndEmberfall()
     {
         // The live-venue contract (P4): a registered venue is NOT automatically live. T1 content
         // flip (relands PR #242): the Sunken Crypt joins the Mine and Gloomwood, in this exact
         // order — callers seed VenueRouter's queue dictionary from this array, and every golden
-        // replay that reads LiveRotation's order depends on it. Emberfall is deliberately ABSENT:
-        // built, ranked (LadderRank 2), and dormant until its art wave — no committed backdrop or
-        // monster portraits yet (see VenueRegistry.LiveRotation's own doc). A venue joins only
-        // through its own determinism-gated re-baseline (L4 flips Emberfall live).
+        // replay that reads LiveRotation's order depends on it. Forward-ladder plan 2026-08-10-003
+        // L4: Emberfall joins too, appended last — its art (backdrop + all five monster portraits)
+        // landed and is committed in godot/assets/art/art-manifest.json, so
+        // VenueHubTests.VenueBackdropArt_Present_RendersRealArt_NotFallback no longer blocks it.
         Assert.Equal(
-            new[] { VenueRegistry.MineId, "gloomwood", "sunken-crypt" },
+            new[] { VenueRegistry.MineId, "gloomwood", "sunken-crypt", "emberfall" },
             VenueRegistry.LiveRotation);
     }
 

@@ -68,6 +68,10 @@ public class VenueRoutingIntegrationTests
         // not just registered (the whole point of L3's re-gate).
         Assert.Contains("gloomwood", seenVenues);
 
+        // Forward-ladder plan 2026-08-10-003 L4: Emberfall is live and, on this seed, actually
+        // reached — the ladder's third rung is real traffic, not just a registered rank.
+        Assert.Contains("emberfall", seenVenues);
+
         // Every venue id that ever appeared is a member of the live rotation — routing never invents
         // or strands a party at an unregistered/non-live venue.
         foreach (var venueId in seenVenues)
@@ -76,12 +80,13 @@ public class VenueRoutingIntegrationTests
         }
 
         // At least one hero graduated past rank 0 — the ladder actually moves on this seed now.
-        // Every rank is a legal value (0/1/2 — Emberfall stays dormant, L4's job) and monotonic by
-        // construction (ExpeditionRevealSystem is the only write site); no test here claims a
-        // SPECIFIC count, since that is exactly the kind of economy-pace number this plan's own
-        // L1 finding warns against over-pinning.
+        // Every rank is a legal value (0/1/2/3 — L4 flipped Emberfall live, so rank 3, graduating
+        // ITS bottom floor, is now reachable too) and monotonic by construction
+        // (ExpeditionRevealSystem is the only write site); no test here claims a SPECIFIC count,
+        // since that is exactly the kind of economy-pace number this plan's own L1 finding warns
+        // against over-pinning.
         Assert.Contains(state.Heroes.Values, hero => hero.LadderRank > 0);
-        Assert.All(state.Heroes.Values, hero => Assert.InRange(hero.LadderRank, 0, 2));
+        Assert.All(state.Heroes.Values, hero => Assert.InRange(hero.LadderRank, 0, 3));
     }
 
     [Fact]

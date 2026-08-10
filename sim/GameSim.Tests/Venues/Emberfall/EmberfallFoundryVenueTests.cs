@@ -46,7 +46,7 @@ public class EmberfallFoundryVenueTests
     [Fact]
     public void Floors_PinTheNamedGatesKindsAndOres()
     {
-        var gate = new[] { 0, 15, 35, 60, 100 };
+        var gate = new[] { 0, 15, 35, 60, 73 };
         for (var floor = 1; floor <= 5; floor++)
         {
             Assert.Equal(floor, Foundry.Floors[floor - 1].Floor); // ascending, 1-based, index 0 == floor 1

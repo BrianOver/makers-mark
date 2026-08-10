@@ -14,17 +14,19 @@ namespace GameSim.Venues.Emberfall;
 /// Crypt. A flooded-forge ruin whose fires never fully went out: warmer, less-dark variety for the
 /// venue roster.</para>
 ///
-/// <para><b>Five floors, Mine-peer gates 0/15/35/60/100.</b> A deliberate peer of the Mine's gate
+/// <para><b>Five floors, Mine-peer gates 0/15/35/60/73.</b> A deliberate peer of the Mine's gate
 /// curve — same structural difficulty ladder — so the monster stats mirror the Mine's peer formulas
 /// (HP 12+10f, attack 5+6f, defense 2+2f, gold 5+3f); the venues differ in NAMES, ORES, and
-/// atmosphere, not difficulty. Final stat tuning rides go-live (wave-D D8); until then the venue is
-/// registered but NOT in <see cref="VenueRegistry.LiveRotation"/>, so it moves no seed's world.</para>
+/// atmosphere, not difficulty. The boss gate (floor 5) is the one MEASURED value — see
+/// <see cref="Build"/>'s own comment — and the venue is LIVE (forward-ladder plan 2026-08-10-003
+/// L4, in <see cref="VenueRegistry.LiveRotation"/>) now that its art wave has landed.</para>
 ///
 /// <para><b>Ore ladder (den palette family).</b> firebrick → slagiron → quench-salt → emberglass →
 /// heartcoal, one per floor, unique within the venue (the <c>OreFloor</c> inversion guards
 /// uniqueness) and disjoint from every other venue's ores — the Foundry mints forge-ores, never Mine,
-/// Gloomwood, or Crypt ore. These are the Ashguild's supply materials; they are registered in the
-/// material registry (draw-neutral, not in the priced pool) alongside this venue.</para>
+/// Gloomwood, or Crypt ore. These are the Ashguild's supply materials; they joined
+/// <c>MaterialRegistry.PricedPool</c> in the same L4 re-baseline that flipped this venue live (a
+/// returning hero's forge-ore must be priceable at the Evening reveal or the reveal crashes).</para>
 ///
 /// <para><b>Monster personalities</b> (art + future per-floor-variant direction — the current
 /// <see cref="VenueFloor"/> contract carries only the kind NAME, so the character lives here as
@@ -55,7 +57,7 @@ public static class EmberfallFoundryVenue
     public const string Heartcoal = "heartcoal";
 
     /// <summary>
-    /// The Emberfall Foundry definition: 5 floors, gates 0/15/35/60/100 (Mine-peer, non-decreasing),
+    /// The Emberfall Foundry definition: 5 floors, gates 0/15/35/60/73 (Mine-peer, non-decreasing),
     /// the named forge monsters, and the firebrick…heartcoal ore ladder. Built once, immutable forever.
     /// </summary>
     public static readonly VenueDefinition Definition = Build();
@@ -73,7 +75,26 @@ public static class EmberfallFoundryVenue
                     2 => 15,
                     3 => 35,
                     4 => 60,
-                    5 => 100, // Mine-peer boss gate; tuned at go-live (D8)
+                    // Boss gate, MEASURED (forward-ladder plan 2026-08-10-003 L4). Floors 1-4 are the
+                    // Mine-peer trivial floors (0/15/35/60 sit at or below a graduating rank-2 party's
+                    // measured entry power, so they are cleared en route on the SAME expedition that
+                    // attempts the boss — TargetFloorFor's +1-past-global-deepest rule, and
+                    // ExpeditionResolver always resolves from floor 1, mean a fresh rank-2 party's
+                    // very first Emberfall trip already targets floor 5); only the boss floor gates
+                    // pacing, exactly the pattern GloomwoodVenue.Build's own comment documents for its
+                    // floor 4. Characterized (this PR's Characterize tool, main seed 2026 + 10 sweep
+                    // seeds, post-PricedPool-flip, post-Tier-12-14-recipes) across four candidate
+                    // gates: 90 stranded 10 of 11 seeds for the full 100-day window (a graduating
+                    // rank-2 party's measured power, 73-85, sits at or below 90 — the same WALL
+                    // failure class L3 found for the Mine); 80 still stranded 6 of 11; 76 reached all
+                    // 11 but with a wide, unpredictable tail (3-58 days after Gloomwood-boss
+                    // graduation); 73 reached ALL 11 seeds with a tight 2-15 day spread (median ~6) —
+                    // the one value where every seed clears AND the tail stays bounded. This lands
+                    // WITHIN the plan's 8-18 day proposal on most seeds and faster on a few (2-3 days)
+                    // — unlike L3's Gloomwood gate (which undershot to a universal 1-4 days), the
+                    // gear curve here (Tier 12-14 recipes, once Emberfall ore actually flows) supports
+                    // the intended pacing; no gap to flag for L5/L6 on this rung.
+                    5 => 73,
                     _ => throw new ArgumentOutOfRangeException(nameof(floor)),
                 },
                 MonsterKind: floor switch
@@ -101,13 +122,19 @@ public static class EmberfallFoundryVenue
         }
 
         // LadderRank 2 (the forward ladder, owner ruling 2026-08-10, plan 2026-08-10-003 L1): the
-        // endgame rung, ranked and READY while the venue sits DORMANT (not in
-        // VenueRegistry.LiveRotation — no committed art yet; see that doc). This REPLACES the
-        // deleted EntryPower power-band field (was 72, a continuous party-power threshold that
-        // saturated well below any floor-5 gate — the tuning history for that dead mechanism lives
-        // in git, not here). A party reaches rank 2 only by graduating Gloomwood (rank 1), so
-        // Emberfall's share of routed parties is now a function of how many parties climb the
-        // ladder, not a threshold — re-measure with the batch farm at L4's art-gated go-live.
+        // endgame rung. Ranked since L1; LIVE since L4 (VenueRegistry.LiveRotation, once the art
+        // wave landed). This REPLACES the deleted EntryPower power-band field (was 72, a continuous
+        // party-power threshold that saturated well below any floor-5 gate — the tuning history for
+        // that dead mechanism lives in git, not here). A party reaches rank 2 only by graduating
+        // Gloomwood (rank 1), so Emberfall's share of routed parties is a function of how many
+        // parties climb the ladder, not a threshold — measured post-flip (L4's characterization,
+        // main seed + 10 sweep seeds pooled): stage 0 (pre-rank1) splits Mine/Sunken-Crypt ~50/50 as
+        // always; stage 2 (rank2 reached) gives Emberfall 67.9% of routed party-ticks, Mine 24.8%,
+        // Gloomwood 4.7%, Sunken-Crypt 2.6% — #92's old "flip collapses Gloomwood 61%->18%" finding
+        // measured a THRESHOLD TIE between two venues competing for the same parties the whole game;
+        // under rank routing a party can never even reach Emberfall's competition until it has
+        // graduated OUT of Gloomwood, so the two venues are never really rivals — share is stage-
+        // keyed, not threshold-keyed, and #92's number is obsolete (§11.5, §11.8).
         return new VenueDefinition(Id, "The Emberfall Foundry", floors.ToImmutable(), LadderRank: 2);
     }
 }

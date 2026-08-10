@@ -7,12 +7,13 @@ using GameSim.Harness;
 namespace GameSim.Cli;
 
 /// <summary>
-/// The forward-ladder plan's L3 characterization harness (plan 2026-08-10-003, §11.8's fix):
+/// The forward-ladder plan's characterization harness (plan 2026-08-10-003, §11.8's fix):
 /// measures the SAME signal the plan's gate rule reads — party power by day, first-floor-reached
-/// days, gold, and (new) graduation days/power — under <see cref="BaselinePlayer"/> on the main
-/// seed plus a sweep. A DATA TOOL, not a gate: it asserts nothing, prints raw tables, and exits 0.
-/// Reused three times across L3 (pre-recipe, post-recipe, post-gate) to prove the gate values were
-/// set from a measurement, not a guess (§11.6's "measure, don't guess" idiom).
+/// days, gold, and graduation days/power (rank0-&gt;1, rank1-&gt;2, and, since L4, rank2-&gt;3) —
+/// under <see cref="BaselinePlayer"/> on the main seed plus a sweep. A DATA TOOL, not a gate: it
+/// asserts nothing, prints raw tables, and exits 0. Reused three times across L3 (pre-recipe,
+/// post-recipe, post-gate) and again across L4 (pre-flip, post-flip, post-gate) to prove every gate
+/// value was set from a measurement, not a guess (§11.6's "measure, don't guess" idiom).
 ///
 /// <c>PartyPower</c> here is <see cref="CombatMath.EffectivePower"/> averaged over every ALIVE hero
 /// at each day's Morning boundary — the same units venue <c>Gate</c> values are expressed in, so a
@@ -88,7 +89,10 @@ public static class Characterize
         int Grad1PartySize,
         int FirstGrad2Day,
         int Grad2PartyPower,
-        int Grad2PartySize);
+        int Grad2PartySize,
+        int FirstGrad3Day,
+        int Grad3PartyPower,
+        int Grad3PartySize);
 
     private sealed record SeedResult(
         ulong Seed,
@@ -99,7 +103,22 @@ public static class Characterize
         CampaignAct FinalAct,
         int ActIIStartDay,
         int ActIIIStartDay,
-        int EndingDay);
+        int EndingDay,
+        ImmutableDictionary<int, ImmutableDictionary<string, int>> ShareByStage);
+
+    /// <summary>
+    /// The forward-ladder plan's L4 item 6: #92's share-collapse measurement was taken under the OLD
+    /// EntryPower threshold-tie router (a party's venue was a function of a continuous power reading
+    /// crossing a band). Under rank routing, no party can reach a rung it hasn't graduated INTO, so
+    /// which venues even COMPETE for a party's routing changes as the campaign progresses — share is
+    /// keyed on campaign STAGE, not on a threshold. Stage 0 = no hero has reached rank 1 yet (only
+    /// Mine/Sunken-Crypt are reachable); Stage 1 = at least one hero reached rank 1 (Gloomwood joins
+    /// the competition); Stage 2 = at least one hero reached rank 2 (Emberfall joins too). The stage
+    /// for a given day is read off the CURRENT roster's highest LadderRank (alive or dead — a rank,
+    /// once earned, never un-unlocks the rung for the campaign), clamped to [0,2].
+    /// </summary>
+    private static int StageOf(GameState state) =>
+        Math.Min(2, state.Heroes.IsEmpty ? 0 : state.Heroes.Values.Max(h => h.LadderRank));
 
     public static int Run(Args a, TextWriter output, TextWriter error)
     {
@@ -108,6 +127,8 @@ public static class Characterize
         {
             results.Add(RunOne(seed, a.Days, a.SampleEvery));
         }
+
+        PrintShareByStage(results.ToImmutable(), output);
 
         foreach (var r in results)
         {
@@ -126,6 +147,8 @@ public static class Characterize
                 + (e.FirstGrad1Day > 0 ? $" (party power {e.Grad1PartyPower}, {e.Grad1PartySize} graduate(s))" : string.Empty));
             output.WriteLine($"first Gloomwood boss (rank1->2) day: {Fmt(e.FirstGrad2Day)}"
                 + (e.FirstGrad2Day > 0 ? $" (party power {e.Grad2PartyPower}, {e.Grad2PartySize} graduate(s))" : string.Empty));
+            output.WriteLine($"first Emberfall boss (rank2->3) day: {Fmt(e.FirstGrad3Day)}"
+                + (e.FirstGrad3Day > 0 ? $" (party power {e.Grad3PartyPower}, {e.Grad3PartySize} graduate(s))" : string.Empty));
             output.WriteLine($"alive at end: {r.AliveAtEnd}, max deepest floor at end: {r.MaxDeepestAtEnd}");
             output.WriteLine($"arc: {r.FinalAct} (ActII day {Fmt(r.ActIIStartDay)}, ActIII day {Fmt(r.ActIIIStartDay)}, Ending day {Fmt(r.EndingDay)})");
             output.WriteLine(string.Empty);
@@ -135,6 +158,50 @@ public static class Characterize
     }
 
     private static string Fmt(int day) => day > 0 ? day.ToString() : "never";
+
+    /// <summary>Aggregated (all requested seeds pooled) venue share by campaign stage — the L4 item 6
+    /// table: #92's old share-collapse number was a single figure over the whole run; this prints one
+    /// row per stage per venue, party-ticks and percentage of that stage's total.</summary>
+    private static void PrintShareByStage(ImmutableList<SeedResult> results, TextWriter output)
+    {
+        output.WriteLine("=== venue share by campaign stage (all requested seeds pooled) ===");
+        output.WriteLine("stage 0 = pre-rank1 (Mine/Sunken-Crypt only reachable)");
+        output.WriteLine("stage 1 = rank1 reached (Gloomwood also reachable)");
+        output.WriteLine("stage 2 = rank2 reached (Emberfall also reachable)");
+
+        for (var stage = 0; stage <= 2; stage++)
+        {
+            var pooled = new SortedDictionary<string, int>(StringComparer.Ordinal);
+            foreach (var r in results)
+            {
+                if (!r.ShareByStage.TryGetValue(stage, out var byVenue))
+                {
+                    continue;
+                }
+
+                foreach (var (venueId, count) in byVenue)
+                {
+                    pooled[venueId] = pooled.GetValueOrDefault(venueId) + count;
+                }
+            }
+
+            var total = pooled.Values.Sum();
+            output.WriteLine($"-- stage {stage} (total party-ticks: {total}) --");
+            if (total == 0)
+            {
+                output.WriteLine("   (never reached by any requested seed)");
+                continue;
+            }
+
+            foreach (var (venueId, count) in pooled)
+            {
+                var pct = count * 100.0 / total;
+                output.WriteLine($"   {venueId,-14} {count,6}  {pct,6:F1}%");
+            }
+        }
+
+        output.WriteLine(string.Empty);
+    }
 
     private static SeedResult RunOne(ulong seed, int days, int sampleEvery)
     {
@@ -152,11 +219,35 @@ public static class Characterize
         var firstGrad2Day = -1;
         var grad2Power = -1;
         var grad2Size = -1;
+        var firstGrad3Day = -1;
+        var grad3Power = -1;
+        var grad3Size = -1;
+
+        var shareByStage = new Dictionary<int, Dictionary<string, int>>
+        {
+            [0] = new(StringComparer.Ordinal),
+            [1] = new(StringComparer.Ordinal),
+            [2] = new(StringComparer.Ordinal),
+        };
 
         for (var tick = 0; tick < days * 5; tick++) // 5-phase day (staged resolution)
         {
             var result = kernel.Tick(state, BaselinePlayer.ActionsFor(state));
             state = result.NewState;
+
+            // Just after the Expedition phase, PendingExpeditions/InFlight hold every party that
+            // departed THIS tick (mirrors VenueRoutingIntegrationTests.VenueIdsThisTick) — tally one
+            // party-tick per departed party, bucketed by the CURRENT roster's stage (item 6).
+            if (state.Phase == DayPhase.Evening)
+            {
+                var stage = StageOf(state);
+                var byVenue = shareByStage[stage];
+                foreach (var venueId in state.PendingExpeditions.Select(r => r.VenueId)
+                             .Concat(state.InFlight.Select(f => f.VenueId)))
+                {
+                    byVenue[venueId] = byVenue.GetValueOrDefault(venueId) + 1;
+                }
+            }
 
             foreach (var gameEvent in result.Events)
             {
@@ -190,6 +281,11 @@ public static class Characterize
                         firstGrad2Day = state.Day;
                         (grad2Power, grad2Size) = PartyPowerOf(state, grad.Graduates);
                     }
+                    else if (grad.NewRank == 3 && firstGrad3Day < 0)
+                    {
+                        firstGrad3Day = state.Day;
+                        (grad3Power, grad3Size) = PartyPowerOf(state, grad.Graduates);
+                    }
                 }
             }
 
@@ -206,13 +302,20 @@ public static class Characterize
         return new SeedResult(
             seed,
             samples.ToImmutable(),
-            new FirstEvents(firstFloor3, firstFloor4, firstFloor5, firstGrad1Day, grad1Power, grad1Size, firstGrad2Day, grad2Power, grad2Size),
+            new FirstEvents(
+                firstFloor3, firstFloor4, firstFloor5,
+                firstGrad1Day, grad1Power, grad1Size,
+                firstGrad2Day, grad2Power, grad2Size,
+                firstGrad3Day, grad3Power, grad3Size),
             finalAlive,
             finalDeepest,
             state.Arc.Act,
             state.Arc.ActIIStartDay,
             state.Arc.ActIIIStartDay,
-            state.Arc.EndingDay);
+            state.Arc.EndingDay,
+            shareByStage.ToImmutableDictionary(
+                kv => kv.Key,
+                kv => kv.Value.ToImmutableDictionary(StringComparer.Ordinal)));
     }
 
     private static DaySample SampleOf(GameState state)

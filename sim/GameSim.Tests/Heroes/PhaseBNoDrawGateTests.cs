@@ -78,6 +78,16 @@ public class PhaseBNoDrawGateTests
         // identical state). `Inc` is STILL byte-identical (13279888329118852579) — same stream,
         // only `State` moved; the gate/monster changes are pure data, no new draw site (grep
         // confirms rng.* stays in the same files).
-        Assert.Equal(new RngState(12780702255728477106UL, 13279888329118852579UL), state.Rng);
+        // GOLDEN RE-BASELINE #4 OF 5 (forward-ladder plan 2026-08-10-003, L4 — Emberfall flips live
+        // as rung 2): see AtomicEquivalenceTests.cs's matching ledger entry for the full account.
+        // VenueRegistry.LiveRotation gaining "emberfall" plus firebrick..heartcoal joining
+        // MaterialRegistry.PricedPool are both pure data (no RNG), but they change WHICH venue a
+        // rank-2 party on this trace raids — pre-L4 the router fell back to Gloomwood forever (no
+        // live rank-2 venue); post-L4 it routes to Emberfall outright. Confirmed directly (temporary
+        // CLI probe, this PR, reverted before commit): two of ten heroes (Kettil, Nessa) reach
+        // LadderRank 3 by day 30 — Emberfall's own bottom floor clears — so every combat draw from
+        // that party's first Emberfall trip onward shifts. `Inc` is STILL byte-identical
+        // (13279888329118852579) — same stream, only `State` moved; no new draw site.
+        Assert.Equal(new RngState(3993052552967124454UL, 13279888329118852579UL), state.Rng);
     }
 }
