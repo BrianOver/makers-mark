@@ -92,6 +92,16 @@ if (args.Length > 0 && args[0] == "probe")
     return GameSim.Cli.ConsequenceProbe.Run(qSeeds, 2026UL, qDays, qOut, Console.Out, Console.Error);
 }
 
+// Characterization mode: `-- characterize --seeds s1,s2,... [--days N] [--sample N]` (forward-ladder
+// plan 2026-08-10-003, L3). Prints raw party-power/floor/graduation tables under BaselinePlayer, no
+// files written, exit 0 — a measurement tool run by hand before/after a gate or recipe change, not a
+// gate itself (see GameSim.Cli.Characterize's own doc comment).
+if (args.Length > 0 && args[0] == "characterize")
+{
+    var cParsed = GameSim.Cli.Characterize.Parse(args[1..], Console.Error);
+    return cParsed is null ? 1 : GameSim.Cli.Characterize.Run(cParsed, Console.Out, Console.Error);
+}
+
 // Interactive mode accepts ONLY `--seed N`. Anything else is a hard error — a typo'd batch
 // invocation ('Batch', misordered flags) must never fall through to the interactive REPL,
 // where redirected stdin would EOF and exit 0 having written zero chronicles (silent green).

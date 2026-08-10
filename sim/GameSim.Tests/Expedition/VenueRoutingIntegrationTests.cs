@@ -26,22 +26,19 @@ public class VenueRoutingIntegrationTests
             .Concat(state.InFlight.Select(f => f.VenueId));
 
     [Fact]
-    public void RealCampaign_RoutesPartiesToTheStarterTier_Over100Days_NeverStrandsOrInvents()
+    public void RealCampaign_RoutesPartiesAcrossTheLadder_Over100Days_NeverStrandsOrInvents()
     {
         // The distribution guard for the RANK router. Every hero starts at rank 0, so BOTH rank-0
         // peers (Mine, Sunken Crypt) must see traffic — that queue-split is still real, still tested.
         //
-        // Gloomwood (rank 1) is DELIBERATELY NOT asserted here anymore. Under the old EntryPower
-        // router this test proved every live venue got traffic because power alone opened the door;
-        // under the ladder, a venue only opens once a party GRADUATES (clears its current rung's
-        // bottom floor), and that is an economy-pace question, not a routing one. Measured on this
-        // exact seed (characterization run, L1 PR body): BaselinePlayer's party-average power
-        // plateaus at 63-73 by day ~15 and never moves again in 100 days — short of the Mine/Crypt
-        // floor-5 gate (100) — so nobody graduates and Gloomwood legitimately never sees a party.
-        // That ceiling is independent of this router (it is a function of gear/level growth, which
-        // this PR does not touch) and is already flagged as a finding for the plan's later units
-        // (L3/L4 raise the craft-side ceiling with higher-tier rung recipes). Pinning "Gloomwood gets
-        // traffic in 100 days" here would be pinning today's economy pace, not the router's contract.
+        // RE-MEASURED (forward-ladder plan 2026-08-10-003 L3): this test used to pin that Gloomwood
+        // NEVER saw traffic and no hero ever graduated on this exact seed, because the Mine/Crypt
+        // floor-5 gate (100) was a WALL against the measured 63-73 power plateau. L3 re-gated floor
+        // 5 to 70 (with floor-5 monster stats dialed down for a fair, survivable fight — see
+        // VenueRegistry.BuildMine's comment) and Gloomwood's own boss gate to 73 (see
+        // GloomwoodVenue.Build's comment): on THIS seed, characterization now shows graduation at
+        // day 13 and the Gloomwood boss falling at day 16 — three heroes reach rank 2 by day 100.
+        // Gloomwood traffic and non-zero ranks are now the MEASURED reality, not an aspiration.
         var kernel = GameComposition.BuildKernel();
         var state = GameComposition.NewCampaign(seed: 1);
 
@@ -67,6 +64,10 @@ public class VenueRoutingIntegrationTests
         Assert.Contains(VenueRegistry.MineId, seenVenues);
         Assert.Contains("sunken-crypt", seenVenues);
 
+        // Gloomwood now ALSO sees traffic on this seed — the ladder's second rung is reachable,
+        // not just registered (the whole point of L3's re-gate).
+        Assert.Contains("gloomwood", seenVenues);
+
         // Every venue id that ever appeared is a member of the live rotation — routing never invents
         // or strands a party at an unregistered/non-live venue.
         foreach (var venueId in seenVenues)
@@ -74,11 +75,13 @@ public class VenueRoutingIntegrationTests
             Assert.Contains(venueId, VenueRegistry.LiveRotation);
         }
 
-        // No hero's LadderRank ever moved — the observed side effect of the same power ceiling: with
-        // nobody clearing a bottom floor, graduation never fires on this seed, which is itself a
-        // pin on today's measured pace (not a claim the mechanism is inert — see LadderRoutingTests
-        // and ExpeditionRevealSystemTests for the directly-forced graduation proofs).
-        Assert.All(state.Heroes.Values, hero => Assert.Equal(0, hero.LadderRank));
+        // At least one hero graduated past rank 0 — the ladder actually moves on this seed now.
+        // Every rank is a legal value (0/1/2 — Emberfall stays dormant, L4's job) and monotonic by
+        // construction (ExpeditionRevealSystem is the only write site); no test here claims a
+        // SPECIFIC count, since that is exactly the kind of economy-pace number this plan's own
+        // L1 finding warns against over-pinning.
+        Assert.Contains(state.Heroes.Values, hero => hero.LadderRank > 0);
+        Assert.All(state.Heroes.Values, hero => Assert.InRange(hero.LadderRank, 0, 2));
     }
 
     [Fact]

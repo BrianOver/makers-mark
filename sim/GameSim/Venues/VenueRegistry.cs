@@ -17,10 +17,11 @@ public static class VenueRegistry
 
     /// <summary>
     /// The 5-floor Mine, built from the EXACT current <c>MonsterTable</c> values (FloorCount 5;
-    /// gate 0/15/35/60/100; kinds Cave Rat/Tunnel Spider/Deep Ghoul/Ore Golem/The Forgeworm;
-    /// HP 12+10*f; attack 5+6*f; defense 2+2*f; gold 5+3*f; ore copper/iron/steel/mithril/adamant).
-    /// The Floor-5 gate sits above any rival-vendor loadout by design (AE3). Byte-identical to the
-    /// old static table is pinned by <c>VenueConformanceTests</c>.
+    /// gate 0/15/35/60/70 — floor 5 re-gated 2026-08-10, see <see cref="BuildMine"/>'s own comment;
+    /// kinds Cave Rat/Tunnel Spider/Deep Ghoul/Ore Golem/The Forgeworm; HP 12+10*f except floor 5
+    /// (50); attack 5+6*f except floor 5 (26); defense 2+2*f; gold 5+3*f; ore
+    /// copper/iron/steel/mithril/adamant). Floors 1-4 and every other floor-5 number stay
+    /// byte-identical to the old static table, pinned by <c>VenueConformanceTests</c>.
     /// </summary>
     public static readonly VenueDefinition Mine = BuildMine();
 
@@ -101,7 +102,25 @@ public static class VenueRegistry
                     2 => 15,
                     3 => 35,
                     4 => 60,
-                    5 => 100, // above any rival-vendor loadout by design (AE3); tuned in U10
+                    // Re-gated 2026-08-10 (forward-ladder plan 2026-08-10-003 L3, §11.8's fix):
+                    // was 100, "above any rival-vendor loadout by design" — measured (this PR's
+                    // Characterize tool, main seed 2026 + 10 sweep seeds, BaselinePlayer) to be a
+                    // WALL, not a gate: party power plateaus at 55-78 by day ~20 and never crosses
+                    // 100 in 100 days on any seed, so floor 5 (and Gloomwood, reachable only by
+                    // graduating here) was permanently unreachable. 70 sits above floor 4's own
+                    // gate (60, so floor 5 stays a REAL extra bar, never a same-gate coin-flip) and
+                    // below the day-20+ plateau every seed reaches. TargetFloorFor keys strictly on
+                    // a party's deepest-cleared record (+1), not on power, so the gate VALUE inside
+                    // this range does not control the clear day at all — 50 and 62 measured
+                    // byte-for-byte identical clear days to 70. What DID move the day-8..58 spread
+                    // was the floor-5 MONSTER (see MonsterHp/MonsterAttack below): the formula value
+                    // was deadly enough to kill the one veteran deep enough to attempt it, resetting
+                    // progress until a new veteran emerged — some seeds took until day 58. Dialing
+                    // the monster down (this PR) brought first-clear to day 12-18 on all 11 seeds,
+                    // comfortably inside the plan's 8-18 day gate rule and above
+                    // BalanceSimTests.NoFloor5BeforeDay's day-8 floor (see this PR's characterization
+                    // tables, before/after).
+                    5 => 70,
                     _ => throw new ArgumentOutOfRangeException(nameof(floor)),
                 },
                 MonsterKind: floor switch
@@ -113,8 +132,15 @@ public static class VenueRegistry
                     5 => "The Forgeworm",
                     _ => throw new ArgumentOutOfRangeException(nameof(floor)),
                 },
-                MonsterHp: 12 + 10 * floor,
-                MonsterAttack: 5 + 6 * floor,
+                // Floor 5's HP/Attack break from the 12+10f/5+6f formula (re-gated 2026-08-10,
+                // plan 2026-08-10-003 L3): the formula value (HP 62, Attack 35) measured too
+                // deadly at gate power for a fair 2-4 round fight (see BuildMine's gate comment
+                // for the full measurement) — dialed to HP 50 / Attack 26 so a gate-power hero's
+                // own damage clears it in 2-4 hits without the one-hit-adjacent lethality that was
+                // driving repeated hero deaths (and the multi-week reset cycle that followed each
+                // one). Defense and gold stay formula-exact.
+                MonsterHp: floor == 5 ? 50 : 12 + 10 * floor,
+                MonsterAttack: floor == 5 ? 26 : 5 + 6 * floor,
                 MonsterDefense: 2 + 2 * floor,
                 GoldPerKill: 5 + 3 * floor,
                 OreKey: floor switch

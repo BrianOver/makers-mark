@@ -191,4 +191,50 @@ public class QualityRollerTests
         // Nodes exist in the model but are NOT in the unlocked set → base distribution.
         RollAndVerify(TestRecipe(ItemSlot.Weapon, tier: 1), materialGrade: 1, NoTalents, shift: 0, seed: 2026, count: 500);
     }
+
+    /// <summary>
+    /// Forward-ladder plan 2026-08-10-003 L3, the Verification Contract's "the minigame survives
+    /// the ladder" row: BEFORE L3, recipes topped out at Tier 3 while Gloomwood ore (rung 1) is
+    /// grade 8-11, so a grade-11 material against a Tier-3 recipe produced shift = 8*(11-3) = +64
+    /// — effective = roll+64 is Masterwork (&gt;=99) on any roll &gt;= 35, and stacked with the
+    /// (now-retired-for-blacksmith, but still live for any future passive profession) talent flat
+    /// shifts it could clear 99 on nearly every roll — "guaranteed Masterwork forever, the forge
+    /// minigame dead" (the plan's own words). L3's fix is giving grade 8-11 material a Tier 8-9
+    /// HOME: the worst-case gap shrinks from +8 grades to at most +3 (grade 11 vs Tier 8), which
+    /// keeps shift bounded enough that Masterwork stays a REAL outcome of the roll (earned), never
+    /// a certainty the die can't avoid (guaranteed) — across every grade 8-11 / Tier 8-9 pairing.
+    /// </summary>
+    [Theory]
+    [InlineData(8, 8)]   // shift 0 — grade matches tier exactly (Common-ceiling floor case)
+    [InlineData(9, 8)]   // shift +8
+    [InlineData(10, 8)]  // shift +16
+    [InlineData(11, 8)]  // shift +24 — the worst-case gap in the new band
+    [InlineData(8, 9)]   // shift -8 — material below tier (Masterwork must be impossible here)
+    [InlineData(9, 9)]   // shift 0
+    [InlineData(10, 9)]  // shift +8
+    [InlineData(11, 9)]  // shift +16
+    public void RungOneMaterialBand_KeepsMasterworkBounded_NotGuaranteed(int materialGrade, int tier)
+    {
+        var shift = 8 * (materialGrade - tier);
+        var counts = RollAndVerify(TestRecipe(ItemSlot.Weapon, tier), materialGrade, NoTalents, shift, seed: 4242, count: 1000);
+
+        // "Bounded, not guaranteed": Masterwork must stay a fraction of rolls, never all of them —
+        // the exact failure mode +64 produced (65% Masterwork on the SAME 1000-roll seed, per
+        // MaterialGradeAboveTier_ShiftsDistributionUp_Exactly8PerGrade's shift-24 sibling case,
+        // scaled up). At most a small minority of rolls should land Masterwork across this band.
+        Assert.True(counts[(int)QualityGrade.Masterwork] < 300,
+            $"grade {materialGrade} vs tier {tier} (shift {shift}): Masterwork hit {counts[(int)QualityGrade.Masterwork]}/1000 — no longer bounded");
+        Assert.Equal(1000, counts.Sum());
+    }
+
+    [Fact]
+    public void RungOneMaterialBand_MasterworkStaysEarnable_AtTheWorstCaseGap()
+    {
+        // Grade 11 vs Tier 8 is the widest legal gap L3's recipes allow (heartwood substituted
+        // into the Tier-8 gloomsteel-blade recipe) — Masterwork must still be REACHABLE (earned),
+        // not merely bounded-to-zero, or the forge minigame's top band becomes unreachable instead
+        // of merely harder — an equally-dead minigame from the other direction.
+        var counts = RollAndVerify(TestRecipe(ItemSlot.Weapon, tier: 8), materialGrade: 11, NoTalents, shift: 24, seed: 4242, count: 1000);
+        Assert.True(counts[(int)QualityGrade.Masterwork] > 0, "grade 11 vs tier 8: Masterwork never landed in 1000 rolls — no longer earnable");
+    }
 }

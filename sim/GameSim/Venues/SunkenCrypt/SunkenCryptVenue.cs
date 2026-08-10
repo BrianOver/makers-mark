@@ -66,7 +66,13 @@ public static class SunkenCryptVenue
                     2 => 15,
                     3 => 35,
                     4 => 60,
-                    5 => 100, // Mine-peer boss gate; tuned at go-live (D8)
+                    // Re-gated 2026-08-10 (forward-ladder plan 2026-08-10-003 L3), byte-identical
+                    // to VenueRegistry.Mine's own floor-5 re-gate — see that gate's comment for the
+                    // measured justification (70 sits above floor 4's own gate of 60, below the
+                    // day-20+ plateau every seed reaches). The Crypt is a rank-0 PEER of the Mine
+                    // (same rung), so its boss gate and monster stats move in lockstep, never
+                    // independently.
+                    5 => 70,
                     _ => throw new ArgumentOutOfRangeException(nameof(floor)),
                 },
                 MonsterKind: floor switch
@@ -78,8 +84,11 @@ public static class SunkenCryptVenue
                     5 => "The Undertow",
                     _ => throw new ArgumentOutOfRangeException(nameof(floor)),
                 },
-                MonsterHp: 12 + 10 * floor,     // Mine-peer difficulty curve (same gate ladder)
-                MonsterAttack: 5 + 6 * floor,
+                // Floor 5 breaks from the Mine-peer formula the same way VenueRegistry.Mine's own
+                // floor 5 does (byte-identical, forward-ladder plan 2026-08-10-003 L3) — see that
+                // gate's comment for the measurement.
+                MonsterHp: floor == 5 ? 50 : 12 + 10 * floor,     // Mine-peer difficulty curve (same gate ladder)
+                MonsterAttack: floor == 5 ? 26 : 5 + 6 * floor,
                 MonsterDefense: 2 + 2 * floor,
                 GoldPerKill: 5 + 3 * floor,
                 OreKey: floor switch

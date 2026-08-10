@@ -58,6 +58,26 @@ public class PhaseBNoDrawGateTests
         // group-by-rank step groups everyone into one cohort — a no-op over a single-valued grouping.
         // BOTH fields are still byte-identical to the L1 value above (verified via git-stash
         // before/after, not just re-asserted).
-        Assert.Equal(new RngState(5771294674252808564UL, 13279888329118852579UL), state.Rng);
+        // GOLDEN RE-BASELINE #3 OF 5 (forward-ladder plan 2026-08-10-003, L3 — gates + rung-1
+        // recipes): **Class 2 — routing/combat decisions change, same stream different position.**
+        // Verified by isolating each change (git-stash the Venues/ edits, re-run): the Tier 8-9
+        // RecipeTable rows are draw-NEUTRAL alone (this pin is byte-identical to the L2 value with
+        // only the recipes present) — no player action is ever submitted on this idle trace, so no
+        // craft ever reaches them, exactly as characterized for the BaselinePlayer economy. The
+        // MOVE comes entirely from the Mine/Sunken-Crypt floor-5 re-gate (100 -> 70) and floor-5
+        // monster re-scale (HP 62 -> 50, Attack 35 -> 26; see VenueRegistry.BuildMine's own comment
+        // for the measurement). On THIS idle trace (seed 9001, zero player actions EVER — no
+        // crafting, no shopping) heroes still fight and still autonomously shop the RIVAL vendor's
+        // shelf (HeroShoppingSystem/ShoppingAi need no player action), reaching up to
+        // baseAttack+72 power fully rival-geared at level 6 (RivalCatalog's AE3 caps: weapon 20 +
+        // shield 16 + armor 18) — comfortably above the new 70 gate, previously short of the old
+        // 100. Confirmed directly (temporary hero-state dump, this PR, reverted before commit):
+        // three of ten heroes on this trace reach LadderRank 2 (Mine graduation AND the Gloomwood
+        // boss both clear) by day 30, all on rival gear alone. The Gloomwood boss re-gate (75 -> 73)
+        // is exercised, not neutral, on this exact trace. Determinism holds (same seed+actions =
+        // identical state). `Inc` is STILL byte-identical (13279888329118852579) — same stream,
+        // only `State` moved; the gate/monster changes are pure data, no new draw site (grep
+        // confirms rng.* stays in the same files).
+        Assert.Equal(new RngState(12780702255728477106UL, 13279888329118852579UL), state.Rng);
     }
 }
