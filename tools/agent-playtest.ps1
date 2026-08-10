@@ -158,6 +158,17 @@ function JsonEsc([string]$s) {
     return $sb.ToString()
 }
 
+# Named once, used twice: here in Invoke-Model's own HTTP call, and again below (worst case =
+# ModelCallMaxAttempts * ModelCallTimeoutSec) to size AGENT_PLAYTEST_TIMEOUT_MS, the env var this
+# driver hands the Godot client so it knows how long a real turn can legitimately take before
+# giving up on it. Before 2026-08-10 the client had its own unrelated hardcoded 30-second wait
+# (AgentPlaytest.cs's DefaultCommandTimeoutMs) with no connection to these numbers at all -- a
+# single slow model call here (up to 300s, and this loop allows three of them) would silently
+# outrun the client's wait, and the client would quit(0) as if the run had ended cleanly. Change
+# these two numbers with the client's fallback constant in mind (its own doc names them back).
+$ModelCallTimeoutSec = 300
+$ModelCallMaxAttempts = 3
+
 function Invoke-Model($systemPrompt, $userText, $imagePath) {
     $imagesJson = ''
     if ($imagePath) {
@@ -187,7 +198,7 @@ function Invoke-Model($systemPrompt, $userText, $imagePath) {
     # Send bytes, not a string: Invoke-RestMethod would otherwise re-encode, and the body is large.
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
     try {
-        $resp = Invoke-RestMethod -Uri ($Endpoint + '/api/chat') -Method Post -Body $bytes -ContentType 'application/json' -TimeoutSec 300
+        $resp = Invoke-RestMethod -Uri ($Endpoint + '/api/chat') -Method Post -Body $bytes -ContentType 'application/json' -TimeoutSec $ModelCallTimeoutSec
     } catch {
         # Surface what ollama actually said. A bare "(400) Bad Request" cost a whole debugging pass
         # once already -- the useful text is in ErrorDetails, and PowerShell hides it by default.
@@ -312,6 +323,12 @@ $env:AGENT_PLAYTEST_DIR = $OutDir
 # automated run left NO reconstructable trail of what the client actually did (day/phase/beat,
 # every action, every phase transition and its cause), only this script's own turn-by-turn digest.
 $env:MM_PLAYTEST_LOG = $playtestLogPath
+# The client's wait for our command.json MUST be sized off the SAME numbers this driver actually
+# uses to produce one -- a worst-case turn here is ModelCallMaxAttempts full ModelCallTimeoutSec
+# calls back to back (a stuck/overloaded ollama can burn all three), so that is what we tell it to
+# wait for, computed, not retyped. See AgentPlaytest.cs's DefaultCommandTimeoutMs doc for the
+# fallback this env var overrides and the run (Scout-5, 2026-08-09 sweep) that mismatch cost.
+$env:AGENT_PLAYTEST_TIMEOUT_MS = [string]($ModelCallMaxAttempts * $ModelCallTimeoutSec * 1000)
 Say ('launching client (out: ' + $OutDir + ', playtest log: ' + $playtestLogPath + ')')
 # The SCENE must be named explicitly. `--path godot` alone boots the game's main scene, so the
 # bridge never runs and the driver waits out its timeout on a client that was never asked to play --
@@ -442,7 +459,7 @@ try {
 
             $attempts = 0
             $imageMissingThisTurn = $false
-            while ($attempts -lt 3 -and -not $command) {
+            while ($attempts -lt $ModelCallMaxAttempts -and -not $command) {
                 $attempts++
                 $reply = ''
                 try { $reply = Invoke-Model $actPrompt $userText $framePath } catch { Warn ('model call failed: ' + $_.Exception.Message) }
@@ -515,6 +532,7 @@ try {
     $env:AGENT_PLAYTEST = ''
     $env:AGENT_PLAYTEST_DIR = ''
     $env:MM_PLAYTEST_LOG = ''
+    $env:AGENT_PLAYTEST_TIMEOUT_MS = ''
 }
 
 Say ('stopped after ' + $turn + ' turns: ' + $stopReason)
