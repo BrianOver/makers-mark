@@ -109,17 +109,25 @@ jobs:
           set +e
           export GODOT_BIN=$(which godot)
 
+          # --settings .runsettings was NEVER passed here until 2026-08-10, which .runsettings'
+          # own closing note called "the first thing to fix before diagnosing further": without
+          # it, CI ran with gdUnit's default CompileProcessTimeout, and a slow rebuild on a busy
+          # runner silently DROPS every [RequireGodotRuntime] test and reports a green ~54 (the
+          # exact lie ENGINE_MIN_PASSED exists to catch after the fact -- this catches it at the
+          # source).
+          #
+          # The file's GODOT_BIN is a local Windows path and it is NOT harmless here: measured on
+          # this workflow's own first run with --settings (2026-08-10), RunConfiguration
+          # EnvironmentVariables OVERRIDE the exported env var in the test host -- gdUnit hunted
+          # for C:\Tools\...exe on Linux, discovered zero tests twice, and the 900 floor correctly
+          # went red on passed=0. So the real path is substituted INTO the settings file first.
+          # (.runsettings' header used to claim the shell env wins; corrected in the same PR.)
+          sed -i "s|<GODOT_BIN>.*</GODOT_BIN>|<GODOT_BIN>$(which godot)</GODOT_BIN>|" .runsettings
+          grep -o "<GODOT_BIN>.*</GODOT_BIN>" .runsettings
+
           run_engine_tests() {
             # PIPESTATUS[0] = dotnet test's own exit code, not tee's (tee itself always
             # succeeds), so the pipe through tee doesn't hide a real failure.
-            #
-            # --settings .runsettings was NEVER passed here until 2026-08-10, which .runsettings'
-            # own closing note called "the first thing to fix before diagnosing further": without
-            # it, CI ran with gdUnit's default CompileProcessTimeout, and a slow rebuild on a busy
-            # runner silently DROPS every [RequireGodotRuntime] test and reports a green ~54 (the
-            # exact lie ENGINE_MIN_PASSED exists to catch after the fact -- this catches it at the
-            # source). The file's GODOT_BIN is a local Windows path, harmless here: the env var
-            # exported above takes precedence, per the file's own header.
             xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj --settings .runsettings --logger "trx;LogFileName=engine-tests.trx" 2>&1 | tee "$1"
             return "${PIPESTATUS[0]}"
           }
@@ -178,7 +186,11 @@ jobs:
           set +e
           export GODOT_BIN=$(which godot)
           # --settings for the same reason as the main step: this guard re-launches Godot via
-          # dotnet test, so it is exposed to the same rebuild-timeout green-54 lie.
+          # dotnet test, so it is exposed to the same rebuild-timeout green-54 lie. The GODOT_BIN
+          # substitution already happened in the main step (same checkout, same file) but is
+          # repeated here defensively -- this step must stay correct if the steps are ever
+          # reordered, and sed is idempotent over its own output.
+          sed -i "s|<GODOT_BIN>.*</GODOT_BIN>|<GODOT_BIN>$(which godot)</GODOT_BIN>|" .runsettings
           xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj \
             --settings .runsettings \
             --filter "FullyQualifiedName~MainUiTests" \

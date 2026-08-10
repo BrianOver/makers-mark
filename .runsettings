@@ -1,8 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- gdUnit4Net engine-test wiring: [RequireGodotRuntime] tests locate the Godot
-     executable via GODOT_BIN. CI exports GODOT_BIN from setup-godot; locally,
-     set the path below to your Godot 4.6.3-stable .NET editor executable
-     (or export GODOT_BIN in your shell, which takes precedence). -->
+     executable via GODOT_BIN. Locally, set the path below to your Godot
+     4.6.3-stable .NET editor executable.
+
+     CORRECTED 2026-08-10: this header used to say a shell-exported GODOT_BIN
+     "takes precedence" over the value below. Measured in CI the first time this
+     file was actually passed to dotnet test: it does NOT -- RunConfiguration
+     EnvironmentVariables override the inherited process env inside the test
+     host, so the Windows path below hijacked a Linux runner and gdUnit
+     discovered zero tests (caught by the ENGINE_MIN_PASSED floor, red on
+     passed=0). CI therefore substitutes its real path into this element with
+     sed before every run (.github/workflows/ci.yml, both dotnet test steps).
+     If you need a different local path, edit the value below -- do not rely on
+     an env var beating it. -->
 <RunSettings>
   <RunConfiguration>
     <EnvironmentVariables>
