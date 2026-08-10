@@ -1,6 +1,8 @@
 #if GDUNIT_TESTS
 using System;
 using System.Linq;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using GameSim.Contracts;
 using GdUnit4;
@@ -427,6 +429,121 @@ public class AgentPlaytestBridgeTests
                 System.IO.Directory.Delete(outDir, recursive: true);
             }
         }
+    }
+
+    /// <summary>
+    /// Pins the whole point of the 2026-08-10 fix: the client's compiled-in fallback wait
+    /// (<c>AgentPlaytest.DefaultCommandTimeoutMs</c>) must outlast the driver's own worst-case
+    /// per-turn latency, or a legitimately slow model turn outruns the client and it self-exits
+    /// mid-run (measured: Scout-5, 2026-08-09 overnight sweep, died on turn 1 of 80, verdict
+    /// still read "ok").
+    ///
+    /// <para>Both halves are read from their REAL sources rather than retyped — a test that just
+    /// asserts <c>950_000 &gt; 900_000</c> pins nothing, because both numbers could drift together
+    /// with an editor's typo and this would still pass. The driver's numbers come from parsing
+    /// <c>tools/agent-playtest.ps1</c>'s own <c>$ModelCallTimeoutSec</c> / <c>$ModelCallMaxAttempts</c>
+    /// assignments; the client's number comes off the actual private const via reflection (it is
+    /// `private` on purpose — nothing outside this dev tool needs to read it at runtime, so the
+    /// test reaches for it the same way <c>ActionFeedbackTextMatchesTimingTests</c> already reaches
+    /// a private method elsewhere in this suite, rather than widening the production API for a
+    /// test's convenience).</para>
+    /// </summary>
+    [TestCase]
+    public void ClientFallbackTimeout_ExceedsTheDriversRealWorstCasePerTurnBudget()
+    {
+        var driverPath = ProjectSettings.GlobalizePath("res://../tools/agent-playtest.ps1");
+        AssertThat(System.IO.File.Exists(driverPath))
+            .OverrideFailureMessage($"Driver script not found at '{driverPath}' — did tools/agent-playtest.ps1 move?")
+            .IsTrue();
+        var driverSource = System.IO.File.ReadAllText(driverPath);
+
+        var timeoutMatch = Regex.Match(driverSource, @"\$ModelCallTimeoutSec\s*=\s*(\d+)");
+        var attemptsMatch = Regex.Match(driverSource, @"\$ModelCallMaxAttempts\s*=\s*(\d+)");
+        AssertThat(timeoutMatch.Success && attemptsMatch.Success)
+            .OverrideFailureMessage(
+                "Could not find '$ModelCallTimeoutSec = N' / '$ModelCallMaxAttempts = N' in " +
+                "tools/agent-playtest.ps1 — this test reads the driver's REAL numbers off its source " +
+                "and cannot pin the relationship if those names changed.")
+            .IsTrue();
+
+        var driverTimeoutSec = int.Parse(timeoutMatch.Groups[1].Value);
+        var driverMaxAttempts = int.Parse(attemptsMatch.Groups[1].Value);
+        var driverWorstCaseMs = (long)driverTimeoutSec * 1000L * driverMaxAttempts;
+
+        var field = typeof(AgentPlaytest).GetField("DefaultCommandTimeoutMs", BindingFlags.NonPublic | BindingFlags.Static);
+        AssertThat(field)
+            .OverrideFailureMessage("AgentPlaytest.DefaultCommandTimeoutMs was not found by reflection — did it get renamed?")
+            .IsNotNull();
+        var clientFallbackMs = (int)field!.GetRawConstantValue()!;
+
+        AssertThat((long)clientFallbackMs)
+            .OverrideFailureMessage(
+                $"AgentPlaytest.DefaultCommandTimeoutMs ({clientFallbackMs}ms) does not exceed the " +
+                $"driver's own worst-case per-turn budget ({driverMaxAttempts} attempts x " +
+                $"{driverTimeoutSec}s = {driverWorstCaseMs}ms, read from tools/agent-playtest.ps1). A " +
+                "legitimately slow model turn would outrun the client's wait and it would self-exit " +
+                "mid-run, exactly like Scout-5 in the 2026-08-09 sweep.")
+            .IsGreater(driverWorstCaseMs);
+    }
+
+    /// <summary>
+    /// Before this fix, <see cref="AgentPlaytestBridge.RunLoop"/> returned <c>void</c> and
+    /// <c>AgentPlaytest._Ready</c> called <c>GetTree().Quit(0)</c> no matter which of the three
+    /// endings happened — a driver going silent mid-run (this test's shape: command.json never
+    /// arrives) exited identically to a real <c>stop</c> or a spent turn budget. That is the exact
+    /// shape of the Scout-5 defect: an abandoned run reporting verdict <c>ok</c>, exit 0.
+    /// </summary>
+    [TestCase]
+    public async Task CommandTimeout_ReportsTimedOut_WithANonZeroExitCode()
+    {
+        var ui = MountMainUi();
+        var outDir = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), "agent-playtest-bridge-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var bridge = new AgentPlaytestBridge(ui);
+
+            // Same shape as CommandTimeout_EndsTheLoopCleanly_AndWritesWhatItHad above: command.json
+            // is never written, so RunLoop can only end via the timeout branch.
+            var outcome = await bridge.RunLoop(ui, outDir, maxTurns: 5, commandTimeoutMs: 300);
+
+            AssertThat(outcome)
+                .OverrideFailureMessage($"Expected AgentPlaytestOutcome.TimedOut when command.json never arrives, got {outcome}.")
+                .IsEqual(AgentPlaytestOutcome.TimedOut);
+            AssertThat(AgentPlaytest.ExitCodeFor(outcome))
+                .OverrideFailureMessage(
+                    "A timed-out run must exit non-zero — an abandoned run is not a completed one, " +
+                    "and the driver's own completion floor (PR #436) should not be the only thing " +
+                    "that can ever notice.")
+                .IsNotEqual(0);
+
+            var log = System.IO.File.ReadAllText(System.IO.Path.Combine(outDir, "turnlog.md"));
+            AssertThat(log.Contains("TIMEOUT", StringComparison.Ordinal))
+                .OverrideFailureMessage($"turnlog.md does not name TIMEOUT as the reason the run stopped:\n{log}")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+            if (System.IO.Directory.Exists(outDir))
+            {
+                System.IO.Directory.Delete(outDir, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The exit-code mapping itself, isolated from RunLoop/Godot entirely: only <c>TimedOut</c> may
+    /// be non-zero. Without this, a future edit could make <c>ExitCodeFor</c> non-zero for
+    /// EVERY outcome (still "passing" the test above, which only checks the TimedOut branch) and
+    /// silently break real, successful runs.
+    /// </summary>
+    [TestCase]
+    public void ExitCodeFor_IsZeroForBothRealEndings_AndOnlyNonZeroForTimeout()
+    {
+        AssertThat(AgentPlaytest.ExitCodeFor(AgentPlaytestOutcome.Stopped)).IsEqual(0);
+        AssertThat(AgentPlaytest.ExitCodeFor(AgentPlaytestOutcome.MaxTurnsReached)).IsEqual(0);
+        AssertThat(AgentPlaytest.ExitCodeFor(AgentPlaytestOutcome.TimedOut)).IsNotEqual(0);
     }
 }
 #endif

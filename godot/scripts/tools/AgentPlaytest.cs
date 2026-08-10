@@ -91,6 +91,36 @@ public sealed record AgentCommand(
     [property: JsonPropertyName("frames")] int? Frames = null);
 
 /// <summary>
+/// Why <see cref="AgentPlaytestBridge.RunLoop"/> returned. <see cref="AgentPlaytest._Ready"/> (the
+/// only caller that owns process lifecycle — see <see cref="AgentPlaytestBridge"/>'s own doc for why
+/// the bridge itself never touches it) turns this into a process exit code via <see
+/// cref="AgentPlaytest.ExitCodeFor"/>.
+///
+/// <para>Before 2026-08-10 this didn't exist: <c>RunLoop</c> returned <c>void</c>, and
+/// <c>_Ready</c> called <c>GetTree().Quit(0)</c> unconditionally once it returned, whether the
+/// driver said <c>stop</c>, the turn budget ran out, or the driver went SILENT mid-run. In the
+/// 2026-08-09 overnight 30-run sweep, <c>Scout-5</c> died this way on turn 1 of 80 — the driver's
+/// own per-turn model-call budget (three attempts, 300s each — see <c>tools/agent-playtest.ps1</c>'s
+/// <c>$ModelCallTimeoutSec</c>/<c>$ModelCallMaxAttempts</c>) outran <see
+/// cref="AgentPlaytest.DefaultCommandTimeoutMs"/>'s old 30-second value, and the run still reported
+/// verdict <c>ok</c>, exit 0. An abandoned run read as a completed one.</para>
+/// </summary>
+public enum AgentPlaytestOutcome
+{
+    /// <summary>The driver sent an explicit <c>stop</c> command — a real ending.</summary>
+    Stopped,
+
+    /// <summary><c>maxTurns</c> turns ran with no <c>stop</c> — a real ending (the budget was spent
+    /// on purpose).</summary>
+    MaxTurnsReached,
+
+    /// <summary>No <c>command.json</c> arrived within <c>commandTimeoutMs</c> — the driver went
+    /// quiet (a model turn slower than the budget, a crashed driver process, ...). This is NOT a
+    /// clean ending and must never share an exit code with the two above.</summary>
+    TimedOut,
+}
+
+/// <summary>
 /// The observe/act bridge itself (U1, verify-by-playing plan) — separated from <see
 /// cref="AgentPlaytest"/>'s dev-tool bootstrap (env-var gate, scene mount, quit) precisely so
 /// <c>AgentPlaytestBridgeTests</c> can drive it against an already-mounted <see cref="MainUi"/>
@@ -382,8 +412,13 @@ public sealed class AgentPlaytestBridge
     /// apply, log, repeat — until <c>stop</c>, <paramref name="maxTurns"/>, or a command-file
     /// timeout. Every branch writes <c>turnlog.md</c> before returning, including the timeout
     /// branch (R2: a run that goes quiet must still leave a readable record, not just vanish).
+    ///
+    /// <para>Returns which of those three endings happened (<see cref="AgentPlaytestOutcome"/>) —
+    /// this method itself never calls <c>GetTree().Quit</c>, on purpose, so the timeout/clean
+    /// distinction is provable without booting the process-quitting dev-tool bootstrap in
+    /// <see cref="AgentPlaytest._Ready"/>.</para>
     /// </summary>
-    public async Task RunLoop(MainUi ui, string outDir, int maxTurns, int commandTimeoutMs)
+    public async Task<AgentPlaytestOutcome> RunLoop(MainUi ui, string outDir, int maxTurns, int commandTimeoutMs)
     {
         System.IO.Directory.CreateDirectory(outDir);
         var turnLog = new StringBuilder();
@@ -422,11 +457,14 @@ public sealed class AgentPlaytestBridge
             var command = await WaitForCommand(commandPath, commandTimeoutMs);
             if (command is null)
             {
-                lastOutcome = $"timed out after {commandTimeoutMs}ms waiting for command.json";
+                // "TIMEOUT" (not just "timed out") so this reads as a NAMED failure mode when
+                // grepped, the same register as the driver's own DEGRADED/INCOMPLETE/STUCK tags —
+                // see AgentPlaytestOutcome's doc for the run this distinction exists to catch.
+                lastOutcome = $"TIMEOUT: timed out after {commandTimeoutMs}ms waiting for command.json";
                 turnLog.AppendLine($"- command: (none) -> {lastOutcome}");
                 FlushLog(outDir, turnLog);
-                GD.Print($"[agent-playtest] {lastOutcome} — ending run at turn {turn}.");
-                return;
+                GD.PrintErr($"[agent-playtest] {lastOutcome} — ending run at turn {turn}. This is an ABANDONED run, not a completed one.");
+                return AgentPlaytestOutcome.TimedOut;
             }
 
             turnLog.AppendLine(
@@ -439,11 +477,12 @@ public sealed class AgentPlaytestBridge
             if (string.Equals(command.Action, "stop", StringComparison.OrdinalIgnoreCase))
             {
                 GD.Print($"[agent-playtest] stop command received at turn {turn}.");
-                return;
+                return AgentPlaytestOutcome.Stopped;
             }
         }
 
         GD.Print($"[agent-playtest] max turns ({maxTurns}) reached.");
+        return AgentPlaytestOutcome.MaxTurnsReached;
     }
 
     private static void FlushLog(string outDir, StringBuilder turnLog) =>
@@ -563,11 +602,40 @@ public sealed class AgentPlaytestBridge
 /// <c>AGENT_PLAYTEST_DIR</c>, matching <see cref="FullPlaytest"/>'s <c>PLAYTEST_OUT</c>
 /// convention. <c>AGENT_PLAYTEST_MAX_TURNS</c> and <c>AGENT_PLAYTEST_TIMEOUT_MS</c> override the
 /// loop bounds; both have sane defaults so a bare launch is still safe.</para>
+///
+/// <para><b>Exit code contract</b> (see <see cref="AgentPlaytestOutcome"/>): 1 means this tool
+/// refused to launch at all (bad gate env var); 0 means the run reached a REAL ending (<c>stop</c>
+/// or max turns); anything from <see cref="ExitCodeFor"/> that is non-zero past that point means
+/// the driver went silent and the run was abandoned mid-turn, not completed. A wrapper that only
+/// checks "exit 0" for success used to see the same 0 for all three (see
+/// <see cref="AgentPlaytestOutcome"/>'s doc for the run that cost).</para>
 /// </summary>
 public partial class AgentPlaytest : Node
 {
     private const int DefaultMaxTurns = 400;
-    private const int DefaultCommandTimeoutMs = 30_000;
+
+    /// <summary>
+    /// Fallback ONLY — used when <c>AGENT_PLAYTEST_TIMEOUT_MS</c> is absent (a manual launch with
+    /// no driver, or a driver older than this fix). The real per-run number always comes from the
+    /// env var: <c>tools/agent-playtest.ps1</c>'s "Launch the client" section computes it from its
+    /// own <c>$ModelCallMaxAttempts</c> * <c>$ModelCallTimeoutSec</c> and sets
+    /// <c>AGENT_PLAYTEST_TIMEOUT_MS</c> before starting this process, precisely so the two halves
+    /// of this channel stop being unrelated numbers in two languages.
+    ///
+    /// <para>This fallback MUST exceed the driver's own worst-case per-turn budget, or the defect
+    /// it exists to prevent reopens. Measured 2026-08-10: the driver retries a model call up to
+    /// <c>$ModelCallMaxAttempts</c> (3) times at <c>$ModelCallTimeoutSec</c> (300) seconds each
+    /// before giving up on a turn — worst case 3 * 300s = 900_000ms — while this constant used to
+    /// be 30_000, ten times too small to survive even one slow attempt. If either number changes in
+    /// <c>tools/agent-playtest.ps1</c>, update <see cref="DriverModelCallTimeoutMs"/> /
+    /// <see cref="DriverModelCallMaxAttempts"/> below to match; a unit test in
+    /// <c>AgentPlaytestBridgeTests</c> reads the driver's actual numbers straight out of the
+    /// <c>.ps1</c> file and fails loudly the moment this fallback stops exceeding them.</para>
+    /// </summary>
+    private const int DriverModelCallTimeoutMs = 300_000;
+    private const int DriverModelCallMaxAttempts = 3;
+    private const int DriverWorstCaseTurnMs = DriverModelCallMaxAttempts * DriverModelCallTimeoutMs;
+    private const int DefaultCommandTimeoutMs = DriverWorstCaseTurnMs + 50_000; // margin over the driver's own worst case
 
     public override async void _Ready()
     {
@@ -591,12 +659,23 @@ public partial class AgentPlaytest : Node
         await Settle(24); // let the fresh campaign finish laying out before the first observation
 
         var bridge = new AgentPlaytestBridge(this);
-        await bridge.RunLoop(ui, outDir, maxTurns, timeoutMs);
+        var outcome = await bridge.RunLoop(ui, outDir, maxTurns, timeoutMs);
 
         RemoveChild(ui);
         ui.QueueFree();
-        GetTree().Quit(0);
+        GetTree().Quit(ExitCodeFor(outcome));
     }
+
+    /// <summary>
+    /// The process exit code a launcher/CI wrapper sees. Only <see
+    /// cref="AgentPlaytestOutcome.TimedOut"/> is non-zero — an abandoned run is not a completed
+    /// one, and <c>tools/agent-playtest.ps1</c>'s own completion-floor exit (PR #436, INCOMPLETE /
+    /// DEGRADED, computed from turn COUNT) should not be the only signal that ever notices a run
+    /// died mid-turn: this is the CLIENT's own signal, independent of whatever the driver script
+    /// does or does not check on its side of the channel.
+    /// </summary>
+    public static int ExitCodeFor(AgentPlaytestOutcome outcome) =>
+        outcome == AgentPlaytestOutcome.TimedOut ? 2 : 0;
 
     private static string ResolveOutDir()
     {
