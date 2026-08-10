@@ -89,35 +89,29 @@ public class VenueConformanceTests
 
     [Theory]
     [MemberData(nameof(AllVenueIds))]
-    public void EntryPower_IsNonNegative(string id)
+    public void LadderRank_IsNonNegative(string id)
     {
-        // The router's progression band: negative would make a venue "reached" by every party AND
-        // sort below the EntryPower-0 early venues — a contradiction the comparator can't express.
-        Assert.InRange(VenueRegistry.All[id].EntryPower, 0, int.MaxValue);
+        // The router's eligibility ladder: negative would make a venue "reached" by every party AND
+        // sort below the rank-0 starter venues — a contradiction the comparator can't express.
+        Assert.InRange(VenueRegistry.All[id].LadderRank, 0, int.MaxValue);
     }
 
     [Fact]
-    public void EntryPowerBands_AreTheTunedRecord()
+    public void LadderRanks_AreTheTunedRecord()
     {
-        // The routing tuning record (2026-08-01, measured against the banded-world power curve:
-        // router-side party power ramps 30..54 (p25..p75) in days 1-10 and saturates at ~70-76).
-        // Mine + Sunken Crypt are the EntryPower-0 early peers (queue-split); Gloomwood and
-        // dormant Emberfall share the veteran band at 72 — a deliberate tie, so Emberfall's
-        // art-gated go-live makes the two top venues queue-split peers instead of one strictly
-        // dominating. Change these consciously — they move every seed's venue distribution (and
-        // therefore the balance bands), and MEASURE with the batch farm, never reason it out:
-        // Gloomwood placements 35 and 55 both looked plausible and measured 65%+ and 86% venue
-        // share; the full sweep 55/65/68/70/71/72 measured 86/75/74/70/72/68% — the threshold
-        // lever saturates near ~68-70% in a three-venue world because the economy feeds back
-        // (Mine traffic sells the smith copper, gear improves, the fleet levels back over any
-        // bar below the ~81 power ceiling). Shipping row at these values: gloomwood 68% / mine
-        // 25% / crypt 7%, all three on 20/20 seeds; go-live sanity row: ember 42% / mine 26% /
-        // gloomwood 24% / crypt 6% (ember on 20/20 under the peer tie; gloomwood on 19/20 — the
-        // tie's ordinal bias favors "emberfall", re-tune at go-live if that reads starved).
-        Assert.Equal(0, VenueRegistry.Mine.EntryPower);
-        Assert.Equal(0, VenueRegistry.All["sunken-crypt"].EntryPower);
-        Assert.Equal(72, VenueRegistry.All["gloomwood"].EntryPower);
-        Assert.Equal(72, VenueRegistry.All["emberfall"].EntryPower);
+        // The forward ladder's rung assignment (owner ruling 2026-08-10, plan 2026-08-10-003 L1,
+        // §11.8's fix): Mine + Sunken Crypt are the rank-0 starter peers (queue-split); Gloomwood is
+        // rank 1, the first rung reached only by graduating (a bottom-floor clear incrementing
+        // Hero.LadderRank, never a power reading); Emberfall is rank 2, the endgame rung, ranked
+        // and ready while dormant (no live art yet — see VenueRegistry.LiveRotation). Unlike the
+        // deleted EntryPower bands, THESE RANKS DO NOT TIE — a party eligible for both Gloomwood and
+        // Emberfall always prefers Emberfall outright (no queue-split "peer" relationship between
+        // rungs; peers only ever share ONE rung, per VenueRouterTests). Change these consciously —
+        // adding a rung or renumbering shifts which venue every ladder-climbing party sees next.
+        Assert.Equal(0, VenueRegistry.Mine.LadderRank);
+        Assert.Equal(0, VenueRegistry.All["sunken-crypt"].LadderRank);
+        Assert.Equal(1, VenueRegistry.All["gloomwood"].LadderRank);
+        Assert.Equal(2, VenueRegistry.All["emberfall"].LadderRank);
     }
 
     [Fact]
@@ -143,10 +137,9 @@ public class VenueConformanceTests
         // flip (relands PR #242): the Sunken Crypt joins the Mine and Gloomwood, in this exact
         // order — callers seed VenueRouter's queue dictionary from this array, and every golden
         // replay that reads LiveRotation's order depends on it. Emberfall is deliberately ABSENT:
-        // built, banded (EntryPower 72), and dormant until its art wave — it measured 44% of all
-        // routed parties when briefly live, which would have pointed half the game's raids at
-        // placeholder glyphs (see VenueRegistry.LiveRotation's own doc). A venue joins only
-        // through its own determinism-gated re-baseline.
+        // built, ranked (LadderRank 2), and dormant until its art wave — no committed backdrop or
+        // monster portraits yet (see VenueRegistry.LiveRotation's own doc). A venue joins only
+        // through its own determinism-gated re-baseline (L4 flips Emberfall live).
         Assert.Equal(
             new[] { VenueRegistry.MineId, "gloomwood", "sunken-crypt" },
             VenueRegistry.LiveRotation);

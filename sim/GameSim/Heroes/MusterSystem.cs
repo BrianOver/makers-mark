@@ -28,6 +28,11 @@ public static class MusterPlan
     /// the predicted acceptances are a local projection, silent (no <c>BountyJudged</c> events) —
     /// the authoritative judging still happens at the Expedition tick, two phases later.
     /// </summary>
+    /// <param name="items">No longer read by routing (L1: <c>partyPower</c>/<c>CombatMath</c> left
+    /// the router entirely — rank routing needs only <see cref="Hero.LadderRank"/>). Kept on the
+    /// signature so <see cref="ExpeditionSystem.TargetFloorFor"/>'s call shape and every existing
+    /// caller (<c>MusterSystem</c>, <c>CommissionSystem</c>, <c>RaidForecast</c>) stay unchanged —
+    /// an unrelated public-API churn this unit's scope does not call for.</param>
     public static ImmutableList<PartyPlan> Compute(
         ImmutableSortedDictionary<int, Hero> heroes,
         ImmutableList<Bounty> bounties,
@@ -58,8 +63,11 @@ public static class MusterPlan
             }
             else
             {
-                var partyPower = CombatMath.PartyAveragePower(party, items);
-                venueId = VenueRouter.ChooseVenue(partyPower, VenueRegistry.LiveRotation, queueCounts);
+                // Interim party-rank rule (L1; see ExpeditionSystem.Process's own note — the same
+                // MIN-of-members rule, run over the SAME parties, so this prediction never disagrees
+                // with what the Expedition tick actually routes two phases later).
+                var partyRank = party.Min(h => h.LadderRank);
+                venueId = VenueRouter.ChooseVenue(partyRank, VenueRegistry.LiveRotation, queueCounts);
             }
 
             queueCounts[venueId] = queueCounts.TryGetValue(venueId, out var count) ? count + 1 : 1;

@@ -44,6 +44,14 @@ public class PhaseBNoDrawGateTests
         // RE-BASELINED (2026-08-01 same PR window, Gloomwood band 55 → 72): same class as above —
         // mid-power idle parties now stay in the early band until 72, so their venues and combat
         // draw counts shift again. `Inc` STILL byte-identical; only `State` moved.
-        Assert.Equal(new RngState(18014097083248745424UL, 13279888329118852579UL), state.Rng);
+        // GOLDEN RE-BASELINE #1 OF 5 (forward-ladder plan 2026-08-10-003, L1 — graduation + rank
+        // router, §11.8's fix): VenueRouter now keys on Hero.LadderRank instead of party power
+        // against EntryPower — see AtomicEquivalenceTests.cs's matching ledger entry for the full
+        // account (this exact idle trace is the one whose power crossed the old Gloomwood band and
+        // drove the two 2026-08-01 re-pins directly above; under the ladder it never graduates out
+        // of rank 0, so it never reaches Gloomwood at all, and the combat draws after the old
+        // divergence point shift). `Inc` is STILL byte-identical (13279888329118852579) — same
+        // stream, only `State` moved; the router remains pure integer comparison, no new draw site.
+        Assert.Equal(new RngState(5771294674252808564UL, 13279888329118852579UL), state.Rng);
     }
 }

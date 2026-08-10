@@ -52,19 +52,21 @@ public sealed record VenueFloor(
 /// byte-sensitive prose reads per-floor <see cref="VenueFloor.MonsterKind"/>, not this.</param>
 /// <param name="Floors">Per-floor data in ascending floor order; index 0 is floor 1. Deterministic
 /// iteration; integer-only.</param>
-/// <param name="EntryPower">The party-average power (<c>CombatMath.PartyAveragePower</c> — the
-/// ROUTER's scale, which never sees in-run craft/consumable modifiers) at which <c>VenueRouter</c>
-/// starts sending bounty-free parties here. 0 = an early venue open to everyone. This exists
-/// because floor gates alone cannot express a venue's progression band: Emberfall shares the
-/// Mine's exact gate ladder but mints grade-12..16 ore, so without an explicit band the router's
-/// old tightest-fit utility sent everyone wherever gates were highest (the PR #242 skew — Mine
-/// starved, Sunken Crypt ~zero). Venues with equal EntryPower are peers and share traffic via
-/// the queue comparator.</param>
+/// <param name="LadderRank">The forward ladder (owner ruling 2026-08-10, plan 2026-08-10-003 L1):
+/// the rung this venue occupies — 0 = starter tier (Mine, Sunken Crypt), 1 = Gloomwood, 2 =
+/// Emberfall Foundry (dormant; ranked now so L4's go-live is a liveness flip only). Replaces the
+/// deleted <c>EntryPower</c> power-band field: a party's rank only ever increments (on a
+/// bottom-floor clear, <see cref="Hero.LadderRank"/>), so <c>VenueRouter</c> keying on rank instead
+/// of a continuous, non-monotonic power reading is what makes the §11.8 routing trap impossible by
+/// construction rather than by threshold-tuning — EntryPower's old band could saturate below a
+/// venue's own floor-5 gate and permanently strand a party in a shallower venue; a rank can't
+/// wobble back down to re-strand anyone. Venues sharing a rank are peers and split traffic via the
+/// router's queue comparator (Mine/Crypt at rank 0 today).</param>
 public sealed record VenueDefinition(
     string Id,
     string DisplayName,
     ImmutableArray<VenueFloor> Floors,
-    int EntryPower = 0)
+    int LadderRank = 0)
 {
     /// <summary>Number of floors in the venue (the deepest attemptable floor).</summary>
     public int FloorCount => Floors.Length;
