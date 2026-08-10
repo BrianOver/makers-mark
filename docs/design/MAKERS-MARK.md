@@ -709,6 +709,18 @@ So, binding rules for every session that touches this repo:
    Its §C5 carries a genuine law question — a settings menu is where the seven laws can be broken
    by something shaped like a courtesy — and the tripwire it specifies is binding on any future
    settings work whether or not the rest of that wave ships.
+   **Amended 2026-08-10:** the shell wave's units all landed (#417–#422, #430–#433), so its doc
+   dies on merge per rule 7 and the freed slot is granted, by name, to
+   `docs/plans/2026-08-10-001-feat-the-playtest-keeps-what-it-saw-plan.md` — the same harness, one
+   layer deeper. The last wave made it stop lying about whether it played; this one makes it **keep
+   what it saw**: per-turn frames, the backend log nothing has ever read, a coverage denominator so
+   that "we tested everything" can be false, and personas so N runs measure N players instead of one
+   player N times. Substrate again, and it earns the slot on its predecessor's argument plus one
+   sharper fact: the scout judge's standing verdict — *"nothing in the log names the player's work —
+   every outcome is read as generic"* — is a link-4/link-5 claim resting entirely on one model's
+   prose, with no recorded evidence beside it. An instrument that cannot evidence a claim about §2
+   links cannot be used to decide anything about them. Same constraint as before: capped overhead,
+   and no unit here may displace a §11.4 path item.
 5. **The measurement rule.** When new data contradicts this plan — P4 moves the boredom
    day, P3's assertions fail, a sweep overturns a tuning claim — the plan amends in the
    same PR that lands the finding. A plan that cannot lose an argument with a measurement
