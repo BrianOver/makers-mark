@@ -52,10 +52,10 @@ VRAM_FLOOR_BYTES = 14 * 1000 ** 3
 # What the C# pins. A parse that finds a different shape is a parse that is wrong --
 # and silently generating 3 lines instead of 6 would leave the library quietly partial.
 EXPECTED = {
-    "VigilOpening": 6,
-    "DeathEpitaph": 6,
-    "ProvenSave": 4,
-    "KillingBlow": 4,
+    "VigilOpening": 10,
+    "DeathEpitaph": 10,
+    "ProvenSave": 10,
+    "KillingBlow": 10,
     # Campaign milestones: once each per campaign, so three lines is plenty of variety.
     "ActAdvanced": 3,
     "ClimaxReached": 3,
