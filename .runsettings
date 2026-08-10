@@ -9,10 +9,14 @@
      EnvironmentVariables override the inherited process env inside the test
      host, so the Windows path below hijacked a Linux runner and gdUnit
      discovered zero tests (caught by the ENGINE_MIN_PASSED floor, red on
-     passed=0). CI therefore substitutes its real path into this element with
-     sed before every run (.github/workflows/ci.yml, both dotnet test steps).
-     If you need a different local path, edit the value below -- do not rely on
-     an env var beating it. -->
+     passed=0). A second attempt sed'd the real Linux path in and dotnet test
+     then died SILENTLY in ~3s with zero output, twice -- the same value works
+     via plain env, so something else in this file trips the Linux adapter.
+     CONCLUSION: this file is LOCAL-ONLY until that is isolated. CI runs without
+     --settings and relies on ENGINE_MIN_PASSED to catch the green-54 lie this
+     file's CompileProcessTimeout guards against locally
+     (.github/workflows/ci.yml, the engine step's note). If you need a different
+     local path, edit the value below -- do not rely on an env var beating it. -->
 <RunSettings>
   <RunConfiguration>
     <EnvironmentVariables>
