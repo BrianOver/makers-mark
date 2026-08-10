@@ -66,9 +66,10 @@ public sealed class ExpeditionSystem : IPhaseSystem
             }
             else
             {
-                // Interim party-rank rule (L1; L2's cohort formation supersedes it): MIN of the
-                // party's members' LadderRank, so a mixed-rank party routes no higher than its
-                // least-graduated member — never marches a rookie's slot into a rung she hasn't earned.
+                // Party-rank rule (L1; exact since L2 landed): MIN of the party's members'
+                // LadderRank. PartyFormation now cohorts by rank before a party ever forms, so
+                // every member here already shares one rank — MIN is a no-op over that single
+                // value, not the mixed-roster safeguard it was interim for.
                 var partyRank = party.Min(h => h.LadderRank);
                 venueId = VenueRouter.ChooseVenue(partyRank, VenueRegistry.LiveRotation, queueCounts);
             }

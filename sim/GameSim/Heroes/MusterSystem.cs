@@ -63,9 +63,10 @@ public static class MusterPlan
             }
             else
             {
-                // Interim party-rank rule (L1; see ExpeditionSystem.Process's own note — the same
-                // MIN-of-members rule, run over the SAME parties, so this prediction never disagrees
-                // with what the Expedition tick actually routes two phases later).
+                // Party-rank rule (L1; exact since L2 landed — see ExpeditionSystem.Process's own
+                // note): the same MIN-of-members rule, run over the SAME parties, so this
+                // prediction never disagrees with what the Expedition tick actually routes two
+                // phases later.
                 var partyRank = party.Min(h => h.LadderRank);
                 venueId = VenueRouter.ChooseVenue(partyRank, VenueRegistry.LiveRotation, queueCounts);
             }

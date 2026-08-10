@@ -52,6 +52,12 @@ public class PhaseBNoDrawGateTests
         // of rank 0, so it never reaches Gloomwood at all, and the combat draws after the old
         // divergence point shift). `Inc` is STILL byte-identical (13279888329118852579) — same
         // stream, only `State` moved; the router remains pure integer comparison, no new draw site.
+        // GOLDEN RE-BASELINE #2 OF 5 (forward-ladder plan 2026-08-10-003, L2 — cohort formation):
+        // NO-OP — see AtomicEquivalenceTests.cs's matching ledger entry for the full account. Every
+        // hero on this trace stays LadderRank 0 the whole 30 days, so PartyFormation's new
+        // group-by-rank step groups everyone into one cohort — a no-op over a single-valued grouping.
+        // BOTH fields are still byte-identical to the L1 value above (verified via git-stash
+        // before/after, not just re-asserted).
         Assert.Equal(new RngState(5771294674252808564UL, 13279888329118852579UL), state.Rng);
     }
 }

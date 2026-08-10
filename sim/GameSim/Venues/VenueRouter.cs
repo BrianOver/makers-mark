@@ -58,11 +58,11 @@ public static class VenueRouter
     /// Choose the live venue a bounty-free party raids today. Pure integer comparison — draws no RNG,
     /// so routing can never become a new RNG-draw site (KTD2).
     /// </summary>
-    /// <param name="partyRank">The party's ladder rank for routing purposes — interim rule (L1):
-    /// the MIN of its members' <see cref="Hero.LadderRank"/>, so a mixed-rank party routes no
-    /// higher than its least-graduated member. L2's cohort formation groups parties by rank before
-    /// they ever reach this call, at which point every member of a formed party shares one rank and
-    /// MIN becomes a no-op over a single-valued set — named here so the successor is traceable.</param>
+    /// <param name="partyRank">The party's ladder rank for routing purposes. Callers still compute
+    /// this as the MIN of the party's members' <see cref="Hero.LadderRank"/> (L1's original rule),
+    /// but <see cref="GameSim.Heroes.PartyFormation.FormParties"/> now cohorts by rank BEFORE a
+    /// party is ever formed (L2, plan 2026-08-10-003), so every member of a party this method sees
+    /// already shares one rank — MIN is exact, not interim: a no-op over a single-valued set.</param>
     /// <param name="liveVenueIds">The live rotation to choose among (<see cref="VenueRegistry.LiveRotation"/>).</param>
     /// <param name="queueCounts">Parties already routed to each venue id THIS TICK, prior to this pick.
     /// A missing key reads as zero (no parties routed there yet).</param>

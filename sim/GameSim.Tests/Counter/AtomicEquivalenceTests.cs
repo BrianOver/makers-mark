@@ -167,6 +167,19 @@ public class AtomicEquivalenceTests
     // 2026-08-01 EntryPower-placement re-pins' own signature, not a new draw site (the router is
     // still pure integer comparison; MIN over LadderRank adds no RNG). Determinism holds (same
     // seed+actions = identical state).
+    // GOLDEN RE-BASELINE #2 OF 5 (forward-ladder plan 2026-08-10-003, L2 — cohort formation): **NO-OP
+    // — hash UNCHANGED, value not re-pinned.** PartyFormation now groups alive heroes by LadderRank
+    // before applying the existing anchor/id rules, so a party can no longer mix ranks. On THIS idle
+    // trace every hero is, and stays, LadderRank 0 the entire 30 days (L1's own measurement
+    // correction, recorded above: party power plateaus at 63-73, below the floor-5 gate of 100, so
+    // nobody ever graduates) — one rank means one cohort, and grouping a single-cohort roster is a
+    // no-op (GroupBy over one key, then OrderBy over that one group, reproduces the exact input order
+    // FormParties already produced pre-L2). Cohort formation can only diverge from the pre-L2
+    // behavior once a mixed-rank roster exists, which requires a graduation, which this trace cannot
+    // produce until L3 fixes the gate-vs-power gap. Class 0 — no behavioral change on the golden
+    // trace; verified by running the fast lane both with and without this unit's diff (git stash) and
+    // confirming this exact SHA in both runs, plus the sibling PhaseBNoDrawGateTests RngState pin
+    // (Inc AND State) unchanged in both runs too.
     private const string ExpectedPreCounterSha256 =
         "8DF23E515D001A8B007A35972676A4B62FB8B15CAF782745DCA6D18BA59668E9";
 
