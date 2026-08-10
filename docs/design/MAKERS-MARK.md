@@ -721,6 +721,15 @@ So, binding rules for every session that touches this repo:
    prose, with no recorded evidence beside it. An instrument that cannot evidence a claim about §2
    links cannot be used to decide anything about them. Same constraint as before: capped overhead,
    and no unit here may displace a §11.4 path item.
+   **Amended 2026-08-10 (third):** granted, by name, to
+   `docs/plans/2026-08-10-003-feat-the-forward-ladder-plan.md` — the §11.8 resolution, carrying
+   the owner's 2026-08-10 forward-ladder ruling. This one is **critical path, not substrate**:
+   §11.8 is interrupt-class and §11.4's own ordering ties rule that a failed P3 re-orders the
+   plan around itself. Its slot comes from `2026-08-08-001-feat-proof-the-player-never-sees`,
+   deleted in the same PR as this grant: that wave's U1–U8 all landed except U5 — the red arc
+   gate, draft #413 — whose every remaining obligation transfers to the ladder wave's L6, where
+   the gate turning green is the wave's exit criterion. Nothing that doc still asserted survives
+   it; git history is the archive.
    **Amended 2026-08-10 (second):** the keeps-what-it-saw wave's units all landed (#436, #438,
    plus the frames/backend/coverage/personas and sweep PRs), so its doc dies in the same PR as
    this amendment (rule 7, atomically — a plan only on a branch does not exist, so the deletion,
@@ -918,6 +927,23 @@ reached floor 5 — but both distort every balance number the repo currently rec
 or MEDIUM, and **none of them was "the campaign never ends."** An anomaly detector that cannot
 see a missing ending is a detector reporting on the weather inside a burning building. Whatever
 lever wins, the analytics pass owes an arc-completion check.
+
+**Ruled 2026-08-10 — none of the three levers; the signal itself was wrong.** The owner:
+*"Powerful party's should NOT go back? They should continue to the next dungeon which adds more
+features/unlocks for the player."* And on the red gate's siblings: *"you are overcomplicating
+the balance tests, just do what's more fun for the player."* Venues are a **forward ladder** —
+graduation by beating a venue's bottom floor increments a monotonic `Hero.LadderRank`, routing
+keys on rank instead of the power high-water latch, and oscillation becomes impossible by
+construction rather than by tuning. Each rung unlocks blacksmith-facing features (ore tiers,
+recipes, factions, news); the arc re-anchors so Act III is the last dungeon opening and the
+Climax is its deepest floor; the Mine stays alive through the recruit trickle, the Forge's own
+ore hunger, and the bounty's refusable back-steer — nothing new built there. The salve and
+money-supply tests are re-framed to assert what a player feels. Lever 1 was already measured
+dead before this ruling (Gloomwood `EntryPower` 90: reachability 0 of 4385 party-ticks, 7 tests
+broken, not merged); the ruling supersedes the remaining two. The wave of record:
+`docs/plans/2026-08-10-003-feat-the-forward-ladder-plan.md`, which also carries §11.5's parked
+Emberfall decision (the flip is rung 2's go-live; the #92 share-collapse measurement becomes
+obsolete when venue share is stage-keyed instead of threshold-keyed).
 
 ### 11.9 The bet
 
