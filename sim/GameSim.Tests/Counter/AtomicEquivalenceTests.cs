@@ -137,8 +137,17 @@ public class AtomicEquivalenceTests
     // shifts. Same stream, different position (PhaseBNoDrawGate: Inc byte-identical, State moved);
     // no new draw site (the router is still pure integer comparison). Third recorded re-pin, one
     // deliberate re-baseline window for the whole branch.
+    // RE-BASELINED 2026-08-10 (forward-ladder plan 2026-08-10-003, L0 — Contracts micro-PR):
+    // **Class 0b — values change, draw-free.** Hero gained the non-positional init member
+    // LadderRank (default 0, the MoodPermille/Xp/Pack pattern), so every serialized hero carries
+    // one new "LadderRank":0 property and the state JSON's bytes move. NOTHING ELSE moved:
+    // nothing writes the field until L1, no draw site was added or reached differently, and the
+    // sibling PhaseBNoDrawGate RngState pin is byte-identical (State AND Inc — verified before
+    // this re-pin, the same both-equal signature as the 2026-08-01 Emberfall-dormant re-pin
+    // above). Golden re-baseline #0 of the ladder wave's five — the save-shape one the plan's L0
+    // names "save-fixture only."
     private const string ExpectedPreCounterSha256 =
-        "34CF8A6F1985CC6105BF70B73CFD7BAC55D9B915116B6C70ADD42DF88AB8F4D2";
+        "5BE5A1B6785D90AE76EFB9109A6B6B4CCB5516E51268006F952FDDDBB7E326D0";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

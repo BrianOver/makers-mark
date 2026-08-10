@@ -77,6 +77,21 @@ public sealed record Hero(
     /// </summary>
     public int Xp { get; init; } = 0;
 
+    /// <summary>
+    /// The forward ladder (owner ruling 2026-08-10, plan 2026-08-10-003 L0): how many dungeons
+    /// this hero has GRADUATED — beaten the bottom floor of — starting at 0 (the Mine tier).
+    /// MONOTONIC BY CONTRACT: it only ever increments, on a bottom-floor clear by a surviving
+    /// party member whose rank equals the venue's, and nothing may ever decrement it. That
+    /// monotonicity is the whole §11.8 fix — routing keyed on a signal that cannot regress cannot
+    /// oscillate, unlike the power high-water latch it replaces. Distinct from
+    /// <see cref="GameSim.Heroes.HeroRank"/> (the XP/career ladder): a hero can be a decorated
+    /// veteran and still rank 0 here if her parties never felled a bottom-floor boss. Non-
+    /// positional init member (the <see cref="MoodPermille"/> pattern) — old saves and existing
+    /// constructors default to 0, which is exactly correct: every pre-ladder hero starts at the
+    /// Mine tier. Nothing writes this field until L1.
+    /// </summary>
+    public int LadderRank { get; init; } = 0;
+
     /// <summary>Simple additive gear score used by shopping and floor gates. Integer math only.</summary>
     public static int GearScore(GearSet gear, ImmutableSortedDictionary<int, Item> items)
     {

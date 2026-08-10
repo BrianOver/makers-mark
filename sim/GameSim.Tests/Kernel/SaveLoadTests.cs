@@ -332,4 +332,74 @@ public class SaveLoadTests
         Assert.Equal(plan.VenueId, loadedPlan.VenueId);
         Assert.Empty(musters[1].Parties);
     }
+
+    [Fact]
+    public void LadderRank_RoundTrips_AndOldSavesDefaultToTheMineTier()
+    {
+        // The forward ladder's contract seam (plan 2026-08-10-003, L0). Two pins in one:
+        //
+        // 1. A populated rank survives a byte-identical round-trip — the graduate stays graduated
+        //    across a save/Continue, or the §11.8 fix silently un-fixes itself on every reload.
+        // 2. A save written BEFORE the field existed loads with rank 0 — which is not merely
+        //    tolerable but CORRECT: every pre-ladder hero starts at the Mine tier. Pinned by
+        //    stripping the property from the serialized JSON and loading that, the same
+        //    old-save-shape proof MoodPermille/Xp/Pack relied on (their precedent, this file).
+        // GameFactory.NewGame seeds an EMPTY roster (recruits trickle in later), so the hero is
+        // hand-built — same reason RaidConductorTests builds its own Strong() heroes.
+        var hero = new Hero(
+            new HeroId(1), "Rank Carrier", "vanguard", Level: 3, MaxHp: 40, Gold: 12,
+            GearSet.Empty, ImmutableList<ItemMemory>.Empty,
+            Alive: true, DeepestFloorReached: 5, DiedOnDay: null) with
+        { LadderRank = 2 };
+        var state = GameFactory.NewGame(seed: 30);
+        var ranked = state with
+        {
+            Heroes = state.Heroes.SetItem(hero.Id.Value, hero),
+        };
+        var firstId = hero.Id.Value;
+
+        var json = SaveCodec.Serialize(ranked);
+        var loaded = SaveCodec.Deserialize(json);
+        Assert.Equal(2, loaded.Heroes[firstId].LadderRank);
+        Assert.Equal(json, SaveCodec.Serialize(loaded));
+
+        // The pre-ladder shape: excise the field entirely and prove absence reads as rank 0.
+        // Both orderings covered (",\"X\":n" and "\"X\":n,") so the strip works wherever the
+        // serializer placed the property in the object.
+        var preLadderJson = json
+            .Replace(",\"LadderRank\":2", string.Empty).Replace(",\"LadderRank\":0", string.Empty)
+            .Replace("\"LadderRank\":2,", string.Empty).Replace("\"LadderRank\":0,", string.Empty);
+        Assert.DoesNotContain("LadderRank", preLadderJson);
+        var preLadder = SaveCodec.Deserialize(preLadderJson);
+        Assert.All(preLadder.Heroes.Values, h => Assert.Equal(0, h.LadderRank));
+    }
+
+    [Fact]
+    public void VenueGraduated_RoundTrips_Polymorphically()
+    {
+        // L0's second seam: the graduation event's discriminator ("venueGraduated") is registered
+        // and survives the polymorphic round-trip. Nothing EMITS this until L1 — this test is what
+        // makes the seam real before the mechanism exists, so L1 cannot ship an event the save
+        // layer has never heard of (the tanning/engineering puzzle lesson, SaveCodec's own doc).
+        var state = GameFactory.NewGame(seed: 31);
+        var graduated = state with
+        {
+            EventLog = state.EventLog.Add(
+                new VenueGraduated(
+                    "mine",
+                    ImmutableList.Create(new HeroId(1), new HeroId(2)),
+                    NewRank: 1)
+                { Id = new EventId(9100), Day = 12 }),
+        };
+
+        var json = SaveCodec.Serialize(graduated);
+        var loaded = SaveCodec.Deserialize(json);
+
+        Assert.Equal(json, SaveCodec.Serialize(loaded));
+        var evt = Assert.IsType<VenueGraduated>(loaded.EventLog[^1]);
+        Assert.Equal("mine", evt.VenueId);
+        Assert.Equal(new[] { new HeroId(1), new HeroId(2) }, evt.Graduates);
+        Assert.Equal(1, evt.NewRank);
+        Assert.Equal(12, evt.Day);
+    }
 }
