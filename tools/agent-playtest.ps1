@@ -1443,6 +1443,17 @@ $findings = ''
 # dedicated text model rather than the vision model that just played.
 try { $findings = Invoke-Model $judgePrompt (($judgeInput) -join [Environment]::NewLine) $null $JudgeModel } catch { Warn ('judge call failed: ' + $_.Exception.Message) }
 
+# THE JUDGE MUST NOT OVERSTAY. Found by the 2026-08-10 shakedown, in the first hour of the first
+# sweep on the new stack: ruling 10 unloads $Model before the judge, but nothing unloaded
+# $JudgeModel AFTER the run -- so run 1's judge (9.3 GB) sat resident into run 2's GPU gate, which
+# saw 0.8 GB free against its 8 GB floor and REFUSED in one second. Four of five persona runs died
+# that way, each reported honestly as MISSING by the sweep (the honesty machinery worked; the
+# residency was the defect). The gate's resident-model exemption (#433) deliberately covers only
+# the model the run itself is about to use, so a leftover judge can never ride it. Same idiom as
+# the ruling-10 unload above: synchronous CLI stop, stderr unredirected (the PS 5.1 2>&1 trap).
+try { & ollama stop $JudgeModel | Out-Null } catch { Warn ('ollama stop ' + $JudgeModel + ' failed: ' + $_.Exception.Message) }
+Say ('judge model ' + $JudgeModel + ' unloaded -- the next run''s GPU gate starts clean')
+
 # W5: the "## Scenario verdict" section -- written ABOVE the model's own prose at every Set-Content
 # site below (mirrors $backendSection/$metricsSection/$deadVerbSection/$temperamentSection's own
 # build-once-use-everywhere shape). Stays the empty array declared above whenever -Scenario was not

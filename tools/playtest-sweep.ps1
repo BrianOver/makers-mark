@@ -116,7 +116,12 @@ param(
     [int]$Turns = 40,
     [string]$OutDir,
     [string]$AggregateFrom,
-    [string]$Model = 'llava:7b',
+    # No default on purpose (was 'llava:7b', and the 2026-08-10 shakedown ran the whole persona
+    # stage on the OLD eyes because of it -- W1 upgraded the driver's default to qwen3-vl:8b and
+    # this pin silently overrode it). Empty means "do not pass -Model at all": the driver's own
+    # default is the single source of truth, and this file can never go stale against it again.
+    # Pass -Model explicitly only when a sweep deliberately compares models.
+    [string]$Model = '',
     [string]$RepoRoot,
     [switch]$DryRun
 )
@@ -1089,7 +1094,9 @@ function Invoke-SweepRun {
         [Parameter(Mandatory)][string]$DriverPath,
         [Parameter(Mandatory)][string]$RunDir,
         [Parameter(Mandatory)][string]$RepoRootForRun,
-        [string]$Model = 'llava:7b'
+        # Empty = inherit the driver's own default (see the param block's note on the stale-pin
+        # defect this replaced).
+        [string]$Model = ''
     )
 
     New-Item -ItemType Directory -Path $RunDir -Force | Out-Null
@@ -1114,8 +1121,10 @@ function Invoke-SweepRun {
     [void]$argList.Add([string]$PlanEntry.Turns)
     [void]$argList.Add('-OutDir')
     [void]$argList.Add($RunDir)
-    [void]$argList.Add('-Model')
-    [void]$argList.Add($Model)
+    if ($Model) {
+        [void]$argList.Add('-Model')
+        [void]$argList.Add($Model)
+    }
     [void]$argList.Add('-RepoRoot')
     [void]$argList.Add($RepoRootForRun)
     if ($personaSupported) {
@@ -1134,7 +1143,9 @@ function Invoke-SweepRun {
         persona                = $PlanEntry.Persona
         personaPassedToDriver  = $personaSupported
         turnsRequested         = $PlanEntry.Turns
-        model                  = $Model
+        # '(driver default)' rather than a retyped model name -- naming one here is how the
+        # stale-pin defect started; the run's own findings.md header carries the real model.
+        model                  = $(if ($Model) { $Model } else { '(driver default)' })
         exitCode               = $exitCode
         startedAt              = $startedAt.ToString('o')
         endedAt                = $endedAt.ToString('o')
