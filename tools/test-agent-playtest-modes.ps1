@@ -53,7 +53,8 @@ $parseTargets = @(
     (Join-Path $toolsDir 'agent-playtest\personas.ps1'),
     (Join-Path $toolsDir 'agent-playtest\model-call.ps1'),
     (Join-Path $toolsDir 'agent-playtest\footer.ps1'),
-    (Join-Path $toolsDir 'agent-playtest\deadverb.ps1')
+    (Join-Path $toolsDir 'agent-playtest\deadverb.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\metrics.ps1')
 )
 foreach ($target in $parseTargets) {
     $tokens = $null
@@ -961,6 +962,219 @@ Check ($script:KnownPersonas -notcontains 'sceptic') 'personas.ps1''s $script:Kn
 Check ($script:KnownPersonas.Count -eq 4) ('personas.ps1''s known-persona roster must be exactly 4 today (W4 adds two more), got ' + $script:KnownPersonas.Count + ': ' + ($script:KnownPersonas -join ', '))
 $sweepRawText = Get-Content (Join-Path $toolsDir 'playtest-sweep.ps1') -Raw
 Check ($sweepRawText -notlike '*''sceptic''*') 'playtest-sweep.ps1''s default -Personas array must not contain the string literal ''sceptic'' any more (it would pass a rejected persona straight to the driver)'
+
+# --- 13. Mechanical fun metrics (W2, docs/plans/2026-08-10-002 "the playtest becomes a player") -----
+. (Join-Path $toolsDir 'agent-playtest\metrics.ps1')
+
+# --- 12a. Per-day action entropy: hand-computed 2-day fixture ------------------------------------
+# Day 1: TurnRecords contribute 2x "press" + 1x "advance" (3 items); playtest-log.jsonl's own
+# "action" rows (BackendActionRows) contribute 1x "BuyMaterialAction" -- 4 items total, counts
+# press=2/advance=1/BuyMaterialAction=1, probabilities 0.5/0.25/0.25.
+#   H = -(0.5*log2(0.5) + 0.25*log2(0.25) + 0.25*log2(0.25)) = -(0.5*-1 + 0.25*-2 + 0.25*-2) = 1.5 bits
+# Day 2: TurnRecords contribute 4x "advance", BackendActionRows contributes nothing for day 2 -- a
+# single action type, so entropy is exactly 0 (log2(1) = 0). Both values are exact (no floating
+# rounding involved: log2(0.5)=-1, log2(0.25)=-2, log2(1)=0 are all exact powers of two).
+$entropyTurnRecords = @(
+    [pscustomobject]@{ Day = 1; Action = 'press' }
+    [pscustomobject]@{ Day = 1; Action = 'press' }
+    [pscustomobject]@{ Day = 1; Action = 'advance' }
+    [pscustomobject]@{ Day = 2; Action = 'advance' }
+    [pscustomobject]@{ Day = 2; Action = 'advance' }
+    [pscustomobject]@{ Day = 2; Action = 'advance' }
+    [pscustomobject]@{ Day = 2; Action = 'advance' }
+)
+$entropyBackendRows = @(
+    [pscustomobject]@{ day = 1; action = 'BuyMaterialAction' }
+)
+$entropyResult = Get-PerDayActionEntropy -TurnRecords $entropyTurnRecords -BackendActionRows $entropyBackendRows
+Check ($entropyResult.Count -eq 2) ('entropy fixture must produce exactly 2 day rows, got ' + $entropyResult.Count)
+$day1Entropy = $entropyResult | Where-Object { $_.Day -eq '1' } | Select-Object -First 1
+$day2Entropy = $entropyResult | Where-Object { $_.Day -eq '2' } | Select-Object -First 1
+Check ($null -ne $day1Entropy) 'entropy fixture must include a day 1 row'
+Check ($null -ne $day2Entropy) 'entropy fixture must include a day 2 row'
+if ($day1Entropy) {
+    Check ($day1Entropy.TotalActions -eq 4) ('day 1 TotalActions must be 4 (3 TurnRecords + 1 backend action row), got ' + $day1Entropy.TotalActions)
+    Check ($day1Entropy.DistinctActionTypes -eq 3) ('day 1 must have 3 distinct action types, got ' + $day1Entropy.DistinctActionTypes)
+    Check ($day1Entropy.EntropyBits -eq 1.5) ('day 1 entropy must be EXACTLY 1.5 bits (hand-computed), got ' + $day1Entropy.EntropyBits)
+}
+if ($day2Entropy) {
+    Check ($day2Entropy.TotalActions -eq 4) ('day 2 TotalActions must be 4 (all TurnRecords, no backend rows for day 2), got ' + $day2Entropy.TotalActions)
+    Check ($day2Entropy.DistinctActionTypes -eq 1) ('day 2 must have exactly 1 distinct action type (all advance), got ' + $day2Entropy.DistinctActionTypes)
+    Check ($day2Entropy.EntropyBits -eq 0) ('day 2 entropy must be EXACTLY 0 bits (a single repeated action has zero entropy), got ' + $day2Entropy.EntropyBits)
+}
+
+# Degenerate input: no TurnRecords and no BackendActionRows at all must not throw, and must produce
+# zero day rows -- never a phantom day.
+$emptyEntropy = Get-PerDayActionEntropy -TurnRecords @() -BackendActionRows @()
+Check (@($emptyEntropy).Count -eq 0) ('entropy over zero input must produce zero day rows, got ' + (@($emptyEntropy).Count))
+
+# --- 12b. LEGAL-vs-CHOSEN ratio per phase: exact counts ------------------------------------------
+# Morning: two turns, both press, enabled controls {A,B,C} both times; turn 1 presses A, turn 2
+# presses B -- legal=3 (A,B,C), chosen=2 (A,B), ratio exactly 2/3.
+# Evening: one turn, enabled controls {D}, action=advance (no target) -- legal=1, chosen=0, ratio 0.
+$ratioTurnRecords = @(
+    [pscustomobject]@{ Phase = 'Morning'; Action = 'press'; Target = 'A'; EnabledControls = @('A', 'B', 'C') }
+    [pscustomobject]@{ Phase = 'Morning'; Action = 'press'; Target = 'B'; EnabledControls = @('A', 'B', 'C') }
+    [pscustomobject]@{ Phase = 'Evening'; Action = 'advance'; Target = $null; EnabledControls = @('D') }
+)
+$ratioResult = Get-LegalVsChosenByPhase -TurnRecords $ratioTurnRecords
+Check ($ratioResult.Count -eq 2) ('ratio fixture must produce exactly 2 phase rows, got ' + $ratioResult.Count)
+$morningRatio = $ratioResult | Where-Object { $_.Phase -eq 'Morning' } | Select-Object -First 1
+$eveningRatio = $ratioResult | Where-Object { $_.Phase -eq 'Evening' } | Select-Object -First 1
+if ($morningRatio) {
+    Check ($morningRatio.LegalCount -eq 3) ('Morning LegalCount must be 3, got ' + $morningRatio.LegalCount)
+    Check ($morningRatio.ChosenCount -eq 2) ('Morning ChosenCount must be 2, got ' + $morningRatio.ChosenCount)
+    Check ([Math]::Abs($morningRatio.Ratio - (2.0 / 3.0)) -lt 0.0001) ('Morning Ratio must be exactly 2/3, got ' + $morningRatio.Ratio)
+    Check ($morningRatio.RatioPct -eq 66.7) ('Morning RatioPct must be 66.7, got ' + $morningRatio.RatioPct)
+}
+if ($eveningRatio) {
+    Check ($eveningRatio.LegalCount -eq 1) ('Evening LegalCount must be 1, got ' + $eveningRatio.LegalCount)
+    Check ($eveningRatio.ChosenCount -eq 0) ('Evening ChosenCount must be 0, got ' + $eveningRatio.ChosenCount)
+    Check ($eveningRatio.Ratio -eq 0) ('Evening Ratio must be exactly 0, got ' + $eveningRatio.Ratio)
+}
+# A phase with zero legal controls ever seen must report ratio 0, not divide-by-zero/crash.
+$zeroLegalResult = Get-LegalVsChosenByPhase -TurnRecords @([pscustomobject]@{ Phase = 'Void'; Action = 'advance'; Target = $null; EnabledControls = @() })
+Check ($zeroLegalResult[0].Ratio -eq 0) 'a phase with zero legal controls ever seen must report ratio 0, not throw'
+
+# --- 12c. Refusal control name parsing (the Reason-string -> control-name bridge) ----------------
+Check ((Get-RefusalControlFromReason 'disabled/absent control: NoSuchButton_xyz') -eq 'NoSuchButton_xyz') 'must extract the control name from a disabled/absent-control reason'
+Check ((Get-RefusalControlFromReason 'illegal key target: "climb" (must be interact or cancel)') -eq 'climb') 'must extract the target from an illegal-key-target reason'
+Check ((Get-RefusalControlFromReason 'illegal/missing move dir: "" (must be up/down/left/right or a "+"-joined composite)') -eq '(move: no/empty dir)') 'an empty captured dir must map to a NAMED fallback, not a blank map row'
+Check ((Get-RefusalControlFromReason 'empty reply') -eq '(unspecified)') 'a reason this file does not recognize must map to (unspecified)'
+Check ((Get-RefusalControlFromReason '') -eq '(unspecified)') 'an empty/absent reason must map to (unspecified), not throw'
+
+# --- 12d. Refusals-by-control frustration map: exact counts, both sources combined ---------------
+# NoSuchButton_xyz refused twice by the driver (pre-send); BuyMaterialAction rejected once by the
+# kernel (backend); OtherBtn refused once by the driver. Ranked by total count descending, ties
+# broken alphabetically (BuyMaterialAction and OtherBtn both total 1 -- "B" sorts before "O").
+$frustrationPreRefusals = @(
+    [pscustomobject]@{ Control = 'NoSuchButton_xyz'; Reason = 'disabled/absent control: NoSuchButton_xyz' }
+    [pscustomobject]@{ Control = 'NoSuchButton_xyz'; Reason = 'disabled/absent control: NoSuchButton_xyz' }
+    [pscustomobject]@{ Control = 'OtherBtn'; Reason = 'disabled/absent control: OtherBtn' }
+)
+$frustrationBackendRejections = @(
+    [pscustomobject]@{ Day = 1; Phase = 'Morning'; Action = 'BuyMaterialAction'; Why = 'insufficient gold' }
+)
+$frustrationResult = Get-RefusalFrustrationMap -PreRefusals $frustrationPreRefusals -BackendRejections $frustrationBackendRejections
+Check ($frustrationResult.Count -eq 3) ('frustration map must produce exactly 3 rows, got ' + $frustrationResult.Count)
+Check ($frustrationResult[0].Control -eq 'NoSuchButton_xyz') ('the top-ranked row must be NoSuchButton_xyz (count 2), got ' + $frustrationResult[0].Control)
+Check ($frustrationResult[0].TotalCount -eq 2) ('NoSuchButton_xyz total must be 2, got ' + $frustrationResult[0].TotalCount)
+Check ($frustrationResult[0].PreRefusedCount -eq 2) ('NoSuchButton_xyz must be all pre-refused (driver-side), got ' + $frustrationResult[0].PreRefusedCount)
+Check ($frustrationResult[1].Control -eq 'BuyMaterialAction') ('the tie-break must sort BuyMaterialAction before OtherBtn alphabetically, got ' + $frustrationResult[1].Control)
+Check ($frustrationResult[1].BackendRejectedCount -eq 1) ('BuyMaterialAction must be backend-rejected once, got ' + $frustrationResult[1].BackendRejectedCount)
+Check ($frustrationResult[2].Control -eq 'OtherBtn') ('the third row must be OtherBtn, got ' + $frustrationResult[2].Control)
+
+# Degenerate: zero refusals of any kind must produce zero rows, not throw.
+$emptyFrustration = Get-RefusalFrustrationMap -PreRefusals @() -BackendRejections @()
+Check (@($emptyFrustration).Count -eq 0) ('zero refusals of any kind must produce zero frustration-map rows, got ' + (@($emptyFrustration).Count))
+
+# --- 12e. Product-sentence counter: fires on an attribution-shaped line, carries the caveat on zero
+# hits verbatim (the brief's own required wording: zero hits means "the log cannot tell you") --------
+$firedBackendSummary = [pscustomobject]@{
+    Available           = $true
+    AttributionNoteHits = @()
+    AttributionCaveat   = 'a tick row records only a COUNT of events -- this log CANNOT directly prove an AttributionBeatEvent fired. 0 hit(s) above -- treat zero hits as "the log cannot tell you", not "nothing named the player''s work."'
+}
+$firedScreenText = @(
+    'Welcome to the shop.',
+    'Legend: Emberbite''s MakersMark blade turned the killing blow on floor 3. Torvald lives.'
+)
+$firedReport = Get-ProductSentenceReport -BackendSummary $firedBackendSummary -ScreenTextHistory $firedScreenText
+Check ($firedReport.ProductSentenceFired -eq $true) 'an attribution-shaped screenText line must fire the product-sentence counter'
+Check ($firedReport.PlayerScreenShowedIt -eq $true) 'PlayerScreenShowedIt must be true when a screenText line matches'
+Check (@($firedReport.ScreenTextHits).Count -eq 1) ('exactly 1 screenText hit expected, got ' + @($firedReport.ScreenTextHits).Count)
+Check ($firedReport.ScreenTextHits[0] -like '*MakersMark*') 'the recorded hit must be the actual matching line, not a placeholder'
+
+$zeroBackendSummary = [pscustomobject]@{
+    Available           = $true
+    AttributionNoteHits = @()
+    AttributionCaveat   = 'a tick row records only a COUNT of events -- this log CANNOT directly prove an AttributionBeatEvent fired. 0 hit(s) above -- treat zero hits as "the log cannot tell you", not "nothing named the player''s work."'
+}
+$zeroReport = Get-ProductSentenceReport -BackendSummary $zeroBackendSummary -ScreenTextHistory @('gold 100', 'welcome')
+Check ($zeroReport.ProductSentenceFired -eq $false) 'zero attribution-shaped screenText lines must not fire the counter'
+Check ($zeroReport.AttributionBeatNamed -eq $false) 'zero backend note hits must report AttributionBeatNamed=false'
+Check ($zeroReport.AttributionCaveat -like '*the log cannot tell you*') ('on zero hits, the backend caveat must be carried through VERBATIM, including "the log cannot tell you" -- got [' + $zeroReport.AttributionCaveat + ']')
+Check ($zeroReport.ScreenTextCaveat -like '*the log cannot tell you*') 'the screenText-side caveat must ALSO say "the log cannot tell you" on zero hits, not silently omit it'
+
+# A missing/unavailable backend summary must not crash, and must say the beat is UNKNOWN, not "false".
+$noBackendReport = Get-ProductSentenceReport -BackendSummary ([pscustomobject]@{ Available = $false }) -ScreenTextHistory @()
+Check ($noBackendReport.AttributionBeatNamed -eq $false) 'an unavailable backend summary must report AttributionBeatNamed=false (not crash)'
+Check ($noBackendReport.AttributionCaveat -like '*UNKNOWN*') 'an unavailable backend summary caveat must say the attribution beat is UNKNOWN, not silently claim "no"'
+
+# --- 12f. Get-MetricsSummary + Format-MetricsMarkdown: the combined caller-facing shape ----------
+$combinedBackendSummary = [pscustomobject]@{
+    Available           = $true
+    ActionRows          = @([pscustomobject]@{ day = 1; action = 'BuyMaterialAction' })
+    Rejections          = @([pscustomobject]@{ Day = 1; Phase = 'Morning'; Action = 'BuyMaterialAction'; Why = 'insufficient gold' })
+    AttributionNoteHits = @()
+    AttributionCaveat   = 'treat zero hits as "the log cannot tell you"'
+}
+$combinedTurnRecords = @(
+    [pscustomobject]@{ Turn = 1; Day = 1; Phase = 'Morning'; Action = 'press'; Target = 'A'; Why = 'test'; Outcome = 'ok'; ScreenText = @('hello'); EnabledControls = @('A', 'B') }
+)
+$combinedPreRefusals = @([pscustomobject]@{ Control = 'NoSuchButton_xyz'; Reason = 'disabled/absent control: NoSuchButton_xyz' })
+$combinedMetrics = Get-MetricsSummary -TurnRecords $combinedTurnRecords -PreRefusals $combinedPreRefusals -BackendSummary $combinedBackendSummary
+Check ($combinedMetrics.PerDayEntropy.Count -eq 1) 'Get-MetricsSummary must combine TurnRecords + BackendSummary.ActionRows into per-day entropy'
+Check ($combinedMetrics.RefusalFrustrationMap.Count -eq 2) 'Get-MetricsSummary must combine PreRefusals + BackendSummary.Rejections into the frustration map'
+$combinedMarkdown = Format-MetricsMarkdown -Metrics $combinedMetrics
+Check ($combinedMarkdown -like '*Mechanical fun metrics*') 'Format-MetricsMarkdown must produce the "Mechanical fun metrics" heading'
+Check ($combinedMarkdown -like '*Product-sentence counter*') 'Format-MetricsMarkdown must include the product-sentence section'
+Check ($combinedMarkdown -like '*Per-day action entropy*') 'Format-MetricsMarkdown must include the per-day entropy table'
+Check ($combinedMarkdown -like '*LEGAL-vs-CHOSEN*') 'Format-MetricsMarkdown must include the legal-vs-chosen section'
+Check ($combinedMarkdown -like '*frustration map*') 'Format-MetricsMarkdown must include the frustration map section'
+
+# --- 12g. Per-day judge digest: the front-trim regression pin ------------------------------------
+# THE required proof (Verification Contract, docs/plans/2026-08-10-002): a per-day digest of a
+# 3-day fixture contains ALL THREE days, even forced through aggressive thinning by an artificially
+# tiny -MaxChars -- the exact regression the old $judgeCap tail-trim could never pass (trimming from
+# the front means only the LAST day would ever survive a small enough cap).
+$digestTurnRecords = New-Object System.Collections.ArrayList
+$digestTurnCounter = 0
+foreach ($digestDay in 1, 2, 3) {
+    for ($i = 1; $i -le 12; $i++) {
+        $digestTurnCounter++
+        [void]$digestTurnRecords.Add([pscustomobject]@{
+            Turn          = $digestTurnCounter
+            Day           = $digestDay
+            Phase         = 'Morning'
+            Action        = 'advance'
+            Target        = $null
+            Why           = 'padding this line out so the fixture is big enough to force real thinning'
+            Outcome       = 'advanced -> day ' + $digestDay
+            ScreenText    = @('some screen text padding the digest size for the thinning test')
+            Refused       = $false
+            RefusalReason = ''
+        })
+    }
+}
+$tinyDigest = Build-PerDayJudgeDigest -TurnRecords @($digestTurnRecords) -MaxChars 800
+Check ($tinyDigest.DayCount -eq 3) ('the 3-day fixture must report DayCount=3, got ' + $tinyDigest.DayCount)
+Check ($tinyDigest.Thinned -eq $true) 'an 800-char budget against a 36-turn/3-day fixture must have triggered thinning'
+Check ($tinyDigest.Text -like '*Day 1*') 'THE REGRESSION PIN: the digest must still contain Day 1 even after aggressive thinning'
+Check ($tinyDigest.Text -like '*Day 2*') 'THE REGRESSION PIN: the digest must still contain Day 2 even after aggressive thinning'
+Check ($tinyDigest.Text -like '*Day 3*') 'THE REGRESSION PIN: the digest must still contain Day 3 even after aggressive thinning'
+Check ($tinyDigest.Text -like '*omitted for length*') 'a thinned day must say so explicitly, not silently drop turns with no trace'
+
+# A budget large enough to hold everything must NOT thin at all -- proves the function does not thin
+# unconditionally just because it CAN.
+$roomyDigest = Build-PerDayJudgeDigest -TurnRecords @($digestTurnRecords) -MaxChars 1000000
+Check ($roomyDigest.Thinned -eq $false) 'a generous budget must not trigger thinning'
+Check ($roomyDigest.Text -like '*turn 36*') 'an unthinned digest must include the LAST turn (turn 36), not just early ones'
+Check ($roomyDigest.Text -like '*turn 1 *') 'an unthinned digest must include the FIRST turn'
+
+# Degenerate: zero turn records must not throw, and must say so rather than returning an empty string
+# that would silently look like a working (if empty) run.
+$emptyDigest = Build-PerDayJudgeDigest -TurnRecords @() -MaxChars 24000
+Check ($emptyDigest.DayCount -eq 0) 'zero turn records must report DayCount=0'
+Check ($emptyDigest.Text -like '*no turns recorded*') 'zero turn records must say so in the digest text, not return a blank string'
+
+# agent-playtest.ps1 itself must actually call the new digest builder in place of the old tail-trim.
+$agentPlaytestRawTextForDigest = Get-Content (Join-Path $toolsDir 'agent-playtest.ps1') -Raw
+Check ($agentPlaytestRawTextForDigest -like '*Build-PerDayJudgeDigest*') 'agent-playtest.ps1 must call Build-PerDayJudgeDigest for the judge input'
+# The old variable's NAME may still appear in a regression-note comment (this repo's own convention --
+# see backend.ps1's AllowEmptyCollection notes for the same pattern); what must actually be gone is the
+# ASSIGNMENT that made it a live tail-trim cap.
+Check ($agentPlaytestRawTextForDigest -notmatch '\$judgeCap\s*=') 'the old $judgeCap tail-trim ASSIGNMENT must be gone from agent-playtest.ps1 (a comment mentioning the old name by way of explanation is fine)'
 
 # --- Summary -----------------------------------------------------------------------------------
 if ($failures.Count -gt 0) {

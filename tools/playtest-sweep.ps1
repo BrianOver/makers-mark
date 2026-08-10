@@ -508,6 +508,50 @@ function Get-BackendData {
     return [pscustomobject]@{ Available = $true; AutoAdvanceCount = $auto; UnattributedAdvanceCount = $unattributed; Note = $note }
 }
 
+# W2 (docs/plans/2026-08-10-002 "the playtest becomes a player"): metrics.json is Get-MetricsSummary's
+# own shape (tools/agent-playtest/metrics.ps1) -- ProductSentence.ProductSentenceFired (the screenText
+# check, per that file's own header on why "fired" means the player's screen, not the backend log) and
+# PerDayEntropy (array of {Day;TotalActions;DistinctActionTypes;EntropyBits}). Same defensive shape as
+# Get-CoverageData/Get-BackendData just above: a run whose driver build predates W2 (or whose run
+# simply never got that far) reports Available=false with a Note, never a guessed/zero value.
+function Get-MetricsData {
+    param([Parameter(Mandatory)][string]$RunDir)
+
+    $path = Join-Path $RunDir 'metrics.json'
+    if (-not (Test-Path $path)) {
+        return [pscustomobject]@{
+            Available            = $false
+            ProductSentenceFired = $null
+            PerDayEntropy        = @()
+            Note                 = 'metrics.json not present (needs the mechanical-metrics unit, W2, not yet landed in this driver build)'
+        }
+    }
+    try {
+        $j = Get-Content $path -Raw | ConvertFrom-Json
+    } catch {
+        return [pscustomobject]@{
+            Available            = $false
+            ProductSentenceFired = $null
+            PerDayEntropy        = @()
+            Note                 = 'metrics.json present but could not be parsed as JSON: ' + $_.Exception.Message
+        }
+    }
+
+    $fired = $null
+    if ($j.PSObject.Properties.Name -contains 'ProductSentence' -and $j.ProductSentence -and
+            ($j.ProductSentence.PSObject.Properties.Name -contains 'ProductSentenceFired')) {
+        $fired = [bool]$j.ProductSentence.ProductSentenceFired
+    }
+    $perDay = @()
+    if ($j.PSObject.Properties.Name -contains 'PerDayEntropy') { $perDay = @($j.PerDayEntropy) }
+
+    $note = $null
+    if ($null -eq $fired -and (@($perDay)).Count -eq 0) {
+        $note = 'metrics.json present but neither ProductSentence.ProductSentenceFired nor PerDayEntropy was found -- schema may differ from what this reader expects'
+    }
+    return [pscustomobject]@{ Available = $true; ProductSentenceFired = $fired; PerDayEntropy = $perDay; Note = $note }
+}
+
 # --- recurring findings: honest normalised-line matching, not semantic clustering --------------
 
 function Get-NormalizedLine {
@@ -637,6 +681,9 @@ function Get-RunSummaryRow {
     $backend = Get-BackendData -RunDir $RunDir
     if ($backend.Note) { [void]$notes.Add($backend.Note) }
 
+    $metrics = Get-MetricsData -RunDir $RunDir
+    if ($metrics.Note) { [void]$notes.Add($metrics.Note) }
+
     $exitCode = $null
     if ($meta -and ($meta.PSObject.Properties.Name -contains 'exitCode')) { $exitCode = $meta.exitCode }
 
@@ -669,10 +716,12 @@ function Get-RunSummaryRow {
         UntouchedSurfaceCount     = $untouchedCount
         AutoAdvanceCount          = $backend.AutoAdvanceCount
         UnattributedAdvanceCount  = $backend.UnattributedAdvanceCount
+        ProductSentenceFired      = $metrics.ProductSentenceFired
         Notes                     = ($notes -join ' | ')
         # Not CSV columns -- kept on the row for REPORT.md's section builders below.
         FindingsFields            = $findings
         CoverageData              = $coverage
+        MetricsData               = $metrics
     }
 }
 
@@ -728,6 +777,49 @@ function Get-NamedBadRuns {
         if ($f.DiffFellBack) { [void]$result.Add(($row.RunTag + ': ' + $f.DiffFellBackSentence)) }
     }
     return @($result)
+}
+
+# W2's own required lead line: "the sentence the game exists to produce fired in K of N runs." K/N
+# is counted only over runs that actually reported metrics.json -- a run whose driver build predates
+# W2 (or that never finished) is named separately rather than silently counted as a "no" (the exact
+# defensive-reading posture this file's own header requires: absent data is an empty cell plus a
+# note, never a guessed zero).
+function Get-ProductSentenceLine {
+    param([Parameter(Mandatory)]$Rows)
+
+    $n = $Rows.Count
+    $withMetrics = @($Rows | Where-Object { $_.MetricsData -and $_.MetricsData.Available -and ($null -ne $_.MetricsData.ProductSentenceFired) })
+    if ($withMetrics.Count -eq 0) {
+        return 'The sentence the game exists to produce fired in UNKNOWN of ' + $n + ' run(s) -- no run in ' +
+            'this sweep reported metrics.json (needs the mechanical-metrics unit, W2, to have landed in ' +
+            'the driver build used here).'
+    }
+    $fired = @($withMetrics | Where-Object { $_.MetricsData.ProductSentenceFired -eq $true })
+    $line = 'The sentence the game exists to produce fired in ' + $fired.Count + ' of ' + $withMetrics.Count +
+        ' run(s) with metrics.json available'
+    if ($withMetrics.Count -lt $n) {
+        $line = $line + ' (' + ($n - $withMetrics.Count) + ' of ' + $n + ' total run(s) had no usable metrics.json)'
+    }
+    return ($line + '.')
+}
+
+# One row per (run, day) that reported per-day entropy -- a sweep-wide view of the day-11 instrument,
+# never collapsed into an average (an average across runs of different lengths and personas would
+# hide exactly the falling-entropy shape this table exists to show).
+function Get-PerDayEntropyTableLines {
+    param([Parameter(Mandatory)]$Rows)
+
+    $tableRows = New-Object System.Collections.ArrayList
+    foreach ($r in $Rows) {
+        if (-not $r.MetricsData -or -not $r.MetricsData.Available) { continue }
+        foreach ($d in @($r.MetricsData.PerDayEntropy)) {
+            [void]$tableRows.Add('| ' + $r.RunTag + ' | ' + $d.Day + ' | ' + $d.EntropyBits + ' | ' + $d.TotalActions + ' | ' + $d.DistinctActionTypes + ' |')
+        }
+    }
+    if ($tableRows.Count -eq 0) {
+        return @('No run in this sweep reported metrics.json with per-day entropy data.')
+    }
+    return @('| Run | Day | Entropy (bits) | Actions | Distinct types |', '|---|---|---|---|---|') + @($tableRows)
 }
 
 function Get-DayElevenAnswer {
@@ -839,6 +931,7 @@ function Write-SweepSummaryCsv {
             UntouchedSurfaceCount     = $r.UntouchedSurfaceCount
             AutoAdvanceCount          = $r.AutoAdvanceCount
             UnattributedAdvanceCount  = $r.UnattributedAdvanceCount
+            ProductSentenceFired      = $r.ProductSentenceFired
             Notes                     = $r.Notes
         }
     }
@@ -855,6 +948,11 @@ function Write-SweepReportMd {
     $lines = New-Object System.Collections.ArrayList
     [void]$lines.Add('# Playtest sweep report')
     [void]$lines.Add('')
+    # W2 (docs/plans/2026-08-10-002): this report LEADS with the product-sentence line, ahead of even
+    # the sweep metadata below -- "did the sentence the game exists to produce fire" is the one line
+    # everything else in this file exists to give context to.
+    [void]$lines.Add('**' + (Get-ProductSentenceLine -Rows $Rows) + '**')
+    [void]$lines.Add('')
     [void]$lines.Add('Sweep directory: ' + $RunsRoot)
     [void]$lines.Add('Generated: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
     [void]$lines.Add('Runs aggregated: ' + $Rows.Count)
@@ -868,6 +966,16 @@ function Write-SweepReportMd {
     [void]$lines.Add('## Deepest day reached')
     [void]$lines.Add('')
     [void]$lines.Add((Get-DayElevenAnswer -Rows $Rows))
+    [void]$lines.Add('')
+
+    [void]$lines.Add('## Per-day action entropy across runs')
+    [void]$lines.Add('')
+    [void]$lines.Add('Shannon entropy (bits) of the action-type mix within each in-game day, per run -- the')
+    [void]$lines.Add('day-11 instrument (tools/agent-playtest/metrics.ps1), read with no model in the loop.')
+    [void]$lines.Add('Falling entropy day over day, or entropy that never moves across a long run, is the')
+    [void]$lines.Add('mechanical signal this table exists to surface.')
+    [void]$lines.Add('')
+    foreach ($l in (Get-PerDayEntropyTableLines -Rows $Rows)) { [void]$lines.Add($l) }
     [void]$lines.Add('')
 
     [void]$lines.Add('## Coverage union across the sweep')
@@ -935,9 +1043,11 @@ function Write-SweepReportMd {
     $missingCoverage = @($Rows | Where-Object { -not $_.CoverageData.Available }).Count
     $missingBackend = @($Rows | Where-Object { ($null -eq $_.AutoAdvanceCount) -and ($null -eq $_.UnattributedAdvanceCount) }).Count
     $missingPersonaHash = @($Rows | Where-Object { -not $_.PromptHash }).Count
+    $missingMetrics = @($Rows | Where-Object { -not $_.MetricsData -or -not $_.MetricsData.Available }).Count
     [void]$lines.Add('- coverage percentage / untouched-surface count: unavailable for ' + $missingCoverage + ' of ' + $Rows.Count + ' run(s)')
     [void]$lines.Add('- backend auto-advance / unattributed-advance counts: unavailable for ' + $missingBackend + ' of ' + $Rows.Count + ' run(s)')
     [void]$lines.Add('- prompt hash (persona proof): unavailable for ' + $missingPersonaHash + ' of ' + $Rows.Count + ' run(s)')
+    [void]$lines.Add('- metrics.json (product-sentence counter, per-day entropy): unavailable for ' + $missingMetrics + ' of ' + $Rows.Count + ' run(s)')
     [void]$lines.Add('')
 
     Set-Content -Path $Path -Value ($lines -join [Environment]::NewLine) -Encoding utf8
