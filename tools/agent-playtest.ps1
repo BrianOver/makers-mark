@@ -76,6 +76,22 @@
     campaign, then the filtered `dotnet test godot/tests` run for Playtest3dRecorder). A stage that
     exceeds this is killed and reported as TIMED OUT in findings.md, not silently omitted.
 
+.PARAMETER FrameEvery
+    Keep every Nth turn's frame under <OutDir>/frames/ (default 1 -- keep all of them). Before this,
+    frame.png was overwritten every turn, so an 80-turn run left exactly ONE screenshot on disk: the
+    last turn, usually the least interesting one. A long run can pass a higher value to thin the kept
+    set; turn 1 is always kept regardless of the value. The kept-frame count is in findings.md's
+    header, and turnlog.md's own per-turn entries say which frame (or that none was kept/available)
+    each note is about.
+
+.PARAMETER Persona
+    Which player this run is pretending to be: first-timer, veteran, speedrunner, completionist,
+    sceptic, or random (picks one of the five for this run). act.md carries the JSON contract and
+    movement rules that never change; prompts/agent-playtest/prompts/personas/<name>.md supplies the
+    KNOWLEDGE and GOAL half. One persona ("curious, slightly impatient") used to drive every run,
+    which measured the same player thirty times over a thirty-run sweep. An unrecognized value fails
+    loudly rather than silently becoming the default -- see personas.ps1's own note.
+
 .EXAMPLE
     .\tools\agent-playtest.ps1 -Turns 40
 
@@ -99,17 +115,24 @@ param(
     [int]$NumCtx = 8192,
     [ValidateSet('Full', 'Diff', 'Scout')]
     [string]$Scope = 'Full',
-    [int]$MechanicalTimeoutMin = 15
+    [int]$MechanicalTimeoutMin = 15,
+    [int]$FrameEvery = 1,
+    [string]$Persona = 'first-timer'
 )
 
 # A4/A5/A6: the diff-to-surface map, the per-turn prompt builder, Scout's mechanical detectors, and
 # the completion-floor verdict are split into their own dot-sourced files for one reason -- they
 # need no Godot, no ollama, and no VRAM to prove, and this script needs all three. See
-# tools/test-agent-playtest-modes.ps1.
+# tools/test-agent-playtest-modes.ps1. frames/backend/coverage/personas (playtest-harness wave, U1-U4)
+# join them for the same reason.
 . (Join-Path $PSScriptRoot 'agent-playtest\scope-map.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\turn-prompt.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\mechanical.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\completion.ps1')
+. (Join-Path $PSScriptRoot 'agent-playtest\frames.ps1')
+. (Join-Path $PSScriptRoot 'agent-playtest\backend.ps1')
+. (Join-Path $PSScriptRoot 'agent-playtest\coverage.ps1')
+. (Join-Path $PSScriptRoot 'agent-playtest\personas.ps1')
 
 $ErrorActionPreference = 'Stop'
 
@@ -132,6 +155,19 @@ function Die($lines) {
     }
     exit 1
 }
+
+# U4: resolve -Persona before anything expensive (GPU gate, model warm-up, launching Godot) runs --
+# a typo'd persona name is a configuration error, and the cheapest possible check should fail first.
+# Resolve-PersonaChoice (personas.ps1) throws on anything not in its known list; caught here and
+# turned into the same loud Die() every other refusal in this file uses, rather than a raw stack
+# trace. "random" resolves to one concrete name now, once, so $personaName is stable for the rest of
+# this run (Say below records BOTH the requested value and the resolved one for that reason).
+try {
+    $personaName = Resolve-PersonaChoice -Persona $Persona
+} catch {
+    Die @($_.Exception.Message)
+}
+Say ('persona: ' + $personaName + ' (requested: ' + $Persona + ')')
 
 # JSON-escape a string by hand.
 #
@@ -238,10 +274,26 @@ $driverLog   = Join-Path $OutDir 'driver.log'
 # client (no phase/beat/cause, no immediate actions). Same directory as everything else this run
 # produces, so one folder answers "what happened in this run".
 $playtestLogPath = Join-Path $OutDir 'playtest-log.jsonl'
+# U1: every frame the model saw, not just the last one -- frame.png itself is still overwritten each
+# turn by the client (AgentPlaytestBridge.RunLoop), so this is a SEPARATE directory the driver copies
+# into after each turn's frame has been used, not a rename of frame.png's own path.
+$framesDir       = Join-Path $OutDir 'frames'
+# U2/U3: the backend record and the coverage census -- written once at the end, alongside everything
+# else this run produces, so one folder still answers "what happened in this run."
+$backendJsonPath   = Join-Path $OutDir 'backend.json'
+$coverageMdPath    = Join-Path $OutDir 'coverage.md'
+$coverageJsonPath  = Join-Path $OutDir 'coverage.json'
 
-foreach ($stale in @($statePath, $cmdPath, $framePath, $turnlogPath, $findingsPath, $driverLog, $playtestLogPath)) {
+foreach ($stale in @($statePath, $cmdPath, $framePath, $turnlogPath, $findingsPath, $driverLog,
+        $playtestLogPath, $backendJsonPath, $coverageMdPath, $coverageJsonPath)) {
     if (Test-Path $stale) { Move-Item $stale ($stale + '.prev') -Force }
 }
+# frames/ is a directory, not a single file -- Move-Item -Force cannot rename it onto an existing
+# ".prev" directory (a PowerShell/.NET limitation on directories, not files), so it is cleared
+# outright instead. Every frame it ever held is also sitting in this run's own findings, so nothing
+# is lost that the previous run's OWN artifacts do not already carry.
+if (Test-Path $framesDir) { Remove-Item $framesDir -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $framesDir -Force | Out-Null
 
 # --- GPU gate: a precondition, not a hope -------------------------------------------------------
 if (-not $Scripted) {
@@ -358,6 +410,25 @@ $fallbackTurns = 0
 $imagelessTurns = 0
 $imageMissingThisTurn = $false
 
+# U1: kept-frame bookkeeping. $frameNoteByTurn is turned into turnlog.md's own per-turn frame lines
+# once the client has fully exited (see the note by Add-FrameReferencesToTurnLog itself for why that
+# ordering is not optional).
+$keptFrameCount = 0
+$missingFrameCount = 0
+$frameNoteByTurn = @{}
+
+# U2: the driver's own per-turn record of accepted-vs-refused, bucketed by day+phase at the moment
+# the outcome was OBSERVED (the turn after the command that produced it -- state.lastOutcome always
+# reports the PRECEDING command's result). Cross-referenced against the backend log's own rejections
+# after the run (Get-DriverBackendMismatches, backend.ps1) to catch a UI/kernel disagreement.
+$driverTurns = New-Object System.Collections.ArrayList
+
+# U3: what this run actually touched, derived against the real registries read from source (never a
+# hand-typed list -- see coverage.ps1's own header note). Registries are read once, up front: they
+# are pure function of the checked-out code, not of anything that happens during the run.
+$coverageRegistries = Get-CoverageRegistries -RepoRoot $RepoRoot
+$coverageTracker = New-CoverageTracker
+
 function Wait-ForFile($path, $timeoutSec) {
     $deadline = (Get-Date).AddSeconds($timeoutSec)
     while ((Get-Date) -lt $deadline) {
@@ -375,10 +446,18 @@ function Wait-ForFile($path, $timeoutSec) {
 
 
 $actPrompt = ''
+$actPromptHash = ''
 $judgePrompt = ''
 $diffScopeInfo = $null
 if (-not $Scripted) {
-    $actPrompt = Get-Content (Join-Path $PSScriptRoot 'agent-playtest\prompts\act.md') -Raw
+    $actProtocolText = Get-Content (Join-Path $PSScriptRoot 'agent-playtest\prompts\act.md') -Raw
+    # U4: act.md is PROTOCOL only (the {{PERSONA}} marker); Build-PersonaActPrompt (personas.ps1)
+    # substitutes in $personaName's own KNOWLEDGE+GOAL text. Throws loudly (never silently plays a
+    # protocol-only prompt) if the marker or the persona file ever goes missing.
+    $actPrompt = Build-PersonaActPrompt -ActProtocolText $actProtocolText -PersonaName $personaName `
+        -PersonasDir (Join-Path $PSScriptRoot 'agent-playtest\prompts\personas')
+    $actPromptHash = Get-PromptHash -Text $actPrompt
+    Say ('act-prompt hash: ' + $actPromptHash + ' (persona: ' + $personaName + ')')
 
     # A5: Scout is judged by a different prompt -- the design-doc-seeded question about decisions
     # and boredom, not the bug-hunting judge.md. Full and Diff keep judge.md unchanged.
@@ -418,6 +497,16 @@ try {
 
         $state = $stateRaw | ConvertFrom-Json
         $turn++
+
+        # U2: record accepted-vs-refused for THIS observation, bucketed by the day/phase active when
+        # the outcome landed (see Get-DriverBackendMismatches, backend.ps1, for why day+phase is the
+        # join key rather than a single turn -- the control name a player presses is not the kernel
+        # action-type name the backend log records, so no exact per-turn key exists between the two).
+        [void]$driverTurns.Add([pscustomobject]@{
+            Day      = $state.day
+            Phase    = $state.phase
+            Accepted = -not (([string]$state.lastOutcome).StartsWith('refused:'))
+        })
 
         # Stuck detection (R2). A model that stares at an unchanged screen must be REPORTED, never
         # mistaken for a clean run -- that is the whole failure mode this harness exists to end.
@@ -515,6 +604,21 @@ try {
         Say ('turn ' + $turn + ': ' + $parsedCmd.action + ' ' + $parsedCmd.target + ' -- ' + $parsedCmd.why)
         [void]$history.Add('turn ' + $turn + ' @ ' + $state.location + '/' + $state.phase + ' -> ' + $parsedCmd.action + ' ' + $parsedCmd.target + ' (' + $parsedCmd.why + ') ; outcome: ' + $state.lastOutcome)
 
+        # U3: record what this turn's state showed and what got pressed, against the real registries
+        # read from source at the top of this script (coverage.ps1's own Add-CoverageTouch).
+        Add-CoverageTouch -Tracker $coverageTracker -State $state -Command $parsedCmd
+
+        # U1: archive this turn's frame (or say plainly why none was kept) NOW -- right after the
+        # model call that consumed frame.png for this turn's decision, and before the client
+        # overwrites frame.png again on the next turn. $imageMissingThisTurn is set by Invoke-Model
+        # itself when it could not find frame.png to attach; Save-TurnFrame double-checks Test-Path
+        # too, since Scripted mode never calls Invoke-Model and so never sets that flag at all.
+        $frameResult = Save-TurnFrame -SourcePath $framePath -FramesDir $framesDir -Turn $turn `
+            -FrameEvery $FrameEvery -SourceMissing:$imageMissingThisTurn
+        $frameNoteByTurn[$turn] = $frameResult.Note
+        if ($frameResult.Kept) { $keptFrameCount++ }
+        if ($frameResult.Missing) { $missingFrameCount++ }
+
         if ($parsedCmd.action -eq 'stop') { $stopReason = 'model asked to stop: ' + $parsedCmd.why; break }
 
         Remove-Item $statePath -Force -ErrorAction SilentlyContinue
@@ -536,6 +640,48 @@ try {
 }
 
 Say ('stopped after ' + $turn + ' turns: ' + $stopReason)
+
+# U1: stamp turnlog.md with a frame reference (or an explicit "frame missing" line) per turn, NOW --
+# once, after the client has fully exited. turnlog.md is rewritten WHOLESALE on every flush by the
+# client's own AgentPlaytestBridge.RunLoop (File.WriteAllText from its in-memory StringBuilder, which
+# has no idea this script exists), so annotating it any earlier would be erased on the very next
+# flush. See Add-FrameReferencesToTurnLog's own doc (frames.ps1).
+if (Test-Path $turnlogPath) {
+    $rawTurnLogForFrames = Get-Content $turnlogPath -Raw
+    $annotatedTurnLog = Add-FrameReferencesToTurnLog -TurnLogText $rawTurnLogForFrames -FrameNoteByTurn $frameNoteByTurn
+    Set-Content -Path $turnlogPath -Value $annotatedTurnLog -Encoding utf8
+}
+Say ('frames kept: ' + $keptFrameCount + ' of ' + $turn + ' turn(s) (' + $framesDir + '), missing: ' + $missingFrameCount)
+
+# U2: the backend record -- playtest-log.jsonl read and turned into evidence (backend.ps1). Computed
+# here, before the judge pass, so a failed judge call still leaves this in findings.md (mirrors why
+# Scout's mechanical section is computed before the judge call too).
+$backendSummary = Get-BackendSummary -LogPath $playtestLogPath
+# NOT wrapped in an extra @() here -- Get-AutoAdvanceContradictions/Get-DriverBackendMismatches
+# already return via the leading-comma pattern (`,@(...)`, see backend.ps1's own ARRAY-RETURN note),
+# so a caller-side @() around the CALL ITSELF double-wraps into a 1-element array whose one element
+# is the real array -- measured directly: it turned a verified 3-line result into "Count = 1" here.
+# The comma trick only needs undoing at the assignment boundary once; +'ing two already-correct
+# arrays together needs no further wrapping.
+$backendContradictions = (Get-AutoAdvanceContradictions -Summary $backendSummary) +
+    (Get-DriverBackendMismatches -Summary $backendSummary -DriverTurns $driverTurns)
+$backendMarkdown = Format-BackendMarkdown -Summary $backendSummary -Contradictions $backendContradictions
+($backendSummary | ConvertTo-Json -Depth 8) | Set-Content -Path $backendJsonPath -Encoding utf8
+if ($backendSummary.Available) {
+    Say ('backend record: ' + $backendSummary.RowCount + ' row(s), ' + @($backendSummary.Rejections).Count +
+        ' rejection(s), ' + $backendSummary.AutoAdvanceCount + ' auto-advance(s), ' +
+        @($backendContradictions).Count + ' contradiction(s)')
+} else {
+    Warn ('backend record: ' + $backendSummary.Message)
+}
+
+# U3: the coverage census -- written as its own coverage.md/coverage.json (not folded into
+# findings.md; the brief asks for standalone files here, unlike U2's backend section).
+$coverageReport = Get-CoverageReport -Registries $coverageRegistries -Tracker $coverageTracker
+$coverageMarkdown = Format-CoverageMarkdown -Report $coverageReport
+Set-Content -Path $coverageMdPath -Value $coverageMarkdown -Encoding utf8
+($coverageReport | ConvertTo-Json -Depth 8) | Set-Content -Path $coverageJsonPath -Encoding utf8
+Say ('coverage: ' + $coverageReport.OverallTouched + ' of ' + $coverageReport.OverallTotal + ' surfaces touched (' + $coverageReport.OverallPercentage + '%) -- ' + $coverageMdPath)
 
 # A1: this is the number the whole unit exists to produce. "The model played N turns" and "the
 # model failed N times and the driver pressed advance N times" used to write an identical
@@ -606,11 +752,16 @@ if ($titleTags.Count -gt 0) {
     $titleLine = '# ' + ($titleTags -join ' AND ') + ' -- agent playtest findings (Scope: ' + $Scope + ')'
 }
 
+$personaHeaderLine = '- persona: ' + $personaName + ' (requested: ' + $Persona + ')'
+if ($actPromptHash) { $personaHeaderLine = $personaHeaderLine + ', act-prompt hash ' + $actPromptHash }
+if ($Scripted) { $personaHeaderLine = $personaHeaderLine + ' (Scripted mode -- no act prompt was built, no model was called)' }
+
 $header = @(
     $titleLine,
     '',
     ('- scope: ' + $Scope),
     ('- model: ' + $Model),
+    $personaHeaderLine,
     ('- turns: ' + $turn + ' (stopped: ' + $stopReason + ')'),
     ('- completion: ' + $turn + ' of ' + $Turns + ' budgeted turns (' + $completionPct + '%)'),
     ('- model-driven turns: ' + $modelDrivenTurns),
@@ -618,6 +769,10 @@ $header = @(
     ('- imageless turns: ' + $imagelessTurns),
     ('- artifacts: ' + $OutDir),
     ('- playtest log (day/phase/beat/cause per tick, every action): ' + $playtestLogPath),
+    ('- frames kept: ' + $keptFrameCount + ' of ' + $turn + ' turn(s) in ' + $framesDir +
+        ' (-FrameEvery ' + $FrameEvery + '), missing: ' + $missingFrameCount),
+    ('- coverage: ' + $coverageReport.OverallTouched + ' of ' + $coverageReport.OverallTotal +
+        ' surfaces touched (' + $coverageReport.OverallPercentage + '%) -- see ' + $coverageMdPath),
     ''
 )
 if ($Scope -eq 'Diff' -and $diffScopeInfo) {
@@ -648,11 +803,17 @@ if ($incomplete) {
     ) + $header
 }
 
+# U2: the "## Backend record" section, placed ABOVE the model's prose in every branch below --
+# recorded facts first, the model's account second (the brief's own ordering requirement). Built
+# once here so every Set-Content site below (zero-turn, Scripted, judge-failed, success) carries it
+# identically rather than three call sites drifting apart from a fourth copy-paste.
+$backendSection = @('', '---', '') + @($backendMarkdown)
+
 # A run that played NOTHING is a failure, whatever mode it was in. The first scripted run sat for 90s
 # on a client that had never been asked to play, then printed "scripted run complete" and exited 0 --
 # the same shape of lie as a truncated test suite reporting "Passed!". Never again from this script.
 if ($turn -eq 0) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('NOTHING WAS PLAYED. ' + $stopReason))
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('NOTHING WAS PLAYED. ' + $stopReason) + $backendSection)
     Die @(
         ('zero turns were played: ' + $stopReason),
         '',
@@ -665,7 +826,7 @@ if ($turn -eq 0) {
 }
 
 if ($Scripted) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('Scripted run -- no model judged this. The channel was exercised, including one deliberate illegal press.', '', '## Turn log', '', $log))
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + @('', '---', '', 'Scripted run -- no model judged this. The channel was exercised, including one deliberate illegal press.', '', '## Turn log', '', $log))
     Say ('scripted run complete, ' + $turn + ' turns. Channel log: ' + $findingsPath)
     exit 0
 }
@@ -699,7 +860,7 @@ $findings = ''
 try { $findings = Invoke-Model $judgePrompt (($judgeInput) -join [Environment]::NewLine) $null } catch { Warn ('judge call failed: ' + $_.Exception.Message) }
 
 if (-not $findings) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('JUDGE FAILED -- no findings written. Raw turn log below.') + $mechanicalSection + @('', $log))
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + @('', '---', '', 'JUDGE FAILED -- no findings written. Raw turn log below.') + $mechanicalSection + @('', $log))
     Die @('the judge pass produced nothing. The turn log is still in ' + $findingsPath + '.')
 }
 
@@ -738,7 +899,7 @@ if ($unsupported.Count -gt 0) {
     ) + ($unsupported | ForEach-Object { '- `' + $_ + '`' })
 }
 
-Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @($findings) + $guardNote + $mechanicalSection + @("", "---", "", "## Turn log", "", $fullLog))
+Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + @('', '---', '') + @($findings) + $guardNote + $mechanicalSection + @("", "---", "", "## Turn log", "", $fullLog))
 
 Write-Host ''
 Say ('findings written: ' + $findingsPath)
