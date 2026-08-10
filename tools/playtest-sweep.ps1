@@ -61,10 +61,10 @@
     "cover EVERY aspect using the three primary playtest modes" is the owner's own ask.
 
 .PARAMETER Personas
-    Persona labels, one run-matrix axis per entry. Default is the five named in
-    docs/plans/2026-08-10-001-feat-the-playtest-keeps-what-it-saw-plan.md's U4 (first-timer,
-    veteran, speedrunner, completionist, sceptic) so this tool's default vocabulary matches the
-    persona files that unit will add. See the DESCRIPTION's "PERSONA IS A LABEL TODAY" note --
+    Persona labels, one run-matrix axis per entry. Default is the four live today (first-timer,
+    veteran, speedrunner, completionist) -- U4's original five also named sceptic, retired by W3
+    (docs/plans/2026-08-10-002, ruling 6: a mechanical dead-verb detector supersedes it, runs under
+    every persona instead of being one). See the DESCRIPTION's "PERSONA IS A LABEL TODAY" note --
     until U4 lands, every persona here plays an identical act.md.
 
 .PARAMETER Turns
@@ -112,7 +112,7 @@
 param(
     [int]$Runs = 1,
     [string[]]$Scopes = @('Full', 'Diff', 'Scout'),
-    [string[]]$Personas = @('first-timer', 'veteran', 'speedrunner', 'completionist', 'sceptic'),
+    [string[]]$Personas = @('first-timer', 'veteran', 'speedrunner', 'completionist'),
     [int]$Turns = 40,
     [string]$OutDir,
     [string]$AggregateFrom,
