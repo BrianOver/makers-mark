@@ -130,10 +130,10 @@ public class TutorialCopyIsFollowableTests
         var ui = MountMainUi();
         try
         {
-            var state = Actionable(ui.Adapter.CurrentState);
+            var world = ui.Adapter.CurrentState;
             foreach (var step in Enum.GetValues<TutorialStep>())
             {
-                var copy = Plain(ui.Tutorial.CopyFor(step, state));
+                var copy = Plain(ui.Tutorial.CopyFor(step, ActionableFor(world, step)));
 
                 AssertThat(string.IsNullOrWhiteSpace(copy))
                     .OverrideFailureMessage(
@@ -183,10 +183,10 @@ public class TutorialCopyIsFollowableTests
         var ui = MountMainUi();
         try
         {
-            var state = Actionable(ui.Adapter.CurrentState);
+            var world = ui.Adapter.CurrentState;
             foreach (var step in Enum.GetValues<TutorialStep>())
             {
-                var copy = Plain(ui.Tutorial.CopyFor(step, state));
+                var copy = Plain(ui.Tutorial.CopyFor(step, ActionableFor(world, step)));
                 AssertThat(copy.Length)
                     .OverrideFailureMessage(
                         $"{step}'s line is {copy.Length} characters — past the {budget} the objective card reserves, " +
@@ -201,6 +201,49 @@ public class TutorialCopyIsFollowableTests
         }
     }
 
+    /// <summary>
+    /// Step 5's OTHER line — the one the owner actually hit. The Watch control is on screen only
+    /// while a party is underground, so in any other phase step 5 cannot name it, and for a while it
+    /// named it anyway ("it auto jumped to night???? yet this is still on tutorial 5???"). What the
+    /// wait variant owes a stranger instead is the press that brings the Mirror back, in the words
+    /// the button prints — read from <see cref="PhaseVocab"/>, not retyped, so a reworded bell turns
+    /// this red rather than quietly sending them hunting.
+    /// </summary>
+    [TestCase]
+    public void LookInsWaitVariant_NamesThePressThatBringsTheMirrorBack_NotTheControlThatIsNotThere()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            // Morning: a party is structurally NOT out, so this is the branch the screen renders.
+            var waiting = ui.Adapter.CurrentState with { Day = 3, Phase = DayPhase.Morning };
+            var copy = Plain(ui.Tutorial.CopyFor(TutorialStep.LookIn, waiting));
+
+            AssertThat(string.IsNullOrWhiteSpace(copy))
+                .OverrideFailureMessage(
+                    "Step 5 renders a BLANK card whenever no party is out — which is most of the day. " +
+                    "The whole job of this surface is telling the player what to do.")
+                .IsFalse();
+
+            var morningBell = PhaseVocab.BellVerb(waiting with { Phase = DayPhase.Morning });
+            AssertThat(copy)
+                .OverrideFailureMessage(
+                    $"Step 5's wait line never names the press that puts a party underground (\"{morningBell}\"), " +
+                    $"so a stranger is left waiting for a button that is not coming:\n  \"{copy}\"")
+                .Contains(morningBell);
+
+            AssertThat(copy.Contains("Watch", StringComparison.Ordinal))
+                .OverrideFailureMessage(
+                    "Step 5's wait line points at the Watch control, which is not on screen in this phase — " +
+                    $"the exact defect the owner reported on 2026-08-09:\n  \"{copy}\"")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     [TestCase]
     public void NoStepCopy_NamesAControlTheScreenDoesNotHave()
     {
@@ -208,11 +251,11 @@ public class TutorialCopyIsFollowableTests
         try
         {
             var day1 = ui.Adapter.CurrentState;
-            var later = Actionable(day1);
             foreach (var step in Enum.GetValues<TutorialStep>())
             {
                 // BOTH branches: the actionable instruction AND the day-1 wait/gated variant, which
                 // is where "press Next/Advance" lived and survived three rounds of copy fixes.
+                var later = ActionableFor(day1, step);
                 foreach (var copy in new[] { Plain(ui.Tutorial.CopyFor(step, later)), Plain(ui.Tutorial.CopyFor(step, day1)) })
                 {
                     foreach (var banned in BannedVocabulary)
@@ -385,12 +428,26 @@ public class TutorialCopyIsFollowableTests
         }
     }
 
-    /// <summary>Day 3 Morning with a full slot budget — the one projection under which every step
-    /// in the chain is simultaneously actionable, so <see cref="TutorialFlow.CopyFor"/> returns the
-    /// real instruction rather than a day-gate or phase-gate wait variant. A pure <c>with</c>
-    /// projection, never a driven campaign: this suite must not depend on phase advance at all.</summary>
-    private static GameState Actionable(GameState state) =>
-        state with { Day = 3, Phase = DayPhase.Morning, ActionSlotsRemaining = ActionBudget.SlotsPerDay };
+    /// <summary>Day 3 Morning with a full slot budget — the projection under which nearly every step
+    /// in the chain is actionable, so <see cref="TutorialFlow.CopyFor"/> returns the real instruction
+    /// rather than a day-gate or phase-gate wait variant. A pure <c>with</c> projection, never a
+    /// driven campaign: this suite must not depend on phase advance at all.</summary>
+    private static GameState Actionable(GameState state) => ActionableFor(state, TutorialStep.BuyMaterial);
+
+    /// <summary>
+    /// The same projection, per step — because ONE phase no longer makes the whole chain actionable
+    /// and cannot: <see cref="TutorialStep.LookIn"/>'s control (Watch) exists only while a party is
+    /// underground, so Morning renders its wait variant instead of the instruction. Asking for the
+    /// instruction in a phase that structurally cannot show it is how this suite read a correct line
+    /// as a missing one. The wait variant is not skipped by this — it has its own case below.
+    /// </summary>
+    private static GameState ActionableFor(GameState state, TutorialStep step) =>
+        state with
+        {
+            Day = 3,
+            Phase = step == TutorialStep.LookIn ? DayPhase.Expedition : DayPhase.Morning,
+            ActionSlotsRemaining = ActionBudget.SlotsPerDay,
+        };
 
     /// <summary>Read the copy the way the screen does — <c>Label</c> has no markup parser, so the
     /// panel strips the emphasis markers before rendering (<see cref="ObjectiveTracker.Plain"/>).

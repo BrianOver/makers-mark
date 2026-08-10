@@ -486,16 +486,25 @@ public class RaidConductorTests
     [TestCase]
     public void ShowHeld_IsFalseWhereThereIsNoTimerToHold_IdleAndVigilStop()
     {
-        var (_, clock, conductor) = Build(StagedWorld(), showHeld: () => true);
+        // The predicate is FLIPPED rather than pinned true, for a reason the first version of this
+        // case got wrong: a hold that is true from construction stops the SendOff timer, so
+        // Update() never reaches Camp and the beat under test is never the one being asserted. The
+        // flip also makes the assertion stronger — at Idle and VigilStop, ShowHeld must read false
+        // while the injected predicate is answering TRUE, which is the gate itself, not a coincidence.
+        var held = false;
+        var (_, clock, conductor) = Build(StagedWorld(), showHeld: () => held);
 
         AssertThat(conductor.Current).IsEqual(RaidConductor.Beat.Idle);
+        held = true;
         AssertThat(conductor.ShowHeld)
             .OverrideFailureMessage("Idle has no show timer — reporting it held would put a false caption on the HUD.")
             .IsFalse();
 
+        held = false; // let the show earn its own seconds, exactly as an unheld span does
         clock.AdvanceNow();
         conductor.Update(RaidConductor.SendOffMaxSeconds); // -> Camp, party parked
         AssertThat(conductor.Current).IsEqual(RaidConductor.Beat.VigilStop);
+        held = true;
         AssertThat(conductor.ShowHeld)
             .OverrideFailureMessage("VigilStop is already timer-free — it is a stop, not a held show.")
             .IsFalse();
