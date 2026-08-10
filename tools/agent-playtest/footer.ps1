@@ -16,11 +16,19 @@
     tools/test-agent-playtest-modes.ps1 can assert its content without a live Godot/-Scripted run --
     the live run still gets its own end-to-end check that findings.md actually contains it.
 
+    W4 (docs/plans/2026-08-10-002): -ExtraLines lets a caller append persona-specific caveats after
+    the static three -- used exactly once today, for the attached persona's own required disclosure
+    that its attachment to a hero was INJECTED by the harness, never formed by the model on its own
+    (see attached.ps1's header). Optional and empty by default so every existing caller (every run
+    that is not the attached persona) keeps the identical static footer this file has always produced.
+
     STYLE NOTE: ASCII-only, no here-strings, no ternary/??, matching every file it is dot-sourced by.
 #>
 
 function Get-HonestyFooterLines {
-    return @(
+    param([string[]]$ExtraLines = @())
+
+    $lines = @(
         '',
         '---',
         '',
@@ -43,4 +51,9 @@ function Get-HonestyFooterLines {
         ('Silence on any of the three above is the instrument having nothing to say about a question ' +
          'it cannot ask -- not a clean bill. Only a human playtest answers them.')
     )
+
+    if ($ExtraLines -and $ExtraLines.Count -gt 0) {
+        $lines = $lines + @('') + $ExtraLines
+    }
+    return $lines
 }

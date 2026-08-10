@@ -50,6 +50,8 @@ Do NOT write a bug report. Answer these four questions, using ONLY what the log 
 2. **This is evidence for a person, not a verdict.** Never write a flat "this game is fun" or "this game is not fun." Write what you personally observed, turn by turn, and let the developer draw the conclusion.
 3. **Do not suggest fixes or implementations.** Report the experience.
 4. Blunt, specific, first person, short sentences. Fragments are fine.
+5. **Always end with exactly two quoted pointers** — the single turn after which you most wanted to
+   keep playing, and the single turn after which you most wanted to stop. Quote each, from the log.
 
 ## Format
 
@@ -67,3 +69,7 @@ Do NOT write a bug report. Answer these four questions, using ONLY what the log 
 
     ## Evidence, not verdict
     One or two sentences summarizing what you personally saw -- framed as "here is what happened," never as a yes/no on whether the game is fun.
+
+    ## Two turns
+    The single turn after which you most wanted to keep playing: "..."
+    The single turn after which you most wanted to stop: "..."

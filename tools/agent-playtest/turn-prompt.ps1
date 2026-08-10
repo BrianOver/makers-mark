@@ -15,9 +15,40 @@
     (day/phase/beat/location) is the fix; it is one field added to an existing line, not new
     machinery.
 
+    W4 (docs/plans/2026-08-10-002, ruling 2): the "Recent turns:" 6-line history window is GONE, not
+    extended -- the model's own scratchpad (the schema's optional "note" field, accumulated by the
+    driver into notes.md and handed back in here as $NotesText) REPLACES it outright. The plan names
+    this "the Pokemon lesson: removing complexity beat adding it" -- a fixed 6-line window of raw
+    turn-by-turn mechanics ("turn 4 @ town/Morning -> press OpenShop") is a worse memory than letting
+    the model write down, in its own words, the one or two things it actually wants to remember (a
+    plan, a hero's name, a thing not yet tried) and reading THAT back. Get-EchoedNotesText below caps
+    what gets echoed at ~2000 chars (oldest content dropped, an explicit trimmed-marker so a capped
+    echo is never mistaken for the complete scratchpad) -- the untrimmed full text still lives in
+    notes.md on disk; only what rides along in the next prompt is bounded.
+
     STYLE NOTE: ASCII-only, no here-strings, no ternary/??. Dot-sourced by agent-playtest.ps1, which
     has to survive Windows PowerShell 5.1's BOM and here-string traps -- keep this file plain too.
 #>
+
+# Caps the model's own accumulated scratchpad text to roughly $MaxChars for the NEXT prompt, oldest
+# content dropped first (a model's most recent thought is the one most worth keeping), with an
+# explicit marker so a caller can never mistake a trimmed echo for the whole thing. The FULL,
+# untrimmed text still lives in notes.md on disk -- this only bounds what rides along in the prompt.
+function Get-EchoedNotesText {
+    param(
+        [string]$FullNotesText,
+        [int]$MaxChars = 2000
+    )
+
+    if (-not $FullNotesText) { return '' }
+    if ($FullNotesText.Length -le $MaxChars) { return $FullNotesText }
+
+    $marker = '(older notes trimmed)'
+    $keepChars = $MaxChars - $marker.Length - [Environment]::NewLine.Length
+    if ($keepChars -lt 0) { $keepChars = 0 }
+    $tail = $FullNotesText.Substring($FullNotesText.Length - $keepChars)
+    return ($marker + [Environment]::NewLine + $tail)
+}
 
 # $State is whatever ConvertFrom-Json produced from state.json (see AgentPlaytest.cs's StateDigest
 # for the field contract this depends on: day, phase, beat, location, canMove, gold,
@@ -27,10 +58,8 @@ function Build-ActUserText {
         [Parameter(Mandatory)]$State,
         [Parameter(Mandatory)][int]$Turn,
         [Parameter(Mandatory)][int]$Turns,
-        [string[]]$RecentHistory
+        [string]$NotesText = ''
     )
-
-    if (-not $RecentHistory) { $RecentHistory = @() }
 
     # An in-range target must NOT be reported as a direction to walk -- see agent-playtest.ps1's own
     # note on this (the first agent run walked "down" into the forge's own footprint eight times
@@ -50,9 +79,10 @@ function Build-ActUserText {
     $prompt2d = ''
     if ($State.interactPrompt) { $prompt2d = 'Interact prompt on screen: ' + $State.interactPrompt }
 
-    $recent = ''
-    if ($RecentHistory.Count -gt 0) {
-        $recent = 'Recent turns:' + [Environment]::NewLine + ($RecentHistory -join [Environment]::NewLine)
+    $notesBlock = ''
+    if ($NotesText) {
+        $echoedNotes = Get-EchoedNotesText -FullNotesText $NotesText -MaxChars 2000
+        $notesBlock = 'Your notes so far:' + [Environment]::NewLine + $echoedNotes
     }
 
     return (@(
@@ -71,7 +101,7 @@ function Build-ActUserText {
         'Controls:',
         (($State.controls | ForEach-Object { '  ' + $_.name + ' [' + $_.label + '] enabled=' + $_.enabled }) -join [Environment]::NewLine),
         '',
-        $recent,
+        $notesBlock,
         '',
         'Answer with one JSON object only.'
     ) -join [Environment]::NewLine)

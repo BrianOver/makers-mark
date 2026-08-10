@@ -103,18 +103,43 @@
     header, and turnlog.md's own per-turn entries say which frame (or that none was kept/available)
     each note is about.
 
+    -Persona monkey defaults this to 25 instead of 1 (ruling 4, docs/plans/2026-08-10-002) UNLESS you
+    pass your own value explicitly -- ~134 KB/frame times monkey's usual 400-turn crash-census budget
+    would otherwise be ~54 MB nobody reviews.
+
 .PARAMETER Persona
     Which player this run is pretending to be: first-timer, veteran, speedrunner, completionist,
-    or random (picks one of those for this run). act.md carries the JSON contract and movement rules
-    that never change; prompts/agent-playtest/prompts/personas/<name>.md supplies the KNOWLEDGE and
-    GOAL half. One persona ("curious, slightly impatient") used to drive every run, which measured
-    the same player thirty times over a thirty-run sweep. An unrecognized value fails loudly rather
-    than silently becoming the default -- see personas.ps1's own note.
+    monkey, attached, or random (picks one of the six for this run). act.md carries the JSON contract
+    and movement rules that never change; prompts/agent-playtest/prompts/personas/<name>.md supplies
+    the KNOWLEDGE and GOAL half (monkey is the one exception -- see below). One persona ("curious,
+    slightly impatient") used to drive every run, which measured the same player thirty times over a
+    thirty-run sweep. An unrecognized value fails loudly rather than silently becoming the default --
+    see personas.ps1's own note.
 
     sceptic is RETIRED (W3, docs/plans/2026-08-10-002, ruling 6): the dead-verb detector below (see
     -FrameEvery and the "## Dead-verb candidates" findings.md section) runs under every persona and
     catches what sceptic could only ever narrate in prose, without the fabrication risk of a model
     inventing doubt about a turn that worked fine.
+
+    monkey (W4, docs/plans/2026-08-10-002, ruling 9) is model-free: no ollama calls, no GPU gate (both
+    skipped entirely -- there is nothing to check VRAM for), no judge pass, no patience meter ("it
+    cannot get frustrated" -- it always runs to the full turn budget). Every turn it picks uniformly at
+    random, via -Seed, among this turn's enabled controls, legal move directions, and advance -- see
+    tools/agent-playtest/monkey.ps1. The mechanical sections (backend, metrics, coverage, dead-verb)
+    still run and still populate findings.md; only the model-facing half is gone.
+
+    attached (W4) knows only that heroes exist and can die permanently; its goal is to keep one named
+    hero (named by the model itself, turn 1, via the new -Persona-agnostic "note" field) alive. The
+    driver watches every later turn's on-screen text for that name next to death vocabulary and, on a
+    match, injects one line into the next prompt and applies a major patience hit -- see
+    tools/agent-playtest/attached.ps1. The attachment is INJECTED by the harness, not formed by the
+    model; the honesty footer on an attached run says so explicitly.
+
+.PARAMETER Seed
+    Seeds -Persona monkey's uniform-random command stream (System.Random). The SAME seed against the
+    SAME state sequence produces a byte-identical command sequence -- reproducibility of the command
+    STREAM given identical states, never a claim about sim determinism (this file's own dot-sourced
+    monkey.ps1 header says so at length). Ignored by every other persona.
 
 .EXAMPLE
     .\tools\agent-playtest.ps1 -Turns 40
@@ -142,7 +167,8 @@ param(
     [string]$Scope = 'Full',
     [int]$MechanicalTimeoutMin = 15,
     [int]$FrameEvery = 1,
-    [string]$Persona = 'first-timer'
+    [string]$Persona = 'first-timer',
+    [int]$Seed = 1
 )
 
 # A4/A5/A6: the diff-to-surface map, the per-turn prompt builder, Scout's mechanical detectors, and
@@ -162,6 +188,12 @@ param(
 . (Join-Path $PSScriptRoot 'agent-playtest\footer.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\deadverb.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\metrics.ps1')
+# W4 (docs/plans/2026-08-10-002): temperament.ps1 (the patience meter), monkey.ps1 (the model-free
+# persona's own command logic). attached.ps1 must be dot-sourced AFTER metrics.ps1 -- it reuses
+# metrics.ps1's own $script:ProductSentenceKeywordPattern rather than a second copy (see its header).
+. (Join-Path $PSScriptRoot 'agent-playtest\temperament.ps1')
+. (Join-Path $PSScriptRoot 'agent-playtest\monkey.ps1')
+. (Join-Path $PSScriptRoot 'agent-playtest\attached.ps1')
 
 $ErrorActionPreference = 'Stop'
 
@@ -197,6 +229,37 @@ try {
     Die @($_.Exception.Message)
 }
 Say ('persona: ' + $personaName + ' (requested: ' + $Persona + ')')
+
+# W4 (docs/plans/2026-08-10-002): monkey and attached are the two new players. monkey is model-free
+# (ruling 9) -- computed once, here, so every later gate (GPU, act-prompt assembly, the patience
+# meter) can branch on it without re-deriving $personaName -eq 'monkey' at each site.
+$isMonkey = ($personaName -eq 'monkey')
+$isAttached = ($personaName -eq 'attached')
+
+# Ruling 4: monkey defaults -FrameEvery to 25, UNLESS the caller passed their own value explicitly --
+# $PSBoundParameters is the only reliable way in PowerShell to tell "the default fired" apart from
+# "the caller asked for exactly 1" (both look identical once inside $FrameEvery itself).
+if ($isMonkey -and -not $PSBoundParameters.ContainsKey('FrameEvery')) {
+    $FrameEvery = 25
+    Say 'monkey default: -FrameEvery 25 (ruling 4 -- ~134 KB/frame x 400 turns would be 54 MB nobody reviews)'
+}
+
+# W4: the one global temperament clock (ruling 8) -- never for Scripted (no persona in the loop at
+# all) or monkey (ruling 9: it cannot get frustrated, it runs to budget regardless). A persona file's
+# own front-matter (personas.ps1's Split-PersonaFrontMatter) may scale only the START value.
+$temperamentMeter = $null
+if (-not $Scripted -and -not $isMonkey) {
+    $patienceMultiplier = Get-PersonaPatienceMultiplier -PersonaName $personaName `
+        -PersonasDir (Join-Path $PSScriptRoot 'agent-playtest\prompts\personas')
+    $temperamentMeter = New-TemperamentMeter -StartMultiplier $patienceMultiplier
+    Say ('temperament: ' + $temperamentMeter.Version + ', start patience ' + $temperamentMeter.Max)
+}
+
+# W4: monkey's own seeded PRNG, created ONCE and reused for the whole run -- see monkey.ps1's own
+# header for why byte-identical same-seed reproduction depends on that (a fresh System.Random per
+# turn would not be a seeded STREAM, just N independent single draws).
+$monkeyRandom = $null
+if ($isMonkey) { $monkeyRandom = New-Object System.Random($Seed) }
 
 # JsonEsc/Build-ModelRequestBody/Get-LegalCommandFromReply now live in agent-playtest\model-call.ps1
 # (W1, docs/plans/2026-08-10-002) so tools/test-agent-playtest-modes.ps1 can prove the request body and
@@ -310,10 +373,15 @@ $deadVerbStagingPath = Join-Path $OutDir 'deadverb-staging.png'
 # the refusal frustration map, the product-sentence counter (metrics.ps1). Same one-folder-answers-
 # everything convention as backend.json/coverage.json above.
 $metricsJsonPath   = Join-Path $OutDir 'metrics.json'
+# W4 (docs/plans/2026-08-10-002, ruling 2): the model's own scratchpad -- accumulated from the
+# schema's optional "note" field, one line per turn that supplies one, wiped at run start (added to
+# THIS SAME stale-artifact sweep below) and NEVER seeded across runs or personas. See turn-prompt.ps1
+# for how a capped echo of this file's content replaces the old 6-line "Recent turns" history window.
+$notesPath = Join-Path $OutDir 'notes.md'
 
 foreach ($stale in @($statePath, $cmdPath, $framePath, $turnlogPath, $findingsPath, $driverLog,
         $playtestLogPath, $backendJsonPath, $coverageMdPath, $coverageJsonPath, $metricsJsonPath,
-        $deadVerbStagingPath)) {
+        $deadVerbStagingPath, $notesPath)) {
     if (Test-Path $stale) { Move-Item $stale ($stale + '.prev') -Force }
 }
 # frames/ is a directory, not a single file -- Move-Item -Force cannot rename it onto an existing
@@ -324,7 +392,11 @@ if (Test-Path $framesDir) { Remove-Item $framesDir -Recurse -Force -ErrorAction 
 New-Item -ItemType Directory -Path $framesDir -Force | Out-Null
 
 # --- GPU gate: a precondition, not a hope -------------------------------------------------------
-if (-not $Scripted) {
+# W4, ruling 9: monkey skips this ENTIRELY, not just the warm-up at the bottom of this block -- there
+# is no model in the loop at all, so there is nothing to check VRAM for.
+if ($isMonkey) {
+    Say 'monkey: skipping the GPU gate and ollama warm-up entirely (ruling 9 -- no model in the loop)'
+} elseif (-not $Scripted) {
     $smi = & nvidia-smi --query-gpu=memory.total,memory.used,temperature.gpu --format=csv,noheader,nounits 2>&1
     if ($LASTEXITCODE -ne 0) {
         Die @('nvidia-smi failed, so the GPU state is unknown.', 'Refusing to load a model blind. Run with -Scripted to prove the channel without a model.')
@@ -439,6 +511,11 @@ $digestSeen = @{}
 $stuckFindings = New-Object System.Collections.ArrayList
 $turn = 0
 $stopReason = 'turn budget reached'
+# W4: set together, once, at the moment a depleted meter ends the run -- see the loop's own patience
+# check for where these are assigned.
+$temperamentQuitTurn = $null
+$temperamentQuitDay = $null
+$temperamentQuitPhase = $null
 
 # A1 honesty counters. A run that mostly pressed advance must not read like a run the model
 # played -- these three numbers are what let the header and the exit code tell the difference.
@@ -485,6 +562,18 @@ $coverageTracker = New-CoverageTracker
 $pendingDeadVerb = $null
 $deadVerbCandidates = New-Object System.Collections.ArrayList
 
+# W4: the scratchpad -- one line per turn that supplied a "note", in chronological order. Joined and
+# capped (turn-prompt.ps1's Get-EchoedNotesText) into the NEXT turn's own prompt; the raw, uncapped
+# text is also appended to notes.md on disk as it arrives.
+$notesLines = New-Object System.Collections.ArrayList
+
+# W4: attached persona hero-tracking state (attached.ps1's own functions do the actual text matching;
+# these four variables are the driver's memory of where in that story this run currently is).
+$attachedHeroName = $null
+$attachedHeroDied = $false
+$attachedDeathTurn = $null
+$attachedDeathAttributed = $false
+
 function Wait-ForFile($path, $timeoutSec) {
     $deadline = (Get-Date).AddSeconds($timeoutSec)
     while ((Get-Date) -lt $deadline) {
@@ -506,7 +595,9 @@ $actPromptHash = ''
 $judgePrompt = ''
 $diffScopeInfo = $null
 $actionSchemaJson = ''
-if (-not $Scripted) {
+if ($isMonkey) {
+    Say 'monkey: skipping act-prompt/schema/judge-prompt assembly entirely (ruling 9 -- no model call ever reads them)'
+} elseif (-not $Scripted) {
     # W1: JSON-schema constrained decoding on every act call (never the warm-up or judge call -- see
     # Invoke-Model's own temperature note). Read once, trimmed to one compact blob so it splices
     # cleanly into the hand-built request body (Build-ModelRequestBody, model-call.ps1). Parsed here
@@ -588,6 +679,15 @@ try {
             if ($deadVerbVerdict.IsCandidate) {
                 [void]$deadVerbCandidates.Add($deadVerbVerdict.Line)
                 Warn $deadVerbVerdict.Line
+                # W4: a dead-verb candidate drains the meter -- OPTIONAL input (this whole block only
+                # ever runs when $pendingDeadVerb was set, itself gated on -not Scripted, so a
+                # Scripted run or a build with W3 not yet landed simply never reaches here at all;
+                # nothing downstream needs to know the difference).
+                if ($temperamentMeter) {
+                    Add-TemperamentDrain -Meter $temperamentMeter -Cause 'deadverb' `
+                        -Amount $script:PatienceDrainDeadVerbCandidate -Turn $pendingDeadVerb.Turn `
+                        -Day $state.day -Phase $pendingDeadVerb.Phase -Detail $pendingDeadVerb.ControlName
+                }
             }
             if ($pendingDeadVerb.Staged) {
                 $deadVerbFinalName = Get-KeptFrameFileName -Turn $pendingDeadVerb.Turn
@@ -621,6 +721,13 @@ try {
             $note = 'STUCK: the screen was identical for 4 turns at ' + $state.location + ' / ' + $state.phase + '. Enabled controls: ' + ($enabled -join ', ')
             Warn $note
             [void]$stuckFindings.Add($note)
+            # W4: a stuck-digest repeat drains the meter -- worse than a single refusal (see
+            # temperament.ps1's own constant-set comments for the reasoning).
+            if ($temperamentMeter) {
+                Add-TemperamentDrain -Meter $temperamentMeter -Cause 'stuck' `
+                    -Amount $script:PatienceDrainStuckRepeat -Turn $turn -Day $state.day -Phase $state.phase `
+                    -Detail ($state.location + '/' + $state.phase)
+            }
         }
 
         # W2: this turn's own pre-refusal reasons, reset every iteration (both modes) -- Scripted never
@@ -633,17 +740,40 @@ try {
         if ($Scripted) {
             $idx = [math]::Min($turn - 1, $scriptedPlan.Count - 1)
             $command = $scriptedPlan[$idx]
+        } elseif ($isMonkey) {
+            # W4, ruling 9: uniform-random, legal by construction (monkey.ps1's own candidates are
+            # built from THIS turn's enabled controls / canMove, never from a fixed vocabulary), so
+            # there is no legality re-check, no attempts loop, and no refusal path here at all.
+            $command = Get-MonkeyCommand -State $state -Random $monkeyRandom
         } else {
-            $recentLines = @()
-            if ($history.Count -gt 0) {
-                $recentLines = $history[[math]::Max(0, $history.Count - 6)..($history.Count - 1)]
-            }
+            $notesFullText = ($notesLines -join [Environment]::NewLine)
             # Surroundings, the interact prompt, and the beat all come straight off state.json (see
             # Build-ActUserText in agent-playtest\turn-prompt.ps1), so this narrates the world, never
             # invents it. Extracted to its own file so the beat-wiring fix below is provable with a
             # stubbed state object instead of a live Godot+ollama run -- see
             # tools/test-agent-playtest-modes.ps1.
-            $userText = Build-ActUserText -State $state -Turn $turn -Turns $Turns -RecentHistory $recentLines
+            $userText = Build-ActUserText -State $state -Turn $turn -Turns $Turns -NotesText $notesFullText
+
+            # W4: the attached persona's own death check -- runs BEFORE the model is asked anything
+            # this turn, so an injected "<name> is dead." line (and the major patience hit) rides
+            # along on THIS turn's own prompt, not a turn later. Only fires once per run (the
+            # -not $attachedHeroDied guard); every later turn's screenText still gets checked for the
+            # attribution-shaped text the quit finding needs, captured at the moment of the match.
+            if ($isAttached -and $attachedHeroName -and -not $attachedHeroDied) {
+                if (Test-ScreenTextForHeroDeath -HeroName $attachedHeroName -ScreenTextLines @($state.screenText)) {
+                    $attachedHeroDied = $true
+                    $attachedDeathTurn = $turn
+                    $attachedDeathAttributed = Test-ScreenTextForAttribution -ScreenTextLines @($state.screenText)
+                    $userText = $userText + [Environment]::NewLine + ($attachedHeroName + ' is dead.')
+                    Warn ('attached: ' + $attachedHeroName + ' is dead (turn ' + $turn +
+                        '), attribution-shaped text on the same screen: ' + $attachedDeathAttributed)
+                    if ($temperamentMeter) {
+                        Add-TemperamentDrain -Meter $temperamentMeter -Cause 'attached-death' `
+                            -Amount $script:PatienceDrainAttachedDeath -Turn $turn -Day $state.day `
+                            -Phase $state.phase -Detail $attachedHeroName
+                    }
+                }
+            }
 
             $attempts = 0
             $imageMissingThisTurn = $false
@@ -667,14 +797,22 @@ try {
                     # W2: raw material for Get-RefusalFrustrationMap -- recorded here, at the ONE place
                     # that already knows both the reason text and which turn/phase it happened in,
                     # rather than re-deriving it later from Warn's own console/driver.log text.
+                    $refusalControl = Get-RefusalControlFromReason -Reason $legal.Reason
                     [void]$preRefusals.Add([pscustomobject]@{
                         Turn    = $turn
                         Day     = $state.day
                         Phase   = $state.phase
-                        Control = (Get-RefusalControlFromReason -Reason $legal.Reason)
+                        Control = $refusalControl
                         Reason  = $legal.Reason
                     })
                     [void]$turnPreRefusalReasons.Add($legal.Reason)
+                    # W4: a refused/pre-refused action drains the meter -- the baseline drain unit
+                    # every other cause in temperament.ps1 is sized relative to.
+                    if ($temperamentMeter) {
+                        Add-TemperamentDrain -Meter $temperamentMeter -Cause 'refusal' `
+                            -Amount $script:PatienceDrainRefusal -Turn $turn -Day $state.day `
+                            -Phase $state.phase -Detail $refusalControl
+                    }
                     continue
                 }
                 $command = $legal.Command
@@ -692,6 +830,25 @@ try {
         $parsedCmd = $command | ConvertFrom-Json
         Say ('turn ' + $turn + ': ' + $parsedCmd.action + ' ' + $parsedCmd.target + ' -- ' + $parsedCmd.why)
         [void]$history.Add('turn ' + $turn + ' @ ' + $state.location + '/' + $state.phase + ' -> ' + $parsedCmd.action + ' ' + $parsedCmd.target + ' (' + $parsedCmd.why + ') ; outcome: ' + $state.lastOutcome)
+
+        # W4: the scratchpad -- a no-op whenever $parsedCmd has no "note" (Scripted's fixed plan and
+        # monkey's own command builder never set one, so this is naturally a no-op for both modes).
+        if ($parsedCmd.note) {
+            $noteLine = 'turn ' + $turn + ': ' + ([string]$parsedCmd.note).Trim()
+            [void]$notesLines.Add($noteLine)
+            try { Add-Content -Path $notesPath -Value $noteLine -Encoding utf8 } catch { }
+
+            # W4: attached names its one hero via this SAME field, the first time it appears --
+            # checked every turn (not just turn 1) so a first-timer-shaped delay in the game actually
+            # naming a hero on screen does not permanently miss the window.
+            if ($isAttached -and -not $attachedHeroName) {
+                $candidateHeroName = Get-AttachedHeroNameFromNote -Note $parsedCmd.note
+                if ($candidateHeroName) {
+                    $attachedHeroName = $candidateHeroName
+                    Say ('attached: hero named -- ' + $attachedHeroName)
+                }
+            }
+        }
 
         # W2: metrics.ps1's per-turn record (see its own header). Day/Phase/ScreenText/EnabledControls
         # come off THIS turn's own $state (the context the action was chosen in); Action/Target/Why come
@@ -712,8 +869,20 @@ try {
         })
 
         # U3: record what this turn's state showed and what got pressed, against the real registries
-        # read from source at the top of this script (coverage.ps1's own Add-CoverageTouch).
+        # read from source at the top of this script (coverage.ps1's own Add-CoverageTouch). W4 hooks
+        # this SAME call site (never a parallel tracker) to reset the temperament meter on the first
+        # turn that touches a surface this run had not touched before -- a full reset, not a partial
+        # refund (ruling 8), the meter's own "second wind" for genuine novelty.
+        $coverageTouchedBefore = 0
+        if ($temperamentMeter) { $coverageTouchedBefore = Get-CoverageTrackerTouchedCount -Tracker $coverageTracker }
         Add-CoverageTouch -Tracker $coverageTracker -State $state -Command $parsedCmd
+        if ($temperamentMeter) {
+            $coverageTouchedAfter = Get-CoverageTrackerTouchedCount -Tracker $coverageTracker
+            if ($coverageTouchedAfter -gt $coverageTouchedBefore) {
+                Reset-TemperamentMeter -Meter $temperamentMeter -Turn $turn -Day $state.day -Phase $state.phase `
+                    -Surface ('coverage +' + ($coverageTouchedAfter - $coverageTouchedBefore))
+            }
+        }
 
         # U1: archive this turn's frame (or say plainly why none was kept) NOW -- right after the
         # model call that consumed frame.png for this turn's decision, and before the client
@@ -748,6 +917,17 @@ try {
             }
         }
 
+        # W4: an empty meter ends the run (ruling 8) -- checked once per turn, after every drain/reset
+        # site above has had its chance to run, so the very drain that emptied it is already reflected
+        # here. Captured turn/day/phase feed Get-TemperamentQuitFinding once the loop has exited.
+        if ($temperamentMeter -and $temperamentMeter.Depleted) {
+            $temperamentQuitTurn = $turn
+            $temperamentQuitDay = $state.day
+            $temperamentQuitPhase = $state.phase
+            $stopReason = 'patience exhausted (see the Patience section below)'
+            break
+        }
+
         if ($parsedCmd.action -eq 'stop') { $stopReason = 'model asked to stop: ' + $parsedCmd.why; break }
 
         Remove-Item $statePath -Force -ErrorAction SilentlyContinue
@@ -776,6 +956,18 @@ try {
 }
 
 Say ('stopped after ' + $turn + ' turns: ' + $stopReason)
+
+# W4: the quit finding (ruling 8) -- computed once, right here, from the exact turn/day/phase captured
+# at the moment the loop noticed the meter was empty. $temperamentMeter is $null for Scripted/monkey,
+# so this whole block is a no-op for both (Depleted is never even a valid question to ask of $null).
+$temperamentQuitFinding = $null
+if ($temperamentMeter -and $temperamentMeter.Depleted) {
+    $temperamentQuitFinding = Get-TemperamentQuitFinding -Meter $temperamentMeter -Turn $temperamentQuitTurn `
+        -Day $temperamentQuitDay -Phase $temperamentQuitPhase
+    Say ('PATIENCE EXHAUSTED: ' + $temperamentQuitFinding.Headline)
+} elseif ($temperamentMeter) {
+    Say ('temperament: ' + (Get-TemperamentBudgetEndNote -Meter $temperamentMeter))
+}
 
 # U1: stamp turnlog.md with a frame reference (or an explicit "frame missing" line) per turn, NOW --
 # once, after the client has fully exited. turnlog.md is rewritten WHOLESALE on every flush by the
@@ -928,6 +1120,28 @@ $header = @(
         $metricsSummary.ProductSentence.ProductSentenceFired + ' -- see ' + $metricsJsonPath),
     ''
 )
+# W4: temperament header lines -- absent (Scripted/monkey never construct a meter) is reported
+# explicitly rather than just omitted, so a reader never has to guess whether it was forgotten.
+if ($temperamentMeter) {
+    $header += ('- temperament version: ' + $temperamentMeter.Version)
+    if ($temperamentMeter.Depleted -and $temperamentQuitFinding) {
+        $header += ('- patience: exhausted -- ' + $temperamentQuitFinding.Headline)
+    } else {
+        $header += ('- patience: ' + (Get-TemperamentBudgetEndNote -Meter $temperamentMeter))
+    }
+} else {
+    $header += '- temperament: not used (Scripted or monkey run -- no persona frustration to measure)'
+}
+$header += ''
+# W4: attached's own header line -- present only when a hero was actually named this run.
+if ($isAttached -and $attachedHeroName) {
+    $attachedStatus = 'still alive at the end of this run'
+    if ($attachedHeroDied) {
+        $attachedStatus = 'died turn ' + $attachedDeathTurn + '; death screen carried attribution-shaped text: ' + $attachedDeathAttributed
+    }
+    $header += ('- attached: named hero "' + $attachedHeroName + '" -- ' + $attachedStatus)
+    $header += ''
+}
 if ($Scope -eq 'Diff' -and $diffScopeInfo) {
     $fallBackNote = ''
     if ($diffScopeInfo.FellBack) { $fallBackNote = ' (FELL BACK to a full sweep -- see below)' }
@@ -952,6 +1166,15 @@ if ($incomplete) {
          'the ' + ($completionFloor * 100) + '% floor. Stopped early -- ' + $stopReason + '. Whatever findings ' +
          'follow are a PARTIAL sample of the intended run, not a completed sweep; do not read them as if the ' +
          'campaign was actually played out.'),
+        ''
+    ) + $header
+}
+# W4 (ruling 8): "the quit reason is written as the run's LEAD finding" -- prepended LAST, so a
+# patience-exhausted run reads this line before DEGRADED/INCOMPLETE (which may well co-occur, since
+# quitting early naturally reads as incomplete too) rather than after them.
+if ($temperamentMeter -and $temperamentMeter.Depleted -and $temperamentQuitFinding) {
+    $header = @(
+        ('PATIENCE EXHAUSTED: ' + $temperamentQuitFinding.Headline + '.'),
         ''
     ) + $header
 }
@@ -983,16 +1206,35 @@ $deadVerbSection = @('', '---', '') + $deadVerbLines
 # shape as $backendSection immediately above. Section order at every site: backend, metrics, dead-verb.
 $metricsSection = @('', '---', '') + @($metricsMarkdown)
 
+# W4: the "## Patience" section -- full drain history behind whichever headline the header line
+# above already carries. Empty for Scripted/monkey (no meter), so appending it to every Set-Content
+# site below is always safe (an empty array contributes nothing to the joined text).
+$temperamentSection = @()
+if ($temperamentMeter) {
+    $temperamentSection = @('', '---', '') + ((Format-TemperamentMarkdown -Meter $temperamentMeter -QuitFinding $temperamentQuitFinding) -split [Environment]::NewLine)
+}
+
 # W1: the honesty footer (agent-playtest\footer.ps1) -- computed once, appended to every Set-Content
 # site below alongside $backendSection, so a run that dies at any stage still ships the same "here is
-# what this instrument cannot see" note as a clean one.
-$honestyFooterLines = Get-HonestyFooterLines
+# what this instrument cannot see" note as a clean one. W4: attached runs get one extra disclosure --
+# the attachment to the named hero was INJECTED by the harness, never formed by the model on its own.
+$footerExtraLines = @()
+if ($isAttached -and $attachedHeroName) {
+    $footerExtraLines = @(
+        ('- **Attached persona note** -- this run''s attachment to "' + $attachedHeroName + '" was ' +
+         'INJECTED by the harness (attached.md''s own protocol told the model to name a hero and care ' +
+         'about them), never formed by the model choosing to care on its own. What this run measures ' +
+         'is whether the game SURFACES the payoff to an already-attached player, never whether ' +
+         'attachment "formed."')
+    )
+}
+$honestyFooterLines = Get-HonestyFooterLines -ExtraLines $footerExtraLines
 
 # A run that played NOTHING is a failure, whatever mode it was in. The first scripted run sat for 90s
 # on a client that had never been asked to play, then printed "scripted run complete" and exited 0 --
 # the same shape of lie as a truncated test suite reporting "Passed!". Never again from this script.
 if ($turn -eq 0) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('NOTHING WAS PLAYED. ' + $stopReason) + $backendSection + $metricsSection + $deadVerbSection + $honestyFooterLines)
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('NOTHING WAS PLAYED. ' + $stopReason) + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + $honestyFooterLines)
     Die @(
         ('zero turns were played: ' + $stopReason),
         '',
@@ -1008,8 +1250,19 @@ if ($Scripted) {
     # $fullLog (unabridged), not $log (the judge-only per-day digest) -- Scripted mode never calls a
     # judge at all ("no model judged this" on the very next line), so there is no reason to show a
     # human the compact judge-oriented digest instead of the real raw turnlog.md text here.
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + @('', '---', '', 'Scripted run -- no model judged this. The channel was exercised, including one deliberate illegal press.', '', '## Turn log', '', $fullLog) + $honestyFooterLines)
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + @('', '---', '', 'Scripted run -- no model judged this. The channel was exercised, including one deliberate illegal press.', '', '## Turn log', '', $fullLog) + $honestyFooterLines)
     Say ('scripted run complete, ' + $turn + ' turns. Channel log: ' + $findingsPath)
+    exit 0
+}
+
+if ($isMonkey) {
+    # W4, ruling 9: monkey skips the judge pass (and, further down, Scout's live mechanical
+    # detectors and the ollama unload handoff) entirely -- "an essay about uniform-random input is
+    # noise by construction." Backend/metrics/coverage/dead-verb are already computed above this
+    # point for every mode, so this mirrors the Scripted branch's own shape rather than duplicating
+    # any of that work.
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + @('', '---', '', 'Monkey run -- ruling 9: uniform-random input is noise by construction, so no judge pass was made. The mechanical sections above (backend/metrics/coverage/dead-verb) are the full evidence this run produces.', '', '## Turn log', '', $fullLog) + $honestyFooterLines)
+    Say ('monkey run complete, ' + $turn + ' turns (seed ' + $Seed + '). Mechanical-only findings: ' + $findingsPath)
     exit 0
 }
 
@@ -1081,7 +1334,7 @@ try { $findings = Invoke-Model $judgePrompt (($judgeInput) -join [Environment]::
 if (-not $findings) {
     # $fullLog here, matching the label -- "Raw turn log below" should mean the raw text, not $log
     # (the judge's own per-day digest input, which is what just failed to produce anything).
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + @('', '---', '', 'JUDGE FAILED -- no findings written. Raw turn log below.') + $mechanicalSection + @('', $fullLog) + $honestyFooterLines)
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + @('', '---', '', 'JUDGE FAILED -- no findings written. Raw turn log below.') + $mechanicalSection + @('', $fullLog) + $honestyFooterLines)
     Die @('the judge pass produced nothing. The turn log is still in ' + $findingsPath + '.')
 }
 
@@ -1120,7 +1373,7 @@ if ($unsupported.Count -gt 0) {
     ) + ($unsupported | ForEach-Object { '- `' + $_ + '`' })
 }
 
-Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + @('', '---', '') + @($findings) + $guardNote + $mechanicalSection + @("", "---", "", "## Turn log", "", $fullLog) + $honestyFooterLines)
+Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + @('', '---', '') + @($findings) + $guardNote + $mechanicalSection + @("", "---", "", "## Turn log", "", $fullLog) + $honestyFooterLines)
 
 Write-Host ''
 Say ('findings written: ' + $findingsPath)

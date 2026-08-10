@@ -54,7 +54,10 @@ $parseTargets = @(
     (Join-Path $toolsDir 'agent-playtest\model-call.ps1'),
     (Join-Path $toolsDir 'agent-playtest\footer.ps1'),
     (Join-Path $toolsDir 'agent-playtest\deadverb.ps1'),
-    (Join-Path $toolsDir 'agent-playtest\metrics.ps1')
+    (Join-Path $toolsDir 'agent-playtest\metrics.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\temperament.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\monkey.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\attached.ps1')
 )
 foreach ($target in $parseTargets) {
     $tokens = $null
@@ -175,7 +178,7 @@ $vigilState = [pscustomobject]@{
     controls = @([pscustomobject]@{ name = 'SendRunner'; label = 'Send the runner'; enabled = $true })
     nearby = @()
 }
-$vigilText = Build-ActUserText -State $vigilState -Turn 5 -Turns 40 -RecentHistory @()
+$vigilText = Build-ActUserText -State $vigilState -Turn 5 -Turns 40
 Check ($vigilText -like '*beat VigilStop*') ('the beat field must reach the model: got [' + $vigilText.Substring(0, [Math]::Min(200, $vigilText.Length)) + ']')
 Check ($vigilText -like '*Day 3*') 'day must still be present alongside beat'
 Check ($vigilText -like '*SendRunner*') 'controls must still be listed'
@@ -191,12 +194,41 @@ $nearbyState = [pscustomobject]@{
         [pscustomobject]@{ key = 'market'; label = 'Market'; direction = 'right'; distance = 220; inRange = $false }
     )
 }
-$nearbyText = Build-ActUserText -State $nearbyState -Turn 1 -Turns 40 -RecentHistory @()
+$nearbyText = Build-ActUserText -State $nearbyState -Turn 1 -Turns 40
 Check ($nearbyText -like '*forge*YOU ARE HERE*') 'an in-range target must say YOU ARE HERE, not a walking direction'
 Check ($nearbyText -like '*market*right*220px away*') 'an out-of-range target must give a direction and distance'
 
-$historyText = Build-ActUserText -State $nearbyState -Turn 2 -Turns 40 -RecentHistory @('turn 1 @ town/Morning -> advance  (test) ; outcome: ok')
-Check ($historyText -like '*Recent turns:*') 'recent history must be included when present'
+# W4 (docs/plans/2026-08-10-002, ruling 2): the OLD "Recent turns:" 6-line history window is GONE,
+# not extended -- replaced outright by the model's own scratchpad ($NotesText). Mechanical proof the
+# parameter itself no longer exists (not just that this test stopped calling it).
+Check ((Get-Command Build-ActUserText).Parameters.Keys -notcontains 'RecentHistory') 'Build-ActUserText must no longer accept -RecentHistory at all -- the notes echo REPLACES it (the Pokemon lesson), never rides alongside it'
+
+$noNotesText = Build-ActUserText -State $nearbyState -Turn 2 -Turns 40
+Check ($noNotesText -notlike '*Recent turns:*') 'with no notes at all, the old "Recent turns:" heading must never appear -- it is gone, not just usually empty'
+Check ($noNotesText -notlike '*Your notes so far:*') 'with no notes at all, the notes heading must not appear either (nothing to echo)'
+
+$withNotesText = Build-ActUserText -State $nearbyState -Turn 2 -Turns 40 -NotesText 'turn 1: remember the smith is out of coal'
+Check ($withNotesText -like '*Your notes so far:*') 'when notes are supplied, the "Your notes so far:" heading must appear'
+Check ($withNotesText -like '*remember the smith is out of coal*') 'the actual note text must reach the model'
+
+# Get-EchoedNotesText: the cap-with-marker mechanics (turn-prompt.ps1) -- short text passes through
+# unchanged; text over the cap is trimmed from the FRONT (oldest dropped) with an explicit marker, and
+# the untrimmed TAIL (the model's most recent thoughts) survives verbatim.
+$shortNotes = 'short note, well under any cap'
+Check ((Get-EchoedNotesText -FullNotesText $shortNotes -MaxChars 2000) -eq $shortNotes) 'notes under the cap must pass through completely unchanged'
+
+$longNotesBuilder = New-Object System.Text.StringBuilder
+for ($i = 1; $i -le 400; $i++) { [void]$longNotesBuilder.Append('note line ' + $i + [Environment]::NewLine) }
+$longNotes = $longNotesBuilder.ToString()
+Check ($longNotes.Length -gt 2000) 'sanity: the long-notes fixture must actually exceed the 2000-char cap used below'
+$echoedLong = Get-EchoedNotesText -FullNotesText $longNotes -MaxChars 2000
+Check ($echoedLong.Length -le 2000) ('the echoed text must respect the cap, got ' + $echoedLong.Length + ' chars')
+Check ($echoedLong -like '(older notes trimmed)*') 'a trimmed echo must lead with the explicit "(older notes trimmed)" marker'
+Check ($echoedLong -like '*note line 400*') 'the trimmed echo must keep the TAIL (the most recent note), never the head'
+Check ($echoedLong -notlike '*note line 1' + [Environment]::NewLine + '*') 'the trimmed echo must have dropped the OLDEST note line, not the newest'
+
+$emptyNotesEcho = Get-EchoedNotesText -FullNotesText '' -MaxChars 2000
+Check ($emptyNotesEcho -eq '') 'empty notes text must echo as an empty string, never throw or add a marker'
 
 # --- 5. Completion floor (A6) -- "a run that dies early reports itself healthy" -----------------
 . (Join-Path $toolsDir 'agent-playtest\completion.ps1')
@@ -489,15 +521,19 @@ $personasDir = Join-Path $toolsDir 'agent-playtest\prompts\personas'
 $actMdPath = Join-Path $toolsDir 'agent-playtest\prompts\act.md'
 $actProtocolText = Get-Content $actMdPath -Raw
 
-foreach ($p in @('first-timer', 'veteran', 'speedrunner', 'completionist')) {
+# W4 (docs/plans/2026-08-10-002): monkey and attached join the original four -- "Resolve-PersonaChoice
+# accepts monkey+attached (roster = 6)" is the brief's own required proof, and this loop is where it
+# lands: Resolve-PersonaChoice only ever checks membership, so it needs no .md file on disk to resolve
+# a name (monkey never has one at all -- see personas.ps1's own header).
+foreach ($p in @('first-timer', 'veteran', 'speedrunner', 'completionist', 'monkey', 'attached')) {
     $resolved = Resolve-PersonaChoice -Persona $p
     Check ($resolved -eq $p) ('a known persona name must resolve to itself, got [' + $resolved + '] for [' + $p + ']')
 }
 
 # "random" resolves via the injectable scriptblock (overridable so this is deterministic) to one of
-# the four known names -- never a fifth value, never the literal string "random" itself.
+# the six known names -- never a seventh value, never the literal string "random" itself.
 $randomResolved = Resolve-PersonaChoice -Persona 'random' -Random { param($items) $items[2] }
-Check (@('first-timer', 'veteran', 'speedrunner', 'completionist') -contains $randomResolved) ('"random" must resolve to one of the four known personas, got [' + $randomResolved + ']')
+Check (@('first-timer', 'veteran', 'speedrunner', 'completionist', 'monkey', 'attached') -contains $randomResolved) ('"random" must resolve to one of the six known personas, got [' + $randomResolved + ']')
 
 # An unknown persona name must FAIL LOUDLY -- never silently become the default. This is the exact
 # silent-fallback defect shape this repo has already fixed twice (A1, A6); a third instance here
@@ -959,7 +995,9 @@ Check ($agentPlaytestRawText -like '*Get-DeadVerbVerdict*') 'agent-playtest.ps1 
 Check ($agentPlaytestRawText -like '*Get-StateFingerprint*') 'agent-playtest.ps1 must call Get-StateFingerprint somewhere in its turn loop'
 Check ($agentPlaytestRawText -like '*deadverb.ps1*') 'agent-playtest.ps1 must dot-source deadverb.ps1'
 Check ($script:KnownPersonas -notcontains 'sceptic') 'personas.ps1''s $script:KnownPersonas must not contain sceptic any more'
-Check ($script:KnownPersonas.Count -eq 4) ('personas.ps1''s known-persona roster must be exactly 4 today (W4 adds two more), got ' + $script:KnownPersonas.Count + ': ' + ($script:KnownPersonas -join ', '))
+Check ($script:KnownPersonas.Count -eq 6) ('personas.ps1''s known-persona roster must be exactly 6 (W4 landed monkey and attached), got ' + $script:KnownPersonas.Count + ': ' + ($script:KnownPersonas -join ', '))
+Check ($script:KnownPersonas -contains 'monkey') 'personas.ps1''s $script:KnownPersonas must contain monkey (W4)'
+Check ($script:KnownPersonas -contains 'attached') 'personas.ps1''s $script:KnownPersonas must contain attached (W4)'
 $sweepRawText = Get-Content (Join-Path $toolsDir 'playtest-sweep.ps1') -Raw
 Check ($sweepRawText -notlike '*''sceptic''*') 'playtest-sweep.ps1''s default -Personas array must not contain the string literal ''sceptic'' any more (it would pass a rejected persona straight to the driver)'
 
@@ -1175,6 +1213,311 @@ Check ($agentPlaytestRawTextForDigest -like '*Build-PerDayJudgeDigest*') 'agent-
 # see backend.ps1's AllowEmptyCollection notes for the same pattern); what must actually be gone is the
 # ASSIGNMENT that made it a live tail-trim cap.
 Check ($agentPlaytestRawTextForDigest -notmatch '\$judgeCap\s*=') 'the old $judgeCap tail-trim ASSIGNMENT must be gone from agent-playtest.ps1 (a comment mentioning the old name by way of explanation is fine)'
+
+# --- 14. Temperament meter (W4, docs/plans/2026-08-10-002 "the playtest becomes a player") -------
+. (Join-Path $toolsDir 'agent-playtest\temperament.ps1')
+
+Check ($script:TemperamentVersion -and $script:TemperamentVersion.Length -gt 0) 'TemperamentVersion must be a non-empty string'
+
+$freshMeter = New-TemperamentMeter
+Check ($freshMeter.Value -eq $script:PatienceStart) ('a fresh meter must start at PatienceStart (' + $script:PatienceStart + '), got ' + $freshMeter.Value)
+Check ($freshMeter.Max -eq $script:PatienceStart) 'a fresh meter''s Max must equal PatienceStart'
+Check ($freshMeter.Depleted -eq $false) 'a fresh meter must not be Depleted'
+Check ($freshMeter.Version -eq $script:TemperamentVersion) 'a fresh meter must stamp the current TemperamentVersion'
+Check (@($freshMeter.DrainHistory).Count -eq 0) 'a fresh meter must have an empty drain history'
+
+$scaledMeter = New-TemperamentMeter -StartMultiplier 2.0
+Check ($scaledMeter.Max -eq ($script:PatienceStart * 2.0)) ('-StartMultiplier must scale ONLY the start value, got Max=' + $scaledMeter.Max)
+
+# THE required proof: a stubbed refusal sequence drains to quit with the EXACT lead-finding line.
+# Sized deliberately to match the plan's own worked example (6 refusals at 3 each = 18 = default
+# PatienceStart) so this test's numbers are not invented on top of the brief's own illustration.
+$quitMeter = New-TemperamentMeter
+for ($i = 1; $i -le 6; $i++) {
+    Add-TemperamentDrain -Meter $quitMeter -Cause 'refusal' -Amount $script:PatienceDrainRefusal `
+        -Turn (8 + $i) -Day 2 -Phase 'Morning' -Detail 'BountiesPanel'
+}
+Check ($quitMeter.Depleted -eq $true) ('6 refusals at ' + $script:PatienceDrainRefusal + ' each must deplete a default-' + $script:PatienceStart + ' meter, got Value=' + $quitMeter.Value)
+Check ($quitMeter.Value -le 0) ('a depleted meter''s Value must be <= 0, got ' + $quitMeter.Value)
+
+$quitFinding = Get-TemperamentQuitFinding -Meter $quitMeter -Turn 14 -Day 2 -Phase 'Morning'
+$expectedQuitHeadline = 'quit day 2 Morning after 6 refusal(s) at BountiesPanel (turn 14)'
+Check ($quitFinding.Headline -eq $expectedQuitHeadline) ('the quit headline must match exactly, expected [' + $expectedQuitHeadline + '] got [' + $quitFinding.Headline + ']')
+Check (@($quitFinding.DrainHistory).Count -eq 6) ('the quit finding''s drain history must list all 6 refusals, got ' + @($quitFinding.DrainHistory).Count)
+Check ($quitFinding.TemperamentVersion -eq $script:TemperamentVersion) 'the quit finding must carry the current TemperamentVersion'
+
+# Mixed-cause headline: a stuck repeat with NO detail, plus two dead-verb candidates with a detail,
+# on the SAME meter -- proves the headline (a) groups counts by cause rather than listing every
+# individual drain, (b) sorts causes deterministically, and (c) only appends " at X" using the LAST
+# detail seen, never blanking out once a later drain happens to have none.
+$mixedMeter = New-TemperamentMeter
+Add-TemperamentDrain -Meter $mixedMeter -Cause 'stuck' -Amount $script:PatienceDrainStuckRepeat -Turn 3 -Day 1 -Phase 'Evening' -Detail ''
+Add-TemperamentDrain -Meter $mixedMeter -Cause 'deadverb' -Amount $script:PatienceDrainDeadVerbCandidate -Turn 4 -Day 1 -Phase 'Evening' -Detail 'OpenShop'
+Add-TemperamentDrain -Meter $mixedMeter -Cause 'deadverb' -Amount $script:PatienceDrainDeadVerbCandidate -Turn 5 -Day 1 -Phase 'Evening' -Detail 'OpenShop'
+Check ($mixedMeter.Depleted -eq $false) ('one stuck (' + $script:PatienceDrainStuckRepeat + ') plus two dead-verb (' + (2 * $script:PatienceDrainDeadVerbCandidate) + ') drains must not deplete an ' + $script:PatienceStart + '-start meter')
+$mixedFinding = Get-TemperamentQuitFinding -Meter $mixedMeter -Turn 5 -Day 1 -Phase 'Evening'
+Check ($mixedFinding.Headline -eq 'quit day 1 Evening after 2 dead-verb candidate(s), 1 stuck repeat(s) at OpenShop (turn 5)') ('mixed-cause headline must group by cause (alphabetical: deadverb before stuck) and use the LAST detail seen, got [' + $mixedFinding.Headline + ']')
+
+# Novelty RESETS the meter -- not increments it. Drain it partway, then reset, and Value must land
+# EXACTLY on Max (a full second wind), and Depleted must clear if it had been set.
+$resetMeter = New-TemperamentMeter
+Add-TemperamentDrain -Meter $resetMeter -Cause 'refusal' -Amount $script:PatienceDrainRefusal -Turn 1 -Day 1 -Phase 'Morning' -Detail 'X'
+Check ($resetMeter.Value -lt $resetMeter.Max) 'sanity: the meter must actually be below Max before reset'
+Reset-TemperamentMeter -Meter $resetMeter -Turn 2 -Day 1 -Phase 'Morning' -Surface 'coverage +1'
+Check ($resetMeter.Value -eq $resetMeter.Max) ('a reset must land EXACTLY on Max, not merely increase -- got ' + $resetMeter.Value + ' vs Max ' + $resetMeter.Max)
+Check ($resetMeter.Depleted -eq $false) 'a reset must clear Depleted'
+$lastHistoryEntry = $resetMeter.DrainHistory[$resetMeter.DrainHistory.Count - 1]
+Check ($lastHistoryEntry.Cause -eq 'reset') 'the reset must be recorded in DrainHistory with Cause=reset'
+Check ($lastHistoryEntry.Amount -eq 0.0) 'a reset''s recorded Amount must be 0 (it is not a drain)'
+
+# A depleted meter that gets reset is genuinely un-depleted, and Get-TemperamentQuitFinding after a
+# reset only ever explains drains SINCE that reset -- proving the "walk back to the last reset" logic.
+$depletedThenResetMeter = New-TemperamentMeter
+for ($i = 1; $i -le 6; $i++) {
+    Add-TemperamentDrain -Meter $depletedThenResetMeter -Cause 'refusal' -Amount $script:PatienceDrainRefusal -Turn $i -Day 1 -Phase 'Morning' -Detail 'A'
+}
+Check ($depletedThenResetMeter.Depleted -eq $true) 'sanity: 6 refusals must deplete this meter too'
+Reset-TemperamentMeter -Meter $depletedThenResetMeter -Turn 7 -Day 1 -Phase 'Morning' -Surface 'coverage +1'
+Check ($depletedThenResetMeter.Depleted -eq $false) 'resetting a depleted meter must un-deplete it'
+Add-TemperamentDrain -Meter $depletedThenResetMeter -Cause 'stuck' -Amount $script:PatienceDrainStuckRepeat -Turn 8 -Day 1 -Phase 'Morning' -Detail 'town/Morning'
+$postResetFinding = Get-TemperamentQuitFinding -Meter $depletedThenResetMeter -Turn 8 -Day 1 -Phase 'Morning'
+Check (@($postResetFinding.DrainHistory).Count -eq 1) ('the quit finding after a reset must only count drains SINCE the reset, got ' + @($postResetFinding.DrainHistory).Count)
+
+# The other ending: a budget-reached run must say so unambiguously, distinct from an exhausted one.
+$budgetMeter = New-TemperamentMeter
+Add-TemperamentDrain -Meter $budgetMeter -Cause 'refusal' -Amount $script:PatienceDrainRefusal -Turn 1 -Day 1 -Phase 'Morning' -Detail 'X'
+$budgetNote = Get-TemperamentBudgetEndNote -Meter $budgetMeter
+Check ($budgetNote -like 'budget reached, patience remaining*') ('the budget-end note must say "budget reached, patience remaining N", got [' + $budgetNote + ']')
+Check ($budgetNote -notlike '*exhausted*') 'the budget-end note must never use exhaustion language -- the two endings must never be conflated'
+
+# Format-TemperamentMarkdown: smoke check that both branches render (the real content is asserted
+# above via the pure functions it calls).
+$quitMarkdown = Format-TemperamentMarkdown -Meter $quitMeter -QuitFinding $quitFinding
+Check ($quitMarkdown -like '*## Patience*') 'Format-TemperamentMarkdown must render a Patience heading'
+Check ($quitMarkdown -like '*BountiesPanel*') 'Format-TemperamentMarkdown must render the quit headline''s detail'
+$budgetMarkdown = Format-TemperamentMarkdown -Meter $budgetMeter -QuitFinding $null
+Check ($budgetMarkdown -like '*budget reached*') 'Format-TemperamentMarkdown must render the budget-end note when the meter was never depleted'
+
+# Get-CoverageTrackerTouchedCount: the driver's own novelty-detection hook, proven against
+# coverage.ps1's REAL tracker shape (already dot-sourced in section 8 above).
+$noveltyTracker = New-CoverageTracker
+Check ((Get-CoverageTrackerTouchedCount -Tracker $noveltyTracker) -eq 0) 'a fresh coverage tracker must report zero touched surfaces'
+$noveltyState = [pscustomobject]@{ location = 'town'; phase = 'Morning'; nearby = @([pscustomobject]@{ key = 'forge'; inRange = $true }) }
+Add-CoverageTouch -Tracker $noveltyTracker -State $noveltyState -Command ([pscustomobject]@{ action = 'advance' })
+$noveltyCountAfter = Get-CoverageTrackerTouchedCount -Tracker $noveltyTracker
+Check ($noveltyCountAfter -gt 0) 'touching a new surface must increase the tracker''s total touched count (the driver''s own reset trigger)'
+
+# agent-playtest.ps1 wiring: temperament version must reach the findings.md header, and every drain
+# site must actually call Add-TemperamentDrain / Reset-TemperamentMeter.
+Check ($agentPlaytestRawText -like '*temperament version*') 'agent-playtest.ps1''s header must include a temperament version line'
+Check ($agentPlaytestRawText -like '*Add-TemperamentDrain*') 'agent-playtest.ps1 must call Add-TemperamentDrain'
+Check ($agentPlaytestRawText -like '*Reset-TemperamentMeter*') 'agent-playtest.ps1 must call Reset-TemperamentMeter'
+Check ($agentPlaytestRawText -like '*Get-TemperamentQuitFinding*') 'agent-playtest.ps1 must call Get-TemperamentQuitFinding'
+Check ($agentPlaytestRawText -like '*PATIENCE EXHAUSTED*') 'agent-playtest.ps1 must render a PATIENCE EXHAUSTED lead banner'
+Check ($agentPlaytestRawText -like '*-not $isMonkey*') 'agent-playtest.ps1 must gate something on -not $isMonkey (the temperament meter, the GPU gate, and the act-prompt build all depend on this)'
+
+# --- 15. Persona front-matter amendment (W4, joins table): "persona files have NO front-matter
+# today" -- verified mechanically here, not just asserted in a comment -----------------------------
+foreach ($existingPersonaFile in @('first-timer', 'veteran', 'speedrunner', 'completionist')) {
+    $rawPersonaText = Get-Content (Join-Path $personasDir ($existingPersonaFile + '.md')) -Raw
+    Check ($rawPersonaText.TrimStart() -notlike '---*') ($existingPersonaFile + '.md must have NO front-matter today (the join-table''s own precondition)')
+    $splitResult = Split-PersonaFrontMatter -RawText $rawPersonaText
+    Check ($splitResult.PatienceMultiplier -eq 1.0) ($existingPersonaFile + '.md with no front-matter must default PatienceMultiplier to 1.0 (no scaling)')
+    Check ($splitResult.Body -eq $rawPersonaText.Trim()) ($existingPersonaFile + '.md with no front-matter must pass its whole text through as Body, unchanged')
+    $multiplierViaHelper = Get-PersonaPatienceMultiplier -PersonaName $existingPersonaFile -PersonasDir $personasDir
+    Check ($multiplierViaHelper -eq 1.0) ($existingPersonaFile + ' must resolve to a 1.0 patience multiplier via Get-PersonaPatienceMultiplier')
+}
+
+# A valid front-matter block: PatienceMultiplier parses, and the block is stripped from Body before
+# it could ever reach the model.
+$validFrontMatterText = "---`r`nPatienceMultiplier: 1.5`r`n---`r`n## Who you are`r`n`r`nSome persona text."
+$validSplit = Split-PersonaFrontMatter -RawText $validFrontMatterText
+Check ($validSplit.PatienceMultiplier -eq 1.5) ('a valid PatienceMultiplier front-matter value must parse, got ' + $validSplit.PatienceMultiplier)
+Check ($validSplit.Body -notlike '*PatienceMultiplier*') 'the front-matter block must be stripped from Body -- it must never reach the model'
+Check ($validSplit.Body -like '*Who you are*') 'the real persona text after the front-matter block must survive in Body'
+
+# THE required proof: an unknown front-matter key fails loudly.
+$unknownKeyText = "---`r`nSomeMadeUpKey: 3`r`n---`r`n## Who you are"
+$unknownKeyThrew = $false
+$unknownKeyMessage = ''
+try { Split-PersonaFrontMatter -RawText $unknownKeyText | Out-Null } catch { $unknownKeyThrew = $true; $unknownKeyMessage = $_.Exception.Message }
+Check ($unknownKeyThrew -eq $true) 'an unrecognized persona front-matter key must throw, not silently do nothing'
+Check ($unknownKeyMessage -like '*unknown persona front-matter key*') ('the thrown message must say "unknown persona front-matter key", got [' + $unknownKeyMessage + ']')
+
+# A non-numeric PatienceMultiplier value must also fail loudly, not silently coerce to something odd.
+$badNumberText = "---`r`nPatienceMultiplier: not-a-number`r`n---`r`n## Who you are"
+$badNumberThrew = $false
+try { Split-PersonaFrontMatter -RawText $badNumberText | Out-Null } catch { $badNumberThrew = $true }
+Check ($badNumberThrew -eq $true) 'a non-numeric PatienceMultiplier must throw, not silently default'
+
+# --- 16. Monkey persona (W4, ruling 9): model-free, seeded uniform-random ------------------------
+. (Join-Path $toolsDir 'agent-playtest\monkey.ps1')
+
+$monkeyStateTwoEnabledOneDisabled = [pscustomobject]@{
+    canMove = $true
+    controls = @(
+        [pscustomobject]@{ name = 'OpenShop'; enabled = $true }
+        [pscustomobject]@{ name = 'OpenForge'; enabled = $true }
+        [pscustomobject]@{ name = 'ClosedThing'; enabled = $false }
+    )
+}
+$monkeyCandidates = Get-MonkeyCandidates -State $monkeyStateTwoEnabledOneDisabled
+# 2 enabled presses + 8 move directions + 1 advance = 11.
+Check ($monkeyCandidates.Count -eq 11) ('2 enabled + 8 moves + advance must be 11 candidates, got ' + $monkeyCandidates.Count)
+$pressTargets = @($monkeyCandidates | Where-Object { $_.Action -eq 'press' } | ForEach-Object { $_.Target })
+Check (($pressTargets -join ',') -eq 'OpenShop,OpenForge') ('only the two ENABLED controls may be press candidates, got [' + ($pressTargets -join ',') + ']')
+Check ($pressTargets -notcontains 'ClosedThing') 'a disabled control must never be a monkey candidate'
+Check (@($monkeyCandidates | Where-Object { $_.Action -eq 'advance' }).Count -eq 1) 'advance must always be exactly one candidate'
+Check (@($monkeyCandidates | Where-Object { $_.Action -eq 'key' }).Count -eq 0) 'monkey must never consider "key" -- the plan''s own candidate set is enabled controls + legal moves + advance only'
+Check (@($monkeyCandidates | Where-Object { $_.Action -eq 'stop' }).Count -eq 0) 'monkey must never consider "stop" -- ruling 9, it runs to budget regardless'
+
+$monkeyStateCannotMove = [pscustomobject]@{ canMove = $false; controls = @([pscustomobject]@{ name = 'OpenShop'; enabled = $true }) }
+$monkeyCandidatesNoMove = Get-MonkeyCandidates -State $monkeyStateCannotMove
+Check ($monkeyCandidatesNoMove.Count -eq 2) ('canMove=false must drop all 8 move candidates (1 press + 1 advance = 2), got ' + $monkeyCandidatesNoMove.Count)
+
+$monkeyStateNothingLegal = [pscustomobject]@{ canMove = $false; controls = @() }
+$monkeyCandidatesNothing = Get-MonkeyCandidates -State $monkeyStateNothingLegal
+Check ($monkeyCandidatesNothing.Count -eq 1) 'zero enabled controls and canMove=false must still leave exactly 1 candidate (advance) -- never an empty set'
+Check ($monkeyCandidatesNothing[0].Action -eq 'advance') 'the one guaranteed candidate must be advance'
+
+# THE required proof: same seed against the same state sequence produces a BYTE-IDENTICAL command
+# sequence -- reproducibility of the COMMAND STREAM, never a sim-determinism claim (monkey.ps1's own
+# header says so at length).
+$monkeyStubStates = @(
+    [pscustomobject]@{ canMove = $true; controls = @([pscustomobject]@{ name = 'A'; enabled = $true }, [pscustomobject]@{ name = 'B'; enabled = $false }) }
+    [pscustomobject]@{ canMove = $false; controls = @([pscustomobject]@{ name = 'A'; enabled = $true }, [pscustomobject]@{ name = 'B'; enabled = $true }) }
+    [pscustomobject]@{ canMove = $true; controls = @() }
+    [pscustomobject]@{ canMove = $true; controls = @([pscustomobject]@{ name = 'C'; enabled = $true }) }
+    [pscustomobject]@{ canMove = $false; controls = @() }
+)
+$monkeyRandomOne = New-Object System.Random(7)
+$monkeyRandomTwo = New-Object System.Random(7)
+$monkeySequenceOne = @($monkeyStubStates | ForEach-Object { Get-MonkeyCommand -State $_ -Random $monkeyRandomOne })
+$monkeySequenceTwo = @($monkeyStubStates | ForEach-Object { Get-MonkeyCommand -State $_ -Random $monkeyRandomTwo })
+Check ($monkeySequenceOne.Count -eq $monkeyStubStates.Count) 'sanity: one command must be produced per stubbed state'
+$monkeySequencesMatch = $true
+for ($i = 0; $i -lt $monkeySequenceOne.Count; $i++) {
+    if ($monkeySequenceOne[$i] -ne $monkeySequenceTwo[$i]) { $monkeySequencesMatch = $false }
+}
+Check ($monkeySequencesMatch -eq $true) ('same seed (7) over the same state sequence must produce a byte-identical command sequence. Seq1: [' + ($monkeySequenceOne -join ' | ') + '] Seq2: [' + ($monkeySequenceTwo -join ' | ') + ']')
+
+# Every produced command must itself be legal JSON with a recognized action -- Get-MonkeyCommand's
+# own output feeds straight into command.json with no Get-LegalCommandFromReply re-check.
+foreach ($cmdText in $monkeySequenceOne) {
+    $parsedMonkeyCmd = $null
+    try { $parsedMonkeyCmd = $cmdText | ConvertFrom-Json } catch { }
+    Check ($null -ne $parsedMonkeyCmd) ('every monkey command must parse as JSON, got [' + $cmdText + ']')
+    if ($parsedMonkeyCmd) {
+        Check (@('press', 'move', 'advance') -contains $parsedMonkeyCmd.action) ('a monkey command''s action must be press/move/advance only, got [' + $parsedMonkeyCmd.action + ']')
+    }
+}
+
+# Driver wiring: monkey must be reachable, and the GPU gate / act-prompt assembly must be SKIPPED
+# for it -- proven by checking the guarding conditional actually mentions isMonkey right next to the
+# gate, not just that the string "isMonkey" appears somewhere in the file.
+Check ($agentPlaytestRawText -like '*Get-MonkeyCommand*') 'agent-playtest.ps1 must call Get-MonkeyCommand'
+Check ($agentPlaytestRawText -like '*monkey.ps1*') 'agent-playtest.ps1 must dot-source monkey.ps1'
+Check ($agentPlaytestRawText -like '*FrameEvery = 25*') 'agent-playtest.ps1 must default -FrameEvery to 25 for monkey (ruling 4)'
+
+$gpuGateBlockMatch = [regex]::Match($agentPlaytestRawText, '(?s)GPU gate:.*?nvidia-smi')
+Check ($gpuGateBlockMatch.Success -eq $true) 'sanity: the GPU gate comment block followed by an nvidia-smi call must exist'
+if ($gpuGateBlockMatch.Success) {
+    Check ($gpuGateBlockMatch.Value -like '*isMonkey*') 'the nvidia-smi GPU gate''s own guarding conditional must reference isMonkey -- monkey must skip the gate entirely, not just the model warm-up at the bottom of it'
+}
+Check ($agentPlaytestRawText -like '*skipping act-prompt*schema*judge-prompt assembly entirely*') 'agent-playtest.ps1 must have a dedicated monkey branch that skips act-prompt/schema/judge-prompt assembly outright, never building one just to ignore it'
+$actPromptBlockMatch = [regex]::Match($agentPlaytestRawText, '(?s)\$actionSchemaJson = ''''\r?\nif \(\$isMonkey\) \{.*?\} elseif \(-not \$Scripted\) \{.*?Build-PersonaActPrompt')
+Check ($actPromptBlockMatch.Success -eq $true) 'the act-prompt assembly block must be structurally gated by "if ($isMonkey) {...} elseif (-not $Scripted) {...Build-PersonaActPrompt...}", not merely mention isMonkey somewhere earlier in the file'
+
+# --- 17. Attached persona (W4): hero tracking, death detection, and reusing metrics.ps1's own
+# product-sentence matcher rather than duplicating it -----------------------------------------------
+. (Join-Path $toolsDir 'agent-playtest\metrics.ps1')
+. (Join-Path $toolsDir 'agent-playtest\attached.ps1')
+
+Check ((Get-AttachedHeroNameFromNote -Note '  Torvald  ') -eq 'Torvald') 'a hero name must be trimmed of surrounding whitespace'
+Check ($null -eq (Get-AttachedHeroNameFromNote -Note '')) 'an empty note must never be treated as a hero name'
+Check ($null -eq (Get-AttachedHeroNameFromNote -Note '   ')) 'a whitespace-only note must never be treated as a hero name'
+Check ($null -eq (Get-AttachedHeroNameFromNote -Note $null)) 'a missing note must never be treated as a hero name'
+
+# THE required proof: fires on a fixture screenText that names the hero next to death vocabulary,
+# and NOT otherwise (name alone, death words alone for a different hero, or no name at all).
+$deathScreenText = @('The town square is quiet.', 'Torvald fell on floor 3 of the mine.')
+Check ((Test-ScreenTextForHeroDeath -HeroName 'Torvald' -ScreenTextLines $deathScreenText) -eq $true) 'the hero''s name next to death vocabulary on the same line must fire'
+
+$nameOnlyScreenText = @('Torvald bought a sword from the shelf.')
+Check ((Test-ScreenTextForHeroDeath -HeroName 'Torvald' -ScreenTextLines $nameOnlyScreenText) -eq $false) 'the hero''s name WITHOUT death vocabulary must never fire'
+
+$differentHeroDeathScreenText = @('Emberbite fell on floor 2.')
+Check ((Test-ScreenTextForHeroDeath -HeroName 'Torvald' -ScreenTextLines $differentHeroDeathScreenText) -eq $false) 'death vocabulary next to a DIFFERENT hero''s name must never fire'
+
+Check ((Test-ScreenTextForHeroDeath -HeroName '' -ScreenTextLines $deathScreenText) -eq $false) 'a blank/unset hero name must never fire, however the screen reads'
+Check ((Test-ScreenTextForHeroDeath -HeroName 'Torvald' -ScreenTextLines @()) -eq $false) 'empty screenText must never fire'
+Check ((Test-ScreenTextForHeroDeath -HeroName 'Torvald' -ScreenTextLines $null) -eq $false) 'null screenText must never throw or fire'
+
+# Reuses metrics.ps1's OWN pattern -- proven by a positive AND a negative match, not just "it did not
+# throw" (a silently-always-false stub would pass a throw-only check).
+$attributionHitText = @('Legend: Emberbite''s MakersMark blade turned the killing blow on floor 3. Torvald lives.')
+Check ((Test-ScreenTextForAttribution -ScreenTextLines $attributionHitText) -eq $true) 'an attribution-shaped line must be detected via the shared pattern'
+$noAttributionText = @('gold 100', 'welcome to the shop')
+Check ((Test-ScreenTextForAttribution -ScreenTextLines $noAttributionText) -eq $false) 'ordinary lines with no attribution-shaped language must not fire'
+
+# attached.md itself: a real persona file, unlike monkey -- and it must know NOTHING about the
+# vigil-specific vocabulary (it is a minimally-informed persona, same spirit as first-timer/
+# speedrunner), reusing the SAME glossary denylist section 10 already built.
+$attachedPersonaPath = Join-Path $personasDir 'attached.md'
+Check (Test-Path $attachedPersonaPath) 'prompts/personas/attached.md must exist'
+$attachedPrompt = Build-PersonaActPrompt -ActProtocolText $actProtocolText -PersonaName 'attached' -PersonasDir $personasDir
+Check ($attachedPrompt -notlike '*{{PERSONA}}*') 'the assembled attached prompt must not still contain the {{PERSONA}} marker'
+Check ($attachedPrompt -like '*hero*') 'the assembled attached prompt must carry its own hero-tracking goal text'
+$attachedHits = Test-TextForGameNouns -Text $attachedPrompt -Denylist $gameNounDenylist -Allowlist $script:GameNounAllowlist
+Check ($attachedHits -notcontains 'Vigil') 'attached must not know the vigil by name -- it is deliberately minimally informed, same spirit as first-timer/speedrunner'
+
+# Driver wiring: the death check, the injected line, the major patience hit, and the honesty
+# footer's own attached-specific disclosure must all be reachable from agent-playtest.ps1.
+Check ($agentPlaytestRawText -like '*Test-ScreenTextForHeroDeath*') 'agent-playtest.ps1 must call Test-ScreenTextForHeroDeath'
+Check ($agentPlaytestRawText -like '*Get-AttachedHeroNameFromNote*') 'agent-playtest.ps1 must call Get-AttachedHeroNameFromNote'
+Check ($agentPlaytestRawText -like '*Test-ScreenTextForAttribution*') 'agent-playtest.ps1 must call Test-ScreenTextForAttribution'
+Check ($agentPlaytestRawText -like '*attached-death*') 'agent-playtest.ps1 must drain the meter with the attached-death cause'
+Check ($agentPlaytestRawText -like '*PatienceDrainAttachedDeath*') 'agent-playtest.ps1 must apply the major attached-death patience hit'
+Check ($agentPlaytestRawText -like '*attachedHeroName + '' is dead.''*') 'agent-playtest.ps1 must inject the "<name> is dead." line'
+Check ($agentPlaytestRawText -like '*Get-HonestyFooterLines -ExtraLines*') 'agent-playtest.ps1 must pass -ExtraLines to Get-HonestyFooterLines (the attached-specific honesty disclosure)'
+Check ($agentPlaytestRawText -like '*INJECTED by the harness*') 'the honesty footer''s attached disclosure must say the attachment was INJECTED, never formed by the model'
+
+# footer.ps1 itself: -ExtraLines must be backward-compatible (every existing caller with no args
+# still gets the identical static footer) AND must actually append when given lines.
+$footerNoExtra = Get-HonestyFooterLines
+$footerWithExtra = Get-HonestyFooterLines -ExtraLines @('- an extra attached-only line')
+Check (($footerNoExtra -join [Environment]::NewLine) -notlike '*extra attached-only line*') 'calling Get-HonestyFooterLines with no -ExtraLines must produce the ORIGINAL static footer, unchanged'
+Check (($footerWithExtra -join [Environment]::NewLine) -like '*extra attached-only line*') '-ExtraLines must actually be appended when supplied'
+
+# --- 18. Scratchpad wipe-at-start (W4, ruling 2) --------------------------------------------------
+# notes.md must be in the SAME stale-artifact sweep every other run-scoped file already goes through
+# -- proven by checking $notesPath sits inside that exact foreach's own @(...) list, not merely that
+# the string "notesPath" appears somewhere in the file.
+$staleArrayMatch = [regex]::Match($agentPlaytestRawText, '(?s)foreach \(\$stale in @\((.*?)\)\)')
+Check ($staleArrayMatch.Success -eq $true) 'sanity: the stale-artifact cleanup foreach must exist'
+if ($staleArrayMatch.Success) {
+    Check ($staleArrayMatch.Groups[1].Value -like '*notesPath*') 'notes.md''s path variable must be included in the stale-artifact wipe-at-start sweep'
+}
+Check ($agentPlaytestRawText -like "*'notes.md'*") 'agent-playtest.ps1 must define a notes.md path'
+Check ($agentPlaytestRawText -like '*notesLines.Add*') 'agent-playtest.ps1 must accumulate notes into an in-memory list'
+Check ($agentPlaytestRawText -like '*Add-Content -Path $notesPath*') 'agent-playtest.ps1 must append each note to notes.md on disk as it arrives'
+Check ($agentPlaytestRawText -notlike '*RecentHistory*') 'agent-playtest.ps1 must not reference the old -RecentHistory parameter anywhere -- it was REPLACED, not extended'
+
+# --- 19. Judge demoted to two pointers (W4, deferred from W2) -------------------------------------
+$judgeMdText = Get-Content (Join-Path $toolsDir 'agent-playtest\prompts\judge.md') -Raw
+$scoutJudgeMdText = Get-Content (Join-Path $toolsDir 'agent-playtest\prompts\scout-judge.md') -Raw
+
+Check ($judgeMdText -like '*most wanted to keep playing*') 'judge.md must instruct the two-pointer closing format (keep-playing pointer)'
+Check ($judgeMdText -like '*most wanted to stop*') 'judge.md must instruct the two-pointer closing format (stop pointer)'
+Check ($judgeMdText -like '*exactly two quoted pointers*') 'judge.md must say the closing pointers are exactly two and quoted'
+
+Check ($scoutJudgeMdText -like '*most wanted to keep playing*') 'scout-judge.md must ALSO instruct the two-pointer closing format (keep-playing pointer)'
+Check ($scoutJudgeMdText -like '*most wanted to stop*') 'scout-judge.md must ALSO instruct the two-pointer closing format (stop pointer)'
+# scout-judge.md must KEEP its own evidence questions -- the brief's own "keeps its evidence
+# questions but gains" wording -- proven by checking its pre-existing headings survived this edit.
+Check ($scoutJudgeMdText -like '*Decision that mattered*') 'scout-judge.md must keep its own "Decision that mattered" evidence question'
+Check ($scoutJudgeMdText -like '*Named my work*') 'scout-judge.md must keep its own "Named my work" evidence question'
+Check ($scoutJudgeMdText -like '*Day-11 check*') 'scout-judge.md must keep its own day-11 evidence question'
 
 # --- Summary -----------------------------------------------------------------------------------
 if ($failures.Count -gt 0) {
