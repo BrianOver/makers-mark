@@ -51,7 +51,12 @@ jobs:
       # Deliberately generous rather than exact, so adding or deleting tests needs no upkeep here.
       # They only have to sit far above the catastrophic mode they exist to catch: a failed Godot
       # rebuild silently drops every [RequireGodotRuntime] test and reports a green ~54.
-      ENGINE_MIN_PASSED: 300   # full suite runs 450+; a silent skip reports ~54
+      # Raised 300 -> 900 on 2026-08-10 (owner-assigned): the suite runs 1030+ now, and the floor's
+      # job is not only the catastrophic ~54 silent skip — gdUnit has been measured truncating
+      # MID-RUN (68 of 504 once; 533 of ~800 once), and a 300 floor waves those through. 900 keeps
+      # ~13% headroom for legitimate test deletion; a wave that removes more than that updates this
+      # number in the same PR, with the new suite size named here.
+      ENGINE_MIN_PASSED: 900   # full suite runs 1030+; a silent skip reports ~54; mid-run truncation lands between
       GUARD_MIN_PASSED: 20     # the MainUiTests subset runs ~30
     steps:
       # LFS on the engine lane ONLY (it renders the PNGs). Checkout skips auto-download so the
@@ -103,6 +108,23 @@ jobs:
           # instead of letting the script die on the first nonzero return.
           set +e
           export GODOT_BIN=$(which godot)
+
+          # --settings .runsettings is DELIBERATELY NOT PASSED HERE, and this is the second,
+          # informed version of that decision -- the first was an accident this PR set out to fix.
+          # Both failure modes below were measured on this PR's own runs (2026-08-10):
+          #   1. Passed verbatim, the file's Windows GODOT_BIN OVERRIDES the env var exported
+          #      above (RunConfiguration EnvironmentVariables win inside the test host, the
+          #      opposite of what .runsettings' header used to claim) -- gdUnit hunted for
+          #      C:\Tools\...exe on Linux and discovered zero tests.
+          #   2. With the real Linux path sed'd into the file, dotnet test printed "Test run
+          #      for ...dll" and then died SILENTLY in ~3s -- no discovery error, no summary,
+          #      exit 1, twice. Same GODOT_BIN value works via plain env on every green run,
+          #      so the settings file itself trips the Linux adapter somewhere not yet isolated.
+          # The thing --settings was meant to deliver (CompileProcessTimeout, guarding the
+          # rebuild-timeout green-54 lie) is already covered downstream by ENGINE_MIN_PASSED:
+          # a green 54 cannot clear a 900 floor. Local runs keep using the file, where it works.
+          # If someone re-attempts this, do it in a PR whose only change is the --settings flag,
+          # and expect to bisect the file section by section.
 
           run_engine_tests() {
             # PIPESTATUS[0] = dotnet test's own exit code, not tee's (tee itself always
@@ -164,6 +186,9 @@ jobs:
           # so `set +e` to inspect the exit code ourselves.
           set +e
           export GODOT_BIN=$(which godot)
+          # No --settings here either -- see the main engine step's note for the two measured
+          # failure modes. This guard's own floor (GUARD_MIN_PASSED + TreatNoTestsAsError)
+          # covers the green-54 lie the settings file would have guarded against.
           xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj \
             --filter "FullyQualifiedName~MainUiTests" \
             -- RunConfiguration.TreatNoTestsAsError=true 2>&1 | tee guard.log
