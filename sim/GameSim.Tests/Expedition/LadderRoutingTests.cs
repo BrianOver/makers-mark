@@ -13,9 +13,11 @@ namespace GameSim.Tests.Expedition;
 /// full Morning+Expedition pipeline (<c>MusterSystem</c>/<c>MusterPlan.Compute</c> and
 /// <c>ExpeditionSystem.Process</c>) — not just the pure <see cref="GameSim.Tests.Venues.VenueRouterTests"/>
 /// comparator suite. Every test here shrinks the starting six to exactly the three lowest-id heroes
-/// (kills 4-6) so <c>PartyFormation</c> forms exactly ONE party, and equips every survivor with
-/// strong gear so combat rolls never introduce death-driven flakiness — the point of these tests is
-/// the ROUTING decision, not combat outcome.
+/// (kills 4-6) and equips every survivor with strong gear so combat rolls never introduce
+/// death-driven flakiness — the point of these tests is the ROUTING decision, not combat outcome.
+/// Uniform-rank trios form exactly ONE party (<c>PartyFormation</c>'s pre-L2 shape); a MIXED-rank
+/// trio is the one deliberate exception (<see cref="MixedRankTrio_CohortFormation_SplitsIntoTwoPartiesRoutedByTheirOwnRank"/>) —
+/// L2's cohort formation splits it into two rank-uniform parties before either ever reaches routing.
 /// </summary>
 public class LadderRoutingTests
 {
@@ -25,10 +27,17 @@ public class LadderRoutingTests
 
     /// <summary>A campaign with exactly heroes 1-3 alive, each hand-set to <paramref name="ranks"/>
     /// (one entry per hero, id order) and equipped with gear strong enough that they never lose a
-    /// fight — isolating the routing decision from combat variance.</summary>
+    /// fight — isolating the routing decision from combat variance. The recruit gate is pushed out
+    /// far past any test's loop bound so <c>RecruitSystem</c> never mints a same-morning 7th hero
+    /// (its default is 0 — see <c>DramaState.Empty</c> — which fires the very first Morning while
+    /// alive is short of six): pre-L2, a stray recruit's high id always sorted into the LEFTOVER slot
+    /// harmlessly; post-L2, a rank-0 recruit could join a rank-0 SOLO party's cohort and silently
+    /// turn it into a pair, which is exactly the kind of incidental interference this helper's own
+    /// "exactly heroes 1-3 alive" contract already promised not to allow.</summary>
     private static GameState ThreeHeroParty(params int[] ranks)
     {
         var state = GameComposition.NewCampaign(seed: 4747);
+        state = state with { Drama = state.Drama with { DaysUntilNextRecruit = 1000 } };
 
         foreach (var deadId in new[] { 4, 5, 6 })
         {
@@ -99,17 +108,43 @@ public class LadderRoutingTests
     }
 
     [Fact]
-    public void MixedRankParty_InterimMinRule_RoutesByTheLowestMember()
+    public void MixedRankTrio_CohortFormation_SplitsIntoTwoPartiesRoutedByTheirOwnRank()
     {
-        // Interim rule (L1; L2's cohort formation supersedes it — see VenueRouter.ChooseVenue's own
-        // doc comment): party rank = MIN of members, so a party with even one rank-0 member never
-        // marches into a rung she hasn't earned.
+        // L2 (cohort formation) supersedes L1's interim MIN-of-members rule: PartyFormation now
+        // groups alive heroes by LadderRank BEFORE a party is ever formed (see PartyFormation's own
+        // doc comment), so a rank-0 hero and two rank-1 heroes can no longer share a single party —
+        // MIN dragging a veteran back to the Mine because a recruit shares her roster is exactly the
+        // failure L2 exists to close. What used to be ONE mixed-rank party of three (this test's old
+        // premise, MIN(0,1,1)=0) is now TWO rank-uniform parties, each routed by its own cohort.
         var state = ThreeHeroParty(0, 1, 1);
         var kernel = GameComposition.BuildKernel();
 
-        var venueId = TickMorningAndExpedition_AssertByteMatch(ref state, kernel);
+        var morning = kernel.Tick(state, ImmutableList<PlayerAction>.Empty);
+        state = morning.NewState;
+        var predicted = Assert.Single(morning.Events.OfType<PartiesFormed>());
+        Assert.Equal(2, predicted.Parties.Count);
 
-        Assert.True(venueId is "mine" or "sunken-crypt", $"MIN(0,1,1)=0 should stay at the starter tier, got '{venueId}'");
+        var rank0Plan = Assert.Single(predicted.Parties, p => p.Roster.Contains(new HeroId(1)));
+        Assert.Equal(new HeroId(1), Assert.Single(rank0Plan.Roster));
+        Assert.True(rank0Plan.VenueId is "mine" or "sunken-crypt", $"expected a rank-0 starter venue, got '{rank0Plan.VenueId}'");
+
+        var rank1Plan = Assert.Single(predicted.Parties, p => p.Roster.Contains(new HeroId(2)));
+        Assert.Equal(new[] { 2, 3 }, rank1Plan.Roster.Select(id => id.Value).OrderBy(v => v));
+        Assert.Equal("gloomwood", rank1Plan.VenueId);
+
+        var expedition = kernel.Tick(state, ImmutableList<PlayerAction>.Empty);
+        state = expedition.NewState;
+
+        string ActualVenueFor(ImmutableList<HeroId> roster) => state.PendingExpeditions
+            .Where(r => r.Party.SequenceEqual(roster))
+            .Select(r => r.VenueId)
+            .Concat(state.InFlight.Where(f => f.Party.SequenceEqual(roster)).Select(f => f.VenueId))
+            .Single();
+
+        // MusterPlan/ExpeditionSystem symmetry, pinned per party (the byte-match property this
+        // whole file exercises — TickMorningAndExpedition_AssertByteMatch's single-party version).
+        Assert.Equal(rank0Plan.VenueId, ActualVenueFor(rank0Plan.Roster));
+        Assert.Equal(rank1Plan.VenueId, ActualVenueFor(rank1Plan.Roster));
     }
 
     [Fact]
@@ -124,9 +159,10 @@ public class LadderRoutingTests
 
         for (var day = 0; day < 5; day++)
         {
-            // The recruit trickle adds new heroes on its own schedule — kill off anyone beyond the
-            // three under test each morning so PartyFormation keeps forming exactly ONE party across
-            // the whole run (this test's ONLY interest is that one party's routing, day over day).
+            // Belt-and-suspenders: ThreeHeroParty already pushes the recruit gate out past this
+            // loop's bound, but kill off anyone beyond the three under test each morning anyway so
+            // PartyFormation keeps forming exactly ONE party across the whole run even if that
+            // changes (this test's ONLY interest is that one party's routing, day over day).
             foreach (var id in state.Heroes.Keys.Where(id => id > 3))
             {
                 state = state with { Heroes = state.Heroes.SetItem(id, state.Heroes[id] with { Alive = false }) };
@@ -146,6 +182,40 @@ public class LadderRoutingTests
             state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState; // Camp
             state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState; // ExpeditionDeep
         }
+    }
+
+    [Fact]
+    public void SixHeroMixedRankRoster_CohortsIntoThreeParties_EachRoutedByItsOwnRank()
+    {
+        // The plan's own worked example (ranks {0,0,0,1,1,2} across the full starting six): the
+        // rank-0 trio (Torvald/Brunhilde/Kael), the rank-1 pair (Sable/Elowen), and the solo rank-2
+        // veteran (Moss) form THREE parties, none mixed, each routed by its own cohort's rank.
+        var state = GameComposition.NewCampaign(seed: 4747);
+        var ranks = new Dictionary<int, int> { [1] = 0, [2] = 0, [3] = 0, [4] = 1, [5] = 1, [6] = 2 };
+        foreach (var (id, rank) in ranks)
+        {
+            state = state with { Heroes = state.Heroes.SetItem(id, state.Heroes[id] with { LadderRank = rank }) };
+        }
+
+        var kernel = GameComposition.BuildKernel();
+        var morning = kernel.Tick(state, ImmutableList<PlayerAction>.Empty);
+        var predicted = Assert.Single(morning.Events.OfType<PartiesFormed>());
+
+        Assert.Equal(3, predicted.Parties.Count);
+
+        var rank0Plan = Assert.Single(predicted.Parties, p => p.Roster.Contains(new HeroId(1)));
+        Assert.Equal(new[] { 1, 2, 3 }, rank0Plan.Roster.Select(id => id.Value).OrderBy(v => v));
+        Assert.True(rank0Plan.VenueId is "mine" or "sunken-crypt", $"expected a rank-0 starter venue, got '{rank0Plan.VenueId}'");
+
+        var rank1Plan = Assert.Single(predicted.Parties, p => p.Roster.Contains(new HeroId(4)));
+        Assert.Equal(new[] { 4, 5 }, rank1Plan.Roster.Select(id => id.Value).OrderBy(v => v));
+        Assert.Equal("gloomwood", rank1Plan.VenueId);
+
+        var rank2Plan = Assert.Single(predicted.Parties, p => p.Roster.Contains(new HeroId(6)));
+        Assert.Equal(new HeroId(6), Assert.Single(rank2Plan.Roster));
+        // No live rank-2 venue (Emberfall dormant) — the frontier rule falls back to the highest
+        // ELIGIBLE live rung, same as RankTwoParty_WithNoLiveRankTwoVenue_FallsBackToGloomwood above.
+        Assert.Equal("gloomwood", rank2Plan.VenueId);
     }
 
     [Fact]

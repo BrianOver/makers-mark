@@ -10,6 +10,21 @@ namespace GameSim.Heroes;
 /// <see cref="ClassDefinition.IsAnchor"/>) when one is available; leftover heroes form one
 /// smaller party (even solo). Dead heroes never party. Pure function of the roster — no RNG,
 /// HeroId order throughout.
+///
+/// <para><b>Cohort by rank FIRST (forward ladder L2, plan 2026-08-10-003).</b> The recruit
+/// trickle guarantees mixed-<see cref="Hero.LadderRank"/> rosters, so no single party-rank rule
+/// can be correct: MAX-of-members would march a fresh rank-0 recruit into a veteran-scaled
+/// rung she hasn't earned; MIN-of-members (the interim rule <see cref="GameSim.Venues.VenueRouter"/>
+/// used before this landed) would drag a graduated veteran back to the Mine the moment ANY
+/// recruit shares her party. The fix groups alive heroes by <see cref="Hero.LadderRank"/> BEFORE
+/// applying the anchor/id rules above, running them independently within each cohort (ascending
+/// rank order — deterministic, and inconsequential to routing since every caller shares one
+/// <c>queueCounts</c> dictionary across cohorts regardless of visiting order). A cohort's own
+/// leftovers form their own smaller party — a solo veteran run into the deep venue is honest
+/// drama, not a bug. The postcondition every routing caller now relies on: every formed party's
+/// members share exactly one <see cref="Hero.LadderRank"/>, so the old MIN-of-members routing
+/// rule (<see cref="GameSim.Expedition.ExpeditionSystem.Process"/>, <see cref="MusterPlan.Compute"/>)
+/// becomes exact rather than interim — MIN over a single-valued set is that value.</para>
 /// </summary>
 public static class PartyFormation
 {
@@ -20,12 +35,28 @@ public static class PartyFormation
         // Values of a sorted dictionary enumerate in key (HeroId.Value) order.
         var alive = heroes.Values.Where(h => h.Alive).ToList();
 
-        // Two id-ordered queues: anchor-class heroes first, everyone else as fillers.
-        var anchors = new Queue<HeroId>(alive.Where(IsAnchor).Select(h => h.Id));
-        var others = new Queue<HeroId>(alive.Where(h => !IsAnchor(h)).Select(h => h.Id));
-
         var parties = ImmutableList.CreateBuilder<ImmutableList<HeroId>>();
-        var fullParties = alive.Count / 3;
+
+        // Cohort by rank first (see class doc): each cohort runs the existing anchor/id-order
+        // rules in total isolation from every other cohort's members.
+        foreach (var cohort in alive.GroupBy(h => h.LadderRank).OrderBy(g => g.Key))
+        {
+            FormPartiesWithinCohort(cohort.ToList(), parties);
+        }
+
+        return parties.ToImmutable();
+    }
+
+    /// <summary>The pre-L2 grouping rules (anchor preference, id-order fill, smaller leftover
+    /// party), now scoped to a single already-rank-uniform cohort instead of the whole roster.
+    /// Appends every party this cohort forms onto the shared <paramref name="parties"/> builder.</summary>
+    private static void FormPartiesWithinCohort(List<Hero> cohort, ImmutableList<ImmutableList<HeroId>>.Builder parties)
+    {
+        // Two id-ordered queues: anchor-class heroes first, everyone else as fillers.
+        var anchors = new Queue<HeroId>(cohort.Where(IsAnchor).Select(h => h.Id));
+        var others = new Queue<HeroId>(cohort.Where(h => !IsAnchor(h)).Select(h => h.Id));
+
+        var fullParties = cohort.Count / 3;
 
         for (var p = 0; p < fullParties; p++)
         {
@@ -50,7 +81,7 @@ public static class PartyFormation
             parties.Add(party.ToImmutableList());
         }
 
-        if (alive.Count % 3 != 0)
+        if (cohort.Count % 3 != 0)
         {
             // Leftovers band together as one smaller party — even a solo run.
             var leftovers = anchors.Concat(others)
@@ -58,8 +89,6 @@ public static class PartyFormation
                 .ToImmutableList();
             parties.Add(leftovers);
         }
-
-        return parties.ToImmutable();
     }
 
     /// <summary>
