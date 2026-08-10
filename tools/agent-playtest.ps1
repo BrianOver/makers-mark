@@ -22,13 +22,32 @@
     Max model turns. Each turn is one observation + one action.
 
 .PARAMETER Model
-    ollama model tag. Default llava:7b.
+    ollama act-model tag. Default qwen3-vl:8b (W1, docs/plans/2026-08-10-002): llava:7b's OCRBench
+    score (~33%) confounds every downstream finding that depends on the model actually reading the
+    screen -- a "the model got stuck" report and "the model could not read the button label" report
+    look identical in the turn log if the model cannot see text at all. qwen3-vl:8b passed the
+    three-frame token-overlap smoke gate that plan's W1 requires before this default could change;
+    see that run's own quoted transcriptions for the evidence. llava:7b is still reachable with
+    -Model llava:7b (ruling 5's quarantine: if a future model change ever fails the gate, drop back
+    to it and file the finding, never force a bad default through silently).
 
     NOT llama3.2-vision:11b, even though it is pulled and bigger. This ollama build cannot load it:
         {"error":"llama-server process has terminated: exit status 1:
                   error loading model: unknown model architecture: 'mllama'"}
     Measured 2026-08-04. Being PULLED is not being LOADABLE -- which is why the gate below warms the
     model with a real one-token request instead of only checking /api/tags.
+
+.PARAMETER JudgeModel
+    ollama model tag for the END-OF-RUN judge pass only. Default qwen3:14b -- a dedicated text model,
+    deliberately NOT the vision model that just played: VLM fine-tuning measurably degrades a model's
+    text-only quality (NVLM), and the judge never sees an image (see the judge-pass comment below),
+    so there is no reason to pay that tax on the pass that writes the actual findings prose.
+
+    qwen3-vl:8b (~6.1 GB) + qwen3:14b (~9.3 GB) sum to ~15.4 GB, over this project's 14 GB VRAM
+    ceiling if both stayed resident across the handoff (ruling 10, docs/plans/2026-08-10-002) -- so
+    this driver explicitly unloads $Model (ollama stop) before ever calling $JudgeModel, and logs
+    `ollama ps` on both sides of that unload rather than assuming ollama's own eviction would have
+    caught it in time.
 
 .PARAMETER Scripted
     Run a fixed command sequence instead of calling the model. Proves the channel without a model in
@@ -104,7 +123,8 @@
 [CmdletBinding()]
 param(
     [int]$Turns = 40,
-    [string]$Model = 'llava:7b',
+    [string]$Model = 'qwen3-vl:8b',
+    [string]$JudgeModel = 'qwen3:14b',
     [switch]$Scripted,
     [int]$MinFreeGb = 8,
     [int]$MaxTempC = 83,
@@ -133,6 +153,8 @@ param(
 . (Join-Path $PSScriptRoot 'agent-playtest\backend.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\coverage.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\personas.ps1')
+. (Join-Path $PSScriptRoot 'agent-playtest\model-call.ps1')
+. (Join-Path $PSScriptRoot 'agent-playtest\footer.ps1')
 
 $ErrorActionPreference = 'Stop'
 
@@ -169,30 +191,11 @@ try {
 }
 Say ('persona: ' + $personaName + ' (requested: ' + $Persona + ')')
 
-# JSON-escape a string by hand.
-#
-# DO NOT reintroduce ConvertTo-Json on the request path. Measured 2026-08-04: a 2.5 KB prompt file in
-# a nested hashtable serialized to a 46,614,552-character body, and ollama answered
-#     {"error":"invalid character 't' after object key:value pair"}
-# on every single call. Windows PowerShell 5.1's ConvertTo-Json wraps the string rather than emitting
-# it (`{"value":"..."}`) and the nesting blows up from there. The failure looked exactly like a broken
-# model -- three retries per turn, 22 turns, every one dead -- which is why this note is here instead
-# of a one-line fix nobody can explain later. ConvertFrom-Json is fine; only this direction is cursed.
-function JsonEsc([string]$s) {
-    if ($null -eq $s) { return '' }
-    $sb = New-Object System.Text.StringBuilder
-    foreach ($ch in $s.ToCharArray()) {
-        $code = [int]$ch
-        if ($ch -eq '"') { [void]$sb.Append('\"') }
-        elseif ($ch -eq '\') { [void]$sb.Append('\\') }
-        elseif ($ch -eq "`n") { [void]$sb.Append('\n') }
-        elseif ($ch -eq "`r") { [void]$sb.Append('\r') }
-        elseif ($ch -eq "`t") { [void]$sb.Append('\t') }
-        elseif ($code -lt 32 -or $code -gt 126) { [void]$sb.Append('\u' + $code.ToString('x4')) }
-        else { [void]$sb.Append($ch) }
-    }
-    return $sb.ToString()
-}
+# JsonEsc/Build-ModelRequestBody/Get-LegalCommandFromReply now live in agent-playtest\model-call.ps1
+# (W1, docs/plans/2026-08-10-002) so tools/test-agent-playtest-modes.ps1 can prove the request body and
+# the reply-legality check with hand-built strings -- no ollama/Godot/VRAM. See that file's own header
+# for the ConvertTo-Json ban this still honors and for why the old NORMALIZE block + regex JSON-extract
+# that used to live in this script's per-turn loop are gone rather than moved.
 
 # Named once, used twice: here in Invoke-Model's own HTTP call, and again below (worst case =
 # ModelCallMaxAttempts * ModelCallTimeoutSec) to size AGENT_PLAYTEST_TIMEOUT_MS, the env var this
@@ -205,12 +208,11 @@ function JsonEsc([string]$s) {
 $ModelCallTimeoutSec = 300
 $ModelCallMaxAttempts = 3
 
-function Invoke-Model($systemPrompt, $userText, $imagePath) {
-    $imagesJson = ''
+function Invoke-Model($systemPrompt, $userText, $imagePath, $modelOverride, $formatSchema) {
+    $imageB64 = $null
     if ($imagePath) {
         if (Test-Path $imagePath) {
-            $b64 = [System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes($imagePath))
-            $imagesJson = ',"images":["' + $b64 + '"]'
+            $imageB64 = [System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes($imagePath))
         } else {
             # A caller that passed a path meant to attach a frame. A missing frame silently
             # becoming a text-only request used to be invisible; now it is warned and counted
@@ -221,15 +223,23 @@ function Invoke-Model($systemPrompt, $userText, $imagePath) {
         }
     }
 
+    $modelForCall = $Model
+    if ($modelOverride) { $modelForCall = $modelOverride }
+
+    # W1 ruling: temperature 0 rides ONLY on schema-constrained act calls, never the warm-up or judge
+    # calls -- see Build-ModelRequestBody's own doc (agent-playtest\model-call.ps1) for why the two are
+    # decoupled rather than one flag meaning both.
+    $temperature = -1
+    if ($formatSchema) { $temperature = 0 }
+
     # num_ctx must be set explicitly. llava:7b defaults to a 4096-token context and ollama HARD
     # ERRORS past it rather than truncating:
     #   {"error":{"code":400,"message":"request (6052 tokens) exceeds the available context size
     #             (4096 tokens), try increasing it","type":"exceed_context_size_error"}}
     # Measured 2026-08-04 on the judge pass. A screen digest plus a turn log passes 4096 quickly, so
     # without this the harness works for a while and then dies exactly when it has something to say.
-    $body = '{"model":"' + (JsonEsc $Model) + '","stream":false,"options":{"num_ctx":' + $NumCtx + '},"messages":[' +
-            '{"role":"system","content":"' + (JsonEsc $systemPrompt) + '"},' +
-            '{"role":"user","content":"' + (JsonEsc $userText) + '"' + $imagesJson + '}]}'
+    $body = Build-ModelRequestBody -Model $modelForCall -SystemPrompt $systemPrompt -UserText $userText `
+        -ImageBase64 $imageB64 -NumCtx $NumCtx -FormatSchema $formatSchema -Temperature $temperature
 
     # Send bytes, not a string: Invoke-RestMethod would otherwise re-encode, and the body is large.
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
@@ -344,6 +354,15 @@ if (-not $Scripted) {
             ('Pull it (ollama pull ' + $Model + ') or pass -Model with one of the above.')
         )
     }
+    # Checked here, before ANY turn runs, for the same reason $Model is: the judge call happens only
+    # after the whole turn budget is spent, and finding out THEN that $JudgeModel was never pulled
+    # would waste the entire run instead of one warm-up request.
+    if ($have -notcontains $JudgeModel) {
+        Die @(
+            ('judge model ' + $JudgeModel + ' is not pulled. Available: ' + ($have -join ', ')),
+            ('Pull it (ollama pull ' + $JudgeModel + ') or pass -JudgeModel with one of the above.')
+        )
+    }
 
     # Warm it with a real request. A model can be PULLED and still fail to LOAD -- measured
     # 2026-08-04, llama3.2-vision:11b is listed by /api/tags and then dies with
@@ -449,7 +468,18 @@ $actPrompt = ''
 $actPromptHash = ''
 $judgePrompt = ''
 $diffScopeInfo = $null
+$actionSchemaJson = ''
 if (-not $Scripted) {
+    # W1: JSON-schema constrained decoding on every act call (never the warm-up or judge call -- see
+    # Invoke-Model's own temperature note). Read once, trimmed to one compact blob so it splices
+    # cleanly into the hand-built request body (Build-ModelRequestBody, model-call.ps1). Parsed here
+    # and only here, purely as a guard: a malformed schema file should fail loudly before the first
+    # real model call, not surface as a mysterious ollama 400 twenty turns in.
+    $actionSchemaJson = (Get-Content (Join-Path $PSScriptRoot 'agent-playtest\prompts\action-schema.json') -Raw).Trim()
+    try { $null = $actionSchemaJson | ConvertFrom-Json } catch {
+        Die @(('action-schema.json does not parse as JSON: ' + $_.Exception.Message))
+    }
+
     $actProtocolText = Get-Content (Join-Path $PSScriptRoot 'agent-playtest\prompts\act.md') -Raw
     # U4: act.md is PROTOCOL only (the {{PERSONA}} marker); Build-PersonaActPrompt (personas.ps1)
     # substitutes in $personaName's own KNOWLEDGE+GOAL text. Throws loudly (never silently plays a
@@ -551,44 +581,23 @@ try {
             while ($attempts -lt $ModelCallMaxAttempts -and -not $command) {
                 $attempts++
                 $reply = ''
-                try { $reply = Invoke-Model $actPrompt $userText $framePath } catch { Warn ('model call failed: ' + $_.Exception.Message) }
-                if (-not $reply) { continue }
-                # Models wrap JSON in prose or fences no matter how firmly you ask. Take the object.
-                $m = [regex]::Match($reply, '\{[^{}]*\}')
-                if (-not $m.Success) { Warn ('no JSON in reply: ' + ($reply -replace '\s+', ' ')); continue }
-                $candidate = $m.Value
-                $parsed = try { $candidate | ConvertFrom-Json } catch { $null }
-                if (-not $parsed -or -not $parsed.action) { Warn 'reply JSON had no action'; continue }
+                try { $reply = Invoke-Model $actPrompt $userText $framePath $null $actionSchemaJson } catch { Warn ('model call failed: ' + $_.Exception.Message) }
 
-                # NORMALIZE, do not just reject. A 7B model folds the control name into the action
-                # slot -- measured on llava:7b's very first probe, which answered
-                # {"action":"openCounter","why":"..."} instead of
-                # {"action":"press","target":"OpenCounter"}. That is a well-formed intention in the
-                # wrong shape; throwing it away burns a turn and teaches the model nothing. Match the
-                # action against the control list case-insensitively and rewrite it as a press.
-                $verbs = @('press', 'move', 'key', 'advance', 'stop')
-                if ($verbs -notcontains $parsed.action) {
-                    # Match on LABEL too. llava repeatedly answered {"action":"Buy 2 copper"} -- the on-screen
-                    # label, not the control name. That is a correct intention in the wrong field.
-                    $match = @($state.controls | Where-Object { $_.name -ieq $parsed.action -or $_.label -ieq $parsed.action }) | Select-Object -First 1
-                    if ($match) {
-                        Say ('normalized "' + $parsed.action + '" to press ' + $match.name)
-                        $parsed = [pscustomobject]@{ action = 'press'; target = $match.name; why = $parsed.why }
-                        $candidate = $parsed | ConvertTo-Json -Compress
-                    } else {
-                        $userText = $userText + [Environment]::NewLine + ('REFUSED: "' + $parsed.action + '" is not an action. Use press, move, key, advance or stop.')
-                        Warn ('unknown action: ' + $parsed.action)
-                        continue
-                    }
-                }
-                # Pre-refuse an illegal press here, with the reason fed back, rather than spending a
-                # game turn on it.
-                if ($parsed.action -eq 'press' -and $enabled -notcontains $parsed.target) {
-                    $userText = $userText + [Environment]::NewLine + ('REFUSED: "' + $parsed.target + '" is not an enabled control. Pick one of: ' + ($enabled -join ', '))
-                    Warn ('model chose a disabled/absent control: ' + $parsed.target)
+                # W1 (docs/plans/2026-08-10-002): with format=action-schema.json constraining decoding,
+                # the reply can no longer arrive as prose-wrapped JSON or a folded verb -- the old
+                # regex JSON-extract and the NORMALIZE block that used to sit here are DELETED, not
+                # relocated (see agent-playtest\model-call.ps1's own header for the full argument).
+                # Get-LegalCommandFromReply still catches what schema decoding cannot: an empty/failed
+                # call, or (ruling 1, kept ON PURPOSE) a real verb aimed at a control that is disabled
+                # right now -- an illegal press is signal the frustration map needs, so this refuses it
+                # and feeds the reason back rather than silently rewriting it.
+                $legal = Get-LegalCommandFromReply -Reply $reply -EnabledControls $enabled
+                if ($legal.Refused) {
+                    $userText = $userText + [Environment]::NewLine + ('REFUSED: ' + $legal.Reason + '. Enabled controls: ' + ($enabled -join ', '))
+                    Warn ('turn ' + $turn + ' attempt ' + $attempts + ' refused: ' + $legal.Reason)
                     continue
                 }
-                $command = $candidate
+                $command = $legal.Command
             }
             if (-not $command) {
                 $command = '{"action":"advance","why":"driver fallback: model gave no usable command"}'
@@ -732,8 +741,16 @@ if (-not $fullLog) { $fullLog = ($history -join [Environment]::NewLine) }
 # reaches tens of KB fast (57 KB in 22 turns, measured), and a 7B model's context is the smaller
 # constraint anyway. The FULL log is still written to findings.md below -- only the model's copy is
 # trimmed, and it is trimmed from the FRONT so the most recent turns survive.
+#
+# INTERIM raise 6000 -> 24000 (W1, docs/plans/2026-08-10-002): the live defect this was still causing
+# is named in that plan directly -- at 6000 chars, the judge saw roughly the last 2-3 turns of a 57 KB
+# log, so it could never speak to anything that happened before whatever just happened, and "day 11 is
+# boring" is exactly the kind of finding that requires seeing most of a run, not its tail. 24000 is
+# still a FRONT-trim, not a fix: $JudgeModel's 40K-token context can hold it, and it buys headroom
+# without yet answering "does the judge see the whole run." W2 replaces this with a per-day digest
+# (docs/plans/2026-08-10-002 W2) instead of raising the cap again.
 $log = $fullLog
-$judgeCap = 6000
+$judgeCap = 24000
 if ($log.Length -gt $judgeCap) {
     $log = '(earlier turns trimmed)' + [Environment]::NewLine + $log.Substring($log.Length - $judgeCap)
     Say ('judge input trimmed to last ' + $judgeCap + ' chars of ' + $fullLog.Length)
@@ -761,6 +778,7 @@ $header = @(
     '',
     ('- scope: ' + $Scope),
     ('- model: ' + $Model),
+    ('- judge model: ' + $JudgeModel),
     $personaHeaderLine,
     ('- turns: ' + $turn + ' (stopped: ' + $stopReason + ')'),
     ('- completion: ' + $turn + ' of ' + $Turns + ' budgeted turns (' + $completionPct + '%)'),
@@ -809,11 +827,16 @@ if ($incomplete) {
 # identically rather than three call sites drifting apart from a fourth copy-paste.
 $backendSection = @('', '---', '') + @($backendMarkdown)
 
+# W1: the honesty footer (agent-playtest\footer.ps1) -- computed once, appended to every Set-Content
+# site below alongside $backendSection, so a run that dies at any stage still ships the same "here is
+# what this instrument cannot see" note as a clean one.
+$honestyFooterLines = Get-HonestyFooterLines
+
 # A run that played NOTHING is a failure, whatever mode it was in. The first scripted run sat for 90s
 # on a client that had never been asked to play, then printed "scripted run complete" and exited 0 --
 # the same shape of lie as a truncated test suite reporting "Passed!". Never again from this script.
 if ($turn -eq 0) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('NOTHING WAS PLAYED. ' + $stopReason) + $backendSection)
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('NOTHING WAS PLAYED. ' + $stopReason) + $backendSection + $honestyFooterLines)
     Die @(
         ('zero turns were played: ' + $stopReason),
         '',
@@ -826,7 +849,7 @@ if ($turn -eq 0) {
 }
 
 if ($Scripted) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + @('', '---', '', 'Scripted run -- no model judged this. The channel was exercised, including one deliberate illegal press.', '', '## Turn log', '', $log))
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + @('', '---', '', 'Scripted run -- no model judged this. The channel was exercised, including one deliberate illegal press.', '', '## Turn log', '', $log) + $honestyFooterLines)
     Say ('scripted run complete, ' + $turn + ' turns. Channel log: ' + $findingsPath)
     exit 0
 }
@@ -843,6 +866,34 @@ if ($Scope -eq 'Scout') {
     $mechanicalSection = @('', '---', '') + @($mechanicalText)
 }
 
+# Ruling 10 (docs/plans/2026-08-10-002): $Model (~6.1 GB, qwen3-vl:8b by default) and $JudgeModel
+# (~9.3 GB, qwen3:14b by default) sum past this project's 14 GB VRAM ceiling if both stayed resident
+# at once. Rather than trust ollama's own idle-eviction to win that race, explicitly release $Model
+# first -- `ollama stop` is a real, synchronous CLI unload, simpler than a bespoke keep_alive=0 request
+# whose reply would just be thrown away. `ollama ps` is logged on both sides of the unload (Say, so it
+# lands in driver.log too) so a live run can be READ, not just assumed, at the exact handoff point.
+$residentBefore = @()
+try {
+    $psBefore = Invoke-RestMethod -Uri ($Endpoint + '/api/ps') -TimeoutSec 10
+    $residentBefore = @($psBefore.models | ForEach-Object { $_.name + ' (' + [math]::Round($_.size / 1GB, 1) + ' GB)' })
+} catch { Warn ('ollama ps (pre-unload) failed: ' + $_.Exception.Message) }
+Say ('ollama ps before judge handoff: ' + (($residentBefore -join ', ')))
+# NOT `2>&1` on this call. Measured live (W1 verification): `ollama stop` writes its own progress
+# spinner as ANSI control codes to STDERR even on a clean, successful unload -- confirmed by `ollama
+# ps` actually showing $Model gone right after. Under this script's `$ErrorActionPreference = 'Stop'`,
+# redirecting a native command's stderr with `2>&1` in Windows PowerShell 5.1 wraps each stderr write
+# in a terminating NativeCommandError (see docs/debugging.md-adjacent lesson on this exact PS 5.1
+# 2>&1 trap), so the unload was silently succeeding while this line reported it as failed. Leaving
+# stderr unredirected here lets a REAL failure still surface as non-zero exit / thrown error without
+# manufacturing a false one out of the spinner's own output.
+try { & ollama stop $Model | Out-Null } catch { Warn ('ollama stop ' + $Model + ' failed: ' + $_.Exception.Message) }
+$residentAfter = @()
+try {
+    $psAfter = Invoke-RestMethod -Uri ($Endpoint + '/api/ps') -TimeoutSec 10
+    $residentAfter = @($psAfter.models | ForEach-Object { $_.name + ' (' + [math]::Round($_.size / 1GB, 1) + ' GB)' })
+} catch { Warn ('ollama ps (post-unload) failed: ' + $_.Exception.Message) }
+Say ('ollama ps after unloading ' + $Model + ', before judge call to ' + $JudgeModel + ': ' + (($residentAfter -join ', ')))
+
 Say 'asking the model to write findings'
 $judgeInput = @(
     'Here is the full log of the session you just played.',
@@ -857,10 +908,12 @@ if ($stuckFindings.Count -gt 0) {
 $findings = ''
 # No image on the judge pass: the LOG is what carries the findings, and a 134 KB frame costs
 # context that the log needs. Visual findings come from the act turns, which do see frames.
-try { $findings = Invoke-Model $judgePrompt (($judgeInput) -join [Environment]::NewLine) $null } catch { Warn ('judge call failed: ' + $_.Exception.Message) }
+# $JudgeModel, not $Model -- see this file's own .PARAMETER JudgeModel doc for why the judge is a
+# dedicated text model rather than the vision model that just played.
+try { $findings = Invoke-Model $judgePrompt (($judgeInput) -join [Environment]::NewLine) $null $JudgeModel } catch { Warn ('judge call failed: ' + $_.Exception.Message) }
 
 if (-not $findings) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + @('', '---', '', 'JUDGE FAILED -- no findings written. Raw turn log below.') + $mechanicalSection + @('', $log))
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + @('', '---', '', 'JUDGE FAILED -- no findings written. Raw turn log below.') + $mechanicalSection + @('', $log) + $honestyFooterLines)
     Die @('the judge pass produced nothing. The turn log is still in ' + $findingsPath + '.')
 }
 
@@ -899,7 +952,7 @@ if ($unsupported.Count -gt 0) {
     ) + ($unsupported | ForEach-Object { '- `' + $_ + '`' })
 }
 
-Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + @('', '---', '') + @($findings) + $guardNote + $mechanicalSection + @("", "---", "", "## Turn log", "", $fullLog))
+Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + @('', '---', '') + @($findings) + $guardNote + $mechanicalSection + @("", "---", "", "## Turn log", "", $fullLog) + $honestyFooterLines)
 
 Write-Host ''
 Say ('findings written: ' + $findingsPath)

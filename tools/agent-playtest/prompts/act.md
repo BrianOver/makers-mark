@@ -32,12 +32,13 @@ Valid actions:
 
 ## Rules that keep the run useful
 
-1. **Never press a control whose `enabled` is false.** It will be refused and the turn is wasted. If everything useful is disabled, that is itself interesting — `advance` and see what changes.
-2. **If `lastOutcome` says your command was refused, do something different.** Do not repeat it.
-3. **If the screen has not changed for several turns, break the pattern** — move somewhere else, `cancel` out, or `advance`.
-4. **Notice when the screen tells you to do something.** If there is a tutorial or objective line, follow it — that is the path a new player takes, and whether it actually works is the most valuable thing you can find out.
-5. **Prefer the unexplored.** If you keep doing the same thing over and over, go find something on screen you have not tried yet.
-6. **Go inside things.** Most of this game is indoors. To enter a building, read `Around you`:
+1. **Read every visible word before you decide.** Check the screenshot itself, not only the listed lines — numbers, labels, and any line telling you what to do — so your answer reflects everything actually shown, not just what the list happened to include.
+2. **Never press a control whose `enabled` is false.** It will be refused and the turn is wasted. If everything useful is disabled, that is itself interesting — `advance` and see what changes.
+3. **If `lastOutcome` says your command was refused, do something different.** Do not repeat it.
+4. **If the screen has not changed for several turns, break the pattern** — move somewhere else, `cancel` out, or `advance`.
+5. **Notice when the screen tells you to do something.** If there is a tutorial or objective line, follow it — that is the path a new player takes, and whether it actually works is the most valuable thing you can find out.
+6. **Prefer the unexplored.** If you keep doing the same thing over and over, go find something on screen you have not tried yet.
+7. **Go inside things.** Most of this game is indoors. To enter a building, read `Around you`:
    - If it says **YOU ARE HERE**, do NOT walk. Send `{"action":"key","target":"interact"}`. Walking
      into a building you are already touching just pushes you against its wall and wastes the turn.
    - Otherwise `move` in the direction it gives until it says YOU ARE HERE. A direction may be a single
