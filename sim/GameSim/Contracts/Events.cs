@@ -56,6 +56,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(ActAdvanced), "actAdvanced")]
 [JsonDerivedType(typeof(ClimaxReached), "climaxReached")]
 [JsonDerivedType(typeof(CampaignEnded), "campaignEnded")]
+[JsonDerivedType(typeof(VenueGraduated), "venueGraduated")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -308,3 +309,17 @@ public sealed record CampaignEnded(
     int AttributionBeatCount,
     int GossipHighlightCount,
     int LegendaryHeroCount) : GameEvent;
+
+/// <summary>
+/// The forward ladder (owner ruling 2026-08-10, plan 2026-08-10-003 L0): a party beat a venue's
+/// bottom floor and its surviving members graduated — <see cref="Hero.LadderRank"/> incremented
+/// to <paramref name="NewRank"/> for every hero in <paramref name="Graduates"/>. Fired by the
+/// expedition layer (L1) at most once per venue clear; gossip, the ticker, and the narrator all
+/// ride this event (L5) rather than re-deriving the moment. <paramref name="VenueId"/> names the
+/// dungeon left behind; the town's next muster shows where they go instead. Nothing emits this
+/// until L1 — this record is the seam.
+/// </summary>
+public sealed record VenueGraduated(
+    string VenueId,
+    System.Collections.Immutable.ImmutableList<HeroId> Graduates,
+    int NewRank) : GameEvent;
