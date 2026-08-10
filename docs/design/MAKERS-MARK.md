@@ -721,6 +721,21 @@ So, binding rules for every session that touches this repo:
    prose, with no recorded evidence beside it. An instrument that cannot evidence a claim about §2
    links cannot be used to decide anything about them. Same constraint as before: capped overhead,
    and no unit here may displace a §11.4 path item.
+   **Amended 2026-08-10 (second):** the keeps-what-it-saw wave's units all landed (#436, #438,
+   plus the frames/backend/coverage/personas and sweep PRs), so its doc dies in the same PR as
+   this amendment (rule 7, atomically — a plan only on a branch does not exist, so the deletion,
+   the successor doc, and this grant travel together). The freed slot is granted, by name, to
+   `docs/plans/2026-08-10-002-feat-the-playtest-becomes-a-player-plan.md` — five units: the eyes
+   upgrade (llava:7b cannot read the game's own pixel fonts; qwen3-vl:8b measured reading a full
+   tutorial line verbatim on this machine), mechanical fun metrics led by the product-sentence
+   counter (a direct instrument on links 4–5, and the §A judge currently cannot answer its own
+   day-11 question — its input is trimmed from the front at 6000 chars), a dead-verb detector
+   probing law 3 with zero prose, driver-side temperament so quit reasons become findings, and
+   scenario cards for owner goal 1. The plan was adversarially checked by a second fable pass and
+   carries its seven named changes, including: the first sweep is an instrument SHAKEDOWN whose
+   numbers are disposable until §11.8's Gloomwood fix lands — a baseline taken on a campaign that
+   cannot finish is not a baseline. Substrate and capped overhead throughout; no unit may
+   displace a §11.4 path item.
 5. **The measurement rule.** When new data contradicts this plan — P4 moves the boredom
    day, P3's assertions fail, a sweep overturns a tuning claim — the plan amends in the
    same PR that lands the finding. A plan that cannot lose an argument with a measurement
