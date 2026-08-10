@@ -19,30 +19,24 @@
     This script does NOT replace tools/agent-playtest.ps1 -- it drives it, repeatedly, and reads
     whatever it wrote. It never modifies that file or tools/agent-playtest/prompts/.
 
-    DEFENSIVE READING (important, and why several fields below can read empty). The driver
-    checked into this worktree as of 2026-08-10 has NO -Persona parameter, no
-    tools/agent-playtest/prompts/personas/ directory, and writes neither coverage.json nor
-    backend.json -- those are U2/U3/U4 of the same plan, being built in parallel by other agents
-    and not yet landed here. Rather than block on that or fake the numbers, every reader in this
-    file is written to degrade honestly: a field the driver has not started emitting yet becomes
-    an EMPTY cell plus a note in SUMMARY.csv's Notes column and in REPORT.md's own caveats
-    section -- never a silent zero and never a crash. A silent zero here would read as "clean,"
-    which is the exact defect class this repo's playtest harness has already been fixed for
-    three times (A1/#419, the completion floor/#436, and the state-fingerprint incident this
-    same lesson traces back to). Re-run this sweep once U1-U4/U6 land and the empty cells should
-    start filling in on their own, with no changes needed here except widening the property-name
-    guesses in Get-CoverageData / Get-BackendData / Get-FindingsFields if the real schema differs
-    from the guess.
+    DEFENSIVE READING (important, and why several fields below can still read empty). This file
+    was first written against a driver with NO -Persona parameter and no coverage.json/
+    backend.json -- U1-U4 were being built in parallel. Those units have since landed on their
+    branch, and the readers here were then aligned to their MEASURED shapes (coverage.json is
+    Get-CoverageReport's Categories array; backend.json is Get-BackendSummary with
+    AutoAdvanceCount/UnattributedAdvanceCount, never a single "contradictionCount"; the persona
+    header is ONE combined line "- persona: <name> (requested: <arg>), act-prompt hash <hex>").
+    The defensive posture stays: a field a given run's driver build did not emit becomes an
+    EMPTY cell plus a note in SUMMARY.csv's Notes column and in REPORT.md's own caveats section
+    -- never a silent zero and never a crash. A silent zero here would read as "clean," the
+    exact defect class this harness has been fixed for three times (A1/#419, the completion
+    floor/#436, and the state-fingerprint incident).
 
-    PERSONA IS A LABEL TODAY, NOT YET A DIFFERENT PLAYER. -Personas is accepted and drives the
-    run matrix and every output's naming, exactly as the plan asks -- but until
-    tools/agent-playtest.ps1 grows a real -Persona parameter (U4), passing a persona name through
-    to it selects nothing different in the actual run: every persona in a sweep plays the SAME
-    act.md. Invoke-SweepRun feature-detects the parameter at call time (Get-Command's own
-    metadata, not a version string) so the day U4 lands, real per-persona runs start happening
-    with no edit needed here. Until then, this is recorded plainly in run-meta.json
-    (personaPassedToDriver: false) and surfaced in REPORT.md's per-persona section rather than
-    left for a reader to discover the hard way.
+    PERSONA PASS-THROUGH IS FEATURE-DETECTED. Invoke-SweepRun probes the driver for -Persona at
+    call time (Get-Command's own metadata, not a version string): present, it is passed and each
+    persona is a genuinely different player; absent (an old checkout), the run still happens,
+    run-meta.json records personaPassedToDriver: false, and REPORT.md's per-persona section says
+    so rather than implying differentiation that never occurred.
 
     SERIAL BY CONSTRUCTION -- do not parallelize this loop. Each run launches its own real Godot
     client (agentplaytest.tscn) and holds the local ollama vision model resident on the one GPU
@@ -362,17 +356,17 @@ function Get-FindingsFields {
         if ($diffFellBackSentence -match '(?i)FELL BACK') { $diffFellBack = $true }
     }
 
-    # SPECULATIVE (U4, not landed here as of 2026-08-10): persona + a short prompt hash are
-    # planned to go in findings.md's header, but no build of agent-playtest.ps1 in this checkout
-    # writes them -- verified directly: no -Persona parameter, no
-    # tools/agent-playtest/prompts/personas/ directory. Try the label the plan doc itself uses; if
-    # it is not there, say so plainly rather than guessing a hash that was never computed.
+    # U4's real header line (verified against feat/playtest-keeps-what-it-saw, not guessed):
+    #   - persona: <resolved> (requested: <arg>), act-prompt hash <hex>
+    # One combined line, not the two separate lines this reader originally speculated. The
+    # resolved name is captured WITHOUT the "(requested: ...)" parenthetical -- a sweep row
+    # saying "first-timer (requested: random)" would break the per-persona grouping key.
     $persona = $null
-    $m = [regex]::Match($text, '(?im)^-\s*persona:\s*(.+?)\s*$')
-    if ($m.Success) { $persona = $m.Groups[1].Value } else { [void]$notes.Add('persona: not reported by this build of agent-playtest.ps1 (needs the persona unit)') }
+    $m = [regex]::Match($text, '(?im)^-\s*persona:\s*([^(\r\n]+?)\s*(?:\(|,|$)')
+    if ($m.Success) { $persona = $m.Groups[1].Value.Trim() } else { [void]$notes.Add('persona: not reported by this build of agent-playtest.ps1 (needs the persona unit)') }
 
     $promptHash = $null
-    $m = [regex]::Match($text, '(?im)^-\s*(?:act )?prompt hash:\s*([0-9a-fA-F]+)')
+    $m = [regex]::Match($text, '(?im)act-prompt hash\s+([0-9a-fA-F]+)')
     if ($m.Success) { $promptHash = $m.Groups[1].Value } else { [void]$notes.Add('prompt hash: not reported by this build of agent-playtest.ps1 (needs the persona unit)') }
 
     return [pscustomobject]@{
@@ -443,20 +437,29 @@ function Get-CoverageData {
         }
     }
 
-    # SPECULATIVE SCHEMA: tries the property names the U5 plan doc's own vocabulary implies
-    # (touched/untouched/percentage). Update these three lines once U3 lands with its real shape.
+    # U3's REAL shape (verified against Get-CoverageReport on feat/playtest-keeps-what-it-saw,
+    # replacing this reader's original speculation): a Categories array of
+    # { Category, Total, Touched[], Untouched[], Percentage } plus OverallTouched/OverallTotal/
+    # OverallPercentage/Caveats. The sweep's touched/untouched are the UNION across categories,
+    # prefixed "Category:" so the never-touched list stays legible when two categories share a
+    # name (a DayPhase and a panel can both be called "Camp").
     $touched = @()
     $untouched = @()
     $pct = $null
-    if ($j.PSObject.Properties.Name -contains 'touched') { $touched = @($j.touched) }
-    if ($j.PSObject.Properties.Name -contains 'untouched') { $untouched = @($j.untouched) }
-    if ($j.PSObject.Properties.Name -contains 'percentage') { $pct = $j.percentage }
+    if ($j.PSObject.Properties.Name -contains 'OverallPercentage') { $pct = $j.OverallPercentage }
+    if ($j.PSObject.Properties.Name -contains 'Categories') {
+        foreach ($cat in @($j.Categories)) {
+            $prefix = [string]$cat.Category + ':'
+            $touched += @(@($cat.Touched) | ForEach-Object { $prefix + $_ })
+            $untouched += @(@($cat.Untouched) | ForEach-Object { $prefix + $_ })
+        }
+    }
 
     $note = $null
-    if ((@($touched)).Count -eq 0 -and (@($untouched)).Count -eq 0) {
-        $note = 'coverage.json present but none of the expected fields (touched/untouched/percentage) were found -- schema may differ from what this reader expects'
+    if ($null -eq $pct -and (@($touched)).Count -eq 0 -and (@($untouched)).Count -eq 0) {
+        $note = 'coverage.json present but neither OverallPercentage nor Categories was found -- schema may differ from what this reader expects'
     }
-    return [pscustomobject]@{ Available = $true; Percentage = $pct; Touched = $touched; Untouched = $untouched; Note = $note }
+    return [pscustomobject]@{ Available = $true; Percentage = $pct; Touched = @($touched); Untouched = @($untouched); Note = $note }
 }
 
 function Get-BackendData {
@@ -465,33 +468,44 @@ function Get-BackendData {
     $path = Join-Path $RunDir 'backend.json'
     if (-not (Test-Path $path)) {
         return [pscustomobject]@{
-            Available          = $false
-            ContradictionCount = $null
-            Note               = 'backend.json not present (needs the backend-log unit, not yet landed in this driver build)'
+            Available                = $false
+            AutoAdvanceCount         = $null
+            UnattributedAdvanceCount = $null
+            Note                     = 'backend.json not present (needs the backend-log unit, not yet landed in this driver build)'
         }
     }
     try {
         $j = Get-Content $path -Raw | ConvertFrom-Json
     } catch {
         return [pscustomobject]@{
-            Available          = $false
-            ContradictionCount = $null
-            Note               = 'backend.json present but could not be parsed as JSON: ' + $_.Exception.Message
+            Available                = $false
+            AutoAdvanceCount         = $null
+            UnattributedAdvanceCount = $null
+            Note                     = 'backend.json present but could not be parsed as JSON: ' + $_.Exception.Message
         }
     }
 
-    # SPECULATIVE SCHEMA: same caveat as Get-CoverageData. Tries a scalar count field first, then
-    # falls back to counting an array of contradiction records.
-    $count = $null
+    # U2's REAL shape (verified against Get-BackendSummary on feat/playtest-keeps-what-it-saw,
+    # replacing this reader's original speculation). There is no single "contradictionCount"
+    # field -- the summary carries the two contradiction-shaped facts separately, and adding them
+    # up here would blur two different findings into one number:
+    #   AutoAdvanceCount         -- phase advances whose recorded cause is auto:* (the game moving
+    #                               without the player; legal for the opt-in innkeeper's clock,
+    #                               which is why it must stay its own column, not "a contradiction")
+    #   UnattributedAdvanceCount -- advances with NO recorded cause at all (the instrumentation
+    #                               itself has a hole; always worth a look)
+    # The driver-accepted-vs-backend-rejected mismatch check lives in findings.md's Backend
+    # section (Get-DriverBackendMismatches), not in backend.json -- reading it from here would be
+    # a guess, so this reader does not.
+    $auto = $null
+    $unattributed = $null
     $note = $null
-    if ($j.PSObject.Properties.Name -contains 'contradictionCount') {
-        $count = $j.contradictionCount
-    } elseif ($j.PSObject.Properties.Name -contains 'contradictions') {
-        $count = (@($j.contradictions)).Count
-    } else {
-        $note = 'backend.json present but no recognised contradiction field (contradictionCount / contradictions) -- schema may differ from what this reader expects'
+    if ($j.PSObject.Properties.Name -contains 'AutoAdvanceCount') { $auto = [int]$j.AutoAdvanceCount }
+    if ($j.PSObject.Properties.Name -contains 'UnattributedAdvanceCount') { $unattributed = [int]$j.UnattributedAdvanceCount }
+    if ($null -eq $auto -and $null -eq $unattributed) {
+        $note = 'backend.json present but neither AutoAdvanceCount nor UnattributedAdvanceCount was found -- schema may differ from what this reader expects'
     }
-    return [pscustomobject]@{ Available = $true; ContradictionCount = $count; Note = $note }
+    return [pscustomobject]@{ Available = $true; AutoAdvanceCount = $auto; UnattributedAdvanceCount = $unattributed; Note = $note }
 }
 
 # --- recurring findings: honest normalised-line matching, not semantic clustering --------------
@@ -653,7 +667,8 @@ function Get-RunSummaryRow {
         LastInGameDay             = $lastDay
         CoveragePercentage        = $coverage.Percentage
         UntouchedSurfaceCount     = $untouchedCount
-        BackendContradictionCount = $backend.ContradictionCount
+        AutoAdvanceCount          = $backend.AutoAdvanceCount
+        UnattributedAdvanceCount  = $backend.UnattributedAdvanceCount
         Notes                     = ($notes -join ' | ')
         # Not CSV columns -- kept on the row for REPORT.md's section builders below.
         FindingsFields            = $findings
@@ -822,7 +837,8 @@ function Write-SweepSummaryCsv {
             LastInGameDay             = $r.LastInGameDay
             CoveragePercentage        = $r.CoveragePercentage
             UntouchedSurfaceCount     = $r.UntouchedSurfaceCount
-            BackendContradictionCount = $r.BackendContradictionCount
+            AutoAdvanceCount          = $r.AutoAdvanceCount
+            UnattributedAdvanceCount  = $r.UnattributedAdvanceCount
             Notes                     = $r.Notes
         }
     }
@@ -917,10 +933,10 @@ function Write-SweepReportMd {
     [void]$lines.Add('')
     [void]$lines.Add('Per-row detail is in SUMMARY.csv''s Notes column. Sweep-wide:')
     $missingCoverage = @($Rows | Where-Object { -not $_.CoverageData.Available }).Count
-    $missingBackend = @($Rows | Where-Object { $null -eq $_.BackendContradictionCount }).Count
+    $missingBackend = @($Rows | Where-Object { ($null -eq $_.AutoAdvanceCount) -and ($null -eq $_.UnattributedAdvanceCount) }).Count
     $missingPersonaHash = @($Rows | Where-Object { -not $_.PromptHash }).Count
     [void]$lines.Add('- coverage percentage / untouched-surface count: unavailable for ' + $missingCoverage + ' of ' + $Rows.Count + ' run(s)')
-    [void]$lines.Add('- backend contradiction count: unavailable for ' + $missingBackend + ' of ' + $Rows.Count + ' run(s)')
+    [void]$lines.Add('- backend auto-advance / unattributed-advance counts: unavailable for ' + $missingBackend + ' of ' + $Rows.Count + ' run(s)')
     [void]$lines.Add('- prompt hash (persona proof): unavailable for ' + $missingPersonaHash + ' of ' + $Rows.Count + ' run(s)')
     [void]$lines.Add('')
 

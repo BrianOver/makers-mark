@@ -126,6 +126,7 @@ $findingsA = @(
     '# Agent playtest findings (Scope: Full)',
     '',
     '- scope: Full',
+    '- persona: first-timer (requested: random), act-prompt hash a1b2c3d4',
     '- model: llava:7b',
     '- turns: 40 (stopped: turn budget reached)',
     '- completion: 40 of 40 budgeted turns (100.0%)',
@@ -153,8 +154,13 @@ $turnlogA = @(
 ) -join "`n"
 Set-Content -Path (Join-Path $runA 'turnlog.md') -Value $turnlogA -Encoding utf8
 
-Set-Content -Path (Join-Path $runA 'coverage.json') -Value '{"touched":["ForgePanel","ShopPanel"],"untouched":["AlchemyPanel","EngineeringPanel","TanningPanel"],"percentage":40.0}' -Encoding utf8
-Set-Content -Path (Join-Path $runA 'backend.json') -Value '{"contradictionCount":1}' -Encoding utf8
+# The REAL U3 shape (Get-CoverageReport on feat/playtest-keeps-what-it-saw): a Categories array,
+# not the flat touched/untouched this fixture originally guessed. One category is enough for the
+# union math; the reader prefixes each surface with its category name.
+Set-Content -Path (Join-Path $runA 'coverage.json') -Value '{"Categories":[{"Category":"Panel","Total":5,"Touched":["ForgePanel","ShopPanel"],"Untouched":["AlchemyPanel","EngineeringPanel","TanningPanel"],"Percentage":40.0}],"OverallTouched":2,"OverallTotal":5,"OverallPercentage":40.0,"Caveats":[]}' -Encoding utf8
+# The REAL U2 shape (Get-BackendSummary): no contradictionCount scalar -- the two
+# contradiction-shaped facts ride as separate counts.
+Set-Content -Path (Join-Path $runA 'backend.json') -Value '{"Available":true,"AutoAdvanceCount":1,"UnattributedAdvanceCount":0}' -Encoding utf8
 Set-Content -Path (Join-Path $runA 'run-meta.json') -Value '{"tag":"Full-first-timer-1","scope":"Full","persona":"first-timer","personaPassedToDriver":false,"exitCode":0}' -Encoding utf8
 
 # runB: DEGRADED AND INCOMPLETE. Shares the SAME finding line as runA (recurrence proof), touches
@@ -194,8 +200,8 @@ $turnlogB = @(
 ) -join "`n"
 Set-Content -Path (Join-Path $runB 'turnlog.md') -Value $turnlogB -Encoding utf8
 
-Set-Content -Path (Join-Path $runB 'coverage.json') -Value '{"touched":["ShopPanel","TavernPanel"],"untouched":["ForgePanel","AlchemyPanel","EngineeringPanel","TanningPanel"],"percentage":25.0}' -Encoding utf8
-Set-Content -Path (Join-Path $runB 'backend.json') -Value '{"contradictionCount":2}' -Encoding utf8
+Set-Content -Path (Join-Path $runB 'coverage.json') -Value '{"Categories":[{"Category":"Panel","Total":6,"Touched":["ShopPanel","TavernPanel"],"Untouched":["ForgePanel","AlchemyPanel","EngineeringPanel","TanningPanel"],"Percentage":33.3}],"OverallTouched":2,"OverallTotal":6,"OverallPercentage":33.3,"Caveats":[]}' -Encoding utf8
+Set-Content -Path (Join-Path $runB 'backend.json') -Value '{"Available":true,"AutoAdvanceCount":2,"UnattributedAdvanceCount":1}' -Encoding utf8
 Set-Content -Path (Join-Path $runB 'run-meta.json') -Value '{"tag":"Scout-veteran-1","scope":"Scout","persona":"veteran","personaPassedToDriver":false,"exitCode":1}' -Encoding utf8
 
 # runC: no findings.md at all -- proves "reported as missing, not skipped silently". Only a
@@ -230,7 +236,13 @@ if (Test-Path $summaryPath) {
         Check ($rowA.CompletionRatio -eq '100%') ('runA CompletionRatio must be "100%%", got [' + $rowA.CompletionRatio + ']')
         Check ($rowA.LastInGameDay -eq '5') ('runA LastInGameDay must be 5 (max of 1,3,5 in its turnlog), got [' + $rowA.LastInGameDay + ']')
         Check ($rowA.ExitCode -eq '0') ('runA ExitCode must come from run-meta.json (0), got [' + $rowA.ExitCode + ']')
-        Check ($rowA.BackendContradictionCount -eq '1') ('runA BackendContradictionCount must be 1, got [' + $rowA.BackendContradictionCount + ']')
+        Check ($rowA.AutoAdvanceCount -eq '1') ('runA AutoAdvanceCount must be 1 (real U2 field, not the guessed contradictionCount), got [' + $rowA.AutoAdvanceCount + ']')
+        Check ($rowA.UnattributedAdvanceCount -eq '0') ('runA UnattributedAdvanceCount must be 0, got [' + $rowA.UnattributedAdvanceCount + ']')
+        # U4's real combined header line: resolved name captured WITHOUT the "(requested: ...)"
+        # parenthetical -- "first-timer (requested: random)" as a grouping key would split every
+        # persona into as many groups as there were request spellings.
+        Check ($rowA.Persona -eq 'first-timer') ('runA Persona must be the bare resolved name "first-timer", got [' + $rowA.Persona + ']')
+        Check ($rowA.PromptHash -eq 'a1b2c3d4') ('runA PromptHash must parse from the combined header line, got [' + $rowA.PromptHash + ']')
     }
     if ($rowB) {
         Check ($rowB.Verdict -eq 'DEGRADED + INCOMPLETE') ('runB verdict must name both, got [' + $rowB.Verdict + ']')
@@ -248,7 +260,8 @@ if (Test-Path $summaryPath) {
     if ($rowC) {
         Check ([string]::IsNullOrEmpty($rowC.CoveragePercentage)) ('runC CoveragePercentage must be empty (no coverage.json), not a silent 0 -- got [' + $rowC.CoveragePercentage + ']')
         Check ([string]::IsNullOrEmpty($rowC.UntouchedSurfaceCount)) ('runC UntouchedSurfaceCount must be empty, not a silent 0 -- got [' + $rowC.UntouchedSurfaceCount + ']')
-        Check ([string]::IsNullOrEmpty($rowC.BackendContradictionCount)) ('runC BackendContradictionCount must be empty, not a silent 0 -- got [' + $rowC.BackendContradictionCount + ']')
+        Check ([string]::IsNullOrEmpty($rowC.AutoAdvanceCount)) ('runC AutoAdvanceCount must be empty, not a silent 0 -- got [' + $rowC.AutoAdvanceCount + ']')
+        Check ([string]::IsNullOrEmpty($rowC.UnattributedAdvanceCount)) ('runC UnattributedAdvanceCount must be empty, not a silent 0 -- got [' + $rowC.UnattributedAdvanceCount + ']')
     }
 }
 
