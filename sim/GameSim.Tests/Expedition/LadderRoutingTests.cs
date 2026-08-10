@@ -148,12 +148,18 @@ public class LadderRoutingTests
     }
 
     [Fact]
-    public void RankTwoParty_WithNoLiveRankTwoVenue_FallsBackToGloomwood_AndNeverOscillatesAcrossDays()
+    public void RankTwoParty_RoutesToEmberfall_NowThatItIsLive_AndNeverOscillatesAcrossDays()
     {
-        // The no-oscillation property the ladder is built on: Emberfall (rank 2) is dormant, so a
-        // rank-2 party's highest ELIGIBLE live rung is Gloomwood (rank 1) — and because LadderRank
-        // only ever increments, this holds every day forever; it never "flips back" to a rank-0
-        // venue the way the old power latch could strand a party in the other direction.
+        // Forward-ladder plan 2026-08-10-003 L4: Emberfall (rank 2) is now LIVE, so a rank-2
+        // party's highest ELIGIBLE rung is Emberfall itself, outright — this test used to assert
+        // the pre-L4 fallback-to-Gloomwood behavior (Emberfall dormant); VenueRouterTests'
+        // RankTwoParty_WithNoLiveRankTwoVenue_FallsBackToGloomwood_AndNeverStrandsOrOscillates keeps
+        // that scenario alive at the pure-comparator level (a synthetic live array without
+        // "emberfall"), so the dormant-venue fallback property is still covered — just no longer
+        // through the REAL registry, which has moved on. The no-oscillation property itself is
+        // unchanged: because LadderRank only ever increments, Emberfall stays eligible and wins
+        // every future tick too — it never "flips back" to a rank-0 or rank-1 venue the way the old
+        // power latch could strand a party in the other direction.
         var state = ThreeHeroParty(2, 2, 2);
         var kernel = GameComposition.BuildKernel();
 
@@ -169,7 +175,7 @@ public class LadderRoutingTests
             }
 
             var venueId = TickMorningAndExpedition_AssertByteMatch(ref state, kernel);
-            Assert.Equal("gloomwood", venueId);
+            Assert.Equal("emberfall", venueId);
 
             // Ranks never regressed across the day just ticked — the property this whole wave exists
             // to guarantee.
@@ -213,9 +219,10 @@ public class LadderRoutingTests
 
         var rank2Plan = Assert.Single(predicted.Parties, p => p.Roster.Contains(new HeroId(6)));
         Assert.Equal(new HeroId(6), Assert.Single(rank2Plan.Roster));
-        // No live rank-2 venue (Emberfall dormant) — the frontier rule falls back to the highest
-        // ELIGIBLE live rung, same as RankTwoParty_WithNoLiveRankTwoVenue_FallsBackToGloomwood above.
-        Assert.Equal("gloomwood", rank2Plan.VenueId);
+        // Emberfall is LIVE (forward-ladder plan 2026-08-10-003 L4) — the solo rank-2 veteran's
+        // highest eligible rung is Emberfall itself, same as
+        // RankTwoParty_RoutesToEmberfall_NowThatItIsLive_AndNeverOscillatesAcrossDays above.
+        Assert.Equal("emberfall", rank2Plan.VenueId);
     }
 
     [Fact]

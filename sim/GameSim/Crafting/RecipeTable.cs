@@ -99,6 +99,33 @@ public static class RecipeTable
         // Salve's 6, a real answer to floors where monsters hit for 25-30 (§11.8/plan design).
         new Recipe("moonresin-draught", "Moonresin Draught", BlacksmithProfession, ItemSlot.Consumable, Tier: 9, "moonresin", MaterialQuantity: 2,
             new ItemStats(Attack: 0, Defense: 0, Weight: 0), new ConsumableEffect(ConsumableKind.Heal, Magnitude: 18)),
+
+        // ---- Rung 2 (the forward ladder, plan 2026-08-10-003 L4): Emberfall-ore recipes ---
+        // Tier 12-14, same shape and same reason as rung 1's Tier 8-9 rows above: gated by MATERIAL
+        // AVAILABILITY, not a talent node — firebrick/slagiron/emberglass only enter Player.Materials
+        // via Emberfall loot, which only flows once a party graduates Gloomwood (Hero.LadderRank 1 ->
+        // 2, L1). Pre-graduation, BaselinePlayer's Tier-descending craft loop sorts these FIRST but
+        // ActionLegality rejects them for want of material and falls through unchanged — draw-neutral
+        // pre-graduation (same proof shape as L3's rung-1 rows). This is again the QualityRoller
+        // correctness fix: Emberfall ore is grade 12-16, so a Tier 12-14 home keeps the material-grade
+        // shift bounded (pinned by QualityRollerTests' RungTwo cases) instead of stacking on the
+        // Tier 3 ceiling the way it would pre-ladder.
+        //
+        // Material choice mirrors L3's own precedent of never keying a craftable recipe to the BOSS
+        // floor's ore (moonresin-draught used floor 3's moonresin, not floor 4's boss-drop
+        // heartwood): the weapon and armor use floor 1/2's firebrick/slagiron (grade == tier, exactly
+        // matching gloomsteel-blade/wardenweave-mail's own pattern), and the salve uses floor 4's
+        // emberglass — one grade ABOVE its own tier, deliberately, the same +1 shape as
+        // moonresin-draught — never floor 5's heartcoal, which a party cannot farm until it has
+        // already beaten the boss this salve exists to help against.
+        new Recipe("cinderforge-blade", "Cinderforge Blade", BlacksmithProfession, ItemSlot.Weapon, Tier: 12, "firebrick", MaterialQuantity: 4,
+            new ItemStats(Attack: 90, Defense: 0, Weight: 14)),
+        new Recipe("ashguild-plate", "Ashguild Plate", BlacksmithProfession, ItemSlot.Armor, Tier: 13, "slagiron", MaterialQuantity: 5,
+            new ItemStats(Attack: 0, Defense: 75, Weight: 17)),
+        // Emberglass Draught: the top salve the plan names by number — Heal 30, the rung-2 answer to
+        // Emberfall's deeper floors the same way moonresin-draught answered Gloomwood's.
+        new Recipe("emberglass-draught", "Emberglass Draught", BlacksmithProfession, ItemSlot.Consumable, Tier: 14, "emberglass", MaterialQuantity: 2,
+            new ItemStats(Attack: 0, Defense: 0, Weight: 0), new ConsumableEffect(ConsumableKind.Heal, Magnitude: 30)),
     }.ToImmutableSortedDictionary(r => r.RecipeId, r => r, StringComparer.Ordinal);
 
     /// <summary>Lookup by recipe id.</summary>

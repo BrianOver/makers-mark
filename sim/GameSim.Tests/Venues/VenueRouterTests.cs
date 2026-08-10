@@ -27,10 +27,12 @@ public class VenueRouterTests
     // gloomwood 1, emberfall 2 — a STRICT ladder, unlike the old EntryPower bands (which tied
     // Gloomwood and Emberfall at 72 to make the go-live a queue-split). Ranks never tie between
     // distinct rungs, so a party eligible for both always prefers the higher one outright — no
-    // ordinal tiebreak needed between rungs. Emberfall is dormant (not in LiveRotation) but stays
-    // in these rotations on purpose: the comparator must already handle its rank correctly on the
-    // day the art-gated go-live puts it back in LiveRotation, and ChooseVenue takes the rotation as
-    // an argument precisely so liveness churn never touches this suite.
+    // ordinal tiebreak needed between rungs. Emberfall went LIVE in L4 (forward-ladder plan
+    // 2026-08-10-003) — these synthetic rotations exercise it both IN and (deliberately) OUT of a
+    // live array on purpose: ChooseVenue takes the rotation as an argument precisely so liveness
+    // churn never touches this suite, and the "absent" cases below stay a real regression guard for
+    // any FUTURE rung that ships ranked-but-not-yet-live, the same shape Emberfall itself was
+    // through L1-L3.
     private static readonly ImmutableArray<string> MineAndGloomwood =
         ImmutableArray.Create(VenueRegistry.MineId, "gloomwood");
 
@@ -76,12 +78,14 @@ public class VenueRouterTests
     [Fact]
     public void RankTwoParty_WithNoLiveRankTwoVenue_FallsBackToGloomwood_AndNeverStrandsOrOscillates()
     {
-        // The no-oscillation property the ladder is built on (§11.8's fix): Emberfall is absent
-        // from this rotation (dormant, not live) — a rank-2 party's highest ELIGIBLE rung among
-        // [mine(0), gloomwood(1)] is Gloomwood. Because LadderRank only ever increments, this party
-        // can never fall lower than rank 2 again, and Gloomwood (rank 1 <= 2) stays eligible and
-        // wins every future tick too — it never "flips back" to the Mine the way the old power
-        // latch could strand a party the other direction.
+        // The no-oscillation property the ladder is built on (§11.8's fix), exercised on a
+        // deliberately CONSTRUCTED rotation with no rank-2 venue live (Emberfall itself was exactly
+        // this shape through L1-L3, and any future rung will be too before its own art-gated
+        // go-live): a rank-2 party's highest ELIGIBLE rung among [mine(0), gloomwood(1)] is
+        // Gloomwood. Because LadderRank only ever increments, this party can never fall lower than
+        // rank 2 again, and Gloomwood (rank 1 <= 2) stays eligible and wins every future tick too —
+        // it never "flips back" to the Mine the way the old power latch could strand a party the
+        // other direction.
         var liveWithoutEmberfall = ImmutableArray.Create(VenueRegistry.MineId, "gloomwood");
         Assert.Equal("gloomwood", VenueRouter.ChooseVenue(partyRank: 2, liveWithoutEmberfall, NoQueue));
 

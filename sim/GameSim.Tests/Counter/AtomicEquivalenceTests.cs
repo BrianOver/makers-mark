@@ -194,8 +194,27 @@ public class AtomicEquivalenceTests
     // the Mine graduation and the Gloomwood boss, re-gated 75 -> 73, clear) by day 30. See
     // PhaseBNoDrawGateTests.cs's matching ledger entry for the full account — `Inc` is STILL
     // byte-identical there (same stream, only `State` moved; no new draw site).
+    // GOLDEN RE-BASELINE #4 OF 5 (forward-ladder plan 2026-08-10-003, L4 — Emberfall flips live as
+    // rung 2): **Class 2 — routing/combat decisions change, same stream different position.** The
+    // Tier 12-14 RecipeTable rows are draw-neutral alone on this trace by the same construction as
+    // L3's rung-1 rows: no player action is ever submitted on this idle trace, so no craft ever
+    // reaches them, and pre-flip their MaterialKey (firebrick/slagiron/emberglass) isn't even in
+    // RecipeTable.MaterialGrades (it derives from MaterialRegistry.PricedPool, which L4 is the one
+    // to expand) — ActionLegality.CraftLegal rejects them exactly as it did every rung-1 row before
+    // L3's own PricedPool change landed. The move is entirely (1) VenueRegistry.LiveRotation gaining
+    // "emberfall" and (2) firebrick..heartcoal joining MaterialRegistry.PricedPool in the same
+    // re-baseline: this idle trace's heroes still autonomously shop the RIVAL vendor
+    // (HeroShoppingSystem needs no player action) and still fight every phase even with zero player
+    // actions. Confirmed directly (temporary CLI probe, this PR, reverted before commit): on THIS
+    // trace (seed 9001, 30 days) two of ten heroes (Kettil, Nessa) reach LadderRank 3 — Emberfall's
+    // OWN bottom floor clears, not merely a routing change — while the router pre-L4 would have kept
+    // sending that same rank-2 party back to Gloomwood forever (no live rank-2 venue existed). Every
+    // combat draw from that party's first Emberfall trip onward shifts. See
+    // PhaseBNoDrawGateTests.cs's matching ledger entry for the full account — `Inc` is STILL
+    // byte-identical there (same stream, only `State` moved; no new draw site — VenueRegistry and
+    // MaterialRegistry are both pure data, no RNG).
     private const string ExpectedPreCounterSha256 =
-        "90AF9C816D9B24DBCCDF53CE80C016C5BAE1A26E8D0900121DC9F5DEDCDB4563";
+        "B50A1DAC3F414ECAB951B1A1F7FD0D6838D32C4D8FCFCBAE7CE7C232C4F81454";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

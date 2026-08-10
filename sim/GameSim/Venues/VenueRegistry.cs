@@ -47,21 +47,21 @@ public static class VenueRegistry
     /// <c>ClassRegistry.RecruitPool</c> opens the three remaining classes in the SAME window (the
     /// operating model's batch-the-re-baseliners rule).</para>
     ///
-    /// <para><b><see cref="Emberfall"/> is BUILT, RANKED, and DORMANT — deliberately NOT live.</b>
-    /// Its mechanics are done (rank 2, the ladder's endgame rung, comparator-tested in
-    /// <c>VenueRouterTests</c>), but it has NO committed art at all — no backdrop, no monster
-    /// portraits — so the venue waits for its art wave (L4 flips it live). Finished-looking content
-    /// that renders as placeholder is exactly the failure this project keeps re-learning
-    /// (silent-fallbacks-hide-finished-work). Going live is a one-line append here + its ore ladder
-    /// into <c>MaterialRegistry.PricedPool</c>, gated by
-    /// <c>VenueHubTests.VenueBackdropArt_Present_RendersRealArt_NotFallback</c>, which FAILS on
-    /// any live venue tile that falls back — the flip cannot ship placeholder-first again.</para>
+    /// <para><b><see cref="Emberfall"/> is LIVE (forward-ladder plan 2026-08-10-003 L4).</b> Rank 2,
+    /// the ladder's endgame rung — a party reaches it only by graduating Gloomwood (clearing its
+    /// bottom floor). Its art landed (backdrop + all five monster portraits, committed and in
+    /// <c>godot/assets/art/art-manifest.json</c>) before this flip, so
+    /// <c>VenueHubTests.VenueBackdropArt_Present_RendersRealArt_NotFallback</c> — the guard that
+    /// FAILS on any live venue tile that falls back to placeholder — passes on real art, not an
+    /// empty tile. Its ore ladder (firebrick..heartcoal) joined <c>MaterialRegistry.PricedPool</c> in
+    /// the same re-baseline this comment describes for Gloomwood and the Crypt above.</para>
     /// </summary>
     public static readonly ImmutableArray<string> LiveRotation =
         ImmutableArray.Create(
             MineId,
             Gloomwood.GloomwoodVenue.Id,
-            SunkenCrypt.SunkenCryptVenue.Id);
+            SunkenCrypt.SunkenCryptVenue.Id,
+            Emberfall.EmberfallFoundryVenue.Id);
 
     /// <summary>Resolve a venue definition by key.</summary>
     public static bool TryGet(string venueId, out VenueDefinition? definition)

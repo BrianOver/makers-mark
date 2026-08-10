@@ -237,4 +237,47 @@ public class QualityRollerTests
         var counts = RollAndVerify(TestRecipe(ItemSlot.Weapon, tier: 8), materialGrade: 11, NoTalents, shift: 24, seed: 4242, count: 1000);
         Assert.True(counts[(int)QualityGrade.Masterwork] > 0, "grade 11 vs tier 8: Masterwork never landed in 1000 rolls — no longer earnable");
     }
+
+    /// <summary>
+    /// Forward-ladder plan 2026-08-10-003 L4, the SAME correctness fix one rung further out:
+    /// Emberfall ore (rung 2) is grade 12-16, homed in Tier 12-14 recipes. The worst-case
+    /// substitution gap widens slightly from L3's own (+3 grades, grade 11 vs Tier 8) to +4 grades
+    /// (grade 16 vs Tier 12 — heartcoal substituted into the Tier-12 cinderforge-blade recipe), a
+    /// consequence of the band itself being one grade wider (5 grades, 12-16) than one tier wider
+    /// (3 tiers, 12-14) allows to line up perfectly — still nowhere near the pre-ladder +8 gap
+    /// (grade 11 vs the old Tier-3 ceiling) that produced "guaranteed forever."
+    /// </summary>
+    [Theory]
+    [InlineData(12, 12)] // shift 0 — grade matches tier exactly (Common-ceiling floor case)
+    [InlineData(13, 12)] // shift +8
+    [InlineData(14, 12)] // shift +16
+    [InlineData(15, 12)] // shift +24
+    [InlineData(16, 12)] // shift +32 — the worst-case gap in the new band
+    [InlineData(12, 13)] // shift -8 — material below tier (Masterwork must be impossible here)
+    [InlineData(13, 13)] // shift 0
+    [InlineData(14, 14)] // shift 0
+    [InlineData(15, 14)] // shift +8 — emberglass-draught's own baseline (one grade above its tier)
+    public void RungTwoMaterialBand_KeepsMasterworkBounded_NotGuaranteed(int materialGrade, int tier)
+    {
+        var shift = 8 * (materialGrade - tier);
+        var counts = RollAndVerify(TestRecipe(ItemSlot.Weapon, tier), materialGrade, NoTalents, shift, seed: 4242, count: 1000);
+
+        // "Bounded, not guaranteed": even at the widest legal gap (+32), Masterwork stays well under
+        // half the rolls — nowhere near the +64 failure mode's 65%. A generous ceiling (the widest
+        // gap this band allows, +32, lands well under it) rather than L3's tighter <300 bound, since
+        // this band's worst-case gap (+4 grades) is genuinely wider than L3's (+3 grades) by design.
+        Assert.True(counts[(int)QualityGrade.Masterwork] < 500,
+            $"grade {materialGrade} vs tier {tier} (shift {shift}): Masterwork hit {counts[(int)QualityGrade.Masterwork]}/1000 — no longer bounded");
+        Assert.Equal(1000, counts.Sum());
+    }
+
+    [Fact]
+    public void RungTwoMaterialBand_MasterworkStaysEarnable_AtTheWorstCaseGap()
+    {
+        // Grade 16 vs Tier 12 is the widest legal gap L4's recipes allow (heartcoal substituted into
+        // the Tier-12 cinderforge-blade recipe) — Masterwork must still be REACHABLE (earned), not
+        // merely bounded, the same earnability proof L3 established one rung earlier.
+        var counts = RollAndVerify(TestRecipe(ItemSlot.Weapon, tier: 12), materialGrade: 16, NoTalents, shift: 32, seed: 4242, count: 1000);
+        Assert.True(counts[(int)QualityGrade.Masterwork] > 0, "grade 16 vs tier 12: Masterwork never landed in 1000 rolls — no longer earnable");
+    }
 }

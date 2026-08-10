@@ -141,6 +141,23 @@ Mine-liveness band.
   12–16 + Ashguild path + re-gates + Tier 12–14 recipes. The backdrop-art guard must
   pass. Re-run #92's share measurement and record it obsolete (share is stage-keyed
   now).
+  **MEASUREMENT RECORD (§11.6 rule 5):** the boss gate proposal (~170/200/235/275/320)
+  was never reachable — a graduating rank-2 party's measured power is 73-85, so a gate
+  above ~85 is the same WALL class L3 found for the Mine (confirmed: 90 stranded 10 of
+  11 sweep seeds for the full 100 days). Swept 90/80/76/73 the same way L3 swept
+  Gloomwood's own boss gate; 73 is the one value where all 11 seeds (main + 10 sweep)
+  clear, with a tight 2-15 day spread after Gloomwood-boss graduation (median ~6) —
+  inside the plan's own 8-18 day rule on most seeds, faster on a few, no gap to flag
+  this time (unlike L3's own Gloomwood undershoot). #92's share measurement, re-run
+  post-flip (main seed + 10 sweep seeds, `characterize` tool, pooled by campaign
+  stage): stage 0 (no hero rank ≥1) splits Mine/Sunken-Crypt ~50/50 as always; stage 2
+  (a hero has reached rank 2) gives Emberfall 67.9% of routed party-ticks, Mine 24.8%,
+  Gloomwood 4.7%, Sunken-Crypt 2.6% of 2,319 pooled party-ticks. #92's "flip collapses
+  Gloomwood 61%→18%" measured a THRESHOLD TIE between two venues competing for the
+  same parties the whole campaign; under rank routing a party can't even reach
+  Emberfall's competition until it has graduated OUT of Gloomwood, so the two venues
+  are never real rivals — share is stage-keyed, and #92's number is retired, not
+  re-tuned.
 - **L5 — Arc re-anchor + graduation news** (re-baseline #5): ArcDirector rank
   triggers; ticker/gossip/narrator on `VenueGraduated`; THE-GAME.md prose edit.
 - **L6 — The gates go green:** #413's red gate re-pinned two-sided per the contract;
