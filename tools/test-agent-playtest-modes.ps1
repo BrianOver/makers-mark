@@ -46,7 +46,11 @@ $parseTargets = @(
     (Join-Path $toolsDir 'agent-playtest\scope-map.ps1'),
     (Join-Path $toolsDir 'agent-playtest\turn-prompt.ps1'),
     (Join-Path $toolsDir 'agent-playtest\mechanical.ps1'),
-    (Join-Path $toolsDir 'agent-playtest\completion.ps1')
+    (Join-Path $toolsDir 'agent-playtest\completion.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\frames.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\backend.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\coverage.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\personas.ps1')
 )
 foreach ($target in $parseTargets) {
     $tokens = $null
@@ -226,6 +230,353 @@ Check ($scriptedRun.Incomplete -eq $false) ('a Scripted run stopping at its fixe
 $zeroTurns = Get-CompletionVerdict -Turn 0 -Turns 0
 Check ($zeroTurns.Ratio -eq 1.0) ('Turns=0 must not divide by zero, got ratio ' + $zeroTurns.Ratio)
 Check ($zeroTurns.Incomplete -eq $false) 'Turns=0 must not be flagged INCOMPLETE'
+
+# --- 6. Frame archiving (U1) -- "every frame the model saw is kept" -----------------------------
+. (Join-Path $toolsDir 'agent-playtest\frames.ps1')
+
+# Default -FrameEvery 1 keeps every turn: N frames for N turns.
+for ($n = 1; $n -le 8; $n++) {
+    $kept = 0
+    for ($t = 1; $t -le $n; $t++) { if (Test-ShouldKeepFrame -Turn $t -FrameEvery 1) { $kept++ } }
+    Check ($kept -eq $n) ('FrameEvery=1 must keep all ' + $n + ' turn(s), kept ' + $kept)
+}
+
+# -FrameEvery 5 keeps ceil(N/5), not floor(N/5) -- turn 1 is always kept, so the LAST partial group
+# of fewer than 5 turns still gets one, matching "N frames for N turns and ceil(N/5) for -FrameEvery
+# 5" from the brief. Checked across enough N to catch an off-by-one at every remainder (0..4).
+foreach ($n in @(1, 4, 5, 6, 9, 10, 11, 12)) {
+    $kept = 0
+    for ($t = 1; $t -le $n; $t++) { if (Test-ShouldKeepFrame -Turn $t -FrameEvery 5) { $kept++ } }
+    $expected = [math]::Ceiling($n / 5.0)
+    Check ($kept -eq $expected) ('FrameEvery=5 with ' + $n + ' turns must keep ceil(' + $n + '/5)=' + $expected + ', kept ' + $kept)
+}
+Check ((Test-ShouldKeepFrame -Turn 1 -FrameEvery 5) -eq $true) 'turn 1 must always be kept regardless of -FrameEvery'
+
+# Save-TurnFrame: a genuinely missing source (the exact "imageless turn" shape PR #420 fixed
+# elsewhere) must say so explicitly, never silently skip with no trace.
+$frameScratch = Join-Path $env:TEMP 'agent-playtest-frames-scratch'
+if (Test-Path $frameScratch) { Remove-Item $frameScratch -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $frameScratch -Force | Out-Null
+$fakeFramesDir = Join-Path $frameScratch 'frames'
+$missingSourcePath = Join-Path $frameScratch 'does-not-exist.png'
+$missingResult = Save-TurnFrame -SourcePath $missingSourcePath -FramesDir $fakeFramesDir -Turn 3 -FrameEvery 1
+Check ($missingResult.Missing -eq $true) 'a nonexistent source frame must be reported Missing=true'
+Check ($missingResult.Kept -eq $false) 'a missing frame must never be reported Kept=true'
+Check ($missingResult.Note -like '*frame missing*') ('the missing-frame note must say "frame missing" verbatim, got [' + $missingResult.Note + ']')
+
+# A real source that IS kept: gets copied to frames/turn-NNN.png.
+$realSourcePath = Join-Path $frameScratch 'frame.png'
+Set-Content -Path $realSourcePath -Value 'not a real png, just bytes for the test' -Encoding utf8
+$keptResult = Save-TurnFrame -SourcePath $realSourcePath -FramesDir $fakeFramesDir -Turn 1 -FrameEvery 1
+Check ($keptResult.Kept -eq $true) 'a real source on a kept turn must report Kept=true'
+Check ($keptResult.FileName -eq 'turn-001.png') ('kept-frame filename must be zero-padded to 3 digits, got [' + $keptResult.FileName + ']')
+Check (Test-Path (Join-Path $fakeFramesDir 'turn-001.png')) 'Save-TurnFrame must actually copy the file to FramesDir'
+
+# A real source on a THINNED turn (FrameEvery=5, turn 2): not kept, not missing either -- a third,
+# distinct outcome from "kept" and "missing".
+$thinnedResult = Save-TurnFrame -SourcePath $realSourcePath -FramesDir $fakeFramesDir -Turn 2 -FrameEvery 5
+Check ($thinnedResult.Kept -eq $false) 'a thinned-away turn must not be Kept'
+Check ($thinnedResult.Missing -eq $false) 'a thinned-away turn is not the same thing as a missing frame'
+Remove-Item $frameScratch -Recurse -Force -ErrorAction SilentlyContinue
+
+# Add-FrameReferencesToTurnLog: a turn WITH a "- frame:" line gets its note right after that line; a
+# turn with NO such line (the command-timeout branch's own header) gets the note appended at the end
+# of its own block instead -- both must reference the exact filename, never silently have no line.
+$sampleTurnLog = (@(
+    '# Agent playtest turn log',
+    '',
+    '## Turn 1',
+    '- day 1 phase Morning beat None location town gold 100 canMove True slots 5',
+    '- screen: Welcome',
+    '- frame: captured (non-blank)',
+    '- command: action=advance target= dir= frames= why=test',
+    '- outcome: advanced',
+    '## Turn 2',
+    '- day 1 phase Morning beat None location town gold 100 canMove True slots 5',
+    '- screen: Welcome',
+    '- command: (none) -> timed out after 30000ms waiting for command.json'
+) -join [Environment]::NewLine)
+$frameNotesForLog = @{
+    1 = 'frame: frames/turn-001.png'
+    2 = 'frame missing at turn 2 -- no frame.png was available to keep'
+}
+$annotatedLog = Add-FrameReferencesToTurnLog -TurnLogText $sampleTurnLog -FrameNoteByTurn $frameNotesForLog
+$idxFrameLine = $annotatedLog.IndexOf('- frame: captured (non-blank)')
+$idxTurn1Note = $annotatedLog.IndexOf('- frame: frames/turn-001.png')
+$idxTurn2Header = $annotatedLog.IndexOf('## Turn 2')
+$idxTurn2Note = $annotatedLog.IndexOf('- frame missing at turn 2')
+Check ($idxFrameLine -ge 0 -and $idxTurn1Note -gt $idxFrameLine -and $idxTurn1Note -lt $idxTurn2Header) 'turn 1''s frame note must land immediately after its own "- frame:" line, before turn 2 starts'
+Check ($idxTurn2Note -gt $idxTurn2Header) 'turn 2 (no "- frame:" line at all) must still get its frame note appended to its own block'
+Check ($annotatedLog -notlike '*{{PERSONA}}*') 'sanity: the turn-log fixture text itself must not contain a stray template marker'
+
+# --- 7. Backend record (U2) -- "the backend log becomes evidence" -------------------------------
+. (Join-Path $toolsDir 'agent-playtest\backend.ps1')
+
+$noBackendLog = Get-BackendSummary -LogPath (Join-Path $env:TEMP 'agent-playtest-no-such-log.jsonl')
+Check ($noBackendLog.Available -eq $false) 'a missing backend log must report Available=false, not a silent clean run'
+Check ($noBackendLog.Message -like '*no backend log*') ('the absent-log message must say so explicitly, got [' + $noBackendLog.Message + ']')
+
+$backendFixturePath = Join-Path $toolsDir 'agent-playtest\tests\backend-fixture.jsonl'
+Check (Test-Path $backendFixturePath) ('backend fixture must exist at ' + $backendFixturePath)
+$backendSummary = Get-BackendSummary -LogPath $backendFixturePath
+
+# Exact counts, hand-computed from the fixture's own known mix (see the fixture file's own layout):
+# 12 valid rows (1 session + 6 tick + 4 note + 1 action), 1 malformed line ("not json at all"), one
+# blank line (must be skipped silently, not counted as malformed).
+Check ($backendSummary.Available -eq $true) 'the fixture must parse as Available=true'
+Check ($backendSummary.RowCount -eq 12) ('fixture RowCount must be 12, got ' + $backendSummary.RowCount)
+Check ($backendSummary.MalformedLineCount -eq 1) ('fixture must report exactly 1 malformed line, got ' + $backendSummary.MalformedLineCount)
+
+# 6 tick rows: A,B (no transition), C (press:AdvancePhase), D (auto:conductor-beat-elapsed),
+# E (auto:innkeepers-clock, also completes Evening -> 1 autosave), F (real transition, empty cause).
+Check ($backendSummary.Advances.Count -eq 4) ('fixture must show 4 real phase advances (C,D,E,F), got ' + $backendSummary.Advances.Count)
+Check ($backendSummary.AutoAdvanceCount -eq 2) ('fixture must show 2 auto: advances (D,E), got ' + $backendSummary.AutoAdvanceCount)
+Check ($backendSummary.PressAdvanceCount -eq 1) ('fixture must show 1 press: advance (C), got ' + $backendSummary.PressAdvanceCount)
+Check ($backendSummary.UnattributedAdvanceCount -eq 1) ('fixture must show 1 unattributed advance (F, empty cause), got ' + $backendSummary.UnattributedAdvanceCount)
+
+# Exactly 1 rejection: tick B introduces it, tick C's empty rejects[] resets the accumulator (a real
+# advance clearing SimAdapter.LastRejections) so it must NOT be double-counted on every later row.
+Check ($backendSummary.Rejections.Count -eq 1) ('fixture must show exactly 1 deduplicated rejection, got ' + $backendSummary.Rejections.Count)
+if ($backendSummary.Rejections.Count -eq 1) {
+    Check ($backendSummary.Rejections[0].Why -eq 'insufficient gold') ('the one rejection''s reason must be "insufficient gold", got [' + $backendSummary.Rejections[0].Why + ']')
+}
+Check ($backendSummary.RejectionCountsByReason.Count -eq 1) ('fixture must group to exactly 1 reason, got ' + $backendSummary.RejectionCountsByReason.Count)
+
+# events: 0+0+2+3+0+1 = 6 across the six tick rows.
+Check ($backendSummary.EventsTotalAcrossTicks -eq 6) ('fixture events total must be 6, got ' + $backendSummary.EventsTotalAcrossTicks)
+
+# Attribution: the ONE "gossip: ..." note row matches the keyword scan; the caveat text must be
+# present regardless, since the log genuinely cannot prove an attribution EVENT fired (only a count).
+Check ($backendSummary.AttributionNoteHits.Count -eq 1) ('fixture must find exactly 1 attribution-shaped note, got ' + $backendSummary.AttributionNoteHits.Count)
+Check ($backendSummary.AttributionCaveat -like '*CANNOT directly prove*') 'the attribution caveat must say the log cannot prove an event fired, not just report a count'
+
+# Narrator: one voiced ("VOICE: spoke ..."), one text-only ("VOICE: text-only (no audio) ...").
+Check ($backendSummary.NarratorVoicedCount -eq 1) ('fixture must show 1 voiced narrator line, got ' + $backendSummary.NarratorVoicedCount)
+Check ($backendSummary.NarratorTextOnlyCount -eq 1) ('fixture must show 1 text-only narrator line, got ' + $backendSummary.NarratorTextOnlyCount)
+
+# Autosave: derived from fromPhase=="Evening" -- tick E is the only one (Evening -> Morning).
+Check ($backendSummary.AutosaveWriteCount -eq 1) ('fixture must derive exactly 1 autosave write, got ' + $backendSummary.AutosaveWriteCount)
+
+# Contradiction (b): auto-advances (D, E) plus the one unattributed advance (F) = 3 lines.
+$autoContradictions = Get-AutoAdvanceContradictions -Summary $backendSummary
+Check ($autoContradictions.Count -eq 3) ('fixture must produce exactly 3 auto-advance/unattributed contradiction lines, got ' + $autoContradictions.Count)
+
+# Contradiction (a): the driver's own turn log shows a refusal in day 1 Morning -> no mismatch: the
+# UI and the kernel AGREE. Remove that refusal and the same bucket must now flag a mismatch, proving
+# the check actually discriminates rather than always firing or never firing.
+$driverTurnsAgree = @(
+    [pscustomobject]@{ Day = 1; Phase = 'Morning'; Accepted = $true }
+    [pscustomobject]@{ Day = 1; Phase = 'Morning'; Accepted = $false }
+)
+$mismatchesAgree = Get-DriverBackendMismatches -Summary $backendSummary -DriverTurns $driverTurnsAgree
+Check ($mismatchesAgree.Count -eq 0) ('when the driver ALSO saw a refusal in day 1 Morning, there must be no mismatch, got ' + $mismatchesAgree.Count)
+
+$driverTurnsDisagree = @(
+    [pscustomobject]@{ Day = 1; Phase = 'Morning'; Accepted = $true }
+)
+$mismatchesDisagree = Get-DriverBackendMismatches -Summary $backendSummary -DriverTurns $driverTurnsDisagree
+Check ($mismatchesDisagree.Count -eq 1) ('when the driver saw ONLY acceptances in day 1 Morning but the backend logged a rejection there, exactly 1 mismatch line must fire, got ' + $mismatchesDisagree.Count)
+Check ($mismatchesDisagree[0] -like '*day 1 Morning*') ('the mismatch line must name the day/phase bucket, got [' + $mismatchesDisagree[0] + ']')
+
+# Format-BackendMarkdown must actually render (smoke check -- the real content is asserted above).
+$backendMarkdownText = Format-BackendMarkdown -Summary $backendSummary -Contradictions $autoContradictions
+Check ($backendMarkdownText -like '*Backend record*') 'Format-BackendMarkdown must produce a "Backend record" heading'
+Check ($backendMarkdownText -like '*insufficient gold*') 'Format-BackendMarkdown must surface the rejection reason'
+
+# --- 8. Coverage census (U3) -- "everything gets a denominator" ---------------------------------
+. (Join-Path $toolsDir 'agent-playtest\coverage.ps1')
+
+# A small, fully synthetic registry -- deliberately NOT the real repo's (which can only grow over
+# time and would make "the exact untouched complement" a moving target). This proves the
+# touch-tracking and report math in isolation from how big the real game happens to be today.
+$fakeRegistries = [pscustomobject]@{
+    Panel           = @('Forge', 'Shop')
+    TownBuilding    = @('forge', 'market', 'tavern')
+    InteriorStation = @('forge/anvil', 'forge/furnace')
+    DayPhase        = @('Morning', 'Evening')
+    ActionType      = @('press', 'advance')
+    HudControl      = @('AdvancePhase')
+    Caveats         = @('synthetic test registry -- not the real game')
+}
+$fakeTracker = New-CoverageTracker
+
+# Stub turn history: turn 1 stands at the forge's door outdoors and advances; turn 2 opens the Forge
+# panel and presses AdvancePhase. This is deliberately a SMALL, hand-traceable script so the expected
+# touched/untouched split can be verified by inspection, not by trusting the code under test.
+$turn1State = [pscustomobject]@{
+    location = 'town'
+    phase    = 'Morning'
+    nearby   = @([pscustomobject]@{ key = 'forge'; inRange = $true })
+}
+$turn1Command = [pscustomobject]@{ action = 'advance' }
+Add-CoverageTouch -Tracker $fakeTracker -State $turn1State -Command $turn1Command
+
+$turn2State = [pscustomobject]@{
+    location = 'panel:Forge'
+    phase    = 'Morning'
+    nearby   = @()
+}
+$turn2Command = [pscustomobject]@{ action = 'press'; target = 'AdvancePhase' }
+Add-CoverageTouch -Tracker $fakeTracker -State $turn2State -Command $turn2Command
+
+$fakeReport = Get-CoverageReport -Registries $fakeRegistries -Tracker $fakeTracker
+$byCat = @{}
+foreach ($c in $fakeReport.Categories) { $byCat[$c.Category] = $c }
+
+Check (($byCat['Panel'].Touched -join ',') -eq 'Forge') ('Panel touched must be exactly [Forge], got [' + ($byCat['Panel'].Touched -join ',') + ']')
+Check (($byCat['Panel'].Untouched -join ',') -eq 'Shop') ('Panel untouched must be exactly [Shop], got [' + ($byCat['Panel'].Untouched -join ',') + ']')
+
+Check (($byCat['TownBuilding'].Touched -join ',') -eq 'forge') ('TownBuilding touched must be exactly [forge], got [' + ($byCat['TownBuilding'].Touched -join ',') + ']')
+Check (($byCat['TownBuilding'].Untouched -join ',') -eq 'market,tavern') ('TownBuilding untouched must be exactly [market,tavern], got [' + ($byCat['TownBuilding'].Untouched -join ',') + ']')
+
+Check ($byCat['InteriorStation'].Touched.Count -eq 0) 'InteriorStation touched must be empty -- neither stub turn ever entered an interior'
+Check (($byCat['InteriorStation'].Untouched -join ',') -eq 'forge/anvil,forge/furnace') ('InteriorStation untouched must list BOTH stations in full, got [' + ($byCat['InteriorStation'].Untouched -join ',') + ']')
+
+Check (($byCat['DayPhase'].Touched -join ',') -eq 'Morning') ('DayPhase touched must be exactly [Morning], got [' + ($byCat['DayPhase'].Touched -join ',') + ']')
+Check (($byCat['DayPhase'].Untouched -join ',') -eq 'Evening') ('DayPhase untouched must be exactly [Evening], got [' + ($byCat['DayPhase'].Untouched -join ',') + ']')
+
+Check ($byCat['ActionType'].Untouched.Count -eq 0) ('ActionType must show full coverage (both press and advance used), untouched was [' + ($byCat['ActionType'].Untouched -join ',') + ']')
+Check ($byCat['HudControl'].Untouched.Count -eq 0) ('HudControl must show full coverage (AdvancePhase was pressed), untouched was [' + ($byCat['HudControl'].Untouched -join ',') + ']')
+
+Check ($fakeReport.OverallTouched -eq 6) ('overall touched must be 6 (1+1+0+1+2+1), got ' + $fakeReport.OverallTouched)
+Check ($fakeReport.OverallTotal -eq 12) ('overall total must be 12 (2+3+2+2+2+1), got ' + $fakeReport.OverallTotal)
+Check ($fakeReport.OverallPercentage -eq 50.0) ('overall percentage must be 50.0, got ' + $fakeReport.OverallPercentage)
+
+$fakeCoverageMarkdown = Format-CoverageMarkdown -Report $fakeReport
+Check ($fakeCoverageMarkdown -like '*market*') 'Format-CoverageMarkdown must print the untouched list in full (market)'
+Check ($fakeCoverageMarkdown -like '*tavern*') 'Format-CoverageMarkdown must print the untouched list in full (tavern)'
+Check ($fakeCoverageMarkdown -like '*forge/anvil*') 'Format-CoverageMarkdown must print untouched interior stations by their venue/id key'
+
+# Real-repo registries: not exact-count-asserted (the repo grows), but proven non-empty and spot
+# checked against known-stable facts derived from source read earlier while building this file --
+# ActionType is a closed 5-verb switch (press/move/key/advance/stop) that will not silently grow.
+$realRegistries = Get-CoverageRegistries -RepoRoot $repoRoot
+Check (($realRegistries.ActionType | Sort-Object) -join ',' -eq 'advance,key,move,press,stop') ('real ActionType registry must be exactly the 5 bridge verbs, got [' + ($realRegistries.ActionType -join ',') + ']')
+Check ($realRegistries.Panel -contains 'Forge') 'real Panel registry must contain Forge (MainUi.cs Drawer.Register)'
+Check ($realRegistries.DayPhase -contains 'Morning') 'real DayPhase registry must contain Morning'
+Check ($realRegistries.TownBuilding.Count -ge 5) ('real TownBuilding registry must have at least the 5 known outdoor venues, got ' + $realRegistries.TownBuilding.Count)
+Check ($realRegistries.InteriorStation.Count -gt 0) 'real InteriorStation registry must be non-empty'
+Check ($realRegistries.Caveats.Count -ge 2) ('real registries must carry at least the HUD-control and forge-profession-gating caveats, got ' + $realRegistries.Caveats.Count)
+
+# --- 9. Personas (U4) -- "five players, not one player five times" ------------------------------
+. (Join-Path $toolsDir 'agent-playtest\personas.ps1')
+
+$personasDir = Join-Path $toolsDir 'agent-playtest\prompts\personas'
+$actMdPath = Join-Path $toolsDir 'agent-playtest\prompts\act.md'
+$actProtocolText = Get-Content $actMdPath -Raw
+
+foreach ($p in @('first-timer', 'veteran', 'speedrunner', 'completionist', 'sceptic')) {
+    $resolved = Resolve-PersonaChoice -Persona $p
+    Check ($resolved -eq $p) ('a known persona name must resolve to itself, got [' + $resolved + '] for [' + $p + ']')
+}
+
+# "random" resolves via the injectable scriptblock (overridable so this is deterministic) to one of
+# the five known names -- never a sixth value, never the literal string "random" itself.
+$randomResolved = Resolve-PersonaChoice -Persona 'random' -Random { param($items) $items[2] }
+Check (@('first-timer', 'veteran', 'speedrunner', 'completionist', 'sceptic') -contains $randomResolved) ('"random" must resolve to one of the five known personas, got [' + $randomResolved + ']')
+
+# An unknown persona name must FAIL LOUDLY -- never silently become the default. This is the exact
+# silent-fallback defect shape this repo has already fixed twice (A1, A6); a third instance here
+# would undo the whole point of U4.
+$unknownPersonaThrew = $false
+$unknownPersonaMessage = ''
+try {
+    Resolve-PersonaChoice -Persona 'definitely-not-a-real-persona' | Out-Null
+} catch {
+    $unknownPersonaThrew = $true
+    $unknownPersonaMessage = $_.Exception.Message
+}
+Check ($unknownPersonaThrew -eq $true) 'an unrecognized -Persona value must throw, not silently resolve to a default'
+Check ($unknownPersonaMessage -like '*unknown persona*') ('the thrown message must say "unknown persona", got [' + $unknownPersonaMessage + ']')
+
+# Two different personas must produce two different assembled prompts and two different hashes --
+# "so two runs claiming to be different players can be checked" (the brief's own acceptance test).
+$veteranPrompt = Build-PersonaActPrompt -ActProtocolText $actProtocolText -PersonaName 'veteran' -PersonasDir $personasDir
+$scepticPrompt = Build-PersonaActPrompt -ActProtocolText $actProtocolText -PersonaName 'sceptic' -PersonasDir $personasDir
+$firstTimerPrompt = Build-PersonaActPrompt -ActProtocolText $actProtocolText -PersonaName 'first-timer' -PersonasDir $personasDir
+$speedrunnerPrompt = Build-PersonaActPrompt -ActProtocolText $actProtocolText -PersonaName 'speedrunner' -PersonasDir $personasDir
+$completionistPrompt = Build-PersonaActPrompt -ActProtocolText $actProtocolText -PersonaName 'completionist' -PersonasDir $personasDir
+
+Check ($veteranPrompt -ne $scepticPrompt) 'veteran and sceptic must assemble to DIFFERENT prompt text'
+$veteranHash = Get-PromptHash -Text $veteranPrompt
+$scepticHash = Get-PromptHash -Text $scepticPrompt
+$firstTimerHash = Get-PromptHash -Text $firstTimerPrompt
+Check ($veteranHash -ne $scepticHash) ('veteran and sceptic must hash differently, both got [' + $veteranHash + ']')
+Check ($veteranHash -ne $firstTimerHash) 'veteran and first-timer must hash differently'
+Check ($veteranHash.Length -eq 12) ('the prompt hash must be 12 hex chars, got [' + $veteranHash + '] (' + $veteranHash.Length + ' chars)')
+
+# Same text must hash the SAME way twice (a hash that is not stable would be useless for comparing
+# two runs' findings.md headers against each other).
+Check ((Get-PromptHash -Text $veteranPrompt) -eq (Get-PromptHash -Text $veteranPrompt)) 'the same prompt text must hash identically on repeat calls'
+
+# The assembled prompt must have substituted the marker away entirely, and must carry the persona's
+# own content through.
+Check ($veteranPrompt -notlike '*{{PERSONA}}*') 'the assembled prompt must not still contain the {{PERSONA}} marker'
+Check ($veteranPrompt -like '*six decisions*') 'the assembled veteran prompt must carry the veteran persona''s own content'
+
+# A missing marker in act.md itself must fail loudly, not silently ship a protocol-only prompt with
+# no persona attached.
+$noMarkerThrew = $false
+try {
+    Build-PersonaActPrompt -ActProtocolText 'no marker in this text at all' -PersonaName 'veteran' -PersonasDir $personasDir | Out-Null
+} catch { $noMarkerThrew = $true }
+Check ($noMarkerThrew -eq $true) 'act.md text with no {{PERSONA}} marker must throw, not silently return protocol-only text'
+
+# A missing persona FILE must also fail loudly.
+$noFileThrew = $false
+try {
+    Build-PersonaActPrompt -ActProtocolText $actProtocolText -PersonaName 'nonexistent-persona' -PersonasDir $personasDir | Out-Null
+} catch { $noFileThrew = $true }
+Check ($noFileThrew -eq $true) 'a persona name with no matching .md file must throw'
+
+# --- 10. Noun-purity guard (mid-flight design-review correction) --------------------------------
+# act.md is shared PROTOCOL every persona reads, including first-timer -- the ONE persona whose
+# entire value is knowing NOTHING the game has not shown it yet. act.md's first draft still taught
+# the game in its opening line and named VigilStop by name in a protocol rule; a first-timer layered
+# on top of THAT is not a first-timer, it is the builder wearing a name tag. This section is the
+# mechanical guard against that regressing silently a second time.
+$gameNounDenylist = Get-GameNounDenylist -RepoRoot $repoRoot
+Check ($gameNounDenylist.Count -ge 10) ('the glossary-derived denylist must have a healthy number of terms (THE-GAME.md ' +
+    'section 8 has 15 rows, one splits into 2), got ' + $gameNounDenylist.Count + ': ' + ($gameNounDenylist -join ', '))
+# Spot-check a few terms by name so a parser regression that silently returns the WRONG terms (not
+# just zero terms) is still caught.
+foreach ($expectedTerm in @('Vigil', 'Bounty', 'Commission', 'Heirloom', 'mark')) {
+    Check ($gameNounDenylist -contains $expectedTerm) ('the glossary-derived denylist must contain "' + $expectedTerm + '", got [' + ($gameNounDenylist -join ', ') + ']')
+}
+
+# THE actual guard: act.md's raw protocol text, on its own, must be clean.
+$actProtocolHits = Test-TextForGameNouns -Text $actProtocolText -Denylist $gameNounDenylist -Allowlist $script:GameNounAllowlist
+Check ($actProtocolHits.Count -eq 0) ('act.md (protocol only, before persona substitution) must teach ZERO game nouns, found: ' + ($actProtocolHits -join ', '))
+
+# THE brief's own required check: the FULLY ASSEMBLED first-timer prompt (protocol + persona, exactly
+# what gets sent to the model) must ALSO be zero-overlap -- a clean act.md is not enough if the one
+# persona meant to know nothing is reunited with a leak of its own.
+$firstTimerHits = Test-TextForGameNouns -Text $firstTimerPrompt -Denylist $gameNounDenylist -Allowlist $script:GameNounAllowlist
+Check ($firstTimerHits.Count -eq 0) ('the assembled first-timer prompt must teach ZERO game nouns, found: ' + ($firstTimerHits -join ', '))
+
+# Contrast case, so this test is PROVEN to discriminate rather than always reading zero by accident:
+# veteran/completionist/sceptic are SUPPOSED to know the vigil by name (rule 7's relocated content).
+$veteranHits = Test-TextForGameNouns -Text $veteranPrompt -Denylist $gameNounDenylist -Allowlist $script:GameNounAllowlist
+Check ($veteranHits.Count -gt 0) 'veteran SHOULD legitimately trip the denylist (it is told about VigilStop on purpose) -- zero hits here would mean this test is vacuous'
+Check ($veteranHits -contains 'Vigil') ('veteran''s hits should specifically include "Vigil", got [' + ($veteranHits -join ', ') + ']')
+$completionistHits = Test-TextForGameNouns -Text $completionistPrompt -Denylist $gameNounDenylist -Allowlist $script:GameNounAllowlist
+Check ($completionistHits -contains 'Vigil') 'completionist must also carry vigil-specific knowledge per the correction'
+$scepticHits = Test-TextForGameNouns -Text $scepticPrompt -Denylist $gameNounDenylist -Allowlist $script:GameNounAllowlist
+Check ($scepticHits -contains 'Vigil') 'sceptic must also carry vigil-specific knowledge per the correction'
+
+# speedrunner is the OTHER blind-to-the-vigil persona (deliberately, per the correction: mashing
+# through the vigil blind is the only honest test that skipping stays legal) -- it MAY legitimately
+# know other game nouns (bounty, etc, already part of its own goal text) but must NOT know "Vigil"
+# specifically.
+$speedrunnerHits = Test-TextForGameNouns -Text $speedrunnerPrompt -Denylist $gameNounDenylist -Allowlist $script:GameNounAllowlist
+Check ($speedrunnerHits -notcontains 'Vigil') ('speedrunner must NOT be told about the vigil by name (that is the skip-legality probe), found: ' + ($speedrunnerHits -join ', '))
+
+# Test-TextForGameNouns itself: an allowlist entry must actually exempt a term (mechanism check,
+# independent of whether act.md currently needs one).
+$allowlistDemoHits = Test-TextForGameNouns -Text 'this sentence uses the word mark on purpose' -Denylist @('mark') -Allowlist @('mark')
+Check ($allowlistDemoHits.Count -eq 0) 'an allowlisted term must be exempted from the denylist scan'
+$noAllowlistDemoHits = Test-TextForGameNouns -Text 'this sentence uses the word mark on purpose' -Denylist @('mark') -Allowlist @()
+Check ($noAllowlistDemoHits.Count -eq 1) 'the same term WITHOUT an allowlist entry must be caught (proves the allowlist, not the pattern, is what exempted it above)'
 
 # --- Summary -----------------------------------------------------------------------------------
 if ($failures.Count -gt 0) {
