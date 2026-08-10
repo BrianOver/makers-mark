@@ -162,6 +162,9 @@ Set-Content -Path (Join-Path $runA 'coverage.json') -Value '{"Categories":[{"Cat
 # contradiction-shaped facts ride as separate counts.
 Set-Content -Path (Join-Path $runA 'backend.json') -Value '{"Available":true,"AutoAdvanceCount":1,"UnattributedAdvanceCount":0}' -Encoding utf8
 Set-Content -Path (Join-Path $runA 'run-meta.json') -Value '{"tag":"Full-first-timer-1","scope":"Full","persona":"first-timer","personaPassedToDriver":false,"exitCode":0}' -Encoding utf8
+# W2 (docs/plans/2026-08-10-002): runA's metrics.json -- the product sentence FIRED (screen showed a
+# MakersMark item), one day of entropy data. Get-MetricsSummary's REAL shape (metrics.ps1).
+Set-Content -Path (Join-Path $runA 'metrics.json') -Value '{"PerDayEntropy":[{"Day":"1","TotalActions":4,"DistinctActionTypes":3,"EntropyBits":1.5}],"ProductSentence":{"ProductSentenceFired":true}}' -Encoding utf8
 
 # runB: DEGRADED AND INCOMPLETE. Shares the SAME finding line as runA (recurrence proof), touches
 # {ShopPanel, TavernPanel} (coverage-union proof: union touched = {Forge,Shop,Tavern}, total known
@@ -203,10 +206,14 @@ Set-Content -Path (Join-Path $runB 'turnlog.md') -Value $turnlogB -Encoding utf8
 Set-Content -Path (Join-Path $runB 'coverage.json') -Value '{"Categories":[{"Category":"Panel","Total":6,"Touched":["ShopPanel","TavernPanel"],"Untouched":["ForgePanel","AlchemyPanel","EngineeringPanel","TanningPanel"],"Percentage":33.3}],"OverallTouched":2,"OverallTotal":6,"OverallPercentage":33.3,"Caveats":[]}' -Encoding utf8
 Set-Content -Path (Join-Path $runB 'backend.json') -Value '{"Available":true,"AutoAdvanceCount":2,"UnattributedAdvanceCount":1}' -Encoding utf8
 Set-Content -Path (Join-Path $runB 'run-meta.json') -Value '{"tag":"Scout-veteran-1","scope":"Scout","persona":"veteran","personaPassedToDriver":false,"exitCode":1}' -Encoding utf8
+# runB's metrics.json -- the product sentence did NOT fire this run, two days of entropy data (the
+# per-day-entropy-table proof needs at least one run with more than a single day of rows).
+Set-Content -Path (Join-Path $runB 'metrics.json') -Value '{"PerDayEntropy":[{"Day":"1","TotalActions":2,"DistinctActionTypes":1,"EntropyBits":0.0},{"Day":"2","TotalActions":3,"DistinctActionTypes":2,"EntropyBits":0.9183}],"ProductSentence":{"ProductSentenceFired":false}}' -Encoding utf8
 
 # runC: no findings.md at all -- proves "reported as missing, not skipped silently". Only a
 # run-meta.json exists (proving exit code / scope / persona can still be recovered even when the
-# driver's own report is absent).
+# driver's own report is absent). Also has NO metrics.json -- the defensive-reading proof for W2's
+# own reader (Get-MetricsData): absent must read as an empty cell/note, never a silent "not fired".
 Set-Content -Path (Join-Path $runC 'run-meta.json') -Value '{"tag":"Diff-sceptic-1","scope":"Diff","persona":"sceptic","personaPassedToDriver":false,"exitCode":1}' -Encoding utf8
 
 # Run the aggregator for real, against these fixtures only -- no Godot, no ollama, no network.
@@ -243,10 +250,13 @@ if (Test-Path $summaryPath) {
         # persona into as many groups as there were request spellings.
         Check ($rowA.Persona -eq 'first-timer') ('runA Persona must be the bare resolved name "first-timer", got [' + $rowA.Persona + ']')
         Check ($rowA.PromptHash -eq 'a1b2c3d4') ('runA PromptHash must parse from the combined header line, got [' + $rowA.PromptHash + ']')
+        # W2 (docs/plans/2026-08-10-002): runA's metrics.json says the product sentence FIRED.
+        Check ($rowA.ProductSentenceFired -eq 'True') ('runA ProductSentenceFired must be True (its metrics.json says so), got [' + $rowA.ProductSentenceFired + ']')
     }
     if ($rowB) {
         Check ($rowB.Verdict -eq 'DEGRADED + INCOMPLETE') ('runB verdict must name both, got [' + $rowB.Verdict + ']')
         Check ($rowB.LastInGameDay -eq '2') ('runB LastInGameDay must be 2, got [' + $rowB.LastInGameDay + ']')
+        Check ($rowB.ProductSentenceFired -eq 'False') ('runB ProductSentenceFired must be False (its metrics.json says so), got [' + $rowB.ProductSentenceFired + ']')
     }
     if ($rowC) {
         Check ($rowC.Verdict -eq 'MISSING') ('runC (no findings.md) verdict must be MISSING, got [' + $rowC.Verdict + ']')
@@ -262,11 +272,32 @@ if (Test-Path $summaryPath) {
         Check ([string]::IsNullOrEmpty($rowC.UntouchedSurfaceCount)) ('runC UntouchedSurfaceCount must be empty, not a silent 0 -- got [' + $rowC.UntouchedSurfaceCount + ']')
         Check ([string]::IsNullOrEmpty($rowC.AutoAdvanceCount)) ('runC AutoAdvanceCount must be empty, not a silent 0 -- got [' + $rowC.AutoAdvanceCount + ']')
         Check ([string]::IsNullOrEmpty($rowC.UnattributedAdvanceCount)) ('runC UnattributedAdvanceCount must be empty, not a silent 0 -- got [' + $rowC.UnattributedAdvanceCount + ']')
+        # W2's own defensive-reading proof: runC has NO metrics.json, so its ProductSentenceFired
+        # cell must be EMPTY -- never a coerced "False", which would read as "checked, and it didn't
+        # fire" instead of "never checked at all."
+        Check ([string]::IsNullOrEmpty($rowC.ProductSentenceFired)) ('runC ProductSentenceFired must be empty (no metrics.json), not a silent False -- got [' + $rowC.ProductSentenceFired + ']')
     }
 }
 
 if (Test-Path $reportPath) {
     $report = Get-Content $reportPath -Raw
+
+    # W2 (docs/plans/2026-08-10-002): REPORT.md must LEAD with "the sentence the game exists to
+    # produce fired in K of N runs" -- read from each run's own metrics.json. K=1 (runA fired),
+    # N-with-metrics=2 (runA + runB both have metrics.json; runC does not), total=3.
+    $productSentenceLineIdx = $report.IndexOf('The sentence the game exists to produce fired')
+    $deepestDayHeadingIdx = $report.IndexOf('## Deepest day reached')
+    Check ($productSentenceLineIdx -ge 0) ('REPORT.md must contain the product-sentence lead line at all. Report:' + [Environment]::NewLine + $report)
+    Check ($productSentenceLineIdx -ge 0 -and $productSentenceLineIdx -lt $deepestDayHeadingIdx) 'REPORT.md must LEAD with the product-sentence line -- it must appear BEFORE the Deepest day reached section, not buried after it'
+    Check ($report -match [regex]::Escape('fired in 1 of 2 run(s) with metrics.json available')) ('REPORT.md must report exactly 1 of 2 runs-with-metrics fired. Report:' + [Environment]::NewLine + $report)
+    Check ($report -match [regex]::Escape('1 of 3 total run(s) had no usable metrics.json')) 'REPORT.md must name runC as the one run with no usable metrics.json, not silently drop it from the denominator'
+
+    # Per-day entropy table across runs: runA's day 1 (1.5 bits) and runB's day 1/day 2 (0/0.9183
+    # bits) must all appear, each attributed to its own run tag.
+    Check ($report -match '## Per-day action entropy across runs') 'REPORT.md must have a per-day entropy table section'
+    Check ($report -match '\| Full-first-timer-1 \| 1 \| 1\.5 \|') ('REPORT.md entropy table must include runA''s day 1 row (1.5 bits). Report:' + [Environment]::NewLine + $report)
+    Check ($report -match '\| Scout-veteran-1 \| 1 \| 0(\.0+)? \|') 'REPORT.md entropy table must include runB''s day 1 row (0 bits)'
+    Check ($report -match '\| Scout-veteran-1 \| 2 \| 0\.9183 \|') 'REPORT.md entropy table must include runB''s day 2 row (0.9183 bits)'
 
     # Coverage union: total 6 known surfaces, 3 touched (Forge/Shop/Tavern), 3 never touched
     # (Alchemy/Engineering/Tanning) -- see the fixture comments above for the arithmetic.

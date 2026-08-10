@@ -42,7 +42,7 @@ Do NOT write a bug report. Answer these four questions, using ONLY what the log 
 1. **Did this session contain a decision that mattered?** Point at the specific turn where you faced a real six-decisions-shaped choice -- or say plainly that you never got the chance to.
 2. **Did anything name the player's work?** Did a ledger line, a gossip line, a legends entry, or a memorial ever say that YOUR item did something specific to a specific hero -- or did every outcome you saw read as generic?
 3. **Was there a stretch where nothing was asked of you?** Quote the turns where you were pressing `advance` or repeating the same action because nothing else was live, and say how long the stretch ran.
-4. **The day-11 check.** If the log reaches roughly day 10 or later, did anything change -- new controls, new pressure, new asks -- or did it feel identical to the early days? If the log never gets that far, say so and skip this one.
+4. **The day-11 check.** The mechanical answer is primary now: per-day action entropy and the LEGAL-vs-CHOSEN ratio per phase (both computed separately, with no model in the loop, and already shown elsewhere in this findings.md) are the standing record of whether day-to-day play actually changed shape. Do not re-derive them or guess a verdict those numbers already answer. If the digest below reaches roughly day 10 or later, add only what those numbers cannot show: a specific turn, a specific quoted line, or a specific ask that changed (or conspicuously did not). If the digest never gets that far, say so and skip the rest of this question.
 
 ## Rules
 

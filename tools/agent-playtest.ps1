@@ -161,6 +161,7 @@ param(
 . (Join-Path $PSScriptRoot 'agent-playtest\model-call.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\footer.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\deadverb.ps1')
+. (Join-Path $PSScriptRoot 'agent-playtest\metrics.ps1')
 
 $ErrorActionPreference = 'Stop'
 
@@ -305,9 +306,14 @@ $coverageJsonPath  = Join-Path $OutDir 'coverage.json'
 # is always resolved -- promoted or deleted -- before the next press turn stages into it), but a run
 # that dies mid-verdict could leave one behind, so it gets the same prior-run cleanup.
 $deadVerbStagingPath = Join-Path $OutDir 'deadverb-staging.png'
+# W2 (docs/plans/2026-08-10-002): mechanical fun metrics -- per-day entropy, legal-vs-chosen ratio,
+# the refusal frustration map, the product-sentence counter (metrics.ps1). Same one-folder-answers-
+# everything convention as backend.json/coverage.json above.
+$metricsJsonPath   = Join-Path $OutDir 'metrics.json'
 
 foreach ($stale in @($statePath, $cmdPath, $framePath, $turnlogPath, $findingsPath, $driverLog,
-        $playtestLogPath, $backendJsonPath, $coverageMdPath, $coverageJsonPath, $deadVerbStagingPath)) {
+        $playtestLogPath, $backendJsonPath, $coverageMdPath, $coverageJsonPath, $metricsJsonPath,
+        $deadVerbStagingPath)) {
     if (Test-Path $stale) { Move-Item $stale ($stale + '.prev') -Force }
 }
 # frames/ is a directory, not a single file -- Move-Item -Force cannot rename it onto an existing
@@ -453,6 +459,19 @@ $frameNoteByTurn = @{}
 # reports the PRECEDING command's result). Cross-referenced against the backend log's own rejections
 # after the run (Get-DriverBackendMismatches, backend.ps1) to catch a UI/kernel disagreement.
 $driverTurns = New-Object System.Collections.ArrayList
+
+# W2 (docs/plans/2026-08-10-002 "the playtest becomes a player"): metrics.ps1's own per-turn record --
+# one entry per turn, chronological by construction, carrying everything Get-PerDayActionEntropy,
+# Get-LegalVsChosenByPhase, Get-ProductSentenceReport, and Build-PerDayJudgeDigest each need. Built
+# alongside $driverTurns rather than replacing it -- $driverTurns' Day/Phase/Accepted shape is already
+# load-bearing for Get-DriverBackendMismatches and this file adds a second, richer record instead of
+# reshaping that one underneath it.
+$turnRecords = New-Object System.Collections.ArrayList
+# Every driver-side pre-send refusal (Get-LegalCommandFromReply catching an illegal press/key/move
+# before it ever reaches the client) -- one entry per REFUSED ATTEMPT, not per turn (a single turn can
+# refuse more than once across its retry attempts before either landing on a legal command or falling
+# back to advance). Feeds Get-RefusalFrustrationMap.
+$preRefusals = New-Object System.Collections.ArrayList
 
 # U3: what this run actually touched, derived against the real registries read from source (never a
 # hand-typed list -- see coverage.ps1's own header note). Registries are read once, up front: they
@@ -604,6 +623,11 @@ try {
             [void]$stuckFindings.Add($note)
         }
 
+        # W2: this turn's own pre-refusal reasons, reset every iteration (both modes) -- Scripted never
+        # populates it (it has no legality-check attempts loop at all), so it is always an empty array
+        # there, which is the correct answer for a mode with no pre-send refusal concept.
+        $turnPreRefusalReasons = New-Object System.Collections.ArrayList
+
         # Decide the command.
         $command = $null
         if ($Scripted) {
@@ -640,6 +664,17 @@ try {
                 if ($legal.Refused) {
                     $userText = $userText + [Environment]::NewLine + ('REFUSED: ' + $legal.Reason + '. Enabled controls: ' + ($enabled -join ', '))
                     Warn ('turn ' + $turn + ' attempt ' + $attempts + ' refused: ' + $legal.Reason)
+                    # W2: raw material for Get-RefusalFrustrationMap -- recorded here, at the ONE place
+                    # that already knows both the reason text and which turn/phase it happened in,
+                    # rather than re-deriving it later from Warn's own console/driver.log text.
+                    [void]$preRefusals.Add([pscustomobject]@{
+                        Turn    = $turn
+                        Day     = $state.day
+                        Phase   = $state.phase
+                        Control = (Get-RefusalControlFromReason -Reason $legal.Reason)
+                        Reason  = $legal.Reason
+                    })
+                    [void]$turnPreRefusalReasons.Add($legal.Reason)
                     continue
                 }
                 $command = $legal.Command
@@ -657,6 +692,24 @@ try {
         $parsedCmd = $command | ConvertFrom-Json
         Say ('turn ' + $turn + ': ' + $parsedCmd.action + ' ' + $parsedCmd.target + ' -- ' + $parsedCmd.why)
         [void]$history.Add('turn ' + $turn + ' @ ' + $state.location + '/' + $state.phase + ' -> ' + $parsedCmd.action + ' ' + $parsedCmd.target + ' (' + $parsedCmd.why + ') ; outcome: ' + $state.lastOutcome)
+
+        # W2: metrics.ps1's per-turn record (see its own header). Day/Phase/ScreenText/EnabledControls
+        # come off THIS turn's own $state (the context the action was chosen in); Action/Target/Why come
+        # off the command actually decided above, whether that was the model's choice or the driver's
+        # own advance-fallback.
+        [void]$turnRecords.Add([pscustomobject]@{
+            Turn            = $turn
+            Day             = $state.day
+            Phase           = $state.phase
+            Action          = $parsedCmd.action
+            Target          = $parsedCmd.target
+            Why             = $parsedCmd.why
+            Outcome         = $state.lastOutcome
+            ScreenText      = @($state.screenText)
+            EnabledControls = $enabled
+            Refused         = (@($turnPreRefusalReasons).Count -gt 0)
+            RefusalReason   = (@($turnPreRefusalReasons) | Select-Object -Last 1)
+        })
 
         # U3: record what this turn's state showed and what got pressed, against the real registries
         # read from source at the top of this script (coverage.ps1's own Add-CoverageTouch).
@@ -766,6 +819,16 @@ Set-Content -Path $coverageMdPath -Value $coverageMarkdown -Encoding utf8
 ($coverageReport | ConvertTo-Json -Depth 8) | Set-Content -Path $coverageJsonPath -Encoding utf8
 Say ('coverage: ' + $coverageReport.OverallTouched + ' of ' + $coverageReport.OverallTotal + ' surfaces touched (' + $coverageReport.OverallPercentage + '%) -- ' + $coverageMdPath)
 
+# W2 (docs/plans/2026-08-10-002): mechanical fun metrics -- computed here, same as backend/coverage
+# just above, so a run that dies before the judge pass still leaves metrics.json and its findings.md
+# section behind. Depends only on $turnRecords/$preRefusals (built during the loop above) and
+# $backendSummary (already computed) -- no model, no Godot.
+$metricsSummary = Get-MetricsSummary -TurnRecords @($turnRecords) -PreRefusals @($preRefusals) -BackendSummary $backendSummary
+$metricsMarkdown = Format-MetricsMarkdown -Metrics $metricsSummary
+($metricsSummary | ConvertTo-Json -Depth 8) | Set-Content -Path $metricsJsonPath -Encoding utf8
+Say ('metrics: ' + @($metricsSummary.PerDayEntropy).Count + ' day(s) of entropy data, product-sentence fired: ' +
+    $metricsSummary.ProductSentence.ProductSentenceFired + ' -- ' + $metricsJsonPath)
+
 # A1: this is the number the whole unit exists to produce. "The model played N turns" and "the
 # model failed N times and the driver pressed advance N times" used to write an identical
 # findings.md and an identical exit code. They no longer do.
@@ -811,24 +874,20 @@ $fullLog = ''
 if (Test-Path $turnlogPath) { $fullLog = Get-Content $turnlogPath -Raw }
 if (-not $fullLog) { $fullLog = ($history -join [Environment]::NewLine) }
 
-# Cap what the JUDGE is sent. The bridge's turnlog carries the whole screen digest per turn, so it
-# reaches tens of KB fast (57 KB in 22 turns, measured), and a 7B model's context is the smaller
-# constraint anyway. The FULL log is still written to findings.md below -- only the model's copy is
-# trimmed, and it is trimmed from the FRONT so the most recent turns survive.
-#
-# INTERIM raise 6000 -> 24000 (W1, docs/plans/2026-08-10-002): the live defect this was still causing
-# is named in that plan directly -- at 6000 chars, the judge saw roughly the last 2-3 turns of a 57 KB
-# log, so it could never speak to anything that happened before whatever just happened, and "day 11 is
-# boring" is exactly the kind of finding that requires seeing most of a run, not its tail. 24000 is
-# still a FRONT-trim, not a fix: $JudgeModel's 40K-token context can hold it, and it buys headroom
-# without yet answering "does the judge see the whole run." W2 replaces this with a per-day digest
-# (docs/plans/2026-08-10-002 W2) instead of raising the cap again.
-$log = $fullLog
-$judgeCap = 24000
-if ($log.Length -gt $judgeCap) {
-    $log = '(earlier turns trimmed)' + [Environment]::NewLine + $log.Substring($log.Length - $judgeCap)
-    Say ('judge input trimmed to last ' + $judgeCap + ' chars of ' + $fullLog.Length)
-}
+# W2 (docs/plans/2026-08-10-002): the judge's own copy of the log is now a PER-DAY DIGEST
+# (Build-PerDayJudgeDigest, metrics.ps1), not a character-count trim of the raw turnlog text. The
+# defect the old $judgeCap tail-trim (6000, then W1's interim 24000) could never fix by raising the
+# number further: trimming from the FRONT means a long run's judge input is always "whatever happened
+# most recently" -- at 6000 chars the judge saw roughly the last 2-3 turns of a 57 KB log, so a
+# question like "did day 11 change shape from day 2" was unanswerable in principle, because day 2 had
+# already fallen off the front. The digest instead builds one block PER DAY from $turnRecords (built
+# during the loop above) and, only if the total still exceeds the budget, thins EVERY day's block
+# toward a floor rather than ever dropping a day outright -- see metrics.ps1's own header. The FULL
+# raw turnlog is still written to findings.md below unabridged; only the model's own copy is a digest.
+$judgeDigest = Build-PerDayJudgeDigest -TurnRecords @($turnRecords) -MaxChars 24000
+$log = $judgeDigest.Text
+Say ('judge input: per-day digest, ' + $judgeDigest.DayCount + ' day(s), ' + $judgeDigest.Length +
+    ' chars (thinned within days: ' + $judgeDigest.Thinned + ')')
 
 # Every scope names itself here, so a report can never be mistaken for a different scope's --
 # see this file's own .PARAMETER Scope doc for what Full/Diff/Scout each answer. Both DEGRADED
@@ -865,6 +924,8 @@ $header = @(
         ' (-FrameEvery ' + $FrameEvery + '), missing: ' + $missingFrameCount),
     ('- coverage: ' + $coverageReport.OverallTouched + ' of ' + $coverageReport.OverallTotal +
         ' surfaces touched (' + $coverageReport.OverallPercentage + '%) -- see ' + $coverageMdPath),
+    ('- product sentence (a MakersMark item named on the player''s own screen): ' +
+        $metricsSummary.ProductSentence.ProductSentenceFired + ' -- see ' + $metricsJsonPath),
     ''
 )
 if ($Scope -eq 'Diff' -and $diffScopeInfo) {
@@ -917,6 +978,11 @@ if (@($deadVerbCandidates).Count -gt 0) {
 }
 $deadVerbSection = @('', '---', '') + $deadVerbLines
 
+# W2: the "## Mechanical fun metrics" section -- BELOW the Backend record, ABOVE the model's prose
+# (recorded facts, then measured facts, then the model's account last). Same build-once-use-four-times
+# shape as $backendSection immediately above. Section order at every site: backend, metrics, dead-verb.
+$metricsSection = @('', '---', '') + @($metricsMarkdown)
+
 # W1: the honesty footer (agent-playtest\footer.ps1) -- computed once, appended to every Set-Content
 # site below alongside $backendSection, so a run that dies at any stage still ships the same "here is
 # what this instrument cannot see" note as a clean one.
@@ -926,7 +992,7 @@ $honestyFooterLines = Get-HonestyFooterLines
 # on a client that had never been asked to play, then printed "scripted run complete" and exited 0 --
 # the same shape of lie as a truncated test suite reporting "Passed!". Never again from this script.
 if ($turn -eq 0) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('NOTHING WAS PLAYED. ' + $stopReason) + $backendSection + $deadVerbSection + $honestyFooterLines)
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('NOTHING WAS PLAYED. ' + $stopReason) + $backendSection + $metricsSection + $deadVerbSection + $honestyFooterLines)
     Die @(
         ('zero turns were played: ' + $stopReason),
         '',
@@ -939,7 +1005,10 @@ if ($turn -eq 0) {
 }
 
 if ($Scripted) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $deadVerbSection + @('', '---', '', 'Scripted run -- no model judged this. The channel was exercised, including one deliberate illegal press.', '', '## Turn log', '', $log) + $honestyFooterLines)
+    # $fullLog (unabridged), not $log (the judge-only per-day digest) -- Scripted mode never calls a
+    # judge at all ("no model judged this" on the very next line), so there is no reason to show a
+    # human the compact judge-oriented digest instead of the real raw turnlog.md text here.
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + @('', '---', '', 'Scripted run -- no model judged this. The channel was exercised, including one deliberate illegal press.', '', '## Turn log', '', $fullLog) + $honestyFooterLines)
     Say ('scripted run complete, ' + $turn + ' turns. Channel log: ' + $findingsPath)
     exit 0
 }
@@ -985,8 +1054,15 @@ try {
 Say ('ollama ps after unloading ' + $Model + ', before judge call to ' + $JudgeModel + ': ' + (($residentAfter -join ', ')))
 
 Say 'asking the model to write findings'
+# W2: $log is now Build-PerDayJudgeDigest's own per-day digest (see this file's own comment above
+# where it is built), covering every day of the run -- not a raw-text tail trim. Every turn line it
+# does include still carries its real turn number, so judge.md/scout-judge.md's own "point at a
+# specific turn number" rule stays honest even when a day has been thinned.
 $judgeInput = @(
-    'Here is the full log of the session you just played.',
+    'Here is a per-day digest of the session you just played (day, phase sequence, then one line',
+    'per turn: action, outcome, any refusal, and up to two lines of on-screen text). A day with a',
+    'lot of turns may have its MIDDLE thinned out (marked "N turn(s) omitted for length") -- every',
+    'day that happened is represented, even if not every turn within it is.',
     '',
     $log,
     ''
@@ -1003,7 +1079,9 @@ $findings = ''
 try { $findings = Invoke-Model $judgePrompt (($judgeInput) -join [Environment]::NewLine) $null $JudgeModel } catch { Warn ('judge call failed: ' + $_.Exception.Message) }
 
 if (-not $findings) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $deadVerbSection + @('', '---', '', 'JUDGE FAILED -- no findings written. Raw turn log below.') + $mechanicalSection + @('', $log) + $honestyFooterLines)
+    # $fullLog here, matching the label -- "Raw turn log below" should mean the raw text, not $log
+    # (the judge's own per-day digest input, which is what just failed to produce anything).
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + @('', '---', '', 'JUDGE FAILED -- no findings written. Raw turn log below.') + $mechanicalSection + @('', $fullLog) + $honestyFooterLines)
     Die @('the judge pass produced nothing. The turn log is still in ' + $findingsPath + '.')
 }
 
@@ -1042,7 +1120,7 @@ if ($unsupported.Count -gt 0) {
     ) + ($unsupported | ForEach-Object { '- `' + $_ + '`' })
 }
 
-Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $deadVerbSection + @('', '---', '') + @($findings) + $guardNote + $mechanicalSection + @("", "---", "", "## Turn log", "", $fullLog) + $honestyFooterLines)
+Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + @('', '---', '') + @($findings) + $guardNote + $mechanicalSection + @("", "---", "", "## Turn log", "", $fullLog) + $honestyFooterLines)
 
 Write-Host ''
 Say ('findings written: ' + $findingsPath)
