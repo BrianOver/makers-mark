@@ -45,7 +45,8 @@ $parseTargets = @(
     (Join-Path $toolsDir 'agent-playtest.ps1'),
     (Join-Path $toolsDir 'agent-playtest\scope-map.ps1'),
     (Join-Path $toolsDir 'agent-playtest\turn-prompt.ps1'),
-    (Join-Path $toolsDir 'agent-playtest\mechanical.ps1')
+    (Join-Path $toolsDir 'agent-playtest\mechanical.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\completion.ps1')
 )
 foreach ($target in $parseTargets) {
     $tokens = $null
@@ -85,6 +86,17 @@ Check ($null -eq $unresolvedSurface) ('unknown path must resolve to null (unreso
 $backslashSurface = Get-ScopeMapSurface 'godot\scripts\panels\ShopPanel.cs'
 Check ($backslashSurface -and $backslashSurface -like '*panel*') ('backslash path mapping: got [' + $backslashSurface + ']')
 
+# Regression (2026-08-09): every pattern above requires a subdirectory segment, so a script sitting
+# directly in godot/scripts/ (no panels/, minigames/, town2d/, ui/, audio/, tools/) always fell
+# through to UNRESOLVED -- and MainUi.cs and RaidConductor.cs, the two busiest orchestration files
+# in the client, live exactly there. Reproduced directly against fix/sendoff-skips-the-day: this is
+# what made -Scope Diff "partially fall back" on a run whose diff and git plumbing were both fine.
+$mainUiSurface = Get-ScopeMapSurface 'godot/scripts/MainUi.cs'
+Check ($null -ne $mainUiSurface) ('top-level MainUi.cs must resolve, not fall through to UNRESOLVED: got [' + $mainUiSurface + ']')
+$raidConductorSurface = Get-ScopeMapSurface 'godot/scripts/RaidConductor.cs'
+Check ($null -ne $raidConductorSurface) ('top-level RaidConductor.cs must resolve, not fall through to UNRESOLVED: got [' + $raidConductorSurface + ']')
+Check ($raidConductorSurface -and $raidConductorSurface -like '*vigil*') ('RaidConductor.cs mapping should name the vigil/raid-watch surface: got [' + $raidConductorSurface + ']')
+
 # --- 3. Diff section fallback logic (A4's scope boundary: fall back LOUDLY) --------------------
 $emptyDiff = Get-ScopeDiffSection -ChangedFiles @()
 Check ($emptyDiff.FellBack -eq $true) 'empty changed-file list must FellBack=true'
@@ -100,6 +112,24 @@ Check ($mixedDiff.FellBack -eq $true) 'partially-unmapped changed-file list must
 Check ($mixedDiff.UnresolvedCount -eq 1) ('partially-unmapped list must count exactly 1 unresolved, got ' + $mixedDiff.UnresolvedCount)
 Check ($mixedDiff.Text -like '*PARTIALLY FELL BACK*') 'partially-unmapped diff section must say so explicitly'
 Check ($mixedDiff.Text -like '*UNRESOLVED*') 'partially-unmapped diff section must still list the unresolved path'
+
+# Regression (2026-08-09): the exact 7-file diff of fix/sendoff-skips-the-day vs origin/main,
+# reproduced directly with `git diff --name-only origin/main...origin/fix/sendoff-skips-the-day`.
+# All 10 Diff-scope sweep runs against that branch reported "fell back" even though the branch
+# genuinely differs from main -- this is the fixed scope map's real-world proof that it no longer
+# does, now that MainUi.cs and RaidConductor.cs resolve.
+$sendoffFiles = @(
+    'godot/scripts/MainUi.cs',
+    'godot/scripts/RaidConductor.cs',
+    'godot/scripts/ui/TutorialFlow.cs',
+    'godot/tests/DayAdvanceHudTests.cs',
+    'godot/tests/PlayableLoopTests.cs',
+    'godot/tests/RaidConductorTests.cs',
+    'godot/tests/TutorialFlowTests.cs'
+)
+$sendoffDiff = Get-ScopeDiffSection -ChangedFiles $sendoffFiles
+Check ($sendoffDiff.FellBack -eq $false) ('the sendoff-skips-the-day file list must no longer fall back, got FellBack=' + $sendoffDiff.FellBack + ' unresolved=' + ($sendoffDiff.Unresolved -join ', '))
+Check ($sendoffDiff.UnresolvedCount -eq 0) ('the sendoff-skips-the-day file list must have zero unresolved, got ' + $sendoffDiff.UnresolvedCount)
 
 # Get-ChangedFilesAgainstMain is real git, but read-only and needs no Godot/ollama/VRAM -- safe to
 # exercise for real against this checkout. Only the shape is asserted (an array, never a crash),
@@ -159,6 +189,43 @@ Check ($nearbyText -like '*market*right*220px away*') 'an out-of-range target mu
 
 $historyText = Build-ActUserText -State $nearbyState -Turn 2 -Turns 40 -RecentHistory @('turn 1 @ town/Morning -> advance  (test) ; outcome: ok')
 Check ($historyText -like '*Recent turns:*') 'recent history must be included when present'
+
+# --- 5. Completion floor (A6) -- "a run that dies early reports itself healthy" -----------------
+. (Join-Path $toolsDir 'agent-playtest\completion.ps1')
+
+# The four real sweep runs that exposed the defect: all stopped early, all with a clean (0%)
+# fallback ratio, so DEGRADED alone missed every one of them. All four must be INCOMPLETE under
+# the 50% floor agent-playtest.ps1 chooses.
+$scout5 = Get-CompletionVerdict -Turn 1 -Turns 80
+Check ($scout5.Incomplete -eq $true) ('Scout-5 (1 of 80 turns) must be INCOMPLETE, got ratio ' + $scout5.Ratio)
+$scout10 = Get-CompletionVerdict -Turn 9 -Turns 80
+Check ($scout10.Incomplete -eq $true) ('Scout-10 (9 of 80 turns) must be INCOMPLETE, got ratio ' + $scout10.Ratio)
+$full1 = Get-CompletionVerdict -Turn 25 -Turns 80
+Check ($full1.Incomplete -eq $true) ('Full-1 (25 of 80 turns) must be INCOMPLETE, got ratio ' + $full1.Ratio)
+$full5 = Get-CompletionVerdict -Turn 36 -Turns 80
+Check ($full5.Incomplete -eq $true) ('Full-5 (36 of 80 turns, the closest surviving case at 45%) must be INCOMPLETE, got ratio ' + $full5.Ratio)
+
+# A run that used its whole budget, or fell only just short of the floor, must NOT be flagged.
+$fullBudget = Get-CompletionVerdict -Turn 80 -Turns 80
+Check ($fullBudget.Incomplete -eq $false) 'a run that used its entire turn budget must not be INCOMPLETE'
+$mostlyThere = Get-CompletionVerdict -Turn 41 -Turns 80
+Check ($mostlyThere.Incomplete -eq $false) ('41 of 80 turns (51%) is just over the floor and must not be INCOMPLETE, got ratio ' + $mostlyThere.Ratio)
+$exactlyAtFloor = Get-CompletionVerdict -Turn 40 -Turns 80
+Check ($exactlyAtFloor.Incomplete -eq $false) ('40 of 80 turns is EXACTLY the 50% floor -- the check is strictly-less-than, so meeting the floor exactly must NOT be INCOMPLETE, got ratio ' + $exactlyAtFloor.Ratio)
+$justUnderFloor = Get-CompletionVerdict -Turn 39 -Turns 80
+Check ($justUnderFloor.Incomplete -eq $true) ('39 of 80 turns is just UNDER the 50% floor and must be INCOMPLETE, got ratio ' + $justUnderFloor.Ratio)
+
+# Scripted mode is exempt by design -- it is a fixed ~5-command channel proof, not a play session,
+# and always stops around turn 5 regardless of -Turns (see agent-playtest.ps1's own .PARAMETER
+# Scripted doc). Without the exemption every scripted run would wrongly read as INCOMPLETE.
+$scriptedRun = Get-CompletionVerdict -Turn 5 -Turns 40 -Scripted
+Check ($scriptedRun.Incomplete -eq $false) ('a Scripted run stopping at its fixed 5-command plan must never be INCOMPLETE, got ratio ' + $scriptedRun.Ratio)
+
+# Turns=0 is a degenerate caller input (never happens through the real param default of 40, but
+# must not divide by zero or crash): defined as complete (ratio 1.0), nothing to fall short of.
+$zeroTurns = Get-CompletionVerdict -Turn 0 -Turns 0
+Check ($zeroTurns.Ratio -eq 1.0) ('Turns=0 must not divide by zero, got ratio ' + $zeroTurns.Ratio)
+Check ($zeroTurns.Incomplete -eq $false) 'Turns=0 must not be flagged INCOMPLETE'
 
 # --- Summary -----------------------------------------------------------------------------------
 if ($failures.Count -gt 0) {

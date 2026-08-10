@@ -78,6 +78,49 @@ function Get-ScopeMapSurface {
         return '(dev tool, not player-facing -- nothing to look at in a normal playthrough)'
     }
 
+    # --- top-level godot/scripts/*.cs (no subdirectory) -----------------------------------------
+    # Found missing 2026-08-09: every pattern above requires a subdirectory segment, so a script
+    # sitting directly in godot/scripts/ always fell through to UNRESOLVED -- and the two busiest
+    # orchestration files in the whole client (MainUi, RaidConductor) live exactly there. That is
+    # what made -Scope Diff "partially fall back" on fix/sendoff-skips-the-day even though the diff
+    # itself and the git plumbing were both fine (reproduced directly: 7 changed files, correctly
+    # read from origin/main...HEAD). Named one by one, same granularity as the sim-module list
+    # below, rather than one catch-all -- a catch-all would quietly swallow the NEXT unclassified
+    # top-level file the same way this gap swallowed these two.
+    if ($p -match '(?i)^godot/scripts/MainUi\.cs$') {
+        return 'the whole client shell -- town view, every panel via the drawer, the HUD header, and the Evening Ledger; sweep broadly'
+    }
+    if ($p -match '(?i)^godot/scripts/RaidConductor\.cs$') {
+        return 'the vigil send-off and the raid/expedition watch sequence (Expedition -> Camp -> ExpeditionDeep -> Homecoming)'
+    }
+    if ($p -match '(?i)^godot/scripts/PhaseClock\.cs$') {
+        return 'the day/phase auto-advance clock -- HUD play/pause/fast-forward, and whether phases hold or advance'
+    }
+    if ($p -match '(?i)^godot/scripts/DelveBeats\.cs$') {
+        return 'the Depths/Delve stage''s animated fight-by-fight replay'
+    }
+    if ($p -match '(?i)^godot/scripts/(JourneyFeed|JourneyStream)\.cs$') {
+        return 'the night ticker / journey feed, including attribution callouts (Scrying Mirror)'
+    }
+    if ($p -match '(?i)^godot/scripts/SimAdapter\.cs$') {
+        return 'no single surface -- the sim/client bridge everything downstream depends on; sweep broadly'
+    }
+    if ($p -match '(?i)^godot/scripts/(AssetCatalog|IconRegistry)\.cs$') {
+        return 'no single surface -- art/icon lookup used by every screen; sweep broadly'
+    }
+    if ($p -match '(?i)^godot/scripts/BuildStamp\.cs$') {
+        return 'the build-provenance label in the corner of the screen'
+    }
+    if ($p -match '(?i)^godot/scripts/CampaignSave\.cs$') {
+        return 'closing and reopening the game -- the campaign must still be there (Continue)'
+    }
+    if ($p -match '(?i)^godot/scripts/NewGameSelect\.cs$') {
+        return 'the front door -- title menu, New Game flow, profession picker, settings, quit'
+    }
+    if ($p -match '(?i)^godot/scripts/(PlaytestLog|TestAssemblyResolver)\.cs$') {
+        return '(dev/test infrastructure, not player-facing -- nothing to look at in a normal playthrough)'
+    }
+
     # --- sim modules -> the screens that render them -------------------------------------------
     if ($p -match '(?i)^sim/GameSim/Crafting/') {
         return 'the Forge/Alchemy/Tanning/Engineering panels and their minigames'
