@@ -1,0 +1,5 @@
+{"kind":"session","startedAt":1700000000,"provenance":"test-build-1"}
+{"kind":"tick","t":1.0,"day":1,"phase":"Morning","beat":"None","cause":"","fromDay":1,"fromPhase":"Morning","gold":100,"mats":0,"shelf":0,"items":0,"heroesAlive":6,"heroes":6,"inFlight":0,"bounties":0,"act":"ActI","slots":5,"events":0,"rejects":[]}
+{"kind":"tick","t":2.0,"day":1,"phase":"Morning","beat":"None","cause":"","fromDay":1,"fromPhase":"Morning","gold":150,"mats":1,"shelf":0,"items":0,"heroesAlive":6,"heroes":6,"inFlight":0,"bounties":0,"act":"ActI","slots":5,"events":5,"rejects":[]}
+{"kind":"tick","t":3.0,"day":1,"phase":"Morning","beat":"None","cause":"","fromDay":1,"fromPhase":"Morning","gold":150,"mats":1,"shelf":0,"items":0,"heroesAlive":6,"heroes":6,"inFlight":0,"bounties":0,"act":"ActI","slots":5,"events":0,"rejects":[]}
+{"kind":"note","t":3.5,"what":"VOICE: spoke idle-01"}

@@ -52,7 +52,8 @@ $parseTargets = @(
     (Join-Path $toolsDir 'agent-playtest\coverage.ps1'),
     (Join-Path $toolsDir 'agent-playtest\personas.ps1'),
     (Join-Path $toolsDir 'agent-playtest\model-call.ps1'),
-    (Join-Path $toolsDir 'agent-playtest\footer.ps1')
+    (Join-Path $toolsDir 'agent-playtest\footer.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\deadverb.ps1')
 )
 foreach ($target in $parseTargets) {
     $tokens = $null
@@ -480,22 +481,22 @@ Check ($realRegistries.TownBuilding.Count -ge 5) ('real TownBuilding registry mu
 Check ($realRegistries.InteriorStation.Count -gt 0) 'real InteriorStation registry must be non-empty'
 Check ($realRegistries.Caveats.Count -ge 2) ('real registries must carry at least the HUD-control and forge-profession-gating caveats, got ' + $realRegistries.Caveats.Count)
 
-# --- 9. Personas (U4) -- "five players, not one player five times" ------------------------------
+# --- 9. Personas (U4, sceptic retired W3) -- "several players, not one player played N times" ---
 . (Join-Path $toolsDir 'agent-playtest\personas.ps1')
 
 $personasDir = Join-Path $toolsDir 'agent-playtest\prompts\personas'
 $actMdPath = Join-Path $toolsDir 'agent-playtest\prompts\act.md'
 $actProtocolText = Get-Content $actMdPath -Raw
 
-foreach ($p in @('first-timer', 'veteran', 'speedrunner', 'completionist', 'sceptic')) {
+foreach ($p in @('first-timer', 'veteran', 'speedrunner', 'completionist')) {
     $resolved = Resolve-PersonaChoice -Persona $p
     Check ($resolved -eq $p) ('a known persona name must resolve to itself, got [' + $resolved + '] for [' + $p + ']')
 }
 
 # "random" resolves via the injectable scriptblock (overridable so this is deterministic) to one of
-# the five known names -- never a sixth value, never the literal string "random" itself.
+# the four known names -- never a fifth value, never the literal string "random" itself.
 $randomResolved = Resolve-PersonaChoice -Persona 'random' -Random { param($items) $items[2] }
-Check (@('first-timer', 'veteran', 'speedrunner', 'completionist', 'sceptic') -contains $randomResolved) ('"random" must resolve to one of the five known personas, got [' + $randomResolved + ']')
+Check (@('first-timer', 'veteran', 'speedrunner', 'completionist') -contains $randomResolved) ('"random" must resolve to one of the four known personas, got [' + $randomResolved + ']')
 
 # An unknown persona name must FAIL LOUDLY -- never silently become the default. This is the exact
 # silent-fallback defect shape this repo has already fixed twice (A1, A6); a third instance here
@@ -511,19 +512,33 @@ try {
 Check ($unknownPersonaThrew -eq $true) 'an unrecognized -Persona value must throw, not silently resolve to a default'
 Check ($unknownPersonaMessage -like '*unknown persona*') ('the thrown message must say "unknown persona", got [' + $unknownPersonaMessage + ']')
 
+# W3 (docs/plans/2026-08-10-002, ruling 6): sceptic is RETIRED -- the dead-verb detector supersedes
+# it. Resolve-PersonaChoice must reject the old name LOUDLY, the same as any other unknown persona,
+# never silently accept it or silently fall back to a default now that its file is gone.
+$scepticThrew = $false
+$scepticMessage = ''
+try {
+    Resolve-PersonaChoice -Persona 'sceptic' | Out-Null
+} catch {
+    $scepticThrew = $true
+    $scepticMessage = $_.Exception.Message
+}
+Check ($scepticThrew -eq $true) 'sceptic must be rejected -- it is retired (ruling 6), not a valid persona any more'
+Check ($scepticMessage -like '*unknown persona*') ('the retired-sceptic rejection message must say "unknown persona", got [' + $scepticMessage + ']')
+Check (-not (Test-Path (Join-Path $personasDir 'sceptic.md'))) 'prompts/personas/sceptic.md must be deleted, not merely unregistered'
+
 # Two different personas must produce two different assembled prompts and two different hashes --
 # "so two runs claiming to be different players can be checked" (the brief's own acceptance test).
 $veteranPrompt = Build-PersonaActPrompt -ActProtocolText $actProtocolText -PersonaName 'veteran' -PersonasDir $personasDir
-$scepticPrompt = Build-PersonaActPrompt -ActProtocolText $actProtocolText -PersonaName 'sceptic' -PersonasDir $personasDir
 $firstTimerPrompt = Build-PersonaActPrompt -ActProtocolText $actProtocolText -PersonaName 'first-timer' -PersonasDir $personasDir
 $speedrunnerPrompt = Build-PersonaActPrompt -ActProtocolText $actProtocolText -PersonaName 'speedrunner' -PersonasDir $personasDir
 $completionistPrompt = Build-PersonaActPrompt -ActProtocolText $actProtocolText -PersonaName 'completionist' -PersonasDir $personasDir
 
-Check ($veteranPrompt -ne $scepticPrompt) 'veteran and sceptic must assemble to DIFFERENT prompt text'
+Check ($veteranPrompt -ne $completionistPrompt) 'veteran and completionist must assemble to DIFFERENT prompt text'
 $veteranHash = Get-PromptHash -Text $veteranPrompt
-$scepticHash = Get-PromptHash -Text $scepticPrompt
+$completionistHash = Get-PromptHash -Text $completionistPrompt
 $firstTimerHash = Get-PromptHash -Text $firstTimerPrompt
-Check ($veteranHash -ne $scepticHash) ('veteran and sceptic must hash differently, both got [' + $veteranHash + ']')
+Check ($veteranHash -ne $completionistHash) ('veteran and completionist must hash differently, both got [' + $veteranHash + ']')
 Check ($veteranHash -ne $firstTimerHash) 'veteran and first-timer must hash differently'
 Check ($veteranHash.Length -eq 12) ('the prompt hash must be 12 hex chars, got [' + $veteranHash + '] (' + $veteranHash.Length + ' chars)')
 
@@ -577,14 +592,13 @@ $firstTimerHits = Test-TextForGameNouns -Text $firstTimerPrompt -Denylist $gameN
 Check ($firstTimerHits.Count -eq 0) ('the assembled first-timer prompt must teach ZERO game nouns, found: ' + ($firstTimerHits -join ', '))
 
 # Contrast case, so this test is PROVEN to discriminate rather than always reading zero by accident:
-# veteran/completionist/sceptic are SUPPOSED to know the vigil by name (rule 7's relocated content).
+# veteran/completionist are SUPPOSED to know the vigil by name (rule 7's relocated content; sceptic
+# used to be the third, retired W3 -- see the "sceptic must be rejected" check above).
 $veteranHits = Test-TextForGameNouns -Text $veteranPrompt -Denylist $gameNounDenylist -Allowlist $script:GameNounAllowlist
 Check ($veteranHits.Count -gt 0) 'veteran SHOULD legitimately trip the denylist (it is told about VigilStop on purpose) -- zero hits here would mean this test is vacuous'
 Check ($veteranHits -contains 'Vigil') ('veteran''s hits should specifically include "Vigil", got [' + ($veteranHits -join ', ') + ']')
 $completionistHits = Test-TextForGameNouns -Text $completionistPrompt -Denylist $gameNounDenylist -Allowlist $script:GameNounAllowlist
 Check ($completionistHits -contains 'Vigil') 'completionist must also carry vigil-specific knowledge per the correction'
-$scepticHits = Test-TextForGameNouns -Text $scepticPrompt -Denylist $gameNounDenylist -Allowlist $script:GameNounAllowlist
-Check ($scepticHits -contains 'Vigil') 'sceptic must also carry vigil-specific knowledge per the correction'
 
 # speedrunner is the OTHER blind-to-the-vigil persona (deliberately, per the correction: mashing
 # through the vigil blind is the only honest test that skipping stays legal) -- it MAY legitimately
@@ -743,6 +757,210 @@ Check ($footerText -like '*Game feel*') 'the honesty footer must name game feel 
 Check ($footerText -like '*Tone register*') 'the honesty footer must name tone register by that term'
 Check ($footerText -like '*Emotional weight*') 'the honesty footer must name emotional weight by that term'
 Check ($footerText -like '*cannot ask*') 'the honesty footer must say silence on these is not a clean bill'
+
+# --- 12. Dead-verb detector (W3, docs/plans/2026-08-10-002, ruling 7) -- "a mechanical check the
+# sceptic persona used to only narrate in prose" ---------------------------------------------------
+. (Join-Path $toolsDir 'agent-playtest\deadverb.ps1')
+
+# Ruling 7's exclusion list must be EXACTLY {turn, lastOutcome} -- not a broader hand-typed set. This
+# pins the LITERAL constant (the same $script: pattern personas.ps1 uses for $script:KnownPersonas),
+# not just behavior that happens to match it today.
+Check (($script:DeadVerbExcludedFields -join ',') -eq 'turn,lastOutcome') ('the exclusion list must be EXACTLY {turn, lastOutcome}, got [' + ($script:DeadVerbExcludedFields -join ',') + ']')
+
+# A minimal but realistic state.json shape (AgentPlaytest.cs's StateDigest fields).
+$dvStateA = [pscustomobject]@{
+    turn                 = 1
+    day                  = 1
+    phase                = 'Morning'
+    beat                 = 'None'
+    actionSlotsRemaining = 5
+    gold                 = 100
+    location             = 'town'
+    canMove              = $true
+    screenText           = @('Welcome to the forge')
+    controls             = @([pscustomobject]@{ name = 'OpenShop'; label = 'Open Shop'; enabled = $true })
+    interactPrompt       = ''
+    nearby               = @([pscustomobject]@{ key = 'forge'; label = 'Forge'; direction = 'up'; distance = 32; inRange = $true })
+    lastOutcome          = '(run start)'
+}
+# Same in every field EXCEPT turn and lastOutcome -- the two fields ruling 7 excludes because they
+# necessarily change on every single turn regardless of what the press did.
+$dvStateB = [pscustomobject]@{
+    turn                 = 2
+    day                  = 1
+    phase                = 'Morning'
+    beat                 = 'None'
+    actionSlotsRemaining = 5
+    gold                 = 100
+    location             = 'town'
+    canMove              = $true
+    screenText           = @('Welcome to the forge')
+    controls             = @([pscustomobject]@{ name = 'OpenShop'; label = 'Open Shop'; enabled = $true })
+    interactPrompt       = ''
+    nearby               = @([pscustomobject]@{ key = 'forge'; label = 'Forge'; direction = 'up'; distance = 32; inRange = $true })
+    lastOutcome          = 'pressed OpenShop -> gold 100 -> 100'
+}
+$dvFingerprintA = Get-StateFingerprint -State $dvStateA
+$dvFingerprintB = Get-StateFingerprint -State $dvStateB
+Check ($dvFingerprintA -eq $dvFingerprintB) 'the fingerprint must be identical when ONLY turn/lastOutcome differ (ruling 7 exclusion list)'
+Check ($dvFingerprintA.Length -eq 64) ('the fingerprint must be a 64-char SHA256 hex digest, got [' + $dvFingerprintA + '] (' + $dvFingerprintA.Length + ' chars)')
+
+# A NORMAL field changing (gold) must change the fingerprint -- proves this is not a function that
+# always returns the same hash regardless of input.
+$dvStateGoldChanged = [pscustomobject]@{
+    turn = 1; day = 1; phase = 'Morning'; beat = 'None'; actionSlotsRemaining = 5; gold = 999
+    location = 'town'; canMove = $true; screenText = @('Welcome to the forge')
+    controls = @([pscustomobject]@{ name = 'OpenShop'; label = 'Open Shop'; enabled = $true })
+    interactPrompt = ''
+    nearby = @([pscustomobject]@{ key = 'forge'; label = 'Forge'; direction = 'up'; distance = 32; inRange = $true })
+    lastOutcome = '(run start)'
+}
+Check ($dvFingerprintA -ne (Get-StateFingerprint -State $dvStateGoldChanged)) 'the fingerprint must change when a normal field (gold) changes'
+
+# THE whole-state guarantee (the state-fingerprint lesson, cited by ruling 7 directly): an ENTIRELY
+# NEW field neither this file nor a hand-typed inclusion list has ever heard of must still change the
+# fingerprint. If this failed, the walk would secretly be an inclusion list wearing an exclusion
+# list's name -- exactly the defect class CLAUDE.md rules 6-10 exist to catch.
+$dvStateWithNewField = [pscustomobject]@{
+    turn = 1; day = 1; phase = 'Morning'; beat = 'None'; actionSlotsRemaining = 5; gold = 100
+    location = 'town'; canMove = $true; screenText = @('Welcome to the forge')
+    controls = @([pscustomobject]@{ name = 'OpenShop'; label = 'Open Shop'; enabled = $true })
+    interactPrompt = ''
+    nearby = @([pscustomobject]@{ key = 'forge'; label = 'Forge'; direction = 'up'; distance = 32; inRange = $true })
+    lastOutcome = '(run start)'
+    brandNewSurfaceFieldNoOneHasSeenYet = 'x'
+}
+Check ($dvFingerprintA -ne (Get-StateFingerprint -State $dvStateWithNewField)) 'adding a state field the fingerprint code has never heard of must still change the hash (the whole-state guarantee, not a second hand-typed list)'
+
+# Canonicalization: object key ORDER must not matter (two logically-identical objects built with keys
+# in different insertion order must hash the same) but array ELEMENT order MUST matter (screenText/
+# controls/nearby order is real game state, never a set to normalize away).
+$dvOrderedOne = [pscustomobject][ordered]@{ gold = 100; day = 1; phase = 'Morning' }
+$dvOrderedTwo = [pscustomobject][ordered]@{ phase = 'Morning'; gold = 100; day = 1 }
+Check ((Get-StateFingerprint -State $dvOrderedOne) -eq (Get-StateFingerprint -State $dvOrderedTwo)) 'object key order must not affect the fingerprint (canonical: sorted keys)'
+
+$dvArrayOrderOne = [pscustomobject]@{ screenText = @('first line', 'second line') }
+$dvArrayOrderTwo = [pscustomobject]@{ screenText = @('second line', 'first line') }
+Check ((Get-StateFingerprint -State $dvArrayOrderOne) -ne (Get-StateFingerprint -State $dvArrayOrderTwo)) 'array ELEMENT order must affect the fingerprint (screenText/controls/nearby order is real state, never normalized)'
+
+# --- Get-BackendEventsForSlice (backend.ps1's own W3 extension -- "if U2's API is whole-log only,
+# W3 extends it, never forks it") ---
+$dvFixturePath = Join-Path $toolsDir 'agent-playtest\tests\deadverb-backend-fixture.jsonl'
+Check (Test-Path $dvFixturePath) ('deadverb backend fixture must exist at ' + $dvFixturePath)
+$dvFixtureRead = Read-BackendLogRows -LogPath $dvFixturePath
+Check ($dvFixtureRead.Rows.Count -eq 5) ('deadverb fixture must have exactly 5 rows (1 session + 3 tick + 1 note), got ' + $dvFixtureRead.Rows.Count)
+
+# RowCountBefore=1 (only the session row existed): the slice covers all 3 tick rows (events 0,5,0)
+# plus the trailing note -- a LOUD slice, a sim event clearly fired.
+$dvLoudSlice = Get-BackendEventsForSlice -AllRows $dvFixtureRead.Rows -RowCountBefore 1
+Check ($dvLoudSlice.SliceRowCount -eq 4) ('loud slice must cover 4 rows (3 tick + 1 note), got ' + $dvLoudSlice.SliceRowCount)
+Check ($dvLoudSlice.EventCount -eq 5) ('loud slice event count must be 0+5+0=5, got ' + $dvLoudSlice.EventCount)
+Check ($dvLoudSlice.SawSimEvent -eq $true) 'a slice whose tick rows sum to a nonzero event count must report SawSimEvent=true'
+
+# RowCountBefore=3 (session + first two tick rows already existed): the slice is just the LAST tick
+# (events=0) plus the note -- a SILENT slice.
+$dvSilentSlice = Get-BackendEventsForSlice -AllRows $dvFixtureRead.Rows -RowCountBefore 3
+Check ($dvSilentSlice.SliceRowCount -eq 2) ('silent slice must cover 2 rows (1 tick + 1 note), got ' + $dvSilentSlice.SliceRowCount)
+Check ($dvSilentSlice.EventCount -eq 0) ('silent slice event count must be 0, got ' + $dvSilentSlice.EventCount)
+Check ($dvSilentSlice.SawSimEvent -eq $false) 'a slice whose tick rows sum to zero events must report SawSimEvent=false'
+
+# RowCountBefore = total row count: nothing was appended since -- an EMPTY slice, still SawSimEvent
+# =false and never a crash on an out-of-range index.
+$dvEmptySlice = Get-BackendEventsForSlice -AllRows $dvFixtureRead.Rows -RowCountBefore ($dvFixtureRead.Rows.Count)
+Check ($dvEmptySlice.SliceRowCount -eq 0) ('a RowCountBefore equal to the total row count must produce an empty slice, got ' + $dvEmptySlice.SliceRowCount)
+Check ($dvEmptySlice.SawSimEvent -eq $false) 'an empty slice must report SawSimEvent=false, never throw'
+
+# Note/action rows never contribute to EventCount even when present in the slice -- only "tick" rows
+# carry a real eventCount (mirrors Get-BackendSummary's own EventsTotalAcrossTicks convention).
+Check ($dvSilentSlice.TickRowCount -eq 1) ('silent slice must count exactly 1 tick row, got ' + $dvSilentSlice.TickRowCount)
+
+# --- Get-DeadVerbVerdict -- the fusion of both signals, and the ONLY thing allowed to say CANDIDATE
+$dvCandidateVerdict = Get-DeadVerbVerdict -FingerprintBefore $dvFingerprintA -FingerprintAfter $dvFingerprintB `
+    -BackendSlice $dvSilentSlice -Turn 7 -Phase 'Morning' -ControlName 'OpenShop'
+Check ($dvCandidateVerdict.IsCandidate -eq $true) 'identical fingerprint + backend-silent slice must produce a CANDIDATE (both signals agree)'
+Check ($null -ne $dvCandidateVerdict.Line) 'a candidate verdict must carry a non-null findings.md line'
+Check ($dvCandidateVerdict.Line -like '*CANDIDATE*') 'the candidate line must say CANDIDATE'
+Check ($dvCandidateVerdict.Line -like '*law-3*') 'the candidate line must name law-3'
+Check ($dvCandidateVerdict.Line -like '*turn 7*') 'the candidate line must name the turn number'
+Check ($dvCandidateVerdict.Line -like '*Morning*') 'the candidate line must name the phase'
+Check ($dvCandidateVerdict.Line -like '*OpenShop*') 'the candidate line must name the pressed control'
+Check ($dvCandidateVerdict.Line -like '*human confirmation*') 'the candidate line must say it is for human confirmation, never asserted as a defect (ruling 7''s exact words)'
+Check ($dvCandidateVerdict.Line -notlike '*is a defect*') 'the candidate line must never assert the press IS a defect'
+
+# A CHANGED fingerprint suppresses the candidate even with a silent backend slice -- the press
+# demonstrably did something, whatever the backend log did or did not separately record.
+$dvChangedFingerprintVerdict = Get-DeadVerbVerdict -FingerprintBefore $dvFingerprintA `
+    -FingerprintAfter (Get-StateFingerprint -State $dvStateGoldChanged) -BackendSlice $dvSilentSlice `
+    -Turn 7 -Phase 'Morning' -ControlName 'OpenShop'
+Check ($dvChangedFingerprintVerdict.IsCandidate -eq $false) 'a CHANGED fingerprint must suppress the candidate even when the backend slice is silent'
+Check ($null -eq $dvChangedFingerprintVerdict.Line) 'a suppressed verdict must not carry a findings.md line'
+
+# A LOGGED sim event suppresses the candidate even with an unchanged fingerprint -- something fired
+# off-screen (a background hero tick, say), so the press is not provably inert.
+$dvLoggedEventVerdict = Get-DeadVerbVerdict -FingerprintBefore $dvFingerprintA -FingerprintAfter $dvFingerprintB `
+    -BackendSlice $dvLoudSlice -Turn 7 -Phase 'Morning' -ControlName 'OpenShop'
+Check ($dvLoggedEventVerdict.IsCandidate -eq $false) 'a logged sim event must suppress the candidate even when the fingerprint is unchanged'
+
+# An UNKNOWN backend slice ($null -- no backend log at all) must NEVER be treated as silence. Absence
+# of evidence is not evidence of a dead verb; this file adds nothing it cannot support.
+$dvUnknownBackendVerdict = Get-DeadVerbVerdict -FingerprintBefore $dvFingerprintA -FingerprintAfter $dvFingerprintB `
+    -BackendSlice $null -Turn 7 -Phase 'Morning' -ControlName 'OpenShop'
+Check ($dvUnknownBackendVerdict.IsCandidate -eq $false) 'an unavailable backend slice must never be treated as silence -- no candidate without positive evidence'
+
+# --- Frame retention (Definition of Done: "keep that turn's frame regardless of -FrameEvery") ------
+$dvFrameTempDir = Join-Path $env:TEMP ('deadverb-frame-test-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $dvFrameTempDir -Force | Out-Null
+try {
+    $dvSourceFrame = Join-Path $dvFrameTempDir 'frame.png'
+    Set-Content -Path $dvSourceFrame -Value 'fake-png-bytes' -Encoding utf8
+    $dvStagingFrame = Join-Path $dvFrameTempDir 'deadverb-staging.png'
+    $dvFinalFrame = Join-Path $dvFrameTempDir 'turn-007.png'
+
+    $dvStagedOk = Save-ProvisionalDeadVerbFrame -SourcePath $dvSourceFrame -StagingPath $dvStagingFrame
+    Check ($dvStagedOk -eq $true) 'staging an existing source frame must return true'
+    Check (Test-Path $dvStagingFrame) 'staging must actually copy the file to the staging path'
+
+    $dvMissingSourceStaged = Save-ProvisionalDeadVerbFrame -SourcePath (Join-Path $dvFrameTempDir 'no-such-frame.png') -StagingPath (Join-Path $dvFrameTempDir 'never-created.png')
+    Check ($dvMissingSourceStaged -eq $false) 'staging a MISSING source frame must return false, not throw'
+    Check (-not (Test-Path (Join-Path $dvFrameTempDir 'never-created.png'))) 'a failed staging attempt must not create a destination file'
+
+    $dvResolvedKept = Resolve-ProvisionalDeadVerbFrame -StagingPath $dvStagingFrame -FinalPath $dvFinalFrame -IsCandidate $true
+    Check ($dvResolvedKept -eq $true) 'resolving a CANDIDATE turn must promote the staged frame and return true'
+    Check (Test-Path $dvFinalFrame) 'a promoted frame must land at its final turn-NNN.png path'
+    Check (-not (Test-Path $dvStagingFrame)) 'a promoted frame must not leave the staging copy behind'
+
+    # Re-stage, then resolve as NOT a candidate: the staged frame must be discarded, never promoted.
+    Set-Content -Path $dvSourceFrame -Value 'fake-png-bytes-2' -Encoding utf8
+    [void](Save-ProvisionalDeadVerbFrame -SourcePath $dvSourceFrame -StagingPath $dvStagingFrame)
+    $dvFinalFrame2 = Join-Path $dvFrameTempDir 'turn-008.png'
+    $dvResolvedDiscarded = Resolve-ProvisionalDeadVerbFrame -StagingPath $dvStagingFrame -FinalPath $dvFinalFrame2 -IsCandidate $false
+    Check ($dvResolvedDiscarded -eq $false) 'resolving a NON-candidate turn must return false (nothing promoted)'
+    Check (-not (Test-Path $dvFinalFrame2)) 'a non-candidate turn must never produce a final kept-frame file'
+    Check (-not (Test-Path $dvStagingFrame)) 'a non-candidate turn''s staged frame must be deleted, not left as an orphan'
+
+    # Resolving with no staged file at all (the common case -- most press turns never needed staging)
+    # must be a quiet no-op, never a throw.
+    $dvResolvedNothingStaged = $null
+    $dvResolvedNothingStagedThrew = $false
+    try { $dvResolvedNothingStaged = Resolve-ProvisionalDeadVerbFrame -StagingPath (Join-Path $dvFrameTempDir 'nothing-here.png') -FinalPath (Join-Path $dvFrameTempDir 'turn-009.png') -IsCandidate $true } catch { $dvResolvedNothingStagedThrew = $true }
+    Check ($dvResolvedNothingStagedThrew -eq $false) 'resolving with no staged file present must not throw'
+    Check ($dvResolvedNothingStaged -eq $false) 'resolving with no staged file present must return false'
+} finally {
+    Remove-Item -Path $dvFrameTempDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# --- Driver wiring: the detector must be reachable from agent-playtest.ps1 itself. Sceptic may still
+# be NAMED in explanatory comments (why it was retired, ruling 6) -- what must be gone is it
+# FUNCTIONING as a persona, which the census/list checks below assert precisely rather than banning
+# the word outright (a blanket text-contains ban would also fail on this file's own honest "sceptic
+# is RETIRED" doc comment).
+Check ($agentPlaytestRawText -like '*Get-DeadVerbVerdict*') 'agent-playtest.ps1 must call Get-DeadVerbVerdict somewhere in its turn loop'
+Check ($agentPlaytestRawText -like '*Get-StateFingerprint*') 'agent-playtest.ps1 must call Get-StateFingerprint somewhere in its turn loop'
+Check ($agentPlaytestRawText -like '*deadverb.ps1*') 'agent-playtest.ps1 must dot-source deadverb.ps1'
+Check ($script:KnownPersonas -notcontains 'sceptic') 'personas.ps1''s $script:KnownPersonas must not contain sceptic any more'
+Check ($script:KnownPersonas.Count -eq 4) ('personas.ps1''s known-persona roster must be exactly 4 today (W4 adds two more), got ' + $script:KnownPersonas.Count + ': ' + ($script:KnownPersonas -join ', '))
+$sweepRawText = Get-Content (Join-Path $toolsDir 'playtest-sweep.ps1') -Raw
+Check ($sweepRawText -notlike '*''sceptic''*') 'playtest-sweep.ps1''s default -Personas array must not contain the string literal ''sceptic'' any more (it would pass a rejected persona straight to the driver)'
 
 # --- Summary -----------------------------------------------------------------------------------
 if ($failures.Count -gt 0) {

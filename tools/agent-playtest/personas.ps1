@@ -1,6 +1,8 @@
 <#
 .SYNOPSIS
-    Pure logic for U4 (playtest-harness wave): five players, not one player five times.
+    Pure logic for U4 (playtest-harness wave): several distinct players, not one player played N
+    times. Four today (sceptic retired, W3 -- see the SCEPTIC RETIRED note below); the roster grows
+    to six once W4 (docs/plans/2026-08-10-002) adds monkey and attached.
 
 .DESCRIPTION
     One act.md persona ("curious, slightly impatient") drove every run of the last sweep, so thirty
@@ -20,21 +22,28 @@
     persona layered on top of a protocol that already answers "what is this game" is not a
     first-timer, and a protocol that tells every persona how to handle the vigil guarantees no run
     can ever discover it unaided -- the exact copy question the game most needs answered. Fixed by
-    moving both into the KNOWLEDGEABLE personas only (veteran/completionist/sceptic get the vigil
+    moving both into the KNOWLEDGEABLE personas only (veteran/completionist get the vigil
     rule; first-timer and speedrunner do not, since the speedrunner mashing through the vigil blind
     is the only honest test that skipping stays legal). Get-GameNounDenylist/Test-TextForGameNouns
     below are the mechanical guard against this regressing a second time.
 
+    SCEPTIC RETIRED (W3, docs/plans/2026-08-10-002, ruling 6): a mechanical "this press changed
+    nothing" check (tools/agent-playtest/deadverb.ps1) now runs under every persona and catches what
+    the sceptic persona could only ever narrate in prose -- zero fabrication risk, versus a model
+    that can (and did) invent doubt about turns that worked fine. prompts/personas/sceptic.md is
+    deleted; an unknown-persona test in tools/test-agent-playtest-modes.ps1 pins that
+    Resolve-PersonaChoice rejects it loudly rather than silently accepting a name whose file is gone.
+
     STYLE NOTE: ASCII-only, no here-strings, no ternary/??, matching every file it is dot-sourced by.
 #>
 
-$script:KnownPersonas = @('first-timer', 'veteran', 'speedrunner', 'completionist', 'sceptic')
+$script:KnownPersonas = @('first-timer', 'veteran', 'speedrunner', 'completionist')
 
-# Resolves -Persona into one of the five real names. "random" picks one FOR THIS RUN via $Random
-# (overridable so a test can assert on the choice instead of trusting Get-Random); anything else
-# must match a known persona exactly. An unrecognized value THROWS -- never silently becomes a
-# default persona, which would read as "first-timer" right up until someone noticed the findings
-# never once mentioned the veteran-only mid-game.
+# Resolves -Persona into one of the known real names ($script:KnownPersonas). "random" picks one FOR
+# THIS RUN via $Random (overridable so a test can assert on the choice instead of trusting
+# Get-Random); anything else must match a known persona exactly. An unrecognized value THROWS --
+# never silently becomes a default persona, which would read as "first-timer" right up until someone
+# noticed the findings never once mentioned the veteran-only mid-game.
 function Resolve-PersonaChoice {
     param(
         [Parameter(Mandatory)][string]$Persona,

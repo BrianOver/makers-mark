@@ -457,3 +457,51 @@ function Format-BackendMarkdown {
 
     return ($lines -join [Environment]::NewLine)
 }
+
+# W3 (docs/plans/2026-08-10-002): the dead-verb detector (deadverb.ps1) needs a PER-TURN slice of
+# this same log -- Get-BackendSummary above only ever answers for the WHOLE run. Extending that API
+# here rather than forking a second reader, per the plan's own join-table instruction ("if U2's API
+# is whole-log only, W3 extends it, never forks it").
+#
+# There is no turn number to join on: PlaytestLog rows are keyed by day/phase/elapsed-seconds "t",
+# never a turn counter (see this file's own header), and day+phase is not a 1:1 turn key either (see
+# Get-DriverBackendMismatches' own note on why no exact per-turn join exists between the driver and
+# this log -- the control name a player presses is not the kernel action-type name this log records).
+# What the driver DOES know precisely is a ROW COUNT: it can call Read-BackendLogRows once right
+# before writing command.json for a press, and again once the next state.json (that press's own
+# outcome) has arrived, and hand both counts here. PlaytestLog.Append is a single
+# File.AppendAllText call per row and the log is never rewritten, so "the rows added since a count
+# taken a moment ago" is an honest, race-free slice -- the same append-only contract
+# Read-BackendLogRows already relies on elsewhere in this file.
+function Get-BackendEventsForSlice {
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][array]$AllRows,
+        [Parameter(Mandatory)][int]$RowCountBefore
+    )
+
+    $sliceRows = @()
+    if ($AllRows.Count -gt $RowCountBefore) {
+        $sliceRows = @($AllRows[$RowCountBefore..($AllRows.Count - 1)])
+    }
+
+    # Only "tick" rows carry an event count (PlaytestLog.Tick's own eventCount -- Adapter.LastEvents
+    # .Count for whatever the tick just completed). "note"/"action" rows in the slice mean something
+    # was SUBMITTED or narrated, never that the kernel's own event system fired, so they count toward
+    # SliceRowCount but never toward EventCount -- the same convention Get-BackendSummary's own
+    # EventsTotalAcrossTicks already uses for the whole-log case.
+    $eventCount = 0
+    $tickRowCount = 0
+    foreach ($row in $sliceRows) {
+        if ($row.kind -eq 'tick') {
+            $tickRowCount++
+            $eventCount += [int]$row.events
+        }
+    }
+
+    return [pscustomobject]@{
+        SliceRowCount = @($sliceRows).Count
+        TickRowCount  = $tickRowCount
+        EventCount    = $eventCount
+        SawSimEvent   = ($eventCount -gt 0)
+    }
+}

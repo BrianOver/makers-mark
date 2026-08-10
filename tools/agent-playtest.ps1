@@ -105,11 +105,16 @@
 
 .PARAMETER Persona
     Which player this run is pretending to be: first-timer, veteran, speedrunner, completionist,
-    sceptic, or random (picks one of the five for this run). act.md carries the JSON contract and
-    movement rules that never change; prompts/agent-playtest/prompts/personas/<name>.md supplies the
-    KNOWLEDGE and GOAL half. One persona ("curious, slightly impatient") used to drive every run,
-    which measured the same player thirty times over a thirty-run sweep. An unrecognized value fails
-    loudly rather than silently becoming the default -- see personas.ps1's own note.
+    or random (picks one of those for this run). act.md carries the JSON contract and movement rules
+    that never change; prompts/agent-playtest/prompts/personas/<name>.md supplies the KNOWLEDGE and
+    GOAL half. One persona ("curious, slightly impatient") used to drive every run, which measured
+    the same player thirty times over a thirty-run sweep. An unrecognized value fails loudly rather
+    than silently becoming the default -- see personas.ps1's own note.
+
+    sceptic is RETIRED (W3, docs/plans/2026-08-10-002, ruling 6): the dead-verb detector below (see
+    -FrameEvery and the "## Dead-verb candidates" findings.md section) runs under every persona and
+    catches what sceptic could only ever narrate in prose, without the fabrication risk of a model
+    inventing doubt about a turn that worked fine.
 
 .EXAMPLE
     .\tools\agent-playtest.ps1 -Turns 40
@@ -155,6 +160,7 @@ param(
 . (Join-Path $PSScriptRoot 'agent-playtest\personas.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\model-call.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\footer.ps1')
+. (Join-Path $PSScriptRoot 'agent-playtest\deadverb.ps1')
 
 $ErrorActionPreference = 'Stop'
 
@@ -293,9 +299,15 @@ $framesDir       = Join-Path $OutDir 'frames'
 $backendJsonPath   = Join-Path $OutDir 'backend.json'
 $coverageMdPath    = Join-Path $OutDir 'coverage.md'
 $coverageJsonPath  = Join-Path $OutDir 'coverage.json'
+# W3: a single provisional holding spot for the ONE press turn awaiting its dead-verb verdict at any
+# given moment (turns are strictly sequential, so at most one is ever pending -- see deadverb.ps1's
+# own frame-retention header). Not a "stale run" artifact in the same sense as the others below (it
+# is always resolved -- promoted or deleted -- before the next press turn stages into it), but a run
+# that dies mid-verdict could leave one behind, so it gets the same prior-run cleanup.
+$deadVerbStagingPath = Join-Path $OutDir 'deadverb-staging.png'
 
 foreach ($stale in @($statePath, $cmdPath, $framePath, $turnlogPath, $findingsPath, $driverLog,
-        $playtestLogPath, $backendJsonPath, $coverageMdPath, $coverageJsonPath)) {
+        $playtestLogPath, $backendJsonPath, $coverageMdPath, $coverageJsonPath, $deadVerbStagingPath)) {
     if (Test-Path $stale) { Move-Item $stale ($stale + '.prev') -Force }
 }
 # frames/ is a directory, not a single file -- Move-Item -Force cannot rename it onto an existing
@@ -448,6 +460,12 @@ $driverTurns = New-Object System.Collections.ArrayList
 $coverageRegistries = Get-CoverageRegistries -RepoRoot $RepoRoot
 $coverageTracker = New-CoverageTracker
 
+# W3 (docs/plans/2026-08-10-002): the dead-verb detector. $pendingDeadVerb holds the ONE press turn
+# still awaiting its verdict (see deadverb.ps1's own header for why the verdict is necessarily one
+# turn behind the press); $deadVerbCandidates collects the CANDIDATE lines findings.md renders.
+$pendingDeadVerb = $null
+$deadVerbCandidates = New-Object System.Collections.ArrayList
+
 function Wait-ForFile($path, $timeoutSec) {
     $deadline = (Get-Date).AddSeconds($timeoutSec)
     while ((Get-Date) -lt $deadline) {
@@ -537,6 +555,33 @@ try {
             Phase    = $state.phase
             Accepted = -not (([string]$state.lastOutcome).StartsWith('refused:'))
         })
+
+        # W3: resolve the PREVIOUS press turn's dead-verb check now that ITS "after" state has
+        # arrived -- $state above IS that after-state (see where $pendingDeadVerb is set, near the
+        # frame-save call below, for why the verdict is necessarily one turn behind the press).
+        if ($pendingDeadVerb) {
+            $fingerprintAfter = Get-StateFingerprint -State $state
+            $backendRowsNow = @((Read-BackendLogRows -LogPath $playtestLogPath).Rows)
+            $deadVerbSlice = Get-BackendEventsForSlice -AllRows $backendRowsNow -RowCountBefore $pendingDeadVerb.BackendRowCountBefore
+            $deadVerbVerdict = Get-DeadVerbVerdict -FingerprintBefore $pendingDeadVerb.FingerprintBefore `
+                -FingerprintAfter $fingerprintAfter -BackendSlice $deadVerbSlice -Turn $pendingDeadVerb.Turn `
+                -Phase $pendingDeadVerb.Phase -ControlName $pendingDeadVerb.ControlName
+            if ($deadVerbVerdict.IsCandidate) {
+                [void]$deadVerbCandidates.Add($deadVerbVerdict.Line)
+                Warn $deadVerbVerdict.Line
+            }
+            if ($pendingDeadVerb.Staged) {
+                $deadVerbFinalName = Get-KeptFrameFileName -Turn $pendingDeadVerb.Turn
+                $deadVerbKept = Resolve-ProvisionalDeadVerbFrame -StagingPath $deadVerbStagingPath `
+                    -FinalPath (Join-Path $framesDir $deadVerbFinalName) -IsCandidate $deadVerbVerdict.IsCandidate
+                if ($deadVerbKept) {
+                    $keptFrameCount++
+                    $frameNoteByTurn[$pendingDeadVerb.Turn] = ('frame: frames/' + $deadVerbFinalName +
+                        ' (kept: law-3 dead-verb candidate, overrides -FrameEvery)')
+                }
+            }
+            $pendingDeadVerb = $null
+        }
 
         # Stuck detection (R2). A model that stares at an unchanged screen must be REPORTED, never
         # mistaken for a clean run -- that is the whole failure mode this harness exists to end.
@@ -628,6 +673,28 @@ try {
         if ($frameResult.Kept) { $keptFrameCount++ }
         if ($frameResult.Missing) { $missingFrameCount++ }
 
+        # W3: a press turn's dead-verb check needs the NEXT turn's state to resolve (see the
+        # resolution block above, near the U2 driverTurns record) -- capture what THIS press looked
+        # like before its outcome exists. Scripted is excluded on purpose: it has no persona, no
+        # model, and its one press ($scriptedPlan above) is a DELIBERATE illegal one meant to be
+        # refused, which would misfire this detector on a turn that was never a real player action.
+        # If -FrameEvery already thinned this turn's frame, it is staged now (deadverb.ps1) since
+        # frame.png will be the NEXT turn's screenshot by the time the verdict is known.
+        if ((-not $Scripted) -and ($parsedCmd.action -eq 'press')) {
+            $deadVerbStaged = $false
+            if (-not $frameResult.Kept) {
+                $deadVerbStaged = Save-ProvisionalDeadVerbFrame -SourcePath $framePath -StagingPath $deadVerbStagingPath
+            }
+            $pendingDeadVerb = [pscustomobject]@{
+                FingerprintBefore     = (Get-StateFingerprint -State $state)
+                BackendRowCountBefore = @((Read-BackendLogRows -LogPath $playtestLogPath).Rows).Count
+                Turn                  = $turn
+                Phase                 = [string]$state.phase
+                ControlName           = [string]$parsedCmd.target
+                Staged                = $deadVerbStaged
+            }
+        }
+
         if ($parsedCmd.action -eq 'stop') { $stopReason = 'model asked to stop: ' + $parsedCmd.why; break }
 
         Remove-Item $statePath -Force -ErrorAction SilentlyContinue
@@ -641,6 +708,13 @@ try {
         # machine's gdUnit/Godot runtime is serialized (see tools/engine-test.ps1's own trap 1), so
         # this waits for the OS to actually finish tearing this one down before anything else starts.
         try { $proc.WaitForExit(10000) } catch { }
+    }
+    # W3: the run ended (budget/timeout/error) with the LAST turn still a press awaiting its
+    # dead-verb verdict -- there is no next state to resolve it against, so it is never asserted
+    # either way (never fabricate), and any staged frame for it is discarded rather than left as an
+    # orphan file with no verdict to explain it.
+    if ($pendingDeadVerb -and $pendingDeadVerb.Staged) {
+        Remove-Item -Path $deadVerbStagingPath -Force -ErrorAction SilentlyContinue
     }
     $env:AGENT_PLAYTEST = ''
     $env:AGENT_PLAYTEST_DIR = ''
@@ -827,6 +901,22 @@ if ($incomplete) {
 # identically rather than three call sites drifting apart from a fourth copy-paste.
 $backendSection = @('', '---', '') + @($backendMarkdown)
 
+# W3 (docs/plans/2026-08-10-002): the dead-verb detector's candidates -- built once here for the same
+# reason $backendSection is, and carried by every Set-Content site below. A press turn only ever gets
+# a candidate line if it was BOTH fingerprint-unchanged and backend-silent (see deadverb.ps1's own
+# Get-DeadVerbVerdict); a run with none is reported as "no candidates" explicitly, bounded by what
+# this run actually pressed -- never a clean bill for verbs the run never touched at all (see
+# coverage.md for those).
+$deadVerbLines = @('## Dead-verb candidates (law-3)', '')
+if (@($deadVerbCandidates).Count -gt 0) {
+    $deadVerbLines += @($deadVerbCandidates | ForEach-Object { '- ' + $_ })
+} else {
+    $deadVerbLines += ('no candidates among the press actions this run exercised -- bounded by ' +
+        'what was actually pressed, never a clean bill for the whole game (see coverage.md for what ' +
+        'this run never touched at all).')
+}
+$deadVerbSection = @('', '---', '') + $deadVerbLines
+
 # W1: the honesty footer (agent-playtest\footer.ps1) -- computed once, appended to every Set-Content
 # site below alongside $backendSection, so a run that dies at any stage still ships the same "here is
 # what this instrument cannot see" note as a clean one.
@@ -836,7 +926,7 @@ $honestyFooterLines = Get-HonestyFooterLines
 # on a client that had never been asked to play, then printed "scripted run complete" and exited 0 --
 # the same shape of lie as a truncated test suite reporting "Passed!". Never again from this script.
 if ($turn -eq 0) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('NOTHING WAS PLAYED. ' + $stopReason) + $backendSection + $honestyFooterLines)
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('NOTHING WAS PLAYED. ' + $stopReason) + $backendSection + $deadVerbSection + $honestyFooterLines)
     Die @(
         ('zero turns were played: ' + $stopReason),
         '',
@@ -849,7 +939,7 @@ if ($turn -eq 0) {
 }
 
 if ($Scripted) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + @('', '---', '', 'Scripted run -- no model judged this. The channel was exercised, including one deliberate illegal press.', '', '## Turn log', '', $log) + $honestyFooterLines)
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $deadVerbSection + @('', '---', '', 'Scripted run -- no model judged this. The channel was exercised, including one deliberate illegal press.', '', '## Turn log', '', $log) + $honestyFooterLines)
     Say ('scripted run complete, ' + $turn + ' turns. Channel log: ' + $findingsPath)
     exit 0
 }
@@ -913,7 +1003,7 @@ $findings = ''
 try { $findings = Invoke-Model $judgePrompt (($judgeInput) -join [Environment]::NewLine) $null $JudgeModel } catch { Warn ('judge call failed: ' + $_.Exception.Message) }
 
 if (-not $findings) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + @('', '---', '', 'JUDGE FAILED -- no findings written. Raw turn log below.') + $mechanicalSection + @('', $log) + $honestyFooterLines)
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $deadVerbSection + @('', '---', '', 'JUDGE FAILED -- no findings written. Raw turn log below.') + $mechanicalSection + @('', $log) + $honestyFooterLines)
     Die @('the judge pass produced nothing. The turn log is still in ' + $findingsPath + '.')
 }
 
@@ -952,7 +1042,7 @@ if ($unsupported.Count -gt 0) {
     ) + ($unsupported | ForEach-Object { '- `' + $_ + '`' })
 }
 
-Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + @('', '---', '') + @($findings) + $guardNote + $mechanicalSection + @("", "---", "", "## Turn log", "", $fullLog) + $honestyFooterLines)
+Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $deadVerbSection + @('', '---', '') + @($findings) + $guardNote + $mechanicalSection + @("", "---", "", "## Turn log", "", $fullLog) + $honestyFooterLines)
 
 Write-Host ''
 Say ('findings written: ' + $findingsPath)
