@@ -430,6 +430,121 @@ public class TutorialFlowTests
         }
     }
 
+    // ── The 2026-08-09 owner report's tutorial half ──────────────────────────────────────────────
+    //
+    //  "i clicked send them off and it auto jumped to night???? yet this is still on tutorial 5???"
+    //  "Tutorial 4 - HOW to watch them depart??"
+    //
+    // Step 4 named a sight and never the press that produces it; step 5 named a control that Night
+    // does not have, and kept naming it after the day had moved on.
+
+    [TestCase]
+    public void WatchDepartureStep_NamesTheBellPressThatStartsIt_NotJustTheThingToLookAt()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
+            ui.Adapter.Queue(new StockAction(ScriptedSession.CraftedItem(ui.Adapter.CurrentState), 50));
+            ui.Adapter.Queue(new PostBountyAction(ScriptedSession.BountyFloor, ScriptedSession.BountyReward));
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.WatchDeparture);
+
+            var copy = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
+            AssertThat(copy).StartsWith("Tutorial 4/10:");
+            AssertThat(copy)
+                .OverrideFailureMessage(
+                    $"Step 4 must name the press, not only the sight — the owner's question was literally " +
+                    $"\"HOW to watch them depart??\". Copy was: \"{copy}\"")
+                .Contains("Send them off");
+            AssertThat(copy)
+                .OverrideFailureMessage("Step 4 should still say where to look once the bell is rung.")
+                .Contains("Mine Gate");
+
+            // ...and the words it tells the player to hunt for are the words actually on the button.
+            AssertThat(Find<Button>(ui, "AdvancePhase").Text).IsEqual("Send them off");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void LookInStep_WithNobodyInTheMine_StopsNamingAWatchButtonThatIsNotOnScreen()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            DriveDay1ToLookIn(ui);
+
+            // While a party IS out, the step names the control — which is on screen.
+            AssertThat(Find<Button>(ui, "WatchButton").Visible).IsTrue();
+            AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!).Contains("Watch");
+
+            // Hurry the day past it (the player's own legal skip) and the control goes away with the
+            // party. The chain must move on rather than sit on a step naming a button Night does not
+            // have — the "still on tutorial 5" half of the report.
+            for (var guard = 0; guard < 8 && ui.Conductor.Current != RaidConductor.Beat.Idle; guard++)
+            {
+                ui.Conductor.Hurry();
+            }
+
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Evening);
+            AssertThat(Find<Button>(ui, "WatchButton").Visible).IsFalse();
+            AssertThat(ui.Tutorial.Step)
+                .OverrideFailureMessage(
+                    "The day reached Night and the chain was still sitting on step 5, pointing at a Watch " +
+                    "control that only exists while a party is out.")
+                .IsEqual(TutorialStep.OpenCounter);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void LookInStep_ResumedOutsideTheRaidWindow_ReadsAsAWaitNeverAsABlankCard()
+    {
+        // The one way LookIn can still be current with no party out: Step is persisted (U5), so a
+        // campaign quit mid-chain and continued the next Morning lands exactly here. The copy must
+        // say what is true and name the way back — never point at the missing button, and never
+        // (WaitText's old `_ => string.Empty` fallthrough) render an empty tutorial card.
+        //
+        // Read through the same "hand a modified state to a pure method" idiom CraftedAdvance uses:
+        // TopSlotText/Checklist are pure projections of whatever state they are given.
+        var ui = MountMainUi();
+        try
+        {
+            DriveDay1ToLookIn(ui);
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.LookIn);
+
+            var resumedAtMorning = ui.Adapter.CurrentState with { Day = 2, Phase = DayPhase.Morning };
+            var copy = ui.Tutorial.TopSlotText(resumedAtMorning)!;
+
+            AssertThat(string.IsNullOrWhiteSpace(copy))
+                .OverrideFailureMessage("The tutorial card rendered BLANK — the surface whose whole job is saying what to do.")
+                .IsFalse();
+            AssertThat(copy).StartsWith("Tutorial 5/10:");
+            AssertThat(copy)
+                .OverrideFailureMessage($"The step is still naming the Watch control with nobody out. Copy was: \"{copy}\"")
+                .NotContains("👁 Watch");
+            AssertThat(copy)
+                .OverrideFailureMessage("The wait copy must name the way back into the raid window.")
+                .Contains("Send them off");
+
+            var row = ui.Tutorial.Checklist(resumedAtMorning).Single(r => r.Current);
+            AssertThat(row.GatingNote)
+                .OverrideFailureMessage("A gated current step owes the checklist a short reason.")
+                .IsNotNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     [TestCase]
     public void LookInStep_CompletesOnlyOnMirrorShown_NeverBeforeItIsCurrent()
     {

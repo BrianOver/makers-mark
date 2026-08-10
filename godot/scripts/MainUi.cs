@@ -430,7 +430,15 @@ public partial class MainUi : Control
         // frame's Conductor.Update, long after _Ready has returned.
         Conductor = new RaidConductor(Adapter, Clock,
             departureShowDone: () => !Town.AnyDeparturePending,
-            homecomingShowDone: () => !Town.AnyReturnPending);
+            homecomingShowDone: () => !Town.AnyReturnPending,
+            // The one on-screen ask that lives INSIDE the raid span and nowhere else: the
+            // apprenticeship chain's Watch step. It is printed on the Expedition->Camp tick (the
+            // PartyDeparted one) and its only affordance — the Watch control below — exists only
+            // while a party is out, so before this hold the player had the two EmptyBeatSeconds
+            // between those two facts to answer it. Measured: 2.00 seconds. See RaidConductor's own
+            // class doc for the owner report this closes. Null-tolerant because Tutorial is built in
+            // BuildUi(), after this line runs (nothing calls the delegate until a real frame).
+            showHeld: () => Tutorial is { Active: true, Step: Ui.TutorialStep.LookIn });
 
         // So PlaytestLog rows can report the current beat without PlaytestLog (or SimAdapter, which
         // has no idea RaidConductor exists) taking a hard dependency on this class — see
@@ -1807,6 +1815,17 @@ public partial class MainUi : Control
                 ? "Return to the vigil"
                 : BellVerb(state);
             var tailParts = new System.Collections.Generic.List<string>();
+
+            // A stopped day must never be an unexplained one. RaidConductor's shows now hold while
+            // the player owes an answer or a surface owns the screen (its own hold doc) — the law
+            // permits that only when skipping's cost is NAMED in copy, so the banner says the day is
+            // waiting and the bell beside it still reads "Hurry the day along". Both halves, always
+            // together: what it is waiting for, and the one press that overrides it.
+            if (Conductor.ShowHeld)
+            {
+                tailParts.Add("the day waits on you");
+            }
+
             if (state.Phase == DayPhase.Expedition)
             {
                 tailParts.Add(DepartureOmen(state));

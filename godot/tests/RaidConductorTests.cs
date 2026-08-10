@@ -1,4 +1,5 @@
 #if GDUNIT_TESTS
+using System;
 using System.Collections.Immutable;
 using GameSim;
 using GameSim.Contracts;
@@ -60,12 +61,46 @@ public class RaidConductorTests
     };
 
     private static (SimAdapter Adapter, PhaseClock Clock, RaidConductor Conductor) Build(
-        GameState world, bool departureDone = true, bool homecomingDone = true)
+        GameState world, bool departureDone = true, bool homecomingDone = true, Func<bool>? showHeld = null)
     {
         var adapter = new SimAdapter(world);
         var clock = new PhaseClock(adapter);
-        var conductor = new RaidConductor(adapter, clock, () => departureDone, () => homecomingDone);
+        var conductor = new RaidConductor(
+            adapter, clock, () => departureDone, () => homecomingDone, showHeld ?? (() => false));
         return (adapter, clock, conductor);
+    }
+
+    /// <summary>A <see cref="StagedWorld"/> driven all the way to a REAL parked party at Camp, then
+    /// handed back as bare state — the shape <c>CampaignSave</c> restores and <c>MainUi._Ready</c>
+    /// builds a brand-new adapter/clock/conductor over when the player picks Continue.</summary>
+    private static GameState ParkedAtCampWorld()
+    {
+        var driver = new SimAdapter(StagedWorld());
+        driver.AdvancePhase(); // Morning -> Expedition
+        driver.AdvancePhase(); // Expedition -> Camp: the party parks
+        AssertThat(driver.CurrentState.Phase)
+            .OverrideFailureMessage("Fixture premise failed: the staged drive did not land at Camp.")
+            .IsEqual(DayPhase.Camp);
+        AssertThat(driver.CurrentState.InFlight.IsEmpty)
+            .OverrideFailureMessage("Fixture premise failed: the staged party did not park.")
+            .IsFalse();
+        return driver.CurrentState;
+    }
+
+    /// <summary>One frame of <c>MainUi._Process</c>'s exact routing — the Idle gate that decides
+    /// which of the two timers is allowed to run this frame. Duplicated here (rather than mounting
+    /// the whole scene) because these tests are deliberately engine-free; the routing is three lines
+    /// and pinning it against the real thing is <c>PlayableLoopTests</c>'s job, not this suite's.</summary>
+    private static void Frame(PhaseClock clock, RaidConductor conductor, double delta)
+    {
+        if (conductor.Current == RaidConductor.Beat.Idle)
+        {
+            clock.Update(delta);
+        }
+        else
+        {
+            conductor.Update(delta);
+        }
     }
 
     // ── 1. A parked party stops exactly once, and stops indefinitely ─────────────────────────────
@@ -324,6 +359,194 @@ public class RaidConductorTests
 
         conductor.Update(1.0); // crosses HomecomingMaxSeconds
         AssertThat(conductor.Current).IsEqual(RaidConductor.Beat.Idle);
+    }
+
+    // ── 9. The hold: a timer may never answer for the player (2026-08-09 owner report) ──────────
+    //
+    //  "i clicked send them off and it auto jumped to night???? yet this is still on tutorial 5???
+    //   this is a critical bug as it skipped most the game and prevented me from playing more"
+    //
+    // Measured on a fresh day 1 before the fix: 4.77 real seconds from the Morning bell to Evening
+    // with zero further input, and — because the apprenticeship chain's Watch step is printed on the
+    // Expedition->Camp tick while the Watch control itself only exists during the raid span —
+    // exactly 2.00 seconds to answer an instruction the game had only just given. What the cases
+    // below pin, together, is the law (§11.7.8: no timers on decisions; skipping stays legal and its
+    // cost is named in copy, never engineered): the timer stops while an answer is owed, the held
+    // seconds are never banked, and the player's own press always goes through anyway.
+
+    [TestCase]
+    public void HeldShow_StopsTheTimerDead_TheUnstagedDayNeverReachesEveningOnItsOwn()
+    {
+        var held = true;
+        var (adapter, clock, conductor) = Build(
+            GameComposition.NewCampaign(UnstagedSeed), departureDone: false, showHeld: () => held);
+
+        clock.AdvanceNow(); // the Morning bell — "Send them off"
+        AssertThat(conductor.Current).IsEqual(RaidConductor.Beat.SendOff);
+        AssertThat(conductor.ShowHeld)
+            .OverrideFailureMessage("A running show with an unanswered ask must report itself held.")
+            .IsTrue();
+
+        // Two full minutes of frames — twenty times every pinned max in this class combined.
+        for (var i = 0; i < 120; i++)
+        {
+            conductor.Update(1.0);
+        }
+
+        AssertThat(adapter.CurrentState.Phase)
+            .OverrideFailureMessage(
+                "The show timer ran while the player still owed an answer — this is the reported bug: " +
+                "one press of Send them off carried the whole day to Night on its own.")
+            .IsEqual(DayPhase.Expedition);
+
+        // Answered: the show resumes on its own terms, and only then.
+        held = false;
+        AssertThat(conductor.ShowHeld).IsFalse();
+        conductor.Update(RaidConductor.SendOffMaxSeconds);
+        AssertThat(adapter.CurrentState.Phase).IsEqual(DayPhase.Camp);
+    }
+
+    [TestCase]
+    public void HeldShow_NeverBanksTheHeldTime_TheShowResumesWhereItPaused()
+    {
+        // The failure this pins is the reported bug wearing a different hat: if the hold merely
+        // DEFERRED the tick (PhaseClock.Update's own engaged branch accrues to the cap on purpose),
+        // then a minute spent inside the forge would fire every remaining beat the frame the player
+        // walked out — a skipped day, just delayed. A held show is PAUSED, not deferred.
+        var held = true;
+        var (adapter, clock, conductor) = Build(
+            GameComposition.NewCampaign(UnstagedSeed), departureDone: false, showHeld: () => held);
+
+        clock.AdvanceNow(); // Morning -> Expedition
+        AssertThat(conductor.Current).IsEqual(RaidConductor.Beat.SendOff);
+
+        for (var i = 0; i < 60; i++)
+        {
+            conductor.Update(1.0); // 60 seconds held — ten times SendOffMaxSeconds
+        }
+
+        held = false;
+        conductor.Update(1.0 / 60.0); // the very first frame after the hold lifts
+
+        AssertThat(adapter.CurrentState.Phase)
+            .OverrideFailureMessage(
+                "The held seconds were banked: the show fired the instant the hold lifted instead of " +
+                "resuming where it paused.")
+            .IsEqual(DayPhase.Expedition);
+
+        conductor.Update(RaidConductor.SendOffMaxSeconds); // now it earns its own max, from zero
+        AssertThat(adapter.CurrentState.Phase).IsEqual(DayPhase.Camp);
+    }
+
+    [TestCase]
+    public void Hurry_WalksStraightThroughTheHold_SkippingStaysLegal()
+    {
+        // §11.7.8: skipping stays legal and its cost is named in copy, never engineered. The hold
+        // binds the TIMER; the bell-row control is the player, and the player always wins.
+        var (adapter, clock, conductor) = Build(
+            GameComposition.NewCampaign(UnstagedSeed), departureDone: false, showHeld: () => true);
+
+        clock.AdvanceNow();
+        AssertThat(conductor.ShowHeld).IsTrue();
+
+        conductor.Hurry();
+
+        AssertThat(adapter.CurrentState.Phase)
+            .OverrideFailureMessage("The hold trapped the player — Hurry must always be allowed through it.")
+            .IsEqual(DayPhase.Evening);
+        AssertThat(conductor.Current).IsEqual(RaidConductor.Beat.Idle);
+    }
+
+    [TestCase]
+    public void EngagedSurface_HoldsTheShow_TheSameLatchThatAlreadyHeldThePhaseClock()
+    {
+        // PhaseClock.Engaged has meant "a drawer/interior/modal owns the screen, hold at the
+        // boundary" since U15 — and the conductor was simply never wired to it, so the day rolled to
+        // Night underneath a player who was standing in the forge crafting during the march (exactly
+        // what §11.7.4 asks the Quest phase to be for).
+        var (adapter, clock, conductor) = Build(GameComposition.NewCampaign(UnstagedSeed), departureDone: false);
+
+        clock.AdvanceNow();
+        clock.Engaged = true;
+        AssertThat(conductor.ShowHeld).IsTrue();
+
+        for (var i = 0; i < 60; i++)
+        {
+            conductor.Update(1.0);
+        }
+
+        AssertThat(adapter.CurrentState.Phase)
+            .OverrideFailureMessage("An engaged surface must hold the raid span exactly as it holds the phase clock.")
+            .IsEqual(DayPhase.Expedition);
+
+        clock.Engaged = false;
+        AssertThat(conductor.ShowHeld).IsFalse();
+    }
+
+    [TestCase]
+    public void ShowHeld_IsFalseWhereThereIsNoTimerToHold_IdleAndVigilStop()
+    {
+        // The predicate is FLIPPED rather than pinned true, for a reason the first version of this
+        // case got wrong: a hold that is true from construction stops the SendOff timer, so
+        // Update() never reaches Camp and the beat under test is never the one being asserted. The
+        // flip also makes the assertion stronger — at Idle and VigilStop, ShowHeld must read false
+        // while the injected predicate is answering TRUE, which is the gate itself, not a coincidence.
+        var held = false;
+        var (_, clock, conductor) = Build(StagedWorld(), showHeld: () => held);
+
+        AssertThat(conductor.Current).IsEqual(RaidConductor.Beat.Idle);
+        held = true;
+        AssertThat(conductor.ShowHeld)
+            .OverrideFailureMessage("Idle has no show timer — reporting it held would put a false caption on the HUD.")
+            .IsFalse();
+
+        held = false; // let the show earn its own seconds, exactly as an unheld span does
+        clock.AdvanceNow();
+        conductor.Update(RaidConductor.SendOffMaxSeconds); // -> Camp, party parked
+        AssertThat(conductor.Current).IsEqual(RaidConductor.Beat.VigilStop);
+        held = true;
+        AssertThat(conductor.ShowHeld)
+            .OverrideFailureMessage("VigilStop is already timer-free — it is a stop, not a held show.")
+            .IsFalse();
+    }
+
+    // ── 10. A resumed campaign arms the vigil at construction, not on the next transition ────────
+
+    [TestCase]
+    public void ResumedMidCamp_ArmsTheVigilStopAtConstruction_NeverStartsIdle()
+    {
+        var parked = ParkedAtCampWorld();
+        var (_, _, conductor) = Build(parked);
+
+        AssertThat(conductor.Current)
+            .OverrideFailureMessage(
+                "A campaign resumed with a party already parked started at Idle. Idle routes " +
+                "MainUi._Process into Clock.Update and the bell press into Clock.AdvanceNow(), so a " +
+                "timer or one stray bell would end an unanswered vigil — the law break this derivation closes.")
+            .IsEqual(RaidConductor.Beat.VigilStop);
+    }
+
+    [TestCase]
+    public void ResumedMidCamp_TheOptInInnkeepersClock_CannotTimeTheVigilAway()
+    {
+        var (adapter, clock, conductor) = Build(ParkedAtCampWorld());
+
+        clock.SetAutoAdvance(true); // the persisted escape hatch, restored at boot before frame one
+        clock.Play();
+
+        for (var i = 0; i < 200; i++)
+        {
+            Frame(clock, conductor, 1.0); // 200 seconds — four times PhaseClock's own borrowed duration
+        }
+
+        AssertThat(adapter.CurrentState.Phase)
+            .OverrideFailureMessage("A wall-clock timer ended the vigil of a party that is still parked.")
+            .IsEqual(DayPhase.Camp);
+        AssertThat(adapter.CurrentState.InFlight.IsEmpty).IsFalse();
+        AssertThat(conductor.Current).IsEqual(RaidConductor.Beat.VigilStop);
+
+        conductor.ResolveVigil(); // still the only way out
+        AssertThat(adapter.CurrentState.Phase).IsEqual(DayPhase.ExpeditionDeep);
     }
 }
 #endif

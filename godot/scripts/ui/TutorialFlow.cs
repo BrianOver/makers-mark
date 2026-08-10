@@ -281,9 +281,17 @@ public sealed partial class TutorialFlow : PanelContainer
             ShortLabel: "Press Watch to look in on them",
             TeachNote: "The Scrying Mirror shows the raid live, floor by floor, including which of your work "
                        + "each hero is carrying. The Watch button appears whenever a party is underground.",
-            // UI-only: no durable sim fact exists for "opened the Mirror" — NotifyMirrorOpened
-            // advances this directly. IsDone stays false so Advance()'s own pass never fires it.
-            IsDone: _ => false,
+            // Normally UI-only: no durable sim fact exists for "opened the Mirror", so
+            // NotifyMirrorOpened advances this directly and this predicate does not fire.
+            //
+            // The Evening clause is the anti-stranding half, and it is the second half of the owner's
+            // 2026-08-09 report — "it auto jumped to night???? yet this is still on tutorial 5???".
+            // The Watch control exists only while a party is out (MainUi.UpdateClockLabel), so once
+            // the day has reached Night this step is pointing at a button that is not on screen. The
+            // conductor now holds the span open for it (RaidConductor's hold doc), so the only way to
+            // arrive here is the player's own deliberate skip — and a step the player chose to walk
+            // past must move on, not sit there naming a control they can no longer see.
+            IsDone: state => state.Phase == DayPhase.Evening,
             AdvanceFrom: [TutorialStep.LookIn], AdvancesTo: TutorialStep.OpenCounter),
         new(
             Step: TutorialStep.OpenCounter, DisplayIndex: 6, Anchor: TutorialAnchor.ForBuilding("market"), MinDay: 2,
@@ -554,10 +562,11 @@ public sealed partial class TutorialFlow : PanelContainer
                 $"the wide button at the top of the screen. The view swings to the **{building}** and follows them out.",
             // Day-1 capstone: no town building — the taught affordance is the persistent Watch
             // control beside the bell (reachable through Expedition/Camp/ExpeditionDeep). "On the
-            // bell row" named a piece of layout vocabulary that appears nowhere on screen.
+            // bell row" named a piece of layout vocabulary that appears nowhere on screen. The day
+            // holds here until this is answered (RaidConductor's hold), so the copy can promise it.
             TutorialStep.LookIn =>
                 $"Tutorial {def.DisplayIndex}/{TotalSteps}: Press **👁 Watch**, beside the wide button at the top of the " +
-                "screen, to open the Scrying Mirror and look in on them.",
+                "screen, to open the Scrying Mirror and look in on them — the day waits until you do.",
             TutorialStep.OpenCounter =>
                 $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — press " +
                 "**Open Counter** at the top of the Shop panel, then **Present** a shelved item and answer with " +
@@ -684,9 +693,21 @@ public sealed partial class TutorialFlow : PanelContainer
             TutorialStep.BuyMaterial => state.Phase == DayPhase.Morning && state.ActionSlotsRemaining > 0,
             TutorialStep.PostBounty => (state.Phase is DayPhase.Morning or DayPhase.Evening) && state.ActionSlotsRemaining > 0,
             TutorialStep.OpenCounter => state.Phase == DayPhase.Morning,
+            TutorialStep.LookIn => WatchWindowOpen(state),
             _ => true,
         };
     }
+
+    /// <summary>The raid window: the only phases in which a party is actually out and the Watch
+    /// control is therefore on screen. Mirrors <c>MainUi.UpdateClockLabel</c>'s own
+    /// <c>_watch.Visible</c> gate exactly — the two must agree or this chain points at a button
+    /// nobody can see, which is precisely what the owner hit on 2026-08-09 ("it auto jumped to night
+    /// yet this is still on tutorial 5"). <see cref="RaidConductor"/> holds the span open so a real
+    /// play-through never has this close underneath an unanswered step; this predicate covers the
+    /// two cases that survive that hold — a player who deliberately hurried past it, and a campaign
+    /// resumed at Morning with <see cref="Step"/> persisted mid-chain.</summary>
+    private static bool WatchWindowOpen(GameState state) =>
+        state.Phase is DayPhase.Expedition or DayPhase.Camp or DayPhase.ExpeditionDeep;
 
     /// <summary>The deferred "comes back later" variant (playtest F6) shown in place of the raw
     /// instruction whenever <see cref="StepActionAvailable"/> is false — the day-not-reached case
@@ -718,7 +739,13 @@ public sealed partial class TutorialFlow : PanelContainer
             };
         }
 
-        if (state.ActionSlotsRemaining <= 0)
+        // Slot exhaustion explains exactly two steps — the two that spend a slot. It used to be
+        // asked of EVERY unavailable step, and every other one fell through to `string.Empty`: a
+        // blank tutorial card, on the surface whose entire job is telling the player what to do.
+        // OpenCounter could already reach it (its own gate is phase-only, no slot check) and LookIn
+        // now can too, so the guard is narrowed to the steps it is actually about — the same
+        // narrowing GatingNote below has always had.
+        if (state.ActionSlotsRemaining <= 0 && def.Step is TutorialStep.BuyMaterial or TutorialStep.PostBounty)
         {
             return def.Step switch
             {
@@ -744,6 +771,11 @@ public sealed partial class TutorialFlow : PanelContainer
                 $"Tutorial {index}/{TotalSteps}: The Bounties board only takes postings in the Morning or Evening — come back then to post yours.",
             TutorialStep.OpenCounter =>
                 $"Tutorial {index}/{TotalSteps}: The counter only opens in the Morning — it reopens next Morning.",
+            // The Watch control is only on the bell row while a party is out (WatchWindowOpen), so
+            // naming it here would point at nothing. Name what is true instead, and the press that
+            // brings it back.
+            TutorialStep.LookIn =>
+                $"Tutorial {index}/{TotalSteps}: Nobody is down there right now — ring **Send them off** and the Mirror opens on them as they go.",
             _ => string.Empty,
         };
     }
@@ -770,6 +802,8 @@ public sealed partial class TutorialFlow : PanelContainer
                 "A Morning task — rest until dawn.",
             TutorialStep.PostBounty when state.Phase is not (DayPhase.Morning or DayPhase.Evening) =>
                 "Morning or Evening — the board reopens then.",
+            TutorialStep.LookIn when !WatchWindowOpen(state) =>
+                "Only while a party is out — ring Send them off.",
             _ => null,
         };
     }
