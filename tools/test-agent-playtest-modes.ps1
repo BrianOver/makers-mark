@@ -57,7 +57,8 @@ $parseTargets = @(
     (Join-Path $toolsDir 'agent-playtest\metrics.ps1'),
     (Join-Path $toolsDir 'agent-playtest\temperament.ps1'),
     (Join-Path $toolsDir 'agent-playtest\monkey.ps1'),
-    (Join-Path $toolsDir 'agent-playtest\attached.ps1')
+    (Join-Path $toolsDir 'agent-playtest\attached.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\scenario.ps1')
 )
 foreach ($target in $parseTargets) {
     $tokens = $null
@@ -1518,6 +1519,170 @@ Check ($scoutJudgeMdText -like '*most wanted to stop*') 'scout-judge.md must ALS
 Check ($scoutJudgeMdText -like '*Decision that mattered*') 'scout-judge.md must keep its own "Decision that mattered" evidence question'
 Check ($scoutJudgeMdText -like '*Named my work*') 'scout-judge.md must keep its own "Named my work" evidence question'
 Check ($scoutJudgeMdText -like '*Day-11 check*') 'scout-judge.md must keep its own day-11 evidence question'
+
+# --- 20. Scenario cards (W5, docs/plans/2026-08-10-002) -- "did this ONE named behaviour work" -----
+. (Join-Path $toolsDir 'agent-playtest\scenario.ps1')
+
+$scenarioFixturePath = Join-Path $toolsDir 'agent-playtest\tests\scenario-card-fixture.md'
+Check (Test-Path $scenarioFixturePath) ('scenario card fixture must exist at ' + $scenarioFixturePath)
+
+# Card parses into all four fields (Backend predicate included -- the fixture card carries one).
+$scenarioCard = Read-ScenarioCard -Path $scenarioFixturePath
+Check ($scenarioCard.Slug -eq 'scenario-card-fixture') ('card Slug must come from the filename, got [' + $scenarioCard.Slug + ']')
+Check ($scenarioCard.Setup.Type -eq 'Fresh') ('fixture card Setup must parse as Fresh, got [' + $scenarioCard.Setup.Type + ']')
+Check (@($scenarioCard.Setup.Commands).Count -eq 0) 'a Fresh Setup must carry zero commands'
+Check ($scenarioCard.Brief -like '*price one item*') ('Brief text must round-trip, got [' + $scenarioCard.Brief + ']')
+Check ($scenarioCard.ExpectedObservation -like '*XYZZY_EXPECTED_MARKER_NEVER_IN_ACT_PROMPT*') ('Expected observation text must round-trip, got [' + $scenarioCard.ExpectedObservation + ']')
+Check ($null -ne $scenarioCard.BackendPredicate) 'fixture card carries a Backend predicate section and must not parse as null'
+if ($scenarioCard.BackendPredicate) {
+    Check ($scenarioCard.BackendPredicate.Kind -eq 'action') ('BackendPredicate.Kind must be "action", got [' + $scenarioCard.BackendPredicate.Kind + ']')
+    Check ($scenarioCard.BackendPredicate.Field -eq 'action') ('BackendPredicate.Field must be "action", got [' + $scenarioCard.BackendPredicate.Field + ']')
+    Check ($scenarioCard.BackendPredicate.Equals -eq 'SendSupplyAction') ('BackendPredicate.Equals must be "SendSupplyAction", got [' + $scenarioCard.BackendPredicate.Equals + ']')
+}
+
+# The real, shipped card (vigil-runner.md) must ALSO parse cleanly -- a regression pin on the one
+# card W5 actually ships, not just the synthetic fixture above.
+$vigilRunnerPath = Join-Path $toolsDir 'agent-playtest\scenarios\vigil-runner.md'
+Check (Test-Path $vigilRunnerPath) ('the shipped vigil-runner card must exist at ' + $vigilRunnerPath)
+$vigilRunnerCard = Read-ScenarioCard -Path $vigilRunnerPath
+Check ($vigilRunnerCard.Slug -eq 'vigil-runner') ('vigil-runner card Slug must be "vigil-runner", got [' + $vigilRunnerCard.Slug + ']')
+Check ($vigilRunnerCard.Setup.Type -eq 'Scripted') ('vigil-runner Setup must be a scripted command prefix, got [' + $vigilRunnerCard.Setup.Type + ']')
+Check (@($vigilRunnerCard.Setup.Commands).Count -eq 12) ('vigil-runner Setup must carry exactly 12 scripted commands, got ' + @($vigilRunnerCard.Setup.Commands).Count)
+foreach ($cmdText in @($vigilRunnerCard.Setup.Commands)) {
+    $parsedSetupCmd = $null
+    try { $parsedSetupCmd = $cmdText | ConvertFrom-Json } catch { }
+    Check ($null -ne $parsedSetupCmd -and $parsedSetupCmd.action -eq 'advance') ('every vigil-runner Setup command must itself parse as an "advance" command, got [' + $cmdText + ']')
+}
+Check ($vigilRunnerCard.Brief -like '*camped in the mine*') 'vigil-runner Brief must describe the send-supply task'
+Check ($vigilRunnerCard.ExpectedObservation -like '*send-supply verb*') 'vigil-runner Expected observation must name the send-supply verb'
+Check ($null -ne $vigilRunnerCard.BackendPredicate) 'vigil-runner must carry a Backend predicate'
+if ($vigilRunnerCard.BackendPredicate) {
+    Check ($vigilRunnerCard.BackendPredicate.Equals -eq 'SendSupplyAction') ('vigil-runner BackendPredicate.Equals must be "SendSupplyAction", got [' + $vigilRunnerCard.BackendPredicate.Equals + ']')
+}
+
+# Missing card: FAILS LOUDLY, never falls back to a plain run.
+$missingCardThrew = $false
+$missingCardMessage = ''
+try { Read-ScenarioCard -Path (Join-Path $env:TEMP 'agent-playtest-no-such-scenario-card.md') } catch { $missingCardThrew = $true; $missingCardMessage = $_.Exception.Message }
+Check ($missingCardThrew -eq $true) 'Read-ScenarioCard must THROW on a missing file, never silently return a default card'
+Check ($missingCardMessage -like '*not found*') ('the missing-card message must say so explicitly, got [' + $missingCardMessage + ']')
+
+# Malformed card (a REQUIRED section absent -- Brief, here): FAILS LOUDLY, naming the section.
+$malformedCardPath = Join-Path $toolsDir 'agent-playtest\tests\scenario-card-missing-brief-fixture.md'
+Check (Test-Path $malformedCardPath) ('malformed-card fixture must exist at ' + $malformedCardPath)
+$malformedCardThrew = $false
+$malformedCardMessage = ''
+try { Read-ScenarioCard -Path $malformedCardPath } catch { $malformedCardThrew = $true; $malformedCardMessage = $_.Exception.Message }
+Check ($malformedCardThrew -eq $true) 'Read-ScenarioCard must THROW on a card missing a required section'
+Check ($malformedCardMessage -like '*Brief*') ('the malformed-card message must NAME the missing section (Brief), got [' + $malformedCardMessage + ']')
+
+# Setup's three shapes, directly.
+$freshSetup = ConvertTo-ScenarioSetup -RawSetupText '  Fresh  '
+Check ($freshSetup.Type -eq 'Fresh') 'ConvertTo-ScenarioSetup must accept "fresh" case/whitespace-insensitively'
+$continueSetup = ConvertTo-ScenarioSetup -RawSetupText 'continue'
+Check ($continueSetup.Type -eq 'Continue') 'ConvertTo-ScenarioSetup must accept "continue"'
+$scriptedSetupText = 'prose above the block' + [Environment]::NewLine + '```json' + [Environment]::NewLine +
+    '["{\"action\":\"advance\",\"why\":\"t\"}", "{\"action\":\"key\",\"target\":\"cancel\",\"why\":\"t\"}"]' +
+    [Environment]::NewLine + '```'
+$scriptedSetup = ConvertTo-ScenarioSetup -RawSetupText $scriptedSetupText
+Check ($scriptedSetup.Type -eq 'Scripted') 'ConvertTo-ScenarioSetup must recognize a fenced JSON command list as Scripted'
+Check (@($scriptedSetup.Commands).Count -eq 2) ('a 2-command scripted Setup must parse to exactly 2 commands, got ' + @($scriptedSetup.Commands).Count)
+
+$badSetupThrew = $false
+try { ConvertTo-ScenarioSetup -RawSetupText 'not fresh, not continue, not json at all' } catch { $badSetupThrew = $true }
+Check ($badSetupThrew -eq $true) 'ConvertTo-ScenarioSetup must THROW on text that is neither fresh/continue nor parseable JSON'
+
+$nestedObjectSetupThrew = $false
+try { ConvertTo-ScenarioSetup -RawSetupText '[{"action":"advance"}]' } catch { $nestedObjectSetupThrew = $true }
+Check ($nestedObjectSetupThrew -eq $true) 'ConvertTo-ScenarioSetup must THROW when the list holds nested JSON objects instead of command STRINGS'
+
+# De-contamination pin: build the REAL assembled act prompt (persona substitution + the scenario
+# Brief append, in that order) and prove the Expected observation text is NOWHERE in it. This is the
+# brief's own required proof, not a trust-the-doc-comment check.
+$realActPrompt = Build-PersonaActPrompt -ActProtocolText $actProtocolText -PersonaName 'first-timer' -PersonasDir $personasDir
+$realActPromptWithScenario = $realActPrompt + [Environment]::NewLine + [Environment]::NewLine +
+    (Get-ScenarioActPromptAddition -Brief $scenarioCard.Brief)
+Check ($realActPromptWithScenario -like '*price one item*') 'sanity: the Brief itself must actually reach the assembled act prompt'
+Check ($realActPromptWithScenario -notlike '*XYZZY_EXPECTED_MARKER_NEVER_IN_ACT_PROMPT*') 'the Expected observation text must NEVER appear in the assembled act prompt (de-contamination)'
+
+# Judge-question assembly: Expected observation DOES belong in the judge's own input (never the act
+# prompt above) -- the mirror-image proof of the de-contamination pin.
+$judgeQuestionLines = Get-ScenarioJudgeQuestionText -ExpectedObservation $scenarioCard.ExpectedObservation
+$judgeQuestionText = ($judgeQuestionLines -join [Environment]::NewLine)
+Check ($judgeQuestionText -like '*XYZZY_EXPECTED_MARKER_NEVER_IN_ACT_PROMPT*') 'the judge-only question text must carry the Expected observation'
+Check ($judgeQuestionText -like '*SCENARIO VERDICT:*') 'the judge-only question must instruct the exact "SCENARIO VERDICT:" reply line'
+
+# Each of the three verdicts, parsed from a fixture judge reply.
+$confirmedText = 'Some prose about the run.' + [Environment]::NewLine + 'SCENARIO VERDICT: CONFIRMED: the ledger reads "Runner delivered a potion to Torvald."'
+$confirmedVerdict = Get-ScenarioVerdictFromJudgeText -JudgeText $confirmedText
+Check ($confirmedVerdict.Verdict -eq 'CONFIRMED') ('CONFIRMED fixture must parse as CONFIRMED, got [' + $confirmedVerdict.Verdict + ']')
+Check ($confirmedVerdict.Quote -like '*Runner delivered a potion*') ('CONFIRMED fixture must capture its quote, got [' + $confirmedVerdict.Quote + ']')
+
+$notSeenText = 'The run never opened the camp card.' + [Environment]::NewLine + 'SCENARIO VERDICT: NOT SEEN: the log never shows a Camp phase at all.'
+$notSeenVerdict = Get-ScenarioVerdictFromJudgeText -JudgeText $notSeenText
+Check ($notSeenVerdict.Verdict -eq 'NOT SEEN') ('NOT SEEN fixture must parse as NOT SEEN, got [' + $notSeenVerdict.Verdict + ']')
+Check ($notSeenVerdict.Quote -like '*never shows a Camp phase*') 'NOT SEEN fixture must capture its quote'
+
+$contradictedText = 'SCENARIO VERDICT: CONTRADICTED: the runner reported "Nothing in your hands to send."'
+$contradictedVerdict = Get-ScenarioVerdictFromJudgeText -JudgeText $contradictedText
+Check ($contradictedVerdict.Verdict -eq 'CONTRADICTED') ('CONTRADICTED fixture must parse as CONTRADICTED, got [' + $contradictedVerdict.Verdict + ']')
+Check ($contradictedVerdict.Quote -like '*Nothing in your hands to send*') 'CONTRADICTED fixture must capture its quote'
+
+$noVerdictLineText = 'The judge just wrote ordinary prose findings with no verdict line at all.'
+$unknownVerdict = Get-ScenarioVerdictFromJudgeText -JudgeText $noVerdictLineText
+Check ($unknownVerdict.Verdict -eq 'UNKNOWN') ('a reply with no "SCENARIO VERDICT:" line must parse as UNKNOWN, got [' + $unknownVerdict.Verdict + ']')
+
+# Format-ScenarioVerdictSection renders each of the three (plus UNKNOWN), with mechanical fact and
+# model observation kept SEPARATE lines, never blended into one boolean.
+$presentBackendResult = [pscustomobject]@{ Present = $true; MatchCount = 1; Detail = 'found 1 matching "action" row(s) where action contains "SendSupplyAction"' }
+$confirmedSection = Format-ScenarioVerdictSection -Card $scenarioCard -JudgeVerdict $confirmedVerdict -BackendResult $presentBackendResult
+Check ($confirmedSection -like '*## Scenario verdict*') 'the rendered section must carry its own heading'
+Check ($confirmedSection -like '*Model observation: CONFIRMED*') 'CONFIRMED must render as the model observation line'
+Check ($confirmedSection -like '*PRESENT*') 'a present backend predicate must render as PRESENT'
+Check ($confirmedSection -like '*never blended*') 'the rendered section must say mechanical fact and model observation are never blended'
+
+$absentBackendResult = [pscustomobject]@{ Present = $false; MatchCount = 0; Detail = 'no "action" row with action containing "SendSupplyAction" was found in 3 row(s)' }
+$notSeenSection = Format-ScenarioVerdictSection -Card $scenarioCard -JudgeVerdict $notSeenVerdict -BackendResult $absentBackendResult
+Check ($notSeenSection -like '*Model observation: NOT SEEN*') 'NOT SEEN must render as the model observation line'
+Check ($notSeenSection -like '*ABSENT*') 'an absent backend predicate must render as ABSENT'
+
+$contradictedSection = Format-ScenarioVerdictSection -Card $scenarioCard -JudgeVerdict $contradictedVerdict -BackendResult $null
+Check ($contradictedSection -like '*Model observation: CONTRADICTED*') 'CONTRADICTED must render as the model observation line'
+Check ($contradictedSection -like '*not evaluated*') 'a null BackendResult (no backend log available) must render as "not evaluated", never a silent PRESENT/ABSENT'
+
+$unknownSection = Format-ScenarioVerdictSection -Card $scenarioCard -JudgeVerdict $unknownVerdict -BackendResult $null
+Check ($unknownSection -like '*Model observation: UNKNOWN*') 'UNKNOWN must render as its own model observation line'
+Check ($unknownSection -notlike '*Model observation: NOT SEEN*') 'UNKNOWN must never render as the NOT SEEN model-observation line -- that would fabricate a negative the judge never gave'
+
+# Backend predicate against fixture JSONL rows -- present and absent, mechanically, no model.
+$presentPredicate = [pscustomobject]@{ Kind = 'action'; Field = 'action'; Equals = 'SendSupplyAction' }
+
+$supplyFixturePath = Join-Path $toolsDir 'agent-playtest\tests\scenario-supply-fixture.jsonl'
+Check (Test-Path $supplyFixturePath) ('scenario supply fixture must exist at ' + $supplyFixturePath)
+$supplyRows = @((Read-BackendLogRows -LogPath $supplyFixturePath).Rows)
+$presentResult = Test-ScenarioBackendPredicate -Predicate $presentPredicate -Rows $supplyRows
+Check ($presentResult.Present -eq $true) ('a fixture with a SendSupplyAction action row must report Present=true, got ' + $presentResult.Present)
+Check ($presentResult.MatchCount -eq 1) ('exactly 1 row must match, got ' + $presentResult.MatchCount)
+
+$absentRows = @((Read-BackendLogRows -LogPath $backendFixturePath).Rows)
+$absentResult = Test-ScenarioBackendPredicate -Predicate $presentPredicate -Rows $absentRows
+Check ($absentResult.Present -eq $false) ('backend-fixture.jsonl has no SendSupplyAction row and must report Present=false, got ' + $absentResult.Present)
+Check ($absentResult.MatchCount -eq 0) ('zero rows must match, got ' + $absentResult.MatchCount)
+
+# Case-insensitive substring match -- proven directly rather than trusted from the two cases above.
+$caseInsensitivePredicate = [pscustomobject]@{ Kind = 'action'; Field = 'action'; Equals = 'sendsupplyaction' }
+$caseInsensitiveResult = Test-ScenarioBackendPredicate -Predicate $caseInsensitivePredicate -Rows $supplyRows
+Check ($caseInsensitiveResult.Present -eq $true) 'the predicate match must be case-insensitive'
+
+# Empty row set must never throw (mirrors backend.ps1's own AllowEmptyCollection lesson).
+$emptyRowsThrew = $false
+try { $null = Test-ScenarioBackendPredicate -Predicate $presentPredicate -Rows @() } catch { $emptyRowsThrew = $true }
+Check ($emptyRowsThrew -eq $false) 'Test-ScenarioBackendPredicate must not throw on an empty row set'
+
+# Malformed Backend predicate (missing a required key): FAILS LOUDLY.
+$badPredicateThrew = $false
+try { ConvertTo-ScenarioBackendPredicate -RawPredicateText '{"kind":"action","field":"action"}' } catch { $badPredicateThrew = $true }
+Check ($badPredicateThrew -eq $true) 'ConvertTo-ScenarioBackendPredicate must THROW when a required key ("equals") is missing'
 
 # --- Summary -----------------------------------------------------------------------------------
 if ($failures.Count -gt 0) {

@@ -1,0 +1,4 @@
+{"kind":"session","startedAt":1700000000,"provenance":"test-build-3"}
+{"kind":"tick","t":1.0,"day":2,"phase":"Camp","beat":"VigilStop","cause":"press:bridge-advance","fromDay":2,"fromPhase":"Expedition","gold":94,"mats":0,"shelf":0,"items":0,"heroesAlive":6,"heroes":6,"inFlight":1,"bounties":0,"act":"ActI","slots":5,"events":0,"rejects":[]}
+{"kind":"action","t":1.5,"day":2,"phase":"Camp","beat":"VigilStop","action":"SendSupplyAction","immediate":true}
+{"kind":"note","t":1.6,"what":"gossip: a runner reached the camp with a fresh potion."}

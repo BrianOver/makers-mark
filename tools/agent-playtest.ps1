@@ -141,6 +141,20 @@
     STREAM given identical states, never a claim about sim determinism (this file's own dot-sourced
     monkey.ps1 header says so at length). Ignored by every other persona.
 
+.PARAMETER Scenario
+    W5 (docs/plans/2026-08-10-002): the slug of a scenario card at
+    tools/agent-playtest/scenarios/<slug>.md -- "did this ONE named behaviour work", answered with
+    quotes, distinct from -Scope Diff ("what changed recently") and the ordinary open-ended sweep.
+    Loaded and validated BEFORE the GPU gate (same fail-cheap-checks-first order as persona
+    resolution); a missing or malformed card Die()s loudly rather than falling back to a plain run
+    (tools/agent-playtest/scenario.ps1 owns the parsing). A card's Setup (fresh/continue/a scripted
+    command prefix) replays blind through the same plumbing -Scripted uses, its Brief is appended to
+    the act prompt AFTER persona substitution (a scenario is a task, not a fifth persona), and its
+    Expected observation goes to the judge pass ONLY -- never the act prompt (the de-contamination
+    requirement; see scenario.ps1's own header). Incompatible with -Scripted and -Persona monkey
+    (neither one calls a model at all, and this needs both a real act loop and a real judge pass) --
+    passing both together Die()s rather than silently picking one.
+
 .EXAMPLE
     .\tools\agent-playtest.ps1 -Turns 40
 
@@ -168,7 +182,8 @@ param(
     [int]$MechanicalTimeoutMin = 15,
     [int]$FrameEvery = 1,
     [string]$Persona = 'first-timer',
-    [int]$Seed = 1
+    [int]$Seed = 1,
+    [string]$Scenario = ''
 )
 
 # A4/A5/A6: the diff-to-surface map, the per-turn prompt builder, Scout's mechanical detectors, and
@@ -194,6 +209,9 @@ param(
 . (Join-Path $PSScriptRoot 'agent-playtest\temperament.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\monkey.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\attached.ps1')
+# W5 (docs/plans/2026-08-10-002): scenario cards -- "did this ONE named behaviour work", answered
+# with quotes. Pure parser + verdict logic; see its own header for the card format.
+. (Join-Path $PSScriptRoot 'agent-playtest\scenario.ps1')
 
 $ErrorActionPreference = 'Stop'
 
@@ -235,6 +253,31 @@ Say ('persona: ' + $personaName + ' (requested: ' + $Persona + ')')
 # meter) can branch on it without re-deriving $personaName -eq 'monkey' at each site.
 $isMonkey = ($personaName -eq 'monkey')
 $isAttached = ($personaName -eq 'attached')
+
+# W5 (docs/plans/2026-08-10-002): load and validate the scenario card, if any, BEFORE the GPU gate --
+# same fail-cheap-checks-first order as persona resolution just above. A missing or malformed card
+# Die()s loudly (scenario.ps1's Read-ScenarioCard throws, naming the exact section) rather than
+# silently falling back to a plain run.
+$scenarioCard = $null
+if ($Scenario) {
+    $scenarioPath = Join-Path $PSScriptRoot ('agent-playtest\scenarios\' + $Scenario + '.md')
+    try {
+        $scenarioCard = Read-ScenarioCard -Path $scenarioPath
+    } catch {
+        Die @(('scenario card failed to load: ' + $_.Exception.Message))
+    }
+    Say ('scenario: ' + $scenarioCard.Slug + ' (Setup: ' + $scenarioCard.Setup.Type + ')')
+    # Neither -Scripted nor monkey ever calls a model -- a scenario needs BOTH a real act loop (to
+    # carry out the Brief) and a real judge pass (to answer the Expected observation), so silently
+    # picking one over the other would be exactly the confusing-combo shape this repo's own
+    # fail-loudly convention exists to prevent.
+    if ($Scripted) {
+        Die @('-Scenario and -Scripted cannot be combined -- Scripted never calls a model, and a scenario needs both a real act loop and a real judge pass.')
+    }
+    if ($isMonkey) {
+        Die @('-Scenario and -Persona monkey cannot be combined -- monkey never calls a model (ruling 9), and a scenario needs both a real act loop and a real judge pass.')
+    }
+}
 
 # Ruling 4: monkey defaults -FrameEvery to 25, UNLESS the caller passed their own value explicitly --
 # $PSBoundParameters is the only reliable way in PowerShell to tell "the default fired" apart from
@@ -574,6 +617,13 @@ $attachedHeroDied = $false
 $attachedDeathTurn = $null
 $attachedDeathAttributed = $false
 
+# W5: the scenario card's Setup replay position -- how many of its scripted commands (if any) have
+# already been consumed. Stays 0 for a Fresh/Continue Setup (Commands is empty, so the turn loop's
+# own scenario branch never matches) and for every ordinary (non-scenario) run ($scenarioCard is
+# $null). See the turn loop's own comment on why replay ALSO stops early the instant state.beat
+# reads VigilStop, rather than trusting this count alone.
+$scenarioSetupIndex = 0
+
 function Wait-ForFile($path, $timeoutSec) {
     $deadline = (Get-Date).AddSeconds($timeoutSec)
     while ((Get-Date) -lt $deadline) {
@@ -616,6 +666,17 @@ if ($isMonkey) {
         -PersonasDir (Join-Path $PSScriptRoot 'agent-playtest\prompts\personas')
     $actPromptHash = Get-PromptHash -Text $actPrompt
     Say ('act-prompt hash: ' + $actPromptHash + ' (persona: ' + $personaName + ')')
+
+    # W5 (docs/plans/2026-08-10-002): the scenario's Brief -- appended AFTER persona substitution (a
+    # scenario is a task layered on the chosen player, never a fifth persona). The Expected
+    # observation NEVER reaches this call, or anything $actPrompt feeds from here on -- it goes to
+    # the judge pass only (see the judge-input assembly below). This is the de-contamination
+    # requirement; tools/test-agent-playtest-modes.ps1 proves it by building this exact prompt and
+    # asserting the expected-observation text is absent from the result.
+    if ($scenarioCard) {
+        $actPrompt = $actPrompt + [Environment]::NewLine + [Environment]::NewLine +
+            (Get-ScenarioActPromptAddition -Brief $scenarioCard.Brief)
+    }
 
     # A5: Scout is judged by a different prompt -- the design-doc-seeded question about decisions
     # and boredom, not the bug-hunting judge.md. Full and Diff keep judge.md unchanged.
@@ -737,6 +798,11 @@ try {
 
         # Decide the command.
         $command = $null
+        # W5: true only for a turn that consumed one of the scenario card's own Setup commands --
+        # excluded from the dead-verb detector below the same way -Scripted's own deliberate illegal
+        # press is (these are driver-constructed synthetic presses proving a path exists, never an
+        # organic player decision the detector should judge).
+        $isScenarioSetupTurn = $false
         if ($Scripted) {
             $idx = [math]::Min($turn - 1, $scriptedPlan.Count - 1)
             $command = $scriptedPlan[$idx]
@@ -745,6 +811,19 @@ try {
             # built from THIS turn's enabled controls / canMove, never from a fixed vocabulary), so
             # there is no legality re-check, no attempts loop, and no refusal path here at all.
             $command = Get-MonkeyCommand -State $state -Random $monkeyRandom
+        } elseif ($scenarioCard -and ($scenarioSetupIndex -lt @($scenarioCard.Setup.Commands).Count) -and
+                  ([string]$state.beat -ne 'VigilStop')) {
+            # W5, ruling 3: Setup may be blind; play may not. Replayed through the SAME plumbing
+            # -Scripted uses (a raw command string, no legality re-check) -- but replay stops the
+            # INSTANT state.beat reads VigilStop, even with commands still unconsumed: this list's own
+            # "advance" is the harness's raw bridge command (AgentPlaytest.ApplyAdvance ->
+            # SimAdapter.AdvancePhase directly), which has no VigilStop gate the way the client's own
+            # AdvancePhase BUTTON does -- so trusting the count alone risks ticking straight through
+            # the very state this card exists to test. See vigil-runner.md's own Setup section for the
+            # full reasoning this guards.
+            $command = @($scenarioCard.Setup.Commands)[$scenarioSetupIndex]
+            $scenarioSetupIndex++
+            $isScenarioSetupTurn = $true
         } else {
             $notesFullText = ($notesLines -join [Environment]::NewLine)
             # Surroundings, the interact prompt, and the beat all come straight off state.json (see
@@ -900,9 +979,11 @@ try {
         # like before its outcome exists. Scripted is excluded on purpose: it has no persona, no
         # model, and its one press ($scriptedPlan above) is a DELIBERATE illegal one meant to be
         # refused, which would misfire this detector on a turn that was never a real player action.
+        # W5: a scenario's own Setup replay is excluded the same way -- those presses are also
+        # driver-constructed to reach a target state, never an organic player decision.
         # If -FrameEvery already thinned this turn's frame, it is staged now (deadverb.ps1) since
         # frame.png will be the NEXT turn's screenshot by the time the verdict is known.
-        if ((-not $Scripted) -and ($parsedCmd.action -eq 'press')) {
+        if ((-not $Scripted) -and (-not $isScenarioSetupTurn) -and ($parsedCmd.action -eq 'press')) {
             $deadVerbStaged = $false
             if (-not $frameResult.Kept) {
                 $deadVerbStaged = Save-ProvisionalDeadVerbFrame -SourcePath $framePath -StagingPath $deadVerbStagingPath
@@ -1001,6 +1082,18 @@ if ($backendSummary.Available) {
         @($backendContradictions).Count + ' contradiction(s)')
 } else {
     Warn ('backend record: ' + $backendSummary.Message)
+}
+
+# W5 (docs/plans/2026-08-10-002): the scenario's backend predicate -- a mechanical fact, checked here
+# (no model involved) against the SAME parsed rows the backend section above already read. $null
+# whenever there is no scenario, or the card carries no predicate, or the log itself was unavailable
+# -- Format-ScenarioVerdictSection reads each of those as its own distinct, honestly-worded case
+# rather than a silent "absent".
+$scenarioBackendResult = $null
+if ($scenarioCard -and $scenarioCard.BackendPredicate -and $backendSummary.Available) {
+    $scenarioBackendRows = @((Read-BackendLogRows -LogPath $playtestLogPath).Rows)
+    $scenarioBackendResult = Test-ScenarioBackendPredicate -Predicate $scenarioCard.BackendPredicate -Rows $scenarioBackendRows
+    Say ('scenario backend predicate: ' + $scenarioBackendResult.Detail)
 }
 
 # U3: the coverage census -- written as its own coverage.md/coverage.json (not folded into
@@ -1142,6 +1235,12 @@ if ($isAttached -and $attachedHeroName) {
     $header += ('- attached: named hero "' + $attachedHeroName + '" -- ' + $attachedStatus)
     $header += ''
 }
+# W5: the scenario's own header line -- present only when -Scenario was given. The verdict itself
+# (model observation + backend predicate) is the "## Scenario verdict" section below, not this line.
+if ($scenarioCard) {
+    $header += ('- scenario: ' + $scenarioCard.Slug + ' -- see the Scenario verdict section below')
+    $header += ''
+}
 if ($Scope -eq 'Diff' -and $diffScopeInfo) {
     $fallBackNote = ''
     if ($diffScopeInfo.FellBack) { $fallBackNote = ' (FELL BACK to a full sweep -- see below)' }
@@ -1214,6 +1313,13 @@ if ($temperamentMeter) {
     $temperamentSection = @('', '---', '') + ((Format-TemperamentMarkdown -Meter $temperamentMeter -QuitFinding $temperamentQuitFinding) -split [Environment]::NewLine)
 }
 
+# W5: the "## Scenario verdict" section -- declared here (empty) so every Set-Content site below can
+# safely include it even before -Scenario's own judge-dependent content exists yet (Scripted/monkey
+# exit long before the judge pass, and -Scenario is incompatible with both -- see the scenario-card
+# load guard above). Populated for real, once the judge has spoken, just before the judge-input
+# assembly below.
+$scenarioSection = @()
+
 # W1: the honesty footer (agent-playtest\footer.ps1) -- computed once, appended to every Set-Content
 # site below alongside $backendSection, so a run that dies at any stage still ships the same "here is
 # what this instrument cannot see" note as a clean one. W4: attached runs get one extra disclosure --
@@ -1234,7 +1340,7 @@ $honestyFooterLines = Get-HonestyFooterLines -ExtraLines $footerExtraLines
 # on a client that had never been asked to play, then printed "scripted run complete" and exited 0 --
 # the same shape of lie as a truncated test suite reporting "Passed!". Never again from this script.
 if ($turn -eq 0) {
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('NOTHING WAS PLAYED. ' + $stopReason) + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + $honestyFooterLines)
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + @('NOTHING WAS PLAYED. ' + $stopReason) + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + $scenarioSection + $honestyFooterLines)
     Die @(
         ('zero turns were played: ' + $stopReason),
         '',
@@ -1250,7 +1356,7 @@ if ($Scripted) {
     # $fullLog (unabridged), not $log (the judge-only per-day digest) -- Scripted mode never calls a
     # judge at all ("no model judged this" on the very next line), so there is no reason to show a
     # human the compact judge-oriented digest instead of the real raw turnlog.md text here.
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + @('', '---', '', 'Scripted run -- no model judged this. The channel was exercised, including one deliberate illegal press.', '', '## Turn log', '', $fullLog) + $honestyFooterLines)
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + $scenarioSection + @('', '---', '', 'Scripted run -- no model judged this. The channel was exercised, including one deliberate illegal press.', '', '## Turn log', '', $fullLog) + $honestyFooterLines)
     Say ('scripted run complete, ' + $turn + ' turns. Channel log: ' + $findingsPath)
     exit 0
 }
@@ -1261,7 +1367,7 @@ if ($isMonkey) {
     # noise by construction." Backend/metrics/coverage/dead-verb are already computed above this
     # point for every mode, so this mirrors the Scripted branch's own shape rather than duplicating
     # any of that work.
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + @('', '---', '', 'Monkey run -- ruling 9: uniform-random input is noise by construction, so no judge pass was made. The mechanical sections above (backend/metrics/coverage/dead-verb) are the full evidence this run produces.', '', '## Turn log', '', $fullLog) + $honestyFooterLines)
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + $scenarioSection + @('', '---', '', 'Monkey run -- ruling 9: uniform-random input is noise by construction, so no judge pass was made. The mechanical sections above (backend/metrics/coverage/dead-verb) are the full evidence this run produces.', '', '## Turn log', '', $fullLog) + $honestyFooterLines)
     Say ('monkey run complete, ' + $turn + ' turns (seed ' + $Seed + '). Mechanical-only findings: ' + $findingsPath)
     exit 0
 }
@@ -1324,6 +1430,12 @@ if ($stuckFindings.Count -gt 0) {
     $judgeInput += @('The harness also detected these automatically -- include them:', '')
     $judgeInput += ($stuckFindings | ForEach-Object { '- ' + $_ })
 }
+# W5 (docs/plans/2026-08-10-002): the scenario's Expected observation goes to the JUDGE ONLY, here --
+# never to $actPrompt (see the act-prompt assembly above). The judge answers from the very log the
+# actor produced, never from being told in advance what to expect.
+if ($scenarioCard) {
+    $judgeInput += @('') + (Get-ScenarioJudgeQuestionText -ExpectedObservation $scenarioCard.ExpectedObservation)
+}
 $findings = ''
 # No image on the judge pass: the LOG is what carries the findings, and a 134 KB frame costs
 # context that the log needs. Visual findings come from the act turns, which do see frames.
@@ -1331,10 +1443,26 @@ $findings = ''
 # dedicated text model rather than the vision model that just played.
 try { $findings = Invoke-Model $judgePrompt (($judgeInput) -join [Environment]::NewLine) $null $JudgeModel } catch { Warn ('judge call failed: ' + $_.Exception.Message) }
 
+# W5: the "## Scenario verdict" section -- written ABOVE the model's own prose at every Set-Content
+# site below (mirrors $backendSection/$metricsSection/$deadVerbSection/$temperamentSection's own
+# build-once-use-everywhere shape). Stays the empty array declared above whenever -Scenario was not
+# given at all.
+if ($scenarioCard) {
+    $scenarioJudgeVerdict = [pscustomobject]@{ Verdict = 'UNKNOWN'; Quote = '' }
+    if ($findings) {
+        $scenarioJudgeVerdict = Get-ScenarioVerdictFromJudgeText -JudgeText $findings
+    } else {
+        Warn 'scenario verdict: the judge call itself produced nothing, so the model observation is UNKNOWN (not NOT SEEN -- never fabricate a negative the judge never gave).'
+    }
+    $scenarioSection = @('', '---', '') +
+        ((Format-ScenarioVerdictSection -Card $scenarioCard -JudgeVerdict $scenarioJudgeVerdict -BackendResult $scenarioBackendResult) -split [Environment]::NewLine)
+    Say ('scenario verdict: ' + $scenarioJudgeVerdict.Verdict)
+}
+
 if (-not $findings) {
     # $fullLog here, matching the label -- "Raw turn log below" should mean the raw text, not $log
     # (the judge's own per-day digest input, which is what just failed to produce anything).
-    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + @('', '---', '', 'JUDGE FAILED -- no findings written. Raw turn log below.') + $mechanicalSection + @('', $fullLog) + $honestyFooterLines)
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + $scenarioSection + @('', '---', '', 'JUDGE FAILED -- no findings written. Raw turn log below.') + $mechanicalSection + @('', $fullLog) + $honestyFooterLines)
     Die @('the judge pass produced nothing. The turn log is still in ' + $findingsPath + '.')
 }
 
@@ -1373,7 +1501,7 @@ if ($unsupported.Count -gt 0) {
     ) + ($unsupported | ForEach-Object { '- `' + $_ + '`' })
 }
 
-Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + @('', '---', '') + @($findings) + $guardNote + $mechanicalSection + @("", "---", "", "## Turn log", "", $fullLog) + $honestyFooterLines)
+Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + $scenarioSection + @('', '---', '') + @($findings) + $guardNote + $mechanicalSection + @("", "---", "", "## Turn log", "", $fullLog) + $honestyFooterLines)
 
 Write-Host ''
 Say ('findings written: ' + $findingsPath)
