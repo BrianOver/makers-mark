@@ -102,12 +102,14 @@ param(
     [int]$MechanicalTimeoutMin = 15
 )
 
-# A4/A5: the diff-to-surface map, the per-turn prompt builder, and Scout's mechanical detectors are
-# split into their own dot-sourced files for one reason -- they need no Godot, no ollama, and no
-# VRAM to prove, and this script needs all three. See tools/test-agent-playtest-modes.ps1.
+# A4/A5/A6: the diff-to-surface map, the per-turn prompt builder, Scout's mechanical detectors, and
+# the completion-floor verdict are split into their own dot-sourced files for one reason -- they
+# need no Godot, no ollama, and no VRAM to prove, and this script needs all three. See
+# tools/test-agent-playtest-modes.ps1.
 . (Join-Path $PSScriptRoot 'agent-playtest\scope-map.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\turn-prompt.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\mechanical.ps1')
+. (Join-Path $PSScriptRoot 'agent-playtest\completion.ps1')
 
 $ErrorActionPreference = 'Stop'
 
@@ -531,6 +533,32 @@ if ($degraded) {
     Warn ('DEGRADED: fallback ratio ' + $fallbackPct + '% exceeds the ' + ($degradeFloor * 100) + '% floor -- this run mostly pressed advance, not played')
 }
 
+# A6 (2026-08-09 overnight sweep): DEGRADED (above) measures FIDELITY -- of the turns that
+# happened, how many were the model actually playing. It says nothing about QUANTITY, so a run
+# whose client died, hung, or was talked into quitting after turn 1 has a fallback ratio of 0/1 =
+# 0% and reads as pristine -- the exact shape of self-flattery DEGRADED already exists to catch, in
+# a new place. Four runs from the same sweep proved it, all verdict=ok exit=0: Scout-5 (1 of 80
+# turns), Scout-10 (9 of 80), Full-1 (25 of 80), Full-5 (36 of 80). See
+# tools/agent-playtest/completion.ps1 for the verdict logic and its own test coverage.
+#
+# Floor chosen at 50%: half the requested budget is the plain-language line for "materially fewer
+# turns than its budget" the owner asked for, and it is the smallest floor that catches every one
+# of the four measured runs above (worst surviving case is Full-5 at 45%). It does NOT care WHY a
+# run stopped short -- a client timeout (Scout-5), a model that gave up and issued its own "stop"
+# after repeated refusals (Scout-10), or anything else all cost the SAME thing: a run that was
+# supposed to observe most of a campaign and instead observed a sliver of it. stopReason (already
+# in the header) still carries the specific cause; this flag carries the fact that the cause
+# mattered enough to fail the run.
+$completionFloor = 0.5
+$completionVerdict = Get-CompletionVerdict -Turn $turn -Turns $Turns -Scripted:$Scripted -Floor $completionFloor
+$completionRatio = $completionVerdict.Ratio
+$completionPct = $completionVerdict.PercentText
+$incomplete = $completionVerdict.Incomplete
+if ($incomplete) {
+    Warn ('INCOMPLETE: only ' + $turn + ' of ' + $Turns + ' budgeted turns ran (' + $completionPct + '%), under the ' +
+        ($completionFloor * 100) + '% floor -- stopped early (' + $stopReason + '). Findings below cover a fraction of the intended run.')
+}
+
 # --- Judge pass ---------------------------------------------------------------------------------
 $fullLog = ''
 if (Test-Path $turnlogPath) { $fullLog = Get-Content $turnlogPath -Raw }
@@ -548,9 +576,17 @@ if ($log.Length -gt $judgeCap) {
 }
 
 # Every scope names itself here, so a report can never be mistaken for a different scope's --
-# see this file's own .PARAMETER Scope doc for what Full/Diff/Scout each answer.
+# see this file's own .PARAMETER Scope doc for what Full/Diff/Scout each answer. Both DEGRADED
+# (fidelity: the turns that happened were mostly fallback) and INCOMPLETE (quantity: too few turns
+# happened at all) can fire independently or together -- the title carries whichever apply so a
+# report can never be mistaken for a clean one.
+$titleTags = @()
+if ($degraded) { $titleTags += 'DEGRADED' }
+if ($incomplete) { $titleTags += 'INCOMPLETE' }
 $titleLine = '# Agent playtest findings (Scope: ' + $Scope + ')'
-if ($degraded) { $titleLine = '# DEGRADED -- agent playtest findings (Scope: ' + $Scope + ')' }
+if ($titleTags.Count -gt 0) {
+    $titleLine = '# ' + ($titleTags -join ' AND ') + ' -- agent playtest findings (Scope: ' + $Scope + ')'
+}
 
 $header = @(
     $titleLine,
@@ -558,6 +594,7 @@ $header = @(
     ('- scope: ' + $Scope),
     ('- model: ' + $Model),
     ('- turns: ' + $turn + ' (stopped: ' + $stopReason + ')'),
+    ('- completion: ' + $turn + ' of ' + $Turns + ' budgeted turns (' + $completionPct + '%)'),
     ('- model-driven turns: ' + $modelDrivenTurns),
     ('- fallback turns: ' + $fallbackTurns + ' (' + $fallbackPct + '% of total)'),
     ('- imageless turns: ' + $imagelessTurns),
@@ -580,6 +617,15 @@ if ($degraded) {
          '"advance" because the model gave no usable command. That is over the ' + ($degradeFloor * 100) +
          '% floor -- this run mostly pressed advance, not played, and its findings below should be read ' +
          'with that in mind.'),
+        ''
+    ) + $header
+}
+if ($incomplete) {
+    $header = @(
+        ('INCOMPLETE: only ' + $turn + ' of ' + $Turns + ' budgeted turns ran (' + $completionPct + '%), under ' +
+         'the ' + ($completionFloor * 100) + '% floor. Stopped early -- ' + $stopReason + '. Whatever findings ' +
+         'follow are a PARTIAL sample of the intended run, not a completed sweep; do not read them as if the ' +
+         'campaign was actually played out.'),
         ''
     ) + $header
 }
@@ -687,8 +733,13 @@ Warn 'the game is fine.'
 if ($unsupported.Count -gt 0) {
     Warn 'At least one finding quotes text the agent never saw -- see the fabrication guard above.'
 }
+if ($incomplete) {
+    Warn ('INCOMPLETE run: only ' + $turn + ' of ' + $Turns + ' budgeted turns ran (' + $completionPct + '%), stopped early (' + $stopReason + '). Exiting non-zero.')
+}
 if ($degraded) {
     Warn ('DEGRADED run: ' + $fallbackTurns + ' of ' + $turn + ' turns (' + $fallbackPct + '%) were the driver pressing advance, not the model playing. Exiting non-zero.')
+}
+if ($degraded -or $incomplete) {
     exit 1
 }
 exit 0
