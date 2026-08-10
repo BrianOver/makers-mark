@@ -1,0 +1,3 @@
+{"kind":"session","startedAt":1700000000,"provenance":"test-build-2"}
+{"kind":"tick","t":1.0,"day":1,"phase":"Morning","beat":"None","cause":"","fromDay":1,"fromPhase":"Morning","gold":100,"mats":0,"shelf":0,"items":0,"heroesAlive":6,"heroes":6,"inFlight":0,"bounties":0,"act":"ActI","slots":5,"events":0,"rejects":[]}
+{"kind":"tick","t":2.0,"day":1,"phase":"Expedition","beat":"None","cause":"press:AdvancePhase","fromDay":1,"fromPhase":"Morning","gold":100,"mats":0,"shelf":0,"items":0,"heroesAlive":6,"heroes":6,"inFlight":3,"bounties":0,"act":"ActI","slots":5,"events":0,"rejects":[]}

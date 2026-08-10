@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["press", "move", "key", "advance", "stop"]
+    },
+    "target": {
+      "type": "string"
+    },
+    "dir": {
+      "type": "string",
+      "enum": ["up", "down", "left", "right", "up+left", "up+right", "down+left", "down+right"]
+    },
+    "frames": {
+      "type": "integer"
+    },
+    "why": {
+      "type": "string"
+    },
+    "note": {
+      "type": "string"
+    }
+  },
+  "required": ["action", "why"]
+}

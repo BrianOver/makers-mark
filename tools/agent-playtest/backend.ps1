@@ -83,7 +83,16 @@ function Read-BackendLogRows {
 # the same way the client's own code does: a shrink means a reset, only the NEW tail beyond the
 # previous length is a genuinely new rejection.
 function Get-BackendRejections {
-    param([Parameter(Mandatory)][array]$TickRows)
+    # AllowEmptyCollection: a clean run (zero backend-level rejections across the whole log, the
+    # NORMAL case for a short scripted/veteran run that never touched an action the kernel would
+    # refuse) passes an empty array here. Without this attribute, PowerShell's own parameter binder
+    # treats a Mandatory array parameter receiving @() as an error and throws "Cannot bind argument
+    # ... because it is an empty collection" -- found live (W1, docs/plans/2026-08-10-002) verifying
+    # the honesty footer: a -Scripted run's real playtest-log.jsonl had a tick row but zero rejects,
+    # and Get-BackendSummary crashed before findings.md could be written at all. The exact silent-zero
+    # shape this file's own header note says it exists to avoid, just one level up (a CRASH instead of
+    # a reported zero, which is worse: no findings.md, not even a wrong one).
+    param([Parameter(Mandatory)][AllowEmptyCollection()][array]$TickRows)
 
     $events = New-Object System.Collections.ArrayList
     $prevCount = 0
@@ -119,7 +128,10 @@ function Get-BackendRejections {
 # type, since two different actions can fail for the same underlying reason and that is the
 # interesting rollup.
 function Get-BackendRejectionCountsByReason {
-    param([Parameter(Mandatory)][array]$Rejections)
+    # AllowEmptyCollection -- see Get-BackendRejections' own note just above; this is the second of
+    # the two call sites that crashed a zero-rejection run before this file could ever explain WHY
+    # it was zero.
+    param([Parameter(Mandatory)][AllowEmptyCollection()][array]$Rejections)
 
     $counts = @{}
     foreach ($r in $Rejections) {

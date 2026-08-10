@@ -50,7 +50,9 @@ $parseTargets = @(
     (Join-Path $toolsDir 'agent-playtest\frames.ps1'),
     (Join-Path $toolsDir 'agent-playtest\backend.ps1'),
     (Join-Path $toolsDir 'agent-playtest\coverage.ps1'),
-    (Join-Path $toolsDir 'agent-playtest\personas.ps1')
+    (Join-Path $toolsDir 'agent-playtest\personas.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\model-call.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\footer.ps1')
 )
 foreach ($target in $parseTargets) {
     $tokens = $null
@@ -383,6 +385,26 @@ $backendMarkdownText = Format-BackendMarkdown -Summary $backendSummary -Contradi
 Check ($backendMarkdownText -like '*Backend record*') 'Format-BackendMarkdown must produce a "Backend record" heading'
 Check ($backendMarkdownText -like '*insufficient gold*') 'Format-BackendMarkdown must surface the rejection reason'
 
+# Regression (found live, W1, docs/plans/2026-08-10-002, while proving the honesty footer end to end):
+# Get-BackendRejections' -TickRows and Get-BackendRejectionCountsByReason's -Rejections were BOTH
+# [Parameter(Mandatory)][array] with no AllowEmptyCollection -- PowerShell's own binder throws "Cannot
+# bind argument ... because it is an empty collection" the moment either receives a real, legal @().
+# A CLEAN run (zero backend-level rejections across the whole log -- the ordinary case for a short
+# run that never touched an action the kernel would refuse) hits exactly this, and hit it BEFORE
+# findings.md could be written at all: not a wrong report, no report. Fixed with AllowEmptyCollection
+# on both parameters; this fixture (zero "rejects" on every tick row) is the proof it stays fixed.
+$zeroRejectionsFixturePath = Join-Path $toolsDir 'agent-playtest\tests\zero-rejections-fixture.jsonl'
+Check (Test-Path $zeroRejectionsFixturePath) ('zero-rejections fixture must exist at ' + $zeroRejectionsFixturePath)
+$zeroRejectionsThrew = $false
+$zeroRejectionsSummary = $null
+try { $zeroRejectionsSummary = Get-BackendSummary -LogPath $zeroRejectionsFixturePath } catch { $zeroRejectionsThrew = $true }
+Check ($zeroRejectionsThrew -eq $false) 'Get-BackendSummary must NOT throw on a real log whose every tick has zero rejects'
+if ($zeroRejectionsSummary) {
+    Check ($zeroRejectionsSummary.Available -eq $true) 'a zero-rejection log must still parse as Available=true'
+    Check (@($zeroRejectionsSummary.Rejections).Count -eq 0) 'a zero-rejection log must report exactly zero rejections, not crash trying to'
+    Check (@($zeroRejectionsSummary.RejectionCountsByReason).Count -eq 0) 'a zero-rejection log must report an empty (not crashed) RejectionCountsByReason'
+}
+
 # --- 8. Coverage census (U3) -- "everything gets a denominator" ---------------------------------
 . (Join-Path $toolsDir 'agent-playtest\coverage.ps1')
 
@@ -577,6 +599,150 @@ $allowlistDemoHits = Test-TextForGameNouns -Text 'this sentence uses the word ma
 Check ($allowlistDemoHits.Count -eq 0) 'an allowlisted term must be exempted from the denylist scan'
 $noAllowlistDemoHits = Test-TextForGameNouns -Text 'this sentence uses the word mark on purpose' -Denylist @('mark') -Allowlist @()
 Check ($noAllowlistDemoHits.Count -eq 1) 'the same term WITHOUT an allowlist entry must be caught (proves the allowlist, not the pattern, is what exempted it above)'
+
+# --- 11. Model request/reply mechanics (W1, docs/plans/2026-08-10-002 "the playtest becomes a
+# player") -- request body carries the schema, the schema file itself is well-formed, and the
+# reply-legality check that replaced the old NORMALIZE block/regex-extract still drives the honesty
+# counters on a semantic refusal. -----------------------------------------------------------------
+. (Join-Path $toolsDir 'agent-playtest\model-call.ps1')
+. (Join-Path $toolsDir 'agent-playtest\footer.ps1')
+
+$actionSchemaPath = Join-Path $toolsDir 'agent-playtest\prompts\action-schema.json'
+Check (Test-Path $actionSchemaPath) ('action-schema.json must exist at ' + $actionSchemaPath)
+$actionSchemaRaw = (Get-Content $actionSchemaPath -Raw).Trim()
+$actionSchemaObj = $null
+try { $actionSchemaObj = $actionSchemaRaw | ConvertFrom-Json } catch { }
+Check ($null -ne $actionSchemaObj) 'action-schema.json must parse as valid JSON'
+
+if ($actionSchemaObj) {
+    Check ($actionSchemaObj.type -eq 'object') 'action-schema.json must be a flat object schema'
+    $actionEnum = @($actionSchemaObj.properties.action.enum)
+    Check (($actionEnum | Sort-Object) -join ',' -eq 'advance,key,move,press,stop') ('action-schema.json''s action enum must be exactly the 5 bridge verbs, got [' + ($actionEnum -join ',') + ']')
+    # Ruling 1 (docs/plans/2026-08-10-002): the schema must NOT enum the enabled controls -- an
+    # illegal press IS signal. This is the mechanical proof that "target" stays an open string.
+    $targetPropNames = @($actionSchemaObj.properties.target.PSObject.Properties.Name)
+    Check ($targetPropNames -notcontains 'enum') 'action-schema.json''s "target" property must NOT be an enum (ruling 1: an illegal press must stay possible)'
+    Check ($actionSchemaObj.properties.target.type -eq 'string') 'action-schema.json''s "target" must be a plain string'
+    $dirEnum = @($actionSchemaObj.properties.dir.enum)
+    Check (($dirEnum | Sort-Object) -join ',' -eq 'down,down+left,down+right,left,right,up,up+left,up+right') ('action-schema.json''s dir enum must be exactly the 8 cardinal/diagonal directions, got [' + ($dirEnum -join ',') + ']')
+    Check ($null -ne $actionSchemaObj.properties.why) 'action-schema.json must have a "why" property'
+    Check ($null -ne $actionSchemaObj.properties.note) 'action-schema.json must have an optional "note" property (W4 will use it; added now per the plan to avoid a second schema PR)'
+    $requiredFields = @($actionSchemaObj.required)
+    Check (($requiredFields | Sort-Object) -join ',' -eq 'action,why') ('action-schema.json must require exactly [action, why], got [' + ($requiredFields -join ',') + ']')
+}
+
+# Build-ModelRequestBody: format is spliced in as a real JSON OBJECT value, not a JsonEsc-escaped
+# string -- proven by round-tripping the produced body back through ConvertFrom-Json and reading
+# .format as a live object, not a string.
+$bodyWithSchema = Build-ModelRequestBody -Model 'qwen3-vl:8b' -SystemPrompt 'sys prompt' -UserText 'user text' `
+    -NumCtx 8192 -FormatSchema $actionSchemaRaw -Temperature 0
+$parsedBodyWithSchema = $null
+try { $parsedBodyWithSchema = $bodyWithSchema | ConvertFrom-Json } catch { }
+Check ($null -ne $parsedBodyWithSchema) 'Build-ModelRequestBody with a schema must produce parseable JSON'
+if ($parsedBodyWithSchema) {
+    Check ($parsedBodyWithSchema.model -eq 'qwen3-vl:8b') 'request body must carry the model name'
+    Check ($null -ne $parsedBodyWithSchema.format) 'request body must contain "format" when a schema is passed'
+    Check (@($parsedBodyWithSchema.format.properties.action.enum) -contains 'press') 'request body''s format.properties.action.enum must contain press (the schema survived the splice as a live object)'
+    Check ($parsedBodyWithSchema.options.temperature -eq 0) 'request body must set temperature 0 on a schema-constrained call'
+    Check ($parsedBodyWithSchema.messages.Count -eq 2) 'request body must carry exactly one system + one user message'
+}
+
+# Warm-up/judge shape: no schema, no temperature override -- proves the two are opt-in per call, not
+# baked into every request this driver makes.
+$bodyNoSchema = Build-ModelRequestBody -Model 'qwen3:14b' -SystemPrompt 'judge prompt' -UserText 'the log' -NumCtx 8192
+$parsedBodyNoSchema = $bodyNoSchema | ConvertFrom-Json
+Check (@($parsedBodyNoSchema.PSObject.Properties.Name) -notcontains 'format') 'a judge/warm-up call (no -FormatSchema) must NOT carry a "format" field'
+Check (@($parsedBodyNoSchema.options.PSObject.Properties.Name) -notcontains 'temperature') 'a judge/warm-up call (no -Temperature) must NOT set temperature'
+
+# Image attachment still round-trips through the extracted body builder.
+$bodyWithImage = Build-ModelRequestBody -Model 'qwen3-vl:8b' -SystemPrompt 'sys' -UserText 'user' -ImageBase64 'ZmFrZQ==' -NumCtx 8192
+$parsedBodyWithImage = $bodyWithImage | ConvertFrom-Json
+Check (@($parsedBodyWithImage.messages[1].images) -contains 'ZmFrZQ==') 'request body must attach the image to the user message when -ImageBase64 is passed'
+
+# Get-LegalCommandFromReply: the redefined refusal path (ruling 1) -- "three attempts produced no
+# LEGAL action" now covers a disabled-control press, an empty reply, and (defensively) malformed
+# JSON, while a real verb aimed at a legal target still passes straight through.
+$illegalPress = Get-LegalCommandFromReply -Reply '{"action":"press","target":"NoSuchButton_xyz","why":"try it"}' -EnabledControls @('OpenShop')
+Check ($illegalPress.Refused -eq $true) 'a press at a disabled/absent control must be Refused=true (this IS the honesty-counter path, ruling 1)'
+Check ($illegalPress.Reason -like '*NoSuchButton_xyz*') ('the refusal reason must name the illegal target, got [' + $illegalPress.Reason + ']')
+Check ($null -eq $illegalPress.Command) 'a refused reply must not also return a Command'
+
+$legalPress = Get-LegalCommandFromReply -Reply '  {"action":"press","target":"OpenShop","why":"try it"}  ' -EnabledControls @('OpenShop')
+Check ($legalPress.Refused -eq $false) 'a press at an ENABLED control must not be refused'
+Check ($legalPress.Command -eq '{"action":"press","target":"OpenShop","why":"try it"}') ('a legal reply must be returned trimmed and otherwise verbatim, got [' + $legalPress.Command + ']')
+
+$emptyReply = Get-LegalCommandFromReply -Reply '' -EnabledControls @()
+Check ($emptyReply.Refused -eq $true) 'an empty reply must be Refused=true'
+Check ($emptyReply.Reason -eq 'empty reply') ('an empty reply''s reason must say so exactly, got [' + $emptyReply.Reason + ']')
+
+$malformedReply = Get-LegalCommandFromReply -Reply 'not json at all' -EnabledControls @()
+Check ($malformedReply.Refused -eq $true) 'malformed (non-JSON) text must be Refused=true (defensive -- schema decoding should prevent this live)'
+
+$unknownActionReply = Get-LegalCommandFromReply -Reply '{"action":"teleport","why":"nope"}' -EnabledControls @()
+Check ($unknownActionReply.Refused -eq $true) 'an action outside the 5 known verbs must be Refused=true (defensive -- schema''s enum should prevent this live)'
+Check ($unknownActionReply.Reason -like '*unknown action*') ('the reason must say "unknown action", got [' + $unknownActionReply.Reason + ']')
+
+# Non-press/key verbs never consult any target legality list -- advance/stop/move have no "target"
+# that could be illegal in the same sense a press or a key does.
+$advanceReply = Get-LegalCommandFromReply -Reply '{"action":"advance","why":"tick the day"}' -EnabledControls @()
+Check ($advanceReply.Refused -eq $false) 'advance must never be refused for lacking an enabled target'
+
+# Regression (found live, W1, docs/plans/2026-08-10-002): a "key" action's target is fixed
+# (interact/cancel), not per-turn like a press's enabled-control list -- but it was NOT checked at
+# all until this fix, so an empty/hallucinated key target passed straight through as "legal" while
+# the game itself refused it every time. A real llava:7b veteran run sent
+# {"action":"key","target":"","why":"..."} on all 8 of 8 turns and read as 0% fallback (8 model-driven
+# turns) right up until this check existed -- the exact "run made zero progress and reported healthy"
+# shape A1/A6 already exist to catch, reopened one level down by schema-constrained decoding for this
+# one verb.
+$illegalKeyReply = Get-LegalCommandFromReply -Reply '{"action":"key","target":"","why":"Open the counter and serve a customer"}' -EnabledControls @()
+Check ($illegalKeyReply.Refused -eq $true) 'a "key" action with an empty/illegal target must be Refused=true, not silently pass as legal'
+Check ($illegalKeyReply.Reason -like '*illegal key target*') ('the reason must say "illegal key target", got [' + $illegalKeyReply.Reason + ']')
+
+$legalKeyInteract = Get-LegalCommandFromReply -Reply '{"action":"key","target":"interact","why":"use the station"}' -EnabledControls @()
+Check ($legalKeyInteract.Refused -eq $false) 'key/interact must be legal regardless of the enabled-control list (key targets InputMap actions, not on-screen controls)'
+$legalKeyCancel = Get-LegalCommandFromReply -Reply '{"action":"key","target":"cancel","why":"back out"}' -EnabledControls @()
+Check ($legalKeyCancel.Refused -eq $false) 'key/cancel must be legal'
+$hallucinatedKeyTarget = Get-LegalCommandFromReply -Reply '{"action":"key","target":"climb","why":"nope"}' -EnabledControls @()
+Check ($hallucinatedKeyTarget.Refused -eq $true) 'a key target outside {interact, cancel} must be refused even when non-empty'
+
+# Regression (found live, same verification pass): "move" needs a real "dir" the same way "press"
+# needs a real "target" -- dir is OPTIONAL in the flat schema, so a reply that omits it entirely is
+# schema-legal. A real qwen3-vl:8b veteran run sent {"action":"move","why":"moving to the market..."}
+# with no "dir" field on 3 of 8 turns and every one passed as "legal" here (before this fix) while the
+# client refused all three ("unknown move dir ''") -- the same self-flattery shape as the key-target
+# gap above, for the third verb that has a legality-bearing field.
+$missingDirReply = Get-LegalCommandFromReply -Reply '{"action":"move","why":"moving to the market to buy materials"}' -EnabledControls @()
+Check ($missingDirReply.Refused -eq $true) 'a "move" with no "dir" field at all must be Refused=true, not silently pass as legal'
+Check ($missingDirReply.Reason -like '*illegal/missing move dir*') ('the reason must say "illegal/missing move dir", got [' + $missingDirReply.Reason + ']')
+
+$emptyDirReply = Get-LegalCommandFromReply -Reply '{"action":"move","dir":"","why":"nope"}' -EnabledControls @()
+Check ($emptyDirReply.Refused -eq $true) 'a "move" with an empty-string "dir" must be Refused=true'
+
+$legalCardinalMove = Get-LegalCommandFromReply -Reply '{"action":"move","dir":"right","frames":20,"why":"go right"}' -EnabledControls @()
+Check ($legalCardinalMove.Refused -eq $false) 'a move with a legal cardinal dir must not be refused'
+$legalDiagonalMove = Get-LegalCommandFromReply -Reply '{"action":"move","dir":"up+left","frames":20,"why":"go diagonal"}' -EnabledControls @()
+Check ($legalDiagonalMove.Refused -eq $false) 'a move with a legal diagonal dir (matching action-schema.json''s own enum) must not be refused'
+$illegalDirWord = Get-LegalCommandFromReply -Reply '{"action":"move","dir":"north","why":"nope"}' -EnabledControls @()
+Check ($illegalDirWord.Refused -eq $true) 'a move dir outside the known 8 (e.g. "north") must be refused'
+
+# NORMALIZE/regex-extract are DELETED, not relocated -- grep the real script text for the specific
+# code shapes that used to live in the per-turn loop (not just the word "NORMALIZE", which the
+# deletion's own explanatory comment still legitimately uses).
+$agentPlaytestRawText = Get-Content (Join-Path $toolsDir 'agent-playtest.ps1') -Raw
+Check ($agentPlaytestRawText -notlike '*[regex]::Match($reply*') 'the old regex JSON-extract call ([regex]::Match($reply, ...)) must be gone from agent-playtest.ps1'
+Check ($agentPlaytestRawText -notlike '*normalized "*') 'the old NORMALIZE Say(''normalized "..."'') message must be gone from agent-playtest.ps1'
+Check ($agentPlaytestRawText -like '*Get-LegalCommandFromReply*') 'agent-playtest.ps1 must call the new Get-LegalCommandFromReply in its place'
+Check ($agentPlaytestRawText -like '*action-schema.json*') 'agent-playtest.ps1 must load action-schema.json and pass it as the act calls'' format'
+
+# Honesty footer (W1): present as a pure, testable function so a scripted/live run is not the only
+# way to prove its content -- the live -Scripted run gets its own end-to-end check on top of this.
+$footerLines = Get-HonestyFooterLines
+$footerText = $footerLines -join [Environment]::NewLine
+Check ($footerText -like '*Game feel*') 'the honesty footer must name game feel by that term'
+Check ($footerText -like '*Tone register*') 'the honesty footer must name tone register by that term'
+Check ($footerText -like '*Emotional weight*') 'the honesty footer must name emotional weight by that term'
+Check ($footerText -like '*cannot ask*') 'the honesty footer must say silence on these is not a clean bill'
 
 # --- Summary -----------------------------------------------------------------------------------
 if ($failures.Count -gt 0) {
