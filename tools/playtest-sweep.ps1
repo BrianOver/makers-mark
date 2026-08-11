@@ -502,13 +502,22 @@ function Get-BackendData {
     # The driver-accepted-vs-backend-rejected mismatch check lives in findings.md's Backend
     # section (Get-DriverBackendMismatches), not in backend.json -- reading it from here would be
     # a guess, so this reader does not.
+    # U4 (eyes-learn-labels wave): the ORIGINAL note here only fired when BOTH counters were absent --
+    # a run whose driver build emits ONE of the two (say AutoAdvanceCount, but not the newer
+    # UnattributedAdvanceCount) got a silent EMPTY cell for the missing one with no note at all, the
+    # exact "reads as a clean zero" defect class this file's own header (DEFENSIVE READING) already
+    # names as the thing to avoid. Fixed to fire per-field, naming exactly which counter(s) are
+    # missing, with a fixed leading phrase ("backend counters not in this driver build") so
+    # SUMMARY.csv's Notes column and REPORT.md's caveats can grep for one stable string regardless of
+    # which field(s) are absent.
     $auto = $null
     $unattributed = $null
+    $missingBackendFields = New-Object System.Collections.ArrayList
+    if ($j.PSObject.Properties.Name -contains 'AutoAdvanceCount') { $auto = [int]$j.AutoAdvanceCount } else { [void]$missingBackendFields.Add('AutoAdvanceCount') }
+    if ($j.PSObject.Properties.Name -contains 'UnattributedAdvanceCount') { $unattributed = [int]$j.UnattributedAdvanceCount } else { [void]$missingBackendFields.Add('UnattributedAdvanceCount') }
     $note = $null
-    if ($j.PSObject.Properties.Name -contains 'AutoAdvanceCount') { $auto = [int]$j.AutoAdvanceCount }
-    if ($j.PSObject.Properties.Name -contains 'UnattributedAdvanceCount') { $unattributed = [int]$j.UnattributedAdvanceCount }
-    if ($null -eq $auto -and $null -eq $unattributed) {
-        $note = 'backend.json present but neither AutoAdvanceCount nor UnattributedAdvanceCount was found -- schema may differ from what this reader expects'
+    if ($missingBackendFields.Count -gt 0) {
+        $note = 'backend counters not in this driver build -- missing: ' + ($missingBackendFields -join ', ')
     }
     return [pscustomobject]@{ Available = $true; AutoAdvanceCount = $auto; UnattributedAdvanceCount = $unattributed; Note = $note }
 }
