@@ -90,6 +90,22 @@
     sweep on purpose: comparing personas/scopes is confounded if the vision model also changes
     mid-sweep.
 
+.PARAMETER BrainModel
+    "the playtest learns to finish" wave, U2/U3. Passed through to every run (tools/agent-playtest
+    .ps1's own -BrainModel) when the driver supports it (feature-detected, same pattern as -Persona
+    below). Empty (default) means "do not pass -BrainModel at all" -- the driver's own default is the
+    single source of truth, same reasoning -Model's own empty default already documents (naming one
+    here is how the stale -Model pin defect started). run-meta.json always records which value was
+    actually used, '(driver default)' when this stayed empty.
+
+.PARAMETER PatienceMode
+    "the playtest learns to finish" wave, U3 (owner finding 2026-08-11 + fable census: 58 of 58
+    model runs died on patience by day 3). Passed through to every run (tools/agent-playtest.ps1's
+    own -PatienceMode) when the driver supports it (feature-detected). Default Sweep: a sweep exists
+    to measure the REST of a long campaign, so a run that would have quit logs a marker and keeps
+    going instead of ending the moment the model gets frustrated. Pass -PatienceMode Quit to recover
+    today's fatal-on-exhaustion behaviour for a sweep run specifically.
+
 .PARAMETER RepoRoot
     Override for testing / non-standard checkouts. Defaults to this script's own parent
     directory's parent (i.e. the repo root), same convention as tools/agent-playtest.ps1.
@@ -122,6 +138,10 @@ param(
     # default is the single source of truth, and this file can never go stale against it again.
     # Pass -Model explicitly only when a sweep deliberately compares models.
     [string]$Model = '',
+    # Empty means "do not pass -BrainModel at all" -- same reasoning as -Model above.
+    [string]$BrainModel = '',
+    [ValidateSet('Quit', 'Sweep')]
+    [string]$PatienceMode = 'Sweep',
     [string]$RepoRoot,
     [switch]$DryRun
 )
@@ -523,9 +543,12 @@ function Get-BackendData {
 }
 
 # W2 (docs/plans/2026-08-10-002 "the playtest becomes a player"): metrics.json is Get-MetricsSummary's
-# own shape (tools/agent-playtest/metrics.ps1) -- ProductSentence.ProductSentenceFired (the screenText
-# check, per that file's own header on why "fired" means the player's screen, not the backend log) and
-# PerDayEntropy (array of {Day;TotalActions;DistinctActionTypes;EntropyBits}). Same defensive shape as
+# own shape (tools/agent-playtest/metrics.ps1) -- ProductSentence.ProductSentenceFired (STALE NOTE
+# CORRECTED 2026-08-11: this used to say "the screenText check" here, but #457 flipped the gate to a
+# real BACKEND hit -- a note-scan hit or, since #460, an eventTypes hit naming AttributionBeatEvent
+# directly -- never the screenText check alone; see metrics.ps1's own Get-ProductSentenceReport for
+# the current, authoritative rule) and PerDayEntropy (array of {Day;TotalActions;DistinctActionTypes;
+# EntropyBits}). Same defensive shape as
 # Get-CoverageData/Get-BackendData just above: a run whose driver build predates W2 (or whose run
 # simply never got that far) reports Available=false with a Note, never a guessed/zero value.
 function Get-MetricsData {
@@ -537,6 +560,7 @@ function Get-MetricsData {
             Available            = $false
             ProductSentenceFired = $null
             PerDayEntropy        = @()
+            WouldHaveQuitTurns   = @()
             Note                 = 'metrics.json not present (needs the mechanical-metrics unit, W2, not yet landed in this driver build)'
         }
     }
@@ -547,6 +571,7 @@ function Get-MetricsData {
             Available            = $false
             ProductSentenceFired = $null
             PerDayEntropy        = @()
+            WouldHaveQuitTurns   = @()
             Note                 = 'metrics.json present but could not be parsed as JSON: ' + $_.Exception.Message
         }
     }
@@ -559,11 +584,20 @@ function Get-MetricsData {
     $perDay = @()
     if ($j.PSObject.Properties.Name -contains 'PerDayEntropy') { $perDay = @($j.PerDayEntropy) }
 
+    # U3 (playtest-finishes wave): WouldHaveQuitMarkers is OPTIONAL -- absent on any driver build
+    # that predates U3, or on a -PatienceMode Quit run that never logged one. Read the same
+    # null-before-@()-wrap way backend.ps1's own eventTypes reader does (a bare @($null) would
+    # otherwise be a one-element array holding a null, not zero elements).
+    $wouldHaveQuitTurns = @()
+    if ($j.PSObject.Properties.Name -contains 'WouldHaveQuitMarkers') {
+        $wouldHaveQuitTurns = @($j.WouldHaveQuitMarkers | Where-Object { $null -ne $_ } | ForEach-Object { $_.Turn })
+    }
+
     $note = $null
     if ($null -eq $fired -and (@($perDay)).Count -eq 0) {
         $note = 'metrics.json present but neither ProductSentence.ProductSentenceFired nor PerDayEntropy was found -- schema may differ from what this reader expects'
     }
-    return [pscustomobject]@{ Available = $true; ProductSentenceFired = $fired; PerDayEntropy = $perDay; Note = $note }
+    return [pscustomobject]@{ Available = $true; ProductSentenceFired = $fired; PerDayEntropy = $perDay; WouldHaveQuitTurns = $wouldHaveQuitTurns; Note = $note }
 }
 
 # --- recurring findings: honest normalised-line matching, not semantic clustering --------------
@@ -731,6 +765,9 @@ function Get-RunSummaryRow {
         AutoAdvanceCount          = $backend.AutoAdvanceCount
         UnattributedAdvanceCount  = $backend.UnattributedAdvanceCount
         ProductSentenceFired      = $metrics.ProductSentenceFired
+        # U3 (playtest-finishes wave): comma-joined turn numbers, empty when the run never logged one
+        # (Quit mode, or a driver build that predates U3) -- never a coerced "0" or blank-reads-as-zero.
+        WouldHaveQuitTurns        = ($(if ($metrics -and @($metrics.WouldHaveQuitTurns).Count -gt 0) { (@($metrics.WouldHaveQuitTurns) -join ',') } else { '' }))
         Notes                     = ($notes -join ' | ')
         # Not CSV columns -- kept on the row for REPORT.md's section builders below.
         FindingsFields            = $findings
@@ -946,6 +983,7 @@ function Write-SweepSummaryCsv {
             AutoAdvanceCount          = $r.AutoAdvanceCount
             UnattributedAdvanceCount  = $r.UnattributedAdvanceCount
             ProductSentenceFired      = $r.ProductSentenceFired
+            WouldHaveQuitTurns        = $r.WouldHaveQuitTurns
             Notes                     = $r.Notes
         }
     }
@@ -1105,7 +1143,11 @@ function Invoke-SweepRun {
         [Parameter(Mandatory)][string]$RepoRootForRun,
         # Empty = inherit the driver's own default (see the param block's note on the stale-pin
         # defect this replaced).
-        [string]$Model = ''
+        [string]$Model = '',
+        # U2/U3 (playtest-finishes wave): same empty-means-inherit-the-driver's-own-default posture
+        # as -Model above.
+        [string]$BrainModel = '',
+        [string]$PatienceMode = 'Sweep'
     )
 
     New-Item -ItemType Directory -Path $RunDir -Force | Out-Null
@@ -1117,6 +1159,17 @@ function Invoke-SweepRun {
     try {
         $cmd = Get-Command -Name $DriverPath -CommandType ExternalScript -ErrorAction Stop
         $personaSupported = $cmd.Parameters.ContainsKey('Persona')
+    } catch { }
+
+    # U2/U3 (playtest-finishes wave): same feature-detection idiom as -Persona above -- a checkout
+    # that has not landed U1-U3 of the driver yet must still be sweepable, just without these two
+    # flags passed through (and with run-meta.json saying so, same shape as personaPassedToDriver).
+    $brainModelSupported = $false
+    $patienceModeSupported = $false
+    try {
+        $cmd2 = Get-Command -Name $DriverPath -CommandType ExternalScript -ErrorAction Stop
+        $brainModelSupported = $cmd2.Parameters.ContainsKey('BrainModel')
+        $patienceModeSupported = $cmd2.Parameters.ContainsKey('PatienceMode')
     } catch { }
 
     $argList = New-Object System.Collections.ArrayList
@@ -1133,6 +1186,14 @@ function Invoke-SweepRun {
     if ($Model) {
         [void]$argList.Add('-Model')
         [void]$argList.Add($Model)
+    }
+    if ($BrainModel -and $brainModelSupported) {
+        [void]$argList.Add('-BrainModel')
+        [void]$argList.Add($BrainModel)
+    }
+    if ($patienceModeSupported) {
+        [void]$argList.Add('-PatienceMode')
+        [void]$argList.Add($PatienceMode)
     }
     [void]$argList.Add('-RepoRoot')
     [void]$argList.Add($RepoRootForRun)
@@ -1155,6 +1216,15 @@ function Invoke-SweepRun {
         # '(driver default)' rather than a retyped model name -- naming one here is how the
         # stale-pin defect started; the run's own findings.md header carries the real model.
         model                  = $(if ($Model) { $Model } else { '(driver default)' })
+        # U2 (playtest-finishes wave): both model names, mirroring the driver's own findings.md
+        # header requirement. brainModelPassedToDriver false means this checkout's driver predates
+        # U2 -- the run used whatever single-model default that older build has, not a brain split.
+        brainModel             = $(if ($BrainModel -and $brainModelSupported) { $BrainModel } else { '(driver default)' })
+        brainModelPassedToDriver = $brainModelSupported
+        # U3 (playtest-finishes wave): patienceModePassedToDriver false means this checkout's driver
+        # predates U3 -- the run used whatever fixed (Quit) behaviour that older build has.
+        patienceMode           = $(if ($patienceModeSupported) { $PatienceMode } else { '(driver default)' })
+        patienceModePassedToDriver = $patienceModeSupported
         exitCode               = $exitCode
         startedAt              = $startedAt.ToString('o')
         endedAt                = $endedAt.ToString('o')
@@ -1232,7 +1302,8 @@ Say ('sweep output: ' + $stampDir + ' (' + $plan.Count + ' run(s) planned)')
 foreach ($entry in $plan) {
     $runDir = Join-Path $stampDir $entry.Tag
     Say ('run ' + $entry.Tag + ' (' + $entry.Scope + ' / ' + $entry.Persona + ') -- turn budget ' + $entry.Turns)
-    Invoke-SweepRun -PlanEntry $entry -DriverPath $driverPath -RunDir $runDir -RepoRootForRun $RepoRoot -Model $Model | Out-Null
+    Invoke-SweepRun -PlanEntry $entry -DriverPath $driverPath -RunDir $runDir -RepoRootForRun $RepoRoot -Model $Model `
+        -BrainModel $BrainModel -PatienceMode $PatienceMode | Out-Null
 }
 
 Invoke-SweepAggregation -RunsRoot $stampDir

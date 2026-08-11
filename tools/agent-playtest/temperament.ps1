@@ -39,6 +39,16 @@
     get frustrated" (the plan's own words) -- agent-playtest.ps1 never constructs a meter when the
     resolved persona is monkey, and Scripted mode (no persona in the loop at all) does not either.
 
+    "the playtest learns to finish" wave, U3: -PatienceMode Sweep turns an EXHAUSTED meter into a
+    LOGGED MARKER instead of a run-ending quit -- the owner finding this unit answers is that 58 of 58
+    model runs died on patience by day 3, so a sweep meant to measure the rest of a long campaign
+    needs the frustration recorded as a FINDING, not a fatality. Get-WouldHaveQuitMarker reuses
+    Get-TemperamentQuitFinding's own drain-history walk (the exact "why now" story, unchanged) so the
+    marker's Trigger text is identical in shape to a real quit's headline -- the only thing Sweep mode
+    changes is what agent-playtest.ps1's own loop does AFTERWARD (reset the meter and keep going,
+    instead of breaking). -PatienceMode Quit (the default) never calls this function at all -- the
+    loop's own depleted-meter check keeps its original break-the-loop behaviour byte-for-byte.
+
     STYLE NOTE: ASCII-only, no here-strings, no ternary/??, matching every file it is dot-sourced by.
 #>
 
@@ -224,6 +234,30 @@ function Get-TemperamentQuitFinding {
     }
 }
 
+# U3 (playtest-finishes wave): builds the "would-have-quit" marker Sweep mode logs on an exhausted
+# meter, in place of the Quit-mode break. Same Turn/Day/Phase fields the real quit finding uses (so a
+# reader never has to learn a second shape), plus Trigger -- the same drain-history-since-last-reset
+# headline Get-TemperamentQuitFinding already computes, just reused here rather than duplicated. The
+# caller (agent-playtest.ps1) is expected to call Reset-TemperamentMeter right after this, so a LATER
+# exhaustion in the same run produces its own, independent marker rather than reading the same drain
+# history twice.
+function Get-WouldHaveQuitMarker {
+    param(
+        [Parameter(Mandatory)]$Meter,
+        [Parameter(Mandatory)][int]$Turn,
+        $Day,
+        [string]$Phase
+    )
+
+    $finding = Get-TemperamentQuitFinding -Meter $Meter -Turn $Turn -Day $Day -Phase $Phase
+    return [pscustomobject]@{
+        Turn    = $Turn
+        Day     = $Day
+        Phase   = $Phase
+        Trigger = $finding.Headline
+    }
+}
+
 # The OTHER ending -- a run that spent its whole turn budget without ever emptying the meter. Kept as
 # its own function (not just an inline string at the call site) so the two endings' text lives next
 # to each other in one file and cannot silently drift into looking alike.
@@ -236,10 +270,17 @@ function Get-TemperamentBudgetEndNote {
 # findings.md's own "## Patience" section -- the full drain history behind whichever headline applies,
 # placed alongside backend/metrics/dead-verb as its own build-once-use-everywhere block (same
 # convention as $backendSection/$metricsSection/$deadVerbSection in agent-playtest.ps1).
+#
+# U3 (playtest-finishes wave): -WouldHaveQuitMarkers is OPTIONAL and empty by default -- Quit mode
+# (the default -PatienceMode) never populates any, so every existing caller renders byte-identically.
+# Sweep mode passes whatever Get-WouldHaveQuitMarker collected during the run; each one gets its own
+# line, in order, so a run that would have quit three times over a long budget shows all three, not
+# just the last.
 function Format-TemperamentMarkdown {
     param(
         [Parameter(Mandatory)]$Meter,
-        $QuitFinding
+        $QuitFinding,
+        [array]$WouldHaveQuitMarkers = @()
     )
 
     $lines = New-Object System.Collections.ArrayList
@@ -258,6 +299,14 @@ function Format-TemperamentMarkdown {
         }
     } else {
         [void]$lines.Add((Get-TemperamentBudgetEndNote -Meter $Meter) + '.')
+    }
+
+    if (@($WouldHaveQuitMarkers).Count -gt 0) {
+        [void]$lines.Add('')
+        [void]$lines.Add('Would-have-quit marker(s) (Sweep mode -- logged, not fatal; patience reset after each):')
+        foreach ($m in $WouldHaveQuitMarkers) {
+            [void]$lines.Add('- turn ' + $m.Turn + ' day ' + $m.Day + ' ' + $m.Phase + ': ' + $m.Trigger)
+        }
     }
 
     return ($lines -join [Environment]::NewLine)
