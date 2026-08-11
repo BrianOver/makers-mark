@@ -83,6 +83,9 @@ $script:PilotHabitDayFloor            = 5
 $script:PilotHabitStreakToLock        = 3
 $script:PilotStuckFrictionThreshold   = 4     # matches the driver's own STUCK detector (4 turns)
 $script:PilotMoveFrames               = 30
+# Tighter than AgentPlaytestBridge's own 96px InRangeReportingPx -- see Get-PilotNavigateCommand's
+# own note on why trusting the reported inRange alone let a swallowed interact go unnoticed.
+$script:PilotInteractDistancePx       = 24
 
 # A fresh, empty memory -- one per run, passed to every Get-PilotCommand call and mutated in place
 # (a PSCustomObject's properties are settable through the same reference -- same idiom
@@ -200,10 +203,20 @@ function Get-PilotUnactedControls {
 }
 
 # Walk toward (then enter/interact with) the nearest $State.nearby entry whose label contains
-# $Keyword, or the plain nearest one if nothing matches -- the same "Around you" reading a model is
-# taught in act.md rule 8, just applied by regex instead of by an LLM reading prose. Returns $null
-# when there is nothing to navigate toward at all (cannot move, or nothing nearby), so the caller can
-# fall through to its own next choice instead of forcing a bad command.
+# $Keyword, or the plain nearest one if no keyword was given at all -- the same "Around you" reading
+# a model is taught in act.md rule 8, just applied by regex instead of by an LLM reading prose.
+# Returns $null when there is nothing to navigate toward (cannot move, nothing nearby, OR a keyword
+# was wanted and not found), so the caller falls through to its own next choice.
+#
+# 2026-08-11 real-run finding: once inside an interior, $State.nearby lists ONLY that room's own
+# stations (AgentPlaytestBridge.cs's Surroundings() — a town building's nearby becomes a DIFFERENT
+# list the moment InteriorActive flips), with no "exit" entry at all. The first version of this
+# function fell back to the NEAREST nearby entry whenever the keyword did not match -- so asking for
+# "shop" while standing inside the FORGE fell back to whichever forge station happened to be
+# closest, and kept interacting with forge stations forever, never leaving. Fixed: a keyword miss
+# while $State.location already reads "interior:..." backs OUT (key: cancel) instead of wandering
+# the wrong building; a keyword miss OUTDOORS still falls back to nearest (every town building is
+# already in that list, so a genuine miss there means the building does not exist this run).
 function Get-PilotNavigateCommand {
     param($State, [string]$Keyword, [Parameter(Mandatory)]$Memory)
 
@@ -214,15 +227,61 @@ function Get-PilotNavigateCommand {
     $target = $null
     if ($Keyword) {
         $target = $nearbyList | Where-Object { $_.label -and ([string]$_.label).ToLowerInvariant().Contains($Keyword) } | Select-Object -First 1
+        if (-not $target) {
+            # A wanted keyword matching nothing HERE is a miss, not "go anywhere nearby" -- the
+            # first version of this function fell back to $nearbyList[0] regardless, which inside
+            # an interior means the nearest station of whatever room we already happen to be in.
+            # Back out first if that is where we are; outdoors, every town building is already in
+            # this list, so a miss there means the building genuinely does not exist and there is
+            # nothing sensible to fall back to either.
+            if (([string]$State.location).StartsWith('interior:')) {
+                return (Build-PilotCommandJson -Action 'key' -Target 'cancel' -Why ('pilot: ' + $Keyword + ' is not in here, leaving'))
+            }
+            return $null
+        }
+    } else {
+        $target = $nearbyList[0]
     }
-    if (-not $target) { $target = $nearbyList[0] }
 
-    if ($target.inRange) {
+    # 2026-08-11 real-run finding: a target reported inRange=true (AgentPlaytestBridge's own
+    # InRangeReportingPx is 96px, documented as a REPORTING threshold "for the model's benefit
+    # only" -- the real gate is WorldInput2D's own tighter Area2D overlap) had its "interact"
+    # silently swallowed -- byte-identical whole-state fingerprint, confirmed against the same
+    # target across several turns. Closing to a tighter distance than the report threshold before
+    # ever pressing interact costs a couple of extra "move" turns per station but a swallowed press
+    # marked VisitedSurfaces and never got tried again, which is worse.
+    if ($target.inRange -and $target.distance -le $script:PilotInteractDistancePx) {
         $Memory.VisitedSurfaces[[string]$target.key] = $true
         return (Build-PilotCommandJson -Action 'key' -Target 'interact' -Why ('pilot: entering ' + $target.label))
     }
     return (Build-PilotCommandJson -Action 'move' -Dir $target.direction -Frames $script:PilotMoveFrames `
         -Why ('pilot: walking to ' + $target.label + ' (' + $target.distance + 'px ' + $target.direction + ')'))
+}
+
+# Reach a WORKING STATION inside a specific building -- one level deeper than
+# Get-PilotNavigateCommand's own building-keyword search, and the fix for a second 2026-08-11
+# real-run finding: a room's own stations are named after their FUNCTION, never the building
+# (WorkshopVocab.cs's own table -- the forge room holds "Anvil"/"Bellows"/"Furnace"/"Material
+# Shelf", none of which contain the substring "forge"), so re-using the building's own keyword
+# once already standing inside it can never match anything and would otherwise walk straight back
+# out through Get-PilotNavigateCommand's own keyword-miss-backs-out fix. Three cases:
+#   1. Already inside the target interior -> no keyword at all (nearest station here IS progress;
+#      a station with Action:null, like the forge's own "Quench Trough", is real, if wasted, human
+#      behavior -- poking the wrong thing once is not a bug in the pilot).
+#   2. Inside a DIFFERENT interior -> leave it (key: cancel) before trying to reach a different one.
+#   3. Outdoors (location "town") -> the ordinary building-keyword search.
+function Get-PilotEnterInteriorCommand {
+    param($State, [Parameter(Mandatory)][string]$InteriorPrefix, [Parameter(Mandatory)][string]$BuildingKeyword, [Parameter(Mandatory)]$Memory)
+
+    $location = [string]$State.location
+    if ($location.StartsWith($InteriorPrefix)) {
+        return (Get-PilotNavigateCommand -State $State -Keyword '' -Memory $Memory)
+    }
+    if ($location.StartsWith('interior:')) {
+        if (-not $State.canMove) { return $null }
+        return (Build-PilotCommandJson -Action 'key' -Target 'cancel' -Why ('pilot: this is not ' + $BuildingKeyword + ', leaving'))
+    }
+    return (Get-PilotNavigateCommand -State $State -Keyword $BuildingKeyword -Memory $Memory)
 }
 
 # Any nearby surface this run has never visited (VisitedSurfaces keyed by the stable `key` field, not
@@ -335,7 +394,10 @@ function Get-PilotMorningCommand {
         return (Build-PilotCommandJson -Action 'press' -Target 'OpenCommissions' -Why 'pilot: check the commission board')
     }
 
-    $nav = Get-PilotNavigateCommand -State $State -Keyword 'shop' -Memory $Memory
+    # Venue key is "market" (InteriorLayout2D.cs: "market" or "Shop" => "market"), NOT "shop" --
+    # the building's own on-screen label is still "Shop", which is what a keyword search outdoors
+    # needs to match.
+    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:market' -BuildingKeyword 'shop' -Memory $Memory
     if ($nav) { return $nav }
 
     return $null
@@ -378,7 +440,7 @@ function Get-PilotExpeditionCommand {
         }
     }
 
-    $nav = Get-PilotNavigateCommand -State $State -Keyword 'forge' -Memory $Memory
+    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -Memory $Memory
     if ($nav) { return $nav }
 
     return $null
@@ -445,7 +507,7 @@ function Get-PilotEveningCommand {
             -Why 'held gold back instead of buying material'
     }
 
-    $nav = Get-PilotNavigateCommand -State $State -Keyword 'forge' -Memory $Memory
+    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -Memory $Memory
     if ($nav) { return $nav }
 
     return $null
