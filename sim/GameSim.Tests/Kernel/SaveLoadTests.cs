@@ -402,4 +402,35 @@ public class SaveLoadTests
         Assert.Equal(1, evt.NewRank);
         Assert.Equal(12, evt.Day);
     }
+
+    [Fact]
+    public void ClimaxDay_RoundTrips_AndOldSavesDefaultToZero()
+    {
+        // The forward ladder's L5 seam: ArcState.ClimaxDay is a new trailing init member (the
+        // LadderRank/SignedName/Xp save-compat precedent above). A populated value must survive a
+        // byte-identical round-trip — the campaign's climax stays dated across a save/Continue — and
+        // a save written before the field existed must load with ClimaxDay 0 (Act III just re-opens
+        // its own climax window rather than exploding on a missing property).
+        var state = GameFactory.NewGame(seed: 32);
+        var climaxed = state with
+        {
+            Arc = new ArcState(CampaignAct.ActIII, ActIIStartDay: 5, ActIIIStartDay: 20, EndingDay: 0)
+            {
+                ClimaxDay = 27,
+            },
+        };
+
+        var json = SaveCodec.Serialize(climaxed);
+        var loaded = SaveCodec.Deserialize(json);
+        Assert.Equal(27, loaded.Arc.ClimaxDay);
+        Assert.Equal(json, SaveCodec.Serialize(loaded));
+
+        // The pre-L5 shape: excise the field entirely and prove absence reads as ClimaxDay 0.
+        var preClimaxJson = json
+            .Replace(",\"ClimaxDay\":27", string.Empty)
+            .Replace("\"ClimaxDay\":27,", string.Empty);
+        Assert.DoesNotContain("ClimaxDay", preClimaxJson);
+        var preClimax = SaveCodec.Deserialize(preClimaxJson);
+        Assert.Equal(0, preClimax.Arc.ClimaxDay);
+    }
 }

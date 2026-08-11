@@ -8,19 +8,26 @@ namespace GameSim.Tests.Balance;
 /// <summary>
 /// Phase D (U-D3) balance gate: the 3-act arc paces sanely over a 100-day BaselinePlayer run on
 /// the main balance seed — it actually moves (not stuck at Act I forever) and it doesn't move
-/// instantly (Act II/III can't fire before the same trivialization floors <see cref="BalanceSimTests"/>
-/// already pins for floor 3 / floor 5 — this unit's thresholds read those exact same signals).
+/// instantly. Act II still reads the same floor-3 trivialization floor <see cref="BalanceSimTests"/>
+/// pins; Act III/Climax (L5, forward-ladder plan 2026-08-10-003) read <see cref="Hero.LadderRank"/>
+/// against the ladder's own <see cref="ArcDirectorSystem.TerminalRank"/>/<see cref="ArcDirectorSystem.ClimaxRank"/>
+/// instead of a floor number, so the day-8 floor below is a loose sanity ceiling, not a pinned band —
+/// the plan's own two-sided bands are L6's gate, not this one's.
 /// </summary>
 public class ArcBalanceTests
 {
     private const int Days = 100;
     private const ulong MainSeed = 2026;
 
-    // Mirrors BalanceSimTests' established pacing bands (same floor-3/floor-5 signals this unit's
-    // Act II/Act III thresholds read). Kept as separate local consts per that file's own "change
-    // them consciously" rule — not shared, to avoid coupling two test files over one number.
+    // Mirrors BalanceSimTests' established floor-3 pacing band for Act II. Kept as a separate local
+    // const per that file's own "change them consciously" rule — not shared, to avoid coupling two
+    // test files over one number.
     private const int NoActIIBeforeDay = 1;  // floor 3 cannot happen on day 1
-    private const int NoActIIIBeforeDay = 8; // mirrors BalanceSimTests.NoFloor5BeforeDay
+
+    // Act III now requires reaching the ladder's TOP rank (graduating Gloomwood, itself gated behind
+    // graduating the Mine/Crypt first) — day 8 remains a safe, deliberately loose sanity floor, not a
+    // measured band (L6 owns the tight two-sided contract).
+    private const int NoActIIIBeforeDay = 8;
 
     [Fact]
     [Trait("Category", "Balance")]
@@ -48,7 +55,9 @@ public class ArcBalanceTests
 
         if (arc.EndingDay > 0)
         {
-            Assert.Equal(arc.ActIIIStartDay + ArcDirectorSystem.EndingDelayDays, arc.EndingDay);
+            // L5: Ending schedules off ClimaxDay (the terminal venue's own boss falling), not
+            // ActIIIStartDay (the terminal venue merely opening) — the two now land days apart.
+            Assert.Equal(arc.ClimaxDay + ArcDirectorSystem.EndingDelayDays, arc.EndingDay);
         }
     }
 }

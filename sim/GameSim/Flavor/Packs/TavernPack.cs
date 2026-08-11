@@ -65,6 +65,15 @@ public static class TavernPack
     /// <summary>Base key for <c>RecruitArrived</c>.</summary>
     public const string RecruitArrived = "recruitArrived";
 
+    /// <summary>Base key for <c>VenueGraduated</c> (forward-ladder plan 2026-08-10-003, L5). Slot is
+    /// "hero" only, like <see cref="RecruitArrived"/> — the event carries a LIST of graduates, so
+    /// <see cref="GameSim.Drama.GossipGenerator"/> collapses it to one label naming the first
+    /// graduate (plus a headcount when more than one), the same one-protagonist-per-line convention
+    /// every other multi-participant beat in this pack already uses. No "venue" slot: the town's
+    /// next muster shows where a graduate goes next, so the line does not need to name the dungeon
+    /// they left, and it stays true across every rung the ladder ever grows to.</summary>
+    public const string VenueGraduated = "venueGraduated";
+
     /// <summary>
     /// The slot names each base key's event provides — the single source of truth shared by
     /// the generator (which fills them) and the conformance tests (which sweep them).
@@ -80,6 +89,7 @@ public static class TavernPack
             [PotionLifesave] = ["hero", "item", "floor"],
             [FloorRecordSet] = ["hero", "floor"],
             [RecruitArrived] = ["hero"],
+            [VenueGraduated] = ["hero"],
         }.ToImmutableSortedDictionary(StringComparer.Ordinal);
 
     /// <summary>The pack itself. Static readonly: built once, immutable forever.</summary>
@@ -597,6 +607,28 @@ public static class TavernPack
                 "The signs foretold {hero}'s coming. The signs also foretold a rain of frogs. One out of two. Again.",
                 "I dreamt a great omen the night before {hero} came. Then I dreamt of breakfast. {hero} is, at least, real.",
                 "The crows announced {hero} at dawn. The crows announce most things. Still — welcome, {hero}, on their authority."),
+
+            // ------------------------------------------------------------- venueGraduated (L5)
+            [$"{VenueGraduated}/gruff"] = ImmutableList.Create(
+                "{hero} outgrew the ground they started on. Deeper dark waits now.",
+                "{hero} doesn't need the shallow dark anymore. Onward.",
+                "Word is {hero} cleared the bottom floor clean. No going back to the easy stuff.",
+                "{hero} put the old grounds behind them. Good. Standing still gets you buried."),
+            [$"{VenueGraduated}/dramatic"] = ImmutableList.Create(
+                "Behold! {hero} has conquered the depths and stands ready for darker ground!",
+                "The old dungeon holds no more terror for {hero} — a deeper one awaits!",
+                "{hero} has broken through! The way forward opens, and it opens wider!",
+                "Sing of {hero}, who left the shallow dark behind and marches toward the deep!"),
+            [$"{VenueGraduated}/wry"] = ImmutableList.Create(
+                "{hero} graduated. There's no ceremony, just a longer walk into worse things.",
+                "Turns out {hero} finished the easy dungeon. There's a harder one now. Congratulations, I guess.",
+                "{hero} cleared the bottom floor. The reward for surviving one dark hole is a deeper one.",
+                "{hero} outgrew the old grounds. Growth, it turns out, means more dying, just later."),
+            [$"{VenueGraduated}/omen"] = ImmutableList.Create(
+                "The old dark released {hero} — a deeper one already knows the name.",
+                "{hero} crossed a threshold the mine doesn't give back easily. The deep dark noticed.",
+                "The bottom floor let {hero} pass. Something further down is already waiting.",
+                "{hero}'s shadow grew long enough to reach the next dark. It always does, eventually."),
         },
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -610,5 +642,7 @@ public static class TavernPack
             // New P2 beats — no prior hardcoded line; authored in the same plain register.
             [Provisioned] = "{item} kept {hero} fighting down on floor {floor}, they say.",
             [PotionLifesave] = "{item} saved {hero}'s life on floor {floor} — plain as that.",
+            // Forward-ladder plan (2026-08-10-003, L5) — no prior line, authored fresh.
+            [VenueGraduated] = "{hero} has proven themselves — a harder dark waits now.",
         });
 }

@@ -237,6 +237,13 @@ public partial class AdventureTicker : PanelContainer
         // nothing at all — so there is no per-XP-tick spam for this line to guard against.
         HeroRankUp e => $"{HeroName(state, e.Hero)} has risen to {e.Rank}.",
 
+        // Forward-ladder plan (2026-08-10-003, L5): a party graduated to the next rung — fired at
+        // most once per venue clear (VenueGraduated's own doc comment), so this can never flood the
+        // strip the way a per-day gauge would. Names the first graduate and counts the rest, the
+        // same convention GraduatesLabel uses for the tavern line — no venue name needed (the town's
+        // next muster shows where a graduate goes instead of this line inventing a destination).
+        VenueGraduated e => GraduatesLine(state, e.Graduates),
+
         // BountyPaid is the town paying out — news, unlike its sibling BountyPosted (still silent;
         // see AdventureTickerTests.PlayerOwnActionEvents_NeverRender): posting is the player's own
         // action read back at them, paying out is someone else's gold moving.
@@ -279,4 +286,18 @@ public partial class AdventureTicker : PanelContainer
 
     private static string HeroName(GameState state, HeroId id) =>
         state.Heroes.TryGetValue(id.Value, out var hero) ? hero.Name : $"Hero #{id.Value}";
+
+    /// <summary>Forward-ladder plan (L5): the full VenueGraduated marquee line, correctly conjugated
+    /// for a solo graduate versus a whole party — names the first graduate (GameSim.Drama.GossipGenerator's
+    /// GraduatesLabel precedent) and counts the rest rather than listing every name.</summary>
+    private static string GraduatesLine(GameState state, IReadOnlyList<HeroId> graduates)
+    {
+        var first = HeroName(state, graduates[0]);
+        return graduates.Count switch
+        {
+            1 => $"{first} has proven ready for deeper ground.",
+            2 => $"{first} and 1 other have proven ready for deeper ground.",
+            _ => $"{first} and {graduates.Count - 1} others have proven ready for deeper ground.",
+        };
+    }
 }

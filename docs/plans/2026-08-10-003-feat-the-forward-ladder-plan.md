@@ -160,6 +160,20 @@ Mine-liveness band.
   re-tuned.
 - **L5 — Arc re-anchor + graduation news** (re-baseline #5): ArcDirector rank
   triggers; ticker/gossip/narrator on `VenueGraduated`; THE-GAME.md prose edit.
+  **MEASUREMENT CORRECTION, recorded by L5's own characterization (§11.6 rule 5):**
+  the design section's own "~day 18-26" (Act III) and "~day 28-35" (Climax) estimates
+  were a pre-implementation guess from the fable pass; L5's characterize run (main
+  seed 2026 + the same 10 sweep seeds L3/L4 used, post-gate, all real gates from L3/
+  L4) measures FASTER on every seed: Act III (terminal rank reached) 12-20, Climax
+  (ClimaxRank reached, Emberfall's floor 5 falling) 14-31, Ending (Climax+5) 19-36 —
+  all 11 seeds reach Ending, none stalls. The gates L3/L4 actually tuned (Mine/Crypt
+  floor 5 at 70, Gloomwood boss at 73, Emberfall boss at 73) all undershot their own
+  8-18/8-12/8-18 day rules on the fast seeds (see those units' own "undershoot"
+  findings), so the arc built on top of them inherits the same fast tail — not a bug
+  in the L5 trigger, a compounding of gates already documented as undershooting.
+  Every seed still lands inside the plan's own two-sided contract (main seed Act III
+  ∈ [15,30] at 18, Climax ≤ 40 at 26, all 11 seeds Ending ≤ 60 at 19-36) — L6 inherits
+  green bands, not a widened one.
 - **L6 — The gates go green:** #413's red gate re-pinned two-sided per the contract;
   money test re-framed; salve axis re-measured (potency fallback only if still red).
   Closes/supersedes #413. **The gate is the wave's exit criterion, not its casualty.**

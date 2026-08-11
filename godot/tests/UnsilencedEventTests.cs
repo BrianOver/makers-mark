@@ -562,6 +562,43 @@ public class UnsilencedEventTests
         }
     }
 
+    // ── the forward ladder (plan 2026-08-10-003, L5) ───────────────────────────────────────────
+
+    /// <summary>A solo graduation names the hero singular; a whole-party graduation names the
+    /// first graduate and counts the rest — proving the ticker's VenueGraduated case is wired
+    /// (it fired into total silence before L5, exactly the class of defect this file audits) and
+    /// that it never invents a name for a hero the event didn't mention.</summary>
+    [TestCase]
+    public void VenueGraduated_SoloAndParty_NameFirstGraduateAndCountTheRest()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            var state = StagedWorld();
+
+            ticker.OnPhaseCompleted(
+                DayPhase.Evening, completedDay: 15, state,
+                ImmutableList.Create<GameEvent>(
+                    new VenueGraduated("mine", ImmutableList.Create(new HeroId(1)), NewRank: 1)));
+
+            AssertThat(ticker.Lines.Count).IsEqual(1);
+            AssertThat(ticker.DisplayText).Contains("V1 has proven ready for deeper ground.");
+
+            ticker.OnPhaseCompleted(
+                DayPhase.Evening, completedDay: 22, state,
+                ImmutableList.Create<GameEvent>(
+                    new VenueGraduated("gloomwood", ImmutableList.Create(new HeroId(1), new HeroId(2)), NewRank: 2)));
+
+            AssertThat(ticker.Lines.Count).IsEqual(2);
+            AssertThat(ticker.DisplayText).Contains("V1 and 1 other have proven ready for deeper ground.");
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
     /// <summary>A day with none of the four U7 economic moments must add nothing — the no-
     /// placeholder-noise contract <see cref="AdventureTicker.OnPhaseCompleted"/> already documents.</summary>
     [TestCase]

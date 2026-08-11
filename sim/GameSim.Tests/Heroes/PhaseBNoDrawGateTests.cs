@@ -88,6 +88,18 @@ public class PhaseBNoDrawGateTests
         // LadderRank 3 by day 30 — Emberfall's own bottom floor clears — so every combat draw from
         // that party's first Emberfall trip onward shifts. `Inc` is STILL byte-identical
         // (13279888329118852579) — same stream, only `State` moved; no new draw site.
+        // GOLDEN RE-BASELINE #5 OF 5 (forward-ladder plan 2026-08-10-003, L5 — arc re-anchor +
+        // graduation news): see AtomicEquivalenceTests.cs's matching ledger entry for the full
+        // account. **Class 0b — values change, draw-free — and unlike every entry above, the pin
+        // below does not move AT ALL, neither `Inc` nor `State`.** ArcDirectorSystem's rewritten Act
+        // III/Climax/Ending triggers read Hero.LadderRank (already on every hero from L0/L1) and the
+        // existing EventLog/Drama state, draw zero RNG (unchanged — the system's own doc comment has
+        // always said so), and their own output, `state.Arc`, has exactly one reader anywhere in
+        // sim/GameSim/ (confirmed by grep): ArcDirectorSystem itself. Nothing downstream of the arc
+        // consumes it, so a rewritten trigger cannot move a single combat/shop/recruit draw. The
+        // AtomicEquivalenceTests SHA256 DOES move on this same trace (Act reads ActIII instead of
+        // Ended at day 30, plus the new ClimaxDay field populated) — that movement is pure
+        // serialized VALUE change on a stream this exact assertion proves is untouched.
         Assert.Equal(new RngState(3993052552967124454UL, 13279888329118852579UL), state.Rng);
     }
 }

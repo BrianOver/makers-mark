@@ -248,8 +248,10 @@ By roughly day thirty a working shop has more gold than shelf space to spend it 
 is where a mature smith's money goes — tier by tier, then into guaranteed work no dice can take
 away. The four legendary commissions in a campaign are the ceiling of that curve.
 
-Act III turns when someone reaches floor 5. Five days later the game reads back everything your mark
-touched, and the world stays open afterward.
+Act III turns when a hero reaches the ladder's last rung — the deepest dungeon opens for them. The
+climax comes later: that dungeon's own floor 5 falling, the ladder beaten, not merely reached. Five
+days after that the game reads back everything your mark touched, and the world stays open
+afterward.
 
 ### 3.5 The six dilemmas
 
@@ -319,8 +321,10 @@ irreversible facts in the game are deaths and the calendar.
 Gold flows in from shelf sales, counter sales, commissions, and bounty payouts. It flows out through
 rent on a ten-day cadence, guild dues on a seven-day one, materials, and the Foundry.
 
-Three venues are live, each with its own ore ladder and its own banded routing — heroes go where
-their power fits. A rival shop holds market share and restocks against you.
+Four venues are live on a forward ladder — the Mine and the Sunken Crypt at the ladder's foot,
+Gloomwood, then the Emberfall Foundry at its top. A party graduates a rung by clearing that venue's
+own floor 5, never routes back down, and each rung's ore grade rises with it. A rival shop holds
+market share and restocks against you.
 
 **Faction standing** sits underneath the ore trade. Buying a faction's ore raises your standing with
 them; standing decays toward neutral every morning if you stop. In return their ore comes cheaper —
@@ -450,15 +454,15 @@ What was borrowed, and what was deliberately refused.
 
 Stated as description. These are properties of the game as it stands, not gaps awaiting work.
 
-- **The campaign's climax is a threshold and its ending is a chronicle.** When a hero reaches floor
-  5 the act turns; five days later the game reads back everything your mark touched. There is no
-  staged final scene — the tally is the ending.
+- **The campaign's climax is a threshold and its ending is a chronicle.** When a hero clears the
+  ladder's last dungeon — its own floor 5 — the climax fires; five days later the game reads back
+  everything your mark touched. There is no staged final scene — the tally is the ending.
 - **The camp simulates nothing while a party sleeps.** It is a decision, not a place. Its entire
   weight is the one question and the three verbs.
 - **The deep floors show the show, not the wager.** There is no slate down there restating what is
   at stake.
-- **Three venues are live.** A fourth exists in the code, unrouted and unillustrated, and does not
-  appear in the game.
+- **Four venues are live, and that is the whole ladder.** There is no rung past the Emberfall
+  Foundry — beating its floor 5 is the campaign's climax, not a step toward a fifth dungeon.
 - **The heroes' autonomy is five rules over true memories.** There is no goal system and no inner
   life. Their friendships and grudges are told in gossip; they are never acted on in the mine.
 - **No wound outlives the night, no hero ever quits, and the town cannot fail.** The only
