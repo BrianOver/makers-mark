@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Text;
 using GameSim.Contracts;
@@ -45,6 +46,19 @@ namespace GodotClient;
 /// Second, <see cref="Action"/> records every player-submitted verb (immediate or bell-queued)
 /// independent of whether it moved the phase at all — the piece neither the old tick row nor a
 /// GD.Print history could answer: WHICH of the day's several actions came before the jump.</para>
+///
+/// <para><b>2026-08-11 extension — the spine, not just the pulse.</b> A tick row's <c>events</c>
+/// field was always <c>Adapter.LastEvents.Count</c> — an integer, never the events themselves — so
+/// nothing downstream could tell an ordinary sale from the one event this whole game is named after
+/// (<c>AttributionBeatEvent</c>, the counterfactual-proven beat: "Emberbite turned the killing
+/// blow… Torvald lives."). The product-sentence sweep (<c>tools/agent-playtest</c>) could only ever
+/// fall back to a best-effort text scan of free-text notes, blind to whether the sim actually
+/// recorded the beat. <see cref="Tick"/> now also carries <c>eventTypes</c> — the DISTINCT type
+/// names in that tick's events (e.g. <c>["ItemSold","AttributionBeatEvent"]</c>), always present
+/// (an empty array on a quiet tick, never an absent key), so a reader can tell "no events fired"
+/// apart from "this log predates the field" by the key's mere presence. No payloads — a type name
+/// is a grep target, not a serialization surface, and this file's own KTD2 contract (adapter-only,
+/// sim never sees a clock or a log) is unaffected either way.</para>
 /// </summary>
 public static class PlaytestLog
 {
@@ -193,13 +207,19 @@ public static class PlaytestLog
     /// with nothing on record that asked for it — so every known trigger is wired to set one; if a
     /// future caller adds a new way to tick the phase and forgets to, this field says so instead of
     /// silently reading like "the AdvancePhase button did it".</para>
+    ///
+    /// <para><paramref name="events"/> is <c>Adapter.LastEvents</c> for this tick — used for two
+    /// fields: <c>events</c> (its count, unchanged from before) and <c>eventTypes</c> (the distinct
+    /// <c>GetType().Name</c> set, e.g. <c>["ItemSold","AttributionBeatEvent"]</c>). See the class's
+    /// own 2026-08-11 doc note for why the count alone was never enough to answer whether the game's
+    /// one load-bearing event — <c>AttributionBeatEvent</c> — actually fired.</para>
     /// </summary>
     public static void Tick(
         DayPhase completedPhase,
         int completedDay,
         GameState state,
         ImmutableList<RejectedAction> rejections,
-        int eventCount,
+        ImmutableList<GameEvent> events,
         string cause = "")
     {
         if (_path is null)
@@ -222,6 +242,21 @@ public static class PlaytestLog
             mats += qty;
         }
 
+        // Distinct type names only — first-seen order, no payloads. Order is deterministic given
+        // events, since the kernel emits them in a fixed order for the same actions/seed, but this
+        // is adapter-side telemetry, not a replay surface, so that determinism is a nice-to-have
+        // here rather than a KTD5 obligation.
+        var eventTypeNames = new List<string>();
+        var seenEventTypes = new HashSet<string>();
+        foreach (var evt in events)
+        {
+            var typeName = evt.GetType().Name;
+            if (seenEventTypes.Add(typeName))
+            {
+                eventTypeNames.Add(typeName);
+            }
+        }
+
         var sb = new StringBuilder();
         sb.Append("{\"kind\":\"tick\",\"t\":")
           .Append(ElapsedSeconds())
@@ -241,7 +276,7 @@ public static class PlaytestLog
           .Append(",\"bounties\":").Append(state.Bounties.Count)
           .Append(",\"act\":\"").Append(state.Arc.Act).Append('"')
           .Append(",\"slots\":").Append(state.ActionSlotsRemaining)
-          .Append(",\"events\":").Append(eventCount)
+          .Append(",\"events\":").Append(events.Count)
           .Append(",\"rejects\":[");
 
         var first = true;
@@ -255,6 +290,22 @@ public static class PlaytestLog
             first = false;
             sb.Append("{\"action\":\"").Append(rejected.Action.GetType().Name)
               .Append("\",\"why\":\"").Append(Escape(rejected.Reason)).Append("\"}");
+        }
+
+        // Always present, even when empty — an empty array means "zero events this tick", never
+        // "this log predates the field" (see the class's 2026-08-11 doc note; a downstream reader
+        // tells the two apart by whether the "eventTypes" key exists at all).
+        sb.Append("],\"eventTypes\":[");
+        var firstType = true;
+        foreach (var typeName in eventTypeNames)
+        {
+            if (!firstType)
+            {
+                sb.Append(',');
+            }
+
+            firstType = false;
+            sb.Append('"').Append(Escape(typeName)).Append('"');
         }
 
         sb.Append("]}\n");
