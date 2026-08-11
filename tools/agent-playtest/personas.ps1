@@ -40,6 +40,13 @@
     attached has a real prompts/personas/attached.md file like the original four, plus driver-side
     hero-tracking logic in tools/agent-playtest/attached.ps1.
 
+    PILOT (S2, scripted-deep-pilot lane): also model-free, same short-circuit shape as monkey (no
+    ollama, no GPU gate, no act/judge prompt, no prompts/personas/*.md file), but its own command
+    logic (tools/agent-playtest/pilot.ps1) is a deliberately imperfect, habit-forming, curious
+    human-shaped policy instead of uniform-random -- built for long (150+ turn) unattended runs that
+    need to reach day 11+ AND capture friction, never for maximizing turns played. See pilot.ps1's own
+    header for the owner steer this implements.
+
     PERSONA FRONT-MATTER (W4, docs/plans/2026-08-10-002, joins table): before this wave, EVERY file
     under prompts/personas/ started directly at "## Who you are" with no header of any kind --
     verified live before writing this, per the plan's own joins-table instruction. This is an
@@ -68,7 +75,7 @@
     STYLE NOTE: ASCII-only, no here-strings, no ternary/??, matching every file it is dot-sourced by.
 #>
 
-$script:KnownPersonas = @('first-timer', 'veteran', 'speedrunner', 'completionist', 'monkey', 'attached')
+$script:KnownPersonas = @('first-timer', 'veteran', 'speedrunner', 'completionist', 'monkey', 'attached', 'pilot')
 
 # Resolves -Persona into one of the known real names ($script:KnownPersonas). "random" picks one FOR
 # THIS RUN via $Random (overridable so a test can assert on the choice instead of trusting

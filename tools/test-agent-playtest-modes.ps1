@@ -58,7 +58,8 @@ $parseTargets = @(
     (Join-Path $toolsDir 'agent-playtest\temperament.ps1'),
     (Join-Path $toolsDir 'agent-playtest\monkey.ps1'),
     (Join-Path $toolsDir 'agent-playtest\attached.ps1'),
-    (Join-Path $toolsDir 'agent-playtest\scenario.ps1')
+    (Join-Path $toolsDir 'agent-playtest\scenario.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\pilot.ps1')
 )
 foreach ($target in $parseTargets) {
     $tokens = $null
@@ -544,16 +545,17 @@ $actProtocolText = Get-Content $actMdPath -Raw
 # W4 (docs/plans/2026-08-10-002): monkey and attached join the original four -- "Resolve-PersonaChoice
 # accepts monkey+attached (roster = 6)" is the brief's own required proof, and this loop is where it
 # lands: Resolve-PersonaChoice only ever checks membership, so it needs no .md file on disk to resolve
-# a name (monkey never has one at all -- see personas.ps1's own header).
-foreach ($p in @('first-timer', 'veteran', 'speedrunner', 'completionist', 'monkey', 'attached')) {
+# a name (monkey never has one at all -- see personas.ps1's own header). S2 (scripted-deep-pilot lane)
+# adds pilot the same way (roster = 7) -- also no .md file, same reason.
+foreach ($p in @('first-timer', 'veteran', 'speedrunner', 'completionist', 'monkey', 'attached', 'pilot')) {
     $resolved = Resolve-PersonaChoice -Persona $p
     Check ($resolved -eq $p) ('a known persona name must resolve to itself, got [' + $resolved + '] for [' + $p + ']')
 }
 
 # "random" resolves via the injectable scriptblock (overridable so this is deterministic) to one of
-# the six known names -- never a seventh value, never the literal string "random" itself.
+# the seven known names -- never an eighth value, never the literal string "random" itself.
 $randomResolved = Resolve-PersonaChoice -Persona 'random' -Random { param($items) $items[2] }
-Check (@('first-timer', 'veteran', 'speedrunner', 'completionist', 'monkey', 'attached') -contains $randomResolved) ('"random" must resolve to one of the six known personas, got [' + $randomResolved + ']')
+Check (@('first-timer', 'veteran', 'speedrunner', 'completionist', 'monkey', 'attached', 'pilot') -contains $randomResolved) ('"random" must resolve to one of the seven known personas, got [' + $randomResolved + ']')
 
 # An unknown persona name must FAIL LOUDLY -- never silently become the default. This is the exact
 # silent-fallback defect shape this repo has already fixed twice (A1, A6); a third instance here
@@ -1282,9 +1284,10 @@ Check ($agentPlaytestRawText -like '*Get-DeadVerbVerdict*') 'agent-playtest.ps1 
 Check ($agentPlaytestRawText -like '*Get-StateFingerprint*') 'agent-playtest.ps1 must call Get-StateFingerprint somewhere in its turn loop'
 Check ($agentPlaytestRawText -like '*deadverb.ps1*') 'agent-playtest.ps1 must dot-source deadverb.ps1'
 Check ($script:KnownPersonas -notcontains 'sceptic') 'personas.ps1''s $script:KnownPersonas must not contain sceptic any more'
-Check ($script:KnownPersonas.Count -eq 6) ('personas.ps1''s known-persona roster must be exactly 6 (W4 landed monkey and attached), got ' + $script:KnownPersonas.Count + ': ' + ($script:KnownPersonas -join ', '))
+Check ($script:KnownPersonas.Count -eq 7) ('personas.ps1''s known-persona roster must be exactly 7 (W4 landed monkey and attached, S2 landed pilot), got ' + $script:KnownPersonas.Count + ': ' + ($script:KnownPersonas -join ', '))
 Check ($script:KnownPersonas -contains 'monkey') 'personas.ps1''s $script:KnownPersonas must contain monkey (W4)'
 Check ($script:KnownPersonas -contains 'attached') 'personas.ps1''s $script:KnownPersonas must contain attached (W4)'
+Check ($script:KnownPersonas -contains 'pilot') 'personas.ps1''s $script:KnownPersonas must contain pilot (S2, scripted-deep-pilot lane)'
 $sweepRawText = Get-Content (Join-Path $toolsDir 'playtest-sweep.ps1') -Raw
 Check ($sweepRawText -notlike '*''sceptic''*') 'playtest-sweep.ps1''s default -Personas array must not contain the string literal ''sceptic'' any more (it would pass a rejected persona straight to the driver)'
 
@@ -2170,6 +2173,129 @@ Check ($emptyRowsThrew -eq $false) 'Test-ScenarioBackendPredicate must not throw
 $badPredicateThrew = $false
 try { ConvertTo-ScenarioBackendPredicate -RawPredicateText '{"kind":"action","field":"action"}' } catch { $badPredicateThrew = $true }
 Check ($badPredicateThrew -eq $true) 'ConvertTo-ScenarioBackendPredicate must THROW when a required key ("equals") is missing'
+
+# --- 21. Pilot persona (S2, scripted-deep-pilot lane): human-shaped, seeded, friction-capturing ----
+. (Join-Path $toolsDir 'agent-playtest\pilot.ps1')
+
+# Determinism: THE required proof, same shape as monkey's own -- same seed over the same state
+# sequence must produce a byte-identical command sequence AND identical decision/friction logs.
+$pilotStubStates = @(
+    [pscustomobject]@{ turn = 1; day = 1; phase = 'Morning'; location = 'town'; canMove = $true; lastOutcome = '(run start)'; screenText = @('Welcome to town.'); controls = @([pscustomobject]@{ name = 'OpenCommissions'; enabled = $true }); nearby = @([pscustomobject]@{ key = 'shop'; label = 'Shop'; direction = 'right'; distance = 80; inRange = $false }) }
+    [pscustomobject]@{ turn = 2; day = 1; phase = 'Morning'; location = 'panel:CommissionBoard'; canMove = $false; lastOutcome = 'pressed OpenCommissions'; screenText = @('No commissions today.'); controls = @(); nearby = @() }
+    [pscustomobject]@{ turn = 3; day = 1; phase = 'Expedition'; location = 'town'; canMove = $true; lastOutcome = 'advanced'; screenText = @('The heroes are away.'); controls = @(); nearby = @([pscustomobject]@{ key = 'forge'; label = 'Forge'; direction = 'left'; distance = 40; inRange = $true }); actionSlotsRemaining = 1 }
+)
+$pilotRandomOne = New-Object System.Random(11)
+$pilotRandomTwo = New-Object System.Random(11)
+$pilotMemoryOne = New-PilotMemory
+$pilotMemoryTwo = New-PilotMemory
+$pilotSequenceOne = @($pilotStubStates | ForEach-Object { Get-PilotCommand -State $_ -Memory $pilotMemoryOne -Random $pilotRandomOne })
+$pilotSequenceTwo = @($pilotStubStates | ForEach-Object { Get-PilotCommand -State $_ -Memory $pilotMemoryTwo -Random $pilotRandomTwo })
+Check ($pilotSequenceOne.Count -eq $pilotStubStates.Count) 'sanity: one command must be produced per stubbed state'
+$pilotSequencesMatch = $true
+for ($i = 0; $i -lt $pilotSequenceOne.Count; $i++) {
+    if ($pilotSequenceOne[$i] -ne $pilotSequenceTwo[$i]) { $pilotSequencesMatch = $false }
+}
+Check ($pilotSequencesMatch -eq $true) ('same seed (11) over the same state sequence must produce a byte-identical pilot command sequence. Seq1: [' + ($pilotSequenceOne -join ' | ') + '] Seq2: [' + ($pilotSequenceTwo -join ' | ') + ']')
+Check ($pilotMemoryOne.SixDecisions.Count -eq $pilotMemoryTwo.SixDecisions.Count) 'same seed must log the same number of six-decision entries'
+Check ($pilotMemoryOne.FrictionLog.Count -eq $pilotMemoryTwo.FrictionLog.Count) 'same seed must log the same number of friction entries'
+
+# Every produced command must itself be legal JSON with a recognized action, and never "stop" --
+# pilot must run to budget the same way monkey does (S2's own "day 11+ is the floor" requirement
+# would be undermined by a policy that could voluntarily end its own run early).
+foreach ($cmdText in $pilotSequenceOne) {
+    $parsedPilotCmd = $null
+    try { $parsedPilotCmd = $cmdText | ConvertFrom-Json } catch { }
+    Check ($null -ne $parsedPilotCmd) ('every pilot command must parse as JSON, got [' + $cmdText + ']')
+    if ($parsedPilotCmd) {
+        Check (@('press', 'move', 'key', 'advance') -contains $parsedPilotCmd.action) ('a pilot command''s action must be press/move/key/advance only, never stop, got [' + $parsedPilotCmd.action + ']')
+    }
+}
+
+# Turn 2's stubbed state reports a refused-shaped lastOutcome is NOT tested here (none of the fixture
+# states above use "refused:") -- proven directly instead, isolated from the sequence above.
+$pilotRefusalMemory = New-PilotMemory
+$pilotRefusalMemory.PendingIntent = 'pilot: stock the crafted item'
+$pilotRefusalState = [pscustomobject]@{
+    turn = 5; day = 2; phase = 'Morning'; location = 'panel:Shop'; canMove = $false
+    lastOutcome = 'refused: ''Stock_9'' is disabled -- (no reason on the tooltip)'
+    screenText = @('Nothing to stock.'); controls = @(); nearby = @()
+}
+Get-PilotCommand -State $pilotRefusalState -Memory $pilotRefusalMemory -Random (New-Object System.Random(1)) | Out-Null
+Check ($pilotRefusalMemory.FrictionLog.Count -eq 1) ('a refused: lastOutcome must produce exactly one friction entry, got ' + $pilotRefusalMemory.FrictionLog.Count)
+if ($pilotRefusalMemory.FrictionLog.Count -eq 1) {
+    $firstFriction = $pilotRefusalMemory.FrictionLog[0]
+    Check ($firstFriction.Category -eq 'refused') ('the friction entry''s category must be "refused", got [' + $firstFriction.Category + ']')
+    Check ($firstFriction.Detail -eq $pilotRefusalState.lastOutcome) 'the friction entry must quote lastOutcome VERBATIM, never paraphrased'
+    Check ($firstFriction.Trying -eq 'pilot: stock the crafted item') 'the friction entry must carry what the pilot was trying to do (PendingIntent from the prior turn)'
+}
+
+# Six-decisions logging: a commission accept/decline must log to Get-PilotCommand's own ledger under
+# the exact decision name CLAUDE.md uses, with a Choice value that is one of the two real sides --
+# never silently always the same side (checked over many draws, not one).
+$sawAccept = $false
+$sawDecline = $false
+for ($seedTry = 0; $seedTry -lt 40; $seedTry++) {
+    $decisionMemory = New-PilotMemory
+    $decisionState = [pscustomobject]@{
+        turn = 1; day = 1; phase = 'Morning'; location = 'panel:CommissionBoard'; canMove = $false
+        lastOutcome = '(run start)'; screenText = @('A commission awaits.')
+        controls = @(
+            [pscustomobject]@{ name = 'CommissionAccept_7'; enabled = $true }
+            [pscustomobject]@{ name = 'CommissionDecline_7'; enabled = $true }
+        )
+        nearby = @()
+    }
+    Get-PilotCommand -State $decisionState -Memory $decisionMemory -Random (New-Object System.Random($seedTry)) | Out-Null
+    $entry = $decisionMemory.SixDecisions | Where-Object { $_.Decision -eq 'answer the commission' } | Select-Object -First 1
+    if ($entry -and $entry.Choice -eq 'accept') { $sawAccept = $true }
+    if ($entry -and $entry.Choice -eq 'decline') { $sawDecline = $true }
+}
+Check ($sawAccept -eq $true) 'across 40 seeded draws, the commission decision must resolve to "accept" at least once'
+Check ($sawDecline -eq $true) 'across 40 seeded draws, the commission decision must resolve to "decline" at least once -- a run where it always resolves the same way tested one player, not a person (owner steer)'
+
+# Forge minigame reading: parses ForgeMinigame's/QuenchMinigame's own on-screen readout text, never
+# an internal gauge value -- proven with the exact label shapes those two classes actually render.
+$forgePumpingLowHeatState = [pscustomobject]@{ screenText = @('Strike 3/21 -- Heat 200 -- pumping') }
+$forgeCmdLowHeat = Get-PilotForgeMinigameCommand -State $forgePumpingLowHeatState -Memory (New-PilotMemory) -Random (New-Object System.Random(1))
+Check ($null -ne $forgeCmdLowHeat) 'a Strike/Heat readout must be recognized as an open Act 1 overlay'
+if ($forgeCmdLowHeat) {
+    $parsedForge = $forgeCmdLowHeat | ConvertFrom-Json
+    Check ($parsedForge.action -eq 'key' -and $parsedForge.target -eq 'forge_strike') 'while pumping and heat is still low, the pilot must wait (tap forge_strike, a Quench-safe no-op here) rather than toggle bellows off early'
+}
+$forgeIdleHotState = [pscustomobject]@{ screenText = @('Strike 5/21 -- Heat 900 -- idle') }
+$forgeCmdHot = Get-PilotForgeMinigameCommand -State $forgeIdleHotState -Memory (New-PilotMemory) -Random (New-Object System.Random(1))
+if ($forgeCmdHot) {
+    $parsedForgeHot = $forgeCmdHot | ConvertFrom-Json
+    Check ($parsedForgeHot.action -eq 'key' -and $parsedForgeHot.target -eq 'forge_strike') 'idle with hot heat must strike'
+}
+$quenchPlungeNowState = [pscustomobject]@{ screenText = @('Heat 512 (target 500 +/-140) -- PLUNGE NOW') }
+$quenchCmd = Get-PilotForgeMinigameCommand -State $quenchPlungeNowState -Memory (New-PilotMemory) -Random (New-Object System.Random(1))
+Check ($null -ne $quenchCmd) 'a Heat/target readout must be recognized as an open Act 2 (quench) overlay'
+if ($quenchCmd) {
+    $parsedQuench = $quenchCmd | ConvertFrom-Json
+    Check ($parsedQuench.action -eq 'key' -and $parsedQuench.target -eq 'plunge') 'PLUNGE NOW on screen must produce a plunge key press'
+}
+$quenchWaitState = [pscustomobject]@{ screenText = @('Heat 800 (target 500 +/-140) -- wait for it...') }
+$quenchWaitCmd = Get-PilotForgeMinigameCommand -State $quenchWaitState -Memory (New-PilotMemory) -Random (New-Object System.Random(1))
+if ($quenchWaitCmd) {
+    $parsedQuenchWait = $quenchWaitCmd | ConvertFrom-Json
+    Check ($parsedQuenchWait.target -ne 'plunge') 'wait for it... on screen must never plunge early'
+}
+$noOverlayState = [pscustomobject]@{ screenText = @('Just standing in town.') }
+Check ($null -eq (Get-PilotForgeMinigameCommand -State $noOverlayState -Memory (New-PilotMemory) -Random (New-Object System.Random(1)))) 'ordinary screen text with neither readout must return null (caller falls through to its own next choice)'
+
+# Driver wiring: pilot must be reachable, and the GPU gate / act-prompt assembly must be SKIPPED for
+# it -- same structural proof style as monkey's own wiring checks above.
+Check ($agentPlaytestRawText -like '*Get-PilotCommand*') 'agent-playtest.ps1 must call Get-PilotCommand'
+Check ($agentPlaytestRawText -like '*pilot.ps1*') 'agent-playtest.ps1 must dot-source pilot.ps1'
+Check ($agentPlaytestRawText -like '*isPilot*') 'agent-playtest.ps1 must reference $isPilot'
+if ($gpuGateBlockMatch.Success) {
+    Check ($gpuGateBlockMatch.Value -like '*isPilot*') 'the nvidia-smi GPU gate''s own guarding conditional must reference isPilot -- pilot must skip the gate entirely, the same way monkey does'
+}
+Check ($agentPlaytestRawText -like '*skipping act-prompt*schema*judge-prompt assembly entirely (S2*') 'agent-playtest.ps1 must have a dedicated pilot branch that skips act-prompt/schema/judge-prompt assembly outright, never building one just to ignore it'
+Check ($agentPlaytestRawText -like '*Friction log*') 'agent-playtest.ps1 must write a Friction log section for pilot runs'
+Check ($agentPlaytestRawText -like '*Six decisions this run took*') 'agent-playtest.ps1 must write a Six-decisions section for pilot runs'
+Check ($agentPlaytestRawText -like '*FrictionLog*SixDecisions*' -or $agentPlaytestRawText -like '*SixDecisions*FrictionLog*') 'agent-playtest.ps1 must fold FrictionLog/SixDecisions into metrics.json for pilot runs'
 
 # --- Summary -----------------------------------------------------------------------------------
 if ($failures.Count -gt 0) {
