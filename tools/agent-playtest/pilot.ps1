@@ -97,6 +97,15 @@ function New-PilotMemory {
         HabitLocked        = @{}
         PendingIntent      = '(run start)'
         PricingFrictionLogged = $false
+        # 2026-08-11 real-run finding: pressing CommissionAccept_1/CommissionDecline_1 does NOT
+        # remove that row from the board or disable either button -- the dead-verb detector
+        # confirmed a byte-identical whole-state fingerprint before/after the press, repeatedly,
+        # against a real running client. Whatever the underlying mechanic (a same-panel selection
+        # that only resolves on close, or a genuine dead verb), re-pressing the SAME commission
+        # forever is not a person's behavior -- a human decides once and moves on. ActedOn tracks
+        # "decision-kind:id" pairs (e.g. "commission-1", "honor-7") so each candidate is acted on
+        # AT MOST ONCE per run, then the policy closes the panel instead of re-opening the loop.
+        ActedOn            = @{}
         FrictionLog        = New-Object System.Collections.ArrayList
         SixDecisions       = New-Object System.Collections.ArrayList
     }
@@ -170,6 +179,24 @@ function Build-PilotCommandJson {
 function Get-PilotEnabledControls {
     param($State, [Parameter(Mandatory)][string]$Pattern)
     return ,@($State.controls | Where-Object { $_ -and $_.enabled -and ([string]$_.name -match $Pattern) })
+}
+
+# The trailing "_<id>" a per-row control name carries (CommissionAccept_7 -> "7"), or the whole
+# name unchanged if there is no such suffix. Used to key $Memory.ActedOn per underlying row rather
+# than per exact control name, so accepting OR declining commission 7 both retire the SAME id.
+function Get-PilotControlId {
+    param([Parameter(Mandatory)][string]$Name)
+    $m = [regex]::Match($Name, '_(\d+)$')
+    if ($m.Success) { return $m.Groups[1].Value }
+    return $Name
+}
+
+# $Candidates filtered down to rows this run has not already acted on under $Kind (see ActedOn's
+# own doc in New-PilotMemory) -- the fix for the real-run finding that pressing the SAME
+# CommissionAccept_1 over and over is a dead verb, not a decision.
+function Get-PilotUnactedControls {
+    param($Candidates, [Parameter(Mandatory)]$Memory, [Parameter(Mandatory)][string]$Kind)
+    return ,@($Candidates | Where-Object { -not $Memory.ActedOn.ContainsKey($Kind + '-' + (Get-PilotControlId $_.name)) })
 }
 
 # Walk toward (then enter/interact with) the nearest $State.nearby entry whose label contains
@@ -255,19 +282,32 @@ function Get-PilotForgeMinigameCommand {
 function Get-PilotMorningCommand {
     param($State, [Parameter(Mandatory)]$Memory, [Parameter(Mandatory)][System.Random]$Random)
 
-    $accept = Get-PilotEnabledControls -State $State -Pattern '^CommissionAccept_'
-    $decline = Get-PilotEnabledControls -State $State -Pattern '^CommissionDecline_'
+    $accept = Get-PilotUnactedControls -Memory $Memory -Kind 'commission' `
+        -Candidates (Get-PilotEnabledControls -State $State -Pattern '^CommissionAccept_')
+    $decline = Get-PilotUnactedControls -Memory $Memory -Kind 'commission' `
+        -Candidates (Get-PilotEnabledControls -State $State -Pattern '^CommissionDecline_')
     if ($accept.Count -gt 0) {
         if (Test-PilotChance -Random $Random -Probability $script:PilotAcceptCommissionChance) {
+            $Memory.ActedOn['commission-' + (Get-PilotControlId $accept[0].name)] = $true
             Add-PilotDecision -Memory $Memory -Day $State.day -Decision 'answer the commission' -Choice 'accept' `
                 -Why ('accepted ' + $accept[0].name)
             return (Build-PilotCommandJson -Action 'press' -Target $accept[0].name -Why 'pilot: accept the commission')
         }
         if ($decline.Count -gt 0) {
+            $Memory.ActedOn['commission-' + (Get-PilotControlId $decline[0].name)] = $true
             Add-PilotDecision -Memory $Memory -Day $State.day -Decision 'answer the commission' -Choice 'decline' `
                 -Why ('declined ' + $decline[0].name)
             return (Build-PilotCommandJson -Action 'press' -Target $decline[0].name -Why 'pilot: decline the commission')
         }
+    }
+
+    # Every commission on the board this morning has now been decided once (or there were none to
+    # begin with) -- close the board rather than let a still-enabled Accept/Decline (2026-08-11
+    # real-run finding: neither disables nor disappears after being pressed -- a dead-verb candidate
+    # against a live client) pull the policy into pressing the same row forever.
+    $closeCommissions = Get-PilotEnabledControls -State $State -Pattern '^CommissionClose$'
+    if ($closeCommissions.Count -gt 0) {
+        return (Build-PilotCommandJson -Action 'press' -Target 'CommissionClose' -Why 'pilot: done with the commission board, closing it')
     }
 
     $stock = Get-PilotEnabledControls -State $State -Pattern '^Stock_'
@@ -363,20 +403,33 @@ function Get-PilotCampCommand {
 function Get-PilotEveningCommand {
     param($State, [Parameter(Mandatory)]$Memory, [Parameter(Mandatory)][System.Random]$Random)
 
-    $honor = Get-PilotEnabledControls -State $State -Pattern '^Honor_'
+    # Same ActedOn-once-then-close fix as commissions (Get-PilotMorningCommand's own note): decide
+    # each honor-eligible hero at most once, then close the wall instead of re-rolling the SAME
+    # still-enabled Honor_ button forever.
+    $honor = Get-PilotUnactedControls -Memory $Memory -Kind 'honor' `
+        -Candidates (Get-PilotEnabledControls -State $State -Pattern '^Honor_')
     if ($honor.Count -gt 0) {
         if (Test-PilotChance -Random $Random -Probability $script:PilotHonorMemorialChance) {
+            $Memory.ActedOn['honor-' + (Get-PilotControlId $honor[0].name)] = $true
             Add-PilotDecision -Memory $Memory -Day $State.day -Decision 'honor the memorial' -Choice 'honor' `
                 -Why ('honored ' + $honor[0].name)
             return (Build-PilotCommandJson -Action 'press' -Target $honor[0].name -Why 'pilot: honor the memorial')
         }
+        $Memory.ActedOn['honor-' + (Get-PilotControlId $honor[0].name)] = $true
         Add-PilotDecision -Memory $Memory -Day $State.day -Decision 'honor the memorial' -Choice 'walk past' -Why 'skipped honoring tonight'
+        # Falls through (no return) to the rest of this function -- "walk past" decided something,
+        # it did not end the turn, and there may be another hero on the wall or material to buy.
     }
 
     $openLegends = Get-PilotEnabledControls -State $State -Pattern '^OpenLegends$'
     if ($openLegends.Count -gt 0 -and -not $Memory.VisitedSurfaces.ContainsKey('OpenLegends-' + $State.day)) {
         $Memory.VisitedSurfaces['OpenLegends-' + $State.day] = $true
         return (Build-PilotCommandJson -Action 'press' -Target 'OpenLegends' -Why 'pilot: check the legends wall')
+    }
+
+    $closeLegends = Get-PilotEnabledControls -State $State -Pattern '^LegendsWallClose$'
+    if ($closeLegends.Count -gt 0 -and $Memory.VisitedSurfaces.ContainsKey('OpenLegends-' + $State.day)) {
+        return (Build-PilotCommandJson -Action 'press' -Target 'LegendsWallClose' -Why 'pilot: done with the legends wall, closing it')
     }
 
     $buy = Get-PilotEnabledControls -State $State -Pattern '^BuyMat_'
