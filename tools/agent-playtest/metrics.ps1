@@ -29,14 +29,17 @@
        said no). Two different refusal mechanisms, one ranked list, because a control that frustrates
        the player does not care which layer said no.
     4. Get-ProductSentenceReport -- the actual instrument on THE-GAME.md links 4-5. Two independent
-       signals, kept separate and both reported: did an attribution-shaped NOTE ever appear in the
-       backend log (Get-BackendSummary's own AttributionNoteHits -- carries ITS OWN caveat forward
-       verbatim, since a tick row logs event COUNTS not TYPES and cannot prove a real attribution event
-       fired), and did the PLAYER'S OWN SCREEN ever show attribution-shaped text (a best-effort scan of
-       every turn's screenText, the only channel that answers what a human actually watched happen).
-       "Fired" for sweep purposes means the SECOND one: link 5 is being IN the town's memory, but link 4
-       plus this game's own name for itself ("you were watching when it happened") is about what the
-       player SAW, not what the backend logged silently.
+       signals, kept separate and both reported: did the backend log corroborate an attribution beat
+       (Get-BackendSummary's own AttributionNoteHits -- a best-effort text scan of free-text "note"
+       rows -- OR AttributionEventTypeHits -- EXACT since 2026-08-11, a tick row whose eventTypes
+       field names the sim's AttributionBeatEvent by type, PlaytestLog.Tick's own addition; either
+       one is a real backend hit, and AttributionCaveat is carried forward verbatim describing
+       whichever this run's log can and cannot prove), and did the PLAYER'S OWN SCREEN ever show
+       attribution-shaped text (a best-effort scan of every turn's screenText, the only channel that
+       answers what a human actually watched happen). "Fired" for sweep purposes means the FIRST one
+       (a real backend hit, note or event type): a screen-only match is UI copy this pattern happens
+       to catch, not proof the sim actually recorded the beat -- see the U2 regression this gate
+       exists to close, in the function's own doc below.
 
     Plus Build-PerDayJudgeDigest, which replaces agent-playtest.ps1's $judgeCap tail-trim (W1's own
     interim 24000-char raise, still a front-trim). The live defect it kills: at any fixed character
@@ -271,18 +274,24 @@ function Get-RefusalFrustrationMap {
 # --- 4. Product-sentence counter ------------------------------------------------------------------
 
 # BackendSummary: Get-BackendSummary's own return object (backend.ps1) -- used for
-# .AttributionNoteHits/.AttributionCaveat/.Available, never re-derived here. ScreenTextHistory: a FLAT
-# array of every screenText line seen across every turn of the run (the caller flattens
-# TurnRecords[].ScreenText -- see agent-playtest.ps1's own wiring).
+# .AttributionNoteHits/.AttributionEventTypeHits/.AttributionCaveat/.Available, never re-derived here.
+# ScreenTextHistory: a FLAT array of every screenText line seen across every turn of the run (the
+# caller flattens TurnRecords[].ScreenText -- see agent-playtest.ps1's own wiring).
 #
 # U2 (eyes-learn-labels wave): "Fired" (ProductSentenceFired, the field metrics.json reports) used to
 # be the SCREEN check alone -- found live as the exact defect this unit closes: 33 of 34 campaign
 # runs read True purely from a regex hit on RIVAL DIALOGUE ("signed...") while the backend note-scan
 # was 0-hits in every single one of those runs. A screen-text regex is a best-effort guess at UI copy
-# (see its own caveat below); the backend note hit is the one signal that is actually about the SIM
-# having recorded an attribution event. ProductSentenceFired is now gated on the backend hit alone;
-# a screen-only hit with the backend silent or unavailable is reported through Verdict as WEAK, never
-# folded into a bare True.
+# (see its own caveat below); a real backend hit is the signal that is actually about the SIM having
+# recorded an attribution event. ProductSentenceFired is now gated on a backend hit alone; a screen-
+# only hit with the backend silent or unavailable is reported through Verdict as WEAK, never folded
+# into a bare True.
+#
+# 2026-08-11 (backend-log-sees-the-spine): a "backend hit" is now EITHER of two independent signals,
+# not just the note-scan -- AttributionEventTypeHits (a tick row whose eventTypes field names
+# AttributionBeatEvent by type, PlaytestLog.Tick's own field, EXACT rather than a text guess) counts
+# just as much as AttributionNoteHits (the pre-existing free-text scan). Before this, the sweep could
+# only ever see the note-scan's best-effort proxy; it can now also see the sim's own event record.
 function Get-ProductSentenceReport {
     param(
         $BackendSummary,
@@ -298,13 +307,21 @@ function Get-ProductSentenceReport {
 
     $attributionBeatNamed = $false
     $attributionNoteHits = @()
+    $attributionEventTypeHits = @()
     $backendAvailable = $false
     $attributionCaveat = 'no backend log was available for this run -- whether an attribution beat ' +
         'fired at all is UNKNOWN, not "no" (see backend.ps1''s own Message for why the log is absent).'
     if ($BackendSummary -and $BackendSummary.Available) {
         $backendAvailable = $true
-        $attributionNoteHits = @($BackendSummary.AttributionNoteHits)
-        $attributionBeatNamed = ($attributionNoteHits.Count -gt 0)
+        # "| Where-Object { $null -ne $_ }" before the @() wrap, not after -- @($null) is a ONE-element
+        # array holding a null (PowerShell's array subexpression operator wraps a scalar, and $null is
+        # a scalar), so a BackendSummary that never set this property (an older/hand-built caller, not
+        # today's Get-BackendSummary, which always sets both) would silently read as "1 hit" instead of
+        # zero. Piping through Where-Object first empties a null pipeline input to genuinely nothing --
+        # same idiom playtest-sweep.ps1 already uses for exactly this trap.
+        $attributionNoteHits = @($BackendSummary.AttributionNoteHits | Where-Object { $null -ne $_ })
+        $attributionEventTypeHits = @($BackendSummary.AttributionEventTypeHits | Where-Object { $null -ne $_ })
+        $attributionBeatNamed = ($attributionNoteHits.Count -gt 0) -or ($attributionEventTypeHits.Count -gt 0)
         $attributionCaveat = $BackendSummary.AttributionCaveat
     }
 
@@ -320,9 +337,10 @@ function Get-ProductSentenceReport {
         '(no matching backend note) is a WEAK signal, not proof -- rival dialogue and other UI copy can ' +
         'share this pattern''s keyword family without a real attribution event ever having fired.'
 
-    # The one boolean metrics.json actually reports: True ONLY on a real backend note hit. A screen-
-    # only hit is real information (PlayerScreenShowedIt still reports it) but is not, by itself,
-    # proof the product sentence fired -- that is exactly the false-positive this unit closes.
+    # The one boolean metrics.json actually reports: True ONLY on a real backend hit (a note-scan hit
+    # OR an eventTypes hit -- either one is the sim's own log corroborating it, not a screen guess). A
+    # screen-only hit is real information (PlayerScreenShowedIt still reports it) but is not, by
+    # itself, proof the product sentence fired -- that is exactly the false-positive this unit closes.
     $fired = $attributionBeatNamed
 
     $verdict = 'NOT SEEN'
@@ -335,14 +353,15 @@ function Get-ProductSentenceReport {
     }
 
     return [pscustomobject]@{
-        ProductSentenceFired = $fired
-        PlayerScreenShowedIt = $screenFired
-        ScreenTextHits       = $screenHits
-        ScreenTextCaveat     = $screenTextCaveat
-        AttributionBeatNamed = $attributionBeatNamed
-        AttributionNoteHits  = $attributionNoteHits
-        AttributionCaveat    = $attributionCaveat
-        Verdict              = $verdict
+        ProductSentenceFired     = $fired
+        PlayerScreenShowedIt     = $screenFired
+        ScreenTextHits           = $screenHits
+        ScreenTextCaveat         = $screenTextCaveat
+        AttributionBeatNamed     = $attributionBeatNamed
+        AttributionNoteHits      = $attributionNoteHits
+        AttributionEventTypeHits = $attributionEventTypeHits
+        AttributionCaveat        = $attributionCaveat
+        Verdict                  = $verdict
     }
 }
 
@@ -391,8 +410,8 @@ function Format-MetricsMarkdown {
     [void]$lines.Add('### Product-sentence counter')
     [void]$lines.Add('')
     $ps = $Metrics.ProductSentence
-    [void]$lines.Add('- VERDICT: ' + $ps.Verdict + ' (metrics.json ProductSentenceFired=' + $ps.ProductSentenceFired + ' -- True requires a backend note hit; a screen-only hit reports WEAK, never a bare True)')
-    [void]$lines.Add('- attribution beat named in the backend log: ' + $ps.AttributionBeatNamed + ' (' + @($ps.AttributionNoteHits).Count + ' note hit(s))')
+    [void]$lines.Add('- VERDICT: ' + $ps.Verdict + ' (metrics.json ProductSentenceFired=' + $ps.ProductSentenceFired + ' -- True requires a real backend hit (note scan or eventTypes); a screen-only hit reports WEAK, never a bare True)')
+    [void]$lines.Add('- attribution beat named in the backend log: ' + $ps.AttributionBeatNamed + ' (' + @($ps.AttributionNoteHits).Count + ' note hit(s), ' + @($ps.AttributionEventTypeHits).Count + ' eventTypes hit(s) -- the latter is EXACT, PlaytestLog.Tick naming AttributionBeatEvent by type, not a text guess)')
     [void]$lines.Add('- the PLAYER''S SCREEN ever showed one: ' + $ps.PlayerScreenShowedIt + ' (' + @($ps.ScreenTextHits).Count + ' screenText hit(s))')
     [void]$lines.Add('CAVEAT (backend note scan): ' + $ps.AttributionCaveat)
     [void]$lines.Add('CAVEAT (screenText scan): ' + $ps.ScreenTextCaveat)
