@@ -755,6 +755,15 @@ So, binding rules for every session that touches this repo:
    **Amended 2026-08-11 (second):** the eyes-learn-labels wave landed both halves (#457 the
    instrument, this PR the game defects), so its doc dies in this same PR per rule 7. Both
    slots are empty; nothing is queued.
+   **Amended 2026-08-11 (third):** one slot is granted, by name, to
+   `docs/plans/2026-08-11-002-feat-the-playtest-learns-to-finish-plan.md`. The ten-rounds
+   campaign could not complete a single model-driven test (58 of 58 runs dead on patience by
+   day 3; ~1,190 of ~1,260 refusals were the 8B model emitting empty commands — fable census),
+   and the owner's finding is the grant's whole argument: testing that cannot finish tests
+   nothing. Three units, all instrument-side: menu-choice acting (pick from the advisor's own
+   legal set instead of composing freeform JSON), sweep-mode patience (the would-have-quit
+   moment becomes a finding instead of a fatality), and an eyes/brain model split. Substrate,
+   capped overhead; no unit may displace a §11.4 path item.
 5. **The measurement rule.** When new data contradicts this plan — P4 moves the boredom
    day, P3's assertions fail, a sweep overturns a tuning claim — the plan amends in the
    same PR that lands the finding. A plan that cannot lose an argument with a measurement
