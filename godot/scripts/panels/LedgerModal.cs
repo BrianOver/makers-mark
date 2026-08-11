@@ -54,6 +54,12 @@ public partial class LedgerModal : SimPanel
     /// <summary>The day whose cards are currently shown (0 = never shown).</summary>
     public int ShownDay { get; private set; }
 
+    /// <summary>How fresh the world was, per <see cref="LatestCompletedEveningDay"/>, the last time
+    /// this modal was told to look (every <see cref="ShowFor"/> call, deliberate reopen of an old
+    /// day included) — see <see cref="Refresh"/>'s own doc for why this is the staleness baseline
+    /// instead of <see cref="ShownDay"/> itself.</summary>
+    private int _lastAcknowledgedEveningDay;
+
     public override void _Ready() => EnsureBuilt();
 
     /// <summary>
@@ -69,17 +75,35 @@ public partial class LedgerModal : SimPanel
     /// re-arms the SAME 3-second countdown from zero before the previous one ever fires, so the
     /// pending reveal for day 2 is silently replaced by day 3's, then day 4's, forever — and nothing
     /// ever lands. <c>MainUi.RefreshAll</c> already calls this every real tick regardless of the
-    /// wall clock (see that method's own doc: "Ledger... stay unconditional"), so
-    /// re-deriving the freshest day HERE, off state the sim already keeps (<see
-    /// cref="GameState.EventLog"/> is append-only — <see cref="LedgerQuery.ReturnCards"/> can answer
-    /// for any past day at any later point), closes the gap with no dependency on real time at all.
-    /// <b>Chosen over closing the modal or blocking the advance:</b> the Close button was live and
-    /// reachable the entire time (never a hard soft-lock), and blocking the day from advancing while
-    /// a surface owns the screen is the one thing this game's laws forbid outright — skipping stays
-    /// legal, no timer may sit on a decision (§11.7.8), and the Ledger is exactly the kind of
+    /// wall clock (see that method's own doc: "Ledger... stay unconditional"), so re-deriving the
+    /// freshest day HERE, off state the sim already keeps (<see cref="GameState.EventLog"/> is
+    /// append-only — <see cref="LedgerQuery.ReturnCards"/> can answer for any past day at any later
+    /// point), closes the gap with no dependency on real time at all.
+    ///
+    /// <para><b>Why the baseline is "freshness at last acknowledgment," not "ShownDay itself."</b>
+    /// The class's own header doc (and <c>MainUiTests.DriveToCraftedDagger</c>, which drove exactly
+    /// this) documents a SECOND, legitimate reason ShownDay can trail the calendar: <see
+    /// cref="BuyOreLegal"/> gates a purchase on <c>Phase == Evening</c> (any evening, not
+    /// specifically the day the offer was revealed), so reopening day 1's ledger DURING day 2's own
+    /// Evening — via the status-bar tray button, precisely to buy what day 1's reveal could not sell
+    /// yet — is a deliberate, sanctioned gap between ShownDay and the calendar, not drift. Comparing
+    /// against ShownDay directly could not tell that apart from the real bug and yanked the view away
+    /// mid-purchase the instant the sim's OWN immediate-resolving <see cref="BuyOreAction"/> replayed
+    /// this same Refresh (still Phase==Evening, still the SAME day — nothing about the WORLD had
+    /// moved, only the gate's own napkin math). <see cref="_lastAcknowledgedEveningDay"/> instead
+    /// snapshots the freshest evening the world could prove AT THE MOMENT <see cref="ShowFor"/> was
+    /// last called — recording "the world was checked as of here," not "this shows the newest day" —
+    /// so re-showing the SAME already-acknowledged freshness is never mistaken for staleness, while a
+    /// genuinely NEW evening completing afterward (the real bug's own shape: nobody ever reopened it
+    /// again) still trips this check on the very next tick.</para>
+    ///
+    /// <para><b>Chosen over closing the modal or blocking the advance:</b> the Close button was live
+    /// and reachable the entire time (never a hard soft-lock), and blocking the day from advancing
+    /// while a surface owns the screen is the one thing this game's laws forbid outright — skipping
+    /// stays legal, no timer may sit on a decision (§11.7.8), and the Ledger is exactly the kind of
     /// non-decision informational reveal that must never become one. Keeping it open and honest
     /// instead — jump it straight to the latest evening, name the skip in copy — costs the player
-    /// nothing they had not already chosen to skip past.
+    /// nothing they had not already chosen to skip past.</para>
     /// </summary>
     public override void Refresh()
     {
@@ -90,10 +114,11 @@ public partial class LedgerModal : SimPanel
         }
 
         var latestEveningDay = LatestCompletedEveningDay(Adapter.CurrentState);
-        if (latestEveningDay > ShownDay)
+        if (latestEveningDay > _lastAcknowledgedEveningDay)
         {
-            var skipped = latestEveningDay - ShownDay;
-            ShowFor(latestEveningDay);
+            var previouslyShown = ShownDay;
+            ShowFor(latestEveningDay); // also re-stamps _lastAcknowledgedEveningDay to match
+            var skipped = latestEveningDay - previouslyShown;
             _feedback!.Text = skipped == 1
                 ? $"Time moved on — this is day {latestEveningDay}'s ledger now."
                 : $"Time moved on {skipped} days while this sat open — this is day {latestEveningDay}'s ledger now.";
@@ -104,13 +129,13 @@ public partial class LedgerModal : SimPanel
     }
 
     /// <summary>The most recent day whose Evening has actually happened, per the live sim state —
-    /// the day <see cref="Refresh"/> should be showing whenever this modal is open. Evening itself
-    /// names its own day (the reveal fires the instant Phase becomes Evening, per <c>MainUi</c>'s
-    /// Return-Ritual arm); once the day rolls to the next Morning (or beyond), the last completed
-    /// evening is one behind the calendar day. Never reads <c>SimAdapter.LastRevealedDay</c> — that
-    /// field only updates on evenings with a party actually in flight (see its own doc), so an empty
-    /// evening would leave it stale; this instead derives straight from Day/Phase, which are correct
-    /// for every evening whether or not anyone came home.</summary>
+    /// the freshest a Ledger reveal could possibly be right now. Evening itself names its own day
+    /// (the reveal fires the instant Phase becomes Evening, per <c>MainUi</c>'s Return-Ritual arm);
+    /// once the day rolls to the next Morning (or beyond), the last completed evening is one behind
+    /// the calendar day. Never reads <c>SimAdapter.LastRevealedDay</c> — that field only updates on
+    /// evenings with a party actually in flight (see its own doc), so an empty evening would leave it
+    /// stale; this instead derives straight from Day/Phase, which are correct for every evening
+    /// whether or not anyone came home.</summary>
     private static int LatestCompletedEveningDay(GameState state) =>
         state.Phase == DayPhase.Evening ? state.Day : state.Day - 1;
 
@@ -134,6 +159,14 @@ public partial class LedgerModal : SimPanel
         _tutorialTip = tutorialTip;
         RenderCards(day);
         Visible = true;
+
+        // Stamp what the world could prove as of RIGHT NOW — including when `day` is deliberately
+        // OLDER than the calendar (a tray-button reopen of a past day to buy, see Refresh's own
+        // doc) — so this exact freshness is never later mistaken for drift.
+        if (Adapter is not null)
+        {
+            _lastAcknowledgedEveningDay = LatestCompletedEveningDay(Adapter.CurrentState);
+        }
     }
 
     public void CloseModal() => Visible = false;
