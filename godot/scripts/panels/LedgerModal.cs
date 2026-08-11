@@ -56,15 +56,63 @@ public partial class LedgerModal : SimPanel
 
     public override void _Ready() => EnsureBuilt();
 
-    /// <summary>Modal contents rebuild on demand via <see cref="ShowFor"/>, not on every tick.</summary>
+    /// <summary>
+    /// Modal contents rebuild on demand via <see cref="ShowFor"/> — EXCEPT for staleness, which this
+    /// checks on every tick (KTD-fix, playtest-pilot3 finding 1). The title names a day
+    /// ("EVENING LEDGER — day N"), so an open Ledger is a promise about which day it is reporting;
+    /// a 160-turn scripted playtest left it open on day 2 while ten more evenings ticked underneath
+    /// it (HUD read Day 12, world input stayed blocked the whole time) because the ONLY path that
+    /// used to refresh <see cref="ShownDay"/> was the automatic Return-Ritual reveal — an unscaled
+    /// wall-clock timer (<c>MainUi.LedgerDelayRemaining</c>) that a fast enough run of evenings
+    /// (Hurry/Skip chains one press through several days at once, and the bridge's own "advance"
+    /// action ticks with zero real time between calls) can outrun indefinitely: every new Evening
+    /// re-arms the SAME 3-second countdown from zero before the previous one ever fires, so the
+    /// pending reveal for day 2 is silently replaced by day 3's, then day 4's, forever — and nothing
+    /// ever lands. <c>MainUi.RefreshAll</c> already calls this every real tick regardless of the
+    /// wall clock (see that method's own doc: "Ledger... stay unconditional"), so
+    /// re-deriving the freshest day HERE, off state the sim already keeps (<see
+    /// cref="GameState.EventLog"/> is append-only — <see cref="LedgerQuery.ReturnCards"/> can answer
+    /// for any past day at any later point), closes the gap with no dependency on real time at all.
+    /// <b>Chosen over closing the modal or blocking the advance:</b> the Close button was live and
+    /// reachable the entire time (never a hard soft-lock), and blocking the day from advancing while
+    /// a surface owns the screen is the one thing this game's laws forbid outright — skipping stays
+    /// legal, no timer may sit on a decision (§11.7.8), and the Ledger is exactly the kind of
+    /// non-decision informational reveal that must never become one. Keeping it open and honest
+    /// instead — jump it straight to the latest evening, name the skip in copy — costs the player
+    /// nothing they had not already chosen to skip past.
+    /// </summary>
     public override void Refresh()
     {
         EnsureBuilt();
-        if (Visible && ShownDay > 0)
+        if (!Visible || ShownDay <= 0 || Adapter is null)
         {
-            RenderCards(ShownDay);
+            return;
         }
+
+        var latestEveningDay = LatestCompletedEveningDay(Adapter.CurrentState);
+        if (latestEveningDay > ShownDay)
+        {
+            var skipped = latestEveningDay - ShownDay;
+            ShowFor(latestEveningDay);
+            _feedback!.Text = skipped == 1
+                ? $"Time moved on — this is day {latestEveningDay}'s ledger now."
+                : $"Time moved on {skipped} days while this sat open — this is day {latestEveningDay}'s ledger now.";
+            return;
+        }
+
+        RenderCards(ShownDay);
     }
+
+    /// <summary>The most recent day whose Evening has actually happened, per the live sim state —
+    /// the day <see cref="Refresh"/> should be showing whenever this modal is open. Evening itself
+    /// names its own day (the reveal fires the instant Phase becomes Evening, per <c>MainUi</c>'s
+    /// Return-Ritual arm); once the day rolls to the next Morning (or beyond), the last completed
+    /// evening is one behind the calendar day. Never reads <c>SimAdapter.LastRevealedDay</c> — that
+    /// field only updates on evenings with a party actually in flight (see its own doc), so an empty
+    /// evening would leave it stale; this instead derives straight from Day/Phase, which are correct
+    /// for every evening whether or not anyone came home.</summary>
+    private static int LatestCompletedEveningDay(GameState state) =>
+        state.Phase == DayPhase.Evening ? state.Day : state.Day - 1;
 
     /// <summary>
     /// Populate with the given day's return cards and open the overlay.

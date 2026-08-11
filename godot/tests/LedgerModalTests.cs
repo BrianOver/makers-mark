@@ -510,5 +510,83 @@ public class LedgerModalTests
             Unmount(ui);
         }
     }
+
+    // ── Refresh staleness (KTD-fix, playtest-pilot3 finding 1) ────────────────────────────────
+
+    /// <summary>
+    /// Two evenings of returns for the same survivor, five days apart — the live <see
+    /// cref="GameState"/> already sits at day 6's Morning (one day past day 5's evening), mirroring
+    /// a campaign where the Ledger has sat open, un-refreshed, across several completed evenings.
+    /// </summary>
+    private static GameState StaleLedgerCampaign()
+    {
+        var survivor = new Hero(
+            SurvivorId, "Thistle", ClassRegistry.VanguardId, Level: 3, MaxHp: 30, Gold: 12,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+            DeepestFloorReached: 2, DiedOnDay: null);
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(SurvivorId.Value, survivor);
+
+        var events = ImmutableList.Create<GameEvent>(
+            new PartyReturned(ImmutableList.Create(SurvivorId)) { Id = new EventId(1), Day = 1 },
+            new LootIncomeReceived(SurvivorId, 8) { Id = new EventId(2), Day = 1 },
+            new PartyReturned(ImmutableList.Create(SurvivorId)) { Id = new EventId(3), Day = 5 },
+            new LootIncomeReceived(SurvivorId, 20) { Id = new EventId(4), Day = 5 });
+
+        var baseState = GameFactory.NewGame(9101, heroes);
+        return baseState with { Day = 6, Phase = DayPhase.Morning, EventLog = events };
+    }
+
+    /// <summary>
+    /// The 160-turn scripted playtest's own headline bug: a Ledger opened for day 1 and left open
+    /// read "EVENING LEDGER — day 2" ten evenings later, with the HUD at Day 12 and the world
+    /// blocked (<c>canMove=false</c>) the whole time. <see cref="LedgerModal.Refresh"/> now runs
+    /// on every tick (via <c>MainUi.RefreshAll</c>, already unconditional) rather than depending on
+    /// the automatic reveal's 3-second wall-clock timer — so an open-but-stale Ledger self-corrects
+    /// to the latest completed evening the very next tick, with no dependency on real time at all.
+    /// </summary>
+    [TestCase]
+    public void Refresh_LedgerOpenOnAStaleDay_JumpsToTheLatestEvening_AndNamesTheSkip()
+    {
+        var ui = MountMainUi(new SimAdapter(StaleLedgerCampaign()));
+        try
+        {
+            ui.Ledger.ShowFor(1); // simulates a Ledger that never got closed since day 1
+            AssertThat(ui.Ledger.ShownDay).IsEqual(1);
+
+            ui.Ledger.Refresh();
+
+            AssertThat(ui.Ledger.ShownDay)
+                .OverrideFailureMessage(
+                    "Ledger stayed on a stale day across a Refresh — the exact bug the 160-turn "
+                    + "playtest found (stuck on day 2 while the HUD read Day 12).")
+                .IsEqual(5);
+            AssertThat(Find<Label>(ui.Ledger, "LedgerTitle").Text).IsEqual("EVENING LEDGER — day 5");
+            AssertThat(Find<Label>(ui.Ledger, "LedgerFeedback").Text).Contains("day 5");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The non-stale case must stay quiet: a Ledger already showing the freshest evening
+    /// never jumps and never prints skip-noise on an ordinary same-day refresh.</summary>
+    [TestCase]
+    public void Refresh_LedgerAlreadyOnTheLatestEvening_NoJump_NoFeedbackNoise()
+    {
+        var ui = MountMainUi(new SimAdapter(StaleLedgerCampaign()));
+        try
+        {
+            ui.Ledger.ShowFor(5); // already showing the freshest evening
+            ui.Ledger.Refresh();
+
+            AssertThat(ui.Ledger.ShownDay).IsEqual(5);
+            AssertThat(Find<Label>(ui.Ledger, "LedgerFeedback").Text).IsEqual(string.Empty);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif
