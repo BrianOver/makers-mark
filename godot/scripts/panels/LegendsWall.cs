@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using GameSim.Advisor;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Drama;
@@ -125,9 +126,23 @@ public partial class LegendsWall : Control
             if (!memorial.Honored)
             {
                 var hero = memorial.Hero;
+
+                // Phase-legality parity (U5, campaign finding: LegendsWall.cs:130 disabled ONLY on
+                // Adapter-null, so the rite rendered live outside Evening and the kernel silently
+                // rejected the click — see GameSim.Drama.FarewellHandlers.CanHandle,
+                // Drama/FarewellHandlers.cs:20-21). ActionLegality.IsLegal already mirrors that exact
+                // phase + memorial-exists guard for HonorMemorialAction, and ShowWall already
+                // receives the full live GameState, so this consults that shared mirror directly
+                // (the same "state.Phase" the class doc for ReforgeGate deliberately does NOT need,
+                // since HonorMemorial — unlike Reforge — really is phase-gated at the handler).
+                var honorAction = new HonorMemorialAction(hero);
+                var honorLegal = ActionLegality.IsLegal(state, honorAction, state.Phase);
                 var honor = new Button { Name = $"Honor_{hero.Value}", Text = "Honor" };
                 honor.Pressed += () => Adapter?.Queue(new HonorMemorialAction(hero));
-                honor.Disabled = Adapter is null;
+                honor.Disabled = Adapter is null || !honorLegal;
+                honor.TooltipText = Adapter is null
+                    ? string.Empty
+                    : honorLegal ? string.Empty : "The wall is honored in the evening.";
                 row.AddChild(honor);
             }
 

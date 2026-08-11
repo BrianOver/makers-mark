@@ -182,8 +182,16 @@ public class LegendsWallTests
     /// button had no material gate at all, so a fresh zero-material save still rendered it
     /// enabled and let a doomed reforge queue and get silently rejected — the exact "dead click"
     /// antipattern <c>ForgePanel</c>'s own vendor-row comment already calls out.</para></summary>
+    /// <summary>U5 (buttons-learn-phases wave): <paramref name="phase"/> defaults to Evening —
+    /// the memorial-honoring window (<c>FarewellHandlers.CanHandle</c>,
+    /// <c>Drama/FarewellHandlers.cs:20-21</c>) and the realistic phase for this fixture (a hero
+    /// died; the town gathers to honor them at dusk). Reforge is phase-independent (legal any
+    /// time, per <see cref="ReforgeGate"/>'s own doc), so every existing Reforge-focused test in
+    /// this suite is unaffected by this default; only the Honor-button tests need a different
+    /// value, and pass it explicitly.</summary>
     private static GameState WorldWithFallenHero(
-        bool honored = false, bool alreadyReforged = false, ImmutableSortedDictionary<string, int>? materials = null)
+        bool honored = false, bool alreadyReforged = false, ImmutableSortedDictionary<string, int>? materials = null,
+        DayPhase phase = DayPhase.Evening)
     {
         var baseState = GameFactory.NewGame(6010);
         var weapon = new Item(
@@ -214,6 +222,7 @@ public class LegendsWallTests
 
         return baseState with
         {
+            Phase = phase,
             Player = baseState.Player with { Materials = materials ?? ImmutableSortedDictionary<string, int>.Empty.Add("copper", 2) },
             Heroes = baseState.Heroes.SetItem(FallenHeroId.Value, fallen),
             Items = ImmutableSortedDictionary<int, Item>.Empty.Add(WornWeaponId.Value, weapon),
@@ -254,6 +263,53 @@ public class LegendsWallTests
 
             AssertThat(ui.Legends.FindChild($"Honor_{FallenHeroId.Value}", recursive: true, owned: false)).IsNull();
             AssertThat(RenderedText(ui.Legends)).Contains("honored");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── U5 (buttons-learn-phases wave): Honor learns the Evening window ─────────────────────────
+
+    /// <summary>
+    /// Campaign finding: Honor was <c>Disabled = Adapter is null</c> ONLY (<c>LegendsWall.cs:130</c>),
+    /// so it rendered live outside Evening even though <c>HonorMemorialAction</c> is Evening-only at
+    /// the kernel (<c>FarewellHandlers.CanHandle</c>, <c>Drama/FarewellHandlers.cs:20-21</c>). This
+    /// pins the fix: outside Evening the button is disabled with a player-facing tooltip.
+    /// </summary>
+    [TestCase]
+    public void HonorButton_DisabledOutsideEvening_TooltipNamesTheWindow()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(WorldWithFallenHero(phase: DayPhase.Morning));
+
+            var honor = Find<Button>(ui.Legends, $"Honor_{FallenHeroId.Value}");
+            AssertThat(honor.Disabled).IsTrue();
+            AssertThat(honor.TooltipText).IsEqual("The wall is honored in the evening.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The other side of the pin: AT Evening (the real rite window, and this fixture's
+    /// own default), the button stays exactly as live as ever — no tooltip standing in front of a
+    /// legal click.</summary>
+    [TestCase]
+    public void HonorButton_EnabledAtEvening_NoTooltip()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(WorldWithFallenHero()); // default phase = Evening
+
+            var honor = Find<Button>(ui.Legends, $"Honor_{FallenHeroId.Value}");
+            AssertThat(honor.Disabled).IsFalse();
+            AssertThat(honor.TooltipText).IsEqual(string.Empty);
         }
         finally
         {

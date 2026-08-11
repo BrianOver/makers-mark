@@ -3,6 +3,7 @@ using System.Linq;
 using GameSim;
 using GameSim.Contracts;
 using GdUnit4;
+using Godot;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -95,6 +96,64 @@ public class CommissionBoardTests
 
             AssertThat(ui.Commissions.CommissionCount).IsEqual(0);
             AssertThat(RenderedText(ui.Commissions)).Contains("No one's asking for anything right now.");
+        }
+        finally { Unmount(ui); }
+    }
+
+    // ── U5 (buttons-learn-phases wave): Accept/Decline learn the Morning window ─────────────────
+
+    /// <summary>
+    /// Campaign finding: Accept/Decline were <c>Disabled = Adapter is null</c> ONLY
+    /// (<c>CommissionBoard.cs:97,102</c>), so both rendered live outside Morning even though
+    /// <c>AcceptCommissionAction</c>/<c>DeclineCommissionAction</c> are Morning-only at the kernel
+    /// (<c>CommissionHandlers.CanHandle</c>, <c>Heroes/CommissionHandlers.cs:18-19</c>) — 24-67
+    /// kernel rejections per 400-turn run, every monkey seed. This pins the fix: outside Morning
+    /// both buttons are disabled with a player-facing tooltip.
+    /// </summary>
+    [TestCase]
+    public void AcceptAndDecline_DisabledOutsideMorning_TooltipNamesTheWindow()
+    {
+        var commission = new Commission(new HeroId(1), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 12, PremiumGold: 30);
+        var state = GameComposition.NewCampaign(seed: 5153) with
+        {
+            Phase = DayPhase.Evening,
+            Commissions = System.Collections.Immutable.ImmutableList.Create(commission),
+        };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Commissions.ShowOpen(ui.Adapter.CurrentState);
+
+            var accept = Find<Button>(ui.Commissions, "CommissionAccept_1");
+            var decline = Find<Button>(ui.Commissions, "CommissionDecline_1");
+
+            AssertThat(accept.Disabled).IsTrue();
+            AssertThat(accept.TooltipText).IsEqual("Commissions are decided in the morning.");
+            AssertThat(decline.Disabled).IsTrue();
+            AssertThat(decline.TooltipText).IsEqual("Commissions are decided in the morning.");
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>The other side of the pin: AT Morning (the real decision window, and a fresh
+    /// campaign's own starting phase), both buttons stay exactly as live as ever — no tooltip
+    /// standing in front of a legal click.</summary>
+    [TestCase]
+    public void AcceptAndDecline_EnabledInMorning_NoTooltip()
+    {
+        var commission = new Commission(new HeroId(1), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 12, PremiumGold: 30);
+        var ui = MountMainUi(AdapterWithCommission(commission)); // fresh campaign starts at Morning
+        try
+        {
+            ui.Commissions.ShowOpen(ui.Adapter.CurrentState);
+
+            var accept = Find<Button>(ui.Commissions, "CommissionAccept_1");
+            var decline = Find<Button>(ui.Commissions, "CommissionDecline_1");
+
+            AssertThat(accept.Disabled).IsFalse();
+            AssertThat(accept.TooltipText).IsEqual(string.Empty);
+            AssertThat(decline.Disabled).IsFalse();
+            AssertThat(decline.TooltipText).IsEqual(string.Empty);
         }
         finally { Unmount(ui); }
     }

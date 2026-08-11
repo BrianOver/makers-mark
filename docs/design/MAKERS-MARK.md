@@ -752,6 +752,9 @@ So, binding rules for every session that touches this repo:
    and memorial buttons that never consult the legality mirror they were owed, and a quench
    minigame that ticks from boot and auto-plunges a phantom craft into every session. Capped
    overhead; no unit may displace a §11.4 path item.
+   **Amended 2026-08-11 (second):** the eyes-learn-labels wave landed both halves (#457 the
+   instrument, this PR the game defects), so its doc dies in this same PR per rule 7. Both
+   slots are empty; nothing is queued.
 5. **The measurement rule.** When new data contradicts this plan — P4 moves the boredom
    day, P3's assertions fail, a sweep overturns a tuning claim — the plan amends in the
    same PR that lands the finding. A plan that cannot lose an argument with a measurement

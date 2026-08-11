@@ -1,4 +1,5 @@
 using System;
+using GameSim.Advisor;
 using GameSim.Contracts;
 using Godot;
 using GodotClient.Ui;
@@ -91,15 +92,33 @@ public partial class CommissionBoard : Control
         var row = new HBoxContainer();
         body.AddChild(row);
 
-        var accept = new Button { Name = $"CommissionAccept_{commission.Hero.Value}", Text = "Accept" };
         var hero1 = commission.Hero;
+
+        // Phase-legality parity (U5, campaign finding: CommissionBoard.cs:97,102 disabled ONLY on
+        // Adapter-null, so both buttons rendered live outside Morning and the kernel silently
+        // rejected 24-67 clicks/run — see GameSim.Heroes.CommissionHandlers.CanHandle,
+        // Heroes/CommissionHandlers.cs:18-19). ActionLegality.IsLegal already mirrors that exact
+        // phase + open-commission guard for AcceptCommissionAction/DeclineCommissionAction, and this
+        // panel already receives the full live GameState via ShowOpen, so it consults that shared
+        // mirror directly rather than re-checking `state.Phase == DayPhase.Morning` locally.
+        var acceptAction = new AcceptCommissionAction(hero1);
+        var acceptLegal = ActionLegality.IsLegal(state, acceptAction, state.Phase);
+        var accept = new Button { Name = $"CommissionAccept_{commission.Hero.Value}", Text = "Accept" };
         accept.Pressed += () => Adapter?.Queue(new AcceptCommissionAction(hero1));
-        accept.Disabled = Adapter is null;
+        accept.Disabled = Adapter is null || !acceptLegal;
+        accept.TooltipText = Adapter is null
+            ? string.Empty
+            : acceptLegal ? string.Empty : "Commissions are decided in the morning.";
         row.AddChild(accept);
 
+        var declineAction = new DeclineCommissionAction(hero1);
+        var declineLegal = ActionLegality.IsLegal(state, declineAction, state.Phase);
         var decline = new Button { Name = $"CommissionDecline_{commission.Hero.Value}", Text = "Decline" };
         decline.Pressed += () => Adapter?.Queue(new DeclineCommissionAction(hero1));
-        decline.Disabled = Adapter is null;
+        decline.Disabled = Adapter is null || !declineLegal;
+        decline.TooltipText = Adapter is null
+            ? string.Empty
+            : declineLegal ? string.Empty : "Commissions are decided in the morning.";
         row.AddChild(decline);
     }
 

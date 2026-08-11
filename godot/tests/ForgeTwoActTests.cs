@@ -495,6 +495,51 @@ public class ForgeTwoActTests
         });
     }
 
+    // ── U6 (buttons-learn-phases wave): the phantom auto-plunge ─────────────────────────────────
+
+    /// <summary>
+    /// U6 (campaign finding): before <see cref="QuenchMinigame.Configure"/> ever runs, this node is
+    /// still ticking — <c>ForgePanel.EnsureBuilt</c> pre-builds Act 2 hidden at its own
+    /// <c>_Ready</c>, and <c>_Process</c> calls <see cref="QuenchMinigame.Advance"/> unconditionally
+    /// from tree entry. With <see cref="QuenchMinigame.RecipeId"/>/<see
+    /// cref="QuenchMinigame.MaterialKey"/> both defaulting to empty, the fixed <see
+    /// cref="QuenchMinigame.QuenchDurationSeconds"/> (4.0s) timeout fired anyway and auto-plunged a
+    /// phantom <c>CraftAction("", "")</c> through <see cref="QuenchMinigame.Finished"/> — rejected
+    /// <c>Unknown recipe ''.</c> in 34/34 campaign runs, every one, before the player had ever opened
+    /// the forge. This pins the fix (the <c>_configured</c> gate): an unconfigured instance advanced
+    /// well past the timeout raises nothing and submits nothing.
+    /// </summary>
+    [TestCase]
+    public void UnconfiguredQuench_AdvancedPastTheTimeout_FiresNoFinishedEvent_SubmitsNothing()
+    {
+        var quench = new QuenchMinigame();
+        try
+        {
+            CraftAction? emitted = null;
+            var finishedFired = false;
+            quench.Finished += action => { finishedFired = true; emitted = action; };
+
+            // 10 simulated seconds, well past QuenchDurationSeconds (4.0s) — the exact phantom-
+            // plunge window the campaign hit before the player ever opened the forge.
+            const double stepSeconds = 0.5;
+            for (var i = 0; i < 20; i++)
+            {
+                quench.Advance(stepSeconds);
+            }
+
+            AssertThat(finishedFired)
+                .OverrideFailureMessage("An unconfigured QuenchMinigame fired Finished — the phantom-plunge bug is back.")
+                .IsFalse();
+            AssertThat(emitted).IsNull();
+            AssertThat(quench.Completed).IsFalse();
+            AssertThat(quench.EmittedAction).IsNull();
+        }
+        finally
+        {
+            quench.Free();
+        }
+    }
+
     /// <summary>Nearest <see cref="ScrollContainer"/> ancestor, or throws.</summary>
     private static ScrollContainer ScrollContainerAncestorOf(Control control)
     {

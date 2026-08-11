@@ -126,6 +126,21 @@ public sealed partial class QuenchMinigame : PanelContainer
     private Button _cancelButton = null!;
     private bool _built;
 
+    /// <summary>U6 (campaign finding: <c>_Process</c> called <see cref="Advance"/> unconditionally
+    /// from tree entry, and <see cref="ForgePanel"/> pre-builds this node — hidden, but still
+    /// ticking — at its own <c>_Ready</c>. With <see cref="RecipeId"/>/<see cref="MaterialKey"/>
+    /// defaulting to empty until the first real <see cref="Configure"/> call, that meant 4.0s
+    /// (<see cref="QuenchDurationSeconds"/>) after boot the auto-plunge timeout fired anyway and
+    /// emitted a phantom <c>CraftAction("", "")</c> through <see cref="Finished"/> — rejected
+    /// <c>Unknown recipe ''.</c> in every one of 34/34 campaign runs, before the player had ever
+    /// opened the forge.) Set true at the end of <see cref="Configure"/>; <see cref="Advance"/>
+    /// no-ops until then. <see cref="Configure"/> runs fresh on every real reuse (Act 1 → Act 2
+    /// handoff, <c>ForgePanel.OnShapingDone</c>), so this only ever gates the PRE-first-craft
+    /// window — once true it stays true, and <see cref="Completed"/>/<see cref="WasCancelled"/>
+    /// already gate ticking between one real run finishing and the next one's <see
+    /// cref="Configure"/> call.</summary>
+    private bool _configured;
+
     public override void _Ready() => EnsureBuilt();
 
     public override void _Process(double delta) => Advance(delta);
@@ -165,6 +180,7 @@ public sealed partial class QuenchMinigame : PanelContainer
         _sampleAccumulator = 0;
         RecordSample(); // seed the domain-boundary sample at the exact x Act 1 handed off
 
+        _configured = true; // U6: only now may Advance() actually tick — see the field's own doc
         RepaintUi();
     }
 
@@ -174,7 +190,10 @@ public sealed partial class QuenchMinigame : PanelContainer
     /// never hang waiting on an input a player forgot to give.</summary>
     public void Advance(double delta)
     {
-        if (Completed || WasCancelled || delta <= 0)
+        // U6: unconfigured — never bound to a real recipe/material by Configure() — must no-op,
+        // not auto-plunge a phantom CraftAction("", "") once the fixed timeout elapses. See
+        // _configured's own doc for the exact campaign-observed failure this guards.
+        if (!_configured || Completed || WasCancelled || delta <= 0)
         {
             return;
         }
