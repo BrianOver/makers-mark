@@ -585,8 +585,11 @@ public class UnsilencedEventTests
             AssertThat(ticker.Lines.Count).IsEqual(1);
             AssertThat(ticker.DisplayText).Contains("V1 has proven ready for deeper ground.");
 
+            // Day 16, not a later week: the marquee retains only MaxDaysRetained (3) days, so a
+            // second graduation far in the future would prune the first line and read as a wiring
+            // failure when it is only retention doing its job.
             ticker.OnPhaseCompleted(
-                DayPhase.Evening, completedDay: 22, state,
+                DayPhase.Evening, completedDay: 16, state,
                 ImmutableList.Create<GameEvent>(
                     new VenueGraduated("gloomwood", ImmutableList.Create(new HeroId(1), new HeroId(2)), NewRank: 2)));
 
