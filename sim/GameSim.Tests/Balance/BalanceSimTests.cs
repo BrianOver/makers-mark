@@ -24,6 +24,13 @@ public class BalanceSimTests
     // calibrated against buggy clear logic). Floor-5 pacing (~day 12) is a playtest knob —
     // raise floor gates or slow advancement if first-session content should last longer.
     private const int NoFloor5BeforeDay = 8;
+
+    // Forward-ladder plan L6 (2026-08-10-003, "the gates go green"): TWO-SIDED rung-0-clear window
+    // on the main seed — a one-sided ">=" band can't see a campaign that never clears floor 5 at
+    // all (exactly the blind spot draft #413's placeholder-Days upper bound existed to close, back
+    // when floor 5 was unreachable on every seed). Measured post-L5 (`characterize --seeds 2026`):
+    // main seed clears floor 5 on day 18, inside the plan's own [8,18] rung-0 rule.
+    private const int Floor5ByDay = 18;
     private const int MinAliveAtEnd = 3;      // recruit trickle keeps the town alive
     private const int GrinWindowDays = 60;    // grin-rate measured over the last N days
     private const int MinBeatsPerWindow = 60; // ≥1 attribution beat per day once rolling
@@ -85,6 +92,9 @@ public class BalanceSimTests
 
         Assert.True(stats.FirstFloor5Day >= NoFloor5BeforeDay,
             $"floor 5 cleared on day {stats.FirstFloor5Day} — before the day-{NoFloor5BeforeDay} trivialization ceiling");
+        Assert.True(stats.FirstFloor5Day <= Floor5ByDay,
+            $"rung-0 (Mine/Sunken-Crypt) never cleared by day {Floor5ByDay} (first floor-5: "
+            + $"{(stats.FirstFloor5Day == int.MaxValue ? "never" : stats.FirstFloor5Day.ToString())})");
 
         Assert.True(stats.MinPlayerGold >= 0, $"player went insolvent (min gold {stats.MinPlayerGold})");
 
