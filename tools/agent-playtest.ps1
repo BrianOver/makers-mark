@@ -49,6 +49,40 @@
     `ollama ps` on both sides of that unload rather than assuming ollama's own eviction would have
     caught it in time.
 
+    Ignored when -BrainModel is set (split mode): the judge reuses the already-resident brain model
+    instead (see -BrainModel's own doc).
+
+.PARAMETER BrainModel
+    "the playtest learns to finish" wave, U2 (owner finding 2026-08-11 + fable census: 58 of 58 model
+    runs died on patience by day 3, ~1,190 of ~1,260 refusals were the 8B VISION model emitting
+    semantically empty commands -- freeform compose-a-command is beyond it). Default qwen3:14b: when
+    set (non-empty), the CHOICE call every turn goes to this dedicated reasoning model instead of
+    $Model, which keeps doing what it has always done -- narrate the frame -- in single-model mode
+    only. Empty string ('') means single-model mode: $Model narrates AND chooses, exactly today's
+    behaviour, kept as the A/B control arm.
+
+    RESIDENCY (ruling 10 + #452's unload discipline, made pure and testable in model-call.ps1's own
+    Get-ModelResidencyPlan): qwen3-vl:8b (~6.1 GB) + qwen3:14b (~9.3 GB) sum to ~15.4 GB, over this
+    project's ~14 GB VRAM ceiling if both stayed resident at once -- vision and brain do NOT swap in
+    and out per turn (that would cost a model load/unload twice per turn, all run long, for no
+    payoff worth the wall clock). Instead split mode never loads $Model at all: frame narration is
+    SKIPPED, not swapped, for the whole run -- the per-turn choice call goes to $BrainModel with the
+    state digest, screen text, and this turn's menu (see turn-prompt.ps1's own -NoImage note), which
+    already carry the observable facts a model needs to choose. This is a real, named deviation from
+    "the vision model narrates every turn" -- reported prominently, not silently absorbed. The judge
+    pass also reuses $BrainModel (already warm), so split mode costs exactly ONE model load and ONE
+    unload for the entire run -- FEWER swaps than single-model mode's own act-then-judge handoff, not
+    more. -JudgeModel is ignored when this is set.
+
+.PARAMETER PatienceMode
+    "the playtest learns to finish" wave, U3. Quit (default) is today's exact behaviour: an exhausted
+    patience meter ends the run. Sweep logs a would-have-quit MARKER instead (same Turn/Day/Phase
+    fields a real quit uses, plus the same drain-history headline text) and CONTINUES to the turn
+    budget -- the meter resets after each marker, so a run can log more than one over a long budget.
+    tools/playtest-sweep.ps1 passes Sweep by default (a sweep exists to measure the rest of a long
+    campaign, not stop the instant the model gets frustrated); this driver's own default stays Quit
+    so a bare interactive run behaves exactly as it always has.
+
 .PARAMETER Scripted
     Run a fixed command sequence instead of calling the model. Proves the channel without a model in
     the loop -- build order matters here, because a model in the loop while the channel is unproven
@@ -169,6 +203,9 @@ param(
     [int]$Turns = 40,
     [string]$Model = 'qwen3-vl:8b',
     [string]$JudgeModel = 'qwen3:14b',
+    [string]$BrainModel = 'qwen3:14b',
+    [ValidateSet('Quit', 'Sweep')]
+    [string]$PatienceMode = 'Quit',
     [switch]$Scripted,
     [int]$MinFreeGb = 8,
     [int]$MaxTempC = 83,
@@ -253,6 +290,19 @@ Say ('persona: ' + $personaName + ' (requested: ' + $Persona + ')')
 # meter) can branch on it without re-deriving $personaName -eq 'monkey' at each site.
 $isMonkey = ($personaName -eq 'monkey')
 $isAttached = ($personaName -eq 'attached')
+
+# U2 (playtest-finishes wave): the eyes/brain residency decision, made once, here -- see this file's
+# own .PARAMETER BrainModel doc and model-call.ps1's Get-ModelResidencyPlan for the VRAM math and the
+# reasoning. Computed unconditionally (cheap, pure) even for Scripted/monkey, which never reach the
+# GPU gate or the act loop's model branch at all -- $residency simply goes unused there, same as
+# $temperamentMeter staying $null for those two modes.
+$residency = Get-ModelResidencyPlan -Model $Model -BrainModel $BrainModel -JudgeModel $JudgeModel
+if ($residency.SplitMode) {
+    Say ('eyes/brain split: ACT+JUDGE calls go to brain model ' + $BrainModel +
+        ' -- vision model ' + $Model + ' is NOT loaded this run, frame narration is SKIPPED (state digest + screen text + menu only)')
+} else {
+    Say ('single-model mode: ' + $Model + ' narrates AND chooses (pass -BrainModel to split them)')
+}
 
 # W5 (docs/plans/2026-08-10-002): load and validate the scenario card, if any, BEFORE the GPU gate --
 # same fail-cheap-checks-first order as persona resolution just above. A missing or malformed card
@@ -463,8 +513,13 @@ if ($isMonkey) {
         $resident = @($ps.models | ForEach-Object { $_.name })
     } catch { }
 
-    if ($resident -contains $Model) {
-        Say ($Model + ' is already loaded, so the free-VRAM floor does not apply to it')
+    # U2 (playtest-finishes wave): the gate checks/warms $residency.ActModel -- $Model itself in
+    # single-model mode, $BrainModel in split mode. Split mode never checks or warms $Model at all:
+    # it is genuinely unused for the whole run (frame narration is skipped, not swapped -- see
+    # -BrainModel's own doc), so requiring it be pulled would refuse a run for a model this run will
+    # never call.
+    if ($resident -contains $residency.ActModel) {
+        Say ($residency.ActModel + ' is already loaded, so the free-VRAM floor does not apply to it')
     } elseif ($freeGb -lt $MinFreeGb) {
         Die @(
             ('only ' + $freeGb + ' GB VRAM free, floor is ' + $MinFreeGb + ' GB.'),
@@ -481,19 +536,23 @@ if ($isMonkey) {
         Die @(('ollama is not reachable at ' + $Endpoint + '.'), 'Start it (ollama serve) and retry.')
     }
     $have = @($tags.models | ForEach-Object { $_.name })
-    if ($have -notcontains $Model) {
+    if ($have -notcontains $residency.ActModel) {
+        $pullFlag = '-Model'
+        if ($residency.SplitMode) { $pullFlag = '-BrainModel' }
         Die @(
-            ('model ' + $Model + ' is not pulled. Available: ' + ($have -join ', ')),
-            ('Pull it (ollama pull ' + $Model + ') or pass -Model with one of the above.')
+            ('model ' + $residency.ActModel + ' is not pulled. Available: ' + ($have -join ', ')),
+            ('Pull it (ollama pull ' + $residency.ActModel + ') or pass ' + $pullFlag + ' with one of the above.')
         )
     }
-    # Checked here, before ANY turn runs, for the same reason $Model is: the judge call happens only
-    # after the whole turn budget is spent, and finding out THEN that $JudgeModel was never pulled
-    # would waste the entire run instead of one warm-up request.
-    if ($have -notcontains $JudgeModel) {
+    # Checked here, before ANY turn runs, for the same reason $residency.ActModel is: the judge call
+    # happens only after the whole turn budget is spent, and finding out THEN that the judge model was
+    # never pulled would waste the entire run instead of one warm-up request. Skipped outright when
+    # the judge model IS the act model (split mode's own reuse -- see -BrainModel's doc): it was just
+    # verified pulled two lines above, checking it twice would only ever repeat the same answer.
+    if (($residency.JudgeModel -ne $residency.ActModel) -and ($have -notcontains $residency.JudgeModel)) {
         Die @(
-            ('judge model ' + $JudgeModel + ' is not pulled. Available: ' + ($have -join ', ')),
-            ('Pull it (ollama pull ' + $JudgeModel + ') or pass -JudgeModel with one of the above.')
+            ('judge model ' + $residency.JudgeModel + ' is not pulled. Available: ' + ($have -join ', ')),
+            ('Pull it (ollama pull ' + $residency.JudgeModel + ') or pass -JudgeModel with one of the above.')
         )
     }
 
@@ -501,19 +560,19 @@ if ($isMonkey) {
     # 2026-08-04, llama3.2-vision:11b is listed by /api/tags and then dies with
     # "unknown model architecture: 'mllama'". Finding that out on turn 1 of a real run, after
     # launching the game, wastes the run and reads like a game bug.
-    Say ('warming ' + $Model)
+    Say ('warming ' + $residency.ActModel)
     # Warm through the SAME path a real turn uses, prompt file included. A warm-up that skips the
     # system prompt proves nothing: the 2026-08-04 failure was triggered by the prompt's own length,
     # so a short bespoke warm-up passed while all 22 real turns failed.
     $warm = $null
-    try { $warm = Invoke-Model (Get-Content (Join-Path $PSScriptRoot 'agent-playtest\prompts\act.md') -Raw) 'Reply with the single word ok.' $null } catch {
+    try { $warm = Invoke-Model (Get-Content (Join-Path $PSScriptRoot 'agent-playtest\prompts\act.md') -Raw) 'Reply with the single word ok.' $null $residency.ActModel } catch {
         Die @(
-            ('model ' + $Model + ' is pulled but will not run.'),
+            ('model ' + $residency.ActModel + ' is pulled but will not run.'),
             ('ollama said: ' + $_.Exception.Message),
             'If this is an architecture error, that model is unsupported by this ollama build -- pick another.'
         )
     }
-    if (-not $warm) { Die @(('model ' + $Model + ' returned nothing on a warm-up request through the real prompt path.')) }
+    if (-not $warm) { Die @(('model ' + $residency.ActModel + ' returned nothing on a warm-up request through the real prompt path.')) }
 }
 
 # --- Launch the client --------------------------------------------------------------------------
@@ -555,10 +614,16 @@ $stuckFindings = New-Object System.Collections.ArrayList
 $turn = 0
 $stopReason = 'turn budget reached'
 # W4: set together, once, at the moment a depleted meter ends the run -- see the loop's own patience
-# check for where these are assigned.
+# check for where these are assigned. Only ever set in -PatienceMode Quit (the default) -- Sweep mode
+# never breaks the loop on a depleted meter at all, see $wouldHaveQuitMarkers below.
 $temperamentQuitTurn = $null
 $temperamentQuitDay = $null
 $temperamentQuitPhase = $null
+
+# U3 (playtest-finishes wave): -PatienceMode Sweep's own record -- one entry per exhaustion the run
+# hit (never just the last), collected instead of ending the run. Stays empty for -PatienceMode Quit
+# (the default), and for Scripted/monkey (no meter at all).
+$wouldHaveQuitMarkers = New-Object System.Collections.ArrayList
 
 # A1 honesty counters. A run that mostly pressed advance must not read like a run the model
 # played -- these three numbers are what let the header and the exit code tell the difference.
@@ -831,12 +896,19 @@ try {
             $isScenarioSetupTurn = $true
         } else {
             $notesFullText = ($notesLines -join [Environment]::NewLine)
+            # U1 (playtest-finishes wave): THIS turn's numbered menu, built mechanically from the
+            # observation just received -- see model-call.ps1's own Build-ActMenu header for exactly
+            # what goes in it and why the ordering is deterministic.
+            $menuItems = Build-ActMenu -State $state
             # Surroundings, the interact prompt, and the beat all come straight off state.json (see
             # Build-ActUserText in agent-playtest\turn-prompt.ps1), so this narrates the world, never
             # invents it. Extracted to its own file so the beat-wiring fix below is provable with a
             # stubbed state object instead of a live Godot+ollama run -- see
-            # tools/test-agent-playtest-modes.ps1.
-            $userText = Build-ActUserText -State $state -Turn $turn -Turns $Turns -NotesText $notesFullText
+            # tools/test-agent-playtest-modes.ps1. -NoImage mirrors $residency.ActUsesImage: split
+            # mode never attaches a frame (see -BrainModel's own doc), so the prompt says so plainly
+            # rather than silently promising a screenshot act.md still describes.
+            $userText = Build-ActUserText -State $state -Turn $turn -Turns $Turns -NotesText $notesFullText `
+                -MenuItems $menuItems -NoImage:(-not $residency.ActUsesImage)
 
             # W4: the attached persona's own death check -- runs BEFORE the model is asked anything
             # this turn, so an injected "<name> is dead." line (and the major patience hit) rides
@@ -861,25 +933,29 @@ try {
 
             $attempts = 0
             $imageMissingThisTurn = $false
+            $actImagePath = $null
+            if ($residency.ActUsesImage) { $actImagePath = $framePath }
             while ($attempts -lt $ModelCallMaxAttempts -and -not $command) {
                 $attempts++
                 $reply = ''
-                try { $reply = Invoke-Model $actPrompt $userText $framePath $null $actionSchemaJson } catch { Warn ('model call failed: ' + $_.Exception.Message) }
+                try { $reply = Invoke-Model $actPrompt $userText $actImagePath $residency.ActModel $actionSchemaJson } catch { Warn ('model call failed: ' + $_.Exception.Message) }
 
-                # W1 (docs/plans/2026-08-10-002): with format=action-schema.json constraining decoding,
-                # the reply can no longer arrive as prose-wrapped JSON or a folded verb -- the old
-                # regex JSON-extract and the NORMALIZE block that used to sit here are DELETED, not
-                # relocated (see agent-playtest\model-call.ps1's own header for the full argument).
-                # Get-LegalCommandFromReply still catches what schema decoding cannot: an empty/failed
-                # call, or (ruling 1, kept ON PURPOSE) a real verb aimed at a control that is disabled
-                # right now -- an illegal press is signal the frustration map needs, so this refuses it
-                # and feeds the reason back rather than silently rewriting it. U1 (eyes-learn-labels):
-                # -EnabledControlLabels lets a press that named a LABEL ("Close") resolve to the real
-                # control NAME ("CloseLedger") instead of refusing outright -- see model-call.ps1's own
-                # header for the campaign evidence this closes.
-                $legal = Get-LegalCommandFromReply -Reply $reply -EnabledControls $enabled -EnabledControlLabels $state.controls
+                # U1 (playtest-finishes wave): menu-choice acting replaces the old freeform
+                # action/target/dir composition -- with format=action-schema.json now constraining
+                # decoding to {"choice": <int>, "why": "...", "note": "..."}, a reply can only ever be
+                # a well-formed integer pick or a defect (empty reply, missing/non-integer choice).
+                # Get-LegalCommandFromMenuChoice resolves it against THIS turn's own $menuItems and
+                # rebuilds EXACTLY the command the old free-form path would have sent for that verb
+                # (model-call.ps1's Get-CommandTextFromMenuItem, reusing Get-ResolvedPressCommandText
+                # verbatim for press) -- ruling 1's "an illegal outcome is signal" still holds: an
+                # out-of-range choice refuses here, and the kernel can still separately reject the
+                # resulting command once it reaches the client (that rejection still lands in the
+                # backend log exactly as before). Get-LegalCommandFromReply (the old free-form checker)
+                # is RETAINED in model-call.ps1, not deleted, purely because Get-ResolvedPressCommandText
+                # is reused by the new path -- see that file's own header.
+                $legal = Get-LegalCommandFromMenuChoice -Reply $reply -MenuItems $menuItems
                 if ($legal.Refused) {
-                    $userText = $userText + [Environment]::NewLine + ('REFUSED: ' + $legal.Reason + '. Enabled controls: ' + ($enabledDescriptors -join ', '))
+                    $userText = $userText + [Environment]::NewLine + ('REFUSED: ' + $legal.Reason + '. Reply with the "choice" number from the menu shown above.')
                     Warn ('turn ' + $turn + ' attempt ' + $attempts + ' refused: ' + $legal.Reason)
                     # W2: raw material for Get-RefusalFrustrationMap -- recorded here, at the ONE place
                     # that already knows both the reason text and which turn/phase it happened in,
@@ -901,9 +977,6 @@ try {
                             -Phase $state.phase -Detail $refusalControl
                     }
                     continue
-                }
-                if ($legal.ResolvedFromLabel) {
-                    Warn ('turn ' + $turn + ' attempt ' + $attempts + ' resolved label "' + $legal.ResolvedFromLabel + '" -> control "' + $legal.ResolvedToName + '"')
                 }
                 $command = $legal.Command
             }
@@ -1031,12 +1104,29 @@ try {
         # W4: an empty meter ends the run (ruling 8) -- checked once per turn, after every drain/reset
         # site above has had its chance to run, so the very drain that emptied it is already reflected
         # here. Captured turn/day/phase feed Get-TemperamentQuitFinding once the loop has exited.
+        #
+        # U3 (playtest-finishes wave): -PatienceMode Sweep logs a would-have-quit MARKER instead of
+        # ending the run -- the default, Quit, keeps today's exact break-the-loop behaviour UNCHANGED
+        # below. A marker carries the same Turn/Day/Phase a real quit uses, plus the same drain-history
+        # headline text
+        # (Get-WouldHaveQuitMarker reuses Get-TemperamentQuitFinding's own walk, temperament.ps1) --
+        # then RESETS the meter (a full second wind, ruling 8's own shape, not a partial refund) so a
+        # LATER exhaustion in the same long run produces its own independent marker rather than never
+        # firing again. The run continues to the turn budget either way.
         if ($temperamentMeter -and $temperamentMeter.Depleted) {
-            $temperamentQuitTurn = $turn
-            $temperamentQuitDay = $state.day
-            $temperamentQuitPhase = $state.phase
-            $stopReason = 'patience exhausted (see the Patience section below)'
-            break
+            if ($PatienceMode -eq 'Sweep') {
+                $marker = Get-WouldHaveQuitMarker -Meter $temperamentMeter -Turn $turn -Day $state.day -Phase $state.phase
+                [void]$wouldHaveQuitMarkers.Add($marker)
+                Warn ('WOULD-HAVE-QUIT (Sweep mode, continuing to the turn budget): ' + $marker.Trigger)
+                Reset-TemperamentMeter -Meter $temperamentMeter -Turn $turn -Day $state.day -Phase $state.phase `
+                    -Surface 'patience reset after a would-have-quit marker (Sweep mode)'
+            } else {
+                $temperamentQuitTurn = $turn
+                $temperamentQuitDay = $state.day
+                $temperamentQuitPhase = $state.phase
+                $stopReason = 'patience exhausted (see the Patience section below)'
+                break
+            }
         }
 
         if ($parsedCmd.action -eq 'stop') { $stopReason = 'model asked to stop: ' + $parsedCmd.why; break }
@@ -1138,7 +1228,8 @@ Say ('coverage: ' + $coverageReport.OverallTouched + ' of ' + $coverageReport.Ov
 # just above, so a run that dies before the judge pass still leaves metrics.json and its findings.md
 # section behind. Depends only on $turnRecords/$preRefusals (built during the loop above) and
 # $backendSummary (already computed) -- no model, no Godot.
-$metricsSummary = Get-MetricsSummary -TurnRecords @($turnRecords) -PreRefusals @($preRefusals) -BackendSummary $backendSummary
+$metricsSummary = Get-MetricsSummary -TurnRecords @($turnRecords) -PreRefusals @($preRefusals) -BackendSummary $backendSummary `
+    -PatienceMode $PatienceMode -WouldHaveQuitMarkers @($wouldHaveQuitMarkers)
 $metricsMarkdown = Format-MetricsMarkdown -Metrics $metricsSummary
 ($metricsSummary | ConvertTo-Json -Depth 8) | Set-Content -Path $metricsJsonPath -Encoding utf8
 Say ('metrics: ' + @($metricsSummary.PerDayEntropy).Count + ' day(s) of entropy data, product-sentence fired: ' +
@@ -1226,7 +1317,11 @@ $header = @(
     '',
     ('- scope: ' + $Scope),
     ('- model: ' + $Model),
-    ('- judge model: ' + $JudgeModel),
+    # U2 (playtest-finishes wave): both model names, per the plan's own requirement. Split mode's
+    # judge line says so explicitly (reusing the brain model, never a stale $JudgeModel name it did
+    # not actually call) -- see $residency's own header note (model-call.ps1's Get-ModelResidencyPlan).
+    ('- judge model: ' + $(if ($residency.SplitMode) { $residency.JudgeModel + ' (reusing the brain model, already resident)' } else { $JudgeModel })),
+    ('- brain model: ' + $(if ($residency.SplitMode) { $BrainModel } else { '(none -- single-model mode, ' + $Model + ' narrates AND chooses)' })),
     $personaHeaderLine,
     ('- turns: ' + $turn + ' (stopped: ' + $stopReason + ')'),
     ('- completion: ' + $turn + ' of ' + $Turns + ' budgeted turns (' + $completionPct + '%)'),
@@ -1247,10 +1342,17 @@ $header = @(
 # explicitly rather than just omitted, so a reader never has to guess whether it was forgotten.
 if ($temperamentMeter) {
     $header += ('- temperament version: ' + $temperamentMeter.Version)
+    # U3 (playtest-finishes wave): the patience mode is always named, Quit or Sweep -- a reader must
+    # never have to guess which ending rule this run used just because -PatienceMode wasn't the
+    # default.
+    $header += ('- patience mode: ' + $PatienceMode)
     if ($temperamentMeter.Depleted -and $temperamentQuitFinding) {
         $header += ('- patience: exhausted -- ' + $temperamentQuitFinding.Headline)
     } else {
         $header += ('- patience: ' + (Get-TemperamentBudgetEndNote -Meter $temperamentMeter))
+    }
+    if ($wouldHaveQuitMarkers.Count -gt 0) {
+        $header += ('- would-have-quit markers (Sweep mode): ' + $wouldHaveQuitMarkers.Count)
     }
 } else {
     $header += '- temperament: not used (Scripted or monkey run -- no persona frustration to measure)'
@@ -1340,7 +1442,7 @@ $metricsSection = @('', '---', '') + @($metricsMarkdown)
 # site below is always safe (an empty array contributes nothing to the joined text).
 $temperamentSection = @()
 if ($temperamentMeter) {
-    $temperamentSection = @('', '---', '') + ((Format-TemperamentMarkdown -Meter $temperamentMeter -QuitFinding $temperamentQuitFinding) -split [Environment]::NewLine)
+    $temperamentSection = @('', '---', '') + ((Format-TemperamentMarkdown -Meter $temperamentMeter -QuitFinding $temperamentQuitFinding -WouldHaveQuitMarkers @($wouldHaveQuitMarkers)) -split [Environment]::NewLine)
 }
 
 # W5: the "## Scenario verdict" section -- declared here (empty) so every Set-Content site below can
@@ -1363,6 +1465,17 @@ if ($isAttached -and $attachedHeroName) {
          'is whether the game SURFACES the payoff to an already-attached player, never whether ' +
          'attachment "formed."')
     )
+}
+# U3 (playtest-finishes wave): the footer names the patience mode explicitly whenever a meter was
+# used at all -- Quit or Sweep, never left to be inferred from whether the run happened to stop early.
+if ($temperamentMeter) {
+    $patienceFooterLine = '- **Patience mode: Quit** -- an exhausted meter ENDS the run (today''s default behaviour).'
+    if ($PatienceMode -eq 'Sweep') {
+        $patienceFooterLine = '- **Patience mode: Sweep** -- an exhausted meter logs a would-have-quit marker ' +
+            '(' + $wouldHaveQuitMarkers.Count + ' this run) and CONTINUES to the turn budget instead of ending ' +
+            'the run; see the Patience section above for each marker''s trigger.'
+    }
+    $footerExtraLines = @($footerExtraLines) + @($patienceFooterLine)
 }
 $honestyFooterLines = Get-HonestyFooterLines -ExtraLines $footerExtraLines
 
@@ -1414,33 +1527,43 @@ if ($Scope -eq 'Scout') {
     $mechanicalSection = @('', '---', '') + @($mechanicalText)
 }
 
-# Ruling 10 (docs/plans/2026-08-10-002): $Model (~6.1 GB, qwen3-vl:8b by default) and $JudgeModel
-# (~9.3 GB, qwen3:14b by default) sum past this project's 14 GB VRAM ceiling if both stayed resident
-# at once. Rather than trust ollama's own idle-eviction to win that race, explicitly release $Model
-# first -- `ollama stop` is a real, synchronous CLI unload, simpler than a bespoke keep_alive=0 request
-# whose reply would just be thrown away. `ollama ps` is logged on both sides of the unload (Say, so it
-# lands in driver.log too) so a live run can be READ, not just assumed, at the exact handoff point.
+# Ruling 10 (docs/plans/2026-08-10-002) + U2 (playtest-finishes wave): single-model mode's own
+# $Model (~6.1 GB, qwen3-vl:8b by default) and $JudgeModel (~9.3 GB, qwen3:14b by default) sum past
+# this project's 14 GB VRAM ceiling if both stayed resident at once, so $residency.UnloadBeforeJudge
+# names what must go first -- $Model in single-model mode, NOTHING in split mode (the brain model is
+# already the only thing resident, and the judge call below reuses it -- see -BrainModel's own doc
+# and model-call.ps1's Get-ModelResidencyPlan). `ollama stop` is a real, synchronous CLI unload,
+# simpler than a bespoke keep_alive=0 request whose reply would just be thrown away. `ollama ps` is
+# logged on both sides (Say, so it lands in driver.log too) so a live run can be READ, not just
+# assumed, at the exact handoff point.
 $residentBefore = @()
 try {
     $psBefore = Invoke-RestMethod -Uri ($Endpoint + '/api/ps') -TimeoutSec 10
     $residentBefore = @($psBefore.models | ForEach-Object { $_.name + ' (' + [math]::Round($_.size / 1GB, 1) + ' GB)' })
 } catch { Warn ('ollama ps (pre-unload) failed: ' + $_.Exception.Message) }
 Say ('ollama ps before judge handoff: ' + (($residentBefore -join ', ')))
-# NOT `2>&1` on this call. Measured live (W1 verification): `ollama stop` writes its own progress
-# spinner as ANSI control codes to STDERR even on a clean, successful unload -- confirmed by `ollama
-# ps` actually showing $Model gone right after. Under this script's `$ErrorActionPreference = 'Stop'`,
-# redirecting a native command's stderr with `2>&1` in Windows PowerShell 5.1 wraps each stderr write
-# in a terminating NativeCommandError (see docs/debugging.md-adjacent lesson on this exact PS 5.1
-# 2>&1 trap), so the unload was silently succeeding while this line reported it as failed. Leaving
-# stderr unredirected here lets a REAL failure still surface as non-zero exit / thrown error without
-# manufacturing a false one out of the spinner's own output.
-try { & ollama stop $Model | Out-Null } catch { Warn ('ollama stop ' + $Model + ' failed: ' + $_.Exception.Message) }
+if (@($residency.UnloadBeforeJudge).Count -eq 0) {
+    Say 'split mode: nothing to unload before the judge call -- the brain model stays resident and is reused directly'
+} else {
+    foreach ($toUnload in $residency.UnloadBeforeJudge) {
+        # NOT `2>&1` on this call. Measured live (W1 verification): `ollama stop` writes its own
+        # progress spinner as ANSI control codes to STDERR even on a clean, successful unload --
+        # confirmed by `ollama ps` actually showing the model gone right after. Under this script's
+        # `$ErrorActionPreference = 'Stop'`, redirecting a native command's stderr with `2>&1` in
+        # Windows PowerShell 5.1 wraps each stderr write in a terminating NativeCommandError (see
+        # docs/debugging.md-adjacent lesson on this exact PS 5.1 2>&1 trap), so the unload was
+        # silently succeeding while this line reported it as failed. Leaving stderr unredirected
+        # here lets a REAL failure still surface as non-zero exit / thrown error without
+        # manufacturing a false one out of the spinner's own output.
+        try { & ollama stop $toUnload | Out-Null } catch { Warn ('ollama stop ' + $toUnload + ' failed: ' + $_.Exception.Message) }
+    }
+}
 $residentAfter = @()
 try {
     $psAfter = Invoke-RestMethod -Uri ($Endpoint + '/api/ps') -TimeoutSec 10
     $residentAfter = @($psAfter.models | ForEach-Object { $_.name + ' (' + [math]::Round($_.size / 1GB, 1) + ' GB)' })
 } catch { Warn ('ollama ps (post-unload) failed: ' + $_.Exception.Message) }
-Say ('ollama ps after unloading ' + $Model + ', before judge call to ' + $JudgeModel + ': ' + (($residentAfter -join ', ')))
+Say ('ollama ps before judge call to ' + $residency.JudgeModel + ': ' + (($residentAfter -join ', ')))
 
 Say 'asking the model to write findings'
 # W2: $log is now Build-PerDayJudgeDigest's own per-day digest (see this file's own comment above
@@ -1469,9 +1592,10 @@ if ($scenarioCard) {
 $findings = ''
 # No image on the judge pass: the LOG is what carries the findings, and a 134 KB frame costs
 # context that the log needs. Visual findings come from the act turns, which do see frames.
-# $JudgeModel, not $Model -- see this file's own .PARAMETER JudgeModel doc for why the judge is a
+# $residency.JudgeModel -- $JudgeModel in single-model mode, the already-resident brain model in
+# split mode -- see this file's own .PARAMETER JudgeModel/-BrainModel docs for why the judge is a
 # dedicated text model rather than the vision model that just played.
-try { $findings = Invoke-Model $judgePrompt (($judgeInput) -join [Environment]::NewLine) $null $JudgeModel } catch { Warn ('judge call failed: ' + $_.Exception.Message) }
+try { $findings = Invoke-Model $judgePrompt (($judgeInput) -join [Environment]::NewLine) $null $residency.JudgeModel } catch { Warn ('judge call failed: ' + $_.Exception.Message) }
 
 # THE JUDGE MUST NOT OVERSTAY. Found by the 2026-08-10 shakedown, in the first hour of the first
 # sweep on the new stack: ruling 10 unloads $Model before the judge, but nothing unloaded
@@ -1481,8 +1605,12 @@ try { $findings = Invoke-Model $judgePrompt (($judgeInput) -join [Environment]::
 # residency was the defect). The gate's resident-model exemption (#433) deliberately covers only
 # the model the run itself is about to use, so a leftover judge can never ride it. Same idiom as
 # the ruling-10 unload above: synchronous CLI stop, stderr unredirected (the PS 5.1 2>&1 trap).
-try { & ollama stop $JudgeModel | Out-Null } catch { Warn ('ollama stop ' + $JudgeModel + ' failed: ' + $_.Exception.Message) }
-Say ('judge model ' + $JudgeModel + ' unloaded -- the next run''s GPU gate starts clean')
+# $residency.UnloadAfterRun (U2, playtest-finishes wave): $JudgeModel in single-model mode, the
+# brain model in split mode -- either way, exactly what was left resident by the judge call above.
+foreach ($toUnload in $residency.UnloadAfterRun) {
+    try { & ollama stop $toUnload | Out-Null } catch { Warn ('ollama stop ' + $toUnload + ' failed: ' + $_.Exception.Message) }
+    Say ($toUnload + ' unloaded -- the next run''s GPU gate starts clean')
+}
 
 # W5: the "## Scenario verdict" section -- written ABOVE the model's own prose at every Set-Content
 # site below (mirrors $backendSection/$metricsSection/$deadVerbSection/$temperamentSection's own

@@ -685,21 +685,25 @@ $actionSchemaObj = $null
 try { $actionSchemaObj = $actionSchemaRaw | ConvertFrom-Json } catch { }
 Check ($null -ne $actionSchemaObj) 'action-schema.json must parse as valid JSON'
 
+# "the playtest learns to finish" wave, U1: the schema's own reply contract becomes
+# {"choice": <int>, "why": "...", "note": "..."} -- menu-choice acting replaces free-form
+# action/target/dir composition entirely (58 of 58 model runs died on patience by day 3, ~1,190 of
+# ~1,260 refusals were the 8B model emitting semantically EMPTY freeform commands -- fable census).
 if ($actionSchemaObj) {
     Check ($actionSchemaObj.type -eq 'object') 'action-schema.json must be a flat object schema'
-    $actionEnum = @($actionSchemaObj.properties.action.enum)
-    Check (($actionEnum | Sort-Object) -join ',' -eq 'advance,key,move,press,stop') ('action-schema.json''s action enum must be exactly the 5 bridge verbs, got [' + ($actionEnum -join ',') + ']')
-    # Ruling 1 (docs/plans/2026-08-10-002): the schema must NOT enum the enabled controls -- an
-    # illegal press IS signal. This is the mechanical proof that "target" stays an open string.
-    $targetPropNames = @($actionSchemaObj.properties.target.PSObject.Properties.Name)
-    Check ($targetPropNames -notcontains 'enum') 'action-schema.json''s "target" property must NOT be an enum (ruling 1: an illegal press must stay possible)'
-    Check ($actionSchemaObj.properties.target.type -eq 'string') 'action-schema.json''s "target" must be a plain string'
-    $dirEnum = @($actionSchemaObj.properties.dir.enum)
-    Check (($dirEnum | Sort-Object) -join ',' -eq 'down,down+left,down+right,left,right,up,up+left,up+right') ('action-schema.json''s dir enum must be exactly the 8 cardinal/diagonal directions, got [' + ($dirEnum -join ',') + ']')
+    Check ($actionSchemaObj.properties.choice.type -eq 'integer') 'action-schema.json''s "choice" property must be typed integer (constrained decoding)'
     Check ($null -ne $actionSchemaObj.properties.why) 'action-schema.json must have a "why" property'
-    Check ($null -ne $actionSchemaObj.properties.note) 'action-schema.json must have an optional "note" property (W4 will use it; added now per the plan to avoid a second schema PR)'
+    Check ($actionSchemaObj.properties.why.type -eq 'string') 'action-schema.json''s "why" must be a plain string'
+    Check ($null -ne $actionSchemaObj.properties.note) 'action-schema.json must have an optional "note" property'
+    Check ($actionSchemaObj.properties.note.type -eq 'string') 'action-schema.json''s "note" must be a plain string'
     $requiredFields = @($actionSchemaObj.required)
-    Check (($requiredFields | Sort-Object) -join ',' -eq 'action,why') ('action-schema.json must require exactly [action, why], got [' + ($requiredFields -join ',') + ']')
+    Check (($requiredFields | Sort-Object) -join ',' -eq 'choice,why') ('action-schema.json must require exactly [choice, why], got [' + ($requiredFields -join ',') + ']')
+    # The old freeform properties (action/target/dir/frames) must be gone entirely -- a leftover
+    # "action" enum property would silently re-legalise composing a verb by hand.
+    $propNames = @($actionSchemaObj.properties.PSObject.Properties.Name)
+    Check ($propNames -notcontains 'action') 'action-schema.json must NOT carry the old "action" property -- the model no longer composes a verb'
+    Check ($propNames -notcontains 'target') 'action-schema.json must NOT carry the old "target" property -- the model no longer names a control'
+    Check ($propNames -notcontains 'dir') 'action-schema.json must NOT carry the old "dir" property'
 }
 
 # Build-ModelRequestBody: format is spliced in as a real JSON OBJECT value, not a JsonEsc-escaped
@@ -713,7 +717,7 @@ Check ($null -ne $parsedBodyWithSchema) 'Build-ModelRequestBody with a schema mu
 if ($parsedBodyWithSchema) {
     Check ($parsedBodyWithSchema.model -eq 'qwen3-vl:8b') 'request body must carry the model name'
     Check ($null -ne $parsedBodyWithSchema.format) 'request body must contain "format" when a schema is passed'
-    Check (@($parsedBodyWithSchema.format.properties.action.enum) -contains 'press') 'request body''s format.properties.action.enum must contain press (the schema survived the splice as a live object)'
+    Check ($parsedBodyWithSchema.format.properties.choice.type -eq 'integer') 'request body''s format.properties.choice.type must be integer (the schema survived the splice as a live object)'
     Check ($parsedBodyWithSchema.options.temperature -eq 0) 'request body must set temperature 0 on a schema-constrained call'
     Check ($parsedBodyWithSchema.messages.Count -eq 2) 'request body must carry exactly one system + one user message'
 }
@@ -793,7 +797,7 @@ Check ($emptyDirReply.Refused -eq $true) 'a "move" with an empty-string "dir" mu
 $legalCardinalMove = Get-LegalCommandFromReply -Reply '{"action":"move","dir":"right","frames":20,"why":"go right"}' -EnabledControls @()
 Check ($legalCardinalMove.Refused -eq $false) 'a move with a legal cardinal dir must not be refused'
 $legalDiagonalMove = Get-LegalCommandFromReply -Reply '{"action":"move","dir":"up+left","frames":20,"why":"go diagonal"}' -EnabledControls @()
-Check ($legalDiagonalMove.Refused -eq $false) 'a move with a legal diagonal dir (matching action-schema.json''s own enum) must not be refused'
+Check ($legalDiagonalMove.Refused -eq $false) 'a move with a legal diagonal dir (matching $script:KnownMoveDirs -- action-schema.json no longer carries a dir enum at all, U1 of the playtest-finishes wave) must not be refused'
 $illegalDirWord = Get-LegalCommandFromReply -Reply '{"action":"move","dir":"north","why":"nope"}' -EnabledControls @()
 Check ($illegalDirWord.Refused -eq $true) 'a move dir outside the known 8 (e.g. "north") must be refused'
 
@@ -902,10 +906,12 @@ $labelControlText = Build-ActUserText -State $labelControlState -Turn 1 -Turns 4
 Check ($labelControlText -like '*CloseLedger -- label: "Close"*') ('the Controls: block must show the differing-label descriptor, got a text without it: [' + $labelControlText + ']')
 Check ($labelControlText -notlike '*AdvancePhase -- label*') 'an identical-label control must render as its bare name with no redundant suffix'
 
-# act.md must carry the new rule naming the target field as always-a-name.
+# "the playtest learns to finish" wave, U1: act.md's old "target field is always a NAME" rule is
+# GONE, not relocated -- the model never types a name or a label any more, only a menu index.
 $actMdRawText = Get-Content (Join-Path $toolsDir 'agent-playtest\prompts\act.md') -Raw
-Check ($actMdRawText -like '*target*field*always*NAME*' -or $actMdRawText -like '*always a control''s NAME*') 'act.md must carry a rule stating the target field is always a control NAME'
-Check ($actMdRawText -like '*never*empty*' -or $actMdRawText -like '*never empty*') 'act.md''s new rule must also say the target must never be empty'
+Check ($actMdRawText -notlike '*target*field*always*NAME*' -and $actMdRawText -notlike '*always a control''s NAME*') 'act.md must NOT still carry the old "target field is always a NAME" rule -- U1 replaced typed targets with a menu index'
+Check ($actMdRawText -like '*choice*') 'act.md must document the new "choice" reply field'
+Check ($actMdRawText -like '*NUMBERED MENU*' -or $actMdRawText -like '*numbered menu*') 'act.md must tell the model to expect a numbered menu each turn'
 
 # NORMALIZE/regex-extract are DELETED, not relocated -- grep the real script text for the specific
 # code shapes that used to live in the per-turn loop (not just the word "NORMALIZE", which the
@@ -913,7 +919,11 @@ Check ($actMdRawText -like '*never*empty*' -or $actMdRawText -like '*never empty
 $agentPlaytestRawText = Get-Content (Join-Path $toolsDir 'agent-playtest.ps1') -Raw
 Check ($agentPlaytestRawText -notlike '*[regex]::Match($reply*') 'the old regex JSON-extract call ([regex]::Match($reply, ...)) must be gone from agent-playtest.ps1'
 Check ($agentPlaytestRawText -notlike '*normalized "*') 'the old NORMALIZE Say(''normalized "..."'') message must be gone from agent-playtest.ps1'
-Check ($agentPlaytestRawText -like '*Get-LegalCommandFromReply*') 'agent-playtest.ps1 must call the new Get-LegalCommandFromReply in its place'
+# "the playtest learns to finish" wave, U1: the main act loop now resolves a MENU CHOICE, not a
+# free-form reply -- Get-LegalCommandFromReply is RETAINED in model-call.ps1 (its own header explains
+# why: Get-ResolvedPressCommandText is reused by the new path) but is no longer the call site here.
+Check ($agentPlaytestRawText -like '*Get-LegalCommandFromMenuChoice*') 'agent-playtest.ps1 must call Get-LegalCommandFromMenuChoice in its per-turn attempts loop'
+Check ($agentPlaytestRawText -like '*Build-ActMenu*') 'agent-playtest.ps1 must call Build-ActMenu to build each turn''s menu'
 Check ($agentPlaytestRawText -like '*action-schema.json*') 'agent-playtest.ps1 must load action-schema.json and pass it as the act calls'' format'
 
 # Honesty footer (W1): present as a pure, testable function so a scripted/live run is not the only
@@ -924,6 +934,153 @@ Check ($footerText -like '*Game feel*') 'the honesty footer must name game feel 
 Check ($footerText -like '*Tone register*') 'the honesty footer must name tone register by that term'
 Check ($footerText -like '*Emotional weight*') 'the honesty footer must name emotional weight by that term'
 Check ($footerText -like '*cannot ask*') 'the honesty footer must say silence on these is not a clean bill'
+
+# --- 11a. Menu-choice acting (U1, "the playtest learns to finish" wave) ---------------------------
+# Owner finding 2026-08-11 + fable census: 58 of 58 model runs died on patience by day 3, ~1,190 of
+# ~1,260 refusals were the 8B model emitting semantically EMPTY freeform commands. Build-ActMenu /
+# Get-LegalCommandFromMenuChoice (model-call.ps1, already dot-sourced above) replace composing JSON
+# with picking a number.
+
+$menuStateNoMoveNoInteract = [pscustomobject]@{
+    canMove        = $false
+    interactPrompt = ''
+    nearby         = @()
+    controls       = @(
+        [pscustomobject]@{ name = 'OpenShop'; label = 'Open Shop'; enabled = $true }
+        [pscustomobject]@{ name = 'CloseLedger'; label = 'Close'; enabled = $true }
+        [pscustomobject]@{ name = 'BuyMat_copper'; label = 'Buy'; enabled = $false }
+    )
+}
+$menuBasic = Build-ActMenu -State $menuStateNoMoveNoInteract
+
+# Item 0 is always advance.
+Check ($menuBasic.Count -gt 0) 'Build-ActMenu must never return an empty menu'
+Check ($menuBasic[0].Index -eq 0) 'menu item 0 must always exist'
+Check ($menuBasic[0].Command.Action -eq 'advance') 'menu item 0 must always resolve to advance'
+Check ($menuBasic[0].DisplayText -like '0.*advance*') 'menu item 0''s display text must name advance'
+
+# Only ENABLED controls get a menu item -- the disabled BuyMat_copper must never appear.
+$pressItems = @($menuBasic | Where-Object { $_.Command.Action -eq 'press' })
+Check ($pressItems.Count -eq 2) ('exactly 2 enabled controls must produce exactly 2 press menu items, got ' + $pressItems.Count)
+Check (@($pressItems | Where-Object { $_.Command.Target -eq 'BuyMat_copper' }).Count -eq 0) 'a DISABLED control must never appear in the menu at all'
+
+# Label+name both shown -- CloseLedger/Close differ, so the descriptor must show both (reuses
+# Format-ControlDescriptor, already proven correct by the eyes-learn-labels section above).
+$closeItem = @($menuBasic | Where-Object { $_.Command.Target -eq 'CloseLedger' }) | Select-Object -First 1
+Check ($null -ne $closeItem) 'the CloseLedger control must produce a menu item'
+Check ($closeItem.DisplayText -like '*CloseLedger -- label: "Close"*') ('a differing label must show both name and label in the menu, got [' + $closeItem.DisplayText + ']')
+
+# No move items when canMove is false; cancel is always present (no per-turn legality signal exists
+# for it); interact is absent when neither interactPrompt nor any nearby.inRange is true.
+Check (@($menuBasic | Where-Object { $_.Command.Action -eq 'move' }).Count -eq 0) 'canMove=false must produce zero move menu items'
+Check (@($menuBasic | Where-Object { $_.Command.Action -eq 'key' -and $_.Command.Target -eq 'cancel' }).Count -eq 1) 'cancel must always appear exactly once, canMove or not'
+Check (@($menuBasic | Where-Object { $_.Command.Action -eq 'key' -and $_.Command.Target -eq 'interact' }).Count -eq 0) 'interact must be ABSENT when neither interactPrompt nor any nearby.inRange is true'
+
+# canMove=true adds exactly the 8 fixed directions, in $script:KnownMoveDirs order.
+$menuStateCanMove = [pscustomobject]@{
+    canMove        = $true
+    interactPrompt = ''
+    nearby         = @()
+    controls       = @()
+}
+$menuWithMove = Build-ActMenu -State $menuStateCanMove
+$moveItems = @($menuWithMove | Where-Object { $_.Command.Action -eq 'move' })
+Check ($moveItems.Count -eq 8) ('canMove=true must add exactly 8 move menu items, got ' + $moveItems.Count)
+Check ((@($moveItems | ForEach-Object { $_.Command.Dir }) -join ',') -eq ($script:KnownMoveDirs -join ',')) 'move menu items must appear in $script:KnownMoveDirs order'
+
+# interactPrompt present -> interact legal; nearby.inRange present -> interact legal too (the
+# "YOU ARE HERE, press interact" building case, a SEPARATE signal from interactPrompt).
+$menuStateInteractPrompt = [pscustomobject]@{ canMove = $false; interactPrompt = 'Press E to open the chest'; nearby = @(); controls = @() }
+Check (@((Build-ActMenu -State $menuStateInteractPrompt) | Where-Object { $_.Command.Action -eq 'key' -and $_.Command.Target -eq 'interact' }).Count -eq 1) 'a non-empty interactPrompt must make interact legal'
+
+$menuStateNearbyInRange = [pscustomobject]@{ canMove = $true; interactPrompt = ''; nearby = @([pscustomobject]@{ inRange = $true }); controls = @() }
+Check (@((Build-ActMenu -State $menuStateNearbyInRange) | Where-Object { $_.Command.Action -eq 'key' -and $_.Command.Target -eq 'interact' }).Count -eq 1) 'a nearby entry with inRange=true must also make interact legal'
+
+# Deterministic ordering: the SAME inputs must number identically across two separate calls (proves
+# stability across turns for the same enabled-control/canMove/interact set, not just "some order").
+$menuAgain = Build-ActMenu -State $menuStateNoMoveNoInteract
+Check ((@($menuBasic | ForEach-Object { $_.DisplayText }) -join '|') -eq (@($menuAgain | ForEach-Object { $_.DisplayText }) -join '|')) 'Build-ActMenu must number identically across two calls given the same inputs'
+
+# Resolution: choice N must resolve to EXACTLY the command the OLD free-form path would have sent
+# for that verb -- proven by comparing parsed fields, not raw text (key ORDER is an implementation
+# detail; the VALUES are the contract).
+$openShopItem = @($menuBasic | Where-Object { $_.Command.Target -eq 'OpenShop' }) | Select-Object -First 1
+$menuPressReply = '{"choice":' + $openShopItem.Index + ',"why":"try the shop","note":"remember this"}'
+$menuPressResult = Get-LegalCommandFromMenuChoice -Reply $menuPressReply -MenuItems $menuBasic
+Check ($menuPressResult.Refused -eq $false) 'a menu choice for an enabled control must not be refused'
+$menuPressParsed = $menuPressResult.Command | ConvertFrom-Json
+$legacyPressResult = Get-LegalCommandFromReply -Reply '{"action":"press","target":"OpenShop","why":"try the shop","note":"remember this"}' -EnabledControls @('OpenShop')
+$legacyPressParsed = $legacyPressResult.Command | ConvertFrom-Json
+Check ($menuPressParsed.action -eq $legacyPressParsed.action -and $menuPressParsed.target -eq $legacyPressParsed.target -and $menuPressParsed.why -eq $legacyPressParsed.why -and $menuPressParsed.note -eq $legacyPressParsed.note) ('a menu-resolved press must match the legacy free-form command field-for-field, got menu=[' + $menuPressResult.Command + '] legacy=[' + $legacyPressResult.Command + ']')
+
+$menuAdvanceReply = '{"choice":0,"why":"nothing else to do"}'
+$menuAdvanceResult = Get-LegalCommandFromMenuChoice -Reply $menuAdvanceReply -MenuItems $menuBasic
+$menuAdvanceParsed = $menuAdvanceResult.Command | ConvertFrom-Json
+Check ($menuAdvanceParsed.action -eq 'advance' -and $menuAdvanceParsed.why -eq 'nothing else to do') ('choice 0 must resolve to advance with the model''s own why text, got [' + $menuAdvanceResult.Command + ']')
+
+$moveItem = @($menuWithMove | Where-Object { $_.Command.Dir -eq 'right' }) | Select-Object -First 1
+$menuMoveReply = '{"choice":' + $moveItem.Index + ',"why":"go right"}'
+$menuMoveResult = Get-LegalCommandFromMenuChoice -Reply $menuMoveReply -MenuItems $menuWithMove
+$menuMoveParsed = $menuMoveResult.Command | ConvertFrom-Json
+Check ($menuMoveParsed.action -eq 'move' -and $menuMoveParsed.dir -eq 'right' -and $menuMoveParsed.frames -gt 0) ('choice resolving to move must produce action=move, dir=right, and a positive frames count, got [' + $menuMoveResult.Command + ']')
+
+# Out-of-range and missing choice both refuse -- still signal (ruling 1), still hits patience.
+$outOfRangeResult = Get-LegalCommandFromMenuChoice -Reply '{"choice":999,"why":"nope"}' -MenuItems $menuBasic
+Check ($outOfRangeResult.Refused -eq $true) 'an out-of-range choice must be Refused=true'
+Check ($outOfRangeResult.Reason -like '*out-of-range*') ('the reason must say out-of-range, got [' + $outOfRangeResult.Reason + ']')
+Check ($null -eq $outOfRangeResult.Command) 'a refused choice must not also return a Command'
+
+$missingChoiceResult = Get-LegalCommandFromMenuChoice -Reply '{"why":"no choice field at all"}' -MenuItems $menuBasic
+Check ($missingChoiceResult.Refused -eq $true) 'a reply with no "choice" field at all must be Refused=true'
+
+$emptyReplyMenuResult = Get-LegalCommandFromMenuChoice -Reply '' -MenuItems $menuBasic
+Check ($emptyReplyMenuResult.Refused -eq $true -and $emptyReplyMenuResult.Reason -eq 'empty reply') 'an empty reply must be Refused=true with reason "empty reply"'
+
+$nonIntegerChoiceResult = Get-LegalCommandFromMenuChoice -Reply '{"choice":"three","why":"nope"}' -MenuItems $menuBasic
+Check ($nonIntegerChoiceResult.Refused -eq $true) 'a non-integer choice value must be Refused=true'
+
+# Build-ActUserText: -MenuItems is OPTIONAL -- every pre-existing caller (every check above this
+# point that never passed it) must keep rendering byte-identically (proven by the "Answer with one
+# JSON object only." exact line surviving unchanged, and no "Choose ONE action" text appearing).
+$noMenuText = Build-ActUserText -State $nearbyState -Turn 1 -Turns 40
+Check ($noMenuText -like '*Answer with one JSON object only.*') 'with no -MenuItems passed, the old exact closing line must survive unchanged'
+Check ($noMenuText -notlike '*Choose ONE action*') 'with no -MenuItems passed, the numbered-menu block must not appear at all'
+
+$withMenuText = Build-ActUserText -State $nearbyState -Turn 1 -Turns 40 -MenuItems $menuBasic
+Check ($withMenuText -like '*Choose ONE action by its number:*') 'with -MenuItems passed, the numbered-menu block must appear'
+Check ($withMenuText -like '*0. advance*') 'the rendered menu must include item 0 (advance)'
+Check ($withMenuText -like '*"choice"*') 'with -MenuItems passed, the closing line must name the "choice" field'
+
+# --- 11b. Eyes/brain residency plan (U2, "the playtest learns to finish" wave) ---------------------
+$singleModePlan = Get-ModelResidencyPlan -Model 'qwen3-vl:8b' -BrainModel '' -JudgeModel 'qwen3:14b'
+Check ($singleModePlan.SplitMode -eq $false) 'an empty -BrainModel must resolve to single-model mode'
+Check ($singleModePlan.ActModel -eq 'qwen3-vl:8b') 'single-model mode''s ActModel must be the vision model'
+Check ($singleModePlan.ActUsesImage -eq $true) 'single-model mode must still attach an image every turn'
+Check ($singleModePlan.JudgeModel -eq 'qwen3:14b') 'single-model mode''s JudgeModel must be the dedicated judge model'
+Check (@($singleModePlan.UnloadBeforeJudge) -contains 'qwen3-vl:8b') 'single-model mode must unload the vision model before the judge call'
+Check (@($singleModePlan.UnloadAfterRun) -contains 'qwen3:14b') 'single-model mode must unload the judge model after the run'
+
+$splitModePlan = Get-ModelResidencyPlan -Model 'qwen3-vl:8b' -BrainModel 'qwen3:14b' -JudgeModel 'qwen3:14b'
+Check ($splitModePlan.SplitMode -eq $true) 'a non-empty -BrainModel must resolve to split mode'
+Check ($splitModePlan.ActModel -eq 'qwen3:14b') 'split mode''s ActModel must be the brain model'
+Check ($splitModePlan.ActUsesImage -eq $false) 'split mode must NOT attach an image (frame narration is skipped, not swapped)'
+Check ($splitModePlan.JudgeModel -eq 'qwen3:14b') 'split mode''s judge call must also go to the brain model'
+Check (@($splitModePlan.UnloadBeforeJudge).Count -eq 0) 'split mode must unload NOTHING before the judge call -- the brain model is already resident and reused'
+Check ((@($splitModePlan.UnloadAfterRun) -join ',') -eq 'qwen3:14b') 'split mode must unload exactly the brain model, once, after the run'
+
+# Build-ActUserText: -NoImage is a plain switch, off by default -- every pre-existing caller keeps
+# rendering with no "No screenshot" line at all.
+$defaultImageText = Build-ActUserText -State $nearbyState -Turn 1 -Turns 40
+Check ($defaultImageText -notlike '*No screenshot*') 'with -NoImage not passed, no "no screenshot" line must appear'
+$noImageText = Build-ActUserText -State $nearbyState -Turn 1 -Turns 40 -NoImage
+Check ($noImageText -like '*No screenshot this turn*') 'with -NoImage passed, the text-only note must appear'
+
+# Driver wiring: agent-playtest.ps1 must actually compute and use the residency plan, not just
+# import the function and never call it.
+Check ($agentPlaytestRawText -like '*Get-ModelResidencyPlan*') 'agent-playtest.ps1 must call Get-ModelResidencyPlan'
+Check ($agentPlaytestRawText -like '*BrainModel*') 'agent-playtest.ps1 must declare a -BrainModel parameter'
+Check ($agentPlaytestRawText -like '*residency.ActModel*') 'agent-playtest.ps1 must use the residency plan''s ActModel for its act calls'
+Check ($agentPlaytestRawText -like '*residency.JudgeModel*') 'agent-playtest.ps1 must use the residency plan''s JudgeModel for its judge call'
 
 # --- 12. Dead-verb detector (W3, docs/plans/2026-08-10-002, ruling 7) -- "a mechanical check the
 # sceptic persona used to only narrate in prose" ---------------------------------------------------
@@ -1562,6 +1719,62 @@ Check ($agentPlaytestRawText -like '*Reset-TemperamentMeter*') 'agent-playtest.p
 Check ($agentPlaytestRawText -like '*Get-TemperamentQuitFinding*') 'agent-playtest.ps1 must call Get-TemperamentQuitFinding'
 Check ($agentPlaytestRawText -like '*PATIENCE EXHAUSTED*') 'agent-playtest.ps1 must render a PATIENCE EXHAUSTED lead banner'
 Check ($agentPlaytestRawText -like '*-not $isMonkey*') 'agent-playtest.ps1 must gate something on -not $isMonkey (the temperament meter, the GPU gate, and the act-prompt build all depend on this)'
+
+# --- 14a. Sweep patience (U3, "the playtest learns to finish" wave) --------------------------------
+# Owner finding 2026-08-11: 58 of 58 model runs died on patience by day 3 -- a sweep meant to measure
+# the REST of a long campaign needs the frustration recorded as a finding, never a fatality.
+
+# Get-WouldHaveQuitMarker reuses Get-TemperamentQuitFinding's own drain-history walk -- the marker's
+# Trigger text must be the SAME headline a real quit would have produced from the identical meter
+# state (proven directly, not just smoke-checked).
+$sweepMeter = New-TemperamentMeter
+for ($i = 1; $i -le 6; $i++) {
+    Add-TemperamentDrain -Meter $sweepMeter -Cause 'refusal' -Amount $script:PatienceDrainRefusal -Turn $i -Day 2 -Phase 'Morning' -Detail 'BountiesPanel'
+}
+Check ($sweepMeter.Depleted -eq $true) 'sanity: 6 refusals at the sized drain amount must deplete the fixture meter (mirrors the quit-fixture math above)'
+$wouldHaveQuitMarker = Get-WouldHaveQuitMarker -Meter $sweepMeter -Turn 6 -Day 2 -Phase 'Morning'
+Check ($wouldHaveQuitMarker.Turn -eq 6 -and $wouldHaveQuitMarker.Day -eq 2 -and $wouldHaveQuitMarker.Phase -eq 'Morning') 'Get-WouldHaveQuitMarker must carry the exact Turn/Day/Phase it was given'
+$equivalentQuitFinding = Get-TemperamentQuitFinding -Meter $sweepMeter -Turn 6 -Day 2 -Phase 'Morning'
+Check ($wouldHaveQuitMarker.Trigger -eq $equivalentQuitFinding.Headline) ('a would-have-quit marker''s Trigger must equal the real quit finding''s Headline for the same meter state, got marker=[' + $wouldHaveQuitMarker.Trigger + '] quit=[' + $equivalentQuitFinding.Headline + ']')
+
+# Reset behaviour: after logging a marker, the caller resets the meter (agent-playtest.ps1's own
+# loop does this) -- a reset meter must be un-depleted and able to drain-then-deplete AGAIN,
+# producing a SECOND, independent marker rather than never firing twice.
+Reset-TemperamentMeter -Meter $sweepMeter -Turn 6 -Day 2 -Phase 'Morning' -Surface 'patience reset after a would-have-quit marker (Sweep mode)'
+Check ($sweepMeter.Depleted -eq $false) 'resetting after a would-have-quit marker must un-deplete the meter'
+for ($i = 7; $i -le 12; $i++) {
+    Add-TemperamentDrain -Meter $sweepMeter -Cause 'refusal' -Amount $script:PatienceDrainRefusal -Turn $i -Day 2 -Phase 'Evening' -Detail 'BountiesPanel'
+}
+Check ($sweepMeter.Depleted -eq $true) 'the SAME meter must be able to deplete a second time after a reset'
+$secondMarker = Get-WouldHaveQuitMarker -Meter $sweepMeter -Turn 12 -Day 2 -Phase 'Evening'
+Check ($secondMarker.Trigger -ne $wouldHaveQuitMarker.Trigger) 'a second marker after a reset must describe the drains SINCE the reset, not repeat the first marker''s text'
+
+# Format-TemperamentMarkdown: -WouldHaveQuitMarkers is OPTIONAL -- every pre-existing call (the
+# $quitMarkdown/$budgetMarkdown checks above, which never pass it) must keep rendering with NO
+# "Would-have-quit" text at all.
+Check ($quitMarkdown -notlike '*Would-have-quit*') 'with no -WouldHaveQuitMarkers passed, no would-have-quit section must appear (byte-identical Quit-mode rendering)'
+$sweepMarkdown = Format-TemperamentMarkdown -Meter $budgetMeter -QuitFinding $null -WouldHaveQuitMarkers @($wouldHaveQuitMarker, $secondMarker)
+Check ($sweepMarkdown -like '*Would-have-quit marker(s)*') 'with -WouldHaveQuitMarkers passed, the section must appear'
+Check ($sweepMarkdown -like '*BountiesPanel*') 'the rendered would-have-quit section must carry the marker''s own trigger text'
+Check (([regex]::Matches($sweepMarkdown, 'turn \d+ day \d+')).Count -ge 2) 'the rendered section must list BOTH markers, not just the last one'
+
+# Driver wiring: -PatienceMode must exist, default to Quit, and the Sweep branch must actually call
+# Get-WouldHaveQuitMarker and Reset-TemperamentMeter (not just declare the parameter and ignore it).
+Check ($agentPlaytestRawText -like '*PatienceMode*') 'agent-playtest.ps1 must declare a -PatienceMode parameter'
+Check ($agentPlaytestRawText -like '*$PatienceMode = ''Quit''*') 'agent-playtest.ps1''s -PatienceMode must default to Quit (today''s exact behaviour)'
+Check ($agentPlaytestRawText -like '*Get-WouldHaveQuitMarker*') 'agent-playtest.ps1 must call Get-WouldHaveQuitMarker in its Sweep-mode branch'
+Check ($agentPlaytestRawText -like '*wouldHaveQuitMarkers*') 'agent-playtest.ps1 must collect would-have-quit markers into its own list'
+
+# playtest-sweep.ps1 wiring: must pass -PatienceMode Sweep by default (feature-detected, same
+# pattern as -Persona) and expose a WouldHaveQuitTurns SUMMARY.csv column.
+$playtestSweepRawText = Get-Content (Join-Path $toolsDir 'playtest-sweep.ps1') -Raw
+Check ($playtestSweepRawText -like '*$PatienceMode = ''Sweep''*') 'playtest-sweep.ps1''s own -PatienceMode must default to Sweep'
+Check ($playtestSweepRawText -like '*patienceModeSupported*') 'playtest-sweep.ps1 must feature-detect -PatienceMode support on the driver, same idiom as -Persona'
+Check ($playtestSweepRawText -like '*WouldHaveQuitTurns*') 'playtest-sweep.ps1 must expose a WouldHaveQuitTurns column'
+# The stale comment fix: the OLD wrong claim ("the screenText check... not the backend log") must be
+# gone, and a corrected note must be present in its place.
+Check ($playtestSweepRawText -notlike '*ProductSentence.ProductSentenceFired (the screenText*') 'playtest-sweep.ps1 must not still claim ProductSentenceFired means the screenText check -- #457/#460 flipped the gate to a backend hit'
+Check ($playtestSweepRawText -like '*STALE NOTE*CORRECTED*') 'playtest-sweep.ps1 must carry the stale-comment correction, not silently delete the history of the mistake'
 
 # --- 15. Persona front-matter amendment (W4, joins table): "persona files have NO front-matter
 # today" -- verified mechanically here, not just asserted in a comment -----------------------------

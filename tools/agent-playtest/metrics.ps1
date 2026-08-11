@@ -372,11 +372,21 @@ function Get-ProductSentenceReport {
 # and $backendSummary (already computed by backend.ps1 before this runs). Always returns the same
 # shape; every sub-report already degrades gracefully on empty/missing input (see each function's own
 # doc), so this never needs a null-guard of its own.
+#
+# U3 (playtest-finishes wave): -PatienceMode/-WouldHaveQuitMarkers are OPTIONAL passthrough fields,
+# not a fifth instrument -- agent-playtest.ps1's own temperament.ps1/Format-TemperamentMarkdown
+# already renders the human-readable Patience section; these two just ride along in metrics.json so
+# tools/playtest-sweep.ps1's aggregator (a separate process, reading files, never the live run) can
+# recover which mode a run used and how many would-have-quit markers it logged, for SUMMARY.csv's own
+# WouldHaveQuitTurns column. Default 'Quit'/empty so every existing caller (every run before this
+# unit landed) still returns a metrics.json shaped exactly as before, plus these two new keys.
 function Get-MetricsSummary {
     param(
         [array]$TurnRecords,
         [array]$PreRefusals,
-        $BackendSummary
+        $BackendSummary,
+        [string]$PatienceMode = 'Quit',
+        [array]$WouldHaveQuitMarkers = @()
     )
 
     $backendActionRows = @()
@@ -392,6 +402,8 @@ function Get-MetricsSummary {
         LegalVsChosenByPhase   = Get-LegalVsChosenByPhase -TurnRecords $TurnRecords
         RefusalFrustrationMap  = Get-RefusalFrustrationMap -PreRefusals $PreRefusals -BackendRejections $backendRejections
         ProductSentence        = Get-ProductSentenceReport -BackendSummary $BackendSummary -ScreenTextHistory $screenTextHistory
+        PatienceMode           = $PatienceMode
+        WouldHaveQuitMarkers   = @($WouldHaveQuitMarkers)
     }
 }
 
