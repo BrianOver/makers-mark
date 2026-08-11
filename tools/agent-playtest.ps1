@@ -344,6 +344,9 @@ if ($Scenario) {
     if ($isMonkey) {
         Die @('-Scenario and -Persona monkey cannot be combined -- monkey never calls a model (ruling 9), and a scenario needs both a real act loop and a real judge pass.')
     }
+    if ($isPilot) {
+        Die @('-Scenario and -Persona pilot cannot be combined -- pilot never calls a model (S2, same as monkey), and a scenario needs both a real act loop and a real judge pass.')
+    }
 }
 
 # Ruling 4: monkey defaults -FrameEvery to 25, UNLESS the caller passed their own value explicitly --
