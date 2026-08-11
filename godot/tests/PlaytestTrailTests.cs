@@ -151,6 +151,58 @@ public class PlaytestTrailTests
         AssertThat(lines[0]).Contains("\"kind\":\"session\"");
     }
 
+    /// <summary>
+    /// 2026-08-11 (backend-log-sees-the-spine): a tick row's <c>events</c> field was always
+    /// <c>Adapter.LastEvents.Count</c> — a bare integer, never provable as any specific event TYPE.
+    /// The product-sentence sweep (<c>tools/agent-playtest/metrics.ps1</c>) needs to corroborate that
+    /// an <c>AttributionBeatEvent</c> actually fired, not merely that some events did. This pins the
+    /// fix at the source: two immediate <c>MaterialPurchased</c>-firing presses in the SAME phase
+    /// must still collapse to ONE distinct name in <c>eventTypes</c> (proving the dedup, not just
+    /// presence), while <c>events</c> keeps counting both (proving the pre-existing field survived).
+    /// </summary>
+    [TestCase]
+    public void ATickWithEvents_LogsTheDistinctEventTypeNames_DedupedNotJustPresent()
+    {
+        var path = ProjectSettings.GlobalizePath("user://playtest-trail-eventtypes.jsonl");
+        PlaytestLog.RedirectForTests(path);
+        MainUi? ui = null;
+        try
+        {
+            ui = MountMainUi();
+            AssertThat(ui.Adapter.CurrentState.Phase)
+                .OverrideFailureMessage("Fixture premise failed: a fresh campaign must start at Morning.")
+                .IsEqual(DayPhase.Morning);
+
+            // BuyMat is an immediate, all-phases verb (SimAdapter.Queue's own doc): each press
+            // resolves on the spot, fires MaterialPurchased, and re-reports OnPhaseCompleted for the
+            // SAME day/phase — no real transition, but a real tick row either way.
+            PressEnabled(ui.Forge, $"BuyMat_{ScriptedSession.CraftMaterial}");
+            PressEnabled(ui.Forge, $"BuyMat_{ScriptedSession.CraftMaterial}");
+
+            var tickLines = System.IO.File.ReadAllLines(path)
+                .Where(l => l.Contains("\"kind\":\"tick\""))
+                .ToList();
+            AssertThat(tickLines.Count).OverrideFailureMessage(Dump(tickLines)).IsGreaterEqual(2);
+
+            var lastRow = tickLines[^1];
+            AssertThat(lastRow)
+                .OverrideFailureMessage("The pre-existing count field must survive this change. " + lastRow)
+                .Contains("\"events\":2");
+            AssertThat(lastRow)
+                .OverrideFailureMessage("Two same-type events in one phase must dedup to ONE eventTypes entry, not two. " + lastRow)
+                .Contains("\"eventTypes\":[\"MaterialPurchased\"]");
+        }
+        finally
+        {
+            if (ui is not null)
+            {
+                Unmount(ui);
+            }
+
+            PlaytestLog.RedirectForTests(null);
+        }
+    }
+
     /// <summary>Every <c>tick</c> row recording a real transition from <paramref name="fromPhase"/>
     /// to <paramref name="toPhase"/> — the two DayPhase enum names, exactly as <c>PlaytestLog.Tick</c>
     /// writes them.</summary>

@@ -17,17 +17,22 @@
     a question (see Get-BackendSummary's own note on event TYPES), this says so instead of guessing:
 
     "tick" -- {kind, t, day, phase, beat, cause, fromDay, fromPhase, gold, mats, shelf, items,
-               heroesAlive, heroes, inFlight, bounties, act, slots, events, rejects:[{action,why}]}
+               heroesAlive, heroes, inFlight, bounties, act, slots, events, rejects:[{action,why}],
+               eventTypes:[typeName,...]}   (eventTypes added 2026-08-11 -- absent on a row from an
+               OLDER build, always present (possibly empty) on a current one; see the caveat below)
     "note" -- {kind, t, what}
     "action" -- {kind, t, day, phase, beat, action, immediate}
     "session" -- {kind, startedAt, provenance}   (header row, written once by PlaytestLog.Begin)
 
-    A GENUINE GAP, found while building this, not invented to pad the report: "events" on a tick row
-    is Adapter.LastEvents.Count -- an INTEGER, never the events themselves. The log therefore cannot
-    break events out BY TYPE, and specifically cannot directly prove an AttributionBeatEvent /
-    GossipEmitted / ItemSigned / MemorialHonored fired at all -- only that SOME events fired that
-    tick. See AttributionCaveat below; this is reported honestly rather than papered over with a
-    heuristic that would read as more certain than it is.
+    A GAP THAT WAS GENUINE, found while building this -- CLOSED 2026-08-11 for one specific event:
+    "events" on a tick row is still Adapter.LastEvents.Count, an INTEGER kept for existing readers,
+    but PlaytestLog.Tick now ALSO writes "eventTypes", the DISTINCT event type names that fired that
+    tick (e.g. ["ItemSold","AttributionBeatEvent"]). That means a log written by a build carrying the
+    field CAN directly prove an AttributionBeatEvent fired (AttributionEventTypeHits below) -- it
+    still cannot break out GossipEmitted/ItemSigned/MemorialHonored specifically unless eventTypes on
+    that row happens to name one of THOSE too, and a log from BEFORE this field existed still only
+    has the bare count. See AttributionCaveat below, which reports whichever of those is actually
+    true for the run in hand rather than a heuristic that would read as more certain than it is.
 
     STYLE NOTE: ASCII-only, no here-strings, no ternary/??, matching every file it is dot-sourced by.
 #>
@@ -40,6 +45,13 @@
 # that carry a MakersMark forward into something a hero or the town can react to.
 $script:NarratorNotePrefix = 'VOICE:'
 $script:AttributionKeywordPattern = '(?i)(attribution|signed|memorial|heirloom|gossip|legend|makersmark|maker''?s mark)'
+
+# The sim's own type name for the one event link 4/5's sweep actually needs (sim/GameSim/Contracts/
+# Events.cs: "AttributionBeatEvent", the exact string PlaytestLog.Tick's eventTypes field writes via
+# GetType().Name -- the same vocabulary rejects[].action already uses for RejectedAction.Action). A
+# named constant rather than inlining the literal below, for the same reason
+# $script:AttributionKeywordPattern is: one place to change if the sim ever renames it.
+$script:AttributionEventTypeName = 'AttributionBeatEvent'
 
 # Reads and parses playtest-log.jsonl, returning one row per line as a PSCustomObject (ConvertFrom-Json
 # output), tagging lines that fail to parse rather than dropping them silently. Never throws on a
@@ -173,6 +185,7 @@ function Get-BackendSummary {
         RejectionCountsByReason  = @()
         EventsTotalAcrossTicks   = 0
         AttributionNoteHits      = @()
+        AttributionEventTypeHits = @()
         AttributionCaveat        = ''
         NarratorLines            = @()
         NarratorVoicedCount      = 0
@@ -227,6 +240,11 @@ function Get-BackendSummary {
             Cause      = $row.cause
             IsAdvance  = $isAdvance
             Events     = $row.events
+            # Where-Object null-filter BEFORE @() wraps it, not after -- @($null) is a ONE-element
+            # array holding a null (the array subexpression operator wraps a bare scalar, and $null
+            # counts), so an old-format row with no "eventTypes" key at all would otherwise read as
+            # "1 (unknown) type" instead of the honest zero/absent this field means for that row.
+            EventTypes = @($row.eventTypes | Where-Object { $null -ne $_ })
         }
     }
     $advances = @($timeline | Where-Object { $_.IsAdvance })
@@ -260,6 +278,38 @@ function Get-BackendSummary {
     $attributionHits = @($noteRows | Where-Object { $_.what -match $script:AttributionKeywordPattern } |
         ForEach-Object { [pscustomobject]@{ T = $_.t; What = $_.what } })
 
+    # eventTypes corroboration (2026-08-11): a tick row from a CURRENT build always carries the
+    # "eventTypes" key, even when its value is an empty array -- that is what lets this tell "zero
+    # events fired" apart from "this log predates the field" by key PRESENCE, not by count. Detected
+    # across every tick row (not just the first) since a batch/telemetry run could in principle mix a
+    # rebuilt client mid-session; one row carrying the key is enough to prove the build could report it.
+    $tickRowsCarryEventTypes = $false
+    foreach ($row in $tickRows) {
+        if (@($row.PSObject.Properties.Name) -contains 'eventTypes') { $tickRowsCarryEventTypes = $true; break }
+    }
+    $attributionEventTypeHits = @($tickRows | Where-Object { @($_.eventTypes) -contains $script:AttributionEventTypeName } |
+        ForEach-Object { [pscustomobject]@{ T = $_.t; Day = $_.day; Phase = $_.phase } })
+
+    if ($tickRowsCarryEventTypes) {
+        $attributionCaveatText = 'a tick row now carries both a COUNT of events (' + $eventsTotal +
+            ' total across this run) and the DISTINCT event TYPE NAMES that fired that tick ' +
+            '(PlaytestLog.Tick''s eventTypes field, added to close the exact gap this caveat used to ' +
+            'describe) -- so THIS log can directly prove an AttributionBeatEvent fired: ' +
+            (@($attributionEventTypeHits).Count) + ' tick row(s) named it. It still cannot prove ' +
+            'GossipEmitted/ItemSigned/MemorialHonored/HeirloomReforged fired unless eventTypes on that ' +
+            'row names one of THOSE specifically -- this only closes the gap for AttributionBeatEvent, ' +
+            'the one link 4/5 sweep actually needs. The ' + (@($attributionHits).Count) + ' note-scan ' +
+            'hit(s) below remain a separate, best-effort signal, not the proof.'
+    } else {
+        $attributionCaveatText = 'this run''s tick rows carry no "eventTypes" key at all -- a log ' +
+            'written by a build before PlaytestLog.Tick gained that field. For THIS run, whether an ' +
+            'AttributionBeatEvent fired is exactly as unprovable from event counts alone as it always ' +
+            'was (only that SOME events fired that tick, never which). The ' +
+            (@($attributionHits).Count) + ' hit(s) below are a best-effort scan of free-text "note" ' +
+            'rows for attribution-shaped language, not a count of real attribution events -- treat ' +
+            'zero hits as "the log cannot tell you", not "nothing named the player''s work."'
+    }
+
     $narratorRows = @($noteRows | Where-Object { $_.what -like ($script:NarratorNotePrefix + '*') })
     $narratorLines = @($narratorRows | ForEach-Object {
         [pscustomobject]@{ T = $_.t; Text = $_.what; Voiced = ($_.what -notlike '*text-only*') }
@@ -291,21 +341,16 @@ function Get-BackendSummary {
         RejectionCountsByReason  = $rejectionCounts
         EventsTotalAcrossTicks   = $eventsTotal
         AttributionNoteHits      = $attributionHits
-        AttributionCaveat        = ('a tick row records only a COUNT of events (' + $eventsTotal +
-            ' total across this run), never their types -- PlaytestLog.Tick logs ' +
-            'Adapter.LastEvents.Count, not the events themselves. This log CANNOT directly prove an ' +
-            'AttributionBeatEvent/GossipEmitted/ItemSigned/MemorialHonored fired. The ' +
-            (@($attributionHits).Count) + ' hit(s) above are a best-effort scan of free-text "note" ' +
-            'rows for attribution-shaped language, not a count of real attribution events -- treat ' +
-            'zero hits as "the log cannot tell you", not "nothing named the player''s work."')
-        NarratorLines             = $narratorLines
-        NarratorVoicedCount       = $voicedCount
-        NarratorTextOnlyCount     = $textOnlyCount
-        AutosaveWriteCount        = $autosaveCount
-        AutosaveCaveat            = 'derived, not directly logged: every tick row whose fromPhase is ' +
+        AttributionEventTypeHits = $attributionEventTypeHits
+        AttributionCaveat        = $attributionCaveatText
+        NarratorLines            = $narratorLines
+        NarratorVoicedCount      = $voicedCount
+        NarratorTextOnlyCount    = $textOnlyCount
+        AutosaveWriteCount       = $autosaveCount
+        AutosaveCaveat           = 'derived, not directly logged: every tick row whose fromPhase is ' +
             '"Evening" corresponds to one CampaignSave.Save(state) call (MainUi.cs OnPhaseCompleted, ' +
             'unconditional on that phase completing) -- there is no dedicated autosave log line.'
-        ActionRows                = @($actionRows)
+        ActionRows               = @($actionRows)
     }
 }
 
@@ -435,6 +480,10 @@ function Format-BackendMarkdown {
     [void]$lines.Add('')
     [void]$lines.Add($Summary.EventsTotalAcrossTicks.ToString() + ' event(s) total across every tick (a raw count only -- see caveat).')
     [void]$lines.Add('CAVEAT: ' + $Summary.AttributionCaveat)
+    if (@($Summary.AttributionEventTypeHits).Count -gt 0) {
+        [void]$lines.Add('AttributionBeatEvent named directly (PlaytestLog.Tick''s eventTypes field, not a text guess):')
+        foreach ($h in $Summary.AttributionEventTypeHits) { [void]$lines.Add('- [t=' + $h.T + '] day ' + $h.Day + ' ' + $h.Phase) }
+    }
     if (@($Summary.AttributionNoteHits).Count -gt 0) {
         [void]$lines.Add('Attribution-shaped note text found:')
         foreach ($h in $Summary.AttributionNoteHits) { [void]$lines.Add('- [t=' + $h.T + '] ' + $h.What) }

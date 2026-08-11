@@ -768,7 +768,7 @@ public partial class MainUi : Control
         // not, so this is a no-op there). This is the same information as the GD.Print above plus the
         // economy columns, written somewhere a later session can actually analyse — see PlaytestLog
         // for why prose playtest reports kept failing us.
-        PlaytestLog.Tick(completedPhase, completedDay, state, Adapter.LastRejections, Adapter.LastEvents.Count, _pendingTickCause);
+        PlaytestLog.Tick(completedPhase, completedDay, state, Adapter.LastRejections, Adapter.LastEvents, _pendingTickCause);
 
         // Sound follows the same signal the HUD does, so a cue can never disagree with what is on
         // screen. Phase-keyed rather than event-keyed for the bed: SetPhase ignores an unchanged

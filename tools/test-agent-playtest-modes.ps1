@@ -382,10 +382,13 @@ Check ($backendSummary.RejectionCountsByReason.Count -eq 1) ('fixture must group
 # events: 0+0+2+3+0+1 = 6 across the six tick rows.
 Check ($backendSummary.EventsTotalAcrossTicks -eq 6) ('fixture events total must be 6, got ' + $backendSummary.EventsTotalAcrossTicks)
 
-# Attribution: the ONE "gossip: ..." note row matches the keyword scan; the caveat text must be
-# present regardless, since the log genuinely cannot prove an attribution EVENT fired (only a count).
+# Attribution: the ONE "gossip: ..." note row matches the keyword scan. This fixture's tick rows all
+# predate the eventTypes field (no row carries the key at all), so AttributionEventTypeHits must be
+# zero and the caveat must say the OLD-FORMAT thing honestly -- "no eventTypes key", not "0 hits" (0
+# hits on a NEW-format log would mean something different: see the eventtypes-fixture block below).
 Check ($backendSummary.AttributionNoteHits.Count -eq 1) ('fixture must find exactly 1 attribution-shaped note, got ' + $backendSummary.AttributionNoteHits.Count)
-Check ($backendSummary.AttributionCaveat -like '*CANNOT directly prove*') 'the attribution caveat must say the log cannot prove an event fired, not just report a count'
+Check (@($backendSummary.AttributionEventTypeHits).Count -eq 0) ('fixture predates eventTypes -- AttributionEventTypeHits must be 0, got ' + @($backendSummary.AttributionEventTypeHits).Count)
+Check ($backendSummary.AttributionCaveat -like '*no "eventTypes" key at all*') 'the attribution caveat on an old-format (no eventTypes) fixture must say so explicitly, not silently read like a checked-and-clean zero'
 
 # Narrator: one voiced ("VOICE: spoke ..."), one text-only ("VOICE: text-only (no audio) ...").
 Check ($backendSummary.NarratorVoicedCount -eq 1) ('fixture must show 1 voiced narrator line, got ' + $backendSummary.NarratorVoicedCount)
@@ -419,6 +422,22 @@ Check ($mismatchesDisagree[0] -like '*day 1 Morning*') ('the mismatch line must 
 $backendMarkdownText = Format-BackendMarkdown -Summary $backendSummary -Contradictions $autoContradictions
 Check ($backendMarkdownText -like '*Backend record*') 'Format-BackendMarkdown must produce a "Backend record" heading'
 Check ($backendMarkdownText -like '*insufficient gold*') 'Format-BackendMarkdown must surface the rejection reason'
+
+# --- 7a. eventTypes corroboration (2026-08-11, backend-log-sees-the-spine): PlaytestLog.Tick now
+# carries the DISTINCT event type names that fired each tick, closing the gap the fixture above (an
+# OLD-format log) still cannot close. This fixture's middle tick row carries
+# eventTypes:["ItemSold","AttributionBeatEvent"] -- proving the log can now directly name the one
+# event link 4/5's sweep actually needs, not just a best-effort text guess.
+$eventTypesFixturePath = Join-Path $toolsDir 'agent-playtest\tests\backend-eventtypes-fixture.jsonl'
+Check (Test-Path $eventTypesFixturePath) ('eventTypes fixture must exist at ' + $eventTypesFixturePath)
+$eventTypesSummary = Get-BackendSummary -LogPath $eventTypesFixturePath
+Check ($eventTypesSummary.Available -eq $true) 'the eventTypes fixture must parse as Available=true'
+Check (@($eventTypesSummary.AttributionEventTypeHits).Count -eq 1) ('fixture must find exactly 1 AttributionBeatEvent-named tick row, got ' + @($eventTypesSummary.AttributionEventTypeHits).Count)
+Check ($eventTypesSummary.AttributionEventTypeHits[0].Day -eq 1) ('the one eventTypes hit must be day 1 (the Evening tick), got ' + $eventTypesSummary.AttributionEventTypeHits[0].Day)
+Check ($eventTypesSummary.AttributionCaveat -like '*can directly prove an AttributionBeatEvent fired*') 'a NEW-format log (any row carrying eventTypes) must say the caveat now CAN prove it, not still cannot'
+Check ($eventTypesSummary.AttributionCaveat -notlike '*no "eventTypes" key at all*') 'a NEW-format log must not be reported as if it predates the field'
+$eventTypesMarkdown = Format-BackendMarkdown -Summary $eventTypesSummary -Contradictions @()
+Check ($eventTypesMarkdown -like '*AttributionBeatEvent named directly*') 'Format-BackendMarkdown must surface the eventTypes hit as a directly-named beat, not just the note-scan section'
 
 # Regression (found live, W1, docs/plans/2026-08-10-002, while proving the honesty footer end to end):
 # Get-BackendRejections' -TickRows and Get-BackendRejectionCountsByReason's -Rejections were BOTH
@@ -1250,6 +1269,23 @@ $backendOnlyReport = Get-ProductSentenceReport -BackendSummary $bothHitBackendSu
 Check ($backendOnlyReport.ProductSentenceFired -eq $true) 'a backend hit alone (no screen hit) must still fire True'
 Check ($backendOnlyReport.PlayerScreenShowedIt -eq $false) 'PlayerScreenShowedIt must be false when no screenText line matches'
 Check ($backendOnlyReport.Verdict -eq 'CONFIRMED') 'a backend hit alone must still verdict CONFIRMED'
+
+# 2026-08-11 (backend-log-sees-the-spine): Backend HAS an eventTypes hit but ZERO note hits -- the
+# OR-gate this unit adds. Before this, only a note-scan hit could fire True; now the exact
+# eventTypes signal (a tick row naming AttributionBeatEvent by type, not a text guess) must ALSO
+# fire True/CONFIRMED on its own, with no note-scan hit needed at all.
+$eventTypeOnlyBackendSummary = [pscustomobject]@{
+    Available                = $true
+    AttributionNoteHits      = @()
+    AttributionEventTypeHits = @([pscustomobject]@{ T = 10.0; Day = 1; Phase = 'Evening' })
+    AttributionCaveat        = 'a tick row now carries both a COUNT of events and the DISTINCT event TYPE NAMES that fired that tick -- so THIS log can directly prove an AttributionBeatEvent fired: 1 tick row(s) named it.'
+}
+$eventTypeOnlyReport = Get-ProductSentenceReport -BackendSummary $eventTypeOnlyBackendSummary -ScreenTextHistory @('gold 100', 'welcome')
+Check ($eventTypeOnlyReport.ProductSentenceFired -eq $true) 'an eventTypes hit ALONE (zero note hits) must fire the product-sentence counter True'
+Check ($eventTypeOnlyReport.AttributionBeatNamed -eq $true) 'an eventTypes hit alone must report AttributionBeatNamed=true'
+Check ($eventTypeOnlyReport.Verdict -eq 'CONFIRMED') ('an eventTypes hit alone must verdict CONFIRMED, got [' + $eventTypeOnlyReport.Verdict + ']')
+Check (@($eventTypeOnlyReport.AttributionEventTypeHits).Count -eq 1) ('the report must carry the eventTypes hit through, got ' + @($eventTypeOnlyReport.AttributionEventTypeHits).Count)
+Check (@($eventTypeOnlyReport.AttributionNoteHits).Count -eq 0) 'the report must still show zero note hits -- the two signals stay independently visible'
 
 # THE REGRESSION PIN: screen shows an attribution-shaped line, but the backend log is AVAILABLE and
 # SILENT (zero note hits) -- this is exactly the 33/34-run false-positive shape. Must be False in

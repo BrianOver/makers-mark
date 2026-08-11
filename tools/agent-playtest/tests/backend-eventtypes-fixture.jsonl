@@ -1,0 +1,4 @@
+{"kind":"session","startedAt":1700000100,"provenance":"test-build-eventtypes"}
+{"kind":"tick","t":1.0,"day":1,"phase":"Morning","beat":"None","cause":"","fromDay":1,"fromPhase":"Morning","gold":100,"mats":0,"shelf":0,"items":0,"heroesAlive":6,"heroes":6,"inFlight":0,"bounties":0,"act":"ActI","slots":5,"events":0,"rejects":[],"eventTypes":[]}
+{"kind":"tick","t":10.0,"day":1,"phase":"Evening","beat":"None","cause":"auto:conductor-beat-elapsed","fromDay":1,"fromPhase":"Expedition","gold":150,"mats":0,"shelf":0,"items":1,"heroesAlive":6,"heroes":6,"inFlight":0,"bounties":0,"act":"ActI","slots":5,"events":3,"rejects":[],"eventTypes":["ItemSold","AttributionBeatEvent"]}
+{"kind":"tick","t":15.0,"day":2,"phase":"Morning","beat":"None","cause":"auto:innkeepers-clock","fromDay":1,"fromPhase":"Evening","gold":150,"mats":0,"shelf":0,"items":1,"heroesAlive":6,"heroes":6,"inFlight":0,"bounties":0,"act":"ActI","slots":5,"events":0,"rejects":[],"eventTypes":[]}
