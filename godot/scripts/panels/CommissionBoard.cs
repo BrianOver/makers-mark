@@ -81,7 +81,26 @@ public partial class CommissionBoard : Control
         card.AddChild(body);
 
         AddHeader(body, $"{heroName} wants a {commission.MinQuality} {commission.Slot} or better");
-        AddLabel(body, $"Deadline: day {commission.DeadlineDay}  —  Premium: {commission.PremiumGold}g over list");
+
+        // Playtest-pilot3 finding 2: CommissionSystem's own expiry sweep (Heroes/CommissionSystem.cs,
+        // ExpireCommissions) only runs when Morning's phase systems actually process — the tick that
+        // LEAVES Morning, not the tick that entered it (GameKernel.Tick runs a phase's systems keyed
+        // on the phase that is ABOUT to complete). So a commission whose DeadlineDay already fell
+        // behind `state.Day` can still sit in state.Commissions, un-swept, for the rest of that
+        // Morning — a real 160-turn run reached exactly this: Day 13's board still offering Torvald's
+        // "Deadline: day 12" with a live Accept button. Accepting it would not just waste the click:
+        // CommissionSystem's own rule expires an ACCEPTED-but-missed commission with a mood penalty
+        // (ExpireMoodPenalty, Heroes/CommissionSystem.cs), and this Morning's own end-of-phase sweep
+        // would apply that penalty the moment the player advances — before they could ever have
+        // delivered. The sim's bookkeeping is not wrong (the commission genuinely has not been swept
+        // yet); the fix belongs here, on the one control that would otherwise let a player walk into
+        // a guaranteed, un-earned mood hit with no warning.
+        var expired = commission.DeadlineDay < state.Day;
+        AddLabel(
+            body,
+            expired
+                ? $"Deadline: day {commission.DeadlineDay} — EXPIRED (this offer is about to lapse) — Premium: {commission.PremiumGold}g over list"
+                : $"Deadline: day {commission.DeadlineDay}  —  Premium: {commission.PremiumGold}g over list");
 
         if (commission.Accepted)
         {
@@ -102,13 +121,15 @@ public partial class CommissionBoard : Control
         // panel already receives the full live GameState via ShowOpen, so it consults that shared
         // mirror directly rather than re-checking `state.Phase == DayPhase.Morning` locally.
         var acceptAction = new AcceptCommissionAction(hero1);
-        var acceptLegal = ActionLegality.IsLegal(state, acceptAction, state.Phase);
+        var acceptLegal = ActionLegality.IsLegal(state, acceptAction, state.Phase) && !expired;
         var accept = new Button { Name = $"CommissionAccept_{commission.Hero.Value}", Text = "Accept" };
         accept.Pressed += () => Adapter?.Queue(new AcceptCommissionAction(hero1));
         accept.Disabled = Adapter is null || !acceptLegal;
         accept.TooltipText = Adapter is null
             ? string.Empty
-            : acceptLegal ? string.Empty : "Commissions are decided in the morning.";
+            : expired
+                ? "That deadline already passed — accepting now would only cost you standing when it lapses today."
+                : acceptLegal ? string.Empty : "Commissions are decided in the morning.";
         row.AddChild(accept);
 
         var declineAction = new DeclineCommissionAction(hero1);
