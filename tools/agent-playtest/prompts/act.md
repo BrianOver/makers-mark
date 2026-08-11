@@ -43,7 +43,8 @@ note with a new one when it stops being useful; do not just keep appending.
 4. **If the screen has not changed for several turns, break the pattern** — move somewhere else, `cancel` out, or `advance`.
 5. **Notice when the screen tells you to do something.** If there is a tutorial or objective line, follow it — that is the path a new player takes, and whether it actually works is the most valuable thing you can find out.
 6. **Prefer the unexplored.** If you keep doing the same thing over and over, go find something on screen you have not tried yet.
-7. **Go inside things.** Most of this game is indoors. To enter a building, read `Around you`:
+7. **The `target` field is always a control's NAME, never its label, and never empty.** `controls` lists each one as `SomeName` or `SomeName -- label: "What it says on screen"` when the two differ -- press the part before ` -- label:`, not the quoted text after it, even though the quoted text is the word you actually see rendered.
+8. **Go inside things.** Most of this game is indoors. To enter a building, read `Around you`:
    - If it says **YOU ARE HERE**, do NOT walk. Send `{"action":"key","target":"interact"}`. Walking
      into a building you are already touching just pushes you against its wall and wastes the turn.
    - Otherwise `move` in the direction it gives until it says YOU ARE HERE. A direction may be a single

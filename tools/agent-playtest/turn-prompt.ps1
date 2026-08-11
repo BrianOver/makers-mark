@@ -26,9 +26,33 @@
     echo is never mistaken for the complete scratchpad) -- the untrimmed full text still lives in
     notes.md on disk; only what rides along in the next prompt is bounded.
 
+    "eyes learn labels" wave, U1: the Controls: block below now formats each control through Format-
+    ControlDescriptor (bare NAME when the label is identical or the "<Name>" textless-button
+    placeholder, else "Name -- label: "Label""), duplicated from model-call.ps1's own copy rather than
+    dot-sourced -- this file must stay provable from a bare stubbed state object with nothing else
+    loaded (see this file's own header), the same reasoning model-call.ps1 gives for duplicating
+    $script:KnownActionVerbs instead of importing coverage.ps1's registry.
+
     STYLE NOTE: ASCII-only, no here-strings, no ternary/??. Dot-sourced by agent-playtest.ps1, which
     has to survive Windows PowerShell 5.1's BOM and here-string traps -- keep this file plain too.
 #>
+
+# Duplicated verbatim from model-call.ps1's own Format-ControlDescriptor -- see this file's header for
+# why it is copied rather than dot-sourced. Any change here must be mirrored there (and vice versa);
+# tools/test-agent-playtest-modes.ps1 exercises both copies independently.
+function Format-ControlDescriptor {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [string]$Label
+    )
+
+    if (-not $Label) { return $Name }
+    $trimmedLabel = $Label.Trim()
+    if (-not $trimmedLabel) { return $Name }
+    if ($trimmedLabel -eq $Name) { return $Name }
+    if ($trimmedLabel -eq ('<' + $Name + '>')) { return $Name }
+    return ($Name + ' -- label: "' + $trimmedLabel + '"')
+}
 
 # Caps the model's own accumulated scratchpad text to roughly $MaxChars for the NEXT prompt, oldest
 # content dropped first (a model's most recent thought is the one most worth keeping), with an
@@ -99,7 +123,7 @@ function Build-ActUserText {
         $around,
         '',
         'Controls:',
-        (($State.controls | ForEach-Object { '  ' + $_.name + ' [' + $_.label + '] enabled=' + $_.enabled }) -join [Environment]::NewLine),
+        (($State.controls | ForEach-Object { '  ' + (Format-ControlDescriptor -Name ([string]$_.name) -Label ([string]$_.label)) + ' enabled=' + $_.enabled }) -join [Environment]::NewLine),
         '',
         $notesBlock,
         '',

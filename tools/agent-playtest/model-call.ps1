@@ -31,6 +31,19 @@
     threw, or (defensively, in case a model or a test ignores the schema) a reply that still fails to
     parse.
 
+    "eyes learn labels" wave, U1: a model reads the LABEL painted on a control ("Close") but the
+    harness only ever accepted the NODE NAME ("CloseLedger") -- found live in a 24-run campaign,
+    full/first-timer-1 died on "disabled/absent control: Close" at the exact state first-timer-6
+    typed "CloseLedger" and proceeded (median model-driven rate 11% across the campaign). Get-
+    LegalCommandFromReply now resolves a press target that misses the NAME list but matches exactly
+    ONE enabled control's LABEL (case-insensitively, trimmed) to that control's real name -- the
+    caller is told via ResolvedFromLabel/ResolvedToName so it can log the resolution, and the
+    returned Command has its target rewritten so a downstream press actually reaches a real node.
+    Two or more label matches refuse (naming the candidates); an empty target refuses (naming up to
+    5 enabled controls); and a label match is only ever considered among controls that are THEMSELVES
+    enabled right now -- ruling 1's "an illegal press IS signal" still holds, so a label can never
+    resurrect a disabled control into a legal one.
+
     STYLE NOTE: ASCII-only, no here-strings, no ternary/??, matching every file it is dot-sourced by.
 #>
 
@@ -110,18 +123,87 @@ $script:KnownKeyTargets = @('interact', 'cancel')
 # refused every one of them ("unknown move dir ''"). Same self-flattery shape, third verb.
 $script:KnownMoveDirs = @('up', 'down', 'left', 'right', 'up+left', 'up+right', 'down+left', 'down+right')
 
+# One control's display text for the model: the bare NAME when its label is identical, or is the
+# "<Name>" bracket placeholder ScreenObservation.ObservedControls emits for a textless button (see
+# AgentPlaytest.cs's ControlDigest doc -- that placeholder carries no real information a model could
+# read off the rendered screen), else "Name -- label: "Label"" so the word actually painted on screen
+# rides alongside the name a press must use. Pure string formatting, no I/O -- shared shape between
+# this file's own enabled-controls-for-the-model list and turn-prompt.ps1's per-turn Controls: block
+# (duplicated there rather than dot-sourced, same reasoning as $script:KnownActionVerbs above: each
+# file must stand alone from a bare stubbed state/reply, no cross-file dependency).
+function Format-ControlDescriptor {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [string]$Label
+    )
+
+    if (-not $Label) { return $Name }
+    $trimmedLabel = $Label.Trim()
+    if (-not $trimmedLabel) { return $Name }
+    if ($trimmedLabel -eq $Name) { return $Name }
+    if ($trimmedLabel -eq ('<' + $Name + '>')) { return $Name }
+    return ($Name + ' -- label: "' + $trimmedLabel + '"')
+}
+
+# The enabled-controls list as agent-playtest.ps1 hands it to the model in REFUSED/STUCK feedback --
+# one descriptor per ENABLED control (see Format-ControlDescriptor), in the caller's own array order.
+# $Controls is the observation's own controls array (name/label/enabled -- ScreenObservation
+# .ObservedControls via AgentPlaytest.cs's ControlDigest); property access below is case-insensitive
+# either way PowerShell reads it.
+function Get-EnabledControlDescriptors {
+    param([array]$Controls)
+
+    $result = New-Object System.Collections.ArrayList
+    foreach ($c in @($Controls)) {
+        if (-not $c.enabled) { continue }
+        if (-not $c.name) { continue }
+        [void]$result.Add((Format-ControlDescriptor -Name ([string]$c.name) -Label ([string]$c.label)))
+    }
+    return ,@($result)
+}
+
+# Rebuilds a "press" command's JSON text with its target swapped to $ResolvedTarget -- used only when
+# Get-LegalCommandFromReply resolves a LABEL to a control's real name, so the command that actually
+# goes out the door presses a node that exists rather than replaying the model's own label text
+# straight through (which the client would refuse with "no visible control named '<label>'"). Hand-
+# built with JsonEsc (this file's own top-of-file helper), never ConvertTo-Json -- see this file's
+# header for why that path is banned here. why/note are carried over verbatim when present; dir/
+# frames are never relevant to a press.
+function Get-ResolvedPressCommandText {
+    param(
+        [Parameter(Mandatory)]$ParsedCommand,
+        [Parameter(Mandatory)][string]$ResolvedTarget
+    )
+
+    $parts = New-Object System.Collections.ArrayList
+    [void]$parts.Add('"action":"press"')
+    [void]$parts.Add('"target":"' + (JsonEsc $ResolvedTarget) + '"')
+    if ($ParsedCommand.why) { [void]$parts.Add('"why":"' + (JsonEsc ([string]$ParsedCommand.why)) + '"') }
+    if ($ParsedCommand.note) { [void]$parts.Add('"note":"' + (JsonEsc ([string]$ParsedCommand.note)) + '"') }
+    return ('{' + ($parts -join ',') + '}')
+}
+
 # Decides whether one model reply is a LEGAL command RIGHT NOW, given this turn's enabled-control list.
 # Returns Command=$null/Refused=$true/Reason=<why> on anything short of legal; Command=<the reply text,
-# trimmed>/Refused=$false on success. Never throws -- a reply this malformed is exactly the case the
-# caller needs a reason string for, not an exception to catch.
+# trimmed, or a label-resolved rewrite -- see below>/Refused=$false on success. Never throws -- a reply
+# this malformed is exactly the case the caller needs a reason string for, not an exception to catch.
+#
+# $EnabledControlLabels (U1, eyes-learn-labels): OPTIONAL, defaults to none for backward compatibility
+# with every existing caller that only ever passed -EnabledControls. When supplied it is the SAME
+# observation controls array Get-EnabledControlDescriptors reads (name/label/enabled) -- used ONLY to
+# resolve a press target that missed the plain NAME list against those controls' LABELS. A control is
+# never eligible as a label match unless its own name is ALSO in $EnabledControls -- a label can never
+# resurrect a disabled control (ruling 1 stays intact: an illegal press is signal, not something to
+# silently rewrite into a legal one).
 function Get-LegalCommandFromReply {
     param(
         [string]$Reply,
-        [string[]]$EnabledControls
+        [string[]]$EnabledControls,
+        [array]$EnabledControlLabels = @()
     )
 
     if (-not $Reply -or -not $Reply.Trim()) {
-        return [pscustomobject]@{ Command = $null; Refused = $true; Reason = 'empty reply' }
+        return [pscustomobject]@{ Command = $null; Refused = $true; Reason = 'empty reply'; ResolvedFromLabel = $null; ResolvedToName = $null }
     }
 
     $trimmed = $Reply.Trim()
@@ -129,25 +211,59 @@ function Get-LegalCommandFromReply {
     try { $parsed = $trimmed | ConvertFrom-Json } catch { $parsed = $null }
     if (-not $parsed -or -not $parsed.action) {
         return [pscustomobject]@{ Command = $null; Refused = $true;
-            Reason = 'reply JSON had no action (schema should prevent this -- treat as a defect if seen live)' }
+            Reason = 'reply JSON had no action (schema should prevent this -- treat as a defect if seen live)'; ResolvedFromLabel = $null; ResolvedToName = $null }
     }
 
     if ($script:KnownActionVerbs -notcontains $parsed.action) {
         return [pscustomobject]@{ Command = $null; Refused = $true;
-            Reason = ('unknown action "' + $parsed.action + '" (schema should prevent this -- treat as a defect if seen live)') }
+            Reason = ('unknown action "' + $parsed.action + '" (schema should prevent this -- treat as a defect if seen live)'); ResolvedFromLabel = $null; ResolvedToName = $null }
     }
 
-    if ($parsed.action -eq 'press' -and $EnabledControls -notcontains $parsed.target) {
-        return [pscustomobject]@{ Command = $null; Refused = $true; Reason = ('disabled/absent control: ' + $parsed.target) }
+    if ($parsed.action -eq 'press') {
+        if ($EnabledControls -contains $parsed.target) {
+            return [pscustomobject]@{ Command = $trimmed; Refused = $false; Reason = ''; ResolvedFromLabel = $null; ResolvedToName = $null }
+        }
+
+        $trimmedTarget = ''
+        if ($parsed.target) { $trimmedTarget = ([string]$parsed.target).Trim() }
+
+        if (-not $trimmedTarget) {
+            $sample = @($EnabledControls) | Select-Object -First 5
+            return [pscustomobject]@{ Command = $null; Refused = $true;
+                Reason = ('empty press target -- enabled controls: ' + ($sample -join ', '));
+                ResolvedFromLabel = $null; ResolvedToName = $null }
+        }
+
+        $labelMatches = New-Object System.Collections.ArrayList
+        foreach ($ctrl in @($EnabledControlLabels)) {
+            if (-not $ctrl.name -or -not $ctrl.label) { continue }
+            if ($EnabledControls -notcontains $ctrl.name) { continue } # never resurrect a disabled control
+            if (([string]$ctrl.label).Trim() -ieq $trimmedTarget) { [void]$labelMatches.Add([string]$ctrl.name) }
+        }
+        $uniqueLabelMatches = @($labelMatches | Select-Object -Unique)
+
+        if ($uniqueLabelMatches.Count -eq 1) {
+            $resolvedName = $uniqueLabelMatches[0]
+            $resolvedText = Get-ResolvedPressCommandText -ParsedCommand $parsed -ResolvedTarget $resolvedName
+            return [pscustomobject]@{ Command = $resolvedText; Refused = $false; Reason = '';
+                ResolvedFromLabel = $trimmedTarget; ResolvedToName = $resolvedName }
+        }
+        if ($uniqueLabelMatches.Count -ge 2) {
+            return [pscustomobject]@{ Command = $null; Refused = $true;
+                Reason = ('ambiguous label "' + $trimmedTarget + '" matches ' + $uniqueLabelMatches.Count + ' enabled controls: ' + ($uniqueLabelMatches -join ', '));
+                ResolvedFromLabel = $null; ResolvedToName = $null }
+        }
+
+        return [pscustomobject]@{ Command = $null; Refused = $true; Reason = ('disabled/absent control: ' + $parsed.target); ResolvedFromLabel = $null; ResolvedToName = $null }
     }
 
     if ($parsed.action -eq 'key' -and $script:KnownKeyTargets -notcontains $parsed.target) {
-        return [pscustomobject]@{ Command = $null; Refused = $true; Reason = ('illegal key target: "' + $parsed.target + '" (must be interact or cancel)') }
+        return [pscustomobject]@{ Command = $null; Refused = $true; Reason = ('illegal key target: "' + $parsed.target + '" (must be interact or cancel)'); ResolvedFromLabel = $null; ResolvedToName = $null }
     }
 
     if ($parsed.action -eq 'move' -and $script:KnownMoveDirs -notcontains $parsed.dir) {
-        return [pscustomobject]@{ Command = $null; Refused = $true; Reason = ('illegal/missing move dir: "' + $parsed.dir + '" (must be up/down/left/right or a "+"-joined composite)') }
+        return [pscustomobject]@{ Command = $null; Refused = $true; Reason = ('illegal/missing move dir: "' + $parsed.dir + '" (must be up/down/left/right or a "+"-joined composite)'); ResolvedFromLabel = $null; ResolvedToName = $null }
     }
 
-    return [pscustomobject]@{ Command = $trimmed; Refused = $false; Reason = '' }
+    return [pscustomobject]@{ Command = $trimmed; Refused = $false; Reason = ''; ResolvedFromLabel = $null; ResolvedToName = $null }
 }
