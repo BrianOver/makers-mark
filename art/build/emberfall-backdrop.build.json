@@ -1,0 +1,20 @@
+{
+  "Seed": 103007492,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "932b1bef52320d4bd0acd51331817ec93baf8c5252398bdd78d7169859d76446",
+  "NormalSha256": null,
+  "Uid": "uid://dxdwijxiams33",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "8 candidates generated locally via ComfyUI MCP across 2 rounds (4 + 4 escalation); curated per art/pipeline/README.md. Regenerates task #95's Emberfall venue set, replacing the hand-authored art/pipeline/gen_emberfall_venue.py pixel grid with the real SDXL chain, matching every other venue backdrop.",
+    "paintoverNote": "c7 (seed+7, round-2 escalation) -- a receding stone tunnel corridor with warm ember light at its far end, closely mirroring mine-backdrop's own tunnel-recession composition. Round 1 (c0-c3) universally drew single close-up archway/doorway props with no depth, or a multi-panel prop-sheet (c1); round 2 added explicit 'wide receding corridor perspective, deep multi-layered depth, distant vanishing point' positive language plus close-up/isolated-prop negatives -- c4 (isometric floating tile prop) and c6 (torch-lit archway gate, still shallow depth) were rejected as insufficiently deep, and c5 (canyon exterior with visible sky/birds) was rejected as an off-contract landscape scene, leaving c7's genuine tunnel recession as the clear winner.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse. Deviation from the standard chain, matching every sibling backdrop (gloomwood/sunkencrypt/mine): cutout.py's BiRefNet salient-object segmentation was NOT run (it discards a full-bleed atmospheric scene as background). Instead the raw 1024x1024 SDXL output was resized (PIL LANCZOS) to 160x160 to match mine-backdrop.png/gloomwood-backdrop.png/sunkencrypt-backdrop.png's identical committed footprint exactly, then format-converted to opaque RGB (no normalmap.py -- AssetSpec.NormalMap=false, flat far plane per EmberfallSpecs.cs). The exact 1024->160 downscale filter used by the original sibling sessions is not recorded in any prior build-half or seeds.generated.md entry; LANCZOS was chosen here as the standard high-quality filter for shrinking painterly/photographic content (as opposed to nearest-neighbour, which this repo reserves for pixel-art upscaling elsewhere)."
+  }
+}

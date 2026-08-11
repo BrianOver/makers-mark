@@ -1,0 +1,20 @@
+{
+  "Seed": 669304066,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "c8d12dfc19dabd33b5d22b6573bf9bbe23d6296e1de853a1e3bffd6ebe8b3f4f",
+  "NormalSha256": "b2d060074d8d50db8982d6db8f4733c90a13baa435ceb274dbb0184c1021f826",
+  "Uid": "uid://c6wehryphjtdl",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md.",
+    "paintoverNote": "c3 (seed+3) -- a charcoal blocky golem body with one large obsessive glowing orange eye, a round orange ember disc at the chest, and two bare stubby fists (no incidental weapon prop). c0 held a torch prop; c1 held a large axe weapon (off-spec for 'stubby riveted arms'); c2 had the strongest 'furnace-mouth' head shape but only faint eye-holes with no clear glow. c3 was preferred for its clean readable silhouette, absence of a held prop, and clear single-eye 'obsessive' characterization.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Monster world sprite per AssetSpec.NormalMap=true. Passed on the existing Flip-Y-OFF import convention (unchanged script/settings, not independently re-swept this wave)."
+  }
+}

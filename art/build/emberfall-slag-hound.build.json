@@ -1,0 +1,20 @@
+{
+  "Seed": 650566664,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "db6f95ac5adfa7d63fd492219dacb8630a02fef034b542d5602ca5145e5f9165",
+  "NormalSha256": "6f0a9bd6b501f0466923eca64f7e9168a03cbc49d0c89064f690572c157650af",
+  "Uid": "uid://df68o5p7sop7k",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "8 candidates across 2 rounds (4 + 4 escalation) generated locally via ComfyUI MCP; curated per art/pipeline/README.md.",
+    "paintoverNote": "c3 (seed+3, round 1) -- a standing hound with a rust-orange masked face/body pattern, a calm closed-mouth expression, and a worked-metal collar/chain (not in the written spec, but reads as guard-dog decoration rather than a contradiction). c0/c1 (round 1) had correct hound anatomy but a snarling bared-teeth expression that conflicts with this venue's Cult-of-the-Lamb 'sympathetic' rule; c2 (round 1) was a multi-panel furnace-prop grid, not a hound at all. A round-2 escalation toward 'chubby rounded chibi proportions' (c4-c7) produced striking round-bodied designs but every one drifted into a robot/mech/golem body plan with no canine features at all, losing the 'hound' identity entirely -- c3 was kept as the strongest literal match to the written 'single molten-slag hound' subject.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Monster world sprite per AssetSpec.NormalMap=true. Passed on the existing Flip-Y-OFF import convention (unchanged script/settings, not independently re-swept this wave)."
+  }
+}

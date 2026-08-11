@@ -1,0 +1,20 @@
+{
+  "Seed": 1518884823,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "1941546317502cea411c588a962883c860688ce4f1aa5203efa44b9e0dc09241",
+  "NormalSha256": "773e44afd165d671e5f5878d511885f0d759e8dcecf14f5d79233a7df643c4d6",
+  "Uid": "uid://b36uf6rpwjcbw",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md.",
+    "paintoverNote": "c2 (seed+2) -- a hooded robed figure gripping a literal flaming ledger/book held out at arm's length (reads as 'fireproof' -- it burns without being consumed), with three faint glowing eye-dots visible in the hood shadow. c0 and c1 held weapons (a mace, a staff+hammer) with no ledger at all; c3 was a front+back double-view turnaround sheet, rejected as a multi-pose composition rather than a single full-body illustration. c2 was the only candidate carrying the ledger prop that distinguishes this monster from Emberfall's other robed/armored designs.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Monster world sprite per AssetSpec.NormalMap=true. Passed on the existing Flip-Y-OFF import convention (unchanged script/settings, not independently re-swept this wave)."
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "Seed": 1109344314,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "cbcb214cd1a0e8c3b456f9496157c8b453500e03e85b1e351166d410b0baa2d4",
+  "NormalSha256": "886cb05b7568ca1c3185a57a69aba2d2b42ed31c0c9bdb1e7cab2520b1d6174c",
+  "Uid": "uid://dkita3yv6fxf8",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "7 candidates across 2 rounds (4 + 3 escalation) generated locally via ComfyUI MCP; curated per art/pipeline/README.md.",
+    "paintoverNote": "c5 (seed+5, round-2 escalation) -- a rounded, tiered stone kiln/furnace structure with a wide glowing crater-mouth at its top, dark iron-band rings around its cylinder, and molten cracks glowing through archway openings at its base; no limbs, no humanoid features. Round 1 (c0-c2) all drew an armored humanoid warrior boss (skull-faced, holding a staff or mace) instead of the spec's inanimate 'furnace-core' structure -- 'boss' + 'iron-banded' proved a strong SDXL attractor toward knight/warrior designs; c3 (round 1) broke through to an actual furnace-tower structure but on a full landscape background, not an isolated portrait. Round 2 added explicit 'not a humanoid, no limbs, no armor, an architectural monster' language: c4 and c6 were atmospheric tower/citadel scenes on full desert-landscape backdrops (wrong composition for an isolated boss portrait); c5 was the only round-2 candidate with both the correct non-humanoid furnace-structure subject AND a clean isolated background suitable for cutout. Curation accepted a kiln/ziggurat silhouette over the written 'heart-shaped' detail, consistent with this repo's standing precedent (see the U5 cave-rat/forgeworm and LW-art hero-sentinel notes in seeds.generated.md) of prioritizing overall composition, palette, and readable silhouette over literal prop/shape fidelity when the two conflict.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Monster world sprite per AssetSpec.NormalMap=true. Passed on the existing Flip-Y-OFF import convention (unchanged script/settings, not independently re-swept this wave)."
+  }
+}

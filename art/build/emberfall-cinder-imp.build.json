@@ -1,0 +1,20 @@
+{
+  "Seed": 906197337,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "6175bd915a566321f890ad5ed627085661360724f81c23f2a75a61fae7e85b4f",
+  "NormalSha256": "5d909f2bef813138a88abb0d6458647197e9c5d5573853cc9565e87e1f0aa929",
+  "Uid": "uid://b3cxnx1udhhoi",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "11 candidates across 3 rounds (4 + 4 + 3) generated locally via ComfyUI MCP; curated per art/pipeline/README.md.",
+    "paintoverNote": "c6 (seed+6, round-2) -- a sitting, chubby round imp with two big soft orange eyes, stubby horns, and a glowing orange chest/belly ember reading as the held coal. Round 1 (c0-c3) hit the character-sheet/concept-sheet attractor on all 4 candidates (SDXL kept drawing multi-pose turnaround grids of imp/tree-creature designs); round 2 added 'single full-bleed illustration, one pose only' language, which fixed the multi-pose problem but 2 of 4 round-2 candidates (c4, c7) drifted into lean quadruped goat/bull-beast anatomy instead of the spec's 'small round plump' body. c6 was the only round-2 single-subject candidate with both the correct round body AND the 'big soft eyes' read (its background carries a faint lighter rectangle -- an imperfect but acceptable neutral backdrop). A round-3 escalation (chibi/bipedal language, c8-c10) produced striking molten-lava-golem shapes with dripping glowing hands but a mask-like 3-orb face instead of 2 eyes; c6 was preferred over c10 for better matching the spec's 'big soft apologetic eyes' characterization.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py --trim); normal map derived via normalmap.py (Sobel height-from-luminance, strength 2.5) -- lit Monster world sprite per AssetSpec.NormalMap=true. Passed on the existing Flip-Y-OFF import convention (unchanged script/settings, not independently re-swept this wave)."
+  }
+}
