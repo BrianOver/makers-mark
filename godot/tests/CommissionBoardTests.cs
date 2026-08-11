@@ -158,6 +158,75 @@ public class CommissionBoardTests
         finally { Unmount(ui); }
     }
 
+    // ── playtest-pilot3 finding 2: a commission whose deadline already passed ────────────────────
+
+    /// <summary>
+    /// Campaign finding (160-turn scripted playtest, turn 160): Day 13's board still offered
+    /// Torvald's "Deadline: day 12" commission with a live Accept button.
+    /// <c>CommissionSystem.ExpireCommissions</c> only sweeps a Morning's stale commissions when
+    /// THAT Morning's own phase systems run (the tick that LEAVES Morning — see
+    /// <c>GameKernel.Tick</c>'s "systems run for the phase about to complete" contract), so a
+    /// commission can sit in <see cref="GameState.Commissions"/> with its deadline already behind
+    /// <c>state.Day</c> for the rest of that Morning. Accepting it here would not just waste the
+    /// click: the SAME Morning's end-of-phase sweep would immediately expire an ACCEPTED-but-missed
+    /// commission with a mood penalty (<c>CommissionSystem.ExpireMoodPenalty</c>) — a guaranteed,
+    /// un-earned hit the player could never have avoided. This pins the surface fix: Accept
+    /// disables once <c>DeadlineDay &lt; state.Day</c>, and the row says so.
+    /// </summary>
+    [TestCase]
+    public void Commission_PastDeadline_AcceptDisabled_LabelNamesItExpired()
+    {
+        var commission = new Commission(new HeroId(1), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 12, PremiumGold: 30);
+        var state = GameComposition.NewCampaign(seed: 5154) with
+        {
+            Day = 13,
+            Commissions = System.Collections.Immutable.ImmutableList.Create(commission),
+        };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Commissions.ShowOpen(ui.Adapter.CurrentState);
+
+            var accept = Find<Button>(ui.Commissions, "CommissionAccept_1");
+            AssertThat(accept.Disabled).IsTrue();
+            AssertThat(accept.TooltipText).Contains("already passed");
+
+            // Declining a doomed offer stays legal — a harmless, player-initiated way to clear it
+            // early instead of waiting for the silent Morning sweep to do it for them.
+            var decline = Find<Button>(ui.Commissions, "CommissionDecline_1");
+            AssertThat(decline.Disabled).IsFalse();
+
+            AssertThat(RenderedText(ui.Commissions)).Contains("EXPIRED");
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>The boundary this mirrors exactly: <c>CommissionSystem.ExpireCommissions</c> keeps a
+    /// commission whose OWN deadline day has arrived (<c>state.Day &lt;= DeadlineDay</c>) — only the
+    /// day AFTER it is swept. So the deadline's own day must still read as a normal, acceptable
+    /// offer, never flagged expired.</summary>
+    [TestCase]
+    public void Commission_OnItsDeadlineDay_StillAcceptable_NotFlaggedExpired()
+    {
+        var commission = new Commission(new HeroId(1), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 12, PremiumGold: 30);
+        var state = GameComposition.NewCampaign(seed: 5155) with
+        {
+            Day = 12,
+            Commissions = System.Collections.Immutable.ImmutableList.Create(commission),
+        };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Commissions.ShowOpen(ui.Adapter.CurrentState);
+
+            var accept = Find<Button>(ui.Commissions, "CommissionAccept_1");
+            AssertThat(accept.Disabled).IsFalse();
+            AssertThat(accept.TooltipText).IsEqual(string.Empty);
+            AssertThat(RenderedText(ui.Commissions)).NotContains("EXPIRED");
+        }
+        finally { Unmount(ui); }
+    }
+
     [TestCase]
     public void Open_EngagesTheLatch_ClosingDisengages()
     {

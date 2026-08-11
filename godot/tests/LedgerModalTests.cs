@@ -510,5 +510,139 @@ public class LedgerModalTests
             Unmount(ui);
         }
     }
+
+    // ── Refresh staleness (KTD-fix, playtest-pilot3 finding 1) ────────────────────────────────
+
+    /// <summary>
+    /// A campaign at day 1's own Evening, its sole hero already fallen. <c>RecruitSystem</c> refills
+    /// an empty roster every Morning regardless, so later days are NOT guaranteed to collapse via
+    /// <c>NoRaidToHost</c> — these tests drive the calendar with <c>UiTestSupport.AdvanceToPhase</c>
+    /// (loop-until-there), never a fixed tick count, so they stay correct whichever shape a given
+    /// day's cycle takes.
+    /// </summary>
+    private static GameState FreshEveningCampaign()
+    {
+        var fallen = new Hero(
+            SurvivorId, "Thistle", ClassRegistry.VanguardId, Level: 3, MaxHp: 30, Gold: 12,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: false,
+            DeepestFloorReached: 2, DiedOnDay: 1);
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(SurvivorId.Value, fallen);
+
+        var events = ImmutableList.Create<GameEvent>(
+            new HeroDied(SurvivorId, 2, "a Cave Rat", GearSet.Empty) { Id = new EventId(1), Day = 1 });
+
+        var baseState = GameFactory.NewGame(9101, heroes);
+        return baseState with
+        {
+            Phase = DayPhase.Evening,
+            EventLog = events,
+            // GameFactory.NewGame pins NextHeroId to 1 regardless of the heroes override above --
+            // without bumping it here, the very next Morning's RecruitSystem tries to insert a
+            // NEW hero at id 1 too and collides with Thistle ("An element with the same key but a
+            // different value already exists"), a pure test-fixture bug these ticking tests are
+            // the first in this file to expose (every other fixture here only ever calls ShowFor
+            // directly, never AdvancePhase).
+            NextHeroId = SurvivorId.Value + 1,
+        };
+    }
+
+    /// <summary>
+    /// The 160-turn scripted playtest's own headline bug: a Ledger opened for day 2 and left open
+    /// read "EVENING LEDGER — day 2" ten evenings later, with the HUD at Day 12 and the world
+    /// blocked (<c>canMove=false</c>) the whole time. <see cref="LedgerModal.Refresh"/> now runs
+    /// on every tick (via <c>MainUi.RefreshAll</c>, already unconditional) rather than depending on
+    /// the automatic reveal's 3-second wall-clock timer — so an open-but-neglected Ledger
+    /// self-corrects the very next real tick after a NEW evening it never acknowledged, with no
+    /// dependency on real time at all. Ticks the REAL adapter forward (not a hand-set day number)
+    /// so this proves the exact call path a live campaign drives: every <c>AdvancePhase()</c> fires
+    /// <c>StateChanged</c> -&gt; <c>OnPhaseCompleted</c> -&gt; <c>RefreshAll</c> -&gt;
+    /// <c>Ledger.Refresh</c>, same as the real game.
+    /// </summary>
+    [TestCase]
+    public void Refresh_LedgerLeftOpenAcrossLaterEvenings_SelfCorrectsToTheLatestOne()
+    {
+        var ui = MountMainUi(new SimAdapter(FreshEveningCampaign()));
+        try
+        {
+            ui.Ledger.ShowFor(1); // opened exactly as day 1's own evening completes -- zero drift yet
+            AssertThat(ui.Ledger.ShownDay).IsEqual(1);
+
+            // Nobody ever reopens the Ledger while day 2's own evening completes underneath it --
+            // the exact neglect the 160-turn playtest hit. AdvanceToPhase (not a fixed tick count):
+            // RecruitSystem can refill the roster on day 2's Morning, so the day may run the full
+            // five-phase cycle instead of NoRaidToHost's collapse -- either way this reaches day 2's
+            // Evening, the very next tick after which self-correction must have already fired (the
+            // feedback line is transient like every other message this modal shows, so this checks
+            // it immediately rather than after further ticks would naturally clear it).
+            ui.Adapter.AdvancePhase(); // day 1 Evening -> day 2 Morning
+            AdvanceToPhase(ui, DayPhase.Evening); // -> day 2's own Evening, however many ticks that takes
+            AssertThat(ui.Adapter.CurrentState.Day).IsEqual(2);
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Evening);
+
+            AssertThat(ui.Ledger.ShownDay)
+                .OverrideFailureMessage(
+                    "Ledger stayed on a stale day across a real tick — the exact bug the 160-turn "
+                    + "playtest found (stuck on day 2 while the HUD read Day 12).")
+                .IsEqual(2);
+            AssertThat(Find<Label>(ui.Ledger, "LedgerTitle").Text).IsEqual("EVENING LEDGER — day 2");
+            AssertThat(Find<Label>(ui.Ledger, "LedgerFeedback").Text).Contains("day 2");
+
+            // And it keeps up, not just once: further neglect (day 3's own evening, nobody reopens
+            // it either) must self-correct AGAIN, proving this is not a one-shot fix that only
+            // catches the FIRST drift.
+            ui.Adapter.AdvancePhase(); // day 2 Evening -> day 3 Morning
+            AdvanceToPhase(ui, DayPhase.Evening); // -> day 3's own Evening
+            AssertThat(ui.Adapter.CurrentState.Day).IsEqual(3);
+            AssertThat(ui.Ledger.ShownDay)
+                .OverrideFailureMessage("a second neglected evening did not self-correct again")
+                .IsEqual(3);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// The regression this staleness fix must NEVER cause: <see cref="LedgerModal"/>'s own class
+    /// doc says a player can "reopen the Ledger from the status bar during the next Evening to
+    /// buy" — <c>BuyOreLegal</c> only gates on <c>Phase == Evening</c>, not on the offer's own day,
+    /// so reopening an OLDER day's ledger during a LATER evening specifically to complete a
+    /// purchase is sanctioned, tested behavior (<c>MainUiTests.DriveToCraftedDagger</c> drives
+    /// exactly this). An immediate-resolving action taken from that reopened view (buying ore IS
+    /// one, per <c>ActionTiming.ResolvesImmediately</c>) replays <c>RefreshAll</c> without moving
+    /// Day or Phase at all — Refresh must never mistake that replay for new drift and yank the
+    /// view out from under an in-progress purchase.
+    /// </summary>
+    [TestCase]
+    public void Refresh_ReopeningAnOlderDayDuringTheCurrentEvening_IsNeverTreatedAsStale()
+    {
+        var ui = MountMainUi(new SimAdapter(FreshEveningCampaign()));
+        try
+        {
+            ui.Adapter.AdvancePhase(); // day 1 Evening -> day 2 Morning
+            AdvanceToPhase(ui, DayPhase.Evening); // -> day 2's own Evening, however many ticks that takes
+            AssertThat(ui.Adapter.CurrentState.Day).IsEqual(2);
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Evening);
+
+            ui.Ledger.ShowFor(1); // deliberate reopen of day 1's ledger during day 2's own evening
+
+            // Simulate the immediate-action replay a real Buy press causes (RefreshAll re-fires,
+            // Day/Phase unchanged) -- twice, to prove this is not merely a one-tick grace window.
+            ui.Ledger.Refresh();
+            ui.Ledger.Refresh();
+
+            AssertThat(ui.Ledger.ShownDay)
+                .OverrideFailureMessage(
+                    "a legitimate reopen-an-older-day-to-buy view got yanked away by the staleness " +
+                    "check -- this is the MainUiTests.DriveToCraftedDagger regression")
+                .IsEqual(1);
+            AssertThat(Find<Label>(ui.Ledger, "LedgerFeedback").Text).IsEqual(string.Empty);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif
