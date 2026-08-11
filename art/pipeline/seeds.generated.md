@@ -216,3 +216,48 @@ layered on top of `NoConceptSheet`; c0 (837462951+0) cleared cleanly and replace
 `hero-occultist` and `hero-sentinel` were inspected against the same bar and both hold up as
 genuinely painterly -- no other regeneration was needed this pass. See
 `art/build/hero-skirmisher.build.json` for full before/after provenance.
+
+## Emberfall Foundry venue regen (task #95) -- painterly SDXL parity, 2026-08-11
+
+| Id | Track | Seed | Hand-finished | Build-half |
+|----|-------|------|---------------|------------|
+| emberfall-backdrop | active | 103007485+7 (candidate, resolved 103007492) | no | `art/build/emberfall-backdrop.build.json` |
+| emberfall-cinder-imp | active | 906197331+6 (candidate, resolved 906197337) | no | `art/build/emberfall-cinder-imp.build.json` |
+| emberfall-slag-hound | active | 650566661+3 (candidate, resolved 650566664) | no | `art/build/emberfall-slag-hound.build.json` |
+| emberfall-bellows-mad | active | 669304063+3 (candidate, resolved 669304066) | no | `art/build/emberfall-bellows-mad.build.json` |
+| emberfall-molten-archivist | active | 1518884821+2 (candidate, resolved 1518884823) | no | `art/build/emberfall-molten-archivist.build.json` |
+| emberfall-undying-forge-heart | active | 1109344309+5 (candidate, resolved 1109344314) | no | `art/build/emberfall-undying-forge-heart.build.json` |
+
+The committed Emberfall set (`godot/assets/art/emberfall-*.png` + `_n` normal maps) was originally
+hand-authored pixel grids (`art/pipeline/gen_emberfall_venue.py`, PR #344) because that session had
+no GPU/ComfyUI access. This wave regenerates the full 6-asset set through the real SDXL/ComfyUI
+chain so Emberfall matches Gloomwood/Sunken Crypt/Mine's painterly quality (task #95); the
+hand-authored script and its `--check` drift guard are retired (deleted) as part of this PR, since
+they assert byte-identity against pixel primitives these new PNGs no longer match by construction --
+see the script's own removal in this PR's diff.
+
+Generated at 1024^2 Active settings (28/6.5/dpmpp_2m/karras, no LoRA) via ComfyUI MCP,
+42 candidates total across the 6 assets (curate-hard, ~86% reject rate). Two assets cleared on
+the first 4-candidate pass with no escalation (`emberfall-bellows-mad`, `emberfall-molten-archivist`);
+the rest needed 1-2 escalation rounds -- `emberfall-backdrop` (round 1 drew close-up archway props
+with no depth; round 2 added receding-corridor-perspective language), `emberfall-slag-hound` (round 1
+mixed snarling/aggressive reads with a multi-panel reject; a round-2 chibi escalation drifted into
+non-canine robot bodies, so the calmer round-1 hound was kept), `emberfall-cinder-imp` (round 1 hit
+the character-sheet attractor 4/4; round 2 fixed the multi-pose problem but drifted into quadruped
+beasts; round 3 nailed the round chubby body but with a 3-eye mask instead of 2 eyes -- the round-2
+sitting-imp candidate was preferred), and `emberfall-undying-forge-heart` (rounds 1-2 kept drawing an
+armored humanoid warrior instead of the spec's inanimate furnace-core structure -- 'boss' + 'iron-
+banded' is a strong SDXL attractor toward knight designs -- until explicit 'not a humanoid, no limbs'
+language broke through). Full chain (BiRefNet `cutout.py --trim` -> Sobel `normalmap.py … 2.5`) for
+all 5 monsters; the backdrop skipped `cutout.py` per the established backdrop precedent (BiRefNet
+discards a full-bleed atmospheric scene as background) and was instead downscaled 1024x1024 ->
+160x160 (PIL LANCZOS) to match `mine-backdrop.png`/`gloomwood-backdrop.png`/`sunkencrypt-
+backdrop.png`'s identical committed footprint, then format-converted to opaque RGB (`NormalMap:
+false`, matching every sibling backdrop). Curation accepted incidental off-spec details on 3 of 6
+assets (slag-hound's collar/chain, forge-heart's kiln/ziggurat silhouette over a literal heart shape,
+cinder-imp's imperfect neutral background) where the alternative candidates missed the subject's
+identity or personality more badly -- consistent with this repo's standing curation precedent
+(U5 cave-rat/forgeworm, LW-art hero-sentinel) of prioritizing composition/palette/silhouette over
+literal prop fidelity. `.import` sidecars were re-minted via the pinned Godot 4.6.3-stable headless
+import pass (`--headless --import --quit-after 200`); uids were preserved unchanged (same filenames,
+same uid contract) for all 6 assets, confirmed via git diff before commit.

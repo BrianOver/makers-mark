@@ -24,13 +24,16 @@ namespace GameArt.Specs.Emberfall;
 /// (<c>DepthsPanel</c> never mounts a dormant venue's tile, and <c>BestiaryPanel</c> only ever asks
 /// for a monster portrait, never an entrance).</para>
 ///
-/// <para>Diffuse+normal pairs are hand-authored Python pixel grids (<c>art/pipeline/
-/// gen_emberfall_venue.py</c>), not SDXL/ComfyUI — see that script's own header for why. The
-/// <see cref="AssetSpec.NormalMap"/> contract still matches the SDXL-family siblings exactly
-/// (Backdrop = diffuse-only flat far plane; Monster = lit foreground figure, normal map required)
-/// so <c>ArtWiringCoverageTests</c>' shape applies unchanged. Rendered by name via
-/// <c>IconRegistry.Art("&lt;Id&gt;")</c> / <c>IconRegistry.Lit("&lt;Id&gt;")</c>, null-tolerant, so
-/// this describe-half merges green before any pixel exists (same as every other venue module).</para>
+/// <para>Diffuse+normal pairs came from the real SDXL/ComfyUI chain (task #95, 2026-08-11),
+/// matching every other venue — the set originally shipped as hand-authored Python pixel grids
+/// (<c>art/pipeline/gen_emberfall_venue.py</c>, since deleted, PR #344) because that session had no
+/// GPU access; see <c>art/pipeline/seeds.generated.md</c>'s "Emberfall Foundry venue regen" entry
+/// for full seed/curation provenance. The <see cref="AssetSpec.NormalMap"/> contract matches the
+/// SDXL-family siblings exactly (Backdrop = diffuse-only flat far plane; Monster = lit foreground
+/// figure, normal map required) so <c>ArtWiringCoverageTests</c>' shape applies unchanged. Rendered
+/// by name via <c>IconRegistry.Art("&lt;Id&gt;")</c> / <c>IconRegistry.Lit("&lt;Id&gt;")</c>,
+/// null-tolerant, so this describe-half merges green before any pixel exists (same as every other
+/// venue module).</para>
 /// </summary>
 public sealed class EmberfallSpecs : IAssetModule
 {
