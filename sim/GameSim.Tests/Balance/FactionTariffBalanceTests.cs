@@ -20,13 +20,15 @@ namespace GameSim.Tests.Balance;
 /// shifts first-floor-5 from day 36 to never-reached and end-alive heroes from 5 to 6, and cuts player
 /// ore spend on identical buys from 2216 to 2042), which is what a band-moving core should do — but the
 /// shifts stay inside the shipped bands. Every assert below is an INDEPENDENT acceptance criterion on
-/// the tariff itself (directional / cap / money-supply / drift), deliberately kept separate from the
-/// unchanged bands so this file is not circular with them.</para>
+/// the tariff itself (directional / cap / drift), deliberately kept separate from the unchanged bands
+/// so this file is not circular with them.</para>
 ///
 /// <para><b>Deepvein params: KEPT.</b> The U1 starting values (StandingCap 100, RiseStep 5, DriftStep
 /// 2, MaxAdjustmentPerMille 100) satisfy every criterion here — the tariff fires (standing saturates to
-/// cap, 157 discount events on the main seed), the aggregate discount stays under the 10% cap (7.85% of
-/// total ore), and money supply is bounded — so no tuning was needed.</para>
+/// cap, 157 discount events on the main seed) and the aggregate discount (the bounded money-supply
+/// source) stays under the 10% cap (7.85% of total ore) — so no tuning was needed. (Forward-ladder
+/// plan L6, 2026-08-10-003: the money-supply property is now asserted single-run, via that same cap,
+/// not via a two-run counterfactual — see "Money-supply upper bound" below.)</para>
 ///
 /// Integer-only, deterministic (every scenario runs twice, byte/value-identical), no RNG in the tariff
 /// path.
@@ -44,7 +46,6 @@ public class FactionTariffBalanceTests
     /// the counterfactual "what a no-standing player pays for the identical purchases";
     /// <see cref="TotalPlayerOreCost"/> is what the player actually paid (base + Σ delta).
     /// <see cref="TotalTariffDelta"/> is Σ (playerCost − base): negative = gold minted by discounts.
-    /// <see cref="FinalTownGold"/> is player + all heroes at campaign end (the money-supply metric).
     /// </summary>
     private sealed record TariffRunStats(
         string FinalJson,
@@ -52,25 +53,13 @@ public class FactionTariffBalanceTests
         long TotalPlayerOreCost,
         long TotalTariffDelta,
         int NegativeDeltaCount,
-        int MaxStanding,
-        long FinalTownGold);
+        int MaxStanding);
 
     private sealed class NullSink : IEventSink
     {
         public void Emit(GameEvent gameEvent)
         {
         }
-    }
-
-    private static long TownGold(GameState state)
-    {
-        long total = state.Player.Gold;
-        foreach (var hero in state.Heroes.Values)
-        {
-            total += hero.Gold;
-        }
-
-        return total;
     }
 
     private static long BaseCostOf(GameState state, BuyOreAction buy)
@@ -86,8 +75,9 @@ public class FactionTariffBalanceTests
     /// true wipes standing to null at the head of every tick, so it never accumulates a persistent
     /// discount — the neutral counterfactual over the same seed. (A tiny within-Evening residual can
     /// remain when several buys land in one tick before the next wipe; it only ever RAISES the neutral
-    /// player's retained gold, which relaxes — never tightens — the money-supply upper bound below.)
-    /// Ore base cost is read from the pre-tick offers so both legs are measured identically.
+    /// player's retained gold, which relaxes — never tightens — <see cref="HundredDay_Favored_IsStrictlyCheaperThanNeutral"/>'s
+    /// ore-spend comparison below.) Ore base cost is read from the pre-tick offers so both legs are
+    /// measured identically.
     /// </summary>
     private static TariffRunStats Run(ulong seed, bool neutral)
     {
@@ -133,7 +123,7 @@ public class FactionTariffBalanceTests
 
         return new TariffRunStats(
             SaveCodec.Serialize(state), totalBaseOreCost, totalBaseOreCost + deltaSum, deltaSum,
-            negCount, maxStanding, TownGold(state));
+            negCount, maxStanding);
     }
 
     // ---- Tariff fires: the feature is not inert over the campaign -----------------------------
@@ -178,8 +168,7 @@ public class FactionTariffBalanceTests
 
         // (b) Genuine two-run over the same seed: favored total ore spend stays within trajectory-drift
         //     slack of the neutral run's total ore spend (RE-BASELINED, U9 "quality gets teeth", 2026-07-24
-        //     — same class of drift the PA2 note above TrajectoryDriftSlack already documents for this
-        //     file: favored/neutral submit the SAME BaselinePlayer policy over the SAME seed but are not
+        //     — favored/neutral submit the SAME BaselinePlayer policy over the SAME seed but are not
         //     forced onto the same in-game trajectory). ShoppingAi's new deep-floor veteran quality gate
         //     (a legitimate demand-side change per this unit) changes which player-shelf items heroes buy
         //     and when, which changes WHEN state.Player.Gold lands relative to each Evening's ore offers
@@ -212,40 +201,18 @@ public class FactionTariffBalanceTests
     }
 
     // ---- Money-supply upper bound (KTD8): discount-minting cannot inflate reserves -------------
-
-    /// <summary>
-    /// PA2 re-tuning note (active-professions quality inversion, 2026-07-21): the favored and
-    /// neutral runs submit the SAME <see cref="BaselinePlayer"/> policy over the SAME seed, but
-    /// they are not forced onto the same in-game TRAJECTORY — <c>BaselinePlayer</c> prices its
-    /// shelved gear at <c>(Attack + Defense) * 2</c>, so whenever the blacksmith's crafted-item
-    /// quality distribution shifts, shelf prices shift with it, which can nudge WHEN a
-    /// gold-gated hero purchase, craft, or ore buy lands relative to the two runs — a trajectory
-    /// divergence, not a tariff effect. PA2 flips the blacksmith to the active dominance model
-    /// (auto-craft's competent-but-capped grade replaces the old ±8 threshold table for every
-    /// BaselinePlayer craft — Risks: "quality inversion shifts the 100-day balance bands"), which
-    /// is exactly this kind of shift. This slack absorbs that incidental drift while the bound
-    /// still catches a genuinely unbounded discount (minted grows with campaign length; this
-    /// slack does not).
-    /// </summary>
-    private const int TrajectoryDriftSlack = 300;
-
-    [Fact]
-    [Trait("Category", "Balance")]
-    public void HundredDay_MoneySupply_StaysWithinNeutralPlusMinted()
-    {
-        var fav = Run(MainSeed, neutral: false);
-        var neu = Run(MainSeed, neutral: true);
-
-        var minted = -fav.TotalTariffDelta; // the one-directional gold SOURCE the discount introduces
-        Assert.True(minted > 0, "no gold minted — the bound would be vacuous");
-
-        // THE KTD8 assert (new — no existing band caps gold on the upside): end-of-campaign town gold
-        // under the discount run cannot exceed the neutral run's total by more than the gold the
-        // discount actually minted, plus a small fixed trajectory-drift slack (see
-        // TrajectoryDriftSlack) — discount-minting is a bounded source, not unobserved inflation.
-        Assert.True(fav.FinalTownGold <= neu.FinalTownGold + minted + TrajectoryDriftSlack,
-            $"discount inflated reserves past the bound: favored {fav.FinalTownGold} > neutral {neu.FinalTownGold} + minted {minted} + slack {TrajectoryDriftSlack}");
-    }
+    //
+    // Forward-ladder plan L6 (2026-08-10-003, owner ruling "you are overcomplicating the balance
+    // tests, just do what's more fun for the player"): the old HundredDay_MoneySupply_StaysWithinNeutralPlusMinted
+    // asserted a two-run counterfactual (favored town gold vs a neutral re-run of the SAME seed,
+    // padded with a hand-tuned TrajectoryDriftSlack for trajectory divergence between the two runs)
+    // — no player ever sees the neutral run, so the assertion measured something unobservable at
+    // the table. DELETED, not re-tuned. What a player CAN feel is bounded right here, in ONE run:
+    // HundredDay_AggregateDiscount_StaysWithinCap (above, under "Cap") already asserts the
+    // single-run, player-feelable version of the same property — the discount minted over the
+    // campaign cannot exceed MaxAdjustmentPerMille (10%) of the ore the player actually bought,
+    // cross-multiplied, no floats, no second run, no slack constant. TariffFires and DriftBack are
+    // untouched by this reframing.
 
     // ---- Determinism: the tariffed campaign is byte-identical across two runs ------------------
 

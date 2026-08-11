@@ -561,7 +561,7 @@ tally-ending.
 |---|------|------|-----------|-----------------|--------|
 | P1 | **Night leads with the mark** (loop U5 / H3): the reveal opens with the attribution beat; sale-and-deed grouped by item | session, godot-only | nothing | Hero: tonight's bearer of your marked item. Ledger line: *is* the item — the beat becomes the opening card | **DONE** 2026-08-07 (wave U1) |
 | P2 | **The send-off names your work** (H4 / Q-1): the departure slate captions which marchers carry your items | session, godot-only | nothing (reads better after P1) | Hero: the named marchers. Ledger line: the antecedent Night points back to | **DONE** 2026-08-07 (wave U2) — and see the §8 correction: the naive version was already shipped; what was owed was the 2-line cap, the staging, and an honest empty state |
-| P3 | **Protect the finale**: two-sided balance assertions (floor 5 *reached* by day ≤N on the main seed; ending *fires* within 100 days) + one scripted full-length client run confirming Act III on the real HUD | session, tests-only | nothing | Invariant: the campaign has an end. (Chain-test clause 3 — protect the substrate) | **ASSERTIONS WRITTEN AND RED** 2026-08-08 (draft #413). They fired on their first run: the campaign cannot reach its own ending. See §11.8 — this is now the top of the critical path |
+| P3 | **Protect the finale**: two-sided balance assertions (floor 5 *reached* by day ≤N on the main seed; ending *fires* within 100 days) + one scripted full-length client run confirming Act III on the real HUD | session, tests-only | nothing | Invariant: the campaign has an end. (Chain-test clause 3 — protect the substrate) | **DONE** 2026-08-10 (forward-ladder L0-L7, closes draft #413). Venues are a forward ladder now; routing keys on `Hero.LadderRank`, not the power latch that stranded parties. Two-sided and green on the main seed (rung-0 clear day 18, Act III day 18, Climax day 26, Ending day 31) and on the 10-seed sweep (Ending ≤ day 36). See §11.8. The scripted full-length client-HUD run remains open |
 | P4 | **The human feel-test** (§9.8): `play.ps1`, one real evening, the five written questions — with the fifth (the boredom day) checked against the measured day-11 wall | an evening (owner) | P1+P2 merged — *with a deadline, not a dependency* (see ties) | Not a build item — the gate that rules 9.3, 9.5, 9.7, confirms R4/R6, and re-dates day-11 | OPEN — **put it on the calendar now** (§12, review C: the bottleneck is the owner, not the agents) |
 | P5 | **The vigil branch**: (a) surface the irony, or (b) retune wave, or (c) damp compensation — V-3's hero-chips ride whichever branch wins | (a) session / (b) wave + **re-baseline** / (c) session-wave + **re-baseline** | **R1** | Hero: the camped party. Ledger line: the delivery's `Provisioned`/`PotionLifesave` beat — or the death delta, depending on the branch | BLOCKED (R1) |
 | P6 | **Endgame surfaces**: buttons + bell-tray wiring for UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | ~2 sessions, godot-only | R2 — **RULED: build** | Hero: whoever carries the guaranteed Masterwork. Ledger line: the attempt's cost and the resulting item's beats | **DONE** 2026-08-07 (wave U3/U4). Dominance measured before shipping the buttons: 17.0% of crafted value flows through purchased attempts at Tier II with a 5000g reserve — hand-work keeps the field. `BaselinePlayer` untouched, no re-baseline |
@@ -721,15 +721,6 @@ So, binding rules for every session that touches this repo:
    prose, with no recorded evidence beside it. An instrument that cannot evidence a claim about §2
    links cannot be used to decide anything about them. Same constraint as before: capped overhead,
    and no unit here may displace a §11.4 path item.
-   **Amended 2026-08-10 (third):** granted, by name, to
-   `docs/plans/2026-08-10-003-feat-the-forward-ladder-plan.md` — the §11.8 resolution, carrying
-   the owner's 2026-08-10 forward-ladder ruling. This one is **critical path, not substrate**:
-   §11.8 is interrupt-class and §11.4's own ordering ties rule that a failed P3 re-orders the
-   plan around itself. Its slot comes from `2026-08-08-001-feat-proof-the-player-never-sees`,
-   deleted in the same PR as this grant: that wave's U1–U8 all landed except U5 — the red arc
-   gate, draft #413 — whose every remaining obligation transfers to the ladder wave's L6, where
-   the gate turning green is the wave's exit criterion. Nothing that doc still asserted survives
-   it; git history is the archive.
    **Amended 2026-08-10 (second):** the keeps-what-it-saw wave's units all landed (#436, #438,
    plus the frames/backend/coverage/personas and sweep PRs), so its doc dies in the same PR as
    this amendment (rule 7, atomically — a plan only on a branch does not exist, so the deletion,
@@ -745,6 +736,12 @@ So, binding rules for every session that touches this repo:
    numbers are disposable until §11.8's Gloomwood fix lands — a baseline taken on a campaign that
    cannot finish is not a baseline. Substrate and capped overhead throughout; no unit may
    displace a §11.4 path item.
+   **Amended 2026-08-10 (fourth):** the playtest-becomes-a-player wave's units all landed (#448),
+   its doc died on merge per rule 7, and no successor was queued at the time — this section is
+   catching up on that untracked death now. Separately, the critical-path slot the (now-deleted)
+   "third" amendment above once described — `docs/plans/2026-08-10-003-feat-the-forward-ladder-plan.md`,
+   the §11.8 resolution — also landed its last unit (L6/L7) and dies on merge in this same PR
+   (§11.8 carries the resolution). Both slots are empty; nothing is queued.
 5. **The measurement rule.** When new data contradicts this plan — P4 moves the boredom
    day, P3's assertions fail, a sweep overturns a tuning claim — the plan amends in the
    same PR that lands the finding. A plan that cannot lose an argument with a measurement
@@ -944,6 +941,16 @@ broken, not merged); the ruling supersedes the remaining two. The wave of record
 `docs/plans/2026-08-10-003-feat-the-forward-ladder-plan.md`, which also carries §11.5's parked
 Emberfall decision (the flip is rung 2's go-live; the #92 share-collapse measurement becomes
 obsolete when venue share is stage-keyed instead of threshold-keyed).
+
+**Resolved 2026-08-10 (L0-L7).** The ladder shipped: rank-keyed graduation and routing (L0-L2),
+all three rungs' gates characterized and set from measurement rather than guessed (L3-L4), the
+arc re-anchored onto `Hero.LadderRank` (L5), and the finale gate itself re-pinned two-sided and
+green (L6, closing draft #413). On the main seed a full `BaselinePlayer` campaign now clears rung
+0 (floor 5) by day 18, opens Act III the same day, reaches its Climax by day 26, and Ends by day
+31; across the main seed plus the 10-seed sweep, every campaign reaches its Ending by day 36 at
+the latest — every seed lands inside the plan's own windows on the first measurement. The finale
+P3 exists to protect is reachable. §11.4's P3 row is updated in this same PR; the plan doc itself
+is deleted per rule 7 — git history is the archive.
 
 ### 11.9 The bet
 
