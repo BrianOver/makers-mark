@@ -208,8 +208,12 @@ Set-Content -Path (Join-Path $runB 'coverage.json') -Value '{"Categories":[{"Cat
 Set-Content -Path (Join-Path $runB 'backend.json') -Value '{"Available":true,"AutoAdvanceCount":2,"UnattributedAdvanceCount":1}' -Encoding utf8
 Set-Content -Path (Join-Path $runB 'run-meta.json') -Value '{"tag":"Scout-veteran-1","scope":"Scout","persona":"veteran","personaPassedToDriver":false,"exitCode":1}' -Encoding utf8
 # runB's metrics.json -- the product sentence did NOT fire this run, two days of entropy data (the
-# per-day-entropy-table proof needs at least one run with more than a single day of rows).
-Set-Content -Path (Join-Path $runB 'metrics.json') -Value '{"PerDayEntropy":[{"Day":"1","TotalActions":2,"DistinctActionTypes":1,"EntropyBits":0.0},{"Day":"2","TotalActions":3,"DistinctActionTypes":2,"EntropyBits":0.9183}],"ProductSentence":{"ProductSentenceFired":false}}' -Encoding utf8
+# per-day-entropy-table proof needs at least one run with more than a single day of rows). U3
+# (playtest-finishes wave): runB also ran -PatienceMode Sweep and logged TWO would-have-quit
+# markers (turns 5 and 9) -- runA's metrics.json above carries no WouldHaveQuitMarkers key at all
+# (a Quit-mode run, or a driver build that predates U3), so the two fixtures together prove BOTH the
+# present-with-turns case and the absent-reads-as-empty case, never a silent zero either way.
+Set-Content -Path (Join-Path $runB 'metrics.json') -Value '{"PerDayEntropy":[{"Day":"1","TotalActions":2,"DistinctActionTypes":1,"EntropyBits":0.0},{"Day":"2","TotalActions":3,"DistinctActionTypes":2,"EntropyBits":0.9183}],"ProductSentence":{"ProductSentenceFired":false},"PatienceMode":"Sweep","WouldHaveQuitMarkers":[{"Turn":5,"Day":1,"Phase":"Camp","Trigger":"quit day 1 Camp after 6 refusal(s) at BountiesPanel (turn 5)"},{"Turn":9,"Day":2,"Phase":"Morning","Trigger":"quit day 2 Morning after 6 refusal(s) at TavernDoor (turn 9)"}]}' -Encoding utf8
 
 # runC: no findings.md at all -- proves "reported as missing, not skipped silently". Only a
 # run-meta.json exists (proving exit code / scope / persona can still be recovered even when the
@@ -274,11 +278,19 @@ if (Test-Path $summaryPath) {
         Check ($rowA.PromptHash -eq 'a1b2c3d4') ('runA PromptHash must parse from the combined header line, got [' + $rowA.PromptHash + ']')
         # W2 (docs/plans/2026-08-10-002): runA's metrics.json says the product sentence FIRED.
         Check ($rowA.ProductSentenceFired -eq 'True') ('runA ProductSentenceFired must be True (its metrics.json says so), got [' + $rowA.ProductSentenceFired + ']')
+        # U3 (playtest-finishes wave): runA's metrics.json carries NO WouldHaveQuitMarkers key at
+        # all (a Quit-mode run, or a driver build predating U3) -- the cell must be EMPTY, never a
+        # coerced "0" or a silent blank that could be misread either way.
+        Check ([string]::IsNullOrEmpty($rowA.WouldHaveQuitTurns)) ('runA WouldHaveQuitTurns must be empty (no WouldHaveQuitMarkers key at all), got [' + $rowA.WouldHaveQuitTurns + ']')
     }
     if ($rowB) {
         Check ($rowB.Verdict -eq 'DEGRADED + INCOMPLETE') ('runB verdict must name both, got [' + $rowB.Verdict + ']')
         Check ($rowB.LastInGameDay -eq '2') ('runB LastInGameDay must be 2, got [' + $rowB.LastInGameDay + ']')
         Check ($rowB.ProductSentenceFired -eq 'False') ('runB ProductSentenceFired must be False (its metrics.json says so), got [' + $rowB.ProductSentenceFired + ']')
+        # U3 (playtest-finishes wave): runB logged TWO would-have-quit markers (turns 5 and 9) --
+        # THE REGRESSION PIN for the comma-joined column: both turn numbers must appear, in order,
+        # never just the last one or a bare count.
+        Check ($rowB.WouldHaveQuitTurns -eq '5,9') ('runB WouldHaveQuitTurns must be "5,9" (both markers, in order), got [' + $rowB.WouldHaveQuitTurns + ']')
     }
     if ($rowC) {
         Check ($rowC.Verdict -eq 'MISSING') ('runC (no findings.md) verdict must be MISSING, got [' + $rowC.Verdict + ']')
@@ -298,6 +310,9 @@ if (Test-Path $summaryPath) {
         # cell must be EMPTY -- never a coerced "False", which would read as "checked, and it didn't
         # fire" instead of "never checked at all."
         Check ([string]::IsNullOrEmpty($rowC.ProductSentenceFired)) ('runC ProductSentenceFired must be empty (no metrics.json), not a silent False -- got [' + $rowC.ProductSentenceFired + ']')
+        # U3 (playtest-finishes wave): runC has NO metrics.json at all -- WouldHaveQuitTurns must be
+        # empty too, same defensive-reading posture as every other metrics.json-derived field.
+        Check ([string]::IsNullOrEmpty($rowC.WouldHaveQuitTurns)) ('runC WouldHaveQuitTurns must be empty (no metrics.json), got [' + $rowC.WouldHaveQuitTurns + ']')
     }
 }
 
