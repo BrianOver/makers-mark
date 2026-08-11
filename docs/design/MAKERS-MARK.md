@@ -764,6 +764,12 @@ So, binding rules for every session that touches this repo:
    legal set instead of composing freeform JSON), sweep-mode patience (the would-have-quit
    moment becomes a finding instead of a fatality), and an eyes/brain model split. Substrate,
    capped overhead; no unit may displace a §11.4 path item.
+   **Amended 2026-08-11 (fourth):** U1-U3 of the playtest-learns-to-finish wave landed together
+   in this PR — menu-choice acting, the eyes/brain split, and sweep-mode patience are all wired
+   into the driver and covered by the pure-logic suites. Its own Definition of Done names this
+   PR as where the doc dies (rule 7): U4 is a run, not a unit — the 10-run sweep proving the
+   success criterion, executed by the orchestrator once the GPU frees, reported to the owner
+   from `runs/`, never re-added here as a queued unit. The slot is empty; nothing is queued.
 5. **The measurement rule.** When new data contradicts this plan — P4 moves the boredom
    day, P3's assertions fail, a sweep overturns a tuning claim — the plan amends in the
    same PR that lands the finding. A plan that cannot lose an argument with a measurement
