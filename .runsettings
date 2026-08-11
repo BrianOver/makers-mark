@@ -5,18 +5,25 @@
 
      CORRECTED 2026-08-10: this header used to say a shell-exported GODOT_BIN
      "takes precedence" over the value below. Measured in CI the first time this
-     file was actually passed to dotnet test: it does NOT -- RunConfiguration
+     file was actually passed to dotnet test: it does NOT. RunConfiguration
      EnvironmentVariables override the inherited process env inside the test
      host, so the Windows path below hijacked a Linux runner and gdUnit
      discovered zero tests (caught by the ENGINE_MIN_PASSED floor, red on
      passed=0). A second attempt sed'd the real Linux path in and dotnet test
-     then died SILENTLY in ~3s with zero output, twice -- the same value works
+     then died SILENTLY in ~3s with zero output, twice; the same value works
      via plain env, so something else in this file trips the Linux adapter.
-     CONCLUSION: this file is LOCAL-ONLY until that is isolated. CI runs without
-     --settings and relies on ENGINE_MIN_PASSED to catch the green-54 lie this
+     CONCLUSION (SUPERSEDED 2026-08-11, see below). CI runs without a settings
+     file and relies on ENGINE_MIN_PASSED to catch the green-54 lie this
      file's CompileProcessTimeout guards against locally
      (.github/workflows/ci.yml, the engine step's note). If you need a different
-     local path, edit the value below -- do not rely on an env var beating it. -->
+     local path, edit the value below; do not rely on an env var beating it.
+
+     CORRECTED AGAIN 2026-08-11: the "died SILENTLY in ~3s" mystery above was
+     THIS FILE. A double hyphen is illegal inside an XML comment, and the
+     2026-08-10 note introduced four of them, so every
+     `dotnet test -settings .runsettings` since has failed to PARSE and run
+     zero tests. The old LOCAL-ONLY conclusion described a symptom of the note,
+     not a fault in the adapter. Never write a double hyphen in these comments. -->
 <RunSettings>
   <RunConfiguration>
     <EnvironmentVariables>
@@ -29,7 +36,7 @@
 
              Rebuild Godot Project ends with exit code: -1
 
-         followed by — and this is the dangerous part — a GREEN run of 54 tests instead of ~438.
+         followed by â€” and this is the dangerous part â€” a GREEN run of 54 tests instead of ~438.
          Every [RequireGodotRuntime] test is silently DROPPED rather than failed. A suite that
          passes while quietly skipping most of itself is the worst failure mode available to a
          determinism-gated project, and it has cost multiple sessions real time being mistaken for
@@ -44,8 +51,8 @@
          hundred tests. 54 means the rebuild failed and you are looking at a lie.
 
          SECOND CAUSE OF THE SAME LIE (found 2026-07-29): the rebuild timeout is not the only way
-         to get a green 54. Two gdUnit runs in flight at once — e.g. this checkout and an agent
-         worktree both running `dotnet test godot/tests` — also produce it, reported as
+         to get a green 54. Two gdUnit runs in flight at once â€” e.g. this checkout and an agent
+         worktree both running `dotnet test godot/tests` â€” also produce it, reported as
 
              GdUnit4 Godot Runtime Test Runner ends with exit code: 100
              Failed to connect: Connection timeout
@@ -55,12 +62,12 @@
          does not help, because nothing timed out.
 
          So: engine test runs across worktrees must be SERIALIZED. Before diagnosing a 54, check
-         whether another run was live (`tasklist | findstr Godot`) — and note that a bare
+         whether another run was live (`tasklist | findstr Godot`) â€” and note that a bare
          `dotnet test ... | tail` hides the non-zero exit code behind the pipe, which is how this
          one initially read as a pass.
 
          THIRD CAUSE (found 2026-08-01; a reproducible trigger for it found 2026-08-03, see the
-         FOURTH block below — which supersedes this one's "CI only" and "wall-clock cap" readings for
+         FOURTH block below â€” which supersedes this one's "CI only" and "wall-clock cap" readings for
          full-suite runs, and leaves the 8-test-step datum below still unexplained): the Godot runtime
          connection is cancelled mid-session and the suite is truncated, reported as
 
@@ -68,8 +75,8 @@
              (stack in GodotRuntimeExecutor.ExecuteCommand / System.IO.Pipes.PipeStream.WriteAsyncCore)
 
          Distinguishing marks, so nobody wastes hours blaming a test the way I did:
-           * the BLAMED TEST IS DIFFERENT EVERY RUN — HumanCampaignTests, then
-             Playtest3dClickThrough, then MainUiTests.ShopPanel_..., then ForgeCraftTests — while the
+           * the BLAMED TEST IS DIFFERENT EVERY RUN â€” HumanCampaignTests, then
+             Playtest3dClickThrough, then MainUiTests.ShopPanel_..., then ForgeCraftTests â€” while the
              error text is identical. Whichever test is executing when the axe falls gets the blame.
            * it is a WALL-CLOCK cap, not a per-test failure: three runs were cut at 9m37s, 9m41s and
              9m48s having completed 170, 354 and 266 tests respectively. Same duration, wildly
@@ -83,7 +90,7 @@
              is NOT close to how long a healthy run takes. A passing CI engine run does all 550
              tests in ~3m30s (3m29s and 3m21s measured), so the cap sits at ~2.8x the real runtime.
              PR #311's own commit aborted at 9m48s/266 and then passed UNCHANGED on re-run at
-             3m21s/550 — same code, same suite size. So the sick run is ~6x slower per test than the
+             3m21s/550 â€” same code, same suite size. So the sick run is ~6x slower per test than the
              healthy one; the suite is not creeping up on a deadline. The ~14 minutes a green
              engine-tests JOB takes is checkout + setup + restore + build + Godot import, and only
              ~3m30s of it is the test run. Do not trim tests or raise timeouts to "buy headroom"
@@ -93,14 +100,14 @@
 
          FOURTH (found 2026-08-03): the truncation is RESOURCE PRESSURE inside the shared Godot
          runtime, not a sick test. gdUnit's "Detected <N> orphan nodes during test execution!" warning
-         counts nodes still ALIVE when a test ends — leaked, and leaked into a runtime that every
+         counts nodes still ALIVE when a test ends â€” leaked, and leaked into a runtime that every
          later test in the session shares. A local full-suite run shows dozens of tests leaking, many
          in the hundreds and several in the thousands (602, 625, 2094, 4188, 4861 measured in one
          run), and the session dies once the pressure is high enough. It dies in one of two ways:
 
              Connection interrupted by cancellation requested       (it stalls; the THIRD block above)
              GdUnit4 Godot Runtime Test Runner ends with exit code: -1073741819
-                                                     (0xC0000005 ACCESS_VIOLATION — it segfaults)
+                                                     (0xC0000005 ACCESS_VIOLATION â€” it segfaults)
 
          Both were reproduced locally on 2026-08-03, on an idle machine, with zero other Godot
          processes running. Same root, two exits.
@@ -111,11 +118,11 @@
              other MainUi tests already did.
            * SimPanel rebuilds that QueueFree children in a test that never yields a frame. QueueFree
              defers to end-of-frame, so nothing is ever actually freed. Do NOT "fix" this by awaiting
-             a frame per phase tick — that was measured at 36s -> 5+ minutes on the sweep.
+             a frame per phase tick â€” that was measured at 36s -> 5+ minutes on the sweep.
              RESOLVED SINCE, in two halves (both must stay): PanelGraveyard + the MainUi mount/unmount
              drains (#377) destroy the residue so nothing leaks ACROSS tests, and the long click-through
              playtests drain per phase tick via MainUi.DrainDetachedPanelsForTests so the PEAK held
-             WITHIN a test stays bounded (was ~375k nodes / ~1.3 GB RSS — enough on its own to kill the
+             WITHIN a test stays bounded (was ~375k nodes / ~1.3 GB RSS â€” enough on its own to kill the
              runtime two-thirds through the suite; reproduced 2026-08-03 with the residue fix already
              in: runner exit -1073741819, suite truncated at 533 of ~800 in 9m44s, both signatures in
              the same log). The sweep asserts its own peak (PeakDetachedNodeBudget)
@@ -125,14 +132,14 @@
            * NOT CI-only. It reproduced twice on an idle local machine with NO other gdUnit run in
              flight (checked: zero Godot processes), on branch fix/bound-the-clickthrough-sweep.
            * NOT a wall-clock cap, at least for full-suite runs. Two local runs stopped after 528 and
-             529 tests of 787 — the SAME PLACE — while taking 1m38s and 9m49s respectively. A clock
+             529 tests of 787 â€” the SAME PLACE â€” while taking 1m38s and 9m49s respectively. A clock
              cannot stop at the same test twice. That is the mirror image of the CI datum above (same
              duration, wildly different counts), and cumulative pressure explains both: how far the
              session gets depends on how much has leaked, and how long it then takes to die depends
              on whether it stalls or faults.
            * It explains why the BLAMED TEST LOOKS RANDOM without needing a sick test at all. The axe
              falls on whoever holds the runtime when it goes, which depends on order and timing.
-           * It explains why CI and local disagree on the same commit — 787 tests there, 529 here.
+           * It explains why CI and local disagree on the same commit â€” 787 tests there, 529 here.
              Rendering disabled lowers the pressure, so CI gets further. A local run is the harsher
              one, which makes it the better place to reproduce this.
 
@@ -144,12 +151,12 @@
          cannot render for nine minutes, so that instance has some other trigger and this block does
          not claim it.
 
-         What it is NOT: gdUnit's <SessionTimeout>. That was tested — with
+         What it is NOT: gdUnit's <SessionTimeout>. That was tested â€” with
          <SessionTimeout>40000</SessionTimeout> here, the local suite still ran all 550 tests in
          2m15s, so the element is ignored under <GdUnit4>. Do not "fix" this by tuning it.
 
          Note also that CI does not currently pass a settings file at all (see .github/workflows/ci.yml),
-         so NONE of this file applies there — including the CompileProcessTimeout below. That is
+         so NONE of this file applies there â€” including the CompileProcessTimeout below. That is
          tracked separately and is the first thing to fix before diagnosing further. -->
     <CompileProcessTimeout>360000</CompileProcessTimeout>
   </GdUnit4>
