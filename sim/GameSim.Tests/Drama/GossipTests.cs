@@ -41,6 +41,7 @@ public class GossipTests
             new AttributionBeatEvent(BeatType.PotionLifesave, salve.Id, new HeroId(5), 2, "detail") { Id = new EventId(10), Day = 1 },
             new FloorRecordSet(new HeroId(4), 3) { Id = new EventId(11), Day = 1 },
             new RecruitArrived(new HeroId(5)) { Id = new EventId(12), Day = 1 },
+            new VenueGraduated("mine", ImmutableList.Create(new HeroId(6)), NewRank: 1) { Id = new EventId(13), Day = 1 },
         };
 
         var lines = Generate(state, maxLines: 10, sources);
@@ -60,6 +61,30 @@ public class GossipTests
         Assert.Contains("Fine Iron Blade", LineFor(sources[1].Id)); // beat line names the item (R4)
         Assert.Contains("Field Salve", LineFor(sources[4].Id));     // Provisioned names the consumable (R4)
         Assert.Contains("Field Salve", LineFor(sources[5].Id));     // PotionLifesave names the consumable (R4)
+        Assert.Contains(state.Heroes[6].Name, LineFor(sources[8].Id)); // VenueGraduated names the graduate (L5)
+    }
+
+    /// <summary>Forward-ladder plan (L5): a party graduates together — the line names the first
+    /// graduate and counts the rest, rather than inventing names for heroes the template never
+    /// mentions or silently dropping the fact that more than one hero advanced.</summary>
+    [Fact]
+    public void VenueGraduated_MultipleGraduates_NamesFirstAndCountsTheRest()
+    {
+        var state = NewWorld();
+        var solo = Generate(state, maxLines: 1,
+            new VenueGraduated("mine", ImmutableList.Create(new HeroId(1)), NewRank: 1) { Id = new EventId(1), Day = 1 });
+        Assert.Contains("Torvald", solo[0].Line);
+        Assert.DoesNotContain("other", solo[0].Line);
+
+        var pair = Generate(state, maxLines: 1,
+            new VenueGraduated("mine", ImmutableList.Create(new HeroId(1), new HeroId(2)), NewRank: 1) { Id = new EventId(2), Day = 1 });
+        Assert.Contains("Torvald", pair[0].Line);
+        Assert.Contains("1 other", pair[0].Line);
+
+        var trio = Generate(state, maxLines: 1,
+            new VenueGraduated("mine", ImmutableList.Create(new HeroId(1), new HeroId(2), new HeroId(3)), NewRank: 1) { Id = new EventId(3), Day = 1 });
+        Assert.Contains("Torvald", trio[0].Line);
+        Assert.Contains("2 others", trio[0].Line);
     }
 
     [Fact]

@@ -103,6 +103,7 @@ public static class Characterize
         CampaignAct FinalAct,
         int ActIIStartDay,
         int ActIIIStartDay,
+        int ClimaxDay,
         int EndingDay,
         ImmutableDictionary<int, ImmutableDictionary<string, int>> ShareByStage);
 
@@ -150,7 +151,12 @@ public static class Characterize
             output.WriteLine($"first Emberfall boss (rank2->3) day: {Fmt(e.FirstGrad3Day)}"
                 + (e.FirstGrad3Day > 0 ? $" (party power {e.Grad3PartyPower}, {e.Grad3PartySize} graduate(s))" : string.Empty));
             output.WriteLine($"alive at end: {r.AliveAtEnd}, max deepest floor at end: {r.MaxDeepestAtEnd}");
-            output.WriteLine($"arc: {r.FinalAct} (ActII day {Fmt(r.ActIIStartDay)}, ActIII day {Fmt(r.ActIIIStartDay)}, Ending day {Fmt(r.EndingDay)})");
+            // L5: ActIII day (terminal rank reached, the last dungeon OPENS) and Climax day (that
+            // dungeon's own bottom floor FALLS, promoting a hero to ClimaxRank) are re-anchored to
+            // land on separate days now — printed separately so the gap between them is visible,
+            // not collapsed the way the pre-L5 single ActIIIStartDay used to.
+            output.WriteLine($"arc: {r.FinalAct} (ActII day {Fmt(r.ActIIStartDay)}, ActIII day {Fmt(r.ActIIIStartDay)}, "
+                + $"Climax day {Fmt(r.ClimaxDay)}, Ending day {Fmt(r.EndingDay)})");
             output.WriteLine(string.Empty);
         }
 
@@ -312,6 +318,7 @@ public static class Characterize
             state.Arc.Act,
             state.Arc.ActIIStartDay,
             state.Arc.ActIIIStartDay,
+            state.Arc.ClimaxDay,
             state.Arc.EndingDay,
             shareByStage.ToImmutableDictionary(
                 kv => kv.Key,

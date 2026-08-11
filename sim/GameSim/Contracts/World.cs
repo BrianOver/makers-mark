@@ -176,6 +176,18 @@ public sealed record ArcState(CampaignAct Act, int ActIIStartDay, int ActIIIStar
 {
     /// <summary>A fresh campaign: Act I, nothing else reached yet.</summary>
     public static readonly ArcState Initial = new(CampaignAct.ActI, ActIIStartDay: 0, ActIIIStartDay: 0, EndingDay: 0);
+
+    /// <summary>Forward-ladder plan (2026-08-10-003, L5): the day any hero first reached the Climax
+    /// rank (the ladder's terminal venue own bottom floor cleared — Emberfall's floor 5 falling
+    /// today). Split out from <see cref="ActIIIStartDay"/> because Act III (the terminal rank's
+    /// dungeon OPENING for a hero) and the Climax (that same dungeon's boss FALLING) are no longer
+    /// the same tick — measured days apart (~day 18-26 vs ~day 28-35) now that Act III keys on
+    /// <see cref="Hero.LadderRank"/> reaching the ladder's top rung rather than on the Mine's own
+    /// floor 5. 0 = not yet reached. Trailing init member (the LadderRank/SignedName/Xp save-compat
+    /// precedent) — a pre-L5 save has no property and deserializes to 0, so an in-flight campaign
+    /// loaded on this build simply has not recorded a climax day yet; <c>GameSim.Arc.ArcDirectorSystem</c>
+    /// schedules the Ending off THIS field exclusively, never off <see cref="ActIIIStartDay"/>.</summary>
+    public int ClimaxDay { get; init; } = 0;
 }
 
 /// <summary>

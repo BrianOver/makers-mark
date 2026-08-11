@@ -213,8 +213,38 @@ public class AtomicEquivalenceTests
     // PhaseBNoDrawGateTests.cs's matching ledger entry for the full account — `Inc` is STILL
     // byte-identical there (same stream, only `State` moved; no new draw site — VenueRegistry and
     // MaterialRegistry are both pure data, no RNG).
+    // GOLDEN RE-BASELINE #5 OF 5 (forward-ladder plan 2026-08-10-003, L5 — arc re-anchor +
+    // graduation news): **Class 0b — values change, draw-free.** ArcDirectorSystem now keys Act
+    // III on Hero.LadderRank reaching the ladder's own TerminalRank (VenueRegistry-derived, today
+    // 2) instead of the Mine's floor-5 wall, keys the Climax on a LATER, separate ClimaxRank
+    // (TerminalRank+1, Emberfall's own bottom floor falling), and schedules the Ending off the new
+    // ArcState.ClimaxDay field instead of ActIIIStartDay (the two no longer share a tick). This is
+    // a pure state-machine rewrite inside ArcDirectorSystem: it draws zero RNG (unchanged from
+    // before) and its own output, state.Arc, is read by no OTHER sim system for gameplay decisions
+    // — confirmed by grep, `state.Arc.Act` has exactly one reader in sim/GameSim/, ArcDirectorSystem
+    // itself. The sibling PhaseBNoDrawGateTests RngState pin is BYTE-IDENTICAL — for the first time
+    // in this five-entry ledger, NEITHER Inc NOR State moved (see that file's matching entry).
+    //
+    // What DOES move the hash: on this idle trace (seed 9001, zero player actions), the OLD
+    // floor-5-Mine-based trigger fired Act III/Climax/Ending well inside 30 days (the Mine's own
+    // floor 5 falls early on this rival-geared trace — see VenueRegistry.BuildMine's gate comment
+    // — so the old ActIIIFloorThreshold=5 tripped long before day 30 and the Ending followed 5 days
+    // later). Under the ladder-anchored trigger, Act III now waits for a hero to reach TerminalRank
+    // 2 — which requires graduating BOTH a rank-0 venue AND Gloomwood first — and the Climax waits
+    // for ClimaxRank 3, Emberfall's own bottom floor falling. Measured directly on this exact trace
+    // (temporary probe, this PR, reverted before commit): ActII day 4 (unchanged), ActIII day 27
+    // (Kettil and Nessa reach LadderRank 2), Climax day 28 (the same two graduate Emberfall to
+    // LadderRank 3 — the exact pair L4's own ledger entry already named reaching LadderRank 3 by
+    // day 30), Ending NOT YET DUE (Climax+5 = day 33, past this trace's 30-day window) — so
+    // `Arc.Act` reads ActIII, not Ended, at day 30, where the pre-L5 serialized state had already
+    // reached CampaignAct.Ended (with a CampaignEnded event and its chronicle tallies in the log)
+    // well before day 30. Every bit of this movement is VALUES on the existing ArcState shape
+    // (Act/ActIIIStartDay/EndingDay differ) plus one new populated field (ClimaxDay) — no Inc
+    // change (same stream identity) and no State change either (same stream position): nothing
+    // downstream of the arc consumes its state, so the rewrite cannot shift a single combat/shop/
+    // recruit draw. See PhaseBNoDrawGateTests.cs's matching ledger entry for the RNG-side proof.
     private const string ExpectedPreCounterSha256 =
-        "B50A1DAC3F414ECAB951B1A1F7FD0D6838D32C4D8FCFCBAE7CE7C232C4F81454";
+        "343F4215F551C98979975588384CDF6B4BDE03C7D88DA1BFCF7DCE2FAC4549C8";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

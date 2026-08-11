@@ -259,8 +259,26 @@ public static class GossipGenerator
             ("floor", FloorText(record.Floor)))),
         RecruitArrived arrived => (TavernPack.RecruitArrived, arrived.Hero, FlavorEngine.Slots(
             ("hero", HeroName(arrived.Hero, heroes)))),
+        VenueGraduated { Graduates.Count: > 0 } graduated => (TavernPack.VenueGraduated, graduated.Graduates[0], FlavorEngine.Slots(
+            ("hero", GraduatesLabel(graduated.Graduates, heroes)))),
         _ => null,
     };
+
+    /// <summary>Forward-ladder plan (L5): one told line per graduation, naming the first graduate
+    /// (the same single-protagonist convention every other told kind here already uses) plus a
+    /// headcount when a whole party graduated together, so the town's news stays honest about scope
+    /// without inventing a name for every hero in the party.</summary>
+    private static string GraduatesLabel(
+        ImmutableList<HeroId> graduates, ImmutableSortedDictionary<int, Hero> heroes)
+    {
+        var first = HeroName(graduates[0], heroes);
+        return graduates.Count switch
+        {
+            1 => first,
+            2 => $"{first} and 1 other",
+            _ => $"{first} and {graduates.Count - 1} others",
+        };
+    }
 
     private static string? BeatBaseKey(BeatType beat) => beat switch
     {

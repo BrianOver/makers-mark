@@ -23,6 +23,19 @@ public class ArcDirectorSystemTests
         };
     }
 
+    /// <summary>L5: Act III/Climax now key on <see cref="Hero.LadderRank"/>, not floor depth —
+    /// stamps hero 1 (Torvald, the starting roster's first hero) with the given rank alongside the
+    /// given depth-board floor (still needed for the Act I-&gt;II leg, unchanged by L5).</summary>
+    private static GameState AtEveningWithDepthAndRank(int floor, int rank)
+    {
+        var baseState = AtEveningWithDepth(floor);
+        var hero = baseState.Heroes[1];
+        return baseState with
+        {
+            Heroes = baseState.Heroes.SetItem(1, hero with { LadderRank = rank }),
+        };
+    }
+
     [Fact]
     public void NoDepthYet_StaysActI_NoEvents()
     {
@@ -53,30 +66,81 @@ public class ArcDirectorSystemTests
     }
 
     [Fact]
-    public void ReachesMaxFloor_AdvancesToActIII_AndFiresClimax_SameTick()
+    public void ReachesTerminalRank_AdvancesToActIII_ButDoesNotYetFireClimax()
     {
-        var state = AtEveningWithDepth(ArcDirectorSystem.ActIIIFloorThreshold);
+        // L5: reaching the ladder's top rung (TerminalRank) opens Act III — the last dungeon admits
+        // this hero — but the Climax (beating that dungeon) is a LATER, separate event now.
+        var state = AtEveningWithDepthAndRank(ArcDirectorSystem.ActIIFloorThreshold, ArcDirectorSystem.TerminalRank);
         var result = DramaFixtures.Tick(state, new ArcDirectorSystem());
 
-        // A jump straight past Act II's threshold in one tick fires BOTH advances plus the climax
-        // (each event fires exactly once, ever — not "at most once per tick").
+        Assert.Equal(CampaignAct.ActIII, result.NewState.Arc.Act);
+        var acts = result.Events.OfType<ActAdvanced>().Select(a => a.Act).ToImmutableList();
+        Assert.Equal(ImmutableList.Create(CampaignAct.ActII, CampaignAct.ActIII), acts);
+        Assert.Empty(result.Events.OfType<ClimaxReached>());
+        Assert.Equal(0, result.NewState.Arc.ClimaxDay);
+    }
+
+    [Fact]
+    public void ReachesClimaxRank_AdvancesToActIII_AndFiresClimax_SameTick()
+    {
+        // A hero who jumps straight to ClimaxRank in one synthetic tick (never realistic on a real
+        // trace — LadderRank increments by exactly one graduation per Evening — but the cascade must
+        // still resolve correctly) fires Act II, Act III, and the Climax all in the same Process call.
+        var state = AtEveningWithDepthAndRank(ArcDirectorSystem.ActIIFloorThreshold, ArcDirectorSystem.ClimaxRank);
+        var result = DramaFixtures.Tick(state, new ArcDirectorSystem());
+
         Assert.Equal(CampaignAct.ActIII, result.NewState.Arc.Act);
         var acts = result.Events.OfType<ActAdvanced>().Select(a => a.Act).ToImmutableList();
         Assert.Equal(ImmutableList.Create(CampaignAct.ActII, CampaignAct.ActIII), acts);
         var climax = Assert.Single(result.Events.OfType<ClimaxReached>());
-        Assert.Equal(ArcDirectorSystem.ActIIIFloorThreshold, climax.DeepestFloorReached);
+        Assert.Equal(ArcDirectorSystem.ActIIFloorThreshold, climax.DeepestFloorReached);
+        Assert.Equal(state.Day, result.NewState.Arc.ClimaxDay);
     }
 
     [Fact]
     public void ClimaxDoesNotRefire_OnSubsequentTicks()
     {
-        var state = AtEveningWithDepth(ArcDirectorSystem.ActIIIFloorThreshold);
+        var state = AtEveningWithDepthAndRank(ArcDirectorSystem.ActIIFloorThreshold, ArcDirectorSystem.ClimaxRank);
         var afterClimax = DramaFixtures.Tick(state, new ArcDirectorSystem()).NewState;
 
         var again = DramaFixtures.Tick(afterClimax with { Phase = DayPhase.Evening }, new ArcDirectorSystem());
         Assert.Empty(again.Events.OfType<ClimaxReached>());
         Assert.Empty(again.Events.OfType<ActAdvanced>());
         Assert.Equal(CampaignAct.ActIII, again.NewState.Arc.Act);
+        Assert.Equal(afterClimax.Arc.ClimaxDay, again.NewState.Arc.ClimaxDay);
+    }
+
+    [Fact]
+    public void ActIII_AndClimax_CanLandOnDifferentDays()
+    {
+        // The core L5 claim: unlike the pre-L5 design (same tick, always), a hero can open Act III
+        // on one day (reaching TerminalRank) and beat the Climax on a LATER day (reaching
+        // ClimaxRank), because they are two separate graduation events in the sim.
+        var openedActIII = AtEveningWithDepthAndRank(ArcDirectorSystem.ActIIFloorThreshold, ArcDirectorSystem.TerminalRank);
+        var afterActIII = DramaFixtures.Tick(openedActIII, new ArcDirectorSystem()).NewState;
+        Assert.Equal(CampaignAct.ActIII, afterActIII.Arc.Act);
+        Assert.Equal(0, afterActIII.Arc.ClimaxDay);
+
+        // Several days pass with no rank change: still no Climax.
+        var laterSameRank = afterActIII with { Day = afterActIII.Day + 6, Phase = DayPhase.Evening };
+        var stillNoClimax = DramaFixtures.Tick(laterSameRank, new ArcDirectorSystem()).NewState;
+        Assert.Equal(0, stillNoClimax.Arc.ClimaxDay);
+        Assert.Equal(CampaignAct.ActIII, stillNoClimax.Arc.Act);
+
+        // The hero later graduates the terminal venue's own bottom floor (ClimaxRank): the Climax
+        // fires on THIS later day, distinct from afterActIII's ActIIIStartDay.
+        var hero = stillNoClimax.Heroes[1];
+        var graduated = stillNoClimax with
+        {
+            Phase = DayPhase.Evening,
+            Heroes = stillNoClimax.Heroes.SetItem(1, hero with { LadderRank = ArcDirectorSystem.ClimaxRank }),
+        };
+        var afterClimax = DramaFixtures.Tick(graduated, new ArcDirectorSystem());
+
+        var climax = Assert.Single(afterClimax.Events.OfType<ClimaxReached>());
+        Assert.NotNull(climax);
+        Assert.Equal(graduated.Day, afterClimax.NewState.Arc.ClimaxDay);
+        Assert.NotEqual(afterActIII.Arc.ActIIIStartDay, afterClimax.NewState.Arc.ClimaxDay);
     }
 
     [Fact]
@@ -87,7 +151,13 @@ public class ArcDirectorSystemTests
         var atThreshold = baseState with
         {
             Phase = DayPhase.Evening,
-            Arc = new ArcState(CampaignAct.ActIII, ActIIStartDay: climaxDay, ActIIIStartDay: climaxDay, EndingDay: 0),
+            // L5: Ending schedules off ClimaxDay, not ActIIIStartDay — set both to the same day here
+            // (Act III opened, then immediately climaxed) purely so this fixture stays a minimal
+            // single-day setup; ActIII_AndClimax_CanLandOnDifferentDays covers the split explicitly.
+            Arc = new ArcState(CampaignAct.ActIII, ActIIStartDay: climaxDay, ActIIIStartDay: climaxDay, EndingDay: 0)
+            {
+                ClimaxDay = climaxDay,
+            },
         };
 
         // One day short of the delay: no Ending yet.
@@ -133,23 +203,24 @@ public class ArcDirectorSystemTests
             new AttributionBeatEvent(BeatType.BreakpointClear, new ItemId(1), heroWithBeats, 1, "z") { Id = new EventId(3), Day = 1 },
             new GossipEmitted(new EventId(1), "the tavern talks") { Id = new EventId(4), Day = 1 });
 
+        const int deepestFloor = 5; // stand-in "deepest floor reached" payload — no longer the arc's own trigger (L5)
         var state = baseState with
         {
             Phase = DayPhase.Evening,
             EventLog = log,
             Drama = baseState.Drama with
             {
-                DepthsBoard = baseState.Drama.DepthsBoard.SetItem(heroWithBeats.Value, ArcDirectorSystem.ActIIIFloorThreshold),
+                DepthsBoard = baseState.Drama.DepthsBoard.SetItem(heroWithBeats.Value, deepestFloor),
                 Memorials = ImmutableList.Create(new Memorial(deadHero, "Fallen Hero", 1, "Old Sword")),
             },
-            Arc = new ArcState(CampaignAct.ActIII, ActIIStartDay: 1, ActIIIStartDay: 1, EndingDay: 0),
+            Arc = new ArcState(CampaignAct.ActIII, ActIIStartDay: 1, ActIIIStartDay: 1, EndingDay: 0) { ClimaxDay = 1 },
         };
 
         var due = state with { Day = 1 + ArcDirectorSystem.EndingDelayDays };
         var result = DramaFixtures.Tick(due, new ArcDirectorSystem());
 
         var ending = Assert.Single(result.Events.OfType<CampaignEnded>());
-        Assert.Equal(ArcDirectorSystem.ActIIIFloorThreshold, ending.DeepestFloorReached);
+        Assert.Equal(deepestFloor, ending.DeepestFloorReached);
         Assert.Equal(1, ending.MemorialCount);
         Assert.Equal(0, ending.HonoredMemorialCount); // memorial never honored in this fixture
         Assert.Equal(3, ending.AttributionBeatCount);
