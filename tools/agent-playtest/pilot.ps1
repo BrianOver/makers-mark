@@ -259,27 +259,63 @@ function Get-PilotNavigateCommand {
 }
 
 # Reach a WORKING STATION inside a specific building -- one level deeper than
-# Get-PilotNavigateCommand's own building-keyword search, and the fix for a second 2026-08-11
-# real-run finding: a room's own stations are named after their FUNCTION, never the building
-# (WorkshopVocab.cs's own table -- the forge room holds "Anvil"/"Bellows"/"Furnace"/"Material
-# Shelf", none of which contain the substring "forge"), so re-using the building's own keyword
-# once already standing inside it can never match anything and would otherwise walk straight back
-# out through Get-PilotNavigateCommand's own keyword-miss-backs-out fix. Three cases:
-#   1. Already inside the target interior -> no keyword at all (nearest station here IS progress;
-#      a station with Action:null, like the forge's own "Quench Trough", is real, if wasted, human
-#      behavior -- poking the wrong thing once is not a bug in the pilot).
-#   2. Inside a DIFFERENT interior -> leave it (key: cancel) before trying to reach a different one.
-#   3. Outdoors (location "town") -> the ordinary building-keyword search.
+# Get-PilotNavigateCommand's own building-keyword search. Real-run findings folded in here
+# (2026-08-11, against the live client, not a stub):
+#
+#   1. A room's own stations are named after their FUNCTION, never the building (WorkshopVocab.cs's
+#      own table -- the forge room holds "Anvil"/"Bellows"/"Furnace"/"Material Shelf", none of which
+#      contain the substring "forge"), so re-using the building's own keyword once already standing
+#      inside it can never match. Already inside the target interior -> no keyword at all (nearest
+#      station here IS progress; a station with Action:null, like the forge's own "Quench Trough",
+#      is real, if wasted, human behavior -- poking the wrong thing once is not a bug here).
+#
+#   2. Interacting with a station OPENS A DRAWER on top of the room (location becomes
+#      "panel:<PanelId>", MainUi's own priority rule -- a drawer panel outranks the room underneath
+#      it), and that drawer does NOT close itself. A first fix attempt (2026-08-11) tried pressing
+#      "key:cancel" while location still read "interior:<venue>" (the WALKABLE ROOM, no drawer
+#      open yet) hoping to leave the building entirely -- it does not: Town2D.ExitInterior() is
+#      wired ONLY to the room's own ExitZone Area2D (BodyEntered), never to Escape/cancel, so three
+#      turns of "leaving" produced a byte-identical screen each time (confirmed live). The REAL bug
+#      this run actually hit was worse and silent: a 400-turn, 42-day run ended with location stuck
+#      at "panel:Forge" from day 1 turn ~9 through the very last turn -- the drawer opened once and
+#      then NEVER closed for the rest of the campaign, because nothing in this policy ever asked to
+#      close it. "cancel" DOES close a DRAWER (ModalEscape.TryClose, the same mechanism
+#      Commissions/Legends already use via their own named Close buttons) -- it only fails to leave
+#      the WALKABLE ROOM underneath one. So: "panel:$PanelId" (we are exactly where this call
+#      wanted) returns null so the caller's own controls check (WorkForge_/Stock_/BuyMat_/etc.)
+#      takes over; any OTHER "panel:*" closes via cancel before anything else is tried.
+#
+#   3. Inside a DIFFERENT walkable interior (no drawer) -> best-effort cancel (harmless even though
+#      finding 2 shows it will not actually leave the room -- a future fix needs the room's own
+#      exit-zone direction, which AgentPlaytestBridge's digest does not expose at all today; logged
+#      as a friction entry by the caller's own stuck-detector rather than silently retried forever).
+#
+#   4. Outdoors (location "town") -> the ordinary building-keyword search.
 function Get-PilotEnterInteriorCommand {
-    param($State, [Parameter(Mandatory)][string]$InteriorPrefix, [Parameter(Mandatory)][string]$BuildingKeyword, [Parameter(Mandatory)]$Memory)
+    param(
+        $State,
+        [Parameter(Mandatory)][string]$InteriorPrefix,
+        [Parameter(Mandatory)][string]$BuildingKeyword,
+        [string]$PanelId = '',
+        [Parameter(Mandatory)]$Memory
+    )
 
     $location = [string]$State.location
+
+    if ($PanelId -and $location -eq ('panel:' + $PanelId)) {
+        return $null # arrived -- let the caller's own control checks (WorkForge_/Stock_/BuyMat_/...) run
+    }
+    if ($location.StartsWith('panel:')) {
+        if (-not $State.canMove) {
+            return (Build-PilotCommandJson -Action 'key' -Target 'cancel' -Why ('pilot: closing an unrelated panel (' + $location + ') to get to ' + $BuildingKeyword))
+        }
+    }
     if ($location.StartsWith($InteriorPrefix)) {
         return (Get-PilotNavigateCommand -State $State -Keyword '' -Memory $Memory)
     }
     if ($location.StartsWith('interior:')) {
         if (-not $State.canMove) { return $null }
-        return (Build-PilotCommandJson -Action 'key' -Target 'cancel' -Why ('pilot: this is not ' + $BuildingKeyword + ', leaving'))
+        return (Build-PilotCommandJson -Action 'key' -Target 'cancel' -Why ('pilot: this is not ' + $BuildingKeyword + ', trying to leave'))
     }
     return (Get-PilotNavigateCommand -State $State -Keyword $BuildingKeyword -Memory $Memory)
 }
@@ -397,7 +433,7 @@ function Get-PilotMorningCommand {
     # Venue key is "market" (InteriorLayout2D.cs: "market" or "Shop" => "market"), NOT "shop" --
     # the building's own on-screen label is still "Shop", which is what a keyword search outdoors
     # needs to match.
-    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:market' -BuildingKeyword 'shop' -Memory $Memory
+    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:market' -BuildingKeyword 'shop' -PanelId 'Shop' -Memory $Memory
     if ($nav) { return $nav }
 
     return $null
@@ -440,7 +476,7 @@ function Get-PilotExpeditionCommand {
         }
     }
 
-    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -Memory $Memory
+    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -Memory $Memory
     if ($nav) { return $nav }
 
     return $null
@@ -507,7 +543,7 @@ function Get-PilotEveningCommand {
             -Why 'held gold back instead of buying material'
     }
 
-    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -Memory $Memory
+    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -Memory $Memory
     if ($nav) { return $nav }
 
     return $null
