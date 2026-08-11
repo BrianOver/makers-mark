@@ -33,6 +33,12 @@ public partial class LedgerModal : SimPanel
     /// </summary>
     public const int MaxCollapsedTaleLines = 8;
 
+    /// <summary>U6: whole-row opacity for an ore-offer row that reads dead outside Evening — the
+    /// same value <see cref="UiKit.ListRow"/>'s own <c>ListRowDisabledAlpha</c> uses for a
+    /// disabled vendor row (that constant is private to <c>UiKit</c>, so this mirrors the literal
+    /// rather than reaching across).</summary>
+    private const float RowDeadAlpha = 0.55f;
+
     private Label? _title;
     private VBoxContainer? _cards;
     private Label? _feedback;
@@ -233,6 +239,7 @@ public partial class LedgerModal : SimPanel
             foreach (var ore in card.OreOffers)
             {
                 var row = AddRow(oreSection.Body);
+                row.Name = $"OreOfferRow_{ore.From.Value}_{ore.MaterialKey}"; // U6: findable for the row-dim test
                 AddIcon(row, IconRegistry.Ore(ore.MaterialKey));
                 AddLabel(row, OreOfferLine(Adapter!.CurrentState, ore));
                 var offer = ore;
@@ -242,6 +249,19 @@ public partial class LedgerModal : SimPanel
                     _feedback!.Text = $"queued: buy {offer.Quantity}x {offer.MaterialKey} from {card.HeroName} (applies when the Evening ticks)";
                 });
                 GateButton(buy, BuyOreLegal(Adapter!.CurrentState, offer, card.HeroName, out var whyNot), whyNot);
+
+                // U6 (campaign finding: this row read as LIVE outside Evening even though
+                // BuyOreAction is Evening-gated at the kernel — GateButton above already disables
+                // the BUTTON, but the row's own icon/price line stayed full-bright, so a glance
+                // during Expedition still read "you can buy this" — a decoy). Dim the WHOLE row,
+                // the same whole-row alpha idiom UiKit.ListRow already uses for a disabled vendor
+                // row, and name the reason on the row itself so it reads dead without hovering the
+                // button.
+                if (Adapter!.CurrentState.Phase != DayPhase.Evening)
+                {
+                    row.Modulate = new Color(1f, 1f, 1f, RowDeadAlpha);
+                    row.TooltipText = "The vendor trades in the evening.";
+                }
             }
         }
 

@@ -457,5 +457,58 @@ public class LedgerModalTests
             Unmount(ui);
         }
     }
+
+    // ── U6 (buttons-learn-phases wave): the ore-row decoy ────────────────────────────────────
+
+    /// <summary>
+    /// Campaign finding: <c>BuyOreAction</c> is Evening-gated (<c>ActionLegality.cs:56</c>), but
+    /// the ore-offer row rendered full-bright outside Evening (e.g. reopening the Ledger during
+    /// Expedition) — the button alone read Disabled, but the row's own icon/price line still
+    /// looked live at a glance, a decoy. This pins the fix: outside Evening the WHOLE row dims
+    /// and carries the player-facing reason as its own tooltip, not just the button.
+    /// </summary>
+    [TestCase]
+    public void OreOfferRow_DimmedAndTooltipNamesTheWindow_OutsideEvening()
+    {
+        var ui = MountMainUi(new SimAdapter(OreOfferDay(standing: 0, quantity: 3, unitPrice: 5) with { Phase = DayPhase.Expedition }));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var row = Find<HBoxContainer>(ui.Ledger, $"OreOfferRow_1_{MaterialRegistry.Copper}");
+            AssertThat(row.Modulate.A)
+                .OverrideFailureMessage("Ore-offer row read as LIVE outside Evening — the exact decoy the campaign found.")
+                .IsLess(1f);
+            AssertThat(row.TooltipText).IsEqual("The vendor trades in the evening.");
+
+            var buy = Find<Button>(ui.Ledger, BuyButtonName);
+            AssertThat(buy.Disabled).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The other side of the pin: AT Evening (the real buying window) the row must read
+    /// exactly as live as it always has — full opacity, no tooltip standing in front of the
+    /// button's own reason.</summary>
+    [TestCase]
+    public void OreOfferRow_ReadsFullyLive_AtEvening()
+    {
+        var ui = MountMainUi(new SimAdapter(OreOfferDay(standing: 0, quantity: 3, unitPrice: 5)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var row = Find<HBoxContainer>(ui.Ledger, $"OreOfferRow_1_{MaterialRegistry.Copper}");
+            AssertThat(row.Modulate.A).IsEqual(1f);
+            AssertThat(row.TooltipText).IsEqual(string.Empty);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif
