@@ -778,6 +778,116 @@ Check ($legalDiagonalMove.Refused -eq $false) 'a move with a legal diagonal dir 
 $illegalDirWord = Get-LegalCommandFromReply -Reply '{"action":"move","dir":"north","why":"nope"}' -EnabledControls @()
 Check ($illegalDirWord.Refused -eq $true) 'a move dir outside the known 8 (e.g. "north") must be refused'
 
+# --- eyes-learn-labels wave, U1: label->name bridge ----------------------------------------------
+# Campaign evidence: models press the visible LABEL ("Close"); the harness only ever accepted the
+# node NAME ("CloseLedger") -- full/first-timer-1 died on "disabled/absent control: Close" at the
+# exact state first-timer-6 typed "CloseLedger" and proceeded. Every fixture below uses that exact
+# pair (name CloseLedger, label Close) as its running example.
+
+# Format-ControlDescriptor: bare name when label is identical or the "<Name>" textless-button
+# placeholder; "Name -- label: "Label"" only when the two genuinely differ.
+Check ((Format-ControlDescriptor -Name 'CloseLedger' -Label 'Close') -eq 'CloseLedger -- label: "Close"') 'a differing label must render as Name -- label: "Label"'
+Check ((Format-ControlDescriptor -Name 'AdvancePhase' -Label 'AdvancePhase') -eq 'AdvancePhase') 'an identical label must render as the bare name, no suffix'
+Check ((Format-ControlDescriptor -Name 'OpenLedger' -Label '<OpenLedger>') -eq 'OpenLedger') 'the "<Name>" textless-button placeholder must render as the bare name, not a redundant suffix'
+Check ((Format-ControlDescriptor -Name 'Foo' -Label '') -eq 'Foo') 'an empty label must render as the bare name'
+Check ((Format-ControlDescriptor -Name 'Foo' -Label $null) -eq 'Foo') 'a null label must render as the bare name, never throw'
+Check ((Format-ControlDescriptor -Name 'CloseLedger' -Label '  Close  ') -eq 'CloseLedger -- label: "Close"') 'a label must be trimmed before comparing/rendering'
+
+# Get-EnabledControlDescriptors: enabled-only, one descriptor per control, caller's own order.
+$descriptorControls = @(
+    [pscustomobject]@{ name = 'CloseLedger'; label = 'Close'; enabled = $true }
+    [pscustomobject]@{ name = 'AdvancePhase'; label = 'AdvancePhase'; enabled = $true }
+    [pscustomobject]@{ name = 'BuyMat_copper'; label = 'Buy'; enabled = $false }
+)
+$descriptors = Get-EnabledControlDescriptors -Controls $descriptorControls
+Check ($descriptors.Count -eq 2) ('Get-EnabledControlDescriptors must skip disabled controls, got ' + $descriptors.Count + ' of 3')
+Check ($descriptors -contains 'CloseLedger -- label: "Close"') 'the enabled differing-label control must appear with its descriptor'
+Check ($descriptors -contains 'AdvancePhase') 'the enabled identical-label control must appear as its bare name'
+Check ($descriptors -notcontains 'BuyMat_copper -- label: "Buy"' -and $descriptors -notcontains 'BuyMat_copper') 'a DISABLED control must never appear in the enabled-descriptors list at all'
+
+# Get-LegalCommandFromReply: a press naming the LABEL resolves to the control's real NAME when
+# exactly one enabled control matches (case-insensitively, trimmed) -- the returned Command has its
+# target rewritten (a raw label press would otherwise reach the client as "no visible control named
+# 'Close'"), and ResolvedFromLabel/ResolvedToName tell the caller to log the resolution.
+$labelControls = @(
+    [pscustomobject]@{ name = 'CloseLedger'; label = 'Close'; enabled = $true }
+)
+$labelResolved = Get-LegalCommandFromReply -Reply '{"action":"press","target":"Close","why":"closing the ledger"}' -EnabledControls @('CloseLedger') -EnabledControlLabels $labelControls
+Check ($labelResolved.Refused -eq $false) 'a press naming an unambiguous enabled label must resolve, not refuse'
+Check ($labelResolved.ResolvedFromLabel -eq 'Close') ('ResolvedFromLabel must carry the label the model sent, got [' + $labelResolved.ResolvedFromLabel + ']')
+Check ($labelResolved.ResolvedToName -eq 'CloseLedger') ('ResolvedToName must carry the real control name, got [' + $labelResolved.ResolvedToName + ']')
+$labelResolvedParsed = $labelResolved.Command | ConvertFrom-Json
+Check ($labelResolvedParsed.action -eq 'press' -and $labelResolvedParsed.target -eq 'CloseLedger') ('the rewritten Command must press the real name, got [' + $labelResolved.Command + ']')
+Check ($labelResolvedParsed.why -eq 'closing the ledger') 'the rewritten Command must preserve the original why text'
+
+# A label resolution with a "note" field must carry the note through too (the scratchpad echo must
+# not silently disappear just because the target got rewritten).
+$labelResolvedWithNote = Get-LegalCommandFromReply -Reply '{"action":"press","target":"Close","why":"t","note":"remember this"}' -EnabledControls @('CloseLedger') -EnabledControlLabels $labelControls
+$labelResolvedWithNoteParsed = $labelResolvedWithNote.Command | ConvertFrom-Json
+Check ($labelResolvedWithNoteParsed.note -eq 'remember this') 'a rewritten label-resolved Command must preserve the original note text'
+
+# A control name that ALREADY matches exactly must behave exactly as before -- label resolution is a
+# fallback, never consulted when the plain name check already succeeds.
+$plainNameStillWorks = Get-LegalCommandFromReply -Reply '{"action":"press","target":"CloseLedger","why":"t"}' -EnabledControls @('CloseLedger') -EnabledControlLabels $labelControls
+Check ($plainNameStillWorks.Refused -eq $false -and $plainNameStillWorks.ResolvedFromLabel -eq $null) 'an exact name match must succeed via the ORIGINAL path, never reported as a label resolution'
+
+# Two or more enabled controls sharing a label: refuse, naming the candidates -- never guess.
+$ambiguousLabelControls = @(
+    [pscustomobject]@{ name = 'BuyOre_1_copper'; label = 'Buy'; enabled = $true }
+    [pscustomobject]@{ name = 'BuyOre_3_copper'; label = 'Buy'; enabled = $true }
+)
+$ambiguousResolved = Get-LegalCommandFromReply -Reply '{"action":"press","target":"Buy","why":"t"}' -EnabledControls @('BuyOre_1_copper', 'BuyOre_3_copper') -EnabledControlLabels $ambiguousLabelControls
+Check ($ambiguousResolved.Refused -eq $true) 'a label matching 2+ enabled controls must refuse, never guess which one'
+Check ($ambiguousResolved.Reason -like '*ambiguous label*') ('the reason must say "ambiguous label", got [' + $ambiguousResolved.Reason + ']')
+Check ($ambiguousResolved.Reason -like '*BuyOre_1_copper*' -and $ambiguousResolved.Reason -like '*BuyOre_3_copper*') ('the ambiguous-label reason must NAME both candidates, got [' + $ambiguousResolved.Reason + ']')
+Check ($ambiguousResolved.ResolvedFromLabel -eq $null) 'an ambiguous (refused) label match must not report a resolution'
+
+# Label matching must NEVER resurrect a DISABLED control -- a control sharing the pressed label but
+# absent from EnabledControls must be excluded from candidacy entirely, even though its label data is
+# present in EnabledControlLabels (the observation includes disabled controls on purpose).
+$disabledLabelControls = @(
+    [pscustomobject]@{ name = 'CloseLedger'; label = 'Close'; enabled = $false }
+)
+$neverResurrect = Get-LegalCommandFromReply -Reply '{"action":"press","target":"Close","why":"t"}' -EnabledControls @() -EnabledControlLabels $disabledLabelControls
+Check ($neverResurrect.Refused -eq $true) 'a label belonging only to a DISABLED control must still refuse'
+Check ($neverResurrect.Reason -like '*disabled/absent control: Close*') ('a label with no enabled candidate must fall through to the plain disabled/absent refusal, got [' + $neverResurrect.Reason + ']')
+
+# Empty target: refuse, and the reason lists up to 5 enabled control names (never all of them
+# unbounded -- the refusal text rides in the model's own next prompt).
+$manyEnabled = @('Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf')
+$emptyTargetPress = Get-LegalCommandFromReply -Reply '{"action":"press","target":"","why":"t"}' -EnabledControls $manyEnabled
+Check ($emptyTargetPress.Refused -eq $true) 'an empty press target must refuse'
+Check ($emptyTargetPress.Reason -like '*empty press target*') ('the reason must say "empty press target", got [' + $emptyTargetPress.Reason + ']')
+Check ($emptyTargetPress.Reason -like '*Alpha*' -and $emptyTargetPress.Reason -like '*Echo*') 'the empty-target reason must list the first 5 enabled controls'
+Check ($emptyTargetPress.Reason -notlike '*Foxtrot*' -and $emptyTargetPress.Reason -notlike '*Golf*') 'the empty-target reason must cap at 5 enabled controls, never list all 7'
+
+# Backward compatibility: every existing caller that never passes -EnabledControlLabels at all (the
+# default @()) must behave byte-identically to before this unit -- a label that could have matched
+# is simply never considered when the caller supplies no label data.
+$noLabelDataPress = Get-LegalCommandFromReply -Reply '{"action":"press","target":"Close","why":"t"}' -EnabledControls @('CloseLedger')
+Check ($noLabelDataPress.Refused -eq $true -and $noLabelDataPress.Reason -like '*disabled/absent control: Close*') 'with no -EnabledControlLabels supplied at all, a label-shaped target must fall through to the plain refusal exactly as before this unit'
+
+# turn-prompt.ps1's Controls: block must thread the SAME descriptor formatting through the model's
+# per-turn observation, not just the refusal-feedback path -- Build-ActUserText already dot-sourced
+# above (section 4).
+$labelControlState = [pscustomobject]@{
+    day = 1; phase = 'Morning'; beat = 'None'; location = 'town'; canMove = $true; gold = 10
+    actionSlotsRemaining = 5; lastOutcome = '(run start)'; screenText = @(); interactPrompt = ''
+    controls = @(
+        [pscustomobject]@{ name = 'CloseLedger'; label = 'Close'; enabled = $true }
+        [pscustomobject]@{ name = 'AdvancePhase'; label = 'AdvancePhase'; enabled = $true }
+    )
+    nearby = @()
+}
+$labelControlText = Build-ActUserText -State $labelControlState -Turn 1 -Turns 40
+Check ($labelControlText -like '*CloseLedger -- label: "Close"*') ('the Controls: block must show the differing-label descriptor, got a text without it: [' + $labelControlText + ']')
+Check ($labelControlText -notlike '*AdvancePhase -- label*') 'an identical-label control must render as its bare name with no redundant suffix'
+
+# act.md must carry the new rule naming the target field as always-a-name.
+$actMdRawText = Get-Content (Join-Path $toolsDir 'agent-playtest\prompts\act.md') -Raw
+Check ($actMdRawText -like '*target*field*always*NAME*' -or $actMdRawText -like '*always a control''s NAME*') 'act.md must carry a rule stating the target field is always a control NAME'
+Check ($actMdRawText -like '*never*empty*' -or $actMdRawText -like '*never empty*') 'act.md''s new rule must also say the target must never be empty'
+
 # NORMALIZE/regex-extract are DELETED, not relocated -- grep the real script text for the specific
 # code shapes that used to live in the per-turn loop (not just the word "NORMALIZE", which the
 # deletion's own explanatory comment still legitimately uses).
@@ -1082,6 +1192,11 @@ Check ((Get-RefusalControlFromReason 'illegal/missing move dir: "" (must be up/d
 Check ((Get-RefusalControlFromReason 'empty reply') -eq '(unspecified)') 'a reason this file does not recognize must map to (unspecified)'
 Check ((Get-RefusalControlFromReason '') -eq '(unspecified)') 'an empty/absent reason must map to (unspecified), not throw'
 
+# eyes-learn-labels wave (U1): two new Reason shapes Get-LegalCommandFromReply's press branch can now
+# emit (label resolution failures) -- both must map to NAMED fallbacks, never (unspecified).
+Check ((Get-RefusalControlFromReason 'empty press target -- enabled controls: Alpha, Bravo') -eq '(press: no/empty target)') 'an empty-press-target reason must map to the same named fallback as the pre-existing blank-name case'
+Check ((Get-RefusalControlFromReason 'ambiguous label "Buy" matches 2 enabled controls: BuyOre_1_copper, BuyOre_3_copper') -eq '(ambiguous label: "Buy")') 'an ambiguous-label reason must map to a NAMED fallback carrying the attempted label, not (unspecified)'
+
 # --- 12d. Refusals-by-control frustration map: exact counts, both sources combined ---------------
 # NoSuchButton_xyz refused twice by the driver (pre-send); BuyMaterialAction rejected once by the
 # kernel (backend); OtherBtn refused once by the driver. Ranked by total count descending, ties
@@ -1107,38 +1222,75 @@ Check ($frustrationResult[2].Control -eq 'OtherBtn') ('the third row must be Oth
 $emptyFrustration = Get-RefusalFrustrationMap -PreRefusals @() -BackendRejections @()
 Check (@($emptyFrustration).Count -eq 0) ('zero refusals of any kind must produce zero frustration-map rows, got ' + (@($emptyFrustration).Count))
 
-# --- 12e. Product-sentence counter: fires on an attribution-shaped line, carries the caveat on zero
-# hits verbatim (the brief's own required wording: zero hits means "the log cannot tell you") --------
-$firedBackendSummary = [pscustomobject]@{
+# --- 12e. Product-sentence counter: U2 (eyes-learn-labels wave) gates ProductSentenceFired on a
+# REAL BACKEND NOTE HIT, never a screen-only regex match -- the exact defect the campaign found live:
+# 33 of 34 runs read True from a keyword hit on RIVAL DIALOGUE ("signed...") while the backend note
+# scan was 0-hits in every one of those runs. A screen-only hit is now WEAK, never a bare True. -----
+
+# Backend HAS a real note hit, screen ALSO shows it -- the genuine positive case: True, CONFIRMED.
+$bothHitBackendSummary = [pscustomobject]@{
+    Available           = $true
+    AttributionNoteHits = @('gossip: word of the MakersMark blade is spreading')
+    AttributionCaveat   = 'a tick row records only a COUNT of events -- this log CANNOT directly prove an AttributionBeatEvent fired. 1 hit(s) above -- treat zero hits as "the log cannot tell you", not "nothing named the player''s work."'
+}
+$bothHitScreenText = @(
+    'Welcome to the shop.',
+    'Legend: Emberbite''s MakersMark blade turned the killing blow on floor 3. Torvald lives.'
+)
+$bothHitReport = Get-ProductSentenceReport -BackendSummary $bothHitBackendSummary -ScreenTextHistory $bothHitScreenText
+Check ($bothHitReport.ProductSentenceFired -eq $true) 'a REAL backend note hit must fire the product-sentence counter'
+Check ($bothHitReport.PlayerScreenShowedIt -eq $true) 'PlayerScreenShowedIt must be true when a screenText line ALSO matches'
+Check ($bothHitReport.Verdict -eq 'CONFIRMED') ('a backend hit (with or without a screen hit) must verdict CONFIRMED, got [' + $bothHitReport.Verdict + ']')
+Check (@($bothHitReport.ScreenTextHits).Count -eq 1) ('exactly 1 screenText hit expected, got ' + @($bothHitReport.ScreenTextHits).Count)
+Check ($bothHitReport.ScreenTextHits[0] -like '*MakersMark*') 'the recorded hit must be the actual matching line, not a placeholder'
+
+# Backend HAS a real note hit, screen shows NOTHING -- still True/CONFIRMED (the backend is the
+# signal of record; the screen scan is a separate, best-effort observation, not a gate on top of it).
+$backendOnlyReport = Get-ProductSentenceReport -BackendSummary $bothHitBackendSummary -ScreenTextHistory @('gold 100', 'welcome')
+Check ($backendOnlyReport.ProductSentenceFired -eq $true) 'a backend hit alone (no screen hit) must still fire True'
+Check ($backendOnlyReport.PlayerScreenShowedIt -eq $false) 'PlayerScreenShowedIt must be false when no screenText line matches'
+Check ($backendOnlyReport.Verdict -eq 'CONFIRMED') 'a backend hit alone must still verdict CONFIRMED'
+
+# THE REGRESSION PIN: screen shows an attribution-shaped line, but the backend log is AVAILABLE and
+# SILENT (zero note hits) -- this is exactly the 33/34-run false-positive shape. Must be False in
+# metrics.json (ProductSentenceFired) and WEAK in findings.md (Verdict), never a bare True.
+$screenOnlyBackendSummary = [pscustomobject]@{
     Available           = $true
     AttributionNoteHits = @()
     AttributionCaveat   = 'a tick row records only a COUNT of events -- this log CANNOT directly prove an AttributionBeatEvent fired. 0 hit(s) above -- treat zero hits as "the log cannot tell you", not "nothing named the player''s work."'
 }
-$firedScreenText = @(
-    'Welcome to the shop.',
-    'Legend: Emberbite''s MakersMark blade turned the killing blow on floor 3. Torvald lives.'
-)
-$firedReport = Get-ProductSentenceReport -BackendSummary $firedBackendSummary -ScreenTextHistory $firedScreenText
-Check ($firedReport.ProductSentenceFired -eq $true) 'an attribution-shaped screenText line must fire the product-sentence counter'
-Check ($firedReport.PlayerScreenShowedIt -eq $true) 'PlayerScreenShowedIt must be true when a screenText line matches'
-Check (@($firedReport.ScreenTextHits).Count -eq 1) ('exactly 1 screenText hit expected, got ' + @($firedReport.ScreenTextHits).Count)
-Check ($firedReport.ScreenTextHits[0] -like '*MakersMark*') 'the recorded hit must be the actual matching line, not a placeholder'
+$screenOnlyReport = Get-ProductSentenceReport -BackendSummary $screenOnlyBackendSummary -ScreenTextHistory $bothHitScreenText
+Check ($screenOnlyReport.ProductSentenceFired -eq $false) 'THE REGRESSION PIN: a screen-only hit with the backend SILENT must NOT fire (ProductSentenceFired=False)'
+Check ($screenOnlyReport.PlayerScreenShowedIt -eq $true) 'PlayerScreenShowedIt must still be true -- the screen signal itself is not suppressed, only kept separate from Fired'
+Check ($screenOnlyReport.Verdict -eq 'WEAK (screen text only, backend silent)') ('a screen-only hit with the backend silent must verdict exactly "WEAK (screen text only, backend silent)", got [' + $screenOnlyReport.Verdict + ']')
+Check ($screenOnlyReport.ScreenTextCaveat -like '*WEAK*') 'the screenText caveat itself must also warn that a screen-only hit is weak'
 
+# Zero hits on either side: False, NOT SEEN.
 $zeroBackendSummary = [pscustomobject]@{
     Available           = $true
     AttributionNoteHits = @()
     AttributionCaveat   = 'a tick row records only a COUNT of events -- this log CANNOT directly prove an AttributionBeatEvent fired. 0 hit(s) above -- treat zero hits as "the log cannot tell you", not "nothing named the player''s work."'
 }
 $zeroReport = Get-ProductSentenceReport -BackendSummary $zeroBackendSummary -ScreenTextHistory @('gold 100', 'welcome')
-Check ($zeroReport.ProductSentenceFired -eq $false) 'zero attribution-shaped screenText lines must not fire the counter'
+Check ($zeroReport.ProductSentenceFired -eq $false) 'zero hits on either side must not fire the counter'
 Check ($zeroReport.AttributionBeatNamed -eq $false) 'zero backend note hits must report AttributionBeatNamed=false'
+Check ($zeroReport.Verdict -eq 'NOT SEEN') ('zero hits on either side must verdict NOT SEEN, got [' + $zeroReport.Verdict + ']')
 Check ($zeroReport.AttributionCaveat -like '*the log cannot tell you*') ('on zero hits, the backend caveat must be carried through VERBATIM, including "the log cannot tell you" -- got [' + $zeroReport.AttributionCaveat + ']')
 Check ($zeroReport.ScreenTextCaveat -like '*the log cannot tell you*') 'the screenText-side caveat must ALSO say "the log cannot tell you" on zero hits, not silently omit it'
 
 # A missing/unavailable backend summary must not crash, and must say the beat is UNKNOWN, not "false".
 $noBackendReport = Get-ProductSentenceReport -BackendSummary ([pscustomobject]@{ Available = $false }) -ScreenTextHistory @()
 Check ($noBackendReport.AttributionBeatNamed -eq $false) 'an unavailable backend summary must report AttributionBeatNamed=false (not crash)'
+Check ($noBackendReport.ProductSentenceFired -eq $false) 'an unavailable backend summary must never fire True'
+Check ($noBackendReport.Verdict -eq 'NOT SEEN') 'an unavailable backend summary with no screen hit either must verdict NOT SEEN'
 Check ($noBackendReport.AttributionCaveat -like '*UNKNOWN*') 'an unavailable backend summary caveat must say the attribution beat is UNKNOWN, not silently claim "no"'
+
+# Screen hit + backend UNAVAILABLE (not silent -- genuinely unknown): still WEAK, still False, but a
+# DIFFERENT wording than the "backend silent" case -- unknown must never be conflated with "checked
+# and found nothing" (the same discipline AttributionCaveat's own UNKNOWN wording already requires).
+$screenOnlyNoBackendReport = Get-ProductSentenceReport -BackendSummary ([pscustomobject]@{ Available = $false }) -ScreenTextHistory $bothHitScreenText
+Check ($screenOnlyNoBackendReport.ProductSentenceFired -eq $false) 'a screen hit with no backend log at all must not fire True'
+Check ($screenOnlyNoBackendReport.Verdict -eq 'WEAK (screen text only, backend unavailable)') ('a screen hit with an UNAVAILABLE backend must verdict differently than a SILENT one, got [' + $screenOnlyNoBackendReport.Verdict + ']')
 
 # --- 12f. Get-MetricsSummary + Format-MetricsMarkdown: the combined caller-facing shape ----------
 $combinedBackendSummary = [pscustomobject]@{
@@ -1161,6 +1313,64 @@ Check ($combinedMarkdown -like '*Product-sentence counter*') 'Format-MetricsMark
 Check ($combinedMarkdown -like '*Per-day action entropy*') 'Format-MetricsMarkdown must include the per-day entropy table'
 Check ($combinedMarkdown -like '*LEGAL-vs-CHOSEN*') 'Format-MetricsMarkdown must include the legal-vs-chosen section'
 Check ($combinedMarkdown -like '*frustration map*') 'Format-MetricsMarkdown must include the frustration map section'
+Check ($combinedMarkdown -like '*VERDICT:*') 'Format-MetricsMarkdown must print the product-sentence VERDICT line (U2, eyes-learn-labels)'
+
+# --- 12f-2. Format-DigestTurnLine: the Day-chip pairing fix (U2, eyes-learn-labels wave) ----------
+# THE REGRESSION PIN: a real captured state.json's screenText begins ["Day", "2", ...] -- the HUD's
+# Day chip renders as two adjacent Label nodes, always first. The old blind First-2-joined-with-';'
+# slice quoted a phantom "Day; 2" no player ever saw; the fix pairs them with a space.
+$dayChipTurn = [pscustomobject]@{
+    Turn = 4; Phase = 'Morning'; Action = 'advance'; Target = $null; Why = 'tick'; Outcome = 'advanced'
+    ScreenText = @('Day', '2', 'Gold', '100'); Refused = $false; RefusalReason = ''
+}
+$dayChipLine = Format-DigestTurnLine $dayChipTurn
+Check ($dayChipLine -like '*Day 2*') ('THE REGRESSION PIN: the Day chip must render as "Day 2", got [' + $dayChipLine + ']')
+Check ($dayChipLine -notlike '*Day; 2*') ('the Day chip must NEVER render as "Day; 2", got [' + $dayChipLine + ']')
+Check ($dayChipLine -like '*Gold; 100*') 'entries beyond the Day-chip pair must keep the ordinary "; "-joined preview'
+
+# A single-entry screenText (no pair to make) must not crash and must show the one entry as-is.
+$oneEntryTurn = [pscustomobject]@{
+    Turn = 1; Phase = 'Morning'; Action = 'advance'; Target = $null; Why = 't'; Outcome = 'ok'
+    ScreenText = @('Welcome'); Refused = $false; RefusalReason = ''
+}
+$oneEntryLine = Format-DigestTurnLine $oneEntryTurn
+Check ($oneEntryLine -like '*screen: Welcome*') ('a single-entry screenText must render as-is, got [' + $oneEntryLine + ']')
+
+# Zero-entry screenText: no "screen:" segment at all (unchanged behavior).
+$zeroEntryTurn = [pscustomobject]@{
+    Turn = 1; Phase = 'Morning'; Action = 'advance'; Target = $null; Why = 't'; Outcome = 'ok'
+    ScreenText = @(); Refused = $false; RefusalReason = ''
+}
+$zeroEntryLine = Format-DigestTurnLine $zeroEntryTurn
+Check ($zeroEntryLine -notlike '*screen:*') 'zero screenText entries must produce no "screen:" segment at all'
+
+# --- 12f-3. Get-FallbackCloseControl (U2, eyes-learn-labels wave) --------------------------------
+# An overlay-owning close control (name starting "Close") among the enabled list must be found;
+# absent one, the function must return nothing (never throw, never guess a non-Close control).
+Check ((Get-FallbackCloseControl -EnabledControls @('AdvancePhase', 'CloseLedger', 'OpenShop')) -eq 'CloseLedger') 'a "Close"-prefixed enabled control must be found regardless of position in the list'
+Check ($null -eq (Get-FallbackCloseControl -EnabledControls @('AdvancePhase', 'OpenShop'))) 'with no Close-prefixed control enabled, the function must return nothing (null), never guess'
+Check ($null -eq (Get-FallbackCloseControl -EnabledControls @())) 'an empty enabled-control list must return nothing, never throw'
+$twoCloseControls = Get-FallbackCloseControl -EnabledControls @('CloseLedger', 'CloseShop')
+Check ($twoCloseControls -eq 'CloseLedger') 'with two Close-prefixed controls, the FIRST in the caller''s own array order must be chosen deterministically'
+
+# agent-playtest.ps1 itself must actually call Get-FallbackCloseControl in its fallback path, and the
+# unconditional advance-only fallback string must no longer be the ONLY fallback shape.
+$agentPlaytestRawTextForFallback = Get-Content (Join-Path $toolsDir 'agent-playtest.ps1') -Raw
+Check ($agentPlaytestRawTextForFallback -like '*Get-FallbackCloseControl*') 'agent-playtest.ps1 must call Get-FallbackCloseControl in its fallback path'
+Check ($agentPlaytestRawTextForFallback -like '*an overlay owns the screen*') 'agent-playtest.ps1''s fallback path must press the close control (not advance) when an overlay owns the screen, logged as such'
+
+# --- 12f-4. Setup-command "why" text gets the [setup] prefix in the judge digest (U2) -------------
+# agent-playtest.ps1 must prefix a scenario Setup-replayed turn's Why text with "[setup] " before it
+# ever reaches TurnRecords -- Format-DigestTurnLine puts .Why straight into the judge line with no
+# other place to distinguish a QA comment ("safety margin 2") from a model's own stated reasoning.
+# NOTE: -like's "[...]" is a character CLASS, not literal brackets -- .Contains() is used for these
+# two checks instead, since the text being searched for genuinely contains literal square brackets.
+Check ($agentPlaytestRawTextForFallback.Contains("'[setup] ' + ")) 'agent-playtest.ps1 must prefix a scenario-Setup turn''s Why text with "[setup] " before recording it'
+$setupWhyLine = Format-DigestTurnLine ([pscustomobject]@{
+    Turn = 8; Phase = 'Camp'; Action = 'advance'; Target = $null; Why = '[setup] safety margin 2'; Outcome = 'advanced'
+    ScreenText = @(); Refused = $false; RefusalReason = ''
+})
+Check ($setupWhyLine.Contains('([setup] safety margin 2)')) ('a setup-prefixed why must render distinguishably in the judge digest line, got [' + $setupWhyLine + ']')
 
 # --- 12g. Per-day judge digest: the front-trim regression pin ------------------------------------
 # THE required proof (Verification Contract, docs/plans/2026-08-10-002): a per-day digest of a
@@ -1547,18 +1757,46 @@ Check (Test-Path $vigilRunnerPath) ('the shipped vigil-runner card must exist at
 $vigilRunnerCard = Read-ScenarioCard -Path $vigilRunnerPath
 Check ($vigilRunnerCard.Slug -eq 'vigil-runner') ('vigil-runner card Slug must be "vigil-runner", got [' + $vigilRunnerCard.Slug + ']')
 Check ($vigilRunnerCard.Setup.Type -eq 'Scripted') ('vigil-runner Setup must be a scripted command prefix, got [' + $vigilRunnerCard.Setup.Type + ']')
-Check (@($vigilRunnerCard.Setup.Commands).Count -eq 12) ('vigil-runner Setup must carry exactly 12 scripted commands, got ' + @($vigilRunnerCard.Setup.Commands).Count)
-foreach ($cmdText in @($vigilRunnerCard.Setup.Commands)) {
-    $parsedSetupCmd = $null
-    try { $parsedSetupCmd = $cmdText | ConvertFrom-Json } catch { }
-    Check ($null -ne $parsedSetupCmd -and $parsedSetupCmd.action -eq 'advance') ('every vigil-runner Setup command must itself parse as an "advance" command, got [' + $cmdText + ']')
+
+# U3 (eyes-learn-labels wave): the card now crafts a sendable field-salve BEFORE the advance-spam
+# (CampHandlers.ApplySend needs a player-crafted consumable in hand -- see the card's own "## Setup"
+# citations) -- 7 craft-prefix commands (enter forge, approach anvil, open panel, buy x2, craft,
+# close panel) followed by the original 12 advances, 19 total. The old "every command is advance"
+# pin is replaced by two narrower pins: the LAST 12 commands are still all "advance" (unchanged from
+# before this unit), and the FIRST 7 are the specific non-advance craft-prefix shape.
+$vigilRunnerCommands = @($vigilRunnerCard.Setup.Commands)
+Check ($vigilRunnerCommands.Count -eq 19) ('vigil-runner Setup must carry exactly 19 scripted commands (7 craft-prefix + 12 advance), got ' + $vigilRunnerCommands.Count)
+
+$vigilCraftPrefix = @($vigilRunnerCommands | Select-Object -First 7 | ForEach-Object { $_ | ConvertFrom-Json })
+$vigilAdvanceTail = @($vigilRunnerCommands | Select-Object -Last 12 | ForEach-Object { $_ | ConvertFrom-Json })
+
+Check ($vigilCraftPrefix.Count -eq 7) ('vigil-runner craft-prefix slice must have 7 parsed commands, got ' + $vigilCraftPrefix.Count)
+foreach ($advCmd in $vigilAdvanceTail) {
+    Check ($null -ne $advCmd -and $advCmd.action -eq 'advance') ('every one of the LAST 12 vigil-runner Setup commands must still parse as "advance", got [' + $advCmd + ']')
 }
+
+if ($vigilCraftPrefix.Count -eq 7) {
+    Check ($vigilCraftPrefix[0].action -eq 'key' -and $vigilCraftPrefix[0].target -eq 'interact') 'vigil-runner craft-prefix command 1 must be key:interact (enter the forge -- player spawns at its door)'
+    Check ($vigilCraftPrefix[1].action -eq 'move' -and $vigilCraftPrefix[1].dir -eq 'up') 'vigil-runner craft-prefix command 2 must be move:up (approach the anvil station)'
+    Check ($vigilCraftPrefix[2].action -eq 'key' -and $vigilCraftPrefix[2].target -eq 'interact') 'vigil-runner craft-prefix command 3 must be key:interact (interact with the anvil -> opens the Forge panel)'
+    Check ($vigilCraftPrefix[3].action -eq 'press' -and $vigilCraftPrefix[3].target -eq 'BuyMat_copper') 'vigil-runner craft-prefix command 4 must press BuyMat_copper (1st copper)'
+    Check ($vigilCraftPrefix[4].action -eq 'press' -and $vigilCraftPrefix[4].target -eq 'BuyMat_copper') 'vigil-runner craft-prefix command 5 must press BuyMat_copper again (2nd copper -- field-salve needs 2)'
+    Check ($vigilCraftPrefix[5].action -eq 'press' -and $vigilCraftPrefix[5].target -eq 'Craft_field-salve') 'vigil-runner craft-prefix command 6 must press Craft_field-salve (bare CraftAction, no minigame)'
+    Check ($vigilCraftPrefix[6].action -eq 'key' -and $vigilCraftPrefix[6].target -eq 'cancel') 'vigil-runner craft-prefix command 7 must be key:cancel (close the Forge panel before the advance-spam)'
+}
+
 Check ($vigilRunnerCard.Brief -like '*camped in the mine*') 'vigil-runner Brief must describe the send-supply task'
 Check ($vigilRunnerCard.ExpectedObservation -like '*send-supply verb*') 'vigil-runner Expected observation must name the send-supply verb'
 Check ($null -ne $vigilRunnerCard.BackendPredicate) 'vigil-runner must carry a Backend predicate'
 if ($vigilRunnerCard.BackendPredicate) {
     Check ($vigilRunnerCard.BackendPredicate.Equals -eq 'SendSupplyAction') ('vigil-runner BackendPredicate.Equals must be "SendSupplyAction", got [' + $vigilRunnerCard.BackendPredicate.Equals + ']')
 }
+
+# U3 regression pin: the KNOWN GAP note this unit was scoped to close must actually be gone from the
+# shipped card, not just described as gone in a commit message (rule 8's own "git outranks docs", one
+# level down -- the card's own text must agree with what the Setup now does).
+$vigilRunnerRawText = Get-Content $vigilRunnerPath -Raw
+Check ($vigilRunnerRawText -notlike '*KNOWN GAP*') 'vigil-runner.md must no longer carry a KNOWN GAP note -- U3 closed it, the craft-prefix above is the fix'
 
 # Missing card: FAILS LOUDLY, never falls back to a plain run.
 $missingCardThrew = $false

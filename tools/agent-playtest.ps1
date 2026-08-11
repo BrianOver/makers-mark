@@ -771,6 +771,11 @@ try {
         # Nearest-target distance is the position proxy: it changes as the player walks and needs no
         # new field. Rounded to 16px so sub-pixel drift is not mistaken for progress.
         $enabled = @($state.controls | Where-Object { $_.enabled } | ForEach-Object { $_.name })
+        # U1 (eyes-learn-labels wave): every "Enabled controls: ..." line the model actually reads
+        # (this STUCK note, and the REFUSED feedback below) shows the label painted on screen
+        # alongside the name a press must use -- $enabled itself stays names-only, since that is what
+        # Get-LegalCommandFromReply's legality check keys on.
+        $enabledDescriptors = Get-EnabledControlDescriptors -Controls $state.controls
         $whereabouts = ''
         if ($state.nearby -and @($state.nearby).Count -gt 0) {
             $nearest = @($state.nearby)[0]
@@ -779,7 +784,7 @@ try {
         $digest = ($state.phase + '|' + $state.location + '|' + $whereabouts + '|' + (($state.screenText) -join ';') + '|' + ($enabled -join ','))
         if ($digestSeen.ContainsKey($digest)) { $digestSeen[$digest] = $digestSeen[$digest] + 1 } else { $digestSeen[$digest] = 1 }
         if ($digestSeen[$digest] -eq 4) {
-            $note = 'STUCK: the screen was identical for 4 turns at ' + $state.location + ' / ' + $state.phase + '. Enabled controls: ' + ($enabled -join ', ')
+            $note = 'STUCK: the screen was identical for 4 turns at ' + $state.location + ' / ' + $state.phase + '. Enabled controls: ' + ($enabledDescriptors -join ', ')
             Warn $note
             [void]$stuckFindings.Add($note)
             # W4: a stuck-digest repeat drains the meter -- worse than a single refusal (see
@@ -868,10 +873,13 @@ try {
                 # Get-LegalCommandFromReply still catches what schema decoding cannot: an empty/failed
                 # call, or (ruling 1, kept ON PURPOSE) a real verb aimed at a control that is disabled
                 # right now -- an illegal press is signal the frustration map needs, so this refuses it
-                # and feeds the reason back rather than silently rewriting it.
-                $legal = Get-LegalCommandFromReply -Reply $reply -EnabledControls $enabled
+                # and feeds the reason back rather than silently rewriting it. U1 (eyes-learn-labels):
+                # -EnabledControlLabels lets a press that named a LABEL ("Close") resolve to the real
+                # control NAME ("CloseLedger") instead of refusing outright -- see model-call.ps1's own
+                # header for the campaign evidence this closes.
+                $legal = Get-LegalCommandFromReply -Reply $reply -EnabledControls $enabled -EnabledControlLabels $state.controls
                 if ($legal.Refused) {
-                    $userText = $userText + [Environment]::NewLine + ('REFUSED: ' + $legal.Reason + '. Enabled controls: ' + ($enabled -join ', '))
+                    $userText = $userText + [Environment]::NewLine + ('REFUSED: ' + $legal.Reason + '. Enabled controls: ' + ($enabledDescriptors -join ', '))
                     Warn ('turn ' + $turn + ' attempt ' + $attempts + ' refused: ' + $legal.Reason)
                     # W2: raw material for Get-RefusalFrustrationMap -- recorded here, at the ONE place
                     # that already knows both the reason text and which turn/phase it happened in,
@@ -894,11 +902,23 @@ try {
                     }
                     continue
                 }
+                if ($legal.ResolvedFromLabel) {
+                    Warn ('turn ' + $turn + ' attempt ' + $attempts + ' resolved label "' + $legal.ResolvedFromLabel + '" -> control "' + $legal.ResolvedToName + '"')
+                }
                 $command = $legal.Command
             }
             if (-not $command) {
-                $command = '{"action":"advance","why":"driver fallback: model gave no usable command"}'
-                Warn 'falling back to advance'
+                # U2 (eyes-learn-labels wave): an unconditional advance-fallback burns a whole day
+                # while an overlay still owns the screen -- see metrics.ps1's Get-FallbackCloseControl
+                # for the mechanical (never hardcoded) derivation of which enabled control closes it.
+                $fallbackCloseControl = Get-FallbackCloseControl -EnabledControls $enabled
+                if ($fallbackCloseControl) {
+                    $command = '{"action":"press","target":"' + $fallbackCloseControl + '","why":"driver fallback: model gave no usable command, an overlay owns the screen"}'
+                    Warn ('falling back to press ' + $fallbackCloseControl + ' (an overlay owns the screen)')
+                } else {
+                    $command = '{"action":"advance","why":"driver fallback: model gave no usable command"}'
+                    Warn 'falling back to advance'
+                }
                 $fallbackTurns++
             } else {
                 $modelDrivenTurns++
@@ -929,6 +949,16 @@ try {
             }
         }
 
+        # U2 (eyes-learn-labels wave): a scenario card's own Setup replay -- the "why" text is a QA
+        # comment for a HUMAN reading the card ("safety margin 2", "staged -- expect VigilStop here"),
+        # not player-facing copy, but it rode the SAME Why field Format-DigestTurnLine puts straight
+        # into the judge's per-turn line, unmarked -- a judge graded it as if it were UI text or a
+        # real decision. Prefixed here, at the one place that already knows a turn came from Setup
+        # replay, rather than downstream where that context is gone; a model-authored why (the normal
+        # case) is untouched.
+        $turnWhyText = $parsedCmd.why
+        if ($isScenarioSetupTurn) { $turnWhyText = '[setup] ' + $turnWhyText }
+
         # W2: metrics.ps1's per-turn record (see its own header). Day/Phase/ScreenText/EnabledControls
         # come off THIS turn's own $state (the context the action was chosen in); Action/Target/Why come
         # off the command actually decided above, whether that was the model's choice or the driver's
@@ -939,7 +969,7 @@ try {
             Phase           = $state.phase
             Action          = $parsedCmd.action
             Target          = $parsedCmd.target
-            Why             = $parsedCmd.why
+            Why             = $turnWhyText
             Outcome         = $state.lastOutcome
             ScreenText      = @($state.screenText)
             EnabledControls = $enabled

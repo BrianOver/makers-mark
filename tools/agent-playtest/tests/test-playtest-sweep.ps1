@@ -115,7 +115,8 @@ $fixtureRoot = Join-Path $env:TEMP 'playtest-sweep-test-fixtures'
 $runA = Join-Path $fixtureRoot 'Full-first-timer-1'
 $runB = Join-Path $fixtureRoot 'Scout-veteran-1'
 $runC = Join-Path $fixtureRoot 'Diff-sceptic-1'
-foreach ($d in @($fixtureRoot, $runA, $runB, $runC)) {
+$runD = Join-Path $fixtureRoot 'Full-monkey-1'
+foreach ($d in @($fixtureRoot, $runA, $runB, $runC, $runD)) {
     New-Item -ItemType Directory -Path $d -Force -ErrorAction Stop | Out-Null
 }
 
@@ -216,6 +217,14 @@ Set-Content -Path (Join-Path $runB 'metrics.json') -Value '{"PerDayEntropy":[{"D
 # own reader (Get-MetricsData): absent must read as an empty cell/note, never a silent "not fired".
 Set-Content -Path (Join-Path $runC 'run-meta.json') -Value '{"tag":"Diff-sceptic-1","scope":"Diff","persona":"sceptic","personaPassedToDriver":false,"exitCode":1}' -Encoding utf8
 
+# runD (U4, eyes-learn-labels wave): backend.json IS present but carries only ONE of the two
+# counters -- AutoAdvanceCount, no UnattributedAdvanceCount at all (a driver build that emits one
+# but not the other, distinct from runC's "no backend.json at all" case above). Before this unit the
+# reader's note only fired when BOTH fields were absent, so the missing UnattributedAdvanceCount
+# rendered as a silent empty cell with NO note anywhere -- indistinguishable from "checked, zero."
+Set-Content -Path (Join-Path $runD 'run-meta.json') -Value '{"tag":"Full-monkey-1","scope":"Full","persona":"monkey","personaPassedToDriver":false,"exitCode":0}' -Encoding utf8
+Set-Content -Path (Join-Path $runD 'backend.json') -Value '{"Available":true,"AutoAdvanceCount":5}' -Encoding utf8
+
 # Run the aggregator for real, against these fixtures only -- no Godot, no ollama, no network.
 & powershell -NoProfile -File $scriptPath -AggregateFrom $fixtureRoot | Out-Null
 $aggExit = $LASTEXITCODE
@@ -228,15 +237,28 @@ Check (Test-Path $reportPath) ('REPORT.md must be written to ' + $reportPath)
 
 if (Test-Path $summaryPath) {
     $rows = @(Import-Csv $summaryPath)
-    Check ($rows.Count -eq 3) ('SUMMARY.csv must have exactly 3 rows (one per fixture run dir), got ' + $rows.Count)
+    Check ($rows.Count -eq 4) ('SUMMARY.csv must have exactly 4 rows (one per fixture run dir), got ' + $rows.Count)
 
     $rowA = $rows | Where-Object { $_.RunTag -eq 'Full-first-timer-1' } | Select-Object -First 1
     $rowB = $rows | Where-Object { $_.RunTag -eq 'Scout-veteran-1' } | Select-Object -First 1
     $rowC = $rows | Where-Object { $_.RunTag -eq 'Diff-sceptic-1' } | Select-Object -First 1
+    $rowD = $rows | Where-Object { $_.RunTag -eq 'Full-monkey-1' } | Select-Object -First 1
 
     Check ($null -ne $rowA) 'SUMMARY.csv must contain a row for Full-first-timer-1'
     Check ($null -ne $rowB) 'SUMMARY.csv must contain a row for Scout-veteran-1'
     Check ($null -ne $rowC) 'SUMMARY.csv must contain a row for Diff-sceptic-1, not skip it silently'
+    Check ($null -ne $rowD) 'SUMMARY.csv must contain a row for Full-monkey-1, not skip it silently'
+
+    # U4 (eyes-learn-labels wave): THE REGRESSION PIN -- a backend.json present with only ONE of the
+    # two counters. The present field must carry its real value; the ABSENT field's cell must be
+    # empty (never a coerced 0); and the Notes column must carry the ONE fixed, greppable phrase
+    # regardless of which field was missing.
+    if ($rowD) {
+        Check ($rowD.AutoAdvanceCount -eq '5') ('runD AutoAdvanceCount (the field IT DOES emit) must be 5, got [' + $rowD.AutoAdvanceCount + ']')
+        Check ([string]::IsNullOrEmpty($rowD.UnattributedAdvanceCount)) ('THE REGRESSION PIN: runD UnattributedAdvanceCount (absent from its backend.json) must be an EMPTY cell, never a silent 0 -- got [' + $rowD.UnattributedAdvanceCount + ']')
+        Check ($rowD.Notes -match 'backend counters not in this driver build') ('THE REGRESSION PIN: runD Notes must carry "backend counters not in this driver build" for its one missing counter, got [' + $rowD.Notes + ']')
+        Check ($rowD.Notes -match 'UnattributedAdvanceCount') ('runD Notes must NAME the specific missing field, got [' + $rowD.Notes + ']')
+    }
 
     if ($rowA) {
         Check ($rowA.Verdict -eq 'CLEAN') ('runA verdict must be CLEAN, got [' + $rowA.Verdict + ']')
@@ -284,13 +306,13 @@ if (Test-Path $reportPath) {
 
     # W2 (docs/plans/2026-08-10-002): REPORT.md must LEAD with "the sentence the game exists to
     # produce fired in K of N runs" -- read from each run's own metrics.json. K=1 (runA fired),
-    # N-with-metrics=2 (runA + runB both have metrics.json; runC does not), total=3.
+    # N-with-metrics=2 (runA + runB both have metrics.json; runC/runD do not), total=4 (U4 added runD).
     $productSentenceLineIdx = $report.IndexOf('The sentence the game exists to produce fired')
     $deepestDayHeadingIdx = $report.IndexOf('## Deepest day reached')
     Check ($productSentenceLineIdx -ge 0) ('REPORT.md must contain the product-sentence lead line at all. Report:' + [Environment]::NewLine + $report)
     Check ($productSentenceLineIdx -ge 0 -and $productSentenceLineIdx -lt $deepestDayHeadingIdx) 'REPORT.md must LEAD with the product-sentence line -- it must appear BEFORE the Deepest day reached section, not buried after it'
     Check ($report -match [regex]::Escape('fired in 1 of 2 run(s) with metrics.json available')) ('REPORT.md must report exactly 1 of 2 runs-with-metrics fired. Report:' + [Environment]::NewLine + $report)
-    Check ($report -match [regex]::Escape('1 of 3 total run(s) had no usable metrics.json')) 'REPORT.md must name runC as the one run with no usable metrics.json, not silently drop it from the denominator'
+    Check ($report -match [regex]::Escape('2 of 4 total run(s) had no usable metrics.json')) 'REPORT.md must name runC AND runD as the two runs with no usable metrics.json, not silently drop them from the denominator'
 
     # Per-day entropy table across runs: runA's day 1 (1.5 bits) and runB's day 1/day 2 (0/0.9183
     # bits) must all appear, each attributed to its own run tag.

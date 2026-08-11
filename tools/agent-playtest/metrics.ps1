@@ -182,12 +182,14 @@ function Get-LegalVsChosenByPhase {
 
 # model-call.ps1's Get-LegalCommandFromReply returns a Reason STRING, not a structured target -- this
 # file is not in W2's own edit list (see metrics.ps1's header), so rather than change that return
-# shape, this parses the three fixed Reason prefixes it emits (its own source, unchanged): "disabled/
-# absent control: <name>", 'illegal key target: "<name>" ...', 'illegal/missing move dir: "<name>" ...'.
-# A captured name that is itself blank (the model sent an empty/missing target or dir -- the exact
-# "key"/"move" gaps model-call.ps1's own header names as found-live defects) gets a NAMED fallback
-# rather than a blank map row nobody could read; anything else this file does not recognize at all
-# (an unrecognized-action or empty-reply refusal, which never names a control) maps to '(unspecified)'.
+# shape, this parses the fixed Reason prefixes it emits (its own source, unchanged): "disabled/
+# absent control: <name>", 'illegal key target: "<name>" ...', 'illegal/missing move dir: "<name>" ...',
+# plus U1 (eyes-learn-labels wave)'s two new press-specific shapes: "empty press target -- ..." and
+# 'ambiguous label "<label>" matches N enabled controls: ...'. A captured name that is itself blank
+# (the model sent an empty/missing target or dir -- the exact "key"/"move" gaps model-call.ps1's own
+# header names as found-live defects) gets a NAMED fallback rather than a blank map row nobody could
+# read; anything else this file does not recognize at all (an unrecognized-action or empty-reply
+# refusal, which never names a control) maps to '(unspecified)'.
 function Get-RefusalControlFromReason {
     param([string]$Reason)
 
@@ -209,6 +211,13 @@ function Get-RefusalControlFromReason {
         $name = $m.Groups[1].Value.Trim()
         if ($name) { return $name }
         return '(move: no/empty dir)'
+    }
+    if ($Reason -like 'empty press target*') {
+        return '(press: no/empty target)'
+    }
+    $m = [regex]::Match($Reason, '^ambiguous label "([^"]*)"')
+    if ($m.Success) {
+        return ('(ambiguous label: "' + $m.Groups[1].Value + '")')
     }
     return '(unspecified)'
 }
@@ -264,10 +273,16 @@ function Get-RefusalFrustrationMap {
 # BackendSummary: Get-BackendSummary's own return object (backend.ps1) -- used for
 # .AttributionNoteHits/.AttributionCaveat/.Available, never re-derived here. ScreenTextHistory: a FLAT
 # array of every screenText line seen across every turn of the run (the caller flattens
-# TurnRecords[].ScreenText -- see agent-playtest.ps1's own wiring). "Fired" (ProductSentenceFired) is
-# defined as the SCREEN check, not the backend-note check -- see this file's own header for why: THE
-# GAME.md's own sentence is "you were watching when it happened," which is a claim about what the
-# player's screen showed, not about what the backend silently logged.
+# TurnRecords[].ScreenText -- see agent-playtest.ps1's own wiring).
+#
+# U2 (eyes-learn-labels wave): "Fired" (ProductSentenceFired, the field metrics.json reports) used to
+# be the SCREEN check alone -- found live as the exact defect this unit closes: 33 of 34 campaign
+# runs read True purely from a regex hit on RIVAL DIALOGUE ("signed...") while the backend note-scan
+# was 0-hits in every single one of those runs. A screen-text regex is a best-effort guess at UI copy
+# (see its own caveat below); the backend note hit is the one signal that is actually about the SIM
+# having recorded an attribution event. ProductSentenceFired is now gated on the backend hit alone;
+# a screen-only hit with the backend silent or unavailable is reported through Verdict as WEAK, never
+# folded into a bare True.
 function Get-ProductSentenceReport {
     param(
         $BackendSummary,
@@ -279,12 +294,15 @@ function Get-ProductSentenceReport {
         if ($line -and ([string]$line -match $script:ProductSentenceKeywordPattern)) { [void]$screenHits.Add([string]$line) }
     }
     $screenHits = @($screenHits | Select-Object -Unique)
+    $screenFired = ($screenHits.Count -gt 0)
 
     $attributionBeatNamed = $false
     $attributionNoteHits = @()
+    $backendAvailable = $false
     $attributionCaveat = 'no backend log was available for this run -- whether an attribution beat ' +
         'fired at all is UNKNOWN, not "no" (see backend.ps1''s own Message for why the log is absent).'
     if ($BackendSummary -and $BackendSummary.Available) {
+        $backendAvailable = $true
         $attributionNoteHits = @($BackendSummary.AttributionNoteHits)
         $attributionBeatNamed = ($attributionNoteHits.Count -gt 0)
         $attributionCaveat = $BackendSummary.AttributionCaveat
@@ -298,18 +316,33 @@ function Get-ProductSentenceReport {
         'language (the same keyword family as the backend note scan above: attribution/signed/' +
         'memorial/heirloom/gossip/legend/makersmark) -- not a parser of the game''s actual UI layout, ' +
         'and not proof the game never showed one just because this pattern found nothing. Treat zero ' +
-        'hits as "the log cannot tell you", not "nothing named the player''s work."'
+        'hits as "the log cannot tell you", not "nothing named the player''s work." A screen hit ALONE ' +
+        '(no matching backend note) is a WEAK signal, not proof -- rival dialogue and other UI copy can ' +
+        'share this pattern''s keyword family without a real attribution event ever having fired.'
 
-    $fired = ($screenHits.Count -gt 0)
+    # The one boolean metrics.json actually reports: True ONLY on a real backend note hit. A screen-
+    # only hit is real information (PlayerScreenShowedIt still reports it) but is not, by itself,
+    # proof the product sentence fired -- that is exactly the false-positive this unit closes.
+    $fired = $attributionBeatNamed
+
+    $verdict = 'NOT SEEN'
+    if ($attributionBeatNamed) {
+        $verdict = 'CONFIRMED'
+    } elseif ($screenFired -and $backendAvailable) {
+        $verdict = 'WEAK (screen text only, backend silent)'
+    } elseif ($screenFired) {
+        $verdict = 'WEAK (screen text only, backend unavailable)'
+    }
 
     return [pscustomobject]@{
         ProductSentenceFired = $fired
-        PlayerScreenShowedIt = $fired
+        PlayerScreenShowedIt = $screenFired
         ScreenTextHits       = $screenHits
         ScreenTextCaveat     = $screenTextCaveat
         AttributionBeatNamed = $attributionBeatNamed
         AttributionNoteHits  = $attributionNoteHits
         AttributionCaveat    = $attributionCaveat
+        Verdict              = $verdict
     }
 }
 
@@ -358,6 +391,7 @@ function Format-MetricsMarkdown {
     [void]$lines.Add('### Product-sentence counter')
     [void]$lines.Add('')
     $ps = $Metrics.ProductSentence
+    [void]$lines.Add('- VERDICT: ' + $ps.Verdict + ' (metrics.json ProductSentenceFired=' + $ps.ProductSentenceFired + ' -- True requires a backend note hit; a screen-only hit reports WEAK, never a bare True)')
     [void]$lines.Add('- attribution beat named in the backend log: ' + $ps.AttributionBeatNamed + ' (' + @($ps.AttributionNoteHits).Count + ' note hit(s))')
     [void]$lines.Add('- the PLAYER''S SCREEN ever showed one: ' + $ps.PlayerScreenShowedIt + ' (' + @($ps.ScreenTextHits).Count + ' screenText hit(s))')
     [void]$lines.Add('CAVEAT (backend note scan): ' + $ps.AttributionCaveat)
@@ -409,14 +443,45 @@ function Format-MetricsMarkdown {
     return ($lines -join [Environment]::NewLine)
 }
 
+# --- Fallback close-control detection (U2, eyes-learn-labels wave) --------------------------------
+
+# When the driver's own per-turn attempts loop exhausts itself with no legal command, the OLD
+# fallback was unconditional "advance" -- even when an OVERLAY owns the screen (a modal/panel with a
+# close control among this turn's enabled ones), where advancing the DAY does not get the player
+# unstuck at all; the very next turn starts from the same stuck overlay having burned a day for
+# nothing. Derived MECHANICALLY, never a hardcoded control list: any enabled control whose NAME
+# starts with "Close" (this codebase's own naming convention -- CloseLedger, CloseShop, ... -- see
+# LedgerModal.cs/ShopPanel.cs's own AddButton calls) is treated as the overlay's own close verb.
+# Returns $null when no such control is enabled (the ordinary case -- nothing is holding the screen).
+function Get-FallbackCloseControl {
+    param([array]$EnabledControls)
+
+    return (@($EnabledControls) | Where-Object { $_ -and ([string]$_).StartsWith('Close') } | Select-Object -First 1)
+}
+
 # --- Per-day judge digest --------------------------------------------------------------------------
 
+# U2 (eyes-learn-labels wave): metrics.ps1's own Format-DigestTurnLine used to slice the first TWO
+# raw ScreenText entries and join them with '; ' -- found live to be a phantom: the real HUD's Day
+# chip renders as two adjacent Label nodes (label "Day", value "2"), so ScreenObservation.VisibleText
+# (which walks each Label separately) ALWAYS puts them first, and a judge reading "Day; 2" quoted
+# text no player ever saw (a player sees "Day 2", rendered with no visible separator at all). Pair
+# them with a single space instead; anything beyond those first two entries is a genuinely separate
+# screen item and keeps the '; ' join.
 function Format-DigestTurnLine {
     param($Turn)
 
     $screenBit = ''
-    if ($Turn.ScreenText -and @($Turn.ScreenText).Count -gt 0) {
-        $screenBit = ' | screen: ' + ((@($Turn.ScreenText) | Select-Object -First 2) -join '; ')
+    $screenTextArr = @($Turn.ScreenText)
+    if ($screenTextArr.Count -gt 0) {
+        $previewParts = New-Object System.Collections.ArrayList
+        if ($screenTextArr.Count -ge 2) {
+            [void]$previewParts.Add(([string]$screenTextArr[0] + ' ' + [string]$screenTextArr[1]))
+            foreach ($rest in @($screenTextArr | Select-Object -Skip 2 -First 2)) { [void]$previewParts.Add($rest) }
+        } else {
+            [void]$previewParts.Add([string]$screenTextArr[0])
+        }
+        $screenBit = ' | screen: ' + ($previewParts -join '; ')
     }
     $refusedBit = ''
     if ($Turn.Refused) { $refusedBit = ' | REFUSED: ' + $Turn.RefusalReason }
