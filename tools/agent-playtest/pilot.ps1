@@ -306,16 +306,39 @@ function Get-PilotEnterInteriorCommand {
         return $null # arrived -- let the caller's own control checks (WorkForge_/Stock_/BuyMat_/...) run
     }
     if ($location.StartsWith('panel:')) {
-        if (-not $State.canMove) {
-            return (Build-PilotCommandJson -Action 'key' -Target 'cancel' -Why ('pilot: closing an unrelated panel (' + $location + ') to get to ' + $BuildingKeyword))
+        # "key:cancel" does NOT close a Drawer-hosted panel -- confirmed live, 150+ consecutive
+        # presses against a real running client with a byte-identical fingerprint every time.
+        # DrawerHost never wires Escape to Close() at all; it only reacts to its own header button,
+        # UiKit.DrawerHeader's own `Name = "Close"` (godot/scripts/ui/UiKit.cs) -- a generic, shared
+        # name across every Drawer-hosted panel (Forge/Shop/Tavern/...), unlike CommissionBoard's/
+        # LegendsWall's OWN separate overlay widgets, which are not Drawer-hosted and use their own
+        # panel-specific Close names (CommissionClose/LegendsWallClose) instead.
+        $close = Get-PilotEnabledControls -State $State -Pattern '^Close$'
+        if ($close.Count -gt 0) {
+            return (Build-PilotCommandJson -Action 'press' -Target 'Close' -Why ('pilot: closing an unrelated panel (' + $location + ') to get to ' + $BuildingKeyword))
         }
+        return $null # no Close control found/enabled this turn -- do not spin on a guess
     }
     if ($location.StartsWith($InteriorPrefix)) {
         return (Get-PilotNavigateCommand -State $State -Keyword '' -Memory $Memory)
     }
     if ($location.StartsWith('interior:')) {
-        if (-not $State.canMove) { return $null }
-        return (Build-PilotCommandJson -Action 'key' -Target 'cancel' -Why ('pilot: this is not ' + $BuildingKeyword + ', trying to leave'))
+        # No fix exists for this one today. "key:cancel" was tried first and confirmed dead by the
+        # same live run: only WorldInput2D.cs listens for the "cancel" action at all (grepped), and
+        # Town2D.ExitInterior() is wired ONLY to the room's own ExitZone Area2D (BodyEntered) --
+        # there is no keyboard shortcut to leave a walkable interior room, and
+        # AgentPlaytestBridge's own digest exposes no direction/position for that exit zone either
+        # (Surroundings() lists ONLY the room's stations once inside one). Logged once per run as a
+        # named harness-limit rather than silently guessed at forever.
+        if (-not $Memory.WrongInteriorFrictionLogged) {
+            $Memory.WrongInteriorFrictionLogged = $true
+            Add-PilotFriction -Memory $Memory -Turn $State.turn -Day $State.day -Phase $State.phase `
+                -Category 'harness-limit' -Trying ('leave ' + $location + ' to reach ' + $BuildingKeyword) `
+                -Detail ('there is no way to exit a walkable interior room through this harness''s action ' +
+                    'vocabulary -- Town2D.ExitInterior() only fires from walking into the room''s own ExitZone, ' +
+                    'never from a key press, and the state digest does not expose where that zone is.')
+        }
+        return $null
     }
     return (Get-PilotNavigateCommand -State $State -Keyword $BuildingKeyword -Memory $Memory)
 }
