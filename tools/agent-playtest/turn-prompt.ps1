@@ -33,6 +33,19 @@
     loaded (see this file's own header), the same reasoning model-call.ps1 gives for duplicating
     $script:KnownActionVerbs instead of importing coverage.ps1's registry.
 
+    "the playtest learns to finish" wave, U1: -MenuItems is OPTIONAL and empty by default, so every
+    existing caller (every test that built this file's output before this unit) keeps a byte-identical
+    prompt. When the caller (agent-playtest.ps1) supplies Build-ActMenu's own output (model-call.ps1),
+    the informational Controls: block above stays exactly as it was (it is still useful context -- it
+    also shows DISABLED controls, which the menu itself never does) and a new numbered "Choose ONE
+    action by its number" block is appended at the end, replacing the old generic "Answer with one
+    JSON object only." closing line with one that names the reply contract's real shape.
+
+    U2: -NoImage is a plain switch, off by default -- the eyes/brain split's split mode passes no
+    frame to the model at all (see agent-playtest.ps1's own .PARAMETER BrainModel doc for why), so
+    this appends one honest line saying so rather than silently sending a request that mentions "A
+    screenshot of the frame" (act.md's own words) when none was actually attached.
+
     STYLE NOTE: ASCII-only, no here-strings, no ternary/??. Dot-sourced by agent-playtest.ps1, which
     has to survive Windows PowerShell 5.1's BOM and here-string traps -- keep this file plain too.
 #>
@@ -82,7 +95,9 @@ function Build-ActUserText {
         [Parameter(Mandatory)]$State,
         [Parameter(Mandatory)][int]$Turn,
         [Parameter(Mandatory)][int]$Turns,
-        [string]$NotesText = ''
+        [string]$NotesText = '',
+        [array]$MenuItems = @(),
+        [switch]$NoImage
     )
 
     # An in-range target must NOT be reported as a direction to walk -- see agent-playtest.ps1's own
@@ -109,6 +124,26 @@ function Build-ActUserText {
         $notesBlock = 'Your notes so far:' + [Environment]::NewLine + $echoedNotes
     }
 
+    # U1 (playtest-finishes wave): the numbered menu is appended ONLY when the caller supplies one --
+    # see this file's own header for why that keeps every pre-existing caller byte-identical. When
+    # present, it also REPLACES the old generic closing instruction with one naming the real reply
+    # shape, since "Answer with one JSON object only." no longer says what that object looks like.
+    $menuBlock = ''
+    $answerLine = 'Answer with one JSON object only.'
+    if (@($MenuItems).Count -gt 0) {
+        $menuLines = @($MenuItems | ForEach-Object { '  ' + $_.DisplayText })
+        $menuBlock = 'Choose ONE action by its number:' + [Environment]::NewLine + ($menuLines -join [Environment]::NewLine)
+        $answerLine = 'Answer with one JSON object only: {"choice": <number from the menu above>, "why": "...", "note": "..."}.'
+    }
+
+    # U2 (playtest-finishes wave, eyes/brain split): split mode sends no image at all -- see this
+    # file's own header. Said plainly rather than silently omitted, since act.md's own protocol text
+    # tells the model to expect "A screenshot of the frame" every turn.
+    $noImageLine = ''
+    if ($NoImage) {
+        $noImageLine = 'No screenshot this turn -- reasoning-only mode. Use the state and screen text above.'
+    }
+
     return (@(
         ('Turn ' + $Turn + ' of ' + $Turns + '.'),
         ('Day ' + $State.day + ', phase ' + $State.phase + ', beat ' + $State.beat + ', at ' +
@@ -116,6 +151,7 @@ function Build-ActUserText {
             ', action slots left ' + $State.actionSlotsRemaining + '.'),
         ('Last outcome: ' + $State.lastOutcome),
         $prompt2d,
+        $noImageLine,
         '',
         'On screen:',
         (($State.screenText | ForEach-Object { '  ' + $_ }) -join [Environment]::NewLine),
@@ -127,6 +163,8 @@ function Build-ActUserText {
         '',
         $notesBlock,
         '',
-        'Answer with one JSON object only.'
+        $menuBlock,
+        '',
+        $answerLine
     ) -join [Environment]::NewLine)
 }

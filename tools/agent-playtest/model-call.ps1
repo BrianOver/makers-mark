@@ -44,6 +44,24 @@
     enabled right now -- ruling 1's "an illegal press IS signal" still holds, so a label can never
     resurrect a disabled control into a legal one.
 
+    "the playtest learns to finish" wave, U1 (owner finding 2026-08-11 + fable census: 58 of 58 model
+    runs died on patience by day 3, ~1,190 of ~1,260 refusals were the 8B model emitting semantically
+    EMPTY commands -- freeform compose-a-command is beyond the local model). Build-ActMenu/
+    Get-LegalCommandFromMenuChoice replace composing JSON with PICKING A NUMBER: the reply contract
+    becomes {"choice": <int>, "why": "...", "note": "..."}, and Get-LegalCommandFromReply above is
+    RETAINED (not deleted, not called from the main act loop any more) purely because
+    Get-ResolvedPressCommandText is reused verbatim by Get-CommandTextFromMenuItem's own press case --
+    "reuse the existing command construction, do not fork it" is the plan's own wording. Label
+    resolution (the whole point of the eyes-learn-labels wave above) becomes unnecessary under a menu:
+    the model never types a name or a label again, only an index, so Format-ControlDescriptor's own
+    "name -- label" text is now purely DISPLAY, read by the model to decide which number to send, never
+    something it has to reproduce correctly.
+
+    Get-ModelResidencyPlan is U2's own eyes/brain-split decision, made PURE so the unload ordering
+    can be proven without ollama/Godot/VRAM -- see its own doc for the VRAM math and the reasoning
+    for why split mode skips a per-turn model swap entirely rather than swapping vision/brain in and
+    out every turn.
+
     STYLE NOTE: ASCII-only, no here-strings, no ternary/??, matching every file it is dot-sourced by.
 #>
 
@@ -122,6 +140,12 @@ $script:KnownKeyTargets = @('interact', 'cancel')
 # schema-legal (dir is optional), so it passed straight through as "model-driven" while the client
 # refused every one of them ("unknown move dir ''"). Same self-flattery shape, third verb.
 $script:KnownMoveDirs = @('up', 'down', 'left', 'right', 'up+left', 'up+right', 'down+left', 'down+right')
+
+# U1 (playtest-finishes wave): a fixed frame count for every menu-chosen move, since the model no
+# longer picks its own (the menu offers a direction, not a direction+distance) -- see Build-ActMenu.
+# Between act.md's old "~20 frames for a short step" and "~60 to cross a room" suggestions; a model
+# that wants to keep walking the same way just picks the same menu item again next turn.
+$script:MenuMoveFrames = 40
 
 # One control's display text for the model: the bare NAME when its label is identical, or is the
 # "<Name>" bracket placeholder ScreenObservation.ObservedControls emits for a textless button (see
@@ -266,4 +290,213 @@ function Get-LegalCommandFromReply {
     }
 
     return [pscustomobject]@{ Command = $trimmed; Refused = $false; Reason = ''; ResolvedFromLabel = $null; ResolvedToName = $null }
+}
+
+# --- U1 (playtest-finishes wave): menu-choice acting -------------------------------------------
+
+# Builds THIS TURN's numbered menu, mechanically, from three sources only -- never a fixed
+# vocabulary the model has to compose against:
+#   0            -- advance, ALWAYS (law 2: skipping stays legal, no exceptions)
+#   1..N         -- one item per ENABLED control, in the observation's own array order (itself
+#                   stable turn to turn for the same control set -- it mirrors the game's own UI
+#                   tree), display text via Format-ControlDescriptor so a model that can only read
+#                   the label painted on screen still knows which number to send
+#   (if canMove) -- one item per direction in $script:KnownMoveDirs, in that fixed order
+#   (if legal)   -- interact, only when the screen is actually offering it: State.interactPrompt is
+#                   non-empty, OR any State.nearby entry reports inRange -- act.md's own words for
+#                   interactPrompt ("present only when the game is actually offering you the E key")
+#                   are the mechanical legality signal here, extended to nearby.inRange since a
+#                   "YOU ARE HERE, press interact" building uses that field instead
+#   always       -- cancel, last. No per-turn legality signal exists for it (none ever did -- the
+#                   old free-form schema never pre-refused a cancel attempt either, see
+#                   Get-LegalCommandFromReply's own $script:KnownKeyTargets check above), so it is
+#                   offered unconditionally, exactly as permissive as before this unit.
+# Ordering is therefore deterministic given the same inputs -- the same enabled-control set, the
+# same canMove/interact legality, always numbers the same way.
+function Build-ActMenu {
+    param([Parameter(Mandatory)]$State)
+
+    $items = New-Object System.Collections.ArrayList
+    [void]$items.Add([pscustomobject]@{
+        Index       = 0
+        DisplayText = '0. advance -- let the day move on'
+        Command     = [pscustomobject]@{ Action = 'advance' }
+    })
+
+    $idx = 1
+    foreach ($c in @($State.controls)) {
+        if (-not $c.enabled) { continue }
+        if (-not $c.name) { continue }
+        $name = [string]$c.name
+        $desc = Format-ControlDescriptor -Name $name -Label ([string]$c.label)
+        [void]$items.Add([pscustomobject]@{
+            Index       = $idx
+            DisplayText = ($idx.ToString() + '. press ' + $desc)
+            Command     = [pscustomobject]@{ Action = 'press'; Target = $name }
+        })
+        $idx++
+    }
+
+    if ($State.canMove) {
+        foreach ($dir in $script:KnownMoveDirs) {
+            [void]$items.Add([pscustomobject]@{
+                Index       = $idx
+                DisplayText = ($idx.ToString() + '. move ' + $dir)
+                Command     = [pscustomobject]@{ Action = 'move'; Dir = $dir }
+            })
+            $idx++
+        }
+    }
+
+    $interactLegal = $false
+    if ($State.interactPrompt) { $interactLegal = $true }
+    foreach ($n in @($State.nearby)) { if ($n.inRange) { $interactLegal = $true } }
+    if ($interactLegal) {
+        [void]$items.Add([pscustomobject]@{
+            Index       = $idx
+            DisplayText = ($idx.ToString() + '. interact -- use the thing you are next to')
+            Command     = [pscustomobject]@{ Action = 'key'; Target = 'interact' }
+        })
+        $idx++
+    }
+
+    [void]$items.Add([pscustomobject]@{
+        Index       = $idx
+        DisplayText = ($idx.ToString() + '. cancel -- leave this room or close this panel')
+        Command     = [pscustomobject]@{ Action = 'key'; Target = 'cancel' }
+    })
+    $idx++
+
+    return ,@($items)
+}
+
+# Turns one menu item back into the exact command JSON text the OLD free-form path would have built
+# for that same verb -- "reuse the existing command construction, do not fork it." $MenuItem is one
+# entry from Build-ActMenu's own array (.Command.Action/.Target/.Dir); $Parsed is the model's raw
+# reply, already ConvertFrom-Json'd, read only for .why/.note (never for .action/.target -- those
+# come from the MENU ITEM the choice resolved to, never from anything the model typed).
+#
+# "press" reuses Get-ResolvedPressCommandText VERBATIM -- the same helper U1 of the eyes-learn-labels
+# wave built to rewrite a label-matched press into its real control name, since building "a press
+# command's JSON given a target/why/note" is exactly what a menu choice needs too. advance/move/key
+# never had a dedicated builder before (the model composed their JSON itself), so their shape is
+# built here directly, but the JSON keys/shape are UNCHANGED from what act.md's old contract produced
+# -- no game-side change is needed to accept it.
+function Get-CommandTextFromMenuItem {
+    param(
+        [Parameter(Mandatory)]$MenuItem,
+        $Parsed
+    )
+
+    if ($MenuItem.Command.Action -eq 'press') {
+        return Get-ResolvedPressCommandText -ParsedCommand $Parsed -ResolvedTarget $MenuItem.Command.Target
+    }
+
+    $parts = New-Object System.Collections.ArrayList
+    [void]$parts.Add('"action":"' + $MenuItem.Command.Action + '"')
+    if (($MenuItem.Command.PSObject.Properties.Name -contains 'Target') -and $MenuItem.Command.Target) {
+        [void]$parts.Add('"target":"' + (JsonEsc $MenuItem.Command.Target) + '"')
+    }
+    if (($MenuItem.Command.PSObject.Properties.Name -contains 'Dir') -and $MenuItem.Command.Dir) {
+        [void]$parts.Add('"dir":"' + $MenuItem.Command.Dir + '"')
+        [void]$parts.Add('"frames":' + $script:MenuMoveFrames)
+    }
+    if ($Parsed -and $Parsed.why) { [void]$parts.Add('"why":"' + (JsonEsc ([string]$Parsed.why)) + '"') }
+    if ($Parsed -and $Parsed.note) { [void]$parts.Add('"note":"' + (JsonEsc ([string]$Parsed.note)) + '"') }
+    return ('{' + ($parts -join ',') + '}')
+}
+
+# Decides whether one model reply is a LEGAL menu pick RIGHT NOW, given $MenuItems (Build-ActMenu's
+# own output for this turn). Same Command/Refused/Reason shape as Get-LegalCommandFromReply, on
+# purpose, so the caller's honesty counters (fallbackTurns/DEGRADED) do not need to change meaning:
+# "three attempts produced no legal action" now covers an empty reply, a missing/non-integer choice,
+# or an out-of-range one -- an out-of-range choice IS STILL SIGNAL (ruling 1's own words), it still
+# drains the patience meter exactly like an illegal press used to. The kernel can still reject the
+# resulting command outright (a menu is what the SCREEN offers; legality of the OUTCOME stays the
+# game's own answer, never pre-empted here) -- that rejection still lands in the backend log exactly
+# as before, this function has no opinion on it.
+function Get-LegalCommandFromMenuChoice {
+    param(
+        [string]$Reply,
+        [array]$MenuItems
+    )
+
+    if (-not $Reply -or -not $Reply.Trim()) {
+        return [pscustomobject]@{ Command = $null; Refused = $true; Reason = 'empty reply' }
+    }
+
+    $trimmed = $Reply.Trim()
+    $parsed = $null
+    try { $parsed = $trimmed | ConvertFrom-Json } catch { $parsed = $null }
+    if ((-not $parsed) -or (-not ($parsed.PSObject.Properties.Name -contains 'choice')) -or ($null -eq $parsed.choice) -or (([string]$parsed.choice).Trim() -eq '')) {
+        return [pscustomobject]@{ Command = $null; Refused = $true;
+            Reason = 'reply JSON had no choice (schema should prevent this -- treat as a defect if seen live)' }
+    }
+
+    $choiceText = ([string]$parsed.choice).Trim()
+    $choice = 0
+    if (-not [int]::TryParse($choiceText, [ref]$choice)) {
+        return [pscustomobject]@{ Command = $null; Refused = $true;
+            Reason = ('choice was not an integer: "' + $choiceText + '"') }
+    }
+
+    $match = @($MenuItems | Where-Object { $_.Index -eq $choice })
+    if ($match.Count -eq 0) {
+        $maxIndex = 0
+        if (@($MenuItems).Count -gt 0) { $maxIndex = (@($MenuItems) | Measure-Object -Property Index -Maximum).Maximum }
+        return [pscustomobject]@{ Command = $null; Refused = $true;
+            Reason = ('out-of-range choice ' + $choice + ' -- valid range is 0 to ' + $maxIndex) }
+    }
+
+    $commandText = Get-CommandTextFromMenuItem -MenuItem $match[0] -Parsed $parsed
+    return [pscustomobject]@{ Command = $commandText; Refused = $false; Reason = '' }
+}
+
+# --- U2 (playtest-finishes wave): eyes/brain residency plan -------------------------------------
+
+# Pure decision, so the unload ordering can be proven without ollama/Godot/VRAM. $BrainModel empty
+# means single-model mode (today's exact behaviour, kept for A/B): $Model narrates AND chooses, the
+# judge pass calls $JudgeModel separately, with the existing unload-$Model-before/unload-$JudgeModel-
+# after dance (ruling 10, docs/plans/2026-08-10-002).
+#
+# $BrainModel non-empty means SPLIT mode. The VRAM math (agent-playtest.ps1's own .PARAMETER
+# BrainModel doc): qwen3-vl:8b (~6.1 GB) + qwen3:14b (~9.3 GB) sum to ~15.4 GB, over this project's
+# ~14 GB ceiling if both stayed resident across a turn -- so split mode does NOT swap vision and
+# brain in and out every turn (that would cost a model load/unload twice per turn, over the whole
+# run's turn budget, for no benefit worth the wall-clock). Instead $Model (vision) is never loaded
+# at all in split mode: frame narration is SKIPPED, not swapped -- ActUsesImage=false tells the
+# caller to send no image and rely on the state digest + screen text + menu, which already carry
+# the observable facts a model needs to choose. $BrainModel alone is resident for BOTH the per-turn
+# choice call and the judge pass (JudgeModel=BrainModel, UnloadBeforeJudge empty -- nothing to
+# unload, the judge reuses the SAME already-warm model), so split mode costs exactly ONE model load
+# and ONE unload for the whole run -- fewer swaps than single-model mode's own act-then-judge
+# handoff, not more.
+function Get-ModelResidencyPlan {
+    param(
+        [Parameter(Mandatory)][string]$Model,
+        [string]$BrainModel = '',
+        [Parameter(Mandatory)][string]$JudgeModel
+    )
+
+    $splitMode = [bool]$BrainModel
+
+    if ($splitMode) {
+        return [pscustomobject]@{
+            SplitMode         = $true
+            ActModel          = $BrainModel
+            ActUsesImage      = $false
+            JudgeModel        = $BrainModel
+            UnloadBeforeJudge = @()
+            UnloadAfterRun    = @($BrainModel)
+        }
+    }
+
+    return [pscustomobject]@{
+        SplitMode         = $false
+        ActModel          = $Model
+        ActUsesImage      = $true
+        JudgeModel        = $JudgeModel
+        UnloadBeforeJudge = @($Model)
+        UnloadAfterRun    = @($JudgeModel)
+    }
 }
