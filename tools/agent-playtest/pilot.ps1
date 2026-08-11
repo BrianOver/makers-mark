@@ -100,6 +100,7 @@ function New-PilotMemory {
         HabitLocked        = @{}
         PendingIntent      = '(run start)'
         PricingFrictionLogged = $false
+        WrongInteriorFrictionLogged = $false
         # 2026-08-11 real-run finding: pressing CommissionAccept_1/CommissionDecline_1 does NOT
         # remove that row from the board or disable either button -- the dead-verb detector
         # confirmed a byte-identical whole-state fingerprint before/after the press, repeatedly,

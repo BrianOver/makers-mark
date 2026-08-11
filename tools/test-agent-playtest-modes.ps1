@@ -2297,6 +2297,44 @@ Check ($agentPlaytestRawText -like '*Friction log*') 'agent-playtest.ps1 must wr
 Check ($agentPlaytestRawText -like '*Six decisions this run took*') 'agent-playtest.ps1 must write a Six-decisions section for pilot runs'
 Check ($agentPlaytestRawText -like '*FrictionLog*SixDecisions*' -or $agentPlaytestRawText -like '*SixDecisions*FrictionLog*') 'agent-playtest.ps1 must fold FrictionLog/SixDecisions into metrics.json for pilot runs'
 
+# Get-PilotEnterInteriorCommand (Bug 3/Bug 4 fixes): this exact function shipped a real defect that
+# THIS suite did not catch -- New-PilotMemory had no WrongInteriorFrictionLogged field, so the very
+# first live run crashed with "the property ... cannot be found on this object" the first time a
+# wrong-walkable-interior state was seen. These three checks exist so that class of bug (a memory
+# field read/written without ever being declared in New-PilotMemory) cannot regress silently again.
+$panelBranchMemory = New-PilotMemory
+$panelBranchState = [pscustomobject]@{
+    turn = 1; day = 1; phase = 'Morning'; location = 'panel:Forge'; canMove = $false
+    lastOutcome = '(run start)'; screenText = @('The forge panel is open.')
+    controls = @([pscustomobject]@{ name = 'Close'; enabled = $true })
+    nearby = @()
+}
+$panelBranchCmd = Get-PilotEnterInteriorCommand -State $panelBranchState -InteriorPrefix 'interior:market' -BuildingKeyword 'shop' -PanelId 'Shop' -Memory $panelBranchMemory
+Check ($null -ne $panelBranchCmd) 'an unrelated open drawer (panel:Forge, wanting the shop) must produce a command, not null'
+if ($panelBranchCmd) {
+    $parsedPanelBranchCmd = $panelBranchCmd | ConvertFrom-Json
+    Check ($parsedPanelBranchCmd.action -eq 'press' -and $parsedPanelBranchCmd.target -eq 'Close') 'closing an unrelated drawer must press the real "Close" button (UiKit.DrawerHeader), never key:cancel -- confirmed dead against a live client'
+}
+
+# Wrong walkable interior (no drawer open): must not crash (the exact bug above), must return null
+# so the caller falls through to its own advance-fallback, and must log the harness-limit gap
+# EXACTLY ONCE per run rather than once per turn.
+$wrongInteriorMemory = New-PilotMemory
+$wrongInteriorState = [pscustomobject]@{
+    turn = 1; day = 1; phase = 'Expedition'; location = 'interior:tavern'; canMove = $true
+    lastOutcome = '(run start)'; screenText = @('You are in the tavern.')
+    controls = @(); nearby = @()
+}
+$wrongInteriorCmdOne = Get-PilotEnterInteriorCommand -State $wrongInteriorState -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -Memory $wrongInteriorMemory
+Check ($null -eq $wrongInteriorCmdOne) 'standing in the wrong walkable interior (no drawer, no exit-zone input available) must return null, never a doomed key:cancel press'
+Check ($wrongInteriorMemory.FrictionLog.Count -eq 1) ('the wrong-interior gap must be logged exactly once, got ' + $wrongInteriorMemory.FrictionLog.Count)
+if ($wrongInteriorMemory.FrictionLog.Count -ge 1) {
+    Check ($wrongInteriorMemory.FrictionLog[0].Category -eq 'harness-limit') 'the wrong-interior gap must log under category harness-limit'
+}
+$wrongInteriorCmdTwo = Get-PilotEnterInteriorCommand -State $wrongInteriorState -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -Memory $wrongInteriorMemory
+Check ($null -eq $wrongInteriorCmdTwo) 'a second call in the same wrong interior must still return null'
+Check ($wrongInteriorMemory.FrictionLog.Count -eq 1) ('a second call in the same run must NOT log a second friction entry, got ' + $wrongInteriorMemory.FrictionLog.Count)
+
 # --- Summary -----------------------------------------------------------------------------------
 if ($failures.Count -gt 0) {
     Write-Host ('FAIL (' + $failures.Count + ' of ' + ($passes + $failures.Count) + '):')
