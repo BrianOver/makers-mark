@@ -742,6 +742,16 @@ So, binding rules for every session that touches this repo:
    "third" amendment above once described — `docs/plans/2026-08-10-003-feat-the-forward-ladder-plan.md`,
    the §11.8 resolution — also landed its last unit (L6/L7) and dies on merge in this same PR
    (§11.8 carries the resolution). Both slots are empty; nothing is queued.
+   **Amended 2026-08-11:** one slot is granted, by name, to
+   `docs/plans/2026-08-11-001-fix-the-eyes-learn-labels-plan.md` — the ten-rounds campaign's first
+   forensics wave. The instrument's own volume run convicted it: models press visible labels while
+   the harness accepts only node names (an A/B pair in the campaign's own logs proves the gap),
+   judges were grading harness digest artifacts as if they were game copy, and the product-sentence
+   headline read True in 33 of 34 runs on a regex hit the backend never corroborated. Four units
+   are substrate (the instrument); two are game defects the campaign caught for real — commission
+   and memorial buttons that never consult the legality mirror they were owed, and a quench
+   minigame that ticks from boot and auto-plunges a phantom craft into every session. Capped
+   overhead; no unit may displace a §11.4 path item.
 5. **The measurement rule.** When new data contradicts this plan — P4 moves the boredom
    day, P3's assertions fail, a sweep overturns a tuning claim — the plan amends in the
    same PR that lands the finding. A plan that cannot lose an argument with a measurement
