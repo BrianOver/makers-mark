@@ -44,6 +44,15 @@
 # script-scope variable (the same pattern personas.ps1 uses for $script:KnownPersonas /
 # $script:GameNounAllowlist) so a test can assert on the literal set, not just on behavior that
 # happens to match it today.
+#
+# "backendLogActive"/"previousFrameOk" (2026-08-12, finding A/B) are DELIBERATELY left OUT of this
+# list: neither necessarily changes on EVERY turn the way turn/lastOutcome do (the only test this
+# list applies), so excluding them would be exactly the "broader hand-typed set" this comment already
+# warns against. previousFrameOk in particular can in rare cases flip between two adjacent turns for
+# a reason unrelated to the press (a --headless capture glitch) and thereby mask a genuine dead-verb
+# candidate -- an acceptable, honestly-documented false NEGATIVE (this detector already tolerates
+# several, per ruling 7's own header), never a false positive, since it can only ever make the
+# fingerprint look MORE different, never paper over a real change.
 $script:DeadVerbExcludedFields = @('turn', 'lastOutcome')
 
 # Canonical (sorted-keys, stable) JSON-shaped text for one value, recursively. Not real JSON output
@@ -147,6 +156,19 @@ function Get-StateFingerprint {
 # never opened) is treated as "cannot confirm silence," not as silence itself: this file adds nothing
 # it cannot support, mirroring backend.ps1's own "everything below is UNKNOWN, not clean" posture for
 # an absent log.
+#
+# -LogStalled (2026-08-12, "the evidence channel says when it dies" -- an 8-lens adversarial audit's
+# finding A) is the THIRD input, and it changes the OUTCOME, not just a caveat bolted on afterward.
+# PlaytestLog.Append fails soft and PERMANENTLY (godot/scripts/PlaytestLog.cs): once it dies mid-run,
+# $BackendSlice.SawSimEvent reads false for every press for the rest of the process -- exactly the
+# same shape a genuinely dead button produces, with no field anywhere in $BackendSlice that tells the
+# two apart. The auditor proved this directly: a hand-built stalled-log slice and a hand-built
+# genuinely-dead-press slice produced IDENTICAL IsCandidate=True verdicts. $LogStalled is the caller's
+# own independent proof the channel died (backend.ps1's Update-BackendLogLivenessTracker, driven by
+# StateDigest.BackendLogActive -- a direct fact from the client, never inferred from this function's
+# own inputs) -- when both signals still agree AND the channel is known dead, this now returns
+# IsUnreliable instead of IsCandidate: never published as a defect, and worded so a human reading
+# findings.md cannot mistake it for one.
 function Get-DeadVerbVerdict {
     param(
         [Parameter(Mandatory)][string]$FingerprintBefore,
@@ -154,7 +176,8 @@ function Get-DeadVerbVerdict {
         $BackendSlice,
         [Parameter(Mandatory)][int]$Turn,
         [Parameter(Mandatory)][string]$Phase,
-        [Parameter(Mandatory)][string]$ControlName
+        [Parameter(Mandatory)][string]$ControlName,
+        [bool]$LogStalled = $false
     )
 
     $fingerprintUnchanged = ($FingerprintBefore -eq $FingerprintAfter)
@@ -162,7 +185,9 @@ function Get-DeadVerbVerdict {
     $backendSilent = $false
     if ($null -ne $BackendSlice) { $backendSilent = (-not $BackendSlice.SawSimEvent) }
 
-    $isCandidate = $fingerprintUnchanged -and $backendSilent
+    $signalsAgree = $fingerprintUnchanged -and $backendSilent
+    $isCandidate = $signalsAgree -and (-not $LogStalled)
+    $isUnreliable = $signalsAgree -and $LogStalled
 
     $line = $null
     if ($isCandidate) {
@@ -170,10 +195,19 @@ function Get-DeadVerbVerdict {
             ', control "' + $ControlName + '" -- the whole-state fingerprint was identical before ' +
             'and after the press, and the backend log recorded no sim event in that window. Labeled ' +
             'CANDIDATE for human confirmation, never asserted as a defect (ruling 7).')
+    } elseif ($isUnreliable) {
+        $line = ('UNRELIABLE (backend log evidence channel was dead): turn ' + $Turn + ', phase ' +
+            $Phase + ', control "' + $ControlName + '" -- the whole-state fingerprint was identical ' +
+            'before and after the press, and the backend log recorded no sim event in that window, ' +
+            'but the backend log itself was already known dead at this point in the run (see the ' +
+            '"backend log evidence channel died" line above). That is exactly the signature a ' +
+            'genuinely dead verb produces, from a channel that could not have told the difference -- ' +
+            'this is NOT a dead-verb candidate, never a defect, and never asserted as either.')
     }
 
     return [pscustomobject]@{
         IsCandidate           = $isCandidate
+        IsUnreliable          = $isUnreliable
         FingerprintUnchanged  = $fingerprintUnchanged
         BackendSilent         = $backendSilent
         Line                  = $line

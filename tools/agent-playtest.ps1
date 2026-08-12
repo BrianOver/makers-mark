@@ -759,6 +759,18 @@ $coverageTracker = New-CoverageTracker
 # turn behind the press); $deadVerbCandidates collects the CANDIDATE lines findings.md renders.
 $pendingDeadVerb = $null
 $deadVerbCandidates = New-Object System.Collections.ArrayList
+# 2026-08-12 finding A: candidates the detector could not tell apart from a stalled evidence channel
+# (Get-DeadVerbVerdict's own IsUnreliable) -- reported separately, never mixed into the list above.
+$deadVerbUnreliable = New-Object System.Collections.ArrayList
+# backend.ps1's own liveness tracker -- watches StateDigest.BackendLogActive turn over turn and
+# latches the instant PlaytestLog's own fail-soft Append gives up (see backend.ps1's own header).
+$backendLivenessTracker = New-BackendLogLivenessTracker
+# 2026-08-12 finding B: which turn's frame was actually KEPT (Save-TurnFrame's own decision), so that
+# the NEXT turn's state.json (previousFrameOk, one turn late by necessity) can be joined back onto it
+# to tell "kept" apart from "kept but BLANK/UNIFORM".
+$frameKeptByTurn = @{}
+$blankKeptFrameCount = 0
+$blankFrameCountOverall = 0
 
 # W4: the scratchpad -- one line per turn that supplied a "note", in chronological order. Joined and
 # capped (turn-prompt.ps1's Get-EchoedNotesText) into the NEXT turn's own prompt; the raw, uncapped
@@ -874,6 +886,23 @@ try {
         $state = $stateRaw | ConvertFrom-Json
         $turn++
 
+        # 2026-08-12 finding A: an independent, direct fact every turn -- never inferred from the
+        # backend log's own row counts (see backend.ps1's own header for why that would just be a
+        # second version of the exact ambiguity this fix exists to remove).
+        Update-BackendLogLivenessTracker -Tracker $backendLivenessTracker -Turn $turn -BackendLogActive $state.backendLogActive
+
+        # 2026-08-12 finding B: $state.previousFrameOk describes turn ($turn - 1)'s frame (one turn
+        # late by necessity -- see StateDigest.PreviousFrameOk's own doc). $null means either turn 1
+        # (no previous turn) or an older client build that predates the field -- either way, skipped
+        # rather than misread as "not blank".
+        if (($null -ne $state.previousFrameOk) -and ($state.previousFrameOk -eq $false)) {
+            $blankFrameCountOverall++
+            $priorFrameTurn = $turn - 1
+            if ($frameKeptByTurn.ContainsKey($priorFrameTurn) -and $frameKeptByTurn[$priorFrameTurn]) {
+                $blankKeptFrameCount++
+            }
+        }
+
         # U2: record accepted-vs-refused for THIS observation, bucketed by the day/phase active when
         # the outcome landed (see Get-DriverBackendMismatches, backend.ps1, for why day+phase is the
         # join key rather than a single turn -- the control name a player presses is not the kernel
@@ -893,7 +922,8 @@ try {
             $deadVerbSlice = Get-BackendEventsForSlice -AllRows $backendRowsNow -RowCountBefore $pendingDeadVerb.BackendRowCountBefore
             $deadVerbVerdict = Get-DeadVerbVerdict -FingerprintBefore $pendingDeadVerb.FingerprintBefore `
                 -FingerprintAfter $fingerprintAfter -BackendSlice $deadVerbSlice -Turn $pendingDeadVerb.Turn `
-                -Phase $pendingDeadVerb.Phase -ControlName $pendingDeadVerb.ControlName
+                -Phase $pendingDeadVerb.Phase -ControlName $pendingDeadVerb.ControlName `
+                -LogStalled $backendLivenessTracker.Stalled
             if ($deadVerbVerdict.IsCandidate) {
                 [void]$deadVerbCandidates.Add($deadVerbVerdict.Line)
                 Warn $deadVerbVerdict.Line
@@ -906,11 +936,17 @@ try {
                         -Amount $script:PatienceDrainDeadVerbCandidate -Turn $pendingDeadVerb.Turn `
                         -Day $state.day -Phase $pendingDeadVerb.Phase -Detail $pendingDeadVerb.ControlName
                 }
+            } elseif ($deadVerbVerdict.IsUnreliable) {
+                # finding A: a harness/evidence-channel failure, never a player-frustration signal --
+                # reported, but the temperament meter (which measures the LATTER) must never drain for it.
+                [void]$deadVerbUnreliable.Add($deadVerbVerdict.Line)
+                Warn $deadVerbVerdict.Line
             }
             if ($pendingDeadVerb.Staged) {
                 $deadVerbFinalName = Get-KeptFrameFileName -Turn $pendingDeadVerb.Turn
                 $deadVerbKept = Resolve-ProvisionalDeadVerbFrame -StagingPath $deadVerbStagingPath `
-                    -FinalPath (Join-Path $framesDir $deadVerbFinalName) -IsCandidate $deadVerbVerdict.IsCandidate
+                    -FinalPath (Join-Path $framesDir $deadVerbFinalName) `
+                    -IsCandidate ($deadVerbVerdict.IsCandidate -or $deadVerbVerdict.IsUnreliable)
                 if ($deadVerbKept) {
                     $keptFrameCount++
                     $frameNoteByTurn[$pendingDeadVerb.Turn] = ('frame: frames/' + $deadVerbFinalName +
@@ -1203,6 +1239,10 @@ try {
         $frameNoteByTurn[$turn] = $frameResult.Note
         if ($frameResult.Kept) { $keptFrameCount++ }
         if ($frameResult.Missing) { $missingFrameCount++ }
+        # 2026-08-12 finding B: whether THIS turn's frame was kept, so next turn's state.json
+        # (previousFrameOk, one turn late by necessity) can be joined back onto it -- see frames.ps1's
+        # own Format-FrameRetentionLine header.
+        $frameKeptByTurn[$turn] = $frameResult.Kept
 
         # W3: a press turn's dead-verb check needs the NEXT turn's state to resolve (see the
         # resolution block above, near the U2 driverTurns record) -- capture what THIS press looked
@@ -1339,7 +1379,9 @@ if (Test-Path $turnlogPath) {
         }
     }
 }
-Say ('frames kept: ' + $keptFrameCount + ' of ' + $turn + ' turn(s) (' + $framesDir + '), missing: ' + $missingFrameCount)
+Say (Format-FrameRetentionLine -KeptCount $keptFrameCount -TotalTurns $turn -MissingCount $missingFrameCount `
+    -BlankKeptCount $blankKeptFrameCount -BlankOverallCount $blankFrameCountOverall -FramesDir $framesDir)
+if ($backendLivenessTracker.Stalled) { Warn (Get-BackendLogStallLine -Tracker $backendLivenessTracker) }
 
 # U2: the backend record -- playtest-log.jsonl read and turned into evidence (backend.ps1). Computed
 # here, before the judge pass, so a failed judge call still leaves this in findings.md (mirrors why
@@ -1353,7 +1395,8 @@ $backendSummary = Get-BackendSummary -LogPath $playtestLogPath
 # arrays together needs no further wrapping.
 $backendContradictions = (Get-AutoAdvanceContradictions -Summary $backendSummary) +
     (Get-DriverBackendMismatches -Summary $backendSummary -DriverTurns $driverTurns)
-$backendMarkdown = Format-BackendMarkdown -Summary $backendSummary -Contradictions $backendContradictions
+$backendMarkdown = Format-BackendMarkdown -Summary $backendSummary -Contradictions $backendContradictions `
+    -LivenessTracker $backendLivenessTracker
 ($backendSummary | ConvertTo-Json -Depth 8) | Set-Content -Path $backendJsonPath -Encoding utf8
 if ($backendSummary.Available) {
     Say ('backend record: ' + $backendSummary.RowCount + ' row(s), ' + @($backendSummary.Rejections).Count +
@@ -1544,11 +1587,14 @@ $header = @(
         $inertTurns + ' inert, ' + $inertPct + '%; longest dead streak ' + $inertStreakWorst + ')'),
     ('- model-driven turns: ' + $modelDrivenTurns),
     ('- fallback turns: ' + $fallbackTurns + ' (' + $fallbackPct + '% of total)'),
-    ('- imageless turns: ' + $imagelessTurns),
+    ('- imageless turns: ' + $imagelessTurns + ' (no frame.png at all for the model -- a BLANK-but-' +
+        'present frame is a DIFFERENT failure and is counted separately, see frames kept below)'),
     ('- artifacts: ' + $OutDir),
-    ('- playtest log (day/phase/beat/cause per tick, every action): ' + $playtestLogPath),
-    ('- frames kept: ' + $keptFrameCount + ' of ' + $turn + ' turn(s) in ' + $framesDir +
-        ' (-FrameEvery ' + $FrameEvery + '), missing: ' + $missingFrameCount),
+    ('- playtest log (day/phase/beat/cause per tick, every action): ' + $playtestLogPath +
+        $(if ($backendLivenessTracker.Stalled) { ' -- STALLED at turn ' + $backendLivenessTracker.StallDetectedAtTurn + ', see Backend record below' } else { '' })),
+    ('- ' + (Format-FrameRetentionLine -KeptCount $keptFrameCount -TotalTurns $turn -MissingCount $missingFrameCount `
+        -BlankKeptCount $blankKeptFrameCount -BlankOverallCount $blankFrameCountOverall -FramesDir $framesDir) +
+        ' (-FrameEvery ' + $FrameEvery + ')'),
     ('- coverage: ' + $coverageReport.OverallTouched + ' of ' + $coverageReport.OverallTotal +
         ' surfaces touched (' + $coverageReport.OverallPercentage + '%) -- see ' + $coverageMdPath),
     ('- product sentence (a MakersMark item named on the player''s own screen): ' +
@@ -1640,12 +1686,24 @@ $backendSection = @('', '---', '') + @($backendMarkdown)
 # this run actually pressed -- never a clean bill for verbs the run never touched at all (see
 # coverage.md for those).
 $deadVerbLines = @('## Dead-verb candidates (law-3)', '')
+# 2026-08-12 finding A: the loud, distinct callout FIRST -- never folded into the candidates below,
+# and never silently absent just because the run also happened to find zero/some real candidates.
+if ($backendLivenessTracker.Stalled) {
+    $deadVerbLines += ('**' + (Get-BackendLogStallLine -Tracker $backendLivenessTracker) + '**')
+    $deadVerbLines += ''
+}
 if (@($deadVerbCandidates).Count -gt 0) {
     $deadVerbLines += @($deadVerbCandidates | ForEach-Object { '- ' + $_ })
 } else {
     $deadVerbLines += ('no candidates among the press actions this run exercised -- bounded by ' +
         'what was actually pressed, never a clean bill for the whole game (see coverage.md for what ' +
         'this run never touched at all).')
+}
+if (@($deadVerbUnreliable).Count -gt 0) {
+    $deadVerbLines += ''
+    $deadVerbLines += '### Unreliable (evidence channel was dead when checked -- never findings)'
+    $deadVerbLines += ''
+    $deadVerbLines += @($deadVerbUnreliable | ForEach-Object { '- ' + $_ })
 }
 $deadVerbSection = @('', '---', '') + $deadVerbLines
 

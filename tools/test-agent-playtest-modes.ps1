@@ -382,6 +382,29 @@ Check ($idxFrameLine -ge 0 -and $idxTurn1Note -gt $idxFrameLine -and $idxTurn1No
 Check ($idxTurn2Note -gt $idxTurn2Header) 'turn 2 (no "- frame:" line at all) must still get its frame note appended to its own block'
 Check ($annotatedLog -notlike '*{{PERSONA}}*') 'sanity: the turn-log fixture text itself must not contain a stray template marker'
 
+# --- 6b. Frame quality reporting (2026-08-12, "the evidence channel says when it dies" -- finding B)
+# A vision model was handed a BLANK/UNIFORM frame.png and the report counted it the same as a real
+# capture -- "frames kept: N of M" folded a degraded --headless capture into a clean-sounding number.
+# Format-FrameRetentionLine is the one place both call sites in agent-playtest.ps1 build that line, so
+# this pins its exact honesty contract rather than either call site's own string concatenation.
+$frameLineAllGood = Format-FrameRetentionLine -KeptCount 10 -TotalTurns 10 -MissingCount 0 `
+    -BlankKeptCount 0 -BlankOverallCount 0 -FramesDir 'C:\fake\frames'
+Check ($frameLineAllGood -like '*frames kept: 10 of 10*') 'the line must state the kept/total counts plainly'
+Check ($frameLineAllGood -like '*0 of the kept are BLANK*') 'a run with zero blank frames must still say so explicitly (0 of the kept), never omit the phrase'
+
+$frameLineSomeBlank = Format-FrameRetentionLine -KeptCount 10 -TotalTurns 20 -MissingCount 1 `
+    -BlankKeptCount 3 -BlankOverallCount 5 -FramesDir 'C:\fake\frames'
+Check ($frameLineSomeBlank -like '*frames kept: 10 of 20*') 'kept/total must reflect the real counts, not the blank count folded in'
+Check ($frameLineSomeBlank -like '*3 of the kept are BLANK*') 'the KEPT-but-blank count must be named directly -- this is the exact number the audit found silently absent'
+Check ($frameLineSomeBlank -like '*missing: 1*') 'missing frames must remain a separate, distinct count from blank ones'
+Check ($frameLineSomeBlank -like '*Blank overall: 5 of 19*') ('overall blank count must be reported against turns-with-KNOWN-quality (TotalTurns-1, the last turn''s frame is never knowable), got [' + $frameLineSomeBlank + ']')
+
+# TotalTurns=0 (a run that died before turn 1) must never underflow -- [Math]::Max(0, ...) is the
+# guard; this proves it holds rather than trusting the arithmetic by inspection.
+$frameLineZeroTurns = Format-FrameRetentionLine -KeptCount 0 -TotalTurns 0 -MissingCount 0 `
+    -BlankKeptCount 0 -BlankOverallCount 0 -FramesDir 'C:\fake\frames'
+Check ($frameLineZeroTurns -like '*Blank overall: 0 of 0*') 'TotalTurns=0 must report "0 of 0", never a negative number'
+
 # --- 7. Backend record (U2) -- "the backend log becomes evidence" -------------------------------
 . (Join-Path $toolsDir 'agent-playtest\backend.ps1')
 
@@ -494,6 +517,52 @@ if ($zeroRejectionsSummary) {
     Check (@($zeroRejectionsSummary.Rejections).Count -eq 0) 'a zero-rejection log must report exactly zero rejections, not crash trying to'
     Check (@($zeroRejectionsSummary.RejectionCountsByReason).Count -eq 0) 'a zero-rejection log must report an empty (not crashed) RejectionCountsByReason'
 }
+
+# --- 7b. Backend log liveness (2026-08-12, "the evidence channel says when it dies" -- finding A) --
+# PlaytestLog.Append fails soft and PERMANENTLY (godot/scripts/PlaytestLog.cs). AgentPlaytest.cs now
+# copies PlaytestLog.Active into StateDigest.BackendLogActive every turn; this tracker watches that
+# field turn over turn and latches the instant it reads false. Proven here with a small synthetic
+# turn-by-turn script -- no Godot, no real state.json needed, since the tracker's own contract only
+# ever depends on the boolean it is handed.
+$livenessTracker = New-BackendLogLivenessTracker
+Check ($livenessTracker.Stalled -eq $false) 'a fresh liveness tracker must start un-stalled'
+Check ($null -eq $livenessTracker.StallDetectedAtTurn) 'a fresh liveness tracker must have no stall turn recorded'
+
+Update-BackendLogLivenessTracker -Tracker $livenessTracker -Turn 1 -BackendLogActive $true
+Check ($livenessTracker.Stalled -eq $false) 'a turn reporting BackendLogActive=true must never stall the tracker'
+
+Update-BackendLogLivenessTracker -Tracker $livenessTracker -Turn 2 -BackendLogActive $null
+Check ($livenessTracker.Stalled -eq $false) 'a turn with NO backendLogActive field at all ($null -- an older client build) must be skipped, never misread as inactive'
+
+Update-BackendLogLivenessTracker -Tracker $livenessTracker -Turn 3 -BackendLogActive $false
+Check ($livenessTracker.Stalled -eq $true) 'a turn reporting BackendLogActive=false must trip the tracker'
+Check ($livenessTracker.StallDetectedAtTurn -eq 3) ('the tracker must record the EXACT turn it tripped on, got ' + $livenessTracker.StallDetectedAtTurn)
+
+# The latch must hold even if a later turn reports Active=true again (a hypothetical scene-reload
+# re-arming PlaytestLog) -- "say so, loudly" must outlive a later recovery, per this tracker's own
+# header note.
+Update-BackendLogLivenessTracker -Tracker $livenessTracker -Turn 4 -BackendLogActive $true
+Check ($livenessTracker.Stalled -eq $true) 'the stall latch must never un-latch, even if a later turn reports Active=true again'
+Check ($livenessTracker.StallDetectedAtTurn -eq 3) 'a later recovery must not overwrite the ORIGINAL stall turn'
+
+$stallLineForStalled = Get-BackendLogStallLine -Tracker $livenessTracker
+Check ($null -ne $stallLineForStalled) 'a stalled tracker must produce a non-null callout line'
+Check ($stallLineForStalled -like '*turn 3*') 'the callout must name the exact turn the channel died'
+Check ($stallLineForStalled -like '*STALLED*' -or $stallLineForStalled -like '*DIED*') 'the callout must read as an evidence-channel failure, not an ordinary finding'
+
+$freshTracker = New-BackendLogLivenessTracker
+Check ($null -eq (Get-BackendLogStallLine -Tracker $freshTracker)) 'a never-stalled tracker must produce no callout line at all (never an empty-but-present one)'
+
+# Format-BackendMarkdown must render the callout FIRST when stalled -- before even the row count --
+# and must render nothing extra when the tracker is $null (every existing caller keeps working).
+$stalledMarkdown = Format-BackendMarkdown -Summary $backendSummary -Contradictions @() -LivenessTracker $livenessTracker
+Check ($stalledMarkdown -like '*BACKEND LOG EVIDENCE CHANNEL DIED*') 'Format-BackendMarkdown must surface the stall callout when the tracker is stalled'
+$stalledMarkdownFirstLine = ($stalledMarkdown -split [Environment]::NewLine)[2]
+Check ($stalledMarkdownFirstLine -like '*DIED*') ('the callout must be the FIRST content line of the section (before row counts), got [' + $stalledMarkdownFirstLine + ']')
+$unstalledMarkdown = Format-BackendMarkdown -Summary $backendSummary -Contradictions @() -LivenessTracker $freshTracker
+Check ($unstalledMarkdown -notlike '*BACKEND LOG EVIDENCE CHANNEL DIED*') 'Format-BackendMarkdown must render no stall callout when the tracker never tripped'
+$noTrackerMarkdown = Format-BackendMarkdown -Summary $backendSummary -Contradictions @()
+Check ($noTrackerMarkdown -notlike '*BACKEND LOG EVIDENCE CHANNEL DIED*') 'Format-BackendMarkdown must work unchanged when -LivenessTracker is omitted entirely'
 
 # --- 8. Coverage census (U3) -- "everything gets a denominator" ---------------------------------
 . (Join-Path $toolsDir 'agent-playtest\coverage.ps1')
@@ -1348,6 +1417,31 @@ $dvUnknownBackendVerdict = Get-DeadVerbVerdict -FingerprintBefore $dvFingerprint
     -BackendSlice $null -Turn 7 -Phase 'Morning' -ControlName 'OpenShop'
 Check ($dvUnknownBackendVerdict.IsCandidate -eq $false) 'an unavailable backend slice must never be treated as silence -- no candidate without positive evidence'
 
+# --- 2026-08-12 finding A regression pin ("the evidence channel says when it dies"): an 8-lens
+# adversarial audit built a stalled-log slice and a genuinely-dead-press slice BY HAND and got
+# IDENTICAL IsCandidate=True verdicts, no distinguishing field anywhere in the result. This is the
+# exact pair, re-proven here: SAME fingerprint pair, SAME backend-silent slice ($dvSilentSlice) as
+# $dvCandidateVerdict above, differing ONLY in -LogStalled. The fix must make the two verdicts
+# genuinely different, not just differently-labeled versions of the same fact.
+$dvStalledVerdict = Get-DeadVerbVerdict -FingerprintBefore $dvFingerprintA -FingerprintAfter $dvFingerprintB `
+    -BackendSlice $dvSilentSlice -Turn 7 -Phase 'Morning' -ControlName 'OpenShop' -LogStalled $true
+Check ($dvStalledVerdict.IsCandidate -eq $false) 'a stalled backend log must NEVER produce IsCandidate=true, even when both raw signals agree -- it must never be published as a defect'
+Check ($dvStalledVerdict.IsUnreliable -eq $true) 'a stalled backend log with both raw signals agreeing must be marked IsUnreliable'
+Check ($null -ne $dvStalledVerdict.Line) 'an unreliable verdict must still carry a findings.md line -- the run must say so, loudly, not go silent'
+Check ($dvStalledVerdict.Line -notlike 'CANDIDATE (law-3*') 'an unreliable verdict must never open with the CANDIDATE (law-3 ...) marker a real candidate uses'
+Check ($dvStalledVerdict.Line -like '*UNRELIABLE*') 'an unreliable verdict must say UNRELIABLE'
+Check ($dvCandidateVerdict.IsCandidate -ne $dvStalledVerdict.IsCandidate) 'the SAME fingerprint pair and SAME backend-silent slice must flip IsCandidate depending on -LogStalled -- this is the exact ambiguity the audit proved and this pin exists to close'
+Check ($dvCandidateVerdict.Line -ne $dvStalledVerdict.Line) 'the SAME two raw signals must produce a DIFFERENT findings.md line once the evidence channel is known dead -- a stalled-log slice and a genuinely-dead-press slice must never render identically'
+
+# A LogStalled log must not manufacture a candidate where the raw signals do not even agree (a
+# CHANGED fingerprint, say) -- -LogStalled only ever downgrades an agreeing pair, never invents one.
+$dvStalledButChangedVerdict = Get-DeadVerbVerdict -FingerprintBefore $dvFingerprintA `
+    -FingerprintAfter (Get-StateFingerprint -State $dvStateGoldChanged) -BackendSlice $dvSilentSlice `
+    -Turn 7 -Phase 'Morning' -ControlName 'OpenShop' -LogStalled $true
+Check ($dvStalledButChangedVerdict.IsCandidate -eq $false) 'LogStalled must never override a CHANGED fingerprint into a candidate'
+Check ($dvStalledButChangedVerdict.IsUnreliable -eq $false) 'LogStalled must never mark a CHANGED-fingerprint press as unreliable either -- the press demonstrably did something, whatever the backend log''s health'
+Check ($null -eq $dvStalledButChangedVerdict.Line) 'a press that is neither a candidate nor unreliable must carry no findings.md line'
+
 # --- Frame retention (Definition of Done: "keep that turn's frame regardless of -FrameEvery") ------
 $dvFrameTempDir = Join-Path $env:TEMP ('deadverb-frame-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $dvFrameTempDir -Force | Out-Null
@@ -1405,6 +1499,14 @@ Check ($script:KnownPersonas -contains 'attached') 'personas.ps1''s $script:Know
 Check ($script:KnownPersonas -contains 'pilot') 'personas.ps1''s $script:KnownPersonas must contain pilot (S2, scripted-deep-pilot lane)'
 $sweepRawText = Get-Content (Join-Path $toolsDir 'playtest-sweep.ps1') -Raw
 Check ($sweepRawText -notlike '*''sceptic''*') 'playtest-sweep.ps1''s default -Personas array must not contain the string literal ''sceptic'' any more (it would pass a rejected persona straight to the driver)'
+
+# --- Driver wiring, 2026-08-12 ("the evidence channel says when it dies"): both findings must be
+# reachable from agent-playtest.ps1's own turn loop, not just exist as dead code in their own files.
+Check ($agentPlaytestRawText -like '*Update-BackendLogLivenessTracker*') 'agent-playtest.ps1 must call Update-BackendLogLivenessTracker every turn (finding A)'
+Check ($agentPlaytestRawText -like '*-LogStalled $backendLivenessTracker.Stalled*') 'agent-playtest.ps1 must pass the liveness tracker''s own Stalled flag into Get-DeadVerbVerdict -- computing the flag without using it would fix nothing'
+Check ($agentPlaytestRawText -like '*previousFrameOk*') 'agent-playtest.ps1 must read state.json''s previousFrameOk field (finding B)'
+Check ($agentPlaytestRawText -like '*Format-FrameRetentionLine*') 'agent-playtest.ps1 must call Format-FrameRetentionLine rather than hand-rolling the frames-kept string at each call site'
+Check ($agentPlaytestRawText -like '*frameKeptByTurn*') 'agent-playtest.ps1 must track which turns were actually KEPT so a later blank-frame report can join back onto them'
 
 # --- 13. Mechanical fun metrics (W2, docs/plans/2026-08-10-002 "the playtest becomes a player") -----
 . (Join-Path $toolsDir 'agent-playtest\metrics.ps1')

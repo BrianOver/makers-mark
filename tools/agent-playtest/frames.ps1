@@ -99,6 +99,38 @@ function Save-TurnFrame {
     }
 }
 
+# --- Blank-frame reporting (2026-08-12, "the evidence channel says when it dies" -- finding B) -----
+#
+# AgentPlaytestBridge.RunLoop already detects a BLANK/UNIFORM frame.png every turn
+# (AgentPlaytestBridge.FrameLooksReal) -- the documented --headless capture contract -- but before
+# this the result only ever became a turnlog.md prose line and an uncaptured GD.PrintErr: it never
+# reached state.json, Save-TurnFrame above never learned of it, and "frames kept: N of M" quietly
+# counted a known-blank capture the same as a real one. The model was handed the blank file anyway.
+#
+# AgentPlaytest.cs now threads last turn's FrameLooksReal into THIS turn's state.json as
+# "previousFrameOk" (necessarily one turn late -- a turn's own frame is only known blank or not once
+# it has actually been captured, and by then that turn's own state.json is already written). This
+# function is the single place that turns the resulting per-turn tally into the report line, so the
+# two call sites in agent-playtest.ps1 (the console Say and the findings.md footer) cannot drift into
+# two different phrasings of the same count.
+function Format-FrameRetentionLine {
+    param(
+        [Parameter(Mandatory)][int]$KeptCount,
+        [Parameter(Mandatory)][int]$TotalTurns,
+        [Parameter(Mandatory)][int]$MissingCount,
+        [Parameter(Mandatory)][int]$BlankKeptCount,
+        [Parameter(Mandatory)][int]$BlankOverallCount,
+        [Parameter(Mandatory)][string]$FramesDir
+    )
+
+    return ('frames kept: ' + $KeptCount + ' of ' + $TotalTurns + ' turn(s) in ' + $FramesDir +
+        ' (' + $BlankKeptCount + ' of the kept are BLANK/UNIFORM -- degraded --headless captures ' +
+        'counted honestly, never folded into a clean "kept"), missing: ' + $MissingCount +
+        '. Blank overall: ' + $BlankOverallCount + ' of ' + ([Math]::Max(0, $TotalTurns - 1)) +
+        ' turn(s) whose frame quality is known (the run''s LAST turn is always excluded -- its own ' +
+        'frame quality is only known one turn late, and no later turn ever arrives to report it).')
+}
+
 # Rewrites turnlog.md's text so every "## Turn N" block carries a line about its frame -- inserted
 # right after the block's own "- frame: captured/BLANK" line (AgentPlaytestBridge.RunLoop already
 # writes one) when that line exists, or appended at the end of the block when it does not (the
