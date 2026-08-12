@@ -1556,13 +1556,13 @@ $header = @(
         ' (-FrameEvery ' + $FrameEvery + '), missing: ' + $missingFrameCount),
     ('- coverage: ' + $coverageReport.OverallTouched + ' of ' + $coverageReport.OverallTotal +
         ' surfaces touched (' + $coverageReport.OverallPercentage + '%) -- see ' + $coverageMdPath),
-    # Adversarial-audit finding D: this line used to claim "named on the player's own screen," but
-    # ProductSentenceFired was re-pointed at a backend-log-only check months ago (metrics.ps1's own
-    # Get-ProductSentenceReport: $fired = $attributionBeatNamed, independent of screen text) to kill
-    # the false positives a screen-text-only check produced. Reworded to name the check this field
-    # actually performs; the screen-visibility signal it used to (mis)claim is its own separate,
-    # correctly-labeled line in the "## Metrics" section below (Format-MetricsMarkdown's "the
-    # PLAYER'S SCREEN ever showed one" line).
+    # Adversarial-audit finding D: this line used to claim on-screen visual proof of an item's name,
+    # but ProductSentenceFired was re-pointed at a backend-log-only check months ago (metrics.ps1's
+    # own Get-ProductSentenceReport: $fired = $attributionBeatNamed, independent of screen text) to
+    # kill the false positives a screen-text-only check produced. Reworded to name the check this
+    # field actually performs; the screen-visibility signal it used to (mis)claim is its own
+    # separate, correctly-labeled line in the "## Metrics" section below (Format-MetricsMarkdown's
+    # own PLAYER'S-SCREEN line).
     ('- product sentence (an attribution beat confirmed by the BACKEND log -- note scan or ' +
         'AttributionBeatEvent eventTypes hit; screen text alone never sets this True, see the ' +
         'Metrics section below for that separate signal): ' +
