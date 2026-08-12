@@ -641,6 +641,21 @@ $env:MM_PLAYTEST_LOG = $playtestLogPath
 # wait for, computed, not retyped. See AgentPlaytest.cs's DefaultCommandTimeoutMs doc for the
 # fallback this env var overrides and the run (Scout-5, 2026-08-09 sweep) that mismatch cost.
 $env:AGENT_PLAYTEST_TIMEOUT_MS = [string]($ModelCallMaxAttempts * $ModelCallTimeoutSec * 1000)
+
+# The client keeps its OWN turn cap (AgentPlaytest.cs's DefaultMaxTurns = 400) and stops the moment
+# it hits one, which is exactly the "two halves of this channel are unrelated numbers in two
+# languages" defect the TIMEOUT_MS line above exists to prevent -- fixed there, left open here.
+#
+# Measured 2026-08-12: three live pilot runs at -Turns 400 / 800 / 900 ALL stopped at turn 400 on
+# different navigation paths, and the driver reported "client wrote no state within 90s" every time
+# -- a clean, deliberate client shutdown wearing a timeout's error message. Any run budgeted past
+# 400 turns has been silently truncated, and blamed on a hang, for as long as both numbers existed.
+#
+# The margin exists because the two sides count different things: the client counts command
+# round-trips it served, the driver counts its own loop iterations, and setup/scenario turns can put
+# them a few apart. Erring high is free (the driver still stops at its own $Turns); erring low
+# reopens the exact defect.
+$env:AGENT_PLAYTEST_MAX_TURNS = [string]($Turns + 25)
 Say ('launching client (out: ' + $OutDir + ', playtest log: ' + $playtestLogPath + ')')
 # The SCENE must be named explicitly. `--path godot` alone boots the game's main scene, so the
 # bridge never runs and the driver waits out its timeout on a client that was never asked to play --

@@ -489,6 +489,56 @@ public class AgentPlaytestBridgeTests
     }
 
     /// <summary>
+    /// The SAME "two halves of this channel are unrelated numbers in two languages" defect the test
+    /// above pins for the timeout, in the place it was left open: the turn budget.
+    ///
+    /// <para>The client keeps its own <c>DefaultMaxTurns</c> (400) and stops the instant it hits one.
+    /// The driver never set <c>AGENT_PLAYTEST_MAX_TURNS</c>, so that cap applied to every run
+    /// regardless of <c>-Turns</c>. Measured 2026-08-12: three live pilot runs budgeted 400 / 800 /
+    /// 900 turns ALL stopped at turn 400, on different navigation paths, and the driver reported
+    /// "client wrote no state within 90s" every time — a clean, deliberate client shutdown wearing a
+    /// timeout's error message. Every run ever budgeted past 400 turns was silently truncated and the
+    /// truncation blamed on a hang.</para>
+    ///
+    /// <para>This asserts the driver EXPORTS the override at all, which is the thing that was
+    /// missing. It deliberately does not pin the exact margin: the two sides count different things
+    /// (client counts served round-trips, driver counts loop iterations), so the margin is a judgement
+    /// call, while its absence is a defect.</para>
+    /// </summary>
+    [TestCase]
+    public void Driver_ExportsItsTurnBudgetToTheClient_SoTheClientCapNeverTruncatesARun()
+    {
+        var driverPath = ProjectSettings.GlobalizePath("res://../tools/agent-playtest.ps1");
+        AssertThat(System.IO.File.Exists(driverPath))
+            .OverrideFailureMessage($"Driver script not found at '{driverPath}' — did tools/agent-playtest.ps1 move?")
+            .IsTrue();
+        var driverSource = System.IO.File.ReadAllText(driverPath);
+
+        var exportMatch = Regex.Match(driverSource, @"\$env:AGENT_PLAYTEST_MAX_TURNS\s*=\s*\[string\]\(\$Turns");
+        AssertThat(exportMatch.Success)
+            .OverrideFailureMessage(
+                "tools/agent-playtest.ps1 does not export AGENT_PLAYTEST_MAX_TURNS from its own $Turns. " +
+                "Without it the client falls back to AgentPlaytest.DefaultMaxTurns (400) and silently " +
+                "truncates any longer run, which the driver then reports as 'client wrote no state " +
+                "within 90s' — a clean shutdown wearing a timeout's error message. Measured 2026-08-12: " +
+                "runs budgeted 400/800/900 all stopped at exactly 400.")
+            .IsTrue();
+
+        // The env var the driver sets must be the one the client actually reads — a rename on either
+        // side silently reopens the defect, since EnvInt just falls through to the default.
+        var clientPath = ProjectSettings.GlobalizePath("res://scripts/tools/AgentPlaytest.cs");
+        AssertThat(System.IO.File.Exists(clientPath))
+            .OverrideFailureMessage($"Client not found at '{clientPath}' — did AgentPlaytest.cs move?")
+            .IsTrue();
+        var clientSource = System.IO.File.ReadAllText(clientPath);
+        AssertThat(clientSource.Contains("EnvInt(\"AGENT_PLAYTEST_MAX_TURNS\""))
+            .OverrideFailureMessage(
+                "AgentPlaytest.cs no longer reads EnvInt(\"AGENT_PLAYTEST_MAX_TURNS\") — the driver is " +
+                "exporting a variable nothing consumes, so the 400-turn cap is back in force silently.")
+            .IsTrue();
+    }
+
+    /// <summary>
     /// Before this fix, <see cref="AgentPlaytestBridge.RunLoop"/> returned <c>void</c> and
     /// <c>AgentPlaytest._Ready</c> called <c>GetTree().Quit(0)</c> no matter which of the three
     /// endings happened — a driver going silent mid-run (this test's shape: command.json never
