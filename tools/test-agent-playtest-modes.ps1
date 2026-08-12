@@ -1758,6 +1758,22 @@ Check ($agentPlaytestRawText -like '*Get-TemperamentQuitFinding*') 'agent-playte
 Check ($agentPlaytestRawText -like '*PATIENCE EXHAUSTED*') 'agent-playtest.ps1 must render a PATIENCE EXHAUSTED lead banner'
 Check ($agentPlaytestRawText -like '*-not $isMonkey*') 'agent-playtest.ps1 must gate something on -not $isMonkey (the temperament meter, the GPU gate, and the act-prompt build all depend on this)'
 
+# Adversarial-audit finding A: -Seed is the sole RNG source for -Persona monkey/pilot's command
+# stream (System.Random) but used to be printed only to a transient console Say() line -- never to
+# findings.md, so a real archived run had no numeric seed recoverable from any artifact at all. Raw-
+# text wiring check (same reasoning as the temperament checks just above): building the LIVE header
+# needs a full Godot+ollama run, which this file's own header says it cannot do.
+Check ($agentPlaytestRawText -like '*drives -Persona monkey/pilot*command stream*') 'agent-playtest.ps1''s findings.md header must include a seed line naming what -Seed drives (finding A)'
+
+# Adversarial-audit finding D: the product-sentence header line used to claim "a MakersMark item
+# named on the player's own screen," but ProductSentenceFired was re-pointed at a backend-log-only
+# check months ago (metrics.ps1's Get-ProductSentenceReport: $fired = $attributionBeatNamed,
+# independent of screen text) to kill the false positives a screen-only check produced -- the wording
+# was never updated to match. Reworded to name the check this field actually performs; THE
+# REGRESSION PIN below proves the old overclaiming wording is gone, not just that new wording exists.
+Check ($agentPlaytestRawText -like '*AttributionBeatEvent eventTypes hit*screen text alone never sets this True*') 'agent-playtest.ps1''s findings.md header must name the BACKEND check the product-sentence field actually performs (finding D)'
+Check ($agentPlaytestRawText -notlike '*named on the player''s own screen*') 'THE REGRESSION PIN: the OLD overclaiming header wording ("named on the player''s own screen") must be gone (finding D)'
+
 # --- 14a. Sweep patience (U3, "the playtest learns to finish" wave) --------------------------------
 # Owner finding 2026-08-11: 58 of 58 model runs died on patience by day 3 -- a sweep meant to measure
 # the REST of a long campaign needs the frustration recorded as a finding, never a fatality.
