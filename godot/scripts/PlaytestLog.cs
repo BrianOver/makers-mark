@@ -80,7 +80,19 @@ public static class PlaytestLog
     public static Func<string>? BeatProvider { get; set; }
 
     /// <summary>True once <see cref="Begin"/> has opened a file. Everything else short-circuits on
-    /// this, so an ordinary test run never touches the filesystem.</summary>
+    /// this, so an ordinary test run never touches the filesystem.
+    ///
+    /// <para><b>2026-08-12 — also the evidence-channel health flag.</b> <see cref="Append"/> is
+    /// fail-soft: the first write that throws (a documented Windows IOException against a file this
+    /// client writes) sets <see cref="_path"/> to <c>null</c> PERMANENTLY, and the only warning is
+    /// <see cref="GD.PrintErr"/>/<see cref="EngineDistress.Warn"/> — neither of which
+    /// <c>tools/agent-playtest.ps1</c> ever sees, since it launches this client with no stdout/stderr
+    /// redirection. Left alone, every dead-verb check for the rest of that run reads "no sim event
+    /// fired," indistinguishable from a genuinely dead button. <see
+    /// cref="GodotClient.Tools.AgentPlaytestBridge.BuildDigest"/> now copies this property straight
+    /// into <c>StateDigest.BackendLogActive</c> every turn, so the outside driver can tell the two
+    /// apart directly instead of inferring it from a quiet log file.</para>
+    /// </summary>
     public static bool Active => _path is not null;
 
     /// <summary>
