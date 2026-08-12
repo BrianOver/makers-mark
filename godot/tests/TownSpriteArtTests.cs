@@ -30,26 +30,34 @@ namespace GodotClient.Tests;
 public class TownSpriteArtTests
 {
     /// <summary>What <c>TownAssets2D</c>/<c>TownLayout2D</c> lay the town out against. U3
-    /// (2026-08-04 verify-by-playing plan, R3) resized the canvas 26x44 -> 40x64 — "26x44 is too
-    /// few pixels to carry detail at gameplay distance" per the plan's own words — a canvas
-    /// resize, not a layout change, since neither <c>TownLayout2D</c>'s tile coordinates nor this
-    /// census pin world scale (that retune is deliberately deferred to U4, see the plan's KTD-F).</summary>
-    private const int BodyWidth = 40;
-    private const int BodyHeight = 64;
+    /// (2026-08-04 verify-by-playing plan, R3) authored the canvas at 26x44 -> 40x64 — "26x44 is
+    /// too few pixels to carry detail at gameplay distance" per the plan's own words.
+    ///
+    /// <para><b>2026-08-12 (asymmetric-decimation fix):</b> the 40x64 canvas above is now an
+    /// AUTHORING resolution only. <c>gen_town_sprites.py</c>'s <c>rarity_downsample_2x()</c> halves
+    /// it to 20x32 before committing — the SHIPPED, on-screen pixel grid — and
+    /// <c>TownLayout2D.CharacterSpriteScale</c> went from 0.5 to 1.0 to match (no runtime scaling,
+    /// hence no runtime decimation, left at all). These pins are the shipped dimensions, not the
+    /// authoring canvas.</para></summary>
+    private const int BodyWidth = 20;
+    private const int BodyHeight = 32;
 
-    /// <summary>First row of the legs/hem (U3: rows 0-2 empty margin, 3-18 head, 19-44 torso, then
-    /// legs/hem — <c>gen_town_sprites.py</c>'s own <c>LEGS_TOP_ROW</c> constant, kept in sync by
-    /// hand since this test intentionally reads committed pixels rather than importing the
-    /// generator). A walk frame may differ at or below this row and nowhere above it — that
-    /// separation is what makes the frames read as a stride, not a whole-body swap.</summary>
-    private const int LegsTopRow = 45;
+    /// <summary>First row of the legs/hem in the SHIPPED (post-halving) image —
+    /// <c>gen_town_sprites.py</c>'s own <c>LEGS_TOP_ROW</c> (45, at the 40x64 authoring
+    /// resolution) integer-divided by 2, kept in sync by hand since this test intentionally reads
+    /// committed pixels rather than importing the generator. A walk frame may differ at or below
+    /// this row and nowhere above it — that separation is what makes the frames read as a stride,
+    /// not a whole-body swap.</summary>
+    private const int LegsTopRow = 22;
 
     /// <summary>A flat placeholder box is 2-3 colours. Real shading needs an outline, at least two
     /// body tones and a highlight, so anything under this is a regression to programmer art.
-    /// Measured (2026-08-04, post-COLOUR+MATERIAL pass): every class has 12-15 distinct opaque
-    /// colours (up from 8-9 pre-pass, now that armour/cloth/skin/hair are all separate ramps);
-    /// this floor sits two below that measured minimum so a genuine regression trips it without
-    /// making the test flaky against a future one-tone tweak.</summary>
+    /// Measured (2026-08-04, post-COLOUR+MATERIAL pass, pre-halving): every class had 12-15
+    /// distinct opaque colours. <b>2026-08-12 (asymmetric-decimation fix):</b> re-measured post
+    /// halving at 23-29 (the rarity-priority downsample keeps existing palette colours rather than
+    /// inventing blended ones, and a smaller canvas concentrates them) — the floor still sits well
+    /// below either measurement, so a genuine regression trips it without making the test flaky
+    /// against a future one-tone tweak.</summary>
     private const int MinDistinctColors = 10;
 
     /// <summary>The shared skin tone every class's face/skin-peek region uses
@@ -65,9 +73,19 @@ public class TownSpriteArtTests
     private const float SkinToneTolerance = 10f / 255f;
 
     /// <summary>Minimum skin-tone pixels for <see cref="EveryClass_CarriesASkinToneRegion"/>.
-    /// Measured (2026-08-04): Mystic/Occultist (the two cowled casters, deliberately just a
-    /// shadow-edge hint per their own established "shadowed face" silhouette) are the thinnest at
-    /// 6px; every other class is 8-40px. This floor sits two below that measured minimum.</summary>
+    /// Measured (2026-08-04, pre-halving): Mystic/Occultist (the two cowled casters, deliberately
+    /// just a shadow-edge hint per their own established "shadowed face" silhouette) were the
+    /// thinnest at 6px; every other class was 8-40px.
+    ///
+    /// <para><b>2026-08-12 (asymmetric-decimation fix):</b> re-measured post halving at 4-13px
+    /// (Mystic/Occultist now exactly AT this floor, Sentinel/Striker at 5px). A plain colour-average
+    /// halving was tried first and measured ZERO exact-match skin pixels for 3 of 6 classes — a 1px
+    /// skin accent sitting next to the outline colour blends to a shade roughly equidistant from
+    /// both, which no reasonable tolerance recovers. <c>rarity_downsample_2x</c>'s rarity-priority
+    /// pick (keep the globally rarer of a block's colours instead of blending) is what keeps this
+    /// floor clearable at all; it now has NO margin for Mystic/Occultist, so a future change to that
+    /// algorithm or to either class's head art must re-measure this, not assume it still holds.</para>
+    /// </summary>
     private const int MinSkinPixels = 4;
 
     /// <summary>Minimum Euclidean RGB distance (0-255 scale per channel) between any two classes'
@@ -224,7 +242,7 @@ public class TownSpriteArtTests
 
     /// <summary>
     /// U3 (R3): "a Vanguard must read differently from a Mystic at a glance, by OUTLINE, not just
-    /// palette" — the plan's own words. Measures the fraction of the 40x64 canvas where one
+    /// palette" — the plan's own words. Measures the fraction of the shipped canvas where one
     /// class's opaque/transparent status (its silhouette) disagrees with another's — a symmetric-
     /// difference-over-union (Jaccard distance) over the ALPHA channel only, so a colour-only
     /// difference (e.g. two classes sharing a body shape but different accent tints) scores zero
@@ -232,12 +250,15 @@ public class TownSpriteArtTests
     /// concerns — this test is deliberately blind to colour, on purpose, because the plan
     /// explicitly calls out outline as the thing palette differences do NOT substitute for.
     ///
-    /// <para><b>Threshold.</b> Measured (2026-08-04, this pass's actual committed art, all 15
-    /// class pairs): the closest pair is striker/skirmisher at 0.115; every other pair is 0.12 or
-    /// higher, several above 0.30. <see cref="MinSilhouetteDistance"/> (0.08) sits comfortably
-    /// below that measured floor — enough margin that a future accent tweak to any one class
-    /// doesn't make this flaky — while still being far above what two classes sharing (or nearly
-    /// sharing) a body shape would score.</para>
+    /// <para><b>Threshold.</b> Measured (2026-08-04, this pass's actual committed art, pre-halving,
+    /// all 15 class pairs): the closest pair was striker/skirmisher at 0.115.
+    /// <b>2026-08-12 (asymmetric-decimation fix):</b> re-measured post halving at
+    /// striker/skirmisher = 0.098, mystic/occultist = 0.103 (every other pair 0.13 or higher) — a
+    /// smaller canvas means a single opaque-vs-transparent pixel flip at a shared silhouette edge
+    /// is a bigger fraction of the union, so this margin narrowed (0.08 floor, ~0.018 headroom
+    /// versus ~0.035 before). <see cref="MinSilhouetteDistance"/> (0.08) still clears it, but with
+    /// less room than before — a future accent tweak to striker or skirmisher is more likely to
+    /// make this flaky than it used to be, and should re-measure rather than assume.</para>
     /// </summary>
     [TestCase]
     public void AnyTwoClasses_HaveDistinctSilhouettes()
@@ -312,9 +333,12 @@ public class TownSpriteArtTests
     /// recorded), the most-common-by-count colour is each class's "dominant garment colour".
     /// Compared pairwise by Euclidean RGB distance (0-255 per channel).</para>
     ///
-    /// <para><b>Threshold.</b> Measured (2026-08-04, this pass's committed art): the closest pair
-    /// is Vanguard/Skirmisher at 46.4; every other pair is 48 or higher, several above 200 (e.g.
-    /// anything against Mystic's bright violet). <see cref="MinGarmentColorDistance"/> (30) sits
+    /// <para><b>Threshold.</b> Measured (2026-08-04, this pass's committed art, pre-halving): the
+    /// closest pair was Vanguard/Skirmisher at 46.4. <b>2026-08-12 (asymmetric-decimation fix):</b>
+    /// re-measured post halving at Vanguard/Sentinel = 64.0 (every other pair 87 or higher) — the
+    /// rarity-priority downsample keeps a block's colour exactly rather than blending it toward a
+    /// neighbour, which is why this margin held (in fact widened) instead of collapsing the way
+    /// <see cref="MinSkinPixels"/>'s did. <see cref="MinGarmentColorDistance"/> (30) sits
     /// comfortably below that floor. Deliberately NOT a hue-angle-only check: Mystic (bright
     /// violet) and Occultist (dark violet) are only 12 degrees apart in hue BY DESIGN — the
     /// sim's own <c>ClassDefinition.ColorRgb</c> comment calls Occultist's "deeper and less
