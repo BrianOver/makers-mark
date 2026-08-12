@@ -2840,10 +2840,40 @@ public partial class MainUi : Control
     /// through this method — the same lesson the paragraph above already states: a rung must never
     /// learn about its own state by asking the "is anyone ELSE open" question.</para>
     /// </summary>
-    private bool AnOverlayOwnsTheScreen() =>
-        Ledger.Visible || Camp.Visible || Mirror.Visible
-        || Forecast.Visible || Bestiary.Visible || Commissions.Visible || Legends.Visible
-        || _systemMenu.Visible;
+    private bool AnOverlayOwnsTheScreen() => OverlaySurfaces().Any(o => o.Surface.Visible);
+
+    /// <summary>
+    /// The named list <see cref="AnOverlayOwnsTheScreen"/> and <see cref="ActiveOverlayName"/> both
+    /// fold over — one source for "is anything covering the screen" and "which one, by name",
+    /// so the two can never silently drift apart into two hand-copied lists.
+    ///
+    /// <para><b>2026-08-12 (coverage-can-see-the-overlays finding A):</b> before this method existed,
+    /// <c>AgentPlaytest.cs</c>'s <c>Location()</c> only ever checked <c>Drawer.IsOpen</c> — every one
+    /// of these seven overlays bypasses the drawer by design (this file's own "FullRect overlays above
+    /// the drawer" comments elsewhere), so a full playthrough that opened the Ledger and the Camp
+    /// panel every day reported byte-identical Panel coverage to a run that never opened either. <see
+    /// cref="ActiveOverlayName"/> gives the playtest bridge the SAME predicate this class already
+    /// trusts for input-blocking, instead of a second hand-maintained name list.</para>
+    /// </summary>
+    private (string Name, CanvasItem Surface)[] OverlaySurfaces() => new (string, CanvasItem)[]
+    {
+        ("Ledger", Ledger),
+        ("Camp", Camp),
+        ("Mirror", Mirror),
+        ("Forecast", Forecast),
+        ("Bestiary", Bestiary),
+        ("Commissions", Commissions),
+        ("Legends", Legends),
+        ("SystemMenu", _systemMenu),
+    };
+
+    /// <summary>The name of whichever <see cref="OverlaySurfaces"/> entry currently owns the screen,
+    /// or null if none does. <c>internal</c> so <c>AgentPlaytest.cs</c>'s <c>Location()</c> (same
+    /// assembly, GodotClient.Tools) can report an open Ledger/Camp/Mirror/Forecast/Bestiary/
+    /// Commissions/Legends/system-menu as a distinct, trackable location instead of it silently
+    /// reading as "town" — see <see cref="OverlaySurfaces"/>'s own doc for why this reuses that list
+    /// rather than re-deriving the answer.</summary>
+    internal string? ActiveOverlayName() => OverlaySurfaces().FirstOrDefault(o => o.Surface.Visible).Name;
 
     /// <summary>
     /// U-audio-2: which cue plays when <paramref name="id"/> opens. Owner's playtest: "Noises for the

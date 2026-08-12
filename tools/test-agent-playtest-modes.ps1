@@ -503,6 +503,7 @@ if ($zeroRejectionsSummary) {
 # touch-tracking and report math in isolation from how big the real game happens to be today.
 $fakeRegistries = [pscustomobject]@{
     Panel           = @('Forge', 'Shop')
+    Overlay         = @('Camp', 'Ledger')
     TownBuilding    = @('forge', 'market', 'tavern')
     InteriorStation = @('forge/anvil', 'forge/furnace')
     DayPhase        = @('Morning', 'Evening')
@@ -513,8 +514,11 @@ $fakeRegistries = [pscustomobject]@{
 $fakeTracker = New-CoverageTracker
 
 # Stub turn history: turn 1 stands at the forge's door outdoors and advances; turn 2 opens the Forge
-# panel and presses AdvancePhase. This is deliberately a SMALL, hand-traceable script so the expected
-# touched/untouched split can be verified by inspection, not by trusting the code under test.
+# panel and presses AdvancePhase; turn 3 opens the Ledger overlay (the exact "overlay:" location shape
+# 2026-08-12's coverage-can-see-the-overlays fix added -- before it, Location() could never emit this
+# and a Ledger visit was structurally invisible to every category below). This is deliberately a
+# SMALL, hand-traceable script so the expected touched/untouched split can be verified by inspection,
+# not by trusting the code under test.
 $turn1State = [pscustomobject]@{
     location = 'town'
     phase    = 'Morning'
@@ -531,12 +535,22 @@ $turn2State = [pscustomobject]@{
 $turn2Command = [pscustomobject]@{ action = 'press'; target = 'AdvancePhase' }
 Add-CoverageTouch -Tracker $fakeTracker -State $turn2State -Command $turn2Command
 
+$turn3State = [pscustomobject]@{
+    location = 'overlay:Ledger'
+    phase    = 'Morning' # same phase as turn 1/2 on purpose -- isolates this turn's effect to Overlay only
+    nearby   = @()
+}
+Add-CoverageTouch -Tracker $fakeTracker -State $turn3State -Command $null
+
 $fakeReport = Get-CoverageReport -Registries $fakeRegistries -Tracker $fakeTracker
 $byCat = @{}
 foreach ($c in $fakeReport.Categories) { $byCat[$c.Category] = $c }
 
 Check (($byCat['Panel'].Touched -join ',') -eq 'Forge') ('Panel touched must be exactly [Forge], got [' + ($byCat['Panel'].Touched -join ',') + ']')
 Check (($byCat['Panel'].Untouched -join ',') -eq 'Shop') ('Panel untouched must be exactly [Shop], got [' + ($byCat['Panel'].Untouched -join ',') + ']')
+
+Check (($byCat['Overlay'].Touched -join ',') -eq 'Ledger') ('Overlay touched must be exactly [Ledger], got [' + ($byCat['Overlay'].Touched -join ',') + ']')
+Check (($byCat['Overlay'].Untouched -join ',') -eq 'Camp') ('Overlay untouched must be exactly [Camp], got [' + ($byCat['Overlay'].Untouched -join ',') + ']')
 
 Check (($byCat['TownBuilding'].Touched -join ',') -eq 'forge') ('TownBuilding touched must be exactly [forge], got [' + ($byCat['TownBuilding'].Touched -join ',') + ']')
 Check (($byCat['TownBuilding'].Untouched -join ',') -eq 'market,tavern') ('TownBuilding untouched must be exactly [market,tavern], got [' + ($byCat['TownBuilding'].Untouched -join ',') + ']')
@@ -550,14 +564,59 @@ Check (($byCat['DayPhase'].Untouched -join ',') -eq 'Evening') ('DayPhase untouc
 Check ($byCat['ActionType'].Untouched.Count -eq 0) ('ActionType must show full coverage (both press and advance used), untouched was [' + ($byCat['ActionType'].Untouched -join ',') + ']')
 Check ($byCat['HudControl'].Untouched.Count -eq 0) ('HudControl must show full coverage (AdvancePhase was pressed), untouched was [' + ($byCat['HudControl'].Untouched -join ',') + ']')
 
-Check ($fakeReport.OverallTouched -eq 6) ('overall touched must be 6 (1+1+0+1+2+1), got ' + $fakeReport.OverallTouched)
-Check ($fakeReport.OverallTotal -eq 12) ('overall total must be 12 (2+3+2+2+2+1), got ' + $fakeReport.OverallTotal)
+Check ($fakeReport.OverallTouched -eq 7) ('overall touched must be 7 (1 Panel+1 Overlay+1 TownBuilding+0 InteriorStation+1 DayPhase+2 ActionType+1 HudControl), got ' + $fakeReport.OverallTouched)
+Check ($fakeReport.OverallTotal -eq 14) ('overall total must be 14 (2+2+3+2+2+2+1), got ' + $fakeReport.OverallTotal)
 Check ($fakeReport.OverallPercentage -eq 50.0) ('overall percentage must be 50.0, got ' + $fakeReport.OverallPercentage)
 
 $fakeCoverageMarkdown = Format-CoverageMarkdown -Report $fakeReport
 Check ($fakeCoverageMarkdown -like '*market*') 'Format-CoverageMarkdown must print the untouched list in full (market)'
 Check ($fakeCoverageMarkdown -like '*tavern*') 'Format-CoverageMarkdown must print the untouched list in full (tavern)'
 Check ($fakeCoverageMarkdown -like '*forge/anvil*') 'Format-CoverageMarkdown must print untouched interior stations by their venue/id key'
+Check ($fakeCoverageMarkdown -like '*## Overlay*') 'Format-CoverageMarkdown must render its own Overlay section'
+Check ($fakeCoverageMarkdown -like '*Camp*') 'Format-CoverageMarkdown must print the untouched Overlay entry (Camp)'
+
+# --- 8a. Coverage census empty-registry guard (2026-08-12, coverage-can-see-the-overlays finding B) --
+# Reproduced directly, exactly as the audit describes: if a source refactor makes ANY registry regex
+# return zero entries, Format-CoverageMarkdown must never print "(none -- full coverage this run)" for
+# it -- that literal string is what a GENUINELY fully-touched category prints, and a reader (or a
+# caller parsing the markdown) cannot tell the two apart from the rendered text alone. A zero
+# denominator must never render as success.
+$emptyRegistries = [pscustomobject]@{
+    Panel           = @()
+    Overlay         = @()
+    TownBuilding    = @()
+    InteriorStation = @()
+    DayPhase        = @()
+    ActionType      = @()
+    HudControl      = @()
+    Caveats         = @()
+}
+$emptyTracker = New-CoverageTracker
+$emptyReport = Get-CoverageReport -Registries $emptyRegistries -Tracker $emptyTracker
+Check ($emptyReport.OverallTotal -eq 0) 'sanity: an all-empty registry set must report OverallTotal 0'
+$emptyCoverageMarkdown = Format-CoverageMarkdown -Report $emptyReport
+Check ($emptyCoverageMarkdown -notlike '*full coverage this run*') 'an empty registry must NEVER print "full coverage this run" -- a zero denominator is not success'
+Check ($emptyCoverageMarkdown -like '*registry empty*') ('an empty registry must say so explicitly, got: ' + $emptyCoverageMarkdown.Substring(0, [Math]::Min(300, $emptyCoverageMarkdown.Length)))
+Check ($emptyCoverageMarkdown -notlike '*(0/0*') 'an empty registry heading must not render a literal 0/0 percentage line -- that reads as a clean pass at a glance'
+
+# Partially-empty: one category genuinely broken (Panel), the rest real -- proves the guard is
+# PER-CATEGORY, not an all-or-nothing switch, and that a healthy-but-fully-untouched category (Overlay
+# here, 0 of 1 touched) still gets its real percentage line, not the empty-registry message.
+$partialRegistries = [pscustomobject]@{
+    Panel           = @()
+    Overlay         = @('Ledger')
+    TownBuilding    = @('forge')
+    InteriorStation = @()
+    DayPhase        = @('Morning')
+    ActionType      = @('advance')
+    HudControl      = @()
+    Caveats         = @()
+}
+$partialTracker = New-CoverageTracker
+$partialReport = Get-CoverageReport -Registries $partialRegistries -Tracker $partialTracker
+$partialMarkdown = Format-CoverageMarkdown -Report $partialReport
+Check ($partialMarkdown -like '*## Panel (registry empty*') 'a category with a genuinely empty registry must be flagged even when its siblings are healthy'
+Check ($partialMarkdown -like '*## Overlay (0/1*') ('a healthy-but-fully-untouched category must print its real 0/1 count, not the empty-registry message, got: ' + $partialMarkdown)
 
 # Real-repo registries: not exact-count-asserted (the repo grows), but proven non-empty and spot
 # checked against known-stable facts derived from source read earlier while building this file --
@@ -569,6 +628,27 @@ Check ($realRegistries.DayPhase -contains 'Morning') 'real DayPhase registry mus
 Check ($realRegistries.TownBuilding.Count -ge 5) ('real TownBuilding registry must have at least the 5 known outdoor venues, got ' + $realRegistries.TownBuilding.Count)
 Check ($realRegistries.InteriorStation.Count -gt 0) 'real InteriorStation registry must be non-empty'
 Check ($realRegistries.Caveats.Count -ge 2) ('real registries must carry at least the HUD-control and forge-profession-gating caveats, got ' + $realRegistries.Caveats.Count)
+
+# --- 8b. Overlay registry (2026-08-12, coverage-can-see-the-overlays finding A) -----------------
+# The Ledger/Camp/Scrying Mirror/Forecast/Bestiary/Commissions/Legends board/system menu are FullRect
+# overlays that deliberately bypass Drawer.Register (MainUi.cs's own "FullRect overlays above the
+# drawer" comments) -- Get-PanelIdRegistry above is structurally blind to every one of them. Pinned
+# against the real repo so this cannot silently regress back to the pre-fix blind spot.
+Check ($realRegistries.Overlay -contains 'Ledger') 'real Overlay registry must contain Ledger (MainUi.cs OverlaySurfaces)'
+Check ($realRegistries.Overlay -contains 'Camp') 'real Overlay registry must contain Camp'
+Check ($realRegistries.Overlay -contains 'Mirror') 'real Overlay registry must contain Mirror (the Scrying Mirror)'
+Check ($realRegistries.Overlay -contains 'Forecast') 'real Overlay registry must contain Forecast (the raid forecast board)'
+Check ($realRegistries.Overlay -contains 'Bestiary') 'real Overlay registry must contain Bestiary'
+Check ($realRegistries.Overlay -contains 'Commissions') 'real Overlay registry must contain Commissions'
+Check ($realRegistries.Overlay -contains 'Legends') 'real Overlay registry must contain Legends'
+Check ($realRegistries.Overlay.Count -ge 7) ('real Overlay registry must have at least the 7 named modal overlays, got ' + $realRegistries.Overlay.Count + ': ' + ($realRegistries.Overlay -join ', '))
+
+# Negative control, from the verify step: PipDock is NOT in this list, and that is correct, not a gap.
+# Unlike Ledger/Camp/Mirror, PipDock never owns the whole screen -- it is a small always-on 300x96
+# corner dock (godot/scripts/ui/PipDock.cs), excluded from MainUi.cs's own AnOverlayOwnsTheScreen()/
+# OverlaySurfaces() for that reason. This registry reuses that exact list, so Pip staying out here is
+# the same correct exclusion, not a re-introduction of the blind spot this fix closed.
+Check ($realRegistries.Overlay -notcontains 'Pip') 'PipDock must stay OUT of the Overlay registry -- it never owns the whole screen, unlike the true modal overlays, and MainUi.cs excludes it from AnOverlayOwnsTheScreen() for that reason'
 
 # --- 9. Personas (U4, sceptic retired W3) -- "several players, not one player played N times" ---
 . (Join-Path $toolsDir 'agent-playtest\personas.ps1')
