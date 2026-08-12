@@ -9,24 +9,36 @@ using Godot;
 namespace GodotClient.Panels;
 
 /// <summary>
-/// A2 (+folded-in A3 FX), plan <c>2026-07-28-001</c> Part 2: the beat-driven combat overlay that
-/// upgrades <see cref="MineWatch"/> from a marching/camped vignette into a "watch the heroes
-/// adventure" delve stage. Renders the ordered <see cref="DelveBeat"/> timeline (<see
-/// cref="DelveBeats"/>, A1) one revealed beat at a time — floor chip, the current floor's monster
-/// + HP bar, and cheap FX (hit-flash/knockback, drifting damage numbers, a kill poof, a loot
-/// sparkle, the constitutional death-cloud, a quaff flash). Presentation-only (KTD2): every method
-/// here only ever reads a <see cref="DelveBeat"/> already computed by <see cref="DelveBeats"/> and
-/// mutates local Godot node state — no sim/Contracts writes, no RNG, no wall-clock reads, only
-/// accumulated <c>delta</c> (repo convention, mirrors <see cref="MineWatch"/>'s own <c>_time</c>
-/// accumulator and <see cref="JourneyPlayhead"/>).
+/// A2 (+folded-in A3 FX), plan <c>2026-07-28-001</c> Part 2, +link3 (2026-08-12, "the watch becomes
+/// a fight"): the beat-driven combat overlay that upgrades <see cref="MineWatch"/> from a
+/// marching/camped vignette into a "watch the heroes adventure" delve stage. Renders the ordered
+/// <see cref="DelveBeat"/> timeline (<see cref="DelveBeats"/>, A1) one revealed beat at a time —
+/// floor chip, the current floor's monster + HP bar, a distinct per-beat combat MOTION for the
+/// acting hero (attack lunge-and-recover, a light recoil or a heavier stagger scaled off how much
+/// of their own MaxHp the hit cost them, a heal's lean-lift-settle, a fall that goes down and stays
+/// down — see the "combat pose tuning" constants and <see cref="CombatPoseKind"/>), plus the
+/// original cheap FX (hit-flash tint, drifting damage numbers, a kill poof, a loot sparkle, the
+/// constitutional death-cloud, a quaff tint, and <see cref="ImpactPulse"/> — a weight cue
+/// <c>MineWatch</c> reads for a torch/campfire light punch and a short world-nudge). Presentation-
+/// only (KTD2): every method here only ever reads a <see cref="DelveBeat"/> already computed by
+/// <see cref="DelveBeats"/> and mutates local Godot node state — no sim/Contracts writes, no RNG,
+/// no engine Tween, no wall-clock reads, only accumulated <c>delta</c> (repo convention, mirrors
+/// <see cref="MineWatch"/>'s own <c>_time</c> accumulator and <see cref="JourneyPlayhead"/>).
 ///
 /// <para><b>Ownership split with <see cref="MineWatch"/>.</b> <see cref="MineWatch"/> still owns
-/// the party figures (march/camp poses, torch/campfire lighting, HP-slump, backdrop scroll) and
-/// the milestone flash — all UNCHANGED. This stage only ADDS an overlay: it never builds its own
-/// hero bodies, instead reading whichever <see cref="Sprite2D"/> <see cref="MineWatch"/> already
-/// built for a given <see cref="HeroId"/> (via <see cref="SyncHeroSprites"/>) and flashing/nudging
-/// THAT sprite directly for hit/quaff/cloud FX — so a fight always lands on the same figure the
-/// player has been watching march or camp, never a duplicate body.</para>
+/// each figure's EXISTENCE and its walk/camp/breathe baseline (<c>AnimateFigures</c>, now driven by
+/// the town's own <see cref="GodotClient.Town2d.SpriteMotion"/> pose driver), plus torch/campfire
+/// lighting and backdrop scroll. This stage never builds its own hero bodies — it reads whichever
+/// <see cref="Sprite2D"/> <see cref="MineWatch"/> already built for a given <see cref="HeroId"/>
+/// (via <see cref="SyncHeroSprites"/>) and layers combat motion/tint ADDITIVELY on top of that
+/// frame's already-bobbed sprite (<c>MineWatch.AnimateFigures</c> always runs first — see <see
+/// cref="Process"/>'s own doc), so a fight always lands on the same figure the player has been
+/// watching march or camp, never a duplicate body. The one exception is a hero <see
+/// cref="DelveBeatKind.SwallowedByDark"/> has clouded: from that beat on, THIS stage is the sole writer of that
+/// sprite's Position/RotationDegrees (<see cref="AdvanceCloudFx"/>) — <c>MineWatch.AnimateFigures</c>
+/// skips a clouded figure entirely (<see cref="IsClouded"/>) so the two never fight over the same
+/// two properties, which is what makes the fall actually stay down instead of being re-planted
+/// upright every frame.</para>
 ///
 /// <para><b>Untinted by design.</b> Mounted as a sibling of <c>MineWatch._world</c> (never a
 /// descendant) — the same reason <c>MineWatch._recordBark</c>/<c>_feedLabel</c> live there: crisp,
@@ -64,11 +76,54 @@ public sealed partial class DelveStage : Node2D
     private const float DamageNumberSeconds = 0.7f;
     private const float PoofSeconds = 0.5f;
     private const float SparkleSeconds = 0.5f;
-    private const float KnockbackPx = 2f;
+    private const float KnockbackPx = 2f; // monster-only recoil (see AdvanceMonster) — heroes use CombatPose below
     private const float KnockbackSettleSeconds = 0.12f;
     private const int PipTotal = 5;
     private const float PipSize = 6f;
     private const float PipSpacing = 8f;
+
+    // ── combat pose tuning (link3 — "the watch becomes a fight") ────────────────────────────────
+    // Every curve below is a pure function of a 0..1 progress ratio (elapsed/duration) — no RNG,
+    // no wall-clock, same contract as everything else in this file. Each has a wind-up, an action,
+    // and a settle (constitutional requirement: "every motion gets a wind-up and a settle" is what
+    // separates "basic" from "detailed", more than any amount of particle work). Heroes are the
+    // only individually-tracked actor in this stage (the monster is one shared sprite) — an
+    // "attack" beat lunges the ACTING hero toward the monster (+X, since every hero sits to the
+    // monster's LEFT at MineWatch's own march/camp layout); a "hit" beat recoils that SAME hero
+    // AWAY from it (-X). A round that both deals and takes damage (an even exchange) plays the hit
+    // reaction, since RenderBeat applies it second — showing "traded blows, but staggered" reads
+    // better than showing only the swing.
+
+    /// <summary>How long <see cref="ImpactPulse"/> takes to fully decay after a beat sets it to 1 —
+    /// fast, so it reads as a jolt (light punch + <c>MineWatch.WorldShakeAmplitude</c> world-nudge),
+    /// never a sway.</summary>
+    private const float ImpactPulseDecaySeconds = 0.22f;
+
+    private const float AttackDuration = 0.32f;
+    private const float AttackWindupPx = 3f;
+    private const float AttackLungePx = 11f;
+
+    private const float RecoilDuration = 0.24f;
+    private const float RecoilPx = 4f;
+
+    private const float StaggerDuration = 0.42f;
+    private const float StaggerPx = 9f;
+    private const float StaggerWobbleDegrees = 6f;
+
+    /// <summary>A hit at or above this fraction of the hero's own MaxHp in one Exchange beat plays
+    /// the bigger <see cref="CombatPoseKind.Stagger"/> reaction instead of a light <see
+    /// cref="CombatPoseKind.Recoil"/> — the "block vs. stagger" distinction the beat data itself
+    /// can carry without inventing a new sim event: <see cref="DelveBeat.DamageTaken"/> and <see
+    /// cref="Hero.MaxHp"/> (both already passed into <see cref="RenderBeat"/>) are all this reads.</summary>
+    private const float HeavyHitFraction = 0.2f;
+
+    private const float HealDuration = 0.4f;
+    private const float HealDipPx = 2f;
+    private const float HealLiftPx = 6f;
+
+    private const float FallDuration = 0.5f;
+    private const float FallDropPx = 18f;
+    private const float FallRotationDegrees = 82f;
 
     /// <summary>Same dark-silhouette recipe as <see cref="MineWatch"/>'s own milestone-flash tint —
     /// duplicated (not shared) per this codebase's own cross-lane precedent, applied only when the
@@ -102,17 +157,46 @@ public sealed partial class DelveStage : Node2D
     private readonly Dictionary<int, CloudFx> _cloudFx = new();
     private readonly List<Transient> _transients = new();
 
+    /// <summary>Per-hero transient combat motion (attack lunge / hit recoil-or-stagger / heal) —
+    /// separate from <see cref="HeroFx"/> (which owns only tint) so the two can never fight over
+    /// the same sprite property; this owns Position/RotationDegrees, <see cref="HeroFx"/> owns
+    /// Modulate. A fresh beat for the same hero simply overwrites the entry — the newest beat
+    /// always wins, which is also why an even exchange (deals AND takes damage the same round)
+    /// ends up showing the hit reaction: <see cref="RenderBeat"/> applies it second.</summary>
+    private readonly Dictionary<int, CombatPose> _heroPose = new();
+
+    private enum CombatPoseKind
+    {
+        Attack,
+        Recoil,
+        Stagger,
+        Heal,
+    }
+
+    private struct CombatPose
+    {
+        public required CombatPoseKind Kind;
+        public required float Duration;
+        public float Elapsed;
+    }
+
     private struct HeroFx
     {
         public float Flash;
         public float Quaff;
-        public float Knockback;
     }
 
     private sealed class CloudFx
     {
         public required ColorRect Rect;
         public float Elapsed;
+
+        /// <summary>The sprite's own Position/RotationDegrees at the instant of death — the fall
+        /// curve (<see cref="FallCurveY"/>/<see cref="FallCurveRotation"/>) is relative to wherever
+        /// the hero actually was (mid-stride marching or camped), not a fixed layout point.</summary>
+        public required Vector2 FallOrigin;
+
+        public required float FallOriginRotationDegrees;
     }
 
     private sealed class Transient
@@ -158,6 +242,14 @@ public sealed partial class DelveStage : Node2D
     /// <summary>How many transient FX (damage numbers, kill-poof puffs, sparkles) are currently
     /// alive (test hook) — proves FX fire-and-forget and eventually self-clear, never leak.</summary>
     public int ActiveTransientCount => _transients.Count;
+
+    /// <summary>0..1 "how hard did something just land" cue, set to 1 by a landed/taken blow
+    /// (Exchange, MonsterSlain) and decayed by <see cref="Process"/> over <see
+    /// cref="ImpactPulseDecaySeconds"/> (test/tuning hook — <c>MineWatch.AnimateLightFlicker</c>/
+    /// <c>AnimateWorldShake</c> are its production readers: a torch/campfire light punch and a
+    /// short world-nudge, both scaled by this value so they are sharp on impact and settle with
+    /// it).</summary>
+    public float ImpactPulse { get; private set; }
 
     // ── build ────────────────────────────────────────────────────────────────────────────────
 
@@ -208,6 +300,7 @@ public sealed partial class DelveStage : Node2D
         CurrentFloor = 0;
         CurrentMonsterKind = string.Empty;
         MonsterHpFraction = 1f;
+        ImpactPulse = 0f;
         _monsterShouldShow = false;
         _monsterSlideProgress = 0f;
         _monsterFlashRemaining = 0f;
@@ -226,6 +319,7 @@ public sealed partial class DelveStage : Node2D
         }
 
         _heroFx.Clear();
+        _heroPose.Clear();
         _heroHpFraction.Clear();
         _clouded.Clear();
 
@@ -310,12 +404,20 @@ public sealed partial class DelveStage : Node2D
                         _monsterFlashRemaining = HitFlashSeconds;
                         _monsterKnockback = KnockbackPx;
                         SpawnDamageNumber(_monsterSprite.Position + new Vector2(-8, -46), beat.DamageDealt);
+                        BeginCombatPose(exchangeHero.Value, CombatPoseKind.Attack, AttackDuration);
+                        ImpactPulse = 1f;
                     }
 
                     if (beat.DamageTaken > 0)
                     {
-                        BumpHeroFx(exchangeHero.Value, flash: HitFlashSeconds, knockback: KnockbackPx);
+                        var heavy = IsHeavyHit(exchangeHero.Value, beat.DamageTaken, heroes);
+                        BumpHeroFx(exchangeHero.Value, flash: HitFlashSeconds);
+                        BeginCombatPose(
+                            exchangeHero.Value,
+                            heavy ? CombatPoseKind.Stagger : CombatPoseKind.Recoil,
+                            heavy ? StaggerDuration : RecoilDuration);
                         SpawnDamageNumber(HeroAnchor(exchangeHero.Value) + new Vector2(-8, -50), beat.DamageTaken);
+                        ImpactPulse = 1f;
                     }
                 }
 
@@ -325,7 +427,8 @@ public sealed partial class DelveStage : Node2D
                 if (beat.Hero is { } quaffHero)
                 {
                     ApplyHeroHp(quaffHero, beat, heroes);
-                    BumpHeroFx(quaffHero.Value, flash: 0f, knockback: 0f, quaff: QuaffFlashSeconds);
+                    BumpHeroFx(quaffHero.Value, flash: 0f, quaff: QuaffFlashSeconds);
+                    BeginCombatPose(quaffHero.Value, CombatPoseKind.Heal, HealDuration);
                 }
 
                 break;
@@ -335,6 +438,7 @@ public sealed partial class DelveStage : Node2D
                 SpawnPoof(_monsterSprite.Position);
                 SpawnSparkle(_monsterSprite.Position + new Vector2(0, -30));
                 HideMonster();
+                ImpactPulse = 1f;
                 break;
 
             case DelveBeatKind.HeroFled:
@@ -365,8 +469,8 @@ public sealed partial class DelveStage : Node2D
     }
 
     /// <summary>Per-frame FX advance (accumulated delta only) — call AFTER <see
-    /// cref="MineWatch"/>'s own figure bob so knockback nudges land on top of the bob, not
-    /// underneath it.</summary>
+    /// cref="MineWatch"/>'s own figure bob (<c>AnimateFigures</c>) so every additive combat-pose
+    /// nudge below lands on top of the bob, not underneath it.</summary>
     public void Process(float delta)
     {
         if (!_built)
@@ -374,8 +478,10 @@ public sealed partial class DelveStage : Node2D
             return;
         }
 
+        ImpactPulse = Mathf.MoveToward(ImpactPulse, 0f, delta / ImpactPulseDecaySeconds);
         AdvanceMonster(delta);
         AdvanceHeroFx(delta);
+        AdvanceCombatPoses(delta);
         AdvancePips();
         AdvanceCloudFx(delta);
         AdvanceTransients(delta);
@@ -447,13 +553,12 @@ public sealed partial class DelveStage : Node2D
         }
     }
 
-    // ── hero FX (hit-flash, knockback, quaff, damage numbers) ───────────────────────────────────
+    // ── hero FX (hit-flash, quaff tint, damage numbers) — TINT only; see CombatPose for motion ──
 
-    private void BumpHeroFx(int heroValue, float flash, float knockback, float quaff = 0f)
+    private void BumpHeroFx(int heroValue, float flash, float quaff = 0f)
     {
         var fx = _heroFx.TryGetValue(heroValue, out var existing) ? existing : default;
         fx.Flash = Mathf.Max(fx.Flash, flash);
-        fx.Knockback = Mathf.Max(fx.Knockback, knockback);
         fx.Quaff = Mathf.Max(fx.Quaff, quaff);
         _heroFx[heroValue] = fx;
     }
@@ -470,6 +575,17 @@ public sealed partial class DelveStage : Node2D
         RefreshPips(hero.Value);
     }
 
+    /// <summary>Whether <paramref name="damageTaken"/> is a big enough bite out of <paramref
+    /// name="heroValue"/>'s own MaxHp (<see cref="HeavyHitFraction"/>) to play the bigger <see
+    /// cref="CombatPoseKind.Stagger"/> reaction instead of a light <see
+    /// cref="CombatPoseKind.Recoil"/> — a fraction, not a flat number, so a glass-cannon Mystic and
+    /// a tanky Vanguard both stagger at "that really hurt ME", not at the same raw number.</summary>
+    private static bool IsHeavyHit(int heroValue, int damageTaken, ImmutableSortedDictionary<int, Hero> heroes)
+    {
+        var maxHp = heroes.TryGetValue(heroValue, out var hero) ? hero.MaxHp : 0;
+        return maxHp > 0 && (float)damageTaken / maxHp >= HeavyHitFraction;
+    }
+
     private void AdvanceHeroFx(float delta)
     {
         foreach (var heroValue in _heroFx.Keys.ToList())
@@ -477,7 +593,6 @@ public sealed partial class DelveStage : Node2D
             var fx = _heroFx[heroValue];
             fx.Flash = Mathf.Max(0f, fx.Flash - delta);
             fx.Quaff = Mathf.Max(0f, fx.Quaff - delta);
-            fx.Knockback = Mathf.MoveToward(fx.Knockback, 0f, delta * (KnockbackPx / KnockbackSettleSeconds));
             _heroFx[heroValue] = fx;
 
             if (!_heroSprites.TryGetValue(heroValue, out var sprite) || _clouded.Contains(heroValue))
@@ -487,20 +602,145 @@ public sealed partial class DelveStage : Node2D
 
             var baseTint = _heroBaseModulate.TryGetValue(heroValue, out var tint) ? tint : sprite.Modulate;
             sprite.Modulate = fx.Flash > 0f ? Colors.White : fx.Quaff > 0f ? QuaffGreen : baseTint;
-            // Knockback is an ADDITIVE nudge applied on top of whatever MineWatch.AnimateFigures
-            // already set this frame (called before this method — see MineWatch._Process) — never
-            // touches BasePosition, only this frame's already-bobbed Position.
-            if (fx.Knockback > 0f)
-            {
-                sprite.Position -= new Vector2(fx.Knockback, 0f);
-            }
 
-            if (fx.Flash <= 0f && fx.Quaff <= 0f && fx.Knockback <= 0f)
+            if (fx.Flash <= 0f && fx.Quaff <= 0f)
             {
                 _heroFx.Remove(heroValue);
             }
         }
     }
+
+    // ── combat pose (attack lunge / hit recoil-or-stagger / heal) — MOTION only; see HeroFx above ─
+
+    private void BeginCombatPose(int heroValue, CombatPoseKind kind, float duration) =>
+        _heroPose[heroValue] = new CombatPose { Kind = kind, Duration = duration };
+
+    /// <summary>Advances every hero's in-flight <see cref="CombatPose"/> and applies it as an
+    /// ADDITIVE nudge on top of whatever <c>MineWatch.AnimateFigures</c> already set this frame
+    /// (same convention the old per-hero Knockback used) — never touches a clouded hero's sprite
+    /// (that figure fell; <see cref="AdvanceCloudFx"/> is its sole owner from here on), but always
+    /// still advances/expires the timer so a hero who dies mid-pose never leaks a dangling entry.</summary>
+    private void AdvanceCombatPoses(float delta)
+    {
+        foreach (var heroValue in _heroPose.Keys.ToList())
+        {
+            var pose = _heroPose[heroValue];
+            pose.Elapsed += delta;
+            var progress = Mathf.Clamp(pose.Elapsed / pose.Duration, 0f, 1f);
+
+            if (!_clouded.Contains(heroValue) && _heroSprites.TryGetValue(heroValue, out var sprite))
+            {
+                ApplyCombatPose(sprite, pose.Kind, progress);
+            }
+
+            if (progress >= 1f)
+            {
+                _heroPose.Remove(heroValue);
+            }
+            else
+            {
+                _heroPose[heroValue] = pose;
+            }
+        }
+    }
+
+    private static void ApplyCombatPose(Sprite2D sprite, CombatPoseKind kind, float progress)
+    {
+        switch (kind)
+        {
+            case CombatPoseKind.Attack:
+                sprite.Position += new Vector2(AttackCurveX(progress), 0f);
+                break;
+
+            case CombatPoseKind.Recoil:
+                sprite.Position += new Vector2(HitCurveX(progress, RecoilPx), 0f);
+                break;
+
+            case CombatPoseKind.Stagger:
+                sprite.Position += new Vector2(HitCurveX(progress, StaggerPx), 0f);
+                sprite.RotationDegrees += StaggerWobbleDegreesAt(progress);
+                break;
+
+            case CombatPoseKind.Heal:
+                sprite.Position += new Vector2(0f, HealCurveY(progress));
+                break;
+        }
+    }
+
+    /// <summary>Lunge-and-recover: wind-up (pull back, away from the monster), thrust (lunge
+    /// toward it, +X), recover (ease back to the resting spot). The "single change that separates
+    /// basic from detailed" — every phase eases (<see cref="EaseOut"/>/<see cref="EaseIn"/>),
+    /// never a linear snap.</summary>
+    private static float AttackCurveX(float progress)
+    {
+        if (progress < 0.2f)
+        {
+            return Mathf.Lerp(0f, -AttackWindupPx, EaseOut(progress / 0.2f));
+        }
+
+        if (progress < 0.5f)
+        {
+            return Mathf.Lerp(-AttackWindupPx, AttackLungePx, EaseOut((progress - 0.2f) / 0.3f));
+        }
+
+        return Mathf.Lerp(AttackLungePx, 0f, EaseIn((progress - 0.5f) / 0.5f));
+    }
+
+    /// <summary>Recoil/stagger: a brief brace (the instant of impact — no motion yet), a snap AWAY
+    /// from the monster (-X), then an eased recover. Shared shape for both — only <paramref
+    /// name="magnitude"/> (and, for Stagger, <see cref="StaggerWobbleDegreesAt"/>) differs, which is
+    /// exactly what makes them read as "the same kind of thing, harder" rather than two unrelated
+    /// animations.</summary>
+    private static float HitCurveX(float progress, float magnitude)
+    {
+        if (progress < 0.08f)
+        {
+            return 0f;
+        }
+
+        if (progress < 0.35f)
+        {
+            return Mathf.Lerp(0f, -magnitude, EaseOut((progress - 0.08f) / 0.27f));
+        }
+
+        return Mathf.Lerp(-magnitude, 0f, EaseIn((progress - 0.35f) / 0.65f));
+    }
+
+    /// <summary>The extra "off-balance" cue that makes a Stagger read as bigger than a Recoil, not
+    /// just further: a decaying rock, active only once the recoil itself has started easing back
+    /// (progress past 0.35 — see <see cref="HitCurveX"/>).</summary>
+    private static float StaggerWobbleDegreesAt(float progress)
+    {
+        if (progress < 0.35f)
+        {
+            return 0f;
+        }
+
+        var t = (progress - 0.35f) / 0.65f;
+        return StaggerWobbleDegrees * (1f - t) * Mathf.Sin(t * Mathf.Pi * 3f);
+    }
+
+    /// <summary>Heal/quaff: lean into the drink (a small dip, +Y), the relieved little lift (-Y,
+    /// overshoots above rest), settle back down to 0 — anticipation/action/follow-through on the
+    /// one beat kind that is good news.</summary>
+    private static float HealCurveY(float progress)
+    {
+        if (progress < 0.25f)
+        {
+            return Mathf.Lerp(0f, HealDipPx, EaseOut(progress / 0.25f));
+        }
+
+        if (progress < 0.65f)
+        {
+            return Mathf.Lerp(HealDipPx, -HealLiftPx, EaseOut((progress - 0.25f) / 0.4f));
+        }
+
+        return Mathf.Lerp(-HealLiftPx, 0f, EaseIn((progress - 0.65f) / 0.35f));
+    }
+
+    private static float EaseOut(float t) => 1f - (1f - t) * (1f - t);
+
+    private static float EaseIn(float t) => t * t;
 
     // ── pips ─────────────────────────────────────────────────────────────────────────────────
 
@@ -551,6 +791,7 @@ public sealed partial class DelveStage : Node2D
         _clouded.Add(heroValue);
         _heroHpFraction.Remove(heroValue);
         _heroFx.Remove(heroValue);
+        _heroPose.Remove(heroValue); // a death always wins over any in-flight attack/hit/heal pose
 
         if (_pipRoots.TryGetValue(heroValue, out var root))
         {
@@ -558,30 +799,90 @@ public sealed partial class DelveStage : Node2D
             _pipRoots.Remove(heroValue);
         }
 
+        var anchor = HeroAnchor(heroValue);
+        var originRotation = _heroSprites.TryGetValue(heroValue, out var heroSprite) ? heroSprite.RotationDegrees : 0f;
+
         var rect = new ColorRect
         {
             Color = new Color(0f, 0f, 0f, 0f),
             Size = new Vector2(44f, 58f),
-            Position = HeroAnchor(heroValue) + new Vector2(-22f, -50f),
+            Position = anchor + new Vector2(-22f, -50f),
         };
         AddChild(rect);
-        _cloudFx[heroValue] = new CloudFx { Rect = rect };
+        _cloudFx[heroValue] = new CloudFx { Rect = rect, FallOrigin = anchor, FallOriginRotationDegrees = originRotation };
     }
 
+    /// <summary>
+    /// The fifth distinct beat motion (link3): "a fall that goes down and stays down." <see
+    /// cref="FallCurveY"/>/<see cref="FallCurveRotation"/> collapse the hero over <see
+    /// cref="FallDuration"/> (wind-up stumble, drop with a slight overshoot, settle to rest) and
+    /// then hold their progress ratio pinned at exactly 1 forever after — <paramref name="delta"/>
+    /// keeps accumulating into <see cref="CloudFx.Elapsed"/> unboundedly, but <c>fallProgress</c>
+    /// clamps, so the frozen final pose never drifts. This is the ONLY writer of a clouded hero's
+    /// sprite Position/RotationDegrees from the moment of death on — <c>MineWatch.AnimateFigures</c>
+    /// skips a clouded figure entirely (<see cref="IsClouded"/>) specifically so this can stay
+    /// authoritative without a fight over the same two properties every frame.
+    /// </summary>
     private void AdvanceCloudFx(float delta)
     {
         foreach (var (heroValue, cloud) in _cloudFx)
         {
-            cloud.Elapsed = Mathf.Min(cloud.Elapsed + delta, CloudSeconds);
-            var progress = cloud.Elapsed / CloudSeconds;
-            cloud.Rect.Color = new Color(0f, 0f, 0f, Mathf.Lerp(0f, 0.85f, progress));
+            cloud.Elapsed += delta;
+            var fadeProgress = Mathf.Clamp(cloud.Elapsed / CloudSeconds, 0f, 1f);
+            var fallProgress = Mathf.Clamp(cloud.Elapsed / FallDuration, 0f, 1f);
+
+            cloud.Rect.Color = new Color(0f, 0f, 0f, Mathf.Lerp(0f, 0.85f, fadeProgress));
+            cloud.Rect.Position = cloud.FallOrigin + new Vector2(0f, FallCurveY(fallProgress)) + new Vector2(-22f, -50f);
 
             if (_heroSprites.TryGetValue(heroValue, out var sprite))
             {
                 var tint = _heroBaseModulate.TryGetValue(heroValue, out var baseTint) ? baseTint : sprite.Modulate;
-                sprite.Modulate = new Color(tint.R, tint.G, tint.B, Mathf.Lerp(tint.A, 0f, progress));
+                sprite.Modulate = new Color(tint.R, tint.G, tint.B, Mathf.Lerp(tint.A, 0f, fadeProgress));
+                sprite.Position = cloud.FallOrigin + new Vector2(0f, FallCurveY(fallProgress));
+                sprite.RotationDegrees = cloud.FallOriginRotationDegrees + FallCurveRotation(fallProgress);
             }
         }
+    }
+
+    /// <summary>Wind-up (a tiny upward stumble, -Y), collapse (drop <see cref="FallDropPx"/> with a
+    /// slight overshoot past rest — gravity, not a glue-down), settle (ease back UP to the exact
+    /// rest depth) — the overshoot-then-settle is the same anticipation/follow-through language as
+    /// every other beat motion in this file, just ending at 1 (down) instead of back at 0.</summary>
+    private static float FallCurveY(float progress)
+    {
+        if (progress < 0.12f)
+        {
+            return Mathf.Lerp(0f, -3f, EaseOut(progress / 0.12f));
+        }
+
+        if (progress < 0.6f)
+        {
+            return Mathf.Lerp(-3f, FallDropPx + 4f, EaseIn((progress - 0.12f) / 0.48f));
+        }
+
+        var t = (progress - 0.6f) / 0.4f;
+        return Mathf.Lerp(FallDropPx + 4f, FallDropPx, EaseOut(t));
+    }
+
+    /// <summary>Topples to <see cref="FallRotationDegrees"/> with the same overshoot-then-settle
+    /// shape as <see cref="FallCurveY"/>, added to the sprite's OWN rotation at the moment of death
+    /// (<see cref="CloudFx.FallOriginRotationDegrees"/>) — a camp-slumped hero (already tilted)
+    /// topples from their existing lean, not from square upright.</summary>
+    private static float FallCurveRotation(float progress)
+    {
+        if (progress < 0.12f)
+        {
+            return 0f;
+        }
+
+        if (progress < 0.6f)
+        {
+            var t = (progress - 0.12f) / 0.48f;
+            return Mathf.Lerp(0f, FallRotationDegrees + 8f, EaseIn(t));
+        }
+
+        var t2 = (progress - 0.6f) / 0.4f;
+        return Mathf.Lerp(FallRotationDegrees + 8f, FallRotationDegrees, EaseOut(t2));
     }
 
     // ── transient FX (damage numbers, kill-poof, loot sparkle) — fire-and-forget, self-pruning ──
