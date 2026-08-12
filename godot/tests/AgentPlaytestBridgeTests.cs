@@ -202,6 +202,51 @@ public class AgentPlaytestBridgeTests
     }
 
     /// <summary>
+    /// 2026-08-12 (coverage-can-see-the-overlays finding A): <see cref="Location"/> used to check only
+    /// <c>ui.Drawer.IsOpen</c> and <c>ui.Town.InteriorActive</c> — the Ledger, Camp, Scrying Mirror,
+    /// Forecast, Bestiary, Commissions, and Legends overlays all bypass the drawer by design
+    /// (<c>MainUi.cs</c>'s own "FullRect overlays above the drawer" comments), so opening any one of
+    /// them reported the exact same location string ("town") as never opening it at all. A full
+    /// playthrough that opened the Ledger every evening produced byte-identical coverage to a run that
+    /// never touched it. This pins the fix: an open overlay must report a distinct, named location.
+    /// </summary>
+    [TestCase]
+    public void OpenOverlay_ReportsLocationDistinctFromTown()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var bridge = new AgentPlaytestBridge(ui);
+
+            var before = bridge.BuildDigest(ui, turn: 1, lastOutcome: "(start)");
+            AssertThat(before.Location)
+                .OverrideFailureMessage($"Setup check: expected location 'town' before any overlay opens, got '{before.Location}'.")
+                .IsEqual("town");
+
+            ui.Ledger.ShowFor(1);
+            var afterLedger = bridge.BuildDigest(ui, turn: 2, lastOutcome: "(opened ledger)");
+            AssertThat(afterLedger.Location)
+                .OverrideFailureMessage(
+                    $"Expected a distinct overlay location once the Ledger opened, got '{afterLedger.Location}'. " +
+                    "A Ledger visit must never read the same as never opening it.")
+                .IsEqual("overlay:Ledger");
+            AssertThat(afterLedger.Location)
+                .OverrideFailureMessage("The Ledger overlay must not report as the plain town location.")
+                .IsNotEqual("town");
+
+            ui.Ledger.CloseModal();
+            var afterClose = bridge.BuildDigest(ui, turn: 3, lastOutcome: "(closed ledger)");
+            AssertThat(afterClose.Location)
+                .OverrideFailureMessage($"Expected 'town' again once the Ledger closed, got '{afterClose.Location}'.")
+                .IsEqual("town");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
     /// The observation has to tell the model the town EXISTS. The first honest agent run reached day 2
     /// without ever entering a building; its own limitation note blamed a missing "enter" verb, which
     /// was wrong — <c>key</c> + the <c>interact</c> InputMap action already reached the same code path a

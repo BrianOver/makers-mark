@@ -253,12 +253,31 @@ public sealed class AgentPlaytestBridge
         return ax >= ay ? horizontal : vertical;
     }
 
-    /// <summary>"town", "interior:&lt;venueKey&gt;", or "panel:&lt;id&gt;" — a drawer panel takes
+    /// <summary>"town", "interior:&lt;venueKey&gt;", "panel:&lt;id&gt;", or "overlay:&lt;name&gt;" —
+    /// whichever thing is actually covering the screen right now wins. An overlay (Ledger/Camp/
+    /// Mirror/Forecast/Bestiary/Commissions/Legends/the system menu) outranks a drawer panel because
+    /// <c>MainUi</c>'s own tray buttons can open one (e.g. "OpenLedger") without first closing
+    /// whatever drawer panel happened to be open, and these overlays draw ABOVE the drawer by design
+    /// (<c>MainUi.cs</c>'s own "FullRect overlays above the drawer" comments) — so an overlay open at
+    /// the same time as a drawer panel is what the player actually sees. A drawer panel in turn takes
     /// priority over a room because <see cref="Town2D.EnterInterior"/> stays active underneath an
     /// opened station drawer (the player is still standing in the room; the drawer is what is
-    /// actually covering the screen right now).</summary>
+    /// actually covering the screen right now).
+    ///
+    /// <para><b>2026-08-12 (coverage-can-see-the-overlays finding A):</b> before the overlay check,
+    /// this method could only ever return "panel:" (from <see cref="DrawerHost.Register"/>), "interior:",
+    /// or "town" — none of the seven <see cref="MainUi.ActiveOverlayName"/> surfaces are drawer panels,
+    /// so opening the Ledger or the Camp panel silently reported as "town", byte-identical to never
+    /// opening either. Reuses <see cref="MainUi.ActiveOverlayName"/> rather than re-deriving the same
+    /// name list a second time here.</para>
+    /// </summary>
     private static string Location(MainUi ui)
     {
+        if (ui.ActiveOverlayName() is { } overlay)
+        {
+            return $"overlay:{overlay}";
+        }
+
         if (ui.Drawer.IsOpen)
         {
             return $"panel:{ui.Drawer.CurrentPanelId}";
