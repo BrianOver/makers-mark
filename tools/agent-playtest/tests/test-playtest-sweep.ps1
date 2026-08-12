@@ -229,10 +229,42 @@ Set-Content -Path (Join-Path $runC 'run-meta.json') -Value '{"tag":"Diff-sceptic
 Set-Content -Path (Join-Path $runD 'run-meta.json') -Value '{"tag":"Full-monkey-1","scope":"Full","persona":"monkey","personaPassedToDriver":false,"exitCode":0}' -Encoding utf8
 Set-Content -Path (Join-Path $runD 'backend.json') -Value '{"Available":true,"AutoAdvanceCount":5}' -Encoding utf8
 
+# runD is also this fixture set's INERT case: a run that used its whole budget and stayed
+# model-driven -- so DEGRADED and INCOMPLETE both read it as pristine -- while nothing it pressed
+# reached the game. That is the exact shape of the 2026-08-11 ten-rounds campaign, and the reason
+# the third gauge exists (agent-playtest/completion.ps1's Get-InertVerdict).
+$findingsD = @(
+    'INERT: 190 of 200 acting commands (95%) changed nothing on screen, at or over the 50% floor. Longest dead streak: 47 turns. This run did not test the game -- treat every finding below as unproven.',
+    '',
+    '# INERT -- agent playtest findings (Scope: Full)',
+    '',
+    '- scope: Full',
+    '- model: llava:7b',
+    '- turns: 200 (stopped: turn budget reached)',
+    '- completion: 200 of 200 budgeted turns (100%)',
+    '- effective: 10 of 200 acting commands changed the screen (190 inert, 95%; longest dead streak 47)',
+    '- model-driven turns: 200',
+    '- fallback turns: 0 (0% of total)',
+    '- persona: monkey (requested: monkey), act-prompt hash deadbeef',
+    '',
+    '- Something unique to run D only about the anvil never showing a heat readout.',
+    '',
+    '## Turn log',
+    '',
+    '- day 1 phase Morning beat None location town canMove=True'
+) -join "`n"
+Set-Content -Path (Join-Path $runD 'findings.md') -Value $findingsD -Encoding utf8
+
 # Run the aggregator for real, against these fixtures only -- no Godot, no ollama, no network.
 & powershell -NoProfile -File $scriptPath -AggregateFrom $fixtureRoot | Out-Null
 $aggExit = $LASTEXITCODE
-Check ($aggExit -eq 0) ('-AggregateFrom must exit 0 on a fixture sweep with no live-run preconditions to fail, got ' + $aggExit)
+# CHANGED, deliberately: this used to assert exit 0. That was wrong, and the wrongness is the whole
+# point of this fix -- these fixtures contain runB (DEGRADED AND INCOMPLETE) and runC (findings.md
+# missing entirely). A sweep carrying two unusable runs out of four must not tell its caller
+# "success". The old assertion pinned exactly the behaviour that let the 2026-08-11 ten-rounds
+# campaign be reported as "78 runs, zero crashes" while every interact in it was a no-op.
+Check ($aggExit -eq 1) ('-AggregateFrom must exit NON-ZERO when the sweep contains unusable runs ' +
+    '(these fixtures have a DEGRADED+INCOMPLETE run and a MISSING one), got ' + $aggExit)
 
 $summaryPath = Join-Path $fixtureRoot 'SUMMARY.csv'
 $reportPath = Join-Path $fixtureRoot 'REPORT.md'
@@ -353,6 +385,10 @@ if (Test-Path $reportPath) {
     # Named bad runs with CAUSE, never a bare count.
     Check ($report -match 'Scout-veteran-1: INCOMPLETE: only 9 of 80') 'REPORT.md must name Scout-veteran-1''s INCOMPLETE cause verbatim from its own findings.md sentence'
     Check ($report -match 'Scout-veteran-1: DEGRADED: 3 of 9 turns') 'REPORT.md must name Scout-veteran-1''s DEGRADED cause verbatim'
+    # The INERT gauge must be named with cause exactly like its two older siblings. A run the harness
+    # itself disowned for never reaching the game is the LAST thing that should be quietly averaged
+    # into a sweep's conclusions.
+    Check ($report -match 'INERT: 190 of 200 acting commands') 'REPORT.md must name the INERT run''s cause verbatim, the same way it names DEGRADED and INCOMPLETE'
     Check ($report -match 'Diff-sceptic-1: MISSING') 'REPORT.md must name Diff-sceptic-1 as MISSING, not omit it'
 
     # Deepest day / day-11 answer: max day across fixtures is 5, well short of day 10 -- the report

@@ -320,6 +320,8 @@ function Get-FindingsFields {
             DegradedSentence     = $null
             Incomplete           = $false
             IncompleteSentence   = $null
+            Inert                = $false
+            InertSentence        = $null
             DiffFellBack         = $false
             DiffFellBackSentence = $null
             Persona              = $null
@@ -373,6 +375,15 @@ function Get-FindingsFields {
     $m = [regex]::Match($text, '(?m)^(INCOMPLETE:.*)$')
     if ($m.Success) { $incomplete = $true; $incompleteSentence = $m.Groups[1].Value.Trim() }
 
+    # The third gauge (agent-playtest/completion.ps1's Get-InertVerdict): most acting commands
+    # changed nothing on screen, so the run never reached the game. A sweep that averages an INERT
+    # run in with real ones publishes the same fiction the 2026-08-11 ten-rounds campaign did --
+    # "78 runs, zero crashes" over runs where every interact was a no-op.
+    $inert = $false
+    $inertSentence = $null
+    $m = [regex]::Match($text, '(?m)^(INERT:.*)$')
+    if ($m.Success) { $inert = $true; $inertSentence = $m.Groups[1].Value.Trim() }
+
     $diffFellBack = $false
     $diffFellBackSentence = $null
     $m = [regex]::Match($text, '(?im)^-\s*diff scope:\s*(.*)$')
@@ -409,6 +420,8 @@ function Get-FindingsFields {
         DegradedSentence     = $degradedSentence
         Incomplete           = $incomplete
         IncompleteSentence   = $incompleteSentence
+        Inert                = $inert
+        InertSentence        = $inertSentence
         DiffFellBack         = $diffFellBack
         DiffFellBackSentence = $diffFellBackSentence
         Persona              = $persona
@@ -825,6 +838,7 @@ function Get-NamedBadRuns {
         }
         if ($f.Degraded) { [void]$result.Add(($row.RunTag + ': ' + $f.DegradedSentence)) }
         if ($f.Incomplete) { [void]$result.Add(($row.RunTag + ': ' + $f.IncompleteSentence)) }
+        if ($f.Inert) { [void]$result.Add(($row.RunTag + ': ' + $f.InertSentence)) }
         if ($f.DiffFellBack) { [void]$result.Add(($row.RunTag + ': ' + $f.DiffFellBackSentence)) }
     }
     return @($result)
@@ -1127,6 +1141,21 @@ function Invoke-SweepAggregation {
         ' DEGRADED/INCOMPLETE/FELL BACK, ' + $missingCount + ' missing findings.md')
     Say ('SUMMARY.csv: ' + $summaryPath)
     Say ('REPORT.md: ' + $reportPath)
+
+    # Hand the caller the one number that decides whether this sweep is evidence: how many runs are
+    # unusable. A run is unusable when its own harness disowned it (DEGRADED / INCOMPLETE / INERT) or
+    # when findings.md never appeared at all -- the same set REPORT.md names with cause, counted once
+    # here so the exit code and the report can never disagree.
+    $unusable = @($rows | Where-Object {
+        $f = $_.FindingsFields
+        $f -and ($f.Missing -or $f.Degraded -or $f.Incomplete -or $f.Inert)
+    }).Count
+    return [pscustomobject]@{
+        RowCount         = $rows.Count
+        UnusableRunCount = $unusable
+        SummaryPath      = $summaryPath
+        ReportPath       = $reportPath
+    }
 }
 
 # =================================================================================================
@@ -1261,7 +1290,18 @@ if ($AggregateFrom) {
     if (-not (Test-Path $AggregateFrom)) { Die @(('aggregate target does not exist: ' + $AggregateFrom)) }
     $runsRoot = (Resolve-Path $AggregateFrom).Path
     Say ('aggregating existing runs under ' + $runsRoot + ' -- no new runs launched (Godot/ollama untouched)')
-    Invoke-SweepAggregation -RunsRoot $runsRoot
+    $aggregate = Invoke-SweepAggregation -RunsRoot $runsRoot
+    # Re-aggregating an old sweep must reach the SAME verdict as running it live -- otherwise
+    # "-AggregateFrom said 0" becomes a laundering path around the unusable-run gate below.
+    $badRunCount = 0
+    if ($aggregate -and ($aggregate.PSObject.Properties.Name -contains 'UnusableRunCount')) {
+        $badRunCount = [int]$aggregate.UnusableRunCount
+    }
+    if ($badRunCount -gt 0) {
+        Warn ($badRunCount + ' of ' + $aggregate.RowCount + ' run(s) in this sweep are UNUSABLE ' +
+            '(DEGRADED / INCOMPLETE / INERT / MISSING) -- see REPORT.md''s named-with-cause section. Exiting non-zero.')
+        exit 1
+    }
     exit 0
 }
 
@@ -1306,6 +1346,26 @@ foreach ($entry in $plan) {
         -BrainModel $BrainModel -PatienceMode $PatienceMode | Out-Null
 }
 
-Invoke-SweepAggregation -RunsRoot $stampDir
+$aggregate = Invoke-SweepAggregation -RunsRoot $stampDir
 Say ('sweep complete: ' + $stampDir)
+
+# A sweep used to `exit 0` no matter what came back, so a caller (a person, a script, CI) could not
+# tell ten real playthroughs from ten runs that never reached the game. It already COLLECTED every
+# run's exit code and every DEGRADED/INCOMPLETE/INERT verdict -- it just never drew a conclusion from
+# them. That is how the 2026-08-11 ten-rounds campaign got reported as "78 runs, zero crashes" while
+# every interact in it was a no-op.
+#
+# The count is deliberately loud on stdout as well as in REPORT.md: a sweep is usually read by
+# whoever comes back to the terminal hours later, and the first thing they should see is how many of
+# these runs are worth believing.
+$badRunCount = 0
+if ($aggregate -and ($aggregate.PSObject.Properties.Name -contains 'UnusableRunCount')) {
+    $badRunCount = [int]$aggregate.UnusableRunCount
+}
+if ($badRunCount -gt 0) {
+    Warn ($badRunCount + ' of ' + $plan.Count + ' run(s) in this sweep are UNUSABLE (DEGRADED / INCOMPLETE / INERT / MISSING) ' +
+        '-- see REPORT.md''s named-with-cause section. Any conclusion drawn across this sweep is averaging over runs ' +
+        'that did not test the game. Exiting non-zero.')
+    exit 1
+}
 exit 0
