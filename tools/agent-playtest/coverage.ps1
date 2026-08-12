@@ -11,6 +11,10 @@
 
     Registries and their source of truth, one function each below:
       - panel ids           <- MainUi.cs's Drawer.Register("Id", PanelInstance) calls
+      - overlay ids         <- MainUi.cs's OverlaySurfaces() named list (Ledger/Camp/Mirror/Forecast/
+                                Bestiary/Commissions/Legends/the system menu -- FullRect overlays that
+                                deliberately bypass the drawer, so Get-PanelIdRegistry above is
+                                structurally blind to them; see this file's own Get-OverlayRegistry)
       - town buildings      <- TownLayout2D.Venues (the outdoor building table)
       - interior stations   <- InteriorLayout2D.Rooms (market/tavern/minegate) UNION
                                 WorkshopVocab.ByProfession (forge -- see its own caveat below)
@@ -47,6 +51,32 @@ function Get-PanelIdRegistry {
 
     $ids = @()
     foreach ($m in [regex]::Matches($text, 'Drawer\.Register\(\s*"([A-Za-z0-9]+)"')) {
+        $ids += $m.Groups[1].Value
+    }
+    return ,@($ids | Select-Object -Unique | Sort-Object)
+}
+
+# Overlay ids: MainUi.cs's own OverlaySurfaces() named list -- the SAME list AnOverlayOwnsTheScreen()
+# and ActiveOverlayName() both fold over, so Location() (AgentPlaytest.cs) reports one of these names
+# exactly when Get-PanelIdRegistry above could never see it. These are FullRect overlays (Ledger,
+# Camp, the Scrying Mirror, the raid Forecast board, the Bestiary, the Commission board, the Legends
+# wall, and the system menu) that deliberately bypass Drawer.Register -- MainUi.cs's own comments call
+# them "FullRect overlays above the drawer". Before this registry existed, a full playthrough that
+# opened the Ledger and the Camp panel every day produced byte-identical Panel coverage to a run that
+# never opened either (2026-08-12 finding, reproduced against a real archived run).
+function Get-OverlayRegistry {
+    param([Parameter(Mandatory)][string]$RepoRoot)
+
+    $path = Join-Path $RepoRoot 'godot\scripts\MainUi.cs'
+    if (-not (Test-Path $path)) { return ,@() }
+    $text = Get-Content $path -Raw
+
+    $blockMatch = [regex]::Match($text, '(?s)OverlaySurfaces\(\)\s*=>\s*new[^\{]*\{(.*?)\};')
+    if (-not $blockMatch.Success) { return ,@() }
+    $block = $blockMatch.Groups[1].Value
+
+    $ids = @()
+    foreach ($m in [regex]::Matches($block, '\(\s*"([A-Za-z0-9]+)"')) {
         $ids += $m.Groups[1].Value
     }
     return ,@($ids | Select-Object -Unique | Sort-Object)
@@ -185,6 +215,7 @@ function Get-CoverageRegistries {
     param([Parameter(Mandatory)][string]$RepoRoot)
 
     $panels = Get-PanelIdRegistry -RepoRoot $RepoRoot
+    $overlays = Get-OverlayRegistry -RepoRoot $RepoRoot
     $buildings = Get-TownBuildingRegistry -RepoRoot $RepoRoot
     $stations = Get-InteriorStationRegistry -RepoRoot $RepoRoot
     $stationKeys = @($stations | ForEach-Object { $_.Venue + '/' + $_.StationId } | Sort-Object -Unique)
@@ -207,6 +238,7 @@ function Get-CoverageRegistries {
 
     return [pscustomobject]@{
         Panel           = $panels
+        Overlay         = $overlays
         TownBuilding    = $buildings
         InteriorStation = $stationKeys
         DayPhase        = $phases
@@ -223,6 +255,7 @@ function Get-CoverageRegistries {
 function New-CoverageTracker {
     return [ordered]@{
         Panel           = @{}
+        Overlay         = @{}
         TownBuilding    = @{}
         InteriorStation = @{}
         DayPhase        = @{}
@@ -252,6 +285,8 @@ function Add-CoverageTouch {
 
     if ($location.StartsWith('panel:')) {
         $Tracker.Panel[$location.Substring(6)] = $true
+    } elseif ($location.StartsWith('overlay:')) {
+        $Tracker.Overlay[$location.Substring(8)] = $true
     } elseif ($location -eq 'town') {
         foreach ($n in @($State.nearby)) {
             if ($n.inRange) { $Tracker.TownBuilding[$n.key] = $true }
@@ -285,7 +320,7 @@ function Get-CoverageReport {
         [Parameter(Mandatory)]$Tracker
     )
 
-    $categories = @('Panel', 'TownBuilding', 'InteriorStation', 'DayPhase', 'ActionType', 'HudControl')
+    $categories = @('Panel', 'Overlay', 'TownBuilding', 'InteriorStation', 'DayPhase', 'ActionType', 'HudControl')
     $byCategory = @()
     $totalAll = 0
     $totalTouched = 0
@@ -329,8 +364,18 @@ function Format-CoverageMarkdown {
     $lines = New-Object System.Collections.ArrayList
     [void]$lines.Add('# Coverage census')
     [void]$lines.Add('')
-    [void]$lines.Add('Overall: ' + $Report.OverallTouched + ' of ' + $Report.OverallTotal +
-        ' surfaces touched (' + $Report.OverallPercentage + '%).')
+
+    # 2026-08-12 (coverage-can-see-the-overlays finding B): a registry that returns ZERO entries (a
+    # source-format regression in the regex that builds it, not a real "nothing left to touch") used
+    # to fall through the $totalAll -gt 0 guard below into 0/0 -- which every downstream reader sees
+    # as a clean, fully-covered run. A zero denominator must never render as success.
+    if ($Report.OverallTotal -eq 0) {
+        [void]$lines.Add('Overall: registry empty -- coverage undefined (every category totaled zero ' +
+            'entries; this is a broken registry-building regex, not a run that covered everything).')
+    } else {
+        [void]$lines.Add('Overall: ' + $Report.OverallTouched + ' of ' + $Report.OverallTotal +
+            ' surfaces touched (' + $Report.OverallPercentage + '%).')
+    }
     [void]$lines.Add('')
 
     $caveats = @($Report.Caveats)
@@ -339,6 +384,19 @@ function Format-CoverageMarkdown {
     [void]$lines.Add('')
 
     foreach ($cat in $Report.Categories) {
+        if ($cat.Total -eq 0) {
+            # Same zero-denominator guard, per category: Get-PanelIdRegistry (or any sibling registry
+            # function) returning ,@() must read as "this census is blind here", never as "(none --
+            # full coverage this run)" -- the literal text a genuinely empty Untouched list prints
+            # below, which a $cat.Total -eq 0 case would otherwise hit too.
+            [void]$lines.Add('## ' + $cat.Category + ' (registry empty -- coverage undefined)')
+            [void]$lines.Add('')
+            [void]$lines.Add('This category''s registry returned ZERO entries. Treat this as a broken ' +
+                'source-format regex to fix, not as evidence the run touched everything.')
+            [void]$lines.Add('')
+            continue
+        }
+
         [void]$lines.Add('## ' + $cat.Category + ' (' + $cat.Touched.Count + '/' + $cat.Total + ', ' + $cat.Percentage + '%)')
         [void]$lines.Add('')
         [void]$lines.Add('Touched:')
