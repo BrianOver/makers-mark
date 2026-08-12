@@ -6,6 +6,7 @@ using GameSim.Contracts;
 using GdUnit4;
 using Godot;
 using GodotClient.Minigames;
+using GodotClient.Tools;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -222,6 +223,69 @@ public class HumanPlaytestTests
                     $"'Unlock' button from x={unlockXBefore:0.#} to x={unlockXAfter:0.#}. These controls " +
                     "now demand more than the drawer's width:\n  " + string.Join("\n  ", offenders))
                 .IsEmpty();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// A recipe below the Forge's material-vendor list must be reachable by the single most
+    /// natural scroll gesture: turning the mouse wheel over the panel.
+    ///
+    /// <para><b>Regression for the defect <see cref="GodotClient.Tests.DeepPilotPlayTests"/>'s
+    /// deep pilot found</b>: <c>MaterialRegistry.PricedPool</c> has 19 priced materials, each
+    /// rendered as a vendor row plus its own quantity-stepper row — around 2100px of content,
+    /// several screens taller than the Forge drawer's ~592px scroll viewport, even before a
+    /// single recipe card. <see cref="HumanPlayer.ScrollIntoView"/> (and the real game's own
+    /// scroll-wheel handling) always turns the wheel at the scroll body's own rect CENTER — the
+    /// natural place a person rests the cursor — and on a fresh day 1 that point sits squarely
+    /// inside the vendor list, on top of <see cref="GodotClient.Ui.UiKit.Section"/>'s themed
+    /// panel background. That background is a bare <c>PanelContainer</c>, which defaults to
+    /// <c>MouseFilter.Stop</c>: it silently swallowed the wheel event before it ever reached the
+    /// ancestor <c>ScrollContainer</c>, so turning the wheel there did precisely nothing — not a
+    /// small viewport, not a CI-only quirk, reproducible on any window that runs this project's
+    /// default 1152x648 (<c>project.godot</c>'s <c>window/size</c>). A real player is not
+    /// permanently stuck (the scrollbar thumb still drags fine, since it sits outside this rect),
+    /// but the game's most obvious scroll affordance going dead over most of a fully-stocked
+    /// list is exactly the "control exists, every property looks right, still unreachable" class
+    /// this suite already treats as a defect. Fixed by giving <c>UiKit.Card</c>/<c>Section</c>'s
+    /// root panels <c>MouseFilter.Ignore</c> — decoration, per this file's own precedent, must
+    /// never eat clicks (or wheel turns) meant for something else.</para>
+    ///
+    /// <para>Deliberately run at the project's DEFAULT window size (no resize call): that is the
+    /// small, always-supported viewport this game ships at, not a comfortable oversized one a
+    /// dev machine happens to default to.</para>
+    /// </summary>
+    [TestCase]
+    public async Task ForgeRecipeBelowTheVendorList_IsReachableByScrollingTheWheel()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var player = new HumanPlayer(ui);
+
+            ui.OpenPanel("Forge");
+            await SettlePanel(ui, player, "Forge");
+
+            var content = ui.Drawer.CurrentContent!;
+            var work = ScreenObservation.Descendants(content)
+                .OfType<Button>()
+                .FirstOrDefault(b => b.IsVisibleInTree() && b.Name.ToString().StartsWith("WorkForge_"));
+
+            AssertThat(work)
+                .OverrideFailureMessage(
+                    "No WorkForge_ button exists on a fresh campaign's Forge panel — this test's own " +
+                    "setup is wrong, not the game.")
+                .IsNotNull();
+
+            var reached = await player.ScrollIntoView(work!);
+
+            AssertThat(reached)
+                .OverrideFailureMessage(
+                    $"Scrolling the mouse wheel over the Forge panel's own center never brought " +
+                    $"\"{work!.Name}\" into view. The vendor list above it is ~2100px of content in a " +
+                    "~592px scroll body, so the wheel MUST be able to page through it — if this fails, " +
+                    "a decorative panel (UiKit.Card/Section) is swallowing the wheel event again.")
+                .IsTrue();
         }
         finally { Unmount(ui); }
     }
