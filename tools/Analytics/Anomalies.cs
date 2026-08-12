@@ -16,23 +16,35 @@ public enum AnomalySeverity
 /// One rule hit: what drifted, where, and how to reproduce it. The repro pointer is the load-bearing
 /// field (observability plan R1/R3) — a Claude must be able to re-create the window from it alone.
 /// </summary>
+/// <param name="Policy">
+/// The player policy (<c>baseline</c> or <c>counter</c>, see <c>BatchRunner.Policy</c>) that produced
+/// the source chronicle. Defaults to <see cref="Anomalies.DefaultPolicy"/> for any caller that does
+/// not know better — every call site before this field existed, and any chronicle this tool cannot
+/// recover a policy tag for (see <see cref="Anomalies.InferPolicyFromFileName"/>). Threaded into
+/// <see cref="ReproCommand"/> so an anomaly found in a <c>--policy counter</c> chronicle reproduces
+/// under the SAME policy rather than silently falling back to a different world (bug: a counter-policy
+/// run's repro used to always replay as baseline).
+/// </param>
 public sealed record Anomaly(
     AnomalySeverity Severity,
     string Rule,
     ulong Seed,
     int DayFrom,
     int DayTo,
-    string Detail)
+    string Detail,
+    string Policy = Anomalies.DefaultPolicy)
 {
     /// <summary>
     /// Reproduces the window WITHOUT contaminating the analytics corpus: writes to a separate
     /// <c>runs-repro/</c> dir (re-running Analytics over <c>runs/</c> must not ingest the truncated
     /// repro chronicle — it would double-count the seed and skew every corpus baseline).
     /// Only valid for BATCH chronicles: an interactively-exported run was driven by human actions,
-    /// which this command does not replay (see docs/debugging.md §1).
+    /// which this command does not replay (see docs/debugging.md §1). Always names <see cref="Policy"/>
+    /// explicitly (never omitted, even for the default) so a repro command is never ambiguous about
+    /// which world it recreates.
     /// </summary>
     public string ReproCommand =>
-        $"dotnet run --project sim/GameSim.Cli -- batch --seeds 1 --seed {Seed} --days {DayTo} --out runs-repro";
+        $"dotnet run --project sim/GameSim.Cli -- batch --seeds 1 --seed {Seed} --days {DayTo} --policy {Policy} --out runs-repro";
 }
 
 /// <summary>
@@ -57,6 +69,15 @@ public sealed record Anomaly(
 /// </summary>
 public static class Anomalies
 {
+    /// <summary>
+    /// The policy assumed for a chronicle whose source this tool cannot determine — every
+    /// <see cref="Detect"/> call before the <c>Anomaly.Policy</c> field existed, and any corpus file
+    /// whose name does not carry a recognizable policy tag (see <see cref="InferPolicyFromFileName"/>).
+    /// Matches the CLI's own default (<c>BatchRunner.Policy.Baseline</c>) so an unresolvable source
+    /// reproduces exactly as this tool always has.
+    /// </summary>
+    public const string DefaultPolicy = "baseline";
+
     // Windows and thresholds (v1 consts — see doc comment).
     public const int TrailingWindowDays = 10;
     public const int BeatStarvationMinDay = 12;         // don't fire on a campaign too young to have beats
@@ -72,8 +93,17 @@ public static class Anomalies
     public const int MonocultureMinJudgments = 20;
     public const int MonoculturePerCentEither = 95;
 
-    /// <summary>Run every rule over the corpus. Deterministic order: by seed, then rule name.</summary>
-    public static IReadOnlyList<Anomaly> Detect(IReadOnlyList<ChronicleData> runs)
+    /// <summary>
+    /// Run every rule over the corpus. Deterministic order: by seed, then rule name.
+    /// </summary>
+    /// <param name="policies">
+    /// Optional, positionally paired with <paramref name="runs"/> (index-for-index, NOT a seed
+    /// lookup — a corpus is not guaranteed to have unique seeds, and a wrong seed match would
+    /// misname a repro command's <c>--policy</c> silently). Absent, or shorter than
+    /// <paramref name="runs"/>, means "use <see cref="DefaultPolicy"/> for whichever runs have no
+    /// entry" — every caller before this parameter existed keeps behaving exactly as before.
+    /// </param>
+    public static IReadOnlyList<Anomaly> Detect(IReadOnlyList<ChronicleData> runs, IReadOnlyList<string>? policies = null)
     {
         var found = new List<Anomaly>();
 
@@ -91,23 +121,26 @@ public static class Anomalies
             }
         }
 
-        foreach (var run in runs)
+        for (var i = 0; i < runs.Count; i++)
         {
+            var run = runs[i];
+            var policy = policies is not null && i < policies.Count ? policies[i] : DefaultPolicy;
+
             var lastFullDay = PlayableHorizon(run);
             if (lastFullDay < 1)
             {
                 continue;
             }
 
-            BeatStarvation(run, lastFullDay, found);
+            BeatStarvation(run, lastFullDay, policy, found);
             if (lastFullDay >= TrailingWindowDays)
             {
-                DeathSpike(run, lastFullDay, baselineCorpus.Count, corpusDeathsByFloor, found);
+                DeathSpike(run, lastFullDay, baselineCorpus.Count, corpusDeathsByFloor, policy, found);
             }
-            GoldMintSpike(run, lastFullDay, found);
-            DeadShop(run, lastFullDay, found);
-            TariffSaturation(run, lastFullDay, found);
-            BountyMonoculture(run, lastFullDay, found);
+            GoldMintSpike(run, lastFullDay, policy, found);
+            DeadShop(run, lastFullDay, policy, found);
+            TariffSaturation(run, lastFullDay, policy, found);
+            BountyMonoculture(run, lastFullDay, policy, found);
         }
 
         return found
@@ -115,6 +148,23 @@ public static class Anomalies
             .ThenBy(a => a.Seed)
             .ThenBy(a => a.Rule, StringComparer.Ordinal)
             .ToList();
+    }
+
+    /// <summary>
+    /// Recovers the player policy that produced a chronicle from its FILENAME, since
+    /// <c>ChronicleData</c> itself carries no policy field by design (sim purity, KTD2 — the sim's
+    /// export type stays a pure telemetry snapshot; <c>BatchRunner.Run</c> instead embeds the tag in
+    /// the filename it writes: <c>batch-seed{seed}-days{days}-{policy}.json</c>, see that method's own
+    /// doc comment). Any name that does not end in a recognized policy suffix — interactive exports
+    /// (<c>run-*.json</c>), hand-copied files, this repo's own test fixtures — falls back to
+    /// <see cref="DefaultPolicy"/>: harmless, since <see cref="Anomaly.ReproCommand"/> is documented as
+    /// valid for BATCH chronicles only, and "baseline" was this tool's only behavior before this fix
+    /// existed at all.
+    /// </summary>
+    public static string InferPolicyFromFileName(string path)
+    {
+        var name = Path.GetFileNameWithoutExtension(path);
+        return name.EndsWith("-counter", StringComparison.OrdinalIgnoreCase) ? "counter" : DefaultPolicy;
     }
 
     /// <summary>The last day whose numbers a player will ever live through: the run's last full day,
@@ -163,7 +213,7 @@ public static class Anomalies
         return sb.ToString();
     }
 
-    private static void BeatStarvation(ChronicleData run, int lastFullDay, List<Anomaly> found)
+    private static void BeatStarvation(ChronicleData run, int lastFullDay, string policy, List<Anomaly> found)
     {
         if (lastFullDay < BeatStarvationMinDay)
         {
@@ -188,13 +238,14 @@ public static class Anomalies
         {
             found.Add(new Anomaly(
                 AnomalySeverity.High, "beat-starvation", run.Seed, from, lastFullDay,
-                $"0 attribution beats in the trailing {TrailingWindowDays} days with living heroes — the attribution-pride loop is starving."));
+                $"0 attribution beats in the trailing {TrailingWindowDays} days with living heroes — the attribution-pride loop is starving.",
+                policy));
         }
     }
 
     private static void DeathSpike(
         ChronicleData run, int lastFullDay, int runCount,
-        Dictionary<int, int> corpusDeathsByFloor, List<Anomaly> found)
+        Dictionary<int, int> corpusDeathsByFloor, string policy, List<Anomaly> found)
     {
         var byFloor = new Dictionary<int, List<HeroDied>>();
         foreach (var death in run.Events.OfType<HeroDied>().Where(d => d.Day <= lastFullDay))
@@ -216,12 +267,13 @@ public static class Anomalies
                 found.Add(new Anomaly(
                     AnomalySeverity.Medium, "death-spike", run.Seed,
                     deaths.Min(d => d.Day), deaths.Max(d => d.Day),
-                    $"floor {floor}: {deaths.Count} deaths vs {othersTotal} across the other {runCount - 1} run(s)."));
+                    $"floor {floor}: {deaths.Count} deaths vs {othersTotal} across the other {runCount - 1} run(s).",
+                    policy));
             }
         }
     }
 
-    private static void GoldMintSpike(ChronicleData run, int lastFullDay, List<Anomaly> found)
+    private static void GoldMintSpike(ChronicleData run, int lastFullDay, string policy, List<Anomaly> found)
     {
         if (lastFullDay < TrailingWindowDays * 2)
         {
@@ -243,7 +295,8 @@ public static class Anomalies
         {
             found.Add(new Anomaly(
                 AnomalySeverity.Medium, "gold-mint-spike", run.Seed, trailingFrom, lastFullDay,
-                $"gold minted {trailing}g in trailing window vs {opening}g in days 1-{TrailingWindowDays} — inflation runaway."));
+                $"gold minted {trailing}g in trailing window vs {opening}g in days 1-{TrailingWindowDays} — inflation runaway.",
+                policy));
         }
     }
 
@@ -253,7 +306,7 @@ public static class Anomalies
     private static int MintedIn(ChronicleData run, int from, int to) =>
         run.Events.OfType<LootIncomeReceived>().Where(e => e.Day >= from && e.Day <= to).Sum(e => e.Gold);
 
-    private static void DeadShop(ChronicleData run, int lastFullDay, List<Anomaly> found)
+    private static void DeadShop(ChronicleData run, int lastFullDay, string policy, List<Anomaly> found)
     {
         if (lastFullDay < DeadShopMinDay)
         {
@@ -266,11 +319,12 @@ public static class Anomalies
         {
             found.Add(new Anomaly(
                 AnomalySeverity.Medium, "dead-shop", run.Seed, 1, lastFullDay,
-                $"{crafted} items crafted, 0 player-shop sales — crafting into the void."));
+                $"{crafted} items crafted, 0 player-shop sales — crafting into the void.",
+                policy));
         }
     }
 
-    private static void TariffSaturation(ChronicleData run, int lastFullDay, List<Anomaly> found)
+    private static void TariffSaturation(ChronicleData run, int lastFullDay, string policy, List<Anomaly> found)
     {
         // AGGREGATE ratio, not per-line: integer rounding makes per-line per-mille meaningless on
         // small line costs (a 1g delta on a 10g line reads as 10% at HALF standing; at the true cap
@@ -297,11 +351,12 @@ public static class Anomalies
         {
             found.Add(new Anomaly(
                 AnomalySeverity.Low, "tariff-saturation", run.Seed, from, to,
-                $"{tariffs.Count} tariff applications averaging at/near the cap over {to - from + 1} days — standing pegged; the lever stopped mattering."));
+                $"{tariffs.Count} tariff applications averaging at/near the cap over {to - from + 1} days — standing pegged; the lever stopped mattering.",
+                policy));
         }
     }
 
-    private static void BountyMonoculture(ChronicleData run, int lastFullDay, List<Anomaly> found)
+    private static void BountyMonoculture(ChronicleData run, int lastFullDay, string policy, List<Anomaly> found)
     {
         var judged = run.Events.OfType<BountyJudged>().Where(j => j.Day <= lastFullDay).ToList();
         if (judged.Count < MonocultureMinJudgments)
@@ -318,7 +373,8 @@ public static class Anomalies
         {
             found.Add(new Anomaly(
                 AnomalySeverity.Low, "bounty-monoculture", run.Seed, 1, lastFullDay,
-                $"{judged.Count} bounty judgments, {accepted} accepted — the decision has degenerated to one direction."));
+                $"{judged.Count} bounty judgments, {accepted} accepted — the decision has degenerated to one direction.",
+                policy));
         }
     }
 }

@@ -215,6 +215,19 @@ function Get-RunPlan {
     return @($plan)
 }
 
+# Adversarial-audit finding A: the ONE place that derives a run's -Seed from its plan entry, so
+# Invoke-SweepRun (which passes it to the driver) and Format-RunMatrix's DryRun preview (which shows
+# it before anything launches, no Godot needed) can never drift apart into two different answers.
+# Derived from the run's own repeat index (the "-N" suffix already in Tag) so "-Runs 3" against one
+# scope/persona pair genuinely produces three different seeds -- before this fix, this file never
+# passed -Seed to the driver AT ALL (grep for "Seed" in this file used to return zero matches), so
+# every sweep-launched monkey/pilot run, INCLUDING repeats explicitly meant to explore a different
+# random command stream, silently reused the driver's hardcoded default of 1.
+function Get-SeedForRun {
+    param([Parameter(Mandatory)]$PlanEntry)
+    return $PlanEntry.Index
+}
+
 # ASSUMED constants, clearly labeled everywhere they are printed -- never presented as measured.
 # No prior sweep in this repo recorded per-turn wall-clock timestamps (checked: run-meta.json is
 # new in this file; nothing before it timed a run). These exist only so a dry run can print SOME
@@ -242,7 +255,7 @@ function Format-RunMatrix {
     [void]$lines.Add('Serial by construction: each run holds its own Godot client and the local vision model,')
     [void]$lines.Add('so total wall clock below is a SUM, not a max -- see this script''s own header for why.')
     [void]$lines.Add('')
-    [void]$lines.Add('  #  tag                              scope  persona          turns  est.min(*)')
+    [void]$lines.Add('  #  tag                              scope  persona          turns  seed  est.min(*)')
 
     $totalMinutes = 0.0
     $i = 0
@@ -250,9 +263,13 @@ function Format-RunMatrix {
         $i++
         $est = Get-EstimatedRunMinutes -Scope $entry.Scope -Turns $entry.Turns
         $totalMinutes = $totalMinutes + $est
+        # Adversarial-audit finding A: shown here (Get-SeedForRun, same function Invoke-SweepRun
+        # calls) so a caller can see BEFORE anything launches that repeats get different seeds --
+        # this dry run must be checkable in one second, per this function's own caller header note.
+        $seed = Get-SeedForRun -PlanEntry $entry
         $row = '  ' + $i.ToString().PadLeft(2) + '  ' + $entry.Tag.PadRight(32) + ' ' +
             $entry.Scope.PadRight(6) + ' ' + $entry.Persona.PadRight(16) + ' ' +
-            $entry.Turns.ToString().PadLeft(5) + '  ' + $est.ToString('0.0').PadLeft(8)
+            $entry.Turns.ToString().PadLeft(5) + '  ' + $seed.ToString().PadLeft(4) + '  ' + $est.ToString('0.0').PadLeft(8)
         [void]$lines.Add($row)
     }
 
@@ -921,16 +938,48 @@ function Get-PersonaDifferences {
         return @($lines)
     }
 
-    # Whether the driver actually varied the prompt per persona, or every persona ran the same
-    # act.md verbatim (today's reality until U4 lands -- see Get-FindingsFields's own note).
-    # Checked once so every line below is honest about what it can and cannot claim.
-    $hashes = @($Rows | ForEach-Object { $_.PromptHash } | Where-Object { $_ } | Select-Object -Unique)
-    if ($hashes.Count -le 1) {
+    # Whether the driver actually varied the prompt per persona, or two (or more) persona LABELS
+    # collapsed onto the SAME assembled prompt text -- e.g. two persona .md files that drifted to
+    # identical wording. Adversarial-audit finding B: the OLD check flattened every row's PromptHash
+    # into one set across the whole sweep and only fired its caveat when hashes.Count -le 1 -- i.e.
+    # ONLY on TOTAL collapse (every persona converged to one hash). A PARTIAL collapse (two of four
+    # personas sharing one hash, the other two each genuinely distinct) left the count at 3, no
+    # caveat fired, and the per-persona bullets below printed a confident line for the collapsed pair
+    # as though each had been measured separately. There was zero direct test coverage of this
+    # function before the fix (see tools/agent-playtest/tests/test-playtest-sweep.ps1's new fixture).
+    #
+    # Fixed to group hashes by PERSONA NAME first: a hash used by only one persona name (however many
+    # repeats/runs that persona has) is healthy and expected; a hash shared ACROSS two or more
+    # DISTINCT persona names is the collapse, named here with every colliding persona so the caveat
+    # is actionable, not just a boolean.
+    $personaNamesByHash = @{}
+    foreach ($row in $Rows) {
+        if (-not $row.Persona -or -not $row.PromptHash) { continue }
+        if (-not $personaNamesByHash.ContainsKey($row.PromptHash)) {
+            $personaNamesByHash[$row.PromptHash] = New-Object System.Collections.Generic.HashSet[string]
+        }
+        [void]$personaNamesByHash[$row.PromptHash].Add($row.Persona)
+    }
+
+    if ($personaNamesByHash.Count -eq 0) {
         [void]$lines.Add('CAVEAT: no run in this sweep reported a distinct prompt hash per persona, so it ' +
             'cannot be confirmed the driver actually played each persona differently. The "persona" below ' +
             'is only the label this sweep REQUESTED, not a verified distinct prompt -- see run-meta.json''s ' +
             'personaPassedToDriver field. This needs the persona unit (U4) to land in agent-playtest.ps1.')
         [void]$lines.Add('')
+    } else {
+        $collapsedHashes = @($personaNamesByHash.GetEnumerator() | Where-Object { $_.Value.Count -ge 2 })
+        foreach ($collapse in $collapsedHashes) {
+            $collidingNames = ($collapse.Value | Sort-Object) -join ', '
+            $scope = 'PARTIAL'
+            if ($collapse.Value.Count -eq $byPersona.Count) { $scope = 'TOTAL' }
+            [void]$lines.Add('CAVEAT: ' + $scope + ' PERSONA COLLAPSE -- personas [' + $collidingNames +
+                '] all produced the SAME act-prompt hash (' + $collapse.Key + '). These persona labels were ' +
+                'NOT played differently in this sweep, even though a per-persona bullet still exists for each ' +
+                'requested label below -- read the colliding personas as one player under two (or more) names, ' +
+                'never as independent evidence.')
+        }
+        if ($collapsedHashes.Count -gt 0) { [void]$lines.Add('') }
     }
 
     # Coverage-based "what did only this persona touch" is computed only when every persona group
@@ -1201,6 +1250,20 @@ function Invoke-SweepRun {
         $patienceModeSupported = $cmd2.Parameters.ContainsKey('PatienceMode')
     } catch { }
 
+    # Adversarial-audit finding A: same feature-detection idiom as -Persona/-BrainModel/-PatienceMode
+    # above -- a checkout whose driver predates -Seed must still be sweepable, just without it passed
+    # through (and with run-meta.json's seedPassedToDriver saying so).
+    $seedSupported = $false
+    try {
+        $cmd3 = Get-Command -Name $DriverPath -CommandType ExternalScript -ErrorAction Stop
+        $seedSupported = $cmd3.Parameters.ContainsKey('Seed')
+    } catch { }
+
+    # The seed this run will request -Persona monkey/pilot's command stream to use -- Get-SeedForRun
+    # is the ONE place that derives it (see its own header), shared with Format-RunMatrix's DryRun
+    # preview so the two can never disagree.
+    $seedForRun = Get-SeedForRun -PlanEntry $PlanEntry
+
     $argList = New-Object System.Collections.ArrayList
     [void]$argList.Add('-NoProfile')
     [void]$argList.Add('-NonInteractive')
@@ -1230,6 +1293,10 @@ function Invoke-SweepRun {
         [void]$argList.Add('-Persona')
         [void]$argList.Add($PlanEntry.Persona)
     }
+    if ($seedSupported) {
+        [void]$argList.Add('-Seed')
+        [void]$argList.Add([string]$seedForRun)
+    }
 
     $startedAt = Get-Date
     $proc = Start-Process -FilePath 'powershell' -ArgumentList $argList -NoNewWindow -PassThru -Wait
@@ -1241,6 +1308,13 @@ function Invoke-SweepRun {
         scope                  = $PlanEntry.Scope
         persona                = $PlanEntry.Persona
         personaPassedToDriver  = $personaSupported
+        # Adversarial-audit finding A: the seed actually requested for this run (derived from its own
+        # repeat index, see $seedForRun's own comment above) plus whether the driver build in this
+        # checkout actually accepted -Seed at all. Written here specifically because it used to be
+        # written NOWHERE -- only ever printed to a transient console Say() line by agent-playtest.ps1
+        # itself -- so a real archived run had no numeric seed recoverable from any artifact at all.
+        seed                   = $seedForRun
+        seedPassedToDriver     = $seedSupported
         turnsRequested         = $PlanEntry.Turns
         # '(driver default)' rather than a retyped model name -- naming one here is how the
         # stale-pin defect started; the run's own findings.md header carries the real model.

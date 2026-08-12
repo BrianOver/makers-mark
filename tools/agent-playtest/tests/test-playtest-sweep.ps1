@@ -97,6 +97,16 @@ Check ($singleText -match '3 run\(s\) would be launched') ('-Runs 3 with one sco
 Check ($singleText -match [regex]::Escape('Full-veteran-1')) 'single case must include Full-veteran-1'
 Check ($singleText -match [regex]::Escape('Full-veteran-3')) 'single case must include Full-veteran-3 (proves -Runs actually multiplies)'
 
+# Adversarial-audit finding A, THE REGRESSION PIN: before this fix, playtest-sweep.ps1 never passed
+# -Seed to the driver at all, so every repeat (including these three) silently reused the driver's
+# hardcoded default of 1. Get-SeedForRun derives the seed from each run's own repeat index, and
+# Format-RunMatrix's DryRun preview (checked here, no Godot needed) must show three DIFFERENT seeds
+# for these three repeats of the same scope/persona pair -- not the same value three times.
+Check ($singleText -match 'seed') 'DryRun matrix header must include a seed column'
+Check ($singleText -match 'Full-veteran-1\s+Full\s+veteran\s+10\s+1\s') ('repeat 1 must be planned with seed 1. Got: ' + $singleText)
+Check ($singleText -match 'Full-veteran-2\s+Full\s+veteran\s+10\s+2\s') ('repeat 2 must be planned with seed 2 (DIFFERENT from repeat 1). Got: ' + $singleText)
+Check ($singleText -match 'Full-veteran-3\s+Full\s+veteran\s+10\s+3\s') ('repeat 3 must be planned with seed 3 (DIFFERENT from repeats 1 and 2). Got: ' + $singleText)
+
 # An unknown scope must fail LOUDLY (Split-CommaList's whole reason for existing over ValidateSet
 # -- see playtest-sweep.ps1's own comment on why -Scopes has no ValidateSet attribute), not fall
 # back to the default silently. Same class of regression this repo has already paid for once
@@ -397,6 +407,80 @@ if (Test-Path $reportPath) {
     Check ($report -match 'Deepest in-game day reached by any run in this sweep: 5') 'REPORT.md must name the correct deepest day (5) across all fixtures'
     Check ($report -match 'NOT answered') 'REPORT.md must say the day-11 question was NOT answered when the deepest day is well short of 10'
     Check ($report -match '110-160') 'REPORT.md must name the turn budget (110-160) needed to reach day 10 at the measured 11-16 turns/day rate'
+}
+
+# --- 4. Partial persona collapse (adversarial-audit finding B) ------------------------------------
+# A SEPARATE fixture root: exactly two of four personas (first-timer, speedrunner) share ONE
+# act-prompt hash; the other two (veteran, completionist) each have their own distinct hash. The OLD
+# Get-PersonaDifferences flattened every row's PromptHash across the WHOLE sweep and fired its caveat
+# only when the resulting set had <= 1 distinct value -- i.e. only on TOTAL collapse (every persona
+# converged). With 3 distinct hashes present here (one shared, two unique) the old code's count was
+# 3, stayed silent, and REPORT.md would have printed a confident bullet for speedrunner as though it
+# had been played separately from first-timer. There was zero direct test coverage of this
+# aggregation function before this fix -- this is that regression's own test.
+$collapseRoot = Join-Path $env:TEMP 'playtest-sweep-test-fixtures-collapse'
+$cRunFirstTimer = Join-Path $collapseRoot 'Full-first-timer-1'
+$cRunVeteran = Join-Path $collapseRoot 'Full-veteran-1'
+$cRunSpeedrunner = Join-Path $collapseRoot 'Full-speedrunner-1'
+$cRunCompletionist = Join-Path $collapseRoot 'Full-completionist-1'
+foreach ($d in @($collapseRoot, $cRunFirstTimer, $cRunVeteran, $cRunSpeedrunner, $cRunCompletionist)) {
+    New-Item -ItemType Directory -Path $d -Force -ErrorAction Stop | Out-Null
+}
+
+function New-CollapseFindings {
+    param([string]$RunDir, [string]$Persona, [string]$Hash)
+    return @(
+        '# Agent playtest findings (Scope: Full)',
+        '',
+        '- scope: Full',
+        ('- persona: ' + $Persona + ' (requested: random), act-prompt hash ' + $Hash),
+        '- model: llava:7b',
+        '- turns: 5 (stopped: turn budget reached)',
+        '- completion: 5 of 5 budgeted turns (100.0%)',
+        '- model-driven turns: 5',
+        '- fallback turns: 0 (0.0% of total)',
+        '- imageless turns: 0',
+        ('- artifacts: ' + $RunDir),
+        ('- playtest log (day/phase/beat/cause per tick, every action): ' + (Join-Path $RunDir 'playtest-log.jsonl')),
+        '',
+        '## Turn log',
+        '',
+        '- day 1 phase Morning beat None location town canMove=True'
+    ) -join "`n"
+}
+
+# first-timer and speedrunner both land on aaaa1111 -- the collapsed pair. veteran (bbbb2222) and
+# completionist (cccc3333) are each genuinely distinct and must NEVER be swept into the caveat.
+Set-Content -Path (Join-Path $cRunFirstTimer 'findings.md') -Value (New-CollapseFindings -RunDir $cRunFirstTimer -Persona 'first-timer' -Hash 'aaaa1111') -Encoding utf8
+Set-Content -Path (Join-Path $cRunVeteran 'findings.md') -Value (New-CollapseFindings -RunDir $cRunVeteran -Persona 'veteran' -Hash 'bbbb2222') -Encoding utf8
+Set-Content -Path (Join-Path $cRunSpeedrunner 'findings.md') -Value (New-CollapseFindings -RunDir $cRunSpeedrunner -Persona 'speedrunner' -Hash 'aaaa1111') -Encoding utf8
+Set-Content -Path (Join-Path $cRunCompletionist 'findings.md') -Value (New-CollapseFindings -RunDir $cRunCompletionist -Persona 'completionist' -Hash 'cccc3333') -Encoding utf8
+
+& powershell -NoProfile -File $scriptPath -AggregateFrom $collapseRoot | Out-Null
+$collapseExit = $LASTEXITCODE
+Check ($collapseExit -eq 0) ('collapse-fixture -AggregateFrom must exit 0 (all four runs are CLEAN), got ' + $collapseExit)
+
+$collapseReportPath = Join-Path $collapseRoot 'REPORT.md'
+Check (Test-Path $collapseReportPath) ('REPORT.md must be written to ' + $collapseReportPath)
+if (Test-Path $collapseReportPath) {
+    $collapseReport = Get-Content $collapseReportPath -Raw
+
+    Check ($collapseReport -match 'PARTIAL PERSONA COLLAPSE') ('REPORT.md must fire the partial-collapse caveat when exactly two of four personas share a hash. Report:' + [Environment]::NewLine + $collapseReport)
+    Check ($collapseReport -match [regex]::Escape('aaaa1111')) 'REPORT.md must name the colliding hash value'
+
+    # THE REGRESSION PIN: the collapsed pair must be named TOGETHER in the same caveat line, and
+    # neither of the two genuinely-distinct personas may be swept into it.
+    $collapseLines = @(($collapseReport -split "`r?`n") | Where-Object { $_ -match 'PARTIAL PERSONA COLLAPSE' })
+    Check ($collapseLines.Count -eq 1) ('exactly one PARTIAL PERSONA COLLAPSE line must fire for one colliding hash, got ' + $collapseLines.Count)
+    if ($collapseLines.Count -ge 1) {
+        $collapseLine = $collapseLines[0]
+        Check ($collapseLine -match 'first-timer') 'the collapse line must name first-timer'
+        Check ($collapseLine -match 'speedrunner') 'the collapse line must name speedrunner'
+        Check ($collapseLine -notmatch 'veteran') 'THE REGRESSION PIN: veteran has its OWN distinct hash and must NOT be named in the collapse line'
+        Check ($collapseLine -notmatch 'completionist') 'THE REGRESSION PIN: completionist has its OWN distinct hash and must NOT be named in the collapse line'
+    }
+
+    Check ($collapseReport -notmatch 'TOTAL PERSONA COLLAPSE') 'this fixture is a PARTIAL collapse (2 of 4 personas), never TOTAL (which would require all 4 to share one hash)'
 }
 
 # --- Summary -----------------------------------------------------------------------------------

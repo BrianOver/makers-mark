@@ -1536,6 +1536,11 @@ $header = @(
     ('- judge model: ' + $(if ($residency.SplitMode) { $residency.JudgeModel + ' (reusing the brain model, already resident)' } else { $JudgeModel })),
     ('- brain model: ' + $(if ($residency.SplitMode) { $BrainModel } else { '(none -- single-model mode, ' + $Model + ' narrates AND chooses)' })),
     $personaHeaderLine,
+    # Adversarial-audit finding A: -Seed is the sole RNG source for -Persona monkey/pilot's command
+    # stream but was never written to any artifact -- only ever printed to a transient console Say()
+    # line (see this file's own "monkey run complete" / "pilot run complete" lines). Written here so
+    # a run is reproducible from its OWN findings.md, not just from a caller's memory of what they typed.
+    ('- seed: ' + $Seed + ' (drives -Persona monkey/pilot''s command stream via System.Random; ignored by every other persona)'),
     ('- turns: ' + $turn + ' (stopped: ' + $stopReason + ')'),
     ('- completion: ' + $turn + ' of ' + $Turns + ' budgeted turns (' + $completionPct + '%)'),
     # The number to read FIRST in any of these reports: if most acting commands changed nothing, the
@@ -1551,7 +1556,16 @@ $header = @(
         ' (-FrameEvery ' + $FrameEvery + '), missing: ' + $missingFrameCount),
     ('- coverage: ' + $coverageReport.OverallTouched + ' of ' + $coverageReport.OverallTotal +
         ' surfaces touched (' + $coverageReport.OverallPercentage + '%) -- see ' + $coverageMdPath),
-    ('- product sentence (a MakersMark item named on the player''s own screen): ' +
+    # Adversarial-audit finding D: this line used to claim on-screen visual proof of an item's name,
+    # but ProductSentenceFired was re-pointed at a backend-log-only check months ago (metrics.ps1's
+    # own Get-ProductSentenceReport: $fired = $attributionBeatNamed, independent of screen text) to
+    # kill the false positives a screen-text-only check produced. Reworded to name the check this
+    # field actually performs; the screen-visibility signal it used to (mis)claim is its own
+    # separate, correctly-labeled line in the "## Metrics" section below (Format-MetricsMarkdown's
+    # own PLAYER'S-SCREEN line).
+    ('- product sentence (an attribution beat confirmed by the BACKEND log -- note scan or ' +
+        'AttributionBeatEvent eventTypes hit; screen text alone never sets this True, see the ' +
+        'Metrics section below for that separate signal): ' +
         $metricsSummary.ProductSentence.ProductSentenceFired + ' -- see ' + $metricsJsonPath),
     ''
 )
