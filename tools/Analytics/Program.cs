@@ -41,6 +41,10 @@ if (files.Count == 0)
 }
 
 var runs = new List<ChronicleData>();
+// Positionally paired with `runs` (see Anomalies.Detect's own doc comment on why index pairing,
+// not a seed lookup) — recovered per-file since ChronicleData carries no policy field itself
+// (sim purity, KTD2; BatchRunner instead tags the FILENAME, see Anomalies.InferPolicyFromFileName).
+var policies = new List<string>();
 var skipped = 0;
 foreach (var file in files)
 {
@@ -58,6 +62,7 @@ foreach (var file in files)
         }
 
         runs.Add(chronicle);
+        policies.Add(Anomalies.InferPolicyFromFileName(file));
     }
     catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidDataException
                                    or IOException or UnauthorizedAccessException)
@@ -96,7 +101,7 @@ Console.WriteLine(Report.Build(runs));
 
 // Anomaly pass (observability plan U3): severity-ranked heavy events with repro pointers.
 // Written next to the corpus when a directory was given; always echoed to stdout.
-var anomalies = Anomalies.Detect(runs);
+var anomalies = Anomalies.Detect(runs, policies);
 var report = Anomalies.Render(anomalies, runs.Count);
 Console.WriteLine(report);
 if (outDir is not null)

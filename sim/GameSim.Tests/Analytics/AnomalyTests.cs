@@ -209,6 +209,63 @@ public class AnomalyTests
         Assert.DoesNotContain(Anomalies.Detect([run]), a => a.Rule == "bounty-monoculture");
     }
 
+    /// <summary>
+    /// Adversarial-audit finding C: an anomaly found in a `--policy counter` chronicle used to
+    /// reproduce as `--policy baseline` at the same seed -- a DIFFERENT world, since ChronicleData
+    /// carries no policy field (sim purity) and ReproCommand never named one at all. Fixed by
+    /// threading a positionally-paired policy list into Detect (see its own doc comment) instead of
+    /// touching ChronicleData under sim/GameSim/.
+    /// </summary>
+    [Fact]
+    public void ReproCommand_NamesTheCounterPolicy_WhenTheSourceRunUsedIt()
+    {
+        var run = Run(seed: 7, day: 31, HealthyBeats(15));
+
+        var hit = Assert.Single(Anomalies.Detect([run], ["counter"]), a => a.Rule == "beat-starvation");
+
+        Assert.Equal("counter", hit.Policy);
+        Assert.Contains("--policy counter", hit.ReproCommand, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReproCommand_DefaultsToBaseline_WhenNoPolicyListIsGiven()
+    {
+        // Every call site that predates this field (every other test in this file included) must
+        // keep reproducing as baseline -- the CLI's own default, and this tool's only behavior
+        // before the fix.
+        var run = Run(seed: 7, day: 31, HealthyBeats(15));
+
+        var hit = Assert.Single(Anomalies.Detect([run]), a => a.Rule == "beat-starvation");
+
+        Assert.Equal(Anomalies.DefaultPolicy, hit.Policy);
+        Assert.Contains("--policy baseline", hit.ReproCommand, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReproCommand_DefaultsToBaseline_WhenThePolicyListIsShorterThanTheRuns()
+    {
+        // Two runs, one policy entry: the second run must fall back to DefaultPolicy rather than
+        // throw or silently reuse the first run's policy.
+        var first = Run(seed: 7, day: 31, HealthyBeats(15));
+        var second = Run(seed: 8, day: 31, HealthyBeats(15));
+
+        var hits = Anomalies.Detect([first, second], ["counter"]);
+
+        Assert.Equal("counter", Assert.Single(hits, a => a.Seed == 7UL).Policy);
+        Assert.Equal(Anomalies.DefaultPolicy, Assert.Single(hits, a => a.Seed == 8UL).Policy);
+    }
+
+    [Theory]
+    [InlineData("runs/batch-seed7-days100-counter.json", "counter")]
+    [InlineData("runs/batch-seed7-days100-baseline.json", "baseline")]
+    [InlineData(@"C:\runs\batch-seed7-days100-COUNTER.json", "counter")]
+    [InlineData("runs/run-2026-08-01.json", "baseline")]
+    [InlineData("runs-repro/batch-seed7-days30-counter.json", "counter")]
+    public void InferPolicyFromFileName_RecoversThePolicyTagBatchRunnerEmbeds(string path, string expected)
+    {
+        Assert.Equal(expected, Anomalies.InferPolicyFromFileName(path));
+    }
+
     [Fact]
     public void SingleRunCorpus_DoesNotDivideByZero_AndRenderHandlesEmpty()
     {
