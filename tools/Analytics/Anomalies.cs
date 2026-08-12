@@ -80,11 +80,12 @@ public static class Anomalies
         // Death-spike baseline corpus = runs long enough to be comparable. Short interactive
         // exports (a 4-day playtest) would inflate runCount without contributing deaths, making
         // the exclude-self inequality fire falsely on normal batch runs.
-        var baselineCorpus = runs.Where(r => r.Day - 1 >= TrailingWindowDays).ToList();
+        var baselineCorpus = runs.Where(r => PlayableHorizon(r) >= TrailingWindowDays).ToList();
         var corpusDeathsByFloor = new Dictionary<int, int>();
         foreach (var run in baselineCorpus)
         {
-            foreach (var death in run.Events.OfType<HeroDied>())
+            var horizon = PlayableHorizon(run);
+            foreach (var death in run.Events.OfType<HeroDied>().Where(d => d.Day <= horizon))
             {
                 corpusDeathsByFloor[death.Floor] = corpusDeathsByFloor.GetValueOrDefault(death.Floor) + 1;
             }
@@ -92,7 +93,7 @@ public static class Anomalies
 
         foreach (var run in runs)
         {
-            var lastFullDay = run.Day - 1; // run.Day is the in-progress day
+            var lastFullDay = PlayableHorizon(run);
             if (lastFullDay < 1)
             {
                 continue;
@@ -101,11 +102,11 @@ public static class Anomalies
             BeatStarvation(run, lastFullDay, found);
             if (lastFullDay >= TrailingWindowDays)
             {
-                DeathSpike(run, baselineCorpus.Count, corpusDeathsByFloor, found);
+                DeathSpike(run, lastFullDay, baselineCorpus.Count, corpusDeathsByFloor, found);
             }
             GoldMintSpike(run, lastFullDay, found);
             DeadShop(run, lastFullDay, found);
-            TariffSaturation(run, found);
+            TariffSaturation(run, lastFullDay, found);
             BountyMonoculture(run, lastFullDay, found);
         }
 
@@ -114,6 +115,25 @@ public static class Anomalies
             .ThenBy(a => a.Seed)
             .ThenBy(a => a.Rule, StringComparer.Ordinal)
             .ToList();
+    }
+
+    /// <summary>The last day whose numbers a player will ever live through: the run's last full day,
+    /// or the day the campaign ENDED, whichever comes first.
+    ///
+    /// <para>Every rule below clamps to this instead of <c>run.Day - 1</c>, because a batch export
+    /// keeps simulating past its own ending. Measured on a 20-seed / 100-day sweep: all 20 campaigns
+    /// ended between day 19 and day 79 (ClimaxDay + 5, exactly), so the unclamped rules were reading
+    /// a trailing window 55-82 days into a finished game. 29 of 30 hits in that report described a
+    /// town nobody plays — a pegged tariff lever over "days 6-94" and a 3x mint spike over
+    /// "days 91-100" are both artifacts of counting the afterlife.</para>
+    ///
+    /// <para>A run with no <see cref="CampaignEnded"/> (an interactive export, a sweep that stops
+    /// early) keeps the old horizon, so nothing is silently dropped.</para></summary>
+    public static int PlayableHorizon(ChronicleData run)
+    {
+        var lastFullDay = run.Day - 1; // run.Day is the in-progress day
+        var ending = run.Events.OfType<CampaignEnded>().FirstOrDefault();
+        return ending is null ? lastFullDay : Math.Min(lastFullDay, ending.Day);
     }
 
     /// <summary>Render the severity-ranked markdown report (empty corpus → honest empty report).</summary>
@@ -173,10 +193,11 @@ public static class Anomalies
     }
 
     private static void DeathSpike(
-        ChronicleData run, int runCount, Dictionary<int, int> corpusDeathsByFloor, List<Anomaly> found)
+        ChronicleData run, int lastFullDay, int runCount,
+        Dictionary<int, int> corpusDeathsByFloor, List<Anomaly> found)
     {
         var byFloor = new Dictionary<int, List<HeroDied>>();
-        foreach (var death in run.Events.OfType<HeroDied>())
+        foreach (var death in run.Events.OfType<HeroDied>().Where(d => d.Day <= lastFullDay))
         {
             (byFloor.TryGetValue(death.Floor, out var list) ? list : byFloor[death.Floor] = []).Add(death);
         }
@@ -239,8 +260,8 @@ public static class Anomalies
             return;
         }
 
-        var crafted = run.Events.OfType<ItemCrafted>().Count();
-        var playerSales = run.Events.OfType<ItemSold>().Count(e => e.FromPlayerShop);
+        var crafted = run.Events.OfType<ItemCrafted>().Count(e => e.Day <= lastFullDay);
+        var playerSales = run.Events.OfType<ItemSold>().Count(e => e.FromPlayerShop && e.Day <= lastFullDay);
         if (crafted >= DeadShopMinCrafts && playerSales == 0)
         {
             found.Add(new Anomaly(
@@ -249,14 +270,15 @@ public static class Anomalies
         }
     }
 
-    private static void TariffSaturation(ChronicleData run, List<Anomaly> found)
+    private static void TariffSaturation(ChronicleData run, int lastFullDay, List<Anomaly> found)
     {
         // AGGREGATE ratio, not per-line: integer rounding makes per-line per-mille meaningless on
         // small line costs (a 1g delta on a 10g line reads as 10% at HALF standing; at the true cap
         // a 14g line rounds to 7.1% — per-line tests false-fire AND false-miss). Summing deltas and
         // bases over all tariff events washes the rounding out. long math: sums of external input
         // must never overflow/throw (Math.Abs(int.MinValue)).
-        var tariffs = run.Events.OfType<TariffApplied>().Where(t => t.BaseLineCost > 0).ToList();
+        var tariffs = run.Events.OfType<TariffApplied>()
+            .Where(t => t.BaseLineCost > 0 && t.Day <= lastFullDay).ToList();
         if (tariffs.Count < TariffSaturationMinEvents)
         {
             return;
@@ -281,7 +303,7 @@ public static class Anomalies
 
     private static void BountyMonoculture(ChronicleData run, int lastFullDay, List<Anomaly> found)
     {
-        var judged = run.Events.OfType<BountyJudged>().ToList();
+        var judged = run.Events.OfType<BountyJudged>().Where(j => j.Day <= lastFullDay).ToList();
         if (judged.Count < MonocultureMinJudgments)
         {
             return;
