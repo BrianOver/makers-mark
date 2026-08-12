@@ -5,6 +5,7 @@ using GameSim.Advisor;
 using GameSim.Contracts;
 using GameSim.Expedition;
 using Godot;
+using GodotClient.Tools;
 using GodotClient.Ui;
 
 namespace GodotClient.Panels;
@@ -340,8 +341,16 @@ public partial class BountyPanel : SimPanel
 /// the recognizer and a test use, using FIXED band geometry (never live <see cref="Control.Size"/>,
 /// mirroring <c>CoinStack.DenominationAt</c>) so it is correct even on a bare, unmounted
 /// instance.</para>
+///
+/// <para><b>Harness hook.</b> Implements <see cref="IHarnessValueControl"/> EXPLICITLY (its own
+/// members are named <see cref="SelectedFloor"/>/<see cref="SelectFloor"/>, not Value/SetValue) so
+/// the agent-playtest harness can observe and drive the bounty floor pick through the same
+/// <see cref="SelectFloor"/> seam a click/arrow-key already uses — see
+/// <c>ScreenObservation.ObservedValueControls</c> and <c>AgentPlaytestBridge</c>'s <c>set</c>
+/// command. Purely additive: the public SelectedFloor/SelectFloor/FloorSelected surface above is
+/// unchanged.</para>
 /// </summary>
-public partial class MineCrossSection : Control
+public partial class MineCrossSection : Control, IHarnessValueControl
 {
     private const float StripWidth = 96f;
     private const float BandHeight = 26f;
@@ -358,6 +367,13 @@ public partial class MineCrossSection : Control
 
     /// <summary>Raised whenever the selection actually changes, with the new floor.</summary>
     public event Action<int>? FloorSelected;
+
+    /// <summary>Explicit <see cref="IHarnessValueControl"/> members — forward to the real,
+    /// already-public seam (<see cref="SelectedFloor"/>/<see cref="SelectFloor"/>) so the harness
+    /// drives EXACTLY what a click/arrow-key drives, never a second path.</summary>
+    int IHarnessValueControl.Value => SelectedFloor;
+
+    void IHarnessValueControl.SetValue(int value) => SelectFloor(value);
 
     public MineCrossSection()
     {

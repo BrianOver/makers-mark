@@ -1,5 +1,6 @@
 using System;
 using Godot;
+using GodotClient.Tools;
 
 namespace GodotClient.Ui;
 
@@ -16,8 +17,15 @@ namespace GodotClient.Ui;
 /// <para><b>Accessibility.</b> Focusable with keyboard parity (up/down = 1, page = 10, typed digits);
 /// no timing. The flip animation is cosmetic and driven by accumulated frame delta, never wall-clock,
 /// so it cannot affect the value.</para>
+///
+/// <para><b>Harness hook.</b> Implements <see cref="IHarnessValueControl"/> for free — <see cref="Value"/>
+/// already has a public getter and <see cref="SetValue"/> already has the exact signature required, so
+/// this is a bare interface declaration with no new members. This is what lets the agent-playtest
+/// harness observe and drive a shop reprice through the SAME seam a click/drag/keypress already
+/// uses — see <c>ScreenObservation.ObservedValueControls</c> and <c>AgentPlaytestBridge</c>'s
+/// <c>set</c> command.</para>
 /// </summary>
-public partial class PriceTag : Control
+public partial class PriceTag : Control, IHarnessValueControl
 {
     private const float FlipSeconds = 0.18f;
 

@@ -19,6 +19,31 @@ namespace GodotClient.Tools;
 /// silently drift apart), the shared piece lives here and <c>HumanPlayer</c> now delegates to
 /// it.</para>
 /// </summary>
+/// <summary>
+/// A <see cref="Control"/> that holds one settable integer through a real seam method — the
+/// harness's generic hook for value-bearing widgets that are NOT one of the four types
+/// <see cref="ScreenObservation.AllTextNodes"/>/<see cref="ScreenObservation.ObservedControls"/>
+/// already enumerate (Button/Label/RichTextLabel/ItemList). <see cref="CoinStack"/> (the haggle
+/// counter-price and the bounty reward), <see cref="GodotClient.Ui.PriceTag"/> (a shop reprice),
+/// and <see cref="GodotClient.Panels.MineCrossSection"/> (the bounty floor pick) are all plain
+/// <c>Control</c>s that draw themselves with <c>_Draw()</c> — invisible to every prior digest field
+/// and to <see cref="AgentPlaytest"/>'s press/move/key/advance/stop vocabulary, which is exactly
+/// why every Counter/Reprice/PostBounty press a playtest ever made resubmitted the widget's own
+/// default untouched (CLAUDE.md's "the three unreachable decisions" finding).
+///
+/// <para>Deliberately one int in, one int out, and <see cref="SetValue"/> MUST be the identical
+/// method a real click/drag/keypress on the control already calls (each implementer documents its
+/// own KTD-A seam) — this can never become a second, test-only way to bypass game logic.</para>
+/// </summary>
+public interface IHarnessValueControl
+{
+    /// <summary>The control's current value.</summary>
+    int Value { get; }
+
+    /// <summary>Set the value outright, through the exact seam a real click/drag/keypress uses.</summary>
+    void SetValue(int value);
+}
+
 public static class ScreenObservation
 {
     /// <summary>Pixels a control may hang outside the viewport before it counts as clipped — one
@@ -172,6 +197,45 @@ public static class ScreenObservation
             if (node is Button button && button.IsVisibleInTree() && button.Name == name)
             {
                 return button;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Every VISIBLE <see cref="IHarnessValueControl"/> under <paramref name="root"/> right now —
+    /// the CoinStack/PriceTag/MineCrossSection-shaped widgets <see cref="ObservedControls"/> cannot
+    /// see at all, because none of them are <see cref="Button"/>s. Kept as its own method rather
+    /// than folded into <see cref="ObservedControls"/> so every existing caller of that method sees
+    /// zero behavior change — the regression risk the unit that added this was explicitly warned
+    /// about.
+    /// </summary>
+    public static IReadOnlyList<(Control Node, IHarnessValueControl Control)> ObservedValueControls(Node root)
+    {
+        var result = new List<(Control, IHarnessValueControl)>();
+        foreach (var node in Descendants(root))
+        {
+            if (node is IHarnessValueControl valueControl && node is Control control && control.IsVisibleInTree())
+            {
+                result.Add((control, valueControl));
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>The visible value control named <paramref name="name"/> under <paramref name="root"/>,
+    /// or null — same honesty rule as <see cref="FindVisibleButtonByName"/> (visible only; a hidden
+    /// control with a matching name is not something a player could have named either).</summary>
+    public static IHarnessValueControl? FindVisibleValueControlByName(Node root, string name)
+    {
+        foreach (var node in Descendants(root))
+        {
+            if (node is IHarnessValueControl valueControl && node is Control control &&
+                control.IsVisibleInTree() && control.Name == name)
+            {
+                return valueControl;
             }
         }
 

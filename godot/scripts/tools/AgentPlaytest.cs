@@ -20,6 +20,23 @@ public sealed record ControlDigest(
     [property: JsonPropertyName("enabled")] bool Enabled);
 
 /// <summary>
+/// One value-bearing control on screen right now that is NOT a <see cref="Button"/> — an
+/// <see cref="IHarnessValueControl"/> such as the haggle counter-price, a shop
+/// reprice tag, or the bounty floor/reward pick. Added because none of these ever reached
+/// <see cref="ControlDigest"/> at all (they are plain <c>Control</c>s that draw themselves, not
+/// Buttons), which is exactly how three of the six decisions CLAUDE.md names the game as being
+/// "made of" went unreachable: every playtest press resubmitted the widget's own default, and
+/// nothing ever reported that. <see cref="Settable"/> is currently always <c>true</c> — every type
+/// that reaches this digest implements <c>SetValue</c> by construction — kept as an explicit field
+/// rather than assumed so a future read-only value display never has to lie about it.
+/// </summary>
+public sealed record ValueControlDigest(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("kind")] string Kind,
+    [property: JsonPropertyName("value")] int Value,
+    [property: JsonPropertyName("settable")] bool Settable);
+
+/// <summary>
 /// The per-turn observation <see cref="AgentPlaytestBridge"/> writes to <c>state.json</c> — the
 /// channel contract from the verify-by-playing plan's U1 section, field-for-field. <see
 /// cref="ScreenText"/> is <c>HumanPlayer.Screen()</c>'s own honest view (visible text only, nothing
@@ -47,6 +64,7 @@ public sealed record StateDigest(
     [property: JsonPropertyName("canMove")] bool CanMove,
     [property: JsonPropertyName("screenText")] IReadOnlyList<string> ScreenText,
     [property: JsonPropertyName("controls")] IReadOnlyList<ControlDigest> Controls,
+    [property: JsonPropertyName("valueControls")] IReadOnlyList<ValueControlDigest> ValueControls,
     [property: JsonPropertyName("interactPrompt")] string InteractPrompt,
     [property: JsonPropertyName("nearby")] IReadOnlyList<NearbyDigest> Nearby,
     [property: JsonPropertyName("lastOutcome")] string LastOutcome);
@@ -79,16 +97,19 @@ public sealed record NearbyDigest(
 /// What the driver (a human, a script, or U2's model loop) writes to <c>command.json</c>. Every
 /// field but <see cref="Action"/> is optional because each action only needs a subset: <c>press</c>
 /// needs <see cref="Target"/>, <c>move</c> needs <see cref="Dir"/> (+ optional <see
-/// cref="Frames"/>), <c>key</c> needs <see cref="Target"/> (an InputMap action name), <c>advance</c>
-/// and <c>stop</c> need neither. <see cref="Why"/> is never read by the bridge — it exists purely
-/// so the turn log carries the model's own stated reasoning next to what actually happened.
+/// cref="Frames"/>), <c>key</c> needs <see cref="Target"/> (an InputMap action name), <c>set</c>
+/// needs <see cref="Target"/> (a value control's name, per <see cref="ValueControlDigest"/>) and
+/// <see cref="Value"/>, <c>advance</c> and <c>stop</c> need neither. <see cref="Why"/> is never read
+/// by the bridge — it exists purely so the turn log carries the model's own stated reasoning next
+/// to what actually happened.
 /// </summary>
 public sealed record AgentCommand(
     [property: JsonPropertyName("action")] string? Action,
     [property: JsonPropertyName("target")] string? Target = null,
     [property: JsonPropertyName("why")] string? Why = null,
     [property: JsonPropertyName("dir")] string? Dir = null,
-    [property: JsonPropertyName("frames")] int? Frames = null);
+    [property: JsonPropertyName("frames")] int? Frames = null,
+    [property: JsonPropertyName("value")] int? Value = null);
 
 /// <summary>
 /// Why <see cref="AgentPlaytestBridge.RunLoop"/> returned. <see cref="AgentPlaytest._Ready"/> (the
@@ -163,6 +184,20 @@ public sealed class AgentPlaytestBridge
             .Select(c => new ControlDigest(c.Name, c.Label, c.Enabled))
             .ToList();
 
+        // Record each value control's OPENING value the first time it is ever seen (by object
+        // identity, not name) — see GuardUnexercisedDecision's own doc for why identity matters:
+        // CounterPrice is rebuilt fresh every CounterPanel.Refresh() with a live, sim-derived
+        // default, so a name-keyed "first ever" would wrongly compare a brand-new round's own
+        // legitimate default against a value recorded turns ago.
+        var observedValueControls = ScreenObservation.ObservedValueControls(ui);
+        var valueControls = observedValueControls
+            .Select(vc => new ValueControlDigest(vc.Node.Name.ToString(), vc.Control.GetType().Name, vc.Control.Value, Settable: true))
+            .ToList();
+        foreach (var (_, control) in observedValueControls)
+        {
+            RecordOpeningValue(control);
+        }
+
         return new StateDigest(
             Turn: turn,
             Day: state.Day,
@@ -174,6 +209,7 @@ public sealed class AgentPlaytestBridge
             CanMove: ui.Town.WorldInputNode.Enabled,
             ScreenText: ScreenObservation.VisibleText(ui, viewport),
             Controls: controls,
+            ValueControls: valueControls,
             InteractPrompt: ui.Town.WorldInputNode.PromptText,
             Nearby: Surroundings(ui),
             LastOutcome: lastOutcome);
@@ -302,9 +338,10 @@ public sealed class AgentPlaytestBridge
             "press" => await ApplyPress(ui, command),
             "move" => await ApplyMove(ui, command),
             "key" => await ApplyKey(ui, command),
+            "set" => await ApplySet(ui, command),
             "advance" => ApplyAdvance(ui),
             "stop" => "stopped",
-            _ => $"refused: unknown action '{command.Action}' (expected press/move/key/advance/stop)",
+            _ => $"refused: unknown action '{command.Action}' (expected press/move/key/set/advance/stop)",
         };
     }
 
@@ -327,11 +364,120 @@ public sealed class AgentPlaytestBridge
             return $"refused: '{command.Target}' is disabled — {reason}";
         }
 
+        // Computed BEFORE the press: Counter/PostBounty read their value controls' CURRENT value at
+        // the instant the button fires, and pressing the button itself can trigger a panel Refresh
+        // that rebuilds those controls with a brand-new default (see GuardUnexercisedDecision's own
+        // doc) — reading this after the press would compare a fresh widget to itself and always
+        // report "unchanged".
+        var guardNote = GuardUnexercisedDecision(ui, command.Target);
+
         var goldBefore = ui.Adapter.CurrentState.Player.Gold;
         button.EmitSignal(BaseButton.SignalName.Pressed);
         await Settle(6);
         var goldAfter = ui.Adapter.CurrentState.Player.Gold;
-        return $"pressed {command.Target} -> gold {goldBefore} -> {goldAfter}";
+        return $"pressed {command.Target} -> gold {goldBefore} -> {goldAfter}{guardNote}";
+    }
+
+    /// <summary>
+    /// Drives a value control (CoinStack/PriceTag/MineCrossSection — anything reaching
+    /// <see cref="ValueControlDigest"/>) through its real <see cref="IHarnessValueControl.SetValue"/>
+    /// seam — the SAME method a click, drag, scroll, or keypress on the control already calls (see
+    /// each type's own KTD-A doc). This is what makes the counter-price/reprice/bounty decisions
+    /// actually exercisable by this harness at all; before it existed, nothing could move these
+    /// widgets away from whatever default they opened with.
+    /// </summary>
+    private async Task<string> ApplySet(MainUi ui, AgentCommand command)
+    {
+        if (string.IsNullOrWhiteSpace(command.Target))
+        {
+            return "refused: set requires a target control name";
+        }
+
+        if (command.Value is not { } value)
+        {
+            return "refused: set requires an integer 'value'";
+        }
+
+        var control = ScreenObservation.FindVisibleValueControlByName(ui, command.Target);
+        if (control is null)
+        {
+            return $"refused: no visible settable control named '{command.Target}' — it is not on screen right now";
+        }
+
+        RecordOpeningValue(control); // in case this instance was set before ever appearing in a digest
+        var before = control.Value;
+        control.SetValue(value);
+        await Settle(3);
+        var after = control.Value;
+        return $"set {command.Target} -> {before} to {after}";
+    }
+
+    // ── guard: a decision that was never actually exercised must be reported, not silently accepted ──
+
+    /// <summary>Keyed by control INSTANCE (never by name — see <see cref="BuildDigest"/>'s own
+    /// remark), the value each <see cref="IHarnessValueControl"/> held the first time this bridge
+    /// ever observed it. This is "the default" <see cref="GuardUnexercisedDecision"/> compares
+    /// against: for <c>BountyFloor</c>/<c>BountyReward</c> (built once, per <c>BountyPanel.EnsureBuilt</c>)
+    /// it is the fixed constant CLAUDE.md's audit named (floor 1, 25g); for <c>CounterPrice</c>/
+    /// <c>Price_*</c> (rebuilt fresh every panel <c>Refresh()</c>) it is whatever live, sim-derived
+    /// value that PARTICULAR widget instance opened with.</summary>
+    private readonly Dictionary<object, int> _openingValues = new(ReferenceEqualityComparer.Instance);
+
+    private void RecordOpeningValue(IHarnessValueControl control)
+    {
+        if (!_openingValues.ContainsKey(control))
+        {
+            _openingValues[control] = control.Value;
+        }
+    }
+
+    /// <summary>The value-control name(s) a decision-shaped button press reads at press time — the
+    /// exact three surfaces CLAUDE.md's "the three unreachable decisions" finding named. A future
+    /// guarded button is a one-line addition here, not a new code path.</summary>
+    private static IReadOnlyList<string> GuardedValueControlNames(string buttonName) => buttonName switch
+    {
+        "Counter" => new[] { "CounterPrice" },
+        "PostBounty" => new[] { "BountyFloor", "BountyReward" },
+        _ when buttonName.StartsWith("Reprice_", StringComparison.Ordinal) =>
+            new[] { "Price_" + buttonName["Reprice_".Length..] },
+        _ => Array.Empty<string>(),
+    };
+
+    /// <summary>
+    /// R2-style honesty guard for exactly the failure CLAUDE.md's 8-lens audit found: Counter,
+    /// Reprice, and PostBounty are drawn with plain <c>Control</c>s a prior digest could not see and
+    /// a prior command vocabulary could not set, so every press silently resubmitted the widget's own
+    /// default and every attempt logged as a success. Now that <c>set</c> exists, a press that still
+    /// submits the opening default means the driver never called it — this reports that fact in the
+    /// outcome string itself so a run can never again read as a real decision when it was not one.
+    /// </summary>
+    private string GuardUnexercisedDecision(MainUi ui, string buttonName)
+    {
+        var guardedNames = GuardedValueControlNames(buttonName);
+        if (guardedNames.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var unexercised = new List<string>();
+        foreach (var name in guardedNames)
+        {
+            var control = ScreenObservation.FindVisibleValueControlByName(ui, name);
+            if (control is null)
+            {
+                continue; // the button's own press already reports "not on screen" if THIS is missing
+            }
+
+            RecordOpeningValue(control); // covers a control this bridge never digested before now
+            if (_openingValues.TryGetValue(control, out var opening) && control.Value == opening)
+            {
+                unexercised.Add($"{name} still at its opening default ({opening})");
+            }
+        }
+
+        return unexercised.Count == 0
+            ? string.Empty
+            : $" | GUARD: {string.Join("; ", unexercised)} — this decision was never exercised (no 'set' before the press).";
     }
 
     private async Task<string> ApplyMove(MainUi ui, AgentCommand command)

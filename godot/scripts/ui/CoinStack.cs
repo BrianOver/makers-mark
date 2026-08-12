@@ -1,5 +1,6 @@
 using System;
 using Godot;
+using GodotClient.Tools;
 
 namespace GodotClient.Ui;
 
@@ -23,8 +24,15 @@ namespace GodotClient.Ui;
 /// <para><b>Accessibility.</b> Keyboard parity is mandatory (KTD-C): the control is focusable,
 /// up/down adjust by 1, page-up/page-down by 10, and typed digits compose a value directly. There is
 /// no timing anywhere in this control.</para>
+///
+/// <para><b>Harness hook.</b> Implements <see cref="IHarnessValueControl"/> for free — <see cref="Value"/>
+/// already has a public getter and <see cref="SetValue"/> already has the exact signature required, so
+/// this is a bare interface declaration with no new members. This is what lets the agent-playtest
+/// harness observe and drive this control (the haggle counter-price, the bounty reward) through the
+/// SAME seam a click/drag/keypress already uses — see <c>ScreenObservation.ObservedValueControls</c>
+/// and <c>AgentPlaytestBridge</c>'s <c>set</c> command.</para>
 /// </summary>
-public partial class CoinStack : Control
+public partial class CoinStack : Control, IHarnessValueControl
 {
     /// <summary>Denominations, largest first — also the left-to-right draw order.</summary>
     public static readonly int[] Denominations = { 100, 10, 1 };
