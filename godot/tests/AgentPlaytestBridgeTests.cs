@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -7,6 +8,7 @@ using System.Threading.Tasks;
 using GameSim.Contracts;
 using GdUnit4;
 using Godot;
+using GodotClient.Minigames;
 using GodotClient.Tools;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
@@ -663,6 +665,128 @@ public class AgentPlaytestBridgeTests
                     "three times with zero effect before being blacklisted for the day, and NEVER entered a " +
                     "single building in 9 in-game days.")
                 .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// fix/the-pilot-can-finish-a-craft: MEASURED, not reasoned about. A live 420-turn pilot probe
+    /// (tools/agent-playtest/pilot.ps1) opened the forge minigame and landed zero strikes. Two
+    /// candidates were named before any test could tell them apart: (A) the pilot's own
+    /// pump-until-780/strike-above-340 thresholds just waste turns re-earning heat it did not need, or
+    /// (B) <see cref="AgentPlaytestBridge.ApplyKey"/>'s press-3-frames-release tap never actually
+    /// latches <see cref="ForgeMinigame"/>'s C3 tap-to-toggle escape hatch (<see
+    /// cref="ForgeMinigame.BellowsTapMaxHoldSeconds"/>), so heat never leaves the floor at all.
+    ///
+    /// <para>Neither <c>ForgeMinigameTests</c> nor <see cref="ForgePlayer"/> can answer this: both
+    /// drive Act 1 with <c>forge.SetProcess(false)</c> and step the clock by hand
+    /// (<c>ForgeMinigame.Advance</c>), which is exactly the branch <see cref="ForgeMinigame"/>'s own
+    /// <c>_GuiInput</c> comment says SKIPS the tap-vs-hold measurement entirely
+    /// (<c>IsProcessing()</c> false). This test drives the EXACT bridge call pilot.ps1 sends
+    /// (<c>{"action":"key","target":"bellows"}</c>, then repeated <c>forge_strike</c> no-ops while
+    /// pumping, matching <c>Get-PilotForgeMinigameCommand</c>'s own policy) against a REAL, still-ticking
+    /// overlay, and reports the actual per-turn heat delta via <c>GD.Print</c> so the number is on
+    /// record regardless of which way the assertions land.</para>
+    /// </summary>
+    [TestCase]
+    public async Task KeyBellows_OneRealTapThenTurnsOfForgeStrike_MeasuresThePerTurnHeatDelta()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+            await PumpWorldFrames(ui, 2);
+
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            ui.Adapter.AdvancePhase();
+            ui.OpenPanel("Forge");
+            PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
+
+            var overlay = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
+            AssertThat(overlay.Visible).IsTrue();
+            await PumpWorldFrames(ui, 1); // the open path's own ClaimKeyboard is deferred one frame
+
+            AssertThat(overlay.IsProcessing())
+                .OverrideFailureMessage(
+                    "Setup check: this overlay must be ticking its OWN real _Process clock, matching a " +
+                    "live client -- if IsProcessing() is false here, this test would accidentally be " +
+                    "measuring ForgePlayer's scripted-clock path instead of the real one a live pilot hits.")
+                .IsTrue();
+
+            var bridge = new AgentPlaytestBridge(ui);
+
+            var tapStartMs = Time.GetTicksMsec();
+            var tapOutcome = await bridge.Apply(ui, new AgentCommand("key", "bellows", Why: "test: one tap, exactly what pilot.ps1 sends to start pumping"));
+            var tapEndMs = Time.GetTicksMsec();
+            var heatAfterTap = overlay.HeatYPermille;
+            var pumpingAfterTap = overlay.IsPumping;
+
+            AssertThat(pumpingAfterTap)
+                .OverrideFailureMessage(
+                    $"One tap of 'bellows' through the real bridge (outcome '{tapOutcome}', round trip " +
+                    $"{tapEndMs - tapStartMs}ms) left IsPumping={pumpingAfterTap}. ForgeMinigame's own C3 " +
+                    "tap-to-toggle latch is supposed to keep the bellows running past release for a press " +
+                    "well under BellowsTapMaxHoldSeconds -- if it does not latch, a live pilot run can " +
+                    "never accumulate heat off a single keypress and can never land a strike. THIS IS " +
+                    "CANDIDATE B.")
+                .IsTrue();
+
+            // pilot.ps1's OWN policy while pumping and under threshold: send "forge_strike" (a real
+            // no-op -- ForgeStrike() early-returns while IsPumping) every turn rather than re-pressing
+            // bellows, so the toggle is never touched again. Each loop iteration below is exactly one
+            // such turn: the SAME ApplyKey press-3-frames-release-3-frames round trip a live run pays,
+            // over and over -- this is where the "per-turn heat delta while the pilot believes it is
+            // pumping" number comes from.
+            var heatSamples = new List<int> { heatAfterTap };
+            var msPerTurn = new List<long>();
+            var pumpingThroughout = pumpingAfterTap;
+            for (var turn = 0; turn < 8; turn++)
+            {
+                var beforeMs = Time.GetTicksMsec();
+                await bridge.Apply(ui, new AgentCommand("key", "forge_strike", Why: "test: simulated turn while pumping"));
+                var afterMs = Time.GetTicksMsec();
+                msPerTurn.Add((long)(afterMs - beforeMs));
+                heatSamples.Add(overlay.HeatYPermille);
+                pumpingThroughout &= overlay.IsPumping;
+            }
+
+            var perTurnDeltas = new List<int>();
+            for (var i = 1; i < heatSamples.Count; i++)
+            {
+                perTurnDeltas.Add(heatSamples[i] - heatSamples[i - 1]);
+            }
+
+            // MEASURED 2026-08-12 (this exact test, run standalone): tapRoundTripMs=44,
+            // heatAfterTap=168, pumpingAfterTap=True, pumpingThroughoutEightTurns=True,
+            // heatSamples=[168,192,216,240,264,288,312,336,360], perTurnDeltas all 24,
+            // msPerTurn ~100 each -- roughly 240 permille/sec, matching
+            // BellowsRaisePermillePerSecond (260) within Settle-frame-count rounding. This DISPROVES
+            // the "tap never latches, heat pinned near zero" hypothesis (fix/the-pilot-can-finish-a-craft's
+            // own candidate B): the C3 escape hatch works, and heat climbs reliably and predictably.
+            GD.Print(
+                "[bellows-latch-measurement] tapRoundTripMs=" + (tapEndMs - tapStartMs) +
+                " heatAfterTap=" + heatAfterTap + " pumpingAfterTap=" + pumpingAfterTap +
+                " pumpingThroughoutEightTurns=" + pumpingThroughout +
+                " heatSamples=[" + string.Join(",", heatSamples) + "]" +
+                " perTurnDeltas=[" + string.Join(",", perTurnDeltas) + "]" +
+                " msPerTurn=[" + string.Join(",", msPerTurn) + "]");
+
+            AssertThat(pumpingThroughout)
+                .OverrideFailureMessage(
+                    "IsPumping turned itself off at some point across 8 forge_strike turns with nobody " +
+                    "pressing bellows again -- it must stay latched until the NEXT bellows tap, not time " +
+                    "out or get knocked off by an unrelated key.")
+                .IsTrue();
+
+            AssertThat(heatSamples[heatSamples.Count - 1])
+                .OverrideFailureMessage(
+                    "Heat did not rise across 8 real turns while IsPumping stayed true. Samples: [" +
+                    string.Join(",", heatSamples) + "]. If heat is flat, the overlay's _Process is not " +
+                    "actually advancing in real time while pumping -- CANDIDATE B again, a different shape.")
+                .IsGreater(heatAfterTap);
         }
         finally
         {
