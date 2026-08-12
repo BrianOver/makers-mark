@@ -5,6 +5,7 @@ using GameSim.Contracts;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
+using GodotClient.Audio;
 using GodotClient.Panels;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
@@ -246,6 +247,38 @@ public class LegendsWallTests
 
             var honored = ui.Adapter.AppliedThisPhase.OfType<HonorMemorialAction>().Single();
             AssertThat(honored.Hero).IsEqual(FallenHeroId);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// U-audio-3 (verbs that resolved silently): the farewell rite — the one action this whole
+    /// panel exists to offer — had no acknowledgement beyond the row re-rendering "— honored" on
+    /// the next refresh. <see cref="GodotClient.Audio.Cue.MemorialHonor"/> is deliberately its own
+    /// cue, never <c>Cue.Bell</c> — this is grief acknowledged once, not the day advancing.
+    /// </summary>
+    [TestCase]
+    public void HonorButton_PlaysTheMemorialHonorCue()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(WorldWithFallenHero());
+
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+            audio!.ClearRecentCues();
+
+            PressEnabled(ui.Legends, $"Honor_{FallenHeroId.Value}");
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"Honoring a memorial played [{string.Join(", ", audio.RecentCues)}] — "
+                    + "MemorialHonor was never among them.")
+                .Contains(Cue.MemorialHonor);
         }
         finally
         {

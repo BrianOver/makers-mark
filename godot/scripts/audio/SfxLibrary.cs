@@ -102,6 +102,28 @@ public enum Cue
     /// differently so the two stay distinguishable rather than firing the identical sound for two
     /// different actions.</summary>
     EnterNoticeboard,
+
+    // ── Verbs that resolved silently (audio-quality pass). Three moments the player performs or
+    //    witnesses that had NO acknowledgement at all before this: a hero actually buying off the
+    //    shelf/counter (BountyPost and Coin already existed for posting/paying, but nothing ever
+    //    played when a sale itself landed), the farewell rite at the Legends Wall, and the Evening
+    //    reveal of a hero who did not come back — which shared the day's ordinary Bell with every
+    //    other night. All three are quiet and short on purpose: "dignity, not drama" is this
+    //    project's own rule for death (NarratorVoiceDirector.Lines[DeathEpitaph]: "Raise a quiet
+    //    one"), and a farewell rite is a private moment, not a public one. ──
+
+    /// <summary>The farewell rite: honoring a fallen hero's memorial at the Legends Wall. A low,
+    /// slow chime — warm, not bright, and never a struck-metal transient the way <see cref="Bell"/>
+    /// or <see cref="BountyPost"/> are. Quieter than <see cref="Bell"/>: this is grief acknowledged
+    /// once, not the day advancing for everyone.</summary>
+    MemorialHonor,
+
+    /// <summary>The Evening reveal of a hero who did not come back — distinct from the ordinary
+    /// day's <see cref="Bell"/>, which tolls for every Evening regardless of what happened. One
+    /// low, muted strike under a short, heavily filtered thump: understated on purpose, matching
+    /// the narrator's own register for the same moment (<c>NarratorVoiceDirector.Trigger.DeathEpitaph</c>)
+    /// — no melodrama, no alarm.</summary>
+    DeathToll,
 }
 
 /// <summary>
@@ -479,6 +501,35 @@ public static class SfxLibrary
             }
 
             Synth.Normalise(buf, 0.14f); // U5: 0.20 -> 0.14, matching the other venue-cue trims
+        }),
+
+        Cue.MemorialHonor => Build(1.40f, buf =>
+        {
+            // A quiet, low chime for the farewell rite — two partials a fifth apart, both slow to
+            // decay, with a soft attack (no struck-metal onset): the opposite character from Bell's
+            // bright bronze tolling, which belongs to the day advancing, not to grief. Low-passed so
+            // nothing bright cuts through a moment this project's own rule says gets no melodrama.
+            Synth.AddPartial(buf, 165f, 0.42f, halfLife: 0.65f, attack: 0.06f);
+            Synth.AddPartial(buf, 247f, 0.20f, halfLife: 0.45f, attack: 0.08f);
+            Synth.LowPass(buf, 1200f);
+            Synth.Normalise(buf, 0.30f); // quieter than Bell (0.55) — a private moment, not a public one
+        }),
+
+        Cue.DeathToll => Build(1.00f, buf =>
+        {
+            // The night's dark news — one low, muted strike, not a tolling bell. Marks the Evening
+            // reveal of a hero who did not come back as its own moment, distinct from the ordinary
+            // day's Bell, without turning it into an alarm: a single dull partial and a short,
+            // heavily low-passed thump underneath, both quiet and both over quickly.
+            for (var i = 0; i < buf.Length; i++)
+            {
+                var t = i / (float)Synth.SampleRate;
+                buf[i] = Synth.Noise(i, seed: 51) * Synth.Decay(t, 0.10f) * 0.3f;
+            }
+
+            Synth.LowPass(buf, 300f);
+            Synth.AddPartial(buf, 98f, 0.42f, halfLife: 0.55f, attack: 0.02f);
+            Synth.Normalise(buf, 0.26f); // quieter than Bell (0.55) — understated, not an alarm
         }),
 
         _ => Build(0.05f, buf => Synth.AddPartial(buf, 440f, 0.4f, halfLife: 0.02f)),

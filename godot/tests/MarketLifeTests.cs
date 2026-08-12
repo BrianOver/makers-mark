@@ -7,6 +7,7 @@ using GameSim.Contracts;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
+using GodotClient.Audio;
 using GodotClient.Town2d;
 using static GdUnit4.Assertions;
 
@@ -207,6 +208,60 @@ public class MarketLifeTests
         finally
         {
             town.Free();
+        }
+    }
+
+    /// <summary>
+    /// U-audio-3 (verbs that resolved silently): this whole choreography — a customer walking in,
+    /// browsing, and walking out with the goods — used to play out in total silence. The coin arc
+    /// IS the sale landing, and it must actually make a sound. An <see cref="AudioDirector"/> is
+    /// mounted at the tree root alongside <see cref="Town2D"/> (never a bare <c>new
+    /// MarketLife2D()</c>) because <c>AudioDirector.For</c> is a tree lookup from
+    /// <c>GetTree().Root</c> — exactly how the real game finds it from any node — so this proves
+    /// the SAME lookup production uses, not a shortcut that could pass while the real wiring is
+    /// broken.
+    /// </summary>
+    [TestCase]
+    public void Advance_SoldRun_PlaysTheCoinCue_WhenTheSaleLands()
+    {
+        var director = new AudioDirector();
+        ((SceneTree)Engine.GetMainLoop()).Root.AddChild(director);
+        var town = Mount();
+        try
+        {
+            var state = TwoHeroTwoItemWorld();
+            var life = town.MarketLife!;
+            life.QueueDay(state, new GameEvent[]
+            {
+                new ItemSold(new ItemId(101), new HeroId(1), 8, FromPlayerShop: true),
+            });
+
+            life.Advance(0.01); // crosses the (zero) start delay — spawns the customer
+            director.ClearRecentCues();
+
+            // Capped the same way Advance_QueuedRun_WalksInJudgesAndWalksOutThenIsFreed already is:
+            // enough steps to clear walk-in + the Judging dwell + walk-out, so a stuck machine fails
+            // this test instead of looping forever.
+            for (var i = 0; i < 200 && life.ActiveCustomerCount > 0; i++)
+            {
+                life.Advance(0.1);
+            }
+
+            AssertThat(life.ActiveCustomerCount)
+                .OverrideFailureMessage("Precondition: the run never finished within the step budget.")
+                .IsEqual(0);
+
+            AssertThat(director.RecentCues)
+                .OverrideFailureMessage(
+                    $"A player-shelf sale played [{string.Join(", ", director.RecentCues)}] — Coin was "
+                    + "never among them. The sale landing is the payoff of the shelf channel and must "
+                    + "be audible, the same way Cue.Shelve already marks stocking it.")
+                .Contains(Cue.Coin);
+        }
+        finally
+        {
+            town.Free();
+            director.Free();
         }
     }
 

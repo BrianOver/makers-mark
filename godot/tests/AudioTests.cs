@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using GameSim.Contracts;
+using GameSim.Presentation;
 using GdUnit4;
 using Godot;
 using GodotClient.Audio;
@@ -1471,6 +1472,39 @@ public class AudioTests
                 "stays byte-for-byte identical while its neighbors (EnterForge/Tavern/MineGate/Noticeboard) " +
                 "get quieter around it.")
             .IsEqual(referenceBytes);
+    }
+
+    /// <summary>
+    /// U-audio-3 (verbs that resolved silently): pins <see cref="MainUi.DeathNoticeCueFor"/> — the
+    /// decision that gives a hero's death its own quiet toll instead of sharing the day's ordinary
+    /// <see cref="Cue.Bell"/> — directly, rather than scripting an entire expedition to a death just
+    /// to prove one <c>switch</c> arm (see that method's own doc for why a pure mapping is the
+    /// testable surface here, the same trade <c>AudioDirector.LoadComposedTrackForCensus</c> makes
+    /// for composed-track resolution).
+    /// </summary>
+    [TestCase]
+    public void DeathNoticeCueFor_OnlySpeaksForDeathEpitaph()
+    {
+        // Nullable-enum equality checked via plain bool (AssertBool), not AssertThat().IsEqual —
+        // Nullable<Cue> does not satisfy GdUnit4's IComparable-constrained overload.
+        AssertBool(MainUi.DeathNoticeCueFor(NarratorVoiceDirector.Trigger.DeathEpitaph) == Cue.DeathToll)
+            .OverrideFailureMessage("A hero who did not come back must get a distinct cue, not silence.")
+            .IsTrue();
+
+        foreach (var trigger in Enum.GetValues<NarratorVoiceDirector.Trigger>())
+        {
+            if (trigger == NarratorVoiceDirector.Trigger.DeathEpitaph)
+            {
+                continue;
+            }
+
+            AssertBool(MainUi.DeathNoticeCueFor(trigger) is null)
+                .OverrideFailureMessage(
+                    $"{trigger} played {MainUi.DeathNoticeCueFor(trigger)} — only DeathEpitaph should " +
+                    "ever get a cue here. A proven save or a killing blow is good news; good news does " +
+                    "not need a bell of its own on top of the narrator already speaking.")
+                .IsTrue();
+        }
     }
 }
 #endif

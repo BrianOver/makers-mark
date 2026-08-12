@@ -523,6 +523,14 @@ public partial class MarketLife2D : Node2D
         AddChild(c.ItemBob);
 
         SpawnCoin(c.TargetAnchor + new Vector2(0, -c.SpriteHeight * 0.5f));
+
+        // U-audio-3 (verbs that resolved silently): this whole choreography — walk in, browse,
+        // walk out with the goods — used to be entirely silent. The coin arc above IS the sale
+        // landing, for both a shelf sale and a stepped counter sale (BuildCounterSaleRun stages
+        // the same Bought:true run through this exact path), so this is the one place that
+        // covers both. Null-tolerant: a headless test mounting a bare Town2D with no
+        // AudioDirector in the tree gets silence, never a crash.
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Coin);
     }
 
     private void SpawnCoin(Vector2 from)
