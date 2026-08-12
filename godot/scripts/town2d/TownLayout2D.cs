@@ -23,24 +23,38 @@ public static class TownLayout2D
     /// Uniform downscale applied to every CHARACTER sprite (player, heroes, townsfolk) — the one
     /// place the cast's world scale is decided.
     ///
-    /// <para>Why: the generated character art is ~30x46px, which in a <see cref="TileSize"/>=16
-    /// world is a person very nearly THREE TILES TALL, while a building is five. A blacksmith
-    /// standing 60% the height of his own forge is what Brian's "buildings are too small and the
-    /// player model is massive" verdict was looking at — and the buildings were never the wrong
-    /// dial. At 0.5 a character is ~1.4 tiles and a building reads ~3.5x their height, which is the
-    /// proportion a top-down village actually reads correctly at.</para>
+    /// <para>Why 1.0 and not some fraction: the world-scale proportion this constant used to
+    /// encode (a blacksmith standing 60% the height of his own forge was Brian's "buildings are too
+    /// small and the player model is massive" verdict — the buildings were never the wrong dial)
+    /// is now baked into the committed PNGs themselves by <c>tools/art/gen_town_sprites.py</c>,
+    /// which ships every character sprite already at its on-screen pixel size. This constant stays
+    /// as the one place to retune that proportion later (against a screenshot) without touching a
+    /// single PNG.</para>
+    ///
+    /// <para><b>2026-08-12 (asymmetric-decimation fix).</b> This used to be 0.5, applied at RUNTIME
+    /// to a double-size source PNG, on the theory that a Nearest-filtered GPU sampler with mipmaps
+    /// off would do a "clean 2:1 decimation" at draw time. It didn't: Nearest keeps exactly one
+    /// column/row out of every mirrored pair, chosen by pixel-grid alignment, not by the art — a
+    /// bilaterally-symmetric silhouette came out visibly lopsided on screen (measured on the real
+    /// committed sprites: every mirror-symmetric row broke symmetry, by up to half its width), and a
+    /// single-pixel authored accent (visor slit, rune, coolant trace, shield boss) was a coin flip
+    /// to survive at all. The fix moved the halving OFFLINE into the generator (see its own
+    /// <c>rarity_downsample_2x</c> doc) — the committed PNG already IS the on-screen pixel grid, so
+    /// this is 1.0 (a pure pass-through) and there is no runtime decimation left to get wrong. See
+    /// <c>CastProportionTests.NoRuntimeDecimation_CharacterSpriteScaleStaysOne</c> for the
+    /// regression pin — reintroducing any value other than 1.0 here without ALSO re-baking the
+    /// source art at that new scale reproduces this bug.</para>
     ///
     /// <para>Applied via <see cref="CharacterArtRoot"/> — an intermediate node between the actor and
-    /// its sprite — rather than by re-generating the PNGs, so this stays one number to tune against a
-    /// screenshot. Deliberately NOT folded into the per-frame <c>Sprite.Scale</c> assignment:
-    /// <c>SpriteMotion</c> owns that value for walk squash/breath, and the feet-compensation offset
-    /// math in every actor's pose-apply inverts <c>Sprite.Scale</c> to keep the feet planted — an
-    /// extra constant factor in there silently breaks that inversion (it made the player's sprite
-    /// drift 11px off its own feet line). Keeping the constant on the parent leaves the pose math,
-    /// and the invariant tests that check it, exactly as they were. Exactly 0.5 keeps the decimation
-    /// a clean 2:1 under the Nearest filter instead of a resampling shimmer.</para>
+    /// its sprite — rather than by re-generating the PNGs on every retune, so this stays one number
+    /// to tune against a screenshot. Deliberately NOT folded into the per-frame <c>Sprite.Scale</c>
+    /// assignment: <c>SpriteMotion</c> owns that value for walk squash/breath, and the
+    /// feet-compensation offset math in every actor's pose-apply inverts <c>Sprite.Scale</c> to keep
+    /// the feet planted — an extra constant factor in there silently breaks that inversion (it made
+    /// the player's sprite drift 11px off its own feet line). Keeping the constant on the parent
+    /// leaves the pose math, and the invariant tests that check it, exactly as they were.</para>
     /// </summary>
-    public const float CharacterSpriteScale = 0.5f;
+    public const float CharacterSpriteScale = 1.0f;
 
     /// <summary>Builds the per-actor node that carries <see cref="CharacterSpriteScale"/>: parent the
     /// actor's <c>Sprite2D</c> to this instead of to the actor itself. Its origin coincides with the

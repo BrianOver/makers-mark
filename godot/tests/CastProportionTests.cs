@@ -79,5 +79,31 @@ public class CastProportionTests
                 .IsEqual(baseTexture.GetHeight());
         }
     }
+
+    /// <summary>
+    /// Regression pin for the 2026-08-12 asymmetric-decimation fix
+    /// (<see cref="TownLayout2D.CharacterSpriteScale"/>'s own doc has the full story). Character
+    /// sprites used to ship at 2x their on-screen pixel size and rely on a runtime Nearest-filtered
+    /// GPU sample at <c>CharacterSpriteScale=0.5</c> to halve them — which silently discarded
+    /// exactly one column/row out of every mirrored pair, making bilaterally-symmetric art (and any
+    /// single-pixel authored accent) come out lopsided on screen. The fix moved the halving OFFLINE
+    /// into <c>tools/art/gen_town_sprites.py</c>, so every committed character PNG is ALREADY at its
+    /// on-screen size — which only stays true while this constant is exactly 1.0 (a pure
+    /// pass-through). Any other value here means either art is being scaled again at runtime (and
+    /// this same bug can reproduce) or the on-screen size of every character in town silently
+    /// changed, which the task that landed this fix was explicitly forbidden from doing.
+    /// </summary>
+    [TestCase]
+    public void NoRuntimeDecimation_CharacterSpriteScaleStaysOne()
+    {
+        AssertThat(TownLayout2D.CharacterSpriteScale)
+            .OverrideFailureMessage(
+                $"CharacterSpriteScale is {TownLayout2D.CharacterSpriteScale}, not 1.0 — character " +
+                "art is being scaled at runtime again. Either this reproduces the asymmetric-" +
+                "decimation bug (a Nearest-filtered non-1.0 scale on art not already re-baked at " +
+                "that size) or the on-screen size of every character in town just changed; neither " +
+                "is a silent change. See CharacterSpriteScale's own doc comment.")
+            .IsEqual(1.0f);
+    }
 }
 #endif
