@@ -1,8 +1,10 @@
 #if GDUNIT_TESTS
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using GdUnit4;
 using Godot;
+using GodotClient.Tools;
 using GodotClient.Town2d;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
@@ -82,6 +84,90 @@ public class HudBoundsTests
             Unmount(ui);
         }
     }
+
+    /// <summary>
+    /// The layout defect itself, pinned at the project's smallest supported window
+    /// (<c>project.godot</c>'s <c>window/size/viewport_*</c> = 1152x648 — this test asserts the
+    /// SETTING rather than hardcoding the numbers, so a deliberate resize keeps this test honest).
+    /// CI run 31598574670 (PR #464) found the "Work the forge" button at (950, 1437) in a
+    /// (1154, 650) viewport with a full 19-material vendor list rendered above it. Reproduced on
+    /// this exact scenario pre-fix at y=2925 (<see cref="ScreenObservation.Descendants"/>, no
+    /// disabled/on-screen filter): the Morning Vendor's 19 <see
+    /// cref="GameSim.Materials.MaterialRegistry.PricedPool"/> rows (each with its own qty stepper)
+    /// plus the Foundry section rendered ABOVE every recipe card on a fresh, non-station
+    /// <c>OpenPanel("Forge")</c> — the exact open <see cref="GodotClient.Tests.DeepPilotPlayTests"/>'s
+    /// competent player and any human clicking the Forge tray button both use.
+    ///
+    /// <para>Two fixes landed together, both needed. (1) <c>ForgePanel.EnsureBuilt</c>: a single
+    /// shared ScrollContainer stacking MaterialsView then CraftView means whichever renders SECOND
+    /// has its first row pushed below the fold once the FIRST view alone exceeds the window —
+    /// simply swapping the stack order was tried first and only moved the burial onto the OTHER
+    /// verb (BuyMat_ vanished instead of WorkForge_, still failing <see
+    /// cref="GodotClient.Tests.DeepPilotPlayTests"/> for a different reason). The real fix gives
+    /// each view its OWN ScrollContainer ("CraftScroll"/"MaterialsScroll"), sharing the body's
+    /// height via <c>SizeFlagsVertical=ExpandFill</c>, so BOTH lists' first rows are on screen at
+    /// once, independent of how long either list grows. (2) <c>RecipeTable.All</c> is an
+    /// <c>ImmutableSortedDictionary</c> keyed by RecipeId, so the un-sorted render order was
+    /// ALPHABETICAL — "ashguild-plate" (Tier 13, a material this fresh save never has) landed
+    /// first and disabled, pushing the first actually-craftable recipe to the second card slot,
+    /// still past the fold within CraftScroll's own share of the height. <c>ForgePanel.Refresh</c>
+    /// now orders recipes by Tier first, so a low-tier recipe in the player's starting material
+    /// always renders before any later-tier one regardless of its id.</para>
+    ///
+    /// <para><see cref="ScreenObservation.ClickableButtons"/> mirrors the same "visible, enabled,
+    /// fully on screen" test the failing real button click used — a control that only a multi-notch
+    /// scroll hunt reaches does not count as reachable here, matching the task brief ("without a
+    /// 19-notch scroll hunt") rather than a weaker "eventually scrollable".</para>
+    /// </summary>
+    [TestCase]
+    public async Task ForgeOpensFresh_PrimaryCraftVerb_IsOnScreenWithoutScrolling()
+    {
+        // ScriptedSession.StartAdapter (not a bare fresh mount): a truly fresh campaign starts with
+        // ZERO materials, so every Craft_/WorkForge_ button renders correctly DISABLED --
+        // ClickableButtons filters disabled buttons out too, which would make this test measure "is
+        // there material" instead of "is it on screen". Pre-stocking the dagger's own copper (same
+        // fixture ForgeCraftTests/ShopPanelTests already use) is what a competent player's own
+        // BuyMat_ press produces, so the button is enabled for the SAME reason it is in the real
+        // failure this test pins.
+        var ui = MountMainUi(ScriptedSession.StartAdapter());
+        try
+        {
+            AssertThat(ui.GetViewportRect().Size)
+                .OverrideFailureMessage("this test pins the SMALLEST supported window (project.godot) -- update the fixture if that setting changes")
+                .IsEqual(new Vector2(1152f, 648f));
+
+            ui.OpenPanel("Forge"); // fresh open, no station Focus -- ResetFocus leaves both views visible
+            await SettleLayout(ui);
+
+            var clickable = ScreenObservation.ClickableButtons(ui.Forge, ui.GetViewport());
+            var primaryVerb = clickable.FirstOrDefault(b => b.Name.ToString().StartsWith("WorkForge_", StringComparison.Ordinal))
+                ?? clickable.FirstOrDefault(b => b.Name.ToString().StartsWith("Craft_", StringComparison.Ordinal));
+
+            AssertThat(primaryVerb)
+                .OverrideFailureMessage(
+                    "Forge opened fresh (day 1, full 19-material vendor list, no station focus) but no " +
+                    "WorkForge_/Craft_ button is clickable without scrolling -- the craft verb is buried " +
+                    "under the vendor list again. " + ScreenObservation.DescribeButtons(ui.Forge, ui.GetViewport()))
+                .IsNotNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // Sibling check (owner named shop/market alongside the forge): ShopPanel has the SAME shape of
+    // bug -- "Stock" (Unshelved Crafts' one gate-checked verb) sits behind Your Shelf and Who Would
+    // Buy This, both of which grow without bound. Measured with one unshelved craft (a fresh
+    // campaign starts with zero, so ScriptedSession drives one dagger through first): Stock_ at
+    // y=830 in the default 1152x648 window. NOT fixed here -- a same-panel reorder (moving
+    // Unshelved Crafts first) was tried and reverted: it broke
+    // RealDragOntoShelfTests.DraggingAnUnshelvedCraftOntoAnEmptySlot_WithARealMouseGesture_
+    // QueuesTheStock, which requires the drag SOURCE (an unshelved card) and the drop TARGET (an
+    // empty shelf slot in Your Shelf) on screen AT THE SAME TIME -- moving the sections apart broke
+    // that gesture. Fixing this properly needs ForgePanel's split-scroll treatment adapted to
+    // preserve co-visibility of drag source and target, which is new scope past this task's
+    // forge-verb ask. Reported here as a follow-up, not fixed.
 
     [TestCase]
     public async Task DrawerOpen_ObjectiveChip_NeverCoversDrawerButtons()

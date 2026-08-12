@@ -79,7 +79,6 @@ public partial class ForgePanel : SimPanel
     // ── U3 (painted-interiors plan): FocusSection — the shelf/anvil stations' "press E, land on
     // the right rows" affordance. Scrolls to and briefly flashes an EXISTING section (no new
     // content, no verb change) — see FocusSection's own doc.
-    private ScrollContainer? _scroll;
     private Control? _vendorSectionRoot;
     private Control? _recipeSectionRoot;
 
@@ -91,6 +90,14 @@ public partial class ForgePanel : SimPanel
     // station opens ONLY its own job. See FocusSection/ResetFocus's own docs.
     private VBoxContainer? _materialsViewRoot;
     private VBoxContainer? _craftViewRoot;
+
+    // ── layout fix ("the forge's primary verb is buried off-screen"): each view gets its OWN
+    // ScrollContainer instead of both sharing one — see EnsureBuilt's own comment for why a
+    // shared scroll cannot fix this (reordering just moves the burial from one verb to the
+    // other). FocusSection hides whichever of these two is NOT the focused section so the
+    // visible one still gets the full body height, same as before this split existed.
+    private ScrollContainer? _materialsScroll;
+    private ScrollContainer? _craftScroll;
     private Control? _focusFlashTarget;
     private double _focusFlashRemaining = -1;
     private const float FocusFlashSeconds = 0.6f;
@@ -307,10 +314,17 @@ public partial class ForgePanel : SimPanel
             return;
         }
 
-        _materialsViewRoot!.Visible = section == "materials";
-        _craftViewRoot!.Visible = section == "craft";
+        var isMaterials = section == "materials";
+        _materialsViewRoot!.Visible = isMaterials;
+        _craftViewRoot!.Visible = !isMaterials;
+        // Hide the OTHER scroll container too (not just its inner view root), so the focused one
+        // is the VBoxContainer's only Expand-flagged child and claims the full body height —
+        // otherwise a hidden-but-still-present ScrollContainer would keep splitting the height
+        // with the visible one for nothing.
+        _materialsScroll!.Visible = isMaterials;
+        _craftScroll!.Visible = !isMaterials;
 
-        DeferEnsureVisible(_scroll, target);
+        DeferEnsureVisible(isMaterials ? _materialsScroll : _craftScroll, target);
         _focusFlashTarget = target;
         _focusFlashRemaining = FocusFlashSeconds;
     }
@@ -334,6 +348,8 @@ public partial class ForgePanel : SimPanel
         LastFocusedSection = null;
         _materialsViewRoot!.Visible = true;
         _craftViewRoot!.Visible = true;
+        _materialsScroll!.Visible = true;
+        _craftScroll!.Visible = true;
     }
 
     /// <summary>Safety ceiling for <see cref="DeferEnsureVisible"/>'s settle-poll — 240 frames (4s
@@ -579,7 +595,19 @@ public partial class ForgePanel : SimPanel
             }
 
             var unlocked = state.Player.TalentsFor(professionId);
-            foreach (var recipe in profession!.Recipes.Values)
+            // Layout fix (same PR as the CraftView/MaterialsView reorder above): RecipeTable.All is
+            // an ImmutableSortedDictionary keyed by RecipeId, so ".Values" iterates ALPHABETICALLY —
+            // an accident of the storage key, not a rendering choice. That put "ashguild-plate" (Tier
+            // 13, needs slagiron the player never has this early) first, and the first TIER-1 recipe
+            // a fresh player can actually afford ("buckler", alphabetically second) landed at y=664
+            // in the default 648px-tall window — one card's height past the fold, right after this
+            // PR's other reorder had already gotten the Recipes section itself up to y=220. Ordering
+            // by Tier first (RecipeId only as the tie-break, preserving today's order within a tier)
+            // renders every recipe a fresh player can reach before any later-tier one, so a low-tier,
+            // in-material recipe's Craft/Work-the-forge controls land near the top of the list
+            // instead of wherever its id happens to sort.
+            var orderedRecipes = profession!.Recipes.Values.OrderBy(r => r.Tier).ThenBy(r => r.RecipeId, StringComparer.Ordinal);
+            foreach (var recipe in orderedRecipes)
             {
                 var material = SelectedMaterialOr(recipe.MaterialKey);
                 var have = state.Player.Materials.TryGetValue(material, out var stock) ? stock : 0;
@@ -1397,21 +1425,60 @@ public partial class ForgePanel : SimPanel
             return;
         }
 
-        var body = BuildScrollBody();
-        // U3: BuildScrollBody's own ScrollContainer is the parent it just added `body` to — kept
-        // here so FocusSection can call EnsureControlVisible without BuildScrollBody needing to
-        // change its own (test-load-bearing) return shape.
-        _scroll = body.GetParent() as ScrollContainer;
-        _feedback = AddLabel(body, string.Empty);
+        // Layout fix ("the forge's primary verb is buried off-screen", CI run 31598574670 / PR
+        // #464): this panel used to be ONE shared ScrollContainer (SimPanel.BuildScrollBody)
+        // stacking MaterialsView then CraftView top-to-bottom. Both sides grow WITHOUT BOUND —
+        // Morning Vendor renders one row per MaterialRegistry.PricedPool key (19 as of this fix,
+        // each with its own qty stepper) plus the Foundry section, and Recipes renders one card
+        // per profession recipe (22 for Blacksmith alone) — so whichever view rendered SECOND in
+        // the stack had its own first row pushed below the fold the instant the first view grew
+        // past the ~648px default window. Measured on a fresh, non-station <c>OpenPanel("Forge")</c>
+        // (ResetFocus — both views visible, the exact open a bare tray press or a playtest tool
+        // uses): vendor-then-craft buried "Work the forge" at y=2925; simply SWAPPING the stack
+        // order got the first recipe card to y=220 but then buried "Buy 1" at well past the fold
+        // instead (<c>DeepPilotPlayTests.CompetentPlayer_ReachesDayEleven_WithRealCrafts</c> kept
+        // failing, now on "no BuyMat_ button in Forge" every single day). Reordering a shared
+        // stack only ever trades which verb is buried — it cannot fix both.
+        //
+        // The actual fix: MaterialsView and CraftView each get their OWN ScrollContainer, sharing
+        // the panel's height via SizeFlagsVertical=ExpandFill (both root-level, side by side in a
+        // plain non-scrolling outer VBox). Every open of this panel now shows the FIRST row of
+        // BOTH lists at once — Buy 1 for the first vendor material AND Craft/Work-the-forge for
+        // the first recipe — each independently scrollable for anything further down its own
+        // list, and neither list's length can ever push the other's first row off screen no
+        // matter how many materials or recipes the game grows to. CraftView keeps a larger share
+        // (3:2) since crafting is this panel's purpose (the class doc's five-link chain, link 1)
+        // and its cards are taller per-item than a vendor row. A station's own FocusSection call
+        // (below) hides whichever ScrollContainer is NOT the focused one, so the focused view
+        // still claims the full body height, exactly as before this split existed.
+        var root = new VBoxContainer { Name = "ForgeRoot" };
+        root.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(root);
+
+        _feedback = AddLabel(root, string.Empty);
         _feedback.Name = "ForgeFeedback";
 
-        // Station split: everything buy-side lives under _materialsViewRoot, everything craft-side
-        // under _craftViewRoot — see FocusSection's own doc for why this pair exists. Both start
-        // visible (the ResetFocus default); a station's FocusSection call is what narrows to one.
-        _materialsViewRoot = new VBoxContainer { Name = "MaterialsView" };
-        body.AddChild(_materialsViewRoot);
-        _craftViewRoot = new VBoxContainer { Name = "CraftView" };
-        body.AddChild(_craftViewRoot);
+        _craftScroll = new ScrollContainer
+        {
+            Name = "CraftScroll",
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+            SizeFlagsStretchRatio = 3f,
+        };
+        root.AddChild(_craftScroll);
+        _craftViewRoot = new VBoxContainer { Name = "CraftView", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _craftScroll.AddChild(_craftViewRoot);
+
+        _materialsScroll = new ScrollContainer
+        {
+            Name = "MaterialsScroll",
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+            SizeFlagsStretchRatio = 2f,
+        };
+        root.AddChild(_materialsScroll);
+        _materialsViewRoot = new VBoxContainer { Name = "MaterialsView", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _materialsScroll.AddChild(_materialsViewRoot);
 
         _materialsLabel = AddLabel(_materialsViewRoot, "MATERIALS:");
 

@@ -120,7 +120,7 @@ public class LayoutTests
         }
     }
 
-    // ── 3/4. Forge + Shop bodies (BuildScrollBody): multi-word labels wrap on real width ─────
+    // ── 3/4. Forge + Shop bodies: multi-word labels wrap on real width ───────────────────────
 
     [TestCase]
     public async Task ForgeBody_Labels_RenderAtReadableWidth()
@@ -131,7 +131,16 @@ public class LayoutTests
             ui.OpenPanel("Forge"); // a closed drawer panel is never laid out, so surface it first
             await SettleLayout(ui);
 
-            AssertLabelsReadable(Find<ScrollContainer>(ui.Forge, "Scroll"));
+            // Layout fix ("the forge's primary verb is buried off-screen"): ForgePanel no longer
+            // has ONE shared ScrollContainer named "Scroll" (SimPanel.BuildScrollBody) — it now
+            // splits into "CraftScroll" and "MaterialsScroll", each independently scrollable (see
+            // ForgePanel.EnsureBuilt's own doc), so both need checking. Asserting against the whole
+            // panel instead would also walk the hidden minigame overlays (ForgeMinigame,
+            // AlchemyBrewPuzzle, etc. — added directly under the panel, not under either scroll) —
+            // never laid out while invisible, so their labels false-flag at the collapsed 1px a
+            // REAL R7 bug produces, for a control a player can never actually see.
+            AssertLabelsReadable(Find<ScrollContainer>(ui.Forge, "CraftScroll"));
+            AssertLabelsReadable(Find<ScrollContainer>(ui.Forge, "MaterialsScroll"));
         }
         finally
         {
