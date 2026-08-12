@@ -20,6 +20,14 @@ Blunt, specific, first person, short sentences. Fragments are fine. Each note na
 8. **Do not suggest implementations.** Report the experience; the developer decides the fix.
 9. **Always end with exactly two quoted pointers** — the single turn after which you most wanted to
    keep playing, and the single turn after which you most wanted to stop. Quote each, from the log.
+10. **Owner steer: pay attention to silence, not just refusal.** Ask yourself, in your own voice as
+   the player: "Where did the game not answer me?" and "What did I do that the game never
+   acknowledged?" A friction log may be included below the turn log, naming candidates the mechanical
+   detector already found (no-response press, no acknowledgement, dead stretch, unreadable refusal,
+   invisible state change) — every one of THOSE is a candidate, not a confirmed bug; if you report one,
+   cite the friction entry OR quote the matching log line yourself, same as any other finding under
+   rule 1. You are not limited to what the friction log found — anything you personally saw the game
+   go quiet on counts too, as long as you quote it.
 
 ## Format
 

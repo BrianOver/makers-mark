@@ -493,17 +493,16 @@ public static class ConsequenceProbe
             + "never unstocks, so a vanished entry was bought); gold earned is GROSS income across the run, "
             + "not the net balance.");
         sb.AppendLine();
-        sb.AppendLine("> **Read this before concluding anything about the economy.** A low number here is "
-            + "currently NOT evidence that the economy is broken, because the harness refuses most of the "
-            + "crafts the game offers it. `BaselinePlayer` gates its Expedition craft on "
-            + "`have >= recipe.MaterialQuantity`, while the kernel's own `ActionLegality.CraftLegal` gates on "
-            + "`have >= max(1, MaterialQuantity - efficiency)` — the Material Efficiency talent saves one "
-            + "material. Measured over 40 days: the kernel allowed a craft the policy refused on **52% of "
-            + "Expedition ticks for seed 2026 and 90% for seed 2027**. The defect bites hardest at exactly "
-            + "`quantity - 1` held, which is where a materials-poor run parks, so it manufactures a perfect "
-            + "correlation between low gold and no crafting with no causal link between them. Fixing it is a "
-            + "re-baseline event (golden replay + every balance baseline), so it is deliberately not done "
-            + "here — but until it is, treat these figures as a measurement of the POLICY, not the game.");
+        sb.AppendLine("> **History.** Until PR #328 (2026-08-01), `BaselinePlayer` gated its Expedition craft "
+            + "on a hand-rolled `have >= recipe.MaterialQuantity`, missing the Material Efficiency talent's "
+            + "discount that the kernel's own `ActionLegality.CraftLegal` applies "
+            + "(`have >= max(1, MaterialQuantity - efficiency)`). Measured over 40 days at the time: the kernel "
+            + "allowed a craft the policy refused on 52% of Expedition ticks for seed 2026 and 90% for seed "
+            + "2027, which manufactured a perfect but non-causal correlation between low gold and no crafting. "
+            + "PR #328 made `BaselinePlayer` ask `ActionLegality.IsLegal` instead of re-deriving the rule "
+            + "(20-seed x 100-day batch: 277 crafts before, 530 after) and it was re-measured clean afterward "
+            + "(0% refusal, both seeds, re-confirmed 2026-08-11). The figures below are a fair measurement of "
+            + "the policy, not an artifact of this defect.");
         sb.AppendLine();
         sb.AppendLine("| seed | items ever shelved | items sold | gold earned (gross) | gold earned / day |");
         sb.AppendLine("|---|---|---|---|---|");

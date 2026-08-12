@@ -344,19 +344,76 @@ public sealed class AgentPlaytestBridge
         return $"moved {command.Dir} {frames}f -> pos ({after.X:0},{after.Y:0}) from ({before.X:0},{before.Y:0})";
     }
 
+    /// <summary>
+    /// fix/pilot-finds-its-way, TWO fixes on this same line, found in that order.
+    ///
+    /// <para><b>First (2026-08-11, superseded below):</b> this used to call <see
+    /// cref="Input.ActionPress"/>/<c>ActionRelease</c>, which per Godot's own documented contract
+    /// updates ONLY the polled <see cref="Input.IsActionPressed"/> state and never calls any node's
+    /// <c>_Input</c> — "If you want to simulate _input, use Input.ParseInputEvent instead" (the Godot
+    /// API doc, verbatim, and the actual fix below turned out to be exactly that sentence). That
+    /// silently broke every <c>_Input</c>-based handler (<c>MainUi</c>'s own Escape ladder) and every
+    /// focus-gated <c>_GuiInput</c> handler (the forge minigame's bellows/strike/plunge). Engine-test-
+    /// pinned by <c>KeyCancel_InsideAWalkableRoom_ExitsIt</c>.</para>
+    ///
+    /// <para><b>Second (2026-08-11, the actual bug): swapping to <c>viewport.PushInput</c> fixed
+    /// cancel and broke nothing, but a live 220-turn pilot run standing 8px from the forge's own door
+    /// pressed "interact" three times with zero effect and never entered a single building in 9
+    /// in-game days.</b> <c>Viewport.PushInput</c> dispatches the event through THAT viewport's own
+    /// <c>_Input</c>/<c>_UnhandledInput</c>/<c>_GuiInput</c> chain — which is why cancel started
+    /// working — but it does NOT update the global <see cref="Input"/> singleton's polled action
+    /// state at all. Proven directly (temporary diagnostic test, since removed): immediately after
+    /// <c>viewport.PushInput(new InputEventKey{Pressed=true})</c>, <c>Input.IsActionPressed("interact")</c>
+    /// read false on every one of the next 6 physics frames — not delayed, never true. <see
+    /// cref="Town2d.WorldInput2D._PhysicsProcess"/> gates building entry on exactly that polled state
+    /// (<c>Input.IsActionJustPressed("interact")</c>), so <c>PushInput</c> alone can dispatch a
+    /// perfectly good "cancel" _Input event while being permanently invisible to any interact/move
+    /// style POLLING reader — the two Godot subsystems are genuinely separate, and neither
+    /// <c>ActionPress</c>/<c>ActionRelease</c> nor <c>PushInput</c> alone is a complete key-press
+    /// simulation; only <see cref="Input.ParseInputEvent"/> is (the same "front door" a real OS key
+    /// event enters through — updates the polled action map AND flows into the normal
+    /// <c>_Input</c>/<c>_GuiInput</c> dispatch a real hardware event would reach). Re-run of the same
+    /// diagnostic with <c>Input.ParseInputEvent</c> in place of <c>PushInput</c>: <c>IsActionJustPressed</c>
+    /// true on the very next physics frame, forge entered. Engine-test-pinned by
+    /// <c>KeyInteract_AtForgeDoorAtSpawn_EntersTheForge</c> (both this one and cancel's own pin still
+    /// green with the same call, since ParseInputEvent is the superset of what PushInput did).</para>
+    /// </summary>
     private async Task<string> ApplyKey(MainUi ui, AgentCommand command)
     {
-        _ = ui; // the action is global (Input singleton); ui is unused here but kept for a uniform signature
         if (string.IsNullOrWhiteSpace(command.Target) || !InputMap.HasAction(command.Target))
         {
             return $"refused: no InputMap action named '{command.Target}'";
         }
 
-        Input.ActionPress(command.Target);
+        var key = PhysicalKeyFor(command.Target);
+        if (key is null)
+        {
+            return $"refused: InputMap action '{command.Target}' has no physical keyboard event bound to it";
+        }
+
+        Godot.Input.ParseInputEvent(new InputEventKey { PhysicalKeycode = key.Value, Keycode = key.Value, Pressed = true });
         await Settle(3);
-        Input.ActionRelease(command.Target);
+        Godot.Input.ParseInputEvent(new InputEventKey { PhysicalKeycode = key.Value, Keycode = key.Value, Pressed = false });
         await Settle(3);
         return $"tapped key '{command.Target}'";
+    }
+
+    /// <summary>The first physical key <paramref name="action"/> is bound to, or null for an action
+    /// with no keyboard event at all (e.g. a future joypad-only binding) — every action this bridge is
+    /// ever asked to press today (cancel/interact/bellows/forge_strike/plunge/...) is keyboard-bound by
+    /// <c>TownInput</c>/<c>MinigameInput</c>, so null here means a genuinely unpressable request rather
+    /// than a gap this method should silently paper over.</summary>
+    private static Key? PhysicalKeyFor(string action)
+    {
+        foreach (var evt in InputMap.ActionGetEvents(action))
+        {
+            if (evt is InputEventKey key)
+            {
+                return key.PhysicalKeycode != Key.None ? key.PhysicalKeycode : key.Keycode;
+            }
+        }
+
+        return null;
     }
 
     private static string ApplyAdvance(MainUi ui)

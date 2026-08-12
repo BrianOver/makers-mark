@@ -143,7 +143,8 @@
 
 .PARAMETER Persona
     Which player this run is pretending to be: first-timer, veteran, speedrunner, completionist,
-    monkey, attached, or random (picks one of the six for this run). act.md carries the JSON contract
+    monkey, attached, pilot, or random (picks one of the seven, same as monkey/attached already do --
+    "random" has never excluded the model-free personas from its pool). act.md carries the JSON contract
     and movement rules that never change; prompts/agent-playtest/prompts/personas/<name>.md supplies
     the KNOWLEDGE and GOAL half (monkey is the one exception -- see below). One persona ("curious,
     slightly impatient") used to drive every run, which measured the same player thirty times over a
@@ -168,6 +169,14 @@
     match, injects one line into the next prompt and applies a major patience hit -- see
     tools/agent-playtest/attached.ps1. The attachment is INJECTED by the harness, not formed by the
     model; the honesty footer on an attached run says so explicitly.
+
+    pilot (S2, scripted-deep-pilot lane) is ALSO model-free, same short-circuit shape as monkey (no
+    ollama, no GPU gate, no act/judge prompt) -- but unlike monkey's uniform-random baseline, its
+    command logic (tools/agent-playtest/pilot.ps1) is a deliberately imperfect, habit-forming, curious
+    policy built to replicate a human across a long (150+ turn) unattended run and surface findings,
+    never to maximize turns/day count. It writes two extra findings.md sections no other persona
+    does -- "## Friction log" and "## Six decisions this run took" -- both also mirrored into
+    metrics.json for the S3 critic pass to consume. See pilot.ps1's own header for the full design.
 
 .PARAMETER Seed
     Seeds -Persona monkey's uniform-random command stream (System.Random). The SAME seed against the
@@ -246,6 +255,10 @@ param(
 . (Join-Path $PSScriptRoot 'agent-playtest\temperament.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\monkey.ps1')
 . (Join-Path $PSScriptRoot 'agent-playtest\attached.ps1')
+# S2 (scripted-deep-pilot lane): pilot.ps1 owns the model-free, human-shaped policy's own command
+# logic -- see its own header. Dot-sourced alongside monkey.ps1 for the same reason (no Godot/ollama/
+# VRAM needed to test it standalone).
+. (Join-Path $PSScriptRoot 'agent-playtest\pilot.ps1')
 # W5 (docs/plans/2026-08-10-002): scenario cards -- "did this ONE named behaviour work", answered
 # with quotes. Pure parser + verdict logic; see its own header for the card format.
 . (Join-Path $PSScriptRoot 'agent-playtest\scenario.ps1')
@@ -290,6 +303,10 @@ Say ('persona: ' + $personaName + ' (requested: ' + $Persona + ')')
 # meter) can branch on it without re-deriving $personaName -eq 'monkey' at each site.
 $isMonkey = ($personaName -eq 'monkey')
 $isAttached = ($personaName -eq 'attached')
+# S2: pilot is model-free like monkey (skips the GPU gate, act/judge prompt assembly, and the
+# temperament meter identically) -- see every isMonkey-adjacent site below, each amended to also
+# check isPilot rather than growing a parallel set of branches.
+$isPilot = ($personaName -eq 'pilot')
 
 # U2 (playtest-finishes wave): the eyes/brain residency decision, made once, here -- see this file's
 # own .PARAMETER BrainModel doc and model-call.ps1's Get-ModelResidencyPlan for the VRAM math and the
@@ -327,6 +344,9 @@ if ($Scenario) {
     if ($isMonkey) {
         Die @('-Scenario and -Persona monkey cannot be combined -- monkey never calls a model (ruling 9), and a scenario needs both a real act loop and a real judge pass.')
     }
+    if ($isPilot) {
+        Die @('-Scenario and -Persona pilot cannot be combined -- pilot never calls a model (S2, same as monkey), and a scenario needs both a real act loop and a real judge pass.')
+    }
 }
 
 # Ruling 4: monkey defaults -FrameEvery to 25, UNLESS the caller passed their own value explicitly --
@@ -336,12 +356,18 @@ if ($isMonkey -and -not $PSBoundParameters.ContainsKey('FrameEvery')) {
     $FrameEvery = 25
     Say 'monkey default: -FrameEvery 25 (ruling 4 -- ~134 KB/frame x 400 turns would be 54 MB nobody reviews)'
 }
+# S2: pilot runs are long by design (150+ turns for the day-11 floor) -- same disk-budget reasoning
+# as monkey's own default above, same escape hatch (an explicit -FrameEvery still wins).
+if ($isPilot -and -not $PSBoundParameters.ContainsKey('FrameEvery')) {
+    $FrameEvery = 25
+    Say 'pilot default: -FrameEvery 25 (same disk-budget reasoning as monkey''s ruling 4)'
+}
 
 # W4: the one global temperament clock (ruling 8) -- never for Scripted (no persona in the loop at
 # all) or monkey (ruling 9: it cannot get frustrated, it runs to budget regardless). A persona file's
 # own front-matter (personas.ps1's Split-PersonaFrontMatter) may scale only the START value.
 $temperamentMeter = $null
-if (-not $Scripted -and -not $isMonkey) {
+if (-not $Scripted -and -not $isMonkey -and -not $isPilot) {
     $patienceMultiplier = Get-PersonaPatienceMultiplier -PersonaName $personaName `
         -PersonasDir (Join-Path $PSScriptRoot 'agent-playtest\prompts\personas')
     $temperamentMeter = New-TemperamentMeter -StartMultiplier $patienceMultiplier
@@ -353,6 +379,15 @@ if (-not $Scripted -and -not $isMonkey) {
 # turn would not be a seeded STREAM, just N independent single draws).
 $monkeyRandom = $null
 if ($isMonkey) { $monkeyRandom = New-Object System.Random($Seed) }
+
+# S2: pilot's own seeded PRNG (same reuse-across-the-whole-run contract as monkey's above) plus its
+# run-lifetime memory object (habit/curiosity/friction state -- see pilot.ps1's New-PilotMemory).
+$pilotRandom = $null
+$pilotMemory = $null
+if ($isPilot) {
+    $pilotRandom = New-Object System.Random($Seed)
+    $pilotMemory = New-PilotMemory
+}
 
 # JsonEsc/Build-ModelRequestBody/Get-LegalCommandFromReply now live in agent-playtest\model-call.ps1
 # (W1, docs/plans/2026-08-10-002) so tools/test-agent-playtest-modes.ps1 can prove the request body and
@@ -433,6 +468,18 @@ if ($RepoRoot -ieq 'C:\Code\Game') {
 
 if (-not $OutDir) { $OutDir = Join-Path $RepoRoot '.claude\agent-playtest' }
 if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir -Force | Out-Null }
+# fix/pilot-finds-its-way: an explicit -OutDir passed as a RELATIVE path used to break the file
+# channel silently. This script's own cwd (repo root, wherever it was invoked from) and the spawned
+# Godot child's cwd (--path godot, below -- Godot changes its working directory to match) resolve the
+# SAME relative string against two DIFFERENT bases. The driver watched
+# <caller's cwd>/<OutDir>/state.json forever while the client wrote godot/<OutDir>/state.json --
+# "AGENT-PLAYTEST REFUSED: client wrote no state" is exactly what a perfectly healthy client produces
+# under that mismatch (measured directly: state.json really was on disk, just under
+# godot/.claude/<OutDir>/). The default (-OutDir omitted) never hit this, because $RepoRoot above is
+# already absolute -- only an explicit relative value could collide. Resolving once, here, removes
+# the ambiguity for both sides: $env:AGENT_PLAYTEST_DIR below carries the same absolute string the
+# client receives, so there is only one directory either process could mean.
+$OutDir = (Resolve-Path $OutDir).Path
 
 $statePath   = Join-Path $OutDir 'state.json'
 $cmdPath     = Join-Path $OutDir 'command.json'
@@ -489,6 +536,8 @@ New-Item -ItemType Directory -Path $framesDir -Force | Out-Null
 # is no model in the loop at all, so there is nothing to check VRAM for.
 if ($isMonkey) {
     Say 'monkey: skipping the GPU gate and ollama warm-up entirely (ruling 9 -- no model in the loop)'
+} elseif ($isPilot) {
+    Say 'pilot: skipping the GPU gate and ollama warm-up entirely (S2 -- model-free, same as monkey)'
 } elseif (-not $Scripted) {
     $smi = & nvidia-smi --query-gpu=memory.total,memory.used,temperature.gpu --format=csv,noheader,nounits 2>&1
     if ($LASTEXITCODE -ne 0) {
@@ -596,7 +645,18 @@ Say ('launching client (out: ' + $OutDir + ', playtest log: ' + $playtestLogPath
 # The SCENE must be named explicitly. `--path godot` alone boots the game's main scene, so the
 # bridge never runs and the driver waits out its timeout on a client that was never asked to play --
 # measured on the first scripted run, which sat for 90s and then reported "scripted run complete".
-$proc = Start-Process -FilePath $godot -ArgumentList @('--path', (Join-Path $RepoRoot 'godot'), 'res://agentplaytest.tscn') -PassThru
+#
+# fix/pilot-finds-its-way: --disable-vsync. Measured 2026-08-11 on this exact machine with an
+# unattended/unfocused desktop session: the client printed "[MainUi] campaign started" and then never
+# wrote state.json at all, for 240s+ -- alive (memory flat, no crash), not slow. Killing it and
+# launching the SAME scene by hand with --disable-vsync produced state.json inside 30s. Vulkan
+# Forward+'s present call was blocking on a compositor vsync signal this session's window station
+# never delivered (no active foreground/composited desktop), which stalls the WHOLE single-threaded
+# main loop -- ProcessFrame signals never fire, so even AgentPlaytestBridge's own Settle() calls never
+# return. An automated, unattended tool cannot depend on a human being logged in and watching the
+# screen; disabling vsync costs nothing for a client nobody is meant to be looking at frame-perfectly
+# anyway (this tool already runs silenced -- DevToolAudio.Silence -- for the same "unattended" reason).
+$proc = Start-Process -FilePath $godot -ArgumentList @('--path', (Join-Path $RepoRoot 'godot'), 'res://agentplaytest.tscn', '--disable-vsync') -PassThru
 
 # Fixed command sequence for -Scripted: prove the channel end to end with no model. Deliberately
 # includes an illegal press so the refusal path is exercised on every scripted run.
@@ -712,6 +772,8 @@ $diffScopeInfo = $null
 $actionSchemaJson = ''
 if ($isMonkey) {
     Say 'monkey: skipping act-prompt/schema/judge-prompt assembly entirely (ruling 9 -- no model call ever reads them)'
+} elseif ($isPilot) {
+    Say 'pilot: skipping act-prompt/schema/judge-prompt assembly entirely (S2 -- model-free, same as monkey)'
 } elseif (-not $Scripted) {
     # W1: JSON-schema constrained decoding on every act call (never the warm-up or judge call -- see
     # Invoke-Model's own temperature note). Read once, trimmed to one compact blob so it splices
@@ -881,6 +943,11 @@ try {
             # built from THIS turn's enabled controls / canMove, never from a fixed vocabulary), so
             # there is no legality re-check, no attempts loop, and no refusal path here at all.
             $command = Get-MonkeyCommand -State $state -Random $monkeyRandom
+        } elseif ($isPilot) {
+            # S2: the human-shaped scripted policy -- legal by construction the same way monkey's
+            # is (every candidate pilot.ps1 builds comes from THIS turn's own enabled controls/
+            # nearby/canMove), so no legality re-check or refusal-retry loop here either.
+            $command = Get-PilotCommand -State $state -Memory $pilotMemory -Random $pilotRandom
         } elseif ($scenarioCard -and ($scenarioSetupIndex -lt @($scenarioCard.Setup.Commands).Count) -and
                   ([string]$state.beat -ne 'VigilStop')) {
             # W5, ruling 3: Setup may be blind; play may not. Replayed through the SAME plumbing
@@ -1230,6 +1297,47 @@ Say ('coverage: ' + $coverageReport.OverallTouched + ' of ' + $coverageReport.Ov
 # $backendSummary (already computed) -- no model, no Godot.
 $metricsSummary = Get-MetricsSummary -TurnRecords @($turnRecords) -PreRefusals @($preRefusals) -BackendSummary $backendSummary `
     -PatienceMode $PatienceMode -WouldHaveQuitMarkers @($wouldHaveQuitMarkers)
+# S2: pilot's own machine-readable friction log + six-decisions ledger, folded into the SAME
+# metrics.json every persona already writes -- so the S3 critic pass and the existing report
+# pipeline consume it unchanged, per the brief's own artifact-shape requirement. $null/empty for
+# every other persona (they never build a $pilotMemory at all).
+if ($isPilot) {
+    # Owner steer (2026-08-11), kind 5 INVISIBLE STATE CHANGE: "something changed in the backend log
+    # (playtest-log.jsonl eventTypes) with no corresponding change in visible screen text." pilot.ps1's
+    # own per-turn decision loop never sees the backend log at all (only $State, the same digest a
+    # human reading the screen would have) -- this can only be checked here, post-run, cross-
+    # referencing $backendSummary.Timeline (each tick's day/eventTypes) against turnlog.md's own
+    # screen dumps (read fresh, not via the LATER $fullLog -- that is not built yet at this point in
+    # the script, and this must run BEFORE metrics.json is written a few lines down so the finding
+    # actually lands in the SAME artifact the rest of the friction log does).
+    #
+    # Day-granularity, not per-event -- a real narrated event on a day makes that day's ticker grow at
+    # least one "Day N:" bullet, so checking for the BULLET rather than matching each eventType name to
+    # its own prose (ItemSold -> "sold to", CommissionPosted -> "wants", ...) avoids a fragile,
+    # possibly-wrong mapping table while still catching the case the owner named: a whole day's worth
+    # of recorded events with zero player-visible trace anywhere in the run.
+    $turnLogForCrossref = ''
+    if (Test-Path $turnlogPath) { $turnLogForCrossref = Get-Content $turnlogPath -Raw }
+    if ($backendSummary.Available -and $turnLogForCrossref) {
+        $daysWithEvents = @($backendSummary.Timeline | Where-Object { @($_.EventTypes).Count -gt 0 } |
+            ForEach-Object { [int]$_.Day } | Sort-Object -Unique)
+        foreach ($eventDay in $daysWithEvents) {
+            $dayBullet = 'Day ' + $eventDay + ':'
+            if (-not $turnLogForCrossref.Contains($dayBullet)) {
+                $typesThatDay = @($backendSummary.Timeline | Where-Object { [int]$_.Day -eq $eventDay } |
+                    ForEach-Object { $_.EventTypes } | Select-Object -Unique)
+                Add-PilotFriction -Memory $pilotMemory -Turn -1 -Day $eventDay -Phase '(whole day, cross-referenced post-run)' `
+                    -Category 'invisible-state-change' -Trying 'read this day''s own events off the screen' `
+                    -Detail ('backend log recorded ' + ($typesThatDay -join ', ') + ' on day ' + $eventDay +
+                        ' but no "' + $dayBullet + '" line appears anywhere in this run''s turn log -- ' +
+                        'candidate for an event the player was never told about (day-granularity check, ' +
+                        'not proof a SPECIFIC event went unnarrated if others that day did)')
+            }
+        }
+    }
+    $metricsSummary | Add-Member -NotePropertyName FrictionLog -NotePropertyValue @($pilotMemory.FrictionLog)
+    $metricsSummary | Add-Member -NotePropertyName SixDecisions -NotePropertyValue @($pilotMemory.SixDecisions)
+}
 $metricsMarkdown = Format-MetricsMarkdown -Metrics $metricsSummary
 ($metricsSummary | ConvertTo-Json -Depth 8) | Set-Content -Path $metricsJsonPath -Encoding utf8
 Say ('metrics: ' + @($metricsSummary.PerDayEntropy).Count + ' day(s) of entropy data, product-sentence fired: ' +
@@ -1512,6 +1620,44 @@ if ($isMonkey) {
     # any of that work.
     Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + $temperamentSection + $scenarioSection + @('', '---', '', 'Monkey run -- ruling 9: uniform-random input is noise by construction, so no judge pass was made. The mechanical sections above (backend/metrics/coverage/dead-verb) are the full evidence this run produces.', '', '## Turn log', '', $fullLog) + $honestyFooterLines)
     Say ('monkey run complete, ' + $turn + ' turns (seed ' + $Seed + '). Mechanical-only findings: ' + $findingsPath)
+    exit 0
+}
+
+if ($isPilot) {
+    # S2: pilot skips the judge pass too -- its OWN scripted policy already names what it was
+    # trying to do and why (SixDecisions/FrictionLog), so there is no model narration to add; the
+    # mechanical sections plus these two pilot-only sections are the full evidence this run produces.
+    $frictionLines = @('## Friction log', '', ('Candidate-shaped, never asserted as fact -- same discipline the dead-verb ' +
+        'detector above uses. Each entry names the turn/day/phase, what the pilot was TRYING to do, and quotes ' +
+        'the on-screen text or refusal copy verbatim (never paraphrased).'), '')
+    $frictionEntries = @($pilotMemory.FrictionLog)
+    if ($frictionEntries.Count -eq 0) {
+        $frictionLines += 'no friction entries this run.'
+    } else {
+        foreach ($f in $frictionEntries) {
+            $frictionLines += ('- turn ' + $f.Turn + ', day ' + $f.Day + ', ' + $f.Phase + ', [' + $f.Category + '] trying: ' +
+                $f.Trying + ' -- ' + $f.Detail)
+        }
+    }
+    $frictionSection = @('', '---', '') + $frictionLines
+
+    $decisionLines = @('## Six decisions this run took', '', ('CLAUDE.md names six decisions the game is actually made ' +
+        'of. Each resolution below is a seeded coin flip (pilot.ps1''s own named probabilities), never always the ' +
+        'same side -- a run where one always resolves the same way tested one player, not a person.'), '')
+    $decisionEntries = @($pilotMemory.SixDecisions)
+    if ($decisionEntries.Count -eq 0) {
+        $decisionLines += 'no decision points of this shape came up this run.'
+    } else {
+        $byDecision = $decisionEntries | Group-Object -Property Decision
+        foreach ($group in $byDecision) {
+            $choices = $group.Group | Group-Object -Property Choice | ForEach-Object { $_.Name + ' x' + $_.Count }
+            $decisionLines += ('- ' + $group.Name + ': ' + ($choices -join ', ') + ' (' + $group.Count + ' total)')
+        }
+    }
+    $decisionSection = @('', '---', '') + $decisionLines
+
+    Set-Content -Path $findingsPath -Encoding utf8 -Value ($header + $backendSection + $metricsSection + $deadVerbSection + $frictionSection + $decisionSection + $temperamentSection + $scenarioSection + @('', '---', '', 'Pilot run (S2, scripted-deep-pilot lane) -- a scripted, model-free, human-shaped policy played this session; no judge pass was made (there is no model narration to check for fabrication). The mechanical sections plus the Friction log and Six-decisions sections above are the full evidence this run produces.', '', '## Turn log', '', $fullLog) + $honestyFooterLines)
+    Say ('pilot run complete, ' + $turn + ' turns (seed ' + $Seed + '), ' + $frictionEntries.Count + ' friction entr(y/ies), ' + $decisionEntries.Count + ' decision(s). Findings: ' + $findingsPath)
     exit 0
 }
 
