@@ -32,6 +32,17 @@ public partial class WorldInput2D : Node2D
     /// has no panel state of its own to react to the key press.</summary>
     public event Action? CancelRequested;
 
+    /// <summary>Raised when "interact" (E) is pressed while <see cref="ActiveTarget"/> is null — a
+    /// dead press used to reach <see cref="Building2D.RaisePick"/> and produce nothing: no sound, no
+    /// prompt, no screen change (see <c>WorldInput2DNoTargetInteractTests</c>, filed against a
+    /// verified playtest log with seven of these in a row). The carried string is the one-line toast
+    /// <c>MainUi</c> shows via its existing <c>ShowBellToast</c> — naming the nearest station when one
+    /// exists (honest, actionable: "get closer"), or a generic miss when the room/town has none at
+    /// all. Fires at most once per keypress (<c>IsActionJustPressed</c>, not held-key polling), so it
+    /// cannot nag a held key, and never fires while a real target is in range — that path is
+    /// unchanged.</summary>
+    public event Action<string>? NoTargetInteract;
+
     private Node2D _player = null!;
     private IReadOnlyList<Building2D> _buildings = Array.Empty<Building2D>();
 
@@ -54,9 +65,16 @@ public partial class WorldInput2D : Node2D
 
         SetTarget(FindNearestOverlapping());
 
-        if (ActiveTarget != null && Input.IsActionJustPressed("interact"))
+        if (Input.IsActionJustPressed("interact"))
         {
-            ActiveTarget.RaisePick();
+            if (ActiveTarget != null)
+            {
+                ActiveTarget.RaisePick();
+            }
+            else
+            {
+                NoTargetInteract?.Invoke(NoTargetMessage());
+            }
         }
 
         if (Input.IsActionJustPressed("cancel"))
@@ -91,6 +109,45 @@ public partial class WorldInput2D : Node2D
         }
 
         return nearest;
+    }
+
+    /// <summary>The nearest building/station by raw distance, regardless of whether the player's
+    /// body currently overlaps its <see cref="Building2D.Interact"/> zone — used only to word <see
+    /// cref="NoTargetMessage"/>, never to decide whether E does anything (that stays exactly <see
+    /// cref="FindNearestOverlapping"/>, unchanged).</summary>
+    private Building2D? FindNearestAny()
+    {
+        if (_player == null || _buildings.Count == 0)
+        {
+            return null;
+        }
+
+        Building2D? nearest = null;
+        var nearestDistance = float.MaxValue;
+
+        foreach (var building in _buildings)
+        {
+            var distance = building.GlobalPosition.DistanceTo(_player.GlobalPosition);
+            if (distance < nearestDistance)
+            {
+                nearestDistance = distance;
+                nearest = building;
+            }
+        }
+
+        return nearest;
+    }
+
+    /// <summary>Wording for a dead "interact" press — names the nearest station so the player
+    /// learns something true and actionable ("closer to what?"), or a generic miss when the room has
+    /// no stations to name at all (empty <see cref="_buildings"/>; not reachable from the town or any
+    /// real interior, kept only so this never throws on an unconfigured node).</summary>
+    private string NoTargetMessage()
+    {
+        var nearest = FindNearestAny();
+        return nearest is null
+            ? "Nothing to interact with here."
+            : $"Too far from the {nearest.NameLabel.Text} — move closer.";
     }
 
     /// <summary>Sets the active target directly (deterministic test seam, and the same path the

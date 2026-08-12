@@ -164,6 +164,13 @@ public partial class Town2D : Control
     /// <c>OnInteriorHotspotActivated</c> or shows an honest flavor toast.</summary>
     public event Action<InteriorLayout2D.StationSpec>? StationActivated;
 
+    /// <summary>Re-emits <see cref="WorldInput2D.NoTargetInteract"/> — an "interact" (E) press with no
+    /// station in range, carrying the one-line honest message to show. <c>MainUi</c> subscribes this
+    /// onto its own <c>ShowBellToast</c>, the same reused rejection-toast banner every other transient
+    /// one-liner in that class shows (mirrors <see cref="StationActivated"/>'s flavor-toast re-emit,
+    /// one level up).</summary>
+    public event Action<string>? NoTargetInteract;
+
     /// <summary>U4 (painted-interiors plan): raised at the END of <see cref="ExitInterior"/> — the
     /// ONE method both room-exit paths (Esc, and the door <see cref="InteriorRoom2D.ExitZone"/>)
     /// already funnel through, so this fires regardless of which one the player used. Replaces the
@@ -497,6 +504,7 @@ public partial class Town2D : Control
         WorldInputNode = new WorldInput2D { Name = "WorldInput2D" };
         World.AddChild(WorldInputNode);
         WorldInputNode.Configure(Player, _buildingsByKey.Values.ToList());
+        WorldInputNode.NoTargetInteract += msg => NoTargetInteract?.Invoke(msg);
 
         WireForgeFx();
         WireAmbientLife();
