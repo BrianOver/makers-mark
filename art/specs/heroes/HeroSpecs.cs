@@ -40,6 +40,11 @@ public sealed class HeroSpecs : IAssetModule
             Subject: "a single armored warrior figure standing, tower shield and blade, "
                 + "full body, front three-quarter view, clear readable silhouette",
             PromptExtra: NeutralBase,
+            // Parity pass (character-art-quality wave, 2026-08-11): the three original V3 figures
+            // predate NoConceptSheet (it was written for the LW-art trio's escalation below) but
+            // draw from the same SDXL checkpoint/attractor pool, so hardening them the same way
+            // costs nothing and closes the one real spec gap between the two halves of the roster.
+            NegativeExtra: NoConceptSheet,
             NeutralBaseTint: true,
             ClassId: "vanguard",
             NormalMap: true,
@@ -53,6 +58,7 @@ public sealed class HeroSpecs : IAssetModule
             Subject: "a single lean duelist figure standing, twin daggers, poised stance, "
                 + "full body, front three-quarter view, clear readable silhouette",
             PromptExtra: NeutralBase,
+            NegativeExtra: NoConceptSheet,
             NeutralBaseTint: true,
             ClassId: "striker",
             NormalMap: true,
@@ -66,6 +72,7 @@ public sealed class HeroSpecs : IAssetModule
             Subject: "a single robed spellcaster figure standing, staff, hood, "
                 + "full body, front three-quarter view, clear readable silhouette",
             PromptExtra: NeutralBase,
+            NegativeExtra: NoConceptSheet,
             NeutralBaseTint: true,
             ClassId: "mystic",
             NormalMap: true,
