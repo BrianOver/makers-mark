@@ -2424,6 +2424,27 @@ if ($forgeCmdHot) {
     $parsedForgeHot = $forgeCmdHot | ConvertFrom-Json
     Check ($parsedForgeHot.action -eq 'key' -and $parsedForgeHot.target -eq 'forge_strike') 'idle with hot heat must strike'
 }
+
+# fix/the-pilot-can-finish-a-craft: the OTHER two branches of the same four-way switch -- idle-and-
+# cold (must START pumping) and pumping-and-hot-enough (must STOP pumping) -- were untested before
+# this. These are exactly the two moments AgentPlaytestBridge.ApplyKey's tap-to-toggle latch
+# (ForgeMinigame's C3 escape hatch) gets exercised for real; a live 400-turn pilot run (seed 1,
+# this branch) measured the tap latching correctly and heat climbing ~13 permille/turn while
+# pumping, landing 10 real strikes -- so the bridge mechanism is proven sound. This pins the POLICY
+# side of that same story: the pilot must actually ASK for a pump start/stop at the right heat, not
+# just handle the no-op branches already covered above.
+$forgeIdleColdState = [pscustomobject]@{ screenText = @('Strike 0/21 -- Heat 100 -- idle') }
+$forgeCmdCold = Get-PilotForgeMinigameCommand -State $forgeIdleColdState -Memory (New-PilotMemory) -Random (New-Object System.Random(1))
+if ($forgeCmdCold) {
+    $parsedForgeCold = $forgeCmdCold | ConvertFrom-Json
+    Check ($parsedForgeCold.action -eq 'key' -and $parsedForgeCold.target -eq 'bellows') 'idle with cold heat (below the strike floor) must start pumping, not strike into a wasted blow'
+}
+$forgePumpingHotEnoughState = [pscustomobject]@{ screenText = @('Strike 5/21 -- Heat 800 -- pumping') }
+$forgeCmdStopPump = Get-PilotForgeMinigameCommand -State $forgePumpingHotEnoughState -Memory (New-PilotMemory) -Random (New-Object System.Random(1))
+if ($forgeCmdStopPump) {
+    $parsedForgeStopPump = $forgeCmdStopPump | ConvertFrom-Json
+    Check ($parsedForgeStopPump.action -eq 'key' -and $parsedForgeStopPump.target -eq 'bellows') 'pumping past the ceiling must tap bellows again to stop, not keep wasting turns pumping higher'
+}
 $quenchPlungeNowState = [pscustomobject]@{ screenText = @('Heat 512 (target 500 +/-140) -- PLUNGE NOW') }
 $quenchCmd = Get-PilotForgeMinigameCommand -State $quenchPlungeNowState -Memory (New-PilotMemory) -Random (New-Object System.Random(1))
 Check ($null -ne $quenchCmd) 'a Heat/target readout must be recognized as an open Act 2 (quench) overlay'
