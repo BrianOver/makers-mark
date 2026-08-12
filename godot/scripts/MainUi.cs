@@ -678,6 +678,15 @@ public partial class MainUi : Control
                     // passes exactly this as campaignId) — one notion of "which campaign", not two.
                     Audio?.SpeakNarrator(
                         trigger, Adapter.CurrentState.Rng.Inc, (ulong)_pendingLedgerDay);
+
+                    // U-audio-3: a hero's death gets its own quiet toll, distinct from the ordinary
+                    // day's Bell — see DeathNoticeCueFor's own doc. Fires alongside the narrator
+                    // line, at the same once-per-reveal moment, never on its own separate gate.
+                    if (DeathNoticeCueFor(trigger) is { } cue)
+                    {
+                        Audio?.Play(cue);
+                    }
+
                     _pendingLedgerVoice = null;
                 }
             }
@@ -2850,6 +2859,24 @@ public partial class MainUi : Control
         "Bounties" => Cue.EnterNoticeboard,
         _ => Cue.PanelOpen,
     };
+
+    /// <summary>
+    /// U-audio-3 (verbs that resolved silently): which SFX cue, if any, marks the ledger-reveal
+    /// narrator trigger picked by <see cref="NarratorVoiceDirector.SelectForNight"/>. Before this
+    /// unit the Evening reveal of a hero who did not come back shared <see cref="Cue.Bell"/> with
+    /// every other night's ending — the same generic toll for "the party is home safe" and "one of
+    /// them is not." Only <see cref="NarratorVoiceDirector.Trigger.DeathEpitaph"/> earns a distinct
+    /// cue: a proven save or a killing blow are good news, and good news does not need a bell of
+    /// its own on top of the narrator already speaking.
+    ///
+    /// <para>Public and pure so a test can pin the mapping directly — mirrors
+    /// <see cref="Audio.AudioDirector.LoadComposedTrackForCensus"/>'s own "test entry point into
+    /// production's real decision" contract, applied here instead of adding a fragile end-to-end
+    /// scenario that would need to script an entire expedition to a death just to prove one
+    /// <c>switch</c> arm.</para>
+    /// </summary>
+    public static Cue? DeathNoticeCueFor(NarratorVoiceDirector.Trigger trigger) =>
+        trigger == NarratorVoiceDirector.Trigger.DeathEpitaph ? Cue.DeathToll : null;
 
     /// <summary>The drawer-hosted panel registered under <paramref name="id"/> — "Town" is not a
     /// drawer panel (the world is the permanent base, not routed through here).</summary>

@@ -6,6 +6,7 @@ using GameSim.Expedition;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
+using GodotClient.Audio;
 using GodotClient.Panels;
 using GodotClient.Ui;
 using static GdUnit4.Assertions;
@@ -90,6 +91,40 @@ public class BountyPanelTests
             AssertThat(pending.Count).IsEqual(1);
             AssertThat(pending[0].TargetFloor).IsEqual(PostFloor);
             AssertThat(pending[0].RewardGold).IsEqual(PostReward);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// U-audio-3 (verbs that resolved silently): <see cref="GodotClient.Audio.Cue.BountyPost"/> has
+    /// existed in <c>SfxLibrary</c> since the SFX set shipped but nothing ever called <c>Play()</c>
+    /// with it — the commission channel's own action nailed a poster to the board and made no sound
+    /// at all. Mirrors <c>ImmediateActionsDoNotReplayThePhaseTests</c>' own technique (a real button
+    /// press, then read <c>AudioDirector.RecentCues</c>) rather than trusting the queued action alone.
+    /// </summary>
+    [TestCase]
+    public void PostButton_PlaysTheBountyPostCue()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+            audio!.ClearRecentCues();
+
+            Find<MineCrossSection>(ui.Bounties, "BountyFloor").SelectFloor(PostFloor);
+            Find<CoinStack>(ui.Bounties, "BountyReward").SetValue(PostReward);
+            PressEnabled(ui.Bounties, "PostBounty");
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"Posting a bounty played [{string.Join(", ", audio.RecentCues)}] — BountyPost was "
+                    + "never among them. The commission channel's own action must be as audible as "
+                    + "stocking a shelf (Cue.Shelve) or sending the party off (Cue.PartyDepart).")
+                .Contains(Cue.BountyPost);
         }
         finally
         {

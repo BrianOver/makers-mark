@@ -210,6 +210,12 @@ public partial class BountyPanel : SimPanel
         var floor = _floorSection.SelectedFloor;
         var reward = _rewardStack.Value;
         Adapter.Queue(new PostBountyAction(floor, reward));
+        // U-audio-3 (verbs that resolved silently): Cue.BountyPost has existed since the SFX set
+        // shipped but nothing ever called Play() with it — the commission channel's own action
+        // nailed a poster to the board and made no sound at all. Mirrors ShopPanel.PlaceOnShelf's
+        // idiom exactly: queue, then play, unconditionally (the button is only ever enabled when
+        // the action is legal).
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.BountyPost);
         _feedback!.Text = $"queued: bounty — clear floor {floor} for {reward}g (gold escrowed on apply)";
     }
 

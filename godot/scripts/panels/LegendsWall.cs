@@ -138,7 +138,16 @@ public partial class LegendsWall : Control
                 var honorAction = new HonorMemorialAction(hero);
                 var honorLegal = ActionLegality.IsLegal(state, honorAction, state.Phase);
                 var honor = new Button { Name = $"Honor_{hero.Value}", Text = "Honor" };
-                honor.Pressed += () => Adapter?.Queue(new HonorMemorialAction(hero));
+                honor.Pressed += () =>
+                {
+                    Adapter?.Queue(new HonorMemorialAction(hero));
+                    // U-audio-3 (verbs that resolved silently): the farewell rite — the one action
+                    // this whole panel exists to offer — had no acknowledgement of any kind beyond
+                    // the row re-rendering "— honored" on the next refresh. Cue.MemorialHonor is
+                    // deliberately not Cue.Bell: this is grief acknowledged once, not the day
+                    // advancing for everyone.
+                    GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.MemorialHonor);
+                };
                 honor.Disabled = Adapter is null || !honorLegal;
                 honor.TooltipText = Adapter is null
                     ? string.Empty
