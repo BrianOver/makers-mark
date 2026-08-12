@@ -255,7 +255,9 @@ TORSO_ROWS = 26      # 19-44
 LEGS_ROWS = 19       # 45-63
 assert MARGIN_ROWS + HEAD_ROWS + TORSO_ROWS + LEGS_ROWS == HEIGHT
 
-# First row of the legs/hem — TownSpriteArtTests' LegsTopRow pins this exact number.
+# First row of the legs/hem on THIS (authoring-resolution) canvas. The SHIPPED asset is halved by
+# rarity_downsample_2x() below (see SHIPPED RESOLUTION note near main()) — TownSpriteArtTests'
+# LegsTopRow pins LEGS_TOP_ROW // 2 (22), the boundary as it actually lands in the committed PNG.
 LEGS_TOP_ROW = MARGIN_ROWS + HEAD_ROWS + TORSO_ROWS
 assert LEGS_TOP_ROW == 45
 
@@ -1124,6 +1126,115 @@ def die(message: str) -> None:
     raise SystemExit(1)
 
 
+# ── SHIPPED RESOLUTION (2026-08-12, asymmetric-decimation fix) ───────────────────────────────────
+# Every character sprite used to ship at this file's full authoring canvas (40x64 / 44x68) and get
+# halved at RUNTIME by TownLayout2D.CharacterSpriteScale=0.5 under a Nearest filter with mipmaps
+# off. That "2:1 decimation" was never clean: Nearest keeps exactly one column/row out of every
+# mirrored pair, chosen by pixel-grid alignment, not by the art — a bilaterally-symmetric silhouette
+# came out visibly lopsided on screen, and any single-pixel authored accent (a visor slit, a rune, a
+# coolant trace, a shield boss) was a coin flip to survive at all. Simulated with a real committed
+# sprite (PIL nearest-downscale, same math a GPU Nearest sampler does for an exact half-scale draw):
+# every mirror-symmetric, non-empty row broke symmetry after the "decimation", by up to 10 of 20
+# output columns.
+#
+# The fix moves the halving OFFLINE, into this generator, so the committed PNG already IS the
+# on-screen pixel grid and TownLayout2D.CharacterSpriteScale is 1.0 (a pure pass-through — no
+# runtime decimation is left to get wrong). `rarity_downsample_2x()` below does the halving with a
+# 2x2-block combine that is a pure function of each block's own pixel VALUES (plus a whole-image
+# frequency table) and never of pixel POSITION, which is what makes it provably safe for a mirror-
+# symmetric source: reflecting the source maps every block onto a value-identical mirror block, so
+# the same deterministic choice is made on both sides and the output is symmetric wherever the
+# input is. `_selftest_rarity_downsample_symmetry()` pins exactly that property.
+def rarity_downsample_2x(image: Image.Image) -> Image.Image:
+    """Halves `image` in both dimensions, tuned for flat-shaded pixel art rather than photographic
+    content. ALPHA is a plain box average of the 2x2 block (a smooth, symmetric silhouette edge).
+    RGB is deliberately NOT blended: a plain colour average dilutes a rare one-pixel accent (skin
+    hint, rune, visor slit, coolant trace) toward whichever colour shares its block, which is
+    almost always the far more common outline/base tone — measured on the real committed art, a
+    naive average crushed 3 of 6 hero classes' entire skin-tone region to zero exact-match pixels.
+    Instead, each opaque pixel in the block votes with its own colour, and the block keeps whichever
+    colour is globally RAREST in this image (ties broken by the RGBA tuple itself, so the pick is
+    fully deterministic) — the rare accent wins over the common fill whenever the two compete for
+    the same output pixel, and blocks that are already a single solid colour are untouched."""
+    width, height = image.size
+    if width % 2 != 0 or height % 2 != 0:
+        die(f"rarity_downsample_2x: {width}x{height} has an odd dimension, cannot halve exactly")
+
+    pixels = image.load()
+
+    freq: dict[tuple[int, int, int, int], int] = {}
+    for y in range(height):
+        for x in range(width):
+            pixel = pixels[x, y]
+            if pixel[3] == 0:
+                continue
+            freq[pixel] = freq.get(pixel, 0) + 1
+
+    new_width, new_height = width // 2, height // 2
+    out = Image.new("RGBA", (new_width, new_height), (0, 0, 0, 0))
+    out_pixels = out.load()
+    for by in range(new_height):
+        for bx in range(new_width):
+            block = [
+                pixels[2 * bx, 2 * by], pixels[2 * bx + 1, 2 * by],
+                pixels[2 * bx, 2 * by + 1], pixels[2 * bx + 1, 2 * by + 1],
+            ]
+            out_alpha = round(sum(p[3] for p in block) / 4)
+            opaque = {p for p in block if p[3] > 0}
+            if not opaque:
+                out_pixels[bx, by] = (0, 0, 0, 0)
+                continue
+            rarest = min(opaque, key=lambda c: (freq[c], c))
+            out_pixels[bx, by] = (rarest[0], rarest[1], rarest[2], out_alpha)
+
+    return out
+
+
+def _selftest_rarity_downsample_symmetry() -> None:
+    """Regression pin for the asymmetric-decimation bug: builds a synthetic 8x4 RGBA image whose
+    every row is an exact left/right mirror (including a rare one-pixel accent colour sandwiched
+    against a common fill, and a fully-transparent row), then asserts EVERY row of the 4x2
+    downsample output is also an exact mirror. Runs unconditionally on import — a future change to
+    rarity_downsample_2x that reintroduces position-dependent behaviour (e.g. swapping in a plain
+    left-to-right column pick) fails loudly here before it ever touches a hero sprite."""
+    common = (20, 15, 31, 255)   # a colour that dominates the image, like the outline tone
+    accent = (196, 148, 110, 255)  # a colour that appears once per mirrored side, like a skin hint
+    other = (110, 104, 128, 255)
+    transparent = (0, 0, 0, 0)
+
+    rows = [
+        [common, other, accent, common, common, accent, other, common],  # accent flanked by common
+        [common, common, common, common, common, common, common, common],  # solid block
+        [other, other, common, common, common, common, other, other],
+        [transparent] * 8,  # fully empty row must stay fully empty
+    ]
+    for row in rows:
+        assert row == row[::-1], f"selftest fixture row is not itself mirror-symmetric: {row}"
+
+    src = Image.new("RGBA", (8, 4), (0, 0, 0, 0))
+    src_pixels = src.load()
+    for y, row in enumerate(rows):
+        for x, color in enumerate(row):
+            src_pixels[x, y] = color
+
+    out = rarity_downsample_2x(src)
+    out_pixels = out.load()
+    for y in range(out.height):
+        out_row = [out_pixels[x, y] for x in range(out.width)]
+        assert out_row == out_row[::-1], (
+            f"rarity_downsample_2x broke mirror symmetry on selftest row {y}: {out_row} — this is "
+            "exactly the asymmetric-decimation bug the 2026-08-12 fix exists to prevent."
+        )
+
+    # The accent colour is globally rarer than `common`/`other` in this fixture (2 vs 8/4
+    # occurrences) and fully occupies its own 2x2 block (rows 0-1, cols 2-3 and cols 4-5 after
+    # mirroring) — it must survive the downsample exactly, not get diluted into a blend.
+    assert out_pixels[1, 0] == accent, f"accent colour did not survive the downsample: {out_pixels[1, 0]}"
+
+
+_selftest_rarity_downsample_symmetry()
+
+
 def render(grid: list[str], name: str, palette: dict[str, tuple[int, int, int, int]], width: int, height: int) -> Image.Image:
     """Rasterize one ASCII grid against `palette`. Validates shape loudly — a short row would
     silently shift every pixel after it, which is exactly the kind of defect a diff cannot show."""
@@ -1162,6 +1273,10 @@ def main() -> int:
         width = PLAYER_WIDTH if name.startswith("player_smith") else WIDTH
         height = PLAYER_HEIGHT if name.startswith("player_smith") else HEIGHT
         image = render(grid, name, palette, width, height)
+        # Halve to the actual on-screen resolution here, offline — see the SHIPPED RESOLUTION note
+        # above rarity_downsample_2x(). The committed PNG is this halved image, not the authoring
+        # canvas; TownLayout2D.CharacterSpriteScale draws it at 1.0, unchanged from here on.
+        image = rarity_downsample_2x(image)
         path = os.path.join(args.out, f"{name}.png")
 
         if args.check:
@@ -1175,7 +1290,7 @@ def main() -> int:
             continue
 
         image.save(path)
-        print(f"wrote {path} ({width}x{height})")
+        print(f"wrote {path} ({image.width}x{image.height})")
 
     if drift:
         for line in drift:
