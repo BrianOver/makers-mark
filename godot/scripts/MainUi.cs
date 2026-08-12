@@ -2343,6 +2343,11 @@ public partial class MainUi : Control
         // (Action/Focus/HoverLine/FlavorLine), so it routes through its own OnStationActivated
         // rather than straight onto OnInteriorHotspotActivated.
         Town.StationActivated += OnStationActivated;
+        // fix/pressing-E-at-nothing-says-something: a dead "interact" press (no station in range) used
+        // to produce nothing at all — no sound, no prompt, no screen change (verified-good playtest
+        // log, seven of these in one 700-turn run). Reuses the same rejection-toast banner every other
+        // transient one-liner in this class shows, exactly like OnStationActivated's flavor toast above.
+        Town.NoTargetInteract += ShowBellToast;
         // U4: replaces the deleted InteriorStage.Exited wiring — fires on EITHER room-exit path
         // (Esc or the door), re-syncing the engaged latch/deferred focus beat the same way every
         // other modal-close path already does (see Town2D.InteriorExited's own doc).
