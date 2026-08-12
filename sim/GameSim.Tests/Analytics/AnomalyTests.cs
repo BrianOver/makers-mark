@@ -240,4 +240,69 @@ public class AnomalyTests
         Assert.Contains("batch --seeds 1 --seed 10", rendered, StringComparison.Ordinal);
         Assert.Contains("docs/debugging.md", rendered, StringComparison.Ordinal);
     }
+
+    /// <summary>A batch export keeps simulating long after the campaign ends, and every rule used to
+    /// read those dead days. Measured on a real 20-seed sweep: 12 of 13 gold-mint-spike hits were
+    /// nothing but afterlife. The trailing window must stop where the game stops.</summary>
+    private static ImmutableList<GameEvent> EconomyBoomAfter(int fromDay, int throughDay, int perDay)
+    {
+        var events = HealthyBeats(throughDay).ToBuilder();
+        for (var day = 1; day <= throughDay; day++)
+        {
+            var gold = day >= fromDay ? perDay : 20;
+            events.Add(new LootIncomeReceived(new HeroId(1), gold) with
+            { Id = new EventId(900 + day), Day = day });
+        }
+
+        return events.ToImmutable();
+    }
+
+    [Fact]
+    public void PostEndingDays_AreNotMeasured()
+    {
+        // Campaign ends day 20; the export runs to day 100 with the economy exploding from day 60.
+        // Nobody plays days 21-100, so nothing about them is an anomaly.
+        var events = EconomyBoomAfter(fromDay: 60, throughDay: 100, perDay: 400).ToBuilder();
+        events.Add(new CampaignEnded(5, 1, 1, 30, 10, 1) with { Id = new EventId(2000), Day = 20 });
+
+        var run = Run(seed: 41, day: 101, events.ToImmutable());
+
+        Assert.Equal(20, Anomalies.PlayableHorizon(run));
+        Assert.DoesNotContain(Anomalies.Detect([run]), a => a.Rule == "gold-mint-spike");
+    }
+
+    [Fact]
+    public void RunThatNeverEnded_KeepsTheFullHorizon()
+    {
+        // Same boom, no ending event (an interactive export, or a sweep cut short): the rule must
+        // still fire. Clamping is about ignoring the afterlife, not about going quiet.
+        var run = Run(seed: 42, day: 101, EconomyBoomAfter(fromDay: 60, throughDay: 100, perDay: 400));
+
+        Assert.Equal(100, Anomalies.PlayableHorizon(run));
+        Assert.Contains(Anomalies.Detect([run]), a => a.Rule == "gold-mint-spike");
+    }
+
+    [Fact]
+    public void PostEndingDeaths_DoNotFeedTheDeathSpikeBaseline()
+    {
+        // Two runs end on day 12; one then racks up floor-4 deaths in its dead days. Neither the
+        // spike nor the baseline it would poison may see them.
+        static ChronicleData Ended(ulong seed, int deathsAfter)
+        {
+            var events = HealthyBeats(40).ToBuilder();
+            events.Add(new CampaignEnded(4, 0, 0, 40, 5, 0) with { Id = new EventId(3000), Day = 12 });
+            for (var i = 0; i < deathsAfter; i++)
+            {
+                events.Add(new HeroDied(
+                    new HeroId(50 + i), Floor: 4, "afterlife", new GearSet(null, null, null)) with
+                { Id = new EventId(3100 + i), Day = 30 + i });
+            }
+
+            return Run(seed, day: 41, events.ToImmutable());
+        }
+
+        var anomalies = Anomalies.Detect([Ended(51, deathsAfter: 9), Ended(52, deathsAfter: 0)]);
+
+        Assert.DoesNotContain(anomalies, a => a.Rule == "death-spike");
+    }
 }
