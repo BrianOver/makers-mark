@@ -2221,12 +2221,133 @@ $pilotRefusalState = [pscustomobject]@{
     screenText = @('Nothing to stock.'); controls = @(); nearby = @()
 }
 Get-PilotCommand -State $pilotRefusalState -Memory $pilotRefusalMemory -Random (New-Object System.Random(1)) | Out-Null
-Check ($pilotRefusalMemory.FrictionLog.Count -eq 1) ('a refused: lastOutcome must produce exactly one friction entry, got ' + $pilotRefusalMemory.FrictionLog.Count)
-if ($pilotRefusalMemory.FrictionLog.Count -eq 1) {
+# Owner steer (2026-08-11), kind 4 UNREADABLE REFUSAL: "(no reason on the tooltip)" is exactly the
+# shape that must ALSO produce a second, filtered entry -- a refusal with no player-actionable reason.
+Check ($pilotRefusalMemory.FrictionLog.Count -eq 2) ('a refused: lastOutcome with no tooltip reason must produce exactly two friction entries (refused + unreadable-refusal), got ' + $pilotRefusalMemory.FrictionLog.Count)
+if ($pilotRefusalMemory.FrictionLog.Count -ge 1) {
     $firstFriction = $pilotRefusalMemory.FrictionLog[0]
     Check ($firstFriction.Category -eq 'refused') ('the friction entry''s category must be "refused", got [' + $firstFriction.Category + ']')
     Check ($firstFriction.Detail -eq $pilotRefusalState.lastOutcome) 'the friction entry must quote lastOutcome VERBATIM, never paraphrased'
     Check ($firstFriction.Trying -eq 'pilot: stock the crafted item') 'the friction entry must carry what the pilot was trying to do (PendingIntent from the prior turn)'
+}
+if ($pilotRefusalMemory.FrictionLog.Count -ge 2) {
+    $secondFriction = $pilotRefusalMemory.FrictionLog[1]
+    Check ($secondFriction.Category -eq 'unreadable-refusal') ('the second friction entry''s category must be "unreadable-refusal", got [' + $secondFriction.Category + ']')
+    Check ($secondFriction.Detail.Contains($pilotRefusalState.lastOutcome)) 'the unreadable-refusal entry must quote the refusal verbatim too'
+}
+
+# A GAME-FACING reason (ForgePanel's own Gate() copy, via ApplyPress's "'{target}' is disabled --
+# {reason}" shape) must NOT be flagged unreadable -- only the harness's own generic fallbacks should be.
+$pilotReadableRefusalMemory = New-PilotMemory
+$pilotReadableRefusalState = [pscustomobject]@{
+    turn = 5; day = 2; phase = 'Morning'; location = 'panel:Forge'; canMove = $true
+    lastOutcome = "refused: 'BuyMat_iron' is disabled -- You can't afford that yet."
+    screenText = @('iron 8g'); controls = @(); nearby = @()
+}
+Get-PilotCommand -State $pilotReadableRefusalState -Memory $pilotReadableRefusalMemory -Random (New-Object System.Random(1)) | Out-Null
+Check (@($pilotReadableRefusalMemory.FrictionLog | Where-Object { $_.Category -eq 'unreadable-refusal' }).Count -eq 0) 'a refusal quoting the game''s own player-facing reason (e.g. "You can''t afford that yet.") must NOT be flagged unreadable-refusal'
+
+# Owner steer (2026-08-11), kind 1 NO-RESPONSE PRESS: a press that reports success but leaves the
+# ENTIRE screen (location/gold/day/phase/beat/canMove/slots/screenText) byte-identical must be caught
+# generally, for every verb -- not just Get-PilotNavigateCommand's own move/interact-toward-a-station
+# case. Two-call sequence: turn A presses the only legal control (a Close-labeled overlay button, so
+# the FIRST call is deterministic, no RNG needed); turn B reports that press as a claimed success
+# ("pressed" — not "refused:") but hands back a screen read that has not moved a single field.
+$noResponseMemory = New-PilotMemory
+$noResponseStateA = [pscustomobject]@{
+    turn = 10; day = 3; phase = 'Camp'; beat = 'DeepTick'; location = 'town'; gold = 100
+    canMove = $false; actionSlotsRemaining = 5
+    lastOutcome = '(run start)'; screenText = @('A STUCK MODAL', 'Close')
+    controls = @([pscustomobject]@{ name = 'StuckModalClose'; label = 'Close'; enabled = $true })
+    nearby = @()
+}
+Get-PilotCommand -State $noResponseStateA -Memory $noResponseMemory -Random (New-Object System.Random(1)) | Out-Null
+Check ($noResponseMemory.PendingAction.Target -eq 'StuckModalClose') 'turn A must record the Close press as the PendingAction so turn B can compare against it'
+$noResponseStateB = [pscustomobject]@{
+    turn = 11; day = 3; phase = 'Camp'; beat = 'DeepTick'; location = 'town'; gold = 100
+    canMove = $false; actionSlotsRemaining = 5
+    lastOutcome = 'pressed StuckModalClose -> gold 100 -> 100'; screenText = @('A STUCK MODAL', 'Close')
+    controls = @([pscustomobject]@{ name = 'StuckModalClose'; label = 'Close'; enabled = $true })
+    nearby = @()
+}
+Get-PilotCommand -State $noResponseStateB -Memory $noResponseMemory -Random (New-Object System.Random(1)) | Out-Null
+$noResponseEntries = @($noResponseMemory.FrictionLog | Where-Object { $_.Category -eq 'no-response-press' })
+Check ($noResponseEntries.Count -eq 1) ('a claimed-success press that changed nothing on screen must log exactly one no-response-press entry, got ' + $noResponseEntries.Count)
+if ($noResponseEntries.Count -eq 1) {
+    Check ($noResponseEntries[0].Detail.Contains('StuckModalClose')) 'the no-response-press entry must name the control that was pressed'
+    Check ($noResponseEntries[0].Detail.Contains('A STUCK MODAL')) 'the no-response-press entry must quote the unchanged screen text verbatim'
+}
+
+# The mirror case: the SAME press, but the screen genuinely changed (the modal closed) -- must NOT be
+# flagged. A detector that fires on every press regardless of outcome would be noise, not a finding.
+$respondedMemory = New-PilotMemory
+Get-PilotCommand -State $noResponseStateA -Memory $respondedMemory -Random (New-Object System.Random(1)) | Out-Null
+$respondedStateB = [pscustomobject]@{
+    turn = 11; day = 3; phase = 'Camp'; beat = 'DeepTick'; location = 'town'; gold = 100
+    canMove = $true; actionSlotsRemaining = 5
+    lastOutcome = 'pressed StuckModalClose -> gold 100 -> 100'; screenText = @('Nothing to send yet.')
+    controls = @(); nearby = @()
+}
+Get-PilotCommand -State $respondedStateB -Memory $respondedMemory -Random (New-Object System.Random(1)) | Out-Null
+Check (@($respondedMemory.FrictionLog | Where-Object { $_.Category -eq 'no-response-press' }).Count -eq 0) 'a press that DID change the screen (canMove flipped true, modal gone) must not be flagged no-response-press'
+
+# Owner steer (2026-08-11), kind 2 NO ACKNOWLEDGEMENT (material-purchase sub-case, objective signal):
+# a BuyMat_ press that is not refused, changes SOMETHING on screen, but $State.gold reads unchanged
+# in the outcome text is a candidate for a silent/queued purchase -- checked off the real gold field,
+# never off prose, so a ticker line that never narrates it cannot hide the check either way.
+$noAckMemory = New-PilotMemory
+$noAckStateA = [pscustomobject]@{
+    turn = 20; day = 2; phase = 'Morning'; beat = 'Idle'; location = 'panel:Forge'; gold = 100
+    canMove = $true; actionSlotsRemaining = 5
+    lastOutcome = '(run start)'; screenText = @('copper 4g')
+    controls = @([pscustomobject]@{ name = 'BuyMat_copper'; label = 'Buy 1'; enabled = $true })
+    nearby = @()
+}
+# Force the buy side of the seeded coin flip -- this test is about the acknowledgement check
+# downstream of a buy, not about re-proving the flip itself (already covered elsewhere).
+$savedBuyChance = $script:PilotBuyMaterialChance
+$script:PilotBuyMaterialChance = 1.0
+Get-PilotCommand -State $noAckStateA -Memory $noAckMemory -Random (New-Object System.Random(1)) | Out-Null
+$script:PilotBuyMaterialChance = $savedBuyChance
+Check ($noAckMemory.PendingAction.Kind -eq 'material-purchase') 'a BuyMat_ press must be tracked as PendingAction.Kind "material-purchase"'
+$noAckStateB = [pscustomobject]@{
+    turn = 21; day = 2; phase = 'Morning'; beat = 'Idle'; location = 'panel:Forge'; gold = 100
+    canMove = $true; actionSlotsRemaining = 5
+    lastOutcome = 'pressed BuyMat_copper -> gold 100 -> 100'; screenText = @('copper 4g (have 1)')
+    controls = @([pscustomobject]@{ name = 'BuyMat_copper'; label = 'Buy 1'; enabled = $true })
+    nearby = @()
+}
+Get-PilotCommand -State $noAckStateB -Memory $noAckMemory -Random (New-Object System.Random(1)) | Out-Null
+Check (@($noAckMemory.FrictionLog | Where-Object { $_.Category -eq 'no-acknowledgement' }).Count -eq 1) 'a BuyMat_ press whose own outcome text reports unchanged gold must log exactly one no-acknowledgement entry'
+
+# Owner steer (2026-08-11), kind 3 DEAD STRETCH: N consecutive "nothing phase-specific available"
+# advance-fallback turns must fold into ONE friction entry naming the turn range, not silence and not
+# one entry per turn -- the day-11 boredom question, measured.
+$deadStretchMemory = New-PilotMemory
+for ($t = 1; $t -le ($script:PilotDeadStretchThreshold + 2); $t++) {
+    $deadStretchState = [pscustomobject]@{
+        turn = $t; day = 6; phase = 'ExpeditionDeep'; beat = 'DeepTick'; location = 'town'; gold = 50
+        canMove = $false; actionSlotsRemaining = 0
+        lastOutcome = 'advanced -> day 6 ExpeditionDeep'; screenText = @('Deep Vigil -- the day waits on you')
+        controls = @(); nearby = @()
+    }
+    Get-PilotCommand -State $deadStretchState -Memory $deadStretchMemory -Random (New-Object System.Random(1)) | Out-Null
+}
+# Streak is still open (no non-dead-stretch turn has closed it yet) -- flush it with one ordinary
+# turn. canMove false + a Close-labeled control (step 3b) is RNG-free and always produces a real
+# press, unlike an Evening Honor_ decision (a seeded coin flip that could fall through to $null too).
+$deadStretchFlushState = [pscustomobject]@{
+    turn = ($script:PilotDeadStretchThreshold + 3); day = 6; phase = 'Evening'; beat = 'Homecoming'; location = 'town'; gold = 50
+    canMove = $false; actionSlotsRemaining = 5
+    lastOutcome = 'advanced -> day 6 Evening'; screenText = @('EVENING LEDGER -- day 6', 'Close')
+    controls = @([pscustomobject]@{ name = 'CloseLedger'; label = 'Close'; enabled = $true })
+    nearby = @()
+}
+Get-PilotCommand -State $deadStretchFlushState -Memory $deadStretchMemory -Random (New-Object System.Random(2)) | Out-Null
+$deadStretchEntries = @($deadStretchMemory.FrictionLog | Where-Object { $_.Category -eq 'dead-stretch' })
+Check ($deadStretchEntries.Count -eq 1) ('a run of ' + ($script:PilotDeadStretchThreshold + 2) + ' consecutive advance-only turns must fold into exactly ONE dead-stretch entry, got ' + $deadStretchEntries.Count)
+if ($deadStretchEntries.Count -eq 1) {
+    Check ($deadStretchEntries[0].Day -eq 6) 'the dead-stretch entry must name the day the streak started'
 }
 
 # Six-decisions logging: a commission accept/decline must log to Get-PilotCommand's own ledger under
@@ -2297,11 +2418,11 @@ Check ($agentPlaytestRawText -like '*Friction log*') 'agent-playtest.ps1 must wr
 Check ($agentPlaytestRawText -like '*Six decisions this run took*') 'agent-playtest.ps1 must write a Six-decisions section for pilot runs'
 Check ($agentPlaytestRawText -like '*FrictionLog*SixDecisions*' -or $agentPlaytestRawText -like '*SixDecisions*FrictionLog*') 'agent-playtest.ps1 must fold FrictionLog/SixDecisions into metrics.json for pilot runs'
 
-# Get-PilotEnterInteriorCommand (Bug 3/Bug 4 fixes): this exact function shipped a real defect that
-# THIS suite did not catch -- New-PilotMemory had no WrongInteriorFrictionLogged field, so the very
-# first live run crashed with "the property ... cannot be found on this object" the first time a
-# wrong-walkable-interior state was seen. These three checks exist so that class of bug (a memory
-# field read/written without ever being declared in New-PilotMemory) cannot regress silently again.
+# Get-PilotEnterInteriorCommand: an unrelated open drawer must be closed via the visible "Close"
+# button (UiKit.DrawerHeader's generic name, shared across every Drawer-hosted panel) when one is
+# enabled -- the more human-plausible action, even though key:cancel would also work now (DrawerHost
+# ._Input DOES close on a real Escape event; see this function's own "panel:" branch doc for the
+# 2026-08-11 correction of an earlier, wrong belief that cancel was dead here).
 $panelBranchMemory = New-PilotMemory
 $panelBranchState = [pscustomobject]@{
     turn = 1; day = 1; phase = 'Morning'; location = 'panel:Forge'; canMove = $false
@@ -2313,12 +2434,30 @@ $panelBranchCmd = Get-PilotEnterInteriorCommand -State $panelBranchState -Interi
 Check ($null -ne $panelBranchCmd) 'an unrelated open drawer (panel:Forge, wanting the shop) must produce a command, not null'
 if ($panelBranchCmd) {
     $parsedPanelBranchCmd = $panelBranchCmd | ConvertFrom-Json
-    Check ($parsedPanelBranchCmd.action -eq 'press' -and $parsedPanelBranchCmd.target -eq 'Close') 'closing an unrelated drawer must press the real "Close" button (UiKit.DrawerHeader), never key:cancel -- confirmed dead against a live client'
+    Check ($parsedPanelBranchCmd.action -eq 'press' -and $parsedPanelBranchCmd.target -eq 'Close') 'closing an unrelated drawer must press the real "Close" button when one is visible/enabled, preferring it over key:cancel'
 }
 
-# Wrong walkable interior (no drawer open): must not crash (the exact bug above), must return null
-# so the caller falls through to its own advance-fallback, and must log the harness-limit gap
-# EXACTLY ONCE per run rather than once per turn.
+# Same branch, no "Close" control enabled this turn (CommissionBoard/LegendsWall use their own
+# panel-specific names, never this generic one) -- must fall back to a real key:cancel escape rather
+# than returning null and spinning on a guess forever.
+$panelBranchNoCloseMemory = New-PilotMemory
+$panelBranchNoCloseState = [pscustomobject]@{
+    turn = 1; day = 1; phase = 'Morning'; location = 'panel:Commissions'; canMove = $false
+    lastOutcome = '(run start)'; screenText = @('Commissions -- Day 1'); controls = @(); nearby = @()
+}
+$panelBranchNoCloseCmd = Get-PilotEnterInteriorCommand -State $panelBranchNoCloseState -InteriorPrefix 'interior:market' -BuildingKeyword 'shop' -PanelId 'Shop' -Memory $panelBranchNoCloseMemory
+Check ($null -ne $panelBranchNoCloseCmd) 'an unrelated panel with no visible Close control must still produce a command (key:cancel), never null'
+if ($panelBranchNoCloseCmd) {
+    $parsedPanelBranchNoCloseCmd = $panelBranchNoCloseCmd | ConvertFrom-Json
+    Check ($parsedPanelBranchNoCloseCmd.action -eq 'key' -and $parsedPanelBranchNoCloseCmd.target -eq 'cancel') 'with no Close control, the fallback must be a real key:cancel press'
+}
+
+# Wrong walkable interior (no drawer open, no stations listed): fix/pilot-finds-its-way -- must not
+# crash (the exact bug above), and must now issue a REAL key:cancel escape rather than the old
+# permanent harness-limit dead end. AgentPlaytest.ApplyKey dispatches a genuine InputEventKey now
+# (see pilot.ps1's own Get-PilotEnterInteriorCommand doc, finding 3), so leaving a wrong interior is
+# a real, working verb, not a logged limitation -- this is exactly REQUIRED BEHAVIOUR 2 (a pilot
+# standing anywhere inside an interior can reliably get back out).
 $wrongInteriorMemory = New-PilotMemory
 $wrongInteriorState = [pscustomobject]@{
     turn = 1; day = 1; phase = 'Expedition'; location = 'interior:tavern'; canMove = $true
@@ -2326,14 +2465,45 @@ $wrongInteriorState = [pscustomobject]@{
     controls = @(); nearby = @()
 }
 $wrongInteriorCmdOne = Get-PilotEnterInteriorCommand -State $wrongInteriorState -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -Memory $wrongInteriorMemory
-Check ($null -eq $wrongInteriorCmdOne) 'standing in the wrong walkable interior (no drawer, no exit-zone input available) must return null, never a doomed key:cancel press'
-Check ($wrongInteriorMemory.FrictionLog.Count -eq 1) ('the wrong-interior gap must be logged exactly once, got ' + $wrongInteriorMemory.FrictionLog.Count)
-if ($wrongInteriorMemory.FrictionLog.Count -ge 1) {
-    Check ($wrongInteriorMemory.FrictionLog[0].Category -eq 'harness-limit') 'the wrong-interior gap must log under category harness-limit'
+Check ($null -ne $wrongInteriorCmdOne) 'standing in the wrong walkable interior must produce a real command (key:cancel), never null -- leaving a room is always available'
+if ($wrongInteriorCmdOne) {
+    $parsedWrongInteriorCmd = $wrongInteriorCmdOne | ConvertFrom-Json
+    Check ($parsedWrongInteriorCmd.action -eq 'key' -and $parsedWrongInteriorCmd.target -eq 'cancel') 'the wrong-interior escape must be a real key:cancel press, not a guess at some other verb'
 }
+Check ($wrongInteriorMemory.FrictionLog.Count -eq 0) ('leaving a wrong interior is a working verb now, not a harness-limit -- expected zero friction entries, got ' + $wrongInteriorMemory.FrictionLog.Count)
 $wrongInteriorCmdTwo = Get-PilotEnterInteriorCommand -State $wrongInteriorState -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -Memory $wrongInteriorMemory
-Check ($null -eq $wrongInteriorCmdTwo) 'a second call in the same wrong interior must still return null'
-Check ($wrongInteriorMemory.FrictionLog.Count -eq 1) ('a second call in the same run must NOT log a second friction entry, got ' + $wrongInteriorMemory.FrictionLog.Count)
+Check ($null -ne $wrongInteriorCmdTwo) 'a second call in the same wrong interior must still produce the same real escape, not fall back to null'
+
+# fix/pilot-finds-its-way (real-run finding, seed 4242, live 22-day run): LedgerModal.cs names its
+# close button "CloseLedger" (Close-PREFIX), breaking the "^Close$" exact-name match every OTHER
+# modal's "<Name>Close" convention satisfies. With canMove false and no phase-specific control on
+# screen, Get-PilotCommand must recognize ANY enabled control whose LABEL reads "Close" (regardless of
+# its internal name) and press it -- this is what stops a stray, un-recognized modal from silently
+# freezing world movement for the rest of the run while "advance" keeps ticking days forward unnoticed.
+$ledgerStuckMemory = New-PilotMemory
+$ledgerStuckState = [pscustomobject]@{
+    turn = 50; day = 8; phase = 'Morning'; location = 'town'; canMove = $false
+    lastOutcome = 'advanced -> day 8 Morning'; screenText = @('EVENING LEDGER -- day 1', 'Torvald', 'Close')
+    controls = @([pscustomobject]@{ name = 'CloseLedger'; label = 'Close'; enabled = $true })
+    nearby = @()
+}
+$ledgerStuckCmd = Get-PilotCommand -State $ledgerStuckState -Memory $ledgerStuckMemory -Random (New-Object System.Random(1))
+$parsedLedgerStuckCmd = $null
+try { $parsedLedgerStuckCmd = $ledgerStuckCmd | ConvertFrom-Json } catch { }
+Check ($null -ne $parsedLedgerStuckCmd) ('a canMove-false state with a Close-labeled control must produce a real command, got [' + $ledgerStuckCmd + ']')
+if ($parsedLedgerStuckCmd) {
+    Check ($parsedLedgerStuckCmd.action -eq 'press' -and $parsedLedgerStuckCmd.target -eq 'CloseLedger') ('must press the Close-labeled control by its REAL name (CloseLedger), not guess at a generic "Close", got action=' + $parsedLedgerStuckCmd.action + ' target=' + $parsedLedgerStuckCmd.target)
+}
+# canMove false with NO Close-labeled control anywhere (a genuinely legal "nothing to do here yet"
+# state, e.g. mid-move settle) must NOT throw and must fall through to the phase policy/advance path
+# rather than inventing a press -- proven by simply not crashing and returning SOME legal command.
+$noCloseControlMemory = New-PilotMemory
+$noCloseControlState = [pscustomobject]@{
+    turn = 1; day = 1; phase = 'Morning'; location = 'town'; canMove = $false
+    lastOutcome = '(run start)'; screenText = @('Just standing.'); controls = @(); nearby = @()
+}
+$noCloseControlCmd = Get-PilotCommand -State $noCloseControlState -Memory $noCloseControlMemory -Random (New-Object System.Random(1))
+Check ($null -ne $noCloseControlCmd) 'canMove false with no Close-labeled control must still produce a legal fallback command (e.g. advance), never null'
 
 # --- Summary -----------------------------------------------------------------------------------
 if ($failures.Count -gt 0) {

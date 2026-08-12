@@ -1,11 +1,13 @@
 #if GDUNIT_TESTS
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using GameSim.Contracts;
 using GdUnit4;
 using Godot;
 using GodotClient.Minigames;
+using GodotClient.Tools;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -66,13 +68,21 @@ public class DeepPilotPlayTests
             var craftsAttempted = 0;
             var craftsCompleted = 0;
             var turns = 0;
+            var craftDiagnostics = new List<string>();
 
             while (ui.Adapter.CurrentState.Day < TargetDay && ui.Adapter.CurrentState.Day < MaxDays)
             {
-                // --- Morning: sell whatever is ready, answer any commission. ---
+                // --- Morning: sell whatever is ready, answer any commission, restock materials. ---
+                // BuyMaterialAction/BuyForgeSupplyAction are Morning-only (MaterialVendorHandlers.cs:46,
+                // ForgeSupplyHandlers.cs:45 -- both CanHandle gate on DayPhase.Morning) -- a real-run
+                // finding while fixing this test: it used to try BuyMat_ in the EVENING block below,
+                // where the button is unconditionally disabled (excluded from ClickableButtons) every
+                // single day, so materials were NEVER restocked and every later WorkForge_ press found
+                // no legal recipe.
                 await player.Frames(2);
                 turns += await TryPressFirstMatching(ui, player, "Shop", "Stock_") ? 1 : 0;
                 turns += await TryPressFirstMatching(ui, player, "Commissions", "CommissionAccept_") ? 1 : 0;
+                turns += await TryPressFirstMatching(ui, player, "Forge", "BuyMat_", craftDiagnostics) ? 1 : 0;
 
                 turns++;
                 PressEnabled(ui, "AdvancePhase");
@@ -88,7 +98,7 @@ public class DeepPilotPlayTests
                     {
                         craftsAttempted++;
                         turns++;
-                        if (await TryCraftOnce(ui, player))
+                        if (await TryCraftOnce(ui, player, craftDiagnostics))
                         {
                             craftsCompleted++;
                         }
@@ -108,9 +118,7 @@ public class DeepPilotPlayTests
                 ui.RefreshAll();
                 await player.Frames(2);
 
-                // --- Evening: honor the memorial if the wall offers one, restock materials. ---
-                turns += await TryPressFirstMatching(ui, player, "Forge", "BuyMat_") ? 1 : 0;
-
+                // --- Evening: honor the memorial if the wall offers one. ---
                 turns++;
                 PressEnabled(ui, "AdvancePhase");
                 ui.RefreshAll();
@@ -134,7 +142,8 @@ public class DeepPilotPlayTests
                     $"reached day {finalState.Day} but zero real (PlayerCrafted) items exist in the final " +
                     $"state, out of {craftsAttempted} attempted / {craftsCompleted} completed forge runs " +
                     $"over {turns} turns. The day-11 floor alone is not the point -- the whole thesis needs " +
-                    "at least one real craft to exist.")
+                    "at least one real craft to exist. Per-attempt diagnostics: " +
+                    string.Join(" || ", craftDiagnostics))
                 .IsGreater(0);
         }
         finally { Unmount(ui); }
@@ -144,12 +153,46 @@ public class DeepPilotPlayTests
     /// starts with <paramref name="prefix"/>, and report whether one was found and clicked. A
     /// generic, honest ("visible, enabled" — <see cref="HumanPlayer.ClickableButtons"/>) helper
     /// rather than one bespoke method per verb, since Stock_/CommissionAccept_/BuyMat_ all share the
-    /// same shape: zero or more per-item rows, act on the first if any exist.</summary>
-    private static async Task<bool> TryPressFirstMatching(MainUi ui, HumanPlayer player, string panel, string prefix)
+    /// same shape: zero or more per-item rows, act on the first if any exist.
+    ///
+    /// <para><b>"Commissions" is not a drawer panel.</b> Unlike Shop/Forge (registered via
+    /// <c>Drawer.Register</c> in <c>MainUi</c>), <see cref="MainUi.Commissions"/> is a code-built modal
+    /// (the same idiom as <c>LegendsWall</c>/<c>ScryingMirror</c>) opened by a tray button calling
+    /// <c>Commissions.ShowOpen(state)</c> directly — <c>ui.OpenPanel("Commissions")</c> throws
+    /// (<c>DrawerHost.Open</c>: "no such drawer panel registered"), which is exactly what made this
+    /// test fail before this fix. Closed again afterward either way (found-and-clicked or nothing to
+    /// act on) so the modal never lingers open into the rest of the day, mirroring what a real player
+    /// (and pilot.ps1's own <c>CommissionClose</c> press) would do.</para>
+    /// </summary>
+    private static async Task<bool> TryPressFirstMatching(MainUi ui, HumanPlayer player, string panel, string prefix, List<string>? diagnostics = null)
     {
-        ui.OpenPanel(panel);
-        await player.Frames(2);
-        var content = ui.Drawer.CurrentContent;
+        Control? content;
+        if (panel == "Commissions")
+        {
+            ui.Commissions.ShowOpen(ui.Adapter.CurrentState);
+            content = ui.Commissions;
+            await player.Frames(2);
+        }
+        else
+        {
+            ui.OpenPanel(panel);
+            content = ui.Drawer.CurrentContent;
+            if (content is not null)
+            {
+                // DrawerHost slides its content in over ~0.22s (~13 frames, DrawerHost.SlideSeconds,
+                // ForgePanel's own DeferEnsureVisible doc) -- for that whole span the panel's REAL
+                // GlobalPosition sits off-stage. A fixed Frames(2) measured every row as "visible,
+                // enabled, and off screen" (window.Encloses fails) for the ENTIRE panel, not just one
+                // button -- ScreenObservation.DescribeButtons on a real run showed 0 of 144 buttons
+                // clickable in the Forge panel this way, day after day. Wait on the slide settling
+                // instead of guessing a frame count (this repo's own rule).
+                await player.WaitForLayout(content);
+            }
+            else
+            {
+                await player.Frames(2);
+            }
+        }
         if (content is null)
         {
             return false;
@@ -159,7 +202,34 @@ public class DeepPilotPlayTests
             .FirstOrDefault(b => b.Name.ToString().StartsWith(prefix, StringComparison.Ordinal));
         if (match is null)
         {
+            if (diagnostics is not null)
+            {
+                var describe = ScreenObservation.DescribeButtons(content, ui.GetViewport());
+                diagnostics.Add($"day {ui.Adapter.CurrentState.Day}: no {prefix} button in {panel}, phase={ui.Adapter.CurrentState.Phase}, gold={ui.Adapter.CurrentState.Player.Gold}, slots={ui.Adapter.CurrentState.ActionSlotsRemaining}, {describe}");
+            }
+            if (panel == "Commissions")
+            {
+                ui.Commissions.Close();
+            }
             return false;
+        }
+
+        if (panel == "Commissions")
+        {
+            // Commissions accumulate across days (an accepted/declined row never leaves the board --
+            // pilot.ps1's own real-run finding), and CommissionBoard's card is a fixed 460x360
+            // ScrollContainer -- by mid-run the first still-decidable row can sit scrolled below its
+            // fold, clipping VisiblePartOf(match) to an empty rect (measured: (0, 0), not a size-1
+            // sliver ClickControl's own AssertReachable would have caught first) that
+            // ScrollIntoView's own WindowRect-vs-clip-rect check does not reliably detect for a small,
+            // centered modal. This test's job is the day-11/craft-count floor, not re-proving that
+            // scrolling a specific board works (a separate, already-covered concern per this file's own
+            // header) -- press it the same direct, honest way this same method already presses
+            // AdvancePhase/CampDeeper (UiTestSupport.Press: a real signal emission, no pixel hunting).
+            match.EmitSignal(BaseButton.SignalName.Pressed);
+            await player.Frames(2);
+            ui.Commissions.Close();
+            return true;
         }
 
         await player.ClickControl(match, prefix + " row");
@@ -172,35 +242,62 @@ public class DeepPilotPlayTests
     /// (already proven honest and competent — reused, never re-implemented), then Act 2 via
     /// <see cref="DriveQuenchToCompletion"/>. Returns whether both acts actually completed.
     /// </summary>
-    private static async Task<bool> TryCraftOnce(MainUi ui, HumanPlayer player)
+    private static async Task<bool> TryCraftOnce(MainUi ui, HumanPlayer player, List<string> diagnostics)
     {
         ui.OpenPanel("Forge");
-        await player.Frames(2);
         var content = ui.Drawer.CurrentContent;
+        // See TryPressFirstMatching's own note: DrawerHost slides its content in over ~13 frames, and
+        // a fixed Frames(2) measured every Forge row as visible+enabled+off-screen the whole time.
+        if (content is not null)
+        {
+            await player.WaitForLayout(content);
+        }
+        else
+        {
+            await player.Frames(2);
+        }
         if (content is null)
         {
+            diagnostics.Add($"day {ui.Adapter.CurrentState.Day}: Forge drawer content was null");
             return false;
         }
 
-        var work = player.ClickableButtons(content)
-            .FirstOrDefault(b => b.Name.ToString().StartsWith("WorkForge_", StringComparison.Ordinal));
+        // Recipe cards render BELOW the material vendor rows in one long ScrollContainer -- once
+        // enough materials/tier upgrades have accumulated, an enabled WorkForge_ can legitimately sit
+        // scrolled below the fold (ClickableButtons' own window.Encloses filter excludes it, same
+        // "off screen" shape ScreenObservation.DescribeButtons reports). Find it WITHOUT the
+        // window-visibility filter first (visible+enabled is enough to know it is really there), then
+        // scroll to it before clicking -- the way a person hunting further down a panel would.
+        var work = ScreenObservation.Descendants(content)
+            .OfType<Button>()
+            .FirstOrDefault(b => b.IsVisibleInTree() && !b.Disabled && b.Name.ToString().StartsWith("WorkForge_", StringComparison.Ordinal));
         if (work is null)
         {
+            var describe = ScreenObservation.DescribeButtons(content, ui.GetViewport());
+            var have = string.Join(",", ui.Adapter.CurrentState.Player.Materials.Select(kv => $"{kv.Key}={kv.Value}"));
+            diagnostics.Add($"day {ui.Adapter.CurrentState.Day}: no WorkForge_ button, gold={ui.Adapter.CurrentState.Player.Gold}, materials=[{have}], {describe}");
             return false; // no legal recipe to work this window -- not this test's job to force one
         }
 
+        await player.ScrollIntoView(work);
         await player.ClickControl(work, "work the forge");
 
         var act1 = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
         var run = await new ForgePlayer(act1, player, ForgePlayer.Skill.Veteran, seed: 2026).Play();
         if (!run.Completed)
         {
+            diagnostics.Add($"day {ui.Adapter.CurrentState.Day}: ForgePlayer act1 did not complete");
             return false;
         }
 
         await player.Frames(2);
         var quench = Find<QuenchMinigame>(ui.Forge, "QuenchMinigame");
-        return await DriveQuenchToCompletion(quench, player);
+        var quenchOk = await DriveQuenchToCompletion(quench, player);
+        if (!quenchOk)
+        {
+            diagnostics.Add($"day {ui.Adapter.CurrentState.Day}: quench did not complete");
+        }
+        return quenchOk;
     }
 
     /// <summary>

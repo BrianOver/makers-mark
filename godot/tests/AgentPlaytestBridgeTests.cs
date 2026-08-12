@@ -545,5 +545,129 @@ public class AgentPlaytestBridgeTests
         AssertThat(AgentPlaytest.ExitCodeFor(AgentPlaytestOutcome.MaxTurnsReached)).IsEqual(0);
         AssertThat(AgentPlaytest.ExitCodeFor(AgentPlaytestOutcome.TimedOut)).IsNotEqual(0);
     }
+
+    /// <summary>
+    /// fix/pilot-finds-its-way: pilot.ps1's own header (2026-08-11) claimed "there is no keyboard
+    /// shortcut to leave a walkable interior room" through this harness, based on grepping for the
+    /// "cancel" action and finding only <c>WorldInput2D</c> — which raises <c>CancelRequested</c> to
+    /// nobody (zero subscribers, confirmed by grep). What that grep missed: <c>MainUi._Input</c>'s
+    /// own Escape ladder (Escape_WithNoDrawerOpen_ExitsTheRoom, InteriorEntryExitTests.cs) already
+    /// calls <see cref="Town2d.Town2D.ExitInterior"/> on a raw <c>Key.Escape</c> — it just never
+    /// matched the string "cancel" in a grep. The REAL gap is one level lower: <see
+    /// cref="AgentPlaytestBridge.Apply"/>'s "key" action drove <c>Input.ActionPress</c>/
+    /// <c>ActionRelease</c>, which — per Godot's own documented contract — updates ONLY the polled
+    /// <c>Input.IsActionPressed</c> state and explicitly never calls any node's <c>_Input</c>. Any
+    /// <c>_Input</c>-based handler (MainUi's ladder) or focus-gated <c>_GuiInput</c> handler (the
+    /// forge minigame's bellows/strike) was therefore unreachable through this verb, while
+    /// polling-based handlers (WorldInput2D's own dead CancelRequested) still fired. This test pins
+    /// the fix — SUPERSEDED one call later the same day: the fix landed as <c>Viewport.PushInput</c>
+    /// first (this test went green on that), but <c>PushInput</c> turned out to be only HALF a real
+    /// key press (see <see cref="KeyInteract_AtForgeDoorAtSpawn_EntersTheForge"/>'s own doc for the
+    /// second half); <c>AgentPlaytest.ApplyKey</c> now calls <see cref="Input.ParseInputEvent"/>
+    /// instead, which is a strict superset (dispatches <c>_Input</c> AND updates polled action
+    /// state), so this test still pins the same behavior against the corrected call.
+    /// </summary>
+    [TestCase]
+    public async Task KeyCancel_InsideAWalkableRoom_ExitsIt()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.EnterInterior("forge");
+            await SettleLayout(ui);
+            AssertThat(ui.Town.InteriorActive).IsTrue();
+            AssertThat(ui.Drawer.IsOpen)
+                .OverrideFailureMessage("Setup check: a drawer must not be open, or Escape closes that first (the earlier ladder rung), not the room.")
+                .IsFalse();
+
+            var bridge = new AgentPlaytestBridge(ui);
+            var outcome = await bridge.Apply(ui, new AgentCommand("key", "cancel", Why: "pilot: leaving the room"));
+
+            var player = new HumanPlayer(ui);
+            var exited = await player.WaitUntil(() => !ui.Town.InteriorActive);
+
+            AssertThat(exited)
+                .OverrideFailureMessage(
+                    $"the harness's key:cancel action did not exit the walkable room (outcome: '{outcome}'). " +
+                    "A live pilot standing in any interior with no drawer open must be able to leave through " +
+                    "this exact verb, or it has no escape at all once its nearest station is unreachable.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// fix/pilot-finds-its-way, live-run finding (2026-08-11): a full 220-turn scripted run standing
+    /// AT the forge doorstep on turn 1 (per <see cref="Surroundings_NameTheTownsBuildings_WithADirectionThatActuallyWorks"/>,
+    /// the forge is 8px away and InRange at spawn) pressed <c>key:interact</c> three times in a row
+    /// with a byte-identical digest each time (location stayed "town" all 220 turns of a 9-day run,
+    /// zero panel entries, zero crafts) before the no-route detector blacklisted it for the day. This
+    /// pins whether that key press reaches <see cref="Town2d.WorldInput2D"/>'s building-entry path at
+    /// all through the bridge. Root cause, isolated with a throwaway diagnostic test (since removed):
+    /// <c>ActiveTarget</c> was ALWAYS correctly "forge" (the physics-overlap geometry is fine, spawn
+    /// distance 8px), so this is not a positioning bug. The actual gap was one level lower —
+    /// <c>ApplyKey</c> dispatched via <c>Viewport.PushInput</c> (the fix that made <c>cancel</c>
+    /// work, see <see cref="KeyCancel_InsideAWalkableRoom_ExitsIt"/>'s own doc), which reaches
+    /// <c>_Input</c>/<c>_GuiInput</c> handlers but does NOT update the global <see cref="Input"/>
+    /// singleton's polled action state at all — confirmed directly: <c>Input.IsActionPressed
+    /// ("interact")</c> read false on every one of 6 physics frames after a <c>PushInput</c> press.
+    /// <c>WorldInput2D._PhysicsProcess</c> gates building entry on exactly that polled state
+    /// (<c>Input.IsActionJustPressed("interact")</c>), so a real "cancel" _Input event and a
+    /// permanently-invisible-to-polling "interact" press are the SAME call shape with two different,
+    /// independent Godot subsystems underneath. <c>ApplyKey</c> now calls <see
+    /// cref="Input.ParseInputEvent"/> — Godot's own documented complete simulation (the literal "use
+    /// Input.ParseInputEvent instead" from the API doc already quoted in this file's history) — which
+    /// is a strict superset of <c>PushInput</c>: same diagnostic re-run showed <c>IsActionJustPressed</c>
+    /// true on the very next physics frame and the forge entered. This test isolates that path: no
+    /// walking, no room, standing at the exact spawn position the real run started from.
+    /// </summary>
+    [TestCase]
+    public async Task KeyInteract_AtForgeDoorAtSpawn_EntersTheForge()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            await SettleLayout(ui);
+            var bridge = new AgentPlaytestBridge(ui);
+
+            var before = bridge.BuildDigest(ui, 1, "(start)");
+            var forge = before.Nearby.FirstOrDefault(n => n.Key.Equals("forge", StringComparison.OrdinalIgnoreCase));
+            AssertThat(forge)
+                .OverrideFailureMessage($"Setup check: forge not in nearby list at spawn. Nearby: {string.Join(", ", before.Nearby.Select(n => n.Key))}.")
+                .IsNotNull();
+            AssertThat(forge!.InRange)
+                .OverrideFailureMessage($"Setup check: forge reported {forge.Distance}px away, not InRange, at spawn.")
+                .IsTrue();
+            AssertThat(before.Location)
+                .OverrideFailureMessage($"Setup check: expected location 'town' at spawn, got '{before.Location}'.")
+                .IsEqual("town");
+
+            var activeTargetBefore = ui.Town.WorldInputNode.ActiveTarget?.Key ?? "(null)";
+            var outcome = await bridge.Apply(ui, new AgentCommand("key", "interact", Why: "pilot: entering Forge"));
+            var activeTargetAfter = ui.Town.WorldInputNode.ActiveTarget?.Key ?? "(null)";
+
+            var player = new HumanPlayer(ui);
+            var entered = await player.WaitUntil(() => ui.Drawer.IsOpen || ui.Town.InteriorActive);
+            var after = bridge.BuildDigest(ui, 2, outcome);
+
+            AssertThat(entered)
+                .OverrideFailureMessage(
+                    $"key:interact at the forge doorstep (spawn, {forge.Distance}px, InRange=true) did not " +
+                    $"enter anything: outcome='{outcome}', location stayed '{after.Location}'. " +
+                    $"ActiveTarget before press: {activeTargetBefore}, after press+settle: {activeTargetAfter}. " +
+                    $"WorldInputNode.Enabled={ui.Town.WorldInputNode.Enabled}. This is the " +
+                    "live-run wall: a real 220-turn pilot run standing on this exact spot pressed interact " +
+                    "three times with zero effect before being blacklisted for the day, and NEVER entered a " +
+                    "single building in 9 in-game days.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif

@@ -468,6 +468,18 @@ if ($RepoRoot -ieq 'C:\Code\Game') {
 
 if (-not $OutDir) { $OutDir = Join-Path $RepoRoot '.claude\agent-playtest' }
 if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir -Force | Out-Null }
+# fix/pilot-finds-its-way: an explicit -OutDir passed as a RELATIVE path used to break the file
+# channel silently. This script's own cwd (repo root, wherever it was invoked from) and the spawned
+# Godot child's cwd (--path godot, below -- Godot changes its working directory to match) resolve the
+# SAME relative string against two DIFFERENT bases. The driver watched
+# <caller's cwd>/<OutDir>/state.json forever while the client wrote godot/<OutDir>/state.json --
+# "AGENT-PLAYTEST REFUSED: client wrote no state" is exactly what a perfectly healthy client produces
+# under that mismatch (measured directly: state.json really was on disk, just under
+# godot/.claude/<OutDir>/). The default (-OutDir omitted) never hit this, because $RepoRoot above is
+# already absolute -- only an explicit relative value could collide. Resolving once, here, removes
+# the ambiguity for both sides: $env:AGENT_PLAYTEST_DIR below carries the same absolute string the
+# client receives, so there is only one directory either process could mean.
+$OutDir = (Resolve-Path $OutDir).Path
 
 $statePath   = Join-Path $OutDir 'state.json'
 $cmdPath     = Join-Path $OutDir 'command.json'
@@ -633,7 +645,18 @@ Say ('launching client (out: ' + $OutDir + ', playtest log: ' + $playtestLogPath
 # The SCENE must be named explicitly. `--path godot` alone boots the game's main scene, so the
 # bridge never runs and the driver waits out its timeout on a client that was never asked to play --
 # measured on the first scripted run, which sat for 90s and then reported "scripted run complete".
-$proc = Start-Process -FilePath $godot -ArgumentList @('--path', (Join-Path $RepoRoot 'godot'), 'res://agentplaytest.tscn') -PassThru
+#
+# fix/pilot-finds-its-way: --disable-vsync. Measured 2026-08-11 on this exact machine with an
+# unattended/unfocused desktop session: the client printed "[MainUi] campaign started" and then never
+# wrote state.json at all, for 240s+ -- alive (memory flat, no crash), not slow. Killing it and
+# launching the SAME scene by hand with --disable-vsync produced state.json inside 30s. Vulkan
+# Forward+'s present call was blocking on a compositor vsync signal this session's window station
+# never delivered (no active foreground/composited desktop), which stalls the WHOLE single-threaded
+# main loop -- ProcessFrame signals never fire, so even AgentPlaytestBridge's own Settle() calls never
+# return. An automated, unattended tool cannot depend on a human being logged in and watching the
+# screen; disabling vsync costs nothing for a client nobody is meant to be looking at frame-perfectly
+# anyway (this tool already runs silenced -- DevToolAudio.Silence -- for the same "unattended" reason).
+$proc = Start-Process -FilePath $godot -ArgumentList @('--path', (Join-Path $RepoRoot 'godot'), 'res://agentplaytest.tscn', '--disable-vsync') -PassThru
 
 # Fixed command sequence for -Scripted: prove the channel end to end with no model. Deliberately
 # includes an illegal press so the refusal path is exercised on every scripted run.
@@ -1279,6 +1302,39 @@ $metricsSummary = Get-MetricsSummary -TurnRecords @($turnRecords) -PreRefusals @
 # pipeline consume it unchanged, per the brief's own artifact-shape requirement. $null/empty for
 # every other persona (they never build a $pilotMemory at all).
 if ($isPilot) {
+    # Owner steer (2026-08-11), kind 5 INVISIBLE STATE CHANGE: "something changed in the backend log
+    # (playtest-log.jsonl eventTypes) with no corresponding change in visible screen text." pilot.ps1's
+    # own per-turn decision loop never sees the backend log at all (only $State, the same digest a
+    # human reading the screen would have) -- this can only be checked here, post-run, cross-
+    # referencing $backendSummary.Timeline (each tick's day/eventTypes) against turnlog.md's own
+    # screen dumps (read fresh, not via the LATER $fullLog -- that is not built yet at this point in
+    # the script, and this must run BEFORE metrics.json is written a few lines down so the finding
+    # actually lands in the SAME artifact the rest of the friction log does).
+    #
+    # Day-granularity, not per-event -- a real narrated event on a day makes that day's ticker grow at
+    # least one "Day N:" bullet, so checking for the BULLET rather than matching each eventType name to
+    # its own prose (ItemSold -> "sold to", CommissionPosted -> "wants", ...) avoids a fragile,
+    # possibly-wrong mapping table while still catching the case the owner named: a whole day's worth
+    # of recorded events with zero player-visible trace anywhere in the run.
+    $turnLogForCrossref = ''
+    if (Test-Path $turnlogPath) { $turnLogForCrossref = Get-Content $turnlogPath -Raw }
+    if ($backendSummary.Available -and $turnLogForCrossref) {
+        $daysWithEvents = @($backendSummary.Timeline | Where-Object { @($_.EventTypes).Count -gt 0 } |
+            ForEach-Object { [int]$_.Day } | Sort-Object -Unique)
+        foreach ($eventDay in $daysWithEvents) {
+            $dayBullet = 'Day ' + $eventDay + ':'
+            if (-not $turnLogForCrossref.Contains($dayBullet)) {
+                $typesThatDay = @($backendSummary.Timeline | Where-Object { [int]$_.Day -eq $eventDay } |
+                    ForEach-Object { $_.EventTypes } | Select-Object -Unique)
+                Add-PilotFriction -Memory $pilotMemory -Turn -1 -Day $eventDay -Phase '(whole day, cross-referenced post-run)' `
+                    -Category 'invisible-state-change' -Trying 'read this day''s own events off the screen' `
+                    -Detail ('backend log recorded ' + ($typesThatDay -join ', ') + ' on day ' + $eventDay +
+                        ' but no "' + $dayBullet + '" line appears anywhere in this run''s turn log -- ' +
+                        'candidate for an event the player was never told about (day-granularity check, ' +
+                        'not proof a SPECIFIC event went unnarrated if others that day did)')
+            }
+        }
+    }
     $metricsSummary | Add-Member -NotePropertyName FrictionLog -NotePropertyValue @($pilotMemory.FrictionLog)
     $metricsSummary | Add-Member -NotePropertyName SixDecisions -NotePropertyValue @($pilotMemory.SixDecisions)
 }

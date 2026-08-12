@@ -500,7 +500,12 @@ public sealed class HumanPlayer
         }
         finally
         {
-            if (pressable is not null)
+            // fix/pilot-finds-its-way: a production Pressed handler that synchronously rebuilds its
+            // own row set (e.g. ShopPanel/ForgePanel's Refresh, Clear + rebuild every vendor row) can
+            // free THIS control before this method resumes from the awaited frames above -- "Cannot
+            // access a disposed object" on the disconnect, even though the click landed and onPressed
+            // already ran. IsInstanceValid guards the disconnect only; fired was already captured.
+            if (pressable is not null && GodotObject.IsInstanceValid(pressable))
             {
                 pressable.Pressed -= onPressed;
             }

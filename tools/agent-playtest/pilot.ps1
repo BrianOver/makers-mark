@@ -82,10 +82,27 @@ $script:PilotCuriosityDayCeiling      = 2
 $script:PilotHabitDayFloor            = 5
 $script:PilotHabitStreakToLock        = 3
 $script:PilotStuckFrictionThreshold   = 4     # matches the driver's own STUCK detector (4 turns)
+# fix/pilot-finds-its-way: the general no-progress detector Get-PilotNavigateCommand runs against
+# EVERY target it walks or interacts toward -- 3 consecutive turns aimed at the same target with an
+# unchanged (location, distance, inRange, screenText) reading means the approach is not working
+# (a collision, a swallowed interact, a drawer that will not close), never that a person just needs
+# one more try. Small and bounded per the owner's own requirement, not a number the run outlives.
+$script:PilotNavStuckThreshold        = 3
+# Hard ceiling on the file's own global idle-stretch counter (Get-PilotCommand, digest-based) --
+# once a run has produced $script:PilotStuckFrictionThreshold consecutive identical turns the ONE
+# friction entry already fires; if it reaches DOUBLE that, something outside navigation itself is
+# looping (a phase policy re-pressing a dead verb Get-PilotNavigateCommand never touches), and the
+# only honest answer left is to force real progress rather than ask the same policy again for what
+# will provably be the same answer.
+$script:PilotGlobalStuckForceAdvance  = 8
 $script:PilotMoveFrames               = 30
 # Tighter than AgentPlaytestBridge's own 96px InRangeReportingPx -- see Get-PilotNavigateCommand's
 # own note on why trusting the reported inRange alone let a swallowed interact go unnoticed.
 $script:PilotInteractDistancePx       = 24
+# Owner steer (2026-08-11): DEAD STRETCH -- "consecutive turns where the only legal thing is advance."
+# 3 running is enough to call it a stretch rather than one ordinary quiet beat (Deep Vigil ticks, an
+# empty Camp stop) -- see Complete-PilotTurn's own doc.
+$script:PilotDeadStretchThreshold     = 3
 
 # A fresh, empty memory -- one per run, passed to every Get-PilotCommand call and mutated in place
 # (a PSCustomObject's properties are settable through the same reference -- same idiom
@@ -100,7 +117,22 @@ function New-PilotMemory {
         HabitLocked        = @{}
         PendingIntent      = '(run start)'
         PricingFrictionLogged = $false
-        WrongInteriorFrictionLogged = $false
+        # fix/pilot-finds-its-way: the general no-progress detector (Get-PilotNavigateCommand) --
+        # NavDigest is the last (location, distance, inRange, screenText) snapshot recorded while
+        # aiming at a given nearby target key; NavStuckCount is how many consecutive turns that
+        # snapshot has read IDENTICAL despite issuing a real move/interact toward it every time.
+        # NavBlocked is the resulting blacklist, keyed by target key -> the DAY it was blocked (NOT a
+        # bare bool -- a real-run finding on seed 4242 measured a permanent-forever blacklist turning
+        # one early stuck episode into zero Stock_/BuyMat_/WorkForge_ presses for the rest of a
+        # 22-day run, which is exactly the "papering over the wall" the owner's steer warns against).
+        # A block only holds for the REST of the day it was set; Get-PilotBestReachableTarget clears
+        # it the instant $State.day moves on, so a target gets a fresh try every day rather than being
+        # exiled for the run. See that function's own doc for why a target-scoped digest catches BOTH
+        # a swallowed interact (screen never changes) and a blocked move (distance never drops), the
+        # two shapes the owner's steer named by name.
+        NavDigest          = @{}
+        NavStuckCount      = @{}
+        NavBlocked         = @{}
         # 2026-08-11 real-run finding: pressing CommissionAccept_1/CommissionDecline_1 does NOT
         # remove that row from the board or disable either button -- the dead-verb detector
         # confirmed a byte-identical whole-state fingerprint before/after the press, repeatedly,
@@ -112,6 +144,19 @@ function New-PilotMemory {
         ActedOn            = @{}
         FrictionLog        = New-Object System.Collections.ArrayList
         SixDecisions       = New-Object System.Collections.ArrayList
+        # Owner steer (2026-08-11, "the test must try to follow as a human would... pay attention to
+        # no interaction, lack of response etc"): PendingAction is what the LAST turn's command was
+        # (action/target/label/why/kind) plus a snapshot of $State AS SEEN when it was chosen --
+        # compared, at the top of the NEXT call, against $State AS SEEN now, to answer "did anything
+        # happen" for EVERY verb (press/move/key/advance), not just the nav-specific case
+        # Get-PilotNavigateCommand's own NavDigest already covers. See Test-PilotAcknowledgement's doc.
+        PendingAction      = $null
+        MinigameActive     = $false
+        # DeadStretchRun: consecutive turns whose ONLY legal option was the "nothing phase-specific
+        # available" advance-fallback (Get-PilotCommand's own catch-all) -- a real "the day-11 boredom
+        # question, measured instead of guessed" per the owner's steer. Holds the FIRST turn/day/phase
+        # of the current streak, or $null when the streak is not running.
+        DeadStretchRun     = $null
     }
 }
 
@@ -149,6 +194,49 @@ function Add-PilotDecision {
         Choice   = $Choice
         Why      = $Why
     })
+}
+
+# Owner steer (2026-08-11): "pay attention to no interaction, lack of response etc." Everything a
+# human would notice as "I did that and nothing happened" reduces to comparing a snapshot of the
+# whole visible screen taken right before a command was chosen against one taken right after it
+# resolved -- the SAME shape Get-PilotNavigateCommand's own NavDigest already uses for the nav-only
+# case, generalized here to cover every verb (press/move/key/advance).
+function Get-PilotFullSnapshot {
+    param($State)
+    return ([string]$State.location + '|' + [string]$State.gold + '|' + [string]$State.day + '|' +
+        [string]$State.phase + '|' + [string]$State.beat + '|' + [string]$State.canMove + '|' +
+        [string]$State.actionSlotsRemaining + '|' + (([string[]]@($State.screenText)) -join ';'))
+}
+
+# The visible LABEL a person reads for $Name (e.g. "Buy 1", "Work the forge"), or $Name itself when
+# it names no on-screen control at all (move/key/advance targets, or a control that scrolled off
+# between turns) -- friction entries should quote what a human would have read, not an internal id.
+function Get-PilotControlLabel {
+    param($State, [string]$Name)
+    if (-not $Name) { return '' }
+    $match = @($State.controls | Where-Object { $_ -and [string]$_.name -eq $Name }) | Select-Object -First 1
+    if ($match -and $match.label) { return [string]$match.label }
+    return $Name
+}
+
+# Owner steer, kind 4 (UNREADABLE REFUSAL): "the on-screen reason would not tell a human what to do
+# differently (empty, generic, or naming a control/term not on screen)." AgentPlaytest.ApplyPress
+# already surfaces the GAME's own tooltip text for a disabled control ("refused: 'X' is disabled --
+# {reason}") -- that reason is genuinely player-facing copy (ForgePanel's own Gate() WhyNot strings,
+# etc.) and is treated as readable by default; only the HARNESS's own generic fallbacks (a target that
+# does not exist on screen, a nonsense move direction, or copy pointing back at itself with nothing a
+# person could act on) are flagged. Candidate-shaped: this names what LOOKS unreadable, not a verdict.
+function Test-PilotRefusalReadable {
+    param([Parameter(Mandatory)][string]$Outcome)
+    if (-not $Outcome.StartsWith('refused:')) { return $true }
+    $reason = $Outcome.Substring(8).Trim()
+    if ([string]::IsNullOrWhiteSpace($reason)) { return $false }
+    if ($reason.ToLowerInvariant().Contains('(no reason on the tooltip)')) { return $false }
+    $unhelpful = @('unknown action', "unknown move dir")
+    foreach ($phrase in $unhelpful) {
+        if ($reason.ToLowerInvariant().Contains($phrase)) { return $false }
+    }
+    return $true
 }
 
 # Seeded coin flip against $Probability. $Random is the SAME System.Random instance the caller reuses
@@ -203,11 +291,35 @@ function Get-PilotUnactedControls {
     return ,@($Candidates | Where-Object { -not $Memory.ActedOn.ContainsKey($Kind + '-' + (Get-PilotControlId $_.name)) })
 }
 
-# Walk toward (then enter/interact with) the nearest $State.nearby entry whose label contains
-# $Keyword, or the plain nearest one if no keyword was given at all -- the same "Around you" reading
-# a model is taught in act.md rule 8, just applied by regex instead of by an LLM reading prose.
-# Returns $null when there is nothing to navigate toward (cannot move, nothing nearby, OR a keyword
-# was wanted and not found), so the caller falls through to its own next choice.
+# The first of $Candidates (in the order given -- $State.nearby already arrives nearest-first,
+# AgentPlaytestBridge.cs's own Surroundings().OrderBy(distance)) whose key is not CURRENTLY on
+# $Memory's no-progress blacklist, or $null when every candidate here has already proven stuck today.
+# See Get-PilotNavigateCommand's own doc for what "stuck" means and why a per-key blacklist is the fix.
+#
+# fix/pilot-finds-its-way (real-run finding, seed 4242): a blacklist entry that never expired turned
+# one early stuck episode into a permanent exile -- measured on a full 220-turn/22-day run, a single
+# early failure to reach the Forge building blacklisted it on day 1 or 2, and the run never pressed a
+# single Stock_/BuyMat_/WorkForge_ button again for the remaining ~20 days (0 of each, confirmed
+# against the driver's own turn-by-turn log). That is "papering over the wall" in exactly the way the
+# owner's steer warns against -- it stopped the infinite loop but also stopped the pilot from ever
+# trying again, which a real person would not do (a doorway that was blocked yesterday is not
+# permanently blocked). $Memory.NavBlocked now stores the DAY a key was blocked, and a block only
+# holds for the REST of that same day -- a new day is a fresh chance, tied to the game's own
+# meaningful boundary (world state, party positions, and the day's own obstacles all move) rather than
+# an arbitrary turn-count cooldown.
+function Get-PilotBestReachableTarget {
+    param($Candidates, [Parameter(Mandatory)]$Memory, [Parameter(Mandatory)]$Day)
+    return ($Candidates | Where-Object {
+        $_.key -and -not ($Memory.NavBlocked.ContainsKey([string]$_.key) -and $Memory.NavBlocked[[string]$_.key] -eq [int]$Day)
+    } | Select-Object -First 1)
+}
+
+# Walk toward (then enter/interact with) the nearest reachable $State.nearby entry whose label
+# contains $Keyword, or the nearest reachable one at all if no keyword was given -- the same
+# "Around you" reading a model is taught in act.md rule 8, just applied by regex instead of by an
+# LLM reading prose. Returns $null when there is nothing left to navigate toward (cannot move,
+# nothing nearby, a keyword was wanted and not found, OR every candidate is blacklisted and this is
+# not an interior to escape from), so the caller falls through to its own next choice.
 #
 # 2026-08-11 real-run finding: once inside an interior, $State.nearby lists ONLY that room's own
 # stations (AgentPlaytestBridge.cs's Surroundings() — a town building's nearby becomes a DIFFERENT
@@ -218,30 +330,93 @@ function Get-PilotUnactedControls {
 # while $State.location already reads "interior:..." backs OUT (key: cancel) instead of wandering
 # the wrong building; a keyword miss OUTDOORS still falls back to nearest (every town building is
 # already in that list, so a genuine miss there means the building does not exist this run).
+#
+# fix/pilot-finds-its-way: the ORIGINAL wall this whole file exists to fix. The pilot walked toward
+# "Stock Crates"/"Material Shelf" and never moved again -- this function had no way to notice its own
+# move/interact was going nowhere, so it issued the SAME command forever. Mechanical, bounded no-
+# progress detection now runs on every target this function ever picks: a (location, distance,
+# inRange, screenText) snapshot is recorded per target key, and if that snapshot reads IDENTICAL for
+# $script:PilotNavStuckThreshold turns running -- despite a real move or interact having been sent
+# each time -- the target is blacklisted ($Memory.NavBlocked) and a friction entry quotes the frozen
+# screen. This one mechanism covers BOTH shapes the owner's steer named: a blocked MOVE (distance
+# never drops -- a collision) and a swallowed INTERACT (screen never changes -- the exact "376-turn
+# entering Anvil" loop that produced zero crafts, since that loop is this same function issuing
+# "key: interact" against the anvil turn after turn). Once a target is blocked this call immediately
+# retries with the NEXT reachable candidate (recursion, bounded by $nearbyList's own finite size,
+# never a wasted turn) -- another station, or (Get-PilotBestReachableTarget returning $null for every
+# remaining candidate) a real "key: cancel" to leave the room, now that AgentPlaytest.ApplyKey
+# dispatches a genuine input event a room's own Escape ladder can actually see (see that file's own
+# fix comment) rather than the ActionPress/ActionRelease pair that could not.
 function Get-PilotNavigateCommand {
     param($State, [string]$Keyword, [Parameter(Mandatory)]$Memory)
 
     if (-not $State.canMove) { return $null }
     $nearbyList = @($State.nearby)
-    if ($nearbyList.Count -eq 0) { return $null }
+    $inInterior = ([string]$State.location).StartsWith('interior:')
+    if ($nearbyList.Count -eq 0) {
+        if ($inInterior) {
+            return (Build-PilotCommandJson -Action 'key' -Target 'cancel' -Why 'pilot: nothing here to reach, leaving')
+        }
+        return $null
+    }
 
-    $target = $null
+    $candidates = $nearbyList
     if ($Keyword) {
-        $target = $nearbyList | Where-Object { $_.label -and ([string]$_.label).ToLowerInvariant().Contains($Keyword) } | Select-Object -First 1
-        if (-not $target) {
+        $candidates = @($nearbyList | Where-Object { $_.label -and ([string]$_.label).ToLowerInvariant().Contains($Keyword) })
+        if ($candidates.Count -eq 0) {
             # A wanted keyword matching nothing HERE is a miss, not "go anywhere nearby" -- the
             # first version of this function fell back to $nearbyList[0] regardless, which inside
             # an interior means the nearest station of whatever room we already happen to be in.
             # Back out first if that is where we are; outdoors, every town building is already in
             # this list, so a miss there means the building genuinely does not exist and there is
             # nothing sensible to fall back to either.
-            if (([string]$State.location).StartsWith('interior:')) {
+            if ($inInterior) {
                 return (Build-PilotCommandJson -Action 'key' -Target 'cancel' -Why ('pilot: ' + $Keyword + ' is not in here, leaving'))
             }
             return $null
         }
+    }
+
+    $target = Get-PilotBestReachableTarget -Candidates $candidates -Memory $Memory -Day $State.day
+    if (-not $target) {
+        # Every candidate this call could have picked has already proven stuck. Escaping the room
+        # (now that key:cancel genuinely works) is the only useful move left; outdoors there is
+        # nothing sensible to fall back to and the caller's own next choice takes over.
+        if ($inInterior) {
+            return (Build-PilotCommandJson -Action 'key' -Target 'cancel' -Why 'pilot: every reachable target here is stuck, leaving')
+        }
+        return $null
+    }
+
+    # No-progress detection: a snapshot of everything that SHOULD change if a move/interact toward
+    # this exact target actually worked. Comparing against the SAME target's own last snapshot (never
+    # a different target's) means switching targets never falsely counts as "stuck", and comparing
+    # the WHOLE tuple (not distance alone) catches a swallowed interact too -- distance can legitimately
+    # sit still right at the interact threshold while the interact itself keeps failing.
+    $navKey = [string]$target.key
+    $navSnapshot = ([string]$State.location + '|' + [string]$target.distance + '|' + [string]$target.inRange + '|' +
+        (([string[]]@($State.screenText)) -join ';'))
+    if ($Memory.NavDigest.ContainsKey($navKey) -and $Memory.NavDigest[$navKey] -eq $navSnapshot) {
+        $streak = 1
+        if ($Memory.NavStuckCount.ContainsKey($navKey)) { $streak = $Memory.NavStuckCount[$navKey] + 1 }
+        $Memory.NavStuckCount[$navKey] = $streak
     } else {
-        $target = $nearbyList[0]
+        $Memory.NavStuckCount[$navKey] = 0
+    }
+    $Memory.NavDigest[$navKey] = $navSnapshot
+
+    if ($Memory.NavStuckCount[$navKey] -ge $script:PilotNavStuckThreshold) {
+        Add-PilotFriction -Memory $Memory -Turn $State.turn -Day $State.day -Phase $State.phase `
+            -Category 'no-route' -Trying ('reach ' + $target.label) `
+            -Detail (($Memory.NavStuckCount[$navKey] + 1).ToString() + ' attempts at ' + $target.label +
+                ' with no change -- screen stayed: "' + (([string[]]@($State.screenText)) -join ' | ') + '"')
+        $Memory.NavBlocked[$navKey] = [int]$State.day
+        $Memory.NavStuckCount[$navKey] = 0
+        # Retry NOW with the next reachable candidate rather than spending a whole turn on a target
+        # already proven dead -- safe: NavBlocked shrinks the candidate set by exactly one key each
+        # time, so this recurses at most $nearbyList.Count deep before Get-PilotBestReachableTarget
+        # returns $null and the branch above ends it.
+        return (Get-PilotNavigateCommand -State $State -Keyword $Keyword -Memory $Memory)
     }
 
     # 2026-08-11 real-run finding: a target reported inRange=true (AgentPlaytestBridge's own
@@ -266,38 +441,62 @@ function Get-PilotNavigateCommand {
 #   1. A room's own stations are named after their FUNCTION, never the building (WorkshopVocab.cs's
 #      own table -- the forge room holds "Anvil"/"Bellows"/"Furnace"/"Material Shelf", none of which
 #      contain the substring "forge"), so re-using the building's own keyword once already standing
-#      inside it can never match. Already inside the target interior -> no keyword at all (nearest
-#      station here IS progress; a station with Action:null, like the forge's own "Quench Trough",
-#      is real, if wasted, human behavior -- poking the wrong thing once is not a bug here).
+#      inside it can never match. Already inside the target interior -> the caller's own
+#      $StationKeyword (may be empty -- nearest REACHABLE station here IS progress; a station with
+#      Action:null, like the forge's own "Quench Trough", is real, if wasted, human behavior --
+#      poking the wrong thing once is not a bug here). See finding 5 below for why an empty
+#      $StationKeyword is no longer always the right default.
 #
 #   2. Interacting with a station OPENS A DRAWER on top of the room (location becomes
 #      "panel:<PanelId>", MainUi's own priority rule -- a drawer panel outranks the room underneath
-#      it), and that drawer does NOT close itself. A first fix attempt (2026-08-11) tried pressing
-#      "key:cancel" while location still read "interior:<venue>" (the WALKABLE ROOM, no drawer
-#      open yet) hoping to leave the building entirely -- it does not: Town2D.ExitInterior() is
-#      wired ONLY to the room's own ExitZone Area2D (BodyEntered), never to Escape/cancel, so three
-#      turns of "leaving" produced a byte-identical screen each time (confirmed live). The REAL bug
-#      this run actually hit was worse and silent: a 400-turn, 42-day run ended with location stuck
-#      at "panel:Forge" from day 1 turn ~9 through the very last turn -- the drawer opened once and
-#      then NEVER closed for the rest of the campaign, because nothing in this policy ever asked to
-#      close it. "cancel" DOES close a DRAWER (ModalEscape.TryClose, the same mechanism
-#      Commissions/Legends already use via their own named Close buttons) -- it only fails to leave
-#      the WALKABLE ROOM underneath one. So: "panel:$PanelId" (we are exactly where this call
-#      wanted) returns null so the caller's own controls check (WorkForge_/Stock_/BuyMat_/etc.)
-#      takes over; any OTHER "panel:*" closes via cancel before anything else is tried.
+#      it), and that drawer does NOT close itself. "key:cancel" DOES close a DRAWER (ModalEscape.
+#      TryClose, the same mechanism Commissions/Legends already use via their own named Close
+#      buttons). So: "panel:$PanelId" (we are exactly where this call wanted) returns null so the
+#      caller's own controls check (WorkForge_/Stock_/BuyMat_/etc.) takes over; any OTHER "panel:*"
+#      closes via cancel before anything else is tried.
 #
-#   3. Inside a DIFFERENT walkable interior (no drawer) -> best-effort cancel (harmless even though
-#      finding 2 shows it will not actually leave the room -- a future fix needs the room's own
-#      exit-zone direction, which AgentPlaytestBridge's digest does not expose at all today; logged
-#      as a friction entry by the caller's own stuck-detector rather than silently retried forever).
+#   3. Inside a DIFFERENT walkable interior (no drawer) -> falls through to the ordinary
+#      keyword search below, which is what actually fixes this case: $BuildingKeyword (e.g. "forge")
+#      will not match ANY of the wrong room's own station labels, and Get-PilotNavigateCommand's own
+#      keyword-miss-while-interior branch already answers a miss with a real "key: cancel" -- FIXED
+#      2026-08-11 (fix/pilot-finds-its-way): earlier builds of this file believed cancel was dead
+#      here (a grep for the "cancel" ACTION found only WorldInput2D's own unused CancelRequested
+#      event, missing MainUi's separate raw-Escape-key Input handler entirely) and treated this as an
+#      unfixable harness-limit, logging it once and returning null forever after. It was not a harness
+#      limit -- AgentPlaytestBridge.ApplyKey drove "cancel" via Input.ActionPress/ActionRelease, which
+#      Godot's own docs say never calls a node's _Input at all ("If you want to simulate _input, use
+#      Input.ParseInputEvent instead"), so MainUi's Escape ladder (which DOES exit the room, per
+#      InteriorEntryExitTests.Escape_WithNoDrawerOpen_ExitsTheRoom) never saw it. ApplyKey now
+#      dispatches a real InputEventKey the same way HumanPlayer.PushKey already does for every engine
+#      test in this suite (AgentPlaytestBridgeTests.KeyCancel_InsideAWalkableRoom_ExitsIt pins it) --
+#      cancel reaches the room's real exit path now, so this no longer needs (or gets) a bespoke
+#      dead-end branch of its own. SUPERSEDED same day: that fix was Viewport.PushInput, which turned
+#      out to be only half a real key press -- see AgentPlaytest.ApplyKey's own doc for the second
+#      half (Input.ParseInputEvent). Cancel still worked either way; "interact" against a town
+#      building's door did not, until the second fix (this is what finally let a live pilot walk
+#      into the forge at all, below).
 #
 #   4. Outdoors (location "town") -> the ordinary building-keyword search.
+#
+#   5. STATION-BLIND once inside (found 2026-08-11, the SAME live run that finally got past finding
+#      3): an empty $StationKeyword lands on whatever station is nearest the room's own entry point,
+#      not whatever the CALLER actually needs -- and ForgePanel.FocusSection (station-split plan,
+#      2026-08) hides the OTHER half of the panel entirely depending on which station opened it
+#      ("anvil"/"bellows" -> Focus:"craft", craft cards only, vendor rows hidden; "furnace"/"shelf" ->
+#      Focus:"materials", vendor rows only, craft cards hidden). A 220-turn live run entered
+#      interior:forge cleanly (finding 3's fix working) and then interacted with "Anvil" 43 times
+#      across 9 in-game days -- Anvil happened to be nearest the door -- and NEVER once saw a BuyMat_
+#      row, because Anvil's craft-only view hides it by design. Buying material and working the forge
+#      are two DIFFERENT stations' jobs now, so the caller must say which one it wants:
+#      $StationKeyword 'shelf' (Material Shelf, Focus:"materials") for Morning's buy decision,
+#      'anvil' (Focus:"craft") for Expedition's craft decision -- see both call sites below.
 function Get-PilotEnterInteriorCommand {
     param(
         $State,
         [Parameter(Mandatory)][string]$InteriorPrefix,
         [Parameter(Mandatory)][string]$BuildingKeyword,
         [string]$PanelId = '',
+        [string]$StationKeyword = '',
         [Parameter(Mandatory)]$Memory
     )
 
@@ -307,40 +506,32 @@ function Get-PilotEnterInteriorCommand {
         return $null # arrived -- let the caller's own control checks (WorkForge_/Stock_/BuyMat_/...) run
     }
     if ($location.StartsWith('panel:')) {
-        # "key:cancel" does NOT close a Drawer-hosted panel -- confirmed live, 150+ consecutive
-        # presses against a real running client with a byte-identical fingerprint every time.
-        # DrawerHost never wires Escape to Close() at all; it only reacts to its own header button,
-        # UiKit.DrawerHeader's own `Name = "Close"` (godot/scripts/ui/UiKit.cs) -- a generic, shared
-        # name across every Drawer-hosted panel (Forge/Shop/Tavern/...), unlike CommissionBoard's/
-        # LegendsWall's OWN separate overlay widgets, which are not Drawer-hosted and use their own
-        # panel-specific Close names (CommissionClose/LegendsWallClose) instead.
+        # CORRECTED 2026-08-11 (fix/pilot-finds-its-way): this comment used to say "key:cancel does
+        # NOT close a Drawer-hosted panel -- confirmed live... DrawerHost never wires Escape to
+        # Close() at all". That was true only of the OLD, broken AgentPlaytestBridge.ApplyKey (see
+        # Get-PilotNavigateCommand's own doc) -- DrawerHost._Input (godot/scripts/ui/DrawerHost.cs)
+        # DOES close on a real Escape key event, it just never reached one before ApplyKey's fix.
+        # Pressing the visible "Close" button (UiKit.DrawerHeader's own generic `Name = "Close"`,
+        # shared across every Drawer-hosted panel -- Forge/Shop/Tavern/...) is kept anyway: it is the
+        # more human-plausible action (a person reads the button, not the keyboard shortcut) and
+        # needs no change now that either path would work.
         $close = Get-PilotEnabledControls -State $State -Pattern '^Close$'
         if ($close.Count -gt 0) {
             return (Build-PilotCommandJson -Action 'press' -Target 'Close' -Why ('pilot: closing an unrelated panel (' + $location + ') to get to ' + $BuildingKeyword))
         }
-        return $null # no Close control found/enabled this turn -- do not spin on a guess
+        # No visible/enabled "Close" button this turn (CommissionBoard/LegendsWall use their own
+        # panel-specific names -- CommissionClose/LegendsWallClose -- not this generic one) -- cancel
+        # is a real, working escape now (see above), so use it rather than spinning on a guess.
+        return (Build-PilotCommandJson -Action 'key' -Target 'cancel' -Why ('pilot: closing an unrelated panel (' + $location + ') to get to ' + $BuildingKeyword))
     }
     if ($location.StartsWith($InteriorPrefix)) {
-        return (Get-PilotNavigateCommand -State $State -Keyword '' -Memory $Memory)
+        return (Get-PilotNavigateCommand -State $State -Keyword $StationKeyword -Memory $Memory)
     }
-    if ($location.StartsWith('interior:')) {
-        # No fix exists for this one today. "key:cancel" was tried first and confirmed dead by the
-        # same live run: only WorldInput2D.cs listens for the "cancel" action at all (grepped), and
-        # Town2D.ExitInterior() is wired ONLY to the room's own ExitZone Area2D (BodyEntered) --
-        # there is no keyboard shortcut to leave a walkable interior room, and
-        # AgentPlaytestBridge's own digest exposes no direction/position for that exit zone either
-        # (Surroundings() lists ONLY the room's stations once inside one). Logged once per run as a
-        # named harness-limit rather than silently guessed at forever.
-        if (-not $Memory.WrongInteriorFrictionLogged) {
-            $Memory.WrongInteriorFrictionLogged = $true
-            Add-PilotFriction -Memory $Memory -Turn $State.turn -Day $State.day -Phase $State.phase `
-                -Category 'harness-limit' -Trying ('leave ' + $location + ' to reach ' + $BuildingKeyword) `
-                -Detail ('there is no way to exit a walkable interior room through this harness''s action ' +
-                    'vocabulary -- Town2D.ExitInterior() only fires from walking into the room''s own ExitZone, ' +
-                    'never from a key press, and the state digest does not expose where that zone is.')
-        }
-        return $null
-    }
+    # Inside a DIFFERENT walkable interior (finding 3 above), OR outdoors (finding 4): both fall
+    # through to the ordinary keyword search. Inside the wrong room, $BuildingKeyword cannot match any
+    # of ITS stations, so Get-PilotNavigateCommand's own keyword-miss-while-interior branch answers
+    # with a real "key: cancel" -- no bespoke dead-end branch needed here any more (see this
+    # function's own doc, finding 3, for what used to live here and why it was wrong).
     return (Get-PilotNavigateCommand -State $State -Keyword $BuildingKeyword -Memory $Memory)
 }
 
@@ -454,6 +645,47 @@ function Get-PilotMorningCommand {
         return (Build-PilotCommandJson -Action 'press' -Target 'OpenCommissions' -Why 'pilot: check the commission board')
     }
 
+    # fix/pilot-finds-its-way: BuyMaterialAction/BuyForgeSupplyAction are Morning-only in the sim
+    # (MaterialVendorHandlers.cs:46, ForgeSupplyHandlers.cs:45 -- both CanHandle gate on
+    # DayPhase.Morning), but this decision used to live in Get-PilotEveningCommand, where BuyMat_/
+    # BuySupply_ can NEVER be enabled -- confirmed with DeepPilotPlayTests (godot/tests): moving this
+    # block to Evening's OWN phase check produced ten straight days of "no BuyMat_ button" with
+    # materials never rising off zero. "Buy the ore or buy the goodwill" (CLAUDE.md's own decision 5)
+    # was therefore never actually decidable by any live pilot run before this fix -- the button was
+    # dead on arrival every single evening, every single day, forever.
+    $buy = Get-PilotEnabledControls -State $State -Pattern '^BuyMat_'
+    $buySupply = Get-PilotEnabledControls -State $State -Pattern '^BuySupply_'
+    $buyable = $buy + $buySupply
+    if ($buyable.Count -gt 0) {
+        # Seen at least one buyable row -- the Forge vendor is in front of us, so this morning's
+        # material decision is resolvable here. Marking it resolved (bought OR conserved, either is a
+        # real decision) is what lets the nav step below move on to the market instead of camping the
+        # forge for the rest of the morning.
+        $Memory.VisitedSurfaces['MorningMaterialResolved-' + $State.day] = $true
+        if (Test-PilotChance -Random $Random -Probability $script:PilotBuyMaterialChance) {
+            Add-PilotDecision -Memory $Memory -Day $State.day -Decision 'buy the ore or buy the goodwill' -Choice 'buy ore' `
+                -Why ('bought via ' + $buyable[0].name)
+            return (Build-PilotCommandJson -Action 'press' -Target $buyable[0].name -Why 'pilot: buy material')
+        }
+        Add-PilotDecision -Memory $Memory -Day $State.day -Decision 'buy the ore or buy the goodwill' -Choice 'conserve gold' `
+            -Why 'held gold back instead of buying material'
+    }
+
+    # Visit the Forge FIRST each morning (to resolve the material decision above) before heading to
+    # the market -- only one building can be walked toward per turn, and once
+    # Get-PilotEnterInteriorCommand reports "arrived" (panel:Forge, or nothing left to do there) it
+    # returns null and this falls straight through to the market nav on the SAME turn, so a morning
+    # with nothing to buy costs no extra turns over the pre-fix behavior.
+    #
+    # -StationKeyword 'shelf' (finding 5, Get-PilotEnterInteriorCommand's own doc): Material Shelf is
+    # the ONLY station whose FocusSection view shows BuyMat_ rows. Anvil (Focus:"craft") is nearer the
+    # door and hides them entirely -- a live run proved this by walking straight into Anvil 43 times
+    # across 9 days and never once seeing a material to buy.
+    if (-not $Memory.VisitedSurfaces.ContainsKey('MorningMaterialResolved-' + $State.day)) {
+        $navForge = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -StationKeyword 'shelf' -Memory $Memory
+        if ($navForge) { return $navForge }
+    }
+
     # Venue key is "market" (InteriorLayout2D.cs: "market" or "Shop" => "market"), NOT "shop" --
     # the building's own on-screen label is still "Shop", which is what a keyword search outdoors
     # needs to match.
@@ -500,7 +732,10 @@ function Get-PilotExpeditionCommand {
         }
     }
 
-    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -Memory $Memory
+    # -StationKeyword 'anvil' (finding 5, Get-PilotEnterInteriorCommand's own doc): Anvil is the
+    # station whose FocusSection view shows WorkForge_/Craft_ -- explicit rather than relying on it
+    # already being the nearest-to-the-door default, which is true today but not a contract.
+    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -StationKeyword 'anvil' -Memory $Memory
     if ($nav) { return $nav }
 
     return $null
@@ -554,23 +789,54 @@ function Get-PilotEveningCommand {
         return (Build-PilotCommandJson -Action 'press' -Target 'LegendsWallClose' -Why 'pilot: done with the legends wall, closing it')
     }
 
-    $buy = Get-PilotEnabledControls -State $State -Pattern '^BuyMat_'
-    $buySupply = Get-PilotEnabledControls -State $State -Pattern '^BuySupply_'
-    $buyable = $buy + $buySupply
-    if ($buyable.Count -gt 0) {
-        if (Test-PilotChance -Random $Random -Probability $script:PilotBuyMaterialChance) {
-            Add-PilotDecision -Memory $Memory -Day $State.day -Decision 'buy the ore or buy the goodwill' -Choice 'buy ore' `
-                -Why ('bought via ' + $buyable[0].name)
-            return (Build-PilotCommandJson -Action 'press' -Target $buyable[0].name -Why 'pilot: buy material')
+    # fix/pilot-finds-its-way: the material-buying decision (BuyMat_/BuySupply_) used to live here.
+    # Moved to Get-PilotMorningCommand -- BuyMaterialAction/BuyForgeSupplyAction are Morning-only in
+    # the sim (MaterialVendorHandlers.cs:46, ForgeSupplyHandlers.cs:45), so those buttons could never
+    # once be enabled at this phase; the Forge-navigation call that used to close this function existed
+    # ONLY to reach them and has no other purpose now that they are gone (Honor_/OpenLegends are HUD
+    # tray + LegendsWall controls, reachable from anywhere -- see this function's own checks above,
+    # none of which need a particular building). Falling through to $null lets the caller's own
+    # advance-fallback (Get-PilotCommand) end the phase instead of wandering the forge for nothing.
+    return $null
+}
+
+# The ONE place every command Get-PilotCommand returns actually leaves the function -- owner steer
+# (2026-08-11), kinds 1-3: flushes/extends the DEAD STRETCH streak (kind 3) and records what is about
+# to be tried plus a snapshot of the screen right now (kinds 1+2, read back next call in Get-
+# PilotCommand's own step 1). $IsDeadStretch marks ONLY the "nothing phase-specific available"
+# fallback itself -- every other command, including a real one chosen the SAME turn a streak was
+# running, ends and logs the streak here.
+function Complete-PilotTurn {
+    param($State, [Parameter(Mandatory)]$Memory, [Parameter(Mandatory)][string]$CommandJson, [switch]$IsDeadStretch)
+
+    if ($IsDeadStretch) {
+        if (-not $Memory.DeadStretchRun) {
+            $Memory.DeadStretchRun = [pscustomobject]@{ StartTurn = $State.turn; StartDay = $State.day; StartPhase = [string]$State.phase; Length = 0 }
         }
-        Add-PilotDecision -Memory $Memory -Day $State.day -Decision 'buy the ore or buy the goodwill' -Choice 'conserve gold' `
-            -Why 'held gold back instead of buying material'
+        $Memory.DeadStretchRun.Length++
+    } elseif ($Memory.DeadStretchRun) {
+        if ($Memory.DeadStretchRun.Length -ge $script:PilotDeadStretchThreshold) {
+            Add-PilotFriction -Memory $Memory -Turn $Memory.DeadStretchRun.StartTurn -Day $Memory.DeadStretchRun.StartDay -Phase $Memory.DeadStretchRun.StartPhase `
+                -Category 'dead-stretch' -Trying 'nothing legal but advance' `
+                -Detail ($Memory.DeadStretchRun.Length.ToString() + ' consecutive turns (turn ' + $Memory.DeadStretchRun.StartTurn + ' to turn ' +
+                    ($State.turn - 1) + ') with nothing to decide but advance, starting day ' + $Memory.DeadStretchRun.StartDay + ' ' + $Memory.DeadStretchRun.StartPhase)
+        }
+        $Memory.DeadStretchRun = $null
     }
 
-    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -Memory $Memory
-    if ($nav) { return $nav }
-
-    return $null
+    $parsed = $CommandJson | ConvertFrom-Json
+    $target = if ($parsed.target) { [string]$parsed.target } else { '' }
+    $kind = 'generic'
+    if ($target -match '^(BuyMat_|BuySupply_)') { $kind = 'material-purchase' }
+    $Memory.PendingAction = [pscustomobject]@{
+        Action      = [string]$parsed.action
+        Target      = $target
+        Label       = (Get-PilotControlLabel -State $State -Name $target)
+        Why         = [string]$parsed.why
+        Kind        = $kind
+        PreSnapshot = (Get-PilotFullSnapshot -State $State)
+    }
+    return $CommandJson
 }
 
 # The one entry point agent-playtest.ps1 calls, mirroring Get-MonkeyCommand's own signature shape
@@ -587,6 +853,58 @@ function Get-PilotCommand {
     if (([string]$State.lastOutcome).StartsWith('refused:')) {
         Add-PilotFriction -Memory $Memory -Turn $State.turn -Day $State.day -Phase $State.phase `
             -Category 'refused' -Trying $Memory.PendingIntent -Detail ([string]$State.lastOutcome)
+        # Owner steer, kind 4 (UNREADABLE REFUSAL) -- a SEPARATE, filtered view of the same event:
+        # would the quoted reason actually tell a human what to do differently.
+        if (-not (Test-PilotRefusalReadable -Outcome ([string]$State.lastOutcome))) {
+            Add-PilotFriction -Memory $Memory -Turn $State.turn -Day $State.day -Phase $State.phase `
+                -Category 'unreadable-refusal' -Trying $Memory.PendingIntent `
+                -Detail ('refused with no player-actionable reason -- verbatim: "' + [string]$State.lastOutcome + '"')
+        }
+    } elseif ($Memory.PendingAction.Action -eq 'move') {
+        # "move" is a SPECIAL case for kind 1: the thing that changes (player pixel position) is not
+        # in $State at all -- location/gold/day/phase/beat/canMove/slots/screenText do not depend on
+        # WHERE inside a room the player stands, so Get-PilotFullSnapshot reads "identical" for every
+        # ordinary step deeper into a big room, which is real progress, not silence. Measured directly
+        # (2026-08-11 live run): naively reusing the whole-screen digest here mislabeled 132 of 220
+        # turns "no-response-press" while the player was, in fact, slowly closing on Anvil the entire
+        # time (a genuinely slow crawl, a DIFFERENT and real finding on its own -- see pilot.ps1's own
+        # header/Get-PilotEnterInteriorCommand doc -- but not silence). The move outcome text itself
+        # already reports ground truth ("moved DIR Nf -> pos (X,Y) from (X2,Y2)") -- a REAL zero-pixel
+        # move (blocked solid in the attempted direction) is what this checks instead.
+        $moveMatch = [regex]::Match([string]$State.lastOutcome, 'pos \(([\d.-]+),\s*([\d.-]+)\) from \(([\d.-]+),\s*([\d.-]+)\)')
+        if ($moveMatch.Success -and $moveMatch.Groups[1].Value -eq $moveMatch.Groups[3].Value -and $moveMatch.Groups[2].Value -eq $moveMatch.Groups[4].Value) {
+            Add-PilotFriction -Memory $Memory -Turn $State.turn -Day $State.day -Phase $State.phase `
+                -Category 'no-response-press' -Trying $Memory.PendingAction.Why `
+                -Detail ('move ' + $Memory.PendingAction.Target + ' reported "' + [string]$State.lastOutcome +
+                    '" -- position did not change at all, likely blocked solid in that direction')
+        }
+        $Memory.PendingAction = $null
+    } elseif ($Memory.PendingAction) {
+        # Owner steer, kinds 1+2 (NO-RESPONSE PRESS / NO ACKNOWLEDGEMENT) -- the outcome CLAIMED
+        # success (not a refusal), so compare the whole-screen snapshot taken when that command was
+        # chosen against the one $State carries now. Generalizes Get-PilotNavigateCommand's own
+        # per-target NavDigest to every verb, not just movement/interact toward a nearby station.
+        $postSnapshot = Get-PilotFullSnapshot -State $State
+        if ($postSnapshot -eq $Memory.PendingAction.PreSnapshot) {
+            Add-PilotFriction -Memory $Memory -Turn $State.turn -Day $State.day -Phase $State.phase `
+                -Category 'no-response-press' -Trying $Memory.PendingAction.Why `
+                -Detail ($Memory.PendingAction.Action + ' ' + $Memory.PendingAction.Target + ' ("' + $Memory.PendingAction.Label +
+                    '") reported "' + [string]$State.lastOutcome + '" but the screen read identical before and after -- "' +
+                    (([string[]]@($State.screenText)) -join ' | ') + '"')
+        } elseif ($Memory.PendingAction.Kind -eq 'material-purchase') {
+            # Objective, not textual: $State.gold is read off the real sim state every turn, never off
+            # prose, so this cannot be fooled by a ticker line that never mentions the purchase.
+            $goldMatch = [regex]::Match([string]$State.lastOutcome, 'gold (\d+) -> (\d+)')
+            if ($goldMatch.Success -and [int]$goldMatch.Groups[1].Value -eq [int]$goldMatch.Groups[2].Value) {
+                Add-PilotFriction -Memory $Memory -Turn $State.turn -Day $State.day -Phase $State.phase `
+                    -Category 'no-acknowledgement' -Trying $Memory.PendingAction.Why `
+                    -Detail ('bought via ' + $Memory.PendingAction.Target + ' ("' + $Memory.PendingAction.Label +
+                        '") -- the press was not refused and the screen changed, but gold read unchanged (' +
+                        $goldMatch.Groups[1].Value + ' -> ' + $goldMatch.Groups[2].Value +
+                        ') -- candidate for a queued/delayed apply or a silent purchase, not confirmed either way')
+            }
+        }
+        $Memory.PendingAction = $null
     }
 
     # --- 2. Idle-stretch detection (same digest shape the driver's own STUCK detector uses). ---
@@ -610,7 +928,27 @@ function Get-PilotCommand {
         if ($unvisited -and (Test-PilotChance -Random $Random -Probability $script:PilotCuriosityChance)) {
             $Memory.PendingIntent = 'curiosity: look at ' + $unvisited.label
             $nav = Get-PilotNavigateCommand -State $State -Keyword ([string]$unvisited.label).ToLowerInvariant() -Memory $Memory
-            if ($nav) { return $nav }
+            if ($nav) { return (Complete-PilotTurn -State $State -Memory $Memory -CommandJson $nav) }
+        }
+    }
+
+    # --- 3b. World-blocking overlay recovery (real-run finding, seed 4242). canMove false with no
+    # phase-specific control in front of us means some code-built modal (Ledger, Forecast, ...) is
+    # covering the whole world, and its own close button's programmatic NAME does not follow the
+    # "<Name>Close" convention every OTHER modal here happens to use -- LedgerModal.cs names its
+    # button "CloseLedger" (Close-PREFIX, not suffix), which the panel-branch's exact "^Close$" match
+    # (Get-PilotEnterInteriorCommand) can never see. Measured on a full 220-turn/22-day live run: the
+    # Evening Ledger opened once on day 1 and never closed again for the rest of the run -- "advance"
+    # kept legally ticking the day forward the whole time (so the run never LOOKED stuck by the
+    # idle-stretch/no-progress detectors above), but canMove stayed false for ~20 straight days,
+    # silently blocking every Stock_/BuyMat_/WorkForge_ press behind it: 0 of each over the whole run.
+    # Matching on the LABEL a person actually reads ("Close") rather than the inconsistent internal
+    # name survives whichever naming convention a FUTURE modal happens to pick too.
+    if (-not $State.canMove) {
+        $closeLabeled = @($State.controls | Where-Object { $_ -and $_.enabled -and $_.label -and ([string]$_.label).Trim() -ieq 'Close' })
+        if ($closeLabeled.Count -gt 0) {
+            $Memory.PendingIntent = 'pilot: close the overlay blocking the world (' + $closeLabeled[0].name + ')'
+            return (Complete-PilotTurn -State $State -Memory $Memory -CommandJson (Build-PilotCommandJson -Action 'press' -Target $closeLabeled[0].name -Why $Memory.PendingIntent))
         }
     }
 
@@ -621,6 +959,26 @@ function Get-PilotCommand {
     elseif ($phase -eq 'Expedition') { $command = Get-PilotExpeditionCommand -State $State -Memory $Memory -Random $Random }
     elseif ($phase -eq 'Camp') { $command = Get-PilotCampCommand -State $State -Memory $Memory -Random $Random }
     elseif ($phase -eq 'Evening') { $command = Get-PilotEveningCommand -State $State -Memory $Memory -Random $Random }
+
+    # --- 4b. Global stuck circuit breaker. Get-PilotNavigateCommand's own per-target detector (see
+    # its doc) catches a bad move/interact toward a KNOWN nearby target, but a phase policy re-pressing
+    # a dead verb OUTSIDE navigation (a button that looks legal but the kernel silently rejects, a
+    # panel that never closes) never goes through that function at all -- this is the general,
+    # last-resort answer to the same requirement, never repeat the same no-op indefinitely, for
+    # whatever the per-target detector cannot see. Once the WHOLE turn (phase, location, screen) has
+    # read identical for $script:PilotGlobalStuckForceAdvance turns running -- double the threshold
+    # that already logged ONE friction entry above -- asking the same phase policy for what will
+    # provably be the same answer stops being useful; force real progress instead. advance is legal in
+    # every phase (act.md's own rule 2) so this branch itself can never be refused.
+    if ($Memory.StuckCount -ge $script:PilotGlobalStuckForceAdvance) {
+        Add-PilotFriction -Memory $Memory -Turn $State.turn -Day $State.day -Phase $State.phase `
+            -Category 'idle-stretch' -Trying $Memory.PendingIntent `
+            -Detail ('forced advance after ' + ($Memory.StuckCount + 1) + ' identical turns at ' + $State.location + '/' + $State.phase +
+                ' -- screen stayed: "' + (([string[]]@($State.screenText)) -join ' | ') + '"')
+        $Memory.StuckCount = 0
+        $Memory.PendingIntent = 'forced advance (global stuck ceiling)'
+        return (Complete-PilotTurn -State $State -Memory $Memory -CommandJson (Build-PilotCommandJson -Action 'advance' -Why 'pilot: stuck too long, forcing the day forward'))
+    }
 
     # --- 5. Habit tracking: which action-prefix did this phase resolve to this time. ---
     $chosenPrefix = 'advance'
@@ -657,14 +1015,14 @@ function Get-PilotCommand {
             $nav = Get-PilotNavigateCommand -State $State -Keyword ([string]$unvisitedAnyDay.label).ToLowerInvariant() -Memory $Memory
             if ($nav) {
                 $Memory.PendingIntent = 'explore ' + $unvisitedAnyDay.label
-                return $nav
+                return (Complete-PilotTurn -State $State -Memory $Memory -CommandJson $nav)
             }
         }
         $Memory.PendingIntent = 'advance the day (nothing else legal/available)'
-        return (Build-PilotCommandJson -Action 'advance' -Why 'pilot: nothing phase-specific available, advancing')
+        return (Complete-PilotTurn -State $State -Memory $Memory -IsDeadStretch -CommandJson (Build-PilotCommandJson -Action 'advance' -Why 'pilot: nothing phase-specific available, advancing'))
     }
 
     $parsedFinal = $command | ConvertFrom-Json
     $Memory.PendingIntent = [string]$parsedFinal.why
-    return $command
+    return (Complete-PilotTurn -State $State -Memory $Memory -CommandJson $command)
 }
