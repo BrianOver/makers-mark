@@ -146,10 +146,29 @@ public static class UiKit
     }
 
     /// <summary>A plain themed card container — cascade-styled (see type remarks); callers add
-    /// their own content (art + stat chips + buttons) as children.</summary>
+    /// their own content (art + stat chips + buttons) as children.
+    ///
+    /// <para><b>MouseFilter = Ignore, not the PanelContainer default (Stop).</b> A card is a
+    /// decoration around interactive children (buttons, spin boxes) — same "decoration must
+    /// never eat clicks" rule already applied to icons/banners elsewhere in this file — but its
+    /// own background, being a Control, defaults to Stop. Left alone, that silently swallows any
+    /// input the card's rect covers and does not itself consume, including a mouse-wheel scroll
+    /// meant for an ancestor <see cref="ScrollContainer"/>: whenever the wheel lands on a card
+    /// instead of a gap between cards, the event is marked handled right there and never climbs
+    /// the tree, so the page does not scroll. Measured cause of
+    /// <c>DeepPilotPlayTests.CompetentPlayer_ReachesDayEleven_WithRealCrafts</c> reproducibly
+    /// failing to reach a Forge recipe below the fold — the fixed wheel-scroll point this
+    /// engine-test harness uses landed on <see cref="Section"/>'s own panel (see that method's
+    /// note), but any <see cref="Card"/> in any scrollable body has the identical defect, so both
+    /// are fixed together. A real player is not universally stuck (dragging the scrollbar thumb
+    /// still works, since it is a sibling outside this rect), but the single most natural
+    /// scroll gesture silently doing nothing over most of a populated list is exactly the
+    /// "control exists, every property looks right, and it is still unreachable" class of bug
+    /// this repo already treats as a defect, not a test artifact.</para>
+    /// </summary>
     public static PanelContainer Card(string? name = null)
     {
-        var card = new PanelContainer();
+        var card = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         if (name is not null)
         {
             card.Name = name;
@@ -160,10 +179,16 @@ public static class UiKit
 
     /// <summary>A titled section: a themed panel wrapping a header <see cref="Label"/> (Coolant,
     /// <see cref="GameTheme.HeaderFontSize"/>) over a body <see cref="VBoxContainer"/> callers
-    /// populate with cards/rows.</summary>
+    /// populate with cards/rows.
+    ///
+    /// <para>Root's <c>MouseFilter</c> is <c>Ignore</c>, not the <see cref="PanelContainer"/>
+    /// default (Stop) — see <see cref="Card"/>'s own remarks for why: this exact root swallowing
+    /// wheel-scroll meant for an ancestor <see cref="ScrollContainer"/> is the confirmed root
+    /// cause fixed alongside it.</para>
+    /// </summary>
     public static SectionView Section(string title)
     {
-        var root = new PanelContainer { Name = "Section" };
+        var root = new PanelContainer { Name = "Section", MouseFilter = Control.MouseFilterEnum.Ignore };
         var body = new VBoxContainer { Name = "SectionBody" };
         root.AddChild(body);
 
