@@ -1,4 +1,5 @@
 #if GDUNIT_TESTS
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using GameSim.Contracts;
 using GdUnit4;
@@ -258,6 +259,244 @@ public class DelveStageTests
             stage.Free();
         }
     }
+
+    // ── link3 ("the watch becomes a fight"): distinct per-beat combat motion ───────────────────
+    // Every hero here is Delver()'s default 40 MaxHp, so HeavyHitFraction (0.2) puts the
+    // Recoil/Stagger boundary at 8 damage — taken:3 is unambiguously light, taken:15 unambiguously
+    // heavy. Sprites are plain standalone Sprite2D (never added to any tree — DelveStage only ever
+    // reads them through SyncHeroSprites, exactly like MineWatch's real figures), so each test
+    // frees its own sprite in `finally` alongside the stage — nothing here is a Godot orphan by the
+    // time the test ends.
+
+    [TestCase]
+    public void Exchange_DamageDealt_AttackLungesTowardMonster_ThenFullyRecovers()
+    {
+        // ApplyCombatPose writes an ADDITIVE nudge (documented contract: "call AFTER MineWatch's
+        // own figure bob... every additive combat-pose nudge lands on top of the bob"), because in
+        // production MineWatch.AnimateFigures overwrites Position with a FRESH baseline every
+        // single frame before this runs. A standalone test has no such per-frame reset, so it must
+        // supply one itself between Process() calls -- exactly what MineWatch already does -- or
+        // each call's nudge compounds onto the previous one instead of replacing it.
+        var basePosition = new Vector2(200f, 150f);
+        var stage = new DelveStage();
+        var sprite = new Sprite2D { Position = basePosition };
+        try
+        {
+            stage.Build();
+            stage.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = sprite });
+            stage.RenderBeat(Beat(DelveBeatKind.Exchange, floor: 1, hero: 1, dealt: 5, taken: 0), Heroes());
+
+            sprite.Position = basePosition;
+            stage.Process(0.05f); // wind-up: pulled back, AWAY from the monster (-X)
+            AssertThat(sprite.Position.X)
+                .OverrideFailureMessage("Attack wind-up should pull the hero back before the lunge.")
+                .IsLess(200f);
+
+            sprite.Position = basePosition;
+            stage.Process(0.10f); // thrust: past the resting spot, TOWARD the monster (+X)
+            AssertThat(sprite.Position.X)
+                .OverrideFailureMessage("Attack thrust should lunge the hero past their resting spot toward the monster.")
+                .IsGreater(200f);
+
+            sprite.Position = basePosition;
+            stage.Process(1.0f); // comfortably past AttackDuration — fully settled
+            AssertThat(sprite.Position.X)
+                .OverrideFailureMessage("An attack lunge must fully recover to the resting spot, not hang mid-lunge.")
+                .IsEqualApprox(200f, 0.1f);
+        }
+        finally
+        {
+            sprite.Free();
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void Exchange_LightDamageTaken_RecoilsAway_LighterThanAHeavyStagger()
+    {
+        var stage = new DelveStage();
+        var lightSprite = new Sprite2D { Position = new Vector2(200f, 150f) };
+        var heavySprite = new Sprite2D { Position = new Vector2(200f, 150f) };
+        try
+        {
+            stage.Build();
+
+            // Light hit (3/40 MaxHp, well under HeavyHitFraction) -- a Recoil.
+            stage.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = lightSprite });
+            stage.RenderBeat(Beat(DelveBeatKind.Exchange, floor: 1, hero: 1, dealt: 0, taken: 3), Heroes());
+            stage.Process(0.15f);
+            var lightOffset = 200f - lightSprite.Position.X;
+            AssertThat(lightOffset).IsGreater(0f); // recoiled AWAY from the monster
+
+            stage.ResetState(); // clears _heroFx/_heroPose/_clouded -- a clean slate for the 2nd case
+
+            // Heavy hit (15/40 MaxHp, well over HeavyHitFraction) -- a Stagger: bigger magnitude.
+            stage.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = heavySprite });
+            stage.RenderBeat(Beat(DelveBeatKind.Exchange, floor: 1, hero: 1, dealt: 0, taken: 15), Heroes());
+            stage.Process(0.15f);
+            var heavyOffset = 200f - heavySprite.Position.X;
+
+            AssertThat(heavyOffset)
+                .OverrideFailureMessage(
+                    "A stagger (heavy hit) must recoil further than a light hit's recoil at the same " +
+                    "elapsed time -- 'a strike, a block, a stagger' must read as different weights, " +
+                    "not the same animation scaled by nothing.")
+                .IsGreater(lightOffset);
+        }
+        finally
+        {
+            lightSprite.Free();
+            heavySprite.Free();
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void Quaff_LiftsHeroBriefly_ThenSettlesBackToRest()
+    {
+        var stage = new DelveStage();
+        var basePosition = new Vector2(200f, 150f);
+        var sprite = new Sprite2D { Position = basePosition };
+        try
+        {
+            stage.Build();
+            stage.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = sprite });
+            stage.RenderBeat(Beat(DelveBeatKind.Quaff, floor: 1, hero: 1), Heroes());
+
+            // Same additive-nudge contract as the attack test above: reset the sprite to base
+            // before each Process() call, standing in for MineWatch's own per-frame reset.
+            sprite.Position = basePosition;
+            stage.Process(0.05f); // wind-up: leans INTO the drink (a small dip, +Y)
+            AssertThat(sprite.Position.Y)
+                .OverrideFailureMessage("A heal should dip slightly before the relieved lift.")
+                .IsGreater(150f);
+
+            sprite.Position = basePosition;
+            stage.Process(0.15f); // the relieved little lift (-Y, above rest) -- cumulative elapsed 0.20s
+            AssertThat(sprite.Position.Y)
+                .OverrideFailureMessage("A heal should lift the hero above their resting position.")
+                .IsLess(150f);
+
+            sprite.Position = basePosition;
+            stage.Process(1.0f); // comfortably past HealDuration — fully settled
+            AssertThat(sprite.Position.Y).IsEqualApprox(150f, 0.1f);
+        }
+        finally
+        {
+            sprite.Free();
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void SwallowedByDark_HeroFallsAndStaysDown_FrozenWellPastFallDuration()
+    {
+        var stage = new DelveStage();
+        var sprite = new Sprite2D { Position = new Vector2(300f, 150f), RotationDegrees = 0f };
+        try
+        {
+            stage.Build();
+            stage.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = sprite });
+
+            var cloud = new DelveBeat(
+                DelveBeatKind.SwallowedByDark, Floor: 1, Hero: new HeroId(1), MonsterKind: "cave-rat",
+                DamageDealt: 0, DamageTaken: 0, HpAfter: ImmutableSortedDictionary<int, int>.Empty, Clouded: true);
+            stage.RenderBeat(cloud, Heroes());
+
+            stage.Process(1.0f); // comfortably past FallDuration (0.5s)
+            var settledY = sprite.Position.Y;
+            var settledRotation = sprite.RotationDegrees;
+
+            AssertThat(settledY).OverrideFailureMessage("A fall must go DOWN.").IsGreater(150f);
+            AssertThat(settledRotation).OverrideFailureMessage("A fall must topple, not stay upright.").IsGreater(0f);
+
+            // Stays down: many more ticks (well past any march/camp cadence) never move it again --
+            // MineWatch.AnimateFigures skips a clouded figure entirely, and this is the guard that
+            // AdvanceCloudFx's own frozen-progress math actually holds that promise.
+            for (var i = 0; i < 20; i++)
+            {
+                stage.Process(0.5f);
+            }
+
+            AssertThat(sprite.Position.Y)
+                .OverrideFailureMessage("A fallen hero must stay down -- it moved again well after settling.")
+                .IsEqualApprox(settledY, 0.01f);
+            AssertThat(sprite.RotationDegrees).IsEqualApprox(settledRotation, 0.01f);
+        }
+        finally
+        {
+            sprite.Free();
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void ImpactPulse_SetByALandedBlow_DecaysToZero()
+    {
+        var stage = new DelveStage();
+        var sprite = new Sprite2D { Position = Vector2.Zero };
+        try
+        {
+            stage.Build();
+            stage.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = sprite });
+            AssertThat(stage.ImpactPulse).IsEqual(0f);
+
+            stage.RenderBeat(Beat(DelveBeatKind.Exchange, floor: 1, hero: 1, dealt: 5, taken: 0), Heroes());
+            AssertThat(stage.ImpactPulse).IsEqual(1f);
+
+            stage.Process(0.05f);
+            AssertThat(stage.ImpactPulse).IsLess(1f);
+            AssertThat(stage.ImpactPulse).IsGreater(0f);
+
+            stage.Process(1.0f); // comfortably past ImpactPulseDecaySeconds (0.22s)
+            AssertThat(stage.ImpactPulse).IsEqual(0f);
+        }
+        finally
+        {
+            sprite.Free();
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void ManyDeathAndResetCycles_LeaveNoOrphanNodes()
+    {
+        // Same technique PanelRebuildDoesNotLeakNodesTests uses against Godot's own orphan
+        // counter — the fall/cloud FX this unit adds (CloudFx.Rect, per-beat transients) must free
+        // exactly as cleanly across repeated deaths as the pre-existing FX already did.
+        var before = OrphanNodeCount();
+        var stage = new DelveStage();
+        var sprite = new Sprite2D { Position = Vector2.Zero };
+        try
+        {
+            stage.Build();
+            stage.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = sprite });
+
+            for (var i = 0; i < 25; i++)
+            {
+                stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+                stage.RenderBeat(Beat(DelveBeatKind.Exchange, floor: 1, hero: 1, dealt: 4, taken: 15), Heroes());
+                var death = new DelveBeat(
+                    DelveBeatKind.SwallowedByDark, Floor: 1, Hero: new HeroId(1), MonsterKind: "cave-rat",
+                    DamageDealt: 0, DamageTaken: 0, HpAfter: ImmutableSortedDictionary<int, int>.Empty, Clouded: true);
+                stage.RenderBeat(death, Heroes());
+                stage.Process(0.3f);
+                stage.ResetState();
+            }
+        }
+        finally
+        {
+            sprite.Free();
+            stage.Free();
+        }
+
+        var leaked = OrphanNodeCount() - before;
+        AssertThat(leaked)
+            .OverrideFailureMessage($"{leaked} nodes leaked across repeated death/reset cycles.")
+            .IsEqual(0);
+    }
+
+    private static int OrphanNodeCount() => (int)Performance.GetMonitor(Performance.Monitor.ObjectOrphanNodeCount);
 
     // ── fixtures ──────────────────────────────────────────────────────────────────────────────
 

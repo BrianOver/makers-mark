@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Town2d;
 using GodotClient.Ui;
 
 namespace GodotClient.Panels;
@@ -60,8 +61,9 @@ namespace GodotClient.Panels;
 /// <para><b>Graceful degrade:</b> a missing "mine-backdrop" makes
 /// <see cref="HasContent"/> false and collapses the WHOLE strip forever, whatever the phase —
 /// DepthsPanel behaves exactly as it did before this unit. A missing hero-class or monster art id
-/// degrades that ONE figure only (no sprite, no light, never a crash) — LW-art's still-unshipped
-/// occultist/sentinel/skirmisher figures simply don't march yet.</para>
+/// degrades that ONE figure only (no sprite, no light, never a crash) — see <see
+/// cref="ResolveWalkFrames"/> for the current two-tier fallback (4-frame pixel walk, then the
+/// single-frame portrait, then nothing) every registered class already clears today.</para>
 /// </summary>
 public partial class MineWatch : SubViewportContainer
 {
@@ -85,6 +87,26 @@ public partial class MineWatch : SubViewportContainer
     private const float SlumpRotationDegrees = 8f;
     private const int MaxFigures = 3; // PartyFormation ships parties of <=3 (v1)
     private const float BackdropSpeed = 14f; // design px/s — deliberately slow ("never-static", not a scroller)
+
+    /// <summary>Fixed "pretend" marching velocity fed to every figure's <see cref="SpriteMotion"/>
+    /// (real-walk-cycle unit, owner playtest: "very basic animations - make detailed etc") —
+    /// figures never actually translate (the backdrop scrolls to sell forward motion instead; see
+    /// <see cref="AnimateBackdrop"/>), so this exists purely to pin <see
+    /// cref="SpriteMotion.Advance"/>'s speed ratio at a constant 1 (its own magnitude equals <see
+    /// cref="MarchSpeed"/>) for a steady, deterministic full-pace gait — no RNG, no wall clock.</summary>
+    private static readonly Vector2 MarchVelocity = new(140f, 0f);
+
+    private const float MarchSpeed = 140f;
+
+    /// <summary>How hard a heavy beat (<see cref="DelveStage.ImpactPulse"/>) punches the torch/
+    /// campfire light energy — secondary motion (weight cue), decays with the same pulse.</summary>
+    private const float ImpactLightPunch = 0.9f;
+
+    /// <summary>World-nudge amplitude (px) on a heavy beat — a small camera/world shake, scaled by
+    /// <see cref="DelveStage.ImpactPulse"/> so it's sharp on impact and settles with it.</summary>
+    private const float WorldShakeAmplitude = 2.5f;
+
+    private const float ShakeFrequency = 40f; // rad/s — fast enough to read as a jolt, not a sway
 
     /// <summary>Logical width of one backdrop tile, world/px units (the backdrop art is scaled to
     /// this width — see <see cref="RebuildBackdropTiles"/>). <c>SubViewportContainer.Stretch</c>
@@ -155,7 +177,35 @@ public partial class MineWatch : SubViewportContainer
             KeyValuePair.Create("sunken-crypt", new[] { "sunkencrypt-donation-plate" }),
         });
 
-    private readonly record struct Figure(Sprite2D Sprite, Vector2 BasePosition, float Phase, HeroId HeroId);
+    /// <summary>Resolved animation-frame set for one hero figure — the SAME <c>town2d-hero-*</c>
+    /// pixel family <see cref="GodotClient.Town2d.HeroActor2D"/> walks the town with (base +
+    /// _walk2/_step/_walk4, <c>tools/art/gen_town_sprites.py</c>'s U3 gait), preferred because it
+    /// already bakes a per-class garment colour into the art (see that script's COLOUR + MATERIAL
+    /// PASS section) — <see cref="BakedColor"/> true, so the sprite's own modulate stays white.
+    /// Falls back to the single-frame lit <see cref="AssetCatalog.HeroPortrait"/> (still
+    /// neutral-tinted, <see cref="BakedColor"/> false) for any class the pixel set hasn't shipped —
+    /// same graceful-degrade contract as everything else in this file, just one frame instead of
+    /// four instead of zero.</summary>
+    private readonly record struct WalkFrames(Texture2D Base, Texture2D? Walk2, Texture2D? Step, Texture2D? Walk4, bool BakedColor);
+
+    /// <summary>One marching/camped hero figure. <see cref="Motion"/> is the SAME
+    /// <see cref="SpriteMotion"/> pose driver the town uses for walking/idle NPCs — reused
+    /// verbatim (<see cref="AnimateFigures"/>) rather than a second animation system. <see
+    /// cref="BaseRotationDegrees"/> carries the camp low-hp slump baseline set once at construction
+    /// (<see cref="RenderCamp"/>); <see cref="AnimateFigures"/> adds the pose's own lean on top of
+    /// it every frame, never replacing it, so a slumped figure stays visibly slumped through every
+    /// walk/breath frame. <see cref="SizeScale"/> is the fixed <see cref="HeroTargetWidth"/> scale
+    /// (<see cref="ScaleToWidth"/>) the pose's own squash/breathe multiplies on top of.</summary>
+    private sealed class Figure
+    {
+        public required Sprite2D Sprite;
+        public required Vector2 BasePosition;
+        public required HeroId HeroId;
+        public required SpriteMotion Motion;
+        public required Vector2 SizeScale;
+        public required WalkFrames Frames;
+        public float BaseRotationDegrees;
+    }
 
     private SubViewport _viewport = null!;
     private Node2D _world = null!;
@@ -573,8 +623,7 @@ public partial class MineWatch : SubViewportContainer
 
         if (State != WatchState.Hidden)
         {
-            AnimateFigures();
-            AnimateLightFlicker();
+            AnimateFigures((float)delta);
         }
 
         if (_milestoneRemaining > 0f)
@@ -604,6 +653,18 @@ public partial class MineWatch : SubViewportContainer
         }
 
         _delveStage.Process((float)delta);
+
+        // Read AFTER DelveStage.Process so a beat rendered THIS frame (RenderBeat, just above)
+        // shows up at (very nearly) full strength here instead of lagging a frame behind —
+        // DelveStage.ImpactPulse is a test/tuning hook; MineWatch is its only production reader.
+        // Unconditional (not gated on State): ImpactPulse decays every frame in DelveStage.Process
+        // regardless of visibility, so this must run every frame too or a shake mid-decay could
+        // freeze at a nonzero _world.Position the moment the strip goes Hidden mid-fight.
+        AnimateWorldShake();
+        if (State != WatchState.Hidden)
+        {
+            AnimateLightFlicker();
+        }
     }
 
     /// <summary>Hero→sprite map for <see cref="DelveStage.SyncHeroSprites"/> — whichever figure
@@ -778,16 +839,24 @@ public partial class MineWatch : SubViewportContainer
         var placed = 0;
         for (var i = 0; i < party.Count && placed < MaxFigures; i++)
         {
-            var sprite = BuildFigureSprite(state, party[i], new Vector2(120f + placed * FigureSpacing, groundY), rotation: 0f);
-            if (sprite is null)
+            var built = BuildFigureSprite(state, party[i], new Vector2(120f + placed * FigureSpacing, groundY), rotation: 0f);
+            if (built is not { } b)
             {
                 continue; // per-figure graceful degrade — unshipped class art
             }
 
-            _figures.Add(new Figure(sprite, sprite.Position, placed * 1.3f, party[i]));
+            _figures.Add(new Figure
+            {
+                Sprite = b.Sprite,
+                BasePosition = b.Sprite.Position,
+                HeroId = party[i],
+                Motion = new SpriteMotion(party[i].Value * 1.7f), // id->phase idiom, verbatim from HeroActor2D
+                SizeScale = b.Sprite.Scale,
+                Frames = b.Frames,
+            });
             if (placed == 0)
             {
-                _torch.Position = sprite.Position + new Vector2(20, -46);
+                _torch.Position = b.Sprite.Position + new Vector2(20, -46);
                 _torch.Enabled = true;
             }
 
@@ -818,13 +887,23 @@ public partial class MineWatch : SubViewportContainer
 
             var angle = (placed - (Math.Min(camp.Party.Count, MaxFigures) - 1) / 2f) * 0.6f;
             var basePos = new Vector2(centerX + Mathf.Sin(angle) * 90f, groundY + (slumped ? SlumpOffsetY : 0f));
-            var sprite = BuildFigureSprite(state, heroId, basePos, slumped ? SlumpRotationDegrees : 0f);
-            if (sprite is null)
+            var rotation = slumped ? SlumpRotationDegrees : 0f;
+            var built = BuildFigureSprite(state, heroId, basePos, rotation);
+            if (built is not { } b)
             {
                 continue;
             }
 
-            _figures.Add(new Figure(sprite, basePos, placed * 1.3f, heroId));
+            _figures.Add(new Figure
+            {
+                Sprite = b.Sprite,
+                BasePosition = basePos,
+                HeroId = heroId,
+                Motion = new SpriteMotion(heroId.Value * 1.7f),
+                SizeScale = b.Sprite.Scale,
+                Frames = b.Frames,
+                BaseRotationDegrees = rotation,
+            });
             placed++;
         }
 
@@ -834,30 +913,64 @@ public partial class MineWatch : SubViewportContainer
         _embers.Emitting = true;
     }
 
-    private Sprite2D? BuildFigureSprite(GameState state, HeroId heroId, Vector2 position, float rotation)
+    /// <summary>
+    /// Resolves a hero class's walk-cycle frame set: the SAME <c>town2d-hero-{classId}</c> pixel
+    /// family (base + <c>_walk2</c>/<c>_step</c>/<c>_walk4</c>) <see
+    /// cref="GodotClient.Town2d.HeroActor2D"/> already walks the town with — every currently
+    /// registered class (vanguard/striker/mystic/sentinel/skirmisher/occultist) ships the full
+    /// 4-frame set as of the 2026-08-04 redraw, so this is the live path for every real hero
+    /// today. <see cref="WalkFrames.BakedColor"/> true there tells <see cref="BuildFigureSprite"/>
+    /// to leave the sprite untinted (the art already bakes a per-class garment colour — multiplying
+    /// it by <see cref="ClassColors.RoleColor"/> would wash that back out, the exact bug
+    /// <c>HeroActor2D</c>'s own U3 comment documents).
+    ///
+    /// <para>Falls back to the single-frame lit <see cref="AssetCatalog.HeroPortrait"/> (still
+    /// normal-mapped, so it keeps responding to this strip's torch/campfire <see
+    /// cref="PointLight2D"/>s) for any FUTURE class whose pixel set hasn't shipped — <see
+    /// cref="WalkFrames.BakedColor"/> false there, so the runtime tint stays. Null only when
+    /// NEITHER exists for this class — the per-figure graceful degrade <see cref="RenderMarch"/>/
+    /// <see cref="RenderCamp"/> already handle.</para>
+    /// </summary>
+    private static WalkFrames? ResolveWalkFrames(string classId)
+    {
+        var baseTex = IconRegistry.Art($"town2d-hero-{classId}");
+        if (baseTex is not null)
+        {
+            return new WalkFrames(
+                baseTex,
+                IconRegistry.Art($"town2d-hero-{classId}_walk2"),
+                IconRegistry.Art($"town2d-hero-{classId}_step"),
+                IconRegistry.Art($"town2d-hero-{classId}_walk4"),
+                BakedColor: true);
+        }
+
+        var portrait = AssetCatalog.HeroPortrait(classId);
+        return portrait is null ? null : new WalkFrames(portrait, null, null, null, BakedColor: false);
+    }
+
+    private (Sprite2D Sprite, WalkFrames Frames)? BuildFigureSprite(GameState state, HeroId heroId, Vector2 position, float rotation)
     {
         if (!state.Heroes.TryGetValue(heroId.Value, out var hero))
         {
             return null;
         }
 
-        var lit = AssetCatalog.HeroPortrait(hero.ClassId);
-        if (lit is null)
+        if (ResolveWalkFrames(hero.ClassId) is not { } wf)
         {
-            return null; // graceful degrade — no diffuse means no sprite, no crash
+            return null; // graceful degrade — no diffuse anywhere for this class, no sprite, no crash
         }
 
         var sprite = new Sprite2D
         {
             Name = $"MineHero_{_figures.Count}",
-            Texture = lit,
+            Texture = wf.Base,
             Position = position,
             RotationDegrees = rotation,
-            Modulate = ClassColors.RoleColor(hero.ClassId),
+            Modulate = wf.BakedColor ? Colors.White : ClassColors.RoleColor(hero.ClassId),
         };
-        ScaleToWidth(sprite, lit, HeroTargetWidth);
+        ScaleToWidth(sprite, wf.Base, HeroTargetWidth);
         _world.AddChild(sprite);
-        return sprite;
+        return (sprite, wf);
     }
 
     private void ClearFigures()
@@ -978,29 +1091,90 @@ public partial class MineWatch : SubViewportContainer
         }
     }
 
-    private void AnimateFigures()
+    /// <summary>
+    /// The walk cycle (link3 — "the watch becomes a fight"): every figure's <see
+    /// cref="Figure.Motion"/> is the SAME <see cref="SpriteMotion"/> pose driver the town's own
+    /// walking NPCs use, fed a fixed full-pace <see cref="MarchVelocity"/> while <see
+    /// cref="State"/> is <see cref="WatchState.Marching"/> (figures never actually translate — the
+    /// backdrop scrolls to sell forward motion, see <see cref="AnimateBackdrop"/> — this velocity
+    /// exists only to pin the pose driver's speed ratio at 1, a steady full-stride gait) and zero
+    /// velocity while <see cref="WatchState.Camped"/> (idle breathing, distinct from the walk bob —
+    /// see <see cref="SpriteMotion.IdlePose"/>). <see cref="Figure.BaseRotationDegrees"/> (the camp
+    /// low-hp slump baseline) is never replaced, only added to every frame, so a slumped figure
+    /// stays visibly slumped through every walk/breath frame it plays.
+    ///
+    /// <para>A hero <see cref="DelveStage"/> has clouded (<see cref="DelveStage.IsClouded"/>) is
+    /// skipped entirely — that figure fell (<c>DelveStage.AdvanceCloudFx</c>'s own fall-and-freeze
+    /// curve) and DelveStage is now the sole authority over its Position/Rotation. Without this
+    /// check, this method would re-plant a fallen figure upright and breathing every single frame,
+    /// since it runs BEFORE <see cref="DelveStage.Process"/> in <see cref="_Process"/> and touches
+    /// every figure unconditionally otherwise — the fall would never visibly stick.</para>
+    /// </summary>
+    private void AnimateFigures(float delta)
     {
-        var campedPose = State == WatchState.Camped;
-        var amplitude = campedPose ? 1.5f : 3f; // marching bob reads bigger than the huddle's slow breathing
-        var speed = campedPose ? 1.6f : 3.4f;
+        var velocity = State == WatchState.Marching ? MarchVelocity : Vector2.Zero;
         foreach (var figure in _figures)
         {
-            var bob = amplitude * Mathf.Sin(_time * speed + figure.Phase);
-            figure.Sprite.Position = figure.BasePosition + new Vector2(0, bob);
+            if (_delveStage.IsClouded(figure.HeroId.Value))
+            {
+                continue;
+            }
+
+            var pose = figure.Motion.Advance(delta, velocity, MarchSpeed);
+            figure.Sprite.Position = figure.BasePosition + new Vector2(0, pose.BobY);
+            figure.Sprite.RotationDegrees = figure.BaseRotationDegrees + Mathf.RadToDeg(pose.LeanRadians);
+            figure.Sprite.Scale = figure.SizeScale * pose.Scale;
+            figure.Sprite.Texture = ResolveWalkFrameTexture(figure.Frames, pose.WalkFrame);
         }
     }
 
+    /// <summary>U3's real 4-frame gait, mirrored verbatim from <see
+    /// cref="GodotClient.Town2d.HeroActor2D.ResolveWalkFrameTexture"/>: maps <see
+    /// cref="SpriteMotion.Pose.WalkFrame"/> (0-3) to whichever of the four resolved textures
+    /// exists, falling back to the base texture for any frame this checkout is missing (a partial
+    /// art drop degrades to fewer visible poses, never a crash or a null texture) — and always for
+    /// the single-frame portrait fallback (<see cref="WalkFrames.Walk2"/>/<see
+    /// cref="WalkFrames.Step"/>/<see cref="WalkFrames.Walk4"/> all null there).</summary>
+    private static Texture2D ResolveWalkFrameTexture(WalkFrames frames, int walkFrame) => walkFrame switch
+    {
+        1 when frames.Walk2 is not null => frames.Walk2,
+        2 when frames.Step is not null => frames.Step,
+        3 when frames.Walk4 is not null => frames.Walk4,
+        _ => frames.Base,
+    };
+
+    /// <summary>Torch/campfire flicker, punched by <see cref="DelveStage.ImpactPulse"/> on a
+    /// landed/taken blow (<see cref="ImpactLightPunch"/>) — weight cue, decays with the pulse
+    /// itself (<c>DelveStage.Process</c> owns that decay; this method only reads the current
+    /// value).</summary>
     private void AnimateLightFlicker()
     {
+        var punch = _delveStage.ImpactPulse * ImpactLightPunch;
         if (_torch.Enabled)
         {
-            _torch.Energy = 1.2f + 0.12f * Mathf.Sin(_time * 9f) * Mathf.Sin(_time * 2.1f);
+            _torch.Energy = 1.2f + 0.12f * Mathf.Sin(_time * 9f) * Mathf.Sin(_time * 2.1f) + punch;
         }
 
         if (_campfireLight.Enabled)
         {
-            _campfireLight.Energy = 1.1f + 0.18f * Mathf.Sin(_time * 11f) * Mathf.Sin(_time * 1.7f);
+            _campfireLight.Energy = 1.1f + 0.18f * Mathf.Sin(_time * 11f) * Mathf.Sin(_time * 1.7f) + punch;
         }
+    }
+
+    /// <summary>A short world-nudge on a heavy beat (<see cref="WorldShakeAmplitude"/>/<see
+    /// cref="ShakeFrequency"/>), scaled by <see cref="DelveStage.ImpactPulse"/> so it is sharp on
+    /// impact and settles with it — a camera-shake read achieved by nudging <see cref="_world"/>
+    /// itself (every tile/figure/light is one of its children, so this moves the whole scene
+    /// uniformly without touching any individual figure's own <c>Position</c>, which stays the
+    /// walk/breathe/combat-pose baseline those systems already own). Always resolves back to
+    /// exactly <see cref="Vector2.Zero"/> once the pulse decays — <see cref="_world"/>'s own
+    /// Position has no other writer in this file, so this is safe to set unconditionally.</summary>
+    private void AnimateWorldShake()
+    {
+        var pulse = _delveStage.ImpactPulse;
+        _world.Position = pulse > 0.001f
+            ? new Vector2(WorldShakeAmplitude * pulse * Mathf.Sin(_time * ShakeFrequency), 0f)
+            : Vector2.Zero;
     }
 
     // ── U9 (KTD-4): venue-true backdrop ──────────────────────────────────────────────────────
@@ -1144,12 +1318,17 @@ public partial class MineWatch : SubViewportContainer
         }
     }
 
-    /// <summary>Scale a lit Sprite2D so its diffuse renders at <paramref name="targetWidth"/> px.
-    /// Not shared across lanes — same call CampPanel's mirrored SupplyFee
-    /// constant makes.</summary>
-    private static void ScaleToWidth(Sprite2D sprite, CanvasTexture lit, float targetWidth)
+    /// <summary>Scale a Sprite2D so its texture renders at <paramref name="targetWidth"/> px. Takes
+    /// the plain <see cref="Texture2D"/> base type so ONE method covers both callers: a lit <see
+    /// cref="CanvasTexture"/> (portrait/prop/monster art — width read off <see
+    /// cref="CanvasTexture.DiffuseTexture"/>, since <c>CanvasTexture.GetWidth()</c> itself is not
+    /// reliable) and a plain pixel <see cref="Texture2D"/> (<see cref="WalkFrames.Base"/> and
+    /// friends, loaded via <see cref="IconRegistry.Art"/> — no CanvasTexture wrapper, so its own
+    /// <c>GetWidth()</c> is correct as-is). Not shared across lanes — same call CampPanel's
+    /// mirrored SupplyFee constant makes.</summary>
+    private static void ScaleToWidth(Sprite2D sprite, Texture2D texture, float targetWidth)
     {
-        var width = lit.DiffuseTexture?.GetWidth() ?? 0;
+        var width = texture is CanvasTexture canvas ? canvas.DiffuseTexture?.GetWidth() ?? 0 : texture.GetWidth();
         if (width > 0)
         {
             sprite.Scale = Vector2.One * (targetWidth / width);

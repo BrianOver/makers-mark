@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
@@ -1142,6 +1143,209 @@ public class MineWatchTests
             watch.Free();
         }
     }
+
+    // ── link3 ("the watch becomes a fight"): the walk cycle + weight/secondary motion ───────────
+
+    [TestCase]
+    public void Marching_VanguardParty_WalkFrameTextureCyclesAcrossMultipleFrames()
+    {
+        // Vanguard ships the full 4-frame town2d-hero-vanguard pixel walk (base/_walk2/_step/
+        // _walk4) — the live path for every real class today (ResolveWalkFrames' own doc). A
+        // static single-frame figure would leave sprite.Texture unchanged for all 30 samples.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var departed = ImmutableList.Create<GameEvent>(
+                new PartyDeparted(ImmutableList.Create(new HeroId(1), new HeroId(2), new HeroId(3)), 2));
+            watch.Refresh(StagedWorld() with { Phase = DayPhase.Expedition }, departed);
+
+            var sprite = Find<Sprite2D>(watch, "MineHero_0");
+            var seen = new HashSet<Texture2D>();
+            for (var i = 0; i < 30; i++)
+            {
+                watch._Process(0.05);
+                seen.Add(sprite.Texture);
+            }
+
+            AssertThat(seen.Count)
+                .OverrideFailureMessage(
+                    "Marching figures never cycled walk-frame textures -- still a single static pose, " +
+                    "not a real walk cycle.")
+                .IsGreater(1);
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void Marching_FigureBobsVerticallyOverAccumulatedDelta()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var departed = ImmutableList.Create<GameEvent>(
+                new PartyDeparted(ImmutableList.Create(new HeroId(1), new HeroId(2), new HeroId(3)), 2));
+            watch.Refresh(StagedWorld() with { Phase = DayPhase.Expedition }, departed);
+
+            var sprite = Find<Sprite2D>(watch, "MineHero_0");
+            var baseY = sprite.Position.Y;
+
+            var sawOffBase = false;
+            for (var i = 0; i < 20; i++)
+            {
+                watch._Process(0.05);
+                if (!Mathf.IsEqualApprox(sprite.Position.Y, baseY))
+                {
+                    sawOffBase = true;
+                }
+            }
+
+            AssertThat(sawOffBase)
+                .OverrideFailureMessage("Marching figures never bobbed vertically -- SpriteMotion isn't wired.")
+                .IsTrue();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void Camped_IdleBreathing_ScaleVariesFromRest_ButNeverCyclesWalkFrames()
+    {
+        // The breathing pose (SpriteMotion.IdlePose) is deliberately a different read from the
+        // walk bob (G4 — "breathing at rest that differs from the walk bob"): it squashes/
+        // stretches Scale, never touches WalkFrame (always 0, the base texture).
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var state = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(CampedParty()) };
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            var sprite = Find<Sprite2D>(watch, "MineHero_0"); // full-hp hero, never slumped
+            var restingScaleY = sprite.Scale.Y;
+            var baseTexture = sprite.Texture;
+
+            var sawBreath = false;
+            for (var i = 0; i < 40; i++)
+            {
+                watch._Process(0.05);
+                if (!Mathf.IsEqualApprox(sprite.Scale.Y, restingScaleY))
+                {
+                    sawBreath = true;
+                }
+
+                AssertThat(sprite.Texture)
+                    .OverrideFailureMessage("A camped (idle) figure must never cycle walk frames.")
+                    .IsEqual(baseTexture);
+            }
+
+            AssertThat(sawBreath)
+                .OverrideFailureMessage("A camped figure never showed the idle breathing squash/stretch.")
+                .IsTrue();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void Clock_Paused_NoNewDelveBeatsRender_Played_TheyDo()
+    {
+        // Extends the existing feed-pause coverage (Clock_Paused_FeedHoldsStill_Played_ItAdvances)
+        // to this unit's own trigger point: BeginCombatPose/ImpactPulse only ever fire from
+        // RenderBeat, which only runs off the SAME gated _delveHead reveal — so a genuine pause
+        // must never start a NEW combat beat/animation, only let an already-started one finish.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var camp = CampedPartyWithFloors();
+            var state = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(camp) };
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            var clock = new PhaseClock(new SimAdapter(state));
+            clock.Pause();
+            watch.Clock = clock;
+
+            watch._Process(100.0); // would force full reveal if the beat loop were still advancing
+            AssertThat(watch.Delve.CurrentFloor).IsEqual(0);
+
+            clock.Play();
+            watch._Process(100.0);
+            AssertThat(watch.Delve.CurrentFloor).IsEqual(1);
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void ManyMarchCampCycles_LeaveNoOrphanNodesAfterTeardown()
+    {
+        // Same technique PanelRebuildDoesNotLeakNodesTests uses against Godot's own orphan
+        // counter — RenderMarch/RenderCamp both call ClearFigures on every rebuild, and this proves
+        // the Figure class (record struct -> class this unit finished) still frees cleanly through
+        // repeated march<->camp swaps.
+        //
+        // Budgeted, not zero, for the SAME documented reason PanelRebuildDoesNotLeakNodesTests
+        // budgets rather than asserts zero: every Refresh() with a live tracked party also calls
+        // UpdateDepartureSlate (U2, unrelated to this unit), which detaches and PanelGraveyard.Buries
+        // its previous rows unconditionally — QueueFree, not an immediate Free. PanelGraveyard.Drain
+        // is the only thing that forces those through, and only MainUi calls it (on mount/unmount);
+        // a standalone MineWatch never mounted under one — exactly this test — never drains, so 30
+        // Refresh() calls leave ~1-2 QueueFree'd-but-not-yet-destroyed rows apiece as measured
+        // "orphans" until a real frame (or a Drain) arrives. That is accepted, pre-existing, and not
+        // this unit's figures/combat-pose churn to fix; LeakBudget stays far below what a genuine
+        // per-iteration leak in THIS unit's own new code would produce (hundreds to thousands, per
+        // PanelRebuildDoesNotLeakNodesTests' own measured history).
+        const int LeakBudget = 90;
+
+        var before = OrphanNodeCount();
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var marchState = StagedWorld() with { Phase = DayPhase.Expedition };
+            var departed = ImmutableList.Create<GameEvent>(
+                new PartyDeparted(ImmutableList.Create(new HeroId(1), new HeroId(2), new HeroId(3)), 2));
+            var campState = StagedWorld() with
+            {
+                Phase = DayPhase.Camp,
+                InFlight = ImmutableList.Create(CampedPartyWithFloors()),
+            };
+
+            for (var i = 0; i < 15; i++)
+            {
+                watch.Refresh(marchState, departed);
+                watch._Process(0.1);
+                watch.Refresh(campState, ImmutableList<GameEvent>.Empty);
+                watch._Process(0.1);
+            }
+        }
+        finally
+        {
+            watch.Free();
+        }
+
+        var leaked = OrphanNodeCount() - before;
+        AssertThat(leaked)
+            .OverrideFailureMessage(
+                $"{leaked} nodes leaked across repeated march/camp Refresh cycles (budget {LeakBudget}) -- " +
+                "check ClearFigures/RenderMarch/RenderCamp and DelveStage.ResetState still free every node " +
+                "they own; see this test's own comment for the separate, accepted UpdateDepartureSlate/" +
+                "PanelGraveyard baseline noise this budget already covers.")
+            .IsLess(LeakBudget);
+    }
+
+    private static int OrphanNodeCount() => (int)Performance.GetMonitor(Performance.Monitor.ObjectOrphanNodeCount);
 
     // ── fixtures ──────────────────────────────────────────────────────────────────────────────
 
