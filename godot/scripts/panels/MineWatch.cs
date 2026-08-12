@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Town2d;
 using GodotClient.Ui;
 
 namespace GodotClient.Panels;
@@ -86,6 +87,26 @@ public partial class MineWatch : SubViewportContainer
     private const int MaxFigures = 3; // PartyFormation ships parties of <=3 (v1)
     private const float BackdropSpeed = 14f; // design px/s — deliberately slow ("never-static", not a scroller)
 
+    /// <summary>Fixed "pretend" marching velocity fed to every figure's <see cref="SpriteMotion"/>
+    /// (real-walk-cycle unit, owner playtest: "very basic animations - make detailed etc") —
+    /// figures never actually translate (the backdrop scrolls to sell forward motion instead; see
+    /// <see cref="AnimateBackdrop"/>), so this exists purely to pin <see
+    /// cref="SpriteMotion.Advance"/>'s speed ratio at a constant 1 (its own magnitude equals <see
+    /// cref="MarchSpeed"/>) for a steady, deterministic full-pace gait — no RNG, no wall clock.</summary>
+    private static readonly Vector2 MarchVelocity = new(140f, 0f);
+
+    private const float MarchSpeed = 140f;
+
+    /// <summary>How hard a heavy beat (<see cref="DelveStage.ImpactPulse"/>) punches the torch/
+    /// campfire light energy — secondary motion (weight cue), decays with the same pulse.</summary>
+    private const float ImpactLightPunch = 0.9f;
+
+    /// <summary>World-nudge amplitude (px) on a heavy beat — a small camera/world shake, scaled by
+    /// <see cref="DelveStage.ImpactPulse"/> so it's sharp on impact and settles with it.</summary>
+    private const float WorldShakeAmplitude = 2.5f;
+
+    private const float ShakeFrequency = 40f; // rad/s — fast enough to read as a jolt, not a sway
+
     /// <summary>Logical width of one backdrop tile, world/px units (the backdrop art is scaled to
     /// this width — see <see cref="RebuildBackdropTiles"/>). <c>SubViewportContainer.Stretch</c>
     /// resizes the child <see cref="SubViewport"/> to match this container's REAL on-screen width
@@ -155,7 +176,35 @@ public partial class MineWatch : SubViewportContainer
             KeyValuePair.Create("sunken-crypt", new[] { "sunkencrypt-donation-plate" }),
         });
 
-    private readonly record struct Figure(Sprite2D Sprite, Vector2 BasePosition, float Phase, HeroId HeroId);
+    /// <summary>Resolved animation-frame set for one hero figure — the SAME <c>town2d-hero-*</c>
+    /// pixel family <see cref="GodotClient.Town2d.HeroActor2D"/> walks the town with (base +
+    /// _walk2/_step/_walk4, <c>tools/art/gen_town_sprites.py</c>'s U3 gait), preferred because it
+    /// already bakes a per-class garment colour into the art (see that script's COLOUR + MATERIAL
+    /// PASS section) — <see cref="BakedColor"/> true, so the sprite's own modulate stays white.
+    /// Falls back to the single-frame lit <see cref="AssetCatalog.HeroPortrait"/> (still
+    /// neutral-tinted, <see cref="BakedColor"/> false) for any class the pixel set hasn't shipped —
+    /// same graceful-degrade contract as everything else in this file, just one frame instead of
+    /// four instead of zero.</summary>
+    private readonly record struct WalkFrames(Texture2D Base, Texture2D? Walk2, Texture2D? Step, Texture2D? Walk4, bool BakedColor);
+
+    /// <summary>One marching/camped hero figure. <see cref="Motion"/> is the SAME
+    /// <see cref="SpriteMotion"/> pose driver the town uses for walking/idle NPCs — reused
+    /// verbatim (<see cref="AnimateFigures"/>) rather than a second animation system. <see
+    /// cref="BaseRotationDegrees"/> carries the camp low-hp slump baseline set once at construction
+    /// (<see cref="RenderCamp"/>); <see cref="AnimateFigures"/> adds the pose's own lean on top of
+    /// it every frame, never replacing it, so a slumped figure stays visibly slumped through every
+    /// walk/breath frame. <see cref="SizeScale"/> is the fixed <see cref="HeroTargetWidth"/> scale
+    /// (<see cref="ScaleToWidth"/>) the pose's own squash/breathe multiplies on top of.</summary>
+    private sealed class Figure
+    {
+        public required Sprite2D Sprite;
+        public required Vector2 BasePosition;
+        public required HeroId HeroId;
+        public required SpriteMotion Motion;
+        public required Vector2 SizeScale;
+        public required WalkFrames Frames;
+        public float BaseRotationDegrees;
+    }
 
     private SubViewport _viewport = null!;
     private Node2D _world = null!;
