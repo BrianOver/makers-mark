@@ -1245,7 +1245,31 @@ if ($temperamentMeter -and $temperamentMeter.Depleted) {
 if (Test-Path $turnlogPath) {
     $rawTurnLogForFrames = Get-Content $turnlogPath -Raw
     $annotatedTurnLog = Add-FrameReferencesToTurnLog -TurnLogText $rawTurnLogForFrames -FrameNoteByTurn $frameNoteByTurn
-    Set-Content -Path $turnlogPath -Value $annotatedTurnLog -Encoding utf8
+    # fix/the-pilot-goes-around (real-run finding): this Set-Content raced a lock on turnlog.md in
+    # two of a handful of live pilot runs -- "The process cannot access the file ... because it is
+    # being used by another process", thrown immediately after Stop-Process -Force + WaitForExit
+    # (10000) above. WaitForExit only guarantees the CLIENT's own handle is gone, not that nothing
+    # else on the machine (a real-time antivirus scan touching every freshly-written file is the
+    # prime suspect) has grabbed a brief lock on it in between. Before this, that race threw the
+    # WHOLE script out with $ErrorActionPreference='Stop' -- discarding a fully completed 220-turn
+    # run's entire report (findings.md/metrics.json never got generated) over a few hundred
+    # milliseconds of file contention on a cosmetic annotation pass. Retry briefly instead; if every
+    # attempt still fails, fall back to leaving the client's own unannotated turnlog.md in place
+    # (still a complete, readable turn-by-turn record, just without the frame cross-references) so a
+    # transient OS-level lock never again costs an entire successful run's output.
+    $turnlogAnnotated = $false
+    for ($turnlogAttempt = 1; $turnlogAttempt -le 5 -and -not $turnlogAnnotated; $turnlogAttempt++) {
+        try {
+            Set-Content -Path $turnlogPath -Value $annotatedTurnLog -Encoding utf8 -ErrorAction Stop
+            $turnlogAnnotated = $true
+        } catch {
+            if ($turnlogAttempt -ge 5) {
+                Say ('WARNING: could not write frame-annotated turnlog.md after 5 attempts (' + $_.Exception.Message + ') -- leaving the client''s own unannotated turnlog.md in place.')
+            } else {
+                Start-Sleep -Milliseconds (200 * $turnlogAttempt)
+            }
+        }
+    }
 }
 Say ('frames kept: ' + $keptFrameCount + ' of ' + $turn + ' turn(s) (' + $framesDir + '), missing: ' + $missingFrameCount)
 
