@@ -263,6 +263,41 @@ Check ($justUnderFloor.Incomplete -eq $true) ('39 of 80 turns is just UNDER the 
 $scriptedRun = Get-CompletionVerdict -Turn 5 -Turns 40 -Scripted
 Check ($scriptedRun.Incomplete -eq $false) ('a Scripted run stopping at its fixed 5-command plan must never be INCOMPLETE, got ratio ' + $scriptedRun.Ratio)
 
+# --- 5b. INERT floor -- "did the game receive anything at all?" ----------------------------------
+# The gauge DEGRADED and INCOMPLETE both miss. The 2026-08-11 ten-rounds campaign burned its full
+# budget, model-driven, and reported "78 runs, zero crashes" while ApplyKey used Viewport.PushInput
+# and therefore never updated the polled input state -- so every 'interact' in every run was a no-op.
+# Both older gauges read those runs as pristine. The owner caught it by watching the screen.
+$deadCampaign = Get-InertVerdict -InertTurns 190 -ActingTurns 200
+Check ($deadCampaign.Inert -eq $true) ('a run where 190 of 200 acting commands changed nothing must be INERT, got ratio ' + $deadCampaign.Ratio)
+
+# A healthy run refuses and bumps into things sometimes. That is play, not a dead harness.
+$healthy = Get-InertVerdict -InertTurns 12 -ActingTurns 200
+Check ($healthy.Inert -eq $false) ('12 inert of 200 acting commands is ordinary friction and must NOT be INERT, got ratio ' + $healthy.Ratio)
+
+# The floor is inclusive here (>=), unlike INCOMPLETE's strictly-less-than: exactly half of a run
+# doing nothing is already a broken harness, not a borderline pass.
+$exactlyHalf = Get-InertVerdict -InertTurns 50 -ActingTurns 100
+Check ($exactlyHalf.Inert -eq $true) ('exactly 50% inert must be INERT -- the check is >=, got ratio ' + $exactlyHalf.Ratio)
+$justUnder = Get-InertVerdict -InertTurns 49 -ActingTurns 100
+Check ($justUnder.Inert -eq $false) ('49% inert is under the floor and must not be INERT, got ratio ' + $justUnder.Ratio)
+
+# Small-sample guards. A run with almost no acting commands cannot be judged either way, and must not
+# fire on a 2-of-2 coincidence -- otherwise the gauge itself becomes the false alarm.
+$tinySample = Get-InertVerdict -InertTurns 2 -ActingTurns 2
+Check ($tinySample.Inert -eq $false) 'a 2-acting-command run is too small to judge and must not be INERT'
+$atMinSample = Get-InertVerdict -InertTurns 8 -ActingTurns 8
+Check ($atMinSample.Inert -eq $true) '8 acting commands is the minimum sample, and 8 of 8 inert must be INERT'
+$noActing = Get-InertVerdict -InertTurns 0 -ActingTurns 0
+Check ($noActing.Inert -eq $false) 'a run with zero acting commands must not divide by zero or fire'
+Check ($noActing.Ratio -eq 0.0) 'zero acting commands must report a 0.0 ratio, not NaN'
+
+# Scripted is exempt for the same reason INCOMPLETE exempts it, plus one of its own: Scripted
+# deliberately sends an illegal press to prove the refusal path works, so inert turns there are the
+# mode doing its job.
+$scriptedInert = Get-InertVerdict -InertTurns 5 -ActingTurns 5 -Scripted
+Check ($scriptedInert.Inert -eq $false) 'a Scripted run must never be INERT -- its illegal press is deliberate'
+
 # Turns=0 is a degenerate caller input (never happens through the real param default of 40, but
 # must not divide by zero or crash): defined as complete (ratio 1.0), nothing to fall short of.
 $zeroTurns = Get-CompletionVerdict -Turn 0 -Turns 0

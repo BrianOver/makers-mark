@@ -692,6 +692,21 @@ $fallbackTurns = 0
 $imagelessTurns = 0
 $imageMissingThisTurn = $false
 
+# INERT bookkeeping -- the third honesty gauge (Get-InertVerdict, completion.ps1, whose header carries
+# the full reasoning). $lastDigest/$lastActionWasActing are the PREVIOUS turn's screen and command, so
+# the comparison at the top of each iteration answers "did the command I just sent change anything?".
+# $inertStreak exists so a dead run DIES instead of burning its whole budget: a 420-turn probe once
+# completed zero forge strikes and reported findings as though it had played.
+$actingTurns = 0
+$inertTurns = 0
+$inertStreak = 0
+$inertStreakWorst = 0
+$lastDigest = $null
+$lastActionWasActing = $false
+$lastActionLabel = ''
+$inertAbortStreak = 15
+$inertAbortLabel = ''
+
 # U1: kept-frame bookkeeping. $frameNoteByTurn is turned into turnlog.md's own per-turn frame lines
 # once the client has fully exited (see the note by Add-FrameReferencesToTurnLog itself for why that
 # ordering is not optional).
@@ -922,6 +937,36 @@ try {
                     -Detail ($state.location + '/' + $state.phase)
             }
         }
+
+        # INERT accounting. $digest above is THIS turn's screen, which is the OUTCOME of the command
+        # sent at the end of the previous iteration -- so comparing it to $lastDigest answers whether
+        # that command did anything at all. Only ACTING commands are judged: 'advance' is allowed to
+        # leave the screen alone (it moves the clock, and the phase it lands in may look identical).
+        #
+        # This is the gauge the STUCK note above is not. STUCK trips on `-eq 4` and so fires once per
+        # distinct digest, meaning a frozen run warns a single time and then runs to the end of its
+        # budget reporting findings. Here the streak ENDS the run, and the ratio FAILS it.
+        if ($null -ne $lastDigest -and $lastActionWasActing) {
+            $actingTurns++
+            if ($digest -eq $lastDigest) {
+                $inertTurns++
+                $inertStreak++
+                if ($inertStreak -gt $inertStreakWorst) { $inertStreakWorst = $inertStreak }
+            } else {
+                $inertStreak = 0
+            }
+        }
+        if ($inertStreak -ge $inertAbortStreak) {
+            $inertAbortLabel = $lastActionLabel
+            $stopReason = ('INERT: ' + $inertStreak + ' consecutive acting commands changed nothing on screen (last: "' +
+                $lastActionLabel + '") at ' + $state.location + ' / ' + $state.phase +
+                ' -- the driver is pressing into a game that is not receiving it. Enabled controls were: ' +
+                ($enabledDescriptors -join ', '))
+            Warn $stopReason
+            Warn 'Stopping the run. A harness that keeps playing here manufactures clean-looking data over a dead game.'
+            break
+        }
+        $lastDigest = $digest
 
         # W2: this turn's own pre-refusal reasons, reset every iteration (both modes) -- Scripted never
         # populates it (it has no legality-check attempts loop at all), so it is always an empty array
@@ -1198,6 +1243,14 @@ try {
 
         if ($parsedCmd.action -eq 'stop') { $stopReason = 'model asked to stop: ' + $parsedCmd.why; break }
 
+        # INERT: remember what this command WAS, so the next iteration's digest comparison knows
+        # whether an unchanged screen is a defect ('press'/'key'/'move'/'click'/'scroll' should all do
+        # something) or expected ('advance' only moves the clock).
+        $lastActionWasActing = ([string]$parsedCmd.action -ne 'advance')
+        $lastActionLabel = [string]$parsedCmd.action
+        if ($parsedCmd.target) { $lastActionLabel = $lastActionLabel + ' ' + [string]$parsedCmd.target }
+        elseif ($parsedCmd.dir) { $lastActionLabel = $lastActionLabel + ' ' + [string]$parsedCmd.dir }
+
         Remove-Item $statePath -Force -ErrorAction SilentlyContinue
         Set-Content -Path $cmdPath -Value $command -Encoding utf8
     }
@@ -1407,6 +1460,18 @@ if ($incomplete) {
         ($completionFloor * 100) + '% floor -- stopped early (' + $stopReason + '). Findings below cover a fraction of the intended run.')
 }
 
+# INERT: did the game receive anything? See Get-InertVerdict (completion.ps1) for why this exists as a
+# third gauge alongside DEGRADED and INCOMPLETE, and which real overnight campaign it would have caught.
+$inertFloor = 0.5
+$inertVerdict = Get-InertVerdict -InertTurns $inertTurns -ActingTurns $actingTurns -Scripted:$Scripted -Floor $inertFloor
+$inertPct = $inertVerdict.PercentText
+$inertRun = $inertVerdict.Inert
+if ($inertRun) {
+    Warn ('INERT: ' + $inertTurns + ' of ' + $actingTurns + ' acting commands (' + $inertPct +
+        '%) changed nothing on screen, at or over the ' + ($inertFloor * 100) + '% floor. Longest dead streak: ' +
+        $inertStreakWorst + ' turns. This run did not test the game -- treat every finding below as unproven.')
+}
+
 # --- Judge pass ---------------------------------------------------------------------------------
 $fullLog = ''
 if (Test-Path $turnlogPath) { $fullLog = Get-Content $turnlogPath -Raw }
@@ -1435,6 +1500,7 @@ Say ('judge input: per-day digest, ' + $judgeDigest.DayCount + ' day(s), ' + $ju
 $titleTags = @()
 if ($degraded) { $titleTags += 'DEGRADED' }
 if ($incomplete) { $titleTags += 'INCOMPLETE' }
+if ($inertRun) { $titleTags += 'INERT' }
 $titleLine = '# Agent playtest findings (Scope: ' + $Scope + ')'
 if ($titleTags.Count -gt 0) {
     $titleLine = '# ' + ($titleTags -join ' AND ') + ' -- agent playtest findings (Scope: ' + $Scope + ')'
@@ -1457,6 +1523,10 @@ $header = @(
     $personaHeaderLine,
     ('- turns: ' + $turn + ' (stopped: ' + $stopReason + ')'),
     ('- completion: ' + $turn + ' of ' + $Turns + ' budgeted turns (' + $completionPct + '%)'),
+    # The number to read FIRST in any of these reports: if most acting commands changed nothing, the
+    # rest of the header is describing a run that never reached the game.
+    ('- effective: ' + ($actingTurns - $inertTurns) + ' of ' + $actingTurns + ' acting commands changed the screen (' +
+        $inertTurns + ' inert, ' + $inertPct + '%; longest dead streak ' + $inertStreakWorst + ')'),
     ('- model-driven turns: ' + $modelDrivenTurns),
     ('- fallback turns: ' + $fallbackTurns + ' (' + $fallbackPct + '% of total)'),
     ('- imageless turns: ' + $imagelessTurns),
@@ -1859,7 +1929,12 @@ if ($incomplete) {
 if ($degraded) {
     Warn ('DEGRADED run: ' + $fallbackTurns + ' of ' + $turn + ' turns (' + $fallbackPct + '%) were the driver pressing advance, not the model playing. Exiting non-zero.')
 }
-if ($degraded -or $incomplete) {
+if ($inertRun) {
+    Warn ('INERT run: ' + $inertTurns + ' of ' + $actingTurns + ' acting commands (' + $inertPct +
+        '%) changed nothing on screen; longest dead streak ' + $inertStreakWorst + ' turns. The game was not ' +
+        'receiving what the driver sent, so nothing below was actually tested. Exiting non-zero.')
+}
+if ($degraded -or $incomplete -or $inertRun) {
     exit 1
 }
 exit 0
