@@ -83,11 +83,38 @@ $script:PilotHabitDayFloor            = 5
 $script:PilotHabitStreakToLock        = 3
 $script:PilotStuckFrictionThreshold   = 4     # matches the driver's own STUCK detector (4 turns)
 # fix/pilot-finds-its-way: the general no-progress detector Get-PilotNavigateCommand runs against
-# EVERY target it walks or interacts toward -- 3 consecutive turns aimed at the same target with an
+# EVERY target it walks or interacts toward -- consecutive turns aimed at the same target with an
 # unchanged (location, distance, inRange, screenText) reading means the approach is not working
 # (a collision, a swallowed interact, a drawer that will not close), never that a person just needs
 # one more try. Small and bounded per the owner's own requirement, not a number the run outlives.
-$script:PilotNavStuckThreshold        = 3
+#
+# fix/the-pilot-goes-around: bumped 3 -> 4 to make room for what a person actually does when a
+# straight walk hits a wall -- they do NOT keep pressing the same direction (that was the whole
+# defect this branch exists to fix: `move` reporting an unchanged `pos (x,y) from (x,y)` turn after
+# turn while the pilot kept sending the identical bearing). Get-PilotSidestepDirection maps stuck-
+# count 1/2 to a perpendicular nudge (both signs, biased toward the target's own OTHER axis when the
+# bearing string reveals it) and stuck-count 3 back to the plain bearing (re-approach, now that the
+# sidestep may have cleared whatever was in the way) -- THEN, only if stuck-count reaches this
+# threshold with still no change, the existing give-up-for-the-day blacklist below fires exactly as
+# it always has. Every one of those attempts is still a real move command, so the existing
+# no-response-press friction check (Get-PilotCommand's own step 1) still fires on each one -- this
+# changes WHICH direction is attempted, never whether a blocked attempt gets reported.
+$script:PilotNavStuckThreshold        = 4
+# fix/the-pilot-goes-around (real-run finding, seed 1, live 220-turn run): the EXACT-equality
+# snapshot above never once matched while the pilot crept toward Material Shelf/Anvil -- turnlog.md's
+# own "moved DIR 30f -> pos (X,Y) from (X2,Y2)" outcomes showed deltas of ONE OR TWO PIXELS per move
+# (2202,136)->(2200,138), turn after turn, for 130+ px of a diagonal approach -- so $target.distance
+# always ticked down by 1-2 and the whole-snapshot string was never byte-identical, never triggering
+# a sidestep. PlayerController2D.Speed is 90px/sec (PlayerController2D.cs), so a clean, unobstructed
+# $script:PilotMoveFrames (30-frame, 0.5s) hold should cover roughly 45px -- 1-2px is the player
+# scraping along a wall almost fully blocked, not a legitimately slow walk. A person does not read
+# "I moved one pixel that time" as progress and keep going; they notice they are barely moving and
+# try something else. This is the MINIMUM pixels $target.distance must close by, per move attempt,
+# to count as real progress -- comfortably above the measured stuck-creep (1-3px) and comfortably
+# below a clean move's own expected ~45px, so a genuinely slow-but-working approach (nearing the
+# interact threshold, where a clean step could plausibly close only a modest amount) still reads as
+# progress while a soft geometry slide does not.
+$script:PilotNavMinProgressPx         = 8
 # Hard ceiling on the file's own global idle-stretch counter (Get-PilotCommand, digest-based) --
 # once a run has produced $script:PilotStuckFrictionThreshold consecutive identical turns the ONE
 # friction entry already fires; if it reaches DOUBLE that, something outside navigation itself is
@@ -95,7 +122,22 @@ $script:PilotNavStuckThreshold        = 3
 # only honest answer left is to force real progress rather than ask the same policy again for what
 # will provably be the same answer.
 $script:PilotGlobalStuckForceAdvance  = 8
-$script:PilotMoveFrames               = 30
+# fix/the-pilot-goes-around (real-run finding, seed 1): 30 was calibrated against "frames == physics
+# ticks", which is false the instant AgentPlaytest.ps1 launches with --disable-vsync (required --
+# see that launch line's own doc -- an unattended session with no compositor otherwise stalls
+# Settle() forever). AgentPlaytestBridge.Settle() awaits SceneTree's process_frame (idle/render)
+# signal, not physics_frame; with vsync off the render loop can run far faster than the fixed 60Hz
+# physics tick rate, so most render frames land BETWEEN physics ticks. Measured directly on a live
+# 220-turn run: PlayerController2D.Speed is 90px/sec (45px expected over a clean 0.5s/30-tick hold),
+# but turnlog.md's own "moved DIR 30f -> pos (X,Y) from (X2,Y2)" outcomes showed 1-3px REGARDLESS OF
+# DIRECTION, turn after turn -- not one wall in one direction, but every direction moving at ~5-10%
+# of the expected rate, which no amount of sidestepping in pilot.ps1 can out-walk (a perfect
+# sidestep into a direction that is ALSO frame-starved still only gains 1-3px). AgentPlaytestBridge.
+# ApplyMove clamps Frames to at most 300 (Math.Clamp(command.Frames ?? 20, 1, 300)) -- raised to that
+# ceiling here rather than guessing a smaller number, since this file cannot fix the underlying
+# render/physics decoupling (that lives in the production C# bridge, out of this unit's scope) and
+# more headroom costs nothing extra in TURN budget (still one command per turn either way).
+$script:PilotMoveFrames               = 300
 # Tighter than AgentPlaytestBridge's own 96px InRangeReportingPx -- see Get-PilotNavigateCommand's
 # own note on why trusting the reported inRange alone let a swallowed interact go unnoticed.
 $script:PilotInteractDistancePx       = 24
@@ -133,6 +175,17 @@ function New-PilotMemory {
         NavDigest          = @{}
         NavStuckCount      = @{}
         NavBlocked         = @{}
+        # fix/the-pilot-goes-around (real-run finding, seed 1): keyed by the KEYWORD a caller searched
+        # for (e.g. "shelf", "anvil" -- Get-PilotEnterInteriorCommand's own $StationKeyword), value is
+        # the DAY every reachable candidate for that keyword last proved stuck (Get-PilotNavigateCommand
+        # sets this at the same moment it would answer "every reachable target here is stuck, leaving").
+        # Distinct from NavBlocked (keyed by a target's own internal `.key`, which is only knowable
+        # once already standing inside the room): this lets Get-PilotEnterInteriorCommand refuse to
+        # re-ENTER a building at all -- by walking OR by QuickTravel -- when today's attempt on that
+        # station already failed, rather than walking/travelling all the way back in only to
+        # immediately find the same blacklisted station and cancel back out. Day-scoped exactly like
+        # NavBlocked, for the same reason: tomorrow is a fresh try, never a permanent exile.
+        StationGivenUpToday = @{}
         # 2026-08-11 real-run finding: pressing CommissionAccept_1/CommissionDecline_1 does NOT
         # remove that row from the board or disable either button -- the dead-verb detector
         # confirmed a byte-identical whole-state fingerprint before/after the press, repeatedly,
@@ -314,6 +367,45 @@ function Get-PilotBestReachableTarget {
     } | Select-Object -First 1)
 }
 
+# fix/the-pilot-goes-around: what a person actually does at a wall -- not keep walking into it. Given
+# the target's own bearing string (AgentPlaytest.cs's Bearing(): a single axis word like "right", or a
+# diagonal "right+down" when the offset is genuinely two-axis) and which sidestep try this is (1 =
+# first, 2 = the opposite sign), returns the perpendicular direction to move instead of the bearing.
+#
+# BIASED TOWARD THE TARGET'S OTHER AXIS: a diagonal bearing already names both axes, dominant first
+# (Bearing()'s own ordering -- "right+down" means rightward is the bigger offset, downward the
+# smaller one) -- the secondary word IS the target's other axis, so attempt 1 uses it directly and
+# attempt 2 tries its opposite. A single-axis bearing ("right") carries no such information at all --
+# Bearing() only collapses to one word when the OTHER axis is small or nonexistent, so there is
+# nothing to bias toward and both signs are tried in a fixed, deterministic order instead (still
+# "both signs", just not a biased pick).
+#
+# Returns $null for "here" (already effectively at the target -- InRange should already be true by
+# then, so this path should not normally be reached) or an unrecognized word.
+function Get-PilotSidestepDirection {
+    param([Parameter(Mandatory)][string]$Direction, [Parameter(Mandatory)][int]$Attempt)
+
+    $opposite = @{ 'left' = 'right'; 'right' = 'left'; 'up' = 'down'; 'down' = 'up' }
+    $parts = @($Direction.Split('+'))
+
+    if ($parts.Count -ge 2 -and $opposite.ContainsKey($parts[1])) {
+        $secondary = $parts[1]
+        if ($Attempt -eq 1) { return $secondary }
+        return $opposite[$secondary]
+    }
+
+    $primary = $parts[0]
+    if ($primary -eq 'left' -or $primary -eq 'right') {
+        if ($Attempt -eq 1) { return 'up' }
+        return 'down'
+    }
+    if ($primary -eq 'up' -or $primary -eq 'down') {
+        if ($Attempt -eq 1) { return 'right' }
+        return 'left'
+    }
+    return $null
+}
+
 # Walk toward (then enter/interact with) the nearest reachable $State.nearby entry whose label
 # contains $Keyword, or the nearest reachable one at all if no keyword was given -- the same
 # "Around you" reading a model is taught in act.md rule 8, just applied by regex instead of by an
@@ -382,6 +474,18 @@ function Get-PilotNavigateCommand {
         # Every candidate this call could have picked has already proven stuck. Escaping the room
         # (now that key:cancel genuinely works) is the only useful move left; outdoors there is
         # nothing sensible to fall back to and the caller's own next choice takes over.
+        #
+        # fix/the-pilot-goes-around (real-run finding, seed 1): recording the give-up here, keyed by
+        # $Keyword and scoped to today, is what stops Get-PilotEnterInteriorCommand's own QuickTravel
+        # branch (or an ordinary walk-in) from re-entering THIS SAME building five turns later only to
+        # immediately hit the identical blacklisted station and cancel back out. Measured directly: a
+        # live run ping-ponged QuickTravel_Forge <-> cancel for 100+ straight turns (turns ~15-220,
+        # never advancing past day 1) because entering cost nothing and nothing remembered that
+        # "shelf" was already given up on for today. A person who fails to reach the shelf does not
+        # walk straight back in five seconds later hoping it changed -- they try again tomorrow.
+        if ($Keyword) {
+            $Memory.StationGivenUpToday[$Keyword] = [int]$State.day
+        }
         if ($inInterior) {
             return (Build-PilotCommandJson -Action 'key' -Target 'cancel' -Why 'pilot: every reachable target here is stuck, leaving')
         }
@@ -390,26 +494,43 @@ function Get-PilotNavigateCommand {
 
     # No-progress detection: a snapshot of everything that SHOULD change if a move/interact toward
     # this exact target actually worked. Comparing against the SAME target's own last snapshot (never
-    # a different target's) means switching targets never falsely counts as "stuck", and comparing
-    # the WHOLE tuple (not distance alone) catches a swallowed interact too -- distance can legitimately
-    # sit still right at the interact threshold while the interact itself keeps failing.
+    # a different target's) means switching targets never falsely counts as "stuck".
+    #
+    # fix/the-pilot-goes-around (real-run finding, seed 1): this used to be ONE exact-equality string
+    # compare over (location, distance, inRange, screenText) -- which never fires while distance is
+    # ticking down by even one pixel a turn. A live run measured EXACTLY that: 1-2px real position
+    # deltas per 30-frame move, turn after turn, scraping along a wall for well over a hundred pixels
+    # of "approach" that never once produced a byte-identical snapshot. Split into two independent
+    # signals instead: CONTEXT (location + screenText -- unrelated to this target's own distance;
+    # a real change here, e.g. a message appearing or the room changing, is unambiguous progress on
+    # its own) and DISTANCE (compared numerically against the SAME target's own last reading, not
+    # string-equality -- see $script:PilotNavMinProgressPx's own doc for why a small nonzero
+    # improvement still counts as stuck). $target.inRange is redundant with distance (AgentPlaytest.cs
+    # derives it FROM distance) and is dropped rather than kept as a second copy of the same fact.
     $navKey = [string]$target.key
-    $navSnapshot = ([string]$State.location + '|' + [string]$target.distance + '|' + [string]$target.inRange + '|' +
-        (([string[]]@($State.screenText)) -join ';'))
-    if ($Memory.NavDigest.ContainsKey($navKey) -and $Memory.NavDigest[$navKey] -eq $navSnapshot) {
+    $navContext = ([string]$State.location + '|' + (([string[]]@($State.screenText)) -join ';'))
+    $madeProgress = $true
+    if ($Memory.NavDigest.ContainsKey($navKey)) {
+        $lastSnapshot = $Memory.NavDigest[$navKey]
+        if ($lastSnapshot.Context -eq $navContext) {
+            $madeProgress = (([int]$lastSnapshot.Distance - [int]$target.distance) -ge $script:PilotNavMinProgressPx)
+        }
+    }
+    if ($madeProgress) {
+        $Memory.NavStuckCount[$navKey] = 0
+    } else {
         $streak = 1
         if ($Memory.NavStuckCount.ContainsKey($navKey)) { $streak = $Memory.NavStuckCount[$navKey] + 1 }
         $Memory.NavStuckCount[$navKey] = $streak
-    } else {
-        $Memory.NavStuckCount[$navKey] = 0
     }
-    $Memory.NavDigest[$navKey] = $navSnapshot
+    $Memory.NavDigest[$navKey] = [pscustomobject]@{ Context = $navContext; Distance = [int]$target.distance }
 
     if ($Memory.NavStuckCount[$navKey] -ge $script:PilotNavStuckThreshold) {
         Add-PilotFriction -Memory $Memory -Turn $State.turn -Day $State.day -Phase $State.phase `
             -Category 'no-route' -Trying ('reach ' + $target.label) `
             -Detail (($Memory.NavStuckCount[$navKey] + 1).ToString() + ' attempts at ' + $target.label +
-                ' with no change -- screen stayed: "' + (([string[]]@($State.screenText)) -join ' | ') + '"')
+                ' (sidestep A, sidestep B, resume) with no meaningful progress -- last reading ' + $target.distance +
+                'px, screen: "' + (([string[]]@($State.screenText)) -join ' | ') + '"')
         $Memory.NavBlocked[$navKey] = [int]$State.day
         $Memory.NavStuckCount[$navKey] = 0
         # Retry NOW with the next reachable candidate rather than spending a whole turn on a target
@@ -430,6 +551,22 @@ function Get-PilotNavigateCommand {
         $Memory.VisitedSurfaces[[string]$target.key] = $true
         return (Build-PilotCommandJson -Action 'key' -Target 'interact' -Why ('pilot: entering ' + $target.label))
     }
+
+    # fix/the-pilot-goes-around: stuck count 1 or 2 -> sidestep (a person who walks into a wall does
+    # not keep pressing the same direction); stuck count 0 (fresh, or just made real progress) or 3
+    # (both sidestep signs already tried with no change -- re-approach once more before the threshold
+    # check above gives up) -> the plain bearing. See $script:PilotNavStuckThreshold's own doc for the
+    # full 4-stage shape this produces (sidestep A, sidestep B, resume, then give up).
+    $stuckNow = $Memory.NavStuckCount[$navKey]
+    if ($stuckNow -eq 1 -or $stuckNow -eq 2) {
+        $sidestep = Get-PilotSidestepDirection -Direction ([string]$target.direction) -Attempt $stuckNow
+        if ($sidestep) {
+            return (Build-PilotCommandJson -Action 'move' -Dir $sidestep -Frames $script:PilotMoveFrames `
+                -Why ('pilot: ' + $target.label + ' is not budging straight-on (' + $target.distance + 'px ' +
+                    $target.direction + ') -- sidestepping ' + $sidestep + ' around it'))
+        }
+    }
+
     return (Build-PilotCommandJson -Action 'move' -Dir $target.direction -Frames $script:PilotMoveFrames `
         -Why ('pilot: walking to ' + $target.label + ' (' + $target.distance + 'px ' + $target.direction + ')'))
 }
@@ -490,6 +627,19 @@ function Get-PilotNavigateCommand {
 #      are two DIFFERENT stations' jobs now, so the caller must say which one it wants:
 #      $StationKeyword 'shelf' (Material Shelf, Focus:"materials") for Morning's buy decision,
 #      'anvil' (Focus:"craft") for Expedition's craft decision -- see both call sites below.
+#
+#   6. QUICK TRAVEL (fix/the-pilot-goes-around): the game itself ships an on-screen shortcut for
+#      exactly this problem -- TutorialFlow's own QuickTravelRow (buttons named "QuickTravel_Forge"/
+#      "QuickTravel_Shop"/...) jumps straight into a building's interior (MainUi.QuickTravel ->
+#      OnTownBuildingClicked, the SAME destination a walked arrival reaches), unlocked once the
+#      tutorial chain completes (TutorialFlow.QuickTravelUnlocked). A human who has already unlocked
+#      a venue-jump row uses it instead of walking across town every single morning -- that is not
+#      this harness inventing a shortcut, it is the designed affordance the game puts on screen for a
+#      player to click. Tried ONLY when outdoors ($location -eq 'town'): <see>Town2D.EnterInterior</see>
+#      is a no-op while ALREADY inside a different room (InteriorActive stays true, guard returns
+#      immediately), so pressing it from inside the wrong building would silently do nothing -- the
+#      existing "different interior" keyword-miss/cancel path below already gets the pilot back
+#      outdoors first, and quick travel is offered again the very next call from there.
 function Get-PilotEnterInteriorCommand {
     param(
         $State,
@@ -497,6 +647,7 @@ function Get-PilotEnterInteriorCommand {
         [Parameter(Mandatory)][string]$BuildingKeyword,
         [string]$PanelId = '',
         [string]$StationKeyword = '',
+        [string]$QuickTravelBuilding = '',
         [Parameter(Mandatory)]$Memory
     )
 
@@ -527,11 +678,41 @@ function Get-PilotEnterInteriorCommand {
     if ($location.StartsWith($InteriorPrefix)) {
         return (Get-PilotNavigateCommand -State $State -Keyword $StationKeyword -Memory $Memory)
     }
-    # Inside a DIFFERENT walkable interior (finding 3 above), OR outdoors (finding 4): both fall
-    # through to the ordinary keyword search. Inside the wrong room, $BuildingKeyword cannot match any
-    # of ITS stations, so Get-PilotNavigateCommand's own keyword-miss-while-interior branch answers
-    # with a real "key: cancel" -- no bespoke dead-end branch needed here any more (see this
-    # function's own doc, finding 3, for what used to live here and why it was wrong).
+
+    # Finding 7 (fix/the-pilot-goes-around, real-run finding, seed 1): NOT already inside, and today's
+    # attempt on THIS station already gave up (Get-PilotNavigateCommand's own StationGivenUpToday,
+    # set the moment every reachable candidate for this keyword proved stuck). Re-entering the
+    # building now -- walking OR QuickTravel-ing in -- can only end in the exact same blacklisted
+    # station and an immediate cancel back out. QuickTravel made this MUCH worse than it already was:
+    # entering used to cost a long walk (which incidentally rate-limited how often the round trip
+    # could repeat); QuickTravel makes it free, and a live run spent turns 15-220 of a 220-turn budget
+    # ping-ponging QuickTravel_Forge <-> cancel, never once advancing past day 1, because nothing
+    # remembered "shelf" was already given up on for today. A person who failed to reach the shelf
+    # does not walk straight back in five seconds later hoping it changed -- they leave it for
+    # tomorrow and get on with something else. Returning null here (never a command) lets the
+    # caller's own next task run instead.
+    if ($StationKeyword -and $Memory.StationGivenUpToday.ContainsKey($StationKeyword) -and
+        [int]$Memory.StationGivenUpToday[$StationKeyword] -eq [int]$State.day) {
+        return $null
+    }
+
+    # Finding 6 above: outdoors, with a quick-travel target named, prefer the on-screen shortcut over
+    # walking -- checked BEFORE the ordinary keyword search, never after (a human who knows the
+    # shortcut does not walk the long way first and only jump on failure).
+    if ($QuickTravelBuilding -and $location -eq 'town') {
+        $quickTravel = Get-PilotEnabledControls -State $State -Pattern ('^QuickTravel_' + [regex]::Escape($QuickTravelBuilding) + '$')
+        if ($quickTravel.Count -gt 0) {
+            return (Build-PilotCommandJson -Action 'press' -Target $quickTravel[0].name `
+                -Why ('pilot: quick-travel to ' + $QuickTravelBuilding + ' instead of walking the town'))
+        }
+    }
+
+    # Inside a DIFFERENT walkable interior (finding 3 above), OR outdoors with quick travel unavailable
+    # (finding 4): both fall through to the ordinary keyword search. Inside the wrong room,
+    # $BuildingKeyword cannot match any of ITS stations, so Get-PilotNavigateCommand's own
+    # keyword-miss-while-interior branch answers with a real "key: cancel" -- no bespoke dead-end
+    # branch needed here any more (see this function's own doc, finding 3, for what used to live here
+    # and why it was wrong).
     return (Get-PilotNavigateCommand -State $State -Keyword $BuildingKeyword -Memory $Memory)
 }
 
@@ -682,14 +863,15 @@ function Get-PilotMorningCommand {
     # door and hides them entirely -- a live run proved this by walking straight into Anvil 43 times
     # across 9 days and never once seeing a material to buy.
     if (-not $Memory.VisitedSurfaces.ContainsKey('MorningMaterialResolved-' + $State.day)) {
-        $navForge = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -StationKeyword 'shelf' -Memory $Memory
+        $navForge = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -StationKeyword 'shelf' -QuickTravelBuilding 'Forge' -Memory $Memory
         if ($navForge) { return $navForge }
     }
 
     # Venue key is "market" (InteriorLayout2D.cs: "market" or "Shop" => "market"), NOT "shop" --
     # the building's own on-screen label is still "Shop", which is what a keyword search outdoors
-    # needs to match.
-    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:market' -BuildingKeyword 'shop' -PanelId 'Shop' -Memory $Memory
+    # needs to match. QuickTravelBuilding stays "Shop" though -- QuickTravelVenues/OnTownBuildingClicked
+    # both key their BUILDING vocabulary off the legacy capitalized names, not the venue key.
+    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:market' -BuildingKeyword 'shop' -PanelId 'Shop' -QuickTravelBuilding 'Shop' -Memory $Memory
     if ($nav) { return $nav }
 
     return $null
@@ -735,7 +917,7 @@ function Get-PilotExpeditionCommand {
     # -StationKeyword 'anvil' (finding 5, Get-PilotEnterInteriorCommand's own doc): Anvil is the
     # station whose FocusSection view shows WorkForge_/Craft_ -- explicit rather than relying on it
     # already being the nearest-to-the-door default, which is true today but not a contract.
-    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -StationKeyword 'anvil' -Memory $Memory
+    $nav = Get-PilotEnterInteriorCommand -State $State -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -StationKeyword 'anvil' -QuickTravelBuilding 'Forge' -Memory $Memory
     if ($nav) { return $nav }
 
     return $null

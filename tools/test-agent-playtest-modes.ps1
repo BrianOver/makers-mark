@@ -2505,6 +2505,113 @@ $noCloseControlState = [pscustomobject]@{
 $noCloseControlCmd = Get-PilotCommand -State $noCloseControlState -Memory $noCloseControlMemory -Random (New-Object System.Random(1))
 Check ($null -ne $noCloseControlCmd) 'canMove false with no Close-labeled control must still produce a legal fallback command (e.g. advance), never null'
 
+# --- fix/the-pilot-goes-around: sidestep-around-a-wall ------------------------------------------
+# The wall this whole branch exists to fix: `move` reporting an unchanged pos turn after turn while
+# the pilot kept sending the identical bearing. A person does not keep walking into the same wall --
+# Get-PilotSidestepDirection first (pure function, no state needed), then the full stuck-count
+# progression through Get-PilotNavigateCommand against a target that never budges no matter what is
+# sent.
+Check ((Get-PilotSidestepDirection -Direction 'right+down' -Attempt 1) -eq 'down') 'a diagonal bearing''s sidestep attempt 1 must use the SECONDARY (smaller) axis word -- biased toward the target''s other axis'
+Check ((Get-PilotSidestepDirection -Direction 'right+down' -Attempt 2) -eq 'up') 'sidestep attempt 2 must be the OPPOSITE sign of attempt 1'
+Check ((Get-PilotSidestepDirection -Direction 'down+right' -Attempt 1) -eq 'right') 'Bearing()''s own dominant-first ordering means the SECOND word is always the secondary axis, regardless of which axis that is'
+Check ((Get-PilotSidestepDirection -Direction 'left' -Attempt 1) -eq 'up') 'a single-axis (horizontal) bearing carries no secondary-axis info -- sidestep must still try SOME perpendicular direction, deterministically, attempt 1'
+Check ((Get-PilotSidestepDirection -Direction 'left' -Attempt 2) -eq 'down') 'attempt 2 for a single-axis bearing must be the opposite sign of attempt 1'
+Check ((Get-PilotSidestepDirection -Direction 'up' -Attempt 1) -eq 'right') 'a single-axis (vertical) bearing sidesteps horizontally, attempt 1'
+Check ($null -eq (Get-PilotSidestepDirection -Direction 'here' -Attempt 1)) '"here" (already at the target) has nothing sensible to sidestep along'
+
+$sidestepMemory = New-PilotMemory
+$sidestepState = [pscustomobject]@{
+    turn = 1; day = 3; phase = 'Expedition'; location = 'interior:forge'; canMove = $true
+    lastOutcome = '(run start)'; screenText = @('Inside the forge.')
+    controls = @(); nearby = @([pscustomobject]@{ key = 'anvil'; label = 'Anvil'; direction = 'right'; distance = 50; inRange = $false })
+}
+$sidestepCmd1 = Get-PilotNavigateCommand -State $sidestepState -Keyword '' -Memory $sidestepMemory | ConvertFrom-Json
+Check ($sidestepCmd1.action -eq 'move' -and $sidestepCmd1.dir -eq 'right') 'a fresh target (no stuck history yet) must walk the plain bearing'
+
+$sidestepCmd2 = Get-PilotNavigateCommand -State $sidestepState -Keyword '' -Memory $sidestepMemory | ConvertFrom-Json
+Check ($sidestepCmd2.action -eq 'move' -and $sidestepCmd2.dir -eq 'up') 'the FIRST no-progress reading (screen identical to last time despite a real move having been sent) must sidestep perpendicular rather than repeat the same blocked bearing'
+
+$sidestepCmd3 = Get-PilotNavigateCommand -State $sidestepState -Keyword '' -Memory $sidestepMemory | ConvertFrom-Json
+Check ($sidestepCmd3.action -eq 'move' -and $sidestepCmd3.dir -eq 'down') 'the SECOND no-progress reading must try the OPPOSITE sidestep sign'
+
+$sidestepCmd4 = Get-PilotNavigateCommand -State $sidestepState -Keyword '' -Memory $sidestepMemory | ConvertFrom-Json
+Check ($sidestepCmd4.action -eq 'move' -and $sidestepCmd4.dir -eq 'right') 'after both sidestep signs still show no progress, the pilot must re-approach the plain bearing once more before giving up'
+Check ($sidestepMemory.FrictionLog.Count -eq 0) 'no give-up friction entry yet -- only 4 real move attempts have been made so far, each of them a genuine try'
+
+$sidestepCmd5 = Get-PilotNavigateCommand -State $sidestepState -Keyword '' -Memory $sidestepMemory | ConvertFrom-Json
+Check ($sidestepCmd5.action -eq 'key' -and $sidestepCmd5.target -eq 'cancel') 'after sidestep A, sidestep B, and a resumed bearing all show zero progress, the pilot must give up on this target for the day (existing blacklist/cancel behavior), never spin on a 5th identical move'
+$noRouteEntries = @($sidestepMemory.FrictionLog | Where-Object { $_.Category -eq 'no-route' })
+Check ($noRouteEntries.Count -eq 1) 'giving up on a target must still log exactly one no-route friction entry -- a blocked approach is a real finding, never silently swallowed'
+Check ($sidestepMemory.NavBlocked.ContainsKey('anvil')) 'the target must be blacklisted for the rest of this day once given up on'
+
+# The exact real-run shape that motivated the numeric-progress rewrite (seed 1, live 220-turn run):
+# distance ticks down by ONE pixel every single turn (never byte-identical, so the OLD exact-equality
+# detector never fired) while PlayerController2D.Speed (90px/sec) means a clean 30-frame move should
+# cover roughly 45px -- 1px/turn is a wall-scrape, not a legitimately slow walk, and must still trip
+# the sidestep/give-up progression on distance ALONE, not exact equality.
+$creepMemory = New-PilotMemory
+$creepDistance = 50
+$creepCmds = New-Object System.Collections.ArrayList
+for ($i = 1; $i -le 5; $i++) {
+    $creepState = [pscustomobject]@{
+        turn = $i; day = 4; phase = 'Morning'; location = 'interior:forge'; canMove = $true
+        lastOutcome = '(run start)'; screenText = @('Inside the forge.')
+        controls = @(); nearby = @([pscustomobject]@{ key = 'shelf'; label = 'Material Shelf'; direction = 'left'; distance = $creepDistance; inRange = $false })
+    }
+    [void]$creepCmds.Add((Get-PilotNavigateCommand -State $creepState -Keyword '' -Memory $creepMemory | ConvertFrom-Json))
+    $creepDistance = $creepDistance - 1
+}
+Check ($creepCmds[0].action -eq 'move' -and $creepCmds[0].dir -eq 'left') 'a fresh creeping target must still start with the plain bearing'
+Check ($creepCmds[1].action -eq 'move' -and $creepCmds[1].dir -ne 'left') ('a 1px-per-turn creep (well under the ~45px a clean move should cover) must be read as no real progress and sidestep on the very next call, got dir=' + $creepCmds[1].dir)
+$creepOpposite = @{ 'left' = 'right'; 'right' = 'left'; 'up' = 'down'; 'down' = 'up' }
+Check ($creepCmds[2].dir -eq $creepOpposite[$creepCmds[1].dir]) 'the second creeping no-progress call must try the OPPOSITE sidestep sign from the first'
+Check ($creepCmds[3].dir -eq 'left') 'after both sidestep signs the creep must resume the plain bearing once more'
+Check ($creepCmds[4].action -eq 'key' -and $creepCmds[4].target -eq 'cancel') 'a creep that never closes by the minimum-progress threshold must still give up on the target for the day, same as an exact zero-pixel block'
+
+# --- fix/the-pilot-goes-around: prefer the on-screen QuickTravel shortcut over walking ----------
+# TutorialFlow's own QuickTravelRow jumps straight into a building once unlocked -- a human who can
+# see and click it does not walk across town instead. Checked ONLY outdoors (Town2D.EnterInterior is
+# a no-op from inside a DIFFERENT room), and only when the button is actually enabled/visible this
+# turn -- never assumed.
+$quickTravelMemory = New-PilotMemory
+$quickTravelState = [pscustomobject]@{
+    turn = 1; day = 5; phase = 'Morning'; location = 'town'; canMove = $true
+    lastOutcome = '(run start)'; screenText = @('Town square.')
+    controls = @([pscustomobject]@{ name = 'QuickTravel_Forge'; label = 'Forge'; enabled = $true })
+    nearby = @([pscustomobject]@{ key = 'forge'; label = 'Forge'; direction = 'left'; distance = 300; inRange = $false })
+}
+$quickTravelCmd = Get-PilotEnterInteriorCommand -State $quickTravelState -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -StationKeyword 'shelf' -QuickTravelBuilding 'Forge' -Memory $quickTravelMemory
+$parsedQuickTravelCmd = $quickTravelCmd | ConvertFrom-Json
+Check ($parsedQuickTravelCmd.action -eq 'press' -and $parsedQuickTravelCmd.target -eq 'QuickTravel_Forge') ('outdoors with an enabled QuickTravel_Forge button, the pilot must press it instead of walking 300px -- got action=' + $parsedQuickTravelCmd.action + ' target=' + $parsedQuickTravelCmd.target + ' dir=' + $parsedQuickTravelCmd.dir)
+
+# Same outdoor state, but the button is not on screen this run (not yet unlocked) -- must fall back
+# to the ordinary walk, never invent a press for a control that does not exist.
+$noQuickTravelMemory = New-PilotMemory
+$noQuickTravelState = [pscustomobject]@{
+    turn = 1; day = 1; phase = 'Morning'; location = 'town'; canMove = $true
+    lastOutcome = '(run start)'; screenText = @('Town square.')
+    controls = @()
+    nearby = @([pscustomobject]@{ key = 'forge'; label = 'Forge'; direction = 'left'; distance = 300; inRange = $false })
+}
+$noQuickTravelCmd = Get-PilotEnterInteriorCommand -State $noQuickTravelState -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -StationKeyword 'shelf' -QuickTravelBuilding 'Forge' -Memory $noQuickTravelMemory
+$parsedNoQuickTravelCmd = $noQuickTravelCmd | ConvertFrom-Json
+Check ($parsedNoQuickTravelCmd.action -eq 'move' -and $parsedNoQuickTravelCmd.dir -eq 'left') 'with no QuickTravel button unlocked yet, the pilot must fall back to walking the ordinary bearing'
+
+# Standing inside a DIFFERENT interior with a QuickTravel_Forge button enabled must NOT press it --
+# Town2D.EnterInterior no-ops while InteriorActive is already true for a different room, so this
+# would silently do nothing; the existing wrong-interior escape (key:cancel) must run instead, and
+# quick travel gets offered again next turn once actually outdoors.
+$wrongInteriorQuickTravelMemory = New-PilotMemory
+$wrongInteriorQuickTravelState = [pscustomobject]@{
+    turn = 1; day = 5; phase = 'Morning'; location = 'interior:tavern'; canMove = $true
+    lastOutcome = '(run start)'; screenText = @('Inside the tavern.')
+    controls = @([pscustomobject]@{ name = 'QuickTravel_Forge'; label = 'Forge'; enabled = $true })
+    nearby = @()
+}
+$wrongInteriorQuickTravelCmd = Get-PilotEnterInteriorCommand -State $wrongInteriorQuickTravelState -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -StationKeyword 'shelf' -QuickTravelBuilding 'Forge' -Memory $wrongInteriorQuickTravelMemory
+$parsedWrongInteriorQuickTravelCmd = $wrongInteriorQuickTravelCmd | ConvertFrom-Json
+Check ($parsedWrongInteriorQuickTravelCmd.action -eq 'key' -and $parsedWrongInteriorQuickTravelCmd.target -eq 'cancel') 'an enabled QuickTravel_Forge button seen from INSIDE a different room must not be pressed (EnterInterior no-ops there) -- must leave the wrong room first instead'
+
 # --- Summary -----------------------------------------------------------------------------------
 if ($failures.Count -gt 0) {
     Write-Host ('FAIL (' + $failures.Count + ' of ' + ($passes + $failures.Count) + '):')
