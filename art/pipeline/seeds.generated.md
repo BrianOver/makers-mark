@@ -261,3 +261,56 @@ identity or personality more badly -- consistent with this repo's standing curat
 literal prop fidelity. `.import` sidecars were re-minted via the pinned Godot 4.6.3-stable headless
 import pass (`--headless --import --quit-after 200`); uids were preserved unchanged (same filenames,
 same uid contract) for all 6 assets, confirmed via git diff before commit.
+
+## Character-art-quality wave — hero portrait trim/spec parity, 2026-08-11
+
+| Id | Track | Seed | Hand-finished | Build-half |
+|----|-------|------|---------------|------------|
+| hero-vanguard | active | 72462747+7 (candidate c7, unchanged) | no | `art/build/hero-vanguard.build.json` |
+| hero-striker | active | 72462748+0 (candidate c0, unchanged) | no | `art/build/hero-striker.build.json` |
+| hero-mystic | active | 72462749+3 (candidate c3, unchanged) | no | `art/build/hero-mystic.build.json` |
+
+Scope for this wave (owner tasks #48/#40, "make higher quality sprites/animations"): the
+character-art candidates were the six hand-authored `town2d-hero-*`/`town2d-townsfolk-*` walking
+bodies + their walk2/walk4 gait frames, and the six `hero-*` portrait ClassFigures. **The walking
+bodies were deliberately NOT touched** — `tools/art/gen_town_sprites.py`'s own header records that
+SDXL was tried and rejected for this asset class (mush at sprite scale, no frame-to-frame identity
+control), and that file has had five hand-pixel quality passes since (2026-08-01 volume-shading,
+2026-08-02 U6 scale-up to 40x64 + cast completion, 2026-08-04 U3 real 4-frame gait + colour/material
+pass, 2026-08-04 civilian bodies, 2026-08-10 cloth-ify hood/cowl) — continuing to regenerate an
+already-mature, actively-iterated, non-SDXL pipeline via SDXL would contradict both the sibling
+convention and the tested rejection. Rendering the shipped bodies at their true runtime scale
+(`CharacterSpriteScale = 0.5`, Nearest filter, `mipmaps/generate=false`) instead surfaced a
+different, more fundamental finding: a clean 2:1 point-sample decimation with no mipmap averaging
+discards exactly half of every source column/row (verified by simulating the runtime downscale and
+comparing against the native art — a symmetric 40-wide silhouette's accent pixels visibly shift and
+the read goes lopsided). Fixing that is a rendering/canvas-architecture change (either supersampled
+"2x2-block-safe" authoring, which needs `MARGIN_ROWS`/`LEGS_ROWS` to stop being odd, or a filtering
+change), not an art-asset change, and repeats the exact "changing on-screen proportions needs
+Brian's call" line `art/pipeline/gen-heroes-hd.py` already drew for a related question — flagged
+here for a scoped follow-up rather than attempted blind in this pass.
+
+Auditing the six `hero-*` portraits side by side (the one character asset that IS genuinely
+SDXL-track, per `art/specs/heroes/HeroSpecs.cs`) found the real, fixable gap: the original CP-2 trio
+(vanguard/striker/mystic, 2026-07-18) predates both `cutout.py --trim` and the `NoConceptSheet`
+negative the later LW-art trio (occultist/sentinel/skirmisher, 2026-07-19) added after their own
+escalation rounds. Concretely, the CP-2 three shipped at the full untrimmed 512x768 canvas (511x744 /
+511x747 / 511x696 content, i.e. carrying 3-10% dead transparent margin the trimmed trio does not),
+which matters because every panel that shows them (`HeroesPanel`, `TavernPanel`, `LedgerModal`,
+`MineWatch`, all `StretchModeEnum.KeepAspectCentered`) fits-to-box on the raw canvas, so the CP-2
+three rendered fractionally smaller/more padded than their trimmed siblings. No new SDXL candidates
+were generated this pass (see GPU-safety note below) — the existing CP-2 diffuses were inspected
+against the LW-art bar and hold up (single clean pose, no concept-sheet/turnaround/cel-shading
+artifacts), so the fix was in-place: cropped each to its alpha bounding box (the exact operation
+`cutout.py --trim` performs) and re-derived its `_n.png` via `normalmap.py … 2.5` (unchanged math,
+new dimensions only). `HeroSpecs.cs` also gained `NegativeExtra: NoConceptSheet` on the CP-2 three so
+a *future* re-roll of any of the six draws from the same hardened negative. `.import` sidecars were
+re-minted via the pinned Godot 4.6.3-stable headless import pass; uids preserved unchanged (same
+filenames, same uid contract) for all three, confirmed via git diff before commit.
+
+**GPU-safety note:** `nvidia-smi` showed 8.0-8.4GB used / 16303MiB (16GB) total throughout this
+session (`C:\Tools\Godot\...Godot_v4.6.3-stable_mono_win64.exe` was an active GPU client the whole
+time — another agent's playtest), leaving ~8GB free against the required >=14GB-free floor. Polled
+every 30s for 6 minutes; the window never opened, so no ComfyUI generation was attempted this pass
+(the trim/spec-parity fix above needed no GPU — BiRefNet segmentation was not re-run, only the
+already-computed alpha channel was cropped, and `normalmap.py` is pure NumPy/PIL, no CUDA).

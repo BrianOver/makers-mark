@@ -1,0 +1,20 @@
+{
+  "Seed": 72462748,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "131d97e3b85a907727faded85cde8d14c0bac4cb3bbf3f4c5c3f7859ce842022",
+  "NormalSha256": "d7bbc4ce1dc16ef8b2249f12fa9c74e280e843e548d45332b46672ac342ee1a6",
+  "Uid": "uid://d3rgwjc6w8t4t",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "CP-2 batch, 2026-07-18: curated by Brian from 8 candidates at base seed 72462748 (offsets +0..+7); winner c0 (seed 72462748, the base draw itself). No build-half was written at the time -- this file backfills that gap during the character-art-quality wave (2026-08-11).",
+    "paintoverNote": "No new pixels generated this pass -- the original CP-2 diffuse/pose was kept as-is (clean single-pose painterly duelist, no concept-sheet artifacts on inspection; reads one long blade rather than literal 'twin daggers', consistent with this repo's standing curation precedent of prioritizing a clean artifact-free silhouette over literal prop fidelity). Two in-place fixes only: (1) cropped to the alpha bounding box via the same crop cutout.py --trim already performs (512x768 -> 511x747), matching the sibling convention hero-occultist/sentinel/skirmisher already use; (2) regenerated hero-striker_n.png via normalmap.py (Sobel, strength 2.5, unchanged math) to match the new trimmed dimensions. HeroSpecs.cs also gained NegativeExtra: NoConceptSheet for spec-level parity against future re-rolls.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, originally BiRefNet-cutout (untrimmed); this pass applied the missing --trim crop and re-derived the normal map via normalmap.py (Sobel height-from-luminance, strength 2.5), Flip-Y-OFF import convention unchanged. Lit ClassFigure sprite per AssetSpec.NormalMap=true, NeutralBaseTint=true (multiplied in-engine by ClassDefinition.ColorRgb for 'striker', crimson)."
+  }
+}

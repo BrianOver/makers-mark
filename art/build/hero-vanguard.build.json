@@ -1,0 +1,20 @@
+{
+  "Seed": 72462754,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "1c6dfdcda41d308bddf8479ca6159e7a4e351b7c2c50a7b2db83b839f4b6f9c9",
+  "NormalSha256": "2b5c8126760c3797068f8af9ac3d82ac0ea32759e157a3806a3a42ef2d103b0c",
+  "Uid": "uid://b3fe4g3nmvafg",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "CP-2 batch, 2026-07-18: curated by Brian from 8 candidates at base seed 72462747 (offsets +0..+7); winner c7 (seed 72462754). No build-half was written at the time -- this file backfills that gap during the character-art-quality wave (2026-08-11).",
+    "paintoverNote": "No new pixels generated this pass -- the original CP-2 diffuse/pose was kept as-is (already a clean single-pose painterly figure, no concept-sheet/turnaround artifacts on inspection). Two in-place fixes only: (1) cropped to the alpha bounding box via the same crop cutout.py --trim already performs (512x768 -> 511x744), bringing this asset in line with the sibling convention hero-occultist/sentinel/skirmisher already use -- the original CP-2 batch predates --trim's adoption and was the one inconsistency found auditing all six hero portraits together; (2) regenerated hero-vanguard_n.png via normalmap.py (Sobel, strength 2.5, unchanged math) to match the new trimmed dimensions. HeroSpecs.cs also gained NegativeExtra: NoConceptSheet (previously only the LW-art trio had it) for spec-level parity against future re-rolls.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, originally BiRefNet-cutout (untrimmed); this pass applied the missing --trim crop and re-derived the normal map via normalmap.py (Sobel height-from-luminance, strength 2.5), Flip-Y-OFF import convention unchanged. Lit ClassFigure sprite per AssetSpec.NormalMap=true, NeutralBaseTint=true (multiplied in-engine by ClassDefinition.ColorRgb for 'vanguard', steel-blue)."
+  }
+}

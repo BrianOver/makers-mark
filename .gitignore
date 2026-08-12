@@ -63,4 +63,10 @@ __pycache__/
 # Exported game builds. A Windows export is ~160MB (a 104MB self-contained exe, a 62MB
 # .pck, and 231 bundled .NET runtime files); it is a build OUTPUT, reproducible from
 # godot/export_presets.cfg by tools/export-windows.ps1, and must never enter git history.
-build/
+# Anchored to the repo root (not a bare `build/`) -- an unanchored pattern also matched
+# art/build/, the tracked SDXL provenance directory (art/build/<id>.build.json per
+# docs/design/art-pipeline-architecture.md), silently blocking every NEW provenance file
+# there from `git add` (found while writing hero-vanguard/striker/mystic's build-half,
+# character-art-quality wave 2026-08-11 -- the existing art/build/*.json files were only
+# ever committed because they predate this rule, not because it allowed them).
+/build/
