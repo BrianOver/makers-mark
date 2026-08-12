@@ -47,3 +47,49 @@ function Get-CompletionVerdict {
         Incomplete  = $incomplete
     }
 }
+
+# The THIRD honesty gauge, and the one whose absence cost this project a whole night of fake data.
+#
+# DEGRADED asks "were the turns real decisions?". INCOMPLETE asks "did enough turns happen?". Neither
+# one asks the question a person watching the screen asks immediately: DID ANYTHING HAPPEN? A run can
+# burn every budgeted turn, model-driven, zero fallbacks, and finish verdict=ok exit=0 while every
+# single input was swallowed before it reached the game. That is not hypothetical -- it is the
+# 2026-08-11 ten-rounds campaign, which reported "78 runs, zero crashes" over runs where
+# AgentPlaytest.ApplyKey used Viewport.PushInput and therefore never updated the polled input state
+# WorldInput2D reads, so EVERY 'interact' in EVERY run was a no-op. The owner found it by opening the
+# game and watching it sit there. The harness had no opinion.
+#
+# INERT is that opinion. A turn is inert when the command the driver sent was an ACTING command (not
+# 'advance', which is allowed to change nothing but the clock) and the screen digest afterwards is
+# byte-identical to the digest before. One inert turn is ordinary -- a refused press, a walk into a
+# wall. A run made mostly of them did not test the game, and must not be allowed to report findings
+# as though it had.
+#
+# Deliberately NOT reused here: the existing STUCK detector fires on `$digestSeen[$digest] -eq 4`,
+# which is an exact-equality trip -- it warns ONCE per distinct digest and never again, so a run
+# frozen for 400 turns emits a single line and keeps going. It is a note, not a gauge. This is the
+# gauge.
+function Get-InertVerdict {
+    param(
+        [Parameter(Mandatory)][int]$InertTurns,
+        [Parameter(Mandatory)][int]$ActingTurns,
+        [switch]$Scripted,
+        [double]$Floor = 0.5,
+        [int]$MinActingTurns = 8
+    )
+
+    $ratio = 0.0
+    if ($ActingTurns -gt 0) { $ratio = [double]$InertTurns / [double]$ActingTurns }
+
+    # Two guards against firing on a run too small to judge. MinActingTurns: a 3-turn channel proof
+    # that happens to refuse twice is not an inert run, it is a tiny sample. Scripted: same exemption
+    # INCOMPLETE grants it, and for the same reason -- Scripted deliberately sends an illegal press to
+    # prove the refusal path works, so a high inert ratio there is the mode succeeding.
+    $inert = (-not $Scripted) -and ($ActingTurns -ge $MinActingTurns) -and ($ratio -ge $Floor)
+
+    return [pscustomobject]@{
+        Ratio       = $ratio
+        PercentText = [math]::Round($ratio * 100, 1)
+        Inert       = $inert
+    }
+}
