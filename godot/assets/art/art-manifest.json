@@ -5,8 +5,6 @@
   "emberfall-molten-archivist": { "diffuse": true, "normal": true },
   "emberfall-slag-hound": { "diffuse": true, "normal": true },
   "emberfall-undying-forge-heart": { "diffuse": true, "normal": true },
-  "faction-crownsguard-emblem": { "diffuse": true, "normal": false },
-  "faction-deepvein-emblem": { "diffuse": true, "normal": false },
   "forge": { "diffuse": true, "normal": false },
   "gloomwood-backdrop": { "diffuse": true, "normal": false },
   "gloomwood-bramble-boar": { "diffuse": true, "normal": true },
