@@ -134,11 +134,22 @@ public class MineWatchTests
     [TestCase]
     public void MissingBackdrop_DegradesWholeStrip_HiddenRegardlessOfPhase()
     {
+        EngineDistress.ResetForTests();
         var watch = new MineWatch();
         try
         {
             watch.Build("does-not-exist-in-any-manifest"); // injectable degrade path
             AssertThat(watch.HasContent).IsFalse();
+
+            // U1 (loud-failures-and-quiet-channels plan): the runtime half of the fix — a missing
+            // backdrop must say so somewhere a real playtest run's own anomaly report
+            // (EngineLogAnomalies.Scan) can see, not only a pre-merge census test. Before this unit
+            // HasContent going false was entirely silent.
+            AssertThat(EngineDistress.Messages.Any(m => m.Contains("does-not-exist-in-any-manifest")))
+                .OverrideFailureMessage(
+                    $"Build() set HasContent=false for a missing backdrop but recorded no "
+                    + $"EngineDistress message. Recorded: [{string.Join(" | ", EngineDistress.Messages)}]")
+                .IsTrue();
 
             var departed = ImmutableList.Create<GameEvent>(
                 new PartyDeparted(ImmutableList.Create(new HeroId(1), new HeroId(2), new HeroId(3)), 2));
@@ -148,6 +159,31 @@ public class MineWatchTests
             AssertThat(watch.Visible).IsFalse();
             AssertThat(watch.CustomMinimumSize).IsEqual(Vector2.Zero);
             AssertThat(watch.FigureCount).IsEqual(0);
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    /// <summary>The healthy path must not change: a resolvable backdrop (the real committed
+    /// "mine-backdrop") still reports <see cref="MineWatch.HasContent"/> true and records no
+    /// distress message — the guard above must only fire on an actual miss.</summary>
+    [TestCase]
+    public void ResolvableBackdrop_HasContentTrue_NoDistressMessage()
+    {
+        EngineDistress.ResetForTests();
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build(); // the real committed default: AssetCatalog.VenueBackdropId("mine")
+
+            AssertThat(watch.HasContent).IsTrue();
+            AssertThat(EngineDistress.Messages.Any(m => m.Contains("mine-backdrop")))
+                .OverrideFailureMessage(
+                    $"A resolvable backdrop should never trip the missing-backdrop warning. "
+                    + $"Recorded: [{string.Join(" | ", EngineDistress.Messages)}]")
+                .IsFalse();
         }
         finally
         {

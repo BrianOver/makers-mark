@@ -187,6 +187,30 @@ public class AssetResolutionCensusTests
     }
 
     /// <summary>
+    /// U1 (loud-failures-and-quiet-channels plan): <c>MineWatch.Build()</c> defaults to
+    /// <c>AssetCatalog.VenueBackdropId("mine")</c> — "mine-backdrop" — and treats a miss as
+    /// <c>HasContent = false</c>, which does not just drop one texture: it collapses the WHOLE
+    /// hero-march/camp strip to Hidden for the rest of the session, regardless of phase (see
+    /// <c>MineWatch</c>'s own remarks on graceful degrade). Nothing pinned this one literal before
+    /// this unit — every other census case here reads its ids off a live table
+    /// (<c>ClassRegistry.RecruitPool</c>, <c>VenueRegistry.Mine.Floors</c>, ...), but the Mine's
+    /// OWN default backdrop is a single hardcoded id with no table to enumerate it from, so it needs
+    /// its own explicit case or it simply has none. A partial checkout, a corrupt import cache, or a
+    /// rename that is not this exact literal would otherwise hide the entire strip with nothing
+    /// failing at PR time — this is the pre-merge half; <c>MineWatch.WarnIfBackdropMissing</c> is
+    /// the runtime half a partial checkout in the field would still need.
+    /// </summary>
+    [TestCase]
+    public void MineBackdrop_ResolvesToCommittedArt()
+    {
+        AssertResolves(
+            "mine-backdrop",
+            "MineWatch.Build()'s default backdrop id (AssetCatalog.VenueBackdropId(\"mine\")) — a "
+            + "miss sets HasContent=false and hides the WHOLE depths-watch strip for the rest of the "
+            + "session, not just this one texture.");
+    }
+
+    /// <summary>
     /// U2 (painted-interiors plan, docs/plans/2026-08-02-001) — the seven Forge-interior art ids
     /// (one room shell + six station props) authored by <c>art/pipeline/gen-forge-interior.py</c>
     /// and mounted by <c>InteriorRoom2D</c> (U1, a parallel branch). Hardcoded here rather than

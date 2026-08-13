@@ -1,7 +1,9 @@
 #if GDUNIT_TESTS
+using System.Linq;
 using GdUnit4;
 using GameSim.Contracts;
 using GodotClient;
+using GodotClient.Tools;
 using static GdUnit4.Assertions;
 
 namespace GodotClient.Tests;
@@ -56,6 +58,54 @@ public class IconRegistryTests
         {
             AssertThat(IconRegistry.Building(name)).IsNotNull();
         }
+    }
+
+    /// <summary>
+    /// U1 (loud-failures-and-quiet-channels plan): before this unit, <c>IconRegistry.Ore</c> called
+    /// <c>GD.Load</c> straight against a missing SVG's path — a native
+    /// <c>core/io/resource_loader.cpp</c> ERROR at runtime (one real playtest run logged 260 of
+    /// them across 5 distinct missing ids), never a graceful placeholder. This proves the guarded
+    /// path: a material key with no committed <c>ore_*.svg</c> resolves to a real, non-null
+    /// texture (never null — <c>ForgePanel</c>'s vendor shelf hands this straight into
+    /// <c>UiKit.ListRow</c>'s icon slot) and records exactly one <see cref="EngineDistress"/> message
+    /// naming the missing key, which is the evidence that the guarded (existence-checked) path was
+    /// taken instead of the raw <c>GD.Load</c> call that used to spam the native loader.
+    /// </summary>
+    [TestCase]
+    public void Ore_MissingIcon_ResolvesToAPlaceholder_RecordsOneDistressMessage_NeverNull()
+    {
+        EngineDistress.ResetForTests();
+
+        var texture = IconRegistry.Ore("does-not-exist-as-an-ore");
+
+        AssertThat(texture)
+            .OverrideFailureMessage(
+                "IconRegistry.Ore('does-not-exist-as-an-ore') returned null instead of a placeholder — "
+                + "a null icon reaching ForgePanel's vendor shelf is exactly the silent-degrade shape "
+                + "this unit closes.")
+            .IsNotNull();
+
+        AssertThat(EngineDistress.Messages.Count(m => m.Contains("does-not-exist-as-an-ore")))
+            .OverrideFailureMessage(
+                $"Expected exactly one EngineDistress message naming the missing ore key; got "
+                + $"[{string.Join(" | ", EngineDistress.Messages)}]. Zero means the guard never ran "
+                + "(or never warned); the guard's whole job is announcing the degrade.")
+            .IsEqual(1);
+    }
+
+    /// <summary>The healthy path must not change: a real, committed material key still resolves
+    /// straight through — no placeholder, no distress message.</summary>
+    [TestCase]
+    public void Ore_CommittedIcon_ResolvesDirectly_NoDistressMessage()
+    {
+        EngineDistress.ResetForTests();
+
+        var texture = IconRegistry.Ore("copper");
+
+        AssertThat(texture).IsNotNull();
+        AssertThat(EngineDistress.Messages.Any(m => m.Contains("copper")))
+            .OverrideFailureMessage("A committed ore icon should never trip the placeholder warning.")
+            .IsFalse();
     }
 
     [TestCase]

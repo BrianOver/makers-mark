@@ -268,6 +268,16 @@ public partial class CounterPanel : SimPanel
     /// nothing about which one happened).</summary>
     private void QueuePresent(ItemId itemId)
     {
+        // U2 (loud-failures-and-quiet-channels plan): CounterPanel had ZERO Cue.Play call sites —
+        // this is press feedback for the panel's core verb, not the sale landing (MarketLife2D's
+        // own EndJudging already covers a closed sale's Coin, for shelf AND stepped-counter sales
+        // alike — see its remarks). Cue.Click is the "ordinary button press" cue its own doc
+        // comment describes and had zero call sites anywhere until this unit. Unconditional,
+        // queue-then-play, mirroring BountyPanel.OnPostPressed/LegendsWall's Honor button — this is
+        // the ONE seam both the Present button and the desk's drag-drop recogniser call (KTD-A), so
+        // wiring it here covers both entry points at once.
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Click);
+
         var beforeCount = Adapter!.CurrentState.EventLog.Count;
         var action = new PresentItemAction(itemId);
         Adapter!.Queue(action);
@@ -299,6 +309,11 @@ public partial class CounterPanel : SimPanel
     /// standing offer exists).</summary>
     private void QueueAccept()
     {
+        // U2: same press-feedback cue as QueuePresent (see its remarks) — the ONE seam both the
+        // Accept button and the desk's handshake click call. Never Coin: the sale landing is
+        // MarketLife2D.EndJudging's job, and playing it again here would double it on every sale.
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Click);
+
         var before = Adapter!.CurrentState.Counter;
         var itemName = before?.Presented is { } presentedId ? ItemName(presentedId) : "the item";
         var heroName = before?.Active is { } activeId ? HeroName(activeId) : "the customer";
@@ -425,6 +440,11 @@ public partial class CounterPanel : SimPanel
 
         var hold = AddButton(row, "HoldFirm", "Hold Firm", () =>
         {
+            // U2: same press-feedback cue as Present/Accept — Hold Firm has no closing outcome of
+            // its own to acknowledge (a walk plays no cue either; CustomerWalked's own reveal stays
+            // silent, same as before this unit), just the press itself.
+            GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Click);
+
             var beforeCount = Adapter!.CurrentState.EventLog.Count;
             var action = new HaggleResponseAction(HaggleResponseKind.HoldFirm);
             Adapter!.Queue(action);
@@ -465,6 +485,12 @@ public partial class CounterPanel : SimPanel
         row.AddChild(priceStack);
         var counterBtn = AddButton(row, "Counter", "Counter", () =>
         {
+            // U2 (loud-failures-and-quiet-channels plan): same press-feedback cue as Present/
+            // Accept/Hold Firm — never Coin here either, for the same double-play reason QueueAccept
+            // documents (MarketLife2D.EndJudging's own remarks: its Coin already covers a stepped
+            // counter sale, same as a shelf sale).
+            GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Click);
+
             // Counter always closes the sale once it clears the afford/positive checks GateButton
             // already mirrors (ResolveCounter's three outcomes — fleece, pin, plain — all call
             // CloseSale) — so unlike Hold Firm there is no "nothing happened" branch to report here.

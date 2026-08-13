@@ -7,6 +7,7 @@ using GameSim.Contracts;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
+using GodotClient.Audio;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -240,6 +241,83 @@ public class CampPanelTests
 
             AssertThat(ui.Camp.Visible).IsTrue(); // slate held through the Deep phase to stay legible
             AssertThat(RenderedText(ui.Camp)).Contains(rejected.Reason);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── U2 (loud-failures-and-quiet-channels plan): a real send makes a sound, a refusal none ──
+    // Before this unit CampPanel had no cue on Send at all. Mirrors
+    // ImmediateActionsDoNotReplayThePhaseTests' own technique (a real button press, then read
+    // AudioDirector.RecentCues).
+
+    [TestCase]
+    public void Send_RealDelivery_PlaysCoinCue()
+    {
+        var ui = MountAtCamp();
+        try
+        {
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+            audio!.ClearRecentCues();
+
+            Press(ui.Camp, "CampSend_1"); // the held salve is the sole option — a real delivery
+
+            var delivered = ui.Adapter.CurrentState.EventLog.OfType<SupplyDelivered>().Any(e => e.To.Value == 1);
+            AssertThat(delivered).OverrideFailureMessage("Precondition: the send must actually land.").IsTrue();
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"A real supply delivery played [{string.Join(", ", audio.RecentCues)}] — Coin was " +
+                    "never among them. The runner's fee is a real gold transaction and must be audible.")
+                .Contains(Cue.Coin);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// The half of the send cue that matters: a refusal must never SOUND LIKE A SALE. It does still
+    /// make a noise, and that is correct — <c>MainUi</c> plays <see cref="Cue.Rejected"/> for every
+    /// rejected action the adapter reports (MainUi.cs, the LastRejections branch), so refusal
+    /// feedback is app-wide and predates this unit. An earlier draft of this test asserted total
+    /// silence and failed against that existing, intended behaviour; asserting "no Coin" is the
+    /// claim this unit is actually entitled to make.
+    /// </summary>
+    [TestCase]
+    public void Send_RefusedSecondDelivery_DoesNotSoundLikeASale()
+    {
+        var ui = MountAtCamp();
+        try
+        {
+            Press(ui.Camp, "CampSend_1"); // the real delivery — lands, plays Coin
+
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+            audio!.ClearRecentCues();
+
+            Press(ui.Camp, "CampSend_1"); // one runner per party per day — this one is refused
+
+            var rejected = ui.Adapter.LastRejections.Single(r => r.Action is SendSupplyAction);
+            AssertThat(rejected.Reason).Contains("One runner per party per day");
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"A refused send played [{string.Join(", ", audio.RecentCues)}] — Coin was among " +
+                    "them. The runner's fee cue marks gold actually changing hands; a refusal that " +
+                    "sounds identical to a delivery tells the player something happened when nothing did.")
+                .NotContains(Cue.Coin);
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"A refused send played [{string.Join(", ", audio.RecentCues)}] — the app-wide " +
+                    "rejection cue never sounded, so the refusal was silent. MainUi plays Rejected " +
+                    "for every rejected action; losing that is a regression in the whole UI, not just here.")
+                .Contains(Cue.Rejected);
         }
         finally
         {

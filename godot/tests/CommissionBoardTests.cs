@@ -4,6 +4,7 @@ using GameSim;
 using GameSim.Contracts;
 using GdUnit4;
 using Godot;
+using GodotClient.Audio;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -223,6 +224,61 @@ public class CommissionBoardTests
             AssertThat(accept.Disabled).IsFalse();
             AssertThat(accept.TooltipText).IsEqual(string.Empty);
             AssertThat(RenderedText(ui.Commissions)).NotContains("EXPIRED");
+        }
+        finally { Unmount(ui); }
+    }
+
+    // ── U2 (loud-failures-and-quiet-channels plan): distinguishable Accept/Decline cues ─────────
+    // Before this unit CommissionBoard had ZERO Cue.Play call sites. Mirrors
+    // ImmediateActionsDoNotReplayThePhaseTests' own technique (a real button press, then read
+    // AudioDirector.RecentCues).
+
+    [TestCase]
+    public void AcceptButton_PlaysClickCue()
+    {
+        var commission = new Commission(new HeroId(1), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 12, PremiumGold: 30);
+        var ui = MountMainUi(AdapterWithCommission(commission));
+        try
+        {
+            ui.Commissions.ShowOpen(ui.Adapter.CurrentState);
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+            audio!.ClearRecentCues();
+
+            PressEnabled(ui.Commissions, "CommissionAccept_1");
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"Accepting a commission played [{string.Join(", ", audio.RecentCues)}] — Click " +
+                    "was never among them. CommissionBoard had zero Cue.Play call sites before this unit.")
+                .Contains(Cue.Click);
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void DeclineButton_PlaysRejectedCue_DistinctFromAccept()
+    {
+        var commission = new Commission(new HeroId(1), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 12, PremiumGold: 30);
+        var ui = MountMainUi(AdapterWithCommission(commission));
+        try
+        {
+            ui.Commissions.ShowOpen(ui.Adapter.CurrentState);
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+            audio!.ClearRecentCues();
+
+            PressEnabled(ui.Commissions, "CommissionDecline_1");
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"Declining a commission played [{string.Join(", ", audio.RecentCues)}] — Rejected " +
+                    "was never among them.")
+                .Contains(Cue.Rejected);
+            // A refusal must not sound like a success — the two verbs must never share a cue.
+            AssertThat(audio.RecentCues.Contains(Cue.Click))
+                .OverrideFailureMessage("Decline played Click, the SAME cue Accept plays — a refusal must not sound like a success.")
+                .IsFalse();
         }
         finally { Unmount(ui); }
     }

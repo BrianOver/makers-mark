@@ -284,7 +284,19 @@ public partial class CampPanel : SimPanel
         var itemValue = pick.ItemCount == 0
             ? -1
             : pick.GetItemMetadata(pick.Selected < 0 ? 0 : pick.Selected).AsInt32();
+        var beforeCount = Adapter.CurrentState.EventLog.Count;
         Adapter.Queue(new SendSupplyAction(to, new ItemId(itemValue)));
+
+        // U2 (loud-failures-and-quiet-channels plan): the runner's fee is a real gold transaction —
+        // Cue.Coin's own doc ("paying a reward") — so it plays ONLY on a real delivery (SupplyDelivered
+        // actually landed), never on a refusal (one runner per party per day, nothing held, the
+        // recall bell already rung, ...). Same before/after event-log technique CounterPanel.
+        // QueuePresent/QueueAccept already use to tell a real outcome from "nothing happened."
+        var delivered = Adapter.CurrentState.EventLog.Skip(beforeCount).OfType<SupplyDelivered>().Any(e => e.To == to);
+        if (delivered)
+        {
+            GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Coin);
+        }
     }
 
     /// <summary>Heal consumables still in the hero's working (stage-1-depleted) pack.</summary>

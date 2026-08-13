@@ -7,6 +7,7 @@ using GameSim.Contracts;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
+using GodotClient.Audio;
 using GodotClient.Panels;
 using GodotClient.Town2d;
 using GodotClient.Ui;
@@ -830,6 +831,184 @@ public class CounterPanelTests
             // ...and the Interest chip itself moved, in the SAME refresh (no bare number with no
             // comment, and no comment with no number either).
             AssertThat(text).Contains("80");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── U2 (loud-failures-and-quiet-channels plan): press feedback + no double-play ────────────
+    // Before this unit CounterPanel had ZERO Cue.Play call sites. Mirrors
+    // ImmediateActionsDoNotReplayThePhaseTests' own technique (a real button press, then read
+    // AudioDirector.RecentCues) rather than trusting the queued action alone.
+
+    [TestCase]
+    public void PresentButton_PlaysClickCue()
+    {
+        var ui = MountMainUi(new SimAdapter(SingleHeroGuaranteedBuyState()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "OpenCounter");
+
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+            audio!.ClearRecentCues();
+
+            PressEnabled(ui.Shop, $"Present_{ShopItemId.Value}");
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"Pressing Present played [{string.Join(", ", audio.RecentCues)}] — Click was " +
+                    "never among them. CounterPanel had zero Cue.Play call sites before this unit.")
+                .Contains(Cue.Click);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void AcceptButton_PlaysClickCue()
+    {
+        var ui = MountMainUi(new SimAdapter(SingleHeroGuaranteedBuyState()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "OpenCounter");
+            PressEnabled(ui.Shop, $"Present_{ShopItemId.Value}");
+
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+            audio!.ClearRecentCues();
+
+            PressEnabled(ui.Shop, "Accept");
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"Pressing Accept played [{string.Join(", ", audio.RecentCues)}] — Click was " +
+                    "never among them.")
+                .Contains(Cue.Click);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void HoldFirmButton_PlaysClickCue()
+    {
+        var ui = MountMainUi(new SimAdapter(SingleHeroGuaranteedBuyState()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "OpenCounter");
+            PressEnabled(ui.Shop, $"Present_{ShopItemId.Value}");
+
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+            audio!.ClearRecentCues();
+
+            PressEnabled(ui.Shop, "HoldFirm");
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"Pressing Hold Firm played [{string.Join(", ", audio.RecentCues)}] — Click was " +
+                    "never among them.")
+                .Contains(Cue.Click);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void CounterButton_PlaysClickCue()
+    {
+        var state = CounterFixture(round: 1, interest: 100, patience: 3, goodwill: 0, standingOffer: 10, presented: ShopItemId);
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+            audio!.ClearRecentCues();
+
+            PressEnabled(ui.Shop, "Counter");
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"Pressing Counter played [{string.Join(", ", audio.RecentCues)}] — Click was " +
+                    "never among them.")
+                .Contains(Cue.Click);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// The regression pin for the double-play risk the packet flagged: <c>MarketLife2D.EndJudging</c>
+    /// already plays <see cref="Cue.Coin"/> for a closed counter sale (its own remarks — "covers a
+    /// stepped counter sale as well as a shelf sale"), driven by <c>Town2D.Refresh</c> feeding
+    /// <c>MarketLife2D.QueueDay</c> the SAME <see cref="CounterSaleClosed"/> event this Accept press
+    /// resolves. CounterPanel's OWN new press feedback (<see cref="Cue.Click"/>, this same unit)
+    /// must never ALSO key a <see cref="Cue.Coin"/> off that event — this proves the sale, end to
+    /// end through the real <c>MainUi</c>/<c>Town2D</c>/<c>MarketLife2D</c> wiring, plays it exactly
+    /// once, not zero and not two.
+    /// </summary>
+    [TestCase]
+    public void CompletedCounterSale_PlaysCoinExactlyOnce()
+    {
+        var ui = MountMainUi(new SimAdapter(SingleHeroGuaranteedBuyState()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "OpenCounter");
+            PressEnabled(ui.Shop, $"Present_{ShopItemId.Value}");
+
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+            audio!.ClearRecentCues();
+
+            PressEnabled(ui.Shop, "Accept"); // closes the sale — an immediate verb (U1, loop-legibility)
+
+            // Same technique MarketLifeTests.Advance_SoldRun_PlaysTheCoinCue_WhenTheSaleLands uses,
+            // INCLUDING its first small Advance: QueueDay only STAGES the run behind a start delay,
+            // so ActiveCustomerCount is still 0 the instant Accept returns. Without this step the
+            // loop below sees 0 and exits without ever advancing, and the test then reports "Coin
+            // played 0 times" as though the game were silent — which is exactly how it failed the
+            // first time. Capped so a stuck machine fails this test instead of looping forever.
+            var marketLife = ui.Town.MarketLife!;
+            marketLife.Advance(0.01); // crosses the start delay — spawns the counter customer
+
+            AssertThat(marketLife.ActiveCustomerCount)
+                .OverrideFailureMessage(
+                    "Precondition: closing the counter sale staged no customer at all, so this test " +
+                    "could not have observed the coin either way. Town2D.Refresh feeds MarketLife2D." +
+                    "QueueDay the tick's CounterSaleClosed event; if that stopped happening, the " +
+                    "stepped counter sale is silent in the real game and U2's KTD5 premise is void.")
+                .IsGreater(0);
+
+            for (var i = 0; i < 200 && marketLife.ActiveCustomerCount > 0; i++)
+            {
+                marketLife.Advance(0.1);
+            }
+
+            var coinCount = audio.RecentCues.Count(c => c == Cue.Coin);
+            AssertThat(coinCount)
+                .OverrideFailureMessage(
+                    $"A completed counter sale played Coin {coinCount} times " +
+                    $"(cues: [{string.Join(", ", audio.RecentCues)}]) — exactly once is correct " +
+                    "(MarketLife2D.EndJudging). CounterPanel's own new press feedback must never add " +
+                    "a second Coin for the same sale.")
+                .IsEqual(1);
         }
         finally
         {

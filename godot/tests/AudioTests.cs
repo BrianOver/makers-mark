@@ -1506,5 +1506,51 @@ public class AudioTests
                 .IsTrue();
         }
     }
+
+    /// <summary>
+    /// U2 (loud-failures-and-quiet-channels plan): census over every production script under
+    /// res://scripts — every <see cref="Cue"/> value must be referenced somewhere OUTSIDE this
+    /// file's own definition/switch (<c>SfxLibrary.cs</c>), or it is a synthesized sound nobody can
+    /// ever hear. <see cref="Cue.Click"/> was exactly that before this unit: a complete recipe in
+    /// <see cref="SfxLibrary.Build"/>, zero call sites anywhere. Mirrors the source-text-scan
+    /// technique <c>AgentPlaytestBridgeTests</c> already uses to pin a driver/client contract
+    /// against real files rather than a parallel hand-maintained list.
+    ///
+    /// <para><b>Why a plain substring scan, not a call-syntax regex.</b> A stricter
+    /// "must appear inside .Play(" / ".StartLoop(" pattern would MISS several cues that are wired
+    /// through a mapping helper instead of a literal call site — <c>MainUi.EntranceCueFor</c>'s
+    /// switch composes <see cref="Cue.PanelOpen"/>/<see cref="Cue.EnterForge"/>/
+    /// <see cref="Cue.EnterTavern"/>/<see cref="Cue.EnterMarket"/>/<see cref="Cue.EnterMineGate"/>/
+    /// <see cref="Cue.EnterNoticeboard"/>, and <c>MainUi.DeathNoticeCueFor</c>'s ternary composes
+    /// <see cref="Cue.DeathToll"/>, both later played by their own caller
+    /// (<c>Audio.Play(EntranceCueFor(id))</c>) rather than a literal <c>.Play(Cue.X)</c> text — this
+    /// scan proves "the id is referenced somewhere in production," the same simple Contains-based
+    /// rigor this repo's other census tests already use, not a stronger claim this file cannot
+    /// cheaply verify.</para>
+    /// </summary>
+    [TestCase]
+    public void EveryCue_HasAtLeastOneProductionReference()
+    {
+        var scriptsDir = ProjectSettings.GlobalizePath("res://scripts");
+        var files = Directory.GetFiles(scriptsDir, "*.cs", SearchOption.AllDirectories)
+            .Where(f => Path.GetFileName(f) != "SfxLibrary.cs") // the definition/switch, not a caller
+            .ToList();
+
+        AssertThat(files.Count)
+            .OverrideFailureMessage($"Found no .cs files under {scriptsDir} — did the scripts folder move?")
+            .IsGreater(0);
+
+        var combined = string.Join("\n", files.Select(File.ReadAllText));
+
+        foreach (var cue in AllCues)
+        {
+            AssertThat(combined.Contains($"Cue.{cue}"))
+                .OverrideFailureMessage(
+                    $"Cue.{cue} has no reference anywhere under res://scripts outside SfxLibrary.cs's " +
+                    "own definition/switch — a synthesized sound with no production call site, " +
+                    "exactly Cue.Click's fate before this unit.")
+                .IsTrue();
+        }
+    }
 }
 #endif
