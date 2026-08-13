@@ -115,6 +115,25 @@
     estimated wall clock) and exit. Launches nothing, creates nothing on disk. A 30-run night
     must be checkable in one second before it is spent -- that is this switch's whole job.
 
+.PARAMETER KeepNewestRuns
+    fix/the-pilot-plays-like-a-person ("clear out as you go"). The N most-recently-active run
+    directories under -OutDir (by newest file write time, not directory name) keep their frames/
+    in full; anything older gets its frames pruned (never the small text artifacts -- findings.md/
+    turnlog.md/metrics.json/run-meta.json always survive). Default 5, deliberately conservative --
+    see tools/agent-playtest/retention.ps1's own header for the full safety design.
+
+.PARAMETER RetentionMinAgeMinutes
+    A second, independent floor alongside -KeepNewestRuns: a run directory whose newest file write
+    is younger than this is never pruned regardless of the count above. Default 30.
+
+.PARAMETER SkipRetention
+    Skip the automatic pre-sweep retention pass entirely for this invocation.
+
+.PARAMETER PruneOnly
+    Run ONLY the retention pass against -OutDir (or its default) and exit -- no scope/persona
+    validation, no driver check, no run launched. For reclaiming disk on demand without also
+    starting a fresh sweep.
+
 .EXAMPLE
     tools/playtest-sweep.ps1 -DryRun -Runs 2 -Scopes Full,Scout -Personas first-timer,veteran
 
@@ -123,6 +142,9 @@
 
 .EXAMPLE
     tools/playtest-sweep.ps1 -AggregateFrom runs/playtest/2026-08-10_020000
+
+.EXAMPLE
+    tools/playtest-sweep.ps1 -PruneOnly -KeepNewestRuns 3
 #>
 [CmdletBinding()]
 param(
@@ -143,10 +165,32 @@ param(
     [ValidateSet('Quit', 'Sweep')]
     [string]$PatienceMode = 'Sweep',
     [string]$RepoRoot,
-    [switch]$DryRun
+    [switch]$DryRun,
+    # fix/the-pilot-plays-like-a-person: "clear out as you go" -- a single archived campaign
+    # directory (this script's own runs/playtest/<stamp>/<tag>/frames/) reached 750MB of PNGs on
+    # disk with nothing ever pruning it (runs/ is gitignored, so this is pure local waste, not a
+    # git problem). Retention runs automatically before every real sweep launch (never during
+    # -DryRun/-AggregateFrom, which are documented to touch nothing on disk) -- see
+    # tools/agent-playtest/retention.ps1's own header for the full safety design (root containment,
+    # keep-newest floor, min-age floor, and this driver's own git-ignore check before ever pruning
+    # for real). Conservative defaults: keep the 5 most-recently-active run directories' frames in
+    # full, and never touch anything active in the last 30 minutes, regardless of that count.
+    [int]$KeepNewestRuns = 5,
+    [int]$RetentionMinAgeMinutes = 30,
+    [switch]$SkipRetention,
+    # Run ONLY the retention sweep against an existing runs/playtest tree, print the report, exit --
+    # no scope/persona validation, no driver check, nothing launched. For a human who wants to
+    # reclaim disk NOW without also kicking off a fresh overnight sweep.
+    [switch]$PruneOnly
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Pure logic, zero Godot/ollama/VRAM -- see its own header. Dot-sourced (never invoked as its own
+# process) so this file's functions below can call straight into it; retention.ps1 itself never
+# calls `exit`, so dot-sourcing it here carries none of the risk this file's own DryRun/AggregateFrom
+# paths have (see this file's own header on why THOSE are tested as separate processes instead).
+. (Join-Path $PSScriptRoot 'agent-playtest\retention.ps1')
 
 function Say($text) { Write-Host ('playtest-sweep: ' + $text) -ForegroundColor Cyan }
 function Warn($text) { Write-Host ('playtest-sweep: ' + $text) -ForegroundColor Yellow }
@@ -1337,6 +1381,47 @@ function Invoke-SweepRun {
     return $meta
 }
 
+# --- retention (fix/the-pilot-plays-like-a-person) ----------------------------------------------
+# The ONE place this driver actually calls Invoke-PlaytestRetentionPrune "for real" (as opposed to
+# retention.ps1's own tests, which call its pure functions directly against a synthetic fixture
+# directory and never touch git at all). This wrapper adds the fourth safety guard promised in
+# retention.ps1's own header: a one-time `git check-ignore` on the resolved runs root BEFORE ever
+# pruning anything, refusing outright (Warn + skip, never Die -- a retention failure must not block
+# the sweep itself) if git is unavailable or the root does not come back ignored. runs/ is a single
+# gitignore line with no negation (.gitignore:39), so one directory-level check is sufficient; this
+# is never repeated per-candidate.
+function Invoke-RetentionAndReport {
+    param(
+        [Parameter(Mandatory)][string]$RunsRoot,
+        [Parameter(Mandatory)][string]$RepoRootForCheck,
+        [int]$KeepNewest = 5,
+        [int]$MinAgeMinutes = 30,
+        [string[]]$ProtectPaths = @()
+    )
+
+    if (-not (Test-Path $RunsRoot)) {
+        Say ('retention: ' + $RunsRoot + ' does not exist yet -- nothing to prune.')
+        return
+    }
+
+    $resolvedRoot = (Resolve-Path $RunsRoot).Path
+    $ignored = $false
+    try {
+        $gitOut = & git -C $RepoRootForCheck check-ignore --quiet -- $resolvedRoot 2>&1
+        $ignored = ($LASTEXITCODE -eq 0)
+    } catch {
+        $ignored = $false
+    }
+    if (-not $ignored) {
+        Warn ('retention: skipping -- git did not confirm ' + $resolvedRoot + ' is ignored (refusing to prune without that guarantee).')
+        return
+    }
+
+    $plan = Get-PlaytestRetentionPlan -RunsRoot $resolvedRoot -KeepNewest $KeepNewest -MinAgeMinutes $MinAgeMinutes -ProtectPaths $ProtectPaths
+    $results = Invoke-PlaytestRetentionPrune -RunsRoot $resolvedRoot -Plan $plan
+    foreach ($line in (Get-PlaytestRetentionReportLines -Plan $plan -PruneResults $results)) { Say $line }
+}
+
 # =================================================================================================
 # MAIN
 # =================================================================================================
@@ -1353,6 +1438,14 @@ if ($RepoRoot -ieq 'C:\Code\Game') {
         'that is the SHARED COORDINATION ROOT, which is stale and never the one to playtest.',
         'Use a worktree or C:\Code\Game\play, same rule tools/agent-playtest.ps1 enforces on itself.'
     )
+}
+
+if ($PruneOnly) {
+    $pruneRoot = $OutDir
+    if (-not $pruneRoot) { $pruneRoot = Join-Path $RepoRoot 'runs\playtest' }
+    Say ('prune-only: reclaiming disk under ' + $pruneRoot + ' -- no run launched, nothing else touched.')
+    Invoke-RetentionAndReport -RunsRoot $pruneRoot -RepoRootForCheck $RepoRoot -KeepNewest $KeepNewestRuns -MinAgeMinutes $RetentionMinAgeMinutes
+    exit 0
 }
 
 $driverPath = Join-Path $RepoRoot 'tools\agent-playtest.ps1'
@@ -1372,7 +1465,12 @@ if ($AggregateFrom) {
         $badRunCount = [int]$aggregate.UnusableRunCount
     }
     if ($badRunCount -gt 0) {
-        Warn ($badRunCount + ' of ' + $aggregate.RowCount + ' run(s) in this sweep are UNUSABLE ' +
+        # fix/the-pilot-plays-like-a-person: found while wiring retention into this same MAIN
+        # section, unrelated to it -- $badRunCount is [int], so "$badRunCount + ' of '" made the
+        # int the LEFT operand of +, and PowerShell's + tries to parse the STRING as an int to
+        # match the left operand's type, throwing "Cannot convert value 'of' to type System.Int32"
+        # before Warn's own message ever printed. [string] cast first makes + plain concatenation.
+        Warn ([string]$badRunCount + ' of ' + $aggregate.RowCount + ' run(s) in this sweep are UNUSABLE ' +
             '(DEGRADED / INCOMPLETE / INERT / MISSING) -- see REPORT.md''s named-with-cause section. Exiting non-zero.')
         exit 1
     }
@@ -1405,6 +1503,15 @@ if ($DryRun) {
 }
 
 if (-not $OutDir) { $OutDir = Join-Path $RepoRoot 'runs\playtest' }
+
+# Retention runs BEFORE this sweep's own $stampDir exists -- nothing this run is about to create can
+# ever be a pruning candidate yet, so no -ProtectPaths entry is needed to keep it safe (see
+# retention.ps1's own header for the rest of the safety design). "Clear out as you go": every real
+# sweep launch reclaims old frames first instead of only ever adding to the pile.
+if (-not $SkipRetention) {
+    Invoke-RetentionAndReport -RunsRoot $OutDir -RepoRootForCheck $RepoRoot -KeepNewest $KeepNewestRuns -MinAgeMinutes $RetentionMinAgeMinutes
+}
+
 $stamp = Get-Date -Format 'yyyy-MM-dd_HHmmss'
 $stampDir = Join-Path $OutDir $stamp
 New-Item -ItemType Directory -Path $stampDir -Force | Out-Null
@@ -1437,7 +1544,9 @@ if ($aggregate -and ($aggregate.PSObject.Properties.Name -contains 'UnusableRunC
     $badRunCount = [int]$aggregate.UnusableRunCount
 }
 if ($badRunCount -gt 0) {
-    Warn ($badRunCount + ' of ' + $plan.Count + ' run(s) in this sweep are UNUSABLE (DEGRADED / INCOMPLETE / INERT / MISSING) ' +
+    # fix/the-pilot-plays-like-a-person: same [int]+string cast fix as the -AggregateFrom branch
+    # above -- see that one's own comment for why "$badRunCount + ' of '" threw instead of printing.
+    Warn ([string]$badRunCount + ' of ' + $plan.Count + ' run(s) in this sweep are UNUSABLE (DEGRADED / INCOMPLETE / INERT / MISSING) ' +
         '-- see REPORT.md''s named-with-cause section. Any conclusion drawn across this sweep is averaging over runs ' +
         'that did not test the game. Exiting non-zero.')
     exit 1

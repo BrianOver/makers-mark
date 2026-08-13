@@ -904,6 +904,7 @@ public partial class AgentPlaytest : Node
         }
 
         DevToolAudio.Silence(); // automated runs stay silent — see DevToolAudio
+        StampWindowTitle(); // see StampWindowTitle's own doc — the persona-visibility fix
 
         var outDir = ResolveOutDir();
         var maxTurns = EnvInt("AGENT_PLAYTEST_MAX_TURNS", DefaultMaxTurns);
@@ -931,6 +932,32 @@ public partial class AgentPlaytest : Node
     /// </summary>
     public static int ExitCodeFor(AgentPlaytestOutcome outcome) =>
         outcome == AgentPlaytestOutcome.TimedOut ? 2 : 0;
+
+    /// <summary>
+    /// fix/the-pilot-plays-like-a-person: an owner watching this client play (over someone's shoulder,
+    /// not through the driver's own logs) had no way to tell WHICH player was driving it — monkey's
+    /// own uniform-random command stream (see monkey.ps1's own header) is, by design, indistinguishable
+    /// from a person mashing buttons; -Persona pilot's habit-forming curiosity detours and seeded
+    /// business-decision coin flips can look similarly unplanned to someone who does not know that
+    /// design; and even a model-driven persona's occasional free-form near-empty command reads the
+    /// same way. The window title is the one piece of on-screen truth this tool can add without
+    /// touching godot/scripts/ui/ (owned by another lane's visual pass this same session) or the
+    /// action vocabulary itself: whoever is looking at the taskbar/title bar can always read off
+    /// exactly which persona is driving, straight from the SAME env var the driver already prints to
+    /// its own console (agent-playtest.ps1's own "persona: X (requested: Y)" Say line).
+    ///
+    /// <para>Absent env var (a manual launch with no driver at all, or a driver older than this fix)
+    /// -> "(unknown)", never a blank title a viewer could mistake for "this is not an automated run."
+    /// <see cref="DisplayServer.WindowSetTitle"/> is a documented no-op under <c>--headless</c> (same
+    /// as <see cref="DisplayServer.WindowSetMode"/>, per <c>UiSettings.cs</c>'s own note), so this is
+    /// harmless in any engine test that happens to instantiate this scene headless.</para>
+    /// </summary>
+    private static void StampWindowTitle()
+    {
+        var persona = System.Environment.GetEnvironmentVariable("AGENT_PLAYTEST_PERSONA");
+        if (string.IsNullOrWhiteSpace(persona)) { persona = "(unknown)"; }
+        DisplayServer.WindowSetTitle("AGENT PLAYTEST (automated) -- persona: " + persona);
+    }
 
     private static string ResolveOutDir()
     {

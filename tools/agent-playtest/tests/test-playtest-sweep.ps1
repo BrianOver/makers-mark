@@ -483,6 +483,38 @@ if (Test-Path $collapseReportPath) {
     Check ($collapseReport -notmatch 'TOTAL PERSONA COLLAPSE') 'this fixture is a PARTIAL collapse (2 of 4 personas), never TOTAL (which would require all 4 to share one hash)'
 }
 
+# --- 6. -PruneOnly's own git-ignore safety gate (fix/the-pilot-plays-like-a-person) -------------
+# The pure retention.ps1 functions (Get-PlaytestRetentionPlan/Invoke-PlaytestRetentionPrune) already
+# have their own thorough unit tests in tools/test-agent-playtest-modes.ps1, against synthetic
+# fixtures under $env:TEMP, per this repo's own testing rule for deletion-adjacent code. What THIS
+# file can additionally prove -- and the only retention behavior this file's own tests should cover,
+# to honor the same "never against the real runs/" rule -- is the DRIVER's own extra safety gate:
+# Invoke-RetentionAndReport (playtest-sweep.ps1's own wrapper) refuses to prune anything at all
+# unless `git check-ignore` confirms the runs root first. A fixture under $env:TEMP is, by
+# construction, never inside this repository at all, so this proves the refusal fires -- and that
+# nothing is deleted when it does -- without ever needing a real runs/ directory or a real prune to
+# succeed. Fixed, reused directory name (never deleted by this script -- same convention as
+# $fixtureRoot/$collapseRoot above); every write below is -Force/overwrite, so re-running this test
+# is idempotent.
+$pruneOnlyRoot = Join-Path $env:TEMP 'playtest-sweep-test-pruneonly-fixture'
+$pruneOnlyRunDir = Join-Path $pruneOnlyRoot 'Full-veteran-1'
+$pruneOnlyFramesDir = Join-Path $pruneOnlyRunDir 'frames'
+New-Item -ItemType Directory -Path $pruneOnlyFramesDir -Force -ErrorAction Stop | Out-Null
+Set-Content -Path (Join-Path $pruneOnlyRunDir 'findings.md') -Value '# findings' -Encoding ascii
+Set-Content -Path (Join-Path $pruneOnlyRunDir 'run-meta.json') -Value '{}' -Encoding ascii
+Set-Content -Path (Join-Path $pruneOnlyFramesDir 'turn-1.png') -Value 'fixture frame bytes' -Encoding ascii
+# Make it look old, so -KeepNewestRuns 0 -RetentionMinAgeMinutes 0 below would make it PRUNE-eligible
+# if the git-ignore gate were not there at all -- a meaningful test needs a candidate that WOULD be
+# pruned absent the gate, or "nothing was pruned" could just mean "nothing was eligible anyway".
+(Get-Item (Join-Path $pruneOnlyFramesDir 'turn-1.png')).LastWriteTimeUtc = (Get-Date).ToUniversalTime().AddDays(-30)
+
+$pruneOnlyOutput = & powershell -NoProfile -File $scriptPath -PruneOnly -OutDir $pruneOnlyRoot -KeepNewestRuns 0 -RetentionMinAgeMinutes 0 2>&1
+$pruneOnlyExit = $LASTEXITCODE
+Check ($pruneOnlyExit -eq 0) ('-PruneOnly against a non-repo temp fixture must still exit 0 (a refused prune is not a failure), got ' + $pruneOnlyExit)
+$pruneOnlyText = ($pruneOnlyOutput | Out-String)
+Check ($pruneOnlyText -match 'retention' -and $pruneOnlyText -match 'skipping') ('-PruneOnly must report that it is skipping retention when git cannot confirm the root is ignored. Output:' + [Environment]::NewLine + $pruneOnlyText)
+Check (Test-Path (Join-Path $pruneOnlyFramesDir 'turn-1.png')) 'the fixture frame file must still exist -- the git-ignore gate must have refused to prune, not silently succeeded'
+
 # --- Summary -----------------------------------------------------------------------------------
 if ($failures.Count -gt 0) {
     Write-Host ('FAIL (' + $failures.Count + ' of ' + ($passes + $failures.Count) + '):')
