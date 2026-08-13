@@ -91,10 +91,22 @@ public static class TownLayout2D
 
     /// <summary>One static prop's placement: sprite id (resolved via <see
     /// cref="TownAssets2D.ForProp"/>), the tile its feet-origin sits on (same <see
-    /// cref="TileToWorld"/> convention buildings use), and whether it needs Y-sorting against
+    /// cref="TileToWorld"/> convention buildings use), whether it needs Y-sorting against
     /// heroes/the player (true for anything tall enough to be walked in front of/behind — a well,
     /// lantern post, or tree; a flush ground decal would pass false and mount under <see
-    /// cref="Town2D.Ground"/> instead, though this slice has none).</summary>
+    /// cref="Town2D.Ground"/> instead, though this slice has none).
+    ///
+    /// <para><b>Every prop's art ships at its on-screen pixel size</b> — 8-24px lantern/tree/crate,
+    /// 32px well, and (U4, asset-completion wave) the eight <c>props-*</c> warm-hub entries below.
+    /// Those eight were rendered at ~800-1024px and committed un-resized, which is why they went
+    /// unmounted so long: dropped into this table as-is they draw several SCREENS wide on the
+    /// 640×360 world viewport. They were resampled ONCE, offline, to the size the town actually
+    /// draws them at (LANCZOS, ~11.87MB → ~31KB) rather than divided down at runtime by a per-entry
+    /// scale factor — a 25-30× runtime downscale of a 1MB texture shimmers as the camera pans (the
+    /// 2D importer keeps no mipmaps here) and holds ~33MB of VRAM for thumbnails. So there is no
+    /// scale knob, and there should never need to be one: if a future prop draws wrong, its art is
+    /// the wrong size and that is where to fix it.</para>
+    /// </summary>
     public readonly record struct PropLayout(string SpriteId, Vector2I Tile, bool YSorted);
 
     /// <summary>
@@ -217,6 +229,51 @@ public static class TownLayout2D
         // Crates: a couple stacked just east of the market's footprint.
         new("town2d-prop-crate", new Vector2I(29, 11), true),
         new("town2d-prop-crate", new Vector2I(29, 13), true),
+
+        // U4 (asset-completion wave, docs/design/ASSETS.md "warm-hub town props"): eight
+        // committed, resolution-tested (ArtWiringCoverageTests.TownProps_ResolveWithNormal)
+        // props that nothing ever drew until this table. Every tile below was checked clear of
+        // every venue footprint (Venues above) and every walkable lane TownLayout2D.PathRects
+        // carries INTO a building — the plaza square itself (PathRects[0]) is exempted from that
+        // check, matching this file's own established precedent (the well sits dead center of
+        // it, corner lanterns flank it): a wide-open square tolerates a decoration, a 1-2-tile
+        // spur does not. Each one's committed art was resampled offline to a footprint sized
+        // relative to this file's existing prop ladder (8px lantern .. 32px well .. 88px
+        // tavern) — tuned against a real rendered frame (tools/receipt.ps1), not guessed.
+
+        // A market yard, north of its footprint and east of the mine-gate road — clear of the
+        // market's own spur and the well/lantern cluster in the plaza.
+        new("props-market-crates", new Vector2I(30, 9), true),
+
+        // A second, informal flyer board over by the market — NOT the same object as the
+        // "noticeboard" VENUE key below (that key is the Bounties building at (26,18), a
+        // different system entirely; see this class's own U4 doc note on the name collision).
+        new("props-noticeboard", new Vector2I(22, 10), true),
+
+        // Festival garland over the top of the plaza, clear of the north road and every spur.
+        new("props-string-lanterns", new Vector2I(17, 12), true),
+
+        // Ore cart parked in the yard behind the forge's west wall.
+        new("props-ore-cart", new Vector2I(9, 11), true),
+
+        // The forge's own pet, curled by the coals — one column further west than the cart/
+        // laundry line (not just a row apart): a first receipt at (9,13), sharing their column
+        // with only 2 tiles of vertical gap, read as one cluttered blob on screen (the
+        // salamander's small silhouette sat inside the laundry line's own footprint) — moving it
+        // sideways instead of just further down gives it a horizontally clear read regardless of
+        // the laundry line's height.
+        new("props-forge-salamander", new Vector2I(7, 13), true),
+
+        // Laundry strung in the backyard gap between the forge and the tavern.
+        new("props-laundry-line", new Vector2I(9, 15), true),
+
+        // Napping on the tavern's south side, clear of its door column (x=13).
+        new("props-tavern-cat", new Vector2I(15, 19), true),
+
+        // A second, older well near the tavern/noticeboard row — duplicates the existing
+        // "town2d-well" prop above in SUBJECT (this class's own U4 doc note flags this as a
+        // genuine open question, not a deliberate two-wells design call).
+        new("props-town-well", new Vector2I(17, 19), true),
     };
 
     /// <summary>Tile coordinate → world-space pixel position of that tile's CENTER. Buildings are

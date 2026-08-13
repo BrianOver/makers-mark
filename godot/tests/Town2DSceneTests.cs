@@ -166,5 +166,135 @@ public class Town2DSceneTests
         }
         finally { town.Free(); }
     }
+
+    /// <summary>U4 (asset-completion wave): the eight warm-hub town props (docs/design/ASSETS.md
+    /// — "11.87MB of finished, committed, resolution-tested art... never mounted"). <see
+    /// cref="ArtWiringCoverageTests.TownProps_ResolveWithNormal"/> already proves every one of
+    /// these ids resolves through <see cref="TownAssets2D.ForProp"/> — that test alone would have
+    /// passed for MONTHS while nothing on screen ever drew them (the exact MineWatch-shaped bug
+    /// this unit's own packet warns against: "an id resolves" and "something draws it" had
+    /// silently drifted apart). Kept as its own array (not a shared reference to <see
+    /// cref="ArtWiringCoverageTests.TownPropIds"/>, a different test class/assembly-visibility
+    /// concern) — same eight literals, same repo convention as that class's own copy.</summary>
+    private static readonly string[] WarmHubPropIds =
+    [
+        "props-noticeboard", "props-town-well", "props-ore-cart", "props-string-lanterns",
+        "props-market-crates", "props-laundry-line", "props-tavern-cat", "props-forge-salamander",
+    ];
+
+    [TestCase]
+    public void WarmHubProps_ResolveToRealArt_AndAppearInTheTownNodeTree()
+    {
+        var town = Mount();
+        try
+        {
+            foreach (var id in WarmHubPropIds)
+            {
+                AssertThat(IconRegistry.Art(id))
+                    .OverrideFailureMessage($"'{id}' must resolve to committed art, not fall through to the loud magenta placeholder")
+                    .IsNotNull();
+
+                var entry = TownLayout2D.Props.FirstOrDefault(p => p.SpriteId == id);
+                AssertThat(entry.SpriteId)
+                    .OverrideFailureMessage($"TownLayout2D.Props has no entry for '{id}' — resolving through ForProp is not the same as being drawn (see MineWatch's own precedent, where ids resolved fine but nothing on screen ever used them)")
+                    .IsEqual(id);
+
+                var nodeName = $"Prop_{entry.SpriteId}_{entry.Tile.X}_{entry.Tile.Y}";
+                AssertThat(town.YSort.GetChildren().Any(child => child.Name.ToString() == nodeName))
+                    .OverrideFailureMessage($"expected a '{nodeName}' node under Town2D.YSort — BuildProps must mount every TownLayout2D.Props entry, not just resolve its id")
+                    .IsTrue();
+            }
+        }
+        finally { town.Free(); }
+    }
+
+    /// <summary>This repo has died of cumulative orphan-node leaks before (see
+    /// <c>PanelRebuildDoesNotLeakNodesTests</c>'s own doc: ~468,000 stranded nodes across one
+    /// suite, eventually crashing the shared gdUnit runtime mid-session). <see cref="Town2D.Free"/>
+    /// is a real <see cref="Node.Free"/> (not a <see cref="Node.QueueFree"/> of an already-detached
+    /// subtree — the specific shape that bug needed), so a mount/teardown cycle SHOULD cascade to
+    /// zero every time; this pins that invariant now that <see cref="TownLayout2D.Props"/> mounts
+    /// 8 more children per cycle than it used to. Same measurement idiom as
+    /// <c>PanelRebuildDoesNotLeakNodesTests.OrphanNodeCount</c> — the engine's own live-node-with-
+    /// no-tree counter, not a node count that can't distinguish "in the tree" from "leaked".</summary>
+    private const int MountTeardownCycles = 10;
+
+    /// <summary>Ceiling on nodes still orphaned after <see cref="MountTeardownCycles"/> full
+    /// town mount/teardown cycles. The fixed shape lands at zero; a per-cycle leak on a town this
+    /// size (buildings, ~28 props, interior rooms, townsfolk, hero actors) would clear this budget
+    /// almost immediately, the same way <c>PanelRebuildDoesNotLeakNodesTests</c>' 200-node budget
+    /// stayed tiny relative to the ~9,000-per-cycle bug it was written to catch.</summary>
+    private const int OrphanLeakBudget = 100;
+
+    [TestCase]
+    public void Town2D_RepeatedMountTeardown_LeavesNoOrphanNodes()
+    {
+        var before = OrphanNodeCount();
+
+        for (var i = 0; i < MountTeardownCycles; i++)
+        {
+            var town = Mount();
+            town.Free();
+        }
+
+        var leaked = OrphanNodeCount() - before;
+
+        AssertThat(leaked)
+            .OverrideFailureMessage(
+                $"{MountTeardownCycles} town mount/teardown cycles left {leaked} nodes still alive "
+                + $"and parented to nothing (budget {OrphanLeakBudget}). Town2D.Free() should cascade "
+                + "synchronously to every child it owns, including every TownLayout2D.Props entry's "
+                + "Sprite2D/SwayingTreeSprite2D — a regression here is exactly the shape that killed "
+                + "the shared gdUnit runtime mid-session before (see PanelRebuildDoesNotLeakNodesTests).")
+            .IsLess(OrphanLeakBudget);
+    }
+
+    /// <summary>Live nodes belonging to no tree — the engine's own counter, mirrors
+    /// <c>PanelRebuildDoesNotLeakNodesTests.OrphanNodeCount</c> exactly (that test lives in a
+    /// different class; this is a deliberate small duplication, not a shared helper, matching this
+    /// repo's own "no cross-class reach-in" convention documented on <see cref="Building2D.Tell"/>
+    /// et al.).</summary>
+    private static int OrphanNodeCount() => (int)Performance.GetMonitor(Performance.Monitor.ObjectOrphanNodeCount);
+
+    /// <summary>Lane clearance is a requirement of this unit, not a nicety: solid objects blocking
+    /// the walkable approach into a building is a known live complaint in this town. Checked
+    /// against <see cref="TownLayout2D.PathRects"/>'s SPUR/road entries only (index 1 onward) —
+    /// index 0 (the plaza square) is deliberately excluded, matching this file's own established
+    /// precedent that the wide-open plaza already legitimately hosts decor (the well sits dead
+    /// center of it, corner lanterns flank it): a decoration on an 11×5 open square doesn't block
+    /// anything, but the SAME decoration on a 1-2-tile spur is the only way into a door.</summary>
+    [TestCase]
+    public void WarmHubProps_NeverSitOnABuildingApproachLane()
+    {
+        var lanes = TownLayout2D.PathRects.Skip(1).ToArray();
+
+        foreach (var id in WarmHubPropIds)
+        {
+            var entry = TownLayout2D.Props.First(p => p.SpriteId == id);
+
+            foreach (var lane in lanes)
+            {
+                AssertThat(lane.HasPoint(entry.Tile))
+                    .OverrideFailureMessage($"'{id}' sits at tile {entry.Tile}, inside approach lane {lane} — it blocks a building's only way in")
+                    .IsFalse();
+            }
+        }
+    }
+
+    /// <summary>The task packet's first placement problem: <c>props-noticeboard</c> collides in
+    /// NAME with <see cref="TownLayout2D.Venues"/>'s "noticeboard" venue key — the Bounties
+    /// building. They must never share a tile, or the prop reads as a second copy of the same
+    /// building rather than the distinct market flyer board it was mounted as (see
+    /// <see cref="TownLayout2D.Props"/>'s own U4 doc note).</summary>
+    [TestCase]
+    public void PropsNoticeboard_SitsAtADifferentTileThanTheNoticeboardBuilding()
+    {
+        var noticeboardBuilding = TownLayout2D.Venues.First(v => v.Key == "noticeboard");
+        var noticeboardProp = TownLayout2D.Props.First(p => p.SpriteId == "props-noticeboard");
+
+        AssertThat(noticeboardProp.Tile)
+            .OverrideFailureMessage($"props-noticeboard must not sit on the noticeboard/Bounties BUILDING's own tile {noticeboardBuilding.Tile} — they are two different objects")
+            .IsNotEqual(noticeboardBuilding.Tile);
+    }
 }
 #endif
