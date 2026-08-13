@@ -1,0 +1,20 @@
+{
+  "Seed": null,
+  "Model": null,
+  "Lora": null,
+  "Steps": null,
+  "CfgMilli": null,
+  "SamplerResolved": null,
+  "SchedulerResolved": null,
+  "PaletteSha256": null,
+  "DiffuseSha256": "352bf4d12d2569f52488e00b0690c8173a1329d94d31280f181905b96e635d6c",
+  "NormalSha256": null,
+  "Uid": "uid://dyj8drl0lodm",
+  "HandFinished": false,
+  "Status": "unreproducible-legacy",
+  "Provenance": {
+    "drafts": null,
+    "paintoverNote": null,
+    "aiDisclosure": "No seed, model, sampler or generation record exists for this asset -- it predates art/build/*.build.json provenance tracking. TownLayout2D.cs's own doc calls this and its siblings 'the pre-pivot SDXL set': still drawn live today as the Tavern building (TownLayout2D.Venues 'tavern' spriteId, resolved through TownAssets2D.ForVenue) per the 2026-08-01 owner ruling to keep this SDXL exterior look over the town2d pixel-art alternative. recolor-forge-roof.py samples its own target hue directly from this file's shingled roof, which is the only other corroborating evidence in-repo that this is SDXL-era art -- but no seed/model/sampler was ever captured for this specific file, so nothing is invented here -- recorded honestly as unreproducible-legacy (U9, R9) rather than fabricated."
+  }
+}

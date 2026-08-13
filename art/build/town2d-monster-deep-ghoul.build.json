@@ -1,0 +1,20 @@
+{
+  "Seed": null,
+  "Model": null,
+  "Lora": null,
+  "Steps": null,
+  "CfgMilli": null,
+  "SamplerResolved": null,
+  "SchedulerResolved": null,
+  "PaletteSha256": null,
+  "DiffuseSha256": "443120de3bccc79d40a48314f9634a9f20ef6f0af0eae38d4110cef808305634",
+  "NormalSha256": null,
+  "Uid": "uid://8trp3meatot5",
+  "HandFinished": false,
+  "Status": "unreproducible-legacy",
+  "Provenance": {
+    "drafts": null,
+    "paintoverNote": null,
+    "aiDisclosure": "No seed, model, sampler or build script exists for this asset. It is a 58x96 ad-hoc canvas, authored outside tools/art/gen_town_sprites.py -- that script is a fixed 40x64 humanoid-rig canvas that never references any monster (confirmed during U9/KTD1, asset-completion wave plan). Whether the original authoring pass used AI generation, hand-pixel editing, or both is not recorded anywhere in this repo's history, so nothing is invented here -- recorded honestly as unreproducible-legacy (U9, R9) rather than fabricating a method or seed. Drawn live today by DelveStage's IconRegistry.Art call composing this exact id from the monster slug."
+  }
+}

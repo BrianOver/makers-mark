@@ -1,0 +1,20 @@
+{
+  "Seed": null,
+  "Model": null,
+  "Lora": null,
+  "Steps": null,
+  "CfgMilli": null,
+  "SamplerResolved": null,
+  "SchedulerResolved": null,
+  "PaletteSha256": null,
+  "DiffuseSha256": "cd78e8fd51a1c8da403165ec2c3229d3dadf2118f426e496f40f6c798f3bd06d",
+  "NormalSha256": null,
+  "Uid": "uid://dgjyswgcnoid0",
+  "HandFinished": false,
+  "Status": "unreproducible-legacy",
+  "Provenance": {
+    "drafts": null,
+    "paintoverNote": null,
+    "aiDisclosure": "No seed, model, sampler or generation record exists for this asset -- it predates art/build/*.build.json provenance tracking. TownLayout2D.cs's own doc calls this and its siblings 'the pre-pivot SDXL set': still drawn live today as the Mine Gate (TownLayout2D.Venues 'mine-gate' spriteId, resolved through TownAssets2D.ForVenue) per the 2026-08-01 owner ruling to keep this SDXL exterior look over the town2d pixel-art alternative. Style is consistent with the repo's known SDXL era, but no seed/model/sampler was ever captured for this specific file, so nothing is invented here -- recorded honestly as unreproducible-legacy (U9, R9) rather than fabricated."
+  }
+}

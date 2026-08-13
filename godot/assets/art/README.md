@@ -72,3 +72,29 @@ fiction. The script itself, committed and diffable, IS the provenance.
 ground tiles (`town2d-tile-*`, 2-3 colours), `town2d-ground-atlas`, `town2d-prop-tree`,
 `town2d-prop-crate`, `mine-gate`, and `ui-frame-wood`. All are flat programmer art from a
 throwaway script. The hero bodies were done first because they are what the player watches move.
+
+## Ids outside the `AssetSpec` grammar — deliberate, not a bug (U9)
+
+`panel_banner_bounties/heroes/shop/tavern` and `player_smith`/`player_smith_step`/
+`player_smith_walk2`/`player_smith_walk4` use `snake_case`, which `AssetSpecRules.IdGrammar`
+rejects (every registered `AssetSpec.Id` must be kebab-case). That is why neither family has — or
+will ever get — an `AssetSpec` entry: the registry and `AssetConformanceTests` cannot see them by
+construction, not because someone forgot to register them. Do not "fix" the underscores: every
+`UiKit.SceneBanner("panel_banner_*")` call site (`ShopPanel`, `TavernPanel`, `HeroPanel`,
+`BountyPanel`) and every `PlayerController2D`/`TownAssets2D` `player_smith*` id names these exact
+literals.
+
+The two families are NOT in the same provenance state, though, and U9's own provenance sweep is
+the reason that distinction is worth recording here:
+
+- **`player_smith*` (4 files) is regenerable.** `tools/art/gen_town_sprites.py`'s `PLAYER_SPRITES`
+  dict is merged into the same `all_sprites` map the hand-authored hero/townsfolk bodies come from
+  and written by the same `main()` loop — `python tools/art/gen_town_sprites.py` reproduces all
+  four byte-identically today. It belongs with the hand-authored pixel track above in every way
+  except id grammar.
+- **`panel_banner_*` (4 files) is not.** No script in `art/pipeline/` or `tools/art/` produces
+  these; there is no seed, no generator, nothing to re-run. They are the same kind of gap as
+  `market`/`tavern`/`mine-gate`/`forge`/`noticeboard` (pre-pipeline SDXL-era art with no surviving
+  build-half) — see `art/build/{market,tavern,mine-gate}.build.json`'s `"Status":
+  "unreproducible-legacy"` records for the pattern this family shares but, being outside the
+  `AssetSpec` grammar, cannot register a matching spec for.

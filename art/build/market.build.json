@@ -1,0 +1,20 @@
+{
+  "Seed": null,
+  "Model": null,
+  "Lora": null,
+  "Steps": null,
+  "CfgMilli": null,
+  "SamplerResolved": null,
+  "SchedulerResolved": null,
+  "PaletteSha256": null,
+  "DiffuseSha256": "99dfdf41f50e56888e0a812d5a007ecba802777d755b1b69fdc9e84d481067f2",
+  "NormalSha256": null,
+  "Uid": "uid://dpdtu75ua63jq",
+  "HandFinished": false,
+  "Status": "unreproducible-legacy",
+  "Provenance": {
+    "drafts": null,
+    "paintoverNote": null,
+    "aiDisclosure": "No seed, model, sampler or generation record exists for this asset -- it predates art/build/*.build.json provenance tracking. TownLayout2D.cs's own doc calls this and its siblings 'the pre-pivot SDXL set': still drawn live today as the Shop building (TownLayout2D.Venues 'market' spriteId, resolved through TownAssets2D.ForVenue) per the 2026-08-01 owner ruling to keep this SDXL exterior look over the town2d pixel-art alternative. Style is consistent with the repo's known SDXL era, but no seed/model/sampler was ever captured for this specific file, so nothing is invented here -- recorded honestly as unreproducible-legacy (U9, R9) rather than fabricated."
+  }
+}
