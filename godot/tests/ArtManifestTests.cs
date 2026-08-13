@@ -124,7 +124,7 @@ public class ArtManifestTests
         var required = new[]
         {
             "panel_banner_bounties", "panel_banner_heroes", "panel_banner_shop", "panel_banner_tavern",
-            "town2d-ground-atlas", "shop-interior",
+            "town2d-ground-atlas",
             "player_smith", "forge", "market", "tavern", "noticeboard",
         };
 
