@@ -1,0 +1,20 @@
+{
+  "Seed": null,
+  "Model": null,
+  "Lora": null,
+  "Steps": null,
+  "CfgMilli": null,
+  "SamplerResolved": null,
+  "SchedulerResolved": null,
+  "PaletteSha256": null,
+  "DiffuseSha256": "8244e3f9623a411c5c522ec0c8dcaed7ef812cf3214e7b09135e0d724515930a",
+  "NormalSha256": "c845b5bc531b896a091e8b363bf7bde2dc5e1ed2cbb05bd290ce9b848a9e0824",
+  "Uid": "uid://dfw3qvvbadrvo",
+  "HandFinished": false,
+  "Status": "unreproducible-legacy",
+  "Provenance": {
+    "drafts": null,
+    "paintoverNote": null,
+    "aiDisclosure": "No seed, model, sampler or generation record exists for this asset -- unlike its three siblings. art/pipeline/seeds.generated.md's CP-2 batch (2026-07-18) logs a real seed for town-forge/town-market/town-mine-gate ('pending build-half', now backfilled alongside this file in U9); town-tavern never appears in that log at all, under this id or any other, so there is genuinely nothing to backfill here. It is registered as an active-track building spec (art/specs/town/TownSpecs.cs) and, per docs/design/world-scale.md (world-rework wave U14, 2026-07-19, now deleted as stale -- see this PR), was the lit venue-entrance figure for the LitTownOverlay 3D-ish Town; that scene and every class it depended on (LitTownOverlay, HeroSprite) were superseded by the 2.5D pivot (Town2D draws the separate bare-id 'tavern' asset instead) and no longer exist in godot/scripts. Confirmed during U9: zero call sites compose the literal id 'town-tavern' anywhere in godot/scripts today, and AssetCatalog.FeetAnchorOffset -- the one place a sibling 'town-mine-gate' literal survived -- itself has zero callers. Recorded honestly as unreproducible-legacy (U9, R9) rather than fabricated; whether the underlying PNG is kept or deleted is the concurrently-running asset-deletion unit's call (godot/assets/art/town-* is outside U9's scope, not this record's)."
+  }
+}
