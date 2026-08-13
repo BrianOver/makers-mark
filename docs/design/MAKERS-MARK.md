@@ -42,8 +42,10 @@ Sections below keep their original numbers so every existing citation still reso
 
 ## 8. What is built, what is designed, what is wished for
 
-The project's own registries (`docs/registry/SYSTEMS.md`, `CONTENT.md`) carry the row-level
-detail and their own drift warnings. This is the load-bearing summary, verified against code
+(`docs/registry/SYSTEMS.md` and `CONTENT.md` were cited here as the row-level ledgers. **That
+directory does not exist** — removed 2026-08-12. The asset ledger is `docs/design/ASSETS.md`;
+everything else is verified against code, not against a registry.) This is the load-bearing
+summary, verified against code
 on this commit and collided with the source-only control pass (now Appendix A). **A reader should trust these
 buckets over any older document, including the registries where named.** The distinction
 that keeps biting is BUILT vs **BUILT, CLI-ONLY**: repeatedly, "implemented and tested"
@@ -67,7 +69,7 @@ never blurs the two.
 | Hero *behavior* that reads relationships/rivalry (Phase B behavior level; Erenshor M5) | **DESIGNED** | §5.2 — today the edges narrate, never act |
 | Attribution beats end to end, plus every reader: ticker, ledger, gossip, provenance, legends wall, chronicle | **BUILT** | `AttributionEngine.cs:19-145` |
 | Three venues, banded draw-free routing, per-venue ore ladders (14 of 21 materials priced) | **BUILT** | `VenueRegistry.cs:62-66` |
-| Emberfall Foundry | **BUILT-INERT** — mechanics done and banded; **no committed art at all**; flip blocked by an art-presence gate test | `VenueRegistry.cs:51-60`; draft PR #346 (§9.1) |
+| Emberfall Foundry | **BUILT AND LIVE** — in `LiveRotation` with committed art and a priced ore ladder (firebrick..heartcoal) | `VenueRegistry.cs:50-64`, `MaterialRegistry.cs:94-105`; shipped by #453 (rung live) + #462 (Foundry art) |
 | Economy heartbeats: rent, Guild assessment + Confidence, rival share, destitution floor, bounty D_q + board minimums | **BUILT** | `RentSystem.cs`, `GuildAssessmentSystem.cs`, `BountyRules.cs` |
 | The four endgame gold sinks: UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | **BUILT — and SHIPPED 2026-08-07** (wave U3/U4, R2 ruled build). All four now have buttons; all 24 actions are reachable. *Corrected: this row previously said "3 of 4 have bell-tray strings waiting" — it was **2 of 4**. The third `PendingVerbVocab` entry is `SetProfessions`, not a sink, and the other two sinks resolve immediately so they never needed a tray entry — which is precisely why nothing flagged them.* | `godot/scripts/panels/ForgePanel.cs` (Foundry section); `godot/tests/ActionReachabilityCensusTests.cs` |
 | Three-act arc: act flips, ending screen (world stays open) | **BUILT** — the ending renders *when it fires*; reachability is unasserted (defect below) and unconfirmed on a real screen | `ArcDirectorSystem.cs`; `panels/ChronicleScroll.cs` |
@@ -89,8 +91,9 @@ never blurs the two.
 
 Stale claims still sitting in older docs, each one now false in code:
 
-- `docs/registry/SYSTEMS.md` says 2 of 4 professions are wired with `ActiveCraft: false` —
-  **stale**: all four are wired and flagged true (`CraftingHandlers.cs:92-120`).
+- ~~`docs/registry/SYSTEMS.md` says 2 of 4 professions are wired with `ActiveCraft: false`~~ —
+  moot: that registry no longer exists. All four professions are wired and flagged true
+  (`CraftingHandlers.cs:92-120`).
 - The 07-27 audits' "consumables and trinkets can never be commissioned" root-cause finding —
   **obsolete**: `CommissionSystem.cs:251-288` commissions both (trinkets for Regulars and up).
 - The 07-29 state-of-the-game headline table — **stale on three rows**: classes ("3 of 6" →
@@ -98,8 +101,11 @@ Stale claims still sitting in older docs, each one now false in code:
   restart" → full save/autosave shipped).
 - Any doc describing the Phase-D economy as shipped — **wrong for the client**: sim-complete,
   CLI-only (§9.10).
-- Any doc calling Emberfall "art complete" — **wrong**: no committed art at all
-  (`VenueRegistry.cs:51-60`; PR #346 touches no art files).
+- ~~Any doc calling Emberfall "art complete" — **wrong**: no committed art at all.~~ **Retracted
+  2026-08-12: this correction is itself now wrong.** Emberfall is live with committed art. PR #346
+  was CLOSED unmerged on 2026-08-07; the flip shipped via #453 (rung live) and #462 (Foundry art
+  through the real SDXL chain). Verified against `VenueRegistry.cs:50-64` and
+  `MaterialRegistry.cs:94-105`, not against this document.
 
 ### Fixed 2026-08-07 — the defect this document missed entirely
 
@@ -155,7 +161,7 @@ Phase 0 (R1–R6) — ruling there rules here. Four of these questions were also
 the external reviews; where a review's argument was adopted, the question below carries an
 "amended" block naming it, and §12 carries the full verdict table.
 
-### 9.1 The Emberfall flip (draft PR #346 — sitting as a draft since 08-02, four days)
+### 9.1 The Emberfall flip — RESOLVED, shipped 2026-08-11 (PR #346 closed unmerged; #453 + #462 did it)
 
 Emberfall Foundry's *mechanics* are finished — built, banded, comparator-tested. Two things
 block a one-line merge, and earlier discussion only ever named the first:
@@ -1213,8 +1219,9 @@ argument:
   `docs/design/2026-07-27-five-pillars-design-synthesis.md` (the demand-map program);
   `docs/design/2026-07-21-operating-model.md` (the 3-tier work engine and Completeness Bar);
   `docs/design/tone-register.md` (the voice).
-- **Ledgers:** `docs/registry/SYSTEMS.md` and `CONTENT.md` — with this document's §8
-  corrections noted until those rows are refreshed.
+- **Asset ledger:** `docs/design/ASSETS.md` — every image, animation, sound and voice line, what
+  draws or plays it, and what is orphaned or missing. (The former `docs/registry/SYSTEMS.md` /
+  `CONTENT.md` ledgers cited here never existed in this tree; reference removed 2026-08-12.)
 
 *Everything in this document was verified against the repository on the day it was written —
 verified again by collision with an independent source-only pass, which caught real errors
