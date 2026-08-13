@@ -98,10 +98,20 @@ diffs against the committed file.** 91 assets. This is the strongest provenance 
 
 **C. 3D (dead)** — TRELLIS/Blender tooling from before the 2.5D pivot. See §6.
 
-## 5. Orphans — 61 files, ~20.4MB, ~30% of the art directory
+## 5. Orphans — ~90 files, ~64MB across all nine rows below
 
 Committed, resolution-tested, and drawn by nothing. Verified by tracing each id from
 `IconRegistry`/`AssetCatalog` to a *production* caller, not a test.
+
+**Corrected 2026-08-13.** This section first claimed "61 files, ~20.4MB." That total covered only the
+first seven rows — the `gen-candidates` row alone is 25 files and **45MB measured on disk**, and the
+contact sheets add four more. Rows one through seven do sum to 61 files / ~20.4MB, so the arithmetic
+was right and the *scope* was wrong. All nine rows are orphaned and all nine are in scope for deletion.
+Quote ~90 files / ~64MB, not the 61 figure.
+
+**Paths below are corrected too.** The PNGs live under `godot/assets/art/`, not bare `art/` — the
+top-level `art/` tree holds `build/`, `specs/` and `pipeline/`, not committed art. Three independent
+reviewers caught the original prefixes; a literal `git rm` against them would have failed.
 
 | What | Files | Size | Why it is orphaned |
 |---|---|---|---|
