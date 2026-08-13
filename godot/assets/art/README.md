@@ -41,7 +41,7 @@ Not everything here comes from SDXL, and the split is deliberate rather than his
 a diffusion render survives, so it goes through the ComfyUI/SDXL chain above and lands a
 provenance record in `art/build/<id>.build.json`.
 
-**Hand-authored pixel track** — the 26×44 town character bodies (`town2d-hero-*.png`; 20×36 before
+**Hand-authored pixel track** — the 20×32 town character bodies (`town2d-hero-*.png`; 20×36 before
 U6, docs/plans/2026-08-02-002 — resized so the cast reads as six drawn people while still staying
 under the player's height, and so sentinel/skirmisher/occultist could get a real town body instead
 of the roster-SVG fallback), authored as
@@ -58,7 +58,7 @@ So they are authored one pixel at a time. That buys three things the generated t
   `python tools/art/gen_town_sprites.py`, drift-check with `--check`.
 - **The base and step frames differ ONLY in the legs**, which is what makes the 2-frame walk read
   as a stride rather than a flicker. `godot/tests/TownSpriteArtTests.cs` pins that invariant, plus
-  the pinned 26×44 size, a minimum distinct-colour count (so art cannot silently regress to a flat
+  the pinned 20×32 size, a minimum distinct-colour count (so art cannot silently regress to a flat
   placeholder box), and the neutral-body contract `TownAssets2D.ForHero` depends on — bodies stay
   desaturated so `ClassColors.RoleColor` can multiply the class colour in without double-tinting.
   `godot/tests/CastProportionTests.cs` (U6) pins the taller invariant: every hero class's
