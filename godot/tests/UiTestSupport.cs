@@ -430,28 +430,6 @@ public static class UiTestSupport
         (control.GetCombinedMinimumSize().X > 1f && control.GetCombinedMinimumSize().Y > 1f);
 
     /// <summary>
-    /// T3: the 3D-town twin of <see cref="WalkUntilArrived"/> — pumps real physics frames until
-    /// <paramref name="body"/> settles within 1.2 units of <paramref name="target"/> (matches the
-    /// arrival radius later click-to-move code uses, T6), rather than hand-computing a frame
-    /// count from speed/distance. Capped and throws on exhaustion, same as every other tick-loop
-    /// helper in this file, so a genuinely stuck body fails the test instead of hanging it.
-    /// </summary>
-    public static async Task WalkUntilArrived3D(Node ctx, Node3D body, Vector3 target, int maxFrames = 600)
-    {
-        for (int i = 0; i < maxFrames; i++)
-        {
-            if (body.GlobalPosition.DistanceTo(target) < 1.2f)
-            {
-                return;
-            }
-
-            await ctx.ToSignal(ctx.GetTree(), SceneTree.SignalName.PhysicsFrame);
-        }
-
-        throw new System.Exception($"body did not arrive within {maxFrames} frames (at {body.GlobalPosition}, target {target})");
-    }
-
-    /// <summary>
     /// T5 (T6 click-to-move consumes this): the 3D twin of <see cref="TryClickArea"/> — headless
     /// physics *picking* is unproven on this build (G1 verdict), so a 3D click-target Area3D is
     /// driven directly instead: reimplements the same point-in-box hit test real picking would do
