@@ -1,18 +1,20 @@
 # Assets — the whole inventory
 
 Every image, animation, sound and voice line in the game, where it comes from, and whether anything
-actually draws or plays it. Written 2026-08-12 against `d03c3af`.
+actually draws or plays it. Written 2026-08-12 against `d03c3af`; **§5 through §8 rewritten
+2026-08-13** after the completion wave (#485-#492) closed nine of the ten holes §6 opened.
 
 **Read the counts as of that commit, not as gospel.** Every number here has a command beside it that
 re-derives it. If a number and the command disagree, the command is right and this file is stale —
-fix it or delete it (CLAUDE.md rule 8).
+fix it or delete it (CLAUDE.md rule 8). The counts in §1 predate the wave's deletions: 121 files left
+the repo, so re-run the commands before quoting any of them.
 
 ```bash
-ls godot/assets/art/*.png | wc -l          # 239 committed PNGs (196 diffuse + 43 normal maps)
+ls godot/assets/art/*.png | wc -l          # 221 after the wave's deletions (was 239)
 ls godot/assets/icons/*.svg | wc -l        # 28 icons (9 glyphs + 19 ore)
 ls godot/assets/audio/*.mp3 | wc -l        # 4 music tracks
 find godot/assets -name "*.ogg" | wc -l    # 49 narrator lines
-ls art/build/*.json | wc -l                # 84 assets with full SDXL provenance
+ls art/build/*.json | wc -l                # 92 provenance records: 84 SDXL + 8 backfilled by U9
 ```
 
 The authoritative wiring check is an engine test, not this document:
@@ -21,7 +23,11 @@ loudly if a referenced id stops resolving. It does **not** run in the fast lane.
 
 ---
 
-## 1. Images — 239 files
+## 1. Images — 221 files
+
+*(Row counts below are pre-wave. The families that lost files are the deleted rows in §5 — sprites,
+faction crests, `town-*`, `shop-interior`, `town2d-*` candidates — none of which appear here, because
+none of them were ever drawn.)*
 
 | Family | Count | Wired by | Origin |
 |---|---|---|---|
@@ -45,7 +51,8 @@ materials (electrum, orichalcum) correctly have none.
 six heroes, two townsfolk builds, the player. Driven by `SpriteMotion`, consumed by `HeroActor2D`,
 `PlayerController2D`, `TownsfolkNpc2D`, `MarketLife2D` and `MineWatch`.
 
-**Twenty procedural animators, all wired, zero orphans.** `SpriteMotion`, `TreeSway`,
+**Twenty-two procedural animators, all wired, zero orphans** — the wave added the monster
+idle-breathe (`DelveStage`, U6) and the forge ember glow (`ForgeEmberGlow2D`, U7). `SpriteMotion`, `TreeSway`,
 `AmbientLife2D`, `MarketLife2D`, `TavernLife2D`, `DayPhaseTint`, `MineWatch`, `DelveStage`,
 `TabFade`, `DrawerHost`, `PipDock`, `ObjectiveTracker`, `Building2D`, `BestiaryPanel`,
 `ChronicleScroll`, `AdventureTicker`, `AudioDirector` crossfade, the gold-chip pop, the UiKit hover
@@ -73,7 +80,9 @@ per-track trim. Missing files degrade to a synthesized `MusicBed` with a loud wa
 No track carries a positive trim, and `AudioTests.NoComposedTrack_EverCarriesAPositiveTrimDb` makes
 that permanent. See §7 for why that test exists.
 
-**SFX** — 22 cues, **all synthesized in code** (`Synth.cs`). There are zero committed SFX files.
+**SFX** — 22 cues, **all synthesized in code** (`Synth.cs`). There are zero committed SFX files. Since
+U2 every cue has at least one production call site, and a census test in `AudioTests` fails if one
+stops having any — `Cue.Click` sat synthesized-and-unreferenced until then.
 
 **Narrator** — 49 lines across 7 triggers (`VigilOpening`, `DeathEpitaph`, `ProvenSave`,
 `KillingBlow`, `ActAdvanced`, `ClimaxReached`, `CampaignEnding`), all pre-baked to `.ogg` so no model
@@ -96,108 +105,124 @@ guarantee is the committed PNG plus its hash, not re-derivable pixels.
 rather than picked by eye, and **every script has a `--check` flag that re-renders in memory and
 diffs against the committed file.** 91 assets. This is the strongest provenance tier in the repo.
 
-**C. 3D (dead)** — TRELLIS/Blender tooling from before the 2.5D pivot. See §6.
+**C. 3D — gone.** The TRELLIS/Blender tooling from before the 2.5D pivot was deleted on 2026-08-13
+(U8), along with the 45MB of candidate output it produced (U5). Two pipelines remain, and that is the
+whole list.
 
-## 5. Orphans — ~90 files, ~64MB across all nine rows below
+## 5. Orphans — cleared 2026-08-13
 
-Committed, resolution-tested, and drawn by nothing. Verified by tracing each id from
-`IconRegistry`/`AssetCatalog` to a *production* caller, not a test.
+Committed, resolution-tested, and drawn by nothing. Every row this section listed is now either
+**drawn** or **deleted**. Kept as a record because the disposition rule is the reusable part: *mount
+finished art, delete superseded or dead-pipeline output, and never delete on size alone.*
 
-**Corrected 2026-08-13.** This section first claimed "61 files, ~20.4MB." That total covered only the
-first seven rows — the `gen-candidates` row alone is 25 files and **45MB measured on disk**, and the
-contact sheets add four more. Rows one through seven do sum to 61 files / ~20.4MB, so the arithmetic
-was right and the *scope* was wrong. All nine rows are orphaned and all nine are in scope for deletion.
-Quote ~90 files / ~64MB, not the 61 figure.
+**121 files, 52.11MB deleted** (U5, #490) — measured with `git cat-file -s` against every deleted
+blob, not estimated.
 
-**Paths below are corrected too.** The PNGs live under `godot/assets/art/`, not bare `art/` — the
-top-level `art/` tree holds `build/`, `specs/` and `pipeline/`, not committed art. Three independent
-reviewers caught the original prefixes; a literal `git rm` against them would have failed.
+| What | Files | Disposition |
+|---|---|---|
+| `godot/assets/sprites/2d/*.svg` | 42 | deleted — early 2.5D scaffold, superseded by `town2d-*.png` |
+| `godot/assets/sprites/{forge,ground_tile,memorial_stone,mine_gate,shop,tavern}.svg` | 12 | deleted with `IconRegistry.Building()`, which they were the only reason to keep |
+| `faction-*-emblem.png` | 4 | deleted — `MainUi` draws the faction's ore as its chip icon; the crests never appeared |
+| `town-{forge,market,tavern,mine-gate}.png(+_n)` | 16 | deleted — the LitOverlay scene that drew them is long gone |
+| `shop-interior.png(+_n)` | 4 | deleted — superseded by `town2d-market-interior-shell` |
+| `town2d-{board,forge,market,…}.png` | 12 | deleted — early candidates; the exterior reverted to the SDXL ids |
+| `art/gen-candidates/2026-07-21/*` | 24 | deleted — abandoned 3D pipeline output, 45MB |
+| `godot/assets/candidates/heroes-r3/*` | 6 | deleted — human-review receipts, never shipped |
+| **`props-*` (8 warm-hub props)** | 16 | **mounted, not deleted** (U4, #487) — 11.87MB of finished art now drawn in the town |
 
-| What | Files | Size | Why it is orphaned |
-|---|---|---|---|
-| `godot/assets/sprites/2d/*.svg` | 21 | small | Early 2.5D scaffold, superseded by `town2d-*.png` |
-| `sprites/{forge,ground_tile,memorial_stone,mine_gate,shop,tavern}.svg` | 6 | small | `IconRegistry.Building()`'s only caller is its own test |
-| `art/faction-*-emblem.png` | 2 | 583KB | `MainUi` draws the faction's ore as its chip icon instead; the crests never appear |
-| `art/town-{forge,market,tavern,mine-gate}.png(+_n)` | 8 | 7.27MB | The "LitOverlay" town scene that consumed them was deleted; the test that cites it no longer exists |
-| `art/shop-interior.png(+_n)` | 2 | 389KB | Superseded by `town2d-market-interior-shell` |
-| `art/props-*.png(+_n)` (8 warm-hub town props) | 16 | 11.87MB | Spec'd and tested, never mounted |
-| `art/town2d-{board,forge,market,...}.png` | 6 | 244KB | Early candidates; exterior reverted to the SDXL ids in 2026-08-01 |
-| `art/gen-candidates/2026-07-21/*` | 25 | ~44MB | Abandoned 3D pipeline output |
-| review contact sheets / candidates | 4 | 80KB | Human-review receipts, never shipped |
+**The town props were the sharpest case, and the reason the wave exists.** Their sibling trio
+(`gloomwood-mushroom-cluster`, `gloomwood-toll-booth`, `sunkencrypt-donation-plate`) had the identical
+bug and was fixed months earlier — ids that resolved, tests that passed, and nothing that ever drew
+them. The town set never got the equivalent. They are now in `TownLayout2D.Props`, resampled offline
+to the size the town actually draws them at (11.87MB → 31KB; see §7 on why not a runtime scale).
 
-**The town props are the sharpest case.** The sibling trio (`gloomwood-mushroom-cluster`,
-`gloomwood-toll-booth`, `sunkencrypt-donation-plate`) had the identical bug and was fixed —
-`MineWatch.cs:165-178` documents it verbatim: *"three generated, normal-mapped props that
-resolved... but nothing ever drew them until this table."* The eight town props never got the
-equivalent fix. `props-forge-salamander.png` is finished, characterful art sitting unused.
+**The count this section first published was wrong, and how it was wrong is worth keeping.** It said
+"61 files, ~20.4MB." That is right for the first seven rows and wrong for the table — a scope error,
+not an arithmetic one; the `gen-candidates` row alone is 45MB. The plan corrected it to ~90 files /
+~64MB, and the real figure after U4 mounted the props rather than deleting them is 121 files /
+52.11MB. Three separate numbers, each honest at the time, and only the last one was measured.
 
 ## 6. Holes
 
-### Missing art for live content
+**Nine of the ten holes this section opened are closed** (PRs #485-#492, 2026-08-13). What each one
+was, and what it is now, is below — kept rather than deleted, because the *shape* of each failure is
+the reusable part.
+
+### Missing art for live content — STILL OPEN, the only one
 Six Tier 8-14 forward-ladder recipes are craftable **today** with no icon —
 `item-gloomsteel-blade`, `item-wardenweave-mail`, `item-moonresin-draught`, `item-cinderforge-blade`,
 `item-ashguild-plate`, `item-emberglass-draught` (`RecipeTable.cs:94-128`). They degrade to a generic
 slot glyph plus the recipe name. Not broken; generic.
 
-### Silent-fallback risks
-- **`MineWatch` single point of failure.** If the `"mine-backdrop"` id stops resolving, `HasContent`
-  goes false and the **entire** hero-march panel hides forever, every phase, no warning. No test pins
-  that specific id.
-- **`IconRegistry.Ore` has no fallback tier.** It calls `GD.Load` with no existence guard, unlike
-  `Art()`. One past incident produced 260 native resource errors in a single playtest. Green today
-  across all 19 ores; reopens the moment an ore ships without an icon.
-- **`IconRegistry.Manifest()`** degrades a corrupted `art-manifest.json` to "nothing present" with no
-  warning — quieter than the audio equivalent, which does warn.
-- `TownAssets2D.Placeholder` is the one fallback that announces itself (`GD.PrintErr` +
-  `PlaytestLog.Note`), but a human sees only a magenta box.
+**Blocked on hardware, not on a decision.** The SDXL chain needs ≥14GB VRAM free; the machine had
+~7GB free across the whole wave. Generating at reduced settings to finish is explicitly not the fix.
+Run it when the GPU is idle.
 
-### Never animated
-- **Monsters have no gait.** All five Mine monsters are single-frame; in combat they slide, recoil
-  and flash but never breathe or walk. Structural: the sprite generator only authors hero/player/
-  townsfolk bodies, and the SDXL chain cannot hold identity across frames at sprite scale (§7).
-- Boss/venue creatures are single-frame painterly portraits with normal maps — lighting response
-  only, no motion anywhere.
-- **Every station and prop is inert** — anvil, bellows, furnace, crates, lanterns. No anvil sparks,
-  no furnace pulse. Only the tree got a sway pass.
+### Silent-fallback risks — CLOSED (U1)
+- **`MineWatch` single point of failure.** A missing `"mine-backdrop"` used to hide the **entire**
+  hero-march panel forever, every phase, with no warning. The census now pins that exact id, and both
+  places that set `HasContent` emit through `EngineDistress.Warn` — so a runtime failure (partial
+  checkout, corrupt import cache, a rename the census literal misses) becomes a reported anomaly
+  rather than an empty panel.
+- **`IconRegistry.Ore` had no fallback tier** — `GD.Load` with no existence guard, once worth 260
+  native resource errors in a single playtest. It now degrades to a placeholder swatch and warns once
+  per missing key.
+- **`IconRegistry.Manifest()`** still degrades a corrupted `art-manifest.json` to "nothing present"
+  with no warning — quieter than the audio equivalent, which warns. Not closed; not yet bitten.
 
-### Silent moments — three of the four honest channels
-Link 2 of the five-link chain says a craft reaches a hero through four channels. Only one makes a
+### Never animated — CLOSED (U6, U7)
+- **Monsters breathe.** All five Mine monsters carry a procedural idle — an eased swell-to-peak-then-
+  release on a cached per-monster base scale, accumulated delta only, frozen by the same pause
+  contract the feed uses. No new art: the owner chose procedural motion over authoring gait frames,
+  because the five minis are five different ad-hoc canvases and `gen_town_sprites.py` is a fixed
+  humanoid rig that never references a monster.
+- **The forge is lit.** Furnace and anvil carry a warm additive pulse (0.35 Hz, phase-offset), which
+  is a property of the object rather than the shared "you can click this" affordance halo
+  `Building2D.Tell` puts on every station.
+- Boss/venue creatures remain single-frame painterly portraits — lighting response only. Deliberately
+  out of scope; U6 covered the five Mine monsters.
+
+### Silent moments — CLOSED (U2)
+Link 2 of the five-link chain says a craft reaches a hero through four channels. All four now make a
 sound.
 
 | Channel | Sound |
 |---|---|
 | Shelf | `Shelve` on stocking, `Coin` when a hero buys |
-| **Counter** | none — `CounterPanel` has zero `Cue.Play`, not even on the sale landing |
-| **Commission** | none — `CommissionBoard` accept/decline are silent |
-| **Vigil runner** | none — `CampPanel.OnSend` is silent |
+| Counter | `Click` on Present / Accept / Hold Firm / Counter; the sale's own `Coin` still comes from `MarketLife2D`, exactly once |
+| Commission | `Click` on accept, `Rejected` on decline — deliberately different, so a refusal never sounds like a success |
+| Vigil runner | `Coin` on a real delivery only, never on a refusal |
 
-The campaign chronicle (`ChronicleScroll`) is also silent, while the Legends Wall beside it chimes.
-`Cue.Click` is synthesized and has **zero call sites** anywhere.
+`Cue.Click` had zero call sites and a doc comment describing exactly this gap; it is wired, and a
+census test now fails if any cue goes unreferenced.
 
-### Unbuilt declarations
-Seven `AssetSpec` entries have no art and never did: `forge-interior`, `tavern-interior`,
-`gate-interior`, `town-ground-plaza`, `town-ground-plaza-worn`, `town-mine-strip`, `player-avatar`.
-The first six were superseded by differently-named `town2d-*` pixel art; the specs were never
-deleted. `player-avatar` has had no live caller since U4.
+### Unbuilt declarations — CLOSED (U9)
+The seven dead `AssetSpec` entries (`forge-interior`, `tavern-interior`, `gate-interior`,
+`town-ground-plaza`, `town-ground-plaza-worn`, `town-mine-strip`, `player-avatar`) are deleted from
+`TownSpecsExtra.cs`, along with `AssetCatalog.PlayerAvatarId`. Eleven further specs remain registered
+and describe-only — the intended null-tolerant gap, not a defect.
 
-Eleven further specs are registered and describe-only — the intended null-tolerant gap, not a defect.
+### Provenance gaps — CLOSED (U9)
+Every one of the 196 manifest ids now has either a `build.json` or a documented exception, and
+`AssetProvenanceTests` asserts it rather than this file claiming it.
 
-### Provenance gaps
-Fourteen files can never be regenerated:
-- `market`, `tavern`, `mine-gate`, `town-tavern` — live-referenced, no seed, no build.json, no script.
-- `panel_banner_*` (4) and `player_smith*` (4, counting frames) — outside the AssetSpec contract
-  entirely; their underscore ids would be rejected by `AssetSpecRules.IdGrammar`, so the registry and
-  conformance tests cannot see them by construction.
-- `town-forge`, `town-market`, `town-mine-gate` — seed logged in `seeds.generated.md`, build-half
-  never written.
+- `market`, `tavern`, `mine-gate` and the five `town2d-monster-*` minis are **live and genuinely
+  unreproducible** — recorded as `unreproducible-legacy` with null seed and model. No seed was
+  invented for any of them; a fabricated provenance record is worse than an honest gap.
+- The four `town-*` ids are gone entirely — U5 deleted the art, so U9's provenance for them would
+  have been a record describing a file that is not there. A test now pins their absence in both
+  directions.
+- **Correction:** this section previously said `player_smith*` "can never be regenerated." That is
+  false — `tools/art/gen_town_sprites.py` writes all four frames. What is true of `panel_banner_*`
+  and `player_smith*` is narrower: their underscore ids sit outside `AssetSpecRules.IdGrammar`, so the
+  registry and conformance tests cannot see them by construction. That is recorded in
+  `godot/assets/art/README.md` so nobody "fixes" it.
 
-### Dead tooling
-`tools/3dgen/` and `tools/blender/` — the TRELLIS/Blender pipeline that targeted the retired 3D
-town — are deleted (U8). Twelve GLBs the pipeline produced still sit committed at
-`art/gen-candidates/2026-07-21/glb/` with no consumer; that output is separate from the tooling and
-remains for the orphan sweep in §5 to clear. `godot/tests/UiTestSupport.cs` also lost
-`WalkUntilArrived3D`, the one dead test helper that was typed against `Node3D` — nothing else in the
-repo renders 3D, and nothing calls it now either.
+### Dead tooling — CLOSED (U5, U8)
+`tools/3dgen/` and `tools/blender/` are deleted, along with `UiTestSupport.WalkUntilArrived3D` — the
+one dead helper typed against `Node3D`. (Nothing *renders* 3D; the earlier claim that no `Node3D`
+existed anywhere was wrong, and that helper was the reason.) The 45MB of candidate output the
+pipeline produced went with §5's orphan sweep.
 
 ## 7. Rejected approaches — do not re-litigate
 
@@ -208,6 +233,16 @@ repo renders 3D, and nothing calls it now either.
 - **A bigger source PNG as free quality.** Under `Nearest` filtering with no mipmaps, scaling down is
   point-sample decimation, not a quality downsample — a bigger PNG lands proportionally bigger, not
   sharper at the same size. (This is the same mechanism as the decimation bug fixed in #471.)
+- **Silkscreen for body text** (tried and rejected 2026-08-13, U10). Its lowercase glyphs are
+  cap-height — inherited from the 2001 bitmap original — so every sentence of prose renders as visual
+  ALL-CAPS: *"They've made camp above the deep floors…"* came out *"THEY'VE MADE CAMP ABOVE THE DEEP
+  FLOORS…"*. Fine for headings and labels, where it ships; wrong for a game whose ledger, gossip and
+  narration are long prose. A future pixel-body face needs true lowercase, not just a pixel grid.
+- **Runtime downscale as a way to use oversized art** (U4). The eight warm-hub props were ~1000px
+  mounted at `Scale ≈ 0.03`; it rendered correctly and was still wrong — a 25-30× runtime downscale of
+  a 1MB texture shimmers as the camera pans (no mipmaps on these) and holds ~33MB of VRAM to draw
+  thumbnails. Resampled offline once instead: same picture, 11.87MB → 31KB, no scale knob left to get
+  wrong. Same lesson as the `CharacterSpriteScale` decimation fix below.
 - **Self-referential recolour.** `recolor-forge-roof.py`'s first version re-read its own output,
   assuming the hue shift was idempotent. It failed `--check` immediately: the target terracotta and
   the magenta defect sit only ~57° apart on the hue wheel.
@@ -221,25 +256,25 @@ repo renders 3D, and nothing calls it now either.
   parity — but sat at a near-constant -63 dBFS floor for nearly its whole length. That is hiss, not
   music, and the boost amplified it. Heard as "loud static randomly at night." Reverted, then deleted.
 
-## 8. To-dos, ranked by whether a player would notice
+## 8. To-dos
 
-1. **Sound the three silent channels** — counter, commission, vigil runner. Link 2 of the spine is
-   three-quarters mute.
-2. **Six missing item icons** for live Tier 8-14 recipes.
-3. **Pin `"mine-backdrop"`** in the resolution census so one typo cannot delete the whole MineWatch
-   panel.
-4. **Monster idle/gait frames** — the things the heroes fight never move. Needs a decision on
-   approach first, since neither existing pipeline produces monster gait.
-5. **Mount or delete the eight town props** — 11.87MB of finished art drawn by nothing, with a
-   documented sibling fix to copy.
-6. **Give `IconRegistry.Ore` a fallback tier** before the next ore ships.
-7. **Station idle cues** — anvil sparks, furnace pulse. The workshop is inert.
-8. **Delete the dead 3D tooling's 44MB of candidate output** (`art/gen-candidates/2026-07-21/`) — the
-   tooling itself is gone (U8); this is the remaining piece of §5's orphan sweep.
-9. **Backfill provenance** for the four live town buildings; decide whether the seven dead specs and
-   `player-avatar` get deleted.
-10. **Pixel font** — `GameTheme.cs:120` still has `TODO(font)`; every screen renders in the engine
-    default body face rather than the intended pixel one.
+**One left.**
+
+1. **Six missing item icons** for live Tier 8-14 recipes (§6). GPU-blocked, not decision-blocked —
+   the SDXL chain needs ≥14GB VRAM free and the machine had ~7GB throughout the wave. Run it when the
+   GPU is idle; do not generate at reduced settings to close the row.
+
+The other nine shipped on 2026-08-13 as PRs #485-#492. Two things worth carrying forward more than
+the list itself:
+
+- **Every unit that changed what is on screen was rendered and looked at**, and looking caught defects
+  the assertions passed over — two props reading as one cluttered blob, and a body font that turned
+  every sentence into visual ALL-CAPS.
+- **Three tests failed the first time they ran honestly, and none of the three was a product defect.**
+  A cue test asserted silence where the app-wide rejection cue legitimately sounds; a sale test read
+  "Coin played 0 times" because its advance loop exited before the customer had spawned; a pause test
+  passed against removed wiring because its window happened to be exactly one breath cycle. A test
+  that can pass with the feature deleted is the failure shape this repo keeps finding.
 
 ## Owner calls, not engineering ones
 
