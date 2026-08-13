@@ -1338,6 +1338,12 @@ public partial class Town2D : Control
     /// index seeds its <see cref="TreeSway"/> phase so a grove doesn't sway in lockstep (mirrors
     /// <see cref="AmbientLife2D"/>'s per-lamppost flicker-phase idiom). Every other prop is
     /// unaffected — a bare <see cref="Sprite2D"/>, exactly as before.</para>
+    ///
+    /// <para><b>U4 (asset-completion wave):</b> <see cref="Node2D.Scale"/> is set from <see
+    /// cref="TownLayout2D.PropLayout.Scale"/> — computed from the texture's RAW (unscaled) <paramref
+    /// name="size"/> so <c>Offset</c> and the final on-screen footprint shrink together, keeping
+    /// the feet-anchor invariant exact regardless of the source art's native resolution (see <see
+    /// cref="TownLayout2D.PropLayout"/>'s own doc for why some entries need a sub-1 value).</para>
     /// </summary>
     private void BuildProps()
     {
@@ -1368,6 +1374,7 @@ public partial class Town2D : Control
             node.Texture = sprite;
             node.Centered = true;
             node.Offset = new Vector2(0f, -size.Y / 2f); // bottom edge lands on the tile's center (feet-origin)
+            node.Scale = new Vector2(prop.Scale, prop.Scale);
             node.Position = TownLayout2D.TileToWorld(prop.Tile);
 
             if (prop.YSorted)
