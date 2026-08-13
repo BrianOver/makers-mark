@@ -652,7 +652,12 @@ public partial class MineWatch : SubViewportContainer
             _delveStage.RenderBeat(_delveBeats[_delveRendered], _delveHeroes);
         }
 
-        _delveStage.Process((float)delta);
+        // U6: the same feedPaused contract _feed and _delveHead already use, now reaching the
+        // monster's idle-breathe. DelveStage's combat FX are deliberately NOT gated by it (they are
+        // decay curves that must finish, exactly as ImpactPulse's note below explains) — only the
+        // looping breath freezes, so a paused fight holds its pose instead of the monster breathing
+        // on through a stopped clock.
+        _delveStage.Process((float)delta, paused: feedPaused);
 
         // Read AFTER DelveStage.Process so a beat rendered THIS frame (RenderBeat, just above)
         // shows up at (very nearly) full strength here instead of lagging a frame behind —
