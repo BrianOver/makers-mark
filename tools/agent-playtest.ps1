@@ -631,6 +631,11 @@ if (-not (Test-Path $godot)) { Die @(('Godot not found at ' + $godot + '. Set GO
 
 $env:AGENT_PLAYTEST = '1'
 $env:AGENT_PLAYTEST_DIR = $OutDir
+# fix/the-pilot-plays-like-a-person: the ONLY on-screen way to tell which persona is driving the
+# client -- see AgentPlaytest.cs's own StampWindowTitle doc for the owner-observed defect this fixes
+# (monkey's own by-design uniform-random command stream is indistinguishable from a person mashing
+# buttons, unless the window itself says which one you are looking at).
+$env:AGENT_PLAYTEST_PERSONA = $personaName
 # PlaytestLog.cs (godot/scripts/PlaytestLog.cs) is opt-in, gated on this var alone -- unset, an
 # automated run left NO reconstructable trail of what the client actually did (day/phase/beat,
 # every action, every phase transition and its cause), only this script's own turn-by-turn digest.
