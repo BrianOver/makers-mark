@@ -349,10 +349,16 @@ public abstract partial class SimPanel : Control
         bool ellipsizeCaption = false) =>
         UiKit.PortraitFrame(artKey, size, fallbackIcon, caption, ellipsizeCaption);
 
-    /// <summary>The fallback-safe art-loader bridge — see <see cref="UiKit.ArtRect"/>.</summary>
+    /// <summary>The fallback-safe art-loader bridge — see <see cref="UiKit.ArtRect"/>. Widened
+    /// (visual-check plan, 2026-08-12) to forward <paramref name="ellipsizeCaption"/>, matching the
+    /// <see cref="PortraitFrame"/> passthrough just above — previously this was the one ArtRect
+    /// caller that could never opt into the single-line ellipsized caption
+    /// <see cref="UiKit.ArtRect"/> already supports. Default false keeps every existing caller
+    /// byte-identical.</summary>
     protected static Control ArtRect(
-        string artKey, Vector2 size, Texture2D? fallbackIcon = null, string? caption = null) =>
-        UiKit.ArtRect(artKey, size, fallbackIcon, caption);
+        string artKey, Vector2 size, Texture2D? fallbackIcon = null, string? caption = null,
+        bool ellipsizeCaption = false) =>
+        UiKit.ArtRect(artKey, size, fallbackIcon, caption, ellipsizeCaption);
 
     // ── UI-2: cozy list/HUD builder passthroughs ──────────────────────────────────────────────
 
