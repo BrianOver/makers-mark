@@ -118,12 +118,6 @@ public static class IconRegistry
     /// </summary>
     public static Texture2D Sprite(string classId) => Load(SpriteDir, "hero_" + classId);
 
-    /// <summary>
-    /// Hand-authored town facade / prop by key (U16): forge, shop, tavern, mine_gate,
-    /// memorial_stone, ground_tile.
-    /// </summary>
-    public static Texture2D Building(string name) => Load(SpriteDir, name);
-
     /// <summary>Generated art by base file name/id (e.g. "hero-mystic", "monster-cave-rat"); null
     /// until the pipeline has generated it. The single id→path load point — <see cref="Lit"/> and
     /// <see cref="AssetCatalog"/>'s resolvers both compose an id string and call through here.</summary>

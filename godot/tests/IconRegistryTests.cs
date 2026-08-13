@@ -51,15 +51,6 @@ public class IconRegistryTests
         }
     }
 
-    [TestCase]
-    public void EveryBuilding_Loads()
-    {
-        foreach (var name in new[] { "forge", "shop", "tavern", "mine_gate", "memorial_stone", "ground_tile" })
-        {
-            AssertThat(IconRegistry.Building(name)).IsNotNull();
-        }
-    }
-
     /// <summary>
     /// U1 (loud-failures-and-quiet-channels plan): before this unit, <c>IconRegistry.Ore</c> called
     /// <c>GD.Load</c> straight against a missing SVG's path — a native
@@ -127,10 +118,10 @@ public class IconRegistryTests
     [TestCase]
     public void Lit_ShippedPair_ReturnsCanvasTextureWithDiffuseAndNormal()
     {
-        // V4a: the shipped pilot pair (town-tavern.png + town-tavern_n.png) resolves to a
-        // CanvasTexture carrying BOTH the diffuse and the normal — the input a lit Sprite2D
-        // needs (proven by lit_tavern_pilot.tscn).
-        var lit = IconRegistry.Lit("town-tavern");
+        // V4a: a shipped diffuse+normal pair (hero-mystic.png + hero-mystic_n.png, U5-era
+        // replacement for the deleted town-tavern pilot pair) resolves to a CanvasTexture
+        // carrying BOTH the diffuse and the normal — the input a lit Sprite2D needs.
+        var lit = IconRegistry.Lit("hero-mystic");
         AssertThat(lit).IsNotNull();
         AssertThat(lit!.DiffuseTexture).IsNotNull();
         AssertThat(lit.NormalTexture).IsNotNull();

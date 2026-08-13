@@ -59,7 +59,7 @@ public class AssetCatalogTests
     public void CommittedIds_ResolveNonNull()
     {
         // The 3 committed hero figures (V3/P006 U1-U2) resolve through HeroPortrait with both
-        // diffuse and normal — the same pair IconRegistryTests already proves for town-tavern.
+        // diffuse and normal — the same pair IconRegistryTests already proves for hero-mystic.
         foreach (var classId in new[] { "vanguard", "striker", "mystic" })
         {
             var lit = AssetCatalog.HeroPortrait(classId);
@@ -68,13 +68,8 @@ public class AssetCatalogTests
             AssertThat(lit.NormalTexture).IsNotNull();
         }
 
-        // Has(id) is a generic manifest presence check, not tied to a typed resolver — it holds
-        // for every committed id, including the town buildings AssetCatalog has no resolver for.
-        foreach (var id in new[]
-                 {
-                     "hero-vanguard", "hero-striker", "hero-mystic",
-                     "town-forge", "town-market", "town-mine-gate", "town-tavern",
-                 })
+        // Has(id) is a generic manifest presence check, not tied to a typed resolver.
+        foreach (var id in new[] { "hero-vanguard", "hero-striker", "hero-mystic" })
         {
             AssertThat(AssetCatalog.Has(id)).IsTrue();
         }
@@ -99,10 +94,10 @@ public class AssetCatalogTests
     [TestCase]
     public void Has_ReflectsManifestExactly()
     {
-        foreach (var id in new[] { "hero-vanguard", "hero-striker", "hero-mystic", "town-tavern" })
+        foreach (var id in new[] { "hero-vanguard", "hero-striker", "hero-mystic" })
         {
             AssertThat(AssetCatalog.Has(id)).IsTrue();
-            AssertThat(AssetCatalog.HasNormal(id)).IsTrue(); // all 7 currently-committed ids ship a normal map
+            AssertThat(AssetCatalog.HasNormal(id)).IsTrue(); // all 3 ids here ship a normal map
         }
 
         AssertThat(AssetCatalog.Has("does_not_exist_yet")).IsFalse();

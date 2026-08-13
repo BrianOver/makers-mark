@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges">
-  <!-- Town2D world prop: crate. 16x16. Wooden crate with cross straps;
-       source for godot/assets/art/town2d-prop-crate.png. -->
-  <rect x="1" y="1" width="13" height="13" fill="#5d462e" stroke="#d8cfe0" stroke-width="1"/>
-  <line x1="1" y1="1" x2="14" y2="14" stroke="#1e1a2a" stroke-width="1"/>
-  <line x1="14" y1="1" x2="1" y2="14" stroke="#1e1a2a" stroke-width="1"/>
-</svg>

@@ -11,16 +11,15 @@ namespace GodotClient.Tests;
 /// U7 (P006) end-to-end wiring proof: the by-id seam (<see cref="AssetCatalog"/> +
 /// <c>art-manifest.json</c>, U3/R10) actually resolves the gameplay-critical committed set from a
 /// fresh checkout (R8), and <c>Has</c> agrees with the manifest exactly. Data-driven theory over id
-/// arrays — mirrors <c>TownSceneTests.LitOverlay_ShippedAssets_MountFourBuildingsThreeHeroesAndWarmLights</c>
-/// and <c>IconRegistryTests</c> — so a future generated asset extends coverage by one array entry,
+/// arrays — mirrors <c>IconRegistryTests</c> — so a future generated asset extends coverage by one array entry,
 /// not new test code (the art wave 2 batch below — Gloomwood/Sunken Crypt monsters+props, town
-/// props, faction crests, the new <c>mine-backdrop</c> — is exactly that extension).
+/// props, the new <c>mine-backdrop</c> — is exactly that extension).
 ///
 /// <para>Coverage set (representative, not exhaustive — the full inventory lives in
 /// <c>docs/design/art-pipeline-health-2026-07-18.md</c> plus the art wave 2 session): one item
 /// icon per profession (blacksmith/tanning/engineering/alchemy), all 5 Mine monster portraits,
 /// both venues' backdrop+entrance (gloomwood/sunkencrypt) plus their floor monsters and props, all
-/// 8 town props, both faction crests, all 3 hero portraits, all 4 town buildings, and the Mine's
+/// 8 town props, all 3 hero portraits, and the Mine's
 /// own hub-tile backdrop. Task #80 (below) extends this with the Emberfall Foundry's backdrop +
 /// its 5 monster portraits — hand-authored pixel grids (no GPU/ComfyUI this session), same
 /// diffuse/normal contract as every SDXL-family sibling. The venue itself stays dormant
@@ -50,11 +49,6 @@ public class ArtWiringCoverageTests
 
     private static readonly string[] HeroClassIds = ["vanguard", "striker", "mystic"];
 
-    private static readonly string[] TownBuildingIds =
-    [
-        "town-forge", "town-market", "town-mine-gate", "town-tavern",
-    ];
-
     // --- art wave 2 (long-tail deferred specs + mine-backdrop) --------------------------------
 
     // GloomwoodVenue.Build()'s 4 floor kinds (sim/GameSim/Venues/Gloomwood/GloomwoodVenue.cs).
@@ -80,8 +74,8 @@ public class ArtWiringCoverageTests
         "Cinder Imp", "Slag Hound", "The Bellows-Mad", "Molten Archivist", "The Undying Forge-Heart",
     ];
 
-    // Venue props (GloomwoodSpecs.cs + SunkenCryptSpecs.cs) — no typed AssetCatalog resolver (same
-    // shape as TownBuildingIds below), all AssetKind.Prop with NormalMap: true.
+    // Venue props (GloomwoodSpecs.cs + SunkenCryptSpecs.cs) — no typed AssetCatalog resolver
+    // (Has/Lit cover them directly, same as any bare art id), all AssetKind.Prop with NormalMap: true.
     private static readonly string[] VenuePropIds =
     [
         "gloomwood-mushroom-cluster", "gloomwood-toll-booth", "sunkencrypt-donation-plate",
@@ -92,12 +86,6 @@ public class ArtWiringCoverageTests
     [
         "props-noticeboard", "props-town-well", "props-ore-cart", "props-string-lanterns",
         "props-market-crates", "props-laundry-line", "props-tavern-cat", "props-forge-salamander",
-    ];
-
-    // Faction crests (art/specs/factions/FactionSpecs.cs) — AssetKind.Item, flat (NormalMap: false).
-    private static readonly string[] FactionCrestIds =
-    [
-        "faction-deepvein-emblem", "faction-crownsguard-emblem",
     ];
 
     [TestCase]
@@ -200,21 +188,6 @@ public class ArtWiringCoverageTests
     }
 
     [TestCase]
-    public void AllFourTownBuildings_PresentInManifestWithNormal()
-    {
-        // AssetCatalog has no typed resolver for town buildings (V4a predates U3) — Has/Lit still
-        // cover them, proving the manifest-backed presence check is generic, not resolver-bound.
-        foreach (var id in TownBuildingIds)
-        {
-            AssertThat(AssetCatalog.Has(id)).IsTrue();
-            AssertThat(AssetCatalog.HasNormal(id)).IsTrue();
-            var lit = IconRegistry.Lit(id);
-            AssertThat(lit).IsNotNull();
-            AssertThat(lit!.NormalTexture).IsNotNull();
-        }
-    }
-
-    [TestCase]
     public void AllGloomwoodAndSunkenCryptMonsters_ResolveWithNormal()
     {
         foreach (var kind in GloomwoodMonsterKinds)
@@ -253,23 +226,6 @@ public class ArtWiringCoverageTests
             AssertThat(lit).IsNotNull();
             AssertThat(lit!.DiffuseTexture).IsNotNull();
             AssertThat(lit.NormalTexture).IsNotNull();
-        }
-    }
-
-    [TestCase]
-    public void FactionCrests_ResolveWithoutNormal()
-    {
-        foreach (var id in FactionCrestIds)
-        {
-            AssertThat(AssetCatalog.Has(id)).IsTrue();
-
-            // Faction crests are flat menu-style icons (AssetSpec.NormalMap=false), same
-            // diffuse-only contract as item icons.
-            AssertThat(AssetCatalog.HasNormal(id)).IsFalse();
-            var lit = IconRegistry.Lit(id);
-            AssertThat(lit).IsNotNull();
-            AssertThat(lit!.DiffuseTexture).IsNotNull();
-            AssertThat(lit.NormalTexture).IsNull();
         }
     }
 
@@ -323,10 +279,11 @@ public class ArtWiringCoverageTests
     public void NeverRegisteredIds_AbsentFromManifest_ResolversNullNoThrow()
     {
         // KTD3 graceful-degrade contract, pinned against synthetic ids that will never be
-        // registered (the real long tail this suite once pinned — props-noticeboard,
-        // faction-deepvein-emblem — is now fully generated above; art wave 2 closed out every
-        // spec the repo had authored, so no genuine "registered but ungenerated" id remains to
-        // probe with). AssetCatalogTests.UnknownConcept_HasFalseAndNullReturn_NoThrow covers the
+        // registered (the real long tail this suite once pinned — props-noticeboard — is now
+        // fully generated above; art wave 2 closed out every spec the repo had authored, so no
+        // genuine "registered but ungenerated" id remains to probe with; the faction crests this
+        // comment also once named were themselves orphaned and deleted in U5, 2026-08-13).
+        // AssetCatalogTests.UnknownConcept_HasFalseAndNullReturn_NoThrow covers the
         // same code path via typed resolvers (venue/monster/item/hero ids); this pins it for a
         // bare art id resolved straight through IconRegistry too.
         const string neverRegisteredProp = "props-nonexistent-prop";

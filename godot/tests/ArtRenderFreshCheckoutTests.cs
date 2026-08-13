@@ -18,7 +18,6 @@ public class ArtRenderFreshCheckoutTests
 {
     private static readonly string[] CommittedIds =
     {
-        "town-forge", "town-market", "town-mine-gate", "town-tavern",
         "hero-vanguard", "hero-striker", "hero-mystic",
     };
 
@@ -34,8 +33,8 @@ public class ArtRenderFreshCheckoutTests
     [TestCase]
     public void EveryCommittedLit_LoadsWithDiffuseAndNormal()
     {
-        // All 7 committed pairs ship an "_n" normal sibling (town buildings + hero figures),
-        // so Lit must carry both the diffuse and the normal texture for each.
+        // All 3 committed hero figures ship an "_n" normal sibling, so Lit must carry both the
+        // diffuse and the normal texture for each.
         foreach (var id in CommittedIds)
         {
             var lit = IconRegistry.Lit(id);
