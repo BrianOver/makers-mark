@@ -678,7 +678,17 @@ public partial class ForgePanel : SimPanel
                     // real-time forge minigame; alchemy → the discrete reagent-puzzle panel.
                     if (professionId == AlchemyProfession.Id)
                     {
-                        var brew = AddButton(controlsRow, $"Brew_{recipe.RecipeId}", "Brew (reagent puzzle)",
+                        // Visual-check plan (2026-08-12): "Brew (reagent puzzle)" was the one
+                        // active-craft label longer than every sibling ("Work the forge"/"Assemble
+                        // (bench)"/"Scrape the hide") — long enough that SimPanel.AddWrappingRow
+                        // wrapped this card's controlsRow onto a second line the CraftScroll no
+                        // longer had room for, burying the alchemist's own primary craft verb
+                        // (rendered screenshot, SHOT_PROFESSION=alchemy SHOT_STATE=ForgePanel — the
+                        // first recipe card's controls sliced off at the scroll's bottom edge, the
+                        // same bug class PR #464 fixed for blacksmith). Shortened to match the
+                        // parenthetical-qualifier convention "Assemble (bench)" already uses —
+                        // "reagent" was redundant inside a panel already headed "Apothecary".
+                        var brew = AddButton(controlsRow, $"Brew_{recipe.RecipeId}", "Brew (puzzle)",
                             () => OnBrewPressed(recipe, material, profession!, unlocked));
                         GateButton(brew, affordable, $"Not enough {material} — need {needed}, have {have}.");
                     }
@@ -1447,10 +1457,24 @@ public partial class ForgePanel : SimPanel
         // the first recipe — each independently scrollable for anything further down its own
         // list, and neither list's length can ever push the other's first row off screen no
         // matter how many materials or recipes the game grows to. CraftView keeps a larger share
-        // (3:2) since crafting is this panel's purpose (the class doc's five-link chain, link 1)
-        // and its cards are taller per-item than a vendor row. A station's own FocusSection call
-        // (below) hides whichever ScrollContainer is NOT the focused one, so the focused view
-        // still claims the full body height, exactly as before this split existed.
+        // (now 4:2 — see the visual-check plan note below; was 3:2) since crafting is this panel's
+        // purpose (the class doc's five-link chain, link 1) and its cards are taller per-item than
+        // a vendor row. A station's own FocusSection call (below) hides whichever ScrollContainer
+        // is NOT the focused one, so the focused view still claims the full body height, exactly
+        // as before this split existed.
+        //
+        // Visual-check plan (2026-08-12): 3:2 was measured tight enough that a non-blacksmith
+        // profession's first recipe card could still slice its own controls row off at CraftScroll's
+        // bottom edge on a fresh Forge open (SHOT_PROFESSION=alchemy SHOT_STATE=ForgePanel,
+        // HudBoundsTests.ForgeOpensFresh_PrimaryCraftVerb_IsOnScreenWithoutScrolling_ForEveryProfession) —
+        // a longer item name ("Alchemical Robe" vs "Buckler") wraps the recipe icon's own caption
+        // onto a second line, and that alone was enough to push the first card's height ~20px past
+        // the 3:2 fold even after the profession button's OWN label was shortened to fit one line
+        // (see the Brew button's own comment). 4:2 (66.7% of the shared body, was 60%) absorbs that
+        // class of per-profession/per-item variance generically instead of chasing one string's
+        // exact pixel width; MaterialsScroll's own first-row visibility (BuyMat_/Buy 1) is unaffected
+        // — it sits well clear of ITS OWN fold, confirmed by DrawerOpen_ObjectiveChip_NeverCoversDrawerButtons
+        // and the full HudBoundsTests/LayoutTests run this PR's own report quotes.
         var root = new VBoxContainer { Name = "ForgeRoot" };
         root.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(root);
@@ -1463,7 +1487,7 @@ public partial class ForgePanel : SimPanel
             Name = "CraftScroll",
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
             SizeFlagsVertical = SizeFlags.ExpandFill,
-            SizeFlagsStretchRatio = 3f,
+            SizeFlagsStretchRatio = 4f,
         };
         root.AddChild(_craftScroll);
         _craftViewRoot = new VBoxContainer { Name = "CraftView", SizeFlagsHorizontal = SizeFlags.ExpandFill };
