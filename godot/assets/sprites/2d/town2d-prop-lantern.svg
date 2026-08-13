@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="8" height="16" viewBox="0 0 8 16" shape-rendering="crispEdges">
-  <!-- Town2D world prop: lantern. 8x16. Post + glass housing with an ember glow;
-       source for godot/assets/art/town2d-prop-lantern.png. -->
-  <rect x="3" y="10" width="2" height="5" fill="#1e1a2a" stroke="#140f1f" stroke-width="1"/>
-  <rect x="1" y="3" width="6" height="6" fill="#1e1a2a" stroke="#d8cfe0" stroke-width="1"/>
-  <rect x="2" y="4" width="4" height="4" fill="#e0913f"/>
-</svg>
