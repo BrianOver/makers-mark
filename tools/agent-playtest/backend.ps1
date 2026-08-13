@@ -426,18 +426,90 @@ function Get-DriverBackendMismatches {
     return ,@($lines | Sort-Object)
 }
 
+# --- Backend log liveness (2026-08-12, "the evidence channel says when it dies" -- finding A) -----
+#
+# PlaytestLog.Append (godot/scripts/PlaytestLog.cs) is fail-soft BY DESIGN: the first write that
+# throws (a documented Windows IOException against a file this client writes) sets the class's static
+# _path to null PERMANENTLY, and the only warning is GD.PrintErr/EngineDistress.Warn -- neither of
+# which agent-playtest.ps1 ever sees, since it launches the client with no stdout/stderr redirection
+# (Start-Process, no -RedirectStandardOutput/-RedirectStandardError). Left alone, EVERY dead-verb
+# check for the rest of that run then reads "no sim event fired in the backend slice" -- the exact
+# shape a genuinely dead button produces, with nothing in Get-DeadVerbVerdict's own inputs able to
+# tell the two apart (an 8-lens adversarial audit built both slices by hand and got identical
+# IsCandidate=True verdicts).
+#
+# The fix does not touch PlaytestLog's fail-soft contract -- a logging failure must never cost a real
+# playtest session, and that design is correct. It gives the digest itself an honest voice instead:
+# AgentPlaytest.cs's StateDigest now carries "backendLogActive" (PlaytestLog.Active, unchanged) every
+# turn -- a DIRECT fact from the client's own bookkeeping, never an inference from row counts or
+# timing. This tracker watches that field turn over turn and LATCHES the instant it reads false --
+# once tripped it never un-latches for the rest of this run's report, even if a later scene reload
+# somehow re-armed PlaytestLog (Begin's own re-entry guard only blocks a second call while _path is
+# still set): a run that had a hole in its own evidence should say so for good, "say so, loudly"
+# outliving a later recovery, never a quiet return to normal.
+function New-BackendLogLivenessTracker {
+    return [pscustomobject]@{
+        Stalled             = $false
+        StallDetectedAtTurn = $null
+    }
+}
+
+# Call once per turn, in turn order, with THAT turn's own state.json "backendLogActive" value.
+# $BackendLogActive is $null when reading an OLDER state.json shape that predates the field entirely
+# (never guess in either direction -- the same "presence, not just value" caution backend.ps1 already
+# takes for eventTypes) -- such a turn is skipped, neither proving nor disproving liveness. Mutates
+# $Tracker in place and returns nothing, matching temperament.ps1's Add-TemperamentDrain/
+# Reset-TemperamentMeter convention for a per-run tracker object.
+function Update-BackendLogLivenessTracker {
+    param(
+        [Parameter(Mandatory)]$Tracker,
+        [Parameter(Mandatory)][int]$Turn,
+        $BackendLogActive
+    )
+
+    if ($Tracker.Stalled) { return }
+    if ($null -eq $BackendLogActive) { return }
+    if ($BackendLogActive -eq $false) {
+        $Tracker.Stalled = $true
+        $Tracker.StallDetectedAtTurn = $Turn
+    }
+}
+
+# The loud, distinct callout (never folded into an ordinary dead-verb candidate line) -- $null when
+# the tracker never tripped, so every call site can splice this in unconditionally.
+function Get-BackendLogStallLine {
+    param([Parameter(Mandatory)]$Tracker)
+
+    if (-not $Tracker.Stalled) { return $null }
+    return ('BACKEND LOG EVIDENCE CHANNEL DIED at turn ' + $Tracker.StallDetectedAtTurn + ': ' +
+        'state.json''s own "backendLogActive" field (PlaytestLog.Active) read false -- ' +
+        'PlaytestLog.Append failed and disabled itself PERMANENTLY for the rest of this process (see ' +
+        'PlaytestLog.cs''s own fail-soft contract). Every dead-verb check from turn ' +
+        $Tracker.StallDetectedAtTurn + ' onward reads "no sim event fired" because the CHANNEL is ' +
+        'dead, not necessarily because the verb is -- see the UNRELIABLE candidates below and never ' +
+        'read them as confirmed defects.')
+}
+
 # The "## Backend record" section for findings.md -- recorded facts, placed ABOVE the model's prose
 # per the brief ("recorded facts first, the model's account second"). Pure text assembly; the caller
 # still writes backend.json separately (ConvertTo-Json on the same $Summary is enough for that).
+# -LivenessTracker (finding A, above) is optional so every existing caller keeps working unchanged;
+# when it is stalled, the callout is inserted FIRST, before even the row/malformed-line count, so it
+# is the first thing a reader of this section sees.
 function Format-BackendMarkdown {
     param(
         [Parameter(Mandatory)]$Summary,
-        [array]$Contradictions
+        [array]$Contradictions,
+        $LivenessTracker = $null
     )
 
     $lines = New-Object System.Collections.ArrayList
     [void]$lines.Add('## Backend record')
     [void]$lines.Add('')
+    if ($LivenessTracker -and $LivenessTracker.Stalled) {
+        [void]$lines.Add('**' + (Get-BackendLogStallLine -Tracker $LivenessTracker) + '**')
+        [void]$lines.Add('')
+    }
     [void]$lines.Add('From ' + $Summary.LogPath + ' (PlaytestLog.cs''s JSONL trail) -- the kernel''s own')
     [void]$lines.Add('record, independent of what the model claims below.')
     [void]$lines.Add('')

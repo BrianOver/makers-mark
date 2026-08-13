@@ -52,6 +52,23 @@ public sealed record ValueControlDigest(
 /// had no field for it at all. Without it the model cannot tell "the world is showing a raid" from
 /// "the world is waiting on me at the vigil", and its most likely move at the single most important
 /// moment of the day is to <c>advance</c> straight past it.</para>
+///
+/// <para><b>2026-08-12 — two evidence-channel fields, added together (an 8-lens adversarial audit,
+/// "the evidence channel says when it dies").</b> <see cref="BackendLogActive"/> is <see
+/// cref="PlaytestLog.Active"/>, unchanged, just surfaced here: without it, the ONLY way
+/// <c>tools/agent-playtest.ps1</c> could learn that <see cref="PlaytestLog"/>'s own fail-soft
+/// <c>Append</c> had died mid-run (a documented Windows IOException, after which it disables itself
+/// PERMANENTLY and warns only through <c>GD.PrintErr</c>/<c>EngineDistress.Warn</c>) was to notice
+/// that the backend log had gone quiet — indistinguishable, from the outside, from a genuinely dead
+/// button never firing a sim event. Now the digest says so directly, every turn, with no inference
+/// required. <see cref="PreviousFrameOk"/> is last turn's <see
+/// cref="AgentPlaytestBridge.FrameLooksReal"/> result (<c>null</c> on turn 1, when there is no
+/// previous turn yet) — necessarily one turn late, since THIS turn's own frame is captured and
+/// checked only after this digest is already written to disk (see <see
+/// cref="AgentPlaytestBridge.RunLoop"/>'s own ordering). Before this, a BLANK/UNIFORM frame (the
+/// documented <c>--headless</c> capture contract) was detected correctly but the result only ever
+/// became a turnlog.md prose line and an uncaptured console warning — the model was handed the known-
+/// blank file anyway, and "frames kept" counted it as a real capture.</para>
 /// </summary>
 public sealed record StateDigest(
     [property: JsonPropertyName("turn")] int Turn,
@@ -67,7 +84,9 @@ public sealed record StateDigest(
     [property: JsonPropertyName("valueControls")] IReadOnlyList<ValueControlDigest> ValueControls,
     [property: JsonPropertyName("interactPrompt")] string InteractPrompt,
     [property: JsonPropertyName("nearby")] IReadOnlyList<NearbyDigest> Nearby,
-    [property: JsonPropertyName("lastOutcome")] string LastOutcome);
+    [property: JsonPropertyName("lastOutcome")] string LastOutcome,
+    [property: JsonPropertyName("backendLogActive")] bool BackendLogActive,
+    [property: JsonPropertyName("previousFrameOk")] bool? PreviousFrameOk);
 
 /// <summary>
 /// One thing the player can walk to and interact with, as seen from where they are standing right now
@@ -176,7 +195,12 @@ public sealed class AgentPlaytestBridge
     /// <summary>The honest digest of <paramref name="ui"/> right now — day/phase/gold straight off
     /// the sim state, everything else (location, canMove, screenText, controls) read off the real
     /// presentation layer the same way a player would.</summary>
-    public StateDigest BuildDigest(MainUi ui, int turn, string lastOutcome)
+    /// <param name="previousFrameOk">Last turn's <see cref="FrameLooksReal"/> result, or
+    /// <c>null</c> when there is no previous turn (turn 1) — see <see cref="StateDigest"/>'s own
+    /// 2026-08-12 doc note for why this is necessarily one turn late rather than describing THIS
+    /// turn's own (not-yet-captured) frame. Callers outside <see cref="RunLoop"/> (engine tests
+    /// building a digest directly) get the honest default of "no data yet" rather than a guess.</param>
+    public StateDigest BuildDigest(MainUi ui, int turn, string lastOutcome, bool? previousFrameOk = null)
     {
         var state = ui.Adapter.CurrentState;
         var viewport = ui.GetViewport();
@@ -212,7 +236,9 @@ public sealed class AgentPlaytestBridge
             ValueControls: valueControls,
             InteractPrompt: ui.Town.WorldInputNode.PromptText,
             Nearby: Surroundings(ui),
-            LastOutcome: lastOutcome);
+            LastOutcome: lastOutcome,
+            BackendLogActive: PlaytestLog.Active,
+            PreviousFrameOk: previousFrameOk);
     }
 
     /// <summary>How far from a target's door the player counts as "in range" (px). Deliberately
@@ -652,14 +678,21 @@ public sealed class AgentPlaytestBridge
         var framePath = System.IO.Path.Combine(outDir, "frame.png");
         var commandPath = System.IO.Path.Combine(outDir, "command.json");
 
+        // Finding B (2026-08-12 evidence-channel audit): null on turn 1 (no previous turn), then
+        // last turn's own FrameLooksReal result — set at the bottom of THIS loop body, read at the
+        // top of the NEXT one. See StateDigest.PreviousFrameOk's own doc for why it cannot describe
+        // the SAME turn's frame (that frame is not captured yet when the digest below is written).
+        bool? previousFrameOk = null;
+
         for (var turn = 1; turn <= maxTurns; turn++)
         {
             await Settle(4); // let the previous action's effects render before observing
 
-            var digest = BuildDigest(ui, turn, lastOutcome);
+            var digest = BuildDigest(ui, turn, lastOutcome, previousFrameOk);
             System.IO.File.WriteAllText(statePath, JsonSerializer.Serialize(digest, JsonOptions));
             var (frameImage, frameSaveError) = FrameCapture.SaveAsPng(ui.GetViewport(), framePath);
             var frameLooksReal = FrameLooksReal(frameImage);
+            previousFrameOk = frameLooksReal;
             if (!frameLooksReal)
             {
                 GD.PrintErr(

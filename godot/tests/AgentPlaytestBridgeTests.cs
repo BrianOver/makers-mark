@@ -60,6 +60,84 @@ public class AgentPlaytestBridgeTests
         }
     }
 
+    /// <summary>
+    /// 2026-08-12, "the evidence channel says when it dies" (an 8-lens adversarial audit): two new
+    /// StateDigest fields exist so the OUTSIDE driver can tell an evidence-channel failure from a real
+    /// one instead of inferring it (finding A: <see cref="StateDigest.BackendLogActive"/>; finding B:
+    /// <see cref="StateDigest.PreviousFrameOk"/>). BackendLogActive must be <see
+    /// cref="PlaytestLog.Active"/> AT THE MOMENT <c>BuildDigest</c> runs, not a value captured once —
+    /// proven here by toggling the SAME test seam <c>PlaytestLogTests.cs</c> uses
+    /// (<see cref="PlaytestLog.RedirectForTests"/>), armed and disarmed within this one test case so
+    /// the shared static never leaks into a sibling test (that class's own header explains why one
+    /// case owning the static start to finish is the shape that cannot race itself).
+    /// PreviousFrameOk is the caller's own explicit input, threaded straight through with no
+    /// transformation — proven by round-tripping both real values and the default "no previous turn
+    /// yet" null.
+    /// </summary>
+    [TestCase]
+    public void BuildDigest_CarriesBackendLogActiveAndPreviousFrameOk()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var bridge = new AgentPlaytestBridge(ui);
+
+            // Default: no previousFrameOk argument at all (every call site before this fix, and every
+            // engine test elsewhere in this suite) must read null, never a guessed true/false — "no
+            // data yet" is the honest turn-1 shape (StateDigest's own 2026-08-12 doc note).
+            var defaultDigest = bridge.BuildDigest(ui, 1, "(start)");
+            AssertThat(defaultDigest.PreviousFrameOk.HasValue)
+                .OverrideFailureMessage("BuildDigest with no previousFrameOk argument must leave the field null, not a guessed value.")
+                .IsFalse();
+
+            var trueDigest = bridge.BuildDigest(ui, 2, "(start)", previousFrameOk: true);
+            AssertThat(trueDigest.PreviousFrameOk.HasValue).IsTrue();
+            AssertThat(trueDigest.PreviousFrameOk!.Value)
+                .OverrideFailureMessage("An explicit previousFrameOk:true must thread straight through to the digest.")
+                .IsTrue();
+
+            var falseDigest = bridge.BuildDigest(ui, 3, "(start)", previousFrameOk: false);
+            AssertThat(falseDigest.PreviousFrameOk.HasValue).IsTrue();
+            AssertThat(falseDigest.PreviousFrameOk!.Value)
+                .OverrideFailureMessage("An explicit previousFrameOk:false must thread straight through, not collapse to null or true.")
+                .IsFalse();
+
+            // BackendLogActive must track PlaytestLog.Active live. The engine suite runs with
+            // MM_PLAYTEST_LOG unset, so Active is false by default — this is a setup check, not the
+            // behavior under test, but a green suite where it were somehow true would invalidate
+            // everything below it.
+            AssertThat(PlaytestLog.Active)
+                .OverrideFailureMessage("Setup check: PlaytestLog must be disarmed by default in the engine suite.")
+                .IsFalse();
+            AssertThat(bridge.BuildDigest(ui, 4, "(start)").BackendLogActive)
+                .OverrideFailureMessage("BuildDigest.BackendLogActive must read false while PlaytestLog is disarmed.")
+                .IsFalse();
+
+            var logPath = ProjectSettings.GlobalizePath("user://playtest-log-digest-liveness-test.jsonl");
+            PlaytestLog.RedirectForTests(logPath);
+            try
+            {
+                AssertThat(bridge.BuildDigest(ui, 5, "(start)").BackendLogActive)
+                    .OverrideFailureMessage("BuildDigest.BackendLogActive must read true once PlaytestLog is armed via RedirectForTests.")
+                    .IsTrue();
+            }
+            finally
+            {
+                PlaytestLog.RedirectForTests(null);
+            }
+
+            AssertThat(bridge.BuildDigest(ui, 6, "(start)").BackendLogActive)
+                .OverrideFailureMessage(
+                    "BuildDigest.BackendLogActive must read false again once PlaytestLog is disarmed — a " +
+                    "stale 'true' here would be exactly the false confidence finding A exists to prevent.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     [TestCase]
     public async Task PressOnEnabledButton_ChangesTheDigest()
     {
