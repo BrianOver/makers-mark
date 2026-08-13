@@ -2,13 +2,13 @@
 
 importer="font_data_dynamic"
 type="FontFile"
-uid="uid://djjme061gukwn"
-path="res://.godot/imported/Cinzel-VariableFont_wght.ttf-3fbb5491b853e1aa301b8707c0cc03ef.fontdata"
+uid="uid://cqywoj1vfj8f1"
+path="res://.godot/imported/Silkscreen-Regular.ttf-0088f200f2f1c02c371962cb8d277333.fontdata"
 
 [deps]
 
-source_file="res://assets/fonts/Cinzel-VariableFont_wght.ttf"
-dest_files=["res://.godot/imported/Cinzel-VariableFont_wght.ttf-3fbb5491b853e1aa301b8707c0cc03ef.fontdata"]
+source_file="res://assets/fonts/Silkscreen-Regular.ttf"
+dest_files=["res://.godot/imported/Silkscreen-Regular.ttf-0088f200f2f1c02c371962cb8d277333.fontdata"]
 
 [params]
 

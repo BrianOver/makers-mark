@@ -352,6 +352,52 @@ public class HudBoundsTests
         }
     }
 
+    /// <summary>
+    /// U10 (asset completion wave, "ship the pixel font"): the Silkscreen display-face swap
+    /// (<see cref="GodotClient.Ui.GameTheme.HeaderFont"/>) changes every header/section-title
+    /// glyph's metrics at once, so this pins the general "no panel's text overflows its
+    /// container" claim at the project's smallest supported window
+    /// (<c>project.godot</c>'s 1152x648 — same setting <see
+    /// cref="ForgeOpensFresh_PrimaryCraftVerb_IsOnScreenWithoutScrolling"/> pins) against the
+    /// ONE surface none of the panel/modal sweeps below already cover: the
+    /// <see cref="GodotClient.Ui.ObjectiveTracker"/> tutorial card, visible from the very first
+    /// frame of a fresh campaign. <see cref="HumanPlayer.ClippedText"/> is the same mechanical
+    /// "cut off by a non-scrolling ancestor, or hanging outside the window" detector
+    /// <c>HumanPlaytestTests.EveryPanel_FitsOnScreen</c> already runs for the drawer panels and
+    /// <c>WholeGameSweepTests.EverySurface_IsReadableAndDoesNotOverlapItself</c> already runs
+    /// for the HUD tray modals (Ledger included) — this closes the one gap neither sweep
+    /// reaches, rather than re-testing what they already do.
+    /// </summary>
+    [TestCase]
+    public async Task ObjectiveChip_TextNeverOverflowsItsOwnContainer()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(ui.GetViewportRect().Size)
+                .OverrideFailureMessage("this test pins the SMALLEST supported window (project.godot) -- update the fixture if that setting changes")
+                .IsEqual(new Vector2(1152f, 648f));
+
+            await SettleLayout(ui);
+            AssertThat(ui.Objective.Visible)
+                .OverrideFailureMessage("the tutorial card never mounted -- this test would pass vacuously")
+                .IsTrue();
+
+            var player = new HumanPlayer(ui);
+            var problems = player.ClippedText();
+
+            AssertThat(problems)
+                .OverrideFailureMessage(
+                    "The tutorial card (or something else visible at a fresh mount) has text a player " +
+                    "cannot fully read at 1152x648:\n  " + string.Join("\n  ", problems))
+                .IsEmpty();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── U2 (shell-and-audio plan, R1/KTD-C): structural HUD/world non-occlusion ─────────────────
 
     [TestCase]

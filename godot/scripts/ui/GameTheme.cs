@@ -22,15 +22,24 @@ namespace GodotClient.Ui;
 /// <see cref="Build"/> itself is therefore idempotent-safe: calling it twice yields two
 /// independent, equivalent themes.</para>
 ///
-/// <para>P007 polish (display font): <see cref="HeaderFont"/> — the OFL-licensed Cinzel display
-/// face (<c>godot/assets/fonts/</c>, license alongside it) — is registered ONLY on the
-/// <see cref="HeaderThemeType"/> theme-type variation, never on the base "Label"/"Button"
-/// types. Body text stays the engine default everywhere (legibility + layout stability, R11);
-/// only a Control that opts in via <c>ThemeTypeVariation = GameTheme.HeaderThemeType</c> —
-/// today, <see cref="GodotClient.Panels.SimPanel.AddHeader"/> and <see cref="UiKit.Section"/>'s
+/// <para>P007 polish (display font), swapped U10 (asset completion wave, "ship the pixel
+/// font"): <see cref="HeaderFont"/> — the OFL-licensed Silkscreen pixel display face
+/// (<c>godot/assets/fonts/</c>, licence alongside it — see <c>Silkscreen-OFL.txt</c>) — is
+/// registered ONLY on the <see cref="HeaderThemeType"/> theme-type variation, never on the base
+/// "Label"/"Button" types. Body text stays the engine default everywhere (legibility + layout
+/// stability, R11 — see the sizing remarks at <see cref="LegibilityFloor"/>'s TODO for why body
+/// specifically was NOT swapped); only a Control that opts in via
+/// <c>ThemeTypeVariation = GameTheme.HeaderThemeType</c> — today,
+/// <see cref="GodotClient.Panels.SimPanel.AddHeader"/> and <see cref="UiKit.Section"/>'s
 /// title — picks it up. Null-tolerant like every other art loader on this project
 /// (<see cref="IconRegistry"/>): a missing font resource degrades to
 /// <see cref="ThemeDB.FallbackFont"/>, never a throw.</para>
+///
+/// <para>U10 replaced Cinzel (a classical serif, never a good fit for this game's pixel-art
+/// 2.5D presentation — see <c>docs/design/ASSETS.md</c> §8 item 10) rather than adding it as a
+/// third face: Cinzel had exactly one consumer (this file's own <see cref="HeaderFontPath"/>),
+/// so keeping both committed would have left one an orphan asset the moment Silkscreen took
+/// the header slot. The Cinzel TTF/licence files were removed in the same PR.</para>
 /// </summary>
 public static class GameTheme
 {
@@ -38,9 +47,13 @@ public static class GameTheme
     /// a Control opts in by setting its own <c>ThemeTypeVariation</c> to this constant.</summary>
     public const string HeaderThemeType = "HeaderLabel";
 
-    /// <summary>The committed OFL display font asset (Cinzel, a variable TTF covering
-    /// Regular→Black) — see <c>godot/assets/fonts/OFL.txt</c> for the license.</summary>
-    private const string HeaderFontPath = "res://assets/fonts/Cinzel-VariableFont_wght.ttf";
+    /// <summary>The committed OFL pixel display font asset (Silkscreen Regular, an 8px-grid
+    /// pixel face) — see <c>godot/assets/fonts/Silkscreen-OFL.txt</c> for the licence. Public
+    /// (not just reachable via <see cref="HeaderFont"/>) so a test can assert the theme
+    /// resolves this EXACT committed asset — "non-null" alone would also be satisfied by a
+    /// silent <see cref="ThemeDB.FallbackFont"/> degrade, which is the failure class this
+    /// repo's null-tolerant loaders keep needing a real regression test for.</summary>
+    public const string HeaderFontPath = "res://assets/fonts/Silkscreen-Regular.ttf";
 
     private static Font? _headerFont;
 
@@ -117,9 +130,21 @@ public static class GameTheme
     /// and per-type font size below must meet or exceed.</summary>
     public const int LegibilityFloor = 16;
 
-    // TODO(font): pixel display+body font swap deferred — needs a committed .ttf asset. Sizes
-    // below are tuned for the CURRENT fonts (engine default body, Cinzel header); revisit once a
-    // pixel face lands so the scale still reads clean at the new face's metrics.
+    // RESOLVED (U10, asset completion wave, "ship the pixel font"): the pixel face landed --
+    // Silkscreen (OFL) now renders the display/heading/label tier (HeaderFont/HeaderFontPath
+    // above), replacing Cinzel. Body stayed engine default DELIBERATELY, not by default:
+    // Silkscreen's lowercase glyphs are cap-height (a property of the original 2001 bitmap
+    // design, carried into the Google Fonts TTF), so setting it on the base "Label"/"Button"
+    // types turns every sentence of prose into visual ALL-CAPS -- verified by temporarily
+    // wiring it onto Label/Button and rendering the Vigil dock's own retelling text ("They've
+    // made camp above the deep floors...") and the tutorial card's teach copy through it
+    // (tools/receipt.ps1; runs/receipts/u10-body-ledger.png, u10-body-forge.png -- runs/ is
+    // gitignored, kept locally for reference only). That is exactly the "worse to read than
+    // what ships today" failure this TODO warned about, so the swap stops at display/heading/
+    // label, same as the class doc above states. HeaderFontSize (22) was checked against
+    // Silkscreen's 8px design grid and left unchanged -- the rendered receipts show it already
+    // crisp and clipping-free across Forge/Shop/Ledger; a purist 24px (3x grid) round number is
+    // a low-priority follow-up the evidence did not demand.
 
     /// <summary>Default body/control font size — held at the legibility floor (R11); the cozy
     /// redesign (UI-1) tightened this from the prior +2 bump now that spacing/hierarchy carry
@@ -357,7 +382,7 @@ public static class GameTheme
         return theme;
     }
 
-    /// <summary>Load the committed Cinzel asset; degrade to <see cref="ThemeDB.FallbackFont"/>
+    /// <summary>Load the committed Silkscreen asset; degrade to <see cref="ThemeDB.FallbackFont"/>
     /// on any miss (a fresh checkout missing LFS pixels, a stripped test build, etc.) — the
     /// same null-tolerant contract <see cref="IconRegistry"/> already guarantees for art.</summary>
     private static Font LoadHeaderFont() =>
