@@ -133,8 +133,46 @@ public static class ScreenObservation
     /// every "is this on screen" question must be asked against (see HumanPlayer.WindowRect).</summary>
     public static Rect2 WindowRect(Viewport viewport) => viewport.GetVisibleRect().Grow(EdgeTolerancePx);
 
+    /// <summary>
+    /// Bug fix (visual-check plan, 2026-08-12): a control fully enclosed by <see cref="WindowRect"/>
+    /// can still be entirely hidden by a nearer ancestor that clips its own content — any
+    /// <c>Control</c> with <see cref="Control.ClipContents"/> true, or any <see cref="ScrollContainer"/>
+    /// (which clips regardless of its own flag) — the exact shape a recipe/talent card scrolled
+    /// past its own <c>ScrollContainer</c>'s fold takes: the OUTER window still encloses its laid-out
+    /// rect, but the ScrollContainer immediately above it does not. <see cref="ClickableButtons"/>
+    /// used to check only the window, so it reported such a button "clickable"; <c>HumanPlayer</c>'s
+    /// own <c>ClickControl</c> then computed the ACTUAL clickable region (its rect intersected with
+    /// every clipping ancestor) and got an empty intersection — Godot's <c>Rect2.Intersection</c>
+    /// returns <c>(0,0,0,0)</c> for two rects that do not overlap at all — so the simulated click
+    /// landed at literal screen origin, under the HUD header, and reported the button unreachable.
+    /// Reproduced live: <c>HumanPlaytestTests.EveryVisibleButton_ActuallyRespondsToARealClick</c>
+    /// failed exactly this way ("Auto-craft (competent)" / "Unlock" clicked at (0, 0)) the moment a
+    /// Forge content-height change shifted which button landed at this edge — the failure was never
+    /// about which button; it was this method quietly disagreeing with the real click-mechanics
+    /// <see cref="HumanPlayer.VisiblePartOf"/> already gets right. Mirrors that method's own
+    /// ancestor walk (same two clipping shapes, same tolerance) so the two can never drift apart
+    /// again — "clickable" and "the region a click can actually land in" are now the same question.
+    /// </summary>
+    private static bool FullyInsideEveryClippingAncestor(Control control)
+    {
+        for (var parent = control.GetParent(); parent is not null; parent = parent.GetParent())
+        {
+            if (parent is Control { ClipContents: true } or ScrollContainer)
+            {
+                var ancestorRect = ((Control)parent).GetGlobalRect().Grow(EdgeTolerancePx);
+                if (!ancestorRect.Encloses(control.GetGlobalRect()))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
     /// <summary>Every button a person could click right now: visible, enabled, laid out to a real
-    /// size, and fully inside the viewport. Mirrors <c>HumanPlayer.ClickableButtons</c>.</summary>
+    /// size, and fully inside the viewport AND every clipping ancestor (see
+    /// <see cref="FullyInsideEveryClippingAncestor"/>). Mirrors <c>HumanPlayer.ClickableButtons</c>.</summary>
     public static IReadOnlyList<Button> ClickableButtons(Node root, Viewport viewport)
     {
         var window = WindowRect(viewport);
@@ -143,11 +181,14 @@ public static class ScreenObservation
             .Where(b => GodotObject.IsInstanceValid(b) && b.IsVisibleInTree() && !b.Disabled)
             .Where(b => b.Size.X > 1f && b.Size.Y > 1f)
             .Where(b => window.Encloses(b.GetGlobalRect()))
+            .Where(FullyInsideEveryClippingAncestor)
             .ToList();
     }
 
     /// <summary>Why a surface has no clickable buttons — absent, hidden, disabled, zero-sized, or
-    /// off screen. Mirrors <c>HumanPlayer.DescribeButtons</c>.</summary>
+    /// off screen (window OR a clipping ancestor — see <see cref="FullyInsideEveryClippingAncestor"/>,
+    /// same fix <see cref="ClickableButtons"/> got, kept in sync so this count and that one's never
+    /// silently disagree again). Mirrors <c>HumanPlayer.DescribeButtons</c>.</summary>
     public static string DescribeButtons(Node root, Viewport viewport)
     {
         var all = Descendants(root).OfType<Button>().ToList();
@@ -158,7 +199,7 @@ public static class ScreenObservation
         var collapsed = all.Count(b => b.IsVisibleInTree() && !b.Disabled && (b.Size.X <= 1f || b.Size.Y <= 1f));
         var offScreen = all.Count(b =>
             b.IsVisibleInTree() && !b.Disabled && b.Size.X > 1f && b.Size.Y > 1f &&
-            !window.Encloses(b.GetGlobalRect()));
+            (!window.Encloses(b.GetGlobalRect()) || !FullyInsideEveryClippingAncestor(b)));
 
         return $"{all.Count} buttons total: {hidden} hidden, {disabled} disabled, {collapsed} zero-sized, " +
                $"{offScreen} off screen, {ClickableButtons(root, viewport).Count} clickable";

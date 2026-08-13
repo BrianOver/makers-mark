@@ -631,7 +631,16 @@ public partial class ForgePanel : SimPanel
                     // the placeholder's caption comes from — dropping it would show the raw asset
                     // key instead of the recipe name. On a HIT it also renders under the icon
                     // now, alongside the fuller infoCol line below — redundant, never wrong.
-                    IconRegistry.Slot(recipe.Slot), recipe.Name));
+                    //
+                    // ellipsizeCaption: true (visual-check plan, 2026-08-12): the infoCol label
+                    // right beside this icon already carries the full name ("Alchemical Robe (t1
+                    // Armor)") -- this caption is a redundant echo of the SAME string, so wrapping
+                    // it to a second line for a longer item name bought nothing but height. A
+                    // fresh alchemist Forge open measured that second line alone pushing the first
+                    // card's controls row past CraftScroll's fold (see EnsureBuilt's own note).
+                    // Single-line ellipsis is exactly what PortraitFrame already does for a long
+                    // hero name in the same spot; this recipe caption never had a reason to differ.
+                    IconRegistry.Slot(recipe.Slot), recipe.Name, ellipsizeCaption: true));
 
                 var infoCol = new VBoxContainer
                 {
@@ -678,7 +687,17 @@ public partial class ForgePanel : SimPanel
                     // real-time forge minigame; alchemy → the discrete reagent-puzzle panel.
                     if (professionId == AlchemyProfession.Id)
                     {
-                        var brew = AddButton(controlsRow, $"Brew_{recipe.RecipeId}", "Brew (reagent puzzle)",
+                        // Visual-check plan (2026-08-12): "Brew (reagent puzzle)" was the one
+                        // active-craft label longer than every sibling ("Work the forge"/"Assemble
+                        // (bench)"/"Scrape the hide") — long enough that SimPanel.AddWrappingRow
+                        // wrapped this card's controlsRow onto a second line the CraftScroll no
+                        // longer had room for, burying the alchemist's own primary craft verb
+                        // (rendered screenshot, SHOT_PROFESSION=alchemy SHOT_STATE=ForgePanel — the
+                        // first recipe card's controls sliced off at the scroll's bottom edge, the
+                        // same bug class PR #464 fixed for blacksmith). Shortened to match the
+                        // parenthetical-qualifier convention "Assemble (bench)" already uses —
+                        // "reagent" was redundant inside a panel already headed "Apothecary".
+                        var brew = AddButton(controlsRow, $"Brew_{recipe.RecipeId}", "Brew (puzzle)",
                             () => OnBrewPressed(recipe, material, profession!, unlocked));
                         GateButton(brew, affordable, $"Not enough {material} — need {needed}, have {have}.");
                     }
@@ -1451,6 +1470,28 @@ public partial class ForgePanel : SimPanel
         // and its cards are taller per-item than a vendor row. A station's own FocusSection call
         // (below) hides whichever ScrollContainer is NOT the focused one, so the focused view
         // still claims the full body height, exactly as before this split existed.
+        //
+        // Visual-check plan (2026-08-12): 3:2 was measured tight enough that a non-blacksmith
+        // profession's first recipe card could still slice its own controls row off at CraftScroll's
+        // bottom edge on a fresh Forge open (SHOT_PROFESSION=alchemy SHOT_STATE=ForgePanel,
+        // HudBoundsTests.ForgeOpensFresh_PrimaryCraftVerb_IsOnScreenWithoutScrolling_ForEveryProfession) —
+        // a longer item name ("Alchemical Robe" vs "Buckler") wrapped the recipe icon's own
+        // caption onto a second line, adding ~20px of height nothing else in this card needed.
+        // FIRST attempted fix here was growing CraftScroll's own stretch ratio (3:2 -> 4:2) to
+        // absorb that class of variance generically — reverted after
+        // HumanPlaytestTests.EveryVisibleButton_ActuallyRespondsToARealClick started failing
+        // reliably on this branch (reproduced in isolation on both the 4:2 build and a plain
+        // checkout of the ratio change alone; the SAME test passes reliably on origin/main and on
+        // this branch's OTHER two changes without it) — growing the shared viewport shifted which
+        // buttons land inside/outside the sweep's per-scroll-page "clickable" set relative to the
+        // OLD 3:2 layout, and the sweep's own click-by-index-then-rederive loop hit a stale
+        // "Auto-craft (competent)" reference at a DIFFERENT point than before, mid a Refresh()
+        // rebuild triggered by an earlier click in the same page. The real, narrowly-scoped fix is
+        // below: the recipe icon's own caption (SimPanel.ArtRect's ellipsizeCaption, mirroring
+        // PortraitFrame's existing single-line convention) never needed to wrap at all — it is
+        // redundant with the info column's own name label right beside it (see that call site's
+        // own comment). Ellipsizing it removes the height cost at its actual source, without
+        // touching the CraftScroll:MaterialsScroll budget every profession's every recipe shares.
         var root = new VBoxContainer { Name = "ForgeRoot" };
         root.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(root);

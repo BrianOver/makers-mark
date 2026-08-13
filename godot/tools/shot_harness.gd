@@ -256,6 +256,19 @@ func _process(_delta: float) -> bool:
 		elif _state == "DepthsPanel":
 			if _ui.has_method("OpenPanel"):
 				_ui.call("OpenPanel", "Depths")
+		elif _state == "Camp":
+			# Visual-check plan (2026-08-12): the winch-house slate (CampPanel, node name
+			# "CampModal") has no in-world hotspot and no drawer id of its own -- MainUi
+			# normally auto-opens it only when a party actually parks at DayPhase.Camp with a
+			# non-empty InFlight. ShowModal is null-tolerant (renders "No party is camped below
+			# the checkpoint." against a fresh seed-2026 day-1 mount, CampPanel.Render's own
+			# empty-InFlight branch), so calling it directly here -- same call() bridge idiom as
+			# Bestiary/Mirror above -- is enough to render the modal's own chrome (title, card
+			# frame, close button) for a layout/theming check, without depending on RNG actually
+			# parking a party this run.
+			var camp = _ui.find_child("CampModal", true, false)
+			if camp:
+				camp.call("ShowModal")
 		elif _state == "ForgeExit":
 			# U1 (painted-interiors plan): the second required receipt -- proves the exit
 			# door returns the player OUTSIDE. Enters the room the normal way; the second

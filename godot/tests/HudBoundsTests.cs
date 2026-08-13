@@ -2,6 +2,7 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using GameSim;
 using GdUnit4;
 using Godot;
 using GodotClient.Tools;
@@ -168,6 +169,84 @@ public class HudBoundsTests
     // that gesture. Fixing this properly needs ForgePanel's split-scroll treatment adapted to
     // preserve co-visibility of drag source and target, which is new scope past this task's
     // forge-verb ask. Reported here as a follow-up, not fixed.
+
+    /// <summary>
+    /// Visual-check plan (2026-08-12): <see cref="ForgeOpensFresh_PrimaryCraftVerb_IsOnScreenWithoutScrolling"/>
+    /// above only ever mounts <see cref="ScriptedSession.StartAdapter"/> -- hardcoded blacksmith
+    /// (class doc: "dagger"/"copper"). A rendered screenshot of a fresh ALCHEMIST campaign
+    /// (<c>SHOT_PROFESSION=alchemy</c>, <c>SHOT_STATE=ForgePanel</c>) showed the first recipe
+    /// card's own controls row ("copper 2x (have 6)" / "Auto-craft (competent)") sliced off at the
+    /// CraftScroll's bottom edge -- the exact bug class the blacksmith-only test above exists to
+    /// catch, just never exercised for a profession whose active-craft button label
+    /// ("Brew (reagent puzzle)"/"Assemble (bench)"/"Scrape the hide") is longer than the
+    /// blacksmith's "Work the forge", which is what <c>SimPanel.AddWrappingRow</c> wraps onto a
+    /// second line once it no longer fits one row at the drawer's width -- growing the first
+    /// card's height past what fits above the fold. Same four professions
+    /// <see cref="TutorialAllProfessionsTests"/> already walks (<c>ProfessionRegistry.All</c> — a
+    /// fifth profession is covered here for free), same primary-verb search
+    /// <see cref="ForgeOpensFresh_PrimaryCraftVerb_IsOnScreenWithoutScrolling"/> already runs,
+    /// widened to accept whichever active-craft button THIS profession renders
+    /// (<c>Brew_</c>/<c>Assemble_</c>/<c>Scrape_</c>/<c>WorkForge_</c>), falling back to the
+    /// always-present <c>Craft_</c> exactly like the blacksmith-only test does.
+    /// </summary>
+    [TestCase("blacksmith")]
+    [TestCase("tanning")]
+    [TestCase("engineering")]
+    [TestCase("alchemy")]
+    public async Task ForgeOpensFresh_PrimaryCraftVerb_IsOnScreenWithoutScrolling_ForEveryProfession(string professionId)
+    {
+        // GameComposition.NewCampaign seeds every profession's own starter material for its
+        // cheapest tier-1 recipe (GameFactory.StarterCopper — NewCampaignSeedingTests pins this for
+        // all four), so the profession's active-craft button renders correctly ENABLED without any
+        // extra stocking step, the same reason ScriptedSession.StartAdapter pre-stocks copper above.
+        var campaign = GameComposition.NewCampaign(ScriptedSession.Seed, professionId);
+        var ui = MountMainUi(new SimAdapter(campaign));
+        try
+        {
+            AssertThat(ui.GetViewportRect().Size)
+                .OverrideFailureMessage("this test pins the SMALLEST supported window (project.godot) -- update the fixture if that setting changes")
+                .IsEqual(new Vector2(1152f, 648f));
+
+            ui.OpenPanel("Forge");
+            await SettleLayout(ui);
+
+            var clickable = ScreenObservation.ClickableButtons(ui.Forge, ui.GetViewport());
+            var primaryVerb = clickable.FirstOrDefault(b => b.Name.ToString().StartsWith("WorkForge_", StringComparison.Ordinal))
+                ?? clickable.FirstOrDefault(b => b.Name.ToString().StartsWith("Brew_", StringComparison.Ordinal))
+                ?? clickable.FirstOrDefault(b => b.Name.ToString().StartsWith("Assemble_", StringComparison.Ordinal))
+                ?? clickable.FirstOrDefault(b => b.Name.ToString().StartsWith("Scrape_", StringComparison.Ordinal))
+                ?? clickable.FirstOrDefault(b => b.Name.ToString().StartsWith("Craft_", StringComparison.Ordinal));
+
+            AssertThat(primaryVerb)
+                .OverrideFailureMessage(
+                    $"{professionId}: Forge opened fresh but no active-craft/Craft_ button is clickable " +
+                    "without scrolling -- the craft verb is buried under the fold for this profession. " +
+                    ScreenObservation.DescribeButtons(ui.Forge, ui.GetViewport()))
+                .IsNotNull();
+
+            // ScreenObservation.ClickableButtons only checks enclosure against the OUTER viewport
+            // window -- a button clipped away by an ANCESTOR ScrollContainer (CraftScroll here) can
+            // still report a GetGlobalRect() the outer window happily encloses, since ClipContents
+            // is a render-time effect, not a layout-position one. That gap is exactly why a rendered
+            // screenshot (SHOT_PROFESSION=alchemy, SHOT_STATE=ForgePanel) showed the alchemist's own
+            // controls row sliced off while this same primaryVerb lookup would have reported it
+            // "clickable" -- the button's rect fit inside the 1152x648 window even though CraftScroll
+            // itself had already clipped it from view. This second assertion is the one that
+            // actually pins the fix: the verb must be fully inside CraftScroll's OWN visible rect,
+            // not merely the window's.
+            var craftScroll = Find<ScrollContainer>(ui.Forge, "CraftScroll");
+            AssertThat(craftScroll.GetGlobalRect().Grow(ScreenObservation.EdgeTolerancePx).Encloses(primaryVerb!.GetGlobalRect()))
+                .OverrideFailureMessage(
+                    $"{professionId}: the primary craft verb '{primaryVerb!.Name}' (rect {primaryVerb.GetGlobalRect()}) " +
+                    $"is not fully inside CraftScroll's own visible rect ({craftScroll.GetGlobalRect()}) -- it fits the " +
+                    "outer window but CraftScroll itself has already clipped it out of view.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 
     [TestCase]
     public async Task DrawerOpen_ObjectiveChip_NeverCoversDrawerButtons()
