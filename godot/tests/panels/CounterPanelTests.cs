@@ -979,11 +979,23 @@ public class CounterPanelTests
 
             PressEnabled(ui.Shop, "Accept"); // closes the sale — an immediate verb (U1, loop-legibility)
 
-            // Same technique MarketLifeTests.Advance_SoldRun_PlaysTheCoinCue_WhenTheSaleLands uses:
-            // QueueDay stages the run but Advance actually plays it out (walk in already happened
-            // pre-sale in this fixture's single-customer flow; this drives the walk-out/coin-arc to
-            // completion). Capped so a stuck machine fails this test instead of looping forever.
+            // Same technique MarketLifeTests.Advance_SoldRun_PlaysTheCoinCue_WhenTheSaleLands uses,
+            // INCLUDING its first small Advance: QueueDay only STAGES the run behind a start delay,
+            // so ActiveCustomerCount is still 0 the instant Accept returns. Without this step the
+            // loop below sees 0 and exits without ever advancing, and the test then reports "Coin
+            // played 0 times" as though the game were silent — which is exactly how it failed the
+            // first time. Capped so a stuck machine fails this test instead of looping forever.
             var marketLife = ui.Town.MarketLife!;
+            marketLife.Advance(0.01); // crosses the start delay — spawns the counter customer
+
+            AssertThat(marketLife.ActiveCustomerCount)
+                .OverrideFailureMessage(
+                    "Precondition: closing the counter sale staged no customer at all, so this test " +
+                    "could not have observed the coin either way. Town2D.Refresh feeds MarketLife2D." +
+                    "QueueDay the tick's CounterSaleClosed event; if that stopped happening, the " +
+                    "stepped counter sale is silent in the real game and U2's KTD5 premise is void.")
+                .IsGreater(0);
+
             for (var i = 0; i < 200 && marketLife.ActiveCustomerCount > 0; i++)
             {
                 marketLife.Advance(0.1);

@@ -280,8 +280,16 @@ public class CampPanelTests
         }
     }
 
+    /// <summary>
+    /// The half of the send cue that matters: a refusal must never SOUND LIKE A SALE. It does still
+    /// make a noise, and that is correct — <c>MainUi</c> plays <see cref="Cue.Rejected"/> for every
+    /// rejected action the adapter reports (MainUi.cs, the LastRejections branch), so refusal
+    /// feedback is app-wide and predates this unit. An earlier draft of this test asserted total
+    /// silence and failed against that existing, intended behaviour; asserting "no Coin" is the
+    /// claim this unit is actually entitled to make.
+    /// </summary>
     [TestCase]
-    public void Send_RefusedSecondDelivery_PlaysNoCue()
+    public void Send_RefusedSecondDelivery_DoesNotSoundLikeASale()
     {
         var ui = MountAtCamp();
         try
@@ -299,10 +307,17 @@ public class CampPanelTests
 
             AssertThat(audio.RecentCues)
                 .OverrideFailureMessage(
-                    $"A refused send played [{string.Join(", ", audio.RecentCues)}] — a refusal must " +
-                    "play no cue at all, not even a rejection sound (AE4: the panel never enforces a " +
-                    "rule, and this verb's own rejection prose already carries the reason).")
-                .IsEmpty();
+                    $"A refused send played [{string.Join(", ", audio.RecentCues)}] — Coin was among " +
+                    "them. The runner's fee cue marks gold actually changing hands; a refusal that " +
+                    "sounds identical to a delivery tells the player something happened when nothing did.")
+                .NotContains(Cue.Coin);
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"A refused send played [{string.Join(", ", audio.RecentCues)}] — the app-wide " +
+                    "rejection cue never sounded, so the refusal was silent. MainUi plays Rejected " +
+                    "for every rejected action; losing that is a regression in the whole UI, not just here.")
+                .Contains(Cue.Rejected);
         }
         finally
         {
