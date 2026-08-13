@@ -84,11 +84,15 @@ public class GameThemeTests
     }
 
     /// <summary>
-    /// P007 polish (display font): <see cref="GameTheme.HeaderFont"/> resolves to a real,
-    /// non-null asset (the committed OFL Cinzel face — never a throw even if the asset were
-    /// ever absent, per its null-tolerant contract), and it is registered ONLY on
+    /// P007 polish (display font; face swapped Cinzel→Silkscreen in U10, asset completion
+    /// wave): <see cref="GameTheme.HeaderFont"/> resolves to a real, non-null asset (the
+    /// committed OFL pixel face — never a throw even if the asset were ever absent, per its
+    /// null-tolerant contract), and it is registered ONLY on
     /// <see cref="GameTheme.HeaderThemeType"/> — the base "Label"/"Button" theme types never
-    /// carry it, so body text keeps the engine default face (R11 layout stability).
+    /// carry it, so body text keeps the engine default face (R11 layout stability; also a
+    /// deliberate U10 call — see the TODO resolution at <c>GameTheme.cs</c>'s
+    /// <see cref="GameTheme.LegibilityFloor"/>: Silkscreen's lowercase glyphs are cap-height,
+    /// so long prose set in it reads as visual ALL-CAPS).
     /// </summary>
     [TestCase]
     public void HeaderFont_ResolvesNonNull_AndIsRegisteredOnlyOnTheHeaderVariation()
@@ -102,6 +106,29 @@ public class GameThemeTests
         // Body types never carry the display font directly — only the opt-in variation does.
         AssertThat(theme.HasFont("font", "Label")).IsFalse();
         AssertThat(theme.HasFont("font", "Button")).IsFalse();
+    }
+
+    /// <summary>
+    /// U10 (asset completion wave): the theme must resolve the ACTUAL committed pixel face
+    /// (Silkscreen, OFL) at <see cref="GameTheme.HeaderFontPath"/> — never a silent degrade to
+    /// <see cref="ThemeDB.FallbackFont"/>. "Non-null" alone (the test above) is not enough:
+    /// <see cref="ThemeDB.FallbackFont"/> is ALSO non-null, so a loader that silently fell back
+    /// would still pass that assertion while never actually rendering the intended face —
+    /// exactly the null-tolerant-loader failure class this repo keeps finding (see
+    /// <c>docs/design/ASSETS.md</c> §6 "Silent-fallback risks"). This asserts on the resolved
+    /// font's IDENTITY (the same cached <see cref="Resource"/> instance Godot's loader returns
+    /// for the committed path), not merely its non-nullness.
+    /// </summary>
+    [TestCase]
+    public void HeaderFont_ResolvesTheCommittedSilkscreenAsset_NeverASilentFallback()
+    {
+        AssertThat(ResourceLoader.Exists(GameTheme.HeaderFontPath)).IsTrue();
+
+        var committed = GD.Load<FontFile>(GameTheme.HeaderFontPath);
+        AssertThat(committed).IsNotNull();
+
+        AssertThat(GameTheme.HeaderFont).IsEqual(committed);
+        AssertThat(GameTheme.HeaderFont).IsNotEqual(ThemeDB.FallbackFont);
     }
 
     /// <summary>

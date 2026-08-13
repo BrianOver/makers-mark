@@ -68,3 +68,8 @@ VCTK Corpus, released under CC BY 4.0, which permits this use and requires that 
 reference clip and the full reasoning live in `tools/narrator/ATTRIBUTION.md`, and a test
 pins this line in place: an attribution that depends on someone remembering is an
 attribution that gets dropped the first time the library is regenerated.
+
+**Display/heading typeface: Silkscreen by The Silkscreen Project Authors, SIL Open Font
+License 1.1.** `godot/assets/fonts/Silkscreen-Regular.ttf`, licence text alongside it at
+`Silkscreen-OFL.txt` — permits embedding and redistribution; the OFL's one restriction (never
+sold by itself, unbundled from this game) is met by shipping it only inside the game build.
