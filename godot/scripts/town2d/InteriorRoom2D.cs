@@ -171,6 +171,19 @@ public partial class InteriorRoom2D : Node2D
             // semantics), so capturing it directly in the closure is safe (no aliasing bug).
             station.Picked += _ => StationActivated?.Invoke(stationSpec);
 
+            // U7 (asset-completion wave, "the workshop is not switched off"): the furnace/anvil's
+            // own heat-glow pulse — see ForgeEmberGlowSprite2D's class doc for the tuning and for
+            // why the anvil shares the furnace's pulse idiom rather than a strike-tied spark.
+            // Mounted here (not via InteriorLayout2D/WorkshopVocab, which only hold DATA) because
+            // this is the one place a station's actual Building2D node — and its resolved sprite
+            // size — exists to attach a child to.
+            if (ForgeEmberGlowSprite2D.TuningFor(stationSpec.Id) is { } tuning)
+            {
+                var glow = new ForgeEmberGlowSprite2D();
+                station.AddChild(glow);
+                glow.Init(tuning, phaseSeed: stationSpec.Tile.X * 0.7f, stationSize: sprite?.GetSize() ?? Vector2.Zero);
+            }
+
             _stations.Add(station);
         }
     }
