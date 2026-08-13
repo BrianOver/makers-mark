@@ -192,10 +192,12 @@ Fourteen files can never be regenerated:
   never written.
 
 ### Dead tooling
-`tools/3dgen/` and `tools/blender/` target the retired 3D town. Twelve GLBs sit committed at
-`art/gen-candidates/2026-07-21/glb/` with no consumer. `gpu_guard.sh` guards a path that no longer
-runs. **`tools/blender/normalize_glb.py` has never executed once** — its own header still says
-Blender is not installed and to treat the first run as a smoke test.
+`tools/3dgen/` and `tools/blender/` — the TRELLIS/Blender pipeline that targeted the retired 3D
+town — are deleted (U8). Twelve GLBs the pipeline produced still sit committed at
+`art/gen-candidates/2026-07-21/glb/` with no consumer; that output is separate from the tooling and
+remains for the orphan sweep in §5 to clear. `godot/tests/UiTestSupport.cs` also lost
+`WalkUntilArrived3D`, the one dead test helper that was typed against `Node3D` — nothing else in the
+repo renders 3D, and nothing calls it now either.
 
 ## 7. Rejected approaches — do not re-litigate
 
@@ -232,7 +234,8 @@ Blender is not installed and to treat the first run as a smoke test.
    documented sibling fix to copy.
 6. **Give `IconRegistry.Ore` a fallback tier** before the next ore ships.
 7. **Station idle cues** — anvil sparks, furnace pulse. The workshop is inert.
-8. **Delete the dead 3D tooling** and its 44MB of candidate output, or state why it is kept.
+8. **Delete the dead 3D tooling's 44MB of candidate output** (`art/gen-candidates/2026-07-21/`) — the
+   tooling itself is gone (U8); this is the remaining piece of §5's orphan sweep.
 9. **Backfill provenance** for the four live town buildings; decide whether the seven dead specs and
    `player-avatar` get deleted.
 10. **Pixel font** — `GameTheme.cs:120` still has `TODO(font)`; every screen renders in the engine
