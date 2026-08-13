@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using Godot;
 using GameSim.Contracts;
+using GodotClient.Tools;
 
 namespace GodotClient;
 
@@ -58,7 +59,54 @@ public static class IconRegistry
         _ => "item-rival-weapon",
     };
 
-    public static Texture2D Ore(string materialKey) => Load(IconDir, $"ore_{materialKey}");
+    /// <summary>
+    /// U1 (loud-failures-and-quiet-channels plan): mirrors <see cref="Art"/>'s
+    /// <see cref="ResourceLoader.Exists"/> existence guard, which this lookup never had — before
+    /// this unit, <c>Load</c> called <c>GD.Load</c> straight against
+    /// <c>res://assets/icons/ore_{materialKey}.svg</c> for every <c>MaterialRegistry.PricedPool</c>
+    /// key, and a missing SVG was a native <c>core/io/resource_loader.cpp</c> ERROR at runtime (one
+    /// real playtest run logged 260 of them across 5 distinct missing ids) rather than a graceful
+    /// fallback — see <c>AssetResolutionCensusTests.PricedOreMaterials_ResolveTheirVendorIcon</c>
+    /// (godot/tests, a different assembly — not cref-able from here) for the pinning test. A miss
+    /// now degrades to a small placeholder swatch (never null — <c>ForgePanel</c>'s vendor shelf
+    /// hands this straight to
+    /// <c>UiKit.ListRow</c>'s icon slot, which is null-tolerant, but a swatch reads as "something is
+    /// wrong here" the way a blank slot would not) and logs exactly once per missing key via
+    /// <see cref="EngineDistress.Warn"/>, the same "announce the degrade" contract
+    /// <c>TownAssets2D.Placeholder</c> already established for generated art.
+    /// </summary>
+    public static Texture2D Ore(string materialKey)
+    {
+        var path = $"{IconDir}/ore_{materialKey}.svg";
+        return ResourceLoader.Exists(path) ? GD.Load<Texture2D>(path) : OrePlaceholder(materialKey, path);
+    }
+
+    private static readonly Dictionary<string, Texture2D> OrePlaceholderCache = new();
+
+    /// <summary>Loud enough to notice, cheap enough to build inline: a flat magenta swatch (the
+    /// same "implausible as anything but a warning" color <c>TownAssets2D.LoudMarkerColor</c>
+    /// uses) rather than pulling in that class's full bordered/lettered placeholder machinery for
+    /// a 24px vendor-row icon, where a hand-drawn 3x5 font would be illegible anyway — the real
+    /// diagnostic is the <see cref="EngineDistress"/> message, not the pixels. Cached per key so a
+    /// vendor shelf re-rendered every refresh does not rebuild the same swatch every frame.</summary>
+    private static Texture2D OrePlaceholder(string materialKey, string path)
+    {
+        if (OrePlaceholderCache.TryGetValue(materialKey, out var cached))
+        {
+            return cached;
+        }
+
+        var image = Image.CreateEmpty(16, 16, false, Image.Format.Rgba8);
+        image.Fill(new Color(1f, 0f, 1f));
+        var texture = ImageTexture.CreateFromImage(image);
+        OrePlaceholderCache[materialKey] = texture;
+
+        EngineDistress.Warn(
+            $"[IconRegistry] no committed ore icon for '{materialKey}' at {path} — showing a "
+            + "placeholder swatch instead of letting a missing SVG spam native resource-loader errors.");
+
+        return texture;
+    }
 
     public static Texture2D Glyph(string name) => Load(IconDir, name); // gold, bounty, gossip, depths, skull, rune
 

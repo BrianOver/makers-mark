@@ -5,6 +5,7 @@ using System.Linq;
 using GameSim.Contracts;
 using Godot;
 using GodotClient.Town2d;
+using GodotClient.Tools;
 using GodotClient.Ui;
 
 namespace GodotClient.Panels;
@@ -310,6 +311,29 @@ public partial class MineWatch : SubViewportContainer
     /// whatever the phase (see type remarks).</summary>
     public bool HasContent { get; private set; }
 
+    /// <summary>
+    /// U1 (loud-failures-and-quiet-channels plan): the CI-only census (<c>AssetResolutionCensusTests</c>)
+    /// pins the id string but cannot see a resolution failure from a partial checkout, a corrupt
+    /// import cache, or a rename that is not the exact literal it pins — a runtime warning is the
+    /// other half. Called from both places <see cref="HasContent"/> is assigned (<see cref="Build(string)"/>
+    /// and <see cref="ApplyVenueBackdrop"/>) right after the assignment, so every path that can
+    /// collapse the whole strip to Hidden says so via <see cref="EngineDistress.Warn"/> — which
+    /// <see cref="EngineLogAnomalies.Scan"/> turns into an anomaly a playtest run's own report
+    /// surfaces, not only a pre-merge test.
+    /// </summary>
+    private void WarnIfBackdropMissing(string backdropId)
+    {
+        if (HasContent)
+        {
+            return;
+        }
+
+        EngineDistress.Warn(
+            $"[MineWatch] backdrop art '{backdropId}' does not resolve — HasContent is now false, "
+            + "collapsing the whole depths-watch strip to Hidden for the rest of the session, "
+            + "regardless of phase (see this type's own remarks on graceful degrade).");
+    }
+
     /// <summary>The venue id (<c>VenueRegistry</c> key, e.g. "mine"/"gloomwood"/"sunken-crypt")
     /// the currently-shown backdrop was resolved from (test/tuning hook, U9 KTD-4).</summary>
     public string BackdropVenueId => _backdropVenueId;
@@ -372,6 +396,7 @@ public partial class MineWatch : SubViewportContainer
 
         _backdropTexture = IconRegistry.Art(backdropId);
         HasContent = _backdropTexture is not null;
+        WarnIfBackdropMissing(backdropId);
         if (HasContent)
         {
             RebuildBackdropTiles(CurrentContainerWidth());
@@ -1198,8 +1223,10 @@ public partial class MineWatch : SubViewportContainer
     private void ApplyVenueBackdrop(string venueId)
     {
         _backdropVenueId = venueId;
-        _backdropTexture = IconRegistry.Art(AssetCatalog.VenueBackdropId(venueId));
+        var backdropId = AssetCatalog.VenueBackdropId(venueId);
+        _backdropTexture = IconRegistry.Art(backdropId);
         HasContent = _backdropTexture is not null;
+        WarnIfBackdropMissing(backdropId);
         ApplyVenueProps(venueId);
 
         if (HasContent)
