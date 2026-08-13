@@ -458,6 +458,169 @@ public class DelveStageTests
         }
     }
 
+    // ── U6 ("give the Mine monsters motion"): the single committed frame idle-breathes ─────────
+    // Procedural motion only (owner decision) — no new art, no gait frames. Scale-only, applied as
+    // a multiplier on top of ShowMonster's own per-monster width-normalizing factor (the five
+    // committed canvases are five different pixel sizes), same accumulated-delta/no-RNG contract
+    // as every other animator in this codebase.
+
+    [TestCase]
+    public void Engage_MonsterBreathes_TransformChangesOverTime_ReturnsToRestEachFullCycle()
+    {
+        var stage = new DelveStage();
+        try
+        {
+            stage.Build();
+            stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+            var rest = stage.MonsterScale;
+
+            stage.Process(0.6f); // partway into the 2s cycle's wind-up
+            var midBreath = stage.MonsterScale;
+            AssertThat(midBreath.X)
+                .OverrideFailureMessage("A monster mid-breath should not sit at its exact rest scale.")
+                .IsNotEqual(rest.X);
+
+            stage.Process(1.4f); // 0.6 + 1.4 = 2.0s exactly -- one full cycle, back at rest
+            var afterFullCycle = stage.MonsterScale;
+            AssertThat(afterFullCycle.X).IsEqualApprox(rest.X, 0.001f);
+            AssertThat(afterFullCycle.Y).IsEqualApprox(rest.Y, 0.001f);
+        }
+        finally
+        {
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void MonsterBreath_DeterministicForFixedDeltaSequence_NoRng()
+    {
+        float[] deltas = [0.033f, 0.05f, 0.1f, 0.02f, 0.4f, 0.033f, 0.7f, 0.6f];
+
+        var stageA = new DelveStage();
+        var stageB = new DelveStage();
+        try
+        {
+            stageA.Build();
+            stageB.Build();
+            stageA.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+            stageB.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+
+            foreach (var d in deltas)
+            {
+                stageA.Process(d);
+                stageB.Process(d);
+                AssertThat(stageA.MonsterScale.X)
+                    .OverrideFailureMessage("Same delta sequence, same starting state -- must produce bit-identical scale (no RNG, no wall-clock).")
+                    .IsEqual(stageB.MonsterScale.X);
+                AssertThat(stageA.MonsterScale.Y).IsEqual(stageB.MonsterScale.Y);
+            }
+        }
+        finally
+        {
+            stageA.Free();
+            stageB.Free();
+        }
+    }
+
+    [TestCase]
+    public void MonsterBreath_PausedFreezesMotion_ResumesOnceUnpaused()
+    {
+        var stage = new DelveStage();
+        try
+        {
+            stage.Build();
+            stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+
+            stage.Process(0.5f); // into the wind-up
+            var beforePause = stage.MonsterScale;
+
+            for (var i = 0; i < 10; i++)
+            {
+                stage.Process(0.3f, paused: true);
+            }
+
+            AssertThat(stage.MonsterScale.X)
+                .OverrideFailureMessage("A paused clock must freeze monster breathing -- scale drifted across 10 paused ticks.")
+                .IsEqual(beforePause.X);
+            AssertThat(stage.MonsterScale.Y).IsEqual(beforePause.Y);
+
+            stage.Process(0.1f); // unpaused again -- motion must resume, not stay frozen forever
+            AssertThat(stage.MonsterScale.X)
+                .OverrideFailureMessage("Breathing must resume once unpaused.")
+                .IsNotEqual(beforePause.X);
+        }
+        finally
+        {
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void MonsterSlain_StopsBreathing_NeverResumesUntilReEngaged()
+    {
+        var stage = new DelveStage();
+        try
+        {
+            stage.Build();
+            stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+            var rest = stage.MonsterScale;
+
+            stage.Process(0.5f);
+            AssertThat(stage.MonsterScale.X)
+                .OverrideFailureMessage("Sanity check: the monster should actually be breathing before it dies.")
+                .IsNotEqual(rest.X);
+
+            stage.RenderBeat(Beat(DelveBeatKind.MonsterSlain, floor: 1, hero: 1, dealt: 10, taken: 0), Heroes());
+
+            // Odd, non-cycle-aligned steps -- if breathing were still live, at least one of these
+            // would land mid-swell. A dead monster must sit pinned at rest on every single one.
+            for (var i = 0; i < 20; i++)
+            {
+                stage.Process(0.37f);
+                AssertThat(stage.MonsterScale.X)
+                    .OverrideFailureMessage("A slain monster must not resume breathing.")
+                    .IsEqualApprox(rest.X, 0.0001f);
+                AssertThat(stage.MonsterScale.Y).IsEqualApprox(rest.Y, 0.0001f);
+            }
+        }
+        finally
+        {
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void RepeatedEngageBreatheResetCycles_LeaveNoOrphanNodes()
+    {
+        var before = OrphanNodeCount();
+        var stage = new DelveStage();
+        try
+        {
+            stage.Build();
+            for (var i = 0; i < 25; i++)
+            {
+                stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+                for (var t = 0; t < 5; t++)
+                {
+                    stage.Process(0.4f);
+                }
+
+                stage.RenderBeat(Beat(DelveBeatKind.MonsterSlain, floor: 1, hero: 1, dealt: 10, taken: 0), Heroes());
+                stage.Process(0.4f);
+                stage.ResetState();
+            }
+        }
+        finally
+        {
+            stage.Free();
+        }
+
+        var leaked = OrphanNodeCount() - before;
+        AssertThat(leaked)
+            .OverrideFailureMessage($"{leaked} nodes leaked across repeated engage/breathe/reset cycles.")
+            .IsEqual(0);
+    }
+
     [TestCase]
     public void ManyDeathAndResetCycles_LeaveNoOrphanNodes()
     {

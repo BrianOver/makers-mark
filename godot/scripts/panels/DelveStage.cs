@@ -67,6 +67,19 @@ public sealed partial class DelveStage : Node2D
     private const float MonsterRestX = 760f;
     private const float MonsterY = 108f;
     private const float MonsterSlideSeconds = 0.35f;
+
+    // ── monster idle-breathe (U6, "give the Mine monsters motion") ─────────────────────────────
+    // All five committed monster minis are single frames (cave-rat/tunnel-spider/deep-ghoul/
+    // ore-golem/forgeworm), each its own ad-hoc canvas size — the owner's explicit decision was
+    // procedural motion on the existing frame, never new art/gait frames (that would need a
+    // variable-canvas non-humanoid extension to gen_town_sprites.py's fixed 40x64 bipedal rig,
+    // which is out of scope here). So: an eased swell-to-peak-then-release loop, applied as a
+    // Scale MULTIPLIER on top of <see cref="_monsterBaseScale"/> — never a flat pixel amount,
+    // since the five canvases are five different sizes. Same wind-up/settle discipline as every
+    // combat pose below, just looped forever instead of firing once.
+    private const float MonsterBreatheCycleSeconds = 2f;
+    private const float MonsterBreatheWindupFraction = 0.6f;
+    private const float MonsterBreatheAmplitude = 0.05f;
     private const float HpBarWidth = 56f;
     private const float HpBarHeight = 6f;
     private const float ExchangeHpStep = 1f / 3f;
@@ -147,6 +160,8 @@ public sealed partial class DelveStage : Node2D
     private float _monsterFlashRemaining;
     private float _monsterKnockback;
     private Color _monsterBaseTint = Colors.White;
+    private Vector2 _monsterBaseScale = Vector2.One;
+    private float _monsterBreatheElapsed;
 
     private readonly Dictionary<int, Sprite2D> _heroSprites = new();
     private readonly Dictionary<int, Color> _heroBaseModulate = new();
@@ -222,6 +237,13 @@ public sealed partial class DelveStage : Node2D
 
     /// <summary>The monster HP bar's current fill fraction, 0..1 (test hook).</summary>
     public float MonsterHpFraction { get; private set; } = 1f;
+
+    /// <summary>The monster sprite's current Scale (test/tuning hook, U6) — the read surface for
+    /// the idle-breathe loop (<see cref="AdvanceMonsterBreath"/>): a pure multiplier of <see
+    /// cref="_monsterBaseScale"/>, so this equals exactly <see cref="_monsterBaseScale"/> at rest
+    /// (cycle start/end, and always while hidden/dead) and swells/settles from there every
+    /// breath.</summary>
+    public Vector2 MonsterScale => _monsterSprite.Scale;
 
     /// <summary>True while a hero's pip row exists (test hook) — false before that hero has ever
     /// been engaged AND after <see cref="DelveBeatKind.SwallowedByDark"/> removes it forever.</summary>
@@ -305,11 +327,14 @@ public sealed partial class DelveStage : Node2D
         _monsterSlideProgress = 0f;
         _monsterFlashRemaining = 0f;
         _monsterKnockback = 0f;
+        _monsterBaseScale = Vector2.One;
+        _monsterBreatheElapsed = 0f;
         _floorChip.Text = string.Empty;
         if (_monsterSprite is not null)
         {
             _monsterSprite.Visible = false;
             _monsterSprite.Texture = null;
+            _monsterSprite.Scale = Vector2.One;
         }
 
         if (_hpBack is not null)
@@ -470,8 +495,16 @@ public sealed partial class DelveStage : Node2D
 
     /// <summary>Per-frame FX advance (accumulated delta only) — call AFTER <see
     /// cref="MineWatch"/>'s own figure bob (<c>AnimateFigures</c>) so every additive combat-pose
-    /// nudge below lands on top of the bob, not underneath it.</summary>
-    public void Process(float delta)
+    /// nudge below lands on top of the bob, not underneath it. <paramref name="paused"/> (U6)
+    /// freezes ONLY the new monster idle-breathe accumulator (<see cref="AdvanceMonsterBreath"/>)
+    /// — every other advance here (combat poses, hero fx, cloud fx, transients) is intentionally
+    /// untouched by it, preserving this method's pre-existing behavior exactly. Defaults to
+    /// <c>false</c> so <c>MineWatch</c>'s existing single-argument call site keeps compiling and
+    /// keeps behaving exactly as before — wiring the real <c>Clock.Playing</c> state through is a
+    /// one-line follow-up in <c>MineWatch._Process</c> (<c>_delveStage.Process((float)delta,
+    /// feedPaused);</c>), out of this unit's scope (<c>MineWatch.cs</c> is another lane's file this
+    /// round).</summary>
+    public void Process(float delta, bool paused = false)
     {
         if (!_built)
         {
@@ -479,7 +512,7 @@ public sealed partial class DelveStage : Node2D
         }
 
         ImpactPulse = Mathf.MoveToward(ImpactPulse, 0f, delta / ImpactPulseDecaySeconds);
-        AdvanceMonster(delta);
+        AdvanceMonster(delta, paused);
         AdvanceHeroFx(delta);
         AdvanceCombatPoses(delta);
         AdvancePips();
@@ -511,7 +544,8 @@ public sealed partial class DelveStage : Node2D
             return;
         }
 
-        ScaleSpriteToWidth(_monsterSprite, MonsterWidth);
+        _monsterBaseScale = ScaleFactorToWidth(_monsterSprite.Texture, MonsterWidth);
+        _monsterSprite.Scale = _monsterBaseScale; // correct size immediately, even before the first Process() breath tick
         _monsterSprite.Modulate = _monsterBaseTint;
         MonsterHpFraction = 1f;
         _monsterShouldShow = true;
@@ -521,7 +555,7 @@ public sealed partial class DelveStage : Node2D
 
     private void HideMonster() => _monsterShouldShow = false;
 
-    private void AdvanceMonster(float delta)
+    private void AdvanceMonster(float delta, bool paused)
     {
         var target = _monsterShouldShow ? 1f : 0f;
         _monsterSlideProgress = Mathf.MoveToward(_monsterSlideProgress, target, delta / MonsterSlideSeconds);
@@ -541,6 +575,8 @@ public sealed partial class DelveStage : Node2D
 
         _monsterSprite.Modulate = _monsterFlashRemaining > 0f ? Colors.White : _monsterBaseTint;
 
+        AdvanceMonsterBreath(delta, paused);
+
         var barVisible = _monsterSprite.Visible;
         _hpBack.Visible = barVisible;
         _hpFill.Visible = barVisible;
@@ -552,6 +588,52 @@ public sealed partial class DelveStage : Node2D
             _hpFill.Size = new Vector2(HpBarWidth * MonsterHpFraction, HpBarHeight);
         }
     }
+
+    /// <summary>U6 ("give the Mine monsters motion"): the single committed frame's own idle-alive
+    /// cue — an eased swell-then-release loop (<see cref="MonsterBreatheCurve"/>) applied as a
+    /// Scale MULTIPLIER on top of <see cref="_monsterBaseScale"/> (the per-monster width-
+    /// normalizing factor <see cref="ShowMonster"/> computes once per Engage — the five committed
+    /// canvases are five different pixel sizes, so breathing must scale relative to each monster's
+    /// own already-normalized size, never a flat pixel amount). Gated on <see
+    /// cref="_monsterShouldShow"/> (not mid-slide sprite visibility), so the monster reads as alive
+    /// from the moment it is engaged, and — the "dead monster never resumes breathing" contract —
+    /// <see cref="_monsterBreatheElapsed"/> is forced back to exactly zero and Scale pinned to <see
+    /// cref="_monsterBaseScale"/> the instant it is hidden (slain/fled/camped/surfaced past), so a
+    /// later Engage always starts a fresh breath, never a stale mid-cycle phase. <paramref
+    /// name="paused"/> freezes the accumulator outright — same "no-op while paused" contract <see
+    /// cref="JourneyPlayhead.Advance"/> uses for the beat feed. Transform only, no RNG, no
+    /// wall-clock, no engine Tween — same accumulated-delta contract as every other animator in
+    /// this codebase.</summary>
+    private void AdvanceMonsterBreath(float delta, bool paused)
+    {
+        if (!_monsterShouldShow)
+        {
+            _monsterBreatheElapsed = 0f;
+            _monsterSprite.Scale = _monsterBaseScale;
+            return;
+        }
+
+        if (!paused)
+        {
+            _monsterBreatheElapsed += delta;
+        }
+
+        var cyclePosition = _monsterBreatheElapsed % MonsterBreatheCycleSeconds;
+        var progress = cyclePosition / MonsterBreatheCycleSeconds;
+        var breathe = MonsterBreatheAmplitude * MonsterBreatheCurve(progress);
+        _monsterSprite.Scale = _monsterBaseScale * new Vector2(1f - breathe, 1f + breathe);
+    }
+
+    /// <summary>Eased swell (wind-up — drawing a breath, coiled as if about to strike) to the
+    /// cycle's peak at <see cref="MonsterBreatheWindupFraction"/>, then an eased release (settle)
+    /// back to rest by the cycle's end — asymmetric (a slow draw-in, a quicker release) rather than
+    /// a symmetric sine, the same "wind-up longer than the settle" shape <see cref="AttackCurveX"/>
+    /// already uses for the hero's own lunge. Returns 0 at both ends of the cycle (rest) and 1 at
+    /// the held peak — the caller scales this by <see cref="MonsterBreatheAmplitude"/>.</summary>
+    private static float MonsterBreatheCurve(float progress) =>
+        progress < MonsterBreatheWindupFraction
+            ? Mathf.Lerp(0f, 1f, EaseOut(progress / MonsterBreatheWindupFraction))
+            : Mathf.Lerp(1f, 0f, EaseIn((progress - MonsterBreatheWindupFraction) / (1f - MonsterBreatheWindupFraction)));
 
     // ── hero FX (hit-flash, quaff tint, damage numbers) — TINT only; see CombatPose for motion ──
 
@@ -986,13 +1068,15 @@ public sealed partial class DelveStage : Node2D
     private Vector2 HeroAnchor(int heroValue) =>
         _heroSprites.TryGetValue(heroValue, out var sprite) ? sprite.Position : new Vector2(140f, 150f);
 
-    private static void ScaleSpriteToWidth(Sprite2D sprite, float targetWidth)
+    /// <summary>The per-monster width-normalizing factor (five committed canvases, five different
+    /// pixel sizes) — returns the factor rather than mutating a sprite directly (U6: <see
+    /// cref="ShowMonster"/> now caches this as <see cref="_monsterBaseScale"/> so <see
+    /// cref="AdvanceMonsterBreath"/> can multiply the idle-breathe swell on top of it every frame
+    /// without re-deriving it from the texture each time).</summary>
+    private static Vector2 ScaleFactorToWidth(Texture2D? texture, float targetWidth)
     {
-        var width = sprite.Texture?.GetWidth() ?? 0;
-        if (width > 0)
-        {
-            sprite.Scale = Vector2.One * (targetWidth / width);
-        }
+        var width = texture?.GetWidth() ?? 0;
+        return width > 0 ? Vector2.One * (targetWidth / width) : Vector2.One;
     }
 
     private static string Titleize(string kind)

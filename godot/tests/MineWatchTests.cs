@@ -1323,6 +1323,78 @@ public class MineWatchTests
         }
     }
 
+    /// <summary>
+    /// U6: the monster's idle-breathe is the newest thing riding this pause contract, and it is
+    /// wired one level down (<c>DelveStage.Process(delta, paused)</c>) rather than in this file's
+    /// own loop — so <see cref="DelveStageTests"/> proving the breath freezes when told to does NOT
+    /// prove the game ever tells it to. This is the integration half: a real paused
+    /// <see cref="PhaseClock"/>, driven through the real <c>_Process</c>, must hold the monster's
+    /// pose still, and playing must let it move again. Dropping the <c>paused:</c> argument at the
+    /// call site compiles fine and would leave a monster breathing through a stopped clock.
+    /// </summary>
+    [TestCase]
+    public void Clock_Paused_MonsterBreathHoldsStill_Played_ItResumes()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var camp = CampedPartyWithFloors();
+            var state = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(camp) };
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            var clock = new PhaseClock(new SimAdapter(state));
+            clock.Play();
+            watch.Clock = clock;
+            watch._Process(100.0);
+
+            // Put a monster on stage explicitly. The camped fixture above reveals its beats but
+            // engages nothing, and a hidden monster holds its rest pose whether the clock runs or
+            // not — which would make the frozen-pose assertion below pass for the wrong reason. This
+            // is the same real DelveStage MineWatch owns, reached through its own public render
+            // path; only the beat is supplied by hand.
+            watch.Delve.RenderBeat(
+                new DelveBeat(
+                    DelveBeatKind.Engage, 1, null, "cave-rat", 0, 0,
+                    ImmutableSortedDictionary<int, int>.Empty, false),
+                state.Heroes);
+
+            clock.Pause();
+            watch._Process(0.17); // settle onto the frozen pose
+            var paused = watch.Delve.MonsterScale;
+
+            // 3 x 0.17s deliberately does NOT sum to a multiple of the 2s breathe cycle. An earlier
+            // version of this test advanced 8 x 0.25s = exactly one full cycle, so the pose returned
+            // to precisely where it started and the assertion passed even with the pause argument
+            // removed at the call site. A pause test that a full period can satisfy tests nothing.
+            for (var i = 0; i < 3; i++)
+            {
+                watch._Process(0.17);
+            }
+
+            AssertThat(watch.Delve.MonsterScale)
+                .OverrideFailureMessage(
+                    $"The monster kept breathing through a paused clock: {paused} -> " +
+                    $"{watch.Delve.MonsterScale}. MineWatch._Process must pass its own feedPaused " +
+                    "down to DelveStage.Process, the same contract _feed and _delveHead already use.")
+                .IsEqual(paused);
+
+            clock.Play();
+            watch._Process(0.5);
+
+            AssertThat(watch.Delve.MonsterScale)
+                .OverrideFailureMessage(
+                    "The monster's pose did not change after the clock resumed, so this test could " +
+                    "not have detected a stuck breath either way — check that a monster is on stage " +
+                    "at all in this fixture before trusting the paused half above.")
+                .IsNotEqual(paused);
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
     [TestCase]
     public void ManyMarchCampCycles_LeaveNoOrphanNodesAfterTeardown()
     {
