@@ -59,7 +59,8 @@ $parseTargets = @(
     (Join-Path $toolsDir 'agent-playtest\monkey.ps1'),
     (Join-Path $toolsDir 'agent-playtest\attached.ps1'),
     (Join-Path $toolsDir 'agent-playtest\scenario.ps1'),
-    (Join-Path $toolsDir 'agent-playtest\pilot.ps1')
+    (Join-Path $toolsDir 'agent-playtest\pilot.ps1'),
+    (Join-Path $toolsDir 'agent-playtest\retention.ps1')
 )
 foreach ($target in $parseTargets) {
     $tokens = $null
@@ -2763,6 +2764,164 @@ $wrongInteriorQuickTravelState = [pscustomobject]@{
 $wrongInteriorQuickTravelCmd = Get-PilotEnterInteriorCommand -State $wrongInteriorQuickTravelState -InteriorPrefix 'interior:forge' -BuildingKeyword 'forge' -PanelId 'Forge' -StationKeyword 'shelf' -QuickTravelBuilding 'Forge' -Memory $wrongInteriorQuickTravelMemory
 $parsedWrongInteriorQuickTravelCmd = $wrongInteriorQuickTravelCmd | ConvertFrom-Json
 Check ($parsedWrongInteriorQuickTravelCmd.action -eq 'key' -and $parsedWrongInteriorQuickTravelCmd.target -eq 'cancel') 'an enabled QuickTravel_Forge button seen from INSIDE a different room must not be pressed (EnterInterior no-ops there) -- must leave the wrong room first instead'
+
+# --- 22. runs/ retention (fix/the-pilot-plays-like-a-person): "clear out as you go" -------------
+# Every check below runs against a SYNTHETIC fixture tree under $env:TEMP -- never the real repo
+# runs/ -- per this repo's own testing rule for deletion-adjacent code. The fixture is built once,
+# used by every check in this section, and removed at the very end (a plain, scoped cleanup of a
+# directory THIS file itself just created, not an exercise of retention.ps1's own deletion logic).
+. (Join-Path $toolsDir 'agent-playtest\retention.ps1')
+
+function New-RetentionFixtureRun {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][string]$Name,
+        [int]$FrameCount = 2,
+        [switch]$NoFrames,
+        [switch]$NoArtifact
+    )
+    $runDir = Join-Path $Root $Name
+    New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+    if (-not $NoArtifact) {
+        Set-Content -Path (Join-Path $runDir 'findings.md') -Value '# findings' -Encoding ascii
+        Set-Content -Path (Join-Path $runDir 'turnlog.md') -Value '## Turn 1' -Encoding ascii
+        Set-Content -Path (Join-Path $runDir 'run-meta.json') -Value '{}' -Encoding ascii
+    }
+    if (-not $NoFrames) {
+        $framesDir = Join-Path $runDir 'frames'
+        New-Item -ItemType Directory -Path $framesDir -Force | Out-Null
+        for ($i = 1; $i -le $FrameCount; $i++) {
+            Set-Content -Path (Join-Path $framesDir ('turn-' + $i + '.png')) -Value 'not a real png, just fixture bytes' -Encoding ascii
+        }
+    }
+    return $runDir
+}
+
+function Set-RetentionFixtureAge {
+    param([Parameter(Mandatory)][string]$RunDir, [Parameter(Mandatory)][datetime]$WriteTimeUtc)
+    Get-ChildItem -Path $RunDir -Recurse -File | ForEach-Object { $_.LastWriteTimeUtc = $WriteTimeUtc }
+}
+
+$retentionFixtureRoot = Join-Path $env:TEMP ('mm-retention-test-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $retentionFixtureRoot -Force | Out-Null
+$retentionNowUtc = (Get-Date).ToUniversalTime()
+
+# --- Test-PathIsUnderRoot: exact match, real nesting, and the string-prefix trap ----------------
+Check (Test-PathIsUnderRoot -Path $retentionFixtureRoot -Root $retentionFixtureRoot) 'Test-PathIsUnderRoot must treat the root itself as under the root'
+Check (Test-PathIsUnderRoot -Path (Join-Path $retentionFixtureRoot 'a\b') -Root $retentionFixtureRoot) 'Test-PathIsUnderRoot must accept a real nested path'
+Check (-not (Test-PathIsUnderRoot -Path (Split-Path -Parent $retentionFixtureRoot) -Root $retentionFixtureRoot)) 'Test-PathIsUnderRoot must reject the PARENT of the root'
+# The trap this function exists to avoid: a naive string StartsWith would wrongly accept a SIBLING
+# directory whose name happens to start with the same characters as the root (no separator between
+# them), e.g. root "...\mm-retention-test-abc" and candidate "...\mm-retention-test-abcXYZ".
+$siblingLookalike = $retentionFixtureRoot + 'XYZ'
+Check (-not (Test-PathIsUnderRoot -Path $siblingLookalike -Root $retentionFixtureRoot)) 'Test-PathIsUnderRoot must reject a sibling whose name merely starts with the same characters (no separator) as the root'
+
+# --- Find-PlaytestRunDirectories: only a frames/ dir WITH a sibling artifact counts --------------
+$fixtureRealRun = New-RetentionFixtureRun -Root $retentionFixtureRoot -Name 'real-run'
+$fixtureFramesNoArtifact = New-RetentionFixtureRun -Root $retentionFixtureRoot -Name 'frames-no-artifact' -NoArtifact
+$fixtureArtifactNoFrames = New-RetentionFixtureRun -Root $retentionFixtureRoot -Name 'artifact-no-frames' -NoFrames
+Set-RetentionFixtureAge -RunDir $fixtureRealRun -WriteTimeUtc $retentionNowUtc
+Set-RetentionFixtureAge -RunDir $fixtureFramesNoArtifact -WriteTimeUtc $retentionNowUtc
+Set-RetentionFixtureAge -RunDir $fixtureArtifactNoFrames -WriteTimeUtc $retentionNowUtc
+
+$foundRuns = Find-PlaytestRunDirectories -RunsRoot $retentionFixtureRoot
+$foundNames = @($foundRuns | ForEach-Object { Split-Path -Leaf $_.RunDir })
+Check ($foundNames -contains 'real-run') 'Find-PlaytestRunDirectories must find a directory with both frames/ and a real artifact file'
+Check (-not ($foundNames -contains 'frames-no-artifact')) 'Find-PlaytestRunDirectories must NOT match a bare frames/ folder with no run artifact next to it'
+Check (-not ($foundNames -contains 'artifact-no-frames')) 'Find-PlaytestRunDirectories must NOT match a run directory with no frames/ subfolder at all (nothing to prune)'
+
+# Clean up the three probe-only fixtures before building the age-graded set below, so later
+# Get-PlaytestRetentionPlan checks are not confused by them.
+Remove-Item -Path $fixtureRealRun -Recurse -Force
+Remove-Item -Path $fixtureFramesNoArtifact -Recurse -Force
+Remove-Item -Path $fixtureArtifactNoFrames -Recurse -Force
+
+# --- Get-PlaytestRetentionPlan: keep-newest floor, min-age floor, protect-path, empty-frames -----
+# Seven runs, newest (run-07) to oldest (run-01), ages chosen to land in every branch with
+# -KeepNewest 3 -MinAgeMinutes 30:
+#   run-07 (0 min), run-06 (5 min), run-05 (10 min)  -> index 0,1,2 -> keep-recent (newest floor)
+#   run-04 (15 min)                                  -> index 3, age < 30 -> keep-too-recent
+#   run-03 (60 min), run-02 (120 min)                -> index 4,5, age >= 30 -> prune
+#   run-01 (240 min)                                 -> index 6, explicitly protected -> keep-protected
+$ages = @{ 'run-07' = 0; 'run-06' = 5; 'run-05' = 10; 'run-04' = 15; 'run-03' = 60; 'run-02' = 120; 'run-01' = 240 }
+foreach ($name in $ages.Keys) {
+    $dir = New-RetentionFixtureRun -Root $retentionFixtureRoot -Name $name -FrameCount 3
+    Set-RetentionFixtureAge -RunDir $dir -WriteTimeUtc $retentionNowUtc.AddMinutes(-1 * $ages[$name])
+}
+$emptyFramesRun = New-RetentionFixtureRun -Root $retentionFixtureRoot -Name 'run-empty-frames' -FrameCount 0
+Set-RetentionFixtureAge -RunDir $emptyFramesRun -WriteTimeUtc $retentionNowUtc.AddMinutes(-500)
+
+$protectedPath = Join-Path $retentionFixtureRoot 'run-01'
+$plan = Get-PlaytestRetentionPlan -RunsRoot $retentionFixtureRoot -KeepNewest 3 -MinAgeMinutes 30 -ProtectPaths @($protectedPath) -NowUtc $retentionNowUtc
+
+function Get-PlanAction {
+    param($Plan, [string]$Name)
+    $row = @($Plan | Where-Object { (Split-Path -Leaf $_.RunDir) -eq $Name }) | Select-Object -First 1
+    if (-not $row) { return $null }
+    return $row.Action
+}
+
+Check ((Get-PlanAction $plan 'run-07') -eq 'keep-recent') ('run-07 (0 min old, newest) must be keep-recent, got ' + (Get-PlanAction $plan 'run-07'))
+Check ((Get-PlanAction $plan 'run-06') -eq 'keep-recent') ('run-06 must be keep-recent, got ' + (Get-PlanAction $plan 'run-06'))
+Check ((Get-PlanAction $plan 'run-05') -eq 'keep-recent') ('run-05 must be keep-recent, got ' + (Get-PlanAction $plan 'run-05'))
+Check ((Get-PlanAction $plan 'run-04') -eq 'keep-too-recent') ('run-04 (15 min old, past the keep-newest floor but under 30 min) must be keep-too-recent, got ' + (Get-PlanAction $plan 'run-04'))
+Check ((Get-PlanAction $plan 'run-03') -eq 'prune') ('run-03 (60 min old) must be prune, got ' + (Get-PlanAction $plan 'run-03'))
+Check ((Get-PlanAction $plan 'run-02') -eq 'prune') ('run-02 (120 min old) must be prune, got ' + (Get-PlanAction $plan 'run-02'))
+Check ((Get-PlanAction $plan 'run-01') -eq 'keep-protected') ('run-01 (240 min old, but in -ProtectPaths) must be keep-protected, got ' + (Get-PlanAction $plan 'run-01'))
+Check ((Get-PlanAction $plan 'run-empty-frames') -eq 'keep-empty') ('a run whose frames/ holds zero files must be keep-empty (nothing to free), got ' + (Get-PlanAction $plan 'run-empty-frames'))
+
+# --- Invoke-PlaytestRetentionPrune: only prunes frames/, never the run dir, never anything outside
+# RunsRoot, never a kept row ------------------------------------------------------------------------
+$pruneResults = Invoke-PlaytestRetentionPrune -RunsRoot $retentionFixtureRoot -Plan $plan
+$removedRunDirs = @($pruneResults | Where-Object { $_.Removed } | ForEach-Object { Split-Path -Leaf $_.RunDir })
+Check (($removedRunDirs | Sort-Object) -join ',' -eq 'run-02,run-03') ('exactly run-02 and run-03 must have been pruned, got [' + (($removedRunDirs | Sort-Object) -join ',') + ']')
+
+foreach ($keptName in @('run-07', 'run-06', 'run-05', 'run-04', 'run-01')) {
+    $keptFramesDir = Join-Path (Join-Path $retentionFixtureRoot $keptName) 'frames'
+    $keptFileCount = @(Get-ChildItem -Path $keptFramesDir -File -ErrorAction SilentlyContinue).Count
+    Check ($keptFileCount -eq 3) ($keptName + ' must keep all 3 of its frame files untouched, found ' + $keptFileCount)
+}
+foreach ($prunedName in @('run-02', 'run-03')) {
+    $prunedFramesDir = Join-Path (Join-Path $retentionFixtureRoot $prunedName) 'frames'
+    Check (-not (Test-Path $prunedFramesDir)) ($prunedName + ' frames/ must have been removed')
+    $prunedFindings = Join-Path (Join-Path $retentionFixtureRoot $prunedName) 'findings.md'
+    Check (Test-Path $prunedFindings) ($prunedName + ' findings.md (the conclusions) must SURVIVE its own frames/ being pruned')
+    $prunedTurnlog = Join-Path (Join-Path $retentionFixtureRoot $prunedName) 'turnlog.md'
+    Check (Test-Path $prunedTurnlog) ($prunedName + ' turnlog.md must SURVIVE its own frames/ being pruned')
+}
+
+# The active-run guarantee, proven directly rather than only inferred from the age/keep-newest
+# math above: a row whose FramesDir resolves OUTSIDE the given -RunsRoot must be refused even if
+# its own Action somehow reads 'prune' (a corrupted/hand-built plan, or a future bug upstream of
+# this function) -- containment is re-checked at deletion time, not trusted from the plan alone.
+$outsideRoot = Join-Path $env:TEMP ('mm-retention-outside-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $outsideRoot -Force | Out-Null
+Set-Content -Path (Join-Path $outsideRoot 'sentinel.png') -Value 'must never be deleted' -Encoding ascii
+$maliciousPlan = @([pscustomobject]@{
+    RunDir = $outsideRoot; FramesDir = $outsideRoot; NewestWriteUtc = $retentionNowUtc; AgeMinutes = 999
+    SizeBytes = 10; FileCount = 1; ProtectedPath = $false; Action = 'prune'
+})
+$maliciousResults = Invoke-PlaytestRetentionPrune -RunsRoot $retentionFixtureRoot -Plan $maliciousPlan
+Check ($maliciousResults[0].Removed -eq $false) 'a FramesDir resolving OUTSIDE -RunsRoot must be REFUSED, never deleted, regardless of its own Action field'
+Check (Test-Path (Join-Path $outsideRoot 'sentinel.png')) 'the outside-root sentinel file must still exist after the refused prune attempt'
+Remove-Item -Path $outsideRoot -Recurse -Force
+
+# WhatIf must report without touching disk.
+$whatIfPlan = Get-PlaytestRetentionPlan -RunsRoot $retentionFixtureRoot -KeepNewest 0 -MinAgeMinutes 0 -NowUtc $retentionNowUtc
+$whatIfTarget = @($whatIfPlan | Where-Object { (Split-Path -Leaf $_.RunDir) -eq 'run-07' -and $_.Action -eq 'prune' })
+if ($whatIfTarget.Count -gt 0) {
+    $whatIfResults = Invoke-PlaytestRetentionPrune -RunsRoot $retentionFixtureRoot -Plan $whatIfTarget -WhatIf
+    Check ($whatIfResults[0].Removed -eq $false) '-WhatIf must never actually remove anything'
+    Check (Test-Path (Join-Path $retentionFixtureRoot 'run-07\frames')) '-WhatIf must leave the frames directory on disk'
+}
+
+# Report lines must name every row, never silently skip a keep (this repo's own "silent deletion is
+# its own failure shape" rule applies just as much to silent keeps).
+$reportLines = Get-PlaytestRetentionReportLines -Plan $plan -PruneResults $pruneResults
+Check (($reportLines | Where-Object { $_ -like '*run-01*keep-protected*' }).Count -gt 0) 'report must explicitly name run-01 as keep-protected, not omit it'
+Check (($reportLines | Where-Object { $_ -like '*freed*' }).Count -gt 0) 'report must include a total-freed summary line'
+
+Remove-Item -Path $retentionFixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
 
 # --- Summary -----------------------------------------------------------------------------------
 if ($failures.Count -gt 0) {
