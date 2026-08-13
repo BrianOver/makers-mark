@@ -118,10 +118,10 @@ public class IconRegistryTests
     [TestCase]
     public void Lit_ShippedPair_ReturnsCanvasTextureWithDiffuseAndNormal()
     {
-        // V4a: the shipped pilot pair (town-tavern.png + town-tavern_n.png) resolves to a
-        // CanvasTexture carrying BOTH the diffuse and the normal — the input a lit Sprite2D
-        // needs (proven by lit_tavern_pilot.tscn).
-        var lit = IconRegistry.Lit("town-tavern");
+        // V4a: a shipped diffuse+normal pair (hero-mystic.png + hero-mystic_n.png, U5-era
+        // replacement for the deleted town-tavern pilot pair) resolves to a CanvasTexture
+        // carrying BOTH the diffuse and the normal — the input a lit Sprite2D needs.
+        var lit = IconRegistry.Lit("hero-mystic");
         AssertThat(lit).IsNotNull();
         AssertThat(lit!.DiffuseTexture).IsNotNull();
         AssertThat(lit.NormalTexture).IsNotNull();
