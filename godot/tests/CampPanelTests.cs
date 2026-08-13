@@ -7,6 +7,7 @@ using GameSim.Contracts;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
+using GodotClient.Audio;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -240,6 +241,68 @@ public class CampPanelTests
 
             AssertThat(ui.Camp.Visible).IsTrue(); // slate held through the Deep phase to stay legible
             AssertThat(RenderedText(ui.Camp)).Contains(rejected.Reason);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── U2 (loud-failures-and-quiet-channels plan): a real send makes a sound, a refusal none ──
+    // Before this unit CampPanel had no cue on Send at all. Mirrors
+    // ImmediateActionsDoNotReplayThePhaseTests' own technique (a real button press, then read
+    // AudioDirector.RecentCues).
+
+    [TestCase]
+    public void Send_RealDelivery_PlaysCoinCue()
+    {
+        var ui = MountAtCamp();
+        try
+        {
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+            audio!.ClearRecentCues();
+
+            Press(ui.Camp, "CampSend_1"); // the held salve is the sole option — a real delivery
+
+            var delivered = ui.Adapter.CurrentState.EventLog.OfType<SupplyDelivered>().Any(e => e.To.Value == 1);
+            AssertThat(delivered).OverrideFailureMessage("Precondition: the send must actually land.").IsTrue();
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"A real supply delivery played [{string.Join(", ", audio.RecentCues)}] — Coin was " +
+                    "never among them. The runner's fee is a real gold transaction and must be audible.")
+                .Contains(Cue.Coin);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Send_RefusedSecondDelivery_PlaysNoCue()
+    {
+        var ui = MountAtCamp();
+        try
+        {
+            Press(ui.Camp, "CampSend_1"); // the real delivery — lands, plays Coin
+
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+            audio!.ClearRecentCues();
+
+            Press(ui.Camp, "CampSend_1"); // one runner per party per day — this one is refused
+
+            var rejected = ui.Adapter.LastRejections.Single(r => r.Action is SendSupplyAction);
+            AssertThat(rejected.Reason).Contains("One runner per party per day");
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"A refused send played [{string.Join(", ", audio.RecentCues)}] — a refusal must " +
+                    "play no cue at all, not even a rejection sound (AE4: the panel never enforces a " +
+                    "rule, and this verb's own rejection prose already carries the reason).")
+                .IsEmpty();
         }
         finally
         {

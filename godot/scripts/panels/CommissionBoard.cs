@@ -123,7 +123,16 @@ public partial class CommissionBoard : Control
         var acceptAction = new AcceptCommissionAction(hero1);
         var acceptLegal = ActionLegality.IsLegal(state, acceptAction, state.Phase) && !expired;
         var accept = new Button { Name = $"CommissionAccept_{commission.Hero.Value}", Text = "Accept" };
-        accept.Pressed += () => Adapter?.Queue(new AcceptCommissionAction(hero1));
+        accept.Pressed += () =>
+        {
+            Adapter?.Queue(new AcceptCommissionAction(hero1));
+            // U2 (loud-failures-and-quiet-channels plan): CommissionBoard had ZERO Cue.Play call
+            // sites — Accept is an ordinary confirm press (Cue.Click's own doc: "any ordinary
+            // button press that isn't one of the specific cues below"), unconditional like every
+            // other queue-then-play call site in this codebase (the button is only enabled when
+            // the action is legal).
+            GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Click);
+        };
         accept.Disabled = Adapter is null || !acceptLegal;
         accept.TooltipText = Adapter is null
             ? string.Empty
@@ -135,7 +144,15 @@ public partial class CommissionBoard : Control
         var declineAction = new DeclineCommissionAction(hero1);
         var declineLegal = ActionLegality.IsLegal(state, declineAction, state.Phase);
         var decline = new Button { Name = $"CommissionDecline_{commission.Hero.Value}", Text = "Decline" };
-        decline.Pressed += () => Adapter?.Queue(new DeclineCommissionAction(hero1));
+        decline.Pressed += () =>
+        {
+            Adapter?.Queue(new DeclineCommissionAction(hero1));
+            // Distinguishable from Accept — a refusal must not sound like a success. Cue.Rejected's
+            // own low, dull "no, without being shrill about it" character (its doc comment) fits a
+            // declined offer as well as a sim-refused action; no existing cue names "player declined"
+            // more precisely, so this reuses it rather than adding a new cue for one rare verb.
+            GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Rejected);
+        };
         decline.Disabled = Adapter is null || !declineLegal;
         decline.TooltipText = Adapter is null
             ? string.Empty
