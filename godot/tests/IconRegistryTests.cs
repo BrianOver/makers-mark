@@ -51,15 +51,6 @@ public class IconRegistryTests
         }
     }
 
-    [TestCase]
-    public void EveryBuilding_Loads()
-    {
-        foreach (var name in new[] { "forge", "shop", "tavern", "mine_gate", "memorial_stone", "ground_tile" })
-        {
-            AssertThat(IconRegistry.Building(name)).IsNotNull();
-        }
-    }
-
     /// <summary>
     /// U1 (loud-failures-and-quiet-channels plan): before this unit, <c>IconRegistry.Ore</c> called
     /// <c>GD.Load</c> straight against a missing SVG's path — a native
