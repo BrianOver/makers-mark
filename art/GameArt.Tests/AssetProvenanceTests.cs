@@ -124,8 +124,8 @@ public class AssetProvenanceTests
     [Fact]
     public void DocumentedUnreproducibleIds_NeverActuallyHaveABuildJson()
     {
-        // If a listed id gains a build.json later (someone backfills it, the way U9 backfilled
-        // town-forge/town-market/town-mine-gate from a recovered seed), its entry here is stale —
+        // If a listed id gains a build.json later (someone backfills it from a recovered seed the
+        // way market/tavern/mine-gate and the five monster minis were), its entry here is stale —
         // remove it rather than let a passing test hide a now-provenanced asset from a reader.
         var buildIds = BuildJsonIds();
         var stale = DocumentedUnreproducibleIds.Where(buildIds.Contains).ToList();
@@ -150,7 +150,6 @@ public class AssetProvenanceTests
     [InlineData("market")]
     [InlineData("tavern")]
     [InlineData("mine-gate")]
-    [InlineData("town-tavern")]
     [InlineData("town2d-monster-cave-rat")]
     [InlineData("town2d-monster-tunnel-spider")]
     [InlineData("town2d-monster-deep-ghoul")]
@@ -166,19 +165,25 @@ public class AssetProvenanceTests
         Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("Model").ValueKind);
     }
 
+    /// <summary>
+    /// The whole <c>town-*</c> family (<c>town-forge</c>, <c>town-market</c>, <c>town-mine-gate</c>,
+    /// <c>town-tavern</c>) was deleted with its art in the same wave as this backfill — the LitOverlay
+    /// scene that drew it is long gone. Provenance for art that no longer exists is an orphan record,
+    /// so those four <c>build.json</c> files went with the PNGs. This pins the absence: a future
+    /// session that re-adds one without re-adding the art is re-creating the orphan.
+    /// </summary>
     [Theory]
     [InlineData("town-forge")]
     [InlineData("town-market")]
     [InlineData("town-mine-gate")]
-    public void U9BackfilledIds_WithARecoveredSeed_AreHonestlyMarkedLocked(string id)
+    [InlineData("town-tavern")]
+    public void DeletedTownOverlayIds_HaveNoOrphanedProvenanceRecord(string id)
     {
-        // Unlike town-tavern (no seed survives anywhere), these three have a real seed logged in
-        // art/pipeline/seeds.generated.md -- U9 backfilled real provenance, not a legacy marker.
-        var path = Path.Combine(RepoRoot(), "art", "build", $"{id}.build.json");
-        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+        var buildJson = Path.Combine(RepoRoot(), "art", "build", $"{id}.build.json");
+        var art = Path.Combine(RepoRoot(), "godot", "assets", "art", $"{id}.png");
 
-        Assert.Equal("locked", doc.RootElement.GetProperty("Status").GetString());
-        Assert.True(doc.RootElement.GetProperty("Seed").GetInt64() > 0);
-        Assert.False(string.IsNullOrWhiteSpace(doc.RootElement.GetProperty("Model").GetString()));
+        Assert.False(File.Exists(art), $"{id}.png is back — if the art returned, its provenance should too.");
+        Assert.False(File.Exists(buildJson),
+            $"{id}.build.json describes art that no longer exists ({art}). Delete the record or restore the art.");
     }
 }
