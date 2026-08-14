@@ -17,7 +17,7 @@ Full stage flow:
 ComfyUI (SDXL)  ->  cutout.py (BiRefNet)  ->  normalmap.py (Sobel)  ->  Godot import
    generate            <id>.png RGBA            <id>_n.png              Sprite2D + Light2D
       |                     |                       |                        |
-  candidates/          candidates/             candidates/          godot/assets/art/ (LFS)
+  candidates/          candidates/             candidates/          godot/assets/art/
   (gitignored)                                                       curated pairs only
 ```
 
@@ -145,12 +145,12 @@ toggle, not the script.
 
 ## 4. Import into Godot + commit (curated pairs only)
 
-On the **pinned engine** (`.godot-version`), copy the curated pair into the LFS
+On the **pinned engine** (`.godot-version`), copy the curated pair into the
 art tree and let Godot mint the `.import` sidecar:
 
 ```
-godot/assets/art/<id>.png       # diffuse   (LFS)
-godot/assets/art/<id>_n.png     # normal    (LFS)
+godot/assets/art/<id>.png       # diffuse
+godot/assets/art/<id>_n.png     # normal
 godot/assets/art/<id>.png.import
 godot/assets/art/<id>_n.png.import
 ```
@@ -159,11 +159,41 @@ Layout is **flat** (no `<track>/` subdirs) — the shipped registry
 (`IconRegistry.Art` → `res://assets/art/<name>.png`) and the pilot are flat; the
 null-tolerant *name* is the contract, not the path.
 
-`godot/assets/art/**/*.png` is **git-LFS**-tracked. Only curated, committed pairs
+**These PNGs are plain git blobs, NOT git-LFS.** This section used to say LFS, and
+`art-pipeline-architecture.md` §Repo layout still lists it as a design requirement
+(`filter=lfs diff=lfs merge=lfs`), but that filter was never added:
+`.gitattributes:25` carries only `godot/assets/art/**/*.png -text`, and every
+committed sibling — checked with `git cat-file -p HEAD:<path>` — is raw PNG bytes
+rather than a pointer. Corrected here rather than in the architecture doc because
+this is the runbook a session actually follows; if LFS is wanted later it is a
+`.gitattributes` change plus a history migration, not a doc edit. Keep icons small
+(see the sizing note below) and the plain-blob tree stays cheap.
+
+Only curated, committed pairs
 go here — `art/pipeline/candidates/` stays gitignored. Then write the build-half
 `art/build/<id>.build.json` (seed, model, sampler/scheduler, diffuse+normal
 sha256, uid, provenance, `Status: locked`) per the architecture doc, and record
 the asset in `seeds.generated.md`.
+
+### Sizing — resample to the draw size before committing
+
+**The spec canvas is a generation size, not a ship size.** Resample the cutout
+offline (LANCZOS) so its long edge is roughly the box it is actually drawn into,
+and commit that. `UiKit.ArtRect` sets `ExpandMode.IgnoreSize` +
+`KeepAspectCentered`, so the texture is scaled into the caller's box no matter
+what it ships at — a bigger PNG buys nothing but repo weight and per-frame
+downscaling.
+
+| Surface | Box | Constant |
+|---|---|---|
+| Item icon (shop shelf, forge recipe row, bounty card) | 56 px | `ShopPanel.ItemArtSize` |
+| Hero portrait tile | 96 px | `UiKit` `PortraitSize` |
+
+A 2× reserve over the box is a reasonable hedge; 9× is not. The 42 item icons
+committed before this rule ship at 200-500 px against a 56 px box — re-sizing
+them is a cheap offline pass needing no GPU and no regeneration. A **runtime**
+`Scale` knob is the wrong fix and has been reverted twice (PR #471 sprites,
+PR #487 props).
 
 ## Files
 
