@@ -1,5 +1,6 @@
 using System;
 using Godot;
+using GodotClient.Tools;
 
 namespace GodotClient.Ui;
 
@@ -349,6 +350,8 @@ public static class UiKit
         // "Soldier/'s/Longs/word" reproduce on exactly this branch (the rival catalog's items
         // carry no committed art, so every rival-shelf card hits this placeholder, not the
         // real-art branch above).
+        WarnOnceOnArtMiss(artKey);
+
         var placeholder = new PanelContainer
         {
             Name = "ArtRectFallback",
@@ -376,6 +379,43 @@ public static class UiKit
 
         return placeholder;
     }
+
+    /// <summary>Art keys already reported missing this process — <see cref="ArtRect"/> is rebuilt on
+    /// every panel refresh, so without this an absent icon would push one warning per redraw and
+    /// bury every other anomaly in the playtest log.</summary>
+    private static readonly System.Collections.Generic.HashSet<string> ArtMissWarned =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Announce the one degrade in this file a player actually sees: a requested art id had no
+    /// committed pixels, so the caller gets a captioned placeholder box instead of the thing.
+    ///
+    /// <para>This is the log whose absence let six craftable Tier 8-14 recipes ship with no icon
+    /// and no playtest run ever notice — the fallback is deliberately graceful, and graceful with
+    /// no message is indistinguishable from working. <see cref="IconRegistry.Art"/> and
+    /// <c>TryArt</c> stay silent on purpose: they are also the probe primitive for legitimately
+    /// optional lookups (a flat icon has no <c>_n</c> normal map; <c>TownAssets2D.ForHero</c> walks
+    /// a fallback ladder on purpose), so warning there would cry wolf. THIS site is the one that
+    /// only runs when a real placeholder is about to be drawn.</para>
+    ///
+    /// <para>Once per key per process, so `EngineLogAnomalies.Scan` sees each distinct missing id
+    /// exactly once no matter how many times its panel is redrawn.</para>
+    /// </summary>
+    private static void WarnOnceOnArtMiss(string artKey)
+    {
+        if (ArtMissWarned.Add(artKey))
+        {
+            EngineDistress.Warn(
+                $"[UiKit] no committed art for '{artKey}' — drawing a captioned placeholder box in "
+                + "its place. The panel still works; the player sees a glyph and a name instead of "
+                + "the art.");
+        }
+    }
+
+    /// <summary>Test-only: forget which art keys have been reported, so a test that asserts the
+    /// warning fires is not silenced by an earlier test in the same process having already seen the
+    /// same key. Mirrors <see cref="EngineDistress.ResetForTests"/>'s purpose.</summary>
+    public static void ResetArtMissWarningsForTests() => ArtMissWarned.Clear();
 
     /// <summary>Build an <see cref="ArtRect"/> caption label: word-wrapped (never mid-word) by
     /// default, or single-line ellipsized when <paramref name="ellipsize"/> is true — the roster

@@ -1,7 +1,10 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using Godot;
 using GameSim.Contracts;
+using GameSim.Economy;
 using GodotClient.Tools;
 
 namespace GodotClient;
@@ -108,6 +111,35 @@ public static class IconRegistry
         return texture;
     }
 
+    /// <summary>Rival catalog recipe ids, read off the sim's own table rather than hand-listed, so a
+    /// future rival line is covered the day it lands. Adapter-side only — no sim edit needed, since
+    /// <c>RivalCatalog.Entries</c> is already public data.</summary>
+    private static readonly HashSet<string> RivalRecipeIds =
+        RivalCatalog.Entries.Select(e => e.RecipeId).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The art id for an item a player can actually SEE, given its recipe and slot. Per-recipe art
+    /// normally (<c>item-&lt;recipeId&gt;</c>); the slot's CATEGORY sprite for a rival catalog line.
+    ///
+    /// <para><b>Why this exists as well as <see cref="RivalCategoryArtId"/>.</b> U7 made the rival
+    /// SHELF use category art, because a synthetic catalog key like <c>"rival-blade-2"</c> has no
+    /// committed art and, per that ruling, never will. But rival goods do not stay on the shelf —
+    /// heroes buy them, wear them, and die in them, so the same items reappear on the roster card
+    /// and the tavern's gear list, and those two surfaces still composed the per-recipe id. Result:
+    /// every hero carrying rival kit showed a captioned placeholder box where its icon belongs.
+    /// Measured, not theorised: a five-run <c>FullPlaytest</c> reported
+    /// <c>item-rival-blade-2</c> and <c>item-rival-shield-1</c> as art misses the moment
+    /// <c>UiKit.ArtRect</c> started logging them — the previous run of the same tool, on the same
+    /// build minus that log, reported the game clean.</para>
+    ///
+    /// <para>Deliberately narrow: ONLY rival ids redirect. Any other item whose art is missing keeps
+    /// hitting the placeholder and its warning, because that is a real gap someone should fix — the
+    /// six forward-ladder recipes were exactly that, and a blanket "fall back to the slot glyph"
+    /// rule would have hidden them for another few months.</para>
+    /// </summary>
+    public static string ItemArtId(string recipeId, ItemSlot slot) =>
+        RivalRecipeIds.Contains(recipeId) ? RivalCategoryArtId(slot) : AssetCatalog.ItemIconId(recipeId);
+
     public static Texture2D Glyph(string name) => Load(IconDir, name); // gold, bounty, gossip, depths, skull, rune
 
     /// <summary>
@@ -178,20 +210,45 @@ public static class IconRegistry
         return result;
     }
 
+    /// <summary>
+    /// The manifest, loaded once and cached. Both degrade paths below announce themselves — an
+    /// absent or corrupt manifest is the single loudest failure this client can suffer quietly,
+    /// because <see cref="Has"/> gates <see cref="TryArt"/>, so "nothing present" means EVERY
+    /// generated texture in the game silently becomes a placeholder box at once. `ASSETS.md`
+    /// carried this as a known open risk ("quieter than the audio equivalent, which warns. Not
+    /// closed; not yet bitten") until the ladder-icon batch showed what a quiet art miss actually
+    /// costs: six recipes shipped iconless and no playtest run ever reported it.
+    /// Warning here (rather than at each caller) fires at most once per process because of the
+    /// cache, and `EngineLogAnomalies.Scan` turns it into a real playtest anomaly.
+    /// </summary>
     private static Dictionary<string, ManifestEntry> Manifest()
     {
         if (_manifestCache is not null) return _manifestCache;
 
         try
         {
-            _manifestCache = Godot.FileAccess.FileExists(ManifestPath)
-                ? ParseManifest(Godot.FileAccess.Open(ManifestPath, Godot.FileAccess.ModeFlags.Read).GetAsText())
-                : new Dictionary<string, ManifestEntry>();
+            if (Godot.FileAccess.FileExists(ManifestPath))
+            {
+                _manifestCache = ParseManifest(
+                    Godot.FileAccess.Open(ManifestPath, Godot.FileAccess.ModeFlags.Read).GetAsText());
+            }
+            else
+            {
+                EngineDistress.Warn(
+                    $"[IconRegistry] no art manifest at {ManifestPath} — EVERY generated texture will "
+                    + "resolve as absent and draw a placeholder. Run art/pipeline/gen-manifest.ps1; a "
+                    + "partial checkout or a missed regeneration is the usual cause.");
+                _manifestCache = new Dictionary<string, ManifestEntry>();
+            }
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
             // A corrupted manifest degrades to "nothing present" rather than crashing the UI —
-            // the same null-tolerant contract Art/Lit already give callers.
+            // the same null-tolerant contract Art/Lit already give callers — but it says so now.
+            EngineDistress.Warn(
+                $"[IconRegistry] art manifest at {ManifestPath} would not parse ({ex.GetType().Name}: "
+                + $"{ex.Message}) — degrading to 'nothing present', so EVERY generated texture will "
+                + "draw a placeholder. Regenerate it with art/pipeline/gen-manifest.ps1.");
             _manifestCache = new Dictionary<string, ManifestEntry>();
         }
         return _manifestCache;
