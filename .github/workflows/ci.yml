@@ -1,30 +1,117 @@
 name: CI
 
-# Three lanes: sim-tests (fast, no Godot), balance-sim, engine-tests (headless Godot).
+# Three required lanes: sim-tests (fast, no Godot), balance-sim, engine-tests (headless Godot).
+#
+# sim-tests is now an AGGREGATE gate over sim-shard (4 parallel shards) + aux-tests, not a job that
+# runs tests itself. That shape is deliberate: the branch ruleset requires a check literally named
+# "sim-tests", so sharding under a new name would have required a branch-protection edit — an
+# owner-gated operation — and would have left every open PR unmergeable in the window between the
+# workflow landing and the ruleset catching up. Keeping the name means the speedup needs no ruleset
+# change at all.
 on:
   pull_request:
   push:
     branches: [main]
 
+# Supersede in-flight runs on a branch when new commits land — but NEVER on main, whose push run is
+# the post-merge determinism gate and must always complete.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
-  sim-tests:
+  # The fast lane, split four ways. Partitioned by namespace with a NEGATION catch-all in shard 4,
+  # so a test in a namespace nobody remembered to list still runs — the alternative (three positive
+  # filters and nothing else) silently drops tests, which is the failure this repo keeps finding.
+  # Shard sizes were measured, not guessed: ~303/327/356/364 test attributes.
+  sim-shard:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: 1
+            filter: 'Category!=Balance&(FullyQualifiedName~GameSim.Tests.Crafting.|FullyQualifiedName~GameSim.Tests.Economy.)'
+          - shard: 2
+            filter: 'Category!=Balance&(FullyQualifiedName~GameSim.Tests.Heroes.|FullyQualifiedName~GameSim.Tests.Drama.|FullyQualifiedName~GameSim.Tests.Expedition.)'
+          - shard: 3
+            filter: 'Category!=Balance&(FullyQualifiedName~GameSim.Tests.Kernel.|FullyQualifiedName~GameSim.Tests.Cli.|FullyQualifiedName~GameSim.Tests.Factions.|FullyQualifiedName~GameSim.Tests.Professions.)'
+          - shard: 4
+            filter: 'Category!=Balance&FullyQualifiedName!~GameSim.Tests.Crafting.&FullyQualifiedName!~GameSim.Tests.Economy.&FullyQualifiedName!~GameSim.Tests.Heroes.&FullyQualifiedName!~GameSim.Tests.Drama.&FullyQualifiedName!~GameSim.Tests.Expedition.&FullyQualifiedName!~GameSim.Tests.Kernel.&FullyQualifiedName!~GameSim.Tests.Cli.&FullyQualifiedName!~GameSim.Tests.Factions.&FullyQualifiedName!~GameSim.Tests.Professions.'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'global.json', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+      # Release, not Debug: the sim is pure CPU work and the Debug JIT runs it 1.5-3x slower.
+      # Verified locally before this landed — the whole non-Balance suite is green under Release
+      # (Failed: 0, Passed: 1594), so nothing here depended on a Debug.Assert that Release strips.
+      # TreatNoTestsAsError guards the shard's own vacuous-green: a filter that matches nothing must
+      # fail loudly rather than report a fast, empty success.
+      - name: Fast lane shard ${{ matrix.shard }} of 4 (no Godot)
+        run: >
+          dotnet test sim/GameSim.Tests/GameSim.Tests.csproj -c Release
+          --filter "${{ matrix.filter }}"
+          --logger "trx;LogFileName=sim-tests-shard-${{ matrix.shard }}.trx"
+          -- RunConfiguration.TreatNoTestsAsError=true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sim-test-results-shard-${{ matrix.shard }}
+          path: sim/GameSim.Tests/TestResults/*.trx
+
+  # Off the critical path, but still merge-blocking: the sim-tests gate below requires it. Moving
+  # these out of the fast lane without that dependency would have quietly stopped them blocking a
+  # merge, since the ruleset only names sim-tests/balance-sim/engine-tests.
+  aux-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - name: Fast lane — sim suite (no Godot)
-        run: dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter "Category!=Balance" --logger "trx;LogFileName=sim-tests.trx"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'global.json', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
       - name: FlavorForge test lane (stub-only, zero network)
-        run: dotnet test tools/FlavorForge.Tests/FlavorForge.Tests.csproj
+        run: dotnet test tools/FlavorForge.Tests/FlavorForge.Tests.csproj -c Release
       - name: Fast lane — art conformance (no Godot, no IO; describe-PR definition of done)
-        run: dotnet test art/GameArt.Tests/GameArt.Tests.csproj --logger "trx;LogFileName=art-tests.trx"
+        run: dotnet test art/GameArt.Tests/GameArt.Tests.csproj -c Release --logger "trx;LogFileName=art-tests.trx"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: sim-test-results
-          path: sim/GameSim.Tests/TestResults/*.trx
+          name: art-test-results
+          path: art/GameArt.Tests/TestResults/*.trx
+
+  # The required check. Runs no tests — it exists so the ruleset's "sim-tests" contract keeps
+  # meaning "the whole fast lane passed" while the work happens in parallel underneath.
+  # `if: always()` is load-bearing: without it a failed shard SKIPS this job, the required check
+  # never reports, and the PR hangs unmergeable instead of failing honestly.
+  sim-tests:
+    runs-on: ubuntu-latest
+    needs: [sim-shard, aux-tests]
+    if: always()
+    steps:
+      - name: Gate — all four shards and the aux lane
+        run: |
+          echo "sim-shard: ${{ needs.sim-shard.result }}"
+          echo "aux-tests: ${{ needs.aux-tests.result }}"
+          if [ "${{ needs.sim-shard.result }}" != "success" ]; then
+            echo "::error::one or more sim-tests shards did not pass"
+            exit 1
+          fi
+          if [ "${{ needs.aux-tests.result }}" != "success" ]; then
+            echo "::error::the aux lane (FlavorForge + art conformance) did not pass"
+            exit 1
+          fi
+          echo "fast lane green across all four shards and the aux lane"
 
   balance-sim:
     runs-on: ubuntu-latest
