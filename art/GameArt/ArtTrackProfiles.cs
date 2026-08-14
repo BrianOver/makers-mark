@@ -91,21 +91,103 @@ public static class ArtTrackProfiles
         _ => throw new ArgumentOutOfRangeException(nameof(track), track, "Unknown art track"),
     };
 
+    /// <summary>
+    /// §11.10 U1 (KTD-A): the positive clause an <see cref="AssetKind.Item"/> spec composes in
+    /// place of the master prompt's architecture wording.
+    ///
+    /// <para>The Active master prompt was authored for BUILDINGS — "one structure centered",
+    /// negating "multiple buildings" — and all 48 committed item icons inherit it. *Structure* is
+    /// an architecture word, and SDXL reads it as one: an unattended batch on 2026-08-14 returned
+    /// a cake stand and a lidded urn for a buckler and a full armoured figure for a hauberk, over
+    /// per-item Subject strings that were specific and correct. This names what an item icon
+    /// actually is, so the subject stops fighting its own prefix.</para>
+    /// </summary>
+    public const string ItemClause =
+        "a single game item icon, one hand-held object centered on empty space, "
+        + "product shot of the object alone, nothing holding it, nothing under it";
+
+    /// <summary>
+    /// The negatives an item spec adds. Every entry is a shape a REAL candidate came back as in
+    /// the 2026-08-14 batch, not a generic exclusion list — furniture and vessels because the
+    /// architecture prefix pulled that way, and the worn/held terms because armour drifted to
+    /// "on a figure" (which survives a BiRefNet cutout as a wrong silhouette rather than as a
+    /// background, and is therefore worse than a bad background).
+    /// </summary>
+    public const string ItemNegative =
+        "furniture, table, side table, cake stand, vase, urn, jar, bowl, pot, pottery, "
+        + "candlestick, lamp, pedestal, plinth, display stand, base plate, "
+        + "worn by a character, mannequin, armor stand, held by a hand, figure, person";
+
+    /// <summary>
+    /// The kind's own clause, or empty for kinds the master prompt already describes correctly.
+    /// Deliberately a switch over <see cref="AssetKind"/> rather than a dictionary: a new kind
+    /// added to the enum composes the unchanged master prompt by default, which is the safe
+    /// direction — silence, not a wrong clause.
+    /// </summary>
+    private static string KindClause(AssetKind kind) => kind switch
+    {
+        AssetKind.Item => ItemClause,
+        _ => string.Empty,
+    };
+
+    /// <summary>The kind's own negatives, paired with <see cref="KindClause"/>. Kept as its own
+    /// switch rather than reusing <see cref="ItemNegative"/> for "any kind with a clause": the two
+    /// are only equivalent while Item is the sole clause-bearing kind, and a future kind would
+    /// otherwise silently inherit furniture negatives that have nothing to do with it.</summary>
+    private static string KindNegative(AssetKind kind) => kind switch
+    {
+        AssetKind.Item => ItemNegative,
+        _ => string.Empty,
+    };
+
+    /// <summary>
+    /// §11.10 U1: the master prompt's building-specific phrases, removed for kinds that supply
+    /// their own clause. Only ever applied when <see cref="KindClause"/> is non-empty, so every
+    /// other kind's composed string is byte-identical to what it composed before this existed —
+    /// pinned by <c>ArtTrackProfileTests.EveryNonItemKind_ComposesTheUnchangedPreClauseString</c>,
+    /// because the alternative (editing the shared master prompt) would silently re-mean roughly
+    /// 300 committed assets with nothing in git to trace it to.
+    /// </summary>
+    private const string ArchitecturePhrase = "one structure centered, ";
+
+    private const string ArchitectureNegativePhrase = "multiple buildings, ";
+
     /// <summary>The full positive prompt for a spec: track master + the spec's palette-family clause
-    /// (variety-tone §2 — <c>house</c> reproduces the pre-family prompt byte-for-byte) + subject.</summary>
+    /// (variety-tone §2 — <c>house</c> reproduces the pre-family prompt byte-for-byte) + subject.
+    /// A spec whose <see cref="AssetSpec.Kind"/> supplies a <see cref="KindClause"/> swaps the
+    /// master's architecture phrase for it; every other kind composes exactly as it always did.</summary>
     public static string ComposePrompt(AssetSpec spec)
     {
         var profile = For(spec.Track);
         var palette = PaletteRegistry.Require(spec.PaletteId).Clause;
         var extra = string.IsNullOrWhiteSpace(spec.PromptExtra) ? string.Empty : ", " + spec.PromptExtra.Trim();
-        return $"{profile.MasterPrompt}, {palette}, {spec.Subject.Trim()}{extra}";
+
+        var master = profile.MasterPrompt;
+        var kindClause = KindClause(spec.Kind);
+        if (kindClause.Length > 0)
+        {
+            master = master.Replace(ArchitecturePhrase, string.Empty, StringComparison.Ordinal);
+            master = $"{master}, {kindClause}";
+        }
+
+        return $"{master}, {palette}, {spec.Subject.Trim()}{extra}";
     }
 
-    /// <summary>The full negative for a spec: the track master negative (+ optional additive extra).</summary>
+    /// <summary>The full negative for a spec: the track master negative (+ the kind's own negatives
+    /// when it has a clause, + optional additive extra).</summary>
     public static string ComposeNegative(AssetSpec spec)
     {
         var profile = For(spec.Track);
         var extra = string.IsNullOrWhiteSpace(spec.NegativeExtra) ? string.Empty : ", " + spec.NegativeExtra.Trim();
-        return $"{profile.MasterNegative}{extra}";
+
+        var master = profile.MasterNegative;
+        var kindNegative = KindNegative(spec.Kind);
+        if (kindNegative.Length > 0)
+        {
+            master = master.Replace(ArchitectureNegativePhrase, string.Empty, StringComparison.Ordinal);
+            master = $"{master}, {kindNegative}";
+        }
+
+        return $"{master}{extra}";
     }
 }
