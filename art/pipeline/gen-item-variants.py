@@ -19,19 +19,30 @@ Seed offsets start at VARIANT_SEED_STRIDE (1000), deliberately clear of the `see
 re-roll offsets the README reserves for curating a BASE icon — so a variant can never collide with
 a re-roll of the thing it varies.
 
-## Auto-screening, and its honest limits
+## THIS SCRIPT DOES NOT CURATE. Measured, 2026-08-14.
 
-Curation is normally a human eye, and 45 recipes x N variants is more than one night of eyes. This
-script therefore screens each candidate against the failure modes that are MEASURABLE, and says so
-in its report rather than claiming the output is curated:
+An earlier version of this file claimed to auto-screen out the known failure modes — concept
+sheets, plates, pairs — so that a 90-image batch would not need eyes. That claim was tested and is
+false, twice over:
 
-  * empty / near-empty cutout        -> alpha coverage floor
-  * a full-frame plate or backdrop   -> alpha coverage ceiling
-  * a concept sheet, pair, or set    -> one connected component must dominate the opaque area
-  * a wildly wrong aspect            -> trimmed bounding-box ratio window
+1. **The screen rejected the game's own shipped art.** Run against all 48 committed item icons —
+   curated, hand-picked, in the game today — the plausible-looking thresholds rejected **16 of
+   them**. A tower shield fills 91% of its frame; `item-engineering-clockwork-glaive` splits 50/50
+   into two connected components; `item-kite-shield` splits 56/44. A legitimate two-part item is
+   numerically indistinguishable from a two-item concept sheet, so the multi-subject test was
+   deleted rather than tuned.
 
-It CANNOT judge whether the art is good. Anything it passes still wants a human look before it is
-trusted, and the report names how many candidates each item needed.
+2. **What survives the screen is still mostly wrong.** A real batch over eight starter recipes
+   rendered 42 candidates, of which 13 passed every structural check. Looking at those 13: two are
+   arguably usable. The rest are a cake stand and a lidded urn (for a buckler), a full armoured
+   figure (for a hauberk), a sword *plus* a figure, and a set of weapons that are simply not the
+   weapon that was asked for. Silhouette and coverage cannot see any of that.
+
+So the screen now does one honest job — discard a cutout that came back EMPTY, which means BiRefNet
+found no subject — and reports the measurements for everything else so a human can sort a batch
+quickly. **Every kept candidate needs eyes before it ships.** The bottleneck for item variation is
+art direction (the subject strings are specific and good; the master prompt's "one structure
+centered" pulls hard toward furniture), not throughput.
 
 GPU SAFETY (hard rules, see docs): one job at a time, never start under the free-VRAM floor, abort
 on temperature. This script renders strictly serially and re-checks `nvidia-smi` between renders,
@@ -60,11 +71,28 @@ MIN_FREE_MIB_TO_START = 13900   # the free-VRAM floor; measured idle headroom on
 MIN_FREE_MIB_MIDRUN = 3000      # once the model is resident it holds ~8 GB; this is the real floor
 MAX_TEMP_C = 83                 # hard abort, never a pause-and-continue
 
-# --- screening thresholds (measured against the committed icon set, see --report) -----------------
-MIN_ALPHA_COVERAGE = 0.06
-MAX_ALPHA_COVERAGE = 0.72
-MIN_DOMINANT_SHARE = 0.70       # largest connected blob as a share of all opaque pixels
-MIN_ASPECT, MAX_ASPECT = 0.30, 3.20
+# --- screening thresholds -------------------------------------------------------------------------
+# CALIBRATED against all 48 committed item icons, not guessed. That distinction is the whole reason
+# these numbers are what they are: the first version of this screen used plausible-sounding limits
+# (coverage <= 0.72, one blob >= 70% of the opaque area) and **would have rejected 16 of the 48
+# icons the game actually ships** — the curated, hand-picked ones. Measured spread of the shipped
+# set:
+#
+#     coverage      0.137 .. 0.909   (median 0.573)   a tower shield legitimately fills the frame
+#     aspect        0.330 .. 1.400   (median 0.946)
+#     largest blob  0.265 .. 1.000   (median 1.000)
+#     runner-up     0.000 .. 0.497   (median 0.000)
+#
+# The last row killed the multi-subject test outright. `item-engineering-clockwork-glaive` splits
+# 50/50 and `item-kite-shield` splits 56/44 — a legitimate two-part item is numerically identical
+# to a two-item concept sheet, so no threshold on blob shares can separate them. It was dropped
+# rather than tuned; a gate that fires on a third of the shipped corpus is not a gate.
+#
+# What survives is the one check the corpus supports: a cutout that came back empty or nearly so,
+# which means BiRefNet found no subject (usually because SDXL returned a light-ground plate). The
+# rest is REPORTED alongside each candidate as information for the human doing the actual curating.
+MIN_ALPHA_COVERAGE = 0.05       # shipped minimum is 0.137; this only catches a failed cutout
+MIN_ASPECT, MAX_ASPECT = 0.25, 4.00  # shipped range is 0.33 .. 1.40, widened so it never gates alone
 
 
 def die(message: str) -> None:
@@ -90,6 +118,25 @@ def check_gpu(floor: int, label: str) -> None:
         die(f"ABORT ({label}): only {free} MiB VRAM free, under the {floor} MiB floor")
 
 
+def reclaim_comfy_vram() -> None:
+    """Unload ComfyUI's cached models before the startup check.
+
+    An idle ComfyUI holds its last checkpoint resident — around 7 GB of a 16 GB card — so a second
+    run started minutes after a first would fail the startup floor while the GPU is, in every sense
+    that matters, free. That is a real trap and not a hypothetical: it is exactly how this script's
+    first batch aborted. The model reloads on the first render anyway (a few seconds), so the only
+    thing this costs is that reload, and what it buys is a startup check that measures OTHER
+    pressure — a game, a browser, another agent's job — rather than our own cache.
+
+    Best-effort: a ComfyUI too old to expose /free, or not running at all, is not a reason to stop
+    here. The startup check immediately after is the real gate."""
+    try:
+        post_raw("/free", {"unload_models": True, "free_memory": True})
+        time.sleep(2.0)  # the free is asynchronous; give the allocator a moment to actually return it
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+        print(f"note: could not ask ComfyUI to free VRAM ({exc}); checking the GPU as-is")
+
+
 # --- ComfyUI ---------------------------------------------------------------------------------------
 def workflow(job: dict, seed: int) -> dict:
     """A plain SDXL txt2img graph in ComfyUI API format. Kept inline rather than loaded from a saved
@@ -110,12 +157,19 @@ def workflow(job: dict, seed: int) -> dict:
     }
 
 
-def post(path: str, payload: dict) -> dict:
+def post_raw(path: str, payload: dict) -> bytes:
+    """POST and hand back the body untouched. `/free` answers with an EMPTY body, so a helper that
+    always parses JSON turns a successful call into a JSONDecodeError — which is how the first run
+    of this script died after passing every GPU check."""
     request = urllib.request.Request(
         f"{COMFY}{path}", data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(request, timeout=30) as response:
-        return json.load(response)
+        return response.read()
+
+
+def post(path: str, payload: dict) -> dict:
+    return json.loads(post_raw(path, payload))
 
 
 def get(path: str) -> bytes:
@@ -148,14 +202,20 @@ def render(job: dict, seed: int, timeout_s: float = 180.0) -> Image.Image:
 
 
 # --- screening -------------------------------------------------------------------------------------
-def largest_blob_share(alpha: Image.Image, threshold: int = 16) -> float:
-    """Share of opaque pixels belonging to the single largest 4-connected component. A lone item is
-    ~1.0; a three-blade variation plate or an inventory grid splits well below the floor. Iterative
-    flood fill (no recursion) — these are 512x512 images and Python's stack is not."""
+def blob_shares(alpha: Image.Image, threshold: int = 16) -> tuple[float, float]:
+    """(largest, second-largest) 4-connected component as shares of all opaque pixels. A lone item
+    is ~(1.0, 0.0); a variation plate or an inventory grid splits both ways. Iterative flood fill
+    (no recursion) — these are 512x512 images and Python's stack is not.
+
+    Both numbers are needed, measured: a candidate showing a longsword AND a full armoured figure
+    scored 0.72 on the largest blob alone and PASSED a largest-only check, because one of two big
+    subjects can still dominate. The second-largest share is what actually says "there are two
+    things here", and it is nearly zero for a legitimate single item with a stray speck."""
     width, height = alpha.size
     pixels = alpha.load()
     seen = bytearray(width * height)
-    opaque = biggest = 0
+    opaque = 0
+    sizes: list[int] = []
 
     for start_y in range(height):
         for start_x in range(width):
@@ -175,41 +235,70 @@ def largest_blob_share(alpha: Image.Image, threshold: int = 16) -> float:
                             seen[n] = 1
                             stack.append((nx, ny))
             opaque += size
-            biggest = max(biggest, size)
+            sizes.append(size)
 
-    return biggest / opaque if opaque else 0.0
+    if not opaque:
+        return 0.0, 0.0
+    sizes.sort(reverse=True)
+    second = sizes[1] if len(sizes) > 1 else 0
+    return sizes[0] / opaque, second / opaque
 
 
 def screen(cutout: Image.Image) -> tuple[bool, str]:
+    """(kept, description). KEPT IS NOT "GOOD" — see the threshold block above. This rejects a
+    cutout that came back empty or absurdly shaped, and describes everything else so whoever
+    curates the batch can sort by the numbers instead of opening ninety files blind."""
     alpha = cutout.getchannel("A")
     width, height = alpha.size
-    coverage = sum(1 for p in alpha.getdata() if p >= 16) / float(width * height)
-
-    if coverage < MIN_ALPHA_COVERAGE:
-        return False, f"near-empty cutout ({coverage:.1%} opaque)"
-    if coverage > MAX_ALPHA_COVERAGE:
-        return False, f"full-frame plate ({coverage:.1%} opaque)"
+    # get_flattened_data(), not the deprecated getdata() — Pillow 14 removes it (2027-10-15). Same
+    # call gen_town_sprites.py and gen-market.py already moved to.
+    coverage = sum(1 for p in alpha.get_flattened_data() if p >= 16) / float(width * height)
 
     box = alpha.getbbox()
     if not box:
-        return False, "no opaque pixels at all"
+        return False, "no opaque pixels at all — the cutout found no subject"
+    if coverage < MIN_ALPHA_COVERAGE:
+        return False, f"near-empty cutout ({coverage:.1%} opaque) — usually a light-ground plate"
+
     aspect = (box[2] - box[0]) / max(1, box[3] - box[1])
     if not (MIN_ASPECT <= aspect <= MAX_ASPECT):
         return False, f"bounding box aspect {aspect:.2f} outside [{MIN_ASPECT}, {MAX_ASPECT}]"
 
-    share = largest_blob_share(alpha)
-    if share < MIN_DOMINANT_SHARE:
-        return False, f"multiple subjects — largest blob is only {share:.0%} of the opaque area"
+    _, runner_up = blob_shares(alpha)
+    parts = "1 part" if runner_up < 0.02 else f"second part {runner_up:.0%}"
+    return True, f"KEPT FOR REVIEW — {coverage:.1%} opaque, aspect {aspect:.2f}, {parts}"
 
-    return True, f"ok ({coverage:.1%} opaque, one subject at {share:.0%})"
+
+# cutout.py needs torch + transformers (BiRefNet). The README's route is a dedicated venv under
+# art/pipeline/.venv, which is the right answer for a workstation that does this often. It does not
+# exist on a fresh checkout, and installing a CUDA torch build to remove some backgrounds is a
+# 2.5 GB detour — so fall back to ComfyUI portable's own embedded interpreter, which necessarily
+# already has a working GPU torch (it is what renders the candidates in the first place). Explicit
+# ladder rather than a bare `sys.executable`, because the failure that motivated it was
+# cutout.py exiting with "missing dependency (torch)" AFTER a successful render had already been
+# paid for.
+CUTOUT_INTERPRETERS = [
+    os.path.join(os.path.dirname(__file__), ".venv", "Scripts", "python.exe"),
+    r"C:\Tools\ComfyUI_windows_portable\python_embeded\python.exe",
+    sys.executable,
+]
+
+
+def cutout_interpreter() -> str:
+    for candidate in CUTOUT_INTERPRETERS:
+        if candidate == sys.executable or os.path.exists(candidate):
+            return candidate
+    return sys.executable
 
 
 def cutout(source: str, dest: str) -> None:
     result = subprocess.run(
-        [sys.executable, os.path.join(os.path.dirname(__file__), "cutout.py"), source, dest, "--trim"],
+        [cutout_interpreter(), os.path.join(os.path.dirname(__file__), "cutout.py"),
+         source, dest, "--trim"],
         capture_output=True, text=True)
     if result.returncode != 0:
-        die(f"cutout.py failed on {source}:\n{result.stdout}\n{result.stderr}")
+        die(f"cutout.py failed on {source} using {cutout_interpreter()}:\n"
+            f"{result.stdout}\n{result.stderr}")
 
 
 def main() -> int:
@@ -234,6 +323,7 @@ def main() -> int:
         die("no jobs selected")
 
     os.makedirs(args.out, exist_ok=True)
+    reclaim_comfy_vram()
     check_gpu(MIN_FREE_MIB_TO_START, "startup")
     print(f"rendering {args.variants} sibling(s) for {len(jobs)} item(s); "
           f"up to {args.tries} candidates each")
@@ -271,8 +361,10 @@ def main() -> int:
 
     free, temp = gpu_state()
     print("\n".join(report))
-    print(f"\n{made} accepted of {attempted} rendered; GPU now {free} MiB free at {temp} C")
-    print("SCREENED, NOT CURATED — every accepted image still wants a human look before it ships.")
+    print(f"\n{made} kept of {attempted} rendered; GPU now {free} MiB free at {temp} C")
+    print("KEPT IS NOT CURATED. The screen only discards empty cutouts and absurd aspect ratios; it "
+          "cannot tell a buckler from a candy dish, and has been measured doing exactly that. Look "
+          "at every kept image before any of it ships.")
     return 0
 
 
