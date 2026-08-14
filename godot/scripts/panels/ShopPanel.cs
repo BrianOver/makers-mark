@@ -209,7 +209,7 @@ public partial class ShopPanel : SimPanel
 
             var headerRow = AddRow(cardBody);
             headerRow.AddChild(ArtRect(
-                IconRegistry.ItemArtId(item.RecipeId, item.Slot), new Vector2(ItemArtSize, ItemArtSize),
+                IconRegistry.ItemArtId(item.RecipeId, item.Slot, item.Id.Value), new Vector2(ItemArtSize, ItemArtSize),
                 // Caption restored (item.Name): on a manifest MISS this is the ONLY place the
                 // placeholder's caption comes from — dropping it here would show the raw asset
                 // key (e.g. "item-rival-blade-2") instead of the item name. On a HIT it now also
@@ -328,7 +328,7 @@ public partial class ShopPanel : SimPanel
 
             var headerRow = AddRow(cardBody);
             headerRow.AddChild(ArtRect(
-                IconRegistry.ItemArtId(item.RecipeId, item.Slot), new Vector2(ItemArtSize, ItemArtSize),
+                IconRegistry.ItemArtId(item.RecipeId, item.Slot, item.Id.Value), new Vector2(ItemArtSize, ItemArtSize),
                 // Caption restored (item.Name): on a manifest MISS this is the ONLY place the
                 // placeholder's caption comes from — dropping it here would show the raw asset
                 // key (e.g. "item-rival-blade-2") instead of the item name. On a HIT it now also

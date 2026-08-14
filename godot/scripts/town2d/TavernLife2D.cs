@@ -126,7 +126,7 @@ public partial class TavernLife2D : Node2D
             // U3 (2026-08-04 COLOUR + MATERIAL pass): no RoleColor Modulate — the body art now
             // bakes its own per-class garment colour with a neutral steel armour ramp (see
             // HeroActor2D's own U3 comment); multiplying by RoleColor here would double-tint it.
-            seat.Figure.Texture = TownAssets2D.ForHero(classId);
+            seat.Figure.Texture = TownAssets2D.ForHero(classId, heroId);
             seat.Figure.Modulate = Colors.White;
             var height = seat.Figure.Texture?.GetHeight() ?? 24f;
             seat.Figure.Offset = new Vector2(0f, -height / 2f);

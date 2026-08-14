@@ -347,8 +347,12 @@ public partial class MarketLife2D : Node2D
     {
         var target = pending.Info.IsCounterCustomer ? _counterAnchor : ShelfAnchorFor(pending.ShelfSlot);
 
-        var baseTex = TownAssets2D.ForHero(pending.Info.ClassId);
-        var stepTex = IconRegistry.Art($"town2d-hero-{pending.Info.ClassId}_step");
+        // The SAME body this customer walks around the plaza in (TownAssets2D.HeroBodyId picks it
+        // off their hero id) — a customer whose figure changed on the way to the counter would
+        // read as a different person arriving, which is exactly the continuity this seam protects.
+        var bodyId = TownAssets2D.HeroBodyId(pending.Info.ClassId, pending.Info.Hero.Value);
+        var baseTex = TownAssets2D.ForHero(pending.Info.ClassId, pending.Info.Hero.Value);
+        var stepTex = IconRegistry.Art($"{bodyId}_step");
         var height = baseTex.GetHeight();
 
         var root = new Node2D { Name = $"MarketCustomer_{pending.Info.Hero.Value}", Position = _doorAnchor };

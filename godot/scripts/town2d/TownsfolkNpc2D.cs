@@ -201,6 +201,17 @@ public partial class TownsfolkNpc2D : Node2D
     public static Texture2D? ResolveWalk4Sprite(string civilianId) => IconRegistry.Art($"town2d-townsfolk-{civilianId}_walk4");
 
     /// <summary>
+    /// The art id for the villager at <paramref name="npcIndex"/>: their build's base id, or one
+    /// of its committed <see cref="ArtVariants"/> siblings. Two builds alone meant a plaza of
+    /// villagers read as two people cloned; with the variation pool the same handful of homes
+    /// spawn visibly different neighbours, and — because the pick is a pure function of the spawn
+    /// index — the SAME neighbour lives at the same house every session. Callers append the frame
+    /// suffixes (<c>_step</c>/<c>_walk2</c>/<c>_walk4</c>) to this id, never to the bare build id.
+    /// </summary>
+    public static string BodyIdFor(string civilianId, int npcIndex) =>
+        ArtVariants.Pick($"town2d-townsfolk-{civilianId}", "npc", npcIndex);
+
+    /// <summary>
     /// Build the sprite and pin the deterministic wander parameters. <paramref name="sprite"/>/
     /// <paramref name="tint"/> are passed in (rather than resolved internally) so tests can supply a
     /// bare <c>PlaceholderTexture2D</c> without touching <see cref="IconRegistry"/> — mirrors

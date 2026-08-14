@@ -140,6 +140,23 @@ public static class IconRegistry
     public static string ItemArtId(string recipeId, ItemSlot slot) =>
         RivalRecipeIds.Contains(recipeId) ? RivalCategoryArtId(slot) : AssetCatalog.ItemIconId(recipeId);
 
+    /// <summary>
+    /// The art id for one SPECIFIC item, varied per instance: <see cref="ItemArtId(string,
+    /// ItemSlot)"/> resolved through <see cref="ArtVariants"/> against the item's own id, so two
+    /// iron swords off the same recipe are not the same picture. Keyed on <c>ItemId</c> — which
+    /// the kernel mints once and never reuses — rather than the recipe, so a hero's blade keeps
+    /// its exact look from the forge to the shelf to the ledger entry that names who died with
+    /// it; and rather than the MakersMark, so a rival good (which carries none) varies too.
+    ///
+    /// <para>Inert until the pools exist: an item whose recipe has no committed <c>-v</c> siblings
+    /// gets a one-entry pool and this returns the same id <see cref="ItemArtId(string, ItemSlot)"/>
+    /// always did. Wiring it ahead of the pixels is deliberate — the alternative is a second pass
+    /// over every panel later, and a panel missed in that pass is an item that silently never
+    /// varies.</para>
+    /// </summary>
+    public static string ItemArtId(string recipeId, ItemSlot slot, int itemId) =>
+        ArtVariants.Pick(ItemArtId(recipeId, slot), "item", itemId);
+
     public static Texture2D Glyph(string name) => Load(IconDir, name); // gold, bounty, gossip, depths, skull, rune
 
     /// <summary>

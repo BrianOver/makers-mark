@@ -10,7 +10,7 @@ fix it or delete it (CLAUDE.md rule 8). The counts in §1 predate the wave's del
 the repo, so re-run the commands before quoting any of them.
 
 ```bash
-ls godot/assets/art/*.png | wc -l          # 221 after the wave's deletions (was 239)
+ls godot/assets/art/*.png | wc -l          # 355 after the 2026-08-14 variation pools (was 227)
 ls godot/assets/icons/*.svg | wc -l        # 28 icons (9 glyphs + 19 ore)
 ls godot/assets/audio/*.mp3 | wc -l        # 4 music tracks
 find godot/assets -name "*.ogg" | wc -l    # 49 narrator lines
@@ -23,19 +23,19 @@ loudly if a referenced id stops resolving. It does **not** run in the fast lane.
 
 ---
 
-## 1. Images — 221 files
+## 1. Images — 389 files
 
-*(Row counts below are pre-wave. The families that lost files are the deleted rows in §5 — sprites,
-faction crests, `town-*`, `shop-interior`, `town2d-*` candidates — none of which appear here, because
-none of them were ever drawn.)*
+*(The families that lost files are the deleted rows in §5 — sprites, faction crests, `town-*`,
+`shop-interior`, `town2d-*` candidates — none of which appear here, because none of them were ever
+drawn. Item-icon and town-body rows re-counted 2026-08-14; the rest still predate that wave.)*
 
 | Family | Count | Wired by | Origin |
 |---|---|---|---|
 | Hero portraits | 6 + 6 normals | `AssetCatalog.HeroPortrait` → Heroes/Counter/Ledger/Tavern panels | SDXL |
 | Monster portraits (4 venues) | 38 | `AssetCatalog.MonsterPortrait` → Bestiary, MineWatch, DelveStage | SDXL |
 | Venue backdrops + entrances | 6 | `AssetCatalog.VenueBackdrop` / `VenueEntrance` | SDXL |
-| Item icons | 39 | `ForgePanel`, shop surfaces | SDXL |
-| Town2D hero + townsfolk bodies | 32 (8 characters x 4 frames) | `TownAssets2D.ForHero`, `HeroActor2D` | Hand-pixel Python |
+| Item icons | 48 (45 recipes + 3 rival category) | `ForgePanel`, shop surfaces | SDXL |
+| Town2D hero + townsfolk bodies | 160 (8 characters x 5 variants x 4 frames) | `TownAssets2D.ForHero`, `HeroActor2D` | Hand-pixel Python |
 | Town2D stations / shells / signs / props | ~42 | `WorkshopVocab`, `InteriorLayout2D`, `TownAssets2D.ForProp` | Hand-pixel Python |
 | Player smith | 5 | `PlayerController2D` | Hand-pixel Python |
 | Mine monster minis | 5 | `DelveStage` | Hand-pixel Python |
@@ -45,11 +45,33 @@ none of them were ever drawn.)*
 The 19 `ore_*.svg` match `MaterialRegistry.PricedPool` exactly. The two registered-but-inert
 materials (electrum, orichalcum) correctly have none.
 
+### Variation pools (2026-08-14)
+
+Owner direction: heroes, NPCs, enemies and crafted items should each look a little unique, drawn
+from a committed collection rather than generated at runtime. The convention is one id namespace,
+not a new one: **the base id is variant 1**, and siblings suffix a contiguous run from 2 —
+`town2d-hero-vanguard`, `-v2`, `-v3`, … `GodotClient.ArtVariants.Pick(baseId, keyspace, simId)`
+chooses among whatever is committed, hashing a stable sim id (FNV-1a, never `GetHashCode` — .NET
+randomizes that per process, so the whole cast would be re-drawn on every launch and again after a
+load). A base id with no siblings returns itself, so adding variation to any family is purely
+additive and wiring a call site early costs nothing.
+
+Live pools: the six hero town bodies and both civilian builds, 5 each (`gen_town_sprites.py` —
+skin, hair and a garment dye-tint vary; **the class hue never does**, because it is the same colour
+the class's panel chip and ledger row use and it has to stay readable as identity). Item icons are
+wired through `IconRegistry.ItemArtId(recipeId, slot, itemId)` and inert until their pools exist —
+`gen-item-variants.py` renders those.
+
 ## 2. Animation
 
 **Frame-based.** Nine characters have the full 4-frame gait (base / `_walk2` / `_step` / `_walk4`):
-six heroes, two townsfolk builds, the player. Driven by `SpriteMotion`, consumed by `HeroActor2D`,
-`PlayerController2D`, `TownsfolkNpc2D`, `MarketLife2D` and `MineWatch`.
+six heroes, two townsfolk builds, the player — and since the variation pools landed, so does every
+one of their five committed bodies (41 gaits, 164 frames). Driven by `SpriteMotion`, consumed by
+`HeroActor2D`, `PlayerController2D`, `TownsfolkNpc2D`, `MarketLife2D` and `MineWatch`.
+`TownSpriteArtTests.EveryVariantBody_ObeysTheSameGaitInvariantsAsItsBase` holds every pool body to
+the invariants the six base bodies always had — it was written because the first 128 variants shipped
+`.import` sidecars Godot had defaulted to `fix_alpha_border=true`, and a full green engine run said
+nothing, since the older guard iterates six hand-listed class ids.
 
 **Twenty-two procedural animators, all wired, zero orphans** — the wave added the monster
 idle-breathe (`DelveStage`, U6) and the forge ember glow (`ForgeEmberGlow2D`, U7). `SpriteMotion`, `TreeSway`,
@@ -103,7 +125,8 @@ guarantee is the committed PNG plus its hash, not re-derivable pixels.
 **B. Procedural pixel art** — pure deterministic Python in `art/pipeline/gen-*.py` and
 `tools/art/gen_town_sprites.py`. No GPU, no model. Colours are sampled from committed sibling PNGs
 rather than picked by eye, and **every script has a `--check` flag that re-renders in memory and
-diffs against the committed file.** 91 assets. This is the strongest provenance tier in the repo.
+diffs against the committed file.** 219 assets (the 2026-08-14 variation pools added 128). This is
+the strongest provenance tier in the repo.
 
 **C. 3D — gone.** The TRELLIS/Blender tooling from before the 2.5D pivot was deleted on 2026-08-13
 (U8), along with the 45MB of candidate output it produced (U5). Two pipelines remain, and that is the

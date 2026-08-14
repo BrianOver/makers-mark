@@ -150,10 +150,16 @@ public partial class HeroActor2D : Node2D
         // M2: cache the base/step textures + construct the pose driver now that heroId/classId
         // are known — same id + "_step" suffix, resolved through the same IconRegistry.Art ladder
         // TownAssets2D.ForHero used for the base (null-tolerant: no _step art until M4 lands it).
+        //
+        // The suffixes hang off TownAssets2D.HeroBodyId, not the bare class id: with variation
+        // pools live, this hero's base frame may be "town2d-hero-vanguard-v3", and composing the
+        // gait frames off the class alone would give them the v1 legs — a figure whose lower half
+        // changes colour every time it takes a step.
+        var bodyId = TownAssets2D.HeroBodyId(classId, heroId);
         _baseTex = sprite;
-        _stepTex = IconRegistry.Art($"town2d-hero-{classId}_step");
-        _walk2Tex = IconRegistry.Art($"town2d-hero-{classId}_walk2");
-        _walk4Tex = IconRegistry.Art($"town2d-hero-{classId}_walk4");
+        _stepTex = IconRegistry.Art($"{bodyId}_step");
+        _walk2Tex = IconRegistry.Art($"{bodyId}_walk2");
+        _walk4Tex = IconRegistry.Art($"{bodyId}_walk4");
         _motion = new SpriteMotion(heroId * 1.7f);
 
         Pick = BuildPick();

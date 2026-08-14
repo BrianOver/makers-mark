@@ -466,6 +466,93 @@ public class TownSpriteArtTests
         return count;
     }
 
+    /// <summary>
+    /// The gait invariants above, applied to every VARIATION-POOL body rather than just the six
+    /// base ids — because the pool is where they were about to silently stop holding.
+    ///
+    /// <para>Measured, not theorised: Godot generated the 128 new variant <c>.import</c> sidecars
+    /// with its default <c>process/fix_alpha_border=true</c>, which is exactly the setting whose
+    /// removal <see cref="StepFrames_DifferOnlyBelowTheWaist"/> exists to protect ("Any FUTURE
+    /// <c>town2d-hero-*_step</c> pair must ship the same setting, or this reproduces"). A full
+    /// engine run went green over all 128 of them anyway, because that test iterates six
+    /// hand-listed class ids and a variant is not one of them. The pixels were fine; the coverage
+    /// was not.</para>
+    ///
+    /// <para>Deliberately does NOT re-assert the cross-class tests (distinct silhouettes, distinct
+    /// garment colours): variants of one class are SUPPOSED to share a silhouette, and their
+    /// garment hues are near-neighbours of one shared class hue by design.</para>
+    /// </summary>
+    [TestCase]
+    public void EveryVariantBody_ObeysTheSameGaitInvariantsAsItsBase()
+    {
+        var bodiesChecked = 0;
+
+        var poolBases = Classes.Select(c => $"town2d-hero-{c}")
+            .Concat(Town2d.TownsfolkNpc2D.CivilianIds.Select(c => $"town2d-townsfolk-{c}"));
+
+        foreach (var baseId in poolBases)
+        {
+            foreach (var bodyId in ArtVariants.PoolFor(baseId).Where(ArtVariants.IsVariantId))
+            {
+                var frames = GaitSuffixes.Select(s => Load($"{bodyId}{s}")).ToList();
+
+                foreach (var frame in frames)
+                {
+                    AssertThat(frame.GetWidth()).IsEqual(BodyWidth);
+                    AssertThat(frame.GetHeight()).IsEqual(BodyHeight);
+                }
+
+                // Every frame must agree with the base frame above the hem — the whole-body-swap
+                // flicker guard, and the fix_alpha_border regression detector.
+                for (var f = 1; f < frames.Count; f++)
+                {
+                    for (var y = 0; y < LegsTopRow; y++)
+                    {
+                        for (var x = 0; x < BodyWidth; x++)
+                        {
+                            AssertThat(frames[f].GetPixel(x, y) == frames[0].GetPixel(x, y))
+                                .OverrideFailureMessage(
+                                    $"{bodyId}{GaitSuffixes[f]} differs from its own base frame at "
+                                    + $"({x},{y}), above the legs row {LegsTopRow}. If the PNGs are "
+                                    + "byte-identical up there, the .import sidecar is the culprit: "
+                                    + "process/fix_alpha_border must be false, as it is on every base body.")
+                                .IsTrue();
+                        }
+                    }
+                }
+
+                // …and the four frames must actually be four frames.
+                var distinct = frames.Select(FingerprintOf).Distinct().Count();
+                AssertThat(distinct)
+                    .OverrideFailureMessage($"{bodyId} ships {distinct} distinct gait frames, not 4")
+                    .IsEqual(4);
+
+                bodiesChecked++;
+            }
+        }
+
+        // Vacuous-green guard: this test's entire value is that it iterates the POOL, so a pool
+        // that enumerates empty must fail here rather than pass by checking nothing.
+        AssertThat(bodiesChecked)
+            .OverrideFailureMessage("no variant bodies were checked — the pool enumerated empty")
+            .IsGreaterEqual(Classes.Length);
+    }
+
+    /// <summary>Cheap content fingerprint for frame-distinctness — the full pixel run, joined.
+    /// 20x32 is small enough that exactness costs nothing and beats any sampling heuristic.</summary>
+    private static string FingerprintOf(Image image)
+    {
+        var sb = new System.Text.StringBuilder(BodyWidth * BodyHeight * 4);
+        for (var y = 0; y < BodyHeight; y++)
+        {
+            for (var x = 0; x < BodyWidth; x++)
+            {
+                sb.Append(image.GetPixel(x, y).ToRgba32()).Append(';');
+            }
+        }
+        return sb.ToString();
+    }
+
     private static Image Load(string id)
     {
         var texture = GD.Load<Texture2D>($"res://assets/art/{id}.png");
