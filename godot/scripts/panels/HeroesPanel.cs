@@ -223,7 +223,7 @@ public partial class HeroesPanel : SimPanel
             }
 
             row.AddChild(ArtRect(
-                AssetCatalog.ItemIconId(item.RecipeId), new Vector2(GearArtSize, GearArtSize),
+                IconRegistry.ItemArtId(item.RecipeId, item.Slot), new Vector2(GearArtSize, GearArtSize),
                 // Caption restored (item.Name): on a manifest MISS this is the ONLY place the
                 // placeholder's caption comes from — dropping it would show the raw asset key
                 // instead of the item name. On a HIT it also renders under the icon now,
