@@ -4,8 +4,13 @@ namespace GameArt.Specs.Items;
 
 /// <summary>
 /// Wave-2 of the craftable-item icon set — the visual-sibling recipes the first <see cref="ItemSpecs"/>
-/// pass deferred, so that EVERY recipe across all four registered professions
-/// (blacksmith + tanning/engineering/alchemy) now has an inventory/shop icon. A pure new-file add-on
+/// pass deferred. This file's original summary claimed it left EVERY recipe across all four registered
+/// professions with an icon; that was true the day it was written and stopped being true the moment the
+/// forward ladder (plan 2026-08-10-003) added six Tier 8-14 recipes, which then rendered as a generic
+/// slot glyph until <see cref="ItemSpecsLadder"/> covered them. The claim is corrected rather than
+/// re-asserted here, because completeness now has a test — <c>ItemIconCoverageTests</c> — and a
+/// comment that repeats what a test already proves is only a chance to be wrong again.
+/// A pure new-file add-on
 /// the reflection registry discovers by presence (a second <see cref="IAssetModule"/> in the assembly),
 /// so <see cref="ItemSpecs"/> — a different owner's file — is never touched. Same conventions as the
 /// first pass: all <c>Active</c>-track, <c>Item</c>-kind icons at 512×512 with NO normal map (flat menu

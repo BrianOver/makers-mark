@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using GameSim.Classes;
+using GameSim.Professions;
 using GameSim.Venues;
 using GdUnit4;
 using Godot;
@@ -652,6 +653,31 @@ public class AssetResolutionCensusTests
     /// when this fails (a magenta-bordered box with the id stamped on it, not a crash, not a blank
     /// hole, and not the plausible-looking wrong art #316 slipped through as).
     /// </summary>
+    /// <summary>
+    /// Every craftable recipe's inventory icon, read straight off <see
+    /// cref="ProfessionRegistry.AllRecipes"/> — the table-driven shape the rest of this file uses,
+    /// so a seventh ladder recipe is covered the moment its row lands with zero edits here.
+    ///
+    /// <para>This closes the engine half of a hole that stayed open for the whole life of the
+    /// forward ladder: six Tier 8-14 recipes (<c>gloomsteel-blade</c> … <c>emberglass-draught</c>)
+    /// shipped craftable with no art, and <c>UiKit.ArtRect</c>'s null-tolerant fallback drew a
+    /// generic slot box for each. Nothing crashed, nothing warned, and no test connected
+    /// <c>RecipeTable</c> to <c>godot/assets/art/</c>. <c>ItemIconCoverageTests</c> in the art lane
+    /// pins that every recipe has a SPEC; this pins that the spec's PIXELS are actually committed
+    /// and loadable — the two halves a fresh checkout needs.</para>
+    /// </summary>
+    [TestCase]
+    public void EveryRecipeItemIcon_ResolvesToCommittedArt()
+    {
+        foreach (var recipeId in ProfessionRegistry.AllRecipes.Keys)
+        {
+            AssertResolves(
+                AssetCatalog.ItemIconId(recipeId),
+                $"'{recipeId}' is craftable today — ForgePanel's recipe row and ShopPanel's shelf "
+                + "card both draw this icon through UiKit.ArtRect for anyone who forges it.");
+        }
+    }
+
     private static void AssertResolves(string id, string why)
     {
         if (KnownPendingIds.Contains(id))

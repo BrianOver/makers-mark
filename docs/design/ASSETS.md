@@ -148,15 +148,32 @@ not an arithmetic one; the `gen-candidates` row alone is 45MB. The plan correcte
 was, and what it is now, is below — kept rather than deleted, because the *shape* of each failure is
 the reusable part.
 
-### Missing art for live content — STILL OPEN, the only one
-Six Tier 8-14 forward-ladder recipes are craftable **today** with no icon —
-`item-gloomsteel-blade`, `item-wardenweave-mail`, `item-moonresin-draught`, `item-cinderforge-blade`,
-`item-ashguild-plate`, `item-emberglass-draught` (`RecipeTable.cs:94-128`). They degrade to a generic
-slot glyph plus the recipe name. Not broken; generic.
+### Missing art for live content — CLOSED (2026-08-14)
+Six Tier 8-14 forward-ladder recipes were craftable with no icon — `item-gloomsteel-blade`,
+`item-wardenweave-mail`, `item-moonresin-draught`, `item-cinderforge-blade`, `item-ashguild-plate`,
+`item-emberglass-draught` (`RecipeTable.cs:94-128`) — and degraded to a generic slot glyph plus the
+recipe name. All six are now committed, and the recipe→icon mapping is pinned in both lanes (§8).
 
-**Blocked on hardware, not on a decision.** The SDXL chain needs ≥14GB VRAM free; the machine had
-~7GB free across the whole wave. Generating at reduced settings to finish is explicitly not the fix.
-Run it when the GPU is idle.
+The hardware block was real and cleared the moment the GPU was idle. What the batch measured is
+worth more than the six PNGs:
+
+- **The Active master negative does not stop SDXL drawing a design study.** The first batch returned
+  8 of 8 concept sheets — multi-blade variation plates, inventory grids, framed plaques on parchment
+  — despite the master negative already listing `sprite sheet`, `tiled`, `duplicated`, `frame` and
+  `border`. `ItemSpecsLadder.SingleItemOnDark` is the escalation. Even hardened, usable yield was
+  ~1-3 singles per 16 candidates, so budget curation time, not just GPU time.
+- **A wrong silhouette costs more than a wrong background.** Armour drifted to "worn by a figure"
+  and vessels to "on a carved plinth". BiRefNet deletes a background for free; it keeps a body and a
+  plinth, because they read as part of the subject. Two subjects were rewritten to say the item
+  stands alone before the yield became usable.
+- **The 42 sibling icons ship 4-9× larger than they draw.** `ShopPanel.ItemArtSize` is 56 and
+  `UiKit.ArtRect` uses `ExpandMode.IgnoreSize` + `KeepAspectCentered`, so a 200-500px texture is
+  downscaled into a 56×56 box every frame. The six new icons ship at a 112px long edge — a 2×
+  reserve — and weigh ~79KB together. Re-sizing the existing 42 is a cheap offline pass nobody has
+  run; it needs no GPU and no regeneration.
+- **Three shipped icons already fail the house rule** they were curated under: `item-longsword` kept
+  an ornate frame and an opaque white card, and `item-kite-shield` and `item-bulwark` are each two
+  items in one texture. Cosmetic, live today, and an owner call rather than an engineering one.
 
 ### Silent-fallback risks — CLOSED (U1)
 - **`MineWatch` single point of failure.** A missing `"mine-backdrop"` used to hide the **entire**
@@ -258,11 +275,13 @@ pipeline produced went with §5's orphan sweep.
 
 ## 8. To-dos
 
-**One left.**
-
-1. **Six missing item icons** for live Tier 8-14 recipes (§6). GPU-blocked, not decision-blocked —
-   the SDXL chain needs ≥14GB VRAM free and the machine had ~7GB throughout the wave. Run it when the
-   GPU is idle; do not generate at reduced settings to close the row.
+**None.** The last row — six missing item icons for the live Tier 8-14 recipes — closed on
+2026-08-14 once the owner freed the GPU (restarting ComfyUI dropped 8058MiB of resident VRAM to
+1059MiB, clearing the ≥14GB floor). Every craftable recipe now has committed art, and two tests hold
+it that way in both lanes: `ItemIconCoverageTests` (art) pins that every recipe has a spec and every
+item spec names a real recipe; `AssetResolutionCensusTests.EveryRecipeItemIcon_ResolvesToCommittedArt`
+(engine) pins that the pixels are committed and loadable. Both read `ProfessionRegistry.AllRecipes`
+rather than a hand-copied list, so recipe #49 is covered the day its row lands.
 
 The other nine shipped on 2026-08-13 as PRs #485-#492. Two things worth carrying forward more than
 the list itself:

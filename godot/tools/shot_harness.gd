@@ -244,6 +244,14 @@ func _process(_delta: float) -> bool:
 			# comparison against the room (same idiom as Demand/HeroCards above).
 			if _ui.has_method("OpenPanel"):
 				_ui.call("OpenPanel", "Forge")
+		elif _state == "ForgeLadder":
+			# Ladder-art receipt: ForgePanel lists recipes OrderBy(Tier).ThenBy(RecipeId), so the
+			# six Tier 8-14 forward-ladder rows are always below the fold behind the Tier 1-3 ones
+			# a fresh campaign opens on. Opening the drawer alone photographs a Buckler and proves
+			# nothing about the ladder icons. The second beat (frame 120 below) scrolls the recipe
+			# list to the end so those rows -- and their art -- are actually on screen.
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Forge")
 		elif _state == "ShopPanel":
 			# U1 (world-and-interiors plan): "Shop" now walks the player INTO the market room
 			# instead of opening the drawer directly (R1) -- same idiom as ForgePanel above,
@@ -455,6 +463,16 @@ func _process(_delta: float) -> bool:
 		var town = _ui.find_child("Town2D", true, false)
 		if town:
 			town.call("ExitInterior")
+	if _state == "ForgeLadder" and _frames == 120:
+		# Bring the LAST forward-ladder recipe row into view. Deliberately not "scroll to the
+		# bottom": CraftScroll holds the talent list below the recipes, so scrolling to max_value
+		# photographs Tier 3 Smithing unlock buttons and no recipe art at all (measured). Asking
+		# the ScrollContainer to reveal a named card lands the ladder rows on screen with their
+		# lower-tier siblings above, and keeps working as recipes are added either side of them.
+		var craft_scroll = _ui.find_child("CraftScroll", true, false)
+		var last_ladder_card = _ui.find_child("RecipeCard_emberglass-draught", true, false)
+		if craft_scroll and last_ladder_card:
+			craft_scroll.ensure_control_visible(last_ladder_card)
 	if _state == "ForgeShelf" and _frames == 200:
 		# U3: the shelf station's own RaisePick -- the exact call a click/E-interact fires
 		# (Building2D.Configure names each station node "Building_{key}").
