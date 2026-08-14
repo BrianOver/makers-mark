@@ -998,6 +998,128 @@ on whether a person does.
 
 ---
 
+### 11.10 Finish the variation the owner asked for — 2026-08-14
+
+**Status: capped overhead, substrate. Not a §2 link item, and no unit here may displace a
+§11.4 path item.** It exists in this section, rather than as a third file in `docs/plans/`,
+because rule 4's two-doc cap is full (`2026-08-13-002` and `2026-08-14-001` both hold live
+units) and the owner chose an inline amendment over raising the cap. Written tight for that
+reason: this is the plan, not a wave doc's worth of it.
+
+**What was asked, 2026-08-14:** *"Heroes, NPCs, enemies, items we craft etc should all be a
+little unique — obviously we cannot generate on the fly so we need a large collection of
+assets that get randomly picked."* Two of four shipped in #503 — heroes and villagers, 128
+town bodies behind `GodotClient.ArtVariants` (base id is variant 1; siblings are a contiguous
+`-v2`, `-v3`, … run; the pick is FNV-1a over a stable sim id, never `GetHashCode`, which .NET
+randomizes per process). **Items and enemies did not.** This finishes them.
+
+**The one measurement that shapes everything below.** An unattended SDXL batch was run and
+looked at: 42 candidates over 8 starter recipes, 13 passed every structural screen, and about
+**two were the right object** — a cake stand and a lidded urn came back as bucklers, a full
+armoured figure as a hauberk. And no automatic screen can rescue it: run any plausible
+structural gate over the 48 *shipped* icons and it rejects 16, because `item-kite-shield`
+legitimately splits 56/44 into two connected components and `item-engineering-clockwork-glaive`
+splits 50/50 — a two-part item is numerically indistinguishable from a two-item concept sheet.
+The bottleneck is art direction, not throughput, so U2 below is a **gate, not a step**.
+
+#### Key technical decisions
+
+**KTD-A. The Active master prompt was authored for buildings, and 48 item icons inherit it.**
+It reads `"…single subject, one structure centered, 3/4 isometric view…"` and negates
+`"multiple buildings"`. *Structure* and *buildings* are architecture words, which is why a
+buckler becomes furniture. **The fix is not to edit the shared master prompt** — that would
+silently change the meaning of every building, backdrop and venue asset already committed.
+Instead `ComposePrompt` splices a **kind-aware clause**, exactly the way it already splices the
+palette-family clause (`ArtTrackProfiles.cs:96-102`). `AssetKind.Item` gets an item clause and
+item-specific negatives; every other kind composes byte-identically to today, and U1 pins that.
+
+**KTD-B. Monsters get a real generator (owner ruling, 2026-08-14).** The five pixel mine minis
+have no build script at all — `art/build/town2d-monster-*.build.json` records
+`Status: "unreproducible-legacy"`, no seed, no model, and the repo does not record whether the
+original pass was AI or hand-pixel. So there is nothing to vary *from*. Authoring a generator in
+`gen_town_sprites.py`'s idiom (ASCII grid + palette ramp + `--check` drift guard) is the same
+method that produced 128 exact, zero-curation town bodies. **Accepted cost: it re-authors five
+sprites already on screen**, so those monsters change appearance. Pleasant side effect —
+`ASSETS.md` §1 currently credits these minis to "Hand-pixel Python", which their own provenance
+record contradicts (a rule-8 lie); U4 makes the claim *true* rather than merely correcting it.
+
+**KTD-C. The encounter key is composed adapter-side, so `Contracts` is never touched.**
+`DelveStage.ShowMonster` receives only a kind string, and `CombatEvent` carries
+`MonsterKind` (a `string`) with no per-encounter id — so "vary each monster" has no key today.
+Adding one to `Contracts` would mean a deny-listed micro-PR *and* a save-format risk. Not
+needed: the beat already carries `Floor` (`DelveStage.cs:413`), so the key is
+`$"{venueId}:{floor}:{kind}"` — deterministic, replay-safe, golden-safe, and it makes the cave
+rat on floor 1 a different body from the one on floor 3 while keeping a given floor's monster
+stable within a run.
+
+**KTD-D. The Bestiary does not vary.** It is a reference catalogue — one canonical picture per
+kind is the correct behaviour there. Variation applies to `DelveStage` and `MineWatch`, the
+live-encounter surfaces. Stated because the opposite is an easy and wrong default.
+
+#### Implementation units
+
+**U1 — Make the prompt kind-aware, and prove nothing else moved.** `ComposePrompt` splices an
+`AssetKind`-derived clause; `ComposeNegative` gains item-kind negatives (furniture, table,
+vase, bowl, candlestick, plinth). Files: `art/GameArt/ArtTrackProfiles.cs`,
+`art/GameArt.Tests/ArtTrackProfileTests.cs` (new). Test scenarios: an `Item` spec's prompt
+contains the item clause and not `"one structure centered"`; a `Building`/scene spec's composed
+prompt is **byte-identical to the string committed today** (pin the literal — this is the guard
+against silently re-rolling ~300 existing assets); a kind with no clause of its own falls back
+to today's master prompt unchanged. Proof: `dotnet test art/GameArt.Tests` green; no pixels change.
+
+**U2 — The gate: four recipes, rendered, in front of the owner.** Re-render `item-buckler`,
+`item-hauberk`, `item-longsword`, `item-round-shield` (the four that failed worst) at two
+variants each through `dump-item-specs` → `gen-item-variants.py`. **Commits no pixels.** Proof:
+the images themselves, shown to the owner beside the shipped base icon. **If the owner says no,
+the wave stops here and U3 is not attempted** — that is the unit's whole purpose. GPU rules
+apply (≥14GB free to start, abort >83 °C, one job, owner-granted window).
+
+**U3 — Batch and commit the item pools** *(conditional on U2's yes)*. Two siblings per recipe
+across the starter set first, then the rest; regenerate `art-manifest.json`; resample to draw
+size offline (never a runtime `Scale` knob). Files: `godot/assets/art/item-*-v*.png`,
+`godot/assets/art/art-manifest.json`. **Proof in the running game, not the diff:** a shot-harness
+capture of the shop showing two items off the *same recipe* with *different* icons, plus a
+`FullPlaytest` run reporting zero art-miss warnings (the logging landed in #497).
+
+**U4 — Author the monster generator.** New monster section in `tools/art/gen_town_sprites.py`
+(its own canvas — the existing rig is a fixed 40×64 humanoid and must not be bent), covering
+all five mine kinds, with `--check` drift-guarding every committed PNG. Files:
+`tools/art/gen_town_sprites.py`, `godot/assets/art/town2d-monster-*.png`,
+`art/build/town2d-monster-*.build.json` (status flips off `unreproducible-legacy`),
+`godot/tests/TownSpriteArtTests.cs`. Test scenarios: each mini is the pinned size; each has ≥N
+distinct opaque colours (no flat placeholder); any two kinds have distinct silhouettes;
+`--check` reports zero drift. Proof: a `DelveStage` render showing the new minis in combat.
+
+**U5 — Monster variant pools + the per-encounter pick.** Add variants per kind, then key the
+pick on KTD-C's `venue:floor:kind`. Files: `godot/scripts/AssetCatalog.cs`,
+`godot/scripts/panels/DelveStage.cs`, `godot/scripts/panels/MineWatch.cs`,
+`godot/tests/ArtVariantsTests.cs`. Test scenarios: the same kind on two different floors
+resolves to two different body ids; the same kind on the same floor is stable across repeated
+resolves *and* across a pool-cache drop (the save/load continuity case); `BestiaryPanel` still
+resolves the base id (KTD-D); every committed monster variant has its whole frame set. Proof: a
+two-floor `DelveStage` capture showing the same monster kind drawn two ways.
+
+**U6 — Make the docs true.** `ASSETS.md` §1 monster row (now honestly "Hand-pixel Python"),
+§1 image count, §4 pipeline-B asset count, and the §1 variation-pools paragraph extended to
+items and monsters. Rule 8: this lands *in* the PR that makes it true, never after.
+
+#### Sequencing, risks, and what is deliberately not here
+
+U1 → U2 → U3 is a chain with a human gate in the middle. **U4 → U5 is independent of it** and
+can run first or in parallel — nothing in the monster half depends on the item prompt. U6 lands
+with whichever PR makes its claims true.
+
+- **Risk: U4 changes art already on screen.** Accepted by the owner in advance. Mitigation:
+  the `DelveStage` render in U4 is the check, and it happens before U5 adds any variants.
+- **Risk: the U2 gate is skipped under time pressure.** That is the exact failure this plan
+  exists to prevent; U3 has no other entry.
+- **Risk: engine tests serialize globally.** U4/U5 both touch them — one run at a time, and
+  always the full suite (a filtered run cannot see other suites vanish).
+- **Not here:** any change to `ArtVariants` itself (it shipped and is proven), the town bodies
+  (done), monster *behaviour* (this is presentation only), and `Contracts` (KTD-C avoids it).
+
+---
+
 ## 12. The external reviews — what came from outside, and what we did with it
 
 On 2026-08-06 the owner collected design reviews from three other AI models and asked for
