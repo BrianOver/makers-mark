@@ -18,11 +18,33 @@ public static class ActionBudget
     public const int SlotsPerDay = 5;
 
     /// <summary>
-    /// Whether <paramref name="action"/> is "real work" that spends a slot: craft, restock/buy
-    /// (the Morning material vendor and the Evening ore market), or negotiate (post a bounty).
-    /// Shelf-arranging (stock/price/unstock), profession/talent picks, counter-session moves, and
-    /// Camp verbs (send/recall) stay free — they don't compete for the day's attention budget.
+    /// Whether <paramref name="action"/> is "real work" that spends a slot.
+    ///
+    /// <para>This list is the NINE action types whose handlers actually decrement
+    /// <c>ActionSlotsRemaining</c> — verified by grep, not by intent. It named only four until
+    /// 2026-08-14, while nine handlers spent slots, so any surface built on it would have
+    /// under-reported the day's real cost. Nothing called it at runtime, which is the only reason
+    /// the lie was harmless: it was a trap armed for the next caller, not a live bug.</para>
+    ///
+    /// <para>Shelf-arranging (stock/price/unstock), profession and talent picks, counter-session
+    /// moves (open/close/present/suggest/haggle), commission answers, the farewell rite, and Camp
+    /// verbs (send/recall) stay free — they don't compete for the day's attention budget. That half
+    /// of the original comment was always true; it was the "real work" half that was wrong.</para>
+    ///
+    /// <para><c>ActionBudgetTests</c> pins this by REFLECTION over every concrete
+    /// <see cref="PlayerAction"/> subtype: each must be explicitly consuming or explicitly free, so
+    /// a tenth action type fails the suite by name rather than defaulting silently to free. That is
+    /// the drift the old "exactly the four" test could not catch, and it mirrors the advisor's own
+    /// legality-parity test.</para>
     /// </summary>
     public static bool ConsumesSlot(PlayerAction action) =>
-        action is CraftAction or BuyOreAction or BuyMaterialAction or PostBountyAction;
+        action is CraftAction
+            or BuyOreAction
+            or BuyMaterialAction
+            or PostBountyAction
+            or ReforgeHeirloomAction
+            or BuyForgeSupplyAction
+            or UpgradeForgeAction
+            or MasterworkAttemptAction
+            or CommissionLegendaryWorkAction;
 }
