@@ -70,3 +70,13 @@ __pycache__/
 # character-art-quality wave 2026-08-11 -- the existing art/build/*.json files were only
 # ever committed because they predate this rule, not because it allowed them).
 /build/
+
+# godot/assets/build_info.txt is GENERATED, not source: play.bat rewrites it on every
+# launch with the running branch@sha. Tracking it meant the launcher dirtied its own
+# checkout every time it ran, which (a) made `git merge --ff-only` refuse the next
+# fast-forward and (b) made the in-game corner label read "dirty" from the SECOND launch
+# onward forever, because play.bat computes that word from `git status` -- which was
+# seeing the stamp this same script had just written. A provenance label that always says
+# dirty is a receipt that lies (CLAUDE.md rule 12). BuildStamp.cs already falls back to
+# "dev (unstamped)" when the file is absent, so a fresh clone is fine.
+godot/assets/build_info.txt
