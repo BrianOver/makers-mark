@@ -78,6 +78,9 @@ if defined DIRTY (
 )
 
 REM ---- 2. fast-forward to origin/main ---------------------------------------
+REM Unconditionally, before BOTH the merge and the stamp below: see :dropgenerated.
+call :dropgenerated
+
 git fetch --quiet origin main 2>nul
 if errorlevel 1 echo   ^(offline -- using the local main^)
 
@@ -184,6 +187,48 @@ for /f "tokens=1,*" %%A in ('git status --porcelain -uall') do (
   )
 )
 if defined QMOVED echo   ^(moved to !QDIR! -- delete them once you have looked^)
+goto :eof
+
+REM ---------------------------------------------------------------------------
+REM  Step 1 above already knows that reimported .import metadata "churns
+REM  constantly and is not a reason to refuse a launch" -- but that reasoning was
+REM  only ever applied to the DIRTY gate, and the churn then broke TWO later
+REM  steps that nobody had connected to it:
+REM
+REM   * the fast-forward. `git merge --ff-only` refuses outright when a
+REM     locally-modified file also changed upstream ("Please commit your changes
+REM     or stash them"). Measured 2026-08-14 on the play checkout: 217 files
+REM     modified, all under godot/assets, only 15 with any content change at all
+REM     -- 14 .import files differing by a single uid= line, plus build_info.txt.
+REM     Nothing a human wrote. The launcher refused, 88 commits of finished work
+REM     stayed invisible, and it looked like "the game did not get the feature".
+REM     Same failure shape the quarantine above exists to prevent, one category
+REM     over.
+REM
+REM   * the provenance stamp. Step 3 derives the corner label's clean/dirty word
+REM     from a bare `git status --porcelain`, so the churn made a pristine
+REM     checkout announce itself as "dirty". A receipt that always says dirty
+REM     tells you nothing (CLAUDE.md rule 12).
+REM
+REM  So this runs UNCONDITIONALLY, before both -- not just when behind. These
+REM  files are output, not source: Godot rewrites them on the very next --import,
+REM  a few lines further down. Anything a human actually edits (code, scenes,
+REM  project.godot) is still guarded by step 1, which refuses to launch rather
+REM  than discarding a single byte of it.
+REM ---------------------------------------------------------------------------
+REM  Only *.import is restored here. build_info.txt is no longer tracked at all (see
+REM  .gitignore), so it can never block a merge and naming it below would be actively
+REM  harmful: `git checkout -- <untracked path>` fails "did not match any file(s) known
+REM  to git" and aborts the WHOLE command, leaving the .import files unrestored. Tested,
+REM  not assumed -- and the 2>nul that used to be here would have hidden it.
+:dropgenerated
+set "GENDIRTY="
+for /f "delims=" %%G in ('git status --porcelain -- "godot/assets/*.import"') do set "GENDIRTY=1"
+if defined GENDIRTY (
+  echo   discarding local churn in generated .import metadata
+  git checkout -- "godot/assets/*.import"
+  if errorlevel 1 echo   ^(could not discard it -- the merge below may still refuse^)
+)
 goto :eof
 
 :fail
