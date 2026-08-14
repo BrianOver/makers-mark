@@ -113,6 +113,12 @@ jobs:
           fi
           echo "fast lane green across all four shards and the aux lane"
 
+  # The REAL CI bottleneck, measured after the fast lane was sharded: 25 minutes, against 8 for
+  # engine-tests and under 2 for the whole sharded fast lane. Sharding the fast lane made the fast
+  # lane fast and left total CI wall-clock almost unchanged, because this job gates it.
+  #
+  # Not sharded: these are 100-day campaign sims, and the count is small (53) while each run is
+  # long, so splitting them buys much less than Release does and costs a partition to maintain.
   balance-sim:
     runs-on: ubuntu-latest
     steps:
@@ -120,8 +126,17 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'global.json', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+      # Release for the same reason the fast lane uses it, and with the same verification: the
+      # balance suite was run locally under Release before this landed and returned Failed: 0,
+      # Passed: 53 — identical to Debug, so no assertion moved and no Debug.Assert was load-bearing.
+      # Locally 3m45s -> 2m03s; this job is CPU-bound on a 2-vCPU runner, so the win should be larger.
       - name: Balance gate — 100-day sim (placeholder until U10)
-        run: dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter "Category=Balance" --logger "trx;LogFileName=balance-sim.trx"
+        run: dotnet test sim/GameSim.Tests/GameSim.Tests.csproj -c Release --filter "Category=Balance" --logger "trx;LogFileName=balance-sim.trx"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
