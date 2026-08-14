@@ -146,7 +146,8 @@ public sealed record DeclineCommissionAction(HeroId Hero) : PlayerAction;
 
 /// <summary>Wave 4c (U18, farewell rite): perform a fallen hero's farewell, marking their
 /// <see cref="Memorial"/> honored (idempotent — a second rite for the same hero is a no-op).
-/// Evening/Night-legal ritual; deterministic, draws no RNG.</summary>
+/// Evening-only ritual (<c>ActionLegality</c> gates it on <c>phase == DayPhase.Evening</c>); the
+/// day has no Night phase, whatever this comment used to say. Deterministic, draws no RNG.</summary>
 public sealed record HonorMemorialAction(HeroId Hero) : PlayerAction;
 
 /// <summary>Wave 4c (U20, heirloom reforge): reforge a fallen hero's worn gear (<paramref name="SourceItem"/>,
