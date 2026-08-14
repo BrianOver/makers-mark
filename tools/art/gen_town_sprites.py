@@ -1021,6 +1021,110 @@ CIVILIAN_SPRITES: dict[str, tuple[list[str], dict[str, tuple[int, int, int, int]
 }
 
 
+# ── VARIATION POOLS (2026-08-14, owner direction: "we want more variation ... heroes, NPCs,
+# enemies, items we craft should all be a little unique") ────────────────────────────────────────
+# Six heroes and a plaza of villagers currently share ONE body per class and ONE per civilian
+# build, so a second vanguard is pixel-identical to the first and four townsfolk read as two
+# people cloned. The fix is a POOL: extra whole-figure variants committed alongside each base
+# sprite, one of which `GodotClient.ArtVariants.Pick` selects from a stable sim id (HeroId, the
+# villager's spawn index) — so a given hero looks the same on day 1 and on day 40, across a
+# save/load, on every machine, without a single runtime draw.
+#
+# WHAT VARIES, AND WHAT DELIBERATELY DOES NOT. Skin tone, hair tone, and a garment dye-tint vary.
+# The class HUE does not: `CLASS_HUES` is sourced verbatim from each `ClassDefinition.ColorRgb`,
+# the same colour that class's panel chip, ledger row and roster card already show, so it is
+# legibility, not decoration — a violet figure must stay readable as the mystic at a glance. The
+# dye-tints below therefore BLEND toward an anchor by a small t rather than replacing the hue: a
+# sun-bleached vanguard is still obviously steel-blue. Civilians carry no such contract (they are
+# not a sim class), but run through the same table for one code path rather than two.
+#
+# NO SILHOUETTE VARIATION HERE, on purpose: every variant reuses its base's ASCII grid untouched,
+# so all four gait frames stay in lockstep and a new variant can never desync the walk cycle. Body
+# shape is what `broad`/`slight` and the six class figures already provide.
+
+# Index 0 is always the BASE sprite and every table's entry 0 reproduces the existing palette
+# exactly (PALETTE["f"], PALETTE["j"], the untouched class hue) — so `--check` reports zero drift
+# on the 32 sprites that shipped before this section existed.
+VARIANT_COUNT = 5  # base + 4 extra bodies per class/civilian build
+
+SKIN_TONES: list[tuple[int, int, int]] = [
+    (196, 148, 110),  # 0 — PALETTE["f"] verbatim, the shared tone every base sprite bakes
+    (232, 190, 152),  # 1 — pale
+    (166, 116, 80),   # 2 — tan
+    (124, 82, 56),    # 3 — deep brown
+    (214, 164, 126),  # 4 — light warm
+]
+
+HAIR_TONES: list[tuple[int, int, int]] = [
+    (58, 42, 34),     # 0 — PALETTE["j"] verbatim
+    (28, 24, 26),     # 1 — near-black
+    (122, 74, 38),    # 2 — auburn
+    (150, 132, 96),   # 3 — straw blond
+    (108, 104, 110),  # 4 — grey
+]
+
+# (anchor colour, blend weight). Small weights on purpose — see the class-hue note above; 0.20 is
+# about where a steel-blue vanguard stops reading as steel-blue, so nothing here exceeds 0.18.
+GARMENT_DYES: list[tuple[tuple[int, int, int], float]] = [
+    ((0, 0, 0), 0.0),          # 0 — the class/civilian hue, untouched
+    ((255, 214, 170), 0.18),   # 1 — sun-bleached
+    ((40, 44, 70), 0.16),      # 2 — travel-stained, cooler
+    ((176, 96, 48), 0.14),     # 3 — rust-dyed
+    ((90, 120, 96), 0.14),     # 4 — moss-dyed
+]
+
+assert len(SKIN_TONES) == len(HAIR_TONES) == len(GARMENT_DYES) == VARIANT_COUNT
+assert SKIN_TONES[0] + (255,) == PALETTE["f"], "variant 0 must reproduce the base skin tone exactly"
+assert HAIR_TONES[0] + (255,) == PALETTE["j"], "variant 0 must reproduce the base hair tone exactly"
+
+
+def variant_palette(base_hue: tuple[int, int, int], index: int) -> dict[str, tuple[int, int, int, int]]:
+    """This individual's full palette. `index` 0 returns a dict byte-identical to the pre-variation
+    palette for `base_hue`; 1..VARIANT_COUNT-1 swap in that row's skin/hair and dye the garment."""
+    anchor, weight = GARMENT_DYES[index]
+    hue = base_hue if weight == 0.0 else _lerp_rgb(base_hue, anchor, weight)[:3]
+    return {
+        **PALETTE,
+        "f": SKIN_TONES[index] + (255,),
+        "j": HAIR_TONES[index] + (255,),
+        **cloth_ramp(hue),
+    }
+
+
+# Must stay in sync with GodotClient.ArtVariants.VariantPrefix — the C# resolver splits on this
+# exact string. Named here rather than inlined so the coupling is greppable from both sides.
+ARTVARIANTS_PREFIX = "-v"
+
+
+def variant_id(base_id: str, index: int) -> str:
+    """`<body>-v<N>` inserted BEFORE any frame suffix, so a variant's four gait frames stay
+    siblings of each other rather than of the base body: `town2d-hero-vanguard_walk2` at index 2
+    becomes `town2d-hero-vanguard-v3_walk2`, which is exactly what `ArtVariants.Pick` composes
+    (it returns the varied BODY id and the caller appends `_walk2`). Index 0 is the base id
+    unchanged — variant numbering is 1-based on screen, so index 1 is "-v2"."""
+    if index == 0:
+        return base_id
+    body, sep, suffix = base_id.partition("_")
+    return f"{body}{ARTVARIANTS_PREFIX}{index + 1}{sep}{suffix}"
+
+
+VARIANT_SPRITES: dict[str, tuple[list[str], dict[str, tuple[int, int, int, int]]]] = {}
+for _index in range(1, VARIANT_COUNT):
+    for _name, _grid in HERO_GRIDS.items():
+        _class_id = _name.removeprefix("town2d-hero-").split("_")[0]
+        VARIANT_SPRITES[variant_id(_name, _index)] = (_grid, variant_palette(CLASS_HUES[_class_id], _index))
+    for _name, _grid in CIVILIAN_GRIDS.items():
+        _civilian_id = _name.removeprefix("town2d-townsfolk-").split("_")[0]
+        VARIANT_SPRITES[variant_id(_name, _index)] = (_grid, variant_palette(CIVILIAN_HUES[_civilian_id], _index))
+
+# Every variant ships its WHOLE frame set or none of it: a pool entry missing `_walk2` would show
+# one villager freezing mid-stride, which is the kind of defect that reads as an engine bug.
+assert len(VARIANT_SPRITES) == (VARIANT_COUNT - 1) * (len(HERO_GRIDS) + len(CIVILIAN_GRIDS))
+for _base in list(HERO_GRIDS) + list(CIVILIAN_GRIDS):
+    for _i in range(1, VARIANT_COUNT):
+        assert variant_id(_base, _i) in VARIANT_SPRITES, f"variant frame missing for {_base} v{_i + 1}"
+
+
 # ── PLAYER SMITH (2026-08-04 second round): brought up to the SAME treatment as the heroes above
 # -- bigger canvas, real 4-frame gait, baked colour, a real face -- so the player is not the one
 # crude sprite left once the heroes carry all of this. No prior generator source existed for
@@ -1145,7 +1249,7 @@ def die(message: str) -> None:
 # symmetric source: reflecting the source maps every block onto a value-identical mirror block, so
 # the same deterministic choice is made on both sides and the output is symmetric wherever the
 # input is. `_selftest_rarity_downsample_symmetry()` pins exactly that property.
-def rarity_downsample_2x(image: Image.Image) -> Image.Image:
+def rarity_downsample_2x(image: Image.Image, freq_source: Image.Image | None = None) -> Image.Image:
     """Halves `image` in both dimensions, tuned for flat-shaded pixel art rather than photographic
     content. ALPHA is a plain box average of the 2x2 block (a smooth, symmetric silhouette edge).
     RGB is deliberately NOT blended: a plain colour average dilutes a rare one-pixel accent (skin
@@ -1155,17 +1259,32 @@ def rarity_downsample_2x(image: Image.Image) -> Image.Image:
     Instead, each opaque pixel in the block votes with its own colour, and the block keeps whichever
     colour is globally RAREST in this image (ties broken by the RGBA tuple itself, so the pick is
     fully deterministic) — the rare accent wins over the common fill whenever the two compete for
-    the same output pixel, and blocks that are already a single solid colour are untouched."""
+    the same output pixel, and blocks that are already a single solid colour are untouched.
+
+    `freq_source` supplies the frequency table from a DIFFERENT image — pass a body's base frame
+    when halving its gait frames, and every frame of that body then ranks colours identically.
+    Without it the table is per-frame, and since a stride changes how much leg colour is on screen,
+    a rarity TIE two rows into the hair can resolve differently from one frame to the next: the
+    figure's head shimmers while it walks. Measured on the committed art before this parameter
+    existed — skirmisher only, `_walk2` and `_walk4` only, exactly 2 pixels each, the other five
+    classes clean — small enough to have shipped unnoticed and to survive a diff, and a real defect
+    all the same. Defaults to `image` itself, which is the identity behaviour every other caller
+    (and the self-test below) already relies on."""
     width, height = image.size
     if width % 2 != 0 or height % 2 != 0:
         die(f"rarity_downsample_2x: {width}x{height} has an odd dimension, cannot halve exactly")
 
     pixels = image.load()
 
+    source = freq_source if freq_source is not None else image
+    if source.size != image.size:
+        die(f"rarity_downsample_2x: freq_source is {source.size}, must match the image's {image.size}")
+    source_pixels = source.load()
+
     freq: dict[tuple[int, int, int, int], int] = {}
     for y in range(height):
         for x in range(width):
-            pixel = pixels[x, y]
+            pixel = source_pixels[x, y]
             if pixel[3] == 0:
                 continue
             freq[pixel] = freq.get(pixel, 0) + 1
@@ -1266,17 +1385,35 @@ def main() -> int:
         help="compare against committed PNGs instead of writing; non-zero exit on any difference")
     args = parser.parse_args()
 
-    all_sprites = {**SPRITES, **PLAYER_SPRITES, **CIVILIAN_SPRITES}
+    all_sprites = {**SPRITES, **PLAYER_SPRITES, **CIVILIAN_SPRITES, **VARIANT_SPRITES}
 
     drift = []
+    # Every gait frame of one body halves against the BASE frame's colour-frequency table, so a
+    # rarity tie resolves the same way in all four — see rarity_downsample_2x's `freq_source` note
+    # for the head-shimmer this closes. Keyed on the id with its frame suffix stripped; a body
+    # whose base frame is somehow absent falls back to per-frame frequency (the old behaviour).
+    base_frames: dict[str, Image.Image] = {}
+
+    def render_full(sprite_name: str) -> Image.Image:
+        grid_, palette_ = all_sprites[sprite_name]
+        w = PLAYER_WIDTH if sprite_name.startswith("player_smith") else WIDTH
+        h = PLAYER_HEIGHT if sprite_name.startswith("player_smith") else HEIGHT
+        return render(grid_, sprite_name, palette_, w, h)
+
+    for name in all_sprites:
+        body_id = name.partition("_")[0] if not name.startswith("player_smith") else "player_smith"
+        if body_id not in base_frames and body_id in all_sprites:
+            base_frames[body_id] = render_full(body_id)
+
     for name, (grid, palette) in all_sprites.items():
         width = PLAYER_WIDTH if name.startswith("player_smith") else WIDTH
         height = PLAYER_HEIGHT if name.startswith("player_smith") else HEIGHT
         image = render(grid, name, palette, width, height)
+        body_id = name.partition("_")[0] if not name.startswith("player_smith") else "player_smith"
         # Halve to the actual on-screen resolution here, offline — see the SHIPPED RESOLUTION note
         # above rarity_downsample_2x(). The committed PNG is this halved image, not the authoring
         # canvas; TownLayout2D.CharacterSpriteScale draws it at 1.0, unchanged from here on.
-        image = rarity_downsample_2x(image)
+        image = rarity_downsample_2x(image, freq_source=base_frames.get(body_id))
         path = os.path.join(args.out, f"{name}.png")
 
         if args.check:

@@ -566,7 +566,7 @@ public partial class TavernPanel : SimPanel
             wornAny = true;
             var row = AddRow(parent);
             row.AddChild(ArtRect(
-                IconRegistry.ItemArtId(item.RecipeId, item.Slot), new Vector2(GearArtSize, GearArtSize),
+                IconRegistry.ItemArtId(item.RecipeId, item.Slot, id.Value), new Vector2(GearArtSize, GearArtSize),
                 IconRegistry.Slot(slot), item.Name));
             var mark = item.Mark is null ? "no maker's mark" : $"marked by {item.Mark.CrafterName}";
             AddLabel(row, $"  {slot}: {item.Name} [{item.Quality}] — {mark}");

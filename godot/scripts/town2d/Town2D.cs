@@ -781,7 +781,7 @@ public partial class Town2D : Control
 
             var actor = new HeroActor2D();
             var color = ClassColors.RoleColor(hero.ClassId);
-            var sprite = TownAssets2D.ForHero(hero.ClassId);
+            var sprite = TownAssets2D.ForHero(hero.ClassId, hero.Id.Value);
             actor.Init(hero.Id.Value, hero.ClassId, color, sprite, HomeFor(hero.Id.Value));
             actor.Picked += id => HeroClicked?.Invoke(id);
             HeroesRoot.AddChild(actor);
@@ -1550,17 +1550,29 @@ public partial class Town2D : Control
     /// </summary>
     private void BuildTownsfolk()
     {
-        // U6 ("townsfolk are not heroes" fix): resolve BOTH dedicated civilian bodies' base/step/
-        // walk2/walk4 textures once each (mirrors the old shared-vanguard resolve, just once per
-        // body instead of once total) and hand villagers one set each, alternating by index —
+        // U6 ("townsfolk are not heroes" fix): resolve the dedicated civilian bodies' base/step/
+        // walk2/walk4 textures and hand villagers one set each, alternating build by index —
         // null-tolerant per body if any frame is ever absent.
-        var bodies = TownsfolkNpc2D.CivilianIds.ToDictionary(
-            id => id,
-            id => (
-                Base: TownsfolkNpc2D.ResolveSprite(id),
-                Step: TownsfolkNpc2D.ResolveStepSprite(id),
-                Walk2: TownsfolkNpc2D.ResolveWalk2Sprite(id),
-                Walk4: TownsfolkNpc2D.ResolveWalk4Sprite(id)));
+        //
+        // 2026-08-14 (variation pools): the resolve is keyed by the villager's SPAWN INDEX, not
+        // just their build, so `broad` villager #0 and `broad` villager #2 draw different
+        // committed bodies (TownsfolkNpc2D.BodyIdFor picks among the -v pool). Two builds shared
+        // across every home is what made the plaza read as two people cloned. Cached per resolved
+        // body id so N villagers landing on the same variant still load each texture once.
+        var bodies = new Dictionary<string, (Texture2D Base, Texture2D? Step, Texture2D? Walk2, Texture2D? Walk4)>();
+
+        (Texture2D Base, Texture2D? Step, Texture2D? Walk2, Texture2D? Walk4) BodyFor(string bodyId)
+        {
+            if (bodies.TryGetValue(bodyId, out var hit)) return hit;
+
+            var built = (
+                Base: IconRegistry.Art(bodyId) ?? TownsfolkNpc2D.ResolveSprite(TownsfolkNpc2D.CivilianIds[0]),
+                Step: IconRegistry.Art($"{bodyId}_step"),
+                Walk2: IconRegistry.Art($"{bodyId}_walk2"),
+                Walk4: IconRegistry.Art($"{bodyId}_walk4"));
+            bodies[bodyId] = built;
+            return built;
+        }
 
         // U6: every venue's own door anchor, in TownLayout2D.Venues' fixed array order (a stable,
         // deterministic sequence — a Dictionary's enumeration order is an implementation detail,
@@ -1573,7 +1585,7 @@ public partial class Town2D : Control
         for (var i = 0; i < TownsfolkHomeTiles.Length; i++)
         {
             var civilianId = TownsfolkNpc2D.CivilianIds[i % TownsfolkNpc2D.CivilianIds.Length];
-            var body = bodies[civilianId];
+            var body = BodyFor(TownsfolkNpc2D.BodyIdFor(civilianId, i));
             var npc = new TownsfolkNpc2D();
             npc.Init(
                 i,

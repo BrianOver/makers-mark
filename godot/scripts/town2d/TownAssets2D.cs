@@ -128,6 +128,25 @@ public static class TownAssets2D
     /// cref="Town2D.ReconcileHeroes"/> passes <see cref="GodotClient.Ui.ClassColors.RoleColor"/>
     /// into <c>HeroActor2D.Init</c>'s own modulate), never baked in here.
     /// </summary>
+    /// <summary>
+    /// The town-body art id this specific hero wears — <c>town2d-hero-{classId}</c> or one of its
+    /// committed <see cref="ArtVariants"/> siblings, chosen from the hero's own id so the SAME
+    /// person is the same figure in the plaza, at the shop counter and on a tavern stool, day
+    /// after day and across a save/load. Callers append their own frame suffix to this
+    /// (<c>_step</c>, <c>_walk2</c>, <c>_walk4</c>) — never to the plain class id, or a hero would
+    /// walk with someone else's legs.
+    /// </summary>
+    public static string HeroBodyId(string classId, int heroId) =>
+        ArtVariants.Pick($"town2d-hero-{classId}", "hero", heroId);
+
+    /// <summary>
+    /// This hero's own body sprite. Same resolution ladder as <see cref="ForHero(string)"/>, with
+    /// the per-hero variant applied first — the overload every caller that HAS a hero id should
+    /// use, because the class-only overload necessarily draws every member of a class identically.
+    /// </summary>
+    public static Texture2D ForHero(string classId, int heroId) =>
+        IconRegistry.Art(HeroBodyId(classId, heroId)) ?? ForHero(classId);
+
     public static Texture2D ForHero(string classId)
     {
         // The bare "hero-{classId}" id (no "town2d-" prefix) resolves to the 512×768 roster
