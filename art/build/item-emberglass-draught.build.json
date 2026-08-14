@@ -1,0 +1,20 @@
+{
+  "Seed": 1216786898,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "358f9d0dc82353370fdb771bf84cbfc7de3a1e6d26160f32453480b2b0f9695c",
+  "NormalSha256": null,
+  "Uid": "uid://43nxa5wotfan",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "16 candidates generated locally via ComfyUI (SDXL base 1.0) at the frozen Active-track settings, seeds AssetSeed.SeedFor(id)+0..15, written to the gitignored art/pipeline/candidates/ scratch dir and curated off a per-id contact sheet. Yield was low and worth recording: the FIRST batch, on the master negative alone, returned 8 of 8 concept sheets (multi-blade variation plates, inventory grids, framed plaques on parchment), which is why ItemSpecsLadder carries the SingleItemOnDark NegativeExtra escalation.",
+    "paintoverNote": "No hand-finish, no paintover. Two mechanical stages only, both scripted: BiRefNet cutout via art/pipeline/cutout.py --trim, then an offline LANCZOS downsample so the long edge is 112px. That size is deliberate \u2014 ShopPanel.ItemArtSize is 56 and UiKit.ArtRect draws with ExpandMode.IgnoreSize + KeepAspectCentered, so the texture is scaled into a 56x56 box no matter what it ships at. The 42 sibling item icons ship at 200-500px and are downscaled 4-9x every frame for nothing; 112 is a 2x reserve over the draw box instead.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py, --trim); no normal map (flat menu icon per AssetSpec.NormalMap=false \u2014 item icons render in panels, never under Light2D)."
+  }
+}

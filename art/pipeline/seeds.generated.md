@@ -314,3 +314,43 @@ time — another agent's playtest), leaving ~8GB free against the required >=14G
 every 30s for 6 minutes; the window never opened, so no ComfyUI generation was attempted this pass
 (the trim/spec-parity fix above needed no GPU — BiRefNet segmentation was not re-run, only the
 already-computed alpha channel was cropped, and `normalmap.py` is pure NumPy/PIL, no CUDA).
+
+## Forward-ladder item icons — 6 icons, 2026-08-14
+
+The six Tier 8-14 recipes (`RecipeTable` rungs 1 and 2, plan 2026-08-10-003 L3/L4) landed craftable
+with no art and rendered as a generic slot glyph plus the recipe name for as long as the ladder has
+existed. `ItemSpecsLadder` is their spec module; `ItemIconCoverageTests` (art lane) and
+`AssetResolutionCensusTests.EveryRecipeItemIcon_ResolvesToCommittedArt` (engine lane) now pin the
+recipe→icon mapping in both directions, so a seventh ladder recipe cannot ship iconless the same way.
+
+| Id | Track | Seed | Hand-finished | Build-half |
+|----|-------|------|---------------|------------|
+| item-gloomsteel-blade | active | 1236254248+10 (candidate c10) | no | `art/build/item-gloomsteel-blade.build.json` |
+| item-wardenweave-mail | active | 1738673230+1 (candidate c1) | no | `art/build/item-wardenweave-mail.build.json` |
+| item-moonresin-draught | active | 1703157801+0 (candidate c0) | no | `art/build/item-moonresin-draught.build.json` |
+| item-cinderforge-blade | active | 486158180+4 (candidate c4) | no | `art/build/item-cinderforge-blade.build.json` |
+| item-ashguild-plate | active | 369794854+1 (candidate c1) | no | `art/build/item-ashguild-plate.build.json` |
+| item-emberglass-draught | active | 1216786886+12 (candidate c12) | no | `art/build/item-emberglass-draught.build.json` |
+
+**Two things this batch measured that the next one should not have to rediscover.**
+
+*The master negative alone does not stop SDXL drawing a design study.* The first batch returned 8 of
+8 concept sheets — multi-blade variation plates, inventory grids, framed plaques on parchment —
+despite the Active master negative already listing `sprite sheet`, `tiled`, `duplicated`, `frame`
+and `border`. `ItemSpecsLadder.SingleItemOnDark` is the escalation (`HeroSpecs.NoConceptSheet`
+widened with the plural and light-ground terms). Even hardened, curated yield was roughly 1-3 usable
+singles per 16.
+
+*A wrong silhouette is worse than a wrong background.* Armour drifted to "worn by a figure" and
+vessels to "standing on a carved plinth". A background is free to remove — BiRefNet deletes it — but
+a body and a plinth are read as PART of the subject and survive the cutout. Both subjects were
+rewritten to say the item stands alone, and mannequin/plinth terms joined the negative.
+
+**Sizing:** shipped at 112px long edge, not the 512px spec canvas. `ShopPanel.ItemArtSize` is 56 and
+`UiKit.ArtRect` draws with `ExpandMode.IgnoreSize` + `KeepAspectCentered`, so the texture lands in a
+56x56 box regardless; the 42 sibling icons ship at 200-500px and are downscaled 4-9x every frame for
+nothing. 112 is a deliberate 2x reserve over the draw box. All six together are ~79KB.
+
+**GPU-safety note:** the owner confirmed the GPU was free and cleared it by restarting ComfyUI
+(8058MiB used → 1059MiB; 14919MiB free against the >=14GB floor). Held one job at a time; die temp
+peaked at 42C against the 83C ceiling, polled before every render by the driver's own guard.
