@@ -1447,34 +1447,56 @@ OLD_HEAD_PLAYER = [
     orow(ocentered(mirror("of"))),  # 8 jaw hold
     orow(ocentered(mirror("f"))),  # 9 chin point
     orow(ocentered("o" * 6)),  # 10 neck gap
-    orow(ocentered(mirror("ommll"))),  # 11 shirt collar
-    orow(ocentered(mirror("ooimmll"))),  # 12 collar -> shoulder lead-in
+    orow(ocentered(mirror("onncc"))),  # 11 shirt collar
+    orow(ocentered(mirror("ooknncc"))),  # 12 collar -> shoulder lead-in
 ]
 assert len(OLD_HEAD_PLAYER) == 11
 
-# Shirt (neutral, outer) with a leather apron (cloth-ramp letters n/k/w directly, coloured by
-# PLAYER_HUE) bibbed over the centre -- the apron WIDENS going down the chest then narrows again
-# at the waist tie, same "outer=material A, inner=material B" trick the shielded classes use for
-# armour-vs-cloth, here for shirt-vs-apron.
+# Shirt (cloth-ramp letters c/n/k/w, coloured by PLAYER_HUE) with a leather apron bibbed over the
+# centre, ALSO in the cloth ramp (n/k/w, unchanged from the original design) -- the apron WIDENS
+# going down the chest then narrows again at the waist tie.
+#
+# 2026-08-15 owner playtest ("main character looks awful -- the generic shopkeeper sprite was
+# better"). Measured on the committed PNG: the neutral steel-violet ramp (o/d/l/m/i) covered
+# ~60% of the opaque area (shoulders/collar/waist -- everywhere the SHIRT shows) while the warm
+# PLAYER_HUE was confined to the apron bib alone (~22.5%), against town2d-townsfolk-broad's
+# cloth-ramp coverage across its WHOLE torso+trousers. The first attempt at a fix mechanically
+# swapped shirt<->apron (shirt warm, apron neutral) -- reviewed against a rendered contact sheet
+# and rejected here at the SAME diagnosis stage that produced it: the apron shape already occupies
+# most of the torso's own width at its "bib dominant" rows (14-24 below fully span the row there),
+# so recolouring it neutral without reshaping it landed at 43.5% warm, UNDER this file's own
+# `--check`-pinned 45% floor (TownSpriteArtTests) -- the diagnosis was right about the SHIRT, wrong
+# about the APRON needing to give up its colour rather than just no longer being the ONLY warm
+# thing. Kept here instead: the shirt (every neutral l/m/i/d letter below, i.e. everywhere the
+# apron does NOT cover) becomes cloth-ramp too, and the apron KEEPS the warm tone it always had
+# (n/k/w below are untouched from the original grid) -- both materials now read as the player's
+# own identity hue, distinguished from each other by VALUE/shading (the same "material contrast
+# via shading, not just hue" idiom the shielded classes already use for armour-vs-cloth), not by
+# one of them being grey. The trousers get the matching fix just below (CLOTH_LEGS_F1..F4, not
+# the neutral LEGS_F1..F4 every other body's STEEL variant would reuse) -- the player was the only
+# figure in the cast still in fully-steel trousers; boots/soles stay neutral for every character,
+# player included (CLOTH_BOOT/CLOTH_SOLE alias STEEL_BOOT/STEEL_SOLE already, by design). Measured
+# result: 61.8% warm, comfortably clear of the 45% floor and in the same range as the civilians'
+# own coverage.
 OLD_TORSO_PLAYER = [
-    orow(ocentered(mirror("ooimmlll"))),  # 13 shoulders (shirt)
-    orow(ocentered(mirror("ohhllnk"))),  # 14 collar -> apron strap begins
-    orow(ocentered(mirror("ohllmnk"))),  # 15
-    orow(ocentered(mirror("ollmnkw"))),  # 16 apron widens
-    orow(ocentered(mirror("ollnkw"))),  # 17
-    orow(ocentered(mirror("olnkww"))),  # 18
+    orow(ocentered(mirror("ooknnccc"))),  # 13 shoulders (shirt)
+    orow(ocentered(mirror("ohhccnk"))),  # 14 collar -> apron strap begins
+    orow(ocentered(mirror("ohccnnk"))),  # 15
+    orow(ocentered(mirror("occnnkw"))),  # 16 apron widens
+    orow(ocentered(mirror("occnkw"))),  # 17
+    orow(ocentered(mirror("ocnkww"))),  # 18
     orow(ocentered(mirror("onkkww"))),  # 19 apron bib dominant
     orow(ocentered(mirror("onkkww"))),  # 20 hold
     orow(ocentered(mirror("onkkww"))),  # 21 hold
     orow(ocentered(mirror("onkkw"))),  # 22 apron narrows toward the waist tie
     orow(ocentered(mirror("onkw"))),  # 23
     orow(ocentered(mirror("onkw"))),  # 24 hold
-    orow(ocentered(mirror("olkw"))),  # 25 shirt/trouser waistband returns
-    orow(ocentered(mirror("olmw"))),  # 26
-    orow(ocentered(mirror("olmd"))),  # 27
-    orow(ocentered(mirror("oomd"))),  # 28
-    orow(ocentered(mirror("oomd"))),  # 29 hold, near hip
-    orow(ocentered(mirror("ooilmmi"))),  # 30 hips (feeds the legs)
+    orow(ocentered(mirror("ockw"))),  # 25 shirt/trouser waistband returns
+    orow(ocentered(mirror("ocnw"))),  # 26
+    orow(ocentered(mirror("ocnw"))),  # 27
+    orow(ocentered(mirror("oonw"))),  # 28
+    orow(ocentered(mirror("oonw"))),  # 29 hold, near hip
+    orow(ocentered(mirror("ookcnnk"))),  # 30 hips (feeds the legs)
 ]
 assert len(OLD_TORSO_PLAYER) == 18
 
@@ -1489,13 +1511,16 @@ def _upscale(head: list[str], torso: list[str], width: int, head_rows: int, tors
 
 UPPER_PLAYER = _upscale(OLD_HEAD_PLAYER, OLD_TORSO_PLAYER, PLAYER_WIDTH, PLAYER_HEAD_ROWS, PLAYER_TORSO_ROWS)
 
-# Legs reuse the STEEL leg frames (dark trousers/boots read fine in the same neutral ramp as
-# armoured greaves) rescaled to the player's own canvas — same alternating-gait guarantee, no
-# second gait implementation to keep in sync.
-PLAYER_LEGS_F1 = nn_scale(LEGS_F1, PLAYER_WIDTH, PLAYER_LEGS_ROWS)
-PLAYER_LEGS_F2 = nn_scale(LEGS_F2, PLAYER_WIDTH, PLAYER_LEGS_ROWS)
-PLAYER_LEGS_F3 = nn_scale(LEGS_F3, PLAYER_WIDTH, PLAYER_LEGS_ROWS)
-PLAYER_LEGS_F4 = nn_scale(LEGS_F4, PLAYER_WIDTH, PLAYER_LEGS_ROWS)
+# Legs reuse the CLOTH leg frames (2026-08-15 palette fix, see OLD_TORSO_PLAYER's doc) rescaled to
+# the player's own canvas — same alternating-gait guarantee, no second gait implementation to keep
+# in sync. The player used to be the only figure in the cast still wearing STEEL (fully neutral)
+# trousers while every hero/townsfolk class already wears CLOTH ones (own-hue thigh/shin/ankle,
+# boot+sole always neutral regardless — CLOTH_BOOT/CLOTH_SOLE alias STEEL_BOOT/STEEL_SOLE, so this
+# does not touch the boot itself, only brings the trouser leg in line with the rest of the cast.
+PLAYER_LEGS_F1 = nn_scale(CLOTH_LEGS_F1, PLAYER_WIDTH, PLAYER_LEGS_ROWS)
+PLAYER_LEGS_F2 = nn_scale(CLOTH_LEGS_F2, PLAYER_WIDTH, PLAYER_LEGS_ROWS)
+PLAYER_LEGS_F3 = nn_scale(CLOTH_LEGS_F3, PLAYER_WIDTH, PLAYER_LEGS_ROWS)
+PLAYER_LEGS_F4 = nn_scale(CLOTH_LEGS_F4, PLAYER_WIDTH, PLAYER_LEGS_ROWS)
 
 PLAYER_EMPTY_MARGIN = ["." * PLAYER_WIDTH] * PLAYER_MARGIN_ROWS
 

@@ -17,6 +17,12 @@ namespace GodotClient.Town2d;
 /// sprite's actual pixel size — real gen'd character art (e.g. ~30x46) and the 16x24 placeholder
 /// both align correctly, since the offset is derived from whichever texture was actually resolved
 /// rather than a fixed constant.</para>
+///
+/// <para><b>U4 (owner playtest, "heroes and NPCs need nameplates"): deliberately NO nameplate
+/// here.</b> Every <see cref="HeroActor2D"/> and <see cref="TownsfolkNpc2D"/> gets
+/// one (see their own <c>Init</c> docs); the player does not, because the camera already answers
+/// "which one is he" — a nameplate over your own avatar would be the one label in town nobody
+/// ever needs to read.</para>
 /// </summary>
 public partial class PlayerController2D : CharacterBody2D
 {

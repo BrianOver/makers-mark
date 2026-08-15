@@ -540,12 +540,14 @@ public class TownSpriteArtTests
 
     /// <summary>Cheap content fingerprint for frame-distinctness — the full pixel run, joined.
     /// 20x32 is small enough that exactness costs nothing and beats any sampling heuristic.</summary>
-    private static string FingerprintOf(Image image)
+    private static string FingerprintOf(Image image) => FingerprintOf(image, BodyWidth, BodyHeight);
+
+    private static string FingerprintOf(Image image, int width, int height)
     {
-        var sb = new System.Text.StringBuilder(BodyWidth * BodyHeight * 4);
-        for (var y = 0; y < BodyHeight; y++)
+        var sb = new System.Text.StringBuilder(width * height * 4);
+        for (var y = 0; y < height; y++)
         {
-            for (var x = 0; x < BodyWidth; x++)
+            for (var x = 0; x < width; x++)
             {
                 sb.Append(image.GetPixel(x, y).ToRgba32()).Append(';');
             }
@@ -559,5 +561,144 @@ public class TownSpriteArtTests
         AssertThat(texture).OverrideFailureMessage($"{id}.png did not load").IsNotNull();
         return texture.GetImage();
     }
+
+    // ── Player smith (2026-08-15 owner playtest: "main character looks awful — the generic
+    // shopkeeper sprite was better") ────────────────────────────────────────────────────────────
+    // The player carries no ClassDefinition and joins no ArtVariants pool (gen_town_sprites.py's
+    // own PLAYER SMITH section doc — "the player does NOT join a variant pool, he is one person"),
+    // so he needs his own small, explicit id list rather than folding into Classes/GaitSuffixes
+    // above, which are keyed on the six-class hero family specifically.
+
+    private const int PlayerWidth = 22;
+    private const int PlayerHeight = 34;
+
+    /// <summary>First row of the legs in the SHIPPED (post-halving) player image — measured directly
+    /// against the committed pixels (the first row at which ANY of the three walk frames differs
+    /// from the base), not assumed from arithmetic: the player's authoring canvas has 3 more rows
+    /// than a hero's (68 vs 64), landing this boundary at 24, not <see cref="LegsTopRow"/>'s 22.</summary>
+    private const int PlayerLegsTopRow = 24;
+
+    private static readonly string[] PlayerGaitIds =
+        ["player_smith", "player_smith_walk2", "player_smith_step", "player_smith_walk4"];
+
+    /// <summary>The four cloth-ramp tones <c>tools/art/gen_town_sprites.py</c> derives from
+    /// <c>PLAYER_HUE</c> (110,74,42) via <c>cloth_ramp()</c> — light/mid/dark/deepest, letters
+    /// 'c'/'n'/'k'/'w'. Hardcoded rather than re-deriving the lerp here so this test pins the exact
+    /// committed RGB triples, the same "assert the real bytes" discipline <see cref="SkinTone"/>
+    /// already uses for the shared skin tone.</summary>
+    private static readonly Color[] PlayerWarmTones =
+    [
+        Color.Color8(182, 164, 148), // 'c' — light
+        Color.Color8(127, 96, 68),   // 'n' — mid
+        Color.Color8(77, 52, 29),    // 'k' — dark
+        Color.Color8(49, 33, 19),    // 'w' — deepest
+    ];
+
+    private const float PlayerWarmToneTolerance = 4f / 255f;
+
+    /// <summary>The minimum fraction of <c>player_smith.png</c>'s own opaque area that must be one
+    /// of <see cref="PlayerWarmTones"/> — the regression pin for the 2026-08-15 fix. Measured on
+    /// the committed (pre-fix) PNG: the warm PLAYER_HUE ramp covered only ~22.5% of the opaque
+    /// area, confined to the apron bib, while the neutral steel-violet ramp (o/d/l/m/i) covered
+    /// ~60% across the shirt/collar/waist that the fix targets — see OLD_TORSO_PLAYER's own doc in
+    /// the generator for the full measurement and why a straight shirt&lt;-&gt;apron colour swap
+    /// (43.5%) was rejected in favour of also warming the trousers (61.8%, comfortably clear).
+    /// </summary>
+    private const float MinWarmFraction = 0.45f;
+
+    [TestCase]
+    public void PlayerSmith_IsThePinnedSize_ForEveryGaitFrame()
+    {
+        foreach (var id in PlayerGaitIds)
+        {
+            var image = Load(id);
+            AssertThat(image.GetWidth()).OverrideFailureMessage($"{id} width").IsEqual(PlayerWidth);
+            AssertThat(image.GetHeight()).OverrideFailureMessage($"{id} height").IsEqual(PlayerHeight);
+        }
+    }
+
+    [TestCase]
+    public void PlayerSmith_WarmGarmentTonesAreTheMajorityOfItsOpaqueArea()
+    {
+        var image = Load("player_smith");
+        var total = 0;
+        var warm = 0;
+
+        for (var y = 0; y < image.GetHeight(); y++)
+        {
+            for (var x = 0; x < image.GetWidth(); x++)
+            {
+                var pixel = image.GetPixel(x, y);
+                if (pixel.A == 0)
+                {
+                    continue;
+                }
+
+                total++;
+                if (PlayerWarmTones.Any(tone => IsCloseTo(pixel, tone, PlayerWarmToneTolerance)))
+                {
+                    warm++;
+                }
+            }
+        }
+
+        AssertThat(total).OverrideFailureMessage("player_smith.png has no opaque pixels at all").IsGreater(0);
+
+        var fraction = (float)warm / total;
+        AssertThat(fraction)
+            .OverrideFailureMessage(
+                $"player_smith.png is {fraction:P1} warm PLAYER_HUE tones ({warm}/{total} opaque px) " +
+                $"— floor {MinWarmFraction:P0}. The owner's 2026-08-15 complaint (\"main character " +
+                "looks awful\") measured as the warm hue confined to the apron bib while the shirt/" +
+                "collar/waist/trousers stayed neutral steel; this pins the fix so it cannot regress.")
+            .IsGreaterEqual(MinWarmFraction);
+    }
+
+    /// <summary>The same two gait invariants <see cref="StepFrames_DifferOnlyBelowTheWaist"/> and
+    /// <see cref="AllFourGaitFrames_ArePairwiseDistinct"/> pin for the six hero classes, applied to
+    /// the player's own four frames — a colour-only palette fix must not touch the leg SHAPE the
+    /// walk-cycle relies on.</summary>
+    [TestCase]
+    public void PlayerSmith_GaitFrames_DifferOnlyBelowTheWaist_AndAreAllFourDistinct()
+    {
+        var frames = PlayerGaitIds.Select(Load).ToArray();
+
+        for (var f = 1; f < frames.Length; f++)
+        {
+            var differencesBelow = 0;
+            for (var y = 0; y < PlayerHeight; y++)
+            {
+                for (var x = 0; x < PlayerWidth; x++)
+                {
+                    if (frames[0].GetPixel(x, y) == frames[f].GetPixel(x, y))
+                    {
+                        continue;
+                    }
+
+                    AssertThat(y)
+                        .OverrideFailureMessage(
+                            $"{PlayerGaitIds[f]} differs from player_smith at ({x},{y}), above the " +
+                            $"legs row {PlayerLegsTopRow}. Only the legs may move between the " +
+                            "player's gait frames.")
+                        .IsGreaterEqual(PlayerLegsTopRow);
+                    differencesBelow++;
+                }
+            }
+
+            AssertThat(differencesBelow)
+                .OverrideFailureMessage($"{PlayerGaitIds[f]} is identical to player_smith — the walk needs a real stride")
+                .IsGreater(0);
+        }
+
+        var distinct = frames.Select(f => FingerprintOf(f, PlayerWidth, PlayerHeight)).Distinct().Count();
+        AssertThat(distinct)
+            .OverrideFailureMessage($"player_smith ships {distinct} distinct gait frames, not 4")
+            .IsEqual(4);
+    }
+
+    private static bool IsCloseTo(Color a, Color b, float tolerance) =>
+        System.Math.Abs(a.R - b.R) <= tolerance
+        && System.Math.Abs(a.G - b.G) <= tolerance
+        && System.Math.Abs(a.B - b.B) <= tolerance;
 }
 #endif

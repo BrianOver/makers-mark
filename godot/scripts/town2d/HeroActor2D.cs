@@ -61,6 +61,12 @@ public partial class HeroActor2D : Node2D
     /// and vertical placement so the click target still tracks the actual sprite footprint.</summary>
     private float _spriteHeight = 24f;
 
+    /// <summary>The RESOLVED sprite's own texture width (set by <see cref="Init"/>) — U4:
+    /// <see cref="Nameplate"/> centers on this, mirroring <see cref="_spriteHeight"/>'s "never a
+    /// fixed constant" contract so the nameplate stays centered over whichever body actually
+    /// resolved (base body vs. an <see cref="ArtVariants"/> sibling of a different width).</summary>
+    private float _spriteWidth = 16f;
+
     public int HeroIdValue { get; private set; }
 
     public string ClassId { get; private set; } = string.Empty;
@@ -74,6 +80,13 @@ public partial class HeroActor2D : Node2D
     public Sprite2D Sprite { get; private set; } = null!;
 
     public Area2D Pick { get; private set; } = null!;
+
+    /// <summary>U4 (owner playtest, "heroes and NPCs need nameplates"): this hero's name, tinted by
+    /// class colour — built through the SAME <see cref="Building2D.BuildLabel"/> recipe a building
+    /// nametag uses (same font size/outline/shadow), so nameplates read as one consistent object
+    /// class across the world. Public so a test can read <see cref="Label.Text"/>/position
+    /// directly.</summary>
+    public Label Nameplate { get; private set; } = null!;
 
     /// <summary>Raised by <see cref="RaisePick"/> (test seam) or a real click on <see
     /// cref="Pick"/> — <c>Town2D</c> forwards this into its own <c>HeroClicked</c> event,
@@ -119,8 +132,12 @@ public partial class HeroActor2D : Node2D
     /// and the initial <see cref="Position"/>. <paramref name="classColor"/> is still multiplied
     /// over the sprite (see <see cref="BuildSprite"/>) — hero body art is neutral light-grey and
     /// MUST be tinted per class to read apart; only the feet-offset math changed (see below).
+    /// <paramref name="heroName"/> (U4) builds this hero's <see cref="Nameplate"/> — optional,
+    /// defaulting to empty, so every pre-U4 test call site that has no name to give keeps compiling
+    /// (an empty nameplate renders no visible text, never a crash).
     /// </summary>
-    public void Init(int heroId, string classId, Color classColor, Texture2D sprite, Vector2 spawn)
+    public void Init(
+        int heroId, string classId, Color classColor, Texture2D sprite, Vector2 spawn, string heroName = "")
     {
         HeroIdValue = heroId;
         ClassId = classId;
@@ -141,11 +158,21 @@ public partial class HeroActor2D : Node2D
         // not a fixed 16x24 constant — real gen'd hero sprites vary in size (see PlayerController2D
         // for the same fix on the player side).
         _spriteHeight = sprite.GetHeight();
+        _spriteWidth = sprite.GetWidth();
 
         Sprite = BuildSprite(sprite, classColor);
         var art = TownLayout2D.CharacterArtRoot(); // carries the cast's world scale — see its doc
         AddChild(art);
         art.AddChild(Sprite);
+
+        // U4: name + class tint, same recipe every building nametag uses (Building2D.BuildLabel,
+        // made public for exactly this reuse) — added as a PLAIN child of this actor (never to the
+        // shared YSort scope directly), and drawn at Building2D.NameplateZIndex so it never enters
+        // the Y-sort comparison against a nearby actor's own sprite (see that constant's own doc
+        // for why a label offset ~10px above the feet line would otherwise be individually
+        // Y-sorted, not treated as glued to its owner).
+        Nameplate = Building2D.BuildLabel(heroName, new Vector2(_spriteWidth, _spriteHeight), tint: classColor);
+        AddChild(Nameplate);
 
         // M2: cache the base/step textures + construct the pose driver now that heroId/classId
         // are known — same id + "_step" suffix, resolved through the same IconRegistry.Art ladder

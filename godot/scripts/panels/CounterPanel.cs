@@ -4,6 +4,7 @@ using System.Linq;
 using GameSim.Contracts;
 using GameSim.Heroes;
 using Godot;
+using GodotClient.Town2d;
 using GodotClient.Ui;
 
 namespace GodotClient.Panels;
@@ -122,7 +123,14 @@ public partial class CounterPanel : SimPanel
         }
 
         var headerRow = AddRow(cardBody);
-        AddIcon(headerRow, IconRegistry.Sprite(hero.ClassId));
+        // U4 (owner playtest 2026-08-15, "the hero buying at the counter didn't match the heroes
+        // outside"): IconRegistry.Sprite(classId) resolves the retired class-only SVG contract
+        // (superseded 2026-08-04, see gen_town_sprites.py:19-27) — every hero of a class rendered
+        // identically here, and differently from the SAME hero's own body in the plaza. Route
+        // through the same per-hero ladder Town2D.ReconcileHeroes uses so the counter customer is
+        // provably the same figure the player saw walk in.
+        var customerIcon = AddIcon(headerRow, TownAssets2D.ForHero(hero.ClassId, hero.Id.Value));
+        customerIcon.Name = "CustomerIcon"; // test seam — the per-hero identity check (U4)
         var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         headerRow.AddChild(infoCol);
         AddLabel(infoCol, $"{hero.Name} — {hero.ClassId}");
@@ -253,7 +261,7 @@ public partial class CounterPanel : SimPanel
 
         desk.SetShelf(shelf);
         desk.SetLegal(canPresent, canAccept);
-        desk.SetCustomer(hero?.ClassId ?? string.Empty, hero?.MoodPermille ?? 0, counter.PatienceRounds);
+        desk.SetCustomer(hero?.ClassId ?? string.Empty, hero?.Id.Value ?? 0, hero?.MoodPermille ?? 0, counter.PatienceRounds);
         desk.PresentRequested += itemId => QueuePresent(new ItemId(itemId));
         desk.AcceptRequested += QueueAccept;
     }
@@ -629,6 +637,7 @@ public partial class CounterPanel : SimPanel
         private bool _canPresent;
         private bool _canAccept;
         private string _classId = string.Empty;
+        private int _heroId;
         private int _moodPermille;
         private int _patienceRounds = 3;
 
@@ -680,10 +689,13 @@ public partial class CounterPanel : SimPanel
 
         /// <summary>Drive posture/expression from the sim's own <paramref name="moodPermille"/>
         /// bucket and a tapping foot from <paramref name="patienceRounds"/> — presentation only,
-        /// read nowhere near <see cref="PresentRequested"/>/<see cref="AcceptRequested"/>.</summary>
-        public void SetCustomer(string classId, int moodPermille, int patienceRounds)
+        /// read nowhere near <see cref="PresentRequested"/>/<see cref="AcceptRequested"/>.
+        /// <paramref name="heroId"/> (U4) is the per-hero identity <see cref="CustomerTexture"/>
+        /// resolves through — without it every hero of a class drew identically here.</summary>
+        public void SetCustomer(string classId, int heroId, int moodPermille, int patienceRounds)
         {
             _classId = classId;
+            _heroId = heroId;
             _moodPermille = moodPermille;
             _patienceRounds = patienceRounds;
             QueueRedraw();
@@ -846,8 +858,8 @@ public partial class CounterPanel : SimPanel
             }
         }
 
-        /// <summary>The customer figure: the existing <see cref="IconRegistry.Sprite"/> hero art
-        /// (never new art), leaned by mood bucket, over a foot that taps faster the lower
+        /// <summary>The customer figure: the same per-hero town body art (<see cref="TownAssets2D.ForHero"/>,
+        /// never new art), leaned by mood bucket, over a foot that taps faster the lower
         /// <see cref="_patienceRounds"/> gets — plain dot-eyes + a mouth line bent by the same mood
         /// bucket for expression. Nothing here is read by <see cref="OnGuiInput"/>.</summary>
         private void DrawCustomer(Vector2 size)
@@ -913,6 +925,11 @@ public partial class CounterPanel : SimPanel
             DrawTextureRect(icon, new Rect2(_dragPos - new Vector2(15f, 15f), new Vector2(30f, 30f)), false);
         }
 
+        /// <summary>The customer figure: <see cref="TownAssets2D.ForHero"/>, the SAME per-hero
+        /// ladder <c>Town2D.ReconcileHeroes</c> resolves the plaza body from — U4 (owner playtest,
+        /// "the hero buying at the counter didn't match the heroes outside") replaced the old
+        /// <see cref="IconRegistry.Sprite"/> class-only call, which drew every hero of a class
+        /// identically. Cached on the (classId, heroId) pair so a redraw never re-resolves.</summary>
         private Texture2D? CustomerTexture()
         {
             if (string.IsNullOrEmpty(_classId))
@@ -920,10 +937,11 @@ public partial class CounterPanel : SimPanel
                 return null;
             }
 
-            if (_customerTexFor != _classId)
+            var cacheKey = $"{_classId}:{_heroId}";
+            if (_customerTexFor != cacheKey)
             {
-                _customerTexFor = _classId;
-                _customerTex = IconRegistry.Sprite(_classId);
+                _customerTexFor = cacheKey;
+                _customerTex = TownAssets2D.ForHero(_classId, _heroId);
             }
 
             return _customerTex;

@@ -100,6 +100,13 @@ public partial class TownsfolkNpc2D : Node2D
     /// of one.</summary>
     public static readonly string[] CivilianIds = { "broad", "slight" };
 
+    /// <summary>U4 (owner playtest, "heroes and NPCs need nameplates"): townsfolk carry no sim
+    /// identity (this class's own doc: "never tied to a sim hero"), so there is no sim name to
+    /// read a nameplate from — a small, deterministic, cosmetic flavour-name pool instead, indexed
+    /// the SAME "index mod length, no RNG" way <see cref="CivilianIds"/> already is (KTD5), so a
+    /// given home tile keeps the same name across sessions and reloads.</summary>
+    public static readonly string[] FlavorNames = { "Aldric", "Mira", "Perrin", "Sela" };
+
     private static readonly Vector2 PlaceholderSize = new(16, 24);
     private static readonly Color PlaceholderColor = new(0.55f, 0.5f, 0.42f);
     private static Texture2D? _placeholderCache;
@@ -112,7 +119,13 @@ public partial class TownsfolkNpc2D : Node2D
 
     public Sprite2D Sprite { get; private set; } = null!;
 
+    /// <summary>U4: this villager's own flavour-name nameplate — same <see
+    /// cref="Building2D.BuildLabel"/> recipe every nametag in the world uses, no class tint (only
+    /// heroes get one).</summary>
+    public Label Nameplate { get; private set; } = null!;
+
     private float _spriteHeight = 24f;
+    private float _spriteWidth = 16f;
     private double _townTime;
     private float _phaseX;
     private float _phaseY;
@@ -220,7 +233,9 @@ public partial class TownsfolkNpc2D : Node2D
     /// pass the base four arguments keep the pre-fix no-swap behavior; <see
     /// cref="Town2D.BuildTownsfolk"/> passes <see cref="ResolveStepSprite"/>'s real result.
     /// <paramref name="walk2Sprite"/>/<paramref name="walk4Sprite"/> (U3) complete the 4-frame
-    /// gait the same optional, null-tolerant way.
+    /// gait the same optional, null-tolerant way. <paramref name="name"/> (U4) builds this
+    /// villager's <see cref="Nameplate"/> — optional/empty for the same reason the gait frames
+    /// are: every pre-U4 test call site that supplies no name keeps compiling.
     /// </summary>
     public void Init(
         int index,
@@ -229,7 +244,8 @@ public partial class TownsfolkNpc2D : Node2D
         Vector2 home,
         Texture2D? stepSprite = null,
         Texture2D? walk2Sprite = null,
-        Texture2D? walk4Sprite = null)
+        Texture2D? walk4Sprite = null,
+        string name = "")
     {
         NpcIndex = index;
         Home = home;
@@ -245,6 +261,7 @@ public partial class TownsfolkNpc2D : Node2D
         _speedY = 0.25f + index % 4 * 0.10f;
 
         _spriteHeight = sprite.GetHeight();
+        _spriteWidth = sprite.GetWidth();
 
         Sprite = new Sprite2D
         {
@@ -256,6 +273,12 @@ public partial class TownsfolkNpc2D : Node2D
         var art = TownLayout2D.CharacterArtRoot(); // carries the cast's world scale — see its doc
         AddChild(art);
         art.AddChild(Sprite);
+
+        // U4: name only, no class tint (villagers have none) — same Building2D.BuildLabel recipe
+        // every nametag in the world uses (see HeroActor2D.Init's own doc for the Y-sort/ZIndex
+        // reasoning this shares).
+        Nameplate = Building2D.BuildLabel(name, new Vector2(_spriteWidth, _spriteHeight));
+        AddChild(Nameplate);
 
         // Gap #3 / U3: cache base/step/walk2/walk4 textures exactly like HeroActor2D.Init does,
         // now that the resolved sprite is known.
