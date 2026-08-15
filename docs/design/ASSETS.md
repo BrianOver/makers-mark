@@ -38,7 +38,7 @@ drawn. Item-icon and town-body rows re-counted 2026-08-14; the rest still predat
 | Town2D hero + townsfolk bodies | 160 (8 characters x 5 variants x 4 frames) | `TownAssets2D.ForHero`, `HeroActor2D` | Hand-pixel Python |
 | Town2D stations / shells / signs / props | ~42 | `WorkshopVocab`, `InteriorLayout2D`, `TownAssets2D.ForProp` | Hand-pixel Python |
 | Player smith | 5 | `PlayerController2D` | Hand-pixel Python |
-| Mine monster minis | 5 | `DelveStage` | Hand-pixel Python |
+| Mine monster minis | 25 (5 kinds × 5 variants) | `DelveStage` | Hand-pixel Python |
 | UI chrome (panel banners, frame) | 5 | `UiKit.SceneBanner`, `GameTheme` | SDXL + placeholder |
 | Icons (glyph + ore SVG) | 28 | `MainUi`, `IconRegistry.Ore` | Hand-authored SVG |
 
@@ -61,6 +61,16 @@ skin, hair and a garment dye-tint vary; **the class hue never does**, because it
 the class's panel chip and ledger row use and it has to stay readable as identity). Item icons are
 wired through `IconRegistry.ItemArtId(recipeId, slot, itemId)` and inert until their pools exist —
 `gen-item-variants.py` renders those.
+
+The five mine monsters joined the pools on 2026-08-14 (§11.10 U4/U5). They previously had **no
+generator at all** — `art/build/town2d-monster-*.build.json` recorded `unreproducible-legacy`, and
+measurement showed why the "Hand-pixel Python" credit in the §1 table could not have been true: 972
+to 5,755 distinct opaque colours each, at sizes from 60×41 to 84×99, which is a generated image
+downscaled rather than authored pixel art. They are now genuinely procedural and that credit is
+honest. Their pick keys on **floor + kind**, never kind alone (`DelveStage.MonsterBodyId`) — kind is
+a catalogue key, so keying on it would draw every cave rat in the campaign identically.
+`BestiaryPanel` keeps the base id on purpose: it is a reference catalogue, where one canonical
+picture per kind is the right answer.
 
 ## 2. Animation
 

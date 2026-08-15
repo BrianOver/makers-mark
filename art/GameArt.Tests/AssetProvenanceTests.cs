@@ -150,17 +150,48 @@ public class AssetProvenanceTests
     [InlineData("market")]
     [InlineData("tavern")]
     [InlineData("mine-gate")]
-    [InlineData("town2d-monster-cave-rat")]
-    [InlineData("town2d-monster-tunnel-spider")]
-    [InlineData("town2d-monster-deep-ghoul")]
-    [InlineData("town2d-monster-ore-golem")]
-    [InlineData("town2d-monster-forgeworm")]
     public void U9BackfilledIds_AreHonestlyMarkedUnreproducibleLegacy(string id)
     {
         var path = Path.Combine(RepoRoot(), "art", "build", $"{id}.build.json");
         using var doc = JsonDocument.Parse(File.ReadAllText(path));
 
         Assert.Equal("unreproducible-legacy", doc.RootElement.GetProperty("Status").GetString());
+        Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("Seed").ValueKind);
+        Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("Model").ValueKind);
+    }
+
+    /// <summary>
+    /// The five mine monsters left the list above on 2026-08-14 (§11.10 U4): they now have a real
+    /// generator, so <c>unreproducible-legacy</c> became a false claim about them and the row had to
+    /// move rather than be corrected in prose (CLAUDE.md rule 8).
+    ///
+    /// <para>Worth recording why they were ever in that list. They had no build script of any kind
+    /// and the repo never recorded their method — and measurement showed it could not have been the
+    /// "Hand-pixel Python" ASSETS.md credited them to: 972 to 5,755 distinct opaque colours across
+    /// the five, at sizes from 60x41 to 84x99. That is a generated image downscaled, not authored
+    /// pixel art. They are now genuinely the thing the docs claimed.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("town2d-monster-cave-rat")]
+    [InlineData("town2d-monster-tunnel-spider")]
+    [InlineData("town2d-monster-deep-ghoul")]
+    [InlineData("town2d-monster-ore-golem")]
+    [InlineData("town2d-monster-forgeworm")]
+    public void MineMonsters_AreProcedural_AndSayHowToReRenderThem(string id)
+    {
+        var path = Path.Combine(RepoRoot(), "art", "build", $"{id}.build.json");
+        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+
+        Assert.Equal("procedural", doc.RootElement.GetProperty("Status").GetString());
+
+        // A procedural record whose disclosure does not name its generator is as unhelpful as no
+        // record — the point of the status flip is that someone can re-render these.
+        var disclosure = doc.RootElement.GetProperty("Provenance").GetProperty("aiDisclosure").GetString();
+        Assert.NotNull(disclosure);
+        Assert.Contains("gen_town_sprites.py", disclosure!, StringComparison.Ordinal);
+        Assert.Contains("--check", disclosure!, StringComparison.Ordinal);
+
+        // Still no seed/model: procedural means deterministic code, not a recorded generation.
         Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("Seed").ValueKind);
         Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("Model").ValueKind);
     }

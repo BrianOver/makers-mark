@@ -416,7 +416,7 @@ public sealed partial class DelveStage : Node2D
 
             case DelveBeatKind.Engage:
                 CurrentMonsterKind = beat.MonsterKind;
-                ShowMonster(beat.MonsterKind);
+                ShowMonster(beat.MonsterKind, beat.Floor);
                 break;
 
             case DelveBeatKind.Exchange:
@@ -522,10 +522,31 @@ public sealed partial class DelveStage : Node2D
 
     // ── monster ──────────────────────────────────────────────────────────────────────────────
 
-    private void ShowMonster(string kind)
+    /// <summary>
+    /// §11.10 U5 (KTD-C): the art id for the monster on this floor, varied per ENCOUNTER.
+    ///
+    /// <para>Keyed on floor + kind, not on kind alone. Kind is a catalogue key — keying on it would
+    /// draw every cave rat in the campaign identically, which is the thing the variation pools
+    /// exist to end. Floor is the coarsest thing that makes an encounter distinct AND is already on
+    /// the beat, so no <c>Contracts</c> change is needed: <c>CombatEvent</c> carries no
+    /// per-encounter id, and adding one would mean a deny-listed micro-PR plus a save-format risk
+    /// for a purely cosmetic gain.</para>
+    ///
+    /// <para>The consequence is deliberate: the rat on floor 1 and the rat on floor 3 are different
+    /// bodies, while the rat on floor 1 is the SAME body every time you meet it — including across a
+    /// save/load, because <see cref="ArtVariants"/> hashes rather than rolls. Stability within a
+    /// floor is what stops the fight reading as a slideshow.</para>
+    /// </summary>
+    public static string MonsterBodyId(string kind, int floor)
     {
         var slug = Slug(kind);
-        var pixelTexture = IconRegistry.Art($"town2d-monster-{slug}");
+        return ArtVariants.Pick($"town2d-monster-{slug}", $"monster:{floor}:{slug}");
+    }
+
+    private void ShowMonster(string kind, int floor)
+    {
+        var slug = Slug(kind);
+        var pixelTexture = IconRegistry.Art(MonsterBodyId(kind, floor));
         if (pixelTexture is not null)
         {
             _monsterSprite.Texture = pixelTexture;
