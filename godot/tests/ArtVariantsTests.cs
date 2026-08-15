@@ -259,6 +259,71 @@ public class ArtVariantsTests
         }
     }
 
+    // ---- props vary by placement, not by kind (§11.10 U9, KTD-F) --------------------------------
+
+    [TestCase]
+    public void TheTownsTrees_AreNoLongerTwelveCopiesOfOneTree()
+    {
+        // The complaint this unit answers, as a measurement. TownLayout2D lays twelve entries whose
+        // SpriteId is all the same string — keying on that id would resolve every one of them to a
+        // single variant and change nothing at all.
+        var treePlacements = Enumerable.Range(0, TownLayout2D.Props.Length)
+            .Where(i => TownLayout2D.Props[i].SpriteId == "town2d-prop-tree")
+            .ToList();
+
+        AssertThat(treePlacements.Count)
+            .OverrideFailureMessage("the layout has no tree placements — the test is vacuous")
+            .IsGreaterEqual(8);
+
+        var drawn = treePlacements
+            .Select(i => TownAssets2D.PropArtId("town2d-prop-tree", i))
+            .ToHashSet();
+
+        AssertThat(drawn.Count)
+            .OverrideFailureMessage($"{treePlacements.Count} tree placements drew {drawn.Count} "
+                + "distinct sprite(s): " + string.Join(", ", drawn))
+            .IsGreaterEqual(3);
+    }
+
+    [TestCase]
+    public void APropAtAGivenPlacement_IsStableAcrossAReload()
+    {
+        var first = TownAssets2D.PropArtId("town2d-prop-tree", 7);
+        ArtVariants.ResetPoolCacheForTests();
+
+        // Layout data is fixed, so a given corner of the map keeps its own tree — a tree that
+        // changed colour on reload would read as the world being redrawn, not as variety.
+        AssertThat(TownAssets2D.PropArtId("town2d-prop-tree", 7)).IsEqual(first);
+    }
+
+    [TestCase]
+    public void EveryPropPlacement_ResolvesToCommittedArt()
+    {
+        var checkedPlacements = 0;
+        for (var i = 0; i < TownLayout2D.Props.Length; i++)
+        {
+            var id = TownAssets2D.PropArtId(TownLayout2D.Props[i].SpriteId, i);
+            AssertThat(IconRegistry.Has(id))
+                .OverrideFailureMessage($"placement {i} ({TownLayout2D.Props[i].SpriteId}) resolved "
+                    + $"to '{id}', which has no committed art")
+                .IsTrue();
+            checkedPlacements++;
+        }
+
+        AssertThat(checkedPlacements).IsEqual(TownLayout2D.Props.Length); // vacuous-green guard
+    }
+
+    [TestCase]
+    public void EveryVariedProp_HasARealPool()
+    {
+        foreach (var id in new[] { "town2d-prop-tree", "town2d-prop-lantern", "town2d-prop-crate" })
+        {
+            AssertThat(ArtVariants.PoolFor(id).Count)
+                .OverrideFailureMessage($"{id} has no variation pool")
+                .IsGreaterEqual(2);
+        }
+    }
+
     [TestCase]
     public void ItemArtId_WithNoCommittedVariants_StillResolvesToTheBaseIcon()
     {

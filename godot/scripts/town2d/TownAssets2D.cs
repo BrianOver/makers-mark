@@ -103,6 +103,24 @@ public static class TownAssets2D
     /// still reads as "a well/lantern/tree/crate", not a blank hole — mirrors <see cref="ForVenue"/>'s
     /// exact fallback ladder, just against the prop table instead of the venue one.
     /// </summary>
+    /// <summary>
+    /// §11.10 U9 (KTD-F): the art id for the prop at <paramref name="placementIndex"/> in
+    /// <c>TownLayout2D.Props</c> — its committed base id, or one of that id's variants.
+    ///
+    /// <para>Keyed on the PLACEMENT, not the sprite id. All twelve trees in the layout share the
+    /// id <c>town2d-prop-tree</c>, so an id-keyed pick would resolve them all to the same variant
+    /// and change nothing — the complaint was twelve identical trees, and keying on the thing they
+    /// have in common cannot fix that. The placement index is fixed layout data, so a given corner
+    /// of the map keeps its own tree across sessions and reloads.</para>
+    /// </summary>
+    public static string PropArtId(string spriteId, int placementIndex) =>
+        ArtVariants.Pick(spriteId, "prop", placementIndex);
+
+    /// <summary>The prop at a given placement, varied. Falls through the same placeholder ladder as
+    /// <see cref="ForProp(string)"/> when a variant somehow fails to load.</summary>
+    public static Texture2D ForProp(string spriteId, int placementIndex) =>
+        IconRegistry.Art(PropArtId(spriteId, placementIndex)) ?? ForProp(spriteId);
+
     public static Texture2D ForProp(string spriteId)
     {
         var art = IconRegistry.Art(spriteId);

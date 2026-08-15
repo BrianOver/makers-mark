@@ -1332,6 +1332,92 @@ assert len(set(_MONSTER_SILHOUETTES.values())) == len(MONSTER_GRIDS), \
     "two monsters share an identical silhouette — they must read apart at a glance"
 
 
+# ── TOWN PROPS (§11.10 U9, 2026-08-14) ───────────────────────────────────────────────────────────
+# TownLayout2D lays down 12 trees, 8 lanterns and 2 crates from THREE sprite ids, so the tree line
+# reads as one tree copied twelve times. This gives each of those three a pool.
+#
+# RECOLOURED, NOT RE-AUTHORED — the one place this section departs from every other generator in
+# this file. The committed props are good art the owner already accepted (the tree is 6 flat
+# colours, the crate 5; the lantern carries a soft alpha glow at 360). Re-authoring them as ASCII
+# grids the way U4 did for the monsters would be re-litigating art nobody complained about — the
+# complaint was that there are twelve IDENTICAL trees, not that the tree is wrong. So the base PNG
+# is the input and each variant is a deterministic colour transform of it.
+#
+# The consequence, stated because it is unusual here: this pass READS a committed PNG rather than
+# being self-contained like the ASCII grids. That is deliberate and desirable — retouch the base
+# tree and its whole pool follows on the next run — but it does mean a base PNG and its variants
+# must be regenerated together, which `--check` enforces by diffing all of them.
+
+PROP_VARIANT_COUNT = 5  # base + 4, matching the town cast
+
+
+def _rgb_to_hsv(r: int, g: int, b: int) -> tuple[float, float, float]:
+    """Integer RGB (0-255) to HSV floats. Hand-rolled rather than colorsys so the arithmetic is
+    visible and the rounding is ours — the same reason cloth_ramp computes its ramp inline."""
+    rf, gf, bf = r / 255.0, g / 255.0, b / 255.0
+    high, low = max(rf, gf, bf), min(rf, gf, bf)
+    span = high - low
+    if span == 0:
+        hue = 0.0
+    elif high == rf:
+        hue = ((gf - bf) / span) % 6
+    elif high == gf:
+        hue = (bf - rf) / span + 2
+    else:
+        hue = (rf - gf) / span + 4
+    return hue / 6.0, (span / high if high else 0.0), high
+
+
+def _hsv_to_rgb(h: float, s: float, v: float) -> tuple[int, int, int]:
+    i = int(h * 6) % 6
+    f = h * 6 - int(h * 6)
+    p, q, t = v * (1 - s), v * (1 - f * s), v * (1 - (1 - f) * s)
+    r, g, b = [(v, t, p), (q, v, p), (p, v, t), (p, q, v), (t, p, v), (v, p, q)][i]
+    return round(r * 255), round(g * 255), round(b * 255)
+
+
+# (hue shift in turns, saturation multiplier, value multiplier). Index 0 is identity, so variant 0
+# reproduces the committed base byte-for-byte and `--check` stays quiet on the three originals.
+PROP_TINTS: list[tuple[float, float, float]] = [
+    (0.000, 1.00, 1.00),   # 0 — the committed art, untouched
+    (0.030, 0.88, 1.10),   # 1 — sun-faded, warmer
+    (-0.035, 1.12, 0.86),  # 2 — deeper, older
+    (0.055, 0.72, 0.97),   # 3 — greyed, weathered
+    (-0.015, 1.05, 1.14),  # 4 — fresher, brighter
+]
+assert PROP_TINTS[0] == (0.0, 1.0, 1.0), "variant 0 must be the identity transform"
+
+PROP_IDS = ["town2d-prop-tree", "town2d-prop-lantern", "town2d-prop-crate"]
+
+# Below this value a pixel is outline or deep shadow. Those stay put: shifting them makes the
+# silhouette read as a different-coloured OBJECT rather than the same object in different light,
+# and at 16-28px wide the outline is most of what carries the shape.
+PROP_OUTLINE_VALUE_FLOOR = 0.18
+
+
+def recolour_prop(image: Image.Image, index: int) -> Image.Image:
+    """One prop variant. Alpha is copied through untouched — the lantern's glow is soft alpha, and
+    perturbing it would change the shape of the light rather than its colour."""
+    hue_shift, sat_mul, val_mul = PROP_TINTS[index]
+    out = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    src, dst = image.load(), out.load()
+
+    for y in range(image.height):
+        for x in range(image.width):
+            r, g, b, a = src[x, y]
+            if a == 0:
+                continue
+            h, s, v = _rgb_to_hsv(r, g, b)
+            if v >= PROP_OUTLINE_VALUE_FLOOR:
+                h = (h + hue_shift) % 1.0
+                s = min(1.0, s * sat_mul)
+                v = min(1.0, v * val_mul)
+                r, g, b = _hsv_to_rgb(h, s, v)
+            dst[x, y] = (r, g, b, a)
+
+    return out
+
+
 # ── PLAYER SMITH (2026-08-04 second round): brought up to the SAME treatment as the heroes above
 # -- bigger canvas, real 4-frame gait, baked colour, a real face -- so the player is not the one
 # crude sprite left once the heroes carry all of this. No prior generator source existed for
@@ -1654,6 +1740,32 @@ def main() -> int:
 
         image.save(path)
         print(f"wrote {path} ({image.width}x{image.height})")
+
+    # ---- prop variants: a colour transform of committed art, not an ASCII render ----------------
+    # Runs after the grid pass because it READS committed PNGs (see the TOWN PROPS section header).
+    # A missing base is a hard error rather than a skip: silently generating no pool is exactly the
+    # "committed but invisible" failure the art-miss logging exists to catch.
+    for prop_id in PROP_IDS:
+        base_path = os.path.join(args.out, f"{prop_id}.png")
+        if not os.path.exists(base_path):
+            die(f"{prop_id}: no committed base PNG at {base_path} — cannot build its variant pool")
+        base = Image.open(base_path).convert("RGBA")
+
+        for index in range(1, PROP_VARIANT_COUNT):
+            name = f"{prop_id}{ARTVARIANTS_PREFIX}{index + 1}"
+            image = recolour_prop(base, index)
+            path = os.path.join(args.out, f"{name}.png")
+
+            if args.check:
+                if not os.path.exists(path):
+                    drift.append(f"{name}: no committed PNG at {path}")
+                elif (list(Image.open(path).convert("RGBA").get_flattened_data())
+                        != list(image.get_flattened_data())):
+                    drift.append(f"{name}: committed PNG differs from the recolour in this script")
+                continue
+
+            image.save(path)
+            print(f"wrote {path} ({image.width}x{image.height})")
 
     if drift:
         for line in drift:
