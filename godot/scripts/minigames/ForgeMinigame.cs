@@ -94,6 +94,16 @@ public sealed partial class ForgeMinigame : PanelContainer
     public const int BellowsDriftBackPermillePerSecond = 8;
 
     public const int StrikeHeatCostPermille = 90;
+
+    /// <summary>The smallest share of a full-heat blow a strike can land, however cold the billet.
+    /// Exists so the act always terminates — see the note in <see cref="ForgeStrike"/>. Deliberately
+    /// small: at 8% a cold-hammering player still finishes, but slowly and at a worse grade, which
+    /// keeps heat management a real decision rather than a formality.</summary>
+    public const double ColdStrikeFloor = 0.08;
+
+    /// <summary>At or below this heat the billet reads as cold and the readout points at the bellows
+    /// rather than telling the player to keep striking.</summary>
+    public const int ColdBilletHeatPermille = 120;
     public const double StrikeOnTempoBonusMultiplier = 2.2;
     public const double TempoPeriodSeconds = 0.6;
     public const int TempoOnBeatWindowPermille = 180;
@@ -252,6 +262,37 @@ public sealed partial class ForgeMinigame : PanelContainer
     /// <summary>Whether the assist is currently doing anything — the condition the readout uses,
     /// kept here so the UI and the tests agree on one definition of "engaged".</summary>
     public bool AssistEngaged => StrikesLanded > RequiredStrikes;
+
+    /// <summary>
+    /// Exactly the line the player reads under the anvil. A property rather than a string built
+    /// inline at the label, so a test can assert on the words the player actually sees — the
+    /// 2026-08-14 defect was half arithmetic and half COPY (at zero heat the readout said "the
+    /// billet is yielding, keep going", which is the one action that could not work), and only the
+    /// arithmetic half was reachable from a test before this.
+    /// </summary>
+    public string ReadoutText
+    {
+        get
+        {
+            if (WasCancelled) return "Cancelled.";
+            if (Completed) return "Shaped! Quenching next...";
+
+            var state = IsPumping ? "pumping" : "idle";
+            var head = $"Strike {StrikesLanded}/{RequiredStrikes} — Heat {HeatYPermille} — {state}";
+
+            // Cold beats overrun: a player at zero heat needs the bellows, and telling them the
+            // billet is "yielding" while it is stone cold is worse than saying nothing.
+            if (HeatYPermille <= ColdBilletHeatPermille)
+            {
+                return head + " — the billet has gone cold; work the bellows before you strike";
+            }
+
+            // Past the strike budget the count reads "23/21", which on its own looks like a failure
+            // state. Name what is actually happening: the assist pays more per blow so the act
+            // closes out. See AssistPerOverrunStrike.
+            return AssistEngaged ? head + " — the billet is yielding, keep going" : head;
+        }
+    }
 
     /// <summary>A read-only PARTIAL preview of Act 1's own smelt+forge zones, computed once
     /// <see cref="ShapingDone"/> fires by calling the SAME pure <c>ForgeScorer.Score</c> on the
@@ -432,8 +473,16 @@ public sealed partial class ForgeMinigame : PanelContainer
         var onTempo = tempoError <= TempoOnBeatWindowPermille;
         RecordStrike(tempoError);
 
+        // Heat scales the blow, but never all the way to nothing. Brian's 2026-08-14 playtest sat at
+        // "Strike 27/21 — Heat 0 — the billet is yielding, keep going": the factor was literally
+        // zero, so every strike advanced the shape by zero and the act could not close no matter how
+        // long he hammered. Worse, AssistMultiplier — the overrun mechanism that exists precisely to
+        // close out a long act — is multiplied by the same term, so the escape hatch was zeroed by
+        // the same bug as the trap. The floor keeps heat management the mechanic it is (a cold blow
+        // buys a fraction of a hot one) while guaranteeing the act always terminates.
+        var heatFactor = Math.Max(ColdStrikeFloor, HeatYPermille / 1000.0);
         var multiplier = onTempo ? StrikeOnTempoBonusMultiplier : 1.0;
-        var advance = (int)Math.Round(_strikeAdvancePermille * (HeatYPermille / 1000.0) * multiplier * AssistMultiplier);
+        var advance = (int)Math.Round(_strikeAdvancePermille * heatFactor * multiplier * AssistMultiplier);
         ShapeXPermille = Math.Clamp(ShapeXPermille + Math.Max(0, advance), 0, ShapingFinishPermille);
         HeatYPermille = Math.Clamp(HeatYPermille - StrikeHeatCostPermille, 0, 1000);
 
@@ -856,17 +905,7 @@ public sealed partial class ForgeMinigame : PanelContainer
 
         _titleLabel.Text = $"Shape it: {RecipeId}";
 
-        _readoutLabel.Text = WasCancelled
-            ? "Cancelled."
-            : Completed
-                ? "Shaped! Quenching next..."
-                : AssistEngaged
-                    // Past the strike budget the count reads "23/21", which on its own looks like a
-                    // failure state. Name what is actually happening instead: the assist is paying
-                    // more per blow so the act closes out. See AssistPerOverrunStrike.
-                    ? $"Strike {StrikesLanded}/{RequiredStrikes} — Heat {HeatYPermille} — "
-                      + $"{(IsPumping ? "pumping" : "idle")} — the billet is yielding, keep going"
-                    : $"Strike {StrikesLanded}/{RequiredStrikes} — Heat {HeatYPermille} — {(IsPumping ? "pumping" : "idle")}";
+        _readoutLabel.Text = ReadoutText;
 
         _hammerButton.Disabled = Completed || WasCancelled || IsPumping;
         _bellowsButton.Disabled = Completed || WasCancelled;

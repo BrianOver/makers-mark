@@ -61,6 +61,85 @@ public class ForgeWinnabilityTests
     }
 
     /// <summary>
+    /// Brian's 2026-08-14 playtest, reproduced exactly: <c>Strike 27/21 — Heat 0 — idle — the billet
+    /// is yielding, keep going</c>. He was past the strike budget, the billet was stone cold, and
+    /// the game was telling him to keep hammering.
+    ///
+    /// <para><b>Why the synthetic players never caught this.</b> <see cref="ForgePlayer"/> manages
+    /// heat sensibly — it pumps before it strikes — so every run above stays out of the state a
+    /// human wanders into by just hitting the hammer. The suite's own failure message even names
+    /// the mechanism ("strike advance is proportional to heat... the shape stops moving"), which
+    /// means the death spiral was understood and simply never asserted at its floor. A policy that
+    /// plays correctly cannot discover a trap that only catches players who do not.</para>
+    ///
+    /// <para>At exactly zero heat the multiplier was zero, so the advance was zero — and because the
+    /// overrun assist is multiplied by that same term, the mechanism that exists specifically to
+    /// close out a long act was zeroed too. The escape hatch had the same bug as the trap.</para>
+    /// </summary>
+    [TestCase]
+    public void AColdBilletStillMoves_SoTheActCanAlwaysClose()
+    {
+        var act1 = new ForgeMinigame();
+        act1.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith,
+            ImmutableSortedSet<string>.Empty, day: 0, demonstratedAccuracyPermille: 500);
+
+        // Drain to Brian's state: strike until the heat bottoms out, never pumping.
+        for (var i = 0; i < 40 && act1.HeatYPermille > 0 && !act1.Completed; i++)
+        {
+            act1.ForgeStrike();
+        }
+
+        if (act1.Completed)
+        {
+            return; // finished before going cold — not the state under test, and not a failure
+        }
+
+        AssertThat(act1.HeatYPermille)
+            .OverrideFailureMessage("could not drive the billet cold; the test no longer reproduces Brian's state")
+            .IsEqual(0);
+
+        var shapeBefore = act1.ShapeXPermille;
+        act1.ForgeStrike();
+
+        AssertThat(act1.ShapeXPermille)
+            .OverrideFailureMessage(
+                $"A strike on a stone-cold billet advanced the shape by 0 (still {act1.ShapeXPermille} "
+                + $"after {act1.StrikesLanded} strikes, assist x{act1.AssistMultiplier:0.00}). That is a "
+                + "softlock the readout describes as \"the billet is yielding, keep going\" — the player "
+                + "can hammer forever and never finish. A cold strike must still buy SOMETHING.")
+            .IsGreater(shapeBefore);
+    }
+
+    /// <summary>
+    /// The other half of the same defect: at zero heat the readout told Brian to keep hammering,
+    /// which is the one thing that cannot work. Copy that names the wrong action is worse than no
+    /// copy, because it spends the player's trust before it wastes their time.
+    /// </summary>
+    [TestCase]
+    public void AColdBillet_TellsThePlayerToWorkTheBellows()
+    {
+        var act1 = new ForgeMinigame();
+        act1.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith,
+            ImmutableSortedSet<string>.Empty, day: 0, demonstratedAccuracyPermille: 500);
+
+        for (var i = 0; i < 40 && act1.HeatYPermille > ForgeMinigame.ColdBilletHeatPermille && !act1.Completed; i++)
+        {
+            act1.ForgeStrike();
+        }
+
+        if (act1.Completed)
+        {
+            return;
+        }
+
+        AssertThat(act1.ReadoutText.ToLowerInvariant())
+            .OverrideFailureMessage(
+                $"At heat {act1.HeatYPermille} the readout says \"{act1.ReadoutText}\" — it must name the "
+                + "cold and point at the bellows, not tell the player to keep striking.")
+            .Contains("bellows");
+    }
+
+    /// <summary>
     /// A player who has learned the rhythm must be REWARDED for it. If a veteran scores the same as a
     /// beginner, the tempo mechanic is decoration and the minigame is a slot machine wearing a skill
     /// costume — which is the honest reading of "grades land Poor" no matter how you play.
