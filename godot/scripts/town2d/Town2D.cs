@@ -1342,9 +1342,14 @@ public partial class Town2D : Control
     private void BuildProps()
     {
         var treeIndex = 0;
+        var placementIndex = 0;
         foreach (var prop in TownLayout2D.Props)
         {
-            var sprite = TownAssets2D.ForProp(prop.SpriteId);
+            // §11.10 U9 (KTD-F): varied by PLACEMENT, not by sprite id. Twelve of these entries
+            // share the id "town2d-prop-tree", so keying the pick on the id would resolve all
+            // twelve to one variant and leave the tree line exactly as identical as it was.
+            var sprite = TownAssets2D.ForProp(prop.SpriteId, placementIndex);
+            placementIndex++;
             var size = sprite?.GetSize() ?? PropFallbackSize;
             if (size.X <= 0f || size.Y <= 0f)
             {
