@@ -2418,6 +2418,55 @@ description of an intention, not of a mechanism, and git outranks it.
 > no traits" (`THE-GAME.md` §6, Crusader Kings row). **(b) is the cheap answer and (a) is the
 > honest one; do not pick for the owner.**
 
+> **R9 RULED, 2026-08-15 — none of (a)/(b)/(c). The grace is a TAUGHT MECHANIC, and it belongs
+> to the tutorial rework (U2), not to the resolver as a silent rule.**
+>
+> Option (c) was built first, and building it is what produced the ruling. It works exactly as
+> specified — and measured over the balance suite it inverts the game:
+>
+> | trait | deaths / raids | mortality |
+> |---|---|---|
+> | Prepared | 159 / 285 | **55.8%** |
+> | Reckless | 59 / 276 | **21.4%** |
+>
+> Preparation became **2.6x deadlier than recklessness**, because under (c) buying a salve is a
+> transaction, so a hero who restocks *forfeits the protection* while a hero who buys nothing stays
+> shielded permanently. The player's entire job is to arm heroes, and the rule made arming one the
+> thing that gets it killed. Two further consequences fell out of the same shape: a hero the player
+> never trades with is immortal for the whole campaign (so it was never a rule about "early" at
+> all), and 3 of 11 balance seeds stopped reaching an Ending inside 100 days.
+>
+> But the deeper objection is the one that decides it, and it is this section's own diagnosis
+> turned on itself: **a hidden shield is exactly the failure §11.11 exists to fix.** The game would
+> have staged an outcome — a hero walking away from a killing blow — and never staged its
+> antecedent. The player would learn a rule they were never told, by noticing a pattern in deaths
+> that did not happen. That is the same defect as a counter asking for a shield the shelf cannot
+> supply, wearing different clothes.
+>
+> So the grace is **introduced deliberately, in the tutorial, as a mechanic the player is told
+> about and watches work** — the apprenticeship's own promise, with a visible end. It moves out of
+> the balance layer and into U2's teaching arc. Its trigger, its duration and its ending copy are
+> U2's to design; what is fixed here is that it must be *taught*, must be *visible when it fires*,
+> and must *end where the tutorial ends* — never a permanent property of an untraded hero, and
+> never coupled to whether the player sold that hero anything.
+>
+> **Technical findings from the (c) build, kept so U2 does not rediscover them.** The mechanism is
+> sound and reusable; only its trigger was wrong. The grace clamp reuses `CombatEvent`'s existing
+> `ModifierHpDelta` ledger field (the same channel the Leech rune uses), so attribution's HP replay
+> stays byte-consistent and **no `Contracts/` change is needed**. `DamageTaken` keeps recording the
+> true lethal roll and the grace is the counteracting delta — which is what makes the near-death
+> legible rather than an invisible cap. Survival ends at 1 HP and the existing `ShouldFlee` check
+> sends the hero home on the next round, so no new retreat path is required. The exemption set is
+> threaded from `ExpeditionSystem`/`ExpeditionDeepSystem` into the resolver as an opaque `HeroId`
+> membership test, mirroring the pre-existing bounty `retreatExemptHeroes` parameter exactly — the
+> resolver still decides every fight on combat math alone and reads no trait, which is why **no
+> pinned law exception was required**. Recomputing at both the Expedition and ExpeditionDeep ticks
+> (rather than carrying one set across Camp) matters, because a vigil resupply can land between them.
+>
+> Fixture note for whoever builds U2: `StagedResolutionTests`' "Naked" heroes have no transactions
+> at all, so any stake-shaped predicate makes them structurally unkillable and those fixtures need
+> deliberate updating rather than silent patching.
+
 The staging half (1-3) ships regardless of which way R9 goes and does not depend on it.
 
 **Files.**
