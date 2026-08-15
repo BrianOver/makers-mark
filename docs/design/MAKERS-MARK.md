@@ -1118,6 +1118,90 @@ with whichever PR makes its claims true.
 - **Not here:** any change to `ArtVariants` itself (it shipped and is proven), the town bodies
   (done), monster *behaviour* (this is presentation only), and `Contracts` (KTD-C avoids it).
 
+#### The rest of the assets — amended 2026-08-14, after U1/U4/U5 landed
+
+An audit of the whole manifest, once the town bodies and monsters had pools:
+
+| family | base ids | pooled |
+|---|---|---|
+| item icons | 48 | no — U2/U3 above |
+| town props / stations / signs / shells / tiles | 48 | no |
+| venue art (backdrops, entrances, venue monsters) | 22 | no |
+| UI chrome + glyphs | 19 | no |
+| hero roster portraits | 6 | no |
+| mine monster portraits (painterly) | 5 | no |
+| player smith | 1 | no |
+| town hero + civilian bodies, mine monster minis | 13 | **yes** |
+
+Three findings from that audit shape the units below more than the counts do.
+
+**1. Three shipped icons are visibly wrong right now.** `item-longsword` renders inside a
+decorative card frame; `item-kite-shield` and `item-bulwark` are each *two shields side by side*.
+The owner reported all three; they are still live. Same root cause as the cake-stand buckler —
+KTD-A's building prefix — so U1's fix is also their fix.
+
+**2. The variation work created an inconsistency.** A hero now has five bodies walking around town
+and **one** portrait on their roster card. The person you watched leave for the mine is not the
+person on the card.
+
+**3. Everything left that is SDXL is downstream of one gate.** The broken icons, the item pools and
+any portrait variants all render through the prompt U1 changed. **None of it runs before U2's
+four-recipe sample is on the owner's screen** — that gate is not per-unit, it is per-programme.
+
+**KTD-E. A hero's portrait must pick the SAME index as their body.** `ArtVariants.Pick` returns an
+id from a pool, and two pools of different depth resolve one key to different indices — so a hero
+could draw body 3 and portrait 1 and read as two different people across surfaces. Two ways out:
+keep every per-hero pool at the same depth (5, matching the bodies), or expose the chosen index so
+both surfaces share it. **Prefer exposing the index** (`ArtVariants.PickIndex`): pool depth is an
+art-supply detail that will drift the first time a family gets a sixth variant, and a rule that
+breaks silently on a future art drop is not a rule. Unit U8 owns this.
+
+**KTD-F. Props vary by PLACEMENT, not by kind.** The town lays down 12 trees, 8 lanterns and 2
+crates from three sprite ids (`TownLayout2D`), so keying on the id would change nothing — every
+tree would still be the same tree. The key is the placement's index in the layout table, which is
+fixed data, so a given corner of the map keeps its own tree across sessions.
+
+**U7 — the three broken icons.** Re-render `item-longsword`, `item-kite-shield`, `item-bulwark` on
+U1's fixed prompt; curate to one good result each. Depends on U2. Files:
+`godot/assets/art/item-{longsword,kite-shield,bulwark}.png`, `art/build/*.build.json`,
+`godot/assets/art/art-manifest.json`. Test scenarios: each id still resolves through
+`AssetResolutionCensusTests`; the committed PNG is a single connected subject (the two-shield defect
+is machine-detectable — a second blob at 44% of the opaque area is what `item-kite-shield` has
+today); icon file size stays at draw size. Proof: a shop capture showing all three, beside the
+current ones.
+
+**U8 — hero roster portraits vary with the body.** Four extra portraits per class (24 renders),
+picked by the same `HeroId` and the same index as the town body per KTD-E. Depends on U2 **and** an
+explicit owner look — hero faces are the most curation-sensitive art in the game, and a bad one is
+worse than a repeated one. Files: `godot/scripts/ArtVariants.cs` (add `PickIndex`),
+`godot/scripts/AssetCatalog.cs`, `godot/tests/ArtVariantsTests.cs`, `art/specs/heroes/HeroSpecs.cs`,
+`godot/assets/art/hero-*-v*.png`. Test scenarios: a hero's portrait index equals their body index
+for every hero id 1-12 across all six classes; a class whose portrait pool is shallower than its
+body pool still resolves (no index overrun); `HeroesPanel`, `TavernPanel` and `LedgerModal` all
+resolve committed art. Proof: a roster capture beside a town capture of the same hero.
+
+**U9 — prop and clutter pools.** Procedural, no GPU: author `prop-tree`, `prop-lantern`,
+`prop-crate` variants in the `gen_town_sprites.py` idiom the monsters now use, then pick by
+placement index (KTD-F). These three ids have **no generator today** — only `props-town-well` has a
+build record — so this unit authors them the same way U4 authored the monsters, and inherits U4's
+lesson: write full-width rows, never `mirror()` on a padded half. Files:
+`tools/art/gen_town_sprites.py`, `godot/scripts/town2d/Town2D.cs`,
+`godot/scripts/town2d/TownAssets2D.cs`, `godot/tests/TownSpriteArtTests.cs`,
+`art/build/town2d-prop-*.build.json`. Test scenarios: 12 tree placements draw ≥3 distinct sprites;
+the same placement index is stable across a pool-cache drop; every committed prop variant is a
+single connected subject at the pinned size; `--check` reports zero drift. Proof: a town capture
+where the tree line is no longer twelve copies.
+
+**U10 — make the docs true.** `ASSETS.md` §1 counts and the variation-pools paragraph; the
+`Mine monster portraits (painterly)` row is now a *fallback* path only (`DelveStage` reaches it
+solely when pixel art is missing, which no longer happens) — say so rather than implying it is a
+live surface. Lands in whichever PR makes its claims true.
+
+**Sequencing.** U9 is independent — no GPU, no gate, can run first. U7 → U8 both wait on U2. U10
+rides along. **Deliberately not here:** signs, building shells, ground tiles, backdrops and UI
+chrome. Those are identity and chrome rather than cast; varying a signboard is noise that costs
+legibility, and the owner's ask named heroes, NPCs, enemies and crafted items.
+
 ---
 
 ## 12. The external reviews — what came from outside, and what we did with it
