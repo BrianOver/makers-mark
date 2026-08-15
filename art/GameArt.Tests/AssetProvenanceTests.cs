@@ -52,18 +52,17 @@ public class AssetProvenanceTests
     /// <summary>
     /// U9's documented exception list for manifest ids that carry no <c>art/build/*.build.json</c>
     /// and have no generator either — every entry below was individually traced to a "no script, no
-    /// seed, nothing to re-run" conclusion during U9, not assumed. Two shapes:
-    /// <c>forge</c>/<c>noticeboard</c> are the same pre-pipeline SDXL-era gap as the sibling
-    /// <c>market</c>/<c>tavern</c>/<c>mine-gate</c> ids U9 DID backfill (see their
-    /// <c>art/build/*.build.json</c> <c>"unreproducible-legacy"</c> records for the pattern);
+    /// seed, nothing to re-run" conclusion during U9, not assumed.
     /// <c>panel_banner_*</c>/<c>ui-frame-wood</c> never had a build-half to begin with (see
     /// <c>godot/assets/art/README.md</c>'s own "Ids outside the AssetSpec grammar" section for
     /// <c>panel_banner_*</c> specifically).
+    ///
+    /// <para><c>forge</c> and <c>noticeboard</c> left this list on 2026-08-15 (§11.12 U3): both now
+    /// have a real <c>art/build/{forge,noticeboard}.build.json</c> (seed/model/sampler, SDXL base
+    /// 1.0 + pixel-art-xl LoRA), so the "no script, no seed" gap they used to sit in is gone.</para>
     /// </summary>
     private static readonly string[] DocumentedUnreproducibleIds =
     {
-        "forge",
-        "noticeboard",
         "panel_banner_bounties",
         "panel_banner_heroes",
         "panel_banner_shop",
@@ -146,10 +145,15 @@ public class AssetProvenanceTests
             + string.Join(", ", stale));
     }
 
+    /// <summary>
+    /// <c>tavern</c> and <c>mine-gate</c> left this theory's InlineData on 2026-08-15 (§11.12 U3):
+    /// both were rebuilt against the U3 Building clause and now carry a real seed/model/sampler
+    /// record (<c>Status: "locked"</c>), so asserting <c>unreproducible-legacy</c> on them would be
+    /// a false claim about art that no longer exists. <c>market</c> is untouched (the owner's own
+    /// style anchor — U3 does not re-render it) and stays unreproducible-legacy.
+    /// </summary>
     [Theory]
     [InlineData("market")]
-    [InlineData("tavern")]
-    [InlineData("mine-gate")]
     public void U9BackfilledIds_AreHonestlyMarkedUnreproducibleLegacy(string id)
     {
         var path = Path.Combine(RepoRoot(), "art", "build", $"{id}.build.json");
@@ -194,6 +198,37 @@ public class AssetProvenanceTests
         // Still no seed/model: procedural means deterministic code, not a recorded generation.
         Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("Seed").ValueKind);
         Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("Model").ValueKind);
+    }
+
+    /// <summary>
+    /// §11.12 U3: the four venue exteriors rebuilt against the U3 Building clause (<c>forge</c> and
+    /// <c>noticeboard</c> gaining their first-ever build.json; <c>tavern</c> and <c>mine-gate</c>
+    /// leaving <c>unreproducible-legacy</c> above). Pins the positive claim the removal above only
+    /// implies: each is genuinely <c>locked</c> with a real seed/model, not just "no longer flagged
+    /// unreproducible." <c>market</c> (the style anchor) is deliberately absent — U3 does not
+    /// re-render it.
+    /// </summary>
+    [Theory]
+    [InlineData("forge")]
+    [InlineData("tavern")]
+    [InlineData("mine-gate")]
+    [InlineData("noticeboard")]
+    public void U3RebuiltVenues_AreLockedWithRealSeedAndModel(string id)
+    {
+        var path = Path.Combine(RepoRoot(), "art", "build", $"{id}.build.json");
+        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+
+        Assert.Equal("locked", doc.RootElement.GetProperty("Status").GetString());
+        Assert.Equal(JsonValueKind.Number, doc.RootElement.GetProperty("Seed").ValueKind);
+        Assert.Equal("sd_xl_base_1.0.safetensors", doc.RootElement.GetProperty("Model").GetString());
+        Assert.Equal("pixel-art-xl.safetensors", doc.RootElement.GetProperty("Lora").GetString());
+
+        // A locked record whose disclosure doesn't say how the alpha was cut is as unhelpful as no
+        // record -- this batch deliberately deviated from cutout.py/BiRefNet (see each file's own
+        // aiDisclosure), so the deviation itself must be readable, not just the recipe.
+        var disclosure = doc.RootElement.GetProperty("Provenance").GetProperty("aiDisclosure").GetString();
+        Assert.NotNull(disclosure);
+        Assert.Contains("DEVIATION from cutout.py", disclosure!, StringComparison.Ordinal);
     }
 
     /// <summary>
