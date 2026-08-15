@@ -1,20 +1,20 @@
 {
-  "Seed": null,
-  "Model": null,
-  "Lora": null,
-  "Steps": null,
-  "CfgMilli": null,
-  "SamplerResolved": null,
-  "SchedulerResolved": null,
+  "Seed": 700400,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": "pixel-art-xl.safetensors",
+  "Steps": 30,
+  "CfgMilli": 7000,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
   "PaletteSha256": null,
-  "DiffuseSha256": "cd78e8fd51a1c8da403165ec2c3229d3dadf2118f426e496f40f6c798f3bd06d",
+  "DiffuseSha256": "4973c02418821ee76bf2f31a1ae543f0031a4bdd338e6d2c9ef7b72a3a4f4e93",
   "NormalSha256": null,
   "Uid": "uid://dgjyswgcnoid0",
   "HandFinished": false,
-  "Status": "unreproducible-legacy",
+  "Status": "locked",
   "Provenance": {
-    "drafts": null,
-    "paintoverNote": null,
-    "aiDisclosure": "No seed, model, sampler or generation record exists for this asset -- it predates art/build/*.build.json provenance tracking. TownLayout2D.cs's own doc calls this and its siblings 'the pre-pivot SDXL set': still drawn live today as the Mine Gate (TownLayout2D.Venues 'mine-gate' spriteId, resolved through TownAssets2D.ForVenue) per the 2026-08-01 owner ruling to keep this SDXL exterior look over the town2d pixel-art alternative. Style is consistent with the repo's known SDXL era, but no seed/model/sampler was ever captured for this specific file, so nothing is invented here -- recorded honestly as unreproducible-legacy (U9, R9) rather than fabricated."
+    "drafts": "Seed 700400 (denoise 0.8, IPAdapter on, 4 candidates) via ComfyUI MCP against the U3 Building clause: #2 grew an urn finial as roof clutter, #3's flat quarry-stone top read oddly, #4 had a mine cart landed on the roof. #1 (a timber-framed crystal arch standing on its own sand pad) was the clean read and the winner.",
+    "paintoverNote": "#1 taken as-is, no inpaint needed.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0 + pixel-art-xl LoRA) diffuse, single ComfyUI KSampler pass (seed 700400, denoise 0.8) -- read directly from the PNG's own embedded ComfyUI workflow JSON, not quoted from memory. IPAdapterAdvanced (vit-h, style transfer, weight 0.9) referenced market.png so palette and lighting lock to the shipped Shop. DEVIATION from cutout.py: background removed via a deterministic flood-fill alpha matte (border-color median, border-seeded flood-fill of the core-background mask, then a fixed ~5px feather ring), not the BiRefNet model cutout.py wraps -- this render's backdrop measured near-uniform (border std < 1.1 per channel) so a segmentation-model pass bought nothing; cutout.py/BiRefNet remains the tool of record for gradient or busy backgrounds. Cropped to the alpha content box, then BOX-downsampled straight to 48x48 (no hard quantization) -- the same recipe market.png's own committed pixels were produced by. Replaces the prior unreproducible-legacy asset, which KTD-A's contract measured at 10 distinct opaque colours -- two orders of magnitude under the venue floor."
   }
 }
