@@ -34,6 +34,16 @@ public partial class SettingsPanel : VBoxContainer
     /// panel never assumes it owns navigation.</summary>
     public event Action? Closed;
 
+    /// <summary>
+    /// U7 (§11.12 plan): "is quick-travel unlocked right now" — set by the in-game host
+    /// (<c>MainUi</c>, right after constructing its instance of this panel) to <see
+    /// cref="TutorialFlow.QuickTravelUnlocked"/>. Null at the title screen (<c>NewGameSelect</c>'s
+    /// instance never sets it — no campaign exists yet, so there is nothing to be unlocked). A
+    /// null probe reads as LOCKED (<see cref="BuildShortcutLegendRow"/>'s <c>?? false</c>), never
+    /// as unlocked, so the legend can never claim an ability the player cannot possibly have.
+    /// </summary>
+    public Func<bool>? QuickTravelUnlockedProbe { get; set; }
+
     private CheckButton _fullscreenToggle = null!;
 
     /// <summary>
@@ -124,6 +134,32 @@ public partial class SettingsPanel : VBoxContainer
 
     private readonly List<RebindRow> _rebindRows = new();
     private Label _rebindStatusLabel = null!;
+
+    // ---- shortcuts legend (U7, §11.12 plan) --------------------------------------------------
+    //
+    // A READ-ONLY companion to the rebind rows above: every ShortcutMap.Entries row, including the
+    // ones with no rebind row at all (F11, Escape, the four quick-travel keys) — "SettingsPanel
+    // renders every ShortcutMap entry, ... not just the rebindable subset." Only the four
+    // quick-travel rows change state after Build() (whether the tutorial has unlocked them), so
+    // only those are kept here for Refresh() to re-check; the rest render once and never change.
+
+    /// <summary>One quick-travel legend row kept live for <see cref="Refresh"/> — the row
+    /// (dimmed/undimmed whole), its key label (tooltip carries <paramref name="LockedHint"/> while
+    /// locked), and the entry's own hint text (read once at <see cref="BuildShortcutLegendRow"/>
+    /// time rather than re-looked-up by id every refresh).</summary>
+    private readonly record struct QuickTravelLegendRow(Control Row, Label KeyLabel, string LockedHint);
+
+    private readonly List<QuickTravelLegendRow> _quickTravelLegendRows = new();
+
+    /// <summary>Every legend row's key <see cref="Label"/>, kept by entry so <see cref="Refresh"/>
+    /// can re-derive its text from the LIVE <see cref="InputMap"/> (a rebind made through the
+    /// rebind rows above, or through the OTHER host's instance of this panel) without a
+    /// string-keyed <see cref="Node.FindChild(string, bool, bool)"/> lookup.</summary>
+    private readonly List<(ShortcutMap.ShortcutEntry Entry, Label KeyLabel)> _shortcutKeyLabels = new();
+
+    /// <summary>Whole-row opacity for a locked quick-travel legend row — same dimming convention
+    /// <see cref="UiKit.ListRow"/> already uses for "not available right now."</summary>
+    private const float LockedShortcutAlpha = 0.55f;
 
     /// <summary>Non-null while a rebind row is waiting for the next keypress — see <see
     /// cref="_Input"/>.</summary>
@@ -255,6 +291,28 @@ public partial class SettingsPanel : VBoxContainer
         resetBindings.Pressed += ResetBindingsToDefaults;
         AddChild(resetBindings);
 
+        // ---- shortcuts legend (U7) ---------------------------------------------------------
+        // Read-only, one row per ShortcutMap entry — including F11, Escape, and the four
+        // quick-travel keys, none of which have a rebind row above (only the ~8 actions this
+        // panel lets a player EDIT do). "The keys that already exist stop being secret" for the
+        // ones this panel cannot let you change too.
+        var shortcutsTitle = new Label
+        {
+            Name = "ShortcutsTitle",
+            Text = "Every key in the game",
+            ThemeTypeVariation = GameTheme.HeaderThemeType,
+        };
+        shortcutsTitle.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        AddChild(shortcutsTitle);
+
+        _quickTravelLegendRows.Clear();
+        foreach (var entry in ShortcutMap.Entries)
+        {
+            AddChild(BuildShortcutLegendRow(entry));
+        }
+
+        RefreshShortcutLegend(); // set the quick-travel rows' initial locked/unlocked look
+
         var back = new Button { Name = "SettingsBack", Text = "Back", CustomMinimumSize = new Vector2(0, 44) };
         back.Pressed += () =>
         {
@@ -318,6 +376,80 @@ public partial class SettingsPanel : VBoxContainer
 
     private static string FormatPercent(double percent) => $"{(int)Math.Round(percent)}%";
 
+    /// <summary>
+    /// One read-only shortcuts-legend row (U7): a fixed-width label, the bound key(s) (<see
+    /// cref="ShortcutMap.KeyLabel"/> — reads the LIVE <see cref="InputMap"/>, so a rebind made
+    /// above shows up here too on the next <see cref="Refresh"/>), and the one-sentence
+    /// description, ExpandFill so it wraps rather than clips. Every row here is a <see
+    /// cref="Label"/>, never a <see cref="Button"/> — nothing on this legend is pressable, which is
+    /// also why a locked quick-travel row can truthfully claim "pressing it still does nothing":
+    /// there is no press handler to disable.
+    /// </summary>
+    private Control BuildShortcutLegendRow(ShortcutMap.ShortcutEntry entry)
+    {
+        var row = new HBoxContainer { Name = $"Shortcut_{entry.Id}_Row" };
+        row.AddThemeConstantOverride("separation", GameTheme.Space12);
+
+        var label = new Label
+        {
+            Name = $"Shortcut_{entry.Id}_Label",
+            Text = entry.Label,
+            CustomMinimumSize = new Vector2(160, 0),
+        };
+        row.AddChild(label);
+
+        var keyLabel = new Label
+        {
+            Name = $"Shortcut_{entry.Id}_Key",
+            Text = ShortcutMap.KeyLabel(entry),
+            CustomMinimumSize = new Vector2(90, 0),
+        };
+        keyLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        row.AddChild(keyLabel);
+        _shortcutKeyLabels.Add((entry, keyLabel));
+
+        var description = new Label
+        {
+            Name = $"Shortcut_{entry.Id}_Description",
+            Text = entry.Description,
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            AutowrapMode = TextServer.AutowrapMode.Word, // never mid-word (R7-class guard, UiKit precedent)
+        };
+        description.AddThemeColorOverride("font_color", GameTheme.BodyTextColor);
+        description.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
+        row.AddChild(description);
+
+        // Quick-travel is the one family whose availability changes mid-session (the tutorial
+        // unlocks it) — everything else on this legend is either always-on or, for the ~8 rebind
+        // rows above, edited through THOSE rows, not this one. Keep the row so RefreshShortcutLegend
+        // can dim/undim it and swap the key label's tooltip without rebuilding the whole panel.
+        if (entry.LockedHint is not null)
+        {
+            _quickTravelLegendRows.Add(new QuickTravelLegendRow(row, keyLabel, entry.LockedHint));
+        }
+
+        return row;
+    }
+
+    /// <summary>
+    /// U7: re-derive every quick-travel legend row's locked/unlocked look from <see
+    /// cref="QuickTravelUnlockedProbe"/> — called once at the end of <see cref="Build"/> (so a
+    /// fresh panel never shows a stale default) and again from <see cref="Refresh"/> (the tutorial
+    /// can complete WHILE this panel sits open-but-hidden behind the system menu's own button
+    /// list). "Quick-travel keys render greyed with their unlock condition named rather than being
+    /// invisible" — the key label stays visible either way; only its dimming and its tooltip
+    /// change.
+    /// </summary>
+    private void RefreshShortcutLegend()
+    {
+        var unlocked = QuickTravelUnlockedProbe?.Invoke() ?? false;
+        foreach (var (row, keyLabel, lockedHint) in _quickTravelLegendRows)
+        {
+            row.Modulate = unlocked ? Colors.White : new Color(1f, 1f, 1f, LockedShortcutAlpha);
+            keyLabel.TooltipText = unlocked ? string.Empty : lockedHint;
+        }
+    }
+
     /// <summary>Re-read every live preference into this instance's controls. Call before revealing
     /// this panel — the OTHER host's copy may have changed any of these since this instance last
     /// synced, and a stale control reads as a preference that silently reverted.</summary>
@@ -343,6 +475,16 @@ public partial class SettingsPanel : VBoxContainer
         {
             row.KeyButton.Text = MinigameInput.KeyLabelFor(row.Action);
         }
+
+        // U7: re-derive key labels (a rebind changes them) and the quick-travel locked/unlocked
+        // look — this panel can sit built-but-hidden behind the system menu's own button list
+        // while the tutorial completes, so Build()'s one-time pass is not enough on its own.
+        foreach (var (entry, keyLabel) in _shortcutKeyLabels)
+        {
+            keyLabel.Text = ShortcutMap.KeyLabel(entry);
+        }
+
+        RefreshShortcutLegend();
     }
 
     private static void RefreshRow(VolumeRow row, float linear01)

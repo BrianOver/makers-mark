@@ -1,5 +1,8 @@
 #if GDUNIT_TESTS
+using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
 using GameSim;
 using GameSim.Classes;
@@ -1014,6 +1017,183 @@ public class CounterPanelTests
         {
             Unmount(ui);
         }
+    }
+
+    // ── Per-hero identity at the counter (U4, owner playtest 2026-08-15: "the hero buying at the
+    // counter didn't match the heroes outside") ────────────────────────────────────────────────
+
+    [TestCase]
+    public void ActiveCustomerIcon_MatchesTownAssets2D_ForHeroClassAndId()
+    {
+        var hero = MakeHero(7, ClassRegistry.StrikerId, gold: 500);
+        var ui = MountMainUi(new SimAdapter(SingleHeroCounterFixture(hero)));
+        try
+        {
+            ui.OpenPanel("Shop");
+            var icon = Find<TextureRect>(ui.Shop, "CustomerIcon");
+
+            AssertThat(icon.Texture)
+                .OverrideFailureMessage(
+                    "the counter customer's icon does not equal TownAssets2D.ForHero(classId, " +
+                    "heroId) — the same call Town2D.ReconcileHeroes uses to draw this hero in the " +
+                    "plaza. A hero must not change species walking from the plaza to the counter.")
+                .IsEqual(TownAssets2D.ForHero(hero.ClassId, hero.Id.Value));
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Two different heroes of the SAME class must each resolve through <see
+    /// cref="TownAssets2D.ForHero"/> individually (never a bare class-only lookup) — and, once the
+    /// class's variant pool actually has depth &gt; 1, that resolution diverges between them. Today
+    /// every <c>town2d-hero-*</c> pool is depth 1 (no committed <c>-v2</c> siblings yet — see
+    /// <c>ArtVariants.PoolFor</c>), so the divergence half is conditional rather than assumed; the
+    /// per-hero call itself is what's pinned unconditionally, and the moment a pool gains depth this
+    /// same test starts proving distinctness with no rewrite needed.</summary>
+    [TestCase]
+    public void TwoHeroesOfTheSameClass_EachTrackTownAssets2D_DivergingOncePoolDepthAllows()
+    {
+        var heroA = MakeHero(11, ClassRegistry.StrikerId, gold: 500);
+        var heroB = MakeHero(12, ClassRegistry.StrikerId, gold: 500);
+
+        var texA = ResolveCounterIconTexture(heroA);
+        var texB = ResolveCounterIconTexture(heroB);
+
+        AssertThat(texA).IsEqual(TownAssets2D.ForHero(heroA.ClassId, heroA.Id.Value));
+        AssertThat(texB).IsEqual(TownAssets2D.ForHero(heroB.ClassId, heroB.Id.Value));
+
+        var poolDepth = ArtVariants.PoolFor($"town2d-hero-{ClassRegistry.StrikerId}").Count;
+        if (poolDepth > 1)
+        {
+            AssertThat(texA)
+                .OverrideFailureMessage(
+                    $"striker's variant pool has depth {poolDepth} but hero 11 and hero 12 still " +
+                    "resolve the identical counter texture — the per-hero pick stopped varying.")
+                .IsNotEqual(texB);
+        }
+    }
+
+    private static Texture2D ResolveCounterIconTexture(Hero hero)
+    {
+        var ui = MountMainUi(new SimAdapter(SingleHeroCounterFixture(hero)));
+        try
+        {
+            ui.OpenPanel("Shop");
+            return Find<TextureRect>(ui.Shop, "CustomerIcon").Texture;
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    private static GameState SingleHeroCounterFixture(Hero hero)
+    {
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(hero.Id.Value, hero);
+        var baseState = GameFactory.NewGame((ulong)(7050 + hero.Id.Value), heroes);
+
+        var counter = new CounterState(
+            Queue: ImmutableList.Create(hero.Id),
+            Active: hero.Id,
+            Round: 0,
+            InterestPermille: 0,
+            PatienceRounds: 3,
+            GoodwillPermille: 0,
+            Presented: null,
+            StandingOfferGold: null,
+            Served: ImmutableSortedSet<int>.Empty,
+            Closed: false);
+
+        return baseState with
+        {
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(ShopItemId.Value, TestBlade()),
+            Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(ShopItemId, 8)) },
+            Counter = counter,
+        };
+    }
+
+    // ── Census: no panel bypasses the per-hero art ladder (U4, scenario 6) ──────────────────────
+    // CounterPanel used to call IconRegistry.Sprite(classId) directly (a class-only, 48x64 flat SVG
+    // primitive on a contract gen_town_sprites.py:19-27 records retired) — every other panel only
+    // ever reaches it as the LAST rung of UiKit.ArtRect/PortraitFrame's fallback ladder
+    // (HeroesPanel.cs, LedgerModal.cs, TavernPanel.cs). This is the regression guard: scan every
+    // .cs file under the REAL res://scripts/panels directory (never a hand-listed file array — a
+    // literal list stops covering a family the moment it grows, the exact failure shape KTD-E in
+    // docs/design/MAKERS-MARK.md §11.12 names) for a direct IconRegistry.Sprite( call whose
+    // enclosing statement does not also open an ArtRect(/PortraitFrame( call.
+    [TestCase]
+    public void NoPanelCallsIconRegistrySprite_OutsideAnArtRectOrPortraitFrameFallback()
+    {
+        var panelsDir = ProjectSettings.GlobalizePath("res://scripts/panels");
+        var files = Directory.GetFiles(panelsDir, "*.cs", SearchOption.AllDirectories);
+
+        AssertThat(files.Length)
+            .OverrideFailureMessage($"found no .cs files under {panelsDir} — did the panels folder move?")
+            .IsGreater(0);
+
+        var violations = new List<string>();
+        foreach (var file in files)
+        {
+            var text = File.ReadAllText(file);
+            var searchStart = 0;
+            while (true)
+            {
+                var hit = text.IndexOf("IconRegistry.Sprite(", searchStart, StringComparison.Ordinal);
+                if (hit < 0)
+                {
+                    break;
+                }
+
+                // Skip a match sitting inside a `//`/`///` comment on its own line first (this
+                // file's own doc comments name "IconRegistry.Sprite(" in prose describing the
+                // historical defect — a real call site never has a `//` earlier on the same
+                // physical line). Same simple Contains-based rigor
+                // AudioTests.EveryCue_HasAtLeastOneProductionReference already uses, not a full C#
+                // parser/tokenizer.
+                var lineStart = text.LastIndexOf('\n', hit) + 1;
+                var linePrefix = text[lineStart..hit];
+
+                if (linePrefix.Contains("//", StringComparison.Ordinal))
+                {
+                    searchStart = hit + 1;
+                    continue;
+                }
+
+                // Walk back to the nearest statement boundary before this call and check whether
+                // an ArtRect/PortraitFrame call opened somewhere inside that statement.
+                var boundary = -1;
+                for (var i = hit - 1; i >= 0; i--)
+                {
+                    if (text[i] is ';' or '{' or '}')
+                    {
+                        boundary = i;
+                        break;
+                    }
+                }
+
+                var statement = text[(boundary + 1)..hit];
+
+                if (!statement.Contains("ArtRect(", StringComparison.Ordinal)
+                    && !statement.Contains("PortraitFrame(", StringComparison.Ordinal))
+                {
+                    var line = text[..hit].Count(c => c == '\n') + 1;
+                    violations.Add($"{Path.GetFileName(file)}:{line}");
+                }
+
+                searchStart = hit + 1;
+            }
+        }
+
+        AssertThat(violations)
+            .OverrideFailureMessage(
+                "IconRegistry.Sprite called outside an ArtRect/PortraitFrame fallback argument at: " +
+                string.Join(", ", violations) + " — every other panel resolves a hero through the " +
+                "ArtRect/PortraitFrame ladder (fallbackIcon), with IconRegistry.Sprite only ever the " +
+                "last rung; a direct call bypasses per-hero art resolution the way CounterPanel's " +
+                "pre-U4 defect did.")
+            .IsEmpty();
     }
 
     // ── Fixtures ─────────────────────────────────────────────────────────────────────────────────

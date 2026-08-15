@@ -582,14 +582,22 @@ public sealed partial class TutorialFlow : PanelContainer
                 $"Tutorial {def.DisplayIndex}/{TotalSteps}: Evening. The **EVENING LEDGER** opens itself — press **Buy** " +
                 $"under **ORE OFFERED**, then close it and press **{EveningBell(state)}** at the top of the screen.",
             // The tray's seven buttons have EMPTY Text (MainUi.TrayButton) — the words live only in
-            // tooltips, and HeroCards' tooltip reads "Renown". Telling a stranger to "open Hero
-            // Cards from the tray" sent them looking for two words that are on screen nowhere.
+            // tooltips. U7 (§11.12 plan) rewrote every tray tooltip from a one-word restatement of
+            // its icon ("Renown", "Commissions") into a real sentence — these two lines now quote
+            // MainUi's OWN tooltip constants (RenownTrayTooltip/CommissionsTrayTooltip) verbatim
+            // rather than retyping the words, so the two can never drift apart again the way a
+            // bare "Renown" already proved they could (<see
+            // cref="GodotClient.Tests.TutorialCopyIsFollowableTests"/>
+            // .TheTraySteps_QuoteTheTooltipsTheTrayButtonsActuallyCarry_NotTheirPanelTitles pins
+            // the join against the LIVE button, not just this string).
             TutorialStep.MeetHeroes =>
                 $"Tutorial {def.DisplayIndex}/{TotalSteps}: The tray is the icon buttons at the top right — no words, so " +
-                "hover for the tooltip and press **Renown**. (The Tavern works too.) Read one hero.",
+                $"hover for the tooltip and press the one reading \"{GodotClient.MainUi.RenownTrayTooltip}\". " +
+                "(The Tavern works too.) Read one hero.",
             TutorialStep.Commission =>
                 $"Tutorial {def.DisplayIndex}/{TotalSteps}: In that tray at the top right, press the icon tipped " +
-                "**Commissions**, then **Accept** or **Decline** one — the loop is yours after this.",
+                $"\"{GodotClient.MainUi.CommissionsTrayTooltip}\", then **Accept** or **Decline** one — the loop " +
+                "is yours after this.",
             _ => string.Empty,
         };
     }

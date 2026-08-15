@@ -782,7 +782,7 @@ public partial class Town2D : Control
             var actor = new HeroActor2D();
             var color = ClassColors.RoleColor(hero.ClassId);
             var sprite = TownAssets2D.ForHero(hero.ClassId, hero.Id.Value);
-            actor.Init(hero.Id.Value, hero.ClassId, color, sprite, HomeFor(hero.Id.Value));
+            actor.Init(hero.Id.Value, hero.ClassId, color, sprite, HomeFor(hero.Id.Value), hero.Name);
             actor.Picked += id => HeroClicked?.Invoke(id);
             HeroesRoot.AddChild(actor);
             _heroActors[hero.Id.Value] = actor;
@@ -1602,7 +1602,8 @@ public partial class Town2D : Control
                 TownLayout2D.TileToWorld(TownsfolkHomeTiles[i]),
                 body.Step,
                 body.Walk2,
-                body.Walk4);
+                body.Walk4,
+                TownsfolkNpc2D.FlavorNames[i % TownsfolkNpc2D.FlavorNames.Length]);
             npc.SetErrandTargets(errandTargets);
             TownsfolkRoot.AddChild(npc);
             _townsfolk.Add(npc);

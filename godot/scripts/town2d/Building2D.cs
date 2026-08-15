@@ -391,13 +391,39 @@ public partial class Building2D : Node2D
     /// not a verb"). Applied only when <see cref="BuildLabel"/>'s <c>dim</c> is true.</summary>
     private static readonly Color DimLabelFontColor = LabelFontColor.Darkened(0.45f);
 
+    /// <summary>U4 (owner playtest 2026-08-15, "heroes and NPCs need nameplates"): every nametag —
+    /// building, hero, townsfolk — draws at this fixed Z (with <see cref="CanvasItem.ZAsRelative"/>
+    /// false) so it NEVER enters the Y-sort comparison every actor/building otherwise shares under
+    /// <c>Town2D.YSort</c>. A nametag sits ~10 world-px above its owner's own sprite; left inside
+    /// the ordinary flat Y-sort scope, that offset would let it get individually sorted against a
+    /// nearby unrelated actor's OWN Y (Godot Y-sorts every descendant CanvasItem it can reach, not
+    /// just each actor's own anchor point) and momentarily draw behind/in front of the wrong thing
+    /// as two actors pass close together — exactly the clutter risk U4 was asked to avoid. Fixed
+    /// Z-index sidesteps the question entirely: canvas items are grouped by Z first, Y-sort only
+    /// orders within the same Z, so a label always wins against every Z-0 sprite regardless of
+    /// either one's Y. Mirrors this file's own existing pattern for the same reason
+    /// (<c>InteriorRoom2D</c>'s <c>ShellZIndex</c> forces the floor/wall backplate BEHIND
+    /// everything the same way; <c>Town2D.WireForgeFx</c>'s glow overlay forces itself IN FRONT).
+    /// </summary>
+    public const int NameplateZIndex = 20;
+
     /// <summary>A crisp outlined nametag (the 2D twin of <c>Building3D.BuildLabel</c>'s
     /// <c>OutlineSize</c> Label3D) — small warm-white text with a near-opaque dusk-dark outline plus
     /// a soft drop shadow, so the name stays legible over grass, cobble, OR a building roof instead
     /// of reading as raw unstyled white text stamped on the sprite. <paramref name="dim"/> (U3):
     /// an honest-flavor station's nametag renders dimmer so it never visually promises a verb it
-    /// does not have — see <see cref="HoverLine"/> for the actual (non-visual) honesty mechanism.</summary>
-    private static Label BuildLabel(string text, Vector2 size, bool dim = false) => new()
+    /// does not have — see <see cref="HoverLine"/> for the actual (non-visual) honesty mechanism.
+    /// <paramref name="tint"/> (U4): overrides the font colour entirely (a hero's own class tint)
+    /// — takes priority over <paramref name="dim"/>, since a class-tinted hero nameplate is never
+    /// also a dimmed honest-flavor station. <c>public</c> (not private): <see
+    /// cref="HeroActor2D"/> and <see cref="TownsfolkNpc2D"/> build their own
+    /// nameplates through this SAME recipe (U4) rather than a second hand-rolled copy, so a
+    /// building nametag and an actor nameplate are visibly the same object class — public rather
+    /// than internal because <c>godot/tests</c> is a separate assembly with no
+    /// <c>InternalsVisibleTo</c> grant to <c>GodotClient</c> (this repo's own established
+    /// constraint, see e.g. <c>CampPanel.cs</c>'s doc for the GameSim side of the same fact), and
+    /// this recipe needs to be test-visible too.</summary>
+    public static Label BuildLabel(string text, Vector2 size, bool dim = false, Color? tint = null) => new()
     {
         Name = "Label",
         Text = text,
@@ -408,10 +434,12 @@ public partial class Building2D : Node2D
         Position = new Vector2(-size.X / 2f, -size.Y - 10f), // clear of the roof, centered above
         Size = new Vector2(size.X, 8f),
         HorizontalAlignment = HorizontalAlignment.Center,
+        ZAsRelative = false,
+        ZIndex = NameplateZIndex,
         LabelSettings = new LabelSettings
         {
             FontSize = 7,
-            FontColor = dim ? DimLabelFontColor : LabelFontColor,
+            FontColor = tint ?? (dim ? DimLabelFontColor : LabelFontColor),
             OutlineSize = 3,
             OutlineColor = LabelOutlineColor,
             ShadowSize = 2,

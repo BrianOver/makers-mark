@@ -4,6 +4,7 @@ using System.Linq;
 using GameSim.Contracts;
 using GameSim.Heroes;
 using Godot;
+using GodotClient.Town2d;
 using GodotClient.Ui;
 
 namespace GodotClient.Panels;
@@ -14,24 +15,32 @@ namespace GodotClient.Panels;
 /// the sim's own integers with NO local arithmetic, buttons queue the PA1 counter actions
 /// VERBATIM, and the kernel stays the only real gate (this panel's <see cref="GateButton"/> calls
 /// only MIRROR the sim's own legality checks — <see cref="GameSim.Counter.CounterHandlers"/>).
-/// Embedded inside <see cref="ShopPanel"/> (which supplies the shelf this reuses for
-/// Present/Suggest) rather than its own MainUi drawer entry — working the counter is part of
-/// running the shop, not a separate destination.
+/// Embedded inside <see cref="ShopPanel"/> (whose own shelf list carries Present/Suggest — U8,
+/// see this class's own remarks below) rather than its own MainUi drawer entry — working the
+/// counter is part of running the shop, not a separate destination.
 ///
 /// <para>Renders one of two shapes: no live session (<c>Counter is null</c> or already
 /// <see cref="CounterState.Closed"/>) shows the "Open Counter" entry (Morning-only, mirroring
 /// <see cref="OpenCounterAction"/>'s own CanHandle gate); a live session renders the active
 /// customer card (class + a presentational mood-hint bucket over <see cref="Hero.MoodPermille"/>
 /// — text only, no new action params), the Interest/Patience/Goodwill/Round meter chips, the
-/// presented item and standing offer, the shelf's Present/Suggest rows, the
-/// Accept/HoldFirm/Counter(+price)/CloseCounter controls, and today's <see cref="CustomerWalked"/>
-/// reasons (R8 prose half). "No active customer" (queue empty, player only arranging) is a valid,
-/// legibly-rendered state — async prep (the sibling shelf sections) stays live throughout.</para>
+/// presented item and standing offer, the Accept/HoldFirm/Counter(+price)/CloseCounter controls,
+/// and today's <see cref="CustomerWalked"/> reasons (R8 prose half). "No active customer" (queue
+/// empty, player only arranging) is a valid, legibly-rendered state — async prep (the sibling
+/// shelf sections) stays live throughout.</para>
+///
+/// <para>U8 (§11.12 plan, "shop counters identical and redundant — condense"): Present/Suggest
+/// used to render HERE too, in <c>BuildShelfActions</c> — a second full iteration of <see
+/// cref="GameSim.Contracts.PlayerState.Shelf"/> stacked directly above <see
+/// cref="ShopPanel"/>'s own "Your Shelf" list, same item/icon/name/price, different buttons. That
+/// method is gone; <see cref="QueuePresent"/> and <see cref="QueueSuggest"/> are now `public` so
+/// <see cref="ShopPanel"/>'s single shelf list can call them directly, adding Present/Suggest onto
+/// its OWN per-item row only while <see cref="CounterState.Active"/> is non-null (mirrors
+/// <c>CounterHandlers.RequireActiveSession</c>) instead of building a second list to hold them.
+/// </para>
 /// </summary>
 public partial class CounterPanel : SimPanel
 {
-    private const int ShelfIconSize = 32;
-
     private Label? _feedback;
     private VBoxContainer? _body;
 
@@ -95,7 +104,8 @@ public partial class CounterPanel : SimPanel
         BuildDesk(state, counter, hero);
         BuildPresentedAndOffer(state, counter);
         BuildPresentReplyBubble(counter);
-        BuildShelfActions(state, counter);
+        // U8: Present/Suggest no longer render a second shelf list HERE — see QueuePresent/
+        // QueueSuggest's own doc. ShopPanel's single shelf list calls them directly.
         BuildHaggleControls(counter, hero);
 
         // CounterHandlers.ApplyClose only ever rejects when Counter is null — never true in this
@@ -122,7 +132,14 @@ public partial class CounterPanel : SimPanel
         }
 
         var headerRow = AddRow(cardBody);
-        AddIcon(headerRow, IconRegistry.Sprite(hero.ClassId));
+        // U4 (owner playtest 2026-08-15, "the hero buying at the counter didn't match the heroes
+        // outside"): IconRegistry.Sprite(classId) resolves the retired class-only SVG contract
+        // (superseded 2026-08-04, see gen_town_sprites.py:19-27) — every hero of a class rendered
+        // identically here, and differently from the SAME hero's own body in the plaza. Route
+        // through the same per-hero ladder Town2D.ReconcileHeroes uses so the counter customer is
+        // provably the same figure the player saw walk in.
+        var customerIcon = AddIcon(headerRow, TownAssets2D.ForHero(hero.ClassId, hero.Id.Value));
+        customerIcon.Name = "CustomerIcon"; // test seam — the per-hero identity check (U4)
         var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         headerRow.AddChild(infoCol);
         AddLabel(infoCol, $"{hero.Name} — {hero.ClassId}");
@@ -253,20 +270,22 @@ public partial class CounterPanel : SimPanel
 
         desk.SetShelf(shelf);
         desk.SetLegal(canPresent, canAccept);
-        desk.SetCustomer(hero?.ClassId ?? string.Empty, hero?.MoodPermille ?? 0, counter.PatienceRounds);
+        desk.SetCustomer(hero?.ClassId ?? string.Empty, hero?.Id.Value ?? 0, hero?.MoodPermille ?? 0, counter.PatienceRounds);
         desk.PresentRequested += itemId => QueuePresent(new ItemId(itemId));
         desk.AcceptRequested += QueueAccept;
     }
 
-    /// <summary>The ONE seam both the Present button and the desk's drag-drop recogniser call
-    /// (KTD-A) — queues the identical <see cref="PresentItemAction"/> either way, then reports
-    /// what actually happened. Present is an <see cref="ActionTiming"/> immediate verb, so
-    /// <see cref="CounterQueueSystem"/>'s resolve pass (internal — not cref-able from here) has
-    /// ALREADY run (opened a round or walked the customer) by the time <see cref="SimAdapter.Queue"/>
-    /// returns — read that off the fresh <see cref="CustomerCountered"/>/<see cref="CustomerWalked"/>
-    /// events rather than assuming either outcome (owner playtest: a bare "Presented X" said
-    /// nothing about which one happened).</summary>
-    private void QueuePresent(ItemId itemId)
+    /// <summary>The ONE seam the Present button (now on <see cref="ShopPanel"/>'s own shelf row —
+    /// U8) AND the desk's drag-drop recogniser call (KTD-A) — queues the identical
+    /// <see cref="PresentItemAction"/> either way, then reports what actually happened. Present is
+    /// an <see cref="ActionTiming"/> immediate verb, so <see cref="CounterQueueSystem"/>'s resolve
+    /// pass (internal — not cref-able from here) has ALREADY run (opened a round or walked the
+    /// customer) by the time <see cref="SimAdapter.Queue"/> returns — read that off the fresh
+    /// <see cref="CustomerCountered"/>/<see cref="CustomerWalked"/> events rather than assuming
+    /// either outcome (owner playtest: a bare "Presented X" said nothing about which one
+    /// happened). Public so <see cref="ShopPanel"/> can call it directly (U8) — it used to be
+    /// reachable only through this panel's own now-deleted shelf list.</summary>
+    public void QueuePresent(ItemId itemId)
     {
         // U2 (loud-failures-and-quiet-channels plan): CounterPanel had ZERO Cue.Play call sites —
         // this is press feedback for the panel's core verb, not the sale landing (MarketLife2D's
@@ -363,65 +382,38 @@ public partial class CounterPanel : SimPanel
             counter.StandingOfferGold is not null ? UiKit.ChipTone.Accent : UiKit.ChipTone.Neutral));
     }
 
-    /// <summary>Reuses the SAME shelf <see cref="ShopPanel"/> lists (spec: "the existing
-    /// shelf/reprice/unstock controls remain live" alongside these counter-specific actions).</summary>
-    private void BuildShelfActions(GameState state, CounterState counter)
+    /// <summary>The ONE seam the Suggest button (now on <see cref="ShopPanel"/>'s own shelf row —
+    /// U8) calls — queues the identical <see cref="SuggestItemAction"/>, then names the interest
+    /// swing (owner playtest: "hit suggest and interest went up but nothing happened lol" —
+    /// Suggest never touches the CURRENT standing offer, only <see
+    /// cref="CounterState.InterestPermille"/>, which the NEXT Present/HoldFirm reads; nothing
+    /// visibly changing THIS round is correct behavior, so this says so rather than leaving a bare
+    /// number to explain itself). Public so <see cref="ShopPanel"/> can call it directly — it used
+    /// to be reachable only through this panel's own now-deleted shelf list.</summary>
+    public void QueueSuggest(ItemId itemId, string itemName)
     {
-        var section = Section("Present / Suggest");
-        _body!.AddChild(section.Root);
+        // Read the before-value off the LIVE state at press time (the caller no longer hands in
+        // a closed-over CounterState snapshot — ShopPanel's row only knows the itemId/name).
+        var before = Adapter!.CurrentState.Counter?.InterestPermille ?? 0;
+        var heroName = Adapter!.CurrentState.Counter?.Active is { } activeId ? HeroName(activeId) : "the customer";
 
-        if (state.Player.Shelf.IsEmpty)
-        {
-            AddLabel(section.Body, "Nothing shelved to show — craft and stock it first.");
-            return;
-        }
+        var action = new SuggestItemAction(itemId);
+        Adapter!.Queue(action);
+        var after = Adapter!.CurrentState.Counter?.InterestPermille ?? before;
+        var interestRose = after > before;
 
-        // Mirrors CounterHandlers.RequireActiveSession: a customer must be at the counter.
-        var legal = counter.Active is not null;
-        foreach (var entry in state.Player.Shelf)
-        {
-            var item = state.Items[entry.Item.Value];
-            var itemId = entry.Item;
+        var consequence = interestRose
+            ? $"interest rose {before} to {after} — a stronger offer on the next round or " +
+              "item, not this one"
+            : $"interest held at {before} — {itemName} isn't what {heroName} needs right now";
 
-            var row = AddRow(section.Body);
-            AddIcon(row, IconRegistry.Slot(item.Slot), ShelfIconSize);
-            AddLabel(row, $"{item.Name} [{item.Quality}] — {entry.Price}g");
+        // Owner playtest ("interest went up but nothing happened lol"): give the meter movement a
+        // voice. Derived from the SAME before/after delta above (the sim's own ApplySuggestBonus
+        // already decided whether the upsell fit) — never a second guess at fit, so this can
+        // never contradict the Interest chip in the same refresh.
+        var reply = CustomerVoice.SuggestReply(itemName, interestRose);
 
-            var present = AddButton(row, $"Present_{itemId.Value}", "Present", () => QueuePresent(itemId));
-            GateButton(present, legal, "No active customer is at the counter.");
-
-            var suggest = AddButton(row, $"Suggest_{itemId.Value}", "Suggest", () =>
-            {
-                // Owner playtest ("hit suggest and interest went up but nothing happened lol"):
-                // Suggest never touches the CURRENT standing offer — HaggleResolver.ApplySuggestBonus
-                // only raises CounterState.InterestPermille, which the NEXT Present/HoldFirm reads
-                // into WillingnessModel.TrueWillingness. Nothing visibly changing this round is
-                // correct behavior, so say so honestly instead of leaving a bare number to explain
-                // itself. Capture the before-value off the CLOSURE's own counter (this Refresh's
-                // state, i.e. before this press) rather than re-reading Adapter afterward.
-                var before = counter.InterestPermille;
-                var heroName = counter.Active is { } activeId ? HeroName(activeId) : "the customer";
-
-                var action = new SuggestItemAction(itemId);
-                Adapter!.Queue(action);
-                var after = Adapter!.CurrentState.Counter?.InterestPermille ?? before;
-                var interestRose = after > before;
-
-                var consequence = interestRose
-                    ? $"interest rose {before} to {after} — a stronger offer on the next round or " +
-                      "item, not this one"
-                    : $"interest held at {before} — {item.Name} isn't what {heroName} needs right now";
-
-                // Owner playtest ("interest went up but nothing happened lol"): give the meter
-                // movement a voice. Derived from the SAME before/after delta above (the sim's own
-                // ApplySuggestBonus already decided whether the upsell fit) — never a second guess
-                // at fit, so this can never contradict the Interest chip in the same refresh.
-                var reply = CustomerVoice.SuggestReply(item.Name, interestRose);
-
-                _feedback!.Text = Confirm(action, $"Suggested {item.Name} — {consequence} — {heroName}: \"{reply}\"");
-            });
-            GateButton(suggest, legal, "No active customer is at the counter.");
-        }
+        _feedback!.Text = Confirm(action, $"Suggested {itemName} — {consequence} — {heroName}: \"{reply}\"");
     }
 
     private void BuildHaggleControls(CounterState counter, Hero? hero)
@@ -570,9 +562,31 @@ public partial class CounterPanel : SimPanel
             return;
         }
 
+        // U8 (§11.12 plan, owner screenshot finding — not a reported line, a screenshot showed
+        // "…UNTER SERVICE"/"…terest 0"/"Standing Offer -…", the header and meter text truncated
+        // on BOTH edges): unlike every OTHER section on this drawer (ShopPanel's "Your Shelf"/
+        // "Unshelved Crafts"/"Rival Shelf" all wrap their rows in UiKit.Section/Card, which
+        // inherit a themed PanelContainer stylebox — and its content margin — from the cascading
+        // theme), this panel's header/meters/offer rows were added directly to a bare
+        // VBoxContainer with NO stylebox and therefore NO content margin at all. DrawerHost's own
+        // content slot hands every registered panel the FULL DrawerWidth with zero inset
+        // (ApplySlide's own remarks: <c>_slot</c> is a sibling of the wood-bordered <c>_panel</c>,
+        // deliberately NOT a PanelContainer child, specifically so it never gets an automatic
+        // content-margin adjustment) — so THIS panel's flush-to-the-edge text is the one surface
+        // with nothing standing between it and that raw edge. A MarginContainer is the exact fix
+        // already used for this exact reason elsewhere (<c>NewGameSelect.BuildTitleScreen</c>'s
+        // own "CardMargin", <c>MainUi.BuildSystemMenu</c>'s "SystemMenuMargin") — giving this
+        // panel the same breathing room every other card-shaped surface already has.
+        var margin = new MarginContainer { Name = "CounterMargin" };
+        margin.SetAnchorsPreset(LayoutPreset.FullRect);
+        margin.AddThemeConstantOverride("margin_left", GameTheme.Space16);
+        margin.AddThemeConstantOverride("margin_right", GameTheme.Space16);
+        margin.AddThemeConstantOverride("margin_top", GameTheme.Space8);
+        margin.AddThemeConstantOverride("margin_bottom", GameTheme.Space8);
+        AddChild(margin);
+
         var root = new VBoxContainer { Name = "CounterRoot" };
-        root.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(root);
+        margin.AddChild(root);
 
         _feedback = AddLabel(root, string.Empty);
         _feedback.Name = "CounterFeedback";
@@ -629,6 +643,7 @@ public partial class CounterPanel : SimPanel
         private bool _canPresent;
         private bool _canAccept;
         private string _classId = string.Empty;
+        private int _heroId;
         private int _moodPermille;
         private int _patienceRounds = 3;
 
@@ -668,9 +683,9 @@ public partial class CounterPanel : SimPanel
             QueueRedraw();
         }
 
-        /// <summary>Mirror the SAME legality predicates <see cref="CounterPanel.BuildShelfActions"/>/
-        /// <see cref="CounterPanel.BuildHaggleControls"/> gate their buttons on, so the desk can
-        /// never fire something a disabled button could not.</summary>
+        /// <summary>Mirror the SAME legality predicates <see cref="ShopPanel"/>'s Present/Suggest
+        /// row (U8) and <see cref="CounterPanel.BuildHaggleControls"/> gate their buttons on, so
+        /// the desk can never fire something a disabled/absent button could not.</summary>
         public void SetLegal(bool canPresent, bool canAccept)
         {
             _canPresent = canPresent;
@@ -680,10 +695,13 @@ public partial class CounterPanel : SimPanel
 
         /// <summary>Drive posture/expression from the sim's own <paramref name="moodPermille"/>
         /// bucket and a tapping foot from <paramref name="patienceRounds"/> — presentation only,
-        /// read nowhere near <see cref="PresentRequested"/>/<see cref="AcceptRequested"/>.</summary>
-        public void SetCustomer(string classId, int moodPermille, int patienceRounds)
+        /// read nowhere near <see cref="PresentRequested"/>/<see cref="AcceptRequested"/>.
+        /// <paramref name="heroId"/> (U4) is the per-hero identity <see cref="CustomerTexture"/>
+        /// resolves through — without it every hero of a class drew identically here.</summary>
+        public void SetCustomer(string classId, int heroId, int moodPermille, int patienceRounds)
         {
             _classId = classId;
+            _heroId = heroId;
             _moodPermille = moodPermille;
             _patienceRounds = patienceRounds;
             QueueRedraw();
@@ -846,8 +864,8 @@ public partial class CounterPanel : SimPanel
             }
         }
 
-        /// <summary>The customer figure: the existing <see cref="IconRegistry.Sprite"/> hero art
-        /// (never new art), leaned by mood bucket, over a foot that taps faster the lower
+        /// <summary>The customer figure: the same per-hero town body art (<see cref="TownAssets2D.ForHero"/>,
+        /// never new art), leaned by mood bucket, over a foot that taps faster the lower
         /// <see cref="_patienceRounds"/> gets — plain dot-eyes + a mouth line bent by the same mood
         /// bucket for expression. Nothing here is read by <see cref="OnGuiInput"/>.</summary>
         private void DrawCustomer(Vector2 size)
@@ -913,6 +931,11 @@ public partial class CounterPanel : SimPanel
             DrawTextureRect(icon, new Rect2(_dragPos - new Vector2(15f, 15f), new Vector2(30f, 30f)), false);
         }
 
+        /// <summary>The customer figure: <see cref="TownAssets2D.ForHero"/>, the SAME per-hero
+        /// ladder <c>Town2D.ReconcileHeroes</c> resolves the plaza body from — U4 (owner playtest,
+        /// "the hero buying at the counter didn't match the heroes outside") replaced the old
+        /// <see cref="IconRegistry.Sprite"/> class-only call, which drew every hero of a class
+        /// identically. Cached on the (classId, heroId) pair so a redraw never re-resolves.</summary>
         private Texture2D? CustomerTexture()
         {
             if (string.IsNullOrEmpty(_classId))
@@ -920,10 +943,11 @@ public partial class CounterPanel : SimPanel
                 return null;
             }
 
-            if (_customerTexFor != _classId)
+            var cacheKey = $"{_classId}:{_heroId}";
+            if (_customerTexFor != cacheKey)
             {
-                _customerTexFor = _classId;
-                _customerTex = IconRegistry.Sprite(_classId);
+                _customerTexFor = cacheKey;
+                _customerTex = TownAssets2D.ForHero(_classId, _heroId);
             }
 
             return _customerTex;
