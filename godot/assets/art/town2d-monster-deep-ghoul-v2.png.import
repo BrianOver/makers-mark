@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bspy0wfuvkoha"
-path="res://.godot/imported/town2d-monster-ore-golem.png-64afb40718c2946decc701ac1798e83f.ctex"
+uid="uid://dexknfvtesit0"
+path="res://.godot/imported/town2d-monster-deep-ghoul-v2.png-d05a37a1d2b120331b7cc58cedc77fee.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/art/town2d-monster-ore-golem.png"
-dest_files=["res://.godot/imported/town2d-monster-ore-golem.png-64afb40718c2946decc701ac1798e83f.ctex"]
+source_file="res://assets/art/town2d-monster-deep-ghoul-v2.png"
+dest_files=["res://.godot/imported/town2d-monster-deep-ghoul-v2.png-d05a37a1d2b120331b7cc58cedc77fee.ctex"]
 
 [params]
 

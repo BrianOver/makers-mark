@@ -7,14 +7,14 @@
   "SamplerResolved": null,
   "SchedulerResolved": null,
   "PaletteSha256": null,
-  "DiffuseSha256": "16037db59c5e561fe8fd4fe4a3847c670356cae4a2ee1e6fa2a3334fea8f1881",
+  "DiffuseSha256": "8881260eb8c6747b8de2955fc45e052d4cb295542a8d4214cb358589f81bcb92",
   "NormalSha256": null,
   "Uid": "uid://d87v2jhbtnkb",
   "HandFinished": false,
-  "Status": "unreproducible-legacy",
+  "Status": "procedural",
   "Provenance": {
     "drafts": null,
     "paintoverNote": null,
-    "aiDisclosure": "No seed, model, sampler or build script exists for this asset. It is a 64x110 ad-hoc canvas, authored outside tools/art/gen_town_sprites.py -- that script is a fixed 40x64 humanoid-rig canvas that never references any monster (confirmed during U9/KTD1, asset-completion wave plan). Whether the original authoring pass used AI generation, hand-pixel editing, or both is not recorded anywhere in this repo's history, so nothing is invented here -- recorded honestly as unreproducible-legacy (U9, R9) rather than fabricating a method or seed. Drawn live today by DelveStage's IconRegistry.Art call composing this exact id from the monster slug."
+    "aiDisclosure": "Authored 2026-08-14 (MAKERS-MARK.md 11.10 U4) as a deterministic ASCII grid in tools/art/gen_town_sprites.py's MINE MONSTERS section - no model, no seed, no GPU. Re-render with `python tools/art/gen_town_sprites.py`; `--check` diffs the committed PNG against the grid and exits non-zero on any drift. SUPERSEDES the previous unreproducible-legacy record: the prior art had no build script of any kind and its method was never recorded, and measurement showed why it could not have been the hand-pixel Python ASSETS.md credited it to - 972 to 5,755 distinct opaque colours across the five, at sizes from 60x41 to 84x99, which is a generated image downscaled rather than authored pixel art."
   }
 }

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bspy0wfuvkoha"
-path="res://.godot/imported/town2d-monster-ore-golem.png-64afb40718c2946decc701ac1798e83f.ctex"
+uid="uid://dw5rjv756llln"
+path="res://.godot/imported/town2d-monster-tunnel-spider-v2.png-9212a1f73e58def7625287368c2d2d99.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/art/town2d-monster-ore-golem.png"
-dest_files=["res://.godot/imported/town2d-monster-ore-golem.png-64afb40718c2946decc701ac1798e83f.ctex"]
+source_file="res://assets/art/town2d-monster-tunnel-spider-v2.png"
+dest_files=["res://.godot/imported/town2d-monster-tunnel-spider-v2.png-9212a1f73e58def7625287368c2d2d99.ctex"]
 
 [params]
 

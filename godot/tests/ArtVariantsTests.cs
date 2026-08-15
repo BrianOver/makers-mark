@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using GdUnit4;
 using GodotClient;
+using GodotClient.Panels;
 using GodotClient.Town2d;
 using static GdUnit4.Assertions;
 
@@ -194,6 +195,68 @@ public class ArtVariantsTests
             .OverrideFailureMessage("every villager drew the same body — the plaza reads as one "
                 + "person cloned, which is the exact complaint this pool exists to answer.")
             .IsGreater(1);
+    }
+
+    // ---- monsters vary per encounter, not per kind (§11.10 U5, KTD-C) --------------------------
+
+    [TestCase]
+    public void TheSameMonsterKind_DrawsDifferentBodiesOnDifferentFloors()
+    {
+        // The whole point: keying on kind alone would make every cave rat in the campaign the same
+        // picture, which is what the pools exist to end.
+        var bodies = Enumerable.Range(1, 6)
+            .Select(floor => DelveStage.MonsterBodyId("Cave Rat", floor))
+            .ToHashSet();
+
+        AssertThat(bodies.Count)
+            .OverrideFailureMessage($"a cave rat drew {bodies.Count} distinct body/bodies across six "
+                + "floors: " + string.Join(", ", bodies))
+            .IsGreaterEqual(2);
+    }
+
+    [TestCase]
+    public void AMonsterOnOneFloor_IsTheSameBodyEveryTime_IncludingAfterAReload()
+    {
+        var first = DelveStage.MonsterBodyId("Cave Rat", 3);
+        var again = DelveStage.MonsterBodyId("Cave Rat", 3);
+
+        // A pool-cache drop stands in for a fresh process / reloaded campaign. If the body changed
+        // mid-fight or across a save, the encounter would read as a slideshow rather than a fight.
+        ArtVariants.ResetPoolCacheForTests();
+        var afterReload = DelveStage.MonsterBodyId("Cave Rat", 3);
+
+        AssertThat(again).IsEqual(first);
+        AssertThat(afterReload).IsEqual(first);
+    }
+
+    [TestCase]
+    public void MonsterBodyId_AlwaysResolvesToCommittedArt_ForEveryMineKindAndFloor()
+    {
+        var checkedIds = 0;
+        foreach (var kind in new[] { "Cave Rat", "Tunnel Spider", "Deep Ghoul", "Ore Golem", "The Forgeworm" })
+        {
+            for (var floor = 1; floor <= 8; floor++)
+            {
+                var id = DelveStage.MonsterBodyId(kind, floor);
+                AssertThat(IconRegistry.Has(id))
+                    .OverrideFailureMessage($"{kind} on floor {floor} resolved to '{id}', which has no committed art")
+                    .IsTrue();
+                checkedIds++;
+            }
+        }
+
+        AssertThat(checkedIds).IsEqual(40); // vacuous-green guard: 5 kinds x 8 floors
+    }
+
+    [TestCase]
+    public void EveryMineMonster_HasARealVariationPool()
+    {
+        foreach (var slug in new[] { "cave-rat", "tunnel-spider", "deep-ghoul", "ore-golem", "forgeworm" })
+        {
+            AssertThat(ArtVariants.PoolFor($"town2d-monster-{slug}").Count)
+                .OverrideFailureMessage($"{slug} has no variation pool")
+                .IsGreaterEqual(2);
+        }
     }
 
     [TestCase]

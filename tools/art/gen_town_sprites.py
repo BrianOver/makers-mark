@@ -1125,6 +1125,213 @@ for _base in list(HERO_GRIDS) + list(CIVILIAN_GRIDS):
         assert variant_id(_base, _i) in VARIANT_SPRITES, f"variant frame missing for {_base} v{_i + 1}"
 
 
+# ── MINE MONSTERS (§11.10 U4, 2026-08-14) ────────────────────────────────────────────────────────
+# The five creatures DelveStage draws had NO generator. `art/build/town2d-monster-*.build.json`
+# recorded them as `Status: "unreproducible-legacy"` -- no seed, no model, no script, and the repo
+# never recorded whether the original pass was AI or hand-pixel. Measured before replacing them:
+# 972 to 5,755 distinct opaque colours each and sizes from 60x41 to 84x99, which is the signature of
+# a generated image downscaled, not of authored pixel art. So there was nothing to vary FROM, and
+# ASSETS.md's "Hand-pixel Python" credit for this row was false. Authoring them here makes the
+# credit true and gives every one of them a variation pool for free.
+#
+# WIDTH, NOT HALVED. These author at the module's own 40-wide canvas so `mirror`/`centered`/`row`
+# work unchanged, and they ship at that size rather than going through rarity_downsample_2x --
+# `DelveStage.MonsterWidth` is 120, so a 40-wide source scales by exactly 3.0. Integer, no shimmer.
+# (The old art was 56-84 wide and was being scaled UP by 1.4-2.1x, which is why it read soft.)
+#
+# Each monster is a silhouette a player must recognise instantly at speed, so they are built for
+# DISTINCT OUTLINES first: the rat is long and low, the spider is wide and legged, the ghoul is
+# tall and narrow, the golem is a broad block, the worm is a vertical coil.
+
+MONSTER_HUES: dict[str, tuple[int, int, int]] = {
+    "cave-rat": (96, 76, 62),        # damp brown fur
+    "tunnel-spider": (78, 60, 96),   # chitin, violet-black
+    "deep-ghoul": (118, 138, 106),   # drowned green
+    "ore-golem": (110, 102, 92),     # wet stone
+    "forgeworm": (158, 76, 44),      # cooling slag
+}
+
+
+def monster_palette(monster_id: str, index: int = 0) -> dict[str, tuple[int, int, int, int]]:
+    """This monster's palette. `index` 0 is the base body; 1..VARIANT_COUNT-1 reuse the SAME
+    variation tables the town figures use (see variant_palette) so a variant monster is tinted by
+    exactly the mechanism a variant villager is, rather than a second scheme to keep in sync."""
+    return variant_palette(MONSTER_HUES[monster_id], index)
+
+
+def mrow(s: str) -> str:
+    """One monster row, written out at full canvas width.
+
+    Deliberately NOT `centered(mirror(half))`, which is how the hero bodies are built. That idiom
+    needs its half-row to end exactly at the centre line, and writing an already-padded half —
+    `"....occnkko....."` — mirrors the padding outward and renders the creature TWICE, once at each
+    edge. That is not hypothetical: the first draft of this section did it, and five monsters came
+    out as nine shapes. Monsters are asymmetric enough (a rat faces left, a spider's legs cross)
+    that the mirror bought little, so every row here is simply written in full and width-asserted."""
+    return row(s)
+
+
+# SHADING, NOT SILHOUETTE. The first draft of these five used one body tone throughout and the
+# render was flat: the spider read as a smudge and the ghoul as a chess pawn, which is worse than
+# the painterly art they replace. Every grid below therefore carries the same four-step cloth ramp
+# the hero bodies use -- `c` light (upper-left, where the light is), `n` mid, `k` dark, `w` deepest
+# (lower-right) -- plus `o` outline and `e` for the one lit feature that makes each creature read.
+
+# CAVE RAT -- long and low, humped back, snout left, bald tail right. Asymmetric, so not mirrored.
+CAVE_RAT = [
+    row_left("." * 40),
+    row_left("..............oooooo...................."),
+    row_left("...........oooccnnkkoo.................."),
+    row_left(".........ooccccnnnkkkkoo................"),
+    row_left("......oooccccnnnnnkkkkkkkoo............."),
+    row_left("....ooccccnnnnnnnnnkkkkkkkkkoo.........."),
+    row_left("...occcnnnnnnnnnnnnkkkkkkkkkkkoo........"),
+    row_left("..occnnnnnnnnnnnnnnkkkkkkkkkkkkkoo......"),
+    row_left(".ocennnnnnnnnnnnnnnkkkkkkkkkkkkkkkoo...."),
+    row_left(".ocnnnnnnnnnnnnnnnnkkkkkkkkkkkkkkkwwoo.."),
+    row_left("oennnnnnnnnnnnnnnnnkkkkkkkkkkkkkkwwwwwo."),
+    row_left("onnnnnnnnnnnnnnnnnnkkkkkkkkkkkkkwwwwwwwo"),
+    row_left(".onnnnnnnnnnnnnnnnkkkkkkkkkkkkkwwwwwwwo."),
+    row_left("..onnnnnnnnnnnnnkkkkkkkkkkkkkwwwwwwoo..."),
+    row_left("...oonnnnnnnnkkkkkkkkkkkkkwwwwwwoo......"),
+    row_left(".....ooonnkkkkkkkkkkkkwwwwwwoo.........."),
+    row_left("........ooo.okko.okko.okko.o............"),
+    row_left("...........okko.okko.okko..............."),
+    row_left("...........owwo.owwo.owwo..............."),
+    row_left("...........oooo.oooo.oooo..............."),
+]
+
+
+# TUNNEL SPIDER -- wide, low, eight real legs, lit eye cluster. Symmetric.
+TUNNEL_SPIDER = [
+    mrow("........................................"),
+    mrow("...................oo..................."),
+    mrow("............o..........okko............."),
+    mrow("............oko.........okko............"),
+    mrow("............okko........okko............"),
+    mrow("............okko.......okko............."),
+    mrow(".............okko.....okko.............."),
+    mrow("..............okko...okko..............."),
+    mrow("..............okkoooccnno..............."),
+    mrow("..............ooccccnnnkko.............."),
+    mrow(".............occcennnnkkkko............."),
+    mrow("............occcennnnkkkkkwo............"),
+    mrow("............occnnnnnkkkkkwwo............"),
+    mrow(".............onnnnkkkkkwwwo............."),
+    mrow("..............onnkkkkwwwoo.............."),
+    mrow(".............o..oowwwoo..o.............."),
+    mrow("............oko...oooo..oko............."),
+    mrow("............oko..........oko............"),
+    mrow("...........oo..............oo..........."),
+]
+
+
+# DEEP GHOUL -- tall, narrow, hunched, long arms hanging past the knee. Symmetric.
+DEEP_GHOUL = [
+    mrow("........................................"),
+    mrow("..................oooo.................."),
+    mrow(".................occnko................."),
+    mrow(".................oceeko................."),
+    mrow(".................ocnkko................."),
+    mrow("..................onko.................."),
+    mrow("...............ooocnkooo................"),
+    mrow("..............occcnnnkkwo..............."),
+    mrow(".............occccnnnkkkwo.............."),
+    mrow("............oocccnnnnkkkwwo............."),
+    mrow("............oconnnnnnkkkwwo............."),
+    mrow("............ocnnnnnnnkkkwwo............."),
+    mrow("............ocnnnnnnnkkkwwo............."),
+    mrow("............oconnnnnnkkkwwo............."),
+    mrow("............oco.nnnnkkk.wwo............."),
+    mrow("............oco.onnkkko.wwo............."),
+    mrow("............owo.onnkkko.owo............."),
+    mrow("............ooo.onnkkko.ooo............."),
+    mrow(".................onkkwo................."),
+    mrow(".................onkkwo................."),
+    mrow("................oonkkwoo................"),
+    mrow("...............okko.owwo................"),
+    mrow("...............oooo.oooo................"),
+]
+
+
+# ORE GOLEM -- broad blocky mass, ember seams in the cracks, stubby legs. Symmetric.
+ORE_GOLEM = [
+    mrow("........................................"),
+    mrow(".................oooooo................."),
+    mrow("...............occcnnkko................"),
+    mrow("...............oceenkkwo................"),
+    mrow("...............occnnkkwo................"),
+    mrow(".............oooocnnkkwoooo............."),
+    mrow("............occcccnnnkkkkkwo............"),
+    mrow("...........occcccnnnnnkkkkkwo..........."),
+    mrow("..........occccnnnneekkkkkwwo..........."),
+    mrow("..........occcnnnnnnnkkkkkwwo..........."),
+    mrow("..........occnnnnnnnnkkkkkwwo..........."),
+    mrow("..........ocnnnneennnkkkkwwwo..........."),
+    mrow("..........ocnnnnnnnnnkkkwwwwo..........."),
+    mrow("...........onnnnnnnnkkkwwwwo............"),
+    mrow("............onnnnnnkkkwwwwo............."),
+    mrow(".............onnnnkkkwwwwo.............."),
+    mrow(".............onnno.okkwwwo.............."),
+    mrow(".............onnno.okkwwwo.............."),
+    mrow(".............onnno.okkwwwo.............."),
+    mrow("............occnno.okkwwwwo............."),
+    mrow("............oooooo.oooooooo............."),
+]
+
+
+# FORGEWORM -- vertical coil, ringed segments, molten maw at the top. Symmetric.
+FORGEWORM = [
+    mrow("........................................"),
+    mrow(".................oooooo................."),
+    mrow("................oceeeeko................"),
+    mrow("..............oceeewweeko..............."),
+    mrow("..............oceewwwweko..............."),
+    mrow("..............occnnnnkkko..............."),
+    mrow("...............occnnkkko................"),
+    mrow("................ocnkkwo................."),
+    mrow("...............occcnnkkwo..............."),
+    mrow("..............occccnnkkkwo.............."),
+    mrow("..............occcnnnkkkwo.............."),
+    mrow("...............occnnkkkwo..............."),
+    mrow("................ocnkkwo................."),
+    mrow("...............occcnnkkwo..............."),
+    mrow("..............occccnnkkkwo.............."),
+    mrow("..............occcnnnkkkwo.............."),
+    mrow("...............occnnkkkwo..............."),
+    mrow("................ocnkkwo................."),
+    mrow("...............occcnnkkwo..............."),
+    mrow("..............occccnnkkkwo.............."),
+    mrow(".............occcccnnnkkkwo............."),
+    mrow(".............oooooooooooooo............."),
+]
+
+
+MONSTER_GRIDS: dict[str, list[str]] = {
+    "cave-rat": CAVE_RAT,
+    "tunnel-spider": TUNNEL_SPIDER,
+    "deep-ghoul": DEEP_GHOUL,
+    "ore-golem": ORE_GOLEM,
+    "forgeworm": FORGEWORM,
+}
+
+MONSTER_SPRITES: dict[str, tuple[list[str], dict[str, tuple[int, int, int, int]]]] = {}
+for _mid, _grid in MONSTER_GRIDS.items():
+    MONSTER_SPRITES[f"town2d-monster-{_mid}"] = (_grid, monster_palette(_mid, 0))
+    for _i in range(1, VARIANT_COUNT):
+        MONSTER_SPRITES[f"town2d-monster-{_mid}{ARTVARIANTS_PREFIX}{_i + 1}"] = (
+            _grid, monster_palette(_mid, _i))
+
+# Silhouette distinctness is the whole design brief for these five (see the section header), so it
+# is asserted rather than eyeballed: no two monsters may share an outline shape.
+_MONSTER_SILHOUETTES = {
+    mid: tuple("".join("#" if ch != "." else "." for ch in r) for r in grid)
+    for mid, grid in MONSTER_GRIDS.items()
+}
+assert len(set(_MONSTER_SILHOUETTES.values())) == len(MONSTER_GRIDS), \
+    "two monsters share an identical silhouette — they must read apart at a glance"
+
+
 # ── PLAYER SMITH (2026-08-04 second round): brought up to the SAME treatment as the heroes above
 # -- bigger canvas, real 4-frame gait, baked colour, a real face -- so the player is not the one
 # crude sprite left once the heroes carry all of this. No prior generator source existed for
@@ -1385,7 +1592,25 @@ def main() -> int:
         help="compare against committed PNGs instead of writing; non-zero exit on any difference")
     args = parser.parse_args()
 
-    all_sprites = {**SPRITES, **PLAYER_SPRITES, **CIVILIAN_SPRITES, **VARIANT_SPRITES}
+    all_sprites = {**SPRITES, **PLAYER_SPRITES, **CIVILIAN_SPRITES, **VARIANT_SPRITES,
+                   **MONSTER_SPRITES}
+
+    def canvas_of(sprite_name: str) -> tuple[int, int]:
+        """(width, height) for one sprite. The town cast and the player are fixed-canvas; monsters
+        vary in height by creature (a rat is not a worm), so their height comes from the grid
+        itself rather than a constant."""
+        if sprite_name.startswith("player_smith"):
+            return PLAYER_WIDTH, PLAYER_HEIGHT
+        if sprite_name.startswith("town2d-monster-"):
+            return WIDTH, len(all_sprites[sprite_name][0])
+        return WIDTH, HEIGHT
+
+    def is_halved(sprite_name: str) -> bool:
+        """Monsters author AT their shipped size; everyone else authors at 2x and is halved by
+        rarity_downsample_2x. See the MINE MONSTERS section header — DelveStage.MonsterWidth is
+        120, so a 40-wide monster scales by exactly 3.0, and halving it first would throw away
+        the detail that makes it readable."""
+        return not sprite_name.startswith("town2d-monster-")
 
     drift = []
     # Every gait frame of one body halves against the BASE frame's colour-frequency table, so a
@@ -1396,24 +1621,25 @@ def main() -> int:
 
     def render_full(sprite_name: str) -> Image.Image:
         grid_, palette_ = all_sprites[sprite_name]
-        w = PLAYER_WIDTH if sprite_name.startswith("player_smith") else WIDTH
-        h = PLAYER_HEIGHT if sprite_name.startswith("player_smith") else HEIGHT
+        w, h = canvas_of(sprite_name)
         return render(grid_, sprite_name, palette_, w, h)
 
     for name in all_sprites:
+        if not is_halved(name):
+            continue  # monsters are single-frame; there is no gait to keep consistent
         body_id = name.partition("_")[0] if not name.startswith("player_smith") else "player_smith"
         if body_id not in base_frames and body_id in all_sprites:
             base_frames[body_id] = render_full(body_id)
 
     for name, (grid, palette) in all_sprites.items():
-        width = PLAYER_WIDTH if name.startswith("player_smith") else WIDTH
-        height = PLAYER_HEIGHT if name.startswith("player_smith") else HEIGHT
+        width, height = canvas_of(name)
         image = render(grid, name, palette, width, height)
-        body_id = name.partition("_")[0] if not name.startswith("player_smith") else "player_smith"
-        # Halve to the actual on-screen resolution here, offline — see the SHIPPED RESOLUTION note
-        # above rarity_downsample_2x(). The committed PNG is this halved image, not the authoring
-        # canvas; TownLayout2D.CharacterSpriteScale draws it at 1.0, unchanged from here on.
-        image = rarity_downsample_2x(image, freq_source=base_frames.get(body_id))
+        if is_halved(name):
+            body_id = name.partition("_")[0] if not name.startswith("player_smith") else "player_smith"
+            # Halve to the actual on-screen resolution here, offline — see the SHIPPED RESOLUTION
+            # note above rarity_downsample_2x(). The committed PNG is this halved image, not the
+            # authoring canvas; TownLayout2D.CharacterSpriteScale draws it at 1.0 from here on.
+            image = rarity_downsample_2x(image, freq_source=base_frames.get(body_id))
         path = os.path.join(args.out, f"{name}.png")
 
         if args.check:
