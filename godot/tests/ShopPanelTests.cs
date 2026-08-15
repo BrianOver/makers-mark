@@ -609,5 +609,218 @@ public class ShopPanelTests
             Unmount(ui);
         }
     }
+
+    // ── U8 (§11.12 plan, "shop counters identical and redundant — condense") ────────────────────
+
+    private static readonly ItemId CondensedShelfItemId = new(9401);
+
+    /// <summary>One shelved item, one hero already promoted to Active at the counter — the exact
+    /// state under which Present/Suggest must appear ON the shelf card (see <see
+    /// cref="ShelvedItem_AppearsInExactlyOneRow_NotTwo"/>/<see
+    /// cref="PresentAndSuggest_RenderOnlyWhileACustomerIsActive"/>).</summary>
+    private static GameState ShelfWithActiveCustomerState()
+    {
+        var baseState = GameComposition.NewCampaign(9401);
+        var item = new Item(
+            CondensedShelfItemId, "test-recipe", "Test Blade", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(Attack: 5, Defense: 0, Weight: 2), new MakersMark("You", 1),
+            ImmutableList<ItemHistoryEntry>.Empty);
+        var heroId = baseState.Heroes.Values.First().Id;
+
+        return baseState with
+        {
+            Items = baseState.Items.Add(item.Id.Value, item),
+            Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(item.Id, 10)) },
+            Counter = new CounterState(
+                Queue: ImmutableList.Create(heroId),
+                Active: heroId,
+                Round: 0,
+                InterestPermille: 0,
+                PatienceRounds: 3,
+                GoodwillPermille: 0,
+                Presented: null,
+                StandingOfferGold: null,
+                Served: ImmutableSortedSet<int>.Empty,
+                Closed: false),
+        };
+    }
+
+    /// <summary>Same shelf, but the counter has never been opened (<c>Counter</c> is null) — the
+    /// "no active customer" half of the same scenario.</summary>
+    private static GameState ShelfWithNoActiveCustomerState()
+    {
+        var baseState = GameComposition.NewCampaign(9401);
+        var item = new Item(
+            CondensedShelfItemId, "test-recipe", "Test Blade", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(Attack: 5, Defense: 0, Weight: 2), new MakersMark("You", 1),
+            ImmutableList<ItemHistoryEntry>.Empty);
+
+        return baseState with
+        {
+            Items = baseState.Items.Add(item.Id.Value, item),
+            Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(item.Id, 10)) },
+        };
+    }
+
+    /// <summary>Recursive descendant count by <see cref="Node.Name"/> — <see
+    /// cref="UiTestSupport.Find{T}"/> only ever returns the FIRST match, which cannot by itself
+    /// prove a name is unique. Local to this suite: no other test file needs a duplicate-detector.</summary>
+    private static int CountDescendantsNamed(Node root, string name)
+    {
+        var count = 0;
+        foreach (var child in root.GetChildren())
+        {
+            if (child.Name == name)
+            {
+                count++;
+            }
+
+            count += CountDescendantsNamed(child, name);
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// The pin for the whole unit (test scenario 1 of the plan): before this unit,
+    /// <c>CounterPanel.BuildShelfActions</c> ("Present / Suggest") rendered a SECOND full card for
+    /// every shelved item directly above this same list, in the same scroll — same item, same
+    /// icon, same name/quality/price shape. That section is deleted outright, not merely emptied.
+    /// </summary>
+    [TestCase]
+    public void ShelvedItem_AppearsInExactlyOneRow_NotTwo()
+    {
+        var ui = MountMainUi(new SimAdapter(ShelfWithActiveCustomerState()));
+        try
+        {
+            ui.OpenPanel("Shop");
+
+            AssertThat(CountDescendantsNamed(ui.Shop, $"ShelfCard_{CondensedShelfItemId.Value}"))
+                .OverrideFailureMessage(
+                    "A shelved item must render in exactly one card — the counter's old duplicate " +
+                    "shelf list must be gone, not just hidden.")
+                .IsEqual(1);
+
+            AssertThat(RenderedText(ui.Shop).Contains("Present / Suggest"))
+                .OverrideFailureMessage("The old 'Present / Suggest' section header still renders somewhere.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Test scenario 3: Present/Suggest are genuinely ABSENT with no active customer —
+    /// never a disabled-and-present button (which would still cost a look-then-discard on every
+    /// shelf item) — and present, enabled, on the SAME card once a customer is active.</summary>
+    [TestCase]
+    public void PresentAndSuggest_RenderOnlyWhileACustomerIsActive()
+    {
+        var uiNoCustomer = MountMainUi(new SimAdapter(ShelfWithNoActiveCustomerState()));
+        try
+        {
+            uiNoCustomer.OpenPanel("Shop");
+
+            AssertThat(uiNoCustomer.Shop.FindChild($"Present_{CondensedShelfItemId.Value}", recursive: true, owned: false))
+                .OverrideFailureMessage("Present must be ABSENT with no active customer, not merely disabled.")
+                .IsNull();
+            AssertThat(uiNoCustomer.Shop.FindChild($"Suggest_{CondensedShelfItemId.Value}", recursive: true, owned: false))
+                .OverrideFailureMessage("Suggest must be ABSENT with no active customer, not merely disabled.")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(uiNoCustomer);
+        }
+
+        var uiWithCustomer = MountMainUi(new SimAdapter(ShelfWithActiveCustomerState()));
+        try
+        {
+            uiWithCustomer.OpenPanel("Shop");
+
+            var present = Find<Button>(uiWithCustomer.Shop, $"Present_{CondensedShelfItemId.Value}");
+            var suggest = Find<Button>(uiWithCustomer.Shop, $"Suggest_{CondensedShelfItemId.Value}");
+            AssertThat(present.Disabled).IsFalse();
+            AssertThat(suggest.Disabled).IsFalse();
+
+            PressEnabled(uiWithCustomer.Shop, $"Present_{CondensedShelfItemId.Value}");
+            AssertThat(uiWithCustomer.Adapter.AppliedThisPhase.OfType<PresentItemAction>().Single().Item)
+                .IsEqual(CondensedShelfItemId);
+        }
+        finally
+        {
+            Unmount(uiWithCustomer);
+        }
+    }
+
+    /// <summary>Test scenario 2, enumerated (not sampled): every shelf/counter verb reachable
+    /// before this unit is still reachable after it, under the same <see cref="Node.Name"/>s
+    /// existing tests already press by.</summary>
+    [TestCase]
+    public void EveryShelfAndCounterVerb_IsStillReachable_ByTheSameName()
+    {
+        var ui = MountMainUi(new SimAdapter(ShelfWithActiveCustomerState()));
+        try
+        {
+            ui.OpenPanel("Shop");
+
+            foreach (var name in new[]
+                     {
+                         $"Unstock_{CondensedShelfItemId.Value}", $"Reprice_{CondensedShelfItemId.Value}",
+                         $"Provenance_{CondensedShelfItemId.Value}", $"Present_{CondensedShelfItemId.Value}",
+                         $"Suggest_{CondensedShelfItemId.Value}", "Accept", "HoldFirm", "Counter", "CloseCounter",
+                     })
+            {
+                AssertThat(Find<Button>(ui.Shop, name))
+                    .OverrideFailureMessage($"'{name}' is no longer reachable after condensing the shelf lists.")
+                    .IsNotNull();
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+
+        var uiClosed = MountMainUi();
+        try
+        {
+            uiClosed.OpenPanel("Shop");
+            AssertThat(Find<Button>(uiClosed.Shop, "OpenCounter")).IsNotNull();
+        }
+        finally
+        {
+            Unmount(uiClosed);
+        }
+    }
+
+    /// <summary>Test scenario 7: a reflective orphan guard over the WHOLE <c>godot/scripts</c> and
+    /// <c>godot/tests</c> trees — walks the real filesystem (mirrors <c>AudioTests
+    /// .EveryCue_HasAtLeastOneProductionReference</c>'s <c>ProjectSettings.GlobalizePath</c> +
+    /// <c>Directory.GetFiles</c> idiom) rather than a hand-listed set of known-good ids, so the
+    /// NEXT deletion (a script/test file removed without its Godot-generated <c>.cs.uid</c>
+    /// sidecar) cannot leave the same class of litter this unit found and deleted
+    /// (<c>ShopStage.cs.uid</c>/<c>ShopStageTests.cs.uid</c>/<c>MonsterView3D.cs.uid</c>).</summary>
+    [TestCase]
+    public void NoUidSidecar_ExistsWithoutItsMatchingCsFile()
+    {
+        foreach (var resRoot in new[] { "res://scripts", "res://tests" })
+        {
+            var dir = ProjectSettings.GlobalizePath(resRoot);
+            var uidFiles = System.IO.Directory.GetFiles(dir, "*.cs.uid", System.IO.SearchOption.AllDirectories);
+
+            AssertThat(uidFiles.Length)
+                .OverrideFailureMessage($"Found no .cs.uid files under {dir} — did the folder move?")
+                .IsGreater(0);
+
+            foreach (var uidFile in uidFiles)
+            {
+                var csFile = uidFile[..^".uid".Length];
+                AssertThat(System.IO.File.Exists(csFile))
+                    .OverrideFailureMessage($"'{uidFile}' has no matching '{csFile}' — an orphaned Godot sidecar left behind by a deleted script.")
+                    .IsTrue();
+            }
+        }
+    }
 }
 #endif

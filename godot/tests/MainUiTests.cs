@@ -133,6 +133,35 @@ public class MainUiTests
     }
 
     [TestCase]
+    public void AdvancePhaseButton_TooltipNamesWhatPressingItWillDo()
+    {
+        // U7 (§11.12 plan): this was the ONE top-bar control with NO tooltip at all — the owner's
+        // own complaint names it, and it survived even the "23 files already set TooltipText"
+        // sweep. No key is bound to it (ShortcutMap has no entry for it — mouse-only by design),
+        // so this pins the description-only branch, not a "(key)" suffix.
+        var ui = MountMainUi();
+        try
+        {
+            // Fresh Day-1 Morning mount: Conductor is Idle, Clock.AutoAdvance is false (forceGated).
+            AssertThat(Find<Button>(ui, "AdvancePhase").TooltipText)
+                .OverrideFailureMessage("AdvancePhase has no tooltip in the Idle/manual-pacing branch.")
+                .IsEqual("Ends this phase and moves the day forward.");
+
+            // Flipping Auto ON swaps both Text ("Skip") and TooltipText together — never one without
+            // the other, so the two can never describe two different presses.
+            Press(ui, "AutoAdvance");
+            AssertThat(Find<Button>(ui, "AdvancePhase").Text).IsEqual("Skip");
+            AssertThat(Find<Button>(ui, "AdvancePhase").TooltipText)
+                .OverrideFailureMessage("AdvancePhase's tooltip did not switch to the Auto-advance branch.")
+                .IsEqual("Jump straight to the next phase, without waiting for the clock to reach it.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void ForgePanel_MaterialsLabel_NeverShowsStaleVendorHint()
     {
         // P007 U7: the old "buy ore from returning heroes (Evening ledger)" hint predates the

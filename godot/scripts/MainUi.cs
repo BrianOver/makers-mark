@@ -1496,6 +1496,24 @@ public partial class MainUi : Control
         "Deep Vigil — camped parties push into the deeper floors and the run is decided. Craft, stock, and price; nothing else to do but wait.\n" +
         "Night — heroes return with loot and news. Buy their ore, post bounties, craft, stock, and price.";
 
+    /// <summary>
+    /// U7 (§11.12 plan): the Books Tray's "Renown" button's real tooltip — the owner's playtest
+    /// found every tray tooltip a one-word restatement of its icon ("Renown" alone, on a button
+    /// with no visible text at all). <c>public const</c>, not inlined at the <see
+    /// cref="TrayButton"/> call site, because <see
+    /// cref="GodotClient.Ui.TutorialFlow.CopyFor"/>'s step 9 line must quote this EXACT sentence
+    /// (<see cref="GodotClient.Tests.TutorialCopyIsFollowableTests"/>
+    /// .TheTraySteps_QuoteTheTooltipsTheTrayButtonsActuallyCarry_NotTheirPanelTitles pins the
+    /// join) — one constant read by both, so the two can never drift apart the way a retyped copy
+    /// of "Renown" already proved they could.
+    /// </summary>
+    public const string RenownTrayTooltip = "Renown — every hero's card: standing, deepest run, and deeds";
+
+    /// <summary>The Books Tray's "Commissions" button's real tooltip — same reasoning and the same
+    /// cross-file pin as <see cref="RenownTrayTooltip"/>, for <see
+    /// cref="GodotClient.Ui.TutorialFlow.CopyFor"/>'s step 10 line.</summary>
+    public const string CommissionsTrayTooltip = "Commissions — the open board of hero requests you can craft against";
+
     /// <summary>A <see cref="UiKit.StatChip"/> given a discoverable <see cref="Node.Name"/> so
     /// tests can locate the exact chip instead of scanning the whole HUD's rendered text.</summary>
     private static Control NamedStatChip(string name, string label, string value, UiKit.ChipTone tone = UiKit.ChipTone.Neutral)
@@ -1817,6 +1835,12 @@ public partial class MainUi : Control
         if (Clock.AutoAdvance)
         {
             _advance.Text = "Skip"; // Innkeeper's Clock (opt-in auto): the bell is the exception
+            // U7: this control had NO tooltip at all before this unit — the one top-bar button the
+            // owner's own complaint names, and the sole exception carved out of "23 files set
+            // TooltipText" turned out to be a control with none. No key is bound to it (mouse-only
+            // by design — see ShortcutMap, which has no entry for it), so this is description
+            // only, never a "(key)" suffix.
+            _advance.TooltipText = "Jump straight to the next phase, without waiting for the clock to reach it.";
             var remaining = Clock.Remaining.ToString("0", CultureInfo.InvariantCulture);
             var paused = Clock.Playing ? string.Empty : " [paused]";
             // U15/AE1: engaged holds the boundary even while flowing — surface that distinctly
@@ -1841,9 +1865,15 @@ public partial class MainUi : Control
             // control becomes the deliberate reopen affordance whenever the stop is armed and its
             // slate is closed, instead of a Hurry that would (correctly) no-op there and read as
             // dead.
-            _advance.Text = Conductor.Current == RaidConductor.Beat.VigilStop && !Camp.Visible
-                ? "Return to the vigil"
-                : BellVerb(state);
+            var vigilStopUnanswered = Conductor.Current == RaidConductor.Beat.VigilStop && !Camp.Visible;
+            _advance.Text = vigilStopUnanswered ? "Return to the vigil" : BellVerb(state);
+            // U7: same three-way branch the Text above already makes, mirrored for the tooltip so
+            // the two can never say different things about what this one press does.
+            _advance.TooltipText = vigilStopUnanswered
+                ? "Reopens the vigil decision you have not answered yet."
+                : Conductor.Current != RaidConductor.Beat.Idle
+                    ? "Skips ahead to the next stop in today's raid."
+                    : "Ends this phase and moves the day forward.";
             var tailParts = new System.Collections.Generic.List<string>();
 
             // A stopped day must never be an unexplained one. RaidConductor's shows now hold while
@@ -2235,10 +2265,23 @@ public partial class MainUi : Control
         _fullscreen = new Button
         {
             Name = "Fullscreen", Text = "⛶", ToggleMode = true, CustomMinimumSize = new Vector2(24, 24),
-            TooltipText = "Fullscreen (F11)", ButtonPressed = IsFullscreen(),
+            ButtonPressed = IsFullscreen(),
         };
         _fullscreen.Pressed += ToggleFullscreen;
-        verbRow.AddChild(_fullscreen);
+
+        // U7: this was the ONE top-bar control that already named its own key ("Fullscreen
+        // (F11)") — the plan's own example of what every other control should look like. Now
+        // derived from ShortcutMap rather than a retyped literal, and the key gets a second,
+        // always-visible home beside the button (UiKit.ShortcutBadge) instead of only living in
+        // the hover tooltip — "controls with a key render the badge inline, not only on hover."
+        var fullscreenEntry = ShortcutMap.Find("fullscreen");
+        _fullscreen.TooltipText = ShortcutMap.Tooltip(fullscreenEntry.Id);
+
+        var fullscreenRow = new HBoxContainer { Name = "FullscreenRow" };
+        fullscreenRow.AddThemeConstantOverride("separation", GameTheme.Space4);
+        fullscreenRow.AddChild(_fullscreen);
+        fullscreenRow.AddChild(UiKit.ShortcutBadge(ShortcutMap.KeyLabel(fullscreenEntry)));
+        verbRow.AddChild(fullscreenRow);
 
         // U3 (loop-legibility plan, KTD-B): the bell tray sits under the verb row, on the same
         // bell zone as Skip/Watch/Auto — one chip per action still waiting for the bell
@@ -2276,25 +2319,38 @@ public partial class MainUi : Control
         trayRow.AddThemeConstantOverride("separation", GameTheme.Space4);
         tray.AddChild(trayRow);
 
-        var ledgerButton = TrayButton("OpenLedger", IconRegistry.Glyph("skull"), "Ledger");
+        // U7 (§11.12 plan): every tray tooltip below used to be a one-word restatement of its own
+        // icon ("Ledger", "Forecast", ...) — the owner could not tell what these seven buttons did
+        // without opening each one to find out. Every tooltip is now a full sentence naming what
+        // the panel actually shows; none of these buttons carry a bound key (see ShortcutMap — the
+        // tray has no keyboard shortcuts today), so there is no "(key)" suffix to add.
+        var ledgerButton = TrayButton(
+            "OpenLedger", IconRegistry.Glyph("skull"),
+            "Ledger — yesterday's full accounting: what sold, what came in, and who bought it");
         ledgerButton.Pressed += () => Ledger.ShowFor(LastCompletedDay);
         trayRow.AddChild(CapTrayIcon(ledgerButton));
 
         // U10: open the raid-forecast board on demand (day-end auto-open is the chained path in
         // OnLedgerVisibilityChanged). Reads live state so it always reflects the current roster.
-        var forecastButton = TrayButton("OpenForecast", IconRegistry.Glyph("depths"), "Forecast");
+        var forecastButton = TrayButton(
+            "OpenForecast", IconRegistry.Glyph("depths"),
+            "Forecast — tomorrow's raid board: who's mustering, and how deep they're going");
         forecastButton.Pressed += () => Forecast.ShowForTomorrow(Adapter.CurrentState);
         trayRow.AddChild(CapTrayIcon(forecastButton));
 
         // Wave 3 (U15): open the commission board on demand — a Prepare-phase surface, same tray
-        // as Forecast. Reads live state so it always reflects the current board.
-        var commissionsButton = TrayButton("OpenCommissions", IconRegistry.Glyph("bounty"), "Commissions");
+        // as Forecast. Reads live state so it always reflects the current board. Tooltip is the
+        // shared CommissionsTrayTooltip constant (see its own doc): TutorialFlow's step 10 line
+        // quotes this exact sentence, so the two can never drift apart.
+        var commissionsButton = TrayButton("OpenCommissions", IconRegistry.Glyph("bounty"), CommissionsTrayTooltip);
         commissionsButton.Pressed += () => Commissions.ShowOpen(Adapter.CurrentState);
         trayRow.AddChild(CapTrayIcon(commissionsButton));
 
         // Wave 4 (U21): open the Legends Wall on demand — same tray as Forecast/Bestiary/Commissions.
         // Reads live state so it always reflects the current memorials/records/gear.
-        var legendsButton = TrayButton("OpenLegends", IconRegistry.Glyph("rune"), "Legends");
+        var legendsButton = TrayButton(
+            "OpenLegends", IconRegistry.Glyph("rune"),
+            "Legends — the wall of fates your work has actually changed");
         legendsButton.Pressed += () => Legends.ShowWall(Adapter.CurrentState);
         trayRow.AddChild(CapTrayIcon(legendsButton));
 
@@ -2303,20 +2359,25 @@ public partial class MainUi : Control
         // OpenPanel("Demand"), but nothing ever called it. Same tray, wired straight onto the
         // drawer's own OpenPanel router (mirrors OnTownBuildingClicked's OpenPanel("Bounties")
         // call) rather than inventing a bespoke show method.
-        var demandButton = TrayButton("OpenDemand", IconRegistry.Glyph("gossip"), "Demand");
+        var demandButton = TrayButton(
+            "OpenDemand", IconRegistry.Glyph("gossip"),
+            "Demand — what the town wants right now, and how badly");
         demandButton.Pressed += () => OpenPanel("Demand");
         trayRow.AddChild(CapTrayIcon(demandButton));
 
         // Phase B, B1d: the hero digest (standing/deepest/XP-rank/deeds card per alive hero) had
         // no HUD entry — same tray as Demand/Legends above. Opens "HeroCards" (not "Heroes" —
-        // that drawer id is already the portrait-grid roster reached via town clicks); the
-        // TooltipText stays "Renown" per this unit's brief.
-        var heroesButton = TrayButton("OpenHeroCards", IconRegistry.Glyph("shield"), "Renown");
+        // that drawer id is already the portrait-grid roster reached via town clicks). Tooltip is
+        // the shared RenownTrayTooltip constant (see its own doc) — TutorialFlow's step 9 line
+        // quotes this exact sentence.
+        var heroesButton = TrayButton("OpenHeroCards", IconRegistry.Glyph("shield"), RenownTrayTooltip);
         heroesButton.Pressed += () => OpenPanel("HeroCards");
         trayRow.AddChild(CapTrayIcon(heroesButton));
 
         // U-D4: the progression spine — same tray. Opens the five-ladder board.
-        var progressButton = TrayButton("OpenProgress", IconRegistry.Glyph("weapon"), "Progress");
+        var progressButton = TrayButton(
+            "OpenProgress", IconRegistry.Glyph("weapon"),
+            "Progress — the five ladders tracking your climb, and each one's next rung");
         progressButton.Pressed += () => OpenPanel("Progress");
         trayRow.AddChild(CapTrayIcon(progressButton));
 
@@ -3613,6 +3674,12 @@ public partial class MainUi : Control
 
         _systemMenuSettings = new SettingsPanel();
         _systemMenuSettings.Build();
+        // U7: the in-game host is the only one that can answer "is quick-travel unlocked" — the
+        // title screen's own SettingsPanel instance (NewGameSelect) never sets this, and a null
+        // probe reads as locked (see the property's own doc), which is correct there: no campaign,
+        // no tutorial, no unlock. Tutorial already exists by this point in BuildUi (constructed
+        // above, well before the system menu).
+        _systemMenuSettings.QuickTravelUnlockedProbe = () => Tutorial.QuickTravelUnlocked;
         _systemMenuSettings.Visible = false;
         _systemMenuSettings.Closed += () =>
         {
