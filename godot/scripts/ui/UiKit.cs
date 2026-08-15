@@ -254,6 +254,33 @@ public static class UiKit
         return chip;
     }
 
+    /// <summary>
+    /// U7 (top-bar-explains-itself plan): a small themed pill printing a bound key's label (e.g.
+    /// <c>"F11"</c>, from <see cref="ShortcutMap.KeyLabel"/>) — reuses <see
+    /// cref="StatChipCompact"/>'s tight pill shape/margins so it sits beside a 24-36px HUD button
+    /// without dominating it. This is the "render the badge inline on the button, not only on
+    /// hover" half of the unit: <see cref="Control.TooltipText"/> still carries the full
+    /// what-it-does-plus-key sentence (<see cref="ShortcutMap.Tooltip"/>), but a control with a
+    /// real key no longer needs a hover to prove it has one.
+    /// </summary>
+    public static Control ShortcutBadge(string keyLabel)
+    {
+        var badge = new PanelContainer { Name = "ShortcutBadge", MouseFilter = Control.MouseFilterEnum.Ignore };
+        badge.AddThemeStyleboxOverride("panel", CompactChipStyle());
+
+        var label = new Label
+        {
+            Name = "ShortcutBadgeLabel",
+            Text = keyLabel,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        label.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        label.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
+        badge.AddChild(label);
+
+        return badge;
+    }
+
     /// <summary>Label/value gap (px) inside a <see cref="StatChipCompact"/> row — tighter than
     /// the full <see cref="StatChip"/>'s themed default HBox separation.</summary>
     private const int CompactChipSeparation = 3;

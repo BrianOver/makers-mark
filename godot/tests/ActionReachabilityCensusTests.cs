@@ -84,8 +84,8 @@ public class ActionReachabilityCensusTests
         [typeof(SendSupplyAction)] = "CampPanel.OnSend (CampPanel.cs:268, queues :287).",
         [typeof(RecallPartyAction)] = "CampPanel's Recall/\"Signal Retreat!\" button lambda (CampPanel.cs:261, queues :263).",
         [typeof(OpenCounterAction)] = "CounterPanel.BuildClosedState's \"Open Counter\" button lambda (CounterPanel.cs:76, queues :78).",
-        [typeof(PresentItemAction)] = "CounterPanel.QueuePresent (CounterPanel.cs:269, queues :272) — Present button and the desk drag-drop recognizer share this funnel.",
-        [typeof(SuggestItemAction)] = "CounterPanel.BuildShelfActions's \"Suggest\" button lambda (CounterPanel.cs:378, queues :390).",
+        [typeof(PresentItemAction)] = "ShopPanel's shelf-row Present button (U8, ShopPanel.cs:281) and CounterPanel's desk drag-drop recognizer both call CounterPanel.QueuePresent (CounterPanel.cs:280, queues :294) — moved off CounterPanel's own now-deleted duplicate shelf list (BuildShelfActions).",
+        [typeof(SuggestItemAction)] = "ShopPanel's shelf-row Suggest button (U8, ShopPanel.cs:282), which calls CounterPanel.QueueSuggest (CounterPanel.cs:385, queues :393) — same move as PresentItemAction above.",
         [typeof(HaggleResponseAction)] =
             "CounterPanel.QueueAccept (CounterPanel.cs:300, queues :307) for Accept; " +
             "BuildHaggleControls' Hold Firm lambda (:426, queues :429) and Counter lambda " +

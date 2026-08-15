@@ -58,6 +58,13 @@ namespace GodotClient.Panels;
 /// and editable for anyone who wants to override it; a "priced at Ng — suggested/custom" hint
 /// (recomputed on every edit, both here and on the already-shelved card) always names the
 /// price and where it came from, so an auto-price never reads as a silent guess.</para>
+///
+/// <para>U8 (§11.12 plan, "shop counters identical and redundant — condense"): "Your Shelf" is
+/// now the ONE shelf list. <see cref="CounterPanel"/>'s own former "Present / Suggest" section
+/// used to iterate <c>state.Player.Shelf</c> a second time directly above this one, in the same
+/// scroll — see <see cref="BuildShelfSection"/>'s own doc. Present/Suggest render on THIS card now,
+/// only while a customer is actually at the counter; everything else (Unstock/Reprice/History,
+/// Unshelved Crafts, the Rival Shelf, drag-to-stock) is unchanged.</para>
 /// </summary>
 public partial class ShopPanel : SimPanel
 {
@@ -180,6 +187,15 @@ public partial class ShopPanel : SimPanel
         return passesToday;
     }
 
+    /// <summary>
+    /// U8 (§11.12 plan, "shop counters identical and redundant — condense"): the ONE shelf list.
+    /// <c>state.Player.Shelf</c> used to be iterated here AND again in
+    /// <c>CounterPanel.BuildShelfActions</c> ("Present / Suggest"), stacked directly above this
+    /// section in the same scroll — same items, same <see cref="IconRegistry.Slot"/> icon, same
+    /// name/quality/price shape, different button sets, reading as duplicate UI. Every card built
+    /// here now also carries Present/Suggest (see the counter-condition inside the loop below) —
+    /// that method is deleted, not merely hidden.
+    /// </summary>
     private void BuildShelfSection(GameState state, Dictionary<int, List<HeroPassedOnItem>> passesToday)
     {
         var section = Section("Your Shelf");
@@ -248,6 +264,23 @@ public partial class ShopPanel : SimPanel
             // U5: "your craft writes the legends" made touchable — open the item's provenance
             // card (History entries + maker's mark + forge sub-scores) on click.
             AddButton(controlsRow, $"Provenance_{itemId.Value}", "History", () => OnShowProvenance(itemId));
+
+            // U8 (§11.12 plan, "shop counters identical and redundant — condense"): Present/Suggest
+            // used to render in CounterPanel.BuildShelfActions — a SECOND full iteration of this
+            // same Player.Shelf, stacked directly above this list in the same scroll, same item/
+            // icon/name/price, different buttons. That method is gone; these two verbs now live on
+            // THIS card instead, and only exist at all while a customer is actually at the counter
+            // (CounterHandlers.RequireActiveSession's own gate, mirrored) — genuinely ABSENT, not
+            // disabled-and-present, when there is no one to present to, so the row never grows a
+            // dead control. CounterPanel.QueuePresent/QueueSuggest are the SAME seams the counter
+            // desk's drag-drop and handshake gestures call (KTD-A) — this is a second entry point
+            // into them, not a second implementation.
+            if (state.Counter is { Closed: false } counter && counter.Active is not null)
+            {
+                var counterRow = AddRow(cardBody);
+                AddButton(counterRow, $"Present_{itemId.Value}", "Present", () => _counter!.QueuePresent(itemId));
+                AddButton(counterRow, $"Suggest_{itemId.Value}", "Suggest", () => _counter!.QueueSuggest(itemId, item.Name));
+            }
 
             if (passesToday.TryGetValue(itemId.Value, out var passes))
             {

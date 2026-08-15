@@ -176,6 +176,83 @@ public class SettingsPanelTests
         });
     }
 
+    // ---- shortcuts legend (U7, §11.12 plan) ------------------------------------------------------
+
+    [TestCase]
+    public void RendersEveryShortcutMapEntry_NotJustTheEightRebindableActions()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            Find<Control>(ui, "SystemMenu").Visible = true;
+            Press(ui, "SystemMenuSettings");
+
+            // F11 (raw key, no rebind row at all), Escape/"cancel" (registered but not one of the
+            // ~8 RebindableActions), and the four quick-travel keys (gated, but still legended) —
+            // none of these have a "Rebind_*_Key" button anywhere on this panel, so this is the
+            // ONLY place they are discoverable at all.
+            foreach (var entry in ShortcutMap.Entries)
+            {
+                AssertThat(Find<Label>(ui, $"Shortcut_{entry.Id}_Label").Text).IsEqual(entry.Label);
+                AssertThat(Find<Label>(ui, $"Shortcut_{entry.Id}_Description").Text).IsEqual(entry.Description);
+
+                var keyText = Find<Label>(ui, $"Shortcut_{entry.Id}_Key").Text;
+                AssertThat(string.IsNullOrWhiteSpace(keyText))
+                    .OverrideFailureMessage($"'{entry.Id}' legend row shows no key at all.")
+                    .IsFalse();
+                AssertThat(keyText)
+                    .OverrideFailureMessage($"'{entry.Id}' legend row could not resolve its key (\"{keyText}\").")
+                    .IsNotEqual("?");
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void QuickTravelLegendRows_UndimAndClearTheirTooltip_OnceTheProbeReportsUnlocked()
+    {
+        // A bare instance, deliberately not routed through MainUi/Tutorial — QuickTravelUnlockedProbe
+        // exists precisely so this panel's own locked/unlocked rendering can be pinned in isolation
+        // from the real tutorial chain (also exercises the "probe unset" default: NewGameSelect's
+        // title-screen instance never sets it, and that must read as locked, never unlocked).
+        var panel = new SettingsPanel();
+        try
+        {
+            AssertThat(panel.QuickTravelUnlockedProbe)
+                .OverrideFailureMessage("QuickTravelUnlockedProbe must default to null (reads as locked) until a host sets it.")
+                .IsNull();
+
+            panel.Build();
+
+            var row = Find<Control>(panel, "Shortcut_quicktravel_forge_Row");
+            var keyLabel = Find<Label>(panel, "Shortcut_quicktravel_forge_Key");
+
+            AssertThat(row.Modulate.A)
+                .OverrideFailureMessage("A null probe (no host has wired it) must render locked, not unlocked.")
+                .IsLess(1f);
+            AssertThat(string.IsNullOrEmpty(keyLabel.TooltipText))
+                .OverrideFailureMessage("A locked quick-travel row must name its unlock condition in its tooltip.")
+                .IsFalse();
+
+            panel.QuickTravelUnlockedProbe = () => true;
+            panel.Refresh();
+
+            AssertThat(row.Modulate.A)
+                .OverrideFailureMessage("Row stayed dimmed after the probe reported unlocked.")
+                .IsEqual(1f);
+            AssertThat(keyLabel.TooltipText)
+                .OverrideFailureMessage("Tooltip still names a lock condition after the probe reported unlocked.")
+                .IsEqual(string.Empty);
+        }
+        finally
+        {
+            panel.Free();
+        }
+    }
+
     // ---- UI scale (C4) --------------------------------------------------------------------------
 
     [TestCase]
