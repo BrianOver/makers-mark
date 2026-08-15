@@ -53,6 +53,51 @@ public class AudioTests
         return samples;
     }
 
+    /// <summary>
+    /// The bellows is a breath, not a hiss — pinned as a NUMBER because it has now been reported twice.
+    ///
+    /// <para>U8 answered "the bellows shift since you have to hold" by halving the cue's amplitude
+    /// (0.30 to 0.15). On 2026-08-14 the owner reported it again: "too loud and abrasive". The second
+    /// word is the one that mattered — abrasive is timbre, and no amount of level cutting fixes
+    /// timbre. The cue was hash noise behind a SINGLE-pole filter at 700Hz, which rolls off just
+    /// 6dB/octave, so at 2.8kHz the noise was still only ~12dB down. That is the hiss band.</para>
+    ///
+    /// <para>Level alone cannot be the assertion, because level alone is exactly the fix that already
+    /// failed once. This measures the cue's HIGH-BAND ENERGY SHARE, so a future session that quietly
+    /// restores a brighter filter — or swaps the cascade back to one pole — goes red here instead of
+    /// arriving as a third identical complaint from the owner.</para>
+    /// </summary>
+    [TestCase]
+    public void TheBellows_ReadsAsBreath_NotHiss()
+    {
+        var pcm = Pcm(SfxLibrary.Get(Cue.Bellows));
+
+        var low = (float[])pcm.Clone();
+        for (var pole = 0; pole < BassFilterPoles; pole++)
+        {
+            Synth.LowPass(low, 900f);
+        }
+
+        var full = Rms(pcm);
+
+        // Vacuous-green guard: a silent cue would trivially "pass" any brightness ceiling by having no
+        // energy anywhere. Silence is a different bug, and it must not read as this one being fixed.
+        AssertThat(full > 0.001f)
+            .OverrideFailureMessage($"The bellows cue is effectively silent (RMS {full:0.#####}).")
+            .IsTrue();
+
+        var highShare = 1f - (Rms(low) / full);
+
+        // Ceiling calibrated against the two-pole 320Hz cue this repo actually ships, with headroom
+        // for float drift across OSes — not a round number picked to be comfortably true.
+        AssertThat(highShare < 0.45f)
+            .OverrideFailureMessage(
+                $"The bellows is {highShare:P0} high-band energy. Above ~45% it stops reading as moving "
+                + "air and starts reading as hiss — the owner's word was \"abrasive\", and that is this "
+                + "number, not the gain. Check the LowPass cascade in SfxLibrary before touching level.")
+            .IsTrue();
+    }
+
     private static float Rms(float[] s) => s.Length == 0 ? 0f : MathF.Sqrt(s.Sum(v => v * v) / s.Length);
 
     private static float Peak(float[] s) => s.Length == 0 ? 0f : s.Max(MathF.Abs);

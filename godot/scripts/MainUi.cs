@@ -293,6 +293,11 @@ public partial class MainUi : Control
     /// Chosen when the Evening tick resolves and spoken when the Ledger opens — see the capture site
     /// for why it cannot be decided at reveal time.</summary>
     private NarratorVoiceDirector.Trigger? _pendingLedgerVoice;
+
+    /// <summary>Heroes lost on the night <see cref="_pendingLedgerVoice"/> was chosen for, so the
+    /// epitaph cannot claim a count the ledger contradicts. Captured with the trigger, at the tick
+    /// that resolved the night — see the assignment site for why it cannot be read at reveal time.</summary>
+    private int _pendingLedgerLosses;
     private HBoxContainer _statChips = null!;
     private Label _clockLabel = null!;
     private PanelContainer _toastBanner = null!;
@@ -677,7 +682,8 @@ public partial class MainUi : Control
                     // Rng.Inc is the campaign's identity everywhere flavor is picked (GossipSystem
                     // passes exactly this as campaignId) — one notion of "which campaign", not two.
                     Audio?.SpeakNarrator(
-                        trigger, Adapter.CurrentState.Rng.Inc, (ulong)_pendingLedgerDay);
+                        trigger, Adapter.CurrentState.Rng.Inc, (ulong)_pendingLedgerDay,
+                        Math.Max(1, _pendingLedgerLosses));
 
                     // U-audio-3: a hero's death gets its own quiet toll, distinct from the ordinary
                     // day's Bell — see DeathNoticeCueFor's own doc. Fires alongside the narrator
@@ -912,6 +918,21 @@ public partial class MainUi : Control
             // is a fact about the night that just resolved, so it is captured with the day it belongs
             // to. Null on a quiet night, which is most nights — silence is the default posture.
             _pendingLedgerVoice = NarratorVoiceDirector.SelectForNight(Adapter.LastEvents);
+
+            // How many the night actually took, captured HERE for the same reason the trigger is —
+            // it is a fact about the night that resolved, and LastEvents will have moved on by the
+            // time the Return-Ritual delay elapses. The owner lost two heroes on 2026-08-14 and heard
+            // "One did not come back"; the selector had no way to know it was speaking over two,
+            // because nobody had ever counted them. This is that count.
+            _pendingLedgerLosses = 0;
+            foreach (var e in Adapter.LastEvents)
+            {
+                if (e is HeroDied)
+                {
+                    _pendingLedgerLosses++;
+                }
+            }
+
             // The reveal fires from _Process when the gate elapses; the Ledger's
             // visibility handler pauses the clock at that point.
         }

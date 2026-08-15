@@ -1694,3 +1694,1660 @@ Hero autonomy is real but narrow: it is five deterministic, RNG-free decision ru
 | Counter | `sim/GameSim/Counter/{CounterHandlers,CounterQueueSystem,HaggleResolver,WillingnessModel}.cs` |
 | Advisor (read models) | `sim/GameSim/Advisor/*.cs`, `sim/GameSim/Drama/{DemandBoard,GoldLedger,LedgerQuery,LegendQuery,DayLog}.cs`, `sim/GameSim/Progression/*` |
 | Surfaces | `godot/scripts/panels/*`, `godot/scripts/minigames/*`, `godot/scripts/town2d/*`, `godot/scripts/{MainUi,SimAdapter}.cs`; CLI `sim/GameSim.Cli/Program.cs` |
+
+---
+
+# §11.11 — P4 came back: the game never shows you the next beat
+
+**Status: §11.4 path work, not overhead.** This is P4's return. The owner sat down, played, and
+wrote notes — that is the human feel-test §11.4 has carried as OPEN since 2026-08-07, and §11.6
+rule 5 (the measurement rule) says the plan amends in the same PR that lands the finding. Every
+unit below traces to a note in his own words. Written as a §11 amendment in §11.10's shape
+because the `docs/plans/` two-doc cap is full (`2026-08-13-002` and `2026-08-14-001` both hold
+live units) and rule 4 does not permit a third.
+
+---
+
+## The one thing that is wrong
+
+Read as a list, the notes look like eight separate complaints. Read against the code, they are
+one.
+
+**Nothing in this game is uncertain, and the client draws only the present tense.** The sim
+already knows the next beat and can prove it. Which hero walks up to the counter is
+`state.Heroes` ordered by relationship band then `HeroId`
+(`sim/GameSim/Counter/CounterHandlers.cs:58-69`). What they ask for is
+`RaidForecast.MissingItemSlots(hero.Gear)[0]` — a pure function of gear
+(`godot/scripts/ui/CustomerVoice.cs:40-43`, `sim/GameSim/Heroes/RaidForecast.cs:85-104`). Which
+three heroes march tomorrow is a pure function of the roster
+(`sim/GameSim/Heroes/PartyFormation.cs:33-48`). Whether Camp will have a decision in it depends
+on `CheckpointFor(targetFloor) = min(1, targetFloor - 1)`
+(`sim/GameSim/Expedition/ExpeditionSystem.cs:26-31`) — knowable at the Morning bell. None of it
+is hidden by design; all of it is simply undrawn until the tick that consumes it.
+
+So the player is permanently answering a question they were never shown coming. A hero asks for
+a shield the shelf cannot supply. A phase called Vigil ends 1.0 seconds after it begins with
+nothing in it. A tutorial step names a verb whose precondition the player does not control. A
+hero dies on a day the player had no reason to be watching that hero. Every one of those is the
+same failure: *the game states its outcome and never staged its antecedent.*
+
+This is what the owner meant by naming **Dungeon Bodega Simulator**. That game's whole strategy
+layer is one day of lead time — read tomorrow's demand, then farm/brew/order against it
+(`docs/design/DB_GAMEPLAY_LOOP.md` §1d, §5.2-5.3; the demand-rotation claim traces to the dev
+site and itch page, *not* to the Steam store bullets, which say only "different demands each
+day"). Its shopkeeping is not deeper than ours. It is *earlier*. Preparation is the verb, and
+preparation is impossible without lead time.
+
+Two things follow, and they set this wave's shape:
+
+1. **Most of these are not missing mechanisms.** The pointing overlay exists
+   (`godot/scripts/ui/TutorialOverlay.cs`). The demand data exists
+   (`RaidForecast.ForTomorrow`, `DemandBoard.DepthStalls`). The vigil craft-and-send chain exists
+   and has a button (`godot/scripts/panels/CampPanel.cs:371-375`). The narrator's loss-count fix
+   already landed and is wired (`NarratorVoiceDirector.ChooseLine(..., losses)`,
+   `godot/scripts/MainUi.cs:686`). The repo's named failure is rebuilding what the kernel already
+   owns. This wave connects and stages; it builds new mechanism in exactly three places, each
+   named.
+2. **Law 4 ("show only what the sim decided") is a boundary here, not an obstacle.** Tomorrow's
+   muster is *decided* — `RaidForecast.ForTomorrow` byte-matches what the Expedition tick forms
+   (`sim/GameSim/Heroes/RaidForecast.cs:26-29`). Whether a party survives stage 1 to reach the
+   camp is *not* decided — those rolls have not happened. So the telegraph tells the player the
+   rule and the stake, never the outcome. That line is drawn explicitly in every unit below, and
+   §11.4's own design note already binds it: stakes qualitatively, never survival percentages.
+
+---
+
+## Implementation units
+
+Six units. Ordered so U1 and U2 can go in parallel (different files), U3 depends on U2's registry
+work, and U5/U6 each carry a ruling that must land before their sim half ships.
+
+---
+
+### U1 — Tomorrow's asks, in front of tonight's shelf
+
+**Goal.** The player can know, before the day they must act on it, which hero will walk up to the
+counter and what they will ask for — and can act on it in one click. Closes *"Counter service
+doesn't make sense — how does the player KNOW to make a shield?"*
+
+**Serves: link2** — the counter is one of the four honest channels, and a channel that asks for
+what the player provably could not have anticipated is not honest, it is a slot machine.
+
+**Mechanism verdict: exists and is illegible, with one seam missing.**
+
+The evidence, precisely:
+
+- The counter's want is `MissingItemSlots(hero.Gear)[0]` with a fixed Weapon/Shield/Armor order
+  (`godot/scripts/ui/CustomerVoice.cs:40-43`, `sim/GameSim/Heroes/RaidForecast.cs:85-104`).
+- The *same* function already drives the day-end forecast board's gear-gap lines —
+  "Torvald: no shield" — rendered at `godot/scripts/panels/RaidForecastBoard.cs:86-96` from
+  `RaidForecast.ForTomorrow` (`sim/GameSim/Heroes/RaidForecast.cs:59-68`), and that board
+  auto-opens chained off the Evening ledger (`godot/scripts/MainUi.cs:670`).
+- So the answer to "how would I know?" is *already on screen the night before*, in a modal that
+  closes and is never referred to again, on a board whose reopen control is a wordless tray icon
+  (`godot/scripts/MainUi.cs:2285`).
+- The advisor **will** say "craft a shield for Torvald" — but only once he is a `DepthStall`,
+  which requires `state.Day - lastRecordDay >= StallThresholdDays` where
+  `StallThresholdDays = 2` (`sim/GameSim/Drama/DemandBoard.cs:84,203-216`;
+  `sim/GameSim/Advisor/ObjectiveAdvisor.cs:235-249`). On day 2, when the tutorial orders the
+  player to open the counter, that predicate is false for everyone. The advisor is silent
+  precisely when the counter first asks.
+- The genuinely missing seam: nothing anywhere projects *the counter queue itself*. `ApplyOpen`
+  computes the queue inside the handler and throws the projection away
+  (`sim/GameSim/Counter/CounterHandlers.cs:58-70`).
+
+**Files.**
+
+- *create* `sim/GameSim/Drama/CounterForecast.cs` — pure projection: the ordered queue
+  `ApplyOpen` would build, each entry carrying hero, the want slot `MissingItemSlots` reports (or
+  the upgrade slot, mirroring `CustomerVoice.WantLine`'s second branch), and the hero's gold.
+- *modify* `sim/GameSim/Counter/CounterHandlers.cs` — `ApplyOpen` calls `CounterForecast.Queue`
+  instead of inlining the ordering, so the projection and the handler cannot drift. Behaviour
+  identical; no new draw, no new state field.
+- *modify* `godot/scripts/ui/CustomerVoice.cs` — `WantLine` reads the same projection.
+- *modify* `godot/scripts/panels/RaidForecastBoard.cs` — a "TOMORROW AT THE COUNTER" section
+  above the muster sections, and per-gap a **"Forge one"** button that closes the board and opens
+  the forge preloaded with the answering recipe (§11.7.4's "one-click path from a gap line to the
+  forge" — the direction is already ruled, this is its first instance).
+- *modify* `godot/scripts/panels/ShopPanel.cs` — a persistent one-line header above the shelf
+  while Morning: *"First at the counter: Torvald — wants a shield, 52g on him."* Read-only, no
+  verb; the verb is the counter button already there.
+- *test* `sim/GameSim.Tests/Counter/CounterForecastTests.cs`
+- *test* `godot/tests/panels/RaidForecastBoardTests.cs` (extend)
+- *test* `godot/tests/panels/ShopPanelTests.cs` (extend)
+
+**Approach.** Extract, do not invent. `CounterForecast.Queue(GameState)` returns exactly the list
+`ApplyOpen` builds today; `CounterForecast.Wants(hero, state)` returns exactly the slot
+`CustomerVoice.WantLine` picks today. Both are pure, allocation-only, no RNG argument, no clock
+— so the counter cannot ask for something the forecast did not name, by construction rather than
+by two tests agreeing. The Godot side renders it in two places and adds one navigation verb.
+
+**Determinism.** Sim change is a pure refactor: same enumeration order, same comparator, zero
+RNG draws added or moved, no `Math.*`. `ApplyOpen` still emits `CustomerApproached` at the same
+point. Golden replay unaffected; **no re-baseline**.
+
+**Patterns to follow.**
+
+- `sim/GameSim/Heroes/RaidForecast.cs` — the exemplar for "a pure projection that byte-matches
+  what the tick will do", including its own doc's promise at lines 26-29. Copy that contract
+  verbatim into `CounterForecast`'s class doc.
+- `sim/GameSim/Drama/DemandBoard.cs` — the read-model shape and the `Snapshot` idiom.
+- `godot/scripts/panels/DemandPanel.cs` — the read-only `SimPanel`/`Section`/`Card` idiom,
+  including `AddWrappingRow` for chip rows.
+- `godot/scripts/panels/CampPanel.cs:85,371-375` — the exact
+  `event Action? OpenForgeRequested` → `MainUi` → `OpenPanel("Forge")` shape the "Forge one"
+  button must reuse rather than reinvent.
+
+**Test scenarios.**
+
+1. `Queue_MatchesApplyOpensOwnOrdering_AcrossRelationshipBands` — build a state where band order
+   and `HeroId` order disagree; assert the projection's head equals the `CustomerApproached` hero
+   after a real `OpenCounterAction` tick.
+2. `Wants_MatchesCustomerVoiceWantLine_ForEveryGearShape` — parameterised over all eight
+   weapon/shield/armor null combinations; assert the projected slot appears in the rendered want
+   line.
+3. `Wants_FullLoadoutHero_NamesTheShelfUpgradeSlot_OrBrowsing` — covers `WantLine`'s second and
+   third branches so the forecast never claims a want the sim would refuse.
+4. `Queue_IsEmpty_WhenNoHeroIsAlive` — the `Active == null` case; the board renders an explicit
+   line, never a blank section.
+5. `ForecastBoard_RendersCounterSection_WithForgeOneButton_ForAGapThatARecipeCanFill`
+6. `ForecastBoard_ForgeOneButton_IsAbsent_WhenNoSelectedProfessionHasARecipeForThatSlot` — never
+   a dead click.
+7. `ShopPanel_CounterHeader_NamesTheSameHeroTheCounterThenSeats`
+8. `ShopPanel_CounterHeader_IsAbsentOutsideMorning` — mirrors
+   `ActionLegality`'s Morning-only gate (`sim/GameSim/Advisor/ActionLegality.cs:67`) rather than
+   asserting its own.
+
+**Verification.** `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter Category!=Balance`
+green; `dotnet test godot/tests --settings .runsettings` green with `Failed: 0` and passed count
+at or above the `ENGINE_MIN_PASSED=300` floor, quoted from the raw log. Golden-replay test green
+with no re-record. Manual: day 1 evening, the board names tomorrow's first customer and their
+slot; day 2 morning, that hero is the one seated.
+
+---
+
+### U2 — The tutorial points at the world, never asks for what the player cannot cause, and stays available
+
+**Goal.** Close all four tutorial notes: *"Tutorials not great"* (highlights, not text cards),
+*"Tutorial 6 doesn't make sense"*, *"Tutorial 7 makes no sense"*, *"Need guided/repeated
+tutorial"*.
+
+**Serves: link1** — a player who cannot reliably reach the anvil never makes the thing the whole
+chain keys on.
+
+**Mechanism verdict: the pointing exists and is starved; the two broken steps are a gating
+defect, not a copy defect; the repeat is genuinely missing.**
+
+#### Why "not great" is not a copy problem
+
+The highlight the owner is asking for **already ships**. `TutorialOverlay`
+(`godot/scripts/ui/TutorialOverlay.cs:36-134`) pulses the real `Building2D` sprite in world space
+for a `Building` anchor and draws a pulsing screen-space outline for a `Hud` anchor, resolved by
+name, throwing rather than pointing at nothing. That is the right mechanism.
+
+What starves it is where the *teaching* lives. The objective card renders the step text
+unclamped at a six-line budget (`godot/scripts/ui/ObjectiveTracker.cs:52-67`,
+`TutorialMaxLines = 6`, ~127px), because each step's copy must carry walk-there instructions,
+the live advisor reason, the control's exact label, and the gesture — e.g. Tutorial 8's
+*"Evening. The **EVENING LEDGER** opens itself — press **Buy** under **ORE OFFERED**, then close
+it and press **Snuff the lanterns** at the top of the screen."*
+(`godot/scripts/ui/TutorialFlow.cs:581-583`). Meanwhile the `TeachNote` — the "what this
+mechanism actually is" paragraph — renders inside a checklist whose scroll window is
+`ChecklistMaxHeight = 32f` pixels, and that constant's own doc concedes it: *"a peek-and-scroll
+sliver, not a several-row window, is what fits"* (`godot/scripts/ui/ObjectiveTracker.cs:78-93`).
+
+So: the game highlights a *building*, and puts everything else in a 127px card above a 32px
+sliver. That is the text-card complaint, exactly.
+
+The fix is to move load off the card and onto the world. `Town2D` already re-emits
+`StationActivated` carrying a whole `InteriorLayout2D.StationSpec` with `Action`, `Focus`,
+`HoverLine` and `FlavorLine`, and `WorldInputNode.Configure(Player, room.Stations)` already scans
+for the nearest in-range station to highlight (`godot/scripts/town2d/Town2D.cs:159-170,683`). The
+anchor vocabulary is a three-value enum (`godot/scripts/ui/TutorialFlow.cs:54-59`). Adding a
+fourth, `Station`, lets a step point at the anvil rather than at the building containing the
+anvil — which is where "press **E** at a station" currently lives as a sentence.
+
+#### Tutorial 6 — what it says, why it misreads
+
+`TutorialStep.OpenCounter`, `DisplayIndex: 6`, `MinDay: 2`
+(`godot/scripts/ui/TutorialFlow.cs:296-302`). Rendered copy
+(`godot/scripts/ui/TutorialFlow.cs:570-573`):
+
+> *"Tutorial 6/10: Walk to the **Shop** and press **E**, or click it — press **Open Counter** at
+> the top of the Shop panel, then **Present** a shelved item and answer with **Accept**, **Hold
+> Firm**, or **Counter**."*
+
+Completion fact: `state.EventLog.OfType<CounterSaleClosed>().Any()`
+(`godot/scripts/ui/TutorialFlow.cs:301`).
+
+**Why it misreads.** Every clause is accurate and the step is still unfollowable, because it
+demands an outcome the player cannot cause. The customer states their want *first*
+(`CustomerVoice.WantLine`), and the want is `MissingItemSlots[0]`. On day 2 the player has
+crafted one or two things from a starter kit against no signal at all. The owner's own case —
+a hero asking for a shield ~50g while the shelf holds a Chain Vest and a Field Salve — is not
+bad luck; it is the modal case. `ShoppingAi.EvaluateItem` returns Pass, `CustomerWalked` fires,
+`CounterSaleClosed` never does, and the step sits on screen repeating the instruction. The step
+is written as "perform this verb" when the sim's contract is "this verb *may* produce a sale."
+
+**What replaces it.** Two changes, in this order:
+
+1. Re-scope the step to what the player actually controls: **open the counter and answer the
+   customer** — completion on `CustomerApproached` plus any one of
+   `PresentItemAction`/`SuggestItemAction`/`HaggleResponseAction`/`CloseCounterAction` in
+   `state.ActionLog`. A closed sale becomes a *bonus* the copy names, not the gate.
+2. Copy that names the anticipation, now that U1 makes anticipation possible:
+   > *"Tutorial 6/10: The **Shop** — press **Open Counter**. Whoever's first in line tells you
+   > what they want before you show them anything; the Forecast board named them last night. Show
+   > them something, or hear them out and close the counter. A hero who walks is a real answer,
+   > not a mistake."*
+
+That last sentence is load-bearing and is the honest register: it tells the player the failure
+mode is legal. Depends on U1 for the "named them last night" clause to be true.
+
+#### Tutorial 7 — what it says, why it misreads
+
+`TutorialStep.Vigil`, `DisplayIndex: 7`, `MinDay: 2`, anchored to HUD control `CampCard`
+(`godot/scripts/ui/TutorialFlow.cs:303-310`). Rendered copy
+(`godot/scripts/ui/TutorialFlow.cs:578-580`):
+
+> *"Tutorial 7/10: When they camp, a card fills the screen. Pick a supply and press **Send**, or
+> press **Recall** to bring them home."*
+
+Day-gated variant (`godot/scripts/ui/TutorialFlow.cs:732-733`):
+
+> *"Tutorial 7/10: The vigil is a Day 2 lesson — nothing to do here yet; it opens once Day 2
+> begins."*
+
+Completion fact: `SupplyDelivered` or `PartyRecalled`
+(`godot/scripts/ui/TutorialFlow.cs:309`).
+
+**Why it misreads.** Three compounding defects, all worse than Tutorial 6's:
+
+- **The precondition is a coin flip the player cannot influence.** A party camps only if
+  `CheckpointFor(targetFloor) >= 1`, i.e. `targetFloor >= 2`
+  (`sim/GameSim/Expedition/ExpeditionSystem.cs:26-31,88-108`), *and* they clear stage 1 cleanly.
+  `RaidConductor`'s own class doc states the consequence: *"Beat.VigilStop is the UNCOMMON case,
+  not the common one"* (`godot/scripts/RaidConductor.cs:28-32`).
+- **Its two completion verbs are the two the design does not want reflexively taken.** `Send` is
+  the verb R1 (§11.3) has frozen as measured-harmful at scale; `Recall` aborts the run. The third
+  verb — "Send them deeper", the only one that *ends* the vigil
+  (`godot/scripts/panels/CampPanel.cs:404-409`) — does not satisfy the step. The tutorial is
+  teaching a habit the plan is actively unsure it wants.
+- **The gating text lies by omission.** "It opens once Day 2 begins" states a day gate for
+  something that is not day-gated. A day-2 party that wipes at floor 1, or targets floor 1 at
+  all, gives the player a Day 2 that never opens it. The step then rides the `BackstopDay = 4`
+  unconditional close (`godot/scripts/ui/TutorialFlow.cs:907-910,928`) — i.e. the player is told
+  a lesson is coming, it silently never comes, and the chain moves on.
+
+**What replaces it.** The step stops being *"do the vigil verb"* and becomes *"understand what
+the stop is and that it waits."* Completion on **seeing the camp card at all**
+(`CampPanel.ShowModal` notifies, same shape as `NotifyMirrorOpened` at
+`godot/scripts/ui/TutorialFlow.cs:937-944`) **or** any of the three camp verbs including Send
+Deeper. Gating note becomes conditional, not day-based:
+
+- when no party is staged today: *"Nothing to teach here today — the party is only going one
+  floor down, so they won't stop. It fires on a run that's aiming deeper."*
+- when a party is staged: *"They'll stop below the checkpoint if they get there clean. When they
+  do, the world waits — there is no clock on it."*
+
+The first line is honest and is only writable because the sim already knows: `MusterPlan.Compute`
+gives every party's `TargetFloor` at the Morning bell.
+
+#### Repeatability
+
+Genuinely missing. `Step` never regresses (`godot/scripts/ui/TutorialFlow.cs:354-356`),
+`Complete()` and `Dismiss()` both set a permanent `user://` flag
+(`godot/scripts/ui/TutorialFlow.cs:981-986,1011-1015`), `Checklist()` returns empty once
+`Active` is false (`godot/scripts/ui/TutorialFlow.cs:818-823`), and `TeachNote` renders only on
+the current row (`godot/scripts/ui/TutorialFlow.cs:842`). Ten authored teaching paragraphs, each
+readable for a few minutes once per campaign, in a 32px window. Add a **Lessons** book: the
+existing tray idiom, rendering all ten `Registry` rows' `ShortLabel` + `TeachNote` at full
+height, readable forever, with the current row marked. Zero new copy — the paragraphs are
+already written and already pinned non-empty by `TutorialRegistryConformanceTests`.
+
+**Files.**
+
+- *modify* `godot/scripts/ui/TutorialFlow.cs` — add `TutorialAnchorKind.Station`; re-point
+  `BuyMaterial`/`Craft` at their stations; rewrite steps 6 and 7 (rows, `IsDone`, `StepText`,
+  `WaitText`, `GatingNote`); add `NotifyCampCardShown`.
+- *modify* `godot/scripts/ui/TutorialOverlay.cs` — resolve a `Station` anchor through
+  `Town2D`'s room stations, same eager-resolve-or-throw contract as the `Hud` branch.
+- *modify* `godot/scripts/town2d/Town2D.cs` — expose station lookup by id for the overlay
+  (read-only; no change to `StationActivated`).
+- *create* `godot/scripts/panels/LessonsPanel.cs` — the Lessons book.
+- *modify* `godot/scripts/MainUi.cs` — register `"Lessons"`, add the tray button, wire
+  `NotifyCampCardShown` from the existing `SyncCampModal` hook.
+- *modify* `godot/scripts/ui/ObjectiveTracker.cs` — with load moved to stations and the Lessons
+  book, drop `TutorialMaxLines` from 6 toward 3 and reclaim the height for the checklist.
+- *test* `godot/tests/TutorialRegistryConformanceTests.cs` (extend — every `Station` anchor must
+  resolve against a real room)
+- *test* `godot/tests/TutorialCopyIsFollowableTests.cs` (extend)
+- *test* `godot/tests/panels/LessonsPanelTests.cs`
+- *test* `godot/tests/ui/TutorialOverlayTests.cs` (extend)
+
+**Approach.** Registry-first, exactly as U5 of the loop-legibility plan established: every step
+fact is a `TutorialStepDef` row, and the conformance suite resolves every anchor against the real
+layout. The new `Station` kind must obey the same house rule the class doc already states — an
+anchor that cannot resolve fails loudly, never points at nothing
+(`godot/scripts/ui/TutorialFlow.cs:45-59`, `godot/scripts/ui/TutorialOverlay.cs:25-34`).
+
+**Determinism / purity.** Godot-side only. `TutorialFlow` reads `GameState` and never mutates it;
+`user://tutorial_flow.json` stays out of the sim save (KTD2). No sim diff, no re-baseline.
+
+**Patterns to follow.**
+
+- `godot/scripts/ui/TutorialFlow.cs:225-338` — the registry array; add rows, never a parallel
+  structure.
+- `godot/scripts/ui/TutorialOverlay.cs:114-133` — the `switch (anchor.Kind)` eager resolve.
+- `godot/scripts/panels/DemandPanel.cs` — the read-only book panel idiom for `LessonsPanel`.
+- `godot/scripts/MainUi.cs:2279-2319` — the tray-button registration shape.
+
+**Test scenarios.**
+
+1. `EveryStationAnchor_ResolvesAgainstARealRoomStation` — conformance, all rows.
+2. `Step6_Completes_WhenTheCustomerWalks_WithoutASale` — the exact case that stalled the owner.
+3. `Step6_AlsoCompletes_OnAClosedSale` — the happy path still works.
+4. `Step7_Completes_OnSeeingTheCampCard_WithNoVerbPressed`
+5. `Step7_Completes_OnSendDeeper` — the verb the plan is comfortable teaching.
+6. `Step7_GatingNote_SaysNoPartyIsStaged_WhenEveryPartyTargetsFloor1`
+7. `Step7_NeverClaimsADayGate_ForAConditionThatIsNotDayGated` — regression pin on the exact
+   defect.
+8. `LessonsPanel_RendersAllTenTeachNotes_AfterTheChainIsComplete`
+9. `LessonsPanel_RendersAllTenTeachNotes_AfterDismiss` — a dismiss must not destroy the lessons.
+10. `ObjectiveCard_HeightStaysWithinTheExisting260pxPin` — `HudBoundsTests`' pin is never
+    relaxed.
+
+**Verification.** Full engine suite, raw `Failed: N, Passed: N` quoted. Manual: start a new
+campaign, confirm the anvil itself pulses on step 1; force a day-2 counter with a Pass verdict
+and confirm step 6 advances; run a day where every party targets floor 1 and confirm step 7's
+note says so.
+
+---
+
+### U3 — The town opens as you learn it
+
+**Goal.** Content gates open as the player earns them rather than all at once on day 1. Closes
+*"Features unlocked as you go."*
+
+**Serves: link2** — the four channels arrive one at a time, so each is learned as a channel
+rather than as one of seven wordless icons.
+
+**Mechanism verdict: missing.** There is exactly one feature gate in the entire client:
+`QuickTravelUnlocked => Completed` (`godot/scripts/ui/TutorialFlow.cs:376-377`). All seven tray
+books — Ledger, Forecast, Commissions, Legends, Demand, Renown, Progress — are constructed and
+visible on day 1 (`godot/scripts/MainUi.cs:2279-2319`), every one of them a wordless icon whose
+name lives only in a tooltip, a fact the tutorial's own step-9 copy has to apologise for:
+*"the tray's buttons carry no words, only icons and tooltips"*
+(`godot/scripts/ui/TutorialFlow.cs:320-324`).
+
+**Approach.** A single ordered unlock table in one place, keyed on durable sim facts the player
+caused, in the same registry idiom as `TutorialFlow.Registry`. Recommended set, each gate being
+the moment the surface first has anything true to say:
+
+| Surface | Opens on | Why that moment |
+|---|---|---|
+| Ledger | first `PartyDeparted` | nothing came home yet |
+| Forecast | first Evening reached | it forecasts *tomorrow* |
+| Renown | first `ItemSold` to a hero | a stranger becomes a customer |
+| Commissions | first commission posted by the sim | an empty board teaches nothing |
+| Demand | first `HeroPassedOnItem` | the board's lead section *is* pass reasons |
+| Legends | first `AttributionBeatEvent` | it is link 4's own reader |
+| Progress | first `BountyPaid` | the existing second-profession milestone |
+
+Each unlock fires a one-line town-voiced arrival toast in the existing register, not a modal.
+`Progress` reuses `TutorialFlow.SecondProfessionMilestoneReached`
+(`godot/scripts/ui/TutorialFlow.cs:1019`) rather than defining a second notion of the same
+milestone.
+
+**The constraint this unit must not break.** `godot/tests/ActionReachabilityCensusTests.cs` fails
+by name on any `PlayerAction` without a recorded surface. A gated surface is still a *recorded*
+surface — the census is a decision census, not a liveness proof (its own doc, lines 32-41) — so
+each gated entry must carry its gate in the surface string, e.g.
+`"HeroCards (opens on first sale to a hero)"`. See KTD-3.
+
+**Files.**
+
+- *create* `godot/scripts/ui/SurfaceUnlocks.cs` — the table plus a pure
+  `IsOpen(GameState, string surfaceId)`.
+- *modify* `godot/scripts/MainUi.cs` — tray buttons consult it every `RefreshHud`; `OpenPanel`
+  refuses a closed surface with the arrival copy rather than a silent no-op.
+- *modify* `godot/tests/ActionReachabilityCensusTests.cs` — surface strings carry their gate.
+- *create* `godot/scripts/ui/SurfaceUnlockToast.cs` or reuse the existing toast path in
+  `MainUi` (prefer reuse — check `OnStationActivated`'s flavor-toast route first).
+- *test* `godot/tests/ui/SurfaceUnlocksTests.cs`
+- *test* `godot/tests/MainUiTests.cs` (extend)
+
+**Determinism.** Client-only. `IsOpen` reads `GameState.EventLog` and mutates nothing; no
+`user://` persistence at all, so a reload re-derives every gate from the campaign itself.
+**No sim diff, no re-baseline.**
+
+**Test scenarios.**
+
+1. `EverySurfaceInTheTray_HasAGateOrAnExplicitAlwaysOpen` — deny-by-default, the census idiom.
+2. `Ledger_IsClosed_BeforeTheFirstDeparture_AndOpen_After`
+3. `Legends_IsClosed_UntilTheFirstAttributionBeat`
+4. `AGatedSurface_ReDerivesItsGate_AfterAReload` — no persistence to go stale.
+5. `NoGate_EverClosesASurfaceItPreviouslyOpened` — monotonic, one-way, same ratchet discipline
+   as `TutorialFlow.Step`.
+6. `ReachabilityCensus_IsGreen_WithEveryGatedSurfaceNamingItsGate`
+7. `EveryTutorialStepAnchor_PointsAtASurfaceThatIsOpenByThatStepsMinDay` — the trap this unit
+   could create: a gate that hides a tutorial target. Pin it.
+
+**Verification.** Engine suite green with the census passing. Manual: fresh campaign, confirm the
+tray starts near-empty and each book arrives with its line.
+
+---
+
+### U4 — The vigil is a workbench, and the day says what happens next
+
+**Goal.** Close *"What do we DO during vigil"* and *"Jumped straight from Vigil to Night."*
+
+**Serves: link2** — the vigil runner is the fourth channel, and a channel the player cannot
+stock is not a channel.
+
+**Mechanism verdict: the chain exists and dead-ends; the phase jump is real and is a copy
+absence, not a timing bug.**
+
+**What the vigil already has.** Four verbs, not zero: Send a supply, Recall, Send them deeper,
+and — since the hero-facing-day H1 work — **"Forge something for them"**, a real button that
+closes the slate and opens the forge, with the hint *"Nothing to send yet? You can leave this
+stop, work the forge, and come back — the vigil holds until you answer it"*
+(`godot/scripts/panels/CampPanel.cs:363-375`). The slate also states floors and monsters still
+ahead, per-hero hp, heals left, and "of which yours: N"
+(`godot/scripts/panels/CampPanel.cs:177-241`). `CraftAction` carries no phase gate at all
+(`sim/GameSim/Advisor/ActionLegality.cs:52`), so crafting mid-vigil is genuinely legal.
+
+**Where it dead-ends.** `CraftLegal` requires both materials in hand and
+`state.ActionSlotsRemaining > 0` (`sim/GameSim/Advisor/ActionLegality.cs:394-403`), and
+`BuyMaterialAction` is Morning-only (`sim/GameSim/Advisor/ActionLegality.cs:57`). A player who
+presses "Forge something for them" at the vigil having spent their day arrives at a forge that
+can make nothing, with no on-screen explanation, and must walk back. The verb is discoverable
+and frequently unusable — which reads as "there is nothing to do here" more convincingly than
+having no button at all.
+
+**Where the jump comes from.** `GameKernel` always runs Expedition → Camp → ExpeditionDeep →
+Evening (`sim/GameSim/Kernel/GameKernel.cs:193-194`); Camp is never skipped. But
+`RaidConductor.BeatFor` maps `DayPhase.Camp` to `Beat.DeepTick` whenever `state.InFlight` is
+empty (`godot/scripts/RaidConductor.cs:180`), and an empty beat runs
+`EmptyBeatSeconds = 1.0`, then the deep show `DeepShowSeconds = 3.0`
+(`godot/scripts/RaidConductor.cs:71-78`). So on every day where nobody parks — the majority, per
+that class's own doc at lines 28-32 — the clock reads *Vigil*, four seconds pass, and it reads
+*Night*. The pacing is correct and intentional. **The absence is that nothing ever says a vigil
+is or is not coming.** The player experiences a phase that appeared to be skipped.
+
+**Approach.** Three changes, none of which touch a camp rule (see the ruling below).
+
+1. **The vigil announces itself at the send-off.** §11.7.4 already asks for exactly this — *"one
+   line of conductor copy when a vigil is coming, so crafting during the march stops being tribal
+   knowledge."* At the Morning bell the sim knows every party's `TargetFloor`
+   (`MusterPlan.Compute`), so the honest lines are:
+   - staged: *"Nordri's three are aiming for floor 3. They'll stop at the checkpoint if they get
+     there clean — that stop has no clock, and the forge stays open through it."*
+   - unstaged: *"Everyone's going one floor down today. No checkpoint, no stop — they'll be back
+     by dark."*
+   This states the **rule**, never the outcome. Stage-1 rolls have not happened, and the copy
+   must not imply they have.
+2. **The vigil's forge trip cannot dead-end silently.** Before opening the forge, the camp slate
+   reports which of the two blockers is live and what it means, using the same
+   mirror-the-kernel discipline `GateButton` already uses at
+   `godot/scripts/panels/CampPanel.cs:232-241` — e.g. *"No slots left today — the anvil's cold
+   until dawn"* / *"Nothing on the rack to work with; the vendor opens at dawn."* A player who
+   knows why can decide; a player who walks into a cold forge concludes the vigil is empty.
+3. **The Camp phase never renders as an unexplained gap.** When `InFlight` is empty at Camp, the
+   clock band shows one line — *"Nobody camped tonight — they're pushing straight through"* —
+   instead of a phase label that changes silently. No timer change.
+
+**What this unit deliberately does not do — and the ruling it needs.**
+
+§11.4 states plainly: *"Until R1 lands, no further vigil work ships."* That freeze is about the
+provisioning **balance** (P5, §9.9). This unit ships none of it: no change to the runner fee, the
+checkpoint depth, the send threshold, the quaff rule, or the set of camp verbs. It is copy and
+gating legibility over verbs that already exist.
+
+But the obvious fourth fix — **letting the player buy materials during Camp** — *is* vigil work
+in R1's sense: it materially raises how often a party gets provisioned, which is the exact axis
+R1 is frozen on. **This is routed as an owner ruling, not taken.**
+
+> **Ruling asked (R7): may `BuyMaterialAction` become legal during `DayPhase.Camp`?**
+> Recommended default: **no**, for this wave. The vigil's scarcity is what makes the morning's
+> "craft one extra salve" decision real, and unlocking mid-vigil supply would pre-empt R1's own
+> question. Cost of "no": the vigil forge trip only works for a player who kept materials and a
+> slot back — which U4 change 2 makes visible and therefore plannable, and which is arguably the
+> better version of dilemma 4 ("spend the slot, or bank it"). If ruled **yes**, it is a sim
+> change with a **balance re-baseline** and belongs in P5's wave, not here.
+
+**Files.**
+
+- *modify* `godot/scripts/RaidConductor.cs` — expose whether any party is staged this tick
+  (derived, not stored).
+- *modify* `godot/scripts/MainUi.cs` — the send-off conductor line; the empty-Camp band line.
+- *modify* `godot/scripts/panels/CampPanel.cs` — the pre-forge blocker report on the
+  `CampForge` button.
+- *modify* `godot/scripts/ui/PhaseVocab.cs` (or wherever the Camp band label resolves — confirm
+  first) for the empty-Camp copy.
+- *test* `godot/tests/RaidConductorTests.cs` (extend)
+- *test* `godot/tests/panels/CampPanelTests.cs` (extend — `VigilRoundTrip` already exists; add
+  the blocked variants beside it)
+- *test* `godot/tests/MainUiTests.cs` (extend)
+
+**Determinism.** Client-only, zero `sim/` diff. **No re-baseline.** No timer is added, shortened,
+or lengthened — law 2 ("no timers on decisions") is untouched, and the `VigilStop` hold at
+`godot/scripts/RaidConductor.cs:206-208` stays exactly as it is.
+
+**Patterns to follow.**
+
+- `godot/scripts/panels/CampPanel.cs:232-241` — `GateButton(legal, whyNot)`: mirror the kernel's
+  own guard and render the reason, never enforce a rule in the panel.
+- `godot/scripts/panels/CampPanel.cs:179-187` — reading venue data for the stakes line rather
+  than inventing a risk score. The send-off line must do the same with `MusterPlan`.
+
+**Test scenarios.**
+
+1. `SendOff_NamesAComingVigil_WhenAnyPartyTargetsFloor2OrDeeper`
+2. `SendOff_SaysNoStopIsComing_WhenEveryPartyTargetsFloor1`
+3. `SendOff_CopyNeverAssertsThePartyWillReachTheCheckpoint` — law-4 pin, asserted on the
+   rendered string.
+4. `EmptyCamp_RendersTheNobodyCampedLine_AndStillAdvancesInEmptyBeatSeconds` — the pacing is
+   unchanged; only the explanation is added.
+5. `CampForgeButton_ReportsNoSlotsLeft_WhenActionSlotsRemainingIsZero`
+6. `CampForgeButton_ReportsNoMaterials_WhenNoSelectedProfessionRecipeIsCraftable`
+7. `CampForgeButton_OpensTheForge_WhenACraftIsGenuinelyLegal` — the existing round trip, still
+   working.
+8. `VigilStop_StillHoldsIndefinitely_WithNoTimer` — regression pin on the law.
+
+**Verification.** Engine suite green. Manual: a day where every party targets floor 1 — the
+send-off says so and Night is no longer a surprise; a day with a staged party — the line lands
+and the camp card follows.
+
+---
+
+### U5 — The party reads as people, not a rotation
+
+**Goal.** Close *"Party seems in a loop."*
+
+**Serves: link3** — the hero carries it into the dark *on their own judgment*, and a party that
+reads as a fixture is a party whose judgment reads as a schedule.
+
+**Mechanism verdict: BOTH — a real sim loop underneath a legibility failure, and they need
+different fixes.**
+
+**The real loop, with evidence.** `PartyFormation.FormParties` is a pure function of the roster:
+alive heroes grouped by `LadderRank`, then anchors and fillers dequeued in `HeroId` order
+(`sim/GameSim/Heroes/PartyFormation.cs:33-92`). With six alive heroes all at rank 0 — the state
+of the game for its entire first stretch — that yields exactly two parties of three, the *same*
+three heroes, every day, with no draw of randomness anywhere in it. Target floor is
+deepest-cleared + 1, and `ApplyCompetenceRetreat` caps each hero at +1 floor per trip
+(`sim/GameSim/Expedition/ExpeditionResolver.cs:405-426`, cited in §11.8). The Mine's floors 1-2
+are Cave Rat and Tunnel Spider on every visit
+(`sim/GameSim/Venues/VenueRegistry.cs:126-134`). So for the first several days the player watches
+the same three names fight the same two monsters. It is a loop because it *is* a loop.
+
+**The legibility failure on top.** Nothing on any surface names what changed since yesterday. The
+muster board reports the same three names and the same target with no delta; the delve stage
+renders Descend → Engage → Exchange → MonsterSlain → OreFound per floor with the collapse rule
+capping exchanges at three per fight (`godot/scripts/DelveBeats.cs:8-14`). Two identical-looking
+days can differ in gear, hp margin, or ore hauled, and none of it is said.
+
+**Approach — legibility now, rotation as a ruling.**
+
+*Ships now (client-only, free):* every muster line and every party card carries a
+**since-yesterday delta** derived from durable facts already in `GameState.EventLog` — "Torvald
+marches with the shield you sold him last night", "third trip to floor 2; the first two came back
+clean", "Nordri is one clear from floor 3." Continuity of reference is §11.7.4's own named
+cheapest-large-win, and this is its muster-side instance. It does not make the loop stop; it
+makes each iteration legibly distinct, which is what the complaint is actually about on days
+where the composition genuinely could not differ.
+
+*Routed as a ruling:*
+
+> **Ruling asked (R8): should party composition vary within a `LadderRank` cohort?**
+> The current rule is anchor-preference then `HeroId` order — total, deterministic, identical
+> every day. Options: (a) leave it, and rely on U5's legibility half plus rank divergence to
+> break the sameness; (b) rotate the filler order by a deterministic function of `state.Day` so
+> the same six heroes form different threes across days; (c) let heroes' own state (relationship
+> edges, traits) influence who parties with whom — which is the Erenshor M5 work §11.5 already
+> cut and named the post-v1 queue leader.
+> Recommended default: **(b)**. It is a small, pure, seedless change (day is already in state),
+> it directly answers the complaint, it costs a **balance re-baseline**, and it does not
+> re-open the cut (c) represents. **(c) stays cut.**
+
+Do not take (b) without the ruling — it changes party composition on every day of every seed,
+which moves every balance number in the repo.
+
+**Files.**
+
+- *modify* `godot/scripts/panels/RaidForecastBoard.cs` — delta lines per marcher.
+- *modify* `godot/scripts/panels/MineWatch.cs` and/or `godot/scripts/JourneyStream.cs` — confirm
+  which owns the live party strip, then carry the same delta there (one owner, not both).
+- *create* `sim/GameSim/Drama/MusterDelta.cs` — pure projection: for each mustering hero, what
+  changed since their last march (new gear this player made, trips at this floor, distance to
+  next record). Read-only over `EventLog`; no new state.
+- *test* `sim/GameSim.Tests/Drama/MusterDeltaTests.cs`
+- *test* `godot/tests/panels/RaidForecastBoardTests.cs` (extend)
+
+**Determinism.** `MusterDelta` is a pure read over `EventLog` with no RNG parameter and no
+`Math.*`. **No re-baseline** for the shipping half. The (b) half, if ruled, is a separate PR with
+its own re-baseline ceremony — never bundled.
+
+**Test scenarios.**
+
+1. `Delta_NamesThePlayersOwnItem_WhenTheHeroMarchesCarryingIt` — keyed on
+   `Item.PlayerCrafted`, the same gate attribution reads, so the muster and the night can never
+   disagree about whose work it is.
+2. `Delta_IsSilent_ForAHeroWithNothingNewSinceTheirLastMarch` — no filler prose; silence is a
+   legitimate answer.
+3. `Delta_CountsRepeatTripsToTheSameFloor`
+4. `Delta_ReadsOnly_AndNeverMutatesState`
+5. `ForecastBoard_RendersOneDeltaLinePerMarcher_AndNoneForAnEmptyDelta`
+
+**Verification.** Fast lane + engine suite green. Manual: three consecutive days on the same
+seed; the muster board should read as three different days, not one day printed three times.
+
+---
+
+### U6 — Loss is staged, not tallied
+
+**Goal.** Close *"Heroes shouldn't die this early"* and the design half of *"Narrator said one
+didn't come back but multiple did."*
+
+**Serves: link5** — the outcome becomes the town's memory, with your name in it. A death the
+player had no stake in produces a memory with nobody's name in it.
+
+**Mechanism verdict: the narrator count bug is already fixed and wired — do not rebuild it. The
+staging is missing. The pacing is a ruling.**
+
+**What is already done.** `NarratorVoiceDirector.ChooseLine` takes a `losses` parameter and
+filters out the count-committing epitaphs on a multi-loss night
+(`sim/GameSim/Presentation/NarratorVoiceDirector.cs:181-213`); `MainUi` passes
+`Math.Max(1, _pendingLedgerLosses)` (`godot/scripts/MainUi.cs:684-686`). The off-by-one reading
+was itself wrong and the file says so at lines 184-193. **This unit adds nothing there.**
+
+**What is missing — the *when* and *how*.** Loss is narrated exactly once, at the automatic
+Ledger reveal after the Evening tick, as one slotless spoken line plus ledger text
+(`godot/scripts/MainUi.cs:664-697`; `SelectForNight` returns `DeathEpitaph` on the first
+`HeroDied` and stops, `sim/GameSim/Presentation/NarratorVoiceDirector.cs:147-170`). Everything
+before that is self-censored on purpose: `DelveBeats` renders a fatal round as
+`SwallowedByDark` with damage zeroed and the hero omitted from later HP snapshots
+(`godot/scripts/DelveBeats.cs:65-74`); the camp slate's "ALREADY BACK TODAY" says only *"the full
+story awaits tonight's Ledger"* (`godot/scripts/panels/CampPanel.cs:141-155`). That censorship is
+right — it protects the reveal. But it means the *entire* emotional weight of a death lands in
+one card, at the end of a day the player spent doing something else, about a hero they may never
+have transacted with.
+
+**What ships (client-only).** Three stakes-side changes, none of which leak a decided outcome:
+
+1. **The vigil already knows who is fading and says so** — `FleeThresholdPercent = 40` drives an
+   existing warning, *"⚠ Someone's fading — this is the moment to ring them home"*
+   (`godot/scripts/panels/CampPanel.cs:60,247-259`). Extend it to name the hero and what of the
+   player's work they carry. That is the stake, stated before the roll, which is exactly what
+   law 4 permits and what "the deep floors show the show, not the wager" (`THE-GAME.md` §7)
+   currently concedes is absent.
+2. **The death card leads with the player's hand in it, or honestly says there is none.** The
+   memorial already names the gear the fallen wore; the card should open on *"Torvald fell on
+   floor 3, wearing the Iron Buckler you stamped on day 2"* — or, when nothing of the player's
+   was on them, say so plainly. Same P1 discipline: lead with the mark, and an honest empty state
+   rather than participation credit.
+3. **Loss narration stays once per night; the *ledger* stops flattening it.** Keep
+   `SelectForNight`'s "overflow is silence, never a queue" — it is right. What changes is the
+   ledger's own ordering: on a multi-loss night, each death gets its own card in the reveal
+   rhythm §11.7.4 asks for, rather than a run of lines under one header.
+
+**What is routed as a ruling.**
+
+There is **no day gate, grace period, or early-campaign protection on death anywhere in the
+sim**. Death is `hp[hero] <= 0` after a combat round
+(`sim/GameSim/Expedition/ExpeditionResolver.cs:569-572`); the only exemption parameter in the
+resolver is the bounty-taker retreat exemption
+(`sim/GameSim/Expedition/ExpeditionSystem.cs:86`, `RetreatExemption`), which is unrelated. The
+only balance assertion about survival is `MinAliveAtEnd = 3` at day 100
+(`sim/GameSim.Tests/Balance/BalanceSimTests.cs:34`). Nothing anywhere asserts *when the first
+death may land*. `THE-GAME.md` §3.3 promises the first death "lands around day four" — that is a
+description of an intention, not of a mechanism, and git outranks it.
+
+> **Ruling asked (R9): should the first campaign death have a floor?**
+> Options: (a) leave it — death is arithmetic from day 1, and the owner's note is answered
+> entirely by U6's staging; (b) a hard day floor (no `HeroDied` before day N, N≈4-5) enforced in
+> the resolver; (c) a *stake* floor rather than a day floor — a hero cannot die until the player
+> has transacted with them at least once (sold, commissioned, or provisioned), so the first
+> death is by construction a death the player has a hand in.
+> Recommended default: **(c)**. It answers the actual complaint — deaths landed before the player
+> had any stake — without lying about the arithmetic on a calendar, and it makes the first death
+> *always* a link-4/link-5 moment rather than usually a statistic. It is a real sim change with
+> a **balance re-baseline** and it needs a pinned law exception review, since a rule that reads a
+> hero's transaction history inside the resolver is close to the line on "the raid resolver reads
+> no traits" (`THE-GAME.md` §6, Crusader Kings row). **(b) is the cheap answer and (a) is the
+> honest one; do not pick for the owner.**
+
+The staging half (1-3) ships regardless of which way R9 goes and does not depend on it.
+
+**Files.**
+
+- *modify* `godot/scripts/panels/CampPanel.cs` — name the fading hero and their carried marked
+  work.
+- *modify* `godot/scripts/panels/LedgerModal.cs` — death card leads with the mark; one card per
+  loss.
+- *test* `godot/tests/panels/CampPanelTests.cs` (extend)
+- *test* `godot/tests/panels/LedgerModalTests.cs` (extend)
+- *(R9 (b) or (c) only, in a separate PR)* `sim/GameSim/Expedition/ExpeditionResolver.cs`,
+  `sim/GameSim.Tests/Balance/BalanceSimTests.cs`, plus a re-record ceremony.
+
+**Determinism.** The shipping half is client-only; **no re-baseline**. Any R9 outcome other than
+(a) is a sim change and a balance re-baseline, serialized, never implicit, never in the same PR
+as the staging.
+
+**Test scenarios.**
+
+1. `FadingWarning_NamesTheHero_AndTheirCarriedPlayerCraftedGear`
+2. `FadingWarning_IsSilent_WhenNoOneIsBelowTheFleeThreshold` — the existing threshold, unchanged.
+3. `FadingWarning_NeverStatesASurvivalNumber` — §11.4's stakes-qualitatively note, pinned on the
+   rendered string.
+4. `DeathCard_LeadsWithThePlayersMarkedItem_WhenTheFallenWoreOne`
+5. `DeathCard_SaysNothingOfYoursWasOnThem_WhenTrue` — honest empty state, no participation
+   credit.
+6. `MultiLossNight_RendersOneCardPerLoss`
+7. `MultiLossNight_StillSpeaksExactlyOneNarratorLine` — regression pin on
+   `SelectForNight`'s deliberate rule, so this unit cannot be mistaken for permission to queue
+   narration.
+8. `NarratorLine_OnAMultiLossNight_IsNeverACountCommittingLine` — pin the *already-landed* fix so
+   a future session cannot regress it.
+
+**Verification.** Engine suite green. Manual: play to a multi-loss night on a known seed; confirm
+one spoken line, several cards, and the fading warning named the right person that afternoon.
+
+---
+
+## Key technical decisions
+
+**KTD-1 — Forward-looking surfaces derive from the same function the tick consumes, never a
+parallel one.** `CounterForecast.Queue` is called by `ApplyOpen` itself; `MusterDelta` reads
+`EventLog`; the vigil send-off line reads `MusterPlan.Compute`. This repo has a named trap — a
+spoken want that disagrees with what the sim accepts is worse than silence
+(`godot/scripts/ui/CustomerVoice.cs:14-22`, which says exactly this and says there is precedent
+for the trap). Extraction over duplication makes agreement structural rather than test-enforced.
+
+**KTD-2 — The telegraph states rules and stakes; it never states an unrolled outcome.** Tomorrow's
+muster is decided and may be named. Whether a party reaches the checkpoint is not, and may only
+be described as a rule ("they'll stop if they get there clean"). Every unit that renders forward
+copy carries a test asserting the rendered string contains no outcome claim and no survival
+number. This is law 4 plus §11.4's own stakes-qualitatively note, made executable.
+
+**KTD-3 — A gated surface is a *recorded* surface.** `ActionReachabilityCensusTests` is a decision
+census; its entries are hand-written strings, and its own doc warns against reading a green run as
+proof a button is live (lines 32-41). U3's gates therefore extend each surface string with its
+gate rather than moving anything into `Exclusions` — an excluded action is one nobody surfaced,
+and these are surfaced, just not yet.
+
+**KTD-4 — Tutorial steps complete on what the player controls, never on what a hero decides.**
+Both broken steps failed the same way: `CounterSaleClosed` requires `ShoppingAi` to return Buy;
+`SupplyDelivered`/`PartyRecalled` requires a party to have parked. Influence never orders, so a
+tutorial gated on a hero's decision is a tutorial that can be failed by the game. New house rule
+for `TutorialStepDef.IsDone`: the fact must be caused by a `PlayerAction` in `ActionLog` or by a
+UI navigation the player performed. Add a conformance test that asserts it for every row.
+
+**KTD-5 — The unlock table is one-way and derived, never persisted.** `SurfaceUnlocks.IsOpen` is
+pure over `GameState`, so a reload cannot resurrect a stale gate — the exact class of defect that
+produced "the tutorial is missing" (`godot/scripts/ui/TutorialFlow.cs:1123-1143`: a `user://`
+flag outliving the campaign that set it). No second `user://` file.
+
+**KTD-6 — Sim changes with balance consequences are rulings, not defaults.** Three are named and
+routed rather than taken: R7 (mid-vigil material purchase), R8 (party rotation), R9 (first-death
+floor). Each names its default so silence has a meaning, per §11.3's own convention. Each, if
+ruled, is a separate PR with its own re-baseline ceremony.
+
+---
+
+## Scope boundaries — what this wave does not do
+
+- **No demand-hazard engine.** P7 is blocked on P4 and needs its own plan ceremony
+  (§11.4). U1 projects demand the sim already computes; it generates none. `BeatType.ToolAssist`
+  still has no emitter and this wave does not give it one.
+- **No vigil balance work.** R1 (§11.3) freezes P5. U4 ships copy and gating legibility over
+  verbs that exist; the runner fee, checkpoint depth, send threshold and quaff rule are untouched,
+  and the one change that would breach the freeze (R7) is routed, not taken.
+- **No second checkpoint.** §11.7.5's depth-scaled camps are a priced sim unit for a later wave.
+- **No timers, anywhere.** `VigilStop`'s indefinite hold, `PhaseClock.Engaged`, and the
+  show-held predicate are unchanged; U4 adds explanation to existing pacing, not pacing.
+- **No new narrator lines and no queued narration.** The spoken library is frozen and append-only
+  (`sim/GameSim/Presentation/NarratorVoiceDirector.cs:58-62` — an index is a filename). One
+  spoken moment per ceremony stays the rule.
+- **No hero-behaviour depth.** Erenshor M5 rivalry stays cut (§11.5); R8's recommended default is
+  explicitly the version that does *not* reopen it.
+- **No profession accumulation.** §11.7.7's fluid progression is P7-adjacent and demand-gated;
+  U3 gates *surfaces*, not disciplines, and touches
+  `ProfessionHandlers.MaxSelected` not at all.
+- **No re-baseline in this wave.** Every unit as scoped is client-only or a pure sim projection.
+  Any of R7/R8/R9 ruled affirmative becomes its own PR with its own ceremony.
+- **No third plan doc.** This lives in §11 as an amendment; `docs/plans/` stays at two.
+
+---
+
+## Sequencing
+
+| # | Unit | Size | Blocked by | Re-baseline |
+|---|------|------|-----------|-------------|
+| U1 | Tomorrow's asks | session | nothing | no |
+| U2 | Tutorial points, gates honestly, repeats | session-wave | U1 for step 6's copy clause only | no |
+| U3 | The town opens as you learn it | session | U2 (shares the registry idiom + the anchor/gate interaction test) | no |
+| U4 | The vigil is a workbench | session | nothing | no |
+| U5 | The party reads as people | session | nothing | no (shipping half) |
+| U6 | Loss is staged | session | nothing | no (shipping half) |
+
+U1, U4, U5 and U6 are mutually independent and touch disjoint files — four parallel lanes. U2
+follows U1 by one clause. U3 follows U2. Engine tests serialize regardless
+(`.claude` memory: never two gdUnit runs at once), so parallel branches, serial verification.
+
+**Rulings owed before the wave completes:** R7 (mid-vigil materials — default no), R8 (party
+rotation — default rotate by day, re-baseline), R9 (first-death floor — default stake-gated,
+re-baseline). None blocks a shipping unit; each blocks a follow-on PR.
+
+---
+
+### 11.12 One building got a contract; nothing else did — 2026-08-15
+
+> **Correction to this section's audio premise, measured after it was drafted.** U10 below argues
+> that `night-still` is "the one track the player has never heard wrap," citing
+> `AudioDirector.cs`'s own comment that Camp is "a brief background beat." That comment is a claim,
+> and the owner's session log is a measurement that contradicts it. In
+> `runs/playtest/session-1786763902.jsonl`, Camp held `night-still` from t=325.2 to t=478.9 —
+> **153.7 seconds, the longest single dwell of the day.** All four tracks were then probed directly:
+> every one is 48kHz Lavf with an `Info` frame and NO LAME gapless tag, `quest-wait`/`night-still`/
+> `town-dusk` are 60.02s and `day-first-light` is 134.04s. So the wrap counts in that session were
+> `quest-wait` 0, `town-dusk` 1, `day-first-light` 1, and `night-still` **2** — night-still wrapped
+> the most, not the least.
+>
+> U10's mechanism survives this intact and is in fact strengthened: the missing gapless metadata is
+> a property of all four files, so every composed bed replays encoder delay/padding on every wrap,
+> and exposure is the only variable. What does NOT survive is using night-still's praise as evidence
+> that it never wraps. The likelier reading of "vigil music good" is that the praised bed is the
+> SYNTHESIZED `MusicBed.Underground()` theme — built so its end meets its beginning and de-clicked,
+> and therefore structurally incapable of this defect — not the composed Camp MP3. Any unit that
+> keys on "which track is clean" must re-derive it from the probe, never from a doc comment.
+
+**Status: capped overhead, substrate, with four units defending §2 links. No unit here may
+displace a §11.4 path item.** Written as a §11 amendment rather than a third file in
+`docs/plans/` because rule 4's two-doc cap is full (`2026-08-13-002` and `2026-08-14-001` both
+hold live units). Same shape and same discipline as §11.10.
+
+**What was asked, 2026-08-15** — the owner played and wrote it down. Visual: *"shop looks
+fantastic"*, *"rework other buildings to match"*, *"interiors super ugly and generic"*, *"main
+character looks awful — the generic shopkeeper sprite was better"*, *"top menu needs a full
+revamp"* (explanations + shortcuts), *"shop counters identical and redundant — condense them"*,
+*"the Watch needs cutscene-quality visuals — render the heroes actually attacking"*, *"the hero
+buying at the counter didn't match the heroes outside"*, *"heroes and NPCs need nameplates"* and
+*"should stick together"*, *"the world feels TINY"*. Audio: *"bellows sound is too loud and
+abrasive"*, *"vigil music is good"*, and a random static burst during Night, then again at Day 2
+Dawn.
+
+#### The common cause
+
+The owner's split — one fantastic building, everything else generic — is not a taste gradient
+across a shared art track. **There is no shared art track for the world.** Measured, from the
+committed pixels:
+
+| id | size | distinct opaque colours | bytes | what it actually is |
+|---|---|---|---|---|
+| `market` (drawn as **Shop**) | 76×62 | **2,732** | 9,803 | 3/4-isometric **volume**: two visible faces, porch columns, striped awning, lit glass, standing on its own baked ground pad; alpha stops at the object |
+| `forge` | 72×81 | 3,645 | 10,902 | flat **front elevation** — one face, no ground, hard-cut at the bottom edge |
+| `noticeboard` | 44×50 | 1,984 | 5,139 | flat front elevation |
+| `tavern` | 84×88 | 4,067 | 12,780 | not a cutout at all — baked green hedges, a purple road and a cream path blob spilling outside the building's own footprint, matching no ground tile the town paints |
+| `mine-gate` | 48×48 | **10** | **567** | a dark ellipse and a brown box. Programmer art, inside a set the manifest calls SDXL |
+
+`market.png` is not better *rendered*. It is the only one drawn at the camera angle a top-down
+2.5D town needs, with a self-contained base and a disciplined cutout. That is the whole
+difference, and it was an accident: **not one of the five is in the art pipeline at all.**
+`art/build/{market,tavern,mine-gate,noticeboard}.build.json` all record
+`Status: "unreproducible-legacy"` with null seed/model/sampler; `forge` has **no build record**.
+Meanwhile `art/specs/town/TownSpecs.cs:16-41` declares four `AssetKind.Building` specs —
+`town-forge`, `town-tavern`, `town-market`, `town-mine-gate` — which have **no PNG, no
+`art-manifest.json` entry and no draw site anywhere**. The buildings the player sees were never
+specced, never rendered by the pipeline, and therefore could never be re-rendered, compared or
+regressed. `TownLayout2D.cs:125-149` records the owner keeping this SDXL set on 2026-08-01 over a
+pixel-art alternative; keeping it was right, and it also froze five orphans in place.
+
+The interiors are the same failure with the polarity flipped. The four room shells
+(`town2d-{forge,market,tavern,gatehouse}-interior-shell.png`, 384×224 / 320×192 / 352×208 /
+288×176) carry **32–40 distinct opaque colours in 1.4–1.9 KB** — a wall band, a floor grid and a
+door rectangle, four rooms differing only in hue. They are procedurally generated by
+`art/pipeline/gen-*-interior.py` against a rule those scripts state in their own docstrings —
+*"Six to eight colours per building, never more"* — sampled verbatim from the `town2d-*` pixel
+building set **the owner rejected**. A palette law that is correct for a 20×36 sprite was applied
+to a room the camera fills. And the repo already proved the alternative:
+`art/build/shop-interior.build.json` is `Status: "locked"` — SDXL base 1.0, seed 497501345, 28
+steps, dpmpp_2m/karras, a 1024×224 warm honey-amber shelf-wall crop with a Sobel normal map, two
+rounds of curation documented in its own provenance. Its PNG is **not on disk**; it was deleted
+with `ShopStage` and only `godot/.godot/imported/shop-interior.png-*.ctex` remains. The method
+worked and the asset was thrown away.
+
+Same shape in the cast, and in audio. `PlayerController2D.cs:30` resolves `player_smith`
+directly through `IconRegistry.Art`, never through `ArtVariants` — it is the one figure that
+commit `db18a90` (#503, 128 pooled town bodies) skipped. `CounterPanel.cs:125` and `:926` resolve
+the customer through `IconRegistry.Sprite(classId)` → `res://assets/sprites/hero_vanguard.svg`, a
+48×64 flat-grey primitive on the **retired** neutral-body-plus-runtime-tint contract that
+`tools/art/gen_town_sprites.py:19-27` records as superseded on 2026-08-04 — so a hero changes
+species walking from the plaza to the counter. And in audio, the one track the owner praised is
+the one track the player has never heard loop. Every symptom is the same sentence: **a contract
+was written once, satisfied once, and never made binding — so each new surface picked whichever
+authoring method was nearest.** This wave writes the contracts down, pins them against the
+manifest, and re-renders to them.
+
+#### Key technical decisions
+
+**KTD-A. The Shop's advantage is the camera and the cutout, not the renderer — so the fix is a
+contract, not a re-roll.** Pin, in a test: a venue asset is one connected opaque subject at 3/4
+isometric with a self-contained base, its alpha bounding box within a few percent of its own
+footprint, and no baked ground extending past it. `tavern.png` fails that today and is
+machine-detectably wrong (its opaque region runs to the image edge on three sides); `mine-gate`
+fails the colour-depth floor by two orders of magnitude. Write the contract from `market.png`'s
+own measurements, then re-render the other four to it.
+
+**KTD-B. Do not edit the shared Active master prompt — splice a `Building` clause, exactly the way
+§11.10 KTD-A spliced the `Item` one.** `ArtTrackProfiles.MasterPrompt` (`ArtTrackProfiles.cs:43-46`)
+already reads *"single subject, one structure centered, 3/4 isometric view"* — the camera phrase is
+in there and the buildings that violate it were made outside the pipeline that reads it. What is
+missing is the *base and cutout* half. `KindClause`/`KindNegative` (`ArtTrackProfiles.cs:127,137`)
+is the live seam §11.10 U1 built for `AssetKind.Item`; `AssetKind.Building`
+(`art/GameArt/AssetSpec.cs:16`) gets its own clause the same way, and every other kind stays
+byte-identical.
+
+**KTD-C. The interiors get the `shop-interior` method, not a palette widening.** Re-running
+`gen-*-interior.py` with more colours would still produce a flat elevation with a door rectangle
+in it. What the rooms need is a painted backplate with depth and light, at the room's exact pixel
+size, resampled offline — which is precisely the pipeline `shop-interior.build.json` records as
+`locked`. Stations keep their pixel sprites and sit on top; the shell is the only thing that
+changes, so `InteriorLayout2D`'s station table, collision and interact geometry are untouched.
+
+**KTD-D. No runtime `Scale` knob, anywhere in this wave.** `TownLayout2D.CharacterSpriteScale` is
+pinned at 1.0 by `CastProportionTests.NoRuntimeDecimation_CharacterSpriteScaleStaysOne` after the
+asymmetric-decimation bug documented at `TownLayout2D.cs:34-46`; `TownLayout2D.PropLayout`'s doc
+(`:99-108`) records the 25–30× runtime downscale that shimmered and held ~33 MB of VRAM for
+thumbnails. Everything committed here is resampled offline to its draw size. Both prior bites are
+named so no unit re-proposes it.
+
+**KTD-E. Every guard added here iterates `art-manifest.json`. Never a literal id array.**
+`ArtManifestTests.IdsInManifest()` (`godot/tests/ArtManifestTests.cs:69`) is the pattern to copy.
+The counter-example is in this repo and is why this KTD is written down: `ArtWiringCoverageTests`
+covers its families from hand-listed `string[]`s (`:34,43,48,50,55,61,72,79,85`) and
+`AssetResolutionCensusTests` from five more (`:226,268,301,332,365`) — a guard iterating a literal
+array stops covering a family the moment the family grows, silently, under a green suite.
+
+**KTD-F. The static is the loop seam, and the track the owner praised is the proof.** Read
+directly from the files' MPEG frame headers (`tools/audio/mp3-seam-probe.py` in U9 reproduces
+this): all four composed tracks are **48 kHz stereo, encoded by Lavf**, carrying an `Info` (CBR)
+Xing frame with **no LAME gapless sub-tag — encoder delay `none`, encoder padding `none`**.
+Durations from their own frame counts: `town-dusk` / `night-still` / `quest-wait` = 2501 frames ×
+1152 / 48000 = **60.02 s**; `day-first-light` = 5585 frames = **134.04 s**. `AudioDirector.cs:763`
+forces `mp3.Loop = true` and every `.import` sets `loop_offset=0`, so each wrap replays the
+encoder's tail padding and then its head delay with no metadata that would let the decoder strip
+either — a hard step, not a fade. Now the owner's own report as evidence: **Night is
+`AudioDirector.cs:146` → `town-dusk` (wraps at 60.02 s) and Dawn is `:145` → `day-first-light`
+(wraps at 134.04 s) — the two phases a player sits in. Vigil is `:147` → `night-still`, and
+`AudioDirector.cs:104-106` states in its own words that Camp "is a brief background beat."** The
+praised track is the one that never reaches its wrap. *"Vigil music is good"* and *"static during
+Night, then again at Day 2 Dawn"* are one fact stated twice. A prior pass diagnosed inter-sample
+clipping and re-encoded exactly those two files (`AudioDirector.cs:117-128`); the owner still
+hears it on exactly those two files, which is evidence against that diagnosis and for this one.
+Secondary and worth measuring but not leading: `AudioDirector` sets no `.Bus` anywhere, so music
+(-22 dB + trim), narrator (-14 dB), six pooled SFX voices and the bellows loop voice all sum on
+the default **Master** bus with no limiter, and Night is the game's densest audio moment.
+
+**KTD-G. The bellows is abrasive because of its rate, not its level.** `SfxLibrary.cs:300-314`
+builds a 0.30 s buffer whose breath envelope is `sin(π · min(1, t/0.28))` — it reaches zero at
+t=0.28, so the last 20 ms is silence — filled with `Synth.Noise` low-passed at 700 Hz and
+normalised to peak 0.15, then unconditionally soft-clipped by `Synth.Normalise`'s `tanh`
+(`Synth.cs:127`, applied even when the buffer is already under peak).
+`AudioDirector.OnLoopVoiceFinished` (`:708-716`) retriggers the whole clip on `Finished`, so a
+held pump is that swell **3.33 times per second with a 20 ms silent gap between each** — a pulsing
+wash with tanh harmonics smeared across broadband noise. It already passes
+`Bellows_IsNoLouderThanAVenueCue` (`AudioTests.cs:1326`) at the quietest level in the library,
+which is exactly why "turn it down" was never going to fix it.
+
+**KTD-H. The Watch is already animated; the missing thing is who landed the blow.**
+`DelveStage.cs` has attack lunges, recoil/stagger, hit flash, drifting damage numbers, kill poofs,
+HP pips and an `ImpactPulse` that punches `MineWatch`'s torch lights and world shake
+(`MineWatch.cs:1180-1208`). The owner did not ask for animation; he asked for a *cutscene*. Two
+real gaps: hero figures play `SpriteMotion`'s walk/breathe gait with no dedicated attack or
+impact frames, and `DelveBeat` (`DelveBeats.cs:46-54`) drops the two fields that make a beat
+*about the player* — `CombatEvent.MonsterKilled` and **`CombatEvent.KillingItem`**
+(`sim/GameSim/Contracts/Expedition.cs:20-40`) — so the sim knows which of your items landed the
+kill and the screen never says so. `DelveBeat` is a Godot-side record; threading those fields
+touches **no** `Contracts` file.
+
+**KTD-I. "The world feels TINY" is content density and framing, not zoom.** Measured: the grid is
+`TownLayout2D.GridWidth/Height` 40×28 tiles at 16 px = 640×448 world px. `Town2D.CanvasShrink`
+resolves to 3 at the 1152 px default window (`Town2D.cs:95-113`), so **384×216 world px = 24×13.5
+tiles are on screen at once**. The five venues occupy tiles x13–26, y3–18 — the entire inhabited
+town fits inside one screen with columns to spare, ringed by 12 copies of one tree at x=2 and
+x=37 and nothing in between. Population is 4 townsfolk (`Town2D.cs:1535-1541`, four hardcoded
+corners) plus 6 heroes plus the player. The camera has nowhere to go and nothing to find when it
+gets there. Fixing that by lowering `CanvasShrink` would violate KTD-D in spirit and make every
+sprite mushier; the fix is to occupy the grid and to give night real light pools instead of one
+flat `CanvasModulate` wash (`Town2D.cs:484`) — note that `MineWatch` already uses `PointLight2D`
+and the town does not.
+
+#### Implementation units
+
+---
+
+**U1 — Write the building contract down and make it fail loudly.** *(no GPU)*
+
+**Goal.** Turn what `market.png` accidentally is into a pinned, testable contract, put the five
+drawn buildings into the pipeline that can render to it, and replace the hand-listed art guards
+with manifest-iterating ones.
+
+`Serves: substrate`
+
+**Files.**
+- modify `art/GameArt/ArtTrackProfiles.cs` — add `BuildingClause` / `BuildingNegative` to the
+  existing `KindClause`/`KindNegative` switches (`:127,137`).
+- modify `art/specs/town/TownSpecs.cs` — retarget the four orphan specs onto the ids actually
+  drawn (`forge`, `market`, `tavern`, `mine-gate`) and add the missing `noticeboard` spec.
+- create `godot/tests/VenueArtContractTests.cs` — the structural contract, iterating the manifest.
+- modify `art/GameArt.Tests/ArtTrackProfileTests.cs` — byte-identity pins.
+- modify `godot/tests/ArtWiringCoverageTests.cs` — replace `TownPropIds`, `VenuePropIds`,
+  `MineMonsterKinds`, `HeroClassIds` literal arrays with manifest-derived enumeration.
+
+**Approach.** The `Building` clause adds what the master prompt lacks: *"standing on its own small
+ground base, complete object isolated on a plain background, nothing cropped at the frame edge"*,
+with negatives for `landscape, background scenery, hedges, road, ground plane extending past the
+building, flat front elevation, orthographic facade`. `TownSpecs.cs` is retargeted rather than
+deleted-and-rewritten so the four already-authored `Subject` strings survive. The contract test
+derives its thresholds from `market.png` itself, measured at test time, so the reference cannot
+drift away from the standard silently.
+
+**Patterns to follow.** `ArtTrackProfiles.cs:95-140` (the `Item` clause §11.10 U1 landed — same
+seam, same doc discipline). `godot/tests/ArtManifestTests.cs:69` `IdsInManifest()` for the
+manifest iteration. `godot/tests/ArtMissLoggingTests.cs` for the loud-degrade contract.
+
+**Test scenarios.**
+1. A `Building` spec's composed prompt contains the base/isolation clause.
+2. A `Prop` / `Backdrop` / `Portrait` / `Monster` / `Sprite` / `ClassFigure` spec's composed prompt
+   is **byte-identical to the string committed today** — the guard against re-rolling ~300 assets.
+3. An `Item` spec still composes §11.10's item clause, unchanged.
+4. Every id in `art-manifest.json` that `TownLayout2D.Venues` draws resolves to a real texture.
+5. Every venue texture has ≥ *N* distinct opaque colours, where *N* is derived from the manifest's
+   own venue set minus the outlier — `mine-gate` (10 colours) fails this today and must.
+6. Every venue texture's opaque bounding box leaves transparent margin on at least three sides —
+   `tavern.png` fails this today and must.
+7. Every venue texture is a single connected opaque component above a small-blob threshold.
+8. Every `AssetKind.Building` spec id in `AssetRegistry` appears in `art-manifest.json`, and every
+   venue id `TownLayout2D` draws has a spec — closes the orphan gap in both directions.
+9. `ArtWiringCoverageTests`' families are enumerated from the manifest; adding a `town2d-prop-*`
+   PNG without wiring it fails the suite.
+
+**Verification.** `dotnet test art/GameArt.Tests` green; `dotnet test godot/tests --settings
+.runsettings` run **whole**, quoting the runner's own `Failed: N, Passed: N` line, with scenarios
+5 and 6 red before the U3 pixels land and green after. Zero pixels change in this unit.
+
+---
+
+**U2 — The gate: five buildings and one room, rendered, in front of the owner.** *(GPU-gated)*
+
+**Goal.** Put the U1 contract in front of the owner as images before anything is committed, and
+stop the art half of this wave if he says no.
+
+`Serves: substrate`
+
+**Files.** None committed. Renders land in `runs/receipts/` only.
+
+**Approach.** Render two candidates each for `forge`, `tavern`, `mine-gate`, `noticeboard` on the
+U1 prompt, plus one `market` re-render as the control (if the contract cannot reproduce the
+building the owner already likes, the contract is wrong and this unit has found that out for the
+price of one render). Separately, render one interior backplate — the Forge room at 384×224 — by
+re-running the `shop-interior` recipe recorded in `art/build/shop-interior.build.json`
+(sd_xl_base_1.0, 28 steps, dpmpp_2m/karras, 1024 square then cropped and resampled offline to the
+room's exact size). Present each beside the shipped asset it would replace.
+
+**GPU gating.** Needs ≥13,900 MiB free VRAM to start; one job at a time; abort above 14 GB used or
+83 °C; owner-granted window. **There is not enough free right now — this unit sits queued and
+blocks only U3.** Every other unit in this wave runs while it waits.
+
+**Verification.** The images themselves, beside the current assets. **If the owner says no, U3 is
+not attempted** — that is this unit's entire purpose. A yes on buildings and a no on interiors (or
+the reverse) splits U3 cleanly.
+
+---
+
+**U3 — Commit the rebuilt exteriors and the painted interiors.** *(GPU-gated; conditional on U2)*
+
+**Goal.** Four buildings that match the Shop, and four rooms that stop looking like a diagram.
+
+`Serves: substrate`
+
+**Files.**
+- modify `godot/assets/art/{forge,tavern,mine-gate,noticeboard}.png` (+ `_n.png` normals)
+- create `godot/assets/art/town2d-{forge,market,tavern,gatehouse}-interior-shell.png` replacements
+  (+ `_n.png`)
+- modify `art/build/*.build.json` for each — `Status` flips off `unreproducible-legacy` to a real
+  seed/model/sampler record; `forge` gains its first build record.
+- modify `godot/assets/art/art-manifest.json` — `normal: true` for every rebuilt id.
+- modify `godot/scripts/town2d/TownAssets2D.cs` — `VenuePlaceholders` sizes must track the new PNG
+  header dimensions 1:1 (the file's own `:40-45` doc explains why).
+- modify `art/pipeline/gen-{forge,market,tavern,gatehouse}-interior.py` — the shell half is
+  removed from each script and its docstring records that the shell is now an SDXL backplate;
+  the **station** half stays exactly as it is.
+
+**Approach.** Resample offline to draw size (KTD-D); commit no runtime scale. Normals are shipped
+because U6 adds `PointLight2D` and an unlit diffuse under a 2D light reads flat — `shop-interior`
+already established the `normalmap.py` Sobel chain for exactly this surface class. `mine-gate` is
+the largest visual delta (10 colours → a real building) and lands first inside this unit so it can
+be reverted alone if it reads wrong.
+
+**Patterns to follow.** `art/build/shop-interior.build.json` (the recipe and the honest provenance
+prose). `art/pipeline/normalmap.py`. `art/pipeline/cutout.py` — and its documented skip condition
+for full-bleed backplates, which the interior shells meet and the building cutouts do not.
+
+**Test scenarios.**
+1. U1's scenarios 4–8 now pass for every venue, including `mine-gate` and `tavern`.
+2. Every committed PNG's dimensions equal the size `TownAssets2D.VenuePlaceholders` /
+   `InteriorLayout2D` declares — a mismatch shifts collision and interact geometry.
+3. Every rebuilt id has `normal: true` in the manifest **and** a `_n.png` on disk; the manifest and
+   the filesystem agree in both directions.
+4. Every rebuilt id's `build.json` has a non-null `Seed`, `Model` and `DiffuseSha256`, and
+   `Status != "unreproducible-legacy"`.
+5. `InteriorRoomTests` and `InteriorTraversalTests` still pass unchanged — the shell swap must not
+   move a single station or door.
+6. `--check` on each surviving `gen-*-interior.py` reports zero drift on the station sprites.
+
+**Verification.** A `FullPlaytest` run reporting **zero** art-miss warnings (the `EngineDistress`
+logging from #497), plus rendered captures: the five buildings in the plaza, and the player
+standing inside each of the four rooms. Diff-side green is not the proof here; the frames are.
+
+---
+
+**U4 — Every person in the world is a specific person.** *(no GPU)*
+
+**Goal.** The player smith stops being the drabbest figure on screen; a hero is the same human at
+the counter as in the plaza; and you can read a name without clicking.
+
+`Serves: link2` — you cannot *hold the good one for the hero who needs it* if you cannot tell
+heroes apart on sight, and you cannot price for the relationship with someone whose face changes
+when they walk indoors.
+
+**Files.**
+- modify `tools/art/gen_town_sprites.py` — the player's garment ramp.
+- modify `godot/assets/art/player_smith{,_step,_walk2,_walk4}.png`
+- create `art/build/player-smith.build.json`
+- modify `godot/scripts/panels/CounterPanel.cs` (`:125`, `:926`)
+- modify `godot/scripts/town2d/HeroActor2D.cs`, `godot/scripts/town2d/TownsfolkNpc2D.cs`,
+  `godot/scripts/town2d/PlayerController2D.cs` — nameplates.
+- modify `godot/tests/TownSpriteArtTests.cs`, `godot/tests/CastProportionTests.cs`,
+  `godot/tests/panels/` counter coverage; create `godot/tests/NameplateTests.cs`.
+
+**Approach, in three grounded parts.**
+
+*(a) The player smith.* The regression is measurable and it is not size or generator — both come
+off `gen_town_sprites.py`, and the player is deliberately taller (22×34 vs the cast's 20×32,
+asserted at `gen_town_sprites.py:1436`). It is **colour area**: `player_smith.png`'s top tones are
+the neutral steel-violet ramp — `#140f1f` 19.4 %, `#2a2438` 12.4 %, `#b8b0c6` 11.0 %, `#6e6880`
+8.5 %, `#3d3242` 8.5 %, roughly 60 % neutral — with the warm `PLAYER_HUE (110,74,42)`
+(`gen_town_sprites.py:229,1511`) confined to the apron bib, while `town2d-townsfolk-broad.png`
+carries `#504027` 17.7 % + `#847050` 15.1 % + `#342919` 10.7 % + `#c4946e` 5.4 %, ≈49 % warm
+garment across the whole torso. The player reads as a grey smudge standing next to warm people.
+Fix at `gen_town_sprites.py:1455-1458`: the shirt takes the warm ramp, the neutral steel moves to
+the apron and tools where it belongs, and the extra 2 px of height buys one more shading step than
+the civilians get. **The player does not join a variant pool** — he is one person, and `ArtVariants`
+on the player would be wrong.
+
+*(b) The counter hero.* `CounterPanel.cs:125` and `:926` call `IconRegistry.Sprite(classId)`
+(`IconRegistry.cs:168` → `res://assets/sprites/hero_{classId}.svg`, a 48×64 flat-grey primitive on
+a contract `gen_town_sprites.py:19-27` records as retired on 2026-08-04), taking only the class id
+so every Vanguard is identical, and bypassing the `UiKit.ArtRect(AssetCatalog.HeroPortraitId(...),
+…, IconRegistry.Sprite(...))` fallback ladder every other panel uses (`HeroesPanel.cs:334`,
+`LedgerModal.cs:270`, `TavernPanel.cs:220`). Route both call sites through
+`TownAssets2D.ForHero(classId, heroId)` — the same `ArtVariants.Pick($"town2d-hero-{classId}",
+"hero", heroId)` the plaza, market and tavern already use (`TownAssets2D.cs:157-165`,
+`Town2D.cs:784`, `MarketLife2D.cs:353-354`, `TavernLife2D.cs:129`) — with `IconRegistry.Sprite` left
+only as the ladder's last rung.
+
+*(c) Nameplates.* None exist over any actor: `Label` appears in `godot/scripts/town2d/` only in
+`Building2D.cs:102` and the interior station labels. Reuse `Building2D.BuildLabel`'s exact recipe
+(`:400-421`, `FontSize=7`, `ShadowSize=2`, `ShadowOffset (0,1.5)`, offset `-size.Y - 10f`) so
+nameplates and building nametags are visibly the same object class. Heroes get their name and
+class tint; townsfolk get their name; the player gets none (the camera already says which one he
+is). Nameplates live inside the world node so the integer canvas upscale magnifies them with
+everything else — `Building2D.cs:404` already documents this.
+
+**Test scenarios.**
+1. `player_smith.png` is 22×34 and warm tones exceed 45 % of its opaque area — pins (a) as a
+   measurement, not a taste claim.
+2. The player's height still exceeds the cast's (`gen_town_sprites.py:1436` assertion holds) and
+   `CharacterSpriteScale` is still exactly 1.0.
+3. `gen_town_sprites.py --check` reports zero drift across every committed town sprite.
+4. `CounterPanel`'s customer texture for hero id *H* of class *C* equals
+   `TownAssets2D.ForHero(C, H)` — the same texture `Town2D.ReconcileHeroes` gives that hero.
+5. Two heroes of the same class with different ids resolve to different counter textures whenever
+   the class pool has depth > 1.
+6. No production panel calls `IconRegistry.Sprite` outside an `ArtRect` fallback argument —
+   reflective over `godot/scripts/panels/`, so a future panel cannot reintroduce it.
+7. Every hero actor and every townsfolk actor in a built `Town2D` has a visible `Label` whose text
+   is that actor's sim name.
+8. A nameplate's world Y sits above its sprite's top edge for the tallest and shortest committed
+   body, at both 22×34 and 20×32.
+9. Nameplates do not enter Y-sort — an actor never sorts in front of another actor because of its
+   label.
+
+**Verification.** Rendered captures: the plaza with nameplates on, and the same hero at the
+counter beside the same hero in the plaza. Full engine suite, run whole, raw `Failed:` line quoted.
+
+---
+
+**U5 — The cast stops scattering.** *(no GPU)*
+
+**Goal.** Heroes and townsfolk read as a town's worth of people who know each other, not twelve
+independent oscillators.
+
+`Serves: link2`
+
+**Files.** modify `godot/scripts/town2d/HeroActor2D.cs`,
+`godot/scripts/town2d/TownsfolkNpc2D.cs`, `godot/scripts/town2d/Town2D.cs`
+(`HomeFor` at `:1242-1243`, `TownsfolkHomeTiles` at `:1535-1541`); modify
+`godot/tests/HeroActor2DTests.cs`, `godot/tests/TownsfolkNpc2DTests.cs`,
+`godot/tests/TownLifeTests.cs`.
+
+**Approach.** The scatter is arithmetic, and it is exact. `Town2D.HomeFor(heroValue) =
+TileToWorld(6 + heroValue*3 % 28, 10 + heroValue*2 % 6)` gives heroes 0–5 world X = 104, 152, 200,
+248, 296, 344 — a 240 px spread across a 384 px screen — and each then wanders a private lissajous
+of amplitude 14×10 px around its own anchor (`HeroActor2D.cs:53,55,293-299`). Townsfolk sit at four
+hardcoded corners 448 px apart in X (`Town2D.cs:1535-1541`) with a 9×5 px wander
+(`TownsfolkNpc2D.cs:55,57,437-443`). There is no cohesion, flocking, leader-follow or
+distance-to-companion term in any of the five ambient-life files.
+
+Replace the per-id anchor with a small table of **named gathering spots** — the well, the tavern
+door, the market front, the forge yard, the gate road — and give each actor a spot rather than a
+coordinate. Two or three actors share a spot with a deterministic per-actor offset inside it, so
+they stand in conversational clusters. Which spot an actor holds is a pure function of its sim id
+and the day phase (heroes drift toward the gate before an expedition, toward the tavern in the
+evening), so it stays deterministic, save-safe, and needs no new sim data. Keep the existing
+lissajous as the *within-spot* idle so the walk animation and pose maths are untouched.
+
+**Patterns to follow.** `HeroActor2D.RallyTo`/`MarchOutTo` (`:208-220`) — the one place the codebase
+already moves heroes as a group, and `Town2D.RallySpacingPx = 14f`, which is the cluster spacing to
+match. `SpriteMotion` stays the pose driver; no `Tween` (the repo has zero `CreateTween` calls in
+`godot/scripts` and that is deliberate).
+
+**Test scenarios.**
+1. At any phase, no gathering spot holds more than *k* actors, and no actor is further than *r* px
+   from its assigned spot.
+2. The mean pairwise distance between living heroes at Morning is below a pinned ceiling derived
+   from today's measured 240 px spread — the regression pin for "stick together."
+3. Spot assignment is a pure function of `(heroId, phase)`: two `Town2D` instances built from the
+   same state assign identically.
+4. Assignments survive a save/load round-trip (`CampaignSaveTests` seam).
+5. Actors sharing a spot never occupy the same pixel — the deterministic offsets are distinct.
+6. Departure choreography (`RallyTo`/`MarchOutTo`) still wins over the spot anchor while it runs,
+   and the anchor resumes after.
+7. `AmbientLife2DTests`, `MarketLifeTests`, `TavernActsTests` unchanged and green — errand walks
+   and tavern seating still override the anchor.
+
+**Verification.** Rendered captures at Morning, Expedition and Evening showing clustered groups,
+plus the full engine suite run whole.
+
+---
+
+**U6 — The town gains somewhere to walk and something to light.** *(no GPU; its optional skyline
+art rides U3)*
+
+**Goal.** Stop the world fitting on one screen.
+
+`Serves: substrate`
+
+**Files.** modify `godot/scripts/town2d/TownLayout2D.cs` (`Venues`, `PathRects`, `Props`),
+`godot/scripts/town2d/Town2D.cs` (`BuildProps`, the lamp layer), `godot/scripts/town2d/Building2D.cs`
+(door-anchor recheck); modify `godot/tests/Town2DSceneTests.cs`,
+`godot/tests/CameraFollowTests.cs`, `godot/tests/PhaseLightTests.cs`,
+`godot/tests/RealClickReachesBuildingTests.cs`.
+
+**Approach, three parts, none of them a zoom change (KTD-I, KTD-D).**
+
+*(a) Occupy the grid.* The venues currently sit inside x13–26 of a 40-wide grid with 24 columns
+visible — the whole town is one screenful. Spread the five venues across the grid's real width and
+lengthen the gate road so walking from the tavern to the mine gate is a journey with a camera pan
+in it, keeping every `PathRects` spur connected and every door-front tile clear. The grid itself
+stays 40×28: the fix is using it, not enlarging it. Redistribute the 12 identical trees and the
+eight `props-*` warm-hub props (`TownLayout2D.cs:246-276`) into the newly opened middle ground so a
+pan reveals objects rather than grass. Note the pre-existing duplicate the file flags in its own
+doc (`:273-276`, `props-town-well` vs `town2d-well` — two wells) and resolve it here.
+
+*(b) Real light at night.* The town's only light model is one `CanvasModulate`
+(`Town2D.cs:484`) tinting the whole viewport flat. `MineWatch` already builds `PointLight2D`s and
+its own gradient (`MineWatch.cs:405-445`, `BuildLightGradient`). Give each `town2d-prop-lantern`
+placement and each lit venue window a `PointLight2D` on the same recipe, energy driven by
+`DayPhaseTint`, so dusk becomes pools of warm light in a cool wash instead of a purple filter. The
+normals U3 ships are what make this read on the buildings; the effect degrades to today's flat
+look if U3 has not landed, so this unit is not blocked by the GPU.
+
+*(c) The edge stops being a wall of grass.* A parallax silhouette band at the grid's north and
+south edges. Procedural in the `gen_town_sprites.py` idiom is the default and needs no GPU; if U2
+came back yes, an SDXL skyline rides U3 instead. Either way it ships at draw size.
+
+**Test scenarios.**
+1. The venue set's bounding box exceeds the visible canvas in both axes — the camera always has
+   somewhere to go. Derived from `Town2D.ShrinkFor(1152)`, not a literal.
+2. Every venue's door-front tile is reachable from the plaza through connected `PathRects` cells —
+   a flood fill, so a spread layout cannot strand a building.
+3. No two venue sprite footprints overlap, using the real PNG dimensions (the check
+   `TownLayout2D.cs:138-140` currently does by hand in a comment).
+4. No prop is placed on a 1–2-tile spur (the plaza square stays exempt, per the file's own
+   precedent).
+5. `RealClickReachesBuildingTests` passes for all five venues at their new tiles — a real click at
+   a real screen position, not a seam call.
+6. Every lantern placement has exactly one `PointLight2D`; energy at Morning is below energy at
+   Evening; energy is a pure function of `DayPhase`.
+7. `CanvasShrink` is unchanged and `CameraZoom` is still 1 — the regression pin against fixing
+   framing with magnification.
+8. The parallax band never enters Y-sort and never receives a click.
+
+**Verification.** Rendered captures at Morning and Evening from three camera positions, plus the
+full engine suite run whole. The Evening capture is the one that proves (b).
+
+---
+
+**U7 — The top bar explains itself and shows its keys.** *(no GPU)*
+
+**Goal.** Every HUD control says what it does and which key does it, and the keys that already
+exist stop being secret.
+
+`Serves: substrate`
+
+**Files.** modify `godot/scripts/MainUi.cs` (`BuildUi` at `:1926`, `TrayButton` at `:2954`, the
+verb cluster at `:2038-2236`, the books tray at `:2238-2304`); modify
+`godot/scripts/ui/UiKit.cs` (a shortcut-badge helper beside `StatChip`);
+create `godot/scripts/ui/ShortcutMap.cs` — the single registry of every binding;
+modify `godot/scripts/ui/SettingsPanel.cs` to read from it; modify
+`godot/tests/MainUiTests.cs`, `godot/tests/SettingsPanelTests.cs`; create
+`godot/tests/ShortcutLegendTests.cs`.
+
+**Approach.** The gap is precise: `TooltipText` is already used in 23 files, but every top-bar
+tooltip is a **one-word restatement of the icon** — `"Ledger"`, `"Forecast"`, `"Commissions"`,
+`"Legends"`, `"Demand"`, `"Renown"`, `"Progress"` (`MainUi.cs:2258-2304`) — and exactly one control
+in the entire HUD names a key (`"Fullscreen (F11)"`, `:2217`). Meanwhile real bindings exist and are
+undiscoverable: `F11` and the four-rung `Escape` ladder (`MainUi.cs:3265-3316`), quick-travel `1`–`4`
+→ Forge/Shop/Tavern/Gate (`MainUi.cs:118-124`, `:3110-3122`) which are additionally **gated on
+`Tutorial.QuickTravelUnlocked`** with nothing telling the player they exist or when they arrive,
+`WASD`/arrows/`E` (`TownInput.cs:18-23`), the minigame verbs (`MinigameInput.cs:40-51`), and the
+numeric widget keys on `PriceTag`/`CoinStack`. `project.godot` has **no `[input]` section at all** —
+every binding is registered at runtime — and `SettingsPanel.RebindableActions` (`:74-110`) is the
+only surface that ever shows a key to the player, covering movement and minigame verbs only.
+
+`ShortcutMap` becomes the one place a binding is declared, with a human label and a one-sentence
+description; `MainUi`, `SettingsPanel` and the tooltips all read it. Every top-bar control's tooltip
+becomes *what it does* plus its key badge; controls with a key render the badge inline on the
+button, not only on hover. Quick-travel keys render greyed with their unlock condition named rather
+than being invisible. This is copy and wiring — **no new verb, no timer, no change to what any
+button does** (law 3 and law 2 both untouched).
+
+**Patterns to follow.** `UiKit.StatChip` / `StatChipCompact` (`:211,235`) for the badge shape;
+`GameTheme` tokens only, never a literal colour; `UiKit.DrawerHeader` (`:700`) for the header
+idiom; `SettingsPanel.ActionLabels`/`DefaultKeysByAction` for the human-label convention already
+established.
+
+**Test scenarios.**
+1. Every top-bar button has a `TooltipText` longer than its own visible label — a one-word tooltip
+   fails.
+2. Every binding in `ShortcutMap` is actually registered (`InputMap` or a real `_Input` handler);
+   every runtime binding appears in `ShortcutMap`. Both directions, reflectively — this is the
+   guard that keeps the legend from going stale.
+3. `SettingsPanel` renders every `ShortcutMap` entry, including `F11`, `Escape` and quick-travel,
+   not just the rebindable subset.
+4. A locked quick-travel key renders visibly disabled with its unlock condition in its tooltip, and
+   pressing it still does nothing.
+5. Tooltip and badge text fit their controls at the smallest supported window
+   (`MenuSizingTests`/`HudBoundsTests` seams) — no clipping, no HUD overflow.
+6. No control gained a verb: the set of actions reachable from the top bar is unchanged.
+
+**Verification.** `UiRenderSmokeTests` plus a captured HUD frame with a tooltip open, and the full
+engine suite run whole.
+
+---
+
+**U8 — One counter.** *(no GPU)*
+
+**Goal.** The shop stops rendering the same shelf twice, one list above the other, in a single
+scroll.
+
+`Serves: link2`
+
+**Files.** modify `godot/scripts/panels/ShopPanel.cs` (`BuildShelfSection` `:183-260`, the mount at
+`:514-521`), `godot/scripts/panels/CounterPanel.cs` (`BuildShelfActions` `:368-425`); modify
+`godot/tests/ShopPanelTests.cs`, `godot/tests/panels/` counter coverage,
+`godot/tests/RealDragOntoShelfTests.cs`; delete the orphans
+`godot/scripts/panels/ShopStage.cs.uid` and `godot/tests/ShopStageTests.cs.uid` (both have no `.cs`).
+
+**Approach.** These are not two panels: `MainUi.PanelFor` (`:2918-2930`) registers only `"Shop"`,
+and `CounterPanel` is mounted as a child of `ShopPanel` (`ShopPanel.cs:517`) directly **above** the
+shelf sections. The redundancy is exact and it is one thing: **`state.Player.Shelf` is iterated
+twice in one scroll** — once by `CounterPanel.BuildShelfActions` ("Present / Suggest") and once by
+`ShopPanel.BuildShelfSection` ("Your Shelf") — same items, same `IconRegistry.Slot` icon, same
+name/quality/price shape, different button sets.
+
+Condense to **one shelf list** whose row carries every shelf verb, with the counter-only verbs
+(Present, Suggest) appearing on the row when a customer is present and absent when one is not.
+Everything else stays: `ShopPanel` keeps "Who Would Buy This" (`:135-161`), Unstock/Reprice/History
+(`:225-250`), "Unshelved Crafts" with `SuggestedPrice` (`:290-392`), the Rival Shelf (`:394-438`)
+and drag-to-stock; `CounterPanel` keeps the entire haggle session — Open/Close, want-line, the
+Interest/Patience/Goodwill/Round meters, Accept/Hold Firm/Counter, the `CounterDesk` canvas and the
+"no active customer" legibility state. **Nothing is deleted except the duplicate rendering.** The
+three entry points into `QueuePresent` (`CounterPanel.cs:269-302` — button, desk drag, handshake)
+stay: that is one seam with many affordances by design, and it stops reading as clutter once it is
+not sitting on top of a duplicated list.
+
+**Test scenarios.**
+1. A shelved item appears in exactly one row in the built `ShopPanel` tree — the pin for the whole
+   unit.
+2. Every verb reachable before is reachable after: Stock, Unstock, Reprice, History, Present,
+   Suggest, Accept, Hold Firm, Counter, Open Counter, Close Counter. Enumerated, not sampled.
+3. With no active customer, Present/Suggest are absent (not disabled-and-present); with one, they
+   are on the row.
+4. The Rival Shelf, the forecast section and the unshelved-crafts section are unchanged.
+5. `RealDragOntoShelfTests` passes — the drag gesture survives the layout change.
+6. Presenting via the button, the desk drag and the handshake all queue the identical action.
+7. No `.uid` file exists in `godot/scripts/` or `godot/tests/` without a matching `.cs` — a
+   reflective orphan guard, so the next deletion cannot leave litter either.
+
+**Verification.** A captured Shop frame with a customer present and one without, plus the full
+engine suite run whole.
+
+---
+
+**U9 — The Watch shows the blow, and whose work landed it.** *(no GPU)*
+
+**Goal.** Cutscene-quality means the heroes visibly attack **and** the screen names the item that
+did it.
+
+`Serves: link4` — the counterfactual proof is the game's fourth link, and the sim already computes
+which of your items landed the killing blow while the renderer throws it away.
+
+**Files.** modify `godot/scripts/DelveBeats.cs` (the `DelveBeat` record `:46-54`, `BuildBeats`
+`:100-205`, `RenderFight` `:217-334`), `godot/scripts/panels/DelveStage.cs`,
+`godot/scripts/panels/MineWatch.cs`; modify `tools/art/gen_town_sprites.py` and
+`godot/assets/art/town2d-hero-*_{attack,impact}.png` (+ variants); modify
+`godot/tests/DelveBeatsTests.cs`, `godot/tests/DelveStageTests.cs`,
+`godot/tests/MineWatchTests.cs`, `godot/tests/TownSpriteArtTests.cs`.
+**No `sim/GameSim/Contracts/` file is touched** (KTD-H).
+
+**Approach, three parts.**
+
+*(a) Carry the attribution.* `CombatEvent` (`sim/GameSim/Contracts/Expedition.cs:20-40`) already
+has `MonsterKilled`, `KillingItem`, `Uses` and `ModifierHpDelta`; `DelveBeat` carries none of them.
+Add `KillingItem` and `MonsterKilled` to the Godot-side `DelveBeat` record, thread them through
+`RenderFight`, and let `DelveStage` stage the kill as a beat that names the item — the same
+sentence `MineWatch` already barks for `AttributionBeatEvent` (`MineWatch.cs:1073`), now landing on
+the frame where the monster dies instead of in a separate feed line.
+
+*(b) Draw the swing.* Hero figures currently play `SpriteMotion`'s walk/breathe gait with combat
+motion layered as position/rotation maths on top (`DelveStage.cs:777-841`). Author two frames per
+class in `gen_town_sprites.py`'s existing rig — an attack extension and an impact recoil — and let
+`BeginCombatPose` swap the frame at the curve's peak. Procedural, no GPU, `--check` drift-guarded,
+and it inherits U4's lesson about writing full-width rows rather than mirroring a padded half.
+
+*(c) Stage it.* On a killing blow, push `ImpactPulse` to its ceiling (the light-punch and world
+shake at `MineWatch.cs:1180-1208` already read it), hold the beat longer in the playhead, and let
+the camera settle on the pair. **No new timer on any decision** — this is the reveal, not a verb;
+skipping stays legal and unchanged (law 7), and every beat still comes from
+`DelveBeats.Build`, so nothing is invented that the sim did not decide (law 4).
+
+**Test scenarios.**
+1. A `CombatEvent` with a non-null `KillingItem` produces a `DelveBeat` carrying it; one without
+   produces null. Both directions.
+2. A killing blow by a **player-crafted** item renders a beat naming the item; a killing blow by a
+   non-player item renders no attribution — there is no participation credit (link 4).
+3. Every hero class has committed `_attack` and `_impact` frames at the class body's pinned size,
+   enumerated from the manifest (KTD-E), not from a class-id array.
+4. `gen_town_sprites.py --check` reports zero drift.
+5. An `Exchange` beat with `DamageDealt > 0` swaps to the attack frame during the pose and returns
+   to the gait after — asserted on the sprite's actual region, not on a flag.
+6. Determinism: the same seed and the same beats produce the same frame sequence.
+7. `MineWatch` still builds exactly **one** `SubViewport` (`:379-386`) — the historical two-viewport
+   headless hang (`docs/debugging.md:93-100`) must not return.
+8. Golden replay unaffected: `DelveBeat` is adapter-side and no sim state moves.
+
+**Verification.** A captured `DelveStage` sequence across a full fight ending in a kill with the
+item named, plus the **full** engine suite run whole (never a filtered run — a filtered run cannot
+see other suites vanish), raw `Failed: N, Passed: N` quoted.
+
+---
+
+**U10 — The two audio defects.** *(no GPU)*
+
+**Goal.** The bellows stops being a 3.33 Hz noise train, and the loop seam stops bursting.
+
+`Serves: substrate`
+
+**Files.** modify `godot/scripts/audio/SfxLibrary.cs` (`Cue.Bellows` `:300-314`),
+`godot/scripts/audio/AudioDirector.cs` (`OnLoopVoiceFinished` `:708-716`, `LoadComposed` `:777`),
+`godot/scripts/audio/Synth.cs` (an opt-out on the unconditional `tanh` at `:127`);
+create `tools/audio/mp3-seam-probe.py`; modify `godot/assets/audio/*.mp3` and their `.import`
+files; modify `godot/tests/AudioTests.cs`.
+
+**Approach.**
+
+*(a) Bellows (KTD-G).* Three changes, none of them a volume cut: lengthen the clip so a held pump
+is one long breath rather than 3.33 short ones; make the retrigger **overlap** the tail instead of
+restarting after a 20 ms silence, so a hold is continuous; and give `Synth.Normalise` a flag that
+skips the `tanh` stage for buffers already under peak, so a quiet noise cue stops being handed
+distortion it does not need. Level stays where it is — it already passes
+`Bellows_IsNoLouderThanAVenueCue`.
+
+*(b) The static (KTD-F).* Two provable-without-the-log steps.
+
+First, **prove the seam**. `tools/audio/mp3-seam-probe.py` reads each composed track's MPEG frame
+headers and reports sample rate, bitrate, channel mode, Xing/`Info` frame, frame count, derived
+duration, and LAME encoder-delay/padding — the measurement that produced KTD-F's table. Then extend
+`AudioTests.TheMusicLoop_JoinsItselfWithoutAStep` (`:192`), which today covers **only** the synth
+`MusicBed`, to every entry of `ComposedTracks`: decode the last *N* ms and the first *N* ms via
+`AudioStream.InstantiatePlayback`/`MixAudio` — the machinery
+`EveryComposedTrack_StaysUnderItsTruePeakCeiling` (`:742`) already uses — and assert the join has no
+step above a pinned threshold. This test is expected to be **red on `town-dusk` and
+`day-first-light` before the fix**, which is the point.
+
+Second, **fix it at the file**. Re-master each composed track so its own head and tail join
+cleanly: trim to a whole frame boundary, apply a short matched fade at the join, and re-encode
+once — or set a non-zero `loop_offset` in the `.import` past the encoder delay if the content
+allows it. Re-pin `ApprovedTrackHashes` (`AudioTests.cs:674-680`) in the same PR.
+
+Two secondary facts to record and check while in here, neither leading: the true-peak test
+approximates with **2× linear interpolation** against a −1.0 dBTP ceiling, and linear interpolation
+materially under-reads true peak (ITU-R BS.1770-4 wants ≥4× with a proper filter), so re-measure at
+4× before concluding the earlier clipping fix was complete; and everything mixes on the default
+**Master** bus with no limiter (`AudioDirector` sets no `.Bus` anywhere) while Night stacks bed +
+narrator + `DeathToll` + UI cues, so sum the worst case and say whether it clips.
+
+**Do not touch `night-still.mp3`.** It is the owner's reference (*"vigil music is good"*), it is the
+LUFS anchor every other trim targets (`AudioDirector.cs:130-141`), and it is byte-pinned. Its seam
+must be *measured* by the new test like every other track, but nothing about it is re-encoded.
+
+**Test scenarios.**
+1. Every entry of `ComposedTracks` joins its own end to its own start without a step above the
+   pinned threshold — iterated over the table, not a hand-listed id set (KTD-E).
+2. `night-still.mp3`'s bytes are unchanged; its `ApprovedTrackHashes` entry is untouched.
+3. Every composed track still loads, still reports `Loop == true`, and still carries a
+   non-positive `TrimDb` (`NoComposedTrack_EverCarriesAPositiveTrimDb`).
+4. Every re-mastered track's effective loudness (raw LUFS + `TrimDb`) stays within ±1 LU of
+   today's — the player must hear no level change from a seam fix.
+5. True peak stays under the ceiling when measured at 4× oversampling, not only 2×.
+6. A held bellows produces continuous output with no silent gap longer than the pinned threshold —
+   the direct pin for "abrasive."
+7. `Cue.Bellows` is still no louder than a venue cue (`:1326` unchanged and green).
+8. Every other `Cue`'s buffer is byte-identical to today — the `Synth.Normalise` flag must not
+   re-roll the library. `EnterMarket_IsByteUntouched` (`:1451`) is the existing precedent.
+9. Determinism: every synthesised buffer is reproducible across runs.
+
+**Verification.** The seam test red-then-green on `town-dusk` and `day-first-light`; the probe
+script's own output quoted in the PR body; the full engine suite run whole. The owner's ear is the
+final gate on the bellows — `MAKERSMARK_DEV_AUDIO_HOTKEYS` already gives him the A/B toggle.
+
+---
+
+**U11 — Make the docs true.** *(no GPU)*
+
+**Goal.** `ASSETS.md` stops describing a world that no longer exists.
+
+`Serves: overhead — booked`
+
+**Files.** modify `docs/design/ASSETS.md` — §1 image counts, the pipeline-B asset count, the
+venue/building rows (they stop being `unreproducible-legacy` once U3 lands), the interior-shell
+rows (procedural → SDXL backplate), the variation-pools paragraph (the player smith is
+deliberately *not* pooled; hero attack frames are), and the audio section (composed tracks now
+carry a seam pin). Also record, honestly, that `shop-interior` was generated, locked, and deleted
+with `ShopStage`, and that its method is what U3's interiors are built on.
+
+**Approach.** Rule 8: this lands **in** the PR that makes each claim true, never after. Every
+count is regenerated from `art-manifest.json`, never hand-tallied.
+
+**Verification.** No claim in `ASSETS.md` that `git` or the manifest contradicts.
+
+#### Sequencing, risks, and what is deliberately not here
+
+**U1 is the only prerequisite in the wave.** U1 → U2 → U3 is a chain with a human gate in the
+middle and a GPU gate on top of it. **U4, U5, U6(a)(b), U7, U8, U9, U10 are all independent of the
+GPU and of each other** and can run in parallel from day one; only U6(c)'s optional skyline and
+U11's interior/exterior claims wait on U3. U11 lands in whichever PR makes its claims true.
+
+- **Risk: the GPU is unavailable and the wave stalls.** It cannot. U2/U3 are the only GPU units and
+  eight of eleven units do not touch them. If the window never opens, this wave still ships the
+  cast, the crowd, the town, the HUD, the counter, the Watch and the audio.
+- **Risk: the U2 gate is skipped under time pressure.** That is the exact failure the gate exists
+  to prevent; U3 has no other entry, and §11.10's measurement stands — 42 candidates over 8 recipes
+  produced about two right objects, so the bottleneck is art direction, not throughput.
+- **Risk: U3 changes art already on screen, including the building the owner likes.** `market.png`
+  is re-rendered only as U2's *control*, and is replaced only if the owner picks the new one.
+- **Risk: engine tests serialize globally.** U4, U5, U6, U7, U8, U9 and U10 all touch
+  `godot/tests`. One run at a time, always the full suite, and the raw `Failed: N, Passed: N` line
+  quoted — never a wrapper's verdict (`tools/engine-test.ps1` has computed PASS from an exit code
+  twice).
+- **Risk: a new asset ships invisible.** Every unit that adds art also adds a manifest-iterating
+  guard (KTD-E) and is verified by a `FullPlaytest` run reporting zero art-miss warnings, not by a
+  green diff.
+- **Risk: U10's re-master changes how the game sounds.** Scenario 4 pins effective loudness within
+  ±1 LU, and `night-still` is not touched at all.
+
+**Not here, and deliberately:**
+- **No `Scale` knob, no `CanvasShrink` change, no `CameraZoom` change** (KTD-D, KTD-I) — both prior
+  bites are named so no unit re-proposes them.
+- **No `sim/GameSim/Contracts/` change.** KTD-H routes around the only unit that might have wanted
+  one. If a later finding needs one, it is a deny-listed micro-PR authored by the orchestrating
+  session, not smuggled into a unit here.
+- **No deny-listed file is edited.** `godot/project.godot` in particular: U7 adds no `[input]`
+  section, because every binding in this game is registered at runtime and `ShortcutMap` keeps it
+  that way. **If a later reviewer wants the bindings moved into the project's Input Map, that is an
+  owner ruling, not a unit here.**
+- **No new verb, no timer, no participation credit.** U7 is copy and wiring only; U9 stages a
+  reveal, not a decision, and only player-crafted items earn an attributed beat; skipping stays
+  legal everywhere and its cost stays named in copy.
+- **No change to `ArtVariants` itself** — it shipped and is proven. The player smith stays out of a
+  pool on purpose (he is one person); hero portraits are §11.10 U8's business, not this wave's.
+- **No music generation.** The composed tracks are re-mastered at the seam; nothing new is written.
+- **No re-baseline.** Every unit here is presentation; no sim rule, no RNG draw and no golden
+  replay moves.
+
+#### What needs an owner ruling before U3
+
+1. **The U2 gate itself** — four buildings and one interior backplate, beside the assets they would
+   replace. GPU window required.
+2. **`mine-gate` is the largest single change** (10 colours → a real building). Worth a separate
+   yes/no inside the gate.
+3. **`tavern.png`'s baked scenery.** Removing it makes the tavern match the set and also removes
+   the only hedges and roadway in the town. If the owner liked those, they should come back as
+   *props*, not as pixels baked into a building.
+4. **Whether `props-town-well` or `town2d-well` survives** — `TownLayout2D.cs:273-276` flags the two
+   wells as a genuine open question, not a design call, and U6 has to place one of them.

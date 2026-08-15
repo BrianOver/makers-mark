@@ -71,6 +71,61 @@ public class PlaytestLogTests
                 Unmount(ui);
             }
 
+            // ── the audio channel, which did not exist and cost a whole playtest round-trip ───
+            // The owner's 2026-08-14 session reported "random static" on two music beds and a
+            // bellows cue that was too loud. His log could answer neither: music appeared only as
+            // prose notes with no length or trim, and SFX produced ZERO rows all session. These
+            // assertions exist so that cannot recur silently — a refactor that drops the Audio call
+            // sites fails here instead of surfacing as a quiet gap the next time he plays.
+            var audio = Rows(path, "audio");
+            AssertThat(audio.Count)
+                .OverrideFailureMessage(
+                    "No audio rows at all after mounting the game and working the forge. The SFX and "
+                    + "music call sites in AudioDirector are the only writers; if they are gone, an "
+                    + "audio complaint is once again undiagnosable from a session log.")
+                .IsGreater(0);
+
+            // Every row carries the FIELD, always — a reader tells "nothing asked for this" apart
+            // from "this log predates the field" by the key's presence, the same contract eventTypes
+            // holds in PlaytestLog itself.
+            foreach (var row in audio)
+            {
+                AssertThat(row)
+                    .OverrideFailureMessage($"audio row has no why field at all: {row}")
+                    .Contains("\"why\":\"");
+            }
+
+            // Non-empty is asserted for MUSIC and VOICE only, and that limit is deliberate rather
+            // than convenient. Those two channels have a handful of call sites and every one of them
+            // sets a reason. The SFX channel has dozens of scattered Play(cue) callers that do not
+            // yet pass one, so asserting non-empty across all channels would be asserting a wiring
+            // job this unit has not done — a test that fails for a true reason is fine, but a test
+            // that claims coverage the code does not have is the failure mode this repo keeps
+            // hitting. Attributing the SFX call sites is follow-up work, and when it lands this
+            // filter is what should widen.
+            foreach (var row in audio.Where(r =>
+                r.Contains("\"channel\":\"music\"") || r.Contains("\"channel\":\"voice\"")))
+            {
+                AssertThat(row.Contains("\"why\":\"\""))
+                    .OverrideFailureMessage($"a music/voice row has an empty reason: {row}")
+                    .IsFalse();
+            }
+
+            // The bed rows are the ones that answer a static complaint, and only if they carry the
+            // track's LENGTH — that is what makes a loop wrap derivable from two timestamps instead
+            // of from a re-run.
+            var music = audio.Where(r => r.Contains("\"channel\":\"music\"")).ToList();
+            AssertThat(music.Count)
+                .OverrideFailureMessage($"no music rows among {audio.Count} audio rows")
+                .IsGreater(0);
+            foreach (var row in music)
+            {
+                AssertThat(row).OverrideFailureMessage($"music row carries no length: {row}")
+                    .Contains("secs=");
+                AssertThat(row).OverrideFailureMessage($"music row carries no trim: {row}")
+                    .Contains("trimDb=");
+            }
+
             // ── a completed craft (both acts) carries the grade ───────────────────────────────
             ui = MountMainUi();
             try
@@ -185,6 +240,16 @@ public class PlaytestLogTests
         System.IO.File.Exists(path)
             ? System.IO.File.ReadAllLines(path)
                 .Where(l => l.Contains("\"kind\":\"note\"") && l.Contains("\"what\":\"minigame "))
+                .ToList()
+            : new List<string>();
+
+    /// <summary>Every row of one kind. Deliberately NOT count-asserted by its callers — the same
+    /// coupling lesson <see cref="Notes"/>'s own doc records: an exact total over a shared
+    /// append-only stream goes red the next time anything else starts writing to it.</summary>
+    private static List<string> Rows(string path, string kind) =>
+        System.IO.File.Exists(path)
+            ? System.IO.File.ReadAllLines(path)
+                .Where(l => l.Contains($"\"kind\":\"{kind}\""))
                 .ToList()
             : new List<string>();
 }

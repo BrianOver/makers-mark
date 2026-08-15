@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Flavor;
@@ -177,10 +178,44 @@ public static class NarratorVoiceDirector
     /// line twice in a row for the same trigger. Advancing by one is still a pure function of inputs,
     /// so determinism holds.</para>
     /// </summary>
-    public static int ChooseLine(Trigger trigger, ulong campaignId, ulong eventId, int previousIndex = -1)
+    /// <param name="losses">How many heroes the night actually took, when the caller knows. The
+    /// default of 1 preserves every existing call site exactly.
+    ///
+    /// <para><b>Why this parameter exists.</b> The owner played on 2026-08-14, lost TWO heroes
+    /// overnight, and heard: <i>"One did not come back."</i> His note was "narrator said one didn't
+    /// come back but multiple did." That reads like an off-by-one and is not one —
+    /// <see cref="SelectForNight"/> deliberately speaks once per night no matter how much happened,
+    /// and that rule is right ("overflow is silence, never a queue"). The defect is one layer down:
+    /// four of the ten epitaphs COMMIT TO A NUMBER in their prose, and nothing stopped the selector
+    /// from picking one of those on a night that took several. Speaking once is a design choice;
+    /// speaking once and miscounting out loud is the game contradicting its own ledger, which the
+    /// player can see. So the fix is not "say more lines" — it is "never pick a line that claims a
+    /// count the night disagrees with".</para>
+    ///
+    /// <para>Purity holds: this is still a total function of its arguments with no clock, no RNG, and
+    /// no <c>Math.*</c>, and the filtered pick uses the same hash over a smaller list, so a given
+    /// (campaign, event, losses) triple always yields the same line.</para></param>
+    public static int ChooseLine(Trigger trigger, ulong campaignId, ulong eventId, int previousIndex = -1, int losses = 1)
     {
-        var count = Lines[trigger].Length;
+        var lines = Lines[trigger];
+        var count = lines.Length;
         var key = StableHash.HashString("narratorVoice/" + trigger);
+
+        // On a night that took more than one, the singular-committed lines are simply not candidates.
+        // Choosing among the survivors (rather than picking freely and rewriting the loser) keeps this
+        // a pure index selection and keeps every line's prose exactly as it was authored.
+        var eligible = losses > 1 ? EligibleForMultipleLosses(trigger, count) : null;
+        if (eligible is { Length: > 0 })
+        {
+            var pick = (int)(StableHash.Avalanche(StableHash.Mix(campaignId, eventId, key)) % (ulong)eligible.Length);
+            if (eligible[pick] == previousIndex && eligible.Length > 1)
+            {
+                pick = (pick + 1) % eligible.Length;
+            }
+
+            return eligible[pick];
+        }
+
         var index = (int)(StableHash.Avalanche(StableHash.Mix(campaignId, eventId, key)) % (ulong)count);
 
         if (index == previousIndex && count > 1)
@@ -189,6 +224,48 @@ public static class NarratorVoiceDirector
         }
 
         return index;
+    }
+
+    /// <summary>
+    /// Line indices that commit, in their own words, to exactly one loss — so they must not be spoken
+    /// over a night that took several.
+    ///
+    /// <para>Held as an explicit index set rather than inferred by scanning the prose for "one": the
+    /// strings are hand-authored English, a substring test would both miss
+    /// <c>"The gear came home. Its owner did not."</c> (singular by pronoun, no numeral) and falsely
+    /// flag <c>"Raise a quiet one."</c> (where "one" is a drink, not a hero). A guessing filter over
+    /// authored prose is the kind of cleverness that fails silently; a list fails loudly, because
+    /// <c>NarratorVoiceDirectorTests</c> pins these indices against the actual line text and goes red
+    /// the moment anyone reorders or rewrites the array.</para>
+    /// </summary>
+    private static readonly ImmutableDictionary<Trigger, ImmutableArray<int>> SingularCommitted =
+        new Dictionary<Trigger, ImmutableArray<int>>
+        {
+            // 1 "One did not come back…", 4 "The gear came home. Its owner did not.",
+            // 6 "A name moves from the roster…", 7 "…holds one less voice…"
+            [Trigger.DeathEpitaph] = [1, 4, 6, 7],
+        }.ToImmutableDictionary();
+
+    /// <summary>The indices that may be spoken over a multi-loss night, or null when this trigger has
+    /// no singular-committed lines at all (every other trigger today — a proven save or a killing blow
+    /// names no count).</summary>
+    private static int[]? EligibleForMultipleLosses(Trigger trigger, int count)
+    {
+        if (!SingularCommitted.TryGetValue(trigger, out var banned))
+        {
+            return null;
+        }
+
+        var kept = new List<int>(count);
+        for (var i = 0; i < count; i++)
+        {
+            if (!banned.Contains(i))
+            {
+                kept.Add(i);
+            }
+        }
+
+        return kept.ToArray();
     }
 
     /// <summary>The audio id for a chosen line — the contract the client's manifest and the committed
