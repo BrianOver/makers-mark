@@ -308,9 +308,23 @@ public static class SfxLibrary
                 buf[i] = Synth.Noise(i, seed: 41) * breath;
             }
 
-            Synth.LowPass(buf, 700f);
+            // 2026-08-15: the owner reported this cue AGAIN — "the bellows sound is too loud and
+            // abrasive". U8 (above) had already halved its level for the same complaint, so cutting
+            // the amplitude a second time would be repeating a fix that demonstrably did not land.
+            // The new word is the diagnosis: ABRASIVE is timbre, not level. This is raw hash noise
+            // behind a ONE-POLE filter, and one pole rolls off only 6dB/octave — at 2.8kHz, two
+            // octaves above the old 700Hz corner, the noise was still down just ~12dB. That band is
+            // exactly where the ear hears hiss. So the filter changes, not (only) the gain: a second
+            // pole doubles the slope to ~12dB/octave, and the corner drops to 320Hz, which is where
+            // moving air actually lives. What is left reads as breath instead of static.
+            Synth.LowPass(buf, 320f);
+            Synth.LowPass(buf, 320f);
+
+            // Cascaded poles cost real energy, so re-normalising is what keeps this audible at all
+            // rather than a level cut stacked on a tone cut. 0.15 -> 0.12 is a deliberate small trim
+            // on top: he said "too loud AND abrasive", and the tone change alone would answer only half.
             Synth.DeClick(buf);
-            Synth.Normalise(buf, 0.15f); // U8: 0.30 -> 0.15, venue-cue level
+            Synth.Normalise(buf, 0.12f); // U8: 0.30 -> 0.15; 2026-08-15: -> 0.12 alongside the tone fix
         }),
 
         Cue.Coin => Build(0.42f, buf =>

@@ -143,6 +143,84 @@ public class NarratorVoiceDirectorTests
         }
     }
 
+    /// <summary>
+    /// The owner's 2026-08-14 session, reproduced from its own log. Two heroes died overnight
+    /// (<c>heroesAlive</c> fell 6 to 4 in one tick) and the narrator spoke <c>death-epitaph-01</c> —
+    /// "One did not come back." His note: "narrator said one didn't come back but multiple did."
+    ///
+    /// <para>No campaign/event pair may reach a singular-committed line on a multi-loss night. Swept
+    /// rather than sampled, because the defect is a hash landing on one of four bad indices — a
+    /// single lucky pair proves nothing, and one lucky pair is exactly what a spot check would be.</para>
+    /// </summary>
+    [Fact]
+    public void AMultiLossNight_NeverSpeaksALineThatClaimsOnlyOneFell()
+    {
+        var lines = NarratorVoiceDirector.Lines[Trigger.DeathEpitaph];
+
+        for (ulong campaign = 1; campaign <= 60; campaign++)
+        {
+            for (ulong evt = 1; evt <= 60; evt++)
+            {
+                for (var losses = 2; losses <= 6; losses++)
+                {
+                    var index = NarratorVoiceDirector.ChooseLine(
+                        Trigger.DeathEpitaph, campaign, evt, previousIndex: -1, losses: losses);
+                    var spoken = lines[index];
+
+                    Assert.False(
+                        SingularCommitted.Contains(index),
+                        $"A night that took {losses} heroes chose death-epitaph-{index:D2}: "
+                        + $"\"{spoken}\" — that line commits to exactly one loss. "
+                        + $"(campaign={campaign} event={evt})");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The banned set is only as good as its agreement with the prose it claims to describe, and the
+    /// prose is a hand-authored array anyone may reorder. This pins the two together: each banned
+    /// index must actually read as singular, and — the direction that decays silently — no line
+    /// OUTSIDE the set may start claiming a count. Reword line 3 into "one more name" without
+    /// touching the index list and this goes red, instead of the epitaph quietly miscounting again.
+    /// </summary>
+    [Fact]
+    public void TheSingularLineList_StillMatchesWhatTheLinesActuallySay()
+    {
+        var lines = NarratorVoiceDirector.Lines[Trigger.DeathEpitaph];
+
+        // Phrases that commit the sentence to a single loss. Deliberately narrow: "Raise a quiet one"
+        // is a drink, not a hero, and must NOT be caught here.
+        string[] singularTells =
+        [
+            "one did not come back", "its owner did not", "a name moves", "one less voice",
+        ];
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var text = lines[i].ToLowerInvariant();
+            var readsSingular = singularTells.Any(tell => text.Contains(tell));
+
+            Assert.True(
+                readsSingular == SingularCommitted.Contains(i),
+                readsSingular
+                    ? $"death-epitaph-{i:D2} reads as a single loss (\"{lines[i]}\") but is not in the "
+                      + "banned set — a multi-loss night can still speak it."
+                    : $"death-epitaph-{i:D2} is banned from multi-loss nights but no longer reads as a "
+                      + $"single loss (\"{lines[i]}\") — the ban is now costing a usable line.");
+        }
+
+        // Vacuous-green guard: if the tells stop matching anything at all, the loop above passes over
+        // nothing and proves nothing. The set is non-empty by construction, so it must stay non-empty.
+        Assert.NotEmpty(SingularCommitted);
+    }
+
+    /// <summary>Indices of <see cref="Trigger.DeathEpitaph"/> lines whose prose names a single loss —
+    /// mirrored from the director's own private list, and pinned against the real strings by
+    /// <see cref="TheSingularLineList_StillMatchesWhatTheLinesActuallySay"/> so the two cannot drift
+    /// apart without a red build.</summary>
+    private static readonly ImmutableHashSet<int> SingularCommitted = [1, 4, 6, 7];
+
     private static string DirectorSourcePath()
     {
         var dir = new DirectoryInfo(Path.GetDirectoryName(

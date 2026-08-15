@@ -499,10 +499,14 @@ public sealed partial class AudioDirector : Node
     /// <para>A request arriving while the narrator is already speaking is DROPPED, not queued: two
     /// stacked lines are a mess, and a line that arrives late has missed the moment it was for.</para>
     /// </summary>
-    public string SpeakNarrator(NarratorVoiceDirector.Trigger trigger, ulong campaignId, ulong eventId)
+    /// <param name="losses">How many heroes this night took, so the selector cannot reach for a line
+    /// that commits to a count the ledger disagrees with (see
+    /// <see cref="NarratorVoiceDirector.ChooseLine"/>). Defaults to 1, which is every non-death
+    /// trigger's honest answer and reproduces the prior behaviour for all of them.</param>
+    public string SpeakNarrator(NarratorVoiceDirector.Trigger trigger, ulong campaignId, ulong eventId, int losses = 1)
     {
         var previous = LastNarratorLineIndexFor(trigger);
-        var index = NarratorVoiceDirector.ChooseLine(trigger, campaignId, eventId, previous);
+        var index = NarratorVoiceDirector.ChooseLine(trigger, campaignId, eventId, previous, losses);
         var audioId = NarratorVoiceDirector.AudioId(trigger, index);
         var text = NarratorVoiceDirector.Lines[trigger][index];
         var path = NarratorLines.ResourcePath(audioId);
@@ -532,6 +536,18 @@ public sealed partial class AudioDirector : Node
         var line = voiced ? $"VOICE: spoke {audioId}" : $"VOICE: text-only (no audio) {audioId}";
         GD.Print(line);
         PlaytestLog.Note(line);
+        PlaytestLog.Audio("voice", audioId, $"trigger:{trigger}", voiced ? "voiced=true" : "voiced=false");
+
+        // The row that would have settled this in one grep instead of a re-read of the selector: on
+        // 2026-08-14 the log said only "spoke death-epitaph-01" while two heroes had died, and nothing
+        // on record connected the two numbers. Now the choice states its own arithmetic — what it
+        // picked, out of how many candidates, and the loss count it was picking FOR — so a narrator
+        // that miscounts out loud disagrees with its own log line rather than only with the player.
+        PlaytestLog.Decision(
+            $"narrator-{NarratorVoiceDirector.TriggerSlug(trigger)}",
+            audioId,
+            $"losses={losses} previousIndex={previous}",
+            NarratorVoiceDirector.Lines[trigger].Length);
 
         return text;
     }
@@ -587,8 +603,16 @@ public sealed partial class AudioDirector : Node
     /// <summary>Drops the <see cref="RecentCues"/> window so a test can scope it to one interaction.</summary>
     public void ClearRecentCues() => _recentCues.Clear();
 
-    /// <summary>Fires <paramref name="cue"/> on the next pooled voice. No-op while <see cref="Muted"/>.</summary>
-    public void Play(Cue cue)
+    /// <summary>Fires <paramref name="cue"/> on the next pooled voice. No-op while <see cref="Muted"/>.
+    ///
+    /// <para><paramref name="why"/> names what asked for the sound. It is optional and empty by
+    /// default so no existing caller changes, but it is the field that makes an SFX complaint
+    /// actionable: the owner's 2026-08-14 session recorded <b>zero</b> rows for any cue, so "the
+    /// bellows is too loud and abrasive" could be neither located in time nor attributed to a gain,
+    /// a trigger, or a repeat. Every row now carries the gain it actually played at — a complaint
+    /// about loudness that cannot cite a number is how a mix gets retuned twice in the same
+    /// direction.</para></summary>
+    public void Play(Cue cue, string why = "")
     {
         LastCuePlayed = cue;
         if (_recentCues.Count >= RecentCueMemory)
@@ -600,6 +624,9 @@ public sealed partial class AudioDirector : Node
 
         if (Muted || _voices.Count == 0)
         {
+            // Still recorded: "the cue fired but nothing came out" and "the cue never fired" are
+            // different bugs, and a log that only writes audible rows cannot tell them apart.
+            PlaytestLog.Audio("sfx", cue.ToString(), why, Muted ? "suppressed=muted" : "suppressed=no-voices");
             return;
         }
 
@@ -608,6 +635,7 @@ public sealed partial class AudioDirector : Node
         voice.VolumeDb = SfxGainDb();
         voice.Stream = SfxLibrary.Get(cue);
         voice.Play();
+        PlaytestLog.Audio("sfx", cue.ToString(), why, $"gainDb={voice.VolumeDb:F1}");
     }
 
     /// <summary>
@@ -637,6 +665,12 @@ public sealed partial class AudioDirector : Node
         _loopVoice.VolumeDb = SfxGainDb();
         _loopVoice.Stream = SfxLibrary.Get(cue);
         _loopVoice.Play();
+
+        // The held loops are where a harsh cue does the most damage — a one-shot is over before you
+        // can resent it, and the bellows (the owner's actual complaint) is held for seconds at a time.
+        // Logging the START gives a duration when paired with the StopLoop row below, which is the
+        // difference between "that cue is too loud" and "that cue is too loud FOR HOW LONG IT RUNS".
+        PlaytestLog.Audio("sfx", cue.ToString(), "loop-start", $"gainDb={_loopVoice.VolumeDb:F1}");
     }
 
     /// <summary>
@@ -662,6 +696,7 @@ public sealed partial class AudioDirector : Node
         _loopReleaseStartDb = _loopVoice.VolumeDb; // fade from wherever the mixer actually has it
         _loopReleasing = true;
         _loopReleaseElapsed = 0;
+        PlaytestLog.Audio("sfx", cue.ToString(), "loop-release", $"fromDb={_loopReleaseStartDb:F1}");
     }
 
     /// <summary>
@@ -708,7 +743,7 @@ public sealed partial class AudioDirector : Node
     private void ApplyPhaseBed(DayPhase phase)
     {
         var (stream, trimDb, label) = ResolveBed(phase);
-        LogBedSwap(label, phase);
+        LogBedSwap(label, phase, stream, trimDb);
         CrossfadeTo(stream, trimDb);
     }
 
@@ -769,12 +804,38 @@ public sealed partial class AudioDirector : Node
 
     /// <summary>The one line this whole unit exists to produce: which bed is actually playing, printed
     /// so it is visible in any console AND written to the session log so "on disk but never in the
-    /// game" (the exact defect this unit fixes) is provably false in a played session's own record.</summary>
-    private static void LogBedSwap(string label, DayPhase phase)
+    /// game" (the exact defect this unit fixes) is provably false in a played session's own record.
+    ///
+    /// <para><b>Now also a structured row, because the prose line could not answer the next question.</b>
+    /// The owner's 2026-08-14 session logged exactly these <c>MUSIC:</c> notes and reported static on
+    /// two of the four beds. The notes named the tracks and stopped there — no trim, and crucially no
+    /// LENGTH, so nothing in the record said when a bed reached its end and wrapped. That is the one
+    /// timestamp a seam artefact needs. Two rows in that session bracket <c>night-still</c> at
+    /// t=325.2 and t=478.9; with the track's length also on the row, its wrap points are arithmetic
+    /// rather than a re-run. <see cref="AudioStream.GetLength"/> returns 0 for a stream that cannot
+    /// report one, which is recorded honestly rather than smoothed to a guess.</para></summary>
+    private static void LogBedSwap(string label, DayPhase phase, AudioStream stream, float trimDb)
     {
         var line = $"MUSIC: {label} for {phase}";
         GD.Print(line);
         PlaytestLog.Note(line);
+
+        var secs = 0.0;
+        try
+        {
+            secs = stream.GetLength();
+        }
+        catch
+        {
+            // A telemetry row must never be the thing that takes down playback — same fail-soft
+            // contract PlaytestLog itself holds.
+        }
+
+        PlaytestLog.Audio(
+            "music",
+            label,
+            $"phase:{phase}",
+            $"trimDb={trimDb:F1} secs={secs:F1}");
     }
 
     /// <summary>

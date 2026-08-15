@@ -325,6 +325,102 @@ public static class PlaytestLog
         _rows++;
     }
 
+    /// <summary>
+    /// One row per audio decision — the channel that did not exist, and whose absence cost a whole
+    /// playtest round-trip.
+    ///
+    /// <para><b>What went wrong.</b> The owner played on 2026-08-14 and reported "random static"
+    /// during the Night bed and again at Day 2's Dawn bed, plus a bellows cue that was "too loud and
+    /// abrasive". His session log (<c>runs/playtest/session-1786763902.jsonl</c>) is the artifact that
+    /// should have answered both, and it could answer neither. Music appeared only as free-text
+    /// <see cref="Note"/> rows — <c>"MUSIC: composed 'night-still' for Camp"</c> — which name the
+    /// track and nothing else: not its trim, not its length, not the volume it actually played at,
+    /// and above all not WHEN IT WRAPPED. Static at a loop seam is invisible to a log that never
+    /// records a loop. SFX were worse: the bellows, his single loudest complaint, produced <b>zero
+    /// rows across the entire session</b>. The one thing the log proved about audio is that we were
+    /// not logging audio.</para>
+    ///
+    /// <para><b>Why a row kind rather than more Notes.</b> A <c>Note</c> is prose, and prose is not a
+    /// query. Answering "what was audible at t=590 and how loud" needs fields — hence <c>channel</c>
+    /// (music/sfx/voice/mix), <c>id</c> (the track or cue), <c>why</c> (the trigger that asked for
+    /// it — this is the REASON half of the owner's standing directive, and it is the field a free-text
+    /// line kept dropping), and a <c>detail</c> string for the per-channel numbers that make a
+    /// complaint measurable: a bed's trim and duration, a cue's gain. Duration matters specifically
+    /// because it is what lets a reader compute the loop wraps a log cannot observe directly: a
+    /// 60s bed logged at t=325 and replaced at t=479 wrapped twice, and those two timestamps are now
+    /// derivable from the record instead of from a repro.</para>
+    ///
+    /// <para>Same fail-soft, opt-in contract as every other method here: a no-op unless
+    /// <see cref="Active"/>, and a write that throws disables the file rather than the game.</para>
+    /// </summary>
+    /// <param name="channel">Which mixer channel: <c>"music"</c>, <c>"sfx"</c>, <c>"voice"</c>, or
+    /// <c>"mix"</c> for a global change (mute, master volume, an A/B toggle).</param>
+    /// <param name="id">The track or cue that played — <c>"night-still"</c>, <c>"bellows"</c>.</param>
+    /// <param name="why">What asked for it. A phase or scene by name (<c>"phase:Camp"</c>), a player
+    /// press, a sim event. An EMPTY why on an audible row is the defect signature this field exists to
+    /// expose: a sound nothing on record asked for.</param>
+    /// <param name="detail">Free-form measured numbers for this channel — <c>"trimDb=-6.9 secs=134.1"</c>
+    /// for a bed, <c>"gainDb=-3"</c> for a cue. Kept as one string rather than a fixed schema because
+    /// the useful number differs per channel and a wrong-shaped column is worse than a readable one.</param>
+    public static void Audio(string channel, string id, string why, string detail = "")
+    {
+        if (_path is null)
+        {
+            return;
+        }
+
+        Append("{\"kind\":\"audio\",\"t\":" + ElapsedSeconds()
+            + ",\"beat\":\"" + Escape(CurrentBeat()) + "\""
+            + ",\"channel\":\"" + Escape(channel) + "\""
+            + ",\"id\":\"" + Escape(id) + "\""
+            + ",\"why\":\"" + Escape(why) + "\""
+            + ",\"detail\":\"" + Escape(detail) + "\""
+            + "}\n");
+    }
+
+    /// <summary>
+    /// One row per choice the game made on the player's behalf — what it picked, out of what, and why.
+    ///
+    /// <para><b>What went wrong.</b> Same session, a harder failure. Two heroes died overnight
+    /// (<c>heroesAlive</c> fell 6 to 4 in the Day 1 to Day 2 tick) and the narrator spoke exactly one
+    /// line: <c>"VOICE: spoke death-epitaph-01"</c>. The owner's note was "narrator said one didn't
+    /// come back but multiple did". The log records the OUTCOME of that choice and nothing about the
+    /// choice: not that two deaths were on the table, not that the narrator considered them, not why
+    /// one line covered both. A reader cannot tell a deliberate one-line-per-night rule from an
+    /// off-by-one, which is exactly the distinction the fix depends on.</para>
+    ///
+    /// <para><b>The shape.</b> <paramref name="candidates"/> is the part that makes this different
+    /// from a <see cref="Note"/>: "chose X" is an outcome, but "chose X of 2" is evidence. A narrator
+    /// picking 1 line for 2 deaths, a customer refusing 1 of 2 shelf items, a party picking floor 3
+    /// out of 5 — each becomes a row whose numbers disagree with the player's experience out loud
+    /// rather than silently.</para>
+    ///
+    /// <para>This is the general REASON channel the owner has now asked for twice ("ideally all
+    /// actions and REASON behind them is logged so you can check later"). It is adapter-side only and
+    /// records what the sim already decided — it never asks the sim a new question, so KTD2 and the
+    /// "show only what the sim decided" law are both untouched.</para>
+    /// </summary>
+    /// <param name="what">The decision's subject — <c>"narrator-epitaph"</c>, <c>"customer-verdict"</c>.</param>
+    /// <param name="chose">What was picked, by id or short description.</param>
+    /// <param name="why">The rule or state that produced it, in the game's own vocabulary.</param>
+    /// <param name="candidates">How many options were on the table, or -1 when the caller genuinely
+    /// cannot say. A count that disagrees with what the player saw is the whole point of the field.</param>
+    public static void Decision(string what, string chose, string why, int candidates = -1)
+    {
+        if (_path is null)
+        {
+            return;
+        }
+
+        Append("{\"kind\":\"decision\",\"t\":" + ElapsedSeconds()
+            + ",\"beat\":\"" + Escape(CurrentBeat()) + "\""
+            + ",\"what\":\"" + Escape(what) + "\""
+            + ",\"chose\":\"" + Escape(chose) + "\""
+            + ",\"why\":\"" + Escape(why) + "\""
+            + ",\"candidates\":" + candidates
+            + "}\n");
+    }
+
     /// <summary>A free-text marker for anything worth correlating against the ticks — a panel
     /// opening, a craft finishing, a minigame result.</summary>
     public static void Note(string what)
@@ -350,7 +446,17 @@ public static class PlaytestLog
     /// two read as one vocabulary.</param>
     /// <param name="immediate">True if the kernel already applied it (workshop verbs); false if it
     /// is merely queued for the next bell (<see cref="ActionTiming"/> decides which).</param>
-    public static void Action(string actionName, bool immediate, int day, DayPhase phase)
+    /// <param name="why">The action's own subject, in the player's vocabulary — which recipe, which
+    /// item, which hero.
+    ///
+    /// <para>Optional and empty by default, so the one choke point in <see cref="SimAdapter.Queue"/>
+    /// keeps recording every verb with no per-call-site work: an unadorned row is still strictly
+    /// better than none. But a bare type name is a weaker record than it looks. The 2026-08-14
+    /// session logged <c>"action":"CraftAction"</c> four times without once naming what was forged,
+    /// while the owner's complaint that day was that the shop and the forge do not connect — the
+    /// exact question ("what did he make, and did anyone want it?") that those four rows are shaped
+    /// to answer and cannot. Panels that know their subject pass it; the rest degrade to "".</para></param>
+    public static void Action(string actionName, bool immediate, int day, DayPhase phase, string why = "")
     {
         if (_path is null)
         {
@@ -363,6 +469,7 @@ public static class PlaytestLog
             + ",\"beat\":\"" + Escape(CurrentBeat()) + "\""
             + ",\"action\":\"" + Escape(actionName) + "\""
             + ",\"immediate\":" + (immediate ? "true" : "false")
+            + ",\"why\":\"" + Escape(why) + "\""
             + "}\n");
     }
 
