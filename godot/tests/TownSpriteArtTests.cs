@@ -50,6 +50,27 @@ public class TownSpriteArtTests
     /// not a whole-body swap.</summary>
     private const int LegsTopRow = 22;
 
+    /// <summary>Per-class first-divergent-row floor for <see cref="StepFrames_DifferOnlyBelowTheWaist"/>,
+    /// superseding the single shared <see cref="LegsTopRow"/> for the SIX BASE CLASS ids only
+    /// (2026-08-15 six-hero-cast ship wave). The base body swapped from the hand ASCII-grid render
+    /// to an SDXL composite cast (art/build/town2d-hero-&lt;class&gt;*.build.json) with its own
+    /// per-class figure crop, so the torso/leg boundary is no longer a single shared constant —
+    /// measured directly off each class's own committed pixels (each hero's own
+    /// "&lt;class&gt; - torso proof.txt" from the art job, cross-checked here against the actual
+    /// PNG bytes): Vanguard 20, Sentinel 18, Striker 23, Skirmisher 22, Mystic 24, Occultist 24.
+    /// <see cref="LegsTopRow"/> itself is UNCHANGED and still correct for
+    /// <see cref="EveryVariantBody_ObeysTheSameGaitInvariantsAsItsBase"/> — the -v2.. variant pool
+    /// bodies are still the untouched hand-drawn render, whose torso/leg boundary never moved.</summary>
+    private static readonly Dictionary<string, int> BaseClassLegsTopRow = new()
+    {
+        ["vanguard"] = 20,
+        ["sentinel"] = 18,
+        ["striker"] = 23,
+        ["skirmisher"] = 22,
+        ["mystic"] = 24,
+        ["occultist"] = 24,
+    };
+
     /// <summary>A flat placeholder box is 2-3 colours. Real shading needs an outline, at least two
     /// body tones and a highlight, so anything under this is a regression to programmer art.
     /// Measured (2026-08-04, post-COLOUR+MATERIAL pass, pre-halving): every class had 12-15
@@ -171,6 +192,7 @@ public class TownSpriteArtTests
         {
             var basis = Load($"town2d-hero-{classId}");
             var step = Load($"town2d-hero-{classId}_step");
+            var legsTopRow = BaseClassLegsTopRow[classId];
 
             var differencesBelow = 0;
             for (var y = 0; y < BodyHeight; y++)
@@ -185,8 +207,8 @@ public class TownSpriteArtTests
                     AssertThat(y)
                         .OverrideFailureMessage(
                             $"town2d-hero-{classId}_step differs from its base at ({x},{y}), above the " +
-                            $"legs row {LegsTopRow}. Only the legs/hem may move between frames.")
-                        .IsGreaterEqual(LegsTopRow);
+                            $"legs row {legsTopRow}. Only the legs/hem may move between frames.")
+                        .IsGreaterEqual(legsTopRow);
                     differencesBelow++;
                 }
             }
@@ -574,9 +596,15 @@ public class TownSpriteArtTests
 
     /// <summary>First row of the legs in the SHIPPED (post-halving) player image — measured directly
     /// against the committed pixels (the first row at which ANY of the three walk frames differs
-    /// from the base), not assumed from arithmetic: the player's authoring canvas has 3 more rows
-    /// than a hero's (68 vs 64), landing this boundary at 24, not <see cref="LegsTopRow"/>'s 22.</summary>
-    private const int PlayerLegsTopRow = 24;
+    /// from the base).
+    ///
+    /// <para><b>2026-08-15 (six-hero-cast ship wave):</b> re-measured at 23, not 24, after
+    /// <c>player_smith*</c> swapped from the hand ASCII-grid render to its own SDXL composite
+    /// (art/build/player_smith*.build.json) — a different figure crop than the hand pipeline's,
+    /// so the arithmetic-derived 24 (68-row authoring canvas vs a hero's 64) no longer applies; 23
+    /// is the smith's own torso proof measurement, cross-checked against the committed PNG bytes,
+    /// same discipline as <see cref="BaseClassLegsTopRow"/>.</para></summary>
+    private const int PlayerLegsTopRow = 23;
 
     private static readonly string[] PlayerGaitIds =
         ["player_smith", "player_smith_walk2", "player_smith_step", "player_smith_walk4"];
