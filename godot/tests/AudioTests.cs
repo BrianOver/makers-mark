@@ -647,18 +647,159 @@ public class AudioTests
                     "here instead of days later.")
                 .IsNotNull();
 
-            var mp3 = stream as AudioStreamMP3;
-            AssertThat(mp3)
-                .OverrideFailureMessage($"'{id}' loaded as {stream?.GetType().Name}, not an AudioStreamMP3.")
+            // U-audio-ogg (2026-08-16): composed tracks are OGG Vorbis now, not MP3 — see
+            // AudioDirector.LoadComposed's own doc for why (MP3's lapped transform needs a LAME
+            // gapless tag Godot's decoder never reliably honors anyway; Vorbis's granule position
+            // makes the whole failure class impossible).
+            var ogg = stream as AudioStreamOggVorbis;
+            AssertThat(ogg)
+                .OverrideFailureMessage($"'{id}' loaded as {stream?.GetType().Name}, not an AudioStreamOggVorbis.")
                 .IsNotNull();
 
-            AssertThat(mp3!.Loop)
+            AssertThat(ogg!.Loop)
                 .OverrideFailureMessage(
                     $"'{id}' ({phase}) is not marked to loop — the track would play once and the bed " +
                     "would fall silent instead of continuing, from either the .import `loop=true` " +
                     "param or the belt-and-suspenders set in AudioDirector.LoadComposed.")
                 .IsTrue();
         }
+    }
+
+    /// <summary>
+    /// U-audio-ogg (2026-08-16): the guard the owner's static complaint needed and never had. Every
+    /// test above this line asks "is the WIRED composed track any good" via
+    /// <see cref="AudioDirector.ComposedTrackIds"/> — a census over the TABLE, not the disk. That gap
+    /// is exactly how this shipped: <see cref="EveryComposedTrack_LoadsAndLoops"/> only ever checked
+    /// the four ids the table already names, so a file dropped into <c>godot/assets/audio/</c> as an
+    /// untagged MP3 (all four originally were: 48kHz Lavf-encoded with an <c>Info</c> header and no
+    /// LAME gapless tag, so every loop wrap replayed the encoder's own delay and padding — a burst of
+    /// non-signal at the seam, heard twice as "random static," see <c>tools/audio/mp3-seam-probe.py</c>
+    /// for the mechanism) had no test standing between it and the owner's ears.
+    ///
+    /// <para>This scans the REAL DIRECTORY (<c>Directory.GetFiles(..., "*.mp3", AllDirectories)</c>),
+    /// never a hand-listed filename array — the same lesson <see cref="EveryDayPhase_ResolvesToANonSilentBed"/>
+    /// already applies to phases, now applied to the asset tree itself. Every composed track today is
+    /// OGG Vorbis (converted this unit specifically because Vorbis's Ogg container carries a
+    /// sample-accurate granule position, so there is no encoder delay/padding to strip and therefore
+    /// no seam to mistime — the failure class is gone, not patched), so this test currently finds zero
+    /// MP3s and passes vacuously. That is the point: it is a regression guard for whatever gets added
+    /// NEXT, not a check with anything to catch today. If an MP3 ever does land here again, it must at
+    /// minimum carry a LAME gapless tag (enc-delay/enc-padding) or this goes red with instructions to
+    /// either add one or convert to OGG instead — exactly <c>mp3-seam-probe.py</c>'s own verdict,
+    /// ported to C# so the engine suite enforces it too, not just a script a session has to remember to
+    /// run by hand.</para>
+    ///
+    /// <para><b>Verified against the actual bytes this repo used to ship.</b> This session could not
+    /// execute the engine suite (a human owns that run — two concurrent gdUnit runs collide and both
+    /// report false greens), so <see cref="IsGaplessMp3"/> below was proven against the real retired
+    /// files via a throwaway, non-Godot C# harness run outside this project (the bytes recovered from
+    /// git history with <c>git show HEAD:godot/assets/audio/night-still.mp3</c>, read-only): it
+    /// correctly read both night-still.mp3 and day-first-light.mp3's original bytes as NOT GAPLESS
+    /// ("no LAME marker"), agreeing with <c>mp3-seam-probe.py</c>'s own verdict on the same files.</para>
+    /// </summary>
+    [TestCase]
+    public void TheComposedAudioDirectory_NeverShipsAnUngaplessMp3()
+    {
+        var assetsDir = ProjectSettings.GlobalizePath("res://assets/audio");
+        AssertThat(Directory.Exists(assetsDir))
+            .OverrideFailureMessage($"{assetsDir} does not exist — did the audio folder move?")
+            .IsTrue();
+
+        // Sanity floor so an accidentally-empty or wrong directory cannot pass this test by having
+        // nothing to scan — the same vacuous-green trap this file's other tests already guard against.
+        var oggCount = Directory.GetFiles(assetsDir, "*.ogg", SearchOption.AllDirectories).Length;
+        AssertThat(oggCount)
+            .OverrideFailureMessage(
+                $"Found only {oggCount} .ogg files under {assetsDir} — expected at least the four " +
+                "composed beds plus the narrator library. A count this low means the scan is not " +
+                "actually looking where the audio lives, which would make the .mp3 scan below meaningless too.")
+            .IsGreaterEqual(4);
+
+        var mp3Files = Directory.GetFiles(assetsDir, "*.mp3", SearchOption.AllDirectories);
+        foreach (var path in mp3Files)
+        {
+            var (gapless, reason) = IsGaplessMp3(path);
+            AssertThat(gapless)
+                .OverrideFailureMessage(
+                    $"{Path.GetFileName(path)} cannot loop gaplessly ({reason}). MP3 is a lapped " +
+                    "transform: without a LAME enc-delay/enc-padding pair, a decoder replays the " +
+                    "encoder's delay and padding on every wrap — a burst of non-signal at the seam, " +
+                    "reported twice by the owner as 'random static'. Either re-encode with LAME " +
+                    "(`lame --nogap`) or convert to OGG Vorbis, which has no delay/padding to strip in " +
+                    "the first place (see tools/audio/mp3-seam-probe.py for the same check, offline).")
+                .IsTrue();
+        }
+    }
+
+    /// <summary>
+    /// Byte-level port of <c>tools/audio/mp3-seam-probe.py</c>'s gapless check, for
+    /// <see cref="TheComposedAudioDirectory_NeverShipsAnUngaplessMp3"/> — same algorithm (skip any ID3
+    /// tag, find the first MPEG frame sync, look for a Xing/Info header, and search it for the literal
+    /// <c>LAME</c> marker that carries the enc-delay/enc-padding pair), reimplemented here so the
+    /// engine suite can enforce it without shelling out to Python. See that Python tool's own doc
+    /// comment for why the marker search is the test and not a fixed-offset read or a trust of the
+    /// encoder name string — both were tried there first and both confidently reported the wrong
+    /// answer.
+    /// </summary>
+    private static (bool Gapless, string Reason) IsGaplessMp3(string path)
+    {
+        var data = File.ReadAllBytes(path);
+
+        var offset = 0;
+        if (data.Length > 10 && data[0] == 'I' && data[1] == 'D' && data[2] == '3')
+        {
+            var size = ((data[6] & 0x7F) << 21) | ((data[7] & 0x7F) << 14) | ((data[8] & 0x7F) << 7) | (data[9] & 0x7F);
+            offset = 10 + size;
+        }
+
+        var frame = -1;
+        for (var i = offset; i < data.Length - 4; i++)
+        {
+            if (data[i] == 0xFF && (data[i + 1] & 0xE0) == 0xE0)
+            {
+                frame = i;
+                break;
+            }
+        }
+
+        if (frame < 0)
+        {
+            return (false, "no MPEG frame sync found");
+        }
+
+        var windowEnd = Math.Min(data.Length, frame + 1024);
+        var xingAt = -1;
+        foreach (var tag in new[] { "Xing", "Info" })
+        {
+            var needle = System.Text.Encoding.ASCII.GetBytes(tag);
+            var idx = new ReadOnlySpan<byte>(data, frame, windowEnd - frame).IndexOf(needle);
+            if (idx >= 0)
+            {
+                xingAt = frame + idx;
+                break;
+            }
+        }
+
+        if (xingAt < 0)
+        {
+            return (false, "no Xing/Info header found");
+        }
+
+        var searchEnd = Math.Min(data.Length, xingAt + 250);
+        var lame = System.Text.Encoding.ASCII.GetBytes("LAME");
+        var markerRel = new ReadOnlySpan<byte>(data, xingAt, searchEnd - xingAt).IndexOf(lame);
+        if (markerRel < 0)
+        {
+            return (false, "no LAME marker -> no gapless delay/padding data");
+        }
+
+        var marker = xingAt + markerRel;
+        if (marker + 24 > data.Length)
+        {
+            return (false, "LAME marker too close to EOF to read delay/padding");
+        }
+
+        return (true, "gapless: LAME delay/padding present");
     }
 
     /// <summary>
@@ -715,13 +856,25 @@ public class AudioTests
     /// — which is the point: it forces whoever changes the bytes to re-run the measurement above and
     /// deliberately vouch for the new file before updating <see cref="ApprovedTrackHashes"/>, rather
     /// than letting a bad take ship silently the way night-still-long did.</para>
+    ///
+    /// <para><b>Re-hashed again, U-audio-ogg (2026-08-16): all four converted from MP3 to OGG Vorbis.</b>
+    /// The MP3s this table's hashes used to pin were the static bug itself — 48kHz Lavf-encoded with
+    /// an <c>Info</c> header and no LAME gapless tag, so every loop wrap replayed the encoder's delay
+    /// and padding (see <c>AudioDirector.LoadComposed</c>'s own doc, and <c>tools/audio/mp3-seam-probe.py</c>).
+    /// Transcoded with ffmpeg's libvorbis (no lossless master exists, so this is MP3-to-Vorbis, not
+    /// from source) at a quality matching or exceeding each original's MP3 bitrate. Re-measured with
+    /// ffmpeg's <c>loudnorm</c> before/after the conversion: every file landed within ~0.3dB integrated
+    /// LUFS and true peak of its MP3 original (day-first-light -14.8/-14.8 LUFS, town-dusk -17.9/-18.2,
+    /// night-still -21.7/-21.7, quest-wait -14.3/-14.2), so none of <see cref="AudioDirector.ComposedTracks"/>'s
+    /// TrimDb values needed to move. The bytes are new, so the hashes below are too; the point of this
+    /// test is unchanged — any future swap-in still needs a deliberate re-measure-and-vouch.</para>
     /// </summary>
     private static readonly Dictionary<string, string> ApprovedTrackHashes = new(StringComparer.Ordinal)
     {
-        ["day-first-light"] = "749315C1653CF6651BADF74032B71D1C986A4D6B8BE68A706C37A9C8986838A3",
-        ["town-dusk"] = "54CCC2B31BEEFE56D2CF06ADA034151F1740E93C9CAB42C0690C098879206B75",
-        ["quest-wait"] = "891C6842028F358A8C2285C719B8B9A29422395FEB779E8C888EFAFCBE170367",
-        ["night-still"] = "E70FFCCDF8ABEEAE015D2FCDA0356118E1C998EA7D4ED48EF75DAA731ED5FDEB",
+        ["day-first-light"] = "3A28F57E57540B4DFA0C365C419858CD1E03A59008C5E4CF33B9D843E459A77E",
+        ["town-dusk"] = "5C7E243453F144ED9A73A97022D6AC5400D2853F40190A2887E4D8945114FC7A",
+        ["quest-wait"] = "3B3E04834FB718A4DD78B0238CB6DD994C1C46D88D016261CEED73397CBC801C",
+        ["night-still"] = "47CE23C6084FAECA63EE190A5EE024DDA01AF50F7F7124E86AD2203C4A73931C",
     };
 
     [TestCase]
@@ -729,7 +882,7 @@ public class AudioTests
     {
         foreach (var (phase, id) in AudioDirector.ComposedTrackIds)
         {
-            var path = ProjectSettings.GlobalizePath($"res://assets/audio/{id}.mp3");
+            var path = ProjectSettings.GlobalizePath($"res://assets/audio/{id}.ogg");
 
             AssertThat(File.Exists(path))
                 .OverrideFailureMessage(
