@@ -287,6 +287,22 @@ public sealed partial class ForgeMinigame : PanelContainer
                 return head + " — the billet has gone cold; work the bellows before you strike";
             }
 
+            // The 2026-08-14 defect, half fixed: at full heat the bellows are doing no work (see
+            // Advance's own clamp note) — the readout must say so, never send the player back to
+            // the one key that can no longer help. This beats AssistEngaged below: an overrun
+            // player who is ALSO pumped to full heat needs "swing", not "keep going".
+            if (HeatYPermille >= 1000)
+            {
+                return head + " — the billet is white-hot; swing now, the bellows have nothing left to give";
+            }
+
+            // Below full heat, pumping is still real work in progress — say so, not "keep going"
+            // (which names the hammer, the one thing pumping disables).
+            if (IsPumping)
+            {
+                return head + " — heat's climbing; strike the moment it catches";
+            }
+
             // Past the strike budget the count reads "23/21", which on its own looks like a failure
             // state. Name what is actually happening: the assist pays more per blow so the act
             // closes out. See AssistPerOverrunStrike.
@@ -427,8 +443,11 @@ public sealed partial class ForgeMinigame : PanelContainer
     /// <summary>Advance the run by <paramref name="delta"/> accumulated-clock seconds — public so
     /// tests drive scripted runs deterministically (no wall-clock, no engine RNG). Heat drains
     /// over time unless the bellows are held, in which case heat rises and shape drifts back
-    /// slightly (can't hammer while pumping). Samples the cursor at a fixed cadence, capped at
-    /// <see cref="MaxSamples"/> pairs.</summary>
+    /// slightly — UNLESS heat is already clamped at 1000, where the pump is doing no work and so
+    /// costs nothing. A strike stops the pump before it lands (see <see cref="ForgeStrike"/>'s own
+    /// "strike implies release" doc), so hammering and pumping are still mutually exclusive at any
+    /// instant — a strike simply ends the pump rather than being blocked by it. Samples the cursor
+    /// at a fixed cadence, capped at <see cref="MaxSamples"/> pairs.</summary>
     public void Advance(double delta)
     {
         if (Completed || WasCancelled || delta <= 0)
@@ -440,8 +459,18 @@ public sealed partial class ForgeMinigame : PanelContainer
 
         if (IsPumping)
         {
+            // Once heat clamps at 1000 the pump is doing no work — a bellows stroke that raises
+            // heat by zero must cost the shape nothing either, or the billet decays for free while
+            // fully hot (the mechanism behind the reported softlock: heat pinned at 1000 forever,
+            // shape draining to 0 with no strike able to land because ForgeStrike used to no-op
+            // while pumping). Below the clamp the pump is still doing real work, so the drift-back
+            // trade stands exactly as before.
+            if (HeatYPermille < 1000)
+            {
+                ShapeXPermille = Math.Max(0, ShapeXPermille - (int)Math.Round(BellowsDriftBackPermillePerSecond * delta));
+            }
+
             HeatYPermille = Math.Min(1000, HeatYPermille + (int)Math.Round(BellowsRaisePermillePerSecond * delta));
-            ShapeXPermille = Math.Max(0, ShapeXPermille - (int)Math.Round(BellowsDriftBackPermillePerSecond * delta));
         }
         else
         {
@@ -461,12 +490,27 @@ public sealed partial class ForgeMinigame : PanelContainer
     /// <summary>Hammer strike: advances shape-X proportional to the CURRENT heat (a cold billet
     /// barely moves) and to <see cref="RequiredStrikes"/> (fewer strikes required = bigger payoff
     /// per strike), costs heat, and advances further when it lands inside the tempo window.
-    /// No-op while pumping (mutually exclusive inputs) or once Act 1 is already done.</summary>
+    /// No-op once Act 1 is already done.
+    ///
+    /// <para><b>STRIKE IMPLIES RELEASE (owner ruling).</b> A strike arriving mid-pump stops the
+    /// bellows first, then lands exactly as any other strike — it is the release, not a second
+    /// input the pump blocks. The prior no-op-while-pumping behaviour combined with the bellows'
+    /// hard clamp at <see cref="HeatYPermille"/> == 1000 to make the hammer permanently inert once
+    /// a player latched the pump (C3's tap-to-toggle) at full heat: Brian's reported "Strike
+    /// 24/21 — Heat 1000 — pumping — the billet is yielding, keep going" was that trap, not a
+    /// rare edge case — a latched pump at full heat is exactly where a player who followed the
+    /// old readout's own advice ends up.</para>
+    /// </summary>
     public void ForgeStrike()
     {
-        if (Completed || WasCancelled || IsPumping)
+        if (Completed || WasCancelled)
         {
             return;
+        }
+
+        if (IsPumping)
+        {
+            BellowsStop();
         }
 
         var tempoError = TempoErrorPermilleNow();
@@ -510,10 +554,17 @@ public sealed partial class ForgeMinigame : PanelContainer
         RepaintUi();
     }
 
-    /// <summary>Release the bellows.</summary>
+    /// <summary>Release the bellows. The single owner of clearing <see cref="_bellowsGesture"/> back
+    /// to <see cref="BellowsGesture.Idle"/> — every stop, from whichever input, goes through here.
+    /// Before this, the mouse bellows button's <c>ButtonUp</c> called this method directly without
+    /// touching the gesture field at all, so a keyboard tap-toggle latch (<see
+    /// cref="BellowsGesture.ToggledOn"/>) could survive a mouse-driven stop: the pump was off, but
+    /// the NEXT Shift press still read as "tap while toggled on, stop it" (a no-op, since it was
+    /// already stopped) instead of starting the pump — Shift going dead until pressed twice.</summary>
     public void BellowsStop()
     {
         IsPumping = false;
+        _bellowsGesture = BellowsGesture.Idle;
         RepaintUi();
     }
 
@@ -609,8 +660,8 @@ public sealed partial class ForgeMinigame : PanelContainer
             {
                 // A tap while toggled ON stops it — "tap to stop" (never reached via OS echo: the
                 // key is not physically held while ToggledOn, so no echo event can occur here).
+                // BellowsStop() clears _bellowsGesture back to Idle itself — see its own doc.
                 BellowsStop();
-                _bellowsGesture = BellowsGesture.Idle;
                 return;
             }
 
@@ -642,7 +693,6 @@ public sealed partial class ForgeMinigame : PanelContainer
             if (_bellowsGesture != BellowsGesture.AwaitingRelease)
             {
                 BellowsStop(); // plain hold (IsProcessing() was false at press time) — stop as always
-                _bellowsGesture = BellowsGesture.Idle;
                 return;
             }
 
@@ -656,7 +706,6 @@ public sealed partial class ForgeMinigame : PanelContainer
             }
 
             BellowsStop();
-            _bellowsGesture = BellowsGesture.Idle;
             return;
         }
 
@@ -907,7 +956,7 @@ public sealed partial class ForgeMinigame : PanelContainer
 
         _readoutLabel.Text = ReadoutText;
 
-        _hammerButton.Disabled = Completed || WasCancelled || IsPumping;
+        _hammerButton.Disabled = Completed || WasCancelled;
         _bellowsButton.Disabled = Completed || WasCancelled;
     }
 

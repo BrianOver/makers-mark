@@ -745,7 +745,26 @@ function Get-PilotForgeMinigameCommand {
             if ($heat -ge $pumpUntil) {
                 return (Build-PilotCommandJson -Action 'key' -Target 'bellows' -Why ('pilot: forge heat ' + $heat + ' is hot enough, stop pumping'))
             }
-            return (Build-PilotCommandJson -Action 'key' -Target 'forge_strike' -Why ('pilot: forge still pumping, waiting out heat ' + $heat))
+            # fix/u-t1-anvil-can-be-finished: this used to send 'forge_strike' here, relying on it
+            # being a real no-op while pumping (ForgeMinigame.ForgeStrike() early-returned on
+            # IsPumping). The owner ruled STRIKE IMPLIES RELEASE and that early-return is gone -- a
+            # 'forge_strike' sent here now stops the pump and lands a strike against a lukewarm
+            # billet every single turn, which would quietly report a worse grade distribution as a
+            # "balance finding" instead of a pilot-policy bug.
+            #
+            # 'plunge' looks like Act 2's own "unbound harmless key" trick (below) but is NOT safe
+            # here: MinigameInput.RegisterActions (godot/scripts/minigames/MinigameInput.cs:45,47)
+            # binds BOTH 'forge_strike' and 'plunge' to the SAME physical key (Space -- plunge's
+            # bound set is Space/Enter/KpEnter, forge_strike's is Space alone), and Godot's
+            # IsActionPressed matches an incoming event against an action's own bound keys
+            # regardless of which action name the caller resolved the key from. Sending 'plunge'
+            # would still synthesize a physical Space press, which ForgeMinigame._GuiInput reads as
+            # 'forge_strike' -- reintroducing the exact bug this comment describes.
+            #
+            # 'confirm' (Enter/KpEnter) shares no physical key with 'forge_strike' (Space) or
+            # 'bellows' (Shift), and ForgeMinigame._GuiInput never queries the 'confirm' action at
+            # all -- a genuinely inert key here, still via the existing 'key' bridge verb.
+            return (Build-PilotCommandJson -Action 'key' -Target 'confirm' -Why ('pilot: forge still pumping, waiting out heat ' + $heat))
         }
         if ($heat -lt $strikeAbove) {
             return (Build-PilotCommandJson -Action 'key' -Target 'bellows' -Why ('pilot: forge heat ' + $heat + ' too low, start pumping'))
