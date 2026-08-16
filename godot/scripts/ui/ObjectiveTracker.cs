@@ -543,7 +543,14 @@ public sealed partial class DayTimeline : HBoxContainer
         // stack) — never theme.SetConstant("separation", "HBoxContainer", ...), which would
         // restyle every HBoxContainer in the app. Without this the 5 phase segments + the
         // waiting dot sat with zero gap and read as run-on text. Kept >= 6 (MenuSizingTests).
-        AddThemeConstantOverride("separation", 12);
+        //
+        // Trimmed from 12 (tutorial-revamp wave, §11.13): the Books Tray's eighth icon
+        // (LessonsPanel, added the same wave) ate into this row's shared ExpandFill budget —
+        // see SegmentStyle's own margin trim just below for the other half of that reclaim —
+        // and this timeline was the one left short, clipping the "Night" segment
+        // (HudBoundsTests.ObjectiveChip_TextNeverOverflowsItsOwnContainer). Still comfortably
+        // above the pinned floor.
+        AddThemeConstantOverride("separation", 8);
 
         // UI-4 (menu-sizing/cozy redesign): a connected segment strip — past dim, current a
         // filled Arcane pill with an Ember underline, future outlined — replacing the 5 loose
@@ -663,8 +670,12 @@ public sealed partial class DayTimeline : HBoxContainer
                 CornerRadiusBottomRight = GameTheme.RadiusChip,
                 CornerRadiusTopLeft = GameTheme.RadiusChip,
                 CornerRadiusTopRight = GameTheme.RadiusChip,
-                ContentMarginLeft = GameTheme.Space8,
-                ContentMarginRight = GameTheme.Space8,
+                // Trimmed from Space8 (tutorial-revamp wave, §11.13) — see this timeline's own
+                // Build()/AddThemeConstantOverride("separation", ...) doc for why: reclaiming
+                // width here (5 pills * 2 sides * 4px = 40px) is the other half of what stopped
+                // the "Night" segment clipping once the Books Tray grew an eighth icon.
+                ContentMarginLeft = GameTheme.Space4,
+                ContentMarginRight = GameTheme.Space4,
                 ContentMarginTop = GameTheme.Space4,
                 ContentMarginBottom = GameTheme.Space4,
             };
@@ -679,8 +690,12 @@ public sealed partial class DayTimeline : HBoxContainer
                 CornerRadiusBottomRight = GameTheme.RadiusChip,
                 CornerRadiusTopLeft = GameTheme.RadiusChip,
                 CornerRadiusTopRight = GameTheme.RadiusChip,
-                ContentMarginLeft = GameTheme.Space8,
-                ContentMarginRight = GameTheme.Space8,
+                // Trimmed from Space8 (tutorial-revamp wave, §11.13) — see this timeline's own
+                // Build()/AddThemeConstantOverride("separation", ...) doc for why: reclaiming
+                // width here (5 pills * 2 sides * 4px = 40px) is the other half of what stopped
+                // the "Night" segment clipping once the Books Tray grew an eighth icon.
+                ContentMarginLeft = GameTheme.Space4,
+                ContentMarginRight = GameTheme.Space4,
                 ContentMarginTop = GameTheme.Space4,
                 ContentMarginBottom = GameTheme.Space4,
             };
@@ -699,8 +714,9 @@ public sealed partial class DayTimeline : HBoxContainer
             CornerRadiusBottomRight = GameTheme.RadiusChip,
             CornerRadiusTopLeft = GameTheme.RadiusChip,
             CornerRadiusTopRight = GameTheme.RadiusChip,
-            ContentMarginLeft = GameTheme.Space8,
-            ContentMarginRight = GameTheme.Space8,
+            // Trimmed from Space8 — see the isCurrent/isPast branches' own doc above.
+            ContentMarginLeft = GameTheme.Space4,
+            ContentMarginRight = GameTheme.Space4,
             ContentMarginTop = GameTheme.Space4,
             ContentMarginBottom = GameTheme.Space4,
         };

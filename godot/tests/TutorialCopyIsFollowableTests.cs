@@ -1,7 +1,9 @@
 #if GDUNIT_TESTS
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
+using GameSim;
 using GameSim.Contracts;
 using GdUnit4;
 using Godot;
@@ -323,7 +325,28 @@ public class TutorialCopyIsFollowableTests
         // The tray's buttons have EMPTY Text — the words live only in tooltips, and HeroCards' is
         // "Renown". "Open Hero Cards from the tray" sent a stranger hunting two words that appear
         // on screen nowhere. This is the join, asserted against the live buttons.
-        var ui = MountMainUi();
+        //
+        // U3 (tutorial-revamp plan, §11.13): HeroCards/Commissions are now SurfaceUnlocks-gated —
+        // while closed, MainUi.RefreshSurfaceUnlocks swaps the GATE's own Reason onto the
+        // button's TooltipText (SurfaceUnlocks' own doc: "greyed, not hidden"), which is a
+        // DIFFERENT sentence than the substantive tooltip step 9/10's copy quotes. A fresh
+        // MountMainUi() never earned either gate (no sale, no commission), so the live buttons
+        // read their CLOSED-gate reason here, not the OpenTooltip this test means to check —
+        // the fixture no longer reaches the surface the way a player actually would by the time
+        // they read these two steps. Mounting with those two facts already true (a player can
+        // legitimately have neither by step 9/10 — SurfaceUnlocks' own "no gate may hide a
+        // tutorial anchor" pin exists for exactly that case — but CAN also already have both,
+        // and only that path lets this suite check the tooltip join without driving the
+        // tutorial's own step machine, which it deliberately never does elsewhere) earns both
+        // gates for real, matching MainUi.SurfaceEffectivelyOpen's non-override branch.
+        var earned = GameComposition.NewCampaign(9703) with
+        {
+            EventLog = ImmutableList.Create<GameEvent>(
+                new ItemSold(new ItemId(1), new HeroId(1), 10, FromPlayerShop: true) { Id = new EventId(1), Day = 1 },
+                new CommissionPosted(new HeroId(1), ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: 5, PremiumGold: 10)
+                    { Id = new EventId(2), Day = 1 }),
+        };
+        var ui = MountMainUi(new SimAdapter(earned));
         try
         {
             var state = Actionable(ui.Adapter.CurrentState);

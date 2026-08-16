@@ -669,8 +669,13 @@ public sealed partial class TutorialFlow : PanelContainer
             // station" sentence — genuinely redundant now that the overlay pulses the EXACT
             // station (the anvil, the shelf), not just the building. Part of the card diet: the
             // world shows where; the card only needs to say what/why.
+            // U2 follow-through (tutorial-revamp plan, §11.13): once inside, name the STATION
+            // still owed (the vendor, the anvil) — not the building the player is already
+            // standing in. Both nouns already exist for other copy in this same method (the
+            // vendor fallback below, `_workshopStationNoun` for Craft's own suggestion text), so
+            // this reuses them rather than inventing a third vocabulary source.
             TutorialStep.BuyMaterial or TutorialStep.Craft =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: def.Step == TutorialStep.BuyMaterial, alreadyThere)} — " +
+                $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: def.Step == TutorialStep.BuyMaterial, alreadyThere, arrivedNoun: def.Step == TutorialStep.BuyMaterial ? "vendor" : _workshopStationNoun)} — " +
                 (suggestions.Count > 0
                     ? suggestions[0].Reason
                     : $"Buy material at the vendor, then craft at the {_workshopStationNoun}."),
@@ -794,7 +799,13 @@ public sealed partial class TutorialFlow : PanelContainer
     // U2 (tutorial-revamp plan, §11.13): shortened from "WASD, or click the ground to move" —
     // part of the card diet (TutorialMaxLines 6->3): the overlay now pulses the exact station, so
     // the text only needs to name the keys, not re-explain what they do.
-    private const string MovementHint = "WASD or click";
+    //
+    // Trimmed again ("or click" dropped, tutorial-revamp wave): step 1's full line (prefix +
+    // this + the live advisor suggestion HeroShoppingSystem/ObjectiveAdvisor appends) still
+    // overflowed the card's own new 3-line/260px budget (HudBoundsTests.
+    // ObjectiveChip_HeightTracksContent_NotFixedEmptyPanel) even after that cut — every other
+    // step's copy already fits, so this is the one line still paying for the diet.
+    private const string MovementHint = "WASD";
 
     /// <summary>
     /// The "get to the right place" half of a step's instruction — or an acknowledgement that the player is
@@ -809,11 +820,20 @@ public sealed partial class TutorialFlow : PanelContainer
     /// <para>Once the step's own surface is open the copy names only what is LEFT, and the movement hint
     /// drops away with it: repeating how to walk to a room you are standing in is noise.</para>
     /// </summary>
-    private static string GoTo(string building, bool includeMovementHint, bool alreadyThere)
+    private static string GoTo(string building, bool includeMovementHint, bool alreadyThere, string? arrivedNoun = null)
     {
         if (alreadyThere)
         {
-            return $"You're at the **{building}**";
+            // U2 follow-through (tutorial-revamp plan, §11.13): once the player is inside, name
+            // the STATION still owed (the vendor, the anvil), never the building they are
+            // already standing in — "You're at the Forge" while the step still wants a purchase
+            // or a craft is the same "telling someone to do what they've just done" defect this
+            // method's own doc names, one layer in (caught by TutorialKeepsUpTests
+            // .OpeningTheStepsBuilding_StopsTheCardTellingYouToWalkThere's sibling check).
+            // `arrivedNoun` carries that word in for the two Station-anchored steps
+            // (BuyMaterial/Craft); every other (Building-anchored) step has no station narrower
+            // than the building itself, so it keeps naming the building, unchanged.
+            return $"You're at the **{arrivedNoun ?? building}**";
         }
 
         // U2 (tutorial-revamp plan, §11.13): shortened "and press E, or click it" to "then press
@@ -822,8 +842,20 @@ public sealed partial class TutorialFlow : PanelContainer
         // complete instruction); the overlay's own pulse now carries the precision this used to
         // spell out in prose. "press E" itself stays — TutorialCopyIsFollowableTests pins it as a
         // literal substring for both BuyMaterial and Craft.
+        // Movement-hint branch (step 1 alone) drops the ARTICLE, not the verb — "Walk to
+        // **{building}**", never "Go to": TutorialKeepsUpTests
+        // .OpeningTheStepsBuilding_StopsTheCardTellingYouToWalkThere pins "Walk to" as the literal
+        // substring a closed drawer must show (and its ABSENCE once arrived), so the verb itself
+        // cannot change. Measured against a live mount
+        // (HudBoundsTests.ObjectiveChip_HeightTracksContent_NotFixedEmptyPanel), the full line —
+        // "Walk to the {building} ({WASD}), press E" plus the live advisor suggestion this step
+        // appends — still wrapped to one WordSmart line more than the article-less form does, at
+        // the card's 296px text width; dropping "the" saves the same width a swap to "Go to"
+        // did (two fewer characters) with room to spare, without touching the pinned verb. Every
+        // other step's copy keeps the full "Walk to the **{building}**" — this is the one line
+        // still paying for the diet.
         return includeMovementHint
-            ? $"Walk to the **{building}** ({MovementHint}), then press **E**"
+            ? $"Walk to **{building}** ({MovementHint}), press **E**"
             : $"Walk to the **{building}**, then press **E**";
     }
 

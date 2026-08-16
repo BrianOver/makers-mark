@@ -1159,7 +1159,16 @@ public partial class MainUi : Control
                 entry.Button.TooltipText = open ? entry.OpenTooltip : gate.Reason;
             }
 
-            if (open && _openSurfaceIds.Add(gate.SurfaceId) && _surfaceUnlocksSeeded)
+            // A live rejection always wins the strip — OnPhaseCompleted's own rule (rejection >
+            // world notice > clear), set just above this call in RefreshAll's caller. This runs
+            // AFTER that decision (RefreshHud -> RefreshSurfaceUnlocks), so without this guard a
+            // surface opening on the SAME tick as a refused action (e.g. a hero's first commission
+            // posting on the very tick a doomed BuyOreAction is rejected) silently stomped the
+            // player's own refusal with good news about a board they didn't ask about — the bug
+            // RejectionUxTests/DayAdvanceHudTests caught. The gate still opens for real (the button
+            // above is un-greyed unconditionally); only this courtesy toast is skipped this tick.
+            if (open && _openSurfaceIds.Add(gate.SurfaceId) && _surfaceUnlocksSeeded
+                && Adapter.LastRejections.IsEmpty)
             {
                 ShowBellToast($"{gate.SurfaceId}'s open now — {gate.Reason}");
             }
@@ -3173,16 +3182,58 @@ public partial class MainUi : Control
     /// <summary>UI-4: a 28px icon-only Books Tray button — the full label moves to <see
     /// cref="Control.TooltipText"/> (mirrors <see cref="UiKit.DrawerHeader"/>'s icon-plus-tooltip
     /// convention for its own Close button).</summary>
-    private static Button TrayButton(string name, Texture2D? icon, string tooltip) => new()
+    private static Button TrayButton(string name, Texture2D? icon, string tooltip)
     {
-        Name = name,
-        Icon = icon,
-        TooltipText = tooltip,
-        CustomMinimumSize = new Vector2(TrayIconSize + 8, TrayIconSize + 8),
-    };
+        var button = new Button
+        {
+            Name = name,
+            Icon = icon,
+            TooltipText = tooltip,
+            CustomMinimumSize = new Vector2(TrayIconSize + 8, TrayIconSize + 8),
+        };
+
+        // Layout-probe finding (tutorial-revamp wave, §11.13): the CustomMinimumSize above is a
+        // FLOOR, not a cap (same lesson CapTrayIcon's own doc already learned for the icon
+        // texture) — the shared Button theme's own StyleBoxFlat (GameTheme.ButtonStyle) carries a
+        // 12px/side ContentMargin sized for a full TEXT button, so an icon-only 22px glyph still
+        // measured a ~46px natural width (22 + 24 of theme padding), not the ~30px this button
+        // asks for. That went unnoticed while seven of these fit the header row with room to
+        // spare; adding LessonsPanel's eighth tray icon (U2, §11.13) was the one that finally
+        // pushed the Books Tray past its slack, squeezing DayTimeline's ExpandFill share down to
+        // its bare floor and clipping the "Night" phase label
+        // (HudBoundsTests.ObjectiveChip_TextNeverOverflowsItsOwnContainer). Trimmed per-instance
+        // margins (not a shared theme edit — every other, text-carrying button keeps the roomier
+        // padding) bring the rendered size back in line with what CustomMinimumSize already
+        // promised.
+        foreach (var (slot, state) in new (string, GameTheme.ButtonVisualState)[]
+        {
+            ("normal", GameTheme.ButtonVisualState.Normal),
+            ("hover", GameTheme.ButtonVisualState.Hover),
+            ("pressed", GameTheme.ButtonVisualState.Pressed),
+            ("disabled", GameTheme.ButtonVisualState.Disabled),
+            ("focus", GameTheme.ButtonVisualState.Hover),
+        })
+        {
+            var style = GameTheme.ButtonStyle(state);
+            style.ContentMarginLeft = TrayIconMargin;
+            style.ContentMarginRight = TrayIconMargin;
+            style.ContentMarginTop = TrayIconMargin;
+            style.ContentMarginBottom = TrayIconMargin;
+            button.AddThemeStyleboxOverride(slot, style);
+        }
+
+        return button;
+    }
 
     /// <summary>Rendered edge of a Books Tray glyph, in px.</summary>
     private const int TrayIconSize = 22;
+
+    /// <summary>Per-side content margin for a tray icon button's own stylebox override (see
+    /// <see cref="TrayButton"/>'s doc) — half <see cref="GameTheme.Space8"/>, matching the tray's
+    /// own 4px chrome margins, so the button's natural size lands at <see cref="TrayIconSize"/> +
+    /// 2*this, exactly the <c>TrayIconSize + 8</c> <see cref="Control.CustomMinimumSize"/> already
+    /// declares.</summary>
+    private const float TrayIconMargin = 4f;
 
     /// <summary>
     /// Cap a tray button's glyph so the TEXTURE stops driving the button's minimum width.

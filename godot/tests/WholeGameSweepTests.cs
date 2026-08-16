@@ -270,7 +270,13 @@ public class WholeGameSweepTests
     [TestCase]
     public async Task EverySurface_CanBeDismissed_AndGivesTheGameBack()
     {
-        var ui = MountMainUi();
+        // U3 (tutorial-revamp plan, §11.13): same reason EverySurface_IsReadableAndDoesNotOverlapItself
+        // above mounts AllTraySurfacesUnlockedWorld() rather than a bare campaign — Ledger/Forecast/
+        // Commissions/Legends are now SurfaceUnlocks-gated tray books, so a fresh mount's four HUD-tray
+        // buttons are Disabled and a real click on them (ClickTray, via HumanPlayer) correctly refuses,
+        // same as it would for an actual player. This test needs every gate already earned so it can
+        // measure dismissal, not gating (SurfaceUnlocksTests owns the gate claims themselves).
+        var ui = MountMainUi(new SimAdapter(AllTraySurfacesUnlockedWorld()));
         try
         {
             var player = new HumanPlayer(ui);

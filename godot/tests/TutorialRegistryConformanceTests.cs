@@ -493,7 +493,47 @@ public class TutorialRegistryConformanceTests
     [TestCase]
     public void EveryTutorialStepAnchor_PointsAtASurfaceThatIsOpenByThatStepsMinDay()
     {
-        var ui = MountMainUi();
+        // This test's whole point (its own doc above) is a day-3 state where NEITHER HeroCards'
+        // nor Commissions' gate has fired yet, so it can prove MainUi's override — not an earned
+        // gate — is what keeps the two buttons pressable. A BARE MountMainUi() cannot reach that:
+        // GameSim.Heroes.CommissionSystem posts a commission for ANY hero with an empty/sub-par
+        // weapon/shield/armor slot or no carried Heal, with NO RNG — and every starting hero's
+        // gear is GearSet.Empty (HeroRoster's own doc), so the very first real Morning tick below
+        // (line "Morning -> Expedition") deterministically posts one, for every seed, every run.
+        // That is not the scenario this test means to build. Fully kitting (and healing-supplying)
+        // every starting hero closes every CommissionSystem.FindGapSlot gap up front so the sim
+        // never has a reason to post one, leaving the override — not luck — to carry both steps.
+        var kitted = GameComposition.NewCampaign(ScriptedSession.Seed);
+        var proofWeapon = new Item(
+            new ItemId(9800), "test-gap-proof", "Proof Blade", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(1, 0, 1), Mark: null, ImmutableList<ItemHistoryEntry>.Empty);
+        var proofShield = new Item(
+            new ItemId(9801), "test-gap-proof", "Proof Shield", ItemSlot.Shield, QualityGrade.Common,
+            new ItemStats(0, 1, 1), Mark: null, ImmutableList<ItemHistoryEntry>.Empty);
+        var proofArmor = new Item(
+            new ItemId(9802), "test-gap-proof", "Proof Armor", ItemSlot.Armor, QualityGrade.Common,
+            new ItemStats(0, 1, 1), Mark: null, ImmutableList<ItemHistoryEntry>.Empty);
+        var proofHeal = new Item(
+            new ItemId(9803), "test-gap-proof", "Proof Salve", ItemSlot.Consumable, QualityGrade.Common,
+            new ItemStats(0, 0, 0), Mark: null, ImmutableList<ItemHistoryEntry>.Empty,
+            Effect: new ConsumableEffect(ConsumableKind.Heal, 10));
+        kitted = kitted with
+        {
+            Items = kitted.Items
+                .Add(proofWeapon.Id.Value, proofWeapon)
+                .Add(proofShield.Id.Value, proofShield)
+                .Add(proofArmor.Id.Value, proofArmor)
+                .Add(proofHeal.Id.Value, proofHeal),
+            Heroes = kitted.Heroes.Values
+                .Select(h => h with
+                {
+                    Gear = new GearSet(proofWeapon.Id, proofShield.Id, proofArmor.Id),
+                    Pack = h.Pack.Add(proofHeal.Id),
+                })
+                .ToImmutableSortedDictionary(h => h.Id.Value, h => h),
+        };
+
+        var ui = MountMainUi(new SimAdapter(kitted));
         try
         {
             var craftedItemId = new ItemId(ui.Adapter.CurrentState.NextItemId);
