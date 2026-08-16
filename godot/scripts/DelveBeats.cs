@@ -41,7 +41,15 @@ public enum DelveBeatKind
 /// cref="DelveBeatKind.OreFound"/> beats (which have no monster) the string/int fields are
 /// repurposed: <see cref="MonsterKind"/> carries <see cref="OreLoot.MaterialKey"/> and
 /// <see cref="DamageDealt"/> carries <see cref="OreLoot.Quantity"/> — the renderer's job (A2/A3),
-/// not this projection's, to know which is which per <see cref="Kind"/>.
+/// not this projection's, to know which is which per <see cref="Kind"/>. The same repurposing
+/// convention applies to a <see cref="DelveBeatKind.Surface"/> beat (U-T5-8, "a rout looks exactly
+/// like a triumph"): it too has no monster, so <see cref="MonsterKind"/> instead carries the
+/// resolved expedition's own <see cref="GameSim.Contracts.ExpeditionHalt"/>, stringified
+/// (<c>nameof</c>-stable — <c>"TargetReached"</c>, <c>"GateHeld"</c>, <c>"FloorLost"</c>,
+/// <c>"TooHurt"</c>, or <c>"Recalled"</c>; <see cref="GameSim.Contracts.ExpeditionHalt.PartyWiped"/>
+/// never reaches a Surface beat at all — see the halt-is-null-or-wiped branch below) — the one fact
+/// this projection already has in hand and the renderer otherwise has no way to recover, since the
+/// beat timeline itself never says whether a party walked out proud or limped out beaten.
 /// </summary>
 public sealed record DelveBeat(
     DelveBeatKind Kind,
@@ -228,10 +236,11 @@ public static class DelveBeats
         else if (halt != ExpeditionHalt.PartyWiped)
         {
             // Every other halt (TargetReached/GateHeld/FloorLost/TooHurt/Recalled) walks the party
-            // out — the halt's specific meaning is on ExpeditionResult.Halt itself for the renderer
-            // to read directly; this projection only decides WHETHER a surfacing moment exists.
+            // out — carried onto the beat itself (MonsterKind repurposed, see the DelveBeat doc
+            // above) so DelveStage can render a triumph and a rout differently without this
+            // projection growing a Contracts-shaped opinion about which is which.
             result.Add(new DelveBeat(
-                DelveBeatKind.Surface, floors.IsEmpty ? 0 : floors[^1].Floor, Hero: null, string.Empty,
+                DelveBeatKind.Surface, floors.IsEmpty ? 0 : floors[^1].Floor, Hero: null, halt.Value.ToString(),
                 0, 0, Snapshot(), false));
         }
         // PartyWiped: nobody surfaces — the story already ended on the last SwallowedByDark beat.

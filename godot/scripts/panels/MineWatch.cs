@@ -383,6 +383,12 @@ public partial class MineWatch : SubViewportContainer
             HandleInputLocally = false,
             TransparentBg = true,
             RenderTargetUpdateMode = SubViewport.UpdateMode.Always,
+            // U-T5-8: this was the one 2D surface in the game NOT pinned to nearest-neighbour —
+            // Godot 4 defaults a fresh Viewport to bilinear, so pixel art drawn at 3-6x (see
+            // ScaleToWidth) read as a smear here while Town2D.cs, UiKit.cs, ForgeMinigame.cs and
+            // AlchemyBrewPuzzle.cs all force Nearest explicitly. Covers the whole viewport,
+            // including every DelveStage sprite mounted inside it.
+            CanvasItemDefaultTextureFilter = Viewport.DefaultCanvasItemTextureFilter.Nearest,
         };
         AddChild(_viewport);
 
@@ -963,17 +969,27 @@ public partial class MineWatch : SubViewportContainer
     /// cref="WalkFrames.BakedColor"/> false there, so the runtime tint stays. Null only when
     /// NEITHER exists for this class — the per-figure graceful degrade <see cref="RenderMarch"/>/
     /// <see cref="RenderCamp"/> already handle.</para>
+    ///
+    /// <para>U-T5-8 ("every hero of a class is the same person"): the body id is resolved through
+    /// <see cref="ArtVariants.Pick"/> on <paramref name="heroId"/> first — the SAME call
+    /// <see cref="GodotClient.Town2d.TownAssets2D.HeroBodyId"/> already makes for the town plaza —
+    /// so a hero down here wears the same one of the 5 committed bodies per class
+    /// (<see cref="ArtVariants"/>'s base + <c>-v2..-v5</c>) they wear everywhere else, deterministic
+    /// from their own id, never RNG. Every frame suffix (<c>_walk2</c>/<c>_step</c>/<c>_walk4</c>)
+    /// is appended to that SAME resolved variant id, never to the plain class id, so a figure never
+    /// mixes legs from two different bodies.</para>
     /// </summary>
-    private static WalkFrames? ResolveWalkFrames(string classId)
+    private static WalkFrames? ResolveWalkFrames(string classId, int heroId)
     {
-        var baseTex = IconRegistry.Art($"town2d-hero-{classId}");
+        var bodyId = ArtVariants.Pick($"town2d-hero-{classId}", "hero", heroId);
+        var baseTex = IconRegistry.Art(bodyId);
         if (baseTex is not null)
         {
             return new WalkFrames(
                 baseTex,
-                IconRegistry.Art($"town2d-hero-{classId}_walk2"),
-                IconRegistry.Art($"town2d-hero-{classId}_step"),
-                IconRegistry.Art($"town2d-hero-{classId}_walk4"),
+                IconRegistry.Art($"{bodyId}_walk2"),
+                IconRegistry.Art($"{bodyId}_step"),
+                IconRegistry.Art($"{bodyId}_walk4"),
                 BakedColor: true);
         }
 
@@ -988,7 +1004,7 @@ public partial class MineWatch : SubViewportContainer
             return null;
         }
 
-        if (ResolveWalkFrames(hero.ClassId) is not { } wf)
+        if (ResolveWalkFrames(hero.ClassId, heroId.Value) is not { } wf)
         {
             return null; // graceful degrade — no diffuse anywhere for this class, no sprite, no crash
         }

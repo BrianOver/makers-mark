@@ -216,6 +216,15 @@ public class DelveBeatsTests
         var beats = DelveBeats.BuildBeats(floors, ImmutableList<HeroId>.Empty, ImmutableList<OreLoot>.Empty, Heroes(), halt);
 
         AssertThat(beats[^1].Kind).IsEqual(DelveBeatKind.Surface);
+
+        // U-T5-8: the Surface beat has no monster, so MonsterKind is repurposed (same convention
+        // as OreFound) to carry the halt itself, stringified -- the one fact DelveStage needs to
+        // render a triumph and a rout differently, and otherwise has no way to recover.
+        AssertThat(beats[^1].MonsterKind)
+            .OverrideFailureMessage(
+                $"A Surface beat for halt {halt} did not carry that halt on MonsterKind -- DelveStage " +
+                "has no other way to tell a triumph from a rout.")
+            .IsEqual(halt.ToString());
     }
 
     [TestCase]

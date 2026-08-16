@@ -7,6 +7,7 @@ using GameSim.Contracts;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
+using GodotClient;
 using GodotClient.Panels;
 using GodotClient.Tools;
 using static GdUnit4.Assertions;
@@ -184,6 +185,33 @@ public class MineWatchTests
                     $"A resolvable backdrop should never trip the missing-backdrop warning. "
                     + $"Recorded: [{string.Join(" | ", EngineDistress.Messages)}]")
                 .IsFalse();
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    // ── U-T5-8 ("the watch stops being blurry, identical, and outcome-blind") ──────────────────
+
+    [TestCase]
+    public void Viewport_PinsNearestTextureFilter()
+    {
+        // MineWatch's SubViewport used to be the one 2D surface in the game NOT forced to nearest-
+        // neighbour (Town2D.cs/UiKit.cs/ForgeMinigame.cs/AlchemyBrewPuzzle.cs all pin it explicitly)
+        // -- Godot 4 defaults a fresh Viewport to bilinear, so pixel art drawn at 3-6x (ScaleToWidth)
+        // read as a blur here specifically. Pinned as a regression tripwire so it can never silently
+        // revert.
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+
+            var viewport = Find<SubViewport>(watch, "MineViewport");
+
+            AssertThat(viewport.CanvasItemDefaultTextureFilter)
+                .OverrideFailureMessage("MineWatch's SubViewport is not pinned to Nearest -- pixel art here will read as a blur.")
+                .IsEqual(Viewport.DefaultCanvasItemTextureFilter.Nearest);
         }
         finally
         {
@@ -402,6 +430,82 @@ public class MineWatchTests
         {
             watch.Free();
         }
+    }
+
+    [TestCase]
+    public void TwoHeroesOfTheSameClass_ResolveDifferentBodies()
+    {
+        // U-T5-8 ("every hero of a class is the same person"): ResolveWalkFrames now resolves the
+        // body through ArtVariants.Pick keyed on the hero's OWN id -- the same call
+        // TownAssets2D.HeroBodyId already makes for the town plaza -- so two heroes sharing a class
+        // must NOT wear the same one of the 5 committed bodies (base + -v2..-v5). The class list is
+        // read straight off the real recruit registry, never a hand-listed array, and the pair of
+        // hero ids is DISCOVERED (not assumed) by scanning ArtVariants.Pick itself, so this fails
+        // loudly rather than passing on a lucky coincidence if the committed variant art ever
+        // changes shape.
+        var (classId, heroA, heroB) = FindTwoHeroIdsWithDifferentBodies();
+
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+                .Add(heroA, Delver(heroA, "A", classId))
+                .Add(heroB, Delver(heroB, "B", classId));
+            var state = GameFactory.NewGame(9111) with { Heroes = heroes };
+            var departed = ImmutableList.Create<GameEvent>(
+                new PartyDeparted(ImmutableList.Create(new HeroId(heroA), new HeroId(heroB)), 2));
+
+            watch.Refresh(state with { Phase = DayPhase.Expedition }, departed);
+
+            var spriteA = Find<Sprite2D>(watch, "MineHero_0");
+            var spriteB = Find<Sprite2D>(watch, "MineHero_1");
+
+            AssertThat(spriteA.Texture)
+                .OverrideFailureMessage(
+                    $"Two heroes of the same class ('{classId}', ids {heroA}/{heroB}) resolved the SAME " +
+                    "body texture -- ResolveWalkFrames must call ArtVariants.Pick keyed on the hero's " +
+                    "own id, not just the class id.")
+                .IsNotEqual(spriteB.Texture);
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    /// <summary>Scans <see cref="GameSim.Classes.ClassRegistry.RecruitPool"/> (the real registry,
+    /// never a hand-listed class array) for a class + hero-id pair whose <see
+    /// cref="ArtVariants.Pick"/> resolution differs, so the test above exercises an actually-proven
+    /// pair rather than an assumed one.</summary>
+    private static (string ClassId, int HeroA, int HeroB) FindTwoHeroIdsWithDifferentBodies()
+    {
+        foreach (var classId in GameSim.Classes.ClassRegistry.RecruitPool)
+        {
+            var baseId = $"town2d-hero-{classId}";
+            string? first = null;
+            var firstId = 0;
+            for (var heroId = 1; heroId <= 64; heroId++)
+            {
+                var bodyId = ArtVariants.Pick(baseId, "hero", heroId);
+                if (first is null)
+                {
+                    first = bodyId;
+                    firstId = heroId;
+                    continue;
+                }
+
+                if (bodyId != first)
+                {
+                    return (classId, firstId, heroId);
+                }
+            }
+        }
+
+        throw new InvalidOperationException(
+            "No class in ClassRegistry.RecruitPool resolved more than one body variant across 64 " +
+            "sampled hero ids -- either the committed art variant pool collapsed to 1, or ArtVariants " +
+            "stopped varying by hero id.");
     }
 
     [TestCase]
