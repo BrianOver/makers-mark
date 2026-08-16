@@ -1,6 +1,9 @@
 using System;
+using System.Linq;
 using GameSim.Contracts;
+using GameSim.Drama;
 using GameSim.Heroes;
+using GameSim.Professions;
 using Godot;
 using GodotClient.Ui;
 
@@ -29,6 +32,15 @@ public partial class RaidForecastBoard : Control
     /// hook (mirrors <c>ProvenanceCard.ShownItemId</c>). 0 before the first call or on a quiet day.</summary>
     public int PartyCount { get; private set; }
 
+    /// <summary>
+    /// U1 (§11.11): closes the board and asks <c>MainUi</c> to open the Forge — the SAME bare
+    /// event shape <see cref="CampPanel.OpenForgeRequested"/> already uses (CampPanel.cs:85,
+    /// 371-375), reused rather than reinvented. No payload: which recipe answers a gap only ever
+    /// gates whether a "Forge one" button is shown at all (never a dead click) — it never drives
+    /// navigation, so there is nothing to carry.
+    /// </summary>
+    public event Action? ForgeOneRequested;
+
     public override void _Ready() => EnsureBuilt();
 
     /// <summary>
@@ -44,6 +56,8 @@ public partial class RaidForecastBoard : Control
         PartyCount = parties.Count;
         Clear(_body!);
         _title!.Text = $"Tomorrow's Raids — Day {state.Day + 1}";
+
+        RenderCounterSection(state);
 
         if (parties.IsEmpty)
         {
@@ -66,6 +80,58 @@ public partial class RaidForecastBoard : Control
     /// cref="ModalEscape"/>). Before this it only closed via its own ✕ button (the whole-game
     /// sweep's own recorded finding).</summary>
     public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, Close);
+
+    /// <summary>
+    /// U1 (§11.11, "tomorrow's asks, in front of tonight's shelf"): "TOMORROW AT THE COUNTER" —
+    /// the SAME projection <see cref="Counter.CounterHandlers"/>'s ApplyOpen will build tomorrow
+    /// (<see cref="CounterForecast.Queue"/>), surfaced here instead of thrown away at day-end like
+    /// every other night's forecast used to be. Closes *"how does the player KNOW to make a
+    /// shield?"* Every entry reuses <see cref="CustomerVoice.WantLine"/> verbatim — the exact line
+    /// the counter itself will speak tomorrow (continuity of reference, §11.7.4) — and a hero whose
+    /// want names a slot gets a one-click "Forge one" button IFF a selected profession can actually
+    /// answer it (<see cref="HasAnsweringRecipe"/>): never a dead click (U1 test 6).
+    /// </summary>
+    private void RenderCounterSection(GameState state)
+    {
+        AddHeader(_body!, "TOMORROW AT THE COUNTER");
+
+        var queue = CounterForecast.Queue(state);
+        if (queue.IsEmpty)
+        {
+            AddLabel(_body!, "  No one is left to serve — the counter would open to an empty room.");
+            return;
+        }
+
+        foreach (var ask in queue)
+        {
+            if (!state.Heroes.TryGetValue(ask.Hero.Value, out var hero))
+            {
+                continue;
+            }
+
+            AddLabel(_body!, $"  {hero.Name}: {CustomerVoice.WantLine(hero, state)}");
+
+            if (ask.WantSlot is { } wantSlot && HasAnsweringRecipe(state, wantSlot))
+            {
+                AddButton(_body!, $"ForgeOne_{ask.Hero.Value}", "Forge one", () =>
+                {
+                    Close();
+                    ForgeOneRequested?.Invoke();
+                });
+            }
+        }
+    }
+
+    /// <summary>U1: the Forge-one button's sole gate — whether a profession the player has
+    /// actually selected (<see cref="PlayerState.SelectedProfessions"/>) carries at least one
+    /// recipe for <paramref name="slot"/>. Mirrors <see cref="ForgePanel"/>'s own profession/recipe
+    /// iteration (selected professions → <see cref="ProfessionRegistry.TryGet"/> →
+    /// <c>profession.Recipes.Values</c>) rather than inventing a second lookup — this only needs
+    /// existence, not the ForgePanel's own tier/material ordering.</summary>
+    private static bool HasAnsweringRecipe(GameState state, ItemSlot slot) =>
+        state.Player.SelectedProfessions.Any(professionId =>
+            ProfessionRegistry.TryGet(professionId, out var profession)
+            && profession!.Recipes.Values.Any(r => r.Slot == slot));
 
     private void RenderParty(ForecastParty party, int ordinal)
     {
