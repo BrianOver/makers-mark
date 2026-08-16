@@ -137,3 +137,34 @@ Do not re-litigate these:
 - Tavern scenery returns as separate props.
 - Keep the well that matches the new town (done).
 - **Buildings get bigger; characters do not get smaller.**
+
+---
+
+## Found while fixing the above — booked, not yet done
+
+These were discovered by the work on this register rather than reported by the owner.
+They go here for the same reason everything else does: a finding that lives only in a
+session transcript is a finding that is already lost.
+
+| # | Item | Evidence | Status |
+|---|---|---|---|
+| 168 | The AI pilot's Act 2 "wait" turn may be inert for the same reason Act 1's was. `tools/agent-playtest/pilot.ps1:761-765` sends `forge_strike` as a deliberate no-op to wait out a timer; `forge_strike` and `plunge` **share physical Space** (`MinigameInput.cs:45,47`), so the trick that worked in Act 1 by accident may be pressing a live key in Act 2. Act 1's version was corrected during #155 by switching to `confirm` (Enter), which shares no key with either. | found while fixing #155 | open |
+| 169 | `HeroReturnCeremonyTests.StagedReturn_AlreadyPastTheShowFloor_EmergesWithNoExtraDelay` waits on a **frame budget** (`HumanPlayer.WaitUntil(condition, maxFrames)`) for an animation timed in **seconds**. CI runs faster per frame with rendering disabled, so a slow runner exhausts the budget before the wall-clock stagger completes and the test fails without a regression. Observed failing on a docs-only PR, passing elsewhere on the same base. Waits must be on the condition, never on a frame count. | found while diagnosing the merge queue | open |
+
+## Two structural facts this session established
+
+Neither is a defect; both change how the next session should plan.
+
+**Subagents cannot see the client.** The engine suite serializes globally, so workers are
+banned from running it. Any *new* engine test a worker writes is therefore first executed
+by CI, not by its author. Three PRs in this program failed on exactly that and all three
+were real. This is the expected tail on any UI wave, not a sign of a bad worker — but it
+means a wave's schedule must budget for one orchestrator-side repair pass per UI unit,
+and worker prompts should say so plainly so the report distinguishes "verified" from
+"could not verify here."
+
+**The merge queue does not drain itself.** Auto-merge armed on every PR is not sufficient:
+the ruleset requires branch-up-to-date and GitHub does not auto-update, so a batch of
+green PRs sits BLOCKED indefinitely until someone pushes branch updates. On a night with
+ten PRs this is a material throughput tax, and it is what the CI sharding change (owner-
+authored, `.github/` is deny-listed) would relieve.
