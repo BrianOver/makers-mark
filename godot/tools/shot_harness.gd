@@ -237,6 +237,9 @@ func _process(_delta: float) -> bool:
 			# Phase B Renown panel — drawer-hosted, opened by id.
 			if _ui.has_method("OpenPanel"):
 				_ui.call("OpenPanel", "HeroCards")
+		elif _state == "Lessons":
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Lessons")
 		elif _state == "ForgePanel":
 			# U1 (painted-interiors plan): "Forge" now walks the player INTO the room instead
 			# of opening the drawer directly (R1). This state bypasses the room and opens the

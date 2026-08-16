@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using GameSim;
 using GameSim.Advisor;
 using GameSim.Contracts;
+using GameSim.Drama;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
@@ -660,6 +661,78 @@ public class ShopPanelTests
             Items = baseState.Items.Add(item.Id.Value, item),
             Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(item.Id, 10)) },
         };
+    }
+
+    // ── U1 (§11.11, "tomorrow's asks, in front of tonight's shelf"): the persistent shelf header ──
+
+    /// <summary>Test scenario 7: proves no drift the structural way — the header names whichever
+    /// hero <see cref="CounterForecast.Queue"/> projects to the front, then a REAL
+    /// <see cref="OpenCounterAction"/> tick is driven and its <see cref="CustomerApproached"/> event
+    /// is checked against the SAME hero. Both reads go through the identical projection
+    /// (<c>ShopPanel.BuildCounterHeaderSection</c> / <c>CounterHandlers.ApplyOpen</c>), so this can
+    /// only fail if that extraction itself regresses.</summary>
+    [TestCase]
+    public void CounterHeader_NamesTheSameHeroTheCounterThenSeats()
+    {
+        var ui = MountMainUi(new SimAdapter(GapWorldForCounterHeader(9501)));
+        try
+        {
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+            ui.OpenPanel("Shop");
+
+            var expectedFirst = CounterForecast.Queue(ui.Adapter.CurrentState)[0];
+            var expectedHero = ui.Adapter.CurrentState.Heroes[expectedFirst.Hero.Value];
+
+            var header = Find<Label>(ui.Shop, "CounterHeader");
+            AssertThat(RenderedText(header)).Contains("First at the counter");
+            AssertThat(RenderedText(header)).Contains(expectedHero.Name);
+
+            // Prove it structurally: actually opening the counter must seat the SAME hero.
+            ui.Adapter.Queue(new OpenCounterAction());
+            ui.Adapter.AdvancePhase();
+            var approached = ui.Adapter.LastEvents.OfType<CustomerApproached>().Single();
+            AssertThat(approached.Hero).IsEqual(expectedFirst.Hero);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Test scenario 8: mirrors <c>ActionLegality</c>'s own <c>OpenCounterAction</c> gate
+    /// (sim/GameSim/Advisor/ActionLegality.cs:67, <c>phase == DayPhase.Morning</c>) rather than
+    /// asserting an independently invented Morning-only rule.</summary>
+    [TestCase]
+    public void CounterHeader_IsAbsentOutsideMorning()
+    {
+        var ui = MountMainUi(new SimAdapter(GapWorldForCounterHeader(9502)));
+        try
+        {
+            ui.OpenPanel("Shop");
+            AssertThat(Find<Label>(ui.Shop, "CounterHeader")).IsNotNull(); // sanity: present at Morning
+
+            AdvanceToPhase(ui, DayPhase.Evening);
+            ui.OpenPanel("Shop"); // RefreshAll only refreshes the open drawer — re-open post-tick
+
+            AssertThat(ui.Shop.FindChild("CounterHeader", recursive: true, owned: false))
+                .OverrideFailureMessage("CounterHeader must be ABSENT outside Morning, not merely stale.")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>A fresh campaign with its lowest-HeroId hero's gear cleared — every starting hero
+    /// shares the Stranger band, so ties break on HeroId ascending (<see cref="CounterForecast.Queue"/>'s
+    /// own comparator), guaranteeing this hero heads the projected queue.</summary>
+    private static GameState GapWorldForCounterHeader(ulong seed)
+    {
+        var baseState = GameComposition.NewCampaign(seed);
+        var hero = baseState.Heroes.Values.First();
+        var bare = hero with { Gear = GearSet.Empty };
+        return baseState with { Heroes = baseState.Heroes.SetItem(bare.Id.Value, bare) };
     }
 
     /// <summary>Recursive descendant count by <see cref="Node.Name"/> — <see

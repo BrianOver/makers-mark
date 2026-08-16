@@ -131,7 +131,11 @@ public class LegendsWallTests
     [TestCase]
     public void HudButton_OpensTheWall()
     {
-        var ui = MountMainUi();
+        // U3 (tutorial-revamp plan, §11.13): Legends is now a gated tray book (opens on the first
+        // AttributionBeatEvent) — mounted against PopulatedWorld (which already carries three) so
+        // this stays a test of the WIRING (does the button open the wall), not of the gate itself
+        // (SurfaceUnlocksTests owns that).
+        var ui = MountMainUi(new SimAdapter(PopulatedWorld()));
         try
         {
             AssertThat(ui.Legends.Visible).IsFalse();

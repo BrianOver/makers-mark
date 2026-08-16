@@ -1,4 +1,7 @@
 #if GDUNIT_TESTS
+using System.Collections.Immutable;
+using GameSim.Contracts;
+using GameSim.Kernel;
 using GdUnit4;
 using Godot;
 using static GdUnit4.Assertions;
@@ -36,7 +39,11 @@ public class PhaseDSurfacesTests
     [TestCase]
     public void ProgressionPanel_Opens_AndRendersAllFiveLadders_WithNextRungs()
     {
-        var ui = MountMainUi();
+        // U3 (tutorial-revamp plan, §11.13): Progress is now a gated tray book (opens on the first
+        // BountyPaid) — mounted with one already paid so this stays a test of the panel's OWN
+        // content, not of the gate itself (SurfaceUnlocksTests owns that).
+        var paidBounty = new Bounty(new BountyId(1), TargetFloor: 1, RewardGold: 10, PostedOnDay: 1, AcceptedBy: null, Paid: true);
+        var ui = MountMainUi(new SimAdapter(GameFactory.NewGame(2026) with { Bounties = ImmutableList.Create(paidBounty) }));
         try
         {
             Press(ui, "OpenProgress");

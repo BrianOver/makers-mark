@@ -225,8 +225,19 @@ public class HeroPanelTests
         var ui = MountMainUi(new SimAdapter(SixHeroesWithStagedShelfState()));
         try
         {
-            ui.OpenPanel("HeroCards"); // U21: RefreshAll only refreshes the currently open drawer
+            // U3 (tutorial-revamp plan, §11.13): HeroCards is now SurfaceUnlocks-gated (opens on
+            // the sim's first player-shelf sale) — MainUi.OpenPanel's own defense-in-depth guard
+            // (added the same wave, for any caller reaching the router without going through the
+            // tray button's Disabled state) refuses a still-gated open with a bell toast instead
+            // of opening the drawer. Opening BEFORE the tick below — while nobody has bought
+            // anything yet — used to be harmless staging order; now it is a refused no-op, so the
+            // drawer never actually opens and never gets built with today's decisions. Tick FIRST
+            // (this fixture's 6 sales earn the gate for real, the same way a player would), then
+            // open — HeroPanel.DecisionsToday reads the durable GameState.EventLog filtered by
+            // Day, not the tick's ephemeral LastEvents, so opening after the tick sees the exact
+            // same six decisions either way.
             ui.Adapter.AdvancePhase(); // Morning: all six heroes shop the staged shelf, in order
+            ui.OpenPanel("HeroCards");
 
             // Sanity: the staging actually produced six real player-shelf sales, not a no-op.
             var sold = ui.Adapter.LastEvents.OfType<ItemSold>().Count(e => e.FromPlayerShop);

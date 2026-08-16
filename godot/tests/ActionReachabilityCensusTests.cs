@@ -79,7 +79,9 @@ public class ActionReachabilityCensusTests
         [typeof(StockAction)] = "ShopPanel.PlaceOnShelf (ShopPanel.cs:508, queues :516) — Stock button and shelf-slot drop share this one funnel.",
         [typeof(SetPriceAction)] = "ShopPanel.Reprice (ShopPanel.cs:558, queues :566).",
         [typeof(UnstockAction)] = "ShopPanel.RemoveFromShelf (ShopPanel.cs:531, queues :539).",
-        [typeof(BuyOreAction)] = "LedgerModal's per-offer \"Buy\" button, built in the ore-offer card loop (LedgerModal.cs:239, queues :241).",
+        [typeof(BuyOreAction)] =
+            "LedgerModal's per-offer \"Buy\" button, built in the ore-offer card loop (LedgerModal.cs:239, queues :241) " +
+            "— Ledger tray book, gated: opens on first PartyDeparted (SurfaceUnlocks.Gates).",
         [typeof(PostBountyAction)] = "BountyPanel.OnPostPressed (BountyPanel.cs:203, queues :212) — Post button, Enter, and the poster-drop all funnel here.",
         [typeof(SendSupplyAction)] = "CampPanel.OnSend (CampPanel.cs:268, queues :287).",
         [typeof(RecallPartyAction)] = "CampPanel's Recall/\"Signal Retreat!\" button lambda (CampPanel.cs:261, queues :263).",
@@ -91,14 +93,24 @@ public class ActionReachabilityCensusTests
             "BuildHaggleControls' Hold Firm lambda (:426, queues :429) and Counter lambda " +
             "(:466, queues :478) for the other two responses.",
         [typeof(CloseCounterAction)] = "CounterPanel.BuildOpenSession's \"Close Counter\" button lambda (CounterPanel.cs:103, queues :105).",
-        [typeof(AcceptCommissionAction)] = "CommissionBoard's per-commission \"Accept\" button lambda (CommissionBoard.cs:94, queues :96).",
-        [typeof(DeclineCommissionAction)] = "CommissionBoard's per-commission \"Decline\" button lambda (CommissionBoard.cs:100, queues :101).",
-        [typeof(HonorMemorialAction)] = "LegendsWall's per-memorial \"Honor\" button lambda (LegendsWall.cs:128, queues :129).",
-        [typeof(ReforgeHeirloomAction)] = "LegendsWall.RenderReforgeOptions' \"Reforge\" button lambda (LegendsWall.cs:202, queues :203).",
+        [typeof(AcceptCommissionAction)] =
+            "CommissionBoard's per-commission \"Accept\" button lambda (CommissionBoard.cs:94, queues :96) " +
+            "— Commissions tray book, gated: opens on the sim's first CommissionPosted (SurfaceUnlocks.Gates).",
+        [typeof(DeclineCommissionAction)] =
+            "CommissionBoard's per-commission \"Decline\" button lambda (CommissionBoard.cs:100, queues :101) " +
+            "— Commissions tray book, gated: opens on the sim's first CommissionPosted (SurfaceUnlocks.Gates).",
+        [typeof(HonorMemorialAction)] =
+            "LegendsWall's per-memorial \"Honor\" button lambda (LegendsWall.cs:128, queues :129) " +
+            "— Legends tray book, gated: opens on the first AttributionBeatEvent (SurfaceUnlocks.Gates).",
+        [typeof(ReforgeHeirloomAction)] =
+            "LegendsWall.RenderReforgeOptions' \"Reforge\" button lambda (LegendsWall.cs:202, queues :203) " +
+            "— Legends tray book, gated: opens on the first AttributionBeatEvent (SurfaceUnlocks.Gates).",
         [typeof(SetProfessionsAction)] =
-            "ProgressionPanel.OnConfirmProfessionsPressed (ProgressionPanel.cs:247, queues :254), " +
-            "new this wave; also MainUi.OnSecondProfessionPicked (MainUi.cs:2888, queues :2896) " +
-            "for the tutorial's earn-2nd-profession picker.",
+            "ProgressionPanel.OnConfirmProfessionsPressed (ProgressionPanel.cs:247, queues :254) " +
+            "— Progress tray book, gated: opens on the first BountyPaid (SurfaceUnlocks.Gates); " +
+            "also MainUi.OnSecondProfessionPicked (MainUi.cs:2888, queues :2896) for the tutorial's " +
+            "earn-2nd-profession picker (its own affordance, ungated — visible once " +
+            "TutorialFlow.SecondProfessionMilestoneReached, the identical fact, is true).",
     };
 
     /// <summary>

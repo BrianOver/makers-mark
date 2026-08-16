@@ -350,6 +350,14 @@ public partial class Town2D : Control
     /// single-source rule as <see cref="WorkshopNametag"/>.</summary>
     public string WorkshopStationNoun => WorkshopVocab.StationNounFor(_workshopProfessionOrder);
 
+    /// <summary>U2 (tutorial-revamp plan, §11.13): the workshop's current materials-station id
+    /// (the tutorial's Station-anchor target for BuyMaterial) — same single-source rule as
+    /// <see cref="WorkshopNametag"/>, just returning a lookup id instead of display text.</summary>
+    public string WorkshopMaterialsStationId => WorkshopVocab.MaterialsStationIdFor(_workshopProfessionOrder);
+
+    /// <summary>U2: the workshop's current crafting-station id (Craft's own Station target).</summary>
+    public string WorkshopCraftStationId => WorkshopVocab.CraftStationIdFor(_workshopProfessionOrder);
+
     /// <summary>U6 (world-and-interiors plan): every spawned villager, so <see cref="_Process"/>
     /// can feed each one the current <see cref="DayPhase"/> (mirrors <see
     /// cref="_ambientLife"/>'s own <c>SetPhase</c> cadence) — kept alongside <see
@@ -627,6 +635,18 @@ public partial class Town2D : Control
         _interiorRooms.TryGetValue(venueKey, out var room)
             ? room
             : throw new InvalidOperationException($"No interior room for venue '{venueKey}' in Town2D.");
+
+    /// <summary>U2 (tutorial-revamp plan, §11.13): look up a mounted station inside <paramref
+    /// name="venueKey"/>'s interior room by its own stable <see
+    /// cref="InteriorLayout2D.StationSpec.Id"/> — the Station-anchor twin of <see
+    /// cref="FindBuilding"/>/<see cref="FindInteriorRoom"/> (same throw-on-unknown contract: every
+    /// real caller, including <see cref="TutorialOverlay"/>, expects the room and its stations to
+    /// already exist). A station IS a <see cref="Building2D"/> (<see cref="InteriorRoom2D.Stations"/>),
+    /// so the SAME <see cref="Building2D.SetTutorialPulsing"/>/<see cref="Building2D.TickTutorialPulse"/>
+    /// mechanism the Building anchor already uses works here unchanged.</summary>
+    public Building2D FindStation(string venueKey, string stationId) =>
+        FindInteriorRoom(venueKey).Stations.FirstOrDefault(s => s.Key == stationId)
+        ?? throw new InvalidOperationException($"No station '{stationId}' in venue '{venueKey}' room.");
 
     /// <summary>U6: test/inspection surface for the tavern's patron seating — null only if <see
     /// cref="WireTavernLife"/> found no tavern row/table stations (never expected on a real

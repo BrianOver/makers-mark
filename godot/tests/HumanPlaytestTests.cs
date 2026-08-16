@@ -41,7 +41,7 @@ public class HumanPlaytestTests
     /// <summary>The drawer panels a player can open from the HUD. Kept as data so a new panel is one
     /// line here rather than a new test nobody remembers to write.</summary>
     private static readonly string[] Panels =
-        ["Forge", "Shop", "Heroes", "Tavern", "Depths", "Bounties", "Demand", "HeroCards", "Progress"];
+        ["Forge", "Shop", "Heroes", "Tavern", "Depths", "Bounties", "Demand", "HeroCards", "Progress", "Lessons"];
 
     /// <summary>How far down each panel the sweep pages. Bounded so a runaway scroller cannot turn this
     /// suite into a multi-minute job; the loop exits early as soon as a panel stops revealing new buttons

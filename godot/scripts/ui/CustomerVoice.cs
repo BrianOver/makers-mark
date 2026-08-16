@@ -1,5 +1,5 @@
-using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Drama;
 using GameSim.Heroes;
 
 namespace GodotClient.Ui;
@@ -24,44 +24,29 @@ namespace GodotClient.Ui;
 public static class CustomerVoice
 {
     /// <summary>
-    /// What the active customer opens with, read BEFORE the player presents anything. Names the
-    /// empty gear slot the hero's own gap query (<see cref="RaidForecast.MissingItemSlots"/>, fixed
-    /// order Weapon/Shield/Armor) reports, alongside their own gold on hand — the real budget, never
-    /// a rounded or invented figure. A hero with no gaps (a full loadout) instead names whichever
-    /// CURRENT shelf item would be a genuine upgrade for them — found by asking
-    /// <see cref="ShoppingAi.EvaluateItem"/> about every shelf entry and keeping the largest
-    /// gear-score gain among Buy verdicts, so a full-loadout hero's stated want can never name
-    /// something the sim would actually refuse if presented. When neither signal fires (nothing on
-    /// the shelf would help them), the line degrades to a plain "browsing" statement rather than
-    /// inventing a want the sim has no basis for.
+    /// What the active customer opens with, read BEFORE the player presents anything. U1 (§11.11):
+    /// the actual slot pick is <see cref="CounterForecast.Wants"/>, extracted so this line can never
+    /// name a want the counter forecast board did not ALSO project the night before — same slot,
+    /// same source, two callers. Names the empty gear slot the hero's own gap query
+    /// (<see cref="RaidForecast.MissingItemSlots"/>, fixed order Weapon/Shield/Armor) reports,
+    /// alongside their own gold on hand — the real budget, never a rounded or invented figure. A
+    /// hero with no gaps (a full loadout) instead names whichever CURRENT shelf item
+    /// <see cref="CounterForecast.Wants"/> found to be a genuine upgrade, so a full-loadout hero's
+    /// stated want can never name something the sim would actually refuse if presented. When
+    /// neither signal fires (nothing on the shelf would help them), the line degrades to a plain
+    /// "browsing" statement rather than inventing a want the sim has no basis for.
     /// </summary>
     public static string WantLine(Hero hero, GameState state)
     {
         var missing = RaidForecast.MissingItemSlots(hero.Gear);
+        var wantSlot = CounterForecast.Wants(hero, state);
+
         if (missing.Count > 0)
         {
-            return $"Looking for {SlotArticle(missing[0])} — about {hero.Gold}g on me.";
+            return $"Looking for {SlotArticle(wantSlot!.Value)} — about {hero.Gold}g on me.";
         }
 
-        var heroClass = ClassRegistry.Require(hero.ClassId);
-        ItemSlot? bestSlot = null;
-        var bestGain = 0;
-        foreach (var entry in state.Player.Shelf)
-        {
-            if (!state.Items.TryGetValue(entry.Item.Value, out var item))
-            {
-                continue;
-            }
-
-            var verdict = ShoppingAi.EvaluateItem(hero, heroClass, item, entry.Price, state.Items);
-            if (verdict.Kind == ShoppingVerdictKind.Buy && verdict.GearScoreGain > bestGain)
-            {
-                bestGain = verdict.GearScoreGain;
-                bestSlot = item.Slot;
-            }
-        }
-
-        return bestSlot is { } slot
+        return wantSlot is { } slot
             ? $"Could use a better {SlotNoun(slot)} if the price is fair — {hero.Gold}g on me."
             : $"Just browsing — {hero.Gold}g on me, if something catches my eye.";
     }

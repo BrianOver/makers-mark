@@ -1,8 +1,10 @@
 #if GDUNIT_TESTS
 using System;
+using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Professions;
 using GdUnit4;
 using Godot;
 using GodotClient.Town2d;
@@ -119,6 +121,86 @@ public class TutorialRegistryConformanceTests
         }
     }
 
+    /// <summary>U2 (tutorial-revamp plan, §11.13): BuyMaterial/Craft's static registry default
+    /// (blacksmith's "shelf"/"anvil") must resolve against a real mounted room — the conformance
+    /// half of "never a silent fallback" for the new Station anchor kind.</summary>
+    [TestCase]
+    public void Registry_EveryStationAnchor_ResolvesAgainstARealRoomStation()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            foreach (var def in TutorialFlow.Registry.Where(d => d.Anchor.Kind == TutorialAnchorKind.Station))
+            {
+                Building2D? station = null;
+                Exception? thrown = null;
+                try
+                {
+                    station = ui.Town.FindStation(def.Anchor.Key!, def.Anchor.StationId!);
+                }
+                catch (Exception ex)
+                {
+                    thrown = ex;
+                }
+
+                AssertThat(thrown)
+                    .OverrideFailureMessage(
+                        $"{def.Step}'s Station anchor ({def.Anchor.Key}, {def.Anchor.StationId}) does not resolve " +
+                        $"against a real room station — this step would point at nothing: {thrown}")
+                    .IsNull();
+                AssertThat(station).IsNotNull();
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>U2: <see cref="TutorialFlow.CurrentAnchor"/>'s dynamic per-profession substitution
+    /// (<see cref="WorkshopVocab.MaterialsStationIdFor"/>/<see
+    /// cref="WorkshopVocab.CraftStationIdFor"/>) must resolve against the REAL room for every
+    /// starting profession, not just blacksmith's own static default — an alchemist/tanner/engineer
+    /// start must never point BuyMaterial/Craft at blacksmith's "shelf"/"anvil" by mistake.</summary>
+    [TestCase]
+    public void CurrentAnchor_ResolvesTheLiveProfessionsOwnStation_ForEveryStartingProfession()
+    {
+        foreach (var professionId in new[]
+                 {
+                     ProfessionRegistry.BlacksmithId, AlchemyProfession.Id, TanningProfession.Id, EngineeringProfession.Id,
+                 })
+        {
+            var ui = MountMainUi(new SimAdapter(GameComposition.NewCampaign(ScriptedSession.Seed, professionId)));
+            try
+            {
+                AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
+                var anchor = ui.Tutorial.CurrentAnchor;
+                AssertThat(anchor.Kind).IsEqual(TutorialAnchorKind.Station);
+
+                Building2D? station = null;
+                Exception? thrown = null;
+                try
+                {
+                    station = ui.Town.FindStation(anchor.Key!, anchor.StationId!);
+                }
+                catch (Exception ex)
+                {
+                    thrown = ex;
+                }
+
+                AssertThat(thrown)
+                    .OverrideFailureMessage(
+                        $"{professionId}'s BuyMaterial anchor ({anchor.Key}, {anchor.StationId}) does not resolve: {thrown}")
+                    .IsNull();
+                AssertThat(station).IsNotNull();
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+    }
+
     [TestCase]
     public void Registry_EveryHudAnchor_ResolvesToALiveControlInTheMountedScene()
     {
@@ -162,14 +244,16 @@ public class TutorialRegistryConformanceTests
         var ui = MountMainUi();
         try
         {
-            // Day 1, BuyMaterial: Building("forge").
+            // Day 1, BuyMaterial: U2 (tutorial-revamp plan, §11.13) re-pointed this at
+            // Station("forge", "shelf") — blacksmith's own materials station — rather than the
+            // whole Forge building, so the overlay pulses the shelf itself.
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
             AssertThat(ui.Overlay.PulsingBuildingKey)
-                .OverrideFailureMessage("BuyMaterial's own anchor (forge) is not pulsing on a fresh mount.")
-                .IsEqual("forge");
+                .OverrideFailureMessage("BuyMaterial's own Station anchor (the shelf) is not pulsing on a fresh mount.")
+                .IsEqual("shelf");
             AssertThat(ui.Overlay.PulsingHudControlName).IsNull();
 
-            // Drive to Shelve: Building("market") — the pulse must move OFF forge onto market.
+            // Drive to Shelve: Building("market") — the pulse must move OFF the shelf onto market.
             ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
             ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Shelve);
@@ -300,6 +384,211 @@ public class TutorialRegistryConformanceTests
             {
                 reloaded.Free();
             }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// KTD-4 (house rule, U1, §11.13): "the fact must be caused by a PlayerAction in ActionLog or
+    /// by a Notify-hook, never by a hero-decided event." This is the tripwire against the exact bug
+    /// this unit fixes returning: step 6 used to require the CUSTOMER's own accept
+    /// (<c>CounterSaleClosed</c>), and step 7's precondition was a stop <c>RaidConductor</c>'s own
+    /// doc calls "the UNCOMMON case" — both unfollowable by construction.
+    ///
+    /// <para>For every row except the two declared UI-navigation-only steps (<see
+    /// cref="TutorialStep.LookIn"/>/<see cref="TutorialStep.MeetHeroes"/> key off a real UI open
+    /// with no durable predicate this test could construct at all — <c>TutorialFlow</c>'s own class
+    /// doc), a state built ONLY from a real player action and its deterministic, state-gated kernel
+    /// consequence — never an AI/hero decision (a customer's own accept, a party that actually
+    /// managed to park) — must flip <see cref="TutorialStepDef.IsDone"/> true. The switch below is
+    /// exhaustive over <see cref="TutorialStep"/>: a step added without an entry here is a compile
+    /// error, not a silent gap.</para>
+    /// </summary>
+    [TestCase]
+    public void EveryStepsCompletionFact_IsReachableByPlayerActionAlone()
+    {
+        var exempt = new[] { TutorialStep.LookIn, TutorialStep.MeetHeroes };
+        var baseState = GameComposition.NewCampaign(9001);
+        var hero = new HeroId(1);
+        var item = new ItemId(1);
+
+        foreach (var def in TutorialFlow.Registry)
+        {
+            if (exempt.Contains(def.Step))
+            {
+                continue;
+            }
+
+            GameState fixture = def.Step switch
+            {
+                TutorialStep.BuyMaterial => baseState with
+                {
+                    EventLog = baseState.EventLog.Add(new MaterialPurchased("copper", 2, 4)),
+                },
+                TutorialStep.Craft => baseState with
+                {
+                    EventLog = baseState.EventLog.Add(new ItemCrafted(item, QualityGrade.Common)),
+                },
+                TutorialStep.Shelve => baseState with
+                {
+                    EventLog = baseState.EventLog.Add(new ItemSold(item, hero, 10, FromPlayerShop: true)),
+                },
+                TutorialStep.PostBounty => baseState with
+                {
+                    EventLog = baseState.EventLog.Add(new BountyPosted(new BountyId(1), 1, 5)),
+                },
+                TutorialStep.WatchDeparture => baseState with
+                {
+                    EventLog = baseState.EventLog.Add(new PartyDeparted(ImmutableList.Create(hero), 1)),
+                },
+                // U1 fix: the customer's own decision (CounterSaleClosed) is deliberately ABSENT
+                // here — only the player's own two actions, proving the old "a sale must close"
+                // gate is gone.
+                TutorialStep.OpenCounter => baseState with
+                {
+                    ActionLog = baseState.ActionLog.Add(new LoggedBatch(
+                        2, DayPhase.Morning,
+                        ImmutableList.Create<PlayerAction>(new OpenCounterAction(), new CloseCounterAction()))),
+                },
+                // U1 fix: SupplyDelivered/PartyRecalled are still legitimate here — deterministic
+                // consequences of the player's own SendSupply/Recall actions, gated only by state
+                // the player can see, never a hero's own choice. The OTHER completion path
+                // (NotifyCampCardShown, a UI-only hook with no durable predicate) is covered
+                // separately by TutorialFlowTests' Step7_Completes_OnSeeingTheCampCard_... — this
+                // row's own IsDone never needs a party to have actually parked.
+                TutorialStep.Vigil => baseState with
+                {
+                    EventLog = baseState.EventLog.Add(new PartyRecalled(ImmutableList.Create(hero))),
+                },
+                TutorialStep.EveningClose => baseState with { Day = 3 },
+                TutorialStep.Commission => baseState with
+                {
+                    ActionLog = baseState.ActionLog.Add(new LoggedBatch(
+                        3, DayPhase.Morning, ImmutableList.Create<PlayerAction>(new DeclineCommissionAction(hero)))),
+                },
+                _ => throw new NotSupportedException($"{def.Step}: no KTD-4 fixture wired for this step."),
+            };
+
+            AssertThat(def.IsDone(fixture))
+                .OverrideFailureMessage(
+                    $"{def.Step}'s IsDone did not flip true from a state built ONLY from player-caused facts " +
+                    "— which means it is (still) gated on something a hero decides, or this test's own fixture " +
+                    "is missing a fact the predicate actually needs.")
+                .IsTrue();
+        }
+    }
+
+    /// <summary>
+    /// U3 (tutorial-revamp plan, §11.13): the trap this unit could create — a gate that hides the
+    /// very tray button a live tutorial step is pointing at. Neither HeroCards' own gate (first
+    /// sale to a hero) nor Commissions' (first commission posted by the sim) is guaranteed true by
+    /// the day the tutorial reaches those two steps — a player can legally reach day 3 having sold
+    /// nothing and having no commission posted. <c>MainUi</c>'s own effective-open override must
+    /// still keep both buttons pressable regardless of what <see cref="SurfaceUnlocks.IsOpen"/>
+    /// alone would say.
+    /// </summary>
+    [TestCase]
+    public void EveryTutorialStepAnchor_PointsAtASurfaceThatIsOpenByThatStepsMinDay()
+    {
+        // This test's whole point (its own doc above) is a day-3 state where NEITHER HeroCards'
+        // nor Commissions' gate has fired yet, so it can prove MainUi's override — not an earned
+        // gate — is what keeps the two buttons pressable. A BARE MountMainUi() cannot reach that:
+        // GameSim.Heroes.CommissionSystem posts a commission for ANY hero with an empty/sub-par
+        // weapon/shield/armor slot or no carried Heal, with NO RNG — and every starting hero's
+        // gear is GearSet.Empty (HeroRoster's own doc), so the very first real Morning tick below
+        // (line "Morning -> Expedition") deterministically posts one, for every seed, every run.
+        // That is not the scenario this test means to build. Fully kitting (and healing-supplying)
+        // every starting hero closes every CommissionSystem.FindGapSlot gap up front so the sim
+        // never has a reason to post one, leaving the override — not luck — to carry both steps.
+        var kitted = GameComposition.NewCampaign(ScriptedSession.Seed);
+        var proofWeapon = new Item(
+            new ItemId(9800), "test-gap-proof", "Proof Blade", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(1, 0, 1), Mark: null, ImmutableList<ItemHistoryEntry>.Empty);
+        var proofShield = new Item(
+            new ItemId(9801), "test-gap-proof", "Proof Shield", ItemSlot.Shield, QualityGrade.Common,
+            new ItemStats(0, 1, 1), Mark: null, ImmutableList<ItemHistoryEntry>.Empty);
+        var proofArmor = new Item(
+            new ItemId(9802), "test-gap-proof", "Proof Armor", ItemSlot.Armor, QualityGrade.Common,
+            new ItemStats(0, 1, 1), Mark: null, ImmutableList<ItemHistoryEntry>.Empty);
+        var proofHeal = new Item(
+            new ItemId(9803), "test-gap-proof", "Proof Salve", ItemSlot.Consumable, QualityGrade.Common,
+            new ItemStats(0, 0, 0), Mark: null, ImmutableList<ItemHistoryEntry>.Empty,
+            Effect: new ConsumableEffect(ConsumableKind.Heal, 10));
+        kitted = kitted with
+        {
+            Items = kitted.Items
+                .Add(proofWeapon.Id.Value, proofWeapon)
+                .Add(proofShield.Id.Value, proofShield)
+                .Add(proofArmor.Id.Value, proofArmor)
+                .Add(proofHeal.Id.Value, proofHeal),
+            Heroes = kitted.Heroes.Values
+                .Select(h => h with
+                {
+                    Gear = new GearSet(proofWeapon.Id, proofShield.Id, proofArmor.Id),
+                    Pack = h.Pack.Add(proofHeal.Id),
+                })
+                .ToImmutableSortedDictionary(h => h.Id.Value, h => h),
+        };
+
+        var ui = MountMainUi(new SimAdapter(kitted));
+        try
+        {
+            var craftedItemId = new ItemId(ui.Adapter.CurrentState.NextItemId);
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
+            ui.Adapter.Queue(new StockAction(craftedItemId, 50));
+            ui.Adapter.Queue(new PostBountyAction(ScriptedSession.BountyFloor, ScriptedSession.BountyReward));
+            ui.Adapter.AdvancePhase(); // Morning -> Expedition
+            ui.Adapter.AdvancePhase(); // Expedition -> Camp: party departs -> LookIn
+            ui.Mirror.ShowMirror(); // LookIn -> OpenCounter
+
+            // Fast-forward past OpenCounter/Vigil/EveningClose without ever selling to a hero or a
+            // commission ever posting — the SAME "hand a modified state to Advance" idiom
+            // TutorialFlowTests uses throughout, so this claim never depends on simulating a real
+            // haggle/camp/commission just to reach day 3.
+            var day2 = ui.Adapter.CurrentState with
+            {
+                Day = 2,
+                EventLog = ui.Adapter.CurrentState.EventLog.Add(new CustomerApproached(new HeroId(1))),
+                // Fixed alongside the merge's own kept predicate (TutorialFlow.CounterAnsweredAtLeastOnce,
+                // U1's ActionLog-only version — see TutorialFlow.Registry's own comment on the
+                // OpenCounter row): needs an OpenCounterAction in the same batch, not just Close.
+                ActionLog = ui.Adapter.CurrentState.ActionLog.Add(
+                    new LoggedBatch(2, ui.Adapter.CurrentState.Phase,
+                        ImmutableList.Create<PlayerAction>(new OpenCounterAction(), new CloseCounterAction()))),
+            };
+            ui.Tutorial.Advance(day2);
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Vigil);
+
+            ui.Tutorial.NotifyCampCardShown();
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.EveningClose);
+
+            ui.Tutorial.Advance(ui.Adapter.CurrentState with { Day = 3 });
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.MeetHeroes);
+
+            ui.RefreshAll(); // re-greys/un-greys the tray from the now-day-3 live state
+
+            AssertThat(SurfaceUnlocks.IsOpen(ui.Adapter.CurrentState, "HeroCards"))
+                .OverrideFailureMessage("Test setup drifted — HeroCards' own gate should still read closed here.")
+                .IsFalse();
+            AssertThat(Find<Button>(ui, "OpenHeroCards").Disabled)
+                .OverrideFailureMessage("HeroCards is gated closed while MeetHeroes points straight at it — the player would be stranded.")
+                .IsFalse();
+
+            ui.OpenPanel("HeroCards"); // MeetHeroes -> Commission
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Commission);
+            ui.RefreshAll();
+
+            AssertThat(SurfaceUnlocks.IsOpen(ui.Adapter.CurrentState, "Commissions"))
+                .OverrideFailureMessage("Test setup drifted — Commissions' own gate should still read closed here.")
+                .IsFalse();
+            AssertThat(Find<Button>(ui, "OpenCommissions").Disabled)
+                .OverrideFailureMessage(
+                    "Commissions is gated closed while the Commission step points straight at it — the player would be stranded.")
+                .IsFalse();
         }
         finally
         {

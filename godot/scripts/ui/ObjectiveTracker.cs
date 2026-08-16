@@ -50,21 +50,25 @@ public sealed partial class ObjectiveTracker : PanelContainer
     private const float ReasonMinHeight = ReasonMaxLines * GameTheme.BodyFontSize * 1.3f;
 
     /// <summary>Line budget the height floor reserves for an UNCLAMPED tutorial step (see
-    /// <see cref="Refresh"/>'s tutorial branch). Four lines holds the longest step in
-    /// <c>TutorialFlow</c>'s chain at <see cref="DockWidth"/>; the label itself is unclamped, so a
-    /// longer one still renders — this only guarantees the room is reserved up front rather than
-    /// depending on a second layout pass.
+    /// <see cref="Refresh"/>'s tutorial branch) at <see cref="DockWidth"/>; the label itself is
+    /// unclamped, so a longer one still renders — this only guarantees the room is reserved up
+    /// front rather than depending on a second layout pass.
     ///
-    /// <para>Six, because a step's text is the instruction PLUS the live advisor reason appended
-    /// (see <c>TutorialFlow.StepText</c>) — e.g. "Walk to the Forge (WASD, or click the ground to
-    /// move) and press E, or click it — Buy 2 copper…". That concatenation is why this card needs so
-    /// many lines. The copy itself is now held to this budget from the other side:
+    /// <para>U2 (tutorial-revamp plan, §11.13): dropped from 6 to 3. The teaching that used to be
+    /// crammed into this card's own text (the mechanism explanation, the "what this actually is"
+    /// paragraph) moved OUT — permanently, into the Lessons book (<c>LessonsPanel</c>) and the
+    /// per-step TeachNote already rendered in the checklist below — so the card itself only ever
+    /// has to hold the instruction PLUS the live advisor reason appended (see
+    /// <c>TutorialFlow.StepText</c>), which now fits in three lines at <see cref="DockWidth"/>.
+    /// Reclaiming this height is what kills <see cref="ChecklistMaxHeight"/>'s old 32px
+    /// "peek-and-scroll sliver" — see that constant's own doc for the new budget math. The copy
+    /// itself is held to this budget from the other side:
     /// <c>TutorialCopyIsFollowableTests.NoStepsCopy_OutgrowsTheObjectiveCardsOwnUnclampedLineBudget</c>
-    /// fails a step that outgrows six lines, because tutorial text renders UNCLAMPED (see
+    /// fails a step that outgrows three lines, because tutorial text renders UNCLAMPED (see
     /// <see cref="Refresh"/>) and a long enough line therefore grows this chip off the screen rather
-    /// than being trimmed — anything that needs more room belongs in the step's TeachNote, which
-    /// renders inside the scrolling checklist and costs no height at all.</para></summary>
-    private const int TutorialMaxLines = 6;
+    /// than being trimmed — anything that needs more room belongs in the step's TeachNote/the
+    /// Lessons book, neither of which costs this card any height at all.</para></summary>
+    private const int TutorialMaxLines = 3;
 
     /// <summary>Height floor for an unclamped tutorial step — same derivation as
     /// <see cref="ReasonMinHeight"/>, just a taller line budget.</summary>
@@ -84,13 +88,21 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// <para>Sized against the REST of this same chip's own pre-existing budget
     /// (<c>HudBoundsTests.ObjectiveChip_HeightTracksContent_NotFixedEmptyPanel</c>'s 260px pin,
     /// which predates this checklist and is never relaxed): a fresh Day-1 mount measures header
-    /// (~23px) + the unclamped 6-line tutorial reason (<see cref="TutorialMinHeight"/>, ~127px) +
-    /// the actions row (~35px) + this panel's own wood-frame margins (24px) + body separations
-    /// (~12px) = ~221px before the checklist adds anything, leaving under 40px of the 260px
-    /// budget for it. A ceiling any taller reopens the exact bug the 260px pin exists to catch —
-    /// the ten-row checklist is why a peek-and-scroll sliver, not a several-row window, is what
-    /// fits; the full list is always one scroll away.</para></summary>
-    private const float ChecklistMaxHeight = 32f;
+    /// (~23px) + the unclamped 3-line tutorial reason (<see cref="TutorialMinHeight"/>, ~62px,
+    /// down from ~127px at the old 6-line budget) + the actions row (~35px) + this panel's own
+    /// wood-frame margins (24px) + body separations (~12px) = ~156px before the checklist adds
+    /// anything, leaving ~100px of the 260px budget for it — up from the old sub-40px sliver.</para>
+    ///
+    /// <para>U2 (tutorial-revamp plan, §11.13): raised from 32px (a literal "peek-and-scroll
+    /// sliver, not a several-row window" by the old doc's own words — 32px is barely one text
+    /// line) to 75px — more than double, a real multi-row checklist window rather than a hint
+    /// that a scrollbar exists — measured against a live capture (<c>tools/shoot.ps1</c>) of the
+    /// single longest-copy step (BuyMaterial, whose Reason line carries a live
+    /// advisor-suggestion suffix this class does not control the length of) rather than the
+    /// pre-U2 doc's own hand-estimated headroom, which measured optimistic once rendered. The full
+    /// ten-row list is still one scroll away for whatever this ceiling doesn't fit. A ceiling any
+    /// taller reopens the exact bug the 260px pin exists to catch.</para></summary>
+    private const float ChecklistMaxHeight = 75f;
 
     public Label Reason { get; private set; } = null!;
     public Button Expand { get; private set; } = null!;
@@ -351,8 +363,14 @@ public sealed partial class ObjectiveTracker : PanelContainer
 
         foreach (var row in rows)
         {
-            var glyph = row.Done ? "✓" : row.Current ? "◆" : "○";
-            var glyphColor = row.Done ? GameTheme.GoodColor : row.Current ? GameTheme.WarnColor : GameTheme.TextDim;
+            // U1 (§11.13): Skipped is a THIRD state, checked before Done/Current — a row the chain
+            // carried the player past without it ever being genuinely answered (see
+            // ChecklistRow.Skipped's own doc). A checkmark here would be a false tick; a hollow
+            // circle would read as still-upcoming when it is not.
+            var glyph = row.Skipped ? "—" : row.Done ? "✓" : row.Current ? "◆" : "○";
+            var glyphColor = row.Skipped ? GameTheme.TextDim
+                : row.Done ? GameTheme.GoodColor
+                : row.Current ? GameTheme.WarnColor : GameTheme.TextDim;
 
             var line = new HBoxContainer { Name = $"TutorialChecklistRow_{row.DisplayIndex}" };
             line.AddThemeConstantOverride("separation", GameTheme.Space8);
@@ -362,7 +380,7 @@ public sealed partial class ObjectiveTracker : PanelContainer
             glyphLabel.AddThemeColorOverride("font_color", glyphColor);
             line.AddChild(glyphLabel);
 
-            var suffix = row.VisitedAnchor ? "  ✓ Arrived" : string.Empty;
+            var suffix = row.Skipped ? "  — didn't come up this time" : row.VisitedAnchor ? "  ✓ Arrived" : string.Empty;
             var textLabel = new Label
             {
                 Name = "TutorialChecklistLabel",
@@ -371,7 +389,7 @@ public sealed partial class ObjectiveTracker : PanelContainer
                 CustomMinimumSize = new Vector2(DockWidth - 40, 0),
                 ClipText = true,
             };
-            if (row.Done)
+            if (row.Done || row.Skipped)
             {
                 textLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
             }
@@ -525,7 +543,14 @@ public sealed partial class DayTimeline : HBoxContainer
         // stack) — never theme.SetConstant("separation", "HBoxContainer", ...), which would
         // restyle every HBoxContainer in the app. Without this the 5 phase segments + the
         // waiting dot sat with zero gap and read as run-on text. Kept >= 6 (MenuSizingTests).
-        AddThemeConstantOverride("separation", 12);
+        //
+        // Trimmed from 12 (tutorial-revamp wave, §11.13): the Books Tray's eighth icon
+        // (LessonsPanel, added the same wave) ate into this row's shared ExpandFill budget —
+        // see SegmentStyle's own margin trim just below for the other half of that reclaim —
+        // and this timeline was the one left short, clipping the "Night" segment
+        // (HudBoundsTests.ObjectiveChip_TextNeverOverflowsItsOwnContainer). Still comfortably
+        // above the pinned floor.
+        AddThemeConstantOverride("separation", 8);
 
         // UI-4 (menu-sizing/cozy redesign): a connected segment strip — past dim, current a
         // filled Arcane pill with an Ember underline, future outlined — replacing the 5 loose
@@ -645,8 +670,12 @@ public sealed partial class DayTimeline : HBoxContainer
                 CornerRadiusBottomRight = GameTheme.RadiusChip,
                 CornerRadiusTopLeft = GameTheme.RadiusChip,
                 CornerRadiusTopRight = GameTheme.RadiusChip,
-                ContentMarginLeft = GameTheme.Space8,
-                ContentMarginRight = GameTheme.Space8,
+                // Trimmed from Space8 (tutorial-revamp wave, §11.13) — see this timeline's own
+                // Build()/AddThemeConstantOverride("separation", ...) doc for why: reclaiming
+                // width here (5 pills * 2 sides * 4px = 40px) is the other half of what stopped
+                // the "Night" segment clipping once the Books Tray grew an eighth icon.
+                ContentMarginLeft = GameTheme.Space4,
+                ContentMarginRight = GameTheme.Space4,
                 ContentMarginTop = GameTheme.Space4,
                 ContentMarginBottom = GameTheme.Space4,
             };
@@ -661,8 +690,12 @@ public sealed partial class DayTimeline : HBoxContainer
                 CornerRadiusBottomRight = GameTheme.RadiusChip,
                 CornerRadiusTopLeft = GameTheme.RadiusChip,
                 CornerRadiusTopRight = GameTheme.RadiusChip,
-                ContentMarginLeft = GameTheme.Space8,
-                ContentMarginRight = GameTheme.Space8,
+                // Trimmed from Space8 (tutorial-revamp wave, §11.13) — see this timeline's own
+                // Build()/AddThemeConstantOverride("separation", ...) doc for why: reclaiming
+                // width here (5 pills * 2 sides * 4px = 40px) is the other half of what stopped
+                // the "Night" segment clipping once the Books Tray grew an eighth icon.
+                ContentMarginLeft = GameTheme.Space4,
+                ContentMarginRight = GameTheme.Space4,
                 ContentMarginTop = GameTheme.Space4,
                 ContentMarginBottom = GameTheme.Space4,
             };
@@ -681,8 +714,9 @@ public sealed partial class DayTimeline : HBoxContainer
             CornerRadiusBottomRight = GameTheme.RadiusChip,
             CornerRadiusTopLeft = GameTheme.RadiusChip,
             CornerRadiusTopRight = GameTheme.RadiusChip,
-            ContentMarginLeft = GameTheme.Space8,
-            ContentMarginRight = GameTheme.Space8,
+            // Trimmed from Space8 — see the isCurrent/isPast branches' own doc above.
+            ContentMarginLeft = GameTheme.Space4,
+            ContentMarginRight = GameTheme.Space4,
             ContentMarginTop = GameTheme.Space4,
             ContentMarginBottom = GameTheme.Space4,
         };

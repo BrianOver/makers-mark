@@ -3,6 +3,7 @@ using System;
 using System.Collections.Immutable;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Drama;
 using GameSim.Heroes;
 using GameSim.Kernel;
 using GdUnit4;
@@ -38,6 +39,8 @@ public class CustomerVoiceTests
         AssertThat(RaidForecast.MissingItemSlots(hero.Gear)[0]).IsEqual(ItemSlot.Weapon);
         AssertThat(line).Contains("a weapon");
         AssertThat(line).Contains("45g");
+        // U1 (§11.11): the extracted projection must name the exact same slot WantLine spoke.
+        AssertThat(CounterForecast.Wants(hero, state)).IsEqual(ItemSlot.Weapon);
     }
 
     [TestCase]
@@ -74,6 +77,9 @@ public class CustomerVoiceTests
         AssertThat(RaidForecast.MissingItemSlots(hero.Gear).Count).IsEqual(0); // no gaps — full loadout
         AssertThat(line).Contains("weapon");
         AssertThat(line).Contains("200g");
+        // U1 (§11.11): test scenario 3 — a full-loadout hero's projected want is the shelf
+        // upgrade slot, never null (the forecast must never under-claim a real want either).
+        AssertThat(CounterForecast.Wants(hero, state)).IsEqual(ItemSlot.Weapon);
     }
 
     [TestCase]
@@ -102,6 +108,75 @@ public class CustomerVoiceTests
 
         AssertThat(line).Contains("Just browsing");
         AssertThat(line).Contains("60g");
+        // U1 (§11.11): test scenario 3 — browsing means the projection is honestly null, never a
+        // fabricated slot the sim has no basis for.
+        AssertThat(CounterForecast.Wants(hero, state)).IsNull();
+    }
+
+    // ── U1 (§11.11): CounterForecast.Wants extracted from WantLine — same slot, one function ───
+
+    /// <summary>Test scenario 2: parameterised over all eight Weapon/Shield/Armor null
+    /// combinations. A hero with any gap must project the FIRST missing slot in fixed order; a
+    /// full-loadout hero (all three filled) must project the shelf's best genuine upgrade (a real
+    /// weapon upgrade is planted on the shelf so that branch is exercised too) — in every case the
+    /// slot <see cref="CounterForecast.Wants"/> names must be the one <see cref="CustomerVoice.WantLine"/>
+    /// actually speaks, so the counter can never ask for something the forecast board didn't ALSO
+    /// show the night before.</summary>
+    [TestCase(true, true, true)]
+    [TestCase(true, true, false)]
+    [TestCase(true, false, true)]
+    [TestCase(true, false, false)]
+    [TestCase(false, true, true)]
+    [TestCase(false, true, false)]
+    [TestCase(false, false, true)]
+    [TestCase(false, false, false)]
+    public void Wants_MatchesCustomerVoiceWantLine_ForEveryGearShape(bool hasWeapon, bool hasShield, bool hasArmor)
+    {
+        var weakWeapon = MakeItem(21, ItemSlot.Weapon, attack: 0, defense: 0, weight: 1, name: "Rusty Knife");
+        var weakShield = MakeItem(22, ItemSlot.Shield, attack: 0, defense: 0, weight: 1, name: "Cracked Buckler");
+        var weakArmor = MakeItem(23, ItemSlot.Armor, attack: 0, defense: 0, weight: 1, name: "Ragged Coat");
+        var upgrade = MakeItem(24, ItemSlot.Weapon, attack: 8, defense: 0, weight: 2, name: "Fine Blade");
+
+        var gear = new GearSet(
+            hasWeapon ? weakWeapon.Id : null,
+            hasShield ? weakShield.Id : null,
+            hasArmor ? weakArmor.Id : null);
+        var hero = MakeHero(1, ClassRegistry.VanguardId, gold: 77, gear);
+
+        var state = GameFactory.NewGame(9210) with
+        {
+            Items = ImmutableSortedDictionary<int, Item>.Empty
+                .Add(weakWeapon.Id.Value, weakWeapon)
+                .Add(weakShield.Id.Value, weakShield)
+                .Add(weakArmor.Id.Value, weakArmor)
+                .Add(upgrade.Id.Value, upgrade),
+            Player = PlayerState.NewGame(0) with { Shelf = ImmutableList.Create(new ShelfEntry(upgrade.Id, 20)) },
+        };
+
+        var wantSlot = CounterForecast.Wants(hero, state);
+        var line = CustomerVoice.WantLine(hero, state);
+
+        var missing = RaidForecast.MissingItemSlots(hero.Gear);
+        if (missing.Count > 0)
+        {
+            AssertThat(wantSlot).IsEqual(missing[0]);
+        }
+
+        if (wantSlot is { } slot)
+        {
+            var word = slot switch
+            {
+                ItemSlot.Weapon => "weapon",
+                ItemSlot.Shield => "shield",
+                ItemSlot.Armor => "armor",
+                _ => slot.ToString().ToLowerInvariant(),
+            };
+            AssertThat(line.ToLowerInvariant()).Contains(word);
+        }
+        else
+        {
+            AssertThat(line).Contains("Just browsing");
+        }
     }
 
     // ── PresentReply: exhaustive over ShoppingVerdictKind, never an empty bubble ────────────────

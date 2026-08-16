@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Drama;
 using GameSim.Kernel;
 
 namespace GameSim.Counter;
@@ -42,11 +43,15 @@ public sealed class CounterHandlers : IActionHandler
         };
 
     /// <summary>
-    /// Opens a fresh stepped session: queue = alive heroes in HeroId order (the existing
-    /// deterministic shopping order — <see cref="Heroes.HeroShoppingSystem"/>), first customer
-    /// becomes Active with a full Patience budget, <see cref="CustomerApproached"/> fires. An empty
-    /// queue (no living heroes) is a valid open session with Active null — the player is only
-    /// arranging (PKD6).
+    /// Opens a fresh stepped session: queue = alive heroes, higher relationship band first,
+    /// HeroId breaking ties (U8 "regulars first", preserving the deterministic order the fallback
+    /// shopping pass uses) — extracted to <see cref="CounterForecast.Queue"/> (U1, §11.11) so the
+    /// night-before forecast board and this handler read the SAME projection and cannot drift
+    /// apart. First customer becomes Active with a full Patience budget, <see
+    /// cref="CustomerApproached"/> fires. An empty queue (no living heroes) is a valid open session
+    /// with Active null — the player is only arranging (PKD6). This is counter-session state
+    /// only — never read by muster (PKD7), so party formation and every gated trace (BaselinePlayer
+    /// never opens the counter) are unaffected.
     /// </summary>
     private static (GameState, RejectedAction?) ApplyOpen(GameState state, OpenCounterAction action, IEventSink events)
     {
@@ -55,16 +60,7 @@ public sealed class CounterHandlers : IActionHandler
             return (state, new RejectedAction(action, "The counter is already open this morning."));
         }
 
-        var queue = state.Heroes.Values
-            .Where(h => h.Alive)
-            // U8 (Regulars first): higher relationship band serves ahead at the counter; HeroId
-            // breaks ties (preserving the deterministic order the fallback shopping pass uses).
-            // This is counter-session state only — never read by muster (PKD7), so party formation
-            // and every gated trace (BaselinePlayer never opens the counter) are unaffected.
-            .OrderByDescending(h => (int)GameSim.Heroes.RelationshipBands.For(h.Id, state))
-            .ThenBy(h => h.Id.Value)
-            .Select(h => h.Id)
-            .ToImmutableList();
+        var queue = CounterForecast.Queue(state).Select(a => a.Hero).ToImmutableList();
 
         var active = queue.Count > 0 ? queue[0] : (HeroId?)null;
         var counter = CounterQueueSystem.PromoteActive(state, CounterState.Empty, queue, active);
