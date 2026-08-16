@@ -351,8 +351,14 @@ public sealed partial class ObjectiveTracker : PanelContainer
 
         foreach (var row in rows)
         {
-            var glyph = row.Done ? "✓" : row.Current ? "◆" : "○";
-            var glyphColor = row.Done ? GameTheme.GoodColor : row.Current ? GameTheme.WarnColor : GameTheme.TextDim;
+            // U1 (§11.13): Skipped is a THIRD state, checked before Done/Current — a row the chain
+            // carried the player past without it ever being genuinely answered (see
+            // ChecklistRow.Skipped's own doc). A checkmark here would be a false tick; a hollow
+            // circle would read as still-upcoming when it is not.
+            var glyph = row.Skipped ? "—" : row.Done ? "✓" : row.Current ? "◆" : "○";
+            var glyphColor = row.Skipped ? GameTheme.TextDim
+                : row.Done ? GameTheme.GoodColor
+                : row.Current ? GameTheme.WarnColor : GameTheme.TextDim;
 
             var line = new HBoxContainer { Name = $"TutorialChecklistRow_{row.DisplayIndex}" };
             line.AddThemeConstantOverride("separation", GameTheme.Space8);
@@ -362,7 +368,7 @@ public sealed partial class ObjectiveTracker : PanelContainer
             glyphLabel.AddThemeColorOverride("font_color", glyphColor);
             line.AddChild(glyphLabel);
 
-            var suffix = row.VisitedAnchor ? "  ✓ Arrived" : string.Empty;
+            var suffix = row.Skipped ? "  — didn't come up this time" : row.VisitedAnchor ? "  ✓ Arrived" : string.Empty;
             var textLabel = new Label
             {
                 Name = "TutorialChecklistLabel",
@@ -371,7 +377,7 @@ public sealed partial class ObjectiveTracker : PanelContainer
                 CustomMinimumSize = new Vector2(DockWidth - 40, 0),
                 ClipText = true,
             };
-            if (row.Done)
+            if (row.Done || row.Skipped)
             {
                 textLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
             }
