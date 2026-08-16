@@ -82,6 +82,11 @@ public partial class ForgePanel : SimPanel
     private Control? _vendorSectionRoot;
     private Control? _recipeSectionRoot;
 
+    // ── U-T1 (register #147): the furnace's own section root, so FocusSection("foundry") can show
+    // the Foundry (coal/flux/forge-tier) and hide the ore vendor within the SAME _materialsViewRoot
+    // — the furnace and the shelf finally answer with two distinct rows, not one shared page.
+    private Control? _foundrySectionRoot;
+
     // ── station split (owner playtest, 2026-08): "the entire point of having different things to
     // click on inside is to help sort this sort of menu" — Gear Rack (Focus "materials") and
     // Workbench (Focus "craft") used to open this SAME panel, merely scrolled to a different
@@ -278,8 +283,8 @@ public partial class ForgePanel : SimPanel
     /// <summary>
     /// U3 (painted-interiors plan, KTD-3): the Material Shelf/Anvil/Furnace stations' "press E,
     /// land on the right rows" affordance. Reuses the EXISTING section containers built by
-    /// <see cref="EnsureBuilt"/> ("materials" → the vendor/material rows, "craft" → the recipe
-    /// cards) — no new content, no verb change.
+    /// <see cref="EnsureBuilt"/> ("materials" → the vendor rows, "foundry" → the coal/flux/forge-
+    /// tier rows, "craft" → the recipe cards) — no new content, no verb change.
     ///
     /// <para><b>Station split (owner playtest, 2026-08).</b> This used to ONLY scroll/flash — both
     /// the vendor rows and the recipe/talent rows stayed mounted and reachable by scrolling no
@@ -287,9 +292,16 @@ public partial class ForgePanel : SimPanel
     /// what was functionally the same page. The owner's complaint named the actual design rule this
     /// broke: a walkable room full of distinct, clickable stations only sorts the menu if each
     /// station shows JUST its own job. So this now also hides the OTHER half —
-    /// <see cref="_materialsViewRoot"/> for "craft", <see cref="_craftViewRoot"/> for "materials" —
-    /// rather than merely losing the scroll position. <see cref="ResetFocus"/> is the undo, called
-    /// by <c>MainUi.OpenPanel</c> on every fresh (non-station) open.</para>
+    /// <see cref="_materialsViewRoot"/> for "craft", <see cref="_craftViewRoot"/> for "materials" or
+    /// "foundry" — rather than merely losing the scroll position. <see cref="ResetFocus"/> is the
+    /// undo, called by <c>MainUi.OpenPanel</c> on every fresh (non-station) open.</para>
+    ///
+    /// <para><b>U-T1 (register #147).</b> "materials" and "foundry" both live inside
+    /// <see cref="_materialsViewRoot"/> (the shelf and the furnace are both buy-side stations), so
+    /// this also toggles <see cref="_vendorSectionRoot"/>/<see cref="_foundrySectionRoot"/> against
+    /// each other — the furnace no longer scrolls past the ore vendor to reach its own coal/flux
+    /// rows, and the shelf no longer surfaces the furnace's Foundry either. Before this unit both
+    /// stations named the same "materials" Focus and so showed the identical page.</para>
     ///
     /// <para>A section name this panel does not recognize is a silent no-op for the
     /// show/hide split too (recognized values are enforced upstream, at room-build time, by
@@ -305,6 +317,7 @@ public partial class ForgePanel : SimPanel
         var target = section switch
         {
             "materials" => _vendorSectionRoot,
+            "foundry" => _foundrySectionRoot,
             "craft" => _recipeSectionRoot,
             _ => null,
         };
@@ -314,17 +327,26 @@ public partial class ForgePanel : SimPanel
             return;
         }
 
-        var isMaterials = section == "materials";
-        _materialsViewRoot!.Visible = isMaterials;
-        _craftViewRoot!.Visible = !isMaterials;
+        var isMaterialsView = section is "materials" or "foundry";
+        _materialsViewRoot!.Visible = isMaterialsView;
+        _craftViewRoot!.Visible = !isMaterialsView;
         // Hide the OTHER scroll container too (not just its inner view root), so the focused one
         // is the VBoxContainer's only Expand-flagged child and claims the full body height —
         // otherwise a hidden-but-still-present ScrollContainer would keep splitting the height
         // with the visible one for nothing.
-        _materialsScroll!.Visible = isMaterials;
-        _craftScroll!.Visible = !isMaterials;
+        _materialsScroll!.Visible = isMaterialsView;
+        _craftScroll!.Visible = !isMaterialsView;
 
-        DeferEnsureVisible(isMaterials ? _materialsScroll : _craftScroll, target);
+        // U-T1: within the materials view, the vendor and Foundry sections are two DIFFERENT
+        // stations' jobs (shelf vs furnace) — show only the one the pressed station owns, per-
+        // section Visible only, no third ScrollContainer.
+        if (isMaterialsView)
+        {
+            _vendorSectionRoot!.Visible = section == "materials";
+            _foundrySectionRoot!.Visible = section == "foundry";
+        }
+
+        DeferEnsureVisible(isMaterialsView ? _materialsScroll : _craftScroll, target);
         _focusFlashTarget = target;
         _focusFlashRemaining = FocusFlashSeconds;
     }
@@ -350,6 +372,9 @@ public partial class ForgePanel : SimPanel
         _craftViewRoot!.Visible = true;
         _materialsScroll!.Visible = true;
         _craftScroll!.Visible = true;
+        // U-T1: undo the vendor/Foundry narrowing too, same bare-open contract as the outer split.
+        _vendorSectionRoot!.Visible = true;
+        _foundrySectionRoot!.Visible = true;
     }
 
     /// <summary>Safety ceiling for <see cref="DeferEnsureVisible"/>'s settle-poll — 240 frames (4s
@@ -1573,6 +1598,7 @@ public partial class ForgePanel : SimPanel
         var foundrySection = Section("Foundry");
         foundrySection.Root.Name = "FoundrySection";
         _materialsViewRoot.AddChild(foundrySection.Root);
+        _foundrySectionRoot = foundrySection.Root; // U-T1: FocusSection("foundry") scroll/flash target
         _foundryRows = new VBoxContainer { Name = "FoundryRows" };
         foundrySection.Body.AddChild(_foundryRows);
 

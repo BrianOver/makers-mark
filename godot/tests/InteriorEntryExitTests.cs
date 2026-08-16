@@ -196,6 +196,63 @@ public class InteriorEntryExitTests
     }
 
     /// <summary>
+    /// Register #147: the furnace used to share the shelf's "materials" Focus, so stoking it opened
+    /// the ore vendor — a byte-identical panel state to the shelf's own press. The furnace's actual
+    /// business (coal, flux, the forge-tier upgrade) is the Foundry, ForgePanel's own third section.
+    /// Asserts on NODE NAMES only, never visible text: the Foundry's own supply buttons are labelled
+    /// "Buy 1" (<c>ForgePanel.cs</c>'s <c>BuySupply_*</c> rows), byte-identical to the ore vendor's
+    /// "Buy 1" rows (<c>BuyMat_*</c>) — a text assertion would be green on the exact bug this test
+    /// exists to catch (the same lesson <c>AnvilThenShelfPress_ActuallyScrollToDifferentVisibleContent</c>'s
+    /// own doc names for register #156).
+    /// </summary>
+    [TestCase]
+    public void FurnacePress_OpensTheFoundry_NotTheOreVendor()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.FindBuilding("forge").RaisePick();
+            var furnace = ui.Town.FindInteriorRoom("forge").Stations[1]; // declared 2nd in InteriorLayout2D
+            AssertThat(furnace.Key).IsEqual("furnace");
+
+            furnace.RaisePick();
+
+            AssertThat(ui.Drawer.IsOpen).IsTrue();
+            AssertThat(ui.Drawer.CurrentPanelId).IsEqual("Forge");
+            AssertThat(ui.Forge.LastFocusedSection)
+                .OverrideFailureMessage(
+                    "Register #147: stoking the furnace must open the Foundry (coal/flux/forge-tier), "
+                    + "not the ore vendor's \"materials\" section.")
+                .IsEqual("foundry");
+
+            var upgrade = Find<Button>(ui.Forge, "UpgradeForge");
+            AssertThat(upgrade.IsVisibleInTree())
+                .OverrideFailureMessage("The furnace must reach the forge-tier upgrade control.")
+                .IsTrue();
+            var coalSupply = Find<Button>(ui.Forge, $"BuySupply_{GameSim.Economy.ForgeSupplyHandlers.Coal}");
+            AssertThat(coalSupply.IsVisibleInTree())
+                .OverrideFailureMessage("The furnace must reach the coal supply row.")
+                .IsTrue();
+            var fluxSupply = Find<Button>(ui.Forge, $"BuySupply_{GameSim.Economy.ForgeSupplyHandlers.Flux}");
+            AssertThat(fluxSupply.IsVisibleInTree())
+                .OverrideFailureMessage("The furnace must reach the flux supply row.")
+                .IsTrue();
+
+            // Every ore-vendor row exists as a node regardless of focus (built once in EnsureBuilt) —
+            // the bug this test forbids is one being REACHABLE (visible in tree), not merely present.
+            var anyOreVendorRowVisible = MaterialRegistry.PricedPool
+                .Select(key => Find<Button>(ui.Forge, $"BuyMat_{key}"))
+                .Any(b => b.IsVisibleInTree());
+            AssertThat(anyOreVendorRowVisible)
+                .OverrideFailureMessage(
+                    "The furnace must NOT open the ore vendor — no BuyMat_* row may be reachable while "
+                    + "the Foundry is focused (register #147's exact collision).")
+                .IsFalse();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
     /// The two tests above only prove INTENT (<c>LastFocusedSection</c>) — a real bug slipped past
     /// exactly that gap during this unit's own build: <c>ScrollContainer.EnsureControlVisible</c>,
     /// called immediately after the drawer opens, measured against the drawer's still-mid-slide,

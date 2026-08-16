@@ -35,9 +35,11 @@ public static class WorkshopVocab
     /// <see cref="StationNoun"/> (display text; ids and nouns can differ, e.g. tanning's "scrape
     /// frame" noun vs "scrape-frame" id, engineering's "workbench" noun vs "bench" id). Named
     /// explicitly per profession rather than inferred from <see
-    /// cref="InteriorLayout2D.StationSpec.Focus"/>, because blacksmith alone carries TWO
+    /// cref="InteriorLayout2D.StationSpec.Focus"/>, because before U-T1 blacksmith carried TWO
     /// Focus:"materials" stations (furnace, shelf) with no data-only way to prefer the
-    /// shopping-flavored one.</para></summary>
+    /// shopping-flavored one — the furnace now has its own "foundry" Focus, but this field stays
+    /// explicit rather than inferred so a future profession sharing a Focus across two stations
+    /// never needs a new inference rule.</para></summary>
     public readonly record struct Vocab(
         string Nametag,
         string StationNoun,
@@ -107,7 +109,10 @@ public static class WorkshopVocab
                 // route the reflective guard is told to allow for a MUTUAL pair only.
                 new InteriorLayout2D.StationSpec("anvil", "Anvil", "town2d-station-anvil", new Vector2I(12, 7), "Forge", Focus: "craft",
                     Verb: "Shape", Copy: "You set the glowing bar on the anvil, ready to shape it.", CombinesWith: "bellows"),
-                new InteriorLayout2D.StationSpec("furnace", "Furnace", "town2d-station-furnace", new Vector2I(6, 5), "Forge", Focus: "materials",
+                // U-T1 (register #147): the furnace used to share the shelf's "materials" Focus,
+                // so stoking it opened the ore vendor — the furnace's own business (coal, flux,
+                // the forge-tier upgrade) is the Foundry, ForgePanel's own third section.
+                new InteriorLayout2D.StationSpec("furnace", "Furnace", "town2d-station-furnace", new Vector2I(6, 5), "Forge", Focus: "foundry",
                     Verb: "Stoke", Copy: "You stoke the furnace, driving the coals hot for the next heat."),
                 // U5: bellows is no longer honest-flavor — it is one half of the anvil's combined
                 // act (R5), so it now shares the anvil's own route on purpose (CombinesWith, above

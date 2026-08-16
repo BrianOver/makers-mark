@@ -99,6 +99,52 @@ public class StationIdentityTests
         }
     }
 
+    /// <summary>
+    /// U-T1 (register #147): <c>ForgePanel.FocusSection</c> is the ONLY sub-panel routing in the
+    /// client, and it now has three legal values ("materials", "foundry", "craft") instead of the
+    /// two that forced the furnace onto the shelf's own route. Iterates the REAL blacksmith station
+    /// list (never a hand-listed id set — that is exactly how anvil/furnace's collision shipped
+    /// unnoticed) and requires its Forge-action stations to cover all three sections, with the
+    /// anvil+bellows CombinesWith pair (R5) as the one sanctioned shared route. A sixth station
+    /// quietly landing back on "materials" (or any other collision) fails here.
+    /// </summary>
+    [TestCase]
+    public void EveryBlacksmithStationFocus_ResolvesToADistinctPanelSection()
+    {
+        var forgeActionStations = WorkshopVocab.StationsFor(ProfessionRegistry.BlacksmithId)
+            .Where(s => s.Action == "Forge")
+            .ToList();
+
+        var distinctSections = forgeActionStations.Select(s => s.Focus).Distinct().ToList();
+        AssertThat(distinctSections.Count)
+            .OverrideFailureMessage(
+                "Every Forge-action blacksmith station must resolve to a distinct ForgePanel "
+                + $"section unless paired by CombinesWith — got "
+                + $"[{string.Join(", ", forgeActionStations.Select(s => $"{s.Id}:{s.Focus}"))}], "
+                + $"{distinctSections.Count} distinct section(s).")
+            .IsEqual(3);
+
+        foreach (var group in forgeActionStations.GroupBy(s => s.Focus))
+        {
+            var members = group.ToList();
+            if (members.Count == 1)
+            {
+                continue;
+            }
+
+            var mutualPair = members.Count == 2
+                && members[0].CombinesWith == members[1].Id
+                && members[1].CombinesWith == members[0].Id;
+
+            AssertThat(mutualPair)
+                .OverrideFailureMessage(
+                    $"Stations [{string.Join(", ", members.Select(m => m.Id))}] share ForgePanel "
+                    + $"section '{group.Key}' without a mutual CombinesWith pairing — the same "
+                    + "byte-identical-route collision register #147 reported for anvil/furnace.")
+                .IsTrue();
+        }
+    }
+
     /// <summary>Every real station must own both halves of KTD-D's fix: a Verb (its half of the
     /// route) and a Copy (its own on-screen line). A station missing either is one nobody bothered
     /// to differentiate — which is how the original collisions shipped unnoticed.</summary>
