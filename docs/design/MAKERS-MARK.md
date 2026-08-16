@@ -3056,7 +3056,9 @@ in it, keeping every `PathRects` spur connected and every door-front tile clear.
 stays 40×28: the fix is using it, not enlarging it. Redistribute the 12 identical trees and the
 eight `props-*` warm-hub props (`TownLayout2D.cs:246-276`) into the newly opened middle ground so a
 pan reveals objects rather than grass. Note the pre-existing duplicate the file flags in its own
-doc (`:273-276`, `props-town-well` vs `town2d-well` — two wells) and resolve it here.
+doc (`:273-276`) is GONE: the owner ruled for `town2d-well` and `props-town-well` was
+deleted (layout, spec, manifest, assets) on 2026-08-16, so the prop list is one shorter
+than this paragraph originally counted.
 
 *(b) Real light at night.* The town's only light model is one `CanvasModulate`
 (`Town2D.cs:484`) tinting the whole viewport flat. `MineWatch` already builds `PointLight2D`s and
@@ -3333,8 +3335,9 @@ U11's interior/exterior claims wait on U3. U11 lands in whichever PR makes its c
 3. **`tavern.png`'s baked scenery.** Removing it makes the tavern match the set and also removes
    the only hedges and roadway in the town. If the owner liked those, they should come back as
    *props*, not as pixels baked into a building.
-4. **Whether `props-town-well` or `town2d-well` survives** — `TownLayout2D.cs:273-276` flags the two
-   wells as a genuine open question, not a design call, and U6 has to place one of them.
+4. ~~Whether `props-town-well` or `town2d-well` survives~~ — **RESOLVED 2026-08-16.** The
+   owner ruled for the well matching the new town: `town2d-well` stays, `props-town-well`
+   is deleted — layout entry, AssetSpec, manifest row, and all four PNG/import files.
 
 ---
 

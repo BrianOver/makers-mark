@@ -92,7 +92,6 @@
   "props-ore-cart": { "diffuse": true, "normal": true },
   "props-string-lanterns": { "diffuse": true, "normal": true },
   "props-tavern-cat": { "diffuse": true, "normal": true },
-  "props-town-well": { "diffuse": true, "normal": true },
   "sunkencrypt-backdrop": { "diffuse": true, "normal": false },
   "sunkencrypt-bog-wight": { "diffuse": true, "normal": true },
   "sunkencrypt-choir-of-teeth": { "diffuse": true, "normal": true },
