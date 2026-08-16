@@ -125,14 +125,19 @@ public sealed class SimAdapter
             // No-op unless MM_PLAYTEST_LOG is set (PlaytestLog.Active) — see PlaytestLog.Action's own
             // doc. This is the ONE choke point every panel's submit passes through, immediate or
             // bell-queued, so a future verb needs no call site of its own to show up in the trail.
-            PlaytestLog.Action(action.GetType().Name, immediate: false, CurrentState.Day, CurrentState.Phase);
+            // U-T6-1: ActionSubject.Describe reads only the action's own fields (no sim lookup, no
+            // evaluator) — the central fill-in that replaces the per-panel opt-in the doc above
+            // proposed and that two days of sessions proved nobody was doing.
+            PlaytestLog.Action(action.GetType().Name, immediate: false, CurrentState.Day, CurrentState.Phase,
+                ActionSubject.Describe(action));
             return;
         }
 
         var result = _kernel.ApplyNow(CurrentState, action);
         CurrentState = result.NewState;
         _applied.Add(action);
-        PlaytestLog.Action(action.GetType().Name, immediate: true, CurrentState.Day, CurrentState.Phase);
+        PlaytestLog.Action(action.GetType().Name, immediate: true, CurrentState.Day, CurrentState.Phase,
+            ActionSubject.Describe(action));
 
         // LastEvents means "everything that has happened this phase", not "whatever happened most
         // recently". Immediate actions accumulate here and AdvancePhase prepends them to the tick's

@@ -92,6 +92,14 @@ public static class PlaytestLog
     /// cref="GodotClient.Tools.AgentPlaytestBridge.BuildDigest"/> now copies this property straight
     /// into <c>StateDigest.BackendLogActive</c> every turn, so the outside driver can tell the two
     /// apart directly instead of inferring it from a quiet log file.</para>
+    ///
+    /// <para><b>2026-08-16 (U-T6-1) — also written into the session header.</b> The outside-driver
+    /// channel above only exists for an <c>agent-playtest</c> run. A human session's OWN artifact
+    /// (this file's JSONL) had no equivalent: the header row this class writes in <see cref="Begin"/>
+    /// carried <c>kind</c>/<c>startedAt</c>/<c>provenance</c> only, so a reader of the raw log had to
+    /// infer "recording was on" from the header's mere presence rather than reading it. The header
+    /// now also carries <c>backendLogActive</c>, the same field name as the digest above, so both
+    /// artifacts speak one vocabulary for the same fact.</para>
     /// </summary>
     public static bool Active => _path is not null;
 
@@ -144,10 +152,18 @@ public static class PlaytestLog
 
             // Header row: what build produced the session. Without provenance a log is unattributable,
             // which is the same reason play.bat stamps the build in the first place.
+            // backendLogActive is always true here — reaching this line means the file just opened
+            // successfully — but it is the same field name AgentPlaytestBridge.BuildDigest copies
+            // into StateDigest.BackendLogActive (see Active's own doc), so a reader correlating this
+            // JSONL against that digest, or grepping the raw file for the flag, never has to infer it
+            // from the header's mere presence. A dead recorder writes no MORE rows after this one —
+            // this field cannot retroactively mark those as missing, only confirm the session started
+            // recording at all.
             System.IO.File.WriteAllText(
                 path,
                 "{\"kind\":\"session\",\"startedAt\":" + startedAtUnix
-                + ",\"provenance\":\"" + Escape(provenance) + "\"}\n");
+                + ",\"provenance\":\"" + Escape(provenance) + "\""
+                + ",\"backendLogActive\":true}\n");
 
             _path = path;
             GD.Print($"[PlaytestLog] recording to {path}");
@@ -182,7 +198,9 @@ public static class PlaytestLog
         _path = null; // clear first so Begin-style re-entry guards do not block the redirect
         _startedAtMsec = Time.GetTicksMsec();
         var startedAtUnix = (long)Time.GetUnixTimeFromSystem();
-        System.IO.File.WriteAllText(path, "{\"kind\":\"session\",\"startedAt\":" + startedAtUnix + ",\"provenance\":\"test\"}\n");
+        System.IO.File.WriteAllText(path,
+            "{\"kind\":\"session\",\"startedAt\":" + startedAtUnix
+            + ",\"provenance\":\"test\",\"backendLogActive\":true}\n");
         _path = path;
         _rows = 0;
     }
@@ -449,13 +467,18 @@ public static class PlaytestLog
     /// <param name="why">The action's own subject, in the player's vocabulary — which recipe, which
     /// item, which hero.
     ///
-    /// <para>Optional and empty by default, so the one choke point in <see cref="SimAdapter.Queue"/>
-    /// keeps recording every verb with no per-call-site work: an unadorned row is still strictly
-    /// better than none. But a bare type name is a weaker record than it looks. The 2026-08-14
-    /// session logged <c>"action":"CraftAction"</c> four times without once naming what was forged,
-    /// while the owner's complaint that day was that the shop and the forge do not connect — the
-    /// exact question ("what did he make, and did anyone want it?") that those four rows are shaped
-    /// to answer and cannot. Panels that know their subject pass it; the rest degrade to "".</para></param>
+    /// <para><b>2026-08-16 (U-T6-1) — filled centrally, not per-panel.</b> The parameter has been
+    /// optional and empty-by-default since this method was written; the doc here used to say "panels
+    /// that know their subject pass it," and in two days of real sessions none ever did — the
+    /// 2026-08-14 session logged <c>"action":"CraftAction"</c> four times without once naming what
+    /// was forged, the exact question ("what did he make, and did anyone want it?") those rows are
+    /// shaped to answer and could not. Per-call-site opt-in needs every future panel author to
+    /// remember it; nobody did. <see cref="GodotClient.SimAdapter.Queue"/> — the one choke point
+    /// every action already passes through — now supplies it itself via
+    /// <see cref="GodotClient.ActionSubject.Describe"/>, a pure switch over the action's own fields
+    /// (no sim lookup, no evaluator, no invented reason). The default stays empty only so a future
+    /// non-<see cref="GameSim.Contracts.PlayerAction"/> caller of this method is never forced to
+    /// invent a subject it does not have.</para></param>
     public static void Action(string actionName, bool immediate, int day, DayPhase phase, string why = "")
     {
         if (_path is null)
