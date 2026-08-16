@@ -136,5 +136,96 @@ public class ArtManifestTests
                 $"renders as a fallback with no error anywhere:\n  {string.Join("\n  ", missing)}")
             .IsEqual(0);
     }
+
+    /// <summary>
+    /// The ten robed townsfolk whose walk cycle ships THREE distinct frames, not four.
+    ///
+    /// <para>Cause, from the pipeline's own source (<c>assemble_folk.py</c>, the robed branch):
+    /// <c>f1, f2, f3, f4 = sway(-1), base_s, sway(1), base_s</c> — the two passing frames are the
+    /// SAME unswayed base object, so <c>_walk2</c> and <c>_walk4</c> come out byte-identical. Not a
+    /// downsample collapse; an assignment. The non-robed branch has four distinct frames because it
+    /// has real walk-contact renders to work from, and the robed bodies never got one
+    /// (their <c>folk_geom.json</c> entries carry no walk seed at all).</para>
+    ///
+    /// <para>Pinned as an EXACT SET, not tolerated: adding an eleventh goes red, and so does fixing
+    /// one without removing it from this list. The earlier note in the tracker said this was two
+    /// characters ("bmatron/selder"); hashing every frame on disk says it is ten, because those two
+    /// robed bodies each ship five palette recolors. A count nobody measured was wrong by 5x, which
+    /// is the whole reason this is a test and not a comment.</para>
+    /// </summary>
+    private static readonly string[] KnownThreeFrameRobedTownsfolk =
+    [
+        "town2d-townsfolk-broad-v11", "town2d-townsfolk-broad-v12", "town2d-townsfolk-broad-v13",
+        "town2d-townsfolk-broad-v14", "town2d-townsfolk-broad-v15",
+        "town2d-townsfolk-slight-v11", "town2d-townsfolk-slight-v12", "town2d-townsfolk-slight-v13",
+        "town2d-townsfolk-slight-v14", "town2d-townsfolk-slight-v15",
+    ];
+
+    [TestCase]
+    public void EveryTownsfolkWalkCycle_ShipsFourDistinctFrames_ExceptThePinnedRobedTen()
+    {
+        // Iterates the manifest, never a hand-listed id array — the mistake that shipped 128
+        // untested assets under a green suite. Every base is discovered, not enumerated here.
+        var bases = new Dictionary<string, List<string>>();
+        foreach (var id in IdsInManifest().Where(i => i.StartsWith("town2d-townsfolk")))
+        {
+            var root = id;
+            foreach (var suffix in new[] { "_step", "_walk2", "_walk4" })
+            {
+                if (id.EndsWith(suffix))
+                {
+                    root = id[..^suffix.Length];
+                    break;
+                }
+            }
+
+            if (!bases.TryGetValue(root, out var frames))
+            {
+                bases[root] = frames = [];
+            }
+
+            frames.Add(id);
+        }
+
+        AssertThat(bases.Count)
+            .OverrideFailureMessage("No townsfolk found at all — the discovery above has rotted.")
+            .IsGreater(0);
+
+        var threeFrame = new List<string>();
+        foreach (var (root, frames) in bases)
+        {
+            var hashes = new HashSet<string>();
+            foreach (var id in frames)
+            {
+                var path = $"{ArtDir}/{id}.png";
+                using var file = Godot.FileAccess.Open(path, Godot.FileAccess.ModeFlags.Read);
+                if (file is null)
+                {
+                    continue; // EveryCommittedPng_IsListedInTheManifest owns the on-disk check
+                }
+
+                hashes.Add(System.Convert.ToBase64String(
+                    System.Security.Cryptography.SHA1.HashData(file.GetBuffer((long)file.GetLength()))));
+            }
+
+            if (frames.Count == 4 && hashes.Count < 4)
+            {
+                threeFrame.Add(root);
+            }
+        }
+
+        threeFrame.Sort();
+        var expected = KnownThreeFrameRobedTownsfolk.OrderBy(x => x, System.StringComparer.Ordinal).ToList();
+
+        AssertThat(string.Join(", ", threeFrame))
+            .OverrideFailureMessage(
+                "The set of townsfolk shipping duplicate walk frames changed.\n" +
+                $"  on disk now: {string.Join(", ", threeFrame)}\n" +
+                $"  pinned:      {string.Join(", ", expected)}\n" +
+                "If you FIXED one, delete it from KnownThreeFrameRobedTownsfolk in the same PR. " +
+                "If a new one appeared, the robed branch of assemble_folk.py has spread — fix the " +
+                "generator, do not widen this list.")
+            .IsEqual(string.Join(", ", expected));
+    }
 }
 #endif
