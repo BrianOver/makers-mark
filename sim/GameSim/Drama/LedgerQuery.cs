@@ -48,12 +48,20 @@ public static class LedgerQuery
         var ores = new Dictionary<int, List<OreOffered>>();
         var records = new Dictionary<int, int>();
         var earned = new Dictionary<int, int>();
+        var departedToday = new HashSet<int>();
 
         var dayEvents = DayLog.For(state.EventLog, day);
         foreach (var gameEvent in dayEvents)
         {
             switch (gameEvent)
             {
+                case PartyDeparted departed:
+                    foreach (var id in departed.Party)
+                    {
+                        departedToday.Add(id.Value);
+                    }
+
+                    break;
                 case PartyReturned returned:
                     foreach (var id in returned.Survivors)
                     {
@@ -92,7 +100,8 @@ public static class LedgerQuery
                 ? (hero.Name, hero.Gold)
                 : (new HeroId(heroValue).ToString(), 0);
 
-            var floor = died?.Floor ?? SurvivorFloor(records.GetValueOrDefault(heroValue), heroBeats, heroOres);
+            var floor = died?.Floor ?? SurvivorFloor(
+                records.GetValueOrDefault(heroValue), heroBeats, heroOres, departedToday.Contains(heroValue));
             var goldEarned = earned.GetValueOrDefault(heroValue);
             cards.Add(new ReturnCard(
                 new HeroId(heroValue), name, died is null, floor,
@@ -176,11 +185,21 @@ public static class LedgerQuery
         return (kills, saves);
     }
 
-    /// <summary>Deepest floor the day's log proves for a survivor (0 when nothing places them).</summary>
+    /// <summary>
+    /// Deepest floor the day's log proves for a survivor. Record/beat/ore evidence can all be
+    /// absent for a hero who banked kill gold on a floor nobody cleared (#166) — a floor fails to
+    /// clear if any fighter flees or dies, but gold is still paid per kill — so 0 is NOT "never
+    /// been", it is "the log has no depth evidence yet". <paramref name="departedToday"/> (from the
+    /// day's own <see cref="PartyDeparted"/> event) floors the result at 1: every delve enters at
+    /// floor 1 (<c>ExpeditionResolver.ResolveFloors</c>'s <c>fromFloor</c>), so 1 is the provable
+    /// minimum for a hero who left town today and can only understate the truth, never fabricate it
+    /// the way a bare 0 does.
+    /// </summary>
     private static int SurvivorFloor(
         int recordFloor,
         ImmutableList<AttributionBeatEvent> beats,
-        ImmutableList<OreOffered> ores)
+        ImmutableList<OreOffered> ores,
+        bool departedToday)
     {
         var floor = recordFloor;
         foreach (var beat in beats)
@@ -193,16 +212,30 @@ public static class LedgerQuery
             floor = Math.Max(floor, OreFloor(ore.MaterialKey));
         }
 
-        return floor;
+        return departedToday ? Math.Max(1, floor) : floor;
     }
 
     /// <summary>
-    /// Inverse of <see cref="VenueDefinition.OreKey"/> — ore names the floor it came from.
-    /// Scoped to the Mine (the only live venue, P4): with no venue in hand here (the ledger reads
-    /// the event log, not the <c>ExpeditionResult</c>), the Mine is the correct default and this
-    /// stays byte-identical to the old <c>MonsterTable</c> loop.
+    /// Inverse of <see cref="VenueDefinition.OreKey"/> — ore names the floor it came from. Scans
+    /// every registered venue (P4's forward ladder) rather than assuming the Mine: ore keys are
+    /// globally unique across all live venues (<c>VenueRegistryTests.EveryOreKey_IsUniqueAcrossAllVenues</c>
+    /// pins it), so the first non-zero hit is unambiguous. Returns 0 only when no venue mints this
+    /// key at all — the ledger reads the event log, not the <c>ExpeditionResult</c>, so there is no
+    /// venue in hand here.
     /// </summary>
-    private static int OreFloor(string materialKey) => VenueRegistry.Mine.OreFloor(materialKey);
+    private static int OreFloor(string materialKey)
+    {
+        foreach (var venue in VenueRegistry.All.Values)
+        {
+            var floor = venue.OreFloor(materialKey);
+            if (floor != 0)
+            {
+                return floor;
+            }
+        }
+
+        return 0;
+    }
 
     private static List<TValue> Bucket<TValue>(Dictionary<int, List<TValue>> map, int key)
     {
