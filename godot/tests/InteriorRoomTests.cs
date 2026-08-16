@@ -36,7 +36,7 @@ public class InteriorRoomTests
     /// <summary>U3: the section keys <c>ForgePanel.FocusSection</c> actually knows how to
     /// scroll/flash — a station naming any other <c>Focus</c> is caught HERE (table-validation
     /// time), not discovered as "the shelf press opened the panel but never scrolled anywhere."</summary>
-    private static readonly HashSet<string> KnownFocusValues = new() { "materials", "craft" };
+    private static readonly HashSet<string> KnownFocusValues = new() { "materials", "foundry", "craft" };
 
     private static Town2D Mount()
     {

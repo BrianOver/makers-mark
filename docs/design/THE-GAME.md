@@ -135,8 +135,9 @@ tavern runs two acts — the commission handshake in the morning, the ore handsh
 plunge to quench it. About ten seconds once you are good at it. When a recipe and material have a
 proven trace, *forge another like it* repeats your grade in one click.
 
-Beside the recipes sits the **Foundry** — the forge's own counter. It shows your forge tier, your
-coal and flux, and the price of the next tier. Four things are bought here:
+Stoke the furnace and the **Foundry** opens — its own screen, not a scroll past the recipes or the
+ore vendor's rows. It shows your forge tier, your coal and flux, and the price of the next tier.
+Four things are bought here:
 
 - **Raise the forge**, 400 → 1,600 → 6,400 → 25,600 gold, each also demanding 25 units of the ore
   from its matching mine floor. Gold alone never buys past what the mine has actually given up.
