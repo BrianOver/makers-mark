@@ -24,6 +24,10 @@
 # the Anvil station (scrolled to the recipe cards instead) — the comparison receipt proving the
 # two land in visibly different places. ForgeFlavor does the same for the Bellows station — the
 # receipt proving a flavor press shows a one-line toast and never opens a panel.
+# Counter (BP-BUG-3) opens the Shop drawer, then presses the real "Open Counter" button --
+# CounterPanel is nested inside ShopPanel and only exists while state.Counter is live, so it
+# is NOT reachable as an OpenPanel id. Without this state the reported edge-clipping could
+# not be photographed at all, which is how a fix for it shipped unverified.
 # SendOff (U1, playtest-three plan) opens the Forge drawer, then presses the real
 # AdvancePhase bell through its own signal — the receipt for "send them off with a drawer
 # open" reachability fix, showing the resulting town view (drawer closed, camera on the
@@ -304,6 +308,19 @@ func _process(_delta: float) -> bool:
 			if bell:
 				for _i in range(presses):
 					bell.emit_signal("pressed")
+		elif _state == "Counter":
+			# BP-BUG-3: the counter panel was reported clipped on BOTH edges, and the clip fix
+			# could never be photographed because no shot state reached an OPEN counter --
+			# CounterPanel is NESTED inside ShopPanel and appears only when state.Counter is
+			# live, so it is not an OpenPanel id the way Demand/HeroCards are. A fix nobody
+			# can photograph is a fix nobody can check, and that is why this one never was.
+			#
+			# Open the Shop drawer here; the real "Open Counter" button is pressed a beat
+			# later (the _frames == 90 block below) once the drawer's 0.22s slide-in has
+			# settled -- the same ordering SendOff uses, for the same reason: pressing
+			# mid-slide photographs a panel that is still moving.
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Shop")
 		elif _state == "SendOff":
 			# U1 (playtest-three plan): the receipt for "clicked send them off with a drawer
 			# open — where are the visuals?" Open the Forge drawer here; the AdvancePhase
@@ -434,6 +451,19 @@ func _process(_delta: float) -> bool:
 	# SendOff's second beat: press the real bell button through its own signal (the exact path
 	# a player uses), a beat after the Forge drawer opened above -- this is what the departure
 	# choreography (drawer close, camera pan, PiP dock) is actually reacting to.
+	# Counter's second beat: the Shop drawer opened at frame 0 has settled, so press the real
+	# "Open Counter" button CounterPanel.BuildClosedState builds -- the same production path a
+	# player takes (Button -> OpenCounterAction -> Adapter.Queue), never a state injection. The
+	# button is gated to Morning, which is where a fresh campaign starts, so it is live here.
+	if _state == "Counter" and _frames == 90:
+		var open_counter = _ui.find_child("OpenCounter", true, false)
+		if open_counter:
+			open_counter.emit_signal("pressed")
+		else:
+			# Loud, not silent: a shot that quietly photographs a CLOSED counter would read as
+			# "the panel is fine" and is exactly how this bug survived being fixed once already.
+			push_error("[shot] SHOT_STATE=Counter could not find the OpenCounter button -- "
+				+ "the shot below is a CLOSED counter and proves nothing about the clip.")
 	if _state == "SendOff" and _frames == 90:
 		var bell = _ui.find_child("AdvancePhase", true, false)
 		if bell:
