@@ -846,26 +846,26 @@ public class AgentPlaytestBridgeTests
     }
 
     /// <summary>
-    /// fix/the-pilot-can-finish-a-craft: MEASURED, not reasoned about. A live 420-turn pilot probe
-    /// (tools/agent-playtest/pilot.ps1) opened the forge minigame and landed zero strikes. Two
-    /// candidates were named before any test could tell them apart: (A) the pilot's own
-    /// pump-until-780/strike-above-340 thresholds just waste turns re-earning heat it did not need, or
-    /// (B) <see cref="AgentPlaytestBridge.ApplyKey"/>'s press-3-frames-release tap never actually
-    /// latches <see cref="ForgeMinigame"/>'s C3 tap-to-toggle escape hatch (<see
-    /// cref="ForgeMinigame.BellowsTapMaxHoldSeconds"/>), so heat never leaves the floor at all.
+    /// fix/u-t1-anvil-can-be-finished: this test used to ASSERT the softlock as correct. The
+    /// original version measured heat climbing steadily across 8 real bridge-driven "forge_strike"
+    /// turns while <c>IsPumping</c> stayed true throughout, and read that as good news --
+    /// "DISPROVES the tap-never-latches hypothesis, the C3 escape hatch works." It does work. That
+    /// was never the bug. The bug is what the old assertions locked in as a requirement:
+    /// <c>ForgeStrike()</c> early-returning while <c>IsPumping</c>, so every one of pilot.ps1's
+    /// "forge_strike" turns sent during a latched pump was a genuine no-op -- the hammer, the one
+    /// input that can finish the craft, did nothing for as long as the bellows stayed toggled on. A
+    /// live 420-turn pilot probe (tools/agent-playtest/pilot.ps1) opened this exact minigame and
+    /// landed zero strikes because of it. Worse, once heat hit its 1000 clamp the bellows kept
+    /// draining shape for free while doing no more heat work -- Brian's own report, "Strike 24/21 --
+    /// Heat 1000 -- pumping -- the billet is yielding, keep going".
     ///
-    /// <para>Neither <c>ForgeMinigameTests</c> nor <see cref="ForgePlayer"/> can answer this: both
-    /// drive Act 1 with <c>forge.SetProcess(false)</c> and step the clock by hand
-    /// (<c>ForgeMinigame.Advance</c>), which is exactly the branch <see cref="ForgeMinigame"/>'s own
-    /// <c>_GuiInput</c> comment says SKIPS the tap-vs-hold measurement entirely
-    /// (<c>IsProcessing()</c> false). This test drives the EXACT bridge call pilot.ps1 sends
-    /// (<c>{"action":"key","target":"bellows"}</c>, then repeated <c>forge_strike</c> no-ops while
-    /// pumping, matching <c>Get-PilotForgeMinigameCommand</c>'s own policy) against a REAL, still-ticking
-    /// overlay, and reports the actual per-turn heat delta via <c>GD.Print</c> so the number is on
-    /// record regardless of which way the assertions land.</para>
+    /// <para><b>STRIKE IMPLIES RELEASE (owner ruling).</b> A strike arriving mid-pump now stops the
+    /// bellows and lands -- it IS the release, not a second input the pump blocks. So this same
+    /// 8-turn "forge_strike while pumping" sequence must now end the pump on the very first turn and
+    /// bank a real strike on every turn after: the inverse of what this test used to assert.</para>
     /// </summary>
     [TestCase]
-    public async Task KeyBellows_OneRealTapThenTurnsOfForgeStrike_MeasuresThePerTurnHeatDelta()
+    public async Task KeyForgeStrike_WhilePumping_StopsThePumpAndLandsRealStrikes()
     {
         var ui = MountMainUi();
         try
@@ -903,27 +903,25 @@ public class AgentPlaytestBridgeTests
                     $"{tapEndMs - tapStartMs}ms) left IsPumping={pumpingAfterTap}. ForgeMinigame's own C3 " +
                     "tap-to-toggle latch is supposed to keep the bellows running past release for a press " +
                     "well under BellowsTapMaxHoldSeconds -- if it does not latch, a live pilot run can " +
-                    "never accumulate heat off a single keypress and can never land a strike. THIS IS " +
-                    "CANDIDATE B.")
+                    "never accumulate heat off a single keypress.")
                 .IsTrue();
 
-            // pilot.ps1's OWN policy while pumping and under threshold: send "forge_strike" (a real
-            // no-op -- ForgeStrike() early-returns while IsPumping) every turn rather than re-pressing
-            // bellows, so the toggle is never touched again. Each loop iteration below is exactly one
-            // such turn: the SAME ApplyKey press-3-frames-release-3-frames round trip a live run pays,
-            // over and over -- this is where the "per-turn heat delta while the pilot believes it is
-            // pumping" number comes from.
+            // Exactly pilot.ps1's OLD policy while pumping: send "forge_strike" every turn rather
+            // than re-pressing bellows. Under the fix, the FIRST such turn must stop the pump
+            // (strike implies release) and land a strike; every turn after is an ordinary strike
+            // against a bellows that is no longer running. Each loop iteration is the SAME
+            // ApplyKey press-3-frames-release-3-frames round trip a live run pays.
             var heatSamples = new List<int> { heatAfterTap };
+            var strikeSamples = new List<int> { overlay.StrikesLanded };
             var msPerTurn = new List<long>();
-            var pumpingThroughout = pumpingAfterTap;
             for (var turn = 0; turn < 8; turn++)
             {
                 var beforeMs = Time.GetTicksMsec();
-                await bridge.Apply(ui, new AgentCommand("key", "forge_strike", Why: "test: simulated turn while pumping"));
+                await bridge.Apply(ui, new AgentCommand("key", "forge_strike", Why: "test: simulated turn, now a real strike even while pumping"));
                 var afterMs = Time.GetTicksMsec();
                 msPerTurn.Add((long)(afterMs - beforeMs));
                 heatSamples.Add(overlay.HeatYPermille);
-                pumpingThroughout &= overlay.IsPumping;
+                strikeSamples.Add(overlay.StrikesLanded);
             }
 
             var perTurnDeltas = new List<int>();
@@ -932,34 +930,35 @@ public class AgentPlaytestBridgeTests
                 perTurnDeltas.Add(heatSamples[i] - heatSamples[i - 1]);
             }
 
-            // MEASURED 2026-08-12 (this exact test, run standalone): tapRoundTripMs=44,
-            // heatAfterTap=168, pumpingAfterTap=True, pumpingThroughoutEightTurns=True,
-            // heatSamples=[168,192,216,240,264,288,312,336,360], perTurnDeltas all 24,
-            // msPerTurn ~100 each -- roughly 240 permille/sec, matching
-            // BellowsRaisePermillePerSecond (260) within Settle-frame-count rounding. This DISPROVES
-            // the "tap never latches, heat pinned near zero" hypothesis (fix/the-pilot-can-finish-a-craft's
-            // own candidate B): the C3 escape hatch works, and heat climbs reliably and predictably.
+            // What this now measures, post-fix: the pump stops on turn 1 (StrikesLanded goes
+            // 0 -> 1, IsPumping true -> false in the same call) and every subsequent turn banks
+            // another strike against a bellows that is no longer running -- the exact opposite of
+            // the pre-fix measurement above this comment's own history, where heat climbed for 8
+            // straight turns and StrikesLanded never moved at all. That prior "healthy" reading was
+            // the trap working exactly as coded: the latch held, and holding was the bug.
             GD.Print(
-                "[bellows-latch-measurement] tapRoundTripMs=" + (tapEndMs - tapStartMs) +
+                "[forge-strike-implies-release] tapRoundTripMs=" + (tapEndMs - tapStartMs) +
                 " heatAfterTap=" + heatAfterTap + " pumpingAfterTap=" + pumpingAfterTap +
-                " pumpingThroughoutEightTurns=" + pumpingThroughout +
+                " pumpingAfterFirstStrikeTurn=" + (strikeSamples.Count > 1 && overlay.IsPumping == false) +
                 " heatSamples=[" + string.Join(",", heatSamples) + "]" +
                 " perTurnDeltas=[" + string.Join(",", perTurnDeltas) + "]" +
+                " strikeSamples=[" + string.Join(",", strikeSamples) + "]" +
                 " msPerTurn=[" + string.Join(",", msPerTurn) + "]");
 
-            AssertThat(pumpingThroughout)
+            AssertThat(overlay.IsPumping)
                 .OverrideFailureMessage(
-                    "IsPumping turned itself off at some point across 8 forge_strike turns with nobody " +
-                    "pressing bellows again -- it must stay latched until the NEXT bellows tap, not time " +
-                    "out or get knocked off by an unrelated key.")
-                .IsTrue();
+                    "A forge_strike sent while pumping must stop the pump -- STRIKE IMPLIES RELEASE -- " +
+                    $"but IsPumping is still true after 8 forge_strike turns. Strike samples: " +
+                    $"[{string.Join(",", strikeSamples)}].")
+                .IsFalse();
 
-            AssertThat(heatSamples[heatSamples.Count - 1])
+            AssertThat(strikeSamples[strikeSamples.Count - 1])
                 .OverrideFailureMessage(
-                    "Heat did not rise across 8 real turns while IsPumping stayed true. Samples: [" +
-                    string.Join(",", heatSamples) + "]. If heat is flat, the overlay's _Process is not " +
-                    "actually advancing in real time while pumping -- CANDIDATE B again, a different shape.")
-                .IsGreater(heatAfterTap);
+                    $"8 real forge_strike turns sent while pumping landed {strikeSamples[^1]} strikes " +
+                    $"total (started at {strikeSamples[0]}). This is exactly the pilot's 420-turn-zero-" +
+                    "strikes trap: forge_strike must never be a no-op while pumping. Heat samples: " +
+                    $"[{string.Join(",", heatSamples)}].")
+                .IsGreater(strikeSamples[0]);
         }
         finally
         {
