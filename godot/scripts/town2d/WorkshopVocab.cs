@@ -35,9 +35,11 @@ public static class WorkshopVocab
     /// <see cref="StationNoun"/> (display text; ids and nouns can differ, e.g. tanning's "scrape
     /// frame" noun vs "scrape-frame" id, engineering's "workbench" noun vs "bench" id). Named
     /// explicitly per profession rather than inferred from <see
-    /// cref="InteriorLayout2D.StationSpec.Focus"/>, because blacksmith alone carries TWO
+    /// cref="InteriorLayout2D.StationSpec.Focus"/>, because before U-T1 blacksmith carried TWO
     /// Focus:"materials" stations (furnace, shelf) with no data-only way to prefer the
-    /// shopping-flavored one.</para></summary>
+    /// shopping-flavored one — the furnace now has its own "foundry" Focus, but this field stays
+    /// explicit rather than inferred so a future profession sharing a Focus across two stations
+    /// never needs a new inference rule.</para></summary>
     public readonly record struct Vocab(
         string Nametag,
         string StationNoun,

@@ -27,7 +27,7 @@ public class WorkshopVocabTests
         "Forge", "Shop", "Tavern", "Bounties", "Depths", "Bestiary", "Legends", "Watch",
     };
 
-    private static readonly System.Collections.Generic.HashSet<string> KnownFocusValues = new() { "materials", "craft" };
+    private static readonly System.Collections.Generic.HashSet<string> KnownFocusValues = new() { "materials", "foundry", "craft" };
 
     private static readonly string[] AllProfessionIds =
     {
