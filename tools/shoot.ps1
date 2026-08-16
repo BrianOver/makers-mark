@@ -8,7 +8,7 @@
 # headless failure mode is an infinite hang, so we never wait forever.
 #
 # Usage: powershell -File tools/shoot.ps1 -Out C:\tmp\town.png [-State Tavern]
-#   -State: "" (town, default) | Forge | Shop | Tavern | Gate
+#   -State: "" (town, default) | Forge | Shop | Tavern | Gate | Counter
 param(
     [Parameter(Mandatory = $true)][string]$Out,
     [string]$State = "",
