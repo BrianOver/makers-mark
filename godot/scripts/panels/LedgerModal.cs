@@ -400,9 +400,17 @@ public partial class LedgerModal : SimPanel
             // PURSE after the reveal (GoldOnHand) is a different quantity — one unlabelled chip
             // sitting under a differing number read as a reward it wasn't. Two labelled chips now,
             // naming each figure so neither is mistaken for the other.
+            // Both chips are named explicitly. Two StatChips under one row are same-named siblings,
+            // and Godot silently renames the second ("StatChip" -> "StatChip2"), so anything
+            // matching the name exactly finds the purse and never the earnings. Naming them here
+            // makes each findable for what it is rather than for the order it happened to be added.
             var goldRow = AddRow(telling.Body);
-            goldRow.AddChild(StatChip("Purse", $"{card.GoldOnHand}g", UiKit.ChipTone.Gold));
-            goldRow.AddChild(StatChip("Earned", $"{card.GoldEarned}g"));
+            var purseChip = StatChip("Purse", $"{card.GoldOnHand}g", UiKit.ChipTone.Gold);
+            purseChip.Name = "GoldChip_Purse";
+            goldRow.AddChild(purseChip);
+            var earnedChip = StatChip("Earned", $"{card.GoldEarned}g");
+            earnedChip.Name = "GoldChip_Earned";
+            goldRow.AddChild(earnedChip);
         }
 
         foreach (var beat in card.Beats)

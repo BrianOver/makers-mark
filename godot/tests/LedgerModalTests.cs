@@ -839,12 +839,15 @@ public class LedgerModalTests
         };
     }
 
-    /// <summary>Reads the two StatChip pills (label + tone-colored "Value" label) that share the
-    /// name "StatChip" under a card, keyed by their (unnamed) label text.</summary>
+    /// <summary>Reads the card's gold pills (label + tone-colored "Value" label), keyed by their
+    /// label text. Matches on the <c>GoldChip_</c> name prefix the panel assigns, NOT on the bare
+    /// "StatChip" default: two same-named siblings make Godot rename the second, so an exact-name
+    /// match finds the purse and silently misses the earnings — which is how this helper first
+    /// reported "chips seen: Purse" against a card that was rendering both.</summary>
     private static System.Collections.Generic.Dictionary<string, string> GoldChipValues(Control cardNode) =>
         cardNode.FindChildren("*", nameof(PanelContainer), recursive: true, owned: false)
             .Cast<PanelContainer>()
-            .Where(p => p.Name == "StatChip")
+            .Where(p => p.Name.ToString().StartsWith("GoldChip_", System.StringComparison.Ordinal))
             .ToDictionary(
                 chip => ((Label)((HBoxContainer)chip.GetChild(0)).GetChild(0)).Text,
                 chip => Find<Label>(chip, "Value").Text);
