@@ -96,9 +96,9 @@ public class AssetProvenanceTests
     };
 
     /// <summary>Every <c>town2d-</c> id is the hand-authored pixel track: some come from
-    /// <c>tools/art/gen_town_sprites.py</c> (townsfolk bodies, hero variant pools -v2..), the rest
-    /// from a dedicated <c>art/pipeline/gen-*.py</c> script (market/signs/interiors/ground tiles) —
-    /// each individually traced to its generator during U9. None carries (or needs) an
+    /// <c>tools/art/gen_town_sprites.py</c> (townsfolk bodies, townsfolk variant pools -v2..), the
+    /// rest from a dedicated <c>art/pipeline/gen-*.py</c> script (market/signs/interiors/ground
+    /// tiles) — each individually traced to its generator during U9. None carries (or needs) an
     /// <c>art/build/*.build.json</c>; the script IS the provenance, per this project's own README.
     ///
     /// <para><b>EXCEPT</b> the six <c>town2d-hero-&lt;class&gt;{,_step,_walk2,_walk4}</c> ids
@@ -110,8 +110,21 @@ public class AssetProvenanceTests
     /// specific ids — the six classes' entries are dead weight `--check` would now flag as drift on
     /// every run were it not for this carve-out, which is why they get real
     /// <c>art/build/town2d-hero-&lt;class&gt;*.build.json</c> records instead of resting on this
-    /// blanket exemption. The hero VARIANT pool ids (<c>-v2</c>.. — <c>ArtVariants.cs</c>) are
-    /// UNCHANGED and still hand-drawn, so they correctly stay under this prefix.</para>
+    /// blanket exemption.</para>
+    ///
+    /// <para><b>AND</b> those same six classes' <c>-v2..-v5</c> VARIANT pool ids (96 ids, same-day
+    /// follow-up): these left the "still hand-drawn" claim below the moment their base did.
+    /// <c>gen_town_sprites.py</c>'s <c>VARIANT_SPRITES</c> still CONTAINS the recolour code that
+    /// would produce a hand-drawn variant for these ids, and <c>_ai_composite_cast_ids</c> now
+    /// excludes them from both the write loop and <c>--check</c> for the exact same reason the base
+    /// ids are excluded — a plain re-run would silently clobber the shipped art. Each of the 96 gets
+    /// its own real <c>art/build/town2d-hero-&lt;class&gt;-v&lt;2-5&gt;*.build.json</c> (<c>Status:
+    /// "procedural"</c> — deterministic PIL recolour of the class's own AI-composite base, using
+    /// <c>gen_town_sprites.py</c>'s own verbatim tone tables; zero diffusion, zero seed, so no
+    /// <c>Seed</c>/<c>Model</c> to record) rather than resting on this blanket exemption, which would
+    /// otherwise silently misdescribe them as unchanged hand art. Every OTHER hero/civilian variant
+    /// pool (skirmisher's hair, townsfolk, everything not one of these six classes) is genuinely
+    /// unchanged and correctly stays under this prefix.</para>
     /// </summary>
     private const string HandAuthoredPrefix = "town2d-";
 

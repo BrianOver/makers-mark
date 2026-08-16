@@ -1716,11 +1716,28 @@ def main() -> int:
     # `python tools/art/gen_town_sprites.py` run would silently clobber the approved AI art back
     # to the old look with no error. AssetProvenanceTests' HandAuthoredPrefix comment carries the
     # test-side half of this same carve-out.
-    _ai_composite_cast_ids = {
+    #
+    # 2026-08-15, same-day follow-up: the six classes' -v2..-v5 VARIANT pools got the same
+    # treatment (96 more PNGs, deterministic PIL recolours of the AI bases per the SAME
+    # SKIN_TONES/HAIR_TONES/GARMENT_DYES rows this script already owns -- not a second render
+    # pipeline). Those ids are DERIVED from CLASS_HUES + variant_id(), not hand-listed, on purpose:
+    # this repo has been burned before by an exclusion set that was a literal id array and silently
+    # stopped covering a growing family (see the hand-listed-fixtures lesson). CIVILIAN variants are
+    # NOT in this set -- townsfolk still render from this script's own hand-drawn geometry.
+    _ai_composite_hero_ids = {
         f"town2d-hero-{cls}{suffix}"
         for cls in CLASS_HUES
         for suffix in ("", "_step", "_walk2", "_walk4")
-    } | {f"player_smith{suffix}" for suffix in ("", "_step", "_walk2", "_walk4")}
+    }
+    _ai_composite_cast_ids = (
+        _ai_composite_hero_ids
+        | {
+            variant_id(base_id, index)
+            for base_id in _ai_composite_hero_ids
+            for index in range(1, VARIANT_COUNT)
+        }
+        | {f"player_smith{suffix}" for suffix in ("", "_step", "_walk2", "_walk4")}
+    )
 
     all_sprites = {
         name: value

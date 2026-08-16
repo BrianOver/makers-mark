@@ -1,0 +1,20 @@
+{
+  "Seed": null,
+  "Model": null,
+  "Lora": null,
+  "Steps": null,
+  "CfgMilli": null,
+  "SamplerResolved": null,
+  "SchedulerResolved": null,
+  "PaletteSha256": null,
+  "DiffuseSha256": "a68db07fa729e1bcd65a2baa02eed7d523996c1b3b9781bb011c88e58e598b14",
+  "NormalSha256": null,
+  "Uid": "uid://bupb2270lx5f0",
+  "HandFinished": false,
+  "Status": "procedural",
+  "Provenance": {
+    "drafts": null,
+    "paintoverNote": null,
+    "aiDisclosure": "Deterministic PIL recolour of the owner-approved town2d-hero-skirmisher_walk2 AI-composite base render (art/build/town2d-hero-skirmisher_walk2.build.json) -- ZERO diffusion, ZERO seed, same discipline as tools/art/gen_town_sprites.py's own variant_palette()/variant_id() for every other class/civilian pool: -v2 is variant row 1 of gen_town_sprites.py's own verbatim SKIN_TONES/HAIR_TONES/GARMENT_DYES tables (VARIANT_COUNT=5, row 0 is the base) -- this body's skin/hair/dye is the SAME row skirmisher's own base and every other class's and townsfolk's own -v2 already use, not a value invented for this class. Recipe (proven, not theorised, against all 24 committed hero frame PNGs before any variant was generated): the base render's own crop/corner-flood-fill key/premultiplied-box-downsample pipeline is reused verbatim, with one recolour step inserted -- nearest-reference pixel classification per zone (skin/hair/garment) with luminance-mapped tone transfer, using skirmisher's own skin + hair (only class with visible hair) + pale leggings at 2x dye weight + green dye lerp. Key masks and crops come from the base render, so this frame's silhouette and alpha are byte-identical to town2d-hero-skirmisher_walk2's own. This is the passing pose (4-frame gait; see the class base's own build.json for the full walk-cycle disclosure)."
+  }
+}
