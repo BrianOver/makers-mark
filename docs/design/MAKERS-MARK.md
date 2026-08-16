@@ -2593,7 +2593,8 @@ re-baseline). None blocks a shipping unit; each blocks a follow-on PR.
 
 ### 11.12 One building got a contract; nothing else did — 2026-08-15
 
-> **Correction to this section's audio premise, measured after it was drafted.** U10 below argues
+> **Correction to this section's audio premise, measured after it was drafted — and then settled.**
+> The audio unit that used to live below (since struck, along with the plan it carried) argued
 > that `night-still` is "the one track the player has never heard wrap," citing
 > `AudioDirector.cs`'s own comment that Camp is "a brief background beat." That comment is a claim,
 > and the owner's session log is a measurement that contradicts it. In
@@ -2604,7 +2605,7 @@ re-baseline). None blocks a shipping unit; each blocks a follow-on PR.
 > `quest-wait` 0, `town-dusk` 1, `day-first-light` 1, and `night-still` **2** — night-still wrapped
 > the most, not the least.
 >
-> U10's mechanism survives this intact and is in fact strengthened: the missing gapless metadata is
+> That unit's mechanism survived this intact and was in fact strengthened: the missing gapless metadata is
 > a property of all four files, so every composed bed replays encoder delay/padding on every wrap,
 > and exposure is the only variable. What does NOT survive is using night-still's praise as evidence
 > that it never wraps. The likelier reading of "vigil music good" is that the praised bed is the
@@ -3256,77 +3257,6 @@ see other suites vanish), raw `Failed: N, Passed: N` quoted.
 
 ---
 
-**U10 — The two audio defects.** *(no GPU)*
-
-**Goal.** The bellows stops being a 3.33 Hz noise train, and the loop seam stops bursting.
-
-`Serves: substrate`
-
-**Files.** modify `godot/scripts/audio/SfxLibrary.cs` (`Cue.Bellows` `:300-314`),
-`godot/scripts/audio/AudioDirector.cs` (`OnLoopVoiceFinished` `:708-716`, `LoadComposed` `:777`),
-`godot/scripts/audio/Synth.cs` (an opt-out on the unconditional `tanh` at `:127`);
-create `tools/audio/mp3-seam-probe.py`; modify `godot/assets/audio/*.mp3` and their `.import`
-files; modify `godot/tests/AudioTests.cs`.
-
-**Approach.**
-
-*(a) Bellows (KTD-G).* Three changes, none of them a volume cut: lengthen the clip so a held pump
-is one long breath rather than 3.33 short ones; make the retrigger **overlap** the tail instead of
-restarting after a 20 ms silence, so a hold is continuous; and give `Synth.Normalise` a flag that
-skips the `tanh` stage for buffers already under peak, so a quiet noise cue stops being handed
-distortion it does not need. Level stays where it is — it already passes
-`Bellows_IsNoLouderThanAVenueCue`.
-
-*(b) The static (KTD-F).* Two provable-without-the-log steps.
-
-First, **prove the seam**. `tools/audio/mp3-seam-probe.py` reads each composed track's MPEG frame
-headers and reports sample rate, bitrate, channel mode, Xing/`Info` frame, frame count, derived
-duration, and LAME encoder-delay/padding — the measurement that produced KTD-F's table. Then extend
-`AudioTests.TheMusicLoop_JoinsItselfWithoutAStep` (`:192`), which today covers **only** the synth
-`MusicBed`, to every entry of `ComposedTracks`: decode the last *N* ms and the first *N* ms via
-`AudioStream.InstantiatePlayback`/`MixAudio` — the machinery
-`EveryComposedTrack_StaysUnderItsTruePeakCeiling` (`:742`) already uses — and assert the join has no
-step above a pinned threshold. This test is expected to be **red on `town-dusk` and
-`day-first-light` before the fix**, which is the point.
-
-Second, **fix it at the file**. Re-master each composed track so its own head and tail join
-cleanly: trim to a whole frame boundary, apply a short matched fade at the join, and re-encode
-once — or set a non-zero `loop_offset` in the `.import` past the encoder delay if the content
-allows it. Re-pin `ApprovedTrackHashes` (`AudioTests.cs:674-680`) in the same PR.
-
-Two secondary facts to record and check while in here, neither leading: the true-peak test
-approximates with **2× linear interpolation** against a −1.0 dBTP ceiling, and linear interpolation
-materially under-reads true peak (ITU-R BS.1770-4 wants ≥4× with a proper filter), so re-measure at
-4× before concluding the earlier clipping fix was complete; and everything mixes on the default
-**Master** bus with no limiter (`AudioDirector` sets no `.Bus` anywhere) while Night stacks bed +
-narrator + `DeathToll` + UI cues, so sum the worst case and say whether it clips.
-
-**Do not touch `night-still.mp3`.** It is the owner's reference (*"vigil music is good"*), it is the
-LUFS anchor every other trim targets (`AudioDirector.cs:130-141`), and it is byte-pinned. Its seam
-must be *measured* by the new test like every other track, but nothing about it is re-encoded.
-
-**Test scenarios.**
-1. Every entry of `ComposedTracks` joins its own end to its own start without a step above the
-   pinned threshold — iterated over the table, not a hand-listed id set (KTD-E).
-2. `night-still.mp3`'s bytes are unchanged; its `ApprovedTrackHashes` entry is untouched.
-3. Every composed track still loads, still reports `Loop == true`, and still carries a
-   non-positive `TrimDb` (`NoComposedTrack_EverCarriesAPositiveTrimDb`).
-4. Every re-mastered track's effective loudness (raw LUFS + `TrimDb`) stays within ±1 LU of
-   today's — the player must hear no level change from a seam fix.
-5. True peak stays under the ceiling when measured at 4× oversampling, not only 2×.
-6. A held bellows produces continuous output with no silent gap longer than the pinned threshold —
-   the direct pin for "abrasive."
-7. `Cue.Bellows` is still no louder than a venue cue (`:1326` unchanged and green).
-8. Every other `Cue`'s buffer is byte-identical to today — the `Synth.Normalise` flag must not
-   re-roll the library. `EnterMarket_IsByteUntouched` (`:1451`) is the existing precedent.
-9. Determinism: every synthesised buffer is reproducible across runs.
-
-**Verification.** The seam test red-then-green on `town-dusk` and `day-first-light`; the probe
-script's own output quoted in the PR body; the full engine suite run whole. The owner's ear is the
-final gate on the bellows — `MAKERSMARK_DEV_AUDIO_HOTKEYS` already gives him the A/B toggle.
-
----
-
 **U11 — Make the docs true.** *(no GPU)*
 
 **Goal.** `ASSETS.md` stops describing a world that no longer exists.
@@ -3348,7 +3278,7 @@ count is regenerated from `art-manifest.json`, never hand-tallied.
 #### Sequencing, risks, and what is deliberately not here
 
 **U1 is the only prerequisite in the wave.** U1 → U2 → U3 is a chain with a human gate in the
-middle and a GPU gate on top of it. **U4, U5, U6(a)(b), U7, U8, U9, U10 are all independent of the
+middle and a GPU gate on top of it. **U4, U5, U6(a)(b), U7, U8, U9 are all independent of the
 GPU and of each other** and can run in parallel from day one; only U6(c)'s optional skyline and
 U11's interior/exterior claims wait on U3. U11 lands in whichever PR makes its claims true.
 
@@ -3360,15 +3290,20 @@ U11's interior/exterior claims wait on U3. U11 lands in whichever PR makes its c
   produced about two right objects, so the bottleneck is art direction, not throughput.
 - **Risk: U3 changes art already on screen, including the building the owner likes.** `market.png`
   is re-rendered only as U2's *control*, and is replaced only if the owner picks the new one.
-- **Risk: engine tests serialize globally.** U4, U5, U6, U7, U8, U9 and U10 all touch
+- **Risk: engine tests serialize globally.** U4, U5, U6, U7, U8 and U9 all touch
   `godot/tests`. One run at a time, always the full suite, and the raw `Failed: N, Passed: N` line
   quoted — never a wrapper's verdict (`tools/engine-test.ps1` has computed PASS from an exit code
   twice).
 - **Risk: a new asset ships invisible.** Every unit that adds art also adds a manifest-iterating
   guard (KTD-E) and is verified by a `FullPlaytest` run reporting zero art-miss warnings, not by a
   green diff.
-- **Risk: U10's re-master changes how the game sounds.** Scenario 4 pins effective loudness within
-  ±1 LU, and `night-still` is not touched at all.
+- **Risk: the audio format change alters how the game sounds.** Closed, not pending: the four beds
+  are OGG/Vorbis now, re-measured within ~0.3 dB of the originals, so no `TrimDb` moved. The old
+  U10 plan that lived here — re-master each file as MP3 with a matched fade, and *"do not touch
+  `night-still.mp3`"* — was struck rather than corrected. Its premise was already false: the
+  session log showed `night-still` wrapping **twice**, more than any other bed, so the one file it
+  declared clean was the worst offender. A plan that has been overtaken is an instruction the next
+  session obeys, which is why rule 8 says delete it.
 
 **Not here, and deliberately:**
 - **No `Scale` knob, no `CanvasShrink` change, no `CameraZoom` change** (KTD-D, KTD-I) — both prior
