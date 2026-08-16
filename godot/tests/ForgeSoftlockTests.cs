@@ -143,14 +143,18 @@ public class ForgeSoftlockTests
             .OverrideFailureMessage($"could not bank at least 500 permille of shape before the clamp test; only reached {act1.ShapeXPermille}")
             .IsGreaterEqual(500);
 
-        var banked = act1.ShapeXPermille;
-
+        // Climb to the clamp FIRST, and only then snapshot. The strikes above spent heat, so this
+        // ramp runs below 1000 — where the drift-back is real work honestly paid for, and the trade
+        // this test is not about. Snapshotting before the ramp charged that legitimate cost to the
+        // ninety-second hold and read as a 40 permille leak at full heat that was never there.
         act1.BellowsStart();
         act1.Advance(5.0);
 
         AssertThat(act1.HeatYPermille)
             .OverrideFailureMessage("setup check: heat must be at the clamp before the 90s hold below means anything")
             .IsEqual(1000);
+
+        var banked = act1.ShapeXPermille;
 
         act1.Advance(90.0);
 
