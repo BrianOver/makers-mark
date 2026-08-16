@@ -1,0 +1,20 @@
+{
+  "Seed": 811100,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": "pixel-art-xl.safetensors",
+  "Steps": 30,
+  "CfgMilli": 7000,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "471d19ff2e79e74ef4018f6fd4f357c4948c4751da9cd232dd5928e53fb9dd3f",
+  "NormalSha256": null,
+  "Uid": "uid://d4akjke3otnxs",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "Every townsfolk body is a COMPOSITE, matching the six-hero-cast wave's own convention (art/build/town2d-hero-*.build.json): a stage-1 t2i base (SDXL base 1.0 + pixel-art-xl LoRA @1.0/1.0, 30 steps, cfg 7.0, dpmpp_2m/karras, 832x1216, batch of 4) picks one candidate; non-robed bodies (broad, belder, slight, steen) then get a SEPARATE walk-contact inpaint per side (SetLatentNoiseMask, denoise 0.5, same sampler/scheduler) for the two weight-bearing gait frames, with the two passing frames a same-render pixel sway of the adopted base -- no extra diffusion sample. ROBED bodies (bmatron, selder) have no visible legs and use the hand pipeline's own no-diffusion hem-sway idiom for ALL FOUR frames: no separate walk-contact render was ever generated for them (the art job's own folk_geom.json entries for bmatron/selder carry no walk seed at all, unlike the other four bodies). All rejected candidates are kept MISS-prefixed under the job's own tmp/folk/_work/ folder (gen_folk_bases.py, gen_folk_bases2.py, gen_folk_walks.py, assemble_folk.py, folk_geom.json).",
+    "paintoverNote": "Purely mechanical: the adopted base render (seed 811100, 2nd candidate, 'a stocky middle aged common villager man in a plain warm brown wool tunic'), shifted +1px below leg_row 21 and re-composited over its own frozen torso. No new diffusion sample -- a passing pose is a pixel shift, not a render.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0 + pixel-art-xl) diffuse for every opaque pixel, but this specific frame adds no NEW generation on top of the base id: it is the base render's own leg pixels shifted +1px, composited back onto the frozen torso."
+  }
+}

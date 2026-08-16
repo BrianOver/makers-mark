@@ -1,0 +1,20 @@
+{
+  "Seed": 834100,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": "pixel-art-xl.safetensors",
+  "Steps": 30,
+  "CfgMilli": 7000,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "447bbbdf557216eb1f63577c04a4b9e07aa7378f135365f8817441858a11e9db",
+  "NormalSha256": null,
+  "Uid": "uid://citaysycttc7u",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "Every townsfolk body is a COMPOSITE, matching the six-hero-cast wave's own convention (art/build/town2d-hero-*.build.json): a stage-1 t2i base (SDXL base 1.0 + pixel-art-xl LoRA @1.0/1.0, 30 steps, cfg 7.0, dpmpp_2m/karras, 832x1216, batch of 4) picks one candidate; non-robed bodies (broad, belder, slight, steen) then get a SEPARATE walk-contact inpaint per side (SetLatentNoiseMask, denoise 0.5, same sampler/scheduler) for the two weight-bearing gait frames, with the two passing frames a same-render pixel sway of the adopted base -- no extra diffusion sample. ROBED bodies (bmatron, selder) have no visible legs and use the hand pipeline's own no-diffusion hem-sway idiom for ALL FOUR frames: no separate walk-contact render was ever generated for them (the art job's own folk_geom.json entries for bmatron/selder carry no walk seed at all, unlike the other four bodies). All rejected candidates are kept MISS-prefixed under the job's own tmp/folk/_work/ folder (gen_folk_bases.py, gen_folk_bases2.py, gen_folk_walks.py, assemble_folk.py, folk_geom.json).",
+    "paintoverNote": "2nd candidate of a 4-batch (seed 834100), 'a slender old villager woman in a muted sage green wool dress, ankle length skirt'. No separate leg diffusion exists for this silhouette -- the whole frame is the SAME adopted base render's own pixels, PIL-swayed +1px starting at hem_row 24, the mirror of the base id's own -1px sway.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0 + pixel-art-xl) diffuse: the entire frame is the adopted base render, PIL-swayed +1px starting at the hem row -- no separate leg diffusion exists for this robed silhouette."
+  }
+}

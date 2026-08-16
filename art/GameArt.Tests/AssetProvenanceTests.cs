@@ -122,9 +122,22 @@ public class AssetProvenanceTests
     /// "procedural"</c> — deterministic PIL recolour of the class's own AI-composite base, using
     /// <c>gen_town_sprites.py</c>'s own verbatim tone tables; zero diffusion, zero seed, so no
     /// <c>Seed</c>/<c>Model</c> to record) rather than resting on this blanket exemption, which would
-    /// otherwise silently misdescribe them as unchanged hand art. Every OTHER hero/civilian variant
-    /// pool (skirmisher's hair, townsfolk, everything not one of these six classes) is genuinely
-    /// unchanged and correctly stays under this prefix.</para>
+    /// otherwise silently misdescribe them as unchanged hand art.</para>
+    ///
+    /// <para><b>AND</b>, same day, the townsfolk civilian cast joins it too (folk-cast wave): the
+    /// approved 'folk' art job redrew <c>town2d-townsfolk-broad</c>/<c>-slight</c> themselves as the
+    /// same kind of SDXL composite, and slotted two new non-robed silhouettes (belder, steen) plus
+    /// two new ROBED silhouettes (bmatron, selder) into those same two pools at <c>-v6..-v15</c> —
+    /// 30 ids, 120 files total. <c>gen_town_sprites.py</c>'s <c>CIVILIAN_GRIDS</c>/<c>CIVILIAN_HUES</c>
+    /// still contain the code that would draw the OLD hand-ASCII broad/slight bodies, and
+    /// <c>_ai_composite_cast_ids</c> now excludes the whole civilian family (derived from
+    /// <c>CIVILIAN_HUES</c> + <c>variant_id()</c>, same discipline as the hero derivation) for the
+    /// exact same clobber reason. Every one of the 120 gets its own real
+    /// <c>art/build/town2d-townsfolk-*.build.json</c> — <c>Status: "locked"</c> with a real seed for
+    /// each of the six silhouettes' own adopted base render (24 files), <c>Status: "procedural"</c>
+    /// for their deterministic PIL palette recolours (96 files), same schema as the hero wave.
+    /// Every OTHER hero/civilian variant pool (skirmisher's hair, everything not one of these twelve
+    /// silhouettes) is genuinely unchanged and correctly stays under this prefix.</para>
     /// </summary>
     private const string HandAuthoredPrefix = "town2d-";
 

@@ -68,6 +68,19 @@ Hand-authored assets get no `art/build/*.build.json`: that record's fields (seed
 AI disclosure) describe a generation run, and filling them for a hand-drawn grid would be a
 fiction. The script itself, committed and diffable, IS the provenance.
 
+**Exception, 2026-08-15 (six-hero-cast + folk-cast waves):** the six hero classes' base bodies
+(plus their `-v2..-v5` pools and `player_smith*`) and, the same day, the townsfolk civilian
+cast (`town2d-townsfolk-broad`/`-slight` and their full `-v2..-v15` pools — broad/slight
+themselves redrawn, plus four new silhouettes, belder/bmatron/steen/selder, slotted into those
+same two pools) all moved OFF this track, onto an SDXL composite pipeline with real
+`art/build/town2d-hero-*.build.json` / `art/build/town2d-townsfolk-*.build.json` records (seed,
+model, sampler for the diffusion bases; `Status: "procedural"` with no seed for the deterministic
+PIL palette recolours). `tools/art/gen_town_sprites.py` still contains the ASCII-grid code that
+used to draw all of these — kept so the underlying `UPPER_*`/`CLOTH_LEGS_*` geometry other things
+still derive from does not break — but its own `_ai_composite_cast_ids` carve-out stops it from
+ever writing or `--check`-ing these specific ids again, so a plain re-run cannot silently clobber
+the approved art back to the old hand-drawn look.
+
 **Still placeholder-tier**, listed honestly so it is not mistaken for finished work: the three
 ground tiles (`town2d-tile-*`, 2-3 colours), `town2d-ground-atlas`, `town2d-prop-tree`,
 `town2d-prop-crate`, `mine-gate`, and `ui-frame-wood`. All are flat programmer art from a

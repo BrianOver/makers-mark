@@ -1,0 +1,20 @@
+{
+  "Seed": null,
+  "Model": null,
+  "Lora": null,
+  "Steps": null,
+  "CfgMilli": null,
+  "SamplerResolved": null,
+  "SchedulerResolved": null,
+  "PaletteSha256": null,
+  "DiffuseSha256": "26eb821e1199e4b461bdf2fd8e6871ff7d7c8cfb7fb124c0aa0bfa3c7059db99",
+  "NormalSha256": null,
+  "Uid": "uid://52abgve0qwyg",
+  "HandFinished": false,
+  "Status": "procedural",
+  "Provenance": {
+    "drafts": null,
+    "paintoverNote": null,
+    "aiDisclosure": "Deterministic PIL recolour of the owner-approved town2d-townsfolk-slight AI-composite render (art/build/town2d-townsfolk-slight.build.json) -- ZERO diffusion, ZERO seed, same discipline as tools/art/gen_town_sprites.py's own variant_palette()/variant_id() for every other class/civilian pool: this is variant row 2 of gen_town_sprites.py's own verbatim SKIN_TONES/HAIR_TONES/GARMENT_DYES tables (VARIANT_COUNT=5, row 0 is the base) -- this body's skin/hair/dye is the SAME row every other class's and townsfolk's own -v3 already use, not a value invented for this silhouette. Recipe (tmp/folk/_work/assemble_folk.py's recolor_full()/build_variant()): nearest-reference pixel classification per zone (skin/hair/cloth), references hand-read from this silhouette's own picked render (calibrated per-body, not shared across families), luminance-mapped tone transfer for skin/hair, a garment dye lerp (<=0.18) for cloth. Key masks and crops come from the base render, so this frame's silhouette and alpha are byte-identical to town2d-townsfolk-slight's own."
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "Seed": null,
+  "Model": null,
+  "Lora": null,
+  "Steps": null,
+  "CfgMilli": null,
+  "SamplerResolved": null,
+  "SchedulerResolved": null,
+  "PaletteSha256": null,
+  "DiffuseSha256": "306f7d8e2de31f062cc0c2d7fded8b42f21a8685d4817a871e97b50528a609bc",
+  "NormalSha256": null,
+  "Uid": "uid://cakh3rxa5xenc",
+  "HandFinished": false,
+  "Status": "procedural",
+  "Provenance": {
+    "drafts": null,
+    "paintoverNote": null,
+    "aiDisclosure": "Deterministic PIL recolour of the owner-approved town2d-townsfolk-slight-v11_walk4 AI-composite render (art/build/town2d-townsfolk-slight-v11_walk4.build.json) -- ZERO diffusion, ZERO seed, same discipline as tools/art/gen_town_sprites.py's own variant_palette()/variant_id() for every other class/civilian pool: this is variant row 2 of gen_town_sprites.py's own verbatim SKIN_TONES/HAIR_TONES/GARMENT_DYES tables (VARIANT_COUNT=5, row 0 is the base) -- this body's skin/hair/dye is the SAME row every other class's and townsfolk's own -v3 already use, not a value invented for this silhouette. Recipe (tmp/folk/_work/assemble_folk.py's recolor_full()/build_variant()): nearest-reference pixel classification per zone (skin/hair/cloth), references hand-read from this silhouette's own picked render (calibrated per-body, not shared across families), luminance-mapped tone transfer for skin/hair, a garment dye lerp (<=0.18) for cloth. Key masks and crops come from the base render, so this frame's silhouette and alpha are byte-identical to town2d-townsfolk-slight-v11_walk4's own. Inherits the SAME known gap as the base id's own _walk4 frame (tmp/folk/MANIFEST.txt KNOWN MISSES): this recolour's _walk4 and _walk2 frames are byte-identical to each other, because the robed branch of build_variant() never applies a sway to either. Reported, not silently patched."
+  }
+}
