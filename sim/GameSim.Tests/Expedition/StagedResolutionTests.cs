@@ -187,9 +187,19 @@ public class StagedResolutionTests
 
     // ── System: park vs immediate finalize ──────────────────────────────────────────────────
 
+    // §11.13 amendment (U4): pinned PAST ApprenticeWarrant.LastGraceDay — this file tests staged
+    // RESOLUTION mechanics (park vs. immediate finalize, wipe vs. floor-lost), not the warrant
+    // (that is ApprenticeWarrantTests.cs's own job). A fresh GameFactory.NewGame starts at Day 1,
+    // which the warrant now covers by default whenever a system (ExpeditionSystem/
+    // ExpeditionDeepSystem) runs — exactly two of this file's death-producing fixtures
+    // (Stage1Wipe_FinalizesImmediately_NoCampReport_NoInFlight, MixedMultiPartyDay_OnePartyParks_OtherFinalizes)
+    // went from PartyWiped to FloorLost the moment U4 landed, because their frail heroes were being
+    // saved at 1 HP instead of dying. Bumping Day here keeps every test in this file exercising
+    // ordinary (post-warrant) mortality, which is what they were written to test.
     private static GameState World(Hero[] heroes, ImmutableSortedDictionary<int, Item> items, ulong seed) =>
         GameFactory.NewGame(seed) with
         {
+            Day = ApprenticeWarrant.LastGraceDay + 1,
             Heroes = heroes.ToImmutableSortedDictionary(h => h.Id.Value, h => h),
             Items = items,
         };

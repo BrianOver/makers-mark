@@ -15,7 +15,8 @@ namespace GameSim.Tests.Kernel;
 /// <see cref="ActionTiming_ResolvesImmediately_MatchesTheExpectedLaneForEveryType"/> by name. Twelve
 /// verbs moved Now under this plan's widening (KTD-A: "an action resolves NOW unless the WORLD must
 /// move before the action means anything"); three remain deliberate bell-riders (construction, identity,
-/// a pact with the Guild) — 21 Now, 3 Bell, 24 total.
+/// a pact with the Guild) — 22 Now, 3 Bell, 25 total (§11.13 amendment U4a added
+/// <see cref="ConcludeApprenticeshipAction"/> as a 22nd Now verb).
 /// </summary>
 public class ActionTimingConformanceTests
 {
@@ -63,6 +64,10 @@ public class ActionTimingConformanceTests
         [typeof(UpgradeForgeAction)] = (false, () => new UpgradeForgeAction()),
         [typeof(SetProfessionsAction)] = (false, () => new SetProfessionsAction(ImmutableSortedSet.Create("blacksmith"))),
         [typeof(CommissionLegendaryWorkAction)] = (false, () => new CommissionLegendaryWorkAction("dagger", "copper")),
+
+        // §11.13 amendment (U4a): the graduation stance — the player's own two hands closing the
+        // apprenticeship, same shape as HonorMemorialAction just above — Now.
+        [typeof(ConcludeApprenticeshipAction)] = (true, () => new ConcludeApprenticeshipAction()),
     };
 
     private static IEnumerable<Type> ConcretePlayerActionTypesInAssembly() =>
@@ -70,10 +75,10 @@ public class ActionTimingConformanceTests
             .Where(t => typeof(PlayerAction).IsAssignableFrom(t) && !t.IsAbstract && t.IsClass);
 
     [Fact]
-    public void ExpectedLane_Has21NowAnd3Bell_24Total()
+    public void ExpectedLane_Has22NowAnd3Bell_25Total()
     {
-        Assert.Equal(24, ExpectedLane.Count);
-        Assert.Equal(21, ExpectedLane.Values.Count(v => v.Immediate));
+        Assert.Equal(25, ExpectedLane.Count);
+        Assert.Equal(22, ExpectedLane.Values.Count(v => v.Immediate));
         Assert.Equal(3, ExpectedLane.Values.Count(v => !v.Immediate));
     }
 

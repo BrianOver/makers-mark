@@ -4,6 +4,7 @@ using GameSim.Advisor;
 using GameSim.Cli;
 using GameSim.Contracts;
 using GameSim.Harness;
+using GameSim.Kernel;
 
 namespace GameSim.Tests.Balance;
 
@@ -20,12 +21,13 @@ namespace GameSim.Tests.Balance;
 /// as a hundred reasonable PRs; this is the one law where a single test can see it happening.</para>
 ///
 /// <para><b>How it measures.</b> Because the sim is pure and deterministic, a decision point can be
-/// forked: tick it once with a candidate action and once with nothing, then compare the durable
-/// world. Identical fingerprint ⇒ that option provably did nothing. Reuses
-/// <see cref="ConsequenceProbe"/>'s own fingerprint and its no-op-by-construction filter rather than
-/// reimplementing either — the fingerprint's completeness is the property the whole measurement
-/// rests on, and this repo has already learned that a hand-listed field set silently stops
-/// covering new fields.</para>
+/// forked: run it once with a candidate action and once with nothing, then compare the durable
+/// world <see cref="ProbeDepthTicks"/> ticks later (deepened from a single tick — see that
+/// constant's own doc for why one tick was never enough). Identical fingerprint ⇒ that option
+/// provably did nothing. Reuses <see cref="ConsequenceProbe"/>'s own fingerprint and its
+/// no-op-by-construction filter rather than reimplementing either — the fingerprint's completeness
+/// is the property the whole measurement rests on, and this repo has already learned that a
+/// hand-listed field set silently stops covering new fields.</para>
 ///
 /// <para><b>THE HONEST FRAMING.</b> Only one direction is sound. Identical ⇒ inert is proof.
 /// Different ⇒ meaningful is NOT: a differing fingerprint can come from the action shifting RNG
@@ -43,6 +45,39 @@ public class VerbConsequenceFloorTests
     /// it.</summary>
     private static readonly Dictionary<string, string> AlwaysInertByRuling = new();
 
+    /// <summary>
+    /// §11.13 amendment (U4a follow-up, coordinator ruling 2026-08-16): one tick was never long
+    /// enough to prove a verb inert — only long enough to prove it inert THAT TICK.
+    /// <see cref="ConcludeApprenticeshipAction"/> (§11.13) proved the gap: <c>GameKernel.Tick</c>
+    /// appends <see cref="GameState.ActionLog"/> AFTER phase systems run (step 4, after step 2), so
+    /// an action whose entire meaning is a durable ActionLog flag
+    /// (<c>GameSim.Expedition.ApprenticeWarrant.Concluded</c>) is invisible to every system in the
+    /// SAME tick it was submitted — it can only ever change a LATER tick's outcome. This constant is
+    /// how many ticks a fork now runs before the two fingerprints are compared. Deepening it makes
+    /// the tripwire STRICTER, never softer: it can only ever catch MORE inert verbs than the one-tick
+    /// probe did, never fewer — a verb the shallow probe already caught diverging stays caught. Sized
+    /// to comfortably cross at least one full day (5 phases) twice over from ANY starting phase, so a
+    /// fork that starts mid-day still reaches a later day's Expedition AND ExpeditionDeep ticks — the
+    /// only two ticks that ever read <c>ApprenticeWarrant.Covers</c>.
+    /// </summary>
+    private const int ProbeDepthTicks = 10;
+
+    /// <summary>Runs <paramref name="first"/> (or no action) on the fork's first tick, then
+    /// <see cref="ProbeDepthTicks"/> - 1 further empty-action ticks on that SAME fork, and
+    /// fingerprints the result. The do-nothing control and every candidate option both run the
+    /// identical depth, so the comparison stays apples-to-apples.</summary>
+    private static string FingerprintAhead(GameKernel kernel, GameState state, PlayerAction? first)
+    {
+        var forked = kernel.Tick(
+            state, first is null ? ImmutableList<PlayerAction>.Empty : ImmutableList.Create(first)).NewState;
+        for (var i = 1; i < ProbeDepthTicks; i++)
+        {
+            forked = kernel.Tick(forked, ImmutableList<PlayerAction>.Empty).NewState;
+        }
+
+        return ConsequenceProbe.FingerprintForTests(forked);
+    }
+
     [Fact]
     public void NoPlayerVerb_IsInertEveryTimeItIsOffered()
     {
@@ -56,8 +91,7 @@ public class VerbConsequenceFloorTests
             while (state.Day <= 30)
             {
                 var legal = ActionLegality.LegalActions(state, state.Phase);
-                var doNothing = ConsequenceProbe.FingerprintForTests(
-                    kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState);
+                var doNothing = FingerprintAhead(kernel, state, null);
 
                 foreach (var option in legal)
                 {
@@ -67,13 +101,15 @@ public class VerbConsequenceFloorTests
                     if (ConsequenceProbe.IsNoOpByConstructionForTests(state, option)) continue;
 
                     var verb = option.GetType().Name.Replace("Action", string.Empty);
-                    var after = ConsequenceProbe.FingerprintForTests(
-                        kernel.Tick(state, ImmutableList.Create(option)).NewState);
+                    var after = FingerprintAhead(kernel, state, option);
 
                     probed[verb] = probed.GetValueOrDefault(verb) + 1;
                     if (after == doNothing) inert[verb] = inert.GetValueOrDefault(verb) + 1;
                 }
 
+                // The REAL timeline still advances exactly one tick per decision point — only the
+                // FORK comparison above looks deeper. 450 decision points across 3 seeds x 30 days
+                // stays the same denominator; only how far each fork looks before comparing changed.
                 state = kernel.Tick(state, ImmutableList<PlayerAction>.Empty).NewState;
             }
         }

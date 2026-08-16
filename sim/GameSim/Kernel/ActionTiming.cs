@@ -118,6 +118,11 @@ public static class ActionTiming
         UnlockTalentAction => true,
         HonorMemorialAction => true,
 
+        // §11.13 amendment (U4a): walking out of the apprenticeship is the player's own stance,
+        // taken the instant the graduation confirm is pressed — same shape as HonorMemorialAction
+        // just above (a durable fact the player asserts, not a commitment the world has to act on).
+        ConcludeApprenticeshipAction => true,
+
         // Everything else waits for the bell — the three deliberate ceremony verbs (2026-08-02
         // KTD-A, open question 1): each is a beat between deciding and having, visible and
         // cancellable (bell tray, U3), not a dead click.

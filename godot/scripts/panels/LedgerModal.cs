@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Expedition;
 using GameSim.Factions;
 using GameSim.Kernel;
 using GameSim.Narrative;
@@ -50,6 +51,15 @@ public partial class LedgerModal : SimPanel
     /// cref="GodotClient.Ui.TutorialFlow.ConsumeLedgerTip"/> owns the once-ever contract; this
     /// field only remembers it long enough to survive a same-day <see cref="Refresh"/>.</summary>
     private string? _tutorialTip;
+
+    /// <summary>
+    /// §11.13 amendment (U6): the dormant loss act's own once-ever teaching block (<see
+    /// cref="GodotClient.Ui.TutorialFlow.ConsumeFirstLossBlock"/>'s result), non-null only for the
+    /// render that follows the FIRST death this campaign — same once-ever-then-null contract as
+    /// <see cref="_tutorialTip"/>, and rendered under the first death card this night (never on a
+    /// later reopen, and never a second time on a later night's death).
+    /// </summary>
+    private string? _firstLossBlock;
 
     /// <summary>The day whose cards are currently shown (0 = never shown).</summary>
     public int ShownDay { get; private set; }
@@ -151,12 +161,13 @@ public partial class LedgerModal : SimPanel
     /// following day's reveal, or a manual reopen — passes null (the default), since
     /// <c>ConsumeLedgerTip</c> never returns non-null twice.</para>
     /// </summary>
-    public void ShowFor(int day, string? tutorialTip = null)
+    public void ShowFor(int day, string? tutorialTip = null, string? firstLossBlock = null)
     {
         EnsureBuilt();
         ShownDay = day;
         _showFullTale = false; // each reveal opens on the compact pride payload
         _tutorialTip = tutorialTip;
+        _firstLossBlock = firstLossBlock;
         RenderCards(day);
         Visible = true;
 
@@ -190,6 +201,7 @@ public partial class LedgerModal : SimPanel
 
         var state = Adapter.CurrentState;
         var cards = LeadWithAttribution(LedgerQuery.ReturnCards(state, day));
+        var warrantSaves = WarrantSavesForDay(day); // §11.13 amendment (U5), keyed by HeroId.Value
         if (cards.IsEmpty)
         {
             AddTutorialTip();
@@ -197,9 +209,10 @@ public partial class LedgerModal : SimPanel
             return;
         }
 
+        var firstLossBlockRendered = false;
         for (var i = 0; i < cards.Count; i++)
         {
-            _cards!.AddChild(BuildReturnCard(state, cards[i], i));
+            _cards!.AddChild(BuildReturnCard(state, cards[i], i, warrantSaves, day));
             if (i == 0)
             {
                 // U1: the attribution beat is the spine of the game (R11) — the tutorial tip now
@@ -207,9 +220,40 @@ public partial class LedgerModal : SimPanel
                 // the very first thing the player's eye lands on.
                 AddTutorialTip();
             }
+
+            // §11.13 amendment (U6): the first-loss block sits UNDER the first death card this
+            // night — once ever, never a second time even if the same night claims more than one
+            // hero (the tutorial owns the FIRST loss only, TutorialRegistryConformanceTests pins it).
+            if (!cards[i].Survived && !firstLossBlockRendered && _firstLossBlock is { } block)
+            {
+                firstLossBlockRendered = true;
+                var lossLabel = AddLabel(_cards!, block);
+                lossLabel.Name = "LedgerFirstLossBlock";
+                lossLabel.AddThemeColorOverride("font_color", GameTheme.WarnColor);
+            }
         }
 
         RenderRetelling(day);
+    }
+
+    /// <summary>
+    /// §11.13 amendment (U5): every warrant save landed on <paramref name="day"/>, keyed by
+    /// HeroId.Value — read off <see cref="SimAdapter.LastRevealedExpeditions"/> (the SAME source
+    /// <see cref="RenderRetelling"/> already reads, guarded by the identical
+    /// <see cref="SimAdapter.LastRevealedDay"/> check) rather than re-deriving anything: one save
+    /// source, shared by the resolver's own clamp, the ledger card, and every test (KTD-E).
+    /// </summary>
+    private ImmutableDictionary<int, ImmutableList<ApprenticeWarrant.WarrantSave>> WarrantSavesForDay(int day)
+    {
+        if (Adapter is null || Adapter.LastRevealedDay != day || Adapter.LastRevealedExpeditions.IsEmpty)
+        {
+            return ImmutableDictionary<int, ImmutableList<ApprenticeWarrant.WarrantSave>>.Empty;
+        }
+
+        return Adapter.LastRevealedExpeditions
+            .SelectMany(ApprenticeWarrant.FiredIn)
+            .GroupBy(save => save.Hero.Value)
+            .ToImmutableDictionary(g => g.Key, g => g.ToImmutableList());
     }
 
     /// <summary>
@@ -257,7 +301,9 @@ public partial class LedgerModal : SimPanel
     /// the house rule this file already followed for the ore rows, now extended to the portrait
     /// and the beat lines).
     /// </summary>
-    private Control BuildReturnCard(GameState state, ReturnCard card, int index)
+    private Control BuildReturnCard(
+        GameState state, ReturnCard card, int index,
+        ImmutableDictionary<int, ImmutableList<ApprenticeWarrant.WarrantSave>> warrantSaves, int night)
     {
         var wrap = Card($"LedgerCard_{index}");
         wrap.AddThemeStyleboxOverride("panel", CardAccentStyle(card.Survived));
@@ -311,6 +357,34 @@ public partial class LedgerModal : SimPanel
             AddIcon(beatRow, ResolveItemIcon(state, beat.Item));
             var beatLabel = AddLabel(beatRow, $"{beat.Beat}: {beat.Detail} (floor {beat.Floor})");
             beatLabel.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.2f));
+        }
+
+        // §11.13 amendment (U5): the apprenticeship warrant's own card — leads with the true roll
+        // (KTD-3/law 4's honest-register shape, the same discipline the death cards already use),
+        // one row per fired save this hero earned tonight (rare to earn more than one, but never
+        // capped). No narrator line (the spoken library stays frozen this wave).
+        //
+        // BUG FIX (caught by this unit's own LedgerModalTests): DawnsLeftLine reads `night` — the
+        // NIGHT this card retells, the same day param RenderCards/BuildReturnCard already thread —
+        // never `state.Day`, the LIVE current day. Those two agree only when the Ledger is showing
+        // mid-reveal for the day that just ended; they diverge the instant the day rolls over
+        // (exactly what a real AdvancePhase past Evening does) or on a deliberate reopen of an
+        // OLDER day (the class doc's own "buy from a past day" scenario) — either way, "how many
+        // dawns are left on the warrant" is a fact about THAT night, not about whenever a player
+        // happens to be re-reading the card.
+        if (warrantSaves.TryGetValue(card.Hero.Value, out var saves))
+        {
+            foreach (var save in saves)
+            {
+                var warrantRow = AddRow(telling.Body);
+                AddIcon(warrantRow, IconRegistry.Glyph("rune"));
+                var warrantLabel = AddLabel(
+                    warrantRow,
+                    $"The blow that landed on {card.HeroName} would have killed {card.HeroName}. The " +
+                    $"apprenticeship's warrant held — {card.HeroName} came home at death's door. {DawnsLeftLine(night)}");
+                warrantLabel.Name = "LedgerWarrantSave";
+                warrantLabel.AddThemeColorOverride("font_color", GameTheme.WarnColor);
+            }
         }
 
         if (!card.OreOffers.IsEmpty)
@@ -591,6 +665,17 @@ public partial class LedgerModal : SimPanel
             -max, max);
         var cost = (int)IntegerCurves.MulDiv(baseLineCost, 1000 - adj, 1000);
         return (cost, adj, faction);
+    }
+
+    /// <summary>§11.13 amendment (U5): "Two dawns left on it" — the number of dawns remaining
+    /// before <see cref="ApprenticeWarrant.LastGraceDay"/>'s own close, counting the dawn that ends
+    /// it (day <see cref="ApprenticeWarrant.LastGraceDay"/> + 1 itself). Never a survival number
+    /// (§11.4's stakes-qualitatively rule) — a day count, not an HP count.</summary>
+    private static string DawnsLeftLine(int day)
+    {
+        var dawnsLeft = ApprenticeWarrant.LastGraceDay + 1 - day;
+        var word = dawnsLeft switch { <= 1 => "One", 2 => "Two", 3 => "Three", _ => dawnsLeft.ToString() };
+        return $"{word} dawn{(dawnsLeft == 1 ? "" : "s")} left on it.";
     }
 
     private static ImmutableList<Hero> PartyHeroes(GameState state, ImmutableList<HeroId> ids)

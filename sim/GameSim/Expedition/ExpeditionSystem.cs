@@ -85,17 +85,23 @@ public sealed class ExpeditionSystem : IPhaseSystem
             // recomputes this identically at the Deep tick (bounties are stable across the two ticks).
             var (exemptHeroes, exemptThroughFloor) = RetreatExemption(bounty);
 
+            // §11.13 amendment (U4): recomputed HERE, at the Expedition tick, not carried from an
+            // earlier read — a mid-day ConcludeApprenticeshipAction can land before this same tick
+            // (both are Morning-adjacent), so the freshest state.Day/ActionLog is what must decide.
+            var warrantHolds = ApprenticeWarrant.Covers(state);
+
             var checkpoint = CheckpointFor(targetFloor);
             if (checkpoint < 1)
             {
                 // Unstaged (target floor 1): resolve the whole run now, park in PendingExpeditions.
-                var result = ExpeditionResolver.Resolve(party, state.Items, venue, targetFloor, rng, exemptHeroes, exemptThroughFloor);
+                var result = ExpeditionResolver.Resolve(
+                    party, state.Items, venue, targetFloor, rng, exemptHeroes, exemptThroughFloor, warrantHolds);
                 state = state with { PendingExpeditions = state.PendingExpeditions.Add(result) };
             }
             else
             {
                 var (completed, inFlight) = ExpeditionResolver.ResolveStage1(
-                    party, state.Items, venue, targetFloor, checkpoint, rng, exemptHeroes, exemptThroughFloor);
+                    party, state.Items, venue, targetFloor, checkpoint, rng, exemptHeroes, exemptThroughFloor, warrantHolds);
                 if (completed is not null)
                 {
                     // Stage-1 wipe / gate / floor-lost / too-hurt: finalise now, no camp report.

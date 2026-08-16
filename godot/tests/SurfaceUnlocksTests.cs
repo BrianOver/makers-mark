@@ -69,6 +69,26 @@ public class SurfaceUnlocksTests
         AssertThat(SurfaceUnlocks.IsOpen(beat, "Legends")).IsTrue();
     }
 
+    /// <summary>§11.13 amendment (U6, test scenario 7): an unattributed first death — no
+    /// player-marked item on the fallen — must still open the wall on the exact night the
+    /// tutorial's dormant loss act points there. LegendsWall itself renders memorials regardless of
+    /// attribution, so this gate widening is honest, not generous.</summary>
+    [TestCase]
+    public void LegendsGate_OpensOnFirstHeroDied_EvenWithNoAttributionBeat()
+    {
+        var fresh = GameFactory.NewGame(2026);
+        AssertThat(SurfaceUnlocks.IsOpen(fresh, "Legends")).IsFalse();
+
+        var died = fresh with
+        {
+            EventLog = ImmutableList.Create<GameEvent>(new HeroDied(
+                new HeroId(1), Floor: 1, Cause: "slain by a Crypt Crab", WornGear: GearSet.Empty)),
+        };
+        AssertThat(SurfaceUnlocks.IsOpen(died, "Legends"))
+            .OverrideFailureMessage("An unattributed first death must still open Legends — the wall has someone to remember.")
+            .IsTrue();
+    }
+
     /// <summary>No <c>user://</c> persistence exists for any gate (KTD2) — a "reload" is just a
     /// FRESH <see cref="GameState"/> instance carrying the identical campaign history, and it must
     /// re-derive the identical verdict rather than depending on any flag written by an earlier

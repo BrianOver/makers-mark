@@ -100,6 +100,14 @@ public class PhaseBNoDrawGateTests
         // AtomicEquivalenceTests SHA256 DOES move on this same trace (Act reads ActIII instead of
         // Ended at day 30, plus the new ClimaxDay field populated) — that movement is pure
         // serialized VALUE change on a stream this exact assertion proves is untouched.
-        Assert.Equal(new RngState(3993052552967124454UL, 13279888329118852579UL), state.Rng);
+        // GOLDEN RE-BASELINE #6 (§11.13 amendment, U4 — the apprenticeship warrant): **Class 2 —
+        // combat decisions change, same stream different position, deliberately.** See
+        // AtomicEquivalenceTests.cs's matching ledger entry for the full account — a hero on this
+        // idle trace (seed 9001, zero player actions, so the ConcludeApprenticeshipAction opt-out
+        // is never submitted) who would have died within Day <= ApprenticeWarrant.LastGraceDay (3)
+        // now survives at 1 HP instead, and every draw downstream of that save point shifts.
+        // `Inc` is STILL byte-identical (13279888329118852579) — same stream, only `State` moved;
+        // the clamp draws no RNG of its own (ApprenticeWarrant.TryClamp is pure integer math).
+        Assert.Equal(new RngState(4182585629336870939UL, 13279888329118852579UL), state.Rng);
     }
 }

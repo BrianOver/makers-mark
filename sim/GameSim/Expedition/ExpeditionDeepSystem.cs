@@ -39,7 +39,14 @@ public sealed class ExpeditionDeepSystem : IPhaseSystem
                 b.AcceptedBy is { } acceptor && inFlight.Party.Contains(acceptor));
             var (exemptHeroes, exemptThroughFloor) = ExpeditionSystem.RetreatExemption(bounty);
 
-            var result = ExpeditionResolver.ResolveStage2(inFlight, party, state.Items, venue, rng, exemptHeroes, exemptThroughFloor);
+            // §11.13 amendment (U4): recomputed HERE, at the Deep tick — not carried over from the
+            // Expedition tick's own read. A vigil resupply (Camp phase) sits between the two ticks,
+            // and a mid-camp ConcludeApprenticeshipAction must be honored by stage 2 even when stage
+            // 1 (moments earlier, same calendar day) still saw the warrant covering.
+            var warrantHolds = ApprenticeWarrant.Covers(state);
+
+            var result = ExpeditionResolver.ResolveStage2(
+                inFlight, party, state.Items, venue, rng, exemptHeroes, exemptThroughFloor, warrantHolds);
             state = state with { PendingExpeditions = state.PendingExpeditions.Add(result) };
         }
 

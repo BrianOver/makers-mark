@@ -41,6 +41,10 @@ public class ActionBudgetTests
         typeof(OpenCounterAction), typeof(CloseCounterAction), typeof(PresentItemAction),
         typeof(SuggestItemAction), typeof(HaggleResponseAction), typeof(AcceptCommissionAction),
         typeof(DeclineCommissionAction), typeof(HonorMemorialAction),
+
+        // §11.13 amendment (U4a): a stance, not an economy verb — mutates nothing, so it never
+        // competes for the day's real-work budget.
+        typeof(ConcludeApprenticeshipAction),
     ];
 
     /// <summary>

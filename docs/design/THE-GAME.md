@@ -222,13 +222,20 @@ Skipping stays legal. You can ring straight through a day you do not care about.
 Day one you have one profession, a handful of copper, an empty shelf, and six strangers.
 
 The tutorial runs three days as an apprenticeship rather than a tooltip tour: make one thing, sell
-one thing, watch one raid resolve. By the end of it you have picked a second profession.
+one thing, watch one raid resolve. By the end of it you have picked a second profession. The
+apprenticeship carries a warrant, and you are told so at the first send-off: through day three the
+Mine keeps no one. A killing blow leaves a hero at death's door and they limp home, and that night's
+ledger shows you the roll that should have killed them. You are told when the warrant ends — twice —
+and the dawn of day four ends it as a beat, not a footnote: from today the Mine keeps what it takes.
+Walk out of the apprenticeship early and you walk out of its warrant too; the game names that price
+at the moment you choose it.
 
-The first real lesson lands around day four, and it lands as a death. A hero you sold to goes one
-floor past their competence and does not come back. Their memorial names the gear they died in — and
-if that was your make, the sentence has your work in it. Nothing in the game punishes you for it.
-The town keeps going, the roster refills, and you have learned what the numbers on a shelf actually
-weigh.
+The first real lesson lands after that dawn, and it lands as a death — whose, where, and when is the
+dice's answer, never a script's, and usually it comes within the first week. That night is the
+tutorial's last act: the ledger names the blow, the wall takes the fallen's name, and the rite is
+yours to perform or to leave. If they wore your make, the sentence has your work in it; if they did
+not, the game says so honestly. Nothing in the game punishes you for any of it. The town keeps going,
+the roster refills, and you have learned what the numbers on a shelf actually weigh.
 
 By the end of the first week you know the shape of it: the roster's needs drift, veterans get
 pickier, and the shelf you stocked on day two is the wrong shelf by day seven.

@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Expedition;
 using GameSim.Factions;
 using GameSim.Kernel;
 using GameSim.Materials;
@@ -638,6 +639,160 @@ public class LedgerModalTests
                     "check -- this is the MainUiTests.DriveToCraftedDagger regression")
                 .IsEqual(1);
             AssertThat(Find<Label>(ui.Ledger, "LedgerFeedback").Text).IsEqual(string.Empty);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── §11.13 amendment (U5/U6): the apprenticeship warrant's own card + the first-loss block ──
+
+    private static readonly HeroId WarrantHeroId = new(1);
+
+    /// <summary>A one-hero, one-floor <see cref="ExpeditionResult"/> carrying exactly one warrant
+    /// save (a lethal blow, held at 1 HP — the SAME <c>!MonsterKilled &amp;&amp; ModifierHpDelta &gt; 0</c>
+    /// shape <see cref="ApprenticeWarrant.FiredIn"/> classifies), driven through the REAL
+    /// <c>ExpeditionRevealSystem</c> via <see cref="SimAdapter.AdvancePhase"/> — never hand-built
+    /// EventLog — so this proves the actual resolver+reveal+ledger wiring, not a stand-in.</summary>
+    private static GameState WarrantSaveNight(int day)
+    {
+        var hero = new Hero(
+            WarrantHeroId, "Torvald", ClassRegistry.VanguardId, Level: 1, MaxHp: 30, Gold: 0,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+            DeepestFloorReached: 0, DiedOnDay: null);
+
+        var combat = new CombatEvent(
+            Floor: 1, Hero: WarrantHeroId, MonsterKind: "Crypt Crab",
+            RecordedRolls: ImmutableList.Create(1, 5), DamageDealt: 3, DamageTaken: 30,
+            MonsterKilled: false, KillingItem: null)
+        {
+            ModifierHpDelta = 29, // 30 dmg from 30 max hp would be lethal; clamped to 1 => +29
+        };
+        var result = new ExpeditionResult(
+            Party: ImmutableList.Create(WarrantHeroId), TargetFloor: 1, DeepestFloorCleared: 0,
+            Floors: ImmutableList.Create(new FloorOutcome(1, Cleared: false, ImmutableList.Create(combat))),
+            Survivors: ImmutableList.Create(WarrantHeroId), Deaths: ImmutableList<HeroId>.Empty,
+            Beats: ImmutableList<AttributionBeat>.Empty, Loot: ImmutableList<OreLoot>.Empty,
+            GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty, VenueId: "mine");
+
+        return GameFactory.NewGame(4242) with
+        {
+            Day = day,
+            Phase = DayPhase.Evening,
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(WarrantHeroId.Value, hero),
+            PendingExpeditions = ImmutableList.Create(result),
+        };
+    }
+
+    [TestCase]
+    public void WarrantCard_RendersOnANightItFired_WithTheTrueRollNamed()
+    {
+        var ui = MountMainUi(new SimAdapter(WarrantSaveNight(day: 2)));
+        try
+        {
+            ui.Adapter.AdvancePhase(); // Evening -> Morning: the reveal processes PendingExpeditions
+
+            ui.Ledger.ShowFor(2);
+            var ledgerText = RenderedText(ui.Ledger);
+
+            AssertThat(ledgerText).Contains("would have killed Torvald");
+            AssertThat(ledgerText).Contains("warrant held");
+            AssertThat(ledgerText)
+                .OverrideFailureMessage($"expected the dawns-left line for day 2; got: {ledgerText}")
+                .Contains("Two dawns left on it.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Test scenario 3 (U5): the card must never render before the warrant actually
+    /// fired (an ordinary survivor night) or after the warrant has ended (day past LastGraceDay —
+    /// the resolver itself would never clamp there, but this pins the CARD side independently: no
+    /// warrant save recorded, no card, whatever the day).</summary>
+    [TestCase]
+    public void WarrantCard_NeverRenders_OnAnOrdinarySurvivorNight()
+    {
+        var ui = MountMainUi(new SimAdapter(DrivenDay())); // Thistle survives with no warrant save
+        try
+        {
+            ui.Ledger.ShowFor(1);
+            AssertThat(RenderedText(ui.Ledger)).NotContains("warrant held");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void WarrantCopy_NeverStatesASurvivalNumber()
+    {
+        var ui = MountMainUi(new SimAdapter(WarrantSaveNight(day: 1)));
+        try
+        {
+            ui.Adapter.AdvancePhase();
+            ui.Ledger.ShowFor(1);
+
+            var warrantLine = Find<Label>(ui.Ledger, "LedgerWarrantSave").Text;
+            // §11.4's stakes-qualitatively rule: no digit anywhere in the rendered warrant line —
+            // "1 HP", "29 damage", a percentage, none of it. "Three dawns left" is a day count, not
+            // a survival number, so it is spelled as a WORD (DawnsLeftLine), never a digit.
+            AssertThat(warrantLine.Any(char.IsDigit))
+                .OverrideFailureMessage($"warrant line contains a digit: \"{warrantLine}\"")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>U6, test scenario 2/8: the once-ever first-loss block lands under the death card,
+    /// with no participation credit and no survival number, driven through the SAME
+    /// <c>ConsumeFirstLossBlock</c> wiring the real automatic reveal uses.</summary>
+    [TestCase]
+    public void FirstLossBlock_RendersOnTheFirstDeathNight_OnceEver_UnderTheDeathCard()
+    {
+        var ui = MountMainUi(new SimAdapter(DrivenDay())); // Borin dies this exact day
+        try
+        {
+            var block = ui.Tutorial.ConsumeFirstLossBlock(ui.Adapter.CurrentState);
+            AssertThat(block).IsNotNull();
+
+            ui.Ledger.ShowFor(1, tutorialTip: null, firstLossBlock: block);
+            var lossLabel = Find<Label>(ui.Ledger, "LedgerFirstLossBlock");
+            AssertThat(lossLabel.Text).IsEqual(block!);
+            AssertThat(lossLabel.Text.Any(char.IsDigit))
+                .OverrideFailureMessage($"first-loss block contains a digit: \"{lossLabel.Text}\"")
+                .IsFalse();
+
+            var cardsContainer = Find<Control>(ui.Ledger, "LedgerCard_0").GetParent();
+            var deathCardIndex = ChildIndex(
+                cardsContainer, $"LedgerCard_{LedgerQuery.ReturnCards(ui.Adapter.CurrentState, 1).FindIndex(c => c.Hero == FallenId)}");
+            var blockIndex = ChildIndex(cardsContainer, "LedgerFirstLossBlock");
+            AssertThat(blockIndex).IsGreater(deathCardIndex);
+
+            // Second call this campaign — the tutorial's own once-ever contract (same shape as
+            // ConsumeLedgerTip's own pin).
+            AssertThat(ui.Tutorial.ConsumeFirstLossBlock(ui.Adapter.CurrentState)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void FirstLossBlock_NeverRenders_ForADismissedChain()
+    {
+        var ui = MountMainUi(new SimAdapter(DrivenDay()));
+        try
+        {
+            ui.Tutorial.Dismiss();
+            AssertThat(ui.Tutorial.ConsumeFirstLossBlock(ui.Adapter.CurrentState)).IsNull();
         }
         finally
         {
