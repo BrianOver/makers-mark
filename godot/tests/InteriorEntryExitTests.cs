@@ -293,10 +293,20 @@ public class InteriorEntryExitTests
                 .OverrideFailureMessage("A flavor click is a toast, not an exit — the room stays open.")
                 .IsTrue();
 
+            // The line is read from the station's own declaration, never copy-pasted here. A literal
+            // string in this assertion is a copy pin wearing a behaviour pin's clothes: it goes red
+            // the day the writing improves, which is exactly what it did when the trough stopped
+            // denying the quench (register #147). What this test is actually for is that a null-Action
+            // station answers with ITS line — so read that line from where the game reads it.
+            var quenchSpec = WorkshopVocab.StationsFor(ProfessionRegistry.BlacksmithId)
+                .First(s => s.Id == "quench");
             var toast = Find<Label>(ui, "RejectionToast");
             AssertThat(toast.Text)
                 .OverrideFailureMessage("The flavor click must show its one-line response as a toast — never silently nothing.")
-                .IsEqual("The water ripples. Nothing to craft here — try the anvil.");
+                .IsEqual(quenchSpec.FlavorLine);
+            AssertThat(quenchSpec.FlavorLine)
+                .OverrideFailureMessage("A flavor station with no line to say is a dead click, which is the thing this test exists to forbid.")
+                .IsNotEmpty();
         }
         finally { Unmount(ui); }
     }
