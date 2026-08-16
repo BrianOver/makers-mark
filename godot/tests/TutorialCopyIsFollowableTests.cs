@@ -69,7 +69,12 @@ public class TutorialCopyIsFollowableTests
         [TutorialStep.WatchDeparture] = ["Mine Gate", "top of the screen"],
 
         [TutorialStep.LookIn] = ["Watch", "top of the screen"],
-        [TutorialStep.OpenCounter] = ["Shop", "Open Counter", "Present", "Accept"],
+        // U2 (tutorial-revamp plan, §11.13): re-scoped alongside the row's own IsDone/copy rewrite
+        // — completion no longer requires a closed sale, so the copy no longer promises specific
+        // Present/Accept/Hold Firm/Counter buttons (any one of several verbs satisfies the step;
+        // naming all of them made the OLD copy read as a checklist of required presses). "Open
+        // Counter" is still the one verb the step actually gates on.
+        [TutorialStep.OpenCounter] = ["Shop", "Open Counter"],
         [TutorialStep.Vigil] = ["Send", "Recall"],
         [TutorialStep.EveningClose] = ["EVENING LEDGER", "ORE OFFERED", "Buy"],
 

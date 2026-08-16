@@ -16,6 +16,11 @@ namespace GodotClient.Ui;
 /// cannot address (confirmed by <c>Building2D</c>'s own click-picking doc: <c>Town2D</c>'s
 /// <c>SubViewport</c> is what physics-picking is enabled on), so the pulse has to live with the
 /// sprite itself rather than be drawn over it.</item>
+/// <item>U2 (tutorial-revamp plan, §11.13): a <see cref="TutorialAnchorKind.Station"/> anchor
+/// pulses a specific station INSIDE a venue's walkable interior room (<see
+/// cref="Town2D.FindStation"/>) rather than the building that contains it — "the anvil, not the
+/// building" — using the identical <see cref="Building2D"/> pulse mechanism, since a station is
+/// one too (<see cref="Town2d.InteriorRoom2D.Stations"/>).</item>
 /// <item>A <see cref="TutorialAnchorKind.Hud"/> anchor gets a pulsing outline drawn by THIS Control,
 /// resolved BY NAME against the live scene (<see cref="Node.FindChild(string, bool, bool)"/>) —
 /// HUD controls (the bell, the Watch button, a tray button, a modal's own fitted card) sit in the
@@ -61,8 +66,11 @@ public sealed partial class TutorialOverlay : Control
     /// <summary>Which anchor is currently active — test/inspection surface.</summary>
     public TutorialAnchor CurrentAnchor => _anchor;
 
-    /// <summary>Which building (if any) currently carries the world-space pulse — test/inspection
-    /// surface for "the overlay pulses exactly the active step's anchor and nothing else".</summary>
+    /// <summary>Which building OR station (if any) currently carries the world-space pulse —
+    /// test/inspection surface for "the overlay pulses exactly the active step's anchor and
+    /// nothing else". A Building anchor reads as the venue key ("forge"); a Station anchor reads
+    /// as the station's own id ("anvil") — both are the SAME <see cref="Building2D.Key"/> field,
+    /// since a station is a Building2D too.</summary>
     public string? PulsingBuildingKey => _pulsingBuilding?.Key;
 
     /// <summary>Which HUD control (if any) currently carries the screen-space outline — test/
@@ -116,6 +124,16 @@ public sealed partial class TutorialOverlay : Control
             case TutorialAnchorKind.Building:
                 // Throws if the key is not a real venue — see class doc; never a silent miss.
                 _pulsingBuilding = town.FindBuilding(anchor.Key!);
+                _pulsingBuilding.SetTutorialPulsing(true);
+                break;
+
+            case TutorialAnchorKind.Station:
+                // U2 (tutorial-revamp plan, §11.13): a station IS a Building2D (InteriorRoom2D
+                // mounts them the same way town buildings mount), so the SAME pulse mechanism
+                // applies unchanged — only the lookup differs (venue room's station table, not
+                // the town's building table). Throws if the (venue, station) pair does not
+                // resolve — same never-point-at-nothing contract as the Building/Hud branches.
+                _pulsingBuilding = town.FindStation(anchor.Key!, anchor.StationId!);
                 _pulsingBuilding.SetTutorialPulsing(true);
                 break;
 

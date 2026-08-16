@@ -232,6 +232,12 @@ public partial class MainUi : Control
     /// <summary>U-D4: the multi-axis progression spine — the five ladders + each one's next rung.
     /// Opened from the HUD "Progress" button.</summary>
     public ProgressionPanel Progress { get; private set; } = null!;
+    /// <summary>U2 (tutorial-revamp plan, §11.13): the Lessons book — every registry row's teach
+    /// note, permanently, surviving dismissal/completion. Opened from the HUD "Lessons" button —
+    /// NOT one of the seven gated tray books (<see cref="SurfaceUnlocks.Gates"/> never names it):
+    /// the whole point is that a player who dismisses or finishes the guided chain can still look
+    /// its lessons up.</summary>
+    public LessonsPanel Lessons { get; private set; } = null!;
     public TabFade TabFade { get; private set; } = null!;
     public AdventureTicker Ticker { get; private set; } = null!;
 
@@ -491,6 +497,7 @@ public partial class MainUi : Control
         Demand.Bind(Adapter);
         HeroCards.Bind(Adapter);
         Progress.Bind(Adapter);
+        Lessons.Bind(Adapter);
         Ledger.Bind(Adapter);
         Chronicle.Bind(Adapter);
         Camp.Bind(Adapter);
@@ -997,6 +1004,10 @@ public partial class MainUi : Control
         else if (state.Phase == DayPhase.Camp)
         {
             Camp.ShowModal();
+            // U2 (tutorial-revamp plan, §11.13): the vigil step completes on SEEING the card, not
+            // on pressing a specific verb — a no-op once Step has moved past Vigil (mirrors
+            // NotifyMirrorOpened's own idiom for the day-1 capstone).
+            Tutorial.NotifyCampCardShown();
 
             // The held breath at the winch-house — the other moment the whole day is built to stage.
             // Once per parking, not once per sync: this runs on every phase tick while a party is
@@ -1081,11 +1092,96 @@ public partial class MainUi : Control
         RefreshStatus();
         var state = Adapter.CurrentState;
         RefreshObjectiveLine();
-        Tutorial.SetWorkshopVocab(Town.WorkshopNametag, Town.WorkshopStationNoun);
+        Tutorial.SetWorkshopVocab(
+            Town.WorkshopNametag, Town.WorkshopStationNoun, Town.WorkshopMaterialsStationId, Town.WorkshopCraftStationId);
         Tutorial.RefreshAffordances(state);
         Timeline.Refresh(state.Phase, Waiting);
         UpdateClockLabel(); // U3/U4: bell verb + player-phase banner are state-driven — refresh on every tick, not only per-frame _Process
         RefreshBellTray(); // U3 (KTD-B): keep the tray honest on every tick too, not only on submit
+        RefreshSurfaceUnlocks(state); // U3 (tutorial-revamp plan): keep the seven gated tray books honest too
+    }
+
+    /// <summary>U3 (tutorial-revamp plan, §11.13): the seven gated tray buttons, keyed by <see
+    /// cref="SurfaceUnlocks.Gate.SurfaceId"/> — populated once, at construction, by <see
+    /// cref="RegisterGatedTrayButton"/>. Read every <see cref="RefreshHud"/> tick to keep
+    /// <c>Disabled</c>/<c>TooltipText</c> honest; the button's OWN substantive tooltip (set at
+    /// construction) is remembered here so the closed-gate reason can replace it and be swapped
+    /// back once the surface opens.</summary>
+    private readonly Dictionary<string, (Button Button, string OpenTooltip)> _gatedTrayButtons = new();
+
+    /// <summary>Every surface id <see cref="SurfaceEffectivelyOpen"/> has ever reported open —
+    /// grows only (mirrors <see cref="TutorialFlow.Step"/>'s own one-way ratchet), so <see
+    /// cref="RefreshSurfaceUnlocks"/> can tell "just opened this tick" (worth an arrival toast)
+    /// from "already open last tick" (silent) via <see cref="HashSet{T}.Add"/>'s own return value.</summary>
+    private readonly HashSet<string> _openSurfaceIds = new();
+
+    /// <summary>False only before the FIRST <see cref="RefreshSurfaceUnlocks"/> call — a resumed
+    /// campaign's already-open surfaces must seed <see cref="_openSurfaceIds"/> silently on that
+    /// first tick, never fire an "arrival" toast for something that opened sessions ago.</summary>
+    private bool _surfaceUnlocksSeeded;
+
+    /// <summary>Wires one Books Tray button into the gate table — called once per button, right
+    /// after its own construction (so <paramref name="button"/>'s TooltipText at THIS point is its
+    /// real, substantive one).</summary>
+    private void RegisterGatedTrayButton(string surfaceId, Button button) =>
+        _gatedTrayButtons[surfaceId] = (button, button.TooltipText);
+
+    /// <summary>
+    /// Whether <paramref name="surfaceId"/> should render/behave as OPEN right now — <see
+    /// cref="SurfaceUnlocks.IsOpen"/>'s own verdict, OR an override while the tutorial is actively
+    /// pointing its OWN Hud anchor at this exact surface's tray button. This is the pin U3 must
+    /// never violate: two Hud anchors in <see cref="TutorialFlow.Registry"/> name a gated tray
+    /// button by its Godot control name ("OpenHeroCards" for MeetHeroes, "OpenCommissions" for
+    /// Commission), and neither gate is guaranteed true by the day the tutorial reaches those
+    /// steps — a player can legally reach day 3 having sold nothing and having no commission
+    /// posted. A gate that hid the very button the tutorial told the player to press would strand
+    /// them there forever, since pressing it is the ONLY way <see
+    /// cref="TutorialFlow.NotifyPanelOpened"/> ever fires for those two steps.
+    /// </summary>
+    private bool SurfaceEffectivelyOpen(GameState state, string surfaceId) =>
+        SurfaceUnlocks.IsOpen(state, surfaceId)
+        || (Tutorial.Active && Tutorial.CurrentAnchor == TutorialAnchor.ForHud($"Open{surfaceId}"));
+
+    /// <summary>Re-grey (or un-grey) every gated tray button from live state, and fire a one-line
+    /// town-voiced arrival toast the FIRST tick a surface reads open (never on the seeding tick —
+    /// see <see cref="_surfaceUnlocksSeeded"/>'s own doc, and never twice — <see
+    /// cref="_openSurfaceIds"/> only ever grows).</summary>
+    private void RefreshSurfaceUnlocks(GameState state)
+    {
+        foreach (var gate in SurfaceUnlocks.Gates)
+        {
+            var open = SurfaceEffectivelyOpen(state, gate.SurfaceId);
+            if (_gatedTrayButtons.TryGetValue(gate.SurfaceId, out var entry))
+            {
+                entry.Button.Disabled = !open;
+                entry.Button.TooltipText = open ? entry.OpenTooltip : gate.Reason;
+            }
+
+            if (open && _openSurfaceIds.Add(gate.SurfaceId) && _surfaceUnlocksSeeded)
+            {
+                ShowBellToast($"{gate.SurfaceId}'s open now — {gate.Reason}");
+            }
+        }
+
+        _surfaceUnlocksSeeded = true;
+    }
+
+    /// <summary>The one place every gated tray button's press funnels through — refuses a closed
+    /// surface with the gate's own reason (never a silent no-op) rather than opening
+    /// <paramref name="openAction"/>. A real player could not have clicked a Disabled button in
+    /// the first place; this exists for the same reason <see cref="OpenPanel"/>'s own guard does —
+    /// defense for any caller that bypasses the Disabled flag (a test harness forcing the Pressed
+    /// signal, a future hotkey).</summary>
+    private void OpenGatedSurface(string surfaceId, Action openAction)
+    {
+        var state = Adapter.CurrentState;
+        if (!SurfaceEffectivelyOpen(state, surfaceId))
+        {
+            ShowBellToast(SurfaceUnlocks.GateFor(surfaceId)?.Reason ?? $"{surfaceId} is not open yet.");
+            return;
+        }
+
+        openAction();
     }
 
     /// <summary>
@@ -2327,32 +2423,36 @@ public partial class MainUi : Control
         var ledgerButton = TrayButton(
             "OpenLedger", IconRegistry.Glyph("skull"),
             "Ledger — yesterday's full accounting: what sold, what came in, and who bought it");
-        ledgerButton.Pressed += () => Ledger.ShowFor(LastCompletedDay);
+        ledgerButton.Pressed += () => OpenGatedSurface("Ledger", () => Ledger.ShowFor(LastCompletedDay));
         trayRow.AddChild(CapTrayIcon(ledgerButton));
+        RegisterGatedTrayButton("Ledger", ledgerButton);
 
         // U10: open the raid-forecast board on demand (day-end auto-open is the chained path in
         // OnLedgerVisibilityChanged). Reads live state so it always reflects the current roster.
         var forecastButton = TrayButton(
             "OpenForecast", IconRegistry.Glyph("depths"),
             "Forecast — tomorrow's raid board: who's mustering, and how deep they're going");
-        forecastButton.Pressed += () => Forecast.ShowForTomorrow(Adapter.CurrentState);
+        forecastButton.Pressed += () => OpenGatedSurface("Forecast", () => Forecast.ShowForTomorrow(Adapter.CurrentState));
         trayRow.AddChild(CapTrayIcon(forecastButton));
+        RegisterGatedTrayButton("Forecast", forecastButton);
 
         // Wave 3 (U15): open the commission board on demand — a Prepare-phase surface, same tray
         // as Forecast. Reads live state so it always reflects the current board. Tooltip is the
         // shared CommissionsTrayTooltip constant (see its own doc): TutorialFlow's step 10 line
         // quotes this exact sentence, so the two can never drift apart.
         var commissionsButton = TrayButton("OpenCommissions", IconRegistry.Glyph("bounty"), CommissionsTrayTooltip);
-        commissionsButton.Pressed += () => Commissions.ShowOpen(Adapter.CurrentState);
+        commissionsButton.Pressed += () => OpenGatedSurface("Commissions", () => Commissions.ShowOpen(Adapter.CurrentState));
         trayRow.AddChild(CapTrayIcon(commissionsButton));
+        RegisterGatedTrayButton("Commissions", commissionsButton);
 
         // Wave 4 (U21): open the Legends Wall on demand — same tray as Forecast/Bestiary/Commissions.
         // Reads live state so it always reflects the current memorials/records/gear.
         var legendsButton = TrayButton(
             "OpenLegends", IconRegistry.Glyph("rune"),
             "Legends — the wall of fates your work has actually changed");
-        legendsButton.Pressed += () => Legends.ShowWall(Adapter.CurrentState);
+        legendsButton.Pressed += () => OpenGatedSurface("Legends", () => Legends.ShowWall(Adapter.CurrentState));
         trayRow.AddChild(CapTrayIcon(legendsButton));
+        RegisterGatedTrayButton("Legends", legendsButton);
 
         // G1 (plan 2026-07-25-001, Slice 2): the demand telegraph had no player-visible entry —
         // DemandPanel was already registered in the Drawer (U6) and reachable via
@@ -2362,8 +2462,9 @@ public partial class MainUi : Control
         var demandButton = TrayButton(
             "OpenDemand", IconRegistry.Glyph("gossip"),
             "Demand — what the town wants right now, and how badly");
-        demandButton.Pressed += () => OpenPanel("Demand");
+        demandButton.Pressed += () => OpenGatedSurface("Demand", () => OpenPanel("Demand"));
         trayRow.AddChild(CapTrayIcon(demandButton));
+        RegisterGatedTrayButton("Demand", demandButton);
 
         // Phase B, B1d: the hero digest (standing/deepest/XP-rank/deeds card per alive hero) had
         // no HUD entry — same tray as Demand/Legends above. Opens "HeroCards" (not "Heroes" —
@@ -2371,15 +2472,28 @@ public partial class MainUi : Control
         // the shared RenownTrayTooltip constant (see its own doc) — TutorialFlow's step 9 line
         // quotes this exact sentence.
         var heroesButton = TrayButton("OpenHeroCards", IconRegistry.Glyph("shield"), RenownTrayTooltip);
-        heroesButton.Pressed += () => OpenPanel("HeroCards");
+        heroesButton.Pressed += () => OpenGatedSurface("HeroCards", () => OpenPanel("HeroCards"));
         trayRow.AddChild(CapTrayIcon(heroesButton));
+        RegisterGatedTrayButton("HeroCards", heroesButton);
 
         // U-D4: the progression spine — same tray. Opens the five-ladder board.
         var progressButton = TrayButton(
             "OpenProgress", IconRegistry.Glyph("weapon"),
             "Progress — the five ladders tracking your climb, and each one's next rung");
-        progressButton.Pressed += () => OpenPanel("Progress");
+        progressButton.Pressed += () => OpenGatedSurface("Progress", () => OpenPanel("Progress"));
         trayRow.AddChild(CapTrayIcon(progressButton));
+        RegisterGatedTrayButton("Progress", progressButton);
+
+        // U2 (tutorial-revamp plan, §11.13): the Lessons book — every teaching the guided chain
+        // ever showed, permanently, whether the chain is running, dismissed, or done. NOT one of
+        // the seven gated books below (SurfaceUnlocks never names "Lessons") — the whole point is
+        // that dismissing/finishing the tutorial never takes the lessons away with it. "armor" is
+        // an unused glyph reused here rather than a new asset (out of this unit's scope).
+        var lessonsButton = TrayButton(
+            "OpenLessons", IconRegistry.Glyph("armor"),
+            "Lessons — every lesson the guided chain has taught so far, kept whether it's running, dismissed, or done");
+        lessonsButton.Pressed += () => OpenPanel("Lessons");
+        trayRow.AddChild(CapTrayIcon(lessonsButton));
 
         // U6/U7 rejection banner: a transient, themed, player-phrased line — hidden
         // except while a toast is live (OnPhaseCompleted shows it, ClearToast/_Process
@@ -2447,6 +2561,7 @@ public partial class MainUi : Control
         Demand = InstantiatePanel<DemandPanel>("res://scenes/panels/demand_panel.tscn");
         HeroCards = InstantiatePanel<HeroPanel>("res://scenes/panels/hero_panel.tscn");
         Progress = new ProgressionPanel(); // U-D4: code-built (no scene deps), like BestiaryPanel
+        Lessons = new LessonsPanel(); // U2 (tutorial-revamp plan): code-built, same idiom as Progress
 
         // U17 (KTD13): the single bottom-edge HUD line — mounted last in the layout so it sits
         // below the world gap, the one region KTD13 reserves for it (PiP docks above it; top bar
@@ -2491,6 +2606,7 @@ public partial class MainUi : Control
         Drawer.Register("Demand", Demand);
         Drawer.Register("HeroCards", HeroCards);
         Drawer.Register("Progress", Progress);
+        Drawer.Register("Lessons", Lessons);
 
         // --- U9 (world-and-interiors plan, KTD-4): the ONE live MineWatch instance (constraint
         //     4 — pumping frames while any SubViewport renders hangs gdUnit headless, and a
@@ -2617,8 +2733,13 @@ public partial class MainUi : Control
         // SAME resolution the building/drawer already use (Town.WorkshopNametag/StationNoun) —
         // Town.Build ran above, so this is never stale on the very first frame. RefreshHud keeps
         // it live if a second profession changes it mid-run.
-        Tutorial.SetWorkshopVocab(Town.WorkshopNametag, Town.WorkshopStationNoun);
+        Tutorial.SetWorkshopVocab(
+            Town.WorkshopNametag, Town.WorkshopStationNoun, Town.WorkshopMaterialsStationId, Town.WorkshopCraftStationId);
         AddChild(Tutorial);
+        // U2 (tutorial-revamp plan, §11.13): the Lessons book needs the live chain to mark its
+        // current row — wired here (Tutorial already Built above) rather than at Lessons'
+        // construction site, which runs before Tutorial exists.
+        Lessons.Tutorial = Tutorial;
         // Dock at the FULL objective width via explicit offsets, NOT LayoutPresetMode.Minsize:
         // Minsize snapshots the collapsed build-time min width into the offset, pinning a sliver-
         // wide panel to the right edge — the same bug already fixed for the Objective chip above
@@ -2688,6 +2809,18 @@ public partial class MainUi : Control
     /// </summary>
     public void OpenPanel(string id)
     {
+        // U3 (tutorial-revamp plan, §11.13): refuse a still-gated surface with its own reason
+        // rather than a silent no-op — defense for any caller that reaches this router without
+        // going through a tray button's own Disabled state (a hotkey, a test/tooling call). The
+        // three gated ids that route through this method at all are Demand/HeroCards/Progress;
+        // every other id (Forge/Shop/Heroes/Tavern/Depths/Bounties/Lessons/Town) carries no gate
+        // (SurfaceUnlocks.GateFor returns null for them), so this is a no-op for the common case.
+        if (SurfaceUnlocks.GateFor(id) is { } gate && !SurfaceEffectivelyOpen(Adapter.CurrentState, id))
+        {
+            ShowBellToast(gate.Reason);
+            return;
+        }
+
         if (id == "Town")
         {
             Drawer.Close();
@@ -3008,6 +3141,7 @@ public partial class MainUi : Control
         "Demand" => Demand,
         "HeroCards" => HeroCards,
         "Progress" => Progress,
+        "Lessons" => Lessons,
         _ => throw new ArgumentOutOfRangeException(nameof(id), id, "no such drawer panel"),
     };
 

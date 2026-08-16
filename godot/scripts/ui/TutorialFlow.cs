@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using GameSim.Advisor;
 using GameSim.Contracts;
+using GameSim.Heroes;
 using GameSim.Professions;
 using Godot;
 using GodotClient.Town2d;
@@ -44,33 +45,56 @@ public enum TutorialStep
 
 /// <summary>U5 (loop-legibility plan, KTD-E): what a tutorial step's overlay pulse points at — a
 /// discriminated value, never a bare string, so "point at nothing" is a compile-time-shaped
-/// question with exactly three answers. <see cref="TutorialAnchorKind.None"/> is a legitimate,
+/// question with exactly four answers (U2, tutorial-revamp plan §11.13, added <see
+/// cref="Station"/>). <see cref="TutorialAnchorKind.None"/> is a legitimate,
 /// deliberate answer (a step with no single walk-there/click-this target); <see
-/// cref="TutorialAnchorKind.Building"/>/<see cref="TutorialAnchorKind.Hud"/> are NOT allowed to
-/// silently fail to resolve — <c>TutorialRegistryConformanceTests</c> resolves every one of those
-/// against the real <see cref="TownLayout2D"/> table / live HUD scene, and <see
-/// cref="TutorialOverlay"/> does the identical resolution at play time (house rule: an anchor
-/// that cannot resolve its target fails loudly, never points at nothing).</summary>
+/// cref="TutorialAnchorKind.Building"/>/<see cref="Station"/>/<see cref="TutorialAnchorKind.Hud"/>
+/// are NOT allowed to silently fail to resolve — <c>TutorialRegistryConformanceTests</c> resolves
+/// every one of those against the real <see cref="TownLayout2D"/> table / room station table /
+/// live HUD scene, and <see cref="TutorialOverlay"/> does the identical resolution at play time
+/// (house rule: an anchor that cannot resolve its target fails loudly, never points at
+/// nothing).</summary>
 public enum TutorialAnchorKind
 {
     None,
     Building,
     Hud,
+
+    /// <summary>U2 (tutorial-revamp plan, §11.13): points at ONE station inside a venue's walkable
+    /// interior room (e.g. the anvil) rather than the building that contains it — "the overlay
+    /// pulses the anvil, not the building." Closes the owner's "tutorials... need in game
+    /// highlights, hovers" note for the two steps (BuyMaterial/Craft) that used to name only the
+    /// building.</summary>
+    Station,
 }
 
 /// <summary>
 /// One step's pointed-at target. <see cref="Key"/> is either a <see cref="TownLayout2D.Venues"/>
 /// key ("forge"/"market"/"tavern"/"minegate"/"noticeboard" — the SAME lowercase vocabulary
 /// <see cref="Town2D.FindBuilding"/> and <c>Building2D.Key</c> already use, never the capitalized
-/// drawer-panel id) for a <see cref="TutorialAnchorKind.Building"/>, or a live <see cref="Node.Name"/>
+/// drawer-panel id) for a <see cref="TutorialAnchorKind.Building"/> OR a <see
+/// cref="TutorialAnchorKind.Station"/> (a Station anchor's <see cref="Key"/> is the STATION's own
+/// venue, so the "walk to the {building}" copy generation still works unchanged for it — see
+/// <c>TutorialFlow.StepText</c>'s <c>building</c> lookup), or a live <see cref="Node.Name"/>
 /// to resolve by <see cref="Node.FindChild(string, bool, bool)"/> against the mounted HUD for a
-/// <see cref="TutorialAnchorKind.Hud"/>.
+/// <see cref="TutorialAnchorKind.Hud"/>. <see cref="StationId"/> is Station-only: the specific
+/// station's own stable id within that venue's room (<c>InteriorLayout2D.StationSpec.Id</c>, e.g.
+/// "anvil") — resolved via <c>Town2D.FindStation(Key, StationId)</c>.
 /// </summary>
-public readonly record struct TutorialAnchor(TutorialAnchorKind Kind, string? Key)
+public readonly record struct TutorialAnchor(TutorialAnchorKind Kind, string? Key, string? StationId = null)
 {
     public static readonly TutorialAnchor None = new(TutorialAnchorKind.None, null);
     public static TutorialAnchor ForBuilding(string venueKey) => new(TutorialAnchorKind.Building, venueKey);
     public static TutorialAnchor ForHud(string controlName) => new(TutorialAnchorKind.Hud, controlName);
+
+    /// <summary>U2: <paramref name="venueKey"/> is always "forge" today (the only venue with a
+    /// Station anchor) but kept general rather than hardcoded, mirroring <see cref="ForBuilding"/>.
+    /// <paramref name="stationId"/> is a per-profession default (blacksmith's own ids) — <see
+    /// cref="TutorialFlow.CurrentAnchor"/> substitutes the LIVE profession's own station id in at
+    /// read time, so this default only matters to callers that never resolve it dynamically
+    /// (e.g. the registry's own static declaration).</summary>
+    public static TutorialAnchor ForStation(string venueKey, string stationId) =>
+        new(TutorialAnchorKind.Station, venueKey, stationId);
 }
 
 /// <summary>One row of the checklist (<see cref="TutorialFlow.Checklist"/>) — one per DISPLAYED
@@ -225,14 +249,23 @@ public sealed partial class TutorialFlow : PanelContainer
     private static TutorialStepDef[] BuildRegistry() =>
     [
         new(
-            Step: TutorialStep.BuyMaterial, DisplayIndex: 1, Anchor: TutorialAnchor.ForBuilding("forge"), MinDay: 1,
+            // U2 (tutorial-revamp plan, §11.13): Station, not Building — the overlay now pulses
+            // the specific materials station (blacksmith's default: the Material Shelf) rather
+            // than the whole Forge building. "forge"/"shelf" are the static blacksmith default;
+            // CurrentAnchor substitutes the LIVE primary profession's own materials-station id at
+            // read time (WorkshopVocab.MaterialsStationIdFor), so an alchemist/tanner/engineer
+            // start still points at their own real station, never blacksmith's by mistake.
+            Step: TutorialStep.BuyMaterial, DisplayIndex: 1, Anchor: TutorialAnchor.ForStation("forge", "shelf"), MinDay: 1,
             ShortLabel: "Buy material, then craft your first item",
             TeachNote: "Inside a building you walk up to a station and press E to use it. The material vendor "
                        + "and the crafting station are both stations in your workshop.",
             IsDone: state => state.EventLog.OfType<MaterialPurchased>().Any(),
             AdvanceFrom: [TutorialStep.BuyMaterial], AdvancesTo: TutorialStep.Craft),
         new(
-            Step: TutorialStep.Craft, DisplayIndex: 1, Anchor: TutorialAnchor.ForBuilding("forge"), MinDay: 1,
+            // U2: Station, not Building — see BuyMaterial's own row doc. "anvil" is the static
+            // blacksmith default; CurrentAnchor substitutes the live profession's own craft
+            // station (WorkshopVocab.CraftStationIdFor).
+            Step: TutorialStep.Craft, DisplayIndex: 1, Anchor: TutorialAnchor.ForStation("forge", "anvil"), MinDay: 1,
             ShortLabel: "Craft your first item",
             TeachNote: "Crafting consumes the material you just bought — or your starter kit — into a finished piece.",
             IsDone: state => state.EventLog.OfType<ItemCrafted>().Any(),
@@ -294,19 +327,37 @@ public sealed partial class TutorialFlow : PanelContainer
             IsDone: state => state.Phase == DayPhase.Evening,
             AdvanceFrom: [TutorialStep.LookIn], AdvancesTo: TutorialStep.OpenCounter),
         new(
+            // U2 (tutorial-revamp plan, §11.13): re-scoped from "close a sale" to "open the
+            // counter and answer the customer" — the OLD IsDone (CounterSaleClosed) demanded an
+            // outcome the player cannot cause (ShoppingAi.EvaluateItem can legally Pass), so the
+            // modal case — a hero who walks with nothing bought — stalled the step forever even
+            // though the player did everything the game lets them do. A closed sale is still a
+            // real outcome, just no longer the gate.
             Step: TutorialStep.OpenCounter, DisplayIndex: 6, Anchor: TutorialAnchor.ForBuilding("market"), MinDay: 2,
-            ShortLabel: "Open the counter and serve a customer",
+            ShortLabel: "Open the counter and hear out the customer",
             TeachNote: "The counter is a live haggle. You present something off your shelf, the customer names "
                        + "an offer, and you take it, hold your price, or name your own.",
-            IsDone: state => state.EventLog.OfType<CounterSaleClosed>().Any(),
+            IsDone: state => state.EventLog.OfType<CustomerApproached>().Any()
+                             && state.ActionLog.Any(batch => batch.Actions.Any(a =>
+                                 a is PresentItemAction or SuggestItemAction or HaggleResponseAction or CloseCounterAction)),
             AdvanceFrom: [TutorialStep.OpenCounter], AdvancesTo: TutorialStep.Vigil),
         new(
-            Step: TutorialStep.Vigil, DisplayIndex: 7, Anchor: TutorialAnchor.ForHud("CampCard"), MinDay: 2,
-            ShortLabel: "Answer the camped party: Send, or Recall",
+            // U2: re-scoped from "day 2 lesson" to "not day-based at all" — MinDay drops to 1
+            // (harmless: OpenCounter's own MinDay:2 already blocks Advance() from ever reaching
+            // this row before day 2, so this was never actually reachable on day 1 in real play;
+            // the change matters only for CopyFor's own audit surface, see StepActionAvailable's
+            // Vigil case). The real precondition was never the day — see AnyPartyStagedForCheckpointToday's
+            // own doc — and IsDone stays UI-only (NotifyCampCardShown, mirroring LookIn/MeetHeroes):
+            // completion is now "the vigil card was SEEN at all", not "a specific verb was
+            // pressed" (Send/Recall are the two the plan is unsure it wants taught reflexively;
+            // Send Deeper is the third and only ends the vigil, and none of the three should gate
+            // the LESSON, which is "understand what the stop is and that it waits").
+            Step: TutorialStep.Vigil, DisplayIndex: 7, Anchor: TutorialAnchor.ForHud("CampCard"), MinDay: 1,
+            ShortLabel: "See the vigil, and know it can wait",
             TeachNote: "A camped party waits on your answer before it goes further. A supply costs a runner's "
                        + "fee and reaches them underground; a recall brings them home short of their target. "
                        + "Sending them deeper is the third answer, and it spends nothing of yours.",
-            IsDone: state => state.EventLog.OfType<SupplyDelivered>().Any() || state.EventLog.OfType<PartyRecalled>().Any(),
+            IsDone: _ => false,
             AdvanceFrom: [TutorialStep.Vigil], AdvancesTo: TutorialStep.EveningClose),
         new(
             Step: TutorialStep.EveningClose, DisplayIndex: 8, Anchor: TutorialAnchor.ForHud("AdvancePhase"), MinDay: 1,
@@ -349,6 +400,16 @@ public sealed partial class TutorialFlow : PanelContainer
 
     private string _workshopStationNoun = "anvil";
 
+    /// <summary>U2 (tutorial-revamp plan, §11.13): the live primary profession's own
+    /// materials-station id — see <see cref="ResolveAnchor"/>. Defaults to blacksmith's own id so
+    /// every existing caller that never invokes <see cref="SetWorkshopVocab"/> (most tests) keeps
+    /// reading the pre-U2 blacksmith station unchanged.</summary>
+    private string _materialsStationId = "shelf";
+
+    /// <summary>U2: the live primary profession's own crafting-station id — see <see
+    /// cref="_materialsStationId"/>'s own doc.</summary>
+    private string _craftStationId = "anvil";
+
     private Button? _quickTravelForgeButton;
 
     /// <summary>Current chain step. Never regresses; only <see cref="Advance"/>/<see
@@ -381,7 +442,30 @@ public sealed partial class TutorialFlow : PanelContainer
     /// cref="TutorialOverlay.RefreshAnchor"/>. <see cref="TutorialAnchor.None"/> while inactive
     /// (the caller is expected to check <see cref="Active"/> first, same contract as <see
     /// cref="TopSlotText"/>).</summary>
-    public TutorialAnchor CurrentAnchor => ByStep[Step].Anchor;
+    public TutorialAnchor CurrentAnchor => ResolveAnchor(ByStep[Step].Anchor, Step);
+
+    /// <summary>U2 (tutorial-revamp plan, §11.13): substitutes the LIVE primary profession's own
+    /// station id into BuyMaterial/Craft's Station anchor — the registry's own declared
+    /// <see cref="TutorialAnchor.StationId"/> is a static blacksmith default ("shelf"/"anvil"),
+    /// never re-typed per profession there (the registry is one array, shared by every campaign).
+    /// <see cref="_materialsStationId"/>/<see cref="_craftStationId"/> are pushed in by <see
+    /// cref="SetWorkshopVocab"/> from the SAME per-profession resolution the actual room uses
+    /// (<c>Town2D.WorkshopMaterialsStationId</c>/<c>WorkshopCraftStationId</c>), so this can never
+    /// disagree with which station the live workshop room actually mounted.</summary>
+    private TutorialAnchor ResolveAnchor(TutorialAnchor anchor, TutorialStep step)
+    {
+        if (anchor.Kind != TutorialAnchorKind.Station)
+        {
+            return anchor;
+        }
+
+        return step switch
+        {
+            TutorialStep.BuyMaterial => anchor with { StationId = _materialsStationId },
+            TutorialStep.Craft => anchor with { StationId = _craftStationId },
+            _ => anchor,
+        };
+    }
 
     /// <summary>"Take a second profession" — visible once <see
     /// cref="SecondProfessionMilestoneReached"/> and a slot is still open.</summary>
@@ -479,10 +563,19 @@ public sealed partial class TutorialFlow : PanelContainer
     /// profession added mid-run updates this class's copy the same tick the workshop room itself
     /// rebuilds (<c>Town2D.RebuildWorkshopIfStale</c>).
     /// </summary>
-    public void SetWorkshopVocab(string nametag, string stationNoun)
+    /// <summary>
+    /// U2 (tutorial-revamp plan, §11.13) widened the signature with <paramref
+    /// name="materialsStationId"/>/<paramref name="craftStationId"/> — the SAME single-source
+    /// rule as <paramref name="nametag"/>/<paramref name="stationNoun"/>, just for the Station
+    /// anchor's lookup ids instead of display text (<c>Town2D.WorkshopMaterialsStationId</c>/
+    /// <c>WorkshopCraftStationId</c>, themselves reading <c>WorkshopVocab</c>).
+    /// </summary>
+    public void SetWorkshopVocab(string nametag, string stationNoun, string materialsStationId, string craftStationId)
     {
         _workshopNametag = nametag;
         _workshopStationNoun = stationNoun;
+        _materialsStationId = materialsStationId;
+        _craftStationId = craftStationId;
         if (_quickTravelForgeButton is not null)
         {
             _quickTravelForgeButton.Text = nametag;
@@ -534,16 +627,23 @@ public sealed partial class TutorialFlow : PanelContainer
         // name follows the workshop's current profession (BuildingDisplayName folds in U7's
         // workshop vocab override) while `def.Anchor.Key` itself stays the stable routing
         // vocabulary IsAtAnchor/PanelIdForVenue read — never rename the plumbing, only the text.
-        var building = def.Anchor.Kind == TutorialAnchorKind.Building ? BuildingDisplayName(def.Anchor.Key!) : string.Empty;
+        // U2 (tutorial-revamp plan, §11.13): a Station anchor's own Key is still the venue key (see
+        // TutorialAnchor's own doc), so the SAME "walk to the {building}" text generation applies
+        // to BuyMaterial/Craft unchanged now that they point at a Station, not a Building.
+        var building = def.Anchor.Kind is TutorialAnchorKind.Building or TutorialAnchorKind.Station
+            ? BuildingDisplayName(def.Anchor.Key!) : string.Empty;
         var alreadyThere = building.Length > 0 && IsAtAnchor(def, openPanelId);
         return def.Step switch
         {
+            // U2 (tutorial-revamp plan, §11.13): dropped the trailing "Inside, press E at a
+            // station" sentence — genuinely redundant now that the overlay pulses the EXACT
+            // station (the anvil, the shelf), not just the building. Part of the card diet: the
+            // world shows where; the card only needs to say what/why.
             TutorialStep.BuyMaterial or TutorialStep.Craft =>
                 $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: def.Step == TutorialStep.BuyMaterial, alreadyThere)} — " +
                 (suggestions.Count > 0
                     ? suggestions[0].Reason
-                    : $"Buy material at the vendor, then craft at the {_workshopStationNoun}.") +
-                " Inside, press **E** at a station.",
+                    : $"Buy material at the vendor, then craft at the {_workshopStationNoun}."),
             TutorialStep.Shelve =>
                 $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — " +
                 (suggestions.FirstOrDefault(s => s.Action is StockAction)?.Reason
@@ -567,10 +667,17 @@ public sealed partial class TutorialFlow : PanelContainer
             TutorialStep.LookIn =>
                 $"Tutorial {def.DisplayIndex}/{TotalSteps}: Press **👁 Watch**, beside the wide button at the top of the " +
                 "screen, to open the Scrying Mirror and look in on them — the day waits until you do.",
+            // U2 (tutorial-revamp plan, §11.13): rewritten alongside the row's IsDone (see the
+            // registry row's own comment) — the old copy demanded Present→Accept/Hold Firm/
+            // Counter as if a sale were guaranteed. It is not: the customer's want is fixed before
+            // the player shows anything, and a hero who walks with nothing bought is the MODAL
+            // case on a starter shelf, not bad luck. This copy names the anticipation (the
+            // Forecast board already told the player who's first and what they want) and states
+            // outright that a walk is a real answer, not a failure.
             TutorialStep.OpenCounter =>
                 $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — press " +
-                "**Open Counter** at the top of the Shop panel, then **Present** a shelved item and answer with " +
-                "**Accept**, **Hold Firm**, or **Counter**.",
+                "**Open Counter**. Whoever's first already named their want — last night's Forecast board. " +
+                "Show it, or hear them out. A walk with nothing sold still counts.",
             // Vigil: no walk-there destination — the camp card opens itself the moment a party camps
             // below the checkpoint (CampPanel.ShowModal, called from MainUi's own SyncCampModal every
             // Camp tick); the lesson is which of its verbs to press. "The winch-house slate" and "the
@@ -650,7 +757,10 @@ public sealed partial class TutorialFlow : PanelContainer
         (openPanelId is not null && openPanelId == PanelIdForVenue(def.Anchor.Key!))
         || _visitedAnchorForStep.Contains(def.DisplayIndex);
 
-    private const string MovementHint = "WASD, or click the ground to move";
+    // U2 (tutorial-revamp plan, §11.13): shortened from "WASD, or click the ground to move" —
+    // part of the card diet (TutorialMaxLines 6->3): the overlay now pulses the exact station, so
+    // the text only needs to name the keys, not re-explain what they do.
+    private const string MovementHint = "WASD or click";
 
     /// <summary>
     /// The "get to the right place" half of a step's instruction — or an acknowledgement that the player is
@@ -672,12 +782,15 @@ public sealed partial class TutorialFlow : PanelContainer
             return $"You're at the **{building}**";
         }
 
-        // "and click it" was the only gesture named, but the buildings a player is sent to are
-        // entered by walking up and pressing E as often as by clicking the sprite — and a stranger
-        // who clicks and misses has no second thing to try. Name both doors.
+        // U2 (tutorial-revamp plan, §11.13): shortened "and press E, or click it" to "then press
+        // E" — part of the card diet. Drops the separately-named "or click it" alternate-entry
+        // gesture (a stranger who walks up and presses E, the more common path, still gets a
+        // complete instruction); the overlay's own pulse now carries the precision this used to
+        // spell out in prose. "press E" itself stays — TutorialCopyIsFollowableTests pins it as a
+        // literal substring for both BuyMaterial and Craft.
         return includeMovementHint
-            ? $"Walk to the **{building}** ({MovementHint}) and press **E**, or click it"
-            : $"Walk to the **{building}** and press **E**, or click it";
+            ? $"Walk to the **{building}** ({MovementHint}), then press **E**"
+            : $"Walk to the **{building}**, then press **E**";
     }
 
     /// <summary>Whether <paramref name="def"/>'s own action is legal THIS phase — mirrors
@@ -737,8 +850,13 @@ public sealed partial class TutorialFlow : PanelContainer
             {
                 TutorialStep.OpenCounter =>
                     $"Tutorial {index}/{TotalSteps}: The counter is a Day {def.MinDay} lesson — nothing to do here yet; it opens once Day {def.MinDay} begins.",
-                TutorialStep.Vigil =>
-                    $"Tutorial {index}/{TotalSteps}: The vigil is a Day {def.MinDay} lesson — nothing to do here yet; it opens once Day {def.MinDay} begins.",
+                // U2 (tutorial-revamp plan, §11.13): Vigil no longer has a day-gate case here — its
+                // MinDay dropped to 1, because the real precondition was never the day (see
+                // AnyPartyStagedForCheckpointToday's own doc, and GatingNote's Vigil case below,
+                // which is where the honest "staged or not" nuance now lives). The OLD line here
+                // ("it opens once Day 2 begins") was the exact lie by omission the owner's playtest
+                // caught: a Day-2 party aiming for floor 1 never opens it, and this text told the
+                // player it was coming anyway.
                 TutorialStep.MeetHeroes =>
                     $"Tutorial {index}/{TotalSteps}: Meeting your heroes is a Day {def.MinDay} lesson — nothing to do here yet; it opens once Day {def.MinDay} begins.",
                 TutorialStep.Commission =>
@@ -812,9 +930,29 @@ public sealed partial class TutorialFlow : PanelContainer
                 "Morning or Evening — the board reopens then.",
             TutorialStep.LookIn when !WatchWindowOpen(state) =>
                 "Only while a party is out — ring Send them off.",
+            // U2 (tutorial-revamp plan, §11.13): the conditional-not-day-based gating note —
+            // regression pin on the exact defect Step7_NeverClaimsADayGate_ForAConditionThatIsNotDayGated
+            // guards. Told honestly, every day this step is current: whether TODAY's muster even
+            // reaches the checkpoint is knowable at the Morning bell (MusterPlan.Compute), so the
+            // note never claims a day gate for a condition that was always about depth, not time.
+            TutorialStep.Vigil => AnyPartyStagedForCheckpointToday(state)
+                ? "They'll stop below the checkpoint if they get there clean — no clock on it."
+                : "Not today — this run's only going one floor down.",
             _ => null,
         };
     }
+
+    /// <summary>U2 (tutorial-revamp plan, §11.13): whether at least one of TODAY's predicted
+    /// parties (<see cref="MusterPlan.Compute"/> — the SAME projection <c>RaidForecast</c> and the
+    /// real Expedition tick both use, so this can never disagree with what actually happens two
+    /// phases later) targets a floor deep enough to ever reach the camp checkpoint
+    /// (<c>ExpeditionSystem.CheckpointFor(targetFloor) &gt;= 1</c> internally, i.e.
+    /// <c>targetFloor &gt;= 2</c> — restated here as the literal comparison since that method is
+    /// private to its own file). Vigil's gating note used to say "it opens once Day 2 begins" when
+    /// the real precondition was never the day at all — a Day-2 party aiming for floor 1 still
+    /// never stops, and the old text told the player it was coming anyway.</summary>
+    private static bool AnyPartyStagedForCheckpointToday(GameState state) =>
+        MusterPlan.Compute(state.Heroes, state.Bounties, state.Items).Any(p => p.TargetFloor >= 2);
 
     /// <summary>
     /// U5: the WHOLE ten-slot checklist, done/current/upcoming, for <see
@@ -842,7 +980,8 @@ public sealed partial class TutorialFlow : PanelContainer
 
             var done = def.DisplayIndex < currentIndex;
             var current = def.DisplayIndex == currentIndex;
-            var visited = current && def.Anchor.Kind == TutorialAnchorKind.Building && VisitedCurrentAnchor;
+            var visited = current && def.Anchor.Kind is TutorialAnchorKind.Building or TutorialAnchorKind.Station
+                          && VisitedCurrentAnchor;
             var gating = current ? GatingNote(state, ByStep[Step]) : null;
             // Both notes read the CURRENT step's own row, not this display slot's first row —
             // BuyMaterial and Craft share slot 1, and while Step is Craft it is Craft's note that
@@ -951,6 +1090,25 @@ public sealed partial class TutorialFlow : PanelContainer
         }
     }
 
+    /// <summary>
+    /// U2 (tutorial-revamp plan, §11.13): Vigil is UI-only, same shape as <see
+    /// cref="NotifyMirrorOpened"/> — the camp card itself carries no distinct completion event, so
+    /// <c>MainUi.SyncCampModal</c> calls this every time it calls <c>CampPanel.ShowModal</c>. This
+    /// is deliberately "seeing the card at all", not "pressing a specific verb": the vigil's own
+    /// three answers (Send/Recall/Send Deeper) are legal to hold off on or to take, and completion
+    /// no longer waits on picking one — a no-op once <see cref="Step"/> has moved past Vigil (the
+    /// card can legitimately reopen on a LATER camp long after this step is done), or while the
+    /// chain is inactive.
+    /// </summary>
+    public void NotifyCampCardShown()
+    {
+        if (Active && Step == TutorialStep.Vigil && ByStep[TutorialStep.Vigil].AdvancesTo is { } to)
+        {
+            Step = to;
+            Save(); // U5: mid-chain persistence (Advance's own doc) — this hook bypasses Advance entirely
+        }
+    }
+
     /// <summary>Day 3: <see cref="TutorialStep.MeetHeroes"/> is likewise UI-only — reading one
     /// hero's card is a panel open, not a sim fact. <c>MainUi.OpenPanel</c> (the single router
     /// every real open funnels through) calls this on every real open; only "Tavern" or
@@ -976,7 +1134,11 @@ public sealed partial class TutorialFlow : PanelContainer
     public void NotifyEnteredBuilding(string venueKey)
     {
         var def = ByStep[Step];
-        if (Active && def.Anchor is { Kind: TutorialAnchorKind.Building } anchor && anchor.Key == venueKey)
+        // U2 (tutorial-revamp plan, §11.13): Station counts too — a Station anchor's own Key IS
+        // the venue key it lives in (see TutorialAnchor's own doc), so walking into that venue is
+        // still the "arrived" fact the checklist's sub-tick reads, exactly as it was for Building.
+        if (Active && def.Anchor is { Kind: TutorialAnchorKind.Building or TutorialAnchorKind.Station } anchor
+            && anchor.Key == venueKey)
         {
             _visitedAnchorForStep.Add(def.DisplayIndex);
         }

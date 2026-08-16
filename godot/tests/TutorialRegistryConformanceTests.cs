@@ -1,8 +1,10 @@
 #if GDUNIT_TESTS
 using System;
+using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Professions;
 using GdUnit4;
 using Godot;
 using GodotClient.Town2d;
@@ -119,6 +121,86 @@ public class TutorialRegistryConformanceTests
         }
     }
 
+    /// <summary>U2 (tutorial-revamp plan, §11.13): BuyMaterial/Craft's static registry default
+    /// (blacksmith's "shelf"/"anvil") must resolve against a real mounted room — the conformance
+    /// half of "never a silent fallback" for the new Station anchor kind.</summary>
+    [TestCase]
+    public void Registry_EveryStationAnchor_ResolvesAgainstARealRoomStation()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            foreach (var def in TutorialFlow.Registry.Where(d => d.Anchor.Kind == TutorialAnchorKind.Station))
+            {
+                Building2D? station = null;
+                Exception? thrown = null;
+                try
+                {
+                    station = ui.Town.FindStation(def.Anchor.Key!, def.Anchor.StationId!);
+                }
+                catch (Exception ex)
+                {
+                    thrown = ex;
+                }
+
+                AssertThat(thrown)
+                    .OverrideFailureMessage(
+                        $"{def.Step}'s Station anchor ({def.Anchor.Key}, {def.Anchor.StationId}) does not resolve " +
+                        $"against a real room station — this step would point at nothing: {thrown}")
+                    .IsNull();
+                AssertThat(station).IsNotNull();
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>U2: <see cref="TutorialFlow.CurrentAnchor"/>'s dynamic per-profession substitution
+    /// (<see cref="WorkshopVocab.MaterialsStationIdFor"/>/<see
+    /// cref="WorkshopVocab.CraftStationIdFor"/>) must resolve against the REAL room for every
+    /// starting profession, not just blacksmith's own static default — an alchemist/tanner/engineer
+    /// start must never point BuyMaterial/Craft at blacksmith's "shelf"/"anvil" by mistake.</summary>
+    [TestCase]
+    public void CurrentAnchor_ResolvesTheLiveProfessionsOwnStation_ForEveryStartingProfession()
+    {
+        foreach (var professionId in new[]
+                 {
+                     ProfessionRegistry.BlacksmithId, AlchemyProfession.Id, TanningProfession.Id, EngineeringProfession.Id,
+                 })
+        {
+            var ui = MountMainUi(new SimAdapter(GameComposition.NewCampaign(ScriptedSession.Seed, professionId)));
+            try
+            {
+                AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
+                var anchor = ui.Tutorial.CurrentAnchor;
+                AssertThat(anchor.Kind).IsEqual(TutorialAnchorKind.Station);
+
+                Building2D? station = null;
+                Exception? thrown = null;
+                try
+                {
+                    station = ui.Town.FindStation(anchor.Key!, anchor.StationId!);
+                }
+                catch (Exception ex)
+                {
+                    thrown = ex;
+                }
+
+                AssertThat(thrown)
+                    .OverrideFailureMessage(
+                        $"{professionId}'s BuyMaterial anchor ({anchor.Key}, {anchor.StationId}) does not resolve: {thrown}")
+                    .IsNull();
+                AssertThat(station).IsNotNull();
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+    }
+
     [TestCase]
     public void Registry_EveryHudAnchor_ResolvesToALiveControlInTheMountedScene()
     {
@@ -162,14 +244,16 @@ public class TutorialRegistryConformanceTests
         var ui = MountMainUi();
         try
         {
-            // Day 1, BuyMaterial: Building("forge").
+            // Day 1, BuyMaterial: U2 (tutorial-revamp plan, §11.13) re-pointed this at
+            // Station("forge", "shelf") — blacksmith's own materials station — rather than the
+            // whole Forge building, so the overlay pulses the shelf itself.
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
             AssertThat(ui.Overlay.PulsingBuildingKey)
-                .OverrideFailureMessage("BuyMaterial's own anchor (forge) is not pulsing on a fresh mount.")
-                .IsEqual("forge");
+                .OverrideFailureMessage("BuyMaterial's own Station anchor (the shelf) is not pulsing on a fresh mount.")
+                .IsEqual("shelf");
             AssertThat(ui.Overlay.PulsingHudControlName).IsNull();
 
-            // Drive to Shelve: Building("market") — the pulse must move OFF forge onto market.
+            // Drive to Shelve: Building("market") — the pulse must move OFF the shelf onto market.
             ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
             ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Shelve);
@@ -300,6 +384,77 @@ public class TutorialRegistryConformanceTests
             {
                 reloaded.Free();
             }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// U3 (tutorial-revamp plan, §11.13): the trap this unit could create — a gate that hides the
+    /// very tray button a live tutorial step is pointing at. Neither HeroCards' own gate (first
+    /// sale to a hero) nor Commissions' (first commission posted by the sim) is guaranteed true by
+    /// the day the tutorial reaches those two steps — a player can legally reach day 3 having sold
+    /// nothing and having no commission posted. <c>MainUi</c>'s own effective-open override must
+    /// still keep both buttons pressable regardless of what <see cref="SurfaceUnlocks.IsOpen"/>
+    /// alone would say.
+    /// </summary>
+    [TestCase]
+    public void EveryTutorialStepAnchor_PointsAtASurfaceThatIsOpenByThatStepsMinDay()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var craftedItemId = new ItemId(ui.Adapter.CurrentState.NextItemId);
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
+            ui.Adapter.Queue(new StockAction(craftedItemId, 50));
+            ui.Adapter.Queue(new PostBountyAction(ScriptedSession.BountyFloor, ScriptedSession.BountyReward));
+            ui.Adapter.AdvancePhase(); // Morning -> Expedition
+            ui.Adapter.AdvancePhase(); // Expedition -> Camp: party departs -> LookIn
+            ui.Mirror.ShowMirror(); // LookIn -> OpenCounter
+
+            // Fast-forward past OpenCounter/Vigil/EveningClose without ever selling to a hero or a
+            // commission ever posting — the SAME "hand a modified state to Advance" idiom
+            // TutorialFlowTests uses throughout, so this claim never depends on simulating a real
+            // haggle/camp/commission just to reach day 3.
+            var day2 = ui.Adapter.CurrentState with
+            {
+                Day = 2,
+                EventLog = ui.Adapter.CurrentState.EventLog.Add(new CustomerApproached(new HeroId(1))),
+                ActionLog = ui.Adapter.CurrentState.ActionLog.Add(
+                    new LoggedBatch(2, ui.Adapter.CurrentState.Phase, ImmutableList.Create<PlayerAction>(new CloseCounterAction()))),
+            };
+            ui.Tutorial.Advance(day2);
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Vigil);
+
+            ui.Tutorial.NotifyCampCardShown();
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.EveningClose);
+
+            ui.Tutorial.Advance(ui.Adapter.CurrentState with { Day = 3 });
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.MeetHeroes);
+
+            ui.RefreshAll(); // re-greys/un-greys the tray from the now-day-3 live state
+
+            AssertThat(SurfaceUnlocks.IsOpen(ui.Adapter.CurrentState, "HeroCards"))
+                .OverrideFailureMessage("Test setup drifted — HeroCards' own gate should still read closed here.")
+                .IsFalse();
+            AssertThat(Find<Button>(ui, "OpenHeroCards").Disabled)
+                .OverrideFailureMessage("HeroCards is gated closed while MeetHeroes points straight at it — the player would be stranded.")
+                .IsFalse();
+
+            ui.OpenPanel("HeroCards"); // MeetHeroes -> Commission
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Commission);
+            ui.RefreshAll();
+
+            AssertThat(SurfaceUnlocks.IsOpen(ui.Adapter.CurrentState, "Commissions"))
+                .OverrideFailureMessage("Test setup drifted — Commissions' own gate should still read closed here.")
+                .IsFalse();
+            AssertThat(Find<Button>(ui, "OpenCommissions").Disabled)
+                .OverrideFailureMessage(
+                    "Commissions is gated closed while the Commission step points straight at it — the player would be stranded.")
+                .IsFalse();
         }
         finally
         {
