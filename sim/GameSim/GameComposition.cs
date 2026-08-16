@@ -90,7 +90,8 @@ public static class GameComposition
             new ForgeTierHandlers(), // Phase D (U-D1 sink 1): UpgradeForgeAction, Morning-only (draws no RNG)
             new ForgeSupplyHandlers(), // Phase D (U-D1 sink 3a): BuyForgeSupplyAction, Morning-only (draws no RNG)
             new MasterworkAttemptHandlers(), // Phase D (U-D1 sink 3b): MasterworkAttemptAction, all phases like CraftAction (draws no RNG — deterministic floor, see class doc)
-            new LegendaryCommissionHandlers())); // Phase D (U-D1 sink 5): CommissionLegendaryWorkAction, all phases like CraftAction (draws no RNG)
+            new LegendaryCommissionHandlers(), // Phase D (U-D1 sink 5): CommissionLegendaryWorkAction, all phases like CraftAction (draws no RNG)
+            new ConcludeApprenticeshipHandlers())); // §11.13 amendment (U4a): ConcludeApprenticeshipAction, all phases, mutates nothing (draws no RNG — see class doc)
 
     /// <summary>A fresh campaign: seeded world with the starting six heroes installed.</summary>
     public static GameState NewCampaign(ulong seed) =>

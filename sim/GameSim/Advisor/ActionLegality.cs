@@ -73,6 +73,7 @@ public static class ActionLegality
         BuyForgeSupplyAction buyForgeSupply => phase == DayPhase.Morning && BuyForgeSupplyLegal(state, buyForgeSupply),
         MasterworkAttemptAction masterwork => MasterworkAttemptLegal(state, masterwork),
         CommissionLegendaryWorkAction commissionLegendary => CommissionLegendaryWorkLegal(state, commissionLegendary),
+        ConcludeApprenticeshipAction => ConcludeApprenticeshipLegal(),
         _ => throw new UnhandledActionException(action.GetType()),
     };
 
@@ -188,6 +189,10 @@ public static class ActionLegality
         {
             actions.Add(reaffirm);
         }
+
+        // ConcludeApprenticeship: §11.13 amendment (U4a) — always legal, one canonical instance,
+        // same "always offer the reaffirm-shaped no-op" precedent as SetProfessions just above.
+        actions.Add(new ConcludeApprenticeshipAction());
 
         // Camp verbs: one recall candidate per un-recalled party; one send candidate per party
         // for the first eligible held consumable.
@@ -742,6 +747,14 @@ public static class ActionLegality
     /// (not already closing) and a customer must actually be at the counter.</summary>
     private static bool HasActiveSession(GameState state) =>
         state.Counter is { Closed: false, Active: not null };
+
+    // ---- ApprenticeWarrantHandlers.Apply guards (§11.13 amendment, U4a): ConcludeApprenticeshipAction
+    // mutates nothing itself (its whole meaning is presence in ActionLog — ApprenticeWarrant.Concluded
+    // scans for it), so it is legal in EVERY phase, unconditionally — including after
+    // ApprenticeWarrant.LastGraceDay, where submitting it is a legal no-op (the warrant is already gone
+    // by its own dated end, so Concluded flipping true from here on changes nothing Covers() would not
+    // already report).
+    private static bool ConcludeApprenticeshipLegal() => true;
 
     // ---- ForgeTierHandlers.Apply guards (U4): ceiling, lock-and-key floor ore, gold, action-budget
     // checked LAST — same order as the handler. ----

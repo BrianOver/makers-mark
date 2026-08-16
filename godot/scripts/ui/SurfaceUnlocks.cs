@@ -79,8 +79,14 @@ public static class SurfaceUnlocks
         new("Demand", "Opens once a hero's passed on your goods — the board's lead section is pass reasons.",
             state => state.EventLog.OfType<HeroPassedOnItem>().Any()),
 
-        new("Legends", "Opens once your work has changed a fate — it's the record of exactly that.",
-            state => state.EventLog.OfType<AttributionBeatEvent>().Any()),
+        // §11.13 amendment (U6): widened from AttributionBeatEvent alone — an unattributed first
+        // death (no player-marked item on the fallen) would otherwise leave the wall greyed on the
+        // exact night the tutorial's own dormant loss act points there. Still monotonic (HeroDied is
+        // as append-only as AttributionBeatEvent), still honest: the wall renders memorials for
+        // every fallen hero regardless of attribution (LegendsWall.cs), so "the town has someone to
+        // remember" is a real, not aspirational, reason to open.
+        new("Legends", "Opens once your work has changed a fate — or the town has someone to remember.",
+            state => state.EventLog.OfType<AttributionBeatEvent>().Any() || state.EventLog.OfType<HeroDied>().Any()),
 
         // Reuses TutorialFlow's own milestone rather than defining a second notion of the same
         // fact (its own doc: "the existing second-profession milestone").

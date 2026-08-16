@@ -243,8 +243,21 @@ public class AtomicEquivalenceTests
     // change (same stream identity) and no State change either (same stream position): nothing
     // downstream of the arc consumes its state, so the rewrite cannot shift a single combat/shop/
     // recruit draw. See PhaseBNoDrawGateTests.cs's matching ledger entry for the RNG-side proof.
+    // GOLDEN RE-BASELINE #6 (§11.13 amendment, U4 — the apprenticeship warrant): **Class 2 —
+    // combat decisions change, same stream different position, deliberately.** The warrant holds
+    // ANY lethal blow at 1 HP through Day <= ApprenticeWarrant.LastGraceDay (3) — this idle trace
+    // (seed 9001, zero player actions EVER, so ConcludeApprenticeshipAction is never submitted) is
+    // exactly the shape the warrant exists to protect: a hero who would have died in the first
+    // three days now survives, keeps fighting/shopping/leveling for the rest of the 30-day trace,
+    // and every combat/recruit/shop draw downstream of that first save point shifts. This is the
+    // ONE deliberate, expected exception to "same seed + same actions = identical state" the plan
+    // itself calls out ("U4 changes outcomes, so the golden replay must be re-recorded
+    // deliberately") — not a bug, and not silently absorbed: re-recorded here, loudly, in the same
+    // PR as the mechanism. The tell this is legitimate and not a new stream: the sibling
+    // PhaseBNoDrawGateTests RngState pin shows `Inc` UNCHANGED (13279888329118852579) — only
+    // `State` moved, the same signature every prior Class-2 entry in this ledger carries.
     private const string ExpectedPreCounterSha256 =
-        "343F4215F551C98979975588384CDF6B4BDE03C7D88DA1BFCF7DCE2FAC4549C8";
+        "ACE39F90966AF0DEB6C8CA2BC80A068196B4F84ED4F5FD41A60712FBC24E31F2";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

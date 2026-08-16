@@ -21,7 +21,8 @@ public static class ExpeditionResolver
         int targetFloor,
         IDeterministicRng rng,
         ImmutableHashSet<int>? retreatExemptHeroes = null,
-        int retreatExemptThroughFloor = 0)
+        int retreatExemptThroughFloor = 0,
+        bool warrantHolds = false)
     {
         if (party.IsEmpty)
         {
@@ -43,7 +44,7 @@ public static class ExpeditionResolver
 
         var (deepestCleared, rawHalt) = ResolveFloors(
             party, items, venue, 1, targetFloor, hp, packs, gold, dead, retreated, floors, loot,
-            retreatExemptHeroes ?? ImmutableHashSet<int>.Empty, retreatExemptThroughFloor, rng);
+            retreatExemptHeroes ?? ImmutableHashSet<int>.Empty, retreatExemptThroughFloor, warrantHolds, rng);
 
         // D4 precedence: clearing the target floor is a full success whatever exit path ended
         // the loop (a too-hurt break AFTER the target is cleared is success, not a limp home).
@@ -74,7 +75,8 @@ public static class ExpeditionResolver
         int checkpointFloor,
         IDeterministicRng rng,
         ImmutableHashSet<int>? retreatExemptHeroes = null,
-        int retreatExemptThroughFloor = 0)
+        int retreatExemptThroughFloor = 0,
+        bool warrantHolds = false)
     {
         if (party.IsEmpty)
         {
@@ -98,7 +100,7 @@ public static class ExpeditionResolver
 
         var (deepestCleared, rawHalt) = ResolveFloors(
             party, items, venue, 1, checkpointFloor, hp, packs, gold, dead, retreated, floors, loot,
-            retreatExemptHeroes ?? ImmutableHashSet<int>.Empty, retreatExemptThroughFloor, rng);
+            retreatExemptHeroes ?? ImmutableHashSet<int>.Empty, retreatExemptThroughFloor, warrantHolds, rng);
 
         // Any non-clean stage-1 ending finalises now (no camp window, no report — deaths reveal
         // only at Evening, KTD5). rawHalt is guaranteed != TargetReached here: a fully cleared
@@ -144,7 +146,8 @@ public static class ExpeditionResolver
         VenueDefinition venue,
         IDeterministicRng rng,
         ImmutableHashSet<int>? retreatExemptHeroes = null,
-        int retreatExemptThroughFloor = 0)
+        int retreatExemptThroughFloor = 0,
+        bool warrantHolds = false)
     {
         var exempt = retreatExemptHeroes ?? ImmutableHashSet<int>.Empty;
         var hp = inFlight.Hp.ToDictionary(kv => kv.Key, kv => kv.Value);
@@ -173,7 +176,7 @@ public static class ExpeditionResolver
 
             var (stage2Deepest, rawHalt) = ResolveFloors(
                 party, items, venue, inFlight.CheckpointFloor + 1, inFlight.TargetFloor, hp, packs, gold, dead, retreated, floors, loot,
-                exempt, retreatExemptThroughFloor, rng);
+                exempt, retreatExemptThroughFloor, warrantHolds, rng);
 
             // ResolveFloors returns the deepest cleared WITHIN its range (0 if none); fall back to
             // the stage-1 deepest so the merged value equals the unstaged single accumulator.
@@ -259,6 +262,7 @@ public static class ExpeditionResolver
         ImmutableList<OreLoot>.Builder loot,
         ImmutableHashSet<int> retreatExemptHeroes,
         int retreatExemptThroughFloor,
+        bool warrantHolds,
         IDeterministicRng rng)
     {
         var deepestCleared = 0;
@@ -296,7 +300,7 @@ public static class ExpeditionResolver
 
             foreach (var hero in fighters) // HeroId order — deterministic
             {
-                var outcome = FightMonster(hero, items, venue, floor, hp, packs, rng, combats, effects[hero.Id.Value]);
+                var outcome = FightMonster(hero, items, venue, floor, hp, packs, rng, combats, effects[hero.Id.Value], warrantHolds);
                 if (outcome == FightOutcome.HeroDied)
                 {
                     dead.Add(hero.Id.Value);
@@ -465,7 +469,8 @@ public static class ExpeditionResolver
         Dictionary<int, List<ItemId>> packs,
         IDeterministicRng rng,
         ImmutableList<CombatEvent>.Builder combats,
-        Crafting.CraftModifiers.HeroModifierEffect effect)
+        Crafting.CraftModifiers.HeroModifierEffect effect,
+        bool warrantHolds)
     {
         var monsterHp = venue.MonsterHp(floor);
         var heroAttack = CombatMath.HeroAttack(hero, items);
@@ -527,18 +532,33 @@ public static class ExpeditionResolver
             var monsterKilled = monsterHp <= 0;
 
             var taken = 0;
+            var modHpDelta = 0;
             if (!monsterKilled)
             {
                 var monsterRoll = rng.NextInt(0, CombatMath.RollSides);
                 rolls.Add(monsterRoll);
                 taken = CombatMath.MonsterDamage(venue.MonsterAttack(floor), monsterRoll, heroDefense);
                 hp[hero.Id.Value] -= taken;
+
+                // §11.13 amendment (U4): the apprenticeship warrant holds a lethal blow at 1 HP,
+                // through the SAME ModifierHpDelta channel the Leech rune uses just below — the two
+                // can never collide (Leech only ever fires when monsterKilled; this only ever fires
+                // when it did not), so ApprenticeWarrant.FiredIn's classification can never disagree
+                // with this clamp. `taken` above still records the TRUE roll (it is the recorded
+                // DamageTaken on the CombatEvent below, unmodified) — the near-death is legible,
+                // never an invisible cap. A no-op (TryClamp returns false) whenever the blow was not
+                // actually lethal, so an ordinary hit is byte-identical whether the warrant holds or
+                // not — the ONLY behavior change is on a roll that would otherwise have killed.
+                if (warrantHolds && ApprenticeWarrant.TryClamp(hp[hero.Id.Value], out var survivedHp, out var warrantDelta))
+                {
+                    hp[hero.Id.Value] = survivedHp;
+                    modHpDelta = warrantDelta;
+                }
             }
 
             // Phase C U-C1: a Leech rune draws life on a kill. Applied AFTER the round's damage,
             // capped at MaxHp, and recorded as ModifierHpDelta so attribution's HP replay stays
             // byte-consistent (KTD6). HealOnKill == 0 (no rune) records 0 → no behaviour change.
-            var modHpDelta = 0;
             if (monsterKilled && effect.HealOnKill > 0)
             {
                 var before = hp[hero.Id.Value];

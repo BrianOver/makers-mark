@@ -34,7 +34,18 @@ public class ArcBalanceTests
 
     // Forward-ladder plan L6's exact two-sided windows for the main seed (measured post-L5, see the
     // class doc above). Supersedes the old one-sided NoActIIIBeforeDay=8 sanity floor.
-    private const int ActIIIByDayLower = 15;
+    //
+    // WIDENED (coordinator's call, 2026-08-16, §11.13 amendment U4 — reversible in this one
+    // constant): the owner already ruled the first death into the tutorial (PR #519) — a warrant
+    // that saves heroes from an early death on days 1-3 (ApprenticeWarrant.LastGraceDay) means more
+    // heroes are alive later in the run, which paces the whole ladder faster. This floor was pinned
+    // at 15 off a PRE-WARRANT measurement (day 18, this class's own doc above); post-warrant the
+    // main seed now measures Act III on day 14 — one day under the old floor, not a regression, a
+    // world that no longer exists being measured by an old ruler. Lowered to 13 (two days of
+    // headroom under the new measurement, not shaved to the exact number) rather than deleted or
+    // widened further — if Act III should hold later than day 14, that is a design lever on the arc
+    // itself, not a wider band, and is the owner's call to make, not this test's.
+    private const int ActIIIByDayLower = 13;
     private const int ActIIIByDayUpper = 30;
     private const int ClimaxByDay = 40;
 

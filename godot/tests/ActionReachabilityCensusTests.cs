@@ -50,7 +50,7 @@ public class ActionReachabilityCensusTests
     /// add a decision for it — <see cref="EveryConcretePlayerActionType_HasASurfaceOrAReasonedExclusion"/>
     /// fails BY NAME right alongside it.
     /// </summary>
-    private const int ExpectedActionCount = 24;
+    private const int ExpectedActionCount = 25;
 
     /// <summary>
     /// Every concrete <see cref="PlayerAction"/> type mapped to the ONE real Godot submit site that
@@ -111,17 +111,22 @@ public class ActionReachabilityCensusTests
             "also MainUi.OnSecondProfessionPicked (MainUi.cs:2888, queues :2896) for the tutorial's " +
             "earn-2nd-profession picker (its own affordance, ungated — visible once " +
             "TutorialFlow.SecondProfessionMilestoneReached, the identical fact, is true).",
+        [typeof(ConcludeApprenticeshipAction)] =
+            "ObjectiveTracker.TutorialDismissConfirmYes (ObjectiveTracker.cs:236), the graduation " +
+            "confirm's \"End it\" button armed by the tutorial's ✕ (TutorialDismiss) — MainUi wires " +
+            "the atomic submit (MainUi.cs:2773, queues :2775) alongside TutorialFlow.Dismiss() on " +
+            "the same press. Gated the way BuyOreAction's is: only reachable while the confirm row " +
+            "is shown, itself gated on the ten-step chain being Active — a gated surface is a " +
+            "recorded surface (KTD-3).",
     };
 
     /// <summary>
     /// Pinned exclusions: a concrete action type that is deliberately NOT wired to any Godot control
-    /// yet, each with a real, non-empty reason a human is responsible for. Empty today — U9's own
-    /// census (see this file's grep audit in the unit's report) found a real
-    /// <c>Adapter.Queue(new &lt;Action&gt;(...))</c> submit site in <c>godot/scripts/panels/</c> for
-    /// all 24 current actions, so there is nothing to pin an exclusion on right now. Left in place
-    /// (rather than deleted) because the whole point of this census is that the NEXT action added to
-    /// <see cref="PlayerAction"/> must get a decision recorded HERE one way or the other — this is
-    /// where "we chose not to surface this yet, and here is why" goes when that day comes.
+    /// yet, each with a real, non-empty reason a human is responsible for. Empty from U9 through
+    /// §11.13's wave (U4a landed <see cref="ConcludeApprenticeshipAction"/> here temporarily,
+    /// pending U5's real submit site; U5 moved it to <see cref="Surfaces"/> below — see that entry's
+    /// own citation). Left in place because the whole point of this census is that the NEXT action
+    /// added to <see cref="PlayerAction"/> must get a decision recorded HERE one way or the other.
     /// </summary>
     private static readonly Dictionary<Type, string> Exclusions = new();
 

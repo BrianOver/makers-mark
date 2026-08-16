@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using GameSim.Advisor;
 using GameSim.Contracts;
+using GameSim.Expedition;
 using GameSim.Heroes;
 using GameSim.Professions;
 using Godot;
@@ -306,7 +307,13 @@ public sealed partial class TutorialFlow : PanelContainer
             Step: TutorialStep.WatchDeparture, DisplayIndex: 4, Anchor: TutorialAnchor.ForBuilding("minegate"), MinDay: 1,
             ShortLabel: "Send the party off, and watch them go",
             TeachNote: "Nothing departs on its own. Ending the Morning is what sends the mustered party out; "
-                       + "the view follows them to the Mine Gate on its own once you do.",
+                       + "the view follows them to the Mine Gate on its own once you do. "
+                       // §11.13 amendment (U5): the apprenticeship's warrant, taught at the first
+                       // send-off — the owner's overrule ("the first death is part of the tutorial"),
+                       // named here before it ever matters.
+                       + "While the town's still teaching you — through Day 3 — the Mine doesn't keep "
+                       + "anyone: a killing blow leaves them at death's door and they limp home. Dawn of "
+                       + "Day 4 ends that, and you'll see it end.",
             IsDone: state => state.EventLog.OfType<PartyDeparted>().Any(),
             // Unconditional across the WHOLE day-1 ladder (class/TutorialStepDef doc): a party's
             // own departure is the day's one truly autonomous event, so it advances the chain into
@@ -395,7 +402,13 @@ public sealed partial class TutorialFlow : PanelContainer
             Step: TutorialStep.MeetHeroes, DisplayIndex: 9, Anchor: TutorialAnchor.ForHud("OpenHeroCards"), MinDay: 3,
             ShortLabel: "Open Renown and read a hero's card",
             TeachNote: "Hero Cards show standing, gear, and deeds — the roster behind every raid. They are the "
-                       + "tray's Renown book; the tray's buttons carry no words, only icons and tooltips.",
+                       + "tray's Renown book; the tray's buttons carry no words, only icons and tooltips. "
+                       // §11.13 amendment (U5): the closing reminder, named a second time before the
+                       // warrant ends (the first was WatchDeparture's own TeachNote) — TeachNote is a
+                       // fixed string (never a function of GameState), so this reads unconditionally
+                       // rather than gating on ApprenticeWarrant.Covers; both day-3 steps are only ever
+                       // Current inside the warrant's own window in practice.
+                       + "Tomorrow the warrant ends — what they carry down is what keeps them.",
             // UI-only, same shape as LookIn — NotifyPanelOpened advances this directly.
             IsDone: _ => false,
             AdvanceFrom: [TutorialStep.MeetHeroes], AdvancesTo: TutorialStep.Commission),
@@ -404,7 +417,9 @@ public sealed partial class TutorialFlow : PanelContainer
             ShortLabel: "Accept or decline a commission",
             TeachNote: "A commission is a hero asking you directly for one thing: a named slot, at a minimum "
                        + "quality, by a deadline, for a premium over the shelf price. Declining is a real "
-                       + "answer — it costs you the premium, not the hero.",
+                       + "answer — it costs you the premium, not the hero. "
+                       // §11.13 amendment (U5): see MeetHeroes' own row for why this is unconditional.
+                       + "Tomorrow the warrant ends — what they carry down is what keeps them.",
             // No distinct GameEvent exists for Accept/Decline (CommissionHandlers' own doc) —
             // GameState.ActionLog (the kernel's own submitted-action history) is the durable fact.
             IsDone: state => state.ActionLog.Any(batch => batch.Actions.Any(a => a is AcceptCommissionAction or DeclineCommissionAction)),
@@ -757,6 +772,21 @@ public sealed partial class TutorialFlow : PanelContainer
     private static string MorningBell(GameState state) => PhaseVocab.BellVerb(state with { Phase = DayPhase.Morning });
 
     private static string EveningBell(GameState state) => PhaseVocab.BellVerb(state with { Phase = DayPhase.Evening });
+
+    /// <summary>
+    /// §11.13 amendment (U5, R12 ruled yes): the graduation confirm's own copy — chosen by whether
+    /// the warrant still holds, so the confirm never states a cost the sim would not actually
+    /// charge (law 7's own "cost named in copy, never engineered", read the honest direction). While
+    /// the warrant holds, ending the apprenticeship is also ending ordinary mortality's postponement
+    /// — named here, at press time, before the choice is made. After it has already ended (the
+    /// warrant's own dated close, or an earlier <see cref="ConcludeApprenticeshipAction"/>), there is
+    /// nothing left to forfeit, so the confirm carries no mortality clause at all.
+    /// </summary>
+    public static string DismissConfirmCopy(GameState state) =>
+        ApprenticeWarrant.Covers(state)
+            ? "End the apprenticeship? The lessons keep — they're in Lessons. The warrant doesn't: "
+              + "from your next send-off, the Mine keeps what it takes."
+            : "End the apprenticeship? The lessons keep — they're in Lessons.";
 
     /// <summary>The town-facing display name for a <see cref="TutorialAnchorKind.Building"/>
     /// anchor's venue key — reads <see cref="TownLayout2D.Venues"/>'s own <c>Nametag</c> for every
@@ -1215,8 +1245,14 @@ public sealed partial class TutorialFlow : PanelContainer
     /// cref="Advance"/>) — sized to the LONGEST realistic path (day 1's own ladder is guaranteed
     /// to reach <see cref="TutorialStep.LookIn"/> by day 1's Expedition tick at the latest, per
     /// <see cref="TutorialStep.WatchDeparture"/>'s own unconditional row), so a day of grace after
-    /// day 3 is real slack, not a hair's-width margin.</summary>
-    private const int BackstopDay = 4;
+    /// day 3 is real slack, not a hair's-width margin.
+    ///
+    /// <para>§11.13 amendment (U4/U5): pinned to <see cref="ApprenticeWarrant.LastGraceDay"/> + 1,
+    /// not a second literal — the tutorial's own close and the sim-side warrant's own dated end are
+    /// ONE fact now, not two that could drift apart (<c>TutorialRegistryConformanceTests
+    /// .BackstopDay_EqualsWarrantLastGraceDayPlusOne</c> pins it anyway, belt-and-braces).</para>
+    /// </summary>
+    private const int BackstopDay = ApprenticeWarrant.LastGraceDay + 1;
 
     /// <summary>Day-1 capstone: <see cref="TutorialStep.LookIn"/> is a UI-only fact (opening the
     /// Scrying Mirror carries no sim event to read durably) — <c>MainUi</c> calls this directly
@@ -1338,6 +1374,121 @@ public sealed partial class TutorialFlow : PanelContainer
         return "This is the day's story — read who came home, what they found, and what it cost.";
     }
 
+    /// <summary>
+    /// §11.13 amendment (U5, R9's own fixed point — "the end is a beat, not a footnote"): the
+    /// once-ever line on the first Morning after <see cref="ApprenticeWarrant.LastGraceDay"/> —
+    /// <c>MainUi</c> calls this every HUD tick (idempotent: non-null exactly once per campaign,
+    /// same contract as <see cref="ConsumeLedgerTip"/>) and renders whatever it returns as a toast.
+    /// Null on every OTHER tick, and permanently null for a campaign that graduated early — an early
+    /// <see cref="ConcludeApprenticeshipAction"/> already named the end in <see
+    /// cref="DismissConfirmCopy"/>'s own confirm at press time, so repeating it here on the dawn that
+    /// follows would be the tutorial's OWN voice restating news the player already answered — the
+    /// exact double-telling this amendment's staging exists to avoid.
+    /// </summary>
+    public string? ConsumeWarrantEndBeat(GameState state)
+    {
+        if (_hasSeenWarrantEndBeat || state.Day < ApprenticeWarrant.LastGraceDay + 1)
+        {
+            return null;
+        }
+
+        _hasSeenWarrantEndBeat = true;
+        Save();
+        return ApprenticeWarrant.Concluded(state)
+            ? null // an early graduate already heard this in the confirm — never repeat it
+            : "The apprenticeship's warrant ended at dawn. From today the Mine keeps what it takes.";
+    }
+
+    /// <summary>U5: once-ever consumed flag backing <see cref="ConsumeWarrantEndBeat"/> — persisted
+    /// alongside <see cref="HasSeenLedgerTip"/> (same once-per-campaign contract).</summary>
+    private bool _hasSeenWarrantEndBeat;
+
+    /// <summary>
+    /// §11.13 amendment (U6): the dormant loss act's own teaching block — once ever, on the
+    /// campaign's first <see cref="HeroDied"/> night, and only for a chain the player did NOT
+    /// dismiss (a dismissed chain gets §11.11 U6's ordinary death-card staging only — this act is
+    /// the tutorial's own last lesson, and declining the tutorial declines its last lesson too).
+    /// <c>MainUi</c> calls this from the SAME automatic Return-Ritual reveal spot as <see
+    /// cref="ConsumeLedgerTip"/>, so it fires on exactly the Evening the death actually landed —
+    /// no arming date is needed: while the warrant holds, no <see cref="HeroDied"/> can exist at all
+    /// (U4 test 8), so this can only ever wake in the ordinary-mortality region the tutorial itself
+    /// walked the player into.
+    /// </summary>
+    public string? ConsumeFirstLossBlock(GameState state)
+    {
+        if (Dismissed || _firstLossDay > 0)
+        {
+            return null;
+        }
+
+        if (!state.EventLog.OfType<HeroDied>().Any())
+        {
+            return null;
+        }
+
+        _firstLossDay = state.Day;
+        Save();
+        return FirstLossBlockText;
+    }
+
+    /// <summary>The first-loss block's own copy (U6) — shared verbatim between <see
+    /// cref="ConsumeFirstLossBlock"/>'s one-time Ledger render and <see cref="LossLessonText"/>'s
+    /// permanent Lessons-book entry, so the two can never say something different about the same
+    /// night. Names permadeath plainly, names the rite, and adds no second claim about whose item
+    /// was on the fallen — the death card itself already carries that (§11.11 U6's own discipline)
+    /// — and never a survival number (§11.4's stakes-qualitatively rule).</summary>
+    private const string FirstLossBlockText =
+        "This is permadeath: gone for good — the roster refills, but not with them. Tonight the wall "
+        + "takes their name — the rite is yours if you want it.";
+
+    /// <summary>U6: the day the FIRST <see cref="HeroDied"/> landed for a non-dismissed chain, or 0
+    /// before that (armed-but-silent). Persisted so a reload mid-window (the "one night, one day"
+    /// span) does not lose the act's own place.</summary>
+    private int _firstLossDay;
+
+    /// <summary>
+    /// §11.13 amendment (U6): the dormant loss act's own checklist row — "one night, one day, then
+    /// an honest retire" (KTD-H: the 1287x-memorial-nag finding is why this is a hard rule, not a
+    /// style choice). Null before the first death (silent while armed), null again two dawns after
+    /// it (retired — the Lessons book holds the text from here on, not this card). While visible:
+    /// <see cref="ChecklistRow.Done"/> the moment a <see cref="HonorMemorialAction"/> lands in <see
+    /// cref="GameState.ActionLog"/>; <see cref="ChecklistRow.Skipped"/> on the SECOND day if it still
+    /// has not (the anti-stranding shape, never a false tick).
+    /// </summary>
+    public ChecklistRow? LossActRow(GameState state)
+    {
+        if (_firstLossDay <= 0)
+        {
+            return null;
+        }
+
+        var dayOffset = state.Day - _firstLossDay;
+        if (dayOffset is < 0 or > 1)
+        {
+            return null; // before it woke (defensive), or past its one-night-one-day window
+        }
+
+        var done = state.ActionLog.Any(batch => batch.Actions.Any(a => a is HonorMemorialAction));
+        var skipped = dayOffset == 1 && !done;
+
+        return new ChecklistRow(
+            DisplayIndex: TotalSteps + 1,
+            Label: "Take the night to the wall — honor them",
+            Done: done,
+            Current: !done && !skipped,
+            VisitedAnchor: false,
+            GatingNote: !done && !skipped && state.Phase != DayPhase.Evening
+                ? "An Evening rite — the wall keeps." : null,
+            TeachNote: null,
+            Skipped: skipped);
+    }
+
+    /// <summary>U6: the loss lesson's own permanent Lessons-book text — non-null from the moment the
+    /// block first rendered (<see cref="_firstLossDay"/> &gt; 0) forever after, independent of <see
+    /// cref="LossActRow"/>'s own two-day visible window (the row retires; the lesson never does —
+    /// "re-reading beats re-running", the same answer U2 established for every other lesson).</summary>
+    public string? LossLessonText => _firstLossDay > 0 ? FirstLossBlockText : null;
+
     private void Complete()
     {
         Completed = true;
@@ -1434,6 +1585,8 @@ public sealed partial class TutorialFlow : PanelContainer
             HasSeenLedgerTip = data.HasSeenLedgerTip;
             Step = data.Step;
             _vigilCardSeen = data.VigilCardSeen;
+            _hasSeenWarrantEndBeat = data.HasSeenWarrantEndBeat;
+            _firstLossDay = data.FirstLossDay;
         }
         catch (System.Text.Json.JsonException)
         {
@@ -1449,6 +1602,7 @@ public sealed partial class TutorialFlow : PanelContainer
             {
                 Completed = Completed, Dismissed = Dismissed, HasSeenLedgerTip = HasSeenLedgerTip, Step = Step,
                 VigilCardSeen = _vigilCardSeen,
+                HasSeenWarrantEndBeat = _hasSeenWarrantEndBeat, FirstLossDay = _firstLossDay,
             }));
     }
 
@@ -1502,5 +1656,22 @@ public sealed partial class TutorialFlow : PanelContainer
         /// reasons, never causes a false Skipped where the fact (SupplyDelivered/PartyRecalled)
         /// is itself absent from the event log too.</summary>
         public bool VigilCardSeen { get; set; }
+
+        /// <summary>§11.13 amendment (U5): added alongside VigilCardSeen — an old save without this
+        /// property deserializes to false, which is safe: <see cref="ConsumeWarrantEndBeat"/>'s own
+        /// day gate (<c>state.Day &lt; ApprenticeWarrant.LastGraceDay + 1</c>) means a save loaded
+        /// well past that dawn simply fires the beat once on the very next qualifying tick, exactly
+        /// as a fresh campaign would — a day late is the same "still owed" answer <see
+        /// cref="ConsumeLedgerTip"/>'s own precedent already trusts.</summary>
+        public bool HasSeenWarrantEndBeat { get; set; }
+
+        /// <summary>§11.13 amendment (U6): the loss act's own place — 0 (not yet armed) is the safe
+        /// default for a save from before this property existed. <see cref="ConsumeFirstLossBlock"/>
+        /// only ever fires from the automatic Return-Ritual reveal (same wiring as <see
+        /// cref="ConsumeLedgerTip"/>), which is a runtime-only gate (<c>MainUi.LedgerDelayRemaining</c>)
+        /// never persisted with the campaign — a save/quit inside that short window, same as
+        /// <see cref="ConsumeLedgerTip"/>'s own pre-existing limitation, can miss the one-time
+        /// reveal. Accepted here on the same precedent, not a new gap this unit introduces.</summary>
+        public int FirstLossDay { get; set; }
     }
 }

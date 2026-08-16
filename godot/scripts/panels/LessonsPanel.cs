@@ -67,6 +67,23 @@ public partial class LessonsPanel : SimPanel
 
             AddLabel(body, def.TeachNote);
         }
+
+        // §11.13 amendment (U6): the loss lesson — not one of the ten registry rows (it is dormant
+        // until the campaign's first HeroDied, which can land well after the chain itself finished),
+        // so it gets its own trailing card, appended only once TutorialFlow.LossLessonText has
+        // something to show. "Re-reading beats re-running" (U2's own answer): this card outlives the
+        // checklist row's own two-day visible window (TutorialFlow.LossActRow) forever.
+        if (Tutorial?.LossLessonText is { } lossLesson)
+        {
+            var card = Card("Lesson_Loss");
+            _content!.AddChild(card);
+
+            var body = new VBoxContainer();
+            card.AddChild(body);
+
+            AddLabel(body, "◆ The first loss").AddThemeColorOverride("font_color", GameTheme.WarnColor);
+            AddLabel(body, lossLesson);
+        }
     }
 
     private void EnsureBuilt()

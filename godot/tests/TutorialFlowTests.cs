@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Expedition;
 using GameSim.Professions;
 using GdUnit4;
 using Godot;
@@ -242,6 +243,16 @@ public class TutorialFlowTests
         }
     }
 
+    /// <summary>
+    /// §11.13 amendment (U5, R12 ruled yes): PRE-EXISTED this amendment encoding the OLD one-press
+    /// semantics (✕ dismissed on the spot) — updated to the new two-press flow rather than loosened,
+    /// the same correction shape as U1's own six tests. The ✕ deliberately no longer dismisses by
+    /// itself: it arms a confirm naming the warrant's cost, and only the confirm's "End it" press
+    /// submits ConcludeApprenticeshipAction + calls Dismiss() atomically. The behavior this test
+    /// actually exists to protect — a REAL dismissal persists across a remount and never re-prompts
+    /// — is unchanged and still the point of the back half below; only how many presses it now
+    /// takes to reach that dismissal moved.
+    /// </summary>
     [TestCase]
     public void Dismiss_MidChain_PersistsAndNeverReprompts_AfterRemount()
     {
@@ -250,6 +261,11 @@ public class TutorialFlowTests
         {
             AssertThat(ui.Tutorial.Active).IsTrue();
             Press(ui, "ObjectiveTutorialDismiss");
+            AssertThat(ui.Tutorial.Dismissed)
+                .OverrideFailureMessage("The ✕ alone must arm a confirm, not dismiss — R12's whole point.")
+                .IsFalse();
+
+            Press(ui, "ObjectiveTutorialDismissConfirmYes");
             AssertThat(ui.Tutorial.Dismissed).IsTrue();
             AssertThat(ui.Tutorial.Active).IsFalse();
             AssertThat(ui.Objective.TutorialDismiss.Visible).IsFalse();
@@ -1774,6 +1790,284 @@ public class TutorialFlowTests
             AssertThat(ui.Adapter.LastRejections.Count).IsEqual(1);
             AssertThat(ui.Adapter.LastRejections[0].Reason).StartsWith("Must select at least one profession");
             AssertThat(ui.Adapter.CurrentState.Player.SelectedProfessions).IsEqual(before);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── §11.13 amendment (U5/U6): the apprenticeship warrant's dawn beat, the graduation confirm's
+    // own copy, and the dormant loss act's lifecycle ─────────────────────────────────────────────
+
+    [TestCase]
+    public void WarrantEndBeat_NeverFires_BeforeItsOwnDay()
+    {
+        var ui = MountMainUi(); // fresh campaign, day 1 — well before LastGraceDay + 1
+        try
+        {
+            AssertThat(ui.Tutorial.ConsumeWarrantEndBeat(ui.Adapter.CurrentState)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// Root cause of a real failure this test used to have: mounting DIRECTLY at
+    /// Day == LastGraceDay + 1 lets MainUi's own boot sequence (BuildUi's unconditional
+    /// RefreshHud -> RefreshSurfaceUnlocks -> ConsumeWarrantEndBeat call) consume the once-ever
+    /// beat before this test's own explicit call ever ran — a real save loaded for the first time
+    /// already past the threshold SHOULD fire the beat immediately at boot (the same "first time
+    /// this session sees it" contract ConsumeLedgerTip already has), so that is not a bug to
+    /// suppress. The fix is test isolation, not product code: mount BEFORE the threshold (the
+    /// default fresh campaign, day 1 — boot's own call is legitimately a no-op there) and hand the
+    /// later-day state directly to the method under test, so this test proves ConsumeWarrantEndBeat's
+    /// OWN once-ever contract without racing the exact wiring the day-1 sibling test above already
+    /// covers.
+    /// </summary>
+    [TestCase]
+    public void WarrantEndBeat_FiresOnceEver_OnTheFirstMorningAfterTheWarrant()
+    {
+        var ui = MountMainUi(); // fresh campaign, day 1 — boot's own RefreshHud call is a no-op here
+        try
+        {
+            var afterWarrant = ui.Adapter.CurrentState with { Day = ApprenticeWarrant.LastGraceDay + 1 };
+            var beat = ui.Tutorial.ConsumeWarrantEndBeat(afterWarrant);
+            AssertThat(beat).IsNotNull();
+            AssertThat(beat!).Contains("warrant ended at dawn");
+
+            AssertThat(ui.Tutorial.ConsumeWarrantEndBeat(afterWarrant)).IsNull(); // once-ever
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// An early graduate already heard the news in <see cref="TutorialFlow.DismissConfirmCopy"/>'s
+    /// own confirm at press time — the dawn beat must stay silent so the tutorial's own voice never
+    /// restates news the player already answered. Mounted BEFORE the threshold day, same isolation
+    /// as the sibling test above — this test used to mount already-past-threshold too, which meant
+    /// MainUi's own boot-time RefreshHud call consumed the beat before Queue(Conclude) even ran, so
+    /// it was passing without ever actually exercising the Concluded branch it claims to pin.
+    /// </summary>
+    [TestCase]
+    public void WarrantEndBeat_NeverFires_AfterAnEarlyGraduation()
+    {
+        var ui = MountMainUi(); // fresh campaign, day 1 — boot's own RefreshHud call is a no-op here
+        try
+        {
+            ui.Adapter.Queue(new ConcludeApprenticeshipAction());
+            var afterWarrant = ui.Adapter.CurrentState with { Day = ApprenticeWarrant.LastGraceDay + 1 };
+            AssertThat(ui.Tutorial.ConsumeWarrantEndBeat(afterWarrant)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void DismissConfirmCopy_NamesTheWarrant_WhileItHolds()
+    {
+        var state = GameComposition.NewCampaign(ScriptedSession.Seed) with { Day = 1 };
+        AssertThat(TutorialFlow.DismissConfirmCopy(state)).Contains("the Mine keeps what it takes");
+    }
+
+    /// <summary>Law 7 read honestly: the confirm must never state a cost the sim would not
+    /// actually charge (§11.4's own rule, applied to this specific dialog).</summary>
+    [TestCase]
+    public void DismissConfirmCopy_CarriesNoMortalityClause_AfterTheWarrantEnded()
+    {
+        var state = GameComposition.NewCampaign(ScriptedSession.Seed) with { Day = ApprenticeWarrant.LastGraceDay + 1 };
+        AssertThat(TutorialFlow.DismissConfirmCopy(state)).NotContains("Mine keeps what it takes");
+    }
+
+    /// <summary>Pressing the ✕ arms the confirm row rather than dismissing on the spot — "no timers
+    /// on decisions" (law): nothing happens until the player's own second press.</summary>
+    [TestCase]
+    public void DismissButton_ArmsTheConfirmRow_RatherThanDismissingImmediately()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            Press(ui.Objective, "ObjectiveTutorialDismiss");
+
+            AssertThat(ui.Tutorial.Dismissed)
+                .OverrideFailureMessage("The ✕ dismissed the chain on ONE press — it must arm a confirm instead.")
+                .IsFalse();
+            AssertThat(Find<Control>(ui.Objective, "ObjectiveTutorialDismissConfirm").Visible).IsTrue();
+
+            Press(ui.Objective, "ObjectiveTutorialDismissConfirmYes");
+
+            AssertThat(ui.Tutorial.Dismissed).IsTrue();
+            AssertThat(ApprenticeWarrant.Concluded(ui.Adapter.CurrentState))
+                .OverrideFailureMessage("Confirming must submit ConcludeApprenticeshipAction atomically alongside Dismiss().")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void DismissConfirm_KeepGoing_NeitherDismissesNorConcludes()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            Press(ui.Objective, "ObjectiveTutorialDismiss");
+            Press(ui.Objective, "ObjectiveTutorialDismissConfirmNo");
+
+            AssertThat(ui.Tutorial.Dismissed).IsFalse();
+            AssertThat(ApprenticeWarrant.Concluded(ui.Adapter.CurrentState)).IsFalse();
+            AssertThat(Find<Control>(ui.Objective, "ObjectiveTutorialDismissConfirm").Visible).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    private static GameState HeroDiedState(int day) => GameComposition.NewCampaign(ScriptedSession.Seed) with
+    {
+        Day = day,
+        EventLog = ImmutableList.Create<GameEvent>(
+            new HeroDied(new HeroId(1), Floor: 1, Cause: "slain by a Crypt Crab", WornGear: GearSet.Empty)),
+    };
+
+    [TestCase]
+    public void LossAct_RendersNothing_WhileArmed()
+    {
+        var ui = MountMainUi(); // no death has ever happened
+        try
+        {
+            AssertThat(ui.Tutorial.LossActRow(ui.Adapter.CurrentState)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void LossAct_NeverWakes_WhenTheChainWasDismissed()
+    {
+        var ui = MountMainUi(new SimAdapter(HeroDiedState(day: 5)));
+        try
+        {
+            ui.Tutorial.Dismiss();
+            AssertThat(ui.Tutorial.ConsumeFirstLossBlock(ui.Adapter.CurrentState)).IsNull();
+            AssertThat(ui.Tutorial.LossActRow(ui.Adapter.CurrentState)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void LossStep_CompletesOnHonorMemorialAction_APlayerCausedDurableFact()
+    {
+        var ui = MountMainUi(new SimAdapter(HeroDiedState(day: 5)));
+        try
+        {
+            ui.Tutorial.ConsumeFirstLossBlock(ui.Adapter.CurrentState);
+            var row = ui.Tutorial.LossActRow(ui.Adapter.CurrentState);
+            AssertThat(row).IsNotNull();
+            AssertThat(row!.Value.Done).IsFalse();
+
+            ui.Adapter.Queue(new HonorMemorialAction(new HeroId(1)));
+
+            var afterHonor = ui.Tutorial.LossActRow(ui.Adapter.CurrentState);
+            AssertThat(afterHonor).IsNotNull();
+            AssertThat(afterHonor!.Value.Done).IsTrue();
+            AssertThat(afterHonor.Value.Skipped).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>"One night, one day, then an honest retire" (KTD-H) — never done, the row shows
+    /// Skipped on the day after, then vanishes entirely at the second dawn (never a false tick).</summary>
+    [TestCase]
+    public void LossStep_RetiresAtTheSecondDawn_AsSkipped_NeverAFalseTick()
+    {
+        var ui = MountMainUi(new SimAdapter(HeroDiedState(day: 5)));
+        try
+        {
+            ui.Tutorial.ConsumeFirstLossBlock(ui.Adapter.CurrentState); // arms at day 5
+
+            var nightOf = ui.Tutorial.LossActRow(ui.Adapter.CurrentState with { Day = 5 });
+            AssertThat(nightOf).IsNotNull();
+            AssertThat(nightOf!.Value.Skipped).IsFalse();
+
+            var dayAfter = ui.Tutorial.LossActRow(ui.Adapter.CurrentState with { Day = 6 });
+            AssertThat(dayAfter)
+                .OverrideFailureMessage("Never honored by the day after — must render Skipped, not vanish silently.")
+                .IsNotNull();
+            AssertThat(dayAfter!.Value.Skipped).IsTrue();
+            AssertThat(dayAfter.Value.Done).IsFalse();
+
+            var secondDawn = ui.Tutorial.LossActRow(ui.Adapter.CurrentState with { Day = 7 });
+            AssertThat(secondDawn)
+                .OverrideFailureMessage("The row must retire (vanish) at the second dawn — KTD-H's anti-nag rule.")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The tutorial owns the FIRST loss only — a second death raises no NEW tutorial
+    /// surface, whatever day it lands on.</summary>
+    [TestCase]
+    public void SecondDeath_RaisesNoTutorialSurface()
+    {
+        var firstDeathState = HeroDiedState(day: 5);
+        var ui = MountMainUi(new SimAdapter(firstDeathState));
+        try
+        {
+            ui.Tutorial.ConsumeFirstLossBlock(ui.Adapter.CurrentState);
+
+            var secondDeathState = firstDeathState with
+            {
+                Day = 20,
+                EventLog = firstDeathState.EventLog.Add(
+                    new HeroDied(new HeroId(2), Floor: 2, Cause: "slain by a Cave Rat", WornGear: GearSet.Empty)),
+            };
+            AssertThat(ui.Tutorial.ConsumeFirstLossBlock(secondDeathState)).IsNull();
+            AssertThat(ui.Tutorial.LossActRow(secondDeathState)).IsNull(); // day 20 is long past the first loss's own window
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void LossLessonText_IsReadableInLessons_AfterTheActCloses()
+    {
+        var ui = MountMainUi(new SimAdapter(HeroDiedState(day: 5)));
+        try
+        {
+            AssertThat(ui.Tutorial.LossLessonText).IsNull();
+
+            ui.Tutorial.ConsumeFirstLossBlock(ui.Adapter.CurrentState);
+            AssertThat(ui.Tutorial.LossLessonText).IsNotNull();
+
+            // Still readable long after the two-day checklist window closed (KTD-H: the Lessons
+            // book, unlike the checklist row, never retires).
+            var afterRetire = ui.Adapter.CurrentState with { Day = 40 };
+            AssertThat(ui.Tutorial.LossActRow(afterRetire)).IsNull();
+            AssertThat(ui.Tutorial.LossLessonText).IsNotNull();
         }
         finally
         {

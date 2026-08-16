@@ -32,6 +32,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(BuyForgeSupplyAction), "buyForgeSupply")]
 [JsonDerivedType(typeof(MasterworkAttemptAction), "masterworkAttempt")]
 [JsonDerivedType(typeof(CommissionLegendaryWorkAction), "commissionLegendaryWork")]
+[JsonDerivedType(typeof(ConcludeApprenticeshipAction), "concludeApprenticeship")]
 public abstract record PlayerAction;
 
 /// <summary>Craft a recipe using a material grade key from <see cref="PlayerState.Materials"/> (R4).
@@ -185,6 +186,20 @@ public sealed record MasterworkAttemptAction(string RecipeId, string MaterialKey
 /// narrative sibling of the existing (materials-only) <see cref="ReforgeHeirloomAction"/> memorial
 /// reforge.</summary>
 public sealed record CommissionLegendaryWorkAction(string RecipeId, string MaterialKey) : PlayerAction;
+
+/// <summary>
+/// §11.13 amendment (U4a, R12 ruled yes): the player walks out of the apprenticeship — no
+/// payload, no state to mutate. Its ENTIRE meaning is its own presence in
+/// <see cref="GameState.ActionLog"/> (the same durable-fact idiom
+/// <c>GodotClient.Ui.TutorialFlow</c>'s Commission predicate already reads off the log rather
+/// than a dedicated event): <c>GameSim.Expedition.ApprenticeWarrant.Concluded</c> scans for it to
+/// decide the apprenticeship warrant's own end, one day early, the same way dismissing the
+/// tutorial ends its teaching. Legal in any phase, spends no action slot (a stance, not an
+/// economy verb), and idempotent — a second submit changes nothing that was not already true.
+/// A no-op once <c>ApprenticeWarrant.LastGraceDay</c> has passed (the warrant is already gone by
+/// its own dated end), so a stray late submit can never do anything at all.
+/// </summary>
+public sealed record ConcludeApprenticeshipAction() : PlayerAction;
 
 /// <summary>An action the kernel refused, with a typed reason — never a silent drop.</summary>
 public sealed record RejectedAction(PlayerAction Action, string Reason);

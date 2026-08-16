@@ -126,6 +126,15 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// exposing this chip to any other tutorial-specific concept.</summary>
     public Button TutorialDismiss { get; private set; } = null!;
 
+    /// <summary>§11.13 amendment (U5): the confirmed-graduation row's "yes, end it" button — the
+    /// caller (<c>MainUi</c>) wires the atomic <c>ConcludeApprenticeshipAction</c> submit +
+    /// <see cref="TutorialFlow.Dismiss"/> on this <see cref="Button.Pressed"/> event, on top of this
+    /// class's own row-hiding handler (both fire; order between them does not matter).</summary>
+    public Button TutorialDismissConfirmYes { get; private set; } = null!;
+
+    private VBoxContainer _dismissConfirmRow = null!;
+    private Label _dismissConfirmLabel = null!;
+
     /// <summary>The step text last rendered — compared on every <see cref="Refresh"/> to decide
     /// whether a fresh <see cref="Tick"/> fade-in is owed (a same-text re-render, e.g. a tick that
     /// didn't change the advisor's top pick, never restarts the dip). <c>null</c> means "never
@@ -201,6 +210,37 @@ public sealed partial class ObjectiveTracker : PanelContainer
         };
         actionsRow.AddChild(TutorialDismiss);
 
+        // §11.13 amendment (U5, R12 ruled yes): dismissing is graduation, and the ✕ now confirms
+        // rather than acting instantly — "no timers on decisions" (law) means this row waits on the
+        // player's own second press, never a countdown; the copy (set by ShowDismissConfirm's
+        // caller, MainUi, from TutorialFlow.DismissConfirmCopy) names the warrant's cost BEFORE the
+        // choice is made, never after. Hidden until the ✕ is pressed once.
+        _dismissConfirmRow = new VBoxContainer { Name = "ObjectiveTutorialDismissConfirm", Visible = false };
+        body.AddChild(_dismissConfirmRow);
+
+        _dismissConfirmLabel = new Label
+        {
+            Name = "ObjectiveTutorialDismissConfirmLabel",
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            CustomMinimumSize = new Vector2(DockWidth - 24, 0),
+        };
+        _dismissConfirmRow.AddChild(_dismissConfirmLabel);
+
+        var confirmButtons = new HBoxContainer { Name = "ObjectiveTutorialDismissConfirmButtons" };
+        confirmButtons.AddThemeConstantOverride("separation", GameTheme.Space8);
+        _dismissConfirmRow.AddChild(confirmButtons);
+
+        // The caller (MainUi) wires the atomic submit+Dismiss() on this button; hiding the row is
+        // this class's own job either way (Yes or No), so it happens here regardless of what the
+        // caller's own handler does.
+        TutorialDismissConfirmYes = new Button { Name = "ObjectiveTutorialDismissConfirmYes", Text = "End it" };
+        TutorialDismissConfirmYes.Pressed += HideDismissConfirm;
+        confirmButtons.AddChild(TutorialDismissConfirmYes);
+
+        var confirmNo = new Button { Name = "ObjectiveTutorialDismissConfirmNo", Text = "Keep going" };
+        confirmNo.Pressed += HideDismissConfirm;
+        confirmButtons.AddChild(confirmNo);
+
         // U5: the tutorial checklist — sits below the actions row, above the (unrelated) live
         // advisor ranked list, and is Clear-then-composed by Refresh() exactly like RankedList
         // below (same "no checklist yet" contract: hidden until Refresh hands it real rows).
@@ -262,6 +302,12 @@ public sealed partial class ObjectiveTracker : PanelContainer
 
         var isTutorial = tutorialOverride is not null;
         TutorialDismiss.Visible = isTutorial;
+        if (!isTutorial)
+        {
+            // Defensive: the chain ending some OTHER way (e.g. BackstopDay's own auto-complete)
+            // while a confirm sat open must not leave a stray graduation dialog on screen.
+            HideDismissConfirm();
+        }
 
         // A TUTORIAL STEP IS NEVER ELLIPSIZED. The two-line clamp exists to stop a verbose advisor
         // reason from growing this chip without bound, and for advisor text losing the tail is fine —
@@ -309,6 +355,23 @@ public sealed partial class ObjectiveTracker : PanelContainer
             });
         }
     }
+
+    /// <summary>
+    /// §11.13 amendment (U5): arm the confirmed-graduation row with <paramref name="copy"/> (from
+    /// <see cref="TutorialFlow.DismissConfirmCopy"/>, chosen by whether the warrant still holds) —
+    /// called by the caller's <see cref="TutorialDismiss"/> press handler. "No timers on decisions"
+    /// (law): this row waits on the player's own second press (<see cref="TutorialDismissConfirmYes"/>
+    /// or the Keep-going button), never a countdown.
+    /// </summary>
+    public void ShowDismissConfirm(string copy)
+    {
+        _dismissConfirmLabel.Text = Plain(copy);
+        _dismissConfirmRow.Visible = true;
+    }
+
+    /// <summary>Close the confirmed-graduation row without acting — the Keep-going answer, and also
+    /// this class's own half of the Yes answer (the caller's Yes handler runs alongside it).</summary>
+    public void HideDismissConfirm() => _dismissConfirmRow.Visible = false;
 
     /// <summary>The checklist rows rendered by the LAST <see cref="RefreshTutorialChecklist"/>
     /// call that actually rebuilt the tree — <c>null</c> means "never rendered" (distinct from an

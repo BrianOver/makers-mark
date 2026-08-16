@@ -63,6 +63,9 @@ public class BellTrayTests
         [typeof(RecallPartyAction)] = () => new RecallPartyAction(new HeroId(1)),
         [typeof(UnlockTalentAction)] = () => new UnlockTalentAction("node", "blacksmith"),
         [typeof(HonorMemorialAction)] = () => new HonorMemorialAction(new HeroId(1)),
+        // §11.13 amendment (U4a): immediate lane, like HonorMemorialAction just above — never
+        // reaches the bell tray, but DeferredTypes()'s own census still needs an entry to build one.
+        [typeof(ConcludeApprenticeshipAction)] = () => new ConcludeApprenticeshipAction(),
         [typeof(UpgradeForgeAction)] = () => new UpgradeForgeAction(),
         [typeof(SetProfessionsAction)] = () => new SetProfessionsAction(ImmutableSortedSet.Create("blacksmith")),
         [typeof(CommissionLegendaryWorkAction)] = () => new CommissionLegendaryWorkAction("dagger", "copper"),

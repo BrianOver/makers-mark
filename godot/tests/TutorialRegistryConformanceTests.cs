@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Expedition;
 using GameSim.Professions;
 using GdUnit4;
 using Godot;
@@ -589,6 +590,39 @@ public class TutorialRegistryConformanceTests
                 .OverrideFailureMessage(
                     "Commissions is gated closed while the Commission step points straight at it — the player would be stranded.")
                 .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// §11.13 amendment (U5, test scenario 10): <c>TutorialFlow.BackstopDay</c> is <c>private</c> —
+    /// pinned here by the OBSERVABLE contract it exists to guarantee (<c>Advance</c>'s own doc:
+    /// unconditional completion once <c>Day &gt;= BackstopDay</c>) rather than reflection, so a
+    /// future drift between the tutorial's own close and <see cref="ApprenticeWarrant.LastGraceDay"/>
+    /// fails by BEHAVIOR, not by a private-field peek.
+    /// </summary>
+    [TestCase]
+    public void BackstopDay_EqualsWarrantLastGraceDayPlusOne()
+    {
+        var ui = MountMainUi(); // fresh campaign: no natural step-progression event has ever fired
+        try
+        {
+            var stillWithinTheWarrant = ui.Adapter.CurrentState with { Day = ApprenticeWarrant.LastGraceDay };
+            ui.Tutorial.Advance(stillWithinTheWarrant);
+            AssertThat(ui.Tutorial.Completed)
+                .OverrideFailureMessage(
+                    "The chain completed at Day == LastGraceDay, before the warrant's own dawn — BackstopDay drifted earlier.")
+                .IsFalse();
+
+            var atTheBackstop = ui.Adapter.CurrentState with { Day = ApprenticeWarrant.LastGraceDay + 1 };
+            ui.Tutorial.Advance(atTheBackstop);
+            AssertThat(ui.Tutorial.Completed)
+                .OverrideFailureMessage(
+                    "The chain did not complete at Day == LastGraceDay + 1 — BackstopDay has drifted from the warrant's own end.")
+                .IsTrue();
         }
         finally
         {

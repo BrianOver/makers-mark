@@ -678,8 +678,10 @@ public partial class MainUi : Control
                 // U7 (loop-legibility plan, R10): the ledger's own one-line tutorial explainer,
                 // wired ONLY to the automatic Return-Ritual reveal — ConsumeLedgerTip returns
                 // non-null exactly once per campaign, so a manual reopen (OpenLedger tray button,
-                // OnLedgerVisibilityChanged's forecast chain) never re-asks for it.
-                Ledger.ShowFor(_pendingLedgerDay, Tutorial.ConsumeLedgerTip());
+                // OnLedgerVisibilityChanged's forecast chain) never re-asks for it. §11.13 amendment
+                // (U6): ConsumeFirstLossBlock rides the SAME automatic-reveal-only wiring — it
+                // returns non-null exactly once, on the night of the campaign's first HeroDied.
+                Ledger.ShowFor(_pendingLedgerDay, Tutorial.ConsumeLedgerTip(), Tutorial.ConsumeFirstLossBlock(Adapter.CurrentState));
 
                 // Only the automatic Return-Ritual reveal speaks. Reopening the ledger from the tray
                 // re-reads the same night, and a narrator that recites on every re-read is the
@@ -1051,11 +1053,26 @@ public partial class MainUi : Control
         // Drawer.CurrentPanelId at all, which is exactly why "the tutorial isn't updating despite
         // entering the forge" survived a drawer-only check (see CurrentLocationPanelId).
         var locationId = CurrentLocationPanelId();
+
+        // §11.13 amendment (U6): the dormant loss act renders its OWN single row (Hud-anchored at
+        // the Legends tray button) whenever the ten-step chain itself is not Active — almost always
+        // the case by the time a post-warrant death lands, since the chain finishes by day 3-4 and
+        // the earliest possible death is day 4. Null (no row, no anchor) outside its own one-night-
+        // one-day window — see TutorialFlow.LossActRow's own doc for the "silent while armed, retires
+        // honestly" contract (KTD-H).
+        var lossRow = Tutorial.Active ? null : Tutorial.LossActRow(state);
+        var checklist = Tutorial.Active ? Tutorial.Checklist(state)
+            : lossRow is { } row ? new[] { row } : null;
+
         Objective.Refresh(
             state,
             Tutorial.TopSlotText(state, locationId), // U23: tutorial overrides the top slot only
-            Tutorial.Active ? Tutorial.Checklist(state) : null); // U5: the checklist ticks alongside it
-        Overlay.RefreshAnchor(Tutorial.Active ? Tutorial.CurrentAnchor : TutorialAnchor.None, Town, this);
+            checklist); // U5/U6: the checklist ticks alongside it
+        Overlay.RefreshAnchor(
+            Tutorial.Active ? Tutorial.CurrentAnchor
+            : lossRow is not null ? TutorialAnchor.ForHud("OpenLegends")
+            : TutorialAnchor.None,
+            Town, this);
         UpdateObjectiveDock(); // Refresh can change the reason line's line count — re-dock to it
     }
 
@@ -1175,6 +1192,17 @@ public partial class MainUi : Control
         }
 
         _surfaceUnlocksSeeded = true;
+
+        // §11.13 amendment (U5): the apprenticeship warrant's own dawn beat — once ever, the first
+        // Morning after ApprenticeWarrant.LastGraceDay, turning the old design's silent expiry into
+        // a beat. Same "a live rejection always wins the strip" courtesy the gate-open toasts just
+        // above already follow — ConsumeWarrantEndBeat itself stays a once-ever consumed flag
+        // regardless (a tick that skips the toast for a rejection does not lose the beat forever;
+        // it fires on this campaign's very next call where a rejection does not win the strip).
+        if (Adapter.LastRejections.IsEmpty && Tutorial.ConsumeWarrantEndBeat(state) is { } warrantBeat)
+        {
+            ShowBellToast(warrantBeat);
+        }
     }
 
     /// <summary>The one place every gated tray button's press funnels through — refuses a closed
@@ -2732,8 +2760,19 @@ public partial class MainUi : Control
         Objective.OffsetRight = -ObjectiveDockMargin;
         UpdateObjectiveDock(); // initial content-height dock (see method doc)
         Objective.Expand.Pressed += UpdateObjectiveDock; // "More" toggles the ranked list's height
-        Objective.TutorialDismiss.Pressed += () =>
+
+        // §11.13 amendment (U5, R12 ruled yes): the ✕ now arms a confirm instead of dismissing on
+        // the spot — "no timers on decisions" (law), so this waits on the player's own SECOND
+        // press. TutorialFlow.DismissConfirmCopy names the warrant's cost (if any is still owed) at
+        // press time, before the choice is made.
+        Objective.TutorialDismiss.Pressed += () => Objective.ShowDismissConfirm(TutorialFlow.DismissConfirmCopy(Adapter.CurrentState));
+
+        // Confirming submits ConcludeApprenticeshipAction through the adapter AND calls
+        // TutorialFlow.Dismiss() — one press, both layers, never one without the other (Objective's
+        // own Pressed handler on this same button hides the confirm row; this is the caller's half).
+        Objective.TutorialDismissConfirmYes.Pressed += () =>
         {
+            Adapter.Queue(new ConcludeApprenticeshipAction());
             Tutorial.Dismiss();
             RefreshHud();
         };
