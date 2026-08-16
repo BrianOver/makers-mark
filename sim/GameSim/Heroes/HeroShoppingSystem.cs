@@ -88,11 +88,16 @@ public sealed class HeroShoppingSystem : IPhaseSystem
             return fulfilled;
         }
 
+        var boycotting = NeedsSystem.IsBoycotting(hero.Id, state);
         var (best, candidates) = EvaluateGearCandidates(state, hero);
 
         // Legible passes (R8): every player-shelf item the hero looked at and did not
         // buy gets a reasoned event — including buyable items that lost on value.
-        // (A null verdict means the item wasn't judged in this pass — consumables.)
+        // (A null verdict means the item wasn't judged in this pass — consumables.) A Buy verdict
+        // that still lost the ranking gets one of two honest reasons: if the boycott's comparison-
+        // only price bias (BoycottEffectivePrice) is what tipped it — this candidate would have won
+        // at its REAL price (LostToBoycott) — the reason names the grudge; otherwise it lost fair
+        // and square on gear score per gold. Never blame the gear for what the boycott decided.
         foreach (var candidate in candidates)
         {
             if (!candidate.FromPlayerShelf || candidate.Verdict is null || ReferenceEquals(candidate, best))
@@ -100,9 +105,20 @@ public sealed class HeroShoppingSystem : IPhaseSystem
                 continue;
             }
 
-            var reason = candidate.Verdict.Kind == ShoppingVerdictKind.Pass
-                ? candidate.Verdict.Reason
-                : $"picked {best!.Item.Name} instead — better gear score per gold";
+            string reason;
+            if (candidate.Verdict.Kind == ShoppingVerdictKind.Pass)
+            {
+                reason = candidate.Verdict.Reason;
+            }
+            else if (LostToBoycott(candidate, best!, boycotting))
+            {
+                reason = BoycottReason(best!.Item);
+            }
+            else
+            {
+                reason = $"picked {best!.Item.Name} instead — better gear score per gold";
+            }
+
             events.Emit(new HeroPassedOnItem(hero.Id, candidate.Item.Id, reason));
         }
 
@@ -116,7 +132,7 @@ public sealed class HeroShoppingSystem : IPhaseSystem
         // player-shelf-only anti-spam precedent above rather than firing for every hero every
         // morning. Observational only: it reads the verdicts already computed, changes nothing,
         // and draws no RNG.
-        StampGearDecision(hero, best, candidates, NeedsSystem.IsBoycotting(hero.Id, state), events);
+        StampGearDecision(hero, best, candidates, boycotting, events);
 
         return ApplyPurchase(state, hero, best, events);
     }
@@ -181,6 +197,31 @@ public sealed class HeroShoppingSystem : IPhaseSystem
             + (int)((long)candidate.Price * NeedsSystem.BoycottPerceivedPricePenaltyPermille / 1000);
     }
 
+    /// <summary>True when the boycott's comparison-only price bias (<see cref="BoycottEffectivePrice"/>),
+    /// not gear score per gold, is why <paramref name="candidate"/> lost to <paramref name="winner"/>:
+    /// judged at its REAL price against whatever price actually won the ranking, <paramref name="candidate"/>
+    /// would have come out ahead. Keeps <see cref="HeroPassedOnItem"/>/<see cref="HeroDecisionExplained"/>
+    /// honest about which of the two mechanisms actually decided — the drought penalty, or the gear
+    /// verdict — since only <see cref="EvaluateGearCandidates"/>'s ranking ever sees the inflated
+    /// price; <see cref="ShoppingAi"/> is called with the real price and never does.</summary>
+    private static bool LostToBoycott(Candidate candidate, Candidate winner, bool boycotting)
+    {
+        if (!boycotting || !candidate.FromPlayerShelf || candidate.Verdict is not { Kind: ShoppingVerdictKind.Buy })
+        {
+            return false;
+        }
+
+        return ShoppingAi.IsBetterValue(
+            candidate.Verdict.GearScoreGain, candidate.Price, candidate.Item.Id,
+            winner.Verdict!.GearScoreGain, BoycottEffectivePrice(winner, boycotting), winner.Item.Id);
+    }
+
+    /// <summary>The honest player-facing reason for a <see cref="LostToBoycott"/> loss — names the
+    /// grudge, never "better gear score," so <c>tools/Analytics/Report.Bucket</c> can't file a
+    /// relationship problem under a gear-quality bucket (both buckets keyword-match on the prose).</summary>
+    private static string BoycottReason(Item winner) =>
+        $"still boycotting the shop over unmet demand — {winner.Name} won on the grudge, not the gear";
+
     /// <summary>Phase B (B1a): the runner-up gear Buy candidate — the best-value candidate other
     /// than <paramref name="best"/> — for the decision card's "chosen over X" framing. Null when
     /// nothing else was a viable Buy this morning. <paramref name="boycotting"/> mirrors
@@ -216,23 +257,29 @@ public sealed class HeroShoppingSystem : IPhaseSystem
         }
 
         var runnerUpName = runnerUp?.Item.Name ?? "nothing else affordable";
+        var reason = runnerUp is not null && LostToBoycott(runnerUp, best, boycotting)
+            ? BoycottReason(best.Item)
+            : best.Verdict!.Reason;
         events.Emit(new HeroDecisionExplained(
-            hero.Id, best.Item.Name, runnerUpName, best.Verdict!.Reason, GearDecisionGapPermille(best, runnerUp)));
+            hero.Id, best.Item.Name, runnerUpName, reason, GearDecisionGapPermille(best, runnerUp, boycotting)));
     }
 
     /// <summary>Value-per-gold gap between the chosen item and its runner-up, in per-mille —
     /// 1000 (maximal) when nothing else was a viable Buy. Integer-only: <c>gain*1000/price</c>
     /// per side, clamped, never negative (a worse "winner" than its runner-up cannot happen by
-    /// construction of <see cref="ShoppingAi.IsBetterValue"/>).</summary>
-    private static int GearDecisionGapPermille(Candidate best, Candidate? runnerUp)
+    /// construction of <see cref="ShoppingAi.IsBetterValue"/>). Priced with
+    /// <see cref="BoycottEffectivePrice"/> on BOTH sides — the exact prices <see cref="EvaluateGearCandidates"/>
+    /// and <see cref="RunnerUpGearCandidate"/> ranked on — so the reported margin is the margin that
+    /// actually decided the outcome, never a raw-price number the ranking itself never used.</summary>
+    private static int GearDecisionGapPermille(Candidate best, Candidate? runnerUp, bool boycotting)
     {
         if (runnerUp is null)
         {
             return 1000;
         }
 
-        var bestScore = ValueScorePermille(best.Verdict!.GearScoreGain, best.Price);
-        var runnerUpScore = ValueScorePermille(runnerUp.Verdict!.GearScoreGain, runnerUp.Price);
+        var bestScore = ValueScorePermille(best.Verdict!.GearScoreGain, BoycottEffectivePrice(best, boycotting));
+        var runnerUpScore = ValueScorePermille(runnerUp.Verdict!.GearScoreGain, BoycottEffectivePrice(runnerUp, boycotting));
         return Math.Clamp(bestScore - runnerUpScore, 0, 1000);
     }
 
