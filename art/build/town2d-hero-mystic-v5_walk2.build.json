@@ -1,0 +1,20 @@
+{
+  "Seed": null,
+  "Model": null,
+  "Lora": null,
+  "Steps": null,
+  "CfgMilli": null,
+  "SamplerResolved": null,
+  "SchedulerResolved": null,
+  "PaletteSha256": null,
+  "DiffuseSha256": "8d317d5fb35582cd7ad87532ed390b8487b9e1388c05cc8ba8fba0360de1894a",
+  "NormalSha256": null,
+  "Uid": "uid://mx2p3xjuueqy",
+  "HandFinished": false,
+  "Status": "procedural",
+  "Provenance": {
+    "drafts": null,
+    "paintoverNote": null,
+    "aiDisclosure": "Deterministic PIL recolour of the owner-approved town2d-hero-mystic_walk2 AI-composite base render (art/build/town2d-hero-mystic_walk2.build.json) -- ZERO diffusion, ZERO seed, same discipline as tools/art/gen_town_sprites.py's own variant_palette()/variant_id() for every other class/civilian pool: -v5 is variant row 4 of gen_town_sprites.py's own verbatim SKIN_TONES/HAIR_TONES/GARMENT_DYES tables (VARIANT_COUNT=5, row 0 is the base) -- this body's skin/hair/dye is the SAME row mystic's own base and every other class's and townsfolk's own -v5 already use, not a value invented for this class. Recipe (proven, not theorised, against all 24 committed hero frame PNGs before any variant was generated): the base render's own crop/corner-flood-fill key/premultiplied-box-downsample pipeline is reused verbatim, with one recolour step inserted -- nearest-reference pixel classification per zone (skin/hair/garment) with luminance-mapped tone transfer, using mystic's own skin (face glow + free hand) + gold sash at 2x weight + violet dye lerp; staff/shoes/tassel untouched. Key masks and crops come from the base render, so this frame's silhouette and alpha are byte-identical to town2d-hero-mystic_walk2's own. This is the passing pose (4-frame gait; see the class base's own build.json for the full walk-cycle disclosure)."
+  }
+}

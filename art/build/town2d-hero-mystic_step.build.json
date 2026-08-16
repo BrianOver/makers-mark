@@ -1,0 +1,20 @@
+{
+  "Seed": 950100,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": "pixel-art-xl.safetensors",
+  "Steps": 30,
+  "CfgMilli": 7000,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "3d22e8e42c528ea889c81a0027ddc66813c4552a6ead9304f02baeb1c6ee08c1",
+  "NormalSha256": null,
+  "Uid": "uid://byljed3veuemi",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "Every hero/smith render is a COMPOSITE, never a single clean generation: stage-1 t2i base (SDXL base 1.0 + pixel-art-xl LoRA @1.0/1.0, 30 steps, cfg 7.0, dpmpp_2m/karras, 832x1216, batch of 4) picks one candidate; some classes then get a stage-2 region-masked inpaint (SetLatentNoiseMask, denoise 0.5, same sampler/scheduler) to fix a specific defect (shield shape, missing daggers, horn/shadow-face detail); vanguard and sentinel additionally got a cast2 torso-only recolor inpaint (denoise 0.5) because both shipped the first round in a pale steel-gray that failed the sim's own ClassDefinition.ColorRgb identity check (measured hue-angle separation 135 degrees vs the hand sprites' 76 degrees) -- see tools/art/gen_town_sprites.py's CLASS_HUES table (~line 218) for the pinned hue each class recolor targeted. Every walk frame then freezes the torso to the adopted base's own bytes above a measured leg_row and composites in leg art below it (a separate contact-pose render for the two weight-bearing frames, a same-render +-1px leg/hem sway for the two passing frames on non-robed classes; robed classes have no visible legs and use a same-render +-1px hem sway only, no extra diffusion sample). All rejected candidates are kept MISS-prefixed under the job's own _work/ folders.",
+    "paintoverNote": "cast1 (2026-08-15, tranche 1), reassembled unchanged into cast2. Same as the base id's own hem-sway, mirrored: +1px instead of -1px, reusing the adopted base render (seed 950100, cast1 stage-1 base render, candidate 1 of 4 (no stage-2 surgery)) unmodified above the hem row.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0 + pixel-art-xl) diffuse, composited: torso identical to the base id; hem band shifted +1px instead of -1px, a mechanical PIL shift."
+  }
+}

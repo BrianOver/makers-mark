@@ -1,0 +1,20 @@
+{
+  "Seed": null,
+  "Model": null,
+  "Lora": null,
+  "Steps": null,
+  "CfgMilli": null,
+  "SamplerResolved": null,
+  "SchedulerResolved": null,
+  "PaletteSha256": null,
+  "DiffuseSha256": "3485c5182db881170b4b175c995a7727c45b29e9f12a89f5aaa811b87eb9a609",
+  "NormalSha256": null,
+  "Uid": "uid://dg6enapm6tmix",
+  "HandFinished": false,
+  "Status": "procedural",
+  "Provenance": {
+    "drafts": null,
+    "paintoverNote": null,
+    "aiDisclosure": "Deterministic PIL recolour of the owner-approved town2d-hero-occultist_step AI-composite base render (art/build/town2d-hero-occultist_step.build.json) -- ZERO diffusion, ZERO seed, same discipline as tools/art/gen_town_sprites.py's own variant_palette()/variant_id() for every other class/civilian pool: -v5 is variant row 4 of gen_town_sprites.py's own verbatim SKIN_TONES/HAIR_TONES/GARMENT_DYES tables (VARIANT_COUNT=5, row 0 is the base) -- this body's skin/hair/dye is the SAME row occultist's own base and every other class's and townsfolk's own -v5 already use, not a value invented for this class. Recipe (proven, not theorised, against all 24 committed hero frame PNGs before any variant was generated): the base render's own crop/corner-flood-fill key/premultiplied-box-downsample pipeline is reused verbatim, with one recolour step inserted -- nearest-reference pixel classification per zone (skin/hair/garment) with luminance-mapped tone transfer, using occultist's own painted rust belt (no skin/hair by design -- shadow face kept) + violet dye lerp; staff/crystal/gem/shoes untouched. Key masks and crops come from the base render, so this frame's silhouette and alpha are byte-identical to town2d-hero-occultist_step's own. This is the mirrored contact pose (4-frame gait; see the class base's own build.json for the full walk-cycle disclosure)."
+  }
+}

@@ -50,6 +50,27 @@ public class TownSpriteArtTests
     /// not a whole-body swap.</summary>
     private const int LegsTopRow = 22;
 
+    /// <summary>Per-class first-divergent-row floor for <see cref="StepFrames_DifferOnlyBelowTheWaist"/>,
+    /// superseding the single shared <see cref="LegsTopRow"/> for the SIX BASE CLASS ids only
+    /// (2026-08-15 six-hero-cast ship wave). The base body swapped from the hand ASCII-grid render
+    /// to an SDXL composite cast (art/build/town2d-hero-&lt;class&gt;*.build.json) with its own
+    /// per-class figure crop, so the torso/leg boundary is no longer a single shared constant —
+    /// measured directly off each class's own committed pixels (each hero's own
+    /// "&lt;class&gt; - torso proof.txt" from the art job, cross-checked here against the actual
+    /// PNG bytes): Vanguard 20, Sentinel 18, Striker 23, Skirmisher 22, Mystic 24, Occultist 24.
+    /// <see cref="LegsTopRow"/> itself is UNCHANGED and still correct for
+    /// <see cref="EveryVariantBody_ObeysTheSameGaitInvariantsAsItsBase"/> — the -v2.. variant pool
+    /// bodies are still the untouched hand-drawn render, whose torso/leg boundary never moved.</summary>
+    private static readonly Dictionary<string, int> BaseClassLegsTopRow = new()
+    {
+        ["vanguard"] = 20,
+        ["sentinel"] = 18,
+        ["striker"] = 23,
+        ["skirmisher"] = 22,
+        ["mystic"] = 24,
+        ["occultist"] = 24,
+    };
+
     /// <summary>A flat placeholder box is 2-3 colours. Real shading needs an outline, at least two
     /// body tones and a highlight, so anything under this is a regression to programmer art.
     /// Measured (2026-08-04, post-COLOUR+MATERIAL pass, pre-halving): every class had 12-15
@@ -60,33 +81,29 @@ public class TownSpriteArtTests
     /// against a future one-tone tweak.</summary>
     private const int MinDistinctColors = 10;
 
-    /// <summary>The shared skin tone every class's face/skin-peek region uses
-    /// (<c>tools/art/gen_town_sprites.py</c>'s <c>'f'</c> letter) — one fantasy-tan RGB, reused
-    /// everywhere rather than picked per class, matching the file's own "never a colour invented
-    /// per class" discipline for shared tones.</summary>
-    private static readonly Color SkinTone = Color.Color8(196, 148, 110);
-
-    /// <summary>Per-channel tolerance for matching <see cref="SkinTone"/> against a loaded pixel —
-    /// generous enough to survive PNG/Godot import rounding, tight enough that it could never
-    /// match a class's garment or steel tones (the closest neighbour, Sentinel's bronze cloth
-    /// light stop, is well over 40 per channel away).</summary>
-    private const float SkinToneTolerance = 10f / 255f;
-
-    /// <summary>Minimum skin-tone pixels for <see cref="EveryClass_CarriesASkinToneRegion"/>.
-    /// Measured (2026-08-04, pre-halving): Mystic/Occultist (the two cowled casters, deliberately
-    /// just a shadow-edge hint per their own established "shadowed face" silhouette) were the
-    /// thinnest at 6px; every other class was 8-40px.
-    ///
-    /// <para><b>2026-08-12 (asymmetric-decimation fix):</b> re-measured post halving at 4-13px
-    /// (Mystic/Occultist now exactly AT this floor, Sentinel/Striker at 5px). A plain colour-average
-    /// halving was tried first and measured ZERO exact-match skin pixels for 3 of 6 classes — a 1px
-    /// skin accent sitting next to the outline colour blends to a shade roughly equidistant from
-    /// both, which no reasonable tolerance recovers. <c>rarity_downsample_2x</c>'s rarity-priority
-    /// pick (keep the globally rarer of a block's colours instead of blending) is what keeps this
-    /// floor clearable at all; it now has NO margin for Mystic/Occultist, so a future change to that
-    /// algorithm or to either class's head art must re-measure this, not assume it still holds.</para>
+    /// <summary>Minimum warm-hue-range pixels for <see cref="EveryClass_CarriesASkinToneRegion"/> —
+    /// see that test's own doc for the full measurement and why this replaced an exact-RGB match.
     /// </summary>
     private const int MinSkinPixels = 4;
+
+    /// <summary>Hue band (degrees, matching Godot <c>Color.H</c>'s 0-1-of-360 convention once
+    /// divided by 360) for a warm, continuous-tone "skin-adjacent" pixel — centred on the fantasy-
+    /// tan family every hero's face/visor-slit/hood-shadow renders into, regardless of exact shade.
+    /// See <see cref="EveryClass_CarriesASkinToneRegion"/>'s doc for the measurement.</summary>
+    private const float SkinHueMinDegrees = 5f;
+    private const float SkinHueMaxDegrees = 45f;
+
+    /// <summary>Saturation floor/ceiling for the same warm-hue test — excludes near-neutral greys
+    /// (steel plate, shadow, white rim-light, all sit under ~0.12 saturation in the committed art)
+    /// at the low end, and would exclude a fully-saturated dyed cloth at the high end (none of the
+    /// six classes' garment ramps land inside this hue band in the first place, but the ceiling
+    /// keeps the intent explicit rather than accidental).</summary>
+    private const float SkinSaturationMin = 0.15f;
+    private const float SkinSaturationMax = 0.70f;
+
+    /// <summary>Value floor for the same test — excludes near-black shadow pixels, which can carry
+    /// a numerically "warm" hue by HSV maths despite reading as pure darkness, not skin.</summary>
+    private const float SkinValueMin = 0.25f;
 
     /// <summary>Minimum Euclidean RGB distance (0-255 scale per channel) between any two classes'
     /// dominant garment colour — see <see cref="EveryClass_HasADistinctDominantGarmentHue"/>'s own
@@ -171,6 +188,7 @@ public class TownSpriteArtTests
         {
             var basis = Load($"town2d-hero-{classId}");
             var step = Load($"town2d-hero-{classId}_step");
+            var legsTopRow = BaseClassLegsTopRow[classId];
 
             var differencesBelow = 0;
             for (var y = 0; y < BodyHeight; y++)
@@ -185,8 +203,8 @@ public class TownSpriteArtTests
                     AssertThat(y)
                         .OverrideFailureMessage(
                             $"town2d-hero-{classId}_step differs from its base at ({x},{y}), above the " +
-                            $"legs row {LegsTopRow}. Only the legs/hem may move between frames.")
-                        .IsGreaterEqual(LegsTopRow);
+                            $"legs row {legsTopRow}. Only the legs/hem may move between frames.")
+                        .IsGreaterEqual(legsTopRow);
                     differencesBelow++;
                 }
             }
@@ -370,13 +388,42 @@ public class TownSpriteArtTests
 
     /// <summary>
     /// R3, the review's explicit ask: "a visible face area with a skin tone... the single biggest
-    /// 'that's a person' cue". Every class carries at least <see cref="MinSkinPixels"/> pixels of
-    /// the shared <see cref="SkinTone"/> — a full face for the two open-faced classes (Striker,
-    /// Skirmisher), a visor-slit/jaw peek for the two full-helm tanks (Vanguard, Sentinel — no
-    /// room for more without contradicting their own closed-helm silhouette), and a dim hint at
-    /// the shadow-hood's edge for the two cowled casters (Mystic/Occultist's faces are
-    /// deliberately shadowed BY DESIGN — see their own head-row comments — so a FULL face here
-    /// would contradict the class's own established look, not just add detail).
+    /// 'that's a person' cue". Every class carries at least <see cref="MinSkinPixels"/> pixels in
+    /// the warm skin-adjacent hue/chroma band (<see cref="SkinHueMinDegrees"/>-<see
+    /// cref="SkinHueMaxDegrees"/>, see <see cref="CountSkinTonePixels"/>) — a full face for the two
+    /// open-faced classes (Striker, Skirmisher), a visor-slit/jaw peek for the two full-helm tanks
+    /// (Vanguard, Sentinel — no room for more without contradicting their own closed-helm
+    /// silhouette), and a dim hint at the shadow-hood's edge for the two cowled casters
+    /// (Mystic/Occultist's faces are deliberately shadowed BY DESIGN so a FULL face would
+    /// contradict the class's own established look, not just add detail).
+    ///
+    /// <para><b>2026-08-15 (AI-composite cast, hue/chroma rewrite):</b> the six hero bases moved
+    /// from the hand ASCII-grid pipeline to an SDXL composite render (art/build/town2d-hero-
+    /// &lt;class&gt;*.build.json) — continuous tone, not a fixed indexed palette. Measuring against
+    /// the OLD exact skin RGB (196,148,110, ±10/255 — the hand pipeline's single shared skin letter,
+    /// <c>tools/art/gen_town_sprites.py</c>'s <c>'f'</c>) — what this test did before — returns 0-1
+    /// pixels on every class (measured directly against the committed art: vanguard 0, sentinel 0,
+    /// striker 0, skirmisher 1, mystic 0, occultist 0), even though every class
+    /// plainly DOES carry a warm skin-toned region by eye (see the pool sheet) — continuous-tone
+    /// rendering plus PNG/import rounding essentially never lands back on one hand-picked triple, so
+    /// the old metric was measuring the WRONG thing for this art, not catching a real defect.</para>
+    ///
+    /// <para><b>What replaced it, and the real numbers.</b> A hue/saturation/value RANGE instead of
+    /// a point match, measured directly against the actual committed pixels (same discipline as
+    /// <see cref="BaseClassLegsTopRow"/>): vanguard 9, sentinel 269, striker 18, skirmisher 70,
+    /// mystic 18, occultist 4. <see cref="MinSkinPixels"/> (4) sits AT the true floor (occultist) —
+    /// zero margin, same precedent this file already accepted for the pre-08-15 metric ("now exactly
+    /// AT this floor... a future change must re-measure this, not assume it still holds").</para>
+    ///
+    /// <para><b>Known imprecision, accepted on purpose:</b> Sentinel's own bronze <c>CLASS_HUE</c>
+    /// (176,141,87) sits in the SAME warm hue/chroma neighbourhood as skin, so its count (269) is
+    /// dominated by armour, not by its actual jaw-peek. Unlike the old exact-RGB match, this test
+    /// cannot cleanly isolate "sliver of skin" from "lots of similarly-hued armour" for that ONE
+    /// class. That is an acceptable trade, not a blind spot: Sentinel's design intent already grants
+    /// it only a tiny sliver of skin ("no room for more without contradicting their own closed-helm
+    /// silhouette"), so a coarser guard for that one class does not weaken the other five, and the
+    /// test still catches what it exists to catch — a class shipping with NO warm-hued region at
+    /// all (a broken palette, a flat placeholder, a colour-space bug).</para>
     /// </summary>
     [TestCase]
     public void EveryClass_CarriesASkinToneRegion()
@@ -388,8 +435,8 @@ public class TownSpriteArtTests
 
             AssertThat(skinPixels)
                 .OverrideFailureMessage(
-                    $"town2d-hero-{classId} has only {skinPixels} skin-tone pixels (floor " +
-                    $"{MinSkinPixels}) — every class needs a real, visible skin-tone region (R3).")
+                    $"town2d-hero-{classId} has only {skinPixels} skin-hue-range pixels (floor " +
+                    $"{MinSkinPixels}) — every class needs a real, visible skin-toned region (R3).")
                 .IsGreaterEqual(MinSkinPixels);
         }
     }
@@ -441,6 +488,9 @@ public class TownSpriteArtTests
         return System.Math.Sqrt(dr * dr + dg * dg + db * db);
     }
 
+    /// <summary>Counts pixels in the warm skin-adjacent hue/chroma band — see
+    /// <see cref="EveryClass_CarriesASkinToneRegion"/>'s doc for the range and why it replaced an
+    /// exact-RGB match. <c>pixel.H</c> is Godot's own hue, a 0-1 fraction of 360°.</summary>
     private static int CountSkinTonePixels(Image image)
     {
         var count = 0;
@@ -454,9 +504,10 @@ public class TownSpriteArtTests
                     continue;
                 }
 
-                if (System.Math.Abs(pixel.R - SkinTone.R) <= SkinToneTolerance
-                    && System.Math.Abs(pixel.G - SkinTone.G) <= SkinToneTolerance
-                    && System.Math.Abs(pixel.B - SkinTone.B) <= SkinToneTolerance)
+                var hueDegrees = pixel.H * 360f;
+                if (hueDegrees >= SkinHueMinDegrees && hueDegrees <= SkinHueMaxDegrees
+                    && pixel.S >= SkinSaturationMin && pixel.S <= SkinSaturationMax
+                    && pixel.V >= SkinValueMin)
                 {
                     count++;
                 }
@@ -481,6 +532,15 @@ public class TownSpriteArtTests
     /// <para>Deliberately does NOT re-assert the cross-class tests (distinct silhouettes, distinct
     /// garment colours): variants of one class are SUPPOSED to share a silhouette, and their
     /// garment hues are near-neighbours of one shared class hue by design.</para>
+    ///
+    /// <para><b>2026-08-15 (hero variant pool ships the AI-composite cast too):</b> the six hero
+    /// classes' <c>-v2..-v5</c> pools were regenerated as deterministic PIL recolours of the SAME
+    /// AI-composite base as their class (not the hand-drawn ASCII-grid render), so they inherit
+    /// that base's own torso/leg boundary — <see cref="BaseClassLegsTopRow"/>, NOT the single
+    /// shared <see cref="LegsTopRow"/> that was correct back when every hero variant was still
+    /// hand-drawn. Townsfolk civilian variants are UNCHANGED (still hand-drawn) and still use the
+    /// shared <see cref="LegsTopRow"/>. Per-pool-base row picked once here rather than duplicating
+    /// the hero/civilian branch inside the frame loop below.</para>
     /// </summary>
     [TestCase]
     public void EveryVariantBody_ObeysTheSameGaitInvariantsAsItsBase()
@@ -492,6 +552,11 @@ public class TownSpriteArtTests
 
         foreach (var baseId in poolBases)
         {
+            var classId = baseId.StartsWith("town2d-hero-") ? baseId["town2d-hero-".Length..] : null;
+            var legsTopRow = classId is not null && BaseClassLegsTopRow.TryGetValue(classId, out var row)
+                ? row
+                : LegsTopRow;
+
             foreach (var bodyId in ArtVariants.PoolFor(baseId).Where(ArtVariants.IsVariantId))
             {
                 var frames = GaitSuffixes.Select(s => Load($"{bodyId}{s}")).ToList();
@@ -506,14 +571,14 @@ public class TownSpriteArtTests
                 // flicker guard, and the fix_alpha_border regression detector.
                 for (var f = 1; f < frames.Count; f++)
                 {
-                    for (var y = 0; y < LegsTopRow; y++)
+                    for (var y = 0; y < legsTopRow; y++)
                     {
                         for (var x = 0; x < BodyWidth; x++)
                         {
                             AssertThat(frames[f].GetPixel(x, y) == frames[0].GetPixel(x, y))
                                 .OverrideFailureMessage(
                                     $"{bodyId}{GaitSuffixes[f]} differs from its own base frame at "
-                                    + $"({x},{y}), above the legs row {LegsTopRow}. If the PNGs are "
+                                    + $"({x},{y}), above the legs row {legsTopRow}. If the PNGs are "
                                     + "byte-identical up there, the .import sidecar is the culprit: "
                                     + "process/fix_alpha_border must be false, as it is on every base body.")
                                 .IsTrue();
@@ -574,35 +639,53 @@ public class TownSpriteArtTests
 
     /// <summary>First row of the legs in the SHIPPED (post-halving) player image — measured directly
     /// against the committed pixels (the first row at which ANY of the three walk frames differs
-    /// from the base), not assumed from arithmetic: the player's authoring canvas has 3 more rows
-    /// than a hero's (68 vs 64), landing this boundary at 24, not <see cref="LegsTopRow"/>'s 22.</summary>
-    private const int PlayerLegsTopRow = 24;
+    /// from the base).
+    ///
+    /// <para><b>2026-08-15 (six-hero-cast ship wave):</b> re-measured at 23, not 24, after
+    /// <c>player_smith*</c> swapped from the hand ASCII-grid render to its own SDXL composite
+    /// (art/build/player_smith*.build.json) — a different figure crop than the hand pipeline's,
+    /// so the arithmetic-derived 24 (68-row authoring canvas vs a hero's 64) no longer applies; 23
+    /// is the smith's own torso proof measurement, cross-checked against the committed PNG bytes,
+    /// same discipline as <see cref="BaseClassLegsTopRow"/>.</para></summary>
+    private const int PlayerLegsTopRow = 23;
 
     private static readonly string[] PlayerGaitIds =
         ["player_smith", "player_smith_walk2", "player_smith_step", "player_smith_walk4"];
 
-    /// <summary>The four cloth-ramp tones <c>tools/art/gen_town_sprites.py</c> derives from
-    /// <c>PLAYER_HUE</c> (110,74,42) via <c>cloth_ramp()</c> — light/mid/dark/deepest, letters
-    /// 'c'/'n'/'k'/'w'. Hardcoded rather than re-deriving the lerp here so this test pins the exact
-    /// committed RGB triples, the same "assert the real bytes" discipline <see cref="SkinTone"/>
-    /// already uses for the shared skin tone.</summary>
-    private static readonly Color[] PlayerWarmTones =
-    [
-        Color.Color8(182, 164, 148), // 'c' — light
-        Color.Color8(127, 96, 68),   // 'n' — mid
-        Color.Color8(77, 52, 29),    // 'k' — dark
-        Color.Color8(49, 33, 19),    // 'w' — deepest
-    ];
+    /// <summary>Hue band (degrees) for a "warm PLAYER_HUE-family" pixel — <c>PLAYER_HUE</c>
+    /// (110,74,42) itself sits at hue≈28°, and <c>cloth_ramp()</c>'s light/mid/dark/deepest stops
+    /// all preserve that hue by construction (the ramp lerps toward white/black, which cannot move
+    /// hue), so the whole ramp — indexed-palette or continuous-tone alike — lives in this band.
+    /// See <see cref="PlayerSmith_WarmGarmentTonesAreTheMajorityOfItsOpaqueArea"/>'s doc for why
+    /// this replaced an exact 4-tone RGB match.</summary>
+    private const float PlayerWarmHueMinDegrees = 0f;
+    private const float PlayerWarmHueMaxDegrees = 45f;
 
-    private const float PlayerWarmToneTolerance = 4f / 255f;
+    /// <summary>Saturation floor for the same test — excludes near-neutral pixels (white rim-light,
+    /// black shadow, silvery tool/anvil greys all sit under ~0.1 saturation), whose hue is
+    /// numerically noisy at low chroma and would otherwise false-match by chance.</summary>
+    private const float PlayerWarmSaturationMin = 0.25f;
 
-    /// <summary>The minimum fraction of <c>player_smith.png</c>'s own opaque area that must be one
-    /// of <see cref="PlayerWarmTones"/> — the regression pin for the 2026-08-15 fix. Measured on
-    /// the committed (pre-fix) PNG: the warm PLAYER_HUE ramp covered only ~22.5% of the opaque
-    /// area, confined to the apron bib, while the neutral steel-violet ramp (o/d/l/m/i) covered
-    /// ~60% across the shirt/collar/waist that the fix targets — see OLD_TORSO_PLAYER's own doc in
-    /// the generator for the full measurement and why a straight shirt&lt;-&gt;apron colour swap
-    /// (43.5%) was rejected in favour of also warming the trousers (61.8%, comfortably clear).
+    /// <summary>Value floor for the same test — excludes near-black shadow pixels, which (like the
+    /// hero skin-hue check above) can carry a "warm" hue by HSV maths despite reading as pure
+    /// darkness rather than a warm garment tone.</summary>
+    private const float PlayerWarmValueMin = 0.12f;
+
+    /// <summary>The minimum fraction of <c>player_smith.png</c>'s own opaque area that must fall in
+    /// the warm hue band above — the regression pin for the 2026-08-15 fix.
+    ///
+    /// <para><b>2026-08-15 (AI-composite cast, hue/chroma rewrite):</b> <c>player_smith*</c> moved
+    /// to an SDXL composite render (art/build/player_smith*.build.json) the same day this floor was
+    /// first written against the hand-authored fix, so the ORIGINAL version of this test (exact
+    /// match against the four hand-picked cloth_ramp RGB triples, ±4/255) never actually ran against
+    /// continuous-tone output. Measured directly against the committed art: the exact-RGB version
+    /// scores 0/257 opaque pixels (0.0%) even though the sprite plainly reads as a warm leather-and-
+    /// apron smith, not the neutral steel-violet look the fix replaced — same failure mode as
+    /// <see cref="EveryClass_CarriesASkinToneRegion"/>'s old metric, and the same fix: a hue/chroma
+    /// RANGE instead of a point match. Measured with the range above: 166/257 opaque pixels (64.6%)
+    /// — comfortably clear of this floor, with roughly the same margin the original exact-match
+    /// version had over ITS floor (61.8% measured vs 45% floor) before the art changed under it.
+    /// </para>
     /// </summary>
     private const float MinWarmFraction = 0.45f;
 
@@ -635,7 +718,9 @@ public class TownSpriteArtTests
                 }
 
                 total++;
-                if (PlayerWarmTones.Any(tone => IsCloseTo(pixel, tone, PlayerWarmToneTolerance)))
+                var hueDegrees = pixel.H * 360f;
+                if (hueDegrees >= PlayerWarmHueMinDegrees && hueDegrees <= PlayerWarmHueMaxDegrees
+                    && pixel.S >= PlayerWarmSaturationMin && pixel.V >= PlayerWarmValueMin)
                 {
                     warm++;
                 }
@@ -647,8 +732,8 @@ public class TownSpriteArtTests
         var fraction = (float)warm / total;
         AssertThat(fraction)
             .OverrideFailureMessage(
-                $"player_smith.png is {fraction:P1} warm PLAYER_HUE tones ({warm}/{total} opaque px) " +
-                $"— floor {MinWarmFraction:P0}. The owner's 2026-08-15 complaint (\"main character " +
+                $"player_smith.png is {fraction:P1} warm PLAYER_HUE-range tones ({warm}/{total} opaque " +
+                $"px) — floor {MinWarmFraction:P0}. The owner's 2026-08-15 complaint (\"main character " +
                 "looks awful\") measured as the warm hue confined to the apron bib while the shirt/" +
                 "collar/waist/trousers stayed neutral steel; this pins the fix so it cannot regress.")
             .IsGreaterEqual(MinWarmFraction);
@@ -695,10 +780,5 @@ public class TownSpriteArtTests
             .OverrideFailureMessage($"player_smith ships {distinct} distinct gait frames, not 4")
             .IsEqual(4);
     }
-
-    private static bool IsCloseTo(Color a, Color b, float tolerance) =>
-        System.Math.Abs(a.R - b.R) <= tolerance
-        && System.Math.Abs(a.G - b.G) <= tolerance
-        && System.Math.Abs(a.B - b.B) <= tolerance;
 }
 #endif

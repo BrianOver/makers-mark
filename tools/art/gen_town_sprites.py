@@ -1703,8 +1703,48 @@ def main() -> int:
         help="compare against committed PNGs instead of writing; non-zero exit on any difference")
     args = parser.parse_args()
 
-    all_sprites = {**SPRITES, **PLAYER_SPRITES, **CIVILIAN_SPRITES, **VARIANT_SPRITES,
-                   **MONSTER_SPRITES}
+    # ── 2026-08-15 six-hero-cast ship wave ─────────────────────────────────────────────────────
+    # These 28 ids no longer come from THIS script. The six hero classes' base body (all 4 gait
+    # frames) and the player smith (all 4 gait frames) were replaced by an SDXL composite cast
+    # (art/build/town2d-hero-<class>*.build.json, art/build/player_smith*.build.json) -- the
+    # owner reviewed and approved them at ship size ("the six heroes at ship size are fantastic";
+    # "the new smith is way better also"). The SPRITES/PLAYER_SPRITES dict entries above are NOT
+    # deleted: VARIANT_SPRITES still recolours the SAME hand-drawn UPPER_<CLASS>/CLOTH_LEGS_*
+    # geometry for the untouched -v2.. pools, and PLAYER_LEGS_* still derives from CLOTH_LEGS_*
+    # too -- deleting the grids would break those. But these 28 ids themselves must never be
+    # written or --check'd against this script's own hand-drawn output again, or a plain
+    # `python tools/art/gen_town_sprites.py` run would silently clobber the approved AI art back
+    # to the old look with no error. AssetProvenanceTests' HandAuthoredPrefix comment carries the
+    # test-side half of this same carve-out.
+    #
+    # 2026-08-15, same-day follow-up: the six classes' -v2..-v5 VARIANT pools got the same
+    # treatment (96 more PNGs, deterministic PIL recolours of the AI bases per the SAME
+    # SKIN_TONES/HAIR_TONES/GARMENT_DYES rows this script already owns -- not a second render
+    # pipeline). Those ids are DERIVED from CLASS_HUES + variant_id(), not hand-listed, on purpose:
+    # this repo has been burned before by an exclusion set that was a literal id array and silently
+    # stopped covering a growing family (see the hand-listed-fixtures lesson). CIVILIAN variants are
+    # NOT in this set -- townsfolk still render from this script's own hand-drawn geometry.
+    _ai_composite_hero_ids = {
+        f"town2d-hero-{cls}{suffix}"
+        for cls in CLASS_HUES
+        for suffix in ("", "_step", "_walk2", "_walk4")
+    }
+    _ai_composite_cast_ids = (
+        _ai_composite_hero_ids
+        | {
+            variant_id(base_id, index)
+            for base_id in _ai_composite_hero_ids
+            for index in range(1, VARIANT_COUNT)
+        }
+        | {f"player_smith{suffix}" for suffix in ("", "_step", "_walk2", "_walk4")}
+    )
+
+    all_sprites = {
+        name: value
+        for name, value in {**SPRITES, **PLAYER_SPRITES, **CIVILIAN_SPRITES, **VARIANT_SPRITES,
+                             **MONSTER_SPRITES}.items()
+        if name not in _ai_composite_cast_ids
+    }
 
     def canvas_of(sprite_name: str) -> tuple[int, int]:
         """(width, height) for one sprite. The town cast and the player are fixed-canvas; monsters
