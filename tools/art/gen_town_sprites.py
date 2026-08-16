@@ -1722,11 +1722,29 @@ def main() -> int:
     # SKIN_TONES/HAIR_TONES/GARMENT_DYES rows this script already owns -- not a second render
     # pipeline). Those ids are DERIVED from CLASS_HUES + variant_id(), not hand-listed, on purpose:
     # this repo has been burned before by an exclusion set that was a literal id array and silently
-    # stopped covering a growing family (see the hand-listed-fixtures lesson). CIVILIAN variants are
-    # NOT in this set -- townsfolk still render from this script's own hand-drawn geometry.
+    # stopped covering a growing family (see the hand-listed-fixtures lesson).
+    #
+    # 2026-08-15, folk-cast wave: the townsfolk CIVILIAN pool joins the same carve-out. The 'folk'
+    # art job redrew broad/slight themselves as an SDXL composite (matching the hero cast's own
+    # style) and slotted two brand-new silhouettes -- belder (grey-beard elder) and bmatron (long-
+    # dress matron) -- into the broad pool at -v6..-v10 / -v11..-v15, plus steen (kid) and selder
+    # (grandmother) into the slight pool the same way (MANIFEST.txt in the art job's own folder).
+    # gen_town_sprites.py's CIVILIAN_GRIDS/CIVILIAN_HUES still contain the code that would draw the
+    # OLD hand-ASCII broad/slight bodies for pool slots 1-5 (VARIANT_COUNT=5) -- kept for the same
+    # reason the hero SPRITES dict is kept, not deleted -- but nothing ships that output for those
+    # ids any longer, so a plain re-run must not write or --check them either. Slots 6-15 (the four
+    # new silhouettes) were never in CIVILIAN_GRIDS/VARIANT_SPRITES to begin with (no ASCII grid
+    # exists for them), so they need no exclusion — this set only has to cover what the script would
+    # otherwise still try to produce. Derived from CIVILIAN_HUES + variant_id(), same discipline as
+    # the hero derivation immediately above, never hand-listed.
     _ai_composite_hero_ids = {
         f"town2d-hero-{cls}{suffix}"
         for cls in CLASS_HUES
+        for suffix in ("", "_step", "_walk2", "_walk4")
+    }
+    _ai_composite_civilian_ids = {
+        f"town2d-townsfolk-{civ}{suffix}"
+        for civ in CIVILIAN_HUES
         for suffix in ("", "_step", "_walk2", "_walk4")
     }
     _ai_composite_cast_ids = (
@@ -1734,6 +1752,12 @@ def main() -> int:
         | {
             variant_id(base_id, index)
             for base_id in _ai_composite_hero_ids
+            for index in range(1, VARIANT_COUNT)
+        }
+        | _ai_composite_civilian_ids
+        | {
+            variant_id(base_id, index)
+            for base_id in _ai_composite_civilian_ids
             for index in range(1, VARIANT_COUNT)
         }
         | {f"player_smith{suffix}" for suffix in ("", "_step", "_walk2", "_walk4")}

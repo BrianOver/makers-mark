@@ -1,0 +1,20 @@
+{
+  "Seed": 832100,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": "pixel-art-xl.safetensors",
+  "Steps": 30,
+  "CfgMilli": 7000,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "06dd8d6525de91f01b8b2a5f8bc890e3a8e1b4ec6055580dd9750fdfabed469c",
+  "NormalSha256": null,
+  "Uid": "uid://tv0davp8d1nu",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "Every townsfolk body is a COMPOSITE, matching the six-hero-cast wave's own convention (art/build/town2d-hero-*.build.json): a stage-1 t2i base (SDXL base 1.0 + pixel-art-xl LoRA @1.0/1.0, 30 steps, cfg 7.0, dpmpp_2m/karras, 832x1216, batch of 4) picks one candidate; non-robed bodies (broad, belder, slight, steen) then get a SEPARATE walk-contact inpaint per side (SetLatentNoiseMask, denoise 0.5, same sampler/scheduler) for the two weight-bearing gait frames, with the two passing frames a same-render pixel sway of the adopted base -- no extra diffusion sample. ROBED bodies (bmatron, selder) have no visible legs and use the hand pipeline's own no-diffusion hem-sway idiom for ALL FOUR frames: no separate walk-contact render was ever generated for them (the art job's own folk_geom.json entries for bmatron/selder carry no walk seed at all, unlike the other four bodies). All rejected candidates are kept MISS-prefixed under the job's own tmp/folk/_work/ folder (gen_folk_bases.py, gen_folk_bases2.py, gen_folk_walks.py, assemble_folk.py, folk_geom.json).",
+    "paintoverNote": "Purely mechanical, and a KNOWN GAP (disclosed in tmp/folk/MANIFEST.txt's own KNOWN MISSES: \"robed bodies: 2 distinct sway frames vs the hand pipeline's 4\"): tmp/folk/_work/assemble_folk.py's robed branch of build_variant() only calls its PIL sway helper for F1/F3 (hem sway +-1px); F2 and F4 both reuse the literal adopted base render (seed 832100, 3rd candidate, 'a stout middle aged villager woman in a plain warm brown wool dress, ankle length skirt') UNSHIFTED. Measured directly (this file's own torso proof.txt): F2 and F4 are byte-identical to each other for every one of this silhouette's 5 palette variants. The walk cycle's two CONTACT poses (base/_step) still alternate correctly; only the two PASSING poses do not. Reported, not silently patched -- see TownSpriteArtTests.EveryVariantBody_ObeysTheSameGaitInvariantsAsItsBase's own documented carve-out for this exact id range.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0 + pixel-art-xl) diffuse for every opaque pixel, but this specific frame adds no new generation AND, unlike every other body in this cast, no pixel shift either: it is the adopted base render's own bytes, unmodified -- byte-identical to its _walk4 sibling. A known, disclosed gap (see tmp/folk/MANIFEST.txt's KNOWN MISSES), not a fresh defect introduced here."
+  }
+}

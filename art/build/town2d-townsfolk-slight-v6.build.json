@@ -1,0 +1,20 @@
+{
+  "Seed": 833100,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": "pixel-art-xl.safetensors",
+  "Steps": 30,
+  "CfgMilli": 7000,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "64f79ba145d86e57fa5038d683d234280b562c125db8be5dadcd6b30a54d1c3a",
+  "NormalSha256": null,
+  "Uid": "uid://ig2wnyblifax",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "Every townsfolk body is a COMPOSITE, matching the six-hero-cast wave's own convention (art/build/town2d-hero-*.build.json): a stage-1 t2i base (SDXL base 1.0 + pixel-art-xl LoRA @1.0/1.0, 30 steps, cfg 7.0, dpmpp_2m/karras, 832x1216, batch of 4) picks one candidate; non-robed bodies (broad, belder, slight, steen) then get a SEPARATE walk-contact inpaint per side (SetLatentNoiseMask, denoise 0.5, same sampler/scheduler) for the two weight-bearing gait frames, with the two passing frames a same-render pixel sway of the adopted base -- no extra diffusion sample. ROBED bodies (bmatron, selder) have no visible legs and use the hand pipeline's own no-diffusion hem-sway idiom for ALL FOUR frames: no separate walk-contact render was ever generated for them (the art job's own folk_geom.json entries for bmatron/selder carry no walk seed at all, unlike the other four bodies). All rejected candidates are kept MISS-prefixed under the job's own tmp/folk/_work/ folder (gen_folk_bases.py, gen_folk_bases2.py, gen_folk_walks.py, assemble_folk.py, folk_geom.json).",
+    "paintoverNote": "3rd candidate of a 4-batch (seed 833100), 'a skinny teenage villager boy in a muted sage green tunic and knee length shorts'. Torso above leg_row (21) is this adopted base render, frozen byte-for-byte; legs below leg_row are a SEPARATE contact-pose inpaint (front-left weight-bearing leg planted, right leg lifted and blanked mid-swing), seed 842000 (tmp/folk/_work/gen_folk_walks.py's own contactL convention: geom seed + 0).",
+    "aiDisclosure": "AI-generated (SDXL base 1.0 + pixel-art-xl) diffuse, COMPOSITE: this is not a single clean render -- the torso is pasted verbatim from the adopted base, only the leg region below the measured leg_row comes from a separate walk-contact inpaint."
+  }
+}
