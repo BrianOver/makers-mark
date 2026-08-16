@@ -3989,3 +3989,565 @@ two lanes are file-disjoint until U5 touches `TutorialFlow` copy — U5 therefor
 whichever of U2/U3 has landed. Engine tests serialize regardless (repo memory: never two gdUnit
 runs at once). Every PR body carries `Serves:` per §11.6 rule 3; U4's quotes the seed-sweep
 census raw.
+
+---
+
+# §11.13 amendment — the first death is part of the tutorial (U4/U5 replaced)
+
+**Status: owner overrule, 2026-08-16.** Asked to pick a grace window, he answered:
+
+> *"Again dude, we want the first death to be part of the tutorial"*
+
+The "again" is the finding. The previous U4/U5 (`docs/design/MAKERS-MARK.md:3731-3889`) built a
+warrant that protects heroes for three days and then **silently expires at dawn 4** — the tutorial
+closes (`BackstopDay = 4`, `godot/scripts/ui/TutorialFlow.cs:1219`), and the first death lands
+days later as an ordinary night, unframed, with the tutorial long gone. That is a balance window
+wearing teaching copy. What he asked for — twice — is that the apprenticeship *delivers* the first
+loss: the player is prepared for it, watches it happen, understands what it cost, and is shown
+what the town does with it. This amendment replaces §11.13's U4 and U5 with U4a/U4/U5/U6 below.
+Everything else in §11.13 (U1-U3, landed) stands.
+
+---
+
+## Framing — what "part of the tutorial" means mechanically
+
+**The tutorial owns the death's preparation and its meaning. The sim alone owns its cause.**
+Three commitments and one prohibition:
+
+1. **No unframed death.** While the apprenticeship's warrant holds (days 1-3, or until the player
+   walks out of it — below), no hero dies: a lethal roll is held at 1 HP through the proven
+   `ModifierHpDelta` channel, the true roll stays in `DamageTaken`, and the survivor limps home via
+   the existing flee check. Every near-death is shown as a forewarning: *"that blow would have
+   killed him — the warrant held."* The player watches death rehearse before it performs.
+2. **The warrant's end is a beat, not an expiry.** Its dawn is named at the first send-off, named
+   again on day 3, and the dawn itself is staged once: *"From today the Mine keeps what it
+   takes."* The old design's exact defect — the grace ending as a silent calendar fact — is the
+   one thing this list exists to kill.
+3. **The tutorial stays armed, quietly, until the sim produces the first death — then teaches
+   it.** The taught chain still completes on day 3-4 exactly as today (quick-travel unchanged,
+   `TutorialFlow.cs:461`); what remains is one dormant act that renders **nothing** until the
+   campaign's first `HeroDied` lands, then wakes for that night and the day after: the ledger's
+   fate card carries a once-ever first-loss teaching block, one pointed step walks the player to
+   the wall and the rite, and the lesson joins the Lessons book forever. Whoever dies, wherever,
+   whenever — the act frames whichever death the dice produced.
+
+**The prohibition:** no code path may select, schedule, weight, hasten, or delay a death. The
+warrant's clamp inside a told window is the design's entire sim-side footprint. The first death
+is real, permanent, and unscripted — the tutorial authored the frame around the picture, never
+the picture.
+
+**How this stays compatible with permadeath-by-hero-judgment (link 3).** Heroes still form
+parties without the player (`PartyFormation.FormParties`,
+`sim/GameSim/Expedition/ExpeditionSystem.cs:39`), pick their own depth
+(`TargetFloorFor`, `ExpeditionSystem.cs:140-156`), and die by arithmetic
+(`hp <= 0`, `sim/GameSim/Expedition/ExpeditionResolver.cs:569-572`). The warrant converts
+outcomes only inside a window the player was told about in advance — the shape R9 already ruled
+legal as a *taught mechanic* (`MAKERS-MARK.md:2421-2451`). Past that window the game is
+unmodified. A death the player was prepared for is still a death the hero chose.
+
+**R10 falls out instead of being ruled.** If the death belongs to the tutorial, then the warrant
+is part of the *taught version* of the game — so dismissing the tutorial is not muting a UI; it is
+walking out of the apprenticeship, warrant included. The dismiss ✕
+(`godot/scripts/ui/ObjectiveTracker.cs:198-202`) becomes a confirmed graduation: one press ends
+the chain *and* submits the sim-visible action that ends the warrant, with the cost named in the
+confirm at press time. No second rule, no hidden shield, no UI preference silently steering
+mortality — the sim sees a logged, deterministic `PlayerAction`, same as every other decision.
+(This is the one piece that needs a `Contracts/` amendment — routed as **R12** below, never
+assumed.)
+
+---
+
+## The hard question, answered — how do you author a death without scripting it?
+
+Ranked, with the losers named:
+
+1. **CHOSEN — prepare, stage the end, then frame whichever death the sim produces first.** The
+   dated warrant answers *"heroes should probably not die this early."* The dawn beat answers
+   *"a guided tutorial with content unlocked as we go"* — the last unlock is mortality itself.
+   The dormant loss act answers *"the first death is part of the tutorial"* without the sim ever
+   choosing a victim. Each owner sentence maps to one mechanism; none requires the dice to lie.
+2. **Narrate whichever death comes first, no grace at all.** Honest, zero sim change — but a
+   day-1 death can land before the player has made anything, which is a memory with nobody's name
+   in it (the old U4's own link-5 argument, `MAKERS-MARK.md:3737-3738`) and is the owner's other
+   note verbatim. Rejected as incomplete, and folded in as option 1's third act.
+3. **The warrant ends when the tutorial chain completes (not on a date).** Teachable ("it ends
+   when you finish") — but it couples mortality to tutorial *progress*: slow-walking the
+   Commission step becomes an immortality lever, which is the R9(c) failure class (player
+   behavior moving the shield) with a new trigger. Capped by a dawn-4 backstop it degenerates
+   into option 1 anyway. Rejected; option 1's only behavioral lever is one explicit, confirmed
+   opt-out that names its cost.
+4. **Dated grace that silently expires (the previous U4/U5).** The version the owner overruled:
+   the death is real and warned-about, but it happens *outside* the tutorial. Kept only as the
+   R12-declined fallback for the dismissal coupling (below), never for the staging.
+5. **Script a death (force one on day 4).** Breaks link 3, law 4 ("show only what the sim
+   decided"), and the game's thesis in one move. Not an option at any price.
+
+---
+
+## Implementation units
+
+Four units. U4a is a deny-listed micro-PR gated on R12. U4 is the wave's only balance-affecting
+sim change, serialized behind its own re-record ceremony. U4 without U5 is a hidden shield — the
+exact failure R9 names — and U4+U5 without U6 is the overruled design again (a warrant whose end
+leads nowhere), so **the wave is not reportable until U6 is merged.**
+
+---
+
+### U4a — The graduation action (Contracts micro-PR; blocked on R12)
+
+**Goal.** Give the sim a deterministic way to see "the player walked out of the apprenticeship,"
+so dismissal can end the warrant without the client whispering to the resolver.
+
+**Serves: link3** — mortality must never be steered by a `user://` flag the sim cannot replay;
+the ActionLog is the only honest channel.
+
+**Files.**
+- *modify* `sim/GameSim/Contracts/Actions.cs` — `ConcludeApprenticeshipAction` (no payload) +
+  its `JsonDerivedType` row (**deny-listed — orchestrator-authored micro-PR, per the CLAUDE.md
+  contract-amendment rule; merged before U4/U5**).
+- *modify* `sim/GameSim/Kernel/ActionTiming.cs` — immediate lane (the pattern at
+  `ActionTiming.cs:93` for `OpenCounterAction`).
+- *modify* `sim/GameSim/Advisor/ActionLegality.cs` — legal in any phase, spends **no** action
+  slot (it is a stance, not an economy verb), idempotent (a second submit is a no-op), and a
+  no-op after day `LastGraceDay` (the warrant is already gone).
+- *modify* `godot/tests/ActionReachabilityCensusTests.cs` — the new action's surfaced path is
+  U5's dismiss confirm (a gated surface is a *recorded* surface, §11.11 KTD-3).
+- *test* `sim/GameSim.Tests/Kernel/` — legality/timing/idempotence rows in the existing
+  conformance suites (`ActionTimingConformanceTests`).
+
+**Approach.** The action mutates nothing by itself — its entire meaning is its presence in
+`GameState.ActionLog` (the same durable-fact idiom the tutorial's own Commission predicate reads,
+`godot/scripts/ui/TutorialFlow.cs:410`). No new state field, no new event.
+
+**Test scenarios.**
+1. `ConcludeApprenticeship_SpendsNoActionSlot`
+2. `ConcludeApprenticeship_IsIdempotent_SecondSubmitChangesNothing`
+3. `ConcludeApprenticeship_AfterLastGraceDay_IsALegalNoOp`
+4. Census: the action appears in the reachability census with its gate string.
+
+**Verification.** Fast lane green. Golden replay untouched (no recorded campaign contains the
+action). No re-baseline — this PR alone changes no outcome.
+
+---
+
+### U4 — The apprenticeship warrant, in the sim (trigger revised)
+
+**Goal.** No hero dies while the apprenticeship holds — as a taught, dated town rule the player
+can also walk out of. Closes the mechanism half of *"heroes should probably not die this early"*
+without recreating the R9(c) inversion.
+
+**Serves: link5** — a day-1 death is a memory with nobody's name in it; the warrant guarantees
+the first death lands after the player has hands and after the tutorial has taught what a loss
+means, which is what makes it a link-5 moment.
+
+**Mechanism: proven, reused verbatim from the rejected R9(c) build** (`MAKERS-MARK.md:2453-2464`
+— do not re-derive):
+- The clamp rides `CombatEvent.ModifierHpDelta` — the Leech rune's existing ledger channel
+  (`sim/GameSim/Contracts/Expedition.cs:32-39`, applied at
+  `sim/GameSim/Expedition/ExpeditionResolver.cs:538-548`) — so attribution's HP replay stays
+  byte-consistent and **no `Contracts/` change is needed for the clamp itself**.
+- `DamageTaken` keeps recording the true lethal roll (`Contracts/Expedition.cs:26`), so the
+  near-death is legible rather than an invisible cap.
+- Survival ends at 1 HP; the existing `CombatMath.ShouldFlee` check
+  (`ExpeditionResolver.cs:503`) sends the hero home next round — no new retreat path.
+- Threaded exactly like the bounty `retreatExemptHeroes` parameter
+  (`ExpeditionSystem.cs:86` → resolver calls at `ExpeditionSystem.cs:92,97-98`;
+  `ExpeditionDeepSystem.cs:40-42`): an opaque boolean, recomputed at **both** ticks (a vigil
+  resupply can land between them — the (c) build's own finding). The resolver still decides every
+  fight on combat math alone and reads no trait, no transaction, no calendar of its own — **no
+  pinned law exception required**, same as the (c) build found.
+
+**The trigger.** `ApprenticeWarrant.Covers(state)` =
+`state.Day <= LastGraceDay && !Concluded(state)`, with `LastGraceDay = 3` (a named sim constant)
+and `Concluded(state)` a scan of `state.ActionLog` for `ConcludeApprenticeshipAction` — pure,
+deterministic, monotonic (an append-only log can only ever turn it truer). Why this trigger and
+not the alternatives:
+- **It cannot recreate the (c) inversion.** The measured disaster (Prepared 55.8% vs Reckless
+  21.4% mortality, 2.6× inverted, `MAKERS-MARK.md:2427-2437`) came from commerce feeding the
+  predicate. Here no purchase, sale, provision, or tutorial progress moves the window — the only
+  player behavior that does is one explicit, confirmed opt-out that names its cost at press time.
+  No hero is ever permanently shielded (the date caps it) and arming a hero can never kill them.
+- **It is teachable.** The copy names the end twice before it arrives (*"dawn of Day 4"*), which
+  a stake-shaped rule never could.
+- **It ends where the tutorial ends, both ways.** Dawn 4 is the chain's own unconditional close
+  (`BackstopDay = 4`, `TutorialFlow.cs:1219`) — the cross-layer pin
+  `TutorialFlow.BackstopDay == ApprenticeWarrant.LastGraceDay + 1` keeps them from drifting
+  apart. And an early exit from the tutorial is an early exit from the warrant, by the same
+  logged action — one principle, two layers, zero clauses.
+- **Fixture protection by construction (old KTD-D, kept).** The warrant is a parameter defaulting
+  **off** at the resolver's own seam (`Resolve`/`ResolveStage1`/`ResolveStage2` signatures at
+  `ExpeditionResolver.cs:17,69,140`); only the two system ticks thread it from state. Direct
+  resolver calls — all existing fixtures, all balance micro-tests, `StagedResolutionTests`' Naked
+  heroes — see no warrant and need no surgery.
+
+**Legibility is a shared projection (old KTD-E, kept).** `ApprenticeWarrant` also exposes the
+pure fired-predicate — *did this combat's survival come from the warrant* — derived from the same
+fold attribution uses to replay HP, so the resolver's clamp, the ledger card, and the tests can
+never disagree.
+
+**Files.**
+- *create* `sim/GameSim/Expedition/ApprenticeWarrant.cs` — `LastGraceDay`, `Covers(GameState)`,
+  `Concluded(GameState)`, the clamp helper the resolver calls, the fired-predicate the client
+  reads.
+- *modify* `sim/GameSim/Expedition/ExpeditionResolver.cs` — clamp at the death check
+  (`hp <= 0` held at 1, delta recorded as `ModifierHpDelta`), behind the threaded flag.
+- *modify* `sim/GameSim/Expedition/ExpeditionSystem.cs`, `ExpeditionDeepSystem.cs` — thread
+  `ApprenticeWarrant.Covers(state)` at both ticks.
+- *modify* `sim/GameSim.Tests/Balance/BalanceSimTests.cs` — re-baseline.
+- *modify* `docs/design/THE-GAME.md` §3.3 — the amendment at the end of this doc, same PR
+  (rule 8: the sentence stops being an intention the moment the mechanism exists).
+- *test* `sim/GameSim.Tests/Expedition/ApprenticeWarrantTests.cs`
+- *(re-record)* the golden replay — same seed + actions now produce different early-day state.
+
+**Patterns to follow.**
+- `ExpeditionSystem.cs:126-129` — `RetreatExemption`: the opaque-parameter threading shape.
+- `ExpeditionResolver.cs:538-548` — the Phase C U-C1 `ModifierHpDelta` discipline (apply after
+  the round's damage, record exactly what was applied, 0 means no behavior change).
+- `ConsumableTraitMortalityBalanceTests.cs` — the seed-sweep census shape for balance claims.
+
+**Test scenarios.**
+1. `WarrantHolds_ALethalRollAtOneHp_OnDay3` — true roll in `DamageTaken`, counteracting
+   `ModifierHpDelta`, survivor at 1 HP.
+2. `WarrantExpires_AtDay4_SameRollKills` — the boundary, both sides.
+3. `WarrantEnds_TheTickAfterConcludeApprenticeship` — conclude on day 2; the next resolution
+   tick's lethal roll kills. (Both ticks read state fresh, so a mid-day conclude is honest:
+   "starting with the next fight," which the confirm copy says.)
+4. `HeldHero_FleesNextRound_ViaTheExistingShouldFleeCheck` — no new retreat path.
+5. `WarrantedFight_StillRecordsTheTrueLethalRoll_ForAttributionReplay` — HP replay byte-parity.
+6. `DirectResolverCalls_AreUnaffected` — the fixture-protection pin.
+7. `FiredPredicate_AgreesWithTheClampByConstruction` — same fold, one source.
+8. `Balance: NoHeroDiedEvent_OnDays1Through3_AcrossAllSeeds` — the harness policies
+   (`sim/GameSim/Harness/`) never submit the conclude action, so this holds unconditionally.
+9. **The not-inverted pin survives.**
+   `SalvesStocked_PreparedHeroes_SurviveMeasurablyBetterThanReckless`
+   (`sim/GameSim.Tests/Balance/ConsumableTraitMortalityBalanceTests.cs:157`) already pins trait
+   mortality the right way up and MUST stay green through the re-baseline — plus the old U4's
+   ratio-within-noise assertion against the pre-warrant baseline, so the (c) shape cannot return
+   unnoticed by either door.
+10. `MinAliveAtEnd = 3` (`BalanceSimTests.cs:34,102`) and Ending-reachability unchanged across
+    the suite's seeds.
+
+**Verification.** Fast lane green; balance suite green post-re-baseline with the re-record diff
+in the same PR; the seed-sweep census quoted raw in the PR body
+(`dotnet run --project sim/GameSim.Cli -- batch --seeds 20 --days 100`), including — **new,
+because the beat's timing is now a design property** — the first-`HeroDied`-day distribution
+(p50/p90 across seeds). Expected shape: the pre-warrant corpus measured 457 deaths over 20×100
+days (`ExpeditionSystem.cs:21-25`), roughly one per 4-5 days, so the first post-warrant death
+should typically land days 4-8. If the census shows a long tail (p90 past ~day 12), **report it
+to the owner as a finding — never engineer a death to fix it** (the prohibition above).
+
+---
+
+### U5 — The warrant is taught, fires visibly, and its end is a dawn beat
+
+**Goal.** The R9 fixed points (taught, visible when it fires, ends where the tutorial ends) plus
+the piece the overrule adds: the end is *staged*, and walking out is a confirmed choice with its
+cost named. Ships immediately after U4 — a warrant that exists but is not yet taught is a hidden
+shield, so U4 and U5 are one owner-visible deliverable in two PRs.
+
+**Serves: link5** — this is U4's legibility half.
+
+**Four surfaces, all existing seams.**
+
+1. **Taught at the first send-off.** `WatchDeparture`'s `TeachNote`
+   (`godot/scripts/ui/TutorialFlow.cs:306-309`) gains the warrant:
+   *"While the town's still teaching you — through Day 3 — the Mine doesn't keep anyone: a
+   killing blow leaves them at death's door and they limp home. Dawn of Day 4 ends that, and
+   you'll see it end."* Day 3's `MeetHeroes`/`Commission` copy carries the closing reminder
+   (*"Tomorrow the warrant ends — what they carry down is what keeps them"*), so the end is
+   named twice before it arrives.
+2. **Visible when it fires.** The night's Ledger gets a warrant card, rendered when the
+   fired-predicate reads true over the day's combats — leading with the true roll, the same
+   honest-register shape as the death cards: *"The blow that landed on Torvald would have killed
+   him. The apprenticeship's warrant held — he came home at death's door. Two dawns left on it."*
+   One card per fired hero; no narrator line (the spoken library is frozen).
+3. **The dawn beat.** A once-ever line on the first Morning after the warrant ends
+   (`state.Day == LastGraceDay + 1`, and only if the player did not conclude early — an early
+   graduate already heard it in the confirm): *"The apprenticeship's warrant ended at dawn. From
+   today the Mine keeps what it takes."* Delivered through the `ConsumeLedgerTip` idiom
+   (`TutorialFlow.cs:1329-1339` — once-ever, persisted, deliberately independent of `Active`),
+   rendered by `MainUi` on the Morning tick. This is the single line that turns the old design's
+   silent expiry into a beat.
+4. **Dismissal is graduation, and says so.** The ✕ (`ObjectiveTracker.cs:198-202`) gains a
+   confirm. While the warrant holds: *"End the apprenticeship? The lessons keep — they're in
+   Lessons. The warrant doesn't: from your next send-off, the Mine keeps what it takes."*
+   Confirming submits `ConcludeApprenticeshipAction` through the adapter **and** calls
+   `TutorialFlow.Dismiss()` — one press, both layers, never one without the other. After the
+   warrant has ended (dismissing a straggling chain, or U6's loss act), the confirm carries no
+   mortality clause at all — there is nothing left to forfeit, and claiming otherwise would be
+   copy stating a cost the sim would not charge.
+
+**Files.**
+- *modify* `godot/scripts/ui/TutorialFlow.cs` — TeachNote/copy amendments; `ConsumeWarrantEndBeat`
+  (the `ConsumeLedgerTip` shape); `PersistedData` gains the beat flag (save-compat default, the
+  `VigilCardSeen` precedent at `TutorialFlow.cs:1499-1504`).
+- *modify* `godot/scripts/ui/ObjectiveTracker.cs` — the confirm dialog on ✕ (two copy variants,
+  chosen by `ApprenticeWarrant.Covers(state)`).
+- *modify* `godot/scripts/MainUi.cs` — dawn-beat rendering on the Morning tick (existing toast
+  route); wiring confirm → adapter submit + `Dismiss()`.
+- *modify* `godot/scripts/panels/LedgerModal.cs` — the warrant card, driven by
+  `ApprenticeWarrant`'s fired-predicate over the night's combats.
+- *test* `godot/tests/panels/LedgerModalTests.cs` (extend)
+- *test* `godot/tests/TutorialCopyIsFollowableTests.cs` (extend)
+- *test* `godot/tests/TutorialRegistryConformanceTests.cs` (extend — the cross-layer constant pin)
+
+**Patterns to follow.** §11.11 U6's death-card discipline (lead with the specific, honest empty
+state); `TutorialFlow.cs:1329-1339` (`ConsumeLedgerTip` — the once-ever persisted line);
+`godot/scripts/panels/CampPanel.cs` `GateButton` — mirror the kernel's guard, never enforce one.
+
+**Test scenarios.**
+1. `TeachNote_NamesTheWarrantAndItsEndDawn` — copy pin.
+2. `WarrantCard_RendersOnANightItFired_WithTheTrueRollNamed`
+3. `WarrantCard_NeverRenders_BeforeItFired_OrAfterTheWarrantEnded`
+4. `WarrantCard_CountsRemainingDawns_Correctly`
+5. `DawnBeat_FiresOnceEver_OnTheFirstMorningAfterTheWarrant`
+6. `DawnBeat_NeverFires_AfterAnEarlyGraduation` — the confirm already carried the news.
+7. `DismissConfirm_NamesOrdinaryMortality_WhileTheWarrantHolds` — skipping's cost in copy,
+   at press time, pinned.
+8. `DismissConfirm_CarriesNoMortalityClause_AfterTheWarrantEnded` — the copy never states a cost
+   the sim would not charge.
+9. `ConfirmedDismiss_SubmitsConcludeAndDismisses_Atomically` — never one half without the other.
+10. `BackstopDay_EqualsWarrantLastGraceDayPlusOne` — the cross-layer drift pin.
+11. `WarrantCopy_NeverStatesASurvivalNumber` — §11.4's stakes-qualitatively rule, on the
+    rendered string.
+
+**Verification.** Engine suite green, raw `Failed: N, Passed: N` quoted against the
+`ENGINE_MIN_PASSED` floor. Manual (render-and-look): seeded campaign with a day-2 lethal roll —
+watch the warrant card land; ring into day 4 — the dawn beat fires once; dismiss on day 2 on a
+second campaign — the confirm names the cost, and a day-3 lethal roll kills.
+
+---
+
+### U6 — The first loss is the tutorial's last lesson
+
+**Goal.** The owner's sentence, made mechanical: when the sim produces the campaign's first
+death, the tutorial wakes for one night and one day, teaches what just happened and what the town
+does with it, and closes. This unit is what was missing from the overruled design.
+
+**Serves: link5** — the outcome becomes the town's memory, and the first time that happens the
+player is walked through every surface that memory lives on.
+
+**Mechanism verdict: the aftermath already exists end-to-end; nothing frames its first
+occurrence.** Deaths are applied at the Evening reveal — `Alive = false`, `DiedOnDay`, a
+`Memorial` raised, `HeroDied` emitted (`sim/GameSim/Drama/ExpeditionRevealSystem.cs:65-84`);
+the ledger's fate cards already exist (`sim/GameSim/Drama/LedgerQuery.cs:46-100`); the night's
+loss count and narrator line are already captured (`godot/scripts/MainUi.cs:927-941`); the ticker
+already speaks it (`godot/scripts/ui/AdventureTicker.cs:147`); the wall already renders memorials
+with an Honor verb per un-honored `Memorial` and a Reforge row per still-reforgeable piece
+(`godot/scripts/panels/LegendsWall.cs:15-27,104-149,164-169`), backed by the Evening-only,
+idempotent `HonorMemorialAction` (`sim/GameSim/Contracts/Actions.cs:147-151`). U6 builds **no new
+aftermath** — it points, once, at what is there.
+
+**Three changes.**
+
+1. **The wake.** A dormant loss act inside `TutorialFlow` (fields + a handful of methods — no new
+   parallel class; the registry, persistence, and never-regress discipline already live there).
+   Armed iff the chain was **not dismissed** (`Dismissed` is the opt-out — a graduate took
+   ordinary mortality and its ordinary staging; §11.11 U6's death cards still serve them). It
+   renders nothing — no card, no row, no override — until
+   `state.EventLog.OfType<HeroDied>().Any()` first reads true. No arming date is needed: while
+   the warrant holds, no `HeroDied` can exist (U4 test 8), and if the player graduated early the
+   act is disarmed by the same flag, so the wake can only ever fire in the ordinary-mortality
+   region the player was walked into.
+2. **The first-loss block, on the night's own ledger.** Once ever, on the fate-card night: a
+   short teaching block in `LedgerModal` under the death card — permadeath named plainly (gone
+   for good; the roster refills), the rite named (*"Tonight the wall takes their name — the rite
+   is yours if you want it"*), and the stake named honestly off the death card's own content:
+   the card already leads with the player's marked item when the fallen wore one and says
+   *nothing of yours was on them* when true (§11.11 U6's discipline) — the block adds no second
+   claim, no participation credit, and **never a survival number**.
+3. **One pointed step, then an honest retire.** A single checklist row wakes with the block:
+   *"Take the night to the wall — honor them"*, Hud-anchored at the Legends tray button, exactly
+   the `MeetHeroes`/`Commission` shape. Completion fact: `HonorMemorialAction` in
+   `GameState.ActionLog` — player-caused, durable, KTD-A clean. The rite is Evening-only at the
+   handler, and the death night *is* an Evening, so the modal case completes the same night; the
+   gating note for a player who rings past says *"an Evening rite — the wall keeps"* (mirror the
+   kernel's guard, never enforce). The row retires at the second dawn after the death via the
+   established unconditional-sweep idiom (`TutorialFlow.cs:314-318,393`), rendering the `Skipped`
+   state (*"— the rite keeps; it's at the wall whenever"*, `ChecklistRow.Skipped`,
+   `TutorialFlow.cs:111-120`) — a sweep on the **pointer**, never on the **verb**: the rite stays
+   legal forever and idempotent. This is the anti-nag line (the 1287×-memorial-nag finding is a
+   repo memory): one night, one day, one row, then the Lessons book holds it permanently.
+
+   Two supporting seams:
+   - **The Legends gate widens.** `SurfaceUnlocks` opens Legends on first `AttributionBeatEvent`
+     only (`godot/scripts/ui/SurfaceUnlocks.cs:82-83`) — an unattributed first death would leave
+     the wall greyed on the exact night the tutorial points there. The gate becomes
+     `AttributionBeatEvent.Any() || HeroDied.Any()` (still monotonic, still EventLog-derived),
+     reason updated: *"Opens once your work has changed a fate — or the town has someone to
+     remember."* Honest by the wall's own content: it renders memorials
+     (`LegendsWall.cs:87,104-118`). The `MainUi.SurfaceEffectivelyOpen` OR
+     (`SurfaceUnlocks.cs:29-40`) remains the backstop pin, not the fix.
+   - **The Lessons book gains the loss lesson** — the block's copy, readable forever after, the
+     same re-reading-beats-re-running answer U2 established.
+
+**Files.**
+- *modify* `godot/scripts/ui/TutorialFlow.cs` — the loss act (wake predicate, the row, the
+  retire sweep, `PersistedData` extension for the once-ever block).
+- *modify* `godot/scripts/panels/LedgerModal.cs` — the first-loss block.
+- *modify* `godot/scripts/ui/SurfaceUnlocks.cs` — the widened Legends gate.
+- *modify* `godot/scripts/panels/LessonsPanel.cs` — the loss lesson row.
+- *modify* `godot/scripts/ui/ObjectiveTracker.cs` — render the woken row (existing row plumbing).
+- *test* `godot/tests/TutorialRegistryConformanceTests.cs` (extend)
+- *test* `godot/tests/panels/LedgerModalTests.cs` (extend)
+- *test* `godot/tests/ui/SurfaceUnlocksTests.cs` (extend)
+
+**Patterns to follow.** `TutorialFlow.cs:1241-1249` (`NotifyPanelOpened` — the Hud-anchor step
+shape); `TutorialFlow.cs:314-318,393` (the unconditional-sweep retire);
+`ChecklistRow.Skipped` (`TutorialFlow.cs:111-120` — the honest third state);
+`SurfaceUnlocks.Gates` (`SurfaceUnlocks.cs:60-89` — monotonic, derived, never persisted).
+
+**Test scenarios.**
+1. `LossAct_RendersNothing_WhileArmed` — the quiet-gap pin: between the dawn beat and the first
+   death, zero tutorial surface area.
+2. `FirstLossBlock_RendersOnTheFirstDeathNight_OnceEver`
+3. `LossAct_NeverWakes_WhenTheChainWasDismissed` — the opt-out pin; ordinary staging still
+   renders (§11.11 U6 untouched).
+4. `LossStep_CompletesOnHonorMemorialAction_APlayerCausedDurableFact` — KTD-A conformance,
+   joins `EveryStepsCompletionFact_IsReachableByPlayerActionAlone`.
+5. `LossStep_RetiresAtTheSecondDawn_AsSkipped_NeverAFalseTick`
+6. `SecondDeath_RaisesNoTutorialSurface` — the tutorial owns the FIRST loss only, pinned.
+7. `LegendsGate_OpensOnFirstHeroDied_EvenWithNoAttributionBeat`
+8. `LossCopy_NeverStatesASurvivalNumber_AndClaimsNoCreditTheCardDidNot`
+9. `LossLesson_IsReadableInLessons_AfterTheActCloses`
+
+**Verification.** Engine suite green, raw counts quoted. Manual (render-and-look): a seeded
+campaign known to produce a post-warrant death — the gap is silent, the block lands with the
+fate card, the wall opens un-greyed, Honor completes the row, the second dawn retires it; a
+dismissed campaign — the same death renders only §11.11 U6's ordinary staging; then confirm
+`THE-GAME.md` §3.3 now describes what the screen just did.
+
+---
+
+## Key technical decisions
+
+**KTD-C′ — The trigger is a date plus one confirmed opt-out; nothing else moves the window.**
+The (c) build proved any behavior-fed predicate lets ordinary play forfeit protection (2.6×
+inversion). A date cannot invert anything; the single opt-out is explicit, confirmed, cost-named,
+and logged as a `PlayerAction` — it is a decision, not a side effect. No commerce, no tutorial
+progress, no trait ever touches the predicate, and the pinned not-inverted assertion
+(`ConsumableTraitMortalityBalanceTests.cs:157`) stands guard behind the argument.
+
+**KTD-D — The warrant defaults off at the resolver's own seam** (kept verbatim from the old U4):
+only the system ticks thread it from state; every direct resolver call is untouched by
+construction.
+
+**KTD-E — One legibility source** (kept): clamp, ledger card, dawn beat, confirm copy, and tests
+all read `ApprenticeWarrant`. A card that could disagree with the resolver is worse than no card.
+
+**KTD-G — The tutorial owns meaning, never fate.** No code path selects, schedules, weights,
+hastens, or delays a death; no RNG site is added anywhere in the wave (the clamp draws nothing —
+the `ModifierHpDelta` discipline, `ExpeditionResolver.cs:538-548`). The loss act is a pure reader
+of `HeroDied`. If the first-death-day census shows an awkward tail, that is an owner finding, not
+a knob.
+
+**KTD-H — The loss act is once-ever and silent while armed.** Between the dawn beat and the
+first death the tutorial has zero on-screen presence; the act fires for one night and one day and
+retires honestly. The 1287×-memorial-nag playtest finding is the reason this is a KTD and not a
+style preference.
+
+**KTD-I — Dismissal is graduation: one press, both layers.** The sim half rides `ActionLog`
+(deterministic, replayable, per-campaign — a new campaign resets it with the sim save, so no
+cross-campaign leak of the `user://tutorial_flow.json` class, `TutorialFlow.cs:1455-1482`); the
+UI half is only framing. The two cannot drift because the confirm submits and dismisses
+atomically, and U5 test 9 pins it.
+
+---
+
+## Where this brushes the laws — said plainly
+
+- **Link 3 / law 4 ("show only what the sim decided").** The warrant converts a decided outcome
+  (death) into a different decided outcome (near-death) inside a told window. This is exactly the
+  shape R9 already ruled legal as a taught mechanic (`MAKERS-MARK.md:2446-2451`), and the
+  resolver-side construction (opaque flag, no trait, no RNG) is the one the (c) build already
+  established needs **no pinned law exception**. The loss act adds zero sim influence — it is
+  pure framing of an event stream. No new ruling needed here.
+- **Law 7 ("skipping stays legal and its cost is named in copy, never engineered").** Dismissal
+  ending the warrant is the one genuine brush in this design. The defense: ordinary mortality is
+  the game's baseline, not a penalty bolted onto skipping — the warrant is part of the taught
+  version, and declining the teaching declines its bubble; the cost is named at press time, in
+  the confirm, before the choice is made. But it is honestly arguable the other way (a mortality
+  change riding a tutorial ✕), it requires a deny-listed `Contracts/` amendment regardless, and
+  §11.11 KTD-6 says balance-consequential sim changes are rulings — so it is **routed as R12
+  below, default yes**, with the fallback pre-written: if declined, the warrant runs its dated
+  course regardless of dismissal and the dismiss toast names the surviving warrant (the old
+  U5.3 shape), while U4/U5/U6's staging all ship unchanged.
+- **"No timers on decisions."** The warrant's dated end is a rule about the world, announced as
+  a beat — not a clock on any decision. U6's retire is a sweep on a *pointer*; the rite itself
+  stays legal forever (idempotent by the handler, `Actions.cs:147-151`). No tutorial step
+  acquires a countdown.
+- **"Influence never orders."** The loss step points and explains; `HonorMemorialAction` remains
+  optional, and declining it costs exactly what the copy says (nothing — the wall keeps).
+
+## Rulings owed
+
+- **R12 — the graduation action (`ConcludeApprenticeshipAction`, a `Contracts/` amendment):
+  should dismissing the tutorial also end the warrant?** Recommended default: **yes** — it is the
+  owner's own principle ("the death is part of the tutorial") applied to its contrapositive, it
+  removes the last hidden shield (a dismissed-but-warranted campaign would be protected by a rule
+  nobody on screen is left to explain), and the cost is named at press time. If **no**: U4a is
+  dropped, U4's trigger is date-only, and the dismiss toast names the surviving warrant. Either
+  way U4 re-records and re-baselines once.
+- **R11 (restated, unchanged) — `LastGraceDay = 3` confirmed?** Three days is the
+  apprenticeship's own span, and dawn 4 is the chain's existing backstop — the pinned equality
+  makes any other value a two-constant decision. Longer values push the first death later; the
+  census's first-death-day distribution (U4 verification) is the evidence to re-ask against if
+  day 4-8 feels wrong in play.
+
+## Scope boundaries — what this wave does not do
+
+- **No scripted, scheduled, weighted, or forced deaths — ever.** The census reports the first
+  death's timing; nothing steers it.
+- **No new RNG site, anywhere.** Determinism changes are confined to U4's clamp, re-recorded once.
+- **No difficulty/assist system.** The warrant is not a toggle and not extendable; the one exit
+  is one-way and cost-named.
+- **No changes to §11.13 U1-U3** (landed), to camp verbs, provisioning balance (R1's freeze),
+  party formation, or §11.11 U6's death staging — U6 here *points at* that staging once, and the
+  first-loss block is additive copy on one night.
+- **No new narrator lines.** The dawn beat, warrant cards, and loss block are text surfaces; the
+  spoken library stays frozen.
+- **No new tray surface and no LessonsPanel redesign** — one lesson row, one widened gate
+  predicate.
+- **No timers on any decision**, and no tutorial step that completes on a hero's cooperation
+  (KTD-A stands; U6's step completes on the player's own rite).
+- **No third plan doc.** This is a §11 amendment; `docs/plans/` stays at two.
+
+## Sequencing
+
+| # | Unit | Size | Blocked by | Sim diff | Re-baseline |
+|---|------|------|-----------|----------|-------------|
+| U4a | Graduation action (Contracts micro-PR) | small | **R12 ruling**; orchestrator-authored | yes (additive) | no |
+| U4 | The warrant, in the sim | session | U4a (or R12-declined fallback) | **yes** | **yes — golden re-record + Category=Balance, own PR** |
+| U5 | Taught, visible, dawn beat, dismiss-as-graduation | session | U4 (must land immediately after) | no | no |
+| U6 | The first loss is the last lesson | session | U4 (needs real deaths past day 3), U5 (copy seams in the same files) | no | no |
+
+U4a→U4→U5→U6 is one lane (U5/U6 share `TutorialFlow`/`LedgerModal`, serial). Engine tests
+serialize regardless. Every PR body carries `Serves:` per §11.6 rule 3; U4's quotes the
+seed-sweep census raw, including the first-death-day distribution. **The wave is reportable only
+at U6's merge** — U4+U5 alone is the overruled design with better copy.
+
+---
+
+## THE-GAME.md §3.3 amendment (lands in U4's PR)
+
+Replace the second and third paragraphs of §3.3 (`docs/design/THE-GAME.md:224-231`) with:
+
+> The tutorial runs three days as an apprenticeship rather than a tooltip tour: make one thing,
+> sell one thing, watch one raid resolve. By the end of it you have picked a second profession.
+> The apprenticeship carries a warrant, and you are told so at the first send-off: through day
+> three the Mine keeps no one. A killing blow leaves a hero at death's door and they limp home,
+> and that night's ledger shows you the roll that should have killed them. You are told when the
+> warrant ends — twice — and the dawn of day four ends it as a beat, not a footnote: from today
+> the Mine keeps what it takes. Walk out of the apprenticeship early and you walk out of its
+> warrant too; the game names that price at the moment you choose it.
+>
+> The first real lesson lands after that dawn, and it lands as a death — whose, where, and when
+> is the dice's answer, never a script's, and usually it comes within the first week. That night
+> is the tutorial's last act: the ledger names the blow, the wall takes the fallen's name, and
+> the rite is yours to perform or to leave. If they wore your make, the sentence has your work in
+> it; if they did not, the game says so honestly. Nothing in the game punishes you for any of it.
+> The town keeps going, the roster refills, and you have learned what the numbers on a shelf
+> actually weigh.
+
+(The "around day four" promise stops being an intention: the earliest possible death IS day 4 by
+mechanism, and the tutorial is standing there when it lands, whichever day the dice pick.)
