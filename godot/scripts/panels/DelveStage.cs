@@ -143,6 +143,14 @@ public sealed partial class DelveStage : Node2D
     private const float FallDropPx = 18f;
     private const float FallRotationDegrees = 82f;
 
+    // ── exit (U-T5-8, "a rout looks exactly like a triumph") ────────────────────────────────────
+    // Long enough to read as a deliberate walk, not a flinch — every other pose here is a half-
+    // second reaction, this is the party actually leaving. ExitOffsetPx is a RELATIVE additive
+    // delta (ApplyCombatPose's own `+=` contract), sized well past MineWatch.DesignSize.X (1024)
+    // from any march/camp start position in either direction, so "off-frame" is not a euphemism.
+    private const float ExitDuration = 1.2f;
+    private const float ExitOffsetPx = 900f;
+
     /// <summary>Same dark-silhouette recipe as <see cref="MineWatch"/>'s own milestone-flash tint —
     /// duplicated (not shared) per this codebase's own cross-lane precedent, applied only when the
     /// new pixel monster art (<c>town2d-monster-*</c>) is missing and the fallback painterly
@@ -191,6 +199,16 @@ public sealed partial class DelveStage : Node2D
         Recoil,
         Stagger,
         Heal,
+
+        /// <summary>The party cleared its target (or was recalled on its own call, never a
+        /// failure) — walks off-frame to the right and HOLDS there (see <see
+        /// cref="IsPersistentPose"/>), the only poses in this file that never settle back.</summary>
+        ExitTriumph,
+
+        /// <summary>The party came back turned back, fled, or beaten — retreats off-frame to the
+        /// LEFT instead, paired with <see cref="ImpactPulse"/> so <c>MineWatch.AnimateWorldShake</c>
+        /// rattles the whole scene on the way out.</summary>
+        ExitRout,
     }
 
     private struct CombatPose
@@ -498,11 +516,51 @@ public sealed partial class DelveStage : Node2D
                 break;
 
             case DelveBeatKind.Camp:
-            case DelveBeatKind.Surface:
                 HideMonster();
+                break;
+
+            case DelveBeatKind.Surface:
+                // U-T5-8 ("a rout looks exactly like a triumph"): the halt DelveBeats carried onto
+                // this beat's otherwise-unused MonsterKind field (see the DelveBeat doc) decides
+                // which way the party leaves — every living hero gets the SAME exit pose, since a
+                // party surfaces or retreats together, never one at a time.
+                HideMonster();
+                var rout = IsRoutHalt(beat.MonsterKind);
+                foreach (var heroValue in _heroSprites.Keys)
+                {
+                    if (!_clouded.Contains(heroValue))
+                    {
+                        BeginCombatPose(heroValue, rout ? CombatPoseKind.ExitRout : CombatPoseKind.ExitTriumph, ExitDuration);
+                    }
+                }
+
+                if (rout)
+                {
+                    // Reuse the existing world-shake idiom (MineWatch.AnimateWorldShake reads this
+                    // every frame) rather than inventing a second shake mechanism — a rout rattles
+                    // the whole scene on the way out, a triumph does not.
+                    ImpactPulse = 1f;
+                }
+
                 break;
         }
     }
+
+    /// <summary>Which <see cref="ExpeditionHalt"/> values (carried as this beat's <see
+    /// cref="DelveBeat.MonsterKind"/> string, stringified via <c>nameof</c>) read as "the party
+    /// came back beaten" rather than "the party came back having done what it set out to do" — the
+    /// exact distinction the owner's own complaint named: a party that broke off hurt at floor 1
+    /// must not exit the screen the same way as a party that cleared its target. <see
+    /// cref="ExpeditionHalt.TargetReached"/> and <see cref="ExpeditionHalt.Recalled"/> (the
+    /// player's OWN call to bank gains — never a failure) walk out a triumph; <see
+    /// cref="ExpeditionHalt.GateHeld"/>/<see cref="ExpeditionHalt.FloorLost"/>/<see
+    /// cref="ExpeditionHalt.TooHurt"/> — turned back, fled, or limped home hurt — retreat as a
+    /// rout. <see cref="ExpeditionHalt.PartyWiped"/> never reaches here (DelveBeats omits the
+    /// Surface beat entirely for it). An unrecognized or empty string (a hand-built test beat, or a
+    /// future halt this switch hasn't been taught yet) defaults to triumph — never invents a shake
+    /// nobody asked for.</summary>
+    private static bool IsRoutHalt(string haltName) => haltName is nameof(ExpeditionHalt.GateHeld)
+        or nameof(ExpeditionHalt.FloorLost) or nameof(ExpeditionHalt.TooHurt);
 
     /// <summary>Per-frame FX advance (accumulated delta only) — call AFTER <see
     /// cref="MineWatch"/>'s own figure bob (<c>AnimateFigures</c>) so every additive combat-pose
@@ -733,7 +791,11 @@ public sealed partial class DelveStage : Node2D
     /// ADDITIVE nudge on top of whatever <c>MineWatch.AnimateFigures</c> already set this frame
     /// (same convention the old per-hero Knockback used) — never touches a clouded hero's sprite
     /// (that figure fell; <see cref="AdvanceCloudFx"/> is its sole owner from here on), but always
-    /// still advances/expires the timer so a hero who dies mid-pose never leaks a dangling entry.</summary>
+    /// still advances/expires the timer so a hero who dies mid-pose never leaks a dangling entry.
+    /// <see cref="IsPersistentPose"/> poses are the one exception to "expires at progress 1": an
+    /// exit never gets removed, so it keeps re-applying its now-clamped curve every frame forever
+    /// (same frozen-progress trick <see cref="AdvanceCloudFx"/> uses for a fall that stays down) —
+    /// the party left, and nothing here ever re-plants them at their march/camp baseline.</summary>
     private void AdvanceCombatPoses(float delta)
     {
         foreach (var heroValue in _heroPose.Keys.ToList())
@@ -747,7 +809,7 @@ public sealed partial class DelveStage : Node2D
                 ApplyCombatPose(sprite, pose.Kind, progress);
             }
 
-            if (progress >= 1f)
+            if (progress >= 1f && !IsPersistentPose(pose.Kind))
             {
                 _heroPose.Remove(heroValue);
             }
@@ -757,6 +819,9 @@ public sealed partial class DelveStage : Node2D
             }
         }
     }
+
+    private static bool IsPersistentPose(CombatPoseKind kind) =>
+        kind is CombatPoseKind.ExitTriumph or CombatPoseKind.ExitRout;
 
     private static void ApplyCombatPose(Sprite2D sprite, CombatPoseKind kind, float progress)
     {
@@ -778,8 +843,21 @@ public sealed partial class DelveStage : Node2D
             case CombatPoseKind.Heal:
                 sprite.Position += new Vector2(0f, HealCurveY(progress));
                 break;
+
+            case CombatPoseKind.ExitTriumph:
+                sprite.Position += new Vector2(ExitCurveX(progress), 0f);
+                break;
+
+            case CombatPoseKind.ExitRout:
+                sprite.Position += new Vector2(-ExitCurveX(progress), 0f);
+                break;
         }
     }
+
+    /// <summary>Eases from rest to fully off-frame and HOLDS there once <paramref name="progress"/>
+    /// clamps at 1 — unlike every other combat pose (which settles back to rest), an exit never
+    /// returns: the party has left the strip, not flinched and recovered.</summary>
+    private static float ExitCurveX(float progress) => Mathf.Lerp(0f, ExitOffsetPx, EaseOut(progress));
 
     /// <summary>Lunge-and-recover: wind-up (pull back, away from the monster), thrust (lunge
     /// toward it, +X), recover (ease back to the resting spot). The "single change that separates
