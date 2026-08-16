@@ -181,6 +181,30 @@ public class StationIdentityTests
         }
     }
 
+    /// <summary>
+    /// U-T1 (register #147): the quench trough IS the craft's second act — <see
+    /// cref="GodotClient.Panels.ForgePanel"/> runs <c>QuenchMinigame</c> there as the plunge that follows
+    /// the anvil's shaping. Its <c>Action</c> correctly stays null (the plunge is reached through
+    /// the craft, never by pressing E on the trough directly), but the copy used to actively deny
+    /// the quench exists ("Nothing to craft here — try the anvil") instead of naming what the
+    /// station actually is. This pins the fix both ways: the copy must point at the anvil as where
+    /// the craft — and the quench that finishes it — begins, and it must never again claim there is
+    /// nothing to craft.
+    /// </summary>
+    [TestCase]
+    public void QuenchTroughCopy_PointsAtTheAnvilsSecondAct_NeverDeniesTheQuenchExists()
+    {
+        var quench = WorkshopVocab.StationsFor(ProfessionRegistry.BlacksmithId).First(s => s.Id == "quench");
+        var line = $"{quench.HoverLine} {quench.FlavorLine}";
+
+        AssertThat(line)
+            .OverrideFailureMessage($"Quench trough copy \"{line}\" never mentions the anvil — it should point there as where the craft (and the quench) begins.")
+            .Contains("anvil");
+        AssertThat(line)
+            .OverrideFailureMessage($"Quench trough copy \"{line}\" still denies the quench exists.")
+            .NotContains("Nothing to craft");
+    }
+
     // ── Live, driven-through-the-real-click coverage for the three collisions actually named in
     // this unit's brief — proves the FIX end to end, not just the table data. ─────────────────────
 

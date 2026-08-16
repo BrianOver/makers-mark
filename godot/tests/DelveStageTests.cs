@@ -458,6 +458,76 @@ public class DelveStageTests
         }
     }
 
+    // ── U-T5-8 ("a rout looks exactly like a triumph") ──────────────────────────────────────────
+
+    [TestCase]
+    public void SurfaceBeat_OnARout_RendersDifferentlyFromATriumph()
+    {
+        var basePosition = new Vector2(200f, 150f);
+        var triumphStage = new DelveStage();
+        var routStage = new DelveStage();
+        var triumphSprite = new Sprite2D { Position = basePosition };
+        var routSprite = new Sprite2D { Position = basePosition };
+        try
+        {
+            triumphStage.Build();
+            triumphStage.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = triumphSprite });
+            triumphStage.RenderBeat(
+                Beat(DelveBeatKind.Surface, floor: 3, monsterKind: nameof(ExpeditionHalt.TargetReached)), Heroes());
+
+            routStage.Build();
+            routStage.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = routSprite });
+            routStage.RenderBeat(
+                Beat(DelveBeatKind.Surface, floor: 3, monsterKind: nameof(ExpeditionHalt.FloorLost)), Heroes());
+
+            // Structural claim #1: a rout rattles the whole scene (the existing ImpactPulse ->
+            // MineWatch.AnimateWorldShake idiom, reused rather than a second shake mechanism); a
+            // triumph never does.
+            AssertThat(triumphStage.ImpactPulse)
+                .OverrideFailureMessage("A triumph must never trigger the world-shake pulse.")
+                .IsEqual(0f);
+            AssertThat(routStage.ImpactPulse)
+                .OverrideFailureMessage("A rout must trigger the world-shake pulse.")
+                .IsEqual(1f);
+
+            // Structural claim #2: the party walks off in OPPOSITE directions -- right for a
+            // triumph, left for a rout. Reset to base before Process(), same convention the attack/
+            // recoil/heal tests above use to stand in for MineWatch's own per-frame baseline reset.
+            triumphSprite.Position = basePosition;
+            routSprite.Position = basePosition;
+            triumphStage.Process(2.0f); // comfortably past ExitDuration
+            routStage.Process(2.0f);
+
+            AssertThat(triumphSprite.Position.X)
+                .OverrideFailureMessage("A triumph must walk off-frame to the RIGHT.")
+                .IsGreater(basePosition.X);
+            AssertThat(routSprite.Position.X)
+                .OverrideFailureMessage("A rout must retreat off-frame to the LEFT.")
+                .IsLess(basePosition.X);
+
+            // Structural claim #3: unlike every other combat pose in this file, an exit never
+            // settles back to rest -- it must still be offset the SAME way many frames later.
+            triumphSprite.Position = basePosition;
+            routSprite.Position = basePosition;
+            triumphStage.Process(5.0f);
+            routStage.Process(5.0f);
+
+            AssertThat(triumphSprite.Position.X)
+                .OverrideFailureMessage("A triumph's exit must hold off-frame, not settle back to rest.")
+                .IsGreater(basePosition.X);
+            AssertThat(routSprite.Position.X)
+                .OverrideFailureMessage("A rout's exit must hold off-frame, not settle back to rest.")
+                .IsLess(basePosition.X);
+        }
+        finally
+        {
+            triumphSprite.Free();
+            routSprite.Free();
+            triumphStage.Free();
+            routStage.Free();
+        }
+    }
+
     // ── U6 ("give the Mine monsters motion"): the single committed frame idle-breathes ─────────
     // Procedural motion only (owner decision) — no new art, no gait frames. Scale-only, applied as
     // a multiplier on top of ShowMonster's own per-monster width-normalizing factor (the five

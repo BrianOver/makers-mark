@@ -1258,9 +1258,21 @@ public partial class Town2D : Control
     }
 
     /// <summary>Deterministic wander-band home per hero id (no RNG, KTD2/KTD4) — a 2D twin of
-    /// <c>Town3D.HomeFor</c>, spread across an open tile band clear of every venue footprint.</summary>
+    /// <c>Town3D.HomeFor</c>, spread across an open tile band clear of every venue footprint.
+    ///
+    /// <para>U-T3-1: the starting six's own tile now lives in <see
+    /// cref="TownLayout2D.HeroHomeTiles"/> — the same six numbers this formula always produced for
+    /// ids 1..6, moved somewhere <c>godot/tests</c> can read them (<c>TownPlacementTests</c>). Any
+    /// id past 6 (a recruit outliving the starting cast — ids are never reused after a death, see
+    /// <c>RecruitSystem</c>) still falls through to the ORIGINAL formula below: a fixed 6-slot table
+    /// has no entry to give it, and the formula's own period (its X term repeats every 28 ids, not
+    /// 6) means the six extracted values cannot stand in for it. Byte-identical for every id either
+    /// way — this is a data-extraction refactor, not a behaviour change.</para>
+    /// </summary>
     private static Vector2 HomeFor(int heroValue) =>
-        TownLayout2D.TileToWorld(new Vector2I(6 + heroValue * 3 % 28, 10 + heroValue * 2 % 6));
+        heroValue >= 1 && heroValue <= TownLayout2D.HeroHomeTiles.Length
+            ? TownLayout2D.TileToWorld(TownLayout2D.HeroHomeTiles[heroValue - 1])
+            : TownLayout2D.TileToWorld(new Vector2I(6 + heroValue * 3 % 28, 10 + heroValue * 2 % 6));
 
     /// <summary>Party-file rally slot near the town square, spread along X (mirrors
     /// <c>Town3D.RallySpotFor</c>).</summary>
@@ -1547,23 +1559,15 @@ public partial class Town2D : Control
             : selected.ToArray();
     }
 
-    /// <summary>Deterministic wander-home tiles for the cosmetic <see cref="TownsfolkNpc2D"/>
-    /// villagers — hand-picked clear of every venue footprint, the plaza/road cobble network, and
-    /// hero <see cref="HomeFor"/> bands (see <see cref="TownLayout2D.Venues"/>/<see
-    /// cref="TownLayout2D.PathRects"/> for the occupied regions this avoids): two open corners
-    /// northwest/northeast of the plaza, two more southwest/southeast of it.</summary>
-    private static readonly Vector2I[] TownsfolkHomeTiles =
-    {
-        new(6, 8),
-        new(34, 8),
-        new(6, 20),
-        new(34, 20),
-    };
-
     /// <summary>Test/inspection surface: how many cosmetic villagers <see cref="BuildTownsfolk"/>
-    /// spawns (mirrors <see cref="TownsfolkHomeTiles"/>'s length without exposing the private table
-    /// itself).</summary>
-    public static int TownsfolkHomeTileCount => TownsfolkHomeTiles.Length;
+    /// spawns (mirrors <see cref="TownLayout2D.TownsfolkHomeTiles"/>'s length without exposing the
+    /// underlying table's own consumers).
+    ///
+    /// <para>U-T3-1: the table itself moved to <see cref="TownLayout2D.TownsfolkHomeTiles"/> (it
+    /// used to be a private array right here, where no test could reach it) — this delegates rather
+    /// than duplicating the length.</para>
+    /// </summary>
+    public static int TownsfolkHomeTileCount => TownLayout2D.TownsfolkHomeTiles.Length;
 
     /// <summary>
     /// Spawns a small bounded set of purely cosmetic wandering villagers (<see
@@ -1607,7 +1611,7 @@ public partial class Town2D : Control
             .ToList();
 
         _townsfolk.Clear();
-        for (var i = 0; i < TownsfolkHomeTiles.Length; i++)
+        for (var i = 0; i < TownLayout2D.TownsfolkHomeTiles.Length; i++)
         {
             var civilianId = TownsfolkNpc2D.CivilianIds[i % TownsfolkNpc2D.CivilianIds.Length];
             var body = BodyFor(TownsfolkNpc2D.BodyIdFor(civilianId, i));
@@ -1619,7 +1623,7 @@ public partial class Town2D : Control
                 // TOWNSFOLK CIVILIANS section) — a runtime tint here would wash it out, the same
                 // fix U3 made for HeroActor2D's Modulate.
                 Colors.White,
-                TownLayout2D.TileToWorld(TownsfolkHomeTiles[i]),
+                TownLayout2D.TileToWorld(TownLayout2D.TownsfolkHomeTiles[i]),
                 body.Step,
                 body.Walk2,
                 body.Walk4,

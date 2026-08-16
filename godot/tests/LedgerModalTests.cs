@@ -94,23 +94,28 @@ public class LedgerModalTests
                 var cardNode = Find<Control>(ui.Ledger, $"LedgerCard_{i}");
 
                 AssertThat(ledgerText).Contains(card.HeroName);
-                AssertThat(ledgerText).Contains(card.Survived ? "Returned safely" : "Did not return");
+                // #167 fix: this fixture never populates SimAdapter.LastRevealedExpeditions, so the
+                // survivor status falls back to the plain, non-committal "Returned" rather than the
+                // old blanket "Returned safely" — see SurvivorCard_OnAStaleDay_FallsBackToPlainReturned
+                // for the guard this exercises.
+                AssertThat(ledgerText).Contains(card.Survived ? "Returned" : "Did not return");
 
                 // Every icon this card renders (portrait/fallback, beat item, ore) must resolve to
                 // a real texture — never a silent blank slot (house rule). The expected COUNT is
-                // derived from the card's own data (portrait + one fate-row icon [gold chip or
-                // skull] + one per beat + one per ore offer), not a hand list — a mutation that
-                // silently drops any one icon (e.g. the beat's item icon, or the gold chip) moves
-                // this count and fails here, not just the weaker "at least one" check.
+                // derived from the card's own data (portrait + a skull icon for death cards only —
+                // #167 turned the survivor gold readout into two label+value StatChips, which carry
+                // no TextureRect — + one per beat + one per ore offer), not a hand list — a mutation
+                // that silently drops any one icon (e.g. the beat's item icon) moves this count and
+                // fails here, not just the weaker "at least one" check.
                 var textures = cardNode
                     .FindChildren("*", nameof(TextureRect), recursive: true, owned: false)
                     .Cast<TextureRect>()
                     .ToList();
-                var expectedIconCount = 1 + 1 + card.Beats.Count + card.OreOffers.Count;
+                var expectedIconCount = 1 + (card.Survived ? 0 : 1) + card.Beats.Count + card.OreOffers.Count;
                 AssertThat(textures.Count)
                     .OverrideFailureMessage(
                         $"card {i} ('{card.HeroName}'): expected {expectedIconCount} icons "
-                        + "(portrait + fate-row icon + one per beat + one per ore offer), found "
+                        + "(portrait + skull-if-death + one per beat + one per ore offer), found "
                         + $"{textures.Count} — an icon was silently dropped.")
                     .IsEqual(expectedIconCount);
                 foreach (var rect in textures)
@@ -793,6 +798,138 @@ public class LedgerModalTests
         {
             ui.Tutorial.Dismiss();
             AssertThat(ui.Tutorial.ConsumeFirstLossBlock(ui.Adapter.CurrentState)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── #167: the survivor card's purse chip and the day's earned gold are different quantities,
+    // and the "Returned safely" status must say what the sim's ExpeditionHalt actually recorded ──
+
+    private static readonly HeroId FloorLostHeroId = new(3);
+
+    /// <summary>A one-hero night that ends in <see cref="ExpeditionHalt.FloorLost"/> — the party
+    /// broke off and came home, not a clean win — driven through the REAL <c>ExpeditionRevealSystem</c>
+    /// via <see cref="SimAdapter.AdvancePhase"/> (same idiom as <see cref="WarrantSaveNight"/>), so
+    /// this proves the actual resolver+reveal+ledger wiring reads <c>Halt</c>, not a hand-built
+    /// EventLog standing in for it.</summary>
+    private static GameState FloorLostNight(int day)
+    {
+        var hero = new Hero(
+            FloorLostHeroId, "Rowan", ClassRegistry.VanguardId, Level: 1, MaxHp: 30, Gold: 0,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+            DeepestFloorReached: 0, DiedOnDay: null);
+
+        var result = new ExpeditionResult(
+            Party: ImmutableList.Create(FloorLostHeroId), TargetFloor: 2, DeepestFloorCleared: 0,
+            Floors: ImmutableList<FloorOutcome>.Empty,
+            Survivors: ImmutableList.Create(FloorLostHeroId), Deaths: ImmutableList<HeroId>.Empty,
+            Beats: ImmutableList<AttributionBeat>.Empty, Loot: ImmutableList<OreLoot>.Empty,
+            GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty, VenueId: "mine",
+            Halt: ExpeditionHalt.FloorLost);
+
+        return GameFactory.NewGame(5151) with
+        {
+            Day = day,
+            Phase = DayPhase.Evening,
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(FloorLostHeroId.Value, hero),
+            PendingExpeditions = ImmutableList.Create(result),
+        };
+    }
+
+    /// <summary>Reads the card's gold pills (label + tone-colored "Value" label), keyed by their
+    /// label text. Matches on the <c>GoldChip_</c> name prefix the panel assigns, NOT on the bare
+    /// "StatChip" default: two same-named siblings make Godot rename the second, so an exact-name
+    /// match finds the purse and silently misses the earnings — which is how this helper first
+    /// reported "chips seen: Purse" against a card that was rendering both.</summary>
+    private static System.Collections.Generic.Dictionary<string, string> GoldChipValues(Control cardNode) =>
+        cardNode.FindChildren("*", nameof(PanelContainer), recursive: true, owned: false)
+            .Cast<PanelContainer>()
+            .Where(p => p.Name.ToString().StartsWith("GoldChip_", System.StringComparison.Ordinal))
+            .ToDictionary(
+                chip => ((Label)((HBoxContainer)chip.GetChild(0)).GetChild(0)).Text,
+                chip => Find<Label>(chip, "Value").Text);
+
+    [TestCase]
+    public void SurvivorCard_GoldChips_LabelPurseAndEarned_AndMatchLedgerQuery()
+    {
+        // Thistle: GoldOnHand (purse) 12, GoldEarned (today's loot) 8 — deliberately different
+        // quantities, the exact shape of #167 (an unlabelled chip under a differing number reads
+        // as a reward it wasn't).
+        var ui = MountMainUi(new SimAdapter(DrivenDay()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var cards = LedgerQuery.ReturnCards(ui.Adapter.CurrentState, 1);
+            var card = cards.Single(c => c.Hero == SurvivorId);
+            AssertThat(card.GoldOnHand)
+                .OverrideFailureMessage("fixture must have Purse != Earned to prove the chips are distinct")
+                .IsNotEqual(card.GoldEarned);
+
+            var cardIndex = cards.FindIndex(c => c.Hero == SurvivorId);
+            var cardNode = Find<Control>(ui.Ledger, $"LedgerCard_{cardIndex}");
+            var chips = GoldChipValues(cardNode);
+
+            AssertThat(chips.ContainsKey("Purse"))
+                .OverrideFailureMessage($"no 'Purse' chip found; chips seen: {string.Join(", ", chips.Keys)}")
+                .IsTrue();
+            AssertThat(chips["Purse"]).IsEqual($"{card.GoldOnHand}g");
+
+            AssertThat(chips.ContainsKey("Earned"))
+                .OverrideFailureMessage($"no 'Earned' chip found; chips seen: {string.Join(", ", chips.Keys)}")
+                .IsTrue();
+            AssertThat(chips["Earned"]).IsEqual($"{card.GoldEarned}g");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void SurvivorCard_OnAFloorLostHalt_NeverSaysReturnedSafely()
+    {
+        var ui = MountMainUi(new SimAdapter(FloorLostNight(day: 1)));
+        try
+        {
+            ui.Adapter.AdvancePhase(); // Evening -> Morning: the reveal processes PendingExpeditions
+
+            ui.Ledger.ShowFor(1);
+            var cardIndex = LedgerQuery.ReturnCards(ui.Adapter.CurrentState, 1)
+                .FindIndex(c => c.Hero == FloorLostHeroId);
+            var status = Find<Label>(Find<Control>(ui.Ledger, $"LedgerCard_{cardIndex}"), "CardStatus").Text;
+
+            AssertThat(status)
+                .OverrideFailureMessage(
+                    $"a routed party (ExpeditionHalt.FloorLost) must never read as a clean win; got \"{status}\"")
+                .IsNotEqual("Returned safely");
+            AssertThat(status).IsEqual("Broke off and came home");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void SurvivorCard_OnAStaleDay_FallsBackToPlainReturned()
+    {
+        // DrivenDay() never populates SimAdapter.LastRevealedExpeditions, so LastRevealedDay stays
+        // at its 0 default -- the same staleness guard WarrantSavesForDay/HaltsForDay both apply
+        // (LastRevealedDay != the shown day) trips here, and the status must fall back to the
+        // plain, non-committal "Returned" rather than asserting an outcome the sim never recorded.
+        var ui = MountMainUi(new SimAdapter(DrivenDay()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+            var cardIndex = LedgerQuery.ReturnCards(ui.Adapter.CurrentState, 1)
+                .FindIndex(c => c.Hero == SurvivorId);
+            var status = Find<Label>(Find<Control>(ui.Ledger, $"LedgerCard_{cardIndex}"), "CardStatus").Text;
+
+            AssertThat(status).IsEqual("Returned");
         }
         finally
         {

@@ -1150,9 +1150,11 @@ public class AudioTests
     /// <summary>
     /// C1's mixer: the music PREFERENCE fader must re-level an already-settled bed immediately
     /// (no fade in flight to hide behind), and by EXACTLY its own linear-to-dB conversion — proving
-    /// the preference layer stacks additively on top of whatever mastering level (MusicDb+TrimDb)
-    /// the bed already had, never replacing or collapsing it (the two-layer contract TrimDb's own
-    /// doc comment insists on).
+    /// the preference layer stacks additively on top of whatever mastering level the bed already had
+    /// (U-T4-1: <see cref="AudioBuses.MusicBusDb"/> on the bus, plus TrimDb on the player), never
+    /// replacing or collapsing it (the two-layer contract TrimDb's own doc comment insists on). This
+    /// only reads the player's own VolumeDb, so the bus-level component is invisible to it either
+    /// way — the delta is what proves the layering, not the absolute number.
     /// </summary>
     [TestCase]
     public void SetMusicVolume_ReLevelsTheSettledBed_ByExactlyItsOwnGain()

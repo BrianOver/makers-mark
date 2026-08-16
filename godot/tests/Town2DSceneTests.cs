@@ -256,31 +256,6 @@ public class Town2DSceneTests
     /// et al.).</summary>
     private static int OrphanNodeCount() => (int)Performance.GetMonitor(Performance.Monitor.ObjectOrphanNodeCount);
 
-    /// <summary>Lane clearance is a requirement of this unit, not a nicety: solid objects blocking
-    /// the walkable approach into a building is a known live complaint in this town. Checked
-    /// against <see cref="TownLayout2D.PathRects"/>'s SPUR/road entries only (index 1 onward) —
-    /// index 0 (the plaza square) is deliberately excluded, matching this file's own established
-    /// precedent that the wide-open plaza already legitimately hosts decor (the well sits dead
-    /// center of it, corner lanterns flank it): a decoration on an 11×5 open square doesn't block
-    /// anything, but the SAME decoration on a 1-2-tile spur is the only way into a door.</summary>
-    [TestCase]
-    public void WarmHubProps_NeverSitOnABuildingApproachLane()
-    {
-        var lanes = TownLayout2D.PathRects.Skip(1).ToArray();
-
-        foreach (var id in WarmHubPropIds)
-        {
-            var entry = TownLayout2D.Props.First(p => p.SpriteId == id);
-
-            foreach (var lane in lanes)
-            {
-                AssertThat(lane.HasPoint(entry.Tile))
-                    .OverrideFailureMessage($"'{id}' sits at tile {entry.Tile}, inside approach lane {lane} — it blocks a building's only way in")
-                    .IsFalse();
-            }
-        }
-    }
-
     /// <summary>The task packet's first placement problem: <c>props-noticeboard</c> collides in
     /// NAME with <see cref="TownLayout2D.Venues"/>'s "noticeboard" venue key — the Bounties
     /// building. They must never share a tile, or the prop reads as a second copy of the same

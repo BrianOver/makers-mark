@@ -202,6 +202,7 @@ public partial class LedgerModal : SimPanel
         var state = Adapter.CurrentState;
         var cards = LeadWithAttribution(LedgerQuery.ReturnCards(state, day));
         var warrantSaves = WarrantSavesForDay(day); // §11.13 amendment (U5), keyed by HeroId.Value
+        var halts = HaltsForDay(day); // #167 fix, keyed by HeroId.Value
         if (cards.IsEmpty)
         {
             AddTutorialTip();
@@ -212,7 +213,7 @@ public partial class LedgerModal : SimPanel
         var firstLossBlockRendered = false;
         for (var i = 0; i < cards.Count; i++)
         {
-            _cards!.AddChild(BuildReturnCard(state, cards[i], i, warrantSaves, day));
+            _cards!.AddChild(BuildReturnCard(state, cards[i], i, warrantSaves, halts, day));
             if (i == 0)
             {
                 // U1: the attribution beat is the spine of the game (R11) — the tutorial tip now
@@ -255,6 +256,54 @@ public partial class LedgerModal : SimPanel
             .GroupBy(save => save.Hero.Value)
             .ToImmutableDictionary(g => g.Key, g => g.ToImmutableList());
     }
+
+    /// <summary>
+    /// #167 fix: the <see cref="ExpeditionHalt"/> the sim actually recorded for each hero who
+    /// returned on <paramref name="day"/>, keyed by HeroId.Value — read off the SAME
+    /// <see cref="SimAdapter.LastRevealedExpeditions"/> source (and the identical
+    /// <see cref="SimAdapter.LastRevealedDay"/> staleness guard) as <see cref="WarrantSavesForDay"/>,
+    /// so the status line can say what actually happened instead of asserting "Returned safely"
+    /// for every survivor regardless of how the expedition actually ended.
+    /// </summary>
+    private ImmutableDictionary<int, ExpeditionHalt> HaltsForDay(int day)
+    {
+        if (Adapter is null || Adapter.LastRevealedDay != day || Adapter.LastRevealedExpeditions.IsEmpty)
+        {
+            return ImmutableDictionary<int, ExpeditionHalt>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<int, ExpeditionHalt>();
+        foreach (var result in Adapter.LastRevealedExpeditions)
+        {
+            foreach (var hero in result.Party)
+            {
+                builder[hero.Value] = result.Halt;
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// #167 fix: survivor status prose keyed off the recorded <see cref="ExpeditionHalt"/> rather
+    /// than a blanket "Returned safely" — a party that fled a floor (<see
+    /// cref="ExpeditionHalt.FloorLost"/>) or turned back at a gate (<see
+    /// cref="ExpeditionHalt.GateHeld"/>) reads as exactly that, never as a clean win. No matching
+    /// halt (or a stale day, per <see cref="HaltsForDay"/>'s guard) falls back to the plain,
+    /// non-committal "Returned". Death cards are untouched — they keep "Did not return".
+    /// </summary>
+    private static string SurvivorStatusText(HeroId hero, ImmutableDictionary<int, ExpeditionHalt> halts) =>
+        halts.TryGetValue(hero.Value, out var halt)
+            ? halt switch
+            {
+                ExpeditionHalt.TargetReached => "Returned safely",
+                ExpeditionHalt.TooHurt => "Came home hurt",
+                ExpeditionHalt.FloorLost => "Broke off and came home",
+                ExpeditionHalt.GateHeld => "Turned back at the gate",
+                ExpeditionHalt.Recalled => "Recalled home",
+                _ => "Returned",
+            }
+            : "Returned";
 
     /// <summary>
     /// U1 (Night leads with the mark): a beat-bearing card leads the reveal instead of whichever
@@ -303,7 +352,8 @@ public partial class LedgerModal : SimPanel
     /// </summary>
     private Control BuildReturnCard(
         GameState state, ReturnCard card, int index,
-        ImmutableDictionary<int, ImmutableList<ApprenticeWarrant.WarrantSave>> warrantSaves, int night)
+        ImmutableDictionary<int, ImmutableList<ApprenticeWarrant.WarrantSave>> warrantSaves,
+        ImmutableDictionary<int, ExpeditionHalt> halts, int night)
     {
         var wrap = Card($"LedgerCard_{index}");
         wrap.AddThemeStyleboxOverride("panel", CardAccentStyle(card.Survived));
@@ -321,7 +371,7 @@ public partial class LedgerModal : SimPanel
         var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         header.AddChild(infoCol);
         AddHeader(infoCol, card.HeroName);
-        var status = AddLabel(infoCol, card.Survived ? "Returned safely" : "Did not return");
+        var status = AddLabel(infoCol, card.Survived ? SurvivorStatusText(card.Hero, halts) : "Did not return");
         status.Name = "CardStatus";
         status.AddThemeColorOverride("font_color", card.Survived ? GameTheme.GoodColor : GameTheme.DangerColor);
 
@@ -344,9 +394,23 @@ public partial class LedgerModal : SimPanel
         }
         else
         {
-            // The purse is a panel fact, not a pack slot (U5's own note) — now its own gold chip
-            // rather than parenthetical text tacked onto the fate line.
-            telling.Body.AddChild(IconChip(IconRegistry.Glyph("gold"), $"{card.GoldOnHand}g", UiKit.ChipTone.Gold));
+            // The purse is a panel fact, not a pack slot (U5's own note) — its own gold chips
+            // rather than parenthetical text tacked onto the fate line. #167 fix: the fate line's
+            // {gold} slot is the day's EARNED income (LedgerQuery.GoldEarned); the hero's whole
+            // PURSE after the reveal (GoldOnHand) is a different quantity — one unlabelled chip
+            // sitting under a differing number read as a reward it wasn't. Two labelled chips now,
+            // naming each figure so neither is mistaken for the other.
+            // Both chips are named explicitly. Two StatChips under one row are same-named siblings,
+            // and Godot silently renames the second ("StatChip" -> "StatChip2"), so anything
+            // matching the name exactly finds the purse and never the earnings. Naming them here
+            // makes each findable for what it is rather than for the order it happened to be added.
+            var goldRow = AddRow(telling.Body);
+            var purseChip = StatChip("Purse", $"{card.GoldOnHand}g", UiKit.ChipTone.Gold);
+            purseChip.Name = "GoldChip_Purse";
+            goldRow.AddChild(purseChip);
+            var earnedChip = StatChip("Earned", $"{card.GoldEarned}g");
+            earnedChip.Name = "GoldChip_Earned";
+            goldRow.AddChild(earnedChip);
         }
 
         foreach (var beat in card.Beats)

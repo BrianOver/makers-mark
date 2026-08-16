@@ -413,7 +413,18 @@ public partial class ForgePanel : SimPanel
 
         if (GodotObject.IsInstanceValid(scroll) && GodotObject.IsInstanceValid(target))
         {
-            scroll!.EnsureControlVisible(target);
+            // Register #156: EnsureControlVisible aims at the whole SECTION ROOT — the
+            // header plus every row (_vendorSectionRoot/_recipeSectionRoot) — not any one row
+            // inside it. Godot's own ScrollContainer::ensure_control_visible computes
+            // diff.y = MAX(MIN(other.y, global.y), other.y + other.h - global.h); when the
+            // target is TALLER than the viewport (the recipe section: ~2600px inside
+            // CraftScroll's ~380px; the vendor section: 19 priced rows, each with its own qty
+            // stepper) the second term always wins and the scroll lands on the target's BOTTOM
+            // edge instead of its top. A station open wants the section's TOP — its first row
+            // is the thing FocusSection was called to reveal — so scroll there explicitly
+            // rather than asking Godot to "ensure visible" a target that can never fit whole.
+            var delta = (int)(target.GlobalPosition.Y - scroll!.GlobalPosition.Y);
+            scroll.ScrollVertical = Math.Max(0, scroll.ScrollVertical + delta);
         }
     }
 

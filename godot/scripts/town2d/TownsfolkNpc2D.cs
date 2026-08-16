@@ -51,10 +51,15 @@ public partial class TownsfolkNpc2D : Node2D
 {
     /// <summary>Wander-drift amplitude in px — deliberately smaller than <see
     /// cref="HeroActor2D.WanderAmplitudeX"/>'s hero-scale figures so villagers read as puttering
-    /// close to home rather than roaming as far as heroes do.</summary>
-    private const float WanderAmplitudeX = 9f;
+    /// close to home rather than roaming as far as heroes do.
+    ///
+    /// <para>U-T3-1: reads <see cref="TownLayout2D.TownsfolkWanderAmplitudeX"/> rather than
+    /// repeating the literal — same "guard and motion read one number" reasoning as <see
+    /// cref="HeroActor2D.WanderAmplitudeX"/>'s own U-T3-1 note.</para>
+    /// </summary>
+    private const float WanderAmplitudeX = TownLayout2D.TownsfolkWanderAmplitudeX;
 
-    private const float WanderAmplitudeY = 5f;
+    private const float WanderAmplitudeY = TownLayout2D.TownsfolkWanderAmplitudeY;
 
     /// <summary>U6: villagers' real walking pace while erranding (px/sec) — also fed to <see
     /// cref="SpriteMotion"/> as the normalizing full pace (mirrors <see

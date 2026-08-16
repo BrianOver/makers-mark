@@ -151,8 +151,8 @@ public partial class HeroesPanel : SimPanel
 
         AddHeader(_detail!, $"{hero.Name} — {ClassRegistry.Require(hero.ClassId).DisplayName}");
         AddLabel(_detail!, hero.Alive
-            ? $"Level {hero.Level} | HP {hero.MaxHp} | {hero.Gold}g | deepest floor {hero.DeepestFloorReached}"
-            : $"DIED day {hero.DiedOnDay} on floor record {hero.DeepestFloorReached}");
+            ? $"Level {hero.Level} | HP {hero.MaxHp} | {hero.Gold}g | deepest {DepthCopy.Deepest(hero.DeepestFloorReached)}"
+            : $"DIED day {hero.DiedOnDay} — deepest {DepthCopy.Deepest(hero.DeepestFloorReached)}");
 
         // U7/U10: relationship band + mood at a glance. Fresh recruits render cleanly as
         // "Stranger · neutral" (the no-history state) — never blank.
@@ -342,7 +342,7 @@ public partial class HeroesPanel : SimPanel
             chipRow.Alignment = BoxContainer.AlignmentMode.Center;
             chipRow.AddChild(UiKit.StatChipCompact("Lv", $"{hero.Level}"));
             chipRow.AddChild(UiKit.StatChipCompact("Gold", $"{hero.Gold}g", UiKit.ChipTone.Accent));
-            chipRow.AddChild(UiKit.StatChipCompact("Deepest", $"{hero.DeepestFloorReached}"));
+            chipRow.AddChild(UiKit.StatChipCompact("Deepest", DepthCopy.Deepest(hero.DeepestFloorReached)));
         }
         else
         {

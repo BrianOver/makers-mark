@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Drama;
 using GameSim.Heroes;
 using Godot;
 using GodotClient.Ui;
@@ -148,7 +149,7 @@ public partial class HeroPanel : SimPanel
         var band = RelationshipBands.For(hero.Id, state);
         var chipRow = AddRow(body);
         chipRow.AddChild(StatChip("Standing", RelationshipBands.Label(band), MoodTone(hero.MoodPermille)));
-        chipRow.AddChild(StatChip("Deepest", $"floor {hero.DeepestFloorReached}"));
+        chipRow.AddChild(StatChip("Deepest", DepthCopy.Deepest(hero.DeepestFloorReached)));
         chipRow.AddChild(StatChip("XP", $"{hero.Xp}"));
         chipRow.AddChild(StatChip("Rank", RankFor(hero.Xp), UiKit.ChipTone.Accent));
 
