@@ -49,10 +49,16 @@ public partial class HeroActor2D : Node2D
 
     /// <summary>Wander-drift amplitude in px (2D-scale decoration tuning knob — the 3D port's
     /// 1.4/1.0 world-unit amplitudes have no fixed pixel equivalent; picked to read as a gentle
-    /// idle bob at 16px-tile scale).</summary>
-    private const float WanderAmplitudeX = 14f;
+    /// idle bob at 16px-tile scale).
+    ///
+    /// <para>U-T3-1: reads <see cref="TownLayout2D.HeroWanderAmplitudeX"/> rather than repeating the
+    /// literal — <c>TownPlacementTests</c> inflates a hero's home tile by this SAME number to build
+    /// its wander-band rect, and a value that could only ever change in one of the two places would
+    /// silently let the guard and the actor's actual motion disagree.</para>
+    /// </summary>
+    private const float WanderAmplitudeX = TownLayout2D.HeroWanderAmplitudeX;
 
-    private const float WanderAmplitudeY = 10f;
+    private const float WanderAmplitudeY = TownLayout2D.HeroWanderAmplitudeY;
 
     /// <summary>The RESOLVED sprite's own texture height (set by <see cref="Init"/>) — half of it
     /// is the <see cref="Sprite2D.Offset"/> lift, so <see cref="Position"/> stays the sprite's FEET

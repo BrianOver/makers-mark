@@ -279,6 +279,55 @@ public static class TownLayout2D
         // standing no-orphans rule — git history is the archive if it is ever wanted back.
     };
 
+    /// <summary>
+    /// U-T3-1 (placement-census unit): the six starting heroes' deterministic wander-home tile,
+    /// extracted VERBATIM from <c>Town2D.HomeFor</c>'s own formula — <c>TileToWorld(new
+    /// Vector2I(6 + id*3 % 28, 10 + id*2 % 6))</c> evaluated for <c>id</c> 1..6 (index 0 is hero id
+    /// 1, ..., index 5 is hero id 6) — so a test can actually see where a hero starts wandering
+    /// from; before this it was a private formula buried in a 1,985-line adapter, and nobody could
+    /// check it against anything else in the town.
+    ///
+    /// <para>Covers only the fixed starting six (<c>GameSim.Heroes.HeroRoster.StartingSix</c>).
+    /// <c>Town2D.HomeFor</c> keeps evaluating its own formula for any id past 6: a recruit's numeric
+    /// id is never reused after a death (see <c>RecruitSystem</c>), so ids climb past 6 in every
+    /// campaign that outlives its opening roster, and the formula's period (its X term repeats every
+    /// 28 ids, not 6) means this 6-slot table has no value that could stand in for id 7+ without
+    /// silently changing where a surviving recruit's home band sits.</para>
+    /// </summary>
+    public static readonly Vector2I[] HeroHomeTiles =
+    {
+        new(9, 12), new(12, 14), new(15, 10), new(18, 12), new(21, 14), new(24, 10),
+    };
+
+    /// <summary>
+    /// U-T3-1: <c>Town2D.BuildTownsfolk</c>'s cosmetic-villager wander-home tiles, extracted
+    /// VERBATIM from that method's own private table (formerly hand-declared inside
+    /// <c>Town2D.cs</c>, where no test could reach it). Two open corners northwest/northeast of the
+    /// plaza, two more southwest/southeast of it — clear of every venue footprint and the
+    /// <see cref="PathRects"/> cobble network.
+    /// </summary>
+    public static readonly Vector2I[] TownsfolkHomeTiles =
+    {
+        new(6, 8), new(34, 8), new(6, 20), new(34, 20),
+    };
+
+    /// <summary>U-T3-1: <c>HeroActor2D</c>'s idle lissajous wander-drift half-amplitude in px, X
+    /// axis — extracted VERBATIM from that class's own private const (unchanged value) so
+    /// <c>TownPlacementTests</c> can inflate a hero's home tile by the SAME band the actor actually
+    /// wanders within; the guard and the motion read one number now and can never drift apart.</summary>
+    public const float HeroWanderAmplitudeX = 14f;
+
+    /// <summary>U-T3-1: as <see cref="HeroWanderAmplitudeX"/>, Y axis.</summary>
+    public const float HeroWanderAmplitudeY = 10f;
+
+    /// <summary>U-T3-1: <c>TownsfolkNpc2D</c>'s own wander-drift half-amplitude in px — deliberately
+    /// smaller than <see cref="HeroWanderAmplitudeX"/> (villagers putter close to home rather than
+    /// roaming as far as heroes do); same "extracted, unchanged" contract as that constant.</summary>
+    public const float TownsfolkWanderAmplitudeX = 9f;
+
+    /// <summary>U-T3-1: as <see cref="TownsfolkWanderAmplitudeX"/>, Y axis.</summary>
+    public const float TownsfolkWanderAmplitudeY = 5f;
+
     /// <summary>Tile coordinate → world-space pixel position of that tile's CENTER. Buildings are
     /// positioned by their Y-sort line (see <see cref="Building2D.Configure"/>'s remarks) at this
     /// same convention — one flat conversion used for every placement (venues, rally point, hero
