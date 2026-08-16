@@ -2646,6 +2646,10 @@ public partial class MainUi : Control
         AddChild(Forecast);
         Forecast.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Forecast.VisibilityChanged += OnForecastVisibilityChanged;
+        // U1 (§11.11): "Forge one" closes the board and jumps to the Forge — same bare
+        // event-forwards-to-OpenPanel("Forge") shape as Camp.OpenForgeRequested (see that wiring's
+        // own comment, this file, StartCampaign).
+        Forecast.ForgeOneRequested += () => OpenPanel("Forge");
 
         // --- Bestiary (gate-b flag 3): code-built modal sibling, opened from the Tavern hotspot.
         Bestiary = new BestiaryPanel();
