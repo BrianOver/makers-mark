@@ -198,8 +198,20 @@ public class ForgeMinigameTests
         }
     }
 
+    /// <summary>
+    /// This test used to be named <c>HammerAndBellows_AreMutuallyExclusive_StrikeIsANoOpWhilePumping</c>
+    /// and it asserted the softlock as correct: that a strike arriving mid-pump changed nothing.
+    /// It was one of two guards holding that behaviour in place (the other lived in
+    /// <c>AgentPlaytestBridgeTests</c>, which recorded a 420-turn pilot probe landing zero strikes
+    /// as a measurement rather than as the bug it was). Together they are why the owner could
+    /// report an unfinishable anvil across two "fixes" and a playtest while CI stayed green.
+    ///
+    /// The owner's ruling is that the strike implies the release: two hands, and reaching for the
+    /// hammer means letting go of the bellows. So the rule this now guards is the opposite one —
+    /// a strike mid-pump ENDS the pump and lands.
+    /// </summary>
     [TestCase]
-    public void HammerAndBellows_AreMutuallyExclusive_StrikeIsANoOpWhilePumping()
+    public void AStrikeMidPump_EndsThePump_AndLands()
     {
         var mg = new ForgeMinigame();
         try
@@ -207,14 +219,23 @@ public class ForgeMinigameTests
             mg.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith, ImmutableSortedSet<string>.Empty, TestDay);
 
             mg.BellowsStart();
+            mg.Advance(1.0); // let the bellows do real work first, so the strike has heat to spend
             var xBefore = mg.ShapeXPermille;
-            mg.ForgeStrike(); // no-op while pumping
-            AssertThat(mg.ShapeXPermille).IsEqual(xBefore);
 
-            mg.BellowsStop();
-            mg.Advance(1.0); // heat rose while pumping — a strike now should actually move the shape
             mg.ForgeStrike();
-            AssertThat(mg.ShapeXPermille).IsGreater(xBefore);
+
+            AssertThat(mg.IsPumping)
+                .OverrideFailureMessage("Reaching for the hammer must let go of the bellows — the strike IS the release.")
+                .IsFalse();
+            AssertThat(mg.ShapeXPermille)
+                .OverrideFailureMessage("A strike that arrives mid-pump must land, not be swallowed — that swallowing was the softlock.")
+                .IsGreater(xBefore);
+
+            // And the hammer keeps working afterwards: the release is a release, not a lockout.
+            var xAfterFirst = mg.ShapeXPermille;
+            mg.Advance(1.0);
+            mg.ForgeStrike();
+            AssertThat(mg.ShapeXPermille).IsGreater(xAfterFirst);
         }
         finally
         {

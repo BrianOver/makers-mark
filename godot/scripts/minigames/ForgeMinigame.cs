@@ -580,9 +580,21 @@ public sealed partial class ForgeMinigame : PanelContainer
             return;
         }
 
+        // The heat-clamp guard belongs here too, and its absence is what CI caught: a fully-shaped
+        // billet still unwound 571 -> 531 across ninety seconds of pumping at full heat, because
+        // this discrete stroke kept paying the drift-back that Advance had already stopped paying.
+        // The rule is the same in both places and must stay the same in both places — a stroke that
+        // raises heat by zero has done no work, so it costs the shape nothing. Read the clamp BEFORE
+        // raising, exactly as Advance does, or the stroke that arrives at 1000 charges for a heat
+        // rise it did not deliver.
         var equivalentSeconds = PumpStrokeHeatPermille / (double)BellowsRaisePermillePerSecond;
+        var wasBelowTheClamp = HeatYPermille < 1000;
         HeatYPermille = Math.Clamp(HeatYPermille + PumpStrokeHeatPermille, 0, 1000);
-        ShapeXPermille = Math.Max(0, ShapeXPermille - (int)Math.Round(BellowsDriftBackPermillePerSecond * equivalentSeconds));
+        if (wasBelowTheClamp)
+        {
+            ShapeXPermille = Math.Max(0, ShapeXPermille - (int)Math.Round(BellowsDriftBackPermillePerSecond * equivalentSeconds));
+        }
+
         BellowsPumped?.Invoke();
         RepaintUi();
     }
