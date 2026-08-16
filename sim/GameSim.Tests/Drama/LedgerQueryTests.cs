@@ -3,6 +3,7 @@ using GameSim.Contracts;
 using GameSim.Drama;
 using GameSim.Flavor;
 using GameSim.Flavor.Packs;
+using GameSim.Venues.Gloomwood;
 
 namespace GameSim.Tests.Drama;
 
@@ -211,6 +212,51 @@ public class LedgerQueryTests
             Assert.Equal(first[i].FloorReached, second[i].FloorReached);
             Assert.Equal(first[i].FateLine, second[i].FateLine);
         }
+    }
+
+    [Fact]
+    public void Survivor_WhoClearedNothing_NamesFloorOne_NeverZero()
+    {
+        // #166: Brunhilde came back from "floor 0" — a floor fails to clear if ANY fighter flees
+        // or dies while gold is still banked per kill, so a survivor can leave the day's log with
+        // no FloorRecordSet, no beat, and no ore, yet still owe the ledger a real floor. The day's
+        // own PartyDeparted event (ExpeditionSystem.cs:118, muster time) is the proof this hero
+        // delved at all — every delve enters at floor 1, so 1 is the honest floor, never 0.
+        var state = NewWorld();
+        state = state with
+        {
+            EventLog = state.EventLog.Add(
+                new PartyDeparted(ImmutableList.Create(new HeroId(1)), TargetFloor: 1)
+                { Id = new EventId(9101), Day = 1 }),
+        };
+        state = TickEvening(AtEvening(state, Result(
+            party: [1], survivors: [1], deaths: [],
+            deepestCleared: 0, // floor 1 never cleared — a partymate fled or died
+            gold: [(1, 8)]))).NewState; // kill gold still banked (ExpeditionResolver pays per kill)
+
+        var card = Assert.Single(LedgerQuery.ReturnCards(state, day: 1));
+
+        Assert.Equal(1, card.FloorReached);
+        Assert.DoesNotContain("floor 0", card.FateLine, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SurvivorFloor_FromGloomwoodOre_NamesTheGloomwoodFloor()
+    {
+        // #166's second, independent vector: OreFloor used to hardcode VenueRegistry.Mine, so any
+        // non-Mine ore mapped to floor 0 no matter how deep it actually came from. Moonresin is
+        // the Gloomwood's floor-3 ore (GloomwoodVenue.Moonresin) — ore is the ONLY depth evidence
+        // here (deepestCleared 0 means no FloorRecordSet, no beat), so the scan across
+        // VenueRegistry.All has to be what names the floor.
+        var state = TickEvening(AtEvening(NewWorld(), Result(
+            party: [1], survivors: [1], deaths: [],
+            deepestCleared: 0,
+            loot: [new OreLoot(new HeroId(1), GloomwoodVenue.Moonresin, 2)],
+            gold: [(1, 10)]))).NewState;
+
+        var card = Assert.Single(LedgerQuery.ReturnCards(state, day: 1));
+
+        Assert.Equal(3, card.FloorReached);
     }
 
     [Fact]

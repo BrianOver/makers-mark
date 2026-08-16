@@ -233,7 +233,7 @@ public static class ObjectiveAdvisor
             var craft = new CraftAction(recipe.RecipeId, recipe.MaterialKey);
             return ActionLegality.IsLegal(state, craft, phase)
                 ? new Suggestion(craft,
-                    $"{stall.HeroName} is stalled at floor {stall.DeepestFloorReached}/{stall.TargetFloor} missing {slot} gear " +
+                    $"{stall.HeroName} is stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, aiming for floor {stall.TargetFloor}, missing {slot} gear " +
                     $"— craft '{recipe.Name}' now, you already have enough {recipe.MaterialKey}.")
                 : null;
         }
@@ -245,7 +245,7 @@ public static class ObjectiveAdvisor
             {
                 var cost = MaterialVendorHandlers.QuoteCost(recipe.MaterialKey, recipe.MaterialQuantity);
                 return new Suggestion(buy,
-                    $"{stall.HeroName} is stalled at floor {stall.DeepestFloorReached}/{stall.TargetFloor} missing {slot} gear " +
+                    $"{stall.HeroName} is stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, aiming for floor {stall.TargetFloor}, missing {slot} gear " +
                     $"— buy {recipe.MaterialQuantity} {recipe.MaterialKey} ({cost}g) toward '{recipe.Name}'.");
             }
         }

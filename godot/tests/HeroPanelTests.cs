@@ -45,6 +45,24 @@ public class HeroPanelTests
     }
 
     [TestCase]
+    public void Day1FreshHero_NeverDelved_RendersNoLiteralFloorZero()
+    {
+        // #166b: DeepestFloorReached == 0 is the legitimate "never delved" sim value every hero
+        // carries on day 1 — not the ordinal floor 0. The Deepest chip must read "not yet".
+        var ui = MountMainUi(new SimAdapter(WorldAtDay(1, ImmutableList<GameEvent>.Empty, MakeHero(1, "Solo"))));
+        try
+        {
+            var cardText = RenderedText(Find<PanelContainer>(ui.HeroCards, "HeroCard_1"));
+            AssertThat(cardText).Contains("not yet");
+            AssertThat(cardText).NotContains("floor 0");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void SteadyTelegraphedStreak_RendersRestlessChip()
     {
         // No purchase ever, arrival day 1: streak = Day - 1. Day 6 => streak 5 (>=4 telegraph,
