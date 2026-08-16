@@ -100,6 +100,65 @@ public class LayoutTests
         }
     }
 
+    // ── 1b. Evening Ledger: the card grid wraps into columns at the design floor ─────────────
+
+    /// <summary>Six same-night returning heroes, no beats/ore/deaths — the minimal fixture needed
+    /// to prove the CARD COUNT the grid fits, not any narrative content.</summary>
+    private static GameState SixHeroReturnDay()
+    {
+        var heroes = Enumerable.Range(1, 6)
+            .Select(id => new Hero(
+                new HeroId(id), $"Hero{id}", "vanguard", Level: 1, MaxHp: 20, Gold: 0,
+                Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+                DeepestFloorReached: 1, DiedOnDay: null))
+            .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+
+        var survivors = Enumerable.Range(1, 6).Select(id => new HeroId(id)).ToImmutableList();
+        var events = ImmutableList.Create<GameEvent>(
+            new PartyReturned(survivors) { Id = new EventId(1), Day = 1 });
+
+        return GameFactory.NewGame(CampSeed, heroes) with { EventLog = events };
+    }
+
+    /// <summary>
+    /// U-T5's own headline target: "at least 3 cards visible at the 1152x648 design floor, and all
+    /// 6 at 1920x1080 with no scrolling at all." This pins the design-floor half — six same-night
+    /// returns, at least 3 of which must actually INTERSECT the scroll viewport (not merely exist
+    /// somewhere in the tree) with zero scrolling, proving the wrapping <c>HFlowContainer</c> grid
+    /// spends the extra width on more cards per row rather than the old one-card-per-row VBox that
+    /// fit roughly 1.4 of 6. Resizes <c>MainUi</c>'s own <see cref="Control.Size"/> (the Ledger's
+    /// real parent) directly rather than the OS-level root <c>Window</c> — no other suite in this
+    /// repo mutates the real window in a test.
+    /// </summary>
+    [TestCase]
+    public async Task EveningLedger_ShowsAtLeastThreeCards_AtTheDesignViewport()
+    {
+        var ui = MountMainUi(new SimAdapter(SixHeroReturnDay()));
+        try
+        {
+            ui.Size = new Vector2(1152, 648); // the design floor, made explicit
+            ui.Ledger.ShowFor(1);
+            await SettleLayout(ui);
+
+            var scroll = Find<ScrollContainer>(ui.Ledger, "LedgerScroll");
+            var viewportRect = scroll.GetGlobalRect();
+            var visibleCount = Enumerable.Range(0, 6)
+                .Select(i => Find<Control>(ui.Ledger, $"LedgerCard_{i}"))
+                .Count(c => viewportRect.Intersects(c.GetGlobalRect()));
+
+            AssertThat(visibleCount)
+                .OverrideFailureMessage(
+                    $"only {visibleCount} of 6 cards intersect the scroll viewport at the 1152x648 "
+                    + "design floor — expected at least 3 (the wrapping grid should fit several "
+                    + "columns per row, not one card per row).")
+                .IsGreaterEqual(3);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── 2. Camp slate: parked party's hp/heals labels render at real width ───────────────────
 
     [TestCase]

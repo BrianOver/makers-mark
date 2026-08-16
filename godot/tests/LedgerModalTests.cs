@@ -2,6 +2,7 @@
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Drama;
@@ -930,6 +931,88 @@ public class LedgerModalTests
             var status = Find<Label>(Find<Control>(ui.Ledger, $"LedgerCard_{cardIndex}"), "CardStatus").Text;
 
             AssertThat(status).IsEqual("Returned");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── U-T5: the modal stops living inside a fixed 640x420 CenterContainer floor/ceiling ────────
+
+    /// <summary>
+    /// The regression this whole unit exists to pin. Before the fix, <c>LedgerModal.EnsureBuilt</c>
+    /// built a <c>CenterContainer</c> around a <c>VBoxContainer</c> carrying
+    /// <c>CustomMinimumSize = new Vector2(640, 420)</c> — a CenterContainer hands its child EXACTLY
+    /// its combined minimum, so that 640x420 was simultaneously the floor and the ceiling no matter
+    /// how big the window got. <see cref="GodotClient.Panels.SimPanel.BuildFittedModalCard"/>
+    /// anchors the card to its PARENT instead (<c>LedgerModal</c>, which is itself full-rect under
+    /// <c>MainUi</c>), so its size is a function of that parent, not a hand-picked minimum. Resizes
+    /// <c>MainUi</c>'s own <see cref="Control.Size"/> directly — the same rect a real maximized game
+    /// window ultimately hands it — rather than the OS-level root <c>Window</c>, which no other
+    /// suite in this repo mutates in a test (<c>CameraFollowTests</c>' own framing test deliberately
+    /// checks its pure ladder function instead of resizing a real window, for exactly this
+    /// portability reason).
+    /// </summary>
+    [TestCase]
+    public async Task Modal_TracksWindowSize_NeverAFixed640x420()
+    {
+        var ui = MountMainUi(new SimAdapter(DrivenDay()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            ui.Size = new Vector2(1152, 648); // the design floor
+            await SettleLayout(ui);
+            var cardAtFloor = Find<PanelContainer>(ui.Ledger, "LedgerModalCard").Size;
+
+            ui.Size = new Vector2(1920, 1080); // a maximized window
+            await SettleLayout(ui);
+            var cardAtMaximized = Find<PanelContainer>(ui.Ledger, "LedgerModalCard").Size;
+
+            AssertThat(cardAtFloor)
+                .OverrideFailureMessage(
+                    $"the card still sits at the old fixed 640x420 floor/ceiling: {cardAtFloor}")
+                .IsNotEqual(new Vector2(640, 420));
+            AssertThat(cardAtMaximized)
+                .OverrideFailureMessage(
+                    $"the card still sits at the old fixed 640x420 floor/ceiling: {cardAtMaximized}")
+                .IsNotEqual(new Vector2(640, 420));
+
+            AssertThat(cardAtMaximized.X)
+                .OverrideFailureMessage(
+                    $"card did not grow with the window: {cardAtFloor} at 1152x648 -> {cardAtMaximized} at 1920x1080")
+                .IsGreater(cardAtFloor.X);
+            AssertThat(cardAtMaximized.Y)
+                .OverrideFailureMessage(
+                    $"card did not grow with the window: {cardAtFloor} at 1152x648 -> {cardAtMaximized} at 1920x1080")
+                .IsGreater(cardAtFloor.Y);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The Ledger's title used to be a plain <c>AddLabel</c> call — 16px BodyFontSize, the
+    /// same size as the smallest text on the card below it, and it never opted into the Silkscreen
+    /// display face at all. This pins both halves of the fix: the type variation AND a font size
+    /// that actually outsizes body text.</summary>
+    [TestCase]
+    public void Title_UsesTheDisplayFace_AndOutsizesBodyText()
+    {
+        var ui = MountMainUi(new SimAdapter(DrivenDay()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var title = Find<Label>(ui.Ledger, "LedgerTitle");
+            AssertThat(title.ThemeTypeVariation).IsEqual(GameTheme.HeaderThemeType);
+            AssertThat(title.GetThemeFont("font")).IsEqual(GameTheme.HeaderFont);
+            AssertThat(title.GetThemeFontSize("font_size")).IsEqual(GameTheme.TitleFontSize);
+            AssertThat(GameTheme.TitleFontSize)
+                .OverrideFailureMessage("the title font size must actually outsize body text, not just match it")
+                .IsGreater(GameTheme.BodyFontSize);
         }
         finally
         {

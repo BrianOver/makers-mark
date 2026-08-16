@@ -158,6 +158,13 @@ public static class GameTheme
     /// HUD's live numbers (gold, day) read as the thing the player glances at first.</summary>
     public const int HudValueFontSize = 20;
 
+    /// <summary>Modal title font size (U-T5, the Evening Ledger fix) — bigger than <see
+    /// cref="HeaderFontSize"/>'s in-card section headers, because a modal's own title names the
+    /// whole screen the player is looking at, not one card inside it. Before this fix the Ledger's
+    /// title used the base "EVENING LEDGER — day N" AddLabel call, so it rendered at
+    /// <see cref="BodyFontSize"/> — the SAME size as the smallest text on screen.</summary>
+    public const int TitleFontSize = 28;
+
     // ── Spacing / shape scale (UI-1) ───────────────────────────────────────────────────────────
     // A small fixed step scale so every builder's margins/gaps come from the SAME ladder instead
     // of one-off literals — the thing that makes a screen read as "designed" rather than "sized
@@ -333,6 +340,37 @@ public static class GameTheme
         };
     }
 
+    /// <summary>Scrollbar track (U-T5): a faint Void-toned rounded channel — off the SAME
+    /// <see cref="RadiusChip"/> corner scale every other small control uses, never a bespoke
+    /// radius. Before this fix <see cref="Build"/> registered zero <c>VScrollBar</c> entries, so
+    /// every scrollable panel (the Evening Ledger included) shipped the bare engine-default
+    /// scrollbar with no themed track/grabber at all.</summary>
+    public static StyleBoxFlat ScrollBarTrackStyle() => new()
+    {
+        BgColor = new Color(VoidColor, 0.5f),
+        CornerRadiusBottomLeft = RadiusChip,
+        CornerRadiusBottomRight = RadiusChip,
+        CornerRadiusTopLeft = RadiusChip,
+        CornerRadiusTopRight = RadiusChip,
+    };
+
+    /// <summary>Scrollbar grabber (thumb) for one interaction state — the same Accent progression
+    /// <see cref="ButtonStyle"/> uses for a button's normal/hover/pressed surfaces, so a dragged
+    /// scrollbar reads as part of this theme rather than the engine's stock gray thumb.</summary>
+    public static StyleBoxFlat ScrollBarGrabberStyle(ButtonVisualState state = ButtonVisualState.Normal) => new()
+    {
+        BgColor = state switch
+        {
+            ButtonVisualState.Hover => AccentColor.Lightened(0.15f),
+            ButtonVisualState.Pressed => AccentColor.Darkened(0.1f),
+            _ => AccentColor,
+        },
+        CornerRadiusBottomLeft = RadiusChip,
+        CornerRadiusBottomRight = RadiusChip,
+        CornerRadiusTopLeft = RadiusChip,
+        CornerRadiusTopRight = RadiusChip,
+    };
+
     /// <summary>
     /// Build a fully-populated <see cref="Theme"/>: legible default font size, PanelContainer/
     /// Panel surfaces, Button normal/hover/pressed/disabled surfaces, and Label/Button text
@@ -351,6 +389,15 @@ public static class GameTheme
         theme.SetStylebox("pressed", "Button", ButtonStyle(ButtonVisualState.Pressed));
         theme.SetStylebox("disabled", "Button", ButtonStyle(ButtonVisualState.Disabled));
         theme.SetStylebox("focus", "Button", ButtonStyle(ButtonVisualState.Hover));
+
+        // U-T5: the Evening Ledger's own overflow scrollbar was the last one riding the bare
+        // engine default (zero VScrollBar entries existed before this) — every ScrollContainer
+        // in the app disables horizontal scrolling (see SimPanel.AddLabel's own remarks), so only
+        // the vertical thumb/track ever render, and only VScrollBar needs theming.
+        theme.SetStylebox("scroll", "VScrollBar", ScrollBarTrackStyle());
+        theme.SetStylebox("grabber", "VScrollBar", ScrollBarGrabberStyle());
+        theme.SetStylebox("grabber_highlighted", "VScrollBar", ScrollBarGrabberStyle(ButtonVisualState.Hover));
+        theme.SetStylebox("grabber_pressed", "VScrollBar", ScrollBarGrabberStyle(ButtonVisualState.Pressed));
 
         // UI-1: OptionButton previously fell through to the naked engine default (a light
         // system-gray dropdown floating on top of every dark themed panel). Give it the SAME
