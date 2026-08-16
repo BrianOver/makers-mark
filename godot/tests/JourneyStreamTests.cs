@@ -121,6 +121,80 @@ public class JourneyStreamTests
         AssertThat(card.Manifest.Any(m => m.Text.Contains("Fine Iron Staff"))).IsTrue();
     }
 
+    // ── BP-BUG-4. The owner's send-off read "Nobody in this party carries anything you forged"
+    // while his own shelf held a Field Salve. Enums.cs is explicit — a Consumable is "carried in
+    // Hero.Pack, not worn" — and BuildManifest walked only the four Gear slots, so the slate denied
+    // every potion the player ever made, including ones that go on to earn a PotionLifesave beat.
+    // These three pin the pack read, the tense split it forces, and the empty state staying honest.
+
+    [TestCase]
+    public void Manifest_NamesAPackedPlayerCraftedConsumable_NotJustWornGear()
+    {
+        // Exactly the owner's shelf: a worn Chain Vest AND a packed Field Salve. Before the fix the
+        // salve was invisible; a salve-only hero got the "nobody carries anything" empty state.
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+            .Add(1, Delver(1, "Torvald") with
+            {
+                Gear = new GearSet(null, null, new ItemId(1)),
+                Pack = ImmutableList.Create(new ItemId(2)),
+            });
+        var items = ImmutableSortedDictionary<int, Item>.Empty
+            .Add(1, CraftedItem(1, "Chain Vest"))
+            .Add(2, CraftedConsumable(2, "Field Salve"));
+        var state = World() with { Phase = DayPhase.Expedition, Heroes = heroes, Items = items };
+        var plan = new PartyPlan(ImmutableList.Create(new HeroId(1)), TargetFloor: 3, VenueId: "mine");
+        var events = ImmutableList.Create<GameEvent>(new PartiesFormed(ImmutableList.Create(plan)));
+
+        var card = JourneyStream.Build(state, events).Single();
+
+        AssertThat(card.Manifest.Count).IsEqual(2);
+        // Worn first, packed second — and the tenses differ on purpose. Worn gear cannot change
+        // mid-raid so "carries" stays true; a packed salve can be drunk on floor 2, so the slate
+        // (which stays up Rumored→Resolved) says "set out with" and remains true either way.
+        AssertThat(card.Manifest[0].Text).IsEqual("Torvald carries your Chain Vest.");
+        AssertThat(card.Manifest[1].Text).IsEqual("Torvald set out with your Field Salve.");
+        AssertThat(card.Manifest[1].Item).IsEqual(new ItemId(2));
+    }
+
+    [TestCase]
+    public void Manifest_PackedRivalConsumable_StillEarnsNoLine()
+    {
+        // The pack read must not become a loophole around MakersMark. A bought rival potion is
+        // still not the player's work, and the empty state must stay honest rather than padded.
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+            .Add(1, Delver(1, "Torvald") with { Pack = ImmutableList.Create(new ItemId(1)) });
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, VendorItem(1, "Rival Tonic"));
+        var state = World() with { Phase = DayPhase.Expedition, Heroes = heroes, Items = items };
+        var plan = new PartyPlan(ImmutableList.Create(new HeroId(1)), TargetFloor: 3, VenueId: "mine");
+
+        var card = JourneyStream.Build(
+            state, ImmutableList.Create<GameEvent>(new PartiesFormed(ImmutableList.Create(plan)))).Single();
+
+        AssertThat(card.Manifest.IsEmpty).IsTrue();
+    }
+
+    [TestCase]
+    public void Manifest_ItemBothWornAndPacked_CountsOnce_NeverDoubleCredits()
+    {
+        // A dedupe guard, not a hypothetical tidy-up: two lines for one item would inflate the
+        // "(+N more)" count on PipDock's departure teaser and read as two crafts on the slate.
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+            .Add(1, Delver(1, "Torvald") with
+            {
+                Gear = new GearSet(new ItemId(1), null, null),
+                Pack = ImmutableList.Create(new ItemId(1)),
+            });
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, CraftedItem(1, "Fine Iron Blade"));
+        var state = World() with { Phase = DayPhase.Expedition, Heroes = heroes, Items = items };
+        var plan = new PartyPlan(ImmutableList.Create(new HeroId(1)), TargetFloor: 3, VenueId: "mine");
+
+        var card = JourneyStream.Build(
+            state, ImmutableList.Create<GameEvent>(new PartiesFormed(ImmutableList.Create(plan)))).Single();
+
+        AssertThat(card.Manifest.Count).IsEqual(1);
+        AssertThat(card.Manifest[0].Text).IsEqual("Torvald carries your Fine Iron Blade.");
+    }
+
     [TestCase]
     public void DepartureLine_PrefersManifestLine_OverPlaceholder_WhenCraftedGearPresent()
     {
@@ -361,6 +435,13 @@ public class JourneyStreamTests
     private static Item CraftedItem(int id, string name) => new(
         new ItemId(id), "recipe", name, ItemSlot.Weapon, QualityGrade.Fine, new ItemStats(1, 0, 1),
         new MakersMark("Player", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+    // A player-crafted Consumable — the shape Hero.Pack holds (Enums.cs: "carried in Hero.Pack,
+    // not worn"), which is why it needs its own helper rather than CraftedItem's Weapon slot.
+    private static Item CraftedConsumable(int id, string name) => new(
+        new ItemId(id), "recipe", name, ItemSlot.Consumable, QualityGrade.Fine, new ItemStats(0, 0, 0),
+        new MakersMark("Player", 1), ImmutableList<ItemHistoryEntry>.Empty,
+        new ConsumableEffect(ConsumableKind.Heal, 12));
 
     private static Item VendorItem(int id, string name) => new(
         new ItemId(id), "recipe", name, ItemSlot.Weapon, QualityGrade.Common, new ItemStats(1, 0, 1),

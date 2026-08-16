@@ -51,7 +51,34 @@ public sealed record DelveBeat(
     int DamageDealt,
     int DamageTaken,
     ImmutableSortedDictionary<int, int> HpAfter,
-    bool Clouded);
+    bool Clouded)
+{
+    /// <summary>
+    /// On a <see cref="DelveBeatKind.MonsterSlain"/> beat, the PLAYER-CRAFTED item that landed the
+    /// killing blow — <see cref="CombatEvent.KillingItem"/>, which the resolver already records and
+    /// which, before this, had exactly ONE reader in the whole codebase
+    /// (<see cref="GameSim.Expedition.AttributionEngine"/>). The watch — the one screen where the
+    /// player is actually looking at the fight — threw it away and rendered a nameless "the rat
+    /// falls", which is the product's own headline sentence (*"Emberbite turned the killing blow on
+    /// floor 3"*) discarded at the last hop.
+    ///
+    /// <para>Null on every other beat kind, on a kill landed by rival or vendor gear, and whenever
+    /// the caller passed no item map — there is NO participation credit, so an unmarked weapon
+    /// earns no line rather than a generic one. <see cref="KillingItemName"/> is resolved here
+    /// (<c>JourneyStream</c>'s "every renderer gets display-ready strings" convention) while the
+    /// id is kept for the same clickable <c>ProvenanceCard</c> target a manifest line carries.</para>
+    ///
+    /// <para>SCOPE, deliberately: this names what the sim RECORDED — who struck last. It does not
+    /// claim the counterfactual ("without it they'd have died"); that is
+    /// <see cref="GameSim.Expedition.AttributionEngine"/>'s verdict and stays the Evening ledger's
+    /// to deliver. Showing a recorded fact is "show only what the sim decided"; showing a proof
+    /// that has not been computed yet would not be.</para>
+    /// </summary>
+    public ItemId? KillingItem { get; init; }
+
+    /// <inheritdoc cref="KillingItem"/>
+    public string? KillingItemName { get; init; }
+}
 
 /// <summary>
 /// KTD11-adjacent pure presentation projection (A1, plan <c>2026-07-28-001</c>): the same
@@ -77,19 +104,26 @@ public static class DelveBeats
 {
     /// <summary>A staged/held party (Camp or ExpeditionDeep phase): stage-1 floors act out, then the
     /// party parks at <see cref="DelveBeatKind.Camp"/> — stage 2 has not resolved yet.</summary>
-    public static ImmutableList<DelveBeat> Build(InFlightExpedition camp, ImmutableSortedDictionary<int, Hero> heroes) =>
+    public static ImmutableList<DelveBeat> Build(
+        InFlightExpedition camp,
+        ImmutableSortedDictionary<int, Hero> heroes,
+        ImmutableSortedDictionary<int, Item>? items = null) =>
         BuildBeats(
             camp.Floors,
             camp.Dead.Select(v => new HeroId(v)).ToImmutableList(), // v1 invariant: always empty (see InFlightExpedition doc)
             camp.Loot,
             heroes,
-            halt: null); // null => not yet halted: append Camp, not Surface
+            halt: null, // null => not yet halted: append Camp, not Surface
+            items);
 
     /// <summary>A finalized expedition (Camp-unstaged or post-Deep-merged): the full floor timeline,
     /// ending in a <see cref="DelveBeatKind.Surface"/> beat shaped by <see cref="ExpeditionResult.Halt"/>
     /// (omitted for <see cref="ExpeditionHalt.PartyWiped"/> — nobody surfaces to show).</summary>
-    public static ImmutableList<DelveBeat> Build(ExpeditionResult result, ImmutableSortedDictionary<int, Hero> heroes) =>
-        BuildBeats(result.Floors, result.Deaths, result.Loot, heroes, result.Halt);
+    public static ImmutableList<DelveBeat> Build(
+        ExpeditionResult result,
+        ImmutableSortedDictionary<int, Hero> heroes,
+        ImmutableSortedDictionary<int, Item>? items = null) =>
+        BuildBeats(result.Floors, result.Deaths, result.Loot, heroes, result.Halt, items);
 
     /// <summary>
     /// The pure core: handcrafted-<see cref="FloorOutcome"/>-testable, no <see cref="GameState"/>
@@ -102,7 +136,8 @@ public static class DelveBeats
         ImmutableList<HeroId> deaths,
         ImmutableList<OreLoot> loot,
         ImmutableSortedDictionary<int, Hero> heroes,
-        ExpeditionHalt? halt)
+        ExpeditionHalt? halt,
+        ImmutableSortedDictionary<int, Item>? items = null)
     {
         var result = ImmutableList.CreateBuilder<DelveBeat>();
         var deadSet = deaths.Select(d => d.Value).ToHashSet();
@@ -163,7 +198,7 @@ public static class DelveBeats
                     hp[heroValue] = MaxHpOf(heroValue);
                 }
 
-                RenderFight(result, floor, heroValue, group, ci0, fi, deadSet, lastOccurrence, hp, hidden, Snapshot);
+                RenderFight(result, floor, heroValue, group, ci0, fi, deadSet, lastOccurrence, hp, hidden, Snapshot, items);
                 fighterGroups++;
                 ci0 = ci1;
             }
@@ -225,7 +260,8 @@ public static class DelveBeats
         Dictionary<int, (int FloorIdx, int ComboIdx)> lastOccurrence,
         Dictionary<int, int> hp,
         HashSet<int> hidden,
-        System.Func<ImmutableSortedDictionary<int, int>> snapshot)
+        System.Func<ImmutableSortedDictionary<int, int>> snapshot,
+        ImmutableSortedDictionary<int, Item>? items)
     {
         var lastCi = groupStartCi + group.Count - 1;
         var isLastOccurrence = lastOccurrence.TryGetValue(heroValue, out var last) && last == (floorIdx, lastCi);
@@ -319,9 +355,27 @@ public static class DelveBeats
             {
                 if (round.MonsterKilled)
                 {
+                    // The one place the recorded KillingItem reaches a screen the player watches.
+                    // Player-crafted ONLY: a rival blade's kill earns no line (no participation
+                    // credit), and a null item map (every legacy call site) simply renders as before.
+                    ItemId? killer = null;
+                    string? killerName = null;
+                    if (round.KillingItem is { } killerId
+                        && items is not null
+                        && items.TryGetValue(killerId.Value, out var killerItem)
+                        && killerItem.PlayerCrafted)
+                    {
+                        killer = killerId;
+                        killerName = killerItem.Name;
+                    }
+
                     result.Add(new DelveBeat(
                         DelveBeatKind.MonsterSlain, floor.Floor, heroId, round.MonsterKind,
-                        round.DamageDealt, round.DamageTaken, snapshot(), false));
+                        round.DamageDealt, round.DamageTaken, snapshot(), false)
+                    {
+                        KillingItem = killer,
+                        KillingItemName = killerName,
+                    });
                 }
                 else if (isFled)
                 {

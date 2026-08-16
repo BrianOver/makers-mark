@@ -89,6 +89,11 @@ public sealed partial class DelveStage : Node2D
     private const float DamageNumberSeconds = 0.7f;
     private const float PoofSeconds = 0.5f;
     private const float SparkleSeconds = 0.5f;
+
+    // Long enough to READ a maker's mark, not just register a flash — the poof is 0.5s, this is a
+    // sentence. Warm gold: the same "this is yours" register the ledger's attribution rows use.
+    private const float KillCreditSeconds = 1.8f;
+    private static readonly Color KillCreditTint = new(1f, 0.86f, 0.5f);
     private const float KnockbackPx = 2f; // monster-only recoil (see AdvanceMonster) — heroes use CombatPose below
     private const float KnockbackSettleSeconds = 0.12f;
     private const int PipTotal = 5;
@@ -323,6 +328,7 @@ public sealed partial class DelveStage : Node2D
         CurrentMonsterKind = string.Empty;
         MonsterHpFraction = 1f;
         ImpactPulse = 0f;
+        LastKillCreditText = string.Empty; // a new party must not inherit the last one's credit
         _monsterShouldShow = false;
         _monsterSlideProgress = 0f;
         _monsterFlashRemaining = 0f;
@@ -462,6 +468,11 @@ public sealed partial class DelveStage : Node2D
                 MonsterHpFraction = 0f;
                 SpawnPoof(_monsterSprite.Position);
                 SpawnSparkle(_monsterSprite.Position + new Vector2(0, -30));
+                if (beat.KillingItemName is { Length: > 0 } killCredit)
+                {
+                    SpawnKillCredit(_monsterSprite.Position + new Vector2(-40, -56), killCredit);
+                }
+
                 HideMonster();
                 ImpactPulse = 1f;
                 break;
@@ -1007,6 +1018,43 @@ public sealed partial class DelveStage : Node2D
             {
                 node.Position = position + new Vector2(0, -18f * progress);
                 node.Modulate = new Color(1f, 1f, 1f, 1f - progress);
+            },
+        });
+    }
+
+    /// <summary>
+    /// The killing-blow credit: the item YOU made, named at the instant the monster drops. This is
+    /// the product's headline sentence reaching a screen the player is actually watching — the
+    /// resolver has always recorded <c>CombatEvent.KillingItem</c>, and until now
+    /// <c>AttributionEngine</c> was its only reader, so the watch showed a nameless kill.
+    ///
+    /// <para>Rises slower and lives longer than a damage number (it is a sentence, not a digit) and
+    /// is offset upward so it never lands on top of the poof. Claims only what the sim recorded —
+    /// who struck last — never the counterfactual verdict, which is the Evening ledger's to give.</para>
+    /// </summary>
+    public string LastKillCreditText { get; private set; } = string.Empty;
+
+    private void SpawnKillCredit(Vector2 position, string itemName)
+    {
+        var text = $"{itemName} struck the blow";
+        LastKillCreditText = text; // test seam — the same shape MineWatch's own bark surfaces use
+        var label = new Label
+        {
+            Name = "KillCreditLabel",
+            Text = text,
+            Position = position,
+            Modulate = KillCreditTint,
+        };
+        AddChild(label);
+        _transients.Add(new Transient
+        {
+            Node = label,
+            Life = KillCreditSeconds,
+            Apply = (node, progress) =>
+            {
+                node.Position = position + new Vector2(0, -26f * progress);
+                // Hold full opacity for the first 60% — a name needs reading time a number doesn't.
+                node.Modulate = KillCreditTint with { A = progress < 0.6f ? 1f : 1f - (progress - 0.6f) / 0.4f };
             },
         });
     }

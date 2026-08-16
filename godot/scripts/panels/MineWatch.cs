@@ -605,10 +605,12 @@ public partial class MineWatch : SubViewportContainer
         var staged = live && !state.InFlight.IsEmpty ? state.InFlight[0] : null;
         var resolved = live && staged is null && !state.PendingExpeditions.IsEmpty ? state.PendingExpeditions[0] : null;
 
+        // state.Items is what turns a recorded KillingItem into a name on screen — without it
+        // every kill renders anonymous, which is the bug this call site used to have.
         var beats = staged is not null
-            ? DelveBeats.Build(staged, state.Heroes)
+            ? DelveBeats.Build(staged, state.Heroes, state.Items)
             : resolved is not null
-                ? DelveBeats.Build(resolved, state.Heroes)
+                ? DelveBeats.Build(resolved, state.Heroes, state.Items)
                 : ImmutableList<DelveBeat>.Empty;
         var party = staged?.Party ?? resolved?.Party ?? ImmutableList<HeroId>.Empty;
         var partyKey = party.IsEmpty ? int.MinValue : JourneyStream.PartyKeyOf(party);
@@ -794,9 +796,10 @@ public partial class MineWatch : SubViewportContainer
     /// for this ceremony; this slate does.
     ///
     /// <para>Shown for as long as this party is tracked (Rumored through Held/Resolved, mirroring
-    /// <see cref="Visible"/>) rather than only at the instant of departure — gear is a roster fact
-    /// that does not change mid-raid (<see cref="JourneyStream.BuildManifest"/>'s own doc), so
-    /// there is nothing dishonest about it staying legible for the whole trip. Hidden together
+    /// <see cref="Visible"/>) rather than only at the instant of departure — every line is phrased
+    /// to survive the whole trip: worn gear "carries" because it cannot change mid-raid, packed
+    /// consumables "set out with" because they can be drunk (<see
+    /// cref="JourneyStream.BuildManifest"/>'s own doc owns that split). Hidden together
     /// with the rest of the strip's chrome once the day exits the live window (<paramref
     /// name="card"/> is null whenever <see cref="JourneyFeed.Cards"/> has nothing to show).</para>
     /// </summary>
