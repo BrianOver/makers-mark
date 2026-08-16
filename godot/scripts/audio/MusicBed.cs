@@ -314,7 +314,7 @@ public static class MusicBed
         // the sub-150Hz content above, so the fix is both a spectral rebalance AND a straight level cut,
         // not one standing in for the other. Measured: every phase's integrated LUFS dropped ~1.4-1.9 LU
         // from this change plus the drone rebalance together (see PR body) — never louder than before it,
-        // which AudioDirector.MusicDb's own headroom assumes.
+        // which AudioBuses.MusicBusDb's own headroom assumes.
         Synth.Normalise(buffer, 0.42f); // a bed, deliberately well below the SFX peak
         return Synth.ToStream(buffer, loop: true);
     }

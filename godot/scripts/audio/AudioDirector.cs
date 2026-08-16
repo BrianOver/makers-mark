@@ -25,8 +25,11 @@ namespace GodotClient.Audio;
 /// ending.</para>
 ///
 /// <para><b>Headless-safe.</b> Godot's dummy audio driver accepts <c>Play()</c> with no output device, so
-/// nothing here needs guarding for tests or CI. Volumes are applied per-player in dB rather than through
-/// a custom bus, so no project-level audio bus layout is required (<c>project.godot</c> is deny-listed).</para>
+/// nothing here needs guarding for tests or CI; it still builds and exposes the full bus graph (see
+/// <see cref="AudioBuses"/>), which <see cref="_Ready"/> builds in code before constructing any player
+/// below — <c>project.godot</c> stays untouched (deny-listed) and no <c>default_bus_layout.tres</c> is
+/// committed. Category mastering lives on that bus graph; a player's own <c>VolumeDb</c> stays the
+/// PREFERENCE layer (see <see cref="MixGainDb"/>) — the two are never collapsed into one number.</para>
 /// </summary>
 public sealed partial class AudioDirector : Node
 {
@@ -38,21 +41,11 @@ public sealed partial class AudioDirector : Node
     /// ambience, and a fast fade would draw attention to itself.</summary>
     private const float CrossfadeSeconds = 2.5f;
 
-    /// <summary>
-    /// Bed level in dB. Well under the SFX so cues always read over the music.
-    ///
-    /// <para>Was -16, which the owner heard as "a little loud". -22 is roughly half the perceived loudness
-    /// (about 6dB per halving) and is the right target for something that plays continuously and is never
-    /// the thing being listened to. An options slider is the real answer; until then this errs quiet,
-    /// because ambience nobody notices is working and ambience someone turns off is not.</para>
-    /// </summary>
-    private const float MusicDb = -22f;
-
     private const float SilentDb = -60f;
 
     /// <summary>One entry in <see cref="ComposedTracks"/>: which phase it replaces, and how far to
-    /// trim it relative to <see cref="MusicDb"/> so it reads at the same loudness as the bed it
-    /// stands in for. See the table's own doc comment for where <see cref="TrimDb"/> came from.</summary>
+    /// trim it relative to <see cref="AudioBuses.MusicBusDb"/> so it reads at the same loudness as the
+    /// bed it stands in for. See the table's own doc comment for where <see cref="TrimDb"/> came from.</summary>
     private readonly record struct ComposedTrack(string Id, string ResourcePath, float TrimDb);
 
     /// <summary>
@@ -235,7 +228,7 @@ public sealed partial class AudioDirector : Node
 
     /// <summary>The <see cref="ComposedTrack.TrimDb"/> currently armed on each player, so a crossfade
     /// already in flight fades FROM the level a player is actually at rather than assuming both
-    /// players always target the same <see cref="MusicDb"/> — see <see cref="_Process"/>.</summary>
+    /// players always target the same <see cref="AudioBuses.MusicBusDb"/> — see <see cref="_Process"/>.</summary>
     private float _musicATrimDb;
     private float _musicBTrimDb;
 
@@ -301,8 +294,8 @@ public sealed partial class AudioDirector : Node
 
     // ---- the mixer (C1, 2026-08-09 shell-and-audio-menu plan) ---------------------------------
     //
-    // Four linear (0..1) PREFERENCE faders layered ON TOP of the MASTERING levels above (MusicDb,
-    // NarratorDb, and every ComposedTrack's own TrimDb) — never collapsed into them. TrimDb answers
+    // Four linear (0..1) PREFERENCE faders layered ON TOP of the MASTERING levels (AudioBuses'
+    // per-category bus volumes, and every ComposedTrack's own TrimDb) — never collapsed into them. TrimDb answers
     // "does this generation read at the same loudness as its neighbours"; these answer "how loud
     // does the PLAYER want the game" — two different questions asked by two different people at two
     // different times, and conflating them is exactly how the night-still-long +5.45dB static
@@ -331,11 +324,12 @@ public sealed partial class AudioDirector : Node
 
     private float SfxGainDb() => MixGainDb(SfxVolume);
 
-    /// <summary>The music bed's real target dB for a given <see cref="ComposedTrack.TrimDb"/> —
-    /// mastering (<paramref name="trimDb"/>) plus preference (<see cref="MixGainDb"/>), computed
-    /// fresh every call so a fader dragged mid-crossfade is reflected on the very next <see
-    /// cref="_Process"/> tick with no special-cased "reapply" path for the in-flight-fade case.</summary>
-    private float MusicTargetDb(float trimDb) => MusicDb + trimDb + MixGainDb(MusicVolume);
+    /// <summary>The music player's own target dB for a given <see cref="ComposedTrack.TrimDb"/> —
+    /// U-T4-1 moved the category mastering level onto <see cref="AudioBuses.MusicBusDb"/>, so this is
+    /// TrimDb plus preference (<see cref="MixGainDb"/>) only, computed fresh every call so a fader
+    /// dragged mid-crossfade is reflected on the very next <see cref="_Process"/> tick with no
+    /// special-cased "reapply" path for the in-flight-fade case.</summary>
+    private float MusicTargetDb(float trimDb) => trimDb + MixGainDb(MusicVolume);
 
     public void SetMasterVolume(float volume)
     {
@@ -403,7 +397,9 @@ public sealed partial class AudioDirector : Node
         }
     }
 
-    private void RefreshNarratorVolume() => _narratorVoice.VolumeDb = NarratorDb + MixGainDb(NarratorVolume);
+    /// <summary>U-T4-1 moved the narrator's category mastering onto <see cref="AudioBuses.NarratorBusDb"/>,
+    /// so the player's own level is preference only.</summary>
+    private void RefreshNarratorVolume() => _narratorVoice.VolumeDb = MixGainDb(NarratorVolume);
 
     /// <summary>
     /// Re-applies whatever mix the player last saved (Settings' four faders, and Mute) — call once,
@@ -434,26 +430,31 @@ public sealed partial class AudioDirector : Node
     {
         Name = "AudioDirector";
 
+        // U-T4-1: the bus graph has to exist before a single player below can be routed onto it.
+        // Idempotent and name-keyed, so the many AudioDirectors the engine suite constructs against
+        // one process-wide AudioServer never grow a duplicate bus.
+        AudioBuses.EnsureBuilt();
+
         Muted = !string.IsNullOrEmpty(OS.GetEnvironment(MuteEnvVar));
         _devHotkeysEnabled = !string.IsNullOrEmpty(OS.GetEnvironment(DevHotkeysEnvVar));
 
         for (var i = 0; i < VoiceCount; i++)
         {
-            var voice = new AudioStreamPlayer { Name = $"Voice{i}" };
+            var voice = new AudioStreamPlayer { Name = $"Voice{i}", Bus = AudioBuses.Sfx };
             AddChild(voice);
             _voices.Add(voice);
         }
 
-        _musicA = new AudioStreamPlayer { Name = "MusicA", VolumeDb = SilentDb };
-        _musicB = new AudioStreamPlayer { Name = "MusicB", VolumeDb = SilentDb };
+        _musicA = new AudioStreamPlayer { Name = "MusicA", VolumeDb = SilentDb, Bus = AudioBuses.Music };
+        _musicB = new AudioStreamPlayer { Name = "MusicB", VolumeDb = SilentDb, Bus = AudioBuses.Music };
         AddChild(_musicA);
         AddChild(_musicB);
 
-        _loopVoice = new AudioStreamPlayer { Name = "LoopVoice" };
+        _loopVoice = new AudioStreamPlayer { Name = "LoopVoice", Bus = AudioBuses.SfxLoop };
         AddChild(_loopVoice);
         _loopVoice.Finished += OnLoopVoiceFinished;
 
-        _narratorVoice = new AudioStreamPlayer { Name = "NarratorVoice" };
+        _narratorVoice = new AudioStreamPlayer { Name = "NarratorVoice", Bus = AudioBuses.Narrator };
         AddChild(_narratorVoice);
         RefreshNarratorVolume();
     }
@@ -463,17 +464,6 @@ public sealed partial class AudioDirector : Node
     // Sparse, triggered, and slotless. NarratorVoiceDirector (sim-side, deterministic) decides WHAT
     // is said; everything here is playback. The voice carries no information — the screen keeps every
     // fact — so a missing recording costs atmosphere and never meaning.
-
-    /// <summary>
-    /// Where the narrator sits against the bed. The music bed plays at <see cref="MusicDb"/> (-22),
-    /// and speech has to read clearly over it without becoming the loudest thing in the game; the
-    /// lines are baked to a fixed loudness at content time so this one number is the whole mix.
-    ///
-    /// <para>Negative, and it stays negative. The <c>night-still-long</c> +5.45dB boost is why
-    /// <see cref="ComposedTrackTrims"/> exists as a census surface — a generation that needs a boost
-    /// to reach level is a bad generation, and the fix is a better take, never a positive trim.</para>
-    /// </summary>
-    private const float NarratorDb = -14f;
 
     /// <summary>Dedicated player, never pooled. A narrator cut off mid-sentence by a round-robin
     /// steal is worse than one that never spoke — same reasoning as <see cref="_loopVoice"/>.</summary>
@@ -1026,7 +1016,7 @@ public sealed partial class AudioDirector : Node
         var falling = _aIsActive ? _musicB : _musicA;
 
         // Each player fades toward/from ITS OWN remembered trim (see _musicATrimDb/_musicBTrimDb),
-        // not a single shared MusicDb — a composed track that needs a -5dB trim must still crossfade
+        // not a single shared bus-level target — a composed track that needs a -5dB trim must still crossfade
         // in at -5dB, and whatever is fading OUT must fade from the level it was actually playing at.
         var risingTrim = _aIsActive ? _musicATrimDb : _musicBTrimDb;
         var fallingTrim = _aIsActive ? _musicBTrimDb : _musicATrimDb;
