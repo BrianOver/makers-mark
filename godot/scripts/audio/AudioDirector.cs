@@ -142,11 +142,11 @@ public sealed partial class AudioDirector : Node
     /// </summary>
     private static readonly Dictionary<DayPhase, ComposedTrack> ComposedTracks = new()
     {
-        [DayPhase.Morning] = new ComposedTrack("day-first-light", "res://assets/audio/day-first-light.mp3", TrimDb: -6.9f),
-        [DayPhase.Evening] = new ComposedTrack("town-dusk", "res://assets/audio/town-dusk.mp3", TrimDb: -3.8f),
-        [DayPhase.Camp] = new ComposedTrack("night-still", "res://assets/audio/night-still.mp3", TrimDb: 0f),
-        [DayPhase.Expedition] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.mp3", TrimDb: -7.5f),
-        [DayPhase.ExpeditionDeep] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.mp3", TrimDb: -7.5f),
+        [DayPhase.Morning] = new ComposedTrack("day-first-light", "res://assets/audio/day-first-light.ogg", TrimDb: -6.9f),
+        [DayPhase.Evening] = new ComposedTrack("town-dusk", "res://assets/audio/town-dusk.ogg", TrimDb: -3.8f),
+        [DayPhase.Camp] = new ComposedTrack("night-still", "res://assets/audio/night-still.ogg", TrimDb: 0f),
+        [DayPhase.Expedition] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.ogg", TrimDb: -7.5f),
+        [DayPhase.ExpeditionDeep] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.ogg", TrimDb: -7.5f),
     };
 
     /// <summary>Loaded composed streams, keyed by resource path so the same file backing two table
@@ -770,9 +770,27 @@ public sealed partial class AudioDirector : Node
 
     /// <summary>
     /// Loads (and caches) a composed track, or returns null after a LOUD warning if it cannot be
-    /// found — a checkout without its Git LFS content pulled must degrade to the synth bed audibly
-    /// documented in the log, never to a silent crash. Same NULL-TOLERANT-BUT-LOUD contract KTD-B
-    /// applies to art: the fallback stays; only its silence goes.
+    /// found — a checkout missing the file (a bad merge, a stray delete) must degrade to the synth
+    /// bed audibly documented in the log, never to a silent crash. Same NULL-TOLERANT-BUT-LOUD
+    /// contract KTD-B applies to art: the fallback stays; only its silence goes.
+    ///
+    /// <para><b>U-audio-ogg (2026-08-16): every composed track is OGG Vorbis now, not MP3.</b> All
+    /// four beds were 48kHz Lavf-encoded MP3 with an <c>Info</c> header and no LAME gapless tag — MP3
+    /// is a lapped transform (encoder delay + final-frame padding), and only a LAME
+    /// enc-delay/enc-padding pair tells a decoder how much of that to strip. Without it, every loop
+    /// wrap replayed the delay and the padding: a burst of non-signal at the seam, heard as "random
+    /// static" (reported twice; see <c>tools/audio/mp3-seam-probe.py</c>, a standalone probe for
+    /// exactly this, and <c>AudioTests.TheComposedAudioDirectory_NeverShipsAnUngaplessMp3</c>, the
+    /// engine-suite guard that now enforces the same check automatically). Vorbis has no such failure
+    /// class — the Ogg container's granule position is
+    /// sample-accurate, so a decoder always knows precisely where the stream starts and ends and there
+    /// is no delay/padding to strip in the first place. Converting removes the defect rather than
+    /// patching it (re-encoding with LAME, or replacing beds with synthesized loops, were the other
+    /// options — this one needed no new asset generation and no lossy-metadata dependency). Transcoded
+    /// with ffmpeg's libvorbis (the original masters no longer exist, so this is MP3-to-Vorbis, not
+    /// from a lossless source) at a quality matching or exceeding each file's original MP3 bitrate;
+    /// re-measured LUFS/true-peak after conversion landed within ~0.3dB of the originals for all four,
+    /// so <see cref="ComposedTrack.TrimDb"/> above did not need to move.</para>
     /// </summary>
     private static AudioStream? LoadComposed(ComposedTrack track)
     {
@@ -785,17 +803,17 @@ public sealed partial class AudioDirector : Node
         {
             EngineDistress.Warn(
                 $"[AudioDirector] composed track '{track.Id}' is missing at {track.ResourcePath} " +
-                "(Git LFS content not pulled?) — falling back to the synth bed.");
+                "— falling back to the synth bed.");
             return null;
         }
 
         var stream = GD.Load<AudioStream>(track.ResourcePath);
-        if (stream is AudioStreamMP3 mp3)
+        if (stream is AudioStreamOggVorbis ogg)
         {
             // Belt-and-suspenders: the .import file's loop=true param already bakes this into the
             // compiled resource, but every OTHER loop guarantee in this file is enforced in code, not
             // metadata, and a stray future reimport must not be able to silently drop it either.
-            mp3.Loop = true;
+            ogg.Loop = true;
         }
 
         ComposedCache[track.ResourcePath] = stream;
