@@ -997,6 +997,10 @@ public partial class MainUi : Control
         else if (state.Phase == DayPhase.Camp)
         {
             Camp.ShowModal();
+            // U1 (tutorial-revamp plan §11.13): the Vigil tutorial step completes the moment this
+            // slate is actually shown — not on a specific verb, and never on whether a party ever
+            // parks in the first place (see TutorialFlow.NotifyCampCardShown's own doc).
+            Tutorial.NotifyCampCardShown();
 
             // The held breath at the winch-house — the other moment the whole day is built to stage.
             // Once per parking, not once per sync: this runs on every phase tick while a party is

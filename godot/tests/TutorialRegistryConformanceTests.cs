@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System;
+using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
 using GameSim.Contracts;
@@ -304,6 +305,96 @@ public class TutorialRegistryConformanceTests
         finally
         {
             Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// KTD-4 (house rule, U1, §11.13): "the fact must be caused by a PlayerAction in ActionLog or
+    /// by a Notify-hook, never by a hero-decided event." This is the tripwire against the exact bug
+    /// this unit fixes returning: step 6 used to require the CUSTOMER's own accept
+    /// (<c>CounterSaleClosed</c>), and step 7's precondition was a stop <c>RaidConductor</c>'s own
+    /// doc calls "the UNCOMMON case" — both unfollowable by construction.
+    ///
+    /// <para>For every row except the two declared UI-navigation-only steps (<see
+    /// cref="TutorialStep.LookIn"/>/<see cref="TutorialStep.MeetHeroes"/> key off a real UI open
+    /// with no durable predicate this test could construct at all — <c>TutorialFlow</c>'s own class
+    /// doc), a state built ONLY from a real player action and its deterministic, state-gated kernel
+    /// consequence — never an AI/hero decision (a customer's own accept, a party that actually
+    /// managed to park) — must flip <see cref="TutorialStepDef.IsDone"/> true. The switch below is
+    /// exhaustive over <see cref="TutorialStep"/>: a step added without an entry here is a compile
+    /// error, not a silent gap.</para>
+    /// </summary>
+    [TestCase]
+    public void EveryStepsCompletionFact_IsReachableByPlayerActionAlone()
+    {
+        var exempt = new[] { TutorialStep.LookIn, TutorialStep.MeetHeroes };
+        var baseState = GameComposition.NewCampaign(9001);
+        var hero = new HeroId(1);
+        var item = new ItemId(1);
+
+        foreach (var def in TutorialFlow.Registry)
+        {
+            if (exempt.Contains(def.Step))
+            {
+                continue;
+            }
+
+            GameState fixture = def.Step switch
+            {
+                TutorialStep.BuyMaterial => baseState with
+                {
+                    EventLog = baseState.EventLog.Add(new MaterialPurchased("copper", 2, 4)),
+                },
+                TutorialStep.Craft => baseState with
+                {
+                    EventLog = baseState.EventLog.Add(new ItemCrafted(item, QualityGrade.Common)),
+                },
+                TutorialStep.Shelve => baseState with
+                {
+                    EventLog = baseState.EventLog.Add(new ItemSold(item, hero, 10, FromPlayerShop: true)),
+                },
+                TutorialStep.PostBounty => baseState with
+                {
+                    EventLog = baseState.EventLog.Add(new BountyPosted(new BountyId(1), 1, 5)),
+                },
+                TutorialStep.WatchDeparture => baseState with
+                {
+                    EventLog = baseState.EventLog.Add(new PartyDeparted(ImmutableList.Create(hero), 1)),
+                },
+                // U1 fix: the customer's own decision (CounterSaleClosed) is deliberately ABSENT
+                // here — only the player's own two actions, proving the old "a sale must close"
+                // gate is gone.
+                TutorialStep.OpenCounter => baseState with
+                {
+                    ActionLog = baseState.ActionLog.Add(new LoggedBatch(
+                        2, DayPhase.Morning,
+                        ImmutableList.Create<PlayerAction>(new OpenCounterAction(), new CloseCounterAction()))),
+                },
+                // U1 fix: SupplyDelivered/PartyRecalled are still legitimate here — deterministic
+                // consequences of the player's own SendSupply/Recall actions, gated only by state
+                // the player can see, never a hero's own choice. The OTHER completion path
+                // (NotifyCampCardShown, a UI-only hook with no durable predicate) is covered
+                // separately by TutorialFlowTests' Step7_Completes_OnSeeingTheCampCard_... — this
+                // row's own IsDone never needs a party to have actually parked.
+                TutorialStep.Vigil => baseState with
+                {
+                    EventLog = baseState.EventLog.Add(new PartyRecalled(ImmutableList.Create(hero))),
+                },
+                TutorialStep.EveningClose => baseState with { Day = 3 },
+                TutorialStep.Commission => baseState with
+                {
+                    ActionLog = baseState.ActionLog.Add(new LoggedBatch(
+                        3, DayPhase.Morning, ImmutableList.Create<PlayerAction>(new DeclineCommissionAction(hero)))),
+                },
+                _ => throw new NotSupportedException($"{def.Step}: no KTD-4 fixture wired for this step."),
+            };
+
+            AssertThat(def.IsDone(fixture))
+                .OverrideFailureMessage(
+                    $"{def.Step}'s IsDone did not flip true from a state built ONLY from player-caused facts " +
+                    "— which means it is (still) gated on something a hero decides, or this test's own fixture " +
+                    "is missing a fact the predicate actually needs.")
+                .IsTrue();
         }
     }
 }
