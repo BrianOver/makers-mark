@@ -61,7 +61,10 @@ public class ScarcityHudTests
     [TestCase]
     public void ForecastButton_OpensBoard_ContentMatchesSimQuery()
     {
-        var ui = MountMainUi();
+        // U3 (tutorial-revamp plan, §11.13): Forecast is now a gated tray book (opens once you
+        // reach an Evening — it forecasts tomorrow) — mounted at Evening so this stays a test of
+        // the WIRING, not of the gate itself (SurfaceUnlocksTests owns that).
+        var ui = MountMainUi(new SimAdapter(GameFactory.NewGame(2026) with { Phase = DayPhase.Evening }));
         try
         {
             var state = ui.Adapter.CurrentState;
@@ -113,7 +116,9 @@ public class ScarcityHudTests
     [TestCase]
     public void ForecastBoard_Close_HidesAndReleasesLatch()
     {
-        var ui = MountMainUi();
+        // U3 (tutorial-revamp plan, §11.13): see ForecastButton_OpensBoard_ContentMatchesSimQuery's
+        // own remark — Forecast is gated on reaching an Evening.
+        var ui = MountMainUi(new SimAdapter(GameFactory.NewGame(2026) with { Phase = DayPhase.Evening }));
         try
         {
             PressEnabled(ui, "OpenForecast");

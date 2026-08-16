@@ -28,11 +28,22 @@ namespace GodotClient.Town2d;
 /// </summary>
 public static class WorkshopVocab
 {
-    /// <summary>One profession's contribution to the shared workshop shell.</summary>
+    /// <summary>One profession's contribution to the shared workshop shell.
+    ///
+    /// <para>U2 (tutorial-revamp plan, §11.13): <see cref="MaterialsStationId"/>/<see
+    /// cref="CraftStationId"/> are the tutorial's own pointer targets — the lookup-key twins of
+    /// <see cref="StationNoun"/> (display text; ids and nouns can differ, e.g. tanning's "scrape
+    /// frame" noun vs "scrape-frame" id, engineering's "workbench" noun vs "bench" id). Named
+    /// explicitly per profession rather than inferred from <see
+    /// cref="InteriorLayout2D.StationSpec.Focus"/>, because blacksmith alone carries TWO
+    /// Focus:"materials" stations (furnace, shelf) with no data-only way to prefer the
+    /// shopping-flavored one.</para></summary>
     public readonly record struct Vocab(
         string Nametag,
         string StationNoun,
         string SignboardSpriteId,
+        string MaterialsStationId,
+        string CraftStationId,
         IReadOnlyList<InteriorLayout2D.StationSpec> Stations);
 
     /// <summary>Fallback profession when the caller has none selected yet (defensive only — every
@@ -58,6 +69,16 @@ public static class WorkshopVocab
     public static string SignboardSpriteIdFor(IReadOnlyList<string> orderedProfessions) =>
         Resolve(orderedProfessions).SignboardSpriteId;
 
+    /// <summary>U2 (tutorial-revamp plan): the primary profession's own materials-station id — see
+    /// <see cref="Vocab"/>'s own doc for why this is a distinct field from <see
+    /// cref="StationNounFor"/> rather than derived from it.</summary>
+    public static string MaterialsStationIdFor(IReadOnlyList<string> orderedProfessions) =>
+        Resolve(orderedProfessions).MaterialsStationId;
+
+    /// <summary>U2 (tutorial-revamp plan): the primary profession's own crafting-station id.</summary>
+    public static string CraftStationIdFor(IReadOnlyList<string> orderedProfessions) =>
+        Resolve(orderedProfessions).CraftStationId;
+
     /// <summary>Every station the given profession contributes to the shared shell — the UNION
     /// across every selected profession is what <see cref="InteriorLayout2D.WorkshopRoomFor"/>
     /// builds the room from. Unknown/unregistered ids contribute nothing (defensive only).</summary>
@@ -75,7 +96,7 @@ public static class WorkshopVocab
         // Byte-identical to the pre-U7 "forge" row (InteriorLayout2D's zero-regression pin): same
         // ids, labels, sprite ids, tiles, and actions/focus as the historical hardcoded six.
         [ProfessionRegistry.BlacksmithId] = new Vocab(
-            "Forge", "anvil", "town2d-sign-blacksmith",
+            "Forge", "anvil", "town2d-sign-blacksmith", MaterialsStationId: "shelf", CraftStationId: "anvil",
             new[]
             {
                 // U5 (verify-by-playing plan, KTD-D): the reported collision — anvil/furnace both
@@ -105,7 +126,7 @@ public static class WorkshopVocab
 
         // Row y=2/3 — clear of blacksmith's y=5/7/10, tanning's y=9, and engineering's y=11.
         [AlchemyProfession.Id] = new Vocab(
-            "Apothecary", "cauldron", "town2d-sign-alchemy",
+            "Apothecary", "cauldron", "town2d-sign-alchemy", MaterialsStationId: "reagent-shelf", CraftStationId: "cauldron",
             new[]
             {
                 // U5 (verify-by-playing plan, KTD-D): the reported collision — cauldron/still both
@@ -127,7 +148,7 @@ public static class WorkshopVocab
 
         // Row y=11 — clear of every other profession's rows.
         [EngineeringProfession.Id] = new Vocab(
-            "Workbench Hall", "workbench", "town2d-sign-engineering",
+            "Workbench Hall", "workbench", "town2d-sign-engineering", MaterialsStationId: "gear-rack", CraftStationId: "bench",
             new[]
             {
                 new InteriorLayout2D.StationSpec("bench", "Workbench", "town2d-station-eng-bench", new Vector2I(5, 11), "Forge", Focus: "craft",
@@ -143,7 +164,7 @@ public static class WorkshopVocab
 
         // Row y=9 — clear of every other profession's rows.
         [TanningProfession.Id] = new Vocab(
-            "Tannery", "scrape frame", "town2d-sign-tanning",
+            "Tannery", "scrape frame", "town2d-sign-tanning", MaterialsStationId: "hide-rack", CraftStationId: "scrape-frame",
             new[]
             {
                 new InteriorLayout2D.StationSpec("scrape-frame", "Scrape Frame", "town2d-station-tan-frame", new Vector2I(5, 9), "Forge", Focus: "craft",

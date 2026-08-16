@@ -105,10 +105,17 @@ public class TutorialAllProfessionsTests
                             "— a player would have nothing readable to act on.")
                         .IsFalse();
 
-                    // U5 (loop-legibility plan): the registry's anchor is profession-independent
-                    // (buildings/HUD controls, never a recipe), so every one of the four professions
-                    // walking this same chain must always have something concrete to point at —
-                    // never TutorialAnchorKind.None while still active, on any tick, for any profession.
+                    // U5 (loop-legibility plan): every one of the four professions walking this
+                    // same chain must always have something concrete to point at — never
+                    // TutorialAnchorKind.None while still active, on any tick, for any profession.
+                    // U2 (tutorial-revamp plan, §11.13) made step 1's own anchor profession-DEPENDENT
+                    // (Station, resolved to each profession's own materials/craft station via
+                    // CurrentAnchor) rather than the profession-independent Building it used to be —
+                    // this assertion still holds regardless, since a Station anchor is never None
+                    // either, and Registry_EveryStationAnchor_ResolvesAgainstARealRoomStation/
+                    // CurrentAnchor_ResolvesTheLiveProfessionsOwnStation_ForEveryStartingProfession
+                    // (TutorialRegistryConformanceTests) own the "resolves to something real" claim
+                    // per profession specifically.
                     AssertThat(ui.Tutorial.CurrentAnchor.Kind)
                         .OverrideFailureMessage(
                             $"{professionId}: tutorial active on tick {tick} ({ui.Tutorial.Step}) but its " +

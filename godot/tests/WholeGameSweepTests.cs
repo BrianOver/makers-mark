@@ -1,9 +1,11 @@
 #if GDUNIT_TESTS
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Threading.Tasks;
 using GameSim.Contracts;
+using GameSim.Kernel;
 using GdUnit4;
 using Godot;
 using static GdUnit4.Assertions;
@@ -98,10 +100,27 @@ public class WholeGameSweepTests
     /// a single mount-and-sweep is far cheaper in CI than eight mounts — which matters, because the engine
     /// job already runs close to its deadline.</para>
     /// </summary>
+    /// <summary>U3 (tutorial-revamp plan, §11.13): the four HUD-tray-routed surfaces in
+    /// <see cref="Surfaces"/> are now gated tray books — a totally fresh mount would fail all four
+    /// of them closed, dropping this sweep to 2-of-6 (Bestiary + Mirror only) and tripping its own
+    /// <c>swept &gt;= 4</c> floor for a reason unrelated to what this sweep actually claims (every
+    /// surface is readable and non-overlapping once raised). Mounted with each gate's own fact
+    /// already true so the sweep still measures readability, not gating — <c>SurfaceUnlocksTests</c>
+    /// owns the gate claims themselves.</summary>
+    private static GameState AllTraySurfacesUnlockedWorld() =>
+        GameFactory.NewGame(2026) with
+        {
+            Phase = DayPhase.Evening,
+            EventLog = ImmutableList.Create<GameEvent>(
+                new PartyDeparted(ImmutableList.Create(new HeroId(1)), TargetFloor: 1),
+                new CommissionPosted(new HeroId(1), ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: 5, PremiumGold: 10),
+                new AttributionBeatEvent(BeatType.KillingBlow, new ItemId(1), new HeroId(1), Floor: 1, Detail: "sweep fixture")),
+        };
+
     [TestCase]
     public async Task EverySurface_IsReadableAndDoesNotOverlapItself()
     {
-        var ui = MountMainUi();
+        var ui = MountMainUi(new SimAdapter(AllTraySurfacesUnlockedWorld()));
         try
         {
             var player = new HumanPlayer(ui);

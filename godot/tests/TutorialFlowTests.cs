@@ -354,6 +354,32 @@ public class TutorialFlowTests
     private static void AnswerCounterAndAdvance(MainUi ui, int day) =>
         CraftedAdvanceWithActions(ui, day, new OpenCounterAction(), new CloseCounterAction());
 
+    /// <summary>
+    /// U2 (tutorial-revamp plan, §11.13)'s own OpenCounter helper, KEPT and fixed to match the
+    /// predicate the merge actually shipped (<c>TutorialFlow.CounterAnsweredAtLeastOnce</c>, U1's
+    /// ActionLog-only version — see the registry row's own comment): needs an <see
+    /// cref="OpenCounterAction"/> in the SAME batch, not just a <see cref="CloseCounterAction"/>,
+    /// or the predicate's own `openedCounter` latch never trips. <c>CustomerApproached</c> stays in
+    /// the EventLog deliberately — it proves the completion fact does not care whether a customer
+    /// ever showed up or what they decided, only that the player opened the counter and answered.
+    /// This shared helper exists only so tests further down the chain can get PAST OpenCounter to
+    /// test a LATER step, mirroring <see cref="CraftedAdvance"/>'s own "hand a modified state to a
+    /// pure method" idiom.
+    /// </summary>
+    private static void CraftedAdvanceOpenCounterComplete(MainUi ui, int day)
+    {
+        var state = ui.Adapter.CurrentState;
+        var crafted = state with
+        {
+            Day = day,
+            EventLog = state.EventLog.Add(new CustomerApproached(new HeroId(1))),
+            ActionLog = state.ActionLog.Add(
+                new LoggedBatch(day, state.Phase,
+                    ImmutableList.Create<PlayerAction>(new OpenCounterAction(), new CloseCounterAction()))),
+        };
+        ui.Tutorial.Advance(crafted);
+    }
+
     /// <summary>The whole arc, every step in day order, each through its REAL completion path
     /// (<c>MainUi.Mirror.ShowMirror</c>/<see cref="MainUi.OpenPanel"/> for the two UI-only steps,
     /// <see cref="CraftedAdvance"/> for the sim-fact ones) — the "scripted 3-day drive" the U7 plan
@@ -685,6 +711,84 @@ public class TutorialFlowTests
         }
     }
 
+    /// <summary>
+    /// U2 (tutorial-revamp plan, §11.13): the exact case that stalled the owner — the customer's
+    /// want is fixed before the player shows anything, and on a starter shelf a hero who WALKS with
+    /// nothing bought is the modal case, not bad luck. The step must complete on this outcome, not
+    /// only on a closed sale (Test scenario 2 from the unit's own brief). Kept alongside
+    /// <see cref="Step6_Completes_WhenTheCustomerWalks_WithoutASale"/> (same claim, proven the
+    /// other way — a realistic EventLog with CustomerApproached/CustomerWalked rather than a bare
+    /// ActionLog construction) rather than merged into it: fixed to also carry an
+    /// <see cref="OpenCounterAction"/> in the ActionLog batch, which the merge's own predicate
+    /// (<c>TutorialFlow.CounterAnsweredAtLeastOnce</c>) requires and the original draft omitted.
+    /// </summary>
+    [TestCase]
+    public void OpenCounterStep_Completes_WhenTheCustomerWalks_WithoutASale()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            DriveDay1ToLookIn(ui);
+            ui.Mirror.ShowMirror();
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.OpenCounter);
+
+            var state = ui.Adapter.CurrentState;
+            var walked = state with
+            {
+                Day = 2,
+                EventLog = state.EventLog
+                    .Add(new CustomerApproached(new HeroId(1)))
+                    .Add(new CustomerWalked(new HeroId(1), null, "no want met")),
+                ActionLog = state.ActionLog.Add(
+                    new LoggedBatch(2, state.Phase,
+                        ImmutableList.Create<PlayerAction>(new OpenCounterAction(), new CloseCounterAction()))),
+            };
+            ui.Tutorial.Advance(walked);
+
+            AssertThat(ui.Tutorial.Step)
+                .OverrideFailureMessage(
+                    "A hero walking with nothing bought did not complete OpenCounter — the step still demands a closed sale.")
+                .IsEqual(TutorialStep.Vigil);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The happy path still works too (Test scenario 3 from the unit's own brief) — same
+    /// relationship to <see cref="Step6_AlsoCompletes_OnAClosedSale"/> as the walk-away test above
+    /// has to its own sibling.</summary>
+    [TestCase]
+    public void OpenCounterStep_AlsoCompletes_OnAClosedSale()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            DriveDay1ToLookIn(ui);
+            ui.Mirror.ShowMirror();
+
+            var state = ui.Adapter.CurrentState;
+            var sold = state with
+            {
+                Day = 2,
+                EventLog = state.EventLog
+                    .Add(new CustomerApproached(new HeroId(1)))
+                    .Add(new CounterSaleClosed(new HeroId(1), new ItemId(1), 10, Pinned: false)),
+                ActionLog = state.ActionLog.Add(
+                    new LoggedBatch(2, state.Phase,
+                        ImmutableList.Create<PlayerAction>(new OpenCounterAction(), new CloseCounterAction()))),
+            };
+            ui.Tutorial.Advance(sold);
+
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Vigil);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     [TestCase]
     public void Step7_Completes_OnSeeingTheCampCard_WithNoVerbPressed()
     {
@@ -705,6 +809,38 @@ public class TutorialFlowTests
 
             AssertThat(ui.Tutorial.Step)
                 .OverrideFailureMessage("Seeing the camp card alone did not advance Vigil.")
+                .IsEqual(TutorialStep.EveningClose);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// U2 (tutorial-revamp plan, §11.13): the same claim as
+    /// <see cref="Step7_Completes_OnSeeingTheCampCard_WithNoVerbPressed"/>, reached via
+    /// <see cref="CraftedAdvanceOpenCounterComplete"/> (fixed, see that helper's own doc) instead
+    /// of <see cref="AnswerCounterAndAdvance"/> — kept as independent coverage rather than merged
+    /// into its sibling.
+    /// </summary>
+    [TestCase]
+    public void VigilStep_CompletesOnSeeingTheCampCard_WithNoVerbPressed()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            DriveDay1ToLookIn(ui);
+            ui.Mirror.ShowMirror();
+            CraftedAdvanceOpenCounterComplete(ui, day: 2);
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Vigil);
+
+            // Mirrors MainUi.SyncCampModal's own call site — fired the instant CampPanel.ShowModal
+            // is, before any of the three camp verbs could ever be pressed.
+            ui.Tutorial.NotifyCampCardShown();
+
+            AssertThat(ui.Tutorial.Step)
+                .OverrideFailureMessage("Seeing the camp card did not complete Vigil — completion still waits on a specific verb.")
                 .IsEqual(TutorialStep.EveningClose);
         }
         finally
@@ -774,6 +910,47 @@ public class TutorialFlowTests
         }
     }
 
+    /// <summary>
+    /// U2: regression pin on the exact defect the owner's playtest caught — "it opens once Day 2
+    /// begins" stated a day gate for a condition (whether today's muster even reaches the
+    /// checkpoint) that was never about the day at all. A quiet world (no heroes at all — MusterPlan
+    /// forms no parties) must read as "not today", never as a day promise. Kept alongside its
+    /// sibling above as a second angle on the same claim: this one reads the checklist row's
+    /// GatingNote directly against an emptied-out Heroes/Bounties state, rather than TopSlotText
+    /// against the live campaign.
+    /// </summary>
+    [TestCase]
+    public void VigilStep_GatingNote_SaysNoPartyIsStaged_WhenEveryPartyTargetsFloor1()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            DriveDay1ToLookIn(ui);
+            ui.Mirror.ShowMirror();
+            CraftedAdvanceOpenCounterComplete(ui, day: 2);
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Vigil);
+
+            var quiet = ui.Adapter.CurrentState with
+            {
+                Heroes = ImmutableSortedDictionary<int, Hero>.Empty,
+                Bounties = ImmutableList<Bounty>.Empty,
+            };
+            var row = ui.Tutorial.Checklist(quiet).Single(r => r.Current);
+
+            AssertThat(row.GatingNote)
+                .OverrideFailureMessage("Vigil's checklist row carried no gating note for a day nobody is staged to camp.")
+                .IsNotNull();
+            AssertThat(row.GatingNote!.Contains("Day", System.StringComparison.Ordinal))
+                .OverrideFailureMessage(
+                    $"Step7_NeverClaimsADayGate regression: Vigil's gating note still names a day gate — \"{row.GatingNote}\"")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     [TestCase]
     public void Step7_NeverClaimsADayGate_ForAConditionThatIsNotDayGated()
     {
@@ -799,8 +976,20 @@ public class TutorialFlowTests
         }
     }
 
+    /// <summary>
+    /// Design-collision note (merge of §11.13 U1 + U2/U3): this test was originally named
+    /// "..._GatedToDay2" and asserted that a SupplyDelivered on Day 1 must NOT complete Vigil — a
+    /// premise that assumed Vigil's own MinDay was still 2. The merge keeps U2/U3's MinDay 2→1 (the
+    /// real precondition was never the day at all — AnyPartyStagedForCheckpointToday's own doc), so
+    /// Day 1 no longer blocks anything here; a hand-built Day-1 SupplyDelivered would now correctly
+    /// complete the step, and asserting otherwise would just be pinning a stale, rejected design.
+    /// What still matters, and is still worth pinning, is that the DAY ROLLING OVER alone (with no
+    /// SupplyDelivered/PartyRecalled fact at all) never completes it — see
+    /// <see cref="ChainReachesMeetHeroes_OnDay3_WhenNoPartyEverCamped"/> for the day-1-shaped half
+    /// of that same claim already covered as a byproduct there. This test now checks it directly.
+    /// </summary>
     [TestCase]
-    public void VigilStep_CompletesOnSupplyDelivered_GatedToDay2()
+    public void VigilStep_CompletesOnSupplyDelivered_NotOnTheDayAlone()
     {
         var ui = MountMainUi();
         try
@@ -810,9 +999,9 @@ public class TutorialFlowTests
             AnswerCounterAndAdvance(ui, day: 2);
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Vigil);
 
-            CraftedAdvance(ui, day: 1, new SupplyDelivered(new HeroId(1), new ItemId(1), 9));
+            CraftedAdvance(ui, day: 2); // no SupplyDelivered/PartyRecalled event at all
             AssertThat(ui.Tutorial.Step)
-                .OverrideFailureMessage("A supply delivery on Day 1 completed a Day-2 step.")
+                .OverrideFailureMessage("Advancing with no SupplyDelivered/PartyRecalled event completed Vigil — IsDone is checking the wrong fact.")
                 .IsEqual(TutorialStep.Vigil);
 
             CraftedAdvance(ui, day: 2, new SupplyDelivered(new HeroId(1), new ItemId(1), 9));

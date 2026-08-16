@@ -110,9 +110,11 @@ public class TutorialKeepsUpTests
             var player = new HumanPlayer(ui);
             await player.Frames(4);
 
+            // U2 (tutorial-revamp plan, §11.13): BuyMaterial points at the Station("forge","shelf")
+            // now, not the whole Forge building — blacksmith's own materials station.
             AssertThat(ui.Overlay.PulsingBuildingKey)
-                .OverrideFailureMessage("BuyMaterial's own anchor (forge) is not pulsing on a fresh mount.")
-                .IsEqual("forge");
+                .OverrideFailureMessage("BuyMaterial's own Station anchor (the shelf) is not pulsing on a fresh mount.")
+                .IsEqual("shelf");
 
             ui.OpenPanel("Forge");
             await player.WaitForLayout(ui.Drawer.CurrentContent!);
