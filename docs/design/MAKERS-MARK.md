@@ -4489,3 +4489,396 @@ Replace the second and third paragraphs of §3.3 (`docs/design/THE-GAME.md:224-2
 
 (The "around day four" promise stops being an intention: the earliest possible death IS day 4 by
 mechanism, and the tutorial is standing there when it lands, whichever day the dice pick.)
+
+---
+
+# §11.14 — The owner's 2026-08-16 playtest, planned end to end
+
+**Status: §11.4 path work. This section is the plan of record for all 27 items of the owner's
+2026-08-16 playtest.** The register itself lives at
+`docs/playtests/2026-08-16-owner-playtest-register.md` (landed in PR #527) and is not duplicated
+here; this section is what gets built, in what order, and why.
+
+## Why this section exists in this shape
+
+The owner's complaint is not that any one thing is broken. It is that feedback goes missing:
+
+> everyplay test i am giving heavy feedback but you jump on ONE thing then skip the rest… its
+> annoying how little you need doing. the tutorial revamp is CLEARLY nowhere NEAR the scope i
+> keep fucking telling you to do (full guided tutorial) and other feedback is getting randomly
+> forgotten.
+
+The forgetting had a mechanical cause, now fixed: the previous session held all 27 items in an
+in-session todo list, hit its subagent cap, and died with the list. The handoff that survived
+asserted the items were "already captured as tasks #141–#162" and nothing by that name existed
+anywhere on disk.
+
+So this program has two products. One is the fixes. The other is that **a fix can no longer be
+claimed without a unit, and a unit can no longer be claimed without a test** — the coverage
+census in §11.14.9 is the executable form of that, and every theme's plan ends with a table that
+has no blanks.
+
+Seven parallel research passes read the code before any unit was written. **Four of the five
+previously-attempted fixes on this list had been aimed at the wrong cause** — the audio clipping
+that does not exist, the bellows volume that was never the mechanism, the loop seam that was not
+the artefact, the tutorial "revamp" that taught button presses. That is why this section leads
+with root causes and not with tasks.
+
+## §11.14.1 Owner rulings, 2026-08-16
+
+Made this session, in response to costed options. Do not re-litigate.
+
+| # | Ruling |
+|---|---|
+| R14.1 | **Strike implies release.** A hammer strike arriving mid-pump stops the pump and lands. Rejected: auto-release at max heat (leaves the trap live at heat 999) and a copy-only prompt (that is the shape of the fix that already failed). |
+| R14.2 | **The furnace opens the Foundry** — coal, flux, forge-tier upgrade. The Material Shelf stays the ore vendor, which the tutorial, `WorkshopVocab` and this document already agreed it was. |
+| R14.3 | **Recipes gate on Forge Tier plus an action slot.** Rejected: a talent-point economy (a new system, deliberately deferred) and a calendar gate (gates on the clock rather than on anything the player's hands did). |
+| R14.4 | **The tutorial chain numbers within acts**, not as one global countdown. |
+| R14.5 | **A named journeyman delivers the lessons no hero can honestly speak.** Ships as a station-table row plus a pure `MentorVoice`, on an existing townsfolk body. She never orders, and no step's completion depends on speaking to her. |
+| R14.6 | **The pointed chain runs through day 7**, not day 3–4. This is a deliberate widening: Acts I–III get room rather than being compressed. |
+| R14.7 | **The tutorial names the six dilemmas out loud** — one sentence each, both sides, no recommendation, pinned by corpus tests. |
+| R14.8 | **Buildings grow role-ranked, 3.5×–5.5× the character body.** Not a uniform multiplier: a uniform 2× would leave the market and the Bounties hall still undersized, i.e. both complaints still open. |
+| R14.9 | **The world grows to 64×44 tiles** (1024×704 px, 3.87 screens of area, from 1.55). Larger was rejected on content grounds — the cap is what can credibly fill it, not what the grid allows. |
+| R14.10 | **`market.png` is not re-rendered.** The owner named it as art he likes and there is no fallback copy on disk. Accepted consequence: at 1.94× it becomes the smallest building in a town whose tavern is 5.5×. A candidate render may be produced for side-by-side review only; it merges on his word or not at all. |
+| R14.11 | **All three causes of the legs-in-grass defect are fixed, including the 244-PNG silhouette pass** over the AI cast approved on 2026-08-15. |
+
+Standing rulings from §11.7 and earlier that constrain this program: venues are a forward ladder;
+heirloom reforge grows and never rewards a death; the first death belongs inside the tutorial;
+buildings get bigger rather than characters smaller; no important information without a face, and
+dialogue is the delivery (R3); the narrator is sparse and triggered, one voice for v1 (R6).
+
+## §11.14.2 The six themes and the ship order
+
+```
+T6  reasons              ──┐
+                           ├──► T1  the forge works ──► T2  the full guided tutorial
+                         ──┘
+T4  one mix pass         ──── independent
+T3  the town reads right ──── independent (T3 is internally ordered: guard → grid → art)
+T5  the night lands      ──── independent
+```
+
+**T6 first** because reason-logs are how the *next* playtest gets diagnosed instead of guessed at.
+Four of the five failed fixes on this register failed for want of a recorded reason.
+
+**T1 before T2** because the tutorial teaches the forge, and teaching a minigame that cannot be
+completed is worse than not teaching it.
+
+**T3 is internally strict**: the placement guard must exist before the grid moves, and the grid
+must move before the buildings grow. This is arithmetic, not preference — a minimum town at
+R14.8's ratios needs 640 px of vertical space and the world has 448. The 16 measured sprite
+overlaps are the same fact from the other side: the layout already fails at today's sizes.
+
+## §11.14.3 T1 — The forge works
+
+Closes #147, #149, #155, #156, #157.
+
+**#155 is the highest-priority defect in the project.** Root cause, three lines: a Shift tap under
+`BellowsTapMaxHoldSeconds` latches the bellows on permanently
+(`godot/scripts/minigames/ForgeMinigame.cs:649-656`); `ForgeStrike()` early-returns while pumping
+(`:465-470`); and the pumping branch drains banked shape at 8‰/s while heat is clamped (`:441-445`).
+Every strike after the latch is discarded and the readout says "keep going."
+
+It survived two fixes and a playtest because **the latch had never executed in CI**: every
+winnability harness drives the overlay with `SetProcess(false)`, and `:622` disables the whole
+gesture machine when not processing. The one test that does exercise it,
+`AgentPlaytestBridgeTests.cs:868-968`, **asserts the softlock as correct** — a 420-turn pilot probe
+landed zero strikes and it was filed as a measurement.
+
+| Unit | Closes | What |
+|---|---|---|
+| U-T1-1 | #155 | The rule (R14.1). Drops `IsPumping` from the strike gate and from the button's disabled state; stops the drain at the heat clamp. Amends the test that pins the bug and the pilot policy that depends on it. |
+| U-T1-2 | #155 | The readout gains a pumping branch. The assist line may not render while pumping. |
+| U-T1-3 | #155 | One bellows, one state — and `ForgeGestureTests`, the first real-clock input suite in the repo, which leaves `_Process` on and waits on conditions rather than frame counts. |
+| U-T1-4 | #155 | `HudBoundsTests` gains its first minigame-overlay case: hammer, bellows and cancel are on screen and clickable at the minimum window. |
+| U-T1-5 | #156 | `EnsureControlVisible` aimed at a section taller than its viewport scrolls to that section's *bottom*. Replaced with an explicit top-edge scroll; the old guard is strengthened so it can no longer pass on a bottom-scrolled panel. |
+| U-T1-6 | #149 | The three modifier selects get family labels derived from the enum; the blank feedback row stops reserving space. |
+| U-T1-7 | #147 | The quench trough stops denying the quench it performs. |
+| U-T1-8 | #147 | The furnace opens the Foundry (R14.2). `FocusSection` gains a third section; `InteriorRoomTests`' known-focus table is the guard that keeps a silent no-op from shipping. |
+| U-T1-9 | #157 | Unlocking a talent costs an action slot and requires a Forge Tier (R14.3). **Golden re-record and a balance re-baseline in the same PR** — `BaselinePlayer` unlocks one talent per morning. |
+| U-T1-10 | #157, #149 | The panel mirrors the kernel's gate. Locked recipes render as one compact row with the named requirement, greyed and never hidden. Day 1 goes from 22 five-button cards to 7 cards and 15 rows — which is also the density half of #149. |
+
+Deliberately not done: reverting the two-scroll split (it is the documented fix for a burial bug);
+un-pairing the bellows from the anvil (deliberate, pinned twice); removing the `IsProcessing()`
+gate (it protects the tempo measurements — the answer is a second harness, not deleting the first
+one's protection); deleting the tap-to-toggle latch (a real accessibility feature — the inert
+hammer under it was the bug).
+
+## §11.14.4 T2 — The full guided tutorial
+
+Closes #158, #160, #161, #162.
+
+**The finding that sets the scope:** the current tutorial teaches you to operate a shop, and this
+game is not a shop. Ten steps teach ten button presses; a player can complete all ten without ever
+watching a hero decide, seeing the mark on anything, or seeing a counterfactual beat. The census:
+**25 player actions exist, 7 are taught, 4 are named but never required, 11 are wholly untaught**,
+all five craft minigames are untaught, and of the six dilemmas the game is made of, **pricing and
+the slot budget are never taught at all**.
+
+The rework is four acts on the five-link spine — The Mark, The Hand-Off, The Dark, The Memory —
+plus a **first-touch** tier so the long tail teaches itself once, the moment it becomes reachable,
+and then lives in the Lessons book. That two-tier split is what makes 25 actions tractable without
+a forty-step chore.
+
+31 units in six waves:
+
+- **Wave A, substrate (7):** act-scoped numbering (R14.4) · splitting the chain's backstop from the
+  warrant constant, which today are the same number · the Docket, one new `CanvasLayer` that draws
+  above the drawer veil and is deliberately absent from `OverlaySurfaces()` · Tomorrow at the
+  Counter moved into it (#160) · `MentorVoice` and the journeyman (R14.5) · a `PanelControl` anchor
+  kind · the first-touch engine with its once-ever anti-nag pin.
+- **Wave B, Act I (4):** the forge's two acts taught inside the forge · the other three crafts, and
+  a stale "ships DORMANT" doc deleted · material sets the ceiling and your hands set the band · the
+  mark, read.
+- **Wave C, Act II (6):** **pricing as a decision** (dilemma #2, untaught today) · **day 1 gets a
+  link-2 beat** (#161) · the counter step completes on actually answering · it points at the
+  counter station · its copy splits and its gates stop lying · hold-or-sell (dilemma #1).
+- **Wave D, Act III (5):** the slot budget named before it bites (dilemma #4) · the muster speaks
+  (dilemma #3) · the ore gift named as a gift (dilemma #5) · **the proof taught the first time it
+  lands** (link 4) · the forecast board taught.
+- **Wave E, the long tail (5):** talents and the second profession · the Foundry's four verbs at
+  affordability · reforge · the read-only surfaces · the HUD chips, including quick travel which
+  unlocks silently today.
+- **Wave F, the guard (3):** `TeachingCoverageCensusTests` — deny-by-default over every action,
+  minigame and panel, where a refusal must carry a written reason · "show me that lesson again" ·
+  census hygiene.
+
+**#161 answered.** The honest state today is *neither* branch: a sale can fire silently on the
+send-off tick because `HeroShoppingSystem` runs before `MusterSystem`, and the game never says so.
+The fix is not to add a sale — it is to make **the moment a hero decided visible**: the send-off
+names what happened, buyer and price, or says honestly that nobody bought it. That gives link 2 its
+missing day-1 beat, and it collapses the either/or, because the two readings were only exclusive
+while the game was silent.
+
+**#160 solved structurally.** It is impossible today, not merely unwired: the drawer's veil is
+added after the tray and eats the click, and hiding `ForgePanel` force-cancels every running craft.
+The Docket fixes both by living on its own layer and never touching `DrawerHost`.
+
+## §11.14.5 T3 — The town reads right
+
+Closes #141, #142, #143, #144, #145, #146, #150, #163.
+
+**#150 is one constant.** `SpriteMotion.WalkSpeedThreshold = 20f`; a wandering hero's lissajous
+velocity peaks at 15.03 px/s. **No wandering hero can ever cross the threshold** — all six are
+frozen on frame 0 all day. The art is not missing (61 `_step` + 61 `_walk2` + 61 `_walk4` on disk)
+and the wiring is not missing. Townsfolk differ solely because their errand speed is 60. Lowering
+the threshold is the wrong fix: at 6 px/s a hero would play one stride every 13.5 seconds while
+drifting in place. The fix is the errand model the townsfolk already have.
+
+**#145 has an exact cause.** `HomeFor(id)` is a formula that puts hero 1's permanent home one tile
+below the ore cart, and the nameplate draws at `ZIndex 20` inside the cart. All six hero homes
+collide with something; hero 6 spawns inside the market and Y-sorts behind it.
+
+**#146 is measured, not felt.** The interior shells carry 0.020–0.033 bytes/px against 1.688 for
+the forge exterior — 19–84× less pixel information per unit area than any art the owner has
+approved. Cause: a "six to eight colours per building" rule, correct for a 20×36 sprite, applied to
+a 384×224 room the camera fills, with the palette sampled from the pixel set the owner rejected.
+
+11 units: the placement table and its census guard (which reconstructs rects the way the client
+does, covers the two placement sources that were unreachable from any test, and pins today's 16
+overlaps as an exact exception set) → the grid to 64×44 and every table re-laid (the exception set
+goes to zero, which is the unit's proof) → occupancy, so the bigger world reads fuller not emptier
+→ the venue art contract that #514 shipped without → the venue re-render to R14.8's sizes → the
+pixel-snap that stops resampling the cast every frame → the contact shadow → the silhouette pass
+(R14.11) → heroes get a real errand → the march pace, as its own revertable PR → painted interior
+backplates → an orphan sweep.
+
+**No prop needs shrinking.** The well at 2.1× a person and the lamppost at 1.4× are both defensible;
+they only read as absurd against undersized buildings. The lamppost's real defect is count — 22
+light sources in a four-building village — which the re-lay fixes.
+
+## §11.14.6 T4 — One mix pass
+
+Closes #151, #152, #153, #154, #165.
+
+**The correction that reframes the whole theme: nothing clips.** Zero clipped samples in any
+shipped bed, in OGG or the MP3 predecessors. The prior "+1.63 dBFS, 11,133 clipped samples" is an
+artefact of an L+R mono sum, which saturates all four beds to exactly 0.0 dB; Godot plays them
+stereo and that sum never happens. Two rounds of gain cuts chased it.
+
+The real defects are content and structure:
+
+- **#151** — the Dawn bed fires 356 hard onsets in 134 s, with 91.1% of its energy below 150 Hz and
+  under 0.001% above 6 kHz. It is an impulse train with no midrange. No gain change can fix content.
+- **#152** — the Night bed has seven seconds of flat noise floor at its tail and loops back into
+  content 34.9 dB louder. The MP3→OGG fix made the *sample* continuous and left the *content*
+  discontinuity. The Evening bed is worse and unreported: 53 of 60 seconds of bare noise floor with
+  isolated full-bandwidth clicks, one of them 62 dB out of silence.
+- **#153** — the previous nudge measured −1.92 dB, at or below noticeable. Level was never the
+  mechanism: the bellows is the only looping cue in the game, retriggered continuously at 0 dB,
+  sitting 8.5 dB above the bed it plays over. Every constant and test in the codebase measures
+  **peak**; the complaint is about **sustained loudness**.
+- **#154/#165** — there are no audio buses at all, no limiter, no ducking, and a 47 dB spread from
+  loudest cue to quietest bed. The narrator sits below nine UI cues.
+
+Two further findings ride along: the craft grade sting bypasses `AudioDirector` entirely and ignores
+the SFX fader, the master fader **and mute** — so muted playtests were never silent; and the
+composed-track fingerprint test pins all four beds by SHA-256, which **actively locks the defective
+generations in place** and must die in the same PR as any re-master.
+
+**How all this passed review, mechanically: integrated LUFS is gated, so it is blind to dead air.**
+The Evening bed measures a respectable −19.6 LUFS while being silent for 53 of its 60 seconds. Every
+gate in this theme therefore measures **unweighted RMS over the source's active window** — first to
+last sample whose 50 ms window sits within 40 dB of the source's loudest — with LUFS recorded
+alongside as documentation only.
+
+**The budget, which is the thing four previous fixes were missing.** Every prior attempt moved a
+runtime constant with no target to move it toward, so none of them could fail. The spec:
+
+| category | source | bus | effective | today |
+|---|---|---|---|---|
+| narrator | −20 | Narrator 0 dB | **−20** | −32.5 |
+| ceremonial one-shot (bell, depart, craft-done, death toll, memorial, grade stings) | −23 | Sfx 0 dB | **−23** | −13.8 … −20.6 |
+| UI one-shot | −27 | Sfx 0 dB | **−27** | −20.9 … −22.5 |
+| music bed | −12 | Music −20 dB | **−32** | −40.9 … −60.9 |
+| held/looping cue (bellows) | −32 | SfxLoop −3 dB | **−35** | −32.4 |
+
+**Spread goes from 47 dB to 15 dB.** The narrator rises 12.5 dB and stops sitting below nine UI
+cues; the bellows moves 11.5 dB *relative to the bed it plays over*, against the 1.92 dB that
+failed. Mastering leaves the runtime trim table entirely — `TrimDb` ends at all zeros, so there is
+no constant left to nudge.
+
+| Unit | Closes | What |
+|---|---|---|
+| U-T4-1 | #165 | The five-bus graph (Master/Music/Sfx/SfxLoop/Narrator) built in code — `project.godot` is deny-listed and stays untouched — with a hard limiter at −1.0 dBTP on Master. `EnsureBuilt` is idempotent and name-keyed, or the engine suite leaves fifty buses and a false-green graph test. |
+| U-T4-2 | #165 | `MixBudget` as a compiled table plus a census that iterates the real cue enum and the composed-track manifest. Ships with a **pinned** exemption count, so every re-level is a red-then-reviewed diff and the receipt cannot lie. |
+| U-T4-3 | #154 | Every one-shot re-levelled from a peak target to an RMS target — **and `tanh` removed from `Synth.Normalise` entirely.** Gating it to `gain < 1` does not help: a 0.55 peak target is already 2.4% into the curve, which is why a pure sine bell measures 2.35% THD with H3 at −32.6 dBc. That third harmonic *is* the word "harsh." `BountyPost`'s normalise is a measured no-op (gain 1.0000) and gets a real target for the first time. |
+| U-T4-4 | #153 | The bellows becomes a genuinely looped stream instead of a 0.30 s one-shot re-armed from a main-thread `Finished` signal — today every breath carries 20–37 ms of gap at an irregular interval, which is the abrasion no level cut touched. Its guard becomes a **sustained** measurement; the two existing bellows guards are deleted, not extended (one compares a held cue's peak to a one-shot's, the other has a 4.9× margin and passed pre-fix too). |
+| U-T4-5 | #165 | The grade sting stops bypassing the director, and the orphan `_hammerSfx` — constructed, parented, never played — is deleted. Guarded by a runtime tree census, so it catches the *next* bypass too. |
+| U-T4-6 | #165 | 50 narrator lines mastered to −20 ±1.0 with a −1.5 dBTP ceiling, and the first gate that has ever looked at their level. Normalised, never re-baked: the takes were curated by ear. |
+| U-T4-7 | #151, #152 | Five content gates — mostly-silence, dead tail, loop-seam level lurch, isolated transient, impulse-train-with-no-tone — and **the SHA-256 fingerprint pin dies here.** A hash census encodes "these exact bytes were vouched for," and the bytes are the defect. |
+| U-T4-8 | #152 | Repair night-still (trim to 51.5 s) and quest-wait (49.5 s), each with a 4 s equal-power head-to-tail fold, so the wrap is level-continuous by construction rather than by inspection. |
+| U-T4-9 | #151, #152 | Regenerate Dawn and Evening. Both are unrepairable: Dawn's defect *is* its content, and Evening has 7 seconds of content in 60, so trimming yields a 2.5 s loop. Briefs are written against the two documented failure modes — Dawn's bans percussion outright, Evening's demands *continuous*. |
+| U-T4-10 | #165 | The bed and the SFX step back 6/4 dB while the narrator speaks. |
+
+**PR #340's own commit body already recorded Evening's failure mode** — *"early prompts emphasizing
+'sparse/restrained' ambient wording produced near-silent output (−38 to −67 LUFS)"* — and the file
+shipped anyway. The generator (ACE-Step via ComfyUI) is installed locally, so regeneration is a
+costed option and provenance stays clean. The difference from #340 is that the gates land first and
+are objective: a bad generation cannot be committed.
+
+`docs/design/ASSETS.md` still lists all four beds as `.mp3`, stale since PR #520 — a rule-8 doc
+asserting what git contradicts, corrected in U-T4-9's PR, which also records the beds' provenance.
+That is written down nowhere today: the narrator has an attribution file, the music has none.
+
+## §11.14.7 T5 — The night lands
+
+Closes #148, #159, #166, #167, and the unreported "Returned safely" defect.
+
+**#166 root cause:** `SurvivorFloor` returns 0 when a survivor set no record, earned no beat and
+looted no ore — exactly what happens when a partymate flees floor 1 while gold is still banked per
+kill. `PartyDeparted.TargetFloor` is in the same day's log and unread. A second vector is already
+armed for the forward ladder: `OreFloor` is hardcoded to the Mine. Fix: clamp to the provable
+minimum of 1 for any hero the log proves departed, and scan the venue registry for ore. Reading
+`TargetFloor` as the floor is rejected — it would overstate, which is fabrication in the direction
+the law cares about most.
+
+**#167 root cause:** the sentence states the day's loot income and the chip states the hero's entire
+purse. Both correct, the chip unlabelled. Fix: label both. `ReturnCard.GoldEarned` gains its first
+client reader.
+
+**#159** is two halves. Geometry: the modal is a hardcoded 640×420 inside a `CenterContainer`, which
+is simultaneously a floor and a ceiling — 33%×39% of a maximized window, 1.4 of 6 cards visible,
+~5× overflow behind an unthemed default scrollbar, and the title is 16px body text because it calls
+`AddLabel` rather than `AddHeader`. The fitted-modal helper that fixes exactly this already exists
+and two other panels already use it. Narration: `SpeakNarrator` **returns** the line's text and all
+three call sites discard it, in direct contradiction of its own contract, and the retelling
+collapses to a single line on any night without an attribution beat.
+
+**#148** splits into a cheap honest tier and the real work. Cheap: pin the viewport to nearest
+filtering (the watch is the only 2D path in the game not pinned, so it is literally the only blurry
+surface), use the hero art variants that already ship, re-author the backdrops at draw size instead
+of stretching 160×160 to 1024×260 anisotropically, and make a rout look different from a triumph.
+Real: replace the fabricated HP bar with the sim's own number, flare the link-4 beats as they
+happen, wire `PresentationScheduler` — fully built, fully tested, called by nothing — as the pacing
+source, and add the camera its `CameraHint` field was written for.
+
+**A law breach is named here.** The monster HP bar depletes by a client-authored fixed ⅓ per beat.
+That is a drawn quantity no sim rule produced — a breach of *show only what the sim decided*, live
+under a green build, because the tripwire scans only for RNG and clock tokens. Its stated
+justification is false: `VenueDefinition.MonsterHp(floor)` is public, is the resolver's own seed, and
+is already rendered by the Bestiary. The fix needs no contract amendment.
+
+## §11.14.8 T6 — Every decision leaves a reason
+
+Closes #164.
+
+The census: across 21 outcome-changing decisions, **3 emit a reason, 11 compute one and discard it,
+5 never compute one, and 2 emit no event at all.** This is a discard problem, not a computation
+problem. The sim already calculates the willingness number the whole counter minigame is played
+against, the quality roll's shift and band, and the counterfactual margins that *are* the
+attribution beats — then returns a bare enum.
+
+The client half is worse: `PlaytestLog.Decision` is the general reason channel, its own doc quotes
+the owner's directive verbatim, and it has **one call site in the repo**. `Action.why` is never
+passed. The owner's 2026-08-16 session recorded 8 ticks, 3 actions and 98 audio rows with **zero
+reasons**.
+
+**Two tiers, chosen by one test — would the player ever want to read this?** Player-facing reasons
+become a persisted `DecisionExplained` event; diagnostic internals become a non-persisted
+`TickResult` trace. The split is forced by a real cost: the golden test hashes the entire serialized
+state and `EventLog` is inside that hash, so a persisted event moves the SHA and — because event ids
+seed the prose variant picker — re-rolls rendered flavour text campaign-wide. Traces cost nothing.
+**Two deliberate re-baselines across the whole theme**, each with the RNG-position pin asserted
+unchanged to prove no draw was added.
+
+12 units. Two are bug fixes rather than instrumentation:
+
+- **The boycott reason lies**, and it is three defects: the emitted prose has no boycott knowledge,
+  so a hero refusing over mood reports "better gear score per gold"; the `HeroDecisionExplained`
+  reason is equally blind; and **the reported margin is computed from raw prices while the ranking
+  used boycott-inflated ones** — a number that is invisibly wrong and survives every existing test.
+  Downstream, Analytics buckets that false reason as a gear-quality problem.
+- **The reveal deletes its own evidence.** Every recorded roll and the typed halt are destroyed the
+  same tick they are narrated. After Evening, nothing in the state says why a party stopped.
+
+## §11.14.9 Coverage census
+
+Every register item, and the unit that closes it. A blank here is a failure of this program.
+
+| # | Item | Units |
+|---|---|---|
+| 141 | legs clip with the grass | U-T3-5, U-T3-6, U-T3-7 |
+| 142 | heroes too big vs buildings | U-T3-4a, U-T3-4b |
+| 143 | the Bounties building | U-T3-4a, U-T3-4b |
+| 144 | too many lampposts | U-T3-1, U-T3-2 |
+| 145 | props clip into actors | U-T3-1, U-T3-2 |
+| 146 | interiors look bad | U-T3-10 |
+| 147 | interactables lack distinct meaning; furnace sells ore | U-T1-7, U-T1-8 |
+| 148 | the watch must reach cutscene quality | U-T5-8, -9, -10, -11, -12a, -12b |
+| 149 | the legacy jank crafting menu | U-T1-6, U-T1-10 |
+| 150 | no hero/NPC walk animation | U-T3-8, U-T3-9 |
+| 151 | Dawn graininess | U-T4-7, U-T4-9 |
+| 152 | Night grainy static | U-T4-7, U-T4-8, U-T4-9 |
+| 153 | bellows too loud | U-T4-4 |
+| 154 | bells/chimes too loud | U-T4-3 |
+| 155 | the anvil minigame cannot be completed | U-T1-1, -2, -3, -4 |
+| 156 | drawer opens scrolled to the bottom | U-T1-5 |
+| 157 | everything unlocked from the start | U-T1-9, U-T1-10 |
+| 158 | full guided tutorial rework | all of T2 |
+| 159 | evening ledger tiny; narration unused | U-T5-5, U-T5-6, U-T5-7 |
+| 160 | Tomorrow at the Counter: taught, and openable while crafting | U-T2-3, U-T2-4, U-T2-23 |
+| 161 | sell before the first send-off? | U-T2-13 |
+| 162 | tutorial step 6 | U-T2-14, -15, -16 |
+| 163 | expand the world | U-T3-2, U-T3-3 |
+| 164 | log every action and its reason | all of T6 |
+| 165 | no audio bus, no limiter | U-T4-1, U-T4-2, U-T4-5, U-T4-6, U-T4-10 |
+| 166 | "came back from floor 0" | U-T5-1, U-T5-2 |
+| 167 | 8g in the sentence, 11g on the chip | U-T5-3 |
+| — | "Returned safely" after a rout (found, unreported) | U-T5-4 |
+
+## §11.14.10 Process notes
+
+- **Both `docs/plans/` slots are occupied**, so under §11.6 rule 4 this program lands here as a §11
+  amendment rather than as a third wave doc — the shape §11.12 and §11.13 both used.
+- **Golden re-records / balance re-baselines: three in total** — U-T1-9 (an action slot changes the
+  baseline trace) and two in T6. Each is a loud, reasoned entry appended to the existing ledger with
+  the RNG-position pin asserted unchanged. Everything else in this program is golden-neutral.
+- **No `sim/GameSim/Contracts/` change is required by T1, T3 or T5.** T6 needs exactly one contract
+  micro-PR, orchestrator-authored, merged before its dependents.
+- **The engine suite is the gate and only the orchestrator runs it.** Healthy pass count on
+  `023c960` is **1245**. Compare the count, never the verdict — two concurrent gdUnit runs each
+  report "Failed: 0" while silently losing about 400 tests.
+- **Several stale figures in §11.12 are corrected by this program's PRs** per rule 8: its venue
+  colour table predates the 2026-08-15 re-render, and its screen-size arithmetic assumes a canvas
+  shrink of 3 where the code resolves 2.
