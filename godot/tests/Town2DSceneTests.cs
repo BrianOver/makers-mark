@@ -178,7 +178,7 @@ public class Town2DSceneTests
     /// concern) — same eight literals, same repo convention as that class's own copy.</summary>
     private static readonly string[] WarmHubPropIds =
     [
-        "props-noticeboard", "props-town-well", "props-ore-cart", "props-string-lanterns",
+        "props-noticeboard", "props-ore-cart", "props-string-lanterns",
         "props-market-crates", "props-laundry-line", "props-tavern-cat", "props-forge-salamander",
     ];
 

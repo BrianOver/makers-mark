@@ -23,14 +23,11 @@ public sealed class PropsSpecs : IAssetModule
             Subject: "a wooden town noticeboard on posts, tacked bounty parchments and scraps, weathered timber frame",
             PaletteId: "hearth",
             NormalMap: true),
-        new AssetSpec(
-            Id: "props-town-well",
-            Module: "props",
-            Track: ArtTrack.Active,
-            Kind: AssetKind.Prop,
-            Subject: "a round stone town well, mossy mortar, wooden roof and crank with a hanging bucket on a rope",
-            PaletteId: "hearth",
-            NormalMap: true),
+        // props-town-well retired 2026-08-16: the village mounted TWO wells three tiles apart
+        // (this one and town2d-well), which TownLayout2D's own note called an open question rather
+        // than a design call. The owner ruled for the town2d pixel set's well, so the spec goes
+        // with the asset — leaving it Active here would have the generator faithfully re-make an
+        // asset nothing mounts, which is how orphans come back.
         new AssetSpec(
             Id: "props-ore-cart",
             Module: "props",

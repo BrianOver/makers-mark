@@ -270,10 +270,13 @@ public static class TownLayout2D
         // Napping on the tavern's south side, clear of its door column (x=13).
         new("props-tavern-cat", new Vector2I(15, 19), true),
 
-        // A second, older well near the tavern/noticeboard row — duplicates the existing
-        // "town2d-well" prop above in SUBJECT (this class's own U4 doc note flags this as a
-        // genuine open question, not a deliberate two-wells design call).
-        new("props-town-well", new Vector2I(17, 19), true),
+        // RESOLVED 2026-08-16. A second "props-town-well" used to sit at (17,19), three tiles from
+        // the "town2d-well" above — the U4 doc note called that a genuine open question rather than
+        // a two-wells design call, and it stayed open long enough that a village of four buildings
+        // shipped with two wells in it. The owner ruled: keep the one matching the new town. That is
+        // town2d-well, which belongs to the town2d pixel set the whole village is drawn from; the
+        // props- one is the older generation. Its asset is deleted rather than orphaned, per the
+        // standing no-orphans rule — git history is the archive if it is ever wanted back.
     };
 
     /// <summary>Tile coordinate → world-space pixel position of that tile's CENTER. Buildings are

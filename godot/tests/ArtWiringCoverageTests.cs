@@ -84,7 +84,7 @@ public class ArtWiringCoverageTests
     // Warm-hub town props (art/specs/props/PropsSpecs.cs) — Prop or Sprite kind, all NormalMap: true.
     private static readonly string[] TownPropIds =
     [
-        "props-noticeboard", "props-town-well", "props-ore-cart", "props-string-lanterns",
+        "props-noticeboard", "props-ore-cart", "props-string-lanterns",
         "props-market-crates", "props-laundry-line", "props-tavern-cat", "props-forge-salamander",
     ];
 
