@@ -2,6 +2,8 @@
 using System.Linq;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Materials;
+using GameSim.Professions;
 using GdUnit4;
 using Godot;
 using GodotClient.Town2d;
@@ -202,6 +204,17 @@ public class InteriorEntryExitTests
     /// (a real station <c>RaisePick</c>) and observes with <see cref="HumanPlayer"/> — "only what a
     /// person could actually read on screen right now" — so a regression back to "scrolled nowhere"
     /// fails HERE, not just in a screenshot a human has to remember to look at.
+    ///
+    /// <para><b>Register #156.</b> A SECOND, different bug slipped past a text-only version of this
+    /// same test: <c>EnsureControlVisible</c> aimed at a section root TALLER than its own viewport
+    /// scrolls to that section's BOTTOM edge, not its top — so the recipe list opened on its LAST
+    /// card and the vendor list on its LAST row. Both the bottom recipe card and the top one render
+    /// a "Work the forge" button, and every vendor row renders a "Buy 1" button, so a bare
+    /// <c>Sees("Work the forge")</c>/<c>Sees("Buy 1")</c> check passed unchanged on the broken,
+    /// bottom-scrolled panel. This test now names the FIRST card/row by its own node name — derived
+    /// from the real recipe/material manifest, the same order <c>ForgePanel</c> itself renders them
+    /// in (<c>ForgePanel.cs:609</c>/<c>:447</c>) — and asserts on ITS geometry via
+    /// <see cref="HumanPlayer.VisiblePartOf"/>, which a bottom scroll cannot also satisfy.</para>
     /// </summary>
     [TestCase]
     public async System.Threading.Tasks.Task AnvilThenShelfPress_ActuallyScrollToDifferentVisibleContent()
@@ -213,17 +226,30 @@ public class InteriorEntryExitTests
             var room = ui.Town.FindInteriorRoom("forge");
             var player = new HumanPlayer(ui);
 
+            // Derived from the real manifest, in the same order ForgePanel.EnsureBuilt renders
+            // it — never hand-list a recipe/material id, or a guard like this stops covering the
+            // family the day one is added.
+            var professionId = ui.Adapter.CurrentState.Player.SelectedProfessions.First();
+            ProfessionRegistry.TryGet(professionId, out var profession);
+            var firstRecipe = profession!.Recipes.Values
+                .OrderBy(r => r.Tier)
+                .ThenBy(r => r.RecipeId, StringComparer.Ordinal)
+                .First();
+            var firstMaterial = MaterialRegistry.PricedPool[0];
+
             // Wait on the CONDITION, not on layout stability: FocusSection's EnsureControlVisible is
             // deferred to the next idle frame and does not itself change any rect, so the layout can
             // read "settled" for three frames while the scroll is still pending. That is why this
             // passed locally and failed on every CI attempt — see HumanPlayer.WaitUntil's doc.
             room.Stations[0].RaisePick(); // anvil -> craft
-            var sawCraft = await player.WaitUntilSees("Work the forge");
+            var firstRecipeCard = Find<Control>(ui.Forge, $"RecipeCard_{firstRecipe.RecipeId}");
+            var sawFirstCard = await player.WaitUntil(() => player.VisiblePartOf(firstRecipeCard).Size.Y > 4f);
             await player.WaitForLayout(ui.Forge);
-            AssertThat(sawCraft)
+            AssertThat(sawFirstCard)
                 .OverrideFailureMessage(
-                    "Anvil press must actually scroll the recipe cards into view — a recipe card's own "
-                    + "\"Work the forge\" button must be readable on screen, not merely intended.")
+                    $"Anvil press must scroll the recipe list to its TOP — the FIRST card "
+                    + $"(RecipeCard_{firstRecipe.RecipeId}) must have non-zero visible area, not merely "
+                    + "SOME recipe card (the list's own LAST card also says \"Work the forge\").")
                 .IsTrue();
             AssertThat(player.Sees("Buy 1"))
                 .OverrideFailureMessage(
@@ -232,14 +258,88 @@ public class InteriorEntryExitTests
                 .IsFalse();
 
             room.Stations[4].RaisePick(); // shelf -> materials (same open panel, re-focused)
-            var sawVendor = await player.WaitUntilSees("Buy 1");
+            var firstVendorRow = Find<Control>(ui.Forge, $"BuyMat_{firstMaterial}");
+            var sawFirstRow = await player.WaitUntil(() => player.VisiblePartOf(firstVendorRow).Size.Y > 4f);
             await player.WaitForLayout(ui.Forge);
-            AssertThat(sawVendor)
-                .OverrideFailureMessage("Shelf press must actually scroll the vendor's \"Buy 1\" rows into view.")
+            AssertThat(sawFirstRow)
+                .OverrideFailureMessage(
+                    $"Shelf press must scroll the vendor list to its TOP — the FIRST row "
+                    + $"(BuyMat_{firstMaterial}) must have non-zero visible area, not merely SOME row.")
                 .IsTrue();
             AssertThat(player.Sees("Work the forge"))
                 .OverrideFailureMessage("Shelf press landed on materials — the recipe cards must have scrolled back out of view.")
                 .IsFalse();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// Register #156, isolated: opening the drawer via the ANVIL must land the recipe list on its
+    /// FIRST card, not its last. <see cref="AnvilThenShelfPress_ActuallyScrollToDifferentVisibleContent"/>
+    /// covers the same fix as part of a scroll-to-DIFFERENT-content comparison; this is the narrow,
+    /// single-purpose regression pin the fix's own PR calls for — first card, named and measured, no
+    /// text match involved.
+    /// </summary>
+    [TestCase]
+    public async System.Threading.Tasks.Task AnvilPress_LandsOnTheFIRSTRecipeCard_NotTheLast()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.FindBuilding("forge").RaisePick();
+            var room = ui.Town.FindInteriorRoom("forge");
+            var player = new HumanPlayer(ui);
+
+            var professionId = ui.Adapter.CurrentState.Player.SelectedProfessions.First();
+            ProfessionRegistry.TryGet(professionId, out var profession);
+            var firstRecipe = profession!.Recipes.Values
+                .OrderBy(r => r.Tier)
+                .ThenBy(r => r.RecipeId, StringComparer.Ordinal)
+                .First();
+
+            room.Stations[0].RaisePick(); // anvil -> craft
+            var card = Find<Control>(ui.Forge, $"RecipeCard_{firstRecipe.RecipeId}");
+            await player.WaitUntil(() => player.VisiblePartOf(card).Size.Y > 4f);
+            await player.WaitForLayout(ui.Forge);
+
+            AssertThat(player.VisiblePartOf(card).Size.Y)
+                .OverrideFailureMessage(
+                    $"Anvil press must land the recipe list at its TOP: the FIRST card "
+                    + $"(RecipeCard_{firstRecipe.RecipeId}, {profession!.DisplayName}'s lowest-tier "
+                    + "recipe) must be visible with non-zero area. A bottom-scrolled panel would still "
+                    + "show its own last card's \"Work the forge\" button — that text alone proves "
+                    + "nothing about which end of the list is on screen.")
+                .IsGreater(4f);
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>Sibling of <see cref="AnvilPress_LandsOnTheFIRSTRecipeCard_NotTheLast"/>: the SHELF
+    /// station (materials focus) must land the vendor list on its FIRST row, not its last. See that
+    /// test's doc for the root cause; the same "Buy 1" label appears on every vendor row (and on the
+    /// Foundry's supply rows too), so only a node-name + geometry check can tell top from bottom.</summary>
+    [TestCase]
+    public async System.Threading.Tasks.Task ShelfPress_LandsOnTheFIRSTVendorRow_NotTheLast()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.FindBuilding("forge").RaisePick();
+            var room = ui.Town.FindInteriorRoom("forge");
+            var player = new HumanPlayer(ui);
+
+            var firstMaterial = MaterialRegistry.PricedPool[0];
+
+            room.Stations[4].RaisePick(); // shelf -> materials
+            var row = Find<Control>(ui.Forge, $"BuyMat_{firstMaterial}");
+            await player.WaitUntil(() => player.VisiblePartOf(row).Size.Y > 4f);
+            await player.WaitForLayout(ui.Forge);
+
+            AssertThat(player.VisiblePartOf(row).Size.Y)
+                .OverrideFailureMessage(
+                    $"Shelf press must land the vendor list at its TOP: the FIRST row "
+                    + $"(BuyMat_{firstMaterial}) must be visible with non-zero area.")
+                .IsGreater(4f);
         }
         finally { Unmount(ui); }
     }
