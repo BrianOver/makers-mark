@@ -3400,3 +3400,592 @@ U11's interior/exterior claims wait on U3. U11 lands in whichever PR makes its c
    *props*, not as pixels baked into a building.
 4. **Whether `props-town-well` or `town2d-well` survives** — `TownLayout2D.cs:273-276` flags the two
    wells as a genuine open question, not a design call, and U6 has to place one of them.
+
+---
+
+# §11.13 — The tutorial revamp: the world teaches, the chain asks only what the player can cause, and the apprenticeship carries a warrant
+
+**Status: §11.4 path work — the largest untouched item in the owner's playtest notes.** His words:
+*"we 100% haven't worked on the tutorial revamp."* He is right. §11.11 U2/U3 designed this and no
+PR has landed any of it: `sim/GameSim/Drama/CounterForecast.cs`, `godot/scripts/ui/SurfaceUnlocks.cs`
+and `godot/scripts/panels/LessonsPanel.cs` do not exist on this commit, `TutorialAnchorKind` still
+has three values (`godot/scripts/ui/TutorialFlow.cs:54-59`), and step 6 still gates on
+`CounterSaleClosed` (`godot/scripts/ui/TutorialFlow.cs:301`). This amendment details §11.11 U2/U3
+into shippable units, folds in the **R9 ruling** (§11.11, PR #512) which now belongs to this work,
+and supersedes §11.11's U2/U3 sections where they disagree. Written in §11.10/§11.11's shape because
+the `docs/plans/` two-doc cap stands.
+
+Every unit traces to the owner's own words:
+*"you need to be more specific and use in game highlights, hovers etc"* — U2.
+*"Features should be unlocked as you go … things greyed out when not needed yet"* — U3.
+*"Tutorial 6 doesn't make sense … do i press 'Snuff the lanterns?'"* — U1.
+*"Tutorial 7 makes no sense. Why the fuck are we talking about camp when we were just selling something?"* — U1.
+*"a guided / repeated tutorial for at least a few days with content unlocked as we go"* — U2 + U3.
+*"Heroes should probably not die this early"* — U4 + U5 (R9's answer).
+
+---
+
+## What is actually wrong
+
+Underneath all five complaints is one design error: **the tutorial teaches *about* the world in
+prose instead of arranging the world to teach.** The game already owns a pointing mechanism —
+`TutorialOverlay` pulses the real building sprite and outlines live HUD controls, resolving eagerly
+or throwing rather than pointing at nothing (`godot/scripts/ui/TutorialOverlay.cs:114-133`) — and
+then starves it: the pointing stops at the building's door while every gesture, label, and
+mechanism explanation is crammed into a ~127px card (`TutorialMaxLines = 6`,
+`godot/scripts/ui/ObjectiveTracker.cs:67,71`) sitting above a checklist whose scroll window is
+`ChecklistMaxHeight = 32f` pixels — the constant's own doc concedes *"a peek-and-scroll sliver, not
+a several-row window, is what fits"* (`godot/scripts/ui/ObjectiveTracker.cs:84-93`). The ten
+`TeachNote` paragraphs render one at a time inside that sliver, once per campaign, then become
+unreachable forever (`Checklist()` returns empty once `Active` is false,
+`godot/scripts/ui/TutorialFlow.cs:826-831`). Meanwhile two of the ten steps are written as "perform
+this verb" when the sim's contract is "this verb *may* produce that outcome": step 6 completes only
+on a sale `ShoppingAi` decides, step 7's precondition is a stop `RaidConductor`'s own doc calls
+*"the UNCOMMON case"* (`godot/scripts/RaidConductor.cs:30`) — both are unfollowable by
+construction, which is what "doesn't make sense" means when a playtester says it. Nothing opens
+gradually — the entire client has exactly one feature gate, `QuickTravelUnlocked => Completed`
+(`godot/scripts/ui/TutorialFlow.cs:377`), while all seven wordless tray books mount on day 1
+(`godot/scripts/MainUi.cs:2327-2381`). And the game's own pacing promise — *"The first real lesson
+lands around day four, and it lands as a death"* (`docs/design/THE-GAME.md` §3.3) — has no
+mechanism behind it at all: death is `hp <= 0` from day 1
+(`sim/GameSim/Expedition/ExpeditionResolver.cs:569-572`), which is R9's origin and why "heroes
+shouldn't die this early" is a tutorial complaint, not a balance complaint.
+
+So the fix is four moves, each matched to whether the mechanism is missing or merely starved:
+**re-gate the two dishonest steps** (mechanism exists, predicate wrong — U1), **move the teaching
+onto the world and into a book** (mechanism exists, starved — U2), **build the unlock table**
+(mechanism missing — U3), and **build the taught death-grace** (mechanism missing; its engineering
+is already proven by the rejected R9(c) build — U4/U5).
+
+---
+
+## Implementation units
+
+Five units. U1 and U2 are both `TutorialFlow`-centric and land in that order on the same lane;
+U3 follows U2 (shares the registry idiom and the anchor/gate interaction test); U4 is the wave's
+only sim change and is serialized behind its own re-baseline ceremony; U5 lands immediately after
+U4 — a warrant that exists but is not yet taught is a hidden shield, the exact failure R9 names,
+so U4 and U5 are one owner-visible deliverable in two PRs.
+
+---
+
+### U1 — Every step completes on something the player caused
+
+**Goal.** Steps 6 and 7 stop demanding outcomes heroes decide. Closes *"Tutorial 6 doesn't make
+sense"* and *"Tutorial 7 makes no sense."*
+
+**Serves: link1** — a chain that stalls on a coin flip teaches the player the game is broken
+before they ever learn what the counter and the vigil are for.
+
+**Mechanism verdict: exists and is mis-gated.** The step machine, the registry, the overlay, the
+persistence are all correct. The two `IsDone` predicates are wrong, and one gating note lies.
+
+The defects, precisely:
+
+- **Step 6 (`OpenCounter`)** completes on `state.EventLog.OfType<CounterSaleClosed>().Any()`
+  (`godot/scripts/ui/TutorialFlow.cs:301`). The customer states their want first, the want is
+  `MissingItemSlots(hero.Gear)[0]`, and on day 2 the shelf was stocked against no signal — the
+  modal case is `CustomerWalked`, not `CounterSaleClosed`, and the step sits repeating
+  *"press **Open Counter** at the top of the Shop panel, then **Present** a shelved item…"*
+  (`godot/scripts/ui/TutorialFlow.cs:570-573`) at a player who has already done all of it.
+- **Step 7 (`Vigil`)** completes on `SupplyDelivered` or `PartyRecalled`
+  (`godot/scripts/ui/TutorialFlow.cs:309`), whose precondition is a party camping —
+  `CheckpointFor(targetFloor) >= 1` requires `targetFloor >= 2` **and** a clean stage-1
+  (`sim/GameSim/Expedition/ExpeditionSystem.cs:31,88`), the uncommon case. Its wait copy asserts a
+  day gate for something that is not day-gated: *"The vigil is a Day 2 lesson — nothing to do here
+  yet; it opens once Day 2 begins"* (`godot/scripts/ui/TutorialFlow.cs:740-741`). Day 2 arrives,
+  nothing opens, and the owner reads a tutorial talking about camp while he is mid-sale — the
+  exact note. Worse, its two completion verbs (Send/Recall) are the two the plan is actively
+  unsure it wants reflexively taught (R1 froze provisioning balance), while "Send them deeper"
+  (`godot/scripts/panels/CampPanel.cs:401-408`) — the only verb that always exists — does not count.
+
+**What replaces them.**
+
+*Step 6* re-scopes to what the player controls: **open the counter and answer the customer.**
+`IsDone` becomes: `OpenCounterAction` in `state.ActionLog` AND any of
+`PresentItemAction`/`SuggestItemAction`/`HaggleResponseAction`/`CloseCounterAction` after it —
+all four are real `PlayerAction` records (`sim/GameSim/Contracts/Actions.cs:83-100`), and the
+ActionLog-scan idiom already exists in this exact registry for the Commission step
+(`godot/scripts/ui/TutorialFlow.cs:336`). Copy names the walk-away as legal:
+
+> *"Tutorial 6/10: The **Shop** — press **Open Counter**. Whoever's first in line says what they
+> want before you show anything. Show them something, or hear them out and close the counter.
+> A hero who walks is a real answer, not a mistake — a closed sale is the bonus, not the lesson."*
+
+(§11.11 U2's "the Forecast board named them last night" clause is deferred: it is only true once
+§11.11 U1's `CounterForecast` ships, which has not happened. One-line copy amendment when it does.)
+
+*Step 7* re-scopes to **understanding the stop**: completion on seeing the camp card at all — a
+new `NotifyCampCardShown()` hook in the exact shape of `NotifyMirrorOpened`
+(`godot/scripts/ui/TutorialFlow.cs:945-952`), called from `MainUi.SyncCampModal`
+(`godot/scripts/MainUi.cs:989`), which already raises `CampPanel.ShowModal`
+(`godot/scripts/panels/CampPanel.cs:100`) the moment a party parks — or on any of the three camp
+verbs including Send Deeper. The lying day-gate copy is replaced by a **conditional** gating note
+readable off `MusterPlan.Compute` (`sim/GameSim/Heroes/MusterSystem.cs:22`), which the Morning
+bell already trusts:
+
+- no party aiming past floor 1: *"No stop today — everyone's going one floor down. It fires on a
+  run that's aiming deeper."*
+- a party staged deeper: *"They'll stop below the checkpoint if they get there clean. When they
+  do, the world waits — there is no clock on it."*
+
+*The chain never strands on the coin flip.* `EveningClose`'s row gains
+`AdvanceFrom: [Vigil, EveningClose]` — the same unconditional-sweep idiom `WatchDeparture`
+already uses across day 1 (`godot/scripts/ui/TutorialFlow.cs:273-277`) — so a campaign where no
+party ever camps moves past step 7 at day 3 instead of riding the silent `BackstopDay = 4` close
+(`godot/scripts/ui/TutorialFlow.cs:915-918,936`). The checklist renders the skipped row honestly:
+a new `Skipped` flag on `ChecklistRow` draws *"— didn't come up this time; it's in Lessons"*
+instead of a false tick or an eternal ○.
+
+**Files.**
+
+- *modify* `godot/scripts/ui/TutorialFlow.cs` — steps 6/7 rows (`IsDone`, `StepText`, `WaitText`,
+  `GatingNote`), `NotifyCampCardShown`, `EveningClose.AdvanceFrom`, `ChecklistRow.Skipped`.
+- *modify* `godot/scripts/MainUi.cs` — one call in `SyncCampModal`.
+- *modify* `godot/scripts/ui/ObjectiveTracker.cs` — render the `Skipped` row state.
+- *test* `godot/tests/TutorialRegistryConformanceTests.cs` (extend)
+- *test* `godot/tests/TutorialCopyIsFollowableTests.cs` (extend)
+
+**Approach.** Registry rows only — no parallel structure (the registry replaced exactly that
+class of defect, `godot/scripts/ui/TutorialFlow.cs:90-100`). The new conformance test is KTD-4
+made executable: **`EveryStepsCompletionFact_IsReachableByPlayerActionAlone`** — for every row,
+build a state whose EventLog/ActionLog contains only player-submitted actions and their immediate
+consequences (no `ShoppingAi` buy, no parked party) and assert `IsDone` can flip true, with the
+two UI-navigation rows (`LookIn`, `MeetHeroes`) and now step 7's card-shown hook exempted by
+their declared shape (`IsDone: _ => false` + Notify), which the suite already recognizes.
+
+**Patterns to follow.**
+
+- `godot/scripts/ui/TutorialFlow.cs:336` — the ActionLog completion scan (Commission row).
+- `godot/scripts/ui/TutorialFlow.cs:945-966` — the Notify-hook shape for UI-only facts.
+- `godot/scripts/ui/TutorialFlow.cs:273-277` — the unconditional-sweep `AdvanceFrom` idiom.
+- `godot/scripts/panels/CampPanel.cs:235` — `GateButton(legal, whyNot)`: mirror the kernel's
+  guard, never enforce one.
+
+**Test scenarios.**
+
+1. `Step6_Completes_WhenTheCustomerWalks_WithoutASale` — the exact case that stalled the owner.
+2. `Step6_AlsoCompletes_OnAClosedSale` — the happy path unchanged.
+3. `Step6_DoesNotComplete_OnOpenAlone` — opening and abandoning is not answering.
+4. `Step7_Completes_OnSeeingTheCampCard_WithNoVerbPressed`
+5. `Step7_Completes_OnSendDeeper` — the verb the plan is comfortable teaching.
+6. `Step7_GatingNote_SaysNoStopIsComing_WhenEveryPartyTargetsFloor1` — read from `MusterPlan`.
+7. `Step7_NeverClaimsADayGate_ForAConditionThatIsNotDayGated` — regression pin on the lie.
+8. `ChainReachesMeetHeroes_OnDay3_WhenNoPartyEverCamped` — the anti-stranding sweep.
+9. `SkippedRow_RendersTheDidntComeUpState_NeverAFalseTick`
+10. `EveryStepsCompletionFact_IsReachableByPlayerActionAlone` — KTD-4, all rows, pinned forever.
+
+**Verification.** Fast lane green; full engine suite, raw `Failed: N, Passed: N` quoted against
+the `ENGINE_MIN_PASSED` floor. Manual: day-2 counter with a Pass verdict — step 6 advances on the
+walk; a floor-1-only day — step 7's note says so and day 3 still reaches step 9.
+
+---
+
+### U2 — The teaching moves onto the world; the card goes on a diet; the lessons stay
+
+**Goal.** Close *"be more specific and use in game highlights, hovers etc"* and the repeatable
+half of *"guided / repeated tutorial."*
+
+**Serves: link1** — the player who cannot reliably find the anvil never makes the thing the whole
+chain keys on.
+
+**Mechanism verdict: the pointing exists and is starved; the repeat is genuinely missing.**
+`TutorialOverlay` already pulses buildings in world space and outlines HUD controls by name,
+throwing on a miss (`godot/scripts/ui/TutorialOverlay.cs:114-133`); `Building2D.SetTutorialPulsing`
+exists (`godot/scripts/town2d/Building2D.cs:293`). What it cannot do is point at a *station* —
+the anvil, the vendor, the counter — so "Inside, press **E** at a station" lives as a sentence in
+the card instead of a pulse on the thing (`godot/scripts/ui/TutorialFlow.cs:541-546`). Every
+interior already carries typed stations with `Action`/`Focus`/`HoverLine`/`FlavorLine`
+(`godot/scripts/town2d/InteriorLayout2D.cs:80`), and `Town2D` already re-emits `StationActivated`
+with the whole spec (`godot/scripts/town2d/Town2D.cs:159-165`). The seam is there; nothing points
+through it.
+
+**Three changes.**
+
+1. **`TutorialAnchorKind.Station`.** A fourth anchor kind: `TutorialAnchor.ForStation(venueKey,
+   stationId)` — outside the venue it behaves as the Building anchor (pulse the door); once the
+   player is inside (`MainUi.CurrentLocationPanelId` already distinguishes this,
+   `godot/scripts/ui/TutorialFlow.cs:497-501`), the overlay pulses the station sprite itself.
+   `BuyMaterial`/`Craft` re-point at the vendor and the profession's crafting station; step 6 at
+   the Shop's `counter` station (`godot/scripts/town2d/InteriorLayout2D.cs:181`). Same house rule:
+   eager resolve or throw, and `TutorialRegistryConformanceTests` resolves every `Station` anchor
+   against the real room at test time (mirroring
+   `Registry_EveryBuildingAnchor_ResolvesAgainstTownLayout2D`,
+   `godot/tests/TutorialRegistryConformanceTests.cs:109`).
+2. **The Lessons book.** A read-only tray panel rendering all ten `ShortLabel` + `TeachNote`
+   rows at full height, current row marked, readable forever — after completion, after dismissal.
+   The ten paragraphs are already written and already pinned non-empty
+   (`godot/tests/TutorialRegistryConformanceTests.cs:81`); today they render one at a time inside
+   a 32px sliver and then never again. Zero new teaching copy; one new place to read it. This is
+   the whole answer to "repeated": re-reading beats re-running, and nothing about the chain's
+   never-regress design (`godot/scripts/ui/TutorialFlow.cs:354-356`) has to change.
+3. **The card diet.** With gestures on the stations and mechanisms in the book, each step's card
+   copy shrinks to pointer + verb (*"Tutorial 1/10: The Forge — buy copper at the vendor, then
+   craft at the anvil"*). `TutorialMaxLines` drops 6 → 3 and the reclaimed ~65px goes to
+   `ChecklistMaxHeight` (32f → ~90f), all inside the existing 260px
+   `HudBoundsTests.ObjectiveChip_HeightTracksContent_NotFixedEmptyPanel` pin, which is never
+   relaxed (`godot/scripts/ui/ObjectiveTracker.cs:84-93` documents the budget arithmetic — a
+   3-line card frees the sliver into a real window). The followability suite's six-line budget
+   test (`godot/tests/TutorialCopyIsFollowableTests.cs:175`) tightens to the new budget so verbose
+   copy can never creep back.
+
+**Files.**
+
+- *modify* `godot/scripts/ui/TutorialFlow.cs` — `TutorialAnchorKind.Station`, re-pointed rows,
+  shortened `StepText` copy.
+- *modify* `godot/scripts/ui/TutorialOverlay.cs` — the `Station` resolve branch (pulse door
+  outside, station inside).
+- *modify* `godot/scripts/town2d/Town2D.cs` — read-only station lookup by `(venueKey, stationId)`
+  for the overlay; no change to `StationActivated`.
+- *create* `godot/scripts/panels/LessonsPanel.cs` — the book.
+- *modify* `godot/scripts/MainUi.cs` — register `"Lessons"`, tray button via the existing
+  `TrayButton` shape (`godot/scripts/MainUi.cs:3036`), tooltip a real sentence like
+  `RenownTrayTooltip` (`godot/scripts/MainUi.cs:1510`).
+- *modify* `godot/scripts/ui/ObjectiveTracker.cs` — `TutorialMaxLines`, `ChecklistMaxHeight`.
+- *test* `godot/tests/TutorialRegistryConformanceTests.cs` (extend — Station anchors resolve)
+- *test* `godot/tests/TutorialCopyIsFollowableTests.cs` (extend — tightened budget)
+- *test* `godot/tests/panels/LessonsPanelTests.cs`
+
+**Patterns to follow.**
+
+- `godot/scripts/ui/TutorialOverlay.cs:114-133` — the `switch (anchor.Kind)` eager resolve; add a
+  case, never a parallel path.
+- `godot/scripts/panels/DemandPanel.cs` — the read-only book idiom for `LessonsPanel`.
+- `godot/scripts/MainUi.cs:2362-2365` — the Demand tray button registration (the newest, cleanest
+  instance of the shape).
+
+**Test scenarios.**
+
+1. `EveryStationAnchor_ResolvesAgainstARealRoomStation` — conformance, all rows, both halves
+   (venue exists AND station id exists in that room).
+2. `StationAnchor_PulsesTheDoorOutside_AndTheStationInside`
+3. `LessonsPanel_RendersAllTenTeachNotes_AfterTheChainIsComplete`
+4. `LessonsPanel_RendersAllTenTeachNotes_AfterDismiss` — a dismiss must not destroy the lessons.
+5. `NoStepsCopy_OutgrowsTheNewThreeLineBudget` — the tightened followability pin.
+6. `ObjectiveCard_HeightStaysWithinTheExisting260pxPin` — never relaxed.
+7. `ChecklistWindow_ShowsAtLeastThreeRowsWithoutScrolling` — the sliver is dead; pin its death.
+
+**Verification.** Full engine suite, raw counts quoted. Manual (render-and-look, per repo memory):
+fresh campaign — the vendor itself pulses, then the anvil; open Lessons after dismissing — all ten
+paragraphs there; checklist shows several rows at rest.
+
+---
+
+### U3 — The town opens as you learn it
+
+**Goal.** Close *"Features should be unlocked as you go when tutorial is active and things greyed
+out when not needed yet."*
+
+**Serves: link2** — the four channels arrive one at a time, so each is learned as a channel
+rather than as one of seven wordless icons.
+
+**Mechanism verdict: missing.** One gate exists in the whole client
+(`godot/scripts/ui/TutorialFlow.cs:377`); all seven tray books mount on day 1
+(`godot/scripts/MainUi.cs:2327-2381`).
+
+**Approach.** §11.11 U3's design stands — one ordered unlock table (`SurfaceUnlocks.IsOpen`,
+pure over `GameState`, never persisted), gates being the moment each surface first has anything
+true to say (Ledger on first `PartyDeparted`, Forecast on first Evening, Renown on first
+`ItemSold` to a hero, Commissions on the first sim-posted commission, Demand on first
+`HeroPassedOnItem`, Legends on first `AttributionBeatEvent`, Progress on first `BountyPaid` via
+the existing `SecondProfessionMilestoneReached`, `godot/scripts/ui/TutorialFlow.cs:1027`). Two
+details are settled here, per the owner's exact wording:
+
+- **Greyed, not hidden.** A closed surface's tray button renders disabled with its gate as the
+  tooltip (*"Opens when a party first returns — nothing to read yet"*), so the tray teaches its
+  own shape instead of reflowing. Unlock fires the one-line arrival toast; no modal.
+- **A gate never hides a tutorial target.** Pinned:
+  `EveryTutorialStepAnchor_PointsAtASurfaceThatIsOpenByThatStepsMinDay` — the one trap this unit
+  could create.
+
+`ActionReachabilityCensusTests` stays green by extending each gated surface string with its gate
+(KTD-3 of §11.11 — a gated surface is a *recorded* surface, never an exclusion).
+
+**Files.**
+
+- *create* `godot/scripts/ui/SurfaceUnlocks.cs` — the table + `IsOpen(GameState, surfaceId)` +
+  per-surface arrival line.
+- *modify* `godot/scripts/MainUi.cs` — tray buttons consult it every `RefreshHud`; disabled state
+  + tooltip; arrival toast on the open transition.
+- *modify* `godot/tests/ActionReachabilityCensusTests.cs` — surface strings carry gates.
+- *test* `godot/tests/ui/SurfaceUnlocksTests.cs`
+- *test* `godot/tests/MainUiTests.cs` (extend)
+
+**Patterns to follow.** `godot/scripts/ui/TutorialFlow.cs:225-338` — the registry-row idiom;
+`godot/scripts/panels/CampPanel.cs:235` — disabled-with-reason, never enforce; §11.11 KTD-5 —
+derived, never persisted (`user://` outliving a campaign is exactly what produced "the tutorial
+is missing", `godot/scripts/ui/TutorialFlow.cs:1139-1150`).
+
+**Test scenarios.** §11.11 U3's seven stand unchanged (deny-by-default census; closed-before /
+open-after per gate; re-derives after reload; monotonic one-way; census green; anchor/gate
+interaction), plus:
+
+8. `AClosedSurfacesTrayButton_IsDisabledWithItsGateAsTooltip_NeverAbsent` — "greyed out", the
+   owner's own word, pinned.
+
+**Verification.** Engine suite green including the census. Manual: fresh campaign — tray starts
+grey except what day 1 needs; each book arrives with its line as its fact first lands.
+
+---
+
+### U4 — The apprenticeship warrant, in the sim
+
+**Goal.** Build R9's ruled mechanic: no hero dies during the tutorial's three days — as a taught,
+dated town rule, not a silent balance clamp. Closes the mechanism half of *"Heroes should
+probably not die this early."*
+
+**Serves: link5** — a day-1 death is a memory with nobody's name in it; the warrant guarantees
+the first death lands after the player has hands, which is what makes it a link-5 moment.
+
+**Mechanism verdict: missing, with the engineering already proven.** The rejected R9(c) build
+(§11.11) established everything reusable: the grace clamp rides `CombatEvent.ModifierHpDelta` —
+the Leech rune's existing ledger channel (`sim/GameSim/Contracts/Expedition.cs:39`, applied at
+`sim/GameSim/Expedition/ExpeditionResolver.cs:539-561`) — so attribution's HP replay stays
+byte-consistent and **no `Contracts/` change is needed**; `DamageTaken` keeps recording the true
+lethal roll (`sim/GameSim/Contracts/Expedition.cs:26`) so the near-death is legible; survival ends
+at 1 HP and the existing `CombatMath.ShouldFlee` check
+(`sim/GameSim/Expedition/ExpeditionResolver.cs:503`) sends the hero home next round — no new
+retreat path. Only the *trigger* was wrong: (c) keyed on transaction history, which made Prepared
+heroes 2.6× deadlier than Reckless (55.8% vs 21.4%) because buying a salve forfeited protection.
+
+**The trigger, redesigned.** The warrant is a **dated window: days 1 through 3**, the
+apprenticeship's own three days — `ApprenticeWarrant.Covers(day) => day <= LastGraceDay` with
+`LastGraceDay = 3`, a named sim constant. Threaded into the resolver as a boolean from
+`ExpeditionSystem.Process` and `ExpeditionDeepSystem` (both read `state.Day`), mirroring exactly
+how `RetreatExemption` already threads (`sim/GameSim/Expedition/ExpeditionSystem.cs:86,92,97` —
+an opaque parameter; the resolver still decides every fight on combat math alone and reads no
+trait, no transaction, no calendar of its own — so no pinned law exception is required, same as
+(c)'s build found). Why a date and not a state:
+
+- It cannot recreate (c)'s inversion: no player behavior feeds it, so arming a hero can never be
+  what kills them, and no hero is ever permanently immortal.
+- It is trivially deterministic (`state.Day` is already state) and trivially teachable: the copy
+  can name the end — *"dawn of Day 4"* — which a stake-shaped rule never could.
+- It satisfies every R9 fixed point: taught (U5), visible when it fires (the true roll +
+  counteracting delta are both in the event stream), ends where the tutorial ends — the chain's
+  own unconditional outer end is `BackstopDay = 4` (`godot/scripts/ui/TutorialFlow.cs:936`), i.e.
+  the warrant expires at the same dawn that closes the chain, and a cross-layer test pins
+  `TutorialFlow.BackstopDay == ApprenticeWarrant.LastGraceDay + 1` so neither constant can drift
+  alone. It is not a property of an untraded hero and is not coupled to selling — the two
+  prohibitions, met by construction.
+
+**Legibility is a shared projection, not a client guess.** `ApprenticeWarrant` also exposes the
+pure predicate the client and tests read — *did this combat event's survival come from the
+warrant* — derived from the same fold attribution already uses to replay HP
+(`sim/GameSim/Expedition/AttributionEngine.cs` is the pattern), so the resolver's clamp and the
+screen's claim cannot disagree (§11.11 KTD-1: derive from the function the tick consumes).
+
+**Files.**
+
+- *create* `sim/GameSim/Expedition/ApprenticeWarrant.cs` — `LastGraceDay`, `Covers(day)`, the
+  clamp helper the resolver calls, the fired-predicate the client reads.
+- *modify* `sim/GameSim/Expedition/ExpeditionResolver.cs` — clamp at the death check
+  (`hp <= 0` → held at 1, delta recorded), behind the threaded flag.
+- *modify* `sim/GameSim/Expedition/ExpeditionSystem.cs`, `ExpeditionDeepSystem.cs` — thread
+  `ApprenticeWarrant.Covers(state.Day)` at both ticks (a vigil resupply can land between them —
+  the (c) build's own finding).
+- *modify* `sim/GameSim.Tests/Balance/BalanceSimTests.cs` — re-baseline; add the trait-mortality
+  flatness assertion (below).
+- *modify* `docs/design/THE-GAME.md` §3.3 — the "lands around day four" sentence stops being an
+  intention and describes the warrant (same PR; rule 8, git outranks the doc).
+- *test* `sim/GameSim.Tests/Expedition/ApprenticeWarrantTests.cs`
+- *(re-record)* the golden replay — same seed + actions now produce different early-day state.
+
+**Fixture note (from the (c) build, kept on purpose).** `StagedResolutionTests`' `Naked` heroes
+(`sim/GameSim.Tests/Expedition/StagedResolutionTests.cs:23`) call the resolver directly; the
+warrant defaults **off** for direct calls (parameter, not ambient state), so those fixtures are
+untouched — the day window only exists where the systems thread it. This is the second reason the
+trigger lives in the systems, not the resolver.
+
+**Determinism / balance.** Same seed + same actions stays identical — but different from the
+*old* recording, so this is a **golden-replay re-record and a full balance re-baseline
+(`Category=Balance`)**, serialized in its own PR, never bundled with client work. Verification
+must census, not anecdote (repo memory: count shapes before claiming cause): a seed sweep
+(`dotnet run --project sim/GameSim.Cli -- batch --seeds 20 --days 100`) before/after, asserting
+(a) zero `HeroDied` on days 1–3 after, (b) Prepared-vs-Reckless mortality within noise of the
+pre-warrant ratio — the (c) failure shape, pinned as a balance test, (c) `MinAliveAtEnd = 3`
+(`sim/GameSim.Tests/Balance/BalanceSimTests.cs:34`) and Ending-reachability unchanged across the
+suite's seeds.
+
+**Test scenarios.**
+
+1. `WarrantHolds_ALethalRollAtOneHp_OnDay3` — true roll in `DamageTaken`, counteracting
+   `ModifierHpDelta`, survivor at 1 HP.
+2. `WarrantExpires_AtDay4_SameRollKills` — the boundary, both sides.
+3. `HeldHero_FleesNextRound_ViaTheExistingShouldFleeCheck` — no new retreat path.
+4. `WarrantedFight_StillRecordsTheTrueLethalRoll_ForAttributionReplay` — HP replay byte-parity.
+5. `DirectResolverCalls_AreUnaffected` — the fixture-protection pin.
+6. `FiredPredicate_AgreesWithTheClampByConstruction` — same fold, one source.
+7. `Balance: NoHeroDiedEvent_OnDays1Through3_AcrossAllSeeds`
+8. `Balance: TraitMortalityRatio_IsNotInverted` — the (c) regression, pinned forever.
+
+**Verification.** Fast lane green; balance suite green post-re-baseline with the re-record diff
+in the same PR; the seed-sweep census quoted in the PR body (raw numbers, not a wrapper verdict).
+
+---
+
+### U5 — The warrant is taught, fires visibly, and ends on screen
+
+**Goal.** The other three R9 fixed points: taught, visible when it fires, ends where the tutorial
+ends. Ships immediately after U4 — **U4 without U5 is a hidden shield, the exact failure R9 names
+(§11.11: "a hidden shield is exactly the failure §11.11 exists to fix"), so the wave is not
+reportable between them.**
+
+**Serves: link5** — same as U4; this is its legibility half.
+
+**Mechanism verdict: missing (nothing teaches what U4 adds).**
+
+**Three surfaces, all existing seams.**
+
+1. **Taught at the first send-off.** `WatchDeparture`'s `TeachNote`
+   (`godot/scripts/ui/TutorialFlow.cs:267-268`) gains the warrant:
+   *"While the town's still teaching you — through Day 3 — the Mine doesn't keep anyone: a killing
+   blow leaves them at death's door and they limp home. Dawn of Day 4 ends that."*
+   Day 3's `MeetHeroes`/`Commission` copy carries the closing reminder (*"Tomorrow the warrant
+   ends — what they carry down is what keeps them"*), so the end is named twice before it arrives.
+2. **Visible when it fires.** The night's Ledger gets a warrant card, rendered when the
+   fired-predicate reads true over the day's combats — leading with the true roll, the same
+   honest-register shape as the death cards: *"The blow that landed on Torvald would have killed
+   him. The apprenticeship's warrant held — he came home at death's door. Two dawns left on it."*
+   One card per fired hero; no narrator line (the spoken library is frozen, §11.11 scope).
+3. **Skipping stays legal and its cost is named, never engineered.** The tutorial's dismiss
+   (`godot/scripts/ui/TutorialFlow.cs:990-994`, the ✕ at
+   `godot/scripts/ui/ObjectiveTracker.cs:186-190`) does **not** end the warrant — a dated town
+   rule keyed to a UI preference would need a new `PlayerAction` (a deny-listed `Contracts/`
+   amendment) and would make dismissing a tutorial silently change mortality, a hidden cost the
+   laws forbid engineering. Instead the dismiss toast names what stands: *"The lessons stay in
+   Lessons, and the apprentice's warrant still runs through Day 3."* (Routed as R10 below in case
+   the owner wants the coupled version.)
+
+**Files.**
+
+- *modify* `godot/scripts/ui/TutorialFlow.cs` — the two TeachNote/copy amendments; dismiss toast
+  copy.
+- *modify* `godot/scripts/panels/LedgerModal.cs` — the warrant card, driven by
+  `ApprenticeWarrant`'s fired-predicate.
+- *modify* `godot/scripts/MainUi.cs` — dismiss toast wiring (reuse the existing toast route —
+  check `OnStationActivated`'s flavor-toast path first, per §11.11 U3's own note).
+- *test* `godot/tests/panels/LedgerModalTests.cs` (extend)
+- *test* `godot/tests/TutorialCopyIsFollowableTests.cs` (extend)
+- *test* `godot/tests/TutorialRegistryConformanceTests.cs` (extend — the cross-layer constant pin)
+
+**Patterns to follow.** §11.11 U6's death-card discipline — lead with the specific, honest empty
+state, no participation credit; `godot/scripts/ui/TutorialFlow.cs:1007-1017` (`ConsumeLedgerTip`)
+— the once-ever ledger-explainer shape, deliberately independent of `Active`.
+
+**Test scenarios.**
+
+1. `WarrantCard_RendersOnANightItFired_WithTheTrueRollNamed`
+2. `WarrantCard_NeverRenders_AfterDay3` — and never before it fired.
+3. `WarrantCard_CountsRemainingDawns_Correctly`
+4. `TeachNote_NamesTheWarrantAndItsEndDate` — copy pin.
+5. `DismissToast_NamesTheWarrantSurvivingTheDismiss` — skipping's cost/non-cost in copy, pinned.
+6. `BackstopDay_EqualsWarrantLastGraceDayPlusOne` — the cross-layer drift pin.
+7. `WarrantCopy_NeverStatesASurvivalNumber` — §11.4's stakes-qualitatively rule, on the rendered
+   string.
+
+**Verification.** Engine suite green, raw counts quoted. Manual: seeded campaign known to produce
+a day-2 lethal roll — watch the ledger card land, then day 4 — same shape of roll kills, memorial
+fires, and THE-GAME.md §3.3's sentence is now a description of a mechanism.
+
+---
+
+## Key technical decisions
+
+**KTD-A — A tutorial step's completion fact is caused by the player, never decided by a hero.**
+§11.11 KTD-4, adopted and made executable (U1 test 10). Both broken steps failed identically:
+`CounterSaleClosed` needs `ShoppingAi` to say Buy; `SupplyDelivered` needs a party to have parked.
+Influence never orders — so a tutorial gated on a hero's decision is a tutorial the game can fail
+for you. The conformance test makes the next such step a red build, not a playtest note.
+
+**KTD-B — Teaching lives on the world and in the book; the card carries only the pointer.** The
+card is a 320px-wide dock with a hard 260px pin; six lines of prose over a 32px checklist sliver
+is the *cause* of "not great," so any redesign that keeps loading that card has fixed nothing.
+Gesture teaching → the station's own pulse and `HoverLine` (the seam already exists,
+`InteriorLayout2D.StationSpec`); mechanism teaching → the Lessons book (already-written
+`TeachNote`s at full height, forever); state teaching (gates) → the checklist's short notes. The
+card: one sentence. Enforced from both sides — the tightened line-budget test and the untouched
+260px pin.
+
+**KTD-C — The warrant's trigger is a date, not a state.** The (c) build proved the mechanism and
+disproved the trigger: any player-behavior trigger lets player behavior forfeit protection, which
+inverted mortality 2.6×. A day window cannot invert anything, costs no `Contracts/` change, names
+its own end in copy, and expires at the same dawn (`Day 4`) as the chain's own unconditional
+backstop — pinned together by test so neither moves alone. The resolver still reads only combat
+math plus an opaque flag threaded exactly like the bounty's `retreatExemptHeroes` — no law
+exception needed.
+
+**KTD-D — The warrant defaults off at the resolver's own seam.** Direct `ExpeditionResolver`
+calls (all existing fixtures, all balance micro-tests) see no warrant; only the two system ticks
+thread it from `state.Day`. This is what makes the (c) build's fixture trap (`Naked` heroes
+becoming structurally unkillable) impossible here by construction rather than by fixture surgery.
+
+**KTD-E — One legibility source.** The ledger card, the tests, and the clamp all read
+`ApprenticeWarrant` — the same repo discipline as `RaidForecast` byte-matching the tick and the
+counter's want matching `WantLine` (§11.11 KTD-1). A warrant card that could disagree with the
+resolver about whether the warrant fired is worse than no card.
+
+**KTD-F — Unlocks derive, never persist; grey, never hide.** §11.11 KTD-5 adopted (the
+`user://`-flag-outliving-a-campaign defect is documented in this very file's history,
+`godot/scripts/ui/TutorialFlow.cs:1139-1150`), plus the owner's own word: a closed book is
+visible, disabled, and says what opens it.
+
+---
+
+## Rulings owed
+
+- **R10 — should dismissing the tutorial also end the warrant?** Recommended default: **no** —
+  the warrant runs its dated course and the dismiss toast says so (U5.3). Ending it on dismissal
+  requires a new `PlayerAction` in `sim/GameSim/Contracts/` (deny-listed — an
+  orchestrator-authored micro-PR) so the sim can see the dismissal deterministically, and it
+  couples a UI preference to hero mortality, a cost the player would pay without being told at
+  press time. If ruled **yes**, it is a Contracts amendment + a second balance touch, its own PR.
+- **R11 — `LastGraceDay = 3` confirmed?** The tutorial's own three days, expiring at the dawn the
+  chain's backstop closes. A longer warrant (e.g. through day 5, nearer THE-GAME §3.3's "around
+  day four" prose) decouples it from "ends where the tutorial ends," so 3 is the recommended
+  default; any other value is the owner's call, same re-baseline either way.
+- *(Standing, from §11.11, unchanged by this amendment:)* R7 mid-vigil materials (default no) and
+  R8 party rotation (default rotate-by-day, re-baseline) are not re-asked here; U1's step-7 copy
+  deliberately teaches the stop without teaching Send-reflexively, staying clear of R1's freeze.
+
+---
+
+## Scope boundaries — what this wave does not do
+
+- **No `CounterForecast` and no forecast-board work.** That is §11.11 U1, un-built and un-owned
+  here; step 6's copy gains its "named them last night" clause in a one-line amendment when it
+  lands.
+- **No sim change outside U4.** U1/U2/U3/U5 are Godot-side only; `TutorialFlow` keeps reading
+  `GameState` and mutating nothing; `user://tutorial_flow.json` stays out of the sim save (KTD2).
+- **No new narrator lines.** The warrant card is ledger text; the spoken library stays frozen and
+  append-only.
+- **No timers, anywhere.** The warrant is a rule about outcomes, not a clock on a decision;
+  `VigilStop`'s indefinite hold (`godot/scripts/RaidConductor.cs:206-208`) and every phase timer
+  are untouched. No tutorial step acquires a countdown.
+- **No forced verbs.** Every step remains advisory: the chain is dismissible, `Advance` only ever
+  reads facts, and U1 *widens* what counts as done — nothing gates play on compliance. Skipping
+  a step costs exactly what the copy says (the lesson waits in Lessons; the warrant runs
+  regardless).
+- **No changes to camp verbs, provisioning balance, party formation, or death staging** — R1's
+  freeze and §11.11 U4/U5/U6 all stand as scoped there.
+- **No difficulty/assist system.** The warrant is not a toggle, not an option, not extendable by
+  the player; it is three days of town, then the game.
+- **No third plan doc.** This is a §11 amendment; `docs/plans/` stays at two.
+
+---
+
+## Sequencing
+
+| # | Unit | Size | Blocked by | Sim diff | Re-baseline |
+|---|------|------|-----------|----------|-------------|
+| U1 | Steps complete on player-caused facts | session | nothing | no | no |
+| U2 | Teaching onto the world + Lessons + card diet | session | U1 (same file, serial) | no | no |
+| U3 | The town opens as you learn it | session | U2 (registry idiom + anchor/gate test) | no | no |
+| U4 | The apprenticeship warrant (sim) | session | nothing (parallel lane) | **yes** | **yes — golden re-record + Category=Balance, own PR** |
+| U5 | Warrant taught, visible, ends on screen | session | U4 (must land immediately after) | no | no |
+
+U1→U2→U3 is one lane (all touch `TutorialFlow`/`ObjectiveTracker`); U4→U5 is the other, and the
+two lanes are file-disjoint until U5 touches `TutorialFlow` copy — U5 therefore rebases on
+whichever of U2/U3 has landed. Engine tests serialize regardless (repo memory: never two gdUnit
+runs at once). Every PR body carries `Serves:` per §11.6 rule 3; U4's quotes the seed-sweep
+census raw.
