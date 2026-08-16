@@ -4716,7 +4716,50 @@ the SFX fader, the master fader **and mute** — so muted playtests were never s
 composed-track fingerprint test pins all four beds by SHA-256, which **actively locks the defective
 generations in place** and must die in the same PR as any re-master.
 
-Unit list lands with the T4 plan.
+**How all this passed review, mechanically: integrated LUFS is gated, so it is blind to dead air.**
+The Evening bed measures a respectable −19.6 LUFS while being silent for 53 of its 60 seconds. Every
+gate in this theme therefore measures **unweighted RMS over the source's active window** — first to
+last sample whose 50 ms window sits within 40 dB of the source's loudest — with LUFS recorded
+alongside as documentation only.
+
+**The budget, which is the thing four previous fixes were missing.** Every prior attempt moved a
+runtime constant with no target to move it toward, so none of them could fail. The spec:
+
+| category | source | bus | effective | today |
+|---|---|---|---|---|
+| narrator | −20 | Narrator 0 dB | **−20** | −32.5 |
+| ceremonial one-shot (bell, depart, craft-done, death toll, memorial, grade stings) | −23 | Sfx 0 dB | **−23** | −13.8 … −20.6 |
+| UI one-shot | −27 | Sfx 0 dB | **−27** | −20.9 … −22.5 |
+| music bed | −12 | Music −20 dB | **−32** | −40.9 … −60.9 |
+| held/looping cue (bellows) | −32 | SfxLoop −3 dB | **−35** | −32.4 |
+
+**Spread goes from 47 dB to 15 dB.** The narrator rises 12.5 dB and stops sitting below nine UI
+cues; the bellows moves 11.5 dB *relative to the bed it plays over*, against the 1.92 dB that
+failed. Mastering leaves the runtime trim table entirely — `TrimDb` ends at all zeros, so there is
+no constant left to nudge.
+
+| Unit | Closes | What |
+|---|---|---|
+| U-T4-1 | #165 | The five-bus graph (Master/Music/Sfx/SfxLoop/Narrator) built in code — `project.godot` is deny-listed and stays untouched — with a hard limiter at −1.0 dBTP on Master. `EnsureBuilt` is idempotent and name-keyed, or the engine suite leaves fifty buses and a false-green graph test. |
+| U-T4-2 | #165 | `MixBudget` as a compiled table plus a census that iterates the real cue enum and the composed-track manifest. Ships with a **pinned** exemption count, so every re-level is a red-then-reviewed diff and the receipt cannot lie. |
+| U-T4-3 | #154 | Every one-shot re-levelled from a peak target to an RMS target — **and `tanh` removed from `Synth.Normalise` entirely.** Gating it to `gain < 1` does not help: a 0.55 peak target is already 2.4% into the curve, which is why a pure sine bell measures 2.35% THD with H3 at −32.6 dBc. That third harmonic *is* the word "harsh." `BountyPost`'s normalise is a measured no-op (gain 1.0000) and gets a real target for the first time. |
+| U-T4-4 | #153 | The bellows becomes a genuinely looped stream instead of a 0.30 s one-shot re-armed from a main-thread `Finished` signal — today every breath carries 20–37 ms of gap at an irregular interval, which is the abrasion no level cut touched. Its guard becomes a **sustained** measurement; the two existing bellows guards are deleted, not extended (one compares a held cue's peak to a one-shot's, the other has a 4.9× margin and passed pre-fix too). |
+| U-T4-5 | #165 | The grade sting stops bypassing the director, and the orphan `_hammerSfx` — constructed, parented, never played — is deleted. Guarded by a runtime tree census, so it catches the *next* bypass too. |
+| U-T4-6 | #165 | 50 narrator lines mastered to −20 ±1.0 with a −1.5 dBTP ceiling, and the first gate that has ever looked at their level. Normalised, never re-baked: the takes were curated by ear. |
+| U-T4-7 | #151, #152 | Five content gates — mostly-silence, dead tail, loop-seam level lurch, isolated transient, impulse-train-with-no-tone — and **the SHA-256 fingerprint pin dies here.** A hash census encodes "these exact bytes were vouched for," and the bytes are the defect. |
+| U-T4-8 | #152 | Repair night-still (trim to 51.5 s) and quest-wait (49.5 s), each with a 4 s equal-power head-to-tail fold, so the wrap is level-continuous by construction rather than by inspection. |
+| U-T4-9 | #151, #152 | Regenerate Dawn and Evening. Both are unrepairable: Dawn's defect *is* its content, and Evening has 7 seconds of content in 60, so trimming yields a 2.5 s loop. Briefs are written against the two documented failure modes — Dawn's bans percussion outright, Evening's demands *continuous*. |
+| U-T4-10 | #165 | The bed and the SFX step back 6/4 dB while the narrator speaks. |
+
+**PR #340's own commit body already recorded Evening's failure mode** — *"early prompts emphasizing
+'sparse/restrained' ambient wording produced near-silent output (−38 to −67 LUFS)"* — and the file
+shipped anyway. The generator (ACE-Step via ComfyUI) is installed locally, so regeneration is a
+costed option and provenance stays clean. The difference from #340 is that the gates land first and
+are objective: a bad generation cannot be committed.
+
+`docs/design/ASSETS.md` still lists all four beds as `.mp3`, stale since PR #520 — a rule-8 doc
+asserting what git contradicts, corrected in U-T4-9's PR, which also records the beds' provenance.
+That is written down nowhere today: the narrator has an attribution file, the music has none.
 
 ## §11.14.7 T5 — The night lands
 
@@ -4805,10 +4848,10 @@ Every register item, and the unit that closes it. A blank here is a failure of t
 | 148 | the watch must reach cutscene quality | U-T5-8, -9, -10, -11, -12a, -12b |
 | 149 | the legacy jank crafting menu | U-T1-6, U-T1-10 |
 | 150 | no hero/NPC walk animation | U-T3-8, U-T3-9 |
-| 151 | Dawn graininess | T4 |
-| 152 | Night grainy static | T4 |
-| 153 | bellows too loud | T4 |
-| 154 | bells/chimes too loud | T4 |
+| 151 | Dawn graininess | U-T4-7, U-T4-9 |
+| 152 | Night grainy static | U-T4-7, U-T4-8, U-T4-9 |
+| 153 | bellows too loud | U-T4-4 |
+| 154 | bells/chimes too loud | U-T4-3 |
 | 155 | the anvil minigame cannot be completed | U-T1-1, -2, -3, -4 |
 | 156 | drawer opens scrolled to the bottom | U-T1-5 |
 | 157 | everything unlocked from the start | U-T1-9, U-T1-10 |
@@ -4819,7 +4862,7 @@ Every register item, and the unit that closes it. A blank here is a failure of t
 | 162 | tutorial step 6 | U-T2-14, -15, -16 |
 | 163 | expand the world | U-T3-2, U-T3-3 |
 | 164 | log every action and its reason | all of T6 |
-| 165 | no audio bus, no limiter | T4 |
+| 165 | no audio bus, no limiter | U-T4-1, U-T4-2, U-T4-5, U-T4-6, U-T4-10 |
 | 166 | "came back from floor 0" | U-T5-1, U-T5-2 |
 | 167 | 8g in the sentence, 11g on the chip | U-T5-3 |
 | — | "Returned safely" after a rout (found, unreported) | U-T5-4 |
