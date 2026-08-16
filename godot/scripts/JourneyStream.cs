@@ -152,13 +152,26 @@ public static class JourneyStream
         party.Select(id => HeroName(heroes, id)).ToImmutableList();
 
     /// <summary>
-    /// U-EXP1: "who carries what you forged" — every party member's currently-equipped gear
-    /// (<see cref="Hero.Gear"/>, same four slots <see cref="Hero.GearScore"/> sums) filtered to
-    /// <see cref="Item.PlayerCrafted"/> only, so a rival-geared or bare-handed recruit contributes
-    /// nothing (never a fabricated line). Order is roster order, then Weapon/Shield/Armor/Trinket —
+    /// U-EXP1: "who carries what you forged" — everything a party member takes down, worn or
+    /// packed, filtered to <see cref="Item.PlayerCrafted"/> only, so a rival-geared or bare-handed
+    /// recruit contributes nothing (never a fabricated line). Order is roster order, then
+    /// Weapon/Shield/Armor/Trinket, then <see cref="Hero.Pack"/> in its own purchase order —
     /// deterministic, no RNG, pure read of already-live <see cref="GameState"/> (KTD2). Valid at
-    /// EVERY stage (Rumored included — gear is known complete at departure, unlike combat), so this
-    /// is called from all three <see cref="JourneyCard"/> construction sites above.
+    /// EVERY stage (Rumored included — the load-out is known complete at departure, unlike combat),
+    /// so this is called from all three <see cref="JourneyCard"/> construction sites above.
+    ///
+    /// <para>Reading <see cref="Hero.Pack"/> is not an embellishment; it is the fix for the slate
+    /// telling the owner "Nobody in this party carries anything you forged" while a hero walked into
+    /// the mine with his Field Salve. <c>Enums.cs</c> is explicit that a Consumable is "carried in
+    /// Hero.Pack, not worn" — so a gear-only read denies the player every potion they ever made,
+    /// including the ones that go on to earn a <c>ProofBeatKind.PotionLifesave</c>. The slate cannot
+    /// be allowed to deny an item the counterfactual replay later credits by name.</para>
+    ///
+    /// <para>TENSE IS LOAD-BEARING. Worn gear does not change mid-raid, so "carries" stays true for
+    /// the whole trip. A packed consumable CAN be drunk on floor 2, so pack lines read "set out
+    /// with" — true at departure and still true afterwards, which is what lets
+    /// <c>MineWatch</c>'s departure slate stay legible from Rumored through Resolved without
+    /// asserting a hero still holds something they already used.</para>
     /// </summary>
     private static ImmutableList<JourneyManifestLine> BuildManifest(ImmutableList<HeroId> party, GameState state)
     {
@@ -170,16 +183,33 @@ public static class JourneyStream
                 continue; // graceful degrade — a dangling roster id renders nothing, never throws
             }
 
+            var counted = new HashSet<int>();
+
             foreach (var slot in new[] { hero.Gear.Weapon, hero.Gear.Shield, hero.Gear.Armor, hero.Gear.Trinket })
             {
                 if (slot is not { } itemId
                     || !state.Items.TryGetValue(itemId.Value, out var item)
-                    || !item.PlayerCrafted)
+                    || !item.PlayerCrafted
+                    || !counted.Add(itemId.Value))
                 {
                     continue;
                 }
 
                 lines.Add(new JourneyManifestLine(itemId, $"{hero.Name} carries your {item.Name}."));
+            }
+
+            // Pack AFTER the worn slots, in Hero.Pack's own purchase order — the order the
+            // resolver quaffs in, and part of the determinism contract (Hero.Pack's own doc).
+            foreach (var itemId in hero.Pack)
+            {
+                if (!state.Items.TryGetValue(itemId.Value, out var item)
+                    || !item.PlayerCrafted
+                    || !counted.Add(itemId.Value))
+                {
+                    continue;
+                }
+
+                lines.Add(new JourneyManifestLine(itemId, $"{hero.Name} set out with your {item.Name}."));
             }
         }
 

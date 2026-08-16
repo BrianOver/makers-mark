@@ -80,6 +80,84 @@ public class DelveBeatsTests
         AssertThat(beats.Any(b => b.Kind == DelveBeatKind.Exchange && b.DamageTaken == 8)).IsTrue();
     }
 
+    // ── The killing blow reaches the watch. CombatEvent.KillingItem has been recorded by the
+    // resolver since KTD6 and had exactly ONE reader in the codebase (AttributionEngine), so the
+    // stage the player actually watches rendered an anonymous kill — the product's own headline
+    // sentence ("Emberbite turned the killing blow on floor 3") discarded at the last hop. ────────
+
+    [TestCase]
+    public void MonsterSlain_NamesThePlayerCraftedItemThatLandedTheBlow()
+    {
+        var floors = ImmutableList.Create(
+            new FloorOutcome(1, true, ImmutableList.Create(
+                new CombatEvent(1, new HeroId(1), "cave-rat", ImmutableList.Create(6), 9, 0, true, new ItemId(1)))));
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, Crafted(1, "Emberbite"));
+
+        var beats = DelveBeats.BuildBeats(
+            floors, ImmutableList<HeroId>.Empty, ImmutableList<OreLoot>.Empty, Heroes(),
+            ExpeditionHalt.TargetReached, items);
+
+        var kill = beats.Single(b => b.Kind == DelveBeatKind.MonsterSlain);
+        AssertThat(kill.KillingItemName).IsEqual("Emberbite");
+        AssertThat(kill.KillingItem).IsEqual(new ItemId(1));
+    }
+
+    [TestCase]
+    public void MonsterSlain_ByRivalGear_EarnsNoCredit_ThereIsNoParticipationCredit()
+    {
+        var floors = ImmutableList.Create(
+            new FloorOutcome(1, true, ImmutableList.Create(
+                new CombatEvent(1, new HeroId(1), "cave-rat", ImmutableList.Create(6), 9, 0, true, new ItemId(1)))));
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, Vendor(1, "Rival Cleaver"));
+
+        var beats = DelveBeats.BuildBeats(
+            floors, ImmutableList<HeroId>.Empty, ImmutableList<OreLoot>.Empty, Heroes(),
+            ExpeditionHalt.TargetReached, items);
+
+        var kill = beats.Single(b => b.Kind == DelveBeatKind.MonsterSlain);
+        AssertThat(kill.KillingItemName).IsNull();
+        AssertThat(kill.KillingItem).IsNull();
+    }
+
+    [TestCase]
+    public void MonsterSlain_WithNoItemMap_RendersExactlyAsBefore_NoCrash()
+    {
+        // Every pre-existing call site omits the map (trailing-optional, the repo's save-compat
+        // shape). Those must degrade to the old anonymous kill, never throw on the recorded id.
+        var floors = ImmutableList.Create(
+            new FloorOutcome(1, true, ImmutableList.Create(
+                new CombatEvent(1, new HeroId(1), "cave-rat", ImmutableList.Create(6), 9, 0, true, new ItemId(1)))));
+
+        var beats = DelveBeats.BuildBeats(
+            floors, ImmutableList<HeroId>.Empty, ImmutableList<OreLoot>.Empty, Heroes(),
+            ExpeditionHalt.TargetReached);
+
+        var kill = beats.Single(b => b.Kind == DelveBeatKind.MonsterSlain);
+        AssertThat(kill.KillingItemName).IsNull();
+        AssertThat(kill.DamageDealt).IsEqual(9); // everything else about the beat is untouched
+    }
+
+    [TestCase]
+    public void ADeathCloudBeat_NeverCarriesAKillCredit_TheCensorStillWins()
+    {
+        // The censor outranks the credit. Mutual destruction is the case that proves it: the hero
+        // DOES kill the monster (MonsterKilled: true) with a player-crafted blade, and dies doing
+        // it. That round renders as SwallowedByDark and nothing else — emitting the kill credit
+        // here would be a death leak wearing the payoff's clothes, on the most tempting beat in
+        // the game to show off.
+        var floors = ImmutableList.Create(
+            new FloorOutcome(1, false, ImmutableList.Create(
+                new CombatEvent(1, new HeroId(1), "ore-golem", ImmutableList.Create(9), 4, 40, true, new ItemId(1)))));
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, Crafted(1, "Emberbite"));
+
+        var beats = DelveBeats.BuildBeats(
+            floors, ImmutableList.Create(new HeroId(1)), ImmutableList<OreLoot>.Empty, Heroes(),
+            ExpeditionHalt.FloorLost, items);
+
+        AssertThat(beats.Any(b => b.Kind == DelveBeatKind.MonsterSlain)).IsFalse();
+        AssertThat(beats.All(b => b.KillingItemName is null)).IsTrue();
+    }
+
     [TestCase]
     public void OreBeats_AppearOnClearedFloors_NoneOnAnUnclearedFloor()
     {
@@ -222,5 +300,14 @@ public class DelveBeatsTests
         new HeroId(id), name, "vanguard", Level: 3, MaxHp: 40, Gold: 10,
         GearSet.Empty, ImmutableList<ItemMemory>.Empty,
         Alive: true, DeepestFloorReached: 1, DiedOnDay: null);
+
+    // The MakersMark is the whole difference between these two: it is what earns a kill credit.
+    private static Item Crafted(int id, string name) => new(
+        new ItemId(id), "recipe", name, ItemSlot.Weapon, QualityGrade.Fine, new ItemStats(1, 0, 1),
+        new MakersMark("Player", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+    private static Item Vendor(int id, string name) => new(
+        new ItemId(id), "recipe", name, ItemSlot.Weapon, QualityGrade.Common, new ItemStats(1, 0, 1),
+        Mark: null, History: ImmutableList<ItemHistoryEntry>.Empty);
 }
 #endif
