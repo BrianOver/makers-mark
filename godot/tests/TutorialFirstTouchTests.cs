@@ -37,6 +37,15 @@ public class TutorialFirstTouchTests
         finally
         {
             flow.Free();
+            // A fired ConsumeFirstTouch call Saves() unconditionally (its own doc: "persisted
+            // immediately") to the SAME user://tutorial_flow.json every MountMainUi-paired test
+            // relies on Unmount's own TutorialFlow.DeleteForTests() to keep clean. This suite builds
+            // a bare TutorialFlow with no MainUi/Unmount pair, so IT is the one that must delete the
+            // file it just wrote — leaving it behind otherwise leaks whatever Completed/Dismissed
+            // this test's own flow happened to have into the NEXT engine test's fresh MountMainUi(),
+            // which reads it back via Load() at boot. Root-cause of the cross-suite Active=false flake
+            // this fix closes (see ConsumeFirstTouch_StillFires_AfterTheChainIsDismissed below).
+            TutorialFlow.DeleteForTests();
         }
     }
 
@@ -55,6 +64,9 @@ public class TutorialFirstTouchTests
         finally
         {
             flow.Free();
+            // Deliberately NOT TutorialFlow.DeleteForTests() here — the whole point of this test is
+            // that user://tutorial_flow.json survives into the second instance below. Cleanup runs
+            // once, after THAT instance is done reading it (same doc as the sibling test above).
         }
 
         var reloaded = new TutorialFlow();
@@ -74,6 +86,7 @@ public class TutorialFirstTouchTests
         finally
         {
             reloaded.Free();
+            TutorialFlow.DeleteForTests(); // see the sibling test's doc: this suite owns its own leak guard
         }
     }
 
@@ -98,6 +111,12 @@ public class TutorialFirstTouchTests
         finally
         {
             flow.Free();
+            // This test's own ConsumeFirstTouch call Saves() Dismissed=true to disk (see the first
+            // test's doc). Without this line that flag leaked into every later engine test's fresh
+            // MountMainUi() this session — including TutorialFlowTests.FreshCampaign_..., which reads
+            // it back via Load() and finds Active already false on a "fresh" campaign it never
+            // touched. Confirmed root cause of that exact cross-suite flake.
+            TutorialFlow.DeleteForTests();
         }
     }
 }
