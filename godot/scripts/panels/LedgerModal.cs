@@ -41,7 +41,19 @@ public partial class LedgerModal : SimPanel
     private const float RowDeadAlpha = 0.55f;
 
     private Label? _title;
+    private Label? _countLine;
     private VBoxContainer? _cards;
+
+    /// <summary>The wrapping card grid (U-T5) — a fresh <see cref="HFlowContainer"/> built inside
+    /// <see cref="_cards"/> on every <see cref="RenderCards"/> pass, so the extra width a bigger
+    /// window carries becomes MORE CARDS PER ROW instead of longer single-file rows. Every hero
+    /// card plus the tutorial tip / first-loss block are children of THIS node, not <see
+    /// cref="_cards"/> directly — <c>LedgerModalTests</c>' "tutorial tip below the lead card" and
+    /// first-loss-block tests key their sibling-order assertions off <c>LedgerCard_0</c>'s own
+    /// parent, so those three stay interleaved in one flow container while THE RETELLING (which
+    /// wants full-width prose lines, not a grid cell) stays a direct <see cref="_cards"/> child
+    /// added after this node.</summary>
+    private HFlowContainer? _cardGrid;
     private Label? _feedback;
     private bool _showFullTale;
 
@@ -201,8 +213,19 @@ public partial class LedgerModal : SimPanel
 
         var state = Adapter.CurrentState;
         var cards = LeadWithAttribution(LedgerQuery.ReturnCards(state, day));
+        // U-T5: announce the total up front — "1.4 of 6 cards fit" used to be something a player
+        // could only DISCOVER by scrolling and losing count. No cards are ever truncated (every
+        // ReturnCard still renders — this is geometry, not pagination), so N always equals M; the
+        // line's job is telling the player that number before they start scrolling, not after.
+        _countLine!.Text = $"Showing {cards.Count} of {cards.Count}";
         var warrantSaves = WarrantSavesForDay(day); // §11.13 amendment (U5), keyed by HeroId.Value
         var halts = HaltsForDay(day); // #167 fix, keyed by HeroId.Value
+
+        // U-T5: a fresh wrapping grid every render — see _cardGrid's own doc for why cards/tip/
+        // first-loss-block live here while THE RETELLING stays a direct _cards child added below.
+        _cardGrid = new HFlowContainer { Name = "LedgerCardGrid" };
+        _cards!.AddChild(_cardGrid);
+
         if (cards.IsEmpty)
         {
             AddTutorialTip();
@@ -213,7 +236,7 @@ public partial class LedgerModal : SimPanel
         var firstLossBlockRendered = false;
         for (var i = 0; i < cards.Count; i++)
         {
-            _cards!.AddChild(BuildReturnCard(state, cards[i], i, warrantSaves, halts, day));
+            _cardGrid!.AddChild(BuildReturnCard(state, cards[i], i, warrantSaves, halts, day));
             if (i == 0)
             {
                 // U1: the attribution beat is the spine of the game (R11) — the tutorial tip now
@@ -228,8 +251,13 @@ public partial class LedgerModal : SimPanel
             if (!cards[i].Survived && !firstLossBlockRendered && _firstLossBlock is { } block)
             {
                 firstLossBlockRendered = true;
-                var lossLabel = AddLabel(_cards!, block);
+                var lossLabel = AddLabel(_cardGrid!, block);
                 lossLabel.Name = "LedgerFirstLossBlock";
+                // Same width floor as the cards and the tutorial tip — see AddTutorialTip. This one
+                // only renders on the campaign's first death, so no fixture caught it collapsing;
+                // it would have arrived as a ransom note on the single most important night the
+                // game has.
+                lossLabel.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
                 lossLabel.AddThemeColorOverride("font_color", GameTheme.WarnColor);
             }
         }
@@ -325,8 +353,14 @@ public partial class LedgerModal : SimPanel
             return;
         }
 
-        var tip = AddLabel(_cards!, $"💬 {_tutorialTip}");
+        var tip = AddLabel(_cardGrid!, $"💬 {_tutorialTip}");
         tip.Name = "LedgerTutorialTip";
+        // The same width floor every card in this grid carries, and for the same reason. An
+        // HFlowContainer hands each child its own natural size, and an autowrapping Label's natural
+        // width is its narrowest word — so a loose Label dropped straight into the grid collapses to
+        // one character per line. BuildReturnCard guards the cards; this and the first-loss block are
+        // the two labels that go in beside them, and they need the floor just as much.
+        tip.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
         tip.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
     }
 
@@ -335,7 +369,7 @@ public partial class LedgerModal : SimPanel
     /// plain-label version always showed.</summary>
     private void AddEmptyState()
     {
-        var row = AddRow(_cards!);
+        var row = AddRow(_cardGrid!);
         AddIcon(row, IconRegistry.Glyph("rune")).Name = "EmptyStateIcon";
         AddLabel(row, "No returns recorded for this day.");
     }
@@ -356,6 +390,13 @@ public partial class LedgerModal : SimPanel
         ImmutableDictionary<int, ExpeditionHalt> halts, int night)
     {
         var wrap = Card($"LedgerCard_{index}");
+        // U-T5: a fixed column width, not a stretch-to-parent VBoxContainer child — this card now
+        // lives in an HFlowContainer (_cardGrid), which gives every child its OWN natural size
+        // rather than the full-width stretch a VBoxContainer used to hand it. Without a floor here
+        // the card would shrink toward its narrowest wrapped word (the same 1-char-per-line R7
+        // collapse LayoutTests already hunts), so this is the width floor that makes the grid read
+        // as readable tiles instead of a jumble of ransom-note columns.
+        wrap.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
         wrap.AddThemeStyleboxOverride("panel", CardAccentStyle(card.Survived));
         var body = new VBoxContainer();
         wrap.AddChild(body);
@@ -388,6 +429,10 @@ public partial class LedgerModal : SimPanel
         }
 
         var fateLabel = AddLabel(fateRow, card.FateLine);
+        // U-T5 (type-scale pass): one step above body/LegibilityFloor — the fate line is the
+        // card's own headline sentence, not incidental prose, so it reads at the same size as the
+        // HUD's live numbers rather than disappearing into the beat/ore rows below it.
+        fateLabel.AddThemeFontSizeOverride("font_size", GameTheme.HudValueFontSize);
         if (!card.Survived)
         {
             fateLabel.AddThemeColorOverride("font_color", GameTheme.DangerColor);
@@ -491,6 +536,14 @@ public partial class LedgerModal : SimPanel
     /// <c>PatronPortraitSize</c> precedent (a compact roster-adjacent card, not the full HUD
     /// <see cref="UiKit.PortraitSize"/>).</summary>
     private const float CardPortraitSize = 56f;
+
+    /// <summary>Column width (px) for one card in the wrapping grid (U-T5). Picked so the design
+    /// floor (1152×648 window, minus <c>SimPanel.BuildFittedModalCard</c>'s margins and this
+    /// card's own scroll/panel insets) still fits at least 3 columns, and a maximized 1920×1080
+    /// window fits at least 5 — six same-night returns then wrap to two short rows instead of one
+    /// scroll-forever column, satisfying this unit's "at least 3 at the design floor, all 6 with
+    /// no scrolling at 1080p" target.</summary>
+    private const float CardGridColumnWidth = 300f;
 
     /// <summary>Left-border accent width (px) marking survivor vs death (below).</summary>
     private const int CardAccentBorderWidth = 4;
@@ -770,22 +823,36 @@ public partial class LedgerModal : SimPanel
         dim.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(dim);
 
-        var center = new CenterContainer();
-        center.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(center);
+        // A FITTED card — see SimPanel.BuildFittedModalCard.
+        //
+        // This was a CenterContainer around a VBox with CustomMinimumSize (640, 420) — the exact
+        // trap CampPanel/ScryingMirror already hit and fixed: a CenterContainer hands its child
+        // EXACTLY its combined minimum, and a Control can never lay out smaller than its own
+        // minimum — so that 640x420 was simultaneously the floor AND the ceiling no matter how big
+        // the window got. Measured: 55.6% x 64.8% of the 1152x648 design viewport, but only 33% x
+        // 39% of a maximized 1920x1080 window, with roughly 1.4 of 6 hero cards actually fitting
+        // in the scroll area behind an unthemed engine-default scrollbar. The owner's own words:
+        // "Evening ledger sucks - needs expanded to be actually readable (its tiny)." That was
+        // arithmetic, not taste.
+        var card = BuildFittedModalCard("LedgerModalCard");
+        var box = card.Body;
 
-        var panel = new PanelContainer();
-        center.AddChild(panel);
-        var box = new VBoxContainer { CustomMinimumSize = new Vector2(640, 420) };
-        panel.AddChild(box);
-
-        _title = AddLabel(box, "EVENING LEDGER");
+        _title = AddHeader(box, "EVENING LEDGER");
         _title.Name = "LedgerTitle";
+        // U-T5: the title used to be a plain AddLabel — 16px BodyFontSize, the SAME size as the
+        // smallest text on screen, and it skipped the Silkscreen display face entirely. AddHeader
+        // above opts it into that face; this override makes it read as the modal's own headline,
+        // one step past even a section header (GameTheme.HeaderFontSize, 22).
+        _title.AddThemeFontSizeOverride("font_size", GameTheme.TitleFontSize);
 
-        // Horizontal scroll disabled (U7/R7): the cards column follows the box's 640px width
-        // so autowrap labels wrap on real width instead of collapsing to 1 char per line.
+        _countLine = AddLabel(box, string.Empty);
+        _countLine.Name = "LedgerCount";
+
+        // Horizontal scroll disabled (U7/R7): the cards column follows the card's real width so
+        // autowrap labels wrap on real width instead of collapsing to 1 char per line.
         var scroll = new ScrollContainer
         {
+            Name = "LedgerScroll",
             SizeFlagsVertical = SizeFlags.ExpandFill,
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
         };
@@ -799,6 +866,11 @@ public partial class LedgerModal : SimPanel
 
         _feedback = AddLabel(box, string.Empty);
         _feedback.Name = "LedgerFeedback";
-        AddButton(box, "CloseLedger", "Close", CloseModal);
+
+        // In the ANCHORED action row, not flowed at the end of the body — same softlock-proof
+        // reasoning as CampPanel/ScryingMirror's own Close/Hold controls (BuildFittedModalCard's
+        // own doc): this is the ONLY way to dismiss a true modal overlay, so its position must
+        // never depend on how much content is stacked above it.
+        AddButton(card.ActionRow, "CloseLedger", "Close", CloseModal);
     }
 }
