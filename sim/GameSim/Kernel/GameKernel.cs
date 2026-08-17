@@ -99,7 +99,10 @@ public sealed class GameKernel
             ActionLog = state.ActionLog.Add(new LoggedBatch(state.Day, state.Phase, ImmutableList.Create(action))),
         };
 
-        return new TickResult(newState, stamped.ToImmutable(), rejected.ToImmutable());
+        return new TickResult(newState, stamped.ToImmutable(), rejected.ToImmutable())
+        {
+            Traces = sink.DrainTraces().ToImmutableList(),
+        };
     }
 
     public TickResult Tick(GameState state, ImmutableList<PlayerAction> actions)
@@ -169,7 +172,10 @@ public sealed class GameKernel
             ActionSlotsRemaining = nextDay != state.Day ? ActionBudget.SlotsPerDay : state.ActionSlotsRemaining,
         };
 
-        return new TickResult(newState, stamped.ToImmutable(), rejected.ToImmutable());
+        return new TickResult(newState, stamped.ToImmutable(), rejected.ToImmutable())
+        {
+            Traces = sink.DrainTraces().ToImmutableList(),
+        };
     }
 
     // The 5-phase day (staged resolution). Camp/ExpeditionDeep sit between Expedition and Evening;
@@ -216,12 +222,24 @@ public sealed class GameKernel
     private static bool NoRaidToHost(ImmutableSortedDictionary<int, Hero> heroes) =>
         PartyFormation.FormParties(heroes).IsEmpty;
 
-    private sealed class EventCollector : IEventSink
+    /// <summary>
+    /// U-T6: the kernel's own sink implements <see cref="ITraceSink"/> alongside the required
+    /// <see cref="IEventSink"/> — see that interface's doc for why this is the ONLY place a trace
+    /// can actually reach <see cref="TickResult.Traces"/> (every test-local sink stub is a plain
+    /// <see cref="IEventSink"/> and simply drops a <c>Trace</c> call it never receives, having no
+    /// method to receive it on).
+    /// </summary>
+    private sealed class EventCollector : IEventSink, ITraceSink
     {
         private readonly List<GameEvent> _events = [];
+        private readonly List<DecisionTrace> _traces = [];
 
         public void Emit(GameEvent gameEvent) => _events.Add(gameEvent);
 
+        public void Trace(DecisionTrace trace) => _traces.Add(trace);
+
         public IReadOnlyList<GameEvent> Drain() => _events;
+
+        public IReadOnlyList<DecisionTrace> DrainTraces() => _traces;
     }
 }

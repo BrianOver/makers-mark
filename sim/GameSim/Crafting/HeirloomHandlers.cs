@@ -1,4 +1,5 @@
 using GameSim.Contracts;
+using GameSim.Kernel;
 using GameSim.Professions;
 
 namespace GameSim.Crafting;
@@ -125,10 +126,14 @@ public sealed class HeirloomHandlers : IActionHandler
 
         // 10. All checks passed — consume, roll (the single RNG draw; null grade = auto-craft
         //     baseline, exactly the same path a bare CraftAction with no captured grade takes),
-        //     mint, stamp the lineage, emit.
+        //     mint, stamp the lineage, emit. U-T6: same QualityRoller path CraftingHandlers wires
+        //     for tracing, so a reforge's discarded quality reason is no more discarded than an
+        //     ordinary craft's — the trace sink upgrade is opportunistic (see ITraceSink's own
+        //     doc), so a test-local IEventSink stub that isn't a real GameKernel sink is unaffected.
+        var traceSink = events as ITraceSink;
         var quality = profession.ActiveCraft
-            ? QualityRoller.RollActive(recipe, materialGrade, talents, profession.Quality, rng)
-            : QualityRoller.Roll(recipe, materialGrade, talents, profession.Quality, rng);
+            ? QualityRoller.RollActive(recipe, materialGrade, talents, profession.Quality, rng, performanceGrade: null, traceSink)
+            : QualityRoller.Roll(recipe, materialGrade, talents, profession.Quality, rng, performanceGrade: null, traceSink);
         var itemId = new ItemId(state.NextItemId);
         var item = ItemForge.Forge(itemId, recipe, quality, state.Day);
 
