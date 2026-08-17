@@ -24,12 +24,18 @@ namespace GodotClient.Tests;
 /// top of <c>props-ore-cart</c> at (9,11) — a 20×16px overlap, "Torvald"'s own nameplate stamped
 /// inside the cart — under a green suite, for as long as this town has existed.</para>
 ///
-/// <para><b>This unit changes no placement</b> — every number below (<see
+/// <para><b>U-T3-1 itself changed no placement</b> — every number it extracted (<see
 /// cref="TownLayout2D.HeroHomeTiles"/>, <see cref="TownLayout2D.TownsfolkHomeTiles"/>, the wander
-/// amplitudes) is the SAME value the game already drew, just moved somewhere a test can see it.
-/// What follows are today's REAL collisions, measured off the committed art on disk, pinned as
-/// KNOWN so this unit lands green — fixing the town's clutter is later units' job in the town wave;
-/// their proof of progress is deleting rows from these lists, never widening them.</para>
+/// amplitudes) was the SAME value the game already drew, just moved somewhere a test could see it.
+/// It landed with sixteen real sprite overlaps, ten nameplate overlaps and eight door-approach
+/// overlaps pinned as KNOWN, all a symptom of one thing: the world was 40×28 tiles, 1.11 screens
+/// wide, and every venue sat inside a single screen with nowhere else for anything to stand.</para>
+///
+/// <para><b>U-T3-2 (register #163, "need to expand the size of the world") fixes the room, not the
+/// symptom.</b> The owner ruled 64×44; every placement table in <c>TownLayout2D</c> was re-laid
+/// onto that grid at today's real art sizes in this PR, and all three exception sets below are now
+/// empty — the same census, the same art, just enough room that nothing has to overlap anything
+/// else to fit.</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -158,72 +164,41 @@ public class TownPlacementTests
 
     /// <summary>
     /// Pinned as an EXACT SET — the <c>ArtManifestTests.KnownThreeFrameRobedTownsfolk</c> idiom.
-    /// Today's real sprite-vs-sprite collisions, measured off the committed art on disk (full
-    /// resolved sprite ids, not the task packet's own shorthand). Adding a row goes red (a NEW
-    /// overlap shipped); fixing one without deleting its row goes red too — the fix isn't proven
-    /// until the exception naming it is gone.
+    ///
+    /// <para><b>U-T3-2 (register #163, "need to expand the size of the world"): EMPTY.</b> The
+    /// sixteen rows this list used to carry were measured off a 40×28-tile world — 1.11 screens
+    /// wide, every venue crammed inside a single screen with nowhere else for a lantern, a hero's
+    /// home, or an ore cart to stand. The owner ruled 64×44; every placement table in
+    /// <c>TownLayout2D</c> was re-laid onto that grid at today's real art sizes in the same PR, and
+    /// this census — same art, same resolution ladder, just more room to stand in — now finds none.
+    /// Emptying this list IS the unit's proof; adding a row back goes red (a NEW overlap shipped).
+    /// </para>
     /// </summary>
     private static readonly string[] KnownSpriteOverlaps =
     [
-        "BLD:forge x HERO3@(15,10) 14x32 px",
-        "BLD:forge x PROP:town2d-prop-lantern(12,13) 16x28 px",
-        "BLD:market x HERO6@(24,10) 16x30 px",
-        "BLD:market x PROP:town2d-prop-lantern(24,13) 14x28 px",
-        "BLD:market x PROP:town2d-prop-lantern(27,13) 16x28 px",
-        "BLD:noticeboard x PROP:town2d-prop-lantern(27,19) 14x28 px",
-        "BLD:tavern x HERO2@(12,14) 20x24 px",
-        "BLD:tavern x PROP:town2d-prop-lantern(12,13) 16x8 px",
-        "BLD:tavern x PROP:town2d-prop-lantern(12,19) 16x28 px",
-        "BLD:tavern x PROP:town2d-prop-lantern(16,13) 2x8 px",
-        "BLD:tavern x PROP:town2d-prop-lantern(16,17) 2x44 px",
-        "PROP:props-ore-cart(9,11) x HERO1@(9,12) 20x16 px",
-        "PROP:props-string-lanterns(17,12) x HERO4@(18,12) 15x32 px",
-        "PROP:town2d-prop-lantern(12,13) x HERO2@(12,14) 16x16 px",
-        "PROP:town2d-prop-lantern(16,13) x PROP:props-string-lanterns(17,12) 13x28 px",
-        "PROP:town2d-well(20,15) x HERO5@(21,14) 14x32 px",
     ];
 
     /// <summary>
-    /// Pinned as an EXACT SET, same contract as <see cref="KnownSpriteOverlaps"/>. The task packet
-    /// that specified this unit hand-surveyed ONE of these ("Torvald"'s nameplate on the ore cart)
-    /// by eye; running the SAME rect math the packet itself specifies
-    /// (<c>Building2D.BuildLabel</c>'s own <c>Position</c>/<c>Size</c>, <c>Building2D.cs:434-435</c>)
-    /// against every nameplate-carrying object finds nine more it did not — a building's own
-    /// nametag can land on ANOTHER building's sprite too (<c>BLD:tavern x BLD:forge</c>: the tavern
-    /// is tall enough, at 88px, that its nametag floats up past the forge's own footprint two tiles
-    /// away). This is the exact "count shapes, don't eyeball one" gap the census exists to close.
+    /// Pinned as an EXACT SET, same contract as <see cref="KnownSpriteOverlaps"/>.
+    ///
+    /// <para><b>U-T3-2: EMPTY.</b> The ten rows this list used to carry (a building's own nametag
+    /// landing on ANOTHER building's sprite, a hero's nametag on the ore cart he was never
+    /// touching) were all a symptom of the same 40×28 crowding <see cref="KnownSpriteOverlaps"/>'s
+    /// own doc describes — the 64×44 re-lay clears every one of them too.</para>
     /// </summary>
     private static readonly string[] KnownNameplateOverlaps =
     [
-        "NAMEPLATE:BLD:tavern x BLD:forge 72x2 px",
-        "NAMEPLATE:BLD:tavern x HERO2@(12,14) 20x6 px",
-        "NAMEPLATE:BLD:tavern x PROP:town2d-prop-lantern(12,13) 16x8 px",
-        "NAMEPLATE:BLD:tavern x PROP:town2d-prop-lantern(16,13) 2x8 px",
-        "NAMEPLATE:HERO1@(9,12) x PROP:props-ore-cart(9,11) 20x8 px",
-        "NAMEPLATE:HERO2@(12,14) x BLD:forge 20x8 px",
-        "NAMEPLATE:HERO2@(12,14) x PROP:town2d-prop-lantern(12,13) 16x8 px",
-        "NAMEPLATE:HERO3@(15,10) x BLD:forge 14x8 px",
-        "NAMEPLATE:HERO4@(18,12) x PROP:props-string-lanterns(17,12) 15x7 px",
-        "NAMEPLATE:HERO5@(21,14) x PROP:town2d-well(20,15) 14x8 px",
     ];
 
     /// <summary>
-    /// Pinned as an EXACT SET, same contract as <see cref="KnownSpriteOverlaps"/>. Not called out
-    /// anywhere in the task packet at all — <c>Town2DSceneTests.WarmHubProps_
-    /// NeverSitOnABuildingApproachLane</c> (deleted by this PR) only ever checked SEVEN prop ids'
-    /// TILE against <see cref="TownLayout2D.PathRects"/>'s spur rects, never a venue's real doorway
-    /// pixel strip against every prop/actor. Running the packet's own stronger check finds these.
+    /// Pinned as an EXACT SET, same contract as <see cref="KnownSpriteOverlaps"/>.
+    ///
+    /// <para><b>U-T3-2: EMPTY.</b> The eight rows this list used to carry (props and heroes
+    /// standing in a venue's own door-approach strip) were the same 40×28 crowding — the 64×44
+    /// re-lay gives every venue's doorway apron room to stay clear too.</para>
     /// </summary>
     private static readonly string[] KnownDoorApproachOverlaps =
     [
-        "LANE:forge x HERO2@(12,14) 20x32 px",
-        "LANE:forge x PROP:town2d-prop-lantern(12,13) 16x16 px",
-        "LANE:market x PROP:town2d-prop-lantern(24,13) 14x16 px",
-        "LANE:market x PROP:town2d-prop-lantern(24,17) 14x4 px",
-        "LANE:market x PROP:town2d-prop-lantern(27,13) 16x16 px",
-        "LANE:noticeboard x PROP:town2d-prop-lantern(27,19) 14x16 px",
-        "LANE:tavern x PROP:props-tavern-cat(15,19) 13x13 px",
-        "LANE:tavern x PROP:town2d-prop-lantern(12,19) 16x16 px",
     ];
 
     /// <summary>The census: every unique pair of placed sprites, in the SAME rect convention the
