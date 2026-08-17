@@ -43,9 +43,10 @@ namespace GodotClient.Tests;
 [RequireGodotRuntime]
 public class TutorialCopyIsFollowableTests
 {
-    /// <summary>The one denominator every line prints ("Tutorial N/10"). Hand-typed HERE on
-    /// purpose, unlike in production where it is derived: a test that computes the expected value
-    /// the same way the code does pins nothing.</summary>
+    /// <summary>The chain's own total displayed-step count (no longer printed as one global
+    /// denominator — U-T2-1 numbers within acts now). Hand-typed HERE on purpose, unlike in
+    /// production where it is derived: a test that computes the expected value the same way the
+    /// code does pins nothing.</summary>
     private const int ExpectedDisplayedSteps = 10;
 
     /// <summary>
@@ -93,15 +94,26 @@ public class TutorialCopyIsFollowableTests
         "press Next", "Next/Advance", "bell row", "winch-house", "noticeboard",
     ];
 
+    /// <summary>
+    /// U-T2-1 (owner ruling, §11.13): the chain now numbers WITHIN acts — "The Hand-Off · 2/4",
+    /// never "Tutorial 7/24" — because a countdown to ten was never going to survive becoming a
+    /// countdown to twenty-four once the pointed chain outgrows day 3 (the owner's own ruling: the
+    /// pointed chain now runs through day 7). <see cref="TutorialFlow.TotalSteps"/> still comes from
+    /// the registry, never hand-typed, and the checklist still renders one row per displayed step —
+    /// what changed is that the CONTIGUITY pin (formerly one flat 1..10 run) is now per-act: every
+    /// act's own displayed steps number 1..N with no gap, and no step's copy claims a GLOBAL
+    /// denominator any more.
+    /// </summary>
     [TestCase]
-    public void TheChainShows_ExactlyTenNumberedSteps_AndTheChecklistHasARowForEveryOne()
+    public void EveryAct_NumbersItsOwnBeats_AndNoBeatClaimsAGlobalDenominator()
     {
-        // A silently lost step is the failure nobody sees until a human hits it: the denominator
-        // every line prints moves, the ladder renders one row shorter, and nothing goes red.
+        // A silently lost step is the failure nobody sees until a human hits it: the total every
+        // act's own count derives from moves, the ladder renders one row shorter, and nothing goes
+        // red.
         AssertThat(TutorialFlow.TotalSteps)
             .OverrideFailureMessage(
                 $"The tutorial now shows {TutorialFlow.TotalSteps} numbered steps, not {ExpectedDisplayedSteps} — " +
-                "every \"Tutorial N/10\" line in the game just renumbered. If that is intended, change " +
+                "at least one act's own denominator just changed. If that is intended, change " +
                 "ExpectedDisplayedSteps here in the same commit.")
             .IsEqual(ExpectedDisplayedSteps);
 
@@ -115,13 +127,47 @@ public class TutorialCopyIsFollowableTests
                     "a step exists that the player can never see coming.")
                 .IsEqual(TutorialFlow.TotalSteps);
 
-            for (var i = 0; i < rows.Count; i++)
+            foreach (var row in rows)
             {
-                AssertThat(rows[i].DisplayIndex)
-                    .OverrideFailureMessage($"Checklist row {i} is numbered {rows[i].DisplayIndex} — the ladder has a gap.")
-                    .IsEqual(i + 1);
-                AssertThat(string.IsNullOrWhiteSpace(rows[i].Label))
-                    .OverrideFailureMessage($"Checklist row {i + 1} renders a blank label.")
+                AssertThat(string.IsNullOrWhiteSpace(row.Label))
+                    .OverrideFailureMessage($"Checklist row {row.DisplayIndex} renders a blank label.")
+                    .IsFalse();
+            }
+
+            // Per-act contiguity: every act's own displayed steps number 1..N with no gap, and each
+            // act's own total matches how many displayed steps it actually has.
+            var slotsByAct = TutorialFlow.Registry
+                .Select(d => (d.DisplayIndex, d.Act, d.Step))
+                .GroupBy(s => s.DisplayIndex)
+                .Select(g => g.First())
+                .OrderBy(s => s.DisplayIndex)
+                .GroupBy(s => s.Act);
+            foreach (var actGroup in slotsByAct)
+            {
+                var slots = actGroup.ToList();
+                for (var i = 0; i < slots.Count; i++)
+                {
+                    var (position, total) = TutorialFlow.ActPosition(slots[i].Step);
+                    AssertThat(position)
+                        .OverrideFailureMessage(
+                            $"{actGroup.Key}'s slot at DisplayIndex {slots[i].DisplayIndex} reads position " +
+                            $"{position}, not {i + 1} — that act's own ladder has a gap.")
+                        .IsEqual(i + 1);
+                    AssertThat(total)
+                        .OverrideFailureMessage(
+                            $"{actGroup.Key}'s own total ({total}) does not match its actual step count ({slots.Count}).")
+                        .IsEqual(slots.Count);
+                }
+            }
+
+            // And no step's rendered copy claims the OLD global "N/10"-shaped denominator.
+            var world = ui.Adapter.CurrentState;
+            foreach (var step in Enum.GetValues<TutorialStep>())
+            {
+                var copy = Plain(ui.Tutorial.CopyFor(step, world));
+                AssertThat(copy.Contains($"/{TutorialFlow.TotalSteps}", StringComparison.Ordinal))
+                    .OverrideFailureMessage(
+                        $"{step}'s copy still claims a global \"/{TutorialFlow.TotalSteps}\" denominator: \"{copy}\"")
                     .IsFalse();
             }
         }
@@ -148,9 +194,13 @@ public class TutorialCopyIsFollowableTests
                         "space, and nothing else in the build reports it.")
                     .IsFalse();
 
+                // U-T2-1: the prefix is act-scoped now ("The Hand-Off · 2/4:"), not a global
+                // "N/10" denominator — check the join against TutorialFlow.ActPosition itself so
+                // this never has to re-derive the act's own display name.
+                var (position, total) = TutorialFlow.ActPosition(step);
                 AssertThat(copy)
-                    .OverrideFailureMessage($"{step}'s line does not carry its step number: \"{copy}\"")
-                    .Contains($"/{TutorialFlow.TotalSteps}:");
+                    .OverrideFailureMessage($"{step}'s line does not carry its own act-scoped position: \"{copy}\"")
+                    .Contains($"{position}/{total}:");
 
                 foreach (var needle in MustName[step])
                 {
@@ -449,6 +499,63 @@ public class TutorialCopyIsFollowableTests
             AssertThat(ui.Bounties.FindChild("BountyExplainer", recursive: true, owned: false) as Label)
                 .OverrideFailureMessage("The bounty explainer label is gone from the panel.")
                 .IsNotNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// U-T2-16 (#162 defect 3): the card itself keeps ONE sentence now (walk to the counter, press
+    /// Open Counter — they speak first) — Present/Suggest/Accept/Hold Firm/Counter moved OUT of the
+    /// card and into this row's own TeachNote (rendered live in the checklist, and permanently in
+    /// the Lessons book). <see cref="TutorialFlow.CounterAnsweredAtLeastOnce"/> accepts all five
+    /// (Present/Suggest/Accept/HoldFirm/Counter), and before this unit no line of copy ANYWHERE ever
+    /// named Suggest at all — this pins that every verb the predicate accepts is named somewhere the
+    /// player can actually read.
+    /// </summary>
+    [TestCase]
+    public void TheCounterStep_NamesEveryVerbItsOwnPredicateAccepts()
+    {
+        var note = TutorialFlow.Registry.Single(d => d.Step == TutorialStep.OpenCounter).TeachNote;
+        foreach (var verb in new[] { "Present", "Suggest", "Accept", "Hold Firm", "Counter" })
+        {
+            AssertThat(note.Contains(verb, StringComparison.Ordinal))
+                .OverrideFailureMessage(
+                    $"OpenCounter's TeachNote never names \"{verb}\", one of the verbs " +
+                    $"TutorialFlow.CounterAnsweredAtLeastOnce accepts:\n  \"{note}\"")
+                .IsTrue();
+        }
+    }
+
+    /// <summary>
+    /// U-T2-16 (#162 defect 4): mirrors <see
+    /// cref="TutorialFlowTests.Step7_NeverClaimsADayGate_ForAConditionThatIsNotDayGated"/> — the same
+    /// regression shape, for the SAME class of lie. OpenCounter's MinDay dropped from 2 to 1: the
+    /// real gate was never the calendar, it was the counter's own Morning-only legality
+    /// (<c>CounterHandlers.ApplyOpen</c>). The OLD wait copy said "The counter is a Day 2 lesson...
+    /// it opens once Day 2 begins" for most of day 1, then a SECOND wait line ("only opens in the
+    /// Morning") for most of day 2 — two wait lines for one gate. The gate is stated as what it
+    /// actually is now: a Morning gate, never a day claim.
+    /// </summary>
+    [TestCase]
+    public void TheCounterStep_NeverClaimsADayGate()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var day1Evening = ui.Adapter.CurrentState with { Day = 1, Phase = DayPhase.Evening };
+            var copy = Plain(ui.Tutorial.CopyFor(TutorialStep.OpenCounter, day1Evening));
+            AssertThat(copy.Contains("opens once Day", StringComparison.OrdinalIgnoreCase))
+                .OverrideFailureMessage($"OpenCounter's wait copy still promises a day gate: \"{copy}\"")
+                .IsFalse();
+            AssertThat(copy.Contains("Day 2", StringComparison.Ordinal))
+                .OverrideFailureMessage($"OpenCounter's wait copy still names a specific day: \"{copy}\"")
+                .IsFalse();
+            AssertThat(copy)
+                .OverrideFailureMessage($"OpenCounter's wait copy should name the real Morning gate: \"{copy}\"")
+                .Contains("Morning");
         }
         finally
         {

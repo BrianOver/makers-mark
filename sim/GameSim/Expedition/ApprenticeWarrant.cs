@@ -33,10 +33,13 @@ namespace GameSim.Expedition;
 public static class ApprenticeWarrant
 {
     /// <summary>
-    /// The apprenticeship's own span (R11, confirmed): three days, ending where the tutorial's own
-    /// backstop does. <c>GodotClient.Ui.TutorialFlow.BackstopDay</c> is pinned to
-    /// <c>LastGraceDay + 1</c> by <c>TutorialRegistryConformanceTests</c> so the two can never drift
-    /// apart — the warrant and the taught chain that promises its end are one fact, not two.
+    /// The apprenticeship's own span (R11, confirmed): three days, unchanged by U-T2-2's split of
+    /// the tutorial's own backstop into two facts. <c>GodotClient.Ui.TutorialFlow.WarrantEndDay</c>
+    /// (this fact's own copy, still <c>LastGraceDay + 1</c>) is pinned by
+    /// <c>TutorialRegistryConformanceTests</c> so the two can never drift apart — the warrant's own
+    /// end and the tutorial's own telling of it are one fact, not two. The chain's own unconditional
+    /// close (<c>ChainBackstopDay</c>) is a SEPARATE, later fact now — this value must not move to
+    /// extend or shrink the pointed chain's own length.
     /// </summary>
     public const int LastGraceDay = 3;
 
