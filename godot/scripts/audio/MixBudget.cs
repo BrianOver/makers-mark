@@ -251,44 +251,27 @@ public static class MixBudget
 
     /// <summary>
     /// Every cue and composed-bed id this build already knows sits outside its <see cref="Budgets"/>
-    /// band, keyed <c>"Cue.&lt;name&gt;"</c> or <c>"Track.&lt;id&gt;"</c>. <b>Nothing is re-levelled by
-    /// this unit</b> — U-T4-2 is the target and the measuring stick, not the fix — so every entry here
-    /// is a real measured gap, not a guess, reported in full in the PR body that landed this file.
+    /// band, keyed <c>"Cue.&lt;name&gt;"</c> or <c>"Track.&lt;id&gt;"</c>.
     /// <c>MixBudgetCensusTests.ThePendingExemptionCount_IsThePinnedNumber</c> pins
     /// <see cref="PendingExemptions"/>.Count so a future unit removing an entry (because it re-levelled
     /// that cue or bed into band) is a red-then-reviewed diff here, never a silent shrink nobody has to
     /// account for — the same discipline <c>ConstitutionTests</c> holds law exceptions to.
+    ///
+    /// <para><b>U-T4-3 emptied the Cue.* half of this table.</b> All 16 exempted cues (5 ceremonial + 11
+    /// UI) are now levelled by <see cref="Synth.NormaliseRms"/> against this file's own
+    /// <see cref="Budgets"/> table instead of an ad hoc peak, and every one measures in band — see that
+    /// unit's PR body for the full before/after table. <c>Cue.EnterMarket</c> was deliberately left off
+    /// the conversion (an R6-pinned byte-freeze test, <c>AudioTests.EnterMarket_IsByteUntouched</c>,
+    /// protects its exact recipe) but was never exempted here either — it already landed in band under
+    /// its old peak-based <c>Normalise</c> call, tanh or not. Only the 4 composed-bed entries remain,
+    /// still owned by a later T4 unit.</para>
     /// </summary>
     public static readonly IReadOnlySet<string> PendingExemptions = new HashSet<string>(StringComparer.Ordinal)
     {
-        // ---- Ceremonial one-shots: all 5 currently ring louder than the −23 ±2 target. ----
-        "Cue.Bell",             // −18.42 dBFS effective
-        "Cue.PartyDepart",      // −18.36 dBFS effective
-        "Cue.CraftDone",        // −17.88 dBFS effective
-        "Cue.MemorialHonor",    // −20.57 dBFS effective
-        "Cue.DeathToll",        // −19.72 dBFS effective
-
-        // ---- UI one-shots: 11 of 15 sit outside the −27 ±2 target (mostly too LOUD; the venue
-        //      entrance cues and both hammer cues run too QUIET instead). PanelOpen, Quench,
-        //      EnterMarket and EnterMineGate already land in band and are NOT listed here. ----
-        "Cue.PanelClose",       // −20.11 dBFS effective — too loud
-        "Cue.Click",            // −22.45 dBFS effective — too loud
-        "Cue.Coin",             // −21.38 dBFS effective — too loud
-        "Cue.Shelve",           // −20.92 dBFS effective — too loud
-        "Cue.BountyPost",       // −22.46 dBFS effective — too loud
-        "Cue.Rejected",         // −19.75 dBFS effective — too loud
-        "Cue.HammerOnBeat",     // −31.09 dBFS effective — too quiet
-        "Cue.HammerOffBeat",    // −29.88 dBFS effective — too quiet
-        "Cue.EnterForge",       // −29.71 dBFS effective — too quiet
-        "Cue.EnterTavern",      // −31.64 dBFS effective — too quiet
-        "Cue.EnterNoticeboard", // −33.78 dBFS effective — too quiet
-
-        // ---- Held loop: Bellows already lands in band (−35.36 vs −35 ±1.5) — not listed. ----
-
         // ---- Music beds: all 4 sit far QUIETER than the −32 ±1.5 target once each track's own
         //      active-window RMS, its ComposedTrack.TrimDb, and the new AudioBuses.MusicBusDb
         //      (−20 dB) are added together — the exact stacking nobody had computed end-to-end
-        //      before this unit. See the PR body for the full per-track arithmetic. ----
+        //      before U-T4-2. See that unit's PR body for the full per-track arithmetic. ----
         "Track.day-first-light", // −41.64 dBFS effective
         "Track.town-dusk",       // −61.41 dBFS effective — the Evening dead-air bed
         "Track.night-still",     // −45.84 dBFS effective

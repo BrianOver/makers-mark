@@ -141,6 +141,15 @@ public enum Cue
 /// </summary>
 public static class SfxLibrary
 {
+    /// <summary>U-T4-3: every one-shot's <see cref="Synth.NormaliseRms"/> call reads its target from
+    /// <see cref="MixBudget"/>'s own compiled table rather than repeating the −23/−27 numbers as
+    /// separate literals here — if the budget ever moves, every cue that spends it moves with it.</summary>
+    private static readonly float CeremonialTargetDbfs =
+        MixBudget.Budgets[MixBudget.Category.CeremonialOneShot].TargetRmsDbfs;
+
+    /// <summary>See <see cref="CeremonialTargetDbfs"/>.</summary>
+    private static readonly float UiTargetDbfs = MixBudget.Budgets[MixBudget.Category.UiOneShot].TargetRmsDbfs;
+
     private static readonly Dictionary<Cue, AudioStreamWav> Cache = new();
 
     /// <summary>The stream for <paramref name="cue"/>, synthesized on first request.</summary>
@@ -159,11 +168,11 @@ public static class SfxLibrary
     {
         Cue.Click => Build(0.05f, buf =>
         {
-            // A dry tick: one short mid partial, no tail. Deliberately the quietest cue in the set
-            // (peak 0.35) because it is the one that fires most often.
+            // A dry tick: one short mid partial, no tail. Targets the UiOneShot floor because it is the
+            // one cue that fires most often.
             Synth.AddPartial(buf, 1180f, 0.5f, halfLife: 0.012f);
             Synth.AddPartial(buf, 2360f, 0.2f, halfLife: 0.006f);
-            Synth.Normalise(buf, 0.35f);
+            Synth.NormaliseRms(buf, UiTargetDbfs); // U-T4-3: was Normalise(buf, 0.35f)
         }),
 
         // Owner's playtest: "opening shop noise is not good". It was a 0.28s broadband noise SWELL
@@ -190,7 +199,7 @@ public static class SfxLibrary
             Synth.AddPartial(buf, 214f, 0.30f, halfLife: 0.030f);
             Synth.AddPartial(buf, 397f, 0.16f, halfLife: 0.022f);
             Synth.DeClick(buf);
-            Synth.Normalise(buf, 0.26f); // heard constantly — must not be the loudest thing in the game
+            Synth.NormaliseRms(buf, UiTargetDbfs); // U-T4-3: was Normalise(buf, 0.26f)
         }),
 
         Cue.PanelClose => Build(0.22f, buf =>
@@ -204,7 +213,7 @@ public static class SfxLibrary
 
             Synth.LowPass(buf, 700f);
             Synth.AddPartial(buf, 110f, 0.45f, halfLife: 0.07f);
-            Synth.Normalise(buf, 0.5f);
+            Synth.NormaliseRms(buf, UiTargetDbfs); // U-T4-3: was Normalise(buf, 0.5f)
         }),
 
         // ── The forge. Both hammer cues share a shape and differ where the GAME differs: an on-beat
@@ -245,7 +254,7 @@ public static class SfxLibrary
             }
 
             Synth.DeClick(buf);
-            Synth.Normalise(buf, 0.22f); // U8: 0.32 -> 0.22
+            Synth.NormaliseRms(buf, UiTargetDbfs); // U-T4-3: was Normalise(buf, 0.22f) (U8: 0.32 -> 0.22)
         }),
 
         Cue.HammerOffBeat => Build(0.20f, buf =>
@@ -265,7 +274,7 @@ public static class SfxLibrary
 
             Synth.LowPass(buf, 1400f);
             Synth.DeClick(buf);
-            Synth.Normalise(buf, 0.16f); // U8: 0.24 -> 0.16
+            Synth.NormaliseRms(buf, UiTargetDbfs); // U-T4-3: was Normalise(buf, 0.16f) (U8: 0.24 -> 0.16)
         }),
 
         Cue.Quench => Build(0.85f, buf =>
@@ -286,7 +295,7 @@ public static class SfxLibrary
             // U5: 10ms attack — this partial started at full amplitude on sample 0 before.
             Synth.AddPartial(buf, 128f, 0.32f, halfLife: 0.070f, attack: 0.010f);
             Synth.DeClick(buf);
-            Synth.Normalise(buf, 0.26f); // U8: 0.35 -> 0.26
+            Synth.NormaliseRms(buf, UiTargetDbfs); // U-T4-3: was Normalise(buf, 0.26f) (U8: 0.35 -> 0.26)
         }),
 
         // U8 (2026-08-02 shell-and-audio plan, R8): "the bellows shift since you have to hold" was
@@ -323,6 +332,10 @@ public static class SfxLibrary
             // Cascaded poles cost real energy, so re-normalising is what keeps this audible at all
             // rather than a level cut stacked on a tone cut. 0.15 -> 0.12 is a deliberate small trim
             // on top: he said "too loud AND abrasive", and the tone change alone would answer only half.
+            // U-T4-3: left on the peak-based Normalise on purpose — Bellows is the one HeldLoop cue and
+            // gets its own sustained-loudness treatment in the next unit, not the one-shot RMS retarget
+            // this unit applies to everything else (see MixBudget.Category.HeldLoop). Still benefits from
+            // Normalise's own tanh removal above.
             Synth.DeClick(buf);
             Synth.Normalise(buf, 0.12f); // U8: 0.30 -> 0.15; 2026-08-15: -> 0.12 alongside the tone fix
         }),
@@ -334,7 +347,7 @@ public static class SfxLibrary
             Synth.AddPartial(buf, 2100f, 0.5f, halfLife: 0.10f);
             Synth.AddPartial(buf, 4130f, 0.32f, halfLife: 0.07f);
             Synth.AddPartial(buf, 5600f, 0.18f, halfLife: 0.04f);
-            Synth.Normalise(buf, 0.5f);
+            Synth.NormaliseRms(buf, UiTargetDbfs); // U-T4-3: was Normalise(buf, 0.5f)
         }),
 
         Cue.Shelve => Build(0.20f, buf =>
@@ -349,7 +362,7 @@ public static class SfxLibrary
             Synth.LowPass(buf, 1600f);
             Synth.AddPartial(buf, 196f, 0.5f, halfLife: 0.05f);
             Synth.AddPartial(buf, 293f, 0.25f, halfLife: 0.035f);
-            Synth.Normalise(buf, 0.6f);
+            Synth.NormaliseRms(buf, UiTargetDbfs); // U-T4-3: was Normalise(buf, 0.6f)
         }),
 
         Cue.CraftDone => Build(0.75f, buf =>
@@ -359,7 +372,7 @@ public static class SfxLibrary
             AddNote(buf, 392f, at: 0.00f, length: 0.30f, amplitude: 0.42f);
             AddNote(buf, 587f, at: 0.10f, length: 0.30f, amplitude: 0.38f);
             AddNote(buf, 784f, at: 0.20f, length: 0.50f, amplitude: 0.40f);
-            Synth.Normalise(buf, 0.6f);
+            Synth.NormaliseRms(buf, CeremonialTargetDbfs); // U-T4-3: was Normalise(buf, 0.6f)
         }),
 
         Cue.Bell => Build(1.60f, buf =>
@@ -372,7 +385,7 @@ public static class SfxLibrary
             Synth.AddPartial(buf, 607f, 0.22f, halfLife: 0.40f);
             Synth.AddPartial(buf, 880f, 0.14f, halfLife: 0.22f);
             Synth.AddPartial(buf, 1290f, 0.08f, halfLife: 0.12f);
-            Synth.Normalise(buf, 0.55f);
+            Synth.NormaliseRms(buf, CeremonialTargetDbfs); // U-T4-3: was Normalise(buf, 0.55f)
         }),
 
         Cue.BountyPost => Build(0.26f, buf =>
@@ -392,7 +405,11 @@ public static class SfxLibrary
                 buf[i] += MathF.Sin(2f * MathF.PI * 1400f * t) * 0.5f * Synth.Decay(t, 0.010f);
             }
 
-            Synth.Normalise(buf, 0.55f);
+            // U-T4-3: this cue's first REAL target. Normalise(buf, 0.55f) computed gain = min(1,
+            // 0.55/max) with max already ~0.52 -- a measured no-op that had never actually moved this
+            // cue's level; the only thing that ever happened to it was the waveshaping Normalise no
+            // longer does.
+            Synth.NormaliseRms(buf, UiTargetDbfs);
         }),
 
         Cue.PartyDepart => Build(1.10f, buf =>
@@ -400,7 +417,7 @@ public static class SfxLibrary
             // A soft two-note horn call, fifth up — a send-off, not a fanfare.
             AddNote(buf, 175f, at: 0.00f, length: 0.55f, amplitude: 0.45f, harmonics: 3);
             AddNote(buf, 262f, at: 0.35f, length: 0.70f, amplitude: 0.40f, harmonics: 3);
-            Synth.Normalise(buf, 0.5f);
+            Synth.NormaliseRms(buf, CeremonialTargetDbfs); // U-T4-3: was Normalise(buf, 0.5f)
         }),
 
         Cue.Rejected => Build(0.24f, buf =>
@@ -410,7 +427,7 @@ public static class SfxLibrary
             Synth.AddPartial(buf, 138f, 0.5f, halfLife: 0.09f);
             Synth.AddPartial(buf, 146f, 0.4f, halfLife: 0.09f);
             Synth.LowPass(buf, 800f);
-            Synth.Normalise(buf, 0.4f);
+            Synth.NormaliseRms(buf, UiTargetDbfs); // U-T4-3: was Normalise(buf, 0.4f)
         }),
 
         // ── Per-venue entrance cues. All use AddPartial's new `attack` (Synth.cs) to round off the
@@ -432,7 +449,7 @@ public static class SfxLibrary
             Synth.AddPartial(buf, 622f, 0.16f, halfLife: 0.06f, attack: 0.008f);
             Synth.AddPartial(buf, 933f, 0.07f, halfLife: 0.035f, attack: 0.010f);
             Synth.LowPass(buf, 2600f); // takes the edge off the upper partial — the harshness complaint
-            Synth.Normalise(buf, 0.15f); // U5: 0.22 -> 0.15 (~-13.2 -> ~-16.5 dBFS), quieter still
+            Synth.NormaliseRms(buf, UiTargetDbfs); // U-T4-3: was Normalise(buf, 0.15f)
         }),
 
         Cue.EnterTavern => Build(0.42f, buf =>
@@ -448,7 +465,7 @@ public static class SfxLibrary
             Synth.AddPartial(buf, 160f, 0.30f, halfLife: 0.09f, attack: 0.01f);
             Synth.AddPartial(buf, 246f, 0.14f, halfLife: 0.07f, attack: 0.012f);
             Synth.AddPartial(buf, 1480f, 0.08f, halfLife: 0.05f, attack: 0.02f); // the one mug clink
-            Synth.Normalise(buf, 0.15f); // U5: 0.22 -> 0.15 (~-13.2 -> ~-16.5 dBFS), quieter still
+            Synth.NormaliseRms(buf, UiTargetDbfs); // U-T4-3: was Normalise(buf, 0.15f)
         }),
 
         Cue.EnterMarket => Build(0.30f, buf =>
@@ -464,6 +481,12 @@ public static class SfxLibrary
             Synth.LowPass(buf, 2200f);
             Synth.AddPartial(buf, 1900f, 0.20f, halfLife: 0.06f, attack: 0.006f);
             Synth.AddPartial(buf, 3550f, 0.11f, halfLife: 0.04f, attack: 0.008f);
+            // U-T4-3: left on the peak-based Normalise deliberately, NOT converted to NormaliseRms like
+            // its four sibling venue cues. R6 pinned this exact recipe byte-for-byte
+            // (AudioTests.EnterMarket_IsByteUntouched — "the one cue the owner called good"), and it
+            // already lands inside the UiOneShot band under this call (see MixBudget.PendingExemptions'
+            // own note: "EnterMarket ... already land in band"), so converting it would change owner-
+            // approved bytes for zero measured benefit. Still benefits from Normalise's own tanh removal.
             Synth.Normalise(buf, 0.22f);
         }),
 
@@ -492,7 +515,7 @@ public static class SfxLibrary
                 }
             }
 
-            Synth.Normalise(buf, 0.15f); // U5: 0.22 -> 0.15 (~-13.2 -> ~-16.5 dBFS), quieter still
+            Synth.NormaliseRms(buf, UiTargetDbfs); // U-T4-3: was Normalise(buf, 0.15f)
         }),
 
         Cue.EnterNoticeboard => Build(0.20f, buf =>
@@ -514,7 +537,7 @@ public static class SfxLibrary
                 buf[i] += MathF.Sin(2f * MathF.PI * 1600f * t) * 0.28f * Synth.Decay(t, 0.008f);
             }
 
-            Synth.Normalise(buf, 0.14f); // U5: 0.20 -> 0.14, matching the other venue-cue trims
+            Synth.NormaliseRms(buf, UiTargetDbfs); // U-T4-3: was Normalise(buf, 0.14f)
         }),
 
         Cue.MemorialHonor => Build(1.40f, buf =>
@@ -526,7 +549,7 @@ public static class SfxLibrary
             Synth.AddPartial(buf, 165f, 0.42f, halfLife: 0.65f, attack: 0.06f);
             Synth.AddPartial(buf, 247f, 0.20f, halfLife: 0.45f, attack: 0.08f);
             Synth.LowPass(buf, 1200f);
-            Synth.Normalise(buf, 0.30f); // quieter than Bell (0.55) — a private moment, not a public one
+            Synth.NormaliseRms(buf, CeremonialTargetDbfs); // U-T4-3: was Normalise(buf, 0.30f)
         }),
 
         Cue.DeathToll => Build(1.00f, buf =>
@@ -543,7 +566,7 @@ public static class SfxLibrary
 
             Synth.LowPass(buf, 300f);
             Synth.AddPartial(buf, 98f, 0.42f, halfLife: 0.55f, attack: 0.02f);
-            Synth.Normalise(buf, 0.26f); // quieter than Bell (0.55) — understated, not an alarm
+            Synth.NormaliseRms(buf, CeremonialTargetDbfs); // U-T4-3: was Normalise(buf, 0.26f)
         }),
 
         _ => Build(0.05f, buf => Synth.AddPartial(buf, 440f, 0.4f, halfLife: 0.02f)),
