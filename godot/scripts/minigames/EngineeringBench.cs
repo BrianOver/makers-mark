@@ -60,12 +60,6 @@ namespace GodotClient.Minigames;
 /// raises <see cref="Cancelled"/> instead and the caller queues nothing. A partial assembly is legal
 /// — it simply scores what it scores, the same "no gate on submission" idiom
 /// <see cref="AlchemyBrewPuzzle.Submit"/> already uses.</para>
-///
-/// <para><b>Ships DORMANT (by design):</b> <see cref="GameSim.Professions.ProfessionDefinition.ActiveCraft"/>
-/// is false for engineering today, so <see cref="Panels.ForgePanel"/> never renders the button that
-/// opens this overlay — nothing here is reachable in the live game yet. The orchestrator flips the
-/// flag alongside the talent remap and a balance-gate re-run; this class and its wiring are simply
-/// staged ahead of that landing.</para>
 /// </summary>
 public sealed partial class EngineeringBench : PanelContainer
 {
