@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using GameSim.Contracts;
 using Godot;
 
 namespace GodotClient.Town2d;
@@ -29,6 +31,22 @@ namespace GodotClient.Town2d;
 /// <c>Town2D</c>'s own choreography instead (it calls <see cref="RallyTo"/> then, after its own
 /// dwell, <see cref="MarchOutTo"/>), since this type's <see cref="RallyTo"/> has no fileDelay
 /// parameter to carry it.</para>
+///
+/// <para><b>U-T3-8 (register #150, "no hero/NPC walk animation"): the errand model townsfolk
+/// already had.</b> A wandering hero's own lissajous drift (<see cref="WanderingBasePosition"/>)
+/// peaks at 15.03px/s — under <see cref="SpriteMotion.WalkSpeedThreshold"/> (20) — so no wandering
+/// hero could ever cross it; all six sat frozen on frame 0 all day even though every walk frame is
+/// on disk and wired. Lowering the threshold was rejected in the plan: at a lissajous-scale speed a
+/// hero would play one stride every ~13.5s while visibly drifting in place, which reads worse than
+/// frozen. The actual fix, verbatim from <see cref="TownsfolkNpc2D"/>'s own errand state machine
+/// (<see cref="SetErrandTargets"/>/<see cref="SetPhase"/>/<see cref="IsErrandHours"/>): while
+/// <see cref="HeroTownState.Wandering"/>, a hero periodically walks a REAL path to a venue door at
+/// <see cref="ErrandWalkSpeed"/> (comfortably above the threshold), dwells a beat, and walks home —
+/// via the same <see cref="StepToward"/> idiom this type already used for Rally/MarchOut/Return.
+/// The idle lissajous wander becomes what happens BETWEEN errands, exactly like townsfolk. <see
+/// cref="ErrandWalkSpeed"/> is deliberately its own constant, separate from <see cref="WalkSpeed"/>
+/// (the expedition march pace) — U-T3-9 retunes it, as its own small, independently revertable PR,
+/// without touching the errand model this unit ships.</para>
 /// </summary>
 public partial class HeroActor2D : Node2D
 {
@@ -59,6 +77,45 @@ public partial class HeroActor2D : Node2D
     private const float WanderAmplitudeX = TownLayout2D.HeroWanderAmplitudeX;
 
     private const float WanderAmplitudeY = TownLayout2D.HeroWanderAmplitudeY;
+
+    // ── U-T3-8: errand mode while Wandering (register #150) — mirrors TownsfolkNpc2D verbatim ──
+
+    /// <summary>Real walking pace (px/sec) for a Wandering hero's errand leg — also fed to <see
+    /// cref="SpriteMotion"/> as the normalizing full pace while <see
+    /// cref="HeroTownState.Wandering"/> (see <see cref="_Process"/>), exactly the dual role <see
+    /// cref="WalkSpeed"/> plays for Rally/MarchOut/Return. Deliberately a SEPARATE constant from
+    /// <see cref="WalkSpeed"/> (260, the dramatic expedition-departure sprint) — a hero puttering to
+    /// the noticeboard and back is not marching to the mine. Comfortably above <see
+    /// cref="SpriteMotion.WalkSpeedThreshold"/> (20) so the errand actually plays a walk pose; the
+    /// exact number is a feel knob U-T3-9 retunes on its own, independently revertable PR.</summary>
+    public const float ErrandWalkSpeed = 60f;
+
+    /// <summary>How long a hero idles (wandering) at home between errands — mirrors <see
+    /// cref="TownsfolkNpc2D"/>'s own cooldown so heroes and townsfolk read as the same kind of
+    /// citizen, not two different simulation rates.</summary>
+    private const double ErrandCooldownSeconds = 22.0;
+
+    /// <summary>How long a hero dwells at the errand destination before heading home.</summary>
+    private const double ErrandDwellSeconds = 4.5;
+
+    /// <summary>Per-hero stagger for the FIRST errand only (id-seeded, no RNG) — spreads departures
+    /// so six heroes don't all leave home the same frame the town loads.</summary>
+    private const double FirstErrandOffsetSeconds = 2.0;
+
+    private const double FirstErrandStaggerSeconds = 1.5;
+
+    /// <summary>One hero's errand sub-state while <see cref="HeroTownState.Wandering"/> — <see
+    /// cref="ErrandStep.Idle"/> is the original lissajous drift (also "between errands"); the other
+    /// three drive a real <see cref="StepToward"/> walk to/from an errand target. Named distinctly from <see
+    /// cref="HeroTownState"/>'s own WalkingOut/WalkingIn (the expedition travel states) so the two
+    /// state machines can never be confused for one another.</summary>
+    private enum ErrandStep
+    {
+        Idle,
+        ToVenue,
+        AtVenue,
+        ToHome,
+    }
 
     /// <summary>The RESOLVED sprite's own texture height (set by <see cref="Init"/>) — half of it
     /// is the <see cref="Sprite2D.Offset"/> lift, so <see cref="Position"/> stays the sprite's FEET
@@ -118,6 +175,31 @@ public partial class HeroActor2D : Node2D
 
     private Vector2 _logicalPosition;
     private Vector2 _walkTarget;
+
+    // ── U-T3-8: errand state ──────────────────────────────────────────────────────────────────
+
+    /// <summary>Door anchors an errand may walk to — supplied by <see cref="Town2D"/> via <see
+    /// cref="SetErrandTargets"/>. Empty (the default) means "never leaves home on errand" — the
+    /// pre-U-T3-8 behavior, still exercised by every existing test that never calls it.</summary>
+    private IReadOnlyList<Vector2> _errandTargets = System.Array.Empty<Vector2>();
+
+    /// <summary>The sim's current phase, mirroring <see cref="TownsfolkNpc2D.SetPhase"/>'s per-tick
+    /// contract — read only by <see cref="IsErrandHours"/> to gate the START of a new errand.</summary>
+    private DayPhase _phase = DayPhase.Morning;
+
+    private ErrandStep _errandStep = ErrandStep.Idle;
+
+    /// <summary>Counts down while <see cref="ErrandStep.Idle"/> AND <see
+    /// cref="HeroTownState.Wandering"/>; a new errand starts once this reaches zero AND <see
+    /// cref="IsErrandHours"/> says so.</summary>
+    private double _errandCooldown;
+
+    private double _dwellRemaining;
+    private Vector2 _errandDestination;
+
+    /// <summary>Deterministic rotation cursor through <see cref="_errandTargets"/> — increments once
+    /// per completed round trip, no RNG.</summary>
+    private int _errandRotation;
 
     /// <summary>M2: per-actor walk/idle pose driver — phase-seeded from <see cref="HeroIdValue"/>
     /// (constructed in <see cref="Init"/>, once the id is known) so a town full of idle heroes
@@ -214,12 +296,40 @@ public partial class HeroActor2D : Node2D
         Pick = BuildPick();
         AddChild(Pick);
 
+        // U-T3-8: id-seeded stagger for the FIRST errand only (mirrors TownsfolkNpc2D.Init) — every
+        // later cycle re-seeds from ErrandCooldownSeconds (see AdvanceErrandToHome), no RNG either
+        // way. The rotation cursor seeds from the hero's own id so six heroes don't all beeline for
+        // the same door on their first errand.
+        _errandCooldown = FirstErrandOffsetSeconds + heroId * FirstErrandStaggerSeconds;
+        _errandRotation = heroId;
+
         State = HeroTownState.Wandering;
         Visible = true;
     }
 
     /// <summary>Test seam raising the same event a real <see cref="Pick"/> click would.</summary>
     public void RaisePick() => Picked?.Invoke(HeroIdValue);
+
+    /// <summary>U-T3-8: supplies the venue door anchors an errand can walk to while <see
+    /// cref="HeroTownState.Wandering"/> — a deterministic id-seeded rotation through this list (see
+    /// <see cref="_errandRotation"/>), no RNG. Null/empty degrades to "never leaves home on errand",
+    /// the exact pre-U-T3-8 contract every existing caller/test that skips this method still gets
+    /// (mirrors <see cref="TownsfolkNpc2D.SetErrandTargets"/> exactly).</summary>
+    public void SetErrandTargets(IReadOnlyList<Vector2> venueDoors) => _errandTargets = venueDoors;
+
+    /// <summary>The sim's current <see cref="DayPhase"/> — call every frame (mirrors <see
+    /// cref="TownsfolkNpc2D.SetPhase"/>'s contract; <see cref="Town2D"/> calls both from the same
+    /// <c>_Process</c> tick). Gates only the START of a new errand (see <see
+    /// cref="IsErrandHours"/>) — an errand already under way always finishes, so a phase flip
+    /// mid-walk never recalls or freezes a hero.</summary>
+    public void SetPhase(DayPhase phase) => _phase = phase;
+
+    /// <summary>"Daytime" for errand purposes — the same two phases <see
+    /// cref="TownsfolkNpc2D.IsErrandHours"/> treats as bright/awake. In practice a hero is Wandering
+    /// during Expedition only for the brief window before the day's departure choreography sweeps
+    /// them into Rally/MarchOut/Away, but the gate is kept identical to townsfolk's on purpose — one
+    /// "is it daytime" rule for every actor in the town, not a bespoke one per actor type.</summary>
+    private static bool IsErrandHours(DayPhase phase) => phase is DayPhase.Morning or DayPhase.Expedition;
 
     /// <summary>
     /// Blunt direct state assignment — used for the Evening/new-day "snap home" and Away
@@ -239,6 +349,11 @@ public partial class HeroActor2D : Node2D
                 Position = Home;
                 _walkTarget = Home;
                 Visible = true;
+                // U-T3-8: (re)entering Wandering from any other state always resumes at Idle, never
+                // mid-errand — a hero snapped home for the new day (Evening) or just walked in from
+                // an expedition has no errand in progress to resume.
+                _errandStep = ErrandStep.Idle;
+                _errandCooldown = ErrandCooldownSeconds;
                 break;
             case HeroTownState.Away:
                 Visible = false;
@@ -291,7 +406,7 @@ public partial class HeroActor2D : Node2D
 
         var basePos = State switch
         {
-            HeroTownState.Wandering => WanderingBasePosition(),
+            HeroTownState.Wandering => AdvanceWandering(delta),
             HeroTownState.Rallying => AdvanceRallying(delta),
             HeroTownState.WalkingOut => AdvanceWalkingOut(delta),
             HeroTownState.WalkingIn => AdvanceWalkingIn(delta),
@@ -312,7 +427,17 @@ public partial class HeroActor2D : Node2D
         // poison the velocity computation above on the NEXT frame.
         _art.Position = SpriteMotion.PixelSnapCorrection(Position);
 
-        var pose = _motion.Advance(delta, velocity, WalkSpeed);
+        // U-T3-8: while Wandering, normalize cadence/lean against the ERRAND pace, not the 260px/s
+        // expedition-march pace — the two are deliberately different constants (see
+        // ErrandWalkSpeed's own doc). Every other state still normalizes against WalkSpeed exactly
+        // as before this unit.
+        //
+        // Rebase note: U-T3-5's pixel-snap line above and this unit's normalizing speed landed in the
+        // same three lines of _Process from two different branches. Both are kept — they are unrelated
+        // concerns (what gets drawn vs. what cadence the pose is judged against) and neither replaces
+        // the other.
+        var normalizingSpeed = State == HeroTownState.Wandering ? ErrandWalkSpeed : WalkSpeed;
+        var pose = _motion.Advance(delta, velocity, normalizingSpeed);
         ApplySpritePose(pose);
     }
 
@@ -344,6 +469,70 @@ public partial class HeroActor2D : Node2D
         3 when _walk4Tex != null => _walk4Tex,
         _ => _baseTex,
     };
+
+    /// <summary>U-T3-8: dispatches <see cref="HeroTownState.Wandering"/> to its own errand sub-state
+    /// machine — mirrors <see cref="TownsfolkNpc2D.AdvanceErrand"/>'s exact shape.</summary>
+    private Vector2 AdvanceWandering(double delta) => _errandStep switch
+    {
+        ErrandStep.ToVenue => AdvanceErrandToVenue(delta),
+        ErrandStep.AtVenue => AdvanceErrandAtVenue(delta),
+        ErrandStep.ToHome => AdvanceErrandToHome(delta),
+        _ => AdvanceErrandIdle(delta),
+    };
+
+    /// <summary>Idle/wandering: counts the errand cooldown down and, once it (and the clock) allow
+    /// it, kicks off the next errand in the deterministic rotation — otherwise this is exactly the
+    /// original lissajous drift.</summary>
+    private Vector2 AdvanceErrandIdle(double delta)
+    {
+        if (_errandTargets.Count > 0)
+        {
+            _errandCooldown -= delta;
+            if (_errandCooldown <= 0.0 && IsErrandHours(_phase))
+            {
+                _errandDestination = _errandTargets[_errandRotation % _errandTargets.Count];
+                _errandRotation++;
+                _errandStep = ErrandStep.ToVenue;
+            }
+        }
+
+        return WanderingBasePosition();
+    }
+
+    private Vector2 AdvanceErrandToVenue(double delta)
+    {
+        StepToward(_errandDestination, delta, out var arrived, ErrandWalkSpeed);
+        if (arrived)
+        {
+            _errandStep = ErrandStep.AtVenue;
+            _dwellRemaining = ErrandDwellSeconds;
+        }
+
+        return _logicalPosition;
+    }
+
+    private Vector2 AdvanceErrandAtVenue(double delta)
+    {
+        _dwellRemaining -= delta;
+        if (_dwellRemaining <= 0.0)
+        {
+            _errandStep = ErrandStep.ToHome;
+        }
+
+        return _logicalPosition;
+    }
+
+    private Vector2 AdvanceErrandToHome(double delta)
+    {
+        StepToward(Home, delta, out var arrived, ErrandWalkSpeed);
+        if (arrived)
+        {
+            _errandStep = ErrandStep.Idle;
+            _errandCooldown = ErrandCooldownSeconds;
+        }
+
+        return _logicalPosition;
+    }
 
     /// <summary>Deterministic lissajous drift for the current accumulated time (pure function of
     /// id + t, no RNG) — <c>HeroActor3D.WanderingBasePosition</c>, X/Z ground axes replaced by
@@ -383,21 +572,28 @@ public partial class HeroActor2D : Node2D
         if (arrived)
         {
             State = HeroTownState.Wandering;
+            // U-T3-8: this arrival bypasses SetState's own reset (it assigns State directly, same
+            // as pre-U-T3-8) — reset here too, so a hero walking home from an expedition resumes
+            // Idle rather than mid-errand.
+            _errandStep = ErrandStep.Idle;
+            _errandCooldown = ErrandCooldownSeconds;
         }
 
         return _logicalPosition;
     }
 
     /// <summary>
-    /// Move <see cref="_logicalPosition"/> toward <paramref name="target"/> at <see
-    /// cref="WalkSpeed"/>, consuming only the slice of <paramref name="delta"/> the remaining
-    /// distance needs; <paramref name="arrived"/> is true once there (<c>HeroActor3D.StepToward</c>
-    /// verbatim, Vector3 → Vector2).
+    /// Move <see cref="_logicalPosition"/> toward <paramref name="target"/> at <paramref
+    /// name="speed"/> (default <see cref="WalkSpeed"/>, every pre-U-T3-8 call site's exact speed),
+    /// consuming only the slice of <paramref name="delta"/> the remaining distance needs; <paramref
+    /// name="arrived"/> is true once there (<c>HeroActor3D.StepToward</c> verbatim, Vector3 →
+    /// Vector2). U-T3-8 adds the <paramref name="speed"/> parameter so the errand sub-state machine
+    /// can reuse this exact step-frame-walker idiom at <see cref="ErrandWalkSpeed"/> instead.
     /// </summary>
-    private double StepToward(Vector2 target, double delta, out bool arrived)
+    private double StepToward(Vector2 target, double delta, out bool arrived, float speed = WalkSpeed)
     {
         var distance = _logicalPosition.DistanceTo(target);
-        var timeToArrive = distance / WalkSpeed;
+        var timeToArrive = distance / speed;
         if (delta >= timeToArrive)
         {
             _logicalPosition = target;
@@ -405,7 +601,7 @@ public partial class HeroActor2D : Node2D
             return delta - timeToArrive;
         }
 
-        var step = WalkSpeed * (float)delta;
+        var step = speed * (float)delta;
         _logicalPosition = _logicalPosition.MoveToward(target, step);
         arrived = false;
         return 0.0;

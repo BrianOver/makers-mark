@@ -364,6 +364,15 @@ public partial class Town2D : Control
     /// cref="TownsfolkRoot"/> rather than re-querying its children every frame.</summary>
     private readonly List<TownsfolkNpc2D> _townsfolk = new();
 
+    /// <summary>U-T3-8 (register #150): every venue's own door anchor, resolved once <see
+    /// cref="BuildBuildings"/> has run — the SAME pool <see cref="BuildTownsfolk"/> already builds
+    /// its errand rotation from (that local var is replaced by this field so heroes and townsfolk
+    /// share one resolution, never two independently-computed copies of the same doors). Fed to
+    /// every <see cref="HeroActor2D"/> via <see cref="HeroActor2D.SetErrandTargets"/> so a wandering
+    /// hero has a real destination to walk to instead of the frozen-below-threshold lissajous drift
+    /// alone (see that type's own class doc for the root cause).</summary>
+    private List<Vector2> _errandTargets = new();
+
     /// <summary>U6: patron seating inside the tavern room — null only if the tavern has no
     /// <see cref="InteriorLayout2D"/> row (defensive; every real build has one) or its "Patron
     /// Table" stations were renamed out from under <see cref="WireTavernLife"/>.</summary>
@@ -466,6 +475,16 @@ public partial class Town2D : Control
         BuildingsRoot = new Node2D { Name = "Buildings" };
         YSort.AddChild(BuildingsRoot);
         BuildBuildings();
+
+        // U-T3-8: every venue's own door anchor, in TownLayout2D.Venues' fixed array order (a
+        // stable, deterministic sequence — a Dictionary's enumeration order is an implementation
+        // detail, this array's is not) — the pool an errand's id-seeded rotation picks from. Resolved
+        // once, right after the buildings that own these doors exist, and shared by BuildTownsfolk
+        // (below) and ReconcileHeroes (which needs it live for any hero recruited mid-campaign).
+        _errandTargets = TownLayout2D.Venues
+            .Select(v => _buildingsByKey[v.Key].DoorAnchorGlobal)
+            .ToList();
+
         BuildProps();
         BuildInteriorRooms(); // U1: island rooms exist off-frame from the start, same as the town
 
@@ -657,6 +676,12 @@ public partial class Town2D : Control
     /// feeds phase updates to (mirrors <see cref="FirstHeroActor"/>'s shape).</summary>
     public IReadOnlyList<TownsfolkNpc2D> Townsfolk => _townsfolk;
 
+    /// <summary>U-T3-8: test/inspection surface for the live hero-actor list <see cref="_Process"/>
+    /// feeds phase updates to — mirrors <see cref="Townsfolk"/>'s exact shape, so a wiring test can
+    /// drive every hero's own errand walk directly (see <c>TownLifeTests</c>' townsfolk precedent)
+    /// without an engine-tick cascade.</summary>
+    public IReadOnlyList<HeroActor2D> HeroActors => _heroActors.Values.OrderBy(a => a.HeroIdValue).ToList();
+
     /// <summary>
     /// U1 (KTD-1, island placement): teleports the player into <paramref name="venueKey"/>'s
     /// walkable interior room and clamps the camera to it — no town hide/show, no reparenting, no
@@ -803,6 +828,10 @@ public partial class Town2D : Control
             var color = ClassColors.RoleColor(hero.ClassId);
             var sprite = TownAssets2D.ForHero(hero.ClassId, hero.Id.Value);
             actor.Init(hero.Id.Value, hero.ClassId, color, sprite, HomeFor(hero.Id.Value), hero.Name);
+            // U-T3-8: same venue-door pool townsfolk errand toward (see _errandTargets' own doc) —
+            // gives a wandering hero a real destination instead of the frozen-below-threshold
+            // lissajous drift alone.
+            actor.SetErrandTargets(_errandTargets);
             actor.Picked += id => HeroClicked?.Invoke(id);
             HeroesRoot.AddChild(actor);
             _heroActors[hero.Id.Value] = actor;
@@ -927,6 +956,13 @@ public partial class Town2D : Control
             foreach (var npc in _townsfolk)
             {
                 npc.SetPhase(Adapter.CurrentState.Phase);
+            }
+
+            // U-T3-8: heroes gate NEW errands off the same phase, same reasoning (see
+            // HeroActor2D.IsErrandHours) — a Wandering hero mid-errand still finishes it regardless.
+            foreach (var actor in _heroActors.Values)
+            {
+                actor.SetPhase(Adapter.CurrentState.Phase);
             }
         }
 
@@ -1603,13 +1639,8 @@ public partial class Town2D : Control
             return built;
         }
 
-        // U6: every venue's own door anchor, in TownLayout2D.Venues' fixed array order (a stable,
-        // deterministic sequence — a Dictionary's enumeration order is an implementation detail,
-        // this array's is not) — the pool an errand's id-seeded rotation picks from.
-        var errandTargets = TownLayout2D.Venues
-            .Select(v => _buildingsByKey[v.Key].DoorAnchorGlobal)
-            .ToList();
-
+        // U6/U-T3-8: the venue-door pool now lives on _errandTargets (resolved once in Build,
+        // shared with heroes) rather than a second copy recomputed here.
         _townsfolk.Clear();
         for (var i = 0; i < TownLayout2D.TownsfolkHomeTiles.Length; i++)
         {
@@ -1628,7 +1659,7 @@ public partial class Town2D : Control
                 body.Walk2,
                 body.Walk4,
                 TownsfolkNpc2D.FlavorNames[i % TownsfolkNpc2D.FlavorNames.Length]);
-            npc.SetErrandTargets(errandTargets);
+            npc.SetErrandTargets(_errandTargets);
             TownsfolkRoot.AddChild(npc);
             _townsfolk.Add(npc);
         }
