@@ -2333,13 +2333,13 @@ public partial class MainUi : Control
                 + "counts.")));
     }
 
-    /// <summary>U-T2 Wave E ("the read-only surfaces", the long tail): HeroCards, Depths, and
-    /// Bestiary carry no player-submitted action anywhere on them — every field on every one of
-    /// them is a pure projection of what the sim already decided (law: show only what the sim
-    /// decided). One shared first-touch id fired from whichever of the three the player reaches
-    /// first (<see cref="OpenPanel"/> for HeroCards/Depths, <see cref="OnBestiaryVisibilityChanged"/>
-    /// for Bestiary) — the other two become no-ops by <see cref="TutorialFlow.ConsumeFirstTouch"/>'s
-    /// own once-ever contract.</summary>
+    /// <summary>U-T2 Wave E ("the read-only surfaces", the long tail), widened in Wave F: HeroCards,
+    /// Depths, Heroes, and Bestiary carry no player-submitted action anywhere on them — every field
+    /// on every one of them is a pure projection of what the sim already decided (law: show only
+    /// what the sim decided). One shared first-touch id fired from whichever of the four the player
+    /// reaches first (<see cref="OpenPanel"/> for HeroCards/Depths/Heroes, <see
+    /// cref="OnBestiaryVisibilityChanged"/> for Bestiary) — the other three become no-ops by <see
+    /// cref="TutorialFlow.ConsumeFirstTouch"/>'s own once-ever contract.</summary>
     private void ShowReadOnlySurfaceLesson() =>
         Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
             "read-only-surfaces",
@@ -3232,11 +3232,15 @@ public partial class MainUi : Control
             // itself decides whether id ("Tavern"/"HeroCards") is the one it is waiting on.
             Tutorial.NotifyPanelOpened(id);
 
-            // U-T2 Wave E ("the read-only surfaces", the long tail): HeroCards and Depths carry no
-            // player-submitted action anywhere on them (Bestiary shares the same lesson from its own
-            // VisibilityChanged hook, OnBestiaryVisibilityChanged, below — it never routes through
-            // this method). One shared id: whichever of the three the player opens first teaches it.
-            if (id is "HeroCards" or "Depths")
+            // U-T2 Wave E ("the read-only surfaces", the long tail); widened in Wave F's coverage
+            // census, which caught the gap: HeroCards, Depths, and Heroes carry no player-submitted
+            // action anywhere on them (Bestiary shares the same lesson from its own VisibilityChanged
+            // hook, OnBestiaryVisibilityChanged, below — it never routes through this method). The
+            // lesson's own copy already named "Heroes" among the three read-only boards; this id
+            // check just never matched the panel that copy meant (HeroesPanel's own drawer id is
+            // "Heroes", distinct from "HeroCards"/HeroPanel) — one shared id, whichever of the four
+            // the player opens first teaches it.
+            if (id is "HeroCards" or "Depths" or "Heroes")
             {
                 ShowReadOnlySurfaceLesson();
             }
