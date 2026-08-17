@@ -13,7 +13,8 @@ namespace GameSim.Harness;
 /// batch runner — one policy, shared by the balance gate and the CLI batch farm, never forked).
 /// Craft the best recipe the kernel would accept (asked via <see cref="Advisor.ActionLegality"/>,
 /// never re-derived here), price at the rival's own formula (better stats win value ties), buy
-/// every affordable ore offer, unlock talents in prerequisite order.
+/// every affordable ore offer, unlock talents in prerequisite order, and (U-T1-11) climb the
+/// Forge Tier ladder itself the moment gold and ore both allow it.
 /// Deterministic — no RNG of its own, no IO, no wall clock: purity-safe inside GameSim.
 /// </summary>
 public static class BaselinePlayer
@@ -25,6 +26,19 @@ public static class BaselinePlayer
         switch (state.Phase)
         {
             case DayPhase.Morning:
+                // U-T1-11: buy the next Forge Tier the moment it's actually legal (gold + the
+                // floor's own ore + an action slot — ForgeTierHandlers/ActionLegality.UpgradeForgeLegal
+                // own every threshold; this only asks, never re-derives). Checked FIRST in Morning
+                // because Morning is the only phase this action is legal in (Morning-only, like the
+                // handler) and every other Morning action here is free (Stock/UnlockTalent spend no
+                // slot per ActionBudget), so trying it first costs nothing on the days it can't fire
+                // and never displaces the day's one talent-unlock or shelf restock on the day it can.
+                var upgrade = new UpgradeForgeAction();
+                if (ActionLegality.IsLegal(state, upgrade, state.Phase))
+                {
+                    actions.Add(upgrade);
+                }
+
                 // Unlock one affordable talent per morning, prereq order (they're free in v1).
                 var smithTalents = state.Player.TalentsFor(ProfessionRegistry.BlacksmithId);
                 var next = TalentTree.Nodes.Values
@@ -132,13 +146,58 @@ public static class BaselinePlayer
                 // at the budget instead of emitting doomed, would-be-rejected buys. Rejected buys
                 // never mutated state, so the 100-day balance bands are byte-identical either way;
                 // this just keeps the ActionLog clean (no RejectedAction spam).
+                //
+                // U-T1-11: two adjustments once the forge ladder's next rung is genuinely in
+                // reach, both gated on already holding the lock-and-key ore
+                // (ForgeTierHandlers.OreQuantity of OreKey[tierIndex]) — never before, so neither
+                // can fire while the tier is still purely aspirational:
+                //
+                // 1. Stop re-buying MORE of that specific ore once we already hold enough. Measured
+                //    on the main balance seed pre-fix: 150 copper banked by day 30 against a 25-unit
+                //    need — this policy's craft loop moves on to the next tier's material almost
+                //    immediately, so anything past the threshold was pure dead stock, gold that
+                //    could bank toward the tier instead.
+                // 2. Reserve gold toward the tier's cost — but never so much that ore-buying goes
+                //    to zero, and never so LITTLE that a balance that already cleared the cost gets
+                //    spent back down below it before Morning gets a turn (UpgradeForgeAction is
+                //    Morning-only; an Evening that spends a just-crossed threshold back to zero
+                //    would make the crossing invisible). Below the cost, protect at most HALF of
+                //    tonight's gold — the other half still buys ore every evening, so a still-thin
+                //    economy is never starved to zero the way a prior full-cost-from-day-one
+                //    reservation attempt was (reverted, #549's body, against an economy with no ore
+                //    banked yet). At or above the cost, protect the FULL cost and spend only the
+                //    surplus — the purchase is real now, and it must survive to Morning intact.
+                //
+                // Every OTHER material keeps buying at full budget throughout — a still-needed ore
+                // (iron/steel feeding live tier-2/3 crafts) is never touched by either adjustment.
+                var tierIndex = Economy.ForgeTierHandlers.CurrentTierIndex(state.Player);
+                var ladderOreKey = tierIndex <= Economy.ForgeTierHandlers.MaxUpgradeIndex
+                    ? Economy.ForgeTierHandlers.OreKey[tierIndex]
+                    : null;
                 var gold = state.Player.Gold;
                 var slots = state.ActionSlotsRemaining;
+                var materials = state.Player.Materials;
+                var ladderOreBanked = ladderOreKey is not null
+                    && materials.TryGetValue(ladderOreKey, out var lockedOre)
+                    && lockedOre >= Economy.ForgeTierHandlers.OreQuantity;
+
+                if (ladderOreBanked)
+                {
+                    var cost = Economy.ForgeTierHandlers.GoldCost[tierIndex];
+                    var protect = gold >= cost ? cost : Math.Min(cost - gold, gold / 2);
+                    gold -= protect;
+                }
+
                 foreach (var offer in state.OpenOreOffers)
                 {
                     if (slots <= 0)
                     {
                         break;
+                    }
+
+                    if (offer.MaterialKey == ladderOreKey && ladderOreBanked)
+                    {
+                        continue; // already banked enough of THIS key for the pending upgrade
                     }
 
                     var cost = offer.Quantity * offer.UnitPrice;
