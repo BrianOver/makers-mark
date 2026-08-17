@@ -18,11 +18,12 @@ namespace GodotClient.Tools;
 /// through real controls: real minigame interaction, every drawer panel opened, the town walked, the
 /// raid watched.
 ///
-/// <para><b>Why this exists as well as <see cref="RealPlaytest"/>:</b> that tool proves the surfaces
-/// EXIST. This one asks whether the game is actually alive across a whole campaign — so it adds
-/// (a) multiple days per run and multiple runs at different seeds, (b) <b>numeric motion
-/// measurement</b>, and (c) a written report of anomalies rather than a pile of screenshots for a
-/// human to squint at.</para>
+/// <para><b>Why this exists as well as the earlier real-launch probe it superseded</b> (an orphaned
+/// <c>RealPlaytest</c> tool, deleted in the U-T3-11 orphan sweep once nothing launched it anymore):
+/// that tool proved the surfaces EXIST. This one asks whether the game is actually alive across a
+/// whole campaign — so it adds (a) multiple days per run and multiple runs at different seeds, (b)
+/// <b>numeric motion measurement</b>, and (c) a written report of anomalies rather than a pile of
+/// screenshots for a human to squint at.</para>
 ///
 /// <para><b>Motion is measured, not eyeballed.</b> A screenshot cannot tell you whether an animation
 /// is running — two identical frames look exactly like a working animation that happens to be paused.

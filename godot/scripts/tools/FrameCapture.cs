@@ -4,8 +4,9 @@ namespace GodotClient.Tools;
 
 /// <summary>
 /// The "grab whatever a viewport is currently showing and save it" path every dev tool in this
-/// folder needs. Extracted (U1, verify-by-playing plan) out of <see cref="ScreenshotTool"/>, which
-/// had four near-identical <c>GetTexture().GetImage(); ...SavePng(path);</c> call sites, so
+/// folder needs. Extracted (U1, verify-by-playing plan) out of an early <c>ScreenshotTool</c>
+/// (deleted in the U-T3-11 orphan sweep once nothing launched its scene anymore), which had four
+/// near-identical <c>GetTexture().GetImage(); ...SavePng(path);</c> call sites, so
 /// <see cref="AgentPlaytest"/>'s per-turn <c>frame.png</c> reuses the same one implementation
 /// instead of a fifth copy appearing.
 ///
