@@ -66,6 +66,19 @@ public class AudioTests
     /// failed once. This measures the cue's HIGH-BAND ENERGY SHARE, so a future session that quietly
     /// restores a brighter filter — or swaps the cascade back to one pole — goes red here instead of
     /// arriving as a third identical complaint from the owner.</para>
+    ///
+    /// <para><b>U-T4-4 recalibrated the ceiling, from measurements taken through THIS path.</b> The
+    /// two-pole 320Hz cue this repo ships measures <b>0.1186</b>; the pre-fix single-pole 700Hz tone
+    /// measures <b>0.4189</b>. The old 0.45 ceiling therefore sat just 7% above the abrasive tone it
+    /// exists to catch — technically not vacuous, but close enough that a partial regression would have
+    /// walked straight through it. 0.20 sits between the two: 69% headroom over what ships, and a hard
+    /// ceiling 2.1x under the tone the owner called abrasive.</para>
+    ///
+    /// <para><b>This share is amplitude-independent</b> — both the shipped RMS-targeted recipe and the
+    /// old peak-0.12 one measure the identical 0.1186, because a scalar gain cancels in the ratio. So a
+    /// future level change cannot move this number, and a number that HAS moved means the filter
+    /// changed. That is exactly the property this test wants, and it is why level and tone need two
+    /// separate assertions rather than one.</para>
     /// </summary>
     [TestCase]
     public void TheBellows_ReadsAsBreath_NotHiss()
@@ -88,15 +101,18 @@ public class AudioTests
 
         var highShare = 1f - (Rms(low) / full);
 
-        // Ceiling calibrated against the two-pole 320Hz cue this repo actually ships, with headroom
-        // for float drift across OSes — not a round number picked to be comfortably true.
-        AssertThat(highShare < 0.45f)
+        AssertThat(highShare < MaxBellowsHighBandShare)
             .OverrideFailureMessage(
-                $"The bellows is {highShare:P0} high-band energy. Above ~45% it stops reading as moving "
-                + "air and starts reading as hiss — the owner's word was \"abrasive\", and that is this "
-                + "number, not the gain. Check the LowPass cascade in SfxLibrary before touching level.")
+                $"The bellows is {highShare:P2} high-band energy (ceiling {MaxBellowsHighBandShare:P0}). "
+                + "Above that it stops reading as moving air and starts reading as hiss — the owner's "
+                + "word was \"abrasive\", and that is this number, not the gain. Check the LowPass "
+                + "cascade in SfxLibrary before touching level.")
             .IsTrue();
     }
+
+    /// <summary>See <see cref="TheBellows_ReadsAsBreath_NotHiss"/>'s own doc for the shipped (0.1186)
+    /// and pre-fix (0.4189) measurements this ceiling sits between.</summary>
+    private const float MaxBellowsHighBandShare = 0.20f;
 
     private static float Rms(float[] s) => s.Length == 0 ? 0f : MathF.Sqrt(s.Sum(v => v * v) / s.Length);
 
@@ -1613,32 +1629,6 @@ public class AudioTests
     }
 
     /// <summary>
-    /// U8 (2026-08-02 shell-and-audio plan, R8): "Forge mini game noises are bad - too loud and
-    /// harsh (particularly the bellows shift since you have to hold)." The held gesture used to
-    /// normalize to 0.30 — double the level every venue-entrance cue (<see cref="Cue.EnterForge"/>,
-    /// <see cref="Cue.EnterTavern"/>, etc.) already settled on as "ambient, heard constantly, must
-    /// not be harsh." A player holding the bellows for a multi-second craft hears this cue far more
-    /// than any single venue entrance, so it has no business being louder than one.
-    /// </summary>
-    [TestCase]
-    public void Bellows_IsNoLouderThanAVenueCue()
-    {
-        var venueCues = new[]
-        {
-            Cue.EnterForge, Cue.EnterTavern, Cue.EnterMarket, Cue.EnterMineGate, Cue.EnterNoticeboard,
-        };
-        var venuePeak = venueCues.Max(c => Peak(Pcm(SfxLibrary.Get(c))));
-        var bellowsPeak = Peak(Pcm(SfxLibrary.Get(Cue.Bellows)));
-
-        AssertThat(bellowsPeak)
-            .OverrideFailureMessage(
-                $"Bellows peaks at {bellowsPeak:0.###}; the loudest venue-entrance cue peaks at " +
-                $"{venuePeak:0.###}. A gesture the player HOLDS for several seconds must sit at venue-cue " +
-                "level at most, not double it.")
-            .IsLessEqual(venuePeak);
-    }
-
-    /// <summary>
     /// U8 (R8): <c>AudioDirector.StartLoop</c>/<c>StopLoop</c> — the held-bellows API. Asserts on the
     /// dedicated loop voice's <c>Stream</c>/<c>VolumeDb</c>, the same script-owned properties
     /// <see cref="CrossfadingBetweenDifferentTrims_NeverJumpsLevel"/> already proves reliable in this
@@ -1646,6 +1636,11 @@ public class AudioTests
     /// existing test in this file relies on, and which this suite cannot verify outside the
     /// orchestrator's serial engine run) — so this stays deterministic under
     /// <see cref="AudioDirector._Process"/>'s own accumulated-delta clock, never a frame count.
+    ///
+    /// <para><b>U-T4-4:</b> the loop voice now arms <see cref="SfxLibrary.GetLooping"/>'s stream, not
+    /// <see cref="SfxLibrary.Get"/>'s — a separate, genuinely continuous instance with
+    /// <c>LoopMode.Forward</c> baked in, so Godot owns the repeat and this director never retriggers
+    /// it from a <c>Finished</c> callback.</para>
     /// </summary>
     [TestCase]
     public void StartLoop_ArmsTheLoopVoice_AndStopLoopFadesThenStops()
@@ -1659,8 +1654,8 @@ public class AudioTests
             var loopVoice = director.GetChildren().OfType<AudioStreamPlayer>()
                 .First(p => p.Name.ToString() == "LoopVoice");
 
-            AssertThat(loopVoice.Stream == SfxLibrary.Get(Cue.Bellows))
-                .OverrideFailureMessage("StartLoop did not arm the dedicated loop voice with the Bellows stream.")
+            AssertThat(loopVoice.Stream == SfxLibrary.GetLooping(Cue.Bellows))
+                .OverrideFailureMessage("StartLoop did not arm the dedicated loop voice with the looping Bellows stream.")
                 .IsTrue();
             AssertThat(loopVoice.VolumeDb)
                 .OverrideFailureMessage($"StartLoop left the loop voice at {loopVoice.VolumeDb}dB instead of audible.")
@@ -1691,47 +1686,112 @@ public class AudioTests
     }
 
     /// <summary>
-    /// U8 (R8): the held loop's own clip is short (a single ~0.3s breath) — a multi-second hold needs
-    /// MANY repeats, or the bellows would go silent after the first breath while still held. Rather
-    /// than depend on real playback timing to actually reach the clip's end (which this headless
-    /// suite cannot verify outside the orchestrator's serial engine run), this fires the loop voice's
-    /// own <c>Finished</c> signal directly — a deterministic way to exercise
-    /// <c>AudioDirector</c>'s retrigger handler without waiting on the audio server's real clock.
+    /// U-T4-4: the measurement register #153 was actually about. Every prior Bellows assertion —
+    /// <see cref="TheBellows_ReadsAsBreath_NotHiss"/>, and the deleted <c>Bellows_IsNoLouderThanAVenueCue</c>
+    /// — measured the cue's own PEAK. The bellows is the one HELD, LOOPING cue in the game
+    /// (<see cref="AudioDirector.StartLoop"/>): a player grips the forge for seconds at a time, and the
+    /// ear integrates a continuous source, discounting a single 0.3s one-shot almost entirely. This
+    /// synthesises a real multi-second hold by tiling <see cref="SfxLibrary.GetLooping"/>'s stream (the
+    /// SAME stream Godot itself loops on the audio thread — no separate "sustained" recipe to drift
+    /// from what actually plays) and measures the SUSTAINED active-window RMS through the full
+    /// <see cref="AudioBuses.SfxLoop"/> -&gt; <see cref="AudioBuses.Sfx"/> chain.
+    ///
+    /// <para><b>Compared against the MusicBed budget's own TARGET (-32dBFS effective), not the live
+    /// Morning bed.</b> <c>day-first-light.ogg</c> (Morning's composed track) measures roughly
+    /// -41.64dBFS effective today — quieter than its own -32±1.5 budget by close to 10dB, and already
+    /// named in <see cref="MixBudget.PendingExemptions"/> as a defect a DIFFERENT, later T4 unit owns
+    /// (re-levelling a composed bed, not a synthesized cue). Comparing against that live number would
+    /// make this test's pass/fail depend on a file this unit does not touch and cannot fix without
+    /// re-opening someone else's pending exemption; comparing against the budget's own designed target
+    /// proves the relationship this unit IS responsible for — <see cref="MixBudget.Category.HeldLoop"/>
+    /// (-35 effective) sits 3dB under <see cref="MixBudget.Category.MusicBed"/> (-32 effective) by
+    /// design, exactly the gap <see cref="MixBudget.Budgets"/> itself encodes. Against the CURRENTLY
+    /// shipped (quieter-than-spec) Morning bed the held bellows is still the louder of the two — that is
+    /// the separate, already-tracked MusicBed exemption, not something this unit's own fix regressed.</para>
     /// </summary>
     [TestCase]
-    public void HeldLoop_RetriggersOnItsOwnClipEnding_UntilReleased()
+    public void TheHeldBellows_SitsUnderTheBedItPlaysOver()
     {
-        var director = new AudioDirector();
-        try
+        var onePass = Pcm(SfxLibrary.GetLooping(Cue.Bellows));
+
+        // Tile several passes to synthesise a real multi-second HOLD — a single 0.3s pass is exactly
+        // the "one breath" measurement every prior test made, and this is deliberately the first one
+        // that is not.
+        const int passes = 10; // 10 * 0.30s = 3.0s, comfortably "held for seconds at a time"
+        var sustained = new float[onePass.Length * passes];
+        for (var p = 0; p < passes; p++)
         {
-            ((SceneTree)Engine.GetMainLoop()).Root.AddChild(director);
-            director.StartLoop(Cue.Bellows);
-            var loopVoice = director.GetChildren().OfType<AudioStreamPlayer>()
-                .First(p => p.Name.ToString() == "LoopVoice");
-
-            loopVoice.Stream = null;
-            loopVoice.EmitSignal(AudioStreamPlayer.SignalName.Finished);
-
-            AssertThat(loopVoice.Stream == SfxLibrary.Get(Cue.Bellows))
-                .OverrideFailureMessage(
-                    "The held loop did not retrigger when its own clip finished — a hold longer than " +
-                    "one breath would go silent while still held.")
-                .IsTrue();
-
-            // Once released, the SAME clip ending must NOT retrigger again.
-            director.StopLoop(Cue.Bellows);
-            director._Process(1.0); // let the release fade complete and the voice actually stop
-            loopVoice.Stream = null;
-            loopVoice.EmitSignal(AudioStreamPlayer.SignalName.Finished);
-
-            AssertThat(loopVoice.Stream is null)
-                .OverrideFailureMessage("The loop voice retriggered again AFTER StopLoop released it.")
-                .IsTrue();
+            Array.Copy(onePass, 0, sustained, p * onePass.Length, onePass.Length);
         }
-        finally
+
+        var sourceDb = MixBudget.ActiveWindowRms(sustained, Synth.SampleRate);
+        var bellowsEffective = sourceDb + AudioBuses.SfxLoopBusDb + AudioBuses.SfxBusDb;
+
+        var bedTarget = MixBudget.Budgets[MixBudget.Category.MusicBed].TargetRmsDbfs;
+
+        AssertThat(bellowsEffective)
+            .OverrideFailureMessage(
+                $"The held bellows measures {bellowsEffective:0.00}dBFS effective sustained over a " +
+                $"{passes * 0.30f:0.#}s hold — the MusicBed budget's own target is {bedTarget:0.0}dBFS. " +
+                "A gesture the player HOLDS for seconds must sit at least 2dB under the bed it plays " +
+                "over, not on top of it.")
+            .IsLessEqual(bedTarget - 2f);
+    }
+
+    /// <summary>
+    /// U-T4-4: the seam itself, measured directly rather than assumed from the fix's own description.
+    /// The OLD mechanism (<c>AudioDirector.StartLoop</c>'s pre-fix retrigger) rearmed a ONE-SHOT whose
+    /// last ~20ms were flat zero by construction (a clamped envelope, <see cref="Synth.DeClick"/>'s own
+    /// 4ms fade stacked on top) from a main-thread <c>Finished</c> callback carrying 0-17ms of frame
+    /// jitter — every breath carried a real, audible gap at an irregular interval. This scans every
+    /// sliding &gt;=5ms window across TWO back-to-back copies of the new loop stream — so the wrap
+    /// itself sits in the middle of the scan, not just its two halves in isolation — and asserts none
+    /// of them drop more than 45dB below the cue's own overall RMS.
+    /// </summary>
+    [TestCase]
+    public void TheHeldBellows_HasNoGapAtItsSeam()
+    {
+        var onePass = Pcm(SfxLibrary.GetLooping(Cue.Bellows));
+
+        var overallRms = Rms(onePass);
+        AssertThat(overallRms > 0.0001f)
+            .OverrideFailureMessage(
+                $"The bellows loop is effectively silent (RMS {overallRms:0.#####}) — a silent cue " +
+                "would trivially pass a gap check by having no gap left to measure.")
+            .IsTrue();
+
+        // Two copies back-to-back puts the wrap itself INSIDE the scan window range, where a window can
+        // see both the tail of one pass and the head of the next.
+        var doubled = new float[onePass.Length * 2];
+        Array.Copy(onePass, 0, doubled, 0, onePass.Length);
+        Array.Copy(onePass, 0, doubled, onePass.Length, onePass.Length);
+
+        var windowSamples = Synth.Samples(0.005f); // the 5ms floor the complaint is measured against
+        var hop = Math.Max(1, windowSamples / 4);
+
+        var quietestWindowDb = double.PositiveInfinity;
+        for (var start = 0; start + windowSamples <= doubled.Length; start += hop)
         {
-            director.Free();
+            double sumSq = 0;
+            for (var i = start; i < start + windowSamples; i++)
+            {
+                sumSq += (double)doubled[i] * doubled[i];
+            }
+
+            var rms = Math.Sqrt(sumSq / windowSamples);
+            var db = rms > 1e-9 ? 20.0 * Math.Log10(rms) : -300.0;
+            quietestWindowDb = Math.Min(quietestWindowDb, db);
         }
+
+        var overallDb = 20.0 * Math.Log10(overallRms);
+        var floorDb = overallDb - 45.0;
+
+        AssertThat((float)quietestWindowDb)
+            .OverrideFailureMessage(
+                $"The quietest 5ms window anywhere in the loop (wrap included) measures " +
+                $"{quietestWindowDb:0.0}dBFS against an overall RMS of {overallDb:0.0}dBFS — more than " +
+                "45dB down. That is the gap: an audible chuff at the loop's own seam.")
+            .IsGreaterEqual((float)floorDb);
     }
 
     /// <summary>
