@@ -256,8 +256,26 @@ public class AtomicEquivalenceTests
     // PR as the mechanism. The tell this is legitimate and not a new stream: the sibling
     // PhaseBNoDrawGateTests RngState pin shows `Inc` UNCHANGED (13279888329118852579) — only
     // `State` moved, the same signature every prior Class-2 entry in this ledger carries.
+    // GOLDEN RE-BASELINE #7 (§11.14.8, T6 — "every decision leaves a reason"): **Class 0b — values
+    // change, draw-free.** ExpeditionRevealSystem now emits one persisted DecisionExplained per
+    // ExpeditionResult, naming the typed ExpeditionHalt and a floor/survivor/death summary that used
+    // to die with GameState.PendingExpeditions the same tick the reveal cleared it. This idle trace
+    // (seed 9001, zero player actions) still fights autonomously every day (the same "heroes shop
+    // and fight with no player input" property every prior re-baseline above documents), so
+    // expeditions resolve and DecisionExplained events land on most days — moving the serialized
+    // EventLog directly (a new event per result) and, because FlavorEngine seeds its variant pick
+    // off the stamped EventId (Contracts/World.cs's own doc), shifting every downstream event's id
+    // by one per result for the rest of the run — which re-rolls WHICH (equally valid) flavour-pack
+    // variant text renders for every later gossip/ledger/narrator line on this trace. No decision
+    // changed: ExpeditionRevealSystem's own Reveal method never references its `rng` parameter (this
+    // unit's own ExpeditionRevealSystemTests assert this directly), so it draws literally zero RNG —
+    // proven, not assumed, by PhaseBNoDrawGateTests.cs's matching pin, which does NOT move for this
+    // entry (`Inc` AND `State` both stay 4182585629336870939 / 13279888329118852579, the exact U4
+    // value above) — the same both-unchanged signature the L5 arc re-anchor entry recorded. This is
+    // pure serialized-content movement (a new event type appearing in the log) plus its downstream
+    // prose-variant reroll, never a routing/combat/economy decision.
     private const string ExpectedPreCounterSha256 =
-        "ACE39F90966AF0DEB6C8CA2BC80A068196B4F84ED4F5FD41A60712FBC24E31F2";
+        "32A002E9EC7D7E2AAE98E6C9C54746AC8060C106956910159F70DF5119FB94F8";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

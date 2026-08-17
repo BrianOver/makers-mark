@@ -57,6 +57,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(ClimaxReached), "climaxReached")]
 [JsonDerivedType(typeof(CampaignEnded), "campaignEnded")]
 [JsonDerivedType(typeof(VenueGraduated), "venueGraduated")]
+[JsonDerivedType(typeof(DecisionExplained), "decisionExplained")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -323,3 +324,31 @@ public sealed record VenueGraduated(
     string VenueId,
     System.Collections.Immutable.ImmutableList<HeroId> Graduates,
     int NewRank) : GameEvent;
+
+/// <summary>
+/// §11.14.8 (T6, register #164): the player-facing half of the two-tier reason split — see
+/// <see cref="DecisionTrace"/> for the diagnostic half that lives on <see cref="TickResult"/>
+/// instead. Mirrors <c>godot/scripts/PlaytestLog.Decision</c>'s call shape 1:1 on purpose: a
+/// decision that clears "would the player ever want to read this?" now persists as a normal
+/// <see cref="GameEvent"/> — durable in <see cref="GameState.EventLog"/>, reachable from saves,
+/// the Chronicle and Analytics — instead of reaching only a UI panel and an opt-in session-log
+/// text file gated behind <c>MM_PLAYTEST_LOG</c> that most sessions never set.
+///
+/// <para>This is the generic ad hoc channel for a decision that has no typed event of its own to
+/// carry a reason on (the existing typed reason-carriers — <see cref="HeroPassedOnItem"/>,
+/// <see cref="HeroDecisionExplained"/>, <see cref="BountyJudged"/>, <see cref="CustomerWalked"/>,
+/// <see cref="HeroDied"/>, <see cref="AttributionBeatEvent"/> — already persist their own reason
+/// field and stay exactly as they are). First user: <c>ExpeditionRevealSystem</c> naming why a
+/// party's expedition halted where it did ("the reveal deletes its own evidence", §11.14.8) —
+/// every recorded roll and the typed <see cref="ExpeditionHalt"/> used to be destroyed the same
+/// tick the reveal narrated them, so nothing in <see cref="GameState"/> ever said why a party
+/// stopped short of its target after Evening.</para>
+/// </summary>
+/// <param name="What">The decision, as a stable slug an analytics pass can group on (mirrors
+/// <see cref="DecisionTrace.What"/> — never a sentence).</param>
+/// <param name="Chosen">What was decided.</param>
+/// <param name="Reason">Why, in the sim's own terms.</param>
+/// <param name="Candidates">How many options were weighed, or -1 when that count is not
+/// meaningful or not known to the emitting site (mirrors <c>PlaytestLog.Decision</c>'s own
+/// default).</param>
+public sealed record DecisionExplained(string What, string Chosen, string Reason, int Candidates = -1) : GameEvent;

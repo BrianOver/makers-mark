@@ -108,6 +108,16 @@ public class PhaseBNoDrawGateTests
         // now survives at 1 HP instead, and every draw downstream of that save point shifts.
         // `Inc` is STILL byte-identical (13279888329118852579) — same stream, only `State` moved;
         // the clamp draws no RNG of its own (ApprenticeWarrant.TryClamp is pure integer math).
+        // GOLDEN RE-BASELINE #7 (§11.14.8, T6 — "every decision leaves a reason"): see
+        // AtomicEquivalenceTests.cs's matching ledger entry for the full account.
+        // ExpeditionRevealSystem now emits a persisted DecisionExplained per ExpeditionResult; its
+        // own Reveal method never touches the `rng` parameter Process receives, so it draws zero
+        // RNG. **Neither `Inc` nor `State` moves for this entry** — the pin below stays byte-for-byte
+        // the U4 value, the same both-unchanged signature the L5 arc re-anchor entry recorded. The
+        // AtomicEquivalenceTests SHA256 DOES move on this same trace (a new event per revealed
+        // expedition, plus the downstream flavour-pack variant reroll that a shifted EventId causes)
+        // — that movement is pure serialized-content change on a stream this exact assertion proves
+        // is untouched.
         Assert.Equal(new RngState(4182585629336870939UL, 13279888329118852579UL), state.Rng);
     }
 }

@@ -23,6 +23,15 @@ namespace GodotClient;
 /// event record. No id is resolved to a name, no evaluator is consulted, nothing here computes a
 /// reason the sim did not already compute. This is a mirror, not an opinion.</para>
 ///
+/// <para><b>A seventh, generic case.</b> <see cref="DecisionExplained"/> is the sim's own persisted
+/// version of exactly this file's shape (<c>What</c>/<c>Chosen</c>/<c>Reason</c>/<c>Candidates</c>,
+/// 1:1 with <see cref="PlaytestLog.Decision"/>'s parameters) for a decision that has no typed event
+/// of its own to carry a reason on. Its case is a straight echo, not a reformat — see
+/// <c>GameSim.Drama.ExpeditionRevealSystem</c>'s expedition-halt explanation for the first
+/// producer, which replaced this file's own former <c>LogRevealed</c>/
+/// <see cref="SimAdapter.LastRevealedExpeditions"/> snapshot workaround now that the sim persists
+/// the reason itself instead of the client racing the tick that discards it.</para>
+///
 /// <para><b>Wired at the choke points, not per-panel.</b> <see cref="LogAll"/> is called from
 /// <see cref="SimAdapter.Queue"/>'s immediate branch and <see cref="SimAdapter.AdvancePhase"/> — the
 /// same two spots <see cref="PlaytestLog.Action"/> already fires from — over the events THAT CALL
@@ -82,36 +91,16 @@ public static class DecisionEvents
                     PlaytestLog.Decision($"attribution-beat:{beat.Beat}",
                         $"item #{beat.Item.Value} / hero #{beat.Hero.Value} / floor {beat.Floor}", beat.Detail);
                     break;
+
+                case DecisionExplained d:
+                    // The generic persisted channel (§11.14.8): a decision with no typed event of
+                    // its own to carry a Reason on. First (and so far only) producer is
+                    // ExpeditionRevealSystem's expedition-halt explanation — "the reveal deletes
+                    // its own evidence" is now fixed at the sim, not patched here: this case is a
+                    // straight echo, unlike the five above it, which each reformat a typed field.
+                    PlaytestLog.Decision(d.What, d.Chosen, d.Reason, d.Candidates);
+                    break;
             }
-        }
-    }
-
-    /// <summary>
-    /// U-T6: "the reveal deletes its own evidence" (§11.14.8) — every recorded roll and the typed
-    /// <see cref="ExpeditionResult.Halt"/> are destroyed the SAME TICK <c>ExpeditionRevealSystem</c>
-    /// narrates them (<c>state.PendingExpeditions</c> is cleared to empty in the same
-    /// <c>Process</c> call that reads it). After Evening, nothing in <c>GameState</c> says why a
-    /// party stopped short of its target — that permanent record needs a Contracts change (see this
-    /// unit's CONTRACT-REQUEST) and is out of scope here.
-    ///
-    /// <para>What IS in scope: <see cref="SimAdapter.LastRevealedExpeditions"/> already snapshots the
-    /// full <see cref="ExpeditionResult"/> — Halt included — the tick BEFORE the reveal clears it
-    /// (V7b, for <c>ExpeditionNarrator</c>'s retelling). Calling this from that exact snapshot point
-    /// means the typed halt reaches the durable session log before the sim forgets it, at zero
-    /// Contracts cost: every field read here already exists on <see cref="ExpeditionResult"/>.</para>
-    /// </summary>
-    public static void LogRevealed(ImmutableList<ExpeditionResult> results)
-    {
-        if (!PlaytestLog.Active || results.IsEmpty)
-        {
-            return;
-        }
-
-        foreach (var result in results)
-        {
-            var why = $"{result.Survivors.Count} survived, {result.Deaths.Count} dead, "
-                + $"cleared {result.DeepestFloorCleared}/{result.TargetFloor}, {result.Floors.Count} floors fought";
-            PlaytestLog.Decision($"expedition-halt:{result.VenueId}", result.Halt.ToString(), why);
         }
     }
 }

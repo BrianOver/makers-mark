@@ -173,14 +173,15 @@ public sealed class SimAdapter
         // Capture the results the Evening reveal is about to consume — the narrator retells them at
         // the Ledger, which renders the post-tick (already-cleared) state (V7b).
         //
-        // U-T6: also the ONLY point that can log the typed Halt (and this expedition's shape) to the
-        // session trail before ExpeditionRevealSystem clears PendingExpeditions this same tick — see
-        // DecisionEvents.LogRevealed's own doc ("the reveal deletes its own evidence", §11.14.8).
+        // U-T6: the typed Halt itself no longer needs this snapshot to reach the session log —
+        // ExpeditionRevealSystem now emits a persisted DecisionExplained naming it ("the reveal
+        // deletes its own evidence", §11.14.8), which DecisionEvents.LogAll(result.Events) below
+        // picks up like any other tick event. This snapshot exists purely for
+        // ExpeditionNarrator's floor-by-floor retelling now.
         if (completedPhase == DayPhase.Evening && !CurrentState.PendingExpeditions.IsEmpty)
         {
             LastRevealedExpeditions = CurrentState.PendingExpeditions;
             LastRevealedDay = completedDay;
-            DecisionEvents.LogRevealed(LastRevealedExpeditions);
         }
 
         var result = _kernel.Tick(CurrentState, _pending.ToImmutableList());

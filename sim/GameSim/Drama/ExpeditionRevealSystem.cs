@@ -12,9 +12,17 @@ namespace GameSim.Drama;
 /// (the forward ladder, plan 2026-08-10-003 L1), attribution beats onto item histories and
 /// hero memories (R11/F3), and the ore market (R6).
 ///
-/// Emission order per result is fixed (determinism contract): PartyReturned, HeroDied*,
-/// FloorRecordSet*, VenueGraduated?, AttributionBeatEvent*, OreOffered*. Draws no RNG — the
-/// expedition was fully resolved at departure; the Evening only tells the town about it.
+/// Emission order per result is fixed (determinism contract): PartyReturned, DecisionExplained,
+/// HeroDied*, FloorRecordSet*, VenueGraduated?, AttributionBeatEvent*, OreOffered*. Draws no
+/// RNG — the expedition was fully resolved at departure; the Evening only tells the town about it.
+///
+/// <para><b>§11.14.8 ("the reveal deletes its own evidence").</b> Every recorded roll and the
+/// typed <see cref="ExpeditionHalt"/> used to die with <see cref="GameState.PendingExpeditions"/>
+/// the same tick this system cleared it — nothing in <see cref="GameState"/> said why a party
+/// stopped short of its target once Evening passed. The <see cref="DecisionExplained"/> emitted
+/// below fixes that at the source: it is a normal persisted event, so it survives into
+/// <see cref="GameState.EventLog"/>, saves, and the Chronicle exactly like every other event this
+/// system emits.</para>
 ///
 /// Bookkeeping rules this system owns (pinned by tests):
 /// - Loot gold reaches SURVIVORS only — a dead hero's purse and ore are lost with them.
@@ -61,6 +69,17 @@ public sealed class ExpeditionRevealSystem : IPhaseSystem
         IEventSink events)
     {
         events.Emit(new PartyReturned(result.Survivors));
+
+        // 0. §11.14.8: why the expedition halted where it did, unconditionally (a clean
+        // TargetReached is exactly as worth reading as a limp home — this mirrors the client-only
+        // predecessor's own unconditional emission, godot/scripts/DecisionEvents.cs's now-removed
+        // LogRevealed). Every field read here is already on ExpeditionResult — no new computation,
+        // only a new place for a number the sim already had to land.
+        events.Emit(new DecisionExplained(
+            $"expedition-halt:{result.VenueId}",
+            result.Halt.ToString(),
+            $"{result.Survivors.Count} survived, {result.Deaths.Count} dead, "
+                + $"cleared {result.DeepestFloorCleared}/{result.TargetFloor}, {result.Floors.Count} floors fought"));
 
         // 1. Deaths (R13/F4/AE6): flip Alive, name the worn gear, raise a memorial.
         foreach (var heroId in result.Deaths)
