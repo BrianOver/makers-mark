@@ -138,14 +138,35 @@ public class WaveDLessonsTests
         }
     }
 
-    /// <summary>"the forecast board taught": fires the first time the board is EVER opened,
-    /// regardless of what tomorrow's muster looks like.</summary>
+    /// <summary>"the forecast board taught": fires the first time the board is EVER opened, AS
+    /// LONG AS the muster does not ALSO have something more specific to say the same tick — the
+    /// PR #575 fix cycle found the two lessons genuinely collide (a fresh campaign's starter
+    /// heroes always carry a gear gap, so <c>OpeningTheForecastBoardForTheFirstTime</c> and
+    /// <c>FirstForecastWithAGearGap</c> were unwinnable simultaneously under any single priority
+    /// order) and the coordinator ruled the muster dilemma outranks the generic orientation note
+    /// when both are eligible. This fixture fully gears every hero so NO party has a gap, isolating
+    /// the orientation lesson on its own — proving it still fires when the muster has nothing to
+    /// add, not that it wins a collision it no longer can.</summary>
     [TestCase]
     public void OpeningTheForecastBoardForTheFirstTime_TeachesWhatItIs()
     {
-        var ui = MountMainUi(new SimAdapter(GameComposition.NewCampaign(9701)));
+        var baseState = GameComposition.NewCampaign(9701);
+        var fullyGeared = baseState with
+        {
+            Heroes = baseState.Heroes.SetItems(baseState.Heroes.Select(kv =>
+                new System.Collections.Generic.KeyValuePair<int, Hero>(
+                    kv.Key,
+                    kv.Value with { Gear = new GearSet(new ItemId(90001), new ItemId(90002), new ItemId(90003)) }))),
+        };
+        var ui = MountMainUi(new SimAdapter(fullyGeared));
         try
         {
+            var noGaps = GameSim.Heroes.RaidForecast.ForTomorrow(ui.Adapter.CurrentState)
+                .All(p => p.GearGaps.IsEmpty);
+            AssertThat(noGaps)
+                .OverrideFailureMessage("Setup check: this fixture still has a gear gap -- it would collide with the muster lesson and prove nothing about the orientation lesson standing alone.")
+                .IsTrue();
+
             ui.Forecast.ShowForTomorrow(ui.Adapter.CurrentState);
 
             AssertThat(ui.Mentor.Visible)
