@@ -70,13 +70,32 @@ public class AudioContentGateTests
             .IsNotNull();
 
         var sampleRate = SampleRate;
-        var frameBudget = (int)Math.Ceiling(stream!.GetLength() * sampleRate) + sampleRate; // +1s margin
+        var nominalSamples = (int)Math.Round(stream!.GetLength() * sampleRate);
+        var frameBudget = nominalSamples + sampleRate; // +1s margin against UNDER-decoding only — see below
         var frames = DecodeUpTo(stream, frameBudget);
         AssertThat(frames.Length)
             .OverrideFailureMessage($"{phase}'s composed track '{id}' decoded 0 frames via MixAudio.")
             .IsGreater(0);
 
         var mono = CombineStereo(frames);
+
+        // Every composed track ships with AudioDirector.LoadComposed's ogg.Loop = true (the same
+        // stream the game actually plays), so a decode request for MORE than the track's own nominal
+        // length does not return silence or stop early -- it WRAPS to loop_offset (0) and keeps
+        // producing audio, i.e. the head played again. The +1s margin above exists only as insurance
+        // against a decode that comes up slightly SHORT of nominal length (container rounding); it
+        // must never be allowed to run past nominal length, or every gate that looks at a track's own
+        // TAIL is silently measuring wrapped HEAD content instead. This is exactly how a real engine
+        // run once measured town-dusk's loop-seam lurch at 0.0dB (tail == head, because "tail" was
+        // literally re-decoded head) when the track's true, un-wrapped tail sits 34.5dB below its
+        // head -- a green gate over a defect that is still fully present. Truncating here is the fix:
+        // decode with margin to guard against undershoot, then hard-cap at the stream's own length so
+        // every gate below only ever sees ONE clean pass through the real content.
+        if (mono.Length > nominalSamples)
+        {
+            mono = mono[..nominalSamples];
+        }
+
         DecodedCache[id] = mono;
         return mono;
     }
