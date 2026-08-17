@@ -10,7 +10,10 @@ namespace GameSim.Tests.Balance;
 /// daily, on top of the baseline policy, must move survival the right way — a deeper
 /// average cleared floor OR fewer deaths than the salveless baseline (tolerant, the
 /// OR is the band). Engagement asserts guard against a vacuous pass, and the baseline
-/// leg doubles as proof that BaselinePlayer never touches consumables.
+/// leg doubles as proof that BaselinePlayer's consumable activity stays a small, occasional
+/// fallback (U-T1: it now crafts a Field Salve when no gear recipe has a buyer and some alive
+/// hero's pack is empty — real but minor income — not a primary strategy), well below the
+/// scripted leg that deliberately force-crafts two a day.
 /// </summary>
 public class SalveProvisioningBalanceTests
 {
@@ -103,12 +106,29 @@ public class SalveProvisioningBalanceTests
 
     [Fact]
     [Trait("Category", "Balance")]
-    public void Baseline_NeverTouchesConsumables()
+    public void Baseline_ConsumableActivityStaysASmallOrganicTrickle()
     {
+        // U-T1 re-baseline (was Baseline_NeverTouchesConsumables, asserting exactly zero).
+        // BaselinePlayer used to NEVER touch consumables — not by design, but because its old
+        // craft-the-biggest-thing-affordable rule made a statless Field Salve (Attack+Defense=0)
+        // lose every tie against gear. Post U-T1, the craft loop only fires a recipe with a real
+        // buyer (HasBuyer), and a salve legitimately wins that check when no gear recipe has a
+        // taker AND some alive hero's pack is empty — real, if minor, income a plain smith would
+        // take. Measured on the main seed: baseline sold 7 / used 2 over 100 days, vs 38 sold /
+        // 32 used for this file's leg that deliberately force-crafts two salves every Expedition
+        // window — still a clean, well-separated A/B for this file's other assertions.
         var baseline = Run(withSalves: false);
+        var salves = Run(withSalves: true);
 
-        Assert.Equal(0, baseline.SalvesSold);
-        Assert.Equal(0, baseline.SalveUses);
+        Assert.True(baseline.SalvesSold < salves.SalvesSold,
+            $"baseline ({baseline.SalvesSold}) should sell far fewer salves than the forced-salve leg ({salves.SalvesSold})");
+        Assert.True(baseline.SalveUses < salves.SalveUses,
+            $"baseline ({baseline.SalveUses}) should see far fewer salve uses than the forced-salve leg ({salves.SalveUses})");
+
+        // A loose sanity ceiling, not a tight pin on the measured 7/2 — catches a future
+        // regression where the demand-gated craft loop starts treating consumables as a primary
+        // income source rather than an occasional fallback.
+        Assert.True(baseline.SalvesSold <= 20, $"baseline sold {baseline.SalvesSold} salves — no longer a minor fallback");
     }
 
     [Fact]
