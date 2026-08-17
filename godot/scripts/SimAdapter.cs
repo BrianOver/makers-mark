@@ -139,6 +139,13 @@ public sealed class SimAdapter
         PlaytestLog.Action(action.GetType().Name, immediate: true, CurrentState.Day, CurrentState.Phase,
             ActionSubject.Describe(action));
 
+        // U-T6: result.Events is THIS action's own new events only (never the phase's accumulated
+        // LastEvents below) — the immediate counterpart to AdvancePhase's own DecisionEvents.LogAll
+        // call, so a haggle response's CustomerWalked (an immediate-path event — see
+        // GameSim.Kernel.ActionTiming) reaches the session log exactly once, not once per subsequent
+        // immediate action this phase.
+        DecisionEvents.LogAll(result.Events);
+
         // LastEvents means "everything that has happened this phase", not "whatever happened most
         // recently". Immediate actions accumulate here and AdvancePhase prepends them to the tick's
         // own events, so a consumer that only wakes on a phase boundary — the narrator, the Ledger —
@@ -165,15 +172,24 @@ public sealed class SimAdapter
 
         // Capture the results the Evening reveal is about to consume — the narrator retells them at
         // the Ledger, which renders the post-tick (already-cleared) state (V7b).
+        //
+        // U-T6: also the ONLY point that can log the typed Halt (and this expedition's shape) to the
+        // session trail before ExpeditionRevealSystem clears PendingExpeditions this same tick — see
+        // DecisionEvents.LogRevealed's own doc ("the reveal deletes its own evidence", §11.14.8).
         if (completedPhase == DayPhase.Evening && !CurrentState.PendingExpeditions.IsEmpty)
         {
             LastRevealedExpeditions = CurrentState.PendingExpeditions;
             LastRevealedDay = completedDay;
+            DecisionEvents.LogRevealed(LastRevealedExpeditions);
         }
 
         var result = _kernel.Tick(CurrentState, _pending.ToImmutableList());
         _pending.Clear();
         CurrentState = result.NewState;
+        // U-T6: result.Events is exactly this tick's own new events (never the phase's accumulated
+        // LastEvents assembled just below), so a hero decision that fires on a real tick — the
+        // Morning shopping pass, the Evening reveal's HeroDied/AttributionBeatEvent — is logged once.
+        DecisionEvents.LogAll(result.Events);
         // The phase's full record: whatever the player did immediately during it, in order, then
         // whatever the tick itself produced (see Queue's immediate branch for why).
         LastEvents = _appliedThisPhase.Count == 0
