@@ -58,6 +58,18 @@ public partial class ProgressionPanel : SimPanel
     /// and reseed the toggles ONLY in the former case.</summary>
     private ImmutableSortedSet<string>? _lastSeededProfessions;
 
+    /// <summary>U-T2 Wave E ("talents and the second profession", the long tail): the shared
+    /// <see cref="Ui.TutorialFlow"/> — this panel's own profession-switch header is a SECOND path
+    /// to the same <see cref="SetProfessionsAction"/> the tutorial's own picker already teaches
+    /// (<c>MainUi.OnSecondProfessionPicked</c>), so both call sites share the SAME first-touch id;
+    /// whichever the player reaches first fires the lesson, the other becomes a no-op by
+    /// <see cref="TutorialFlow.ConsumeFirstTouch"/>'s own once-ever contract. Null-tolerant.</summary>
+    public TutorialFlow? Tutorial { get; set; }
+
+    /// <summary>The shared "Bryn speaks a first-touch lesson" banner (<see cref="MentorBanner"/>,
+    /// Wave C) — owned by <c>MainUi</c> so it draws above this panel too.</summary>
+    public MentorBanner? Mentor { get; set; }
+
     public override void _Ready() => EnsureBuilt();
 
     public override void Refresh()
@@ -254,5 +266,13 @@ public partial class ProgressionPanel : SimPanel
         var action = new SetProfessionsAction(PendingProfessionSelection());
         Adapter.Queue(action);
         _professionsFeedback!.Text = Confirm(action, "Professions submitted");
+
+        Mentor?.ShowFirstTouch(
+            Tutorial?.ConsumeFirstTouch(
+                "second-profession-picked",
+                MentorVoice.Speak(
+                    "A second profession adds a new craft alongside your first — it never replaces "
+                    + "what you already know. Both share the same forge and the same day's action "
+                    + "slots.")));
     }
 }

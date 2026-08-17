@@ -7,6 +7,7 @@ using GdUnit4;
 using Godot;
 using GodotClient.Audio;
 using GodotClient.Panels;
+using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -392,6 +393,33 @@ public class LegendsWallTests
             var minted = ui.Adapter.CurrentState.Items.Values.Single(i => i.Id != WornWeaponId);
             AssertThat(minted.RecipeId).IsEqual("dagger");
             AssertThat(minted.HeirloomLineage).IsEqual("forged from the Rusty Dagger of Sera");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>U-T2 Wave E ("reforge", the long tail): the first-ever Reforge press teaches what
+    /// the mechanic is — same fixture/wiring as
+    /// <see cref="ReforgeButton_DefaultPickers_ReforgesTheSourceItemsOwnRecipe_MintsTheHeirloom"/>.</summary>
+    [TestCase]
+    public void FirstReforgePress_TeachesTheReforgeLesson()
+    {
+        var world = WorldWithFallenHero();
+        var ui = MountMainUi(new SimAdapter(world));
+        try
+        {
+            ui.Legends.ShowWall(world);
+
+            PressEnabled(ui.Legends, $"Reforge_{WornWeaponId.Value}");
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The reforge lesson never showed on the campaign's first-ever Reforge press.")
+                .IsTrue();
+            var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
+            AssertThat(text).Contains(MentorVoice.Name);
+            AssertThat(text).Contains("reforged");
         }
         finally
         {
