@@ -180,6 +180,204 @@ public class DelveStageTests
         "test-venue", "Test Venue",
         ImmutableArray.Create(new VenueFloor(1, 0, "cave-rat", monsterHp, 5, 2, 5, "test-ore")));
 
+    // ── U-T5-12 (§11.14.7): "add the camera its CameraHint field was written for" ──────────────
+
+    [TestCase]
+    public void Engage_OnAFocusedFloor_SetsFocusAnchorAndIntensity()
+    {
+        var stage = new DelveStage();
+        try
+        {
+            stage.Build();
+            stage.FloorFocusByFloor = ImmutableDictionary<int, DelveStage.FloorFocus>.Empty
+                .Add(1, new DelveStage.FloorFocus(new HeroId(1), 0.75f));
+            AssertThat(stage.FocusAnchor.HasValue).IsFalse();
+
+            stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+            stage.Process(0.016f);
+
+            AssertThat(stage.FocusAnchor.HasValue).IsTrue();
+            AssertThat(stage.FocusIntensity).IsEqualApprox(0.75f, 0.001f);
+        }
+        finally
+        {
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void Engage_OnAnUnfocusedFloor_NeverSetsAFocusAnchor()
+    {
+        // FloorFocusByFloor stays at its default-empty -- the overwhelming majority of floors,
+        // since PresentationScheduler dilates at most 1 PullFocus + 6 Glance floors per raid.
+        var stage = new DelveStage();
+        try
+        {
+            stage.Build();
+            stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+            stage.Process(0.016f);
+
+            AssertThat(stage.FocusAnchor.HasValue).IsFalse();
+            AssertThat(stage.FocusIntensity).IsEqual(0f);
+        }
+        finally
+        {
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void ANewFloorsEngage_ReplacesThePreviousFloorsFocus()
+    {
+        // Floor 1 is flared, floor 2 is not -- the camera must let go of floor 1's hero rather than
+        // staying pinned on a fight that already ended.
+        var stage = new DelveStage();
+        try
+        {
+            stage.Build();
+            stage.FloorFocusByFloor = ImmutableDictionary<int, DelveStage.FloorFocus>.Empty
+                .Add(1, new DelveStage.FloorFocus(new HeroId(1), 1f));
+            stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+            stage.Process(0.016f);
+            AssertThat(stage.FocusAnchor.HasValue).IsTrue();
+
+            stage.RenderBeat(Beat(DelveBeatKind.Descend, floor: 2, monsterKind: "tunnel-spider"), Heroes());
+            stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 2, monsterKind: "tunnel-spider"), Heroes());
+            stage.Process(0.016f);
+
+            AssertThat(stage.FocusAnchor.HasValue).IsFalse();
+        }
+        finally
+        {
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void Surface_ClearsAnyStandingFocus()
+    {
+        var stage = new DelveStage();
+        try
+        {
+            stage.Build();
+            stage.FloorFocusByFloor = ImmutableDictionary<int, DelveStage.FloorFocus>.Empty
+                .Add(1, new DelveStage.FloorFocus(new HeroId(1), 1f));
+            stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+            stage.Process(0.016f);
+            AssertThat(stage.FocusAnchor.HasValue).IsTrue();
+
+            stage.RenderBeat(
+                new DelveBeat(DelveBeatKind.Surface, 1, null, "TargetReached", 0, 0,
+                    ImmutableSortedDictionary<int, int>.Empty, false),
+                Heroes());
+            stage.Process(0.016f);
+
+            AssertThat(stage.FocusAnchor.HasValue).IsFalse();
+            AssertThat(stage.FocusIntensity).IsEqual(0f);
+        }
+        finally
+        {
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void ResetState_ClearsFocus()
+    {
+        var stage = new DelveStage();
+        try
+        {
+            stage.Build();
+            stage.FloorFocusByFloor = ImmutableDictionary<int, DelveStage.FloorFocus>.Empty
+                .Add(1, new DelveStage.FloorFocus(new HeroId(1), 1f));
+            stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+            stage.Process(0.016f);
+            AssertThat(stage.FocusAnchor.HasValue).IsTrue();
+
+            stage.ResetState();
+
+            AssertThat(stage.FocusAnchor.HasValue).IsFalse();
+            AssertThat(stage.FocusIntensity).IsEqual(0f);
+        }
+        finally
+        {
+            stage.Free();
+        }
+    }
+
+    // ── U-T5-10 (§11.14.7): "flare the link-4 beats as they happen" ────────────────────────────
+
+    [TestCase]
+    public void ProofBeats_FlareOnTheBeatTheyWereAttachedTo()
+    {
+        var stage = new DelveStage();
+        try
+        {
+            stage.Build();
+            stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+            AssertThat(stage.LastProofFlareText).IsEqual(string.Empty);
+
+            var proof = new AttributionBeat(
+                BeatType.LethalSave, new ItemId(1), new HeroId(1), 1, "Ironhide turned a lethal cave-rat hit");
+            var exchange = Beat(DelveBeatKind.Exchange, floor: 1, hero: 1, dealt: 5, taken: 3)
+                with { ProofBeats = ImmutableList.Create(proof) };
+
+            stage.RenderBeat(exchange, Heroes());
+
+            AssertThat(stage.LastProofFlareText).IsEqual("Ironhide turned a lethal cave-rat hit");
+            AssertThat(stage.ActiveTransientCount).IsGreaterEqual(1);
+        }
+        finally
+        {
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void ProofBeats_Empty_NeverFlaresAnything()
+    {
+        // A beat DelveBeats never attached a proof to (the overwhelming majority of every fight)
+        // must not spawn a flare -- ProofBeats defaults to empty for exactly this reason.
+        var stage = new DelveStage();
+        try
+        {
+            stage.Build();
+            stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+            stage.RenderBeat(Beat(DelveBeatKind.Exchange, floor: 1, hero: 1, dealt: 5, taken: 0), Heroes());
+
+            AssertThat(stage.LastProofFlareText).IsEqual(string.Empty);
+        }
+        finally
+        {
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void ResetState_ClearsTheProofFlareText()
+    {
+        var stage = new DelveStage();
+        try
+        {
+            stage.Build();
+            stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+            var proof = new AttributionBeat(
+                BeatType.Provisioned, new ItemId(1), new HeroId(1), 1, "Field Tonic kept H1 fighting on floor 1");
+            stage.RenderBeat(
+                Beat(DelveBeatKind.Quaff, floor: 1, hero: 1) with { ProofBeats = ImmutableList.Create(proof) },
+                Heroes());
+            AssertThat(stage.LastProofFlareText).IsNotEqual(string.Empty);
+
+            stage.ResetState();
+
+            AssertThat(stage.LastProofFlareText).IsEqual(string.Empty);
+        }
+        finally
+        {
+            stage.Free();
+        }
+    }
+
     [TestCase]
     public void Exchange_UpdatesHeroPips_FromHpAfter()
     {

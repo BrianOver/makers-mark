@@ -16,6 +16,7 @@ public sealed class JourneyPlayhead
 {
     private int _partyKey = int.MinValue;
     private int _beatCount;
+    private double[] _weights = [];
     private double _elapsed;
     private double _phaseDuration = 1.0;
 
@@ -28,13 +29,28 @@ public sealed class JourneyPlayhead
     public bool Idle => Revealed >= _beatCount;
 
     /// <summary>
-    /// Rebind for this tick. A NEW <paramref name="partyKey"/> resets the reveal to the top (a
-    /// different party, or — after save/load — the same party rebuilt from scratch with no
-    /// memory of what was shown before: the documented "clouds on reload" behavior, KTD11).
-    /// <paramref name="beatCount"/> may grow call-to-call (a staged party's stage-2 beats append
-    /// once resolved) without ever resetting an in-progress reveal.
+    /// Rebind for this tick, every beat weighted equally — the original uniform time-stretch
+    /// (every <c>JourneyFeed</c> text-ticker card still uses this; nothing about its pacing
+    /// changes). A NEW <paramref name="partyKey"/> resets the reveal to the top (a different
+    /// party, or — after save/load — the same party rebuilt from scratch with no memory of what
+    /// was shown before: the documented "clouds on reload" behavior, KTD11). <paramref
+    /// name="beatCount"/> may grow call-to-call (a staged party's stage-2 beats append once
+    /// resolved) without ever resetting an in-progress reveal.
     /// </summary>
-    public void Bind(int partyKey, int beatCount, double phaseDurationSeconds)
+    public void Bind(int partyKey, int beatCount, double phaseDurationSeconds) =>
+        Bind(partyKey, UniformWeights(beatCount), phaseDurationSeconds);
+
+    /// <summary>
+    /// Rebind with a PER-BEAT weight (§11.14.7, U-T5-11: "wire PresentationScheduler as the
+    /// pacing source" — the delve overlay's own playhead uses this overload so a floor scored
+    /// Glance/PullFocus by the scheduler holds the watch longer than a routine Ambient one,
+    /// instead of every beat getting an identical uniform slice of the phase's clock). A beat's
+    /// weight is how long it holds the reveal BEFORE the next beat can appear — weight 1 for
+    /// every entry reduces to exactly the uniform overload's math (proven by
+    /// <c>JourneyPlayheadTests</c>). Same rebind-on-partyKey-change / grow-without-reset contract
+    /// as the uniform overload above.
+    /// </summary>
+    public void Bind(int partyKey, IReadOnlyList<double> weights, double phaseDurationSeconds)
     {
         if (partyKey != _partyKey)
         {
@@ -43,9 +59,13 @@ public sealed class JourneyPlayhead
             _elapsed = 0;
         }
 
-        _beatCount = beatCount;
+        _weights = weights.ToArray();
+        _beatCount = _weights.Length;
         _phaseDuration = Math.Max(phaseDurationSeconds, 0.001);
     }
+
+    private static double[] UniformWeights(int count) =>
+        count <= 0 ? [] : Enumerable.Repeat(1.0, count).ToArray();
 
     /// <summary>Accumulate frame delta. A no-op while <paramref name="paused"/> — "feed pauses
     /// with the clock" (paused ≠ engaged: an engaged-but-playing phase keeps flowing here).</summary>
@@ -57,9 +77,32 @@ public sealed class JourneyPlayhead
         }
 
         _elapsed += deltaSeconds;
-        var perBeat = _phaseDuration / _beatCount;
-        var target = Math.Min(_beatCount, (int)(_elapsed / Math.Max(perBeat, 0.0001)) + 1);
-        Revealed = Math.Max(Revealed, target);
+        var totalWeight = _weights.Sum();
+        if (totalWeight <= 0)
+        {
+            return;
+        }
+
+        var elapsedWeight = _elapsed / _phaseDuration * totalWeight;
+
+        // Beat i is revealed once elapsed weight has passed every PRIOR beat's weight — beat 0
+        // reveals immediately (prefix 0), matching the original uniform formula's "reveal one the
+        // instant elapsed > 0, then hold perBeat seconds before the next" behavior exactly when
+        // every weight is 1 (pinned by JourneyPlayheadTests.WeightedBind_UniformWeights_MatchesOldFormula).
+        var prefix = 0.0;
+        var target = 0;
+        for (var i = 0; i < _weights.Length; i++)
+        {
+            if (prefix > elapsedWeight)
+            {
+                break;
+            }
+
+            target = i + 1;
+            prefix += _weights[i];
+        }
+
+        Revealed = Math.Max(Revealed, Math.Min(_beatCount, target));
     }
 
     /// <summary>Skip mid-stream: jump straight to the card's end instead of dangling on a partial

@@ -93,6 +93,63 @@ public class JourneyFeedTests
         AssertThat(head.Revealed).IsEqual(5);
     }
 
+    // ── U-T5-11 (§11.14.7): "wire PresentationScheduler as the pacing source" — the weighted Bind
+    // overload MineWatch's delve playhead now uses so a Glance/PullFocus floor holds longer than a
+    // routine Ambient one, instead of every beat getting an identical uniform slice of the clock. ──
+
+    [TestCase]
+    public void WeightedBind_UniformWeights_MatchesTheOldUniformFormula()
+    {
+        // Every weight 1 must reduce to EXACTLY Bind(partyKey, beatCount, duration)'s own math —
+        // the whole point of building this as a generalization, not a parallel code path.
+        var head = new JourneyPlayhead();
+        head.Bind(partyKey: 1, weights: new double[] { 1, 1, 1, 1 }, phaseDurationSeconds: 4.0);
+
+        head.Advance(0.9, paused: false);
+        AssertThat(head.Revealed).IsEqual(1);
+
+        head.Advance(1.2, paused: false); // elapsed 2.1s
+        AssertThat(head.Revealed).IsEqual(3);
+
+        head.Advance(10.0, paused: false);
+        AssertThat(head.Revealed).IsEqual(4);
+        AssertThat(head.Idle).IsTrue();
+    }
+
+    [TestCase]
+    public void WeightedBind_AHeavierBeat_HoldsTheRevealLonger()
+    {
+        // weights [3, 1, 1], duration 5 -> 1 weight-unit/sec. Beat 0 (weight 3, a PullFocus floor)
+        // must still be showing at t=2.9s and only hand off to beat 1 once its own 3-unit budget is
+        // spent -- the entire mechanism this unit exists to add.
+        var head = new JourneyPlayhead();
+        head.Bind(partyKey: 1, weights: new double[] { 3, 1, 1 }, phaseDurationSeconds: 5.0);
+
+        head.Advance(2.9, paused: false);
+        AssertThat(head.Revealed)
+            .OverrideFailureMessage("A weight-3 beat handed off early -- it is not holding any longer than a weight-1 beat.")
+            .IsEqual(1);
+
+        head.Advance(0.2, paused: false); // elapsed 3.1s -> past beat 0's 3-unit budget
+        AssertThat(head.Revealed).IsEqual(2);
+
+        head.Advance(10.0, paused: false);
+        AssertThat(head.Revealed).IsEqual(3);
+    }
+
+    [TestCase]
+    public void WeightedBind_AllZeroWeights_NeverAdvances_NoCrash()
+    {
+        // Defensive only -- MineWatch always builds weights >= 1, but a degenerate all-zero list
+        // must stay inert rather than divide by zero.
+        var head = new JourneyPlayhead();
+        head.Bind(partyKey: 1, weights: new double[] { 0, 0, 0 }, phaseDurationSeconds: 5.0);
+
+        head.Advance(100.0, paused: false);
+
+        AssertThat(head.Revealed).IsEqual(0);
+    }
+
     [TestCase]
     public void Feed_Refresh_ClouedOnReload_RevealedEmptyUntilFirstAdvance()
     {

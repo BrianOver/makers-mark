@@ -86,6 +86,27 @@ public sealed record DelveBeat(
 
     /// <inheritdoc cref="KillingItem"/>
     public string? KillingItemName { get; init; }
+
+    /// <summary>
+    /// U-T5-10 (§11.14.7, "flare the link-4 beats as they happen"): the proven counterfactual
+    /// attribution(s) (<see cref="BeatType.LethalSave"/>, <see cref="BeatType.BreakpointClear"/>,
+    /// <see cref="BeatType.Provisioned"/>, <see cref="BeatType.PotionLifesave"/>) that landed on
+    /// THIS hero's THIS floor, already computed by <see cref="GameSim.Expedition.AttributionEngine"/>
+    /// and until now reaching only the tavern gossip line and the Evening ledger recap — never the
+    /// one screen where the player is actually watching the fight happen. <see
+    /// cref="BeatType.KillingBlow"/> is deliberately excluded (already flared via <see
+    /// cref="KillingItem"/>/<see cref="KillingItemName"/> on the <see
+    /// cref="DelveBeatKind.MonsterSlain"/> beat itself — the same fact, no double-credit) and <see
+    /// cref="BeatType.ToolAssist"/> has no emitter yet (mirrors <c>PresentationScheduler</c>'s own
+    /// skip). <see cref="AttributionBeat"/> carries no round number, so this projection attaches
+    /// each proof to the FIRST eligible beat for its (floor, hero) pair — a consumable proof
+    /// (Provisioned/PotionLifesave) to a <see cref="DelveBeatKind.Quaff"/>, a combat proof
+    /// (LethalSave/BreakpointClear) to a <see cref="DelveBeatKind.Exchange"/>/<see
+    /// cref="DelveBeatKind.MonsterSlain"/>/<see cref="DelveBeatKind.HeroFled"/> — never a <see
+    /// cref="DelveBeatKind.SwallowedByDark"/> beat (the censor still wins). Empty for every other
+    /// beat and every pre-existing call site that passes no attribution list.
+    /// </summary>
+    public ImmutableList<AttributionBeat> ProofBeats { get; init; } = ImmutableList<AttributionBeat>.Empty;
 }
 
 /// <summary>
@@ -126,12 +147,15 @@ public static class DelveBeats
 
     /// <summary>A finalized expedition (Camp-unstaged or post-Deep-merged): the full floor timeline,
     /// ending in a <see cref="DelveBeatKind.Surface"/> beat shaped by <see cref="ExpeditionResult.Halt"/>
-    /// (omitted for <see cref="ExpeditionHalt.PartyWiped"/> — nobody surfaces to show).</summary>
+    /// (omitted for <see cref="ExpeditionHalt.PartyWiped"/> — nobody surfaces to show). Threads
+    /// <see cref="ExpeditionResult.Beats"/> through so the watch can flare a proven attribution as
+    /// it happens (U-T5-10) — a staged party (the other overload) has none yet, since <see
+    /// cref="GameSim.Expedition.AttributionEngine"/> only runs on a fully-resolved result.</summary>
     public static ImmutableList<DelveBeat> Build(
         ExpeditionResult result,
         ImmutableSortedDictionary<int, Hero> heroes,
         ImmutableSortedDictionary<int, Item>? items = null) =>
-        BuildBeats(result.Floors, result.Deaths, result.Loot, heroes, result.Halt, items);
+        BuildBeats(result.Floors, result.Deaths, result.Loot, heroes, result.Halt, items, result.Beats);
 
     /// <summary>
     /// The pure core: handcrafted-<see cref="FloorOutcome"/>-testable, no <see cref="GameState"/>
@@ -145,10 +169,42 @@ public static class DelveBeats
         ImmutableList<OreLoot> loot,
         ImmutableSortedDictionary<int, Hero> heroes,
         ExpeditionHalt? halt,
-        ImmutableSortedDictionary<int, Item>? items = null)
+        ImmutableSortedDictionary<int, Item>? items = null,
+        ImmutableList<AttributionBeat>? attributionBeats = null)
     {
         var result = ImmutableList.CreateBuilder<DelveBeat>();
         var deadSet = deaths.Select(d => d.Value).ToHashSet();
+
+        // U-T5-10: split by WHAT KIND of beat a proof ties to (a round has no linkage back to its
+        // AttributionBeat — the sim's own type carries no round number), each keyed by (floor,
+        // hero) and consumed exactly once by RenderFight's first eligible beat. KillingBlow is
+        // skipped (already flared via CombatEvent.KillingItem on MonsterSlain — the same fact) and
+        // ToolAssist has no emitter yet (mirrors PresentationScheduler.BeatBaseKey's own skip).
+        var quaffProofs = new Dictionary<(int Floor, int Hero), List<AttributionBeat>>();
+        var combatProofs = new Dictionary<(int Floor, int Hero), List<AttributionBeat>>();
+        foreach (var proof in attributionBeats ?? ImmutableList<AttributionBeat>.Empty)
+        {
+            var bucket = proof.Beat switch
+            {
+                BeatType.Provisioned or BeatType.PotionLifesave => quaffProofs,
+                BeatType.LethalSave or BeatType.BreakpointClear => combatProofs,
+                _ => null, // KillingBlow (already flared) / ToolAssist (no emitter yet)
+            };
+
+            if (bucket is null)
+            {
+                continue;
+            }
+
+            var key = (proof.Floor, proof.Hero.Value);
+            if (!bucket.TryGetValue(key, out var list))
+            {
+                list = new List<AttributionBeat>();
+                bucket[key] = list;
+            }
+
+            list.Add(proof);
+        }
 
         // Verbatim JourneyStream.BuildBeats technique: a dead hero's LAST CombatEvent anywhere in
         // the whole result is, by construction, the death round — precomputed once so the render
@@ -206,7 +262,9 @@ public static class DelveBeats
                     hp[heroValue] = MaxHpOf(heroValue);
                 }
 
-                RenderFight(result, floor, heroValue, group, ci0, fi, deadSet, lastOccurrence, hp, hidden, Snapshot, items);
+                RenderFight(
+                    result, floor, heroValue, group, ci0, fi, deadSet, lastOccurrence, hp, hidden, Snapshot, items,
+                    quaffProofs, combatProofs);
                 fighterGroups++;
                 ci0 = ci1;
             }
@@ -270,7 +328,9 @@ public static class DelveBeats
         Dictionary<int, int> hp,
         HashSet<int> hidden,
         System.Func<ImmutableSortedDictionary<int, int>> snapshot,
-        ImmutableSortedDictionary<int, Item>? items)
+        ImmutableSortedDictionary<int, Item>? items,
+        Dictionary<(int Floor, int Hero), List<AttributionBeat>> quaffProofs,
+        Dictionary<(int Floor, int Hero), List<AttributionBeat>> combatProofs)
     {
         var lastCi = groupStartCi + group.Count - 1;
         var isLastOccurrence = lastOccurrence.TryGetValue(heroValue, out var last) && last == (floorIdx, lastCi);
@@ -339,7 +399,10 @@ public static class DelveBeats
             {
                 hp[heroValue] = use.HpAfter;
                 result.Add(new DelveBeat(
-                    DelveBeatKind.Quaff, floor.Floor, heroId, round.MonsterKind, 0, 0, snapshot(), false));
+                    DelveBeatKind.Quaff, floor.Floor, heroId, round.MonsterKind, 0, 0, snapshot(), false)
+                {
+                    ProofBeats = TakeProofs(quaffProofs, floor.Floor, heroValue),
+                });
             }
 
             hp[heroValue] -= round.DamageTaken;
@@ -350,14 +413,20 @@ public static class DelveBeats
             {
                 hp[heroValue] = use.HpAfter;
                 result.Add(new DelveBeat(
-                    DelveBeatKind.Quaff, floor.Floor, heroId, round.MonsterKind, 0, 0, snapshot(), false));
+                    DelveBeatKind.Quaff, floor.Floor, heroId, round.MonsterKind, 0, 0, snapshot(), false)
+                {
+                    ProofBeats = TakeProofs(quaffProofs, floor.Floor, heroValue),
+                });
             }
 
             if (picks.Contains(k))
             {
                 result.Add(new DelveBeat(
                     DelveBeatKind.Exchange, floor.Floor, heroId, round.MonsterKind,
-                    round.DamageDealt, round.DamageTaken, snapshot(), false));
+                    round.DamageDealt, round.DamageTaken, snapshot(), false)
+                {
+                    ProofBeats = TakeProofs(combatProofs, floor.Floor, heroValue),
+                });
             }
 
             if (k == group.Count - 1)
@@ -384,15 +453,35 @@ public static class DelveBeats
                     {
                         KillingItem = killer,
                         KillingItemName = killerName,
+                        ProofBeats = TakeProofs(combatProofs, floor.Floor, heroValue),
                     });
                 }
                 else if (isFled)
                 {
                     result.Add(new DelveBeat(
                         DelveBeatKind.HeroFled, floor.Floor, heroId, round.MonsterKind,
-                        round.DamageDealt, round.DamageTaken, snapshot(), false));
+                        round.DamageDealt, round.DamageTaken, snapshot(), false)
+                    {
+                        ProofBeats = TakeProofs(combatProofs, floor.Floor, heroValue),
+                    });
                 }
             }
         }
+    }
+
+    /// <summary>Pop this (floor, hero)'s pending proofs (if any) so the SAME AttributionBeat never
+    /// flares twice — the first eligible beat wins (see the type doc on <see
+    /// cref="DelveBeat.ProofBeats"/> for why no more precise placement is possible).</summary>
+    private static ImmutableList<AttributionBeat> TakeProofs(
+        Dictionary<(int Floor, int Hero), List<AttributionBeat>> proofs, int floor, int hero)
+    {
+        var key = (floor, hero);
+        if (!proofs.TryGetValue(key, out var list))
+        {
+            return ImmutableList<AttributionBeat>.Empty;
+        }
+
+        proofs.Remove(key);
+        return list.ToImmutableList();
     }
 }
