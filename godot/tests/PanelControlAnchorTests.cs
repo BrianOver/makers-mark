@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System;
+using System.Threading.Tasks;
 using GdUnit4;
 using Godot;
 using GodotClient.Ui;
@@ -55,12 +56,13 @@ public class PanelControlAnchorTests
     }
 
     [TestCase]
-    public void PanelControl_HidesTheOutline_WhileItsOwnPanelIsClosed()
+    public async Task PanelControl_HidesTheOutline_WhileItsOwnPanelIsClosed()
     {
         var ui = MountMainUi();
         try
         {
             ui.Overlay.RefreshAnchor(TutorialAnchor.ForPanelControl(TargetPanelId, TargetControlName), ui.Town, ui.Drawer, ui);
+            await SettleLayout(ui);
             ui.Overlay.Tick(0.016);
 
             AssertThat(Find<ColorRect>(ui, "TutorialOverlayTop").Visible)
@@ -73,14 +75,25 @@ public class PanelControlAnchorTests
         }
     }
 
+    /// <summary>
+    /// Real Godot engine timing, not a synchronous fiction: <see cref="Ui.DrawerHost.Open"/>'s own
+    /// visibility flip cascades through <see cref="Control.IsVisibleInTree"/> via the engine's
+    /// notification pipeline, and a nested <see cref="Container"/> tree's own deferred
+    /// <c>queue_sort</c> can still be mid-cascade the instant this method returns (the exact
+    /// documented hazard <see cref="SettleLayout"/> exists for). This test therefore awaits a real
+    /// settle — a bounded number of ACTUAL engine frames, never a stand-in for wall-clock duration —
+    /// before reading <see cref="TutorialOverlay"/>'s output, the same discipline
+    /// <c>ForgeRoom_PerimeterWalls_BlockThePlayer</c> already applies to physics.
+    /// </summary>
     [TestCase]
-    public void PanelControl_ShowsTheOutline_OnceItsOwnPanelOpens()
+    public async Task PanelControl_ShowsTheOutline_OnceItsOwnPanelOpens()
     {
         var ui = MountMainUi();
         try
         {
             ui.Overlay.RefreshAnchor(TutorialAnchor.ForPanelControl(TargetPanelId, TargetControlName), ui.Town, ui.Drawer, ui);
             ui.OpenPanel(TargetPanelId);
+            await SettleLayout(ui);
             ui.Overlay.Tick(0.016);
 
             AssertThat(Find<ColorRect>(ui, "TutorialOverlayTop").Visible)
@@ -94,13 +107,14 @@ public class PanelControlAnchorTests
     }
 
     [TestCase]
-    public void PanelControl_HidesTheOutline_WhileADifferentPanelIsOpen()
+    public async Task PanelControl_HidesTheOutline_WhileADifferentPanelIsOpen()
     {
         var ui = MountMainUi();
         try
         {
             ui.Overlay.RefreshAnchor(TutorialAnchor.ForPanelControl(TargetPanelId, TargetControlName), ui.Town, ui.Drawer, ui);
             ui.OpenPanel("Shop"); // a DIFFERENT panel than the anchor names
+            await SettleLayout(ui);
             ui.Overlay.Tick(0.016);
 
             AssertThat(Find<ColorRect>(ui, "TutorialOverlayTop").Visible)
