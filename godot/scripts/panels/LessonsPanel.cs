@@ -93,6 +93,27 @@ public partial class LessonsPanel : SimPanel
             AddLabel(body, "◆ The first loss").AddThemeColorOverride("font_color", GameTheme.WarnColor);
             AddLabel(body, lossLesson);
         }
+
+        // U-T2-7 (Wave A substrate, §11.14.4): the first-touch tier's own permanent record — every
+        // id TutorialFlow.ConsumeFirstTouch has ever fired, rendered forever ("re-reading beats
+        // re-running", same precedent as the loss lesson above and every registry row before it).
+        // Empty today (Wave A ships the engine; Wave E's own units are its first real callers), so
+        // this loop renders nothing yet on a fresh campaign — LessonsPanelTests proves it renders
+        // once something HAS fired.
+        if (Tutorial is { } firstTouchOwner)
+        {
+            foreach (var (id, lessonText) in firstTouchOwner.FirstTouch.Fired)
+            {
+                var card = Card($"Lesson_FirstTouch_{id}");
+                _content!.AddChild(card);
+
+                var body = new VBoxContainer();
+                card.AddChild(body);
+
+                AddLabel(body, $"◆ {id}").AddThemeColorOverride("font_color", GameTheme.WarnColor);
+                AddLabel(body, lessonText);
+            }
+        }
     }
 
     private void EnsureBuilt()

@@ -25,6 +25,11 @@ namespace GodotClient.Ui;
 /// resolved BY NAME against the live scene (<see cref="Node.FindChild(string, bool, bool)"/>) —
 /// HUD controls (the bell, the Watch button, a tray button, a modal's own fitted card) sit in the
 /// SAME coordinate space as this overlay, so a screen-space rect works.</item>
+/// <item>U-T2-6 (Wave A substrate, §11.14.4): a <see cref="TutorialAnchorKind.PanelControl"/> anchor
+/// draws the IDENTICAL screen-space outline as Hud, but resolves the target SCOPED to one named
+/// drawer panel (<see cref="DrawerHost.PanelContent"/>) rather than searching the whole mounted UI —
+/// two different panels reusing a control name can never resolve to the wrong one this way, the gap
+/// a plain Hud lookup would have left open.</item>
 /// </list>
 ///
 /// <para><b>Never a dead click, never a silent fallback</b> (house rule). <see cref="RefreshAnchor"/>
@@ -100,12 +105,13 @@ public sealed partial class TutorialOverlay : Control
     /// <summary>
     /// Re-point the overlay at <paramref name="anchor"/> — call whenever the active step (or its
     /// anchor) might have changed (mirrors <see cref="ObjectiveTracker.Refresh"/>'s own
-    /// call-every-tick, never-per-frame contract). <paramref name="town"/> resolves a Building
-    /// anchor; <paramref name="hudRoot"/> (the live <c>MainUi</c> tree) resolves a Hud anchor by
-    /// name. A no-op if the SAME anchor is already active (never restarts the pulse or re-resolves
-    /// on every idle tick).
+    /// call-every-tick, never-per-frame contract). <paramref name="town"/> resolves a Building or
+    /// Station anchor; <paramref name="drawer"/> (U-T2-6) resolves a PanelControl anchor's own named
+    /// panel; <paramref name="hudRoot"/> (the live <c>MainUi</c> tree) resolves a Hud anchor by name.
+    /// A no-op if the SAME anchor is already active (never restarts the pulse or re-resolves on every
+    /// idle tick).
     /// </summary>
-    public void RefreshAnchor(TutorialAnchor anchor, Town2D town, Node hudRoot)
+    public void RefreshAnchor(TutorialAnchor anchor, Town2D town, DrawerHost drawer, Node hudRoot)
     {
         if (_anchor == anchor)
         {
@@ -145,6 +151,35 @@ public sealed partial class TutorialOverlay : Control
                         $"Tutorial HUD anchor \"{anchor.Key}\" does not resolve to a Control in the live " +
                         "scene — a tutorial step must never point at nothing (house rule). Fix the registry " +
                         "row in TutorialFlow.Registry or the control's own Name.");
+                }
+
+                break;
+
+            case TutorialAnchorKind.PanelControl:
+                // U-T2-6: resolved SCOPED to the named panel's own registered content root, never
+                // against the whole mounted UI — this is the whole reason this kind exists over
+                // reusing Hud (class doc). Reuses _hudTarget for the actual outline: a panel control
+                // sits in the same screen-space coordinate system as any other HUD control once its
+                // panel is showing, so Tick()'s existing IsVisibleInTree()-gated draw already does
+                // the right thing with no changes there — it naturally hides the outline while a
+                // DIFFERENT panel is open (this one's Visible chain is false) and shows it once the
+                // named panel is actually the one on screen.
+                var panelRoot = drawer.PanelContent(anchor.Key!);
+                if (panelRoot is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Tutorial PanelControl anchor names panel \"{anchor.Key}\", which is not a " +
+                        "registered DrawerHost panel — a tutorial step must never point at nothing " +
+                        "(house rule). Fix the registry row in TutorialFlow.Registry.");
+                }
+
+                _hudTarget = panelRoot.FindChild(anchor.ControlName!, recursive: true, owned: false) as Control;
+                if (_hudTarget is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Tutorial PanelControl anchor \"{anchor.Key}/{anchor.ControlName}\" does not resolve " +
+                        "to a Control inside that panel — a tutorial step must never point at nothing (house " +
+                        "rule). Fix the registry row in TutorialFlow.Registry or the control's own Name.");
                 }
 
                 break;

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using GameSim.Professions;
 using Godot;
+using GodotClient.Ui;
 
 namespace GodotClient.Town2d;
 
@@ -158,7 +159,15 @@ public static class InteriorLayout2D
                 // to this pre-U7 row). A live session with a DIFFERENT/dual profession selection
                 // never reads this static entry for the "forge" venue — see WorkshopRoomFor and
                 // Town2D's own doc for how the actual composed room is resolved at build/entry time.
-                WorkshopVocab.StationsFor(ProfessionRegistry.BlacksmithId).ToArray()),
+                //
+                // U-T2-5 (Wave A substrate, §11.14.4, R14.5): MentorVoice.Station is appended here
+                // TOO (not just in WorkshopRoomFor below) so this static row stays byte-identical to
+                // WorkshopRoomFor's own blacksmith-only output — WorkshopVocabTests
+                // .BlacksmithOnlyWorkshopRoom_IsByteIdenticalToThePreU7ForgeRow compares the two
+                // directly. Bryn is not part of ANY profession's own WorkshopVocab set (she teaches
+                // whichever craft the player actually picked, not blacksmithing specifically) — she
+                // is appended once, here and in WorkshopRoomFor, never inside WorkshopVocab itself.
+                WorkshopVocab.StationsFor(ProfessionRegistry.BlacksmithId).Append(MentorVoice.Station).ToArray()),
             // U1 (world-and-interiors plan): the market room. ShopPanel has no FocusSection (unlike
             // ForgePanel) at the time this row was authored, so counter/shelf-a/shelf-b all open a
             // plain Shop with no Focus — the plan's "Focus stock if ShopPanel grows a section anchor
@@ -274,6 +283,15 @@ public static class InteriorLayout2D
     /// other profession ever uses — see <see cref="WorkshopVocab"/>'s own doc), so any two selected
     /// professions' sets union into the shared shell with no tile collision, whatever the
     /// selection.</para>
+    ///
+    /// <para><b>U-T2-5 (Wave A substrate, §11.14.4, R14.5):</b> <see cref="MentorVoice.Station"/> is
+    /// appended UNCONDITIONALLY, after the profession union — Bryn is not any one profession's own
+    /// station, she is the apprenticeship's own teaching presence in whichever workshop the player
+    /// actually built, so she appears regardless of which craft(s) are selected. Her own Y row (4)
+    /// sits clear of every profession's own rows (<see cref="WorkshopVocab"/>'s row scheme: 2/3, 5/7/
+    /// 10, 9, 11), so this can never collide with any selection, and the empty-selection defensive
+    /// branch above already returns <see cref="Rooms"/>'s own "forge" row, which carries her too (see
+    /// that row's own comment for why the two are kept byte-identical on purpose).</para>
     /// </summary>
     public static RoomSpec WorkshopRoomFor(IReadOnlyList<string> orderedProfessions)
     {
@@ -286,6 +304,7 @@ public static class InteriorLayout2D
         var stations = orderedProfessions
             .Distinct()
             .SelectMany(WorkshopVocab.StationsFor)
+            .Append(MentorVoice.Station)
             .ToArray();
 
         return baseSpec with { Stations = stations };
