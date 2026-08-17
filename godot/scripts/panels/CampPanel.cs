@@ -62,6 +62,7 @@ public partial class CampPanel : SimPanel
     private static int SupplyFee(int checkpointFloor) => SupplyFeeBase + SupplyFeePerFloor * checkpointFloor;
 
     private Label? _title;
+    private Label? _narratorLine;
     private VBoxContainer? _parties;
     private Label? _rejection;
 
@@ -105,6 +106,15 @@ public partial class CampPanel : SimPanel
     }
 
     public void CloseModal() => Visible = false;
+
+    /// <summary>
+    /// U-T5-6: <c>MainUi</c> calls this right after the real <c>AudioDirector.SpeakNarrator</c> call
+    /// for the vigil-opening trigger returns — same "insert after the real call, never a parameter to
+    /// ShowModal" reasoning as <c>LedgerModal.SetNarratorLine</c>'s own doc. Idle text (no line spoken
+    /// yet) renders as an empty, zero-height label rather than leaving stale copy from a previous
+    /// vigil on screen.
+    /// </summary>
+    public void SetNarratorLine(string? text) => _narratorLine!.Text = text ?? string.Empty;
 
     /// <summary>Escape closes the winch-house slate — the shared mechanism (<see
     /// cref="ModalEscape"/>), not a bespoke handler. This IS a TRUE modal overlay (unlike most of
@@ -352,6 +362,15 @@ public partial class CampPanel : SimPanel
         // the identical bug, which is why the pattern now lives in one place.
         var card = BuildFittedModalCard("CampCard");
         var box = card.Body;
+
+        // U-T5-6 (register #159, owner's standing direction R3: "no important information without a
+        // face"): the winch-house slate had no narrator at all before this unit — the camp now speaks
+        // FIRST, ahead of even the question below. Empty text renders as a zero-height Label, so a
+        // night with no line costs no space. MainUi.SetNarratorLine feeds this the exact text the real
+        // AudioDirector.SpeakNarrator call returned — never a second composition of the same moment.
+        _narratorLine = AddLabel(box, string.Empty);
+        _narratorLine.Name = "CampNarratorLine";
+        _narratorLine.AddThemeColorOverride("font_color", GameTheme.AccentColor);
 
         // U1 (KTD-A) question copy: names the actual decision (send supplies / bring them home /
         // send them deeper) instead of a bare label — this modal IS the vigil's one real stop, so

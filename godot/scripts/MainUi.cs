@@ -695,9 +695,14 @@ public partial class MainUi : Control
                 {
                     // Rng.Inc is the campaign's identity everywhere flavor is picked (GossipSystem
                     // passes exactly this as campaignId) — one notion of "which campaign", not two.
-                    Audio?.SpeakNarrator(
+                    //
+                    // U-T5-6 (register #159, second half): SpeakNarrator's own doc promises the screen
+                    // is the source of truth — Ledger.ShowFor already rendered above, BEFORE the
+                    // director had picked a line, so the text can only reach it here, after the fact.
+                    var narratorLine = Audio?.SpeakNarrator(
                         trigger, Adapter.CurrentState.Rng.Inc, (ulong)_pendingLedgerDay,
                         Math.Max(1, _pendingLedgerLosses));
+                    Ledger.SetNarratorLine(narratorLine);
 
                     // U-audio-3: a hero's death gets its own quiet toll, distinct from the ordinary
                     // day's Bell — see DeathNoticeCueFor's own doc. Fires alongside the narrator
@@ -831,7 +836,11 @@ public partial class MainUi : Control
         // Milestones speak OUTSIDE the rejection branch below. A player who mistyped an action on
         // the same tick their campaign reached its climax should still hear the climax — the toast
         // strip has to choose one line, but the voice is a different channel and does not.
-        SpeakMilestones(Adapter.LastEvents, state);
+        //
+        // U-T5-6: SpeakMilestones now hands back the exact text its own real SpeakNarrator call
+        // returned (or null on a quiet tick) — the toast surface below shows THAT text, never a
+        // second composition of the same moment.
+        var milestoneLine = SpeakMilestones(Adapter.LastEvents, state);
 
         // U6 (R6) toast half: surfaced refusals render as a short player-phrased line
         // that auto-clears (wall-clock in _Process, or here on the next clean tick).
@@ -840,8 +849,13 @@ public partial class MainUi : Control
         {
             // Nothing the player did wrong this tick, so the banner is free for something the
             // WORLD did. Rejections always win it — the player's own refused action is more urgent
-            // feedback than news, and stacking both in one strip would bury the refusal.
-            var notice = WorldNotice(Adapter.LastEvents, state);
+            // feedback than news, and stacking both in one strip would bury the refusal. A spoken
+            // milestone outranks the ordinary world notice too (U-T5-6): it fires at most once per
+            // campaign and it is literally what the narrator just said — showing anything else in its
+            // place would put a voice on screen with no matching text. Falls back to WorldNotice only
+            // when Audio itself is unavailable (the null-conditional above), so the pre-existing
+            // hand-composed climax line still covers that defensive case.
+            var notice = milestoneLine ?? WorldNotice(Adapter.LastEvents, state);
             if (notice is null)
             {
                 ClearToast();
@@ -1024,8 +1038,12 @@ public partial class MainUi : Control
             if (_spokeVigilForDay != state.Day)
             {
                 _spokeVigilForDay = state.Day;
-                Audio?.SpeakNarrator(
+                // U-T5-6: the winch-house slate had no narrator at all before this — Camp.
+                // SetNarratorLine puts the exact returned text on screen (SpeakNarrator's own doc:
+                // "the screen is the source of truth"), regardless of volume or mute.
+                var narratorLine = Audio?.SpeakNarrator(
                     NarratorVoiceDirector.Trigger.VigilOpening, state.Rng.Inc, (ulong)state.Day);
+                Camp.SetNarratorLine(narratorLine);
             }
         }
     }
@@ -1545,9 +1563,17 @@ public partial class MainUi : Control
     /// <para><see cref="CampaignAct"/> advancing had NO presentation of any kind before this —
     /// not a toast, not a ticker line — despite being the moment permadeath starts to bite. The
     /// climax and the ending already had text; they were simply silent.</para>
+    ///
+    /// <para>U-T5-6: returns whichever narrator line actually spoke this tick (or null on a quiet
+    /// one), so the caller can put the SAME text the director picked on screen — never a second
+    /// composition of the same moment. At most one milestone fires per real tick in practice, so
+    /// "the last one wins" (the loop keeps overwriting <c>spoken</c>) only matters for the
+    /// vanishingly rare same-tick cascade <c>GameSim.Arc.ArcDirectorSystem</c>'s own doc already
+    /// calls out.</para>
     /// </summary>
-    private void SpeakMilestones(IEnumerable<GameEvent> events, GameState state)
+    private string? SpeakMilestones(IEnumerable<GameEvent> events, GameState state)
     {
+        string? spoken = null;
         foreach (var evt in events)
         {
             var trigger = evt switch
@@ -1565,8 +1591,10 @@ public partial class MainUi : Control
 
             // Rng.Inc is the campaign's identity everywhere flavor is picked; the day is the
             // event id, matching how the ledger voice keys its own pick.
-            Audio?.SpeakNarrator(t, state.Rng.Inc, (ulong)state.Day);
+            spoken = Audio?.SpeakNarrator(t, state.Rng.Inc, (ulong)state.Day);
         }
+
+        return spoken;
     }
 
     /// <summary>What the narrator has already said this session. A campaign milestone that speaks
