@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Linq;
+using GameSim.Classes;
 using GameSim.Contracts;
 
 namespace GameSim.Heroes;
@@ -78,6 +79,8 @@ public sealed class CommissionHandlers : IActionHandler
             return null;
         }
 
+        var heroClass = ClassRegistry.Require(hero.ClassId);
+
         ShelfEntry? match = null;
         Item? matchItem = null;
         foreach (var entry in state.Player.Shelf.OrderBy(e => e.Item.Value))
@@ -88,6 +91,23 @@ public sealed class CommissionHandlers : IActionHandler
             }
 
             if (item.Slot != commission.Slot || item.Quality < commission.MinQuality)
+            {
+                continue;
+            }
+
+            // U-T1-11 (found while wiring BaselinePlayer to accept commissions): this match loop
+            // bypasses ShoppingAi's ordinary verdict gates ON PURPOSE (a bespoke commission SHOULD
+            // skip veteran-quality/gear-score-must-improve) — but it was also skipping role-fit and
+            // weight-cap, which are not preference gates, they are "can this hero physically use it"
+            // facts. A Shield never reaches a shield-incapable class through ordinary shopping
+            // (ShoppingAi.EvaluateItem's own first check); it should not reach one through a
+            // commission either.
+            if (item.Slot == ItemSlot.Shield && !heroClass.AllowsShield)
+            {
+                continue;
+            }
+
+            if (heroClass.MaxItemWeight is { } cap && item.Stats.Weight > cap)
             {
                 continue;
             }

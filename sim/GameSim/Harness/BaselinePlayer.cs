@@ -13,7 +13,9 @@ namespace GameSim.Harness;
 /// batch runner — one policy, shared by the balance gate and the CLI batch farm, never forked).
 /// Craft the best recipe the kernel would accept (asked via <see cref="Advisor.ActionLegality"/>,
 /// never re-derived here), price at the rival's own formula (better stats win value ties), buy
-/// every affordable ore offer, unlock talents in prerequisite order.
+/// affordable ore that some unlocked recipe can actually spend, accept every open gear commission,
+/// unlock talents in prerequisite order, and (U-T1-11) climb the Forge Tier ladder itself the
+/// moment gold and ore both allow it.
 /// Deterministic — no RNG of its own, no IO, no wall clock: purity-safe inside GameSim.
 /// </summary>
 public static class BaselinePlayer
@@ -25,6 +27,25 @@ public static class BaselinePlayer
         switch (state.Phase)
         {
             case DayPhase.Morning:
+                // U-T1-11: buy the next Forge Tier the moment it's actually legal (gold + the
+                // floor's own ore + an action slot — ForgeTierHandlers/ActionLegality.UpgradeForgeLegal
+                // own every threshold; this only asks, never re-derives). Checked FIRST in Morning:
+                // it is the day's highest-leverage action whenever it's legal (unlocking an entire
+                // Forge Tier's worth of recipes, not one talent node), so it should win any tie for
+                // the day's action slot. On this branch alone that tie never actually happens —
+                // Stock/UnlockTalent spend no slot per ActionBudget, so trying the upgrade first
+                // costs nothing on the days it can't fire and never displaces the talent-unlock or
+                // shelf restock below. But register #157 (PR #549) adds UnlockTalentAction to the
+                // slot-consuming list, so once composed with that change the two DO compete for the
+                // same slot — checking the tier purchase first is what makes it win that
+                // competition, rather than losing the day's one slot to whichever talent this policy
+                // would otherwise reach for.
+                var upgrade = new UpgradeForgeAction();
+                if (ActionLegality.IsLegal(state, upgrade, state.Phase))
+                {
+                    actions.Add(upgrade);
+                }
+
                 // Unlock one affordable talent per morning, prereq order (they're free in v1).
                 var smithTalents = state.Player.TalentsFor(ProfessionRegistry.BlacksmithId);
                 var next = TalentTree.Nodes.Values
@@ -35,6 +56,39 @@ public static class BaselinePlayer
                 if (next is not null)
                 {
                     actions.Add(new UnlockTalentAction(next.NodeId, ProfessionRegistry.BlacksmithId));
+                }
+
+                // U-T1-11 re-baseline: accept every open GEAR commission. Free (AcceptCommissionAction
+                // spends no slot per ActionBudget) and, unlike the ordinary shelf, pays a guaranteed
+                // PREMIUM over list once fulfilled — the "commission" channel CLAUDE.md names as one
+                // of the four honest ways a craft reaches a hero, and one this policy never touched
+                // before. Measured: composed-world seeds reach Forge Tier II by day 13-20 instead of
+                // day 25-60 once this fires. Accepting blindly was the first thing to ever actually
+                // exercise two pre-existing gaps in Heroes/CommissionSystem.cs and
+                // Heroes/CommissionHandlers.cs, both fixed in this same PR (found and fixed, not
+                // found and worked around): CommissionSystem.FindGapSlot's WornGap check read an
+                // always-null Shield slot as "empty" for a class that can never equip one
+                // (AllowsShield: false), posting an uncompletable Shield commission; and
+                // CommissionHandlers.TryFulfillFromShelf matched a shelf item to a commission on
+                // Slot+MinQuality only, with no role-fit or weight-cap check — both now mirror
+                // ShoppingAi.EvaluateItem's own "can this hero physically use it" gates.
+                //
+                // Consumable-slot commissions are still deliberately EXCLUDED, and that one stays a
+                // scope choice rather than a bug fix: CommissionSystem.FindGapSlot posts one for ANY
+                // hero with an empty pack, regardless of trait, and accepting it would fulfil through
+                // the same guaranteed-sale path a RECKLESS hero's trait fiction is "never restocks"
+                // (TraitEffects.ConsumableStockTargetFor returns 0 for them by design) — overriding a
+                // hero's own stocking trait is a different question from "can they wear it," and
+                // ordinary consumable provisioning already has its own trait-respecting path
+                // (HasBuyer/ShopConsumableOnce). The commission channel adds gear income here; it
+                // does not silently overrule a hero's stocking trait.
+                foreach (var commission in state.Commissions.Where(c => !c.Accepted && c.Slot != ItemSlot.Consumable))
+                {
+                    var accept = new AcceptCommissionAction(commission.Hero);
+                    if (ActionLegality.IsLegal(state, accept, state.Phase))
+                    {
+                        actions.Add(accept);
+                    }
                 }
 
                 // Stock every unshelved player craft at the rival's price formula.
@@ -62,8 +116,18 @@ public static class BaselinePlayer
                              i.PlayerCrafted && !shelved.Contains(i.Id.Value) && !equipped.Contains(i.Id.Value)
                              && (i.Effect is null || !soldConsumables.Contains(i.Id.Value))))
                 {
-                    var statSum = item.Stats.Attack + item.Stats.Defense;
-                    actions.Add(new StockAction(item.Id, Math.Max(1, statSum * 2)));
+                    // U-T1-11 re-baseline: a consumable's ItemStats are ALWAYS zero (Attack/Defense/
+                    // Weight — it carries no gear score, by design, see RecipeTable), so the gear
+                    // formula priced every field-salve at Math.Max(1, 0*2) = 1g, forever — measured:
+                    // once gear demand across the roster saturates at the tier-1 ceiling and HasBuyer
+                    // falls through to the always-has-a-buyer consumable, this 1g asking price capped
+                    // total revenue far below what the item could actually fetch, even though
+                    // ShoppingAi.EvaluateConsumable never compares price to value at all — only
+                    // affordability — so real gold was being left on the table on every single sale.
+                    // Priced on the heal Magnitude instead, mirroring the gear formula's own shape
+                    // (double the "stat" that stands in for value).
+                    var value = item.Effect is { } effect ? effect.Magnitude : item.Stats.Attack + item.Stats.Defense;
+                    actions.Add(new StockAction(item.Id, Math.Max(1, value * 2)));
                 }
 
                 break;
@@ -132,13 +196,84 @@ public static class BaselinePlayer
                 // at the budget instead of emitting doomed, would-be-rejected buys. Rejected buys
                 // never mutated state, so the 100-day balance bands are byte-identical either way;
                 // this just keeps the ActionLog clean (no RejectedAction spam).
+                //
+                // U-T1-11: two adjustments once the forge ladder's next rung is genuinely in
+                // reach, both gated on already holding the lock-and-key ore
+                // (ForgeTierHandlers.OreQuantity of OreKey[tierIndex]) — never before, so neither
+                // can fire while the tier is still purely aspirational:
+                //
+                // 1. Stop re-buying MORE of that specific ore once we already hold enough. Measured
+                //    on the main balance seed pre-fix: 150 copper banked by day 30 against a 25-unit
+                //    need — this policy's craft loop moves on to the next tier's material almost
+                //    immediately, so anything past the threshold was pure dead stock, gold that
+                //    could bank toward the tier instead.
+                // 2. Reserve gold toward the tier's cost — but never so much that ore-buying goes
+                //    to zero, and never so LITTLE that a balance that already cleared the cost gets
+                //    spent back down below it before Morning gets a turn (UpgradeForgeAction is
+                //    Morning-only; an Evening that spends a just-crossed threshold back to zero
+                //    would make the crossing invisible). Below the cost, protect at most HALF of
+                //    tonight's gold — the other half still buys ore every evening, so a still-thin
+                //    economy is never starved to zero the way a prior full-cost-from-day-one
+                //    reservation attempt was (reverted, #549's body, against an economy with no ore
+                //    banked yet). At or above the cost, protect the FULL cost and spend only the
+                //    surplus — the purchase is real now, and it must survive to Morning intact.
+                //
+                // Every OTHER material keeps buying at full budget throughout — a still-needed ore
+                // (iron/steel feeding live tier-2/3 crafts) is never touched by either adjustment.
+                //
+                // U-T1-11 re-baseline: a third guard, orthogonal to the two above. Nothing stops the
+                // craft loop's own recipe tier from being LOCKED for reasons that have nothing to do
+                // with the forge ladder (an ordinary talent-tier gate not yet unlocked, or material
+                // availability for the Gloomwood/Emberfall rungs) — buying ore for a tier this smith
+                // cannot legally craft yet is dead stock exactly like the ladder-ore case above, just
+                // for a different reason. `usableMaterials` mirrors ActionLegality.CraftLegal's own
+                // tier-gate check (never re-deriving the quantity/slot halves) so a material only gets
+                // bought when some already-unlocked recipe could actually spend it, or when it is the
+                // ladder's own lock-and-key ore (which has a real use — buying the tier itself — even
+                // before any recipe needs it).
+                var smithProfession = ProfessionRegistry.TryGet(ProfessionRegistry.BlacksmithId, out var bp) ? bp : null;
+                var eveningTalents = state.Player.TalentsFor(ProfessionRegistry.BlacksmithId);
+                var usableMaterials = RecipeTable.All.Values
+                    .Where(r => smithProfession is null
+                                || !smithProfession.TierGate.TryGetValue(r.Tier, out var gate)
+                                || eveningTalents.Contains(gate))
+                    .Select(r => r.MaterialKey)
+                    .ToHashSet();
+
+                var tierIndex = Economy.ForgeTierHandlers.CurrentTierIndex(state.Player);
+                var ladderOreKey = tierIndex <= Economy.ForgeTierHandlers.MaxUpgradeIndex
+                    ? Economy.ForgeTierHandlers.OreKey[tierIndex]
+                    : null;
                 var gold = state.Player.Gold;
                 var slots = state.ActionSlotsRemaining;
+                var materials = state.Player.Materials;
+                var ladderOreBanked = ladderOreKey is not null
+                    && materials.TryGetValue(ladderOreKey, out var lockedOre)
+                    && lockedOre >= Economy.ForgeTierHandlers.OreQuantity;
+
+                if (ladderOreBanked)
+                {
+                    var cost = Economy.ForgeTierHandlers.GoldCost[tierIndex];
+                    var protect = gold >= cost ? cost : Math.Min(cost - gold, gold / 2);
+                    gold -= protect;
+                }
+
                 foreach (var offer in state.OpenOreOffers)
                 {
                     if (slots <= 0)
                     {
                         break;
+                    }
+
+                    var isLadderOre = offer.MaterialKey == ladderOreKey;
+                    if (isLadderOre && ladderOreBanked)
+                    {
+                        continue; // already banked enough of THIS key for the pending upgrade
+                    }
+
+                    if (!isLadderOre && !usableMaterials.Contains(offer.MaterialKey))
+                    {
+                        continue; // no unlocked recipe can spend this, and it isn't the ladder's own key
                     }
 
                     var cost = offer.Quantity * offer.UnitPrice;

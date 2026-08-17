@@ -27,12 +27,23 @@ public readonly record struct GoldLedgerEntry(string Source, int Delta, string N
 /// U1's narration line and feeds the SAME derived facts in here via <paramref name="bountyRefunds"/>,
 /// so the detection logic lives in exactly one place.
 /// </para>
+/// <para>
+/// U-T1-11 (discovered, not introduced, by that unit — see its own PR body): <c>ForgeTierHandlers</c>'s
+/// <c>UpgradeForgeAction</c> is a THIRD silent flow, same shape as the two above — its class doc says
+/// so explicitly ("emits no event"). It sat latent because no scripted policy had ever actually bought
+/// a Forge Tier inside a ledger-reconstruction test's window before; <c>BaselinePlayer</c> now does,
+/// on day 13-18 of most seeds, so the gap became a real, reproducible test failure rather than a
+/// theoretical one. Same fix as MF-2/MF-4: a caller-fed row (<paramref name="forgeUpgrades"/>) rather
+/// than a new persisted event (a golden-extension, forbidden mid-slice by the same R7 stop-rule MF-2's
+/// own doc cites) — optional and defaulted so every pre-existing call site (that never exercised this
+/// path) keeps compiling and meaning exactly what it meant before.
+/// </para>
 /// </summary>
 public static class GoldLedger
 {
     /// <summary>
     /// Itemizes every known player-purse gold movement for <paramref name="day"/>: the evented flows
-    /// read straight off the log, plus the two caller-fed inputs above for the flows the sim never
+    /// read straight off the log, plus the caller-fed inputs above for the flows the sim never
     /// events. <see cref="LootIncomeReceived"/> and <see cref="BountyPaid"/> are deliberately absent —
     /// both move a HERO's purse, never <c>state.Player.Gold</c>, so they are out of scope for a
     /// player-gold reconstruction. <see cref="RentMissed"/> and <see cref="MarketShareShifted"/> are
@@ -43,7 +54,8 @@ public static class GoldLedger
         GameState state,
         int day,
         ImmutableList<GoldLedgerEntry> oreSpend,
-        ImmutableList<GoldLedgerEntry> bountyRefunds)
+        ImmutableList<GoldLedgerEntry> bountyRefunds,
+        ImmutableList<GoldLedgerEntry>? forgeUpgrades = null)
     {
         var rows = ImmutableList.CreateBuilder<GoldLedgerEntry>();
 
@@ -83,6 +95,10 @@ public static class GoldLedger
 
         rows.AddRange(oreSpend);
         rows.AddRange(bountyRefunds);
+        if (forgeUpgrades is not null)
+        {
+            rows.AddRange(forgeUpgrades);
+        }
 
         var frozen = rows.ToImmutable();
         var total = 0;
