@@ -370,7 +370,23 @@ public partial class Town2D : Control
     /// share one resolution, never two independently-computed copies of the same doors). Fed to
     /// every <see cref="HeroActor2D"/> via <see cref="HeroActor2D.SetErrandTargets"/> so a wandering
     /// hero has a real destination to walk to instead of the frozen-below-threshold lissajous drift
-    /// alone (see that type's own class doc for the root cause).</summary>
+    /// alone (see that type's own class doc for the root cause).
+    ///
+    /// <para><b>U-T3-3 (register #163, occupancy): also carries <see
+    /// cref="TownLayout2D.TownsfolkHomeTiles"/>'s four far-corner tiles</b>, alongside the five venue
+    /// doors above. #545's re-lay grew the grid 40×28 → 64×44 (2.51×) without growing the cast, and
+    /// every existing errand destination (the five venues) sits inside the SAME central cluster
+    /// (roughly tiles X18-46, Y8-40) — a bigger room with the same handful of people still confined
+    /// to a third of it reads emptier, not fuller. The four townsfolk-home corners are the one place
+    /// in the whole grid already proven collision-clear at the far edges (<c>TownPlacementTests</c>'
+    /// own empty exception sets already cover them) — reusing them as errand destinations, rather
+    /// than placing anything new, sends BOTH castes of wandering actor out toward all four corners on
+    /// the existing rotation, no new props, no relocated homes, no changed wander bands (the three
+    /// things §11.14.5 explicitly rules out touching). See <see cref="BuildTownsfolk"/>'s own doc for
+    /// why a townsfolk actor's OWN home is filtered out of the list it personally receives — heroes
+    /// have no such collision (<see cref="TownLayout2D.HeroHomeTiles"/> is a disjoint table) and get
+    /// the full nine-entry pool unfiltered.</para>
+    /// </summary>
     private List<Vector2> _errandTargets = new();
 
     /// <summary>U6: patron seating inside the tavern room — null only if the tavern has no
@@ -481,8 +497,13 @@ public partial class Town2D : Control
         // detail, this array's is not) — the pool an errand's id-seeded rotation picks from. Resolved
         // once, right after the buildings that own these doors exist, and shared by BuildTownsfolk
         // (below) and ReconcileHeroes (which needs it live for any hero recruited mid-campaign).
+        //
+        // U-T3-3: appends the four townsfolk-home corners (see _errandTargets' own doc for why) —
+        // still resolved once, still deterministic, still in a fixed array order (TownsfolkHomeTiles
+        // itself, not a Dictionary).
         _errandTargets = TownLayout2D.Venues
             .Select(v => _buildingsByKey[v.Key].DoorAnchorGlobal)
+            .Concat(TownLayout2D.TownsfolkHomeTiles.Select(TownLayout2D.TileToWorld))
             .ToList();
 
         BuildProps();
@@ -681,6 +702,11 @@ public partial class Town2D : Control
     /// drive every hero's own errand walk directly (see <c>TownLifeTests</c>' townsfolk precedent)
     /// without an engine-tick cascade.</summary>
     public IReadOnlyList<HeroActor2D> HeroActors => _heroActors.Values.OrderBy(a => a.HeroIdValue).ToList();
+
+    /// <summary>U-T3-3: test/inspection surface for the shared errand-destination pool (see
+    /// <see cref="_errandTargets"/>'s own doc) — lets a test prove the pool's real membership
+    /// (five venue doors + four townsfolk-home corners) without reconstructing it by hand.</summary>
+    public IReadOnlyList<Vector2> ErrandTargets => _errandTargets;
 
     /// <summary>
     /// U1 (KTD-1, island placement): teleports the player into <paramref name="venueKey"/>'s
@@ -1647,6 +1673,7 @@ public partial class Town2D : Control
             var civilianId = TownsfolkNpc2D.CivilianIds[i % TownsfolkNpc2D.CivilianIds.Length];
             var body = BodyFor(TownsfolkNpc2D.BodyIdFor(civilianId, i));
             var npc = new TownsfolkNpc2D();
+            var home = TownLayout2D.TileToWorld(TownLayout2D.TownsfolkHomeTiles[i]);
             npc.Init(
                 i,
                 body.Base,
@@ -1654,12 +1681,17 @@ public partial class Town2D : Control
                 // TOWNSFOLK CIVILIANS section) — a runtime tint here would wash it out, the same
                 // fix U3 made for HeroActor2D's Modulate.
                 Colors.White,
-                TownLayout2D.TileToWorld(TownLayout2D.TownsfolkHomeTiles[i]),
+                home,
                 body.Step,
                 body.Walk2,
                 body.Walk4,
                 TownsfolkNpc2D.FlavorNames[i % TownsfolkNpc2D.FlavorNames.Length]);
-            npc.SetErrandTargets(_errandTargets);
+            // U-T3-3: _errandTargets now includes all four townsfolk-home corners (see its own
+            // doc) — a villager's OWN home is filtered out of the list IT receives, or "erranding"
+            // there would arrive in the same tick it left (zero distance) and read as a phantom
+            // trip rather than a real one. Heroes have no such collision (HeroHomeTiles is a
+            // disjoint table) and get the shared list unfiltered — see ReconcileHeroes.
+            npc.SetErrandTargets(_errandTargets.Where(t => t != home).ToList());
             TownsfolkRoot.AddChild(npc);
             _townsfolk.Add(npc);
         }

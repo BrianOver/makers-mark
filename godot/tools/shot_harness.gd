@@ -130,6 +130,27 @@ func _initialize() -> void:
 		# home tile, walking a real path -- rather than standing frozen at Home, when the capture
 		# is finally saved.
 		_settle = 900
+	elif _state == "TownOverview":
+		# U-T3-3 (register #163, occupancy): a before/after receipt for "does the bigger 64x44 grid
+		# read fuller or emptier" needs the WHOLE grid on screen at once, which the production 1x
+		# camera zoom never shows (it only frames ~24x13.5 tiles around the player/follow target).
+		# Held for 1800 frames (30s) -- long enough for several errand cooldown cycles (22s) to
+		# fire across all ten wandering actors, so the capture isn't just catching everyone still
+		# at home on a lucky/unlucky frame.
+		_settle = 1800
+	elif _state == "OccupancyCorner":
+		# U-T3-3: the direct close-up receipt. Hero 5's own errand rotation seeds at
+		# _errandRotation = heroId = 5, and the shared pool's index 5 (5 venue doors, then the
+		# four TownsfolkHomeTiles in order) is TownsfolkHomeTiles[0] = tile (6,12) = world
+		# (104,200) -- so hero 5's FIRST errand, with no rotation cycling needed, targets that
+		# exact corner. Hero 5's own home (HeroHomeTiles[4] = tile (33,18) = world (536,296)) is
+		# ~442.5px away; at ErrandWalkSpeed (110px/s) that is a ~4.0s walk. Hero 5's first-errand
+		# cooldown is FirstErrandOffsetSeconds + 5*FirstErrandStaggerSeconds = 2.0 + 7.5 = 9.5s, so
+		# the dwell window at the corner runs roughly t=13.5s to t=18.0s (ErrandDwellSeconds=4.5).
+		# 950 frames (~15.8s at 60fps) sits comfortably inside that window with margin on both
+		# sides for real per-frame jitter (this runs on the GPU, not headless -- see this file's
+		# own SHOT_QUIET doc for why per-frame delta is never perfectly 1/60s here).
+		_settle = 950
 	elif _state == "BellTray":
 		# U3 (loop-legibility plan, KTD-B): a plain HUD chip, no camera move -- but the
 		# ack toast auto-clears after MainUi.RejectionToastSeconds (4s = 240 frames), so the
@@ -234,6 +255,35 @@ func _process(_delta: float) -> bool:
 	_frames += 1
 	if _quiet and not _ambient_suppressed:
 		_try_suppress_ambient_vfx()
+	if (_state == "TownOverview" or _state == "OccupancyCorner") and _frames == 65:
+		# U-T3-3: Town2D.FollowPlayer() re-centers the camera on Player.GlobalPosition EVERY
+		# real engine frame -- a direct or even a set_deferred Cam.GlobalPosition write from
+		# THIS script was measured to still lose that race every single frame (this SceneTree's
+		# own _process apparently runs before Town2D's, not after, contradicting an assumption
+		# an older comment here made about _try_suppress_ambient_vfx's ordering). Moving the
+		# PLAYER instead sidesteps the race entirely: FollowPlayer just keeps re-reading
+		# wherever the player actually is, and nothing in this headless-input run ever moves
+		# the player again once placed (no WASD is ever pumped here). One frame after the
+		# other states' own _frames==60 dispatch, so it never collides with one.
+		var player = _ui.find_child("Player", true, false)
+		var cam = _ui.find_child("Cam", true, false)
+		if player and cam:
+			if _state == "TownOverview":
+				# Fits the whole 64x44 grid (1024x704 world px) inside the 640x360 world
+				# viewport with a small, even margin (measured empirically -- 0.3 left ~47%
+				# grey letterbox per side).
+				player.call("SpawnAt", Vector2(512, 352))
+				cam.zoom = Vector2(0.5, 0.5)
+			else:
+				# Hero 5's own errand rotation seeds at _errandRotation = heroId = 5, and the
+				# shared pool's index 5 (five venue doors, then the four TownsfolkHomeTiles in
+				# order) is TownsfolkHomeTiles[0] = tile (6,12) = world (104, 200) -- hero 5's
+				# FIRST errand, no rotation cycling needed, targets exactly this corner (see
+				# the _settle branch above for the full timing derivation).
+				player.call("SpawnAt", Vector2(104, 200))
+				cam.zoom = Vector2(1.4, 1.4)
+			cam.global_position = player.global_position
+			cam.reset_smoothing()
 	if _state != "" and not _entered and _frames == 60:
 		if _state == "Bestiary":
 			# The Bestiary modal opens from a tavern hotspot in-game; capture it directly by
@@ -446,6 +496,10 @@ func _process(_delta: float) -> bool:
 				return_bell.emit_signal("pressed")
 		elif _state == "HeroErrand":
 			pass # U-T3-8: no click/bell -- just hold the plain town for the long settle above.
+		elif _state == "TownOverview":
+			pass # U-T3-3: no click/bell -- the player-teleport + zoom-out fires at frame 65 below.
+		elif _state == "OccupancyCorner":
+			pass # U-T3-3: no click/bell -- the player-teleport + zoom-in fires at frame 65 below.
 		elif _state == "ReturnAtNight":
 			# U10: same reproduction, but four presses (Morning -> Expedition -> Camp ->
 			# ExpeditionDeep) land the day at Evening/"Night" -- see _settle above for why
