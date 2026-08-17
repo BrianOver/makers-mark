@@ -1915,15 +1915,20 @@ public partial class ForgePanel : SimPanel
     /// <para>Guarded on the banner's OWN current visibility for the same reason, across a longer
     /// span: <see cref="_mentorBanner"/>'s containers stay <see cref="MouseFilterEnum.Ignore"/> (a
     /// banner is a toast, never a gate — law: skipping stays legal), so a player can keep working a
-    /// craft overlay with an unread banner still up and reach a SECOND first-touch moment (e.g.
-    /// finishing the craft reaches <see cref="ShowMarkReadLesson"/>) before dismissing the first.
-    /// Refusing to fire here — WITHOUT consuming the id — is what keeps that second lesson alive for
-    /// a later call instead of being silently marked-seen and never shown; skipping it costs the
-    /// player nothing but a delay, never the lesson itself.</para>
+    /// craft overlay with an unread banner still up and reach a SECOND first-touch moment before
+    /// dismissing the first. Refusing to fire here — WITHOUT consuming the id — is what keeps that
+    /// second lesson alive for a later call instead of being silently marked-seen and never shown;
+    /// skipping it costs the player nothing but a delay, never the lesson itself. <paramref
+    /// name="preempt"/> lifts this ONE guard for a lesson whose own moment cannot wait: see <see
+    /// cref="ShowMarkReadLesson"/>'s own doc for why link 1 of the spine is the one caller that
+    /// needs it. A currently-showing banner is ALWAYS an already-consumed lesson by construction
+    /// (text only ever reaches the label after <see cref="TutorialFlow.ConsumeFirstTouch"/> already
+    /// succeeded) — preempting it costs nothing the Lessons book hasn't already recorded permanently,
+    /// it only ends that lesson's time on screen a little early.</para>
     /// </summary>
-    private bool ShowMentorFirstTouch(string id, string lessonText, TutorialAnchor? spotlight = null)
+    private bool ShowMentorFirstTouch(string id, string lessonText, TutorialAnchor? spotlight = null, bool preempt = false)
     {
-        if (_mentorBanner is { Visible: true })
+        if (!preempt && _mentorBanner is { Visible: true })
         {
             return false;
         }
@@ -1964,6 +1969,20 @@ public partial class ForgePanel : SimPanel
     /// the five completion paths fired it, but only <see cref="OnQuenchFinished"/> ever opens
     /// <see cref="_ceremony"/>. <see cref="BuildMentorBanner"/>'s own doc already anticipates this:
     /// the banner is built LAST specifically so it draws over the ceremony's card too.</para>
+    ///
+    /// <para><b>Fires with <c>preempt: true</c> — the one lesson in this file that does.</b> Link 1
+    /// of the spine ("you make a thing, and it is provably yours") is the beat every downstream link
+    /// keys on: the counterfactual proof, the ledger, the legends wall all assume the player was
+    /// already told the stamp is theirs. It has exactly one moment — the FIRST craft's completion —
+    /// and no second chance at the same weight. Every other lesson in this file teaches a mechanic
+    /// that stays true forever, so losing a few seconds of screen time to a later first-touch costs
+    /// nothing; this one does not get to wait behind whichever teaching banner happens to still be
+    /// up (observed in practice: a still-open Act 2/quench banner, whose own moment — reading the
+    /// gauge — has already passed by the time the craft it was teaching about is done). Confirmed
+    /// safe to override: a currently-showing banner is by construction an ALREADY-consumed lesson
+    /// (see <see cref="ShowMentorFirstTouch"/>'s own doc), permanently recorded in the Lessons book
+    /// regardless of how long it stayed on screen — preempting it loses no content, only ends its
+    /// display a little early.</para>
     /// </summary>
     private bool ShowMarkReadLesson()
     {
@@ -1981,7 +2000,8 @@ public partial class ForgePanel : SimPanel
         return ShowMentorFirstTouch(
             MarkReadLessonId,
             $"That stamp under the grade is yours — {mark.CrafterName}, day {mark.CraftedOnDay}. "
-            + "Every hero who ever carries this carries your name on it too.");
+            + "Every hero who ever carries this carries your name on it too.",
+            preempt: true);
     }
 
     /// <summary>The first-touch id <see cref="ShowMarkReadLesson"/> fires under — named once here so
