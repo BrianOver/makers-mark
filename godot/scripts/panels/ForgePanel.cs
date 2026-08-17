@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Economy;
@@ -139,6 +140,38 @@ public partial class ForgePanel : SimPanel
     /// narrows the panel.</summary>
     public bool CraftViewVisible => _craftViewRoot?.Visible ?? true;
 
+    /// <summary>
+    /// U-T2 Wave B (§11.14.4, Act I): the live tutorial chain, wired by <c>MainUi</c> right after
+    /// both this panel and <see cref="TutorialFlow"/> are built (same "needs more than just the
+    /// adapter" precedent as <c>LessonsPanel.Tutorial</c>) — this panel's own first-touch teaching
+    /// (<see cref="ShowMentorFirstTouch"/>) reads/writes it. Null-tolerant: every call site checks
+    /// before use, so a caller that never wires this (most existing tests) sees zero behavior
+    /// change — no banner ever shows, exactly as if Wave B did not exist.
+    /// </summary>
+    public TutorialFlow? Tutorial { get; set; }
+
+    /// <summary>
+    /// U-T2 Wave B: while non-null, <c>MainUi</c>'s own tutorial-overlay refresh points the pulse
+    /// HERE instead of wherever the pointed chain's own current step wants it — set only while
+    /// <see cref="ShowMentorFirstTouch"/>'s own material-ceiling lesson banner is up (reuses the
+    /// <see cref="TutorialAnchorKind.PanelControl"/> anchor kind built for exactly this: pointing at
+    /// one control inside a panel), cleared the instant the banner is dismissed
+    /// (<see cref="DismissMentorBanner"/>). Test/inspection surface, same idiom as <see
+    /// cref="LastFocusedSection"/>.
+    /// </summary>
+    public TutorialAnchor? MentorSpotlight { get; private set; }
+
+    /// <summary>
+    /// U-T2 Wave B: raised every time <see cref="MentorSpotlight"/> is set OR cleared. <c>MainUi</c>'s
+    /// own tutorial-overlay refresh only runs on a phase tick or an explicit panel-open/close
+    /// (<see cref="TutorialFlow"/>'s own <c>RefreshObjectiveLine</c> call sites) — none of which fire
+    /// when a craft overlay opens WITHOUT queuing a <see cref="CraftAction"/> (Act 1's own
+    /// <see cref="OnWorkForgePressed"/>, the three other crafts' "Pressed" handlers). Without this
+    /// event the pulse would silently keep pointing at whatever the chain wanted BEFORE the banner
+    /// went up, and never move to <see cref="MentorSpotlight"/> at all.
+    /// </summary>
+    public event Action? MentorSpotlightChanged;
+
     /// <summary>U23d/U7: the Anvil Map forge overlay — ACT 1 of the two-act forge, a single
     /// instance reused across recipes, (re)configured per <see cref="OnWorkForgePressed"/> press.
     /// Built once in <see cref="EnsureBuilt"/> as the LAST child so it draws over the recipe/talent
@@ -213,6 +246,15 @@ public partial class ForgePanel : SimPanel
     private Label? _ceremonyStars;
     private HBoxContainer? _ceremonyPips;
     private double _ceremonyRemaining = -1;
+
+    // ── U-T2 Wave B (§11.14.4, Act I): Bryn's own teaching banner — see BuildMentorBanner's doc.
+    private PanelContainer? _mentorBanner;
+    private Label? _mentorLabel;
+
+    // ── G1 forge juice (game-feel plan §"Forge juice") — two tiny procedural tones, no external
+    // audio asset needed (see MakeTone's own doc for why).
+    private AudioStreamPlayer? _hammerSfx;
+    private AudioStreamPlayer? _stingSfx;
 
     /// <summary>U8 (2026-08-02 shell-and-audio plan, R8): true while the held-bellows loop is armed
     /// on <see cref="GodotClient.Audio.AudioDirector.StartLoop"/> — the rising/falling edge latch
@@ -889,7 +931,32 @@ public partial class ForgePanel : SimPanel
         var mods = new[] { oil, rune, fitting }.Where(m => m is not null).ToArray();
         var modText = mods.Length == 0 ? string.Empty : $" + [{string.Join(", ", mods)}]";
         _feedback!.Text = Confirm(action, $"Crafted {recipeId} with {material}{modText}");
+        // Wave B: one first-touch lesson per action (ShowMentorFirstTouch's own doc) — the mark can
+        // only be read once material-ceiling has already had its turn on some earlier craft.
+        if (!ShowMaterialCeilingLesson())
+        {
+            ShowMarkReadLesson();
+        }
     }
+
+    /// <summary>
+    /// U-T2 Wave B (§11.14.4, Act I, "material sets the ceiling and your hands set the band"): the
+    /// actual mental model of crafting in this game, untaught until now. Fires once, the first time
+    /// the player has ever pressed a material selection through to a craft — <see
+    /// cref="TutorialAnchor.ForPanelControl"/> spotlights <see cref="_materialSelect"/> itself while
+    /// the banner is up, reusing Wave A's <see cref="TutorialAnchorKind.PanelControl"/> anchor
+    /// (built for exactly this) rather than a second pointing mechanism. Described qualitatively —
+    /// no client-invented thresholds; <see cref="GameSim.Crafting.QualityRoller.RollActive"/>'s own
+    /// real bands are the sim's, never restated here as numbers.
+    /// </summary>
+    private bool ShowMaterialCeilingLesson() =>
+        ShowMentorFirstTouch(
+            "material-ceiling-hand-band",
+            "The material you choose sets a hard ceiling on what this craft can become — bring less "
+            + "than the recipe calls for and even a perfect hand can't reach the top grades. Match or "
+            + "better it, and every grade opens up. Inside that ceiling, how well you work the bench "
+            + "decides where you actually land.",
+            TutorialAnchor.ForPanelControl("Forge", "MaterialSelect"));
 
     /// <summary>U23d: open the Anvil Map forge overlay for this recipe/material — the "Work the
     /// forge" path beside the auto-craft fallback. The path seed is derived from the recipe id +
@@ -910,6 +977,20 @@ public partial class ForgePanel : SimPanel
         _minigame.Visible = true;
         OpenedOverlay(_minigame);
         LogMinigame("open", "forge", _minigame.RecipeId, _minigame.MaterialKey);
+        // Wave B: one first-touch lesson per action (ShowMentorFirstTouch's own doc) — Act 1's own
+        // lesson only gets its turn once material-ceiling has already fired on some earlier craft.
+        if (!ShowMaterialCeilingLesson())
+        {
+            // "the forge's two acts, taught inside the forge": fires the first time Act 1 is EVER
+            // reachable — quotes the real controls (hammer/bellows), never a client-invented number
+            // for the tempo window itself.
+            ShowMentorFirstTouch(
+                "forge-act1-shaping",
+                "This is the shaping heat. A hammer strike lands cleanest near the tempo line; too "
+                + "early or too late costs you ground. Hold the bellows when you need more heat to "
+                + "work with — it costs shape progress while you do. Nothing here is on a clock but "
+                + "your own hands.");
+        }
     }
 
     /// <summary>
@@ -932,6 +1013,13 @@ public partial class ForgePanel : SimPanel
         _quench.Visible = true;
         OpenedOverlay(_quench); // PT1 precedent: the deferred keyboard grab misses unless re-asked here too
         LogMinigame("open", "quench", _quench.RecipeId, _quench.MaterialKey, $" strikes={result.StrikesLanded}");
+        // U-T2 Wave B: Act 2 taught the same way as Act 1 — the first time the hand-off is EVER
+        // reached, not a tooltip pointing at the quench from outside it.
+        ShowMentorFirstTouch(
+            "forge-act2-quench",
+            "The gauge starts moving the moment this opens — watch it and plunge once it crosses into "
+            + "the band the recipe note calls for. Early or late both cost you against that band; there's "
+            + "no separate clock beyond the one you're already watching.");
     }
 
     /// <summary>"Forge another like it" (U7 / loop-structure plan KTD-C): re-queue the EXACT trace
@@ -1088,6 +1176,7 @@ public partial class ForgePanel : SimPanel
         LogMinigame("done", "forge", action.RecipeId, action.MaterialKey,
             $" grade={_quench.PreviewGradePermille} sub={string.Join("/", action.SubScores ?? ImmutableList<int>.Empty)}");
         ShowCeremony(action);
+        ShowMarkReadLesson();
     }
 
     /// <summary>Act 1 cancel queues nothing (PKD8) — Act 1 never builds a <see cref="CraftAction"/>
@@ -1124,6 +1213,14 @@ public partial class ForgePanel : SimPanel
         _brewPuzzle.Visible = true;
         OpenedOverlay(_brewPuzzle);
         LogMinigame("open", "brew", _brewPuzzle.RecipeId, _brewPuzzle.MaterialKey);
+        if (!ShowMaterialCeilingLesson())
+        {
+            ShowMentorFirstTouch(
+                "alchemy-brew",
+                "Pour the reagents in the order the recipe note gives you — that order is the whole "
+                + "test here, not speed. There's no clock on reading the note twice before you start "
+                + "pouring.");
+        }
     }
 
     /// <summary>The brew overlay's ONE completed run → the ONE queued <see cref="CraftAction"/>
@@ -1138,6 +1235,7 @@ public partial class ForgePanel : SimPanel
             $"Brewed {action.RecipeId} with {action.MaterialKey} " +
             $"(brew score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})");
         LogMinigame("done", "brew", action.RecipeId, action.MaterialKey, PreviewDetail(action));
+        ShowMarkReadLesson();
     }
 
     /// <summary>Brew cancel queues nothing (PKD8) — just closes the overlay.</summary>
@@ -1157,6 +1255,13 @@ public partial class ForgePanel : SimPanel
         _engineeringBench.Visible = true;
         OpenedOverlay(_engineeringBench);
         LogMinigame("open", "assemble", _engineeringBench.RecipeId, _engineeringBench.MaterialKey);
+        if (!ShowMaterialCeilingLesson())
+        {
+            ShowMentorFirstTouch(
+                "engineering-assembly",
+                "Fit each part where it actually belongs before you crank the finale. Placement has "
+                + "no clock on it — take the time to get it right.");
+        }
     }
 
     /// <summary>The bench overlay's ONE completed run → the ONE queued <see cref="CraftAction"/>
@@ -1171,6 +1276,7 @@ public partial class ForgePanel : SimPanel
             $"Assembled {action.RecipeId} with {action.MaterialKey} " +
             $"(assembly score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})");
         LogMinigame("done", "assemble", action.RecipeId, action.MaterialKey, PreviewDetail(action));
+        ShowMarkReadLesson();
     }
 
     /// <summary>Bench cancel queues nothing (PKD8) — just closes the overlay.</summary>
@@ -1192,6 +1298,13 @@ public partial class ForgePanel : SimPanel
         _tanningFrame.Visible = true;
         OpenedOverlay(_tanningFrame);
         LogMinigame("open", "scrape", _tanningFrame.RecipeId, _tanningFrame.MaterialKey);
+        if (!ShowMaterialCeilingLesson())
+        {
+            ShowMentorFirstTouch(
+                "tanning-frame",
+                "Cover the hide, but hold back — over-scraping ruins it as surely as leaving it "
+                + "patchy. No clock here either; work the whole frame at your own pace.");
+        }
     }
 
     /// <summary>The tanning frame's ONE completed run → the ONE queued <see cref="CraftAction"/>
@@ -1207,6 +1320,7 @@ public partial class ForgePanel : SimPanel
             $"Scraped {action.RecipeId} with {action.MaterialKey} " +
             $"(hide score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})");
         LogMinigame("done", "scrape", action.RecipeId, action.MaterialKey, PreviewDetail(action));
+        ShowMarkReadLesson();
     }
 
     /// <summary>Tanning-frame cancel queues nothing (PKD8) — just closes the overlay.</summary>
@@ -1685,6 +1799,7 @@ public partial class ForgePanel : SimPanel
         _tanningFrame.Cancelled += OnTanningFrameCancelled;
 
         BuildCeremony();
+        BuildMentorBanner();
     }
 
     /// <summary>
@@ -1738,5 +1853,140 @@ public partial class ForgePanel : SimPanel
         var skip = AddButton(body, "ForgeCeremonySkip", "Skip", HideCeremony);
         skip.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
     }
+
+    /// <summary>
+    /// U-T2 Wave B (§11.14.4, Act I): Bryn's own teaching banner — a small, non-blocking strip that
+    /// shows a first-touch lesson (<see cref="ShowMentorFirstTouch"/>) the moment one of this panel's
+    /// five craft overlays becomes reachable for the first time. Added LAST (after the ceremony) so
+    /// it draws over every overlay this panel owns, including the ceremony's own card.
+    ///
+    /// <para><b>No timer, ever (law).</b> Unlike <see cref="_ceremony"/>, this banner carries NO
+    /// countdown of its own — it stays up until the player presses "Got it," however long that
+    /// takes. The root and its inner containers stay <see cref="MouseFilterEnum.Ignore"/> (never
+    /// block a click meant for the minigame underneath); only the dismiss button itself accepts
+    /// input, the same "celebratory toast, not a gating modal" discipline <see cref="BuildCeremony"/>
+    /// already documents for the ceremony's own backdrop.</para>
+    /// </summary>
+    private void BuildMentorBanner()
+    {
+        _mentorBanner = new PanelContainer { Name = "ForgeMentorBanner", Visible = false, MouseFilter = MouseFilterEnum.Ignore };
+        _mentorBanner.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        _mentorBanner.AddThemeStyleboxOverride("panel", GameTheme.PanelStyleWood());
+        AddChild(_mentorBanner);
+
+        var center = new CenterContainer { Name = "ForgeMentorCenter", MouseFilter = MouseFilterEnum.Ignore };
+        center.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        _mentorBanner.AddChild(center);
+
+        var card = Card("ForgeMentorCard");
+        center.AddChild(card);
+
+        var body = new VBoxContainer { Name = "ForgeMentorBody" };
+        card.AddChild(body);
+
+        _mentorLabel = AddLabel(body, string.Empty);
+        _mentorLabel.Name = "ForgeMentorText";
+        _mentorLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _mentorLabel.HorizontalAlignment = HorizontalAlignment.Center;
+
+        var dismiss = AddButton(body, "ForgeMentorDismiss", "Got it", DismissMentorBanner);
+        dismiss.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+    }
+
+    /// <summary>
+    /// U-T2 Wave B: fires <paramref name="lessonText"/> for <paramref name="id"/> through <see
+    /// cref="TutorialFlow.ConsumeFirstTouch"/> — the SAME once-ever engine Wave A shipped, never a
+    /// second nag-prevention mechanism — and shows it on <see cref="_mentorBanner"/> only when it
+    /// actually fires (a repeat call is silently a no-op, per that engine's own contract). <paramref
+    /// name="spotlight"/> (Wave A's <see cref="TutorialAnchorKind.PanelControl"/>, built for exactly
+    /// this) optionally points the tutorial overlay's own pulse at one control while this banner is
+    /// up — cleared the instant the banner is dismissed. Null-tolerant: a caller with no <see
+    /// cref="Tutorial"/> wired (most existing tests) sees no banner ever, never a crash.
+    ///
+    /// <para>Returns whether it actually fired. <see cref="_mentorBanner"/> is ONE slot, not a
+    /// queue — every call site that can reach two first-touch lessons off the SAME player action
+    /// (e.g. <see cref="OnWorkForgePressed"/> reaching both the material-ceiling lesson and its own
+    /// Act 1 lesson) MUST short-circuit on this return value, or the second call silently
+    /// overwrites the first one's text before a single frame ever rendered it — and because
+    /// <see cref="TutorialFlow.ConsumeFirstTouch"/> already marked the first id fired, that lesson
+    /// would be gone forever, never actually seen. Never fatten this into an internal queue instead:
+    /// one lesson per action keeps "Got it" meaning what it says.</para>
+    ///
+    /// <para>Guarded on the banner's OWN current visibility for the same reason, across a longer
+    /// span: <see cref="_mentorBanner"/>'s containers stay <see cref="MouseFilterEnum.Ignore"/> (a
+    /// banner is a toast, never a gate — law: skipping stays legal), so a player can keep working a
+    /// craft overlay with an unread banner still up and reach a SECOND first-touch moment (e.g.
+    /// finishing the craft reaches <see cref="ShowMarkReadLesson"/>) before dismissing the first.
+    /// Refusing to fire here — WITHOUT consuming the id — is what keeps that second lesson alive for
+    /// a later call instead of being silently marked-seen and never shown; skipping it costs the
+    /// player nothing but a delay, never the lesson itself.</para>
+    /// </summary>
+    private bool ShowMentorFirstTouch(string id, string lessonText, TutorialAnchor? spotlight = null)
+    {
+        if (_mentorBanner is { Visible: true })
+        {
+            return false;
+        }
+
+        if (Tutorial?.ConsumeFirstTouch(id, MentorVoice.Speak(lessonText)) is not { } fired)
+        {
+            return false;
+        }
+
+        _mentorLabel!.Text = fired;
+        _mentorBanner!.Visible = true;
+        MentorSpotlight = spotlight;
+        MentorSpotlightChanged?.Invoke();
+        return true;
+    }
+
+    /// <summary>The banner's own "Got it" — never a timer, always the player's own press (law: no
+    /// timers on decisions). Also releases <see cref="MentorSpotlight"/>, so the tutorial overlay's
+    /// pulse returns to whatever the pointed chain's own current step wants next tick.</summary>
+    private void DismissMentorBanner()
+    {
+        _mentorBanner!.Visible = false;
+        MentorSpotlight = null;
+        MentorSpotlightChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// U-T2 Wave B (link1, "the mark, read"): shows the sim's own <see cref="MakersMark"/> on
+    /// whichever item the campaign's own EventLog says was crafted most recently — reads the SAME
+    /// durable fact <see cref="TutorialFlow.Registry"/>'s own <c>Craft</c> row keys its completion
+    /// on (<see cref="ItemCrafted"/>), never a value this class invents. Called from every path a
+    /// craft can complete (the plain auto-craft button and all four active-craft "Finished"
+    /// handlers) — first-touch-gated, so it only ever renders once, on whichever path the player's
+    /// FIRST craft actually took.
+    ///
+    /// <para>Routed through the SAME <see cref="ShowMentorFirstTouch"/>/<see cref="_mentorBanner"/>
+    /// every other Wave B lesson uses, deliberately — the mark must be shown regardless of which of
+    /// the five completion paths fired it, but only <see cref="OnQuenchFinished"/> ever opens
+    /// <see cref="_ceremony"/>. <see cref="BuildMentorBanner"/>'s own doc already anticipates this:
+    /// the banner is built LAST specifically so it draws over the ceremony's card too.</para>
+    /// </summary>
+    private bool ShowMarkReadLesson()
+    {
+        if (Adapter?.CurrentState.EventLog.OfType<ItemCrafted>().LastOrDefault() is not { } crafted)
+        {
+            return false;
+        }
+
+        var item = Adapter.CurrentState.Items[crafted.Item.Value];
+        if (item.Mark is not { } mark)
+        {
+            return false; // rival/vendor stock carries no mark — defensive only, a JUST-crafted item always has one
+        }
+
+        return ShowMentorFirstTouch(
+            MarkReadLessonId,
+            $"That stamp under the grade is yours — {mark.CrafterName}, day {mark.CraftedOnDay}. "
+            + "Every hero who ever carries this carries your name on it too.");
+    }
+
+    /// <summary>The first-touch id <see cref="ShowMarkReadLesson"/> fires under — named once here so
+    /// every call site (the auto-craft path and all four "Finished" handlers) shares the identical
+    /// key, never a copy-pasted literal that could drift.</summary>
+    private const string MarkReadLessonId = "the-mark-read";
 
 }

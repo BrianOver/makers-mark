@@ -1092,7 +1092,11 @@ public partial class MainUi : Control
             Tutorial.TopSlotText(state, locationId), // U23: tutorial overrides the top slot only
             checklist); // U5/U6: the checklist ticks alongside it
         Overlay.RefreshAnchor(
-            Tutorial.Active ? Tutorial.CurrentAnchor
+            // U-T2 Wave B: Bryn's own spotlight (e.g. "the mark, read" pointing at the material
+            // dropdown) outranks the chain's own anchor while her banner is up — the player is
+            // mid-lesson, not mid-chain-step, so the pulse must follow HER, not the chain.
+            Forge.MentorSpotlight is { } mentorSpotlight ? mentorSpotlight
+            : Tutorial.Active ? Tutorial.CurrentAnchor
             : lossRow is not null ? TutorialAnchor.ForHud("OpenLegends")
             : TutorialAnchor.None,
             Town, Drawer, this);
@@ -2846,6 +2850,11 @@ public partial class MainUi : Control
         // current row — wired here (Tutorial already Built above) rather than at Lessons'
         // construction site, which runs before Tutorial exists.
         Lessons.Tutorial = Tutorial;
+        // U-T2 Wave B: Forge needs the SAME live chain — its own first-touch lessons (Bryn's
+        // banner) fire through TutorialFlow.ConsumeFirstTouch, the identical once-ever engine
+        // Lessons reads above. Same ordering reason: Forge is built before Tutorial exists.
+        Forge.Tutorial = Tutorial;
+        Forge.MentorSpotlightChanged += RefreshObjectiveLine;
         // Dock at the FULL objective width via explicit offsets, NOT LayoutPresetMode.Minsize:
         // Minsize snapshots the collapsed build-time min width into the offset, pinning a sliver-
         // wide panel to the right edge — the same bug already fixed for the Objective chip above

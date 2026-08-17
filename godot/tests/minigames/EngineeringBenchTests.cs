@@ -23,8 +23,9 @@ namespace GodotClient.Tests;
 /// gestures via the <c>GuiInput</c> C# event (same headless-testable idiom as
 /// <c>AlchemyBrewPuzzle.BrewCanvas</c>), and full keyboard parity to the identical seams. Every
 /// scenario either drives the bench unmounted via its public seam methods, or through the real
-/// <c>ForgePanel</c> to prove the overlay ships wired but DORMANT while
-/// <c>EngineeringProfession.Definition.ActiveCraft</c> is false. PROPERTY-ONLY: a plain 2D
+/// <c>ForgePanel</c> to prove the overlay is LIVE and reachable — <c>EngineeringProfession
+/// .Definition.ActiveCraft</c> flipped true in U3b, so selecting engineering now routes through
+/// the real Assemble button, not the plain auto-craft fallback. PROPERTY-ONLY: a plain 2D
 /// <c>Control</c> canvas, never a 3D <c>SubViewport</c> — the known gdUnit headless-hang trap never
 /// applies here.
 /// </summary>
