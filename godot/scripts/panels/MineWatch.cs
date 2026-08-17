@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Presentation;
 using GameSim.Venues;
 using Godot;
 using GodotClient.Town2d;
@@ -110,6 +111,20 @@ public partial class MineWatch : SubViewportContainer
 
     private const float ShakeFrequency = 40f; // rad/s — fast enough to read as a jolt, not a sway
 
+    /// <summary>U-T5-12: the camera's max horizontal lean toward a flared hero (px), scaled by <see
+    /// cref="DelveStage.FocusIntensity"/> — deliberately small and BOUNDED (never a true recentre,
+    /// which would need this strip's exact figure-layout geometry to get right) so a miscalibrated
+    /// lean can never push a figure toward the strip's edge, only nudge it.</summary>
+    private const float FocusLeanPx = 20f;
+
+    /// <summary>U-T5-12: the camera's max zoom-in on a flared floor (a 1.0..1+this scale on <see
+    /// cref="_world"/>), scaled the same way as <see cref="FocusLeanPx"/> — subtle by design; this
+    /// is a push-in cue, not a cutscene close-up.</summary>
+    private const float FocusZoomBoost = 0.06f;
+
+    private const float FocusPanSpeed = 60f; // px/s MoveToward rate — eases in/out, never snaps
+    private const float FocusZoomSpeed = 0.25f; // units/s MoveToward rate, same contract
+
     /// <summary>Logical width of one backdrop tile, world/px units (the backdrop art is scaled to
     /// this width — see <see cref="RebuildBackdropTiles"/>). <c>SubViewportContainer.Stretch</c>
     /// resizes the child <see cref="SubViewport"/> to match this container's REAL on-screen width
@@ -211,6 +226,15 @@ public partial class MineWatch : SubViewportContainer
 
     private SubViewport _viewport = null!;
     private Node2D _world = null!;
+
+    /// <summary>U-T5-12 test/tuning hook — <see cref="_world"/>'s live Position, the combined
+    /// shake+focus-lean <see cref="AnimateWorldFocus"/> writes every frame.</summary>
+    public Vector2 WorldOffset => _world.Position;
+
+    /// <summary>U-T5-12 test/tuning hook — <see cref="_world"/>'s live uniform Scale (1f at rest,
+    /// eased toward <c>1+FocusZoomBoost</c> while a floor is camera-focused).</summary>
+    public float WorldZoom => _world.Scale.X;
+
     private CanvasModulate _ambient = null!;
     private Texture2D? _backdropTexture;
     private readonly List<Sprite2D> _backdropTiles = [];
@@ -240,6 +264,11 @@ public partial class MineWatch : SubViewportContainer
     private float _time;
     private float _milestoneRemaining;
     private bool _built;
+
+    // U-T5-12: eased toward FocusAnchor/FocusIntensity every frame in AnimateWorldFocus, folded
+    // into _world's own Position/Scale alongside the existing impact shake — see that method's doc.
+    private Vector2 _focusPan = Vector2.Zero;
+    private float _focusZoom = 1f;
 
     /// <summary>U16 (KTD11): the in-panel journey feed — one <see cref="JourneyFeed"/> cache
     /// driving a text line under the marching/camped figures above. MineWatch shows exactly ONE
@@ -643,8 +672,130 @@ public partial class MineWatch : SubViewportContainer
 
         _delveBeats = beats;
         _delveHeroes = state.Heroes;
-        _delveHead.Bind(partyKey, beats.Count, PhaseClock.DurationOf(state.Phase));
+
+        // U-T5-11/U-T5-12 (§11.14.7): PresentationScheduler was fully built, fully tested, and
+        // called by nothing -- ONE run of it now backs both remaining real-tier units. Its own doc
+        // says pacing MAGNITUDES and camera framing are deliberately the renderer's call ("a
+        // presentation-RNG concern for the Wave-2 renderer, which owns wall-clock pacing; this
+        // scheduler only orders and tiers") -- the weights/intensities below are that call.
+        var floorBeats = ResolveFloorBeats(resolved, party, state);
+        _delveHead.Bind(partyKey, DelveBeatWeights(floorBeats, beats), PhaseClock.DurationOf(state.Phase));
+        _delveStage.FloorFocusByFloor = DelveFloorFocus(floorBeats);
     }
+
+    private const double AmbientBeatWeight = 1.0;
+    private const double GlanceBeatWeight = 2.5;
+    private const double PullFocusBeatWeight = 4.0;
+
+    /// <summary>Runs <see cref="PresentationScheduler.Schedule"/> once (pure, deterministic — same
+    /// campaign-id convention <c>GameSim.Drama.GossipSystem</c> already uses for the identical
+    /// flavor-pack variant picker: <see cref="RngState.Inc"/>) and collapses its beat list to one
+    /// scheduled <see cref="Beat"/> per floor — the single source both <see cref="DelveBeatWeights"/>
+    /// (U-T5-11, pacing) and <see cref="DelveFloorFocus"/> (U-T5-12, the camera) read from, so a
+    /// resolved expedition never runs the scheduler twice in one Refresh. A floor never gets more
+    /// than one star beat (the scheduler's own budget contract), so no floor can appear twice here
+    /// regardless. Only a fully-resolved <paramref name="resolved"/> carries the HP-trace/
+    /// AttributionBeat data the scheduler needs — a staged party's stage-1 floors (<paramref
+    /// name="resolved"/> null) have none of that yet, so both readers below fall back to their own
+    /// pre-this-unit behavior for every floor.</summary>
+    private static Dictionary<int, Beat> ResolveFloorBeats(
+        ExpeditionResult? resolved, ImmutableList<HeroId> party, GameState state)
+    {
+        var byFloor = new Dictionary<int, Beat>();
+        if (resolved is null || party.IsEmpty)
+        {
+            return byFloor;
+        }
+
+        var partyHeroes = party
+            .Select(id => state.Heroes.TryGetValue(id.Value, out var hero) ? hero : null)
+            .Where(hero => hero is not null)
+            .Select(hero => hero!)
+            .ToImmutableList();
+        if (partyHeroes.IsEmpty)
+        {
+            return byFloor;
+        }
+
+        var schedule = PresentationScheduler.Schedule(resolved, partyHeroes, state.Items, state.Rng.Inc, state.Day);
+        foreach (var scheduled in schedule)
+        {
+            if (scheduled.Floor is { } floor)
+            {
+                byFloor[floor] = scheduled;
+            }
+        }
+
+        return byFloor;
+    }
+
+    /// <summary>U-T5-11: one pacing weight per <paramref name="beats"/> entry, in order — a floor
+    /// scored Glance/PullFocus holds the reveal longer than a routine Ambient floor, replacing the
+    /// uniform per-beat division every <see cref="DelveBeat"/> got regardless of what happened on
+    /// it. A floor absent from <paramref name="floorBeats"/> (a staged party, or a routine Ambient
+    /// floor the scheduler never dilated) falls back to <see cref="AmbientBeatWeight"/> — the exact
+    /// uniform pacing this overlay used before this unit, never worse.</summary>
+    private static IReadOnlyList<double> DelveBeatWeights(Dictionary<int, Beat> floorBeats, ImmutableList<DelveBeat> beats)
+    {
+        if (beats.IsEmpty)
+        {
+            return Array.Empty<double>();
+        }
+
+        var weights = new double[beats.Count];
+        for (var i = 0; i < beats.Count; i++)
+        {
+            weights[i] = floorBeats.TryGetValue(beats[i].Floor, out var scheduled)
+                ? scheduled.Tier switch
+                {
+                    BeatTier.PullFocus => PullFocusBeatWeight,
+                    BeatTier.Glance => GlanceBeatWeight,
+                    _ => AmbientBeatWeight,
+                }
+                : AmbientBeatWeight;
+        }
+
+        return weights;
+    }
+
+    /// <summary>U-T5-12 (§11.14.7): "add the camera its CameraHint field was written for" —
+    /// <see cref="Beat.CameraHint"/> had exactly zero readers anywhere in the repo before this. A
+    /// floor the scheduler dilated (Glance/PullFocus) always carries both a <see cref="Beat.Hero"/>
+    /// and a non-empty <see cref="Beat.CameraHint"/> together (the scheduler's own star-candidate
+    /// contract — <see cref="Beat.Hero"/> is null only on the two party-wide Ambient beats, which
+    /// carry <c>Floor: null</c> and so never reach this dictionary at all) — <see
+    /// cref="FocusIntensityFor"/> reads the hint's OWN suffix to decide how hard the watch's camera
+    /// leans toward that hero, while the Tier above decides how LONG it holds.</summary>
+    private static ImmutableDictionary<int, DelveStage.FloorFocus> DelveFloorFocus(Dictionary<int, Beat> floorBeats)
+    {
+        var builder = ImmutableDictionary.CreateBuilder<int, DelveStage.FloorFocus>();
+        foreach (var (floor, scheduled) in floorBeats)
+        {
+            if (scheduled.Tier != BeatTier.Ambient
+                && scheduled.Hero is { } hero
+                && scheduled.CameraHint is { Length: > 0 } hint)
+            {
+                builder[floor] = new DelveStage.FloorFocus(hero, FocusIntensityFor(hint));
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    /// <summary>How hard the camera leans toward the hinted hero, 0..1 — read from <see
+    /// cref="Beat.CameraHint"/>'s own suffix (<c>PresentationScheduler.StarCandidate</c>'s
+    /// <c>CameraHint</c> values: <c>"hero:&lt;id&gt;:death"</c>, <c>"hero:&lt;id&gt;:nearmiss"</c>,
+    /// <c>"item:&lt;id&gt;:save"</c>, or a plain <c>"item:&lt;id&gt;"</c>) rather than from <see
+    /// cref="BeatTier"/>, so the STYLE of the shot answers WHAT happened, not just how notable it
+    /// was. A death gets the hardest push-in this watch has; a plain attribution (a breakpoint
+    /// clear/killing blow with no death or save in play) the lightest.</summary>
+    private static float FocusIntensityFor(string hint) => hint switch
+    {
+        _ when hint.EndsWith(":death", StringComparison.Ordinal) => 1.0f,
+        _ when hint.EndsWith(":save", StringComparison.Ordinal) => 0.75f,
+        _ when hint.EndsWith(":nearmiss", StringComparison.Ordinal) => 0.55f,
+        _ => 0.4f,
+    };
 
     public override void _Process(double delta)
     {
@@ -707,11 +858,12 @@ public partial class MineWatch : SubViewportContainer
 
         // Read AFTER DelveStage.Process so a beat rendered THIS frame (RenderBeat, just above)
         // shows up at (very nearly) full strength here instead of lagging a frame behind —
-        // DelveStage.ImpactPulse is a test/tuning hook; MineWatch is its only production reader.
-        // Unconditional (not gated on State): ImpactPulse decays every frame in DelveStage.Process
-        // regardless of visibility, so this must run every frame too or a shake mid-decay could
-        // freeze at a nonzero _world.Position the moment the strip goes Hidden mid-fight.
-        AnimateWorldShake();
+        // DelveStage.ImpactPulse/FocusAnchor/FocusIntensity are test/tuning hooks; MineWatch is
+        // their only production reader. Unconditional (not gated on State): ImpactPulse decays
+        // every frame in DelveStage.Process regardless of visibility, so this must run every frame
+        // too or a shake/focus mid-decay could freeze at a nonzero _world.Position the moment the
+        // strip goes Hidden mid-fight.
+        AnimateWorldFocus((float)delta);
         if (State != WatchState.Hidden)
         {
             AnimateLightFlicker();
@@ -1223,20 +1375,55 @@ public partial class MineWatch : SubViewportContainer
         }
     }
 
-    /// <summary>A short world-nudge on a heavy beat (<see cref="WorldShakeAmplitude"/>/<see
-    /// cref="ShakeFrequency"/>), scaled by <see cref="DelveStage.ImpactPulse"/> so it is sharp on
-    /// impact and settles with it — a camera-shake read achieved by nudging <see cref="_world"/>
-    /// itself (every tile/figure/light is one of its children, so this moves the whole scene
-    /// uniformly without touching any individual figure's own <c>Position</c>, which stays the
-    /// walk/breathe/combat-pose baseline those systems already own). Always resolves back to
-    /// exactly <see cref="Vector2.Zero"/> once the pulse decays — <see cref="_world"/>'s own
-    /// Position has no other writer in this file, so this is safe to set unconditionally.</summary>
-    private void AnimateWorldShake()
+    /// <summary>
+    /// <see cref="_world"/>'s ONE writer for both <c>Position</c> and <c>Scale</c> — a camera-shake
+    /// read on a heavy beat (<see cref="WorldShakeAmplitude"/>/<see cref="ShakeFrequency"/>, scaled
+    /// by <see cref="DelveStage.ImpactPulse"/> so it is sharp on impact and settles with it) ADDED
+    /// to a slower, eased lean/push-in toward whichever hero <see cref="DelveStage.FocusAnchor"/>
+    /// names (U-T5-12, "add the camera its CameraHint field was written for") — both nudge the same
+    /// node (every tile/figure/light is one of its children, so this moves/scales the whole scene
+    /// uniformly without touching any individual figure's own Position, which stays the
+    /// walk/breathe/combat-pose baseline those systems already own).
+    ///
+    /// <para>The lean is deliberately bounded and direction-only (<see cref="FocusLeanPx"/> times
+    /// <see cref="DelveStage.FocusIntensity"/>, signed toward whichever side of the strip's live
+    /// center — <see cref="CurrentContainerWidth"/>, the same resize-aware source
+    /// <c>RebuildBackdropTiles</c> already reads — the hero sits on) rather than a true recentre,
+    /// which would need this strip's exact figure-layout geometry to get right. The zoom is
+    /// deliberately pivoted on that SAME strip center (Position gets a compensating <c>pivot *
+    /// (1 - zoom)</c> term alongside the shake/lean) rather than <see cref="_world"/>'s own local
+    /// origin — Godot's <c>Node2D.Scale</c> otherwise scales away from (0,0), which would drift
+    /// every figure toward the bottom-right corner by an amount that grows with distance from it
+    /// (up to ~50px at this strip's own width) instead of reading as a push toward center. <see
+    /// cref="_focusPan"/>/<see cref="_focusZoom"/> ease toward their targets via <c>MoveToward</c>
+    /// (accumulated delta, no engine Tween — repo convention) so a focus beat glides in and out
+    /// instead of snapping. Both resolve back to exactly zero/one once <see
+    /// cref="DelveStage.FocusAnchor"/> goes null, so an unfocused floor renders byte-identical to
+    /// before this unit.</para>
+    /// </summary>
+    private void AnimateWorldFocus(float delta)
     {
+        var anchor = _delveStage.FocusAnchor;
+        var intensity = _delveStage.FocusIntensity;
+        var pivot = new Vector2(CurrentContainerWidth() / 2f, StripHeight / 2f);
+
+        var panTarget = Vector2.Zero;
+        if (anchor is { } focus)
+        {
+            var side = Mathf.Sign(pivot.X - focus.X);
+            panTarget = new Vector2(side * FocusLeanPx * intensity, 0f);
+        }
+
+        _focusPan = _focusPan.MoveToward(panTarget, delta * FocusPanSpeed);
+        _focusZoom = Mathf.MoveToward(_focusZoom, 1f + (FocusZoomBoost * intensity), delta * FocusZoomSpeed);
+
         var pulse = _delveStage.ImpactPulse;
-        _world.Position = pulse > 0.001f
+        var shake = pulse > 0.001f
             ? new Vector2(WorldShakeAmplitude * pulse * Mathf.Sin(_time * ShakeFrequency), 0f)
             : Vector2.Zero;
+
+        _world.Position = shake + _focusPan + (pivot * (1f - _focusZoom));
+        _world.Scale = Vector2.One * _focusZoom;
     }
 
     // ── U9 (KTD-4): venue-true backdrop ──────────────────────────────────────────────────────

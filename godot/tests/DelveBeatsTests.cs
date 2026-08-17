@@ -137,6 +137,98 @@ public class DelveBeatsTests
         AssertThat(kill.DamageDealt).IsEqual(9); // everything else about the beat is untouched
     }
 
+    // ── U-T5-10 (§11.14.7): "flare the link-4 beats as they happen". Beyond the killing blow
+    // (already covered above), ExpeditionResult.Beats carries proven counterfactual saves
+    // (LethalSave/BreakpointClear/Provisioned/PotionLifesave) that used to reach only the tavern
+    // gossip line and the Evening ledger recap -- never the one screen where the player is actually
+    // watching the fight. ──────────────────────────────────────────────────────────────────────────
+
+    [TestCase]
+    public void ProofBeat_LethalSave_AttachesToACombatBeat_NeverToDescendOrEngage()
+    {
+        var floors = ImmutableList.Create(
+            new FloorOutcome(1, true, ImmutableList.Create(
+                new CombatEvent(1, new HeroId(1), "cave-rat", ImmutableList.Create(3), 5, 3, true, null))));
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, Crafted(1, "Ironhide"));
+        var attribution = ImmutableList.Create(
+            new AttributionBeat(BeatType.LethalSave, new ItemId(1), new HeroId(1), 1, "Ironhide turned a lethal cave-rat hit"));
+
+        var beats = DelveBeats.BuildBeats(
+            floors, ImmutableList<HeroId>.Empty, ImmutableList<OreLoot>.Empty, Heroes(),
+            ExpeditionHalt.TargetReached, items, attribution);
+
+        var flared = beats.Where(b => !b.ProofBeats.IsEmpty).ToImmutableList();
+        AssertThat(flared.Count).IsEqual(1);
+        AssertThat(flared[0].Kind is DelveBeatKind.Exchange or DelveBeatKind.MonsterSlain).IsTrue();
+        AssertThat(flared[0].ProofBeats.Single().Detail).IsEqual("Ironhide turned a lethal cave-rat hit");
+
+        AssertThat(beats.Where(b => b.Kind is DelveBeatKind.Descend or DelveBeatKind.Engage).All(b => b.ProofBeats.IsEmpty))
+            .OverrideFailureMessage("A proof beat leaked onto a beat that exists before any round resolved.")
+            .IsTrue();
+    }
+
+    [TestCase]
+    public void ProofBeat_Provisioned_AttachesToAQuaffBeat()
+    {
+        var uses = ImmutableList.Create(new ConsumableUse(new ItemId(2), Round: 1, HpBefore: 10, HpAfter: 25));
+        var floors = ImmutableList.Create(
+            new FloorOutcome(1, true, ImmutableList.Create(
+                new CombatEvent(1, new HeroId(1), "cave-rat", ImmutableList.Create(3), 5, 0, true, null) { Uses = uses })));
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(2, Crafted(2, "Field Tonic"));
+        var attribution = ImmutableList.Create(
+            new AttributionBeat(BeatType.Provisioned, new ItemId(2), new HeroId(1), 1, "Field Tonic kept H1 fighting on floor 1"));
+
+        var beats = DelveBeats.BuildBeats(
+            floors, ImmutableList<HeroId>.Empty, ImmutableList<OreLoot>.Empty, Heroes(),
+            ExpeditionHalt.TargetReached, items, attribution);
+
+        var flared = beats.Where(b => !b.ProofBeats.IsEmpty).ToImmutableList();
+        AssertThat(flared.Count).IsEqual(1);
+        AssertThat(flared[0].Kind).IsEqual(DelveBeatKind.Quaff);
+        AssertThat(flared[0].ProofBeats.Single().Detail).IsEqual("Field Tonic kept H1 fighting on floor 1");
+    }
+
+    [TestCase]
+    public void ProofBeat_KillingBlow_NeverDuplicated_AlreadyCoveredByKillingItem()
+    {
+        // KillingBlow's AttributionBeat names the SAME fact as CombatEvent.KillingItem — attaching
+        // it to ProofBeats too would double-credit the identical item on the identical beat.
+        var floors = ImmutableList.Create(
+            new FloorOutcome(1, true, ImmutableList.Create(
+                new CombatEvent(1, new HeroId(1), "cave-rat", ImmutableList.Create(6), 9, 0, true, new ItemId(1)))));
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, Crafted(1, "Emberbite"));
+        var attribution = ImmutableList.Create(
+            new AttributionBeat(BeatType.KillingBlow, new ItemId(1), new HeroId(1), 1, "Emberbite landed the killing blow on the cave-rat"));
+
+        var beats = DelveBeats.BuildBeats(
+            floors, ImmutableList<HeroId>.Empty, ImmutableList<OreLoot>.Empty, Heroes(),
+            ExpeditionHalt.TargetReached, items, attribution);
+
+        AssertThat(beats.All(b => b.ProofBeats.IsEmpty)).IsTrue();
+        var kill = beats.Single(b => b.Kind == DelveBeatKind.MonsterSlain);
+        AssertThat(kill.KillingItemName).IsEqual("Emberbite"); // the credit still lands, just not doubled
+    }
+
+    [TestCase]
+    public void ProofBeat_NeverAttachesToASwallowedByDarkBeat_TheCensorStillWins()
+    {
+        // A hero who dies while a proof was pending must never carry it -- the censor outranks
+        // every other rule in this file (KTD5/R17/AE2), including a proof this honest.
+        var floors = ImmutableList.Create(
+            new FloorOutcome(1, false, ImmutableList.Create(
+                new CombatEvent(1, new HeroId(1), "ore-golem", ImmutableList.Create(9), 0, 40, false, null))));
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, Crafted(1, "Ironhide"));
+        var attribution = ImmutableList.Create(
+            new AttributionBeat(BeatType.LethalSave, new ItemId(1), new HeroId(1), 1, "Ironhide turned a lethal ore-golem hit"));
+
+        var beats = DelveBeats.BuildBeats(
+            floors, ImmutableList.Create(new HeroId(1)), ImmutableList<OreLoot>.Empty, Heroes(),
+            ExpeditionHalt.FloorLost, items, attribution);
+
+        AssertThat(beats.Any(b => b.Kind == DelveBeatKind.SwallowedByDark)).IsTrue();
+        AssertThat(beats.All(b => b.ProofBeats.IsEmpty)).IsTrue();
+    }
+
     [TestCase]
     public void ADeathCloudBeat_NeverCarriesAKillCredit_TheCensorStillWins()
     {

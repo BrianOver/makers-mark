@@ -1499,6 +1499,68 @@ public class MineWatchTests
         }
     }
 
+    /// <summary>
+    /// U-T5-12 (§11.14.7): "add the camera its CameraHint field was written for" — the integration
+    /// half of <c>DelveStageTests</c>' FocusAnchor/FocusIntensity coverage. Proving DelveStage
+    /// resolves the right anchor does NOT prove MineWatch's own <c>_Process</c> ever turns that into
+    /// an actual camera reaction, exactly the same gap <c>Clock_Paused_MonsterBreathHoldsStill</c>
+    /// above closes for the breathe pause. Drives the real <c>_Process</c> loop; only the beat/focus
+    /// map are supplied by hand, same convention as that test.
+    /// </summary>
+    [TestCase]
+    public void CameraFocus_ZoomsInWhileAFloorIsFlared_ThenEasesBackWhenCleared()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var camp = CampedPartyWithFloors();
+            var state = StagedWorld() with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(camp) };
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            var clock = new PhaseClock(new SimAdapter(state));
+            clock.Play();
+            watch.Clock = clock;
+
+            AssertThat(watch.WorldZoom).IsEqualApprox(1f, 0.001f);
+
+            watch.Delve.FloorFocusByFloor = ImmutableDictionary<int, DelveStage.FloorFocus>.Empty
+                .Add(1, new DelveStage.FloorFocus(new HeroId(1), 1f));
+            watch.Delve.RenderBeat(
+                new DelveBeat(DelveBeatKind.Engage, 1, null, "cave-rat", 0, 0,
+                    ImmutableSortedDictionary<int, int>.Empty, false),
+                state.Heroes);
+
+            for (var i = 0; i < 30; i++)
+            {
+                watch._Process(0.1);
+            }
+
+            AssertThat(watch.WorldZoom)
+                .OverrideFailureMessage("A flared floor never zoomed the camera in -- CameraHint reached DelveStage but not MineWatch's own world scale.")
+                .IsGreater(1f);
+
+            // Clear the focus (a Surface beat, the fight's over) and let it ease back to rest.
+            watch.Delve.RenderBeat(
+                new DelveBeat(DelveBeatKind.Surface, 1, null, "TargetReached", 0, 0,
+                    ImmutableSortedDictionary<int, int>.Empty, false),
+                state.Heroes);
+
+            for (var i = 0; i < 30; i++)
+            {
+                watch._Process(0.1);
+            }
+
+            AssertThat(watch.WorldZoom)
+                .OverrideFailureMessage("The camera never let go of the flared floor -- a stuck zoom is worse than none.")
+                .IsEqualApprox(1f, 0.01f);
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
     [TestCase]
     public void ManyMarchCampCycles_LeaveNoOrphanNodesAfterTeardown()
     {

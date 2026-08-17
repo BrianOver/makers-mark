@@ -97,6 +97,13 @@ public sealed partial class DelveStage : Node2D
     // sentence. Warm gold: the same "this is yours" register the ledger's attribution rows use.
     private const float KillCreditSeconds = 1.8f;
     private static readonly Color KillCreditTint = new(1f, 0.86f, 0.5f);
+
+    // U-T5-10: a proven attribution (LethalSave/BreakpointClear/Provisioned/PotionLifesave) is link
+    // 4 of the game's five-link spine landing live — deliberately held longer and pitched brighter
+    // than the plain kill-credit line above (a routine kill), never the same weight as the game's
+    // entire product proving itself.
+    private const float ProofFlareSeconds = 2.6f;
+    private static readonly Color ProofFlareTint = new(1f, 0.95f, 0.55f);
     private const float KnockbackPx = 2f; // monster-only recoil (see AdvanceMonster) — heroes use CombatPose below
     private const float KnockbackSettleSeconds = 0.12f;
     private const int PipTotal = 5;
@@ -114,6 +121,35 @@ public sealed partial class DelveStage : Node2D
     // AWAY from it (-X). A round that both deals and takes damage (an even exchange) plays the hit
     // reaction, since RenderBeat applies it second — showing "traded blows, but staggered" reads
     // better than showing only the swing.
+
+    /// <summary>
+    /// U-T5-12 (§11.14.7, "add the camera its CameraHint field was written for"): which hero
+    /// <c>MineWatch.RefreshDelveBeats</c> wants the camera leaning toward for a given floor, and how
+    /// hard — resolved once per <c>PresentationScheduler.Schedule</c> call and handed down here the
+    /// same way <see cref="Venue"/> is. <see cref="Intensity"/> is 0..1, already resolved from the
+    /// scheduled <c>Beat.CameraHint</c>'s own suffix by <c>MineWatch.FocusIntensityFor</c> — this
+    /// stage only ever reads it, never interprets the hint string itself (KTD2: this is
+    /// presentation-adapter code, the hint-parsing policy lives with its one caller).
+    /// </summary>
+    public readonly record struct FloorFocus(HeroId Hero, float Intensity);
+
+    /// <summary>Per-floor camera focus (see <see cref="FloorFocus"/>) — empty for a staged party or
+    /// a raid the scheduler found nothing worth dilating in (every floor stays unfocused, which
+    /// renders byte-identical to before this unit).</summary>
+    public ImmutableDictionary<int, FloorFocus> FloorFocusByFloor { get; set; } = ImmutableDictionary<int, FloorFocus>.Empty;
+
+    /// <summary>Where the camera should lean this frame — the CURRENTLY-focused hero's own anchor
+    /// (test/tuning hook; re-resolved every <see cref="Process"/> call so it tracks a moving/bobbing
+    /// sprite), or null while no floor in flight is focused. <c>MineWatch.AnimateWorldFocus</c> is
+    /// its only production reader.</summary>
+    public Vector2? FocusAnchor { get; private set; }
+
+    /// <summary>0..1 companion to <see cref="FocusAnchor"/> — how hard the camera should lean/zoom,
+    /// always 0 when <see cref="FocusAnchor"/> is null (test/tuning hook).</summary>
+    public float FocusIntensity { get; private set; }
+
+    private int? _focusHeroValue;
+    private float _focusHeroIntensity;
 
     /// <summary>How long <see cref="ImpactPulse"/> takes to fully decay after a beat sets it to 1 —
     /// fast, so it reads as a jolt (light punch + <c>MineWatch.WorldShakeAmplitude</c> world-nudge),
@@ -374,7 +410,12 @@ public sealed partial class DelveStage : Node2D
         MonsterHpMax = 1;
         _monsterHpRemaining = 1;
         ImpactPulse = 0f;
+        _focusHeroValue = null;
+        _focusHeroIntensity = 0f;
+        FocusAnchor = null;
+        FocusIntensity = 0f;
         LastKillCreditText = string.Empty; // a new party must not inherit the last one's credit
+        LastProofFlareText = string.Empty;
         _monsterShouldShow = false;
         _monsterSlideProgress = 0f;
         _monsterFlashRemaining = 0f;
@@ -469,6 +510,21 @@ public sealed partial class DelveStage : Node2D
             case DelveBeatKind.Engage:
                 CurrentMonsterKind = beat.MonsterKind;
                 ShowMonster(beat.MonsterKind, beat.Floor);
+
+                // U-T5-12: this floor's fight just started on screen — the natural moment for the
+                // camera to commit to (or explicitly clear) its focus for the floor, rather than
+                // re-deciding it beat-by-beat.
+                if (FloorFocusByFloor.TryGetValue(beat.Floor, out var focus))
+                {
+                    _focusHeroValue = focus.Hero.Value;
+                    _focusHeroIntensity = focus.Intensity;
+                }
+                else
+                {
+                    _focusHeroValue = null;
+                    _focusHeroIntensity = 0f;
+                }
+
                 break;
 
             case DelveBeatKind.Exchange:
@@ -546,9 +602,11 @@ public sealed partial class DelveStage : Node2D
 
             case DelveBeatKind.Camp:
                 HideMonster();
+                _focusHeroValue = null; // the day's fighting is over — camera eases back to rest
                 break;
 
             case DelveBeatKind.Surface:
+                _focusHeroValue = null; // ditto — the party is walking out, nothing left to lean on
                 // U-T5-8 ("a rout looks exactly like a triumph"): the halt DelveBeats carried onto
                 // this beat's otherwise-unused MonsterKind field (see the DelveBeat doc) decides
                 // which way the party leaves — every living hero gets the SAME exit pose, since a
@@ -572,6 +630,16 @@ public sealed partial class DelveStage : Node2D
                 }
 
                 break;
+        }
+
+        // U-T5-10 (§11.14.7, "flare the link-4 beats as they happen"): fires for whichever beat
+        // DelveBeats attached a proof to (Quaff/Exchange/MonsterSlain/HeroFled — never
+        // SwallowedByDark, DelveBeats never attaches one there), AFTER that beat's own case above
+        // already ran, so the proof flare layers on top of the beat's normal FX rather than
+        // replacing it.
+        if (!beat.ProofBeats.IsEmpty)
+        {
+            FlareProofBeats(beat);
         }
     }
 
@@ -610,6 +678,14 @@ public sealed partial class DelveStage : Node2D
         }
 
         ImpactPulse = Mathf.MoveToward(ImpactPulse, 0f, delta / ImpactPulseDecaySeconds);
+
+        // U-T5-12: re-resolved every frame (not just when RenderBeat sets _focusHeroValue) so the
+        // anchor tracks whichever sprite HeroAnchor currently reports — a moving march step, a
+        // combat-pose lunge, all the same "read this frame's already-bobbed figure" contract
+        // ImpactPulse/BumpHeroFx already follow.
+        FocusAnchor = _focusHeroValue is { } focusedHero ? HeroAnchor(focusedHero) : null;
+        FocusIntensity = _focusHeroValue is not null ? _focusHeroIntensity : 0f;
+
         AdvanceMonster(delta, paused);
         AdvanceHeroFx(delta);
         AdvanceCombatPoses(delta);
@@ -1164,6 +1240,59 @@ public sealed partial class DelveStage : Node2D
                 node.Position = position + new Vector2(0, -26f * progress);
                 // Hold full opacity for the first 60% — a name needs reading time a number doesn't.
                 node.Modulate = KillCreditTint with { A = progress < 0.6f ? 1f : 1f - (progress - 0.6f) / 0.4f };
+            },
+        });
+    }
+
+    /// <summary>The last proof-flare text spawned (test hook, same shape as <see
+    /// cref="LastKillCreditText"/>) — a new party must not inherit the last one's flare, so <see
+    /// cref="ResetState"/> clears it alongside <see cref="LastKillCreditText"/>.</summary>
+    public string LastProofFlareText { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// U-T5-10 (§11.14.7): a proven counterfactual attribution reaching the one screen where the
+    /// player is actually watching the fight, not just the tavern gossip line or the Evening
+    /// ledger's later recap. Reuses <see cref="AttributionBeat.Detail"/> VERBATIM — the same
+    /// sentence <c>LedgerModal</c>/<c>JourneyStream</c> already render — no new prose invented here,
+    /// only a distinct visual treatment (brighter tint, held longer than the plain kill-credit line)
+    /// because this beat, not the routine kill, is the game's entire product landing.
+    /// </summary>
+    private void FlareProofBeats(DelveBeat beat)
+    {
+        if (beat.Hero is not { } hero)
+        {
+            return; // defensive: DelveBeats never attaches a ProofBeats entry without a Hero
+        }
+
+        var anchor = HeroAnchor(hero.Value) + new Vector2(-48, -64);
+        foreach (var proof in beat.ProofBeats)
+        {
+            SpawnProofFlare(anchor, proof.Detail);
+            anchor += new Vector2(0, -18f); // stack, never overlap, when a round earns more than one
+        }
+    }
+
+    private void SpawnProofFlare(Vector2 position, string text)
+    {
+        LastProofFlareText = text; // test seam — mirrors LastKillCreditText
+        var label = new Label
+        {
+            Name = "ProofFlareLabel",
+            Text = text,
+            Position = position,
+            Modulate = ProofFlareTint,
+        };
+        AddChild(label);
+        _transients.Add(new Transient
+        {
+            Node = label,
+            Life = ProofFlareSeconds,
+            Apply = (node, progress) =>
+            {
+                node.Position = position + new Vector2(0, -30f * progress);
+                // Same reading-time contract as SpawnKillCredit, held a touch longer (70% vs 60%) —
+                // this sentence outranks a routine kill credit.
+                node.Modulate = ProofFlareTint with { A = progress < 0.7f ? 1f : 1f - (progress - 0.7f) / 0.3f };
             },
         });
     }
