@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Venues;
 using Godot;
 using GodotClient.Town2d;
 using GodotClient.Tools;
@@ -626,6 +627,18 @@ public partial class MineWatch : SubViewportContainer
             _delvePartyKey = partyKey;
             _delveRendered = 0;
             _delveStage.ResetState();
+        }
+
+        // Law-breach fix (§11.14.7): the HP bar reads VenueDefinition.MonsterHp, so it needs the
+        // ACTUALLY-raided venue, not always the Mine — same source ApplyVenueBackdrop already
+        // reads off staged/resolved above (ResolveVenueId mirrors this exact staged-then-resolved
+        // order), graceful-degrading to the Mine for an unregistered/unknown id rather than crashing.
+        var delveVenueId = staged?.VenueId ?? resolved?.VenueId;
+        if (delveVenueId is not null)
+        {
+            _delveStage.Venue = VenueRegistry.TryGet(delveVenueId, out var venueDef) && venueDef is not null
+                ? venueDef
+                : VenueRegistry.Mine;
         }
 
         _delveBeats = beats;
