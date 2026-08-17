@@ -253,6 +253,11 @@ public partial class LedgerModal : SimPanel
                 firstLossBlockRendered = true;
                 var lossLabel = AddLabel(_cardGrid!, block);
                 lossLabel.Name = "LedgerFirstLossBlock";
+                // Same width floor as the cards and the tutorial tip — see AddTutorialTip. This one
+                // only renders on the campaign's first death, so no fixture caught it collapsing;
+                // it would have arrived as a ransom note on the single most important night the
+                // game has.
+                lossLabel.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
                 lossLabel.AddThemeColorOverride("font_color", GameTheme.WarnColor);
             }
         }
@@ -350,6 +355,12 @@ public partial class LedgerModal : SimPanel
 
         var tip = AddLabel(_cardGrid!, $"💬 {_tutorialTip}");
         tip.Name = "LedgerTutorialTip";
+        // The same width floor every card in this grid carries, and for the same reason. An
+        // HFlowContainer hands each child its own natural size, and an autowrapping Label's natural
+        // width is its narrowest word — so a loose Label dropped straight into the grid collapses to
+        // one character per line. BuildReturnCard guards the cards; this and the first-loss block are
+        // the two labels that go in beside them, and they need the floor just as much.
+        tip.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
         tip.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
     }
 
