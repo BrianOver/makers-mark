@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Kernel;
 
@@ -252,9 +253,21 @@ public sealed class CommissionSystem : IPhaseSystem
         Hero hero, ImmutableSortedDictionary<int, Item> items, int targetFloor, RelationshipBand band)
     {
         var bar = FloorMinQuality(targetFloor);
+        var heroClass = ClassRegistry.Require(hero.ClassId);
 
         foreach (var slot in new[] { ItemSlot.Weapon, ItemSlot.Shield, ItemSlot.Armor })
         {
+            // U-T1-11 (found while wiring BaselinePlayer to accept commissions): a class that never
+            // equips a Shield (AllowsShield: false) also never POPULATES the Shield gear slot, so
+            // the empty-slot branch below read that as an unambiguous "gap" for EVERY class — posting
+            // (and, if accepted, guaranteeing) a commission for gear the hero can never wear. Skipped
+            // here, the same class-compatibility gate ShoppingAi/HasBuyer already apply to ordinary
+            // shopping and crafting.
+            if (slot == ItemSlot.Shield && !heroClass.AllowsShield)
+            {
+                continue;
+            }
+
             if (WornGap(slot) is { } gap)
             {
                 return gap;

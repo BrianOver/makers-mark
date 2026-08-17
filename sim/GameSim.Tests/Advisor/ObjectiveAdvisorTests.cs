@@ -166,6 +166,17 @@ public class ObjectiveAdvisorTests
             "R5's demand-aware requirement never actually fired in this run.");
     }
 
+    /// <summary>U-T1-11 re-baseline: this scenario needs a death-heavy run, not the class's own
+    /// <see cref="Seed"/> specifically — a local seed rather than the shared constant, so this
+    /// change stays scoped to the one test that broke rather than nudging every other test in this
+    /// file onto a different campaign. <see cref="Seed"/> (4242) stopped reliably producing 6 deaths
+    /// in 150 days once BaselinePlayer's income fixes (U-T1-11: usableMaterials ore-buying hygiene +
+    /// real consumable pricing) got real gear to heroes measurably faster — a HEALTHIER economy, not
+    /// a broken one, but this fixture needs lethality, not health. Measured: seed 1 clears 6 deaths
+    /// by day 15 under the SAME policy (a 60-seed sweep found the overwhelming majority of seeds
+    /// still do; 4242 was the outlier, not the norm).</summary>
+    private const ulong DeathHeavySeed = 1;
+
     /// <summary>
     /// U8: six hero deaths must produce a death-adjacent (<see cref="HonorMemorialAction"/>)
     /// suggestion within the phase (Evening) it first becomes legal — the thin bridge to Phase A's
@@ -175,7 +186,7 @@ public class ObjectiveAdvisorTests
     public void SixDeaths_ProduceADeathAdjacentSuggestion_WithinOnePhase()
     {
         var kernel = GameComposition.BuildKernel();
-        var state = GameComposition.NewCampaign(Seed);
+        var state = GameComposition.NewCampaign(DeathHeavySeed);
         var deaths = 0;
 
         for (var tick = 0; tick < 150 * 5 && deaths < 6; tick++)
@@ -185,7 +196,7 @@ public class ObjectiveAdvisorTests
             state = result.NewState;
         }
 
-        Assert.True(deaths >= 6, $"Only {deaths} hero death(s) occurred in 150 days at seed {Seed} — this scenario needs at least 6.");
+        Assert.True(deaths >= 6, $"Only {deaths} hero death(s) occurred in 150 days at seed {DeathHeavySeed} — this scenario needs at least 6.");
 
         // A memorial raised on the death-revealing Evening becomes honorable starting the NEXT
         // Evening tick (FarewellHandlers' own contract) — scan forward through the following two

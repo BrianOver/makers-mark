@@ -33,6 +33,7 @@ public class GoldLedgerTests
         for (var i = 0; i < days; i++)
         {
             var oreSpend = ImmutableList<GoldLedgerEntry>.Empty;
+            var forgeUpgrades = ImmutableList<GoldLedgerEntry>.Empty;
 
             while (true)
             {
@@ -52,13 +53,23 @@ public class GoldLedgerTests
                     oreSpend = ComputeOreSpend(before, actions, result);
                 }
 
+                if (before.Phase == DayPhase.Morning)
+                {
+                    // U-T1-11: a third silent flow, same shape as MF-2 above — UpgradeForgeAction
+                    // emits no event at all (ForgeTierHandlers' own class doc), so an accepted one's
+                    // cost is derived the same way: the pre-tick tier index looked up against the
+                    // ladder's own fixed cost table, only when the action was actually accepted
+                    // (never rejected — a rejected action changes nothing, needs no row).
+                    forgeUpgrades = ComputeForgeUpgrade(before, actions, result);
+                }
+
                 if (state.Phase == DayPhase.Morning)
                 {
                     break; // the day just rolled over
                 }
             }
 
-            var (_, total) = GoldLedger.DayDeltas(state, day, oreSpend, ImmutableList<GoldLedgerEntry>.Empty);
+            var (_, total) = GoldLedger.DayDeltas(state, day, oreSpend, ImmutableList<GoldLedgerEntry>.Empty, forgeUpgrades);
             var observedChange = state.Player.Gold - goldAtDayStart;
             Assert.Equal(observedChange, total);
 
@@ -162,6 +173,31 @@ public class GoldLedgerTests
             }
 
             rows.Add(new GoldLedgerEntry("ore", -baseLineCost, $"{buy.Quantity}x {buy.MaterialKey}"));
+        }
+
+        return rows.ToImmutable();
+    }
+
+    /// <summary>U-T1-11: same shape as <see cref="ComputeOreSpend"/> for the other silent flow —
+    /// <c>UpgradeForgeAction</c> emits no event, so an ACCEPTED one's cost is derived from the
+    /// pre-tick tier index against the ladder's own fixed <see cref="GameSim.Economy.ForgeTierHandlers.GoldCost"/>
+    /// table (the SAME lookup <c>ForgeTierHandlers.Apply</c> itself uses), never re-derived.</summary>
+    private static ImmutableList<GoldLedgerEntry> ComputeForgeUpgrade(
+        GameState before, ImmutableList<PlayerAction> actions, TickResult result)
+    {
+        var rejected = result.Rejected.Select(r => r.Action).ToHashSet();
+        var rows = ImmutableList.CreateBuilder<GoldLedgerEntry>();
+
+        foreach (var action in actions)
+        {
+            if (action is not UpgradeForgeAction || rejected.Contains(action))
+            {
+                continue;
+            }
+
+            var tierIndex = GameSim.Economy.ForgeTierHandlers.CurrentTierIndex(before.Player);
+            var cost = GameSim.Economy.ForgeTierHandlers.GoldCost[tierIndex];
+            rows.Add(new GoldLedgerEntry("forge tier", -cost, $"upgraded to Forge Tier {tierIndex + 2}"));
         }
 
         return rows.ToImmutable();
