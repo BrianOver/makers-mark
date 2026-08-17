@@ -1760,12 +1760,34 @@ public class TutorialFlowTests
             // Starting point: blacksmith only (PlayerState.NewGame's own default) — the Forge lists
             // blacksmith's dagger and nothing from tanning.
             ui.OpenPanel("Forge");
-            var tanningRecipeId = ProfessionRegistry.All[TanningProfession.Id].Recipes.Keys
-                .OrderBy(id => id, System.StringComparer.Ordinal).First();
+
+            // U-T1-10: pick the two tanning recipes by whether the profession's OWN TierGate covers
+            // their tier, not by alphabetical order.
+            //
+            // This test used to take `Recipes.Keys.OrderBy(Ordinal).First()`, which is
+            // "tanning-dragonhide-armor" — TIER 3, the highest gate in the game, purely by accident of
+            // spelling. It passed only because ForgePanel rendered a full five-button card for every
+            // recipe regardless of tier, while `CraftingHandlers.ApplyCraft` had ALWAYS rejected a
+            // tier-gated craft. So the old assertion was green over a real defect: it proved a card
+            // existed whose Craft button the sim would refuse. U-T1-10 is the fix, and it is what turned
+            // this test red — correctly.
+            //
+            // Deriving from `TierGate` rather than hardcoding "Tier == 1" keeps this honest if the gate
+            // table ever moves: whatever the profession says is gated is what must render as a row.
+            var tanning = ProfessionRegistry.All[TanningProfession.Id];
+            var tanningOpenRecipeId = tanning.Recipes.Values
+                .Where(r => !tanning.TierGate.ContainsKey(r.Tier))
+                .OrderBy(r => r.RecipeId, System.StringComparer.Ordinal)
+                .First().RecipeId;
+            var tanningGatedRecipeId = tanning.Recipes.Values
+                .Where(r => tanning.TierGate.ContainsKey(r.Tier))
+                .OrderBy(r => r.RecipeId, System.StringComparer.Ordinal)
+                .First().RecipeId;
+
             AssertThat(ui.Forge.FindChild($"RecipeCard_{ScriptedSession.CraftRecipeId}", recursive: true, owned: false))
                 .OverrideFailureMessage("Precondition failed: blacksmith's own dagger recipe should render before any switch.")
                 .IsNotNull();
-            AssertThat(ui.Forge.FindChild($"RecipeCard_{tanningRecipeId}", recursive: true, owned: false)).IsNull();
+            AssertThat(ui.Forge.FindChild($"RecipeCard_{tanningOpenRecipeId}", recursive: true, owned: false)).IsNull();
 
             // Switch blacksmith -> tanning through the general surface (never the tutorial's own
             // add-only picker, which this state has already left behind).
@@ -1792,8 +1814,27 @@ public class TutorialFlowTests
             AssertThat(ui.Forge.FindChild($"RecipeCard_{ScriptedSession.CraftRecipeId}", recursive: true, owned: false))
                 .OverrideFailureMessage("Blacksmith's dagger recipe still renders after switching away from blacksmith.")
                 .IsNull();
-            AssertThat(ui.Forge.FindChild($"RecipeCard_{tanningRecipeId}", recursive: true, owned: false))
-                .OverrideFailureMessage("Tanning's own recipe never rendered after switching to tanning.")
+            AssertThat(ui.Forge.FindChild($"RecipeCard_{tanningOpenRecipeId}", recursive: true, owned: false))
+                .OverrideFailureMessage(
+                    $"Tanning's ungated recipe '{tanningOpenRecipeId}' never rendered as a card after "
+                    + "switching to tanning — the profession switch did not change the craftable set.")
+                .IsNotNull();
+
+            // U-T1-10's other half, asserted here for the first time: a tier-gated recipe is GREYED WITH
+            // A NAMED REASON, never hidden (SurfaceUnlocks' doctrine — the player sees what is coming and
+            // why it is closed). Both halves in one test, because "the card is gone" and "a row explains
+            // why" are separate claims and only the pair of them is the feature.
+            AssertThat(ui.Forge.FindChild($"RecipeCard_{tanningGatedRecipeId}", recursive: true, owned: false))
+                .OverrideFailureMessage(
+                    $"Tanning's tier-gated recipe '{tanningGatedRecipeId}' rendered a full five-button "
+                    + "card. Its Craft button would be an enabled control the sim then rejects — the "
+                    + "exact defect U-T1-10 exists to close.")
+                .IsNull();
+            AssertThat(ui.Forge.FindChild($"Locked_{tanningGatedRecipeId}", recursive: true, owned: false))
+                .OverrideFailureMessage(
+                    $"Tanning's tier-gated recipe '{tanningGatedRecipeId}' rendered NEITHER a card nor a "
+                    + "locked row — it was hidden outright, which is the one thing the greyed-with-a-reason "
+                    + "doctrine forbids.")
                 .IsNotNull();
         }
         finally
