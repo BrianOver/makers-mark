@@ -67,12 +67,18 @@ public class AudioTests
     /// restores a brighter filter — or swaps the cascade back to one pole — goes red here instead of
     /// arriving as a third identical complaint from the owner.</para>
     ///
-    /// <para><b>U-T4-4 recalibrated the ceiling.</b> The two-pole 320Hz cue this repo actually ships
-    /// measures 0.0103 high-band share; the pre-fix single-pole 700Hz tone measured 0.0915 — both
-    /// cleared the old 0.45 ceiling (a 4.9x margin over the BAD tone, not the good one), so it pinned
-    /// nothing and would not have caught a regression back to the abrasive filter. 0.03 sits between
-    /// the two — comfortable headroom over the shipped value, and a hard ceiling under the value this
-    /// test exists to catch.</para>
+    /// <para><b>U-T4-4 recalibrated the ceiling, from measurements taken through THIS path.</b> The
+    /// two-pole 320Hz cue this repo ships measures <b>0.1186</b>; the pre-fix single-pole 700Hz tone
+    /// measures <b>0.4189</b>. The old 0.45 ceiling therefore sat just 7% above the abrasive tone it
+    /// exists to catch — technically not vacuous, but close enough that a partial regression would have
+    /// walked straight through it. 0.20 sits between the two: 69% headroom over what ships, and a hard
+    /// ceiling 2.1x under the tone the owner called abrasive.</para>
+    ///
+    /// <para><b>This share is amplitude-independent</b> — both the shipped RMS-targeted recipe and the
+    /// old peak-0.12 one measure the identical 0.1186, because a scalar gain cancels in the ratio. So a
+    /// future level change cannot move this number, and a number that HAS moved means the filter
+    /// changed. That is exactly the property this test wants, and it is why level and tone need two
+    /// separate assertions rather than one.</para>
     /// </summary>
     [TestCase]
     public void TheBellows_ReadsAsBreath_NotHiss()
@@ -104,9 +110,9 @@ public class AudioTests
             .IsTrue();
     }
 
-    /// <summary>See <see cref="TheBellows_ReadsAsBreath_NotHiss"/>'s own doc for the shipped (0.0103)
-    /// and pre-fix (0.0915) measurements this ceiling sits between.</summary>
-    private const float MaxBellowsHighBandShare = 0.03f;
+    /// <summary>See <see cref="TheBellows_ReadsAsBreath_NotHiss"/>'s own doc for the shipped (0.1186)
+    /// and pre-fix (0.4189) measurements this ceiling sits between.</summary>
+    private const float MaxBellowsHighBandShare = 0.20f;
 
     private static float Rms(float[] s) => s.Length == 0 ? 0f : MathF.Sqrt(s.Sum(v => v * v) / s.Length);
 

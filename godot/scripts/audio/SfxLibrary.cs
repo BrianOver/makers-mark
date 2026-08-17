@@ -152,8 +152,21 @@ public static class SfxLibrary
 
     /// <summary>U-T4-4: the one <see cref="MixBudget.Category.HeldLoop"/> cue's target, read from the
     /// same table as <see cref="CeremonialTargetDbfs"/>/<see cref="UiTargetDbfs"/> — see those fields'
-    /// own doc for why this lives in <see cref="MixBudget"/> rather than as a literal here.</summary>
-    private static readonly float HeldLoopTargetDbfs = MixBudget.Budgets[MixBudget.Category.HeldLoop].TargetRmsDbfs;
+    /// own doc for why this lives in <see cref="MixBudget"/> rather than as a literal here.
+    ///
+    /// <para><b>Unlike those two, this one has to undo its bus.</b> Every number in
+    /// <see cref="MixBudget.Budgets"/> is EFFECTIVE loudness — what the player hears after the cue's bus
+    /// attenuation — which is why <see cref="CeremonialTargetDbfs"/>/<see cref="UiTargetDbfs"/> can be
+    /// used raw: both ride <see cref="AudioBuses.Sfx"/> at <see cref="AudioBuses.SfxBusDb"/> = 0 dB, so
+    /// source and effective are the same number. The held bellows is the only cue on
+    /// <see cref="AudioBuses.SfxLoop"/> (<see cref="AudioBuses.SfxLoopBusDb"/> = −3 dB), so normalising
+    /// the SOURCE straight to the effective target lands the player 3 dB low — measured, not theorised:
+    /// <c>MixBudgetCensusTests</c> read −38.01 dBFS effective against the −35.0±1.5 band. Adding the bus
+    /// back makes this a −32 dBFS source target, which is what this cue's own recipe comment always
+    /// claimed it was.</para></summary>
+    private static readonly float HeldLoopTargetDbfs =
+        MixBudget.Budgets[MixBudget.Category.HeldLoop].TargetRmsDbfs
+        - AudioBuses.SfxLoopBusDb - AudioBuses.SfxBusDb;
 
     private static readonly Dictionary<Cue, AudioStreamWav> Cache = new();
 
