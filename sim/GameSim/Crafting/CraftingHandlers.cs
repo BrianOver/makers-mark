@@ -1,5 +1,6 @@
 using GameSim.Contracts;
 using GameSim.Economy;
+using GameSim.Kernel;
 using GameSim.Professions;
 
 namespace GameSim.Crafting;
@@ -176,9 +177,10 @@ public sealed class CraftingHandlers : IActionHandler
         };
 
         var performanceGrade = forgeScore?.GradePermille ?? echoGrade ?? puzzleGrade;
+        var traceSink = events as ITraceSink;
         var quality = profession.ActiveCraft
-            ? QualityRoller.RollActive(recipe, materialGrade, talents, profession.Quality, rng, performanceGrade)
-            : QualityRoller.Roll(recipe, materialGrade, talents, profession.Quality, rng, performanceGrade);
+            ? QualityRoller.RollActive(recipe, materialGrade, talents, profession.Quality, rng, performanceGrade, traceSink)
+            : QualityRoller.Roll(recipe, materialGrade, talents, profession.Quality, rng, performanceGrade, traceSink);
         var itemId = new ItemId(state.NextItemId);
         // Sub-scores: the Anvil-Map scorer's three zone scores when hand-forged (Wave 5), else the
         // action's Godot-captured sub-scores (legacy/passive), else empty (auto-craft).

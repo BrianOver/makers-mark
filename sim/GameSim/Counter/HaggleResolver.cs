@@ -1,5 +1,6 @@
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Kernel;
 
 namespace GameSim.Counter;
 
@@ -56,9 +57,19 @@ internal static class HaggleResolver
         var trueWillingness = WillingnessModel.TrueWillingness(
             listPrice, hero.Gold, hero.ClassId, interest, hero.MoodPermille, item.Quality,
             Heroes.TraitEffects.PriceSensitivityPermille(hero));
-        var (floor, _) = WillingnessModel.Band(trueWillingness, round);
+        var (floor, ceiling) = WillingnessModel.Band(trueWillingness, round);
 
         events.Emit(new CustomerCountered(hero.Id, floor));
+
+        // U-T6: the CustomerCountered event carries only the offer itself — the true-willingness
+        // number the whole minigame is played against, and the band it produced, are computed
+        // right here and would otherwise vanish the instant this method returns.
+        if (events is ITraceSink traces)
+        {
+            traces.Trace(new DecisionTrace(
+                "haggle-band", $"opened round 1 at {floor}g", $"true willingness {trueWillingness}g at list {listPrice}g",
+                $"interest={interest} mood={hero.MoodPermille} quality={item.Quality} floor={floor} ceiling={ceiling}"));
+        }
 
         return counter with
         {
@@ -111,9 +122,16 @@ internal static class HaggleResolver
         var trueWillingness = WillingnessModel.TrueWillingness(
             listPrice, hero.Gold, hero.ClassId, counter.InterestPermille, hero.MoodPermille, item.Quality,
             Heroes.TraitEffects.PriceSensitivityPermille(hero));
-        var (floor, _) = WillingnessModel.Band(trueWillingness, nextRound);
+        var (floor, ceiling) = WillingnessModel.Band(trueWillingness, nextRound);
 
         events.Emit(new CustomerCountered(hero.Id, floor));
+
+        if (events is ITraceSink traces)
+        {
+            traces.Trace(new DecisionTrace(
+                "haggle-band", $"held firm to round {nextRound} at {floor}g", $"true willingness {trueWillingness}g at list {listPrice}g",
+                $"interest={counter.InterestPermille} mood={hero.MoodPermille} quality={item.Quality} floor={floor} ceiling={ceiling}"));
+        }
 
         return state with
         {
@@ -142,19 +160,35 @@ internal static class HaggleResolver
         var trueWillingness = WillingnessModel.TrueWillingness(
             shelfEntry.Price, hero.Gold, hero.ClassId, counter.InterestPermille, hero.MoodPermille, item.Quality,
             Heroes.TraitEffects.PriceSensitivityPermille(hero));
-        var (_, ceiling) = WillingnessModel.Band(trueWillingness, counter.Round);
+        var (floor, ceiling) = WillingnessModel.Band(trueWillingness, counter.Round);
+
+        // U-T6: CounterSaleClosed carries the price and a Pinned bool but never the willingness/band
+        // numbers that decided WHICH of fleece/pin/plain this was — recorded once, here, alongside
+        // whichever branch below actually fires.
+        void TraceOutcome(string chosen, string reason)
+        {
+            if (events is ITraceSink traces)
+            {
+                traces.Trace(new DecisionTrace(
+                    "haggle-counter", chosen, reason,
+                    $"trueWillingness={trueWillingness} floor={floor} ceiling={ceiling} price={price}"));
+            }
+        }
 
         if (price > ceiling)
         {
+            TraceOutcome("fleeced", $"countered {price}g exceeds the round's ceiling of {ceiling}g");
             var fleecedSession = counter with { GoodwillPermille = counter.GoodwillPermille - WillingnessModel.FleeceGoodwillPenaltyPermille };
             return (CloseSale(state, fleecedSession, hero, item, shelfEntry, price, pinned: false, events, moodDelta: -WillingnessModel.FleeceMoodPenalty), null);
         }
 
         if (WillingnessModel.IsPin(price, trueWillingness))
         {
+            TraceOutcome("pinned", $"countered {price}g landed within the pin window of true willingness {trueWillingness}g");
             return (CloseSale(state, counter, hero, item, shelfEntry, price, pinned: true, events, moodDelta: WillingnessModel.PinMoodBonus), null);
         }
 
+        TraceOutcome("plain sale", $"countered {price}g inside [{floor},{ceiling}] but outside the pin window");
         return (CloseSale(state, counter, hero, item, shelfEntry, price, pinned: false, events), null);
     }
 

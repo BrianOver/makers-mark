@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
+using GameSim.Kernel;
 using GameSim.Professions;
 
 namespace GameSim.Crafting;
@@ -42,7 +43,9 @@ public static class QualityRoller
     /// equals one grade of better ore, never dominating the roll.</summary>
     private const int PerformanceShiftMax = 8;
 
-    public static QualityGrade Roll(Recipe recipe, int materialGrade, ImmutableSortedSet<string> unlockedTalents, ProfessionQualityModel quality, IDeterministicRng rng, int? performanceGrade = null)
+    public static QualityGrade Roll(
+        Recipe recipe, int materialGrade, ImmutableSortedSet<string> unlockedTalents, ProfessionQualityModel quality,
+        IDeterministicRng rng, int? performanceGrade = null, ITraceSink? traceSink = null)
     {
         var masteryGrade = quality.MaterialMasteryNode is { } mastery && unlockedTalents.Contains(mastery) ? 1 : 0;
         var effectiveGrade = materialGrade + masteryGrade;
@@ -73,27 +76,22 @@ public static class QualityRoller
         }
 
         var effective = rng.Roll100() + shift;
-        if (effective <= 14)
+        var resultGrade = effective switch
         {
-            return QualityGrade.Poor;
-        }
+            <= 14 => QualityGrade.Poor,
+            <= 64 => QualityGrade.Common,
+            <= 89 => QualityGrade.Fine,
+            <= 98 => QualityGrade.Superior,
+            _ => QualityGrade.Masterwork,
+        };
 
-        if (effective <= 64)
-        {
-            return QualityGrade.Common;
-        }
+        // U-T6: the shift and the effective roll it produced are the entire reason this recipe
+        // landed on this grade — CraftingHandlers/HeirloomHandlers only ever kept the bare enum.
+        traceSink?.Trace(new DecisionTrace(
+            "quality-roll", resultGrade.ToString(), $"roll+shift {effective} against the passive threshold table",
+            $"shift={shift} effective={effective} materialGrade={materialGrade} recipeTier={recipe.Tier}"));
 
-        if (effective <= 89)
-        {
-            return QualityGrade.Fine;
-        }
-
-        if (effective <= 98)
-        {
-            return QualityGrade.Superior;
-        }
-
-        return QualityGrade.Masterwork;
+        return resultGrade;
     }
 
     // ==================================================================================
@@ -144,7 +142,9 @@ public static class QualityRoller
     /// hard-caps at Superior regardless of jitter or future constant drift — belt and braces:
     /// the minigame is the only road to Masterwork (PKD4).
     /// </summary>
-    public static QualityGrade RollActive(Recipe recipe, int materialGrade, ImmutableSortedSet<string> unlockedTalents, ProfessionQualityModel quality, IDeterministicRng rng, int? performanceGrade = null)
+    public static QualityGrade RollActive(
+        Recipe recipe, int materialGrade, ImmutableSortedSet<string> unlockedTalents, ProfessionQualityModel quality,
+        IDeterministicRng rng, int? performanceGrade = null, ITraceSink? traceSink = null)
     {
         var isAutoCraft = performanceGrade is null;
         var grade = performanceGrade ?? AutoCraftGrade;
@@ -156,6 +156,7 @@ public static class QualityRoller
         var effective = clamped + jitter;
 
         var band = BandFor(effective);
+        var preCeilingBand = band;
 
         var masteryGrade = quality.MaterialMasteryNode is { } mastery && unlockedTalents.Contains(mastery) ? 1 : 0;
         var materialStep = materialGrade + masteryGrade - recipe.Tier;
@@ -168,6 +169,17 @@ public static class QualityRoller
         {
             band = QualityGrade.Superior;
         }
+
+        // U-T6: the jittered roll AND whether a material/auto-craft ceiling clipped it are the
+        // whole story of why this craft landed where it did — CraftingHandlers/HeirloomHandlers
+        // only ever kept the bare enum, so a Fine that got capped from a would-be Masterwork read
+        // identically to a Fine the roll actually earned.
+        traceSink?.Trace(new DecisionTrace(
+            "quality-roll", band.ToString(),
+            band == preCeilingBand
+                ? $"jittered roll {effective} landed in-band, no ceiling applied"
+                : $"jittered roll {effective} would have been {preCeilingBand} before the material/auto-craft ceiling capped it",
+            $"performanceGrade={grade} jitter={jitter} effective={effective} materialStep={materialStep} isAutoCraft={isAutoCraft}"));
 
         return band;
     }
