@@ -1095,7 +1095,7 @@ public partial class MainUi : Control
             Tutorial.Active ? Tutorial.CurrentAnchor
             : lossRow is not null ? TutorialAnchor.ForHud("OpenLegends")
             : TutorialAnchor.None,
-            Town, this);
+            Town, Drawer, this);
         UpdateObjectiveDock(); // Refresh can change the reason line's line count — re-dock to it
     }
 
@@ -3528,6 +3528,17 @@ public partial class MainUi : Control
     /// </summary>
     private void OnStationActivated(InteriorLayout2D.StationSpec station)
     {
+        // R14.5 (Wave A substrate, §11.14.4): Bryn's own station toasts her LIVE voice — whatever
+        // the apprenticeship is teaching right now, in her own words — rather than the fixed
+        // MentorVoice.Greeting every other flavor station's static FlavorLine would otherwise show.
+        // Checked before the generic flavor branch below (which she would also satisfy, since her
+        // own Action is null) so pressing her always speaks the CURRENT lesson, not a stale one-off.
+        if (station.Id == MentorVoice.StationId)
+        {
+            ShowBellToast(MentorVoice.CurrentLesson(Tutorial.Active ? Tutorial.Step : null));
+            return;
+        }
+
         if (station.Action is null)
         {
             // Honest flavor (U3): no verb here, ever — reuses the same rejection-toast banner

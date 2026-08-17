@@ -3,6 +3,7 @@ using System.Linq;
 using GameSim.Professions;
 using GdUnit4;
 using GodotClient.Town2d;
+using GodotClient.Ui;
 using static GdUnit4.Assertions;
 
 namespace GodotClient.Tests;
@@ -70,6 +71,37 @@ public class WorkshopVocabTests
             .IsEqual(staticForgeRow.Stations);
     }
 
+    /// <summary>R14.5/U-T2-5 (Wave A substrate, §11.14.4): Bryn is not a profession's own furniture —
+    /// she is appended to EVERY composed workshop room regardless of which profession(s) are
+    /// selected, at the same tile every time, never colliding with any profession's own set (her own
+    /// row, 4, sits clear of every profession's row per <see cref="WorkshopVocab"/>'s own scheme).</summary>
+    [TestCase]
+    public void MentorStation_AppearsInEveryComposedWorkshopRoom_RegardlessOfProfessionSelection()
+    {
+        foreach (var professionId in AllProfessionIds)
+        {
+            var solo = InteriorLayout2D.WorkshopRoomFor(new[] { professionId });
+            var mentorRows = solo.Stations.Where(s => s.Id == MentorVoice.StationId).ToList();
+
+            AssertThat(mentorRows.Count)
+                .OverrideFailureMessage($"'{professionId}' alone: Bryn's station must appear exactly once — found {mentorRows.Count}.")
+                .IsEqual(1);
+            AssertThat(mentorRows[0]).IsEqual(MentorVoice.Station);
+
+            foreach (var other in WorkshopVocab.StationsFor(professionId))
+            {
+                AssertThat(other.Tile)
+                    .OverrideFailureMessage($"'{professionId}' station '{other.Id}' shares Bryn's own tile — she must never collide with a real station.")
+                    .IsNotEqual(MentorVoice.Station.Tile);
+            }
+        }
+
+        var dual = InteriorLayout2D.WorkshopRoomFor(new[] { AlchemyProfession.Id, TanningProfession.Id });
+        AssertThat(dual.Stations.Count(s => s.Id == MentorVoice.StationId))
+            .OverrideFailureMessage("Bryn must appear exactly once even with two professions selected, never once per profession.")
+            .IsEqual(1);
+    }
+
     [TestCase]
     public void NametagFor_ReadsThePrimary_TheFirstOrderedElement()
     {
@@ -87,7 +119,8 @@ public class WorkshopVocabTests
     /// stations land on the same tile, no station id repeats, and the FULL station set of BOTH
     /// professions appears (a naive dedupe-by-id could silently drop a real station if two
     /// professions ever reused an id, which they never do — this proves the union never loses
-    /// one).</summary>
+    /// one), PLUS Bryn (U-T2-5, R14.5) — she is appended to every composed room regardless of
+    /// selection, never any one profession's own station.</summary>
     [TestCase]
     public void EveryPairOfProfessions_UnionsIntoAValidRoom_NoTileOrIdCollisions()
     {
@@ -101,10 +134,11 @@ public class WorkshopVocabTests
                 }
 
                 var room = InteriorLayout2D.WorkshopRoomFor(new[] { a, b });
-                var expectedCount = WorkshopVocab.StationsFor(a).Count + WorkshopVocab.StationsFor(b).Count;
+                // +1: MentorVoice.Station (U-T2-5) — universal, not part of either profession's own set.
+                var expectedCount = WorkshopVocab.StationsFor(a).Count + WorkshopVocab.StationsFor(b).Count + 1;
 
                 AssertThat(room.Stations.Length)
-                    .OverrideFailureMessage($"Union of '{a}' + '{b}' lost or duplicated a station — expected every station from both sets.")
+                    .OverrideFailureMessage($"Union of '{a}' + '{b}' lost or duplicated a station — expected every station from both sets plus Bryn.")
                     .IsEqual(expectedCount);
 
                 var ids = room.Stations.Select(s => s.Id).ToArray();

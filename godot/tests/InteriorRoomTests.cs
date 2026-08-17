@@ -115,8 +115,8 @@ public class InteriorRoomTests
 
             AssertThat(actualIds)
                 .OverrideFailureMessage(
-                    "U1 pins exactly these six forge station ids, in this order, so U2 can author "
-                    + "art against them in parallel.")
+                    "U1 pins these forge station ids, in this order (six blacksmith stations plus "
+                    + "Bryn, U-T2-5), so U2 can author art against them in parallel.")
                 .IsEqual(expectedIds);
         }
         finally { town.Free(); }

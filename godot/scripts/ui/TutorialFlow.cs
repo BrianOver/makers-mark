@@ -67,6 +67,28 @@ public enum TutorialAnchorKind
     /// highlights, hovers" note for the two steps (BuyMaterial/Craft) that used to name only the
     /// building.</summary>
     Station,
+
+    /// <summary>
+    /// U-T2-6 (Wave A substrate, §11.14.4): points at ONE control INSIDE a specific drawer panel —
+    /// e.g. "the Accept button inside the open Counter panel" — rather than anywhere in the whole
+    /// live HUD tree the way <see cref="Hud"/> does. The gap this closes: <see cref="Hud"/> resolves
+    /// by bare <see cref="Node.FindChild(string, bool, bool)"/> name against the ENTIRE mounted UI,
+    /// which is only safe for controls that are globally unique by name (the bell, the tray
+    /// buttons) — every registered drawer panel stays permanently parented once <see
+    /// cref="Ui.DrawerHost.Register"/> runs (just hidden when not current), so two different panels
+    /// reusing a control name (a "CloseButton", an "AcceptButton") would silently resolve to
+    /// whichever one happens first in tree order, not necessarily the one the step actually means.
+    /// <see cref="TutorialOverlay"/> resolves this kind scoped to the NAMED panel's own registered
+    /// content root (<see cref="Ui.DrawerHost.PanelContent"/>) first, then searches only inside it —
+    /// this is the capability §11.14.4 names as missing ("the tutorial can point at panels and at
+    /// world positions but not at an individual control inside a panel"), which is why "it points at
+    /// the counter station" (a WORLD station, <see cref="Station"/>) is a different thing from
+    /// pointing at a specific button inside the Counter's own open PANEL — this kind is for the
+    /// latter. No <see cref="TutorialStepDef"/> uses this kind yet (Wave A ships the mechanism;
+    /// Wave C/E's own units are the first real rows) — <see cref="PanelControlAnchorTests"/> proves
+    /// it end to end against a real, always-mounted panel control in the meantime.
+    /// </summary>
+    PanelControl,
 }
 
 /// <summary>
@@ -110,17 +132,36 @@ public static class TutorialActVocab
 /// drawer-panel id) for a <see cref="TutorialAnchorKind.Building"/> OR a <see
 /// cref="TutorialAnchorKind.Station"/> (a Station anchor's <see cref="Key"/> is the STATION's own
 /// venue, so the "walk to the {building}" copy generation still works unchanged for it — see
-/// <c>TutorialFlow.StepText</c>'s <c>building</c> lookup), or a live <see cref="Node.Name"/>
+/// <c>TutorialFlow.StepText</c>'s <c>building</c> lookup), a live <see cref="Node.Name"/>
 /// to resolve by <see cref="Node.FindChild(string, bool, bool)"/> against the mounted HUD for a
-/// <see cref="TutorialAnchorKind.Hud"/>. <see cref="StationId"/> is Station-only: the specific
+/// <see cref="TutorialAnchorKind.Hud"/>, OR (U-T2-6) the registered DRAWER PANEL id (<see
+/// cref="Ui.DrawerHost.CurrentPanelId"/>'s own vocabulary, e.g. "Forge"/"Shop") for a <see
+/// cref="TutorialAnchorKind.PanelControl"/>. <see cref="StationId"/> is Station-only: the specific
 /// station's own stable id within that venue's room (<c>InteriorLayout2D.StationSpec.Id</c>, e.g.
-/// "anvil") — resolved via <c>Town2D.FindStation(Key, StationId)</c>.
+/// "anvil") — resolved via <c>Town2D.FindStation(Key, StationId)</c>. <see cref="ControlName"/> is
+/// the PanelControl-only twin of that same slot — see its own doc.
 /// </summary>
 public readonly record struct TutorialAnchor(TutorialAnchorKind Kind, string? Key, string? StationId = null)
 {
     public static readonly TutorialAnchor None = new(TutorialAnchorKind.None, null);
     public static TutorialAnchor ForBuilding(string venueKey) => new(TutorialAnchorKind.Building, venueKey);
     public static TutorialAnchor ForHud(string controlName) => new(TutorialAnchorKind.Hud, controlName);
+
+    /// <summary>U-T2-6 (Wave A substrate, §11.14.4): a control scoped to ONE specific drawer panel —
+    /// <paramref name="panelId"/> is the panel's own registration id (<see
+    /// cref="Ui.DrawerHost.Register"/>'s own vocabulary — "Forge"/"Shop"/etc., the SAME ids <see
+    /// cref="Ui.DrawerHost.CurrentPanelId"/> reports and <c>MainUi.OpenPanel</c> accepts), <paramref
+    /// name="controlName"/> the <see cref="Node.Name"/> of the control inside that panel's OWN
+    /// registered content root. Reuses the <see cref="StationId"/> slot (see <see
+    /// cref="ControlName"/>) rather than adding a fourth positional field — the same "one generic
+    /// second key, meaning differs by Kind" shape <see cref="StationId"/> already established.</summary>
+    public static TutorialAnchor ForPanelControl(string panelId, string controlName) =>
+        new(TutorialAnchorKind.PanelControl, panelId, controlName);
+
+    /// <summary>U-T2-6: a readable alias for <see cref="StationId"/> when <see cref="Kind"/> is <see
+    /// cref="TutorialAnchorKind.PanelControl"/> — same underlying value, named for what it actually
+    /// holds at THIS kind rather than borrowing Station's own name for it.</summary>
+    public string? ControlName => StationId;
 
     /// <summary>U2: <paramref name="venueKey"/> is always "forge" today (the only venue with a
     /// Station anchor) but kept general rather than hardcoded, mirroring <see cref="ForBuilding"/>.
@@ -1658,6 +1699,48 @@ public sealed partial class TutorialFlow : PanelContainer
     /// "re-reading beats re-running", the same answer U2 established for every other lesson).</summary>
     public string? LossLessonText => _firstLossDay > 0 ? FirstLossBlockText : null;
 
+    /// <summary>
+    /// U-T2-7 (Wave A substrate, §11.14.4): the first-touch tier's own bookkeeping — "a first-touch
+    /// lesson fires the FIRST time an action becomes reachable, once ever, and then lives in the
+    /// Lessons book." A generic engine, deliberately, rather than a fourth hand-rolled <c>bool
+    /// _hasSeenX</c> field beside <see cref="HasSeenLedgerTip"/>/<see cref="_hasSeenWarrantEndBeat"/>/
+    /// <see cref="_firstLossDay"/> — three copies of the identical "once ever, never again" shape is
+    /// already sprawl; an eleven-action long tail (Wave E) copying it an eleventh time is the
+    /// failure this exists to stop before it starts. Persisted alongside every other flag this class
+    /// already saves (<see cref="Load"/>/<see cref="Save"/>) — never a runtime-only set a reload
+    /// could forget.
+    /// </summary>
+    public FirstTouchLessons FirstTouch { get; private set; } = new();
+
+    /// <summary>
+    /// Fires <paramref name="lessonText"/> for <paramref name="id"/> — but ONLY the first time this
+    /// exact id is ever passed here, for the lifetime of the campaign (persisted immediately). Every
+    /// call after that, including on a later run after a reload, returns <see langword="null"/> —
+    /// <b>the anti-nag pin.</b> This repo has already shipped a 1287x memorial nag to the owner
+    /// (KTD-H) from a "should only fire once" surface that had nothing durable backing that claim;
+    /// <see cref="FirstTouchLessonsTests"/> calls the SAME id a four-digit number of times and
+    /// asserts exactly one non-null answer came back, so this is a proven property, not a promise in
+    /// a comment.
+    ///
+    /// <para>Independent of <see cref="Active"/>/<see cref="Dismissed"/> — the long tail's own
+    /// lessons matter to every campaign, tutorial-dismissed or not, exactly like <see
+    /// cref="ConsumeLedgerTip"/>'s own precedent. This class has no idea what "reachable" means for
+    /// any given action (KTD2: pure bookkeeping, see <see cref="FirstTouchLessons"/>'s own doc) — the
+    /// CALLER decides that and is expected to call this only once it already has (never a poll-every-
+    /// tick call regardless of reachability, even though the anti-nag pin would still hold if one
+    /// did — law: no timers, no nags, ever).</para>
+    /// </summary>
+    public string? ConsumeFirstTouch(string id, string lessonText)
+    {
+        var fired = FirstTouch.Consume(id, lessonText);
+        if (fired is not null)
+        {
+            Save();
+        }
+
+        return fired;
+    }
+
     private void Complete()
     {
         Completed = true;
@@ -1756,6 +1839,10 @@ public sealed partial class TutorialFlow : PanelContainer
             _vigilCardSeen = data.VigilCardSeen;
             _hasSeenWarrantEndBeat = data.HasSeenWarrantEndBeat;
             _firstLossDay = data.FirstLossDay;
+            // U-T2-7: an old save without this property deserializes to null — safe, same "widens
+            // going forward, never fabricates a false fire" contract VigilCardSeen's own remark set:
+            // a pre-existing campaign simply has nothing fired yet, exactly like a fresh one.
+            FirstTouch = new FirstTouchLessons(data.FirstTouchFired);
         }
         catch (System.Text.Json.JsonException)
         {
@@ -1772,6 +1859,7 @@ public sealed partial class TutorialFlow : PanelContainer
                 Completed = Completed, Dismissed = Dismissed, HasSeenLedgerTip = HasSeenLedgerTip, Step = Step,
                 VigilCardSeen = _vigilCardSeen,
                 HasSeenWarrantEndBeat = _hasSeenWarrantEndBeat, FirstLossDay = _firstLossDay,
+                FirstTouchFired = new Dictionary<string, string>(FirstTouch.Fired),
             }));
     }
 
@@ -1842,5 +1930,13 @@ public sealed partial class TutorialFlow : PanelContainer
         /// <see cref="ConsumeLedgerTip"/>'s own pre-existing limitation, can miss the one-time
         /// reveal. Accepted here on the same precedent, not a new gap this unit introduces.</summary>
         public int FirstLossDay { get; set; }
+
+        /// <summary>U-T2-7 (Wave A substrate): the first-touch tier's own fired set, id -> the exact
+        /// text it fired with — an old save without this property deserializes to <see
+        /// langword="null"/>, which <see cref="Load"/> hands straight to <see
+        /// cref="FirstTouchLessons"/>'s own null-tolerant constructor (nothing fired yet, same as a
+        /// fresh campaign — never a false fire, per <see cref="FirstTouchLessons.Consume"/>'s own
+        /// contract).</summary>
+        public Dictionary<string, string>? FirstTouchFired { get; set; }
     }
 }

@@ -104,6 +104,22 @@ public partial class DrawerHost : Control
     public ColorRect Veil => _dim;
 
     /// <summary>
+    /// U-T2-6 (Wave A substrate, §11.14.4): a registered panel's own content root, found by id,
+    /// REGARDLESS of whether it is the currently open one. Every panel <see cref="Register"/>s once
+    /// at boot and stays permanently parented under <see cref="_slot"/> from then on (just hidden
+    /// when not current) — so this resolves the SAME live node whether the panel is open, closed, or
+    /// has never been opened yet this session, which is exactly what <see cref="TutorialOverlay"/>'s
+    /// <c>PanelControl</c> anchor needs: it can resolve — and validate — the target control before
+    /// the panel is ever opened, then rely on the control's own <see
+    /// cref="CanvasItem.IsVisibleInTree"/> (naturally false while a different panel is showing) to
+    /// decide whether to actually draw a pulse right now.
+    /// </summary>
+    /// <returns>The registered content, or <see langword="null"/> for an id nothing ever <see
+    /// cref="Register"/>ed — a caller bug (a typo'd panel id in a tutorial registry row), checked at
+    /// the call site per that class's own "never point at nothing" contract.</returns>
+    public Control? PanelContent(string id) => _registered.GetValueOrDefault(id);
+
+    /// <summary>
     /// Every registered panel id, in registration order.
     ///
     /// <para>Exists so a coverage guard can assert that the human-playtest sweep

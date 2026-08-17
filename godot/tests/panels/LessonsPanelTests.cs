@@ -143,5 +143,56 @@ public class LessonsPanelTests
             Unmount(ui);
         }
     }
+
+    /// <summary>U-T2-7 (Wave A substrate, §11.14.4): once a first-touch lesson has fired, it lives
+    /// in this book PERMANENTLY — "then lives in the Lessons book" is the plan's own second half of
+    /// the first-touch tier, and it must not depend on the tutorial chain still being active.</summary>
+    [TestCase]
+    public void LessonsPanel_RendersAFirstTouchLesson_OnceItHasFired()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var fired = ui.Tutorial.ConsumeFirstTouch("test-first-touch-panel", "This fired exactly once.");
+            AssertThat(fired).IsNotNull();
+
+            ui.OpenPanel("Lessons");
+            var text = RenderedText(ui.Lessons);
+
+            AssertThat(text.Contains("This fired exactly once.", StringComparison.Ordinal))
+                .OverrideFailureMessage("A fired first-touch lesson's own text is missing from the Lessons book.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The book renders whatever fired FIRST, never a later attempt to overwrite it — same
+    /// "re-reading beats re-running, never a stale claim" contract every other lesson in this book
+    /// already has.</summary>
+    [TestCase]
+    public void LessonsPanel_NeverOverwritesAFiredFirstTouchLesson_WithALaterAttempt()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Tutorial.ConsumeFirstTouch("test-overwrite", "The original text.");
+            ui.Tutorial.ConsumeFirstTouch("test-overwrite", "A later, different text.");
+
+            ui.OpenPanel("Lessons");
+            var text = RenderedText(ui.Lessons);
+
+            AssertThat(text.Contains("The original text.", StringComparison.Ordinal)).IsTrue();
+            AssertThat(text.Contains("A later, different text.", StringComparison.Ordinal))
+                .OverrideFailureMessage("The Lessons book rendered a SECOND attempt's text — the first fire must be permanent.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif
