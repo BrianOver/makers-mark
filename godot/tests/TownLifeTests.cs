@@ -178,6 +178,264 @@ public class TownLifeTests
         return condition();
     }
 
+    // ── HeroActor2D errand mode (U-T3-8, register #150 "no hero/NPC walk animation") ────────────
+    //
+    // A wandering hero's own lissajous drift peaks at 15.03px/s — under SpriteMotion's own
+    // WalkSpeedThreshold (20) — so before this unit every hero sat frozen on frame 0 all day. These
+    // tests are the direct port of the TownsfolkNpc2D errand-mode block above onto HeroActor2D's own
+    // API shape (SetErrandTargets/SetPhase, same names, same contract).
+
+    /// <summary>Condition-waited, never a frame count — same discipline as the townsfolk version.</summary>
+    [TestCase]
+    public void HeroErrand_LeavesHome_ReachesTheDoor_ThenReturnsHome_ConditionWaited()
+    {
+        var actor = new HeroActor2D();
+        try
+        {
+            var home = new Vector2(100, 100);
+            actor.Init(1, "vanguard", Colors.White, new PlaceholderTexture2D(), home);
+            var door = home + new Vector2(180, 40);
+            actor.SetErrandTargets(new[] { door });
+            actor.SetPhase(DayPhase.Morning); // errand hours
+
+            AssertThat(DriveUntil(actor, () => actor.Position.DistanceTo(home) > 20f, 0.2, 200))
+                .OverrideFailureMessage("hero never left the wander band around Home to start the errand")
+                .IsTrue();
+
+            AssertThat(DriveUntil(actor, () => actor.Position.DistanceTo(door) < 1f, 0.2, 200))
+                .OverrideFailureMessage("hero never reached the errand door")
+                .IsTrue();
+
+            AssertThat(DriveUntil(actor, () => actor.Position.DistanceTo(home) < 1f, 0.2, 400))
+                .OverrideFailureMessage("hero never walked home again after dwelling at the door")
+                .IsTrue();
+
+            AssertThat(actor.State)
+                .OverrideFailureMessage("an errand is a Wandering-hero behavior — it must never change HeroTownState")
+                .IsEqual(HeroActor2D.HeroTownState.Wandering);
+        }
+        finally
+        {
+            actor.QueueFree();
+        }
+    }
+
+    /// <summary>"An errand that teleports is not an errand" — every tick's displacement is bounded
+    /// by <see cref="HeroActor2D.ErrandWalkSpeed"/>*delta.</summary>
+    [TestCase]
+    public void HeroErrand_NeverTeleports_EveryTickBoundedByWalkSpeed()
+    {
+        var actor = new HeroActor2D();
+        try
+        {
+            var home = Vector2.Zero;
+            actor.Init(0, "vanguard", Colors.White, new PlaceholderTexture2D(), home);
+            actor.SetErrandTargets(new[] { home + new Vector2(300, 0) });
+            actor.SetPhase(DayPhase.Morning);
+
+            const double delta = 0.1;
+            var budget = HeroActor2D.ErrandWalkSpeed * delta + 0.5; // small float-safety margin
+
+            for (var i = 0; i < 400; i++)
+            {
+                var before = actor.Position;
+                actor._Process(delta);
+                var stepDistance = before.DistanceTo(actor.Position);
+
+                AssertThat(stepDistance <= budget)
+                    .OverrideFailureMessage(
+                        $"tick {i}: moved {stepDistance:0.##}px in one {delta}s step (budget {budget:0.##}px) " +
+                        "— this is a teleport, not a walked errand")
+                    .IsTrue();
+
+                if (i > 60 && actor.Position.DistanceTo(home) < 1f)
+                {
+                    break; // completed a full round trip well within the cap
+                }
+            }
+        }
+        finally
+        {
+            actor.QueueFree();
+        }
+    }
+
+    /// <summary>Evening ("Night") never starts a NEW errand — the hero stays inside the same small
+    /// wander band the pre-U-T3-8 idle drift already used, across a long simulated stretch (well
+    /// past the id-seeded first-departure offset).</summary>
+    [TestCase]
+    public void HeroErrand_NightPhase_NeverStartsAnErrand_StaysInTheWanderBand()
+    {
+        var actor = new HeroActor2D();
+        try
+        {
+            var home = new Vector2(50, 50);
+            actor.Init(0, "vanguard", Colors.White, new PlaceholderTexture2D(), home);
+            actor.SetErrandTargets(new[] { home + new Vector2(300, 0) });
+            actor.SetPhase(DayPhase.Evening); // "Night" — not errand hours
+
+            var maxOffset = 0f;
+            for (var i = 0; i < 400; i++) // 80 simulated seconds — far past any cooldown
+            {
+                actor._Process(0.2);
+                maxOffset = Mathf.Max(maxOffset, actor.Position.DistanceTo(home));
+            }
+
+            AssertThat(maxOffset < 20f)
+                .OverrideFailureMessage(
+                    $"hero wandered {maxOffset:0.##}px from Home at Night — a NEW errand must wait for " +
+                    "Dawn/Quest (IsErrandHours), or the town reads equally busy after dark")
+                .IsTrue();
+        }
+        finally
+        {
+            actor.QueueFree();
+        }
+    }
+
+    [TestCase]
+    public void HeroErrand_Determinism_SameConfigSameDeltas_IdenticalPositions()
+    {
+        var a = new HeroActor2D();
+        var b = new HeroActor2D();
+        try
+        {
+            var home = new Vector2(60, 90);
+            var targets = new[] { home + new Vector2(150, -40) };
+            a.Init(2, "vanguard", Colors.White, new PlaceholderTexture2D(), home);
+            b.Init(2, "vanguard", Colors.White, new PlaceholderTexture2D(), home);
+            a.SetErrandTargets(targets);
+            b.SetErrandTargets(targets);
+            a.SetPhase(DayPhase.Morning);
+            b.SetPhase(DayPhase.Morning);
+
+            for (var i = 0; i < 300; i++)
+            {
+                a._Process(0.15);
+                b._Process(0.15);
+                AssertThat(a.Position).IsEqual(b.Position);
+            }
+        }
+        finally
+        {
+            a.QueueFree();
+            b.QueueFree();
+        }
+    }
+
+    /// <summary>The direct regression proof for register #150: a wandering hero's lissajous drift
+    /// alone (no errand targets) NEVER crosses <see cref="SpriteMotion.WalkSpeedThreshold"/>, so
+    /// <see cref="SpriteMotion"/> only ever returns an idle pose (zero lean) — proven first as the
+    /// documented baseline, then flipped by giving the SAME hero a real errand and proving a walk
+    /// pose (nonzero lean) is reached while <see cref="HeroActor2D.State"/> is STILL Wandering.</summary>
+    [TestCase]
+    public void HeroErrand_CrossesWalkSpeedThreshold_LeanAppliesWhileStillWandering()
+    {
+        var frozen = new HeroActor2D();
+        var walking = new HeroActor2D();
+        try
+        {
+            var home = new Vector2(50, 50);
+            frozen.Init(1, "vanguard", Colors.White, new PlaceholderTexture2D(), home);
+            walking.Init(1, "vanguard", Colors.White, new PlaceholderTexture2D(), home);
+            walking.SetErrandTargets(new[] { home + new Vector2(200, 0) });
+            walking.SetPhase(DayPhase.Morning);
+
+            var frozenLeaned = false;
+            var walkingLeaned = false;
+            for (var i = 0; i < 300; i++)
+            {
+                frozen._Process(0.1);
+                walking._Process(0.1);
+                frozenLeaned |= Mathf.Abs(frozen.Sprite.Rotation) > 0f;
+                walkingLeaned |= walking.State == HeroActor2D.HeroTownState.Wandering &&
+                    Mathf.Abs(walking.Sprite.Rotation) > 0f;
+            }
+
+            AssertThat(frozenLeaned)
+                .OverrideFailureMessage(
+                    "baseline drifted: register #150's root cause (lissajous peaks under " +
+                    "WalkSpeedThreshold) no longer holds with no errand targets set — this test's " +
+                    "premise needs re-checking, not the fix")
+                .IsFalse();
+
+            AssertThat(walkingLeaned)
+                .OverrideFailureMessage(
+                    "register #150: giving the SAME hero a real errand must cross " +
+                    "SpriteMotion.WalkSpeedThreshold and apply a walk pose while State is still " +
+                    "Wandering — this is the actual fix, not a faster lissajous")
+                .IsTrue();
+        }
+        finally
+        {
+            frozen.QueueFree();
+            walking.QueueFree();
+        }
+    }
+
+    private static bool DriveUntil(HeroActor2D actor, System.Func<bool> condition, double delta, int maxSteps)
+    {
+        for (var i = 0; i < maxSteps; i++)
+        {
+            if (condition())
+            {
+                return true;
+            }
+
+            actor._Process(delta);
+        }
+
+        return condition();
+    }
+
+    // ── Town2D wiring: heroes errand toward real venue doors (U-T3-8) ────────────────────────────
+
+    [TestCase]
+    public void Town2D_Built_HeroesErrandTowardRealVenueDoors()
+    {
+        var town = new Town2D { Name = "Town2D" };
+        town.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        ((SceneTree)Engine.GetMainLoop()).Root.AddChild(town);
+        town.Build(new SimAdapter(seed: 11));
+        try
+        {
+            AssertThat(town.Adapter!.CurrentState.Phase)
+                .OverrideFailureMessage("a fresh campaign is expected to start in Morning (errand hours)")
+                .IsEqual(DayPhase.Morning);
+
+            var homes = town.HeroActors.Select(a => a.Home).ToList();
+            AssertThat(homes.Count > 0).OverrideFailureMessage("a fresh campaign must have living heroes").IsTrue();
+            var leftHome = false;
+
+            // No real frame pump: _Process is called directly as a plain method (see the townsfolk
+            // wiring test's own doc for why Town2D's live SubViewport is never asked to render).
+            // Town2D._Process only feeds each hero's SetPhase — the errand walk itself lives in
+            // HeroActor2D._Process, so each one must be driven directly too.
+            for (var i = 0; i < 300 && !leftHome; i++)
+            {
+                town._Process(0.2);
+                foreach (var actor in town.HeroActors)
+                {
+                    actor._Process(0.2);
+                }
+
+                leftHome = town.HeroActors
+                    .Select((a, idx) => a.Position.DistanceTo(homes[idx]))
+                    .Any(d => d > 20f);
+            }
+
+            AssertThat(leftHome)
+                .OverrideFailureMessage(
+                    "no hero left their wander band across 60 simulated seconds — Town2D must feed " +
+                    "real venue door anchors into HeroActor2D.SetErrandTargets")
+                .IsTrue();
+        }
+        finally
+        {
+            town.Free();
+        }
+    }
+
     // ── TavernLife2D patron seating ───────────────────────────────────────────────────────────
 
     [TestCase]
