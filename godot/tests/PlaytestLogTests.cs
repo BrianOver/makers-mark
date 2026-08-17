@@ -1,7 +1,9 @@
 #if GDUNIT_TESTS
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
+using System.Reflection;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GdUnit4;
@@ -186,6 +188,66 @@ public class PlaytestLogTests
         }
     }
 
+    /// <summary>
+    /// U-T6-1: the whole point of <see cref="ActionSubject"/> — a <see cref="CraftAction"/> row's
+    /// <c>why</c> must name the recipe AND the material, not just echo the bare type name every
+    /// prior session logged. Goes straight through <see cref="SimAdapter.Queue"/> (no UI mount
+    /// needed; <c>SimAdapter</c> is deliberately plain C#) so the assertion is about the choke
+    /// point's own wiring, not about which button a panel happens to expose.
+    /// </summary>
+    [TestCase]
+    public void CraftActionRow_NamesTheRecipeAndMaterial()
+    {
+        var path = ProjectSettings.GlobalizePath("user://playtest-log-subject-craft.jsonl");
+        PlaytestLog.RedirectForTests(path);
+        try
+        {
+            var adapter = new SimAdapter(2026UL);
+            adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
+
+            var rows = Rows(path, "action");
+            var craftRow = rows.LastOrDefault(r => r.Contains("\"action\":\"CraftAction\""));
+            AssertThat(craftRow).OverrideFailureMessage(Dump(rows)).IsNotNull();
+            AssertThat(craftRow).Contains(
+                $"\"why\":\"craft {ScriptedSession.CraftRecipeId} from {ScriptedSession.CraftMaterial}\"");
+        }
+        finally
+        {
+            PlaytestLog.RedirectForTests(null);
+        }
+    }
+
+    /// <summary>
+    /// The brief's other two examples ("which floor a bounty targets and for how much", "what was
+    /// stocked ... and to what [price]") — proving the fill-in is not a one-type special case.
+    /// </summary>
+    [TestCase]
+    public void OtherActionTypes_CarryCorrectNonEmptySubjects()
+    {
+        var path = ProjectSettings.GlobalizePath("user://playtest-log-subject-others.jsonl");
+        PlaytestLog.RedirectForTests(path);
+        try
+        {
+            var adapter = new SimAdapter(2026UL);
+            adapter.Queue(new PostBountyAction(TargetFloor: 3, RewardGold: 50));
+            adapter.Queue(new StockAction(new ItemId(7), 42));
+
+            var rows = Rows(path, "action");
+
+            var bountyRow = rows.LastOrDefault(r => r.Contains("\"action\":\"PostBountyAction\""));
+            AssertThat(bountyRow).OverrideFailureMessage(Dump(rows)).IsNotNull();
+            AssertThat(bountyRow).Contains("\"why\":\"post bounty for floor 3 at 50g\"");
+
+            var stockRow = rows.LastOrDefault(r => r.Contains("\"action\":\"StockAction\""));
+            AssertThat(stockRow).OverrideFailureMessage(Dump(rows)).IsNotNull();
+            AssertThat(stockRow).Contains("\"why\":\"stock item #7 at 42g\"");
+        }
+        finally
+        {
+            PlaytestLog.RedirectForTests(null);
+        }
+    }
+
     /// <summary>Buy the dagger's copper, open the forge, and press Work — the same enabled Controls
     /// a player clicks (<c>ForgeCraftTests</c>' own path).</summary>
     private static void OpenAnvilMap(MainUi ui)
@@ -252,5 +314,83 @@ public class PlaytestLogTests
                 .Where(l => l.Contains($"\"kind\":\"{kind}\""))
                 .ToList()
             : new List<string>();
+}
+
+/// <summary>
+/// U-T6-1: <see cref="ActionSubject.Describe"/> is pure, engine-free reflection over
+/// <see cref="PlayerAction"/> record fields — no Godot runtime needed, same discipline as
+/// <c>ActionReachabilityCensusTests</c>'s own type census in this directory and
+/// <c>ActionLegalityTests.BuildMinimalInstance</c> (sim project, same idiom). Iterates the concrete
+/// types by reflection rather than hand-listing them, so a NEW action type (the 26th) is caught here
+/// BY NAME the instant this runs, instead of quietly logging an empty or sentinel <c>why</c> in a
+/// real session the next time someone plays.
+/// </summary>
+[TestSuite]
+public class ActionSubjectCoverageTests
+{
+    [TestCase]
+    public void EveryConcretePlayerActionType_ProducesANonEmptySubject()
+    {
+        var actionTypes = typeof(PlayerAction).Assembly.GetTypes()
+            .Where(t => t.IsClass && !t.IsAbstract && typeof(PlayerAction).IsAssignableFrom(t))
+            .ToList();
+
+        AssertThat(actionTypes.Count)
+            .OverrideFailureMessage(
+                "Reflection found zero concrete PlayerAction types — the Contracts assembly/type lookup itself is broken.")
+            .IsGreater(0);
+
+        var missing = new List<string>();
+        foreach (var type in actionTypes)
+        {
+            var instance = BuildMinimalInstance(type);
+            var subject = ActionSubject.Describe(instance);
+            if (string.IsNullOrWhiteSpace(subject) || subject.StartsWith(ActionSubject.NoCaseSentinel))
+            {
+                missing.Add(type.Name);
+            }
+        }
+
+        AssertThat(missing.Count)
+            .OverrideFailureMessage($"ActionSubject.Describe has no case for: {string.Join(", ", missing)}")
+            .IsEqual(0);
+    }
+
+    /// <summary>Builds a minimal, guard-safe instance of a concrete <see cref="PlayerAction"/> record
+    /// via its primary (positional) constructor, purely by reflection — the exact technique
+    /// <c>ActionLegalityTests.BuildMinimalInstance</c> uses in the sim project, duplicated here rather
+    /// than shared because the two live in different assemblies with no test-only bridge between
+    /// them. Every constructor parameter gets the most inert value its type allows.</summary>
+    private static PlayerAction BuildMinimalInstance(Type type)
+    {
+        var ctor = type
+            .GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+            .Where(c => !(c.GetParameters().Length == 1 && c.GetParameters()[0].ParameterType == type))
+            .OrderByDescending(c => c.GetParameters().Length)
+            .First();
+
+        var args = ctor.GetParameters().Select(p => MinimalArg(p.ParameterType)).ToArray();
+        return (PlayerAction)ctor.Invoke(args);
+    }
+
+    private static object? MinimalArg(Type type)
+    {
+        if (type == typeof(string))
+        {
+            return string.Empty;
+        }
+
+        if (type == typeof(ImmutableSortedSet<string>))
+        {
+            return ImmutableSortedSet<string>.Empty;
+        }
+
+        if (type.IsValueType)
+        {
+            return Activator.CreateInstance(type);
+        }
+
+        return null; // any other nullable/reference param (ImmutableList<int>?, CraftPuzzleInput?, ...)
+    }
 }
 #endif
