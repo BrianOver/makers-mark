@@ -25,7 +25,11 @@ public class WaveELessonsTests
 {
     /// <summary>"talents and the second profession" (ForgePanel half): keen-eye has no
     /// prerequisites, so it is unlockable from a fresh save — the same fixture
-    /// <c>ForgeCraftTests.TalentUnlock_QueuesUnlockTalentAction</c>-shaped tests already use.</summary>
+    /// <c>ForgeCraftTests.TalentUnlock_QueuesUnlockTalentAction</c>-shaped tests already use.
+    /// <c>ForgePanel.ShowTalentsLesson</c> routes through the panel's OWN private
+    /// <c>ShowMentorFirstTouch</c>/<c>_mentorBanner</c> (the <c>ForgeMentorLessonsTests</c>
+    /// precedent) — NOT the shared <c>MainUi.Mentor</c> every other Wave C/D/E lesson uses — so
+    /// this asserts against <c>ui.Forge</c>'s own banner controls, not <c>ui.Mentor</c>.</summary>
     [TestCase]
     public void FirstTalentUnlock_TeachesTheTalentLesson()
     {
@@ -36,10 +40,10 @@ public class WaveELessonsTests
 
             PressEnabled(ui.Forge, "Unlock_keen-eye");
 
-            AssertThat(ui.Mentor.Visible)
+            AssertThat(Find<PanelContainer>(ui.Forge, "ForgeMentorBanner").Visible)
                 .OverrideFailureMessage("The talent lesson never showed on the campaign's first-ever Unlock press.")
                 .IsTrue();
-            var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
+            var text = Find<Label>(ui.Forge, "ForgeMentorText").Text;
             AssertThat(text).Contains(MentorVoice.Name);
             AssertThat(text).Contains("Talent");
         }
@@ -81,7 +85,9 @@ public class WaveELessonsTests
 
     /// <summary>"the Foundry's four verbs at affordability": a fresh campaign starts with
     /// <c>GameFactory.StartingPlayerGold</c> = 100, comfortably above coal's 4g unit price, so
-    /// "Buy 1" is a real, legal, day-1 press — no fixture beyond a fresh mount needed.</summary>
+    /// "Buy 1" is a real, legal, day-1 press — no fixture beyond a fresh mount needed.
+    /// <c>ForgePanel.ShowFoundryVerbsLesson</c> routes through the same private
+    /// <c>_mentorBanner</c> as the talent lesson above, not <c>MainUi.Mentor</c>.</summary>
     [TestCase]
     public void FirstFoundryVerbPress_TeachesTheFoundryLesson()
     {
@@ -97,10 +103,10 @@ public class WaveELessonsTests
 
             PressEnabled(ui.Forge, "BuySupply_coal");
 
-            AssertThat(ui.Mentor.Visible)
+            AssertThat(Find<PanelContainer>(ui.Forge, "ForgeMentorBanner").Visible)
                 .OverrideFailureMessage("The Foundry lesson never showed on the campaign's first-ever Foundry-verb press.")
                 .IsTrue();
-            var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
+            var text = Find<Label>(ui.Forge, "ForgeMentorText").Text;
             AssertThat(text).Contains(MentorVoice.Name);
             AssertThat(text).Contains("Foundry");
         }
