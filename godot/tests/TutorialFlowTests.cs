@@ -1264,6 +1264,43 @@ public class TutorialFlowTests
         }
     }
 
+    /// <summary>U-T2 Wave E ("the HUD chips including quick travel, which unlocks silently today",
+    /// the long tail): the tick that flips <see cref="TutorialFlow.Completed"/> — and with it
+    /// <see cref="TutorialFlow.QuickTravelUnlocked"/> — true must teach the player a new HUD chip
+    /// just appeared. Reuses the exact backstop-completion fixture above; a real
+    /// <see cref="SimAdapter.AdvancePhase"/> after <see cref="CraftedAdvance"/> flips
+    /// <c>Tutorial.Completed</c> is what actually runs <c>MainUi.RefreshHud</c> (<c>CraftedAdvance</c>
+    /// itself calls <see cref="TutorialFlow.Advance"/> directly, bypassing the HUD tick entirely).</summary>
+    [TestCase]
+    public void TutorialCompleting_TeachesThatQuickTravelJustUnlocked()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            DriveDay1ToLookIn(ui);
+            CraftedAdvance(ui, day: 8);
+            AssertThat(ui.Tutorial.Completed).IsTrue();
+
+            // Clear whatever unrelated lesson DriveDay1ToLookIn's own real ticks may have already
+            // shown (e.g. the mark-read lesson) -- this test is about quick-travel specifically, not
+            // about which lesson happens to be on screen first.
+            ui.Mentor.Dismiss();
+
+            ui.Adapter.AdvancePhase(); // the real tick that runs MainUi.RefreshHud
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("Quick travel unlocked silently -- no lesson showed on the tick Completed flipped true.")
+                .IsTrue();
+            var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
+            AssertThat(text).Contains(MentorVoice.Name);
+            AssertThat(text).Contains("quick-travel");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     /// <summary>
     /// U1 (§11.13) superseded this unit's own earlier fix: the Vigil step's own completion fact
     /// (<c>SupplyDelivered</c>/<c>PartyRecalled</c>) can only ever fire if a party actually parks —

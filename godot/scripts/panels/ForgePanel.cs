@@ -1539,7 +1539,22 @@ public partial class ForgePanel : SimPanel
         var action = new UnlockTalentAction(nodeId, professionId);
         Adapter?.Queue(action);
         _feedback!.Text = Confirm(action, $"Unlocked {nodeId}");
+        ShowTalentsLesson();
     }
+
+    /// <summary>
+    /// U-T2 Wave E (§11.14.4, "talents and the second profession", the long tail): fires the first
+    /// time the player EVER unlocks a talent node — before this unit, nothing explained what a
+    /// talent unlock actually costs or how the tree connects. Reads no sim number here beyond what
+    /// <see cref="GameSim.Crafting.CraftingHandlers"/>'s own <c>ApplyUnlock</c> already decided (v1:
+    /// no gold, no action slot — see that method's own doc); the lesson describes the mechanism,
+    /// never a restated cost that could silently drift from the sim's own truth.
+    /// </summary>
+    private void ShowTalentsLesson() =>
+        ShowMentorFirstTouch(
+            "first-talent-unlock",
+            "Talent nodes build on each other — a later one needs its own prerequisite unlocked "
+            + "first. Unlocking one costs you nothing but the choice of which path you follow.");
 
     /// <summary>Queues a vendor buy (Morning-only in the sim; the U6 gate disables the row
     /// off-Morning, and a rejection that still surfaces becomes MainUi's toast). Fixed to
@@ -1566,7 +1581,24 @@ public partial class ForgePanel : SimPanel
         var action = new UpgradeForgeAction();
         Adapter?.Queue(action);
         _feedback!.Text = Confirm(action, "Requested a forge upgrade");
+        ShowFoundryVerbsLesson();
     }
+
+    /// <summary>
+    /// U-T2 Wave E ("the Foundry's four verbs at affordability", the long tail): fires the first
+    /// time the player EVER presses any one of the Foundry's four gold-for-certainty verbs
+    /// (<see cref="OnUpgradeForgePressed"/>, <see cref="OnBuyForgeSupplyPressed"/>,
+    /// <see cref="OnMasterworkPressed"/>, <see cref="OnCommissionLegendaryPressed"/>) — one shared
+    /// lesson, since all four are the same mechanism (R14.2: the furnace opens the Foundry) and the
+    /// player reaching any one of them for the first time means they can now afford to think about
+    /// all four.
+    /// </summary>
+    private void ShowFoundryVerbsLesson() =>
+        ShowMentorFirstTouch(
+            "foundry-four-verbs",
+            "The Foundry's four verbs — upgrading the forge, buying coal and flux, a guaranteed "
+            + "masterwork, and a legendary commission — all trade gold for certainty instead of a "
+            + "roll. None of them are worth reaching for until the gold is actually there to spend.");
 
     /// <summary>U3: coal/flux from the forge supplier — resolves immediately (mirrors
     /// <see cref="OnBuyMaterialPressed"/>'s immediate-resolve shape). Still a fixed one-unit
@@ -1577,6 +1609,7 @@ public partial class ForgePanel : SimPanel
         Adapter?.Queue(action);
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Coin);
         _feedback!.Text = Confirm(action, $"Bought 1 {supplyKey}");
+        ShowFoundryVerbsLesson();
     }
 
     /// <summary>U4 (P6b): the masterwork attempt — resolves IMMEDIATELY
@@ -1591,6 +1624,7 @@ public partial class ForgePanel : SimPanel
         Adapter?.Queue(action);
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.CraftDone);
         _feedback!.Text = Confirm(action, $"Masterwork attempt on {recipeId} with {materialKey} (guarantees Superior or better)");
+        ShowFoundryVerbsLesson();
     }
 
     /// <summary>U4 (P6b): commission one of the era's capped legendary works — always a BELL-RIDER
@@ -1606,6 +1640,7 @@ public partial class ForgePanel : SimPanel
         var action = new CommissionLegendaryWorkAction(recipeId, materialKey);
         Adapter?.Queue(action);
         _feedback!.Text = Confirm(action, $"Commissioned a legendary {recipeId} from {materialKey}");
+        ShowFoundryVerbsLesson();
     }
 
     private string SelectedMaterialOr(string recipeDefault)

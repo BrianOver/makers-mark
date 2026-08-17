@@ -57,6 +57,16 @@ public partial class LegendsWall : Control
     /// (headless/test safe, <see cref="CommissionBoard.Adapter"/> precedent).</summary>
     public SimAdapter? Adapter { get; set; }
 
+    /// <summary>U-T2 Wave E ("reforge", the long tail): the shared <see cref="Ui.TutorialFlow"/>
+    /// (same instance every other panel's first-touch teaching reads/writes, e.g.
+    /// <c>ForgePanel.Tutorial</c>/<c>RaidForecastBoard.Tutorial</c>) — this wall's own Reforge
+    /// lesson reads/writes it through <see cref="Mentor"/>. Null-tolerant.</summary>
+    public TutorialFlow? Tutorial { get; set; }
+
+    /// <summary>The shared "Bryn speaks a first-touch lesson" banner (<see cref="MentorBanner"/>,
+    /// Wave C) — owned by <c>MainUi</c> so it draws above this modal too.</summary>
+    public MentorBanner? Mentor { get; set; }
+
     /// <summary>True iff the last <see cref="ShowWall"/> call rendered the invitational empty
     /// state (no memorials, no depths records, no legend items) — test hook.</summary>
     public bool ShowedEmptyState { get; private set; }
@@ -224,8 +234,12 @@ public partial class LegendsWall : Control
             row.AddChild(materialSelect);
 
             var button = new Button { Name = $"Reforge_{itemId.Value}", Text = "Reforge" };
-            button.Pressed += () => Adapter?.Queue(new ReforgeHeirloomAction(
-                itemId, recipeOptions[recipeSelect.Selected].RecipeId, materialOptions[materialSelect.Selected]));
+            button.Pressed += () =>
+            {
+                Adapter?.Queue(new ReforgeHeirloomAction(
+                    itemId, recipeOptions[recipeSelect.Selected].RecipeId, materialOptions[materialSelect.Selected]));
+                ShowReforgeLesson();
+            };
             row.AddChild(button);
 
             // Enabled-state parity with legality (KEY CONSTRAINT: ActionLegality's predicates are
@@ -247,6 +261,18 @@ public partial class LegendsWall : Control
             Repaint();
         }
     }
+
+    /// <summary>U-T2 Wave E ("reforge", the long tail): fires the first time the player ever
+    /// presses a Reforge button — a fallen hero's worn heirloom, remade in a recipe/material the
+    /// player now chooses, same forge and same mark as any other craft.</summary>
+    private void ShowReforgeLesson() =>
+        Mentor?.ShowFirstTouch(
+            Tutorial?.ConsumeFirstTouch(
+                "reforge-heirloom",
+                MentorVoice.Speak(
+                    "A fallen hero's gear can be reforged into something new — pick the recipe and "
+                    + "the material, and the piece they carried becomes a fresh mark instead of "
+                    + "staying a memorial.")));
 
     /// <summary>Mirrors <c>HeirloomHandlers.Apply</c>'s guards 4-9 (the SAME recipe/profession/
     /// material/tier/quantity/action-budget chain <c>CraftingHandlers</c> uses) for a candidate

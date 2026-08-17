@@ -1256,6 +1256,7 @@ public partial class MainUi : Control
         Tutorial.SetWorkshopVocab(
             Town.WorkshopNametag, Town.WorkshopStationNoun, Town.WorkshopMaterialsStationId, Town.WorkshopCraftStationId);
         Tutorial.RefreshAffordances(state);
+        ShowQuickTravelUnlockedLessonIfEarned();
         Timeline.Refresh(state.Phase, Waiting);
         UpdateClockLabel(); // U3/U4: bell verb + player-phase banner are state-driven — refresh on every tick, not only per-frame _Process
         RefreshBellTray(); // U3 (KTD-B): keep the tray honest on every tick too, not only on submit
@@ -2332,6 +2333,43 @@ public partial class MainUi : Control
                 + "counts.")));
     }
 
+    /// <summary>U-T2 Wave E ("the read-only surfaces", the long tail): HeroCards, Depths, and
+    /// Bestiary carry no player-submitted action anywhere on them — every field on every one of
+    /// them is a pure projection of what the sim already decided (law: show only what the sim
+    /// decided). One shared first-touch id fired from whichever of the three the player reaches
+    /// first (<see cref="OpenPanel"/> for HeroCards/Depths, <see cref="OnBestiaryVisibilityChanged"/>
+    /// for Bestiary) — the other two become no-ops by <see cref="TutorialFlow.ConsumeFirstTouch"/>'s
+    /// own once-ever contract.</summary>
+    private void ShowReadOnlySurfaceLesson() =>
+        Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
+            "read-only-surfaces",
+            MentorVoice.Speak(
+                "Nothing on this board is a button — it only shows you what has already happened. "
+                + "Heroes, depths, and the bestiary are the sim's own record, not a place to act.")));
+
+    /// <summary>U-T2 Wave E ("the HUD chips including quick travel, which unlocks silently today",
+    /// the long tail): <see cref="TutorialFlow.QuickTravelRow"/> just starts rendering the day the
+    /// tutorial chain completes (<see cref="TutorialFlow.QuickTravelUnlocked"/> is exactly
+    /// <see cref="TutorialFlow.Completed"/>) — no fanfare, no event, nothing that told the player a
+    /// new HUD chip exists at all. Safe to call every <c>RefreshHud</c> tick unconditionally: the
+    /// <see cref="TutorialFlow.QuickTravelUnlocked"/> guard is cheap and
+    /// <see cref="TutorialFlow.ConsumeFirstTouch"/>'s own once-ever contract is what actually limits
+    /// this to the one tick it first goes true (same shape as
+    /// <see cref="ShowProofFirstTouchIfEarned"/>).</summary>
+    private void ShowQuickTravelUnlockedLessonIfEarned()
+    {
+        if (!Tutorial.QuickTravelUnlocked)
+        {
+            return;
+        }
+
+        Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
+            "quick-travel-unlocked",
+            MentorVoice.Speak(
+                "A quick-travel row just opened up top — every building you have already visited is "
+                + "now one click away, no walk required.")));
+    }
+
     /// <summary>U5: a transient bell-action notice (reuses the rejection-toast banner).</summary>
     private void ShowBellToast(string message)
     {
@@ -3110,6 +3148,15 @@ public partial class MainUi : Control
         Forecast.Tutorial = Tutorial;
         Forecast.Mentor = Mentor;
 
+        // U-T2 Wave E (the long tail): the Legends Wall's Reforge lesson needs the same wiring.
+        Legends.Tutorial = Tutorial;
+        Legends.Mentor = Mentor;
+
+        // U-T2 Wave E: Progress's own general profession-switch header shares the second-profession
+        // lesson's id with MainUi.OnSecondProfessionPicked (see ProgressionPanel.Tutorial's own doc).
+        Progress.Tutorial = Tutorial;
+        Progress.Mentor = Mentor;
+
         // --- build-provenance stamp (deploy hygiene): a small always-visible corner label naming
         //     this build — mounted last so it draws over everything else. See BuildStamp's own
         //     doc; no other MainUi behavior changes here. ---
@@ -3184,6 +3231,15 @@ public partial class MainUi : Control
             // clicks, quick-travel, tray buttons), so it is the one place to notify from. TutorialFlow
             // itself decides whether id ("Tavern"/"HeroCards") is the one it is waiting on.
             Tutorial.NotifyPanelOpened(id);
+
+            // U-T2 Wave E ("the read-only surfaces", the long tail): HeroCards and Depths carry no
+            // player-submitted action anywhere on them (Bestiary shares the same lesson from its own
+            // VisibilityChanged hook, OnBestiaryVisibilityChanged, below — it never routes through
+            // this method). One shared id: whichever of the three the player opens first teaches it.
+            if (id is "HeroCards" or "Depths")
+            {
+                ShowReadOnlySurfaceLesson();
+            }
         }
 
         // The tutorial's copy depends on WHICH surface is open (it stops telling you to walk somewhere you
@@ -3723,6 +3779,14 @@ public partial class MainUi : Control
         }
 
         Adapter.Queue(new SetProfessionsAction(current.Add(professionId)));
+        // U-T2 Wave E ("talents and the second profession", the long tail): fires once, the first
+        // time the player ever takes a second profession — the union-never-replace contract this
+        // method's own doc already states is otherwise invisible on screen.
+        Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
+            "second-profession-picked",
+            MentorVoice.Speak(
+                "A second profession adds a new craft alongside your first — it never replaces what "
+                + "you already know. Both share the same forge and the same day's action slots.")));
     }
 
     /// <summary>
@@ -3997,6 +4061,7 @@ public partial class MainUi : Control
         {
             _resumePlayOnBestiaryClose = Clock.Playing;
             Clock.Pause();
+            ShowReadOnlySurfaceLesson();
         }
         else if (_resumePlayOnBestiaryClose)
         {
