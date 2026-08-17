@@ -546,6 +546,87 @@ public class AudioTests
         AssertThat(Synth.Noise(10, seed: 1)).IsNotEqual(Synth.Noise(10, seed: 2));
     }
 
+    /// <summary>
+    /// U-T4-3: <see cref="Synth.Normalise"/> used to run every sample through <c>MathF.Tanh</c>
+    /// unconditionally — gating it to "only when scaling down" would not have helped, because
+    /// <c>Normalise(buf, 0.55)</c> produces a post-gain peak of exactly 0.55, and <c>tanh(0.55)</c> is
+    /// already 2.4% into the curve. A mathematically pure sine at that level measures 2.35% THD with the
+    /// third harmonic at −32.6 dBc — real, audible grit on every pure tone in the game, reproduced here
+    /// as a direct single-frequency correlation (a matched-filter DFT term at an arbitrary, not
+    /// necessarily bin-aligned frequency — the same "FFT one bin" idea) at <see cref="Cue.Bell"/>'s and
+    /// <see cref="Cue.CraftDone"/>'s historical <c>Normalise</c> peak targets (0.55 and 0.6 respectively
+    /// — <see cref="Cue.Shelve"/> shared CraftDone's 0.6 and measures identically, since tanh's harmonic
+    /// distortion is a pure function of amplitude, not of frequency or which cue is asking).
+    ///
+    /// <para><b>Why a synthetic probe, not <see cref="SfxLibrary.Get"/>'s actual multi-partial
+    /// buffers.</b> Measured directly against a throwaway harness reproducing this file's exact
+    /// synthesis math: <see cref="Cue.Bell"/>'s own OTHER partial at 607Hz leaks into a naive
+    /// 220→660Hz third-harmonic probe of the actual shipped buffer via ordinary rectangular-window
+    /// spectral leakage (no window is applied to a short transient) — a −55dBc floor REGARDLESS of
+    /// whether tanh is present. <see cref="Cue.CraftDone"/>'s own second note carries an intentional
+    /// harmonic at 1174Hz, 2Hz from a naive 392→1176Hz third-harmonic probe of its first note — that
+    /// pairing measures ~19% "THD" whether or not tanh is present, because it is mostly measuring
+    /// CraftDone's own designed second note, not the waveshaper. A clean single steady tone at each
+    /// cue's own historical peak level isolates the one thing actually being proven — does
+    /// <see cref="Synth.Normalise"/> still warp a pure tone — the same way this unit's own cited numbers
+    /// were derived, without either collision.</para>
+    /// </summary>
+    [TestCase]
+    public void PureToneCues_AreNotWaveshaped()
+    {
+        (double Thd, double ThirdHarmonicDbc) Probe(float peak)
+        {
+            var n = Synth.Samples(1.0f);
+            var buf = new float[n];
+            for (var i = 0; i < n; i++)
+            {
+                buf[i] = MathF.Sin(2f * MathF.PI * 220f * i / Synth.SampleRate) * peak;
+            }
+
+            Synth.Normalise(buf, peak);
+
+            double Correlate(float freqHz)
+            {
+                double c = 0, s = 0;
+                for (var i = 0; i < buf.Length; i++)
+                {
+                    var theta = 2.0 * Math.PI * freqHz * i / Synth.SampleRate;
+                    c += buf[i] * Math.Cos(theta);
+                    s += buf[i] * Math.Sin(theta);
+                }
+
+                return Math.Sqrt(c * c + s * s) * 2.0 / buf.Length;
+            }
+
+            var fundamental = Correlate(220f);
+            var thirdHarmonic = Correlate(660f);
+            return (thirdHarmonic / fundamental, 20.0 * Math.Log10(thirdHarmonic / fundamental));
+        }
+
+        // Bell's and CraftDone's historical Normalise peak targets — both cues moved to
+        // Synth.NormaliseRms in this same unit (see SfxLibrary.Build), so these literals are frozen
+        // probes of Normalise itself, not a live read of either cue's current recipe.
+        foreach (var (label, peak) in new[] { ("Bell", 0.55f), ("CraftDone", 0.60f) })
+        {
+            var (thd, thirdHarmonicDbc) = Probe(peak);
+
+            AssertThat((float)thd)
+                .OverrideFailureMessage(
+                    $"A pure tone at {label}'s old Normalise target ({peak}) measures {thd:P2} THD after " +
+                    "Synth.Normalise — the waveshaper is back. Nothing in this library needs soft " +
+                    "limiting: ToStream hard-clamps to +/-1.0 and AudioBuses now carries a -1.0 dBTP " +
+                    "limiter on Master.")
+                .IsLess(0.005f);
+
+            AssertThat((float)thirdHarmonicDbc)
+                .OverrideFailureMessage(
+                    $"A pure tone at {label}'s old Normalise target ({peak}) has a third harmonic at " +
+                    $"{thirdHarmonicDbc:0.0}dBc after Synth.Normalise — should be silent (no waveshaping) " +
+                    "well below -60dBc.")
+                .IsLess(-60f);
+        }
+    }
+
     [TestCase]
     public void Director_PlaysACueOnAPooledVoice_AndStartsTheBed()
     {
@@ -1433,14 +1514,30 @@ public class AudioTests
     /// <see cref="Cue.EnterMineGate"/>, <see cref="Cue.EnterNoticeboard"/>) replaces
     /// <see cref="Cue.PanelOpen"/> at exactly one Town2D building's entrance
     /// (<c>MainUi.EntranceCueFor</c>) — the owner's complaint was that the generic cue was "too loud and
-    /// harsh," so a replacement that is merely DIFFERENT but equally loud would only fix half of it. Peak
-    /// is the right comparison here (not RMS/LUFS): these are all sub-half-second transients where what a
-    /// player perceives as "loud" is dominated by the peak hit, not the average level.
+    /// harsh," so a replacement that is merely DIFFERENT but equally loud would only fix half of it.
+    ///
+    /// <para><b>U-T4-3: peak retired as the comparison, RMS took its place.</b> This used to compare raw
+    /// sample peak — reasonable back when every cue's level was an ad hoc peak target picked by ear, with
+    /// no shared scale to weigh them on. U-T4-3 gave every UI one-shot (PanelOpen and all five venue cues
+    /// alike) the SAME calibrated target (<see cref="MixBudget.Category.UiOneShot"/>,
+    /// <see cref="Synth.NormaliseRms"/>), which means peak stopped being a fair proxy: three of these
+    /// cues (<see cref="Cue.EnterForge"/>, <see cref="Cue.EnterTavern"/>, <see cref="Cue.EnterNoticeboard"/>)
+    /// were previously under-target and this unit correctly BOOSTED them into band — which raises their
+    /// peak right along with their RMS even though they are now no louder in the sense the mix budget
+    /// actually controls. <c>EnterTavern</c> (peak 0.255) and <c>EnterNoticeboard</c> (peak 0.286) both
+    /// now exceed <c>PanelOpen</c>'s peak (0.218) purely from that correct boost — a stale peak comparison
+    /// would read this as a regression when it is the fix landing. Comparing the SAME
+    /// <see cref="MixBudget.ActiveWindowRms"/> measurement the census itself checks preserves this test's
+    /// actual intent (a venue cue must not read as louder than the sound it replaced) without being fooled
+    /// by a punchier transient sitting at an identical, in-budget RMS. The allowance is the category's own
+    /// compiled tolerance, not a new invented number — two cues independently targeting the same band are
+    /// expected to land within it, not bit-identically.</para>
     /// </summary>
     [TestCase]
     public void TheVenueCues_AreNeverLouderThanPanelOpen()
     {
-        var panelOpenPeak = Peak(Pcm(SfxLibrary.Get(Cue.PanelOpen)));
+        var panelOpenDb = MixBudget.ActiveWindowRms(Pcm(SfxLibrary.Get(Cue.PanelOpen)), Synth.SampleRate);
+        var tolerance = MixBudget.Budgets[MixBudget.Category.UiOneShot].ToleranceDb;
         var venueCues = new[]
         {
             Cue.EnterForge, Cue.EnterTavern, Cue.EnterMarket, Cue.EnterMineGate, Cue.EnterNoticeboard,
@@ -1448,13 +1545,14 @@ public class AudioTests
 
         foreach (var cue in venueCues)
         {
-            var peak = Peak(Pcm(SfxLibrary.Get(cue)));
-            AssertThat(peak)
+            var db = MixBudget.ActiveWindowRms(Pcm(SfxLibrary.Get(cue)), Synth.SampleRate);
+            AssertThat(db)
                 .OverrideFailureMessage(
-                    $"{cue} peaks at {peak:0.###}, PanelOpen (the generic cue it replaces at its " +
-                    $"building) peaks at {panelOpenPeak:0.###}. A per-venue cue that is LOUDER than the " +
+                    $"{cue} measures {db:0.00} dBFS, PanelOpen (the generic cue it replaces at its " +
+                    $"building) measures {panelOpenDb:0.00} dBFS — more than the UiOneShot category's own " +
+                    $"{tolerance:0.0}dB tolerance louder. A per-venue cue that reads as louder than the " +
                     "sound it replaces only fixes 'identical,' not 'too loud.'")
-                .IsLessEqual(panelOpenPeak);
+                .IsLessEqual(panelOpenDb + tolerance);
         }
     }
 

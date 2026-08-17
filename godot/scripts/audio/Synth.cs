@@ -108,9 +108,22 @@ public static class Synth
         }
     }
 
-    /// <summary>Normalises to <paramref name="peak"/> if the buffer is louder, and always soft-clips —
-    /// so a cue built from many partials can never come out distorted or wildly louder than its
-    /// siblings, which is how a mix ends up with one sound everybody flinches at.</summary>
+    /// <summary>Scales <paramref name="buffer"/> down if it is louder than <paramref name="peak"/>
+    /// (never boosts — this is a ceiling, not a target). A one-shot still wanting a raw peak ceiling
+    /// (today, only <see cref="Cue.Bellows"/> and <see cref="Cue.EnterMarket"/> — see
+    /// <c>SfxLibrary</c>'s own notes at those two cues) is the caller for this; every other one-shot
+    /// targets loudness directly via <see cref="NormaliseRms"/> instead.
+    ///
+    /// <para><b>U-T4-3: no longer soft-clips.</b> This used to run every sample through
+    /// <c>MathF.Tanh</c> unconditionally — including well BELOW peak, since gating the tanh call to
+    /// "only when scaling down" does not help: <c>Normalise(buf, 0.55)</c> produces a post-gain peak of
+    /// exactly 0.55, and <c>tanh(0.55)</c> is already 2.4% into the curve. A mathematically pure sine at
+    /// that level measured 2.35% THD with the third harmonic at −32.6 dBc — audible grit on every pure
+    /// tone in the game, and level alone could never fix it. Nothing here ever needed the soft limiter:
+    /// <see cref="ToStream"/> already hard-clamps to ±1.0, and <c>AudioBuses</c> now carries a −1.0 dBTP
+    /// limiter on Master, which is where a safety ceiling belongs — not silently warping every quiet
+    /// cue on the way there.</para>
+    /// </summary>
     public static void Normalise(float[] buffer, float peak = 0.85f)
     {
         var max = 0f;
@@ -124,8 +137,47 @@ public static class Synth
             var gain = MathF.Min(1f, peak / max);
             for (var i = 0; i < buffer.Length; i++)
             {
-                buffer[i] = MathF.Tanh(buffer[i] * gain);
+                buffer[i] *= gain;
             }
+        }
+    }
+
+    /// <summary>Below this, <see cref="MixBudget.ActiveWindowRms"/> is reporting "no measurable signal"
+    /// (its own <c>SilenceFloorDb</c> is −120) rather than a real, quiet level — scaling toward a target
+    /// against that reading would divide by (functionally) silence and produce a meaningless gain.</summary>
+    private const float SilenceGuardDbfs = -100f;
+
+    /// <summary>Scales <paramref name="buffer"/> so its own <see cref="MixBudget.ActiveWindowRms"/>
+    /// lands at <paramref name="targetRmsDbfs"/> — a target, not a ceiling: unlike <see cref="Normalise"/>
+    /// this may boost as freely as it cuts, because RMS-targeting for perceived loudness has no reason to
+    /// only go one direction.
+    ///
+    /// <para><b>U-T4-3: the unit that spends the budget <c>MixBudget</c> (U-T4-2) wrote down.</b> Every
+    /// one-shot cue used to target a raw PEAK (0.14 to 0.6, chosen by ear, cue by cue, with no shared
+    /// scale) — which is exactly how <c>Bell</c> ended up 22 to 42 dB louder than the bed it rang over:
+    /// nothing ever measured what "peak 0.55" actually sounds like relative to "peak 0.26." Levelling to
+    /// the SAME measurement the census checks (<see cref="MixBudget.ActiveWindowRms"/>, not a plain
+    /// whole-buffer RMS) means the gain this applies and the number
+    /// <c>MixBudgetCensusTests.EveryCue_LandsInItsBudgetBand</c> checks against are the same idea of
+    /// "loud," not two that happen to usually agree.</para>
+    ///
+    /// <para>No soft-clipping here either, for the same reason <see cref="Normalise"/> lost its own: a
+    /// boost large enough to threaten <see cref="ToStream"/>'s ±1.0 hard clamp would mean a cue's peak
+    /// target and its category's RMS target had drifted wildly apart, which is a design defect in the
+    /// cue's own recipe, not something a limiter should quietly paper over.</para>
+    /// </summary>
+    public static void NormaliseRms(float[] buffer, float targetRmsDbfs)
+    {
+        var currentDb = MixBudget.ActiveWindowRms(buffer, SampleRate);
+        if (currentDb <= SilenceGuardDbfs)
+        {
+            return; // no measurable signal to level toward a target -- leave it as silence, not noise.
+        }
+
+        var gain = MathF.Pow(10f, (targetRmsDbfs - currentDb) / 20f);
+        for (var i = 0; i < buffer.Length; i++)
+        {
+            buffer[i] *= gain;
         }
     }
 

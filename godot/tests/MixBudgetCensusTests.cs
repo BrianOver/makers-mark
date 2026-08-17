@@ -213,8 +213,13 @@ public class MixBudgetCensusTests
     /// is pinned at an exact count, so a future PR silently growing the exemption set (papering over a
     /// new regression instead of fixing it) or silently shrinking it (claiming a re-level without the
     /// diff to prove it) both go red here and need a deliberate, reviewed edit to this number.
+    ///
+    /// <para>U-T4-3 dropped this 20 -&gt; 4: every one-shot cue (5 ceremonial + 11 UI Cue.* entries) now
+    /// lands in its <see cref="MixBudget.Budgets"/> band via <see cref="Synth.NormaliseRms"/> — see that
+    /// unit's PR body for the before/after table. Only the 4 composed-bed Track.* entries remain,
+    /// unowned by this unit.</para>
     /// </summary>
-    private const int PinnedExemptionCount = 20;
+    private const int PinnedExemptionCount = 4;
 
     [TestCase]
     public void ThePendingExemptionCount_IsThePinnedNumber()

@@ -72,10 +72,13 @@ public class LessonsPanelTests
         var ui = MountMainUi();
         try
         {
-            // Fastest real path to Completed: the chain's own backstop — no need to drive three
+            // Fastest real path to Completed: the chain's own backstop — no need to drive the
             // in-game days for a claim about the BOOK, not the chain's own advance logic (that is
-            // TutorialFlowTests' job).
-            ui.Tutorial.Advance(ui.Adapter.CurrentState with { Day = 4 });
+            // TutorialFlowTests' job). Read the backstop from the flow rather than hardcoding a day:
+            // this was a literal 4, which silently stopped meaning "the chain closes" when U-T2-2
+            // split that constant into the warrant's end (still day 4) and the chain's own close
+            // (now later, because the pointed chain runs through day 7).
+            ui.Tutorial.Advance(ui.Adapter.CurrentState with { Day = TutorialFlow.ChainBackstopDay });
             AssertThat(ui.Tutorial.Completed).IsTrue();
 
             ui.OpenPanel("Lessons");

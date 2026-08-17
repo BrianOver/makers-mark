@@ -67,13 +67,23 @@ public static class TownLayout2D
         Scale = new Godot.Vector2(CharacterSpriteScale, CharacterSpriteScale),
     };
 
-    /// <summary>Town grid extent in tiles (pivot plan: "town grid ≈40×28") — width deliberately
-    /// equals the 640px viewport width exactly (no horizontal camera pan needed), height (28 ×
-    /// 16 = 448px) exceeds the 360px viewport so the vertical <see cref="Camera2D"/> limit has
-    /// somewhere to pan between the mine gate (north) and the town square (south).</summary>
-    public const int GridWidth = 40;
+    /// <summary>Town grid extent in tiles. <b>U-T3-2 (register #163, "need to expand the size of
+    /// the world"):</b> the world used to be 40×28 (640×448px) — 1.11 screens wide by 1.38 tall on
+    /// the 640×360 viewport, so every venue sat inside a single screen and the whole cluster read as
+    /// one room ringed by trees. The owner ruled <b>64×44</b> (1024×704px): 1.60 screens wide by
+    /// 1.96 tall, a 2.51× area increase over the old grid — enough room that a minimum town (gate,
+    /// road, two building rows, a plaza, a tree line) actually fits without every object crowding
+    /// the same few tiles. Both dimensions still exceed their viewport axis, so the <see
+    /// cref="Camera2D"/> limits keep something to pan across on both axes. Every placement table
+    /// below (<see cref="Venues"/>, <see cref="RallyTile"/>, <see cref="PathRects"/>, <see
+    /// cref="Props"/>, <see cref="HeroHomeTiles"/>, <see cref="TownsfolkHomeTiles"/>) was re-laid
+    /// onto this grid in the same PR, at today's art sizes — <c>godot/tests/TownPlacementTests.cs</c>
+    /// pins the proof: its known-bad sprite/nameplate/door-approach overlap sets, sixteen sprite
+    /// overlaps and a nameplate stamped on a wheelbarrow among them, all measured off the cramped
+    /// 40×28 grid, are now empty exception sets rather than a widened list.</summary>
+    public const int GridWidth = 64;
 
-    public const int GridHeight = 28;
+    public const int GridHeight = 44;
 
     /// <summary>One venue's placement: the tile its Y-sort line (front-door row) sits on, plus the
     /// sprite id <see cref="TownAssets2D"/> resolves through the art manifest/fallback ladder.
@@ -147,24 +157,33 @@ public static class TownLayout2D
     /// owner rejected). Back to the unrecoloured magenta roof (option B) — overwrite
     /// <c>godot/assets/art/forge.png</c> with the frozen pre-fix copy at
     /// <c>art/pipeline/sources/forge-sdxl-magenta.png</c>.</para>
+    ///
+    /// <para><b>U-T3-2 (register #163, 64×44 grid):</b> re-laid off the cramped 40×28 tile
+    /// coordinates onto the new grid — mine gate north on the road, forge/market as the north
+    /// building row, tavern/noticeboard as the south row, the plaza (well, lanterns, string-lights)
+    /// sitting in the yard between them. Every footprint below is checked clear of every other
+    /// venue/prop/hero/townsfolk sprite, nameplate and door-approach lane at today's real PNG sizes
+    /// (forge 72×81, market 76×62, tavern 84×88, mine-gate 48×48, noticeboard 44×50) — see <see
+    /// cref="Props"/>'s own doc and <c>TownPlacementTests</c>'s now-empty exception sets.</para>
     /// </summary>
     public static readonly VenueLayout[] Venues =
     {
-        new("forge", "Forge", "forge", new Vector2I(13, 12)),
-        new("market", "Shop", "market", new Vector2I(26, 12)),
-        new("tavern", "Tavern", "tavern", new Vector2I(13, 18)),
+        new("forge", "Forge", "forge", new Vector2I(18, 26)),
+        new("market", "Shop", "market", new Vector2I(46, 26)),
+        new("tavern", "Tavern", "tavern", new Vector2I(18, 40)),
         // U2 (playtest-three plan): was "Gate" — bare enough to read as generic scenery next to a
         // "Bounties" building that actually opens a DIFFERENT panel (Depths). Nametag only; the
         // click-routing key ("minegate") and TownAssets2D's sprite id are untouched.
-        new("minegate", "Mine Gate", "mine-gate", new Vector2I(20, 3)),
-        new("noticeboard", "Bounties", "noticeboard", new Vector2I(26, 18)),
+        new("minegate", "Mine Gate", "mine-gate", new Vector2I(32, 8)),
+        new("noticeboard", "Bounties", "noticeboard", new Vector2I(46, 40)),
     };
 
     /// <summary>Where departing heroes rally (dwell as a cluster) before marching to the mine
-    /// gate's own <see cref="Building2D.DoorAnchorGlobal"/> — sits ON the road (see <see
+    /// gate's own <see cref="Building2D.DoorAnchorGlobal"/> — sits ON the north road (see <see
     /// cref="PathRects"/>) between the plaza and the gate, mirroring <c>Town3D.RallySpotFor</c>'s
-    /// "near the gate, spread along one axis" read.</summary>
-    public static readonly Vector2I RallyTile = new(20, 9);
+    /// "near the gate, spread along one axis" read. U-T3-2: moved with the gate from (20,9) to sit
+    /// on the new road at column 32.</summary>
+    public static readonly Vector2I RallyTile = new(32, 14);
 
     /// <summary>
     /// Cobble tile rects (<see cref="Town2D.BuildGround"/> paints every cell inside these over the
@@ -174,105 +193,107 @@ public static class TownLayout2D
     /// decoration with an actual walkable-reading street layout. Rects deliberately overlap by a
     /// tile at each junction (redundant repaints, not a bug) so the network reads as continuous
     /// rather than as disjoint tile confetti.
+    ///
+    /// <para><b>U-T3-2 (64×44 grid):</b> re-laid around the new venue positions — the plaza now
+    /// sits in the yard between the north row (forge/market) and the south row (tavern/
+    /// noticeboard), with the well/lantern cluster (see <see cref="Props"/>) inside it, and the
+    /// road running north from the plaza up to the relocated mine gate.</para>
     /// </summary>
     public static readonly Rect2I[] PathRects =
     {
-        // Central plaza: x15-25, y13-17 (11×5 tiles), framing the well/lantern props below.
-        new(15, 13, 11, 5),
-        // North road: plaza's top edge (y13) up to the mine gate's door-front tile (20,4).
-        new(19, 4, 2, 9),
-        // Forge spur: its door-front tile (13,13) into the plaza's west edge (x15).
-        new(13, 13, 3, 1),
-        // Market spur: its door-front tile (26,13) into the plaza's east edge (x25).
-        new(25, 13, 2, 1),
-        // Tavern spur: plaza's south edge (y17) down to its door-front tile (13,19).
-        new(13, 17, 1, 3),
-        // Noticeboard spur: plaza's south edge (y17) down to its door-front tile (26,19).
-        new(26, 17, 1, 3),
+        // Central plaza: x22-41, y28-39 (20×12 tiles), framing the well/lantern props below.
+        new(22, 28, 20, 12),
+        // North road: the mine gate's door-front row (8) down to the plaza's north edge (28).
+        new(31, 8, 2, 21),
+        // Forge spur: its door-front row (26) into the plaza's NW corner (22,28).
+        new(18, 26, 5, 3),
+        // Market spur: its door-front row (26) into the plaza's NE corner (41,28).
+        new(41, 26, 5, 3),
+        // Tavern spur: plaza's south edge (39) down to its door-front row (40).
+        new(18, 39, 5, 2),
+        // Noticeboard spur: plaza's south edge (39) down to its door-front row (40).
+        new(41, 39, 5, 2),
     };
 
     /// <summary>
-    /// Static decoration: a well anchoring the plaza center, lanterns flanking the plaza corners
-    /// and each building's door, trees framing the map's open edges/corners, and a couple of
-    /// crates beside the market — all placed on open grass clear of every venue footprint and the
-    /// cobble network (props carry no collision, so this is a legibility/framing choice, not a
-    /// pathing constraint). <see cref="Town2D.BuildProps"/> instantiates each entry.
+    /// Static decoration: a well anchoring the plaza center, lanterns at the plaza's four corners,
+    /// trees framing the map's open edges/corners, and a couple of crates beside the market — all
+    /// placed on open grass clear of every venue footprint and the cobble network (props carry no
+    /// collision, so this is a legibility/framing choice, not a pathing constraint). <see
+    /// cref="Town2D.BuildProps"/> instantiates each entry.
+    ///
+    /// <para><b>U-T3-2 (register #163, 64×44 grid):</b> every tile re-laid onto the bigger grid at
+    /// TODAY's real committed art sizes (well 40×68, lantern 16×44, tree 28×40, crate 16×16 —
+    /// measured off the PNG headers, not the placeholder-fallback table in <see
+    /// cref="TownAssets2D"/>, which only applies when art is missing). <b>Lanterns dropped from 8
+    /// to 4</b> (register #144, "22 light sources in a four-building village") — plaza corners
+    /// only now; the road and window glow carry the rest. <c>TownPlacementTests</c>' sprite,
+    /// nameplate and door-approach-lane exception sets are all empty against this table — the
+    /// sixteen overlaps a four-building 40×28 village had nowhere to avoid are gone, not widened.
+    /// </para>
     /// </summary>
     public static readonly PropLayout[] Props =
     {
-        new("town2d-well", new Vector2I(20, 15), true),
+        new("town2d-well", new Vector2I(32, 33), true),
 
-        // Lanterns: plaza's four corners, then flanking each building's door-front tile.
-        new("town2d-prop-lantern", new Vector2I(16, 13), true),
-        new("town2d-prop-lantern", new Vector2I(24, 13), true),
-        new("town2d-prop-lantern", new Vector2I(16, 17), true),
-        new("town2d-prop-lantern", new Vector2I(24, 17), true),
-        new("town2d-prop-lantern", new Vector2I(12, 13), true),
-        new("town2d-prop-lantern", new Vector2I(27, 13), true),
-        new("town2d-prop-lantern", new Vector2I(12, 19), true),
-        new("town2d-prop-lantern", new Vector2I(27, 19), true),
+        // Lanterns: plaza's four corners only (register #144 — was 8, flanking every door too).
+        new("town2d-prop-lantern", new Vector2I(24, 30), true),
+        new("town2d-prop-lantern", new Vector2I(40, 30), true),
+        new("town2d-prop-lantern", new Vector2I(24, 38), true),
+        new("town2d-prop-lantern", new Vector2I(40, 38), true),
 
-        // Trees: framing the map's open edges/corners, well clear of the central cluster.
+        // Trees: framing the new 64x44 perimeter, well clear of the central cluster.
         new("town2d-prop-tree", new Vector2I(2, 2), true),
-        new("town2d-prop-tree", new Vector2I(10, 2), true),
-        new("town2d-prop-tree", new Vector2I(30, 2), true),
-        new("town2d-prop-tree", new Vector2I(37, 2), true),
-        new("town2d-prop-tree", new Vector2I(2, 8), true),
-        new("town2d-prop-tree", new Vector2I(37, 8), true),
-        new("town2d-prop-tree", new Vector2I(2, 18), true),
-        new("town2d-prop-tree", new Vector2I(37, 18), true),
-        new("town2d-prop-tree", new Vector2I(2, 25), true),
-        new("town2d-prop-tree", new Vector2I(10, 25), true),
-        new("town2d-prop-tree", new Vector2I(30, 25), true),
-        new("town2d-prop-tree", new Vector2I(37, 25), true),
+        new("town2d-prop-tree", new Vector2I(16, 2), true),
+        new("town2d-prop-tree", new Vector2I(48, 2), true),
+        new("town2d-prop-tree", new Vector2I(61, 2), true),
+        new("town2d-prop-tree", new Vector2I(2, 12), true),
+        new("town2d-prop-tree", new Vector2I(2, 21), true),
+        new("town2d-prop-tree", new Vector2I(61, 21), true),
+        new("town2d-prop-tree", new Vector2I(61, 33), true),
+        new("town2d-prop-tree", new Vector2I(2, 42), true),
+        new("town2d-prop-tree", new Vector2I(10, 43), true),
+        new("town2d-prop-tree", new Vector2I(51, 43), true),
+        new("town2d-prop-tree", new Vector2I(61, 42), true),
 
         // Crates: a couple stacked just east of the market's footprint.
-        new("town2d-prop-crate", new Vector2I(29, 11), true),
-        new("town2d-prop-crate", new Vector2I(29, 13), true),
+        new("town2d-prop-crate", new Vector2I(54, 18), true),
+        new("town2d-prop-crate", new Vector2I(54, 20), true),
 
-        // U4 (asset-completion wave, docs/design/ASSETS.md "warm-hub town props"): eight
-        // committed, resolution-tested (ArtWiringCoverageTests.TownProps_ResolveWithNormal)
-        // props that nothing ever drew until this table. Every tile below was checked clear of
-        // every venue footprint (Venues above) and every walkable lane TownLayout2D.PathRects
-        // carries INTO a building — the plaza square itself (PathRects[0]) is exempted from that
-        // check, matching this file's own established precedent (the well sits dead center of
-        // it, corner lanterns flank it): a wide-open square tolerates a decoration, a 1-2-tile
-        // spur does not. Each one's committed art was resampled offline to a footprint sized
-        // relative to this file's existing prop ladder (8px lantern .. 32px well .. 88px
-        // tavern) — tuned against a real rendered frame (tools/receipt.ps1), not guessed.
+        // U4 (asset-completion wave, docs/design/ASSETS.md "warm-hub town props"): committed,
+        // resolution-tested (ArtWiringCoverageTests.TownProps_ResolveWithNormal) props that nothing
+        // ever drew until this table. Every tile below is checked clear of every venue footprint
+        // (Venues above) and every walkable lane TownLayout2D.PathRects carries INTO a building —
+        // the plaza square itself is exempted from that check, matching this file's own
+        // established precedent (the well sits dead center of it, corner lanterns flank it): a
+        // wide-open square tolerates a decoration, a 1-2-tile spur does not.
 
-        // A market yard, north of its footprint and east of the mine-gate road — clear of the
-        // market's own spur and the well/lantern cluster in the plaza.
-        new("props-market-crates", new Vector2I(30, 9), true),
+        // A market yard, north of its footprint — clear of the market's own spur.
+        new("props-market-crates", new Vector2I(54, 22), true),
 
         // A second, informal flyer board over by the market — NOT the same object as the
-        // "noticeboard" VENUE key below (that key is the Bounties building at (26,18), a
+        // "noticeboard" VENUE key below (that key is the Bounties building at (46,40), a
         // different system entirely; see this class's own U4 doc note on the name collision).
-        new("props-noticeboard", new Vector2I(22, 10), true),
+        new("props-noticeboard", new Vector2I(42, 31), true),
 
         // Festival garland over the top of the plaza, clear of the north road and every spur.
-        new("props-string-lanterns", new Vector2I(17, 12), true),
+        new("props-string-lanterns", new Vector2I(32, 28), true),
 
         // Ore cart parked in the yard behind the forge's west wall.
-        new("props-ore-cart", new Vector2I(9, 11), true),
+        new("props-ore-cart", new Vector2I(12, 24), true),
 
-        // The forge's own pet, curled by the coals — one column further west than the cart/
-        // laundry line (not just a row apart): a first receipt at (9,13), sharing their column
-        // with only 2 tiles of vertical gap, read as one cluttered blob on screen (the
-        // salamander's small silhouette sat inside the laundry line's own footprint) — moving it
-        // sideways instead of just further down gives it a horizontally clear read regardless of
-        // the laundry line's height.
-        new("props-forge-salamander", new Vector2I(7, 13), true),
+        // The forge's own pet, curled by the coals.
+        new("props-forge-salamander", new Vector2I(10, 28), true),
 
         // Laundry strung in the backyard gap between the forge and the tavern.
-        new("props-laundry-line", new Vector2I(9, 15), true),
+        new("props-laundry-line", new Vector2I(9, 33), true),
 
-        // Napping on the tavern's south side, clear of its door column (x=13).
-        new("props-tavern-cat", new Vector2I(15, 19), true),
+        // Napping on the tavern's south side.
+        new("props-tavern-cat", new Vector2I(24, 41), true),
 
-        // RESOLVED 2026-08-16. A second "props-town-well" used to sit at (17,19), three tiles from
-        // the "town2d-well" above — the U4 doc note called that a genuine open question rather than
-        // a two-wells design call, and it stayed open long enough that a village of four buildings
+        // RESOLVED 2026-08-16. A second "props-town-well" used to sit three tiles from the
+        // "town2d-well" above — the U4 doc note called that a genuine open question rather than a
+        // two-wells design call, and it stayed open long enough that a village of four buildings
         // shipped with two wells in it. The owner ruled: keep the one matching the new town. That is
         // town2d-well, which belongs to the town2d pixel set the whole village is drawn from; the
         // props- one is the older generation. Its asset is deleted rather than orphaned, per the
@@ -293,10 +314,23 @@ public static class TownLayout2D
     /// campaign that outlives its opening roster, and the formula's period (its X term repeats every
     /// 28 ids, not 6) means this 6-slot table has no value that could stand in for id 7+ without
     /// silently changing where a surviving recruit's home band sits.</para>
+    ///
+    /// <para><b>U-T3-2 (64×44 grid):</b> re-laid clear of every venue/prop footprint, nameplate and
+    /// door-approach lane on the new grid — see <c>TownPlacementTests</c>' now-empty exception
+    /// sets.</para>
+    ///
+    /// <para><b>Kept close to the relocated mine gate, not spread to the map's edges.</b> A first
+    /// pass placed these near the grid's far corners (clear of everything, but 400-600px from the
+    /// gate instead of the old ~100-210px) and broke <c>HeroReturnCeremonyTests</c> in CI: <see
+    /// cref="Town2D.ReturnSurvivors"/>'s staggered walk-in (<c>HeroActor2D.WalkSpeed</c>=260px/s)
+    /// no longer cleared <c>HumanPlayer.WaitUntil</c>'s frame budget before the test's own
+    /// "well under a full show-floor wait" ceiling. These six tiles are the OLD table's exact
+    /// world-space offsets from the OLD gate, re-applied to the NEW gate position — same walk
+    /// distances (~100-210px), same timing, just translated to sit beside the relocated gate.</para>
     /// </summary>
     public static readonly Vector2I[] HeroHomeTiles =
     {
-        new(9, 12), new(12, 14), new(15, 10), new(18, 12), new(21, 14), new(24, 10),
+        new(21, 16), new(24, 18), new(27, 14), new(30, 16), new(33, 18), new(36, 14),
     };
 
     /// <summary>
@@ -305,10 +339,14 @@ public static class TownLayout2D
     /// <c>Town2D.cs</c>, where no test could reach it). Two open corners northwest/northeast of the
     /// plaza, two more southwest/southeast of it — clear of every venue footprint and the
     /// <see cref="PathRects"/> cobble network.
+    ///
+    /// <para><b>U-T3-2 (64×44 grid):</b> re-laid at the new grid's four outer corners, clear of
+    /// every venue/prop footprint, nameplate and door-approach lane — see
+    /// <c>TownPlacementTests</c>' now-empty exception sets.</para>
     /// </summary>
     public static readonly Vector2I[] TownsfolkHomeTiles =
     {
-        new(6, 8), new(34, 8), new(6, 20), new(34, 20),
+        new(6, 12), new(58, 12), new(6, 40), new(58, 40),
     };
 
     /// <summary>U-T3-1: <c>HeroActor2D</c>'s idle lissajous wander-drift half-amplitude in px, X
