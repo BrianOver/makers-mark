@@ -251,4 +251,83 @@ public class ConsumableResolverTests
             System.Text.Json.JsonSerializer.Serialize(a),
             System.Text.Json.JsonSerializer.Serialize(b));
     }
+
+    [Fact]
+    public void FleesInsteadOfDrinking_WhenTheOnlyHealCannotClearTheWorstCase()
+    {
+        // link1/link2 fix (2026-08-17): found by instrumenting a 90-seed balance sweep — 6 of 6
+        // recorded deaths carrying a Heal item were a hero who quaffed correctly, then died the
+        // SAME round anyway because the salve's Magnitude never had a chance of covering that
+        // floor's worst-case hit. A hero one worst-case blow from death, holding a Heal item too
+        // weak to clear that SAME worst case even after drinking, must flee instead of gambling a
+        // fight the item cannot secure — a hero whose heal WOULD clear the risk must still drink
+        // and fight (unchanged; see QuaffFires_WhileStillAboveTheFleeLine_NeverInsteadOfFleeing).
+        //
+        // Floor 1: MonsterAttack 11, MonsterDefense 4; no gear -> heroDefense 1, so the worst-case
+        // hit is CombatMath.MonsterDamage(11, 5, 1) = 15. A magnitude-1 salve heals for nothing
+        // useful against that gap. MaxHp 40 puts the ordinary flee line at hp < 10 (25%) while the
+        // at-risk line (CouldDieNextRound) is hp <= 15 — a real 6-value band (hp 10..15) where a
+        // hero is above the flee line yet still one worst-case blow from death, and the pack's
+        // one Heal item (+1) cannot lift them clear of that same 15-point gap.
+        var weakSalve = Salve(10, magnitude: 1);
+        var items = Catalog(weakSalve);
+
+        for (ulong seed = 0; seed < 2000; seed++)
+        {
+            var hero = Packed(1, hp: 40, gear: null, weakSalve.Id);
+            var result = ExpeditionResolver.Resolve(
+                ImmutableList.Create(hero), items, VenueRegistry.Mine, targetFloor: 2, new Pcg32(RngState.FromSeed(seed)));
+
+            if (!result.Deaths.Contains(hero.Id) && result.Halt == ExpeditionHalt.FloorLost)
+            {
+                var fledFloor = result.Floors.Last();
+                var hpAtFlee = hero.MaxHp - fledFloor.Combats.Where(c => c.Hero == hero.Id).Sum(c => c.DamageTaken)
+                    - result.Floors.Where(f => f.Floor < fledFloor.Floor)
+                        .SelectMany(f => f.Combats).Where(c => c.Hero == hero.Id).Sum(c => c.DamageTaken);
+
+                if (hpAtFlee <= 0 || CombatMath.ShouldFlee(hpAtFlee, hero.MaxHp))
+                {
+                    continue; // an ordinary below-the-line flee — not the scenario under test
+                }
+
+                // Above the ordinary flee line, but still at risk, with a heal too weak to help:
+                // proves the NEW branch fired, not the pre-existing 25%-line flee.
+                Assert.True(CombatMath.CouldDieNextRound(hpAtFlee, VenueRegistry.Mine.MonsterAttack(fledFloor.Floor), 1),
+                    $"fled at {hpAtFlee}/{hero.MaxHp} without being at risk — not the scenario under test");
+                Assert.DoesNotContain(AllUses(result), u => u.Item == weakSalve.Id);
+                return; // proven
+            }
+        }
+
+        Assert.Fail("No above-the-line, at-risk, insufficient-heal flee across 2000 seeds — scenario needs retuning.");
+    }
+
+    [Fact]
+    public void StillDrinksAndFights_WhenTheHealWouldClearTheWorstCase()
+    {
+        // The mirror of the test above: a hero at risk whose Heal item WOULD clear that same
+        // worst-case hit must still drink and fight on, exactly as before this fix. Default
+        // Salve magnitude (6) against floor 1's worst-case-15 gap comfortably clears from most
+        // at-risk starting points, so this is the common case, not a corner one.
+        var goodSalve = Salve(10, magnitude: 6);
+        var items = Catalog(goodSalve);
+
+        for (ulong seed = 0; seed < 200; seed++)
+        {
+            var hero = Packed(1, hp: 60, gear: null, goodSalve.Id);
+            var result = ExpeditionResolver.Resolve(
+                ImmutableList.Create(hero), items, VenueRegistry.Mine, targetFloor: 2, new Pcg32(RngState.FromSeed(seed)));
+
+            var use = AllUses(result).FirstOrDefault(u => u.Item == goodSalve.Id);
+            if (use is not null && CombatMath.CouldDieNextRound(use.HpBefore, VenueRegistry.Mine.MonsterAttack(2), 1))
+            {
+                // Quaffed while genuinely at risk (not just the 50% comfort line) and the fight
+                // continued — the salve was strong enough, so no flee was needed.
+                Assert.False(CombatMath.ShouldFlee(use.HpBefore, hero.MaxHp));
+                return; // proven
+            }
+        }
+
+        Assert.Fail("No at-risk drink-and-fight across 200 seeds — scenario needs retuning.");
+    }
 }

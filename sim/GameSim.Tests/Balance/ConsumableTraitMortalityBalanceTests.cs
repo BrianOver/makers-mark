@@ -188,9 +188,49 @@ public class ConsumableTraitMortalityBalanceTests
         // The gate below asserts the DIRECTION with a >=5pp margin, deliberately well under the
         // measured 10.6pp so ordinary seed wobble never trips it — but any change that flattens
         // the axis or flips it lethal again fails here, loudly.
+        //
+        // RE-BASELINE HISTORY (2026-08-17, link2 fix, "consumables get drunk before the hero
+        // dies"): register #157's own branch (U-T1-9, not yet merged) composed with U-T1-11
+        // pushed this 2.7pp BELOW zero — Prepared 62.2% (234/376) vs Reckless 59.5% (206/346),
+        // the fiction genuinely backwards, not just a narrower correct-direction gap (an
+        // apparent-margin reading that fooled a first pass at this exact number — which is
+        // exactly why the direction is asserted SEPARATELY from the margin below). Root cause,
+        // found by instrumenting every death carrying an unused-or-just-drunk Heal item across a
+        // 90-seed sweep: 6 of 6 recorded deaths were a hero who quaffed correctly (wounded check
+        // fired, TryQuaff fired) but whose single field-salve's Magnitude wasn't enough to clear
+        // that same round's worst-case hit — CouldDieNextRound never asked "would drinking
+        // actually get me clear," only "am I in danger," so the salve got burned on a fight it
+        // could not secure. Fixed in ExpeditionResolver.FightMonster: when a hero is at risk NOW
+        // and a Heal item is available, simulate the post-heal HP against the SAME worst-case
+        // check — if that's still in the danger zone, flee instead of drinking-and-fighting (the
+        // item cannot save this fight, so don't spend it losing one; a hero with no Heal item, or
+        // whose heal WOULD clear the risk, is unaffected). Re-measured after, same two 90-seed
+        // blocks: seeds 2026..2115 reckless 231/342 (67.5%) vs prepared 170/316 (53.8%) — 13.7pp;
+        // seeds 5000..5089 reckless 253/359 (70.5%) vs prepared 181/324 (55.9%) — 14.6pp. (Total
+        // populations are smaller than the two blocks quoted above them because U-T1-11's
+        // healthier reference economy shipped between those measurements and this one — an
+        // unrelated, already-landed change, not an effect of this fix.) This fix targets the
+        // un-merged #549 branch's regression but stands on its own: it closes a real gap on
+        // PLAIN `main` too (the fast lane and this file's own margin assertion were already
+        // green before this fix — the 90-seed sweep just never happened to sample the exact
+        // insufficient-heal shape until instrumented directly), and this file's own gate
+        // (fast lane 1644/1644, balance 70/70) did not move a single OTHER pinned band.
         var totals = RunAllSeedsParallel();
         var (recklessTotal, recklessDied, preparedTotal, preparedDied) =
             (totals.RecklessTotal, totals.RecklessDied, totals.PreparedTotal, totals.PreparedDied);
+
+        // DIRECTION IS THE LOAD-BEARING CLAIM — asserted on its own, separately from the margin
+        // below. A single combined "margin >= 5pp" assertion cannot distinguish "correct
+        // direction, not enough margin" from "backwards" in its failure message, and that
+        // ambiguity is exactly what let a 2.7pp INVERSION (Prepared WORSE than Reckless) read at
+        // a glance as "the right way round with a narrower gap" during this fix's own review.
+        // Strict inequality (no margin, no tie): Prepared must die at a LOWER rate than Reckless,
+        // full stop, before any question of by how much.
+        Assert.True((long)preparedDied * recklessTotal < (long)recklessDied * preparedTotal,
+            $"Prepared mortality ({preparedDied}/{preparedTotal}) is not even LOWER than Reckless " +
+            $"({recklessDied}/{recklessTotal}) — direction INVERTED, not just short of margin. " +
+            "Preparation must read as insurance, never as a liability, whatever the margin turns " +
+            "out to be.");
 
         // Integer-only rate comparison (KTD2: no floating point in sim-adjacent math):
         // preparedDied/preparedTotal + 5pp <= recklessDied/recklessTotal, cross-multiplied
