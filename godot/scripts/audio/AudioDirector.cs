@@ -225,6 +225,49 @@ public sealed partial class AudioDirector : Node
     /// only smooths the CLIP's own edges, never an arbitrary interruption point.</summary>
     private const float LoopReleaseSeconds = 0.12f;
 
+    // ---- U-T4-10: the narrator duck --------------------------------------------------------------
+    //
+    // While a narrator line is AUDIBLY PLAYING, the bed steps back 6dB and SFX steps back 4dB — a bus-
+    // level duck (AudioBuses, U-T4-1) rather than a per-source hack, so it stacks under every mixer
+    // fader and ComposedTrack.TrimDb already applied at their own layers instead of fighting them, and
+    // so it reaches every SFX voice at once (the held bellows included — SfxLoop sends TO Sfx, so
+    // ducking Sfx also ducks whatever is currently looping on top of it, with no separate SfxLoop step
+    // needed). Bus-level, never player-level: it never touches _narratorVoice.VolumeDb, so the duck can
+    // never become a way to change what the narrator's OWN line sounds like, only what competes with it.
+
+    /// <summary>How far the Music bus steps back while a narrator line plays.</summary>
+    private const float NarratorDuckMusicDb = -6f;
+
+    /// <summary>How far the Sfx bus steps back while a narrator line plays.</summary>
+    private const float NarratorDuckSfxDb = -4f;
+
+    /// <summary>Attack is short — the duck should feel immediate, since the narrator is already
+    /// speaking by the time it starts. Release is longer, matching <see cref="_Process"/>'s existing
+    /// crossfade/loop-release idiom: the bed and SFX returning to full level reads better as a settle
+    /// than a snap.</summary>
+    private const float NarratorDuckAttackSeconds = 0.12f;
+
+    private const float NarratorDuckReleaseSeconds = 0.35f;
+
+    /// <summary>True from the moment a voiced narrator line starts until its release fade lands — see
+    /// <see cref="_Process"/>. Distinct from <see cref="_narratorDuckReleasing"/>: this stays true for
+    /// the WHOLE duck (attack ramp, held, AND release ramp), so <see cref="StartNarratorDuck"/> can tell
+    /// "already ducked for this line" apart from "not ducking at all."</summary>
+    private bool _narratorDucking;
+
+    /// <summary>True once <see cref="ReleaseNarratorDuck"/> has armed the release half of the ramp.</summary>
+    private bool _narratorDuckReleasing;
+
+    private double _narratorDuckElapsed;
+
+    /// <summary>The Music/Sfx bus dB the current ramp (attack or release) started FROM, captured live —
+    /// same "fade from wherever the mixer actually is" contract as <see cref="_loopReleaseStartDb"/>,
+    /// so a release that starts before an attack fully lands still fades from its true current level
+    /// rather than assuming the attack had already finished.</summary>
+    private float _narratorDuckFromMusicDb;
+
+    private float _narratorDuckFromSfxDb;
+
     private AudioStreamPlayer _musicA = null!;
     private AudioStreamPlayer _musicB = null!;
 
@@ -517,6 +560,10 @@ public sealed partial class AudioDirector : Node
             _narratorVoice.Stream = GD.Load<AudioStream>(path);
             _narratorVoice.Play();
             voiced = true;
+            // U-T4-10: only an ACTUALLY audible line earns room — a text-only request (no recording,
+            // or dropped because the narrator was already speaking) has nothing to compete with the
+            // bed/SFX for, and ducking around silence would just be a level change with no reason.
+            StartNarratorDuck();
         }
 
         var request = new NarratorRequest(audioId, text, voiced);
@@ -560,6 +607,50 @@ public sealed partial class AudioDirector : Node
             }
         }
         return -1;
+    }
+
+    /// <summary>
+    /// U-T4-10: arms the Music/Sfx bus duck for a line that just started playing. Idempotent for a
+    /// line arriving while the previous one's duck is still HELD (not releasing) — <see cref="_Process"/>
+    /// already keeps the bed/SFX down in that case, so restarting the attack ramp would only reintroduce
+    /// a tiny audible dip mid-hold for no reason. A line arriving during an in-flight RELEASE re-arms
+    /// the attack from wherever that release currently sits (<see cref="_narratorDuckFromMusicDb"/>/
+    /// <see cref="_narratorDuckFromSfxDb"/> captured live, same contract as <see cref="_loopReleaseStartDb"/>),
+    /// never assuming the release had already reached the base level.
+    /// </summary>
+    private void StartNarratorDuck()
+    {
+        if (_narratorDucking && !_narratorDuckReleasing)
+        {
+            return; // already ducked/ducking-in for a still-speaking line
+        }
+
+        _narratorDucking = true;
+        _narratorDuckReleasing = false;
+        _narratorDuckElapsed = 0;
+        _narratorDuckFromMusicDb = AudioServer.GetBusVolumeDb(AudioServer.GetBusIndex(AudioBuses.Music));
+        _narratorDuckFromSfxDb = AudioServer.GetBusVolumeDb(AudioServer.GetBusIndex(AudioBuses.Sfx));
+    }
+
+    /// <summary>
+    /// Arms the release half of the ramp. <see cref="_Process"/> is the ONLY caller — it polls
+    /// <see cref="_narratorVoice"/>.Playing every frame and calls this the instant that goes false, for
+    /// whatever reason (the line reached its own end, <see cref="SetMuted"/> stopped it, the node is
+    /// mid-teardown). That is deliberate: a duck armed from a <c>Finished</c> SIGNAL callback would
+    /// leave the whole mix ducked forever on any path that never fires that signal, which is exactly the
+    /// failure this unit's own brief warns about. Polling a boolean cannot fail to notice.
+    /// </summary>
+    private void ReleaseNarratorDuck()
+    {
+        if (!_narratorDucking || _narratorDuckReleasing)
+        {
+            return;
+        }
+
+        _narratorDuckReleasing = true;
+        _narratorDuckElapsed = 0;
+        _narratorDuckFromMusicDb = AudioServer.GetBusVolumeDb(AudioServer.GetBusIndex(AudioBuses.Music));
+        _narratorDuckFromSfxDb = AudioServer.GetBusVolumeDb(AudioServer.GetBusIndex(AudioBuses.Sfx));
     }
 
     // The library and its resource paths live in NarratorLines, deliberately off this Node — see
@@ -981,6 +1072,25 @@ public sealed partial class AudioDirector : Node
         _loopReleaseElapsed = -1;
     }
 
+    /// <summary>
+    /// U-T4-10 safety net: <see cref="AudioServer"/> bus volumes are process-global, not owned by this
+    /// node, so they outlive it — a director freed mid-duck (a test's early exit, a scene teardown) must
+    /// not leave the shared Music/Sfx buses ducked for whatever plays through them next, including
+    /// another <see cref="AudioDirector"/> the engine test suite constructs afterward in the same
+    /// process. The graceful <see cref="_Process"/> release ramp is the normal path; this is the one
+    /// that fires if the node is torn down before that ramp ever got to run to completion.
+    /// </summary>
+    public override void _ExitTree()
+    {
+        if (_narratorDucking)
+        {
+            AudioServer.SetBusVolumeDb(AudioServer.GetBusIndex(AudioBuses.Music), AudioBuses.MusicBusDb);
+            AudioServer.SetBusVolumeDb(AudioServer.GetBusIndex(AudioBuses.Sfx), AudioBuses.SfxBusDb);
+            _narratorDucking = false;
+            _narratorDuckReleasing = false;
+        }
+    }
+
     public override void _Process(double delta)
     {
         if (_loopReleasing)
@@ -993,6 +1103,42 @@ public sealed partial class AudioDirector : Node
                 _loopVoice.Stop();
                 _loopReleasing = false;
                 _loopCue = null;
+            }
+        }
+
+        if (_narratorDucking)
+        {
+            var musicIndex = AudioServer.GetBusIndex(AudioBuses.Music);
+            var sfxIndex = AudioServer.GetBusIndex(AudioBuses.Sfx);
+
+            _narratorDuckElapsed += delta;
+            if (_narratorDuckReleasing)
+            {
+                var released = (float)Math.Clamp(_narratorDuckElapsed / NarratorDuckReleaseSeconds, 0, 1);
+                AudioServer.SetBusVolumeDb(musicIndex, Mathf.Lerp(_narratorDuckFromMusicDb, AudioBuses.MusicBusDb, released));
+                AudioServer.SetBusVolumeDb(sfxIndex, Mathf.Lerp(_narratorDuckFromSfxDb, AudioBuses.SfxBusDb, released));
+                if (released >= 1f)
+                {
+                    _narratorDucking = false;
+                    _narratorDuckReleasing = false;
+                }
+            }
+            else
+            {
+                var attacked = (float)Math.Clamp(_narratorDuckElapsed / NarratorDuckAttackSeconds, 0, 1);
+                AudioServer.SetBusVolumeDb(musicIndex,
+                    Mathf.Lerp(_narratorDuckFromMusicDb, AudioBuses.MusicBusDb + NarratorDuckMusicDb, attacked));
+                AudioServer.SetBusVolumeDb(sfxIndex,
+                    Mathf.Lerp(_narratorDuckFromSfxDb, AudioBuses.SfxBusDb + NarratorDuckSfxDb, attacked));
+            }
+
+            // Polled every frame, NEVER a Finished-signal callback — see ReleaseNarratorDuck's own doc
+            // for why. The instant the voice is no longer actually playing, for any reason, the release
+            // fires on the very next tick; a line that never fires its own completion signal cannot
+            // leave this latched.
+            if (!_narratorDuckReleasing && !_narratorVoice.Playing)
+            {
+                ReleaseNarratorDuck();
             }
         }
 
