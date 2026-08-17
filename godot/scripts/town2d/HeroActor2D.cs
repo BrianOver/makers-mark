@@ -202,6 +202,10 @@ public partial class HeroActor2D : Node2D
     /// pre-U-T3-8 behavior, still exercised by every existing test that never calls it.</summary>
     private IReadOnlyList<Vector2> _errandTargets = System.Array.Empty<Vector2>();
 
+    /// <summary>False until this actor's first <see cref="_Process"/> tick after <see cref="Init"/> —
+    /// see <see cref="_Process"/> for why the first frame's position delta is not a velocity.</summary>
+    private bool _hasPreviousFrame;
+
     /// <summary>The sim's current phase, mirroring <see cref="TownsfolkNpc2D.SetPhase"/>'s per-tick
     /// contract — read only by <see cref="IsErrandHours"/> to gate the START of a new errand.</summary>
     private DayPhase _phase = DayPhase.Morning;
@@ -323,6 +327,7 @@ public partial class HeroActor2D : Node2D
         _errandRotation = heroId;
 
         State = HeroTownState.Wandering;
+        _hasPreviousFrame = false;
         Visible = true;
     }
 
@@ -438,7 +443,22 @@ public partial class HeroActor2D : Node2D
         // M2: velocity feeds the walk/idle pose driver only — Position (the Y-sort/feet
         // baseline) is set from basePos exactly as it was before pose existed; the pose itself is
         // applied to the CHILD Sprite2D only, below (see ApplySpritePose).
-        var velocity = delta > 0.0 ? moved / (float)delta : Vector2.Zero;
+        // The FIRST frame after Init has no previous frame to difference against, so `moved` is not a
+        // movement at all — it is the gap between where Init parked this actor and where its own
+        // motion model says it belongs. For a wandering hero that gap is real: the lissajous is NOT
+        // zero at t=0 (it is amplitude*sin(phase), and the phase is id-seeded), so dividing that
+        // offset by a frame length reported hundreds of px/s at delta=0.1 and thousands at 60fps —
+        // far over SpriteMotion.WalkSpeedThreshold. Every hero therefore leaned on their very first
+        // rendered frame: one frame, easy to miss by eye, and exactly what TownLifeTests' own
+        // baseline guard caught by refusing to accept a leaning "frozen" hero.
+        //
+        // Reporting zero is not a fudge, it is the honest answer — with no prior frame there is no
+        // measurable velocity, and the pose driver's whole input is velocity. Deliberately done here
+        // rather than by seeding Position in Init: Position is the Y-sort/feet baseline that
+        // HeroActor2DTests pins against StepToward exactly, and moving an actor's start point to fix
+        // a velocity artifact would trade one wrong number for a different one.
+        var velocity = delta > 0.0 && _hasPreviousFrame ? moved / (float)delta : Vector2.Zero;
+        _hasPreviousFrame = true;
         Position = basePos;
 
         // U-T3-5: correct only what gets DRAWN (the art root), never Position itself — see
