@@ -180,6 +180,11 @@ public partial class TownsfolkNpc2D : Node2D
     /// cref="SetErrandTargets"/>.</summary>
     private IReadOnlyList<Vector2> _errandTargets = System.Array.Empty<Vector2>();
 
+    /// <summary>U-T3-3: test/inspection surface for <see cref="_errandTargets"/> — lets a test prove
+    /// exactly what pool THIS villager received (e.g. that <see cref="Town2D.BuildTownsfolk"/>
+    /// filtered its own home out) without needing a second private-reflection seam.</summary>
+    public IReadOnlyList<Vector2> ErrandTargets => _errandTargets;
+
     /// <summary>U6/U11: the sim's current phase, mirroring <see
     /// cref="AmbientLife2D.SetPhase"/>'s per-tick contract — read only by <see
     /// cref="IsErrandHours"/> to gate the START of a new errand cycle.</summary>

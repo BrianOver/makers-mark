@@ -206,6 +206,11 @@ public partial class HeroActor2D : Node2D
     /// see <see cref="_Process"/> for why the first frame's position delta is not a velocity.</summary>
     private bool _hasPreviousFrame;
 
+    /// <summary>U-T3-3: test/inspection surface for <see cref="_errandTargets"/> — mirrors <see
+    /// cref="TownsfolkNpc2D.ErrandTargets"/>'s exact shape so a test can prove a hero receives the
+    /// pool UNFILTERED (unlike a townsfolk actor, a hero's own home is never a member of it).</summary>
+    public IReadOnlyList<Vector2> ErrandTargets => _errandTargets;
+
     /// <summary>The sim's current phase, mirroring <see cref="TownsfolkNpc2D.SetPhase"/>'s per-tick
     /// contract — read only by <see cref="IsErrandHours"/> to gate the START of a new errand.</summary>
     private DayPhase _phase = DayPhase.Morning;

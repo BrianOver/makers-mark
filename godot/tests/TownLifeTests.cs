@@ -436,6 +436,153 @@ public class TownLifeTests
         }
     }
 
+    // ── Occupancy: the shared errand pool reaches all four far corners (U-T3-3, register #163) ──
+    //
+    // #545 grew the grid 40x28 -> 64x44 (2.51x) without growing the cast; every errand destination
+    // that existed before this unit (the five venue doors) sits inside the same central cluster, so
+    // the extra room read emptier, not fuller. TownsfolkHomeTiles' four far-corner tiles are the one
+    // place already proven collision-clear at the map's edges -- reusing them as errand destinations
+    // (no new props, no relocated homes, no changed wander bands) sends both castes out toward every
+    // corner on the SAME rotation machinery U-T3-8 already shipped.
+
+    [TestCase]
+    public void ErrandTargets_IsTheFiveVenueDoorsPlusAllFourTownsfolkHomeCorners()
+    {
+        var town = new Town2D { Name = "Town2D" };
+        town.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        ((SceneTree)Engine.GetMainLoop()).Root.AddChild(town);
+        town.Build(new SimAdapter(seed: 11));
+        try
+        {
+            AssertThat(town.ErrandTargets.Count)
+                .OverrideFailureMessage("expected exactly 5 venue doors + 4 townsfolk-home corners")
+                .IsEqual(9);
+
+            foreach (var key in new[] { "forge", "market", "tavern", "minegate", "noticeboard" })
+            {
+                var door = town.FindBuilding(key).DoorAnchorGlobal;
+                AssertThat(town.ErrandTargets.Contains(door))
+                    .OverrideFailureMessage($"'{key}' door anchor {door} missing from the errand pool")
+                    .IsTrue();
+            }
+
+            foreach (var tile in TownLayout2D.TownsfolkHomeTiles)
+            {
+                var home = TownLayout2D.TileToWorld(tile);
+                AssertThat(town.ErrandTargets.Contains(home))
+                    .OverrideFailureMessage($"townsfolk-home corner {home} (tile {tile}) missing from the errand pool")
+                    .IsTrue();
+            }
+        }
+        finally
+        {
+            town.Free();
+        }
+    }
+
+    /// <summary>A villager erranding to its OWN home would arrive the same tick it left (zero
+    /// distance) — a phantom trip, not a real one. Each of the four townsfolk actors must receive
+    /// the shared 9-entry pool MINUS its own home (8 entries), never the full 9.</summary>
+    [TestCase]
+    public void BuildTownsfolk_EachVillagersOwnHomeIsFilteredFromItsOwnErrandTargets()
+    {
+        var town = new Town2D { Name = "Town2D" };
+        town.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        ((SceneTree)Engine.GetMainLoop()).Root.AddChild(town);
+        town.Build(new SimAdapter(seed: 11));
+        try
+        {
+            AssertThat(town.Townsfolk.Count).IsEqual(TownLayout2D.TownsfolkHomeTiles.Length);
+
+            foreach (var npc in town.Townsfolk)
+            {
+                AssertThat(npc.ErrandTargets.Count)
+                    .OverrideFailureMessage($"villager at {npc.Home} should receive 8 targets (9 minus its own home)")
+                    .IsEqual(town.ErrandTargets.Count - 1);
+
+                AssertThat(npc.ErrandTargets.Contains(npc.Home))
+                    .OverrideFailureMessage($"villager at {npc.Home} must never receive its OWN home as an errand target")
+                    .IsFalse();
+            }
+        }
+        finally
+        {
+            town.Free();
+        }
+    }
+
+    /// <summary>Unlike a townsfolk actor, a hero's home (<see cref="TownLayout2D.HeroHomeTiles"/>)
+    /// is a disjoint table from <see cref="TownLayout2D.TownsfolkHomeTiles"/> — no self-visit is
+    /// possible, so every hero receives the FULL unfiltered pool.</summary>
+    [TestCase]
+    public void ReconcileHeroes_EveryHeroReceivesTheFullUnfilteredErrandPool()
+    {
+        var town = new Town2D { Name = "Town2D" };
+        town.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        ((SceneTree)Engine.GetMainLoop()).Root.AddChild(town);
+        town.Build(new SimAdapter(seed: 11));
+        try
+        {
+            AssertThat(town.HeroActors.Count > 0).IsTrue();
+
+            foreach (var actor in town.HeroActors)
+            {
+                AssertThat(actor.ErrandTargets.Count)
+                    .OverrideFailureMessage($"hero {actor.HeroIdValue} should receive the full unfiltered pool")
+                    .IsEqual(town.ErrandTargets.Count);
+            }
+        }
+        finally
+        {
+            town.Free();
+        }
+    }
+
+    /// <summary>The direct occupancy proof: driven long enough, at least one wandering actor
+    /// (hero or townsfolk) actually REACHES one of the four far-corner tiles that, before this
+    /// unit, no errand could ever walk to.</summary>
+    [TestCase]
+    public void Town2D_Built_SomeActorReachesATownsfolkHomeCorner_ConditionWaited()
+    {
+        var town = new Town2D { Name = "Town2D" };
+        town.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        ((SceneTree)Engine.GetMainLoop()).Root.AddChild(town);
+        town.Build(new SimAdapter(seed: 11));
+        try
+        {
+            var corners = TownLayout2D.TownsfolkHomeTiles.Select(TownLayout2D.TileToWorld).ToList();
+            var reached = false;
+
+            for (var i = 0; i < 2000 && !reached; i++)
+            {
+                town._Process(0.2);
+                foreach (var actor in town.HeroActors)
+                {
+                    actor._Process(0.2);
+                }
+
+                foreach (var npc in town.Townsfolk)
+                {
+                    npc._Process(0.2);
+                }
+
+                reached = town.HeroActors.Any(a => corners.Any(c => a.Position.DistanceTo(c) < 2f)) ||
+                    town.Townsfolk.Any(n => corners.Any(c => n.Position.DistanceTo(c) < 2f && n.Home.DistanceTo(c) > 2f));
+            }
+
+            AssertThat(reached)
+                .OverrideFailureMessage(
+                    "no hero or townsfolk (visiting a corner that isn't its own home) reached any " +
+                    "townsfolk-home corner across 400 simulated seconds -- the occupancy pool is not " +
+                    "actually wired to real actor movement")
+                .IsTrue();
+        }
+        finally
+        {
+            town.Free();
+        }
+    }
+
     // ── TavernLife2D patron seating ───────────────────────────────────────────────────────────
 
     [TestCase]
