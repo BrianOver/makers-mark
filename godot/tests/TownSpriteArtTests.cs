@@ -842,5 +842,82 @@ public class TownSpriteArtTests
             .OverrideFailureMessage($"player_smith ships {distinct} distinct gait frames, not 4")
             .IsEqual(4);
     }
+
+    // ── U-T3-7 (register #141, R14.11 "the 244-PNG silhouette pass") ─────────────────────────
+
+    /// <summary>
+    /// Every AI-cast body's alpha channel must be BINARY (0 or 1, Godot's normalized 0/255) —
+    /// no partial/soft alpha anywhere. <c>art/pipeline/harden-cast-silhouette.py</c>'s own doc has
+    /// the full root-cause trace: <c>cutout.py</c>'s BiRefNet segmentation mask is a continuous
+    /// sigmoid probability field, never thresholded before being saved, so every
+    /// <c>town2d-hero-*</c>/<c>player_smith*</c> PNG shipped with 15-18% of its pixels at a soft
+    /// alpha ramp — a translucent halo that reads as a leg dissolving into whatever sits behind it
+    /// (register #141, "the character's legs 'clip' with the grass").
+    ///
+    /// <para>Iterates the REAL registry — <see cref="ArtVariants.PoolFor"/>'s own manifest probe
+    /// and <see cref="Town2d.TownsfolkNpc2D.CivilianIds"/>, not a hand-listed id array — the exact
+    /// same enumeration <see cref="EveryVariantBody_ObeysTheSameGaitInvariantsAsItsBase"/> already
+    /// uses, so a future class/variant/civilian added without going through
+    /// <c>harden-cast-silhouette.py</c> is caught immediately rather than silently shipping
+    /// soft-edged, the way the original 124 files did. Townsfolk civilians are included even
+    /// though today's committed art already ships crisp (measured directly: 0.0% partial alpha
+    /// across all 120 <c>town2d-townsfolk-*</c> files — they never went through the AI cutout
+    /// path) — the invariant this test states is "the whole cast reads as a hard silhouette," not
+    /// "only the half that happened to need fixing today does," so a future civilian regenerated
+    /// through the same AI-cutout pipeline would trip this exactly like a hero would.</para>
+    /// </summary>
+    [TestCase]
+    public void EveryCastBody_HasABinaryAlphaChannel_NoSoftCutoutEdges()
+    {
+        var checkedCount = 0;
+
+        var heroBases = Classes.Select(c => $"town2d-hero-{c}");
+        var townsfolkBases = Town2d.TownsfolkNpc2D.CivilianIds.Select(c => $"town2d-townsfolk-{c}");
+
+        foreach (var baseId in heroBases.Concat(townsfolkBases))
+        {
+            foreach (var bodyId in ArtVariants.PoolFor(baseId))
+            {
+                foreach (var suffix in GaitSuffixes)
+                {
+                    AssertAlphaIsBinary(Load($"{bodyId}{suffix}"), $"{bodyId}{suffix}");
+                    checkedCount++;
+                }
+            }
+        }
+
+        foreach (var id in PlayerGaitIds)
+        {
+            AssertAlphaIsBinary(Load(id), id);
+            checkedCount++;
+        }
+
+        // Vacuous-green guard (mirrors EveryVariantBody_...'s own): this test's entire value is
+        // that it iterates the real registry, so an enumeration that collapses to (near-)nothing
+        // must fail here rather than pass by checking almost nothing. 244 is the exact census
+        // measured directly against this checkout's committed files at the time this test was
+        // written (120 hero + 120 townsfolk + 4 player) — a floor, not a ceiling: future art
+        // growing the roster should only ever push this number up.
+        AssertThat(checkedCount)
+            .OverrideFailureMessage($"only {checkedCount} cast bodies were checked — the registry enumerated (nearly) empty")
+            .IsGreaterEqual(244);
+    }
+
+    private static void AssertAlphaIsBinary(Image image, string id)
+    {
+        for (var y = 0; y < image.GetHeight(); y++)
+        {
+            for (var x = 0; x < image.GetWidth(); x++)
+            {
+                var a = image.GetPixel(x, y).A;
+                AssertThat(a == 0f || a == 1f)
+                    .OverrideFailureMessage(
+                        $"{id}.png has a partial-alpha pixel at ({x},{y}) (alpha={a}) — a soft " +
+                        "cutout edge that reads as the character dissolving into whatever is behind " +
+                        "it (register #141). Run art/pipeline/harden-cast-silhouette.py over it.")
+                    .IsTrue();
+            }
+        }
+    }
 }
 #endif
