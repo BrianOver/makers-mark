@@ -1,6 +1,8 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
+using System.Linq;
 using GameSim.Contracts;
+using GameSim.Expedition;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
@@ -38,9 +40,22 @@ public class NarratorTextOnScreenTests
     public void EveningReveal_DeathEpitaph_RendersInLedger_EvenMuted()
     {
         var partyIds = ImmutableList.Create(new HeroId(1));
+        // Past the apprenticeship warrant, deliberately. A fresh campaign starts on day 1, and
+        // ApprenticeWarrant holds every lethal blow at 1 HP through LastGraceDay — so a day-1 death
+        // fixture produces a hero who limps home, no HeroDied, and therefore no epitaph for
+        // SelectForNight to pick. That is the tutorial working as designed (§11.13: the Mine keeps
+        // no one while the town is still teaching you), and it means any test that needs a real
+        // death has to ask for one on a day the Mine is allowed to keep it.
         var state = GameFactory.NewGame(2026) with
         {
+            Day = ApprenticeWarrant.LastGraceDay + 2,
             Phase = DayPhase.Evening,
+            // A ONE-hero roster, deliberately. With the full starting six alive, the same Evening
+            // tick's own ExpeditionSystem musters and resolves a real raid and OVERWRITES
+            // PendingExpeditions, so the reveal consumes that instead of the result injected here --
+            // which is why this fixture originally produced a PartyReturned with no deaths in it at
+            // all. One hero cannot form a party, so the injected result is the one that survives.
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, Doomed(1)),
             PendingExpeditions = ImmutableList.Create(DiedRun(partyIds, "mine")),
         };
 
@@ -52,7 +67,12 @@ public class NarratorTextOnScreenTests
             ui.Audio.SetNarratorVolume(0f);
             ui.Audio.SetMuted(true);
 
-            ui.Adapter.AdvancePhase(); // completes Evening: HeroDied fires, arms the Return-Ritual gate
+            // Press the real bell, not Adapter.AdvancePhase. The trigger is chosen in MainUi's own
+            // phase-completed hook, from THAT tick's LastEvents — advancing the adapter directly
+            // never runs the hook, so _pendingLedgerVoice stays null and the reveal has nothing to
+            // say. This is the idiom the rest of the suite already uses for the Return Ritual
+            // (see CampPanelTests' "the real Evening bell — fires the reveal").
+            PressEnabled(ui, "AdvancePhase"); // completes Evening: HeroDied fires, arms the gate
             ui._Process(MainUi.ReturnRitualDelaySeconds + 0.1); // fires the reveal: ShowFor, then the real SpeakNarrator call
 
             var spoken = ui.Audio.LastNarratorLine?.Text;
@@ -183,6 +203,13 @@ public class NarratorTextOnScreenTests
     }
 
     // ── fixtures ──────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>One hero the Mine is allowed to keep: alive, no gear, so the reveal's memorial
+    /// GearSummary has nothing to resolve against an empty Items table.</summary>
+    private static Hero Doomed(int id) => new(
+        new HeroId(id), $"Doomed{id}", "vanguard", Level: 1, MaxHp: 20, Gold: 0,
+        new GearSet(null, null, null), ImmutableList<ItemMemory>.Empty,
+        Alive: true, DeepestFloorReached: 0, DiedOnDay: null);
 
     private static ExpeditionResult DiedRun(ImmutableList<HeroId> party, string venueId) => new(
         Party: party,
