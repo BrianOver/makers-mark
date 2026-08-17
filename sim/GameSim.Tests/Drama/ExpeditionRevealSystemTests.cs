@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Kernel;
 
 namespace GameSim.Tests.Drama;
 
@@ -541,5 +542,88 @@ public class ExpeditionRevealSystemTests
         Assert.Equal(new[] { 1, 2, 3 }, returns[0].Survivors.Select(h => h.Value));
         Assert.Equal(new[] { 4, 5, 6 }, returns[1].Survivors.Select(h => h.Value));
         Assert.Empty(tick.NewState.PendingExpeditions);
+        // §11.14.8: one DecisionExplained per result, same order as the PartyReturned pair above.
+        Assert.Equal(2, tick.Events.OfType<DecisionExplained>().Count());
+    }
+
+    // ---- §11.14.8 ("the reveal deletes its own evidence") ----
+
+    /// <summary>
+    /// The named defect this unit fixes: before this, <see cref="ExpeditionResult.Halt"/> and its
+    /// recorded rolls died with <see cref="GameState.PendingExpeditions"/> the same tick this system
+    /// cleared it, so nothing in <see cref="GameState"/> ever said why a party stopped short of its
+    /// target once Evening passed. The persisted <see cref="DecisionExplained"/> is that fix — every
+    /// field it carries already lived on <see cref="ExpeditionResult"/>, only the destination is new.
+    /// </summary>
+    [Fact]
+    public void Reveal_EmitsDecisionExplained_NamingTheHaltAndSummary()
+    {
+        var state = NewWorld();
+        var result = Result(party: [1], survivors: [1], deaths: [], targetFloor: 5, deepestCleared: 3)
+            with { Halt = ExpeditionHalt.TooHurt, VenueId = "mine" };
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        var explained = Assert.Single(tick.Events.OfType<DecisionExplained>());
+        Assert.Equal("expedition-halt:mine", explained.What);
+        Assert.Equal("TooHurt", explained.Chosen);
+        Assert.Equal("1 survived, 0 dead, cleared 3/5, 0 floors fought", explained.Reason);
+        Assert.Equal(-1, explained.Candidates); // no meaningful candidate count for a halt reason
+    }
+
+    /// <summary>Unconditional emission (mirrors the removed client-only predecessor's own behavior,
+    /// <c>godot/scripts/DecisionEvents.cs</c>'s former <c>LogRevealed</c>): a clean TargetReached is
+    /// exactly as worth a durable record as a limp home — no special-casing the success path away.</summary>
+    [Fact]
+    public void Reveal_EmitsDecisionExplained_EvenOnACleanTargetReached()
+    {
+        var state = NewWorld();
+        var result = Result(party: [1], survivors: [1], deaths: [], targetFloor: 3, deepestCleared: 3);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        var explained = Assert.Single(tick.Events.OfType<DecisionExplained>());
+        Assert.Equal(ExpeditionHalt.TargetReached.ToString(), explained.Chosen);
+    }
+
+    /// <summary>
+    /// The golden re-baseline's own proof obligation (§11.14.10 process notes): this event must add
+    /// zero RNG draws. <see cref="ExpeditionRevealSystem"/> draws none by construction — its
+    /// <c>Reveal</c> helper never touches the <c>rng</c> parameter <c>Process</c> receives at all —
+    /// so the kernel's RNG position after this tick is bit-identical to before it.
+    /// </summary>
+    [Fact]
+    public void Reveal_DrawsNoRng_RngStateUnchangedAcrossTheEveningTick()
+    {
+        var state = NewWorld();
+        var result = Result(party: [1], survivors: [1], deaths: [], targetFloor: 5, deepestCleared: 3)
+            with { Halt = ExpeditionHalt.TooHurt };
+        var before = state.Rng;
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.Equal(before, tick.NewState.Rng);
+    }
+
+    /// <summary>The whole point: unlike <see cref="DecisionTrace"/> (never serialized — see that
+    /// type's own doc), <see cref="DecisionExplained"/> is a normal <see cref="GameEvent"/> and MUST
+    /// survive a save round-trip, or the reveal's evidence is still lost, just one tick later.</summary>
+    [Fact]
+    public void Reveal_DecisionExplained_SurvivesASaveRoundTrip()
+    {
+        var state = NewWorld();
+        var result = Result(party: [1], survivors: [1], deaths: [], targetFloor: 5, deepestCleared: 3)
+            with { Halt = ExpeditionHalt.GateHeld, VenueId = "mine" };
+
+        var tick = TickEvening(AtEvening(state, result));
+        var json = SaveCodec.Serialize(tick.NewState);
+
+        Assert.Contains("expedition-halt:mine", json);
+        Assert.Contains("GateHeld", json);
+
+        var reloaded = SaveCodec.Deserialize(json);
+        var explained = Assert.Single(reloaded.EventLog.OfType<DecisionExplained>());
+        Assert.Equal("expedition-halt:mine", explained.What);
+        Assert.Equal("GateHeld", explained.Chosen);
     }
 }

@@ -72,6 +72,32 @@ public class DecisionEventsTests
         }
     }
 
+    /// <summary>The seventh, generic case: <see cref="DecisionExplained"/> is a straight echo (its
+    /// fields are already named What/Chosen/Reason/Candidates — the exact <see
+    /// cref="PlaytestLog.Decision"/> parameter shape), unlike the six above it, which each reformat
+    /// a typed field into that shape.</summary>
+    [TestCase]
+    public void LogAll_EchoesDecisionExplained_Verbatim()
+    {
+        var path = ProjectSettings.GlobalizePath("user://decision-events-logall-explained.jsonl");
+        PlaytestLog.RedirectForTests(path);
+        try
+        {
+            DecisionEvents.LogAll(ImmutableList.Create<GameEvent>(
+                new DecisionExplained("expedition-halt:mine", "TooHurt", "1 survived, 0 dead, cleared 3/5, 0 floors fought")));
+
+            var rows = Rows(path);
+            AssertThat(rows.Count).OverrideFailureMessage(Dump(rows)).IsEqual(1);
+            AssertThat(rows[0]).Contains("\"what\":\"expedition-halt:mine\"");
+            AssertThat(rows[0]).Contains("\"chose\":\"TooHurt\"");
+            AssertThat(rows[0]).Contains("\"why\":\"1 survived, 0 dead, cleared 3/5, 0 floors fought\"");
+        }
+        finally
+        {
+            PlaytestLog.RedirectForTests(null);
+        }
+    }
+
     /// <summary>The fail-soft contract every other <c>PlaytestLog</c> writer honors: disarmed means
     /// zero work, not just zero output — a disarmed recorder must never throw on an event shape it
     /// has never seen.</summary>
@@ -89,12 +115,14 @@ public class DecisionEventsTests
 
     /// <summary>
     /// "The reveal deletes its own evidence" (§11.14.8): an Evening tick with a pending expedition
-    /// consumes <c>GameState.PendingExpeditions</c> the SAME tick it narrates it — this proves the
-    /// typed <see cref="ExpeditionResult.Halt"/> reaches the session log from
-    /// <see cref="SimAdapter.LastRevealedExpeditions"/>'s snapshot point BEFORE that consumption,
-    /// driven through a real <see cref="SimAdapter.AdvancePhase"/> tick rather than calling
-    /// <see cref="DecisionEvents.LogRevealed"/> directly, so a future change to WHEN the snapshot is
-    /// taken fails here too.
+    /// used to consume <c>GameState.PendingExpeditions</c> the SAME tick it narrated it, destroying
+    /// the typed <see cref="ExpeditionResult.Halt"/> with no durable record anywhere. Fixed at the
+    /// source now: <c>GameSim.Drama.ExpeditionRevealSystem</c> emits a persisted
+    /// <see cref="DecisionExplained"/> naming the halt before it clears PendingExpeditions, so this
+    /// drives a real <see cref="SimAdapter.AdvancePhase"/> tick (never calling a client-side echo
+    /// directly) and proves the row reaches the session log through the SAME generic
+    /// <see cref="DecisionEvents.LogAll"/> path as every other reason-bearing event — no
+    /// snapshot-timing workaround left to break.
     /// </summary>
     [TestCase]
     public void AdvancePhase_LogsTheTypedHalt_BeforeTheEveningTickConsumesIt()
