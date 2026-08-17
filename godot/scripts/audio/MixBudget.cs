@@ -258,12 +258,13 @@ public static class MixBudget
     private static float ToDb(double linear) => linear > 1e-9 ? (float)(20.0 * Math.Log10(linear)) : SilenceFloorDb;
 
     /// <summary>
-    /// Every cue and composed-bed id this build already knows sits outside its <see cref="Budgets"/>
-    /// band, keyed <c>"Cue.&lt;name&gt;"</c> or <c>"Track.&lt;id&gt;"</c>.
-    /// <c>MixBudgetCensusTests.ThePendingExemptionCount_IsThePinnedNumber</c> pins
-    /// <see cref="PendingExemptions"/>.Count so a future unit removing an entry (because it re-levelled
-    /// that cue or bed into band) is a red-then-reviewed diff here, never a silent shrink nobody has to
-    /// account for — the same discipline <c>ConstitutionTests</c> holds law exceptions to.
+    /// Every cue, composed-bed, and narrator-line id this build already knows sits outside its
+    /// <see cref="Budgets"/> band, keyed <c>"Cue.&lt;name&gt;"</c>, <c>"Track.&lt;id&gt;"</c>, or
+    /// <c>"NarratorLine.&lt;audioId&gt;"</c>. <c>MixBudgetCensusTests.ThePendingExemptionCount_IsThePinnedNumber</c>
+    /// pins <see cref="PendingExemptions"/>.Count so a future unit removing an entry (because it
+    /// re-levelled that cue, bed, or line into band) is a red-then-reviewed diff here, never a silent
+    /// shrink nobody has to account for — the same discipline <c>ConstitutionTests</c> holds law
+    /// exceptions to.
     ///
     /// <para><b>U-T4-3 emptied the Cue.* half of this table.</b> All 16 exempted cues (5 ceremonial + 11
     /// UI) are now levelled by <see cref="Synth.NormaliseRms"/> against this file's own
@@ -271,8 +272,23 @@ public static class MixBudget
     /// unit's PR body for the full before/after table. <c>Cue.EnterMarket</c> was deliberately left off
     /// the conversion (an R6-pinned byte-freeze test, <c>AudioTests.EnterMarket_IsByteUntouched</c>,
     /// protects its exact recipe) but was never exempted here either — it already landed in band under
-    /// its old peak-based <c>Normalise</c> call, tanh or not. Only the 4 composed-bed entries remain,
-    /// still owned by a later T4 unit.</para>
+    /// its old peak-based <c>Normalise</c> call, tanh or not.</para>
+    ///
+    /// <para><b>U-T4-6 added the 9 NarratorLine.* entries.</b> All 49 committed narrator lines were
+    /// normalised (a single per-file linear gain, re-encoded to the same Ogg Vorbis/mono/24kHz format
+    /// every line already shipped — never re-synthesised, per this unit's own "the takes were curated
+    /// by ear" constraint) toward −20 dBFS active-window RMS, but 9 of them have a crest factor (peak
+    /// minus RMS) too wide to reach that target without breaching the −1.5 dBTP ceiling
+    /// (<c>MixBudgetCensusTests.EveryNarratorLine_LandsInItsBudgetBand_AndUnderItsTruePeakCeiling</c>'s
+    /// own peak assertion is unconditional, no exemption — the ceiling itself is never negotiable).
+    /// Each was instead mastered to the LOUDEST gain that keeps it at/under the ceiling (a real, bisected
+    /// measurement against the actual re-encoded file, not an arithmetic guess — this pipeline's
+    /// gain-vs-peak relationship is not perfectly linear across a lossy re-encode, confirmed directly:
+    /// naive linear prediction understated one file's real re-encoded peak by 0.53 dB), which leaves
+    /// each 0.1-2.0 dB quieter than the tolerance floor allows. This is a genuine, measured tension in
+    /// the recordings themselves (an unusually low crest factor relative to the other 40), not a script
+    /// bug or a tolerance to widen quietly. Only 4 composed-bed entries remain unowned by this unit.
+    /// </para>
     /// </summary>
     public static readonly IReadOnlySet<string> PendingExemptions = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -284,5 +300,21 @@ public static class MixBudget
         "Track.town-dusk",       // −61.41 dBFS effective — the Evening dead-air bed
         "Track.night-still",     // −45.84 dBFS effective
         "Track.quest-wait",      // −45.99 dBFS effective
+
+        // ---- Narrator lines: peak-limited (see this field's own doc above) — each mastered to the
+        //      loudest safe gain under the −1.5 dBTP ceiling, landing quieter than the −21.0 floor. ----
+        // Values below are the engine gate's OWN measurements (MixBudgetCensusTests, via
+        // MixBudget.ActiveWindowRms and MonoPeakDb) after the margin pass described in
+        // NarratorTruePeakCeilingDbTp's doc — not a separate tool's numbers. See that doc for why the
+        // distinction is load-bearing here.
+        "NarratorLine.campaign-ending-00", // −21.94 dBFS effective, −2.05 dBTP
+        "NarratorLine.climax-reached-01",  // −23.72 dBFS effective, −1.74 dBTP — the widest miss
+        "NarratorLine.death-epitaph-09",   // −21.54 dBFS effective, −1.59 dBTP
+        "NarratorLine.killing-blow-09",    // −21.27 dBFS effective, −1.55 dBTP
+        "NarratorLine.proven-save-00",     // −21.41 dBFS effective, −1.57 dBTP
+        "NarratorLine.vigil-opening-00",   // −22.62 dBFS effective, −1.62 dBTP
+        "NarratorLine.vigil-opening-01",   // −22.08 dBFS effective, −1.67 dBTP
+        "NarratorLine.vigil-opening-07",   // −22.75 dBFS effective, −2.15 dBTP
+        "NarratorLine.vigil-opening-08",   // −22.23 dBFS effective, −1.75 dBTP
     };
 }

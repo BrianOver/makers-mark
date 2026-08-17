@@ -216,10 +216,15 @@ public class MixBudgetCensusTests
     ///
     /// <para>U-T4-3 dropped this 20 -&gt; 4: every one-shot cue (5 ceremonial + 11 UI Cue.* entries) now
     /// lands in its <see cref="MixBudget.Budgets"/> band via <see cref="Synth.NormaliseRms"/> — see that
-    /// unit's PR body for the before/after table. Only the 4 composed-bed Track.* entries remain,
-    /// unowned by this unit.</para>
+    /// unit's PR body for the before/after table. Only the 4 composed-bed Track.* entries remained,
+    /// unowned by that unit.</para>
+    ///
+    /// <para>U-T4-6 raised this 4 -&gt; 13: 9 of the 49 mastered narrator lines are genuinely
+    /// peak-limited (crest factor too wide to reach −20 dBFS RMS without breaching the −1.5 dBTP
+    /// ceiling) — see <see cref="MixBudget.PendingExemptions"/>'s own doc for the full measurement.
+    /// </para>
     /// </summary>
-    private const int PinnedExemptionCount = 4;
+    private const int PinnedExemptionCount = 13;
 
     [TestCase]
     public void ThePendingExemptionCount_IsThePinnedNumber()
@@ -245,11 +250,166 @@ public class MixBudgetCensusTests
             validKeys.Add($"Track.{id}");
         }
 
+        foreach (var audioId in NarratorLines.AllAudioIds)
+        {
+            validKeys.Add($"NarratorLine.{audioId}");
+        }
+
         var unknown = MixBudget.PendingExemptions.Where(key => !validKeys.Contains(key)).ToList();
         AssertInt(unknown.Count)
             .OverrideFailureMessage(
                 "MixBudget.PendingExemptions names ids that do not exist: " + string.Join(", ", unknown))
             .IsEqual(0);
     }
+
+    /// <summary>Approximate ("true") peak via a cheap 2x linear interpolation between consecutive
+    /// decoded frames — the SAME technique <c>AudioTests.PeakDb</c> uses for composed tracks (see its
+    /// own doc for why an approximation is an acceptable trade), narrowed to one channel: narrator
+    /// lines are recorded/committed MONO, and Godot's <see cref="AudioStreamPlayback.MixAudio"/> always
+    /// returns stereo frames with the mono content duplicated onto both channels, so reading <see
+    /// cref="Vector2.X"/> alone is the real signal with no information lost (unlike <see
+    /// cref="CombineStereo"/>'s mean-channel-POWER combine above, which would discard sign and corrupt
+    /// the inter-sample interpolation this measurement depends on).</summary>
+    private static (float SamplePeakDb, float TruePeakDb) MonoPeakDb(Vector2[] frames)
+    {
+        var sampleMax = 0f;
+        var trueMax = 0f;
+
+        for (var i = 0; i < frames.Length; i++)
+        {
+            var v = frames[i].X;
+            var absV = Math.Abs(v);
+            sampleMax = Math.Max(sampleMax, absV);
+            trueMax = Math.Max(trueMax, absV);
+
+            if (i + 1 < frames.Length)
+            {
+                var mid = (v + frames[i + 1].X) * 0.5f;
+                trueMax = Math.Max(trueMax, Math.Abs(mid));
+            }
+        }
+
+        static float ToDb(float linear) => linear > 0f ? 20f * MathF.Log10(linear) : -120f;
+        return (ToDb(sampleMax), ToDb(trueMax));
+    }
+
+    /// <summary>The narrator's own true-peak ceiling (§11.14.6, U-T4-6) — tighter than the composed-
+    /// track ceiling (<c>AudioTests.TruePeakCeilingDbTp</c>, −1.0) because the Narrator bus carries no
+    /// headroom of its own (<see cref="AudioBuses.NarratorBusDb"/> is 0 dB, so source and effective are
+    /// the same number) and speech has less margin against inter-sample overs than a mixed composition
+    /// does. Unconditional — no <see cref="MixBudget.PendingExemptions"/> escape hatch, unlike the RMS
+    /// band check below: a line that cannot reach −20 dBFS without breaching this gets mastered to the
+    /// loudest SAFE gain instead (see <see cref="MixBudget.PendingExemptions"/>'s own doc for the 9
+    /// lines that landed here), so a real ceiling breach reaching this test is always a genuine, fresh
+    /// regression, never a known, accepted trade.
+    ///
+    /// <para><b>Master to a MARGIN, never to this number, and measure with THIS gate.</b> The first
+    /// mastering pass bisected each line to the largest gain whose true peak "cleared" −1.5, measured
+    /// with a separate Python port of <see cref="MixBudget.ActiveWindowRms"/>/<c>MonoPeakDb</c>. Fourteen
+    /// lines then failed here, because two correct implementations of the same measurement straddle a
+    /// boundary: the port and this gate disagreed by ~0.05 dB on most lines and by <b>0.7 dB</b> on
+    /// <c>climax-reached-01</c> (ported −1.65, measured here −0.95). A target with no margin turns that
+    /// ordinary disagreement into a red build.</para>
+    ///
+    /// <para><b>And gain alone cannot hit a true-peak target at this bitrate.</b> Measured while fixing
+    /// the above: at 45 kbps mono Vorbis the encoded true peak is <b>not a monotone function of input
+    /// gain</b> — cutting <c>killing-blow-02</c> by a further 1.0 dB moved its measured peak from −1.51
+    /// to −1.46, the wrong way, because codec ringing dominates. Three lines could not be brought under
+    /// the ceiling by scaling at all. What works is a real true-peak limiter before encoding
+    /// (<c>alimiter=limit=0.63:level=disabled</c> — <c>level=disabled</c> matters, since ffmpeg's
+    /// alimiter applies auto make-up gain by default and without it the peak went to <i>+0.3 dBFS</i>),
+    /// which tames the peak while leaving RMS inside the band. That is why nine lines need an RMS
+    /// exemption and not twelve: limiting keeps loudness where scaling would have sacrificed it.</para></summary>
+    private const float NarratorTruePeakCeilingDbTp = -1.5f;
+
+    /// <summary>
+    /// U-T4-6: "the first gate that has ever looked at [the narrator lines'] level." Iterates <see
+    /// cref="NarratorLines.AllAudioIds"/> — the real registry <see cref="NarratorVoiceDirector.Lines"/>
+    /// backs, not a hand-listed id array — decodes each committed Ogg Vorbis line through the same
+    /// <see cref="AudioStreamPlayback.MixAudio"/> path <see cref="EveryComposedBed_LandsInItsBudgetBand"/>
+    /// already uses, and checks BOTH halves of the unit's own brief: the −20±1.0 dBFS
+    /// <see cref="MixBudget.Category.Narrator"/> RMS band (source == effective, since <see
+    /// cref="AudioBuses.NarratorBusDb"/> is 0 dB) with the same exemption/staleness contract every other
+    /// census in this file uses, AND the unconditional <see cref="NarratorTruePeakCeilingDbTp"/> true-
+    /// peak ceiling.
+    /// </summary>
+    [TestCase]
+    public void EveryNarratorLine_LandsInItsBudgetBand_AndUnderItsTruePeakCeiling()
+    {
+        var mixRate = (int)AudioServer.GetMixRate();
+        var budget = MixBudget.Budgets[MixBudget.Category.Narrator];
+        var checkedCount = 0;
+
+        foreach (var audioId in NarratorLines.AllAudioIds)
+        {
+            var path = NarratorLines.ResourcePath(audioId);
+            AssertBool(ResourceLoader.Exists(path))
+                .OverrideFailureMessage($"narrator line '{audioId}' has no committed audio at {path}.")
+                .IsTrue();
+
+            var stream = GD.Load<AudioStream>(path);
+            AssertThat(stream)
+                .OverrideFailureMessage($"narrator line '{audioId}' would not load from {path}.")
+                .IsNotNull();
+
+            var frameBudget = (int)Math.Ceiling(stream!.GetLength() * mixRate) + mixRate; // +1s margin
+            var frames = DecodeUpTo(stream, frameBudget);
+            AssertInt(frames.Length)
+                .OverrideFailureMessage(
+                    $"narrator line '{audioId}' decoded 0 frames via MixAudio — a line this test cannot "
+                    + "see is a line this budget cannot protect.")
+                .IsGreater(0);
+
+            var mono = new float[frames.Length];
+            for (var i = 0; i < frames.Length; i++)
+            {
+                mono[i] = frames[i].X;
+            }
+
+            var sourceDb = MixBudget.ActiveWindowRms(mono, mixRate);
+            var effective = sourceDb + AudioBuses.NarratorBusDb + DefaultFaderDb;
+
+            var inBand = MathF.Abs(effective - budget.TargetRmsDbfs) <= budget.ToleranceDb;
+            var key = $"NarratorLine.{audioId}";
+            var exempted = MixBudget.PendingExemptions.Contains(key);
+
+            AssertBool(inBand || exempted)
+                .OverrideFailureMessage(
+                    $"narrator line '{audioId}' measures {effective:0.00} dBFS effective — outside "
+                    + $"{budget.TargetRmsDbfs:0.0}±{budget.ToleranceDb:0.0} dB and not listed in "
+                    + "MixBudget.PendingExemptions. Either this line drifted and needs an exemption "
+                    + "(with a bumped pin), or it is a brand-new line with no mastering pass yet.")
+                .IsTrue();
+
+            if (exempted)
+            {
+                AssertBool(inBand)
+                    .OverrideFailureMessage(
+                        $"'{key}' is listed in MixBudget.PendingExemptions but now measures "
+                        + $"{effective:0.00} dBFS, inside its {budget.TargetRmsDbfs:0.0}±"
+                        + $"{budget.ToleranceDb:0.0} band. It was fixed — remove it from "
+                        + "PendingExemptions and lower the pinned count.")
+                    .IsFalse();
+            }
+
+            var (_, truePeakDb) = MonoPeakDb(frames);
+            AssertFloat(truePeakDb)
+                .OverrideFailureMessage(
+                    $"narrator line '{audioId}' has an (approximate) true peak of {truePeakDb:0.00} dBTP "
+                    + $"— over the {NarratorTruePeakCeilingDbTp:0.0} dBTP ceiling. This ceiling has no "
+                    + "exemption: re-master the file with art/pipeline (or the equivalent narrator "
+                    + "mastering pass) to a lower gain, never widen this constant.")
+                .IsLessEqual(NarratorTruePeakCeilingDbTp);
+
+            checkedCount++;
+        }
+
+        // Vacuous-green guard: this test's entire value is that it iterates the real registry, so an
+        // enumeration collapsing to (near-)nothing must fail here rather than pass by checking nothing.
+        AssertInt(checkedCount)
+            .OverrideFailureMessage("no narrator lines were checked — NarratorLines.AllAudioIds enumerated empty")
+            .IsGreaterEqual(49);
+    }
+
 }
 #endif
