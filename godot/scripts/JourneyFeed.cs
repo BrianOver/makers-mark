@@ -108,6 +108,15 @@ public sealed class JourneyPlayhead
     /// <summary>Skip mid-stream: jump straight to the card's end instead of dangling on a partial
     /// reveal — "remaining beats collapse to the clouded/summary end state" (U16 Approach).</summary>
     public void Collapse() => Revealed = _beatCount;
+
+    /// <summary>Receipt/test hook (§11.14.7): force <see cref="Revealed"/> to an exact count instead
+    /// of waiting real seconds for <see cref="Advance"/> to earn it — a screenshot tool has no
+    /// minutes to spend watching a whole phase's worth of time-stretch play out one beat at a time.
+    /// Clamped to [0, beatCount] and monotonic with <see cref="Advance"/> the same way <see
+    /// cref="Collapse"/> already is — both only ever raise <see cref="Revealed"/>, never lower it, so
+    /// this cannot un-reveal a beat a real tick already earned. Never called from production code.
+    /// </summary>
+    public void SetRevealed(int count) => Revealed = Math.Max(Revealed, Math.Clamp(count, 0, _beatCount));
 }
 
 /// <summary>

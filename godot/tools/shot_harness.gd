@@ -157,6 +157,16 @@ func _initialize() -> void:
 		# default 320-frame settle below would already show the tray chip WITHOUT the toast.
 		# 90 (the plain-town default) lands comfortably inside the toast's window.
 		_settle = 90
+	elif _state == "Watch":
+		# U-T5-9/10/11/12 (§11.14.7): MainUi.StageWatchFightReceipt (SHOT_WATCH_FIGHT, set by
+		# shoot.ps1 for this state) already stages a resolved two-floor fight at DayPhase.Camp
+		# before the scene even mounts -- no day-cycle navigation needed. The beat reveal itself is
+		# forced instantly (MineWatch.RevealDelveBeatsForReceipt, called at frame 200 below) rather
+		# than waited on -- see that method's own doc for why frame 200, not frame 0: the proof
+		# flare is a real-time decay curve (2.6s) that keeps ticking regardless of pause state, so
+		# revealing at mount time and capturing at a several-second settle would photograph it
+		# already faded. 260 leaves 60 frames (~1s) of the flare/camera-lean still visibly live.
+		_settle = 260
 	elif _state == "MineGateFocus":
 		# U2: armed at frame 60 below; the focus beat's own smoothing settles ~40 frames after
 		# arming (measured), and the beat itself expires 3.2s (~192 frames) after arming, after
@@ -435,6 +445,29 @@ func _process(_delta: float) -> bool:
 			var bell3 = _ui.find_child("AdvancePhase", true, false)
 			if bell3:
 				bell3.emit_signal("pressed")
+		elif _state == "Watch":
+			# §11.14.7: the fight is already staged at mount (see StageWatchFightReceipt).
+			# MineWatch itself is mounted INSIDE the Depths drawer (Depths.MountWatch, MainUi's
+			# own build-time wiring) -- not part of the always-visible HUD -- so it is not on
+			# screen at all until that drawer opens, same "PanelId + Panel" bypass idiom
+			# ForgePanel/ShopPanel/DepthsPanel above already use.
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Depths")
+			var watch_camp_modal = _ui.find_child("CampModal", true, false)
+			if watch_camp_modal:
+				watch_camp_modal.visible = false
+			var watch_tutorial = _ui.find_child("TutorialOverlay", true, false)
+			if watch_tutorial:
+				watch_tutorial.visible = false
+			# The departure slate ("THE SEND-OFF") is real MineWatch content, but it reports on
+			# TODAY'S actual auto-formed party -- a different, unrelated departure from the
+			# hand-staged floor 1/2 fight this receipt exists to show -- and it visually sits on
+			# top of the backdrop/monster/HP-bar overlay this state is FOR. Suppressed here, same
+			# "the modals that covered you are the thing to suppress" idiom as CampModal/
+			# TutorialOverlay above.
+			var watch_slate = _ui.find_child("DepartureSlate", true, false)
+			if watch_slate:
+				watch_slate.visible = false
 		elif _state == "MineGateFocus":
 			# U2 (shell-and-audio plan): the receipt for R1 -- "the mine is off the screen at
 			# the top" -- proving the mine gate is reachable once the header no longer occludes
@@ -513,6 +546,15 @@ func _process(_delta: float) -> bool:
 			# via the source-gen call() bridge).
 			_ui.call("OnTownBuildingClicked", _state)
 		_entered = true
+	# Watch's second beat: jump the delve overlay to floor 1's LethalSave-flared Exchange beat
+	# (MineWatch.RevealDelveBeatsForReceipt's own doc explains why this fires at frame 200, 60
+	# frames -- ~1s -- before the 260 settle above, instead of at mount time: the proof flare and
+	# camera lean are real-time decay/ease curves, and firing them too early would have them fully
+	# resolved by the time the PNG is actually captured).
+	if _state == "Watch" and _frames == 200:
+		var watch_reveal = _ui.find_child("MineWatch", true, false)
+		if watch_reveal:
+			watch_reveal.call("RevealDelveBeatsForReceipt", 3)
 	# SendOff's second beat: press the real bell button through its own signal (the exact path
 	# a player uses), a beat after the Forge drawer opened above -- this is what the departure
 	# choreography (drawer close, camera pan, PiP dock) is actually reacting to.

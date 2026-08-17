@@ -261,6 +261,17 @@ public partial class MineWatch : SubViewportContainer
 
     private readonly List<Figure> _figures = [];
     private ImmutableList<HeroId> _currentParty = ImmutableList<HeroId>.Empty;
+
+    /// <summary>Receipt/test hook (§11.14.7): seeds <see cref="_currentParty"/> directly. In real
+    /// play that field is only ever set from a genuine <c>PartyDeparted</c> event (<see
+    /// cref="Refresh"/>'s own <c>lastEvents.OfType&lt;PartyDeparted&gt;()</c> scan) and survives every
+    /// later Camp/ExpeditionDeep tick the same day. <c>MainUi.StageWatchFightReceipt</c> hand-injects
+    /// an already-resolved <see cref="GameSim.Contracts.ExpeditionResult"/> straight at
+    /// <see cref="DayPhase.Camp"/> for a screenshot harness, so no departure tick — and therefore no
+    /// <c>PartyDeparted</c> event — ever actually fires; without this seed the strip would render the
+    /// backdrop and delve overlay with zero hero figures. Never called from production code.</summary>
+    public void SeedPartyForReceipt(ImmutableList<HeroId> party) => _currentParty = party;
+
     private float _time;
     private float _milestoneRemaining;
     private bool _built;
@@ -683,6 +694,41 @@ public partial class MineWatch : SubViewportContainer
         _delveStage.FloorFocusByFloor = DelveFloorFocus(floorBeats);
     }
 
+    /// <summary>Renders every beat <see cref="_delveHead"/> has revealed but <see
+    /// cref="_delveRendered"/> hasn't drawn yet — the shared step between <see cref="_Process"/>'s
+    /// own real-time reveal and <see cref="RevealDelveBeatsForReceipt"/>'s instant one, so a
+    /// receipt-forced jump fires the exact same <see cref="DelveStage.RenderBeat"/> calls (proof
+    /// flares, camera focus, HP replay) a real playthrough would have, just without the wait.</summary>
+    private void DrainRevealedDelveBeats()
+    {
+        var revealTarget = Math.Min(_delveHead.Revealed, _delveBeats.Count);
+        for (; _delveRendered < revealTarget; _delveRendered++)
+        {
+            _delveStage.RenderBeat(_delveBeats[_delveRendered], _delveHeroes);
+        }
+    }
+
+    /// <summary>Receipt/test hook (§11.14.7): jumps the delve overlay straight to <paramref
+    /// name="beatCount"/> beats revealed and renders every newly-revealed one immediately, instead
+    /// of waiting real seconds for <see cref="JourneyPlayhead"/>'s own time-stretch — a screenshot
+    /// tool has no minutes to spend watching a whole Camp phase play out one beat at a time.
+    /// Monotonic with the real per-frame reveal (<see cref="JourneyPlayhead.SetRevealed"/>'s own
+    /// doc): calling this with a small count, then letting a few real frames tick for FX polish,
+    /// then capturing, cannot ever un-reveal or re-render a beat.
+    ///
+    /// <para>DELIBERATELY not called from <c>MainUi.MaybeSeedWatchReceipt</c> at scene-mount time —
+    /// <see cref="DelveStage.RenderBeat"/> fires a beat's proof flare/impact FX the instant it
+    /// renders, and those are real-time decay curves (<see cref="DelveStage.ProofFlareSeconds"/> =
+    /// 2.6s) that keep ticking regardless of pause state. Reveal at frame 0 and capture at the
+    /// state's usual ~4s settle would photograph the flare already fully faded. <c>shot_harness.gd</c>
+    /// calls this shortly BEFORE its settle frame instead, so the flare/camera-lean are still live
+    /// at capture.</para> Never called from production code otherwise.</summary>
+    public void RevealDelveBeatsForReceipt(int beatCount)
+    {
+        _delveHead.SetRevealed(beatCount);
+        DrainRevealedDelveBeats();
+    }
+
     private const double AmbientBeatWeight = 1.0;
     private const double GlanceBeatWeight = 2.5;
     private const double PullFocusBeatWeight = 4.0;
@@ -843,11 +889,7 @@ public partial class MineWatch : SubViewportContainer
         // target this frame's already-bobbed figure (AnimateFigures ran earlier this same call).
         _delveStage.SyncHeroSprites(BuildHeroSpriteMap());
         _delveHead.Advance(delta, paused: feedPaused);
-        var revealTarget = Math.Min(_delveHead.Revealed, _delveBeats.Count);
-        for (; _delveRendered < revealTarget; _delveRendered++)
-        {
-            _delveStage.RenderBeat(_delveBeats[_delveRendered], _delveHeroes);
-        }
+        DrainRevealedDelveBeats();
 
         // U6: the same feedPaused contract _feed and _delveHead already use, now reaching the
         // monster's idle-breathe. DelveStage's combat FX are deliberately NOT gated by it (they are

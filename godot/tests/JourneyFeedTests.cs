@@ -63,6 +63,44 @@ public class JourneyFeedTests
         AssertThat(head.Idle).IsTrue();
     }
 
+    /// <summary>§11.14.7 receipt/test hook: a screenshot tool jumps straight to a SPECIFIC beat
+    /// count instead of the card's end (<see cref="JourneyPlayhead.Collapse"/>), so it can land on
+    /// the exact beat carrying a proof flare rather than the fully-resolved summary state.</summary>
+    [TestCase]
+    public void Playhead_SetRevealed_JumpsToExactCount()
+    {
+        var head = new JourneyPlayhead();
+        head.Bind(1, 5, 100.0); // long phase, barely started
+
+        head.SetRevealed(3);
+
+        AssertThat(head.Revealed).IsEqual(3);
+        AssertThat(head.Idle).IsFalse();
+    }
+
+    [TestCase]
+    public void Playhead_SetRevealed_ClampsToBeatCount()
+    {
+        var head = new JourneyPlayhead();
+        head.Bind(1, 5, 100.0);
+
+        head.SetRevealed(99);
+
+        AssertThat(head.Revealed).IsEqual(5);
+    }
+
+    [TestCase]
+    public void Playhead_SetRevealed_NeverLowersARealAdvance()
+    {
+        var head = new JourneyPlayhead();
+        head.Bind(1, 5, 5.0); // 1 beat/sec
+        head.Advance(4.0, paused: false); // real progress to beat 4
+
+        head.SetRevealed(1); // a receipt jump that would UNDO real progress
+
+        AssertThat(head.Revealed).IsEqual(4); // monotonic — the higher value wins
+    }
+
     [TestCase]
     public void Playhead_NewPartyKey_ResetsRevealToZero()
     {
