@@ -73,6 +73,21 @@ public partial class LedgerModal : SimPanel
     /// </summary>
     private string? _firstLossBlock;
 
+    /// <summary>
+    /// U-T5-6 (register #159, second half): the narrator's own chosen line for tonight's Evening
+    /// reveal, if one spoke. Set via <see cref="SetNarratorLine"/> — NOT a <see cref="ShowFor"/>
+    /// parameter, because <c>MainUi</c> calls <c>ShowFor</c> BEFORE the real
+    /// <c>AudioDirector.SpeakNarrator</c> call runs, so the line the director actually picked is not
+    /// known yet at that point (<c>MainUi.OnPhaseCompleted</c>'s own ordering). <c>SpeakNarrator</c>'s
+    /// own doc: "Returns the line's text so a caller can show it on screen regardless — the screen is
+    /// the source of truth", and its no-suppression clause ("No setting anywhere may suppress the
+    /// narrator's TEXT") is exactly what this field exists to honor. Null on a quiet night — most
+    /// nights, per <c>NarratorVoiceDirector</c>'s own doc — and reset to null by every fresh
+    /// <see cref="ShowFor"/> so yesterday's line can never bleed into a night that spoke none of its
+    /// own.
+    /// </summary>
+    private string? _narratorLine;
+
     /// <summary>The day whose cards are currently shown (0 = never shown).</summary>
     public int ShownDay { get; private set; }
 
@@ -180,6 +195,7 @@ public partial class LedgerModal : SimPanel
         _showFullTale = false; // each reveal opens on the compact pride payload
         _tutorialTip = tutorialTip;
         _firstLossBlock = firstLossBlock;
+        _narratorLine = null; // MainUi sets this AFTER this call returns — see the field's own doc
         RenderCards(day);
         Visible = true;
 
@@ -189,6 +205,23 @@ public partial class LedgerModal : SimPanel
         if (Adapter is not null)
         {
             _lastAcknowledgedEveningDay = LatestCompletedEveningDay(Adapter.CurrentState);
+        }
+    }
+
+    /// <summary>
+    /// U-T5-6: <c>MainUi</c> calls this right after the Evening reveal's real
+    /// <c>AudioDirector.SpeakNarrator</c> call returns — see <see cref="_narratorLine"/>'s own doc for
+    /// why this cannot simply be a <see cref="ShowFor"/> parameter. Re-renders immediately (rather
+    /// than waiting for the next real <see cref="Refresh"/> tick) so the line appears in the same
+    /// frame the narrator actually spoke it, and is a no-op while the modal is closed (a later
+    /// <see cref="ShowFor"/> re-render will pick up whatever <see cref="_narratorLine"/> is by then).
+    /// </summary>
+    public void SetNarratorLine(string? text)
+    {
+        _narratorLine = text;
+        if (Visible)
+        {
+            RenderCards(ShownDay);
         }
     }
 
@@ -225,6 +258,10 @@ public partial class LedgerModal : SimPanel
         // first-loss-block live here while THE RETELLING stays a direct _cards child added below.
         _cardGrid = new HFlowContainer { Name = "LedgerCardGrid" };
         _cards!.AddChild(_cardGrid);
+
+        // U-T5-6: the narrator's own line, if it spoke tonight — first in the grid, ahead of every
+        // card, tutorial tip, or empty state below.
+        AddNarratorLine();
 
         if (cards.IsEmpty)
         {
@@ -342,6 +379,27 @@ public partial class LedgerModal : SimPanel
     /// </summary>
     private static ImmutableList<ReturnCard> LeadWithAttribution(ImmutableList<ReturnCard> cards) =>
         cards.OrderByDescending(card => !card.Beats.IsEmpty).ToImmutableList();
+
+    /// <summary>
+    /// U-T5-6: the narrator's own line for tonight's reveal (see <see cref="_narratorLine"/>'s doc),
+    /// rendered first in the card grid with its own accent color so it reads as narration rather than
+    /// another card's prose. Same HFlowContainer width-floor treatment as <see cref="AddTutorialTip"/>
+    /// and for the same reason — an HFlowContainer hands each child its own natural size, so a loose
+    /// autowrapping Label dropped in without a floor collapses to one character per line (the exact
+    /// trap <c>LayoutTests</c> caught at 88px on this same grid).
+    /// </summary>
+    private void AddNarratorLine()
+    {
+        if (_narratorLine is null)
+        {
+            return;
+        }
+
+        var line = AddLabel(_cardGrid!, _narratorLine);
+        line.Name = "LedgerNarratorLine";
+        line.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
+        line.AddThemeColorOverride("font_color", GameTheme.AccentColor);
+    }
 
     /// <summary>U7's own one-line tutorial explainer (R10), now hoisted to render after the lead
     /// card (U1) rather than above every card — see <see cref="_tutorialTip"/>'s doc for the
