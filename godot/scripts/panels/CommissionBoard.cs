@@ -31,6 +31,18 @@ public partial class CommissionBoard : Control
     /// a board shown before this is wired simply renders with disabled buttons (headless/test safe).</summary>
     public SimAdapter? Adapter { get; set; }
 
+    /// <summary>
+    /// U-T2 Wave C (§11.14.4, Act II, "hold-or-sell" — dilemma #1): the live tutorial chain, wired
+    /// by <c>MainUi</c> right after both this board and <see cref="TutorialFlow"/> are built (same
+    /// precedent as <c>ForgePanel.Tutorial</c>/<c>ShopPanel.Tutorial</c>) — accepting a commission
+    /// reads/writes it through <see cref="Mentor"/>. Null-tolerant.
+    /// </summary>
+    public TutorialFlow? Tutorial { get; set; }
+
+    /// <summary>The shared "Bryn speaks a first-touch lesson" banner (<see cref="MentorBanner"/>,
+    /// Wave C) — owned by <c>MainUi</c> so it draws above this modal too.</summary>
+    public MentorBanner? Mentor { get; set; }
+
     /// <summary>Number of commissions rendered by the last <see cref="ShowOpen"/> call — test hook
     /// (mirrors <see cref="RaidForecastBoard.PartyCount"/>).</summary>
     public int CommissionCount { get; private set; }
@@ -132,6 +144,7 @@ public partial class CommissionBoard : Control
             // other queue-then-play call site in this codebase (the button is only enabled when
             // the action is legal).
             GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Click);
+            ShowHoldOrSellLesson();
         };
         accept.Disabled = Adapter is null || !acceptLegal;
         accept.TooltipText = Adapter is null
@@ -159,6 +172,21 @@ public partial class CommissionBoard : Control
             : declineLegal ? string.Empty : "Commissions are decided in the morning.";
         row.AddChild(decline);
     }
+
+    /// <summary>
+    /// U-T2 Wave C (§11.14.4, Act II, dilemma #1, R14.7 "one sentence each, both sides, no
+    /// recommendation"): names the hold-or-sell dilemma out loud the first time the player EVER
+    /// accepts a commission — the moment they are choosing to hold a slot for one named hero
+    /// rather than sell freely off the shelf. Fires once per campaign through the SAME first-touch
+    /// engine and shared banner Wave C's pricing lesson uses (<see cref="TutorialFlow.ConsumeFirstTouch"/>,
+    /// <see cref="MentorBanner"/>) — never a third mechanism. Null-tolerant.
+    /// </summary>
+    private void ShowHoldOrSellLesson() =>
+        Mentor?.ShowFirstTouch(Tutorial?.ConsumeFirstTouch(
+            "hold-or-sell",
+            MentorVoice.Speak(
+                "Sell the good one, or hold it for the hero who needs it — the shelf pays now, while "
+                + "a commission pays more, later, to a named person, if they live that long.")));
 
     private void EnsureBuilt()
     {

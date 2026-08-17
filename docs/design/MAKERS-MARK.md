@@ -4620,7 +4620,7 @@ plus a **first-touch** tier so the long tail teaches itself once, the moment it 
 and then lives in the Lessons book. That two-tier split is what makes 25 actions tractable without
 a forty-step chore.
 
-31 units in six waves:
+28 units in six waves:
 
 - **Wave A, substrate (7):** act-scoped numbering (R14.4) · splitting the chain's backstop from the
   warrant constant, which today are the same number · the Docket, one new `CanvasLayer` that draws
@@ -4630,9 +4630,13 @@ a forty-step chore.
 - **Wave B, Act I (4):** the forge's two acts taught inside the forge · the other three crafts, and
   a stale "ships DORMANT" doc deleted · material sets the ceiling and your hands set the band · the
   mark, read.
-- **Wave C, Act II (6):** **pricing as a decision** (dilemma #2, untaught today) · **day 1 gets a
-  link-2 beat** (#161) · the counter step completes on actually answering · it points at the
-  counter station · its copy splits and its gates stop lying · hold-or-sell (dilemma #1).
+- **Wave C, Act II (3):** **pricing as a decision** (dilemma #2, untaught today) · **day 1 gets a
+  link-2 beat** (#161) · hold-or-sell (dilemma #1). Three more items originally scoped here — the
+  counter step completing on actually answering, it pointing at the counter station, its copy
+  splitting and its gates no longer lying — turned out already shipped by earlier, differently-
+  numbered work (`CounterAnsweredAtLeastOnce`/U-T2-15/U-T2-16, PRs #518 and #544) that predates this
+  wave's own numbering; git, not this count, is the record (rule 8) — grepping `TutorialFlow.cs`
+  before starting Wave C found them already in place, so they were dropped rather than redone.
 - **Wave D, Act III (5):** the slot budget named before it bites (dilemma #4) · the muster speaks
   (dilemma #3) · the ore gift named as a gift (dilemma #5) · **the proof taught the first time it
   lands** (link 4) · the forecast board taught.
