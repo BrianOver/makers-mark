@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using GameSim.Contracts;
 using GameSim.Presentation;
 using GdUnit4;
@@ -924,93 +923,13 @@ public class AudioTests
     }
 
     /// <summary>
-    /// U-audio-fingerprint (2026-08-09, fix/night-music-is-static): the TrimDb sign guard above only
-    /// catches a generation admitting it is too quiet — it says nothing if a phase's FILE is quietly
-    /// swapped for a bad take at TrimDb 0, which is exactly how the original defect would have shipped
-    /// had night-still-long.mp3 been left at 0dB instead of +5.45dB. This pins exactly which bytes
-    /// were already measured and approved, offline, the same way <c>ComposedTrackTrims</c> pins
-    /// TrimDb — a byte-identity check, cheap and certain, that complements (not replaces) the live
-    /// decoded measurement in <see cref="EveryComposedTrack_StaysUnderItsTruePeakCeiling"/> below,
-    /// which is what actually re-derives loudness/peak facts from the shipped audio instead of
-    /// trusting whoever last measured it by hand.
-    ///
-    /// <para>Measured 2026-08-09 with soundfile/pyloudnorm (decode -&gt; integrated LUFS, plus per-second
-    /// RMS across the opening 10s to check for real dynamics): day-first-light -13.28 LUFS (10s RMS
-    /// spread 53.8dB), town-dusk -15.30 LUFS (spread 42.3dB), quest-wait -14.30 LUFS (spread 14.4dB),
-    /// night-still -21.74 LUFS (spread 26.4dB) — all comfortably dynamic. For comparison, the rejected
-    /// night-still-long.mp3 measured -27.12 LUFS integrated but only 0.75dB of RMS spread across its
-    /// opening 10s: a flat, near-constant noise floor with no musical dynamics at all, the numeric
-    /// signature behind "random static noises." That file was deleted from the repo in this same
-    /// commit rather than left as an orphan a future edit could re-wire.</para>
-    ///
-    /// <para><b>Re-measured and re-hashed the same day</b> once true-peak checking (see below) found
-    /// day-first-light and town-dusk both clipping on reconstruction — day-first-light.mp3 and
-    /// town-dusk.mp3 were re-encoded at a lower level (never boosted) to fix it, which changes their
-    /// bytes and therefore their hashes here. quest-wait and night-still were untouched and keep
-    /// their original hashes.</para>
-    ///
-    /// <para>Any future regeneration, re-encode, or newly-wired id fails this test with no approved hash
-    /// — which is the point: it forces whoever changes the bytes to re-run the measurement above and
-    /// deliberately vouch for the new file before updating <see cref="ApprovedTrackHashes"/>, rather
-    /// than letting a bad take ship silently the way night-still-long did.</para>
-    ///
-    /// <para><b>Re-hashed again, U-audio-ogg (2026-08-16): all four converted from MP3 to OGG Vorbis.</b>
-    /// The MP3s this table's hashes used to pin were the static bug itself — 48kHz Lavf-encoded with
-    /// an <c>Info</c> header and no LAME gapless tag, so every loop wrap replayed the encoder's delay
-    /// and padding (see <c>AudioDirector.LoadComposed</c>'s own doc, and <c>tools/audio/mp3-seam-probe.py</c>).
-    /// Transcoded with ffmpeg's libvorbis (no lossless master exists, so this is MP3-to-Vorbis, not
-    /// from source) at a quality matching or exceeding each original's MP3 bitrate. Re-measured with
-    /// ffmpeg's <c>loudnorm</c> before/after the conversion: every file landed within ~0.3dB integrated
-    /// LUFS and true peak of its MP3 original (day-first-light -14.8/-14.8 LUFS, town-dusk -17.9/-18.2,
-    /// night-still -21.7/-21.7, quest-wait -14.3/-14.2), so none of <see cref="AudioDirector.ComposedTracks"/>'s
-    /// TrimDb values needed to move. The bytes are new, so the hashes below are too; the point of this
-    /// test is unchanged — any future swap-in still needs a deliberate re-measure-and-vouch.</para>
-    /// </summary>
-    private static readonly Dictionary<string, string> ApprovedTrackHashes = new(StringComparer.Ordinal)
-    {
-        ["day-first-light"] = "3A28F57E57540B4DFA0C365C419858CD1E03A59008C5E4CF33B9D843E459A77E",
-        ["town-dusk"] = "5C7E243453F144ED9A73A97022D6AC5400D2853F40190A2887E4D8945114FC7A",
-        ["quest-wait"] = "3B3E04834FB718A4DD78B0238CB6DD994C1C46D88D016261CEED73397CBC801C",
-        ["night-still"] = "47CE23C6084FAECA63EE190A5EE024DDA01AF50F7F7124E86AD2203C4A73931C",
-    };
-
-    [TestCase]
-    public void EveryComposedTrack_MatchesItsApprovedLoudnessFingerprint()
-    {
-        foreach (var (phase, id) in AudioDirector.ComposedTrackIds)
-        {
-            var path = ProjectSettings.GlobalizePath($"res://assets/audio/{id}.ogg");
-
-            AssertThat(File.Exists(path))
-                .OverrideFailureMessage(
-                    $"{phase} maps to composed track '{id}' but {path} does not exist on disk — either " +
-                    "the file was removed without updating AudioDirector.ComposedTracks, or it was " +
-                    "renamed and this fingerprint census was not updated to match.")
-                .IsTrue();
-
-            var actualHash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
-            var isApproved = ApprovedTrackHashes.TryGetValue(id, out var expectedHash)
-                && string.Equals(actualHash, expectedHash, StringComparison.Ordinal);
-
-            AssertThat(isApproved)
-                .OverrideFailureMessage(
-                    $"{phase}'s composed track '{id}' hashes to {actualHash}, which is not in " +
-                    "ApprovedTrackHashes. This is either a brand-new id that was never loudness-checked, " +
-                    "or existing bytes silently changed under an id this test already trusted. Before " +
-                    "adding/updating the hash: decode the file (soundfile/pyloudnorm or ffmpeg loudnorm), " +
-                    "check its integrated LUFS against its neighbours and its per-second RMS spread over " +
-                    "the opening ~10s — under ~2dB of spread is a flat noise floor, not music, and is " +
-                    "exactly how night-still-long.mp3 shipped as 'random static' at night.")
-                .IsTrue();
-        }
-    }
-
-    /// <summary>
-    /// U-audio-peak-guard (2026-08-09, fix/night-music-is-static continued): the fingerprint test
-    /// above freezes bytes but says nothing about whether a BRAND NEW file is any good — it would not
-    /// have caught town-dusk.mp3 (+1.71 dBTP true peak, inter-sample clipping) or day-first-light.mp3
-    /// (+0.03 dBTP) the day either landed, because neither had a prior hash to compare against. This
-    /// test decodes every composed track through the SAME <see cref="AudioStream.InstantiatePlayback"/>
+    /// U-audio-peak-guard (2026-08-09, fix/night-music-is-static continued): a byte-identity fingerprint
+    /// test used to live above this one (deleted, U-T4-7 — a hash census proves bytes did not change,
+    /// never that they were any good, and it actively blocked repairing them; see
+    /// <c>AudioContentGateTests</c> for the five real content gates that replaced it). That fingerprint
+    /// test would not have caught town-dusk.mp3 (+1.71 dBTP true peak, inter-sample clipping) or
+    /// day-first-light.mp3 (+0.03 dBTP) the day either landed, because neither had a prior hash to
+    /// compare against — this test decodes every composed track through the SAME <see cref="AudioStream.InstantiatePlayback"/>
     /// / <see cref="AudioStreamPlayback.MixAudio"/> path the game itself plays through — no separate
     /// offline tool that could drift from what actually ships — and measures its peak directly, so a
     /// future regeneration or re-encode that lands hot fails here without anyone needing to remember
