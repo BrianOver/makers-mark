@@ -47,13 +47,22 @@ public partial class MentorBanner : PanelContainer
         var card = UiKit.Card("MentorBannerCard");
         center.AddChild(card);
 
-        var body = new VBoxContainer { Name = "MentorBannerBody" };
+        // U-T2 Wave D fix (WholeGameSweepTests): an unconstrained Label under a CenterContainer
+        // sizes to its own UNWRAPPED natural width before AutowrapMode ever gets a width to wrap
+        // against — on the smallest content window (1152x648, the sweep's own floor) a full-
+        // sentence lesson pushed the card far wider than the window, and CenterContainer happily
+        // centers a child larger than itself, overflowing both edges and (via the resulting
+        // mis-sized VBoxContainer) shoving the Dismiss button below the visible window entirely —
+        // a dead click on the one control that gets the player OUT of the lesson. Same fixed-width
+        // idiom CommissionBoard/RaidForecastBoard already use for their own modal cards.
+        var body = new VBoxContainer { Name = "MentorBannerBody", CustomMinimumSize = new Vector2(440, 0) };
         card.AddChild(body);
 
         _label = AddLabel(body, string.Empty);
         _label.Name = "MentorBannerText";
         _label.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _label.HorizontalAlignment = HorizontalAlignment.Center;
+        _label.CustomMinimumSize = new Vector2(440, 0);
 
         var dismiss = AddButton(body, "MentorBannerDismiss", "Got it", Dismiss);
         dismiss.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
@@ -67,10 +76,19 @@ public partial class MentorBanner : PanelContainer
     /// busy-guard: refuses to overwrite an already-showing, un-dismissed lesson so a second
     /// first-touch reached before the player dismisses the first is never silently consumed and
     /// lost — it simply waits for a later call once the banner is free again.
+    ///
+    /// <para><paramref name="preempt"/> (Wave D, generalized from the same insight ForgePanel's
+    /// mark-read lesson needed in Wave B): lifts the busy-guard for a lesson whose own value
+    /// outranks whatever generic orientation note happens to still be on screen. A currently-
+    /// showing banner is ALWAYS an already-consumed lesson by construction — preempting it costs
+    /// nothing the Lessons book has not already recorded permanently, it only ends that lesson's
+    /// screen time a little early. Use for a SPECIFIC, actionable lesson (e.g. a live dilemma)
+    /// that can collide with a more generic "here is what this screen is" lesson fired moments
+    /// earlier in the same caller — not a default, and not something every call site needs.</para>
     /// </summary>
-    public bool ShowFirstTouch(string? fired)
+    public bool ShowFirstTouch(string? fired, bool preempt = false)
     {
-        if (fired is null || Visible)
+        if (fired is null || (!preempt && Visible))
         {
             return false;
         }

@@ -620,8 +620,17 @@ public partial class MineWatch : SubViewportContainer
             _embers.Emitting = false;
         }
 
-        var milestone = lastEvents.FirstOrDefault(e =>
-            e is FloorRecordSet or AttributionBeatEvent or DenThreatShifted { VenueId: MineVenueId });
+        // U-T2 Wave D fix: explicit priority, not emission order. A single tick CAN carry both a
+        // FloorRecordSet and an AttributionBeatEvent for the same hero (a new depth record and a
+        // counterfactual proof landing on the same expedition are not mutually exclusive), and
+        // ExpeditionRevealSystem's own event order is incidental, never information-ranked. A
+        // bare FirstOrDefault over "whichever comes first" let a depth record silently outrank the
+        // proof — a number going up beats the one thing this entire game exists to produce, which
+        // is backwards on the merits. AttributionBeatEvent (link 4) always wins; FloorRecordSet is
+        // still worth a bark on a quiet tick, then the Mine's own den-threat flavor last.
+        var milestone = lastEvents.FirstOrDefault(e => e is AttributionBeatEvent)
+            ?? lastEvents.FirstOrDefault(e => e is FloorRecordSet)
+            ?? lastEvents.FirstOrDefault(e => e is DenThreatShifted { VenueId: MineVenueId });
         if (milestone is not null)
         {
             QueueMilestone(state, milestone);
@@ -1293,10 +1302,24 @@ public partial class MineWatch : SubViewportContainer
         _ => 1,
     };
 
+    /// <summary>
+    /// U-T2 Wave D (§11.14.4, Act III, link 4, "the proof taught the first time it lands"):
+    /// <see cref="AttributionBeatEvent.Detail"/> is <see cref="GameSim.Expedition.AttributionEngine"/>'s
+    /// OWN already-composed sentence — e.g. "Emberbite landed the killing blow on the cave-rat" —
+    /// and it is the ONLY place in this event that names WHICH item earned the beat.
+    ///
+    /// <para><b>The bug this fixes.</b> The bark used to reconstruct its own phrase from a
+    /// beat-type verb lookup and the hero/floor, discarding <c>Detail</c> entirely — the one screen
+    /// where the player actually watches the fight named the HERO and the ACTION but never the
+    /// CRAFT, which is the entire point of link 4 ("the game proves it mattered", CLAUDE.md's own
+    /// opening line: "Emberbite turned the killing blow on floor 3. Torvald lives."). A beat that
+    /// never says which item earned it cannot function as proof of anything, no matter how well it
+    /// is taught — this was a prerequisite fix, not a separate polish pass.</para>
+    /// </summary>
     private static string BarkFor(GameState state, GameEvent evt) => evt switch
     {
         FloorRecordSet r => $"{HeroLabel(state, r.Hero)} sets a new depth record — floor {r.Floor}!",
-        AttributionBeatEvent b => $"{HeroLabel(state, b.Hero)} — {BeatVerb(b.Beat)} (floor {b.Floor})",
+        AttributionBeatEvent b => $"{HeroLabel(state, b.Hero)} — {b.Detail} (floor {b.Floor})",
         DenThreatShifted { Lockdown: true } => "The Mine has been overrun — the routes here are locked down!",
         DenThreatShifted d => $"The Mine's depths grow restless — den threat tier {d.ThreatTier} ({d.ThreatPermille / 10}%).",
         _ => string.Empty,
@@ -1304,17 +1327,6 @@ public partial class MineWatch : SubViewportContainer
 
     private static string HeroLabel(GameState state, HeroId id) =>
         state.Heroes.TryGetValue(id.Value, out var hero) ? hero.Name : $"Hero #{id.Value}";
-
-    private static string BeatVerb(BeatType beat) => beat switch
-    {
-        BeatType.KillingBlow => "killing blow",
-        BeatType.LethalSave => "lethal save",
-        BeatType.BreakpointClear => "breakpoint clear",
-        BeatType.Provisioned => "provisioned",
-        BeatType.PotionLifesave => "potion lifesave",
-        BeatType.ToolAssist => "tool assist",
-        _ => "notable beat",
-    };
 
     private void ApplyHidden()
     {
