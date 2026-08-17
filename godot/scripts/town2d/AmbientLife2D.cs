@@ -399,17 +399,41 @@ public partial class AmbientLife2D : Node2D
         };
     }
 
+    /// <summary>The firefly density (motes per PX²) <see cref="BaselineFireflyAmount"/> was tuned
+    /// against — the pre-U-T3-2 40×28-tile world (640×448px). Kept as a reference constant rather
+    /// than re-reading <c>TownLayout2D.GridWidth/GridHeight</c> (which no longer describe that
+    /// world) so <see cref="FireflyAmountFor"/> stays a pure function of the rect it is actually
+    /// given, not a second hardcoded grid size that could drift from the real one.</summary>
+    private const float BaselineWorldAreaPx = 640f * 448f;
+
+    /// <summary>Firefly count <see cref="BuildFireflyField"/> used at the pre-U-T3-2 world size —
+    /// "readability over spectacle" per the plan.</summary>
+    private const int BaselineFireflyAmount = 18;
+
+    /// <summary>
+    /// U-T3-2 (register #163, 64×44 grid): the world grew 2.51× in area (1024×704px vs the old
+    /// 640×448px) — <paramref name="rect"/> is the SAME full-world rect <see cref="Build"/>'s
+    /// caller already computes from <c>TownLayout2D.GridWidth/GridHeight</c>, so scaling the count
+    /// off its own area (rather than a second copy of the grid constants) means a future resize
+    /// keeps a constant firefly DENSITY automatically, instead of the field reading emptier every
+    /// time the world grows — the opposite of the town's own "bigger but deader" complaint this
+    /// unit exists to fix.
+    /// </summary>
+    private static int FireflyAmountFor(Rect2 rect) =>
+        Mathf.Max(1, Mathf.RoundToInt(BaselineFireflyAmount * rect.Size.X * rect.Size.Y / BaselineWorldAreaPx));
+
     /// <summary>A wide, continuously-emitting field of tiny warm motes spread across
     /// <paramref name="rect"/> — omnidirectional gentle bob (no directional stream), additive blend
-    /// so they read as a soft glow rather than solid dots. Modest <c>Amount</c> per the plan's
-    /// "readability over spectacle" note.</summary>
+    /// so they read as a soft glow rather than solid dots. <see cref="FireflyAmountFor"/> keeps the
+    /// per-area density constant as the world resizes (see its own doc); "readability over
+    /// spectacle" per the plan still governs the baseline this scales from.</summary>
     private static CpuParticles2D BuildFireflyField(string name, Rect2 rect, Color color) => new()
     {
         Name = name,
         Position = rect.GetCenter(),
         Emitting = true,
         OneShot = false,
-        Amount = 18,
+        Amount = FireflyAmountFor(rect),
         Lifetime = 8.0,
         Explosiveness = 0f,
         Randomness = 0.85f,

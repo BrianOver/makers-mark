@@ -142,10 +142,14 @@ public class Town2DSceneTests
             // cozy-village cluster reads as a paved square, not a gap in a grass field. The rich
             // pixel-art ground atlas (town2d-ground-atlas, always imported in the engine-test env)
             // places cobble at atlas coord (3,0); the code-built flat fallback used (1,0).
-            var cell = town.Ground.GetCellAtlasCoords(new Vector2I(20, 15));
+            //
+            // U-T3-2 (register #163, 64x44 grid): the plaza moved from (20,15) to (32,33) — the
+            // well's own tile, dead center of the re-laid plaza rect — when the whole town was
+            // re-laid onto the bigger grid; see TownLayout2D.PathRects/Props for the new layout.
+            var cell = town.Ground.GetCellAtlasCoords(new Vector2I(32, 33));
 
             AssertThat(cell)
-                .OverrideFailureMessage("Plaza tile (20,15) must be cobbled — TownLayout2D.PathRects or the ground atlas regressed")
+                .OverrideFailureMessage("Plaza tile (32,33) must be cobbled — TownLayout2D.PathRects or the ground atlas regressed")
                 .IsEqual(new Vector2I(3, 0));
         }
         finally { town.Free(); }
