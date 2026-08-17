@@ -124,6 +124,15 @@ public partial class TownsfolkNpc2D : Node2D
 
     public Sprite2D Sprite { get; private set; } = null!;
 
+    /// <summary>U-T3-6 (register #141): this villager's own grounding shadow — see
+    /// <see cref="TownLayout2D.BuildContactShadow"/>, same recipe every actor uses.</summary>
+    public Sprite2D Shadow { get; private set; } = null!;
+
+    /// <summary>U-T3-5 (register #141): the <see cref="TownLayout2D.CharacterArtRoot"/> child that
+    /// carries <see cref="Sprite"/> — see <see cref="HeroActor2D"/>'s identical field for why
+    /// <see cref="_Process"/> corrects THIS node's position rather than this actor's own.</summary>
+    private Node2D _art = null!;
+
     /// <summary>U4: this villager's own flavour-name nameplate — same <see
     /// cref="Building2D.BuildLabel"/> recipe every nametag in the world uses, no class tint (only
     /// heroes get one).</summary>
@@ -268,6 +277,11 @@ public partial class TownsfolkNpc2D : Node2D
         _spriteHeight = sprite.GetHeight();
         _spriteWidth = sprite.GetWidth();
 
+        // U-T3-6: added before the art root so scene-tree order alone already draws it
+        // underneath — belt-and-suspenders with its own ZIndex=-1.
+        Shadow = TownLayout2D.BuildContactShadow(_spriteWidth);
+        AddChild(Shadow);
+
         Sprite = new Sprite2D
         {
             Name = "Sprite",
@@ -275,9 +289,9 @@ public partial class TownsfolkNpc2D : Node2D
             Modulate = tint,
             Offset = new Vector2(0, -_spriteHeight / 2f),
         };
-        var art = TownLayout2D.CharacterArtRoot(); // carries the cast's world scale — see its doc
-        AddChild(art);
-        art.AddChild(Sprite);
+        _art = TownLayout2D.CharacterArtRoot(); // carries the cast's world scale — see its doc
+        AddChild(_art);
+        _art.AddChild(Sprite);
 
         // U4: name only, no class tint (villagers have none) — same Building2D.BuildLabel recipe
         // every nametag in the world uses (see HeroActor2D.Init's own doc for the Y-sort/ZIndex
@@ -343,6 +357,11 @@ public partial class TownsfolkNpc2D : Node2D
         // pose below is applied to the CHILD Sprite only, exactly the HeroActor2D/SpriteMotion
         // contract.
         Position = basePos;
+
+        // U-T3-5: correct only what gets DRAWN (the art root), never Position itself — see
+        // SpriteMotion.PixelSnapCorrection's own doc for why rounding Position directly would
+        // poison the velocity computation above on the NEXT frame.
+        _art.Position = SpriteMotion.PixelSnapCorrection(Position);
 
         if (Mathf.Abs(moved.X) >= 0.01f)
         {
@@ -442,9 +461,10 @@ public partial class TownsfolkNpc2D : Node2D
     /// copy of <see cref="HeroActor2D.ApplySpritePose"/>'s feet-compensation math.</summary>
     private void ApplySpritePose(SpriteMotion.Pose pose)
     {
+        // U-T3-5: Mathf.Round — see HeroActor2D.ApplySpritePose's identical comment for why.
         Sprite.Offset = new Vector2(
             0,
-            -_spriteHeight / 2f + pose.BobY + _spriteHeight / 2f * (1f - pose.Scale.Y));
+            Mathf.Round(-_spriteHeight / 2f + pose.BobY + _spriteHeight / 2f * (1f - pose.Scale.Y)));
         Sprite.Rotation = pose.LeanRadians;
         Sprite.Scale = pose.Scale;
         // U3: the real 4-frame gait (mirrors HeroActor2D.ResolveWalkFrameTexture exactly) — the

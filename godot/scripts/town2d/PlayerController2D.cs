@@ -51,6 +51,15 @@ public partial class PlayerController2D : CharacterBody2D
 
     public Sprite2D Sprite { get; private set; } = null!;
 
+    /// <summary>U-T3-6 (register #141): the player's own grounding shadow — see
+    /// <see cref="TownLayout2D.BuildContactShadow"/>, same recipe every actor uses.</summary>
+    public Sprite2D Shadow { get; private set; } = null!;
+
+    /// <summary>U-T3-5 (register #141): the <see cref="TownLayout2D.CharacterArtRoot"/> child that
+    /// carries <see cref="Sprite"/> — see <see cref="HeroActor2D"/>'s identical field for why
+    /// <see cref="_Process"/> corrects THIS node's position rather than the body's own.</summary>
+    private Node2D _art = null!;
+
     /// <summary>M3: the pure pose driver (animation plan Part 1) — a single-actor instance (no
     /// per-hero phase-seed spread needed; there is only one player), advanced every <see
     /// cref="_Process"/> and applied to the CHILD <see cref="Sprite"/> only, never this body's own
@@ -108,9 +117,13 @@ public partial class PlayerController2D : CharacterBody2D
     public override void _Ready()
     {
         Sprite = BuildSprite();
-        var art = TownLayout2D.CharacterArtRoot(); // carries the cast's world scale — see its doc
-        AddChild(art);
-        art.AddChild(Sprite);
+        _art = TownLayout2D.CharacterArtRoot(); // carries the cast's world scale — see its doc
+        AddChild(_art);
+        _art.AddChild(Sprite);
+
+        // U-T3-6: same shadow recipe every actor uses, sized off the resolved sprite's own width.
+        Shadow = TownLayout2D.BuildContactShadow(Sprite.Texture.GetWidth());
+        AddChild(Shadow);
 
         // THE PLAYER HAD NO COLLISION SHAPE AT ALL, and it broke two things at once — found by
         // Brian's human playtest (2026-07-29) reporting that pressing E at the forge did nothing.
@@ -163,9 +176,10 @@ public partial class PlayerController2D : CharacterBody2D
         // Feet-compensation contract (SpriteMotion.Pose doc comment): squash/breath scale around
         // the sprite's own center, so any Scale.Y != 1 frame must add h/2*(1-Scale.Y) back into the
         // offset or the character appears to sink/float instead of keeping its feet planted.
+        // U-T3-5: Mathf.Round — see HeroActor2D.ApplySpritePose's identical comment for why.
         Sprite.Offset = new Vector2(
             0,
-            -_spriteHeight / 2f + pose.BobY + _spriteHeight / 2f * (1f - pose.Scale.Y));
+            Mathf.Round(-_spriteHeight / 2f + pose.BobY + _spriteHeight / 2f * (1f - pose.Scale.Y)));
         Sprite.Rotation = pose.LeanRadians;
         Sprite.Scale = pose.Scale;
         Sprite.Texture = pose.WalkFrame switch
@@ -181,6 +195,11 @@ public partial class PlayerController2D : CharacterBody2D
         {
             Sprite.FlipH = Velocity.X < 0;
         }
+
+        // U-T3-5: correct only what gets DRAWN (the art root), never Position itself — Position is
+        // the CharacterBody2D's own physics-owned transform (SpriteMotion.PixelSnapCorrection's doc
+        // explains why HeroActor2D does the same rather than rounding Position in place).
+        _art.Position = SpriteMotion.PixelSnapCorrection(Position);
     }
 
     /// <summary>Test/production seam: pass <c>null</c> to fall back to real <see cref="Input"/>.</summary>

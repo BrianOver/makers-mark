@@ -164,6 +164,44 @@ public class SpriteMotionTests
         }
     }
 
+    /// <summary>U-T3-5 (register #141): the correction plus the position it was computed from must
+    /// always land on a whole pixel, for a wide range of fractional inputs — including negative
+    /// ones (the lissajous wander drifts on both sides of Home) and inputs already exactly on the
+    /// grid (the correction must be a true no-op there, never a spurious ±1px nudge).</summary>
+    [TestCase]
+    public void PixelSnapCorrection_AppliedToItsInput_AlwaysLandsOnAWholePixel()
+    {
+        Vector2[] inputs =
+        {
+            new(0f, 0f),
+            new(10f, 20f), // already whole
+            new(10.49f, -20.49f),
+            new(10.51f, -20.51f),
+            new(-14.999f, 9.001f),
+            new(0.5f, -0.5f), // exact half — Godot's banker's-adjacent Mathf.Round must still land whole
+            new(123.456f, -987.654f),
+        };
+
+        foreach (var position in inputs)
+        {
+            var correction = SpriteMotion.PixelSnapCorrection(position);
+            var drawn = position + correction;
+
+            AssertFloat(drawn.X).IsEqual(Mathf.Round(drawn.X));
+            AssertFloat(drawn.Y).IsEqual(Mathf.Round(drawn.Y));
+        }
+    }
+
+    /// <summary>An already-whole-pixel position must get a zero correction — a correction that
+    /// nudges a position already on the grid would itself reintroduce the exact jitter this unit
+    /// exists to remove.</summary>
+    [TestCase]
+    public void PixelSnapCorrection_OnAlreadyWholePixel_IsZero()
+    {
+        var correction = SpriteMotion.PixelSnapCorrection(new Vector2(42f, -17f));
+        AssertThat(correction).IsEqual(Vector2.Zero);
+    }
+
     [TestCase]
     public void FeetCompensationFormula_KeepsSpriteBottomEdgeAtBobY_RegardlessOfSquashScale()
     {

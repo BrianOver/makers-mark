@@ -336,5 +336,98 @@ public class HeroActor2DTests
             actor.QueueFree();
         }
     }
+
+    /// <summary>U-T3-5 (register #141, "legs clip with the grass"): <see cref="HeroActor2D.Sprite"/>'s
+    /// vertical <c>Offset</c> carries the idle-breathe/walk-bob feet-compensation formula, which is
+    /// continuously fractional by construction (see <c>SpriteMotion.Pose</c>) — this pins that
+    /// <c>ApplySpritePose</c> rounds it to a whole pixel EVERY frame, both while idly wandering
+    /// (breathing) and while actually walking (bob), never just at one instant.</summary>
+    [TestCase]
+    public void ApplySpritePose_OffsetYIsAlwaysAWholePixel_IdleAndWalking()
+    {
+        var actor = new HeroActor2D();
+        try
+        {
+            var home = new Vector2(30, 40);
+            actor.Init(5, "vanguard", Colors.White, new PlaceholderTexture2D(), home);
+
+            // Idle (wandering): breathing alone continuously varies Scale.Y/Offset.Y.
+            for (var i = 0; i < 30; i++)
+            {
+                actor._Process(0.017);
+                AssertFloat(actor.Sprite.Offset.Y).IsEqual(Mathf.Round(actor.Sprite.Offset.Y));
+            }
+
+            // Walking: bob + squash on top of travel.
+            actor.RallyTo(new Vector2(1000, 0));
+            for (var i = 0; i < 30; i++)
+            {
+                actor._Process(0.017);
+                AssertFloat(actor.Sprite.Offset.Y).IsEqual(Mathf.Round(actor.Sprite.Offset.Y));
+            }
+        }
+        finally
+        {
+            actor.QueueFree();
+        }
+    }
+
+    /// <summary>U-T3-5: the actor's own <see cref="Node2D.Position"/> (the Y-sort/feet baseline)
+    /// stays exactly the continuous lissajous value it always was — <see
+    /// cref="SpriteMotion.PixelSnapCorrection"/>'s own doc explains why rounding it directly would
+    /// poison next frame's velocity/threshold math — but the "Art" child node <see
+    /// cref="HeroActor2D"/> parents <see cref="HeroActor2D.Sprite"/> under must always correct that
+    /// fraction away, so <c>Position + Art.Position</c> (what actually gets drawn) lands on a whole
+    /// pixel every single frame, including while wandering (continuously fractional Position).</summary>
+    [TestCase]
+    public void PixelSnapCorrection_KeepsDrawnPositionOnWholePixel_WhileWandering()
+    {
+        var actor = new HeroActor2D();
+        try
+        {
+            var home = new Vector2(21, 16); // one of TownLayout2D.HeroHomeTiles' own converted points
+            actor.Init(1, "vanguard", Colors.White, new PlaceholderTexture2D(), home);
+
+            var art = actor.GetNode<Node2D>("Art");
+            for (var i = 0; i < 40; i++)
+            {
+                actor._Process(0.017);
+                var drawn = actor.Position + art.Position;
+                AssertFloat(drawn.X).IsEqual(Mathf.Round(drawn.X));
+                AssertFloat(drawn.Y).IsEqual(Mathf.Round(drawn.Y));
+            }
+        }
+        finally
+        {
+            actor.QueueFree();
+        }
+    }
+
+    /// <summary>U-T3-6 (register #141): every hero gets a grounding shadow, centered on the feet
+    /// baseline (this actor's own local origin) and drawn strictly behind the character art — a
+    /// shadow drawn ON TOP would read as a dark smear across the sprite, not ground contact.</summary>
+    [TestCase]
+    public void Init_AddsContactShadow_CenteredAtFeet_DrawnBehindTheSprite()
+    {
+        var actor = new HeroActor2D();
+        try
+        {
+            var texture = new PlaceholderTexture2D { Size = new Vector2(20, 32) };
+            actor.Init(3, "striker", Colors.White, texture, new Vector2(0, 0));
+
+            AssertThat(actor.Shadow).IsNotNull();
+            AssertThat(actor.Shadow.Texture).IsNotNull();
+            AssertThat(actor.Shadow.Position).IsEqual(Vector2.Zero);
+            AssertThat(actor.Shadow.ZIndex).IsLess(0); // strictly behind the default-ZIndex art/Sprite
+            AssertThat(actor.Shadow.Scale.X).IsGreater(0f);
+            AssertThat(actor.Shadow.Scale.Y).IsGreater(0f);
+            // Flattened ellipse, not a circle — ground contact, not a puddle drawn as a full disc.
+            AssertThat(actor.Shadow.Scale.Y).IsLess(actor.Shadow.Scale.X);
+        }
+        finally
+        {
+            actor.QueueFree();
+        }
+    }
 }
 #endif

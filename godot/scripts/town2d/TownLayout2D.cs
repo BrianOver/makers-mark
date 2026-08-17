@@ -67,6 +67,46 @@ public static class TownLayout2D
         Scale = new Godot.Vector2(CharacterSpriteScale, CharacterSpriteScale),
     };
 
+    private static GradientTexture2D? _shadowTextureCache;
+
+    /// <summary>U-T3-6 (register #141, R14.11's companion): a small radial dark→transparent
+    /// falloff, cached process-wide — the SAME cached-<see cref="GradientTexture2D"/> recipe
+    /// <c>Town2D.GlowTexture</c> already uses for the forge glow, just dark instead of white.
+    /// Procedural rather than a PNG on purpose: a contact shadow's silhouette is a soft blob, not
+    /// authored art, so building it in code sidesteps "art ships at draw size" entirely (§11.14.5
+    /// — there is no PNG here to size, resample offline, or scale at runtime).</summary>
+    public static GradientTexture2D ContactShadowTexture() => _shadowTextureCache ??= new GradientTexture2D
+    {
+        Gradient = new Gradient
+        {
+            Colors = [new Godot.Color(0, 0, 0, 0.45f), new Godot.Color(0, 0, 0, 0.32f), new Godot.Color(0, 0, 0, 0)],
+            Offsets = [0f, 0.55f, 1f],
+        },
+        Width = 16,
+        Height = 16,
+        Fill = GradientTexture2D.FillEnum.Radial,
+        FillFrom = new Godot.Vector2(0.5f, 0.5f),
+        FillTo = new Godot.Vector2(1f, 0.5f),
+    };
+
+    /// <summary>U-T3-6: one actor's grounding shadow — a flattened ellipse centered on the actor's
+    /// own local origin (the feet/Y-sort baseline every actor already keeps at (0,0) local to
+    /// itself), sized off <paramref name="spriteWidth"/> (never a fixed constant — mirrors every
+    /// other per-actor measurement in this file/HeroActor2D/TownsfolkNpc2D/PlayerController2D).
+    /// <see cref="Node2D.ZIndex"/> is pinned below the character art (which stays at the default 0)
+    /// so the shadow always draws underneath regardless of add-order or any future child added to
+    /// the same actor.</summary>
+    public static Sprite2D BuildContactShadow(float spriteWidth) => new()
+    {
+        Name = "ContactShadow",
+        Texture = ContactShadowTexture(),
+        ZIndex = -1,
+        // The 16x16 texture's own radial falloff already reads as an ellipse once flattened on Y;
+        // width tracks the actor's stance (roughly 70% of its sprite width), height a third of
+        // that, so the shadow reads as ground contact, not a puddle.
+        Scale = new Godot.Vector2(spriteWidth * 0.70f / 16f, spriteWidth * 0.24f / 16f),
+    };
+
     /// <summary>Town grid extent in tiles. <b>U-T3-2 (register #163, "need to expand the size of
     /// the world"):</b> the world used to be 40×28 (640×448px) — 1.11 screens wide by 1.38 tall on
     /// the 640×360 viewport, so every venue sat inside a single screen and the whole cluster read as

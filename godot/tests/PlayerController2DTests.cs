@@ -369,5 +369,83 @@ public class PlayerController2DTests
             building.QueueFree();
         }
     }
+
+    /// <summary>U-T3-5 (register #141): mirrors <c>HeroActor2DTests.ApplySpritePose_OffsetYIsAlwaysAWholePixel_IdleAndWalking</c>
+    /// for the player — idle breathing AND an active walk (MoveToTile seek) must both keep
+    /// <see cref="Sprite2D.Offset"/>.Y on a whole pixel every frame.</summary>
+    [TestCase]
+    public async Task ApplySpritePose_OffsetYIsAlwaysAWholePixel_IdleAndWalking()
+    {
+        var player = Mount();
+        try
+        {
+            player.SpawnAt(new Vector2(200, 200));
+            for (var i = 0; i < 20; i++)
+            {
+                await PumpWorldFrames(player, 1);
+                AssertFloat(player.Sprite.Offset.Y).IsEqual(Mathf.Round(player.Sprite.Offset.Y));
+            }
+
+            player.MoveToTile(new Vector2(600, 200));
+            for (var i = 0; i < 20; i++)
+            {
+                await PumpWorldFrames(player, 1);
+                AssertFloat(player.Sprite.Offset.Y).IsEqual(Mathf.Round(player.Sprite.Offset.Y));
+            }
+        }
+        finally
+        {
+            player.QueueFree();
+        }
+    }
+
+    /// <summary>U-T3-5: mirrors <c>HeroActor2DTests.PixelSnapCorrection_KeepsDrawnPositionOnWholePixel_WhileWandering</c>
+    /// — while seeking (continuously fractional <see cref="Node2D.Position"/> every frame), the
+    /// "Art" child's correction must keep <c>Position + Art.Position</c> on a whole pixel.</summary>
+    [TestCase]
+    public async Task PixelSnapCorrection_KeepsDrawnPositionOnWholePixel_WhileSeeking()
+    {
+        var player = Mount();
+        try
+        {
+            player.SpawnAt(new Vector2(50, 50));
+            player.MoveToTile(new Vector2(500, 90));
+            var art = player.GetNode<Node2D>("Art");
+
+            for (var i = 0; i < 30; i++)
+            {
+                await PumpWorldFrames(player, 1);
+                var drawn = player.Position + art.Position;
+                AssertFloat(drawn.X).IsEqual(Mathf.Round(drawn.X));
+                AssertFloat(drawn.Y).IsEqual(Mathf.Round(drawn.Y));
+            }
+        }
+        finally
+        {
+            player.QueueFree();
+        }
+    }
+
+    /// <summary>U-T3-6 (register #141): the player gets the same grounding shadow every actor
+    /// does — centered at the feet baseline, drawn strictly behind the character art.</summary>
+    [TestCase]
+    public void SpawnAt_HasContactShadow_CenteredAtFeet_DrawnBehindTheSprite()
+    {
+        var player = Mount();
+        try
+        {
+            player.SpawnAt(new Vector2(10, 10));
+
+            AssertThat(player.Shadow).IsNotNull();
+            AssertThat(player.Shadow.Texture).IsNotNull();
+            AssertThat(player.Shadow.Position).IsEqual(Vector2.Zero);
+            AssertThat(player.Shadow.ZIndex).IsLess(0);
+            AssertThat(player.Shadow.Scale.Y).IsLess(player.Shadow.Scale.X);
+        }
+        finally
+        {
+            player.QueueFree();
+        }
+    }
 }
 #endif
