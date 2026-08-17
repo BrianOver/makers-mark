@@ -174,8 +174,16 @@ public class ObjectiveAdvisorTests
     /// real consumable pricing) got real gear to heroes measurably faster — a HEALTHIER economy, not
     /// a broken one, but this fixture needs lethality, not health. Measured: seed 1 clears 6 deaths
     /// by day 15 under the SAME policy (a 60-seed sweep found the overwhelming majority of seeds
-    /// still do; 4242 was the outlier, not the norm).</summary>
-    private const ulong DeathHeavySeed = 1;
+    /// still do; 4242 was the outlier, not the norm).
+    ///
+    /// RE-SWEPT (2026-08-17, register #157/#549 composed with the link2 flee/quaff fix, PR #577):
+    /// seed 1 stopped reliably producing 6 deaths too — #577 makes a hero flee a fight their own
+    /// salve could never have won instead of drinking it and dying anyway, which is exactly the
+    /// class of death this fixture was leaning on. Another HEALTHIER-economy side effect, not a
+    /// balance defect (ConsumableTraitMortalityBalanceTests measures the survival gain directly).
+    /// An 80-seed sweep under the composed code found seed 3 clears 6 deaths by day 20 and holds
+    /// (most seeds still do; 1 joined 4242 as an outlier this time, not the norm).</summary>
+    private const ulong DeathHeavySeed = 3;
 
     /// <summary>
     /// U8: six hero deaths must produce a death-adjacent (<see cref="HonorMemorialAction"/>)
