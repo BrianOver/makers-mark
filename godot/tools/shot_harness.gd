@@ -121,6 +121,15 @@ func _initialize() -> void:
 		_settle = 1200
 	elif _state == "":
 		_settle = 90
+	elif _state == "HeroErrand":
+		# U-T3-8 (register #150, "no hero/NPC walk animation"): the plain town default ("") only
+		# settles 90 frames (1.5s) -- nowhere near enough for HeroActor2D's own id-seeded first-
+		# errand stagger (2.0 + id*1.5s, i.e. 2-9.5s before a hero even LEAVES home) plus travel
+		# time to a venue door. This state holds the plain town (no click/bell) for 900 frames
+		# (15s) instead, so at least one of the six heroes is provably mid-errand -- away from its
+		# home tile, walking a real path -- rather than standing frozen at Home, when the capture
+		# is finally saved.
+		_settle = 900
 	elif _state == "BellTray":
 		# U3 (loop-legibility plan, KTD-B): a plain HUD chip, no camera move -- but the
 		# ack toast auto-clears after MainUi.RejectionToastSeconds (4s = 240 frames), so the
@@ -435,6 +444,8 @@ func _process(_delta: float) -> bool:
 			if return_bell:
 				return_bell.emit_signal("pressed")
 				return_bell.emit_signal("pressed")
+		elif _state == "HeroErrand":
+			pass # U-T3-8: no click/bell -- just hold the plain town for the long settle above.
 		elif _state == "ReturnAtNight":
 			# U10: same reproduction, but four presses (Morning -> Expedition -> Camp ->
 			# ExpeditionDeep) land the day at Evening/"Night" -- see _settle above for why
