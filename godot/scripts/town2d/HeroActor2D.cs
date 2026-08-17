@@ -85,10 +85,29 @@ public partial class HeroActor2D : Node2D
     /// cref="HeroTownState.Wandering"/> (see <see cref="_Process"/>), exactly the dual role <see
     /// cref="WalkSpeed"/> plays for Rally/MarchOut/Return. Deliberately a SEPARATE constant from
     /// <see cref="WalkSpeed"/> (260, the dramatic expedition-departure sprint) — a hero puttering to
-    /// the noticeboard and back is not marching to the mine. Comfortably above <see
-    /// cref="SpriteMotion.WalkSpeedThreshold"/> (20) so the errand actually plays a walk pose; the
-    /// exact number is a feel knob U-T3-9 retunes on its own, independently revertable PR.</summary>
-    public const float ErrandWalkSpeed = 60f;
+    /// a venue and back is not marching to the mine. Comfortably above <see
+    /// cref="SpriteMotion.WalkSpeedThreshold"/> (20) so the errand actually plays a walk pose.
+    ///
+    /// <para><b>U-T3-9 ("the march pace," its own revertable PR per the plan): retuned from
+    /// U-T3-8's launch value of 60 (townsfolk's own <see cref="TownsfolkNpc2D.ErrandWalkSpeed"/>,
+    /// reused verbatim at first) to 110.</b> Measured, not guessed: because this errand leg always
+    /// hands <see cref="SpriteMotion.Advance"/> a <c>walkSpeed</c> argument equal to the hero's OWN
+    /// actual speed (see <see cref="_Process"/>'s <c>normalizingSpeed</c>), <c>speedRatio</c> is
+    /// pinned at exactly 1.0 the entire time a hero is erranding — so <see
+    /// cref="SpriteMotion.StepHz"/> (3.2/sec) never changes with this constant; only the ground
+    /// DISTANCE covered per full 4-frame gait cycle does, linearly (speed × 2/StepHz). At 60 that is
+    /// 37.5px/cycle (townsfolk's own already-shipped look); at 110 it is 68.75px/cycle — sitting
+    /// well below the 162.5px/cycle the existing 260px/s <see cref="WalkSpeed"/> march-out already
+    /// ships at today, so this is a conservative step toward "brisk," not toward that sprint.
+    /// Judged by eye on top of that math: <c>tools/shoot.ps1</c> renders at both 60 and 110 (see the
+    /// U-T3-9 PR body for the frames) show a real alternating stride — front leg forward, weight
+    /// shifted — at both paces, not a foot-sliding glide or a legs-cycling-in-place skate; 110 was
+    /// not pushed further because 60→110 was the only comparison actually rendered and confirmed
+    /// clean before landing this PR. If the owner's own screen reads 110 as too brisk (or wants it
+    /// brisker still), this single constant reverts or retunes independently of U-T3-8's errand
+    /// model — the whole reason the plan called for two PRs instead of one.</para>
+    /// </summary>
+    public const float ErrandWalkSpeed = 110f;
 
     /// <summary>How long a hero idles (wandering) at home between errands — mirrors <see
     /// cref="TownsfolkNpc2D"/>'s own cooldown so heroes and townsfolk read as the same kind of
