@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System.Linq;
+using System.Threading.Tasks;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GdUnit4;
@@ -19,6 +20,14 @@ namespace GodotClient.Tests;
 /// hardcoded string), and <see cref="ForgePanel.SetFeedback"/> hides the feedback label — reclaiming
 /// its reserved height, since an invisible Godot Control is skipped by its parent Container's own
 /// layout — whenever there is nothing to say.
+///
+/// <para><b>Zero extra lines (engine-run finding on PR #584):</b> the first cut of this fix used
+/// "Fitting:" and wrapped the row onto a second line at this drawer's width, which
+/// <c>HudBoundsTests.ForgeOpensFresh_PrimaryCraftVerb_IsOnScreenWithoutScrolling</c> caught — the
+/// added height buried the primary craft verb below the fold, the exact previously-fixed regression
+/// that guard exists for. <see cref="ThreeModifierGroups_RenderOnOneLine_NeverWrapping"/> pins that
+/// this fix must never cost the panel a line of height, in THIS file rather than only in the
+/// engine-wide HUD-bounds sweep, so a future label-text change fails fast and close to its cause.</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -49,7 +58,7 @@ public class ForgeMenuLegibilityTests
     private static void AssertFamilyLabel(MainUi ui, string selectName, ModifierFamily family)
     {
         var select = Find<OptionButton>(ui.Forge, selectName);
-        var label = Find<Label>(ui.Forge, $"{selectName}Label");
+        var label = Find<Label>(ui.Forge, $"ModifierFamilyLabel_{selectName}");
 
         AssertThat(label.Text).IsNotEmpty();
         AssertThat(label.Text).IsEqual($"{CraftModifiers.FamilyLabel(family)}:");
@@ -68,11 +77,43 @@ public class ForgeMenuLegibilityTests
         {
             ui.OpenPanel("Forge");
 
-            var labels = new[] { "OilSelectLabel", "RuneSelectLabel", "FitSelectLabel" }
-                .Select(name => Find<Label>(ui.Forge, name).Text)
+            var labels = new[] { "OilSelect", "RuneSelect", "FitSelect" }
+                .Select(selectName => Find<Label>(ui.Forge, $"ModifierFamilyLabel_{selectName}").Text)
                 .ToList();
 
             AssertThat(labels.Distinct().Count()).IsEqual(labels.Count);
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// Register #149 pin (engine-run finding on PR #584): the modifiers row must cost ZERO extra
+    /// lines — <c>HudBoundsTests.ForgeOpensFresh_PrimaryCraftVerb_IsOnScreenWithoutScrolling</c>
+    /// caught a first cut of this fix ("Fitting:", full family name) wrapping onto a second line,
+    /// which buried the primary craft verb below the fold. Pinned here directly (all three
+    /// label+select groups share the same row Y) rather than only via that wider engine-wide sweep,
+    /// so a future label-text regrowth fails fast, close to its actual cause, instead of surfacing
+    /// only as "the craft verb vanished" three files away.
+    /// </summary>
+    [TestCase]
+    public async Task ThreeModifierGroups_RenderOnOneLine_NeverWrapping()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Forge");
+            await SettleLayout(ui.Forge);
+
+            var rowYs = new[] { "OilSelect", "RuneSelect", "FitSelect" }
+                .Select(selectName => Find<HBoxContainer>(ui.Forge, $"{selectName}Group").GetGlobalRect().Position.Y)
+                .ToList();
+
+            AssertThat(rowYs.Distinct().Count())
+                .OverrideFailureMessage(
+                    $"Modifier groups sit at Y positions [{string.Join(", ", rowYs)}] — the row wrapped " +
+                    "onto more than one line, which is exactly the extra height that buried the primary " +
+                    "craft verb below the fold on PR #584's first engine run.")
+                .IsEqual(1);
         }
         finally { Unmount(ui); }
     }

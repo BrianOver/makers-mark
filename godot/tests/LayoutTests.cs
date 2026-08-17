@@ -334,6 +334,19 @@ public class LayoutTests
     /// matches names the kit itself assigns (no other builder in this codebase names a node
     /// <c>StatChip*</c>/<c>PortraitFrame*</c>/<c>ArtRectFallback*</c>/<c>ListRow*</c>/
     /// <c>IconChip*</c>), so it stays precise.</para>
+    ///
+    /// <para><b>ModifierFamilyLabel added (register #149, U-T1-6):</b> <c>ForgePanel.
+    /// ModifierSelectGroup</c> pairs each of the forge's three modifier selects with a short label
+    /// naming its family ("Oil:"/"Rune:"/"Fit:") — deliberately non-autowrapping, fixed at its own
+    /// natural text width (<c>SizeFlags.ShrinkBegin</c>, same "hugging form label" idiom
+    /// <c>BountyPanel.FormLabel</c> already uses), same intent as <c>ListRow</c>'s fixed columns:
+    /// a short, self-contained affordance label, never prose a container could squeeze down to one
+    /// character per line. Without this entry the canary cannot tell "Fit:" (deliberately three
+    /// letters wide, ~40px) apart from a genuinely collapsed autowrap label, and a floor built to
+    /// catch the LATTER would otherwise punish making the FORMER short enough to keep the
+    /// modifiers row on one line — the exact fix <c>HudBoundsTests.
+    /// ForgeOpensFresh_PrimaryCraftVerb_IsOnScreenWithoutScrolling</c> forced (an engine run found
+    /// the wrapped row burying the primary craft verb below the fold).</para>
     /// </summary>
     private static bool IsCompactKitWidgetLabel(Label label)
     {
@@ -344,7 +357,8 @@ public class LayoutTests
                 || name.StartsWith("ArtRectFallback", StringComparison.Ordinal)
                 || name.StartsWith("PortraitFrame", StringComparison.Ordinal)
                 || name.StartsWith("ListRow", StringComparison.Ordinal)
-                || name.StartsWith("IconChip", StringComparison.Ordinal))
+                || name.StartsWith("IconChip", StringComparison.Ordinal)
+                || name.StartsWith("ModifierFamilyLabel", StringComparison.Ordinal))
             {
                 return true;
             }

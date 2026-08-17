@@ -60,12 +60,22 @@ public static class CraftModifiers
     /// <see cref="ModifierFamily"/> enum HERE, rather than as a free-standing string at each forge
     /// call site, means a family added to the enum without a case below throws instead of silently
     /// shipping a selector with nothing beside it.
+    ///
+    /// <para><b>"Fit", not "Fitting" (engine-run finding on PR #584):</b> the forge's craft-modifier
+    /// row must cost ZERO extra lines — <c>HudBoundsTests.ForgeOpensFresh_PrimaryCraftVerb_
+    /// IsOnScreenWithoutScrolling</c> (the godot test suite) guards exactly this, BECAUSE burying the
+    /// primary craft verb under the vendor list is a known, previously-fixed regression. A same-commit
+    /// engine run proved "Fitting:" was the few extra pixels that tipped the modifier row onto a
+    /// second line, which pushed the fold down onto the craft verb. Fixing the modifiers reading as
+    /// anonymous junk by making the Craft button unreachable would be a straight downgrade for the
+    /// exact register (#149) this label exists to answer. Still unambiguous, still enum-derived,
+    /// still throws on an unhandled family.</para>
     /// </summary>
     public static string FamilyLabel(ModifierFamily family) => family switch
     {
         ModifierFamily.QuenchOil => "Oil",
         ModifierFamily.Rune => "Rune",
-        ModifierFamily.Fitting => "Fitting",
+        ModifierFamily.Fitting => "Fit",
         _ => throw new ArgumentOutOfRangeException(
             nameof(family), family, "Add a display label for this modifier family in CraftModifiers.FamilyLabel."),
     };

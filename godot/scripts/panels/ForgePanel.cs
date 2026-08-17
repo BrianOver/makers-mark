@@ -1685,7 +1685,7 @@ public partial class ForgePanel : SimPanel
 
     /// <summary>
     /// Register #149 ("the legacy jank crafting menu"): pairs a modifier selector with a label naming
-    /// its family, so the row reads "Oil: (none)  Rune: (none)  Fitting: (none)" instead of three
+    /// its family, so the row reads "Oil: (none)  Rune: (none)  Fit: (none)" instead of three
     /// unlabeled "(none)" boxes a player has no way to tell apart. The label text comes from
     /// <see cref="GameSim.Crafting.CraftModifiers.FamilyLabel"/> — derived from the
     /// <see cref="GameSim.Contracts.ModifierFamily"/> enum value actually passed to
@@ -1693,12 +1693,25 @@ public partial class ForgePanel : SimPanel
     /// drift from it. Grouped in one <see cref="HBoxContainer"/> (rather than two loose children of the
     /// row) so <see cref="AddWrappingRow"/> wraps the label and its select as one unit, never splitting
     /// a label from the box it names onto separate lines.
+    ///
+    /// <para><b>Zero extra lines (engine-run finding on PR #584):</b> an earlier version of this
+    /// method used the family's full name ("Fitting:") and left the row on plain <c>AddRow</c>'s
+    /// sibling, <c>AddWrappingRow</c>, wrapping onto a second line at this drawer's width — which
+    /// <c>HudBoundsTests.ForgeOpensFresh_PrimaryCraftVerb_IsOnScreenWithoutScrolling</c> caught: the
+    /// added height buried the primary Craft/Work-the-forge button below the fold, the exact
+    /// previously-fixed regression that guard exists for. <see cref="CraftModifiers.FamilyLabel"/>
+    /// now returns "Fit" (not "Fitting") specifically so all three label+select pairs fit one line at
+    /// this drawer's width — labelling the modifiers must never cost the panel a line of height.</para>
     /// </summary>
     private static HBoxContainer ModifierSelectGroup(OptionButton select, GameSim.Contracts.ModifierFamily family)
     {
         var group = new HBoxContainer { Name = $"{select.Name}Group" };
         var label = AddLabel(group, $"{GameSim.Crafting.CraftModifiers.FamilyLabel(family)}:");
-        label.Name = $"{select.Name}Label";
+        // "ModifierFamilyLabel" prefix (not "{select.Name}Label"): recognized by LayoutTests'
+        // IsCompactKitWidgetLabel as a deliberately short, fixed-width affordance label (same
+        // exemption StatChip/ListRow/IconChip already get) — never prose the R7 readable-width
+        // canary should treat as a collapsed autowrap label.
+        label.Name = $"ModifierFamilyLabel_{select.Name}";
         // Same "hugging form label" idiom as BountyPanel.FormLabel: left-aligned, non-expanding (must
         // not itself claim the row's leftover width — AddLabel defaults ExpandFill, tuned for autowrap
         // labels that DO need it, e.g. recipe names), no autowrap on a label this short.
