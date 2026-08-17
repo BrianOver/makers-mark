@@ -50,6 +50,15 @@ public partial class ForgePanel : SimPanel
     /// recipe name must keep enough room to wrap at word boundaries, not mid-word.</summary>
     private const float RecipeInfoColumnMinWidth = 180f;
 
+    /// <summary>
+    /// Register #160 (U-T2-4): "Open the Docket" from right inside the craft section — the third
+    /// of the three ways in, and the only one this panel owns. Bare event, same shape as <see
+    /// cref="RaidForecastBoard.ForgeOneRequested"/>/<see cref="CampPanel.OpenForgeRequested"/>:
+    /// <c>MainUi</c> calls <c>Docket.Toggle()</c> directly. This button never touches
+    /// <c>DrawerHost</c> in any way — the Forge drawer stays exactly as open as it already was.
+    /// </summary>
+    public event Action? OpenDocketRequested;
+
     private Label? _feedback;
     private Label? _materialsLabel;
     private OptionButton? _materialSelect;
@@ -1613,6 +1622,15 @@ public partial class ForgePanel : SimPanel
         _craftViewRoot.AddChild(talentSection.Root);
         _talentRows = new VBoxContainer { Name = "TalentRows" };
         talentSection.Body.AddChild(_talentRows);
+
+        // Register #160 (U-T2-4): the Docket's third way in, appended AFTER Talents — the LAST
+        // row of CraftScroll's own scrollable body, so it costs zero px of the fold budget every
+        // other row above it already fights for (see this method's own multi-paragraph history:
+        // even a few px has buried "Work the forge"/"Buy 1" before). Reachable by scrolling, same
+        // as Talents already is on some professions; never touches DrawerHost.
+        var docketButton = AddButton(_craftViewRoot, "OpenDocketFromForge", "Tomorrow at the Counter",
+            () => OpenDocketRequested?.Invoke());
+        docketButton.TooltipText = "Open the counter forecast without leaving the forge.";
 
         // U23d/U7: the Anvil Map forge overlay — ACT 1, added LAST (after the scroll body above)
         // so it draws on top, self-contained (PKD8), hidden until "Work the forge" opens it.

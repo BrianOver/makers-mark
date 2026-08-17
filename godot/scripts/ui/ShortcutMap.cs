@@ -92,6 +92,9 @@ public static class ShortcutMap
             "cancel", "Back / menu", "Closes whatever's open — a drawer, a room — or opens the pause menu.",
             new[] { "cancel" }),
         new ShortcutEntry(
+            "docket_toggle", "Tomorrow at the Counter", "Toggle the counter forecast — stays open while you craft.",
+            new[] { "docket_toggle" }),
+        new ShortcutEntry(
             "fullscreen", "Fullscreen", "Toggle fullscreen.",
             Array.Empty<string>(), RawKey: Key.F11),
         new ShortcutEntry(
