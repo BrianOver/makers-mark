@@ -8,6 +8,7 @@ using GameSim.Crafting;
 using GameSim.Professions;
 using GdUnit4;
 using Godot;
+using GodotClient.Audio;
 using GodotClient.Minigames;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
@@ -435,6 +436,63 @@ public class ForgeTwoActTests
                 .IsFalse();
             await player.WaitForLayout(workForgeAfter);
             await player.ClickControl(workForgeAfter, "Work the forge (right after the craft)");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── U-T4-5: the grade sting must route through AudioDirector, not a bypass of its own ─────────
+
+    /// <summary>
+    /// Before U-T4-5, <c>ShowCeremony</c> played its sting on a bare <c>AudioStreamPlayer</c> of
+    /// ForgePanel's own — never a child of <see cref="AudioDirector"/>, never recorded to
+    /// <see cref="AudioDirector.LastCuePlayed"/>/<see cref="AudioDirector.RecentCues"/>, deaf to Mute
+    /// and every fader. This drives a real craft to its ceremony and asserts the director's OWN
+    /// "what did I just play" surface names the grade-appropriate <c>Cue.GradeSting*</c> — a bypassed
+    /// sting would leave <see cref="AudioDirector.LastCuePlayed"/> at whatever the minigame's last
+    /// hammer/quench cue was instead, since a bypass never calls <see cref="AudioDirector.Play"/> at
+    /// all. <c>ShowCeremony</c> plays its sting as the LAST statement of the synchronous
+    /// <c>Plunge()</c> -&gt; <c>OnMinigameQuenched</c> (<see cref="Cue.Quench"/>) -&gt;
+    /// <c>OnQuenchFinished</c> -&gt; <c>ShowCeremony</c> chain, so <see cref="AudioDirector.LastCuePlayed"/>
+    /// reads the sting itself, not the quench splash that fires just before it.
+    /// </summary>
+    [TestCase]
+    public void ForgeCeremony_GradeStingPlaysThroughTheDirector_MatchingThePreviewGrade()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded * 3));
+            ui.Adapter.AdvancePhase();
+            ui.OpenPanel("Forge");
+
+            PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
+
+            var act1 = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
+            DriveAct1ToCompletion(act1, pumpUntilPermille: 900, strikeAbovePermille: 500);
+            var quench = Find<QuenchMinigame>(ui.Forge, "QuenchMinigame");
+            quench.Plunge(); // synchronous: Quenched (Cue.Quench) then Finished -> OnQuenchFinished -> ShowCeremony
+
+            // Read the SAME preview grade ShowCeremony itself reads, so this test's expectation and the
+            // panel's own selection can never silently drift from different sources of truth.
+            var expectedBand = ForgeMinigame.PreviewGrade(quench.PreviewGradePermille ?? 0);
+            var expectedCue = expectedBand switch
+            {
+                QualityGrade.Poor => Cue.GradeStingPoor,
+                QualityGrade.Common => Cue.GradeStingCommon,
+                QualityGrade.Fine => Cue.GradeStingFine,
+                QualityGrade.Superior => Cue.GradeStingSuperior,
+                _ => Cue.GradeStingMasterwork,
+            };
+
+            AssertThat(ui.Audio.LastCuePlayed)
+                .OverrideFailureMessage(
+                    $"ShowCeremony's sting for a {expectedBand} craft should have played {expectedCue} "
+                    + $"through AudioDirector.Play — LastCuePlayed reads {ui.Audio.LastCuePlayed} instead. "
+                    + "A null or unrelated cue here means the sting bypassed the director again.")
+                .IsEqual(expectedCue);
         }
         finally
         {

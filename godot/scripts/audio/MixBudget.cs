@@ -90,9 +90,12 @@ public static class MixBudget
     /// because nothing ever asked.
     ///
     /// <para><b>The five ceremonial ids and the fifteen UI ids below are counted straight off this
-    /// unit's brief.</b> One entry in the brief's own Ceremonial bucket — "the 5 grade stings" — has no
-    /// <see cref="Cue"/> today; only one craft-completion cue (<see cref="Audio.Cue.CraftDone"/>) exists
-    /// for every grade. That gap is reported, not silently invented — see the PR body.</para>
+    /// unit's brief.</b> One entry in the brief's own Ceremonial bucket — "the 5 grade stings" — had no
+    /// <see cref="Cue"/> at the time this file was written; only one craft-completion cue (<see
+    /// cref="Audio.Cue.CraftDone"/> ) existed for every grade, and ForgePanel's own grade sting bypassed
+    /// <see cref="AudioDirector"/> (and this table) entirely. U-T4-5 closed that gap: <see
+    /// cref="Cue.GradeStingPoor"/> through <see cref="Cue.GradeStingMasterwork"/> now exist and are
+    /// mapped below, so the census this file's tests run finally weighs them too.</para>
     /// </summary>
     public static Category CategoryFor(Cue cue) => cue switch
     {
@@ -103,6 +106,11 @@ public static class MixBudget
         Cue.CraftDone => Category.CeremonialOneShot,
         Cue.DeathToll => Category.CeremonialOneShot,
         Cue.MemorialHonor => Category.CeremonialOneShot,
+        Cue.GradeStingPoor => Category.CeremonialOneShot,
+        Cue.GradeStingCommon => Category.CeremonialOneShot,
+        Cue.GradeStingFine => Category.CeremonialOneShot,
+        Cue.GradeStingSuperior => Category.CeremonialOneShot,
+        Cue.GradeStingMasterwork => Category.CeremonialOneShot,
 
         // UI one-shots: fire constantly, must sit well under the ceremonial cues so the rare moments
         // still read as rare.

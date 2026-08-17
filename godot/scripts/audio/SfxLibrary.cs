@@ -66,6 +66,37 @@ public enum Cue
     /// <summary>One stroke of the bellows.</summary>
     Bellows,
 
+    // ── The craft-grade sting (U-T4-5).
+    //
+    //    ForgePanel.ShowCeremony used to swap a bare AudioStreamPlayer of its own — never a child of
+    //    AudioDirector, never routed to any bus — to one of five ForgePanel.MakeTone chords and Play()
+    //    it directly. That bypass meant the sting ignored the SFX fader, the Master fader, AND Mute:
+    //    an automated playtest run with MAKERSMARK_MUTE_AUDIO set was never actually silent, and the
+    //    sting could never be leveled, ducked, or measured by anything MixBudget checks. These five
+    //    give the grade sting its own Cue per grade — CategoryFor puts all five in CeremonialOneShot,
+    //    same bucket as CraftDone/Bell/PartyDepart/DeathToll/MemorialHonor — so ShowCeremony now plays
+    //    through AudioDirector like every other cue in the game. The tone recipe (a plain sine, or two
+    //    summed for the top two grades, under a decay envelope) is kept close to MakeTone's own
+    //    original pitches so the grade ladder still reads the same by ear; only the level control
+    //    changed, from a raw amplitude literal to Synth.NormaliseRms against this file's own
+    //    CeremonialTargetDbfs. ──
+
+    /// <summary>Grade sting: Poor. The dullest, quietest rung of the ladder.</summary>
+    GradeStingPoor,
+
+    /// <summary>Grade sting: Common.</summary>
+    GradeStingCommon,
+
+    /// <summary>Grade sting: Fine.</summary>
+    GradeStingFine,
+
+    /// <summary>Grade sting: Superior — the first rung with a second, higher partial (a fifth up).</summary>
+    GradeStingSuperior,
+
+    /// <summary>Grade sting: Masterwork — the brightest rung, same two-partial shape as Superior a
+    /// third higher.</summary>
+    GradeStingMasterwork,
+
     // ── Per-venue entrance cues (U-audio-2).
     //
     //    Owner's playtest, verbatim: "Noises for the buildings are identical as before - too loud and
@@ -361,6 +392,21 @@ public static class SfxLibrary
             Synth.NormaliseRms(buf, HeldLoopTargetDbfs);
         }),
 
+        // ── Grade stings (U-T4-5) — see the Cue enum's own doc for why these exist now. Pitches match
+        //    ForgePanel's retired MakeTone ladder (196/262/330/392+494/523+784 Hz) so the grade ladder
+        //    still reads the same by ear; a linear decay envelope (not AddPartial's exponential one)
+        //    for the same reason, then NormaliseRms to this file's own CeremonialTargetDbfs instead of
+        //    MakeTone's raw amplitude-times-envelope literal. ──
+        Cue.GradeStingPoor => Build(0.35f, buf => AddGradeTone(buf, 196f, 0.35f)),
+
+        Cue.GradeStingCommon => Build(0.35f, buf => AddGradeTone(buf, 262f, 0.35f)),
+
+        Cue.GradeStingFine => Build(0.40f, buf => AddGradeTone(buf, 330f, 0.40f)),
+
+        Cue.GradeStingSuperior => Build(0.45f, buf => AddGradeTone(buf, 392f, 0.45f, secondaryHz: 494f)),
+
+        Cue.GradeStingMasterwork => Build(0.55f, buf => AddGradeTone(buf, 523f, 0.55f, secondaryHz: 784f)),
+
         Cue.Coin => Build(0.42f, buf =>
         {
             // Two bright partials a shade off an octave, plus a third high one — the beating between
@@ -592,6 +638,31 @@ public static class SfxLibrary
 
         _ => Build(0.05f, buf => Synth.AddPartial(buf, 440f, 0.4f, halfLife: 0.02f)),
     };
+
+    /// <summary>
+    /// U-T4-5: the grade-sting recipe — a plain sine (or two, averaged, for the top two grades) under
+    /// a LINEAR decay envelope (1 at t=0 down to 0 at <paramref name="durationSeconds"/>), matching
+    /// the shape ForgePanel's retired <c>MakeTone</c> used byte-for-byte before the envelope, so the
+    /// grade ladder's own character is unchanged — only how loud it lands is. <see cref="Synth.AddPartial"/>'s
+    /// EXPONENTIAL decay is deliberately not reused here for that reason.
+    /// </summary>
+    private static void AddGradeTone(float[] buffer, float hz, float durationSeconds, float? secondaryHz = null)
+    {
+        for (var i = 0; i < buffer.Length; i++)
+        {
+            var t = i / (float)Synth.SampleRate;
+            var envelope = MathF.Max(0f, 1f - t / durationSeconds);
+            var wave = MathF.Sin(2f * MathF.PI * hz * t);
+            if (secondaryHz is { } second)
+            {
+                wave = (wave + MathF.Sin(2f * MathF.PI * second * t)) * 0.5f;
+            }
+
+            buffer[i] = wave * envelope;
+        }
+
+        Synth.NormaliseRms(buffer, CeremonialTargetDbfs);
+    }
 
     /// <summary>A plucked note with a few harmonics, added into <paramref name="buffer"/> starting at
     /// <paramref name="at"/> seconds. Harmonics fall off as 1/n and decay faster the higher they are,
