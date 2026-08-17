@@ -620,8 +620,17 @@ public partial class MineWatch : SubViewportContainer
             _embers.Emitting = false;
         }
 
-        var milestone = lastEvents.FirstOrDefault(e =>
-            e is FloorRecordSet or AttributionBeatEvent or DenThreatShifted { VenueId: MineVenueId });
+        // U-T2 Wave D fix: explicit priority, not emission order. A single tick CAN carry both a
+        // FloorRecordSet and an AttributionBeatEvent for the same hero (a new depth record and a
+        // counterfactual proof landing on the same expedition are not mutually exclusive), and
+        // ExpeditionRevealSystem's own event order is incidental, never information-ranked. A
+        // bare FirstOrDefault over "whichever comes first" let a depth record silently outrank the
+        // proof — a number going up beats the one thing this entire game exists to produce, which
+        // is backwards on the merits. AttributionBeatEvent (link 4) always wins; FloorRecordSet is
+        // still worth a bark on a quiet tick, then the Mine's own den-threat flavor last.
+        var milestone = lastEvents.FirstOrDefault(e => e is AttributionBeatEvent)
+            ?? lastEvents.FirstOrDefault(e => e is FloorRecordSet)
+            ?? lastEvents.FirstOrDefault(e => e is DenThreatShifted { VenueId: MineVenueId });
         if (milestone is not null)
         {
             QueueMilestone(state, milestone);

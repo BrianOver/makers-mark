@@ -148,12 +148,14 @@ public partial class RaidForecastBoard : Control
     }
 
     /// <summary>
-    /// U-T2 Wave D (§11.14.4, Act III, dilemma #5, R14.7 "one sentence each, both sides, no
-    /// recommendation"): names the forecast board itself out loud the first time it is EVER opened
-    /// — before this unit, nothing in the tutorial chain pointed at it at all, despite it being the
-    /// one screen that shows tomorrow's muster before it happens (U10's own class doc, "surface
-    /// scarcity in the HUD"). Fires through the SAME first-touch engine and shared banner Wave C's
-    /// dilemma lessons use.
+    /// U-T2 Wave D (§11.14.4, Act III, "the forecast board taught"): names the forecast board
+    /// itself out loud the first time it is EVER opened — before this unit, nothing in the tutorial
+    /// chain pointed at it at all, despite it being the one screen that shows tomorrow's muster
+    /// before it happens (U10's own class doc, "surface scarcity in the HUD"). Fires through the
+    /// SAME first-touch engine and shared banner Wave C's dilemma lessons use.
+    ///
+    /// <para>Deliberately NOT <c>preempt: true</c> — this is the generic orientation note, so it is
+    /// the one that yields when <see cref="ShowMusterGearGapLesson"/> also fires this same call.</para>
     /// </summary>
     private void ShowForecastBoardLesson() =>
         Mentor?.ShowFirstTouch(Tutorial?.ConsumeFirstTouch(
@@ -168,13 +170,22 @@ public partial class RaidForecastBoard : Control
     /// (<see cref="ForecastParty.GearGaps"/>) — before this unit, of the six dilemmas the game is
     /// made of, this was one of the ones never taught. Wording matches <c>docs/design/THE-GAME.md</c>
     /// §3.5's own dilemma #3 sentence verbatim (already owner-approved language).
+    ///
+    /// <para><c>preempt: true</c> — this is the SAME collision Wave B's mark-read lesson found
+    /// against the quench lesson: a fresh campaign's very first <see cref="ShowForTomorrow"/> call
+    /// can reach BOTH <see cref="ShowForecastBoardLesson"/> (fires first, generic) and this one
+    /// (fires second, specific) in the same synchronous call. A live, actionable dilemma outranks a
+    /// merely-still-open "here is what this screen is" note — see <see
+    /// cref="MentorBanner.ShowFirstTouch"/>'s own doc for why preempting costs nothing.</para>
     /// </summary>
     private void ShowMusterGearGapLesson() =>
-        Mentor?.ShowFirstTouch(Tutorial?.ConsumeFirstTouch(
-            "the-muster-speaks",
-            MentorVoice.Speak(
-                "Fill the empty slot, or upgrade the full one? The muster board tells you who is "
-                + "marching under-equipped. It does not tell you who will survive.")));
+        Mentor?.ShowFirstTouch(
+            Tutorial?.ConsumeFirstTouch(
+                "the-muster-speaks",
+                MentorVoice.Speak(
+                    "Fill the empty slot, or upgrade the full one? The muster board tells you who is "
+                    + "marching under-equipped. It does not tell you who will survive.")),
+            preempt: true);
 
     private void EnsureBuilt()
     {
