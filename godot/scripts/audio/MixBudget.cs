@@ -303,14 +303,18 @@ public static class MixBudget
 
         // ---- Narrator lines: peak-limited (see this field's own doc above) — each mastered to the
         //      loudest safe gain under the −1.5 dBTP ceiling, landing quieter than the −21.0 floor. ----
-        "NarratorLine.campaign-ending-00", // −21.66 dBFS effective, −1.50 dBTP (at the ceiling)
-        "NarratorLine.climax-reached-01",  // −23.02 dBFS effective, −1.65 dBTP — the widest miss
-        "NarratorLine.death-epitaph-09",   // −21.28 dBFS effective, −1.51 dBTP
-        "NarratorLine.killing-blow-09",    // −21.27 dBFS effective, −1.57 dBTP
-        "NarratorLine.proven-save-00",     // −21.40 dBFS effective, −1.61 dBTP
-        "NarratorLine.vigil-opening-00",   // −22.44 dBFS effective, −1.51 dBTP
-        "NarratorLine.vigil-opening-01",   // −21.85 dBFS effective, −1.55 dBTP
-        "NarratorLine.vigil-opening-07",   // −22.23 dBFS effective, −1.53 dBTP
-        "NarratorLine.vigil-opening-08",   // −22.04 dBFS effective, −1.56 dBTP
+        // Values below are the engine gate's OWN measurements (MixBudgetCensusTests, via
+        // MixBudget.ActiveWindowRms and MonoPeakDb) after the margin pass described in
+        // NarratorTruePeakCeilingDbTp's doc — not a separate tool's numbers. See that doc for why the
+        // distinction is load-bearing here.
+        "NarratorLine.campaign-ending-00", // −21.94 dBFS effective, −2.05 dBTP
+        "NarratorLine.climax-reached-01",  // −23.72 dBFS effective, −1.74 dBTP — the widest miss
+        "NarratorLine.death-epitaph-09",   // −21.54 dBFS effective, −1.59 dBTP
+        "NarratorLine.killing-blow-09",    // −21.27 dBFS effective, −1.55 dBTP
+        "NarratorLine.proven-save-00",     // −21.41 dBFS effective, −1.57 dBTP
+        "NarratorLine.vigil-opening-00",   // −22.62 dBFS effective, −1.62 dBTP
+        "NarratorLine.vigil-opening-01",   // −22.08 dBFS effective, −1.67 dBTP
+        "NarratorLine.vigil-opening-07",   // −22.75 dBFS effective, −2.15 dBTP
+        "NarratorLine.vigil-opening-08",   // −22.23 dBFS effective, −1.75 dBTP
     };
 }

@@ -301,7 +301,25 @@ public class MixBudgetCensusTests
     /// band check below: a line that cannot reach −20 dBFS without breaching this gets mastered to the
     /// loudest SAFE gain instead (see <see cref="MixBudget.PendingExemptions"/>'s own doc for the 9
     /// lines that landed here), so a real ceiling breach reaching this test is always a genuine, fresh
-    /// regression, never a known, accepted trade.</summary>
+    /// regression, never a known, accepted trade.
+    ///
+    /// <para><b>Master to a MARGIN, never to this number, and measure with THIS gate.</b> The first
+    /// mastering pass bisected each line to the largest gain whose true peak "cleared" −1.5, measured
+    /// with a separate Python port of <see cref="MixBudget.ActiveWindowRms"/>/<c>MonoPeakDb</c>. Fourteen
+    /// lines then failed here, because two correct implementations of the same measurement straddle a
+    /// boundary: the port and this gate disagreed by ~0.05 dB on most lines and by <b>0.7 dB</b> on
+    /// <c>climax-reached-01</c> (ported −1.65, measured here −0.95). A target with no margin turns that
+    /// ordinary disagreement into a red build.</para>
+    ///
+    /// <para><b>And gain alone cannot hit a true-peak target at this bitrate.</b> Measured while fixing
+    /// the above: at 45 kbps mono Vorbis the encoded true peak is <b>not a monotone function of input
+    /// gain</b> — cutting <c>killing-blow-02</c> by a further 1.0 dB moved its measured peak from −1.51
+    /// to −1.46, the wrong way, because codec ringing dominates. Three lines could not be brought under
+    /// the ceiling by scaling at all. What works is a real true-peak limiter before encoding
+    /// (<c>alimiter=limit=0.63:level=disabled</c> — <c>level=disabled</c> matters, since ffmpeg's
+    /// alimiter applies auto make-up gain by default and without it the peak went to <i>+0.3 dBFS</i>),
+    /// which tames the peak while leaving RMS inside the band. That is why nine lines need an RMS
+    /// exemption and not twelve: limiting keeps loudness where scaling would have sacrificed it.</para></summary>
     private const float NarratorTruePeakCeilingDbTp = -1.5f;
 
     /// <summary>
@@ -392,5 +410,6 @@ public class MixBudgetCensusTests
             .OverrideFailureMessage("no narrator lines were checked — NarratorLines.AllAudioIds enumerated empty")
             .IsGreaterEqual(49);
     }
+
 }
 #endif
