@@ -81,8 +81,17 @@ public class BlacksmithAsDataTests
         // PA2: blacksmith is ACTIVE now, so the real production path is RollActive, not the
         // passive Roll(). Tier-1 dagger + copper (grade 1, materialStep = 0), no PerformanceGrade
         // submitted (auto-craft, PKD4), seed 1234, 1000 rolls. Auto-craft resolves at the
-        // competent constant (550) ± jitter, which straddles only the Common/Fine seam at
-        // materialStep 0 — never Poor, Superior, or Masterwork.
+        // competent constant ± jitter.
+        //
+        // RE-BASELINED 2026-08-09 (QualityRoller.AutoCraftGrade 550 -> 800, owner ruling "raise
+        // power growth", §11.8.2). The old golden "0,487,513,0,0" is the exact evidence the raise
+        // was made on: at 550 the jitter band [525,575] straddled ONLY the Common/Fine seam, so
+        // auto-craft produced nothing but Common and Fine, forever, and the player's own work was
+        // quality-indistinguishable from the rival vendor's flat-Common shop stock. The new
+        // "0,0,106,894,0" is Fine 10.6% / Superior 89.4% at the [775,825] band — and the two
+        // zeros that matter are still zero: no Poor, and NO MASTERWORK, so PKD4's "the minigame
+        // is the only road to Masterwork" is pinned here as strongly as it ever was. The
+        // materialStep-0 Superior ceiling is doing the capping, exactly as designed.
         var rng = new Pcg32(RngState.FromSeed(1234));
         var counts = new int[5];
         for (var i = 0; i < 1000; i++)
@@ -91,7 +100,7 @@ public class BlacksmithAsDataTests
             counts[(int)grade]++;
         }
 
-        Assert.Equal("0,487,513,0,0", string.Join(",", counts));
+        Assert.Equal("0,0,106,894,0", string.Join(",", counts));
         Assert.Equal(1000, counts.Sum());
     }
 

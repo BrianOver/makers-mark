@@ -109,7 +109,7 @@ public static class QualityRoller
     /// <summary>Auto-craft's competent-but-capped grade (PKD4): a null <c>PerformanceGrade</c>
     /// (and, once Phase B lands puzzle-scored professions, a null <c>CraftPuzzleInput</c> too —
     /// Phase A's puzzle is always null) resolves here rather than at the player's real skill.</summary>
-    private const int AutoCraftGrade = 550;
+    private const int AutoCraftGrade = 800;
 
     /// <summary>
     /// The active-model dominance roll (PA2/PKD3): <paramref name="performanceGrade"/> (a
