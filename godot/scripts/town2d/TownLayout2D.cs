@@ -318,10 +318,19 @@ public static class TownLayout2D
     /// <para><b>U-T3-2 (64×44 grid):</b> re-laid clear of every venue/prop footprint, nameplate and
     /// door-approach lane on the new grid — see <c>TownPlacementTests</c>' now-empty exception
     /// sets.</para>
+    ///
+    /// <para><b>Kept close to the relocated mine gate, not spread to the map's edges.</b> A first
+    /// pass placed these near the grid's far corners (clear of everything, but 400-600px from the
+    /// gate instead of the old ~100-210px) and broke <c>HeroReturnCeremonyTests</c> in CI: <see
+    /// cref="Town2D.ReturnSurvivors"/>'s staggered walk-in (<c>HeroActor2D.WalkSpeed</c>=260px/s)
+    /// no longer cleared <c>HumanPlayer.WaitUntil</c>'s frame budget before the test's own
+    /// "well under a full show-floor wait" ceiling. These six tiles are the OLD table's exact
+    /// world-space offsets from the OLD gate, re-applied to the NEW gate position — same walk
+    /// distances (~100-210px), same timing, just translated to sit beside the relocated gate.</para>
     /// </summary>
     public static readonly Vector2I[] HeroHomeTiles =
     {
-        new(8, 20), new(8, 36), new(58, 20), new(58, 34), new(30, 20), new(34, 20),
+        new(21, 16), new(24, 18), new(27, 14), new(30, 16), new(33, 18), new(36, 14),
     };
 
     /// <summary>
