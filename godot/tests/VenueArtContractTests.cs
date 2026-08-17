@@ -234,9 +234,14 @@ public class VenueArtContractTests
 
     private static readonly KnownFailure[] KnownVenuesFailingTheContract =
     [
-        // Assertion 1 — transparent margin >=1px on all four sides. market ships flush to its own
-        // canvas on every side (0/0/0/0); noticeboard is flush top/bottom (T0/B0) though its left/
-        // right sides already clear the floor (L1/R1).
+        // Assertion 1 — transparent margin >=1px on all four sides. ALL FIVE fail, and the reason is
+        // uniform: not one venue leaves a transparent column at its left or right edge. Measured:
+        // forge T6/B6/L0/R0, tavern T9/B8/L0/R0, minegate T1/B1/L0/R0, market T0/B0/L0/R0,
+        // noticeboard T0/B0/L1/R1. Three of them have generous top/bottom margins, which is what
+        // made this look like a two-venue problem — the horizontal edges were never measured.
+        new("forge", "transparent-margin"),
+        new("tavern", "transparent-margin"),
+        new("minegate", "transparent-margin"),
         new("market", "transparent-margin"),
         new("noticeboard", "transparent-margin"),
 
@@ -248,11 +253,15 @@ public class VenueArtContractTests
         // 5.5x ruling). All five venues fail today (forge 81px, tavern 88px, market 62px,
         // noticeboard 50px, mine-gate 48px, all well under 3.5 * 34px = 119px) — this row set IS the
         // regression pin the re-render unit is measured against.
+        // NOTE the key: "minegate", the TownLayout2D.Venues key, not "mine-gate", which is its
+        // sprite id. Both strings exist and they are not the same string — pinning the sprite id
+        // here left the real key unpinned and the row inert, so this assertion reported a failure
+        // it had supposedly already accounted for.
         new("forge", "size-ratio"),
         new("tavern", "size-ratio"),
         new("market", "size-ratio"),
         new("noticeboard", "size-ratio"),
-        new("mine-gate", "size-ratio"),
+        new("minegate", "size-ratio"),
     ];
 
     private static List<string> Expected(string assertion) =>
