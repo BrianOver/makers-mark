@@ -872,6 +872,14 @@ public class InteriorEntryExitTests
         // The zero-regression pin (this unit's own contract): a blacksmith-only campaign must see
         // byte-identical station ids/order to the pre-U7 forge row, in the live built room, not
         // just in InteriorLayout2D's own static table.
+        //
+        // U-T2-5 (Wave A substrate, §11.14.4, R14.5) widens this on purpose: Bryn, the mentor, is
+        // appended to EVERY composed workshop room regardless of profession selection (never any
+        // one profession's own station — see InteriorLayout2D.WorkshopRoomFor's own doc), so the
+        // pre-U7 six-station set is no longer the WHOLE live room, just its profession-owned part.
+        // WorkshopVocabTests.BlacksmithOnlyWorkshopRoom_IsByteIdenticalToThePreU7ForgeRow still pins
+        // the stricter, self-referential half of this claim (WorkshopRoomFor's OWN output never
+        // drifts from InteriorLayout2D.Rooms["forge"]'s static row).
         var ui = MountMainUi(); // default seed-2026 campaign — blacksmith (GameComposition's default)
         try
         {
@@ -880,8 +888,8 @@ public class InteriorEntryExitTests
             var stationIds = room.Stations.Select(s => s.Key).ToArray();
 
             AssertThat(stationIds)
-                .OverrideFailureMessage("A blacksmith start must see zero change from the pre-U7 forge room.")
-                .IsEqual(new[] { "anvil", "furnace", "bellows", "quench", "shelf", "rack" });
+                .OverrideFailureMessage("A blacksmith start must see zero change from the pre-U7 forge row, plus Bryn (U-T2-5).")
+                .IsEqual(new[] { "anvil", "furnace", "bellows", "quench", "shelf", "rack", "mentor" });
             AssertThat(ui.Town.FindBuilding("forge").NameLabel.Text).IsEqual("Forge");
         }
         finally { Unmount(ui); }
@@ -920,9 +928,16 @@ public class InteriorEntryExitTests
             AssertThat(stationIds.Contains("cauldron"))
                 .OverrideFailureMessage("Alchemy's stations must appear the next time the player enters the workshop.")
                 .IsTrue();
+            // U-T2-5 (Wave A substrate, §11.14.4, R14.5): +1 for Bryn — appended to every composed
+            // workshop room regardless of profession selection, never any one profession's own set
+            // (InteriorLayout2D.WorkshopRoomFor's own doc), so a second profession joining does not
+            // duplicate her either.
+            AssertThat(stationIds.Contains("mentor"))
+                .OverrideFailureMessage("Bryn must still be present once a second profession joins — she is not any one profession's own station.")
+                .IsTrue();
             AssertThat(stationIds.Length)
-                .OverrideFailureMessage("Expected all 6 blacksmith + 5 alchemy stations, no loss and no duplicate mount.")
-                .IsEqual(11);
+                .OverrideFailureMessage("Expected all 6 blacksmith + 5 alchemy stations + Bryn, no loss and no duplicate mount.")
+                .IsEqual(12);
 
             // Blacksmith started the campaign FIRST — it stays primary (and the building's own
             // nametag) even after alchemy joins mid-run (this unit's "primary = first selected"
