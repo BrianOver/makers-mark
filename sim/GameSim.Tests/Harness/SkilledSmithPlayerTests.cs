@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Linq;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Harness;
 using GameSim.Kernel;
@@ -18,7 +19,15 @@ public class SkilledSmithPlayerTests
 {
     private static GameState ExpeditionStateWithMaterials(int day, int nextItemId)
     {
-        var state = GameFactory.NewGame(seed: 99);
+        // U-T1: BaselinePlayer's Expedition craft now only fires when some alive hero has a real
+        // gear gap (HasBuyer) — a bare GameFactory.NewGame() fixture has zero heroes, so nobody
+        // would ever buy anything and the craft loop correctly emits nothing. One ungeared hero
+        // gives the loop a legitimate buyer for tier-1 gear without changing what the tests below
+        // are actually checking (grade-stamping, determinism, novice quality band).
+        var hero = new Hero(
+            new HeroId(1), "Test Hero", ClassRegistry.VanguardId, Level: 1, MaxHp: 20, Gold: 500,
+            GearSet.Empty, ImmutableList<ItemMemory>.Empty, Alive: true, DeepestFloorReached: 0, DiedOnDay: null);
+        var state = GameFactory.NewGame(seed: 99, ImmutableSortedDictionary<int, Hero>.Empty.Add(hero.Id.Value, hero));
         return state with
         {
             Day = day,

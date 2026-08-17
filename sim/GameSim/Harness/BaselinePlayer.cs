@@ -1,7 +1,9 @@
 using System.Collections.Immutable;
 using GameSim.Advisor;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Crafting;
+using GameSim.Heroes;
 using GameSim.Professions;
 
 namespace GameSim.Harness;
@@ -42,8 +44,23 @@ public static class BaselinePlayer
                     .Where(id => id is not null)
                     .Select(id => id!.Value.Value)
                     .ToHashSet();
+                // U-T1: a CONSUMABLE that has ever sold is gone for good (ShopHandlers 3b — it lives
+                // in a hero's pack until drunk, then it's just gone). Neither "shelved" nor "equipped"
+                // (gear slots only) ever catches that case, so pre-fix this re-offered the SAME sold
+                // consumable id as a doomed StockAction every single morning for the rest of the
+                // campaign (harmless to state — rejections never mutate — but pure ActionLog noise a
+                // shopkeeper who remembers their own sales wouldn't generate). GEAR is deliberately
+                // exempt: a sold weapon a hero later drops for an upgrade has no "already sold" rule
+                // in ShopHandlers — it is genuinely second-hand stock, and re-shelving it for whichever
+                // hero needs it next is real income this policy should keep (an early cut of this fix
+                // blocked it and peak gold measurably dropped, 399g -> 286g, for exactly that reason).
+                var soldConsumables = state.EventLog.OfType<ItemSold>()
+                    .Select(e => e.Item.Value)
+                    .Where(id => state.Items.TryGetValue(id, out var sold) && sold.Effect is not null)
+                    .ToHashSet();
                 foreach (var item in state.Items.Values.Where(i =>
-                             i.PlayerCrafted && !shelved.Contains(i.Id.Value) && !equipped.Contains(i.Id.Value)))
+                             i.PlayerCrafted && !shelved.Contains(i.Id.Value) && !equipped.Contains(i.Id.Value)
+                             && (i.Effect is null || !soldConsumables.Contains(i.Id.Value))))
                 {
                     var statSum = item.Stats.Attack + item.Stats.Defense;
                     actions.Add(new StockAction(item.Id, Math.Max(1, statSum * 2)));
@@ -67,12 +84,22 @@ public static class BaselinePlayer
                 // every balance number described a smith who wouldn't work. It also ignored the
                 // tier gate: the old check could emit a doomed craft for a tier-locked recipe
                 // (rejected, no craft that window) instead of walking down to a legal one.
+                // U-T1 ("the reference player learns to trade"): a plain shopkeeper doesn't keep
+                // manufacturing stock nobody in town can use. Measured before this fix, on the main
+                // balance seed: 98 items crafted in 100 days, but only 18 ever sold off the player
+                // shelf (rival took another 40) — 82% of production was dead weight, because the old
+                // rule crafted the single biggest thing it could afford every day regardless of
+                // whether any hero had a gap for it. HasBuyer asks the same question a hero already
+                // asks (ShoppingAi: is this a strict gear-score upgrade, or an empty pack for a
+                // consumable) against the CURRENT alive roster, net of what the player's own shelf
+                // already offers unsold — so this loop still prefers the best tier it can afford, but
+                // skips a candidate with no real buyer instead of shelving another item nobody wants.
                 foreach (var recipe in RecipeTable.All.Values
                              .OrderByDescending(r => r.Tier)
                              .ThenByDescending(r => r.BaseStats.Attack + r.BaseStats.Defense))
                 {
                     var candidate = new CraftAction(recipe.RecipeId, recipe.MaterialKey);
-                    if (ActionLegality.IsLegal(state, candidate, state.Phase))
+                    if (ActionLegality.IsLegal(state, candidate, state.Phase) && HasBuyer(state, recipe))
                     {
                         actions.Add(candidate);
                         break; // one craft per window keeps the policy simple and stable
@@ -127,5 +154,82 @@ public static class BaselinePlayer
         }
 
         return actions.ToImmutable();
+    }
+
+    /// <summary>
+    /// U-T1: does <paramref name="recipe"/> have a real buyer RIGHT NOW? Estimated on
+    /// <see cref="Recipe.BaseStats"/> (Common-grade — <see cref="Crafting.ItemForge"/> only scales
+    /// stats UP from there) since the harness doesn't know the quality roll before the craft
+    /// happens, same as a real smith wouldn't; auto-craft's <c>AutoCraftGrade</c> (550, jitter ±25)
+    /// never reaches the Poor band, so Common is a safe, if slightly conservative, floor.
+    ///
+    /// Gear: true when some ALIVE, role/weight-compatible hero's current best option in this slot —
+    /// worn gear OR whatever the player's own shelf already offers unsold — is weaker than this
+    /// recipe would be. That "net of the shelf" check is what stops the loop from re-crafting a
+    /// second copy of a slot the shelf already covers while the first copy is still waiting for a
+    /// buyer (exactly the pileup the pre-fix measurement found: 105 stock attempts, 18 sales, 94/100
+    /// days ending with a nonempty shelf).
+    ///
+    /// Consumables: true when some alive hero's <see cref="Hero.Pack"/> is below their stocking
+    /// target AND the shelf doesn't already carry an unsold Heal item (a consumable that's ever
+    /// sold never restocks — ShopHandlers 3b — so this is the only staleness check consumables need).
+    /// </summary>
+    private static bool HasBuyer(GameState state, Recipe recipe)
+    {
+        if (recipe.Effect is { Kind: ConsumableKind.Heal })
+        {
+            var alreadyShelved = state.Player.Shelf.Any(e =>
+                state.Items.TryGetValue(e.Item.Value, out var shelved) && shelved.Effect is { Kind: ConsumableKind.Heal });
+            return !alreadyShelved
+                && state.Heroes.Values.Any(h => h.Alive && h.Pack.Count < TraitEffects.ConsumableStockTargetFor(h));
+        }
+
+        var estimated = recipe.BaseStats.Attack + recipe.BaseStats.Defense;
+
+        foreach (var hero in state.Heroes.Values)
+        {
+            if (!hero.Alive)
+            {
+                continue;
+            }
+
+            var heroClass = ClassRegistry.Require(hero.ClassId);
+            if (recipe.Slot == ItemSlot.Shield && !heroClass.AllowsShield)
+            {
+                continue;
+            }
+
+            if (heroClass.MaxItemWeight is { } weightCap && recipe.BaseStats.Weight > weightCap)
+            {
+                continue;
+            }
+
+            var bestAvailable = hero.Gear.Slot(recipe.Slot) is { } wornId
+                && state.Items.TryGetValue(wornId.Value, out var worn)
+                ? worn.Stats.Attack + worn.Stats.Defense
+                : 0;
+
+            foreach (var entry in state.Player.Shelf)
+            {
+                if (!state.Items.TryGetValue(entry.Item.Value, out var shelved) || shelved.Slot != recipe.Slot)
+                {
+                    continue;
+                }
+
+                if (heroClass.MaxItemWeight is { } shelfWeightCap && shelved.Stats.Weight > shelfWeightCap)
+                {
+                    continue; // this hero couldn't wear the unsold copy either — doesn't cover them
+                }
+
+                bestAvailable = Math.Max(bestAvailable, shelved.Stats.Attack + shelved.Stats.Defense);
+            }
+
+            if (estimated > bestAvailable)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
