@@ -33,6 +33,18 @@ public partial class RaidForecastBoard : Control
     public int PartyCount { get; private set; }
 
     /// <summary>
+    /// U-T2 Wave D (§11.14.4, Act III): the live tutorial chain, wired by <c>MainUi</c> right after
+    /// both this board and <see cref="TutorialFlow"/> are built (same precedent as
+    /// <c>ForgePanel.Tutorial</c>/<c>ShopPanel.Tutorial</c>/<c>CommissionBoard.Tutorial</c>) — this
+    /// board's own first-touch teaching reads/writes it through <see cref="Mentor"/>. Null-tolerant.
+    /// </summary>
+    public TutorialFlow? Tutorial { get; set; }
+
+    /// <summary>The shared "Bryn speaks a first-touch lesson" banner (<see cref="MentorBanner"/>,
+    /// Wave C) — owned by <c>MainUi</c> so it draws above this modal too.</summary>
+    public MentorBanner? Mentor { get; set; }
+
+    /// <summary>
     /// U1 (§11.11): closes the board and asks <c>MainUi</c> to open the Forge — the SAME bare
     /// event shape <see cref="CampPanel.OpenForgeRequested"/> already uses (CampPanel.cs:85,
     /// 371-375), reused rather than reinvented. No payload: which recipe answers a gap only ever
@@ -51,6 +63,7 @@ public partial class RaidForecastBoard : Control
     public void ShowForTomorrow(GameState state)
     {
         EnsureBuilt();
+        ShowForecastBoardLesson();
 
         var parties = RaidForecast.ForTomorrow(state);
         PartyCount = parties.Count;
@@ -129,8 +142,39 @@ public partial class RaidForecastBoard : Control
             {
                 AddLabel(_body!, $"  - {gap}");
             }
+
+            ShowMusterGearGapLesson();
         }
     }
+
+    /// <summary>
+    /// U-T2 Wave D (§11.14.4, Act III, dilemma #5, R14.7 "one sentence each, both sides, no
+    /// recommendation"): names the forecast board itself out loud the first time it is EVER opened
+    /// — before this unit, nothing in the tutorial chain pointed at it at all, despite it being the
+    /// one screen that shows tomorrow's muster before it happens (U10's own class doc, "surface
+    /// scarcity in the HUD"). Fires through the SAME first-touch engine and shared banner Wave C's
+    /// dilemma lessons use.
+    /// </summary>
+    private void ShowForecastBoardLesson() =>
+        Mentor?.ShowFirstTouch(Tutorial?.ConsumeFirstTouch(
+            "forecast-board-taught",
+            MentorVoice.Speak(
+                "This is a preview, not a promise — tomorrow's likely muster, projected off tonight's "
+                + "roster. Whatever you still buy or craft before morning can change what it shows here.")));
+
+    /// <summary>
+    /// U-T2 Wave D (dilemma #3, "the muster speaks", R14.7): names the empty-slot-versus-full-slot
+    /// dilemma out loud the first time this board EVER shows a party marching with a real gear gap
+    /// (<see cref="ForecastParty.GearGaps"/>) — before this unit, of the six dilemmas the game is
+    /// made of, this was one of the ones never taught. Wording matches <c>docs/design/THE-GAME.md</c>
+    /// §3.5's own dilemma #3 sentence verbatim (already owner-approved language).
+    /// </summary>
+    private void ShowMusterGearGapLesson() =>
+        Mentor?.ShowFirstTouch(Tutorial?.ConsumeFirstTouch(
+            "the-muster-speaks",
+            MentorVoice.Speak(
+                "Fill the empty slot, or upgrade the full one? The muster board tells you who is "
+                + "marching under-equipped. It does not tell you who will survive.")));
 
     private void EnsureBuilt()
     {

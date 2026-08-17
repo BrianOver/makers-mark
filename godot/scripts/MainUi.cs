@@ -1115,6 +1115,9 @@ public partial class MainUi : Control
         Ledger.Refresh();
         Camp.Refresh();
         Watch.Refresh(Adapter.CurrentState, Adapter.LastEvents); // U9: refreshed regardless of host
+        // U-T2 Wave D (§11.14.4, Act III, link 4): the proof taught the first time it lands — see
+        // ShowProofFirstTouchIfEarned's own doc. Checked right alongside the watch it flares on.
+        ShowProofFirstTouchIfEarned();
         Mirror.Refresh();
         Pip.Refresh(Adapter.CurrentState, Adapter.LastEvents); // U16/KTD11: rebuild the PiP's cards once per tick
     }
@@ -2300,6 +2303,35 @@ public partial class MainUi : Control
         return $"{HeroDisplayName(state, first.Buyer)} marches carrying your {itemName}, bought for {first.Price}g{extra}";
     }
 
+    /// <summary>
+    /// U-T2 Wave D (§11.14.4, Act III, link 4, "the proof taught the first time it lands"): the
+    /// FIRST time ever an <see cref="AttributionBeatEvent"/> reaches this tick — the counterfactual
+    /// replay (<see cref="GameSim.Expedition.AttributionEngine"/>) naming a player-crafted item that
+    /// mattered — Bryn explains the MECHANISM once, through the same shared banner Wave C
+    /// introduced. Never fires on a re-render with no new beat (<see cref="SimAdapter.LastEvents"/>
+    /// is THIS tick's own batch); never restates which item or hero earned it — that specific,
+    /// sim-decided fact is <see cref="Panels.MineWatch"/>'s own bark's job
+    /// (<c>BarkFor</c>, fixed alongside this unit to actually name the item via <see
+    /// cref="AttributionBeatEvent.Detail"/> instead of discarding it). Without this lesson a player
+    /// who reaches the proof having never been told what it is reads the flash as unexplained
+    /// decoration — the coordinator's own framing for why this is the wave's most important unit.
+    /// </summary>
+    private void ShowProofFirstTouchIfEarned()
+    {
+        if (!Adapter.LastEvents.OfType<AttributionBeatEvent>().Any())
+        {
+            return;
+        }
+
+        Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
+            "the-proof-taught",
+            MentorVoice.Speak(
+                "That flash is the proof: the sim just replayed this fight with your craft taken back "
+                + "out of it, and found it would have gone differently. Only something you actually "
+                + "forged can ever earn a beat like that — nothing else a hero happens to be carrying "
+                + "counts.")));
+    }
+
     /// <summary>U5: a transient bell-action notice (reuses the rejection-toast banner).</summary>
     private void ShowBellToast(string message)
     {
@@ -3072,6 +3104,11 @@ public partial class MainUi : Control
         Shop.Mentor = Mentor;
         Commissions.Tutorial = Tutorial;
         Commissions.Mentor = Mentor;
+
+        // U-T2 Wave D: the forecast board's two lessons ("the forecast board taught", "the muster
+        // speaks") need the same wiring.
+        Forecast.Tutorial = Tutorial;
+        Forecast.Mentor = Mentor;
 
         // --- build-provenance stamp (deploy hygiene): a small always-visible corner label naming
         //     this build — mounted last so it draws over everything else. See BuildStamp's own
