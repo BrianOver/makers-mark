@@ -150,6 +150,11 @@ public static class SfxLibrary
     /// <summary>See <see cref="CeremonialTargetDbfs"/>.</summary>
     private static readonly float UiTargetDbfs = MixBudget.Budgets[MixBudget.Category.UiOneShot].TargetRmsDbfs;
 
+    /// <summary>U-T4-4: the one <see cref="MixBudget.Category.HeldLoop"/> cue's target, read from the
+    /// same table as <see cref="CeremonialTargetDbfs"/>/<see cref="UiTargetDbfs"/> — see those fields'
+    /// own doc for why this lives in <see cref="MixBudget"/> rather than as a literal here.</summary>
+    private static readonly float HeldLoopTargetDbfs = MixBudget.Budgets[MixBudget.Category.HeldLoop].TargetRmsDbfs;
+
     private static readonly Dictionary<Cue, AudioStreamWav> Cache = new();
 
     /// <summary>The stream for <paramref name="cue"/>, synthesized on first request.</summary>
@@ -298,14 +303,25 @@ public static class SfxLibrary
             Synth.NormaliseRms(buf, UiTargetDbfs); // U-T4-3: was Normalise(buf, 0.26f) (U8: 0.35 -> 0.26)
         }),
 
-        // U8 (2026-08-02 shell-and-audio plan, R8): "the bellows shift since you have to hold" was
-        // the specific complaint — a 0.30s one-shot per grip was the wrong shape for a multi-second
-        // gesture, and this clip's own envelope already starts AND ends at zero (sin(pi*t/0.28) is 0
-        // at t=0 and t=0.28), so it was already seam-safe for AudioDirector.StartLoop's manual
-        // retrigger without any shape change — only the level needed to move, from double the
-        // venue-cue normalize down to matching it (0.30 -> 0.15). The discrete PumpStroke path keeps
-        // firing this SAME cue as a one-shot via Play() (never the loop voice), so drag-pumping stays
-        // tactile at the same new, quieter level.
+        // U8 (2026-08-02 shell-and-audio plan, R8) shipped the breath/filter recipe below; a
+        // 2026-08-15 pass dropped its level again (0.15 -> 0.12, -1.92dB) for "too loud and abrasive."
+        // Register #153 reopened on the very next playtest with the identical words: "bellows sound is
+        // too loud."
+        //
+        // U-T4-4 found why level could never have fixed it. Cue.Bellows is the only HELD, LOOPING cue
+        // in the game (AudioDirector.StartLoop) — a player grips the forge for seconds at a time, and
+        // the ear integrates a continuous source while all but discounting a single 0.3s one-shot.
+        // Measured SUSTAINED (this recipe repeated to simulate a real hold), the cue ran -32.4dBFS
+        // effective, 8.5dB ABOVE the Morning bed it plays over — while its own PEAK (-18.46dBFS) was
+        // the QUIETEST cue in the whole set. Every prior round (including the -1.92dB nudge above)
+        // measured peak. Peak was never the mechanism.
+        //
+        // This one-shot recipe stays: it is still fired directly by ForgePanel's discrete drag-pump
+        // path (PumpStroke, via Play() on a pooled voice, never the loop voice — see AudioDirector's
+        // own note on why that path cannot share a LoopMode-flagged stream with the held gesture). Only
+        // its LEVEL TARGET changed, from a peak literal to the same MixBudget.Category.HeldLoop budget
+        // the held loop is levelled to below — see SfxLibrary.GetLooping for the separate, genuinely
+        // continuous stream AudioDirector.StartLoop now arms for the actual multi-second hold.
         Cue.Bellows => Build(0.30f, buf =>
         {
             // Air through leather: a soft breathy swell with no pitch at all. Quiet, because a player
@@ -317,27 +333,19 @@ public static class SfxLibrary
                 buf[i] = Synth.Noise(i, seed: 41) * breath;
             }
 
-            // 2026-08-15: the owner reported this cue AGAIN — "the bellows sound is too loud and
-            // abrasive". U8 (above) had already halved its level for the same complaint, so cutting
-            // the amplitude a second time would be repeating a fix that demonstrably did not land.
-            // The new word is the diagnosis: ABRASIVE is timbre, not level. This is raw hash noise
-            // behind a ONE-POLE filter, and one pole rolls off only 6dB/octave — at 2.8kHz, two
-            // octaves above the old 700Hz corner, the noise was still down just ~12dB. That band is
-            // exactly where the ear hears hiss. So the filter changes, not (only) the gain: a second
-            // pole doubles the slope to ~12dB/octave, and the corner drops to 320Hz, which is where
-            // moving air actually lives. What is left reads as breath instead of static.
+            // Two-pole 320Hz cascade (2026-08-15's tone fix, untouched by this unit): a single pole
+            // only rolls off 6dB/octave and left hiss audible two octaves up at the old 700Hz corner;
+            // two poles reach the band moving air actually lives in. What is left reads as breath
+            // instead of static — see TheBellows_ReadsAsBreath_NotHiss for the pinned measurement.
             Synth.LowPass(buf, 320f);
             Synth.LowPass(buf, 320f);
 
-            // Cascaded poles cost real energy, so re-normalising is what keeps this audible at all
-            // rather than a level cut stacked on a tone cut. 0.15 -> 0.12 is a deliberate small trim
-            // on top: he said "too loud AND abrasive", and the tone change alone would answer only half.
-            // U-T4-3: left on the peak-based Normalise on purpose — Bellows is the one HeldLoop cue and
-            // gets its own sustained-loudness treatment in the next unit, not the one-shot RMS retarget
-            // this unit applies to everything else (see MixBudget.Category.HeldLoop). Still benefits from
-            // Normalise's own tanh removal above.
             Synth.DeClick(buf);
-            Synth.Normalise(buf, 0.12f); // U8: 0.30 -> 0.15; 2026-08-15: -> 0.12 alongside the tone fix
+            // U-T4-4: NormaliseRms to the HeldLoop budget target, not another peak literal — see this
+            // cue's own leading comment for why peak was never the right quantity to move. This is an
+            // 11.5dB relative move against the 1.92dB that failed (source -32dBFS + the SfxLoop bus's
+            // own -3dB = -35dBFS effective, versus the old peak-0.12 recipe's -32.4dBFS effective).
+            Synth.NormaliseRms(buf, HeldLoopTargetDbfs);
         }),
 
         Cue.Coin => Build(0.42f, buf =>
@@ -598,5 +606,89 @@ public static class SfxLibrary
         fill(buffer);
         Synth.DeClick(buffer);
         return Synth.ToStream(buffer);
+    }
+
+    /// <summary>Separate cache from <see cref="Cache"/>, keyed by the same <see cref="Cue"/>. A loop
+    /// stream and its one-shot counterpart are built from different recipes (see <see cref="GetLooping"/>'s
+    /// own doc) and must never be the same <see cref="AudioStreamWav"/> instance — <see cref="Get"/>'s
+    /// cached stream is also fired as a plain one-shot elsewhere (ForgePanel's drag-pump path) and must
+    /// never carry a baked-in <c>LoopMode</c>, or every playback of it would loop forever.</summary>
+    private static readonly Dictionary<Cue, AudioStreamWav> LoopCache = new();
+
+    /// <summary>
+    /// U-T4-4: the looping variant of <paramref name="cue"/> — a genuinely continuous cycle with
+    /// <see cref="AudioStreamWav.LoopModeEnum.Forward"/> baked in, so Godot loops it on the audio
+    /// thread with no gap and no main-thread retrigger. <see cref="AudioDirector.StartLoop"/> is the
+    /// one caller.
+    ///
+    /// <para>A SEPARATE stream from <see cref="Get"/>, never a flag on the shared one — see
+    /// <see cref="LoopCache"/>'s own doc for why a shared stream cannot carry this, and
+    /// <see cref="AudioDirector"/>'s loop-voice field for the same constraint stated from the player
+    /// side.</para>
+    ///
+    /// <para>Only <see cref="MixBudget.Category.HeldLoop"/> cues need a recipe here — today only
+    /// <see cref="Cue.Bellows"/> (see <see cref="MixBudget.CategoryFor"/>) — so every other
+    /// <see cref="Cue"/> throws rather than silently handing back a stream nobody designed to loop.</para>
+    /// </summary>
+    public static AudioStreamWav GetLooping(Cue cue)
+    {
+        if (!LoopCache.TryGetValue(cue, out var stream))
+        {
+            stream = BuildLoop(cue);
+            LoopCache[cue] = stream;
+        }
+
+        return stream;
+    }
+
+    private static AudioStreamWav BuildLoop(Cue cue) => cue switch
+    {
+        Cue.Bellows => BuildLoopStream(0.30f, buf =>
+        {
+            // Air through leather, ONE full breath cycle spanning the WHOLE buffer — the one-shot
+            // recipe above clamps its own sine at t=0.28s so a retriggered clip gets a clean release
+            // tail before its own 0.30s end; that clamp is exactly the defect for a LOOP (a flat ~20ms
+            // zero plateau at every wrap, worsened by 0-17ms of frame jitter from the retrigger this
+            // unit deletes). There is no clamp here, so the hump fills the entire buffer and the wrap
+            // meets a naturally near-zero, still-sloped sample instead of a flat silence.
+            //
+            // Floored so the cycle never actually goes silent between breaths (0.30 to 1.0, not 0 to
+            // 1.0) — a bellows held continuously keeps moving air; it does not stop and restart. This
+            // is also what keeps TheHeldBellows_HasNoGapAtItsSeam's own measurement nowhere near its
+            // 45dB floor: the quietest instant is still roughly a third of full amplitude, not silence.
+            for (var i = 0; i < buf.Length; i++)
+            {
+                var t = i / (float)Synth.SampleRate;
+                var cycle = 0.5f - 0.5f * MathF.Cos(2f * MathF.PI * t / 0.30f); // 0 at both ends, exactly periodic there
+                var breath = 0.30f + 0.70f * cycle;
+                buf[i] = Synth.Noise(i, seed: 41) * breath;
+            }
+
+            // Same two-pole 320Hz cascade as the one-shot (see Cue.Bellows' own doc for why one pole
+            // was not enough) — the loop must read as the same instrument, not a different sound.
+            Synth.LowPass(buf, 320f);
+            Synth.LowPass(buf, 320f);
+
+            // Forces both ends to exactly zero regardless of what the two-pole filter's own internal
+            // state looks like at the buffer's end — a filter's impulse response does not naturally
+            // meet itself across a hard loop boundary, so the envelope's own periodicity above is not
+            // by itself enough to guarantee a click-free wrap. This is what actually guarantees it.
+            Synth.DeClick(buf);
+            Synth.NormaliseRms(buf, HeldLoopTargetDbfs);
+        }),
+
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(cue), cue, $"{cue} has no looping recipe — only MixBudget.Category.HeldLoop cues need one."),
+    };
+
+    /// <summary>Builds a stream marked <see cref="AudioStreamWav.LoopModeEnum.Forward"/> — the loop
+    /// counterpart to <see cref="Build(float,Action{float[]})"/>, which never sets it. DeClick is left
+    /// to each recipe to call explicitly (order matters relative to its own filtering), unlike
+    /// <see cref="Build(float,Action{float[]})"/>'s unconditional post-fill call.</summary>
+    private static AudioStreamWav BuildLoopStream(float seconds, Action<float[]> fill)
+    {
+        var buffer = new float[Synth.Samples(seconds)];
+        fill(buffer);
+        return Synth.ToStream(buffer, loop: true);
     }
 }

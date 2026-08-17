@@ -189,17 +189,22 @@ public sealed partial class AudioDirector : Node
     /// needs its own fade so a stop mid-buffer never clicks (<see cref="StopLoop"/>). One voice is
     /// enough: only one gesture (the forge bellows) loops today.
     ///
-    /// <para>Looping is driven by manually retriggering <see cref="Play"/> on <see cref="Finished"/>
-    /// (<see cref="OnLoopVoiceFinished"/>) rather than the stream's own baked-in <c>LoopMode</c> — the
-    /// SAME cached <see cref="SfxLibrary"/> stream that loops here must also stay safe to fire as a
-    /// plain one-shot on a POOLED voice elsewhere (a discrete <c>PumpStroke</c>); a stream-level
-    /// LoopMode would make every playback of it loop forever, one-shot or not.</para>
+    /// <para><b>U-T4-4: looping is now the stream's own baked-in <c>LoopMode</c>
+    /// (<see cref="SfxLibrary.GetLooping"/>), not a manual retrigger.</b> The prior mechanism
+    /// rearmed <see cref="Play"/> from this player's own <c>Finished</c> signal — a main-thread
+    /// callback, firing after a 0.30s one-shot whose last ~20ms were flat zero by construction (a
+    /// clamped envelope) plus 0-17ms of frame jitter reaching that callback, so every breath carried a
+    /// real, audible gap at an irregular interval. Godot loops <see cref="SfxLibrary.GetLooping"/>'s
+    /// stream on the AUDIO thread instead, with no callback and no gap. <see cref="SfxLibrary.Get"/>'s
+    /// stream for the SAME cue is a separate, non-looping instance — it stays safe to fire as a plain
+    /// one-shot on a POOLED voice elsewhere (a discrete <c>PumpStroke</c>); a stream-level LoopMode on
+    /// that shared stream would make every playback of it loop forever, one-shot or not.</para>
     /// </summary>
     private AudioStreamPlayer _loopVoice = null!;
 
     /// <summary>The cue currently armed on <see cref="_loopVoice"/>, or null when nothing is
-    /// looping. <see cref="OnLoopVoiceFinished"/> and <see cref="StopLoop"/> both read this to decide
-    /// whether to keep breathing or let go.</summary>
+    /// looping. <see cref="StopLoop"/> reads this to decide whether a release call actually applies to
+    /// the voice currently held.</summary>
     private Cue? _loopCue;
 
     /// <summary>True from <see cref="StopLoop"/> until its release fade lands — see
@@ -452,7 +457,6 @@ public sealed partial class AudioDirector : Node
 
         _loopVoice = new AudioStreamPlayer { Name = "LoopVoice", Bus = AudioBuses.SfxLoop };
         AddChild(_loopVoice);
-        _loopVoice.Finished += OnLoopVoiceFinished;
 
         _narratorVoice = new AudioStreamPlayer { Name = "NarratorVoice", Bus = AudioBuses.Narrator };
         AddChild(_narratorVoice);
@@ -635,6 +639,10 @@ public sealed partial class AudioDirector : Node
     /// looping (calling it again mid-breath must not restart the clip's phase); a different cue
     /// takes over the one dedicated voice immediately. No-op while <see cref="Muted"/>, matching
     /// <see cref="Play"/>'s own contract.
+    ///
+    /// <para>U-T4-4: arms <see cref="SfxLibrary.GetLooping"/>'s stream, not <see cref="SfxLibrary.Get"/>'s
+    /// — Godot loops it on the audio thread from its own baked-in <c>LoopMode</c>, so this is a single
+    /// <see cref="AudioStreamPlayer.Play"/> call for the whole hold, never retriggered.</para>
     /// </summary>
     public void StartLoop(Cue cue)
     {
@@ -653,7 +661,7 @@ public sealed partial class AudioDirector : Node
         }
 
         _loopVoice.VolumeDb = SfxGainDb();
-        _loopVoice.Stream = SfxLibrary.Get(cue);
+        _loopVoice.Stream = SfxLibrary.GetLooping(cue);
         _loopVoice.Play();
 
         // The held loops are where a harsh cue does the most damage — a one-shot is over before you
@@ -687,22 +695,6 @@ public sealed partial class AudioDirector : Node
         _loopReleasing = true;
         _loopReleaseElapsed = 0;
         PlaytestLog.Audio("sfx", cue.ToString(), "loop-release", $"fromDb={_loopReleaseStartDb:F1}");
-    }
-
-    /// <summary>
-    /// Keeps a held breath going for as long as it is armed. The loop cue's own clip is short (a
-    /// single ~0.3s breath, seam-safe like a music-bed loop — see <see cref="Cue.Bellows"/>'s own
-    /// doc) — a multi-second hold needs many repeats, and this is the retrigger, never a new
-    /// gesture. Stops retriggering the instant <see cref="StopLoop"/> has armed the release fade.
-    /// </summary>
-    private void OnLoopVoiceFinished()
-    {
-        if (_loopCue is { } cue && !_loopReleasing && !Muted)
-        {
-            _loopVoice.VolumeDb = SfxGainDb(); // live: a slider dragged mid-hold is heard next breath
-            _loopVoice.Stream = SfxLibrary.Get(cue);
-            _loopVoice.Play();
-        }
     }
 
     /// <summary>
