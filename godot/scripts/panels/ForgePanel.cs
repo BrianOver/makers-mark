@@ -214,11 +214,6 @@ public partial class ForgePanel : SimPanel
     private HBoxContainer? _ceremonyPips;
     private double _ceremonyRemaining = -1;
 
-    // ── G1 forge juice (game-feel plan §"Forge juice") — two tiny procedural tones, no external
-    // audio asset needed (see MakeTone's own doc for why).
-    private AudioStreamPlayer? _hammerSfx;
-    private AudioStreamPlayer? _stingSfx;
-
     /// <summary>U8 (2026-08-02 shell-and-audio plan, R8): true while the held-bellows loop is armed
     /// on <see cref="GodotClient.Audio.AudioDirector.StartLoop"/> — the rising/falling edge latch
     /// <see cref="_Process"/> polls <c>_minigame.IsPumping</c> against, so <c>StartLoop</c>/<c>StopLoop</c>
@@ -1281,7 +1276,11 @@ public partial class ForgePanel : SimPanel
     /// the 3 beat sub-score pips, shown over the now-hidden minigame overlay for
     /// <see cref="CeremonySeconds"/> (or until <see cref="HideCeremony"/> is pressed early). Reads
     /// ONLY the already-emitted <see cref="CraftAction"/> — presentation, never a second scoring
-    /// pass; the sting plays through <see cref="_stingSfx"/>.
+    /// pass; the sting plays through <see cref="GodotClient.Audio.AudioDirector"/> (U-T4-5 —
+    /// <see cref="GradeStingCueFor"/> picks the grade-appropriate <see cref="GodotClient.Audio.Cue"/>).
+    /// Before U-T4-5 this fired on a bare, unparented-to-the-director <c>AudioStreamPlayer</c> of this
+    /// panel's own — deaf to the SFX fader, the master fader, mute, and every <c>MixBudget</c> band the
+    /// rest of the mix now honours; a "muted" automated playtest was never actually silent.
     /// </summary>
     private void ShowCeremony(CraftAction action)
     {
@@ -1297,12 +1296,23 @@ public partial class ForgePanel : SimPanel
         _ceremonyPips.AddChild(StatChip("Forge", subScores[1].ToString(), PipTone(subScores[1])));
         _ceremonyPips.AddChild(StatChip("Quench", subScores[2].ToString(), PipTone(subScores[2])));
 
-        _stingSfx!.Stream = GradeStingTones[band];
-        _stingSfx.Play();
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GradeStingCueFor(band), "grade-sting");
 
         _ceremony!.Visible = true;
         _ceremonyRemaining = CeremonySeconds;
     }
+
+    /// <summary>U-T4-5: which <see cref="GodotClient.Audio.Cue"/> <see cref="ShowCeremony"/> plays for
+    /// a given grade band — same discard-defaults-to-top-grade shape as <see cref="StarCountFor"/>/
+    /// <see cref="GradeColor"/> above.</summary>
+    private static GodotClient.Audio.Cue GradeStingCueFor(QualityGrade band) => band switch
+    {
+        QualityGrade.Poor => GodotClient.Audio.Cue.GradeStingPoor,
+        QualityGrade.Common => GodotClient.Audio.Cue.GradeStingCommon,
+        QualityGrade.Fine => GodotClient.Audio.Cue.GradeStingFine,
+        QualityGrade.Superior => GodotClient.Audio.Cue.GradeStingSuperior,
+        _ => GodotClient.Audio.Cue.GradeStingMasterwork,
+    };
 
     /// <summary>Dismiss the ceremony — the auto-timeout path (<see cref="_Process"/>) and the
     /// player's own Skip button both funnel through here.</summary>
@@ -1675,7 +1685,6 @@ public partial class ForgePanel : SimPanel
         _tanningFrame.Cancelled += OnTanningFrameCancelled;
 
         BuildCeremony();
-        BuildSfx();
     }
 
     /// <summary>
@@ -1730,69 +1739,4 @@ public partial class ForgePanel : SimPanel
         skip.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
     }
 
-    /// <summary>G1 forge juice (game-feel plan §"Forge juice"): two tiny procedural
-    /// <see cref="AudioStreamPlayer"/>s — no external audio asset committed for either (see
-    /// <see cref="MakeTone"/>'s own doc for why). <see cref="OnMinigameStruck"/> retriggers
-    /// <see cref="_hammerSfx"/> on every strike; <see cref="ShowCeremony"/> swaps
-    /// <see cref="_stingSfx"/>'s stream to the grade-appropriate tone before playing it.
-    /// Headless-safe: Godot's dummy audio driver accepts <c>Play()</c> without a real output
-    /// device, so an engine test never has to guard around this.</summary>
-    private void BuildSfx()
-    {
-        _hammerSfx = new AudioStreamPlayer { Name = "ForgeHammerSfx", Stream = HammerClangTone };
-        AddChild(_hammerSfx);
-
-        _stingSfx = new AudioStreamPlayer { Name = "ForgeStingSfx" };
-        AddChild(_stingSfx);
-    }
-
-    // ── G1 procedural SFX — short synthesized tones, no external audio asset ──────────────────
-    private const int SfxSampleRate = 22050;
-
-    private static readonly AudioStreamWav HammerClangTone = MakeTone(180f, 0.09f, secondaryHz: 620f, amplitude: 0.6f);
-
-    private static readonly Dictionary<QualityGrade, AudioStreamWav> GradeStingTones = new()
-    {
-        [QualityGrade.Poor] = MakeTone(196f, 0.35f),
-        [QualityGrade.Common] = MakeTone(262f, 0.35f),
-        [QualityGrade.Fine] = MakeTone(330f, 0.4f),
-        [QualityGrade.Superior] = MakeTone(392f, 0.45f, secondaryHz: 494f),
-        [QualityGrade.Masterwork] = MakeTone(523f, 0.55f, secondaryHz: 784f),
-    };
-
-    /// <summary>
-    /// A short synthesized tone (optionally a two-note chord via <paramref name="secondaryHz"/>)
-    /// with a linear decay envelope — placeholder-quality "juice" audio that needs no external
-    /// asset (and so nothing to license-track for CMMC/SOC 2 purposes). 16-bit mono PCM, built
-    /// once into a <see langword="static readonly"/> field per cue above — never regenerated per
-    /// play.
-    /// </summary>
-    private static AudioStreamWav MakeTone(float hz, float durationSeconds, float? secondaryHz = null, float amplitude = 0.5f)
-    {
-        var sampleCount = (int)(SfxSampleRate * durationSeconds);
-        var data = new byte[sampleCount * 2]; // 16-bit mono
-        for (var i = 0; i < sampleCount; i++)
-        {
-            var t = i / (float)SfxSampleRate;
-            var envelope = 1f - t / durationSeconds;
-            var wave = Mathf.Sin(2f * Mathf.Pi * hz * t);
-            if (secondaryHz is { } second)
-            {
-                wave = (wave + Mathf.Sin(2f * Mathf.Pi * second * t)) * 0.5f;
-            }
-
-            var sample = Mathf.Clamp(wave * amplitude * envelope, -1f, 1f);
-            var s16 = (short)(sample * short.MaxValue);
-            data[i * 2] = (byte)(s16 & 0xFF);
-            data[i * 2 + 1] = (byte)((s16 >> 8) & 0xFF);
-        }
-
-        return new AudioStreamWav
-        {
-            Data = data,
-            Format = AudioStreamWav.FormatEnum.Format16Bits,
-            MixRate = SfxSampleRate,
-            Stereo = false,
-        };
-    }
 }
