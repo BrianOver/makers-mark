@@ -163,4 +163,39 @@ public sealed class SpriteMotion
 
         return new Pose(bobY, lean, scale, stepFrameB, walkFrame);
     }
+
+    /// <summary>
+    /// U-T3-5 (register #141, "character legs clip with the grass"): the per-frame correction to
+    /// apply to the ART ROOT — the child <see cref="Node2D"/> <c>TownLayout2D.CharacterArtRoot()</c>
+    /// sits between an actor and its <see cref="Sprite2D"/> — so the actor keeps drawing on a whole
+    /// screen pixel every frame.
+    ///
+    /// <para><b>Root cause.</b> <c>HeroActor2D</c>/<c>TownsfolkNpc2D</c>'s idle lissajous wander and
+    /// <c>PlayerController2D</c>'s seek both hold the actor's own <see cref="Node2D.Position"/> (the
+    /// Y-sort/feet baseline) at a continuously-varying float, and — independent of that — this
+    /// class's own idle-breathe/walk-bob <see cref="Pose"/> holds <c>Sprite2D.Offset</c>/<c>Scale</c>
+    /// continuously fractional too. <c>Town2D.Build</c> already turns on the world
+    /// <c>SubViewport</c>'s <c>Snap2DTransformsToPixel</c>/<c>Snap2DVerticesToPixel</c>, and every
+    /// character texture is drawn <c>Nearest</c>-filtered — but <c>tools/receipt.ps1</c>'s own
+    /// measured noise floor (see its header) still isolates a nonzero frame-to-frame pixel diff to
+    /// "one idle actor's breath-cycle animation" even with every OTHER animated layer suppressed:
+    /// the engine-level snap does not fully absorb a continuously-varying SCALE the way it does a
+    /// continuously-varying position. That residual is what reads as a leg dissolving into the
+    /// grass — the sprite's own bottom edge samples a slightly different sub-pixel position every
+    /// single frame, even while the character stands still.</para>
+    ///
+    /// <para><b>Why a correction on a separate node, not <c>Mathf.Round</c> on <see
+    /// cref="Node2D.Position"/> itself.</b> Every actor's own <c>_Process</c> computes this frame's
+    /// velocity as <c>(basePos - Position) / delta</c> BEFORE overwriting <c>Position</c> — that
+    /// feeds <see cref="Advance"/>'s walk/idle threshold and lean. Rounding <c>Position</c> directly
+    /// would inject up to ±0.5px of spurious velocity noise into that division (at a 60fps delta of
+    /// ~0.017s, ±0.5px is ±29px/s — enough to spuriously cross <see cref="WalkSpeedThreshold"/>
+    /// (20) near a lissajous zero-crossing and flash a walk pose on an idle actor). Returning the
+    /// correction as its own delta, applied only to the art root's <see cref="Node2D.Position"/>,
+    /// changes what is DRAWN without changing what is MEASURED — every existing exact-position
+    /// assertion (<c>HeroActor2DTests</c>, <c>TownsfolkNpc2DTests</c>, <c>PlayerController2DTests</c>)
+    /// stays correct unchanged.</para>
+    /// </summary>
+    public static Vector2 PixelSnapCorrection(Vector2 position) =>
+        new(Mathf.Round(position.X) - position.X, Mathf.Round(position.Y) - position.Y);
 }

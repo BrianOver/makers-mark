@@ -85,6 +85,17 @@ public partial class HeroActor2D : Node2D
 
     public Sprite2D Sprite { get; private set; } = null!;
 
+    /// <summary>U-T3-6 (register #141): this hero's grounding shadow — see
+    /// <see cref="TownLayout2D.BuildContactShadow"/>. Public for the same "tests can inspect it
+    /// directly" reason <see cref="Sprite"/>/<see cref="Nameplate"/> are.</summary>
+    public Sprite2D Shadow { get; private set; } = null!;
+
+    /// <summary>U-T3-5 (register #141): the <see cref="TownLayout2D.CharacterArtRoot"/> child that
+    /// carries <see cref="Sprite"/> — kept so <see cref="_Process"/> can apply
+    /// <see cref="SpriteMotion.PixelSnapCorrection"/> to it every frame without re-walking the
+    /// scene tree.</summary>
+    private Node2D _art = null!;
+
     public Area2D Pick { get; private set; } = null!;
 
     /// <summary>U4 (owner playtest, "heroes and NPCs need nameplates"): this hero's name, tinted by
@@ -166,10 +177,15 @@ public partial class HeroActor2D : Node2D
         _spriteHeight = sprite.GetHeight();
         _spriteWidth = sprite.GetWidth();
 
+        // U-T3-6: added BEFORE the art root so a fresh checkout's scene-tree order alone already
+        // draws it underneath — belt-and-suspenders with its own ZIndex=-1.
+        Shadow = TownLayout2D.BuildContactShadow(_spriteWidth);
+        AddChild(Shadow);
+
         Sprite = BuildSprite(sprite, classColor);
-        var art = TownLayout2D.CharacterArtRoot(); // carries the cast's world scale — see its doc
-        AddChild(art);
-        art.AddChild(Sprite);
+        _art = TownLayout2D.CharacterArtRoot(); // carries the cast's world scale — see its doc
+        AddChild(_art);
+        _art.AddChild(Sprite);
 
         // U4: name + class tint, same recipe every building nametag uses (Building2D.BuildLabel,
         // made public for exactly this reuse) — added as a PLAIN child of this actor (never to the
@@ -291,6 +307,11 @@ public partial class HeroActor2D : Node2D
         var velocity = delta > 0.0 ? moved / (float)delta : Vector2.Zero;
         Position = basePos;
 
+        // U-T3-5: correct only what gets DRAWN (the art root), never Position itself — see
+        // SpriteMotion.PixelSnapCorrection's own doc for why rounding Position directly would
+        // poison the velocity computation above on the NEXT frame.
+        _art.Position = SpriteMotion.PixelSnapCorrection(Position);
+
         var pose = _motion.Advance(delta, velocity, WalkSpeed);
         ApplySpritePose(pose);
     }
@@ -300,9 +321,13 @@ public partial class HeroActor2D : Node2D
     /// to this actor's own <see cref="Position"/> (Y-sort key/feet baseline).</summary>
     private void ApplySpritePose(SpriteMotion.Pose pose)
     {
+        // U-T3-5: Mathf.Round here, not just the art-root correction above — Offset.Y carries the
+        // idle-breathe/walk-bob compensation, which is continuously fractional on its own (see
+        // SpriteMotion.PixelSnapCorrection's doc); rounding it is what stops THAT residual from
+        // reintroducing sub-pixel motion the art-root correction never touches.
         Sprite.Offset = new Vector2(
             0,
-            -_spriteHeight / 2f + pose.BobY + _spriteHeight / 2f * (1f - pose.Scale.Y));
+            Mathf.Round(-_spriteHeight / 2f + pose.BobY + _spriteHeight / 2f * (1f - pose.Scale.Y)));
         Sprite.Rotation = pose.LeanRadians;
         Sprite.Scale = pose.Scale;
         Sprite.Texture = ResolveWalkFrameTexture(pose.WalkFrame);

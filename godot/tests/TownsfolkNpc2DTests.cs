@@ -328,5 +328,77 @@ public class TownsfolkNpc2DTests
             town.Free();
         }
     }
+
+    /// <summary>U-T3-5 (register #141): mirrors
+    /// <c>HeroActor2DTests.ApplySpritePose_OffsetYIsAlwaysAWholePixel_IdleAndWalking</c> — a
+    /// villager's idle-breathe Offset.Y must round to a whole pixel every frame while puttering.</summary>
+    [TestCase]
+    public void ApplySpritePose_OffsetYIsAlwaysAWholePixel_WhileWandering()
+    {
+        var npc = new TownsfolkNpc2D();
+        try
+        {
+            npc.Init(4, new PlaceholderTexture2D(), Colors.White, new Vector2(60, 40));
+
+            for (var i = 0; i < 40; i++)
+            {
+                npc._Process(0.017);
+                AssertFloat(npc.Sprite.Offset.Y).IsEqual(Mathf.Round(npc.Sprite.Offset.Y));
+            }
+        }
+        finally
+        {
+            npc.QueueFree();
+        }
+    }
+
+    /// <summary>U-T3-5: mirrors <c>HeroActor2DTests.PixelSnapCorrection_KeepsDrawnPositionOnWholePixel_WhileWandering</c>
+    /// — the "Art" child's per-frame correction must keep <c>Position + Art.Position</c> (what
+    /// actually gets drawn) on a whole pixel every frame of the villager's own wander drift.</summary>
+    [TestCase]
+    public void PixelSnapCorrection_KeepsDrawnPositionOnWholePixel_WhileWandering()
+    {
+        var npc = new TownsfolkNpc2D();
+        try
+        {
+            npc.Init(2, new PlaceholderTexture2D(), Colors.White, new Vector2(6, 12));
+
+            var art = npc.GetNode<Node2D>("Art");
+            for (var i = 0; i < 40; i++)
+            {
+                npc._Process(0.017);
+                var drawn = npc.Position + art.Position;
+                AssertFloat(drawn.X).IsEqual(Mathf.Round(drawn.X));
+                AssertFloat(drawn.Y).IsEqual(Mathf.Round(drawn.Y));
+            }
+        }
+        finally
+        {
+            npc.QueueFree();
+        }
+    }
+
+    /// <summary>U-T3-6 (register #141): every villager gets the same grounding shadow a hero does —
+    /// centered at the feet baseline, drawn strictly behind the character art.</summary>
+    [TestCase]
+    public void Init_AddsContactShadow_CenteredAtFeet_DrawnBehindTheSprite()
+    {
+        var npc = new TownsfolkNpc2D();
+        try
+        {
+            var texture = new PlaceholderTexture2D { Size = new Vector2(20, 32) };
+            npc.Init(0, texture, Colors.White, Vector2.Zero);
+
+            AssertThat(npc.Shadow).IsNotNull();
+            AssertThat(npc.Shadow.Texture).IsNotNull();
+            AssertThat(npc.Shadow.Position).IsEqual(Vector2.Zero);
+            AssertThat(npc.Shadow.ZIndex).IsLess(0);
+            AssertThat(npc.Shadow.Scale.Y).IsLess(npc.Shadow.Scale.X);
+        }
+        finally
+        {
+            npc.QueueFree();
+        }
+    }
 }
 #endif
