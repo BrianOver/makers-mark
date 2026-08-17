@@ -231,15 +231,19 @@ public class AudioContentGateTests
     /// musical hit) — <see cref="Gate.IsolatedTransient"/>.</item>
     /// </list>
     ///
-    /// <para><b>night-still (Camp) and quest-wait (Expedition/ExpeditionDeep) ARE this program's U-T4-8
-    /// repair targets</b> — trim to 51.5s and 49.5s respectively, each with a 4s equal-power head-to-
-    /// tail fold. Measured before repair: night-still's last 8.8s sit ≥30dB under its own loudest 0.5s
-    /// window (<see cref="Gate.DeadTail"/>) and its wrap jumps +33.1dB (head -31.3dBFS, tail
-    /// -64.4dBFS, <see cref="Gate.LoopSeamLevelLurch"/>); quest-wait's last 10.5s are dead
-    /// (<see cref="Gate.DeadTail"/>) and its wrap jumps +23.1dB (head -41.7dBFS, tail -64.8dBFS,
-    /// <see cref="Gate.LoopSeamLevelLurch"/>) — note 60.0 − 51.5 = 8.5s and 60.0 − 49.5 = 10.5s, both
-    /// matching their own measured dead tail almost exactly, which is exactly why those two trim points
-    /// were chosen. Once U-T4-8 lands, these four entries are removed and the pinned count drops to 4.</para>
+    /// <para><b>night-still (Camp) and quest-wait (Expedition/ExpeditionDeep) WERE this program's
+    /// U-T4-8 repair targets, and are now fixed.</b> Both trimmed (51.5s and 49.5s respectively) with a
+    /// 4s equal-power (<c>ffmpeg acrossfade</c>, <c>qsin</c>/<c>qsin</c> curves — sin²+cos²=1, constant
+    /// power through the whole fold, never a linear fade's ~3dB mid-fade dip) head-to-tail fold, so the
+    /// wrap is level-continuous BY CONSTRUCTION rather than by inspection. Before repair: night-still's
+    /// last 8.8s sat ≥30dB under its own loudest 0.5s window (<see cref="Gate.DeadTail"/>) and its wrap
+    /// jumped +33.1dB (head -31.3dBFS, tail -64.4dBFS, <see cref="Gate.LoopSeamLevelLurch"/>); quest-
+    /// wait's last 10.5s were dead and its wrap jumped +23.1dB (head -41.7dBFS, tail -64.8dBFS) — note
+    /// 60.0 − 51.5 = 8.5s and 60.0 − 49.5 = 10.5s, both matching their own measured dead tail almost
+    /// exactly, which is exactly why those two trim points were chosen. After repair: night-still's
+    /// dead tail is 0.0s and its wrap lurch is 3.4dB; quest-wait's dead tail is 0.0s and its wrap lurch
+    /// is 4.5dB — both now comfortably inside every gate's ceiling, and their four exemption entries
+    /// are removed here, dropping the pinned count from 8 to 4.</para>
     /// </summary>
     private static readonly HashSet<(string Track, Gate Gate)> PendingContentExemptions = new()
     {
@@ -247,13 +251,9 @@ public class AudioContentGateTests
         ("Track.town-dusk", Gate.MostlySilent),
         ("Track.town-dusk", Gate.LoopSeamLevelLurch),
         ("Track.town-dusk", Gate.IsolatedTransient),
-        ("Track.night-still", Gate.DeadTail),
-        ("Track.night-still", Gate.LoopSeamLevelLurch),
-        ("Track.quest-wait", Gate.DeadTail),
-        ("Track.quest-wait", Gate.LoopSeamLevelLurch),
     };
 
-    private const int PinnedContentExemptionCount = 8;
+    private const int PinnedContentExemptionCount = 4;
 
     [TestCase]
     public void ThePendingContentExemptionCount_IsThePinnedNumber()
@@ -261,10 +261,9 @@ public class AudioContentGateTests
         AssertInt(PendingContentExemptions.Count)
             .OverrideFailureMessage(
                 $"PendingContentExemptions has {PendingContentExemptions.Count} entries; this test pins " +
-                $"{PinnedContentExemptionCount}. A later unit (U-T4-8 repairing night-still/quest-wait, " +
-                "U-T4-9 regenerating day-first-light/town-dusk) must remove its entries and lower this " +
-                "number in the same PR; a newly-drifted failure adds an entry and raises it. Never let " +
-                "the set change silently.")
+                $"{PinnedContentExemptionCount}. U-T4-9 (regenerating day-first-light/town-dusk) must " +
+                "remove its entries and lower this number in the same PR; a newly-drifted failure adds " +
+                "an entry and raises it. Never let the set change silently.")
             .IsEqual(PinnedContentExemptionCount);
     }
 
@@ -338,8 +337,10 @@ public class AudioContentGateTests
 
     /// <summary>
     /// Ceiling 3.0s of trailing content may sit ≥30dB under the track's own loudest 0.5s window before
-    /// it counts as a dead tail. Measured: day-first-light 1.2s, town-dusk 2.5s — both under. night-
-    /// still measures 8.8s and quest-wait 10.5s (both exempted, both U-T4-8 repair targets).
+    /// it counts as a dead tail. Measured: day-first-light 1.2s, town-dusk 2.5s — both under. Before
+    /// U-T4-8's repair, night-still measured 8.8s and quest-wait 10.5s; both now measure 0.0s — the
+    /// trim itself removes the dead tail outright, the 4s equal-power fold is what fixes the level lurch
+    /// at the new, shorter wrap point (see <see cref="Gate.LoopSeamLevelLurch"/>'s own doc).
     /// </summary>
     private const double DeadTailCeilingSeconds = 3.0;
 
